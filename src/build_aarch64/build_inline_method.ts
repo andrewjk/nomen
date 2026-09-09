@@ -5,6 +5,7 @@ import StructNode from "../nodes/StructNode.ts";
 import { parse_raw_directives } from "../raw_directives.ts";
 import { build_body_with_cursor } from "./emit_nir.ts";
 import { emit_owning_buffer_inline_aarch64 } from "./utils/owning_buffer_specialize.ts";
+import { install_raw_reload_plan, type RawParamReloadLine } from "./utils/raw_reload.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
 import { emit_owning_array_string_specialize } from "./utils/string_pair.ts";
 import { get_enum_sret_size } from "./utils/struct_layout.ts";
@@ -239,6 +240,15 @@ export default function build_inline_method(
 	if (needs_x19) {
 		callee_idx = 1;
 	}
+	// Raw `#arch: aarch64` reload plan for a MIXED inline body (see
+	// utils/raw_reload.ts): the splice site's x-registers hold the args, and
+	// any control flow between the parking below and a raw statement
+	// clobbers them. Callee-parked params reload from their register; sp-push
+	// params reload from their push slot (statement-level pushes are
+	// balanced, so the offsets are fixed across the body).
+	const inline_reloads: RawParamReloadLine[] = [];
+	const inline_push_slots: { reg: string; push_index: number }[] = [];
+	let inline_push_count = needs_x19 ? 1 : 0;
 
 	status.function_param_regs = new Map();
 	status.function_param_vars = new Set();
@@ -275,20 +285,32 @@ export default function build_inline_method(
 			const saved_reg = callee_saved[callee_idx++];
 			if (saved_reg !== "x19" || !needs_x19) {
 				status.code += `str ${saved_reg}, [sp, #-16]!\n`;
+				inline_push_count++;
 			}
 			status.code += `mov ${saved_reg}, ${param_regs[i]}\n`;
 			status.function_param_regs.set(param.name, saved_reg);
+			if (i < param_regs.length) {
+				inline_reloads.push({ reg: param_regs[i], asm: `mov ${param_regs[i]}, ${saved_reg}` });
+			}
 		} else if (!is_struct_type) {
 			if (param.type.is_ref || callee_idx >= callee_saved.length) {
 				status.code += `str ${param_regs[i]}, [sp, #-16]!\n`;
 				saved_stack_slots.push(param.name);
+				if (i < param_regs.length) {
+					inline_push_slots.push({ reg: param_regs[i], push_index: inline_push_count });
+				}
+				inline_push_count++;
 			} else {
 				const saved_reg = callee_saved[callee_idx++];
 				if (saved_reg !== "x19" || !needs_x19) {
 					status.code += `str ${saved_reg}, [sp, #-16]!\n`;
+					inline_push_count++;
 				}
 				status.code += `mov ${saved_reg}, ${param_regs[i]}\n`;
 				status.function_param_regs.set(param.name, saved_reg);
+				if (i < param_regs.length) {
+					inline_reloads.push({ reg: param_regs[i], asm: `mov ${param_regs[i]}, ${saved_reg}` });
+				}
 			}
 		}
 		if (param.declaration === "var") {
@@ -330,7 +352,26 @@ export default function build_inline_method(
 	// `b .inline_ret_N_or`, an undefined symbol).
 	const code_length_before_body = status.code.length;
 
+	// Finalize the sp-push reloads: at any statement boundary in the body,
+	// push #p (0-based) sits at [sp, #16*(total-1-p)].
+	for (const entry of inline_push_slots) {
+		inline_reloads.push({
+			reg: entry.reg,
+			asm: `ldr ${entry.reg}, [sp, #${16 * (inline_push_count - 1 - entry.push_index)}]`,
+		});
+	}
+	if (return_struct && status.return_buffer_stack_offset !== undefined) {
+		inline_reloads.push({
+			reg: "x8",
+			asm: `ldr x8, [x29, #${status.return_buffer_stack_offset}]`,
+		});
+	}
+	const old_raw_param_reloads = status.raw_param_reloads;
+	install_raw_reload_plan(status, inline_reloads);
+
 	build_body_with_cursor(func, status);
+
+	status.raw_param_reloads = old_raw_param_reloads;
 
 	// A raw block inside a (mixed) inline body may still branch to the
 	// function's standalone return label — rewrite those to the inline
@@ -473,6 +514,13 @@ export function build_inline_function(func: FunctionNode, status: BuildStatus) {
 
 	const saved_stack_slots: string[] = [];
 
+	// Raw `#arch: aarch64` reload plan for the inline body (see the method
+	// path above): callee-parked params reload from their register, sp-push
+	// params from their fixed push slot.
+	const inline_reloads: RawParamReloadLine[] = [];
+	const inline_push_slots: { reg: string; push_index: number }[] = [];
+	let inline_push_count = 0;
+
 	for (let i = 0; i < func.params.length; i++) {
 		const param = func.params[i];
 		if (param.is_self_param) continue;
@@ -482,17 +530,29 @@ export function build_inline_function(func: FunctionNode, status: BuildStatus) {
 		if (is_struct_type && callee_idx < callee_saved.length) {
 			const saved_reg = callee_saved[callee_idx++];
 			status.code += `str ${saved_reg}, [sp, #-16]!\n`;
+			inline_push_count++;
 			status.code += `mov ${saved_reg}, ${param_regs[i]}\n`;
 			status.function_param_regs.set(param.name, saved_reg);
+			if (i < param_regs.length) {
+				inline_reloads.push({ reg: param_regs[i], asm: `mov ${param_regs[i]}, ${saved_reg}` });
+			}
 		} else if (!is_struct_type) {
 			if (param.type.is_ref || callee_idx >= callee_saved.length) {
 				status.code += `str ${param_regs[i]}, [sp, #-16]!\n`;
 				saved_stack_slots.push(param.name);
+				if (i < param_regs.length) {
+					inline_push_slots.push({ reg: param_regs[i], push_index: inline_push_count });
+				}
+				inline_push_count++;
 			} else {
 				const saved_reg = callee_saved[callee_idx++];
 				status.code += `str ${saved_reg}, [sp, #-16]!\n`;
+				inline_push_count++;
 				status.code += `mov ${saved_reg}, ${param_regs[i]}\n`;
 				status.function_param_regs.set(param.name, saved_reg);
+				if (i < param_regs.length) {
+					inline_reloads.push({ reg: param_regs[i], asm: `mov ${param_regs[i]}, ${saved_reg}` });
+				}
 			}
 		}
 		if (param.declaration === "var") {
@@ -521,7 +581,26 @@ export function build_inline_function(func: FunctionNode, status: BuildStatus) {
 		status.return_buffer_stack_offset = return_buffer_stack_offset;
 	}
 
+	// Finalize the sp-push reloads: at any statement boundary in the body,
+	// push #p (0-based) sits at [sp, #16*(total-1-p)].
+	for (const entry of inline_push_slots) {
+		inline_reloads.push({
+			reg: entry.reg,
+			asm: `ldr ${entry.reg}, [sp, #${16 * (inline_push_count - 1 - entry.push_index)}]`,
+		});
+	}
+	if (return_struct && status.return_buffer_stack_offset !== undefined) {
+		inline_reloads.push({
+			reg: "x8",
+			asm: `ldr x8, [x29, #${status.return_buffer_stack_offset}]`,
+		});
+	}
+	const old_raw_param_reloads = status.raw_param_reloads;
+	install_raw_reload_plan(status, inline_reloads);
+
 	build_body_with_cursor(func, status);
+
+	status.raw_param_reloads = old_raw_param_reloads;
 
 	status.code += `${return_label}:\n`;
 

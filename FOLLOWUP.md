@@ -198,35 +198,6 @@ gate for flipping the default.
   loop-terminator bug — rebuild the repro from the test harness
   (check_output's audit path) instead.
 
-## Raw `#arch: aarch64` blocks assume param registers, which control flow clobbers
-
-Found while writing the switch-case mutation-gate test in
-`test/borrow_to_string_elision.test.ts`: a raw asm block that reads its
-parameters crashes at runtime when it sits after any control flow. The raw
-block ABI hands params in `x0`, `x1`, … at function entry, and the emitter
-splices the block verbatim wherever the statement sits — but by then the
-backend has evaluated other expressions into those registers. Repro
-(`func raw_touch = (string p) { switch { case true { raw } } }`, asm from
-`test/out/aarch64/.../main.s`):
-
-```
-str x0, [x29, #0]   // param p spilled to its slot
-mov x0, #1          // switch condition reuses x0
-cmp x0, #0
-beq end_switch_0
-mov w2, #74
-strb w2, [x0]       // raw block still expects p in x0 → writes to address 1
-```
-
-The C backend is unaffected (raw C bodies reference params by name through the
-generated glue). Entry-position raw blocks — the shape all of `core/` and
-the existing tests use — are fine. Fix directions: reload the params into
-their ABI registers immediately before each raw statement (the values are
-already in the slots the prologue spills them to), or have
-`asm_validator`/`lift_asm` reject a raw block that is not preceded only by
-prologue code, or document raw blocks as entry-only for aarch64. The same
-clobber class applies to any `if`/`while`/`match` body, not just `switch`.
-
 ## `buffer_pipeline.ts` (ASM_PLAN_3 tranche K) is dead code
 
 Found while landing ASM_PLAN_7 tranche 3: the inline Buffer address

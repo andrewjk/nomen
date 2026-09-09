@@ -25,6 +25,11 @@ import {
 	emit_owning_buffer_standalone_aarch64,
 } from "./utils/owning_buffer_specialize.ts";
 import {
+	install_raw_reload_plan,
+	raw_slot_reload_line,
+	type RawParamReloadLine,
+} from "./utils/raw_reload.ts";
+import {
 	NUM_REG_ARGS,
 	overflow_placeholder,
 	patch_overflow_placeholders,
@@ -293,7 +298,16 @@ function build_destroy_function(node: StructNode, func: FunctionNode, status: Bu
 
 	status.buffer_data_cache = undefined;
 	status.array_ptr_cache = undefined;
-	build_body_with_cursor(func, status);
+	// A destroy body's only param is self in callee-saved x19 (live across
+	// the whole function), so there is nothing to reload — but the body must
+	// not inherit the enclosing function's plan either.
+	const old_destroy_raw_param_reloads = status.raw_param_reloads;
+	install_raw_reload_plan(status, []);
+	try {
+		build_body_with_cursor(func, status);
+	} finally {
+		status.raw_param_reloads = old_destroy_raw_param_reloads;
+	}
 
 	// The body build may have claimed registers (loop promotion); the cast
 	// defeats the assignment narrowing from the clear above.
@@ -796,6 +810,11 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 	// patched once the local frame size is known.
 	const param_regs = ["x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"];
 	let param_idx = 1;
+	// Raw `#arch: aarch64` reload plan (see utils/raw_reload.ts). self stays
+	// in callee-saved x19 for the whole init; custom-init params start at
+	// slot 1. Variadic params have no separate body-visible register past
+	// the pair count beyond the len reload below.
+	const raw_reloads: RawParamReloadLine[] = [];
 	for (let i = 0; i < func.params.length; i++) {
 		const param = func.params[i];
 		if (param.is_self_param) continue;
@@ -805,6 +824,10 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 			status.stack_offsets!.set(`_${param.name}_len`, len_offset);
 			if (param_idx < NUM_REG_ARGS) {
 				status.code += `str ${param_regs[param_idx]}, [x29, #${len_offset}]\n`;
+				raw_reloads.push({
+					reg: param_regs[param_idx],
+					asm: `ldr ${param_regs[param_idx]}, [x29, #${len_offset}]`,
+				});
 			} else {
 				const k = param_idx - NUM_REG_ARGS;
 				status.code += `ldr x9, [x29, #${overflow_placeholder(func_name, k)}]\n`;
@@ -829,6 +852,7 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 			} else {
 				status.code += `str ${reg}, [x29, #${offset}]\n`;
 			}
+			raw_reloads.push({ reg, asm: raw_slot_reload_line(reg, offset, size) });
 		} else {
 			const k = param_idx - NUM_REG_ARGS;
 			status.code += `ldr x9, [x29, #${overflow_placeholder(func_name, k)}]\n`;
@@ -844,6 +868,13 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 		}
 		param_idx++;
 	}
+
+	// The entry registers are NOT valid at the init body's first statement:
+	// the field-default initialization below reuses x1/x2 as scratch. Capture
+	// the entry marker HERE (before any of that emission) so every raw block
+	// in the body reloads its params.
+	const old_raw_param_reloads = status.raw_param_reloads;
+	install_raw_reload_plan(status, raw_reloads);
 
 	// Zero the struct memory
 	status.code += `str xzr, [x19]\n`;
@@ -958,7 +989,11 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 
 	status.buffer_data_cache = undefined;
 	status.array_ptr_cache = undefined;
-	build_body_with_cursor(func, status);
+	try {
+		build_body_with_cursor(func, status);
+	} finally {
+		status.raw_param_reloads = old_raw_param_reloads;
+	}
 
 	// The init body's own loop-promotion claims (the enclosing's set was
 	// cleared above); restored after capture. These MUST be saved/restored
@@ -1184,6 +1219,8 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		// moved to x19 or, for `var self`, treated as a regular struct param);
 		// variadics take 2 slots (count + ptr); every other param takes 1.
 		let slot_idx = 0;
+		// Entry AAPCS slot of each callee-saved-parked param (raw reload plan).
+		const callee_param_slots = new Map<string, number>();
 		for (let i = 0; i < func.params.length; i++) {
 			const param = func.params[i];
 			if (param.is_self_param && !self_is_var) {
@@ -1234,6 +1271,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 					status.code += `ldr ${saved_reg}, [sp, #${16 + 16 * callee_idx + k * 8}]\n`;
 				}
 				status.function_param_regs.set(param.name, saved_reg);
+				callee_param_slots.set(param.name, slot_idx);
 			} else {
 				// Non-struct params will be saved after stack allocation
 			}
@@ -1269,6 +1307,11 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		// pass so overflow args (slot >= 8) are pulled from the caller's
 		// outgoing stack area via per-arg placeholders.
 		let second_slot_idx = 0;
+		// Raw `#arch: aarch64` reload plan (see utils/raw_reload.ts). self
+		// needs no entry: the needs_x19 convention parks it in callee-saved
+		// x19/x20 for the whole method. Variadic method params get no slot
+		// spill and no entry register past the pair count — no reload.
+		const raw_reloads: RawParamReloadLine[] = [];
 		for (let i = 0; i < func.params.length; i++) {
 			const param = func.params[i];
 			if (param.is_self_param && !self_is_var) {
@@ -1292,6 +1335,10 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 					const p_slot = second_slot_idx + half;
 					if (p_slot < NUM_REG_ARGS) {
 						status.code += `str ${param_regs[p_slot]}, [x29, #${offset + half * 8}]\n`;
+						raw_reloads.push({
+							reg: param_regs[p_slot],
+							asm: `ldr ${param_regs[p_slot]}, [x29, #${offset + half * 8}]`,
+						});
 					} else {
 						const k = p_slot - NUM_REG_ARGS;
 						status.code += `ldr x9, [x29, #${overflow_placeholder(func_label, k)}]\n`;
@@ -1313,6 +1360,10 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 					const p_slot = second_slot_idx + half;
 					if (p_slot < NUM_REG_ARGS) {
 						status.code += `str ${param_regs[p_slot]}, [x29, #${offset + half * 8}]\n`;
+						raw_reloads.push({
+							reg: param_regs[p_slot],
+							asm: `ldr ${param_regs[p_slot]}, [x29, #${offset + half * 8}]`,
+						});
 					} else {
 						const k = p_slot - NUM_REG_ARGS;
 						status.code += `ldr x9, [x29, #${overflow_placeholder(func_label, k)}]\n`;
@@ -1326,8 +1377,13 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 				!!status.structs.find((s) => s.name === param.type.name && !s.is_simple_type) ||
 				!!status.enums.find((e) => e.name === param.type.name && e.has_associated_data);
 			if (!is_struct_type) {
-				const size = aarch64_size(param.type.name);
-				const offset = allocate_stack_space(status, size, size);
+				// A `ref T` param receives an 8-byte pointer to the caller's
+				// storage regardless of T's size, so the local slot must
+				// always be 8 bytes (spilling `ref bool` as `strb` truncates
+				// the address). Mirrors build_function_node's prologue.
+				const is_ref = param.type.is_ref;
+				const size = is_ref ? 8 : aarch64_size(param.type.name);
+				const offset = allocate_stack_space(status, size, is_ref ? 8 : size);
 				status.stack_offsets!.set(param.name, offset);
 				if (param.is_self_param) {
 					// `var self` (= `ref self` here): self takes slot 0 (in
@@ -1336,6 +1392,14 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 					// carries the dereferenced value for raw bodies only.
 					const save_reg = x19_through_ref ? "x0" : needs_x19 ? "x19" : param_regs[second_slot_idx];
 					status.code += `str ${save_reg}, [x29, #${offset}]\n`;
+					// needs_x19 parks self in callee-saved x19 (live for the
+					// whole method); the raw entry register is x0 either way.
+					if (second_slot_idx < NUM_REG_ARGS) {
+						raw_reloads.push({
+							reg: param_regs[second_slot_idx],
+							asm: raw_slot_reload_line(param_regs[second_slot_idx], offset, size),
+						});
+					}
 				} else if (second_slot_idx < NUM_REG_ARGS) {
 					const reg = param_regs[second_slot_idx];
 					if (size === 1) {
@@ -1345,6 +1409,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 					} else {
 						status.code += `str ${reg}, [x29, #${offset}]\n`;
 					}
+					raw_reloads.push({ reg, asm: raw_slot_reload_line(reg, offset, size) });
 				} else {
 					const k = second_slot_idx - NUM_REG_ARGS;
 					status.code += `ldr x9, [x29, #${overflow_placeholder(func_label, k)}]\n`;
@@ -1356,25 +1421,59 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 						status.code += `str x9, [x29, #${offset}]\n`;
 					}
 				}
-			} else if (param.type.is_ref) {
+			} else {
 				// A `ref` class param's callee-saved register (assigned in the
 				// first pass) currently holds the ADDRESS of the caller's
 				// pointer slot. Field access expects the register to hold the
 				// instance, so dereference once — and save &slot separately (in
 				// a dedicated slot) for the reassignment write-back path.
 				// Mirrors build_function_node's top-level prologue.
-				const is_class = !!status.structs.find((s) => s.name === param.type.name && s.is_class);
-				if (is_class) {
-					const reg = status.function_param_regs.get(param.name);
-					if (reg) {
-						const ref_slot = allocate_stack_space(status, 8, 8);
-						status.code += `str ${reg}, [x29, #${ref_slot}]\n`;
-						status.code += `ldr ${reg}, [${reg}]\n`;
-						status.ref_class_slots!.set(param.name, ref_slot);
+				if (param.type.is_ref) {
+					const is_class = !!status.structs.find((s) => s.name === param.type.name && s.is_class);
+					if (is_class) {
+						const reg = status.function_param_regs.get(param.name);
+						if (reg) {
+							const ref_slot = allocate_stack_space(status, 8, 8);
+							status.code += `str ${reg}, [x29, #${ref_slot}]\n`;
+							status.code += `ldr ${reg}, [${reg}]\n`;
+							status.ref_class_slots!.set(param.name, ref_slot);
+						}
+					}
+				}
+				// Callee-saved-parked struct/trait/enum param (first pass):
+				// the parked register still holds the entry value, except a
+				// `ref` class param's register was dereferenced to the
+				// instance — reload &caller-storage from its dedicated slot.
+				const abi_slot = callee_param_slots.get(param.name);
+				if (abi_slot !== undefined && abi_slot < NUM_REG_ARGS) {
+					const abi_reg = param_regs[abi_slot];
+					const saved_reg = status.function_param_regs.get(param.name);
+					const ref_class =
+						param.type.is_ref && saved_reg
+							? !!status.structs.find((s) => s.name === param.type.name && s.is_class)
+							: false;
+					const ref_slot = ref_class ? status.ref_class_slots?.get(param.name) : undefined;
+					if (ref_class && ref_slot !== undefined) {
+						raw_reloads.push({
+							reg: abi_reg,
+							asm: `ldr ${abi_reg}, [x29, #${ref_slot}]`,
+						});
+					} else if (saved_reg) {
+						raw_reloads.push({ reg: abi_reg, asm: `mov ${abi_reg}, ${saved_reg}` });
 					}
 				}
 			}
 			second_slot_idx++;
+		}
+
+		// An sret return parks the caller's result buffer (x8) in its own slot
+		// so the return path can reload it — a mid-body raw block that stores
+		// through x8 needs the same reload.
+		if (return_struct && return_buffer_stack_offset !== undefined) {
+			raw_reloads.push({
+				reg: "x8",
+				asm: `ldr x8, [x29, #${return_buffer_stack_offset}]`,
+			});
 		}
 
 		// Save mov'd class param values for cleanup at return — mirrors
@@ -1445,7 +1544,16 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			if (nir_regalloc_enabled()) {
 				seed_function_allocations(func, status, { exclude_params: new Set(["self"]) });
 			}
-			build_body_with_cursor(func, status);
+			// Raw `#arch: aarch64` blocks spliced by this body reload their
+			// params from the plan (an inline expansion swaps in its own and
+			// the restore below brings back the enclosing function's).
+			const old_raw_param_reloads = status.raw_param_reloads;
+			install_raw_reload_plan(status, raw_reloads);
+			try {
+				build_body_with_cursor(func, status);
+			} finally {
+				status.raw_param_reloads = old_raw_param_reloads;
+			}
 		}
 
 		// The method's own loop-promotion claims (the enclosing function's set
@@ -1679,7 +1787,16 @@ function build_trait_functions(node: StructNode, status: BuildStatus) {
 
 			status.buffer_data_cache = undefined;
 			status.array_ptr_cache = undefined;
-			build_body_with_cursor(func, status);
+			// No param spill in this builder (self rides callee-saved x19), so a raw
+			// block here has no restorable homes — install an empty plan so the
+			// enclosing function's reloads can't leak into the trait body.
+			const old_trait_raw_param_reloads = status.raw_param_reloads;
+			install_raw_reload_plan(status, []);
+			try {
+				build_body_with_cursor(func, status);
+			} finally {
+				status.raw_param_reloads = old_trait_raw_param_reloads;
+			}
 
 			const trait_claims = status.callee_saved_regs_used as Set<string> | undefined;
 			const trait_loop_regs = trait_claims ? [...trait_claims].sort() : [];

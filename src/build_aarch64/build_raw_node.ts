@@ -3,6 +3,7 @@ import { is_overloaded, mangled_label } from "../check/utils/function_overload.t
 import FunctionNode from "../nodes/FunctionNode.ts";
 import RawNode from "../nodes/RawNode.ts";
 import { check_raw_arch_coverage, parse_raw_directives } from "../raw_directives.ts";
+import { raw_reload_lines_for } from "./utils/raw_reload.ts";
 import { get_enum_sret_size, get_struct_size } from "./utils/struct_layout.ts";
 
 export default function build_raw_node(node: RawNode, status: BuildStatus) {
@@ -24,6 +25,17 @@ export default function build_raw_node(node: RawNode, status: BuildStatus) {
 			status.c_companion += `${code}\n`;
 		}
 	} else {
+		// A raw asm block reads its parameters from the entry ABI registers
+		// (x0, x1, …), but it is spliced verbatim wherever its statement
+		// sits — after any control flow or expression evaluation those
+		// registers hold scratch values. Away from the body's entry point,
+		// re-establish the entry values first: the prologue parked each
+		// register-slot param in a home (stack slot or callee-saved
+		// register) that stays live at every statement boundary. Only the
+		// registers the block actually names are reloaded.
+		for (const line of raw_reload_lines_for(code, status.raw_param_reloads, status.code.length)) {
+			status.code += `${line}\n`;
+		}
 		status.code += `${code}\n`;
 	}
 }

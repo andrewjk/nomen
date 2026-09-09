@@ -146,6 +146,16 @@ export default interface BuildStatus {
 	function_param_regs?: Map<string, string>;
 	function_param_vars?: Set<string>;
 	/**
+	 * aarch64 only. The current function's raw `#arch: aarch64` param-reload
+	 * plan (see build_aarch64/utils/raw_reload.ts): a raw asm block spliced
+	 * anywhere other than the body's entry point must reload its parameters'
+	 * entry ABI registers from the prologue homes before its first
+	 * instruction. Each prologue builder installs a plan around its body
+	 * build and restores the enclosing one after (nested/inline builds must
+	 * not splice the outer function's reloads into their own raw blocks).
+	 */
+	raw_param_reloads?: import("../build_aarch64/utils/raw_reload.ts").RawParamReloadPlan;
+	/**
 	 * The current function's/method's parameter types (aarch64), recorded at
 	 * prologue time. Loop promotion resolves a candidate with no scoped
 	 * declaration and no body declare record (i.e. a parameter) through this

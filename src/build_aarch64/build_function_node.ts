@@ -21,6 +21,11 @@ import { emit_destroy_for_anchor_slot } from "./utils/auto_destroy.ts";
 import { plan_function_promotions } from "./utils/func_regalloc.ts";
 import { nir_regalloc_enabled, plan_nir_registers } from "./utils/nir_regalloc.ts";
 import {
+	install_raw_reload_plan,
+	raw_slot_reload_line,
+	type RawParamReloadLine,
+} from "./utils/raw_reload.ts";
+import {
 	NUM_REG_ARGS,
 	overflow_placeholder,
 	patch_overflow_placeholders,
@@ -247,6 +252,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 
 	const callee_saved = ["x19", "x20", "x21", "x22"];
 	const callee_map = new Map<string, string>();
+	const callee_param_slots = new Map<string, number>();
 	let callee_idx = 0;
 
 	status.code += `.p2align 2\n`;
@@ -391,6 +397,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 					status.code += `ldr ${saved_reg}, [sp, #${16 + 16 * callee_idx + k * 8}]\n`;
 				}
 				callee_map.set(param.name, saved_reg);
+				callee_param_slots.set(param.name, first_pass_slot);
 			}
 			first_pass_slot++;
 		}
@@ -566,8 +573,17 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			: fn_allocs && fn_allocs.size > 0
 				? new Set(fn_allocs.values())
 				: undefined;
+	// Raw `#arch: aarch64` param-reload lines collected by the prologue below
+	// (empty when there is no body); installed around the body build.
+	let raw_reload_plan_lines: RawParamReloadLine[] = [];
+
 	if (has_body) {
 		let param_idx = 0;
+		// Raw `#arch: aarch64` reload plan (see utils/raw_reload.ts): one
+		// line per entry ABI register whose value the prologue parks
+		// somewhere restorable. Overflow args (slot >= 8) never ride a
+		// register at entry, so they get no entry.
+		const raw_reloads: RawParamReloadLine[] = [];
 		for (let i = 0; i < node.params.length; i++) {
 			const param = node.params[i];
 			// Recorded before the per-shape branches below (view/string spill
@@ -583,6 +599,10 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				if (param_idx < NUM_REG_ARGS) {
 					const len_reg = param_regs[param_idx];
 					status.code += `str ${len_reg}, [x29, #${len_offset}]\n`;
+					raw_reloads.push({
+						reg: len_reg,
+						asm: `ldr ${len_reg}, [x29, #${len_offset}]`,
+					});
 				} else {
 					const k = param_idx - NUM_REG_ARGS;
 					status.code += `ldr x9, [x29, #${overflow_placeholder(label_name, k)}]\n`;
@@ -608,6 +628,10 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 					const p_slot = param_idx + half;
 					if (p_slot < NUM_REG_ARGS) {
 						status.code += `str ${param_regs[p_slot]}, [x29, #${offset + half * 8}]\n`;
+						raw_reloads.push({
+							reg: param_regs[p_slot],
+							asm: `ldr ${param_regs[p_slot]}, [x29, #${offset + half * 8}]`,
+						});
 					} else {
 						const k = p_slot - NUM_REG_ARGS;
 						status.code += `ldr x9, [x29, #${overflow_placeholder(label_name, k)}]\n`;
@@ -640,6 +664,10 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 					const p_slot = param_idx + half;
 					if (p_slot < NUM_REG_ARGS) {
 						status.code += `str ${param_regs[p_slot]}, [x29, #${offset + half * 8}]\n`;
+						raw_reloads.push({
+							reg: param_regs[p_slot],
+							asm: `ldr ${param_regs[p_slot]}, [x29, #${offset + half * 8}]`,
+						});
 					} else {
 						const k = p_slot - NUM_REG_ARGS;
 						status.code += `ldr x9, [x29, #${overflow_placeholder(label_name, k)}]\n`;
@@ -656,6 +684,8 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			if (callee_map.has(param.name)) {
 				const reg = callee_map.get(param.name)!;
 				status.function_param_regs.set(param.name, reg);
+				const abi_slot = callee_param_slots.get(param.name);
+				let reload_pushed = false;
 				// A `ref` class param's register currently holds the ADDRESS of the
 				// caller's pointer slot (the call site passes &slot so the callee
 				// can reassign it). Field access expects the register to hold the
@@ -668,7 +698,24 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 						status.code += `str ${reg}, [x29, #${ref_slot}]\n`;
 						status.code += `ldr ${reg}, [${reg}]\n`;
 						status.ref_class_slots?.set(param.name, ref_slot);
+						if (abi_slot !== undefined && abi_slot < NUM_REG_ARGS) {
+							// The raw entry value is &caller-storage, not the
+							// dereferenced instance — reload it from the saved
+							// &slot, not from the (mutated) callee-saved register.
+							const abi_reg = param_regs[abi_slot];
+							raw_reloads.push({
+								reg: abi_reg,
+								asm: `ldr ${abi_reg}, [x29, #${ref_slot}]`,
+							});
+							reload_pushed = true;
+						}
 					}
+				}
+				if (!reload_pushed && abi_slot !== undefined && abi_slot < NUM_REG_ARGS) {
+					const abi_reg = param_regs[abi_slot];
+					// The parked callee-saved register still holds the entry
+					// value (it is preserved across the function's own calls).
+					raw_reloads.push({ reg: abi_reg, asm: `mov ${abi_reg}, ${reg}` });
 				}
 			} else {
 				// A `ref T` param receives an 8-byte pointer to the caller's
@@ -713,8 +760,10 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 					if (promoted_reg && size === 8) {
 						if (param_is_float) {
 							status.code += `fmov ${promoted_reg}, ${reg}\n`;
+							raw_reloads.push({ reg, asm: `fmov ${reg}, ${promoted_reg}` });
 						} else {
 							status.code += `mov ${promoted_reg}, ${reg}\n`;
+							raw_reloads.push({ reg, asm: `mov ${reg}, ${promoted_reg}` });
 						}
 					} else {
 						if (size === 1) {
@@ -726,6 +775,10 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 						} else {
 							status.code += `str ${reg}, [x29, #${offset}]\n`;
 						}
+						// The slot holds the entry value (sub-word spills store
+						// the param's declared width; the matching load
+						// zero-extends exactly like the emitters' slot reads).
+						raw_reloads.push({ reg, asm: raw_slot_reload_line(reg, offset, size) });
 						if (promoted_reg) {
 							emit_promoted_load(status, promoted_reg, offset, param.type.name);
 						}
@@ -792,6 +845,17 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				status.function_ref_params!.add(param.name);
 			}
 		}
+
+		// An sret return parks the caller's result buffer (x8) in its own slot
+		// so the return path can reload it after the body's calls — a mid-body
+		// raw block that stores through x8 needs the same reload.
+		if (return_struct && status.return_buffer_stack_offset !== undefined) {
+			raw_reloads.push({
+				reg: "x8",
+				asm: `ldr x8, [x29, #${status.return_buffer_stack_offset}]`,
+			});
+		}
+		raw_reload_plan_lines = raw_reloads;
 	}
 
 	const moved_before = new Set(status.moved ?? []);
@@ -873,9 +937,15 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		status.nir_emit_ctx = undefined;
 	}
 
+	// Raw `#arch: aarch64` blocks spliced by this body reload their params
+	// from the plan (a nested function build swaps in its own and the
+	// finally below restores ours).
+	const old_raw_param_reloads = status.raw_param_reloads;
+	install_raw_reload_plan(status, raw_reload_plan_lines);
 	try {
 		build_block_node(node, status);
 	} finally {
+		status.raw_param_reloads = old_raw_param_reloads;
 		status.nir_emit_ctx = old_nir_ctx;
 		vn?.undo();
 	}
