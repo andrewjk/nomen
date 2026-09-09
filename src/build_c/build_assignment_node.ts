@@ -274,6 +274,26 @@ export default function build_assignment_node(
 		// access like `first = p.at(0)` (int array) is a plain value copy with
 		// no ownership to manage, and freeing it would be invalid.
 		if (lhs_type?.name === "string") {
+			// Force-heap target (the scan proved it receives a heap value
+			// somewhere later): the variable must own heap on EVERY path, so
+			// the borrow reception is strdup'd into an owned copy instead of
+			// the raw borrow store. The variable stays a FULL owner — its decl
+			// is never spliced and string_borrow_vars is never joined — so a
+			// later reassignment (`b = t`, possibly conditionally) takes the
+			// owned-string path and frees the displaced copy validly.
+			// Temp-first: the borrow expression may read the LHS.
+			if (status.force_heap_strings?.has(lhs_name)) {
+				const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+				const temp = `_borrow_dup_${id}`;
+				status.code += `nomen_string ${temp} = nomen_str_dup(`;
+				emit_rhs_value(node.right_value, nir_rhs, status);
+				status.code += `);\n`;
+				status.code += `free(${lhs_name}.ptr);\n`;
+				status.code += `${lhs_name} = ${temp};\n`;
+				if (!status.heap_strings) status.heap_strings = new Set();
+				status.heap_strings.add(lhs_name);
+				return;
+			}
 			const was_borrow = !!status.string_borrow_vars?.has(lhs_name);
 			if (!status.string_borrow_vars) status.string_borrow_vars = new Set();
 			status.string_borrow_vars.add(lhs_name);
@@ -547,6 +567,24 @@ export default function build_assignment_node(
 					if (!node.swap) {
 						splice_decl_from_c_scopes(status, (rhs as ValueNode).value);
 					}
+				} else if (!node.swap && (rhs as ValueNode).is_moved) {
+					// `s = mov t` (string): EXPLICIT ownership transfer. Splice
+					// the source's decl from whichever scope frame holds it so
+					// its scope-exit free is suppressed — the assignee owns the
+					// bytes now (its own displaced value was already freed
+					// above). Only when the source actually OWNS heap: a
+					// literal-only/borrow-held source owns nothing, and marking
+					// the assignee as owner would free rodata/container memory
+					// at scope exit. Mirrors aarch64's heap_strings
+					// delete(source)/add(target).
+					const src_name = (rhs as ValueNode).value;
+					if (string_var_owns_heap(status, src_name)) {
+						splice_decl_from_c_scopes(status, src_name);
+						if (!status.heap_strings) status.heap_strings = new Set();
+						status.heap_strings.add(lhs_name);
+					}
+					// Fall through: the plain `lhs = rhs` pair store completes
+					// the transfer.
 				} else if (should_value_copy_string_assign(node)) {
 					const src_value = rhs as ValueNode;
 					const src_can_move =
@@ -951,19 +989,29 @@ function string_var_owns_heap(status: BuildStatus, name: string): boolean {
 	// Mirror free_scoped_declarations' ownership classification for the
 	// initializer shapes: a `var` literal or a call/method result was
 	// strdup'd or produced fresh heap at the declare. A bare-variable init
-	// only owns when the declare strdup'd it (`var u = t`), which the value
-	// shape can't distinguish here — refuse (the assign site falls back to
-	// the strdup, which is always sound). Anything else may still point at
-	// static storage.
+	// (`var u = t`) owns only when the declare strdup'd/transferred it, which
+	// the declare site records in heap_strings (checked above); reaching the
+	// bare-value branch without the mark means u aliases its source's storage
+	// (const source, borrow-only literal, or a source outside the declare's
+	// scope frame) → refuse. Anything else may still point at static storage.
 	if (value.node_type === "value") {
 		const v = value as ValueNode;
-		return (
+		if (
 			decl.declaration === "var" &&
 			typeof v.value === "string" &&
 			v.value.length >= 2 &&
 			v.value.startsWith('"') &&
 			v.value.endsWith('"')
-		);
+		) {
+			return true;
+		}
+		// A bare-variable initializer (`var u = t`): the declare strdup'd (or
+		// transferred) an owned copy into u, and the declare site recorded that
+		// in heap_strings — handled by the heap_strings check above. Reaching
+		// here without the mark means the declare did NOT dup (a const, a
+		// borrow-only literal, or a source outside the declare's scope frame —
+		// u aliases its source's storage) → refuse.
+		return false;
 	}
 	return value.node_type === "access" || value.node_type === "func_call";
 }

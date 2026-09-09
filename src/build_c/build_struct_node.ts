@@ -5,6 +5,7 @@ import {
 import { mono_struct_name, mono_type_name } from "../build_common/mono_name.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import { classify_param } from "../build_common/param_classify.ts";
+import scan_force_heap_strings from "../build_common/scan_force_heap_strings.ts";
 import { moved_param_is_consumed } from "../build_common/scan_moved_param_consumed.ts";
 import { is_overloaded, mangled_label } from "../check/utils/function_overload.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
@@ -541,6 +542,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		const old_ref_class_param_types = status.ref_class_param_types;
 		const old_scoped_declarations = status.scoped_declarations;
 		const old_borrow_only = status.c_borrow_only_strings;
+		const old_force_heap = status.force_heap_strings;
 		const old_return_type = status.function_return_type;
 		const old_function_name = status.current_function_name;
 		const old_view_params = status.function_view_params;
@@ -552,6 +554,9 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		status.ref_class_param_types = new Map();
 		status.scoped_declarations = enter_c_scope(status);
 		status.c_borrow_only_strings = scan_borrow_only_strings(func);
+		// Shared with the aarch64 backend (see build_function_node): force
+		// heap ownership for string vars that receive a heap value later.
+		status.force_heap_strings = scan_force_heap_strings(func.statements ?? [], status.structs);
 		status.function_return_type = func.return_type;
 		const self_param = func.params[0]?.is_self_param ? func.params[0] : null;
 		status.self_is_ref = !!self_param?.is_ref || self_param?.declaration === "var";
@@ -800,6 +805,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		leave_c_scope(status);
 		status.scoped_declarations = old_scoped_declarations;
 		status.c_borrow_only_strings = old_borrow_only;
+		status.force_heap_strings = old_force_heap;
 		status.function_return_type = old_return_type;
 		status.current_function_name = old_function_name;
 		status.function_view_params = old_view_params;

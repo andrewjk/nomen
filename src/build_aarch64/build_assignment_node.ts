@@ -1,6 +1,7 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
+import { is_string_borrow } from "../build_common/string_return_analysis.ts";
 import { is_float_type } from "../built_in_types.ts";
 import { move_on_last_use_enabled } from "../check/utils/last_use.ts";
 import { is_int_literal, parse_int_literal_bigint } from "../int_literal.ts";
@@ -1371,15 +1372,45 @@ export default function build_assignment_node(
 				rhs_is_string_var && (node as AssignmentNode).last_use_move && move_on_last_use_enabled()
 					? (rhs_value as ValueNode).value
 					: undefined;
-			if (rhs_is_string_var && move_source === undefined) {
+			// EXPLICIT `s = mov t`: ownership transfer by contract. When the
+			// source owns heap, move the ownership mark from source to target
+			// — exactly one owner frees the bytes. A source that owns nothing
+			// (literal-held/borrow-held var) transfers nothing trackable: the
+			// raw pair store below keeps the historical behavior.
+			const explicit_move_source =
+				!node.swap &&
+				!!rhs_value &&
+				rhs_value.is_moved &&
+				size === 16 &&
+				rhs_value.type?.name === "string" &&
+				!rhs_value.type?.is_view
+					? rhs_value.value
+					: undefined;
+			// A borrow-RECEPTACLE target (force-heap scan: it receives a heap
+			// value somewhere later, so its reassign/scope-exit frees are
+			// emitted unconditionally) must own heap on EVERY path — strdup the
+			// borrow into an owned copy and register the cleanup, instead of
+			// storing the raw borrow (which a not-taken restart branch would
+			// leave in the slot for the exit free to reclaim).
+			const rhs_is_borrow_reception =
+				!node.swap && size === 16 && is_string_borrow(node.right_value);
+			const borrow_needs_dup = rhs_is_borrow_reception && !!status.force_heap_strings?.has(name);
+			if ((rhs_is_string_var && move_source === undefined) || borrow_needs_dup) {
 				emit_strdup_string(status);
 			}
-			if (rhs_is_string_var) {
+			if (rhs_is_string_var || borrow_needs_dup) {
 				if (move_source !== undefined) status.heap_strings?.delete(move_source);
 				if (!status.heap_strings) status.heap_strings = new Set();
 				status.heap_strings.add(name);
 			} else if (status.last_result_is_heap) {
 				if (!status.heap_strings) status.heap_strings = new Set();
+				status.heap_strings.add(name);
+			} else if (
+				explicit_move_source !== undefined &&
+				status.heap_strings?.delete(explicit_move_source)
+			) {
+				// The source owned heap (its mark was just removed): the target
+				// owns the transferred bytes now.
 				status.heap_strings.add(name);
 			}
 			status.code += `\n`;

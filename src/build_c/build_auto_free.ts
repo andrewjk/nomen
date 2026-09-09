@@ -116,9 +116,12 @@ export function free_scoped_declarations(
 		// (`args.at(n)`, `list.first()`) is a BORROW into the container's
 		// storage — including the hoisted `_param_N` temp for a call like
 		// `parse_int(init.args.at(1))`. Freeing it would free argv/container
-		// memory. Skip it.
+		// memory. Skip it — UNLESS the declare itself strdup'd the borrow into
+		// an owned copy (c_owned_borrow_inits: a force-heap variable must own
+		// heap on every path), in which case the copy is freed like any other.
 		const is_borrowed_string =
-			is_string_borrow(dec.value) || !!status.string_borrow_vars?.has(dec.name);
+			(is_string_borrow(dec.value) && !status.c_owned_borrow_inits?.has(dec)) ||
+			!!status.string_borrow_vars?.has(dec.name);
 		// A string temp whose value is a fresh heap allocation (e.g. an array
 		// `to_string()` hoisted as an interpolation arg) is owned and MUST be
 		// freed even when its inherited type is `static` (the static-ness came

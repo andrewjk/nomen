@@ -1,6 +1,7 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import { struct_needs_auto_destroy } from "../build_common/destroy_analysis.ts";
 import { is_nullable_struct_type } from "../build_common/nullable_struct.ts";
+import scan_force_heap_strings from "../build_common/scan_force_heap_strings.ts";
 import { moved_param_is_consumed } from "../build_common/scan_moved_param_consumed.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
 import { is_overloaded, mangled_label } from "../check/utils/function_overload.ts";
@@ -22,7 +23,6 @@ import {
 	emit_owning_buffer_destroy_aarch64,
 	emit_owning_buffer_standalone_aarch64,
 } from "./utils/owning_buffer_specialize.ts";
-import scan_force_heap_strings from "./utils/scan_force_heap_strings.ts";
 import {
 	NUM_REG_ARGS,
 	overflow_placeholder,

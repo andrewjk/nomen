@@ -1,6 +1,7 @@
 import emission_label from "../build_common/emission_label.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
+import scan_force_heap_strings from "../build_common/scan_force_heap_strings.ts";
 import { moved_param_is_consumed } from "../build_common/scan_moved_param_consumed.ts";
 import { lower_function } from "../nir/from_ast.ts";
 import BitsetNode from "../nodes/BitsetNode.ts";
@@ -38,6 +39,12 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.deferred_frees = [];
 	const old_borrow_only = status.c_borrow_only_strings;
 	status.c_borrow_only_strings = scan_borrow_only_strings(node);
+	// Shared with the aarch64 backend: string vars that receive a heap value
+	// somewhere in the body must own heap on EVERY path (their literal/borrow
+	// initializer is strdup'd, and borrow receptions are strdup'd), so the
+	// reassign/scope-exit frees are always valid.
+	const old_force_heap = status.force_heap_strings;
+	status.force_heap_strings = scan_force_heap_strings(node.statements ?? [], status.structs);
 
 	// Emit nested struct/function definitions at file scope before the function
 	// signature, so the generated C code is valid (no nested function defs).
@@ -392,6 +399,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.scoped_declarations = old_scoped_declarations;
 	status.deferred_frees = old_deferred_frees;
 	status.c_borrow_only_strings = old_borrow_only;
+	status.force_heap_strings = old_force_heap;
 }
 
 function emit_nested_declarations(node: FunctionNode, status: BuildStatus) {

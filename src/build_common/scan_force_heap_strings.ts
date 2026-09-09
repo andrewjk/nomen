@@ -1,11 +1,12 @@
-import AccessFunctionCallNode from "../../nodes/AccessFunctionCallNode.ts";
-import AccessNode from "../../nodes/AccessNode.ts";
-import AssignmentNode from "../../nodes/AssignmentNode.ts";
-import BaseNode from "../../nodes/BaseNode.ts";
-import IfElseNode from "../../nodes/IfElseNode.ts";
-import StructNode from "../../nodes/StructNode.ts";
-import SwitchNode from "../../nodes/SwitchNode.ts";
-import ValueNode from "../../nodes/ValueNode.ts";
+import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
+import AccessNode from "../nodes/AccessNode.ts";
+import AssignmentNode from "../nodes/AssignmentNode.ts";
+import BaseNode from "../nodes/BaseNode.ts";
+import IfElseNode from "../nodes/IfElseNode.ts";
+import StructNode from "../nodes/StructNode.ts";
+import SwitchNode from "../nodes/SwitchNode.ts";
+import ValueNode from "../nodes/ValueNode.ts";
+import { is_call_site_borrow_accessor } from "./string_return_analysis.ts";
 
 // Collect string variable names that are reassigned a freshly-allocated heap
 // string somewhere in the function body (including inside loops/branches).
@@ -14,6 +15,13 @@ import ValueNode from "../../nodes/ValueNode.ts";
 // A string local that is the RECEIVER of a `ref self` method call (e.g.
 // `s.set(i, 'x')`) is also included: a literal initializer would store the
 // rodata address, which the mutating method cannot write through.
+//
+// Shared by both backends. For the C backend the set additionally gates the
+// borrow-reception strdup: a variable in this set will own heap from some
+// point onward, so EVERY value it can hold must be heap-owned (a borrow
+// reception is strdup'd into an owned copy) — otherwise the unconditional
+// reassign/scope-exit frees would reclaim container storage when the heap
+// branch never executed.
 export default function scan_force_heap_strings(
 	statements: BaseNode[],
 	structs?: StructNode[],
@@ -107,6 +115,10 @@ function visit(node: BaseNode | undefined, result: Set<string>, structs?: Struct
 // A right-hand side that produces a fresh heap string (concat, repeat,
 // interpolation, to_string, or any string-returning function/method call).
 // Bare literals and variable references are excluded — they don't allocate.
+// A container BORROW accessor call (`.at`/`.first` without `owned_return`)
+// is excluded too: it hands back a view into the receiver's storage, not a
+// fresh allocation — forcing the target's initializer to a heap copy for
+// those would strdup every plain borrow read (a leak).
 function is_fresh_heap_string(node: BaseNode | undefined): boolean {
 	if (!node) return false;
 	const type_name = (node as unknown as { type?: { name?: string } }).type?.name;
@@ -114,7 +126,10 @@ function is_fresh_heap_string(node: BaseNode | undefined): boolean {
 	if (node.node_type === "op") return true;
 	if (node.node_type === "func_call") return true;
 	if (node.node_type === "access") {
-		return (node as AccessNode).access.node_type === "access_func";
+		const access = (node as AccessNode).access;
+		if (access.node_type !== "access_func") return false;
+		const fn = access as AccessFunctionCallNode;
+		return !(!fn.owned_return && is_call_site_borrow_accessor(fn.name));
 	}
 	return false;
 }

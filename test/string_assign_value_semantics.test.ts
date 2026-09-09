@@ -72,10 +72,13 @@ function count(code: string, needle: string): number {
 /**
  * Plain string assignment VALUE SEMANTICS (`s = t` strdups an owned copy) +
  * move-on-last-use assignment transfer (`s = t` with a provably dead source
- * transfers the pair instead). The alias lowering this replaces dangled the
+ * transfers the pair instead). The alias lowering this replaced dangled the
  * target whenever the source's scope ended first, leaked through returns of
- * the assignee, and made writes through `ref` visible in both variables —
- * see FOLLOWUP.md "Plain string assignment aliases".
+ * the assignee, and made writes through `ref` visible in both variables.
+ * Ownership restart: a variable that receives a borrow and later a heap
+ * value (`b = src.at(0)` … `b = t`) owns heap on every path — borrow
+ * receptions are strdup'd, so the frees stay valid even when the restart
+ * branch never executes. Explicit `s = mov t` transfers the ownership mark.
  */
 
 test("cross-scope assign then plain read prints the copied value", async () => {
@@ -255,4 +258,177 @@ pub func main = () {
 	} finally {
 		set_move_on_last_use_enabled(true);
 	}
+});
+
+/**
+ * Borrow-INITIALIZED assignees (`var string b = src.at(0)` / `b = src.at(0)`
+ * followed by a plain heap reassign `b = t`). Ownership RESTART: the target
+ * becomes a full owner on every path — borrow receptions are strdup'd into
+ * owned copies so the (unconditionally emitted) reassign and scope-exit
+ * frees are valid even when the restart branch never executes. The pre-fix
+ * lowering left the variables aliasing (cross-scope dangle of a borrow) or
+ * freed the container's storage outright.
+ */
+
+test("borrow-initialized assignee: heap reassign in a branch, read after", async () => {
+	const input = `
+import System
+
+pub func main = () {
+	var string[] src = ["hello"]
+	var string b = src.at(0)
+	if true {
+		var string t = 42.to_string()
+		b = t
+	}
+	Console.write(b)
+}
+`;
+	await run_program(input, "string_assign_borrow_init_assignee", "42");
+});
+
+test("borrow-reception assignee: heap reassign in a branch, reads around", async () => {
+	const input = `
+import System
+
+pub func main = () {
+	var string[] src = ["hello"]
+	var string b
+	b = src.at(0)
+	Console.write(b)
+	if true {
+		var string t = 42.to_string()
+		b = t
+	}
+	Console.write(b)
+}
+`;
+	await run_program(input, "string_assign_borrow_receptacle", "hello42");
+});
+
+test("borrow-reception assignee: restart inside a loop frees each copy", async () => {
+	const input = `
+import System
+
+pub func main = () {
+	var string[] src = ["hello"]
+	var string b
+	b = src.at(0)
+	var int i = 0
+	while i < 3; i += 1 {
+		var string t = i.to_string()
+		b = t
+		Console.write(b)
+	}
+	Console.write(b)
+}
+`;
+	await run_program(input, "string_assign_borrow_receptacle_loop", "0122");
+});
+
+test("UNTAKEN restart branch leaves the borrow alive (no invalid free)", async () => {
+	const input = `
+import System
+
+pub func main = () {
+	var string[] src = ["hello"]
+	var string b
+	b = src.at(0)
+	if 1 < 0 {
+		var string t = 42.to_string()
+		b = t
+	}
+	Console.write(b)
+}
+`;
+	await run_program(input, "string_assign_borrow_restart_untaken", "hello");
+});
+
+test("UNTAKEN restart branch, borrow-init declare assignee", async () => {
+	const input = `
+import System
+
+pub func main = () {
+	var string[] src = ["hello"]
+	var string b = src.at(0)
+	if 1 < 0 {
+		var string t = 42.to_string()
+		b = t
+	}
+	Console.write(b)
+}
+`;
+	await run_program(input, "string_assign_borrow_init_untaken", "hello");
+});
+
+test("plain borrow read stays a raw borrow (no forced strdup leak)", async () => {
+	const input = `
+import System
+
+pub func main = () {
+	var string[] src = ["hello"]
+	var string b = src.at(0)
+	Console.write(b)
+}
+`;
+	await run_program(input, "string_assign_plain_borrow_read", "hello");
+	const c = build_main(input, "c");
+	expect(c).toContain("b = (src[0L]);");
+	expect(c).not.toContain("nomen_str_dup(src[0L]");
+});
+
+/**
+ * Explicit `s = mov t` keeps its transfer path — and it must actually
+ * TRANSFER: the source's scope-exit free is suppressed and the assignee
+ * frees the bytes once. The pre-fix lowering freed BOTH (C) or left the
+ * assignee dangling (aarch64).
+ */
+
+test("explicit mov transfers (single owner, no double free)", async () => {
+	const input = `
+import System
+
+pub func main = () {
+	var t = "aaaa".to_string()
+	var string s = "init"
+	s = mov t
+	Console.write(s)
+}
+`;
+	await run_program(input, "string_assign_explicit_mov_transfer", "aaaa");
+	const c = build_main(input, "c");
+	expect(c).toContain("s = t;");
+	expect(c).not.toContain("nomen_str_dup(t)");
+	// s's heap-forced literal init copy (eager-freed at the reassign) + the
+	// transferred block at scope exit. t's free was spliced.
+	expect(count(c, "free(")).toBe(2);
+});
+
+/**
+ * The C move gate now accepts bare-variable-INITIALIZER sources: the
+ * declare site records the strdup'd/transferred copy in heap_strings, so
+ * `var u = t; s = u` transfers (aarch64 already did via heap_strings).
+ */
+
+test("bare-variable-initializer source moves on last use", () => {
+	const input = `
+import System
+
+pub func main = () {
+	var t = "aaaa".to_string()
+	var u = t
+	var string s = "init"
+	s = u
+	Console.write(s)
+}
+`;
+	const c = build_main(input, "c");
+	expect(c).toContain("s = u;");
+	expect(c).not.toContain("nomen_str_dup(u)");
+	// s's heap-forced literal init copy (eager-freed at the reassign) + the
+	// final copy at scope exit; t and u were both moved (suppressed frees).
+	expect(count(c, "free(")).toBe(2);
+
+	const a64 = build_main(input, "aarch64");
+	expect(count(a64, "bl _strdup")).toBe(1);
 });

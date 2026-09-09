@@ -686,6 +686,27 @@ export default function build_declaration_node(
 				) {
 					c_materialize_view_string(node.value, status);
 				} else if (
+					node.type.name === "string" &&
+					!node.type.is_view &&
+					!node.type.is_array &&
+					is_string_borrow(node.value) &&
+					!!status.force_heap_strings?.has(safe_name)
+				) {
+					// Borrow-INITIALIZED assignee that the force-heap scan proved
+					// will later receive a heap value (`b = <borrow>` now, `b = t`
+					// somewhere later): the reassign free and the scope-exit free
+					// are emitted unconditionally, so `b` must own heap on EVERY
+					// path — strdup the borrow into an owned copy at birth. Record
+					// the decl so auto_free's borrow test (`is_string_borrow(init)`)
+					// doesn't skip the now-owned copy.
+					status.code += `nomen_str_dup(`;
+					emit_init_value(node.value, nir_init, status);
+					status.code += `)`;
+					if (!status.c_owned_borrow_inits) status.c_owned_borrow_inits = new Set();
+					status.c_owned_borrow_inits.add(node);
+					if (!status.heap_strings) status.heap_strings = new Set();
+					status.heap_strings.add(safe_name);
+				} else if (
 					node.declaration === "var" &&
 					node.type.name === "string" &&
 					!node.type.is_view &&
@@ -722,6 +743,14 @@ export default function build_declaration_node(
 						emit_init_value(node.value, nir_init, status);
 						status.code += `)`;
 					}
+					// The variable owns heap from birth (strdup'd or transferred
+					// pair). Record it so a later `s = <this var>` can transfer on
+					// last use (string_var_owns_heap) and auto_free's positive
+					// term keeps the free even when the initializer shape is no
+					// longer classifyable (e.g. the source's decl was spliced
+					// between here and scope exit).
+					if (!status.heap_strings) status.heap_strings = new Set();
+					status.heap_strings.add(safe_name);
 				} else {
 					// Type erasure: when a class pointer is assigned to a
 					// simple-typed variable (e.g. `var int v = value` in

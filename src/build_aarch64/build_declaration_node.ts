@@ -9,6 +9,7 @@ import string_literal_length from "../build_common/string_literal_length.ts";
 import {
 	collect_expression_branch_values,
 	is_owned_string_branch_value,
+	is_string_borrow,
 } from "../build_common/string_return_analysis.ts";
 import { is_float_type } from "../built_in_types.ts";
 import { move_on_last_use_enabled } from "../check/utils/last_use.ts";
@@ -59,7 +60,7 @@ import {
 	emit_var_store,
 	is_local_ref_var,
 } from "./utils/stack_var.ts";
-import { emit_pair_store_x29 } from "./utils/string_pair.ts";
+import { emit_pair_store_x29, emit_strdup_string } from "./utils/string_pair.ts";
 import {
 	emit_struct_copy,
 	get_enum_size,
@@ -2282,6 +2283,27 @@ export default function build_declaration_node(
 			if (node.type.name === "string" && !node.type.is_view && is_view_value(node.value, status)) {
 				emit_view_string_arg(node.value, status);
 				emit_view_materialize_owned(status);
+				emit_var_store(status, "x0", node.name, size);
+				mark_heap_string(status, node.name);
+				status.last_result_is_heap = false;
+				return;
+			}
+			// Borrow-INITIALIZED assignee that the force-heap scan proved will
+			// later receive a heap value (`b = <borrow>` now, `b = t` somewhere
+			// later): the reassign free and the scope-exit free are emitted
+			// unconditionally, so `b` must own heap on EVERY path — strdup the
+			// borrow into an owned copy at birth and register the cleanup.
+			if (
+				node.type.name === "string" &&
+				!node.type.is_view &&
+				!node.type.is_array &&
+				size === 16 &&
+				is_string_borrow(node.value) &&
+				!!status.force_heap_strings?.has(node.name)
+			) {
+				emit_init_value(node.value, nir_init, status);
+				if (!status.code.endsWith("\n")) status.code += "\n";
+				emit_strdup_string(status);
 				emit_var_store(status, "x0", node.name, size);
 				mark_heap_string(status, node.name);
 				status.last_result_is_heap = false;

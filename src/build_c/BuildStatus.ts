@@ -404,6 +404,15 @@ export default interface BuildStatus {
 	 */
 	string_borrow_vars?: Set<string>;
 	/**
+	 * Declaration NODES whose borrow-INITIALIZED string was strdup'd into an
+	 * owned copy at the declare (`var string b = src.at(0)` where the
+	 * force-heap scan proved `b` receives a heap value later — the reassign
+	 * and scope-exit frees are emitted unconditionally, so every value `b`
+	 * can hold must be heap-owned). Keyed by declaration object identity (not
+	 * name) so a shadowing declaration can't inherit the override.
+	 */
+	c_owned_borrow_inits?: Set<DeclarationNode>;
+	/**
 	 * String variables whose ownership was TRANSFERRED by a move-on-last-use
 	 * declare (`var u = t` where t is proven dead after — STRING_PLAN tranche
 	 * 4). The transferred-to variable frees the bytes at its own scope exit,

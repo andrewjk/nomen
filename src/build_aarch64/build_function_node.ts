@@ -2,6 +2,7 @@ import type BuildStatus from "../build_c/BuildStatus.ts";
 import array_struct_name from "../build_c/utils/array_struct.ts";
 import emission_label from "../build_common/emission_label.ts";
 import { resolve_mono_type } from "../build_common/mono_name.ts";
+import scan_force_heap_strings from "../build_common/scan_force_heap_strings.ts";
 import { moved_param_is_consumed } from "../build_common/scan_moved_param_consumed.ts";
 import { ALL_FLOAT_TYPES } from "../built_in_types.ts";
 import { lower_function } from "../nir/from_ast.ts";
@@ -18,7 +19,6 @@ import { emit_free } from "./utils/audit.ts";
 import { emit_destroy_for_anchor_slot } from "./utils/auto_destroy.ts";
 import { plan_function_promotions } from "./utils/func_regalloc.ts";
 import { nir_regalloc_enabled, plan_nir_registers } from "./utils/nir_regalloc.ts";
-import scan_force_heap_strings from "./utils/scan_force_heap_strings.ts";
 import {
 	NUM_REG_ARGS,
 	overflow_placeholder,
