@@ -50,9 +50,18 @@ export default function parse_visibility(visibility: "pub" | "private", status: 
 			break;
 		}
 		case "strict": {
-			// `<visibility> strict enum …` — parse_enum consumes the visibility,
-			// then the `strict` modifier, then `enum`.
-			parse_enum(visibility, status);
+			// `<visibility> strict enum/bitset …` — the parse_* functions
+			// consume the visibility, then the `strict` modifier, then the
+			// kind keyword. Disambiguate on the token after `strict`.
+			const next2 = status.tokens[status.i + 2]?.value;
+			if (next2 === "enum") {
+				parse_enum(visibility, status);
+			} else if (next2 === "bitset") {
+				parse_bitset(visibility, status);
+			} else {
+				add_error(status, `Expected enum or bitset after strict`, get_index(status));
+				consume(status);
+			}
 			break;
 		}
 		case "bitset": {

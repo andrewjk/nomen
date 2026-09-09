@@ -205,3 +205,65 @@ Console.write("\\{strict}")
 		expect(parsed.errors).toEqual([]);
 	});
 });
+
+describe("strict bitsets", () => {
+	test("declaration forms and binding compile", () => {
+		const input = `
+pub strict bitset Flags {
+	case read
+	case write
+}
+
+strict bitset Quiet {
+	case on
+	case off
+}
+
+func flags_of = (out Flags) {
+	return Flags.read | Flags.write
+}
+
+var _ = flags_of()
+const f = flags_of()
+Console.write("\\{f}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+	});
+
+	test("bare statement call discarding a strict bitset is an error", () => {
+		const input = `
+pub strict bitset Flags {
+	case read
+	case write
+}
+
+func flags_of = (out Flags) {
+	return Flags.read | Flags.write
+}
+
+flags_of()
+`;
+		const parsed = parse_with_imports(input);
+		expect(
+			parsed.errors.some((e) => e.message.includes("Value of strict bitset Flags is discarded")),
+		).toBe(true);
+	});
+
+	test("non-strict bitsets may still be discarded", () => {
+		const input = `
+pub bitset Flags {
+	case read
+	case write
+}
+
+func flags_of = (out Flags) {
+	return Flags.read | Flags.write
+}
+
+flags_of()
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+	});
+});

@@ -132,6 +132,44 @@ try_it()
 	});
 });
 
+describe("spec: strict bitsets", () => {
+	test("binding and explicit discard are uses", () => {
+		const input = `
+pub strict bitset Flags {
+    case read
+    case write
+}
+
+func flags_of = (out Flags) {
+    return Flags.read | Flags.write
+}
+
+var _ = flags_of()
+const f = flags_of()
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("bare statement call discards a strict bitset value", () => {
+		const input = `
+pub strict bitset Flags {
+    case read
+    case write
+}
+
+func flags_of = (out Flags) {
+    return Flags.read | Flags.write
+}
+
+flags_of()
+`;
+		const errors = compile_main(input);
+		expect(
+			errors.some((e) => e.message.includes("Value of strict bitset Flags is discarded")),
+		).toBe(true);
+	});
+});
+
 describe("spec: bitsets", () => {
 	test("bitset declaration and combine", () => {
 		const input = `

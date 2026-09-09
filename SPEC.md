@@ -1001,6 +1001,8 @@ pub bitset Permissions {
 var perms = Permissions.read | Permissions.write
 ```
 
+Like enums, bitsets can be declared `strict` (`pub strict bitset Flags`), with the same discard rules — see [Strict Enums](#strict-enums).
+
 Bitset values can be combined, checked, and toggled:
 
 ```

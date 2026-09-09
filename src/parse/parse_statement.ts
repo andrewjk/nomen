@@ -81,12 +81,15 @@ export default function parse_statement(status: ParseStatus) {
 				break;
 			}
 			case "strict": {
-				// Contextual modifier: `strict enum …` or `strict pub enum …`.
-				// Anything else (e.g. `strict = 5`, `strict.foo()`) falls through
-				// to the expression path, so `strict` stays usable as a name.
+				// Contextual modifier: `strict enum/bitset …` or
+				// `strict pub enum/bitset …`. Anything else (e.g. `strict = 5`,
+				// `strict.foo()`) falls through to the expression path, so
+				// `strict` stays usable as a name.
 				const next = status.tokens[status.i + 1]?.value;
 				if (next === "enum") {
 					parse_enum(default_visibility(status), status);
+				} else if (next === "bitset") {
+					parse_bitset(default_visibility(status), status);
 				} else if (next === "pub" || next === "private") {
 					consume(status);
 					parse_visibility(next, status);

@@ -70,12 +70,13 @@ export default function check_block_node(node: BlockNode, status: CheckStatus) {
 }
 
 /**
- * A `strict` enum's values may not be silently discarded: a statement-position
- * call (`f.close()`, `File.write_all(...)`) whose result type is a strict
- * enum is a compile error. Bind the value (`var _ = f.close()`) or match on
- * it — ignoring is fine, it just has to be deliberate. Runs after `check_node`
- * so the call's result `type` is resolved. Declarations, assignments, returns
- * and match scrutinees are all uses and never reach this.
+ * A `strict` enum or bitset's values may not be silently discarded: a
+ * statement-position call (`f.close()`, `File.write_all(...)`) whose result
+ * type is a strict type is a compile error. Bind the value
+ * (`var _ = f.close()`) or match on it — ignoring is fine, it just has to be
+ * deliberate. Runs after `check_node` so the call's result `type` is
+ * resolved. Declarations, assignments, returns and match scrutinees are all
+ * uses and never reach this.
  */
 function check_strict_enum_discard(child: BaseNode, status: CheckStatus) {
 	// Statement-position calls arrive in three shapes: a bare `f(...)` is a
@@ -95,22 +96,28 @@ function check_strict_enum_discard(child: BaseNode, status: CheckStatus) {
 	const type = (call as AccessFunctionCallNode | FunctionCallNode).type;
 	if (!type?.name) return;
 	const strict_enum = status.enums.find((e) => e.strict && e.name === type.name);
-	if (!strict_enum) return;
+	const strict_bitset = strict_enum
+		? undefined
+		: status.bitsets.find((b) => b.strict && b.name === type.name);
+	if (!strict_enum && !strict_bitset) return;
 	add_error(
 		status,
-		`Value of strict enum ${strict_enum_display_name(strict_enum, type)} is discarded; bind it (e.g. \`var _ = …\`) or match on it`,
+		`Value of strict ${strict_enum ? "enum" : "bitset"} ${strict_type_display_name(strict_enum ?? strict_bitset!, type)} is discarded; bind it (e.g. \`var _ = …\`) or match on it`,
 		child.start,
 	);
 }
 
 /**
- * Render a strict enum result type for the discard error message, preferring
- * the generic template's spelling (`Result<int, string>`) over the
- * monomorphized name (`Result_int_string`).
+ * Render a strict enum/bitset result type for the discard error message,
+ * preferring the generic template's spelling (`Result<int, string>`) over the
+ * monomorphized name (`Result_int_string`). Bitsets are never generic.
  */
-function strict_enum_display_name(en: EnumNode, type: Type): string {
-	if (en.template_name && en.template_args?.length) {
-		return `${en.template_name}<${en.template_args.map((a) => type_name(a)).join(", ")}>`;
+function strict_type_display_name(en: EnumNode | BitsetNode, type: Type): string {
+	if (en.node_type === "enum") {
+		const e = en as EnumNode;
+		if (e.template_name && e.template_args?.length) {
+			return `${e.template_name}<${e.template_args.map((a) => type_name(a)).join(", ")}>`;
+		}
 	}
 	return type_name(type);
 }

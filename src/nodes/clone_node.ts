@@ -445,6 +445,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 		case "bitset": {
 			const n = node as BitsetNode;
 			const c = new BitsetNode(n.start, n.visibility, n.name, n.cases.slice());
+			c.strict = n.strict;
 			c.allocations = n.allocations?.map(clone_node);
 			return c;
 		}
