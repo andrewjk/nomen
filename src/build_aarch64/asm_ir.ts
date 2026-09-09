@@ -227,6 +227,10 @@ export const MNEMONICS: Record<string, MnemonicSig> = {
 	movn: { shapes: [["r", "i"]] },
 	madd: { shapes: [["r", "r", "r", "r"]] },
 	msub: { shapes: [["r", "r", "r", "r"]] },
+	// Sign-extend word/half/byte to 64-bit (build_cast_node widening forms).
+	sxtb: { shapes: [["r", "r"]] },
+	sxth: { shapes: [["r", "r"]] },
+	sxtw: { shapes: [["r", "r"]] },
 	sdiv: { shapes: [["r", "r", "r"]] },
 	udiv: { shapes: [["r", "r", "r"]] },
 	lsl: {

@@ -3,32 +3,14 @@
  **/
 pub struct string: Stringable, Hashable, Equatable {
 	pub func hash = (self, out uint) {
-		```
-		#arch: c
-		unsigned long h = 5381;
-		for (const char* p = self; *p; p++) {
-			h = h * 33 + (unsigned long)(unsigned char)*p;
+		// djb2 over exactly self.length bytes — matches the byte count of
+		// owned strings and literals (views hash the viewed bytes only).
+		var uint hash_acc = 5381
+		var i = 0
+		while i < self.length; i += 1 {
+			hash_acc = hash_acc * 33 + (self.at(i) as uint)
 		}
-		return h;
-		```
-		```
-		#arch: aarch64
-		// Fat-string ABI: x19 = self ptr, x20 = self len (the pair prologue).
-		// djb2 over exactly len bytes — no NUL scan.
-		mov x0, #5381
-		mov x3, x19
-		mov x4, x20
-		.Lstring_hash_loop:
-		cbz x4, .Lstring_hash_done
-		ldrb w1, [x3]
-		mov x2, #33
-		mul x0, x0, x2
-		add x0, x0, x1
-		add x3, x3, #1
-		sub x4, x4, #1
-		b .Lstring_hash_loop
-		.Lstring_hash_done:
-		```
+		return hash_acc
 	}
 
 	// Returns an OWNED copy of self (`mov out string`). Both backends hand

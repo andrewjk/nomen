@@ -3,14 +3,7 @@
  **/
 pub struct uint: Stringable, Hashable, Equatable {
 	pub func hash = (self, out uint) {
-		```
-		#arch: c
-		return (unsigned long)self;
-		```
-		```
-		#arch: aarch64
-		mov x0, x19
-		```
+		return self
 	}
 
 	pub func to_string = (self, mov out string) {

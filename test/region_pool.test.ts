@@ -37,6 +37,27 @@ function compile(source: string, force_region = false): string {
 	}
 }
 
+// Core library functions with Nomen bodies (BigInt, String.hash, …) emit
+// their own `.while_N` loops before main's body, and loop labels are
+// numbered globally — so main's loop labels must be discovered AFTER the
+// `_main:` label rather than assumed to start at a fixed number. Returns
+// main's loop numbers in order of first appearance (outermost first).
+function main_loops(code: string): number[] {
+	// main's body ends where the next function label begins (deferred
+	// emissions of referenced core functions can follow main's ret).
+	const start = code.indexOf("_main:");
+	const body_start = code.indexOf("\n", start) + 1;
+	let end = code.length;
+	const next_fn = code.slice(body_start).match(/^[A-Za-z_][A-Za-z0-9_]*:/m);
+	if (next_fn && next_fn.index !== undefined) end = body_start + next_fn.index;
+	const nums: number[] = [];
+	for (const m of code.slice(start, end).matchAll(/^\.while_(\d+):/gm)) {
+		const n = Number(m[1]);
+		if (!nums.includes(n)) nums.push(n);
+	}
+	return nums;
+}
+
 const PIN_SHAPE = `
 import System
 
@@ -54,8 +75,9 @@ pub func main = () {
 
 test("loop receiver derivation is hoisted above the loop header", () => {
 	const code = compile(PIN_SHAPE, true);
-	const loop = code.slice(code.indexOf(".while_0:"), code.indexOf(".end_while_0:"));
-	const pre = code.slice(0, code.indexOf(".while_0:"));
+	const [w] = main_loops(code);
+	const loop = code.slice(code.indexOf(`.while_${w}:`), code.indexOf(`.end_while_${w}:`));
+	const pre = code.slice(0, code.indexOf(`.while_${w}:`));
 	// The receiver derivation runs once, BEFORE the header (the hoisted
 	// form: receiver struct address + data-pointer load + pin copy).
 	expect(pre).toMatch(/add x9, x\d+, #\d+\nldr x9, \[x9, #8\]\nmov x2[0-8], x9\n$/m);
@@ -91,7 +113,8 @@ pub func main = () {
 }
 `);
 	// The derivation appears INSIDE the loop (no hoist) — soundness first.
-	const loop = code.slice(code.indexOf(".while_0:"), code.indexOf(".end_while_0:"));
+	const [w] = main_loops(code);
+	const loop = code.slice(code.indexOf(`.while_${w}:`), code.indexOf(`.end_while_${w}:`));
 	expect(loop).toMatch(/ldr x9, \[x9, #8\]|mov x9, x\d+/);
 });
 
@@ -112,7 +135,8 @@ test("kill-switch restores the pre-tranche shape", () => {
 		const off = result.code;
 		// Without the pass the derivation rides inside the loop (the
 		// pre-tranche shape) — the switch is the A/B arm.
-		const loop = off.slice(off.indexOf(".while_0:"), off.indexOf(".end_while_0:"));
+		const [w] = main_loops(off);
+		const loop = off.slice(off.indexOf(`.while_${w}:`), off.indexOf(`.end_while_${w}:`));
 		expect(loop.length).toBeGreaterThan(0);
 		expect(loop).toMatch(/ldr x9, \[x9, #8\]|add x9,/);
 		// The two arms differ (the hoist fires by default ON).
@@ -234,8 +258,12 @@ test("region-scoped source variable binds a loop-contained local to a borrowed r
 	const code = compile(REGION_VAR_SHAPE, true);
 	// The region-var bracket rides the SECOND loop (the nest): the first
 	// loop is the buffer fill.
-	const pre_loop = code.slice(code.indexOf(".end_while_0:"), code.indexOf(".while_1:"));
-	const body = code.slice(code.indexOf(".while_1:"), code.indexOf(".end_while_1:"));
+	const [outer, inner] = main_loops(code);
+	const pre_loop = code.slice(
+		code.indexOf(`.end_while_${outer}:`),
+		code.indexOf(`.while_${inner}:`),
+	);
+	const body = code.slice(code.indexOf(`.while_${inner}:`), code.indexOf(`.end_while_${inner}:`));
 	// The accumulator's declare is register-bound: `mov x0, #0` followed
 	// by a register copy (the slot form would be `str x0, [x29, #N]`).
 	expect(body).toMatch(/mov x0, #0\nmov x(?:1[2-5]|2[0-8]), x0\n/);

@@ -592,9 +592,12 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 			const param_trait = status.traits.find((t) => t.name === param.type.name);
 			// Only struct/trait/self/ref params and non-simple `var` params are
 			// emitted as pointers (see build_parameter_node). A `var int x` is
-			// by-value, so it must NOT be in function_ref_params.
+			// by-value, so it must NOT be in function_ref_params. A method of
+			// a SIMPLE-TYPE struct (int/uint/bool/char/floats) also receives
+			// `self` by value (c_type spelling, no struct tag), so its self
+			// must not be dereferenced at use sites either.
 			const is_pointer_param =
-				param.is_self_param ||
+				(param.is_self_param && !node.is_simple_type) ||
 				(param_struct && !param_struct.is_simple_type) ||
 				param_trait ||
 				param.is_ref ||

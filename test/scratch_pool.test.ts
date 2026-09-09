@@ -41,6 +41,26 @@ function compile(source: string, force_region = false): string {
 /** Ten loop-spanning hot ints (fill x23–x28) plus four loop-contained
  *  temporaries per iteration (claim x12–x15) — the pool is exhausted, so
  *  the region pin can only come from the scratch set. */
+// Core library functions with Nomen bodies (BigInt, String.hash, ...) emit
+// their own `.while_N` loops before main's body, and loop labels are
+// numbered globally — so main's loop labels must be discovered AFTER the
+// `_main:` label rather than assumed to start at a fixed number. Returns
+// main's loop numbers in order of first appearance (outermost first).
+function main_loops(code: string): number[] {
+	// main's body ends where the next function label begins (deferred
+	// emissions of referenced core functions can follow main's ret).
+	const start = code.indexOf("_main:");
+	const body_start = code.indexOf("\n", start) + 1;
+	let end = code.length;
+	const next_fn = code.slice(body_start).match(/^[A-Za-z_][A-Za-z0-9_]*:/m);
+	if (next_fn && next_fn.index !== undefined) end = body_start + next_fn.index;
+	const nums: number[] = [];
+	for (const m of code.slice(start, end).matchAll(/^\.while_(\d+):/gm)) {
+		const n = Number(m[1]);
+		if (!nums.includes(n)) nums.push(n);
+	}
+	return nums;
+}
 const EXHAUSTED_SHAPE = `
 import System
 
@@ -83,8 +103,9 @@ pub func main = () {
 
 test("pool-exhausted call-free loop pins its receiver into a scratch register", () => {
 	const code = compile(EXHAUSTED_SHAPE, true);
-	const loop_start = code.indexOf(".while_1:");
-	const loop = code.slice(loop_start, code.indexOf(".end_while_1:"));
+	const [, w] = main_loops(code);
+	const loop_start = code.indexOf(`.while_${w}:`);
+	const loop = code.slice(loop_start, code.indexOf(`.end_while_${w}:`));
 	const pre = code.slice(0, loop_start);
 	// The derivation runs once, BEFORE the header, into x4–x8 (x8 first).
 	expect(pre).toMatch(/add x9, x29, #\d+\nldr x9, \[x9, #8\]\nmov x[4-8], x9\n/);
@@ -94,7 +115,7 @@ test("pool-exhausted call-free loop pins its receiver into a scratch register", 
 	// Nothing to spill, nothing to restore: the bracket neither spills a
 	// displaced occupant nor reloads the scratch register at exit.
 	expect(loop).not.toMatch(/str x[4-8], \[x29, #\d+\]/);
-	const after = code.slice(code.indexOf(".end_while_1:"));
+	const after = code.slice(code.indexOf(`.end_while_${w}:`));
 	expect(after.slice(0, 200)).not.toMatch(/ldr x[4-8], \[x29, #\d+\]\nmov x[4-8],/);
 });
 
@@ -153,7 +174,8 @@ pub func main = () {
 `,
 		true,
 	);
-	const loop = code.slice(code.indexOf(".while_1:"), code.indexOf(".end_while_1:"));
+	const [, w] = main_loops(code);
+	const loop = code.slice(code.indexOf(`.while_${w}:`), code.indexOf(`.end_while_${w}:`));
 	expect(loop.length).toBeGreaterThan(0);
 	// The scan refuses (x5 in the raw text): no scratch pin — the
 	// derivation stays inline, re-run per iteration. Soundness first.
@@ -172,7 +194,8 @@ test("kill-switch restores the pre-tranche shape", () => {
 		const off = compile(EXHAUSTED_SHAPE);
 		// With the region gate off, the derivation rides inside the loop
 		// and no scratch register is ever borrowed.
-		const loop = off.slice(off.indexOf(".while_1:"), off.indexOf(".end_while_1:"));
+		const [, w] = main_loops(off);
+		const loop = off.slice(off.indexOf(`.while_${w}:`), off.indexOf(`.end_while_${w}:`));
 		expect(loop.length).toBeGreaterThan(0);
 		expect(loop).not.toMatch(/mov x[4-8], x9/);
 		expect(off).not.toEqual(on);
@@ -265,8 +288,9 @@ pub func main = () {
 
 test("base-fold: the pin folds an invariant base and accesses index the bare induction", () => {
 	const code = compile(FOLD_SHAPE, true);
-	const loop_start = code.indexOf(".while_1:");
-	const loop = code.slice(loop_start, code.indexOf(".end_while_1:"));
+	const [, w] = main_loops(code);
+	const loop_start = code.indexOf(`.while_${w}:`);
+	const loop = code.slice(loop_start, code.indexOf(`.end_while_${w}:`));
 	const pre = code.slice(0, loop_start);
 	// The fold register is preloaded once, before the header (base 4 × 8).
 	expect(pre).toMatch(/add x8, x\d+, #32\n/);

@@ -245,3 +245,29 @@ ASM_PLAN_7 tranches:
   pipeline) — read those as "the region-bracket equivalents".
 - Either delete `buffer_pipeline.ts` + its BuildStatus fields, or wire
   the enable switch, before it misleads another tranche.
+
+## Checker name resolution: core Nomen-body locals can collide with user names
+
+- **What:** `check_assignment_node` resolves assignment targets via
+  `status.values.find((v) => v.name === ...)` — first match in one global
+  values array. Core library Nomen method bodies (e.g. String.hash's
+  `var uint h = 5381`) push their locals into that same array. Depending on
+  check order, a user's top-level `const h` can be found FIRST, producing
+  "Assignment to const: h" for an assignment inside the core method's own
+  body (reproduced: `struct HasArray: Equatable {...}` + `const h =
+HasArray(5)` + `"\{h.n}"` interpolation, with the old `var uint h` name in
+  String.hash).
+- **Where:** `src/check/check_assignment_node.ts` (~line 101-126,
+  `values.find`), `src/check/check_function_node.ts` (body checks clone the
+  ambient `values`, inheriting unrelated user top-level values), and the
+  values-array design generally.
+- **Impact:** Name-shadowing between user code and core Nomen bodies is
+  order-dependent and first-match-wins. Pre-existing exposure (BigInt's
+  `i`/`carry`, Map's `idx`...) — raw `#arch` blocks were immune because
+  their identifiers never reached the checker. Rewrites of raw blocks to
+  plain Nomen (2026-09: Math.power, primitive hashes, String.hash,
+  Regex.find_next_byte) widen it. Worked around by naming String.hash's
+  accumulator `hash_acc`.
+- **Fix direction:** either scope function-body values properly (innermost
+  match wins; function bodies shouldn't resolve through unrelated top-level
+  names) or make `find` prefer the innermost/last-pushed declaration.
