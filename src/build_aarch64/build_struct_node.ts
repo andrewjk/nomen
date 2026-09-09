@@ -11,6 +11,7 @@ import RootNode from "../nodes/RootNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
+import build_extern from "./build_extern.ts";
 import build_node from "./build_node.ts";
 import { check_c_fallback } from "./build_raw_node.ts";
 import { build_body_with_cursor } from "./emit_nir.ts";
@@ -1039,6 +1040,10 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		if (func.name === "#destroy") continue;
 		if (func.is_inline) continue;
 		if (check_c_fallback(func, node.name, status)) continue;
+		if (func.is_extern) {
+			build_extern(func, status);
+			continue;
+		}
 
 		const old_scoped_declarations = status.scoped_declarations;
 		const old_heap_strings = status.heap_strings;

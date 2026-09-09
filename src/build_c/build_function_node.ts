@@ -15,6 +15,7 @@ import TraitNode from "../nodes/TraitNode.ts";
 import build_auto_free from "./build_auto_free.ts";
 import build_bitset_node from "./build_bitset_node.ts";
 import build_block_node from "./build_block_node.ts";
+import build_extern from "./build_extern.ts";
 import build_parameter_node from "./build_parameter_node.ts";
 import build_struct_body from "./build_struct_body.ts";
 import build_struct_node from "./build_struct_node.ts";
@@ -32,6 +33,10 @@ import scan_borrow_only_strings from "./utils/scan_borrow_only_strings.ts";
 
 export default function build_function_node(node: FunctionNode, status: BuildStatus) {
 	if (node.is_generic) return;
+	if (node.is_extern) {
+		build_extern(node, status);
+		return;
+	}
 
 	const old_scoped_declarations = status.scoped_declarations;
 	status.scoped_declarations = enter_c_scope(status);

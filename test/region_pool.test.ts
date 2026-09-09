@@ -258,11 +258,7 @@ test("region-scoped source variable binds a loop-contained local to a borrowed r
 	const code = compile(REGION_VAR_SHAPE, true);
 	// The region-var bracket rides the SECOND loop (the nest): the first
 	// loop is the buffer fill.
-	const [outer, inner] = main_loops(code);
-	const pre_loop = code.slice(
-		code.indexOf(`.end_while_${outer}:`),
-		code.indexOf(`.while_${inner}:`),
-	);
+	const [, inner] = main_loops(code);
 	const body = code.slice(code.indexOf(`.while_${inner}:`), code.indexOf(`.end_while_${inner}:`));
 	// The accumulator's declare is register-bound: `mov x0, #0` followed
 	// by a register copy (the slot form would be `str x0, [x29, #N]`).

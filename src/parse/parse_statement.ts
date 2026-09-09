@@ -101,6 +101,15 @@ export default function parse_statement(status: ParseStatus) {
 				}
 				break;
 			}
+			case "extern": {
+				consume(status);
+				if (peek_current(status) === "func") {
+					parse_function(default_visibility(status), status, undefined, false, true);
+				} else {
+					add_error(status, "Expected func after extern", get_index(status));
+				}
+				break;
+			}
 			case "#": {
 				// #init or #destroy — special struct functions
 				const next = status.tokens[status.i + 1]?.value;

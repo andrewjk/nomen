@@ -32,6 +32,15 @@ export default class FunctionNode extends BaseNode implements BlockNode, Returni
 	is_generic?: boolean;
 	checked?: boolean;
 	is_inline?: boolean;
+	/**
+	 * True for an `extern func` declaration: a body-less function whose body
+	 * is a C-library symbol call. The backends emit a marshalling adapter
+	 * under the function's emission label (free externs are stamped
+	 * `extern_<name>` so the adapter can never collide with the C symbol it
+	 * wraps); the symbol itself defaults to the declared name. Library-only:
+	 * the checker rejects `extern` outside the System library.
+	 */
+	is_extern?: boolean;
 	/** True when this function is defined in the appended System library source. */
 	is_library?: boolean;
 	/**

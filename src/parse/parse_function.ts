@@ -24,6 +24,7 @@ export default function parse_function(
 	status: ParseStatus,
 	name_override?: string,
 	is_inline?: boolean,
+	is_extern?: boolean,
 ) {
 	const start = get_index(status);
 	if (name_override) {
@@ -66,6 +67,16 @@ export default function parse_function(
 	}
 	const func = new FunctionNode(start, visibility, name, return_type);
 	if (is_inline) func.is_inline = true;
+	if (is_extern) {
+		func.is_extern = true;
+		// Free externs emit under a prefixed label so the marshalling adapter
+		// can never collide with the C symbol it wraps (e.g. `atoi`). Method
+		// externs keep the `struct_method` label, which can't collide either.
+		const extern_parent = status.stack.at(-1);
+		if (extern_parent?.node_type === "root" || extern_parent?.node_type === "func") {
+			func.label_name = `extern_${name}`;
+		}
+	}
 
 	if (accept("<", status)) {
 		func.type_params.push(consume_name(status));
@@ -107,7 +118,11 @@ export default function parse_function(
 		func.is_static = !func.params[0]?.is_self_param;
 
 		if (expect(")", status)) {
-			if (accept("=>", status)) {
+			if (is_extern) {
+				// `extern func` — declaration only, no body. The backends emit
+				// a marshalling adapter that calls the C symbol.
+				func.is_extern = true;
+			} else if (accept("=>", status)) {
 				func.has_body = true;
 				func.has_return = true;
 				func.is_arrow_body = true;

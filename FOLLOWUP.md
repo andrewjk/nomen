@@ -271,3 +271,19 @@ HasArray(5)` + `"\{h.n}"` interpolation, with the old `var uint h` name in
 - **Fix direction:** either scope function-body values properly (innermost
   match wins; function bodies shouldn't resolve through unrelated top-level
   names) or make `find` prefer the innermost/last-pushed declaration.
+
+## Free library functions don't resolve from a parameterless `main`
+
+- **What:** calling a free `pub` library function (e.g. `parse_int("41")`)
+  from a `pub func main = () {}` fails with "Function not found:
+  parse_int". The same call from `pub func main = (Init init) {}` resolves
+  fine. Reproduced on a clean tree (pre-existing, unrelated to the extern
+  work).
+- **Where:** free-function call resolution (`status.functions` registration
+  vs. check order of user code before the appended library source); looks
+  like `Init`-struct registration is what pulls the library's free
+  functions into scope, so a program that never references `Init` never
+  sees them.
+- **Impact:** low (benches all take `(Init init)`), but surprising.
+- **Fix direction:** register library free functions unconditionally during
+  the check pre-pass instead of as a side effect of `Init` materialization.

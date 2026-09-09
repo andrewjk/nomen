@@ -1,3 +1,4 @@
+import add_error from "../add_error.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import Type from "../nodes/Type.ts";
 import check_block_node from "./check_block_node.ts";
@@ -8,6 +9,33 @@ import check_type_exists from "./utils/check_type_exists.ts";
 import clone_status from "./utils/clone_status.ts";
 import { extract_length_equalities_at_registration } from "./utils/flow_bounds.ts";
 import materialize_type from "./utils/materialize_type.ts";
+
+/** Param/return types an `extern func` may marshal in this first cut. */
+function extern_supported_type(type: Type): boolean {
+	if (type.is_ref || type.is_view || type.is_array) return false;
+	if (!type.name) return false;
+	const scalars = [
+		"bool",
+		"char",
+		"int",
+		"int8",
+		"int16",
+		"int32",
+		"int64",
+		"uint",
+		"uint8",
+		"uint16",
+		"uint32",
+		"uint64",
+		"float",
+		"float32",
+		"float64",
+		"ufloat",
+		"ufloat32",
+		"ufloat64",
+	];
+	return scalars.includes(type.name) || type.name === "string";
+}
 
 function is_generic_func(func: FunctionNode): boolean {
 	return func.type_params.length > 0;
@@ -43,6 +71,41 @@ export default function check_function_node(func: FunctionNode, status: CheckSta
 		if (equalities.length) {
 			param.constraint = constraint;
 			param.stripped_length_equalities = equalities;
+		}
+	}
+
+	if (func.is_extern) {
+		// Library-only: externs are the System library's FFI surface, not a
+		// user escape hatch (same trust line as core-only constraint checks).
+		if (!func.is_library) {
+			add_error(
+				status,
+				`'extern' functions can only be declared in the System library`,
+				func.start,
+			);
+		}
+		if (func.type_params.length > 0) {
+			add_error(status, `extern functions cannot be generic`, func.start);
+		}
+		for (const param of func.params) {
+			if (param.is_variadic) {
+				add_error(status, `extern variadic parameters are not supported yet`, param.start);
+				continue;
+			}
+			if (!extern_supported_type(param.type)) {
+				add_error(
+					status,
+					`extern parameter '${param.name}' has an unsupported type '${param.type.name}' (scalars and string only)`,
+					param.start,
+				);
+			}
+		}
+		if (func.return_type.name && !extern_supported_type(func.return_type)) {
+			add_error(
+				status,
+				`extern return type '${func.return_type.name}' is unsupported (scalars and string only)`,
+				func.return_type_start ?? func.start,
+			);
 		}
 	}
 
@@ -82,6 +145,10 @@ export default function check_function_node(func: FunctionNode, status: CheckSta
 		// incomplete struct. Materialize it here.
 		instantiate_generic_type(func.return_type, function_status);
 	}
+
+	// An extern has no body to check: the backends synthesize the
+	// marshalling adapter from the signature alone.
+	if (func.is_extern) return;
 
 	check_block_node(func, function_status);
 

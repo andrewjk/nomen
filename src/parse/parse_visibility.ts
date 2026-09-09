@@ -80,6 +80,17 @@ export default function parse_visibility(visibility: "pub" | "private", status: 
 			}
 			break;
 		}
+		case "extern": {
+			consume(status);
+			// `<visibility> extern func …` — a body-less declaration whose
+			// body is a C-library symbol call. Library-only (checker-enforced).
+			if (peek_current(status) === "func") {
+				parse_function(visibility, status, undefined, false, true);
+			} else {
+				add_error(status, "Expected func after extern", get_index(status));
+			}
+			break;
+		}
 		case "#": {
 			const next2 = status.tokens[status.i + 2]?.value;
 			if (next2 === "init") {

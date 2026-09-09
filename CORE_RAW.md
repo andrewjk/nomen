@@ -116,6 +116,71 @@ inexpressible.
   rewrite would just re-express the same calls with more code.
 - `Controls/` — UI layer; `aarch64_use_c` there is by policy (AGENTS.md).
 
+## Roadmap: language features to retire the remaining raw blocks
+
+The remaining raw blocks split into two groups, and each group needs its own
+language feature. They are complementary, not alternatives.
+
+### 1. C extern mappings (implemented — retires the libc/OS wrappers)
+
+A declaration-only function whose body is a C symbol call:
+
+```
+extern func atoi = (string s, out int)
+```
+
+- **Status: implemented.** First conversions: `Init.parse_int` (→ `atoi`)
+  and `String.to_string` (→ `strdup`), exercised end to end on both
+  backends by `test/externs.test.ts` and the spec suite. See
+  `src/build_c/build_extern.ts` and `src/build_aarch64/build_extern.ts`.
+- **Semantics:** string params marshal to the thin `char*` (`.ptr`); a
+  string return is re-wrapped as an owned fat string via `strlen`. Free
+  externs emit under an `extern_<name>` label so the adapter can never
+  collide with the C symbol it wraps; method externs keep the normal
+  `struct_method` label. Lockdown is enforced in `check_function_node`
+  (library-only, same trust line as core constraints).
+- **Not yet supported:** variadic externs (blocks the `snprintf`
+  to_strings), float32/64 argument lists beyond the sole-param shape
+  (blocks converting `Math.sqrt`/`log` while they are `inline`-spliced —
+  deliberately kept raw for now), and symbol renaming (`extern func open =
+("fopen" ...)`).
+- **Retires when fully rolled out:** Console, Time, Mutex, Task,
+  Stream/*, the `snprintf` to_strings. This is the larger half of the
+  remaining block count, and the low-risk half: both backends already
+  emit calls to these exact symbols from raw blocks today.
+
+### 2. `unsafe` (second — retires the memory primitives)
+
+A minimal typed pointer subset, usable only inside `unsafe` blocks (or
+unsafe-declared functions):
+
+- **Retires:** Buffer, ClassBuffer, Array inline storage, StringBuilder,
+  JsonTree slab, BigInt limb access, String's `at`/`set`/`slice` — the
+  category A blocks whose essence is pointer casts (`((long*)data)[i]`),
+  which no extern can express.
+- **The real payoff is single-sourcing:** every primitive is currently
+  written twice (C + aarch64 asm) and the two can drift — e.g. String.hash's
+  C body NUL-scanned while the asm trusted `length`. One unsafe Nomen body
+  gives both backends the same semantics by construction.
+- **Scope minimally:** `ptr T`, deref/index, cast to/from `uint64`. Typed
+  `ptr T` deref lets each backend own the element-width question (C emits
+  `((T*)p)[i]`; aarch64 emits the width dispatch it hand-writes in
+  `load_T`).
+- **Required companions:** `T_SIZE` as a const expression and a replacement
+  for `Array.set`/`with`'s `#if T_NEEDS_STRDUP` string-slot specialization;
+  `owning_buffer_specialize.ts` replaces some raw bodies at build time and
+  must learn to recognize unsafe bodies.
+- **Lockdown:** library-only via the same core-trust mechanism; widening to
+  user code later is a policy change, not a redesign.
+
+### What stays raw even after both
+
+- 128-bit helpers (`BigInt.div128`, `mul_wide_hi`) — better served by
+  `mul_hi`-style builtins than by unsafe pointers.
+- `Console.platform` (OS detection) and the `Task`/`Channel` pool internals
+  unless externs (pthread) + unsafe (node structs) are pushed through them.
+- `Controls/` (UI, `aarch64_use_c` by policy).
+
 ## Benchmark hot-path summary (C backend)
 
 Where the raw blocks actually sit in the current `bench/benchmark.sh`

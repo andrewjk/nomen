@@ -8,16 +8,12 @@ pub struct Init {
 	var bool is_tty
 }
 
+// FFI: the C library's decimal-string parser (stdlib.h).
+extern func atoi = (string s, out int)
+
 /**
  * Parses a decimal string into an int
  **/
 pub func parse_int = (string s, out int) {
-	```
-	#arch: c
-	return atoi(s);
-	```
-	```
-	#arch: aarch64
-	bl _atoi
-	```
+	return atoi(s)
 }

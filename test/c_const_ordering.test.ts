@@ -2,7 +2,7 @@ import { expect, test } from "vite-plus/test";
 
 import build from "../src/build";
 import build_and_check_output from "./build_and_check_output";
-import parse_with_imports, { parse_raw } from "./parse_with_imports";
+import { parse_raw } from "./parse_with_imports";
 
 /**
  * C output ordering: top-level (program-scope AND library-scope) global

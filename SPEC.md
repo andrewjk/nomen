@@ -19,9 +19,9 @@ The following words are reserved by the language and cannot be used as
 variable, parameter, field, type, or enum case names:
 
 `as` `async` `bitset` `break` `case` `class` `const` `continue` `cp` `else`
-`enum` `extend` `for` `func` `if` `import` `in` `let` `match` `mov` `of` `out`
-`panic` `private` `pub` `raw` `ref` `return` `spawn` `struct` `switch` `swap`
-`todo` `trait` `var` `view` `while`
+`enum` `extern` `extend` `for` `func` `if` `import` `in` `let` `match` `mov`
+`of` `out` `panic` `private` `pub` `raw` `ref` `return` `spawn` `struct`
+`switch` `swap` `todo` `trait` `var` `view` `while`
 
 The literals `true`, `false`, and `null`, and `self`, are reserved as well.
 Using a reserved word as a name is a compile error:
@@ -1129,6 +1129,24 @@ Parameters can be function types:
 ```
 func apply = (func (int, out int) mapper, int value, out int) {
     return mapper(value)
+}
+```
+
+#### Extern Functions
+
+A body-less `extern func` declaration maps a Nomen function onto a C
+library symbol named by the declared function name. Parameters and return
+types must be scalars or `string`. A `string` parameter marshals to the
+thin C `char*` (the buffer is NUL-terminated), and a `string` return is
+re-wrapped as an owned string with its length. Externs are library-only:
+declaring one outside the System library is a compile error.
+
+```
+// In the System library (core/System/Init.nm):
+extern func atoi = (string s, out int)
+
+pub func parse_int = (string s, out int) {
+    return atoi(s)
 }
 ```
 
