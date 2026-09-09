@@ -1,5 +1,6 @@
 import BaseNode from "./BaseNode.ts";
 import ParameterNode from "./ParameterNode.ts";
+import Type from "./Type.ts";
 
 export default class EnumNode extends BaseNode {
 	visibility: "pub" | "private";
@@ -11,6 +12,18 @@ export default class EnumNode extends BaseNode {
 	type_params: string[];
 	/** True when type_params is non-empty (set during check). */
 	is_generic?: boolean;
+	/**
+	 * True when declared with the `strict` modifier (`pub strict enum Result<T, E>`).
+	 * A strict enum's values may not be silently discarded: a statement-position
+	 * call whose result type is a strict enum is a compile error. Callers must
+	 * bind the value (e.g. `var _ = f.close()`) or match on it. Copied onto
+	 * monomorphized instantiations by `monomorphize_enum`.
+	 */
+	strict?: boolean;
+	/** Set on monomorphized instantiations: the generic template's name. */
+	template_name?: string;
+	/** Set on monomorphized instantiations: the concrete type args. */
+	template_args?: Type[];
 
 	constructor(
 		start: number,

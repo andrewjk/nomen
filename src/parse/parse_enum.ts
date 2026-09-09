@@ -14,9 +14,14 @@ import peek_current from "./utils/peek_current.ts";
 export default function parse_enum(visibility: "pub" | "private", status: ParseStatus) {
 	const start = get_index(status);
 	accept(visibility, status);
+	// Optional `strict` modifier between visibility and `enum`
+	// (`pub strict enum Result<T, E> { ... }`). Contextual: only consumed when
+	// it appears in this position, so `strict` remains usable as a name.
+	const strict = accept("strict", status);
 	accept("enum", status);
 	const name = consume_name(status);
 	const node = new EnumNode(start, visibility, name);
+	node.strict = strict;
 
 	// Generic type parameters: `enum Result<T, E> { ... }`
 	if (accept("<", status)) {

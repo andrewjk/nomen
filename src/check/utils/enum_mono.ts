@@ -85,6 +85,13 @@ export function monomorphize_enum(
 
 	const mono = new EnumNode(generic_enum.start, generic_enum.visibility, mono_name, cases);
 	mono.is_generic = false;
+	// A strict generic enum's instantiations stay strict — the discard check
+	// looks the concrete type up by its mono name. The template name/args are
+	// kept so diagnostics can render `Result<int, string>` instead of the
+	// monomorphized spelling.
+	mono.strict = generic_enum.strict;
+	mono.template_name = generic_enum.name;
+	mono.template_args = flat_args.map(clone_type);
 	// NOTE: deliberately NOT inheriting is_library. A mono enum is
 	// auto-generated per use, so it belongs in the user TU (mirroring
 	// `_Tuple_` structs in is_system_definition) — the precompiled system.o

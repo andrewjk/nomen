@@ -17,7 +17,7 @@ pub func main = (Init init) {
 		case .ok(did) {
 			match f.readAll() {
 				case .ok(text) {
-					f.close()
+					var _ = f.close()
 
 		const int original_len = text.length
 

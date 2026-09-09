@@ -77,4 +77,25 @@ match found {
 `;
 		expect(compile_main(input)).toEqual([]);
 	});
+
+	test("core Result is strict: discard is an error, binding is a use", () => {
+		const fallible = `
+func try_it = (out Result<int, string>) {
+    return Result.error("no")
+}
+`;
+		const ok = compile_main(`${fallible}
+var _ = try_it()
+`);
+		expect(ok).toEqual([]);
+
+		const discarded = compile_main(`${fallible}
+try_it()
+`);
+		expect(
+			discarded.some((e) =>
+				e.message.includes("Value of strict enum Result<int, string> is discarded"),
+			),
+		).toBe(true);
+	});
 });

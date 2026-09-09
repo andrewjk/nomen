@@ -582,14 +582,23 @@ pub struct File {
 	}
 
 	// (static) Write `data` to `path` (replacing any existing contents) in
-	// one open/write/close.
+	// one open/write/close. A write failure is reported as `.error`, not
+	// silently swallowed (the `strict` Result discard check forces this to
+	// be deliberate).
 	pub func write_all = (string path, string data, out Result<bool, FileError>) {
 		var Result<bool, FileError> result = .error(FileError.other)
 		var File f = File()
 		match f.open(path, "w") {
 			case .ok(did) {
-				f.writeAll(data)
-				result = f.close()
+				match f.writeAll(data) {
+					case .ok(did2) {
+						result = f.close()
+					}
+					case .error(e2) {
+						var _ = f.close()
+						result = .error(e2)
+					}
+				}
 			}
 			case .error(e) {
 				result = .error(e)

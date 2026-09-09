@@ -15,18 +15,18 @@ test("ziglings 107 files2 -- errors", () => {
 import System
 
 pub func main = () {
-    Directory.create("output")
+    var _ = Directory.create("output")
     var File w = File()
     match w.open("output/zigling.txt", "w") {
         case .ok(did) {
-            w.writeAll("It's zigling time!")
-            w.close()
+            var _ = w.writeAll("It's zigling time!")
+            var _ = w.close()
         }
         case .error(e) { Console.write("open failed") }
     }
 
     var File r = File()
-    r.open("output/zigling.txt")
+    var _ = r.open("output/zigling.txt")
     const string content = r.readAll()
     Console.write("Successfully Read \\{content.length} bytes: \\{content}\\n")
 }
@@ -40,12 +40,12 @@ test("ziglings 107 files2 -- fixed", () => {
 import System
 
 pub func main = () {
-    Directory.create("output")
+    var _ = Directory.create("output")
     var File w = File()
     match w.open("output/zigling.txt", "w") {
         case .ok(did) {
-            w.writeAll("It's zigling time!")
-            w.close()
+            var _ = w.writeAll("It's zigling time!")
+            var _ = w.close()
         }
         case .error(e) { Console.write("open failed") }
     }
@@ -73,12 +73,12 @@ test("ziglings 107 files2 -- build", async () => {
 import System
 
 pub func main = () {
-    Directory.create("output")
+    var _ = Directory.create("output")
     var File w = File()
     match w.open("output/zigling.txt", "w") {
         case .ok(did) {
-            w.writeAll("It's zigling time!")
-            w.close()
+            var _ = w.writeAll("It's zigling time!")
+            var _ = w.close()
         }
         case .error(e) { Console.write("open failed") }
     }

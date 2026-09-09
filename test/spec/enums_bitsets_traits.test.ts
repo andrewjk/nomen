@@ -74,6 +74,64 @@ var shape = Shape.rect(10, 20)
 	});
 });
 
+describe("spec: strict enums", () => {
+	test("bind, explicit discard, and match are all uses", () => {
+		const input = `
+pub strict enum Attempt {
+    case ok
+    case error(int code)
+}
+
+func try_it = (out Attempt) {
+    return Attempt.error(5)
+}
+
+var _ = try_it()
+const r = try_it()
+match try_it() {
+    case .ok -> Console.write("ok")
+    case .error(code) -> Console.write("error \\{code}")
+}
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("bare statement call discards a strict enum value", () => {
+		const input = `
+pub strict enum Attempt {
+    case ok
+    case error(int code)
+}
+
+func try_it = (out Attempt) {
+    return Attempt.error(5)
+}
+
+try_it()
+`;
+		const errors = compile_main(input);
+		expect(
+			errors.some((e) => e.message.includes("Value of strict enum Attempt is discarded")),
+		).toBe(true);
+	});
+
+	test("non-strict enums may still be discarded", () => {
+		const input = `
+pub enum Attempt {
+    case ok
+    case error(int code)
+}
+
+func try_it = (out Attempt) {
+    return Attempt.error(5)
+}
+
+try_it()
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+});
+
 describe("spec: bitsets", () => {
 	test("bitset declaration and combine", () => {
 		const input = `

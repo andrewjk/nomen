@@ -150,6 +150,11 @@ declarations, so never import a sibling. Only cross-namespace references
 Failures are signalled via return values — nullable results, status structs,
 or boolean + out-parameter pairs. There is no `throw`/`try`/`catch`.
 
+`Result<T, E>` is declared `strict`: a call returning it must bind or match
+the value (`var _ = f.close()` to discard deliberately; a bare `f.close()`
+statement is a compile error). Any enum can opt into this with the `strict`
+modifier.
+
 ## Tests
 
 A test is any `pub func <name> = (ref Tester t)` in a `*.test.nm` file.

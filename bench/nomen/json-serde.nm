@@ -24,7 +24,7 @@ pub func main = (Init init) {
 		case .ok(did) {
 			match f.readAll() {
 				case .ok(text) {
-					f.close()
+					var _ = f.close()
 
 					// Parse once and serialize, like the Go version's first pass.
 					var tree = JsonTree()

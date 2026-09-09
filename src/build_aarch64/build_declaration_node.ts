@@ -60,7 +60,11 @@ import {
 	emit_var_store,
 	is_local_ref_var,
 } from "./utils/stack_var.ts";
-import { emit_pair_store_x29, emit_strdup_string } from "./utils/string_pair.ts";
+import {
+	emit_pair_load_x29,
+	emit_pair_store_x29,
+	emit_strdup_string,
+} from "./utils/string_pair.ts";
 import {
 	emit_struct_copy,
 	get_enum_size,
@@ -2040,7 +2044,7 @@ export default function build_declaration_node(
 					// from heap_strings (the frame's entry is gated on the
 					// global set).
 					if (node.last_use_move && move_on_last_use_enabled() && src_off0 !== undefined) {
-						status.code += `ldp x0, x1, [x29, #${src_off0}]\n`;
+						emit_pair_load_x29(status, src_off0);
 						emit_pair_store_x29(status, offset);
 						status.heap_strings?.delete(raw);
 						mark_heap_string(status, node.name);

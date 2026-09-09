@@ -2,21 +2,6 @@
 
 Skipped or out-of-scope items recorded for later.
 
-## Must-use enforcement for `Result`-returning IO (design agreed, not built)
-
-All fallible File/Directory operations now return `Result<T, FileError>` /
-`Result<T, DirectoryError>`, but the compiler does NOT force callers to handle
-the result: a bare statement call (`f.open(p, "r")`) still silently discards
-it. Agreed design, deferred as its own scope:
-
-- Mark the generic `Result` enum declaration must-use (attribute-style marker
-  on the enum), so ANY Result-typed value discarded in statement position is a
-  compile error.
-- Explicit escape hatch: bind to `_` or `match` on it — ignoring/panicking is
-  fine, it just has to be deliberate.
-- Enforcement point: checker walk where statement-position calls are checked
-  (AccessFunctionCallNode.is_statement already exists as a hook).
-
 ## Enum-with-string-payload ownership edges
 
 The core contract now works end to end on both backends (case construction

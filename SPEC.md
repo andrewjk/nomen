@@ -941,10 +941,10 @@ var Option<int> found = Option.some(4)
 found = .none
 ```
 
-The core library ships two generic enums:
+The core library ships two generic enums. `Result` is declared `strict`:
 
 ```
-pub enum Result<T, E> {
+pub strict enum Result<T, E> {
     case ok(T value)
     case error(E error)
 }
@@ -954,6 +954,38 @@ pub enum Option<T> {
     case none
 }
 ```
+
+Because `Result` is strict, a fallible call's value may not be silently discarded — see [Strict Enums](#strict-enums).
+
+### Strict Enums
+
+An enum declared with the `strict` modifier may not have its values silently discarded: a statement-position call whose result is a strict enum value is a compile error. Bind the value or match on it — ignoring is fine, it just has to be deliberate (`_` discards explicitly):
+
+```
+pub strict enum Attempt {
+    case ok
+    case error(int code)
+}
+
+func try_it = (out Attempt) {
+    return Attempt.error(5)
+}
+
+var _ = try_it()      // explicit discard
+const r = try_it()    // bound: a use
+match try_it() {
+    case .ok -> Console.write("ok")
+    case .error(code) -> Console.write("error \{code}")
+}
+```
+
+A bare statement call discards the value and is rejected:
+
+```
+try_it()  // error: value of strict enum Attempt is discarded
+```
+
+`strict` composes with visibility and generics (`pub strict enum Result<T, E>`), and carries across monomorphized instantiations (`Result<int, string>` stays strict).
 
 ## Bitsets
 

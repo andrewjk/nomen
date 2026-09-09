@@ -1,12 +1,15 @@
 import add_error from "../add_error.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
+import BaseNode from "../nodes/BaseNode.ts";
 import BitsetNode from "../nodes/BitsetNode.ts";
 import type BlockNode from "../nodes/BlockNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import EnumNode from "../nodes/EnumNode.ts";
 import ExtendNode from "../nodes/ExtendNode.ts";
+import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
+import LetNode from "../nodes/LetNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import TraitNode from "../nodes/TraitNode.ts";
 import Type from "../nodes/Type.ts";
@@ -17,6 +20,7 @@ import type CheckStatus from "./CheckStatus.ts";
 import { synthesize_auto_derived_methods } from "./utils/auto_derive.ts";
 import { extract_length_equalities_at_registration } from "./utils/flow_bounds.ts";
 import materialize_type from "./utils/materialize_type.ts";
+import type_name from "./utils/type_name.ts";
 
 export default function check_block_node(node: BlockNode, status: CheckStatus) {
 	gather_structs(node, status);
@@ -57,11 +61,58 @@ export default function check_block_node(node: BlockNode, status: CheckStatus) {
 	status.stack.push(node);
 	for (let child of node.statements) {
 		check_node(child, status);
+		check_strict_enum_discard(child, status);
 	}
 	status.stack.pop();
 	status.scope_depth--;
 
 	hoist_discarded_class_results(node, status);
+}
+
+/**
+ * A `strict` enum's values may not be silently discarded: a statement-position
+ * call (`f.close()`, `File.write_all(...)`) whose result type is a strict
+ * enum is a compile error. Bind the value (`var _ = f.close()`) or match on
+ * it — ignoring is fine, it just has to be deliberate. Runs after `check_node`
+ * so the call's result `type` is resolved. Declarations, assignments, returns
+ * and match scrutinees are all uses and never reach this.
+ */
+function check_strict_enum_discard(child: BaseNode, status: CheckStatus) {
+	// Statement-position calls arrive in three shapes: a bare `f(...)` is a
+	// func_call; `a.b(...)` and `File.delete(...)` are an access node wrapping
+	// the call (the "(" tail is folded into parse_access). A `let`-prefixed
+	// expression evaluates and discards, so its wrapped call counts too.
+	let node: BaseNode = child;
+	if (node.node_type === "let") node = (node as LetNode).value;
+	let call: BaseNode | undefined;
+	if (node.node_type === "func_call" || node.node_type === "access_func") {
+		call = node;
+	} else if (node.node_type === "access") {
+		const inner = (node as AccessNode).access;
+		if (inner?.node_type === "access_func") call = inner;
+	}
+	if (!call) return;
+	const type = (call as AccessFunctionCallNode | FunctionCallNode).type;
+	if (!type?.name) return;
+	const strict_enum = status.enums.find((e) => e.strict && e.name === type.name);
+	if (!strict_enum) return;
+	add_error(
+		status,
+		`Value of strict enum ${strict_enum_display_name(strict_enum, type)} is discarded; bind it (e.g. \`var _ = …\`) or match on it`,
+		child.start,
+	);
+}
+
+/**
+ * Render a strict enum result type for the discard error message, preferring
+ * the generic template's spelling (`Result<int, string>`) over the
+ * monomorphized name (`Result_int_string`).
+ */
+function strict_enum_display_name(en: EnumNode, type: Type): string {
+	if (en.template_name && en.template_args?.length) {
+		return `${en.template_name}<${en.template_args.map((a) => type_name(a)).join(", ")}>`;
+	}
+	return type_name(type);
 }
 
 /**

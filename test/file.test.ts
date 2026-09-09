@@ -8,9 +8,9 @@ describe("File write/read", () => {
 var File w = File()
 match w.open("filetest_wl.txt", "w") {
 	case .ok(did) {
-		w.writeLine("hello")
-		w.writeLine("world")
-		w.close()
+		var _ = w.writeLine("hello")
+		var _ = w.writeLine("world")
+		var _ = w.close()
 	}
 	case .error(e) {
 		Console.write("open failed")
@@ -49,8 +49,8 @@ match r.open("filetest_wl.txt", "r") {
 var File w = File()
 match w.open("filetest_all.txt", "w") {
 	case .ok(did) {
-		w.writeAll("nomen file io")
-		w.close()
+		var _ = w.writeAll("nomen file io")
+		var _ = w.close()
 	}
 	case .error(e) {
 		Console.write("open failed")
@@ -82,8 +82,8 @@ match r.open("filetest_all.txt", "r") {
 var File w = File()
 match w.open("filetest_eof.txt", "w") {
 	case .ok(did) {
-		w.writeAll("x")
-		w.close()
+		var _ = w.writeAll("x")
+		var _ = w.close()
 	}
 	case .error(e) {
 		Console.write("open failed")
@@ -117,8 +117,8 @@ match r.open("filetest_eof.txt", "r") {
 var File w = File()
 match w.open("filetest_chunk.txt", "w") {
 	case .ok(did) {
-		w.writeChunk("abcdef", 6)
-		w.close()
+		var _ = w.writeChunk("abcdef", 6)
+		var _ = w.close()
 	}
 	case .error(e) {
 		Console.write("open failed")
@@ -170,7 +170,7 @@ match File.write_all("filetest_static.txt", "static io") {
 
 	test("File.exists is true for present and false for absent", async () => {
 		const input = `
-File.write_all("filetest_exists.txt", "x")
+var _ = File.write_all("filetest_exists.txt", "x")
 if File.exists("filetest_exists.txt") {
 	if File.exists("filetest_no_such_xyz.txt") {
 		Console.write("both")
@@ -186,7 +186,7 @@ if File.exists("filetest_exists.txt") {
 
 	test("File.delete removes the file", async () => {
 		const input = `
-File.write_all("filetest_delete.txt", "x")
+var _ = File.write_all("filetest_delete.txt", "x")
 match File.delete("filetest_delete.txt") {
 	case .ok(did) {
 		if File.exists("filetest_delete.txt") {

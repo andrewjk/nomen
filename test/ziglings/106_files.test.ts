@@ -18,10 +18,10 @@ test("ziglings 106 files -- errors", () => {
 import System
 
 pub func main = () {
-    Directory.create("output")
+    var _ = Directory.create("output")
     var File f = File()
-    f.open("output/zigling.txt", "w")
-    f.writeChunk("It's zigling time!")
+    var _ = f.open("output/zigling.txt", "w")
+    var _ = f.writeChunk("It's zigling time!")
     Console.write("Successfully wrote 18 bytes.\\n")
 }
 `;
@@ -34,7 +34,7 @@ test("ziglings 106 files -- fixed", () => {
 import System
 
 pub func main = () {
-    Directory.create("output")
+    var _ = Directory.create("output")
     var File f = File()
     match f.open("output/zigling.txt", "w") {
         case .ok(did) {
@@ -56,7 +56,7 @@ test("ziglings 106 files -- build", async () => {
 import System
 
 pub func main = () {
-    Directory.create("output")
+    var _ = Directory.create("output")
     var File f = File()
     match f.open("output/zigling.txt", "w") {
         case .ok(did) {

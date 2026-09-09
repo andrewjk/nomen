@@ -31,7 +31,7 @@ import {
 	release_heap_string_fields,
 } from "./utils/auto_destroy.ts";
 import { allocate_stack_space, emit_var_address, emit_var_store } from "./utils/stack_var.ts";
-import { emit_strdup_string } from "./utils/string_pair.ts";
+import { emit_pair_store_x29, emit_strdup_string } from "./utils/string_pair.ts";
 import { emit_struct_copy, get_enum_sret_size, get_struct_size } from "./utils/struct_layout.ts";
 
 let return_val_counter = 0;
@@ -238,7 +238,7 @@ export default function build_return_node(
 				status.code += `adr x0, ${label}\n`;
 				emit_strdup(status);
 				status.code += `mov x1, #${string_literal_length(raw)}\n`;
-				status.code += `stp x0, x1, [x29, #${slot}]\n`;
+				emit_pair_store_x29(status, slot, "x0", "x1");
 			} else if (raw !== null) {
 				status.code += `mov x0, #${raw}\n`;
 				if (element_size === 1) {

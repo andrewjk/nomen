@@ -35,6 +35,15 @@ import {
 } from "./utils/view_fields.ts";
 
 export default function check_declaration_node(decl: DeclarationNode, status: CheckStatus) {
+	// A bare `_` binding is the deliberate-discard convention (`var _ = f()`,
+	// notably for strict enums). Several may appear in one scope, so give each
+	// a unique internal name: the C backend would otherwise emit duplicate
+	// `_` locals and the aarch64 backend would key both slots under one
+	// stack_offsets entry. The `_` prefix keeps the unused-value warning
+	// suppressed and reads as a discard in any dumped AST.
+	if (decl.name === "_") {
+		decl.name = `_disc_${status.var_name_counter.value++}`;
+	}
 	// `view hi = expr` is sugar for a const view binding. Normalize the
 	// keyword to `const` so every downstream site (StackValue, both backends,
 	// the var-never-changed warning) treats it as an immutable binding. View

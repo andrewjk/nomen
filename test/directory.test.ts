@@ -12,7 +12,7 @@ const ARCHITECTURES = ["c", "aarch64"] as const;
 describe("Directory helpers", () => {
 	test("Directory.exists true for created, false for missing", async () => {
 		const input = `
-Directory.create("dir_exists_test")
+var _ = Directory.create("dir_exists_test")
 if Directory.exists("dir_exists_test") {
 	if Directory.exists("dir_no_such_xyz") {
 		Console.write("both")
@@ -55,8 +55,8 @@ match Directory.list("dir_no_such_xyz_123") {
 
 	test("Directory.list returns created entry", async () => {
 		const input = `
-Directory.create("dir_list_test")
-File.write_all("dir_list_test/only.txt", "x")
+var _ = Directory.create("dir_list_test")
+var _ = File.write_all("dir_list_test/only.txt", "x")
 match Directory.list("dir_list_test") {
 	case .ok(names) { Console.write(names) }
 	case .error(e) { Console.write("list failed") }
@@ -78,8 +78,8 @@ match Directory.list("dir_list_test") {
 
 	test("Directory.create then Directory.remove", async () => {
 		const input = `
-Directory.create("dir_remove_test")
-Directory.remove("dir_remove_test")
+var _ = Directory.create("dir_remove_test")
+var _ = Directory.remove("dir_remove_test")
 if Directory.exists("dir_remove_test") {
 	Console.write("still here")
 } else {

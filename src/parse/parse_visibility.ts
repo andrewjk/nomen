@@ -49,6 +49,12 @@ export default function parse_visibility(visibility: "pub" | "private", status: 
 			parse_enum(visibility, status);
 			break;
 		}
+		case "strict": {
+			// `<visibility> strict enum …` — parse_enum consumes the visibility,
+			// then the `strict` modifier, then `enum`.
+			parse_enum(visibility, status);
+			break;
+		}
 		case "bitset": {
 			parse_bitset(visibility, status);
 			break;

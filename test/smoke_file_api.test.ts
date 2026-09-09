@@ -7,9 +7,9 @@ test("File open/read/write round-trip via Results", async () => {
 var File w = File()
 match w.open("smoke.txt", "w") {
 	case .ok(did) {
-		w.writeLine("hello")
-		w.writeLine("world")
-		w.close()
+		var _ = w.writeLine("hello")
+		var _ = w.writeLine("world")
+		var _ = w.close()
 	}
 	case .error(e) {
 		Console.write("open failed")
@@ -80,7 +80,7 @@ match f.readAll() {
 
 test("File static helpers via Results", async () => {
 	const input = `
-File.write_all("smoke_static.txt", "static io")
+var _ = File.write_all("smoke_static.txt", "static io")
 match File.read_all("smoke_static.txt") {
 	case .ok(body) {
 		Console.write(body)
@@ -109,13 +109,13 @@ if File.exists("smoke_static.txt") {
 
 test("Directory create/list/remove via Results", async () => {
 	const input = `
-File.delete("smoke_dir/a.txt")
-File.delete("smoke_dir/b.txt")
-Directory.remove("smoke_dir")
+var _ = File.delete("smoke_dir/a.txt")
+var _ = File.delete("smoke_dir/b.txt")
+var _ = Directory.remove("smoke_dir")
 match Directory.create("smoke_dir") {
 	case .ok(did) {
-		File.write_all("smoke_dir/a.txt", "x")
-		File.write_all("smoke_dir/b.txt", "y")
+		var _ = File.write_all("smoke_dir/a.txt", "x")
+		var _ = File.write_all("smoke_dir/b.txt", "y")
 		match Directory.list("smoke_dir") {
 			case .ok(names) {
 				Console.write(names.length.to_string())
@@ -124,8 +124,8 @@ match Directory.create("smoke_dir") {
 				Console.write("list failed")
 			}
 		}
-		File.delete("smoke_dir/a.txt")
-			File.delete("smoke_dir/b.txt")
+		var _ = File.delete("smoke_dir/a.txt")
+			var _ = File.delete("smoke_dir/b.txt")
 			match Directory.remove("smoke_dir") {
 				case .ok(did2) {
 					Console.write("removed")

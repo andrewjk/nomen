@@ -150,7 +150,7 @@
 				},
 				{
 					"name": "storage.modifier.nm",
-					"match": "\\b(?:pub|private|inline|out|ref)\\b"
+					"match": "\\b(?:pub|private|inline|out|ref|strict)\\b"
 				},
 				{
 					"name": "keyword.operator.word.nm",

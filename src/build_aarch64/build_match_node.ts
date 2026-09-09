@@ -17,6 +17,7 @@ import {
 	emit_enum_payload_frees,
 } from "./utils/auto_destroy.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
+import { emit_pair_store_x29 } from "./utils/string_pair.ts";
 import {
 	get_enum_case_index,
 	get_enum_payload_offset,
@@ -177,8 +178,10 @@ export default function build_match_node(
 					if (field.type.name === "string") {
 						// A fat-string payload rides as a (ptr, len) pair —
 						// copy BOTH halves or the binding's length is stale.
+						// The binding slot can sit beyond the ldp/stp ±504
+						// range in large frames, so use the guarded helper.
 						status.code += `ldp x9, x11, [x10, #${payload_off}]\n`;
-						status.code += `stp x9, x11, [x29, #${slot}]\n`;
+						emit_pair_store_x29(status, slot, "x9", "x11");
 					} else if (size === 1) {
 						status.code += `ldrb w9, [x10, #${payload_off}]\n`;
 						status.code += `strb w9, [x29, #${slot}]\n`;

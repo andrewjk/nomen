@@ -209,7 +209,7 @@ pub func main = (Init init) {
 		case .ok(did) {
 			match f.readAll() {
 				case .ok(text) {
-					f.close()
+					var _ = f.close()
 
 		var data = Buffer<int>()
 		const int text_len = text.length

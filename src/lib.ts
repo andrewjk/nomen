@@ -138,7 +138,7 @@ function extract_type_names(source: string): string[] {
 	const names: string[] = [];
 	for (let line of source.split("\n")) {
 		const trimmed = line.trim();
-		const m = trimmed.match(/^pub (?:struct|class|trait|enum|bitset) (\w+)/);
+		const m = trimmed.match(/^pub (?:strict )?(?:struct|class|trait|enum|bitset) (\w+)/);
 		if (m) names.push(m[1]);
 	}
 	return names;

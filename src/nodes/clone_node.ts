@@ -438,6 +438,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.type_params = n.type_params.slice();
 			c.is_generic = n.is_generic;
 			c.is_library = n.is_library;
+			c.strict = n.strict;
 			c.allocations = n.allocations?.map(clone_node);
 			return c;
 		}
