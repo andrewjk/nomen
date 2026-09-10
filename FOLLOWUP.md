@@ -243,84 +243,101 @@ Also still open from the same area: `for ref x of list` is rejected with
 a dedicated error (List `set` takes `move T`, so the array writeback
 shape doesn't transfer — needs its own design).
 
-## Allmark port blockers (found converting allmark's web impl to Nomen, 2026-09-10)
-
 Converting the allmark markdown library (~170 TS files) to Nomen hit the
 following. The port currently builds around all of these (traits instead of
 func fields, `Map<string, int>` indices instead of reference-valued maps,
 `--arch c` for the aarch64 mis-binds, no string-literal defaults on class
 fields), but each should be fixed in the compiler:
 
-1. **aarch64: class `#init` mis-binds scalar params after a string param.**
-   `N1("c", 7)` with `#init = (ref self, string k, int i)` produced
-   `self.idx == 1` (reads slot garbage) — the int lands in the wrong
-   register/slot when marshalling a fat-string pair in front of it. The C
-   backend is correct, so the allmark port targets `--arch c`.
+## aarch64: class `#init` mis-binds scalar params after a string param
 
-   ```
-   class N1 {
-       var string kind
-       var int idx
-       pub func #init = (ref self, string k, int i) { self.kind = k; self.idx = i }
-   }
-   var n = N1("c", 7)
-   // n.idx == 7 on --arch c, == 1 on aarch64
-   ```
+**aarch64: class `#init` mis-binds scalar params after a string param.**
+`N1("c", 7)` with `#init = (ref self, string k, int i)` produced
+`self.idx == 1` (reads slot garbage) — the int lands in the wrong
+register/slot when marshalling a fat-string pair in front of it. The C
+backend is correct, so the allmark port targets `--arch c`.
 
-2. **aarch64: struct custom `#init` with two string params segfaults.**
-   `S2("http://x", "t")` aborts (reads through a wrong pointer when the
-   second string field is later read). C backend correct.
+```
+class N1 {
+    var string kind
+    var int idx
+    pub func #init = (ref self, string k, int i) { self.kind = k; self.idx = i }
+}
+var n = N1("c", 7)
+// n.idx == 7 on --arch c, == 1 on aarch64
+```
 
-3. **Class string field with a literal default frees static rodata.**
-   `pub var string content = ""` on a class emits `self->content =
+## aarch64: struct custom `#init` with two string params segfaults
+
+**aarch64: struct custom `#init` with two string params segfaults.**
+`S2("http://x", "t")` aborts (reads through a wrong pointer when the
+second string field is later read). C backend correct.
+
+## Class string field with a literal default frees static rodata
+
+**Class string field with a literal default frees static rodata.**
+`pub var string content = ""` on a class emits `self->content =
 nomen_str_lit("", 0)` in `#init` — and any later `#init` assignment does
-   `free(self->content.ptr)` on the static literal first, or destroy frees
-   it at scope exit → "pointer being freed was not allocated" abort. Value
-   structs are unaffected (their defaults are dup'd). Workaround: no
-   default; `#init` sets `self.content = "" + ""` (a real allocation).
+`free(self->content.ptr)` on the static literal first, or destroy frees
+it at scope exit → "pointer being freed was not allocated" abort. Value
+structs are unaffected (their defaults are dup'd). Workaround: no
+default; `#init` sets `self.content = "" + ""` (a real allocation).
 
-4. **`Map` values must be scalars or strings — struct/class/trait values
-   are broken.** With `Map<string, SomeStruct>` the C backend emits
-   `used type 'struct SomeStruct' where arithmetic or pointer type is
+## `Map` values must be scalars or strings — struct/class/trait values are broken
+
+**`Map` values must be scalars or strings — struct/class/trait values
+are broken.** With `Map<string, SomeStruct>` the C backend emits
+`used type 'struct SomeStruct' where arithmetic or pointer type is
 required` (values are marshalled through 8-byte slots); aarch64
-   segfaults. Class/trait values hit the same slot-marshalling. Workaround:
-   `Map<string, int>` index into a parallel `List<T>`. (Docs should state
-   the value-type restriction until fixed.)
+segfaults. Class/trait values hit the same slot-marshalling. Workaround:
+`Map<string, int>` index into a parallel `List<T>`. (Docs should state
+the value-type restriction until fixed.)
 
-5. **`Map` variadic constructor with class/trait values errors inside the
-   library.** `Map<string, Animal>(["d", Dog()])` → "Cannot move a borrowed
-   value into owning parameter 'value'" raised from `Map.#init`'s own body
-   (the pair elements are loads, and `set` wants `move TV`). Same
-   restriction as (4).
+## `Map` variadic constructor with class/trait values errors inside the library
 
-6. **Generic instantiation with a trait type arg fails under explicit
-   annotation.** `var List<Animal> l = List<Animal>()` → "struct fields
-   cannot be trait types" (the annotated-local check fires before the
-   ClassBuffer rewrite). Inference (`var l = List<Animal>()`) and class
-   fields typed `List<Animal>` work, so the trait-ClassBuffer routing
-   exists — the annotation path just skips it.
+**`Map` variadic constructor with class/trait values errors inside the
+library.** `Map<string, Animal>(["d", Dog()])` → "Cannot move a borrowed
+value into owning parameter 'value'" raised from `Map.#init`'s own body
+(the pair elements are loads, and `set` wants `move TV`). Same
+restriction as (4).
 
-7. **Func-typed struct fields are parsed but not callable.** `pub var func
+## Generic instantiation with a trait type arg fails under explicit annotation
+
+**Generic instantiation with a trait type arg fails under explicit
+annotation.** `var List<Animal> l = List<Animal>()` → "struct fields
+cannot be trait types" (the annotated-local check fires before the
+ClassBuffer rewrite). Inference (`var l = List<Animal>()`) and class
+fields typed `List<Animal>` work, so the trait-ClassBuffer routing
+exists — the annotation path just skips it.
+
+## Func-typed struct fields are parsed but not callable
+
+**Func-typed struct fields are parsed but not callable.** `pub var func
 (int, out bool) test` inside a struct compiles, but `r.test(5)` →
-   "Function not found: Rule.test" (and the same for a local copy `var func
+"Function not found: Rule.test" (and the same for a local copy `var func
 (int, out bool) g = r.test`). Either implement calling through
-   function-typed fields or reject the field declaration with a
-   "use a trait instead" error.
+function-typed fields or reject the field declaration with a
+"use a trait instead" error.
 
-8. **Methods cannot return borrowed class refs.** `pub func node = (self,
+## Methods cannot return borrowed class refs
+
+**Methods cannot return borrowed class refs.** `pub func node = (self,
 int i, out Node) { return self.nodes.at_or_panic(i) }` → "cannot return
-   a borrowed reference". Callers must inline `state.nodes.at_or_panic(i)`
-   instead. A sanctioned accessor shape (or `view`-like borrow return)
-   would remove a lot of noise.
+a borrowed reference". Callers must inline `state.nodes.at_or_panic(i)`
+instead. A sanctioned accessor shape (or `view`-like borrow return)
+would remove a lot of noise.
 
-9. **Constraint-verification gaps at literal/length arithmetic:**
-   - `"abc".slice(1, 3)` → "Parameter constraint cannot be verified" (the
-     literal's compile-time length isn't recorded for the slice
-     constraint); binding the literal to a `const` first works.
-   - `l.at(l.length - 1)` under a `l.length > 0` guard → unverifiable
-     (`length - 1 < length` needs arithmetic reasoning). List now gets
-     `at_or_panic`, so callers sidestep it, but the common "last element"
-     shape would be nice to prove.
+## Constraint-verification gaps at literal/length arithmetic
+
+**Constraint-verification gaps at literal/length arithmetic:**
+
+- `"abc".slice(1, 3)` → "Parameter constraint cannot be verified" (the
+  literal's compile-time length isn't recorded for the slice
+  constraint); binding the literal to a `const` first works.
+- `l.at(l.length - 1)` under a `l.length > 0` guard → unverifiable
+  (`length - 1 < length` needs arithmetic reasoning). List now gets
+  `at_or_panic`, so callers sidestep it, but the common "last element"
+  shape would be nice to prove.
 
 ## Trait method call on an rvalue receiver fails to compile (C backend)
 
