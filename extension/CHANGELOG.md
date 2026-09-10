@@ -1,6 +1,12 @@
 # Changelog
 
 
+
+## 0.2.1
+<sub>2026-09-10</sub>
+
+-  *(patch)* - Fix namespace imports resolving directories and spaced :: segments
+
 ## 0.2.0
 <sub>2026-09-10</sub>
 

@@ -3,6 +3,13 @@
 
 
 
+
+## 0.2.3
+<sub>2026-09-10</sub>
+
+-  *(patch)* - Fix namespace imports resolving directories and spaced :: segments
+-  *(patch)* - Desugar for x of List to element iteration
+
 ## 0.2.2
 <sub>2026-09-10</sub>
 
