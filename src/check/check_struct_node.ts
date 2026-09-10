@@ -141,6 +141,21 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 			);
 			continue;
 		}
+		// A func-typed field (e.g. `pub var func (int, out bool) test`) is
+		// parsed but has no working storage, assignment, or call path in
+		// either backend. Reject it here with the sanctioned guidance rather
+		// than letting it fail later with confusing errors ("Parameters
+		// missing for function", "Function not found: <Struct>.<field>", or
+		// invalid C). The supported shape for a set of callable operations on
+		// a struct is a trait (interface) — see SPEC "Trait Types".
+		if (decl.func_params) {
+			add_error(
+				status,
+				`${struct.is_class ? "class" : "struct"} fields cannot be function types — use a trait instead`,
+				decl.start,
+			);
+			continue;
+		}
 		if (!struct.is_class && is_class_type(decl.type.name, status)) {
 			add_error(status, `struct fields cannot be class types, use a class instead`, decl.start);
 		} else if (!struct.is_class && status.traits.find((t) => t.name === decl.type.name)) {

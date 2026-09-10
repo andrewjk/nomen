@@ -112,8 +112,10 @@ export default function parse_declaration(
 		}
 	}
 
-	// Check type or value has been set
-	if (!decl.type.name && !decl.value && !decl.func_return_type) {
+	// Check type or value has been set. A function-type declaration
+	// (`var func (string) run` — a func-typed variable/field) may have no
+	// initializer and no `out` return, so func_params must count as "typed".
+	if (!decl.type.name && !decl.value && !decl.func_return_type && !decl.func_params) {
 		add_error(status, `Expected type or default value`, decl.start + decl.declaration.length + 1);
 	}
 

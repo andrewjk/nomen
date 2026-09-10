@@ -270,14 +270,24 @@ compound literal, and value-struct values round-trip through
   The C cast-to-struct-zero fix lives in build_return_node.ts /
   build_cast_node.ts (2026-09-11).
 
-## Func-typed struct fields are parsed but not callable
+## Func-typed local values: `out`-returning signatures are not callable
 
-**Func-typed struct fields are parsed but not callable.** `pub var func
-(int, out bool) test` inside a struct compiles, but `r.test(5)` →
-"Function not found: Rule.test" (and the same for a local copy `var func
-(int, out bool) g = r.test`). Either implement calling through
-function-typed fields or reject the field declaration with a
-"use a trait instead" error.
+RESOLVED for struct fields (2026-09-11): a func-typed FIELD (`pub var func
+(int, out bool) test`) is now rejected at check time with
+"fields cannot be function types — use a trait instead" (the field storage,
+assignment, and call paths never worked in either backend; the parse gap
+that rejected `func (...)` fields with no `out` return is fixed too — see
+parse_declaration's func_params guard). See test/func_field_rejected.test.ts.
+
+STILL OPEN — func-typed LOCALS with an `out` return cannot be CALLED:
+`var func (int, out bool) f = gt3` checks, but `f(5)` fails ("Function not
+found: f" / "Too many parameters for function: f" depending on shape). The
+working subset is a no-return signature (`var func (string,) print =
+Console.write`), and only when initialized from a library function — a user
+function value errors "Too many parameters". The indirect-call path needs
+out-parameter ABI support and consistent callee typing. Test coverage:
+test/func_field_rejected.test.ts pins the field rejection; the local gaps
+remain untested (broken shapes).
 
 ## Methods cannot return borrowed class refs
 
