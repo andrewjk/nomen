@@ -78,7 +78,7 @@ function count(code: string, needle: string): number {
  * Ownership restart: a variable that receives a borrow and later a heap
  * value (`b = src.at(0)` … `b = t`) owns heap on every path — borrow
  * receptions are strdup'd, so the frees stay valid even when the restart
- * branch never executes. Explicit `s = mov t` transfers the ownership mark.
+ * branch never executes. Explicit `s = move t` transfers the ownership mark.
  */
 
 test("cross-scope assign then plain read prints the copied value", async () => {
@@ -378,20 +378,20 @@ pub func main = () {
 });
 
 /**
- * Explicit `s = mov t` keeps its transfer path — and it must actually
+ * Explicit `s = move t` keeps its transfer path — and it must actually
  * TRANSFER: the source's scope-exit free is suppressed and the assignee
  * frees the bytes once. The pre-fix lowering freed BOTH (C) or left the
  * assignee dangling (aarch64).
  */
 
-test("explicit mov transfers (single owner, no double free)", async () => {
+test("explicit move transfers (single owner, no double free)", async () => {
 	const input = `
 import System
 
 pub func main = () {
 	var t = "aaaa".to_string()
 	var string s = "init"
-	s = mov t
+	s = move t
 	Console.write(s)
 }
 `;

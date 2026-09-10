@@ -21,7 +21,7 @@ import value_from_value_node from "./utils/value_from_value_node.ts";
  *  - a function or method that is never called
  *
  * The analysis is deliberately conservative: it biases towards not warning
- * when ownership (mov/ref/cp), trait vtables, library code or the `_`-discard
+ * when ownership (move/ref/cp), trait vtables, library code or the `_`-discard
  * convention is involved, since those cases can look "unused" to a text walk
  * yet be required by the runtime.
  */

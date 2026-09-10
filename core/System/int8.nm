@@ -6,7 +6,7 @@ pub struct int8: Stringable, Hashable, Equatable {
 		return self as uint
 	}
 
-	pub func to_string = (self, mov out string) {
+	pub func to_string = (self, move out string) {
 		```
 		#arch: c
 		int length = snprintf(NULL, 0, "%d", self);

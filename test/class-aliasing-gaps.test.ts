@@ -44,7 +44,7 @@ Console.write("done\\n")
 		await build_and_check_output(input, "alias_double_destroy", "Ddone\n");
 	});
 
-	// #2 — A class that owns another class (`mov Inner c`) is aliased. Both
+	// #2 — A class that owns another class (`move Inner c`) is aliased. Both
 	// aliases' destroy paths `free()` the inner instance, so the inner is freed
 	// twice → double free → the process aborts. Correct behaviour is to print
 	// the value with no crash and a balanced audit.
@@ -54,9 +54,9 @@ class Inner {
 	var int v
 }
 class Outer {
-	mov Inner c
+	move Inner c
 }
-var Outer p = Outer(mov Inner(7))
+var Outer p = Outer(move Inner(7))
 var Outer q = p
 Console.write("\\{p.c.v}\\n")
 `;

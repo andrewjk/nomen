@@ -54,7 +54,7 @@ function emit_init_value(
 }
 
 /**
- * The declaration SWAP replacement (`var X b = mov obj.field swap <rep>`) —
+ * The declaration SWAP replacement (`var X b = move obj.field swap <rep>`) —
  * the expression-seam version of the historical `build_node(swap)`. Both
  * backends build it in VALUE position; the surrounding statement tail is
  * handled by the caller, so no newline normalization happens here.
@@ -188,7 +188,7 @@ export default function build_declaration_node(
 		// class_vars (build_vtable_target passes it by value, not &name)
 		// and variable_types (so accesses are recognized as trait
 		// dispatch). Ownership follows the callee's return convention: a
-		// `mov out T` method (`owned_return`, e.g. `list.pop()`) transfers
+		// `move out T` method (`owned_return`, e.g. `list.pop()`) transfers
 		// ownership (destroy + free at scope exit via trait_class_locals);
 		// a plain borrow (e.g. `.at(i)`) does not (the container still
 		// owns the element), so the local is recorded as an alias and
@@ -257,7 +257,7 @@ export default function build_declaration_node(
 		// ownership — EXCEPT scan-detected borrow-returning functions like
 		// `box_at`, whose class return is a container reference the callee's
 		// owner frees.)
-		// An `access` that is an ownership-transferring method (`mov out T`,
+		// An `access` that is an ownership-transferring method (`move out T`,
 		// e.g. `list.pop()`) returns a fresh owned instance — it is NOT a borrow,
 		// so the variable genuinely owns it and must be freed at scope exit.
 		// Only treat a non-`owned_return` access as an alias/borrow.
@@ -351,7 +351,7 @@ export default function build_declaration_node(
 				}
 			}
 		}
-		// `var List b = mov a` (struct mov): ownership transfers from a to b.
+		// `var List b = move a` (struct move): ownership transfers from a to b.
 		// Remove the source `a` from whichever scope frame holds it (it may be
 		// declared in an OUTER scope when the declaration sits inside an
 		// if/loop branch) so it won't be destroyed at scope exit (b owns the
@@ -369,7 +369,7 @@ export default function build_declaration_node(
 			if (!status.class_vars) status.class_vars = new Set();
 			status.class_vars.add(safe_name);
 			// When a class var captures the result of a call that also
-			// received a same-type class temporary as a non-mov arg (the
+			// received a same-type class temporary as a non-move arg (the
 			// hoisted `_param_N` for e.g. `Box(5)`), the callee may return
 			// that very instance (e.g. `return x ?? fallback`). Both the
 			// result var and the temporary would then point at one
@@ -776,7 +776,7 @@ export default function build_declaration_node(
 					}
 				}
 			}
-			// `var X b = mov obj.field swap <rep>`: the field's bytes were
+			// `var X b = move obj.field swap <rep>`: the field's bytes were
 			// copied into `b` above (transferring ownership). Now write the
 			// replacement value back into the moved-out field so the field is
 			// revalidated — otherwise the field still aliases `b`'s data and
@@ -808,7 +808,7 @@ export default function build_declaration_node(
 
 /**
  * When a class-typed variable captures the result of a call that also
- * received a same-type class temporary as a non-mov arg (the hoisted
+ * received a same-type class temporary as a non-move arg (the hoisted
  * `_param_N` for e.g. `Box(5)`), the callee may return that very instance
  * (e.g. `return x ?? fallback`). The result variable supersedes the
  * temporary, so drop it from scoped_declarations to consolidate to a single

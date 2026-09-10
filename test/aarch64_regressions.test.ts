@@ -45,7 +45,7 @@ Console.write("\\{spill(la, lb, lc, ld, le)}")
 	await build_and_check_output(input, "spilled_struct_param_forward", "15");
 });
 
-// A value-struct declaration initialized from a non-`mov` field access —
+// A value-struct declaration initialized from a non-`move` field access —
 // including the checker-hoisted `_param_N` temp for a struct call argument —
 // is a shallow borrow whose buffer belongs to the owner. Destroying it at
 // scope exit freed the owner's data (render_text's `diff.changes` arg led to
@@ -53,7 +53,7 @@ Console.write("\\{spill(la, lb, lc, ld, le)}")
 test("field struct borrow not destroyed", async () => {
 	const input = `
 pub class Holder {
-  mov List<int> items = List<int>()
+  move List<int> items = List<int>()
 }
 
 func count = (List<int> xs, out int) {
@@ -122,10 +122,10 @@ func box_at = (List<Box> xs, int i, out Box) {
   var int j = i
   if j >= 0 && j < xs.length {
     var Box got = xs.at(j)
-    return mov got
+    return move got
   }
   var empty = Box()
-  return mov empty
+  return move empty
 }
 
 pub func main = () {
@@ -134,8 +134,8 @@ pub func main = () {
   first.items.push(10)
   var Box second = Box()
   second.items.push(20)
-  boxes.push(mov first)
-  boxes.push(mov second)
+  boxes.push(move first)
+  boxes.push(move second)
 
   var int total = 0
   const Box taken = box_at(boxes, 1)
@@ -666,7 +666,7 @@ func flush_delete = (ref int del_start, ref List<Change> changes, List<Token> ta
   }
   var c = Change()
   c.a = token_index(ta, del_start)
-  changes.push(mov c)
+  changes.push(move c)
   del_start = -1
 }
 
@@ -679,7 +679,7 @@ func make = (string s, int idx, out Token) {
 
 pub func main = (Init init) {
   var List<Token> ta = List<Token>()
-  ta.push(mov make("x", 5))
+  ta.push(move make("x", 5))
   var List<Change> cs = List<Change>()
   var int d = 0
   flush_delete(ref d, ref cs, ta)
@@ -732,7 +732,7 @@ func flush = (ref int del_start, List<Token> ta, out int) {
 
 pub func main = (Init init) {
   var List<Token> ta = List<Token>()
-  ta.push(mov make("x", 5))
+  ta.push(move make("x", 5))
   var int d = 0
   Console.write_line("a=\\{flush(ref d, ta)}")
 }

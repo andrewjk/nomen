@@ -202,7 +202,7 @@ Changes applied:
       field it receives). Branches (`if`/`match`/`switch`) snapshot the cache
       before and restore the dominating pre-branch state after, so an entry
       loaded in one branch is never reused in a sibling. (Note: the
-      `var x = mov obj.field swap …` declaration form is built by
+      `var x = move obj.field swap …` declaration form is built by
       `build_declaration_node`, which has no invalidation of its own — it is
       only sound today because the conservative `bl` invalidation clears the
       field entry before every such reassignment in the current test suite. A
@@ -602,7 +602,7 @@ pay off.** The per-iteration `digits.data` re-derivation (an
 looked like the obvious remaining cost in pidigits's Knuth-D loop. A sound
 loop-invariant hoist was written (`loop_buffer_licm`): it pre-scans each loop
 body for Buffer load/store accesses whose data pointer is never mutated
-(assignment / `mov … swap` / resize / owner reassigned / owner passed to a
+(assignment / `move … swap` / resize / owner reassigned / owner passed to a
 `bl`), loads them once into a callee-saved register in the preheader, and
 seeds the cache so the body reuses them every iteration. It was correct
 (asm-verified: the inner multiply loops no longer reloaded
@@ -1193,7 +1193,7 @@ the note at the top.)
 12. ✓ **DONE (item 20):** `load_float`/`store_float` result-register bug fix —
     re-enables spectral-norm (was `nan`). See item 20 above.
 13. ✓ **DONE (item 21):** Naked inline for all raw-only inline funcs — eliminates
-    the per-parameter callee-saved save/mov/restore triple for static raw-only
+    the per-parameter callee-saved save/move/restore triple for static raw-only
     inline funcs (`Math.sqrt` et al.). Helps nbody.
 14. ✓ **DONE (item 22):** Float assignment round-trip elimination — assignments
     to register-allocated float vars go directly `d0 → dN` instead of

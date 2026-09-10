@@ -494,7 +494,7 @@ export function monomorphize(
 				// The synthesized init byte-copies each param into its field,
 				// so a field whose (substituted) type is a class OR an owning
 				// value struct (List<...>/Buffer/…/anything owning heap) must
-				// take it by `mov` — a plain by-value pass would leave the
+				// take it by `move` — a plain by-value pass would leave the
 				// field and the caller's variable co-owning the same storage
 				// (double-free at scope exit). Mirrors
 				// mark_owning_auto_init_params for non-generic structs.
@@ -505,7 +505,7 @@ export function monomorphize(
 						is_owning_struct_type_requiring_move(field.type, status))
 				) {
 					param.is_moved = true;
-				} else if (field.declaration === "mov") {
+				} else if (field.declaration === "move") {
 					param.declaration = "var";
 				}
 				init_params.push(param);
@@ -1066,7 +1066,7 @@ function derive_annotations_for_access_func(
 		fc.type = rt;
 	}
 
-	if (func.returns_mov) {
+	if (func.returns_move) {
 		fc.owned_return = true;
 	}
 	if (is_overloaded(struct, fc.name)) {

@@ -218,7 +218,7 @@ pub class Channel: Sendable {
 	// (the node's copy is moved out — the payload leaves the channel, and a
 	// second receive of the same message is not possible). The fat (ptr, len)
 	// pair survives intact. Pair with send_string.
-	pub func receive_string = (self, mov out string) {
+	pub func receive_string = (self, move out string) {
 		```
 		#arch: c
 		pthread_mutex_lock((pthread_mutex_t *)self->mu);

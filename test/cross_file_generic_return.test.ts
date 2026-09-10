@@ -33,7 +33,7 @@ pub func combined = (string a, string b, out List<Diff>) {
 	if a == b {
 		var Diff e = Diff()
 		e.moved = true
-		d.push(mov e)
+		d.push(move e)
 	}
 	return d
 }

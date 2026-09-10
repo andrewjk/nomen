@@ -9,14 +9,14 @@ import get_index from "./utils/get_index.ts";
 export default function parse_bitset(visibility: "pub" | "private", status: ParseStatus) {
 	const start = get_index(status);
 	accept(visibility, status);
-	// Optional `strict` modifier between visibility and `bitset`
-	// (`pub strict bitset Flags { ... }`) — mirrors parse_enum. Contextual, so
-	// `strict` remains usable as a name elsewhere.
-	const strict = accept("strict", status);
+	// Optional `must_use` modifier between visibility and `bitset`
+	// (`pub must_use bitset Flags { ... }`) — mirrors parse_enum. Contextual, so
+	// `must_use` remains usable as a name elsewhere.
+	const must_use = accept("must_use", status);
 	accept("bitset", status);
 	const name = consume_name(status);
 	const node = new BitsetNode(start, visibility, name);
-	node.strict = strict;
+	node.must_use = must_use;
 
 	if (expect("{", status)) {
 		while (accept("case", status)) {

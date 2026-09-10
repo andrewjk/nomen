@@ -163,7 +163,7 @@ while line < 50 {
 	var op = Op()
 	op.kind = line % 4
 	op.line = line
-	ops.push(mov op)
+	ops.push(move op)
 	line += 1
 }
 for i of 0 .. ops.length {
@@ -351,7 +351,7 @@ describe("List<string>", () => {
 	// `char*` — a borrow of the buffer's slot (or a static literal address) —
 	// crashing on the free. The fix treats `.at`/`.first`/`.slice`/`load_T`
 	// (without `owned_return`) as borrows in `value_is_owned_string`, mirroring
-	// the C backend's `is_string_borrow`. `pop` (mov out T) stays owned.
+	// the C backend's `is_string_borrow`. `pop` (move out T) stays owned.
 
 	test("push and read back via at", async () => {
 		const input = `
@@ -404,7 +404,7 @@ Console.write("\\{same}")
 
 	// Regression: `List<string>.pop` of an element that was `push`'d as a
 	// bare literal previously crashed on the aarch64 backend (SIGABRT). `pop`
-	// is `mov out T` (owned_return), so the caller anchors and frees the
+	// is `move out T` (owned_return), so the caller anchors and frees the
 	// result — but the Buffer<string> slot held a shallow copy of the literal
 	// (a `char*` into rodata), so the free aborted. The aarch64 backend now
 	// strdup's the `move_T` result at the `pop` return (mirroring the C
@@ -482,7 +482,7 @@ for i of 0 .. xs.length {
 		await build_and_check_output(input, "list_string_heap_destroy", "abcdefghijkl");
 	});
 
-	// Regression: a heap-string expression passed to `push` (a `mov T value`
+	// Regression: a heap-string expression passed to `push` (a `move T value`
 	// param) must not leak the original. The buffer strdup's its own copy and
 	// the caller retains + frees the original — ownership transfer of a string
 	// arg would orphan it. Covered by the leak detector on both backends.
@@ -639,9 +639,9 @@ for i of 0 .. a.length {
 		await build_and_check_output(input, "list_copy_owning_struct", "Alice Bob Alice Carol ");
 	});
 
-	test("copy of a List field (the mov-field escape hatch)", async () => {
-		// The ROADBLOCKS "Copying a `mov List` field out by value" scenario:
-		// extracting an owning List<T> field by value. `mov ... swap` takes
+	test("copy of a List field (the move-field escape hatch)", async () => {
+		// The ROADBLOCKS "Copying a `move List` field out by value" scenario:
+		// extracting an owning List<T> field by value. `move ... swap` takes
 		// ownership; `.copy()` takes a deep copy and leaves the field intact.
 		const input = `
 struct Group {
@@ -676,7 +676,7 @@ Console.write("\\{a.length} \\{b.length}")
 		const input = `
 class Animal { var char letter }
 var List<Animal> l = List<Animal>()
-l.push(mov Animal('X'))
+l.push(move Animal('X'))
 var List<Animal> c = l.copy()
 `;
 		const parsed = parse_with_imports(input);
@@ -690,7 +690,7 @@ var List<Animal> c = l.copy()
 trait Speaker { func speak = (self, out string) }
 class Dog : Speaker { func speak = (self, out string) { return "woof" } }
 var List<Speaker> l = List<Speaker>()
-l.push(mov Dog())
+l.push(move Dog())
 var List<Speaker> c = l.copy()
 `;
 		const parsed = parse_with_imports(input);
@@ -705,12 +705,12 @@ describe("List<T> as an explicit struct-field type", () => {
 	// (`struct List *items`) in the synthesized `Group_init` signature on C —
 	// an incomplete type the field assignment conflicted with. The ctor
 	// signature now lowers to the monomorphized `struct List_int *`, and the
-	// auto-init param for a non-defaulted owning-struct field is a `mov`
+	// auto-init param for a non-defaulted owning-struct field is a `move`
 	// param (the init byte-copies the arg into the field, so ownership must
 	// transfer — a plain by-value pass would leave the caller's variable and
 	// the field co-owning the backing slab).
 
-	test("construct with mov — field reads back on both backends", async () => {
+	test("construct with move — field reads back on both backends", async () => {
 		const input = `
 struct Group {
   var List<int> items
@@ -718,7 +718,7 @@ struct Group {
 var List<int> xs = List<int>()
 xs.push(1)
 xs.push(2)
-var Group g = Group(mov xs)
+var Group g = Group(move xs)
 var int total = 0
 for i of 0 .. g.items.length {
   total = total + g.items.at(i)
@@ -741,14 +741,14 @@ Console.write("\\{g.items.length} \\{g.items.pop()}")
 		await build_and_check_output(input, "list_field_fresh_ctor", "2 8");
 	});
 
-	test("mov-declared field still works with mov", async () => {
+	test("move-declared field still works with move", async () => {
 		const input = `
 struct Group {
-  mov List<int> items
+  move List<int> items
 }
 var List<int> xs = List<int>()
 xs.push(5)
-var Group g = Group(mov xs)
+var Group g = Group(move xs)
 Console.write("\\{g.items.pop()}")
 `;
 		await build_and_check_output(input, "list_field_mov_field", "5");
@@ -762,7 +762,7 @@ struct Group {
 var Group g = Group()
 g.items.push(1)
 g.items.push(2)
-var List<int> run = mov g.items swap List<int>()
+var List<int> run = move g.items swap List<int>()
 run.push(3)
 Console.write("\\{run.length} \\{g.items.length}")
 `;
@@ -777,12 +777,12 @@ Console.write("\\{run.length} \\{g.items.length}")
 		// rejection; before that, a checker hang).
 		const input = `
 struct Wrapper<T> {
-	mov T item
+	move T item
 }
 var List<int> xs = List<int>()
 xs.push(9)
 xs.push(8)
-var Wrapper<List<int>> w = Wrapper<List<int>>(mov xs)
+var Wrapper<List<int>> w = Wrapper<List<int>>(move xs)
 Console.write("\\{w.item.length} \\{w.item.pop()}")
 `;
 		await build_and_check_output(input, "nested_generic_instantiation", "2 8");
@@ -807,12 +807,12 @@ Console.write("\\{w.item.pop()}")
 		// (Wrapper_Wrapper_List_int).
 		const input = `
 struct Wrapper<T> {
-	mov T item
+	move T item
 }
 var List<int> xs = List<int>()
 xs.push(3)
-var Wrapper<List<int>> inner = Wrapper<List<int>>(mov xs)
-var Wrapper<Wrapper<List<int>>> outer = Wrapper<Wrapper<List<int>>>(mov inner)
+var Wrapper<List<int>> inner = Wrapper<List<int>>(move xs)
+var Wrapper<Wrapper<List<int>>> outer = Wrapper<Wrapper<List<int>>>(move inner)
 Console.write("\\{outer.item.item.pop()}")
 `;
 		await build_and_check_output(input, "nested_generic_doubly", "3");
@@ -823,12 +823,12 @@ Console.write("\\{outer.item.item.pop()}")
 		// (check) + signature lowering (build) must flatten recursively.
 		const input = `
 struct Wrapper<T> {
-	mov T item
+	move T item
 }
 func fill = (out Wrapper<List<int>>) {
 	var List<int> xs = List<int>()
 	xs.push(6)
-	return Wrapper<List<int>>(mov xs)
+	return Wrapper<List<int>>(move xs)
 }
 func first_of = (Wrapper<List<int>> w, out int) {
 	return w.item.pop()
@@ -839,7 +839,7 @@ Console.write("\\{first_of(w)}")
 		await build_and_check_output(input, "nested_generic_param_return", "6");
 	});
 
-	test("plain by-value constructor arg is rejected (missing mov)", () => {
+	test("plain by-value constructor arg is rejected (missing move)", () => {
 		const input = `
 struct Group {
   var List<int> items
@@ -848,7 +848,7 @@ var List<int> xs = List<int>()
 var Group g = Group(xs)
 `;
 		const parsed = parse_with_imports(input);
-		const err = parsed.errors.find((e) => e.message.includes("Missing 'mov' keyword"));
+		const err = parsed.errors.find((e) => e.message.includes("Missing 'move' keyword"));
 		expect(err).toBeDefined();
 		expect(err!.message).toContain("items");
 	});
@@ -868,17 +868,17 @@ var Group b = Group(a.items)
 		expect(err).toBeDefined();
 	});
 
-	test("bare mov out of a field into the constructor is rejected (needs swap)", () => {
+	test("bare move out of a field into the constructor is rejected (needs swap)", () => {
 		const input = `
 struct Group {
   var List<int> items
 }
 var Group a = Group(List<int>())
-var Group b = Group(mov a.items)
+var Group b = Group(move a.items)
 `;
 		const parsed = parse_with_imports(input);
 		const err = parsed.errors.find((e) =>
-			e.message.includes("cannot mov 'items' out of struct by value"),
+			e.message.includes("cannot move 'items' out of struct by value"),
 		);
 		expect(err).toBeDefined();
 	});

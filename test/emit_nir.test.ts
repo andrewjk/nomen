@@ -718,7 +718,7 @@ class Box {
   var int value
 }
 class Holder {
-  mov Box content
+  move Box content
 }
 func run_swap_var = (out int) {
   var Box a = Box(1)
@@ -727,8 +727,8 @@ func run_swap_var = (out int) {
   return a.value * 10 + b.value
 }
 func run_swap_field = (out int) {
-  var Holder h1 = Holder(mov Box(1))
-  var Holder h2 = Holder(mov Box(2))
+  var Holder h1 = Holder(move Box(1))
+  var Holder h2 = Holder(move Box(2))
   h1.content = h2.content swap Box(99)
   return h1.content.value * 100 + h2.content.value
 }
@@ -737,7 +737,7 @@ Console.write("\\{run_swap_var()} \\{run_swap_field()}")
 });
 
 test("declaration swaps marshal through the NIR seam byte-identically", () => {
-	// Tranche 5: `var Pt c = mov w.pt swap <rep>` — the value-struct
+	// Tranche 5: `var Pt c = move w.pt swap <rep>` — the value-struct
 	// declaration path's swap replacement rides the seam too.
 	expect_byte_identical(`
 struct Pt {
@@ -749,7 +749,7 @@ struct Wrap {
 }
 func run_decl = (out int) {
   var Wrap w = Wrap(Pt(4, 4))
-  var Pt c = mov w.pt swap Pt(5, 5)
+  var Pt c = move w.pt swap Pt(5, 5)
   return c.x * 10 + w.pt.x
 }
 Console.write("\\{run_decl()}")
@@ -759,7 +759,7 @@ Console.write("\\{run_decl()}")
 test("NIR-native swap and address-RHS binaries run correctly", async () => {
 	// Behavioral belt-and-braces for the tranche-5 paths: p = mk(3) → (3,4)
 	// → 7; a = b swap Box(7) → a=2, b=7 → 27; h1.content = h2.content swap
-	// Box(99) → h1=2, h2=99 → 299; var Pt c = mov w.pt swap Pt(5,5) → c.x=4,
+	// Box(99) → h1=2, h2=99 → 299; var Pt c = move w.pt swap Pt(5,5) → c.x=4,
 	// w.pt.x=5 → 45.
 	const { default: build_and_check_output } = await import("./build_and_check_output");
 	await build_and_check_output(
@@ -775,7 +775,7 @@ class Box {
   var int value
 }
 class Holder {
-  mov Box content
+  move Box content
 }
 func mk = (int a, out Pt) {
   return Pt(a, a + 1)
@@ -792,14 +792,14 @@ func run_swap_var = (out int) {
   return a.value * 10 + b.value
 }
 func run_swap_field = (out int) {
-  var Holder h1 = Holder(mov Box(1))
-  var Holder h2 = Holder(mov Box(2))
+  var Holder h1 = Holder(move Box(1))
+  var Holder h2 = Holder(move Box(2))
   h1.content = h2.content swap Box(99)
   return h1.content.value * 100 + h2.content.value
 }
 func run_decl = (out int) {
   var Wrap w = Wrap(Pt(4, 4))
-  var Pt c = mov w.pt swap Pt(5, 5)
+  var Pt c = move w.pt swap Pt(5, 5)
   return c.x * 10 + w.pt.x
 }
 Console.write("\\{run_addr()} \\{run_swap_var()} \\{run_swap_field()} \\{run_decl()}")

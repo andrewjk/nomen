@@ -154,7 +154,7 @@ interface AssignmentRecord {
 
 interface DeclareRecord {
 	name: string;
-	declaration: "const" | "var" | "mov" | "view";
+	declaration: "const" | "var" | "move" | "view";
 	enter: number;
 	exit: number;
 	/** Enclosing loops at the declare site (back-edge coverage). */
@@ -205,7 +205,11 @@ class Walk {
 	}
 
 	write(name: string): void {
-		this.writes.push({ name, enter: ++this.stamp, loop_ranges: [...this.loop_stack] });
+		this.writes.push({
+			name,
+			enter: ++this.stamp,
+			loop_ranges: [...this.loop_stack],
+		});
 	}
 
 	declare(node: DeclarationNode, body: () => void): void {

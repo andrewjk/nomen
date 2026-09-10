@@ -38,11 +38,11 @@ Console.write("\\{a.v}")
 	test("reassign a ref class param then read a field of the new instance", async () => {
 		const input = `
 class Box { var int v }
-class Holder { mov Box c }
+class Holder { move Box c }
 func replace = (ref Holder h, int n) {
-    h = Holder(mov Box(n))
+    h = Holder(move Box(n))
 }
-var Holder h = Holder(mov Box(0))
+var Holder h = Holder(move Box(0))
 replace(ref h, 7)
 replace(ref h, 8)
 Console.write("\\{h.c.v}\\n")
@@ -53,11 +53,11 @@ Console.write("\\{h.c.v}\\n")
 	test("ref class param with owned field reassigned in a loop", async () => {
 		const input = `
 class Box { var int v }
-class Holder { mov Box c }
+class Holder { move Box c }
 func replace = (ref Holder h, int n) {
-    h = Holder(mov Box(n))
+    h = Holder(move Box(n))
 }
-var Holder h = Holder(mov Box(0))
+var Holder h = Holder(move Box(0))
 var int i = 1
 while i <= 4 {
     replace(ref h, i)

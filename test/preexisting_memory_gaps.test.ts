@@ -5,9 +5,9 @@ import build_and_check_output from "./build_and_check_output";
 // Failing tests documenting pre-existing memory gaps (NOT nullable-specific).
 // These all leak and should be fixed eventually. The root cause for most is
 // that class temporaries (constructor results not bound to a variable) passed
-// to non-mov parameters are never anchored, so nobody frees them.
+// to non-move parameters are never anchored, so nobody frees them.
 describe("pre-existing memory gaps", () => {
-	test("class temporary passed to non-mov param leaks", async () => {
+	test("class temporary passed to non-move param leaks", async () => {
 		const input = `
 class Box {
 	var int v
@@ -20,7 +20,7 @@ take(Box(5))
 		await build_and_check_output(input, "gap_temp_nonmov_param", "5\n");
 	});
 
-	test("class temporary passed to nullable non-mov param leaks", async () => {
+	test("class temporary passed to nullable non-move param leaks", async () => {
 		const input = `
 class Box {
 	var int v
@@ -35,7 +35,7 @@ take(Box(5))
 		await build_and_check_output(input, "gap_temp_nullable_param", "5\n");
 	});
 
-	test("forwarding a non-mov param to another non-mov param leaks the temporary", async () => {
+	test("forwarding a non-move param to another non-move param leaks the temporary", async () => {
 		const input = `
 class Box {
 	var int v
@@ -127,13 +127,13 @@ class Box {
 	}
 }
 class Holder {
-	mov Box c
+	move Box c
 }
 func make = (int n, out Box) {
 	return Box(n)
 }
 func test = () {
-	var Holder h = Holder(mov Box(0))
+	var Holder h = Holder(move Box(0))
 	h.c = make(1)
 	h.c = make(2)
 }

@@ -138,7 +138,7 @@ function extract_type_names(source: string): string[] {
 	const names: string[] = [];
 	for (let line of source.split("\n")) {
 		const trimmed = line.trim();
-		const m = trimmed.match(/^pub (?:strict )?(?:struct|class|trait|enum|bitset) (\w+)/);
+		const m = trimmed.match(/^pub (?:must_use )?(?:struct|class|trait|enum|bitset) (\w+)/);
 		if (m) names.push(m[1]);
 	}
 	return names;
@@ -222,7 +222,13 @@ function build_type_map(
 		} else {
 			for (const fname of free_funcs) {
 				if (!functions.has(fname)) {
-					functions.set(fname, { name: fname, source, path: f, deps, namespace });
+					functions.set(fname, {
+						name: fname,
+						source,
+						path: f,
+						deps,
+						namespace,
+					});
 				}
 			}
 		}

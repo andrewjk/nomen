@@ -43,7 +43,7 @@ export default class Type {
 	 * extracting from a const source (e.g. `const_list.at(i)` where the
 	 * element type is a class). Field writes through a const_ref are
 	 * rejected, as are mutating (`ref self`) method dispatch and forwarding
-	 * to a `ref`/`mov` parameter. To regain mutability: don't declare the
+	 * to a `ref`/`move` parameter. To regain mutability: don't declare the
 	 * source `const`, take a `ref` to the source first, or `.clone()` the
 	 * element.
 	 *

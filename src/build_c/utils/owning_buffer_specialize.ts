@@ -28,7 +28,7 @@ import type BuildStatus from "../BuildStatus.ts";
  * `replace_T` frees the old slot then strdup's, and `#destroy` frees each slot
  * then the slab. `move_T`/`pop` then return an already-heap pointer directly
  * (no return-site strdup). The caller retains ownership of the ORIGINAL string
- * it pushed (string mov args are not spliced — see check_function_call), so
+ * it pushed (string move args are not spliced — see check_function_call), so
  * there is a single owner on each side: the buffer owns its strdup'd copies,
  * the caller owns the original. See ROADBLOCKS "List<string> owning
  * extraction".

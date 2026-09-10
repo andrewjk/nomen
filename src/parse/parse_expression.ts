@@ -254,13 +254,13 @@ function parse_primary(status: ParseStatus, value: string): BaseNode {
  */
 export default function parse_expression(status: ParseStatus, allow_assignment = true): BaseNode {
 	const start = get_index(status);
-	// A leading `mov` marks the whole expression as an ownership transfer
-	// (e.g. `b = mov a`, `var X b = mov a`) rather than a copy. `mov` is also a
+	// A leading `move` marks the whole expression as an ownership transfer
+	// (e.g. `b = move a`, `var X b = move a`) rather than a copy. `move` is also a
 	// declaration keyword, but only at statement start (handled by parse_statement);
 	// here, inside an expression, it is unambiguously the move prefix. Function
-	// call parameters consume their own `mov` (parse_function_call_parameter)
+	// call parameters consume their own `move` (parse_function_call_parameter)
 	// before calling parse_expression, so this never double-processes them.
-	const is_mov = accept("mov", status);
+	const is_move = accept("move", status);
 	let value = peek_current(status) || "??";
 	let node = parse_primary(status, value);
 
@@ -322,7 +322,10 @@ export default function parse_expression(status: ParseStatus, allow_assignment =
 				) {
 					const fc = node as FunctionCallNode;
 					const anon = expression as AnonStructNode;
-					fc.field_overrides = anon.fields.map((f) => ({ name: f.name, value: f.value }));
+					fc.field_overrides = anon.fields.map((f) => ({
+						name: f.name,
+						value: f.value,
+					}));
 					break;
 				}
 				if (is_operation_node(expression)) {
@@ -419,7 +422,7 @@ export default function parse_expression(status: ParseStatus, allow_assignment =
 			case "-=":
 			case "*=": {
 				if (!allow_assignment) {
-					if (is_mov) node.is_moved = true;
+					if (is_move) node.is_moved = true;
 					return node;
 				}
 				const op = consume(status);
@@ -433,7 +436,7 @@ export default function parse_expression(status: ParseStatus, allow_assignment =
 				break;
 			}
 			default: {
-				if (is_mov) node.is_moved = true;
+				if (is_move) node.is_moved = true;
 				return node;
 			}
 		}

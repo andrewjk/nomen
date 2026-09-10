@@ -10,10 +10,10 @@ import emission_label from "./emission_label.ts";
 /**
  * Functions (and methods) whose CLASS-typed return value is a BORROWED
  * reference — e.g. `func box_at = (List<Box> xs, int i, out Box) { var Box
- * got = xs.at(j); return mov got }` hands back the container's element, not a
+ * got = xs.at(j); return move got }` hands back the container's element, not a
  * fresh instance. A caller-side declaration initialized from such a call must
  * NOT be destroy-tracked (the callee's owner frees it) — mirroring the
- * syntactic borrow rules at declaration sites (field access / non-`mov out`
+ * syntactic borrow rules at declaration sites (field access / non-`move out`
  * method call).
  *
  * Syntactic, build-time: a return of a local whose initializer is a field
@@ -119,7 +119,7 @@ function scan_func(
 				borrowed_locals.add(decl.name);
 			} else if (access.access.node_type === "access_func") {
 				const fc = access.access as AccessFunctionCallNode;
-				// A `mov out T` method (owned_return) produces a fresh
+				// A `move out T` method (owned_return) produces a fresh
 				// owned value; everything else hands back a reference the
 				// receiver owns.
 				if (!fc.owned_return) borrowed_locals.add(decl.name);

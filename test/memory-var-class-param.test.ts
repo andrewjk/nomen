@@ -7,7 +7,7 @@ describe("memory ref class param", () => {
 		const input = `
 class Node {
 	var int value = 0
-	mov Node? child = null
+	move Node? child = null
 }
 
 func set_value = (ref Node n) {
@@ -31,8 +31,8 @@ Console.write("\\{child.value}")
 		const input = `
 class TreeNode {
 	var int data = 0
-	mov TreeNode? left = null
-	mov TreeNode? right = null
+	move TreeNode? left = null
+	move TreeNode? right = null
 }
 
 func fill = (ref TreeNode node) {

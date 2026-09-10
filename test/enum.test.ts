@@ -174,7 +174,7 @@ Console.write("\\{shape}")
 		const input = `
 enum Message {
   case quit
-  case move(int x, int y)
+  case walk(int x, int y)
   case write(string text)
 }
 

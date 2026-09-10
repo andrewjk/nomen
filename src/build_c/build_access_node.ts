@@ -931,15 +931,15 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					status.code += array_wrap.suffix;
 				}
 			}
-			// mov parameter handling for method calls: same as
+			// move parameter handling for method calls: same as
 			// build_function_call_node — remove moved class vars / temporaries
 			// from scoped_declarations so they won't be double-freed.
-			if (access_func.mov_param_indices) {
-				for (const idx of access_func.mov_param_indices) {
+			if (access_func.move_param_indices) {
+				for (const idx of access_func.move_param_indices) {
 					const param = access_func.params[idx];
 					if (param?.node_type === "value") {
 						const vname = (param as ValueNode).value;
-						// A `string` arg to a `mov T` param keeps caller ownership
+						// A `string` arg to a `move T` param keeps caller ownership
 						// (an owning Buffer<string> strdup's its own copy), so do NOT
 						// splice it — auto_free must reclaim the original. Resolve
 						// the type from the declaration (a bare variable reference's
@@ -953,7 +953,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 							: undefined;
 						const is_value_struct = !!decl_struct && !decl_struct.is_class;
 						// Splice from whichever scope frame holds the declaration —
-						// a `mov` inside an if/loop branch must also remove an
+						// a `move` inside an if/loop branch must also remove an
 						// OUTER-scope variable, or that scope's exit cleanup reclaims
 						// the value the callee now owns (double-free).
 						if (decl_hit) decl_hit.frame.splice(decl_hit.index, 1);

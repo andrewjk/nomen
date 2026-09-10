@@ -210,7 +210,7 @@ pub func main = () {
 });
 
 // A whole-function-promoted int param skips its slot spill entirely — the
-// value lives only in its callee-saved register, so the reload is a mov
+// value lives only in its callee-saved register, so the reload is a move
 // from there, not a slot load.
 test("raw aarch64 block after control flow reads a promoted int param", async () => {
 	await run_program(

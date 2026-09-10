@@ -11,11 +11,11 @@ describe("reassignment paths inside a loop", () => {
 	test("heap-returning factory function", async () => {
 		const input = `
 class Box { var int v }
-class Holder { mov Box c }
+class Holder { move Box c }
 func mk = (int n, out Holder) {
-    return Holder(mov Box(n))
+    return Holder(move Box(n))
 }
-var Holder h = Holder(mov Box(0))
+var Holder h = Holder(move Box(0))
 var int i = 1
 while i <= 5 {
     h = mk(i)
@@ -29,11 +29,11 @@ Console.write("\\{h.c.v}\\n")
 	test("ref param reassigned by a function called in a loop", async () => {
 		const input = `
 class Box { var int v }
-class Holder { mov Box c }
+class Holder { move Box c }
 func replace = (ref Holder h, int n) {
-    h = Holder(mov Box(n))
+    h = Holder(move Box(n))
 }
-var Holder h = Holder(mov Box(0))
+var Holder h = Holder(move Box(0))
 var int i = 1
 while i <= 5 {
     replace(ref h, i)
@@ -47,11 +47,11 @@ Console.write("\\{h.c.v}\\n")
 	test("ref param reassignment outside a loop reclaims the old instance", async () => {
 		const input = `
 class Box { var int v }
-class Holder { mov Box c }
+class Holder { move Box c }
 func replace = (ref Holder h, int n) {
-    h = Holder(mov Box(n))
+    h = Holder(move Box(n))
 }
-var Holder h = Holder(mov Box(0))
+var Holder h = Holder(move Box(0))
 replace(ref h, 7)
 Console.write("\\{h.c.v}\\n")
 `;
@@ -74,12 +74,12 @@ Console.write("\\{s}\\n")
 	test("constructor reassignment in a nested if inside a loop", async () => {
 		const input = `
 class Box { var int v }
-class Holder { mov Box c }
-var Holder h = Holder(mov Box(0))
+class Holder { move Box c }
+var Holder h = Holder(move Box(0))
 var int i = 1
 while i <= 5 {
     if i > 2 {
-        h = Holder(mov Box(i))
+        h = Holder(move Box(i))
     }
     i = i + 1
 }

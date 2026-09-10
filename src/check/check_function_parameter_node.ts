@@ -44,7 +44,7 @@ export default function check_function_parameter_node(param: ParameterNode, stat
 	// through it. Mutation that the caller observes must go through `ref`,
 	// which forces an explicit `ref` at the call site. For a mutable scratch
 	// copy that the caller never sees, take the param read-only and declare a
-	// local `var` inside the body. (`mov`, `ref`, and `self` params set
+	// local `var` inside the body. (`move`, `ref`, and `self` params set
 	// declaration="var" too but are distinguished by is_moved / type.is_ref /
 	// is_self_param and are excluded here.)
 	if (
@@ -60,11 +60,11 @@ export default function check_function_parameter_node(param: ParameterNode, stat
 		);
 	}
 
-	// mov is for class types and owning value structs (List/Map/Buffer/… —
+	// move is for class types and owning value structs (List/Map/Buffer/… —
 	// anything whose byte-copy would double-free, so the move transfers the
 	// backing storage). Type parameters (T, U, …) are allowed since the actual
 	// type isn't known until monomorphization; when a generic is instantiated
-	// with a non-owning type, mov silently becomes a no-op.
+	// with a non-owning type, move silently becomes a no-op.
 	if (
 		param.is_moved &&
 		param.type.name &&
@@ -75,7 +75,7 @@ export default function check_function_parameter_node(param: ParameterNode, stat
 	) {
 		add_error(
 			status,
-			`mov is only allowed for class or owning struct types, not '${param.type.name}'`,
+			`move is only allowed for class or owning struct types, not '${param.type.name}'`,
 			param.start,
 		);
 	}

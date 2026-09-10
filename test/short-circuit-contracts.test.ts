@@ -36,8 +36,8 @@ func build = (out List<Item>) {
 	a.text = "one"
 	var b = Item()
 	b.text = "one"
-	xs.push(mov a)
-	xs.push(mov b)
+	xs.push(move a)
+	xs.push(move b)
 	return xs
 }
 

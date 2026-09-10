@@ -23,7 +23,7 @@ export default function parse_visibility(visibility: "pub" | "private", status: 
 	switch (next) {
 		case "const":
 		case "var":
-		case "mov":
+		case "move":
 		case "view": {
 			if (visibility === "private" && status.stack.at(-1)?.node_type === "trait") {
 				add_error(status, `Trait fields cannot be private`, get_index(status));
@@ -49,17 +49,17 @@ export default function parse_visibility(visibility: "pub" | "private", status: 
 			parse_enum(visibility, status);
 			break;
 		}
-		case "strict": {
-			// `<visibility> strict enum/bitset …` — the parse_* functions
-			// consume the visibility, then the `strict` modifier, then the
-			// kind keyword. Disambiguate on the token after `strict`.
+		case "must_use": {
+			// `<visibility> must_use enum/bitset …` — the parse_* functions
+			// consume the visibility, then the `must_use` modifier, then the
+			// kind keyword. Disambiguate on the token after `must_use`.
 			const next2 = status.tokens[status.i + 2]?.value;
 			if (next2 === "enum") {
 				parse_enum(visibility, status);
 			} else if (next2 === "bitset") {
 				parse_bitset(visibility, status);
 			} else {
-				add_error(status, `Expected enum or bitset after strict`, get_index(status));
+				add_error(status, `Expected enum or bitset after must_use`, get_index(status));
 				consume(status);
 			}
 			break;
@@ -128,7 +128,7 @@ export default function parse_visibility(visibility: "pub" | "private", status: 
 		default: {
 			add_error(
 				status,
-				`Visibility can only be set for const, var, mov, class, struct, trait or func`,
+				`Visibility can only be set for const, var, move, class, struct, trait or func`,
 				get_index(status),
 			);
 			consume(status);

@@ -67,7 +67,11 @@ test("weighted reads double-count loop bodies and see if branches", () => {
 
 test("address-take is reported for access receivers even inside branches", () => {
 	// p.field = 1  →  p's address escapes via the access target
-	const acc: any = { node_type: "access", target: ident("p"), access: undefined };
+	const acc: any = {
+		node_type: "access",
+		target: ident("p"),
+		access: undefined,
+	};
 	const asgn = new AssignmentNode(0, acc as any, ident("1"));
 	const decl: any = {
 		node_type: "declare",
@@ -76,7 +80,10 @@ test("address-take is reported for access receivers even inside branches", () =>
 		value: ident("MyPoint()"),
 	};
 
-	const report = analyze_function({ params: [], statements: [decl as BaseNode, asgn] });
+	const report = analyze_function({
+		params: [],
+		statements: [decl as BaseNode, asgn],
+	});
 
 	expect(report.variables.get("p")?.address_taken).toBe(true);
 });
@@ -93,7 +100,10 @@ test("method-call arguments count as reads and ref indices feed exclusions", () 
 		},
 	};
 
-	const report = analyze_function({ params: [], statements: [push_call as BaseNode] });
+	const report = analyze_function({
+		params: [],
+		statements: [push_call as BaseNode],
+	});
 	expect(report.variables.get("t")?.reads).toBe(1);
 	expect(report.variables.get("xs")?.address_taken).toBe(true);
 	expect(report.ref_arg_names.has("t")).toBe(true);
@@ -262,7 +272,7 @@ pub func swapper = (int q, out int) {
     var Box a = Box(0)
     var Box b = Box(1)
     a = b swap Box(q)
-    var Box d = mov a swap Box(q + 1)
+    var Box d = move a swap Box(q + 1)
     return d.value
 }
 `;
@@ -282,7 +292,7 @@ pub func swapper = (int q, out int) {
 	expect(assign!.swap).not.toBeNull();
 	expect(assign!.swap!.node.node_type).toBe("func_call");
 
-	// `var Box d = mov a swap Box(q + 1)` — the replacement rides the declare.
+	// `var Box d = move a swap Box(q + 1)` — the replacement rides the declare.
 	const decl = lowered.body.find((s) => s.kind === "declare" && s.decl.swap !== null);
 	expect(decl && decl.kind === "declare").toBe(true);
 

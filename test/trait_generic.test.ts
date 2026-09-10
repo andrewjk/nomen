@@ -115,8 +115,8 @@ struct Mouse {}
 
 if true {
 	var List<Greetable> list = List<Greetable>()
-	list.push(mov Dog())
-	list.push(mov Cat())
+	list.push(move Dog())
+	list.push(move Cat())
 }
 Console.write(" done")
 `;

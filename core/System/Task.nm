@@ -69,10 +69,10 @@ pub class Task<T> : Sendable {
 	// the full return value — including the 16-byte fat-string pair — and the
 	// trampoline writes the function's return value there before exiting.
 	// The result is MOVED OUT: the slot is zeroed as the value leaves, and
-	// `mov out T` marks the caller as the owner. Call it once; a second call
+	// `move out T` marks the caller as the owner. Call it once; a second call
 	// returns the zero value. For tasks with no return value (void
 	// functions), returns the zero value.
-	pub func result = (ref self, mov out T) {
+	pub func result = (ref self, move out T) {
 		```
 		#arch: c
 		if (self->future) {

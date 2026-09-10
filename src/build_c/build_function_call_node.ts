@@ -250,21 +250,21 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		}
 	}
 
-	// mov parameter handling: when a class-typed variable (or a hoisted
-	// temporary like `_param_N`) is passed with `mov`, ownership transfers
+	// move parameter handling: when a class-typed variable (or a hoisted
+	// temporary like `_param_N`) is passed with `move`, ownership transfers
 	// to the callee. Remove it from scoped_declarations so auto_free won't
 	// free it at scope exit (would double-free or UAF).
-	if (node.mov_param_indices) {
-		for (const idx of node.mov_param_indices) {
+	if (node.move_param_indices) {
+		for (const idx of node.move_param_indices) {
 			const param = node.params[idx];
 			if (param?.node_type === "value") {
 				const vname = (param as ValueNode).value;
 				// Search every scope frame (current + enclosing on c_scope_stack):
-				// a `mov` inside an if/loop branch must also transfer ownership
+				// a `move` inside an if/loop branch must also transfer ownership
 				// of a variable declared in an OUTER scope, or that scope's exit
 				// cleanup reclaims the value the callee now owns (double-free).
 				const decl_hit = find_decl_in_c_scopes(status, vname);
-				// A `string` arg to a `mov T` param does NOT transfer ownership:
+				// A `string` arg to a `move T` param does NOT transfer ownership:
 				// an owning `Buffer<string>` strdup's its own copy, so the caller
 				// retains and frees the original. Skip the splice (and the
 				// moved-marker) so auto_free reclaims it. Class/trait args

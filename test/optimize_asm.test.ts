@@ -43,7 +43,7 @@ describe("optimize_asm passes", () => {
 	test("keeps a branch when other code sits before the target label", () => {
 		const asm = ["_f:", "b .Lend", "mov x0, #2", ".Lend:", "ret"].join("\n");
 		const out = optimize_asm(asm);
-		// The mov is unreachable and goes away, then the branch-to-next folds.
+		// The move is unreachable and goes away, then the branch-to-next folds.
 		expect(out).toBe(["_f:", ".Lend:", "ret"].join("\n"));
 	});
 
@@ -182,6 +182,9 @@ Console.write(total.to_string())
 		// (every pass only shrinks or preserves).
 		const plain = build(parsed.root, { arch: "aarch64" });
 		expect(result.code.length).toBeLessThanOrEqual(plain.code.length);
-		await check_output("release_optimize_smoke", result, "90", { arch: "aarch64", audit: false });
+		await check_output("release_optimize_smoke", result, "90", {
+			arch: "aarch64",
+			audit: false,
+		});
 	});
 });

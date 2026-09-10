@@ -1409,7 +1409,10 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 					} else {
 						status.code += `str ${reg}, [x29, #${offset}]\n`;
 					}
-					raw_reloads.push({ reg, asm: raw_slot_reload_line(reg, offset, size) });
+					raw_reloads.push({
+						reg,
+						asm: raw_slot_reload_line(reg, offset, size),
+					});
 				} else {
 					const k = second_slot_idx - NUM_REG_ARGS;
 					status.code += `ldr x9, [x29, #${overflow_placeholder(func_label, k)}]\n`;
@@ -1459,7 +1462,10 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 							asm: `ldr ${abi_reg}, [x29, #${ref_slot}]`,
 						});
 					} else if (saved_reg) {
-						raw_reloads.push({ reg: abi_reg, asm: `mov ${abi_reg}, ${saved_reg}` });
+						raw_reloads.push({
+							reg: abi_reg,
+							asm: `mov ${abi_reg}, ${saved_reg}`,
+						});
 					}
 				}
 			}
@@ -1476,14 +1482,19 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			});
 		}
 
-		// Save mov'd class param values for cleanup at return — mirrors
-		// build_function_node's top-level prologue (a method's `mov Box b` param
+		// Save moved class param values for cleanup at return — mirrors
+		// build_function_node's top-level prologue (a method's `move Box b` param
 		// is owned by the callee and must be reclaimed at its return label).
 		// A param with a callee-saved register needs a dedicated spill slot; one
 		// that missed the callee-saved pool already lives in its own param slot.
 		const moved_param_save_slots = new Map<
 			string,
-			{ offset: number; type_name: string; type_args?: Type[]; is_nullable?: boolean }
+			{
+				offset: number;
+				type_name: string;
+				type_args?: Type[];
+				is_nullable?: boolean;
+			}
 		>();
 		for (const param of func.params) {
 			if (!param.is_moved || param.is_self_param) continue;
@@ -1542,7 +1553,9 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			// before the body builds. `self` stays excluded: the method ABI
 			// parks it in x19/x20 with its own conventions.
 			if (nir_regalloc_enabled()) {
-				seed_function_allocations(func, status, { exclude_params: new Set(["self"]) });
+				seed_function_allocations(func, status, {
+					exclude_params: new Set(["self"]),
+				});
 			}
 			// Raw `#arch: aarch64` blocks spliced by this body reload their
 			// params from the plan (an inline expansion swaps in its own and
@@ -1585,7 +1598,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 
 		status.code += `${return_label}:\n`;
 
-		// Reclaim mov'd class params at the return label (every return jumps
+		// Reclaim moved class params at the return label (every return jumps
 		// here): #destroy + field destroys, then free — skipping params moved
 		// out within the body, and params whose ownership escapes into an
 		// outliving value (stored into a container, forwarded, returned —

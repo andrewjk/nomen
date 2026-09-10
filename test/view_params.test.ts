@@ -82,7 +82,7 @@ pub func main = (Init init) {
 	var List<Item> xs = List<Item>()
 	var i0 = Item()
 	i0.text = "one"
-	xs.push(mov i0)
+	xs.push(move i0)
 	var total = 0
 	var i = 0
 	while i < xs.length {
@@ -255,7 +255,7 @@ pub func main = (Init init) {
 	var List<Item> xs = List<Item>()
 	var i0 = Item()
 	i0.text = "hello"
-	xs.push(mov i0)
+	xs.push(move i0)
 	if xs.length == 1 {
 		Console.write("r \\{text_at(xs, 0)}")
 	}
@@ -286,7 +286,7 @@ func text_at = (List<Item> xs, int i, out view string) {
 pub func main = (Init init) {
 	var List<Item> xs = List<Item>()
 	var i0 = Item()
-	xs.push(mov i0)
+	xs.push(move i0)
 	const view string v = text_at(xs, 0)
 	Console.write("l\\{v.length} \\{v.to_string()}")
 }

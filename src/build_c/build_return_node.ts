@@ -409,7 +409,7 @@ export default function build_return_node(
 				// the receiver IS self — the accessor method's own body — keep it a
 				// borrow: the caller invokes it through `.at`/`.first`, whose result
 				// `is_string_borrow` treats as non-owned (not freed), so strdup'ing
-				// would hand the caller a heap copy it never frees (a leak). `mov out
+				// would hand the caller a heap copy it never frees (a leak). `move out
 				// T` accessors (`owned_return`, e.g. `pop`) relinquish the slot and
 				// stay owned.
 				const is_container_borrow_accessor =

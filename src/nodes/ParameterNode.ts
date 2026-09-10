@@ -12,7 +12,7 @@ export default class ParameterNode extends BaseNode {
 	default_value_start?: number;
 	is_self_param?: boolean;
 	is_copied?: boolean;
-	// `is_moved` is inherited from BaseNode (a mov parameter / mov expression).
+	// `is_moved` is inherited from BaseNode (a move parameter / move expression).
 	is_ref?: boolean;
 	is_variadic?: boolean;
 	/**
@@ -37,7 +37,7 @@ export default class ParameterNode extends BaseNode {
 		type?: Type,
 		default_value?: BaseNode,
 		is_self_param?: boolean,
-		declaration?: "const" | "var" | "cp" | "mov",
+		declaration?: "const" | "var" | "cp" | "move",
 	) {
 		super("param", start);
 		this.name = name;
@@ -49,7 +49,7 @@ export default class ParameterNode extends BaseNode {
 			if (declaration === "cp") {
 				this.is_copied = true;
 			}
-			if (declaration === "mov") {
+			if (declaration === "move") {
 				this.is_moved = true;
 			}
 		}

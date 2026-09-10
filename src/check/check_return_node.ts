@@ -61,7 +61,7 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 			if (param && is_class_type(param.type.name, status) && !param.is_moved) {
 				add_error(
 					status,
-					`Cannot return class parameter '${param.name}' without 'mov' — would create shared reference`,
+					`Cannot return class parameter '${param.name}' without 'move' — would create shared reference`,
 					ret.value.start,
 				);
 			}
@@ -70,9 +70,9 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 
 	// A borrowed class reference must not be returned IMPLICITLY — it would
 	// escape the function scope and outlive the instance it points into. Use
-	// `mov` to make the escape explicit (for a borrow, the caller receives a
+	// `move` to make the escape explicit (for a borrow, the caller receives a
 	// non-owning reference — classified at the call site by the method-borrow
-	// rules) or `mov … swap …` to transfer a replacement in. The other
+	// rules) or `move … swap …` to transfer a replacement in. The other
 	// exception is a `view T` return that borrows from `self` (the receiver):
 	// a slice method hands back a non-owning borrow that the caller re-roots
 	// at the call-site receiver (see borrow_depth_of), so returning it is
@@ -86,7 +86,7 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 				: undefined;
 		if (sv?.has_view_borrows) {
 			// A struct whose `view T` fields hold borrows: its bytes carry
-			// slices of someone else's storage, and `mov` cannot transfer that
+			// slices of someone else's storage, and `move` cannot transfer that
 			// ownership (there is none). Returning is sound only when every
 			// field borrow roots at `self` — the same re-rooting convention as
 			// the direct-view case above (a method handing its receiver's
@@ -105,7 +105,7 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 			if (!safe_view_from_self && !explicit_mov) {
 				add_error(
 					status,
-					`cannot return a borrowed reference — use 'mov' (with swap) to transfer ownership`,
+					`cannot return a borrowed reference — use 'move' (with swap) to transfer ownership`,
 					ret.value.start,
 				);
 			}

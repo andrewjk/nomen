@@ -455,7 +455,7 @@ class Box {
     var int v
 }
 class Holder {
-    mov Box c
+    move Box c
 }
 func test = () {
     var Holder? h = Holder(Box(7))
@@ -483,7 +483,7 @@ Console.write("done")
 });
 
 describe("nullable classes — function parameters", () => {
-	test("pass nullable var to nullable non-mov param", () => {
+	test("pass nullable var to nullable non-move param", () => {
 		const input = `
 class Box {
     var int v
@@ -502,12 +502,12 @@ take(a)
 		expect(parsed.errors).toEqual([]);
 	});
 
-	test("pass nullable var to nullable mov param", () => {
+	test("pass nullable var to nullable move param", () => {
 		const input = `
 class Box {
     var int v
 }
-func take = (mov Box? x) {
+func take = (move Box? x) {
     if x != null {
         Console.write("non")
     } else {
@@ -515,13 +515,13 @@ func take = (mov Box? x) {
     }
 }
 var Box? a = null
-take(mov a)
+take(move a)
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
 	});
 
-	test("pass null literal to nullable non-mov param", () => {
+	test("pass null literal to nullable non-move param", () => {
 		const input = `
 class Box {
     var int v
@@ -616,12 +616,12 @@ class Box {
     var int v
 }
 class Holder {
-    mov Box c
+    move Box c
 }
 func test = () {
-    var Holder? h = Holder(mov Box(7))
+    var Holder? h = Holder(move Box(7))
     h = null
-    h = Holder(mov Box(8))
+    h = Holder(move Box(8))
     h = null
 }
 test()
@@ -630,19 +630,19 @@ Console.write("done")
 		await build_and_check_output(input, "nullable_field_owner_reassign", "done");
 	});
 
-	test("pass non-null nullable var to mov param — freed exactly once", async () => {
+	test("pass non-null nullable var to move param — freed exactly once", async () => {
 		const input = `
 class Box {
     var int v
 }
-func take = (mov Box? x) {
+func take = (move Box? x) {
     if x != null {
         Console.write_line("\\{x.v}")
     }
 }
 func test = () {
     var Box? a = Box(5)
-    take(mov a)
+    take(move a)
 }
 test()
 Console.write("done")
@@ -650,19 +650,19 @@ Console.write("done")
 		await build_and_check_output(input, "nullable_mov_nonnull", "5\ndone");
 	});
 
-	test("pass null nullable var to mov param — no free, no crash", async () => {
+	test("pass null nullable var to move param — no free, no crash", async () => {
 		const input = `
 class Box {
     var int v
 }
-func take = (mov Box? x) {
+func take = (move Box? x) {
     if x == null {
         Console.write_line("null")
     }
 }
 func test = () {
     var Box? a = null
-    take(mov a)
+    take(move a)
 }
 test()
 Console.write("done")
@@ -679,10 +679,10 @@ class Box {
     }
 }
 class Holder {
-    mov Box c
+    move Box c
 }
 func test = () {
-    var Holder? h = Holder(mov Box(7))
+    var Holder? h = Holder(move Box(7))
 }
 test()
 Console.write("done")
@@ -716,11 +716,11 @@ describe("nullable classes — move semantics and fields", () => {
 class Box {
     var int v
 }
-func take = (mov Box? x) {
+func take = (move Box? x) {
 }
 func test = () {
     var Box? a = Box(1)
-    take(mov a)
+    take(move a)
     a = null
 }
 test()
@@ -734,11 +734,11 @@ Console.write("done")
 class Box {
     var int v
 }
-func take = (mov Box? x) {
+func take = (move Box? x) {
 }
 func test = () {
     var Box? a = Box(1)
-    take(mov a)
+    take(move a)
     a = Box(2)
 }
 test()
@@ -747,7 +747,7 @@ Console.write("done")
 		await build_and_check_output(input, "nullable_mov_then_new", "done");
 	});
 
-	test("nullable class field (mov) freed at scope exit when null", async () => {
+	test("nullable class field (move) freed at scope exit when null", async () => {
 		const input = `
 class Box {
     var int v
@@ -756,10 +756,10 @@ class Box {
     }
 }
 class Holder {
-    mov Box? maybe
+    move Box? maybe
 }
 func test = () {
-    var Holder h = Holder(mov null)
+    var Holder h = Holder(move null)
 }
 test()
 Console.write("done")
@@ -767,7 +767,7 @@ Console.write("done")
 		await build_and_check_output(input, "nullable_field_null", "done");
 	});
 
-	test("nullable class field (mov) freed at scope exit when non-null", async () => {
+	test("nullable class field (move) freed at scope exit when non-null", async () => {
 		const input = `
 class Box {
     var int v
@@ -776,10 +776,10 @@ class Box {
     }
 }
 class Holder {
-    mov Box? maybe
+    move Box? maybe
 }
 func test = () {
-    var Holder h = Holder(mov Box(7))
+    var Holder h = Holder(move Box(7))
 }
 test()
 Console.write("done")
@@ -837,10 +837,10 @@ class Box {
     }
 }
 class Holder {
-    mov Box? maybe
+    move Box? maybe
 }
 func test = () {
-    var Holder h = Holder(mov null)
+    var Holder h = Holder(move null)
     h.maybe = Box(5)
 }
 test()
@@ -858,10 +858,10 @@ class Box {
     }
 }
 class Holder {
-    mov Box? maybe
+    move Box? maybe
 }
 func test = () {
-    var Holder h = Holder(mov Box(5))
+    var Holder h = Holder(move Box(5))
     h.maybe = null
 }
 test()

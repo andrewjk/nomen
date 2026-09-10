@@ -72,7 +72,7 @@ export function classify_param(
 	// Pointer rules:
 	//   - struct / trait params: by reference
 	//   - `ref` / array params: by pointer (modifications propagate)
-	//   - `mov` on a SIMPLE type is by-value (the parser normalizes mov to
+	//   - `move` on a SIMPLE type is by-value (the parser normalizes move to
 	//     var+is_moved; for simple types that pointer is meaningless)
 	//   - `var` on a SIMPLE type is by-value too: the callee gets a mutable
 	//     local copy. Modifying it does not propagate to the caller (the
@@ -84,5 +84,13 @@ export function classify_param(
 		type.is_array ||
 		(!is_simple && flags.declaration === "var");
 	const is_ref_class = !!flags.is_ref && is_class && !flags.is_self;
-	return { struct, trait, is_struct, is_simple, is_class, is_ref_class, wants_pointer };
+	return {
+		struct,
+		trait,
+		is_struct,
+		is_simple,
+		is_class,
+		is_ref_class,
+		wants_pointer,
+	};
 }

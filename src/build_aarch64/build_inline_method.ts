@@ -144,7 +144,7 @@ export default function build_inline_method(
 	// registers `build_access_node` already loaded the args into. The general
 	// inline path below would needlessly shuffle each param into a callee-saved
 	// register (x19/x20/…) that the raw body never reads, adding a
-	// save/mov/restore triple per parameter. `build_naked_inline` just emits
+	// save/move/restore triple per parameter. `build_naked_inline` just emits
 	// the raw asm verbatim (with an x19→x0 rewrite when the body references
 	// self), so prefer it for every raw-only inline func regardless of whether
 	// it has a self parameter.
@@ -290,14 +290,20 @@ export default function build_inline_method(
 			status.code += `mov ${saved_reg}, ${param_regs[i]}\n`;
 			status.function_param_regs.set(param.name, saved_reg);
 			if (i < param_regs.length) {
-				inline_reloads.push({ reg: param_regs[i], asm: `mov ${param_regs[i]}, ${saved_reg}` });
+				inline_reloads.push({
+					reg: param_regs[i],
+					asm: `mov ${param_regs[i]}, ${saved_reg}`,
+				});
 			}
 		} else if (!is_struct_type) {
 			if (param.type.is_ref || callee_idx >= callee_saved.length) {
 				status.code += `str ${param_regs[i]}, [sp, #-16]!\n`;
 				saved_stack_slots.push(param.name);
 				if (i < param_regs.length) {
-					inline_push_slots.push({ reg: param_regs[i], push_index: inline_push_count });
+					inline_push_slots.push({
+						reg: param_regs[i],
+						push_index: inline_push_count,
+					});
 				}
 				inline_push_count++;
 			} else {
@@ -309,7 +315,10 @@ export default function build_inline_method(
 				status.code += `mov ${saved_reg}, ${param_regs[i]}\n`;
 				status.function_param_regs.set(param.name, saved_reg);
 				if (i < param_regs.length) {
-					inline_reloads.push({ reg: param_regs[i], asm: `mov ${param_regs[i]}, ${saved_reg}` });
+					inline_reloads.push({
+						reg: param_regs[i],
+						asm: `mov ${param_regs[i]}, ${saved_reg}`,
+					});
 				}
 			}
 		}
@@ -534,14 +543,20 @@ export function build_inline_function(func: FunctionNode, status: BuildStatus) {
 			status.code += `mov ${saved_reg}, ${param_regs[i]}\n`;
 			status.function_param_regs.set(param.name, saved_reg);
 			if (i < param_regs.length) {
-				inline_reloads.push({ reg: param_regs[i], asm: `mov ${param_regs[i]}, ${saved_reg}` });
+				inline_reloads.push({
+					reg: param_regs[i],
+					asm: `mov ${param_regs[i]}, ${saved_reg}`,
+				});
 			}
 		} else if (!is_struct_type) {
 			if (param.type.is_ref || callee_idx >= callee_saved.length) {
 				status.code += `str ${param_regs[i]}, [sp, #-16]!\n`;
 				saved_stack_slots.push(param.name);
 				if (i < param_regs.length) {
-					inline_push_slots.push({ reg: param_regs[i], push_index: inline_push_count });
+					inline_push_slots.push({
+						reg: param_regs[i],
+						push_index: inline_push_count,
+					});
 				}
 				inline_push_count++;
 			} else {
@@ -551,7 +566,10 @@ export function build_inline_function(func: FunctionNode, status: BuildStatus) {
 				status.code += `mov ${saved_reg}, ${param_regs[i]}\n`;
 				status.function_param_regs.set(param.name, saved_reg);
 				if (i < param_regs.length) {
-					inline_reloads.push({ reg: param_regs[i], asm: `mov ${param_regs[i]}, ${saved_reg}` });
+					inline_reloads.push({
+						reg: param_regs[i],
+						asm: `mov ${param_regs[i]}, ${saved_reg}`,
+					});
 				}
 			}
 		}

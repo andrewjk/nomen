@@ -23,8 +23,8 @@ export function leave_c_scope(status: BuildStatus) {
 /**
  * Find a declaration by name in the active scope frame or any enclosing frame
  * on c_scope_stack (innermost frame first, so a shadowing inner declaration
- * wins). Returns the owning frame and the declaration's index, so a mov site
- * can resolve and splice a declaration living in an OUTER scope — a `mov`
+ * wins). Returns the owning frame and the declaration's index, so a move site
+ * can resolve and splice a declaration living in an OUTER scope — a `move`
  * inside an if/loop branch must still transfer ownership of variables
  * declared before the branch (mirrors aarch64's all_scope_frames).
  */
@@ -44,7 +44,7 @@ export function find_decl_in_c_scopes(
 /**
  * Splice a declaration out of whichever scope frame holds it (the current
  * frame or an enclosing frame on c_scope_stack). Used at ownership-transfer
- * sites (`mov` args, alias moves) — without this, a declaration left in an
+ * sites (`move` args, alias moves) — without this, a declaration left in an
  * outer frame is reclaimed by that scope's exit cleanup even though the
  * callee/new owner now owns the value (latent double-free).
  */

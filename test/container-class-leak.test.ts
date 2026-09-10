@@ -21,7 +21,7 @@ describe("container-stored class leak", () => {
 class Animal { var char letter }
 if true {
 	var List<Animal> list = List<Animal>()
-	list.push(mov Animal('Z'))
+	list.push(move Animal('Z'))
 }
 Console.write("done\\n")
 `;
@@ -33,7 +33,7 @@ Console.write("done\\n")
 class Animal { var char letter }
 if true {
 	var LinkedList<Animal> list = LinkedList<Animal>()
-	list.add(mov Animal('Z'))
+	list.add(move Animal('Z'))
 }
 Console.write("done\\n")
 `;
@@ -45,7 +45,7 @@ Console.write("done\\n")
 class Animal { var char letter }
 if true {
 	var Tree<Animal> t = Tree<Animal>()
-	t.add(mov Animal('Z'))
+	t.add(move Animal('Z'))
 }
 Console.write("done\\n")
 `;
@@ -57,7 +57,7 @@ Console.write("done\\n")
 class Animal { var char letter }
 if true {
 	var Graph<Animal> g = Graph<Animal>()
-	g.add_node(mov Animal('Z'))
+	g.add_node(move Animal('Z'))
 }
 Console.write("done\\n")
 `;

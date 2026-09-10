@@ -542,7 +542,7 @@ class Box {
     var int value
 }
 class Holder {
-    mov Box content
+    move Box content
 }
 func run_swap_var = (out int) {
     var Box a = Box(1)
@@ -551,8 +551,8 @@ func run_swap_var = (out int) {
     return a.value * 10 + b.value
 }
 func run_swap_field = (out int) {
-    var Holder h1 = Holder(mov Box(1))
-    var Holder h2 = Holder(mov Box(2))
+    var Holder h1 = Holder(move Box(1))
+    var Holder h2 = Holder(move Box(2))
     h1.content = h2.content swap Box(99)
     return h1.content.value * 100 + h2.content.value
 }
@@ -563,7 +563,7 @@ Console.write("\\{run_swap_var()} \\{run_swap_field()}")
 });
 
 test("declaration swaps marshal through the C NIR seam byte-identically", () => {
-	// `var Pt c = mov w.pt swap <rep>` — the value-struct declaration path's
+	// `var Pt c = move w.pt swap <rep>` — the value-struct declaration path's
 	// swap replacement rides the seam too (the moved-out field is revalidated
 	// with the replacement after the bytes transfer to the local).
 	expect_byte_identical(
@@ -579,7 +579,7 @@ struct Wrap {
 }
 func run_decl = (out int) {
     var Wrap w = Wrap(Pt(4, 4))
-    var Pt c = mov w.pt swap Pt(5, 5)
+    var Pt c = move w.pt swap Pt(5, 5)
     return c.x * 10 + w.pt.x
 }
 Console.write("\\{run_decl()}")
@@ -684,7 +684,7 @@ test("C binaries built through the expression seam run correctly", async () => {
 	// Behavioral belt-and-braces for the expression-seam tranche: base 10 →
 	// bump → 11 → +=2 → 13; ratio 0.5+0.25 → 0.750000; greeting "hi there" +
 	// "!"; c.count 10+4=14; c.label "set"; nums[0]=9, nums[1]=13; a = b swap
-	// 99 → a=2 (b's old value), b=99; var Pt c = mov w.pt swap Pt(5,5) →
+	// 99 → a=2 (b's old value), b=99; var Pt c = move w.pt swap Pt(5,5) →
 	// c.x=4, w.pt.x=5 → 45. (Console.write adds no newline.)
 	const { default: build_and_check_output } = await import("./build_and_check_output");
 	await build_and_check_output(
@@ -719,7 +719,7 @@ func run_swap = (out int) {
 
 func run_decl_swap = (out int) {
     var Wrap w = Wrap(Pt(4, 4))
-    var Pt c = mov w.pt swap Pt(5, 5)
+    var Pt c = move w.pt swap Pt(5, 5)
     return c.x * 10 + w.pt.x
 }
 

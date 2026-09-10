@@ -324,7 +324,7 @@ Console.write("\\{nums.at(2)}")
 class Animal { var char letter }
 if true {
 	var List<Animal> list = List<Animal>()
-	list.push(mov Animal('A'))
+	list.push(move Animal('A'))
 	var Animal a = list.pop()
 	Console.write("\\{a.letter}")
 }
@@ -336,13 +336,13 @@ Console.write("done\\n")
 	// A struct that transitively owns heap resources (here List, via its Buffer
 	// field) cannot be byte-copied from another variable — both copies would
 	// free the same backing data (double-free). This is rejected at compile
-	// time; copy with .copy() or transfer ownership with mov.
+	// time; copy with .copy() or transfer ownership with move.
 	test("struct copy of a container shares the buffer (rejected)", () => {
 		const input = `
 class Animal { var char letter }
 if true {
 	var List<Animal> a = List<Animal>()
-	a.push(mov Animal('A'))
+	a.push(move Animal('A'))
 	var List<Animal> b = a
 }
 Console.write("done\\n")
@@ -405,7 +405,7 @@ class Box {
 }
 
 var List<Box> list = List<Box>()
-list.push(mov Box(1))
+list.push(move Box(1))
 list.pop()
 Console.write("done")
 `;

@@ -5,7 +5,7 @@ import check_output from "./check_output";
 import parse_with_imports from "./parse_with_imports";
 
 // Regression tests for the FOLLOWUP.md "Latent ownership-tracking holes":
-// value-struct methods overwriting caller-tracked string fields, and mov
+// value-struct methods overwriting caller-tracked string fields, and move
 // sites only splicing the current scope frame.
 
 async function build_and_run(input: string, name: string, expected: string, audit = false) {
@@ -87,24 +87,24 @@ Console.write("\\{p.name}")
 	await build_and_run(input, "self_write_delegated", "Cat");
 });
 
-// A `mov` call inside an if branch with the variable declared in the outer
-// scope: the C backend's mov-site splice only searched the current frame, so
+// A `move` call inside an if branch with the variable declared in the outer
+// scope: the C backend's move-site splice only searched the current frame, so
 // the outer scope-exit cleanup freed the instance the callee already owned
 // (double-free).
-test("mov of outer-scope variable inside if branch", async () => {
+test("move of outer-scope variable inside if branch", async () => {
 	const input = `
 class Box {
   var int v = 0
 }
 
-func consume = (mov Box b, out int) {
+func consume = (move Box b, out int) {
   return b.v
 }
 
 var Box b = Box()
 b.v = 7
 if b.v > 0 {
-  var int got = consume(mov b)
+  var int got = consume(move b)
   Console.write("\\{got}")
 }
 Console.write("done")
@@ -112,8 +112,8 @@ Console.write("done")
 	await build_and_run(input, "mov_outer_scope_if_branch", "7done", true);
 });
 
-// Same hole on the method-call mov path (build_access_node).
-test("method-call mov of outer-scope variable inside if branch", async () => {
+// Same hole on the method-call move path (build_access_node).
+test("method-call move of outer-scope variable inside if branch", async () => {
 	const input = `
 class Box {
   var int v = 0
@@ -122,7 +122,7 @@ class Box {
 struct Collector {
   var int total = 0
 
-  func take = (ref self, mov Box b) {
+  func take = (ref self, move Box b) {
     self.total = self.total + b.v
   }
 }
@@ -131,7 +131,7 @@ var Box b = Box()
 b.v = 7
 var Collector c = Collector()
 if b.v > 0 {
-  c.take(mov b)
+  c.take(move b)
 }
 Console.write("\\{c.total}")
 `;

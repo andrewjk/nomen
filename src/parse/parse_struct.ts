@@ -64,7 +64,7 @@ export default function parse_struct(
 				.filter((f) => f.visibility !== "private" && !f.value)
 				.map((f) => {
 					const param = new ParameterNode(-1, f.name, f.type);
-					if (f.declaration === "mov") {
+					if (f.declaration === "move") {
 						param.is_moved = true;
 					}
 					param.constraint = f.constraint;

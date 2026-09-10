@@ -1,8 +1,8 @@
 import System
 
 class TreeNode {
-	mov TreeNode? left = null
-	mov TreeNode? right = null
+	move TreeNode? left = null
+	move TreeNode? right = null
 }
 
 func create_tree = (int depth, out TreeNode) {

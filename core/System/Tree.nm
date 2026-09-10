@@ -13,7 +13,7 @@ pub struct Tree<T>: Enumerable {
 	var parents = Buffer<int>()
 	var count = 0
 
-	pub func add = (ref self, mov T value) {
+	pub func add = (ref self, move T value) {
 		const int idx = self.count
 		self.values.grow_int(idx + 1)
 		const int v = value

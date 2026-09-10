@@ -7,19 +7,19 @@ import parse_with_imports from "./parse_with_imports";
 // a function return) are now lifetime-checked: a borrow defaults to staying in
 // the scope it was taken in, and escaping it (assigning to an outer-scope
 // variable, or returning it) is rejected at compile time. To extract ownership
-// the user must use `mov` (with swap).
+// the user must use `move` (with swap).
 
 describe("borrow-escape rejection (caught at compile time)", () => {
-	test("direct field-access assignment requires mov/swap", () => {
+	test("direct field-access assignment requires move/swap", () => {
 		const input = `
 class Box { var int v }
-class Holder { mov Box c }
-var Holder h = Holder(mov Box(1))
+class Holder { move Box c }
+var Holder h = Holder(move Box(1))
 var Box b = Box(0)
 b = h.c
 `;
 		const parsed = parse_with_imports(input);
-		expect(parsed.errors.some((e) => e.message.includes("use mov with swap"))).toBe(true);
+		expect(parsed.errors.some((e) => e.message.includes("use move with swap"))).toBe(true);
 	});
 
 	test("borrowed field via intermediate variable cannot escape its scope", () => {
@@ -28,12 +28,12 @@ b = h.c
 		const input = `
 class Box { var int v }
 class Pair {
-    mov Box a
-    mov Box b
+    move Box a
+    move Box b
 }
 var Box stolen = Box(0)
 if true {
-    var Pair p = Pair(mov Box(1), mov Box(2))
+    var Pair p = Pair(move Box(1), move Box(2))
     var Box tmp = p.a
     stolen = tmp
 }
@@ -45,17 +45,17 @@ Console.write("\\{stolen.v}\\n")
 
 	test("returning a borrowed field is rejected", () => {
 		// getc returns h.c (a borrow); the caller could keep it past h's
-		// lifetime. Rejected — use mov to transfer ownership.
+		// lifetime. Rejected — use move to transfer ownership.
 		const input = `
 class Box { var int v }
-class Holder { mov Box c }
+class Holder { move Box c }
 func getc = (ref Holder h, out Box) {
     return h.c
 }
 pub func main = () {
     var Box b = Box(0)
     if true {
-        var Holder h = Holder(mov Box(5))
+        var Holder h = Holder(move Box(5))
         b = getc(ref h)
     }
     Console.write("\\{b.v}\\n")
@@ -69,8 +69,8 @@ pub func main = () {
 		// `b` borrows h.c and is used within the same scope — fine.
 		const input = `
 class Box { var int v }
-class Holder { mov Box c }
-var Holder h = Holder(mov Box(1))
+class Holder { move Box c }
+var Holder h = Holder(move Box(1))
 var Box b = h.c
 Console.write("\\{b.v}\\n")
 `;
@@ -81,14 +81,14 @@ Console.write("\\{b.v}\\n")
 	test("container element borrow cannot escape the container's scope", () => {
 		// `cur` borrows a pointer the list exposes via .at(); assigning it to the
 		// outer `cur` would outlive the list. Rejected (instance method return
-		// is treated as a borrow of the receiver). (`.pop()` is now `mov out T` —
+		// is treated as a borrow of the receiver). (`.pop()` is now `move out T` —
 		// an owned return — so it can escape freely; `.at()` is the borrow case.)
 		const input = `
 class Animal { var char letter }
 var Animal cur
 if true {
     var List<Animal> list = List<Animal>()
-    list.push(mov Animal('Z'))
+    list.push(move Animal('Z'))
     if list.length > 0 {
         cur = list.at(0)
     }
@@ -128,10 +128,10 @@ describe("deferred reclamation across owner reassignment", () => {
 	test("borrowed reference kept valid across owner reassignment", async () => {
 		const input = `
 class Box { var int v }
-class Holder { mov Box c }
-var Holder h = Holder(mov Box(1))
+class Holder { move Box c }
+var Holder h = Holder(move Box(1))
 var Box b = h.c
-h = Holder(mov Box(2))
+h = Holder(move Box(2))
 Console.write("\\{b.v}\\n")
 `;
 		await build_and_check_output(input, "defer_reassign_borrow", "1\n");
@@ -140,12 +140,12 @@ Console.write("\\{b.v}\\n")
 	test("class reassignment inside a loop keeps the live instance", async () => {
 		const input = `
 class Box { var int v }
-class Holder { mov Box c }
-var Holder h = Holder(mov Box(0))
+class Holder { move Box c }
+var Holder h = Holder(move Box(0))
 var int i = 1
 while i <= 5 {
     var Box tmp = Box(i)
-    h = Holder(mov tmp)
+    h = Holder(move tmp)
     i = i + 1
 }
 Console.write("\\{h.c.v}\\n")
@@ -160,8 +160,8 @@ Console.write("\\{h.c.v}\\n")
 // Copying an owning struct out of a field (`var Own x = obj.field`) duplicates
 // the backing pointer, so both the copy and the owner would free the same data
 // (double-free). This is now caught: the copy is rejected unless the field is
-// moved out with `mov` AND a `swap` that revalidates it
-// (`var Own x = mov obj.field swap <replacement>`). The `swap` is mandatory for
+// moved out with `move` AND a `swap` that revalidates it
+// (`var Own x = move obj.field swap <replacement>`). The `swap` is mandatory for
 // a field move because a field cannot be left holding a moved-out value -- the
 // replacement is stored back in so the owner never destroys a moved field. (The
 // `Map`/`Set` `rehash` functions use exactly this idiom.)
@@ -196,14 +196,14 @@ func take = (ref Holder h) {
 		);
 	});
 
-	test("mov out of a field without a swap is rejected", () => {
-		// `mov` alone would leave the field holding a moved-out (invalid) value.
+	test("move out of a field without a swap is rejected", () => {
+		// `move` alone would leave the field holding a moved-out (invalid) value.
 		const input = `
 struct Holder {
 	var Buffer<int> buf = Buffer<int>()
 }
 func take = (ref Holder h) {
-	var Buffer<int> leak = mov h.buf
+	var Buffer<int> leak = move h.buf
 }
 `;
 		const parsed = parse_with_imports(input);
@@ -212,13 +212,13 @@ func take = (ref Holder h) {
 		);
 	});
 
-	test("mov out of a field with a swap is allowed", () => {
+	test("move out of a field with a swap is allowed", () => {
 		const input = `
 struct Holder {
 	var Buffer<int> buf = Buffer<int>()
 }
 func take = (ref Holder h) {
-	var Buffer<int> old = mov h.buf swap Buffer<int>()
+	var Buffer<int> old = move h.buf swap Buffer<int>()
 }
 `;
 		const parsed = parse_with_imports(input);
@@ -226,7 +226,7 @@ func take = (ref Holder h) {
 	});
 });
 
-// `mov` transfers ownership, so the source is invalidated and may not be used
+// `move` transfers ownership, so the source is invalidated and may not be used
 // again until it is reassigned (or revalidated by a swap). This is enforced at
 // compile time: a moved variable read afterward is a "used after move" error.
 describe("use-after-move", () => {
@@ -234,7 +234,7 @@ describe("use-after-move", () => {
 		const input = `
 var List<int> a = List<int>()
 a.push(1)
-var List<int> b = mov a
+var List<int> b = move a
 a.push(2)
 `;
 		const parsed = parse_with_imports(input);
@@ -247,7 +247,7 @@ a.push(2)
 		const input = `
 var List<int> a = List<int>()
 a.push(1)
-var List<int> b = mov a
+var List<int> b = move a
 a = List<int>()
 a.push(2)
 `;
@@ -256,7 +256,7 @@ a.push(2)
 	});
 });
 
-// `b = mov a swap <replacement>` swaps an owning struct variable out: b takes
+// `b = move a swap <replacement>` swaps an owning struct variable out: b takes
 // a's value, and the replacement is struct-copied back into a (which is then
 // un-marked moved, so it is destroyed normally). This mirrors the field-swap
 // path used by Map/Set rehash.
@@ -266,7 +266,7 @@ describe("owning-struct variable swap", () => {
 var List<int> a = List<int>()
 a.push(1)
 var List<int> b = List<int>()
-b = mov a swap List<int>()
+b = move a swap List<int>()
 const int v = b.pop()
 Console.write("\\{v}")
 `;

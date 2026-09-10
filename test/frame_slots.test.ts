@@ -41,7 +41,7 @@ describe("frame-slot optimization", () => {
 			),
 		);
 		// The store must execute while x1 still holds 1 — emitting it after
-		// the mov would store 2.
+		// the move would store 2.
 		const store_idx = out.findIndex((l) => l === "str x1, [x29, #40]");
 		const redef_idx = out.findIndex((l) => l === "mov x1, #2");
 		expect(store_idx).toBeGreaterThan(-1);

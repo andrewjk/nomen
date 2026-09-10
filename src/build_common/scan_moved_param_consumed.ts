@@ -2,7 +2,7 @@ import BaseNode from "../nodes/BaseNode.ts";
 import type FunctionNode from "../nodes/FunctionNode.ts";
 
 /**
- * Whether a `mov` class parameter's ownership escapes the function body —
+ * Whether a `move` class parameter's ownership escapes the function body —
  * i.e. it is passed (as an argument or receiver) into some call/constructor
  * whose result may outlive the function (stored into a returned
  * container/struct), or it is a bare value used as an argument. In those cases
@@ -11,7 +11,7 @@ import type FunctionNode from "../nodes/FunctionNode.ts";
  * (e.g. field access `x.value` or interpolation) does NOT consume it.
  *
  * Shared by the C backend's function epilogue and the aarch64 function /
- * method mov-param reclaims so both agree on when a mov'd param is reclaimed.
+ * method move-param reclaims so both agree on when a moved param is reclaimed.
  */
 export function moved_param_is_consumed(root: FunctionNode, name: string): boolean {
 	let consumed = false;

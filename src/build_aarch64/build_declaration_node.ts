@@ -949,8 +949,8 @@ export default function build_declaration_node(
 					emit_var_load(status, "x0", node.name, 8);
 					status.code += `bl ${func_call.name}_init\n`;
 					if (outgoing > 0) status.code += `add sp, sp, #${outgoing}\n`;
-					if (func_call.mov_param_indices?.length) {
-						for (const idx of func_call.mov_param_indices) {
+					if (func_call.move_param_indices?.length) {
+						for (const idx of func_call.move_param_indices) {
 							mark_moved_if_struct(func_call.params[idx], status);
 						}
 					}
@@ -989,8 +989,8 @@ export default function build_declaration_node(
 				emit_var_address(status, "x0", node.name);
 				status.code += `bl ${func_call.name}_init\n`;
 				if (outgoing > 0) status.code += `add sp, sp, #${outgoing}\n`;
-				if (func_call.mov_param_indices?.length) {
-					for (const idx of func_call.mov_param_indices) {
+				if (func_call.move_param_indices?.length) {
+					for (const idx of func_call.move_param_indices) {
 						mark_moved_if_struct(func_call.params[idx], status);
 					}
 				}
@@ -1019,7 +1019,7 @@ export default function build_declaration_node(
 	// class pointer, so dispatch works once the local is tracked in
 	// trait_class_locals (build_access_node dereferences [&local] to
 	// reach the instance whose vtable lives at offset 0). Ownership
-	// follows the callee's return convention: a `mov out T` method
+	// follows the callee's return convention: a `move out T` method
 	// (`owned_return`, e.g. `list.pop()`) transfers ownership (anchor
 	// for destroy + free at scope exit via the trait's `<Trait>_destroy`
 	// shim); a plain borrow (e.g. `.at(i)`) does not (the container
@@ -1055,8 +1055,8 @@ export default function build_declaration_node(
 	// class-variable copy (`var Box q = p`), or a NON-owning method call
 	// (`const Diff d = diffs.at(di)` — the container owns the element);
 	// borrowed decls would otherwise be destroyed alongside their owner,
-	// double-freeing / corrupting shared state. `mov p` (ownership transfer),
-	// `null`, and an `owned_return` method (`mov out T`, e.g. `list.pop()`)
+	// double-freeing / corrupting shared state. `move p` (ownership transfer),
+	// `null`, and an `owned_return` method (`move out T`, e.g. `list.pop()`)
 	// stay owned. Mirrors the C backend's val_is_class_alias rule.
 	const value_is_field_borrow =
 		node.value?.node_type === "access" &&
@@ -1071,7 +1071,7 @@ export default function build_declaration_node(
 		!((node.value as AccessNode).access as AccessFunctionCallNode).owned_return;
 	// A plain FUNCTION call returning a class may also hand back a borrowed
 	// reference (`func box_at = (... out Box) { var Box got = xs.at(j);
-	// return mov got }` — the container owns the element). Scan-determined
+	// return move got }` — the container owns the element). Scan-determined
 	// per callee (scan_borrow_returns); such decls are not destroy-tracked.
 	const value_is_borrowing_call =
 		node.value?.node_type === "func_call" &&
@@ -1113,13 +1113,13 @@ export default function build_declaration_node(
 			status.alias_owns_flag?.set(node.name, flag_offset);
 		}
 	}
-	// A value-struct declaration initialized from a non-`mov` FIELD ACCESS
+	// A value-struct declaration initialized from a non-`move` FIELD ACCESS
 	// (`diff.changes`, `obj.span` — including the checker-hoisted `_param_N`
 	// temp for a struct call argument) is a shallow borrow: the struct bytes
 	// are copied but the embedded buffer's data belongs to the owner. It must
 	// NOT be destroy-tracked — destroying it would free the owner's buffer
 	// (double-free once the owner is destroyed). Mirrors the C backend's
-	// is_destructured_field_access rule in build_auto_free. A `mov` field
+	// is_destructured_field_access rule in build_auto_free. A `move` field
 	// access transfers ownership and stays tracked.
 	if (
 		!is_borrowed_class_ref &&
@@ -1738,7 +1738,7 @@ export default function build_declaration_node(
 					status.code += `mov x0, #${struct_size}\n`;
 					emit_malloc(status);
 					// Anchor the instance so it's freed at scope exit. For
-					// argument temporaries (_param_N) passed via `mov`, the
+					// argument temporaries (_param_N) passed via `move`, the
 					// callee takes ownership and mark_moved_if_struct adds
 					// them to status.moved — the cleanup paths (both decl
 					// and heap_slots) skip moved vars, so no double-free.
@@ -1749,8 +1749,8 @@ export default function build_declaration_node(
 					emit_var_load(status, "x0", node.name, 8);
 					status.code += `bl ${func_call.name}_init\n`;
 					if (outgoing > 0) status.code += `add sp, sp, #${outgoing}\n`;
-					if (func_call.mov_param_indices?.length) {
-						for (const idx of func_call.mov_param_indices) {
+					if (func_call.move_param_indices?.length) {
+						for (const idx of func_call.move_param_indices) {
 							mark_moved_if_struct(func_call.params[idx], status);
 						}
 					}
@@ -1791,7 +1791,7 @@ export default function build_declaration_node(
 						status.code += "\n";
 					}
 				}
-				// A `mov out` method (e.g. List.pop) transfers ownership of its
+				// A `move out` method (e.g. List.pop) transfers ownership of its
 				// result to this variable — anchor it so it's freed at scope
 				// exit, otherwise the relinquished instance leaks.
 				if (
@@ -1870,8 +1870,8 @@ export default function build_declaration_node(
 					emit_var_address(status, "x0", node.name);
 					status.code += `bl ${func_call.name}_init\n`;
 					if (outgoing > 0) status.code += `add sp, sp, #${outgoing}\n`;
-					if (func_call.mov_param_indices?.length) {
-						for (const idx of func_call.mov_param_indices) {
+					if (func_call.move_param_indices?.length) {
+						for (const idx of func_call.move_param_indices) {
 							mark_moved_if_struct(func_call.params[idx], status);
 						}
 					}
@@ -1927,13 +1927,13 @@ export default function build_declaration_node(
 					status.code += `ldr x3, [x1, #${i * 8}]\n`;
 					status.code += `str x3, [x2, #${i * 8}]\n`;
 				}
-				// `var X b = mov a`: the bytes are copied into b, then the source is
+				// `var X b = move a`: the bytes are copied into b, then the source is
 				// marked moved so it is not destroyed at scope exit (b is now the sole
 				// owner). Without this, both a and b would free the same backing data.
 				if (node.value.is_moved) {
 					mark_moved_if_struct(node.value, status);
 				}
-				// `var X b = mov obj.field swap <rep>`: the field's bytes were copied
+				// `var X b = move obj.field swap <rep>`: the field's bytes were copied
 				// into b above; now struct-copy the replacement back into the moved-out
 				// field to revalidate it (so the owner never destroys a moved field).
 				if (node.swap && node.value.node_type === "access") {

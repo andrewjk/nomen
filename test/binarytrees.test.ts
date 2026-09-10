@@ -3,7 +3,7 @@ import { describe, test } from "vite-plus/test";
 import build_and_check_output from "./build_and_check_output";
 
 // Mirrors the binarytrees benchmark using the arena Tree (single flat Buffer +
-// int child indices) instead of `mov`-owned node pointers. Same shape of work
+// int child indices) instead of `move`-owned node pointers. Same shape of work
 // -- recursively build a tree, traverse/count it, and bulk create/destroy --
 // but with one owner so there is nothing to leak.
 

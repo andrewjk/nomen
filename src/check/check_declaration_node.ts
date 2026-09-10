@@ -36,7 +36,7 @@ import {
 
 export default function check_declaration_node(decl: DeclarationNode, status: CheckStatus) {
 	// A bare `_` binding is the deliberate-discard convention (`var _ = f()`,
-	// notably for strict enums). Several may appear in one scope, so give each
+	// notably for must_use enums). Several may appear in one scope, so give each
 	// a unique internal name: the C backend would otherwise emit duplicate
 	// `_` locals and the aarch64 backend would key both slots under one
 	// stack_offsets entry. The `_` prefix keeps the unused-value warning
@@ -51,8 +51,8 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 	const is_view_keyword = decl.declaration === "view";
 	// Narrowed, view-free declaration kind for the StackValue and backends.
 	// The ternary narrows `decl.declaration` in the false branch to exclude
-	// "view", so this local is exactly `"const" | "var" | "mov"`.
-	const declaration: "const" | "var" | "mov" =
+	// "view", so this local is exactly `"const" | "var" | "move"`.
+	const declaration: "const" | "var" | "move" =
 		decl.declaration === "view" ? "const" : decl.declaration;
 	decl.declaration = declaration;
 	// Whether the user wrote a `view` type modifier (`var view T v = ...`).
@@ -176,14 +176,14 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 		// materialized so build/codegen resolves it.
 		instantiate_generic_type(decl.type, status);
 
-		// Check for var on class-type fields in classes/traits (must use mov)
+		// Check for var on class-type fields in classes/traits (must use move)
 		if (
 			decl.declaration === "var" &&
 			decl.type.name &&
 			is_class_type(decl.type.name, status) &&
 			(decl.scope?.node_type === "struct" || decl.scope?.node_type === "trait")
 		) {
-			add_error(status, `class-type fields must use 'mov', not 'var'`, decl.start);
+			add_error(status, `class-type fields must use 'move', not 'var'`, decl.start);
 		}
 
 		if (decl.value) {
@@ -222,7 +222,7 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 		//   - Rule 1: `view hi = expr` requires the value to actually be a view
 		//     (e.g. a .slice() result). Binding an owned value with `view` is a
 		//     mistake — the user probably meant `const`.
-		//   - Rule 3: a `var`/`const`/`mov` declaration whose *inferred* type is a
+		//   - Rule 3: a `var`/`const`/`move` declaration whose *inferred* type is a
 		//     view must opt in explicitly — either with the `view` keyword
 		//     (`view hi = ...`) or a `view` type modifier (`var view T v = ...`).
 		//     This keeps the borrow semantics visible at the declaration site.
@@ -266,22 +266,22 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 		// bare-variable copy is rejected here; a fresh allocation (constructor /
 		// function return) is a move, not a copy, and member-access copies (e.g.
 		// `var Buffer old = self.field`) are left to the field machinery. Use
-		// .copy() for a deep copy or `mov` to transfer ownership. A struct whose
+		// .copy() for a deep copy or `move` to transfer ownership. A struct whose
 		// #destroy only resets fields (no raw block) is NOT owning and may copy.
 		if (decl.value?.node_type === "value" && !decl.value.is_moved) {
 			const val_type = type_from_value_node(decl.value, status);
 			if (val_type.name && is_owning_struct_type(val_type, status)) {
 				add_error(
 					status,
-					`cannot copy '${val_type.name}' by value — it owns heap resources; use .copy() or mov`,
+					`cannot copy '${val_type.name}' by value — it owns heap resources; use .copy() or move`,
 					decl.value.start,
 				);
 			}
 		}
 		// Copying an owning struct out of a field (`var X b = obj.field`)
 		// duplicates the backing pointer; the field must be moved out with a swap
-		// that revalidates it (`var X b = mov obj.field swap <replacement>`).
-		// `mov` without a swap would leave the field holding a moved-out value.
+		// that revalidates it (`var X b = move obj.field swap <replacement>`).
+		// `move` without a swap would leave the field holding a moved-out value.
 		// A struct whose ONLY ownership is `string` fields is a BORROW when
 		// copied (string-only struct locals aren't auto-destroyed), so it may be
 		// read out of a field by value.
@@ -295,13 +295,13 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 				if (!decl.value.is_moved) {
 					add_error(
 						status,
-						`cannot copy '${field_type.name}' out of field '${field_name}' by value — it owns heap resources; use 'mov ... swap <replacement>'`,
+						`cannot copy '${field_type.name}' out of field '${field_name}' by value — it owns heap resources; use 'move ... swap <replacement>'`,
 						decl.value.start,
 					);
 				} else if (!decl.swap) {
 					add_error(
 						status,
-						`mov out of a field requires a swap to revalidate it`,
+						`move out of a field requires a swap to revalidate it`,
 						decl.value.start,
 					);
 				} else {
@@ -323,7 +323,7 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			}
 		}
 
-		// `var X b = mov a` (no swap) transfers ownership: the source `a` is moved
+		// `var X b = move a` (no swap) transfers ownership: the source `a` is moved
 		// and may not be used again until reassigned. (A swap revalidates it.)
 		if (decl.value?.node_type === "value" && decl.value.is_moved && !decl.swap) {
 			if (!status.moved_variables) status.moved_variables = new Set();

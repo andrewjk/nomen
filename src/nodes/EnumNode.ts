@@ -13,13 +13,13 @@ export default class EnumNode extends BaseNode {
 	/** True when type_params is non-empty (set during check). */
 	is_generic?: boolean;
 	/**
-	 * True when declared with the `strict` modifier (`pub strict enum Result<T, E>`).
-	 * A strict enum's values may not be silently discarded: a statement-position
-	 * call whose result type is a strict enum is a compile error. Callers must
+	 * True when declared with the `must_use` modifier (`pub must_use enum Result<T, E>`).
+	 * A must_use enum's values may not be silently discarded: a statement-position
+	 * call whose result type is a must_use enum is a compile error. Callers must
 	 * bind the value (e.g. `var _ = f.close()`) or match on it. Copied onto
 	 * monomorphized instantiations by `monomorphize_enum`.
 	 */
-	strict?: boolean;
+	must_use?: boolean;
 	/** Set on monomorphized instantiations: the generic template's name. */
 	template_name?: string;
 	/** Set on monomorphized instantiations: the concrete type args. */

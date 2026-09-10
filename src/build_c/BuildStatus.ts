@@ -62,7 +62,11 @@ export default interface BuildStatus {
 	 * Each entry records the function node, owning struct (if any), and the
 	 * concatenated raw C code — used to generate the companion file.
 	 */
-	c_companion_functions?: { func: FunctionNode; struct_name?: string; raw_code: string }[];
+	c_companion_functions?: {
+		func: FunctionNode;
+		struct_name?: string;
+		raw_code: string;
+	}[];
 	/**
 	 * Build errors (e.g. missing arch block for the target architecture).
 	 */
@@ -121,7 +125,11 @@ export default interface BuildStatus {
 	 * the scope-exit free) plus its class name and nullability. Saved/restored
 	 * per scope alongside scoped_declarations.
 	 */
-	deferred_frees?: { temp: string; struct_name: string; is_nullable: boolean }[];
+	deferred_frees?: {
+		temp: string;
+		struct_name: string;
+		is_nullable: boolean;
+	}[];
 	interpolate_string_counts: Set<number>;
 	return_assign?: string;
 	/**
@@ -282,7 +290,12 @@ export default interface BuildStatus {
 			 */
 			is_nullable?: boolean;
 		}[];
-		struct_decls: { name: string; type_name: string; type_args?: Type[]; is_nullable?: boolean }[];
+		struct_decls: {
+			name: string;
+			type_name: string;
+			type_args?: Type[];
+			is_nullable?: boolean;
+		}[];
 	}[];
 	struct_return_buffer?: string;
 	return_buffer_stack_offset?: number;
@@ -306,7 +319,7 @@ export default interface BuildStatus {
 	function_struct_param_slots?: Set<string>;
 	/**
 	 * Functions/methods (by emitted label) whose CLASS-typed return is a
-	 * borrowed reference (e.g. `return mov got` where `got = xs.at(i)`).
+	 * borrowed reference (e.g. `return move got` where `got = xs.at(i)`).
 	 * A class declaration initialized from such a call is a borrow — it must
 	 * NOT be destroy-tracked at scope exit (the callee's owner frees the
 	 * instance). See build_common/scan_borrow_returns.ts.
@@ -316,7 +329,7 @@ export default interface BuildStatus {
 	 * aarch64 only. The scoped_declarations arrays of ENCLOSING scopes while
 	 * an if/while/for/switch/match body is being built (each swaps in a fresh
 	 * frame — see enter_scope_frame/exit_scope_frame). A `return` inside the
-	 * body must clean up those outer frames' declarations too, and mov
+	 * body must clean up those outer frames' declarations too, and move
 	 * marking must recognize outer-scope locals.
 	 */
 	outer_scope_declarations?: DeclarationNode[][];
@@ -332,7 +345,7 @@ export default interface BuildStatus {
 	stack_offsets_frames?: Map<string, number>[];
 	/**
 	 * C only. Post-statement frees for VALUE-struct string fields released at
-	 * a `mov` call site (the callee's store_T deep-copied them and the decl
+	 * a `move` call site (the callee's store_T deep-copied them and the decl
 	 * was spliced out of scoped_declarations). The call may sit inside a
 	 * larger expression, so the frees are buffered here and appended by
 	 * build_node once the statement is complete.
@@ -344,7 +357,7 @@ export default interface BuildStatus {
 	 * fields are NOT freed by the struct destroy (they may be rodata from
 	 * construction), so ownership is tracked per assignment: the recorded
 	 * fields are released at scope exit — including when the struct was
-	 * `mov`-stored into a container (store_T strdups its own copy, so the
+	 * `move`-stored into a container (store_T strdups its own copy, so the
 	 * source's heap string is otherwise abandoned). Cleared when the struct
 	 * is returned (the sret byte-copy transfers the string pointers).
 	 */
@@ -371,7 +384,7 @@ export default interface BuildStatus {
 	/** Destination hint, integer side (ASM_PLAN_2 tranche F): when set to a
 	 *  promoted x-register, the ROOT integer operation of an assignment or
 	 *  declaration initializer emits directly into it instead of x0 +
-	 *  writeback mov. Consume-once (the root op clears it, so nested
+	 *  writeback move. Consume-once (the root op clears it, so nested
 	 *  sub-operations keep the scratch discipline; the target's old value
 	 *  stays readable until the final instruction, which reads its sources
 	 *  before writing). Only ever set for callee-saved x23-x28 targets —
@@ -606,7 +619,13 @@ export default interface BuildStatus {
 	access_pins?: {
 		entries: Map<
 			string,
-			{ key: string; reg: string; len: number; names: string[]; snap: Set<string> }
+			{
+				key: string;
+				reg: string;
+				len: number;
+				names: string[];
+				snap: Set<string>;
+			}
 		>;
 		written: Set<string>;
 	};

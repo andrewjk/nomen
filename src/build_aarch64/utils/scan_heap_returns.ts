@@ -7,9 +7,9 @@ import StructNode from "../../nodes/StructNode.ts";
 
 const KNOWN_HEAP_RETURNING = new Set<string>([
 	// NOTE: intentionally empty of static entries. Raw `#arch` library bodies
-	// that hand back malloc'd strings declare `mov out string` in their .nm
+	// that hand back malloc'd strings declare `move out string` in their .nm
 	// signatures and classify through the checker's `owned_return` stamp; the
-	// primitive `*_to_string` builtins are `mov out string` too (and every
+	// primitive `*_to_string` builtins are `move out string` too (and every
 	// consumer also recognizes them by their `*_to_string` label). Only
 	// DYNAMIC entries land here anymore: string-returning functions consumed
 	// through a `spawn` trampoline (scan_spawn_callees below) and functions
@@ -28,7 +28,7 @@ export function scan_heap_returning_functions(root: BaseNode): Set<string> {
  * consumed through the task's C trampoline, where the aarch64 backend's
  * declaration-level heap tracking can't see the result — the value lands in
  * the typed result slot and is later moved out to the `result()` caller, who
- * frees it unconditionally (a `mov out string`). The callee must therefore
+ * frees it unconditionally (a `move out string`). The callee must therefore
  * normalize EVERY return path to an owned heap copy (the return-site strdup
  * only fires for functions in this set), so a literal-only spawned function
  * doesn't hand `result()` a rodata pointer the caller would free.

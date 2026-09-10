@@ -19,7 +19,7 @@ export interface PathBounds {
  * A value (declaration, param etc) that is accessible at the current point
  */
 export default interface StackValue {
-	declaration: "const" | "var" | "mov";
+	declaration: "const" | "var" | "move";
 	name: string;
 	type: Type;
 	/**

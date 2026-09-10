@@ -13,7 +13,7 @@ pub struct LinkedList<T>: Enumerable {
 	var int head = -1
 	var count = 0
 
-	pub func add = (ref self, mov T value) {
+	pub func add = (ref self, move T value) {
 		var int idx = self.count
 		self.values.grow_T(idx + 1)
 		self.values.store_T(idx, value)

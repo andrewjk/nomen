@@ -176,17 +176,17 @@ export default function parse_function(
 function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: ParseStatus) {
 	const param_start = get_index(status);
 
-	// `mov out TYPE` — an ownership-transferring (owned) return. Distinguished
-	// from a `mov TYPE name` parameter by the `out` that follows `mov`.
-	const returns_mov = peek_current(status) === "mov" && peek_next(status) === "out";
-	if (returns_mov) {
-		accept("mov", status);
+	// `move out TYPE` — an ownership-transferring (owned) return. Distinguished
+	// from a `move TYPE name` parameter by the `out` that follows `move`.
+	const returns_move = peek_current(status) === "move" && peek_next(status) === "out";
+	if (returns_move) {
+		accept("move", status);
 	}
 
 	if (accept("out", status)) {
 		func.return_type_start = get_index(status);
 		func.return_type = parse_type(status);
-		func.returns_mov = returns_mov;
+		func.returns_move = returns_move;
 
 		// Optional return contract: `out TYPE: out >= 0 && out < cap`
 		// The placeholder `out` refers to the return value.
@@ -208,7 +208,7 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 	} else if (accept("cp", status)) {
 		param.declaration = "var";
 		param.is_copied = true;
-	} else if (accept("mov", status)) {
+	} else if (accept("move", status)) {
 		param.declaration = "var";
 		param.is_moved = true;
 	}
@@ -240,10 +240,10 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 		status.tokens[status.i]?.value === "self" &&
 		(parent.node_type === "struct" || parent.node_type === "trait" || parent.node_type === "extend")
 	) {
-		// `var self` / `cp self` / `mov self` are rejected: use `ref self`
+		// `var self` / `cp self` / `move self` are rejected: use `ref self`
 		// for mutation (visible to the caller) or bare `self` (read-only; in
 		// `#init` it may assign fields). A declaration keyword consumed above
-		// (var/cp/mov all set declaration="var") is detectable here because a
+		// (var/cp/move all set declaration="var") is detectable here because a
 		// bare `self` is still "const" at this point — the `#init` override
 		// below hasn't run yet, so this can't be done later in the check pass.
 		if (param.declaration === "var") {

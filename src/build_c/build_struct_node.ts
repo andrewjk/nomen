@@ -637,7 +637,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 			}
 		}
 
-		// A `mov` class param transfers ownership to the callee — register it
+		// A `move` class param transfers ownership to the callee — register it
 		// as a scoped declaration so build_auto_free destroys+frees it at the
 		// method's exit, mirroring build_function_node (and skipping params
 		// whose ownership escapes into an outliving value — the same
@@ -648,7 +648,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 			if (param.is_moved && param_struct?.is_class && !moved_param_is_consumed(func, param.name)) {
 				const pname = c_function_name(param.name);
 				status.scoped_declarations.push(
-					new DeclarationNode(param.start, "private", "mov", pname, param.type),
+					new DeclarationNode(param.start, "private", "move", pname, param.type),
 				);
 			}
 		}
@@ -885,18 +885,18 @@ function build_auto_destroy(node: StructNode, status: BuildStatus) {
 		if (field_struct.is_class) {
 			// Reclaim an owned class-typed field when either (a) its type has
 			// a user-defined `#destroy` (so its observable side effects run, and
-			// the instance is freshly owned, e.g. `Holder(mov Box(7))`), or
-			// (b) the field is declared `mov` — then the field is the sole
+			// the instance is freshly owned, e.g. `Holder(move Box(7))`), or
+			// (b) the field is declared `move` — then the field is the sole
 			// owner of its instance (ownership transferred at assignment time in
 			// build_assignment_node, which removes the source from
 			// scoped_declarations). Recursively destroy + free so subtrees
 			// deeper than one level are reclaimed (mirrors aarch64's
 			// emit_field_destroys). Nullable fields may be null, so guard the
-			// destroy/free with `if`. Non-`mov` class fields without a
+			// destroy/free with `if`. Non-`move` class fields without a
 			// `#destroy` frequently alias another owned variable and are left
 			// to leak rather than risk a double-free.
 			const field_has_destroy = !!field_struct.functions.find((f) => f.name === "#destroy");
-			const field_is_owned = field.declaration === "mov";
+			const field_is_owned = field.declaration === "move";
 			if (field_has_destroy) {
 				status.code += `if (self->${field.name}) {\n`;
 				status.code += `${field_struct.name}_destroy(self->${field.name});\n`;

@@ -5,7 +5,7 @@ pub struct List<T>: Viewable {
 	var length = 0
 	var Buffer<T> items = Buffer<T>()
 
-	pub func push = (ref self, mov T value) {
+	pub func push = (ref self, move T value) {
 		if self.length >= self.items.cap {
 			var new_cap = 4
 			var int old_cap = self.items.cap
@@ -18,7 +18,7 @@ pub struct List<T>: Viewable {
 		self.length += 1
 	}
 
-	pub func pop = (ref self, mov out T) {
+	pub func pop = (ref self, move out T) {
 		if self.length <= 0 {
 			return self.items.move_T(0)
 		}
@@ -57,7 +57,7 @@ pub struct List<T>: Viewable {
 		return self.items.slice(start, end)
 	}
 
-	pub func set = (ref self, int i: i >= 0 && i < self.length, mov T value) {
+	pub func set = (ref self, int i: i >= 0 && i < self.length, move T value) {
 		self.items.replace_T(i, value)
 	}
 

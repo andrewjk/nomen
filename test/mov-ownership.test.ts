@@ -3,7 +3,7 @@ import { expect, describe, test } from "vite-plus/test";
 import parse from "../src/parse";
 import test_error from "./test_error";
 
-describe("mov ownership errors", () => {
+describe("move ownership errors", () => {
 	describe("struct fields cannot be class types", () => {
 		test("struct with class field using var", () => {
 			const input = `
@@ -20,13 +20,13 @@ struct Holder {
 			]);
 		});
 
-		test("struct with class field using mov", () => {
+		test("struct with class field using move", () => {
 			const input = `
 class Box {
   var int value
 }
 struct Holder {
-  mov Box content
+  move Box content
 }
 `;
 			const parsed = parse(input);
@@ -55,13 +55,13 @@ struct Point {
 		// destroy. Blocked for the same reason class fields are blocked; use a
 		// `class` (routes to ClassBuffer's sound per-pointer destroy) or store
 		// the concrete type.
-		test("struct with trait field using mov", () => {
+		test("struct with trait field using move", () => {
 			const input = `
 trait Speaker {
   func say = (out string)
 }
 struct Holder {
-  mov Speaker s
+  move Speaker s
 }
 `;
 			const parsed = parse(input);
@@ -81,7 +81,7 @@ trait Speaker {
   func say = (out string)
 }
 class Holder {
-  mov Speaker s
+  move Speaker s
 }
 `;
 			const parsed = parse(input);
@@ -89,7 +89,7 @@ class Holder {
 		});
 	});
 
-	describe("class-type fields must use mov", () => {
+	describe("class-type fields must use move", () => {
 		test("class with var class field", () => {
 			const input = `
 class Box {
@@ -101,17 +101,17 @@ class Holder {
 `;
 			const parsed = parse(input);
 			expect(parsed.errors).toEqual([
-				test_error(input, "class-type fields must use 'mov', not 'var'", 6, 3),
+				test_error(input, "class-type fields must use 'move', not 'var'", 6, 3),
 			]);
 		});
 
-		test("class with mov class field is fine", () => {
+		test("class with move class field is fine", () => {
 			const input = `
 class Box {
   var int value
 }
 class Holder {
-  mov Box content
+  move Box content
 }
 `;
 			const parsed = parse(input);
@@ -129,17 +129,17 @@ trait HasBox {
 `;
 			const parsed = parse(input);
 			expect(parsed.errors).toEqual([
-				test_error(input, "class-type fields must use 'mov', not 'var'", 6, 3),
+				test_error(input, "class-type fields must use 'move', not 'var'", 6, 3),
 			]);
 		});
 
-		test("trait with mov class field is fine", () => {
+		test("trait with move class field is fine", () => {
 			const input = `
 class Box {
   var int value
 }
 trait HasBox {
-  mov Box content
+  move Box content
 }
 `;
 			const parsed = parse(input);
@@ -157,26 +157,31 @@ class Counter {
 		});
 	});
 
-	describe("mov only allowed for class types (or type params)", () => {
-		test("mov int parameter", () => {
+	describe("move only allowed for class types (or type params)", () => {
+		test("move int parameter", () => {
 			const input = `
-func identity = (mov int x, out int) {
+func identity = (move int x, out int) {
   return x
 }
 `;
 			const parsed = parse(input);
 			expect(parsed.errors).toEqual([
-				test_error(input, "mov is only allowed for class or owning struct types, not 'int'", 2, 18),
+				test_error(
+					input,
+					"move is only allowed for class or owning struct types, not 'int'",
+					2,
+					18,
+				),
 			]);
 		});
 
-		test("mov struct parameter", () => {
+		test("move struct parameter", () => {
 			const input = `
 struct Point {
   var int x
   var int y
 }
-func identity = (mov Point p, out Point) {
+func identity = (move Point p, out Point) {
   return p
 }
 `;
@@ -184,19 +189,19 @@ func identity = (mov Point p, out Point) {
 			expect(parsed.errors).toEqual([
 				test_error(
 					input,
-					"mov is only allowed for class or owning struct types, not 'Point'",
+					"move is only allowed for class or owning struct types, not 'Point'",
 					6,
 					18,
 				),
 			]);
 		});
 
-		test("mov class parameter is fine", () => {
+		test("move class parameter is fine", () => {
 			const input = `
 class Box {
   var int value
 }
-func identity = (mov Box b, out Box) {
+func identity = (move Box b, out Box) {
   return b
 }
 `;
@@ -204,9 +209,9 @@ func identity = (mov Box b, out Box) {
 			expect(parsed.errors).toEqual([]);
 		});
 
-		test("mov string parameter", () => {
+		test("move string parameter", () => {
 			const input = `
-func identity = (mov string s, out string) {
+func identity = (move string s, out string) {
   return s
 }
 `;
@@ -214,18 +219,18 @@ func identity = (mov string s, out string) {
 			expect(parsed.errors).toEqual([
 				test_error(
 					input,
-					"mov is only allowed for class or owning struct types, not 'string'",
+					"move is only allowed for class or owning struct types, not 'string'",
 					2,
 					18,
 				),
 			]);
 		});
 
-		test("mov on generic type parameter is allowed", () => {
+		test("move on generic type parameter is allowed", () => {
 			const input = `
 struct Container<T> {
   var int dummy
-  func add = (ref self, mov T value) {
+  func add = (ref self, move T value) {
     return
   }
 }
@@ -235,18 +240,18 @@ struct Container<T> {
 		});
 	});
 
-	describe("mov at call site", () => {
-		test("mov with value type at call site to non-mov param", () => {
+	describe("move at call site", () => {
+		test("move with value type at call site to non-move param", () => {
 			const input = `
 func identity = (int x, out int) {
   return x
 }
 var int x = 5
-identity(mov x)
+identity(move x)
 `;
 			const parsed = parse(input);
 			expect(parsed.errors.length).toBeGreaterThan(0);
-			expect(parsed.errors[0].message).toContain("mov");
+			expect(parsed.errors[0].message).toContain("move");
 		});
 	});
 });

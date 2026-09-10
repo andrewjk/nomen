@@ -335,9 +335,9 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 					status.function_ref_params.add(pname);
 				}
 			}
-			// A `mov` class param transfers ownership to the callee. Register
+			// A `move` class param transfers ownership to the callee. Register
 			// it as a scoped declaration so build_auto_free destroys+frees it
-			// at function exit — unless the body further moves it out (the mov
+			// at function exit — unless the body further moves it out (the move
 			// param handling in build_function_call_node splices it), or it is
 			// returned (handled in build_return_node). Mirrors aarch64's
 			// moved_param_save_slots cleanup.
@@ -347,7 +347,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				node.name !== "main" &&
 				!moved_param_is_consumed(node, param.name)
 			) {
-				const decl = new DeclarationNode(param.start, "private", "mov", pname, param.type);
+				const decl = new DeclarationNode(param.start, "private", "move", pname, param.type);
 				status.scoped_declarations.push(decl);
 			}
 		}

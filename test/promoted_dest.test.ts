@@ -49,7 +49,7 @@ pub func main = () {}
 test("fused flag with a register home takes cset directly, no dead init", () => {
 	const code = compile(CARRY_LOOP);
 	const fn = code.slice(code.indexOf("\ncarries:"), code.indexOf("\n_main:"));
-	// The cset lands in a promoted register (not x0), with no staging mov.
+	// The cset lands in a promoted register (not x0), with no staging move.
 	// Since tranche J the fused carry compare rides the declare's own
 	// `adds` flags: the condition code is `hs` (the add's carry-out), not
 	// `lo` from a cmp.
@@ -127,7 +127,7 @@ pub func main = () {}
 	expect(fn).toMatch(/add x(?:1[2-5]|2[0-8]), x(?:1[2-5]|2[0-8]), #4095\n/);
 	expect(fn).toMatch(/sub x(?:1[2-5]|2[0-8]), x(?:1[2-5]|2[0-8]), #2\n/);
 	expect(fn).not.toContain("add x(?:1[2-5]|2[0-8]), x(?:1[2-5]|2[0-8]), #4096");
-	// 4096 keeps the generic compound sequence (a load or mov of the
+	// 4096 keeps the generic compound sequence (a load or move of the
 	// literal, then add, then store back to the home).
 	expect(fn).toMatch(/#4096/);
 });

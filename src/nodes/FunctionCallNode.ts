@@ -11,7 +11,7 @@ export default class FunctionCallNode extends BaseNode {
 	is_func_param?: boolean;
 	type_args?: Type[];
 	ref_param_indices?: number[];
-	mov_param_indices?: number[];
+	move_param_indices?: number[];
 	/**
 	 * Indices of arguments whose corresponding callee parameter is a nullable
 	 * struct value type (`T?` where T is a non-class struct). Populated during

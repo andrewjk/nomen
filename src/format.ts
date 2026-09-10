@@ -353,7 +353,7 @@ function strip_redundant_type(pieces: Piece[]): Piece[] {
 	let i = 0;
 	if (pieces[i]?.text === "pub" || pieces[i]?.text === "private") i++;
 	const declaration = pieces[i]?.text;
-	if (declaration !== "var" && declaration !== "const" && declaration !== "mov") return pieces;
+	if (declaration !== "var" && declaration !== "const" && declaration !== "move") return pieces;
 	i++;
 
 	const type_start = i;

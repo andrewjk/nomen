@@ -61,7 +61,7 @@ export default function check_block_node(node: BlockNode, status: CheckStatus) {
 	status.stack.push(node);
 	for (let child of node.statements) {
 		check_node(child, status);
-		check_strict_enum_discard(child, status);
+		check_must_use_enum_discard(child, status);
 	}
 	status.stack.pop();
 	status.scope_depth--;
@@ -70,15 +70,15 @@ export default function check_block_node(node: BlockNode, status: CheckStatus) {
 }
 
 /**
- * A `strict` enum or bitset's values may not be silently discarded: a
+ * A `must_use` enum or bitset's values may not be silently discarded: a
  * statement-position call (`f.close()`, `File.write_all(...)`) whose result
- * type is a strict type is a compile error. Bind the value
+ * type is a must_use type is a compile error. Bind the value
  * (`var _ = f.close()`) or match on it — ignoring is fine, it just has to be
  * deliberate. Runs after `check_node` so the call's result `type` is
  * resolved. Declarations, assignments, returns and match scrutinees are all
  * uses and never reach this.
  */
-function check_strict_enum_discard(child: BaseNode, status: CheckStatus) {
+function check_must_use_enum_discard(child: BaseNode, status: CheckStatus) {
 	// Statement-position calls arrive in three shapes: a bare `f(...)` is a
 	// func_call; `a.b(...)` and `File.delete(...)` are an access node wrapping
 	// the call (the "(" tail is folded into parse_access). A `let`-prefixed
@@ -95,24 +95,24 @@ function check_strict_enum_discard(child: BaseNode, status: CheckStatus) {
 	if (!call) return;
 	const type = (call as AccessFunctionCallNode | FunctionCallNode).type;
 	if (!type?.name) return;
-	const strict_enum = status.enums.find((e) => e.strict && e.name === type.name);
-	const strict_bitset = strict_enum
+	const must_use_enum = status.enums.find((e) => e.must_use && e.name === type.name);
+	const must_use_bitset = must_use_enum
 		? undefined
-		: status.bitsets.find((b) => b.strict && b.name === type.name);
-	if (!strict_enum && !strict_bitset) return;
+		: status.bitsets.find((b) => b.must_use && b.name === type.name);
+	if (!must_use_enum && !must_use_bitset) return;
 	add_error(
 		status,
-		`Value of strict ${strict_enum ? "enum" : "bitset"} ${strict_type_display_name(strict_enum ?? strict_bitset!, type)} is discarded; bind it (e.g. \`var _ = …\`) or match on it`,
+		`Value of must_use ${must_use_enum ? "enum" : "bitset"} ${must_use_type_display_name(must_use_enum ?? must_use_bitset!, type)} is discarded; bind it (e.g. \`var _ = …\`) or match on it`,
 		child.start,
 	);
 }
 
 /**
- * Render a strict enum/bitset result type for the discard error message,
+ * Render a must_use enum/bitset result type for the discard error message,
  * preferring the generic template's spelling (`Result<int, string>`) over the
  * monomorphized name (`Result_int_string`). Bitsets are never generic.
  */
-function strict_type_display_name(en: EnumNode | BitsetNode, type: Type): string {
+function must_use_type_display_name(en: EnumNode | BitsetNode, type: Type): string {
 	if (en.node_type === "enum") {
 		const e = en as EnumNode;
 		if (e.template_name && e.template_args?.length) {
@@ -194,7 +194,7 @@ function gather_top_level_consts(block: BlockNode, status: CheckStatus) {
  * (running its `#destroy` and field destroys first).
  *
  * Free functions and constructors returning a class always yield an owned
- * value. Method calls are hoisted only when they have an owned (`mov out T`)
+ * value. Method calls are hoisted only when they have an owned (`move out T`)
  * return — a borrowed return (e.g. `list.at(0)`) is owned by its receiver and
  * must NOT be freed here.
  */

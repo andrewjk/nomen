@@ -299,7 +299,7 @@ function emit_rhs_value(rhs: BaseNode, nir: NirExpr | null | undefined, status: 
 
 /**
  * Emit an assignment/declaration SWAP expression (the replacement value
- * `a = b swap <rep>` / `var X b = mov f swap <rep>`): the expression-seam
+ * `a = b swap <rep>` / `var X b = move f swap <rep>`): the expression-seam
  * version of the historical `build_node(swap)`. Both callers normalize the
  * trailing newline immediately after, so the helper does it.
  */
@@ -615,8 +615,8 @@ export default function build_assignment_node(
 	// store, so a previously cached data pointer would be stale. The cache key
 	// mirrors buf_cache_key() in build_access_node (simple name or "obj.field").
 	//
-	// This also covers `mov self.fld swap X` swaps: the swapped-OUT field is the
-	// assignment's RHS (e.g. `self.keys` in `var old = mov self.keys swap ...`),
+	// This also covers `move self.fld swap X` swaps: the swapped-OUT field is the
+	// assignment's RHS (e.g. `self.keys` in `var old = move self.keys swap ...`),
 	// and the swap stores the replacement into it — so that field's buffer (and
 	// its cached data pointer) is reassigned. Invalidating the RHS field key is
 	// what keeps field-buffer caching sound across Map.rehash and friends.
@@ -801,7 +801,7 @@ export default function build_assignment_node(
 					const decl_is_nullable = !!status.variable_types?.get(name)?.is_nullable;
 					if (owns_current) {
 						consume_anchor_slot(status, name);
-						// Skip the reclaim when the var was moved (e.g. `take(mov a)`
+						// Skip the reclaim when the var was moved (e.g. `take(move a)`
 						// then `a = Box(...)`) — the callee already freed the old
 						// instance, so freeing again here would double-free.
 						if (!status.moved?.has(name)) {
@@ -1372,7 +1372,7 @@ export default function build_assignment_node(
 				rhs_is_string_var && (node as AssignmentNode).last_use_move && move_on_last_use_enabled()
 					? (rhs_value as ValueNode).value
 					: undefined;
-			// EXPLICIT `s = mov t`: ownership transfer by contract. When the
+			// EXPLICIT `s = move t`: ownership transfer by contract. When the
 			// source owns heap, move the ownership mark from source to target
 			// — exactly one owner frees the bytes. A source that owns nothing
 			// (literal-held/borrow-held var) transfers nothing trackable: the
@@ -1536,7 +1536,7 @@ export default function build_assignment_node(
 				// non-tracked shapes): only a fresh-heap RHS
 				// (last_result_is_heap) transfers an owned value into the
 				// field, recorded in heap_string_fields for the scope-exit
-				// release (and the mov-into-container release). Overwriting a
+				// release (and the move-into-container release). Overwriting a
 				// recorded heap value with a non-heap one frees it and drops
 				// the record.
 				const string_target = field_is_struct_string(target_type, field_type, status)!;

@@ -5,8 +5,8 @@ class MerkleNode {
 	var value = 0
 	var has_hash = false
 	var has_value = false
-	mov MerkleNode? left = null
-	mov MerkleNode? right = null
+	move MerkleNode? left = null
+	move MerkleNode? right = null
 }
 
 func make_merkle = (int depth, out MerkleNode) {

@@ -117,7 +117,7 @@ function asm_function_body(code: string, label: string): string {
 }
 
 describe("value-struct list elements are flat storage (PERF.md Part 5)", () => {
-	// The PERF.md Part 5 idiom (`var op = Op(); op.kind = 0; ops.push(mov op)`)
+	// The PERF.md Part 5 idiom (`var op = Op(); op.kind = 0; ops.push(move op)`)
 	// cost one malloc/free per element when Op was a class. The fix the
 	// follow-up called for — value-struct `List<T>` element support — makes
 	// the natural encoding the fast one: elements live in a slab sized in
@@ -134,7 +134,7 @@ while line < 50 {
 	var op = Op()
 	op.kind = line
 	op.line = line
-	ops.push(mov op)
+	ops.push(move op)
 	line += 1
 }
 var int sink = 0

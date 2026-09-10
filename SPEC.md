@@ -19,7 +19,7 @@ The following words are reserved by the language and cannot be used as
 variable, parameter, field, type, or enum case names:
 
 `as` `async` `bitset` `break` `case` `class` `const` `continue` `cp` `else`
-`enum` `extern` `extend` `for` `func` `if` `import` `in` `let` `match` `mov`
+`enum` `extern` `extend` `for` `func` `if` `import` `in` `let` `match` `move`
 `of` `out` `panic` `private` `pub` `raw` `ref` `return` `spawn` `struct`
 `switch` `swap` `todo` `trait` `var` `view` `while`
 
@@ -941,10 +941,10 @@ var Option<int> found = Option.some(4)
 found = .none
 ```
 
-The core library ships two generic enums. `Result` is declared `strict`:
+The core library ships two generic enums. `Result` is declared `must_use`:
 
 ```
-pub strict enum Result<T, E> {
+pub must_use enum Result<T, E> {
     case ok(T value)
     case error(E error)
 }
@@ -955,14 +955,14 @@ pub enum Option<T> {
 }
 ```
 
-Because `Result` is strict, a fallible call's value may not be silently discarded — see [Strict Enums](#strict-enums).
+Because `Result` is must_use, a fallible call's value may not be silently discarded — see [Strict Enums](#must_use-enums).
 
-### Strict Enums
+### must_use Enums
 
-An enum declared with the `strict` modifier may not have its values silently discarded: a statement-position call whose result is a strict enum value is a compile error. Bind the value or match on it — ignoring is fine, it just has to be deliberate (`_` discards explicitly):
+An enum declared with the `must_use` modifier may not have its values silently discarded: a statement-position call whose result is a must_use enum value is a compile error. Bind the value or match on it — ignoring is fine, it just has to be deliberate (`_` discards explicitly):
 
 ```
-pub strict enum Attempt {
+pub must_use enum Attempt {
     case ok
     case error(int code)
 }
@@ -982,10 +982,10 @@ match try_it() {
 A bare statement call discards the value and is rejected:
 
 ```
-try_it()  // error: value of strict enum Attempt is discarded
+try_it()  // error: value of must_use enum Attempt is discarded
 ```
 
-`strict` composes with visibility and generics (`pub strict enum Result<T, E>`), and carries across monomorphized instantiations (`Result<int, string>` stays strict).
+`must_use` composes with visibility and generics (`pub must_use enum Result<T, E>`), and carries across monomorphized instantiations (`Result<int, string>` stays must_use).
 
 ## Bitsets
 
@@ -1001,7 +1001,7 @@ pub bitset Permissions {
 var perms = Permissions.read | Permissions.write
 ```
 
-Like enums, bitsets can be declared `strict` (`pub strict bitset Flags`), with the same discard rules — see [Strict Enums](#strict-enums).
+Like enums, bitsets can be declared `must_use` (`pub must_use bitset Flags`), with the same discard rules — see [Strict Enums](#must_use-enums).
 
 Bitset values can be combined, checked, and toggled:
 
@@ -2434,7 +2434,7 @@ function's return type (`Task<uint64>` for uint64-returning functions,
 ```
 pub class Task<T> : Sendable {
     func wait = (ref self)
-    func result = (ref self, mov out T)
+    func result = (ref self, move out T)
     func result_uint64 = (ref self, out uint64)
     func cancel = (ref self)
     func current_cancelled = (out bool)   // static
@@ -2443,7 +2443,7 @@ pub class Task<T> : Sendable {
 
 - `wait()` blocks until the task finishes. Idempotent.
 - `result()` blocks, then moves the spawned function's return value out as
-  `T`. The value transfers to the caller (`mov out`) — call it once; a
+  `T`. The value transfers to the caller (`move out`) — call it once; a
   second call observes the zero value. The result slot is sized to the full
   type, so a fat `string` result arrives intact, and an unconsumed result
   is freed when the handle's `#destroy` runs.

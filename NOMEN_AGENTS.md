@@ -100,7 +100,7 @@ func safe = (string[] s, int i: i >= 0 && i < s.length, out string) {
 | -------- | ---------------------------------------------- |
 | `ref T`  | mutable borrow; caller must also write `ref`   |
 | `view T` | read-only borrow                               |
-| `mov T`  | transfer ownership; caller writes `mov`        |
+| `move T` | transfer ownership; caller writes `move`       |
 | `out T`  | output parameter, assigned inside the function |
 
 `const` values cannot be passed to `ref` — rebind the caller as `var` first.
@@ -150,10 +150,10 @@ declarations, so never import a sibling. Only cross-namespace references
 Failures are signalled via return values — nullable results, status structs,
 or boolean + out-parameter pairs. There is no `throw`/`try`/`catch`.
 
-`Result<T, E>` is declared `strict`: a call returning it must bind or match
+`Result<T, E>` is declared `must_use`: a call returning it must bind or match
 the value (`var _ = f.close()` to discard deliberately; a bare `f.close()`
 statement is a compile error). Any enum or bitset can opt into this with the
-`strict` modifier.
+`must_use` modifier.
 
 ## Tests
 

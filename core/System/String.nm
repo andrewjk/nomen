@@ -1,7 +1,7 @@
 // FFI: the C library's heap-copy entry point (string.h). The adapter
 // marshals the fat string to the thin char* the C ABI expects; the string
 // result is re-wrapped with its length.
-extern func strdup = (string s, mov out string)
+extern func strdup = (string s, move out string)
 
 /**
  * A UTF-8 text string — a heap-owned, length-tracked sequence of bytes
@@ -18,13 +18,13 @@ pub struct string: Stringable, Hashable, Equatable {
 		return h
 	}
 
-	// Returns an OWNED copy of self (`mov out string`). Both backends hand
+	// Returns an OWNED copy of self (`move out string`). Both backends hand
 	// back a fresh allocation the caller frees — never an alias of self's
 	// storage — so the result can outlive the receiver (e.g. escape a match
 	// branch that reclaims the scrutinee temp). Goes through the `strdup`
 	// extern: the adapter marshals self.ptr to libc and re-wraps the copy
 	// with its length.
-	pub func to_string = (self, mov out string) {
+	pub func to_string = (self, move out string) {
 		return strdup(self)
 	}
 

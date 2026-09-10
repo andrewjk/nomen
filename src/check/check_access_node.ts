@@ -640,10 +640,10 @@ function check_access_function_node(
 		node.mangled_name = mangled_label(func, struct.name);
 	}
 
-	// A `mov out T` method transfers ownership of its result to the caller
+	// A `move out T` method transfers ownership of its result to the caller
 	// (it's an owned value, not a borrow). Record that on the node so the
 	// borrow checker treats it as non-borrowed and the build anchors it.
-	if (func.returns_mov) {
+	if (func.returns_move) {
 		node.owned_return = true;
 	}
 

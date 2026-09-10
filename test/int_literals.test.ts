@@ -152,7 +152,7 @@ Console.write("\\{codes.at(0)}\\{codes.at(1)}\\{codes.at(2)}")
 		await build_and_check_output(input, "int_lit_array", "25525510");
 	});
 
-	// Large literals (>16 bits) cannot be encoded as a aarch64 `mov` (movz)
+	// Large literals (>16 bits) cannot be encoded as a aarch64 `move` (movz)
 	// immediate and must lower to a `ldr =imm` literal-pool load. They must also
 	// be emitted in decimal — the assembler rejects `#0x..`/`#0o..`/`#0b..`.
 	// Regression for the FNV-1a prime `0x01000193` failing to assemble on the

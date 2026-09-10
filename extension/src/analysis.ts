@@ -447,7 +447,13 @@ class Builder {
 	private type_info(name: string): TypeInfo {
 		let info = this.types.get(name);
 		if (!info) {
-			info = { name, fields: new Map(), methods: new Map(), cases: new Map(), traits: [] };
+			info = {
+				name,
+				fields: new Map(),
+				methods: new Map(),
+				cases: new Map(),
+				traits: [],
+			};
 			this.types.set(name, info);
 		}
 		return info;
@@ -475,7 +481,7 @@ class Builder {
 		const prefix = node.is_ref
 			? "ref "
 			: node.is_moved
-				? "mov "
+				? "move "
 				: node.is_copied
 					? "cp "
 					: node.declaration === "var"

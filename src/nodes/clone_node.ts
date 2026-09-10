@@ -85,7 +85,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.is_func_param = n.is_func_param;
 			c.type_args = n.type_args?.map(clone_type);
 			c.ref_param_indices = n.ref_param_indices?.slice();
-			c.mov_param_indices = n.mov_param_indices?.slice();
+			c.move_param_indices = n.move_param_indices?.slice();
 			c.nullable_param_indices = n.nullable_param_indices?.slice();
 			c.view_param_indices = n.view_param_indices?.slice();
 			c.swap_params = n.swap_params
@@ -121,7 +121,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 				n.is_static,
 			);
 			c.ref_param_indices = n.ref_param_indices?.slice();
-			c.mov_param_indices = n.mov_param_indices?.slice();
+			c.move_param_indices = n.move_param_indices?.slice();
 			c.swap_params = n.swap_params
 				? new Map([...n.swap_params].map(([k, v]) => [k, clone_node(v)]))
 				: undefined;
@@ -396,7 +396,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.scope = n.scope;
 			c.allocations = n.allocations?.map(clone_node);
 			c.return_constraint = n.return_constraint ? clone_node(n.return_constraint) : undefined;
-			c.returns_mov = n.returns_mov;
+			c.returns_move = n.returns_move;
 			c.is_library = n.is_library;
 			// `inline` must survive monomorphization: the aarch64 backend
 			// skips standalone emission of inline funcs and splices their
@@ -413,7 +413,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 				n.type ? clone_type(n.type) : new Type(""),
 				n.default_value ? clone_node(n.default_value) : undefined,
 				n.is_self_param,
-				n.is_copied ? "cp" : n.is_moved ? "mov" : n.declaration,
+				n.is_copied ? "cp" : n.is_moved ? "move" : n.declaration,
 			);
 			c.type_start = n.type_start;
 			c.name_start = n.name_start;
@@ -422,7 +422,9 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.is_ref = n.is_ref;
 			c.is_variadic_tuple = n.is_variadic_tuple;
 			c.constraint = n.constraint ? clone_node(n.constraint) : undefined;
-			c.stripped_length_equalities = n.stripped_length_equalities?.map((e) => ({ ...e }));
+			c.stripped_length_equalities = n.stripped_length_equalities?.map((e) => ({
+				...e,
+			}));
 			c.func_params = n.func_params?.map((p) => clone_node(p) as ParameterNode);
 			c.func_return_type = n.func_return_type ? clone_type(n.func_return_type) : undefined;
 			c.allocations = n.allocations?.map(clone_node);
@@ -438,14 +440,14 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.type_params = n.type_params.slice();
 			c.is_generic = n.is_generic;
 			c.is_library = n.is_library;
-			c.strict = n.strict;
+			c.must_use = n.must_use;
 			c.allocations = n.allocations?.map(clone_node);
 			return c;
 		}
 		case "bitset": {
 			const n = node as BitsetNode;
 			const c = new BitsetNode(n.start, n.visibility, n.name, n.cases.slice());
-			c.strict = n.strict;
+			c.must_use = n.must_use;
 			c.allocations = n.allocations?.map(clone_node);
 			return c;
 		}

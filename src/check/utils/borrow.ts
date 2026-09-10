@@ -42,7 +42,7 @@ export function borrow_depth_of(node: BaseNode, status: CheckStatus): number | u
 		} else if (access.access.node_type === "access_func") {
 			const t = type_from_value_node(access, status);
 			if (is_borrowed_return(t, status)) {
-				// A `mov out T` method transfers ownership — the result is an
+				// A `move out T` method transfers ownership — the result is an
 				// owned value, not a borrow.
 				if ((access.access as AccessFunctionCallNode).owned_return) return undefined;
 				// Instance method returning a class/view borrows from its
@@ -94,7 +94,7 @@ export function borrow_owner_of(node: BaseNode, status: CheckStatus): string | u
 		} else if (access.access.node_type === "access_func") {
 			const t = type_from_value_node(access, status);
 			if (is_borrowed_return(t, status)) {
-				// A `mov out T` method returns an owned value — no owner to root
+				// A `move out T` method returns an owned value — no owner to root
 				// a borrow at (and it must not be invalidated by receiver mutation).
 				if ((access.access as AccessFunctionCallNode).owned_return) return undefined;
 				if (access.target.node_type === "value") {
@@ -122,7 +122,7 @@ export function borrow_owner_of(node: BaseNode, status: CheckStatus): string | u
 /**
  * Whether a method-call result type is a borrow of its receiver (rather than an
  * owned value). True for class-/trait-typed returns and for `view T` returns;
- * false for primitives, constructors, and `mov out T` (owned) returns. Traits
+ * false for primitives, constructors, and `move out T` (owned) returns. Traits
  * are reference types just like classes (a trait-typed value is a heap pointer
  * into someone else's ClassBuffer<Trait> slot), so an instance method returning
  * a trait borrows from its receiver the same way a class-typed return does.

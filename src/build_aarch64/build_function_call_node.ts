@@ -814,7 +814,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			status.code += `add sp, sp, #${outgoing_size}\n`;
 		}
 
-		// A non-inlined call may (transitively, via a `ref`/`var`/`mov` receiver
+		// A non-inlined call may (transitively, via a `ref`/`var`/`move` receiver
 		// or argument) reallocate any Buffer reachable from its parameters,
 		// including a cached field buffer such as `obj.field`. The emitter can't
 		// see through the callee, so conservatively drop every field-buffer
@@ -922,7 +922,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		status.last_result_is_heap = true;
 	}
 
-	// A `mov out string` call transfers ownership by signature (the checker
+	// A `move out string` call transfers ownership by signature (the checker
 	// stamps owned_return) — the caller owns and must free the result, even
 	// when the callee isn't in heap_returning_functions.
 	if (
@@ -933,11 +933,11 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		status.last_result_is_heap = true;
 	}
 
-	if (node.mov_param_indices?.length) {
-		for (const idx of node.mov_param_indices) {
+	if (node.move_param_indices?.length) {
+		for (const idx of node.move_param_indices) {
 			const param = node.params[idx];
 			if (param?.node_type === "value") {
-				// A `string` mov arg keeps caller ownership (owning
+				// A `string` move arg keeps caller ownership (owning
 				// Buffer<string> strdup's); skip mark_moved so scope-exit
 				// cleanup frees it. Resolve the type from the declaration — a
 				// bare variable reference's ValueNode.type is unset after mono —

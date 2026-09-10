@@ -5,19 +5,19 @@ import build_and_check_output from "./build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 import test_error from "./test_error";
 
-describe("class ownership transfer (mov keyword)", () => {
-	test("returning mov class param transfers ownership", async () => {
+describe("class ownership transfer (move keyword)", () => {
+	test("returning move class param transfers ownership", async () => {
 		const input = `
 class Box {
   var int value
 }
 
-func identity = (mov Box b, out Box) {
+func identity = (move Box b, out Box) {
   return b
 }
 
 var Box a = Box(42)
-var Box b = identity(mov a)
+var Box b = identity(move a)
 Console.write("\\{b.value}")
 `;
 		await build_and_check_output(input, "own_return_param", "42");
@@ -29,53 +29,53 @@ class Box {
   var int value
 }
 
-func pick = (Box a, mov Box b, out Box) {
+func pick = (Box a, move Box b, out Box) {
   return b
 }
 
 var Box x = Box(1)
 var Box y = Box(2)
-var Box z = pick(x, mov y)
+var Box z = pick(x, move y)
 Console.write("\\{x.value}")
 Console.write("\\{z.value}")
 `;
 		await build_and_check_output(input, "own_return_one_of_two", "12");
 	});
 
-	test("class param returned through nested function with mov", async () => {
+	test("class param returned through nested function with move", async () => {
 		const input = `
 class Box {
   var int value
 }
 
-func inner = (mov Box b, out Box) {
+func inner = (move Box b, out Box) {
   return b
 }
 
-func outer = (mov Box b, out Box) {
-  return inner(mov b)
+func outer = (move Box b, out Box) {
+  return inner(move b)
 }
 
 var Box a = Box(42)
-var Box result = outer(mov a)
+var Box result = outer(move a)
 Console.write("\\{result.value}")
 `;
 		await build_and_check_output(input, "own_nested_return", "42");
 	});
 
-	test("class param stored in returned array with mov", async () => {
+	test("class param stored in returned array with move", async () => {
 		const input = `
 class Box {
   var int value
 }
 
-func store = (mov Box b, out Box[]) {
+func store = (move Box b, out Box[]) {
   var arr = Array(b)
   return arr
 }
 
 var Box a = Box(42)
-var Box[] result = store(mov a)
+var Box[] result = store(move a)
 if result.length > 0 {
   Console.write("\\{result.first().value}")
 }
@@ -83,22 +83,22 @@ if result.length > 0 {
 		await build_and_check_output(input, "own_param_in_array", "42");
 	});
 
-	test("class in struct field returned from function with mov", async () => {
+	test("class in struct field returned from function with move", async () => {
 		const input = `
 class Box {
   var int value
 }
 
 class Holder {
-  mov Box content
+  move Box content
 }
 
-func wrap = (mov Box b, out Holder) {
-  return Holder(mov b)
+func wrap = (move Box b, out Holder) {
+  return Holder(move b)
 }
 
 var Box a = Box(42)
-var Holder h = wrap(mov a)
+var Holder h = wrap(move a)
 Console.write("\\{h.content.value}")
 `;
 		await build_and_check_output(input, "own_class_in_struct_field", "42");
@@ -121,7 +121,7 @@ Console.write("\\{result.first().value}")
 		await build_and_check_output(input, "own_stack_array_return", "42");
 	});
 
-	test("mov at call site requires mov in definition", async () => {
+	test("move at call site requires move in definition", async () => {
 		const input = `
 class Box {
   var int value
@@ -132,12 +132,12 @@ func identity = (Box b, out Box) {
 }
 
 var Box a = Box(42)
-var Box b = identity(mov a)
+var Box b = identity(move a)
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors.length).toBeGreaterThanOrEqual(2);
 		expect(parsed.errors.map((e) => e.message)).toContain(
-			"Unexpected 'mov' keyword for non-mov parameter 'b'",
+			"Unexpected 'move' keyword for non-move parameter 'b'",
 		);
 	});
 
@@ -259,27 +259,27 @@ class Box {
 }
 
 class Holder {
-  mov Box content
+  move Box content
 }
 
-var Holder h = Holder(mov Box(42))
+var Holder h = Holder(move Box(42))
 Console.write("\\{h.content.value}")
 `;
 		await build_and_check_output(input, "class_in_struct_field", "42");
 	});
 
-	test("mov prevents double-free when class passed to function that returns it", async () => {
+	test("move prevents double-free when class passed to function that returns it", async () => {
 		const input = `
 class Box {
   var int value
 }
 
-func identity = (mov Box b, out Box) {
+func identity = (move Box b, out Box) {
   return b
 }
 
 var Box a = Box(42)
-var Box b = identity(mov a)
+var Box b = identity(move a)
 Console.write("\\{b.value}")
 `;
 		await build_and_check_output(input, "mov_prevents_double_free", "42");
@@ -375,45 +375,50 @@ Console.write("done")
 		await build_and_check_output(input, "continue_class_array", "02done");
 	});
 
-	test("mov with struct (non-class) parameter", () => {
+	test("move with struct (non-class) parameter", () => {
 		const input = `
 struct Point {
   var int x
   var int y
 }
 
-func identity = (mov Point p, out Point) {
+func identity = (move Point p, out Point) {
   return p
 }
 
 var Point a = Point(1, 2)
-var Point b = identity(mov a)
+var Point b = identity(move a)
 `;
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual([
-			test_error(input, "mov is only allowed for class or owning struct types, not 'Point'", 7, 18),
+			test_error(
+				input,
+				"move is only allowed for class or owning struct types, not 'Point'",
+				7,
+				18,
+			),
 		]);
 	});
 
-	test("multiple mov parameters", async () => {
+	test("multiple move parameters", async () => {
 		const input = `
 class Box {
   var int value
 }
 
-func pick = (mov Box a, mov Box b, out Box) {
+func pick = (move Box a, move Box b, out Box) {
   return b
 }
 
 var Box x = Box(1)
 var Box y = Box(2)
-var Box z = pick(mov x, mov y)
+var Box z = pick(move x, move y)
 Console.write("\\{z.value}")
 `;
 		await build_and_check_output(input, "mov_multiple", "2");
 	});
 
-	test("returning class from function without mov does not transfer ownership", async () => {
+	test("returning class from function without move does not transfer ownership", async () => {
 		const input = `
 class Box {
   var int value
@@ -429,21 +434,21 @@ Console.write("\\{a.value},\\{b.value}")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors.length).toBeGreaterThan(0);
-		expect(parsed.errors[0].message).toContain("Cannot return class parameter 'b' without 'mov'");
+		expect(parsed.errors[0].message).toContain("Cannot return class parameter 'b' without 'move'");
 	});
 
-	test("returning class param with mov is allowed", async () => {
+	test("returning class param with move is allowed", async () => {
 		const input = `
 class Box {
   var int value
 }
 
-func share = (mov Box b, out Box) {
+func share = (move Box b, out Box) {
   return b
 }
 
 var Box a = Box(42)
-var Box b = share(mov a)
+var Box b = share(move a)
 Console.write("\\{b.value}")
 `;
 		await build_and_check_output(input, "mov_class_return", "42");
@@ -478,10 +483,10 @@ func share = (Box b, out Box) {
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors.length).toBeGreaterThan(0);
-		expect(parsed.errors[0].message).toContain("Cannot return class parameter 'b' without 'mov'");
+		expect(parsed.errors[0].message).toContain("Cannot return class parameter 'b' without 'move'");
 	});
 
-	test("returning non-class struct param without mov is allowed", async () => {
+	test("returning non-class struct param without move is allowed", async () => {
 		const input = `
 struct Point {
   var int x
@@ -505,36 +510,36 @@ class Box {
   var int value
 }
 
-func identity = (mov Box x, out Box) {
+func identity = (move Box x, out Box) {
   return x
 }
 
-func wrap = (mov Box b, out Box) {
-  return identity(mov b)
+func wrap = (move Box b, out Box) {
+  return identity(move b)
 }
 
 var Box a = Box(42)
-var Box b = wrap(mov a)
+var Box b = wrap(move a)
 Console.write("\\{b.value}")
 `;
 		await build_and_check_output(input, "return_class_via_call", "42");
 	});
 
-	test("returning a mov class param that owns a class field", async () => {
+	test("returning a move class param that owns a class field", async () => {
 		const input = `
 class Box {
   var int v
 }
 class Holder {
-  mov Box c
+  move Box c
 }
 
-func id = (mov Holder h, out Holder) {
+func id = (move Holder h, out Holder) {
   return h
 }
 
-var Holder a = Holder(mov Box(5))
-var Holder b = id(mov a)
+var Holder a = Holder(move Box(5))
+var Holder b = id(move a)
 Console.write("\\{b.c.v}")
 `;
 		await build_and_check_output(input, "return_mov_param_with_field", "5");

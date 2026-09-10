@@ -85,11 +85,11 @@ var Elephant a = Elephant('A')
 var Elephant b = Elephant('B')
 var Elephant c = Elephant('C')
 var int ia = list.count
-list.add(mov a)
+list.add(move a)
 var int ib = list.count
-list.add(mov b)
+list.add(move b)
 var int ic = list.count
-list.add(mov c)
+list.add(move c)
 list.set_next(ia, ib)
 list.set_next(ib, ic)
 for i of 0 .. list.count {
@@ -105,7 +105,7 @@ for i of 0 .. list.count {
 }
 Console.write("\\n")
 `;
-		// Elephants are mov'd into the list (ownership transfers), so they
+		// Elephants are moved into the list (ownership transfers), so they
 		// aren't freed at scope exit. The container doesn't free stored
 		// values on destroy yet — known limitation. Type safety (no UAF)
 		// is the guarantee; the leak is expected.

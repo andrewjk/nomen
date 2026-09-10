@@ -491,7 +491,7 @@ class Box {
 }
 
 class Holder {
-  mov Box box
+  move Box box
 }
 
 func get_value = (Holder h, out int) {
@@ -500,7 +500,7 @@ func get_value = (Holder h, out int) {
 }
 
 var Box box = Box(42)
-var Holder h = Holder(mov box)
+var Holder h = Holder(move box)
 var int v = get_value(h)
 Console.write("\\{v}")
 `;
@@ -764,7 +764,7 @@ func fill = (ref List<Item> items, int n) {
   while i < n {
     var Item x = Item()
     x.value = i
-    items.push(mov x)
+    items.push(move x)
     i = i + 1
   }
 }

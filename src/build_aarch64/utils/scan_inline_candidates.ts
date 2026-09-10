@@ -53,7 +53,7 @@ function is_inline_candidate(func: FunctionNode): boolean {
 	if (!func.has_body) return false;
 	if (func.is_inline) return false;
 	if (func.statements.length === 0 || func.statements.length > MAX_STATEMENTS) return false;
-	if (func.returns_mov) return false;
+	if (func.returns_move) return false;
 	// Raw-block (FFI) functions have arch-specific bodies (`#arch: c`,
 	// `aarch64_use_c`, raw `aarch64`, …) that the general inline path can't
 	// splice in: a companion-C body emits nothing inline, leaving the call a

@@ -12,7 +12,7 @@ pub struct Set<T: Hashable + Equatable> {
 	var Buffer<T> slots = Buffer<T>()
 	var used = Buffer<int>()
 
-	pub func add = (ref self, mov T value) {
+	pub func add = (ref self, move T value) {
 		var int cap = self.slots.cap
 		if cap == 0 {
 			cap = self.slots.alloc_T(8)
@@ -148,8 +148,8 @@ pub struct Set<T: Hashable + Equatable> {
 	}
 
 	func rehash = (ref self, int new_cap) {
-		var Buffer<T> old_slots = mov self.slots swap Buffer<T>()
-		var Buffer<int> old_used = mov self.used swap Buffer<int>()
+		var Buffer<T> old_slots = move self.slots swap Buffer<T>()
+		var Buffer<int> old_used = move self.used swap Buffer<int>()
 		var int old_cap = old_slots.cap
 
 		self.slots.alloc_T(new_cap)
@@ -168,7 +168,7 @@ pub struct Set<T: Hashable + Equatable> {
 				// once the new buffer has made its own copy — passing it inline
 				// would orphan the move_T result.
 				var T v = old_slots.move_T(i)
-				self.add(mov v)
+				self.add(move v)
 			}
 		}
 	}

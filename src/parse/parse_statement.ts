@@ -59,7 +59,7 @@ export default function parse_statement(status: ParseStatus) {
 			}
 			case "const":
 			case "var":
-			case "mov":
+			case "move":
 			case "view": {
 				parse_declaration(default_visibility(status), value, status);
 				break;
@@ -80,11 +80,11 @@ export default function parse_statement(status: ParseStatus) {
 				parse_enum(default_visibility(status), status);
 				break;
 			}
-			case "strict": {
-				// Contextual modifier: `strict enum/bitset …` or
-				// `strict pub enum/bitset …`. Anything else (e.g. `strict = 5`,
-				// `strict.foo()`) falls through to the expression path, so
-				// `strict` stays usable as a name.
+			case "must_use": {
+				// Contextual modifier: `must_use enum/bitset …` or
+				// `must_use pub enum/bitset …`. Anything else (e.g. `must_use = 5`,
+				// `must_use.foo()`) falls through to the expression path, so
+				// `must_use` stays usable as a name.
 				const next = status.tokens[status.i + 1]?.value;
 				if (next === "enum") {
 					parse_enum(default_visibility(status), status);

@@ -18,8 +18,8 @@ import build_and_check_output from "./build_and_check_output";
  * `function_return_type`, which is unset for primitive-returning struct
  * methods (current_return_is_string's fallback now covers it).
  *
- * The program uses `mov` params per the ownership model (mutators storing
- * into an owning field take `mov T`).
+ * The program uses `move` params per the ownership model (mutators storing
+ * into an owning field take `move T`).
  */
 
 const SRC = `
@@ -33,8 +33,8 @@ class Box {
 }
 
 class Wall {
-	mov Box? art = null
-	func set_art = (ref self, mov Box b) {
+	move Box? art = null
+	func set_art = (ref self, move Box b) {
 		self.art = b
 	}
 	func show = (self, out string) {
@@ -48,9 +48,9 @@ class Wall {
 pub func main = () {
 	var Wall w = Wall()
 	Console.write("\\{w.show()}\\n")
-	w.set_art(mov Box(1))
+	w.set_art(move Box(1))
 	Console.write("\\{w.show()}\\n")
-	w.set_art(mov Box(2))
+	w.set_art(move Box(2))
 	Console.write("\\{w.show()}\\n")
 }
 `;

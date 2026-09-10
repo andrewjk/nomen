@@ -15,7 +15,7 @@ export function is_class_type(type_name: string, status: CheckStatus): boolean {
  * 8-byte heap pointer that the container's `#destroy` will reclaim
  * per-element. That covers both classes (ClassBuffer<T> routing) and
  * traits (ClassBuffer<Trait> routing, dispatching destroy via the
- * vtable). Storing a BORROW of such a type into a `mov T` slot would
+ * vtable). Storing a BORROW of such a type into a `move T` slot would
  * create shared ownership: the destination's destroy frees the pointer
  * while the source still references it (a runtime double-free, SIGABRT).
  */
@@ -87,7 +87,7 @@ export function is_owning_struct_type(type: Type, status: CheckStatus): boolean 
  * be rodata literals), so byte-copying such a struct out of a field is a sound
  * BORROW (the copy aliases the source's strings; neither side frees them).
  * A struct that owns a List/Buffer/class/… WOULD be destroyed, so copying it
- * by value would double-free — that's the case that must stay a `mov ... swap`.
+ * by value would double-free — that's the case that must stay a `move ... swap`.
  */
 export function is_owning_struct_type_requiring_move(type: Type, status: CheckStatus): boolean {
 	const s = resolve_struct(type, status);

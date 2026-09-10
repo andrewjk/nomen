@@ -80,15 +80,15 @@ function current_return_is_float(status: BuildStatus): boolean {
 }
 
 /**
- * Whether the function currently being built declares `mov out string` (the
+ * Whether the function currently being built declares `move out string` (the
  * signature-level ownership contract). Mirrors current_return_is_string's
  * resolution: `function_return_type` is unset for primitive-returning struct
  * methods, so resolve the FunctionNode from `current_struct`.
  */
-function current_function_returns_mov_string(status: BuildStatus): boolean {
+function current_function_returns_move_string(status: BuildStatus): boolean {
 	if (!status.current_struct || !status.current_function_name) return false;
 	const fn = status.current_struct.functions.find((f) => f.name === status.current_function_name);
-	return !!fn?.returns_mov && fn.return_type?.name === "string" && !fn.return_type?.is_view;
+	return !!fn?.returns_move && fn.return_type?.name === "string" && !fn.return_type?.is_view;
 }
 
 /**
@@ -379,10 +379,10 @@ export default function build_return_node(
 			((!!status.heap_returning_functions &&
 				(status.heap_returning_functions.has(fn_name) ||
 					(mangled !== undefined && status.heap_returning_functions.has(mangled)))) ||
-				// A `mov out string` function hands the caller an OWNED value by
+				// A `move out string` function hands the caller an OWNED value by
 				// signature — a literal return path must be copied into heap
 				// storage or the caller frees rodata.
-				current_function_returns_mov_string(status))
+				current_function_returns_move_string(status))
 		) {
 			// strdup the ptr half, keep the len half (x1 survives the call).
 			emit_strdup_string(status);
@@ -423,13 +423,13 @@ export default function build_return_node(
 		!is_call_site_borrow_accessor(borrow_fn_name) &&
 		current_return_is_string(status) &&
 		// Either the function is classified heap-returning (its callers free
-		// every result) or it declares `mov out string` (the caller owns the
+		// every result) or it declares `move out string` (the caller owns the
 		// result by signature) — in both cases every return path must hand
 		// over a heap pointer.
 		((!!status.heap_returning_functions &&
 			(status.heap_returning_functions.has(borrow_fn_name) ||
 				(borrow_mangled !== undefined && status.heap_returning_functions.has(borrow_mangled)))) ||
-			current_function_returns_mov_string(status));
+			current_function_returns_move_string(status));
 	let needs_borrow_strdup = false;
 	if (normalizes_borrow_returns) {
 		if (node.value.node_type === "value") {

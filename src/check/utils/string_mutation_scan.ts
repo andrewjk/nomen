@@ -27,7 +27,7 @@ import type_from_value_node from "./type_from_value_node.ts";
  * plain-string-param calls — has no byte-mutation reach on the parameter:
  *   - dispatching a `ref self` method (`set`) on the parameter,
  *   - passing the parameter to a `ref string` param (mutable borrow),
- *   - passing it to a `mov string` param (the callee would own — and free —
+ *   - passing it to a `move string` param (the callee would own — and free —
  *     the caller's bytes),
  *   - swapping the parameter, spawning/async-capturing it (conservative),
  *   - anything a raw `#arch` body might do that the AST can't show
@@ -77,15 +77,15 @@ export function maybe_mark_borrow_to_string_arg(
 	func_param: ParameterNode | undefined,
 	func: FunctionNode,
 	arg_index: number,
-	node: { mov_param_indices?: number[]; swap_params?: Map<number, BaseNode> },
+	node: { move_param_indices?: number[]; swap_params?: Map<number, BaseNode> },
 	status: CheckStatus,
 ): boolean {
 	if (!borrow_to_string_elision_enabled()) return false;
 	if (!func_param || !is_plain_string_param(func_param)) return false;
 	if (!is_plain_string_receiver_to_string(param, status)) return false;
-	// Explicit `mov`/swap at this argument position transfers ownership —
+	// Explicit `move`/swap at this argument position transfers ownership —
 	// never a borrow.
-	if (node.mov_param_indices?.includes(arg_index)) return false;
+	if (node.move_param_indices?.includes(arg_index)) return false;
 	if (node.swap_params?.has(arg_index)) return false;
 	// The soundness gate: the callee must have no mutation reach on this
 	// parameter. `arg_index` is the caller-side index; the scan maps it to
@@ -276,7 +276,7 @@ interface CallSite {
 	name: string;
 	params: BaseNode[];
 	mangled_name?: string;
-	mov_param_indices?: number[];
+	move_param_indices?: number[];
 	swap_params?: Map<number, BaseNode>;
 	resolved_function?: FunctionNode;
 }
@@ -291,9 +291,9 @@ function call_site_mutates(
 	for (let j = 0; j < call.params.length; j++) {
 		const arg = call.params[j];
 		if (!(arg.node_type === "value" && (arg as ValueNode).value === pname)) continue;
-		// Explicit `mov p` / swap involvement: ownership transfer or
+		// Explicit `move p` / swap involvement: ownership transfer or
 		// exchange — the callee (or the swap partner's cleanup) frees.
-		if (call.mov_param_indices?.includes(j)) return true;
+		if (call.move_param_indices?.includes(j)) return true;
 		if (call.swap_params?.has(j)) return true;
 		// Interpolation helpers are compiler-synthesized renderers:
 		// read-only by construction (and resolvable through no table).

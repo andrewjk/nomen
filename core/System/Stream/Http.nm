@@ -53,9 +53,9 @@ pub struct Http {
 	// method string ("GET" / "POST"); a leading 'P' selects POST semantics
 	// (sends `body` and the Content-* headers). Sets self->status (0 on
 	// failure) and self->error, and returns the response body (empty string
-	// on failure). The raw body mallocs the response — `mov out string`
+	// on failure). The raw body mallocs the response — `move out string`
 	// transfers ownership to the caller.
-	func raw_exchange = (ref self, string method, string url, string body, mov out string) {
+	func raw_exchange = (ref self, string method, string url, string body, move out string) {
 		```
 		#arch: c
 		#scope: file

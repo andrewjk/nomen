@@ -56,9 +56,9 @@ ${source}
 	);
 }
 
-test("rederive owned_return on mov-out method call inside mono body", () => {
+test("rederive owned_return on move-out method call inside mono body", () => {
 	// Instantiating List<int> monomorphises the generic. The `pop` method's
-	// body calls self.items.move_T(idx); move_T is `mov out T`, so the call
+	// body calls self.items.move_T(idx); move_T is `move out T`, so the call
 	// must carry owned_return = true on the mono body. Without the
 	// re-derivation pass this annotation is absent (the mono body is never
 	// re-checked).
@@ -77,7 +77,7 @@ const int v = list.pop()
 
 test("rederive owned_return absent on borrow accessor inside mono body", () => {
 	// Instantiating List<int> monomorphises the generic. The `at` method's
-	// body calls self.items.load_T(i); load_T is NOT mov-out, so owned_return
+	// body calls self.items.load_T(i); load_T is NOT move-out, so owned_return
 	// must NOT be set.
 	const parsed = parse_with_system(`
 var List<int> list = List<int>()

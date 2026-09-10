@@ -105,7 +105,7 @@ export function free_scoped_declarations(
 		// pointer (e.g. a string literal stored in the tuple) that must not be
 		// freed. The temporary owns the tuple's contents; the destructured
 		// bindings are non-owning views.
-		// A `mov` field access (`var Buffer b = mov self.slots swap ...`)
+		// A `move` field access (`var Buffer b = move self.slots swap ...`)
 		// transfers OWNERSHIP of the field's data to `b`, so `b` must be
 		// destroyed at scope exit — it is NOT a non-owning view.
 		const is_destructured_field_access =

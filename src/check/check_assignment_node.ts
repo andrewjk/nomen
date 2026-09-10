@@ -297,7 +297,7 @@ export default function check_assignment_node(
 
 	// Reject byte-copying a struct that transitively owns heap resources from
 	// another variable — both variables would free the same backing data
-	// (double-free). Use `mov` (`b = mov a`) to transfer ownership or `.copy()`
+	// (double-free). Use `move` (`b = move a`) to transfer ownership or `.copy()`
 	// for a deep copy. A `swap` assignment transfers ownership (the source is
 	// replaced), so it is allowed; fresh allocations (constructors / function
 	// returns) arrive as non-value nodes and are moves, not copies. This mirrors
@@ -312,15 +312,15 @@ export default function check_assignment_node(
 		if (rhs_type.name && is_owning_struct_type(rhs_type, status)) {
 			add_error(
 				status,
-				`cannot copy '${rhs_type.name}' by value — it owns heap resources; use .copy() or mov`,
+				`cannot copy '${rhs_type.name}' by value — it owns heap resources; use .copy() or move`,
 				assign.right_value.start,
 			);
 		}
 	}
 
-	// `b = mov a` (no swap) transfers ownership: the source `a` is moved and may
+	// `b = move a` (no swap) transfers ownership: the source `a` is moved and may
 	// not be used again until it is reassigned. (A swap revalidates the source,
-	// so it is not marked; func-call `mov` params are marked in check_function_call.)
+	// so it is not marked; func-call `move` params are marked in check_function_call.)
 	if (assign.right_value.node_type === "value" && assign.right_value.is_moved && !assign.swap) {
 		if (!status.moved_variables) status.moved_variables = new Set();
 		status.moved_variables.add((assign.right_value as ValueNode).value);
@@ -394,11 +394,11 @@ export default function check_assignment_node(
 	if (rhs_is_field_access && rhs_type.name) {
 		if (is_class_type(rhs_type.name, status)) {
 			// A class field is a borrowed reference owned by its parent; extracting
-			// it requires mov+swap so the parent's slot is revalidated.
+			// it requires move+swap so the parent's slot is revalidated.
 			if (!assign.swap) {
 				add_error(
 					status,
-					`cannot assign class field '${rhs_type.name}' from another owner, use mov with swap`,
+					`cannot assign class field '${rhs_type.name}' from another owner, use move with swap`,
 					assign.right_value.start,
 				);
 			}
@@ -410,13 +410,13 @@ export default function check_assignment_node(
 				const field_name = (assign.right_value as AccessNode).access.name;
 				add_error(
 					status,
-					`cannot copy '${rhs_type.name}' out of field '${field_name}' by value — it owns heap resources; use mov with swap`,
+					`cannot copy '${rhs_type.name}' out of field '${field_name}' by value — it owns heap resources; use move with swap`,
 					assign.right_value.start,
 				);
 			} else if (!assign.swap) {
 				add_error(
 					status,
-					`mov out of a field requires a swap to revalidate it`,
+					`move out of a field requires a swap to revalidate it`,
 					assign.right_value.start,
 				);
 			}
@@ -426,7 +426,7 @@ export default function check_assignment_node(
 	// Borrow-lifetime check: a borrowed class reference (a variable that holds
 	// a borrow) may not be assigned to a variable declared in an outer scope —
 	// that would let the borrow outlive the instance it points into. To move
-	// ownership out, use `mov` (with swap). Within the same/inner scope the
+	// ownership out, use `move` (with swap). Within the same/inner scope the
 	// target simply becomes a borrow too.
 	if (!assign.swap && left_value.declaration === "var") {
 		const rhs_borrow_depth = borrow_depth_of(assign.right_value, status);
@@ -434,7 +434,7 @@ export default function check_assignment_node(
 			if (left_value.decl_depth !== undefined && left_value.decl_depth < rhs_borrow_depth) {
 				add_error(
 					status,
-					`borrow escapes its scope — use 'mov' (with swap) to transfer ownership`,
+					`borrow escapes its scope — use 'move' (with swap) to transfer ownership`,
 					assign.right_value.start,
 				);
 			} else {

@@ -129,7 +129,7 @@ function replace_in_place(target: ArrayValuesNode, source: FunctionCallNode) {
 	(target as any).is_static = source.is_static;
 	(target as any).type_args = source.type_args;
 	(target as any).ref_param_indices = source.ref_param_indices;
-	(target as any).mov_param_indices = source.mov_param_indices;
+	(target as any).move_param_indices = source.move_param_indices;
 	(target as any).swap_params = source.swap_params;
 	(target as any).variadic_param_name = source.variadic_param_name;
 	(target as any).variadic_param_index = source.variadic_param_index;

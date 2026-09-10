@@ -134,10 +134,10 @@ function is_fresh_heap_string(node: BaseNode | undefined): boolean {
 	return false;
 }
 
-// A bare owned-string VARIABLE right-hand side (`s = t`, no explicit mov):
+// A bare owned-string VARIABLE right-hand side (`s = t`, no explicit move):
 // assignment value semantics strdup t into a copy the target owns. A bare
 // identifier only — literals (rodata stores stay raw), explicit moves
-// (`s = mov t`, handled by the mov transfer path), and view-typed sources
+// (`s = move t`, handled by the move transfer path), and view-typed sources
 // (non-owning pair stores) are excluded.
 function is_owned_string_var_rhs(node: BaseNode | undefined): boolean {
 	if (!node || node.node_type !== "value") return false;

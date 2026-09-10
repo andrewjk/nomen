@@ -437,7 +437,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.function_view_params = new Set();
 	status.moved_class_params = new Map();
 
-	// Save mov'd class param values for cleanup at return
+	// Save moved class param values for cleanup at return
 	let moved_param_save_slots: Map<
 		string,
 		{
@@ -778,7 +778,10 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 						// The slot holds the entry value (sub-word spills store
 						// the param's declared width; the matching load
 						// zero-extends exactly like the emitters' slot reads).
-						raw_reloads.push({ reg, asm: raw_slot_reload_line(reg, offset, size) });
+						raw_reloads.push({
+							reg,
+							asm: raw_slot_reload_line(reg, offset, size),
+						});
 						if (promoted_reg) {
 							emit_promoted_load(status, promoted_reg, offset, param.type.name);
 						}
@@ -860,8 +863,8 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 
 	const moved_before = new Set(status.moved ?? []);
 
-	// Track mov'd class params for cleanup at return. This runs regardless of
-	// whether the function has a body: a `mov Box x` param is owned by the
+	// Track moved class params for cleanup at return. This runs regardless of
+	// whether the function has a body: a `move Box x` param is owned by the
 	// callee and must be reclaimed (with its #destroy + field destroys) even
 	// when the body is empty. The incoming value is saved from whichever
 	// register holds it at entry — the callee-saved register assigned during
@@ -1018,7 +1021,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		status.code += `mov x0, #0\n`;
 	}
 
-	// Reclaim mov'd class params: run #destroy + field destroys (which free
+	// Reclaim moved class params: run #destroy + field destroys (which free
 	// owned class fields) then free the instance itself. Skip params that were
 	// moved out within the body. When the function returns a class, also skip a
 	// param whose value is the return value — it is handed back to the caller.

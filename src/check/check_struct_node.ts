@@ -170,12 +170,12 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 	rewrite_generic_buffer_fields(struct, status);
 
 	// The auto-generated #init's parameter for a non-defaulted field whose
-	// type is an owning value struct (List/Map/Buffer/…) must be a `mov`
+	// type is an owning value struct (List/Map/Buffer/…) must be a `move`
 	// param: the init body byte-copies the param into the field, so a plain
 	// by-value pass would leave the field and the caller's variable co-owning
 	// the same backing storage (double-free at scope exit). Marking the param
-	// moved makes `Struct(mov x)` the required (sound) call form — the build's
-	// mov machinery then releases the caller's cleanup obligation — while a
+	// moved makes `Struct(move x)` the required (sound) call form — the build's
+	// move machinery then releases the caller's cleanup obligation — while a
 	// fresh constructor arg (`Struct(List<int>())`) transfers implicitly.
 	mark_owning_auto_init_params(struct, status);
 
@@ -202,13 +202,13 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 }
 
 /**
- * Mark the auto-generated (bodyless) `#init`'s parameters as `mov` for every
+ * Mark the auto-generated (bodyless) `#init`'s parameters as `move` for every
  * non-defaulted field whose type is an owning value struct (e.g.
  * `var List<int> items`). The synthesized init byte-copies each param into its
  * field, so ownership must transfer with the call — a plain by-value argument
  * would leave the caller's variable and the field co-owning the backing heap
  * storage (a double-free at scope exit, mirroring the `var List b = a`
- * declaration rejection). Runs for both `var` and `mov`-declared fields: a
+ * declaration rejection). Runs for both `var` and `move`-declared fields: a
  * defaulted owning field never takes a param (its default constructs fresh),
  * and a non-defaulted one always needs the transfer. Generic structs are
  * skipped — their init params are rebuilt per-monormorphization in
@@ -321,7 +321,7 @@ export function resolve_struct_field_types(status: CheckStatus) {
 			if (t?.name) field.type = t;
 		}
 		rewrite_generic_buffer_fields(struct, status);
-		// Mark auto-init params of owning-struct fields as `mov` upfront for
+		// Mark auto-init params of owning-struct fields as `move` upfront for
 		// the same reason the type inference above runs here: user functions
 		// are checked BEFORE library structs (appended after user source), so
 		// a statement-order-only marker would miss call sites checked first.

@@ -57,7 +57,7 @@ class Dog : Speaker {
 
 if true {
 	var List<Speaker> pets = List<Speaker>()
-	pets.push(mov Dog("Rex"))
+	pets.push(move Dog("Rex"))
 }
 Console.write("\\ndone")
 `;
@@ -89,7 +89,7 @@ class Dog : Speaker {
 
 if true {
 	var List<Speaker> pets = List<Speaker>()
-	pets.push(mov Dog("Rex"))
+	pets.push(move Dog("Rex"))
 }
 Console.write("done")
 `;
@@ -116,8 +116,8 @@ class Cat : Speaker {
 
 if true {
 	var List<Speaker> pets = List<Speaker>()
-	pets.push(mov Dog("Rex"))
-	pets.push(mov Cat("Tom"))
+	pets.push(move Dog("Rex"))
+	pets.push(move Cat("Tom"))
 }
 Console.write(" done")
 `;

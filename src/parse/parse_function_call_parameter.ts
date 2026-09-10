@@ -10,7 +10,7 @@ export default function parse_function_call_parameter(
 	status: ParseStatus,
 ) {
 	const is_ref = accept("ref", status);
-	const is_mov = accept("mov", status);
+	const is_move = accept("move", status);
 	const param = parse_expression(status);
 	node.params.push(param);
 	const param_index = node.params.length - 1;
@@ -18,9 +18,9 @@ export default function parse_function_call_parameter(
 		if (!node.ref_param_indices) node.ref_param_indices = [];
 		node.ref_param_indices.push(param_index);
 	}
-	if (is_mov) {
-		if (!node.mov_param_indices) node.mov_param_indices = [];
-		node.mov_param_indices.push(param_index);
+	if (is_move) {
+		if (!node.move_param_indices) node.move_param_indices = [];
+		node.move_param_indices.push(param_index);
 	}
 	if (peek_current(status) === "swap") {
 		accept("swap", status);

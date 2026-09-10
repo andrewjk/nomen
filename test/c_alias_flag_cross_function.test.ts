@@ -31,7 +31,7 @@ func first = (List<R> xs, out int) {
 pub func main = (Init init) {
 	var List<R> xs = List<R>()
 	var a = R(7)
-	xs.push(mov a)
+	xs.push(move a)
 	var t = R(41)
 	Console.write("\\{first(xs)} \\{t.v}\\n")
 }

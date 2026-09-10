@@ -18,9 +18,9 @@ describe("container class-ref auto-free: remaining gaps", () => {
 class Animal { var char letter }
 var List<Animal> l1 = List<Animal>()
 var List<Animal> l2 = List<Animal>()
-l1.push(mov Animal('A'))
+l1.push(move Animal('A'))
 var Animal x = l1.pop()
-l2.push(mov x)
+l2.push(move x)
 Console.write("ok\\n")
 `;
 		await build_and_check_output(input, "gap_pop_double_free", "ok\n");
@@ -33,9 +33,9 @@ Console.write("ok\\n")
 class Animal { var char letter }
 if true {
 	var List<Animal> list = List<Animal>()
-	list.push(mov Animal('A'))
+	list.push(move Animal('A'))
 	if list.length > 0 {
-		list.set(0, mov Animal('B'))
+		list.set(0, move Animal('B'))
 		Console.write("\\{list.at(0).letter}")
 	}
 }
@@ -56,23 +56,23 @@ class Resource {
 }
 if true {
 	var List<Resource> list = List<Resource>()
-	list.push(mov Resource(1))
+	list.push(move Resource(1))
 }
 Console.write("done\\n")
 `;
 		await build_and_check_output(input, "gap_destroy_not_run", "destroyed\ndone\n");
 	});
 
-	// #4 — A class owning another class (mov Box) freed correctly when held as a
+	// #4 — A class owning another class (move Box) freed correctly when held as a
 	// local, but when stored in a container the raw free() does not recurse, so
 	// the owned inner class leaks.
 	test("container-stored class with owned class field leaks the inner class", async () => {
 		const input = `
 class Box { var int v }
-class Holder { mov Box content }
+class Holder { move Box content }
 if true {
 	var List<Holder> list = List<Holder>()
-	list.push(mov Holder(mov Box(7)))
+	list.push(move Holder(move Box(7)))
 }
 Console.write("done\\n")
 `;
@@ -88,7 +88,7 @@ class Animal { var char letter }
 if true {
 	var List<Animal> list = List<Animal>()
 	list = List<Animal>()
-	list.push(mov Animal('Z'))
+	list.push(move Animal('Z'))
 }
 Console.write("done\\n")
 `;
@@ -102,7 +102,7 @@ Console.write("done\\n")
 class Animal { var char letter }
 func make_list = (out List<Animal>) {
 	var List<Animal> result = List<Animal>()
-	result.push(mov Animal('Z'))
+	result.push(move Animal('Z'))
 	return result
 }
 if true {
@@ -118,7 +118,7 @@ Console.write("done\\n")
 class Animal { var char letter }
 func make_list = (out List<Animal>) {
 	var List<Animal> result = List<Animal>()
-	result.push(mov Animal('Z'))
+	result.push(move Animal('Z'))
 	return result
 }
 if true {
@@ -141,7 +141,7 @@ struct Zoo {
 }
 if true {
 	var Zoo z = Zoo()
-	z.animals.push(mov Animal('Z'))
+	z.animals.push(move Animal('Z'))
 }
 Console.write("done\\n")
 `;
@@ -158,7 +158,7 @@ struct Zoo {
 	var List<Animal> animals = List<Animal>()
 
 	func #init = (self) {
-		self.animals.push(mov Animal('Z'))
+		self.animals.push(move Animal('Z'))
 	}
 }
 if true {

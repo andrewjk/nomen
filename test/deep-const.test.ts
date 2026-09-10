@@ -3,7 +3,7 @@ import { expect, describe, test } from "vite-plus/test";
 import { parse_raw } from "./parse_with_imports";
 
 // Deep-const for collections: extracting a class element from a const source
-// yields a read-only (`is_const_ref`) reference — field writes, ref/mov
+// yields a read-only (`is_const_ref`) reference — field writes, ref/move
 // forwarding, and mutating (`ref self`) dispatch through it are rejected.
 // See FOLLOWUP.md "Deep-const for collections".
 
@@ -54,21 +54,21 @@ func leak = (List<Widget> list) {
 		);
 	});
 
-	test("mov param forwarding of const_ref is rejected", () => {
+	test("move param forwarding of const_ref is rejected", () => {
 		const input = `
 import System
 ${WIDGET}
-func take_mov = (mov Widget w) {
+func take_mov = (move Widget w) {
 	w.title = "changed"
 }
 func leak = (List<Widget> list) {
-	take_mov(mov list.at(0))
+	take_mov(move list.at(0))
 }
 `;
 		const parsed = parse_raw(input);
 		const messages = filter_constraint(parsed.errors).map((e) => e.message);
 		expect(messages).toContain(
-			"Cannot pass a const reference to mov parameter 'w' — extract from a non-const source or use a plain (copy) parameter",
+			"Cannot pass a const reference to move parameter 'w' — extract from a non-const source or use a plain (copy) parameter",
 		);
 	});
 

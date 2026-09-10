@@ -260,7 +260,7 @@ test("the cbz test form hoists cmp #0 with a ne select", () => {
 	expect(text).not.toContain("cbz x12");
 });
 
-test("immediate-differing arms hoist a once-only mov pair", () => {
+test("immediate-differing arms hoist a once-only move pair", () => {
 	const asm = [
 		"f:",
 		"mov x12, #1",

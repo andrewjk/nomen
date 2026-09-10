@@ -86,7 +86,7 @@ export default interface CheckStatus {
 	is_assignment_target?: boolean;
 
 	/**
-	 * Variables that have been moved via `mov` and can no longer be used
+	 * Variables that have been moved via `move` and can no longer be used
 	 */
 	moved_variables?: Set<string>;
 

@@ -10,10 +10,10 @@ class Box {
 	var int value
 }
 class Holder {
-	mov Box content
+	move Box content
 }
-var Holder h1 = Holder(mov Box(1))
-var Holder h2 = Holder(mov Box(2))
+var Holder h1 = Holder(move Box(1))
+var Holder h2 = Holder(move Box(2))
 h1.content = h2.content swap Box(0)
 Console.write("\\{h1.content.value} \\{h2.content.value}")
 `;
@@ -26,10 +26,10 @@ class Box {
 	var int value
 }
 class Holder {
-	mov Box content
+	move Box content
 }
-var Holder h1 = Holder(mov Box(1))
-var Holder h2 = Holder(mov Box(2))
+var Holder h1 = Holder(move Box(1))
+var Holder h2 = Holder(move Box(2))
 h1.content = h2.content swap Box(0)
 Console.write("done")
 `;
@@ -42,10 +42,10 @@ class Box {
 	var int value
 }
 class Holder {
-	mov Box content
+	move Box content
 }
-var Holder h1 = Holder(mov Box(10))
-var Holder h2 = Holder(mov Box(20))
+var Holder h1 = Holder(move Box(10))
+var Holder h2 = Holder(move Box(20))
 h1.content = h2.content swap Box(99)
 Console.write("\\{h1.content.value} \\{h2.content.value}")
 `;
@@ -58,10 +58,10 @@ class Box {
 	var int value
 }
 class Holder {
-	mov Box content
+	move Box content
 }
-var Holder h1 = Holder(mov Box(1))
-var Holder h2 = Holder(mov Box(2))
+var Holder h1 = Holder(move Box(1))
+var Holder h2 = Holder(move Box(2))
 h1.content = h2.content swap Box(3)
 Console.write("done")
 `;
@@ -74,10 +74,10 @@ class Box {
 	var int value
 }
 class Holder {
-	mov Box content
+	move Box content
 }
-var Holder h1 = Holder(mov Box(1))
-var Holder h2 = Holder(mov Box(2))
+var Holder h1 = Holder(move Box(1))
+var Holder h2 = Holder(move Box(2))
 h1.content = h2.content swap 42
 `;
 		const parsed = parse_with_imports(input);

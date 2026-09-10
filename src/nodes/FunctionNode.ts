@@ -44,12 +44,12 @@ export default class FunctionNode extends BaseNode implements BlockNode, Returni
 	/** True when this function is defined in the appended System library source. */
 	is_library?: boolean;
 	/**
-	 * True for a `mov out T` return: the method transfers ownership of the
+	 * True for a `move out T` return: the method transfers ownership of the
 	 * returned value to the caller (which must then free it), rather than
 	 * lending a borrow. The canonical example is `List.pop`. Symmetric to a
-	 * `mov T` parameter (ownership in), this is ownership out.
+	 * `move T` parameter (ownership in), this is ownership out.
 	 */
-	returns_mov?: boolean;
+	returns_move?: boolean;
 	/**
 	 * True for a string-returning function whose return expressions hand
 	 * back a BORROW (a parameter pass-through, a borrow-initialized local,

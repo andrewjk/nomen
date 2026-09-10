@@ -60,14 +60,22 @@ export interface NirCallFacts {
 }
 
 export type NirExpr =
-	| { readonly kind: "leaf"; readonly node: BaseNode; readonly name: string | null }
+	| {
+			readonly kind: "leaf";
+			readonly node: BaseNode;
+			readonly name: string | null;
+	  }
 	| {
 			readonly kind: "binary";
 			readonly node: BaseNode;
 			readonly left: NirExpr;
 			readonly right: NirExpr;
 	  }
-	| { readonly kind: "wrap"; readonly node: BaseNode; readonly inner: NirExpr | null }
+	| {
+			readonly kind: "wrap";
+			readonly node: BaseNode;
+			readonly inner: NirExpr | null;
+	  }
 	| {
 			readonly kind: "call";
 			readonly node: BaseNode;
@@ -140,7 +148,7 @@ export interface NirDeclareInfo {
 	readonly modifiers: NirDeclModifiers;
 	readonly init: NirExpr | null;
 	/** Replacement value written back into a moved-out source (`var X b =
-	 *  mov obj.field swap <rep>`); null when the declaration has no swap. */
+	 *  move obj.field swap <rep>`); null when the declaration has no swap. */
 	readonly swap: NirExpr | null;
 	readonly node: BaseNode;
 }
@@ -209,7 +217,10 @@ export type NirStmt =
 			readonly kind: "nested_func";
 			readonly name: string;
 			readonly label_name: string | undefined;
-			readonly params: readonly { readonly name: string; readonly type: Type }[];
+			readonly params: readonly {
+				readonly name: string;
+				readonly type: Type;
+			}[];
 			readonly body: NirStmt[];
 	  })
 	| (NirStmtBase & {

@@ -61,7 +61,7 @@ var List<int> a = List<int>()
 a.push(1)
 var List<int> b = List<int>()
 b.push(2)
-b = mov a
+b = move a
 const int v = b.pop()
 Console.write("\\{v}")
 `;
@@ -90,9 +90,9 @@ class Box {
 	var int value
 }
 class Holder {
-	mov Box content
+	move Box content
 }
-var Holder h1 = Holder(mov Box(42))
+var Holder h1 = Holder(move Box(42))
 var Holder h2 = h1
 Console.write("\\{h1.content.value}")
 `;
@@ -106,10 +106,10 @@ class Box {
 	var int value
 }
 class Holder {
-	mov Box content
+	move Box content
 }
-var Holder h1 = Holder(mov Box(1))
-var Holder h2 = Holder(mov Box(2))
+var Holder h1 = Holder(move Box(1))
+var Holder h2 = Holder(move Box(2))
 h1.content = h2.content
 `;
 			const parsed = parse_with_imports(input);
@@ -117,16 +117,16 @@ h1.content = h2.content
 			expect(parsed.errors.map((e) => e.message)).toContainEqual(expect.stringContaining("cannot"));
 		});
 
-		test("cannot mov out of class field", () => {
+		test("cannot move out of class field", () => {
 			const input = `
 class Box {
 	var int value
 }
 class Holder {
-	mov Box content
+	move Box content
 }
-var Holder h1 = Holder(mov Box(42))
-var Holder h2 = Holder(mov h1.content)
+var Holder h1 = Holder(move Box(42))
+var Holder h2 = Holder(move h1.content)
 `;
 			const parsed = parse_with_imports(input);
 			expect(parsed.errors.length).toBeGreaterThan(0);
@@ -139,9 +139,9 @@ class Box {
 	var int value
 }
 class Holder {
-	mov Box content
+	move Box content
 }
-var Holder h = Holder(mov Box(42))
+var Holder h = Holder(move Box(42))
 Console.write("\\{h.content.value}")
 `;
 			await build_and_check_output(input, "ok_read_field", "42");
@@ -153,9 +153,9 @@ class Box {
 	var int value
 }
 struct Holder {
-	mov Box content
+	move Box content
 }
-var Holder h1 = Holder(mov Box(1))
+var Holder h1 = Holder(move Box(1))
 var Holder h2 = h1
 `;
 			const parsed = parse_with_imports(input);
@@ -278,34 +278,34 @@ Console.write("\\{b.id}")
 });
 
 // An owning struct may not be byte-copied from a variable (the source and the
-// copy would both free the same backing data). The escape hatch is the `mov`
+// copy would both free the same backing data). The escape hatch is the `move`
 // keyword, which transfers ownership instead of copying: the bytes still move
 // into the destination, but the source is marked moved and skipped at cleanup,
-// so only one owner frees. `mov` works in both copy sites:
+// so only one owner frees. `move` works in both copy sites:
 //
-//   - declaration:   `var List<int> b = mov a`
-//   - assignment:    `b = mov a`
+//   - declaration:   `var List<int> b = move a`
+//   - assignment:    `b = move a`
 //
-// Requiring `mov` on both keeps the two sites consistent (previously an
+// Requiring `move` on both keeps the two sites consistent (previously an
 // assignment silently moved while a declaration was rejected). A struct whose
-// `#destroy` is benign (no raw block) is a value type and needs no `mov`.
-describe("owning-struct moves (mov keyword)", () => {
-	test("declaration `var X b = mov a` transfers ownership (no double-free)", async () => {
+// `#destroy` is benign (no raw block) is a value type and needs no `move`.
+describe("owning-struct moves (move keyword)", () => {
+	test("declaration `var X b = move a` transfers ownership (no double-free)", async () => {
 		// b takes the list; a is moved (not freed). Only b is destroyed, so the
 		// backing Buffer is freed exactly once (audit clean).
 		const input = `
 var List<int> a = List<int>()
 a.push(1)
 a.push(2)
-var List<int> b = mov a
+var List<int> b = move a
 const int v = b.pop()
 Console.write("\\{v}")
 `;
 		await build_and_check_output(input, "owning_decl_mov", "2");
 	});
 
-	test("assignment of an owning struct requires mov", () => {
-		// Plain `b = a` is rejected for owning structs -- use `b = mov a` (or
+	test("assignment of an owning struct requires move", () => {
+		// Plain `b = a` is rejected for owning structs -- use `b = move a` (or
 		// `.copy()` for an independent copy). Mirrors the declaration-side rule.
 		const input = `
 var List<int> a = List<int>()

@@ -26,7 +26,7 @@ import peek_current from "./utils/peek_current.ts";
 
 export default function parse_declaration(
 	visibility: "pub" | "private",
-	declaration: "const" | "var" | "mov" | "view",
+	declaration: "const" | "var" | "move" | "view",
 	status: ParseStatus,
 ) {
 	const start = get_index(status);
@@ -102,7 +102,7 @@ export default function parse_declaration(
 			if (!decl.type.name && is_value_node(decl.value)) {
 				decl.type = decl.value.type;
 			}
-			// `var X b = mov obj.field swap <replacement>`: moving a field out
+			// `var X b = move obj.field swap <replacement>`: moving a field out
 			// invalidates it, so a swap replacement is required to revalidate the
 			// field (mirrors assignment/param swap).
 			if (peek_current(status) === "swap") {
@@ -326,7 +326,7 @@ function parse_anon_function_parameter(func: FunctionNode, status: ParseStatus) 
 	} else if (accept("cp", status)) {
 		param.declaration = "var";
 		param.is_copied = true;
-	} else if (accept("mov", status)) {
+	} else if (accept("move", status)) {
 		param.declaration = "var";
 		param.is_moved = true;
 	}
@@ -407,7 +407,7 @@ function looks_like_destructuring(status: ParseStatus, start_idx: number): boole
  */
 function parse_destructuring(
 	visibility: "pub" | "private",
-	declaration: "const" | "var" | "mov" | "view",
+	declaration: "const" | "var" | "move" | "view",
 	start: number,
 	status: ParseStatus,
 ) {

@@ -6,7 +6,7 @@ import parse_with_imports from "./parse_with_imports";
 // at compile time. They define the current safety boundary: what IS prevented.
 
 describe("compiler-caught memory safety", () => {
-	test("class-type fields must use mov", () => {
+	test("class-type fields must use move", () => {
 		const input = `
 class Inner { var int x }
 class Outer { var Inner child }
@@ -15,10 +15,10 @@ var Outer o = Outer(i)
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors.length).toBeGreaterThan(0);
-		expect(parsed.errors[0].message).toContain("mov");
+		expect(parsed.errors[0].message).toContain("move");
 	});
 
-	test("returning class param without mov is rejected", () => {
+	test("returning class param without move is rejected", () => {
 		const input = `
 class Box { var int v }
 func borrow = (ref Box b, out Box) {
@@ -27,15 +27,15 @@ func borrow = (ref Box b, out Box) {
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors.length).toBeGreaterThan(0);
-		expect(parsed.errors[0].message).toContain("mov");
+		expect(parsed.errors[0].message).toContain("move");
 	});
 
 	test("using variable after move is rejected", () => {
 		const input = `
 class Box { var int v }
-class Holder { mov Box held }
+class Holder { move Box held }
 var Box b = Box(42)
-var Holder h = Holder(mov b)
+var Holder h = Holder(move b)
 Console.write("\\{b.v}\\n")
 `;
 		const parsed = parse_with_imports(input);

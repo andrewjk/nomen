@@ -10,7 +10,7 @@ pub func main = () {
 	print_thing(xx + 5)
 
 	const thing = Thing(4)
-	do_thing(mov thing)
+	do_thing(move thing)
 
 	//Console.write("bad \{thing}\n")
 
@@ -40,7 +40,7 @@ func print_thing = (int xx) {
 	Console.write("hi, x is \{xx}!\n")
 }
 
-func do_thing = (mov Thing thing) {
+func do_thing = (move Thing thing) {
 	Console.write("we got the moved thing\n")
 }
 

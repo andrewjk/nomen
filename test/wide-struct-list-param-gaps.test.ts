@@ -84,7 +84,7 @@ pub func main = () {
 		var u = NS()
 		u.text = part_of(src, i, next)
 		u.side = i
-		units.push(mov u)
+		units.push(move u)
 		i = next
 	}
 	Console.write_line("units \\{units.length} norm \\{build_norm(units).length}")

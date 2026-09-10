@@ -78,7 +78,7 @@ match found {
 		expect(compile_main(input)).toEqual([]);
 	});
 
-	test("core Result is strict: discard is an error, binding is a use", () => {
+	test("core Result is must_use: discard is an error, binding is a use", () => {
 		const fallible = `
 func try_it = (out Result<int, string>) {
     return Result.error("no")
@@ -94,7 +94,7 @@ try_it()
 `);
 		expect(
 			discarded.some((e) =>
-				e.message.includes("Value of strict enum Result<int, string> is discarded"),
+				e.message.includes("Value of must_use enum Result<int, string> is discarded"),
 			),
 		).toBe(true);
 	});

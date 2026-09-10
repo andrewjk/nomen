@@ -23,7 +23,7 @@ export default function check_trait_node(trait: TraitNode, status: CheckStatus) 
 
 	for (let decl of trait.fields) {
 		if (decl.declaration === "var" && decl.type.name && is_class_type(decl.type.name, status)) {
-			add_error(status, `class-type fields must use 'mov', not 'var'`, decl.start);
+			add_error(status, `class-type fields must use 'move', not 'var'`, decl.start);
 		}
 		check_declaration_node(decl, status);
 	}

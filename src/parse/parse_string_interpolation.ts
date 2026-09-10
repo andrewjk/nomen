@@ -25,7 +25,7 @@ export default function parse_string_interpolation(status: ParseStatus): Functio
 			// Skip the wrap when the expression is ALREADY a `*.to_string()`
 			// call: double-wrapping used to be harmless while the outer call
 			// lowered to the `string_to_string` identity, but with the
-			// signature flipped to `mov out string` (a real strdup) the inner
+			// signature flipped to `move out string` (a real strdup) the inner
 			// conversion's copy would leak between the two conversions.
 			const already_to_string =
 				param.node_type === "access" &&

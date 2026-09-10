@@ -11,7 +11,7 @@ Most types of memory corruption (use before initialization, use after free, doub
 - **Typed Values** - bools, ints, strings and so forth
 - **Structs & Classes** — value-type structs and reference-type classes
 - **Automatic Memory Management** — `#init` functions to allocate resources, `#destroy` functions to clear them at scope exit
-- **Ownership** — `mov` instances to a new owner, or share instances by `ref`
+- **Ownership** — `move` instances to a new owner, or share instances by `ref`
 - **Borrowed Slices** — `view` instances are non-owning, zero-copy slices that can't outlive their source
 - **Traits** — interface-based polymorphism
 - **Enums & Bitsets** — sum types with associated data, plus composable bit flags
@@ -716,22 +716,22 @@ class Box {
     var int value
 }
 
-// an owning field — only classes can hold classes, and only via mov
+// an owning field — only classes can hold classes, and only via move
 class Holder {
-    mov Box content
+    move Box content
 }
 
-// an owning parameter — the caller gives up access with `mov`
-func take = (mov Box b) {
+// an owning parameter — the caller gives up access with `move`
+func take = (move Box b) {
     Console.write("\{b.value}")
 }
 
-var h = Holder(mov Box(7))
+var h = Holder(move Box(7))
 var b = Box(42)
-take(mov b)   // b is invalid after this
+take(move b)   // b is invalid after this
 ```
 
-- `mov` marks a class-typed field or parameter as owned (moved in).
+- `move` marks a class-typed field or parameter as owned (moved in).
 - `ref` passes a value by reference so the callee can mutate it; the caller must
   write `ref` at the call site, and a `const` value can't be borrowed mutably.
 - Plain parameters are read-only — take them by value and make a local `var`

@@ -9,7 +9,7 @@ export default class AccessFunctionCallNode extends BaseNode {
 
 	is_static?: boolean;
 	ref_param_indices?: number[];
-	mov_param_indices?: number[];
+	move_param_indices?: number[];
 	/**
 	 * Indices of arguments whose corresponding callee parameter is a nullable
 	 * struct value type (`T?` where T is a non-class struct). See
@@ -26,7 +26,7 @@ export default class AccessFunctionCallNode extends BaseNode {
 	variadic_param_index?: number;
 	mangled_name?: string;
 	/**
-	 * Set during checking when the called method has a `mov out T` return — the
+	 * Set during checking when the called method has a `move out T` return — the
 	 * call produces an owned value (not a borrow), so the caller must anchor and
 	 * free it. Read by the borrow checker (treats the result as non-borrowed)
 	 * and the build (anchors the result).

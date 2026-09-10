@@ -11,7 +11,7 @@ import build_and_check_output from "./build_and_check_output";
 // storage. Now the local holds the returned pointer, dispatches through
 // the trait vtable, and follows the callee's ownership convention:
 // `.at` borrows (not freed — the container owns the element), while a
-// `mov out T` method like `pop` transfers ownership (freed at scope
+// `move out T` method like `pop` transfers ownership (freed at scope
 // exit).
 
 describe("Trait-typed retrieval from ClassBuffer<Trait>", () => {
@@ -28,7 +28,7 @@ class Dog : Speaker {
 
 if true {
 	var List<Speaker> pets = List<Speaker>()
-	pets.push(mov Dog("Rex"))
+	pets.push(move Dog("Rex"))
 	for i of 0 .. pets.length {
 		var Speaker p = pets.at(i)
 		Console.write(p.speak())
@@ -43,7 +43,7 @@ Console.write("\\ndone")
 		await build_and_check_output(input, "cb_trait_retrieve_at", "Rexdestroying Rex\ndone");
 	});
 
-	test("retrieve via pop (mov out — owned, freed at scope exit)", async () => {
+	test("retrieve via pop (move out — owned, freed at scope exit)", async () => {
 		const input = `
 trait Speaker { func speak = (self, out string) }
 class Dog : Speaker {
@@ -56,13 +56,13 @@ class Dog : Speaker {
 
 if true {
 	var List<Speaker> pets = List<Speaker>()
-	pets.push(mov Dog("Rex"))
+	pets.push(move Dog("Rex"))
 	var Speaker p = pets.pop()
 	Console.write(p.speak())
 }
 Console.write("\\ndone")
 `;
-		// pop() is `mov out T`, so ownership transfers to p. p is freed
+		// pop() is `move out T`, so ownership transfers to p. p is freed
 		// at scope exit via the trait's Speaker_destroy shim (→
 		// Dog_destroy → "destroying Rex"). pets' slot was nulled by
 		// move_int, so no double-free.
@@ -83,8 +83,8 @@ class Cat : Speaker {
 
 if true {
 	var List<Speaker> pets = List<Speaker>()
-	pets.push(mov Dog("dog Rex"))
-	pets.push(mov Cat("cat Tom"))
+	pets.push(move Dog("dog Rex"))
+	pets.push(move Cat("cat Tom"))
 	for i of 0 .. pets.length {
 		var Speaker p = pets.at(i)
 		Console.write(p.speak())

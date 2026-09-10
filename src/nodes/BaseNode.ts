@@ -16,8 +16,8 @@ export default class BaseNode {
 	// We don't want to add them to the statements afterwards, because that would be slower
 	allocations?: BaseNode[];
 
-	/** Set when this expression was written with a leading `mov` (e.g. `b = mov a`,
-	 *  `var X b = mov a`). Marks an ownership transfer rather than a copy. */
+	/** Set when this expression was written with a leading `move` (e.g. `b = move a`,
+	 *  `var X b = move a`). Marks an ownership transfer rather than a copy. */
 	is_moved?: boolean;
 
 	constructor(node_type: NodeType, start: number) {

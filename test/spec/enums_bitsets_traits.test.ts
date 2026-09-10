@@ -74,10 +74,10 @@ var shape = Shape.rect(10, 20)
 	});
 });
 
-describe("spec: strict enums", () => {
+describe("spec: must_use enums", () => {
 	test("bind, explicit discard, and match are all uses", () => {
 		const input = `
-pub strict enum Attempt {
+pub must_use enum Attempt {
     case ok
     case error(int code)
 }
@@ -96,9 +96,9 @@ match try_it() {
 		expect(compile_main(input)).toEqual([]);
 	});
 
-	test("bare statement call discards a strict enum value", () => {
+	test("bare statement call discards a must_use enum value", () => {
 		const input = `
-pub strict enum Attempt {
+pub must_use enum Attempt {
     case ok
     case error(int code)
 }
@@ -111,11 +111,11 @@ try_it()
 `;
 		const errors = compile_main(input);
 		expect(
-			errors.some((e) => e.message.includes("Value of strict enum Attempt is discarded")),
+			errors.some((e) => e.message.includes("Value of must_use enum Attempt is discarded")),
 		).toBe(true);
 	});
 
-	test("non-strict enums may still be discarded", () => {
+	test("non-must_use enums may still be discarded", () => {
 		const input = `
 pub enum Attempt {
     case ok
@@ -132,10 +132,10 @@ try_it()
 	});
 });
 
-describe("spec: strict bitsets", () => {
+describe("spec: must_use bitsets", () => {
 	test("binding and explicit discard are uses", () => {
 		const input = `
-pub strict bitset Flags {
+pub must_use bitset Flags {
     case read
     case write
 }
@@ -150,9 +150,9 @@ const f = flags_of()
 		expect(compile_main(input)).toEqual([]);
 	});
 
-	test("bare statement call discards a strict bitset value", () => {
+	test("bare statement call discards a must_use bitset value", () => {
 		const input = `
-pub strict bitset Flags {
+pub must_use bitset Flags {
     case read
     case write
 }
@@ -165,7 +165,7 @@ flags_of()
 `;
 		const errors = compile_main(input);
 		expect(
-			errors.some((e) => e.message.includes("Value of strict bitset Flags is discarded")),
+			errors.some((e) => e.message.includes("Value of must_use bitset Flags is discarded")),
 		).toBe(true);
 	});
 });

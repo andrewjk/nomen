@@ -3,20 +3,20 @@ import { describe, expect, test } from "vite-plus/test";
 import build_and_check_output from "./build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 
-describe("strict enums", () => {
-	test("declaration forms: `pub strict enum`, `strict enum`, `strict pub enum`", () => {
+describe("must_use enums", () => {
+	test("declaration forms: `pub must_use enum`, `must_use enum`, `must_use pub enum`", () => {
 		const input = `
-pub strict enum A {
+pub must_use enum A {
 	case ok
 	case error(int code)
 }
 
-strict enum B {
+must_use enum B {
 	case ok
 	case error(int code)
 }
 
-strict pub enum C {
+must_use pub enum C {
 	case ok
 	case error(int code)
 }
@@ -32,7 +32,7 @@ var _ = use()
 
 	test("binding, matching, and explicit discard all compile and run", async () => {
 		const input = `
-pub strict enum Attempt {
+pub must_use enum Attempt {
 	case ok
 	case error(int code)
 }
@@ -58,9 +58,9 @@ match try_it(3) {
 		await build_and_check_output(input, "strict_enum_use", "ok");
 	});
 
-	test("bare statement call discarding a strict enum is an error (method call)", () => {
+	test("bare statement call discarding a must_use enum is an error (method call)", () => {
 		const input = `
-pub strict enum Attempt {
+pub must_use enum Attempt {
 	case ok
 	case error(int code)
 }
@@ -73,13 +73,13 @@ try_it()
 `;
 		const parsed = parse_with_imports(input);
 		expect(
-			parsed.errors.some((e) => e.message.includes("Value of strict enum Attempt is discarded")),
+			parsed.errors.some((e) => e.message.includes("Value of must_use enum Attempt is discarded")),
 		).toBe(true);
 	});
 
-	test("bare statement call discarding a strict enum is an error (free function call)", () => {
+	test("bare statement call discarding a must_use enum is an error (free function call)", () => {
 		const input = `
-pub strict enum Attempt {
+pub must_use enum Attempt {
 	case ok
 	case error(int code)
 }
@@ -92,13 +92,13 @@ attempt()
 `;
 		const parsed = parse_with_imports(input);
 		expect(
-			parsed.errors.some((e) => e.message.includes("Value of strict enum Attempt is discarded")),
+			parsed.errors.some((e) => e.message.includes("Value of must_use enum Attempt is discarded")),
 		).toBe(true);
 	});
 
 	test("`let`-prefixed calls discard too and are rejected", () => {
 		const input = `
-pub strict enum Attempt {
+pub must_use enum Attempt {
 	case ok
 	case error(int code)
 }
@@ -111,11 +111,11 @@ let try_it()
 `;
 		const parsed = parse_with_imports(input);
 		expect(
-			parsed.errors.some((e) => e.message.includes("Value of strict enum Attempt is discarded")),
+			parsed.errors.some((e) => e.message.includes("Value of must_use enum Attempt is discarded")),
 		).toBe(true);
 	});
 
-	test("non-strict enums may still be discarded", () => {
+	test("non-must_use enums may still be discarded", () => {
 		const input = `
 pub enum Attempt {
 	case ok
@@ -132,7 +132,7 @@ try_it()
 		expect(parsed.errors).toEqual([]);
 	});
 
-	test("core Result is strict: a discarded File op errors, `var _` and match are uses", async () => {
+	test("core Result is must_use: a discarded File op errors, `var _` and match are uses", async () => {
 		const input = `
 var File w = File()
 match w.open("strict_enum_file.txt", "w") {
@@ -171,14 +171,14 @@ try_it()
 		const parsed = parse_with_imports(input);
 		expect(
 			parsed.errors.some((e) =>
-				e.message.includes("Value of strict enum Result<int, string> is discarded"),
+				e.message.includes("Value of must_use enum Result<int, string> is discarded"),
 			),
 		).toBe(true);
 	});
 
 	test("repeated `var _` discards in one scope compile and run", async () => {
 		const input = `
-pub strict enum Attempt {
+pub must_use enum Attempt {
 	case ok
 	case error(int code)
 }
@@ -195,26 +195,26 @@ Console.write("done")
 		await build_and_check_output(input, "strict_enum_repeated_discard", "done");
 	});
 
-	test("`strict` remains usable as an identifier", () => {
+	test("`must_use` remains usable as an identifier", () => {
 		const input = `
-var int strict = 3
-strict = strict + 1
-Console.write("\\{strict}")
+var int must_use = 3
+must_use = must_use + 1
+Console.write("\\{must_use}")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
 	});
 });
 
-describe("strict bitsets", () => {
+describe("must_use bitsets", () => {
 	test("declaration forms and binding compile", () => {
 		const input = `
-pub strict bitset Flags {
+pub must_use bitset Flags {
 	case read
 	case write
 }
 
-strict bitset Quiet {
+must_use bitset Quiet {
 	case on
 	case off
 }
@@ -231,9 +231,9 @@ Console.write("\\{f}")
 		expect(parsed.errors).toEqual([]);
 	});
 
-	test("bare statement call discarding a strict bitset is an error", () => {
+	test("bare statement call discarding a must_use bitset is an error", () => {
 		const input = `
-pub strict bitset Flags {
+pub must_use bitset Flags {
 	case read
 	case write
 }
@@ -246,11 +246,11 @@ flags_of()
 `;
 		const parsed = parse_with_imports(input);
 		expect(
-			parsed.errors.some((e) => e.message.includes("Value of strict bitset Flags is discarded")),
+			parsed.errors.some((e) => e.message.includes("Value of must_use bitset Flags is discarded")),
 		).toBe(true);
 	});
 
-	test("non-strict bitsets may still be discarded", () => {
+	test("non-must_use bitsets may still be discarded", () => {
 		const input = `
 pub bitset Flags {
 	case read

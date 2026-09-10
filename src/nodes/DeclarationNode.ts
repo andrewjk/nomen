@@ -4,7 +4,7 @@ import Type from "./Type.ts";
 
 export default class DeclarationNode extends BaseNode {
 	visibility: "pub" | "private";
-	declaration: "const" | "var" | "mov" | "view";
+	declaration: "const" | "var" | "move" | "view";
 	name: string;
 	type: Type;
 	value?: BaseNode;
@@ -18,7 +18,7 @@ export default class DeclarationNode extends BaseNode {
 	func_params?: ParameterNode[];
 	func_return_type?: Type;
 	scope?: BaseNode;
-	/** Optional swap replacement for `var X b = mov obj.field swap <expr>`: the
+	/** Optional swap replacement for `var X b = move obj.field swap <expr>`: the
 	 *  expression stored back into the moved-out field to revalidate it. */
 	swap?: BaseNode;
 	/** True for the synthesized loop-iterator binding (`var <item> = arr.at(i)`)
@@ -50,7 +50,7 @@ export default class DeclarationNode extends BaseNode {
 	constructor(
 		start: number,
 		visibility: "pub" | "private",
-		declaration: "const" | "var" | "mov" | "view",
+		declaration: "const" | "var" | "move" | "view",
 		name: string,
 		type?: Type,
 		value?: BaseNode,

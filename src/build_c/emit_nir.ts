@@ -247,7 +247,7 @@ function with_semicolon_tail(status: BuildStatus): void {
 	if (!status.code.endsWith("}\n")) {
 		status.code += ";\n";
 	}
-	// Flush frees deferred from mov call sites inside this statement
+	// Flush frees deferred from move call sites inside this statement
 	// (VALUE-struct string fields — see build_access_node /
 	// build_function_call_node). Appending them at the call itself would
 	// break the surrounding expression.

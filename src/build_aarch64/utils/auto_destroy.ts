@@ -24,7 +24,7 @@ import {
 } from "./struct_layout.ts";
 
 /**
- * Whether a declaration's initializer is a non-`mov` FIELD ACCESS — a shallow
+ * Whether a declaration's initializer is a non-`move` FIELD ACCESS — a shallow
  * struct borrow (`diff.changes`, the checker-hoisted `_param_N` temp for a
  * struct call arg). The struct bytes are copied but any embedded buffer data
  * belongs to the owner, so the declaration must NOT be destroyed at scope
@@ -762,13 +762,20 @@ function emit_destroy_for_array_elem(
  * correctly. Returns `{ struct_type, type_name, type_args }` or undefined.
  */
 function resolve_decl_struct(
-	decl: { type: { name: string; type_args?: Type[]; is_nullable?: boolean }; value?: any },
+	decl: {
+		type: { name: string; type_args?: Type[]; is_nullable?: boolean };
+		value?: any;
+	},
 	status: BuildStatus,
 ): { struct_type: StructNode; type_name: string; type_args?: Type[] } | undefined {
 	const resolved = resolve_struct_name(decl.type.name, decl.type.type_args, status);
 	const direct = is_struct_type(resolved, status) || is_struct_type(decl.type.name, status);
 	if (direct) {
-		return { struct_type: direct, type_name: resolved, type_args: decl.type.type_args };
+		return {
+			struct_type: direct,
+			type_name: resolved,
+			type_args: decl.type.type_args,
+		};
 	}
 	// Trait-typed local with concrete storage: recover the concrete struct
 	// from the initializer's type.
@@ -777,7 +784,11 @@ function resolve_decl_struct(
 		if (val_type?.name) {
 			const concrete = is_struct_type(val_type.name, status);
 			if (concrete) {
-				return { struct_type: concrete, type_name: val_type.name, type_args: val_type.type_args };
+				return {
+					struct_type: concrete,
+					type_name: val_type.name,
+					type_args: val_type.type_args,
+				};
 			}
 		}
 	}
@@ -1018,7 +1029,7 @@ export function emit_cleanup_to_loop_depth(status: BuildStatus) {
 /**
  * When a heap-returning call's result is captured into an owned variable
  * (e.g. `var Box a = make(Box(5))`), the result is anchored as a fresh owner.
- * But if the call also received a same-type class temporary as a non-mov arg
+ * But if the call also received a same-type class temporary as a non-move arg
  * (the hoisted `_param_N` for `Box(5)`), that temporary is anchored too — and
  * the function may return the very same instance (e.g. `return x ?? fallback`),
  * so both anchors point at one allocation and one gets double-freed. The
@@ -1030,7 +1041,7 @@ export function emit_cleanup_to_loop_depth(status: BuildStatus) {
  */
 export function consolidate_temp_anchors(
 	status: BuildStatus,
-	call_node: { node_type?: string; params?: any[]; mov_param_indices?: number[] } | undefined,
+	call_node: { node_type?: string; params?: any[]; move_param_indices?: number[] } | undefined,
 	result_type_name: string | undefined,
 ) {
 	for (const pname of superseded_param_temp_names(status, call_node, result_type_name)) {
@@ -1060,7 +1071,7 @@ export function mark_moved_if_struct(
 			.find((d) => d.name === var_name)?.type;
 	}
 	if (!var_type) return;
-	// Search every scope frame: a `mov`/`return` inside an if/loop body must
+	// Search every scope frame: a `move`/`return` inside an if/loop body must
 	// still recognize (and mark) locals declared in enclosing scopes.
 	const is_local = all_scope_frames(status).some((frame) => frame.some((d) => d.name === var_name));
 	const has_anchor = find_anchor_slot(status, var_name) !== undefined;
@@ -1075,10 +1086,10 @@ export function mark_moved_if_struct(
 	}
 	// A RETURNED heap string transfers ownership to the caller (the return
 	// cleanup must not free it) — but only in return context (for_return): a
-	// plain `string` arg to a `mov T` param does NOT transfer ownership (an
+	// plain `string` arg to a `move T` param does NOT transfer ownership (an
 	// owning `Buffer<string>` strdup's its own copy — the callee-copies
 	// convention), so the caller retains and frees the original at scope
-	// exit. (Mirrors the C backend's mov_param_indices string gate.) A string
+	// exit. (Mirrors the C backend's move_param_indices string gate.) A string
 	// field of a moved VALUE struct is likewise released at scope exit via
 	// heap_string_fields — store_T deep-copied it.
 	if (opts?.for_return && status.heap_strings?.has(var_name)) {

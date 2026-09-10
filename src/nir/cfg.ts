@@ -60,7 +60,11 @@ interface FlatStmtBase {
 
 export type FlatStmt =
 	| (FlatStmtBase & { readonly op: "declare"; readonly name: string })
-	| (FlatStmtBase & { readonly op: "assign"; readonly target: NirExpr; readonly rhs: NirExpr })
+	| (FlatStmtBase & {
+			readonly op: "assign";
+			readonly target: NirExpr;
+			readonly rhs: NirExpr;
+	  })
 	| (FlatStmtBase & { readonly op: "eval"; readonly expr: NirExpr })
 	| (FlatStmtBase & { readonly op: "spawn"; readonly call: NirExpr })
 	| (FlatStmtBase & { readonly op: "anon_struct" })
@@ -524,7 +528,7 @@ class CfgBuilder {
 				const defs: string[] = s.decl.name ? [s.decl.name] : [];
 				walk_expr(s.decl.init, out);
 				if (s.decl.swap) {
-					// `var X b = mov src.field swap <rep>`: the replacement's
+					// `var X b = move src.field swap <rep>`: the replacement's
 					// reads join the walk, and the source root is redefined.
 					if (s.decl.init) {
 						const root = root_name(s.decl.init);

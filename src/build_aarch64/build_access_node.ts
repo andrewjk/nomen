@@ -2410,7 +2410,7 @@ function build_access_method(
 		// the fat pair.
 		!method_self_is_ref;
 	let frees_string_receiver = false;
-	// A consuming `mov out string` call (`string_to_string`, the identity
+	// A consuming `move out string` call (`string_to_string`, the identity
 	// until the signature flipped to a real strdup) receives a COPY of the
 	// receiver's storage. When that receiver is itself a temporary OWNING
 	// allocation (`f().to_string()`, `(a + b).to_string()`), the original
@@ -2420,12 +2420,12 @@ function build_access_method(
 	// excluded too.
 	if (receiver_is_string) {
 		// Build the receiver pair, tracking whether it produced an OWNING
-		// heap temp (`f(...)`, a concat, a mov-out call). Reset-first mirrors
+		// heap temp (`f(...)`, a concat, a move-out call). Reset-first mirrors
 		// emit_string_length: the flag reflects exactly this expression.
 		status.last_result_is_heap = false;
 		build_node(node.target, status);
 		if (!status.code.endsWith("\n")) status.code += "\n";
-		// A consuming `mov out string` call (`string_to_string`, the identity
+		// A consuming `move out string` call (`string_to_string`, the identity
 		// until the signature flipped to a real strdup) copies the receiver's
 		// storage — when that receiver is itself an owning temp, the original
 		// must be freed once the copy exists (mirroring the C backend's
@@ -2972,11 +2972,11 @@ function build_access_method(
 		status.code += `ldr x0, [sp], #16\n`;
 	}
 
-	if (access_func.mov_param_indices?.length) {
-		for (const idx of access_func.mov_param_indices) {
+	if (access_func.move_param_indices?.length) {
+		for (const idx of access_func.move_param_indices) {
 			const param = access_func.params[idx];
 			if (param?.node_type === "value") {
-				// A `string` mov arg keeps caller ownership (owning
+				// A `string` move arg keeps caller ownership (owning
 				// Buffer<string> strdup's); skip mark_moved so scope-exit
 				// cleanup frees it. Resolve the type from the declaration — a
 				// bare variable reference's ValueNode.type is unset after mono —
@@ -3034,7 +3034,7 @@ function build_access_method(
 		status.last_result_is_heap = true;
 	}
 
-	// A `Buffer<string>.move_T` (`mov out T`) result is the slot's strdup'd
+	// A `Buffer<string>.move_T` (`move out T`) result is the slot's strdup'd
 	// heap copy — the caller owns and must free it. move_T is inline raw asm,
 	// so it isn't classified heap-returning via the return-node path, and the
 	// monomorphized call's `owned_return`/type annotations are unset (a bare
@@ -3044,7 +3044,7 @@ function build_access_method(
 		status.last_result_is_heap = true;
 	}
 
-	// General `mov out string` move-out accessors (Task<string>.result,
+	// General `move out string` move-out accessors (Task<string>.result,
 	// Channel.receive_string, List<string>.pop): the callee relinquishes an
 	// owned heap buffer to the caller (the checker stamps owned_return), so
 	// the receiving declaration must free it at scope exit. Generalizes the
