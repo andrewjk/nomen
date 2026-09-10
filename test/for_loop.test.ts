@@ -1,9 +1,14 @@
+import path from "node:path";
+
 import { expect, describe, test } from "vite-plus/test";
 
+import { get_library } from "../src/lib.ts";
 import parse from "../src/parse";
 import build_and_check_output from "./build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 import test_error from "./test_error";
+
+const core = path.resolve(import.meta.dirname, "../core");
 
 // BUILD
 describe("for loop build", () => {
@@ -237,6 +242,112 @@ Console.write("\\{sum}")
 	});
 });
 
+// BUILD (List element iteration)
+describe("for loop over List", () => {
+	test("for loop iterates List elements", async () => {
+		const input = `
+var List<int> xs = List<int>()
+xs.push(1)
+xs.push(2)
+xs.push(3)
+var sum = 0
+for x of xs {
+  sum = sum + x
+}
+Console.write("\\{sum}")
+`;
+		await build_and_check_output(input, "for_loop_list_elements", "6");
+	});
+
+	test("for loop over List of strings", async () => {
+		const input = `
+var List<string> words = List<string>()
+words.push("foo")
+words.push("bar")
+var acc = ""
+for w of words {
+  acc = acc + w
+}
+Console.write(acc)
+`;
+		await build_and_check_output(input, "for_loop_list_strings", "foobar");
+	});
+
+	test("for loop element type supports member access", async () => {
+		const input = `
+pub class Item {
+  var text = ""
+}
+func build = (out List<Item>) {
+  var List<Item> items = List<Item>()
+  var a = Item()
+  a.text = "one"
+  items.push(move a)
+  var b = Item()
+  b.text = "two"
+  items.push(move b)
+  return items
+}
+const List<Item> items = build()
+var acc = ""
+for it of items {
+  acc = acc + it.text
+}
+Console.write(acc)
+`;
+		await build_and_check_output(input, "for_loop_list_member_access", "onetwo");
+	});
+
+	test("for loop over empty List runs zero times", async () => {
+		const input = `
+var List<int> xs = List<int>()
+var count = 0
+for x of xs {
+  count = count + 1
+}
+Console.write("\\{count}")
+`;
+		await build_and_check_output(input, "for_loop_list_empty", "0");
+	});
+
+	test("nested for loops over Lists", async () => {
+		const input = `
+var List<int> xs = List<int>()
+xs.push(1)
+xs.push(2)
+var List<int> ys = List<int>()
+ys.push(10)
+ys.push(20)
+var total = 0
+for x of xs {
+  for y of ys {
+    total = total + x * y
+  }
+}
+Console.write("\\{total}")
+`;
+		// (1*10 + 1*20) + (2*10 + 2*20) = 90
+		await build_and_check_output(input, "for_loop_list_nested", "90");
+	});
+
+	test("for loop over List param", async () => {
+		const input = `
+func total = (List<int> xs, out int) {
+  var sum = 0
+  for x of xs {
+    sum = sum + x
+  }
+  return sum
+}
+var List<int> xs = List<int>()
+xs.push(4)
+xs.push(5)
+Console.write("\\{total(xs)}")
+`;
+		await build_and_check_output(input, "for_loop_list_param", "9");
+	});
+});
+
 // ERRORS
 describe("for loop errors", () => {
 	test("string list", () => {
@@ -246,7 +357,7 @@ for x of "hi" {
 }
 `;
 		const expected = [
-			test_error(input, "For loop list must be an array or Enumerable, not string", 2, 10),
+			test_error(input, "For loop list must be an array, List, or Enumerable, not string", 2, 10),
 		];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
@@ -259,7 +370,7 @@ for x of 5 {
 }
 `;
 		const expected = [
-			test_error(input, "For loop list must be an array or Enumerable, not int", 2, 10),
+			test_error(input, "For loop list must be an array, List, or Enumerable, not int", 2, 10),
 		];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
@@ -283,7 +394,7 @@ for x of 0 {
 }
 `;
 		const expected = [
-			test_error(input, "For loop list must be an array or Enumerable, not int", 2, 10),
+			test_error(input, "For loop list must be an array, List, or Enumerable, not int", 2, 10),
 		];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
@@ -350,7 +461,7 @@ for x of true {
 }
 `;
 		const expected = [
-			test_error(input, "For loop list must be an array or Enumerable, not bool", 2, 10),
+			test_error(input, "For loop list must be an array, List, or Enumerable, not bool", 2, 10),
 		];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
@@ -424,5 +535,26 @@ for n of nums; n += 1; {
 `;
 		const parsed = parse(input);
 		expect(parsed.errors.length).toBeGreaterThan(0);
+	});
+
+	test("for ref over List is rejected", () => {
+		const input = `
+import System
+var List<int> xs = List<int>()
+xs.push(1)
+for ref x of xs {
+  x = x + 1
+}
+`;
+		const expected = [
+			test_error(
+				input,
+				"'ref' iteration is not supported for List<T> — index explicitly (for i of 0..xs.length) and use .set to write back",
+				5,
+				5,
+			),
+		];
+		const parsed = parse(input, get_library(core));
+		expect(parsed.errors).toEqual(expected);
 	});
 });

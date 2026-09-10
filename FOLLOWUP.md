@@ -225,3 +225,21 @@ Also adjacent and known: `Console.write` uses `printf("%s")`, so printing
 a mid-buffer (non-terminated) view over-reads to NUL. Callers materialize
 first; length-aware `==` is unaffected.
 
+## Element iteration for remaining collections (split out of for-of-List)
+
+`for x of some_list` desugars to element iteration for `Array<T>` and now
+`List<T>`, but the other collections can't follow yet:
+
+- `Graph<T>` has no `length` at all (the `Enumerable` default returns 0),
+  so desugaring via `0..length` would silently produce empty loops.
+- `LinkedList<T>`/`Tree<T>` have `length()` methods, but their `.at`
+  contracts are phrased against `count` (`idx < self.count`), and a
+  `0..length()` range does not discharge that today (verified failing on
+  0.2.2) — needs either field-based lengths or return-contract linkage
+  from `length()` to the count field.
+- `Map`/`Set`/`Buffer` have no `.at(i)` element semantics to desugar to.
+
+Also still open from the same area: `for ref x of list` is rejected with
+a dedicated error (List `set` takes `move T`, so the array writeback
+shape doesn't transfer — needs its own design).
+

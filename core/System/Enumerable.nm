@@ -1,5 +1,7 @@
 // Trait for collection types that can be iterated with `for x of collection`.
 // The loop variable receives int indices 0..length-1; use .at(i) to access values.
+// (`List<T>` is deliberately NOT Enumerable: `for x of some_list` desugars to
+// element iteration like arrays, which is what loop bodies almost always want.)
 /**
  * A trait for collections that can be iterated with `for x of collection`
  **/

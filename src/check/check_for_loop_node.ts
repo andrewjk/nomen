@@ -24,6 +24,26 @@ function has_trait(type_name: string, trait_name: string, status: CheckStatus): 
 	return struct.traits.includes(trait_name);
 }
 
+/**
+ * The element type of a `List<T>` value, from either the generic annotation
+ * (`List` + type args) or the monomorphized struct (`List_Diff` via its
+ * recorded source args) — mirroring the lookup in check_access_node.
+ * Returns undefined when the List struct isn't in scope at all (e.g. bare
+ * parse without the System library) or the element can't be recovered, in
+ * which case the loop falls through to the array-or-Enumerable error.
+ */
+function list_element_type(t: Type, status: CheckStatus): Type | undefined {
+	if (t.name === "List") {
+		const generic = status.structs.find((s) => s.name === "List");
+		if (!generic || !generic.functions.some((f) => f.name === "at")) return undefined;
+		return t.type_args?.[0];
+	}
+	const struct = t.name ? status.structs.find((s) => s.name === t.name) : undefined;
+	if (!struct?.name.startsWith("List_")) return undefined;
+	if (!struct.functions.some((f) => f.name === "at")) return undefined;
+	return struct.source_type_args?.[0];
+}
+
 export default function check_for_loop_node(for_loop: ForLoopNode, status: CheckStatus) {
 	// Desugar array value-iteration:
 	//   for x of arr        (arr is an Array<T>)
@@ -69,6 +89,28 @@ export default function check_for_loop_node(for_loop: ForLoopNode, status: Check
 			check_for_loop_node(for_loop, status);
 			return;
 		}
+		// `for x of some_list` (a `List<T>`) iterates ELEMENTS, exactly like
+		// arrays: desugar to an index loop with the element bound from
+		// `.at()`. (`Enumerable` types keep yielding indices — see below.)
+		// `List.length` is a field and `List.at` carries the standard bounds
+		// contract, so the generated accesses verify like the array shape.
+		// The struct must exist (bare parse without the System library has
+		// no `List` to desugar against); otherwise fall through to the
+		// must-be-array-or-Enumerable error below.
+		const list_elem = list_element_type(list_type, status);
+		if (list_elem && !enumerable) {
+			if (for_loop.item_is_ref) {
+				add_error(
+					status,
+					`'ref' iteration is not supported for List<T> — index explicitly (for i of 0..xs.length) and use .set to write back`,
+					for_loop.item.start,
+				);
+				return;
+			}
+			desugar_array_for_loop(for_loop, list_type, list_elem);
+			check_for_loop_node(for_loop, status);
+			return;
+		}
 	}
 
 	let for_status = clone_status(status);
@@ -84,7 +126,7 @@ export default function check_for_loop_node(for_loop: ForLoopNode, status: Check
 		if (!list_type.is_array && !is_enumerable && list_type.name) {
 			add_error(
 				for_status,
-				`For loop list must be an array or Enumerable, not ${list_type.name}`,
+				`For loop list must be an array, List, or Enumerable, not ${list_type.name}`,
 				for_loop.list.start,
 			);
 		}
@@ -182,7 +224,7 @@ export default function check_for_loop_node(for_loop: ForLoopNode, status: Check
  * break/continue so mutations persist on all exit paths. (The write-back is
  * skipped on `return`, matching Rust's copy semantics.)
  */
-function desugar_array_for_loop(for_loop: ForLoopNode, array_type: Type) {
+function desugar_array_for_loop(for_loop: ForLoopNode, array_type: Type, elem_type?: Type) {
 	const list = for_loop.list;
 	const start = list.start;
 	const original_item = for_loop.item;
@@ -198,10 +240,11 @@ function desugar_array_for_loop(for_loop: ForLoopNode, array_type: Type) {
 	// (`storage_kind: "heap_array"`) whose type carries a STAMPED compile-time
 	// length (e.g. the literal passed to a param at a call site) must still
 	// use the RUNTIME `arr.length` — the stamped length is per-call and would
-	// be wrong for a different-length argument.
+	// be wrong for a different-length argument. A `List<T>` has no
+	// compile-time length; its `.length` field always bounds `.at`.
 	const zero = new ValueNode(start, "0");
 	const bound =
-		array_type.storage_kind === "heap_array" || !array_type.length
+		elem_type !== undefined || array_type.storage_kind === "heap_array" || !array_type.length
 			? new AccessNode(start, clone_node(list), new AccessFieldNode(start, "length"))
 			: clone_node(array_type.length);
 	for_loop.list = new RangeNode(start, zero, bound);
@@ -216,7 +259,7 @@ function desugar_array_for_loop(for_loop: ForLoopNode, array_type: Type) {
 		"private",
 		is_ref ? "var" : "const",
 		original_item.value,
-		new Type(array_type.name),
+		elem_type ?? new Type(array_type.name),
 		at_access,
 	);
 	decl.is_loop_iterator = true;
