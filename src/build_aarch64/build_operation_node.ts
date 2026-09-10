@@ -1362,11 +1362,21 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			status.code += `add x8, x29, #${return_temp_offset}\n`;
 		}
 
-		// Check if operands are owned heap temps before building them
+		// Check if operands are owned heap temps before building them. A
+		// string COMPARISON (`a == b` dispatched to string's #op_eq/#op_ne)
+		// yields bool, so gating on the op's result type alone misses it —
+		// the strdup'd call result / concat consumed by the comparison never
+		// got freed (1 leak per operation; the C backend frees the same
+		// shapes via its is_string_cmp arm). Mirrors the result-string gate
+		// for `+`/`*`.
+		const is_string_cmp =
+			(node.op === "==" || node.op === "!=") && node.operator_func.struct_name === "string";
 		const right_is_heap =
-			node.type?.name === "string" && is_owned_heap_temp(node.right_value, status);
+			(node.type?.name === "string" || is_string_cmp) &&
+			is_owned_heap_temp(node.right_value, status);
 		const left_is_heap =
-			node.type?.name === "string" && is_owned_heap_temp(node.left_value, status);
+			(node.type?.name === "string" || is_string_cmp) &&
+			is_owned_heap_temp(node.left_value, status);
 
 		if (node.type?.name === "string" || node.operator_func.struct_name === "string") {
 			// Fat-string operator call: each operand is a (ptr, len) pair.
@@ -1940,9 +1950,16 @@ function is_owned_heap_temp(node: BaseNode, status?: BuildStatus): boolean {
 	let target_value: string | undefined;
 	let target_type_name: string | undefined;
 	let check_node = node;
-	let check_type_name = (node as { type?: { name?: string } }).type?.name;
-	if (node.node_type === "access") {
-		const access_node = node as unknown as {
+	// A parenthesized operand `("a" + "b") + "c"` wraps the inner expression
+	// in a grouped node — the classification below keys on node_type, so a
+	// grouped owned temp escaped the spill-and-free and leaked (the C
+	// backend's is_owned_heap_temp has the same gap). Unwrap first.
+	while (check_node.node_type === "grouped") {
+		check_node = (check_node as unknown as { value: BaseNode }).value;
+	}
+	let check_type_name = (check_node as { type?: { name?: string } }).type?.name;
+	if (check_node.node_type === "access") {
+		const access_node = check_node as unknown as {
 			access?: { node_type?: string; type?: { name?: string } };
 			target?: { value?: string; type?: { name?: string } };
 		};
@@ -1992,6 +2009,20 @@ function is_owned_heap_temp(node: BaseNode, status?: BuildStatus): boolean {
 		// Non-overloaded struct methods don't carry a precomputed mangled_name on
 		// the AST; the build phase emits them as `StructName_func`. Try that.
 		if (heap_set && target_value && heap_set.has(`${target_value}_${raw_name}`)) return true;
+		// A nested function's emission label is `<parent>_<name>` (e.g.
+		// `main_render`), which no AST name above carries — consult the
+		// resolved callee's own label (the same set is keyed by
+		// emission_label). Without this, an owned call result consumed by a
+		// string operator escaped the spill-and-free (a per-call leak).
+		const resolved = (
+			check_node as unknown as {
+				resolved_function?: { label_name?: string; name: string; returns_string_borrow?: boolean };
+			}
+		).resolved_function;
+		if (resolved) {
+			if (heap_set?.has(resolved.label_name ?? resolved.name)) return true;
+			if (resolved.returns_string_borrow === false) return true;
+		}
 		// A `mov out string` call transfers ownership by signature — the
 		// checker stamps owned_return regardless of the name patterns above
 		// (this includes `string.to_string`, whose result is an OWNED copy

@@ -234,7 +234,14 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			}
 			if (left_temp) status.code += `free(${lt}.ptr); `;
 			if (right_temp) status.code += `free(${rt}.ptr); `;
-			status.code += `${cres}; })`;
+			// `!=` dispatched to the struct's `eq` (or `==` to `ne`): invert
+			// the call result — same as the non-spill path below. Without
+			// this, `x != y` with a heap-temp operand evaluated as `==`.
+			if (!is_string_op && node.operator_func.invert) {
+				status.code += `!${cres}; })`;
+			} else {
+				status.code += `${cres}; })`;
+			}
 		} else {
 			const is_array_op =
 				node.operator_func.struct_name.startsWith("Array") &&
@@ -276,20 +283,27 @@ export function is_owned_heap_temp(
 	status: BuildStatus,
 ): boolean {
 	let check_node = node;
+	// A parenthesized operand `("a" + "b")` wraps the inner expression in a
+	// grouped node — the classification below keys on node_type, so a
+	// grouped owned temp escaped the spill-and-free. Unwrap first (mirrors
+	// the aarch64 classifier).
+	while (check_node.node_type === "grouped") {
+		check_node = (check_node as unknown as { value: import("../nodes/BaseNode.ts").default }).value;
+	}
 	let target_value: string | undefined;
 	let target_type_name: string | undefined;
-	let type_name = (node as { type?: { name?: string } }).type?.name;
-	if (node.node_type === "access") {
-		const access = node as unknown as {
+	let type_name = (check_node as { type?: { name?: string } }).type?.name;
+	if (check_node.node_type === "access") {
+		const access = check_node as unknown as {
 			access?: { node_type?: string; type?: { name?: string }; name?: string };
 			target?: { value?: string; type?: { name?: string } };
 		};
 		if (access.access?.node_type !== "access_func") return false;
 		target_value = access.target?.value;
 		target_type_name = access.target?.type?.name;
-		if (!target_type_name && (node as any).target) {
+		if (!target_type_name && (check_node as any).target) {
 			try {
-				target_type_name = type_from_value_node((node as any).target)?.name;
+				target_type_name = type_from_value_node((check_node as any).target)?.name;
 			} catch {
 				target_type_name = undefined;
 			}
