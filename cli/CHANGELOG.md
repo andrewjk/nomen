@@ -1,6 +1,13 @@
 # Changelog
 
 
+
+## 0.2.1
+<sub>2026-09-10</sub>
+
+-  *(patch)* - Fix: honor --out as the linked binary path
+-  *(patch)* - Fix: view receivers and view structs in Lists
+
 ## 0.2.0
 <sub>2026-09-10</sub>
 
