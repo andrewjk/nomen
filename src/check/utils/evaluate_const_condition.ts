@@ -479,11 +479,23 @@ function evaluate_operation(
 				const la = vdecl.alias_of ? parse_offset_expr(vdecl.alias_of) : undefined;
 				const left_base = la ? la.base : var_name;
 				const left_off = (la ? la.offset : 0) + offset;
-				// Right identity: follow its variable's alias too.
+				// Right identity: follow its variable's alias too — but only
+				// when the resolved string doesn't already incorporate it.
+				// expr_to_string resolves one alias level while building the
+				// path, so `self.length` against receiver `self.text` arrives
+				// as "self.text.length" with `self` still aliasing
+				// "self.text": following again would de-resolve to
+				// "self.text" and miss the identity. The startsWith check
+				// detects the incorporated case (a chained bare-variable
+				// alias like `n` → `m` → `list.length` never prefix-matches,
+				// so it still follows).
 				const right_base_name = right_str.split(".")[0];
 				const rdecl = status.values.findLast((v) => v.name === right_base_name);
 				const ra = rdecl?.alias_of ? parse_offset_expr(rdecl.alias_of) : undefined;
-				const right_base = ra ? ra.base : right_str;
+				const right_base =
+					ra && !(right_str === ra.base || (ra.offset === 0 && right_str.startsWith(ra.base + ".")))
+						? ra.base
+						: right_str;
 				const right_off = ra ? ra.offset : 0;
 				if (left_base === right_base) {
 					const d = left_off - right_off;

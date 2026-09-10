@@ -929,12 +929,31 @@ export default function check_function_call(
 				// self_path is the full access path (e.g. "self.items" for
 				// `self.items.load_int(...)`), so self.cap resolves correctly
 				// to "self.items.cap" when matching against flow bounds.
+				// Inherit the resolved base's flow bounds: the synthetic self
+				// otherwise SHADOWS the real declaration (findLast hits this
+				// entry first), hiding guard facts recorded on it — e.g. a
+				// method-body `if self.text.length >= 2` fact consulted as
+				// `self.length` at a `self.text.slice(0, 2)` call site.
+				const self_path_or_value = self_path ?? self_value;
+				const self_base = status.values.findLast(
+					(v) => v.name === self_path_or_value.split(".")[0],
+				);
 				status.values.push({
 					declaration: "const",
 					name: "self",
 					type: self_type,
 					is_set: true,
-					alias_of: self_path ?? self_value,
+					alias_of: self_path_or_value,
+					range_lower: self_base?.range_lower,
+					range_upper: self_base?.range_upper,
+					upper_bound_exprs: self_base?.upper_bound_exprs?.slice(),
+					lower_bound_exprs: self_base?.lower_bound_exprs?.slice(),
+					upper_bound_inclusive_exprs: self_base?.upper_bound_inclusive_exprs?.slice(),
+					lower_bound_inclusive_exprs: self_base?.lower_bound_inclusive_exprs?.slice(),
+					upper_bound_expr: self_base?.upper_bound_expr,
+					lower_bound_expr: self_base?.lower_bound_expr,
+					known_length: self_base?.known_length,
+					path_bounds: self_base?.path_bounds,
 				});
 			}
 

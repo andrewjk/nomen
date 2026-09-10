@@ -696,8 +696,15 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 			// value. Every view lowers to the universal nomen_view struct.
 			status.code += `nomen_view ${emit_label}(`;
 		} else {
-			const return_struct = status.structs.find((s) => s.name === return_type && !s.is_simple_type);
-			const return_trait = status.traits.find((t) => t.name === return_type);
+			// Monomorphize generic container returns (`out List<VLine>` →
+			// `struct List_VLine`) — the bare generic has no emitted body,
+			// so a bare `struct List` return is an incomplete type. No-op
+			// for non-generic returns. Mirrors build_function_node.
+			const mono_return_type = mono_type_name(func.return_type);
+			const return_struct = status.structs.find(
+				(s) => s.name === mono_return_type && !s.is_simple_type,
+			);
+			const return_trait = status.traits.find((t) => t.name === mono_return_type);
 			// A method that RETURNS a value struct by value needs that struct's
 			// full typedef at its signature. The signature is forward-declared
 			// in the HEADER, but only `struct T;` lives there — so emit the
@@ -715,7 +722,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 			// A struct/trait return uses the `struct Tag` form (tag never
 			// mangled); otherwise emit the typedef/primitive via c_type.
 			if (return_struct || return_trait) {
-				status.code += `struct ${return_type}`;
+				status.code += `struct ${mono_return_type}`;
 			} else {
 				status.code += `${c_type(return_type)}`;
 			}

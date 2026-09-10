@@ -1418,7 +1418,8 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 /**
  * Whether an argument expression is a fat string VALUE: either its static
  * type names `string`, or it is a string literal (whose ValueNode.type may
- * be unset). Literals ride the pair ABI like any string.
+ * be unset). Literals ride the pair ABI like any string. A `view string`
+ * counts too — same pair ABI (see build_function_call_node).
  */
 function arg_is_string(node: BaseNode): boolean {
 	const v = node as { value?: string };
@@ -1426,7 +1427,7 @@ function arg_is_string(node: BaseNode): boolean {
 		return true;
 	}
 	const t = type_from_value_node(node);
-	return t?.name === "string" && !t.is_view && !t.is_array;
+	return t?.name === "string" && !t.is_array;
 }
 
 function build_access_method(
@@ -2401,7 +2402,11 @@ function build_access_method(
 	const receiver_is_string =
 		!access_func.is_static &&
 		target_type?.name === "string" &&
-		!target_type.is_view &&
+		// A `view string` receiver rides the SAME (ptr, len) pair ABI as an
+		// owned string — the pair path below builds it into x0/x1 either
+		// way. Excluding views here collapsed the pair to one slot (the
+		// length was dropped and every following arg shifted down a
+		// register), silently corrupting e.g. `view.slice(s, e)` calls.
 		// A string ARRAY (`string[N]` / heap `Array<string>`) is typed
 		// name="string" but its methods take ONE pointer slot (first-element
 		// convention), not the fat pair.

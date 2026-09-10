@@ -405,8 +405,9 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 			}
 			// `view T` builtins operate on the universal (ptr, len) slice directly:
 			//   v.at(i)       →  ((Elem*)v.ptr)[i]
+			//   v.slice(s, e) →  re-rooted sub-view (string views; no copy)
 			//   v.to_string() →  malloc(len+1); memcpy; null-terminate (owned copy)
-			//     (to_string is string-only: it materializes a char slice.)
+			//     (slice/to_string are string-only; at works for any view.)
 			// Views are read-only — there is no `.set`.
 			if (target_type.is_view) {
 				if (access_func.name === "at" && access_func.params.length === 1) {
@@ -418,6 +419,26 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					status.code += `.ptr)[`;
 					build_node(access_func.params[0], status);
 					status.code += `]`;
+					return;
+				}
+				if (
+					access_func.name === "slice" &&
+					target_type.name === "string" &&
+					access_func.params.length === 2
+				) {
+					// view string slice → sub-view: re-root the (ptr, len)
+					// pair without copying. Without this arm a view receiver
+					// fell through to `string_slice(nomen_string, ...)` and
+					// failed to compile (nomen_view vs nomen_string).
+					const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+					const tmp = `_vsl_${id}`;
+					status.code += `({ nomen_view ${tmp} = `;
+					build_node(node.target, status);
+					status.code += `; long _s = `;
+					build_node(access_func.params[0], status);
+					status.code += `; nomen_view _r; _r.ptr = (void*)((char*)${tmp}.ptr + _s); _r.len = (long)(`;
+					build_node(access_func.params[1], status);
+					status.code += ` - _s); _r; })`;
 					return;
 				}
 				if (access_func.name === "to_string" && target_type.name === "string") {

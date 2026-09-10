@@ -117,7 +117,11 @@ function emit_struct_address(node: BaseNode, status: BuildStatus) {
 /**
  * Whether an argument expression is a fat string VALUE: either its static
  * type names `string`, or it is a string literal (whose ValueNode.type may
- * be unset). Literals ride the pair ABI like any string.
+ * be unset). Literals ride the pair ABI like any string. A `view string`
+ * counts too — it IS the same (ptr, len) pair at runtime, so a view
+ * argument to a non-view `string` param (e.g. a `.slice` receiver) must
+ * occupy two slots just like an owned string. (`view` DECLARED params are
+ * unaffected: the view_arg_set check runs first.)
  */
 function arg_is_string(node: BaseNode): boolean {
 	const v = node as { value?: string };
@@ -125,7 +129,7 @@ function arg_is_string(node: BaseNode): boolean {
 		return true;
 	}
 	const t = type_from_value_node(node);
-	return t?.name === "string" && !t.is_view && !t.is_array;
+	return t?.name === "string" && !t.is_array;
 }
 
 export default function build_function_call_node(node: FunctionCallNode, status: BuildStatus) {
