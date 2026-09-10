@@ -163,8 +163,30 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 						status.code += `;\nself${accessor}${has_flag_name(field.name)} = 1;\n`;
 					}
 				} else {
+					// A class's plain string field is always heap-owned (the
+					// init body's reassignment `free(self->field.ptr)` and
+					// <Class>_destroy free it unconditionally), so a default
+					// must be duplicated — a raw literal here would be freed
+					// as static rodata. A heap-producing default is stored
+					// directly. Value structs keep the raw store (their
+					// field ownership is tracked per assignment).
+					const field_is_class_string =
+						is_class &&
+						field.type.name === "string" &&
+						!field.type.is_array &&
+						!field.type.is_ref &&
+						!field.type.is_view;
+					const value_is_fresh_heap =
+						!!field.value && is_owned_heap_temp(field.value as BaseNode, status);
+					const wrap_dup = field_is_class_string && !value_is_fresh_heap;
 					status.code += `self${accessor}${field.name} = `;
+					if (wrap_dup) {
+						status.code += `nomen_str_dup(`;
+					}
 					build_node(field.value, status);
+					if (wrap_dup) {
+						status.code += `)`;
+					}
 					status.code += ";\n";
 				}
 			}

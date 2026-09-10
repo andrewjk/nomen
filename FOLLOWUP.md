@@ -249,16 +249,6 @@ func fields, `Map<string, int>` indices instead of reference-valued maps,
 `--arch c` for the aarch64 mis-binds, no string-literal defaults on class
 fields), but each should be fixed in the compiler:
 
-## Class string field with a literal default frees static rodata
-
-**Class string field with a literal default frees static rodata.**
-`pub var string content = ""` on a class emits `self->content =
-nomen_str_lit("", 0)` in `#init` — and any later `#init` assignment does
-`free(self->content.ptr)` on the static literal first, or destroy frees
-it at scope exit → "pointer being freed was not allocated" abort. Value
-structs are unaffected (their defaults are dup'd). Workaround: no
-default; `#init` sets `self.content = "" + ""` (a real allocation).
-
 ## `Map` values must be scalars or strings — struct/class/trait values are broken
 
 **`Map` values must be scalars or strings — struct/class/trait values
