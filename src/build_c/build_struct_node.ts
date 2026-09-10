@@ -181,6 +181,10 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 		const old_current_struct = status.current_struct;
 		const old_return_type = status.function_return_type;
 		const old_variadic_params = status.function_variadic_params;
+		// Per-body reset (see build_function_node): trait_class_locals is
+		// name-keyed and must not leak across method bodies.
+		const old_trait_class_locals = status.trait_class_locals;
+		status.trait_class_locals = undefined;
 		status.function_ref_params = new Set<string>();
 		status.class_vars = new Set<string>();
 		status.function_variadic_params = new Set<string>();
@@ -239,6 +243,7 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 		status.code += `}\n`;
 		status.function_ref_params = old_ref_params;
 		status.class_vars = old_class_vars;
+		status.trait_class_locals = old_trait_class_locals;
 		status.function_variadic_params = old_variadic_params;
 		status.self_is_ref = old_self_is_ref;
 		status.self_is_local = old_self_is_local;
@@ -551,6 +556,13 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		const old_return_type = status.function_return_type;
 		const old_function_name = status.current_function_name;
 		const old_view_params = status.function_view_params;
+		// trait_class_locals is name-keyed; without a per-method reset a
+		// trait-typed local named `v` in one monomorphized body (e.g.
+		// List<Trait>.copy) leaks into LATER monomorphized bodies whose
+		// local shares the name (List<string>.copy), making their auto-free
+		// emit `Trait_destroy(v)` for a string element — invalid C.
+		const old_trait_class_locals = status.trait_class_locals;
+		status.trait_class_locals = undefined;
 		status.function_view_params = new Set<string>();
 		status.current_function_name = func.name;
 		status.function_ref_params = new Set<string>();
@@ -806,6 +818,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		// conditional early return still falls through, and those fall-through
 		// declarations must be reclaimed.
 		build_auto_free(status);
+		status.trait_class_locals = old_trait_class_locals;
 		status.code += `}\n`;
 		if (raw_thin) {
 			set_c_thin_strings(false);

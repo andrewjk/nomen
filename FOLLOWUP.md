@@ -243,7 +243,6 @@ Also still open from the same area: `for ref x of list` is rejected with
 a dedicated error (List `set` takes `move T`, so the array writeback
 shape doesn't transfer — needs its own design).
 
-
 ## Allmark port blockers (found converting allmark's web impl to Nomen, 2026-09-10)
 
 Converting the allmark markdown library (~170 TS files) to Nomen hit the
@@ -274,7 +273,7 @@ fields), but each should be fixed in the compiler:
 
 3. **Class string field with a literal default frees static rodata.**
    `pub var string content = ""` on a class emits `self->content =
-   nomen_str_lit("", 0)` in `#init` — and any later `#init` assignment does
+nomen_str_lit("", 0)` in `#init` — and any later `#init` assignment does
    `free(self->content.ptr)` on the static literal first, or destroy frees
    it at scope exit → "pointer being freed was not allocated" abort. Value
    structs are unaffected (their defaults are dup'd). Workaround: no
@@ -283,7 +282,7 @@ fields), but each should be fixed in the compiler:
 4. **`Map` values must be scalars or strings — struct/class/trait values
    are broken.** With `Map<string, SomeStruct>` the C backend emits
    `used type 'struct SomeStruct' where arithmetic or pointer type is
-   required` (values are marshalled through 8-byte slots); aarch64
+required` (values are marshalled through 8-byte slots); aarch64
    segfaults. Class/trait values hit the same slot-marshalling. Workaround:
    `Map<string, int>` index into a parallel `List<T>`. (Docs should state
    the value-type restriction until fixed.)
@@ -302,14 +301,14 @@ fields), but each should be fixed in the compiler:
    exists — the annotation path just skips it.
 
 7. **Func-typed struct fields are parsed but not callable.** `pub var func
-   (int, out bool) test` inside a struct compiles, but `r.test(5)` →
+(int, out bool) test` inside a struct compiles, but `r.test(5)` →
    "Function not found: Rule.test" (and the same for a local copy `var func
-   (int, out bool) g = r.test`). Either implement calling through
+(int, out bool) g = r.test`). Either implement calling through
    function-typed fields or reject the field declaration with a
    "use a trait instead" error.
 
 8. **Methods cannot return borrowed class refs.** `pub func node = (self,
-   int i, out Node) { return self.nodes.at_or_panic(i) }` → "cannot return
+int i, out Node) { return self.nodes.at_or_panic(i) }` → "cannot return
    a borrowed reference". Callers must inline `state.nodes.at_or_panic(i)`
    instead. A sanctioned accessor shape (or `view`-like borrow return)
    would remove a lot of noise.
@@ -358,46 +357,6 @@ around in the port:
   `_alias_owns_<name> = 1` without a declaration (name-mangled only on
   first assignment). Workaround: use fresh local names per re-fetch.
 
-## C backend: trait-typed List monos poison `trait_class_locals` for all later monos
-
-`trait_class_locals` (build_c/build_declaration_node.ts) is keyed by bare
-local name and never cleared between function bodies. When a
-`List<SomeTrait>` is instantiated, the emitted `<List>_copy` body declares a
-local `v` (core List.nm's `copy`), which records
-`trait_class_locals["v"] = "SomeTrait"`. Every LATER monomorphized body with
-a local named `v` (e.g. `List_string_copy`, `List_int_copy` from by-value
-List params) then auto-frees its element via `SomeTrait_destroy(v); free(v);`
-— invalid C (`passing 'nomen_string' to parameter of incompatible type
-'void *'`). Minimal repro (declaration order matters — the trait list must
-come first):
-
-```
-trait Rule {
-    pub func name = (self, out string)
-}
-class TextRule : Rule {
-    pub func name = (self, out string) { return "text" }
-}
-class Holder {
-    pub var List<Rule> rules = List<Rule>()
-    pub var List<string> names = List<string>()
-    pub func #init = (ref self) {}
-}
-
-pub func main = (Init init) {
-    var h = Holder()
-    h.rules.push(TextRule())
-    h.names.push("x")
-    Console.write("\{h.names.at_or_panic(0)}\n")   // C error at List_string_copy
-}
-```
-
-Fix: clear (or scope/qualify) trait_class_locals per function body — or key
-it by (function, name). This blocks the allmark nomen port's test suite: the
-port's RuleSet/RendererSet legitimately hold trait lists, and List<string>/
-List<int> are used throughout (found 2026-09-11; port builds clean under
-`nomen check`, fails only in C emission).
-
 ## CLI: `nomen test` build phase runs out of memory (OOM) on the allmark project
 
 `nomen check --in test/<file>.test.nm` completes in ~6s (12k warnings, 0
@@ -417,6 +376,7 @@ trait_class_locals bug above), so the difference is the test path:
 
 The escape scanner processes `\` + next-char naively, so writing a literal
 backslash as `\\` is fragile:
+
 - `"\\{"` (escaped backslash, then a brace) starts INTERPOLATION — the
   scanner appears to look for `\{` without honoring the preceding `\\`, so
   `"\\{code}"` evaluates `{code}` as an expression.
