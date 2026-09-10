@@ -195,3 +195,91 @@ ASM_PLAN_7 tranches:
   pipeline) — read those as "the region-bracket equivalents".
 - Either delete `buffer_pipeline.ts` + its BuildStatus fields, or wire
   the enable switch, before it misleads another tranche.
+
+## View-field structs in generic Lists (found updating the differator port, 2026-09-10)
+
+The differator's `Line.text`-as-`view string` conversion (DIFF_TODO port
+item 1) is blocked: the checker accepts a self-borrowed `List<VLine>`
+return, but neither backend implements it.
+
+**aarch64 silently corrupts.** Push/`at` round-trip of a struct with a
+`view string` field through `List<T>` returns a wrong pair (len 2 reads
+back as 1, pointer reads as empty). Reproduces with a single-field
+struct too, and without any post-init field write — any view-field
+struct in a `List` is affected. Direct (non-List) struct return of the
+same value is correct, and a raw view local is correct, so the slice /
+init / field-read paths are sound and the corruption is in the List
+store/load (stride or pair-offset mismatch in the monomorphized
+element). Silent wrong data — the worst shape for a diff library, which
+is why the port keeps owned strings.
+
+```nomen
+import System
+
+pub struct VLine {
+	var view string text
+	var start = 0
+}
+
+pub class Doc {
+	var text = ""
+	pub func lines = (ref self, out List<VLine>) {
+		var List<VLine> result = List<VLine>()
+		const n = self.text.length
+		view txt = self.text.slice(0, n)
+		if txt.length >= 2 {
+			view first = txt.slice(0, 2)
+			var l = VLine(first)
+			l.start = 0
+			result.push(move l)
+		}
+		return result
+	}
+}
+
+pub func main = (Init init) {
+	var d = Doc()
+	d.text = "hi\n"
+	const ls = d.lines()
+	if ls.length == 1 {
+		const line = ls.at(0)
+		Console.write_line("len=\{line.text.length}")  // prints len=1, expect 2
+		Console.write_line(line.text.to_string())      // prints empty, expect "hi"
+	}
+}
+```
+
+Same file, same binary: `view txt` alone prints `len=3 "hi\n"` and a
+direct `out VLine` self-borrowed return prints `len=3 "hi\n"` — only the
+`List` round-trip corrupts. Likely the same family as the
+wide-struct-list-param gaps (`test/wide-struct-list-param-gaps.test.ts`).
+
+**C backend rejects the same shape at compile time** (loud, at least):
+the `out List<VLine>` method emits a bare `struct List` return type
+(`incomplete result type 'struct List'`), and a view local passed to
+`.slice` emits `string_slice(nomen_string, ...)` for a `nomen_view`
+argument (`passing 'nomen_view' to parameter of incompatible type`).
+So a view-field `List` return is currently unusable on both backends —
+aarch64 miscompiles it, C won't compile it.
+
+**Checker ergonomics on the same path** (minor, all in the repro
+above): `self.text.slice(0, self.text.length)` and a guarded
+`self.text.slice(0, 2)` behind `if self.text.length >= 2` are both
+rejected (`Parameter constraint cannot be verified: end`) — bounds do
+not propagate through `self.` field paths. Binding `const n =
+self.text.length` first verifies. Also: `view x = <owned string>`
+requires a `.slice()` result (a whole-field re-root needs a full-range
+slice), and a struct with a view field has no zero-arg init
+(`VLine()` → `Parameters missing for function: VLine`; construct as
+`VLine(view)`).
+
+## `nomen build --out` is ignored (found 2026-09-10)
+
+`nomen build --in src/bench_one.nm --arch c --out build/bench_one_c`
+prints `Built .../build/bench_one` and writes the binary there — `--out`
+is silently ignored and whatever was at the default output path (here,
+the fresh aarch64 `bench_one`) is overwritten. Not C-specific: `--out
+build/bench_one_rel` on the default arch and `--out /tmp/cbench_test`
+behave the same (output always lands at `build/<entry-basename>`,
+nothing written to the requested path). Reproduced 4/4. Workaround:
+build, then `cp` the binary aside before the next build.
