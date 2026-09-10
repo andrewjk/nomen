@@ -2,6 +2,13 @@
 
 
 
+
+## 0.2.2
+<sub>2026-09-10</sub>
+
+-  *(patch)* - Fix: unify bound namespaces and chain inclusive bounds
+-  *(patch)* - Fix: view to owned transfers materialize
+
 ## 0.2.1
 <sub>2026-09-10</sub>
 
