@@ -1,5 +1,22 @@
 # Changelog
 
+
+## 0.2.0
+<sub>2026-09-10</sub>
+
+-  *(minor)*
+  Rename keywords: `mov` → `move` (reads as English like the rest of the keyword set) and `strict` → `must_use` (names the actual rule — values may not be silently discarded — and avoids the one-letter `struct` collision)
+-  *(patch)*
+  Fix: C backend alias-own flags leak across functions (undeclared _alias_owns_X compile error when a later function reuses a variable name that a borrow was bound to in an earlier one)
+-  *(patch)*
+  Fix: C backend string-ownership sets (string_borrow_vars, moved_string_vars, heap_strings, owned_string_vars, moved) leak across functions like the alias maps did — a borrow-only local name in one function suppressed the scope-exit free of an unrelated owned same-named variable in a later one (leak visible under --audit)
+-  *(patch)* - Add --audit/--audit-runtime support to the test command
+-  *(patch)*
+  Fix: element type of a cross-file generic return resolved order-independently — the mono instantiation is flowed at call time and materialized on demand at member access, so implicit-typed results (const diffs = combined(a, b)) no longer degrade to the bare type param in entry-first merge order
+-  *(patch)*
+  Fix: owned-string expression temps never freed on aarch64 — string comparisons (==/!=) now spill-and-free owned heap-temp operands (the result-type gate missed bool-yielding comparisons), grouped operands like ("a" + "b") + "c" classify as owned temps, nested-in-function callees resolve through their emission label, and the C backend's spill-and-free path no longer drops the != inversion
+-  *(patch)* - Fix aarch64 ref-deref arg clobbering arg 0
+
 ## 0.1.0
 <sub>2026-09-09</sub>
 
