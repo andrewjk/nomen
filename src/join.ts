@@ -199,7 +199,41 @@ function add_source(
 		// `import System` and `import System::<namespace>` are library imports,
 		// resolved at parse time via resolve_linked_types — not files to inline.
 		if (trimmed === "System" || trimmed.startsWith("System::")) return match;
-		const import_file_path = `./${trimmed.split("::").join("/")}.nm`;
+		// Segments may carry whitespace (older formatter versions emitted
+		// `Types:: Diff`), so trim each one rather than the whole path.
+		const segments: string[] = trimmed
+			.split("::")
+			.map((s: string) => s.trim())
+			.filter((s: string) => s.length > 0);
+		if (!segments.length) return "";
+		const rel = segments.join("/");
+		// A trailing segment may name a namespace directory (`import Types`
+		// for `./Types/*.nm`) rather than a module file — inline every file
+		// in it, mirroring how `import System` pulls a whole namespace and
+		// how a folder is itself a module (see gather_module_siblings).
+		let is_dir = false;
+		try {
+			is_dir = fs.statSync(path.resolve(folder_path, rel)).isDirectory();
+		} catch {
+			// Not a directory — fall through to file resolution below.
+		}
+		if (is_dir) {
+			let names: string[];
+			try {
+				names = fs.readdirSync(path.resolve(folder_path, rel));
+			} catch {
+				return "";
+			}
+			for (const name of names.sort()) {
+				if (!name.endsWith(".nm")) continue;
+				const import_file_path = `./${rel}/${name}`;
+				if (!inputs.has(import_file_path)) {
+					add_source(folder_path, import_file_path, inputs, lib_path);
+				}
+			}
+			return "";
+		}
+		const import_file_path = `./${rel}.nm`;
 		if (!inputs.has(import_file_path)) {
 			add_source(folder_path, import_file_path, inputs, lib_path);
 		}

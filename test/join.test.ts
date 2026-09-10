@@ -149,3 +149,68 @@ test("join for a regular program does not strip main", () => {
 		fs.rmSync(root, { recursive: true, force: true });
 	}
 });
+
+// ---------------------------------------------------------------------------
+// join: namespace (directory) imports + spaced `::` segments
+// ---------------------------------------------------------------------------
+
+function write_namespace_fixture(root: string): void {
+	fs.mkdirSync(path.join(root, "src", "Types"), { recursive: true });
+	fs.writeFileSync(
+		path.join(root, "src", "Types", "Diff.nm"),
+		"pub struct Diff {\n\tvar x = 0\n}\n",
+	);
+	fs.writeFileSync(
+		path.join(root, "src", "Types", "Span.nm"),
+		"pub struct Span {\n\tvar y = 0\n}\n",
+	);
+	fs.writeFileSync(path.join(root, "src", "Types", "notes.txt"), "not a module file\n");
+}
+
+test("join resolves a namespace import to every file in the directory", () => {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), "nomen-join-ns-"));
+	try {
+		write_namespace_fixture(root);
+		fs.writeFileSync(
+			path.join(root, "src", "main.nm"),
+			'import System\nimport Types\npub func main = (Init init) {\n\tConsole.write_line("hi")\n}\n',
+		);
+		const input = join(path.join(root, "src", "main.nm"), undefined);
+		expect(input).toContain("pub struct Diff");
+		expect(input).toContain("pub struct Span");
+		expect(input).not.toContain("not a module file");
+	} finally {
+		fs.rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("join tolerates whitespace around :: segments", () => {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), "nomen-join-spaced-"));
+	try {
+		write_namespace_fixture(root);
+		fs.writeFileSync(
+			path.join(root, "src", "main.nm"),
+			'import System\nimport Types:: Diff\npub func main = (Init init) {\n\tConsole.write_line("hi")\n}\n',
+		);
+		const input = join(path.join(root, "src", "main.nm"), undefined);
+		expect(input).toContain("pub struct Diff");
+	} finally {
+		fs.rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("join dedupes an explicit file import covered by a namespace import", () => {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), "nomen-join-dedupe-"));
+	try {
+		write_namespace_fixture(root);
+		fs.writeFileSync(
+			path.join(root, "src", "main.nm"),
+			'import System\nimport Types\nimport Types::Span\npub func main = (Init init) {\n\tConsole.write_line("hi")\n}\n',
+		);
+		const input = join(path.join(root, "src", "main.nm"), undefined);
+		expect(input.match(/pub struct Span \{/g)?.length).toBe(1);
+		expect(input).toContain("pub struct Diff");
+	} finally {
+		fs.rmSync(root, { recursive: true, force: true });
+	}
+});

@@ -200,7 +200,7 @@ function read_siblings(
 	pending.push({ dir: self_dir, text: doc_text });
 	while (pending.length > 0) {
 		const current = pending.shift()!;
-		for (const target of project_imports(current.text)) {
+		for (const target of project_imports(current.dir, current.text)) {
 			const full = path.resolve(current.dir, target);
 			if (seen.has(full)) continue;
 			const text = read_file(full);
@@ -217,15 +217,43 @@ function read_siblings(
  * are library imports (skipped), anything else names a project file where
  * both `::` and `/` separate path segments (`import types::CharChange` and
  * the old `import types/CharChange` both mean `./types/CharChange.nm`).
+ * Segments are trimmed (`Types:: Diff` from older formatter versions), and
+ * a trailing segment naming a namespace directory (`import Types` for
+ * `./Types/*.nm`) expands to every `.nm` file directly inside it.
  */
-function project_imports(text: string): string[] {
+function project_imports(base_dir: string, text: string): string[] {
 	const targets: string[] = [];
 	const re = /^import(.*)$/gm;
 	let match: RegExpExecArray | null;
 	while ((match = re.exec(text)) !== null) {
 		const trimmed = match[1].trim();
 		if (!trimmed || trimmed === "System" || trimmed.startsWith("System::")) continue;
-		targets.push(`./${trimmed.split("::").join("/")}.nm`);
+		const rel = trimmed
+			.split("::")
+			.map((s) => s.trim())
+			.filter((s) => s.length > 0)
+			.join("/");
+		if (!rel) continue;
+		let is_dir = false;
+		try {
+			is_dir = fs.statSync(path.resolve(base_dir, rel)).isDirectory();
+		} catch {
+			// Not a directory — fall through to file resolution below.
+		}
+		if (is_dir) {
+			let names: string[];
+			try {
+				names = fs.readdirSync(path.resolve(base_dir, rel));
+			} catch {
+				continue;
+			}
+			for (const name of names.sort()) {
+				if (!name.endsWith(".nm")) continue;
+				targets.push(`./${rel}/${name}`);
+			}
+			continue;
+		}
+		targets.push(`./${rel}.nm`);
 	}
 	return targets;
 }
