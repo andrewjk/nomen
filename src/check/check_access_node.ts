@@ -7,6 +7,7 @@ import BaseNode from "../nodes/BaseNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
+import type StructNode from "../nodes/StructNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import check_function_call from "./check_function_call.ts";
@@ -234,6 +235,37 @@ function resolve_generic_enum_access(
 	return mono ?? undefined;
 }
 
+/**
+ * Resolve a generic-typed receiver (`List<Diff>`) to its monomorphized
+ * struct, MATERIALIZING the instantiation on demand when no mono exists yet.
+ *
+ * A receiver's generic annotation is only instantiated eagerly at sites that
+ * run after the declaring type is registered (param checks, explicit local
+ * declarations, the callee's own body). A cross-file value typed from a
+ * callee's return annotation — `const diffs = combined(a, b)` where
+ * `combined` declares `out List<Diff>` in a later-merged file — arrives as
+ * the bare generic plus type args with no mono in the table, because the
+ * root gather's `instantiate_generic_type` runs in a single statement-order
+ * pass (the library's `List` is registered after the callee's function).
+ * Resolving members against the bare generic yields raw type params
+ * (`at` -> `out T`), so element-typed access degrades order-dependently
+ * ("Field not found", empty-typed conditions). Instantiating here makes
+ * resolution merge-order independent; `monomorphize` is idempotent and
+ * defers (returns null) when an arg is still an unresolved type param.
+ */
+function materialize_mono_struct(type: Type, status: CheckStatus): StructNode | undefined {
+	if (!type.type_args?.length) return undefined;
+	const generic = status.structs.findLast((s) => s.name === type.name);
+	if (!generic?.is_generic || generic.type_params.length !== type.type_args.length) {
+		return undefined;
+	}
+	const mono_name = mono_type_name(type);
+	if (!status.structs.find((s) => s.name === mono_name)) {
+		monomorphize(generic, type.type_args, status);
+	}
+	return status.structs.find((s) => s.name === mono_name);
+}
+
 function check_access_field_node(
 	target_type: Type,
 	target: BaseNode,
@@ -242,8 +274,7 @@ function check_access_field_node(
 ): boolean {
 	let struct = status.structs.find((s) => s.name === target_type.name);
 	if (struct?.is_generic && target_type.type_args?.length) {
-		const mono_name = mono_type_name(target_type);
-		struct = status.structs.find((s) => s.name === mono_name) || struct;
+		struct = materialize_mono_struct(target_type, status) || struct;
 	}
 	let field = struct?.fields.find((f) => f.name === node.name);
 	if (!field) {
@@ -464,9 +495,9 @@ function check_access_function_node(
 
 	// Resolve generic type to monomorphized name so we find the right methods
 	if (effective_type.type_args?.length && !effective_type.is_array) {
-		const mono_name = mono_type_name(effective_type);
-		if (status.structs.find((s) => s.name === mono_name)) {
-			effective_type = new Type(mono_name);
+		const mono = materialize_mono_struct(effective_type, status);
+		if (mono) {
+			effective_type = new Type(mono.name);
 		}
 	}
 

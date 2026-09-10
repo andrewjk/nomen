@@ -14,6 +14,7 @@ import { set_resolved_function } from "../nodes/set_resolved_function.ts";
 import StructNode from "../nodes/StructNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
+import { instantiate_generic_type } from "./check_function_call_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { borrow_depth_of } from "./utils/borrow.ts";
@@ -214,6 +215,20 @@ export default function check_function_call(
 
 	node.type = func.return_type;
 	node.is_static = func.is_static;
+
+	// Flow a generic return type's monomorphized instantiation at
+	// call-resolution time. A cross-file callee checked later in the merge
+	// order still carries its bare return annotation (`out List<Diff>`) here:
+	// the root gather's instantiate_generic_type ran in a single
+	// statement-order pass, before the generic's own struct was registered.
+	// Materializing the mono now lets every consumer of this call's type
+	// (the LHS binding, member access, the build) see the concrete
+	// instantiation regardless of merge order. No-op for non-generic types,
+	// already-materialized monos (monomorphize reuses them), and unresolved
+	// type params inside generic bodies (deferred to monomorphization).
+	if (node.type?.type_args?.length) {
+		instantiate_generic_type(node.type, status);
+	}
 
 	// Deep-const: a method dispatched on a const receiver yields a read-only
 	// (`is_const_ref`) class reference. The flag propagates through all
