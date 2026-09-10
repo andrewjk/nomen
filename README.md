@@ -90,7 +90,7 @@ The `nomen` CLI has several commands: `init`, `run`, `build`, `check`, `format`,
 | `--audit-runtime` |       | Path to `audit_runtime.c` (used with `--audit`).                                     |
 | `--check`         |       | `format` dry-run: report changes without writing.                                    |
 
-See [CLI.md](CLI.md) for the full reference (input resolution, build output, config files, and examples).
+See [CLI.md](docs/CLI.md) for the full reference (input resolution, build output, config files, and examples).
 
 ## Language Overview
 
@@ -495,7 +495,7 @@ var int v = unwrap(b)   // T inferred as int
 Type parameters are type-erased at the storage level — all values are 8 bytes
 on aarch64, so `T` exists only for compile-time checking. The compiler emits
 one specialized copy per concrete instantiation (`Box<int>` → `Box_int`). See
-[GENERICS.md](GENERICS.md) for the full design.
+[GENERICS.md](docs/GENERICS.md) for the full design.
 
 ### Constraints
 
@@ -631,7 +631,7 @@ var [x = px, y = py] = p
 
 ## Standard Library
 
-The `System` library (in `core/System/`) is imported with `import System`.
+The standard `System` library is imported with `import System`.
 
 ### Console
 
@@ -678,7 +678,7 @@ pub func main = () {
 }
 ```
 
-See [ASYNC.md](ASYNC.md) for the full design.
+See [ASYNC.md](docs/ASYNC.md) for the full design.
 
 ## Memory Management
 
@@ -704,7 +704,7 @@ struct Transaction {
 - `#destroy` runs at scope exit for structs and classes that own resources
 - Heap strings and class instances are freed automatically
 
-See [MEMORY.md](MEMORY.md) for the full model.
+See [MEMORY.md](docs/MEMORY.md) for the full model.
 
 ## Ownership & Borrows
 
@@ -751,11 +751,11 @@ s = "changed"                        // frees s's old buffer → v dangles
 Console.write("\{v.length}")         // Error: borrow invalidated
 ```
 
-See [BORROW.md](BORROW.md) for the rules and the borrow-invalidation checks.
+See [BORROW.md](docs/BORROW.md) for the rules and the borrow-invalidation checks.
 
 ## GUI
 
-Nomen ships a native UI layer in `core/System/Controls/`: windows, text,
+Nomen ships a native UI layer in `System::Controls`: windows, text,
 buttons, checkboxes, and a layout engine + compositor. The example app in
 `app/` is a small todo-list GUI built with it.
 
@@ -773,7 +773,7 @@ pub func main = () {
 
 The layout engine is constraints-down, sizes-up (like Flutter/SwiftUI): parents
 hand each child a size range, children report their intrinsic size, and the
-engine resolves it into pixel frames. See [GUI.md](GUI.md) for the full
+engine resolves it into pixel frames. See [GUI.md](docs/GUI.md) for the full
 layout and compositor design.
 
 ## Questions
