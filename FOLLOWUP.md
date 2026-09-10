@@ -272,14 +272,3 @@ requires a `.slice()` result (a whole-field re-root needs a full-range
 slice), and a struct with a view field has no zero-arg init
 (`VLine()` → `Parameters missing for function: VLine`; construct as
 `VLine(view)`).
-
-## `nomen build --out` is ignored (found 2026-09-10)
-
-`nomen build --in src/bench_one.nm --arch c --out build/bench_one_c`
-prints `Built .../build/bench_one` and writes the binary there — `--out`
-is silently ignored and whatever was at the default output path (here,
-the fresh aarch64 `bench_one`) is overwritten. Not C-specific: `--out
-build/bench_one_rel` on the default arch and `--out /tmp/cbench_test`
-behave the same (output always lands at `build/<entry-basename>`,
-nothing written to the requested path). Reproduced 4/4. Workaround:
-build, then `cp` the binary aside before the next build.

@@ -26,3 +26,12 @@ export function build_dir_for(input_path: string, is_test: boolean): string {
 		? path.join(project_root_for(input_path), "build", "test")
 		: path.join(project_root_for(input_path), "build");
 }
+
+/**
+ * The linked binary path for `input_path`: an explicit `--out` wins,
+ * otherwise `<build dir>/<entry basename>`.
+ */
+export function outfile_for(input_path: string, is_test: boolean, out?: string): string {
+	if (out) return path.resolve(out);
+	return path.join(build_dir_for(input_path, is_test), path.basename(input_path, ".nm"));
+}

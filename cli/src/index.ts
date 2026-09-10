@@ -14,7 +14,7 @@ import { parse_args, print_help, type Args } from "./args.ts";
 import { run_docs } from "./docs.ts";
 import render_errors, { render_warnings } from "./format_errors.ts";
 import { find_bundled, run_init } from "./init.ts";
-import { build_dir_for } from "./paths.ts";
+import { build_dir_for, outfile_for } from "./paths.ts";
 import { runTests } from "./test.ts";
 import type Config from "./types/Config.ts";
 
@@ -170,6 +170,7 @@ try {
 		if (args.audit_runtime) config.audit_runtime = args.audit_runtime;
 		if (args.release) config.release = args.release;
 		if (args.fast_math) config.fast_math = args.fast_math;
+		if (args.out) config.out = args.out;
 
 		// Is the --in path a folder
 		if (fs.lstatSync(args.in).isDirectory()) {
@@ -370,7 +371,8 @@ function processFile(filename: string, config: Config, mode: Mode, program_args:
 	}
 
 	const basename = path.basename(filename, ".nm");
-	// Output lives in the project's `build/` — `build/test` for *.test.nm.
+	// Output lives in the project's `build/` — `build/test` for *.test.nm —
+	// unless an explicit --out names the linked binary.
 	const buildDir = build_dir_for(resolved_path, filename.endsWith(".test.nm"));
 	if (!fs.existsSync(buildDir)) {
 		fs.mkdirSync(buildDir, { recursive: true });
@@ -378,7 +380,10 @@ function processFile(filename: string, config: Config, mode: Mode, program_args:
 	const ext = arch === "aarch64" ? ".s" : platform === "macos" || platform === "ios" ? ".m" : ".c";
 	const headerfile = path.join(buildDir, "main.h");
 	const codefile = path.join(buildDir, basename + ext);
-	const outfile = path.join(buildDir, basename);
+	const outfile = outfile_for(resolved_path, filename.endsWith(".test.nm"), config.out);
+	if (!fs.existsSync(path.dirname(outfile))) {
+		fs.mkdirSync(path.dirname(outfile), { recursive: true });
+	}
 	fs.writeFileSync(headerfile, result.headers);
 	fs.writeFileSync(codefile, result.code);
 

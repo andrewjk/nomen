@@ -6,4 +6,5 @@ export default interface Config {
 	audit_runtime?: string;
 	release?: boolean;
 	fast_math?: boolean;
+	out?: string;
 }
