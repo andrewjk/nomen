@@ -270,15 +270,6 @@ compound literal, and value-struct values round-trip through
   The C cast-to-struct-zero fix lives in build_return_node.ts /
   build_cast_node.ts (2026-09-11).
 
-## Generic instantiation with a trait type arg fails under explicit annotation
-
-**Generic instantiation with a trait type arg fails under explicit
-annotation.** `var List<Animal> l = List<Animal>()` → "struct fields
-cannot be trait types" (the annotated-local check fires before the
-ClassBuffer rewrite). Inference (`var l = List<Animal>()`) and class
-fields typed `List<Animal>` work, so the trait-ClassBuffer routing
-exists — the annotation path just skips it.
-
 ## Func-typed struct fields are parsed but not callable
 
 **Func-typed struct fields are parsed but not callable.** `pub var func
