@@ -249,23 +249,26 @@ func fields, `Map<string, int>` indices instead of reference-valued maps,
 `--arch c` for the aarch64 mis-binds, no string-literal defaults on class
 fields), but each should be fixed in the compiler:
 
-## `Map` values must be scalars or strings — struct/class/trait values are broken
+## `Map` reference-typed values (class/trait) blocked by variadic-tuple + field rules
 
-**`Map` values must be scalars or strings — struct/class/trait values
-are broken.** With `Map<string, SomeStruct>` the C backend emits
-`used type 'struct SomeStruct' where arithmetic or pointer type is
-required` (values are marshalled through 8-byte slots); aarch64
-segfaults. Class/trait values hit the same slot-marshalling. Workaround:
-`Map<string, int>` index into a parallel `List<T>`. (Docs should state
-the value-type restriction until fixed.)
+Remaining after the struct-value fix (`return 0` now lowers to a zeroed
+compound literal, and value-struct values round-trip through
+`Buffer<TV>` on both backends — see test/trait_class_locals_scope.test.ts):
 
-## `Map` variadic constructor with class/trait values errors inside the library
+- `Map<string, SomeTrait>` / `Map<string, SomeClass>` still fail to CHECK.
+  The variadic `#init` is re-checked per instantiation, and its
+  `...[TK, TV] pairs` tuple materializes `_Tuple_string_Animal` — a value
+  struct with a trait/class-typed field, which check_struct_node rejects
+  ("struct fields cannot be trait/class types") for the sound byte-copy
+  double-free reason. The mono'd `#init` body then also trips
+  "Cannot move a borrowed value" on `set(pairs.at(i)._0, pairs.at(i)._1)`
+  (borrowed pair element into a `move TV` param).
 
-**`Map` variadic constructor with class/trait values errors inside the
-library.** `Map<string, Animal>(["d", Dog()])` → "Cannot move a borrowed
-value into owning parameter 'value'" raised from `Map.#init`'s own body
-(the pair elements are loads, and `set` wants `move TV`). Same
-restriction as (4).
+  A fix needs a sound ownership story for reference-typed tuple elements
+  (e.g. materialize the pair as a class when any element is class/trait, or
+  borrow-only variadic tuples), which cascades through the variadic ABI.
+  The C cast-to-struct-zero fix lives in build_return_node.ts /
+  build_cast_node.ts (2026-09-11).
 
 ## Generic instantiation with a trait type arg fails under explicit annotation
 

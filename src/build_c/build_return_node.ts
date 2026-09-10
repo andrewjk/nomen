@@ -450,6 +450,18 @@ export default function build_return_node(
 			!ret_type.is_array &&
 			node.value.node_type === "value" &&
 			((node.value as ValueNode).value === "0" || (node.value as ValueNode).value === "null");
+		// A STRUCT zero value (`return 0` with the out type instantiated to a
+		// value struct — Map.get's missing-key path with TV = struct): emit a
+		// zero-initialized compound literal. `(struct X)0` does not compile,
+		// and a zeroed struct is the intended zero value (NULL string
+		// pointers, 0 scalars).
+		const returns_struct_zero =
+			is_struct &&
+			!return_is_class &&
+			!ret_type.is_view &&
+			!ret_type.is_array &&
+			node.value.node_type === "value" &&
+			((node.value as ValueNode).value === "0" || (node.value as ValueNode).value === "null");
 		if (
 			!returns_string_zero &&
 			!returns_view_value &&
@@ -486,6 +498,8 @@ export default function build_return_node(
 		}
 		if (returns_string_zero) {
 			status.code += `(nomen_string){0,0}`;
+		} else if (returns_struct_zero) {
+			status.code += `(struct ${mono_ret_name}){0}`;
 		} else if (returns_view_value) {
 			c_materialize_view_string(node.value, status);
 		} else {
@@ -496,6 +510,7 @@ export default function build_return_node(
 		}
 		if (
 			!returns_string_zero &&
+			!returns_struct_zero &&
 			!returns_view_value &&
 			(returns_borrowed_string || returns_string_literal || returns_borrow_var)
 		) {

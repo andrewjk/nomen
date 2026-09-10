@@ -25,6 +25,19 @@ export default function build_cast_node(node: CastNode, status: BuildStatus) {
 		(s) => s.name === node.target_type.name && !s.is_simple_type,
 	);
 	const prefix = is_struct ? "struct " : "";
+
+	// Casting a literal zero to a value struct (e.g. the core library's
+	// generic `return 0` zero-value in Map.get with TV = struct): emit a
+	// zero-initialized compound literal instead of an int cast — C rejects
+	// `(struct X)0`.
+	if (is_struct && !node.target_type.is_ref) {
+		const value = node.value;
+		if (value.node_type === "value" && (value as { value?: string }).value === "0") {
+			status.code += `(${prefix}${c_type(node.target_type.name)}){0}`;
+			return;
+		}
+	}
+
 	status.code += `(${prefix}${c_type(node.target_type.name)})`;
 	build_node(node.value, status);
 }

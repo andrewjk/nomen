@@ -116,3 +116,37 @@ pub func main = (Init init) {
 	expect(parsed.errors).toEqual([]);
 	await build_and_check_output(input, "trait_locals_scope_map_rehash", "7\n", true);
 });
+
+describe("Map with struct values", () => {
+	test("Map<string, Struct> stores and loads value structs", async () => {
+		const input = `
+import System
+
+pub struct LinkReference {
+	pub var string url = ""
+	pub var string title = ""
+}
+
+pub func main = (Init init) {
+	var refs = Map<string, LinkReference>()
+	var LinkReference r = LinkReference()
+	r.url = "http://example"
+	r.title = "Example"
+	refs.set("l1", r)
+	if refs.has("l1") {
+		var LinkReference got = refs.get_or("l1", LinkReference())
+		Console.write("\\{got.url} \\{got.title}\\n")
+	}
+	Console.write("done\\n")
+}
+`;
+		const parsed = parse_raw(input);
+		expect(parsed.errors).toEqual([]);
+		await build_and_check_output(
+			input,
+			"map_struct_values_roundtrip",
+			"http://example Example\ndone\n",
+			true,
+		);
+	});
+});
