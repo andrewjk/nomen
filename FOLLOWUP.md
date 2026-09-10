@@ -196,3 +196,33 @@ ASM_PLAN_7 tranches:
 - Either delete `buffer_pipeline.ts` + its BuildStatus fields, or wire
   the enable switch, before it misleads another tranche.
 
+## Constraint bounds live in two namespaces (found 2026-09-10, differator port)
+
+A parameter constraint like `end >= start` is evaluated with pushed
+stand-ins named after the CALLEE params, but guard facts are recorded
+under the CALLER's names. The two meet only by accident:
+
+- `text.slice(start, line_end)` behind `line_end >= start` verifies
+  because the outer variable happens to be named `start` (fact `["start"]`
+  vs target `"start"`). Rename it `lo` and the identical guard fails —
+  nothing connects `"lo"` to `"start"`. Pushed args carry the outer
+  variable's own alias (usually undefined for plain vars), never the arg
+  expression, so there is no bridge. The differator port names its slice
+  bounds `start`/`end` to coincide (see `split_lines`/`lines_of_bare`).
+- Related: the inclusive-upper check has no transitive step — `start <=
+  line_end` plus `line_end <= text.length` does not discharge `start <=
+  self.length` (the strict path chains; the inclusive path only does
+  direct `includes`). Port-side workaround is stating the implied bound
+  (`start <= text.length`) explicitly in the guard.
+
+Fix directions: default a pushed arg's `alias_of` to the arg's own path
+when the outer decl has none (unifying both sides into caller
+namespace), plus the missing transitive step for `<=` goals. Both need
+care around `is_nonnegative_access`, which treats an alias ending in a
+length-like field as proof of non-negativity — a defaulted bare-name
+alias (e.g. a var literally named `length`) must not satisfy it; require
+a dotted path there. A prototype of both fixes passed the full suite
+(311 files / 3000 tests) but was reverted to keep this release
+port-compatible; the differator workarounds above stand in until they
+land.
+
