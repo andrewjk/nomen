@@ -3,6 +3,7 @@ import type BaseNode from "../../nodes/BaseNode.ts";
 import type DeclarationNode from "../../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../../nodes/FunctionCallNode.ts";
 import StructNode from "../../nodes/StructNode.ts";
+import type Type from "../../nodes/Type.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
 import type CheckStatus from "../CheckStatus.ts";
 import { borrow_depth_of, borrow_owner_of } from "./borrow.ts";
@@ -213,6 +214,24 @@ export function propagate_view_borrows(
 export function view_borrows_root_at_self(sv: { view_field_owners?: Set<string> }): boolean {
 	const owners = sv.view_field_owners;
 	return !!owners?.size && [...owners].every((o) => o === "self");
+}
+
+/**
+ * Whether a value of this type can carry a non-owning view borrow: the type
+ * itself is a `view`, a `ref` (a borrow by definition — keep the existing
+ * taint), a struct declaring (transitively) `view T` fields, or a generic
+ * instantiation with such an argument. Anything else (primitives, owned
+ * strings, containers of owned values) owns its storage outright, so a call
+ * producing it does not propagate its view arguments' borrows — tainting it
+ * is a false positive (e.g. returning `slice_string(view)` from a function
+ * returning owned `string`). Callers pass an unset/unknown type through as
+ * carrying, preserving today's behavior where nothing is known.
+ */
+export function type_can_carry_view_borrow(type: Type | undefined, status: CheckStatus): boolean {
+	if (!type || !type.name) return true;
+	if (type.is_view || type.is_ref) return true;
+	if (struct_has_view_fields(type.name, status)) return true;
+	return (type.type_args ?? []).some((t) => type_can_carry_view_borrow(t, status));
 }
 
 /**

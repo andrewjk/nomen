@@ -31,6 +31,7 @@ import {
 	merge_view_borrows_into_var,
 	propagate_view_borrows,
 	root_var_of,
+	type_can_carry_view_borrow,
 	view_fields_invalidated,
 	view_source_borrow_info,
 } from "./utils/view_fields.ts";
@@ -457,7 +458,8 @@ export default function check_assignment_node(
 			}
 		} else if (
 			assign.right_value.node_type === "func_call" &&
-			type_from_value_node(assign.right_value, status)?.name
+			type_from_value_node(assign.right_value, status)?.name &&
+			type_can_carry_view_borrow(type_from_value_node(assign.right_value, status), status)
 		) {
 			// A constructor call whose `view T` arguments borrow from named
 			// sources (`x = Line(doc.slice(0, 5), …)`): record those

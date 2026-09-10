@@ -10,7 +10,11 @@ import { borrow_depth_of, borrow_owner_of } from "./utils/borrow.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
-import { ctor_call_view_borrow, view_borrows_root_at_self } from "./utils/view_fields.ts";
+import {
+	ctor_call_view_borrow,
+	type_can_carry_view_borrow,
+	view_borrows_root_at_self,
+} from "./utils/view_fields.ts";
 
 function is_class_type(type_name: string, status: CheckStatus): boolean {
 	return !!status.structs.find((s) => s.name === type_name && s.is_class);
@@ -115,8 +119,15 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 		// the fresh value's `view T` arguments borrow from this frame's
 		// storage. Sound only when every argument's borrow roots at `self`
 		// (re-rooted at the call-site receiver); anything else dangles the
-		// moment the function returns.
-		const infos = ctor_call_view_borrow(ret.value as FunctionCallNode, status);
+		// moment the function returns. Plain calls are checked too, but only
+		// when their result type can actually carry a borrow — an owned
+		// `string` (or any non-view, view-field-free type) owns its storage
+		// outright (a `to_string` materialization, a literal), so tainting it
+		// with the view arguments' borrows is a false positive.
+		const result_carries = type_can_carry_view_borrow(ret.type, status);
+		const infos = result_carries
+			? ctor_call_view_borrow(ret.value as FunctionCallNode, status)
+			: undefined;
 		if (infos?.size && ![...infos.keys()].every((o) => o === "self")) {
 			add_error(
 				status,

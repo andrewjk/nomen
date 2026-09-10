@@ -32,6 +32,7 @@ import {
 	ctor_call_view_borrow,
 	propagate_view_borrows,
 	type BorrowInfo,
+	type_can_carry_view_borrow,
 } from "./utils/view_fields.ts";
 
 export default function check_declaration_node(decl: DeclarationNode, status: CheckStatus) {
@@ -366,9 +367,12 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 		// Line(doc.slice(0, 5), …)`) gives the new variable dependencies on
 		// those sources; copying another view-carrying struct transfers its
 		// dependencies. An argument rooted deeper than this declaration's
-		// scope would let the borrow escape — rejected.
+		// An argument rooted deeper than this declaration's
+		// scope would let the borrow escape — rejected. Plain calls whose
+		// result type cannot carry a borrow (owned `string`, primitives)
+		// are skipped: their results own their storage outright.
 		let view_borrows: Map<string, BorrowInfo> | undefined;
-		if (decl.value?.node_type === "func_call") {
+		if (decl.value?.node_type === "func_call" && type_can_carry_view_borrow(decl.type, status)) {
 			view_borrows = ctor_call_view_borrow(decl.value as FunctionCallNode, status);
 			if (view_borrows?.size) {
 				for (const [, info] of view_borrows) {

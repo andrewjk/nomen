@@ -22,7 +22,7 @@ import c_function_name from "./utils/c_function_name.ts";
 import { find_decl_in_c_scopes, splice_decl_from_c_scopes } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
-import { c_view_string_arg } from "./utils/view_value.ts";
+import { c_materialize_view_string, c_view_string_arg, is_view_value } from "./utils/view_value.ts";
 
 let string_field_counter = 0;
 
@@ -514,9 +514,22 @@ export default function build_assignment_node(
 				if (lhs_is_string && !rhs_is_bare_value) {
 					const id = (status.label_counter = (status.label_counter ?? 0) + 1);
 					const temp = `_reassign_${id}`;
+					// View RHS into an owned slot: value semantics —
+					// materialize a length-bounded owned copy (a raw pair
+					// store would alias borrowed memory, and clang rejects
+					// nomen_view → nomen_string anyway).
+					const rhs_is_view = is_view_value(node.right_value, status);
 					status.code += `nomen_string ${temp} = `;
-					emit_rhs_value(node.right_value, nir_rhs, status);
+					if (rhs_is_view) {
+						c_materialize_view_string(node.right_value, status);
+					} else {
+						emit_rhs_value(node.right_value, nir_rhs, status);
+					}
 					status.code += `;\nfree(${lhs_name}.ptr);\n${lhs_name} = ${temp};\n`;
+					if (rhs_is_view) {
+						if (!status.heap_strings) status.heap_strings = new Set();
+						status.heap_strings.add(lhs_name);
+					}
 					return;
 				}
 				status.code += `free(${lhs_name}.ptr);\n`;
@@ -567,6 +580,22 @@ export default function build_assignment_node(
 					if (!node.swap) {
 						splice_decl_from_c_scopes(status, (rhs as ValueNode).value);
 					}
+				} else if (
+					lhs_is_string &&
+					!node.swap &&
+					rhs.node_type === "value" &&
+					is_view_value(rhs, status)
+				) {
+					// `s = v` (view into owned string slot): value semantics —
+					// materialize a length-bounded owned copy. Must precede
+					// the `is_moved` transfer below: a moved view owns nothing
+					// to transfer. The old value was already freed above.
+					status.code += `${lhs_name} = `;
+					c_materialize_view_string(rhs, status);
+					status.code += `;\n`;
+					if (!status.heap_strings) status.heap_strings = new Set();
+					status.heap_strings.add(lhs_name);
+					return;
 				} else if (!node.swap && (rhs as ValueNode).is_moved) {
 					// `s = move t` (string): EXPLICIT ownership transfer. Splice
 					// the source's decl from whichever scope frame holds it so

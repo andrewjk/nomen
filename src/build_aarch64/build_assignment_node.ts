@@ -56,7 +56,7 @@ import {
 	get_field_offset,
 	get_struct_size,
 } from "./utils/struct_layout.ts";
-import { is_view_value } from "./utils/view_value.ts";
+import { emit_view_materialize_owned, is_view_value } from "./utils/view_value.ts";
 
 function is_mutable_param(name: string, status: BuildStatus): boolean {
 	return !!(status.function_param_vars?.has(name) || status.function_ref_params?.has(name));
@@ -1321,6 +1321,26 @@ export default function build_assignment_node(
 			// (e.g. `s = s + "x"`), so the old value must still be alive here.
 			emit_rhs_value(node.right_value, nir_rhs, status);
 			if (!status.code.endsWith("\n")) status.code += "\n";
+			// A `view string` RHS into an owned string slot (`s = v`)
+			// materializes an OWNED heap copy bounded by the view's len —
+			// never an alias of the source buffer (mirrors the declaration
+			// path). The value build leaves the (ptr, len) pair in x0/x1;
+			// copy it, and mark the target for scope-exit cleanup below.
+			// View-typed targets re-point instead and are excluded.
+			const assign_lhs_type =
+				status.scoped_declarations.find((d) => d.name === name)?.type ??
+				status.variable_types?.get(name);
+			const rhs_is_view_into_owned =
+				!node.swap &&
+				!node.operator &&
+				size === 16 &&
+				assign_lhs_type?.name === "string" &&
+				!assign_lhs_type.is_view &&
+				is_view_value(node.right_value, status);
+			if (rhs_is_view_into_owned) {
+				emit_view_materialize_owned(status);
+				if (!status.code.endsWith("\n")) status.code += "\n";
+			}
 			// Preserve the freshly computed value across freeing the old value.
 			// A fat string rides the (x0, x1) pair — save BOTH halves.
 			const saves_fat_pair = size === 16;
@@ -1395,7 +1415,10 @@ export default function build_assignment_node(
 			const rhs_is_borrow_reception =
 				!node.swap && size === 16 && is_string_borrow(node.right_value);
 			const borrow_needs_dup = rhs_is_borrow_reception && !!status.force_heap_strings?.has(name);
-			if ((rhs_is_string_var && move_source === undefined) || borrow_needs_dup) {
+			if (rhs_is_view_into_owned) {
+				if (!status.heap_strings) status.heap_strings = new Set();
+				status.heap_strings.add(name);
+			} else if ((rhs_is_string_var && move_source === undefined) || borrow_needs_dup) {
 				emit_strdup_string(status);
 			}
 			if (rhs_is_string_var || borrow_needs_dup) {

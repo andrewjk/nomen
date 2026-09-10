@@ -21,7 +21,7 @@ import { reclaim_all_c_scopes } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
 import emit_allocations from "./utils/emit_allocations.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
-import { is_view_value } from "./utils/view_value.ts";
+import { c_materialize_view_string, is_view_value } from "./utils/view_value.ts";
 
 /**
  * Emit a return VALUE expression. Under NIR-driven emission the lowered
@@ -343,6 +343,17 @@ export default function build_return_node(
 				returns_borrow_var = true;
 			}
 		}
+		// A `view string` value returned into an owned `string` return
+		// materializes with a LENGTH-BOUNDED copy (malloc len+1 / memcpy /
+		// NUL): a thin nomen_str_dup would over-read past the view's end
+		// (and mismatches the nomen_view argument type entirely). Restricted
+		// to value/access shapes, mirroring the aarch64 return path.
+		const returns_view_value =
+			ret_type.name === "string" &&
+			!ret_type.is_view &&
+			!ret_type.is_array &&
+			is_view_value(node.value, status) &&
+			(node.value.node_type === "value" || node.value.node_type === "access");
 		if (returns_borrowed_string) {
 			const access = (node.value as AccessNode).access;
 			if (access.node_type === "access_func") {
@@ -441,6 +452,7 @@ export default function build_return_node(
 			((node.value as ValueNode).value === "0" || (node.value as ValueNode).value === "null");
 		if (
 			!returns_string_zero &&
+			!returns_view_value &&
 			(returns_borrowed_string || returns_string_literal || returns_borrow_var)
 		) {
 			status.code += `nomen_str_dup(`;
@@ -474,6 +486,8 @@ export default function build_return_node(
 		}
 		if (returns_string_zero) {
 			status.code += `(nomen_string){0,0}`;
+		} else if (returns_view_value) {
+			c_materialize_view_string(node.value, status);
 		} else {
 			emit_return_value(node.value, nir_value, status);
 		}
@@ -482,6 +496,7 @@ export default function build_return_node(
 		}
 		if (
 			!returns_string_zero &&
+			!returns_view_value &&
 			(returns_borrowed_string || returns_string_literal || returns_borrow_var)
 		) {
 			status.code += `)`;

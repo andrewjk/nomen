@@ -33,6 +33,7 @@ import {
 import { allocate_stack_space, emit_var_address, emit_var_store } from "./utils/stack_var.ts";
 import { emit_pair_store_x29, emit_strdup_string } from "./utils/string_pair.ts";
 import { emit_struct_copy, get_enum_sret_size, get_struct_size } from "./utils/struct_layout.ts";
+import { emit_view_materialize_owned, is_view_value } from "./utils/view_value.ts";
 
 let return_val_counter = 0;
 
@@ -471,7 +472,18 @@ export default function build_return_node(
 		}
 	}
 	if (needs_borrow_strdup) {
-		emit_strdup_string(status);
+		// A `view string` value materializes with a LENGTH-BOUNDED copy —
+		// a thin strdup would over-read past the view's end (views into the
+		// middle of a buffer are not NUL-terminated there). Restricted to
+		// value/access shapes whose build leaves the pair in x0/x1.
+		if (
+			is_view_value(node.value, status) &&
+			(node.value.node_type === "value" || node.value.node_type === "access")
+		) {
+			emit_view_materialize_owned(status);
+		} else {
+			emit_strdup_string(status);
+		}
 		if (!status.code.endsWith("\n")) {
 			status.code += "\n";
 		}

@@ -196,45 +196,32 @@ ASM_PLAN_7 tranches:
 - Either delete `buffer_pipeline.ts` + its BuildStatus fields, or wire
   the enable switch, before it misleads another tranche.
 
-## View taint over-applied to owning call results (differator port item 3)
+## View argument to owned `string` parameter (deferred design question)
 
-`ctor_call_view_borrow` fires on ANY call with `view_param_indices` — in
-`check_return_node`, `check_declaration_node`, and `check_assignment_node`
-alike — so returning a plain call with view params is rejected even when
-the result is freshly owned:
+Passing a `view string` where an owned `string` parameter is expected is
+allowed by omission (call-site type matching compares type names only) but
+has no designed semantics, and the backends disagree: aarch64 silently
+passes the pair through, C fails at clang (`passing 'nomen_view' to
+parameter of incompatible type 'nomen_string'`). The differator works
+around it by materializing (`.to_string()`) before such calls.
 
-```nomen
-pub func substring = (string text, int start, int end, out string) {
-	return slice_string(text, start, end)   // ✗ "cannot return 'string' —
-	                                        // its 'view' field(s) borrow from this scope"
-}
-```
+Probed for soundness holes on aarch64 (all correct output, `--audit`
+clean, repeated runs): read-only callees, return passthrough (borrow
+normalization strdup's), container stores (`store_T` strdup's), and
+`move`-out into a return are all benign. Params are `const` (no
+reassign-and-free), which closes the obvious hole. No crash, leak, or
+wrong output constructed — so this is a coherence question, not a fire.
 
-where `slice_string = (view string text, ...)`. The rule was written for
-struct constructors (`return Line(view)` — the result genuinely embeds
-the borrow) but cannot tell the two apart. Fix direction: gate the taint
-on the callee result type carrying a borrow — skip it when the result is
-neither `view` nor a struct with view fields (`struct_has_view_fields`
-already exists in `view_fields.ts`). Soundness rests on owned-typed
-values owning their storage, which the checker already enforces at every
-production site (`return <view>` and view-typed bindings without the
-keyword are both rejected). Regression tests: positive
-(`substring`-returns-`slice_string(view)` verifies and runs) plus
-negative (`return Line(view)` still errors). Port-side workaround in
-place (owned `substring`); it keeps working either way.
+The two coherent options mirror the two precedents set elsewhere:
+materialize at the boundary (what assignment/declaration/`return move`
+now do — but a hidden malloc per call would reintroduce exactly the
+per-line copies the differator just eliminated if it ever fires in a
+loop), or reject at check time (what declaration Rule 3 does for
+bindings — but that could break currently-passing aarch64 code; needs a
+suite-wide audit first). Needs an owner decision; until then the backend
+divergence stands (loud on C, silent alias on aarch64).
 
-Adjacent bug found while verifying the invariant: view→owned assignment
-miscompiles (at least on aarch64) —
-
-```nomen
-var string s = "hello"
-view v = s.slice(0, 1)
-s = v
-Console.write(s)   // prints "[he", expect "[h]"
-```
-
-The direct `v.to_string()` print is correct, so the slice is fine and the
-store itself writes a wrong pair. Also still open: `return move v` (view
-as owned) produces no borrow error — confirm what move-of-view compiles
-to before trusting signatures anywhere.
+Also adjacent and known: `Console.write` uses `printf("%s")`, so printing
+a mid-buffer (non-terminated) view over-reads to NUL. Callers materialize
+first; length-aware `==` is unaffected.
 
