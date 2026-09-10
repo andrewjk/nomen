@@ -289,14 +289,6 @@ out-parameter ABI support and consistent callee typing. Test coverage:
 test/func_field_rejected.test.ts pins the field rejection; the local gaps
 remain untested (broken shapes).
 
-## Methods cannot return borrowed class refs
-
-**Methods cannot return borrowed class refs.** `pub func node = (self,
-int i, out Node) { return self.nodes.at_or_panic(i) }` → "cannot return
-a borrowed reference". Callers must inline `state.nodes.at_or_panic(i)`
-instead. A sanctioned accessor shape (or `view`-like borrow return)
-would remove a lot of noise.
-
 ## Constraint-verification gaps at literal/length arithmetic
 
 **Constraint-verification gaps at literal/length arithmetic:**

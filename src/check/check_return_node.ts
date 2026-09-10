@@ -103,10 +103,18 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 				);
 			}
 		} else {
-			const safe_view_from_self =
-				!!func.return_type?.is_view && borrow_owner_of(ret.value, status) === "self";
+			const borrow_owner = borrow_owner_of(ret.value, status);
+			const safe_view_from_self = !!func.return_type?.is_view && borrow_owner === "self";
+			// A CLASS/TRAIT borrow rooted at `self` may be returned too: the
+			// call site re-roots the result at the receiver argument (the same
+			// convention as `view T` returns), so the borrow's lifetime is the
+			// caller's use of its own object — exactly like `list.at(i)`
+			// assigned to a local. This is what makes accessor methods sound:
+			// `pub func node = (self, int i, out Node) {
+			//      return self.nodes.at_or_panic(i) }`.
+			const safe_class_borrow_from_self = !func.return_type?.is_view && borrow_owner === "self";
 			const explicit_mov = !!get_inner_value_node(ret.value)?.is_moved;
-			if (!safe_view_from_self && !explicit_mov) {
+			if (!safe_view_from_self && !safe_class_borrow_from_self && !explicit_mov) {
 				add_error(
 					status,
 					`cannot return a borrowed reference — use 'move' (with swap) to transfer ownership`,
