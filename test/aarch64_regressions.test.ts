@@ -631,3 +631,111 @@ Console.write("\\{pickin(p, q)} \\{pickin(r, w)}")
 	// pick(1,2)=1, pick(2,3)=2 → 3 per instantiation.
 	await build_and_check_output(input, "mono_clone_nested_func_labels", "3 3");
 });
+
+// A call whose LAST-built argument auto-derefs a `ref` scalar param, with a
+// hoisted class-typed variable as arg 0: the arg-0 materialization used the
+// stale AAPCS param register (x0 — the arg-0 target itself), so the `mov`
+// degenerated to a no-op and x0 still held the ref deref at the `bl` (the
+// list arg arrived as an int → SIGSEGV inside the callee).
+test("ref deref as later arg keeps hoisted arg 0", async () => {
+	const input = `
+import System
+
+pub class Token {
+  var text = ""
+  var index = 0
+}
+
+pub class Change {
+  var a = 0
+  var b = 0
+}
+
+func token_index = (List<Token> toks, int i, out int) {
+  var int j = i
+  if j >= 0 && j < toks.length {
+    const Token t = toks.at(j)
+    return t.index
+  }
+  return 0
+}
+
+func flush_delete = (ref int del_start, ref List<Change> changes, List<Token> ta) {
+  if del_start == -1 {
+    return
+  }
+  var c = Change()
+  c.a = token_index(ta, del_start)
+  changes.push(mov c)
+  del_start = -1
+}
+
+func make = (string s, int idx, out Token) {
+  var t = Token()
+  t.text = s
+  t.index = idx
+  return t
+}
+
+pub func main = (Init init) {
+  var List<Token> ta = List<Token>()
+  ta.push(mov make("x", 5))
+  var List<Change> cs = List<Change>()
+  var int d = 0
+  flush_delete(ref d, ref cs, ta)
+	if cs.length > 0 {
+    Console.write_line("a=\\{cs.at(0).a}")
+  }
+}
+`;
+	await build_and_check_output(input, "ref_deref_later_arg_keeps_arg0", "a=5", true);
+});
+
+// The same shape through a STATIC method call: the arg in slot 0 (x0) is
+// built in-loop (class types take the by-pointer branch before the deferral
+// check), then the deferred ref-deref leaf parks through x0 and clobbers it.
+test("ref deref as later static-call arg keeps x0 arg", async () => {
+	const input = `
+import System
+
+pub class Token {
+  var text = ""
+  var index = 0
+}
+
+pub class Tokens {
+  func index_of = (List<Token> toks, int i, out int) {
+    var int j = i
+    if j >= 0 && j < toks.length {
+      const Token t = toks.at(j)
+      return t.index
+    }
+    return 0
+  }
+}
+
+func make = (string s, int idx, out Token) {
+  var t = Token()
+  t.text = s
+  t.index = idx
+  return t
+}
+
+func flush = (ref int del_start, List<Token> ta, out int) {
+  if del_start == -1 {
+    return 0
+  }
+  var int got = Tokens.index_of(ta, del_start)
+  del_start = -1
+  return got
+}
+
+pub func main = (Init init) {
+  var List<Token> ta = List<Token>()
+  ta.push(mov make("x", 5))
+  var int d = 0
+  Console.write_line("a=\\{flush(ref d, ta)}")
+}
+`;
+	await build_and_check_output(input, "ref_deref_static_call_keeps_arg0", "a=5", true);
+});

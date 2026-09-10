@@ -689,18 +689,12 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					if (deferred) continue;
 					status.code += `ldr ${reg}, [x29, #${args_base + s * 8}]\n`;
 				}
-				if (!is_struct) {
-					const deferred0 = deferred_args.find((d) => start_reg + d.slot === 0);
-					if (!deferred0) {
-						status.code += `ldr x0, [x29, #${args_base}]\n`;
-					}
-				}
 			}
 			// Deferred leaf arguments (tranche H): materialize directly into
 			// their argument registers — every evaluation is complete.
 			// DESCENDING slot order: a leaf whose build_operand falls back to
-			// build_node parks its value through x0 (func refs, globals) —
-			// that may only clobber registers not yet parked, so x0
+			// build_node parks its value through x0 (func refs, globals, ref
+			// scalars) — that may only clobber registers not yet parked, so x0
 			// materializes last.
 			deferred_args.sort((a, b) => b.slot - a.slot);
 			for (const d of deferred_args) {
@@ -708,6 +702,18 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				if (slot >= NUM_REG_ARGS) continue;
 				build_operand(d.param, param_regs[slot], status);
 				if (!status.code.endsWith("\n")) status.code += "\n";
+			}
+			// The arg-0 load waits until AFTER the deferred materializations:
+			// a leaf that parks its value through x0 would otherwise clobber
+			// the loaded arg-0 register (and the dead-move pass would then
+			// delete the load as redundant — the value never reached the call).
+			// A deferred slot-0 leaf already materialized last in the loop
+			// above, so only the non-deferred case needs the late load.
+			if (has_args && !is_struct) {
+				const deferred0 = deferred_args.find((d) => start_reg + d.slot === 0);
+				if (!deferred0) {
+					status.code += `ldr x0, [x29, #${args_base}]\n`;
+				}
 			}
 			// AAPCS64: arguments past x0..x7 go in the caller's outgoing area,
 			// which must be at [sp] at the moment of the bl. Lower sp by the

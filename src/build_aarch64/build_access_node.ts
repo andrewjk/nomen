@@ -2674,6 +2674,29 @@ function build_access_method(
 			? overflow_base + (half_slot - NUM_REG_ARGS) * 8
 			: view_spill_base + (arg_slot[j] + half) * 8;
 	};
+	// A STATIC method's first argument occupies x0 — the register every
+	// deferred leaf's materialization parks its value through (func refs,
+	// globals, ref scalars). Spill it in-loop and reload it after the
+	// deferred materializations. A first argument that defers (a plain leaf
+	// — `ref`/struct/enum args build in-loop before the deferral branch)
+	// materializes last on its own, and pair args reload late, so neither
+	// needs this.
+	const param0 = access_func.params[0];
+	const param0_is_pair = view_arg_set.has(0) || string_arg_set.has(0);
+	const param0_is_ref = (access_func.ref_param_indices ?? []).includes(0);
+	const param0_type_name = (param0 as any)?.type?.name || "";
+	const param0_builds_in_loop =
+		access_func.params.length > 0 &&
+		(param0_is_ref ||
+			is_struct_type(param0_type_name, status) ||
+			is_enum_with_data_type(param0_type_name, status) ||
+			!arg_deferrable(0));
+	const static_arg0_needs_spill =
+		start_reg === 0 && access_func.params.length > 0 && !param0_is_pair && param0_builds_in_loop;
+	let static_arg0_spill = 0;
+	if (static_arg0_needs_spill) {
+		static_arg0_spill = allocate_stack_space(status, 8, 8);
+	}
 	// `ref` class PARAMS forwarded to a method's `ref` param: tracked so their
 	// callee-saved registers can be reloaded from the caller's slot once the
 	// call returns (the callee may have reassigned it).
@@ -2759,13 +2782,28 @@ function build_access_method(
 			const reg = `x${slot}`;
 			if (reg !== "x0") {
 				status.code += `mov ${reg}, x0\n`;
+			} else if (static_arg0_needs_spill) {
+				status.code += `str x0, [x29, #${static_arg0_spill}]\n`;
 			}
 		}
 	}
-	// Reload the spilled view/string pairs into their register slots now that
-	// every argument has been evaluated (no later evaluation can clobber
-	// them). Halves at register slots past x7 stay in the outgoing-area
-	// slots.
+	// Deferred leaf arguments (tranche H): materialize directly into their
+	// slot registers — every argument evaluation is complete, so nothing can
+	// clobber them and no evaluation can be reordered past a side effect
+	// (the call-free sibling gate decided that at the deferral site).
+	// DESCENDING slot order: a leaf whose build_operand falls back to
+	// build_node parks its value through x0 (func refs, globals, ref
+	// scalars) — that may only clobber registers not yet parked, so x0
+	// materializes last.
+	deferred_args.sort((a, b) => b.slot - a.slot);
+	for (const d of deferred_args) {
+		build_operand(d.param, `x${start_reg + d.slot}`, status);
+		if (!status.code.endsWith("\n")) status.code += "\n";
+	}
+	// Reload the spilled view/string pairs into their register slots AFTER
+	// the deferred materializations (a leaf parking through x0 would clobber
+	// an earlier x0 pair half). Halves at register slots past x7 stay in the
+	// outgoing-area slots.
 	if (has_pair_args) {
 		for (let j = 0; j < access_func.params.length; j++) {
 			if (!view_arg_set.has(j) && !string_arg_set.has(j)) continue;
@@ -2776,18 +2814,11 @@ function build_access_method(
 			}
 		}
 	}
-
-	// Deferred leaf arguments (tranche H): materialize directly into their
-	// slot registers — every argument evaluation is complete, so nothing can
-	// clobber them and no evaluation can be reordered past a side effect
-	// (the call-free sibling gate decided that at the deferral site).
-	// DESCENDING slot order: a leaf whose build_operand falls back to
-	// build_node parks its value through x0 (func refs, globals) — that may
-	// only clobber registers not yet parked, so x0 materializes last.
-	deferred_args.sort((a, b) => b.slot - a.slot);
-	for (const d of deferred_args) {
-		build_operand(d.param, `x${start_reg + d.slot}`, status);
+	// Restore the static first argument last of all: everything above (the
+	// deferred materializations, the pair reloads) may pass through x0.
+	if (static_arg0_needs_spill) {
 		if (!status.code.endsWith("\n")) status.code += "\n";
+		status.code += `ldr x0, [x29, #${static_arg0_spill}]\n`;
 	}
 
 	if (!status.code.endsWith("\n")) {
