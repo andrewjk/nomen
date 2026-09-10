@@ -77,3 +77,42 @@ pub func main = (Init init) {
 		await build_and_check_output(input, "trait_locals_scope_param", "2\ndone\n", true);
 	});
 });
+
+test("Map<string,string> rehash next to a trait list", async () => {
+	// The Map rehash body declares locals `k`/`v`; before the per-function
+	// scoping those names could be poisoned by a trait-typed local in
+	// another monomorphized body, emitting `Trait_destroy(v)` for the
+	// rehashed strings (invalid C).
+	const input = `
+import System
+
+trait Rule {
+	pub func name = (self, out string)
+}
+
+class TextRule : Rule {
+	pub func name = (self, out string) {
+		return "text"
+	}
+}
+
+pub func main = (Init init) {
+	var rules = List<Rule>()
+	rules.push(TextRule())
+
+	var m = Map<string, string>()
+	m.set("a", "1")
+	m.set("b", "2")
+	m.set("c", "3")
+	m.set("d", "4")
+	m.set("e", "5")
+	m.set("f", "6")
+	m.set("g", "7")
+	var first = m.get_or("g", "")
+	Console.write("\\{first}\\n")
+}
+`;
+	const parsed = parse_raw(input);
+	expect(parsed.errors).toEqual([]);
+	await build_and_check_output(input, "trait_locals_scope_map_rehash", "7\n", true);
+});

@@ -322,40 +322,14 @@ int i, out Node) { return self.nodes.at_or_panic(i) }` → "cannot return
      `at_or_panic`, so callers sidestep it, but the common "last element"
      shape would be nice to prove.
 
-## C backend: `Map<string, string>` rehash emits trait destroy calls
+## Trait method call on an rvalue receiver fails to compile (C backend)
 
-When a program contains BOTH a `Map<string, string>` that grows past its
-initial capacity (triggering `rehash`) AND a `List<SomeTrait>`, the
-`Map_string_string_rehash` auto-free block emits `SomeTrait_destroy(v);
-free(v);` for the string values — `passing 'nomen_string' to parameter of
-incompatible type 'void *'` compile errors. Reproduced minimal:
-
-```
-trait Rule { pub func name = (self, out string) }
-class TextRule : Rule { pub func name = (self, out string) { return "text" } }
-
-pub func main = (Init init) {
-    var rules = List<Rule>()
-    rules.push(TextRule())
-    var m = Map<string, string>()
-    m.set("a", "1")  // ... seven sets to force a rehash
-}
-```
-
-The allmark port works around it by storing its 2125-entry HTML entity
-table as fixed-width static string blobs with a hand-written binary search
-(no Map at all). Two smaller C-backend issues found the same day, worked
-around in the port:
-
-- Assigning `null` to a `string?` class field (field default `= null` or
-  `#init` assignment) emits `self->field = 0;` where the field is a
-  `nomen_string` struct → invalid C. Workaround: initialize with `"" + ""`.
-- `contains(node.field, "x")` directly in a `switch`/`if` condition emits
-  the `_param_N` temp after its use (`use of undeclared identifier`).
-  Workaround: hoist the field into a local first.
-- Reassigning a class-typed local from `at_or_panic` a second time emits
-  `_alias_owns_<name> = 1` without a declaration (name-mangled only on
-  first assignment). Workaround: use fresh local names per re-fetch.
+`rules.at_or_panic(0).name()` — calling a trait method directly on a call
+result — emits `&<rvalue>` in C: `cannot take the address of an rvalue of
+type 'struct Rule *'`. Binding the call result to a local first works
+(`var Rule r = rules.at_or_panic(0); r.name()`). The receiver expression
+needs a materialized temp when the self parameter is taken by address.
+Found while verifying the trait_class_locals fix (2026-09-11).
 
 ## CLI: `nomen test` build phase runs out of memory (OOM) on the allmark project
 
