@@ -769,7 +769,14 @@ export default function check_function_call(
 				lower_bound_inclusive_exprs = decl.lower_bound_inclusive_exprs;
 				upper_bound_expr = decl.upper_bound_expr;
 				lower_bound_expr = decl.lower_bound_expr;
-				alias_of = decl.alias_of;
+				// Default to the argument's own path when the outer
+				// declaration carries no alias: constraint targets name the
+				// CALLEE params, while guard facts are recorded under the
+				// CALLER's names, and the two meet only through aliases. A
+				// bare `lo` passed for `start` resolves the target to `"lo"`,
+				// matching facts phrased against `lo` — previously this only
+				// worked when both happened to share a name.
+				alias_of = decl.alias_of ?? expr_to_string(param, status);
 			}
 		} else if (param.node_type === "op") {
 			// Offset access like `arr.at(i - 1)` / `arr.at(i + 1)`: take the

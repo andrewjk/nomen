@@ -196,33 +196,45 @@ ASM_PLAN_7 tranches:
 - Either delete `buffer_pipeline.ts` + its BuildStatus fields, or wire
   the enable switch, before it misleads another tranche.
 
-## Constraint bounds live in two namespaces (found 2026-09-10, differator port)
+## View taint over-applied to owning call results (differator port item 3)
 
-A parameter constraint like `end >= start` is evaluated with pushed
-stand-ins named after the CALLEE params, but guard facts are recorded
-under the CALLER's names. The two meet only by accident:
+`ctor_call_view_borrow` fires on ANY call with `view_param_indices` — in
+`check_return_node`, `check_declaration_node`, and `check_assignment_node`
+alike — so returning a plain call with view params is rejected even when
+the result is freshly owned:
 
-- `text.slice(start, line_end)` behind `line_end >= start` verifies
-  because the outer variable happens to be named `start` (fact `["start"]`
-  vs target `"start"`). Rename it `lo` and the identical guard fails —
-  nothing connects `"lo"` to `"start"`. Pushed args carry the outer
-  variable's own alias (usually undefined for plain vars), never the arg
-  expression, so there is no bridge. The differator port names its slice
-  bounds `start`/`end` to coincide (see `split_lines`/`lines_of_bare`).
-- Related: the inclusive-upper check has no transitive step — `start <=
-  line_end` plus `line_end <= text.length` does not discharge `start <=
-  self.length` (the strict path chains; the inclusive path only does
-  direct `includes`). Port-side workaround is stating the implied bound
-  (`start <= text.length`) explicitly in the guard.
+```nomen
+pub func substring = (string text, int start, int end, out string) {
+	return slice_string(text, start, end)   // ✗ "cannot return 'string' —
+	                                        // its 'view' field(s) borrow from this scope"
+}
+```
 
-Fix directions: default a pushed arg's `alias_of` to the arg's own path
-when the outer decl has none (unifying both sides into caller
-namespace), plus the missing transitive step for `<=` goals. Both need
-care around `is_nonnegative_access`, which treats an alias ending in a
-length-like field as proof of non-negativity — a defaulted bare-name
-alias (e.g. a var literally named `length`) must not satisfy it; require
-a dotted path there. A prototype of both fixes passed the full suite
-(311 files / 3000 tests) but was reverted to keep this release
-port-compatible; the differator workarounds above stand in until they
-land.
+where `slice_string = (view string text, ...)`. The rule was written for
+struct constructors (`return Line(view)` — the result genuinely embeds
+the borrow) but cannot tell the two apart. Fix direction: gate the taint
+on the callee result type carrying a borrow — skip it when the result is
+neither `view` nor a struct with view fields (`struct_has_view_fields`
+already exists in `view_fields.ts`). Soundness rests on owned-typed
+values owning their storage, which the checker already enforces at every
+production site (`return <view>` and view-typed bindings without the
+keyword are both rejected). Regression tests: positive
+(`substring`-returns-`slice_string(view)` verifies and runs) plus
+negative (`return Line(view)` still errors). Port-side workaround in
+place (owned `substring`); it keeps working either way.
+
+Adjacent bug found while verifying the invariant: view→owned assignment
+miscompiles (at least on aarch64) —
+
+```nomen
+var string s = "hello"
+view v = s.slice(0, 1)
+s = v
+Console.write(s)   // prints "[he", expect "[h]"
+```
+
+The direct `v.to_string()` print is correct, so the slice is fine and the
+store itself writes a wrong pair. Also still open: `return move v` (view
+as owned) produces no borrow error — confirm what move-of-view compiles
+to before trusting signatures anywhere.
 

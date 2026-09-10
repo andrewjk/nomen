@@ -195,8 +195,22 @@ function evaluate_operation(
 				// inclusive constraint (`x <= E`), NOT a strict one
 				// (`x < E`) — otherwise `x <= len` would wrongly
 				// satisfy `x < len` and miss an off-by-one OOB.
+				// Like the strict path above, an inclusive bound chains:
+				// `x <= V` plus `V </<= target` implies `x <= target`
+				// (both `x <= V <= T` and `x <= V < T` give `x <= T`).
 				if (op.op === "<=" && left_decl?.upper_bound_inclusive_exprs?.length && target_str) {
 					if (left_decl.upper_bound_inclusive_exprs.includes(target_str)) return true;
+					if (left_decl.upper_bound_inclusive_exprs.some((u) => upper_implies(u, target_str!))) {
+						return true;
+					}
+					for (const u of left_decl.upper_bound_inclusive_exprs) {
+						const v = parse_offset_expr(u);
+						if (v && v.offset === 0 && u !== target_str) {
+							const vdecl = status.values.findLast((vv) => vv.name === v.base);
+							if (vdecl?.upper_bound_exprs?.includes(target_str!)) return true;
+							if (vdecl?.upper_bound_inclusive_exprs?.includes(target_str!)) return true;
+						}
+					}
 				}
 				// Off-by-one: a STRICT constraint `x < E` is guarded
 				// only by an INCLUSIVE bound `x <= E` on the SAME E. That
@@ -710,10 +724,15 @@ function is_nonnegative_access(
 		if (decl?.alias_of) {
 			// Strip a trailing `± c` offset; the access is non-negative only
 			// when the offset is `+ c` or absent (a `- c` could go negative).
+			// The path must be dotted (a genuine container access like
+			// `xs.length`): a bare name ending in a length-like word (e.g. a
+			// plain variable literally named `length`, possibly negative)
+			// proves nothing.
 			const m = decl.alias_of.match(/^(\w+(?:\.\w+)*)\s*([+-]\s*\d+)?$/);
 			if (m) {
 				const field_path = m[1];
 				const offset_str = m[2];
+				if (!field_path.includes(".")) return false;
 				const last = field_path.split(".").at(-1);
 				if (last && NON_NEGATIVE_FIELDS.has(last)) {
 					if (!offset_str) return true;
