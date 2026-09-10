@@ -849,6 +849,37 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 			}
 			param_idx++;
 		}
+		// A fat `string` (or `view T`) init param is a (ptr, len) pair: spill
+		// BOTH halves from their two register slots (or the caller's outgoing
+		// stack area) into a 16-byte local. Consumes two param register
+		// slots — matching the call site's pair passing — so skip the
+		// generic single-slot spill and the trailing param_idx++. (Mirrors
+		// the regular prologue in build_function_node, which already handled
+		// this; the missing pair handling here made every scalar param
+		// AFTER a string param read the wrong register.)
+		if (
+			(param.type.name === "string" && !param.type.is_ref && !param.type.is_array) ||
+			param.type.is_view
+		) {
+			const offset = allocate_stack_space(status, 16, 16);
+			status.stack_offsets!.set(param.name, offset);
+			for (const half of [0, 1] as const) {
+				const p_slot = param_idx + half;
+				if (p_slot < NUM_REG_ARGS) {
+					status.code += `str ${param_regs[p_slot]}, [x29, #${offset + half * 8}]\n`;
+					raw_reloads.push({
+						reg: param_regs[p_slot],
+						asm: `ldr ${param_regs[p_slot]}, [x29, #${offset + half * 8}]`,
+					});
+				} else {
+					const k = p_slot - NUM_REG_ARGS;
+					status.code += `ldr x9, [x29, #${overflow_placeholder(func_name, k)}]\n`;
+					status.code += `str x9, [x29, #${offset + half * 8}]\n`;
+				}
+			}
+			param_idx += 2;
+			continue;
+		}
 		const size = aarch64_size(param.type.name);
 		const offset = allocate_stack_space(status, size, size);
 		status.stack_offsets!.set(param.name, offset);

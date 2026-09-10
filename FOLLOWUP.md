@@ -249,30 +249,6 @@ func fields, `Map<string, int>` indices instead of reference-valued maps,
 `--arch c` for the aarch64 mis-binds, no string-literal defaults on class
 fields), but each should be fixed in the compiler:
 
-## aarch64: class `#init` mis-binds scalar params after a string param
-
-**aarch64: class `#init` mis-binds scalar params after a string param.**
-`N1("c", 7)` with `#init = (ref self, string k, int i)` produced
-`self.idx == 1` (reads slot garbage) — the int lands in the wrong
-register/slot when marshalling a fat-string pair in front of it. The C
-backend is correct, so the allmark port targets `--arch c`.
-
-```
-class N1 {
-    var string kind
-    var int idx
-    pub func #init = (ref self, string k, int i) { self.kind = k; self.idx = i }
-}
-var n = N1("c", 7)
-// n.idx == 7 on --arch c, == 1 on aarch64
-```
-
-## aarch64: struct custom `#init` with two string params segfaults
-
-**aarch64: struct custom `#init` with two string params segfaults.**
-`S2("http://x", "t")` aborts (reads through a wrong pointer when the
-second string field is later read). C backend correct.
-
 ## Class string field with a literal default frees static rodata
 
 **Class string field with a literal default frees static rodata.**
