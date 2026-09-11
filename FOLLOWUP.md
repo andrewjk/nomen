@@ -285,26 +285,39 @@ trait_class_locals bug above), so the difference is the test path:
 `strip_main_functions` + the generated harness + build. Worth profiling
 `run_test_file`'s build phase on this corpus.
 
-## String-literal byte hazards (found while testing System.Text.Utf8)
+## Tuple literal with computed elements miscompiles (both backends?)
 
-Three related issues, all verified on 0.2.x; the Utf8/CharIndex tests in
-test/utf8.test.ts work around all three (byte-exact strings are built with
-`StringBuilder` + `(0xNN as char)`).
+A tuple literal whose elements are computed expressions (not simple
+parameter references or literals) produces the wrong value for every
+element after the first: `return [a + 1, a + 2]` with a=10 yields
+`t._0 == 11` (correct) but `t._1 == 1` (should be 12); same for
+`[total / 100, total % 100]`. The equivalent with simple param refs
+(`return [a, b]`) works. Fully documented with failing tests in
+test/tuple-computed-elements-bug.test.ts (deliberately asserting the
+CORRECT values, so they fail until fixed). Tuples are `ArrayValuesNode`
+with a tuple type — suspects are the `return [..]` element-evaluation
+paths in build_c/build_return_node.ts and
+build_aarch64/build_return_node.ts (element temps/slots aliasing or
+evaluation-order clobbering). Found while building System.Text.Utf8,
+which returns a `DecodedChar` struct instead of `[int, int]` to dodge it.
 
-1. **Const-fold of string `+` re-emits raw escape text (aarch64).**
-   `"a\x80" + "b"` folds to a single `_param: .asciz "a\x80b"` in the
-   emitted asm, and the assembler re-parses `\x80b` greedily → byte 0x0B
-   instead of `0x80,"b"`. The folder concatenates raw source slices; it
-   must decode-then-re-encode (or refuse to fold escape-containing
-   literals). Whether the C backend folds the same way is unconfirmed.
-2. **Raw multibyte chars in literals miscount `.length`.**
-   `string_literal_length` counts every raw character as one byte, so
-   `"café".length` is 4 instead of 5 (the fat-string len truncates the
-   final byte; `char_count` over the truncated fat string still agrees
-   with it). Needs UTF-8 width math for raw chars in that function (and
-   an audit of the C splice path for the same).
-3. **Embedded NUL does not survive the C backend.**
-   `Utf8.encode(0x0)` round-trips on aarch64 but yields an empty string
-   on C (NUL truncation in the C-string runtime), so `decode_at(enc, 0)`
-   panics with "byte index out of range". Test excludes 0x0 with a NOTE.
-   General C-backend NUL limitation, not Utf8-specific.
+## Residual string-byte hazards (narrowed from the Utf8-found set)
+
+The three hazards found while testing System.Text.Utf8 are fixed and
+covered (test/string_bytes.test.ts; `0x0` restored in test/utf8.test.ts):
+the aarch64 const-fold no longer folds escape-containing literals
+(`resolve_string_op` bails to runtime concat), `string_literal_length`
+does UTF-8 width math plus octal escapes, and StringBuilder's raw C
+bodies are natively fat (NATIVELY_FAT_PREFIXES) so embedded NULs survive
+`to_string`/`append_string` on C. What remains:
+
+- **General NUL beyond StringBuilder.** The thin raw-string adapter still
+  synthesizes length via `strlen`, so any OTHER raw-C function returning
+  bytes with embedded NULs (File reads, FFI) truncates the same way.
+  Fixing each means fat-aware authoring + exemption per function, as done
+  for StringBuilder — or a length-carrying adapter protocol (big blast
+  radius; needs an owner decision).
+- **`\8`/`\9` and `\x`-with-no-digits are degenerate.** Octal handling
+  covers `\0`–`\7`; `\8`/`\9`/bare `\x` keep the old pair-counting while
+  clang/GAS do whatever they do (clang warns). Nobody writes these, but a
+  check-time rejection would be more honest than silent divergence.

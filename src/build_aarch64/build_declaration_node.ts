@@ -734,6 +734,13 @@ function resolve_string_op(op: OperationNode, status: BuildStatus): string | nul
 		const right = resolve_string_value(op.right_value, status);
 		if (!right) return null;
 		const right_content = strip_quotes(right);
+		// Byte-hazard guard: folding concatenates RAW source text, so an
+		// escape at the end of the left literal would be re-parsed against
+		// the start of the right one (`"a\x80" + "b"` folds to `"a\x80b"`,
+		// which the assembler reads greedily as 0x0B, not 0x80,"b"). Any
+		// backslash in either side vetoes the fold; the runtime concat path
+		// parses each literal independently and is always correct.
+		if (left_content.includes("\\") || right_content.includes("\\")) return null;
 		return `"${left_content}${right_content}"`;
 	}
 
@@ -741,6 +748,9 @@ function resolve_string_op(op: OperationNode, status: BuildStatus): string | nul
 		if (op.right_value.node_type === "value") {
 			const multiplier = parseInt((op.right_value as ValueNode).value);
 			if (isNaN(multiplier)) return null;
+			// Same hazard at every copy boundary (`"\x41" * 2` is fine, but
+			// a trailing hex escape meeting a leading hex digit re-parses).
+			if (left_content.includes("\\")) return null;
 			return `"${left_content.repeat(multiplier)}"`;
 		}
 	}

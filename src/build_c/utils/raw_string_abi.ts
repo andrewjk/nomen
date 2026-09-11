@@ -60,6 +60,12 @@ const NATIVELY_FAT_PREFIXES = [
 	// allocated with sizeof(T) and the body dereferences `T *` directly).
 	"Task_",
 	"Channel",
+	// StringBuilder — its raw bodies are authored fat-aware (`s.ptr`/`s.len`,
+	// returning `(nomen_string){ptr, len}`) so embedded NULs survive: the
+	// thin adapter synthesizes length via strlen, which truncates at the
+	// first NUL (see build_raw_node's fat-aware carve-out — bodies already
+	// using `.ptr`/`.len` are left unshimmed).
+	"StringBuilder",
 ];
 
 export function is_t_generic_struct(name: string | undefined): boolean {

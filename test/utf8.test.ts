@@ -99,9 +99,8 @@ Console.write("\\{hd.code_point} \\{half.length}\\n")
 	test("decode(encode(x)) round-trips", async () => {
 		const input = `
 var List<int> points = List<int>()
-// NOTE: 0x0 excluded — the C backend cannot round-trip an embedded NUL
-// (C-string truncation); aarch64 handles it.
 points.push(0x1)
+points.push(0x0)
 points.push(0x7F)
 points.push(0x80)
 points.push(0x7FF)
@@ -124,7 +123,7 @@ while i < points.length {
 }
 Console.write("\\n")
 `;
-		await build_and_check_output(input, "utf8_round_trip", "ok ok ok ok ok ok ok ok ok ok \n");
+		await build_and_check_output(input, "utf8_round_trip", "ok ok ok ok ok ok ok ok ok ok ok \n");
 	});
 });
 

@@ -690,11 +690,12 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		// Define the function
 		// HACK: Need to map names to types
 		// A raw-only method written against the thin char* string ABI
-		// (String.nm's libc bodies, StringBuilder, *_to_string, File/Console
+		// (String.nm's libc bodies, *_to_string, File/Console
 		// FFI) is emitted under a `_raw_` label with thin string types plus a
-		// compiler-generated fat adapter (raw_string_abi.ts). T-generic
-		// container methods (Buffer_<T> & co.) are natively fat via the
-		// checker's T substitution and skip the adapter. (raw_thin was
+		// compiler-generated fat adapter (raw_string_abi.ts). Natively-fat
+		// structs (T-generic container monos via the checker's T
+		// substitution; Channel and StringBuilder via fat-aware authoring —
+		// see NATIVELY_FAT_PREFIXES) skip the adapter. (raw_thin was
 		// computed above, before the shim registry.)
 		if (raw_thin) set_c_thin_strings(true);
 		const func_start = status.code.length;
