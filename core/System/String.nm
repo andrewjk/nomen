@@ -222,7 +222,7 @@ pub struct string: Stringable, Hashable, Equatable {
 		var bool replaced = nlen == 0
 		while i < n {
 			if !replaced && nlen > 0 && i + nlen <= n && match_at(self, needle, i) {
-				sb.append_view(replacement)
+				sb.append_string_view(replacement)
 				i = i + nlen
 				replaced = true
 			} else {
@@ -242,7 +242,7 @@ pub struct string: Stringable, Hashable, Equatable {
 		var int nlen = needle.length
 		while i < n {
 			if nlen > 0 && i + nlen <= n && match_at(self, needle, i) {
-				sb.append_view(replacement)
+				sb.append_string_view(replacement)
 				i = i + nlen
 			} else {
 				sb.append_char(self.at(i))

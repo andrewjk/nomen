@@ -171,21 +171,124 @@ pub struct StringBuilder {
 		```
 	}
 
-	// Append a view's bytes without materializing it. `append_string`
-	// takes an owned string, so passing a slice would need a `to_string`
-	// copy per call — this loops char by char instead (used by
+	// Append a view's bytes without materializing it: `append_string` takes
+	// an owned string, so passing a slice would need a `to_string` copy per
+	// call. Views lower to the same (ptr, len) fat pair, so the bytes are
+	// memcpy'd straight out of the borrowed buffer (used by
 	// `string.replace_first`/`replace_all`).
-	// Append a view's bytes without materializing it. `append_string`
-	// takes an owned string, so passing a slice would need a `to_string`
-	// copy per call — this loops char by char instead (used by
-	// `string.replace_first`/`replace_all`).
-	func append_view = (ref self, view string s) {
-		var int i = 0
-		var int n = s.length
-		while i < n {
-			self.append_char(s.at(i))
-			i = i + 1
+	pub func append_string_view = (ref self, view string s) {
+		```
+		#arch: c
+		int sl = (int)s.len;
+		int needed = self->len + sl + 1;
+		if (needed > self->cap) {
+			int nc = self->cap;
+			if (nc == 0) nc = 16;
+			while (nc < needed) nc *= 2;
+			self->data = (unsigned long long)realloc((void*)(unsigned long long)self->data, nc);
+			self->cap = nc;
 		}
+		memcpy((unsigned char*)(unsigned long long)self->data + self->len, s.ptr, sl);
+		self->len = self->len + sl;
+		```
+		```
+		#arch: aarch64
+		// x19 = self; s = (x1 ptr, x2 len) — a view is the same fat pair.
+		sub sp, sp, #32
+		str x1, [sp, #0]          // s ptr
+		str x2, [sp, #8]          // sl
+		ldr x1, [x19, #16]        // len
+		add x1, x1, x2            // len + sl
+		add x1, x1, #1            // +1 for null room
+		// inline ensure(x1)
+		ldr x2, [x19, #24]
+		cmp x2, x1
+		b.ge .Lsb_asv_copy
+		mov x3, #16
+		cmp x2, #0
+		csel x3, x3, x2, eq
+		.Lsb_asv_loop:
+		cmp x3, x1
+		b.ge .Lsb_asv_grow
+		lsl x3, x3, #1
+		b .Lsb_asv_loop
+		.Lsb_asv_grow:
+		str x3, [x19, #24]
+		ldr x0, [x19, #8]
+		mov x1, x3
+		bl _realloc
+		str x0, [x19, #8]
+		.Lsb_asv_copy:
+		// memcpy(data + len, s.ptr, sl)
+		ldr x0, [x19, #8]         // data
+		ldr x1, [x19, #16]        // len
+		add x0, x0, x1            // dest = data + len
+		ldr x1, [sp, #0]          // src = s ptr
+		ldr x2, [sp, #8]          // n = sl
+		bl _memcpy
+		// len = len + sl
+		ldr x0, [x19, #16]
+		ldr x1, [sp, #8]
+		add x0, x0, x1
+		str x0, [x19, #16]
+		add sp, sp, #32
+		```
+	}
+
+	// Replace the buffer's contents with a copy of `s`'s bytes. The only
+	// way to start a StringBuilder from a slice without a `to_string()`
+	// copy: the view's bytes are copied once into fresh storage, so the
+	// result is owned and independent of the source.
+	pub func seed = (ref self, view string s) {
+		```
+		#arch: c
+		int sl = (int)s.len;
+		int needed = sl + 1;
+		if (needed > self->cap) {
+			int nc = self->cap;
+			if (nc == 0) nc = 16;
+			while (nc < needed) nc *= 2;
+			self->data = (unsigned long long)realloc((void*)(unsigned long long)self->data, nc);
+			self->cap = nc;
+		}
+		memcpy((unsigned char*)(unsigned long long)self->data, s.ptr, sl);
+		self->len = sl;
+		```
+		```
+		#arch: aarch64
+		// x19 = self; s = (x1 ptr, x2 len)
+		sub sp, sp, #32
+		str x1, [sp, #0]          // s ptr
+		str x2, [sp, #8]          // sl
+		add x1, x2, #1            // needed = sl + 1
+		// inline ensure(x1)
+		ldr x2, [x19, #24]
+		cmp x2, x1
+		b.ge .Lsb_seed_copy
+		mov x3, #16
+		cmp x2, #0
+		csel x3, x3, x2, eq
+		.Lsb_seed_loop:
+		cmp x3, x1
+		b.ge .Lsb_seed_grow
+		lsl x3, x3, #1
+		b .Lsb_seed_loop
+		.Lsb_seed_grow:
+		str x3, [x19, #24]
+		ldr x0, [x19, #8]
+		mov x1, x3
+		bl _realloc
+		str x0, [x19, #8]
+		.Lsb_seed_copy:
+		// memcpy(data, s.ptr, sl)
+		ldr x0, [x19, #8]         // dest = data
+		ldr x1, [sp, #0]          // src = s ptr
+		ldr x2, [sp, #8]          // n = sl
+		bl _memcpy
+		ldr x0, [sp, #8]
+		str x0, [x19, #16]        // len = sl
+		add sp, sp, #32
+		```
 	}
 
 	// Finalize: null-terminate, return the byte buffer as a string, and
