@@ -117,25 +117,36 @@ export default function check_function_call_node(
 
 	if (!func) {
 		const param_value = status.values.findLast((v) => v.name === node.name);
-		if (param_value?.type.name === "func") {
+		// A func-typed value: either the type is literally `func`, or the
+		// declaration carried a signature (func_params). The latter covers
+		// `out`-returning signatures, whose StackValue type is the RETURN
+		// type (`var func (int, out bool) f2` stores type bool) and would
+		// otherwise miss this branch entirely ("Function not found").
+		const is_func_value =
+			!!param_value && (param_value.type.name === "func" || !!param_value.func_params?.length);
+		if (is_func_value && param_value) {
 			func = new FunctionNode(
 				0,
 				"pub",
 				node.name,
-				param_value.type.func_return_type || param_value.type,
+				param_value.func_return_type || param_value.type,
 			);
+			// The signature may live on the declaration (StackValue) or on
+			// the type — check both, preferring the declaration's.
 			const param = status.stack
 				.flatMap((n: any) => n.params || [])
 				.find((p: any) => p.name === node.name);
-			if (param?.func_params) {
-				func.params = param.func_params;
-			} else if (param_value.type.func_params) {
-				func.params = param_value.type.func_params;
+			const sig_params =
+				param?.func_params ?? param_value.func_params ?? param_value.type.func_params;
+			if (sig_params) {
+				func.params = sig_params;
 			}
-			if (param?.func_return_type) {
-				func.return_type = param.func_return_type;
-			} else if (param_value.type.func_return_type) {
-				func.return_type = param_value.type.func_return_type;
+			const sig_return =
+				param?.func_return_type ??
+				param_value.func_return_type ??
+				param_value.type.func_return_type;
+			if (sig_return) {
+				func.return_type = sig_return;
 			}
 			node.is_func_param = true;
 		}

@@ -253,14 +253,51 @@ export default function check_assignment_node(
 	// * If this is an access, it's the field target e.g. for `person.address.zip
 	//   = 1234` we would check that the types of `zip` and `1234` match
 	//if (left_value)
-	check_type_and_value_match(
-		type_from_value_node(assign.left_value, status),
-		type_from_value_node(assign.right_value, status),
-		value_from_value_node(assign.right_value),
-		status,
-		assign.right_value.start,
-		"assignment",
-	);
+	// Function-typed reassignment (`f = gt10`): the LHS is a func value whose
+	// declared signature lives on the StackValue (func_params); the RHS is a
+	// bare function name whose type_from_value is the opaque `func` marker.
+	// Skip the plain name equality check (the signature compatibility was
+	// validated above) and only verify the RHS resolves to a function.
+	const lhs_func_params = lhs_value?.func_params;
+	const rhs_is_func_marker = type_from_value_node(assign.right_value, status).name === "func";
+	if (lhs_func_params?.length && rhs_is_func_marker) {
+		if (assign.right_value.node_type !== "value") {
+			add_error(status, `Expected a function name`, assign.right_value.start);
+		} else {
+			// Signature compatibility: the RHS function's params (minus the
+			// `out` return slot, which type_from_value doesn't count) must
+			// match the declared signature in count and type.
+			const rhs_fn = status.functions.findLast(
+				(f) => f.name === (assign.right_value as ValueNode).value,
+			);
+			const rhs_params = (rhs_fn?.params ?? []).filter((p) => !p.is_self_param);
+			if (rhs_params.length !== lhs_func_params.length) {
+				add_error(
+					status,
+					`Function signature mismatch: expected ${lhs_func_params.length} parameter(s)`,
+					assign.right_value.start,
+				);
+			} else {
+				for (let i = 0; i < lhs_func_params.length; i++) {
+					if (lhs_func_params[i].type.name !== rhs_params[i].type.name) {
+						add_error(
+							status,
+							`Function signature mismatch: parameter ${i + 1} is ${rhs_params[i].type.name}, expected ${lhs_func_params[i].type.name}`,
+							assign.right_value.start,
+						);
+					}
+				}
+			}
+		}
+	} else
+		check_type_and_value_match(
+			type_from_value_node(assign.left_value, status),
+			type_from_value_node(assign.right_value, status),
+			value_from_value_node(assign.right_value),
+			status,
+			assign.right_value.start,
+			"assignment",
+		);
 
 	// A view-typed field store (`line.text = doc.slice(0, 5)`): the instance
 	// now carries a non-owning borrow rooted at the RHS's owner. Record it on
