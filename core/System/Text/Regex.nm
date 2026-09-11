@@ -128,9 +128,6 @@ pub struct Regex {
 				dst.start = i
 				dst.end = end
 				dst.length = end - i
-				// Assign the call result inline: a local string variable
-				// stored into a ref-param struct field miscompiles on
-				// aarch64 (see FOLLOWUP.md).
 				dst.text = input.substring(i, end)
 				return
 			}

@@ -1581,7 +1581,27 @@ export default function build_assignment_node(
 				if (!status.code.endsWith("\n")) {
 					status.code += "\n";
 				}
-				const rhs_is_heap = status.last_result_is_heap;
+				let rhs_is_heap = status.last_result_is_heap;
+				// A heap-owned string VARIABLE loads as a plain pair with no
+				// fresh-heap mark — but its own scope-exit release still
+				// fires. Raw-storing the pair would hand the field a pointer
+				// that the variable's free reclaims (dangling the moment this
+				// function returns and the caller reads the field, e.g. a
+				// `ref Box dst` param whose `dst.s = s` aliases a callee
+				// local). Dup the bytes and own the copy, mirroring the C
+				// backend, which strdups every non-fresh field RHS.
+				const rhs_value_node =
+					node.right_value.node_type === "value" ? (node.right_value as ValueNode) : undefined;
+				const rhs_heap_local =
+					!rhs_is_heap &&
+					!!rhs_value_node &&
+					typeof rhs_value_node.value === "string" &&
+					rhs_value_node.type?.name === "string" &&
+					!!status.heap_strings?.has(rhs_value_node.value);
+				if (rhs_heap_local) {
+					emit_strdup(status);
+					rhs_is_heap = true;
+				}
 				if (is_class_target && !rhs_is_heap) {
 					emit_strdup(status);
 				}

@@ -306,33 +306,49 @@ bodies are natively fat (NATIVELY_FAT_PREFIXES) so embedded NULs survive
   clang/GAS do whatever they do (clang warns). Nobody writes these, but a
   check-time rejection would be more honest than silent divergence.
 
-## aarch64: local string variable stored into a ref-param struct field
+## Cross-scope string field stores leak the stored copy (accepted, bounded)
 
-Assigning a LOCAL string variable into a struct field accessed through a
-`ref` struct parameter miscompiles on the aarch64 backend — the field reads
-back corrupted (empty or aliasing another field's value). The same store with
-an inline call result (`dst.text = input.substring(i, end)`) or a literal is
-correct, and the C backend is correct in all shapes.
+The dangling half of this is FIXED. Assigning a heap-owned string local into
+a struct field through a `ref` struct parameter used to raw-store the local's
+(ptr, len) and then reclaim the buffer at the local's scope exit — the field
+dangled the moment the callee returned (C was correct; it strdups). The
+aarch64 backend now strdups the pair at the store and records the field as
+heap (mirroring C), so the field owns an independent copy and the local's own
+free stays sound. Covered by test/ref_param_string_field.test.ts.
 
-Minimal repro (prints `[]` / garbage instead of `[123]`):
+What remains — and was already true before the fix — is a LEAK for every
+cross-scope owning store, because `heap_string_fields` records are
+scope-local: the record that "this field holds heap" lands in the CALLEE's
+scope and dies at return, while the field lives in the CALLER's variable,
+whose scope exit never frees it.
 
-```
-struct Box { var string s = "" }
+- `dst.s = <fresh call result>` (e.g. Regex.find's
+  `dst.text = input.substring(...)`) — transferred raw; the buffer leaks.
+  Pre-existing; invisible until audited because the covering tests ran with
+  audit off.
+- `dst.s = <heap-owned local>` — the strdup'd copy leaks (new since the
+  dangle fix; strictly better than the corruption it replaces).
+- Repeated stores free each displaced copy (`old_was_heap`); only the final
+  value leaks, so the leak is bounded by fields, not stores.
+- Same-scope stores (`b.s = s` where `b` is the local being stored into) and
+  class fields are fully balanced — the record (or the class destroy) frees
+  at the owner's scope exit. test/ref_param_string_field.test.ts asserts the
+  same-scope shape with audit ON and the cross-scope shapes with audit OFF
+  (they report `LEAK: 1 allocation(s)` by design).
 
-func fill = (ref Box dst) {
-	var string s = "abc123".substring(0, 3)
-	dst.s = s
-}
+Posture: leak, never double-free/invalid-free — the same trade
+`drop_self_written_string_field_records` makes for displaced `self`-writes.
 
-pub func main = (Init init) {
-	var Box b = Box()
-	fill(ref b)
-	Console.write("[\{b.s}]\n")
-}
-```
+Fix directions, when picked up (either closes the leak class):
 
-Found while building `Regex.find` (`RegexMatch.text` through the `ref
-RegexMatch dst` param); worked around there by assigning the call result
-inline. Suspect the heap-string field-store path through ref params (the
-"transient heap-string flag" machinery) drops the strdup when the source is
-a frame-local (ptr, len) pair.
+1. **Caller-side record propagation.** At each direct call `fill(ref b)`,
+   scan the callee (transitively, like `scan_self_string_field_writes`) for
+   writes to its ref params' string fields, then add/refresh the caller's
+   `b.s` record so the owner's scope exit frees. Soundness needs
+   must-executed (dominator) + always-heap analysis: a record over a field a
+   not-taken store left holding a borrow would free rodata at exit. Shapes
+   that can't be proven keep the leak.
+2. **Always-heap value-struct string fields** (tier 3 in the trait-dispatch
+   entry above): strdup on every assignment including literals,
+   `<Struct>_destroy` frees every field. Deletes `heap_string_fields` and
+   this whole class; costs a malloc per literal store into a value struct.
