@@ -77,27 +77,39 @@ function compile(source: string, region_on: boolean): string {
 	}
 }
 
+/** The user program's main body: the System library is joined into the
+ *  same single-TU build — some of its functions land after main (string
+ *  helpers with their own `.while_` loops) — so the user's hot loop must
+ *  be found inside main's region, not in the whole code. */
+function main_region(code: string): string {
+	const start = code.search(/^_main:$/m);
+	expect(start).toBeGreaterThan(-1);
+	const end = code.indexOf("\n.globl", start);
+	return end === -1 ? code.slice(start) : code.slice(start, end);
+}
+
 /** Slice the LAST while loop: its header, body, update block, and tail. */
 function hot_loop(code: string): { pre: string; body: string; update: string; post: string } {
+	const region = main_region(code);
 	const starts: { index: number; n: string }[] = [];
-	for (const m of code.matchAll(/\.while_(\d+):/g)) {
+	for (const m of region.matchAll(/\.while_(\d+):/g)) {
 		starts.push({ index: m.index!, n: m[1] });
 	}
 	expect(starts.length).toBeGreaterThan(0);
 	const { index: start, n } = starts[starts.length - 1];
 	const end_label = `.end_while_${n}:`;
-	const end = code.indexOf(end_label, start);
+	const end = region.indexOf(end_label, start);
 	expect(end).toBeGreaterThan(start);
 	const update_label = `.while_update_${n}:`;
-	const update_start = code.indexOf(update_label, start);
+	const update_start = region.indexOf(update_label, start);
 	// Loops without an update clause (`while c { ... }` with the step in
 	// the body) emit no update label — the whole body is the step.
-	const update = update_start > start ? code.slice(update_start, end) : code.slice(start, end);
+	const update = update_start > start ? region.slice(update_start, end) : region.slice(start, end);
 	return {
-		pre: code.slice(Math.max(0, start - 1200), start),
-		body: code.slice(start, end),
+		pre: region.slice(Math.max(0, start - 1200), start),
+		body: region.slice(start, end),
 		update,
-		post: code.slice(end, end + 400),
+		post: region.slice(end, end + 400),
 	};
 }
 

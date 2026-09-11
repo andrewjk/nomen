@@ -398,6 +398,17 @@ Console.write("done")
 		await build_and_check_output(input, "leak_while_break_class", "0done");
 	});
 
+	/** The user program's main body: the System library is joined into the
+	 *  same single-TU build — some of its functions land after main (string
+	 *  helpers, match_at) — so instruction counts must be scoped to main's
+	 *  region to describe the user program. */
+	function main_region(code: string): string {
+		const start = code.search(/^_main:$/m);
+		expect(start).toBeGreaterThan(-1);
+		const end = code.indexOf("\n.globl", start);
+		return end === -1 ? code.slice(start) : code.slice(start, end);
+	}
+
 	test("break runs class destroy in loop", async () => {
 		const input = `
 class Resource {
@@ -422,8 +433,9 @@ Console.write("done")
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(result.code).toContain("bl _nomen_free_wrap");
-		expect(result.code.match(/bl _nomen_free_wrap/g)?.length).toBe(2);
+		const main_code = main_region(result.code);
+		expect(main_code).toContain("bl _nomen_free_wrap");
+		expect(main_code.match(/bl _nomen_free_wrap/g)?.length).toBe(2);
 
 		await build_and_check_output(input, "leak_break_class_destroy", "done");
 	});
@@ -451,8 +463,9 @@ Console.write("done")
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(result.code).toContain("bl _nomen_free_wrap");
-		expect(result.code.match(/bl _nomen_free_wrap/g)?.length).toBe(2);
+		const main_code = main_region(result.code);
+		expect(main_code).toContain("bl _nomen_free_wrap");
+		expect(main_code.match(/bl _nomen_free_wrap/g)?.length).toBe(2);
 
 		await build_and_check_output(input, "leak_continue_class_destroy", "done");
 	});

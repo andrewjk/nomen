@@ -24,6 +24,18 @@ function compile(source: string): string {
 	return result.code;
 }
 
+/** The user `f` body: from the line-anchored `f:` label to `_main:`. A
+ *  plain indexOf("f:") can't be used — the joined System library's
+ *  functions (e.g. `string_index_of:`) contain the substring, and its
+ *  functions surround the user code in the single-TU build. */
+function user_fn(code: string): string {
+	const start = code.search(/^f:$/m);
+	const end = code.search(/^_main:$/m);
+	expect(start).toBeGreaterThan(-1);
+	expect(end).toBeGreaterThan(start);
+	return code.slice(start, end);
+}
+
 const KERNEL = `
 import System
 
@@ -162,7 +174,7 @@ pub func main = () {}
 `);
 	// Outer contains a nested loop → outer stays; the inner's own break
 	// rejects the inner's unroll → both remain loops (two end labels).
-	const fn = code.slice(code.indexOf("f:"), code.indexOf("main:"));
+	const fn = user_fn(code);
 	expect((fn.match(/\.end_while_\d+:/g) ?? []).length).toBe(2);
 });
 
@@ -244,7 +256,7 @@ pub func main = () {}
 `);
 	// The trip-count arithmetic is bound - init — a `>` bound would have
 	// miscompiled into 5 copies of a loop that never runs.
-	const fn = code.slice(code.indexOf("f:"), code.indexOf("main:"));
+	const fn = user_fn(code);
 	expect(fn).toContain(".while_");
 });
 
@@ -262,7 +274,7 @@ func f = (out float) {
 }
 pub func main = () {}
 `);
-	const fn = code.slice(code.indexOf("f:"), code.indexOf("main:"));
+	const fn = user_fn(code);
 	// Trips 2, 3, 4 — the plan's init is the literal, not just 0.
 	expect(fn).not.toContain(".while_");
 	expect((fn.match(/mov x0, #[234]\n/g) ?? []).length).toBeGreaterThanOrEqual(3);
@@ -359,7 +371,7 @@ pub func main = () {}
 `);
 	// `j = n + 1` never resolves (n is a param) → the inner rejects under
 	// every copy → the outer rejects too. Both stay loops.
-	const fn = code.slice(code.indexOf("f:"), code.indexOf("main:"));
+	const fn = user_fn(code);
 	expect((fn.match(/\.while_\d+:/g) ?? []).length).toBe(2);
 });
 
@@ -383,7 +395,7 @@ pub func main = () {}
 `);
 	// The break targets the inner loop; unrolling the inner would delete
 	// its target, and the outer inherits the rejection via the gate.
-	const fn = code.slice(code.indexOf("f:"), code.indexOf("main:"));
+	const fn = user_fn(code);
 	expect((fn.match(/\.while_\d+:/g) ?? []).length).toBe(2);
 });
 
