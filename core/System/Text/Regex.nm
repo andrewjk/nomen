@@ -169,8 +169,7 @@ pub struct Regex {
 	}
 
 	// Replace all non-overlapping occurrences of pattern in input with replacement.
-	pub func replace_all = (string pattern, string input, string replacement, out string) {
-		var sb = StringBuilder()
+	pub func replace_all = (string pattern, string input, string replacement, out string) {		var sb = StringBuilder()
 		var int pat_len = pattern.length
 		var int len = input.length
 		var string charset = first_byte_set(pattern, pat_len)
@@ -205,6 +204,164 @@ pub struct Regex {
 		}
 		return sb.to_string()
 	}
+
+	// Whether pattern matches anywhere in input, ignoring ASCII case.
+	pub func test_ci = (string pattern, string input, out bool) {
+		var string folded = fold_pattern(pattern)
+		return Regex.test(folded, input)
+	}
+
+	// First match of pattern in input, ignoring ASCII case ("" if none).
+	pub func match_ci = (string pattern, string input, move out string) {
+		var string folded = fold_pattern(pattern)
+		return Regex.match(folded, input)
+	}
+
+	// find, ignoring ASCII case.
+	pub func find_ci = (string pattern, string input, ref RegexMatch dst) {
+		var string folded = fold_pattern(pattern)
+		Regex.find(folded, input, ref dst)
+	}
+
+	// captures, ignoring ASCII case.
+	pub func captures_ci = (string pattern, string input, ref List<string> dst, out bool) {
+		var string folded = fold_pattern(pattern)
+		return Regex.captures(folded, input, ref dst)
+	}
+
+	// replace_all, ignoring ASCII case.
+	pub func replace_all_ci = (string pattern, string input, string replacement, out string) {
+		var string folded = fold_pattern(pattern)
+		return Regex.replace_all(folded, input, replacement)
+	}
+}
+
+// Rewrite pattern so the case-sensitive engine matches case-insensitively:
+// literals become both-case classes ([kK]), class members and ranges gain
+// their case counterparts ([a-z] -> [a-zA-Z]). Structural syntax — groups,
+// alternation, quantifiers, anchors, escaped punctuation — is copied
+// through unchanged.
+func fold_pattern = (string pattern, move out string) {
+	var int n = pattern.length
+	var sb = StringBuilder()
+	var int i = 0
+	while i < n; i += 1 {
+		var char c = pattern.at(i)
+		if (c as int) == 92 {
+			// Escaped char: a literal keeps its backslash; an escaped
+			// letter becomes a both-case class.
+			if i + 1 < n {
+				var char e = pattern.at(i + 1)
+				if is_alpha_byte(e) {
+					sb.append_char('[')
+					sb.append_char(e)
+					sb.append_char(swap_case_byte(e))
+					sb.append_char(']')
+				} else {
+					sb.append_char(c)
+					sb.append_char(e)
+				}
+				i += 1
+			} else {
+				sb.append_char(c)
+			}
+		} else {
+			if c == '[' {
+				var int ce = atom_end_pos(pattern, i, n)
+				fold_class(pattern, i, ce, ref sb)
+				i = ce - 1
+			} else {
+				if is_alpha_byte(c) {
+					sb.append_char('[')
+					sb.append_char(c)
+					sb.append_char(swap_case_byte(c))
+					sb.append_char(']')
+				} else {
+					sb.append_char(c)
+				}
+			}
+		}
+	}
+	return sb.to_string()
+}
+
+// fold a character class [cs..ce): copy its contents, adding the case
+// counterpart of every letter member and mirroring letter ranges.
+func fold_class = (string pattern, int cs, int ce, ref StringBuilder dst) {
+	dst.append_char('[')
+	var int i = cs + 1
+	if i < ce - 1 {
+		if pattern.at(i) == '^' {
+			dst.append_char('^')
+			i += 1
+		}
+	}
+	var int content_end = ce - 1
+	while i < content_end; i += 1 {
+		var char c = pattern.at(i)
+		if (c as int) == 92 {
+			dst.append_char(c)
+			if i + 1 < content_end {
+				var char e = pattern.at(i + 1)
+				dst.append_char(e)
+				if is_alpha_byte(e) {
+					dst.append_char(swap_case_byte(e))
+				}
+				i += 1
+			}
+		} else {
+			if i + 2 < content_end {
+				if pattern.at(i + 1) == '-' {
+					var char lo = c
+					var char hi = pattern.at(i + 2)
+					dst.append_char(lo)
+					dst.append_char('-')
+					dst.append_char(hi)
+					if is_alpha_byte(lo) {
+						if is_alpha_byte(hi) {
+							dst.append_char(swap_case_byte(lo))
+							dst.append_char('-')
+							dst.append_char(swap_case_byte(hi))
+						}
+					}
+					i += 2
+				} else {
+					if is_alpha_byte(c) {
+						dst.append_char(c)
+						dst.append_char(swap_case_byte(c))
+					} else {
+						dst.append_char(c)
+					}
+				}
+			} else {
+				if is_alpha_byte(c) {
+					dst.append_char(c)
+					dst.append_char(swap_case_byte(c))
+				} else {
+					dst.append_char(c)
+				}
+			}
+		}
+	}
+	dst.append_char(']')
+}
+
+// ASCII letter test for pattern characters.
+func is_alpha_byte = (char c, out bool) {
+	var int code = c as int
+	return (code > 64 && code < 91) || (code > 96 && code < 123)
+}
+
+// The ASCII letter with the opposite case (unchanged for non-letters).
+func swap_case_byte = (char c, out char) {
+	var int code = c as int
+	if code > 64 && code < 91 {
+		return (code + 32) as char
+	}
+	if code > 96 && code < 123 {
+		return (code - 32) as char
+	}
+	return c
 }
 
 // Scan input[pos..len) for the next byte that appears in charset.
