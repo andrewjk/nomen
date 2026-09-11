@@ -666,15 +666,62 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				}
 				const cast = `(${ret_c} (*)(${cast_params.join(", ") || "void"}))`;
 
+				// An rvalue receiver (a call result, e.g.
+				// `rules.at_or_panic(0).name()`): the call already yields the
+				// instance pointer, so taking `&` is both invalid C and the
+				// wrong value — and emitting the call twice would duplicate
+				// side effects. Materialize it once into a statement-expression
+				// temp and reuse that slot for both the vtable lookup and the
+				// self argument. (Plain values and field accesses are lvalues
+				// and keep the address-of path below.)
+				const recv_is_rvalue =
+					node.target.node_type === "func_call" ||
+					(node.target.node_type === "access" &&
+						(node.target as AccessNode).access.node_type === "access_func");
+				let recv_temp: string | undefined;
+				let recv_temp_owned = false;
+				let recv_ret_temp: string | undefined;
+				if (recv_is_rvalue) {
+					const before = status.code.length;
+					status.suppress_dereference = true;
+					build_node(node.target, status);
+					status.suppress_dereference = false;
+					const recv_expr = status.code.substring(before);
+					status.code = status.code.substring(0, before);
+					const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+					recv_temp = `_trrecv_${id}`;
+					status.code += `({ void *${recv_temp} = (void*)(${recv_expr}); `;
+					// An owned receiver (a `move out T` call like pop()): the
+					// temp owns the instance, so it must be destroyed after
+					// the dispatch — mirroring the scope-exit reclaim an
+					// owned trait-typed local gets. The dispatch result is
+					// carried out in its own temp so the free can run last.
+					recv_temp_owned =
+						node.target.node_type === "access" &&
+						!!((node.target as AccessNode).access as AccessFunctionCallNode).owned_return;
+					if (recv_temp_owned && ret_c !== "void") {
+						recv_ret_temp = `_trret_${id}`;
+						status.code += `${ret_c} ${recv_ret_temp} = `;
+					}
+				}
+
 				status.code += `(${cast}_get_trait_func(`;
-				build_vtable_target(node.target, status);
+				if (recv_temp) {
+					status.code += `(void *)${recv_temp}`;
+				} else {
+					build_vtable_target(node.target, status);
+				}
 				status.code += `, ${trait_index}, ${func_index}))(`;
 
 				// Receiver pointer is the first call argument only when the
 				// method declares self.
 				let need_comma = false;
 				if (has_self) {
-					build_vtable_target(node.target, status);
+					if (recv_temp) {
+						status.code += `(void *)${recv_temp}`;
+					} else {
+						build_vtable_target(node.target, status);
+					}
 					need_comma = true;
 				}
 				for (let i = 0; i < access_func.params.length; i++) {
@@ -705,6 +752,15 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					}
 				}
 				status.code += `)`;
+				if (recv_temp) {
+					if (recv_temp_owned) {
+						status.code += `; ${trait.name}_destroy(${recv_temp}); free(${recv_temp})`;
+						if (recv_ret_temp) {
+							status.code += `; ${recv_ret_temp}`;
+						}
+					}
+					status.code += `; })`;
+				}
 			} else {
 				let method_type: Type | undefined = target_type;
 				if (!method_type?.name && node.target.node_type === "access") {

@@ -2583,6 +2583,23 @@ function build_access_method(
 		}
 	}
 
+	// Trait dispatch with a non-value receiver re-evaluates the receiver in
+	// the dispatch prologue (for the vtable lookup) AFTER argument
+	// evaluation — clobbering the arg registers and double-running side
+	// effects (`rules.pop().name()` both crashed and popped twice). Spill the
+	// receiver to a dedicated slot here; the prologue restores from it
+	// instead of rebuilding. (String-pair receivers use their own restore
+	// path and are excluded.)
+	const trait_target_for_recv = status.traits.find((t) => t.name === target_type.name);
+	const will_trait_dispatch =
+		!!trait_target_for_recv &&
+		!!trait_target_for_recv.functions.find((f) => f.name === access_func.name);
+	let trait_recv_slot: number | undefined;
+	if (will_trait_dispatch && node.target.node_type !== "value" && !receiver_is_string) {
+		trait_recv_slot = allocate_stack_space(status, 8, 8);
+		status.code += `str x0, [x29, #${trait_recv_slot}]\n`;
+	}
+
 	const raw_needs_self =
 		!access_func.is_static && access_func.params.length > 0 && !receiver_is_string;
 	// Self-marshal elision (ASM_PLAN_2 tranche F): a raw-only inline
@@ -2910,6 +2927,8 @@ function build_access_method(
 					}
 				}
 			}
+		} else if (trait_recv_slot !== undefined) {
+			status.code += `ldr x9, [x29, #${trait_recv_slot}]\n`;
 		} else {
 			build_node(node.target, status);
 			if (!status.code.endsWith("\n")) status.code += "\n";
@@ -2924,6 +2943,25 @@ function build_access_method(
 		// bit-cast to x0 for the generic consumers.
 		if (is_float_type(access_func.type.name)) {
 			status.code += `fmov x0, d0\n`;
+		}
+		// An owned receiver (a `move out T` call like pop() spilled to the
+		// trait_recv_slot above): the slot owns the instance, so destroy it
+		// through the trait shim and free it now — mirroring the scope-exit
+		// reclaim an owned trait-typed local gets. The dispatch result (x0,
+		// plus x1 for fat string returns) is preserved across the calls.
+		if (
+			trait_recv_slot !== undefined &&
+			node.target.node_type === "access" &&
+			!!((node.target as AccessNode).access as AccessFunctionCallNode).owned_return
+		) {
+			status.code += `str x0, [sp, #-16]!\n`;
+			status.code += `str x1, [sp, #-16]!\n`;
+			status.code += `ldr x0, [x29, #${trait_recv_slot}]\n`;
+			status.code += `bl ${trait_target.name}_destroy\n`;
+			status.code += `ldr x0, [x29, #${trait_recv_slot}]\n`;
+			emit_free(status);
+			status.code += `ldr x1, [sp], #16\n`;
+			status.code += `ldr x0, [sp], #16\n`;
 		}
 	} else if (inline_func && overflow_count === 0) {
 		// Inline candidates are small functions; the inline path can't accept
