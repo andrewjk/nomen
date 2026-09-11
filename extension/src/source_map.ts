@@ -153,12 +153,18 @@ function read_siblings(
 	const seen = new Set<string>([file_path]);
 
 	const siblings: SiblingSource[] = [];
-	const pending: { dir: string; text: string }[] = [];
-	const push_file = (dir: string, full: string, text: string) => {
+	// `base` is the folder project-relative imports resolve against. It
+	// mirrors the compiler joiner's `folder_path`: the entry's own folder
+	// for the document and its siblings, but the module root for files
+	// pulled in under a namespace import or the test `src/` module (so
+	// `import types` in `src/parse/parseLine.nm` finds `src/types/`). Files
+	// discovered through an import inherit the base they were found from.
+	const pending: { dir: string; text: string; base: string }[] = [];
+	const push_file = (dir: string, full: string, text: string, base: string = dir) => {
 		if (seen.has(full)) return;
 		seen.add(full);
 		siblings.push({ path: full, text });
-		pending.push({ dir, text });
+		pending.push({ dir, text, base });
 	};
 
 	const add_siblings_in = (dir: string, exclude_base: string) => {
@@ -188,24 +194,48 @@ function read_siblings(
 	}
 	// A `*.test.nm` file can reference the program's `pub` declarations: pull
 	// in the `src/` module (with `main` stripped, since the test harness
-	// generates its own), mirroring how the compiler joins test sources.
+	// generates its own), mirroring how the compiler joins test sources. The
+	// src files are queued (not just inlined) so the loop below follows THEIR
+	// imports too — otherwise everything the top-level src files pull from
+	// subfolders (rulesets, parsers, renderers) stays unknown.
+	let test_src_dir: string | undefined;
 	if (!is_library_file && self_base.endsWith(".test.nm")) {
-		const src_dir = resolve_src_module(self_dir);
-		if (src_dir) add_src_module(siblings, src_dir, seen);
+		test_src_dir = resolve_src_module(self_dir);
+		if (test_src_dir) {
+			let names: string[];
+			try {
+				names = fs.readdirSync(test_src_dir);
+			} catch {
+				names = [];
+			}
+			for (const name of names.sort()) {
+				if (!name.endsWith(".nm")) continue;
+				const full = path.join(test_src_dir, name);
+				if (seen.has(full)) continue;
+				const text = read_file(full);
+				if (text === undefined) continue;
+				push_file(test_src_dir, full, strip_main_functions(text), test_src_dir);
+			}
+		}
 	}
 
 	// Follow project-relative imports transitively, starting from the
 	// document's live text (which may be newer than disk). `System` imports
 	// resolve through the library walker instead.
-	pending.push({ dir: self_dir, text: doc_text });
+	pending.push({ dir: self_dir, text: doc_text, base: self_dir });
 	while (pending.length > 0) {
 		const current = pending.shift()!;
-		for (const target of project_imports(current.dir, current.text)) {
-			const full = path.resolve(current.dir, target);
+		for (const target of project_imports(current.base, current.text)) {
+			const full = path.resolve(current.base, target);
 			if (seen.has(full)) continue;
-			const text = read_file(full);
+			let text = read_file(full);
 			if (text === undefined) continue;
-			push_file(path.dirname(full), full, text);
+			// The compiler strips `main` from everything under the test's
+			// src module; mirror that for files found through its imports.
+			if (test_src_dir && is_within(full, test_src_dir)) {
+				text = strip_main_functions(text);
+			}
+			push_file(path.dirname(full), full, text, current.base);
 		}
 	}
 	return siblings;
@@ -256,24 +286,6 @@ function project_imports(base_dir: string, text: string): string[] {
 		targets.push(`./${rel}.nm`);
 	}
 	return targets;
-}
-
-function add_src_module(out: SiblingSource[], src_dir: string, seen: Set<string>): void {
-	let names: string[];
-	try {
-		names = fs.readdirSync(src_dir);
-	} catch {
-		return;
-	}
-	for (const name of names.sort()) {
-		if (!name.endsWith(".nm")) continue;
-		const full = path.join(src_dir, name);
-		if (seen.has(full)) continue;
-		const text = read_file(full);
-		if (text === undefined) continue;
-		seen.add(full);
-		out.push({ path: full, text: strip_main_functions(text) });
-	}
 }
 
 const file_cache = new Map<string, { mtime: number; text: string }>();
