@@ -284,3 +284,27 @@ same project reaches C emission without OOM (it fails on the
 trait_class_locals bug above), so the difference is the test path:
 `strip_main_functions` + the generated harness + build. Worth profiling
 `run_test_file`'s build phase on this corpus.
+
+## String-literal byte hazards (found while testing System.Text.Utf8)
+
+Three related issues, all verified on 0.2.x; the Utf8/CharIndex tests in
+test/utf8.test.ts work around all three (byte-exact strings are built with
+`StringBuilder` + `(0xNN as char)`).
+
+1. **Const-fold of string `+` re-emits raw escape text (aarch64).**
+   `"a\x80" + "b"` folds to a single `_param: .asciz "a\x80b"` in the
+   emitted asm, and the assembler re-parses `\x80b` greedily → byte 0x0B
+   instead of `0x80,"b"`. The folder concatenates raw source slices; it
+   must decode-then-re-encode (or refuse to fold escape-containing
+   literals). Whether the C backend folds the same way is unconfirmed.
+2. **Raw multibyte chars in literals miscount `.length`.**
+   `string_literal_length` counts every raw character as one byte, so
+   `"café".length` is 4 instead of 5 (the fat-string len truncates the
+   final byte; `char_count` over the truncated fat string still agrees
+   with it). Needs UTF-8 width math for raw chars in that function (and
+   an audit of the C splice path for the same).
+3. **Embedded NUL does not survive the C backend.**
+   `Utf8.encode(0x0)` round-trips on aarch64 but yields an empty string
+   on C (NUL truncation in the C-string runtime), so `decode_at(enc, 0)`
+   panics with "byte index out of range". Test excludes 0x0 with a NOTE.
+   General C-backend NUL limitation, not Utf8-specific.

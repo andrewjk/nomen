@@ -1,0 +1,144 @@
+// A run-length index of character widths for O(log n) random access.
+//
+// ASCII text needs no records at all (width-1 runs are implicit); only runs
+// of multi-byte characters are stored, each as {byte_index, char_start,
+// width, count}. All lookups binary-search the runs, so repeated indexed
+// access stays logarithmic no matter how often callers re-walk. The index
+// borrows its source (no copy of the text).
+
+/**
+ * A run of consecutive same-width multi-byte characters
+ **/
+pub struct CharRun {
+	var int byte_index
+	var int char_start
+	var int width
+	var int count
+}
+
+/**
+ * A run-length character-width index (construct with `CharIndex(text)`,
+ * then `byte_offset_of` / `char_index_of` / `char_at` in O(log runs))
+ **/
+pub struct CharIndex {
+	var view string source
+	var List<CharRun> runs = List<CharRun>()
+	var int char_count = 0
+
+	pub func #init = (self, view string source) {
+		self.source = source
+		var int pos = 0
+		var int len = source.length
+		var int chars = 0
+		var int open_at = -1
+		var int open_width = 0
+		var int open_start = 0
+		var int open_count = 0
+		while pos < len {
+			var int w = Utf8.width_at(source, pos)
+			switch {
+				case w == 1 {
+					if open_at >= 0 {
+						self.runs.push(CharRun(open_at, open_start, open_width, open_count))
+						open_at = -1
+					}
+					pos = pos + 1
+					chars = chars + 1
+				}
+				case open_at >= 0 && w == open_width {
+					open_count = open_count + 1
+					pos = pos + w
+					chars = chars + 1
+				}
+				else {
+					if open_at >= 0 {
+						self.runs.push(CharRun(open_at, open_start, open_width, open_count))
+					}
+					open_at = pos
+					open_start = chars
+					open_width = w
+					open_count = 1
+					pos = pos + w
+					chars = chars + 1
+				}
+			}
+		}
+		if open_at >= 0 {
+			self.runs.push(CharRun(open_at, open_start, open_width, open_count))
+		}
+		self.char_count = chars
+	}
+
+	// Index built over source in one pass. Construct directly —
+	// `CharIndex(text)` borrows the caller's text with no copy.
+	pub func byte_offset_of = (self, int char_index, out int) {
+		if char_index < 0 || char_index >= self.char_count {
+			panic("character index out of range")
+		}
+		var int found = self.rightmost_run(char_index, true)
+		if found < 0 {
+			// No run starts at or before it: pure ASCII prefix.
+			return char_index
+		}
+		var r = self.runs.at_or_panic(found)
+		if char_index < r.char_start + r.count {
+			return r.byte_index + (char_index - r.char_start) * r.width
+		}
+		var int after_chars = r.char_start + r.count
+		var int after_bytes = r.byte_index + r.count * r.width
+		return after_bytes + (char_index - after_chars)
+	}
+
+	// Character index containing byte_offset. A mid-character offset floors
+	// into its character; byte_offset == source.length maps to char_count.
+	// Panics if byte_offset is out of [0, source.length].
+	pub func char_index_of = (self, int byte_offset, out int) {
+		if byte_offset < 0 || byte_offset > self.source.length {
+			panic("byte offset out of range")
+		}
+		if byte_offset == self.source.length {
+			return self.char_count
+		}
+		var int found = self.rightmost_run(byte_offset, false)
+		if found < 0 {
+			return byte_offset
+		}
+		var r = self.runs.at_or_panic(found)
+		if byte_offset < r.byte_index + r.count * r.width {
+			return r.char_start + (byte_offset - r.byte_index) / r.width
+		}
+		var int after_chars = r.char_start + r.count
+		var int after_bytes = r.byte_index + r.count * r.width
+		return after_chars + (byte_offset - after_bytes)
+	}
+
+	// Decoded code point of the char_index-th character. Panics if
+	// char_index is out of [0, char_count).
+	pub func char_at = (self, int char_index, out int) {
+		var int at = self.byte_offset_of(char_index)
+		var d = Utf8.decode_at(self.source, at)
+		return d.code_point
+	}
+	// Rightmost run whose key (char_start when by_char, else byte_index) is
+	// <= target, or -1 when all runs start after it.
+	func rightmost_run = (self, int target, bool by_char, out int) {
+		var int lo = 0
+		var int hi = self.runs.length - 1
+		var int found = -1
+		while lo <= hi {
+			var int mid = (lo + hi) / 2
+			var r = self.runs.at_or_panic(mid)
+			var int key = r.char_start
+			if !by_char {
+				key = r.byte_index
+			}
+			if key <= target {
+				found = mid
+				lo = mid + 1
+			} else {
+				hi = mid - 1
+			}
+		}
+		return found
+	}
+}

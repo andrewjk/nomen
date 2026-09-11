@@ -1,0 +1,32 @@
+// A single-pass cursor over a string's Unicode scalar values.
+//
+// The cursor borrows its source (no copy) and decodes lazily: each `next`
+// costs one decode step. For repeated random access, build a CharIndex
+// instead — re-walking from scratch on every access is O(n) per lookup.
+
+/**
+ * A single-pass cursor over Unicode scalar values (`has_next`/`next`)
+ **/
+pub struct Chars {
+	var view string source
+	var int byte_pos = 0
+
+	pub func #init = (self, view string source) {
+		self.source = source
+	}
+
+	pub func has_next = (self, out bool) {
+		return self.byte_pos < self.source.length
+	}
+
+	// The code point at the cursor, advancing past it. Malformed sequences
+	// yield U+FFFD. Panics when exhausted — check has_next first.
+	pub func next = (ref self, out int) {
+		if self.byte_pos >= self.source.length {
+			panic("Chars exhausted; check has_next first")
+		}
+		var d = Utf8.decode_at(self.source, self.byte_pos)
+		self.byte_pos = self.byte_pos + d.byte_length
+		return d.code_point
+	}
+}
