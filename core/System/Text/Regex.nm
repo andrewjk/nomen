@@ -457,9 +457,14 @@ func alt_first_bytes = (string pattern, int start, int end, ref StringBuilder sb
 	while i < end {
 		var char c = pattern.at(i)
 		if (c as int) == 92 {
-			// escaped literal: first byte is the escaped char
+			// escaped literal: first byte is the escaped char — unless it's
+			// a backreference, whose first byte depends on a capture.
 			if i + 1 < end {
-				sb.append_char(pattern.at(i + 1))
+				var char e = pattern.at(i + 1)
+				if is_backref_digit(e) {
+					return -1
+				}
+				sb.append_char(e)
 			}
 			return 0
 		}
@@ -762,6 +767,10 @@ func match_single_atom = (
 	if (pc as int) == 92 {
 		if atom_start + 1 < atom_end {
 			var char ec = pattern.at(atom_start + 1)
+			if is_backref_digit(ec) {
+				// \1..\9: match the same text capture group N matched.
+				return match_backref(input, backref_group(ec), in_pos, in_len, ref caps)
+			}
 			if in_pos < in_len {
 				if input.at(in_pos) == ec {
 					return in_pos + 1
@@ -802,6 +811,11 @@ func char_matches_atom = (
 	}
 	if (pc as int) == 92 {
 		if atom_start + 1 < atom_end {
+			if is_backref_digit(pattern.at(atom_start + 1)) {
+				// A backreference is a multi-byte atom; the greedy
+				// single-character loop never consults this for it.
+				return false
+			}
 			return ic == pattern.at(atom_start + 1)
 		}
 		return false
@@ -842,6 +856,26 @@ func match_star = (
 			in_len,
 			ref caps,
 		)
+	}
+	if (pc as int) == 92 {
+		if atom_start + 1 < atom_end {
+			if is_backref_digit(pattern.at(atom_start + 1)) {
+				// A backreference matches a whole span per iteration — the
+				// single-character greedy loop below can't apply.
+				return match_star_backref(
+					pattern,
+					atom_start,
+					rest,
+					pat_end,
+					input,
+					in_pos,
+					min_count,
+					lazy,
+					in_len,
+					ref caps,
+				)
+			}
+		}
 	}
 
 	// Greedily consume the longest run of matching characters.
@@ -1149,4 +1183,117 @@ pub struct RegexMatch {
 	var int end = 0
 	var int length = 0
 	var string text = ""
+}
+
+// Whether the escaped character c (the byte after a backslash) is a
+// backreference (\1..\9; \0 is the whole-match escape, not supported here).
+func is_backref_digit = (char c, out bool) {
+	var int code = c as int
+	return code >= 49 && code <= 57
+}
+
+// The capture group a backreference refers to: '1' -> 1 .. '9' -> 9.
+func backref_group = (char c, out int) {
+	return (c as int) - 48
+}
+
+// Match the text capture group `group` last matched, at in_pos. Returns the
+// position after the span, or -1 when the group has no span here (it did not
+// participate) or the text differs.
+func match_backref = (string input, int group, int in_pos, int in_len, ref List<int> caps, out int) {
+	var int at = last_capture_index(caps, group)
+	if at < 0 {
+		return -1
+	}
+	var int s = caps.at(at + 1)
+	if s < 0 {
+		return -1
+	}
+	var int len = caps.at(at + 2) - s
+	if in_pos + len > in_len {
+		return -1
+	}
+	var int i = 0
+	while i < len; i += 1 {
+		if input.at(in_pos + i) != input.at(s + i) {
+			return -1
+		}
+	}
+	return in_pos + len
+}
+
+// Greedy/lazy backtracking for a backreference atom quantified with '*' or
+// '+' (each iteration consumes the referenced span).
+func match_star_backref = (
+	string pattern,
+	int atom_start,
+	int rest,
+	int pat_end,
+	string input,
+	int in_pos,
+	int min_count,
+	int lazy,
+	int in_len,
+	ref List<int> caps,
+	out int
+) {
+	var int group = backref_group(pattern.at(atom_start + 1))
+	if lazy > 0 {
+		if min_count <= 0 {
+			var int stop = match_here(pattern, rest, pat_end, input, in_pos, in_len, ref caps)
+			if stop >= 0 {
+				return stop
+			}
+		}
+		var int next = match_backref(input, group, in_pos, in_len, ref caps)
+		if next >= 0 {
+			if next != in_pos {
+				var new_min = 0
+				if min_count > 0 {
+					new_min = min_count - 1
+				}
+				return match_star_backref(
+					pattern,
+					atom_start,
+					rest,
+					pat_end,
+					input,
+					next,
+					new_min,
+					lazy,
+					in_len,
+					ref caps,
+				)
+			}
+		}
+		return -1
+	}
+	var int next = match_backref(input, group, in_pos, in_len, ref caps)
+	if next >= 0 {
+		if next != in_pos {
+			var new_min = 0
+			if min_count > 0 {
+				new_min = min_count - 1
+			}
+			var int r = match_star_backref(
+				pattern,
+				atom_start,
+				rest,
+				pat_end,
+				input,
+				next,
+				new_min,
+				lazy,
+				in_len,
+				ref caps,
+			)
+			if r >= 0 {
+				return r
+			}
+		}
+	}
+	if min_count <= 0 {
+		return match_here(pattern, rest, pat_end, input, in_pos, in_len, ref caps)
+	}
+	return -1
 }
