@@ -1,4 +1,5 @@
 import add_error from "../add_error.ts";
+import string_literal_length from "../build_common/string_literal_length.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
@@ -784,6 +785,7 @@ export default function check_function_call(
 			const pop = param as OperationNode;
 			if (pop.op === "+" || pop.op === "-") {
 				let base_name: string | undefined;
+				let base_path: string | undefined;
 				let c = 0;
 				if (
 					pop.left_value.node_type === "value" &&
@@ -799,7 +801,17 @@ export default function check_function_call(
 				) {
 					c = parseInt((pop.right_value as ValueNode).value, 10);
 					if (pop.op === "-") c = -c;
-					if (pop.left_value.node_type === "value") base_name = (pop.left_value as ValueNode).value;
+					if (pop.left_value.node_type === "value") {
+						base_name = (pop.left_value as ValueNode).value;
+					} else if (pop.left_value.node_type === "access") {
+						// A dotted-path base (e.g. `list.length - 1`): facts for
+						// the path are recorded on the base VARIABLE ("list"),
+						// so look up the base, and alias to the shifted full
+						// path so alias-through-arithmetic can prove
+						// `arg < list.length`.
+						base_path = expr_to_string(pop.left_value, status);
+						if (base_path) base_name = base_path.split(".")[0];
+					}
 				}
 				if (base_name) {
 					const decl = status.values.findLast((v) => v.name === base_name);
@@ -817,7 +829,11 @@ export default function check_function_call(
 						lower_bound_expr = decl.lower_bound_expr
 							? shift_offset_expr(decl.lower_bound_expr, c)
 							: undefined;
-						alias_of = decl.alias_of ? shift_offset_expr(decl.alias_of, c) : undefined;
+						alias_of = decl.alias_of
+							? shift_offset_expr(decl.alias_of, c)
+							: base_path !== undefined
+								? shift_offset_expr(base_path, c)
+								: undefined;
 					}
 				}
 			}
@@ -945,12 +961,20 @@ export default function check_function_call(
 				const self_base = status.values.findLast(
 					(v) => v.name === self_path_or_value.split(".")[0],
 				);
+				// A string-literal receiver (`"abc".slice(1, 2)`) has no
+				// variable to inherit facts from, but its compile-time byte
+				// length is exactly what `self.length` constraints need.
+				const literal_known_length = self_path_or_value.startsWith('"')
+					? string_literal_length(self_path_or_value)
+					: undefined;
 				status.values.push({
 					declaration: "const",
 					name: "self",
 					type: self_type,
 					is_set: true,
 					alias_of: self_path_or_value,
+					known_length:
+						literal_known_length !== undefined ? literal_known_length : self_base?.known_length,
 					range_lower: self_base?.range_lower,
 					range_upper: self_base?.range_upper,
 					upper_bound_exprs: self_base?.upper_bound_exprs?.slice(),
@@ -959,7 +983,6 @@ export default function check_function_call(
 					lower_bound_inclusive_exprs: self_base?.lower_bound_inclusive_exprs?.slice(),
 					upper_bound_expr: self_base?.upper_bound_expr,
 					lower_bound_expr: self_base?.lower_bound_expr,
-					known_length: self_base?.known_length,
 					path_bounds: self_base?.path_bounds,
 				});
 			}

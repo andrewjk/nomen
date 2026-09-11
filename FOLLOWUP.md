@@ -289,18 +289,6 @@ out-parameter ABI support and consistent callee typing. Test coverage:
 test/func_field_rejected.test.ts pins the field rejection; the local gaps
 remain untested (broken shapes).
 
-## Constraint-verification gaps at literal/length arithmetic
-
-**Constraint-verification gaps at literal/length arithmetic:**
-
-- `"abc".slice(1, 3)` → "Parameter constraint cannot be verified" (the
-  literal's compile-time length isn't recorded for the slice
-  constraint); binding the literal to a `const` first works.
-- `l.at(l.length - 1)` under a `l.length > 0` guard → unverifiable
-  (`length - 1 < length` needs arithmetic reasoning). List now gets
-  `at_or_panic`, so callers sidestep it, but the common "last element"
-  shape would be nice to prove.
-
 ## Trait method call on an rvalue receiver fails to compile (C backend)
 
 `rules.at_or_panic(0).name()` — calling a trait method directly on a call

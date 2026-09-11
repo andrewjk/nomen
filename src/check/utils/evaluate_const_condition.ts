@@ -162,6 +162,28 @@ function evaluate_operation(
 				target_str = `${target_str} ${left_offset >= 0 ? "-" : "+"} ${Math.abs(left_offset)}`;
 			}
 
+			// Algebraic same-base identities: `X + c OP X` is decidable from
+			// the offset alone (integers): `X + c < X` iff c < 0, `X + c <= X`
+			// iff c <= 0, and mirrored for `>`/`>=`. This proves the common
+			// last-element shape `list.at(list.length - 1)`, whose index is
+			// the constraint's own bound base shifted by a constant — no
+			// stored flow fact can express `X - c < X`.
+			if (left_var && right_str && !right_str.includes(" ")) {
+				const right_base = parse_offset_expr(right_str);
+				const left_base = parse_offset_expr(left_var);
+				if (
+					right_base &&
+					left_base &&
+					right_base.base === left_base.base &&
+					right_base.offset === left_base.offset
+				) {
+					if (op.op === "<" && left_offset < 0) return true;
+					if (op.op === "<=" && left_offset <= 0) return true;
+					if (op.op === ">" && left_offset > 0) return true;
+					if (op.op === ">=" && left_offset >= 0) return true;
+				}
+			}
+
 			if (op.op === "<" || op.op === "<=") {
 				if (left_decl?.upper_bound_exprs?.length && target_str) {
 					if (left_decl.upper_bound_exprs.includes(target_str)) return true;
@@ -366,6 +388,11 @@ function evaluate_operation(
 		const left = evaluate_const_condition(op.left_value, status);
 		const right = evaluate_const_condition(op.right_value, status);
 		if (op.op === "&&") {
+			if (process.env.NOMEN_DBG) {
+				const L = evaluate_operation(op.left_value ?? op, status);
+				const R = evaluate_operation(op.right_value ?? op, status);
+				console.error("DBG && left=", L, "right=", R);
+			}
 			if (left === false || right === false) return false;
 			if (left === "unsafe" || right === "unsafe") return "unsafe";
 			if (left === true && right === true) return true;
