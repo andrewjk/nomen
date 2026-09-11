@@ -248,18 +248,24 @@ func fold_pattern = (string pattern, move out string) {
 	while i < n; i += 1 {
 		var char c = pattern.at(i)
 		if (c as int) == 92 {
-			// Escaped char: a literal keeps its backslash; an escaped
-			// letter becomes a both-case class.
+			// Escaped char: shorthands and backrefs keep their backslash;
+			// other escaped letters become both-case classes; escaped
+			// punctuation is copied literally.
 			if i + 1 < n {
 				var char e = pattern.at(i + 1)
-				if is_alpha_byte(e) {
-					sb.append_char('[')
-					sb.append_char(e)
-					sb.append_char(swap_case_byte(e))
-					sb.append_char(']')
-				} else {
+				if is_shorthand(e) || is_backref_digit(e) {
 					sb.append_char(c)
 					sb.append_char(e)
+				} else {
+					if is_alpha_byte(e) {
+						sb.append_char('[')
+						sb.append_char(e)
+						sb.append_char(swap_case_byte(e))
+						sb.append_char(']')
+					} else {
+						sb.append_char(c)
+						sb.append_char(e)
+					}
 				}
 				i += 1
 			} else {
@@ -304,7 +310,9 @@ func fold_class = (string pattern, int cs, int ce, ref StringBuilder dst) {
 			if i + 1 < content_end {
 				var char e = pattern.at(i + 1)
 				dst.append_char(e)
-				if is_alpha_byte(e) {
+				// A shorthand keeps its backslash; other escaped letters
+				// gain their case counterpart.
+				if is_alpha_byte(e) && !is_shorthand(e) {
 					dst.append_char(swap_case_byte(e))
 				}
 				i += 1
@@ -458,11 +466,18 @@ func alt_first_bytes = (string pattern, int start, int end, ref StringBuilder sb
 		var char c = pattern.at(i)
 		if (c as int) == 92 {
 			// escaped literal: first byte is the escaped char — unless it's
-			// a backreference, whose first byte depends on a capture.
+			// a backreference (depends on a capture) or a complement
+			// shorthand (not an inclusion set), which disable the prefilter.
 			if i + 1 < end {
 				var char e = pattern.at(i + 1)
 				if is_backref_digit(e) {
 					return -1
+				}
+				if is_shorthand(e) {
+					if shorthand_members(e, ref sb) < 0 {
+						return -1
+					}
+					return 0
 				}
 				sb.append_char(e)
 			}
@@ -771,6 +786,15 @@ func match_single_atom = (
 				// \1..\9: match the same text capture group N matched.
 				return match_backref(input, backref_group(ec), in_pos, in_len, ref caps)
 			}
+			if is_shorthand(ec) {
+				// \d \s \w and complements: class membership by name.
+				if in_pos < in_len {
+					if matches_shorthand(ec, input.at(in_pos)) {
+						return in_pos + 1
+					}
+				}
+				return -1
+			}
 			if in_pos < in_len {
 				if input.at(in_pos) == ec {
 					return in_pos + 1
@@ -811,12 +835,16 @@ func char_matches_atom = (
 	}
 	if (pc as int) == 92 {
 		if atom_start + 1 < atom_end {
-			if is_backref_digit(pattern.at(atom_start + 1)) {
+			var char ec = pattern.at(atom_start + 1)
+			if is_backref_digit(ec) {
 				// A backreference is a multi-byte atom; the greedy
 				// single-character loop never consults this for it.
 				return false
 			}
-			return ic == pattern.at(atom_start + 1)
+			if is_shorthand(ec) {
+				return matches_shorthand(ec, ic)
+			}
+			return ic == ec
 		}
 		return false
 	}
@@ -1058,8 +1086,16 @@ func char_in_class = (
 		var char c = pattern.at(i)
 		if (c as int) == 92 {
 			if i + 1 < content_end {
-				if ic == pattern.at(i + 1) {
-					found = true
+				var char e = pattern.at(i + 1)
+				if is_shorthand(e) {
+					// \d \s \w (and complements) inside a class.
+					if matches_shorthand(e, ic) {
+						found = true
+					}
+				} else {
+					if ic == e {
+						found = true
+					}
 				}
 			}
 			i = i + 2
@@ -1296,4 +1332,76 @@ func match_star_backref = (
 		return match_here(pattern, rest, pat_end, input, in_pos, in_len, ref caps)
 	}
 	return -1
+}
+
+// Whether the escaped character c names an ASCII shorthand class:
+// \d \D (digits), \w \W (word characters), \s \S (whitespace).
+func is_shorthand = (char c, out bool) {
+	var int code = c as int
+	return code == 100 || code == 68 || code == 119 || code == 87 || code == 115 || code == 83
+}
+
+// Whether byte b belongs to the shorthand class named by c. Uppercase names
+// are the complements (S/D/W match anything the lowercase set excludes).
+func matches_shorthand = (char c, char b, out bool) {
+	var int kind = c as int
+	var int code = b as int
+	var found = false
+	if kind == 100 || kind == 68 {
+		// \d \D
+		found = code >= 48 && code <= 57
+	} else {
+		if kind == 119 || kind == 87 {
+			// \w \W
+			found = (code >= 97 && code <= 122) || (code >= 65 && code <= 90) || (code >= 48 && code <= 57) || code == 95
+		} else {
+			// \s \S
+			found = (code >= 9 && code <= 13) || code == 32
+		}
+	}
+	if kind >= 65 && kind <= 90 {
+		return !found
+	}
+	return found
+}
+
+// Append the member bytes of the lowercase shorthand class named by c to the
+// first-byte charset. Complement shorthands (S/D/W) match "anything else" —
+// not expressible as an inclusion set — so they return -1, which disables
+// the caller's prefilter.
+func shorthand_members = (char c, ref StringBuilder sb, out int) {
+	var int kind = c as int
+	if kind == 83 || kind == 68 || kind == 87 {
+		return -1
+	}
+	if kind == 100 {
+		var int code = 48
+		while code <= 57; code += 1 {
+			sb.append_char(code as char)
+		}
+		return 0
+	}
+	if kind == 119 {
+		var int code = 48
+		while code <= 57; code += 1 {
+			sb.append_char(code as char)
+		}
+		var int upper = 65
+		while upper <= 90; upper += 1 {
+			sb.append_char(upper as char)
+		}
+		var int lower = 97
+		while lower <= 122; lower += 1 {
+			sb.append_char(lower as char)
+		}
+		sb.append_char('_')
+		return 0
+	}
+	// \s: tab, LF, VT, FF, CR, space
+	var int w = 9
+	while w <= 13; w += 1 {
+		sb.append_char(w as char)
+	}
+	sb.append_char(32 as char)
+	return 0
 }
