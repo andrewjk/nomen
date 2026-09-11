@@ -31,6 +31,7 @@
 	"JsonTree",
 	"Json",
 	"Regex",
+	"RegexMatch",
 	"List_int",
 	"Buffer_string",
 	"List_string",

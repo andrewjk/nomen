@@ -305,3 +305,34 @@ bodies are natively fat (NATIVELY_FAT_PREFIXES) so embedded NULs survive
   covers `\0`–`\7`; `\8`/`\9`/bare `\x` keep the old pair-counting while
   clang/GAS do whatever they do (clang warns). Nobody writes these, but a
   check-time rejection would be more honest than silent divergence.
+
+## aarch64: local string variable stored into a ref-param struct field
+
+Assigning a LOCAL string variable into a struct field accessed through a
+`ref` struct parameter miscompiles on the aarch64 backend — the field reads
+back corrupted (empty or aliasing another field's value). The same store with
+an inline call result (`dst.text = input.substring(i, end)`) or a literal is
+correct, and the C backend is correct in all shapes.
+
+Minimal repro (prints `[]` / garbage instead of `[123]`):
+
+```
+struct Box { var string s = "" }
+
+func fill = (ref Box dst) {
+	var string s = "abc123".substring(0, 3)
+	dst.s = s
+}
+
+pub func main = (Init init) {
+	var Box b = Box()
+	fill(ref b)
+	Console.write("[\{b.s}]\n")
+}
+```
+
+Found while building `Regex.find` (`RegexMatch.text` through the `ref
+RegexMatch dst` param); worked around there by assigning the call result
+inline. Suspect the heap-string field-store path through ref params (the
+"transient heap-string flag" machinery) drops the strdup when the source is
+a frame-local (ptr, len) pair.

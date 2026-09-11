@@ -65,8 +65,7 @@ pub struct Regex {
 	// group that did not participate in the match) and return true. Return
 	// false with `out` untouched when nothing matches. A group that repeats
 	// (`(a)+`) reports its LAST iteration.
-	pub func captures = (string pattern, string input, ref List<string> dst, out bool) {
-		var int pat_len = pattern.length
+	pub func captures = (string pattern, string input, ref List<string> dst, out bool) {		var int pat_len = pattern.length
 		var int len = input.length
 		var string charset = first_byte_set(pattern, pat_len)
 		var int clen = charset.length
@@ -103,6 +102,39 @@ pub struct Regex {
 			}
 		}
 		return false
+	}
+
+	// Find the first match of pattern in input and fill `dst` with where it
+	// sits: .found with byte offsets .start/.end, the matched .text, and
+	// .length (all zero/empty when .found is false — mvzr-style positions
+	// for callers doing their own index bookkeeping). `dst` is fully reset
+	// first, so a reused RegexMatch carries nothing over. Scans every
+	// position: the first-byte prefilter would skip nullable patterns'
+	// empty matches at skipped positions, reporting a wrong .start.
+	pub func find = (string pattern, string input, ref RegexMatch dst) {
+		dst.found = false
+		dst.start = 0
+		dst.end = 0
+		dst.length = 0
+		dst.text = ""
+		var int pat_len = pattern.length
+		var int len = input.length
+		var i = 0
+		while i <= len; i += 1 {
+			var caps = List<int>()
+			var int end = match_here(pattern, 0, pat_len, input, i, len, ref caps)
+			if end >= 0 {
+				dst.found = true
+				dst.start = i
+				dst.end = end
+				dst.length = end - i
+				// Assign the call result inline: a local string variable
+				// stored into a ref-param struct field miscompiles on
+				// aarch64 (see FOLLOWUP.md).
+				dst.text = input.substring(i, end)
+				return
+			}
+		}
 	}
 
 	// Count the number of non-overlapping occurrences of pattern in input.
@@ -866,4 +898,15 @@ func last_capture_index = (List<int> caps, int group, out int) {
 		}
 	}
 	return best
+}
+
+/**
+ * A Regex.find result: whether the pattern matched, where, and what
+ **/
+pub struct RegexMatch {
+	var bool found = false
+	var int start = 0
+	var int end = 0
+	var int length = 0
+	var string text = ""
 }
