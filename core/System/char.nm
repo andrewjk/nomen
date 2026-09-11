@@ -44,4 +44,29 @@ pub struct char: Stringable, Hashable, Equatable {
 		.Lend_char_to_string:
 		```
 	}
+
+	// ASCII digit: '0'-'9'. Non-ASCII bytes are false.
+	pub func is_digit = (self, out bool) {
+		var int code = self as int
+		return code >= 48 && code <= 57
+	}
+
+	// ASCII letter: 'A'-'Z' or 'a'-'z'. Non-ASCII bytes are false.
+	pub func is_alpha = (self, out bool) {
+		var int code = self as int
+		return (code >= 65 && code <= 90) || (code >= 97 && code <= 122)
+	}
+
+	// ASCII letter or digit.
+	pub func is_alphanumeric = (self, out bool) {
+		return self.is_alpha() || self.is_digit()
+	}
+
+	// ASCII whitespace: tab, LF, VT, FF, CR, space. Unicode spaces are
+	// false — byte-oriented callers trim with this and pass multibyte
+	// sequences through untouched.
+	pub func is_ascii_space = (self, out bool) {
+		var int code = self as int
+		return (code >= 9 && code <= 13) || code == 32
+	}
 }

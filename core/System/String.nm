@@ -342,13 +342,13 @@ pub struct string: Stringable, Hashable, Equatable {
 	pub func trim = (self, out string) {
 		var int start = 0
 		while start < self.length; start += 1 {
-			if !is_space_byte(self.char_code_at(start)) {
+			if !self.at(start).is_ascii_space() {
 				break
 			}
 		}
 		var int end = self.length
 		while end > start; end -= 1 {
-			if !is_space_byte(self.char_code_at(end - 1)) {
+			if !self.at(end - 1).is_ascii_space() {
 				break
 			}
 		}
@@ -360,7 +360,7 @@ pub struct string: Stringable, Hashable, Equatable {
 	pub func trim_end = (self, out string) {
 		var int end = self.length
 		while end > 0; end -= 1 {
-			if !is_space_byte(self.char_code_at(end - 1)) {
+			if !self.at(end - 1).is_ascii_space() {
 				break
 			}
 		}
@@ -372,7 +372,7 @@ pub struct string: Stringable, Hashable, Equatable {
 	pub func trim_start = (self, out string) {
 		var int start = 0
 		while start < self.length; start += 1 {
-			if !is_space_byte(self.char_code_at(start)) {
+			if !self.at(start).is_ascii_space() {
 				break
 			}
 		}
@@ -409,11 +409,6 @@ pub struct string: Stringable, Hashable, Equatable {
 		}
 		return sb.to_string()
 	}
-}
-
-// ASCII whitespace byte: tab, LF, VT, FF, CR, space.
-func is_space_byte = (int code, out bool) {
-	return (code >= 9 && code <= 13) || code == 32
 }
 
 // needle matches text at byte offset pos (caller guarantees pos + len fits;
