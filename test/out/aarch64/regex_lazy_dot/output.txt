@@ -1,0 +1,2 @@
+[aXXb] 0 4
+[aXXbYb] 0 6

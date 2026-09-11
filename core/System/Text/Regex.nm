@@ -329,7 +329,8 @@ func alt_first_bytes = (string pattern, int start, int end, ref StringBuilder sb
 				return -1
 			}
 			// A '?'/'*' quantifier makes the group nullable — the first byte
-			// can also come from whatever follows it.
+			// can also come from whatever follows it. A second '?' marks the
+			// quantifier lazy and is skipped either way.
 			var int after = a_end
 			var int nullable = 0
 			if after < end {
@@ -337,6 +338,11 @@ func alt_first_bytes = (string pattern, int start, int end, ref StringBuilder sb
 				if q == '?' || q == '*' {
 					nullable = 1
 					after += 1
+					if after < end {
+						if pattern.at(after) == '?' {
+							after += 1
+						}
+					}
 				}
 			}
 			if nullable == 0 {
@@ -469,17 +475,27 @@ func match_here = (
 	// Determine the bounds of the current atom.
 	var int a_end = atom_end_pos(pattern, pat_pos, pat_end)
 
-	// Check for a quantifier following the atom.
+	// Check for a quantifier following the atom. A trailing '?' marks the
+	// quantifier LAZY (shortest match first) — the rest of the pattern then
+	// starts after both symbols.
 	if a_end < pat_end {
 		var char q = pattern.at(a_end)
-		if q == '*' {
-			return match_star(pattern, pat_pos, a_end, pat_end, input, in_pos, 0, in_len, ref caps)
-		}
-		if q == '+' {
-			return match_star(pattern, pat_pos, a_end, pat_end, input, in_pos, 1, in_len, ref caps)
-		}
-		if q == '?' {
-			return match_optional(pattern, pat_pos, a_end, pat_end, input, in_pos, in_len, ref caps)
+		if q == '*' || q == '+' || q == '?' {
+			var int lazy = 0
+			var int rest = a_end + 1
+			if rest < pat_end {
+				if pattern.at(rest) == '?' {
+					lazy = 1
+					rest += 1
+				}
+			}
+			if q == '*' {
+				return match_star(pattern, pat_pos, a_end, rest, pat_end, input, in_pos, 0, lazy, in_len, ref caps)
+			}
+			if q == '+' {
+				return match_star(pattern, pat_pos, a_end, rest, pat_end, input, in_pos, 1, lazy, in_len, ref caps)
+			}
+			return match_optional(pattern, pat_pos, a_end, rest, pat_end, input, in_pos, lazy, in_len, ref caps)
 		}
 	}
 
@@ -636,17 +652,20 @@ func char_matches_atom = (
 	return pc == ic
 }
 
-// Greedily match the atom [atom_start..atom_end) followed by the rest of the
-// pattern pattern[atom_end+1..pat_end). min_count is 0 for '*' and 1 for '+'.
-// Single-character atoms are handled iteratively; groups recurse.
+// Match the atom [atom_start..atom_end) followed by the rest of the pattern
+// pattern[rest..pat_end). min_count is 0 for '*' and 1 for '+'; lazy picks
+// the shortest repetition first instead of the longest. Single-character
+// atoms are handled iteratively; groups recurse.
 func match_star = (
 	string pattern,
 	int atom_start,
 	int atom_end,
+	int rest,
 	int pat_end,
 	string input,
 	int in_pos,
 	int min_count,
+	int lazy,
 	int in_len,
 	ref List<int> caps,
 	out int
@@ -657,10 +676,12 @@ func match_star = (
 			pattern,
 			atom_start,
 			atom_end,
+			rest,
 			pat_end,
 			input,
 			in_pos,
 			min_count,
+			lazy,
 			in_len,
 			ref caps,
 		)
@@ -675,10 +696,21 @@ func match_star = (
 			break
 		}
 	}
+	if lazy > 0 {
+		// Lazy: extend from the minimum until the rest matches.
+		var int try_pos = in_pos + min_count
+		while try_pos <= max_pos; try_pos += 1 {
+			var int r = match_here(pattern, rest, pat_end, input, try_pos, in_len, ref caps)
+			if r >= 0 {
+				return r
+			}
+		}
+		return -1
+	}
 	// Backtrack from the longest match down to the minimum, trying the rest.
 	var int try_pos = max_pos
 	while try_pos >= in_pos + min_count; try_pos -= 1 {
-		var int r = match_here(pattern, atom_end + 1, pat_end, input, try_pos, in_len, ref caps)
+		var int r = match_here(pattern, rest, pat_end, input, try_pos, in_len, ref caps)
 		if r >= 0 {
 			return r
 		}
@@ -686,19 +718,54 @@ func match_star = (
 	return -1
 }
 
-// Recursive greedy backtracking for group atoms quantified with '*' or '+'.
+// Recursive backtracking for group atoms quantified with '*' or '+'.
 func match_star_group = (
 	string pattern,
 	int atom_start,
 	int atom_end,
+	int rest,
 	int pat_end,
 	string input,
 	int in_pos,
 	int min_count,
+	int lazy,
 	int in_len,
 	ref List<int> caps,
 	out int
 ) {
+	if lazy > 0 {
+		// Lazy: stop repeating first (minimum met), then try one more
+		// iteration before giving up.
+		if min_count <= 0 {
+			var int stop = match_here(pattern, rest, pat_end, input, in_pos, in_len, ref caps)
+			if stop >= 0 {
+				return stop
+			}
+		}
+		var int next = match_single_atom(pattern, atom_start, atom_end, input, in_pos, in_len, ref caps)
+		if next >= 0 {
+			if next != in_pos {
+				var new_min = 0
+				if min_count > 0 {
+					new_min = min_count - 1
+				}
+				return match_star_group(
+					pattern,
+					atom_start,
+					atom_end,
+					rest,
+					pat_end,
+					input,
+					next,
+					new_min,
+					lazy,
+					in_len,
+					ref caps,
+				)
+			}
+		}
+		return -1
+	}
 	// Try matching the group one more time (greedy).
 	var int next = match_single_atom(pattern, atom_start, atom_end, input, in_pos, in_len, ref caps)
 	if next >= 0 {
@@ -711,10 +778,12 @@ func match_star_group = (
 				pattern,
 				atom_start,
 				atom_end,
+				rest,
 				pat_end,
 				input,
 				next,
 				new_min,
+				lazy,
 				in_len,
 				ref caps,
 			)
@@ -725,31 +794,45 @@ func match_star_group = (
 	}
 	// Stop repeating and try the rest of the pattern, if the minimum is met.
 	if min_count <= 0 {
-		return match_here(pattern, atom_end + 1, pat_end, input, in_pos, in_len, ref caps)
+		return match_here(pattern, rest, pat_end, input, in_pos, in_len, ref caps)
 	}
 	return -1
 }
 
-// Match the atom optionally ('?'), preferring to include it.
+// Match the atom optionally ('?'), preferring to include it unless lazy.
 func match_optional = (
 	string pattern,
 	int atom_start,
 	int atom_end,
+	int rest,
 	int pat_end,
 	string input,
 	int in_pos,
+	int lazy,
 	int in_len,
 	ref List<int> caps,
 	out int
 ) {
+	if lazy > 0 {
+		// Lazy: try without the atom first.
+		var int skip = match_here(pattern, rest, pat_end, input, in_pos, in_len, ref caps)
+		if skip >= 0 {
+			return skip
+		}
+		var int next = match_single_atom(pattern, atom_start, atom_end, input, in_pos, in_len, ref caps)
+		if next >= 0 {
+			return match_here(pattern, rest, pat_end, input, next, in_len, ref caps)
+		}
+		return -1
+	}
 	var int next = match_single_atom(pattern, atom_start, atom_end, input, in_pos, in_len, ref caps)
 	if next >= 0 {
-		var int r = match_here(pattern, atom_end + 1, pat_end, input, next, in_len, ref caps)
+		var int r = match_here(pattern, rest, pat_end, input, next, in_len, ref caps)
 		if r >= 0 {
 			return r
 		}
 	}
-	return match_here(pattern, atom_end + 1, pat_end, input, in_pos, in_len, ref caps)
+	return match_here(pattern, rest, pat_end, input, in_pos, in_len, ref caps)
 }
 
 // Report whether input.at(in_pos) belongs to the character class whose '[' is
