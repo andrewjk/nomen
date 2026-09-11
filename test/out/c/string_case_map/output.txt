@@ -1,0 +1,4 @@
+mixed 123!
+MIXED 123!
+CAFé
+café
