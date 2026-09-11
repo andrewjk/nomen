@@ -70,10 +70,26 @@ export default function tokenize(input: string, preserve_source = false): Token[
 					value = normalize_multiline_string(input.substring(status.i, end));
 					status.i = end - 1;
 				} else if (value === "'") {
-					// It's a char literal -- e.g. 'h'
-					if (input[status.i + 2] === "'") {
-						value = input.substring(status.i, status.i + 3);
-						status.i += 2;
+					// It's a char literal -- e.g. 'h'. An escape pair ('\\',
+					// '\n', '\'') or hex escape ('\xNN') is consumed as a
+					// unit and left raw for downstream decoding — the old
+					// fixed-width check mis-scanned any of those into stray
+					// backslash tokens.
+					let k = status.i + 1;
+					if (input[k] === "\\") {
+						k++;
+						if (input[k] === "x") {
+							k++;
+							while (k < input.length && /[0-9a-fA-F]/.test(input[k])) k++;
+						} else {
+							k++;
+						}
+					} else {
+						k++;
+					}
+					if (input[k] === "'") {
+						value = input.substring(status.i, k + 1);
+						status.i = k;
 					}
 				} else if (value === "/" && input[status.i + 1] === "/") {
 					// It's a one-line comment -- process until the newline
@@ -237,8 +253,19 @@ export default function tokenize(input: string, preserve_source = false): Token[
 }
 
 function consume_string(input: string, status: TokenizeStatus) {
+	// Escape pairing: a backslash consumes the NEXT char as part of an escape
+	// pair (`\\`, `\n`, `\"`, ...). Without this, `\{` was misread as an
+	// interpolation start and `\\"` misread as an escaped closing quote —
+	// i.e. literal backslashes were hazardous. The pairing is tracked
+	// left-to-right: an odd run of N backslashes escapes its successor; the
+	// check `input[j + 1] === "{"` is therefore only reached when the
+	// backslash at j is itself NOT escaped.
+	let skip_next = false;
 	for (let j = status.i + 1; j < input.length; j++) {
 		if (input[j] === "\n") {
+			// A backslash immediately before a line break is not an escape
+			// here (keeps the historical multiline-continuation scan).
+			skip_next = false;
 			const next_quote = find_next_line_quote(input, j + 1);
 			if (next_quote !== -1) {
 				let next = next_quote + 1;
@@ -247,6 +274,9 @@ function consume_string(input: string, status: TokenizeStatus) {
 			} else {
 				return j;
 			}
+		} else if (skip_next) {
+			// The second half of an escape pair — consumed as a unit.
+			skip_next = false;
 		} else if (input[j] === "\\" && input[j + 1] === "{") {
 			status.tokens.push({ value: input.substring(status.i, j), i: status.i });
 			status.i = j;
@@ -265,7 +295,11 @@ function consume_string(input: string, status: TokenizeStatus) {
 			// expression body (which could contain `"` or `\n` and confuse the
 			// surrounding string scan).
 			j = end;
-		} else if (input[j] === '"' && input[j - 1] !== "\\") {
+		} else if (input[j] === "\\") {
+			// Start of an escape pair — its successor is payload, so the
+			// next iteration skips it instead of scanning it.
+			skip_next = true;
+		} else if (input[j] === '"') {
 			return j + 1;
 		}
 	}

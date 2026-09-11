@@ -1,0 +1,8 @@
+a=[\{code}]
+b=[a\]
+c=[\[x]]
+e=[a\nb]
+f=[line1
+line2]
+nl=10 bs=92
+done

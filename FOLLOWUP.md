@@ -312,25 +312,3 @@ same project reaches C emission without OOM (it fails on the
 trait_class_locals bug above), so the difference is the test path:
 `strip_main_functions` + the generated harness + build. Worth profiling
 `run_test_file`'s build phase on this corpus.
-
-## String literal escapes: `\\X` runs and `\{` make backslashes hazardous
-
-The escape scanner processes `\` + next-char naively, so writing a literal
-backslash as `\\` is fragile:
-
-- `"\\{"` (escaped backslash, then a brace) starts INTERPOLATION — the
-  scanner appears to look for `\{` without honoring the preceding `\\`, so
-  `"\\{code}"` evaluates `{code}` as an expression.
-- `"\\[x]"` errors: after consuming `\\`, the following `\[` is treated as an
-  (unsupported) escape → `Unknown value: \` at the `[`.
-- There is no `\`` escape — emitting `\\`` for a literal backtick yields a
-  spurious backslash.
-
-Workaround (used by the allmark nomen tests and already the convention in
-Json.nm): always write literal backslashes as `\x5c` and leave `[`, `{`,
-backtick etc. bare. A left-to-right escape decoder that honors `\\` as a
-pair (or simply documenting `\\` as unsafe) would prevent this class of bug.
-
-Also: interpolations containing escaped quotes directly before `\{`
-(`" start=\"\{n}\""`) mis-tokenize catastrophically (the render-agent hit
-this; reworked to string concatenation).
