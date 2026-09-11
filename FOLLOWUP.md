@@ -285,22 +285,6 @@ trait_class_locals bug above), so the difference is the test path:
 `strip_main_functions` + the generated harness + build. Worth profiling
 `run_test_file`'s build phase on this corpus.
 
-## Tuple literal with computed elements miscompiles (both backends?)
-
-A tuple literal whose elements are computed expressions (not simple
-parameter references or literals) produces the wrong value for every
-element after the first: `return [a + 1, a + 2]` with a=10 yields
-`t._0 == 11` (correct) but `t._1 == 1` (should be 12); same for
-`[total / 100, total % 100]`. The equivalent with simple param refs
-(`return [a, b]`) works. Fully documented with failing tests in
-test/tuple-computed-elements-bug.test.ts (deliberately asserting the
-CORRECT values, so they fail until fixed). Tuples are `ArrayValuesNode`
-with a tuple type — suspects are the `return [..]` element-evaluation
-paths in build_c/build_return_node.ts and
-build_aarch64/build_return_node.ts (element temps/slots aliasing or
-evaluation-order clobbering). Found while building System.Text.Utf8,
-which returns a `DecodedChar` struct instead of `[int, int]` to dodge it.
-
 ## Residual string-byte hazards (narrowed from the Utf8-found set)
 
 The three hazards found while testing System.Text.Utf8 are fixed and
