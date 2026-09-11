@@ -130,7 +130,7 @@ export default function check_function_node(func: FunctionNode, status: CheckSta
 	const types_before = function_status.types.length;
 
 	for (let param of func.params) {
-		check_function_parameter_node(param, function_status);
+		check_function_parameter_node(param, function_status, !!func.is_library);
 	}
 
 	if (func.return_type.name) {

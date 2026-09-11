@@ -209,4 +209,61 @@ pub struct string: Stringable, Hashable, Equatable {
 		ldp x20, x21, [sp], #16
 		```
 	}
+
+	// Replace the first non-overlapping occurrence of needle with
+	// replacement. No match — or an empty needle — returns an owned copy
+	// of self. Views pass straight in (no `to_string` copy): both sides
+	// are only ever read.
+	pub func replace_first = (self, view string needle, view string replacement, out string) {
+		var sb = StringBuilder()
+		var int i = 0
+		var int n = self.length
+		var int nlen = needle.length
+		var bool replaced = nlen == 0
+		while i < n {
+			if !replaced && nlen > 0 && i + nlen <= n && match_at(self, needle, i) {
+				sb.append_view(replacement)
+				i = i + nlen
+				replaced = true
+			} else {
+				sb.append_char(self.at(i))
+				i = i + 1
+			}
+		}
+		return sb.to_string()
+	}
+
+	// Replace all non-overlapping occurrences of needle with replacement,
+	// left to right. Same edge behavior as replace_first.
+	pub func replace_all = (self, view string needle, view string replacement, out string) {
+		var sb = StringBuilder()
+		var int i = 0
+		var int n = self.length
+		var int nlen = needle.length
+		while i < n {
+			if nlen > 0 && i + nlen <= n && match_at(self, needle, i) {
+				sb.append_view(replacement)
+				i = i + nlen
+			} else {
+				sb.append_char(self.at(i))
+				i = i + 1
+			}
+		}
+		return sb.to_string()
+	}
+}
+
+// needle matches text at byte offset pos (caller guarantees pos + len fits;
+// the trailing guard makes the bound explicit so `.at` verifies).
+func match_at = (view string text, view string needle, int pos, out bool) {
+	var int i = 0
+	var int nlen = needle.length
+	var int n = text.length
+	while i < nlen && pos + i < n {
+		if text.at(pos + i) != needle.at(i) {
+			return false
+		}
+		i = i + 1
+	}
+	return i == nlen
 }

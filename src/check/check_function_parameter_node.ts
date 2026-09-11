@@ -12,7 +12,11 @@ import { is_class_type, is_owning_struct_type_requiring_move } from "./utils/own
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 
-export default function check_function_parameter_node(param: ParameterNode, status: CheckStatus) {
+export default function check_function_parameter_node(
+	param: ParameterNode,
+	status: CheckStatus,
+	is_library_scope = false,
+) {
 	if (param.is_variadic) {
 		if (!param.type.name) {
 			add_error(status, `Variadic parameter requires a type`, param.start);
@@ -107,8 +111,20 @@ export default function check_function_parameter_node(param: ParameterNode, stat
 	// A parameter may legitimately shadow a module-level `const` (those are
 	// pre-registered at the root by `gather_top_level_consts`), so only flag a
 	// clash with a non-const name — i.e. a duplicate parameter, or a collision
-	// with an in-scope `var`.
-	if (status.values.some((v) => v.name === param.name && v.declaration !== "const")) {
+	// with an in-scope `var`. In library scope, module globals are additionally
+	// exempt: library source is appended after user source, so user top-level
+	// vars sit in the enclosing scope of every library definition — but they
+	// are a join artifact, not real scope (library files cannot capture user
+	// locals; no closures). Without the exemption, any library method param
+	// (e.g. StringBuilder.append_char's `c`) collides with a same-named user
+	// top-level var the moment a new dependency edge pulls its struct into
+	// statement-order checking.
+	if (
+		status.values.some(
+			(v) =>
+				v.name === param.name && v.declaration !== "const" && !(is_library_scope && v.is_global),
+		)
+	) {
 		add_error(status, `Parameter already declared: ${param.name}`, param.start);
 	}
 

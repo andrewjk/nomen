@@ -171,6 +171,23 @@ pub struct StringBuilder {
 		```
 	}
 
+	// Append a view's bytes without materializing it. `append_string`
+	// takes an owned string, so passing a slice would need a `to_string`
+	// copy per call — this loops char by char instead (used by
+	// `string.replace_first`/`replace_all`).
+	// Append a view's bytes without materializing it. `append_string`
+	// takes an owned string, so passing a slice would need a `to_string`
+	// copy per call — this loops char by char instead (used by
+	// `string.replace_first`/`replace_all`).
+	func append_view = (ref self, view string s) {
+		var int i = 0
+		var int n = s.length
+		while i < n {
+			self.append_char(s.at(i))
+			i = i + 1
+		}
+	}
+
 	// Finalize: null-terminate, return the byte buffer as a string, and
 	// release ownership (sets `data` to 0 so the destructor won't free it).
 	func to_string = (ref self, out string) {
