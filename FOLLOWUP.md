@@ -289,18 +289,6 @@ out-parameter ABI support and consistent callee typing. Test coverage:
 test/func_field_rejected.test.ts pins the field rejection; the local gaps
 remain untested (broken shapes).
 
-## aarch64: trait dispatch with args + string return leaks
-
-Calling a trait method WITH arguments that returns a string leaks one
-allocation on aarch64 (`LEAK: 1 allocation(s)` in audit mode), e.g.
-`g.greet("!")` or `g.repeat_tag(3)` — with a bound OR rvalue receiver, on the
-unmodified baseline. Arg-less string-returning dispatch (`g.tag()`) and
-concrete (non-trait) dispatch are clean, so the leak is in the aarch64
-trait-dispatch argument path (spill/restore or the fat-string return pair
-handling around `blr`). Found while verifying the rvalue-receiver fix
-(2026-09-11); test/trait_rvalue_receiver.test.ts deliberately uses int
-returns and arg-less string returns to stay clear of it.
-
 ## CLI: `nomen test` build phase runs out of memory (OOM) on the allmark project
 
 `nomen check --in test/<file>.test.nm` completes in ~6s (12k warnings, 0

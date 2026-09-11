@@ -70,4 +70,32 @@ pub func main = (Init init) {
 		// len=1 proves pop() ran exactly once (twice would leave 0).
 		await build_and_check_output(input, "trait_rvalue_receiver_args", "1\nH\nlen=1\ndone\n", true);
 	});
+	test("owned string results through trait dispatch do not leak", async () => {
+		// A trait method returning owned heap must get the concrete-call
+		// treatment (dup + free the original) on every conformer path.
+		const input = `
+import System
+
+trait Greeter {
+	pub func greet = (self, string suffix, out string)
+}
+
+class Hello : Greeter {
+	pub func greet = (self, string suffix, out string) {
+		return "hello" + suffix
+	}
+}
+
+pub func main = (Init init) {
+	var gs = List<Greeter>()
+	gs.push(Hello())
+	var Greeter g = gs.at_or_panic(0)
+	Console.write("\\{g.greet("!")}\\n")
+	Console.write("done\\n")
+}
+`;
+		const parsed = parse_raw(input);
+		expect(parsed.errors).toEqual([]);
+		await build_and_check_output(input, "trait_owned_string_result", "hello!\ndone\n", true);
+	});
 });

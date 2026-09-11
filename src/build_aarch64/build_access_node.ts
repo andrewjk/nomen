@@ -1430,6 +1430,37 @@ function arg_is_string(node: BaseNode): boolean {
 	return t?.name === "string" && !t.is_array;
 }
 
+/**
+ * Whether every known (non-generic) conformer of `trait` implements `method`
+ * as an owned-heap string return, per the stamped classification. The dynamic
+ * dispatch result is then owned regardless of which conformer runs, so the
+ * caller takes the concrete-call path (dup + free the original). Anything
+ * else — a borrow-returning or unclassified conformer, or none at all —
+ * keeps the borrow treatment.
+ */
+function trait_method_all_conformers_owned(
+	trait: { name: string },
+	method_name: string,
+	status: BuildStatus,
+): boolean {
+	const conformers = status.structs.filter(
+		(s) => !s.is_generic && (s.traits ?? []).includes(trait.name),
+	);
+	if (conformers.length === 0) return false;
+	for (const s of conformers) {
+		const m = s.functions.find((f) => f.name === method_name);
+		if (
+			!m ||
+			m.return_type?.name !== "string" ||
+			m.return_type?.is_view ||
+			m.returns_string_borrow !== false
+		) {
+			return false;
+		}
+	}
+	return true;
+}
+
 function build_access_method(
 	node: AccessNode,
 	access_func: AccessFunctionCallNode,
@@ -3072,6 +3103,23 @@ function build_access_method(
 	// the C backend, which strdup's literals. So we deliberately do NOT set
 	// last_result_is_heap here; the concrete-call path treats such returns the
 	// same way (the literal lives in static data and is never freed).
+
+	// ...unless EVERY known conformer's implementation returns owned heap:
+	// then the dynamic result is owned regardless of which conformer runs,
+	// and the caller must dup + free the original exactly like a concrete
+	// owned-returning call (otherwise each such dispatch leaks). Mixed or
+	// unknown conformers keep the borrow treatment — a leak beats freeing a
+	// borrow. (The C backend sidesteps this: it normalizes every string
+	// return to owned at the callee, so its unconditional dup + free is
+	// always sound.)
+	if (
+		trait_target &&
+		trait_func?.return_type?.name === "string" &&
+		!trait_func.return_type?.is_view &&
+		trait_method_all_conformers_owned(trait_target, access_func.name, status)
+	) {
+		status.last_result_is_heap = true;
+	}
 
 	if (status.heap_returning_functions?.has(method_name)) {
 		status.last_result_is_heap = true;
