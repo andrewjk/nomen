@@ -318,7 +318,13 @@ export function monomorphize(
 		// Substitute type params in field default values (e.g. Buffer<T>()
 		// becomes Buffer_int() when Tree<T> is monomorphized to Tree_int).
 		if (mono_field.value) {
-			substitute_raw_in_node(mono_field.value, substitution, status.structs);
+			substitute_raw_in_node(
+				mono_field.value,
+				substitution,
+				status.structs,
+				undefined,
+				status.traits,
+			);
 		}
 		return mono_field;
 	});
@@ -376,7 +382,7 @@ export function monomorphize(
 	for (const func of generic_struct.functions) {
 		if (func.name === "#init") continue;
 		const cloned = clone_node(func) as FunctionNode;
-		substitute_raw_types(cloned, substitution, status.structs);
+		substitute_raw_types(cloned, substitution, status.structs, status.traits);
 		rename_local_labels(cloned, mono_name);
 		// Substitute type-param names on body node `.type` fields (T -> Pt), so
 		// the builder lowers struct-typed locals/args/fields correctly. self is
@@ -395,7 +401,13 @@ export function monomorphize(
 		for (const param of cloned.params) {
 			param.type = substitute_type(param.type, substitution);
 			if (param.constraint) {
-				substitute_raw_in_node(param.constraint, substitution, status.structs);
+				substitute_raw_in_node(
+					param.constraint,
+					substitution,
+					status.structs,
+					undefined,
+					status.traits,
+				);
 			}
 		}
 		// Retype body ValueNodes that reference a (non-self) param to that
@@ -443,27 +455,54 @@ export function monomorphize(
 	});
 
 	const custom_init = generic_struct.functions.find((f) => f.name === "#init" && f.has_body);
+	// A variadic-tuple #init (`...[TK, TV] pairs`) whose tuple contains a
+	// CLASS/TRAIT element cannot be cloned for a reference-typed
+	// instantiation: the pair materializes as a value struct with a
+	// trait/class-typed field (rejected — byte-copy shares the reference),
+	// and the body's borrowed pair element can't feed a `move TV` param (the
+	// ownership chain breaks at the variadic boundary). Skip the custom init
+	// and fall through to the synthesized field-based init, so
+	// `Map<string, SomeTrait>()` + `set()` works fully; passing pairs is
+	// rejected at the call site with targeted guidance (see
+	// reject_variadic_pairs_on_reference_map).
+	// The concrete type args are in scope here (flat_args) — check THOSE,
+	// not the generic declaration's unresolved TK/TV params.
+	const variadic_init_unsupported =
+		!!custom_init &&
+		custom_init.params.some((p) => p.is_variadic && p.type.tuple_types?.length) &&
+		flat_args.some(
+			(arg) =>
+				status.traits.some((tr) => tr.name === arg.name) ||
+				status.structs.some((s) => s.name === arg.name && s.is_class),
+		);
+	const effective_custom_init = variadic_init_unsupported ? undefined : custom_init;
 	// Only treat a custom #init as the monomorphized constructor when its
 	// body is real Nomen code. A raw-`#arch`-only #init (e.g. Array<T>'s) is
 	// a hand-written primitive that assumes a pointer `self` and is never
 	// invoked through the normal constructor path — keep the old behaviour
 	// of synthesizing a field-based #init for those.
 	const custom_init_is_nomen =
-		!!custom_init && custom_init.statements.some((s) => s.node_type !== "raw");
-	if (custom_init && custom_init_is_nomen) {
+		!!effective_custom_init && effective_custom_init.statements.some((s) => s.node_type !== "raw");
+	if (effective_custom_init && custom_init_is_nomen) {
 		// A generic struct with a custom #init (e.g. Map<K,V>'s variadic-tuple
 		// constructor) is cloned + type-substituted + re-checked here, so its
 		// variadic tuple param materializes against the concrete type args and
 		// its body resolves self.method() against the monomorphized struct.
-		const cloned = clone_node(custom_init) as FunctionNode;
-		substitute_raw_types(cloned, substitution, status.structs);
+		const cloned = clone_node(effective_custom_init) as FunctionNode;
+		substitute_raw_types(cloned, substitution, status.structs, status.traits);
 		rename_local_labels(cloned, mono_name);
 		cloned.return_type = new Type(mono_name);
 		cloned.type_params = [];
 		for (const param of cloned.params) {
 			param.type = substitute_type(param.type, substitution);
 			if (param.constraint) {
-				substitute_raw_in_node(param.constraint, substitution, status.structs);
+				substitute_raw_in_node(
+					param.constraint,
+					substitution,
+					status.structs,
+					undefined,
+					status.traits,
+				);
 			}
 		}
 		// The self param's type was the generic struct name (e.g. "Map"); it
@@ -1226,6 +1265,7 @@ function substitute_raw_types(
 	func: FunctionNode,
 	substitution: Map<string, string>,
 	structs: StructNode[],
+	traits: { name: string }[],
 ) {
 	// Compute params whose type resolves to a non-simple struct: in the C
 	// backend those are passed by pointer (`struct T *value`), but raw C
@@ -1246,7 +1286,7 @@ function substitute_raw_types(
 		}
 	}
 	for (const stmt of func.statements) {
-		substitute_raw_in_node(stmt, substitution, structs, deref_params);
+		substitute_raw_in_node(stmt, substitution, structs, deref_params, traits);
 	}
 }
 
@@ -1391,11 +1431,23 @@ function raw_block_is_pure_asm(value: string): boolean {
 	return false;
 }
 
+function is_reference_type_arg(
+	t: Type,
+	structs: StructNode[],
+	traits: { name: string }[],
+): boolean {
+	return (
+		!!traits.some((tr) => tr.name === t.name) ||
+		!!structs.find((s) => s.name === t.name && s.is_class)
+	);
+}
+
 function substitute_raw_in_node(
 	node: BaseNode,
 	substitution: Map<string, string>,
 	structs: StructNode[],
 	deref_params: Set<string> = new Set(),
+	traits: { name: string }[] = [],
 ) {
 	if (node.node_type === "raw") {
 		const raw = node as RawNode;
@@ -1468,6 +1520,17 @@ function substitute_raw_in_node(
 	// generic method) and rewrite a func_call constructor's name to its
 	// monomorphized symbol so the build keys `_init` correctly.
 	const any_node = node as any;
+	// Reference-typed element routing: a `Buffer<T>` whose (substituted) type
+	// arg resolves to a CLASS or TRAIT must lower as `ClassBuffer<T>` — the
+	// field-level rewrite in monomorphize does this for struct FIELDS, but a
+	// constructor call inside a generic BODY (e.g. Map.rehash's
+	// `swap Buffer<TV>()`) only passes through here. Without the swap, the
+	// name still reads `Buffer_Animal` while the field is `ClassBuffer_Animal`
+	// — mismatched types, undeclared functions.
+	const route_reference_elem = (base: string, args: Type[]): string =>
+		base === "Buffer" && args.length === 1 && is_reference_type_arg(args[0], structs, traits)
+			? "ClassBuffer"
+			: base;
 	if (node.node_type === "func_call" && any_node.type_args?.length) {
 		const old_args = any_node.type_args as Type[];
 		any_node.type_args = old_args.map((t: Type) => substitute_type(t, substitution));
@@ -1481,7 +1544,10 @@ function substitute_raw_in_node(
 		const base_name = any_node.name.endsWith(old_suffix)
 			? any_node.name.slice(0, any_node.name.length - old_suffix.length)
 			: any_node.name;
-		any_node.name = mono_type_name(base_name, any_node.type_args);
+		any_node.name = mono_type_name(
+			route_reference_elem(base_name, any_node.type_args),
+			any_node.type_args,
+		);
 	} else if (node.node_type === "access_func" && any_node.type_args?.length) {
 		any_node.type_args = any_node.type_args.map((t: Type) => substitute_type(t, substitution));
 	}
@@ -1496,6 +1562,15 @@ function substitute_raw_in_node(
 	// method calls on the local against the unresolved `Buffer_TK` symbol.
 	if (node.node_type === "declare" && any_node.type?.name) {
 		any_node.type = substitute_type(any_node.type, substitution);
+		// Route Buffer<X> -> ClassBuffer<X> when X is a class/trait, matching
+		// the field rewrite (e.g. Map.rehash's `var Buffer<TV> old_values`).
+		if (
+			any_node.type.name === "Buffer" &&
+			any_node.type.type_args?.length === 1 &&
+			is_reference_type_arg(any_node.type.type_args[0] as Type, structs, traits)
+		) {
+			any_node.type.name = "ClassBuffer";
+		}
 		if (any_node.func_return_type?.name) {
 			any_node.func_return_type = substitute_type(any_node.func_return_type, substitution);
 		}
@@ -1504,34 +1579,34 @@ function substitute_raw_in_node(
 	if (any_node.statements && Array.isArray(any_node.statements)) {
 		for (const child of any_node.statements) {
 			if (child && typeof child === "object" && "node_type" in child) {
-				substitute_raw_in_node(child, substitution, structs, deref_params);
+				substitute_raw_in_node(child, substitution, structs, deref_params, traits);
 			}
 		}
 	}
 	if (any_node.params && Array.isArray(any_node.params)) {
 		for (const child of any_node.params) {
 			if (child && typeof child === "object" && "node_type" in child) {
-				substitute_raw_in_node(child, substitution, structs, deref_params);
+				substitute_raw_in_node(child, substitution, structs, deref_params, traits);
 			}
 		}
 	}
 	if (any_node.value && any_node.value.node_type) {
-		substitute_raw_in_node(any_node.value, substitution, structs, deref_params);
+		substitute_raw_in_node(any_node.value, substitution, structs, deref_params, traits);
 	}
 	if (any_node.left_value?.node_type) {
-		substitute_raw_in_node(any_node.left_value, substitution, structs, deref_params);
+		substitute_raw_in_node(any_node.left_value, substitution, structs, deref_params, traits);
 	}
 	if (any_node.right_value?.node_type) {
-		substitute_raw_in_node(any_node.right_value, substitution, structs, deref_params);
+		substitute_raw_in_node(any_node.right_value, substitution, structs, deref_params, traits);
 	}
 	if (any_node.target?.node_type) {
-		substitute_raw_in_node(any_node.target, substitution, structs, deref_params);
+		substitute_raw_in_node(any_node.target, substitution, structs, deref_params, traits);
 	}
 	if (any_node.access?.node_type) {
-		substitute_raw_in_node(any_node.access, substitution, structs, deref_params);
+		substitute_raw_in_node(any_node.access, substitution, structs, deref_params, traits);
 	}
 	if (any_node.swap?.node_type) {
-		substitute_raw_in_node(any_node.swap, substitution, structs, deref_params);
+		substitute_raw_in_node(any_node.swap, substitution, structs, deref_params, traits);
 	}
 }
 

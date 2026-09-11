@@ -388,11 +388,6 @@ function evaluate_operation(
 		const left = evaluate_const_condition(op.left_value, status);
 		const right = evaluate_const_condition(op.right_value, status);
 		if (op.op === "&&") {
-			if (process.env.NOMEN_DBG) {
-				const L = evaluate_operation(op.left_value ?? op, status);
-				const R = evaluate_operation(op.right_value ?? op, status);
-				console.error("DBG && left=", L, "right=", R);
-			}
 			if (left === false || right === false) return false;
 			if (left === "unsafe" || right === "unsafe") return "unsafe";
 			if (left === true && right === true) return true;

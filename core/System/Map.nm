@@ -27,6 +27,9 @@ pub struct Map<TK: Hashable + Equatable, TV> {
 	pub func set = (ref self, move TK key, move TV value) {
 		var int cap = self.keys.cap
 		if cap == 0 {
+			// alloc_T: for Buffer<TK> it is T_SIZE-aware (string keys are
+			// 16-byte slots); for ClassBuffer<TV> it delegates to alloc_int
+			// (one pointer per slot). Both have it for generic parity.
 			cap = self.keys.alloc_T(8)
 			self.values.alloc_T(8)
 			self.used.alloc(8)

@@ -29,6 +29,17 @@ pub struct ClassBuffer<T> {
 		```
 	}
 
+	// Semantic parity with Buffer<T>.alloc_T: generic code (e.g. Map#init's
+	// `self.values.alloc_T(N)`) forwards to either Buffer — where alloc_T is
+	// T_SIZE-aware (string slots are 16 bytes) — or this ClassBuffer, whose
+	// slots are always one pointer wide. The compiler routes value-struct
+	// element types to Buffer and class/trait elements to ClassBuffer
+	// (monomorphize's field rewrite), so a call arriving HERE is always
+	// pointer-sized: delegate to alloc_int.
+	func alloc_T = (ref self, int size, out int: out >= size) {
+		return self.alloc_int(size)
+	}
+
 	func grow_int = (ref self, int needed, out int: out >= needed) {
 		```
 		#arch: c

@@ -249,26 +249,26 @@ func fields, `Map<string, int>` indices instead of reference-valued maps,
 `--arch c` for the aarch64 mis-binds, no string-literal defaults on class
 fields), but each should be fixed in the compiler:
 
-## `Map` reference-typed values (class/trait) blocked by variadic-tuple + field rules
+## Map variadic pairs constructor with reference-typed values
 
-Remaining after the struct-value fix (`return 0` now lowers to a zeroed
-compound literal, and value-struct values round-trip through
-`Buffer<TV>` on both backends — see test/trait_class_locals_scope.test.ts):
+After the reference-value routing fixes (`swap Buffer<TV>()` in Map.rehash
+and Map's `alloc_T` forwards now lower to `ClassBuffer` for class/trait
+elements; ClassBuffer gained `alloc_T` for generic parity), reference-valued
+Maps work end to end via `Map() + set()` — see
+test/map_reference_values.test.ts.
 
-- `Map<string, SomeTrait>` / `Map<string, SomeClass>` still fail to CHECK.
-  The variadic `#init` is re-checked per instantiation, and its
-  `...[TK, TV] pairs` tuple materializes `_Tuple_string_Animal` — a value
-  struct with a trait/class-typed field, which check_struct_node rejects
-  ("struct fields cannot be trait/class types") for the sound byte-copy
-  double-free reason. The mono'd `#init` body then also trips
-  "Cannot move a borrowed value" on `set(pairs.at(i)._0, pairs.at(i)._1)`
-  (borrowed pair element into a `move TV` param).
-
-  A fix needs a sound ownership story for reference-typed tuple elements
-  (e.g. materialize the pair as a class when any element is class/trait, or
-  borrow-only variadic tuples), which cascades through the variadic ABI.
-  The C cast-to-struct-zero fix lives in build_return_node.ts /
-  build_cast_node.ts (2026-09-11).
+Still gated: the VARIADIC pairs constructor (`Map<string, Animal>(["a",
+Dog()])`). The variadic `#init` is skipped at instantiation when TV is a
+class/trait (monomorphize's `variadic_init_unsupported` — the pair tuple
+materializes as a value struct with a trait/class-typed field, rejected for
+the byte-copy double-free reason, and the body's borrowed pair element can't
+feed a `move TV` param soundly). Passing pairs to a reference-valued Map
+currently errors at the call site. Lifting this gate needs the ownership
+work agreed in the 2026-09-11 design discussion: classify trait fields like
+class fields in `is_owning_struct_*`, allow class/trait fields in value
+structs (owning aggregates, move-only assignment), and allow borrowed → move
+when the source field's container doesn't destroy it (with the field
+invalidated against re-read).
 
 ## CLI: `nomen test` build phase runs out of memory (OOM) on the allmark project
 
