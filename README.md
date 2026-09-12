@@ -575,7 +575,7 @@ Console.write("\{p.name} \{p.x} \{p.y}")
 var [name, x, y] = p
 ```
 
-To build a _named_ struct, call its constructor. Append `[ field = value, ... ]` with `+` to override fields that have declared defaults, applied after construction:
+To build a _named_ struct, call its constructor. Seed a literal from it with `..` to override fields that have declared defaults, applied after construction:
 
 ```nomen
 struct Circle {
@@ -596,7 +596,7 @@ struct Layout {
     var int shrink = 0
 }
 
-const Layout big = Layout() + [ grow = 2, shrink = 3 ]
+const Layout big = [ .. Layout(), grow = 2, shrink = 3 ]
 ```
 
 The anonymous-struct type is inferred and has no source-level name, so it can only be used where its type can be inferred. Overrides may only target fields with a declared default; required fields are set positionally by the constructor call.

@@ -1,4 +1,4 @@
-import emit_field_overrides from "../build/emit_field_overrides.ts";
+import emit_field_overrides, { has_field_overrides } from "../build/emit_field_overrides.ts";
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import call_in_set from "../build_common/call_in_set.ts";
@@ -2417,7 +2417,7 @@ export default function build_declaration_node(
 	// whose `grow` field has a declared default) are applied as post-
 	// construction field assignments after the constructor returned. The
 	// synthetic AssignmentNodes reuse the existing assignment build path.
-	if (node.value?.node_type === "func_call") {
+	if (node.value && has_field_overrides(node.value)) {
 		emit_field_overrides(node.name, node.value, build_node, status);
 	}
 }

@@ -1,3 +1,4 @@
+import emit_field_overrides, { has_field_overrides } from "../build/emit_field_overrides.ts";
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
@@ -576,6 +577,13 @@ function build_swap(node: AssignmentNode, status: BuildStatus, nir_swap?: NirExp
  * `build_node(value)` + newline tail otherwise.
  */
 export function get_source_address(value: BaseNode, status: BuildStatus, nir?: NirExpr | null) {
+	if (value.node_type === "anon_struct" && (value as any).base) {
+		// A base-bearing struct literal addresses like its base: the copy
+		// below lands the base's bytes in the destination; overrides apply
+		// after the copy.
+		get_source_address((value as any).base, status);
+		return;
+	}
 	if (value.node_type === "value") {
 		const name = (value as ValueNode).value;
 		const paramReg = status.function_param_regs?.get(name);
@@ -983,6 +991,11 @@ export default function build_assignment_node(
 					emit_var_address(status, "x1", name);
 					emit_struct_copy("x0", "x1", 0, struct_size, status);
 				}
+			}
+			// `x = [ .. <base>, f = v ]`: the copy above landed the base's
+			// bytes; apply the override field stores to the destination now.
+			if (has_field_overrides(node.right_value)) {
+				emit_field_overrides(name, node.right_value, build_node, status);
 			}
 			build_swap(node, status, nir_swap);
 			return;

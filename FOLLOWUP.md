@@ -352,3 +352,31 @@ Fix directions, when picked up (either closes the leak class):
    entry above): strdup on every assignment including literals,
    `<Struct>_destroy` frees every field. Deletes `heap_string_fields` and
    this whole class; costs a malloc per literal store into a value struct.
+
+## Constructor field-override (`[ .. <base>, ... ]`) defects
+
+Found while verifying the allmark port's "struct literals / builders" ask.
+The base-seeded literal `[ .. <base>, field = value, ... ]` (which replaced
+the retired `T() + [ ... ]` syntax) is sound on both backends for scalar
+defaulted fields — constructor, factory, and variable bases — but:
+
+- **`Array<T>`/`List<T>`-typed fields cannot have default values.** A field
+  like `var Array<int> children = Array<int>()` emits `_self.children = {};`
+  on C (clang rejects it: "expected expression") and segfaults the aarch64
+  binary at runtime. Defaults are therefore limited to scalar-typed fields
+  today, which blocks the one-expression-factory pattern for any node struct
+  carrying a children list.
+- **Override RHS is evaluated after the base lands in the destination.** In
+  `m = [ .. x, node_type = m.node_type ]` the override expression reads the
+  destination's post-copy value: both backends copy the base into the target
+  (or run `#init`) BEFORE evaluating the `[ ... ]` values, so a self-reference
+  silently yields the new/clobbered value instead of the pre-assignment one.
+  No error, just a wrong value. Workaround: copy to a temp first
+  (`var string saved = m.node_type`). Fix direction: evaluate override value
+  expressions into temporaries before emitting the base copy/init.
+- **Override values' reads are invisible to NIR traffic/liveness.** The
+  lowering keeps the base's reads (via the wrap expr) but the `[ ... ]`
+  field expressions ride the node (same exposure the `+` form had). Only
+  matters if an override value reads something whose last use is the
+  override itself; promotion would then conservatively keep it in memory —
+  sound, just not optimal.

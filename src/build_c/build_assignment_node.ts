@@ -1,4 +1,4 @@
-import emit_field_overrides from "../build/emit_field_overrides.ts";
+import emit_field_overrides, { has_field_overrides } from "../build/emit_field_overrides.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import { is_string_borrow } from "../build_common/string_return_analysis.ts";
@@ -9,7 +9,6 @@ import AccessNode from "../nodes/AccessNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
-import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import { build_vtable_target } from "./build_access_node.ts";
@@ -851,11 +850,7 @@ export default function build_assignment_node(
 	// `x = T(...) + [ ... ]`: apply the named-field overrides to the LHS
 	// after the construction. Only a simple variable LHS is handled here;
 	// field-target overrides in assignment are an edge case.
-	if (
-		node.left_value.node_type === "value" &&
-		node.right_value.node_type === "func_call" &&
-		(node.right_value as FunctionCallNode).field_overrides?.length
-	) {
+	if (node.left_value.node_type === "value" && has_field_overrides(node.right_value)) {
 		const lname = (node.left_value as ValueNode).value;
 		emit_field_overrides(lname, node.right_value, build_node, status, ";\n", ";\n");
 	}

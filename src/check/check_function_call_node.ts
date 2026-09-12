@@ -89,11 +89,12 @@ export default function check_function_call_node(
 		}
 	}
 
-	// `T(args) + [ field = value, ... ]` is collapsed onto the call at parse
-	// time as `field_overrides`. Validate them against the struct's fields:
-	// each must name a real field that is NOT an #init param (set positionally)
-	// and HAS a declared default (required fields are owned by #init). This
-	// keeps the overlay from becoming a back door around construction.
+	// `T(args) + [ field = value, ... ]` (retired) and a base-bearing
+	// `[ .. T(args), ... ]` literal both arrive as `field_overrides` on the
+	// call. Validate them against the struct's fields: each must name a real
+	// field that is NOT an #init param (set positionally) and HAS a declared
+	// default (required fields are owned by #init). This keeps the overlay
+	// from becoming a back door around construction.
 	if (node.field_overrides?.length) {
 		const override_struct = status.structs.findLast((s) => s.name === node.name);
 		if (override_struct && func) {
@@ -2026,7 +2027,7 @@ function infer_scalar_type(node: BaseNode, status: CheckStatus): Type {
 	return new Type("");
 }
 
-function validate_field_overrides(
+export function validate_field_overrides(
 	node: FunctionCallNode,
 	struct: StructNode,
 	init_func: FunctionNode,

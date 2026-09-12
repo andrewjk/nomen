@@ -194,6 +194,29 @@ printCircle(Circle("c", 25, 70, 15))
 `;
 		expect(compile_main(input)).toEqual([]);
 	});
+
+	test("overriding fields on construction (base-seeded literal)", () => {
+		// SPEC "Overriding fields on construction": the base runs first
+		// (required fields positionally), named fields must have declared
+		// defaults; the base may be a constructor, a factory result, or a
+		// plain variable (owning structs require move/.copy()).
+		const input = `
+struct LayoutParams {
+    var int grow = 0
+    var int shrink = 0
+}
+
+func layout = (int grow, out LayoutParams) {
+    return [ .. LayoutParams(), grow = grow, shrink = 3 ]
+}
+
+const LayoutParams DEF = [ .. LayoutParams(), grow = 2, shrink = 3 ]
+const LayoutParams TWO = [ .. DEF, grow = 2 ]
+const LayoutParams THREE = layout(7)
+Console.write("\\{DEF.grow} \\{DEF.shrink} \\{TWO.grow} \\{TWO.shrink} \\{THREE.grow} \\{THREE.shrink}")
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
 });
 
 describe("spec: extension methods", () => {

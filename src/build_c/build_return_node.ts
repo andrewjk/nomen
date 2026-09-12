@@ -1,4 +1,4 @@
-import emit_field_overrides from "../build/emit_field_overrides.ts";
+import emit_field_overrides, { has_field_overrides } from "../build/emit_field_overrides.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import {
 	collect_expression_branch_values,
@@ -10,7 +10,6 @@ import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
-import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_array_values_node from "./build_array_values_node.ts";
@@ -519,10 +518,7 @@ export default function build_return_node(
 		status.code += `;\n`;
 		// `return T(...) + [ ... ]`: apply the named-field overrides to the
 		// _return_val temp before returning it.
-		if (
-			node.value.node_type === "func_call" &&
-			(node.value as FunctionCallNode).field_overrides?.length
-		) {
+		if (has_field_overrides(node.value)) {
 			emit_field_overrides("_return_val", node.value, build_node, status, "", ";\n");
 		}
 		reclaim_all_c_scopes(status);

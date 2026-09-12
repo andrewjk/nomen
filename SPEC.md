@@ -481,7 +481,7 @@ The type is inferred from the literal and has no source-level name, so an anonym
 
 #### Overriding fields on construction
 
-Appending the same `[ field = value, ... ]` form to a constructor with `+` overrides fields that have declared defaults, applied after `#init` runs. Required (non-defaulted) fields are set positionally by the constructor call:
+A struct literal may be seeded from a base expression with `..`, then override fields by name. The base runs first (its required fields are set positionally by the constructor call); each named field must have a declared default and is applied after the base is constructed:
 
 ```
 struct LayoutParams {
@@ -489,11 +489,22 @@ struct LayoutParams {
     var int shrink = 0
 }
 
-const LayoutParams DEF = LayoutParams() + [ grow = 2, shrink = 3 ]
-const LayoutParams ONE = LayoutParams() + [ grow = 7 ]
+const LayoutParams DEF = [ .. LayoutParams(), grow = 2, shrink = 3 ]
+const LayoutParams ONE = [ .. LayoutParams(), grow = 7 ]
 ```
 
-`T(...) + [ ... ]` is an ordinary expression and works in declarations, assignments, return values, and call arguments. Overrides may only target fields with a declared default.
+The base may be any value-struct expression — a constructor call, a factory function's result, or a plain variable (a copy; an owning struct requires `move` or `.copy()`):
+
+```
+func layout = (int grow, out LayoutParams) {
+    return [ .. LayoutParams(), grow = grow, shrink = 3 ]
+}
+
+const LayoutParams DEF = [ .. LayoutParams(), grow = 2, shrink = 3 ]
+const LayoutParams TWO = [ .. DEF, grow = 2 ]
+```
+
+`[ .. <base>, ... ]` is an ordinary expression and works in declarations, assignments, return values, and call arguments. Overrides may only target fields with a declared default; required fields are set positionally by the constructor call.
 
 ### Tuple Types
 

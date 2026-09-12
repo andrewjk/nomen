@@ -430,6 +430,16 @@ function expr(ctx: LowerCtx, n: BaseNode | null | undefined): NirExpr {
 			// rides whole (its facts carry the arg reads for liveness).
 			return { kind: "spawn", node: n, call: expr(ctx, (n as SpawnNode).call) };
 		}
+		case "anon_struct": {
+			// A base-bearing literal (`[ .. <base>, f = v ]`) lowers as a wrap
+			// of its base: the base's reads ride the IR, and the emitter routes
+			// the node back to build_node — which emits the base copy plus the
+			// override field stores. Override value reads stay with the node,
+			// exactly like the retired `T(...) + [ ... ]` form's
+			// `field_overrides`.
+			const anon = n as import("../nodes/AnonStructNode.ts").default;
+			return { kind: "wrap", node: n, inner: anon.base ? expr(ctx, anon.base) : null };
+		}
 		case "func": {
 			// A function used as a VALUE: `var func (int) handler { … }`
 			// declares a function-typed variable whose value is the

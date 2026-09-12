@@ -1,3 +1,4 @@
+import emit_field_overrides, { has_field_overrides } from "../build/emit_field_overrides.ts";
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import { is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
@@ -10,12 +11,13 @@ import {
 import { is_float_type } from "../built_in_types.ts";
 import type { NirExpr } from "../nir/nir.ts";
 import AccessNode from "../nodes/AccessNode.ts";
+import AnonStructNode from "../nodes/AnonStructNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
-import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import { resolve_static_value } from "./build_array_values_node.ts";
+import { get_source_address } from "./build_assignment_node.ts";
 import { emit_string_array_labels, resolve_array_element } from "./build_declaration_node.ts";
 import build_node from "./build_node.ts";
 import { emit_expr_from_nir } from "./emit_nir.ts";
@@ -31,6 +33,8 @@ import {
 	release_heap_string_fields,
 } from "./utils/auto_destroy.ts";
 import { allocate_stack_space, emit_var_address, emit_var_store } from "./utils/stack_var.ts";
+
+let temp_counter = 0;
 import { emit_pair_store_x29, emit_strdup_string } from "./utils/string_pair.ts";
 import { emit_struct_copy, get_enum_sret_size, get_struct_size } from "./utils/struct_layout.ts";
 import { emit_view_materialize_owned, is_view_value } from "./utils/view_value.ts";
@@ -324,9 +328,7 @@ export default function build_return_node(
 		// the temp where field overrides are applied. Force the temp path for
 		// override constructors so the overrides land on the temp, then the
 		// copy below (x0 → return buffer) carries them through.
-		const override_ctor =
-			node.value?.node_type === "func_call" &&
-			!!(node.value as FunctionCallNode).field_overrides?.length;
+		const override_ctor = has_field_overrides(node.value);
 		const saved_buffer = override_ctor ? status.struct_return_buffer : undefined;
 		if (override_ctor) status.struct_return_buffer = undefined;
 		// A float return rides the d0 convention — request the d0 fast path
@@ -335,7 +337,30 @@ export default function build_return_node(
 		// don't consume the flag and land in x0; the tail below moves them.
 		const ret_is_float = current_return_is_float(status);
 		if (ret_is_float) status.float_result_in_d0 = true;
-		emit_return_value(node.value, nir_value, status);
+		if (node.value?.node_type === "anon_struct") {
+			// `return [ .. <base>, f = v ]`: copy the base into a fresh temp
+			// (the return must not alias the base's storage), apply the
+			// overrides to the temp, and leave x0 = temp address so the copy
+			// below (x0 → return buffer) carries the full value through.
+			const anon = node.value as AnonStructNode;
+			const struct_size = get_struct_size(anon.type!.name, status);
+			const temp_name = `_anon_ret_${temp_counter++}`;
+			const offset = allocate_stack_space(status, struct_size);
+			status.stack_offsets!.set(temp_name, offset);
+			if (!status.variable_types) status.variable_types = new Map();
+			status.variable_types.set(temp_name, anon.type!);
+			get_source_address(anon.base!, status);
+			if (!status.code.endsWith("\n")) status.code += "\n";
+			emit_var_address(status, "x1", temp_name);
+			emit_struct_copy("x0", "x1", 0, struct_size, status);
+			if ((anon.base! as ValueNode).is_moved) {
+				mark_moved_if_struct(anon.base!, status);
+			}
+			emit_field_overrides(temp_name, anon, build_node, status);
+			emit_var_address(status, "x0", temp_name);
+		} else {
+			emit_return_value(node.value, nir_value, status);
+		}
 		if (ret_is_float) {
 			if (!status.code.endsWith("\n")) {
 				status.code += "\n";

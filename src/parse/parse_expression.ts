@@ -127,7 +127,7 @@ function is_anonymous_function(status: ParseStatus): boolean {
 	return false;
 }
 
-function parse_anon_struct(start: number, status: ParseStatus): AnonStructNode {
+function parse_anon_struct(start: number, status: ParseStatus, base?: BaseNode): AnonStructNode {
 	const fields: { name: string; value: BaseNode }[] = [];
 	while (peek_current(status) !== "]") {
 		const name = consume_name(status);
@@ -137,7 +137,9 @@ function parse_anon_struct(start: number, status: ParseStatus): AnonStructNode {
 		if (!accept(",", status)) break;
 	}
 	expect("]", status);
-	return new AnonStructNode(start, fields);
+	const node = new AnonStructNode(start, fields);
+	node.base = base;
+	return node;
 }
 
 function parse_postfix_chain(status: ParseStatus, node: BaseNode, leading_value: string): BaseNode {
@@ -199,6 +201,17 @@ function parse_primary(status: ParseStatus, value: string): BaseNode {
 			if (next && after_next === "=") {
 				consume(status);
 				return parse_anon_struct(start, status);
+			}
+			// `[ .. <base>, field = value, ... ]`: a struct literal seeded from
+			// a base expression. The base is parsed as a full expression (it
+			// runs until the `,` or `]`), then named fields follow. The base
+			// may also stand alone (`[ .. x ]` is a copy of `x`).
+			if (next === "..") {
+				consume(status);
+				consume(status);
+				const base = parse_expression(status);
+				accept(",", status);
+				return parse_anon_struct(start, status, base);
 			}
 			consume(status);
 			const node = new ArrayValuesNode(start);
@@ -322,25 +335,6 @@ export default function parse_expression(status: ParseStatus, allow_assignment =
 			case ">=": {
 				consume(status);
 				const expression = parse_expression(status, allow_assignment);
-				// `T(args) + [ field = value, ... ]`: a struct constructor
-				// extended with named-field overrides for defaulted fields.
-				// Merge the literal onto the call as field_overrides (the
-				// checker validates them against the struct's fields). The
-				// anon struct is otherwise not a legal value, so this collapse
-				// is the only place it can attach.
-				if (
-					current_value === "+" &&
-					node.node_type === "func_call" &&
-					expression.node_type === "anon_struct"
-				) {
-					const fc = node as FunctionCallNode;
-					const anon = expression as AnonStructNode;
-					fc.field_overrides = anon.fields.map((f) => ({
-						name: f.name,
-						value: f.value,
-					}));
-					break;
-				}
 				if (is_operation_node(expression)) {
 					node = restructure_op(
 						start,

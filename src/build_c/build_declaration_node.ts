@@ -1,4 +1,4 @@
-import emit_field_overrides from "../build/emit_field_overrides.ts";
+import emit_field_overrides, { has_field_overrides } from "../build/emit_field_overrides.ts";
 import call_in_set from "../build_common/call_in_set.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
@@ -811,7 +811,7 @@ export default function build_declaration_node(
 			// returned. Routing through build_assignment_node means value
 			// structs, classes, struct-typed fields, and strings all reuse
 			// the existing assignment path.
-			if (node.value?.node_type === "func_call") {
+			if (has_field_overrides(node.value)) {
 				emit_field_overrides(safe_name, node.value, build_node, status, ";\n", ";\n");
 			}
 		}

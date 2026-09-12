@@ -131,7 +131,7 @@ Console.write("\\{s.b} \\{s.c}")
 	});
 
 	test("named-field struct literal overrides defaults", async () => {
-		// `T() + [ field = val, … ]` runs #init (no args — every field has a
+		// `[ .. T(), field = val, … ]` runs #init (no args — every field has a
 		// default), then applies the named fields as post-construction
 		// overrides. Mirrors the GUI geometry `DEFAULT_PARAMS` form.
 		const input = `
@@ -139,8 +139,8 @@ struct LP {
   var int grow = 0
   var int shrink = 0
 }
-const LP DEF = LP() + [ grow = 2, shrink = 3 ]
-const LP ONE = LP() + [ grow = 7 ]
+const LP DEF = [ .. LP(), grow = 2, shrink = 3 ]
+const LP ONE = [ .. LP(), grow = 7 ]
 Console.write("\\{DEF.grow} \\{DEF.shrink} \\{ONE.grow} \\{ONE.shrink}")
 `;
 		await build_and_check_output(input, "struct_named_field_literal_defaults", "2 3 7 0");
@@ -152,7 +152,7 @@ struct Mixed {
   var int a
   var int b = 5
 }
-const Mixed M = Mixed(1) + [ b = 9 ]
+const Mixed M = [ .. Mixed(1), b = 9 ]
 const Mixed N = Mixed(4)
 Console.write("\\{M.a} \\{M.b} \\{N.a} \\{N.b}")
 `;
@@ -160,7 +160,7 @@ Console.write("\\{M.a} \\{M.b} \\{N.a} \\{N.b}")
 	});
 
 	test("named-field struct literal with enum shorthand values", async () => {
-		// The geometry types need `LayoutParams() + [ width = .auto, grow = 1 ]`-style
+		// The geometry types need `[ .. LayoutParams(), width = .auto, grow = 1 ]`-style
 		// overlays whose override values are enum shorthands. These must resolve to the
 		// mangled enum case (with is_enum_shorthand) at check time, else the
 		// aarch64 build emits an illegal text relocation (`adr x0, .auto`).
@@ -173,7 +173,7 @@ struct LP {
   var Len width = .auto
   var int grow = 0
 }
-const LP DEF = LP() + [ width = .fixed(50), grow = 1 ]
+const LP DEF = [ .. LP(), width = .fixed(50), grow = 1 ]
 match DEF.width {
   case .auto -> Console.write("auto \\{DEF.grow}")
   case .fixed(n) -> Console.write("fixed \\{n} \\{DEF.grow}")
@@ -183,9 +183,10 @@ match DEF.width {
 	});
 
 	test("named-field overrides in assignment, return, and call-arg positions", async () => {
-		// `T(...) + [ ... ]` must work as a general expression, not only as the
-		// value of a declaration: reassignment, a return value, and an inline
-		// call argument all need to apply the overrides after construction.
+		// `[ .. T(...), ... ]` must work as a general expression, not only as
+		// the value of a declaration: reassignment, a return value, and an
+		// inline call argument all need to apply the overrides after
+		// construction.
 		const input = `
 struct Mixed {
   var int a
@@ -197,15 +198,15 @@ func show = (Mixed m) {
 }
 
 func make = (int a, out Mixed) {
-  return Mixed(a) + [ b = a + 100 ]
+  return [ .. Mixed(a), b = a + 100 ]
 }
 
-var Mixed m = Mixed(1) + [ b = 9 ]
-m = Mixed(2) + [ b = 7 ]
+var Mixed m = [ .. Mixed(1), b = 9 ]
+m = [ .. Mixed(2), b = 7 ]
 show(m)
 var Mixed n = make(3)
 show(n)
-show(Mixed(5) + [ b = 50 ])
+show([ .. Mixed(5), b = 50 ])
 `;
 		await build_and_check_output(
 			input,

@@ -242,6 +242,14 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 		}
 		case "anon_struct": {
 			const anon = node as AnonStructNode;
+			// A base-bearing literal (`[ .. <base>, ... ]`) emits its base
+			// expression — the destination slot gets a copy of the base (the
+			// owning-struct copy/move rule was enforced at check time); the
+			// destination sites apply the field overrides afterwards.
+			if (anon.base) {
+				build_node(anon.base, status);
+				break;
+			}
 			for (const field of anon.fields) {
 				build_node(field.value, status);
 			}
