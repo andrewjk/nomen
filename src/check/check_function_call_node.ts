@@ -1344,6 +1344,15 @@ export function substitute_type(type: Type, substitution: Map<string, string>): 
 function fold_substituted_constant_ifs(statements: BaseNode[]) {
 	for (let i = statements.length - 1; i >= 0; i--) {
 		const stmt = statements[i];
+		// An `unsafe { ... }` wrapper (the library convention: unsafe-ness is
+		// an implementation detail, so bodies nest the constant-if inside the
+		// block) — fold inside its statement list in place.
+		if (stmt.node_type === "unsafe") {
+			fold_substituted_constant_ifs(
+				(stmt as import("../nodes/UnsafeBlockNode.ts").default).statements,
+			);
+			continue;
+		}
 		if (stmt.node_type !== "if") continue;
 		const if_else = stmt as import("../nodes/IfElseNode.ts").default;
 		if (if_else.if_branch) fold_substituted_constant_ifs(if_else.if_branch.statements);

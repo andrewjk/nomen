@@ -17,10 +17,10 @@ unsafe {
 		).toBe(true);
 	});
 
-	test("library unsafe func with ptr indexing compiles clean", () => {
-		// The spec's library-side example (`unsafe func decode = ...` with
-		// `(self as ptr char)[i]`) is shaped like the core String.at primitive;
-		// parse+check a program that pulls the library and proves no errors.
+	test("library unsafe body with ptr indexing compiles clean", () => {
+		// The spec's ptr-indexing example is shaped like the core String.at
+		// primitive (a `func` with an `unsafe { ... }` body); parse+check a
+		// program that pulls the library and proves no errors.
 		const source = `import System
 
 pub func main = () {

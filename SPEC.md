@@ -2151,6 +2151,12 @@ unsafe func decode = (ref self, int i, out char) {
 }
 ```
 
+The two forms are interchangeable; prefer the block form. The System
+library itself uses `func` with an `unsafe { ... }` block rather than
+`unsafe func`, so unsafe-ness stays an implementation detail of the
+library's internals — callers see an ordinary function that has already
+been vetted.
+
 Inside an unsafe context, three extra operations are available:
 
 - **`ptr T` values** — a bare machine word holding the address of a `T`.

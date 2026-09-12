@@ -84,11 +84,13 @@ pub struct StringBuilder {
 	// Append a null-terminated string. `unsafe` Nomen single-sourced for
 	// both backends: the fat pair's pointer half feeds memcpy directly, and
 	// the tracked length replaces the strlen the old C body paid.
-	unsafe func append_string = (ref self, string s) {
-		var int sl = s.length
-		self.ensure(self.len + sl + 1)
-		memcpy(self.data + self.len, (s as ptr char) as uint64, sl)
-		self.len = self.len + sl
+	func append_string = (ref self, string s) {
+		unsafe {
+			var int sl = s.length
+			self.ensure(self.len + sl + 1)
+			memcpy(self.data + self.len, (s as ptr char) as uint64, sl)
+			self.len = self.len + sl
+		}
 	}
 
 	// Append a view's bytes without materializing it: `append_string` takes
@@ -96,22 +98,26 @@ pub struct StringBuilder {
 	// call. Views lower to the same (ptr, len) fat pair, so the bytes are
 	// memcpy'd straight out of the borrowed buffer (used by
 	// `string.replace_first`/`replace_all`).
-	pub unsafe func append_string_view = (ref self, view string s) {
-		var int sl = s.length
-		self.ensure(self.len + sl + 1)
-		memcpy(self.data + self.len, (s as ptr char) as uint64, sl)
-		self.len = self.len + sl
+	pub func append_string_view = (ref self, view string s) {
+		unsafe {
+			var int sl = s.length
+			self.ensure(self.len + sl + 1)
+			memcpy(self.data + self.len, (s as ptr char) as uint64, sl)
+			self.len = self.len + sl
+		}
 	}
 
 	// Replace the buffer's contents with a copy of `s`'s bytes. The only
 	// way to start a StringBuilder from a slice without a `to_string()`
 	// copy: the view's bytes are copied once into fresh storage, so the
 	// result is owned and independent of the source.
-	pub unsafe func seed = (ref self, view string s) {
-		var int sl = s.length
-		self.ensure(sl + 1)
-		memcpy(self.data, (s as ptr char) as uint64, sl)
-		self.len = sl
+	pub func seed = (ref self, view string s) {
+		unsafe {
+			var int sl = s.length
+			self.ensure(sl + 1)
+			memcpy(self.data, (s as ptr char) as uint64, sl)
+			self.len = sl
+		}
 	}
 
 	// Finalize: null-terminate, return the byte buffer as a string, and

@@ -44,8 +44,10 @@ pub struct string: Stringable, Hashable, Equatable {
 	// The indexing primitive everything string code builds on — `unsafe`
 	// Nomen, single-sourced for both backends. `self as ptr char` is the fat
 	// value's backing bytes (the thin `char*` the raw blocks used to poke).
-	pub unsafe func at = (self, int index: index >= 0 && index < self.length, out char) {
-		return (self as ptr char)[index]
+	pub func at = (self, int index: index >= 0 && index < self.length, out char) {
+		unsafe {
+			return (self as ptr char)[index]
+		}
 	}
 
 	// Bounds-checked access: `fallback` when index is outside
@@ -93,8 +95,10 @@ pub struct string: Stringable, Hashable, Equatable {
 		```
 	}
 
-	pub unsafe func set = (ref self, int index: index >= 0 && index < self.length, char value) {
-		(self as ptr char)[index] = value
+	pub func set = (ref self, int index: index >= 0 && index < self.length, char value) {
+		unsafe {
+			(self as ptr char)[index] = value
+		}
 	}
 
 	pub func #op_eq = (self, string other, out bool) {

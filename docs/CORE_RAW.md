@@ -112,6 +112,12 @@ inexpressible.
 - **aarch64 backend:** the asm validator's `MNEMONICS` table was missing
   `sxtb`/`sxth`/`sxtw` (emitted by widening casts like `int32 as uint`);
   added.
+- **Unsafe blocks are unwrapped post-check** (see `check.ts`): the wrapper
+  only carries the checker's `in_unsafe` context; after checking, its
+  statements are spliced into the enclosing list so the NIR flattening and
+  both backends' index-based statement pairing stay 1:1. (Consequence:
+  `clone_node` must deep-copy unsafe blocks, or mono clones would share —
+  and late-stamp-clobber — the generic body's subtree.)
 
 ### Not candidates
 
@@ -176,7 +182,11 @@ ptr char`, struct-pointer→`uint64`, and the generic constants `T_SIZE` /
   appended System library source (source-offset boundary), and the checker
   rejects pointer operations outside an unsafe context. See SPEC.md
   "Unsafe Code" and `test/unsafe.test.ts`.
-- **First tranche rewritten (all single-sourced, both backends):**
+- **First tranche rewritten (all single-sourced, both backends).** Every
+  rewritten body is an ordinary `func` containing an `unsafe { ... }`
+  block — the `unsafe func` form exists but the library doesn't use it:
+  unsafe-ness is an implementation detail callers shouldn't see, and the
+  block form keeps the exposed signature identical to any other method.
   - `Buffer.nm`: `alloc`, `grow`, `zero`, `alloc_int`, `grow_int`,
     `zero_int`, `alloc_T`, `grow_T`, `zero_T`, `alloc_float`, `#destroy`
   - `StringBuilder.nm`: `ensure`, `append_string`, `append_string_view`,

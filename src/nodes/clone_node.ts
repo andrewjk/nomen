@@ -34,6 +34,7 @@ import SwitchNode from "./SwitchNode.ts";
 import TodoNode from "./TodoNode.ts";
 import TraitNode from "./TraitNode.ts";
 import Type from "./Type.ts";
+import UnsafeBlockNode from "./UnsafeBlockNode.ts";
 import ValueNode from "./ValueNode.ts";
 import WhileLoopNode from "./WhileLoopNode.ts";
 
@@ -300,6 +301,12 @@ export default function clone_node(node: BaseNode): BaseNode {
 			const c = new IndexNode(n.start, clone_node(n.target), clone_node(n.index));
 			c.type = n.type ? clone_type(n.type) : undefined;
 			c.is_array_target = n.is_array_target;
+			c.allocations = n.allocations?.map(clone_node);
+			return c;
+		}
+		case "unsafe": {
+			const n = node as UnsafeBlockNode;
+			const c = new UnsafeBlockNode(n.start, n.statements.map(clone_node));
 			c.allocations = n.allocations?.map(clone_node);
 			return c;
 		}

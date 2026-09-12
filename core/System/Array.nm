@@ -34,29 +34,35 @@ pub struct Array<T>: Viewable {
 	// backends (docs/CORE_RAW.md roadmap item 2). `self[index]` lowers to the
 	// element base each backend already uses for Array receivers (C skips the
 	// struct header; aarch64's receiver IS the first element).
-	pub inline unsafe func at = (self, int index: index >= 0 && index < self.length, out T) {
-		return self[index]
+	pub inline func at = (self, int index: index >= 0 && index < self.length, out T) {
+		unsafe {
+			return self[index]
+		}
 	}
 
-	pub unsafe func first = (self: self.length > 0, out T) {
-		return self[0]
+	pub func first = (self: self.length > 0, out T) {
+		unsafe {
+			return self[0]
+		}
 	}
 
 	// The string-slot specialization the raw `#if T_NEEDS_STRDUP` blocks used
 	// to express: T_NEEDS_STRDUP is a per-instantiation constant the
 	// monomorphizer substitutes (true for string, false otherwise) and folds,
 	// so each mono body keeps only its arm.
-	pub unsafe func set = (ref self, int index: index >= 0 && index < self.length, T value) {
-		if T_NEEDS_STRDUP {
-			// T is string: a fat value whose backing bytes must be
-			// heap-copied per slot — otherwise the slot would share the
-			// incoming pointer and auto_free would double-free it. Free the
-			// displaced slot's bytes (no local: a named copy would be
-			// auto-freed too), then store a fresh deep copy.
-			free((self[index] as ptr char) as uint64)
-			self[index] = strdup(value)
-		} else {
-			self[index] = value
+	pub func set = (ref self, int index: index >= 0 && index < self.length, T value) {
+		unsafe {
+			if T_NEEDS_STRDUP {
+				// T is string: a fat value whose backing bytes must be
+				// heap-copied per slot — otherwise the slot would share the
+				// incoming pointer and auto_free would double-free it. Free
+				// the displaced slot's bytes (no local: a named copy would be
+				// auto-freed too), then store a fresh deep copy.
+				free((self[index] as ptr char) as uint64)
+				self[index] = strdup(value)
+			} else {
+				self[index] = value
+			}
 		}
 	}
 
@@ -80,8 +86,10 @@ pub struct Array<T>: Viewable {
 		panic("index out of range")
 	}
 
-	pub unsafe func at_end = (self, out T) {
-		return self[self.length - 1]
+	pub func at_end = (self, out T) {
+		unsafe {
+			return self[self.length - 1]
+		}
 	}
 
 	// A non-owning (ptr, len) slice [start, end) over self's inline element
