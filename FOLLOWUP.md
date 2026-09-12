@@ -412,3 +412,36 @@ never reassigned to a different conformer.
 Found while probing the "func-typed struct fields → use a trait instead"
 story for the allmark port (value-struct conformers would make one-method
 wrapper classes unnecessary).
+
+## Auto method inline (ASM_PLAN_7 tranche 7): JsonTree splice segfaults block default-ON
+
+The tranche-7 mechanism (`is_auto_inline_method` in
+`src/build_aarch64/utils/scan_inline_candidates.ts`, dispatch widened in
+`build_access_node.ts`, splice-recursion guard in `build_inline_method.ts`)
+ships **default OFF** because splicing unmarked small methods segfaults on
+the Json library's shapes:
+
+- Program: `Json.parse`/`Json.stringify` round-trip of `[1, true, "hi", null]`
+  (test/json.test.ts parse tests, bench/nomen/json-serde.nm) — SIGSEGV at
+  runtime, no build errors.
+- Every spliced `JsonTree` method segfaults INDEPENDENTLY — excluding any
+  single one (`set_kind`, `set_next`, `set_child`, `get_next`, `get_child`,
+  `set_val`, `get_val`, `get_kind`, `reset`) via a per-name gate leaves the
+  crash. It is not one bad method; the splice pattern itself is unsound for
+  these bodies.
+- What these bodies share: `ref self` + a `self.nodes.load_T(idx)` /
+  `store_T(idx, val)` call — a GENERIC user-inline (`Buffer<T>`) splice
+  NESTED inside the auto splice, constructing a struct-typed local
+  (`var JsonNode n = self.nodes.load_T(idx)`) from the nested splice's
+  result. The user-inline path alone never exercised generic-nested-inside-
+  unmarked splices at scale.
+- Refusals that did NOT fix it (kept in the predicate as shape guards):
+  string receivers (the at_or receipt — fat (ptr,len) self), scalar
+  receivers (`char.is_digit` — no struct), >4 params (`set_leaf_kind` —
+  param reads fell back to global-address emission).
+
+Next steps for a root cause: dump the spliced region for
+`JsonTree.set_kind` on/off and diff the param parking vs the
+`self.nodes` field addressing; check whether the nested generic splice
+re-registers `function_param_regs` for the OUTER body on return (the
+swap/restore in `build_inline_method` around the nested `bl` path).

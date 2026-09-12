@@ -1,0 +1,115 @@
+import { expect, test } from "vite-plus/test";
+
+import build from "../src/build";
+import {
+	auto_method_inline_enabled,
+	set_auto_method_inline_enabled,
+} from "../src/build_aarch64/utils/scan_inline_candidates";
+import build_and_check_output from "./build_and_check_output";
+import { parse_raw } from "./parse_with_imports";
+
+/**
+ * Auto method inlining (ASM_PLAN_7 tranche 7). Small unmarked methods
+ * (the BigInt `ensure`/`clear` shape) splice through the proven
+ * user-inline path, killing the per-call `bl` + ABI marshal at hot call
+ * sites (282 samples in `BigInt_ensure` per D2 iteration). DEFAULT OFF:
+ * the JsonTree receipt shape (every set-kind / get-child splice) segfaults
+ * independently — see FOLLOWUP.md — so the mechanism ships kill-switch
+ * only until that class is root-caused. The tests here exercise the ON
+ * arm explicitly and pin the default-OFF contract.
+ */
+
+const ENSURE_SHAPE = `
+import System
+
+struct Acc {
+	var int total
+
+	pub func #init = (self) {
+		self.total = 0
+	}
+
+	func add_to = (ref self, int v) {
+		self.total = self.total + v
+	}
+}
+
+pub func main = (Init init) {
+	var a = Acc()
+	var int i = 0
+	while i < 4; i += 1 {
+		a.add_to(i + 1)
+	}
+	Console.write("\\{a.total}\\n")
+}
+`;
+
+function compile(source: string, on: boolean): string {
+	set_auto_method_inline_enabled(on);
+	try {
+		const parsed = parse_raw(source);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(result.errors ?? []).toEqual([]);
+		return result.code;
+	} finally {
+		set_auto_method_inline_enabled(false);
+	}
+}
+
+test("ON: a small ref-self method splices instead of calling", () => {
+	const on = compile(ENSURE_SHAPE, true);
+	expect(on).not.toContain("bl Acc_add_to");
+	// The standalone body is still emitted (trait dispatch, method
+	// values, and overflow-arg call sites keep taking the bl).
+	expect(on).toMatch(/Acc_add_to:/);
+});
+
+test("OFF (the default): the same call stays a bl", () => {
+	const off = compile(ENSURE_SHAPE, false);
+	expect(off).toContain("bl Acc_add_to");
+	expect(off).not.toBe(compile(ENSURE_SHAPE, true));
+});
+
+test("the default is OFF", () => {
+	expect(auto_method_inline_enabled()).toBe(false);
+});
+
+test("ON: a recursive small method still compiles (nested call takes the bl)", () => {
+	const src = `
+import System
+
+struct Down {
+	var int n
+
+	pub func #init = (self) {
+		self.n = 0
+	}
+
+	func walk = (ref self, int k) {
+		if k > 0 {
+			self.walk(k - 1)
+		}
+		self.n = k
+	}
+}
+
+pub func main = (Init init) {
+	var d = Down()
+	d.walk(3)
+	Console.write("\\{d.n}\\n")
+}
+`;
+	const on = compile(src, true);
+	// The outer call spliced; the nested recursive call fell back to bl.
+	expect(on).toContain("bl Down_walk");
+});
+
+test("behavioral: spliced ref-self mutation is exact (both backends)", async () => {
+	set_auto_method_inline_enabled(true);
+	try {
+		await build_and_check_output(ENSURE_SHAPE, "auto_method_inline", "10\n", true);
+	} finally {
+		set_auto_method_inline_enabled(false);
+	}
+});

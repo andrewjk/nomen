@@ -16,6 +16,25 @@ export function reset_inline_counter() {
 	inline_counter = 0;
 }
 
+/** The stack of method splices currently being emitted (ASM_PLAN_7
+ *  tranche 7): a nested call to the method being spliced — recursion —
+ *  must take the `bl` path, or the splice would recurse at compile time.
+ *  Keyed `Struct.method`; splice discipline is single-entry (a method
+ *  never splices into itself transitively either). */
+const active_splices = new Set<string>();
+
+export function inline_splice_active(struct_name: string, func_name: string): boolean {
+	return active_splices.has(`${struct_name}.${func_name}`);
+}
+
+export function begin_inline_splice(struct_name: string, func_name: string): void {
+	active_splices.add(`${struct_name}.${func_name}`);
+}
+
+export function end_inline_splice(struct_name: string, func_name: string): void {
+	active_splices.delete(`${struct_name}.${func_name}`);
+}
+
 function is_raw_only(func: FunctionNode): boolean {
 	return func.statements.every((s) => s.node_type === "raw");
 }

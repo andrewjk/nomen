@@ -5,6 +5,82 @@ import FunctionNode from "../../nodes/FunctionNode.ts";
 
 const MAX_STATEMENTS = 15;
 
+/** Auto method inlining (ASM_PLAN_7 tranche 7). DEFAULT OFF: the splice
+ *  of unmarked small methods segfaults on the JsonTree receipt shape
+ *  (every set-kind / get-child splice crashes independently — see
+ *  FOLLOWUP.md), so the mechanism ships kill-switch-only for A/B work
+ *  until that class is root-caused. OFF restores exactly the explicit-
+ *  `inline`-only dispatch. */
+let auto_method_inline_on = false;
+
+export function auto_method_inline_enabled(): boolean {
+	return auto_method_inline_on;
+}
+
+export function set_auto_method_inline_enabled(enabled: boolean): void {
+	auto_method_inline_on = enabled;
+}
+
+const MAX_AUTO_METHOD_STATEMENTS = 3;
+const MAX_AUTO_METHOD_PARAMS = 3;
+
+/**
+ * ensure/grow/clear-shaped methods (ASM_PLAN_7 tranche 7): small real
+ * bodies the method-inline path can splice WITHOUT the explicit `inline`
+ * marker — killing the per-call `bl` + ABI marshal at hot call sites
+ * (the pidigits receipt: 282 samples in `BigInt_ensure` as a real call
+ * per D2 iteration). Deliberately NARROWER than the user-marked path's
+ * freedom: no raw statements (raw-only methods keep their naked-inline
+ * contract), a tight statement budget, scalar params beside self, and a
+ * scalar-or-void return. The standalone body is still emitted — trait
+ * dispatch, method values, and overflow-arg call sites keep taking the
+ * `bl`, so nothing here may skip emission.
+ */
+export function is_auto_inline_method(func: FunctionNode): boolean {
+	if (!auto_method_inline_on) return false;
+	if (!func.has_body) return false;
+	if (func.is_inline) return false; // explicit — the call sites already select it
+	if (func.statements.length === 0 || func.statements.length > MAX_AUTO_METHOD_STATEMENTS) {
+		return false;
+	}
+	if (func.returns_move) return false;
+	if (func.statements.some((s) => s.node_type === "raw")) return false;
+	// The ensure/clear shape: self plus at most a couple of scalars. A
+	// `ref self` receiver (mutable-through-the-caller's-instance) is the
+	// user-inline path's proven surface (BigInt.set); wide param lists are
+	// not — the set_leaf_kind receipt spliced a 7-param method whose param
+	// reads fell back to global-address emission.
+	if (func.params.length > MAX_AUTO_METHOD_PARAMS) return false;
+
+	for (const param of func.params) {
+		// The splice's self parking is a struct-receiver contract: a scalar
+		// receiver (`char.is_digit` — the receiver is a bare w-register
+		// value, and `char` is no struct at all) or a fat string (a
+		// ptr+len pair — the at_or receipt) mis-splices. Struct receivers
+		// only.
+		if (param.is_self_param) {
+			if (!param.type?.name || param.type.name === "string") return false;
+			if (SIMPLE_TYPES.includes(param.type.name)) return false;
+			continue;
+		}
+		if (param.is_variadic || param.is_variadic_tuple) return false;
+		if (!SIMPLE_TYPES.includes(param.type.name)) return false;
+		if (param.type.is_array || param.type.is_view) return false;
+		if (param.type.is_ref) return false;
+		if (param.is_moved) return false;
+		if (param.declaration === "var") return false;
+	}
+	// Param shadowing corrupts the inline path the same way it corrupts
+	// the flat path (params park in registers that shadowed locals would
+	// grab) — a body redeclaring a param name refuses.
+	const param_names = new Set(func.params.filter((p) => !p.is_self_param).map((p) => p.name));
+	if (declares_any_name(func.statements, param_names)) return false;
+	if (func.return_type?.is_array || func.return_type?.is_view) return false;
+	if (func.return_type?.name && !SIMPLE_TYPES.includes(func.return_type.name)) return false;
+
+	return true;
+}
+
 export function scan_inline_candidates(root: BaseNode): Map<string, BaseNode> {
 	// Collect every plain `func` statement in the tree — top-level AND nested
 	// inside other function bodies (the checker rejects closures, so a nested

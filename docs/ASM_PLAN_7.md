@@ -400,3 +400,31 @@ Result: full suite green default-ON (344 files / 3181 tests) with
 j += 2, multi-access / inner-diamond / extra-induction-def / base-def
 refusals, function-wide walk-register absence, kill-switch
 byte-identity, behavioral both backends).
+
+### Tranche 7 (2026-09-13): auto-inline small methods — LANDED DEFAULT-OFF
+
+The mechanism is in and proven on the receipt shape; the switch ships
+OFF pending one root-cause. `is_auto_inline_method` admits unmarked
+methods with ≤3 statements, ≤3 params, scalar-or-void returns, no raw
+statements / moved params / param shadowing, and a STRUCT receiver
+(string self is a fat (ptr,len) pair the splice parks half of — the
+at_or receipt; scalar receivers like `char.is_digit` are no struct at
+all). The widened dispatch reuses the user-inline splice wholesale,
+plus a splice-active guard: a nested call to the method currently
+being spliced (recursion) takes the `bl` instead of re-splicing
+forever. The standalone body is still emitted — trait dispatch,
+method values, and overflow-arg call sites keep taking the `bl`.
+
+Suite-caught receipts while shaping the predicate: string-receiver
+splices return garbage bounds (`at_or` reading a half-parked self),
+7-param splices fall back to global-address emission for their params
+(`set_leaf_kind`), and — the blocker — EVERY spliced `JsonTree`
+method segfaults independently (`set_kind`/`get_child`/`reset`/…,
+each excluded alone leaves the crash): their bodies nest a GENERIC
+user-inline (`Buffer<T>.load_T`/`store_T`) constructing a struct
+local inside the auto splice, a composition the user-inline surface
+never exercised. The mechanism ships kill-switch-only (default OFF —
+byte-identical to pre-tranche) with the investigation recorded in
+FOLLOWUP.md; the ON arm is proven by `test/auto_method_inline.test.ts`
+(splice-instead-of-bl shape, standalone body still emitted, default-OFF
+pin, recursive-method bl fallback, behavioral both backends).

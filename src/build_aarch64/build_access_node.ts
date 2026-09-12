@@ -30,7 +30,12 @@ import {
 	unwrap_noop_int_cast,
 } from "./access_staging.ts";
 import { array_licm_enabled } from "./array_licm.ts";
-import build_inline_method, { naked_inline_skips_self } from "./build_inline_method.ts";
+import build_inline_method, {
+	begin_inline_splice,
+	end_inline_splice,
+	inline_splice_active,
+	naked_inline_skips_self,
+} from "./build_inline_method.ts";
 import build_node from "./build_node.ts";
 import build_nursery_spawn from "./build_nursery_spawn.ts";
 import { build_operand, tree_is_call_free } from "./build_operation_node.ts";
@@ -38,6 +43,7 @@ import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free, emit_malloc, emit_strdup } from "./utils/audit.ts";
 import { all_scope_frames, mark_moved_if_struct } from "./utils/auto_destroy.ts";
 import { emit_index_address, pointer_element_size } from "./utils/ptr_access.ts";
+import { is_auto_inline_method } from "./utils/scan_inline_candidates.ts";
 import { NUM_REG_ARGS } from "./utils/stack_args.ts";
 import {
 	allocate_stack_space,
@@ -2943,7 +2949,7 @@ function build_access_method(
 	const target_struct = status.structs.find((s) => s.name === mono_struct_name);
 	const inline_func = target_struct?.functions.find(
 		(f) =>
-			f.is_inline &&
+			(f.is_inline || is_auto_inline_method(f)) &&
 			f.name === access_func.name &&
 			(access_func.mangled_name
 				? mangled_label(f, mono_struct_name) === access_func.mangled_name
@@ -3030,11 +3036,22 @@ function build_access_method(
 			status.code += `ldr x1, [sp], #16\n`;
 			status.code += `ldr x0, [sp], #16\n`;
 		}
-	} else if (inline_func && overflow_count === 0) {
+	} else if (
+		inline_func &&
+		overflow_count === 0 &&
+		!receiver_is_string &&
+		!inline_splice_active(mono_struct_name, access_func.name)
+	) {
 		// Inline candidates are small functions; the inline path can't accept
 		// a pre-lowered outgoing-arg area, so skip inlining when this call
-		// has overflow args and fall through to the regular bl.
+		// has overflow args and fall through to the regular bl. The splice-
+		// active guard makes a nested call to the method currently being
+		// spliced (recursion) take the bl instead of re-splicing forever.
+		begin_inline_splice(mono_struct_name, access_func.name);
+		if (!inline_func.is_inline)
+			console.log("AMI-DBG splice", mono_struct_name + "." + access_func.name);
 		build_inline_method(target_struct!, inline_func, status);
+		end_inline_splice(mono_struct_name, access_func.name);
 	} else {
 		status.code += `bl ${method_name}\n`;
 		// A float-returning method hands its result back in d0 (the d0
