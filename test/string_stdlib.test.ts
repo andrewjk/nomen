@@ -41,16 +41,28 @@ Console.write("\\{f} \\{g} \\{h} \\{i} \\{j}\\n")
 		);
 	});
 
-	test("char_code_at is NaN-safe", async () => {
+	test("char_code_at is bounds-constrained", async () => {
+		// `char_code_at` carries `at`'s constraint: out-of-bounds reads are
+		// unrepresentable (literal indexes are compile errors; dynamic ones
+		// must be proven by flow facts). In-bounds reads return the byte.
 		const input = `
 var int a = "Abc".char_code_at(0)
 var int b = "Abc".char_code_at(2)
-var int c = "Abc".char_code_at(3)
-var int d = "Abc".char_code_at(-1)
 var int e = "Abc".char_code_at(1)
-Console.write("\\{a} \\{b} \\{c} \\{d} \\{e}\\n")
+Console.write("\\{a} \\{b} \\{e}\\n")
 `;
-		await build_and_check_output(input, "string_char_code_at", "65 99 -1 -1 98\n");
+		await build_and_check_output(input, "string_char_code_at", "65 99 98\n");
+	});
+
+	test("char_code_at_or falls back, char_code_at_or_panic reads", async () => {
+		const input = `
+var int a = "Abc".char_code_at_or(0, -1)
+var int b = "Abc".char_code_at_or(3, -1)
+var int c = "Abc".char_code_at_or(-2, -1)
+var int d = "Abc".char_code_at_or_panic(1)
+Console.write("\\{a} \\{b} \\{c} \\{d}\\n")
+`;
+		await build_and_check_output(input, "string_char_code_at_or", "65 -1 -1 98\n");
 	});
 
 	test("substring clamps its bounds", async () => {

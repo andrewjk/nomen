@@ -39,6 +39,8 @@
 	"string_starts_with",
 	"string_ends_with",
 	"string_char_code_at",
+	"string_char_code_at_or",
+	"string_char_code_at_or_panic",
 	"string_substring",
 	"string_trim",
 	"string_trim_end",

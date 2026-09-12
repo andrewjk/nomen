@@ -309,13 +309,32 @@ pub struct string: Stringable, Hashable, Equatable {
 
 	// The code of the byte at `index`, or -1 when out of bounds — the
 	// JavaScript charCodeAt NaN case as a plain int parsers can test.
-	pub func char_code_at = (self, int index, out int) {
-		if index >= 0 {
-			if index < self.length {
-				return self.at(index) as int
-			}
+	// The code of the byte at `index`. Like `at`, the constraint makes
+	// out-of-bounds reads unrepresentable: a literal index is verified at
+	// compile time, and a dynamic index must be proven in-range by flow
+	// facts (a `while i < self.length` loop or an `if` guard) — an
+	// unverifiable call is a compile error. For a sentinel read, use
+	// `char_code_at_or`; for a trapping read, `char_code_at_or_panic`.
+	pub func char_code_at = (self, int index: index >= 0 && index < self.length, out int) {
+		return self.at(index) as int
+	}
+
+	// The code of the byte at `index`, with `fallback` when index is
+	// outside [0, self.length).
+	pub func char_code_at_or = (self, int index, int fallback, out int) {
+		if index >= 0 && index < self.length {
+			return self.at(index) as int
 		}
-		return -1
+		return fallback
+	}
+
+	// The code of the byte at `index`; traps when index is outside
+	// [0, self.length) — out-of-range is a bug, not a case.
+	pub func char_code_at_or_panic = (self, int index, out int) {
+		if index >= 0 && index < self.length {
+			return self.at(index) as int
+		}
+		panic("index out of range")
 	}
 
 	// Owned copy of self[start, end) with both bounds clamped into
