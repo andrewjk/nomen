@@ -380,3 +380,35 @@ defaulted fields — constructor, factory, and variable bases — but:
   matters if an override value reads something whose last use is the
   override itself; promotion would then conservatively keep it in memory —
   sound, just not optimal.
+
+## Value-struct conformers are inconsistently accepted as trait types
+
+The checker rejects `value struct 'X' cannot be used as trait 'T'; declare
+'X' as a class` in most positions (e.g. passing `X()` to a `T` parameter).
+But a trait-typed LOCAL initialized from an inline value-struct constructor
+slips through:
+
+```
+trait BlockRule { func test = (self, string line, out bool) }
+struct HeadingRule : BlockRule { ... }
+var BlockRule rule = HeadingRule()   // accepted (!)
+rule = QuoteRule()                    // ...
+```
+
+- **aarch64** compiles and runs this correctly (reassignment re-tags the
+  slot).
+- **C** declares the local as the CONCRETE struct (`struct HeadingRule
+  rule;` — the trait-tagged representation is skipped), so `rule =
+  QuoteRule_init()` is a raw clang type error ("assigning to 'struct
+  HeadingRule' from incompatible type 'struct QuoteRule'").
+
+Two coherent fixes: reject the local uniformly (simplest — value structs
+cannot be trait-typed, period, matching the documented rule), or accept them
+uniformly (box value-struct conformers like aarch64 does, and teach the C
+backend the tagged representation). Either way the C concrete-struct
+specialization for trait-typed locals must only apply when the local is
+never reassigned to a different conformer.
+
+Found while probing the "func-typed struct fields → use a trait instead"
+story for the allmark port (value-struct conformers would make one-method
+wrapper classes unnecessary).
