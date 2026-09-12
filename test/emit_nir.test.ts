@@ -34,14 +34,18 @@ import parse_with_imports, { parse_raw } from "./parse_with_imports";
  * mechanics, not the vectorizer (see test/neon_vector.test.ts).
  */
 
-function compile_aarch64(source: string, raw = false): string {
-	const parsed = raw ? parse_raw(source) : parse_with_imports(source);
+function compile_aarch64(source: string, raw = false, raw_statements = false): string {
+	const parsed = raw
+		? parse_raw(source)
+		: raw_statements
+			? parse_with_imports(source, { allow_user_raw: true })
+			: parse_with_imports(source);
 	expect(parsed.errors).toEqual([]);
 	const result = build(parsed.root, { arch: "aarch64" });
 	return result.code;
 }
 
-function expect_byte_identical(source: string, raw = false): void {
+function expect_byte_identical(source: string, raw = false, raw_statements = false): void {
 	set_nir_emission_enabled(false);
 	set_neon_vectorization_enabled(false);
 	// Decl-site register binding (tranche G stage 3) is cursor-dependent by
@@ -75,10 +79,10 @@ function expect_byte_identical(source: string, raw = false): void {
 	// dispatch (spills/derivations/pre-seeded pins) — cursor-dependent,
 	// same treatment as the fuses.
 	set_region_pool_enabled(false);
-	const baseline = compile_aarch64(source, raw);
+	const baseline = compile_aarch64(source, raw, raw_statements);
 	set_nir_emission_enabled(true);
 	try {
-		const with_nir = compile_aarch64(source, raw);
+		const with_nir = compile_aarch64(source, raw, raw_statements);
 		expect(with_nir.length).toBeGreaterThan(0);
 		expect(with_nir).toEqual(baseline);
 	} finally {
@@ -287,14 +291,18 @@ Console.write("\\{nested_flow(6)}")
 });
 
 test("raw aarch64 statements delegate byte-identically", () => {
-	expect_byte_identical(`
+	expect_byte_identical(
+		`
 var int x = 1
 \`\`\`
 #arch: aarch64
 ldr x0, =5
 \`\`\`
 Console.write("\\{x}")
-`);
+`,
+		false,
+		true,
+	);
 });
 
 test("nested functions delegate and install their own NIR ctx", () => {

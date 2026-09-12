@@ -19,7 +19,7 @@ const system = get_library(path.resolve(import.meta.dirname, "../core"));
 /** Parse + check a FULL program (import System, main, …) and build it for one
  *  arch, returning the emitted code. */
 function build_code(input: string, arch: "aarch64" | "c"): string {
-	const parsed = parse(input, system);
+	const parsed = parse(input, system, undefined, { allow_user_raw: true });
 	expect(parsed.errors).toEqual([]);
 	const result = build(parsed.root, { arch, audit: false });
 	expect(result.errors ?? []).toEqual([]);
@@ -29,7 +29,7 @@ function build_code(input: string, arch: "aarch64" | "c"): string {
 /** Compile + run a full program on BOTH backends and pin its stdout. Mirrors
  *  bench helpers: link the precompiled system object when available. */
 async function run_program(input: string, name: string, expected: string) {
-	const parsed = parse(input, system);
+	const parsed = parse(input, system, undefined, { allow_user_raw: true });
 	expect(parsed.errors).toEqual([]);
 	const split_available = (arch: "aarch64" | "c") =>
 		!build_needs_objc(parsed.root, default_platform()) &&

@@ -7,10 +7,20 @@ export default function type_from_value(value: string, status: CheckStatus): Typ
 	// per-instantiation element size and representation flags are compile-time
 	// constants named after the type parameter (`T_SIZE`, `T_NEEDS_STRDUP`,
 	// `T_FAT`). The monomorphizer substitutes them with literals; here they
-	// just need a type so the generic form of the body checks.
+	// just need a type so the generic form of the body checks. Library-only:
+	// these expose core representation facts (element layout, string-ness),
+	// so a user generic's `T_SIZE` stays an unknown value.
 	for (const tp of status.type_params) {
-		if (value === `${tp}_SIZE`) return new Type("int", true);
-		if (value === `${tp}_NEEDS_STRDUP` || value === `${tp}_FAT`) return new Type("bool", true);
+		if (value === `${tp}_SIZE` || value === `${tp}_NEEDS_STRDUP` || value === `${tp}_FAT`) {
+			const in_library = status.stack.some(
+				(n) => n.node_type === "func" && (n as { is_library?: boolean }).is_library,
+			);
+			if (in_library) {
+				if (value.endsWith("_SIZE")) return new Type("int", true);
+				return new Type("bool", true);
+			}
+			return new Type("");
+		}
 	}
 
 	// Is it a value that's been declared in a var/const or param?

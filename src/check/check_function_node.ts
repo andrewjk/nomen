@@ -141,6 +141,18 @@ export default function check_function_node(func: FunctionNode, status: CheckSta
 			func.return_type = new Type("?");
 		} else {
 			func.return_type = materialize_type(func.return_type, function_status);
+			// Lockdown: `ptr T` returns are System-library-only. Note the
+			// library check runs with `in_unsafe` set for unsafe funcs, but a
+			// plain `func` returning a pointer must ALSO be allowed (the
+			// library's own convention is func + unsafe block), so gate on
+			// is_library rather than in_unsafe here.
+			if (func.return_type.is_pointer && !func.is_library) {
+				add_error(
+					function_status,
+					`'ptr' return types are reserved for the System library — raw pointer manipulation is not available to user code`,
+					func.return_type_start ?? func.start,
+				);
+			}
 		}
 		// A generic container used only as a return type (e.g.
 		// `out List<string>` with no construction of that exact type) would

@@ -2141,6 +2141,13 @@ unsafe {
 // manipulation is not available to user code
 ```
 
+The lockdown is airtight by construction: `unsafe` declarations/blocks,
+`ptr` types (locals, fields, parameters, return types), pointer casts and
+indexing, the per-instantiation constants, **and raw `#arch:` code blocks**
+(which subsume everything `unsafe` offers) are all reserved for the System
+library source. There is no user-reachable expression whose type is a
+pointer, so user code cannot hold — let alone dereference — one.
+
 An `unsafe func` declaration makes the whole body an unsafe context; an
 `unsafe { ... }` block scopes it to a region:
 

@@ -11,7 +11,12 @@ import tokenize from "./tokenize.ts";
 import type CompileError from "./types/CompileError.ts";
 import type ParseResult from "./types/ParseResult.ts";
 
-export default function parse(source: string, library?: Library, file_path?: string): ParseResult {
+export default function parse(
+	source: string,
+	library?: Library,
+	file_path?: string,
+	options?: { allow_user_raw?: boolean },
+): ParseResult {
 	let user_source_length = source.length;
 	if (library) {
 		source = resolve_linked_types(source, library, file_path);
@@ -39,6 +44,7 @@ export default function parse(source: string, library?: Library, file_path?: str
 		qualified_paths: [],
 		library,
 		errors: [],
+		allow_user_raw: options?.allow_user_raw,
 	};
 	// `unsafe` lockdown: only the appended System library source (tokens at
 	// or past the user source's end) may declare unsafe functions/blocks.

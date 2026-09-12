@@ -252,7 +252,7 @@ struct Filey {
 var Filey a = Filey(1)
 var Filey b = a
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { allow_user_raw: true });
 		expect(parsed.errors.map((e) => e.message)).toContainEqual(
 			expect.stringContaining("cannot copy 'Filey'"),
 		);

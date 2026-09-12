@@ -69,6 +69,148 @@ pub func main = () {
 		expect(result.errors.some((e) => e.message.includes("unsafe context"))).toBe(true);
 	});
 
+	test("user pub unsafe func is rejected", () => {
+		const result = parse(
+			`
+import System
+pub unsafe func sneaky = () {
+	var ptr int p = 0
+}
+`,
+			core,
+		);
+		expect(result.errors.some((e) => e.message.includes("'unsafe' is reserved"))).toBe(true);
+	});
+
+	test("user inline unsafe func is rejected", () => {
+		const result = parse(
+			`
+import System
+inline unsafe func sneaky = () {
+	var ptr int p = 0
+}
+`,
+			core,
+		);
+		expect(result.errors.some((e) => e.message.includes("'unsafe' is reserved"))).toBe(true);
+	});
+
+	test("user raw #arch c block is rejected (the total bypass)", () => {
+		// A raw block splices arbitrary C into the translation unit —
+		// strictly more power than `unsafe`. It must obey the same lockdown.
+		const result = parse(
+			`
+import System
+pub func main = () {
+	\`\`\`
+	#arch: c
+	{ long* p = (long*)0x41414141; *p = 42; }
+	\`\`\`
+}
+`,
+			core,
+		);
+		expect(result.errors.some((e) => e.message.includes("'raw' blocks are reserved"))).toBe(true);
+	});
+
+	test("user raw #arch aarch64 block is rejected too", () => {
+		const result = parse(
+			`
+import System
+pub func main = () {
+	\`\`\`
+	#arch: aarch64
+	mov x0, #42
+	\`\`\`
+}
+`,
+			core,
+		);
+		expect(result.errors.some((e) => e.message.includes("'raw' blocks are reserved"))).toBe(true);
+	});
+
+	test("ptr-typed local declaration is rejected", () => {
+		const result = parse(
+			`
+import System
+pub func main = () {
+	var ptr int p = 0
+}
+`,
+			core,
+		);
+		expect(result.errors.some((e) => e.message.includes("'ptr' types are reserved"))).toBe(true);
+	});
+
+	test("ptr-typed parameter is rejected", () => {
+		const result = parse(
+			`
+import System
+func f = (ptr int p, out int) {
+	return 0
+}
+pub func main = () {
+}
+`,
+			core,
+		);
+		expect(result.errors.some((e) => e.message.includes("'ptr' parameters are reserved"))).toBe(
+			true,
+		);
+	});
+
+	test("ptr-typed return type is rejected", () => {
+		const result = parse(
+			`
+import System
+func f = (out ptr int) {
+	return 0
+}
+pub func main = () {
+}
+`,
+			core,
+		);
+		expect(result.errors.some((e) => e.message.includes("'ptr' return types are reserved"))).toBe(
+			true,
+		);
+	});
+
+	test("ptr-typed struct field is rejected", () => {
+		const result = parse(
+			`
+import System
+struct S {
+	var ptr int p
+}
+pub func main = () {
+}
+`,
+			core,
+		);
+		expect(result.errors.some((e) => e.message.includes("'ptr' types are reserved"))).toBe(true);
+	});
+
+	test("T_SIZE is unknown in user generics", () => {
+		// The per-instantiation constants expose core representation facts
+		// (element layout, string-ness) — library funcs only.
+		const result = parse(
+			`
+import System
+struct Box<T> {
+	var int x
+	func size = (self, out int) {
+		return T_SIZE
+	}
+}
+pub func main = () {
+}
+`,
+			core,
+		);
+		expect(result.errors.some((e) => e.message.includes("Unknown value: T_SIZE"))).toBe(true);
+	});
+
 	test("indexing a non-pointer is rejected even in library code", () => {
 		// Library source (tokens past the user boundary) may use unsafe, but a
 		// non-pointer index target is still a type error. We assert via a

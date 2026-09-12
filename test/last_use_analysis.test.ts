@@ -9,7 +9,7 @@ import parse from "../src/parse";
 const system = get_library(path.resolve(import.meta.dirname, "../core"));
 
 function scan(src: string): LastUseSite[] {
-	const parsed = parse(src, system);
+	const parsed = parse(src, system, undefined, { allow_user_raw: true });
 	expect(parsed.errors).toEqual([]);
 	return scan_last_use_string_moves(parsed.root);
 }

@@ -26,6 +26,7 @@ import {
 	is_owning_struct_type,
 	is_owning_struct_type_requiring_move,
 } from "./utils/ownership.ts";
+import reject_pointer_type from "./utils/reject_pointer_type.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 import {
@@ -44,6 +45,15 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 	// suppressed and reads as a discard in any dumped AST.
 	if (decl.name === "_") {
 		decl.name = `_disc_${status.var_name_counter.value++}`;
+	}
+	// Lockdown: `ptr T` locals/fields are System-library-only (the type must
+	// be explicit; an inferred binding can never name a pointer type because
+	// no legal user expression produces one). A struct FIELD's scope is its
+	// struct, so a library struct may declare pointer fields; user structs
+	// (and locals outside unsafe contexts) are rejected.
+	const scope_is_library = !!(decl.scope as { is_library?: boolean } | undefined)?.is_library;
+	if (!scope_is_library) {
+		reject_pointer_type(decl.type, status, decl.start);
 	}
 	// `view hi = expr` is sugar for a const view binding. Normalize the
 	// keyword to `const` so every downstream site (StackValue, both backends,

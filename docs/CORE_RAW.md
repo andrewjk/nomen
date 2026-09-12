@@ -178,10 +178,23 @@ ptr char`, struct-pointer→`uint64`, and the generic constants `T_SIZE` /
   `T_NEEDS_STRDUP` / `T_FAT` as real Nomen expressions (the monomorphizer
   substitutes them with literals and folds the dead arm of any `if` they
   guard — replacing the raw `#if T_NEEDS_STRDUP` preprocessor idiom).
-  Lockdown is enforced twice: the parser rejects `unsafe` outside the
-  appended System library source (source-offset boundary), and the checker
-  rejects pointer operations outside an unsafe context. See SPEC.md
-  "Unsafe Code" and `test/unsafe.test.ts`.
+  Lockdown is airtight by construction (see `test/unsafe.test.ts` for the
+  pin of every path):
+  - the parser rejects `unsafe` declarations/blocks outside the appended
+    System library source (source-offset boundary), and **raw `#arch:`
+    blocks too** — they subsume everything `unsafe` offers (the compiler's
+    own machinery tests opt back in via `parse`'s `allow_user_raw` flag,
+    which the CLI never sets);
+  - the checker rejects pointer operations (casts, indexing) outside an
+    unsafe context, `ptr`-typed introductions (locals, fields, params,
+    returns) outside the library, and `T_SIZE`/`T_NEEDS_STRDUP`/`T_FAT`
+    in user generics;
+  - no library function exposes `ptr` in its public signature, so user
+    code cannot obtain a pointer value at all;
+  - the build backends need no gate of their own: they run only on the
+    error-free checked AST, index nodes originate solely from the parser's
+    `[` postfix (checker-gated), and mono clones derive from
+    library-checked bodies. See SPEC.md "Unsafe Code".
 - **First tranche rewritten (all single-sourced, both backends).** Every
   rewritten body is an ordinary `func` containing an `unsafe { ... }`
   block — the `unsafe func` form exists but the library doesn't use it:

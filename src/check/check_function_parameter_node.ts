@@ -34,6 +34,17 @@ export default function check_function_parameter_node(
 	} else if (param.type.name) {
 		check_type_exists(param.type, status, param.type_start!);
 		param.type = materialize_type(param.type, status);
+		// Lockdown: `ptr T` params are System-library-only. Signatures are
+		// the API boundary, so this keys on the library scope (not the
+		// in_unsafe flag — the library's own convention is plain `func` with
+		// an inner `unsafe { }` block, which does not raise in_unsafe here).
+		if (param.type.is_pointer && !is_library_scope) {
+			add_error(
+				status,
+				`'ptr' parameters are reserved for the System library — raw pointer manipulation is not available to user code`,
+				param.type_start ?? param.start,
+			);
+		}
 		// A generic container used only as a parameter type (e.g.
 		// `List<string> xs` with no `List<string>()` construction elsewhere)
 		// would never be monomorphized, leaving the signature as a bare

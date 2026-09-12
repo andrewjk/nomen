@@ -17,7 +17,7 @@ import type FunctionNode from "../src/nodes/FunctionNode";
 import parse from "../src/parse";
 
 function compile_cfg(source: string, name: string): FunctionCfg {
-	const parsed = parse(source);
+	const parsed = parse(source, undefined, undefined, { allow_user_raw: true });
 	expect(parsed.errors).toEqual([]);
 	const fn = parsed.root.statements.find(
 		(s) => s.node_type === "func" && (s as FunctionNode).name === name,
