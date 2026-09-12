@@ -323,3 +323,46 @@ variable-label / escaping-address / label-split-scope refusals,
 movz-range int remat, behavioral both backends). The spectral-norm
 j-loop's per-iteration `adr+ldr` pair is gone (the `1.0` rides the
 preheader); pidigits' D-loops lose their pool loads the same way.
+
+### Tranche 5 (2026-09-13): stack-staging elision — LANDED
+
+The push/pop staging pairs around computed indexes (cause 2's second
+half, cause 7) elide in two forms. FORM B — `str xS, [sp, #-16]!` …
+clean middle … `ldr xS, [sp], #16`, where the middle is linear (no
+labels, branches, calls), touches neither sp nor xS in EITHER register
+view, and may be empty of everything but index arithmetic — is a
+SEMANTIC IDENTITY (the pop restores exactly the pushed value; sp nets
+zero) and deletes unconditionally. This is the shape the slot-resident
+accumulator actually produces (`add x1, x29, #32; ldr x1, [x29, #32]`
+staged across the step computation) and it needs no verdict at all.
+FORM A — the staging `mov xS, xV` in front — additionally deletes the
+mov and renames the consumer's read of xS to xV, gated on: xV never
+redefined between mov and consumer (w-siblings share the register —
+the `ldrb w0` after `mov x1, x0` is an x0 redefinition), and exact CFG
+liveness over the rewritten text proving xS dead after the consumer
+(the same machinery tranche 4 built: call-arg slots and the return
+pair x0/x1/d0/d1 read only when actually written — an unwritten slot
+is garbage nobody observes; without the exclusion the x1 propagation
+from a distant `ret` refused everything).
+
+Two suite-caught receipts while landing: (a) the first w-sibling miss —
+`ldrb w0` after a `mov x1, x0` staging slipped the xV-def check, the
+rename produced `cmp x0, x0` and six regex tests matched everything
+(character classes compared a register with itself); siblings now
+share fate in both the middle scan and the def checks. (b) The
+verdict's line index in the combined trial must subtract the
+candidate's OWN three deleted lines, not just its siblings' — without
+it `line_block[f]` read past the analysis and crashed. Landing also
+split the liveness analysis per FUNCTION chunk (the same ret/.data
+boundary heuristic the lift uses — control flow cannot cross a ret),
+cutting the tranche's build-time cost on pidigits from ~370 ms to
+~115 ms; the corpus byte-identity test had been timing out under full
+parallel load before the split.
+
+Result: full suite green default-ON (343 files / 3172 tests) with
+`test/staging_elide.test.ts` (both forms' shape, call/label/touch
+refusals, the w-sibling receipt, rename refusals with the pair still
+eliding, kill-switch byte-identity, real-build pick-function scoping,
+behavioral both backends). The pick receipt: both arms' staging pairs
+per iteration gone; the spectral-norm `if transpose` arms lose their
+×2 push/pop tax.

@@ -9,6 +9,7 @@ import {
 	run_float_forwarding,
 } from "./build_aarch64/asm_opt.ts";
 import { rematerialize_constants } from "./build_aarch64/asm_remat.ts";
+import { elide_stack_staging } from "./build_aarch64/asm_staging_elide.ts";
 import { reset_access_temp_counter } from "./build_aarch64/build_access_node.ts";
 import { reset_decl_const_counters } from "./build_aarch64/build_declaration_node.ts";
 import { reset_label_counter as reset_for_label_counter } from "./build_aarch64/build_for_loop_node.ts";
@@ -330,6 +331,15 @@ export default function build(
 		// memory-materialized constant tax (the spectral-norm `1.0`
 		// receipt).
 		status.code = rematerialize_constants(status.code);
+		// Stack-staging elision (ASM_PLAN_7 tranche 5) — the emitter's
+		// push/pop staging pairs around computed indexes (`mov x1, x25` +
+		// `str x1, [sp, #-16]!` … `ldr x1, [sp], #16` + read) elide to a
+		// direct read of the register-resident source when the shape is
+		// exact: nothing between mov and consumer touches xS/sp or redefines
+		// xV, and exact liveness proves xS dead after the consumer. Kills
+		// the 3-instruction staging tax per index computation (the
+		// spectral-norm receipt, ×2 paths).
+		status.code = elide_stack_staging(status.code);
 		// Dead staging-move elimination inside validated loop cycles —
 		// prunes `mov xD, xS` whose destination exact-CFG liveness proves
 		// dead (the per-statement emission's protocol staging whose

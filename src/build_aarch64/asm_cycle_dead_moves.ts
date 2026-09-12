@@ -221,6 +221,62 @@ export function analyze_cfg(code: string): Analysis | null {
 	return analyze(code);
 }
 
+/** The start line of the function chunk containing `idx` — the same
+ *  boundary heuristic the lift uses (a non-blank preceding `ret`, `.data`,
+ *  `.p2align`, or `.text` line opens a new chunk). Liveness cannot flow
+ *  across a `ret`, so per-chunk analysis is exact. */
+export function function_chunk_start(lines: string[], idx: number): number {
+	let start = 0;
+	let prev = "";
+	for (let i = 0; i < idx; i++) {
+		const t = lines[i].trim();
+		if (!t) continue;
+		if (
+			prev === "ret" ||
+			prev.startsWith(".data") ||
+			prev.startsWith(".p2align") ||
+			prev.startsWith(".text")
+		) {
+			start = i;
+		}
+		prev = t;
+	}
+	return start;
+}
+
+/** Analyze ONLY the function chunk containing `line_idx` — the same
+ *  blocks/edges/liveness as a whole-text analysis restricted to that
+ *  function (control flow cannot cross a `ret`), at a fraction of the
+ *  cost on multi-function program text. `offset` maps chunk-relative
+ *  line indexes back to whole-text indexes. */
+export function analyze_function_at(
+	code: string,
+	line_idx: number,
+): { a: Analysis; offset: number } | null {
+	const lines = code.split("\n");
+	const start = function_chunk_start(lines, line_idx);
+	let end = lines.length;
+	let prev = "";
+	for (let i = start; i < lines.length; i++) {
+		const t = lines[i].trim();
+		if (!t) continue;
+		if (
+			i > start &&
+			(prev === "ret" ||
+				prev.startsWith(".data") ||
+				prev.startsWith(".p2align") ||
+				prev.startsWith(".text"))
+		) {
+			end = i;
+			break;
+		}
+		prev = t;
+	}
+	const a = analyze(lines.slice(start, end).join("\n"));
+	if (!a) return null;
+	return { a, offset: start };
+}
+
 /** One full analysis pass over the text; null = abort (the text contains
  *  something the CFG does not model — the caller returns it unchanged). */
 function analyze(code: string): Analysis | null {

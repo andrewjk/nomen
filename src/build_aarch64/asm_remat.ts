@@ -49,7 +49,14 @@
  * unchanged (byte-identical off arm).
  */
 
-import { ALL_TRACKED, analyze_cfg, exact_defs, transfer } from "./asm_cycle_dead_moves.ts";
+import {
+	ALL_TRACKED,
+	analyze_function_at,
+	exact_defs,
+	function_chunk_start,
+	transfer,
+	type Analysis,
+} from "./asm_cycle_dead_moves.ts";
 import { find_containing_cycle, instr_regs } from "./asm_if_convert.ts";
 import type { AsmInstruction } from "./asm_ir.ts";
 import { parse_asm_instruction } from "./lift_asm.ts";
@@ -195,11 +202,7 @@ function apply_pairs(lines: string[], cands: PairCandidate[], fmov_at?: number[]
  * address cannot leak through it. Without this, every loop feeding a
  * call would refuse (all eight arg slots read = live).
  */
-function live_before_fmov(
-	a: NonNullable<ReturnType<typeof analyze_cfg>>,
-	f: number,
-	exclude_arg_reads: Set<string>,
-): Set<string> {
+function live_before_fmov(a: Analysis, f: number, exclude_arg_reads: Set<string>): Set<string> {
 	const step = (instr: AsmInstruction, live: Set<string>): void => {
 		if (instr.op === "bl" || instr.op === "blr") {
 			for (let x = 0; x <= 17; x++) live.delete(`x${x}`);
@@ -261,17 +264,26 @@ function remat_float_pairs(code: string): string {
 		const cands = find_pair_candidates(lines, doubles);
 		if (cands.length === 0) break;
 		// Trial: every candidate collapsed; the liveness verdict for each
-		// is computed at its inserted fmov.
+		// is computed at its inserted fmov, analyzing ONLY the candidate's
+		// function chunk (control flow cannot cross a ret, so the per-
+		// function result is exact — and a fraction of the whole-text cost).
 		const fmov_line: number[] = [];
 		const trial = apply_pairs(lines, cands, fmov_line);
-		const a = analyze_cfg(trial.join("\n"));
-		if (!a) break;
+		const trial_code = trial.join("\n");
 		const exclude = new Set(cands.map((c) => c.xR));
+		const chunk_memo = new Map<number, { a: Analysis; offset: number } | null>();
 		const winners: PairCandidate[] = [];
 		for (let ci = 0; ci < cands.length; ci++) {
 			const f = fmov_line[ci];
 			if (f === undefined) continue;
-			const live = live_before_fmov(a, f, exclude);
+			const chunk = function_chunk_start(trial, f);
+			let entry = chunk_memo.get(chunk);
+			if (entry === undefined) {
+				entry = analyze_function_at(trial_code, f);
+				chunk_memo.set(chunk, entry);
+			}
+			if (!entry) continue;
+			const live = live_before_fmov(entry.a, f - entry.offset, exclude);
 			// Dead in BOTH register views → no reader observes the deleted
 			// address def on any path → collapse is invisible.
 			const c = cands[ci];
@@ -431,8 +443,14 @@ function hoist_one_fmov(code: string): string | null {
 /** Rewrite `line` so every READ occurrence of `from` becomes `to`. The
  *  textual occurrences of a register token map one-to-one onto its reg
  *  operands in order, so the q-th match is the q-th dX operand — rename
- *  it iff that operand sits in a read position. */
-function rename_reads(line: string, instr: AsmInstruction, from: string, to: string): string {
+ *  it iff that operand sits in a read position. Shared with the sibling
+ *  asm-level passes (staging elision). */
+export function rename_reads(
+	line: string,
+	instr: AsmInstruction,
+	from: string,
+	to: string,
+): string {
 	const defs = new Set(exact_defs(instr));
 	const dx_ops: boolean[] = [];
 	for (let p = 0; p < instr.operands.length; p++) {
