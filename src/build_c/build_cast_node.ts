@@ -1,4 +1,5 @@
 import CastNode from "../nodes/CastNode.ts";
+import { pointer_element_c_type } from "./build_index_node.ts";
 import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_function_name from "./utils/c_function_name.ts";
@@ -18,6 +19,34 @@ export default function build_cast_node(node: CastNode, status: BuildStatus) {
 		}
 		build_node(node.value, status);
 		status.code += `)`;
+		return;
+	}
+
+	// `unsafe` pointer casts (checker-gated): integer ↔ `ptr T`, and
+	// `string` → `ptr char` (the fat value's data pointer).
+	const value_type = type_from_value_node(node.value);
+	if (node.target_type.is_pointer || value_type.is_pointer) {
+		if (node.target_type.is_pointer) {
+			status.code += `(${pointer_element_c_type(node.target_type, status)}*)`;
+			if (value_type.name === "string" && !value_type.is_pointer) {
+				// Fat string → its backing bytes: the thin pointer inside the
+				// nomen_string value (or behind the ref-self pointer — the
+				// natural `*self` deref comes from build_value_node).
+				status.code += `(`;
+				build_node(node.value, status);
+				status.code += `).ptr`;
+				return;
+			}
+			build_node(node.value, status);
+			return;
+		}
+		// Pointer → integer: same bits, reinterpreted. A struct/class pointer
+		// (`self as uint64`) must emit the POINTER (`self`), not a deref'd
+		// struct lvalue — suppress the value-node deref.
+		status.code += `(${c_type(node.target_type.name)})`;
+		status.suppress_dereference = true;
+		build_node(node.value, status);
+		status.suppress_dereference = false;
 		return;
 	}
 

@@ -197,14 +197,17 @@ export function emit_owning_array_string_specialize(
 		status.code += `stp x20, x21, [sp, #-16]!\n`;
 		status.code += `lsl x9, x1, #4\n`;
 		status.code += `add x9, ${self_reg}, x9\n`; // &slot[index]
-		// Free the outgoing value.
+		// Free the outgoing value. x2/x3 are caller-saved and _free clobbers
+		// them, so the incoming value pair parks in x20/x21 (saved above).
 		status.code += `ldr x0, [x9]\n`;
+		status.code += `mov x20, x2\n`;
+		status.code += `mov x21, x3\n`;
 		emit_free(status);
 		// Deep-copy the incoming value.
-		status.code += `mov x0, x2\n`;
+		status.code += `mov x0, x20\n`;
 		emit_strdup(status);
 		status.code += `str x0, [x9]\n`;
-		status.code += `str x3, [x9, #8]\n`;
+		status.code += `str x21, [x9, #8]\n`;
 		status.code += `ldp x20, x21, [sp], #16\n`;
 		return true;
 	}

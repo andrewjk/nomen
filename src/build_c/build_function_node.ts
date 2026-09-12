@@ -16,6 +16,7 @@ import build_auto_free from "./build_auto_free.ts";
 import build_bitset_node from "./build_bitset_node.ts";
 import build_block_node from "./build_block_node.ts";
 import build_extern from "./build_extern.ts";
+import { pointer_element_c_type } from "./build_index_node.ts";
 import build_parameter_node from "./build_parameter_node.ts";
 import build_struct_body from "./build_struct_body.ts";
 import build_struct_node from "./build_struct_node.ts";
@@ -125,7 +126,10 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		status.code += `int main(`;
 	} else {
 		if (node.return_type.name) {
-			if (node.return_type.is_array) {
+			if (node.return_type.is_pointer) {
+				// A `ptr T` return is a bare machine word (`T*`).
+				status.code += `${pointer_element_c_type(node.return_type, status)}* `;
+			} else if (node.return_type.is_array) {
 				// Arrays can't be returned by value in C. Return a pointer to
 				// the Array_<T> header struct (heap-allocated by build_return_node
 				// when the local stack array is copied to the heap at return).

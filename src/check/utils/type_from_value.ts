@@ -3,6 +3,16 @@ import Type from "../../nodes/Type.ts";
 import type CheckStatus from "../CheckStatus.ts";
 
 export default function type_from_value(value: string, status: CheckStatus): Type {
+	// `unsafe`-code generic constants: inside a generic struct's method, the
+	// per-instantiation element size and representation flags are compile-time
+	// constants named after the type parameter (`T_SIZE`, `T_NEEDS_STRDUP`,
+	// `T_FAT`). The monomorphizer substitutes them with literals; here they
+	// just need a type so the generic form of the body checks.
+	for (const tp of status.type_params) {
+		if (value === `${tp}_SIZE`) return new Type("int", true);
+		if (value === `${tp}_NEEDS_STRDUP` || value === `${tp}_FAT`) return new Type("bool", true);
+	}
+
 	// Is it a value that's been declared in a var/const or param?
 	const decl_value = status.values.findLast((v) => v.name === value);
 	if (decl_value) {

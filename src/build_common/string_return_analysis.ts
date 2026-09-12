@@ -252,6 +252,10 @@ export function value_is_owned_string(
 		return !isLiteral && !isNumeric && !borrow_names.has(v.value);
 	}
 	if (v.node_type === "op") return true;
+	// `p[i]` / `arr[i]` (unsafe Nomen element reads — e.g. a rewritten
+	// `Array.at` body): the element lives in the target's existing storage,
+	// so like a field access it is a BORROW, never a fresh heap allocation.
+	if (v.node_type === "index") return false;
 	if (v.node_type === "access") {
 		if (v.access?.node_type === "access_field") return false;
 		if (v.access?.node_type === "access_func") {

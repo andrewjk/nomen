@@ -42,24 +42,50 @@ function resolve_struct(type: Type, status: CheckStatus): StructNode | undefined
 
 /**
  * Recursively determine whether an AST subtree contains a `raw` node (an inline
- * asm/C block). Used to tell apart a `#destroy` that actually releases a
- * resource (free/fclose/release are always emitted via raw blocks in Nomen) from
- * a benign cleanup hook that only resets fields (e.g. `self.id = 0`). The walk
- * skips `scope`/`parent` back-edges and is cycle-guarded.
+ * asm/C block) or a call to an `extern` function. Used to tell apart a
+ * `#destroy` that actually releases a resource from a benign cleanup hook that
+ * only resets fields (e.g. `self.id = 0`). Releases are written either as raw
+ * blocks (`free(...)` inside `#arch:` code — the pre-unsafe form) or as plain
+ * Nomen calls to the memory externs (`free`/`realloc`/... declared
+ * `extern func`); both are un-analyzable resource releases. The walk skips
+ * `scope`/`parent` back-edges and is cycle-guarded.
  */
-function contains_raw(node: BaseNode, visited: WeakSet<BaseNode>): boolean {
+function contains_release(node: BaseNode, visited: WeakSet<BaseNode>): boolean {
 	if (!node || typeof node !== "object" || visited.has(node)) return false;
 	visited.add(node);
 	if (node.node_type === "raw") return true;
+	const any_node = node as any;
+	if (node.node_type === "func_call" || node.node_type === "access_func") {
+		const resolved = any_node.resolved_function;
+		if (resolved?.is_extern) return true;
+		// The generic body may be classified before its own statement was
+		// reached (user structs are checked before the appended library), so
+		// the call's stamp may be absent — resolve by name. Externs are
+		// pre-registered at root gather time (check_block_node), making this
+		// order-independent.
+		const name = any_node.name as string | undefined;
+		if (name && !resolved) {
+			const func = externs_by_name.get(name);
+			if (func?.is_extern) return true;
+		}
+	}
 	for (const child of child_nodes(node)) {
-		if (contains_raw(child, visited)) return true;
+		if (contains_release(child, visited)) return true;
 	}
 	return false;
 }
 
+/** Root-level extern declarations, populated by check_block_node's gather
+ *  pass so ownership classification never depends on statement order. */
+const externs_by_name = new Map<string, FunctionNode>();
+
+export function register_extern_for_ownership(func: FunctionNode): void {
+	if (func.is_extern) externs_by_name.set(func.name, func);
+}
+
 function destroy_releases(func: FunctionNode): boolean {
 	const visited = new WeakSet<BaseNode>();
-	return func.statements.some((s) => contains_raw(s, visited));
+	return func.statements.some((s) => contains_release(s, visited));
 }
 
 /**

@@ -63,6 +63,9 @@ export default function clone_status(status: CheckStatus): CheckStatus {
 		// Mutating-call tracking: share the same set so records in cloned
 		// (block/function) scopes propagate to the root warning pass.
 		mutated_local_names: status.mutated_local_names,
+		// Unsafe context: block clones (if/else/while bodies) stay inside the
+		// same unsafe function, so inherit the flag.
+		in_unsafe: status.in_unsafe,
 		// View-field invalidations: share the same set so an invalidation
 		// inside a branch (which may fall through) stays visible afterwards —
 		// a conservative union, mirroring mutated_local_names.

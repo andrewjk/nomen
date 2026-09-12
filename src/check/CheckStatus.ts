@@ -142,6 +142,14 @@ export default interface CheckStatus {
 	mutated_local_names?: Set<string>;
 
 	/**
+	 * True while checking inside an `unsafe func` body or an `unsafe { }`
+	 * block — the only places `ptr T` values, `p[i]` indexing and
+	 * integer↔pointer casts are legal. Not cloned through: block-scoped
+	 * forms set/restore it explicitly.
+	 */
+	in_unsafe?: boolean;
+
+	/**
 	 * Struct variables whose `view T` fields were invalidated by a mutation
 	 * (reassignment or ref-mutation) of a source they borrow from. Reading a
 	 * view field of one is rejected until the field is re-pointed. Shared by

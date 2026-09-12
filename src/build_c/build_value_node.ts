@@ -90,17 +90,7 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 	// forwarding) set suppress_dereference, so they get the bare pointer.
 	// A custom #init uses a local by-value `self` (self_is_local), which is
 	// never in function_ref_params, so this branch is skipped there.
-	if (
-		value === "self" &&
-		status.function_ref_params?.has("self") &&
-		!status.suppress_dereference &&
-		// A `string` receiver is emitted as a thin `char *self` inside raw
-		// #arch bodies (via the _raw_ adapter) — the pointer IS the value.
-		// A Nomen-level (non-raw) string method's self is a by-value
-		// nomen_string param, never in function_ref_params, so this guard
-		// only matters for the raw path.
-		status.current_struct?.name !== "string"
-	) {
+	if (value === "self" && status.function_ref_params?.has("self") && !status.suppress_dereference) {
 		status.code += `*`;
 	}
 	// A `ref` class param is a double pointer (`struct T **`); a value-use

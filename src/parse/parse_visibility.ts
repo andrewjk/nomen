@@ -88,8 +88,15 @@ export default function parse_visibility(visibility: "pub" | "private", status: 
 			if (peek_current(status) === "inline") {
 				consume(status);
 			}
+			// `<visibility> inline unsafe func …` — the unsafe marker may sit
+			// between the modifiers.
+			let unsafe_fn = false;
+			if (peek_current(status) === "unsafe") {
+				consume(status);
+				unsafe_fn = true;
+			}
 			if (peek_current(status) === "func") {
-				parse_function(visibility, status, undefined, true);
+				parse_function(visibility, status, undefined, true, false, unsafe_fn);
 			} else {
 				add_error(status, "Expected func after inline", get_index(status));
 			}
@@ -103,6 +110,30 @@ export default function parse_visibility(visibility: "pub" | "private", status: 
 				parse_function(visibility, status, undefined, false, true);
 			} else {
 				add_error(status, "Expected func after extern", get_index(status));
+			}
+			break;
+		}
+		case "unsafe": {
+			consume(status);
+			// `<visibility> unsafe func …` — the whole body is an unsafe
+			// context (ptr values, indexing, pointer casts). Library-only:
+			// the lockdown boundary check runs in parse_function.
+			if (peek_current(status) === "unsafe") {
+				consume(status);
+			}
+			if (peek_current(status) === "inline") {
+				consume(status);
+				if (peek_current(status) === "func") {
+					parse_function(visibility, status, undefined, true, false, true);
+				} else {
+					add_error(status, "Expected func after inline", get_index(status));
+				}
+				break;
+			}
+			if (peek_current(status) === "func") {
+				parse_function(visibility, status, undefined, false, false, true);
+			} else {
+				add_error(status, "Expected func after unsafe", get_index(status));
 			}
 			break;
 		}

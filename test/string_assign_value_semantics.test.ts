@@ -26,7 +26,15 @@ function build_main(input: string, arch: "aarch64" | "c"): string {
 	expect(result.errors ?? []).toEqual([]);
 	if (arch === "c") {
 		const start = result.code.indexOf("int main()");
-		return result.code.slice(start, result.code.indexOf("// Func", start + 8));
+		// The section ends at the next function comment — or at the first
+		// memory-extern adapter (core unsafe bodies emit extern_free/malloc
+		// calls and their adapters, which would otherwise pollute counts).
+		let end = result.code.indexOf("// Func", start + 8);
+		for (const marker of ["nomen_string extern_", "void extern_", "unsigned long long extern_"]) {
+			const m = result.code.indexOf(marker, start + 8);
+			if (m !== -1 && (end === -1 || m < end)) end = m;
+		}
+		return result.code.slice(start, end === -1 ? undefined : end);
 	}
 	const lines = result.code.split("\n");
 	const start = lines.findIndex((l) => l === "_main:");

@@ -514,6 +514,8 @@ export default function build_return_node(
 	if (status.last_result_is_heap && current_return_is_string(status)) {
 		if (!status.heap_returning_functions) status.heap_returning_functions = new Set();
 		if (status.current_function_name) {
+			if (process.env.NOMEN_DBG_HEAP)
+				console.error(`DBG registering heap-returning: ${status.current_function_name}`);
 			status.heap_returning_functions.add(status.current_function_name);
 		}
 	}

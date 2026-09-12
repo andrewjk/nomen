@@ -31,6 +31,14 @@ export default function build_cast_node(node: CastNode, status: BuildStatus) {
 	const from_type = type_from_value_node(node.value);
 	const from = from_type.name;
 	const to = node.target_type.name;
+
+	// `unsafe` pointer casts are bit-no-ops on a register machine: a pointer
+	// is already a 64-bit word in x0. A fat string value loads as the
+	// (ptr, len) pair and `as ptr char` simply keeps the ptr half.
+	if (node.target_type.is_pointer || from_type?.is_pointer) {
+		return;
+	}
+
 	const fs = aarch64_size(from);
 	const ts = aarch64_size(to);
 

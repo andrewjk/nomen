@@ -41,6 +41,13 @@ export default class FunctionNode extends BaseNode implements BlockNode, Returni
 	 * the checker rejects `extern` outside the System library.
 	 */
 	is_extern?: boolean;
+	/**
+	 * True for an `unsafe func`: the whole body is an unsafe context, so
+	 * `ptr T` values, `p[i]` indexing and integer↔pointer casts are legal
+	 * in it without a nested `unsafe { }` block. Library-only (the parser
+	 * rejects the keyword outside the System library source).
+	 */
+	is_unsafe?: boolean;
 	/** True when this function is defined in the appended System library source. */
 	is_library?: boolean;
 	/**

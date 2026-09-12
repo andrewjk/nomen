@@ -6,6 +6,7 @@ import BaseNode from "../nodes/BaseNode.ts";
 import CastNode from "../nodes/CastNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import GroupedNode from "../nodes/GroupedNode.ts";
+import IndexNode from "../nodes/IndexNode.ts";
 import { is_operation_node } from "../nodes/is_node_type.ts";
 import OperationNode, { type Operator } from "../nodes/OperationNode.ts";
 import RangeNode from "../nodes/RangeNode.ts";
@@ -272,6 +273,18 @@ export default function parse_expression(status: ParseStatus, allow_assignment =
 				accept(".", status);
 				const access = new AccessNode(node.start, node, parse_access(value, status));
 				node = access;
+				break;
+			}
+			case "[": {
+				// Postfix indexing `p[i]` — the raw-pointer element access of
+				// `unsafe` code (the checker rejects it on non-pointer
+				// targets and outside unsafe contexts). Array-literal `[`
+				// only ever appears in primary position, so this is
+				// unambiguous.
+				accept("[", status);
+				const index = parse_expression(status, false);
+				expect("]", status);
+				node = new IndexNode(node.start, node, index);
 				break;
 			}
 			case "(": {

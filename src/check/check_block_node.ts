@@ -20,10 +20,28 @@ import type CheckStatus from "./CheckStatus.ts";
 import { synthesize_auto_derived_methods } from "./utils/auto_derive.ts";
 import { extract_length_equalities_at_registration } from "./utils/flow_bounds.ts";
 import materialize_type from "./utils/materialize_type.ts";
+import { register_extern_for_ownership } from "./utils/ownership.ts";
 import type_name from "./utils/type_name.ts";
 
 export default function check_block_node(node: BlockNode, status: CheckStatus) {
 	gather_structs(node, status);
+
+	// Pre-register root-level `extern func` declarations so ANY earlier code
+	// (user structs checked before the appended library) can resolve calls to
+	// them. The extern adapter label (`extern_<name>`) and the ownership
+	// classifier (a `#destroy` that calls an extern releases a resource) both
+	// depend on the call's resolved function being findable regardless of
+	// statement order — struct TYPES get the same treatment via
+	// gather_structs. check_function_node still checks each extern in
+	// statement order; the duplicate registration is harmless (findLast).
+	if (node.node_type === "root") {
+		for (const child of node.statements) {
+			if (child.node_type === "func" && (child as FunctionNode).is_extern) {
+				status.functions.push(child as FunctionNode);
+				register_extern_for_ownership(child as FunctionNode);
+			}
+		}
+	}
 
 	// Merge each `extend struct/class Name { ... }` block's methods into the
 	// named target struct, so the upcoming statement-order walk checks them

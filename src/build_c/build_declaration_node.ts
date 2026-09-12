@@ -21,6 +21,7 @@ import RangeNode from "../nodes/RangeNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_array_values_node from "./build_array_values_node.ts";
 import { struct_needs_destroy_by_name } from "./build_auto_free.ts";
+import { pointer_element_c_type } from "./build_index_node.ts";
 import build_node from "./build_node.ts";
 import build_parameter_node from "./build_parameter_node.ts";
 import build_range_node, { evaluate_constant } from "./build_range_node.ts";
@@ -217,6 +218,17 @@ export default function build_declaration_node(
 			status.code += `void *${safe_name}`;
 			if (node.value) {
 				status.code += ` = (void *)`;
+				emit_init_value(node.value, nir_init, status);
+			}
+			status.code += `;\n`;
+			return;
+		}
+		if (node.type.is_pointer) {
+			// A `ptr T` local is a bare machine word (an address). It is
+			// never auto-freed — unsafe code owns the pointee explicitly.
+			status.code += `${pointer_element_c_type(node.type, status)} *${safe_name}`;
+			if (node.value) {
+				status.code += ` = `;
 				emit_init_value(node.value, nir_init, status);
 			}
 			status.code += `;\n`;

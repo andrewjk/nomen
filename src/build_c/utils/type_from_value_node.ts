@@ -47,6 +47,11 @@ export default function type_from_value_node(node: BaseNode): Type {
 		case "anon_struct": {
 			return (node as AnonStructNode).type || new Type("");
 		}
+		case "index": {
+			// `p[i]` (unsafe element read) — the checker/mono pipeline stamps
+			// the element type on the index node.
+			return (node as import("../../nodes/IndexNode.ts").default).type ?? new Type("");
+		}
 	}
 	return new Type("");
 }

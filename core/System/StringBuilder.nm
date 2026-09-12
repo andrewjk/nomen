@@ -14,48 +14,19 @@ pub struct StringBuilder {
 	var cap = 0
 
 	// Ensure capacity for at least `needed` bytes. Grows geometrically.
+	// Plain Nomen + the memory externs — no pointer arithmetic needed, so
+	// this doesn't even require an unsafe context.
 	func ensure = (ref self, int needed) {
-		```
-		#arch: c
-		if (self->cap >= needed) return;
-		int new_cap = self->cap;
-		if (new_cap == 0) new_cap = 16;
-		while (new_cap < needed) new_cap *= 2;
-		self->data = (unsigned long long)realloc((void*)(unsigned long long)self->data, new_cap);
-		self->cap = new_cap;
-		```
-		```
-		#arch: aarch64
-		// x19 = self, x1 = needed
-		ldr x2, [x19, #24]        // cap
-		cmp x2, x1
-		b.ge .Lsb_ensure_end
-		// pick new_cap
-		mov x3, #16
-		cmp x2, #0
-		csel x3, x3, x2, eq
-		.Lsb_ensure_loop:
-		cmp x3, x1
-		b.ge .Lsb_ensure_grow
-		lsl x3, x3, #1
-		b .Lsb_ensure_loop
-		.Lsb_ensure_grow:
-		// save needed (x1) and new_cap (x3) across realloc
-		sub sp, sp, #32
-		str x1, [sp, #0]
-		str x3, [sp, #8]
-		str x2, [sp, #16]         // old cap (unused after, but keeps stack aligned)
-		ldr x0, [x19, #8]         // data
-		mov x1, x3
-		bl _realloc
-		str x0, [sp, #24]         // saved new data ptr
-		ldr x1, [sp, #8]          // new_cap
-		str x1, [x19, #24]        // cap = new_cap
-		ldr x0, [sp, #24]
-		str x0, [x19, #8]         // data = realloc result
-		add sp, sp, #32
-		.Lsb_ensure_end:
-		```
+		if self.cap >= needed {
+			return
+		}
+		var int new_cap = self.cap
+		if new_cap == 0 {
+			new_cap = 16
+		}
+		while new_cap < needed; new_cap *= 2 {}
+		self.data = realloc(self.data, new_cap)
+		self.cap = new_cap
 	}
 
 	// Append a single byte (char).
@@ -110,65 +81,14 @@ pub struct StringBuilder {
 		```
 	}
 
-	// Append a null-terminated string.
-	func append_string = (ref self, string s) {
-		```
-		#arch: c
-		int sl = (int)s.len;
-		int needed = self->len + sl + 1;
-		if (needed > self->cap) {
-			int nc = self->cap;
-			if (nc == 0) nc = 16;
-			while (nc < needed) nc *= 2;
-			self->data = (unsigned long long)realloc((void*)(unsigned long long)self->data, nc);
-			self->cap = nc;
-		}
-		memcpy((unsigned char*)(unsigned long long)self->data + self->len, s.ptr, sl);
-		self->len = self->len + sl;
-		```
-		```
-		#arch: aarch64
-		// Fat-string ABI: x19 = self; s = (x1 ptr, x2 len). The length is
-		// already in a register — no strlen.
-		sub sp, sp, #32
-		str x1, [sp, #0]          // s ptr
-		str x2, [sp, #8]          // sl
-		ldr x1, [x19, #16]        // len
-		add x1, x1, x2            // len + sl
-		add x1, x1, #1            // +1 for null room
-		// inline ensure(x1)
-		ldr x2, [x19, #24]
-		cmp x2, x1
-		b.ge .Lsb_as_copy
-		mov x3, #16
-		cmp x2, #0
-		csel x3, x3, x2, eq
-		.Lsb_as_loop:
-		cmp x3, x1
-		b.ge .Lsb_as_grow
-		lsl x3, x3, #1
-		b .Lsb_as_loop
-		.Lsb_as_grow:
-		str x3, [x19, #24]
-		ldr x0, [x19, #8]
-		mov x1, x3
-		bl _realloc
-		str x0, [x19, #8]
-		.Lsb_as_copy:
-		// memcpy(data + len, s.ptr, sl)
-		ldr x0, [x19, #8]         // data
-		ldr x1, [x19, #16]        // len
-		add x0, x0, x1            // dest = data + len
-		ldr x1, [sp, #0]          // src = s ptr
-		ldr x2, [sp, #8]          // n = sl
-		bl _memcpy
-		// len = len + sl
-		ldr x0, [x19, #16]
-		ldr x1, [sp, #8]
-		add x0, x0, x1
-		str x0, [x19, #16]
-		add sp, sp, #32
-		```
+	// Append a null-terminated string. `unsafe` Nomen single-sourced for
+	// both backends: the fat pair's pointer half feeds memcpy directly, and
+	// the tracked length replaces the strlen the old C body paid.
+	unsafe func append_string = (ref self, string s) {
+		var int sl = s.length
+		self.ensure(self.len + sl + 1)
+		memcpy(self.data + self.len, (s as ptr char) as uint64, sl)
+		self.len = self.len + sl
 	}
 
 	// Append a view's bytes without materializing it: `append_string` takes
@@ -176,119 +96,22 @@ pub struct StringBuilder {
 	// call. Views lower to the same (ptr, len) fat pair, so the bytes are
 	// memcpy'd straight out of the borrowed buffer (used by
 	// `string.replace_first`/`replace_all`).
-	pub func append_string_view = (ref self, view string s) {
-		```
-		#arch: c
-		int sl = (int)s.len;
-		int needed = self->len + sl + 1;
-		if (needed > self->cap) {
-			int nc = self->cap;
-			if (nc == 0) nc = 16;
-			while (nc < needed) nc *= 2;
-			self->data = (unsigned long long)realloc((void*)(unsigned long long)self->data, nc);
-			self->cap = nc;
-		}
-		memcpy((unsigned char*)(unsigned long long)self->data + self->len, s.ptr, sl);
-		self->len = self->len + sl;
-		```
-		```
-		#arch: aarch64
-		// x19 = self; s = (x1 ptr, x2 len) — a view is the same fat pair.
-		sub sp, sp, #32
-		str x1, [sp, #0]          // s ptr
-		str x2, [sp, #8]          // sl
-		ldr x1, [x19, #16]        // len
-		add x1, x1, x2            // len + sl
-		add x1, x1, #1            // +1 for null room
-		// inline ensure(x1)
-		ldr x2, [x19, #24]
-		cmp x2, x1
-		b.ge .Lsb_asv_copy
-		mov x3, #16
-		cmp x2, #0
-		csel x3, x3, x2, eq
-		.Lsb_asv_loop:
-		cmp x3, x1
-		b.ge .Lsb_asv_grow
-		lsl x3, x3, #1
-		b .Lsb_asv_loop
-		.Lsb_asv_grow:
-		str x3, [x19, #24]
-		ldr x0, [x19, #8]
-		mov x1, x3
-		bl _realloc
-		str x0, [x19, #8]
-		.Lsb_asv_copy:
-		// memcpy(data + len, s.ptr, sl)
-		ldr x0, [x19, #8]         // data
-		ldr x1, [x19, #16]        // len
-		add x0, x0, x1            // dest = data + len
-		ldr x1, [sp, #0]          // src = s ptr
-		ldr x2, [sp, #8]          // n = sl
-		bl _memcpy
-		// len = len + sl
-		ldr x0, [x19, #16]
-		ldr x1, [sp, #8]
-		add x0, x0, x1
-		str x0, [x19, #16]
-		add sp, sp, #32
-		```
+	pub unsafe func append_string_view = (ref self, view string s) {
+		var int sl = s.length
+		self.ensure(self.len + sl + 1)
+		memcpy(self.data + self.len, (s as ptr char) as uint64, sl)
+		self.len = self.len + sl
 	}
 
 	// Replace the buffer's contents with a copy of `s`'s bytes. The only
 	// way to start a StringBuilder from a slice without a `to_string()`
 	// copy: the view's bytes are copied once into fresh storage, so the
 	// result is owned and independent of the source.
-	pub func seed = (ref self, view string s) {
-		```
-		#arch: c
-		int sl = (int)s.len;
-		int needed = sl + 1;
-		if (needed > self->cap) {
-			int nc = self->cap;
-			if (nc == 0) nc = 16;
-			while (nc < needed) nc *= 2;
-			self->data = (unsigned long long)realloc((void*)(unsigned long long)self->data, nc);
-			self->cap = nc;
-		}
-		memcpy((unsigned char*)(unsigned long long)self->data, s.ptr, sl);
-		self->len = sl;
-		```
-		```
-		#arch: aarch64
-		// x19 = self; s = (x1 ptr, x2 len)
-		sub sp, sp, #32
-		str x1, [sp, #0]          // s ptr
-		str x2, [sp, #8]          // sl
-		add x1, x2, #1            // needed = sl + 1
-		// inline ensure(x1)
-		ldr x2, [x19, #24]
-		cmp x2, x1
-		b.ge .Lsb_seed_copy
-		mov x3, #16
-		cmp x2, #0
-		csel x3, x3, x2, eq
-		.Lsb_seed_loop:
-		cmp x3, x1
-		b.ge .Lsb_seed_grow
-		lsl x3, x3, #1
-		b .Lsb_seed_loop
-		.Lsb_seed_grow:
-		str x3, [x19, #24]
-		ldr x0, [x19, #8]
-		mov x1, x3
-		bl _realloc
-		str x0, [x19, #8]
-		.Lsb_seed_copy:
-		// memcpy(data, s.ptr, sl)
-		ldr x0, [x19, #8]         // dest = data
-		ldr x1, [sp, #0]          // src = s ptr
-		ldr x2, [sp, #8]          // n = sl
-		bl _memcpy
-		ldr x0, [sp, #8]
-		str x0, [x19, #16]        // len = sl
-		add sp, sp, #32
-		```
+	pub unsafe func seed = (ref self, view string s) {
+		var int sl = s.length
+		self.ensure(sl + 1)
+		memcpy(self.data, (s as ptr char) as uint64, sl)
+		self.len = sl
 	}
 
 	// Finalize: null-terminate, return the byte buffer as a string, and
@@ -344,24 +167,11 @@ pub struct StringBuilder {
 
 	// Drop the buffer without finalizing (free the byte buffer outright).
 	func #destroy = () {
-		```
-		#arch: c
-		if (self->data) {
-			free((void*)(unsigned long long)self->data);
-			self->data = 0;
-			self->len = 0;
-			self->cap = 0;
+		if self.data != 0 {
+			free(self.data)
+			self.data = 0
+			self.len = 0
+			self.cap = 0
 		}
-		```
-		```
-		#arch: aarch64
-		ldr x0, [x19, #8]
-		cbz x0, .Lsb_destroy_end
-		bl _free
-		str xzr, [x19, #8]
-		str xzr, [x19, #16]
-		str xzr, [x19, #24]
-		.Lsb_destroy_end:
-		```
 	}
 }

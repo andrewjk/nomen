@@ -3,7 +3,10 @@ import AccessNode from "../nodes/AccessNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
+import GroupedNode from "../nodes/GroupedNode.ts";
+import IndexNode from "../nodes/IndexNode.ts";
 import LetNode from "../nodes/LetNode.ts";
+import UnsafeBlockNode from "../nodes/UnsafeBlockNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import parse_access from "./parse_access.ts";
 import parse_async_block from "./parse_async_block.ts";
@@ -112,7 +115,14 @@ export default function parse_statement(status: ParseStatus) {
 			}
 			case "inline": {
 				consume(status);
-				if (peek_current(status) === "func") {
+				if (peek_current(status) === "unsafe") {
+					consume(status);
+					if (peek_current(status) === "func") {
+						parse_function(default_visibility(status), status, undefined, true, false, true);
+					} else {
+						add_error(status, "Expected func after unsafe", get_index(status));
+					}
+				} else if (peek_current(status) === "func") {
 					parse_function(default_visibility(status), status, undefined, true);
 				} else {
 					add_error(status, "Expected func after inline", get_index(status));
@@ -125,6 +135,46 @@ export default function parse_statement(status: ParseStatus) {
 					parse_function(default_visibility(status), status, undefined, false, true);
 				} else {
 					add_error(status, "Expected func after extern", get_index(status));
+				}
+				break;
+			}
+			case "unsafe": {
+				// Lockdown boundary check for BLOCKS lives here; the function
+				// forms are checked in parse_function.
+				const unsafe_start = get_index(status);
+				consume(status);
+				if (peek_current(status) === "func" || peek_current(status) === "inline") {
+					if (peek_current(status) === "inline") {
+						consume(status);
+						if (peek_current(status) === "func") {
+							parse_function(default_visibility(status), status, undefined, true, false, true);
+						} else {
+							add_error(status, "Expected func after inline", get_index(status));
+						}
+					} else {
+						parse_function(default_visibility(status), status, undefined, false, false, true);
+					}
+				} else if (peek_current(status) === "{") {
+					if (status.unsafe_boundary === undefined || unsafe_start < status.unsafe_boundary) {
+						add_error(
+							status,
+							`'unsafe' is reserved for the System library — raw pointer manipulation is not available to user code`,
+							unsafe_start,
+						);
+					}
+					accept("{", status);
+					const unsafe_block = new UnsafeBlockNode(unsafe_start, []);
+					// Register the block in its parent BEFORE pushing it on the
+					// stack, so statements inside attach to the block itself.
+					add_to_parent(unsafe_block, "Unsafe block", status);
+					status.stack.push(unsafe_block);
+					while (peek_current(status) !== "}" && peek_current(status) !== undefined) {
+						parse_statement(status);
+					}
+					expect("}", status);
+					status.stack.pop();
+				} else {
+					add_error(status, "Expected func or { after unsafe", get_index(status));
 				}
 				break;
 			}
@@ -220,14 +270,33 @@ export default function parse_statement(status: ParseStatus) {
 function parse_statement_start(status: ParseStatus) {
 	const start = get_index(status);
 	const value = consume(status);
-	let node: BaseNode = new ValueNode(start, value);
-
+	let node: BaseNode;
+	if (value === "(") {
+		// A statement that begins with a parenthesized expression (e.g.
+		// `(ptr)[i] = v` in unsafe code). Parse the group, then enter the
+		// postfix loop so indexing/assignment on it parses identically to a
+		// named value.
+		node = new GroupedNode(start, parse_expression(status));
+		expect(")", status);
+	} else {
+		node = new ValueNode(start, value);
+	}
 	while (true) {
 		const current_value = peek_current(status);
 		switch (current_value) {
 			case ".": {
 				accept(".", status);
 				node = new AccessNode(node.start, node, parse_access(value, status));
+				break;
+			}
+			case "[": {
+				// Postfix indexing `p[i]` (unsafe pointer element access) —
+				// mirrors parse_expression so `p[i] = v` and `p[i].field = v`
+				// parse as assignment statements.
+				accept("[", status);
+				const index = parse_expression(status, false);
+				expect("]", status);
+				node = new IndexNode(node.start, node, index);
 				break;
 			}
 			case "(": {

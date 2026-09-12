@@ -2,6 +2,12 @@ import add_error from "../add_error.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import type ParseStatus from "./ParseStatus.ts";
+
+/** Does `value` start like a type name (word-shaped)? Used to disambiguate
+ *  the `ptr T` pointer marker from a local variable named `ptr`. */
+function is_word_token(value: string): boolean {
+	return /^[A-Za-z_]\w*$/.test(value);
+}
 import accept from "./utils/accept.ts";
 import consume from "./utils/consume.ts";
 import expect from "./utils/expect.ts";
@@ -41,6 +47,15 @@ export default function parse_type(status: ParseStatus): Type {
 		return type;
 	}
 
+	// `ptr T` — a raw typed pointer, only legal in library `unsafe` code
+	// (the checker enforces the unsafe context; the parser only parses it).
+	// Only a pointer MARKER when a type name follows (`var ptr = 5` keeps
+	// `ptr` available as an inferred-local name).
+	const is_pointer =
+		peek_current(status) === "ptr" && is_word_token(status.tokens[status.i + 1]?.value ?? "");
+	if (is_pointer) {
+		consume(status);
+	}
 	const is_view = accept("view", status);
 	const is_ref = accept("ref", status);
 	const start = get_index(status);
@@ -66,6 +81,20 @@ export default function parse_type(status: ParseStatus): Type {
 			type.length = new ValueNode(get_index(status), consume(status));
 		}
 		expect("]", status);
+	}
+	if (is_pointer) {
+		// A pointer is a bare machine word — no views/refs/arrays of
+		// pointers, and no pointer-to-array. (Pointer-to-pointer would also
+		// parse here as `ptr ptr T`; reject it with the same rule.)
+		if (type.is_view || type.is_ref || type.is_array || type.is_pointer) {
+			add_error(status, `ptr type cannot be combined with view/ref/array or another ptr`, start);
+		}
+		type.is_pointer = true;
+		type.is_view = undefined;
+		type.is_ref = undefined;
+		type.storage_kind = undefined;
+		type.is_nullable = undefined;
+		type.length = undefined;
 	}
 	// `Array<T>` is the generic heap `Array` struct (monomorphized to
 	// `Array_<T>`), NOT a raw `T[]` stack array. Keep `is_array` (so the whole

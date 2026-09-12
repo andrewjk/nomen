@@ -18,6 +18,7 @@ import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
+import IndexNode from "../nodes/IndexNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import type StructNode from "../nodes/StructNode.ts";
 import Type from "../nodes/Type.ts";
@@ -36,6 +37,7 @@ import { build_operand, tree_is_call_free } from "./build_operation_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free, emit_malloc, emit_strdup } from "./utils/audit.ts";
 import { all_scope_frames, mark_moved_if_struct } from "./utils/auto_destroy.ts";
+import { emit_index_address, pointer_element_size } from "./utils/ptr_access.ts";
 import { NUM_REG_ARGS } from "./utils/stack_args.ts";
 import {
 	allocate_stack_space,
@@ -949,6 +951,40 @@ export function resolve_at_element_addr(target: BaseNode, status: BuildStatus): 
 }
 
 function build_access_field(node: AccessNode, status: BuildStatus) {
+	// `unsafe` member load through a pointer-indexed element (`p[i].field`):
+	// compute the element address (x9), add the member offset, and load with
+	// the member's width (a string member loads the (ptr, len) pair).
+	if (node.target.node_type === "index") {
+		const index = node.target as IndexNode;
+		const access_field_early = node.access as AccessFieldNode;
+		const elem = index.type ?? new Type(type_from_value_node(index.target).name);
+		build_node(index.target, status);
+		if (!status.code.endsWith("\n")) status.code += "\n";
+		status.code += `str x0, [sp, #-16]!\n`;
+		build_node(index.index, status);
+		if (!status.code.endsWith("\n")) status.code += "\n";
+		status.code += `mov x1, x0\n`;
+		status.code += `ldr x0, [sp], #16\n`;
+		emit_index_address(pointer_element_size(elem, status), status);
+		let offset: number;
+		if (elem.name === "string") {
+			offset = access_field_early.name === "len" ? 8 : 0;
+		} else {
+			offset = get_field_offset(elem.name, access_field_early.name, status);
+		}
+		if (offset > 0) status.code += `add x9, x9, #${offset}\n`;
+		const field_type = access_field_early.type;
+		if (field_type?.name === "string") {
+			status.code += `ldp x0, x1, [x9]\n`;
+			return;
+		}
+		const fsize = aarch64_size(field_type?.name || elem.name);
+		if (fsize === 1) status.code += `ldrb w0, [x9]\n`;
+		else if (fsize === 2) status.code += `ldrh w0, [x9]\n`;
+		else if (fsize === 4) status.code += `ldr w0, [x9]\n`;
+		else status.code += `ldr x0, [x9]\n`;
+		return;
+	}
 	let target_type = type_from_value_node(node.target);
 	if (!target_type?.name && node.target.node_type === "value") {
 		const name = (node.target as ValueNode).value;
@@ -3122,6 +3158,7 @@ function build_access_method(
 	}
 
 	if (status.heap_returning_functions?.has(method_name)) {
+		if (process.env.NOMEN_DBG_HEAP) console.error(`DBG heap-returning hit: ${method_name}`);
 		status.last_result_is_heap = true;
 	}
 

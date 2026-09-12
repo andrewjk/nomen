@@ -8,6 +8,10 @@ scope), classifies why each is raw, and identifies which could become plain
 Nomen code without regressing the **C backend** benchmarks (the aarch64
 backend is not at parity and is explicitly not the target here).
 
+**Status: roadmap item 2 (`unsafe`) is implemented, and a first tranche of
+memory primitives has been rewritten — see "Unsafe outcomes" below for what
+moved, what deliberately stayed raw, and the measurements.**
+
 See also [AGENTS.md](./AGENTS.md) ("Inline code blocks") for the directive
 mechanics.
 
@@ -157,37 +161,113 @@ extern func atoi = (string s, out int)
   remaining block count, and the low-risk half: both backends already
   emit calls to these exact symbols from raw blocks today.
 
-### 2. `unsafe` (second — retires the memory primitives)
+### 2. `unsafe` (implemented — memory primitives single-sourceable)
 
 A minimal typed pointer subset, usable only inside `unsafe` blocks (or
 unsafe-declared functions):
 
-- **Retires:** Buffer, ClassBuffer, Array inline storage, StringBuilder,
-  JsonTree slab, BigInt limb access, String's `at`/`set`/`slice` — the
-  category A blocks whose essence is pointer casts (`((long*)data)[i]`),
-  which no extern can express.
-- **The real payoff is single-sourcing:** every primitive is currently
-  written twice (C + aarch64 asm) and the two can drift — e.g. String.hash's
-  C body NUL-scanned while the asm trusted `length`. One unsafe Nomen body
-  gives both backends the same semantics by construction.
-- **Scope minimally:** `ptr T`, deref/index, cast to/from `uint64`. Typed
-  `ptr T` deref lets each backend own the element-width question (C emits
-  `((T*)p)[i]`; aarch64 emits the width dispatch it hand-writes in
-  `load_T`).
-- **Required companions:** `T_SIZE` as a const expression and a replacement
-  for `Array.set`/`with`'s `#if T_NEEDS_STRDUP` string-slot specialization;
-  `owning_buffer_specialize.ts` replaces some raw bodies at build time and
-  must learn to recognize unsafe bodies.
-- **Lockdown:** library-only via the same core-trust mechanism; widening to
-  user code later is a policy change, not a redesign.
+- **Status: implemented.** `ptr T` values, `p[i]` indexing (load and
+  store, scalar/string/struct widths), integer↔pointer casts, `string →
+ptr char`, struct-pointer→`uint64`, and the generic constants `T_SIZE` /
+  `T_NEEDS_STRDUP` / `T_FAT` as real Nomen expressions (the monomorphizer
+  substitutes them with literals and folds the dead arm of any `if` they
+  guard — replacing the raw `#if T_NEEDS_STRDUP` preprocessor idiom).
+  Lockdown is enforced twice: the parser rejects `unsafe` outside the
+  appended System library source (source-offset boundary), and the checker
+  rejects pointer operations outside an unsafe context. See SPEC.md
+  "Unsafe Code" and `test/unsafe.test.ts`.
+- **First tranche rewritten (all single-sourced, both backends):**
+  - `Buffer.nm`: `alloc`, `grow`, `zero`, `alloc_int`, `grow_int`,
+    `zero_int`, `alloc_T`, `grow_T`, `zero_T`, `alloc_float`, `#destroy`
+  - `StringBuilder.nm`: `ensure`, `append_string`, `append_string_view`,
+    `seed`, `#destroy`
+  - `Array.nm`: `at`, `first`, `at_end`, `set` (the `set` body replaces
+    `#if T_NEEDS_STRDUP` with the folded `T_NEEDS_STRDUP` constant)
+  - `String.nm`: `at`, `set`
+- **New memory externs** (in `String.nm`, an always-linked base-type file,
+  so every core file sees them regardless of pull order):
+  `calloc`, `malloc`, `realloc`, `free`, `memcpy`, `memset`. Under audit,
+  the aarch64 adapter routes allocator symbols through the
+  `nomen_*_wrap` counters so the leak checks stay balanced.
+- **Deliberately still raw, with measured reasons:**
+  - `BigInt.nm` get/set/get_at/set_at (and `data_ptr`): the limbs sit in
+    the hottest loops and the functions are `inline`. The unsafe-Nomen
+    forms splice through the general inline-method ABI (self parking,
+    param marshalling, local spills per splice) and measured **3× slower
+    pidigits on aarch64** (0.48s → 1.5s; even the once-per-loop
+    `data_ptr` cost ~30% via loop-plan perturbation). The C backend was
+    identical either way. Reverted to raw; documented inline.
+  - `Buffer.nm` load/store/store_or family, `move_T`, `replace_T`,
+    `shift_T` (inline splice targets — same ABI cost risk), plus
+    `slice` (needs a `view` constructor, not expressible yet).
+  - `Array.nm` `#init` (variadic packing), `with`/`add`/`mul`
+    (backend-specific result layouts: the C header is a real struct, the
+    aarch64 value is a first-element pointer with the length prefix at
+    `[-8]` — one Nomen body cannot construct both), `slice` (view
+    constructor).
+  - `String.nm` `slice` (view constructor), `#op_eq` (C.5 policy),
+    `#op_add`/`#op_mul`.
+  - `StringBuilder.nm` `append_char`/`to_string` (inline hot path;
+    ownership hand-off shapes).
+- **Compiler fixes the rewrites surfaced** (each would miscompile
+  independently of unsafe):
+  - Monomorphized clones copy plain free-function calls UNRESOLVED (the
+    generic body is checked after the clone is taken), so an `extern`
+    callee emitted its bare symbol instead of the `extern_<name>` adapter.
+    Fixed with `resolve_free_func_calls` in the clone pipeline and extern
+    pre-registration at root gather.
+  - `ownership.ts` classified "owning" by the presence of a raw block in
+    `#destroy`; Nomen destroys that call the memory externs now count too
+    (`contains_release`), with order-independent extern resolution.
+  - The aarch64 string-slot `set` specialization freed the displaced
+    pointer and then read the value pair from caller-saved registers the
+    free had clobbered (pre-existing, exposed by the new tests); fixed by
+    parking the pair in callee-saved registers across the calls.
+  - `value_is_owned_string` treats the unknown index node as
+    "conservatively owned" — a `return self[index]` (unsafe element read)
+    is a BORROW like a field access; mis-classifying it made call sites
+    free array slots (libmalloc abort).
+
+### Unsafe outcomes (benchmarks)
+
+Best-of-5 wall times, `bench/ab.sh` (same-day same-machine baseline vs
+post-rewrite; nsieve/knucleotide/lru/regex-redux sit at 0.0–0.2s and are
+noise-limited, all unchanged):
+
+| Benchmark   | C before | C after | aarch64 before | aarch64 after |
+| ----------- | -------- | ------- | -------------- | ------------- |
+| nsieve      | 0.13s    | 0.13s   | 0.16s          | 0.16s         |
+| json-serde  | 0.03s    | 0.03s   | 0.06s          | 0.06s         |
+| pidigits    | 0.33s    | 0.33s   | 0.48s          | 0.48s         |
+| binarytrees | 1.34s    | 1.33s   | 1.53s          | 1.54s         |
+
+No regressions beyond noise on either backend. The BigInt experiment
+(3× aarch64) is why the per-limb primitives stay raw.
 
 ### What stays raw even after both
 
 - 128-bit helpers (`BigInt.div128`, `mul_wide_hi`) — better served by
   `mul_hi`-style builtins than by unsafe pointers.
+- The inline per-element load/store primitives (`Buffer.load*`/`store*`,
+  `BigInt` limb access, `Array.at`'s old raw form) that splice into hot
+  loops: the aarch64 inline-method ABI (self parking + param marshalling
+  per splice) measurably costs more than the raw bodies save. Unsafe
+  Nomen wins for once-per-operation primitives (alloc/grow/destroy) and
+  non-inline functions; it loses inside tight loops on aarch64. Revisit
+  if the inline splice path ever learns to emit naked bodies for
+  allocation-free unsafe snippets.
+- Result-constructing primitives whose LAYOUT differs per backend
+  (`Array.with`/`add`/`mul`: C returns a real struct, aarch64 a
+  first-element pointer with the length at `[-8]`) — one Nomen body
+  cannot construct both until the language gains a backend-neutral
+  "make an Array value" expression.
 - `Console.platform` (OS detection) and the `Task`/`Channel` pool internals
   unless externs (pthread) + unsafe (node structs) are pushed through them.
 - `Controls/` (UI, `aarch64_use_c` by policy).
+- Remaining category A blocks not yet migrated (no measured reason — just
+  not done yet): `ClassBuffer.*` (uint64 handle ops — safe future work),
+  `JsonTree` slab, `String.slice`/`#op_add`/`#op_mul` (need a view
+  constructor or raw memcpy shapes), `Buffer.slice`.
 
 ## Benchmark hot-path summary (C backend)
 

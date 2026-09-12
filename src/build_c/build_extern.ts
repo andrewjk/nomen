@@ -53,11 +53,19 @@ export default function build_extern(
 			arg_texts.push(`${pname}.ptr`);
 		} else {
 			param_texts.push(`${c_type(param.type.name)} ${pname}`);
-			arg_texts.push(pname);
+			if (param.type.name === "uint64") {
+				// A `uint64` extern param is a raw address (the whole point of
+				// the memory externs): cast through size_t so the libc
+				// pointer-typed parameter accepts it without a diagnostic.
+				arg_texts.push(`(void*)(size_t)${pname}`);
+			} else {
+				arg_texts.push(pname);
+			}
 		}
 	}
 
 	const returns_string = node.return_type.name === "string";
+	const returns_address = node.return_type.name === "uint64";
 	let ret_text: string;
 	if (!node.return_type.name) {
 		ret_text = "void";
@@ -74,6 +82,10 @@ export default function build_extern(
 	if (returns_string) {
 		status.code += `char* _r = ${symbol}(${call_args});\n`;
 		status.code += `return (nomen_string){ _r, (long)strlen(_r) };\n`;
+	} else if (returns_address) {
+		// A `uint64` extern return is a raw address (malloc/calloc/realloc):
+		// re-interpret the symbol's pointer result as an integer.
+		status.code += `return (unsigned long long)(size_t)${symbol}(${call_args});\n`;
 	} else if (node.return_type.name) {
 		status.code += `return ${symbol}(${call_args});\n`;
 	} else {

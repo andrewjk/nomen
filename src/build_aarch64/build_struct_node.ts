@@ -1291,8 +1291,13 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			}
 			// A fat `string` or `view T` param arrives as a (ptr, len)
 			// register pair — two AAPCS64 slots, not a by-address struct
-			// param.
-			if (param.type.is_view || param.type.name === "string") {
+			// param. (`ref self` on the string struct is excluded: the
+			// caller passes &receiver as ONE slot — parse stamps is_ref on
+			// the param, not the type.)
+			if (
+				param.type.is_view ||
+				(param.type.name === "string" && !(param.is_self_param && param.is_ref))
+			) {
 				slot_idx += 2;
 				continue;
 			}
@@ -1401,7 +1406,9 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			// A fat `string` param is a (ptr, len) pair: spill both halves
 			// into a 16-byte local (two register slots — matching the call
 			// site's pair passing), then skip the generic single-slot spill.
-			if (param.type.name === "string") {
+			// (`ref self` on the string struct is excluded — it arrives as
+			// ONE &receiver slot and is spilled by the ref path below.)
+			if (param.type.name === "string" && !(param.is_self_param && param.is_ref)) {
 				const offset = allocate_stack_space(status, 16, 16);
 				status.stack_offsets!.set(param.name, offset);
 				// Each half comes from its own register slot, or from the

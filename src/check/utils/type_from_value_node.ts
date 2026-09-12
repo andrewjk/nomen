@@ -75,6 +75,10 @@ export default function type_from_value_node(node: BaseNode, status: CheckStatus
 			// spawn yields a Task handle (see check_spawn_node).
 			return (node as SpawnNode).call.type;
 		}
+		case "index": {
+			// `p[i]` — the checker stamps the element type at the index node.
+			return (node as import("../../nodes/IndexNode.ts").default).type ?? new Type("");
+		}
 	}
 	return new Type("");
 }

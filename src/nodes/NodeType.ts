@@ -36,4 +36,6 @@ export type NodeType =
 	| "spawn"
 	| "async_block"
 	| "raw"
-	| "anon_struct";
+	| "anon_struct"
+	| "index"
+	| "unsafe";

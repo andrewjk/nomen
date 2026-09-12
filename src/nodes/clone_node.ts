@@ -18,6 +18,7 @@ import FunctionNode from "./FunctionNode.ts";
 import GroupedNode from "./GroupedNode.ts";
 import IfElseNode from "./IfElseNode.ts";
 import ImportNode from "./ImportNode.ts";
+import IndexNode from "./IndexNode.ts";
 import LetNode from "./LetNode.ts";
 import MatchNode from "./MatchNode.ts";
 import OperationNode from "./OperationNode.ts";
@@ -51,6 +52,7 @@ export function clone_type(type: Type): Type {
 	t.start = type.start;
 	t.is_ref = type.is_ref;
 	t.is_const_ref = type.is_const_ref;
+	t.is_pointer = type.is_pointer;
 	t.is_return_type = type.is_return_type;
 	t.is_nullable = type.is_nullable;
 	t.type_args = type.type_args?.map(clone_type);
@@ -290,6 +292,14 @@ export default function clone_node(node: BaseNode): BaseNode {
 		case "grouped": {
 			const n = node as GroupedNode;
 			const c = new GroupedNode(n.start, clone_node(n.value));
+			c.allocations = n.allocations?.map(clone_node);
+			return c;
+		}
+		case "index": {
+			const n = node as IndexNode;
+			const c = new IndexNode(n.start, clone_node(n.target), clone_node(n.index));
+			c.type = n.type ? clone_type(n.type) : undefined;
+			c.is_array_target = n.is_array_target;
 			c.allocations = n.allocations?.map(clone_node);
 			return c;
 		}

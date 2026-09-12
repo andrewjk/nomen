@@ -31,6 +31,14 @@ export default interface ParseStatus {
 	 */
 	library?: Library;
 	/**
+	 * Source offset at which the appended System library source begins
+	 * (i.e. the end of the user's own source). `unsafe` declarations and
+	 * blocks are only accepted in tokens at or beyond this offset — the
+	 * lockdown that keeps raw pointer manipulation library-only. Undefined
+	 * when no library is linked: `unsafe` is then illegal everywhere.
+	 */
+	unsafe_boundary?: number;
+	/**
 	 * Errors that have been encountered
 	 */
 	errors: CompileError[];

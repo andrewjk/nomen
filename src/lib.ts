@@ -151,7 +151,9 @@ function extract_type_names(source: string): string[] {
 function extract_free_func_names(source: string): string[] {
 	const names: string[] = [];
 	for (let line of source.split("\n")) {
-		const m = line.match(/^pub\s+func\s+(\w+)/);
+		// `extern func` declarations are indexed too: a body token naming the
+		// wrapped symbol (e.g. `memcpy`) must pull the declaring file in.
+		const m = line.match(/^(?:pub\s+|extern\s+|pub\s+extern\s+)func\s+(\w+)/);
 		if (m) names.push(m[1]);
 	}
 	return names;

@@ -17,6 +17,7 @@ import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import GroupedNode from "../nodes/GroupedNode.ts";
 import IfElseNode from "../nodes/IfElseNode.ts";
+import IndexNode from "../nodes/IndexNode.ts";
 import LetNode from "../nodes/LetNode.ts";
 import MatchNode from "../nodes/MatchNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
@@ -27,6 +28,7 @@ import SpawnNode from "../nodes/SpawnNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import SwitchNode from "../nodes/SwitchNode.ts";
 import TraitNode from "../nodes/TraitNode.ts";
+import UnsafeBlockNode from "../nodes/UnsafeBlockNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import WhileLoopNode from "../nodes/WhileLoopNode.ts";
 import check_access_node from "./check_access_node.ts";
@@ -44,6 +46,7 @@ import check_for_loop_node from "./check_for_loop_node.ts";
 import check_function_call_node from "./check_function_call_node.ts";
 import check_function_node from "./check_function_node.ts";
 import check_if_else_node from "./check_if_else_node.ts";
+import check_index_node from "./check_index_node.ts";
 import check_let_node from "./check_let_node.ts";
 import check_match_node from "./check_match_node.ts";
 import check_operation_node from "./check_operation_node.ts";
@@ -53,6 +56,7 @@ import check_spawn_node from "./check_spawn_node.ts";
 import check_struct_node from "./check_struct_node.ts";
 import check_switch_node from "./check_switch_node.ts";
 import check_trait_node from "./check_trait_node.ts";
+import check_unsafe_block_node from "./check_unsafe_block_node.ts";
 import check_value_node from "./check_value_node.ts";
 import check_while_loop_node from "./check_while_loop_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
@@ -187,6 +191,14 @@ export default function check_node(node: BaseNode, status: CheckStatus): boolean
 		}
 		case "anon_struct": {
 			result = check_anon_struct(node as AnonStructNode, status);
+			break;
+		}
+		case "index": {
+			result = check_index_node(node as IndexNode, status);
+			break;
+		}
+		case "unsafe": {
+			result = check_unsafe_block_node(node as UnsafeBlockNode, status);
 			break;
 		}
 		default: {

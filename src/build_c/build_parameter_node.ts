@@ -1,6 +1,7 @@
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { classify_param } from "../build_common/param_classify.ts";
 import ParameterNode from "../nodes/ParameterNode.ts";
+import { pointer_element_c_type } from "./build_index_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import array_struct_name from "./utils/array_struct.ts";
 import c_function_name from "./utils/c_function_name.ts";
@@ -64,6 +65,13 @@ export default function build_parameter_node(node: ParameterNode, status: BuildS
 	// .to_string) operate on it directly.
 	if (!node.is_self_param && node.type.is_view) {
 		status.code += `nomen_view ${c_function_name(node.name)}`;
+		return;
+	}
+
+	// A `ptr T` parameter is a bare machine word (`T*`) — a scalar, never
+	// a struct pass-by-pointer nor a ref slot.
+	if (!node.is_self_param && node.type.is_pointer) {
+		status.code += `${pointer_element_c_type(node.type, status)}* ${c_function_name(node.name)}`;
 		return;
 	}
 

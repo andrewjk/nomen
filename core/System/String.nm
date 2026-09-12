@@ -3,6 +3,19 @@
 // result is re-wrapped with its length.
 extern func strdup = (string s, move out string)
 
+// Raw memory externs — the allocation primitives every `unsafe` Nomen body
+// across core (Buffer, StringBuilder, Array, ...) is built on. This file is
+// part of the always-linked base types, so the declarations are visible to
+// every core file regardless of pull order. Free externs emit under an
+// `extern_<name>` label that wraps the identically-named C symbol, so these
+// can never collide with it (docs/CORE_RAW.md roadmap items 1+2).
+extern func calloc = (int count, int size, out uint64)
+extern func malloc = (int bytes, out uint64)
+extern func realloc = (uint64 address, int bytes, out uint64)
+extern func free = (uint64 address)
+extern func memcpy = (uint64 dst, uint64 src, int bytes, out uint64)
+extern func memset = (uint64 dst, int value, int bytes, out uint64)
+
 /**
  * A UTF-8 text string — a heap-owned, length-tracked sequence of bytes
  **/
@@ -28,17 +41,11 @@ pub struct string: Stringable, Hashable, Equatable {
 		return strdup(self)
 	}
 
-	pub func at = (self, int index: index >= 0 && index < self.length, out char) {
-		```
-		#arch: c
-		return self[index];
-		```
-		```
-		#arch: aarch64
-		// Fat-string ABI: x19 = self ptr, x20 = self len; index in x2
-		// (self's pair occupies slots 0-1).
-		ldrb w0, [x19, x2]
-		```
+	// The indexing primitive everything string code builds on — `unsafe`
+	// Nomen, single-sourced for both backends. `self as ptr char` is the fat
+	// value's backing bytes (the thin `char*` the raw blocks used to poke).
+	pub unsafe func at = (self, int index: index >= 0 && index < self.length, out char) {
+		return (self as ptr char)[index]
 	}
 
 	// Bounds-checked access: `fallback` when index is outside
@@ -86,16 +93,8 @@ pub struct string: Stringable, Hashable, Equatable {
 		```
 	}
 
-	pub func set = (ref self, int index: index >= 0 && index < self.length, char value) {
-		```
-		#arch: c
-		(*self)[index] = value;
-		```
-		```
-		#arch: aarch64
-		// x19 = self (pointer), x1 = index, w2 = value
-		strb w2, [x19, x1]
-		```
+	pub unsafe func set = (ref self, int index: index >= 0 && index < self.length, char value) {
+		(self as ptr char)[index] = value
 	}
 
 	pub func #op_eq = (self, string other, out bool) {

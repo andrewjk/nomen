@@ -115,6 +115,9 @@ export default function check_function_node(func: FunctionNode, status: CheckSta
 	}
 
 	let function_status = clone_status(status);
+	// Unsafe context: an `unsafe func` body is one big unsafe region —
+	// `ptr T` values, `p[i]` indexing and pointer casts are legal in it.
+	function_status.in_unsafe = !!func.is_unsafe;
 	// Everything inherited from the enclosing scope (now cloned into our
 	// `values`) is a capture target: this function may not reference any of
 	// those names. Record the boundary so check_value_node can reject such

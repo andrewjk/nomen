@@ -11,6 +11,7 @@ import AccessNode from "../nodes/AccessNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
+import IndexNode from "../nodes/IndexNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
@@ -40,6 +41,7 @@ import {
 	mark_moved_if_struct,
 	record_heap_string_field,
 } from "./utils/auto_destroy.ts";
+import { emit_index_address, emit_index_store, pointer_element_size } from "./utils/ptr_access.ts";
 import {
 	allocate_stack_space,
 	emit_deref_var_address,
@@ -603,6 +605,13 @@ export default function build_assignment_node(
 	nir_rhs?: NirExpr | null,
 	nir_swap?: NirExpr | null,
 ) {
+	// `unsafe` stores through a raw pointer: `p[i] = v` and `p[i].field = v`.
+	// The element address is computed first and pushed; the RHS builds with
+	// the standard rvalue conventions; then a width-matched store lands it.
+	if (node.left_value.node_type === "index" || is_index_member_store(node)) {
+		build_index_store(node, status, nir_rhs);
+		return;
+	}
 	const rhs_type = type_from_value_node(node.right_value);
 	const rhs_is_struct = is_struct_type(rhs_type, status);
 	// An enum with associated data is multi-word (tag + payload) and lives on
@@ -1921,4 +1930,98 @@ export default function build_assignment_node(
 	}
 
 	build_swap(node, status, nir_swap);
+}
+
+/**
+ * Whether the assignment target is a member of a pointer-indexed element
+ * (`p[i].field = v`): an access whose receiver is an index node.
+ */
+function is_index_member_store(node: AssignmentNode): boolean {
+	return (
+		node.left_value.node_type === "access" &&
+		(node.left_value as AccessNode).target.node_type === "index" &&
+		(node.left_value as AccessNode).access.node_type === "access_field"
+	);
+}
+
+/**
+ * Element type of an index (or index-member) assignment target, stamped by
+ * the checker on the index node; falls back to resolving through the
+ * pointer expression's type.
+ */
+function index_elem_type(index: IndexNode, status: BuildStatus): Type {
+	if (index.type?.name) return index.type;
+	const target_type = type_from_value_node(index.target);
+	return new Type(target_type.name);
+}
+
+/**
+ * Compute the element address for `p[i]` into x9. The pointer builds into
+ * x0 (spilled), then the index into x0; scaling uses madd per ptr_access.
+ */
+function build_index_element_address(index: IndexNode, status: BuildStatus) {
+	build_node(index.target, status);
+	if (!status.code.endsWith("\n")) status.code += "\n";
+	status.code += `str x0, [sp, #-16]!\n`;
+	build_node(index.index, status);
+	if (!status.code.endsWith("\n")) status.code += "\n";
+	status.code += `mov x1, x0\n`;
+	status.code += `ldr x0, [sp], #16\n`;
+	emit_index_address(pointer_element_size(index_elem_type(index, status), status), status);
+}
+
+/**
+ * Emit `p[i] = v` / `p[i].field = v`: element address → x9 (pushed), RHS
+ * built with standard conventions, then a width-matched (or member-offset)
+ * store through the popped address.
+ */
+function build_index_store(node: AssignmentNode, status: BuildStatus, nir_rhs?: NirExpr | null) {
+	const index =
+		node.left_value.node_type === "index"
+			? (node.left_value as IndexNode)
+			: ((node.left_value as AccessNode).target as IndexNode);
+	const member =
+		node.left_value.node_type === "access"
+			? ((node.left_value as AccessNode).access as AccessFieldNode)
+			: undefined;
+	const elem = index_elem_type(index, status);
+	const elem_is_string = elem.name === "string";
+
+	build_index_element_address(index, status);
+	if (!status.code.endsWith("\n")) status.code += "\n";
+
+	let offset = 0;
+	if (member) {
+		// Member offset within the element: `.ptr`/`.len` on a string
+		// element (0/8), or the struct field layout for value structs.
+		if (elem_is_string) {
+			offset = member.name === "len" ? 8 : 0;
+		} else {
+			offset = get_field_offset(elem.name, member.name, status);
+		}
+	}
+
+	status.code += `add x9, x9, #${offset}\n`;
+	status.code += `str x9, [sp, #-16]!\n`;
+	emit_rhs_value(node.right_value, nir_rhs, status);
+	if (!status.code.endsWith("\n")) status.code += "\n";
+	status.code += `ldr x9, [sp], #16\n`;
+
+	if (member) {
+		// A string member (.ptr / .len) is one 8-byte word; struct members
+		// follow their field width; a string-typed struct member stores the
+		// (ptr, len) pair.
+		const field_type = member.type;
+		if (field_type?.name === "string") {
+			status.code += `stp x0, x1, [x9]\n`;
+			return;
+		}
+		const fsize = aarch64_size(field_type?.name || elem.name);
+		if (fsize === 1) status.code += `strb w0, [x9]\n`;
+		else if (fsize === 2) status.code += `strh w0, [x9]\n`;
+		else if (fsize === 4) status.code += `str w0, [x9]\n`;
+		else status.code += `str x0, [x9]\n`;
+		return;
+	}
+	emit_index_store(elem, status);
 }

@@ -27,7 +27,15 @@ function build_main(input: string, arch: "aarch64" | "c"): string {
 	expect(result.errors ?? []).toEqual([]);
 	if (arch === "c") {
 		const start = result.code.indexOf("int main()");
-		return result.code.slice(start, result.code.indexOf("// Func", start + 8));
+		// The section ends at the next function comment — or at the first
+		// memory-extern adapter (core unsafe bodies emit extern_free/malloc
+		// calls and their adapters, which would otherwise pollute counts).
+		let end = result.code.indexOf("// Func", start + 8);
+		for (const marker of ["nomen_string extern_", "void extern_", "unsigned long long extern_"]) {
+			const m = result.code.indexOf(marker, start + 8);
+			if (m !== -1 && (end === -1 || m < end)) end = m;
+		}
+		return result.code.slice(start, end === -1 ? undefined : end);
 	}
 	const lines = result.code.split("\n");
 	const start = lines.findIndex((l) => l === "_main:");
@@ -71,6 +79,21 @@ function count(code: string, needle: string): number {
 }
 
 /**
+ * Count occurrences inside MAIN's body only. Core unsafe bodies now emit
+ * `extern_free(...)` calls (and the extern adapter itself contains
+ * `free(`), so whole-TU free counts include legitimate library noise the
+ * move-on-last-use pins were never about.
+ */
+function count_in_main(code: string, needle: string): number {
+	const start = code.indexOf("// Func main");
+	if (start === -1) return count(code, needle);
+	const rest = code.slice(start);
+	const end = rest.indexOf("\n}\n");
+	const body = (end === -1 ? rest : rest.slice(0, end)).split("extern_free(").join("externFREE(");
+	return body.split(needle).length - 1;
+}
+
+/**
  * Move-on-last-use declares (STRING_PLAN tranche 4): `var u = t` where t is
  * an owned string local proven never read or written after — the strdup'd
  * value-semantics copy becomes a pair + ownership transfer. The last-use
@@ -94,7 +117,7 @@ pub func main = () {
 	const c = build_main(input, "c");
 	expect(c).toContain("nomen_string u = t;");
 	expect(c).not.toContain("nomen_str_dup(");
-	expect(count(c, "free(")).toBe(1);
+	expect(count_in_main(c, "free(")).toBe(1);
 
 	const a64 = build_main(input, "aarch64");
 	// t's declaration strdup's via string_to_string; the alias adds none.
@@ -118,7 +141,7 @@ pub func main = () {
 
 	const c = build_main(input, "c");
 	expect(c).toContain("nomen_str_dup(t)");
-	expect(count(c, "free(")).toBe(2);
+	expect(count_in_main(c, "free(")).toBe(2);
 });
 
 test("write-after refuses the move (the aliasing UAF shape)", async () => {
@@ -163,7 +186,7 @@ pub func main = () {
 		set_move_on_last_use_enabled(true);
 	}
 	expect(off_c).toContain("nomen_string u = nomen_str_dup(t);");
-	expect(count(off_c, "free(")).toBe(2);
+	expect(count_in_main(off_c, "free(")).toBe(2);
 	expect(count(off_a64, "bl _strdup")).toBe(1);
 	expect(count(off_a64, "bl _free")).toBe(2);
 });

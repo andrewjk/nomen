@@ -25,6 +25,7 @@ export default function parse_function(
 	name_override?: string,
 	is_inline?: boolean,
 	is_extern?: boolean,
+	is_unsafe?: boolean,
 ) {
 	const start = get_index(status);
 	if (name_override) {
@@ -67,6 +68,19 @@ export default function parse_function(
 	}
 	const func = new FunctionNode(start, visibility, name, return_type);
 	if (is_inline) func.is_inline = true;
+	if (is_unsafe) {
+		func.is_unsafe = true;
+		// Lockdown: `unsafe` is reserved for the System library. The boundary
+		// is the end of the user's own source; source offsets past it belong
+		// to the appended library source.
+		if (status.unsafe_boundary === undefined || start < status.unsafe_boundary) {
+			add_error(
+				status,
+				`'unsafe' is reserved for the System library — raw pointer manipulation is not available to user code`,
+				start,
+			);
+		}
+	}
 	if (is_extern) {
 		func.is_extern = true;
 		// Free externs emit under a prefixed label so the marshalling adapter

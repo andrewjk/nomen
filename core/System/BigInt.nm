@@ -20,6 +20,13 @@ pub struct BigInt {
 		return self
 	}
 
+	// Per-limb get/set stay raw: they are `inline` and splice into the limb
+	// loops, where the raw bodies are 1-2 instructions with no param
+	// marshalling. The unsafe-Nomen forms measured a 3x pidigits regression
+	// on aarch64 (the inline-method ABI parks self and spills locals per
+	// splice); the C backend (single TU, -O2) showed no difference either
+	// way, so the raw blocks win on single-sourcing grounds being equal.
+	// See docs/CORE_RAW.md "unsafe outcomes".
 	inline func get = (self, int i, out uint64) {
 		```
 		#arch: c
@@ -48,6 +55,10 @@ pub struct BigInt {
 	// into a local once (before the loop) and index through it via get_at /
 	// set_at, so each limb access is a single strided load/store instead of
 	// re-reading self->digits.data every iteration. ptr is held in a uint64.
+	// All five stay raw: measured on aarch64, even the loop-hoisted
+	// data_ptr as Nomen cost pidigits ~30% (the inline splice perturbs the
+	// whole-function asm plan); the C backend was identical either way.
+	// See docs/CORE_RAW.md "unsafe outcomes".
 	inline func data_ptr = (self, out uint64) {
 		```
 		#arch: c
@@ -59,6 +70,9 @@ pub struct BigInt {
 		```
 	}
 
+	// Same story as get/set above: the hoisted-pointer limb accessors stay
+	// raw for the aarch64 splice path. `data_ptr` is called once per loop
+	// (to hoist the slab address), so its Nomen body is free.
 	inline func get_at = (self, uint64 ptr, int i, out uint64) {
 		```
 		#arch: c

@@ -62,6 +62,40 @@ export default function check_cast_node(node: CastNode, status: CheckStatus) {
 	}
 	if (from === to) return;
 
+	// `unsafe` pointer casts: integer ↔ `ptr T`, and `string` → `ptr char`
+	// (the fat string's data pointer). These fabricate/discard references,
+	// so they are illegal outside an unsafe context.
+	if (node.target_type.is_pointer || value_type.is_pointer) {
+		if (!status.in_unsafe) {
+			add_error(
+				status,
+				`Pointer casts require an unsafe context — wrap it in an 'unsafe' block or an 'unsafe func'`,
+				node.start,
+			);
+			return;
+		}
+		if (node.target_type.is_pointer && value_type.is_pointer) return; // ptr→ptr word cast
+		if (value_type.is_pointer && to === "uint64") return;
+		if (value_type.is_pointer && to === "int") return;
+		if (value_type.is_pointer && to === "uint") return;
+		if (!value_type.is_pointer && node.target_type.is_pointer) {
+			const from_is_int = ALL_INT_TYPES.includes(from);
+			if (from_is_int) return;
+			// `string as ptr char` — the fat value's backing bytes.
+			if (from === "string" && to === "char") return;
+		}
+		// A struct/class pointer reinterpreted as an integer (e.g.
+		// `self as uint64` to reach a header word / inline storage).
+		const from_struct = status.structs.find((s) => s.name === from);
+		if (!value_type.is_pointer && from_struct && to === "uint64") return;
+		add_error(
+			status,
+			`Cannot cast from ${type_name(value_type)} to ${type_name(node.target_type)} in unsafe code (integer ↔ ptr only, or string → ptr char)`,
+			node.start,
+		);
+		return;
+	}
+
 	const from_idx = ALL_INT_TYPES.indexOf(from);
 	const to_idx = ALL_INT_TYPES.indexOf(to);
 	const from_is_float = ALL_FLOAT_TYPES.includes(from);

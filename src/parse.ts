@@ -40,6 +40,12 @@ export default function parse(source: string, library?: Library, file_path?: str
 		library,
 		errors: [],
 	};
+	// `unsafe` lockdown: only the appended System library source (tokens at
+	// or past the user source's end) may declare unsafe functions/blocks.
+	// Undefined with no library — the feature is then rejected everywhere.
+	if (library) {
+		status.unsafe_boundary = user_source_length;
+	}
 
 	parse_statement(status);
 

@@ -12,6 +12,7 @@ import OperationNode from "../nodes/OperationNode.ts";
 import ParameterNode from "../nodes/ParameterNode.ts";
 import RawNode from "../nodes/RawNode.ts";
 import RootNode from "../nodes/RootNode.ts";
+import { set_resolved_function } from "../nodes/set_resolved_function.ts";
 import StructNode from "../nodes/StructNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
@@ -383,6 +384,7 @@ export function monomorphize(
 		if (func.name === "#init") continue;
 		const cloned = clone_node(func) as FunctionNode;
 		substitute_raw_types(cloned, substitution, status.structs, status.traits);
+		fold_substituted_constant_ifs(cloned.statements);
 		rename_local_labels(cloned, mono_name);
 		// Substitute type-param names on body node `.type` fields (T -> Pt), so
 		// the builder lowers struct-typed locals/args/fields correctly. self is
@@ -418,7 +420,15 @@ export function monomorphize(
 		// for List<T>, whose only struct-typed value is the element param.
 		retype_param_references(cloned.statements, cloned.params);
 		retype_local_references(cloned.statements);
+		// Unsafe-body index nodes: the generic body was checked AFTER this
+		// clone was made (user code triggers monomorphization first), so the
+		// checker's stamps (element type, array-target flag) are absent.
+		// Re-derive them now that every type on the clone is concrete.
+		restamp_index_nodes(cloned.statements, mono_name);
 		resolve_mono_equality_ops(cloned.statements, status);
+		// Re-resolve plain free-function calls (see resolve_free_func_calls —
+		// extern callees must emit through their `extern_<name>` adapter).
+		resolve_free_func_calls(cloned.statements, status);
 		// Re-derive check-phase annotations on AccessFunctionCallNodes.
 		// The mono body is cloned from the unchecked generic body and never
 		// re-checked (cloned.checked = true below), so annotations the
@@ -490,6 +500,7 @@ export function monomorphize(
 		// its body resolves self.method() against the monomorphized struct.
 		const cloned = clone_node(effective_custom_init) as FunctionNode;
 		substitute_raw_types(cloned, substitution, status.structs, status.traits);
+		fold_substituted_constant_ifs(cloned.statements);
 		rename_local_labels(cloned, mono_name);
 		cloned.return_type = new Type(mono_name);
 		cloned.type_params = [];
@@ -1038,6 +1049,66 @@ function rederive_access_func_annotations(nodes: BaseNode[], status: CheckStatus
 	for (const node of nodes) rederive_annotations_in_node(node, status);
 }
 
+/**
+ * Re-resolve PLAIN free-function calls (`calloc(...)`, `memset(...)`) in a
+ * monomorphized clone. The generic body is checked AFTER the mono clone is
+ * made (user code triggers monomorphization before the library struct's own
+ * statement is reached), so the cloner copies an unresolved call — and the
+ * build then emits the bare name instead of the callee's emission label
+ * (fatal for `extern` callees, whose adapter lives under `extern_<name>`).
+ * Method calls don't need this (rederive_access_func_annotations re-derives
+ * them from the receiver type); only bare calls do.
+ */
+function resolve_free_func_calls(nodes: BaseNode[], status: CheckStatus) {
+	for (const node of nodes) resolve_free_calls_in_node(node, status);
+}
+
+function resolve_free_calls_in_node(node: BaseNode | undefined | null, status: CheckStatus) {
+	if (!node) return;
+	const any_node = node as any;
+	if (node.node_type === "func_call" && !any_node.resolved_function) {
+		const name = (node as import("../nodes/FunctionCallNode.ts").default).name;
+		const func = status.functions.findLast((f) => f.name === name);
+		if (func) set_resolved_function(node as import("../nodes/FunctionCallNode.ts").default, func);
+	}
+	if (any_node.statements && Array.isArray(any_node.statements)) {
+		for (const child of any_node.statements) {
+			if (child && typeof child === "object" && "node_type" in child) {
+				resolve_free_calls_in_node(child, status);
+			}
+		}
+	}
+	if (any_node.params && Array.isArray(any_node.params)) {
+		for (const child of any_node.params) {
+			if (child && typeof child === "object" && "node_type" in child) {
+				resolve_free_calls_in_node(child, status);
+			}
+		}
+	}
+	if (any_node.value?.node_type) resolve_free_calls_in_node(any_node.value, status);
+	if (any_node.left_value?.node_type) resolve_free_calls_in_node(any_node.left_value, status);
+	if (any_node.right_value?.node_type) resolve_free_calls_in_node(any_node.right_value, status);
+	if (any_node.target?.node_type) resolve_free_calls_in_node(any_node.target, status);
+	if (any_node.index?.node_type) resolve_free_calls_in_node(any_node.index, status);
+	if (any_node.access?.node_type) resolve_free_calls_in_node(any_node.access, status);
+	if (any_node.condition?.node_type) resolve_free_calls_in_node(any_node.condition, status);
+	if (any_node.if_branch?.statements) {
+		for (const child of any_node.if_branch.statements) resolve_free_calls_in_node(child, status);
+	}
+	if (any_node.else_branch?.statements) {
+		for (const child of any_node.else_branch.statements) resolve_free_calls_in_node(child, status);
+	}
+	if (any_node.cases && Array.isArray(any_node.cases)) {
+		for (const c of any_node.cases) {
+			if (c?.branch?.statements) {
+				for (const child of c.branch.statements) resolve_free_calls_in_node(child, status);
+			}
+			if (c?.match_value?.node_type) resolve_free_calls_in_node(c.match_value, status);
+			if (c?.condition?.node_type) resolve_free_calls_in_node(c.condition, status);
+		}
+	}
+}
+
 function rederive_annotations_in_node(node: BaseNode | undefined | null, status: CheckStatus) {
 	if (!node) return;
 	const any_node = node as any;
@@ -1243,6 +1314,7 @@ export function substitute_type(type: Type, substitution: Map<string, string>): 
 	new_type.is_ref = type.is_ref;
 	new_type.is_view = type.is_view;
 	new_type.is_const_ref = type.is_const_ref;
+	new_type.is_pointer = type.is_pointer;
 	new_type.is_nullable = type.is_nullable;
 	if (resolved_name !== type.name) {
 		new_type.type_args = undefined;
@@ -1259,6 +1331,39 @@ export function substitute_type(type: Type, substitution: Map<string, string>): 
 	// in monomorphize can materialize the now-concrete tuple struct.
 	new_type.tuple_types = type.tuple_types?.map((t) => substitute_type(t, substitution));
 	return new_type;
+}
+
+/**
+ * After the monomorphizer substituted `T_NEEDS_STRDUP`/`T_FAT` with literal
+ * `true`/`false`, delete the dead arm of every `if` they guard. The generic
+ * body could not type-check both arms (a representation-specific arm touches
+ * fields only `string` elements have, e.g. `.ptr`), so the checker skips
+ * those arms; folding here means the surviving arm is the only thing the
+ * re-derivation passes and both backends ever see.
+ */
+function fold_substituted_constant_ifs(statements: BaseNode[]) {
+	for (let i = statements.length - 1; i >= 0; i--) {
+		const stmt = statements[i];
+		if (stmt.node_type !== "if") continue;
+		const if_else = stmt as import("../nodes/IfElseNode.ts").default;
+		if (if_else.if_branch) fold_substituted_constant_ifs(if_else.if_branch.statements);
+		if (if_else.else_branch) fold_substituted_constant_ifs(if_else.else_branch.statements);
+		const cond = if_else.condition;
+		if (cond?.node_type !== "value") continue;
+		const v = (cond as ValueNode).value;
+		if (v !== "true" && v !== "false") continue;
+		const keep = v === "true" ? if_else.if_branch : if_else.else_branch;
+		const kept: BaseNode[] = keep ? [...keep.statements] : [];
+		// Preserve any allocations the checker hoisted onto the if node.
+		if (if_else.allocations?.length) {
+			const target = kept[0];
+			if (target) {
+				target.allocations ??= [];
+				target.allocations.push(...if_else.allocations);
+			}
+		}
+		statements.splice(i, 1, ...kept);
+	}
 }
 
 function substitute_raw_types(
@@ -1449,6 +1554,32 @@ function substitute_raw_in_node(
 	deref_params: Set<string> = new Set(),
 	traits: { name: string }[] = [],
 ) {
+	// `unsafe` Nomen bodies use the same per-instantiation constants the raw
+	// blocks do — `T_SIZE` (element byte size), `T_NEEDS_STRDUP`/`T_FAT`
+	// (string representation flags). In a Nomen body they are ValueNodes, so
+	// substitute them with real literals (numeric / true / false); a follow-up
+	// pass (fold_substituted_constant_ifs) then deletes the dead arm of any
+	// `if` they guard, which is how the generic body could type-check only
+	// the representation-independent statements.
+	if (node.node_type === "value") {
+		const vn = node as ValueNode;
+		for (const [param, type] of substitution) {
+			if (vn.value === `${param}_SIZE`) {
+				vn.value = String(raw_type_size(type, structs));
+				vn.type = new Type("int", true);
+				return;
+			}
+			if (vn.value === `${param}_NEEDS_STRDUP` || vn.value === `${param}_FAT`) {
+				vn.value = type === "string" ? "true" : "false";
+				vn.type = new Type("bool", true);
+				return;
+			}
+		}
+	}
+	if (node.node_type === "index") {
+		const idx = node as import("../nodes/IndexNode.ts").default;
+		if (idx.type) idx.type = substitute_type(idx.type, substitution);
+	}
 	if (node.node_type === "raw") {
 		const raw = node as RawNode;
 		let value = raw.value;
@@ -1576,6 +1707,13 @@ function substitute_raw_in_node(
 		}
 	}
 	// Recursively walk common container nodes
+	if (any_node.allocations && Array.isArray(any_node.allocations)) {
+		for (const child of any_node.allocations) {
+			if (child && typeof child === "object" && "node_type" in child) {
+				substitute_raw_in_node(child, substitution, structs, deref_params, traits);
+			}
+		}
+	}
 	if (any_node.statements && Array.isArray(any_node.statements)) {
 		for (const child of any_node.statements) {
 			if (child && typeof child === "object" && "node_type" in child) {
@@ -1607,6 +1745,12 @@ function substitute_raw_in_node(
 	}
 	if (any_node.swap?.node_type) {
 		substitute_raw_in_node(any_node.swap, substitution, structs, deref_params, traits);
+	}
+	if (any_node.condition?.node_type) {
+		substitute_raw_in_node(any_node.condition, substitution, structs, deref_params, traits);
+	}
+	if (any_node.index?.node_type) {
+		substitute_raw_in_node(any_node.index, substitution, structs, deref_params, traits);
 	}
 }
 
@@ -2062,6 +2206,18 @@ function substitute_node_types(
 			if (n.type) n.type = substitute_type(n.type, substitution);
 			break;
 		}
+		case "index": {
+			const n = node as import("../nodes/IndexNode.ts").default;
+			substitute_node_types(n.target, substitution);
+			substitute_node_types(n.index, substitution);
+			if (n.type) n.type = substitute_type(n.type, substitution);
+			break;
+		}
+		case "unsafe": {
+			const n = node as import("../nodes/UnsafeBlockNode.ts").default;
+			substitute_body_types(n.statements, substitution);
+			break;
+		}
 		case "value": {
 			// ValueNode.type carries the resolved type from checking (e.g. `T`
 			// for a generic param use). The builder reads it directly to decide
@@ -2079,4 +2235,73 @@ function substitute_node_types(
 		case "import":
 			break;
 	}
+}
+
+/**
+ * Re-stamp `p[i]` index nodes in monomorphized clones whose checker stamps
+ * are missing (the clone was taken before the generic body was checked).
+ * - Inside `Array_<elem>` method bodies, `self[i]` targets the inline
+ *   element storage → is_array_target + element type from the mono name.
+ * - Any other unstamped index resolves its element type from the (now
+ *   concrete) target type: a `ptr T` value's name IS the element type.
+ */
+function restamp_index_nodes(nodes: BaseNode[], mono_struct_name: string) {
+	for (const node of nodes) restamp_index_in_node(node, mono_struct_name);
+}
+
+function restamp_index_in_node(node: BaseNode | undefined | null, mono_struct_name: string) {
+	if (!node) return;
+	const any_node = node as any;
+	if (node.node_type === "index") {
+		const idx = node as import("../nodes/IndexNode.ts").default;
+		if (!idx.type) {
+			const target = idx.target;
+			const target_is_self = target.node_type === "value" && (target as ValueNode).value === "self";
+			if (target_is_self && mono_struct_name.startsWith("Array_")) {
+				idx.is_array_target = true;
+				idx.type = new Type(mono_struct_name.slice("Array_".length));
+			} else {
+				const elem = restamp_resolve_type(target);
+				if (elem?.name) idx.type = new Type(elem.name);
+			}
+		}
+	}
+	if (Array.isArray(any_node.statements)) {
+		for (const child of any_node.statements) {
+			if (child && typeof child === "object" && "node_type" in child) {
+				restamp_index_in_node(child, mono_struct_name);
+			}
+		}
+	}
+	if (Array.isArray(any_node.params)) {
+		for (const child of any_node.params) {
+			if (child && typeof child === "object" && "node_type" in child) {
+				restamp_index_in_node(child, mono_struct_name);
+			}
+		}
+	}
+	if (any_node.if_branch?.statements) {
+		for (const child of any_node.if_branch.statements)
+			restamp_index_in_node(child, mono_struct_name);
+	}
+	if (any_node.else_branch?.statements) {
+		for (const child of any_node.else_branch.statements)
+			restamp_index_in_node(child, mono_struct_name);
+	}
+	if (any_node.value?.node_type) restamp_index_in_node(any_node.value, mono_struct_name);
+	if (any_node.left_value?.node_type) restamp_index_in_node(any_node.left_value, mono_struct_name);
+	if (any_node.right_value?.node_type)
+		restamp_index_in_node(any_node.right_value, mono_struct_name);
+	if (any_node.target?.node_type) restamp_index_in_node(any_node.target, mono_struct_name);
+	if (any_node.index?.node_type) restamp_index_in_node(any_node.index, mono_struct_name);
+	if (any_node.condition?.node_type) restamp_index_in_node(any_node.condition, mono_struct_name);
+}
+
+/** Minimal type resolver for index-target expressions after substitution. */
+function restamp_resolve_type(node: BaseNode): Type | undefined {
+	const any_node = node as any;
+	if (node.node_type === "value") return any_node.type;
+	if (node.node_type === "cast") return any_node.target_type;
+	if (node.node_type === "grouped") return restamp_resolve_type(any_node.value);
+	return undefined;
 }

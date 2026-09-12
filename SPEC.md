@@ -21,7 +21,7 @@ variable, parameter, field, type, or enum case names:
 `as` `async` `bitset` `break` `case` `class` `const` `continue` `cp` `else`
 `enum` `extern` `extend` `for` `func` `if` `import` `in` `let` `match` `move`
 `of` `out` `panic` `private` `pub` `raw` `ref` `return` `spawn` `struct`
-`switch` `swap` `todo` `trait` `var` `view` `while`
+`switch` `swap` `todo` `trait` `unsafe` `var` `view` `while`
 
 The literals `true`, `false`, and `null`, and `self`, are reserved as well.
 Using a reserved word as a name is a compile error:
@@ -2123,6 +2123,56 @@ enum or bitset that wraps a string field still relies on the auto-free of that
 field's string value, not on any destroy logic of its own.
 
 See [MEMORY.md](MEMORY.md) for the full memory model description.
+
+## Unsafe Code
+
+`unsafe` is a minimal typed-pointer subset reserved for the **System
+library** — it exists so the memory primitives (`Buffer`, `Array` inline
+storage, `StringBuilder`, `BigInt` limb access, …) can be written once as
+plain Nomen instead of duplicated `#arch: c` + `#arch: aarch64` raw blocks
+(see [CORE_RAW.md](docs/CORE_RAW.md)). Using it in user code is a compile
+error:
+
+```
+unsafe {
+    var p = 0
+}
+// Error: 'unsafe' is reserved for the System library — raw pointer
+// manipulation is not available to user code
+```
+
+An `unsafe func` declaration makes the whole body an unsafe context; an
+`unsafe { ... }` block scopes it to a region:
+
+```
+// In the System library:
+unsafe func decode = (ref self, int i, out char) {
+    return (self as ptr char)[i]
+}
+```
+
+Inside an unsafe context, three extra operations are available:
+
+- **`ptr T` values** — a bare machine word holding the address of a `T`.
+  Declared like any other type (`var ptr uint64 p = ...`), passed as a
+  scalar, and treated as an 8-byte word by both backends.
+- **Indexing** — `p[i]` loads a `T` from `p + i * sizeof(T)`; as an
+  assignment target (`p[i] = v`) it stores. `T` may be a scalar, a `string`
+  (the fat pair), or a value struct. Indexing a heap `Array<T>` receiver
+  addresses its inline element storage.
+- **Pointer casts** — integer ↔ `ptr T` (bit-reinterpretation), `string →
+ptr char` (the fat value's backing bytes), and a struct pointer →
+  `uint64` (e.g. `self as uint64` to reach a header word).
+
+Everything else is identical: bounds constraints on parameters are still
+compile-time verified, auto-free still applies to named string/struct
+locals, and the checker still rejects any pointer operation outside an
+unsafe context.
+
+Per-instantiation constants are available inside generic bodies as plain
+expressions: `T_SIZE` (the element's byte size), `T_NEEDS_STRDUP` and
+`T_FAT` (bools, true when `T` is `string`). The monomorphizer substitutes
+them with literals and folds the dead arm of any `if` they guard.
 
 ## Standard Library
 

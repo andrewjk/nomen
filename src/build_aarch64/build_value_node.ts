@@ -162,6 +162,11 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 			if (paramReg !== "x0") {
 				status.code += `mov x0, ${paramReg}`;
 			}
+		} else if (node.type?.is_pointer) {
+			// A `ptr T` param is a bare machine word in its register.
+			if (paramReg !== "x0") {
+				status.code += `mov x0, ${paramReg}`;
+			}
 		} else if (
 			status.function_param_vars?.has(original_value) ||
 			status.function_param_vars?.has(value) ||
@@ -234,6 +239,13 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 	// Variable reference - check register allocation first, then stack offset
 	const alloc_reg = status.register_allocations?.get(value);
 	if (alloc_reg) {
+		if (node.type?.is_pointer) {
+			// A `ptr T` local promoted to a register holds the address itself.
+			if (alloc_reg !== "x0") {
+				status.code += `mov x0, ${alloc_reg}\n`;
+			}
+			return;
+		}
 		if (status.function_ref_params?.has(value) || status.function_ref_params?.has(original_value)) {
 			if (alloc_reg !== "x0") {
 				status.code += `mov x0, ${alloc_reg}\n`;
@@ -257,10 +269,18 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 		}
 		return;
 	}
-	const offset = status.stack_offsets?.get(value);
+	let offset = status.stack_offsets?.get(value);
+	if (offset === undefined && value !== original_value) {
+		offset = status.stack_offsets?.get(original_value);
+	}
 	if (offset !== undefined) {
 		const type_name = node.type?.name || "";
 		const is_array = node.type?.is_array || false;
+		if (node.type?.is_pointer) {
+			// A `ptr T` local is a single 8-byte word: the address itself.
+			status.code += `ldr x0, [x29, #${offset}]`;
+			return;
+		}
 		const is_ref =
 			status.function_ref_params?.has(value) || status.function_ref_params?.has(original_value);
 		const param_type_name = node.type?.name;
@@ -287,6 +307,19 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 			// ADDRESS so consumers struct-copy the full value. The generic
 			// scalar path below would load only the 8-byte tag word.
 			status.code += `add x0, x29, #${offset}`;
+		} else if (
+			type_name === "string" &&
+			!is_ref &&
+			(value === "_self" || original_value === "self") &&
+			status.current_struct?.name === "string" &&
+			!status.function_param_regs?.has("self")
+		) {
+			// `ref self` on the string struct: the slot holds the RAW incoming
+			// &receiver (one word — never the pair the by-value convention
+			// spills), so the fat value is rebuilt by dereferencing it.
+			status.code += `ldr x9, [x29, #${offset}]\n`;
+			status.code += `ldr x0, [x9]\n`;
+			status.code += `ldr x1, [x9, #8]\n`;
 		} else if (type_name === "string" && !is_ref) {
 			// Fat string slot: load the (ptr, len) pair.
 			emit_string_pair_load(status, value);

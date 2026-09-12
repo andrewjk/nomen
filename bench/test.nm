@@ -45,7 +45,7 @@ func do_thing = (move Thing thing) {
 }
 
 func restricted = (string[] source, int i: i >= 0 && i < source.length) {
-	Console.write("uh oh \{source[i]}")
+	Console.write("uh oh \{source.at(i)}")
 }
 
 func null_check = (Thing? thing) {

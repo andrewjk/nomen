@@ -894,6 +894,21 @@ export default function build_declaration_node(
 		return;
 	}
 
+	if (node.type.is_pointer) {
+		// A `ptr T` local is a single 8-byte word (the address). No auto-free
+		// anchor: unsafe code owns the pointee explicitly.
+		const offset = allocate_stack_space(status, 8);
+		status.stack_offsets!.set(node.name, offset);
+		if (node.value) {
+			emit_init_value(node.value, nir_init, status);
+			if (!status.code.endsWith("\n")) status.code += "\n";
+		} else {
+			status.code += `mov x0, #0\n`;
+		}
+		emit_var_store(status, "x0", node.name, 8);
+		return;
+	}
+
 	const directive = aarch64_type(node.type.name);
 	const size = aarch64_size(node.type.name);
 

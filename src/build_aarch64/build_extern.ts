@@ -38,7 +38,21 @@ export default function build_extern(
 		: undefined;
 	const label = method_label ?? emission_label(node);
 	const prefix = status.platform === "windows" ? "" : "_";
-	const symbol = `${prefix}${node.name.replace(/#/g, "")}`;
+	// Under audit, allocator externs must route through the audit runtime's
+	// wrappers so the balanced alloc/free counter sees the calls (mirrors the
+	// C backend's wrap_c_allocators).
+	const raw_symbol = `${prefix}${node.name.replace(/#/g, "")}`;
+	const audit_wrapped =
+		status.audit && status.platform !== "windows"
+			? {
+					free: "_nomen_free_wrap",
+					malloc: "_nomen_malloc_wrap",
+					calloc: "_nomen_calloc_wrap",
+					realloc: "_nomen_realloc_wrap",
+					strdup: "_nomen_strdup_wrap",
+				}[node.name]
+			: undefined;
+	const symbol = audit_wrapped ?? raw_symbol;
 
 	const float_params = node.params.filter(
 		(p) => !p.is_variadic && (p.type.name.startsWith("float") || p.type.name.startsWith("ufloat")),

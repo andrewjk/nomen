@@ -42,6 +42,7 @@ export const KEYWORDS = new Set([
 	"swap",
 	"raw",
 	"extern",
+	"unsafe",
 ]);
 
 /** Every word that cannot be used as a declared name. */

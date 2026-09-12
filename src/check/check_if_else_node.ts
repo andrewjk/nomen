@@ -2,6 +2,7 @@ import add_error from "../add_error.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import IfElseNode from "../nodes/IfElseNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
+import ValueNode from "../nodes/ValueNode.ts";
 import check_block_node from "./check_block_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
@@ -26,6 +27,15 @@ function block_always_returns(node: { statements: BaseNode[] }): boolean {
 }
 
 export default function check_if_else_node(if_else: IfElseNode, status: CheckStatus) {
+	// A per-instantiation representation constant guards this if
+	// (`if T_NEEDS_STRDUP { … } else { … }` in generic core bodies): the
+	// concrete value is only known at monomorphization, which folds away the
+	// dead arm. Neither branch can type-check generically (the string arm
+	// touches representation fields), so both are skipped here.
+	if (is_unchecked_constant_condition(if_else.condition, status)) {
+		return;
+	}
+
 	check_node(if_else.condition, status);
 	const condition_type = type_from_value_node(if_else.condition, status);
 	if (!is_bool_condition(condition_type)) {
@@ -249,4 +259,19 @@ export default function check_if_else_node(if_else: IfElseNode, status: CheckSta
 function union_known(a: number | undefined, b: number | undefined): number | undefined {
 	if (a === undefined || b === undefined) return undefined;
 	return a === b ? a : undefined;
+}
+
+/**
+ * True for a condition that is a per-instantiation constant marker
+ * (`T_NEEDS_STRDUP` / `T_FAT`, T a type param in scope) — substituted with a
+ * literal by the monomorphizer, which then folds the dead arm (see
+ * fold_substituted_constant_ifs).
+ */
+function is_unchecked_constant_condition(cond: BaseNode | undefined, status: CheckStatus): boolean {
+	if (!cond || cond.node_type !== "value") return false;
+	const value = (cond as ValueNode).value;
+	for (const tp of status.type_params) {
+		if (value === `${tp}_NEEDS_STRDUP` || value === `${tp}_FAT`) return true;
+	}
+	return false;
 }

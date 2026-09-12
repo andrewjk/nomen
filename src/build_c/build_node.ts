@@ -16,6 +16,7 @@ import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import GroupedNode from "../nodes/GroupedNode.ts";
 import IfElseNode from "../nodes/IfElseNode.ts";
+import IndexNode from "../nodes/IndexNode.ts";
 import LetNode from "../nodes/LetNode.ts";
 import MatchNode from "../nodes/MatchNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
@@ -29,6 +30,7 @@ import StructNode from "../nodes/StructNode.ts";
 import SwitchNode from "../nodes/SwitchNode.ts";
 import TodoNode from "../nodes/TodoNode.ts";
 import TraitNode from "../nodes/TraitNode.ts";
+import UnsafeBlockNode from "../nodes/UnsafeBlockNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import WhileLoopNode from "../nodes/WhileLoopNode.ts";
 import build_access_node from "./build_access_node.ts";
@@ -45,6 +47,7 @@ import build_for_loop_node from "./build_for_loop_node.ts";
 import build_function_call_node from "./build_function_call_node.ts";
 import build_function_node from "./build_function_node.ts";
 import build_if_else_node from "./build_if_else_node.ts";
+import build_index_node from "./build_index_node.ts";
 import build_let_node from "./build_let_node.ts";
 import build_match_node from "./build_match_node.ts";
 import build_operation_node from "./build_operation_node.ts";
@@ -242,6 +245,20 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 			for (const field of anon.fields) {
 				build_node(field.value, status);
 			}
+			break;
+		}
+		case "index": {
+			build_index_node(node as IndexNode, status);
+			break;
+		}
+		case "unsafe": {
+			// `unsafe { ... }` is a pure checker-level scope: the statements
+			// build sequentially. Statements that need their own semicolons
+			// handle that themselves (mirrors the root/func block builders).
+			for (const stmt of (node as UnsafeBlockNode).statements) {
+				build_node(stmt, status, true);
+			}
+			with_semicolon = false;
 			break;
 		}
 		default: {

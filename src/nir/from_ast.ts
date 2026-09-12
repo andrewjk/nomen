@@ -67,7 +67,16 @@ function record_unknown(ctx: LowerCtx, node: BaseNode | null | undefined): void 
 function block(ctx: LowerCtx, stmts: BaseNode[] | null | undefined): NirStmt[] {
 	const out: NirStmt[] = [];
 	if (!stmts) return out;
-	for (const s of stmts) out.push(stmt(ctx, s));
+	for (const s of stmts) {
+		// An `unsafe { ... }` block is a pure checker-level scope: its
+		// statements flatten into the enclosing list (the emitter builds them
+		// in order anyway).
+		if (s.node_type === "unsafe") {
+			out.push(...block(ctx, (s as import("../nodes/UnsafeBlockNode.ts").default).statements));
+			continue;
+		}
+		out.push(stmt(ctx, s));
+	}
 	return out;
 }
 
@@ -437,6 +446,18 @@ function expr(ctx: LowerCtx, n: BaseNode | null | undefined): NirExpr {
 					node: n,
 					receiver: { kind: "leaf", node: n, name: null },
 					steps: [{ name: (n as AccessFieldNode).name, node: n }],
+				};
+			}
+			// `p[i]` — a raw-pointer element read (unsafe code). Lowers as a
+			// binary expression (target, index) so traffic/liveness see both
+			// reads; the emitter routes the node back to build_index_node.
+			if ((n as any).node_type === "index") {
+				const idx = n as import("../nodes/IndexNode.ts").default;
+				return {
+					kind: "binary",
+					node: n,
+					left: expr(ctx, idx.target),
+					right: expr(ctx, idx.index),
 				};
 			}
 			record_unknown(ctx, n);

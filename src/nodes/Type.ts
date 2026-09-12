@@ -39,6 +39,15 @@ export default class Type {
 	storage_kind?: StorageKind;
 	is_ref?: boolean;
 	/**
+	 * True for a `ptr T` raw pointer — a bare machine word holding the
+	 * address of a `T`. Only constructible inside `unsafe` code (the
+	 * parser rejects the `ptr` type form outside the System library, and
+	 * the checker rejects pointer casts/operations outside unsafe
+	 * contexts). Both backends treat a pointer as an 8-byte scalar word:
+	 * C emits `T*`-typed values, aarch64 a plain register.
+	 */
+	is_pointer?: boolean;
+	/**
 	 * True when this value is a read-only class reference obtained by
 	 * extracting from a const source (e.g. `const_list.at(i)` where the
 	 * element type is a class). Field writes through a const_ref are
