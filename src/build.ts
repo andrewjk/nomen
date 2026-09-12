@@ -8,6 +8,7 @@ import {
 	optimize_frame_slots,
 	run_float_forwarding,
 } from "./build_aarch64/asm_opt.ts";
+import { rematerialize_constants } from "./build_aarch64/asm_remat.ts";
 import { reset_access_temp_counter } from "./build_aarch64/build_access_node.ts";
 import { reset_decl_const_counters } from "./build_aarch64/build_declaration_node.ts";
 import { reset_label_counter as reset_for_label_counter } from "./build_aarch64/build_for_loop_node.ts";
@@ -319,6 +320,16 @@ export default function build(
 		// pass below can price the staging moves the diamond used to
 		// shield.
 		status.code = convert_loop_invariant_branches(status.code);
+		// Constant rematerialization (ASM_PLAN_7 tranche 4) — float
+		// literal-pool loads (`adr xN, _float_op_K` + `ldr dM, [xN]`)
+		// become `fmov dM, #imm` (in place when the address staging register
+		// provably dies with the pair), in-cycle fmov immediates hoist to
+		// the preheader under a fresh d-register (clang's once-per-loop
+		// materialization), and `ldr xN, =K` literal-pool loads in
+		// movz/movn range become mov immediates. Kills the per-iteration
+		// memory-materialized constant tax (the spectral-norm `1.0`
+		// receipt).
+		status.code = rematerialize_constants(status.code);
 		// Dead staging-move elimination inside validated loop cycles —
 		// prunes `mov xD, xS` whose destination exact-CFG liveness proves
 		// dead (the per-statement emission's protocol staging whose

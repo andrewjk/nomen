@@ -157,6 +157,7 @@ export const MNEMONICS: Record<string, MnemonicSig> = {
 			["f", "f"],
 			["f", "r"],
 			["r", "f"],
+			["f", "i"], // fmov d0, #1.0 — the FP modified-immediate remat form
 		],
 	},
 	add: {

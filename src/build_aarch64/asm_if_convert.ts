@@ -142,8 +142,10 @@ function cond_branch_cc(op: string): string | null {
 }
 
 /** Registers an instruction WRITES (exact, dest-first; stores/compares/
- *  branches define nothing; ldp defines both leading registers). */
-function exact_defs(instr: AsmInstruction): string[] {
+ *  branches define nothing; ldp defines both leading registers). Shared
+ *  with the sibling asm-level passes (remat) so lift semantics stay in
+ *  one place. */
+export function exact_defs(instr: AsmInstruction): string[] {
 	switch (instr.op) {
 		case "str":
 		case "strb":
@@ -185,7 +187,7 @@ function exact_defs(instr: AsmInstruction): string[] {
 }
 
 /** Every register an instruction touches (operands, memory base/index). */
-function instr_regs(instr: AsmInstruction): string[] {
+export function instr_regs(instr: AsmInstruction): string[] {
 	const out: string[] = [];
 	for (const o of instr.operands) {
 		if (o.kind === "reg") out.push(o.name);
@@ -248,8 +250,9 @@ function escape_re(s: string): string {
 /** The innermost validated cycle (header line h, back-edge line e)
  *  strictly containing [test_idx, end_line], or null. Header provenance
  *  from inside, no calls/indirect transfers inside, and every jump
- *  target inside the range is the diamond's own else/end label. */
-function find_containing_cycle(
+ *  target inside the range is the diamond's own else/end label. Shared
+ *  with the sibling asm-level passes (remat). */
+export function find_containing_cycle(
 	labels: Map<string, number[]>,
 	jumps: { from: number; target: number | null; cond: boolean }[],
 	parsed: (AsmInstruction | null)[],

@@ -65,7 +65,7 @@ const LABEL_LINE_RE = /^([A-Za-z_.$][\w.$]*|\d+):$/;
 const B_ALIAS_RE = /^(eq|ne|lt|le|gt|ge|hs|lo|ls|hi|mi|pl)$/;
 const NUM_TARGET_RE = /^(\d+)([fb])$/;
 
-const ALL_TRACKED: string[] = [];
+export const ALL_TRACKED: string[] = [];
 for (let r = 0; r <= 30; r++) ALL_TRACKED.push(`x${r}`, `w${r}`, `d${r}`);
 ALL_TRACKED.push("sp", "xzr");
 
@@ -77,8 +77,8 @@ function is_branch_op(op: string): boolean {
 }
 
 /** Registers an instruction WRITES (exact, dest-first) — the coalescer's
- *  model. */
-function exact_defs(instr: AsmInstruction): string[] {
+ *  model. Shared with the sibling asm-level passes (remat). */
+export function exact_defs(instr: AsmInstruction): string[] {
 	switch (instr.op) {
 		case "str":
 		case "strb":
@@ -115,8 +115,8 @@ function exact_defs(instr: AsmInstruction): string[] {
 
 /** Registers an instruction READS: every register operand outside the
  *  leading def positions, plus memory base/index (the coalescer's
- *  positional model). */
-function reads_of(instr: AsmInstruction): string[] {
+ *  positional model). Shared with the sibling asm-level passes (remat). */
+export function reads_of(instr: AsmInstruction): string[] {
 	let skip: number;
 	switch (instr.op) {
 		case "str":
@@ -168,7 +168,9 @@ function mov_dest(instr: AsmInstruction): string | null {
 	return d.name;
 }
 
-function transfer(instr: AsmInstruction, live: Set<string>): void {
+/** Per-instruction liveness transfer — shared with the sibling asm-level
+ *  passes (remat). */
+export function transfer(instr: AsmInstruction, live: Set<string>): void {
 	const op = instr.op;
 	if (op === "bl" || op === "blr") {
 		for (let a = 0; a <= 17; a++) live.delete(`x${a}`);
@@ -196,13 +198,7 @@ function transfer(instr: AsmInstruction, live: Set<string>): void {
 	for (const r of reads_of(instr)) live.add(r);
 }
 
-interface Block {
-	start: number;
-	end: number;
-	succ: number[];
-}
-
-interface Analysis {
+export interface Analysis {
 	lines: string[];
 	parsed: (AsmInstruction | null)[];
 	kind: ("label" | "instr" | "skip")[];
@@ -210,6 +206,19 @@ interface Analysis {
 	line_block: number[];
 	live_in: Set<string>[];
 	cycles: { head: number; end: number }[];
+}
+
+export interface Block {
+	start: number;
+	end: number;
+	succ: number[];
+}
+
+/** The full CFG analysis shared with the sibling asm-level passes (remat):
+ *  blocks, resolved edges, and exact backward liveness. Null = the text
+ *  contains something the model does not handle. */
+export function analyze_cfg(code: string): Analysis | null {
+	return analyze(code);
 }
 
 /** One full analysis pass over the text; null = abort (the text contains

@@ -161,6 +161,15 @@ function parse_reg(tok: string): string | null {
 	return null;
 }
 
+/** `#1.0` / `#-0.5` — the FP modified-immediate form `fmov Dd, #imm` takes.
+ *  The shape check only needs the operand KIND (the structured `value` slot
+ *  is integer-typed), so the bit value rides `raw` verbatim. */
+const FLOAT_IMM_RE = /^#-?\d+\.\d+$/;
+
+function parse_float_imm(tok: string): boolean {
+	return FLOAT_IMM_RE.test(tok.trim());
+}
+
 /** Parse `[base, ...]` with optional trailing `!`, plus a post-index `#imm`
  *  that may follow the bracket group as its own comma part. */
 function parse_mem(parts: string[], start: number): { mem: ParsedMem; next: number } | null {
@@ -261,6 +270,7 @@ function parse_operand(tok: string): Operand | "labelish" | null {
 	}
 	const imm = parse_imm(trimmed);
 	if (imm !== null) return { kind: "imm", value: imm, raw: trimmed };
+	if (parse_float_imm(trimmed)) return { kind: "imm", value: 0n, raw: trimmed };
 	const pseudo = parse_pseudo_imm(trimmed);
 	if (pseudo !== null) return { kind: "imm", value: pseudo, raw: trimmed };
 	if (/^[A-Za-z_.$][\w.$]*$/.test(trimmed)) return "labelish";

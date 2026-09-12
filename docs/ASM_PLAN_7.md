@@ -274,3 +274,52 @@ byte-identical; spectral-norm n=4000 interleaved best-of 1.28 → **1.25 s**
 (n=1500 unchanged at the 0.18 s fdiv-latency floor), pidigits n=4000 and
 fannkuch n=11 neutral. Remaining gap to clang is causes 1–2 (partly
 addressed by tranche 1) and 4–8 — tranches 4–8.
+
+### Tranche 4 (2026-09-13): constant rematerialization — LANDED
+
+The `adr x3, _float_op_4; ldr d18, [x3]` pair (cause 4) collapses to
+`fmov d18, #imm` when three gates hold: the label is one of the
+compiler's constant pools (`_float_op_N` / `_float_const_N` /
+`_float_lit_N` — a top-level `var float f` ALSO emits a `.double` line
+named after the variable, and collapsing its loads would freeze it),
+the value is in the FP modified-immediate set (±m/16 × 2^e, m ∈
+[16,31], e ∈ [-3,4], plus +0 — 3.14, exponents and −0.0 keep the pool),
+and exact CFG liveness over the rewritten text proves the staging
+register dead in both register views before the inserted fmov. The
+liveness verdict runs its own backward fixpoint with one refinement
+over the shared analysis: a call's ABI argument reads (x0–x8) do not
+observe the candidates' staging registers — every argument a callee
+actually reads is written at the call site, so the deleted pool
+address cannot leak through an unused arg slot (without this, every
+loop feeding a call refused: all eight arg slots model as live). Then
+an in-cycle `fmov dX, #imm` whose destination appears nowhere outside
+the cycle hoists to the preheader under a fresh caller-saved
+d-register (d16–d31, textually absent in EVERY form — d/s/q/v share
+the physical file, so a `v18.2d` NEON use hides d18) with the in-scope
+reads renamed; the scope ends at the next dX definition, which is what
+makes the three-operand consume-and-redefine shape (`fdiv d17, d17,
+d0` reading the constant into its own destination) work — a label
+between the fmov and the scope end refuses (a skipping path would
+have dX hold something else; dM always holds the constant). Finally
+`ldr xN, =K` in movz/movn range becomes `mov xN, #K`. The lift gained
+the `fmov d, #imm` shape and float-immediate operand parsing; the
+validator then covers every new emission.
+
+Two suite-caught receipts while landing: (a) the collapse trial kept
+the pair's `ldr` (a `continue` that skipped nothing), so every verdict
+saw the address still read and the pass silently never fired — the
+kill-switch A/B test caught it only after the first synthetic test
+passed; (b) the first rename mapped textual match ordinals onto
+ABSOLUTE operand positions (`fmul d16, d8, d17`'s single d17 match is
+operand 2, ordinal 0) — the rename became a no-op, the hoist deleted
+the only def, and four behavioral tests ran with undefined d-registers
+(f=0.0, -0.000000, an infinite fcmp loop). Both fixes are shape-local;
+the guard-rail tests pin them.
+
+Result: full suite green default-ON (341 files / 3161 tests) with
+`test/const_remat.test.ts` (collapse + hoist shape, consume-and-
+redefine rename exactness, kill-switch byte-identity, non-encodable /
+variable-label / escaping-address / label-split-scope refusals,
+movz-range int remat, behavioral both backends). The spectral-norm
+j-loop's per-iteration `adr+ldr` pair is gone (the `1.0` rides the
+preheader); pidigits' D-loops lose their pool loads the same way.
