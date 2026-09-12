@@ -8,6 +8,7 @@ import {
 	optimize_frame_slots,
 	run_float_forwarding,
 } from "./build_aarch64/asm_opt.ts";
+import { reduce_pointer_walks } from "./build_aarch64/asm_pointer_walk.ts";
 import { rematerialize_constants } from "./build_aarch64/asm_remat.ts";
 import { elide_stack_staging } from "./build_aarch64/asm_staging_elide.ts";
 import { reset_access_temp_counter } from "./build_aarch64/build_access_node.ts";
@@ -340,6 +341,14 @@ export default function build(
 		// the 3-instruction staging tax per index computation (the
 		// spectral-norm receipt, ×2 paths).
 		status.code = elide_stack_staging(status.code);
+		// Pointer-walk strength reduction (ASM_PLAN_7 tranche 6) — inside a
+		// validated cycle, a loop-invariant base indexed by the induction
+		// at a fixed scale (`[base, j, lsl #3]`) rewrites to a walked
+		// register: preheader `add w, base, j, lsl #k`, body accesses
+		// become unscaled `[w]`, and the latch adds a `w += stride` bump
+		// tracking the induction (clang's exact walked form — the index
+		// arithmetic leaves the loop body's memory ops entirely).
+		status.code = reduce_pointer_walks(status.code);
 		// Dead staging-move elimination inside validated loop cycles —
 		// prunes `mov xD, xS` whose destination exact-CFG liveness proves
 		// dead (the per-statement emission's protocol staging whose

@@ -296,8 +296,9 @@ function remat_float_pairs(code: string): string {
 }
 
 /** Label/jump tables for the cycle validator — the same parse discipline
- *  the if-conversion pass uses (one label position map, resolved jumps). */
-function build_tables(code: string): {
+ *  the if-conversion pass uses (one label position map, resolved jumps).
+ *  Shared with the sibling asm-level passes (pointer walk). */
+export function build_tables(code: string): {
 	parsed: (AsmInstruction | null)[];
 	labels: Map<string, number[]>;
 	jumps: { from: number; token: string; target: number | null; cond: boolean }[];

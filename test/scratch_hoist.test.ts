@@ -95,11 +95,16 @@ test("pool-refused inner-loop receivers hoist into scratch registers", () => {
 	// The bracket entry derives both receivers' data pointers into
 	// scratch registers before the header.
 	expect(loop.pre).toMatch(/mov x[4-8], x9\n/);
-	// The body indexes straight off the scratch registers — no
-	// per-iteration derivation (`ldr x9, [x9, #8]`) survives.
-	expect(loop.body).toMatch(/ldr x0, \[x[4-8], x\d+, lsl #3\]/);
+	// The body walks the load pointer post-index (ASM_PLAN_7 tranche 6
+	// composes on the brackets: the single scaled u-access becomes
+	// `u.data + j·8` materialized once, then `ldr [w], #8`); the store
+	// indexes by the OUTER induction — invariant in this cycle — so it
+	// keeps the bracket-pinned indexed form, and no per-iteration
+	// derivation (`ldr x9, [x9, #8]`) survives.
+	expect(loop.body).toMatch(/ldr x0, \[x1[67]\], #8/);
 	expect(loop.body).toMatch(/str x\d+, \[x[4-8], x\d+, lsl #3\]/);
 	expect(loop.body).not.toContain("ldr x9, [x9, #8]");
+	expect(loop.pre).toMatch(/add x1[67], x[4-8], x\d+, lsl #3/);
 });
 
 test("kill-switch restores the per-iteration derivation", () => {

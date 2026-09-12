@@ -366,3 +366,37 @@ eliding, kill-switch byte-identity, real-build pick-function scoping,
 behavioral both backends). The pick receipt: both arms' staging pairs
 per iteration gone; the spectral-norm `if transpose` arms lose their
 ×2 push/pop tax.
+
+### Tranche 6 (2026-09-13): pointer-walk strength reduction — LANDED
+
+The walked form (cause 5) is the POST-INDEX one — clang's receipt
+fuses the bump into the memory op (`ldr d3, [x16], #8`), so a
+latch-side `add w, w, #stride` would buy nothing; the walk is worth
+taking only when the fusion is free. Inside a validated cycle, a
+(base, induction, scale) access group with EXACTLY ONE in-cycle
+access, no jump-targeted label anywhere in the body (an inner diamond
+would make the access conditional — the post-index bump would skip on
+some iterations and desync from the induction; the loop-exit guard
+targets OUTSIDE the range and pairs correctly), an induction defined
+exactly once by `add j, j, #m` in the latch, a base defined nowhere in
+the cycle, and a shared scale rewrites to: preheader
+`add w, base, j, lsl #k` (j's entry value IS the value at the
+fall-through preheader — single-entry cycles), and the access becomes
+`… [w], #(m·2^k)`. The walk register comes from the if-conversion
+scratch pair (x16/x17) but must be textually absent from the ENTIRE
+function chunk — absent-from-body is not enough, since an ENCLOSING
+loop's if-converted select can live across this cycle in a register
+the body never mentions, and the preheader/latch writes would clobber
+it. Vector (q/v) accesses belong to the NEON planner's closed-form
+loops and are never walked. The composition with tranches 2/3 is the
+plan's intent: the bracket-pinned receiver's single scaled access
+becomes `u.data + j·8` materialized once, then `ldr [w], #8` — one
+scratch-hoist test assertion updated to the composed (walked) shape;
+the store indexing the OUTER induction stays indexed (invariant in
+this cycle — refused, correctly).
+
+Result: full suite green default-ON (344 files / 3181 tests) with
+`test/pointer_walk.test.ts` (post-index shape, stride-tracking with
+j += 2, multi-access / inner-diamond / extra-induction-def / base-def
+refusals, function-wide walk-register absence, kill-switch
+byte-identity, behavioral both backends).
