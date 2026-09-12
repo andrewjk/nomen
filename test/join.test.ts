@@ -214,3 +214,125 @@ test("join dedupes an explicit file import covered by a namespace import", () =>
 		fs.rmSync(root, { recursive: true, force: true });
 	}
 });
+
+// ---------------------------------------------------------------------------
+// join: import-graph cycles and self-imports
+// ---------------------------------------------------------------------------
+
+test("join terminates on a self-import and warns", () => {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), "nomen-join-self-"));
+	try {
+		fs.mkdirSync(path.join(root, "src"), { recursive: true });
+		fs.writeFileSync(path.join(root, "src", "main.nm"), "import main\npub func main = () {}\n");
+		const warnings: string[] = [];
+		const original_error = console.error;
+		console.error = (...args: unknown[]) => {
+			warnings.push(args.join(" "));
+		};
+		let input: string;
+		try {
+			input = join(path.join(root, "src", "main.nm"), undefined);
+		} finally {
+			console.error = original_error;
+		}
+		expect(input).toContain("pub func main");
+		expect(warnings.some((w) => w.includes("imports itself"))).toBe(true);
+	} finally {
+		fs.rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("join warns on a file importing its own namespace folder", () => {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), "nomen-join-own-ns-"));
+	try {
+		fs.mkdirSync(path.join(root, "src", "utils"), { recursive: true });
+		fs.writeFileSync(
+			path.join(root, "src", "main.nm"),
+			"import System\nimport utils\npub func main = () {}\n",
+		);
+		fs.writeFileSync(
+			path.join(root, "src", "utils", "a.nm"),
+			"import utils\npub func a = () {}\n",
+		);
+		const warnings: string[] = [];
+		const original_error = console.error;
+		console.error = (...args: unknown[]) => {
+			warnings.push(args.join(" "));
+		};
+		let input: string;
+		try {
+			input = join(path.join(root, "src", "main.nm"), undefined);
+		} finally {
+			console.error = original_error;
+		}
+		expect(input).toContain("pub func a");
+		expect(
+			warnings.some((w) => w.includes("a.nm imports its own namespace")),
+		).toBe(true);
+	} finally {
+		fs.rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("join terminates on mutual imports and includes each file once", () => {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), "nomen-join-mutual-"));
+	try {
+		fs.mkdirSync(path.join(root, "src"), { recursive: true });
+		fs.writeFileSync(
+			path.join(root, "src", "main.nm"),
+			"import System\nimport utils::a\npub func main = () {}\n",
+		);
+		fs.mkdirSync(path.join(root, "src", "utils"));
+		fs.writeFileSync(
+			path.join(root, "src", "utils", "a.nm"),
+			"import utils::b\npub func a = () {}\n",
+		);
+		fs.writeFileSync(
+			path.join(root, "src", "utils", "b.nm"),
+			"import utils::a\npub func b = () {}\n",
+		);
+		const input = join(path.join(root, "src", "main.nm"), undefined);
+		expect(input).toContain("pub func a");
+		expect(input).toContain("pub func b");
+		expect(input.split("pub func b").length - 1).toBe(1);
+	} finally {
+		fs.rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("join includes a diamond dependency exactly once", () => {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), "nomen-join-diamond-"));
+	try {
+		fs.mkdirSync(path.join(root, "src"), { recursive: true });
+		fs.writeFileSync(
+			path.join(root, "src", "main.nm"),
+			"import System\nimport shared\nimport left\npub func main = () {}\n",
+		);
+		fs.writeFileSync(path.join(root, "src", "shared.nm"), "pub func shared = () {}\n");
+		fs.writeFileSync(
+			path.join(root, "src", "left.nm"),
+			"import shared\npub func left = () {}\n",
+		);
+		const input = join(path.join(root, "src", "main.nm"), undefined);
+		expect(input.split("pub func shared").length - 1).toBe(1);
+		expect(input).toContain("pub func left");
+	} finally {
+		fs.rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("join reports an unresolvable import instead of a raw ENOENT", () => {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), "nomen-join-missing-"));
+	try {
+		fs.mkdirSync(path.join(root, "src"), { recursive: true });
+		fs.writeFileSync(
+			path.join(root, "src", "main.nm"),
+			"import System\nimport nope\npub func main = () {}\n",
+		);
+		expect(() => join(path.join(root, "src", "main.nm"), undefined)).toThrowError(
+			/does not resolve/,
+		);
+	} finally {
+		fs.rmSync(root, { recursive: true, force: true });
+	}
+});

@@ -43,6 +43,11 @@ export default function join(
 	const folder_path = path.dirname(entry_file_path);
 	const file_path = path.basename(entry_file_path);
 	const inputs = new Map();
+	// Every real file in the graph, by resolved absolute path. A file is
+	// marked BEFORE its imports are processed, so self-imports and mutual
+	// imports (A imports B imports A) terminate instead of recursing
+	// forever — each file is walked exactly once.
+	const visited = new Set<string>();
 	const resolved_lib_path = lib_path ? path.resolve(lib_path, "src") : fallback_lib_path();
 	// Key the entry as `./<name>` so that a sibling's `import <name>` (which
 	// resolves to the same key) finds it already inlined instead of re-reading
@@ -51,19 +56,19 @@ export default function join(
 	const prev_test_src_dir = test_src_dir;
 	test_src_dir = for_test ? resolve_src_module(folder_path) : undefined;
 	try {
-		add_source(folder_path, `./${file_path}`, inputs, resolved_lib_path);
+		add_source(folder_path, `./${file_path}`, inputs, resolved_lib_path, visited);
 		// A folder is a module: every sibling `.nm` file's `pub` declarations are
 		// visible to the entry without an explicit `import`, mirroring how the
 		// System library concatenates its own files. Pull in every other file in
 		// the entry's folder so cross-file references resolve.
-		gather_module_siblings(folder_path, file_path, inputs, resolved_lib_path);
+		gather_module_siblings(folder_path, file_path, inputs, resolved_lib_path, visited);
 		// Declarations one directory up are visible too — a file in `src/utils/`
 		// sees the `.nm` files directly in `src/`. Mirrors the editor extension,
 		// which does the same so diagnostics match what the compiler accepts.
-		gather_module_parent(folder_path, file_path, inputs, resolved_lib_path);
+		gather_module_parent(folder_path, file_path, inputs, resolved_lib_path, visited);
 		// A `*.test.nm` file can use the program's `pub` declarations: pull in
 		// the `src/` module (with `main` stripped) so tests call the real code.
-		if (test_src_dir) gather_src_module(test_src_dir, inputs, resolved_lib_path);
+		if (test_src_dir) gather_src_module(test_src_dir, inputs, resolved_lib_path, visited);
 	} finally {
 		test_src_dir = prev_test_src_dir;
 	}
@@ -75,6 +80,7 @@ function gather_module_siblings(
 	entry_file: string,
 	inputs: Map<string, string>,
 	lib_path: string,
+	visited: Set<string>,
 ): void {
 	let names: string[];
 	try {
@@ -101,7 +107,7 @@ function gather_module_siblings(
 				// unreadable sibling — fall through and let add_source handle it
 			}
 		}
-		add_source(folder_path, import_file_path, inputs, lib_path);
+		add_source(folder_path, import_file_path, inputs, lib_path, visited);
 	}
 }
 
@@ -110,6 +116,7 @@ function gather_module_parent(
 	entry_file: string,
 	inputs: Map<string, string>,
 	lib_path: string,
+	visited: Set<string>,
 ): void {
 	// `.nm` files one directory up are visible to the entry too (a file in
 	// `src/utils/` sees `src/*.nm`), mirroring the editor extension. Skip
@@ -136,7 +143,7 @@ function gather_module_parent(
 		}
 		// Resolve relative to the parent so the file's own imports also look
 		// there; key as `./<name>` so an explicit `import <name>` dedupes.
-		add_source(parent_path, `./${name}`, inputs, lib_path);
+		add_source(parent_path, `./${name}`, inputs, lib_path, visited);
 	}
 }
 
@@ -152,7 +159,12 @@ export function resolve_src_module(entry_dir: string): string | undefined {
 	return undefined;
 }
 
-function gather_src_module(src_dir: string, inputs: Map<string, string>, lib_path: string): void {
+function gather_src_module(
+	src_dir: string,
+	inputs: Map<string, string>,
+	lib_path: string,
+	visited: Set<string>,
+): void {
 	let names: string[];
 	try {
 		names = fs.readdirSync(src_dir);
@@ -163,7 +175,7 @@ function gather_src_module(src_dir: string, inputs: Map<string, string>, lib_pat
 		if (!name.endsWith(".nm")) continue;
 		const import_file_path = `./${name}`;
 		if (inputs.has(import_file_path)) continue;
-		add_source(src_dir, import_file_path, inputs, lib_path);
+		add_source(src_dir, import_file_path, inputs, lib_path, visited);
 	}
 }
 
@@ -176,6 +188,7 @@ function add_source(
 	file_path: string,
 	inputs: Map<string, string>,
 	lib_path: string,
+	visited: Set<string>,
 ) {
 	let source_path = path.resolve(folder_path, file_path);
 
@@ -186,7 +199,22 @@ function add_source(
 		}
 	}
 
-	let source = fs.readFileSync(source_path, "utf8");
+	// Mark BEFORE processing imports: a file that imports itself (directly,
+	// or through a mutual-import cycle) is already in the graph when its
+	// own import line resolves, so the walk terminates. Also dedupes a file
+	// reached by two different keys (gathered under one name, imported
+	// under another).
+	if (visited.has(source_path)) return;
+	visited.add(source_path);
+
+	let source: string;
+	try {
+		source = fs.readFileSync(source_path, "utf8");
+	} catch {
+		throw new Error(
+			`joiner: 'import ${file_path.replace(/^\.\/|\.\w+$/g, "")}' does not resolve from ${folder_path}`,
+		);
+	}
 	// In a test compile the harness supplies `main`, so drop the program's own
 	// `main` declarations (its other `pub` declarations stay visible).
 	if (test_src_dir && is_within(source_path, test_src_dir)) {
@@ -212,15 +240,24 @@ function add_source(
 		// in it, mirroring how `import System` pulls a whole namespace and
 		// how a folder is itself a module (see gather_module_siblings).
 		let is_dir = false;
+		const dir_path = path.resolve(folder_path, rel);
 		try {
-			is_dir = fs.statSync(path.resolve(folder_path, rel)).isDirectory();
+			is_dir = fs.statSync(dir_path).isDirectory();
 		} catch {
 			// Not a directory — fall through to file resolution below.
 		}
 		if (is_dir) {
+			// A file importing the namespace folder it lives in is a self-import:
+			// everything in that folder is already gathered as siblings.
+			if (is_within(source_path, dir_path)) {
+				console.error(
+					`[joiner] warning: ${source_path} imports its own namespace ('${trimmed}') — skipped`,
+				);
+				return "";
+			}
 			let names: string[];
 			try {
-				names = fs.readdirSync(path.resolve(folder_path, rel));
+				names = fs.readdirSync(dir_path);
 			} catch {
 				return "";
 			}
@@ -228,14 +265,19 @@ function add_source(
 				if (!name.endsWith(".nm")) continue;
 				const import_file_path = `./${rel}/${name}`;
 				if (!inputs.has(import_file_path)) {
-					add_source(folder_path, import_file_path, inputs, lib_path);
+					add_source(folder_path, import_file_path, inputs, lib_path, visited);
 				}
 			}
 			return "";
 		}
 		const import_file_path = `./${rel}.nm`;
+		const target = path.resolve(folder_path, import_file_path);
+		if (target === source_path) {
+			console.error(`[joiner] warning: ${source_path} imports itself — skipped`);
+			return "";
+		}
 		if (!inputs.has(import_file_path)) {
-			add_source(folder_path, import_file_path, inputs, lib_path);
+			add_source(folder_path, import_file_path, inputs, lib_path, visited);
 		}
 		return "";
 	});
