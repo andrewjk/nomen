@@ -404,13 +404,18 @@ byte-identity, behavioral both backends).
 ### Tranche 7 (2026-09-13, unlocked same day): auto-inline small methods — LANDED DEFAULT-ON
 
 The mechanism is in and the default is ON. `is_auto_inline_method`
-admits unmarked methods with ≤3 statements, ≤3 params, scalar-or-void
-returns, no raw statements / moved params / param shadowing, a STRUCT
-receiver (string self is a fat (ptr,len) pair the splice parks half of
-— the at_or receipt; scalar receivers like `char.is_digit` are no
-struct at all), and — the unlock — NO T-generic callee in the body
-(`calls_generic_method` refuses bodies containing `load_T`/`store_T`
-calls). The widened dispatch reuses the user-inline splice wholesale,
+admits unmarked LEAF methods only — ≤3 statements, ≤3 params,
+scalar-or-void returns, no raw statements / moved params / param
+shadowing, a STRUCT receiver (string self is a fat (ptr,len) pair the
+splice parks half of — the at_or receipt; scalar receivers like
+`char.is_digit` are no struct at all), and NO calls in the body. The
+leaf-only gate is measured, not precautionary: call-bearing splices
+(ensure→grow_int chains expanded into pidigits' D2 loop) ran +52–62%
+REGRESSION (695–743 ms vs 458 ms at n=4000) — the expanded frame
+traffic and defeated loop planning cost more than the saved `bl` —
+and the crashing JsonTree splices all nested T-generic
+`load_T`/`store_T` splices. Leaf-only keeps the wins and pidigits at
+baseline. The widened dispatch reuses the user-inline splice wholesale,
 plus a splice-active guard: a nested call to the method currently
 being spliced (recursion) takes the `bl` instead of re-splicing
 forever. The standalone body is still emitted — trait dispatch,
@@ -456,6 +461,13 @@ marker positions nothing. Per-iteration guard overhead amortizes 2 →
 1.5 instructions (3 guards per 2 iterations). Runs AFTER pointer-walk,
 so both copies carry every earlier transform; the lift re-validates
 the rewritten text and any failure reverts the candidate.
+
+Measured net effect of tranches 4–8 (interleaved best-of-7, kill-
+switch A/B, n=4000/1500-scale): spectral-norm −53% (174.8 → 81.6 ms —
+the plan's 2.25× gap to the C backend is CLOSED), knucleotide −26%
+(7.4 → 5.5 ms), json-serde −2%, fannkuch-redux −1%, mandelbrot/
+binarytrees/nbody neutral, pidigits at baseline once call-bearing
+auto-inline was gated to leaf-only.
 
 Result: full suite green with `test/unroll2.test.ts` (duplication
 shape, label placement, call/diamond/size refusals, kill-switch

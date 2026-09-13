@@ -5,11 +5,12 @@ import FunctionNode from "../../nodes/FunctionNode.ts";
 
 const MAX_STATEMENTS = 15;
 
-/** Auto method inlining (ASM_PLAN_7 tranche 7), default ON. The
- *  T-generic-callee refusal below is what unlocked the default: the
- *  JsonTree receipt's splices all nested a generic
- *  `Buffer<T>.load_T`/`store_T` splice (crash class — FOLLOWUP.md). OFF
- *  restores exactly the explicit-`inline`-only dispatch. */
+/** Auto method inlining (ASM_PLAN_7 tranche 7), default ON: LEAF bodies
+ *  only (no calls), no T-generic callees, struct receivers, ≤3 statements
+ *  and params. Measured (n=4000/1500-scale benches, interleaved best-of):
+ *  spectral-norm −53%, knucleotide −26%, json-serde/fannkuch ~−1%,
+ *  neutral elsewhere. OFF restores exactly the explicit-`inline`-only
+ *  dispatch. */
 let auto_method_inline_on = true;
 
 export function auto_method_inline_enabled(): boolean {
@@ -77,37 +78,33 @@ export function is_auto_inline_method(func: FunctionNode): boolean {
 	if (func.return_type?.is_array || func.return_type?.is_view) return false;
 	if (func.return_type?.name && !SIMPLE_TYPES.includes(func.return_type.name)) return false;
 
-	// A body that calls a T-GENERIC method (`Buffer<T>.load_T`/`store_T`)
-	// refuses: the generic-nested splice class is the JsonTree receipt's
-	// remaining crash (see FOLLOWUP.md auto-method-inline entry).
-	if (calls_generic_method(func.statements)) return false;
+	// LEAF-ONLY: the body may not call anything. Two measured receipts:
+	// (a) call-BEARING splices (ensure→grow_int chains expanded into hot
+	// loops) ran pidigits n=4000 +52–62% — the expanded frame traffic and
+	// defeated loop planning cost far more than the saved call; (b) a body
+	// calling a T-GENERIC method (`Buffer<T>.load_T`/`store_T`) nested a
+	// generic user-inline splice that miscompiled (the JsonTree crash —
+	// FOLLOWUP.md). Call-bearing methods keep the real call; the
+	// ensure-shaped win needs the frame-context work first.
+	if (body_has_call(func.statements)) return false;
 
 	return true;
 }
 
-/** Whether any method/function call in the subtree resolves to a generic
- *  (type-parameterized) callee. */
-function calls_generic_method(node: BaseNode | BaseNode[] | null | undefined): boolean {
+/** Whether the subtree contains any call (method or function). */
+function body_has_call(node: BaseNode | BaseNode[] | null | undefined): boolean {
 	if (!node) return false;
 	if (Array.isArray(node)) {
 		for (const item of node) {
-			if (calls_generic_method(item)) return true;
+			if (body_has_call(item)) return true;
 		}
 		return false;
 	}
 	if (typeof node !== "object") return false;
-	const any_node = node as any;
-	if (
-		any_node.node_type === "access_func" &&
-		typeof any_node.name === "string" &&
-		any_node.name.endsWith("_T")
-	) {
-		return true;
-	}
-	const resolved = any_node.resolved_function as FunctionNode | undefined;
-	if (resolved && (resolved.type_params?.length ?? 0) > 0) return true;
-	for (const child of child_nodes(any_node)) {
-		if (calls_generic_method(child as BaseNode)) return true;
+	const nt = (node as any).node_type;
+	if (nt === "access_func" || nt === "func_call") return true;
+	for (const child of child_nodes(node)) {
+		if (body_has_call(child as BaseNode)) return true;
 	}
 	return false;
 }

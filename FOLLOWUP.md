@@ -398,8 +398,8 @@ rule = QuoteRule()                    // ...
 - **aarch64** compiles and runs this correctly (reassignment re-tags the
   slot).
 - **C** declares the local as the CONCRETE struct (`struct HeadingRule
-  rule;` — the trait-tagged representation is skipped), so `rule =
-  QuoteRule_init()` is a raw clang type error ("assigning to 'struct
+rule;` — the trait-tagged representation is skipped), so `rule =
+QuoteRule_init()` is a raw clang type error ("assigning to 'struct
   HeadingRule' from incompatible type 'struct QuoteRule'").
 
 Two coherent fixes: reject the local uniformly (simplest — value structs
