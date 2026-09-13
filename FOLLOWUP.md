@@ -413,12 +413,17 @@ Found while probing the "func-typed struct fields → use a trait instead"
 story for the allmark port (value-struct conformers would make one-method
 wrapper classes unnecessary).
 
-## Auto method inline (ASM_PLAN_7 tranche 7): JsonTree splice segfaults block default-ON
+## Auto method inline (ASM_PLAN_7 tranche 7): RESOLVED — root-caused, gated, default ON
+
+**Update (both open items closed — see the receipts at the bottom):**
+the crash class is the T-generic-nested splice; auto-inline is LEAF-ONLY
+and default ON; the user-inline dispatch is gated too; the `ensure`
+receipt is a measured refusal.
 
 The tranche-7 mechanism (`is_auto_inline_method` in
 `src/build_aarch64/utils/scan_inline_candidates.ts`, dispatch widened in
 `build_access_node.ts`, splice-recursion guard in `build_inline_method.ts`)
-ships **default OFF** because splicing unmarked small methods segfaults on
+originally shipped **default OFF** because splicing unmarked small methods segfaults on
 the Json library's shapes:
 
 - Program: `Json.parse`/`Json.stringify` round-trip of `[1, true, "hi", null]`
@@ -440,8 +445,26 @@ the Json library's shapes:
   receivers (`char.is_digit` — no struct), >4 params (`set_leaf_kind` —
   param reads fell back to global-address emission).
 
-Next steps for a root cause: dump the spliced region for
-`JsonTree.set_kind` on/off and diff the param parking vs the
-`self.nodes` field addressing; check whether the nested generic splice
-re-registers `function_param_regs` for the OUTER body on return (the
-swap/restore in `build_inline_method` around the nested `bl` path).
+**Root cause and disposition (same session):** the crashing splices all
+have bodies that call a T-GENERIC Buffer method (`load_T`/`store_T`) —
+the auto splice NESTS a generic user-inline splice (materializing a
+56-byte struct local inside the outer splice's frame context).
+`is_auto_inline_method` is therefore LEAF-ONLY (`body_has_call`
+refuses any body with calls — which also subsumes the generic-nested
+class), and the SAME refusal gates the USER-marked inline dispatch
+(`inline_method_splice_unsafe` in build_access_node), where the bug
+was confirmed empirically: marking `JsonTree.set_kind`/`get_kind` as
+`pub inline` (auto-inline off) reproduces `Json.parse` → n=0 with
+broken child links — a PRE-EXISTING user-inline path bug, not a
+tranche-7 regression. `build_struct_node` now emits standalone bodies
+for refused user-inline methods (their call sites take the real call).
+The `ensure` receipt (282 samples in `BigInt_ensure` per D2 iteration)
+was measured and closed as a refusal: user-inline `ensure` in pidigits
+n=4000 ran +55.5% (711.5 vs 457.3 ms, output correct) — the expansion
+of `ensure`→`grow_int`→`grow` into the loop body costs more than the
+saved `bl`; winning it needs a properly nested frame context (x29
+rebase + independent slot stream) plus an inline cost model.
+
+Still open underneath: WHY the nested generic splice miscompiles (the
+frame-context question applies to user-marked inline methods that call
+`load_T`/`store_T` — they now safely take the `bl`).
