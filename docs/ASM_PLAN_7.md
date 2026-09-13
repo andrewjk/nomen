@@ -437,9 +437,20 @@ set_kind crashes, only get_kind misprints kinds, every non-generic
 splice is exact alone) and by test/json.test.ts green default-ON. The
 ON arm is pinned by `test/auto_method_inline.test.ts` (splice-instead-
 of-bl shape, standalone body still emitted, default-ON pin,
-recursive-method bl fallback, behavioral both backends). The deeper
-generic-nested-splice question for USER-marked inline methods remains
-open (FOLLOWUP.md).
+recursive-method bl fallback, behavioral both backends). The deeper generic-nested-splice question was then investigated for
+USER-marked inline methods and CONFIRMED: marking
+`JsonTree.set_kind`/`get_kind` as `pub inline` (auto-inline off,
+isolating the pre-existing user-inline path) reproduces the miscompile
+(`Json.parse` → n=0, broken child links) — a latent user-inline bug
+predating tranche 7. Both dispatch paths now refuse it
+(`inline_method_splice_unsafe` gates the user-inline dispatch, and
+`build_struct_node` emits standalone bodies for refused user-inline
+methods, whose call sites take the real call). The `ensure` receipt
+was also measured and closed: user-inline `ensure` in pidigits ran
++55.5% (711.5 vs 457.3 ms, output correct) — sound but a clear loss;
+the expansion of `ensure`→`grow_int`→`grow` into the D2 loop defeats
+the loop's tight slot-resident codegen. The receipt needs a properly
+nested frame context plus an inline cost model (FOLLOWUP.md).
 
 ### Tranche 8 (2026-09-13): ×2 unrolling in validated cycles — LANDED
 

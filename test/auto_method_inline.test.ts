@@ -107,6 +107,42 @@ pub func main = (Init init) {
 	expect(on).toContain("bl Down_walk");
 });
 
+test("generic-callee user-inline takes the bl (JsonTree receipt class)", () => {
+	// A USER-marked inline method whose body calls a `_T`-generic Buffer
+	// method must NOT splice — the nested generic splice miscompiles (the
+	// JsonTree receipt: parse of a JSON array lost the node count and
+	// child links). Two gates engage: the call site takes the real `bl`,
+	// and the standalone body IS emitted (user-inline methods normally
+	// skip standalone emission — the bl needs it).
+	const src = `
+import System
+
+struct Keeper {
+	var Buffer<JsonNode> nodes = Buffer<JsonNode>()
+
+	pub func #init = (self) {
+		self.nodes.grow_T(4)
+	}
+
+	pub inline func reserve = (ref self, int extra) {
+		self.nodes.grow_T(extra)
+	}
+}
+
+pub func main = (Init init) {
+	var k = Keeper()
+	k.reserve(4)
+	Console.write("ok\\n")
+}
+`;
+	const code = compile(src, true);
+	expect(code).toContain("bl Keeper_reserve");
+	// The standalone body is emitted despite the inline marker.
+	expect(code).toMatch(/Keeper_reserve:/);
+	// The call site did not splice the load/store pattern.
+	expect(code).not.toMatch(/\.LBuffer_JsonNode_buffer_load_T_copy/);
+});
+
 test("behavioral: spliced ref-self mutation is exact (both backends)", async () => {
 	set_auto_method_inline_enabled(true);
 	try {

@@ -109,6 +109,46 @@ function body_has_call(node: BaseNode | BaseNode[] | null | undefined): boolean 
 	return false;
 }
 
+/**
+ * The generic-nested-splice refusal, applied to the USER-marked inline
+ * dispatch as well: a method whose body calls a `_T`-suffixed generic
+ * (`Buffer<T>.load_T`/`store_T`) miscompiles when spliced — the nested
+ * generic user-inline splice materializes struct locals in the outer
+ * splice's frame context (the JsonTree receipt: `Json.parse` returning
+ * n=0 with broken child links). PRE-EXISTING user-inline path bug that
+ * tranche 7's auto gate merely avoided; until the nested-frame context
+ * work lands, such methods take the real call on every dispatch path.
+ */
+export function inline_method_splice_unsafe(func: FunctionNode): boolean {
+	const found = calls_generic_method(func.statements);
+	return found;
+}
+
+/** Whether the subtree calls a `_T`-suffixed generic callee
+ *  (`Buffer<T>.load_T`/`store_T` — the element-generic convention). */
+function calls_generic_method(node: BaseNode | BaseNode[] | null | undefined): boolean {
+	if (!node) return false;
+	if (Array.isArray(node)) {
+		for (const item of node) {
+			if (calls_generic_method(item)) return true;
+		}
+		return false;
+	}
+	if (typeof node !== "object") return false;
+	const any_node = node as any;
+	if (
+		any_node.node_type === "access_func" &&
+		typeof any_node.name === "string" &&
+		any_node.name.endsWith("_T")
+	) {
+		return true;
+	}
+	for (const child of child_nodes(any_node)) {
+		if (calls_generic_method(child as BaseNode)) return true;
+	}
+	return false;
+}
+
 export function scan_inline_candidates(root: BaseNode): Map<string, BaseNode> {
 	// Collect every plain `func` statement in the tree — top-level AND nested
 	// inside other function bodies (the checker rejects closures, so a nested
