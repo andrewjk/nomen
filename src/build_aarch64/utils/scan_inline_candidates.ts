@@ -5,13 +5,12 @@ import FunctionNode from "../../nodes/FunctionNode.ts";
 
 const MAX_STATEMENTS = 15;
 
-/** Auto method inlining (ASM_PLAN_7 tranche 7). DEFAULT OFF: the splice
- *  of unmarked small methods segfaults on the JsonTree receipt shape
- *  (every set-kind / get-child splice crashes independently — see
- *  FOLLOWUP.md), so the mechanism ships kill-switch-only for A/B work
- *  until that class is root-caused. OFF restores exactly the explicit-
- *  `inline`-only dispatch. */
-let auto_method_inline_on = false;
+/** Auto method inlining (ASM_PLAN_7 tranche 7), default ON. The
+ *  T-generic-callee refusal below is what unlocked the default: the
+ *  JsonTree receipt's splices all nested a generic
+ *  `Buffer<T>.load_T`/`store_T` splice (crash class — FOLLOWUP.md). OFF
+ *  restores exactly the explicit-`inline`-only dispatch. */
+let auto_method_inline_on = true;
 
 export function auto_method_inline_enabled(): boolean {
 	return auto_method_inline_on;
@@ -78,7 +77,39 @@ export function is_auto_inline_method(func: FunctionNode): boolean {
 	if (func.return_type?.is_array || func.return_type?.is_view) return false;
 	if (func.return_type?.name && !SIMPLE_TYPES.includes(func.return_type.name)) return false;
 
+	// A body that calls a T-GENERIC method (`Buffer<T>.load_T`/`store_T`)
+	// refuses: the generic-nested splice class is the JsonTree receipt's
+	// remaining crash (see FOLLOWUP.md auto-method-inline entry).
+	if (calls_generic_method(func.statements)) return false;
+
 	return true;
+}
+
+/** Whether any method/function call in the subtree resolves to a generic
+ *  (type-parameterized) callee. */
+function calls_generic_method(node: BaseNode | BaseNode[] | null | undefined): boolean {
+	if (!node) return false;
+	if (Array.isArray(node)) {
+		for (const item of node) {
+			if (calls_generic_method(item)) return true;
+		}
+		return false;
+	}
+	if (typeof node !== "object") return false;
+	const any_node = node as any;
+	if (
+		any_node.node_type === "access_func" &&
+		typeof any_node.name === "string" &&
+		any_node.name.endsWith("_T")
+	) {
+		return true;
+	}
+	const resolved = any_node.resolved_function as FunctionNode | undefined;
+	if (resolved && (resolved.type_params?.length ?? 0) > 0) return true;
+	for (const child of child_nodes(any_node)) {
+		if (calls_generic_method(child as BaseNode)) return true;
+	}
+	return false;
 }
 
 export function scan_inline_candidates(root: BaseNode): Map<string, BaseNode> {

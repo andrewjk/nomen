@@ -401,15 +401,16 @@ j += 2, multi-access / inner-diamond / extra-induction-def / base-def
 refusals, function-wide walk-register absence, kill-switch
 byte-identity, behavioral both backends).
 
-### Tranche 7 (2026-09-13): auto-inline small methods — LANDED DEFAULT-OFF
+### Tranche 7 (2026-09-13, unlocked same day): auto-inline small methods — LANDED DEFAULT-ON
 
-The mechanism is in and proven on the receipt shape; the switch ships
-OFF pending one root-cause. `is_auto_inline_method` admits unmarked
-methods with ≤3 statements, ≤3 params, scalar-or-void returns, no raw
-statements / moved params / param shadowing, and a STRUCT receiver
-(string self is a fat (ptr,len) pair the splice parks half of — the
-at_or receipt; scalar receivers like `char.is_digit` are no struct at
-all). The widened dispatch reuses the user-inline splice wholesale,
+The mechanism is in and the default is ON. `is_auto_inline_method`
+admits unmarked methods with ≤3 statements, ≤3 params, scalar-or-void
+returns, no raw statements / moved params / param shadowing, a STRUCT
+receiver (string self is a fat (ptr,len) pair the splice parks half of
+— the at_or receipt; scalar receivers like `char.is_digit` are no
+struct at all), and — the unlock — NO T-generic callee in the body
+(`calls_generic_method` refuses bodies containing `load_T`/`store_T`
+calls). The widened dispatch reuses the user-inline splice wholesale,
 plus a splice-active guard: a nested call to the method currently
 being spliced (recursion) takes the `bl` instead of re-splicing
 forever. The standalone body is still emitted — trait dispatch,
@@ -419,15 +420,21 @@ Suite-caught receipts while shaping the predicate: string-receiver
 splices return garbage bounds (`at_or` reading a half-parked self),
 7-param splices fall back to global-address emission for their params
 (`set_leaf_kind`), and — the blocker — EVERY spliced `JsonTree`
-method segfaults independently (`set_kind`/`get_child`/`reset`/…,
-each excluded alone leaves the crash): their bodies nest a GENERIC
-user-inline (`Buffer<T>.load_T`/`store_T`) constructing a struct
-local inside the auto splice, a composition the user-inline surface
-never exercised. The mechanism ships kill-switch-only (default OFF —
-byte-identical to pre-tranche) with the investigation recorded in
-FOLLOWUP.md; the ON arm is proven by `test/auto_method_inline.test.ts`
-(splice-instead-of-bl shape, standalone body still emitted, default-OFF
-pin, recursive-method bl fallback, behavioral both backends).
+method segfaults independently (`set_kind`/`get_child`/…, each
+excluded alone leaves the crash): their bodies nest a GENERIC
+user-inline (`Buffer<T>.load_T`/`store_T`) splice — materializing a
+56-byte struct local inside the outer splice's frame context. The
+unlock: `calls_generic_method` refuses any body with a `_T`-suffixed
+generic callee, so the crashing class takes the `bl` while the
+ensure/clear receipt (concrete callees `grow_int`/`zero_int`) splices.
+The gate was proven by the AMI_ONLY single-splice bisection (only
+set_kind crashes, only get_kind misprints kinds, every non-generic
+splice is exact alone) and by test/json.test.ts green default-ON. The
+ON arm is pinned by `test/auto_method_inline.test.ts` (splice-instead-
+of-bl shape, standalone body still emitted, default-ON pin,
+recursive-method bl fallback, behavioral both backends). The deeper
+generic-nested-splice question for USER-marked inline methods remains
+open (FOLLOWUP.md).
 
 ### Tranche 8 (2026-09-13): ×2 unrolling in validated cycles — LANDED
 

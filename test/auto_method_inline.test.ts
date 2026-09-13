@@ -12,11 +12,12 @@ import { parse_raw } from "./parse_with_imports";
  * Auto method inlining (ASM_PLAN_7 tranche 7). Small unmarked methods
  * (the BigInt `ensure`/`clear` shape) splice through the proven
  * user-inline path, killing the per-call `bl` + ABI marshal at hot call
- * sites (282 samples in `BigInt_ensure` per D2 iteration). DEFAULT OFF:
- * the JsonTree receipt shape (every set-kind / get-child splice) segfaults
- * independently — see FOLLOWUP.md — so the mechanism ships kill-switch
- * only until that class is root-caused. The tests here exercise the ON
- * arm explicitly and pin the default-OFF contract.
+ * sites (282 samples in `BigInt_ensure` per D2 iteration). DEFAULT ON:
+ * the JsonTree receipt crash class is refused by the T-generic-callee
+ * gate — every crashing splice (`set_kind`, `get_child`, …) nested a
+ * `Buffer<T>.load_T`/`store_T` splice, and bodies calling `_T`-suffixed
+ * generic methods no longer auto-inline (see FOLLOWUP.md). The tests
+ * here pin the ON behavior and the kill switch.
  */
 
 const ENSURE_SHAPE = `
@@ -45,6 +46,7 @@ pub func main = (Init init) {
 `;
 
 function compile(source: string, on: boolean): string {
+	const saved = auto_method_inline_enabled();
 	set_auto_method_inline_enabled(on);
 	try {
 		const parsed = parse_raw(source);
@@ -53,7 +55,7 @@ function compile(source: string, on: boolean): string {
 		expect(result.errors ?? []).toEqual([]);
 		return result.code;
 	} finally {
-		set_auto_method_inline_enabled(false);
+		set_auto_method_inline_enabled(saved);
 	}
 }
 
@@ -65,14 +67,14 @@ test("ON: a small ref-self method splices instead of calling", () => {
 	expect(on).toMatch(/Acc_add_to:/);
 });
 
-test("OFF (the default): the same call stays a bl", () => {
+test("the kill switch restores the call (off arm)", () => {
 	const off = compile(ENSURE_SHAPE, false);
 	expect(off).toContain("bl Acc_add_to");
 	expect(off).not.toBe(compile(ENSURE_SHAPE, true));
 });
 
-test("the default is OFF", () => {
-	expect(auto_method_inline_enabled()).toBe(false);
+test("the default is ON", () => {
+	expect(auto_method_inline_enabled()).toBe(true);
 });
 
 test("ON: a recursive small method still compiles (nested call takes the bl)", () => {

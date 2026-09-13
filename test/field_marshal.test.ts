@@ -1,6 +1,7 @@
 import { expect, test } from "vite-plus/test";
 
 import build from "../src/build";
+import { set_auto_method_inline_enabled } from "../src/build_aarch64/utils/scan_inline_candidates";
 import { parse_raw } from "./parse_with_imports";
 
 /**
@@ -76,7 +77,12 @@ test("scalar field write with a callee-saved receiver skips the push/pop", () =>
 });
 
 test("field write with a call in the RHS stores after the call through the register", () => {
+	// This test pins the REAL-CALL marshaling shape; auto method inlining
+	// (ASM_PLAN_7 tranche 7) removes the call for small methods, so it is
+	// disabled here.
+	set_auto_method_inline_enabled(false);
 	const code = compile(WRITE_SHAPE);
+	set_auto_method_inline_enabled(true);
 	const body = fn_body(code, "Counter_len_from_call");
 	const bl_at = body.indexOf("bl Inner_doubled");
 	expect(bl_at).toBeGreaterThan(-1);
