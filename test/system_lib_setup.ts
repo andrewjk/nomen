@@ -8,6 +8,20 @@ import { SYSTEM_OBJ, SYSTEM_OBJ_A64 } from "./system_lib";
 const execPromise = util.promisify(exec);
 
 /**
+ * Resolve a runnable `tsx`: the CLI workspace vendors it (`cli/node_modules`),
+ * the root may not — and `npx tsx` fails outright when the package isn't
+ * root-installed and the registry is unreachable. Falls back to `npx tsx`
+ * for layouts where only the root install exists.
+ */
+function resolve_tsx(): string {
+	const local_bin = path.resolve(import.meta.dirname, "../cli/node_modules/.bin/tsx");
+	if (fs.existsSync(local_bin)) return `"${local_bin}"`;
+	const root_bin = path.resolve(import.meta.dirname, "../node_modules/.bin/tsx");
+	if (fs.existsSync(root_bin)) return `"${root_bin}"`;
+	return "npx tsx";
+}
+
+/**
  * vitest globalSetup: builds the precompiled system objects ONCE before any
  * test runs (rebuilding only when the System library source or the generated
  * system TU changes), then every test links them instead of recompiling the
@@ -21,7 +35,7 @@ const execPromise = util.promisify(exec);
 export default async function setup(): Promise<void> {
 	const script = path.resolve(import.meta.dirname, "system_lib_worker.ts");
 	try {
-		await execPromise(`npx tsx "${script}"`, { maxBuffer: 10 * 1024 * 1024 });
+		await execPromise(`${resolve_tsx()} "${script}"`, { maxBuffer: 10 * 1024 * 1024 });
 	} catch (e) {
 		console.error(
 			`[system_lib] prebuild worker failed:\n${(e as Error).message?.split("\n").slice(0, 6).join("\n")}`,
