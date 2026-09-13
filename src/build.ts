@@ -11,6 +11,7 @@ import {
 import { reduce_pointer_walks } from "./build_aarch64/asm_pointer_walk.ts";
 import { rematerialize_constants } from "./build_aarch64/asm_remat.ts";
 import { elide_stack_staging } from "./build_aarch64/asm_staging_elide.ts";
+import { unroll_loops_x2 } from "./build_aarch64/asm_unroll2.ts";
 import { reset_access_temp_counter } from "./build_aarch64/build_access_node.ts";
 import { reset_decl_const_counters } from "./build_aarch64/build_declaration_node.ts";
 import { reset_label_counter as reset_for_label_counter } from "./build_aarch64/build_for_loop_node.ts";
@@ -349,6 +350,13 @@ export default function build(
 		// tracking the induction (clang's exact walked form — the index
 		// arithmetic leaves the loop body's memory ops entirely).
 		status.code = reduce_pointer_walks(status.code);
+		// ×2 loop unrolling (ASM_PLAN_7 tranche 8) — validated straight-line
+		// cycles duplicate [body, guard] with the header label hoisted below
+		// a pre-guard copy: identical guard evaluations at identical
+		// sequential points, both copies keeping their own induction
+		// increment, for every trip count. Amortizes the guard overhead
+		// across the two copies of the body.
+		status.code = unroll_loops_x2(status.code);
 		// Dead staging-move elimination inside validated loop cycles —
 		// prunes `mov xD, xS` whose destination exact-CFG liveness proves
 		// dead (the per-statement emission's protocol staging whose

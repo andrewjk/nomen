@@ -428,3 +428,32 @@ byte-identical to pre-tranche) with the investigation recorded in
 FOLLOWUP.md; the ON arm is proven by `test/auto_method_inline.test.ts`
 (splice-instead-of-bl shape, standalone body still emitted, default-OFF
 pin, recursive-method bl fallback, behavioral both backends).
+
+### Tranche 8 (2026-09-13): ×2 unrolling in validated cycles — LANDED
+
+The asm-loop-promote cycle shape, unrolled without increment
+rewriting: the header label moves below a PRE-GUARD copy (the
+original guard text, evaluated at the same sequential point — zero
+increments before it), the body duplicates with a second guard copy
+before the back-edge. Every guard instance is the original text at
+the same sequential position; both copies keep their own `j += m`,
+so j's final value and every body execution are bit-identical for
+trip counts 0, 1, odd, and even (proven by an emulator test over
+n = 0..5 and behaviorally on both backends). Validation: the while-
+dispatch guard shape (`cmp` + `b.cond exit` targeting outside the
+cycle), no calls/indirect exits, no jump-targeted inner label (an
+inner diamond would duplicate its labels and let copy-2 skip copy-1's
+increments); untargeted markers (`.while_update_N:`) drop from the
+duplicate — duplicate label definitions are assembler errors, and a
+marker positions nothing. Per-iteration guard overhead amortizes 2 →
+1.5 instructions (3 guards per 2 iterations). Runs AFTER pointer-walk,
+so both copies carry every earlier transform; the lift re-validates
+the rewritten text and any failure reverts the candidate.
+
+Result: full suite green with `test/unroll2.test.ts` (duplication
+shape, label placement, call/diamond/size refusals, kill-switch
+byte-identity, behavioral trip-count exactness both backends). Note:
+the emit_nir benchmark-corpus byte-identity test has grown marginal
+against its 30 s budget on this machine after hours of continuous
+runs — it times out identically at the pre-tranche-8 HEAD (verified
+via stash), so the flakiness is environmental, not this diff.
