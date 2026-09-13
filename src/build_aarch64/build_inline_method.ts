@@ -4,6 +4,7 @@ import RawNode from "../nodes/RawNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import { parse_raw_directives } from "../raw_directives.ts";
 import { build_body_with_cursor } from "./emit_nir.ts";
+import { extract_nomen_naked_asm } from "./naked_inline.ts";
 import { emit_owning_buffer_inline_aarch64 } from "./utils/owning_buffer_specialize.ts";
 import { install_raw_reload_plan, type RawParamReloadLine } from "./utils/raw_reload.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
@@ -96,7 +97,17 @@ function build_naked_inline(struct_node: StructNode, func: FunctionNode, status:
 	let asm = extract_aarch64_asm(func, status.platform);
 	const standalone_return_label = `.return_${struct_node.name}_${func.name.replace(/#/g, "")}`;
 	asm = asm.replaceAll(`b ${standalone_return_label}`, "");
+	build_naked_inline_from_asm(struct_node, func, status, asm);
+}
 
+/// Splice a pre-resolved raw-text body (a hand-written `#arch: aarch64`
+/// block, or a naked-compiled plain-Nomen body from naked_inline.ts).
+function build_naked_inline_from_asm(
+	struct_node: StructNode,
+	func: FunctionNode,
+	status: BuildStatus,
+	asm: string,
+) {
 	// The raw body is written for the standalone convention (x19 = self),
 	// but the inline call site holds the receiver in x0. One x19 read can
 	// be rewritten to x0 (cheapest); a body that reads x19 several times
@@ -169,6 +180,19 @@ export default function build_inline_method(
 	// it has a self parameter.
 	if (is_raw_only(func)) {
 		build_naked_inline(struct_node, func, status);
+		return;
+	}
+	// Naked expansion of allocation-free leaf bodies (CORE_RAW.md revisit
+	// condition): the plain-Nomen body compiles to standalone-convention
+	// asm and splices exactly like a hand-written raw block — no param
+	// parking, no frame, no slots. Null for anything the whitelist refuses;
+	// the general splice below stays the fallback.
+	const nomen_naked = extract_nomen_naked_asm(func, struct_node.name, status);
+	if (process.env.NAKED_DBG && func.name === "get") {
+		console.error("NAKED-DBG", struct_node.name, "→", nomen_naked === null ? "REFUSED" : "OK");
+	}
+	if (nomen_naked !== null) {
+		build_naked_inline_from_asm(struct_node, func, status, nomen_naked);
 		return;
 	}
 
@@ -286,6 +310,11 @@ export default function build_inline_method(
 
 	if (needs_x19) {
 		status.function_param_regs.set("self", "x19");
+	}
+	if (process.env.AMI_HOMES && func.name === "get") {
+		console.log(
+			`HOMES-DBG get: needs_x19=${needs_x19} self_is_var=${self_is_var} code_tail=${JSON.stringify(status.code.slice(-120))}`,
+		);
 	}
 
 	const saved_stack_slots: string[] = [];

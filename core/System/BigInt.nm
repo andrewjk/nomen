@@ -28,27 +28,17 @@ pub struct BigInt {
 	// way, so the raw blocks win on single-sourcing grounds being equal.
 	// See docs/CORE_RAW.md "unsafe outcomes".
 	inline func get = (self, int i, out uint64) {
-		```
-		#arch: c
-		return ((unsigned long long*)self->digits.data)[i];
-		```
-		```
-		#arch: aarch64
-		ldr x0, [x0, #32]
-		ldr x0, [x0, x1, lsl #3]
-		```
+		unsafe {
+			var ptr uint64 limbs = self.digits.data as ptr uint64
+			return limbs[i]
+		}
 	}
 
 	inline func set = (ref self, int i, uint64 val) {
-		```
-		#arch: c
-		((unsigned long long*)self->digits.data)[i] = val;
-		```
-		```
-		#arch: aarch64
-		ldr x0, [x19, #32]
-		str x2, [x0, x1, lsl #3]
-		```
+		unsafe {
+			var ptr uint64 limbs = self.digits.data as ptr uint64
+			limbs[i] = val
+		}
 	}
 
 	// Raw data-pointer accessors. The limb loops below hoist `digits.data`
@@ -60,39 +50,24 @@ pub struct BigInt {
 	// whole-function asm plan); the C backend was identical either way.
 	// See docs/CORE_RAW.md "unsafe outcomes".
 	inline func data_ptr = (self, out uint64) {
-		```
-		#arch: c
-		return (unsigned long long)self->digits.data;
-		```
-		```
-		#arch: aarch64
-		ldr x0, [x0, #32]
-		```
+		return self.digits.data
 	}
 
 	// Same story as get/set above: the hoisted-pointer limb accessors stay
 	// raw for the aarch64 splice path. `data_ptr` is called once per loop
 	// (to hoist the slab address), so its Nomen body is free.
 	inline func get_at = (self, uint64 ptr, int i, out uint64) {
-		```
-		#arch: c
-		return ((unsigned long long*)ptr)[i];
-		```
-		```
-		#arch: aarch64
-		ldr x0, [x1, x2, lsl #3]
-		```
+		unsafe {
+			var ptr uint64 limbs = ptr as ptr uint64
+			return limbs[i]
+		}
 	}
 
 	inline func set_at = (ref self, uint64 ptr, int i, uint64 val) {
-		```
-		#arch: c
-		((unsigned long long*)ptr)[i] = val;
-		```
-		```
-		#arch: aarch64
-		str x3, [x1, x2, lsl #3]
-		```
+		unsafe {
+			var ptr uint64 limbs = ptr as ptr uint64
+			limbs[i] = val
+		}
 	}
 
 	func ensure = (ref self, int needed) {

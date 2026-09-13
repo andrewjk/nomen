@@ -213,13 +213,21 @@ ptr char`, struct-pointer→`uint64`, and the generic constants `T_SIZE` /
   the aarch64 adapter routes allocator symbols through the
   `nomen_*_wrap` counters so the leak checks stay balanced.
 - **Deliberately still raw, with measured reasons:**
-  - `BigInt.nm` get/set/get_at/set_at (and `data_ptr`): the limbs sit in
-    the hottest loops and the functions are `inline`. The unsafe-Nomen
-    forms splice through the general inline-method ABI (self parking,
-    param marshalling, local spills per splice) and measured **3× slower
-    pidigits on aarch64** (0.48s → 1.5s; even the once-per-loop
-    `data_ptr` cost ~30% via loop-plan perturbation). The C backend was
-    identical either way. Reverted to raw; documented inline.
+  - `BigInt.nm` get/set/get_at/set_at/data_ptr — **CONVERTED** (unsafe
+    Nomen), after the naked-expansion work closed the gap that had kept
+    them raw. The original refusal measured **3× slower pidigits**
+    (0.48s → 1.5s) because the general inline splice expanded each limb
+    access into a ~16-instruction envelope (self/arg parking pushes,
+    statement-protocol x0 round-trips, a ptr local spilled to a slot)
+    around one real load. `naked_inline.ts` now compiles allocation-free
+    leaf bodies straight to the standalone raw-block convention (x19 =
+    self, args x1..x3, scratch x9/x10), and `build_naked_inline` adapts
+    it to the splice site exactly like a hand-written raw block — the
+    compiled `get` is instruction-identical to the old raw pair.
+    Re-measured pidigits n=4000: 470.3 ms vs the 457.7 ms raw baseline
+    (+2.7%, within the observed noise band; was +124% through the
+    general splice), outputs identical. `div128`/`mul_wide_hi` stay raw
+    (128-bit ops).
   - `Buffer.nm` load/store/store_or family, `move_T`, `replace_T`,
     `shift_T` (inline splice targets — same ABI cost risk), plus
     `slice` (needs a `view` constructor, not expressible yet).
@@ -272,13 +280,21 @@ No regressions beyond noise on either backend. The BigInt experiment
 - 128-bit helpers (`BigInt.div128`, `mul_wide_hi`) — better served by
   `mul_hi`-style builtins than by unsafe pointers.
 - The inline per-element load/store primitives (`Buffer.load*`/`store*`,
-  `BigInt` limb access, `Array.at`'s old raw form) that splice into hot
-  loops: the aarch64 inline-method ABI (self parking + param marshalling
-  per splice) measurably costs more than the raw bodies save. Unsafe
-  Nomen wins for once-per-operation primitives (alloc/grow/destroy) and
-  non-inline functions; it loses inside tight loops on aarch64. Revisit
-  if the inline splice path ever learns to emit naked bodies for
-  allocation-free unsafe snippets.
+  `ClassBuffer.load*`/`store*`, `StringBuilder.append_char`/`to_string`)
+  remain raw for now — but the blocker has moved: the naked-expansion
+  path (naked_inline.ts) makes spliced leaf bodies free, so these can
+  convert as soon as their bodies fit the whitelist (Buffer.load*'s
+  bounds-proven constraint locals and StringBuilder's realloc/ownership
+  hand-off shapes are the remaining work). The old aarch64-ABI objection
+  is retired: spliced leaf bodies now compile to the same instructions
+  the raw blocks hand-wrote.
+- A related gate landed alongside: user-marked `inline` methods whose
+  bodies call a `_T`-generic method (`Buffer.load_T`/`store_T` — e.g.
+  `List.at`) take the real call on every dispatch path. The
+  generic-nested splice class miscompiles (the JsonTree receipt:
+  `Json.parse` → n=0); until nested-frame splices land, such methods
+  are routed to their standalone bodies, which are now emitted for
+  exactly this case.
 - Result-constructing primitives whose LAYOUT differs per backend
   (`Array.with`/`add`/`mul`: C returns a real struct, aarch64 a
   first-element pointer with the length at `[-8]`) — one Nomen body
@@ -287,10 +303,16 @@ No regressions beyond noise on either backend. The BigInt experiment
 - `Console.platform` (OS detection) and the `Task`/`Channel` pool internals
   unless externs (pthread) + unsafe (node structs) are pushed through them.
 - `Controls/` (UI, `aarch64_use_c` by policy).
-- Remaining category A blocks not yet migrated (no measured reason — just
-  not done yet): `ClassBuffer.*` (uint64 handle ops — safe future work),
-  `JsonTree` slab, `String.slice`/`#op_add`/`#op_mul` (need a view
-  constructor or raw memcpy shapes), `Buffer.slice`.
+- Remaining category A blocks not yet migrated: `ClassBuffer`
+  load/store/move/replace/shift (per-element inline splices —
+  convertible via naked_inline once their bounds-constraint locals fit
+  the whitelist), `ClassBuffer.slice`, `Buffer.slice`,
+  `String.slice`/`#op_add`/`#op_mul` (need a view constructor or raw
+  memcpy shapes), `JsonTree.#destroy` (calls the mono-only `T_destroy`
+  symbol). CONVERTED this pass: `ClassBuffer.alloc_int`/`grow_int`/
+  `grow_T` (plain Nomen over the calloc/realloc/memset externs) and the
+  `JsonTree` slab trio (`alloc_node` coda, `free_text`, `set_text` —
+  unsafe Nomen over malloc/memcpy/memset with the 7-word slab stride).
 
 ## Benchmark hot-path summary (C backend)
 
