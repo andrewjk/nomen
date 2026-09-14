@@ -274,26 +274,42 @@ func fields, `Map<string, int>` indices instead of reference-valued maps,
 `--arch c` for the aarch64 mis-binds, no string-literal defaults on class
 fields), but each should be fixed in the compiler:
 
-## Map variadic pairs constructor with reference-typed values
+## Map values are fully supported (allmark PORT "Map values must be scalars or strings") — RESOLVED
 
-After the reference-value routing fixes (`swap Buffer<TV>()` in Map.rehash
-and Map's `alloc_T` forwards now lower to `ClassBuffer` for class/trait
-elements; ClassBuffer gained `alloc_T` for generic parity), reference-valued
-Maps work end to end via `Map() + set()` — see
-test/map_reference_values.test.ts.
+RESOLVED (2026-09-14): `Map` values of every kind work via `Map()` + `set()`
+— scalars/strings as before; class and trait values (after the
+reference-value routing fixes: `swap Buffer<TV>()` in Map.rehash and Map's
+`alloc_T` forwards now lower to `ClassBuffer` for class/trait elements,
+which gained `alloc_T` for generic parity); and VALUE STRUCTS, including
+allmark's `LinkReference` shape (a struct of strings). `set` / `get_or` /
+`has` / `length` and overwrite-of-an-existing-key all run correctly on both
+backends under audit — covered by test/map_reference_values.test.ts. The
+allmark port's `Map<string, int>` + parallel `List<T>` workaround can
+collapse back to `Map<string, LinkReference>` /
+`Map<string, FootnoteReference>` (those tables are lookup-only — no map
+iteration is needed, and none exists).
 
-Still gated: the VARIADIC pairs constructor (`Map<string, Animal>(["a",
-Dog()])`). The variadic `#init` is skipped at instantiation when TV is a
-class/trait (monomorphize's `variadic_init_unsupported` — the pair tuple
-materializes as a value struct with a trait/class-typed field, rejected for
-the byte-copy double-free reason, and the body's borrowed pair element can't
-feed a `move TV` param soundly). Passing pairs to a reference-valued Map
-currently errors at the call site. Lifting this gate needs the ownership
-work agreed in the 2026-09-11 design discussion: classify trait fields like
-class fields in `is_owning_struct_*`, allow class/trait fields in value
-structs (owning aggregates, move-only assignment), and allow borrowed → move
-when the source field's container doesn't destroy it (with the field
-invalidated against re-read).
+What remains is the VARIADIC PAIRS CONSTRUCTOR form only:
+`Map<string, Animal>(["a", Dog()])`.
+
+- **Class/trait TVs are gated at check time** (`variadic_init_unsupported`):
+  the pair tuple materializes as a value struct with a trait/class-typed
+  field (rejected for the byte-copy double-free reason), and the body's
+  borrowed pair element can't feed a `move TV` param soundly. Lifting the
+  gate needs the ownership work from the 2026-09-11 design discussion:
+  classify trait fields like class fields in `is_owning_struct_*`, allow
+  class/trait fields in value structs (owning aggregates, move-only
+  assignment), and allow borrowed → move when the source field's container
+  doesn't destroy it (with the field invalidated against re-read).
+- **Value-struct TVs are NOT gated and crash on aarch64** (found
+  2026-09-14): `Map<string, TV>(["a", TV(1)])` for ANY value struct TV
+  (two ints, one string, one int all reproduced) builds, and the C backend
+  runs it correctly, but aarch64 SIGSEGVs — `Tuple_<TK>_<TV>_init` reads a
+  null struct argument (`ldr x9, [x3]` with `x3 = 0`), i.e. the variadic
+  pair packing does not materialize/pass the value-struct tuple element's
+  address. Fix direction: either extend `variadic_init_unsupported` to
+  value-struct TVs (a consistent clean rejection, at the cost of the
+  working C shape) or fix the aarch64 variadic tuple packing.
 
 ## CLI: `nomen test` build phase runs out of memory (OOM) on the allmark project
 
