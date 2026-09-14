@@ -1,4 +1,7 @@
-import emit_field_overrides, { has_field_overrides } from "../build/emit_field_overrides.ts";
+import emit_field_overrides, {
+	has_field_overrides,
+	hoist_field_overrides,
+} from "../build/emit_field_overrides.ts";
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import call_in_set from "../build_common/call_in_set.ts";
@@ -801,6 +804,9 @@ export default function build_declaration_node(
 	nir_init?: NirExpr | null,
 	nir_swap?: NirExpr | null,
 ) {
+	// Evaluate override values into temporaries before the base lands in the
+	// destination (see hoist_field_overrides).
+	hoist_field_overrides(node.value, build_node, status);
 	status.last_result_is_heap = false;
 	const prev_heap = status.last_result_is_heap;
 

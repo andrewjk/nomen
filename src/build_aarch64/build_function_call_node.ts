@@ -1,4 +1,4 @@
-import emit_field_overrides from "../build/emit_field_overrides.ts";
+import emit_field_overrides, { hoist_field_overrides } from "../build/emit_field_overrides.ts";
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import emission_label from "../build_common/emission_label.ts";
@@ -133,6 +133,9 @@ function arg_is_string(node: BaseNode): boolean {
 }
 
 export default function build_function_call_node(node: FunctionCallNode, status: BuildStatus) {
+	// Evaluate override values into temporaries before the base constructor
+	// runs into the temp slot (see hoist_field_overrides).
+	hoist_field_overrides(node, build_node, status);
 	// Shorthand enum-with-args constructor `.case(args)` (rewritten by the
 	// checker to `Enum_case` with is_enum_shorthand=true). Allocate a tag+payload
 	// temp, store the case index at +0, then each arg at its payload offset.

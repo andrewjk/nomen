@@ -1,4 +1,7 @@
-import emit_field_overrides, { has_field_overrides } from "../build/emit_field_overrides.ts";
+import emit_field_overrides, {
+	has_field_overrides,
+	hoist_field_overrides,
+} from "../build/emit_field_overrides.ts";
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
@@ -614,6 +617,9 @@ export default function build_assignment_node(
 	nir_rhs?: NirExpr | null,
 	nir_swap?: NirExpr | null,
 ) {
+	// Evaluate override values into temporaries before the base lands in the
+	// destination (see hoist_field_overrides).
+	hoist_field_overrides(node.right_value, build_node, status);
 	// `unsafe` stores through a raw pointer: `p[i] = v` and `p[i].field = v`.
 	// The element address is computed first and pushed; the RHS builds with
 	// the standard rvalue conventions; then a width-matched store lands it.

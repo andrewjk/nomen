@@ -1,4 +1,7 @@
-import emit_field_overrides, { has_field_overrides } from "../build/emit_field_overrides.ts";
+import emit_field_overrides, {
+	has_field_overrides,
+	hoist_field_overrides,
+} from "../build/emit_field_overrides.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import { is_string_borrow } from "../build_common/string_return_analysis.ts";
@@ -54,6 +57,10 @@ export default function build_assignment_node(
 	nir_rhs?: NirExpr | null,
 	nir_swap?: NirExpr | null,
 ) {
+	// Evaluate override values into temporaries before the base lands in the
+	// destination, so an override reading the destination (`m = [ .. x,
+	// node_type = m.node_type ]`) sees the pre-assignment value.
+	hoist_field_overrides(node.right_value, build_node, status, ";\n");
 	// Check whether this is an access of a field from a trait rather than a concrete type
 	// HACK: This needs to be much more comprehensive, e.g. to handle access
 	// chains where something in the middle is a trait

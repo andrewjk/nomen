@@ -1,4 +1,7 @@
-import emit_field_overrides, { has_field_overrides } from "../build/emit_field_overrides.ts";
+import emit_field_overrides, {
+	has_field_overrides,
+	hoist_field_overrides,
+} from "../build/emit_field_overrides.ts";
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import { is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
@@ -120,6 +123,9 @@ export default function build_return_node(
 	status: BuildStatus,
 	nir_value?: NirExpr | null,
 ) {
+	// Evaluate override values into temporaries before the base lands in the
+	// return slot (see hoist_field_overrides).
+	hoist_field_overrides(node.value, build_node, status);
 	if (node.from_inline) {
 		return;
 	}

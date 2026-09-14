@@ -127,3 +127,20 @@ pub func main = () {
 `);
 	expect(parsed.errors.some((e) => e.message.includes("cannot copy 'Node' by value"))).toBe(true);
 });
+
+test("override value reading the destination sees pre-assignment state", async () => {
+	const input = `
+struct Meta {
+    var int id
+    var int flags = 5
+}
+var Meta m = Meta(1)
+m.flags = 100
+var Meta x = Meta(2)
+x.flags = 200
+m = [ .. x, flags = m.flags ]
+Console.write_line(m.id.to_string())
+Console.write_line(m.flags.to_string())
+`;
+	await build_and_check_output(input, "fov_self_read", "2\n100");
+});

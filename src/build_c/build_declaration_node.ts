@@ -1,4 +1,7 @@
-import emit_field_overrides, { has_field_overrides } from "../build/emit_field_overrides.ts";
+import emit_field_overrides, {
+	has_field_overrides,
+	hoist_field_overrides,
+} from "../build/emit_field_overrides.ts";
 import call_in_set from "../build_common/call_in_set.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
@@ -80,6 +83,9 @@ export default function build_declaration_node(
 	nir_init?: NirExpr | null,
 	nir_swap?: NirExpr | null,
 ) {
+	// Evaluate override values into temporaries before the base lands in the
+	// destination (see hoist_field_overrides).
+	hoist_field_overrides(node.value, build_node, status, ";\n");
 	// TODO: malloc() if it's on the heap
 
 	// Function type declaration (explicit `var func (...) f = ...` or inferred

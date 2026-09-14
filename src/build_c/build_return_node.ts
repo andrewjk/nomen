@@ -1,4 +1,7 @@
-import emit_field_overrides, { has_field_overrides } from "../build/emit_field_overrides.ts";
+import emit_field_overrides, {
+	has_field_overrides,
+	hoist_field_overrides,
+} from "../build/emit_field_overrides.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import {
 	collect_expression_branch_values,
@@ -48,6 +51,9 @@ export default function build_return_node(
 	status: BuildStatus,
 	nir_value?: NirExpr | null,
 ) {
+	// Evaluate override values into temporaries before the base lands in the
+	// return slot (see hoist_field_overrides).
+	hoist_field_overrides(node.value, build_node, status, ";\n");
 	// For a nullable struct return type, the callee signals null-ness to the
 	// caller through the hidden `*_ret_has` out-parameter (0 = null,
 	// 1 = value). Detect once: a bare `return` (void) only fires for non-nullable
