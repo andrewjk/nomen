@@ -431,6 +431,51 @@ export default function check_assignment_node(
 			const target_type = type_from_value_node(access.target, status);
 			const struct = status.structs.findLast((s) => s.name === target_type.name);
 			const field = struct?.fields.find((f) => f.name === field_access.name);
+			// Owning (`move`) class fields take ownership of their instance.
+			// Storing a BORROWED reference (a non-`move` parameter, a field /
+			// container borrow, or an object alias) would let the field's
+			// destroy free an instance its real owner frees too — double free
+			// on both backends. Owner-carrying values stay legal and are the
+			// established idiom: a fresh constructor/call (non-value RHS), an
+			// explicit `move`, a `move` parameter, or an owned local
+			// (`var TreeNode l = create_tree(...); node.left = l` — the
+			// backends implicitly move the local into the field).
+			const field_is_owning_class =
+				field?.declaration === "move" &&
+				!!field.type.name &&
+				!field.type.is_array &&
+				is_class_type(field.type.name, status);
+			if (
+				field_is_owning_class &&
+				assign.right_value.node_type === "value" &&
+				!assign.right_value.is_moved
+			) {
+				const src_name = (assign.right_value as ValueNode).value;
+				const src_sv = /^[A-Za-z_][A-Za-z0-9_]*$/.test(src_name)
+					? status.values.findLast((v) => v.name === src_name)
+					: undefined;
+				if (src_sv) {
+					// A parameter is a borrow unless declared `move`; resolve it
+					// off the enclosing FunctionNode (a `move T p` parses with
+					// declaration "var" + ParameterNode.is_moved). Locals carry
+					// their borrow/alias status on the scope value.
+					const enclosing_func = status.stack.findLast((n) => n.node_type === "func") as
+						| FunctionNode
+						| undefined;
+					const src_param = enclosing_func?.params.find((p) => p.name === src_name);
+					const src_is_borrow =
+						(src_param !== undefined && !src_param.is_moved) ||
+						!!src_sv.borrowed_from ||
+						!!src_sv.class_alias_of;
+					if (src_is_borrow) {
+						add_error(
+							status,
+							`cannot store '${src_name}' into owning field '${field_access.name}' — the field takes ownership of a borrowed value; take a fresh instance, declare the parameter 'move', or pass it with 'move'`,
+							assign.right_value.start,
+						);
+					}
+				}
+			}
 			if (field?.constraint) {
 				let arg_value: number | boolean | undefined;
 				if (assign.right_value.node_type === "value") {

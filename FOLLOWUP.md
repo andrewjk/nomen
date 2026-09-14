@@ -7,24 +7,54 @@ Skipped or out-of-scope items recorded for later.
 The core contract now works end to end on both backends (case construction
 strdups string args; enum locals free payloads at scope exit; match hoists
 call scrutinees into owned temps and frees them; reassignment frees the
-displaced payload). Not yet covered:
+displaced payload).
 
-- The checker does not reject storing a BORROWED class value (e.g. a plain
-  non-`mov` param) into an OWNING class field (`self.art = b` with
-  `func f = (ref self, Box b)`): the callee's field destroy frees it AND
-  the caller's auto-free frees the same temp — both backends double-free.
-  The documented model (MEMORY.md) requires `mov T` for owning mutators;
-  a checker rule mirroring the rejected `b = a` owning-struct copy would
-  close it.
-- Enum values stored INSIDE containers/structs: `<Struct>_destroy` (both
-  backends) does not walk enum fields' string payloads — storing a
-  `Result<string, E>` in a struct field, Buffer, or List leaks it.
-- Enum-valued struct FIELD returns (`return self.last_result`) bitwise-copy
-  the payload without a boundary copy — aliasing with the field's own
-  lifetime is unchecked.
-- A match binding that escapes its branch (`case .ok(t) -> return t`) relies
-  on the return-boundary borrow normalization; deeper escapes (storing the
-  binding) are untracked.
+FIXED (2026-09-14): **storing a borrowed class value into an OWNING class
+field** is now a check-time rejection (`cannot store 'b' into owning field
+'art' — the field takes ownership of a borrowed value; take a fresh
+instance, declare the parameter 'move', or pass it with 'move'`,
+check_assignment_node). The rule fires only for genuine borrows — a
+non-`move` parameter (resolved via the enclosing FunctionNode's params,
+since a `move` param parses with declaration "var" + `ParameterNode.is_moved`),
+a field/container borrow (`borrowed_from`), or an object alias
+(`class_alias_of`). Owner-carrying values stay legal: fresh
+constructors/call results, an explicit `move`, a `move`-param mutator
+(`self.art = a`), and an owned local implicitly transferred
+(`var TreeNode l = create_tree(...); node.left = l` — the backends already
+move the local into the field; that idiom is all over the bench corpus).
+`null` into a nullable owning field stays legal. Covered by
+test/owning_field_borrow.test.ts (the borrowed shape double-freed on both
+backends — aarch64 SIGSEGV verified before the fix).
+
+Still open, with today's probe evidence:
+
+- **Enum values stored INSIDE structs are not usable end to end — and not
+  just for ownership.** `struct Holder { var Maybe m }` with
+  `enum Maybe { case some(string) case none }`: `match h.m { case .some(v)
+-> v }` binds an EMPTY/`(null)` payload even when the Holder is
+  constructed INLINE (aarch64 verified; the LOCAL enum `var Maybe m =
+Maybe.some("x")` matches fine, so it's the field-scrutinee path reading
+  the payload pair at the wrong offset). Independent of that, the LEAK
+  half stands: `<Struct>_destroy` (both backends) does not walk enum
+  fields' string payloads (LEAK: 1 verified through a `make() -> Holder`
+  boundary). Fixing the destroy walk alone won't make the shape usable —
+  the field-scrutinee binding needs its own investigation.
+- **Enums as generic-container element types are broken earlier still**:
+  `List<Maybe>`/`Buffer<Maybe>` on C fails at header emission ("unknown
+  type name 'Maybe'" — the `Buffer_Maybe_*` prototypes precede the enum
+  typedef), so the container element-payload walk can't even be evaluated
+  on C until that ordering is fixed. aarch64 runs `List<Maybe>` +
+  push/length under audit clean (payloads may be stored raw rather than
+  strdup'd — unverified which).
+- **Enum-valued struct FIELD returns** (`return self.last_result`)
+  bitwise-copy the payload without a boundary copy — aliasing with the
+  field's own lifetime is unchecked. (The `make() -> Holder` probe also
+  showed the payload not surviving to the match, so the by-value struct
+  return of an enum-carrying struct needs verification on both backends
+  once the field-scrutinee bug is fixed.)
+- **A match binding that escapes its branch** (`case .ok(t) -> return t`)
+  relies on the return-boundary borrow normalization; deeper escapes
+  (storing the binding) are untracked.
 
 ## Cold-run parallel test flakiness (pre-existing)
 
