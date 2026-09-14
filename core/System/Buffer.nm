@@ -248,6 +248,12 @@ pub struct Buffer<T> {
 		```
 	}
 
+	// Store `val` into slot `i`, which MUST be fresh (calloc'd, or zeroed by
+	// move_T). For an owning T (string, or a struct with string fields) the
+	// specialised body deep-copies the incoming value but does NOT free the
+	// slot's previous occupant — a second `store_T` at an occupied index
+	// leaks it. To overwrite a live slot use replace_T (frees the displaced
+	// value) — this is the primitive every container's `set` uses.
 	inline func store_T = (ref self, int i: i >= 0 && i < self.cap, T val) {
 		```
 		#arch: c

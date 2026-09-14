@@ -503,3 +503,27 @@ instantiation" sites (cf. the `List<int>`-as-generic-struct-field case:
 `List<int>` there also fails with "Function not found: List_int");
 worth a general pass over monomorphization of generic types mentioned
 only inside generic bodies.
+
+## `Buffer`'s raw slot primitives are public, and `store_T` leaks on overwrite
+
+`default_visibility` makes struct members `pub` by default, so `Buffer<T>`'s
+low-level primitives (`alloc_T`/`grow_T`/`load_T`/`store_T`/`replace_T`/
+`move_T`, plus the `_int` twins) are callable from user code — despite the
+library treating them as internal implementation details. `store_T` assumes
+a FRESH slot: its specialised body deep-copies the incoming value for owning
+element types but does NOT free the previous occupant, so storing twice at
+one index leaks. Verified on both backends (audit): `Buffer<string>` and
+`Buffer<struct { var string }>` with `store_T(0, ..)` twice report
+`LEAK: 1 allocation(s)`; the `replace_T` variant is balanced. `ClassBuffer`'s
+`store_T` has the same shape for class pointers (leaks the displaced
+instance). Contract comments were added to both.
+
+Internal containers (`List`/`Map`/`Set`/`Arena`/…) are balanced — they use
+`store_T` on fresh slots and `replace_T` to overwrite — so the leak is only
+reachable by driving `Buffer`/`ClassBuffer` directly. Fix options:
+(a) accept the primitives as the documented low-level API (current);
+(b) make `store_T` free the displaced value — rejected, it breaks the
+round-trip self-store guard (`load_T`→modify→`store_T` back to the same
+slot would free the value being re-stored); (c) give the language a way to
+hide struct-internal members (e.g. `_`-prefixed names not exported) so raw
+primitives aren't user-visible at all.

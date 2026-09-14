@@ -93,6 +93,11 @@ pub struct ClassBuffer<T> {
 		```
 	}
 
+	// Store the owned class pointer `val` into slot `i`, which MUST be fresh
+	// (calloc'd, or zeroed by move_T/move_int). This is a plain pointer
+	// store — it does NOT destroy/free the slot's previous occupant, so a
+	// second `store_T` at an occupied index leaks that instance. Use
+	// replace_T (or replace_int) to overwrite a live slot.
 	inline func store_T = (ref self, int i: i >= 0 && i < self.cap, T val: val != 0) {
 		```
 		#arch: c
