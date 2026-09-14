@@ -58,13 +58,6 @@ func sum_terms = (int a, int b, ref BigInt out_p, ref BigInt out_q) {
 
 	// q = ql * qr
 	out_q.mul_to(ql, qr, ref scratch)
-
-	pl.digits.destroy()
-	ql.digits.destroy()
-	pr.digits.destroy()
-	qr.digits.destroy()
-	scratch.digits.destroy()
-	product.digits.destroy()
 }
 
 // Compute 10^exp via binary exponentiation (repeated squaring).

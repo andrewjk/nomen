@@ -173,12 +173,10 @@ if f > 1.0 {
 		// div128's `#arch: aarch64` body uses GNU numeric local labels
 		// (`1:` / `b.hs 1f`) — the validator must resolve them, not reject.
 		const input = `
-var BigInt a = BigInt()
-var BigInt b = BigInt()
+var BigInt a = BigInt(100)
+var BigInt b = BigInt(10)
 var BigInt q = BigInt()
 var BigInt rem = BigInt()
-a = a.new(100)
-b = b.new(10)
 q.div_to(a, b, ref rem)
 Console.write((q.get(0) as int).to_string())
 Console.write("\\n")

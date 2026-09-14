@@ -6,7 +6,10 @@ pub struct BigInt {
 	var len = 0
 	var digits = Buffer<int>()
 
-	pub func new = (ref self, int val, out BigInt) {
+	pub func #init = (ref self) {
+	}
+
+	pub func #init = (ref self, int val) {
 		self.sign = 1
 		var int v = val
 		if v < 0 {
@@ -17,7 +20,6 @@ pub struct BigInt {
 		self.digits.zero_int(self.digits.cap)
 		self.digits.store_int(0, v)
 		self.len = 1
-		return self
 	}
 
 	// Per-limb get/set stay raw: they are `inline` and splice into the limb
@@ -528,20 +530,8 @@ pub struct BigInt {
 			}
 			self.len = self.len - 1
 		}
-
-		a0.digits.destroy()
-		a1.digits.destroy()
-		b0.digits.destroy()
-		b1.digits.destroy()
-		z0.digits.destroy()
-		z2.digits.destroy()
-		aa.digits.destroy()
-		bb.digits.destroy()
-		z1.digits.destroy()
-		s0.digits.destroy()
-		s1.digits.destroy()
-		s2.digits.destroy()
 	}
+
 	// self = quotient, a = dividend, b = divisor, remainder = remainder
 	// Uses remainder's internal buffer as working space
 	pub func div_to = (ref self, BigInt a, BigInt b, ref BigInt remainder) {

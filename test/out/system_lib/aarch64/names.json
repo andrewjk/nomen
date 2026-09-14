@@ -120,7 +120,7 @@
 	"Ansi_bg_cyan",
 	"Ansi_bg_white",
 	"BigInt_init",
-	"BigInt_new",
+	"BigInt_init_int",
 	"BigInt_ensure",
 	"BigInt_clear",
 	"BigInt_copy_range_from",

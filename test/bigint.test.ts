@@ -8,8 +8,7 @@ import parse_with_imports from "./parse_with_imports";
 
 test("new: zero", async () => {
 	const input = `
-var BigInt a = BigInt()
-a = a.new(0)
+var BigInt a = BigInt(0)
 Console.write("sign=")
 Console.write(a.sign.to_string())
 Console.write(" len=")
@@ -23,8 +22,7 @@ Console.write("\\n")
 
 test("new: positive", async () => {
 	const input = `
-var BigInt a = BigInt()
-a = a.new(42)
+var BigInt a = BigInt(42)
 Console.write("sign=")
 Console.write(a.sign.to_string())
 Console.write(" len=")
@@ -38,8 +36,7 @@ Console.write("\\n")
 
 test("new: negative", async () => {
 	const input = `
-var BigInt a = BigInt()
-a = a.new(-99)
+var BigInt a = BigInt(-99)
 Console.write("sign=")
 Console.write(a.sign.to_string())
 Console.write(" len=")
@@ -55,10 +52,8 @@ Console.write("\\n")
 
 test("cmp: equal", async () => {
 	const input = `
-var BigInt a = BigInt()
-var BigInt b = BigInt()
-a = a.new(100)
-b = b.new(100)
+var BigInt a = BigInt(100)
+var BigInt b = BigInt(100)
 Console.write(a.cmp(b).to_string())
 `;
 	await build_and_check_output(input, "bigint_cmp_equal", "0");
@@ -66,10 +61,8 @@ Console.write(a.cmp(b).to_string())
 
 test("cmp: less than", async () => {
 	const input = `
-var BigInt a = BigInt()
-var BigInt b = BigInt()
-a = a.new(10)
-b = b.new(20)
+var BigInt a = BigInt(10)
+var BigInt b = BigInt(20)
 Console.write(a.cmp(b).to_string())
 `;
 	await build_and_check_output(input, "bigint_cmp_lt", "-1");
@@ -77,10 +70,8 @@ Console.write(a.cmp(b).to_string())
 
 test("cmp: greater than", async () => {
 	const input = `
-var BigInt a = BigInt()
-var BigInt b = BigInt()
-a = a.new(999)
-b = b.new(1)
+var BigInt a = BigInt(999)
+var BigInt b = BigInt(1)
 Console.write(a.cmp(b).to_string())
 `;
 	await build_and_check_output(input, "bigint_cmp_gt", "1");
@@ -88,13 +79,11 @@ Console.write(a.cmp(b).to_string())
 
 test("cmp: different limb counts", async () => {
 	const input = `
-var BigInt a = BigInt()
-var BigInt b = BigInt()
+var BigInt a = BigInt(1000000000)
+var BigInt b = BigInt(1000000000)
 var BigInt s = BigInt()
-a = a.new(1000000000)
-b = b.new(1000000000)
 a.mul_to(a, b, ref s)
-s = s.new(100)
+s = BigInt(100)
 Console.write("big=")
 Console.write(a.cmp(s).to_string())
 Console.write(" small=")
@@ -108,10 +97,8 @@ Console.write("\\n")
 
 test("add_to: single limb", async () => {
 	const input = `
-var BigInt a = BigInt()
-var BigInt b = BigInt()
-a = a.new(30)
-b = b.new(12)
+var BigInt a = BigInt(30)
+var BigInt b = BigInt(12)
 a.add_to(a, b)
 Console.write((a.get(0) as int).to_string())
 `;
@@ -120,13 +107,11 @@ Console.write((a.get(0) as int).to_string())
 
 test("add_to: carry produces second limb", async () => {
 	const input = `
-var BigInt a = BigInt()
-var BigInt b = BigInt()
+var BigInt a = BigInt(4294967296)
+var BigInt b = BigInt(4294967296)
 var BigInt s = BigInt()
-a = a.new(4294967296)
-b = b.new(4294967296)
 a.mul_to(a, b, ref s)
-b = b.new(1)
+b = BigInt(1)
 a.add_to(a, b)
 Console.write("len=")
 Console.write(a.len.to_string())
@@ -141,10 +126,8 @@ Console.write("\\n")
 
 test("add_to: no overflow", async () => {
 	const input = `
-var BigInt a = BigInt()
-var BigInt b = BigInt()
-a = a.new(500)
-b = b.new(500)
+var BigInt a = BigInt(500)
+var BigInt b = BigInt(500)
 a.add_to(a, b)
 Console.write((a.get(0) as int).to_string())
 `;
@@ -155,10 +138,8 @@ Console.write((a.get(0) as int).to_string())
 
 test("sub_to: single limb", async () => {
 	const input = `
-var BigInt a = BigInt()
-var BigInt b = BigInt()
-a = a.new(50)
-b = b.new(18)
+var BigInt a = BigInt(50)
+var BigInt b = BigInt(18)
 a.sub_to(a, b)
 Console.write((a.get(0) as int).to_string())
 `;
@@ -167,10 +148,8 @@ Console.write((a.get(0) as int).to_string())
 
 test("sub_to: result is zero", async () => {
 	const input = `
-var BigInt a = BigInt()
-var BigInt b = BigInt()
-a = a.new(100)
-b = b.new(100)
+var BigInt a = BigInt(100)
+var BigInt b = BigInt(100)
 a.sub_to(a, b)
 Console.write((a.get(0) as int).to_string())
 `;
@@ -179,13 +158,11 @@ Console.write((a.get(0) as int).to_string())
 
 test("sub_to: borrow across limbs", async () => {
 	const input = `
-var BigInt a = BigInt()
-var BigInt b = BigInt()
+var BigInt a = BigInt(4294967296)
+var BigInt b = BigInt(4294967296)
 var BigInt s = BigInt()
-a = a.new(4294967296)
-b = b.new(4294967296)
 a.mul_to(a, b, ref s)
-b = b.new(1)
+b = BigInt(1)
 a.sub_to(a, b)
 Console.write("len=")
 Console.write(a.len.to_string())
@@ -202,11 +179,9 @@ Console.write("\\n")
 
 test("mul_to: single limb", async () => {
 	const input = `
-var BigInt a = BigInt()
-var BigInt b = BigInt()
+var BigInt a = BigInt(7)
+var BigInt b = BigInt(6)
 var BigInt s = BigInt()
-a = a.new(7)
-b = b.new(6)
 a.mul_to(a, b, ref s)
 Console.write((a.get(0) as int).to_string())
 `;
@@ -215,11 +190,9 @@ Console.write((a.get(0) as int).to_string())
 
 test("mul_to: produces 2-limb result", async () => {
 	const input = `
-var BigInt a = BigInt()
-var BigInt b = BigInt()
+var BigInt a = BigInt(4294967296)
+var BigInt b = BigInt(4294967296)
 var BigInt s = BigInt()
-a = a.new(4294967296)
-b = b.new(4294967296)
 a.mul_to(a, b, ref s)
 Console.write("len=")
 Console.write(a.len.to_string())
@@ -234,16 +207,14 @@ Console.write("\\n")
 
 test("mul_to: multi-limb", async () => {
 	const input = `
-var BigInt a = BigInt()
-var BigInt b = BigInt()
+var BigInt a = BigInt(1000000000)
+var BigInt b = BigInt(1000000000)
 var BigInt s = BigInt()
-a = a.new(1000000000)
-b = b.new(1000000000)
 a.mul_to(a, b, ref s)
-b = b.new(1000000000)
-s = s.new(1000000000)
+b = BigInt(1000000000)
+s = BigInt(1000000000)
 b.mul_to(b, s, ref a)
-s = s.new(1000000000)
+s = BigInt(1000000000)
 b.mul_to(b, s, ref a)
 Console.write(b.len.to_string())
 `;
@@ -254,10 +225,8 @@ Console.write(b.len.to_string())
 
 test("mul_to: Karatsuba self-multiply (a==b) at 32 limbs", async () => {
 	const input = `
-var BigInt ten = BigInt()
-ten = ten.new(10)
-var BigInt x = BigInt()
-x = x.new(1)
+var BigInt ten = BigInt(10)
+var BigInt x = BigInt(1)
 var BigInt tmp = BigInt()
 var BigInt scratch = BigInt()
 var int i = 0
@@ -287,12 +256,10 @@ mu.mul_to(x, y, ref scratch)
 
 test("div: single-limb exact", async () => {
 	const input = `
-var BigInt a = BigInt()
-var BigInt b = BigInt()
+var BigInt a = BigInt(100)
+var BigInt b = BigInt(10)
 var BigInt q = BigInt()
 var BigInt rem = BigInt()
-a = a.new(100)
-b = b.new(10)
 q.div_to(a, b, ref rem)
 Console.write("q=")
 Console.write((q.get(0) as int).to_string())
@@ -305,12 +272,10 @@ Console.write("\\n")
 
 test("div: single-limb with remainder", async () => {
 	const input = `
-var BigInt a = BigInt()
-var BigInt b = BigInt()
+var BigInt a = BigInt(100)
+var BigInt b = BigInt(7)
 var BigInt q = BigInt()
 var BigInt rem = BigInt()
-a = a.new(100)
-b = b.new(7)
 q.div_to(a, b, ref rem)
 Console.write("q=")
 Console.write((q.get(0) as int).to_string())
@@ -323,12 +288,10 @@ Console.write("\\n")
 
 test("div: single-limb divisor=1", async () => {
 	const input = `
-var BigInt a = BigInt()
-var BigInt b = BigInt()
+var BigInt a = BigInt(123456789)
+var BigInt b = BigInt(1)
 var BigInt q = BigInt()
 var BigInt rem = BigInt()
-a = a.new(123456789)
-b = b.new(1)
 q.div_to(a, b, ref rem)
 Console.write("q=")
 Console.write((q.get(0) as int).to_string())
@@ -341,12 +304,10 @@ Console.write("\\n")
 
 test("div: dividend equals divisor", async () => {
 	const input = `
-var BigInt a = BigInt()
-var BigInt b = BigInt()
+var BigInt a = BigInt(42)
+var BigInt b = BigInt(42)
 var BigInt q = BigInt()
 var BigInt rem = BigInt()
-a = a.new(42)
-b = b.new(42)
 q.div_to(a, b, ref rem)
 Console.write("q=")
 Console.write((q.get(0) as int).to_string())
@@ -359,12 +320,10 @@ Console.write("\\n")
 
 test("div: dividend less than divisor", async () => {
 	const input = `
-var BigInt a = BigInt()
-var BigInt b = BigInt()
+var BigInt a = BigInt(5)
+var BigInt b = BigInt(10)
 var BigInt q = BigInt()
 var BigInt rem = BigInt()
-a = a.new(5)
-b = b.new(10)
 q.div_to(a, b, ref rem)
 Console.write("q=")
 Console.write((q.get(0) as int).to_string())
@@ -379,15 +338,13 @@ Console.write("\\n")
 
 test("div: 2-limb / 1-limb", async () => {
 	const input = `
-var BigInt a = BigInt()
-var BigInt b = BigInt()
+var BigInt a = BigInt(1000000000)
+var BigInt b = BigInt(1000000000)
 var BigInt s = BigInt()
 var BigInt q = BigInt()
 var BigInt rem = BigInt()
-a = a.new(1000000000)
-b = b.new(1000000000)
 a.mul_to(a, b, ref s)
-b = b.new(3)
+b = BigInt(3)
 q.div_to(a, b, ref rem)
 Console.write("q=")
 Console.write((q.get(0) as int).to_string())
@@ -400,18 +357,15 @@ Console.write("\\n")
 
 test("div: 2-limb / 2-limb exact", async () => {
 	const input = `
-var BigInt a = BigInt()
-var BigInt b = BigInt()
-var BigInt s = BigInt()
+var BigInt a = BigInt(1000000000)
+var BigInt b = BigInt(1000000000)
+var BigInt s = BigInt(1000000000)
 var BigInt q = BigInt()
 var BigInt rem = BigInt()
-b = b.new(1000000000)
-s = s.new(1000000000)
 b.mul_to(b, s, ref rem)
-a = a.new(1000000000)
-s = s.new(1000000000)
+s = BigInt(1000000000)
 a.mul_to(a, s, ref rem)
-s = s.new(27)
+s = BigInt(27)
 a.mul_to(a, s, ref rem)
 q.div_to(a, b, ref rem)
 Console.write("q=")
@@ -425,20 +379,17 @@ Console.write("\\n")
 
 test("div: 2-limb / 2-limb with remainder", async () => {
 	const input = `
-var BigInt a = BigInt()
-var BigInt b = BigInt()
-var BigInt s = BigInt()
+var BigInt a = BigInt(1000000000)
+var BigInt b = BigInt(1000000000)
+var BigInt s = BigInt(1000000000)
 var BigInt q = BigInt()
 var BigInt rem = BigInt()
-b = b.new(1000000000)
-s = s.new(1000000000)
 b.mul_to(b, s, ref rem)
-s = s.new(3)
+s = BigInt(3)
 b.mul_to(b, s, ref rem)
-a = a.new(1000000000)
-s = s.new(1000000000)
+s = BigInt(1000000000)
 a.mul_to(a, s, ref rem)
-s = s.new(10)
+s = BigInt(10)
 a.mul_to(a, s, ref rem)
 q.div_to(a, b, ref rem)
 Console.write("q=")
@@ -452,24 +403,20 @@ Console.write("\\n")
 
 test("div: 2-limb / 2-limb carry test", async () => {
 	const input = `
-var BigInt a = BigInt()
-var BigInt b = BigInt()
-var BigInt s = BigInt()
+var BigInt a = BigInt(-8956217137030164580)
+var BigInt b = BigInt(-8006580162858909745)
+var BigInt s = BigInt(4294967296)
 var BigInt q = BigInt()
 var BigInt rem = BigInt()
-b = b.new(-8006580162858909745)
-s = s.new(4294967296)
-var BigInt t = BigInt()
-t = t.new(4294967296)
+var BigInt t = BigInt(4294967296)
 s.mul_to(s, t, ref rem)
-t = t.new(444)
+t = BigInt(444)
 t.mul_to(t, s, ref rem)
 b.add_to(b, t)
-a = a.new(-8956217137030164580)
-s = s.new(4294967296)
-t = t.new(4294967296)
+s = BigInt(4294967296)
+t = BigInt(4294967296)
 s.mul_to(s, t, ref rem)
-t = t.new(12129)
+t = BigInt(12129)
 t.mul_to(t, s, ref rem)
 a.add_to(a, t)
 q.div_to(a, b, ref rem)
@@ -485,7 +432,7 @@ Console.write("\\n")
 test("to_digit: single limb", async () => {
 	const input = `
 var BigInt a = BigInt()
-a = a.new(42)
+a = BigInt(42)
 Console.write(a.to_digit().to_string())
 `;
 	await build_and_check_output(input, "bigint_to_digit_single", "42");
@@ -493,11 +440,9 @@ Console.write(a.to_digit().to_string())
 
 test("to_digit: multi-limb returns -1", async () => {
 	const input = `
-var BigInt a = BigInt()
-var BigInt b = BigInt()
+var BigInt a = BigInt(4294967296)
+var BigInt b = BigInt(4294967296)
 var BigInt s = BigInt()
-a = a.new(4294967296)
-b = b.new(4294967296)
 a.mul_to(a, b, ref s)
 Console.write(a.to_digit().to_string())
 `;
@@ -510,9 +455,9 @@ test("copy_from: creates independent copy", async () => {
 	const input = `
 var BigInt a = BigInt()
 var BigInt b = BigInt()
-a = a.new(12345)
+a = BigInt(12345)
 b.copy_from(a)
-a = a.new(99999)
+a = BigInt(99999)
 Console.write("a=")
 Console.write((a.get(0) as int).to_string())
 Console.write(" b=")
@@ -531,10 +476,10 @@ var BigInt b = BigInt()
 var BigInt s = BigInt()
 var BigInt q = BigInt()
 var BigInt rem = BigInt()
-a = a.new(12345)
-b = b.new(67890)
+a = BigInt(12345)
+b = BigInt(67890)
 a.mul_to(a, b, ref s)
-b = b.new(67890)
+b = BigInt(67890)
 q.div_to(a, b, ref rem)
 Console.write("roundtrip=")
 Console.write((q.get(0) as int).to_string())
@@ -547,12 +492,10 @@ Console.write("\\n")
 
 test("chain: add then sub roundtrip", async () => {
 	const input = `
-var BigInt a = BigInt()
-var BigInt b = BigInt()
-a = a.new(1000)
-b = b.new(42)
+var BigInt a = BigInt(1000)
+var BigInt b = BigInt(42)
 a.add_to(a, b)
-b = b.new(42)
+b = BigInt(42)
 a.sub_to(a, b)
 Console.write("roundtrip=")
 Console.write((a.get(0) as int).to_string())
@@ -563,13 +506,11 @@ Console.write("\\n")
 
 test("chain: mul then sub", async () => {
 	const input = `
-var BigInt a = BigInt()
-var BigInt b = BigInt()
+var BigInt a = BigInt(100)
+var BigInt b = BigInt(100)
 var BigInt s = BigInt()
-a = a.new(100)
-b = b.new(100)
 a.mul_to(a, b, ref s)
-b = b.new(1)
+b = BigInt(1)
 a.sub_to(a, b)
 Console.write("100*100-1=")
 Console.write((a.get(0) as int).to_string())
@@ -580,13 +521,11 @@ Console.write("\\n")
 
 test("chain: repeated mul", async () => {
 	const input = `
-var BigInt a = BigInt()
-var BigInt b = BigInt()
+var BigInt a = BigInt(10)
+var BigInt b = BigInt(10)
 var BigInt s = BigInt()
-a = a.new(10)
-b = b.new(10)
 a.mul_to(a, b, ref s)
-b = b.new(10)
+b = BigInt(10)
 a.mul_to(a, b, ref s)
 Console.write("10^3=")
 Console.write((a.get(0) as int).to_string())
@@ -599,11 +538,9 @@ Console.write("\\n")
 
 test("edge: multiply by zero", async () => {
 	const input = `
-var BigInt a = BigInt()
-var BigInt b = BigInt()
+var BigInt a = BigInt(999999)
+var BigInt b = BigInt(0)
 var BigInt s = BigInt()
-a = a.new(999999)
-b = b.new(0)
 a.mul_to(a, b, ref s)
 Console.write("len=")
 Console.write(a.len.to_string())
@@ -616,11 +553,9 @@ Console.write("\\n")
 
 test("edge: multiply by one", async () => {
 	const input = `
-var BigInt a = BigInt()
-var BigInt b = BigInt()
+var BigInt a = BigInt(123456789)
+var BigInt b = BigInt(1)
 var BigInt s = BigInt()
-a = a.new(123456789)
-b = b.new(1)
 a.mul_to(a, b, ref s)
 Console.write((a.get(0) as int).to_string())
 `;
@@ -629,10 +564,8 @@ Console.write((a.get(0) as int).to_string())
 
 test("edge: add zero", async () => {
 	const input = `
-var BigInt a = BigInt()
-var BigInt b = BigInt()
-a = a.new(42)
-b = b.new(0)
+var BigInt a = BigInt(42)
+var BigInt b = BigInt(0)
 a.add_to(a, b)
 Console.write((a.get(0) as int).to_string())
 `;
@@ -641,10 +574,8 @@ Console.write((a.get(0) as int).to_string())
 
 test("edge: sub zero", async () => {
 	const input = `
-var BigInt a = BigInt()
-var BigInt b = BigInt()
-a = a.new(42)
-b = b.new(0)
+var BigInt a = BigInt(42)
+var BigInt b = BigInt(0)
 a.sub_to(a, b)
 Console.write((a.get(0) as int).to_string())
 `;
@@ -655,17 +586,15 @@ Console.write((a.get(0) as int).to_string())
 
 test("mul: 3-limb result", async () => {
 	const input = `
-var BigInt a = BigInt()
-var BigInt b = BigInt()
+var BigInt a = BigInt(1000000000)
+var BigInt b = BigInt(1000000000)
 var BigInt s = BigInt()
-a = a.new(1000000000)
-b = b.new(1000000000)
 a.mul_to(a, b, ref s)
-b = b.new(1000000000)
-s = s.new(1000000000)
+b = BigInt(1000000000)
+s = BigInt(1000000000)
 a.mul_to(a, b, ref s)
-b = b.new(1000000000)
-s = s.new(1000000000)
+b = BigInt(1000000000)
+s = BigInt(1000000000)
 a.mul_to(a, b, ref s)
 Console.write("len=")
 Console.write(a.len.to_string())
@@ -681,15 +610,15 @@ var BigInt b = BigInt()
 var BigInt s = BigInt()
 var BigInt q = BigInt()
 var BigInt rem = BigInt()
-b = b.new(1000000000)
-s = s.new(1000000000)
+b = BigInt(1000000000)
+s = BigInt(1000000000)
 b.mul_to(b, s, ref rem)
-a = a.new(1000000000)
-s = s.new(1000000000)
+a = BigInt(1000000000)
+s = BigInt(1000000000)
 a.mul_to(a, s, ref rem)
-s = s.new(1000000000)
+s = BigInt(1000000000)
 a.mul_to(a, s, ref rem)
-s = s.new(1000)
+s = BigInt(1000)
 a.mul_to(a, s, ref rem)
 q.div_to(a, b, ref rem)
 Console.write("q=")
@@ -712,13 +641,13 @@ var BigInt q = BigInt()
 var BigInt rem = BigInt()
 var int i = 0
 while i < 5 {
-b = b.new(1000000000)
-s = s.new(1000000000)
+b = BigInt(1000000000)
+s = BigInt(1000000000)
 b.mul_to(b, s, ref rem)
-a = a.new(1000000000)
-s = s.new(1000000000)
+a = BigInt(1000000000)
+s = BigInt(1000000000)
 a.mul_to(a, s, ref rem)
-s = s.new(3)
+s = BigInt(3)
 a.mul_to(a, s, ref rem)
 q.div_to(a, b, ref rem)
 Console.write((q.get(0) as int).to_string())
@@ -734,10 +663,8 @@ Console.write("\\n")
 
 test("bug: mul_to scratch==a multi-limb clobbers a", async () => {
 	const input = `
-var BigInt a = BigInt()
-var BigInt b = BigInt()
-a = a.new(1000000000)
-b = b.new(3)
+var BigInt a = BigInt(1000000000)
+var BigInt b = BigInt(3)
 a.mul_to(a, b, ref a)
 Console.write("a=")
 Console.write((a.get(0) as int).to_string())
@@ -753,10 +680,8 @@ Console.write("\\n")
 
 test("bug: mul_to scratch==b multi-limb clobbers b", async () => {
 	const input = `
-var BigInt a = BigInt()
-var BigInt b = BigInt()
-a = a.new(3)
-b = b.new(1000000000)
+var BigInt a = BigInt(3)
+var BigInt b = BigInt(1000000000)
 a.mul_to(a, b, ref b)
 Console.write("a=")
 Console.write((a.get(0) as int).to_string())
@@ -772,10 +697,8 @@ Console.write("\\n")
 
 test("bug: mul_to scratch==self multi-limb zeroes result", async () => {
 	const input = `
-var BigInt a = BigInt()
-var BigInt b = BigInt()
-a = a.new(1000000000)
-b = b.new(1000000000)
+var BigInt a = BigInt(1000000000)
+var BigInt b = BigInt(1000000000)
 a.mul_to(a, b, ref a)
 Console.write("len=")
 Console.write(a.len.to_string())
@@ -793,10 +716,8 @@ Console.write("\\n")
 
 test("bug: mul_to scratch==self single-limb zeroes result", async () => {
 	const input = `
-var BigInt a = BigInt()
-var BigInt b = BigInt()
-a = a.new(42)
-b = b.new(1000000000)
+var BigInt a = BigInt(42)
+var BigInt b = BigInt(1000000000)
 a.mul_to(a, b, ref a)
 Console.write("len=")
 Console.write(a.len.to_string())
@@ -814,10 +735,8 @@ Console.write("\\n")
 
 test("bug: mul_to scratch==b with a.len==1 clobbers b", async () => {
 	const input = `
-var BigInt a = BigInt()
-var BigInt b = BigInt()
-a = a.new(7)
-b = b.new(1000000000)
+var BigInt a = BigInt(7)
+var BigInt b = BigInt(1000000000)
 a.mul_to(a, b, ref b)
 Console.write("a=")
 Console.write((a.get(0) as int).to_string())
@@ -833,10 +752,8 @@ Console.write("\\n")
 
 test("bug: mul_to scratch==a with b.len==1 clobbers a", async () => {
 	const input = `
-var BigInt a = BigInt()
-var BigInt b = BigInt()
-a = a.new(1000000000)
-b = b.new(7)
+var BigInt a = BigInt(1000000000)
+var BigInt b = BigInt(7)
 a.mul_to(a, b, ref a)
 Console.write("a=")
 Console.write((a.get(0) as int).to_string())

@@ -473,10 +473,10 @@ Console.write("done")
 	test("reassigning struct from self method call does not double-free buffer", async () => {
 		const input = `
 var BigInt k = BigInt()
-k = k.new(1)
+k = BigInt(1)
 var BigInt k2 = BigInt()
-k2 = k2.new(2)
-k = k2.new(3)
+k2 = BigInt(2)
+k = BigInt(3)
 var int d = k.to_digit()
 Console.write(d.to_string())
 `;
@@ -488,7 +488,7 @@ Console.write(d.to_string())
 var BigInt k = BigInt()
 var int i = 0
 while i < 3 {
-	k = k.new(i)
+	k = BigInt(i)
 	var int d = k.to_digit()
 	Console.write(d.to_string())
 	i += 1

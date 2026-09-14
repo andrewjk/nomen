@@ -6,7 +6,6 @@ An arbitrary-precision integer
 
 **Members:**
 
-- `new(int val) -> BigInt`
 - `get(int i) -> uint64`
 - `set(int i, uint64 val)`
 - `data_ptr() -> uint64`

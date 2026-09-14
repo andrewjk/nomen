@@ -904,7 +904,11 @@ export default function build_assignment_node(
 				}
 			}
 			const lhs_decl = status.scoped_declarations.find((d) => d.name === name);
-			const lhs_type_name = lhs_decl?.type?.name ?? "";
+			// Inside a loop body the scoped-declaration table is swapped out (see
+			// find_var_size) — fall back to the checker's persistent variable
+			// types so the displaced value is still destroyed (otherwise a value
+			// struct with owning fields leaks its buffer on every reassignment).
+			const lhs_type_name = lhs_decl?.type?.name ?? status.variable_types?.get(name)?.name ?? "";
 			const needs_pre_destroy =
 				rhs_is_struct &&
 				!rhs_struct &&

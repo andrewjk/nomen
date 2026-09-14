@@ -683,11 +683,11 @@ Spigot-algorithm π computed with `BigInt`. The whole runtime is `BigInt.div_to`
 - **[source]/[stdlib] An in-place `div_to(out self, a, b, rem)`** already landed
   (item 9 / item 16), so the Nomen source no longer copies a fresh `BigInt` back
   into `u` every digit.
-- **[source]** All 12 `BigInt` locals (`k`, `n1`, `d`, `one`, …) are allocated
-  with `BigInt()` then re-bound with `= .new(...)`. The intermediate empty
-  buffer is allocated and immediately replaced. Constructing them directly with
-  `BigInt.new(1)` (if a static-method constructor lands) would halve startup
-  allocations.
+- **[source]** All 12 `BigInt` locals (`k`, `n1`, `d`, `one`, …) used to be
+  allocated with `BigInt()` then re-bound with `= .new(...)`, allocating an
+  intermediate empty buffer that was immediately replaced. Constructor
+  overloading (`BigInt(1)`) landed, and the benchmark sources now construct
+  directly.
 - Karatsuba for the multiply would help at large `n`, but at the benchmark
   sizes schoolbook dominates and the fixes above come first. (The Karatsuba
   self-multiply bug has been fixed — see codegen item 3.)
