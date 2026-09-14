@@ -554,3 +554,45 @@ string field stores").
 
 Related: `move Trait` params are now supported (checker + both backends'
 epilogue reclaim via the trait `<Trait>_destroy` shim) — test/move_trait_param.test.ts.
+
+## Func-typed struct fields (allmark PORT) — deliberate trait alternative, currently unimplemented
+
+The checker rejects func-typed fields outright
+(`struct fields cannot be function types — use a trait instead`,
+check_struct_node), and Nomen's sanctioned answer is the strategy-pattern
+trait (TRAITS.md "Use a trait instead": one trait + one class per rule). The
+allmark port wanted the TS `BlockRule = { test: (line: string) => boolean }`
+object shape directly instead.
+
+Investigated 2026-09-14 — this is a deferred FEATURE, not a stale rejection
+or a small gap. With the rejection bypassed, the storage half largely works
+already: `struct Rule { var func (int, out int) f }`, the synthesized ctor
+taking a function value, and struct copy/layout all check and BUILD on both
+backends (a func value is an 8-byte code pointer — C declares a func-typed
+local as `long (*f)(long)`, so the field slot needs no layout change). Only
+the CALL is missing: `r.f(args)` parses as a method access, the checker has
+no func-typed-field branch, and it errors `Function not found: Rule.f`.
+
+Implementation work (≈150–250 lines, checker + both call paths):
+
+- **checker**: lift the rejection; in check_access_function_node, when the
+  receiver's struct has a func-typed field `name` and no method `name`,
+  resolve the call as an indirect call through that field — attach the
+  field's signature (`field.func_params` / `field.func_return_type`) to the
+  call node and check the args against it (the same shared call machinery a
+  func-typed LOCAL call uses, which already builds a synthetic FunctionNode;
+  see check_function_call_node's `is_func_param`).
+- **C**: at the call site emit
+  `((<ret> (*)(<param c types>))<field access>)(args)` — the field stays a
+  `void*` slot, the cast supplies the signature; reuse the param spelling
+  from build_function_type_declaration. (Alternatively declare the field as
+  a real function pointer, which touches the struct typedef + accessors +
+  ctor param + defaults; the cast keeps the change local.)
+- **aarch64**: load the field into a scratch register, evaluate the args, and
+  `blr` — mirrors the existing func-value call (`is_func_param` →
+  `ldr x8, …; blr x8` in build_function_call_node) but reached through the
+  access path (build_access_node), whose arg machinery is already there.
+- also: assignment `s.f = someFunc` / func-typed field values.
+
+Until then the trait shape (one class per rule) remains the answer, which is
+what the port uses.
