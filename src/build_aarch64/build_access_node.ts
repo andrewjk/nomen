@@ -2813,11 +2813,18 @@ function build_access_method(
 			continue;
 		}
 		// A fat `string` argument is already the (ptr, len) pair in x0/x1 —
-		// spill both halves like a view.
+		// spill both halves like a view. A `null` literal (type rewritten to
+		// the param's `string?` by the checker) zeroes BOTH halves: its build
+		// leaves only x0 = 0, and x1 would carry garbage into the callee.
 		if (string_arg_set.has(i)) {
-			build_node(param, status);
-			if (!status.code.endsWith("\n")) {
-				status.code += "\n";
+			if (param.node_type === "value" && (param as ValueNode).value === "null") {
+				status.code += `mov x0, #0\n`;
+				status.code += `mov x1, #0\n`;
+			} else {
+				build_node(param, status);
+				if (!status.code.endsWith("\n")) {
+					status.code += "\n";
+				}
 			}
 			status.code += `str x0, [x29, #${view_half_store(i, 0)}]\n`;
 			status.code += `str x1, [x29, #${view_half_store(i, 1)}]\n`;

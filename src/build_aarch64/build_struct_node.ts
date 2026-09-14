@@ -47,6 +47,8 @@ import {
 	get_type_size,
 } from "./utils/struct_layout.ts";
 
+let field_strdup_guard_counter = 0;
+
 function emit_typed_store(
 	status: BuildStatus,
 	src_reg: string,
@@ -551,13 +553,19 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 			const len_src = slot + 1 < NUM_REG_ARGS ? param_regs[slot] : undefined;
 			if (node.is_class && !field.type.is_ref) {
 				// Class string fields are always heap-owned: strdup the ptr
-				// half. The strdup wrapper call clobbers every caller-saved
-				// register, so BOTH halves must be spilled across it.
+				// half. A NULL ptr half (a `null` argument) must NOT be
+				// strdup'd (the wrapper strlens it) — skip the copy and store
+				// the raw pair; the destroy's free(NULL) is a no-op. The
+				// strdup wrapper call clobbers every caller-saved register,
+				// so BOTH halves must be spilled across it.
+				const skip_label = `.field_strdup_skip_${field_strdup_guard_counter++}`;
+				status.code += `cbz ${src_reg}, ${skip_label}\n`;
 				status.code += `stp ${src_reg}, ${len_src ?? "xzr"}, [sp, #-16]!\n`;
 				status.code += `mov x0, ${src_reg}\n`;
 				emit_strdup(status);
 				status.code += `ldp ${src_reg}, ${len_src ?? "xzr"}, [sp], #16\n`;
 				status.code += `mov ${src_reg}, x0\n`;
+				status.code += `${skip_label}:\n`;
 			}
 			if (len_src) {
 				emit_pair_store_to(status, "x19", offset, src_reg, len_src);
@@ -650,6 +658,21 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 				} else if (val === "false") {
 					status.code += `mov x1, #0\n`;
 				} else if (val === "null") {
+					// A `null` default on a fat string field zeroes BOTH halves:
+					// the generic single-word store below would leave the len
+					// half holding garbage (every later == null / use reads the
+					// pair). Non-string fields keep the single-word store.
+					if (
+						field.type.name === "string" &&
+						!field.type.is_ref &&
+						!field.type.is_view &&
+						!field.type.is_array
+					) {
+						status.code += `mov x1, #0\n`;
+						status.code += `mov x2, #0\n`;
+						emit_pair_store_to(status, "x19", offset, "x1", "x2");
+						continue;
+					}
 					status.code += `mov x1, #0\n`;
 				} else if (/^(\+|-)*\d+$/.test(val)) {
 					status.code += `ldr x1, =${val}\n`;
@@ -957,6 +980,21 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 				} else if (val === "false") {
 					status.code += `mov x1, #0\n`;
 				} else if (val === "null") {
+					// A `null` default on a fat string field zeroes BOTH halves:
+					// the generic single-word store below would leave the len
+					// half holding garbage (every later == null / use reads the
+					// pair). Non-string fields keep the single-word store.
+					if (
+						field.type.name === "string" &&
+						!field.type.is_ref &&
+						!field.type.is_view &&
+						!field.type.is_array
+					) {
+						status.code += `mov x1, #0\n`;
+						status.code += `mov x2, #0\n`;
+						emit_pair_store_to(status, "x19", offset, "x1", "x2");
+						continue;
+					}
 					status.code += `mov x1, #0\n`;
 				} else if (/^(\+|-)*\d+$/.test(val)) {
 					status.code += `ldr x1, =${val}\n`;

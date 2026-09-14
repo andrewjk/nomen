@@ -529,10 +529,18 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					continue;
 				}
 				// A fat `string` argument is already the (ptr, len) pair in
-				// x0/x1 — spill both halves.
+				// x0/x1 — spill both halves. A `null` literal (type rewritten
+				// to the param's `string?` by the checker) zeroes BOTH halves:
+				// its build leaves only x0 = 0, and x1 would carry garbage
+				// into the callee.
 				if (string_arg_set.has(i)) {
-					build_node(param, status);
-					if (!status.code.endsWith("\n")) status.code += "\n";
+					if (param.node_type === "value" && (param as ValueNode).value === "null") {
+						status.code += `mov x0, #0\n`;
+						status.code += `mov x1, #0\n`;
+					} else {
+						build_node(param, status);
+						if (!status.code.endsWith("\n")) status.code += "\n";
+					}
 					status.code += `str x0, [x29, #${args_base + arg_slot[i] * 8}]\n`;
 					status.code += `str x1, [x29, #${args_base + (arg_slot[i] + 1) * 8}]\n`;
 					continue;

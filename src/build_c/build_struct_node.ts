@@ -374,6 +374,13 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 				status.code += `${object_name}${accessor}${field.name} = `;
 				if (default_is_null) {
 					status.code += `(nomen_string){0, 0}`;
+				} else if (wrap_strdup && !field.value) {
+					// A class string field param is normally strdup'd (the
+					// field is heap-owned and freed unconditionally at
+					// destroy) — but a `null` argument has a NULL `.ptr`, and
+					// nomen_str_dup strlens it. Guard on the ptr: a null pair
+					// stores raw (free(NULL) is a no-op).
+					status.code += `${field.name}.ptr ? nomen_str_dup(${field.name}) : ${field.name}`;
 				} else {
 					if (wrap_strdup) {
 						status.code += `nomen_str_dup(`;

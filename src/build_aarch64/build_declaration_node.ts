@@ -548,9 +548,14 @@ function build_constructor_params(
 			// A view argument rides the (ptr, len) pair ABI whatever its
 			// element type — a non-string view value's bare build loads only
 			// the ptr half, so route through emit_view_string_arg. Fat
-			// strings already build as the full pair.
+			// strings already build as the full pair. A `null` literal (type
+			// rewritten to the param's `string?` by the checker) zeroes BOTH
+			// halves — its bare build leaves x1 (the len) holding garbage.
 			if (arg_is_view[i]) {
 				emit_view_string_arg(param, status);
+			} else if (param.node_type === "value" && (param as ValueNode).value === "null") {
+				status.code += `mov x0, #0\n`;
+				status.code += `mov x1, #0\n`;
 			} else {
 				build_node(param, status);
 			}

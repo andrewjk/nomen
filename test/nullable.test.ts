@@ -456,6 +456,138 @@ test()
 	});
 });
 
+describe("nullable strings — null as an argument / field default (both backends)", () => {
+	test("null into string? ctor param (required field)", async () => {
+		const input = `
+class Holder {
+	var string? tag
+}
+func test = () {
+	var Holder h = Holder(null)
+	if h.tag == null {
+		Console.write_line("null")
+	} else {
+		Console.write_line("non")
+	}
+}
+test()
+`;
+		await build_and_check_output(input, "nullable_string_arg_ctor", "null");
+	});
+
+	test("null into string? plain function param", async () => {
+		const input = `
+func use = (string? s) {
+	if s == null {
+		Console.write_line("none")
+	} else {
+		Console.write_line(s)
+	}
+}
+use(null)
+`;
+		await build_and_check_output(input, "nullable_string_arg_fn", "none");
+	});
+
+	test("null into string? method param", async () => {
+		const input = `
+class Box {
+	var int v
+	func touch = (ref self, string? s) {
+		if s == null {
+			self.v = 7
+		}
+	}
+}
+func test = () {
+	var Box b = Box(1)
+	b.touch(null)
+	Console.write_line("\\{b.v}")
+}
+test()
+`;
+		await build_and_check_output(input, "nullable_string_arg_method", "7");
+	});
+
+	test("null into string? param alongside other args", async () => {
+		const input = `
+func use = (int n, string? s, int m) {
+	if s == null {
+		Console.write_line("\\{n + m}")
+	}
+}
+use(3, null, 4)
+`;
+		await build_and_check_output(input, "nullable_string_arg_mixed", "7");
+	});
+
+	test("null into value struct string? ctor param", async () => {
+		const input = `
+struct S {
+	var string? tag
+}
+func test = () {
+	var S s = S(null)
+	if s.tag == null {
+		Console.write_line("snull")
+	}
+}
+test()
+`;
+		await build_and_check_output(input, "nullable_string_arg_vstruct", "snull");
+	});
+
+	test("null arg freed without leak (audit)", async () => {
+		const input = `
+func use = (string? s) {
+	if s == null {
+		Console.write_line("none")
+	}
+}
+func test = () {
+	use(null)
+}
+test()
+Console.write_line("done")
+`;
+		await build_and_check_output(input, "nullable_string_arg_leak", "none\ndone");
+	});
+
+	test("defaulted nullable string field zeroes the pair (class + value struct)", async () => {
+		const input = `
+class Holder {
+	var string? tag = null
+}
+struct S {
+	var string? tag = null
+}
+func test = () {
+	var Holder h = Holder()
+	if h.tag == null {
+		Console.write_line("null")
+	}
+	h.tag = "x"
+	Console.write_line(h.tag)
+	h.tag = null
+	if h.tag == null {
+		Console.write_line("cleared")
+	}
+	var S s = S()
+	if s.tag == null {
+		Console.write_line("snull")
+	}
+}
+test()
+Console.write_line("done")
+`;
+		await build_and_check_output(
+			input,
+			"nullable_string_field_default",
+			"null\nx\ncleared\nsnull\ndone",
+		);
+	});
+});
+
 describe("nullable classes — declaration and codegen", () => {
 	test("var Box? a = null does not emit adr x0, null", () => {
 		const input = `

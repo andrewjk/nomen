@@ -929,6 +929,20 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 						access_func.params[i].node_type === "value"
 							? (access_func.params[i] as ValueNode).value
 							: "";
+					// A `null` literal arg to a fat `string` parameter: the
+					// checker rewrote the arg's type to the param's. Emit the
+					// zero pair — a bare `0` is a C type error against the
+					// nomen_string param.
+					if (
+						param_type.name === "string" &&
+						!param_type.is_view &&
+						!param_type.is_array &&
+						access_func.params[i].node_type === "value" &&
+						(access_func.params[i] as ValueNode).value === "null"
+					) {
+						status.code += `(nomen_string){0, 0}`;
+						continue;
+					}
 					// Also treat class_vars as struct/class args — ValueNode types
 					// inside monomorphized method bodies may still be unresolved
 					// generic param names (e.g. `T` instead of `Animal`).

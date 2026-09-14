@@ -399,12 +399,16 @@ export default function check_function_call(
 		// to the param's declared type so `get_struct_size` resolves
 		// correctly. Narrow to non-class structs — nullable CLASS params
 		// (`Box?`) have their own (pre-existing) call convention that doesn't
-		// need this.
+		// need this. A nullable `string` param is rewritten too: the fat
+		// pair ABI needs the arg to carry the param's type so both backends
+		// recognize it as a two-slot string arg (and lower the literal to
+		// the zero pair instead of a bare 0).
 		if (
 			func_param &&
 			func_param.type.is_nullable &&
 			!func_param.type.is_ref &&
 			!func_param.type.is_array &&
+			!func_param.type.is_view &&
 			param.node_type === "value" &&
 			(param as ValueNode).value === "null"
 		) {
@@ -413,7 +417,7 @@ export default function check_function_call(
 						(st) => st.name === func_param.type.name && !st.is_class && !st.is_simple_type,
 					)
 				: undefined;
-			if (s) {
+			if (s || func_param.type.name === "string") {
 				(param as ValueNode).type = func_param.type;
 			}
 		}

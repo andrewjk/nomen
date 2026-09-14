@@ -1603,9 +1603,20 @@ export default function build_assignment_node(
 				}
 
 				status.last_result_is_heap = false;
-				emit_rhs_value(node.right_value, nir_rhs, status);
-				if (!status.code.endsWith("\n")) {
-					status.code += "\n";
+				// A literal `null` RHS zeroes BOTH pair halves — its bare
+				// build leaves x0 = 0 with x1 (the len half) holding garbage,
+				// and the class-target strdup below would strlen(NULL).
+				const rhs_is_null_literal =
+					node.right_value.node_type === "value" &&
+					(node.right_value as ValueNode).value === "null";
+				if (rhs_is_null_literal) {
+					status.code += `mov x0, #0\n`;
+					status.code += `mov x1, #0\n`;
+				} else {
+					emit_rhs_value(node.right_value, nir_rhs, status);
+					if (!status.code.endsWith("\n")) {
+						status.code += "\n";
+					}
 				}
 				let rhs_is_heap = status.last_result_is_heap;
 				// A heap-owned string VARIABLE loads as a plain pair with no
@@ -1620,6 +1631,7 @@ export default function build_assignment_node(
 					node.right_value.node_type === "value" ? (node.right_value as ValueNode) : undefined;
 				const rhs_heap_local =
 					!rhs_is_heap &&
+					!rhs_is_null_literal &&
 					!!rhs_value_node &&
 					typeof rhs_value_node.value === "string" &&
 					rhs_value_node.type?.name === "string" &&
@@ -1628,7 +1640,10 @@ export default function build_assignment_node(
 					emit_strdup(status);
 					rhs_is_heap = true;
 				}
-				if (is_class_target && !rhs_is_heap) {
+				if (rhs_is_null_literal) {
+					// A null pair stores raw — no dup, nothing owned (and the
+					// destroy-side free(NULL) is a no-op).
+				} else if (is_class_target && !rhs_is_heap) {
 					emit_strdup(status);
 				}
 				mark_moved_if_struct(node.right_value, status);

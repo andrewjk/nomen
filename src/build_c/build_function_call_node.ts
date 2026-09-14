@@ -77,6 +77,22 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			continue;
 		}
 
+		// A `null` literal arg to a fat `string` parameter (`Holder(null)`
+		// where the field is `string?`): the checker rewrote the arg's type
+		// to the param's, so this is recognized here. The param is a
+		// nomen_string struct — a bare `0` is a C type error — so emit the
+		// zero pair (NULL ptr, len 0).
+		if (
+			param_type.name === "string" &&
+			!param_type.is_view &&
+			!param_type.is_array &&
+			node.params[i].node_type === "value" &&
+			(node.params[i] as ValueNode).value === "null"
+		) {
+			status.code += `(nomen_string){0, 0}`;
+			continue;
+		}
+
 		// An `Array<T>` argument that is a heap `struct Array_<T>*` value (a
 		// `heap_array_vars` local or another `Array<T>` param — the type carries
 		// `is_array_heap`) must be forwarded directly: `ref` Array<T> params
