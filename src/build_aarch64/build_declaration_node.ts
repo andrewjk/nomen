@@ -47,6 +47,7 @@ import {
 	mark_heap_string,
 	mark_moved_if_struct,
 	is_field_struct_borrow,
+	set_trait_class_local,
 	track_struct_decl,
 } from "./utils/auto_destroy.ts";
 import { build_swap_params } from "./utils/build_swap.ts";
@@ -945,7 +946,7 @@ export default function build_declaration_node(
 			// pointer to the heap instance (not the inline struct), so it can
 			// be reassigned to a different conforming class. Malloc the
 			// instance, store the pointer, and run the constructor into it.
-			// Track in trait_class_locals so method dispatch dereferences the
+			// Track in trait_class_frames so method dispatch dereferences the
 			// stored pointer to reach the vtable. The instance is anchored
 			// with destroy_type = trait name, so every cleanup path
 			// (scope-exit / return / break) reclaims it via the trait's
@@ -953,8 +954,9 @@ export default function build_declaration_node(
 			// differ from the initializer's after reassignment, so destroy
 			// must dispatch polymorphically.
 			if (concrete.is_class) {
-				if (!status.trait_class_locals) status.trait_class_locals = new Map();
-				status.trait_class_locals.set(node.name, node.type.name);
+				// Scope-keyed trait record: class-backed pointer storage (see
+				// set_trait_class_local / trait_class_frames).
+				set_trait_class_local(status, node.name, node.type.name);
 				const struct_size = get_struct_size(concrete.name, status);
 				if (status.function_return_label) {
 					const offset = allocate_stack_space(status, 8);
@@ -995,8 +997,12 @@ export default function build_declaration_node(
 			// trait so method/field accesses still dispatch through the
 			// vtable) and record it with the concrete type name so
 			// break/continue cleanup (emit_cleanup_to_loop_depth) destroys it
-			// correctly too.
+			// correctly too. The storage is INLINE (a value struct, not a
+			// class pointer), so record a null binding: it must BLOCK any
+			// enclosing class-backed binding for this name, or dispatch would
+			// dereference the inline struct's first field as a vtable pointer.
 			status.scoped_declarations.push(node);
+			set_trait_class_local(status, node.name, null);
 			if (struct_needs_destroy(concrete, status)) {
 				track_struct_decl(status, node.name, concrete.name, undefined, node.type.is_nullable);
 			}
@@ -1042,7 +1048,7 @@ export default function build_declaration_node(
 	// pointer dispatched through the trait vtable. The
 	// ClassBuffer<Trait> slot already stores a correct vtable-bearing
 	// class pointer, so dispatch works once the local is tracked in
-	// trait_class_locals (build_access_node dereferences [&local] to
+	// trait_class_frames (build_access_node dereferences [&local] to
 	// reach the instance whose vtable lives at offset 0). Ownership
 	// follows the callee's return convention: a `move out T` method
 	// (`owned_return`, e.g. `list.pop()`) transfers ownership (anchor
@@ -1056,8 +1062,10 @@ export default function build_declaration_node(
 		(node.value as AccessNode).access.node_type === "access_func"
 	) {
 		const inner = (node.value as AccessNode).access as AccessFunctionCallNode;
-		if (!status.trait_class_locals) status.trait_class_locals = new Map();
-		status.trait_class_locals.set(node.name, node.type.name);
+		// Scope-keyed trait record: the callee's vtable-bearing class pointer
+		// is pointer storage, so dispatch must dereference (see
+		// set_trait_class_local).
+		set_trait_class_local(status, node.name, node.type.name);
 		if (status.function_return_label) {
 			const offset = allocate_stack_space(status, 8);
 			status.stack_offsets!.set(node.name, offset);

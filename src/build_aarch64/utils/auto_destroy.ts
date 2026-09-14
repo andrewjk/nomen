@@ -114,6 +114,13 @@ export function enter_scope_frame(status: BuildStatus): DeclarationNode[] {
 	status.register_allocations = status.register_allocations
 		? new Map(status.register_allocations)
 		: undefined;
+	// trait_class_frames joins the copy-on-enter group: a trait-typed local
+	// bound inside the frame must not leak its binding past the frame, and a
+	// class-backed binding from an enclosing scope must stay visible inside.
+	if (!status.trait_class_frames) status.trait_class_frames = [new Map()];
+	status.trait_class_frames.push(
+		new Map(status.trait_class_frames[status.trait_class_frames.length - 1]),
+	);
 	return old;
 }
 
@@ -121,6 +128,7 @@ export function enter_scope_frame(status: BuildStatus): DeclarationNode[] {
 export function exit_scope_frame(status: BuildStatus, old: DeclarationNode[]) {
 	status.outer_scope_declarations?.pop();
 	status.scoped_declarations = old;
+	status.trait_class_frames?.pop();
 	const saved_offsets = status.stack_offsets_frames?.pop();
 	if (saved_offsets) status.stack_offsets = saved_offsets;
 	const saved_allocs = status.register_allocations_frames?.pop();
@@ -131,6 +139,32 @@ export function exit_scope_frame(status: BuildStatus, old: DeclarationNode[]) {
  *  the current (innermost) frame last — matching fall-through cleanup order. */
 export function all_scope_frames(status: BuildStatus): DeclarationNode[][] {
 	return [...(status.outer_scope_declarations ?? []), status.scoped_declarations ?? []];
+}
+
+/**
+ * Record a trait-typed local's concrete storage in the CURRENT scope frame
+ * (`name → trait` for class-backed pointer storage, `null` for inline
+ * value-struct storage). Scope-keyed, unlike the body-global name map this
+ * replaces: a binding written here dies with the frame, so a same-named
+ * variable in a sibling or shadowing scope can never inherit it (a stale
+ * entry used to make dispatch dereference an inline struct's first field
+ * as a vtable pointer — silent runtime corruption).
+ */
+export function set_trait_class_local(status: BuildStatus, name: string, trait: string | null) {
+	if (!status.trait_class_frames) status.trait_class_frames = [new Map()];
+	status.trait_class_frames[status.trait_class_frames.length - 1].set(name, trait);
+}
+
+/**
+ * The trait shim backing `name`'s current binding, or undefined when the
+ * name is unbound or bound to non-class-backed storage. Copy-on-enter
+ * frames mean the innermost frame already carries every enclosing scope's
+ * bindings, so a single lookup suffices.
+ */
+export function trait_class_for(status: BuildStatus, name: string): string | undefined {
+	const frames = status.trait_class_frames;
+	const trait = frames?.[frames.length - 1]?.get(name);
+	return typeof trait === "string" ? trait : undefined;
 }
 
 export function mark_heap_string(status: BuildStatus, name: string) {

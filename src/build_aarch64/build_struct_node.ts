@@ -253,10 +253,10 @@ function build_destroy_function(node: StructNode, func: FunctionNode, status: Bu
 	const old_scoped_declarations = status.scoped_declarations;
 
 	const old_heap_strings = status.heap_strings;
-	// trait_class_locals is name-keyed; reset per body so a trait-typed local
+	// trait_class_frames is scope-keyed; reset per body so a trait-typed local
 	// in one body cannot leak into later bodies (see build_function_node).
-	const old_trait_class_locals = status.trait_class_locals;
-	status.trait_class_locals = undefined;
+	const old_trait_class_frames = status.trait_class_frames;
+	status.trait_class_frames = undefined;
 	const old_heap_string_arrays = status.heap_string_arrays;
 	status.heap_string_arrays = undefined;
 	const old_heap_class_arrays = status.heap_class_arrays;
@@ -365,7 +365,7 @@ function build_destroy_function(node: StructNode, func: FunctionNode, status: Bu
 
 	status.scoped_declarations = old_scoped_declarations;
 	status.heap_strings = old_heap_strings;
-	status.trait_class_locals = old_trait_class_locals;
+	status.trait_class_frames = old_trait_class_frames;
 	status.heap_string_arrays = old_heap_string_arrays;
 	status.heap_class_arrays = old_heap_class_arrays;
 	status.heap_array_vars = old_heap_array_vars;
@@ -382,10 +382,10 @@ function build_auto_destroy_function(node: StructNode, status: BuildStatus) {
 	const old_scoped_declarations = status.scoped_declarations;
 
 	const old_heap_strings = status.heap_strings;
-	// trait_class_locals is name-keyed; reset per body so a trait-typed local
+	// trait_class_frames is scope-keyed; reset per body so a trait-typed local
 	// in one body cannot leak into later bodies (see build_function_node).
-	const old_trait_class_locals = status.trait_class_locals;
-	status.trait_class_locals = undefined;
+	const old_trait_class_frames = status.trait_class_frames;
+	status.trait_class_frames = undefined;
 	const old_heap_string_arrays = status.heap_string_arrays;
 	status.heap_string_arrays = undefined;
 	const old_heap_class_arrays = status.heap_class_arrays;
@@ -446,7 +446,7 @@ function build_auto_destroy_function(node: StructNode, status: BuildStatus) {
 
 	status.scoped_declarations = old_scoped_declarations;
 	status.heap_strings = old_heap_strings;
-	status.trait_class_locals = old_trait_class_locals;
+	status.trait_class_frames = old_trait_class_frames;
 	status.heap_string_arrays = old_heap_string_arrays;
 	status.heap_class_arrays = old_heap_class_arrays;
 	status.heap_array_vars = old_heap_array_vars;
@@ -755,10 +755,10 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 	const old_scoped_declarations = status.scoped_declarations;
 
 	const old_heap_strings = status.heap_strings;
-	// trait_class_locals is name-keyed; reset per body so a trait-typed local
+	// trait_class_frames is scope-keyed; reset per body so a trait-typed local
 	// in one body cannot leak into later bodies (see build_function_node).
-	const old_trait_class_locals = status.trait_class_locals;
-	status.trait_class_locals = undefined;
+	const old_trait_class_frames = status.trait_class_frames;
+	status.trait_class_frames = undefined;
 	const old_heap_string_arrays = status.heap_string_arrays;
 	status.heap_string_arrays = undefined;
 	const old_heap_class_arrays = status.heap_class_arrays;
@@ -1098,7 +1098,7 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 
 	status.scoped_declarations = old_scoped_declarations;
 	status.heap_strings = old_heap_strings;
-	status.trait_class_locals = old_trait_class_locals;
+	status.trait_class_frames = old_trait_class_frames;
 	status.heap_string_arrays = old_heap_string_arrays;
 	status.heap_class_arrays = old_heap_class_arrays;
 	status.heap_array_vars = old_heap_array_vars;
@@ -1134,10 +1134,10 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 
 		const old_scoped_declarations = status.scoped_declarations;
 		const old_heap_strings = status.heap_strings;
-		// trait_class_locals is name-keyed; reset per body so a trait-typed
+		// trait_class_frames is scope-keyed; reset per body so a trait-typed
 		// local in one monomorphized body cannot leak into later bodies.
-		const old_trait_class_locals = status.trait_class_locals;
-		status.trait_class_locals = undefined;
+		const old_trait_class_frames = status.trait_class_frames;
+		status.trait_class_frames = undefined;
 		const old_heap_string_arrays = status.heap_string_arrays;
 		status.heap_string_arrays = undefined;
 		const old_heap_class_arrays = status.heap_class_arrays;
@@ -1747,7 +1747,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 
 		status.scoped_declarations = old_scoped_declarations;
 		status.heap_strings = old_heap_strings;
-		status.trait_class_locals = old_trait_class_locals;
+		status.trait_class_frames = old_trait_class_frames;
 		status.heap_string_arrays = old_heap_string_arrays;
 		status.heap_class_arrays = old_heap_class_arrays;
 		status.heap_array_vars = old_heap_array_vars;

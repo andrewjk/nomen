@@ -41,6 +41,7 @@ import {
 	mark_anchor_destroy,
 	mark_moved_if_struct,
 	record_heap_string_field,
+	trait_class_for,
 } from "./utils/auto_destroy.ts";
 import { emit_index_address, emit_index_store, pointer_element_size } from "./utils/ptr_access.ts";
 import {
@@ -706,7 +707,10 @@ export default function build_assignment_node(
 					// initializer's after a prior reassignment — then builds the
 					// replacement and re-anchors it tagged with the trait name so
 					// every later cleanup path dispatches destroy polymorphically.
-					const trait_class_trait = status.trait_class_locals?.get(name);
+					// The trait comes from the name's scope-keyed binding
+					// (trait_class_frames), never a body-global map, so a
+					// same-named variable in another scope cannot inherit it.
+					const trait_class_trait = trait_class_for(status, name);
 					if (trait_class_trait !== undefined) {
 						const decl_frame = status.class_decl_frame?.get(name);
 						consume_anchor_slot(status, name);

@@ -195,13 +195,13 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	const old_heap_array_vars = status.heap_array_vars;
 	status.heap_array_vars = undefined;
 
-	// trait_class_locals is name-keyed like heap_strings and must be reset
-	// per function for the same reason: a trait-typed local named `v` in one
+	// trait_class_frames is scope-keyed per body and must not leak across
+	// functions for the same reason: a trait-typed local named `v` in one
 	// function (e.g. the monomorphized List<Trait>.copy from the core
 	// library) otherwise makes a LATER function's unrelated local named `v`
 	// dispatch-reclaim through Trait_destroy.
-	const old_trait_class_locals = status.trait_class_locals;
-	status.trait_class_locals = undefined;
+	const old_trait_class_frames = status.trait_class_frames;
+	status.trait_class_frames = undefined;
 
 	const old_moved: Set<string> | undefined = status.moved;
 	(status.moved as Set<string> | undefined) = undefined;
@@ -1144,7 +1144,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.heap_owned_string_arrays = old_heap_owned_string_arrays;
 	status.heap_class_arrays = old_heap_class_arrays;
 	status.heap_array_vars = old_heap_array_vars;
-	status.trait_class_locals = old_trait_class_locals;
+	status.trait_class_frames = old_trait_class_frames;
 	status.current_function_name = old_function_name;
 	status.stack_size = old_stack_size;
 	status.stack_offsets = old_stack_offsets;

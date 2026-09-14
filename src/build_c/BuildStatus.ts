@@ -190,22 +190,29 @@ export default interface BuildStatus {
 	 */
 	class_vars?: Set<string>;
 	/**
-	 * AARCH64-BACKEND ONLY. Trait-typed LOCAL variables whose concrete
-	 * storage is a `class` (e.g. `var Speaker s = Dog()` where Dog is a
-	 * class). Such a local stores a pointer to the heap-allocated instance
-	 * (not the inline struct value), so it can be reassigned to a different
-	 * conforming class (`s = Cat()`). Keyed by variable name → the trait
-	 * name; dispatch dereferences the stored pointer to reach the vtable,
-	 * and reassignment reclaims the displaced instance via the trait's
-	 * `<Trait>_destroy` shim + free.
+	 * AARCH64-BACKEND ONLY. Scope frames for trait-typed LOCAL variables
+	 * whose concrete storage matters to dispatch:
 	 *
-	 * The C backend does NOT use this map: its trait record lives on the
-	 * DeclarationNode (`trait_class_trait`), which is scope-correct — a
-	 * name-keyed body-global entry outlived the variable's scope and
-	 * poisoned same-named variables in sibling/shadowing scopes (emitting
+	 *  - `name → trait` — the local's concrete storage is a `class` instance
+	 *    (`var Speaker s = Dog()`): the slot holds a POINTER to the heap
+	 *    instance, so vtable dispatch must dereference it once, and
+	 *    reassignment reclaims the displaced instance via the trait's
+	 *    `<Trait>_destroy` shim + free.
+	 *  - `name → null` — a trait-typed local backed by inline (value-struct)
+	 *    storage exists in this frame under this name: it must BLOCK any
+	 *    inherited class-backed binding (an outer sibling's stale binding
+	 *    would deref the inline struct's first field as a vtable pointer).
+	 *
+	 * One frame per scope, copy-on-enter (see enter_scope_frame), so an
+	 * inner scope's re-binding dies with its frame and reads resolve to the
+	 * enclosing binding afterwards — the same treatment
+	 * `register_allocations` gets. The C backend does not use this: its
+	 * record lives on the DeclarationNode (`trait_class_trait`), which is
+	 * scope-correct by construction (a name-keyed body-global entry there
+	 * poisoned same-named variables in sibling/shadowing scopes, emitting
 	 * `<Trait>_destroy(v)` for int/string elements — invalid C).
 	 */
-	trait_class_locals?: Map<string, string>;
+	trait_class_frames?: Map<string, string | null>[];
 	/**
 	 * `ref` class parameters, emitted as double pointers (`struct T **`). The
 	 * call site passes the address of the caller's pointer slot so the callee

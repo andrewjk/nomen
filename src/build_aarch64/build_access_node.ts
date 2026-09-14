@@ -41,7 +41,7 @@ import build_nursery_spawn from "./build_nursery_spawn.ts";
 import { build_operand, tree_is_call_free } from "./build_operation_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free, emit_malloc, emit_strdup } from "./utils/audit.ts";
-import { all_scope_frames, mark_moved_if_struct } from "./utils/auto_destroy.ts";
+import { all_scope_frames, mark_moved_if_struct, trait_class_for } from "./utils/auto_destroy.ts";
 import { emit_index_address, pointer_element_size } from "./utils/ptr_access.ts";
 import {
 	is_auto_inline_method,
@@ -2991,7 +2991,12 @@ function build_access_method(
 				// instance pointer — dereference once so x9 holds the
 				// instance whose vtable lives at offset 0, matching how a
 				// trait param arrives (the pointer directly in its register).
-				if (status.trait_class_locals?.has(name)) {
+				// The decision reads the name's scope-keyed binding: a
+				// same-named sibling/shadowing local backed by inline value
+				// struct storage records a null binding that blocks the
+				// inherited one (dereferencing an inline struct's first field
+				// as a vtable pointer corrupts the dispatch).
+				if (trait_class_for(status, name) !== undefined) {
 					status.code += `ldr x9, [x9]\n`;
 					// The callee's self argument must likewise be the instance
 					// pointer, not &local. The target build left x0 = &local;

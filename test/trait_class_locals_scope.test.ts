@@ -1,6 +1,8 @@
 import { expect, describe, test } from "vite-plus/test";
 
+import build from "../src/build";
 import build_and_check_output from "./build_and_check_output";
+import check_output from "./check_output";
 import { parse_raw } from "./parse_with_imports";
 
 // trait_class_locals is name-keyed per-function state in both backends. A
@@ -151,6 +153,58 @@ pub func main = (Init init) {
 		const parsed = parse_raw(input);
 		expect(parsed.errors).toEqual([]);
 		await build_and_check_output(input, "trait_locals_shadowing", "inner\nbold\ndone\n", true);
+	});
+
+	// AARCH64-ONLY (the C backend cannot compile value-struct conformers as
+	// trait types yet — see FOLLOWUP.md). A class-backed trait local used to
+	// leave a name-keyed `trait_class_locals` entry behind when its scope
+	// ended; a same-named value-struct-backed trait local in a sibling scope
+	// then inherited it, and its method dispatch dereferenced the inline
+	// struct's first field as a vtable pointer — SIGSEGV at runtime.
+	// trait_class_frames ties the binding to its scope (null blocks the
+	// inherited class-backed deref), so each block dispatches correctly.
+	test("value-struct trait local after a same-named class-backed sibling (aarch64)", async () => {
+		const input = `
+import System
+
+trait Speak {
+	pub func speak = (self, out string)
+}
+
+class Dog : Speak {
+	pub func speak = (self, out string) {
+		return "woof"
+	}
+}
+
+struct Robot : Speak {
+	pub var int id = 0
+	pub func speak = (self, out string) {
+		return "beep"
+	}
+	pub func #init = (ref self) {
+	}
+}
+
+pub func main = (Init init) {
+	if true {
+		var Speak s = Dog()
+		Console.write("\\{s.speak()}\\n")
+	}
+	if true {
+		var Speak s = Robot()
+		Console.write("\\{s.speak()}\\n")
+	}
+	Console.write("done\\n")
+}
+`;
+		const parsed = parse_raw(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", platform: "macos", audit: true });
+		await check_output("trait_locals_value_struct_sibling", result, "woof\nbeep\ndone\n", {
+			arch: "aarch64",
+			audit: true,
+		});
 	});
 });
 

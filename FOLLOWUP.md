@@ -406,23 +406,6 @@ as no-initializer strings — emit `= {0, 0}` for a `null` initializer (and
 audit the reassign/free paths for the nullable case; the aarch64 backend
 stores a tagged pair, which is why the port only fails on C).
 
-## AARCH64: trait_class_locals is still a body-global name map
-
-The C backend's `<Trait>_destroy` poisoning was fixed by moving the trait
-record onto the DeclarationNode (`trait_class_trait`), which is
-scope-correct. The aarch64 backend keeps the name-keyed
-`status.trait_class_locals` map (reset per function body only), so the
-same stale-entry hazard lives on there in its two consumers: the
-reassignment path (build_assignment_node — destroys the displaced
-instance via the stale trait shim) and dispatch dereferencing
-(build_access_node). A trait-typed local's entry outlives its scope, so a
-same-named non-trait local in a sibling or shadowing scope can pick it
-up — on aarch64 this is silent runtime corruption rather than a compile
-error. The declaration-carried model is the proven fix shape (see
-test/trait_class_locals_scope.test.ts); porting it needs the aarch64
-access/assignment paths to resolve the owning declaration through its
-scope frames.
-
 ## Value-struct conformers are inconsistently accepted as trait types
 
 The checker rejects `value struct 'X' cannot be used as trait 'T'; declare
