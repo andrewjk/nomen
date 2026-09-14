@@ -323,8 +323,9 @@ export default function build_assignment_node(
 		// inherits the outer one's trait record.
 		const lhs_scope_hit = find_decl_in_c_scopes(status, lhs_name);
 		const lhs_decl = status.scoped_declarations.find((d) => d.name === lhs_name);
-		// class_vars persists across scopes (unlike scoped_declarations), so
-		// we can detect class vars from outer scopes too.
+		// class_vars is copy-on-enter per scope (enter_c_scope), so entries
+		// from enclosing scopes stay visible here, while a sibling scope's
+		// same-named entry never leaks in.
 		const lhs_in_class_vars = !!status.class_vars?.has(lhs_name);
 		const lhs_type = lhs_decl?.type || status.variable_types?.get(lhs_name);
 		const lhs_struct = lhs_type ? status.structs.find((s) => s.name === lhs_type.name) : null;

@@ -420,19 +420,27 @@ var BlockRule rule = HeadingRule()   // accepted (!)
 rule = QuoteRule()                    // ...
 ```
 
-- **aarch64** compiles and runs this correctly (reassignment re-tags the
-  slot).
-- **C** declares the local as the CONCRETE struct (`struct HeadingRule
-rule;` — the trait-tagged representation is skipped), so `rule =
-QuoteRule_init()` is a raw clang type error ("assigning to 'struct
-  HeadingRule' from incompatible type 'struct QuoteRule'").
+**Update (2026-09-14): the single-conformer LOCAL form now works on both
+backends** — aarch64 via inline storage with a scope-keyed dispatch-deref
+record (`trait_class_frames`), C via the concrete-struct declaration with
+`&local` vtable dispatch (`build_vtable_target`'s address path) and
+scope-correct `class_vars` (`class_vars_frames`, copy-on-enter in
+enter_c_scope). Covered by
+`trait_locals_value_struct_sibling` (test/trait_class_locals_scope.test.ts)
+on both backends.
 
-Two coherent fixes: reject the local uniformly (simplest — value structs
-cannot be trait-typed, period, matching the documented rule), or accept them
-uniformly (box value-struct conformers like aarch64 does, and teach the C
-backend the tagged representation). Either way the C concrete-struct
-specialization for trait-typed locals must only apply when the local is
-never reassigned to a different conformer.
+What remains open:
+
+- **Checker inconsistency**: locals are accepted while argument/field
+  positions reject value-struct conformers. Either reject the local
+  uniformly (simplest, matching the documented rule) or accept everywhere
+  (box conformers on C like aarch64's tagged representation).
+- **Cross-conformer reassignment** (`rule = QuoteRule()` where the slot
+  was sized by HeadingRule): C emits a raw struct assignment — a clang
+  type error today (which is at least loud). aarch64 bitwise-copies into
+  the initializer-sized slot, which silently corrupts when the new
+  conformer is larger. Both need a check-time rejection (or a
+  max-conformer-sized box) before this shape is sound.
 
 Found while probing the "func-typed struct fields → use a trait instead"
 story for the allmark port (value-struct conformers would make one-method

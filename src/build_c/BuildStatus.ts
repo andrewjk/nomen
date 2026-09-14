@@ -190,6 +190,18 @@ export default interface BuildStatus {
 	 */
 	class_vars?: Set<string>;
 	/**
+	 * Scope snapshots for `class_vars` (C backend): enter_c_scope pushes the
+	 * enclosing set and installs a COPY, leave_c_scope restores it — the
+	 * same copy-on-enter treatment the aarch64 backend gives
+	 * `stack_offsets_frames` / `trait_class_frames`. The set is name-keyed,
+	 * so without per-scope copies a class-backed local's entry outlived its
+	 * scope and poisoned a same-named variable in a sibling scope (e.g. a
+	 * `void *`-backed `var T s = Dog()` followed by a `struct Drone`-backed
+	 * `var T s = Drone()`: the sibling's vtable dispatch read the stale
+	 * entry and passed the struct by value where a pointer was expected).
+	 */
+	class_vars_frames?: Set<string>[];
+	/**
 	 * AARCH64-BACKEND ONLY. Scope frames for trait-typed LOCAL variables
 	 * whose concrete storage matters to dispatch:
 	 *

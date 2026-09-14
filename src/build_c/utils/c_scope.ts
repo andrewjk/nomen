@@ -12,12 +12,26 @@ export function enter_c_scope(status: BuildStatus): DeclarationNode[] {
 	const frame: DeclarationNode[] = [];
 	if (!status.c_scope_stack) status.c_scope_stack = [];
 	status.c_scope_stack.push(frame);
+	// class_vars joins the copy-on-enter group (mirroring the aarch64
+	// backend's stack_offsets_frames): the set is name-keyed, so a
+	// declaration inside this frame must not permanently overwrite an
+	// enclosing scope's entry, and a sibling scope must never inherit this
+	// frame's entries. Without the copy, a class-backed trait local's
+	// pointer-storage entry leaked into a same-named value-struct-backed
+	// sibling (`var T s = Dog()` then `var T s = Drone()`), whose vtable
+	// dispatch then passed the struct by value where its instance pointer
+	// was expected — a clang type error (or worse).
+	if (!status.class_vars_frames) status.class_vars_frames = [];
+	status.class_vars_frames.push(status.class_vars ?? new Set());
+	status.class_vars = new Set(status.class_vars ?? []);
 	return frame;
 }
 
 /** Pop the current scope frame from c_scope_stack (scope-exit counterpart to enter_c_scope). */
 export function leave_c_scope(status: BuildStatus) {
 	status.c_scope_stack?.pop();
+	const saved_class_vars = status.class_vars_frames?.pop();
+	if (saved_class_vars) status.class_vars = saved_class_vars;
 }
 
 /**
