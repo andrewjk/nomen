@@ -352,6 +352,15 @@ export default function build_assignment_node(
 		if (lhs_trait_class !== undefined && !node.operator) {
 			const rhs = node.right_value;
 			const rhs_is_bare_value = rhs.node_type === "value";
+			// Alias safety (two-tier trait copies): a slot that is itself an
+			// ALIAS of a class-backed trait local (`var Rule b = a`) owns
+			// nothing — reassignment overwrites the pointer without
+			// reclaiming (the source still owns the instance). And when THIS
+			// slot has live aliases, the displaced instance is still shared —
+			// skip the destroy (bounded leak) rather than dangle them.
+			const lhs_is_alias_copy = !!status.class_alias_vars?.has(lhs_name);
+			const lhs_has_alias = !!status.aliased_class_sources?.has(lhs_name);
+			const reclaim = !lhs_is_alias_copy && !lhs_has_alias;
 			// Compute a non-bare RHS into a temp first to avoid use-after-free
 			// when it references the LHS.
 			if (!rhs_is_bare_value) {
@@ -360,17 +369,21 @@ export default function build_assignment_node(
 				status.code += `void *${temp} = (void *)`;
 				emit_rhs_value(rhs, nir_rhs, status);
 				status.code += `;\n`;
-				if (lhs_type?.is_nullable) {
-					status.code += `if (${lhs_name}) { ${lhs_trait_class}_destroy(${lhs_name}); free(${lhs_name}); }\n`;
-				} else {
-					status.code += `${lhs_trait_class}_destroy(${lhs_name}); free(${lhs_name});\n`;
+				if (reclaim) {
+					if (lhs_type?.is_nullable) {
+						status.code += `if (${lhs_name}) { ${lhs_trait_class}_destroy(${lhs_name}); free(${lhs_name}); }\n`;
+					} else {
+						status.code += `${lhs_trait_class}_destroy(${lhs_name}); free(${lhs_name});\n`;
+					}
 				}
 				status.code += `${lhs_name} = ${temp};\n`;
 			} else {
-				if (lhs_type?.is_nullable) {
-					status.code += `if (${lhs_name}) { ${lhs_trait_class}_destroy(${lhs_name}); free(${lhs_name}); }\n`;
-				} else {
-					status.code += `${lhs_trait_class}_destroy(${lhs_name}); free(${lhs_name});\n`;
+				if (reclaim) {
+					if (lhs_type?.is_nullable) {
+						status.code += `if (${lhs_name}) { ${lhs_trait_class}_destroy(${lhs_name}); free(${lhs_name}); }\n`;
+					} else {
+						status.code += `${lhs_trait_class}_destroy(${lhs_name}); free(${lhs_name});\n`;
+					}
 				}
 				status.code += `${lhs_name} = (void *)`;
 				emit_rhs_value(rhs, nir_rhs, status);

@@ -28,7 +28,7 @@ import build_range_node, { evaluate_constant } from "./build_range_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import { emit_expr_from_nir, nir_array_elements } from "./emit_nir.ts";
 import c_function_name from "./utils/c_function_name.ts";
-import { splice_decl_from_c_scopes } from "./utils/c_scope.ts";
+import { find_decl_in_c_scopes, splice_decl_from_c_scopes } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import { c_materialize_view_string, is_view_value } from "./utils/view_value.ts";
@@ -144,6 +144,18 @@ export default function build_declaration_node(
 			);
 			if (val_struct) {
 				concrete_struct_name = val_struct.name;
+			} else if (node.value.node_type === "value") {
+				// `var Rule r2 = r` — a copy of another trait slot: the source's
+				// declaration carries its concrete backing (value-struct inline
+				// storage). The class-backed source case is handled by its own
+				// branch below (the copy becomes a pointer alias).
+				const src_hit = find_decl_in_c_scopes(status, (node.value as ValueNode).value);
+				const src_concrete = src_hit
+					? src_hit.frame[src_hit.index].trait_concrete_struct
+					: undefined;
+				if (src_concrete) {
+					concrete_struct_name = src_concrete;
+				}
 			}
 		}
 		// A trait-typed local whose concrete storage is a `class` holds a
@@ -449,6 +461,9 @@ export default function build_declaration_node(
 		} else if (is_class_type) {
 			status.code += `struct ${mono_name} *${safe_name}`;
 		} else if (concrete_struct_name) {
+			// Carry the concrete backing on the declaration so COPIES of this
+			// slot (`var Rule r3 = r2`) resolve the same struct.
+			node.trait_concrete_struct = concrete_struct_name;
 			status.code += `struct ${concrete_struct_name} ${safe_name}`;
 		} else if (mono_struct) {
 			status.code += `struct ${mono_name} ${safe_name}`;

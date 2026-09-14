@@ -27,7 +27,7 @@ import {
 	is_owning_struct_type_requiring_move,
 } from "./utils/ownership.ts";
 import reject_pointer_type from "./utils/reject_pointer_type.ts";
-import { trait_slot_conformer_of_decl } from "./utils/trait_slot.ts";
+import { is_trait_type, trait_slot_conformer_of_decl } from "./utils/trait_slot.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 import {
@@ -215,6 +215,34 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 					decl.value.start,
 					"declaration",
 				);
+			}
+
+			// Two-tier trait rule: a trait-typed local initialized from
+			// ANOTHER trait-typed local whose slot is CLASS-backed (no
+			// value-struct binding) is rejected. The copy would need
+			// non-owning alias semantics over the shared heap instance,
+			// which the backends don't provide for trait slots — the original
+			// binding IS the shareable reference. Value-struct slot copies
+			// are fine (inline bytes; the copy re-binds the same conformer).
+			if (
+				declaration === "var" &&
+				is_trait_type(decl.type.name, status) &&
+				!decl.type.is_array &&
+				!decl.type.is_ref &&
+				!decl.type.is_view &&
+				decl.value.node_type === "value"
+			) {
+				const src_name = value_from_value_node(decl.value);
+				const src_sv = /^[A-Za-z_][A-Za-z0-9_]*$/.test(src_name ?? "")
+					? status.values.findLast((v) => v.name === src_name)
+					: undefined;
+				if (src_sv && !src_sv.trait_slot_conformer && src_sv.type.name === decl.type.name) {
+					add_error(
+						status,
+						`a class-backed trait local cannot be copied — reassign through the original binding or declare a new class instance`,
+						decl.value.start,
+					);
+				}
 			}
 
 			if (!decl.type.name) {

@@ -70,7 +70,11 @@ Reassignment must therefore reuse the SAME conformer — storing a different
 value-struct conformer, a class instance, or anything whose conformer isn't
 statically known is a check error (`value-struct trait slot 'r' is bound to
 'HeadingV' and cannot hold …`), because the bytes wouldn't fit or wouldn't
-carry the right identity.
+carry the right identity. Copies of the slot (`var Rule r2 = r`) re-bind
+the same conformer and copy inline. Copying a CLASS-backed slot (`var Rule
+b = a`, a initialized from a class) is rejected: it would need non-owning
+alias semantics over the shared heap instance, which trait slots don't
+provide — the original binding is the shareable reference.
 
 **Tier 2 — everything that crosses a call or container boundary requires a
 class.** A trait-typed parameter, a class's trait field, a collection

@@ -56,6 +56,14 @@ export default class DeclarationNode extends BaseNode {
 	 *  elements — invalid C). Set at build time by the C declaration builder;
 	 *  consumed by build_auto_free and the reassignment path. */
 	trait_class_trait?: string;
+	/** Concrete struct name for a trait-typed local whose slot holds INLINE
+	 *  value-struct storage (`var Rule r = HeadingV()`): copies of the slot
+	 *  (`var Rule r2 = r`) must declare the SAME concrete struct — the trait
+	 *  typedef is an empty struct and cannot hold the value. Carried on THIS
+	 *  declaration (scope-correct, same rationale as trait_class_trait). Set
+	 *  at build time by the C declaration builder; consumed when building
+	 *  another declaration initialized from this variable. */
+	trait_concrete_struct?: string;
 	constructor(
 		start: number,
 		visibility: "pub" | "private",

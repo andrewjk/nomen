@@ -24,7 +24,11 @@ import {
 	is_owning_struct_type,
 	is_owning_struct_type_requiring_move,
 } from "./utils/ownership.ts";
-import { trait_conformer_of_value } from "./utils/trait_slot.ts";
+import {
+	is_trait_type,
+	trait_conformer_of_value,
+	value_struct_trait_error,
+} from "./utils/trait_slot.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 import {
@@ -176,6 +180,31 @@ export default function check_assignment_node(
 				add_error(
 					status,
 					`value-struct trait slot '${left_value_name}' is bound to '${bound}' and cannot hold ${rhs_desc}; declare a class`,
+					assign.right_value.start,
+				);
+				return false;
+			}
+		} else if (
+			!is_compound &&
+			!left_value.trait_slot_conformer &&
+			assign.left_value.node_type === "value" &&
+			is_trait_type(left_value.type.name, status) &&
+			!left_value.type.is_array &&
+			!left_value.type.is_ref
+		) {
+			// A trait-typed local WITHOUT a value-struct binding holds the
+			// pointer representation (a class instance). Storing a
+			// value-struct conformer into it would save a pointer to a
+			// dying stack temporary — reject.
+			const rhs_conformer = trait_conformer_of_value(
+				assign.right_value,
+				left_value.type.name!,
+				status,
+			);
+			if (rhs_conformer) {
+				add_error(
+					status,
+					value_struct_trait_error(rhs_conformer, left_value.type.name!),
 					assign.right_value.start,
 				);
 				return false;

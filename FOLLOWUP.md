@@ -393,6 +393,33 @@ defaulted fields — constructor, factory, and variable bases — but:
   override itself; promotion would then conservatively keep it in memory —
   sound, just not optimal.
 
+## Trait dispatch through container elements (found fixing trait-slot copies, pre-existing)
+
+While fixing value-struct trait-slot copies, two adjacent PRE-EXISTING
+holes surfaced in the shape `var Rule p = rules.at(0)` (trait-typed local
+borrowed from a container element) and its surroundings:
+
+- **C: trait dispatch on a container-element receiver takes `&` of an
+  rvalue.** `rules.at(0).test("# h")` (element type a class) emits
+  `HeadingC_test(&Array_HeadingC_at(rules, 0L), …)` — `&` of the at()
+  return value, which is already the element POINTER. clang rejects it
+  ("cannot take the address of an rvalue"). The vtable-target address path
+  (`build_vtable_target`'s fallback) must not `&` an lvalue that is itself
+  a pointer (an `.at`/`.first` result is `struct T *`, not a
+  `struct T`).
+- **aarch64: reassigning a borrowed trait slot frees the container's
+  element.** `var Rule p = rules.at(0); p = HeadingC()` runs the
+  trait-shim destroy + free on p's old value (the element the container
+  still owns) at the reassignment — the container's element is then
+  use-after-free'd by the next `.at(0)`. The C side now guards this
+  (build_assignment_node skips the trait-shim reclaim when the slot is in
+  `class_alias_vars` — set by the borrow-return initializer — or has live
+  aliases); aarch64's trait-class reassignment path (build_assignment_node
+  ~line 713) needs the same `class_alias_vars` / borrow-record guard.
+
+Repro (both): a `trait Rule`, an `Array<HeadingC>` (class conformer), one
+element, `var Rule p = rules.at(0)`.
+
 ## AARCH64 inline splices: bodies with calls are refused, root miscompile unsolved
 
 Auto method inline (ASM_PLAN_7 tranche 7) ships default ON but LEAF-ONLY

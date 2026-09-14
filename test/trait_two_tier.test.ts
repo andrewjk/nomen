@@ -63,6 +63,23 @@ test()
 		await build_and_check_output(input, "two_tier_same_conformer", "heading");
 	});
 
+	test("value-struct trait slot copies and re-binds the same conformer", async () => {
+		const input =
+			PRELUDE +
+			`
+func test = () {
+	var Rule r = HeadingV()
+	var Rule r2 = r
+	r2 = HeadingV()
+	if r2.test("# h") {
+		Console.write_line("heading")
+	}
+}
+test()
+`;
+		await build_and_check_output(input, "two_tier_value_copy", "heading");
+	});
+
 	test("conformer propagates through a trait-typed copy for rejection", () => {
 		// r2 inherits r's bound conformer, so storing a different conformer
 		// through r2 must be rejected exactly like through r.
@@ -203,6 +220,34 @@ test()
 func try_rule = (Rule rule, string line, out bool) => rule.test(line)
 func test = () {
 	const bool b = try_rule(HeadingV(), "# h")
+}
+test()
+`,
+			"value struct 'HeadingV' cannot be used as trait 'Rule'",
+		);
+	});
+
+	test("class-backed trait slot copy is rejected", () => {
+		expect_error(
+			PRELUDE +
+				`
+func test = () {
+	var Rule a = HeadingC()
+	var Rule b = a
+}
+test()
+`,
+			"class-backed trait local cannot be copied",
+		);
+	});
+
+	test("storing a value struct into a class-backed trait slot is rejected", () => {
+		expect_error(
+			PRELUDE +
+				`
+func test = () {
+	var Rule b = HeadingC()
+	b = HeadingV()
 }
 test()
 `,
