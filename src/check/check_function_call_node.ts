@@ -30,11 +30,30 @@ import { is_overloaded, mangled_label } from "./utils/function_overload.ts";
 import { is_class_type, is_owning_struct_type_requiring_move } from "./utils/ownership.ts";
 import type_from_value from "./utils/type_from_value.ts";
 
+/**
+ * Find a plain (free) function by name. `status.functions` also holds every
+ * struct/trait METHOD (check_function_node registers them all), so a plain
+ * `func_call` name must prefer the non-method match: a method named like a
+ * free function would otherwise steal the call and mismatch on its `self` +
+ * receiver params (e.g. an `Arena.free(ref self, ArenaRef<T>)` method vs the
+ * extern `free(uint64)` that `Buffer`'s `#destroy` calls). Methods are
+ * identified by their leading `self` parameter; the fallback keeps the old
+ * resolution for a name that only exists as a method (a call that is already
+ * an error either way).
+ */
+function find_free_function(status: CheckStatus, name: string): FunctionNode | undefined {
+	const is_method = (f: FunctionNode) => !!f.params?.[0]?.is_self_param;
+	return (
+		status.functions.findLast((f) => f.name === name && !is_method(f)) ??
+		status.functions.findLast((f) => f.name === name)
+	);
+}
+
 export default function check_function_call_node(
 	node: FunctionCallNode,
 	status: CheckStatus,
 ): boolean {
-	let func = status.functions.findLast((f) => f.name === node.name);
+	let func = find_free_function(status, node.name);
 
 	if (!func) {
 		const struct = status.structs.findLast((s) => s.name === node.name);
@@ -1069,7 +1088,7 @@ function resolve_free_calls_in_node(node: BaseNode | undefined | null, status: C
 	const any_node = node as any;
 	if (node.node_type === "func_call" && !any_node.resolved_function) {
 		const name = (node as import("../nodes/FunctionCallNode.ts").default).name;
-		const func = status.functions.findLast((f) => f.name === name);
+		const func = find_free_function(status, name);
 		if (func) set_resolved_function(node as import("../nodes/FunctionCallNode.ts").default, func);
 	}
 	if (any_node.statements && Array.isArray(any_node.statements)) {
@@ -1287,7 +1306,7 @@ function rederive_nursery_spawn_annotations(fc: AccessFunctionCallNode, status: 
 	// declared return type regardless of check order).
 	let return_type = call.type;
 	if (!return_type?.name) {
-		const func = status.functions.findLast((f) => f.name === call.name);
+		const func = find_free_function(status, call.name);
 		if (func) {
 			return_type = func.return_type;
 			call.type = func.return_type;
