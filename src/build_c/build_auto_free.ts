@@ -175,10 +175,13 @@ export function free_scoped_declarations(
 		// A trait-typed local whose concrete storage is a class holds a
 		// pointer to a heap instance whose concrete type may change across
 		// reassignment. Reclaim it via the trait's `<Trait>_destroy` shim
-		// (dispatches through the vtable's destroy slot) then free. This
-		// must precede the class_var / trait-typed-concrete branches below,
-		// which would assume a fixed concrete type.
-		const trait_class_trait = status.trait_class_locals?.get(dec.name);
+		// (dispatches through the vtable's destroy slot) then free. The trait
+		// is recorded on the declaration itself (not a name-keyed map), so a
+		// same-named variable in a sibling or shadowing scope can never
+		// inherit the binding. This must precede the class_var /
+		// trait-typed-concrete branches below, which would assume a fixed
+		// concrete type.
+		const trait_class_trait = dec.trait_class_trait;
 		if (trait_class_trait !== undefined && !is_destructured_field_access) {
 			if (!commented) {
 				status.code += "\n// Auto-free\n";

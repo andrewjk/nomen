@@ -47,6 +47,15 @@ export default class DeclarationNode extends BaseNode {
 	 *  storage at build time. Set at check time by check_function_call;
 	 *  consumed by the build backends' declaration emitters. */
 	is_heap_array_copy?: boolean;
+	/** Trait name for a trait-typed local whose concrete storage is a class
+	 *  instance (`var Speaker s = Dog()`): the C backend reclaims it at scope
+	 *  exit / reassignment through the `<Trait>_destroy` vtable shim. Carried
+	 *  on THIS declaration rather than a body-global name map so a same-named
+	 *  variable in a sibling or shadowing scope can never inherit the binding
+	 *  (a stale name-keyed entry emitted `<Trait>_destroy(v)` for int/string
+	 *  elements — invalid C). Set at build time by the C declaration builder;
+	 *  consumed by build_auto_free and the reassignment path. */
+	trait_class_trait?: string;
 	constructor(
 		start: number,
 		visibility: "pub" | "private",

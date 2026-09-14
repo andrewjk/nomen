@@ -76,6 +76,82 @@ pub func main = (Init init) {
 		expect(parsed.errors).toEqual([]);
 		await build_and_check_output(input, "trait_locals_scope_param", "2\ndone\n", true);
 	});
+
+	// The trait record must be tied to the DECLARATION, not a body-global
+	// name map: a trait-typed local's binding used to outlive its scope, so
+	// a same-named string local in a SIBLING scope was reclaimed with
+	// `Rule_destroy(v)` — invalid C (`passing 'nomen_string' to parameter of
+	// incompatible type 'void *'`).
+	test("same-named string local in a sibling scope is not poisoned", async () => {
+		const input = `
+import System
+
+trait Rule {
+	pub func name = (self, out string)
+}
+
+class TextRule : Rule {
+	pub func name = (self, out string) {
+		return "text"
+	}
+}
+
+pub func main = (Init init) {
+	if true {
+		var Rule v = TextRule()
+		Console.write("\\{v.name()}\\n")
+	}
+	if true {
+		var string v = "str"
+		Console.write("\\{v}\\n")
+	}
+	Console.write("done\\n")
+}
+`;
+		const parsed = parse_raw(input);
+		expect(parsed.errors).toEqual([]);
+		await build_and_check_output(input, "trait_locals_sibling_scope", "text\nstr\ndone\n", true);
+	});
+
+	// Shadowing: an OUTER trait-typed local live across an inner same-named
+	// non-trait declaration. The inner scope's reclaim must not free the
+	// outer instance, and the outer local must still be reclaimed (and
+	// re-destroyed on reassignment) through its own trait shim.
+	test("inner same-named local shadows an outer trait local", async () => {
+		const input = `
+import System
+
+trait Rule {
+	pub func name = (self, out string)
+}
+
+class TextRule : Rule {
+	pub func name = (self, out string) {
+		return "text"
+	}
+}
+
+class BoldRule : Rule {
+	pub func name = (self, out string) {
+		return "bold"
+	}
+}
+
+pub func main = (Init init) {
+	var Rule v = TextRule()
+	if true {
+		var string v = "inner"
+		Console.write("\\{v}\\n")
+	}
+	v = BoldRule()
+	Console.write("\\{v.name()}\\n")
+	Console.write("done\\n")
+}
+`;
+		const parsed = parse_raw(input);
+		expect(parsed.errors).toEqual([]);
+		await build_and_check_output(input, "trait_locals_shadowing", "inner\nbold\ndone\n", true);
+	});
 });
 
 test("Map<string,string> rehash next to a trait list", async () => {

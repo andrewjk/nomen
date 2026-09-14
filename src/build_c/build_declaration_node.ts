@@ -163,8 +163,11 @@ export default function build_declaration_node(
 		) {
 			if (!status.class_vars) status.class_vars = new Set();
 			status.class_vars.add(safe_name);
-			if (!status.trait_class_locals) status.trait_class_locals = new Map();
-			status.trait_class_locals.set(safe_name, node.type.name);
+			// Record the trait on the declaration itself (not a name-keyed map):
+			// auto_free reclaims THIS declaration through the trait's destroy
+			// shim, so a same-named variable in another scope can never inherit
+			// the binding (see DeclarationNode.trait_class_trait).
+			node.trait_class_trait = node.type.name;
 			if (node.type?.name) {
 				if (!status.variable_types) status.variable_types = new Map();
 				status.variable_types.set(safe_name, node.type);
@@ -190,8 +193,8 @@ export default function build_declaration_node(
 		// and variable_types (so accesses are recognized as trait
 		// dispatch). Ownership follows the callee's return convention: a
 		// `move out T` method (`owned_return`, e.g. `list.pop()`) transfers
-		// ownership (destroy + free at scope exit via trait_class_locals);
-		// a plain borrow (e.g. `.at(i)`) does not (the container still
+		// ownership (destroy + free at scope exit via the declaration's
+		// trait record); a plain borrow (e.g. `.at(i)`) does not (the container still
 		// owns the element), so the local is recorded as an alias and
 		// never freed.
 		const val_is_trait_method_return =
@@ -203,8 +206,9 @@ export default function build_declaration_node(
 			const inner = (node.value as AccessNode).access as AccessFunctionCallNode;
 			if (!status.class_vars) status.class_vars = new Set();
 			status.class_vars.add(safe_name);
-			if (!status.trait_class_locals) status.trait_class_locals = new Map();
-			status.trait_class_locals.set(safe_name, node.type.name);
+			// Same declaration-carried trait record as above: ownership (destroy
+			// + free at scope exit) rides on this node, not a body-global map.
+			node.trait_class_trait = node.type.name;
 			if (node.type?.name) {
 				if (!status.variable_types) status.variable_types = new Map();
 				status.variable_types.set(safe_name, node.type);

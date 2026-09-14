@@ -317,6 +317,11 @@ export default function build_assignment_node(
 	// (removed from scoped_declarations so it won't be double-freed).
 	if (!node.operator && node.left_value.node_type === "value") {
 		const lhs_name = (node.left_value as ValueNode).value;
+		// Resolve the LHS's declaration through every scope frame (innermost
+		// first) so a trait-typed local declared in an OUTER scope is found
+		// from inside a loop/if body, and a shadowing inner declaration never
+		// inherits the outer one's trait record.
+		const lhs_scope_hit = find_decl_in_c_scopes(status, lhs_name);
 		const lhs_decl = status.scoped_declarations.find((d) => d.name === lhs_name);
 		// class_vars persists across scopes (unlike scoped_declarations), so
 		// we can detect class vars from outer scopes too.
@@ -329,8 +334,12 @@ export default function build_assignment_node(
 		// reclaims its old instance via the trait's `<Trait>_destroy` shim
 		// (the concrete type at runtime may differ from the initializer's
 		// after a prior reassignment), then stores the new pointer. The RHS
-		// is cast to `void *` so any conforming class pointer assigns.
-		const lhs_trait_class = status.trait_class_locals?.get(lhs_name);
+		// is cast to `void *` so any conforming class pointer assigns. The
+		// trait name comes from the LHS's own declaration (scope-correct),
+		// never a body-global name map.
+		const lhs_trait_class = lhs_scope_hit
+			? lhs_scope_hit.frame[lhs_scope_hit.index].trait_class_trait
+			: undefined;
 		if (lhs_trait_class !== undefined && !node.operator) {
 			const rhs = node.right_value;
 			const rhs_is_bare_value = rhs.node_type === "value";

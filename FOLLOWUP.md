@@ -295,6 +295,18 @@ does UTF-8 width math plus octal escapes, and StringBuilder's raw C
 bodies are natively fat (NATIVELY_FAT_PREFIXES) so embedded NULs survive
 `to_string`/`append_string` on C. What remains:
 
+- **Source-level hex escapes are emitted into C verbatim** (found
+  compiling the allmark port's 2125-entry entity table, whose literals
+  are full of `\x01` separators): `escape_c_string` (build_value_node)
+  intentionally leaves source escapes untouched, so `"\x01AMP"` reaches
+  C as `"\x01AMP"` — C's `\x` consumes ALL following hex digits
+  (`\x01A` = 0x1A, longer runs exceed 255) and clang rejects the TU with
+  `hex escape sequence out of range`. Fix direction: when emitting a
+  string literal that contains a `\x` escape (or any byte-level escape),
+  either re-encode those escapes with exactly-two-digit form split from
+  adjacent hex-digit characters (`"\x01" "AMP"`), or emit them as octal
+  (`\001`, self-terminating). The same greed applies to octal escapes
+  followed by a `0`–`7` digit.
 - **General NUL beyond StringBuilder.** The thin raw-string adapter still
   synthesizes length via `strlen`, so any OTHER raw-C function returning
   bytes with embedded NULs (File reads, FFI) truncates the same way.
@@ -380,6 +392,36 @@ defaulted fields — constructor, factory, and variable bases — but:
   matters if an override value reads something whose last use is the
   override itself; promotion would then conservatively keep it in memory —
   sound, just not optimal.
+
+## Nullable string initialized to null emits invalid C
+
+`var string? frontmatter = null` (allmark port's `src/parse.nm`) emits
+`nomen_string frontmatter = 0;` on the C backend — clang rejects it
+(`initializing 'nomen_string' with an expression of incompatible type
+'int'`). The declaration path only zero-initializes non-nullable strings
+(`= {0, 0}` in build_declaration_node's no-value branch); a nullable
+string whose initializer is literally `null` falls through and emits a
+bare `0`. Fix direction: nullable string locals need the same treatment
+as no-initializer strings — emit `= {0, 0}` for a `null` initializer (and
+audit the reassign/free paths for the nullable case; the aarch64 backend
+stores a tagged pair, which is why the port only fails on C).
+
+## AARCH64: trait_class_locals is still a body-global name map
+
+The C backend's `<Trait>_destroy` poisoning was fixed by moving the trait
+record onto the DeclarationNode (`trait_class_trait`), which is
+scope-correct. The aarch64 backend keeps the name-keyed
+`status.trait_class_locals` map (reset per function body only), so the
+same stale-entry hazard lives on there in its two consumers: the
+reassignment path (build_assignment_node — destroys the displaced
+instance via the stale trait shim) and dispatch dereferencing
+(build_access_node). A trait-typed local's entry outlives its scope, so a
+same-named non-trait local in a sibling or shadowing scope can pick it
+up — on aarch64 this is silent runtime corruption rather than a compile
+error. The declaration-carried model is the proven fix shape (see
+test/trait_class_locals_scope.test.ts); porting it needs the aarch64
+access/assignment paths to resolve the owning declaration through its
+scope frames.
 
 ## Value-struct conformers are inconsistently accepted as trait types
 

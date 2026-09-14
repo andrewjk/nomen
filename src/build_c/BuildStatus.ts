@@ -190,15 +190,20 @@ export default interface BuildStatus {
 	 */
 	class_vars?: Set<string>;
 	/**
-	 * Trait-typed LOCAL variables whose concrete storage is a `class` (e.g.
-	 * `var Speaker s = Dog()` where Dog is a class). Such a local stores a
-	 * pointer to the heap-allocated instance (not the inline struct value),
-	 * so it can be reassigned to a different conforming class
-	 * (`s = Cat()`). Keyed by variable name → the trait name. Dispatch and
-	 * field access read the vtable through the stored pointer (the local is
-	 * also tracked in `class_vars` so build_vtable_target passes it by
-	 * value); scope-exit and reassignment reclaim it via the trait's
+	 * AARCH64-BACKEND ONLY. Trait-typed LOCAL variables whose concrete
+	 * storage is a `class` (e.g. `var Speaker s = Dog()` where Dog is a
+	 * class). Such a local stores a pointer to the heap-allocated instance
+	 * (not the inline struct value), so it can be reassigned to a different
+	 * conforming class (`s = Cat()`). Keyed by variable name → the trait
+	 * name; dispatch dereferences the stored pointer to reach the vtable,
+	 * and reassignment reclaims the displaced instance via the trait's
 	 * `<Trait>_destroy` shim + free.
+	 *
+	 * The C backend does NOT use this map: its trait record lives on the
+	 * DeclarationNode (`trait_class_trait`), which is scope-correct — a
+	 * name-keyed body-global entry outlived the variable's scope and
+	 * poisoned same-named variables in sibling/shadowing scopes (emitting
+	 * `<Trait>_destroy(v)` for int/string elements — invalid C).
 	 */
 	trait_class_locals?: Map<string, string>;
 	/**

@@ -235,13 +235,6 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.function_ref_params = new Set<string>();
 	const old_class_vars = status.class_vars;
 	status.class_vars = new Set<string>();
-	// trait_class_locals is name-keyed and must not leak across function
-	// bodies: a trait-typed local named `v` in one function (e.g. the
-	// monomorphized List<Trait>.copy from the core library) otherwise makes a
-	// LATER function's unrelated local named `v` auto-free through
-	// Trait_destroy — emitting `InlineRule_destroy(v)` for a string element.
-	const old_trait_class_locals = status.trait_class_locals;
-	status.trait_class_locals = undefined;
 	const old_ref_class_params = status.ref_class_params;
 	status.ref_class_params = new Set<string>();
 	const old_ref_class_param_types = status.ref_class_param_types;
@@ -405,11 +398,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	// function that has a CONDITIONAL early return still falls through to here,
 	// and its fall-through declarations must be reclaimed. Without this, such
 	// functions leak every declaration on the fall-through path.
-	//
-	// trait_class_locals must be restored only AFTER this auto_free pass: the
-	// pass consults the map to reclaim trait-typed locals.
 	build_auto_free(status);
-	status.trait_class_locals = old_trait_class_locals;
 
 	// In audit mode, call nomen_audit_check (from audit_runtime.c) at main exit.
 	// It prints "LEAK: N allocation(s)" when the balanced malloc/free counter
