@@ -187,7 +187,14 @@ export function free_scoped_declarations(
 				status.code += "\n// Auto-free\n";
 				commented = true;
 			}
-			if (dec.type.is_nullable) {
+			// A trait slot registered as a reassigned ALIAS (a borrowed slot
+			// that later took a fresh instance) owns its value only after the
+			// store — gate the reclaim on its runtime owns-flag (see the
+			// declaration's borrow branch and the assignment arm).
+			const alias_flag = status.c_alias_owns_flags?.get(dec.name);
+			if (alias_flag !== undefined) {
+				status.code += `if (${alias_flag}) { ${trait_class_trait}_destroy(${cname}); free(${cname}); }\n`;
+			} else if (dec.type.is_nullable) {
 				status.code += `if (${cname}) { ${trait_class_trait}_destroy(${cname}); free(${cname}); }\n`;
 			} else {
 				status.code += `${trait_class_trait}_destroy(${cname}); free(${cname});\n`;

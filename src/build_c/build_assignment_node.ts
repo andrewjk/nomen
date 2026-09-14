@@ -513,12 +513,7 @@ export default function build_assignment_node(
 					struct_name: lhs_struct.name,
 					is_nullable: !!lhs_type?.is_nullable,
 				});
-			} else if (
-				lhs_is_class &&
-				lhs_is_alias &&
-				lhs_struct &&
-				status.c_alias_owns_flags?.has(lhs_name)
-			) {
+			} else if (lhs_is_class && lhs_is_alias && status.c_alias_owns_flags?.has(lhs_name)) {
 				// Alias reassignment to a fresh instance (`q = R(3)` where
 				// `var R q = p`): the alias only owns its value AFTER its first
 				// reassignment, so free the old instance only when the runtime
@@ -528,16 +523,25 @@ export default function build_assignment_node(
 				// and register its scope-exit destroy in the frame that DECLARED
 				// it (not the current one — the reassignment may sit in a loop
 				// body). Mirrors aarch64's alias_owns_flag + mark_anchor_destroy.
-				const flag = status.c_alias_owns_flags.get(lhs_name)!;
-				status.code += `if (${flag}) { ${lhs_struct.name}_destroy(${lhs_name}); free(${lhs_name}); }\n`;
-				status.code += `${flag} = 1;\n`;
-				const frame = status.alias_decl_frames?.get(lhs_name) ?? status.scoped_declarations;
-				if (!frame.some((d) => d.name === lhs_name)) {
-					frame.push(
-						lhs_decl ?? new DeclarationNode(node.start, "private", "var", lhs_name, lhs_type!),
-					);
+				// A TRAIT slot uses the trait's `<Trait>_destroy` shim (the
+				// concrete type may vary); it has no `lhs_struct` (traits
+				// aren't structs), so take the name from the declared type.
+				const alias_destroy_name = lhs_struct?.name ?? lhs_type?.name;
+				if (alias_destroy_name) {
+					const flag = status.c_alias_owns_flags.get(lhs_name)!;
+					status.code += `if (${flag}) { ${alias_destroy_name}_destroy(${lhs_name}); free(${lhs_name}); }\n`;
+					status.code += `${flag} = 1;\n`;
+					const frame = status.alias_decl_frames?.get(lhs_name) ?? status.scoped_declarations;
+					if (!frame.some((d) => d.name === lhs_name)) {
+						const decl =
+							lhs_decl ?? new DeclarationNode(node.start, "private", "var", lhs_name, lhs_type!);
+						// The registration must carry the trait record so
+						// auto_free's trait branch reclaims through the shim.
+						if (!lhs_struct) decl.trait_class_trait = lhs_type?.name;
+						frame.push(decl);
+					}
 				}
-			} else {
+			} else if (lhs_is_string) {
 				// For a string with a non-bare RHS that may reference the LHS
 				// (e.g. `s = f(s)` or `s = s + "x"`), compute the RHS into a
 				// temp BEFORE freeing the old value to avoid use-after-free.

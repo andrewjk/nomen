@@ -713,8 +713,16 @@ export default function build_assignment_node(
 					const trait_class_trait = trait_class_for(status, name);
 					if (trait_class_trait !== undefined) {
 						const decl_frame = status.class_decl_frame?.get(name);
+						// Only reclaim the displaced value when the slot actually
+						// OWNS it (it has an anchor). A borrowed slot
+						// (`var Rule p = rules.at(0)` — not `owned_return`) has
+						// no anchor: the container owns the element, so the
+						// trait-shim destroy + free would dangle it (the next
+						// `.at(0)` is then use-after-free). Mirrors the C
+						// backend's class_alias_vars guard.
+						const owns_current = find_anchor_slot(status, name) !== undefined;
 						consume_anchor_slot(status, name);
-						if (!status.moved?.has(name)) {
+						if (owns_current && !status.moved?.has(name)) {
 							const label_id = (status.label_counter = (status.label_counter ?? 0) + 1);
 							const no_free_label = `.Ltrait_no_free_${label_id}`;
 							emit_var_load(status, "x0", name, 8);

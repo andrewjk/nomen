@@ -184,7 +184,36 @@ export default function build_declaration_node(
 				if (!status.variable_types) status.variable_types = new Map();
 				status.variable_types.set(safe_name, node.type);
 			}
-			status.scoped_declarations.push(node);
+			// A BORROW initializer (a non-`owned_return` accessor: `.at(i)` /
+			// `.first()`) yields a concrete-class element the CONTAINER owns —
+			// the local is a non-owning alias, so it must not be reclaimed at
+			// scope exit or reassignment (doing so frees the container's
+			// element). A `move out T` accessor (`.pop()`) or a fresh
+			// constructor transfers ownership. Mirrors the unknown-concrete
+			// method-return branch below and the aarch64 declaration path.
+			const borrow_initializer =
+				node.value?.node_type === "access" &&
+				(node.value as AccessNode).access.node_type === "access_func" &&
+				!((node.value as AccessNode).access as AccessFunctionCallNode).owned_return;
+			if (borrow_initializer) {
+				if (!status.class_alias_vars) status.class_alias_vars = new Set();
+				status.class_alias_vars.add(safe_name);
+				// Runtime owns-flag (mirrors the plain-class alias machinery):
+				// a borrowed slot only owns its value AFTER a reassignment to a
+				// fresh instance, and a conditional store means that decision
+				// must be made at runtime. The scope-exit reclaim (auto_free's
+				// trait branch) and the reassignment reclaim both gate on it.
+				if (!status.c_alias_owns_flags) status.c_alias_owns_flags = new Map();
+				if (!status.c_alias_owns_flags.has(safe_name)) {
+					const flag = `_alias_owns_${safe_name}`;
+					status.c_alias_owns_flags.set(safe_name, flag);
+					status.code += `int ${flag} = 0;\n`;
+				}
+				if (!status.alias_decl_frames) status.alias_decl_frames = new Map();
+				status.alias_decl_frames.set(safe_name, status.scoped_declarations);
+			} else {
+				status.scoped_declarations.push(node);
+			}
 			status.code += `void *${safe_name}`;
 			if (node.value) {
 				status.code += ` = (void *)`;

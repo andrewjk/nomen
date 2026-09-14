@@ -79,6 +79,23 @@ export function build_vtable_target(node: BaseNode, status: BuildStatus) {
 			return;
 		}
 	}
+	// A class-typed RECEIVER EXPRESSION (a container element access like
+	// `rules.at(i)`, or any expression whose static type is a class) already
+	// evaluates to the instance pointer — vtable dispatch wants that pointer,
+	// not its address. `&expr` would be `&` of an rvalue (clang: "cannot take
+	// the address of an rvalue"). Bare locals are handled above; an inline
+	// value-struct-backed trait slot still takes its address below.
+	if (node.node_type !== "value") {
+		const expr_type = type_from_value_node(node);
+		const expr_is_class =
+			!!expr_type?.name && !!status.structs.find((s) => s.name === expr_type.name && s.is_class);
+		if (expr_is_class) {
+			status.suppress_dereference = true;
+			build_node(node, status);
+			status.suppress_dereference = false;
+			return;
+		}
+	}
 	// Any other lvalue: build it without the ref-param deref and take its address.
 	const before = status.code.length;
 	status.suppress_dereference = true;
@@ -896,7 +913,16 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 								!!status.function_ref_params?.has(target_value) ||
 								!!status.class_vars?.has(target_value) ||
 								!!status.heap_array_vars?.has(target_value);
-							if (!target_is_ref_param) {
+							// A class-typed RECEIVER EXPRESSION (e.g. a container
+							// element `rules.at(i)`) already evaluates to the
+							// instance pointer — pass it as-is; `&expr` would be
+							// `&` of an rvalue (clang: "cannot take the address of
+							// an rvalue"). Mirrors build_vtable_target.
+							const target_expr_type = type_from_value_node(node.target);
+							const target_expr_is_class =
+								!!target_expr_type?.name &&
+								!!status.structs.find((s) => s.name === target_expr_type.name && s.is_class);
+							if (!target_is_ref_param && !target_expr_is_class) {
 								status.code += "&";
 							} else if (target_is_ref_class_param) {
 								// A `ref` class param is a double pointer (`struct T **`),
@@ -904,8 +930,9 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 								// suppress_dereference off so build_value_node emits
 								// `(*t)`, yielding the instance pointer self expects.
 							} else {
-								// target is already a pointer (var/ref param) — don't
-								// dereference it; we want the pointer itself.
+								// target is already a pointer (var/ref param, or a
+								// class-typed expression) — don't dereference it; we
+								// want the pointer itself.
 								status.suppress_dereference = true;
 							}
 						}
