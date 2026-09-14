@@ -41,6 +41,7 @@ import {
 	is_owning_struct_type_requiring_move,
 } from "./utils/ownership.ts";
 import { maybe_mark_borrow_to_string_arg } from "./utils/string_mutation_scan.ts";
+import synthesize_lambda_name from "./utils/synthesize_lambda_name.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 
@@ -377,6 +378,13 @@ export default function check_function_call(
 		// params are untyped ("Unknown value: x"). Covers both a func-typed
 		// parameter and a func-typed struct FIELD's ctor param (both carry
 		// func_params/func_return_type).
+		//
+		// An anonymous lambda has no name to emit under; both backends lower
+		// a lambda value to a file-scope function, so synthesize a unique
+		// emission name first (named functions keep theirs).
+		if (param.node_type === "func" && !(param as FunctionNode).name) {
+			synthesize_lambda_name(param as FunctionNode, status);
+		}
 		if (param.node_type === "func" && func_param?.func_params?.length) {
 			const rhs_func = param as FunctionNode;
 			if (rhs_func.params.length === func_param.func_params.length) {
@@ -1123,6 +1131,12 @@ export default function check_function_call(
 		if (
 			(param.node_type !== "value" ||
 				is_heap_array_var_copy(param, func_param, param_type, status)) &&
+			// A lambda argument is a constant function address, not an
+			// evaluated value — hoisting it into a `_param_N` temp would type
+			// the temp as the lambda's RETURN type and store a truncated
+			// pointer. The backends emit the function's address at the call
+			// site directly.
+			param.node_type !== "func" &&
 			!has_ref_keyword &&
 			!node.swap_params?.has(i) &&
 			!(i === (node as FunctionCallNode).variadic_param_index && param.node_type === "array")

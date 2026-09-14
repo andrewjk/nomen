@@ -554,30 +554,3 @@ string field stores").
 
 Related: `move Trait` params are now supported (checker + both backends'
 epilogue reclaim via the trait `<Trait>_destroy` shim) — test/move_trait_param.test.ts.
-
-## Func-typed struct fields — IMPLEMENTED; lambda ARGUMENTS still fail on aarch64
-
-IMPLEMENTED (2026-09-14): struct/class fields may be func-typed
-(`var func (int, out bool) test`), and `s.f(args)` calls through the stored
-8-byte code pointer. The checker resolves the call as an indirect call
-(check_access_node; the parser leaves the field's type name empty with the
-signature on func_params/func_return_type — check_struct_node now gives it
-an explicit `func` type), C emits `((<ret> (*)(<params>))s.f)(args)`, and
-aarch64 loads the field and reuses the func-VALUE call lowering
-(`ldr x8, …; blr x8`). Also handled: field reassignment, class fields,
-struct copies (the pointer is non-owning), func defaults, and `self.f(...)`.
-The aarch64 access path no longer treats a stored func field as a static
-METHOD reference (the `adr x0, Struct_field` hook now applies only when no
-such field exists). Covered by test/func_field.test.ts.
-
-Known gaps (both PRE-EXISTING and type-agnostic — func-typed PARAMETERS
-behave identically, so these are not field-specific):
-
-- **A lambda as a func-typed ARGUMENT fails to build on aarch64** (C is
-  fine): `apply((y) => y * 4, 3)` / `Rule((x) => x * 3)` emit bad asm
-  (`:` / `_ = …`). The checker now infers the lambda's parameter types from
-  the parameter's signature (check_function_call), but the aarch64 lambda-
-  as-argument lowering is missing. Named functions work.
-- **Func SIGNATURE mismatches are not rejected**: `var func (int, out int) f
-= some_string_func` and `r.f = some_string_func` are accepted (verified
-  for both locals and fields) — there is no func-type compatibility check.

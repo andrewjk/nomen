@@ -16,6 +16,7 @@ import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
+import FunctionNode from "../nodes/FunctionNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import RangeNode from "../nodes/RangeNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
@@ -27,6 +28,7 @@ import build_parameter_node from "./build_parameter_node.ts";
 import build_range_node, { evaluate_constant } from "./build_range_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import { emit_expr_from_nir, nir_array_elements } from "./emit_nir.ts";
+import build_lambda_value from "./utils/build_lambda_value.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import { find_decl_in_c_scopes, splice_decl_from_c_scopes } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
@@ -902,9 +904,12 @@ function consolidate_temp_anchors(
 }
 
 function build_function_type_declaration(node: DeclarationNode, status: BuildStatus) {
-	// If the value is a FunctionNode, build it as a regular function definition
+	// If the value is a FunctionNode (a lambda), build it as a regular
+	// function definition at file scope (hoisted out of the expression —
+	// see build_lambda_value). The "declaration" is the definition itself:
+	// no local is emitted, and uses of the name resolve to the function.
 	if (node.value && node.value.node_type === "func") {
-		build_node(node.value, status);
+		build_lambda_value(node.value as FunctionNode, status, false);
 		return;
 	}
 

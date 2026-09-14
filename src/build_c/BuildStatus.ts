@@ -58,6 +58,15 @@ export default interface BuildStatus {
 	 */
 	file_scope_c?: string;
 	/**
+	 * C-backend lambda definitions (anonymous functions used as values —
+	 * call arguments, declaration/assignment initializers). C may not nest a
+	 * function definition inside an expression, so build_lambda_value
+	 * buffers each definition here; build_root_node flushes the buffer at
+	 * file scope after the statement walk (main.h carries the prototypes, so
+	 * definition order among file-scope functions is irrelevant).
+	 */
+	lambda_definitions?: string;
+	/**
 	 * Functions whose bodies are compiled as C (via `aarch64_use_c`).
 	 * Each entry records the function node, owning struct (if any), and the
 	 * concatenated raw C code — used to generate the companion file.

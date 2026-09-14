@@ -6,6 +6,7 @@ import type BaseNode from "../nodes/BaseNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
+import ParameterNode from "../nodes/ParameterNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import check_node from "./check_node.ts";
@@ -24,6 +25,7 @@ import {
 	is_owning_struct_type,
 	is_owning_struct_type_requiring_move,
 } from "./utils/ownership.ts";
+import synthesize_lambda_name from "./utils/synthesize_lambda_name.ts";
 import {
 	is_trait_type,
 	trait_conformer_of_value,
@@ -70,24 +72,51 @@ export default function check_assignment_node(
 
 	// If the RHS is a lambda and the LHS is a function-typed variable, infer the
 	// lambda's parameter and return types from the declared function signature.
+	// A func-typed FIELD target (`r.f = (x) => …`) infers from the field's
+	// func_params/func_return_type the same way.
 	const lhs_value_name = value_from_value_node(assign.left_value);
 	const lhs_value = status.values.findLast((v) => v.name === lhs_value_name);
+	let lambda_signature: {
+		params?: ParameterNode[] | { name: string; type: Type }[];
+		return_type?: Type;
+	} = {};
+	if (assign.left_value.node_type === "access") {
+		const field = (assign.left_value as AccessNode).access;
+		if (field.node_type === "access_field") {
+			// The field's Type carries only the "func" name — the signature
+			// lives on the struct's field declaration.
+			const target_type = type_from_value_node((assign.left_value as AccessNode).target, status);
+			const struct = status.structs.find((s) => s.name === target_type.name);
+			const fd = struct?.fields.find((f) => f.name === (field as AccessFieldNode).name);
+			lambda_signature = { params: fd?.func_params, return_type: fd?.func_return_type };
+		}
+	} else if (lhs_value?.func_params?.length) {
+		lambda_signature = { params: lhs_value.func_params, return_type: lhs_value.func_return_type };
+	}
 	if (
 		assign.right_value.node_type === "func" &&
-		lhs_value?.func_params &&
-		lhs_value.func_params.length
+		lambda_signature.params &&
+		lambda_signature.params.length
 	) {
 		const rhs_func = assign.right_value as FunctionNode;
-		rhs_func.name = lhs_value_name;
-		if (rhs_func.params.length === lhs_value.func_params.length) {
+		if (assign.left_value.node_type === "value") {
+			// A bare variable target names the lambda after the variable —
+			// uses of the variable then resolve to the emitted function.
+			rhs_func.name = lhs_value_name;
+		} else if (!rhs_func.name) {
+			// A field target must not name the lambda after the root
+			// variable; give it a unique emission name.
+			synthesize_lambda_name(rhs_func, status);
+		}
+		if (rhs_func.params.length === lambda_signature.params.length) {
 			for (let i = 0; i < rhs_func.params.length; i++) {
-				if (!rhs_func.params[i].type.name && lhs_value.func_params[i].type.name) {
-					rhs_func.params[i].type = lhs_value.func_params[i].type;
+				if (!rhs_func.params[i].type.name && lambda_signature.params[i].type.name) {
+					rhs_func.params[i].type = lambda_signature.params[i].type;
 				}
 			}
 		}
-		if (lhs_value.func_return_type && !rhs_func.return_type.name) {
-			rhs_func.return_type = lhs_value.func_return_type;
+		if (lambda_signature.return_type && !rhs_func.return_type.name) {
+			rhs_func.return_type = lambda_signature.return_type;
 		}
 	}
 
@@ -312,15 +341,29 @@ export default function check_assignment_node(
 	// * If this is an access, it's the field target e.g. for `person.address.zip
 	//   = 1234` we would check that the types of `zip` and `1234` match
 	//if (left_value)
-	// Function-typed reassignment (`f = gt10`): the LHS is a func value whose
-	// declared signature lives on the StackValue (func_params); the RHS is a
-	// bare function name whose type_from_value is the opaque `func` marker.
-	// Skip the plain name equality check (the signature compatibility was
-	// validated above) and only verify the RHS resolves to a function.
-	const lhs_func_params = lhs_value?.func_params;
+	// Function-typed reassignment (`f = gt10`, or a lambda `r.f = (x) => …`):
+	// the LHS is a func value whose declared signature lives on the StackValue
+	// (func_params) or on the struct field; the RHS is either a bare function
+	// name whose type_from_value is the opaque `func` marker, or a lambda
+	// whose signature was merged in above. Skip the plain name equality check
+	// (the signature compatibility is validated here) and only verify the
+	// function shape.
+	const lhs_func_params = lhs_value?.func_params ?? lambda_signature.params;
 	const rhs_is_func_marker = type_from_value_node(assign.right_value, status).name === "func";
-	if (lhs_func_params?.length && rhs_is_func_marker) {
-		if (assign.right_value.node_type !== "value") {
+	const rhs_is_lambda = assign.right_value.node_type === "func";
+	if (lhs_func_params?.length && (rhs_is_func_marker || rhs_is_lambda)) {
+		if (rhs_is_lambda) {
+			// The lambda's parameter types were inferred from the target's
+			// signature above; verify the count matches.
+			const rhs_fn = assign.right_value as FunctionNode;
+			if (rhs_fn.params.length !== lhs_func_params.length) {
+				add_error(
+					status,
+					`Function signature mismatch: expected ${lhs_func_params.length} parameter(s)`,
+					assign.right_value.start,
+				);
+			}
+		} else if (assign.right_value.node_type !== "value") {
 			add_error(status, `Expected a function name`, assign.right_value.start);
 		} else {
 			// Signature compatibility: the RHS function's params (minus the

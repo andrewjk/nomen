@@ -1,4 +1,5 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
+import emission_label from "../build_common/emission_label.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import AnonStructNode from "../nodes/AnonStructNode.ts";
@@ -91,7 +92,18 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 			break;
 		}
 		case "func": {
+			// A lambda in VALUE position (a func-typed call argument, or a
+			// declaration/assignment initializer): its body emits as a
+			// function (buffered after the enclosing one via the nested-func
+			// path) and the value is the function's address. A named `func`
+			// STATEMENT never reaches build_node — block builders call
+			// build_function_node directly — so anything here is a lambda.
+			// Outside a function body (a file-scope declaration) there is no
+			// x0 to leave a value in; the definition alone is the emission.
 			build_function_node(node as FunctionNode, status);
+			if (status.function_return_label) {
+				status.code += `adr x0, ${emission_label(node as FunctionNode)}\n`;
+			}
 			with_semicolon = false;
 			break;
 		}

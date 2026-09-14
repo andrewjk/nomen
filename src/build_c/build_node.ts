@@ -45,7 +45,6 @@ import build_declaration_node from "./build_declaration_node.ts";
 import build_enum_node from "./build_enum_node.ts";
 import build_for_loop_node from "./build_for_loop_node.ts";
 import build_function_call_node from "./build_function_call_node.ts";
-import build_function_node from "./build_function_node.ts";
 import build_if_else_node from "./build_if_else_node.ts";
 import build_index_node from "./build_index_node.ts";
 import build_let_node from "./build_let_node.ts";
@@ -64,6 +63,7 @@ import build_trait_node from "./build_trait_node.ts";
 import build_value_node from "./build_value_node.ts";
 import build_while_loop_node from "./build_while_loop_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
+import build_lambda_value from "./utils/build_lambda_value.ts";
 
 export default function build_node(node: BaseNode, status: BuildStatus, with_semicolon = false) {
 	// Build any associated declarations first, e.g. for function call params that
@@ -123,7 +123,14 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 			break;
 		}
 		case "func": {
-			build_function_node(node as FunctionNode, status);
+			// A lambda in VALUE position (a func-typed call argument, or a
+			// declaration/assignment initializer): its definition is hoisted
+			// to file scope (C may not nest function definitions in an
+			// expression) and the value is the function's identifier. A named
+			// `func` STATEMENT never reaches build_node — block builders call
+			// build_function_node directly — so anything here is a lambda.
+			build_lambda_value(node as FunctionNode, status);
+			with_semicolon = false;
 			break;
 		}
 		case "func_call": {

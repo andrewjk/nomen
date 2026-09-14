@@ -863,11 +863,26 @@ export default function build_declaration_node(
 		if (status.function_return_label) {
 			const offset = allocate_stack_space(status, 8);
 			status.stack_offsets!.set(node.name, offset);
-		} else {
+		} else if (!(node.value && node.value.node_type === "func")) {
+			// At file scope the value lives in a data slot — but a lambda
+			// initializer emits a FUNCTION of the same name (its label is the
+			// storage; uses `adr` it directly). Emitting the slot too would
+			// define the label twice.
 			emit_data(status, `${node.name}: .space 8`);
 		}
 		if (node.value && node.value.node_type === "func") {
+			// A lambda initializer: build_node leaves the function's address
+			// in x0 (the definition itself is buffered after this function).
+			// Store it so calls through the local resolve to the function —
+			// without the store the slot held garbage. File scope has no x0
+			// context; the definition alone is the emission there.
 			emit_init_value(node.value, nir_init, status);
+			if (status.function_return_label) {
+				if (!status.code.endsWith("\n")) {
+					status.code += "\n";
+				}
+				emit_var_store(status, "x0", node.name, 8);
+			}
 		} else if (node.value) {
 			emit_init_value(node.value, nir_init, status);
 			if (!status.code.endsWith("\n")) {

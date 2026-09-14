@@ -110,6 +110,13 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			// param has no type of its own.
 			const value_func = decl.value as FunctionNode;
 			const lhs_params = decl.func_params;
+			if (value_func.params.length !== lhs_params.length) {
+				add_error(
+					status,
+					`Function signature mismatch: expected ${lhs_params.length} parameter(s)`,
+					value_func.start,
+				);
+			}
 			if (value_func.params.length === lhs_params.length) {
 				for (let i = 0; i < value_func.params.length; i++) {
 					if (!value_func.params[i].type.name && lhs_params[i].type.name) {
@@ -127,6 +134,37 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			status.stack.pop();
 			return;
 		} else if (decl.value) {
+			if (decl.value.node_type === "value") {
+				// Signature compatibility for a named-function initializer
+				// (`var func (int, out int) f = takes_string`): the function's
+				// params (minus the `out` return slot, which type_from_value
+				// doesn't count) must match the declared signature in count
+				// and type.
+				const fn = status.functions.findLast((f) => f.name === (decl.value as ValueNode).value);
+				if (fn) {
+					const rhs_params = fn.params.filter((p) => !p.is_self_param);
+					if (rhs_params.length !== decl.func_params.length) {
+						add_error(
+							status,
+							`Function signature mismatch: expected ${decl.func_params.length} parameter(s)`,
+							decl.value.start,
+						);
+					} else {
+						for (let i = 0; i < decl.func_params.length; i++) {
+							if (
+								decl.func_params[i].type.name &&
+								decl.func_params[i].type.name !== rhs_params[i].type.name
+							) {
+								add_error(
+									status,
+									`Function signature mismatch: parameter ${i + 1} is ${rhs_params[i].type.name}, expected ${decl.func_params[i].type.name}`,
+									decl.value.start,
+								);
+							}
+						}
+					}
+				}
+			}
 			status.stack.push(decl);
 
 			const old_expected_type = status.expected_type;

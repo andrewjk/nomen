@@ -55,6 +55,15 @@ export default function build_root_node(node: RootNode, status: BuildStatus) {
 
 	build_block_node(node, status);
 
+	// Lambda (anonymous function) definitions captured during the body walk:
+	// C may not nest a function definition inside an expression, so
+	// build_lambda_value buffered them. Flushing at file scope after the
+	// statement walk is valid C — main.h carries their prototypes.
+	if (status.lambda_definitions) {
+		status.code += status.lambda_definitions;
+		status.lambda_definitions = undefined;
+	}
+
 	// Apple ObjC framework imports (Foundation/Cocoa) pull in MacTypes.h, which
 	// defines `Point`, `Rect`, etc. and would collide with user-defined types
 	// of the same name. Only emit them when the generated code actually

@@ -13,6 +13,7 @@ import StructNode from "../nodes/StructNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_extern from "./build_extern.ts";
+import build_function_node from "./build_function_node.ts";
 import build_node from "./build_node.ts";
 import { check_c_fallback } from "./build_raw_node.ts";
 import { build_body_with_cursor } from "./emit_nir.ts";
@@ -752,6 +753,18 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 						status.code += `str x9, [x19, #${offset + w * 8}]\n`;
 					}
 				}
+			} else if (field.value.node_type === "func" && field.type.name === "func") {
+				// A lambda default: its definition emits as a function (buffered
+				// after the current one via the nested-func path — forced here,
+				// the auto-init builder runs without a return label) and the
+				// symbol IS the code address, stored directly.
+				const prev_return_label = status.function_return_label;
+				status.function_return_label = `.return_${func_name}`;
+				build_function_node(field.value as FunctionNode, status);
+				status.function_return_label = prev_return_label;
+				if (!status.code.endsWith("\n")) status.code += "\n";
+				status.code += `adr x1, ${emission_label(field.value as FunctionNode)}\n`;
+				emit_typed_store(status, "x1", "x19", offset, 8);
 			}
 		}
 	}
