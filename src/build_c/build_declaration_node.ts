@@ -667,6 +667,19 @@ export default function build_declaration_node(
 				build_node(node.value, status);
 				status.join_needs_owned_string = old_join_owned;
 				status.return_assign = old_return_assign;
+			} else if (
+				node.value.node_type === "value" &&
+				(node.value as ValueNode).value === "null" &&
+				node.type.name === "string" &&
+				!node.type.is_view &&
+				!node.type.is_array
+			) {
+				// A `null` initializer for a string local zero-initializes the
+				// pair — the same treatment as a no-initializer string (the
+				// checker only accepts `null` for a nullable type, so `.ptr`
+				// is NULL and every free stays a valid no-op). A bare `0`
+				// would be a C type error: nomen_string is a struct.
+				status.code += ` = {0, 0}`;
 			} else {
 				status.code += " = ";
 				// A `var string` declared with a string literal must own a

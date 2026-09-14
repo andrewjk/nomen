@@ -221,6 +221,12 @@ export default function build_assignment_node(
 		// aarch64 backend's `target_is_class ||` gate.
 		if (target_struct && target_var && (!self_target || target_struct.is_class)) {
 			const fresh_heap = is_owned_heap_temp(node.right_value, status);
+			// A literal `null` RHS zero-initializes the nullable field's pair
+			// (a bare `0` inside nomen_str_dup(...) would be a C type error;
+			// the NULL `.ptr` keeps the free paths no-op-safe). The displaced
+			// old value is still reclaimed below.
+			const rhs_is_null_value =
+				node.right_value.node_type === "value" && (node.right_value as ValueNode).value === "null";
 			// Capture the field-access expression (e.g. `b->text`) by building
 			// it then rolling back, so it can be referenced multiple times.
 			const before_len = status.code.length;
@@ -229,7 +235,9 @@ export default function build_assignment_node(
 			status.code = status.code.substring(0, before_len);
 			const temp = `_nomen_strfield_${string_field_counter++}`;
 			status.code += `{\nnomen_string ${temp} = `;
-			if (fresh_heap) {
+			if (rhs_is_null_value) {
+				status.code += `(nomen_string){0, 0}`;
+			} else if (fresh_heap) {
 				emit_rhs_value(node.right_value, nir_rhs, status);
 			} else {
 				status.code += `nomen_str_dup(`;
@@ -856,7 +864,28 @@ export default function build_assignment_node(
 	} else {
 		status.code += " = ";
 	}
-	emit_rhs_value(node.right_value, nir_rhs, status);
+	// A literal `null` stored into a fat string slot zero-initializes the
+	// pair (the checker only accepts `null` for a nullable type, so `.ptr`
+	// is NULL and every free stays a valid no-op). Matches the declaration
+	// path's `= {0, 0}` and the return path's `(nomen_string){0,0}`: a bare
+	// `0` would be a C type error (nomen_string is a struct).
+	const null_store_lhs_type =
+		node.left_value.node_type === "value"
+			? status.scoped_declarations.find((d) => d.name === (node.left_value as ValueNode).value)
+					?.type || status.variable_types?.get((node.left_value as ValueNode).value)
+			: undefined;
+	const rhs_is_null_string_store =
+		!node.operator &&
+		node.right_value.node_type === "value" &&
+		(node.right_value as ValueNode).value === "null" &&
+		null_store_lhs_type?.name === "string" &&
+		!null_store_lhs_type.is_view &&
+		!null_store_lhs_type.is_array;
+	if (rhs_is_null_string_store) {
+		status.code += `(nomen_string){0, 0}`;
+	} else {
+		emit_rhs_value(node.right_value, nir_rhs, status);
+	}
 	// `x = T(...) + [ ... ]`: apply the named-field overrides to the LHS
 	// after the construction. Only a simple variable LHS is handled here;
 	// field-target overrides in assignment are an edge case.

@@ -393,18 +393,28 @@ defaulted fields — constructor, factory, and variable bases — but:
   override itself; promotion would then conservatively keep it in memory —
   sound, just not optimal.
 
-## Nullable string initialized to null emits invalid C
+## `null` into a `string?` parameter or aarch64 nullable-string field (found fixing the C local-decl bug, out of scope)
 
-`var string? frontmatter = null` (allmark port's `src/parse.nm`) emits
-`nomen_string frontmatter = 0;` on the C backend — clang rejects it
-(`initializing 'nomen_string' with an expression of incompatible type
-'int'`). The declaration path only zero-initializes non-nullable strings
-(`= {0, 0}` in build_declaration_node's no-value branch); a nullable
-string whose initializer is literally `null` falls through and emits a
-bare `0`. Fix direction: nullable string locals need the same treatment
-as no-initializer strings — emit `= {0, 0}` for a `null` initializer (and
-audit the reassign/free paths for the nullable case; the aarch64 backend
-stores a tagged pair, which is why the port only fails on C).
+The local-declaration half is FIXED (`var string? x = null` now emits
+`= {0, 0}` on C; local reassignment `x = null`, field stores
+`obj.field = null`, and defaulted string fields (`class` and value struct)
+emit the `(nomen_string){0, 0}` zero pair — covered by
+test/nullable.test.ts). Two related shapes remain broken:
+
+- **`null` as a function/constructor ARGUMENT to a `string?` param**
+  (`Holder(null)` where the field is `var string? tag`): C passes a bare
+  `0` for the `nomen_string` param — clang rejects it ("passing 'int' to
+  parameter of incompatible type 'nomen_string'"); aarch64 compiles but
+  the binary fails at runtime (exit non-zero). Needs the checker to
+  rewrite a `null` arg's type to the param's declared type (the pattern
+  already used for nullable STRUCT params in check_function_call) plus
+  arg-site emission of the zero pair on both backends.
+- **aarch64: defaulted nullable-string FIELDS** (`var string? tag = null`
+  in a class) store only the ptr word and leave `len` uninitialized, and
+  the subsequent `== null` comparison mis-compiles (the expected branch
+  never runs; output.txt comes back empty). C emits the correct zero pair
+  after the fix above. Needs the aarch64 `#init` default emission to
+  zero both halves (mirroring C's `(nomen_string){0, 0}`).
 
 ## Value-struct conformers are inconsistently accepted as trait types
 

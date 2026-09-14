@@ -368,6 +368,94 @@ func test = (Thing? thing) {
 	});
 });
 
+describe("nullable strings — null lowering (fat string pair)", () => {
+	test("var string? s = null does not emit a bare 0 initializer", () => {
+		const input = `
+var string? s = null
+if s != null {
+	Console.write("non")
+} else {
+	Console.write("null")
+}
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "c", audit: true });
+		expect(result.code).not.toMatch(/nomen_string s = 0;/);
+		expect(result.code).toContain("nomen_string s = {0, 0};");
+	});
+
+	test("var string? s = null then branch on nullness", async () => {
+		const input = `
+func test = () {
+	var string? s = null
+	if s != null {
+		Console.write_line("non")
+	} else {
+		Console.write_line("null")
+	}
+}
+test()
+`;
+		await build_and_check_output(input, "nullable_string_decl_null", "null");
+	});
+
+	test("reassign nullable string to null zeroes the pair", async () => {
+		const input = `
+func test = () {
+	var string? s = "x"
+	Console.write_line(s)
+	s = null
+	if s == null {
+		Console.write_line("cleared")
+	}
+}
+test()
+`;
+		await build_and_check_output(input, "nullable_string_reassign_null", "x\ncleared");
+	});
+
+	test("null → value → null cycle reclaims cleanly (audit)", async () => {
+		const input = `
+func test = () {
+	var string? s = null
+	s = "x"
+	Console.write_line(s)
+	s = null
+	if s == null {
+		Console.write_line("cleared")
+	}
+}
+test()
+`;
+		await build_and_check_output(input, "nullable_string_cycle", "x\ncleared");
+	});
+
+	test("nullable string field default / store emits the zero pair on C", () => {
+		const input = `
+class Holder {
+	var string? tag = null
+}
+struct S {
+	var string? tag = null
+}
+func test = () {
+	var Holder h = Holder()
+	h.tag = null
+	var S s = S()
+	s.tag = null
+}
+test()
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "c", audit: true });
+		expect(result.code).not.toContain("nomen_str_dup(0)");
+		expect(result.code).not.toMatch(/\.tag = 0;/);
+		expect(result.code).toContain("tag = (nomen_string){0, 0};");
+	});
+});
+
 describe("nullable classes — declaration and codegen", () => {
 	test("var Box? a = null does not emit adr x0, null", () => {
 		const input = `

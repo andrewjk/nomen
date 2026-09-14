@@ -14,6 +14,7 @@ import FunctionNode from "../nodes/FunctionNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import TraitNode from "../nodes/TraitNode.ts";
 import Type from "../nodes/Type.ts";
+import ValueNode from "../nodes/ValueNode.ts";
 import build_auto_free from "./build_auto_free.ts";
 import build_extern from "./build_extern.ts";
 import build_node from "./build_node.ts";
@@ -179,13 +180,28 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 					const value_is_fresh_heap =
 						!!field.value && is_owned_heap_temp(field.value as BaseNode, status);
 					const wrap_dup = field_is_class_string && !value_is_fresh_heap;
+					// A literal `null` default zero-initializes the string
+					// field's pair — for a class OR a value struct. A bare
+					// `0` (or nomen_str_dup(0)) would be a C type error, and
+					// a NULL `.ptr` keeps the destroy-side free a no-op.
+					const default_is_null =
+						field.type.name === "string" &&
+						!field.type.is_array &&
+						!field.type.is_ref &&
+						!field.type.is_view &&
+						field.value.node_type === "value" &&
+						(field.value as ValueNode).value === "null";
 					status.code += `self${accessor}${field.name} = `;
-					if (wrap_dup) {
-						status.code += `nomen_str_dup(`;
-					}
-					build_node(field.value, status);
-					if (wrap_dup) {
-						status.code += `)`;
+					if (default_is_null) {
+						status.code += `(nomen_string){0, 0}`;
+					} else {
+						if (wrap_dup) {
+							status.code += `nomen_str_dup(`;
+						}
+						build_node(field.value, status);
+						if (wrap_dup) {
+							status.code += `)`;
+						}
 					}
 					status.code += ";\n";
 				}
@@ -343,30 +359,46 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 				const value_is_fresh_heap =
 					!!field.value && is_owned_heap_temp(field.value as BaseNode, status);
 				const wrap_strdup = field_is_class_string && !value_is_fresh_heap;
+				// A literal `null` default zero-initializes the string field's
+				// pair — for a class OR a value struct. A bare `0` (or
+				// nomen_str_dup(0)) would be a C type error, and a NULL `.ptr`
+				// keeps the destroy-side free a no-op.
+				const default_is_null =
+					!!field.value &&
+					field.type.name === "string" &&
+					!field.type.is_array &&
+					!field.type.is_ref &&
+					!field.type.is_view &&
+					field.value.node_type === "value" &&
+					(field.value as ValueNode).value === "null";
 				status.code += `${object_name}${accessor}${field.name} = `;
-				if (wrap_strdup) {
-					status.code += `nomen_str_dup(`;
-				}
-				if (field.value) {
-					build_node(field.value, status);
+				if (default_is_null) {
+					status.code += `(nomen_string){0, 0}`;
 				} else {
-					// Struct params are passed by pointer — dereference when
-					// assigning into a by-value field. Class fields are now
-					// pointers themselves, so don't dereference the param.
-					// Resolve a generic field type (e.g. `List<int>`) to its
-					// mono struct so the pointer/value decision matches the
-					// (already monomorphized) ctor signature.
-					const field_struct = status.structs.find(
-						(s) => s.name === mono_struct_name(field.type, status) && !s.is_simple_type,
-					);
-					const field_trait = status.traits.find((t) => t.name === field.type.name);
-					if ((field_struct && !field_struct.is_class) || field_trait) {
-						status.code += `*`;
+					if (wrap_strdup) {
+						status.code += `nomen_str_dup(`;
 					}
-					status.code += field.name;
-				}
-				if (wrap_strdup) {
-					status.code += `)`;
+					if (field.value) {
+						build_node(field.value, status);
+					} else {
+						// Struct params are passed by pointer — dereference when
+						// assigning into a by-value field. Class fields are now
+						// pointers themselves, so don't dereference the param.
+						// Resolve a generic field type (e.g. `List<int>`) to its
+						// mono struct so the pointer/value decision matches the
+						// (already monomorphized) ctor signature.
+						const field_struct = status.structs.find(
+							(s) => s.name === mono_struct_name(field.type, status) && !s.is_simple_type,
+						);
+						const field_trait = status.traits.find((t) => t.name === field.type.name);
+						if ((field_struct && !field_struct.is_class) || field_trait) {
+							status.code += `*`;
+						}
+						status.code += field.name;
+					}
+					if (wrap_strdup) {
+						status.code += `)`;
+					}
 				}
 				status.code += ";\n";
 			}
