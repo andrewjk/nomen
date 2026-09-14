@@ -544,4 +544,28 @@ Console.write("\\{b.c.v}")
 `;
 		await build_and_check_output(input, "return_mov_param_with_field", "5");
 	});
+
+	test("moved param is reclaimed when a called method only reads the receiver", async () => {
+		const input = `
+class Box {
+  var int v
+  pub func #init = (ref self, int v) {
+    self.v = v
+  }
+  pub func get = (self, out int) {
+    return self.v
+  }
+}
+pub func use_it = (move Box b) {
+  Console.write_line("\\{b.get()}")
+}
+pub func take = (move Box b) {
+  use_it(move b)
+}
+var Box box = Box(5)
+take(move box)
+Console.write_line("done")
+`;
+		await build_and_check_output(input, "move_param_method_read", "5\ndone");
+	});
 });

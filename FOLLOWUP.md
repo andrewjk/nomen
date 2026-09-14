@@ -527,30 +527,3 @@ round-trip self-store guard (`load_T`→modify→`store_T` back to the same
 slot would free the value being re-stored); (c) give the language a way to
 hide struct-internal members (e.g. `_`-prefixed names not exported) so raw
 primitives aren't user-visible at all.
-
-## A `move` class/trait param leaks when the callee calls a METHOD on it
-
-`moved_param_is_consumed` (the shared scan behind both backends' moved-param
-epilogue reclaim) treats ANY method call on the moved param as consuming it
-("the receiver may be stored by the callee"), so the callee does not free it.
-When the method doesn't actually retain the receiver, the instance leaks —
-verified for a moved CLASS param, so this is not trait-specific:
-
-```
-class Box { var int v
-  func get = (self, out int) { return self.v } }
-func take = (move Box b) { use_it(move b) }
-func use_it = (move Box b) { Console.write_line("\{b.get()}") }  // method on b
-take(Box(5))   // LEAK: 1 allocation(s)
-```
-
-A field access (`b.v`) does NOT trigger it, so the common shapes balance; the
-leak needs "moved param + a method invoked on it". This is the deliberate
-"leak, never double-free" posture (a callee may stash the receiver), but it is
-over-broad. Narrowing it needs interprocedural knowledge of whether the callee
-retains the receiver (the same must-executed / retention analysis the
-caller-side string-field-record propagation would need — see "Cross-scope
-string field stores").
-
-Related: `move Trait` params are now supported (checker + both backends'
-epilogue reclaim via the trait `<Trait>_destroy` shim) — test/move_trait_param.test.ts.

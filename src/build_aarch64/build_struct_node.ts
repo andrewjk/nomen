@@ -1747,7 +1747,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			}
 			for (const [name, info] of moved_param_save_slots) {
 				if (status.moved?.has(name) && !moved_before.has(name)) continue;
-				if (moved_param_is_consumed(func, name)) continue;
+				if (moved_param_is_consumed(func, name, info.type_name, status.structs)) continue;
 				if (ret_is_class) {
 					status.code += `ldr x0, [x29, #${info.offset}]\n`;
 					status.code += `ldr x1, [x29, #${return_save!}]\n`;

@@ -1057,8 +1057,9 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			if (moved_set?.has(name)) continue;
 			// A param whose ownership escapes into an outliving value (stored
 			// into a container, forwarded, returned) is not the callee's to
-			// free — mirrors the C backend's registration gate.
-			if (moved_param_is_consumed(node, name)) continue;
+			// free — mirrors the C backend's registration gate. A method call
+			// on the param only counts when the callee may retain its receiver.
+			if (moved_param_is_consumed(node, name, info.type_name, status.structs)) continue;
 			if (need_guard) {
 				status.code += `ldr x0, [x29, #${info.offset}]\n`;
 				status.code += `ldr x1, [x29, #${return_save!}]\n`;

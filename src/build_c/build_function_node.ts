@@ -353,7 +353,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				param.is_moved &&
 				moved_owning_param &&
 				node.name !== "main" &&
-				!moved_param_is_consumed(node, param.name)
+				!moved_param_is_consumed(node, param.name, param_struct?.name, status.structs)
 			) {
 				const decl = new DeclarationNode(param.start, "private", "move", pname, param.type);
 				if (param_trait && !param_struct?.is_class) decl.trait_class_trait = param.type.name;

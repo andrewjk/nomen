@@ -719,7 +719,11 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		for (const param of func.params) {
 			if (param.is_self_param) continue;
 			const param_struct = status.structs.find((s) => s.name === param.type.name);
-			if (param.is_moved && param_struct?.is_class && !moved_param_is_consumed(func, param.name)) {
+			if (
+				param.is_moved &&
+				param_struct?.is_class &&
+				!moved_param_is_consumed(func, param.name, param_struct.name, status.structs)
+			) {
 				const pname = c_function_name(param.name);
 				status.scoped_declarations.push(
 					new DeclarationNode(param.start, "private", "move", pname, param.type),
