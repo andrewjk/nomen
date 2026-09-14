@@ -49,6 +49,34 @@ pub func main = (Init init) {
 		await build_and_check_output(input, "borrowed_accessor_return", "first second\ndone\n", true);
 	});
 
+	test("accessor method returns a borrowed class FIELD", async () => {
+		const input = `
+import System
+
+class Box {
+	pub var int v
+}
+
+class Holder {
+	pub move Box b
+
+	pub func get = (self, out Box) {
+		return self.b
+	}
+}
+
+pub func main = (Init init) {
+	var h = Holder(move Box(9))
+	var Box got = h.get()
+	Console.write("v=\\{got.v}\\n")
+	Console.write("done\\n")
+}
+`;
+		const parsed = parse_raw(input);
+		expect(parsed.errors).toEqual([]);
+		await build_and_check_output(input, "borrowed_field_return", "v=9\ndone\n", true);
+	});
+
 	test("borrow returned from a NON-self root is still rejected", async () => {
 		const input = `
 import System

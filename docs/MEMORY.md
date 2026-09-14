@@ -233,7 +233,12 @@ that would escape to a shallower (outer) scope:
 - `cur = list.pop()` / `arr.first()` (an instance method returning a class) is
   a borrow of the receiver, rooted at the receiver's lifetime — it can't be
   assigned to a variable that outlives the receiver.
-- `return h.c` (returning a borrow from a function) is rejected.
+- `return h.c` (returning a borrow rooted at a LOCAL from a function) is
+  rejected. A borrow rooted at `self`, however, IS returnable — `return
+self.c` / `return self.items.at_or_panic(i)` re-root the result at the
+  receiver argument at the call site (the same convention as `view T`
+  returns), which is what makes `state.node(idx)` accessors sound
+  (test/borrowed_accessor_return.test.ts).
 
 Constructors and static factories (`Box(1)`, `Array.with(...)`, free functions
 returning fresh allocations) produce owned values and may escape freely. (The
