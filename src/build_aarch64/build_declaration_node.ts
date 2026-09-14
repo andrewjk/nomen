@@ -126,6 +126,16 @@ function is_struct_type_node(node: BaseNode, status: BuildStatus): boolean {
 	return !!t?.name && !!status.structs.find((s) => s.name === t.name && !s.is_simple_type);
 }
 
+/** Whether a node's type is a VALUE struct (non-class): arguments of that
+ *  type ride as a POINTER to the value (the callee copies through it), so
+ *  call sites must hand over the address, not the first word. */
+function is_value_struct_type_node(node: BaseNode, status: BuildStatus): boolean {
+	const t = type_from_value_node(node);
+	return (
+		!!t?.name && !!status.structs.find((s) => s.name === t.name && !s.is_simple_type && !s.is_class)
+	);
+}
+
 function escape_asciz(value: string): string {
 	if (!value.includes("\n")) return value;
 	const quote = value[0];
@@ -400,8 +410,20 @@ function build_constructor_params(
 				}
 				for (let k = tfc.params.length - 1; k >= 0; k--) {
 					const arg_is_view_arg = !!(tfc.params[k] as any).type?.is_view;
+					// A value-struct param must pass its ADDRESS: the tuple's
+					// _init receives struct fields as pointers and copies
+					// through them (see build_struct_node's field-init copy
+					// path). build_node would hand back only the value's
+					// first word — the variadic-pairs Map<string, Struct>
+					// constructor then read through garbage and SIGSEGV'd.
+					const param_by_address =
+						!arg_is_string(tfc.params[k]) &&
+						!arg_is_view_arg &&
+						is_value_struct_type_node(tfc.params[k], status);
 					if (arg_is_view_arg) {
 						emit_view_string_arg(tfc.params[k], status);
+					} else if (param_by_address) {
+						emit_struct_address_param(tfc.params[k], status);
 					} else {
 						build_node(tfc.params[k], status);
 					}

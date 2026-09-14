@@ -43,6 +43,17 @@ function is_struct_type(type_name: string, status: BuildStatus): boolean {
 	return !!status.structs.find((s) => s.name === type_name && !s.is_simple_type);
 }
 
+/** Whether an argument expression's type is a VALUE struct (non-class):
+ *  arguments of that type ride as a POINTER to the value (the callee copies
+ *  through it), so call sites must hand over the address, not the first
+ *  word. */
+function is_value_struct_arg(node: BaseNode, status: BuildStatus): boolean {
+	const t = type_from_value_node(node);
+	return (
+		!!t?.name && !!status.structs.find((s) => s.name === t.name && !s.is_simple_type && !s.is_class)
+	);
+}
+
 function is_enum_with_data_type(type_name: string, status: BuildStatus): boolean {
 	const e = status.enums.find((e) => e.name === type_name);
 	return !!e && !!e.has_associated_data;
@@ -316,7 +327,17 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 						fc_total += arg_is_string(fc.params[k]) ? 2 : 1;
 					}
 					for (let k = fc.params.length - 1; k >= 0; k--) {
-						build_node(fc.params[k], status);
+						// A value-struct param must pass its ADDRESS: the tuple's
+						// _init receives struct fields as pointers and copies
+						// through them (see build_struct_node's field-init copy
+						// path). build_node would hand back only the value's
+						// first word — the variadic-pairs Map<string, Struct>
+						// constructor then read through garbage and SIGSEGV'd.
+						if (is_value_struct_arg(fc.params[k], status)) {
+							emit_struct_address(fc.params[k], status);
+						} else {
+							build_node(fc.params[k], status);
+						}
 						if (!status.code.endsWith("\n")) status.code += "\n";
 						const reg_idx = fc_slots[k];
 						if (arg_is_string(fc.params[k]) && reg_idx + 1 < fc_param_regs.length) {

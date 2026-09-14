@@ -10,6 +10,60 @@ import { parse_raw } from "./parse_with_imports";
 // and Map's alloc_T forwards route names to ClassBuffer.
 
 describe("Map with reference-typed values", () => {
+	test("variadic pairs constructor with value-struct values", async () => {
+		// Map<string, TV>(["k", TV(...)]) materializes each pair as a
+		// _Tuple_string_TV whose TV field is copied through a POINTER —
+		// the aarch64 pair packing handed the tuple _init the value's
+		// first word instead of the address (SIGSEGV). Both shapes the
+		// checker's gate does NOT cover (value structs pass it): scalars
+		// only, and a string-carrying struct.
+		const input = `
+import System
+
+struct Vec {
+	var int x = 0
+	var int y = 0
+	pub func #init = (ref self, int x, int y) {
+		self.x = x
+		self.y = y
+	}
+}
+
+struct Named {
+	var string name = ""
+	var int num = 0
+	pub func #init = (ref self, string name, int num) {
+		self.name = name
+		self.num = num
+	}
+}
+
+pub func main = (Init init) {
+	var m = Map<string, Vec>(["a", Vec(1, 2)], ["b", Vec(3, 4)])
+	Console.write("len=\\{m.length}\\n")
+	var Vec va = m.get_or("a", Vec(0, 0))
+	var Vec vb = m.get_or("b", Vec(0, 0))
+	Console.write("a=\\{va.x},\\{va.y} b=\\{vb.x},\\{vb.y}\\n")
+	var n = Map<string, Named>(["k", Named("hi", 7)])
+	var Named nk = n.get_or("k", Named("no", 0))
+	Console.write("k=\\{nk.name}/\\{nk.num}\\n")
+	m.set("c", Vec(5, 6))
+	m.set("a", Vec(-1, -2))
+	var Vec vc = m.get_or("c", Vec(0, 0))
+	var Vec va2 = m.get_or("a", Vec(0, 0))
+	Console.write("c=\\{vc.x},\\{vc.y} a2=\\{va2.x},\\{va2.y} len=\\{m.length}\\n")
+}
+`;
+		const parsed = parse_raw(input);
+		expect(parsed.errors).toEqual([]);
+		await build_and_check_output(
+			input,
+			"map_reference_values_variadic_pairs",
+			"len=2\na=1,2 b=3,4\nk=hi/7\nc=5,6 a2=-1,-2 len=3\n",
+			true,
+		);
+	});
+
 	test("class/trait values set, get, and destroy soundly", async () => {
 		const input = `
 import System

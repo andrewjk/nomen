@@ -250,10 +250,7 @@ test("join warns on a file importing its own namespace folder", () => {
 			path.join(root, "src", "main.nm"),
 			"import System\nimport utils\npub func main = () {}\n",
 		);
-		fs.writeFileSync(
-			path.join(root, "src", "utils", "a.nm"),
-			"import utils\npub func a = () {}\n",
-		);
+		fs.writeFileSync(path.join(root, "src", "utils", "a.nm"), "import utils\npub func a = () {}\n");
 		const warnings: string[] = [];
 		const original_error = console.error;
 		console.error = (...args: unknown[]) => {
@@ -266,9 +263,7 @@ test("join warns on a file importing its own namespace folder", () => {
 			console.error = original_error;
 		}
 		expect(input).toContain("pub func a");
-		expect(
-			warnings.some((w) => w.includes("a.nm imports its own namespace")),
-		).toBe(true);
+		expect(warnings.some((w) => w.includes("a.nm imports its own namespace"))).toBe(true);
 	} finally {
 		fs.rmSync(root, { recursive: true, force: true });
 	}
@@ -309,10 +304,7 @@ test("join includes a diamond dependency exactly once", () => {
 			"import System\nimport shared\nimport left\npub func main = () {}\n",
 		);
 		fs.writeFileSync(path.join(root, "src", "shared.nm"), "pub func shared = () {}\n");
-		fs.writeFileSync(
-			path.join(root, "src", "left.nm"),
-			"import shared\npub func left = () {}\n",
-		);
+		fs.writeFileSync(path.join(root, "src", "left.nm"), "import shared\npub func left = () {}\n");
 		const input = join(path.join(root, "src", "main.nm"), undefined);
 		expect(input.split("pub func shared").length - 1).toBe(1);
 		expect(input).toContain("pub func left");
