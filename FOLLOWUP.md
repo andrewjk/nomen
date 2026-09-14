@@ -476,33 +476,21 @@ first json_parse_pairs stop; the watch itself worked — capture the
 command output with `watchpoint command add`). The first write of 0
 names the miscompiled store directly.
 
-## Generic enum return from a generic-struct method fails to monomorphize (found building `Arena<T>`)
+## Generic enum with a CLASS/TRAIT element has no mono representation (narrow)
 
-A method whose body returns a generic enum over the struct's own type
-parameter does not monomorphize: adding
-
-```
-pub func try_get = (self, ArenaRef<T> handle, out Option<T>) {
-    if !self.is_valid(handle) {
-        var Option<T> none = Option<T>.none
-        return none
-    }
-    return Option<T>.some(self.values.load_T(handle.index))
-}
-```
-
-to `core/System/Arena.nm` compiles through the checker but the C backend
-emits `Option Arena_string_try_get(...)` — the bare, un-instantiated
-`Option` typedef — and `_some(&Option, ...)`, so clang rejects the TU
-("unknown type name 'Option'"). The method was dropped from `Arena<T>` in
-favor of `is_valid` + `get_or` + `get` (which cover the same cases without
-a generic-enum return). Repro: add that method back and build any
-`Arena<X>` program on the C backend. Likely the same class of gap as other
-"generic value produced inside a generic method body needs
-instantiation" sites (cf. the `List<int>`-as-generic-struct-field case:
-`List<int>` there also fails with "Function not found: List_int");
-worth a general pass over monomorphization of generic types mentioned
-only inside generic bodies.
+The monomorphization of generic-enum RETURNS from generic-struct methods is
+fixed (`Option<T>` over value elements materializes `Option_string`-style
+monos for the signature, the body's case constructions, and locals — see
+test/generic_enum_return.test.ts). Still broken: instantiating the generic
+enum with a CLASS/trait element (e.g. `Option<Box>` via
+`Arena<Box>.try_get`), where the mono's case payload emits as a by-value
+`struct { Box value; }` C field — a class must ride as `struct Box*`, and
+the typedef must exist before the enum's header block ("must use 'struct'
+tag", "incomplete type"). Restoring `Arena.try_get` needs this first:
+monomorphize_enum needs the same class→pointer payload treatment struct
+fields get, plus a typedef-order pass for mono enums referencing user
+classes. Ownership is also open (does a `.some(class)` payload own the
+instance — who destroys it?).
 
 ## `Buffer`'s raw slot primitives are public, and `store_T` leaks on overwrite
 

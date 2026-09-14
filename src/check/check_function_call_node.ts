@@ -426,6 +426,7 @@ export function monomorphize(
 		// handled separately below (its type is the struct name, not a type
 		// param). Mirrors the trait-default retype pattern.
 		for (const stmt of cloned.statements) substitute_node_types(stmt, substitution);
+		materialize_mono_enum_types(cloned.statements, substitution, status);
 		// Repoint every `self` reference at the monomorphised struct (e.g.
 		// Box -> Box_Pt). The cloned body's `self` ValueNodes keep the generic
 		// struct name, and the builder reads ValueNode.type directly to decide
@@ -435,8 +436,14 @@ export function monomorphize(
 		// retype at the trait-method clone site.
 		retype_self_references(cloned.statements, mono_name);
 		cloned.return_type = substitute_type(cloned.return_type, substitution);
+		if (cloned.return_type.type_args?.length) {
+			cloned.return_type = materialize_generic_enum_type(cloned.return_type, status);
+		}
 		for (const param of cloned.params) {
 			param.type = substitute_type(param.type, substitution);
+			if (param.type.type_args?.length) {
+				param.type = materialize_generic_enum_type(param.type, status);
+			}
 			if (param.constraint) {
 				substitute_raw_in_node(
 					param.constraint,
@@ -1372,6 +1379,109 @@ export function substitute_type(type: Type, substitution: Map<string, string>): 
 }
 
 /**
+ * A type annotation naming a GENERIC ENUM with concrete type args (e.g.
+ * `Option<T>` inside a generic body, after substitution → `Option<string>`):
+ * materialize the monomorphized enum and rename the type to it. Bodies are
+ * not re-checked after monomorphization, so without this the clone keeps the
+ * bare template name and the backends emit `Option` (an unknown C symbol) or
+ * lower case payloads with the unresolved param type (a missed owned-string
+ * dup, then an invalid free at scope exit).
+ */
+function materialize_generic_enum_type(type: Type, status: CheckStatus): Type {
+	if (!type?.name || !type.type_args?.length) return type;
+	const generic_enum = status.enums.find((e) => e.name === type.name && e.is_generic);
+	if (!generic_enum || generic_enum.type_params.length !== type.type_args.length) return type;
+	if (type.type_args.some((t) => !t.name || generic_enum.type_params.includes(t.name))) {
+		return type;
+	}
+	const mono = monomorphize_enum(generic_enum, type.type_args, status);
+	if (!mono) return type;
+	const out = new Type(mono.name, type.is_static, type.is_array, type.length);
+	out.is_ref = type.is_ref;
+	out.is_view = type.is_view;
+	out.is_const_ref = type.is_const_ref;
+	out.is_pointer = type.is_pointer;
+	out.is_nullable = type.is_nullable;
+	out.type_args = undefined;
+	return out;
+}
+
+/**
+ * Sweep a monomorphized body and repoint every generic-enum mention at its
+ * materialized mono: type annotations (`var Option<T> none = ...`) and bare
+ * enum-name references (`Option<T>.some(...)` — the checker deferred the case
+ * construction because T was unresolved). Runs after substitute_node_types,
+ * which renames type args but leaves the generic enum's own name alone.
+ */
+function materialize_mono_enum_types(
+	statements: BaseNode[],
+	substitution: Map<string, string>,
+	status: CheckStatus,
+) {
+	const visit = (node: unknown): void => {
+		if (!node || typeof node !== "object") return;
+		const record = node as Record<string, unknown>;
+		for (const key of Object.keys(record)) {
+			if (key === "parent" || key === "scope") continue;
+			const v = record[key];
+			if (v instanceof Type) {
+				record[key] = materialize_generic_enum_type(v as Type, status);
+			} else if (Array.isArray(v)) {
+				for (let i = 0; i < v.length; i++) {
+					const item = v[i];
+					if (item instanceof Type) {
+						v[i] = materialize_generic_enum_type(item as Type, status);
+					} else {
+						visit(item);
+					}
+				}
+			} else if (v && typeof v === "object" && !(v instanceof Type)) {
+				visit(v);
+			}
+		}
+		const value_node = node as unknown as {
+			node_type?: string;
+			value?: string;
+			type?: Type;
+			type_args?: Type[];
+		};
+		if (value_node.node_type === "value" && value_node.value && status) {
+			// A generic-enum NAME reference (`Option<T>.some(...)`): the enum
+			// name sits in .value, with type args either on the node or on
+			// .type. The checker deferred the case construction (T was
+			// unresolved) and may have left .type.name empty, so look the enum
+			// up by the value's name directly. The type args may also be
+			// unsubstituted ([T]) — substitute_node_types only rewrites .type —
+			// so substitute them here before materializing.
+			const type_args = value_node.type_args ?? value_node.type?.type_args;
+			const generic_enum = type_args
+				? status.enums.find((e) => e.name === value_node.value && e.is_generic)
+				: undefined;
+			if (generic_enum && generic_enum.type_params.length === type_args!.length) {
+				const concrete = type_args!.map((t) => substitute_type(t, substitution));
+				const all_concrete = concrete.every(
+					(t) => t.name && !generic_enum.type_params.includes(t.name),
+				);
+				if (all_concrete) {
+					const base =
+						value_node.type?.name === value_node.value
+							? value_node.type
+							: new Type(value_node.value);
+					base.type_args = concrete;
+					const materialized = materialize_generic_enum_type(base, status);
+					if (materialized !== base) {
+						value_node.type = materialized;
+						value_node.value = materialized.name;
+						value_node.type_args = undefined;
+					}
+				}
+			}
+		}
+	};
+	for (const stmt of statements) visit(stmt);
+}
+
+/**
  * After the monomorphizer substituted `T_NEEDS_STRDUP`/`T_FAT` with literal
  * `true`/`false`, delete the dead arm of every `if` they guard. The generic
  * body could not type-check both arms (a representation-specific arm touches
@@ -1905,6 +2015,7 @@ function specialize_function(
 
 	if (generic_func.type_params.length > 0) {
 		substitute_body_types(cloned.statements, substitution);
+		materialize_mono_enum_types(cloned.statements, substitution, status);
 	}
 
 	cloned.type_params = [];
@@ -2142,6 +2253,7 @@ export function substitute_body_types(
 function substitute_node_types(
 	node: import("../nodes/BaseNode.ts").default,
 	substitution: Map<string, string>,
+	status?: CheckStatus,
 ) {
 	if (!node) return;
 
@@ -2149,7 +2261,8 @@ function substitute_node_types(
 		case "declare": {
 			const n = node as import("../nodes/DeclarationNode.ts").default;
 			n.type = substitute_type(n.type, substitution);
-			if (n.value) substitute_node_types(n.value, substitution);
+			if (status) n.type = materialize_generic_enum_type(n.type, status);
+			if (n.value) substitute_node_types(n.value, substitution, status);
 			if (n.func_return_type)
 				n.func_return_type = substitute_type(n.func_return_type, substitution);
 			break;

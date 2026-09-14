@@ -74,6 +74,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 			const c = new ValueNode(n.start, n.value, n.type ? clone_type(n.type) : undefined);
 			c.is_enum_shorthand = n.is_enum_shorthand;
 			c.allocations = n.allocations?.map(clone_node);
+			c.type_args = n.type_args?.map(clone_type);
 			return c;
 		}
 		case "func_call": {
