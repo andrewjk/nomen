@@ -168,7 +168,7 @@ func identity = (move int x, out int) {
 			expect(parsed.errors).toEqual([
 				test_error(
 					input,
-					"move is only allowed for class or owning struct types, not 'int'",
+					"move is only allowed for class, trait, or owning struct types, not 'int'",
 					2,
 					18,
 				),
@@ -189,7 +189,7 @@ func identity = (move Point p, out Point) {
 			expect(parsed.errors).toEqual([
 				test_error(
 					input,
-					"move is only allowed for class or owning struct types, not 'Point'",
+					"move is only allowed for class, trait, or owning struct types, not 'Point'",
 					6,
 					18,
 				),
@@ -219,7 +219,7 @@ func identity = (move string s, out string) {
 			expect(parsed.errors).toEqual([
 				test_error(
 					input,
-					"move is only allowed for class or owning struct types, not 'string'",
+					"move is only allowed for class, trait, or owning struct types, not 'string'",
 					2,
 					18,
 				),

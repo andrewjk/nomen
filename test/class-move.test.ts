@@ -393,7 +393,7 @@ var Point b = identity(move a)
 		expect(parsed.errors).toEqual([
 			test_error(
 				input,
-				"move is only allowed for class or owning struct types, not 'Point'",
+				"move is only allowed for class, trait, or owning struct types, not 'Point'",
 				7,
 				18,
 			),

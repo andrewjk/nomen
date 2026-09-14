@@ -886,7 +886,14 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		else if (param.type.name === "string" || param.type.is_view) pidx += 2;
 		if (param.is_moved) {
 			const is_class = !!status.structs.find((s) => s.name === param.type.name && s.is_class);
-			if (is_class) {
+			// A trait-typed value is a reference to a heap instance (a pointer
+			// with a vtable), so `move Trait` transfers ownership exactly like
+			// `move Class`: the callee reclaims it at exit through the trait's
+			// `<Trait>_destroy` shim (emit_destroy_for_anchor_slot dispatches
+			// traits polymorphically). Registering it in moved_class_params
+			// also lets a forwarded `move`/`return` recognize it.
+			const is_trait = !!status.traits.find((t) => t.name === param.type.name);
+			if (is_class || is_trait) {
 				const reg = callee_map.get(param.name) ?? param_regs[pidx];
 				status.moved_class_params!.set(param.name, reg);
 				const save_offset = allocate_stack_space(status, 8);

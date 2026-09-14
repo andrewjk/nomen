@@ -344,14 +344,19 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			// at function exit — unless the body further moves it out (the move
 			// param handling in build_function_call_node splices it), or it is
 			// returned (handled in build_return_node). Mirrors aarch64's
-			// moved_param_save_slots cleanup.
+			// moved_param_save_slots cleanup. A `move` TRAIT param is the same
+			// ownership transfer of a heap instance; its declaration carries
+			// `trait_class_trait` so auto_free reclaims through the trait's
+			// `<Trait>_destroy` shim (the concrete type varies).
+			const moved_owning_param = param_struct?.is_class || !!param_trait;
 			if (
 				param.is_moved &&
-				param_struct?.is_class &&
+				moved_owning_param &&
 				node.name !== "main" &&
 				!moved_param_is_consumed(node, param.name)
 			) {
 				const decl = new DeclarationNode(param.start, "private", "move", pname, param.type);
+				if (param_trait && !param_struct?.is_class) decl.trait_class_trait = param.type.name;
 				status.scoped_declarations.push(decl);
 			}
 		}

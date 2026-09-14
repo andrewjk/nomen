@@ -9,6 +9,7 @@ import check_type_exists from "./utils/check_type_exists.ts";
 import { apply_bounds, strip_length_equalities } from "./utils/flow_bounds.ts";
 import materialize_type from "./utils/materialize_type.ts";
 import { is_class_type, is_owning_struct_type_requiring_move } from "./utils/ownership.ts";
+import { is_trait_type } from "./utils/trait_slot.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 
@@ -75,22 +76,27 @@ export default function check_function_parameter_node(
 		);
 	}
 
-	// move is for class types and owning value structs (List/Map/Buffer/… —
-	// anything whose byte-copy would double-free, so the move transfers the
-	// backing storage). Type parameters (T, U, …) are allowed since the actual
-	// type isn't known until monomorphization; when a generic is instantiated
-	// with a non-owning type, move silently becomes a no-op.
+	// move is for class types, trait types, and owning value structs
+	// (List/Map/Buffer/… — anything whose byte-copy would double-free, so the
+	// move transfers the backing storage). A trait-typed value is a reference
+	// to a heap instance (a pointer with a vtable), so `move Trait` transfers
+	// ownership exactly like `move Class` — the callee destroys it through
+	// the trait's `<Trait>_destroy` shim. Type parameters (T, U, …) are
+	// allowed since the actual type isn't known until monomorphization; when
+	// a generic is instantiated with a non-owning type, move silently becomes
+	// a no-op.
 	if (
 		param.is_moved &&
 		param.type.name &&
 		!is_class_type(param.type.name, status) &&
+		!is_trait_type(param.type.name, status) &&
 		!is_owning_struct_type_requiring_move(param.type, status) &&
 		!status.type_params.includes(param.type.name) &&
 		!status.structs.some((s) => s.type_params.includes(param.type.name))
 	) {
 		add_error(
 			status,
-			`move is only allowed for class or owning struct types, not '${param.type.name}'`,
+			`move is only allowed for class, trait, or owning struct types, not '${param.type.name}'`,
 			param.start,
 		);
 	}
