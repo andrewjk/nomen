@@ -1,0 +1,6 @@
+hello world
+r0-stale
+r1-live
+r0idx=0 r2idx=0
+r0_still_stale=false
+reused

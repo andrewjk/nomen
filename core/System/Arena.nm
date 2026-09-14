@@ -1,0 +1,166 @@
+// Arena<T>: a generational arena — one owner of every slot, with cheap
+// copyable handles (`ArenaRef<T>`) instead of borrows. This is the single-ownership
+// answer to "many places need to refer to the same node": the arena owns the
+// values, everyone else holds `ArenaRef<T>` (a plain { index, generation } value
+// that copies freely and never dangles undetected).
+//
+// Why not `List<T>` + raw `int` indices? An index silently aliases a recycled
+// slot after a removal — the classic stale-index bug. An `ArenaRef<T>` carries the
+// slot's generation, bumped on every `free`; a stale handle fails the
+// generation check and `get` panics (`is_valid` / `get_or` test it without
+// trapping), so use-after-free is DETECTED instead of silently reading
+// another node.
+//
+// The arena is the sole owner: `free` relinquishes the slot's value (moved out
+// and reclaimed by the ordinary ownership machinery) and bumps the generation;
+// the arena's own #destroy reclaims every still-live slot at scope exit.
+
+/**
+ * A copyable, non-owning handle to an `Arena<T>` slot. The generation makes a
+ * reused slot distinguishable from the one this handle was issued for.
+ **/
+pub struct ArenaRef<T> {
+	var int index = -1
+	var int generation = -1
+
+	pub func is_null = (self, out bool) {
+		return self.index < 0
+	}
+}
+
+/**
+ * A generational arena: one owner of a set of `T` values, addressed by
+ * copyable `ArenaRef<T>` handles.
+ **/
+pub struct Arena<T> {
+	// Slot payloads. T = value struct/primitive routes to Buffer<T>; T =
+	// class/trait routes to ClassBuffer<T> (monomorphize rewrites the field),
+	// so slot ownership follows the usual element rules.
+	var Buffer<T> values = Buffer<T>()
+	// Per-slot generation, bumped on every free. Slots are calloc'd, so a
+	// fresh slot's generation is 0.
+	var Buffer<int> generations = Buffer<int>()
+	// Freed slot indices available for reuse (LIFO free list). A raw Buffer
+	// plus an explicit count: a `List<int>` field would need its own
+	// monomorphization from inside a generic struct body.
+	var Buffer<int> free_indices = Buffer<int>()
+	var int free_count = 0
+	// High-water mark: every index < count has a slot (live or free).
+	var int count = 0
+
+	/**
+	 * A fresh arena with no slots.
+	 **/
+	pub func #init = (ref self) {
+		self.values = Buffer<T>()
+		self.generations = Buffer<int>()
+		self.free_indices = Buffer<int>()
+		self.free_count = 0
+		self.count = 0
+	}
+
+	/**
+	 * Store `value` in a slot (reusing a freed slot when one is available) and
+	 * return a handle to it.
+	 **/
+	pub func alloc = (ref self, move T value, out ArenaRef<T>) {
+		var int index = -1
+		if self.free_count > 0 {
+			// Reuse a freed slot. Its generation was already bumped by `free`,
+			// so stale handles to it are already invalid.
+			self.free_count = self.free_count - 1
+			index = self.free_indices.load_int(self.free_count)
+		} else {
+			index = self.count
+			self.count = index + 1
+			self.generations.grow_int(index + 1)
+			self.generations.store_int(index, 0)
+		}
+		self.values.grow_T(index + 1)
+		self.values.store_T(index, value)
+		var ArenaRef<T> handle = ArenaRef<T>()
+		handle.index = index
+		handle.generation = self.generations.load_int(index)
+		return handle
+	}
+
+	/**
+	 * Relinquish the slot `handle` points at (its value is reclaimed), bumping the
+	 * generation so every outstanding handle to that slot becomes stale.
+	 **/
+	pub func free = (ref self, ArenaRef<T> handle) {
+		if !self.is_valid(handle) {
+			panic("arena: free of a stale handle")
+		}
+		var T discarded = self.values.move_T(handle.index)
+		self.generations.store_int(handle.index, handle.generation + 1)
+		self.free_indices.grow_int(self.free_count + 1)
+		self.free_indices.store_int(self.free_count, handle.index)
+		self.free_count = self.free_count + 1
+	}
+
+	/**
+	 * The current generation of a slot index (raw; for `ArenaRef` bookkeeping).
+	 **/
+	pub func generation_of = (self, int index: index >= 0 && index < self.count, out int) {
+		return self.generations.load_int(index)
+	}
+
+	/**
+	 * Whether `handle` still names a live slot.
+	 **/
+	pub func is_valid = (self, ArenaRef<T> handle, out bool) {
+		if handle.index < 0 || handle.index >= self.count {
+			return false
+		}
+		return self.generations.load_int(handle.index) == handle.generation
+	}
+
+	/**
+	 * The value `handle` names. Panics on a stale handle (use-after-free is a
+	 * bug, not a case — use `is_valid` / `get_or` when absence is expected).
+	 **/
+	pub func get = (self, ArenaRef<T> handle, out T) {
+		if !self.is_valid(handle) {
+			panic("arena: get of a stale handle")
+		}
+		return self.values.load_T(handle.index)
+	}
+
+	/**
+	 * The value `handle` names, or `fallback` when the handle is stale.
+	 **/
+	pub func get_or = (self, ArenaRef<T> handle, T fallback, out T) {
+		if !self.is_valid(handle) {
+			return fallback
+		}
+		return self.values.load_T(handle.index)
+	}
+
+	/**
+	 * Replace the value `handle` names (same slot, same handle).
+	 **/
+	pub func set = (ref self, ArenaRef<T> handle, move T value) {
+		if !self.is_valid(handle) {
+			panic("arena: set through a stale handle")
+		}
+		self.values.replace_T(handle.index, value)
+	}
+
+	/**
+	 * The number of slots ever allocated (live + freed). Indices `0 .. count()`
+	 * can be walked with `get_index`; freed slots return their stale value, so
+	 * prefer `is_valid` + `get` when iterating handles.
+	 **/
+	pub func count_all = (self, out int) {
+		return self.count
+	}
+
+	/**
+	 * Raw slot access by index — for iteration over the index space. Does not
+	 * generation-check; callers own the index bookkeeping.
+	 **/
+	pub func get_index = (self, int index: index >= 0 && index < self.count, out T) {
+		return self.values.load_T(index)
+	}
+}

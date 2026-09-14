@@ -475,3 +475,31 @@ Next step: in the set_kind-only failing build, watchpoint
 first json_parse_pairs stop; the watch itself worked — capture the
 command output with `watchpoint command add`). The first write of 0
 names the miscompiled store directly.
+
+## Generic enum return from a generic-struct method fails to monomorphize (found building `Arena<T>`)
+
+A method whose body returns a generic enum over the struct's own type
+parameter does not monomorphize: adding
+
+```
+pub func try_get = (self, ArenaRef<T> handle, out Option<T>) {
+    if !self.is_valid(handle) {
+        var Option<T> none = Option<T>.none
+        return none
+    }
+    return Option<T>.some(self.values.load_T(handle.index))
+}
+```
+
+to `core/System/Arena.nm` compiles through the checker but the C backend
+emits `Option Arena_string_try_get(...)` — the bare, un-instantiated
+`Option` typedef — and `_some(&Option, ...)`, so clang rejects the TU
+("unknown type name 'Option'"). The method was dropped from `Arena<T>` in
+favor of `is_valid` + `get_or` + `get` (which cover the same cases without
+a generic-enum return). Repro: add that method back and build any
+`Arena<X>` program on the C backend. Likely the same class of gap as other
+"generic value produced inside a generic method body needs
+instantiation" sites (cf. the `List<int>`-as-generic-struct-field case:
+`List<int>` there also fails with "Function not found: List_int");
+worth a general pass over monomorphization of generic types mentioned
+only inside generic bodies.
