@@ -15,6 +15,7 @@ import {
 	enter_scope_frame,
 	exit_scope_frame,
 	emit_enum_payload_frees,
+	set_trait_class_local,
 } from "./utils/auto_destroy.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
 import { emit_pair_store_x29 } from "./utils/string_pair.ts";
@@ -162,6 +163,18 @@ export default function build_match_node(
 					const param_name = match_case.params[j];
 					const field = enum_case.params[j];
 					if (!field) continue;
+					// A class/trait payload binding holds the INSTANCE POINTER
+					// (a borrow of the payload the enum value owns). Track it
+					// scope-keyed so trait method dispatch dereferences the
+					// slot to reach the instance's vtable (build_access_node).
+					const is_class =
+						!!field.type.name &&
+						!!status.structs.find((s) => s.name === field.type.name && s.is_class);
+					const is_trait =
+						!!field.type.name && !!status.traits.find((t) => t.name === field.type.name);
+					if ((is_class || is_trait) && !field.type.is_array) {
+						set_trait_class_local(status, param_name, field.type.name);
+					}
 					const payload_off = get_enum_payload_offset(
 						enum_with_data.name,
 						enum_case.name,

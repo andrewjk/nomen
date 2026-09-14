@@ -476,23 +476,27 @@ export function resolve_struct_name(
 }
 
 /**
- * Free the string payloads of an enum-with-data local (`var Result<string, E>
+ * Free the owned payloads of an enum-with-data local (`var Result<string, E>
  * r`), tag-guarded: for every case carrying a string param, load the case
  * index, compare against the blob's tag word, and free the payload's ptr
- * half on match. Case construction strdups string args (always-heap), so
- * freeing here is safe. Callers must NOT run this for an enum local that was
- * RETURNED — its bytes (and payload ownership) transferred to the caller.
+ * half on match. A class/trait payload (an owned instance pointer — case
+ * construction transfers ownership) is likewise reclaimed: `<T>_destroy`
+ * (the trait shim dispatches polymorphically) then free. Case construction
+ * strdups string args (always-heap), so freeing here is safe. Callers must
+ * NOT run this for an enum local that was RETURNED — its bytes (and payload
+ * ownership) transferred to the caller.
  */
 export function emit_enum_payload_frees(status: BuildStatus, enum_name: string, decl_name: string) {
 	const enum_node = status.enums.find((e) => e.name === enum_name);
 	if (!enum_node?.has_associated_data) return;
-	const string_cases = enum_node.cases.filter((c) =>
-		c.params.some((p) => p.type.name === "string"),
+	const owning_cases = enum_node.cases.filter((c) =>
+		c.params.some((p) => p.type.name === "string" || enum_payload_is_reference(p, status)),
 	);
-	if (!string_cases.length) return;
-	for (const c of string_cases) {
+	if (!owning_cases.length) return;
+	for (const c of owning_cases) {
 		for (const p of c.params) {
-			if (p.type.name !== "string") continue;
+			const is_ref = enum_payload_is_reference(p, status);
+			if (p.type.name !== "string" && !is_ref) continue;
 			const case_index = enum_node.cases.indexOf(c);
 			const payload_off = get_enum_payload_offset(enum_name, c.name, p.name, status);
 			emit_var_address(status, "x0", decl_name);
@@ -502,10 +506,24 @@ export function emit_enum_payload_frees(status: BuildStatus, enum_name: string, 
 			status.code += `cmp x9, x10\n`;
 			status.code += `b.ne ${skip}\n`;
 			status.code += `ldr x0, [x0, #${payload_off}]\n`;
-			emit_free(status);
+			if (is_ref) {
+				status.code += `bl ${p.type.name}_destroy\n`;
+				emit_free(status);
+			} else {
+				emit_free(status);
+			}
 			status.code += `${skip}:\n`;
 		}
 	}
+}
+
+/** Whether an enum case param is a class/trait REFERENCE payload (an owned
+ *  instance pointer — see build_enum_node on C). */
+function enum_payload_is_reference(p: { type: Type }, status: BuildStatus): boolean {
+	if (!p.type.name || p.type.is_array) return false;
+	const struct = status.structs.find((s) => s.name === p.type.name);
+	if (struct?.is_class) return true;
+	return !!status.traits.find((t) => t.name === p.type.name);
 }
 
 export function is_struct_type(type_name: string, status: BuildStatus): StructNode | undefined {

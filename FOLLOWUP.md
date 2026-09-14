@@ -445,21 +445,25 @@ first json_parse_pairs stop; the watch itself worked — capture the
 command output with `watchpoint command add`). The first write of 0
 names the miscompiled store directly.
 
-## Generic enum with a CLASS/TRAIT element has no mono representation (narrow)
+## Match-branch heap strings leak through a hoisted match-expression arg (pre-existing, narrow)
 
-The monomorphization of generic-enum RETURNS from generic-struct methods is
-fixed (`Option<T>` over value elements materializes `Option_string`-style
-monos for the signature, the body's case constructions, and locals — see
-test/generic_enum_return.test.ts). Still broken: instantiating the generic
-enum with a CLASS/trait element (e.g. `Option<Box>` via
-`Arena<Box>.try_get`), where the mono's case payload emits as a by-value
-`struct { Box value; }` C field — a class must ride as `struct Box*`, and
-the typedef must exist before the enum's header block ("must use 'struct'
-tag", "incomplete type"). Restoring `Arena.try_get` needs this first:
-monomorphize_enum needs the same class→pointer payload treatment struct
-fields get, plus a typedef-order pass for mono enums referencing user
-classes. Ownership is also open (does a `.some(class)` payload own the
-instance — who destroys it?).
+Found while landing the class/trait enum-payload work (it is NOT
+payload-related — the repro has no enum at all). A match used directly as
+a call argument whose branch result is a heap string leaks that string on
+C: `Console.write_line(match true { case true -> s.speak() case false ->
+s.speak() })` reports `LEAK: 1 allocation(s)` (audit). The hoisted arg
+temp (`_param_N`) is only freed when `value_is_heap_string`
+(build_auto_free.ts) recognizes the initializer — and it only recognizes
+`access`/`func_call` node shapes, not `match`. A direct call in the same
+position IS freed (`Console.write_line(n.to_string())`), and binding the
+match to a variable first still leaks (the declaration free gate has the
+same shape gap). Leak-only, never unsound; bounded by one allocation per
+such statement. Fix direction: teach the hoisted-arg/declaration heap
+recognition that a `match` initializer is heap when any branch returns
+heap (mirroring how mixed string joins normalize ownership per branch), or
+have the match emission register its result temp in an owned-results set
+when it stored a heap value (the C backend already tracks
+`last_result_is_heap` per expression).
 
 ## `Buffer`'s raw slot primitives are public, and `store_T` leaks on overwrite
 

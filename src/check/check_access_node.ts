@@ -18,7 +18,11 @@ import check_function_call_node, {
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { invalidate_borrows_of, receiver_owner_of } from "./utils/borrow.ts";
-import { find_mono_enum, monomorphize_enum } from "./utils/enum_mono.ts";
+import {
+	enforce_case_payload_ownership,
+	find_mono_enum,
+	monomorphize_enum,
+} from "./utils/enum_mono.ts";
 import { expr_to_string } from "./utils/flow_bounds.ts";
 import {
 	find_function_by_params,
@@ -589,6 +593,9 @@ function check_access_function_node(
 				for (let param of node.params) {
 					check_node(param, status);
 				}
+				// A CLASS/TRAIT case payload is an OWNING slot — enforce the
+				// ownership contract (see enforce_case_payload_ownership).
+				enforce_case_payload_ownership(enum_case.name, enum_case.params, node.params, node, status);
 
 				return true;
 			}

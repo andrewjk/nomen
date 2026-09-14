@@ -161,6 +161,15 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				const case_index = enum_node.cases.indexOf(enum_case);
 				const enum_size = get_enum_size(enum_node.name, status);
 				const temp_offset = allocate_stack_space(status, enum_size);
+				// An owned class/trait LOCAL passed to an owning case payload
+				// transfers ownership (check records the arg in
+				// move_param_indices): mark it moved so its own scope-exit
+				// destroy doesn't free the instance the payload now owns.
+				if (node.move_param_indices?.length) {
+					for (const idx of node.move_param_indices) {
+						mark_moved_if_struct(node.params[idx], status);
+					}
+				}
 				status.code += `add x0, x29, #${temp_offset}\n`;
 				status.code += `mov x1, #${case_index}\n`;
 				status.code += `str x1, [x0]\n`;

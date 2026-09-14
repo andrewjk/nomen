@@ -2,13 +2,36 @@ import type { NirStmt } from "../nir/nir.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
+import type EnumNode from "../nodes/EnumNode.ts";
 import MatchNode from "../nodes/MatchNode.ts";
+import type Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_auto_free from "./build_auto_free.ts";
 import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import { build_block_with_cursor } from "./emit_nir.ts";
+import c_function_name from "./utils/c_function_name.ts";
 import c_type from "./utils/c_type.ts";
+
+/**
+ * Whether a case payload of this type is a class/trait REFERENCE (rides as
+ * `struct Tag *` in the tagged union — see build_enum_node). The match
+ * binding for such a payload must declare the pointer form, and the owning
+ * payload must be reclaimed when the enum value dies.
+ */
+function payload_is_reference(type: Type, status: BuildStatus): boolean {
+	if (!type.name || type.is_array) return false;
+	const struct = status.structs.find((s) => s.name === type.name);
+	if (struct?.is_class) return true;
+	return !!status.traits.find((t) => t.name === type.name);
+}
+
+/** Cases of this enum whose payloads the value OWNS and must reclaim. */
+function owning_payload_cases(enum_node: EnumNode, status: BuildStatus) {
+	return enum_node.cases.filter((c) =>
+		c.params.some((p) => p.type.name === "string" || payload_is_reference(p.type, status)),
+	);
+}
 
 function enum_case_tag_name(match_value: string, enum_name: string): string | null {
 	if (match_value.startsWith(enum_name + "_")) {
@@ -102,7 +125,7 @@ export default function build_match_node(
 		const temp = `_match_val_${match_temp_counter++}`;
 		status.code += `${c_type(enum_name)} ${temp} = ${value_expr_raw};\n`;
 		value_expr = temp;
-		if (enum_node!.cases.some((c) => c.params.some((p) => p.type.name === "string"))) {
+		if (owning_payload_cases(enum_node!, status).length) {
 			match_scrutinee_temps.push(temp);
 		}
 	}
@@ -122,7 +145,21 @@ export default function build_match_node(
 			for (let i = 0; i < match_case.params.length; i++) {
 				const field = enum_case.params[i];
 				if (!field) continue;
-				status.code += `${c_type(field.type.name)} ${match_case.params[i]} = ${value_expr}._data._${case_tag}.${field.name};\n`;
+				const is_ref = payload_is_reference(field.type, status);
+				const decl = is_ref ? `struct ${field.type.name} *` : `${c_type(field.type.name)} `;
+				status.code += `${decl}${match_case.params[i]} = ${value_expr}._data._${case_tag}.${field.name};\n`;
+				if (is_ref) {
+					// The binding holds the instance POINTER: track it so a
+					// method call on the binding dispatches through the
+					// vtable with the pointer (not its address) — mirroring
+					// the trait-class local declaration machinery.
+					if (!status.class_vars) status.class_vars = new Set();
+					status.class_vars.add(c_function_name(match_case.params[i]));
+					if (field.type.name) {
+						if (!status.variable_types) status.variable_types = new Map();
+						status.variable_types.set(c_function_name(match_case.params[i]), field.type);
+					}
+				}
 			}
 		}
 
@@ -139,13 +176,21 @@ export default function build_match_node(
 	}
 	status.code += "}\n";
 
-	// The scrutinee temp dies with the match: free its string payloads
-	// (tag-guarded), mirroring the enum-local auto-free.
+	// The scrutinee temp dies with the match: free its owned payloads
+	// (tag-guarded), mirroring the enum-local auto-free. A string payload is
+	// a strdup'd copy (free the ptr); a class/trait payload is an owned
+	// instance (destroy + free).
 	for (const temp of match_scrutinee_temps) {
 		for (const c of enum_node!.cases) {
 			for (const p of c.params) {
-				if (p.type.name !== "string") continue;
-				status.code += `if (${temp}.tag == ${enum_node!.name}_${c.name}) { free(${temp}._data._${c.name}.${p.name}.ptr); }\n`;
+				const is_ref = payload_is_reference(p.type, status);
+				if (p.type.name !== "string" && !is_ref) continue;
+				const guard = `if (${temp}.tag == ${enum_node!.name}_${c.name})`;
+				if (is_ref) {
+					status.code += `${guard} { ${p.type.name}_destroy(${temp}._data._${c.name}.${p.name}); free(${temp}._data._${c.name}.${p.name}); }\n`;
+				} else {
+					status.code += `${guard} { free(${temp}._data._${c.name}.${p.name}.ptr); }\n`;
+				}
 			}
 		}
 	}

@@ -589,6 +589,19 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 			if (enum_node) {
 				const enum_case = enum_node.cases.find((c) => c.name === access_func.name);
 				if (enum_case) {
+					// An owned class/trait LOCAL passed to an owning case
+					// payload transfers ownership (check records the arg in
+					// move_param_indices): splice its declaration out of the
+					// scope frames so auto_free won't free the instance the
+					// payload now owns (double-free).
+					if (access_func.move_param_indices?.length) {
+						for (const idx of access_func.move_param_indices) {
+							const arg = access_func.params[idx];
+							if (arg?.node_type !== "value") continue;
+							const decl_hit = find_decl_in_c_scopes(status, (arg as ValueNode).value);
+							if (decl_hit) decl_hit.frame.splice(decl_hit.index, 1);
+						}
+					}
 					status.code += `${enum_node.name}_${enum_case.name}_init(`;
 					for (let i = 0; i < access_func.params.length; i++) {
 						if (i > 0) {

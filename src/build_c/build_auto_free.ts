@@ -4,12 +4,46 @@ import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable
 import { is_string_borrow } from "../build_common/string_return_analysis.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
+import type EnumNode from "../nodes/EnumNode.ts";
+import type ParameterNode from "../nodes/ParameterNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import { is_view_value } from "./utils/view_value.ts";
+
+/**
+ * Whether an enum case payload of this type is a class/trait REFERENCE (an
+ * owned instance pointer in the tagged union — see build_enum_node's
+ * payload_c_decl). Such a payload is reclaimed with `<T>_destroy` + free.
+ */
+function payload_is_reference(type: ParameterNode["type"], status: BuildStatus): boolean {
+	if (!type.name || type.is_array) return false;
+	const struct = status.structs.find((s) => s.name === type.name);
+	if (struct?.is_class) return true;
+	return !!status.traits.find((t) => t.name === type.name);
+}
+
+/**
+ * Emit the tag-guarded reclamation for one owned payload of an enum value:
+ * a string payload frees its strdup'd ptr; a class/trait payload destroys
+ * and frees the instance.
+ */
+function emit_enum_payload_reclaim(
+	cname: string,
+	enum_node: EnumNode,
+	c: EnumNode["cases"][number],
+	p: ParameterNode,
+	status: BuildStatus,
+) {
+	const guard = `if (${cname}.tag == ${enum_node.name}_${c.name})`;
+	if (payload_is_reference(p.type, status)) {
+		status.code += `${guard} { ${p.type.name}_destroy(${cname}._data._${c.name}.${p.name}); free(${cname}._data._${c.name}.${p.name}); }\n`;
+	} else if (p.type.name === "string") {
+		status.code += `${guard} { free(${cname}._data._${c.name}.${p.name}.ptr); }\n`;
+	}
+}
 
 export default function build_auto_free(status: BuildStatus) {
 	free_scoped_declarations(status, status.scoped_declarations);
@@ -220,14 +254,15 @@ export function free_scoped_declarations(
 			}
 			status.code += `free(${cname}.ptr);\n`;
 		}
-		// An enum-with-data local owns its string payloads (case-init strdups
-		// string args — construction is an ownership copy). Free the payload
-		// of the case actually stored, guarded by the tag.
+		// An enum-with-data local owns its payloads (case construction is an
+		// ownership copy: strings are strdup'd, class/trait instances
+		// transfer their pointer). Reclaim the payload of the case actually
+		// stored, guarded by the tag.
 		if (!is_destructured_field_access && !dec.type.is_array) {
 			const enum_node = status.enums.find((e) => e.name === dec.type.name);
 			if (enum_node?.has_associated_data) {
 				const payload_cases = enum_node.cases.filter((c) =>
-					c.params.some((p) => p.type.name === "string"),
+					c.params.some((p) => p.type.name === "string" || payload_is_reference(p.type, status)),
 				);
 				if (payload_cases.length) {
 					if (!commented) {
@@ -236,8 +271,7 @@ export function free_scoped_declarations(
 					}
 					for (const c of payload_cases) {
 						for (const p of c.params) {
-							if (p.type.name !== "string") continue;
-							status.code += `if (${cname}.tag == ${enum_node.name}_${c.name}) { free(${cname}._data._${c.name}.${p.name}.ptr); }\n`;
+							emit_enum_payload_reclaim(cname, enum_node, c, p, status);
 						}
 					}
 				}

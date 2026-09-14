@@ -20,6 +20,18 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 	// checker to `Enum_case` with is_enum_shorthand=true). Lower to the same
 	// `Enum_case_init(args)` call that `Enum.case(args)` access calls emit.
 	if (node.is_enum_shorthand) {
+		// An owned class/trait LOCAL passed to an owning case payload
+		// transfers ownership (check records the arg in move_param_indices):
+		// splice its declaration out of the scope frames so auto_free won't
+		// free the instance the payload now owns (double-free).
+		if (node.move_param_indices?.length) {
+			for (const idx of node.move_param_indices) {
+				const param = node.params[idx];
+				if (param?.node_type !== "value") continue;
+				const decl_hit = find_decl_in_c_scopes(status, (param as ValueNode).value);
+				if (decl_hit) decl_hit.frame.splice(decl_hit.index, 1);
+			}
+		}
 		status.code += `${node.name}_init(`;
 		for (let i = 0; i < node.params.length; i++) {
 			if (i > 0) {

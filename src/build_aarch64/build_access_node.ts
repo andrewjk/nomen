@@ -1619,6 +1619,15 @@ function build_access_method(
 				const temp_name = `_enum_${access_temp_counter++}`;
 				const temp_offset = allocate_stack_space(status, enum_size);
 				status.stack_offsets!.set(temp_name, temp_offset);
+				// An owned class/trait LOCAL passed to an owning case payload
+				// transfers ownership (check records the arg in
+				// move_param_indices): mark it moved so its own scope-exit
+				// destroy doesn't free the instance the payload now owns.
+				if (access_func.move_param_indices?.length) {
+					for (const idx of access_func.move_param_indices) {
+						mark_moved_if_struct(access_func.params[idx], status);
+					}
+				}
 				status.code += `add x0, x29, #${temp_offset}\n`;
 				status.code += `mov x1, #${case_index}\n`;
 				status.code += `str x1, [x0]\n`;

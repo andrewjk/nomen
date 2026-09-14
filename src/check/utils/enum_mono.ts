@@ -1,5 +1,6 @@
 import add_error from "../../add_error.ts";
 import { mono_type_name } from "../../build_common/mono_name.ts";
+import type BaseNode from "../../nodes/BaseNode.ts";
 import EnumNode from "../../nodes/EnumNode.ts";
 import ParameterNode from "../../nodes/ParameterNode.ts";
 import RootNode from "../../nodes/RootNode.ts";
@@ -7,6 +8,7 @@ import Type from "../../nodes/Type.ts";
 import { flatten_nested_generic_arg } from "../check_function_call_node.ts";
 import type CheckStatus from "../CheckStatus.ts";
 import { materialize_anon_enum_type } from "./anon_enum.ts";
+import { borrow_depth_of } from "./borrow.ts";
 import { clone_type, materialize_tuple_type } from "./tuple_struct.ts";
 
 /**
@@ -117,8 +119,7 @@ export function monomorphize_enum(
  * Find an enum registered at the root by name — a mono may already have been
  * emitted to root.statements from a different (cloned) check scope whose
  * status.enums copy we don't share.
- */
-function find_root_enum(status: CheckStatus, name: string): EnumNode | undefined {
+ */ function find_root_enum(status: CheckStatus, name: string): EnumNode | undefined {
 	const root = status.stack[0] as RootNode | undefined;
 	if (!root) return undefined;
 	return root.statements.find((s) => s.node_type === "enum" && (s as EnumNode).name === name) as
@@ -171,4 +172,50 @@ function substitute_payload(t: Type, substitution: Map<string, Type>): Type {
 		return copy;
 	}
 	return clone_type(t);
+}
+
+/**
+ * Enforce the ownership contract for CLASS/TRAIT case payloads at an enum
+ * case construction (`Option<Box>.some(x)` / `.some(x)`).
+ *
+ * A class/trait payload is an OWNING slot: the tagged union stores the
+ * instance pointer raw and the enum value's scope exit destroys + frees it —
+ * the same single-ownership contract ClassBuffer<T> slots follow. A borrowed
+ * argument would leave two owners (the payload and the borrow's source) — a
+ * double free — so it is rejected here, mirroring owning-field stores. Fresh
+ * constructions transfer soundly; an owned LOCAL is moved implicitly
+ * (recorded in the node's move_param_indices so the build suppresses its own
+ * scope-exit reclaim); an explicit `move` arrives already recorded.
+ */
+export function enforce_case_payload_ownership(
+	case_name: string,
+	case_params: ParameterNode[],
+	args: BaseNode[],
+	node: { move_param_indices?: number[] },
+	status: CheckStatus,
+): void {
+	for (let i = 0; i < args.length; i++) {
+		const case_param = case_params[i];
+		if (!case_param?.type.name || case_param.type.is_array) continue;
+		const is_ref_payload =
+			!!status.structs.find((s) => s.name === case_param.type.name)?.is_class ||
+			!!status.traits.find((t) => t.name === case_param.type.name);
+		if (!is_ref_payload) continue;
+		const arg = args[i];
+		if (arg.node_type === "value" && (arg as import("../../nodes/ValueNode.ts").default).is_moved) {
+			continue;
+		}
+		if (borrow_depth_of(arg, status) !== undefined) {
+			add_error(
+				status,
+				`cannot pass a borrowed value to case '.${case_name}' — the case payload takes ownership; construct a fresh instance or pass an owned local with 'move'`,
+				arg.start,
+			);
+			continue;
+		}
+		if (arg.node_type === "value") {
+			if (!node.move_param_indices) node.move_param_indices = [];
+			if (!node.move_param_indices.includes(i)) node.move_param_indices.push(i);
+		}
+	}
 }

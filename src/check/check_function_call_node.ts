@@ -20,7 +20,7 @@ import check_function_call from "./check_function_call.ts";
 import check_function_node from "./check_function_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
-import { monomorphize_enum } from "./utils/enum_mono.ts";
+import { monomorphize_enum, enforce_case_payload_ownership } from "./utils/enum_mono.ts";
 import {
 	collect_return_bounds,
 	collect_return_length,
@@ -253,6 +253,9 @@ export default function check_function_call_node(
 				check_node(param, status);
 				status.expected_type = old_expected;
 			}
+			// A CLASS/TRAIT case payload is an OWNING slot — enforce the
+			// ownership contract (see enforce_case_payload_ownership).
+			enforce_case_payload_ownership(case_name, enum_case.params, node.params, node, status);
 			node.type = new Type(enum_node.name);
 			node.is_static = true;
 			node.name = `${enum_node.name}_${case_name}`;

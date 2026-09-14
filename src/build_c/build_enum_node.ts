@@ -1,4 +1,5 @@
 import EnumNode from "../nodes/EnumNode.ts";
+import type Type from "../nodes/Type.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_type, { c_typedef_name } from "./utils/c_type.ts";
 
@@ -28,6 +29,29 @@ export default function build_enum_node(node: EnumNode, status: BuildStatus) {
 	status.code += "\n";
 }
 
+/**
+ * Whether an enum case payload of this type is a REFERENCE value (a class
+ * instance pointer or a trait object). Such a payload rides as
+ * `struct Tag *` — a by-value `Tag` field would need the full typedef before
+ * the enum's header block (and would byte-copy the instance, sharing
+ * ownership). The tag form only needs the forward declaration the header
+ * already carries, so mono enums referencing user classes order-independently.
+ */
+function payload_is_reference(type: Type, status: BuildStatus): boolean {
+	if (!type.name || type.is_array) return false;
+	const struct = status.structs.find((s) => s.name === type.name);
+	if (struct?.is_class) return true;
+	return !!status.traits.find((t) => t.name === type.name);
+}
+
+/** The C declaration spelling for a case payload. */
+function payload_c_decl(type: Type, name: string, status: BuildStatus): string {
+	if (payload_is_reference(type, status)) {
+		return `struct ${type.name} *${name}`;
+	}
+	return `${c_type(type.name)} ${name}`;
+}
+
 function build_simple_enum(node: EnumNode, status: BuildStatus) {
 	// Emit the typedef enum only in the header (which the .m includes), so the
 	// definition isn't duplicated between the two files. The typedef name is
@@ -47,20 +71,20 @@ function build_tagged_union_enum(node: EnumNode, status: BuildStatus) {
 	status.headers += `${c_typedef_name(node.name + "_tag")} tag;\n`;
 	status.headers += `union {\n`;
 	for (const c of node.cases) {
-		status.headers += `struct { ${c.params.map((p) => `${c_type(p.type.name)} ${p.name}`).join("; ")}${c.params.length ? ";" : ""} } _${c.name};\n`;
+		status.headers += `struct { ${c.params.map((p) => payload_c_decl(p.type, p.name, status)).join("; ")}${c.params.length ? ";" : ""} } _${c.name};\n`;
 	}
 	status.headers += `} _data;\n`;
 	status.headers += `} ${c_typedef_name(node.name)};\n`;
 
 	for (const c of node.cases) {
-		const ctor_params = c.params.map((p) => `${c_type(p.type.name)} ${p.name}`).join(", ");
+		const ctor_params = c.params.map((p) => payload_c_decl(p.type, p.name, status)).join(", ");
 		const ctor = `${c_typedef_name(node.name)} ${node.name}_${c.name}_init(${ctor_params})`;
 		status.headers += `${ctor};\n`;
 		status.code += `${ctor}\n{\n`;
 		status.code += `${c_typedef_name(node.name)} r;\n`;
 		status.code += `r.tag = ${node.name}_${c.name};\n`;
 		for (const p of c.params) {
-			if (p.type.name === "string") {
+			if (p.type.name === "string" && !payload_is_reference(p.type, status)) {
 				// A string payload is an OWNED copy: strdup the argument so the
 				// enum value's lifetime is independent of the producer's local
 				// (which is freed at its own scope exit). Bitwise assignment
@@ -68,6 +92,9 @@ function build_tagged_union_enum(node: EnumNode, status: BuildStatus) {
 				status.code += `r._data._${c.name}.${p.name}.ptr = strdup(${p.name}.ptr);\n`;
 				status.code += `r._data._${c.name}.${p.name}.len = ${p.name}.len;\n`;
 			} else {
+				// Scalars and value structs copy by value; a class/trait
+				// payload copies the owning pointer (construction transfers
+				// ownership — see the check-time borrow rejection).
 				status.code += `r._data._${c.name}.${p.name} = ${p.name};\n`;
 			}
 		}
