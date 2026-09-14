@@ -27,6 +27,7 @@ import {
 	is_owning_struct_type_requiring_move,
 } from "./utils/ownership.ts";
 import reject_pointer_type from "./utils/reject_pointer_type.ts";
+import { trait_slot_conformer_of_decl } from "./utils/trait_slot.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 import {
@@ -444,6 +445,12 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 				view_borrows && view_borrows.size ? new Set(view_borrows.keys()) : undefined,
 			class_alias_of: class_alias_src,
 			is_global: !in_function(status),
+			trait_slot_conformer: trait_slot_conformer_of_decl(
+				declaration,
+				decl.type,
+				decl.value,
+				status,
+			),
 		});
 		if (decl.value) {
 			track_assignment_bounds(decl.name, decl.value, status);

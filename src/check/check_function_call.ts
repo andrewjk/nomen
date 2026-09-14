@@ -1049,6 +1049,28 @@ export default function check_function_call(
 			continue;
 		}
 
+		// Two-tier trait rule: a value-struct-backed trait LOCAL (inline
+		// concrete storage) cannot cross a call boundary as a trait argument
+		// — the callee's slot expects the pointer representation. Reject the
+		// by-value pass; declare a class to send a conformer across.
+		if (param.node_type === "value" && func_param.type.name) {
+			const arg_name = value_from_value_node(param);
+			const arg_sv = /^[A-Za-z_][A-Za-z0-9_]*$/.test(arg_name ?? "")
+				? status.values.findLast((v) => v.name === arg_name)
+				: undefined;
+			if (
+				arg_sv?.trait_slot_conformer &&
+				status.traits.some((t) => t.name === func_param.type.name) &&
+				!func_param.type.is_array
+			) {
+				add_error(
+					status,
+					`value-struct trait slot '${arg_sv.name}' is bound to '${arg_sv.trait_slot_conformer}' and cannot cross a call boundary; declare a class`,
+					param.start,
+				);
+			}
+		}
+
 		if (
 			(param.node_type !== "value" ||
 				is_heap_array_var_copy(param, func_param, param_type, status)) &&

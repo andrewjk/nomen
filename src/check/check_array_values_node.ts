@@ -1,3 +1,4 @@
+import add_error from "../add_error.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import Type from "../nodes/Type.ts";
@@ -6,6 +7,11 @@ import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import hoist_struct_params from "./utils/hoist_struct_params.ts";
+import {
+	is_trait_type,
+	is_value_struct_conformer,
+	value_struct_trait_error,
+} from "./utils/trait_slot.ts";
 import { get_or_create_tuple_struct, tuple_struct_name } from "./utils/tuple_struct.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
@@ -305,6 +311,20 @@ function check_as_array_or_inferred_tuple(
 		const value = array.values[i];
 		const vt = value_types[i];
 		if (!vt) continue;
+		// Two-tier trait rule: a trait-typed COLLECTION element slot holds
+		// the pointer representation (a heap instance with a vtable header).
+		// A value-struct conformer has no header and cannot cross into the
+		// container — reject it here (the trait-typed LOCAL exception does
+		// not apply: this slot outlives inline storage assumptions).
+		if (is_trait_type(array_item_type.name, status)) {
+			const conformer = is_value_struct_conformer(vt.name, array_item_type.name!, status)
+				? vt.name!
+				: undefined;
+			if (conformer) {
+				add_error(status, value_struct_trait_error(conformer, array_item_type.name!), value.start);
+				continue;
+			}
+		}
 		check_type_and_value_match(
 			array_item_type,
 			vt,

@@ -161,4 +161,16 @@ export default interface StackValue {
 	 * For function-typed variables: the declared return type.
 	 */
 	func_return_type?: Type;
+	/**
+	 * For a trait-typed local whose slot holds CONCRETE value-struct storage
+	 * (`var Rule r = HeadingV()` where HeadingV is a value struct): the name
+	 * of the conformer the slot was initialized with. Both backends size the
+	 * slot and resolve dispatch from that conformer, so the slot cannot
+	 * change shape: a reassignment to a different conformer (check_assignment_node)
+	 * and a crossing of a call boundary with the local itself
+	 * (check_function_call) are rejected. The two-tier rule: trait-typed
+	 * locals may hold inline value-struct storage; every position that
+	 * crosses a call or container boundary requires a class.
+	 */
+	trait_slot_conformer?: string;
 }

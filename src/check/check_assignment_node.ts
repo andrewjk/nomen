@@ -24,6 +24,7 @@ import {
 	is_owning_struct_type,
 	is_owning_struct_type_requiring_move,
 } from "./utils/ownership.ts";
+import { trait_conformer_of_value } from "./utils/trait_slot.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 import {
@@ -151,6 +152,35 @@ export default function check_assignment_node(
 		);
 		return false;
 	} else if (left_value.declaration === "var") {
+		// Two-tier trait rule: a trait-typed local bound to a value-struct
+		// conformer (inline concrete storage, sized by that conformer) cannot
+		// change shape. Only a value of the SAME conformer may be stored; a
+		// different conformer — or anything whose concrete conformer isn't
+		// statically known (a call result, a class instance) — is rejected.
+		// declare-a-class is the escape hatch for polymorphic slots.
+		if (
+			!is_compound &&
+			left_value.trait_slot_conformer &&
+			assign.left_value.node_type === "value"
+		) {
+			const bound = left_value.trait_slot_conformer;
+			const trait_name = left_value.type.name;
+			const rhs_conformer =
+				trait_name !== undefined
+					? trait_conformer_of_value(assign.right_value, trait_name, status)
+					: undefined;
+			if (rhs_conformer !== bound) {
+				const rhs_desc = rhs_conformer
+					? `value struct '${rhs_conformer}'`
+					: "a value whose conformer is not statically known";
+				add_error(
+					status,
+					`value-struct trait slot '${left_value_name}' is bound to '${bound}' and cannot hold ${rhs_desc}; declare a class`,
+					assign.right_value.start,
+				);
+				return false;
+			}
+		}
 		left_value.is_set = true;
 		// For `i = i + 6` and the equivalent compound form `i += 6`, snapshot
 		// the LHS's current bounds BEFORE clearing so track_assignment_bounds

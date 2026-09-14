@@ -3,8 +3,9 @@
 Why `value struct 'X' cannot be used as trait 'T'; declare 'X' as a class`
 exists, what a trait-typed value actually is at runtime, and how the "use a
 trait instead" pattern replaces func-typed struct fields. Everything here was
-verified against both backends; the one open incoherence is recorded in
-`FOLLOWUP.md` (value-struct conformers are inconsistently accepted).
+verified against both backends. The one deliberate exception to the
+blanket rule — trait-typed _locals_ — is specified below ("The two-tier
+rule").
 
 ## What a trait-typed value is at runtime
 
@@ -33,7 +34,7 @@ validly-tagged instance the slot's scope exit can release.
 **1. No header, no heap.** A value struct is its fields, inline — a stack
 slot, a container element, a field. There is no leading tag for
 `_get_trait_func` to read and nothing heap-allocated to point at. Using it
-as a trait requires *boxing*: allocate a cell, copy the bytes in, hang the
+as a trait requires _boxing_: allocate a cell, copy the bytes in, hang the
 tag on it.
 
 **2. Boxing flips the semantics.** Value structs copy by value and die at
@@ -48,12 +49,39 @@ trait conversion. Nomen keeps allocations explicit and auditable (see
 MEMORY.md and the leak-audit posture), so a silent box on each coercion is
 against the grain of the design.
 
-It is **not a fundamental impossibility** — the aarch64 backend already
-boxes value-struct conformers in trait-typed locals and runs them correctly
-(reassignment included). The gap is coherence: the checker mostly rejects
-value-struct conformers, aarch64 boxes them, and C mis-specializes the local
-to the concrete struct type (so reassignment to a different conformer is a
-raw clang type error). See FOLLOWUP.md for the two clean resolutions.
+## The two-tier rule
+
+The blanket rule has one deliberate exception, and it stops exactly where
+the pointer representation would be needed:
+
+**Tier 1 — trait-typed locals may hold a value-struct conformer inline.**
+
+```nomen
+var Rule r = HeadingV()   // value struct: OK — inline storage, no heap
+r.test("# heading")       // dispatch resolved through the bound conformer
+r = HeadingV()            // same conformer: OK
+```
+
+No cell is allocated: the slot is sized by the initializer's conformer,
+dispatch is resolved through it (aarch64: inline storage + a scope-keyed
+dispatch record; C: the concrete-struct declaration with `&local` vtable
+dispatch), and the slot keeps that conformer for its whole lifetime.
+Reassignment must therefore reuse the SAME conformer — storing a different
+value-struct conformer, a class instance, or anything whose conformer isn't
+statically known is a check error (`value-struct trait slot 'r' is bound to
+'HeadingV' and cannot hold …`), because the bytes wouldn't fit or wouldn't
+carry the right identity.
+
+**Tier 2 — everything that crosses a call or container boundary requires a
+class.** A trait-typed parameter, a class's trait field, a collection
+element, or a trait-typed local passed as an argument all hold the pointer
+representation (heap instance + vtable header). Value-struct conformers are
+rejected in every one of those positions with
+`value struct 'X' cannot be used as trait 'T'; declare 'X' as a class` —
+the language does not box implicitly.
+
+That is the whole contract. There is no third tier: a value struct never
+gains a header, and no coercion ever allocates.
 
 ## "Use a trait instead": the strategy pattern
 
@@ -64,7 +92,7 @@ stored function, and the conformer's fields hold whatever state the function
 needs. TS's rule object:
 
 ```ts
-type BlockRule = { test: (line: string) => boolean }
+type BlockRule = { test: (line: string) => boolean };
 ```
 
 becomes (verified on both backends):
@@ -102,6 +130,9 @@ is indirect-call lowering and `#init`/copy/move semantics in both backends).
 
 - Polymorphism with state or identity → `class : Trait`, hold as `Trait`.
 - A pure function value → func-typed **local or parameter** (fully
-  supported; SPEC "Function Types"). Only the *field* case is rejected.
+  supported; SPEC "Function Types"). Only the _field_ case is rejected.
 - A rule/renderer family → one trait + class per rule (current port shape),
   until/unless func-typed fields land.
+- A polymorphic value confined to ONE function's body → a value struct
+  conformer in a trait-typed local is fine (two-tier rule, tier 1); the
+  moment it must cross a call or container boundary, promote it to a class.
