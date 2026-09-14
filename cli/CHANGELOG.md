@@ -4,6 +4,85 @@
 
 
 
+
+## 0.3.0
+<sub>2026-09-14</sub>
+
+-  *(minor)* - string replace_first/replace_all with view needle/replacement
+-  *(minor)* - System::string query methods: index_of, contains, prefix/suffix, char_code_at, substring, trim, case mapping
+-  *(minor)* - StringBuilder.append_string_view and seed: memcpy views without to_string copies
+-  *(minor)* - char classification: is_digit, is_alpha, is_alphanumeric, is_ascii_space
+-  *(minor)* - Regex.captures: capture group extraction into List<string>
+-  *(minor)* - Regex.find + RegexMatch: mvzr-style match positions
+-  *(minor)* - Regex lazy quantifiers: *? +? ??
+-  *(minor)* - Regex case-insensitive matching: *_ci wrappers via pattern folding
+-  *(minor)* - Regex backreferences: \1-\9 incl. quantified and lazy forms
+-  *(minor)* - Regex \s \d \w shorthands with \S \D \W complements
+-  *(minor)*
+  Add `unsafe` (library-only): ptr T values, pointer indexing, pointer casts, and generic T_SIZE/T_NEEDS_STRDUP/T_FAT constants; rewrite core memory primitives (Buffer alloc/grow/zero/destroy, StringBuilder ensure/append/seed/destroy, Array at/first/at_end/set, String at/set) as unsafe Nomen with memory externs
+-  *(minor)* - Base-seeded struct literals: [ .. base, field = value ] replaces the T() + [ ... ] override syntax
+-  *(minor)* - string.char_code_at is bounds-constrained; add char_code_at_or / char_code_at_or_panic
+-  *(minor)* - nomen check/build on a project file anchors to the package.jsonc entry
+-  *(minor)* - Joiner walks the import graph cycle-safely; self-import and unresolvable-import diagnostics
+-  *(minor)*
+  Two-tier rule for value-struct trait conformers: cross-conformer reassignment, trait-array elements, and call-boundary passes of value-struct-backed trait locals are now check-time rejections; the inline local form is documented as tier 1 (docs/TRAITS.md)
+-  *(minor)*
+  Reject passing a view string where an owned string parameter is expected — call .to_string() to materialize (was: silent alias on aarch64, clang error on C)
+-  *(minor)*
+  Add System.Arena<T> + ArenaRef<T>: a generational arena (one owner, copyable generation-checked handles) for the single-ownership parent/child-reference pattern (allmark PORT)
+-  *(minor)*
+  Allow move on trait-typed parameters (checker + both backends reclaim via the trait <Trait>_destroy shim), unblocking add(move Renderer r) style APIs
+-  *(minor)*
+  Func-typed struct/class fields: declare, assign, and call s.f(args) via an indirect call (allmark BlockRule object shape)
+-  *(patch)*
+  Scope trait_class_locals per function body so a trait-typed local in one monomorphized body cannot poison later bodies' auto-free
+-  *(patch)* - Verify Map rehash auto-free is fixed by trait_class_locals scoping; add regression test
+-  *(patch)* - aarch64 custom init: spill fat string params as (ptr,len) register pairs so following scalars read the right registers
+-  *(patch)* - C init: dup class string field literal defaults so reassignment/destroy never frees rodata
+-  *(patch)*
+  C return/cast: lower return 0 with a struct out type to a zero-initialized compound literal so Map<string, Struct> compiles
+-  *(patch)* - Verify explicit List<Trait> annotations check clean (regression test)
+-  *(patch)* - Reject func-typed struct/class fields with trait guidance; fix func-type field parse
+-  *(patch)* - Allow methods to return class borrows rooted at self (accessor pattern); non-self borrows still rejected
+-  *(patch)* - Constraint verifier: literal-length facts, same-base offset algebra, dotted-path offset args
+-  *(patch)* - Tokenize escape pairs left-to-right; decode char-literal escapes in both backends
+-  *(patch)* - Materialize rvalue trait receivers once; reclaim owned receivers on both backends
+-  *(patch)* - aarch64 trait dispatch: free owned string results when all conformers return owned heap
+-  *(patch)* - Checker: synthesize func-value calls for any signature (incl. out returns) and signature-check reassignment
+-  *(patch)* - Map() + set() works for class/trait values; variadic pairs gate refined
+-  *(patch)* - System.Text UTF-8 helpers (Utf8, Chars, CharIndex)
+-  *(patch)* - Fix string-literal byte hazards (fold, lengths, NUL)
+-  *(patch)* - Remove stale tuple bug report, already fixed
+-  *(patch)* - aarch64: strdup a heap-local string stored into a ref-param struct field (store used to dangle)
+-  *(patch)*
+  aarch64 backend: constant rematerialization — float literal-pool loads become fmov immediates (hoisted out of hot loops), movz-range literal-pool loads become mov immediates
+-  *(patch)*
+  aarch64 backend: stack-staging elision — push/pop staging pairs around computed indexes become direct register reads (mov-form rename verdict-gated on exact liveness; bare pairs deleted as identities)
+-  *(patch)*
+  aarch64 backend: pointer-walk strength reduction — single-access loop addressing becomes post-index walked pointers (`ldr [w], #stride`), killing the index arithmetic from the memory op
+-  *(patch)*
+  aarch64 backend: auto method inline mechanism for small unmarked methods (ensure/clear-shaped) — lands kill-switch-only (default OFF) pending the JsonTree splice crash root-cause
+-  *(patch)*
+  aarch64 backend: ×2 unrolling of validated straight-line loop cycles (pre-guard hoist + body/guard duplication, exact for every trip count)
+-  *(patch)*
+  aarch64 backend: auto method inline unlocked (default ON) — small unmarked methods splice at call sites; bodies calling T-generic Buffer methods (load_T/store_T) take the real call (JsonTree crash class gated out)
+-  *(patch)*
+  aarch64 backend: naked inline expansion for allocation-free leaf bodies — BigInt limb accessors, ClassBuffer alloc/grow and JsonTree slab primitives converted from raw asm to plain Nomen (single-sourced across backends); List.at now takes a real call (generic-nested splice gate)
+-  *(patch)* - Fix C-backend trait-typed local poisoning invalid C
+-  *(patch)* - Scope aarch64 trait-class bindings per local
+-  *(patch)* - Close C value-struct conformer dispatch gap
+-  *(patch)* - Fix nullable string initialized to null emitting invalid C on the backend
+-  *(patch)* - null into string? params and aarch64 defaulted nullable-string fields now lower to the zero pair
+-  *(patch)*
+  Trait-typed local copies of value-struct slots now build on C (concrete-struct declaration); class-backed trait-slot copies and value-struct stores into class-backed slots are check-time rejections; borrow-slot reassignment no longer destroys the shared instance on C
+-  *(patch)*
+  Reject storing a borrowed class value into an owning (move) class field — the borrowed shape double-freed on both backends; the move-param mutator idiom stays legal
+-  *(patch)*
+  Fix trait dispatch through container elements: C no longer takes the address of a class-typed receiver expression (container element), and aarch64 no longer frees a borrowed trait slot's container-owned element on reassignment
+-  *(patch)*
+  Plain func_call resolution must not resolve to a struct/trait method (a method named like a free function, e.g. Arena.free vs the extern free, stole the call)
+-  *(patch)* - Fix lambda arguments and func-typed values on aarch64; reject func signature mismatches
+
 ## 0.2.3
 <sub>2026-09-10</sub>
 

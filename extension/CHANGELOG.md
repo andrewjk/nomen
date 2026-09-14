@@ -2,6 +2,12 @@
 
 
 
+
+## 0.2.2
+<sub>2026-09-14</sub>
+
+-  *(patch)* - Test files follow src module imports transitively; highlight swap keyword
+
 ## 0.2.1
 <sub>2026-09-10</sub>
 
