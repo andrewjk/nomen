@@ -1220,6 +1220,28 @@ v.scale(4)       // calls scale(int) -> (8, 12)
 v.scale(v)       // calls scale(Vec2) -> (16, 36)
 ```
 
+Constructors (`#init`) overload the same way — the call's arguments select the overload:
+
+```
+struct Point {
+    var int x
+    var int y
+
+    pub func #init = (ref self, int x, int y) {
+        self.x = x
+        self.y = y
+    }
+
+    pub func #init = (ref self, int x) {
+        self.x = x
+        self.y = 0
+    }
+}
+
+const a = Point(2, 3)   // calls #init(int, int)
+const b = Point(5)      // calls #init(int)
+```
+
 Overload resolution matches by the number and types of non-`self` parameters. Operators can also be overloaded:
 
 ```

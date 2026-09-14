@@ -792,7 +792,9 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 }
 
 function build_custom_init_function(node: StructNode, func: FunctionNode, status: BuildStatus) {
-	const func_name = `${node.name}_init`;
+	const func_name = is_overloaded(node, "#init")
+		? mangled_label(func, node.name)
+		: `${node.name}_init`;
 
 	const old_scoped_declarations = status.scoped_declarations;
 
@@ -828,7 +830,7 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 	status.stack_size = 0;
 	status.stack_offsets = new Map();
 
-	const return_label = `.return_${node.name}_init`;
+	const return_label = `.return_${func_name}`;
 	status.function_return_label = return_label;
 
 	const stack_placeholder = `STACK_SIZE_${func_name}`;

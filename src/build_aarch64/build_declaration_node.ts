@@ -311,7 +311,7 @@ function emit_class_constructor_to_slot(
 	anchor_heap_pointer(status, `${arr_name}_elem_${slot_offset}`);
 	const outgoing = build_constructor_params(fc, param_regs, status);
 	status.code += `ldr x0, [x29, #${slot_offset}]\n`;
-	status.code += `bl ${fc.name}_init\n`;
+	status.code += `bl ${fc.mangled_name ?? `${fc.name}_init`}\n`;
 	if (outgoing > 0) status.code += `add sp, sp, #${outgoing}\n`;
 }
 
@@ -323,7 +323,7 @@ function emit_struct_constructor_to_slot(
 	const param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
 	const outgoing = build_constructor_params(fc, param_regs, status);
 	status.code += slot_addr;
-	status.code += `bl ${fc.name}_init\n`;
+	status.code += `bl ${fc.mangled_name ?? `${fc.name}_init`}\n`;
 	if (outgoing > 0) status.code += `add sp, sp, #${outgoing}\n`;
 }
 
@@ -418,7 +418,7 @@ function build_constructor_params(
 					}
 				}
 				status.code += `add x0, x29, #${slot_offset}\n`;
-				status.code += `bl ${tfc.name}_init\n`;
+				status.code += `bl ${tfc.mangled_name ?? `${tfc.name}_init`}\n`;
 			} else if (elem_struct) {
 				emit_struct_address_param(arg, status);
 				if (!status.code.endsWith("\n")) status.code += "\n";
@@ -994,7 +994,7 @@ export default function build_declaration_node(
 					const param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
 					const outgoing = build_constructor_params(func_call, param_regs, status);
 					emit_var_load(status, "x0", node.name, 8);
-					status.code += `bl ${func_call.name}_init\n`;
+					status.code += `bl ${func_call.mangled_name ?? `${func_call.name}_init`}\n`;
 					if (outgoing > 0) status.code += `add sp, sp, #${outgoing}\n`;
 					if (func_call.move_param_indices?.length) {
 						for (const idx of func_call.move_param_indices) {
@@ -1038,7 +1038,7 @@ export default function build_declaration_node(
 				const param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
 				const outgoing = build_constructor_params(func_call, param_regs, status);
 				emit_var_address(status, "x0", node.name);
-				status.code += `bl ${func_call.name}_init\n`;
+				status.code += `bl ${func_call.mangled_name ?? `${func_call.name}_init`}\n`;
 				if (outgoing > 0) status.code += `add sp, sp, #${outgoing}\n`;
 				if (func_call.move_param_indices?.length) {
 					for (const idx of func_call.move_param_indices) {
@@ -1800,7 +1800,7 @@ export default function build_declaration_node(
 					const param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
 					const outgoing = build_constructor_params(func_call, param_regs, status);
 					emit_var_load(status, "x0", node.name, 8);
-					status.code += `bl ${func_call.name}_init\n`;
+					status.code += `bl ${func_call.mangled_name ?? `${func_call.name}_init`}\n`;
 					if (outgoing > 0) status.code += `add sp, sp, #${outgoing}\n`;
 					if (func_call.move_param_indices?.length) {
 						for (const idx of func_call.move_param_indices) {
@@ -1921,7 +1921,7 @@ export default function build_declaration_node(
 					const outgoing = build_constructor_params(func_call, param_regs, status);
 					// Pass declaration address in x0
 					emit_var_address(status, "x0", node.name);
-					status.code += `bl ${func_call.name}_init\n`;
+					status.code += `bl ${func_call.mangled_name ?? `${func_call.name}_init`}\n`;
 					if (outgoing > 0) status.code += `add sp, sp, #${outgoing}\n`;
 					if (func_call.move_param_indices?.length) {
 						for (const idx of func_call.move_param_indices) {

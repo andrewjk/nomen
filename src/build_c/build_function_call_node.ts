@@ -34,9 +34,10 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 	const is_struct = status.structs.find((s) => s.name === node.name && !s.is_simple_type);
 	// A nested-function callee emits under its uniquified label (the checker
 	// stamps resolved_function on every resolved call); struct constructors
-	// and top-level functions keep their names.
+	// and top-level functions keep their names. An overloaded constructor
+	// carries the checker-stamped mangled label for the resolved overload.
 	const func_name = is_struct
-		? `${node.name}_init`
+		? (node.mangled_name ?? `${node.name}_init`)
 		: c_function_name(emission_label(node.resolved_function ?? node));
 	status.code += `${func_name}(`;
 

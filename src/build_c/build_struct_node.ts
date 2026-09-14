@@ -64,7 +64,8 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 	// We just need to emit the forward declaration to headers here.
 	status.headers += `struct ${node.name};\n`;
 
-	const custom_init = node.functions.find((f) => f.name === "#init" && f.has_body);
+	const custom_inits = node.functions.filter((f) => f.name === "#init" && f.has_body);
+	const custom_init = custom_inits[0];
 
 	// Classes are heap-allocated: the constructor returns a pointer and
 	// mallocs the instance internally. Structs remain stack-allocated by
@@ -72,216 +73,228 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 	const is_class = !!node.is_class;
 	const accessor = is_class ? "->" : ".";
 
-	// Declare the constructor
-	const ctor_params = custom_init
-		? custom_init.params
-				.filter((p) => !p.is_self_param)
-				.map((p) => {
-					// Variadic params are emitted as `long _name_len, T *name`
-					// (mirroring build_function_node), so the body can read
-					// `name[i]` and `_name_len`.
-					let decl = "";
-					if (p.is_variadic) {
-						decl += `long _${p.name}_len, `;
-					}
-					decl += c_param_decl(p.type, p.name, status, {
-						is_ref: p.is_ref || p.type.is_ref,
-						declaration: p.declaration,
-					});
-					// A nullable struct value param (`T? f`, T a non-class
-					// struct) takes a companion `unsigned char <name>_has`
-					// flag as the very next C parameter (mirrors
-					// build_function_node). The constructor body reads the
-					// flag through the param name directly.
-					if (!p.is_variadic && is_nullable_struct_type(p.type, status)) {
-						decl += `, unsigned char ${has_flag_name(p.name)}`;
-					}
-					return decl;
-				})
-				.join(", ")
-		: node.fields
-				.filter((f) => f.value == null)
-				.map((f) => {
-					let decl = c_param_decl(f.type, f.name, status);
-					if (is_nullable_struct_type(f.type, status)) {
-						decl += `, unsigned char ${has_flag_name(f.name)}`;
-					}
-					return decl;
-				})
-				.join(", ");
 	// The constructor returns by tag (`struct Foo` / `struct Foo*`): the tag is
 	// never mangled (only the typedef is), so the signature stays valid whether
-	// or not a GUI build mangles the typedef name. The forward declaration
-	// below used to prepend `struct ` to a bare-name return; with the tag
-	// baked in here it's emitted as-is.
+	// or not a GUI build mangles the typedef name. Each `#init` overload emits
+	// under its own label: mangled by param types when the struct has several,
+	// the plain `<Struct>_init` otherwise.
 	const ctor_return = is_class ? `struct ${node.name}*` : `struct ${node.name}`;
-	const ctor = `${ctor_return} ${node.name}_init(${ctor_params})`;
-	status.headers += `${ctor};\n`;
+	const field_params = node.fields
+		.filter((f) => f.value == null)
+		.map((f) => {
+			let decl = c_param_decl(f.type, f.name, status);
+			if (is_nullable_struct_type(f.type, status)) {
+				decl += `, unsigned char ${has_flag_name(f.name)}`;
+			}
+			return decl;
+		})
+		.join(", ");
+	const ctor_sig = (init: FunctionNode) => {
+		const ctor_params = init.params
+			.filter((p) => !p.is_self_param)
+			.map((p) => {
+				// Variadic params are emitted as `long _name_len, T *name`
+				// (mirroring build_function_node), so the body can read
+				// `name[i]` and `_name_len`.
+				let decl = "";
+				if (p.is_variadic) {
+					decl += `long _${p.name}_len, `;
+				}
+				decl += c_param_decl(p.type, p.name, status, {
+					is_ref: p.is_ref || p.type.is_ref,
+					declaration: p.declaration,
+				});
+				// A nullable struct value param (`T? f`, T a non-class
+				// struct) takes a companion `unsigned char <name>_has`
+				// flag as the very next C parameter (mirrors
+				// build_function_node). The constructor body reads the
+				// flag through the param name directly.
+				if (!p.is_variadic && is_nullable_struct_type(p.type, status)) {
+					decl += `, unsigned char ${has_flag_name(p.name)}`;
+				}
+				return decl;
+			})
+			.join(", ");
+		const label = is_overloaded(node, "#init")
+			? mangled_label(init, node.name)
+			: `${node.name}_init`;
+		return `${ctor_return} ${label}(${ctor_params})`;
+	};
 
 	if (custom_init) {
-		// Custom init — generate a constructor function with the user-facing
-		// signature (no self param). Inside, create a local `self` struct,
-		// run the init body (which assigns fields via `self.field = ...`),
-		// then return it.
-		status.code += `${ctor}\n{\n`;
-		if (is_class) {
-			status.code += `struct ${node.name}* self = malloc(sizeof(struct ${node.name}));\n`;
-		} else {
-			status.code += `struct ${node.name} self;\n`;
+		for (const ci of custom_inits) {
+			status.headers += `${ctor_sig(ci)};\n`;
 		}
-		if (node.traits.length) {
-			status.code += `self${accessor}_vt = &_${node.name}_traits;\n`;
-		}
+	} else {
+		status.headers += `${ctor_return} ${node.name}_init(${field_params});\n`;
+	}
 
-		// Apply default field values BEFORE the custom init body runs, so any
-		// field the init doesn't explicitly assign still gets its default.
-		for (const field of node.fields) {
-			if (field.value) {
-				if (
-					field.type.is_view &&
-					!field.type.is_array &&
-					!is_nullable_struct_type(field.type, status)
-				) {
-					// Defaulted view field (see the auto-init loop): borrow the
-					// string literal's storage, or zero the pair.
-					if (field.type.name === "string") {
-						status.code += `{ nomen_string _p = `;
-						build_node(field.value, status);
-						status.code += `; self${accessor}${field.name} = (nomen_view){ _p.ptr, _p.len }; }\n`;
+	if (custom_init) {
+		for (const custom_init of custom_inits) {
+			// Custom init — generate a constructor function with the user-facing
+			// signature (no self param). Inside, create a local `self` struct,
+			// run the init body (which assigns fields via `self.field = ...`),
+			// then return it.
+			status.code += `${ctor_sig(custom_init)}\n{\n`;
+			if (is_class) {
+				status.code += `struct ${node.name}* self = malloc(sizeof(struct ${node.name}));\n`;
+			} else {
+				status.code += `struct ${node.name} self;\n`;
+			}
+			if (node.traits.length) {
+				status.code += `self${accessor}_vt = &_${node.name}_traits;\n`;
+			}
+
+			// Apply default field values BEFORE the custom init body runs, so any
+			// field the init doesn't explicitly assign still gets its default.
+			for (const field of node.fields) {
+				if (field.value) {
+					if (
+						field.type.is_view &&
+						!field.type.is_array &&
+						!is_nullable_struct_type(field.type, status)
+					) {
+						// Defaulted view field (see the auto-init loop): borrow the
+						// string literal's storage, or zero the pair.
+						if (field.type.name === "string") {
+							status.code += `{ nomen_string _p = `;
+							build_node(field.value, status);
+							status.code += `; self${accessor}${field.name} = (nomen_view){ _p.ptr, _p.len }; }\n`;
+						} else {
+							status.code += `self${accessor}${field.name} = (nomen_view){0};\n`;
+						}
+					} else if (is_nullable_struct_type(field.type, status)) {
+						// Default is either `null` (flag 0, value untouched) or a
+						// struct value (copy it in, flag 1).
+						const is_null =
+							field.value.node_type === "value" && (field.value as any).value === "null";
+						if (is_null) {
+							status.code += `self${accessor}${has_flag_name(field.name)} = 0;\n`;
+						} else {
+							status.code += `self${accessor}${field.name} = `;
+							build_node(field.value, status);
+							status.code += `;\nself${accessor}${has_flag_name(field.name)} = 1;\n`;
+						}
 					} else {
-						status.code += `self${accessor}${field.name} = (nomen_view){0};\n`;
-					}
-				} else if (is_nullable_struct_type(field.type, status)) {
-					// Default is either `null` (flag 0, value untouched) or a
-					// struct value (copy it in, flag 1).
-					const is_null =
-						field.value.node_type === "value" && (field.value as any).value === "null";
-					if (is_null) {
-						status.code += `self${accessor}${has_flag_name(field.name)} = 0;\n`;
-					} else {
+						// A class's plain string field is always heap-owned (the
+						// init body's reassignment `free(self->field.ptr)` and
+						// <Class>_destroy free it unconditionally), so a default
+						// must be duplicated — a raw literal here would be freed
+						// as static rodata. A heap-producing default is stored
+						// directly. Value structs keep the raw store (their
+						// field ownership is tracked per assignment).
+						const field_is_class_string =
+							is_class &&
+							field.type.name === "string" &&
+							!field.type.is_array &&
+							!field.type.is_ref &&
+							!field.type.is_view;
+						const value_is_fresh_heap =
+							!!field.value && is_owned_heap_temp(field.value as BaseNode, status);
+						const wrap_dup = field_is_class_string && !value_is_fresh_heap;
+						// A literal `null` default zero-initializes the string
+						// field's pair — for a class OR a value struct. A bare
+						// `0` (or nomen_str_dup(0)) would be a C type error, and
+						// a NULL `.ptr` keeps the destroy-side free a no-op.
+						const default_is_null =
+							field.type.name === "string" &&
+							!field.type.is_array &&
+							!field.type.is_ref &&
+							!field.type.is_view &&
+							field.value.node_type === "value" &&
+							(field.value as ValueNode).value === "null";
 						status.code += `self${accessor}${field.name} = `;
-						build_node(field.value, status);
-						status.code += `;\nself${accessor}${has_flag_name(field.name)} = 1;\n`;
-					}
-				} else {
-					// A class's plain string field is always heap-owned (the
-					// init body's reassignment `free(self->field.ptr)` and
-					// <Class>_destroy free it unconditionally), so a default
-					// must be duplicated — a raw literal here would be freed
-					// as static rodata. A heap-producing default is stored
-					// directly. Value structs keep the raw store (their
-					// field ownership is tracked per assignment).
-					const field_is_class_string =
-						is_class &&
-						field.type.name === "string" &&
-						!field.type.is_array &&
-						!field.type.is_ref &&
-						!field.type.is_view;
-					const value_is_fresh_heap =
-						!!field.value && is_owned_heap_temp(field.value as BaseNode, status);
-					const wrap_dup = field_is_class_string && !value_is_fresh_heap;
-					// A literal `null` default zero-initializes the string
-					// field's pair — for a class OR a value struct. A bare
-					// `0` (or nomen_str_dup(0)) would be a C type error, and
-					// a NULL `.ptr` keeps the destroy-side free a no-op.
-					const default_is_null =
-						field.type.name === "string" &&
-						!field.type.is_array &&
-						!field.type.is_ref &&
-						!field.type.is_view &&
-						field.value.node_type === "value" &&
-						(field.value as ValueNode).value === "null";
-					status.code += `self${accessor}${field.name} = `;
-					if (default_is_null) {
-						status.code += `(nomen_string){0, 0}`;
-					} else {
-						if (wrap_dup) {
-							status.code += `nomen_str_dup(`;
+						if (default_is_null) {
+							status.code += `(nomen_string){0, 0}`;
+						} else {
+							if (wrap_dup) {
+								status.code += `nomen_str_dup(`;
+							}
+							build_node(field.value, status);
+							if (wrap_dup) {
+								status.code += `)`;
+							}
 						}
-						build_node(field.value, status);
-						if (wrap_dup) {
-							status.code += `)`;
-						}
+						status.code += ";\n";
 					}
-					status.code += ";\n";
 				}
 			}
-		}
 
-		// Build the custom init body. For structs, `self` is a local by-value
-		// variable (self_is_local=true, field access uses `.`). For classes,
-		// `self` is a heap pointer (self_is_local=false, self_is_ref=true,
-		// field access uses `->`).
-		const old_ref_params = status.function_ref_params;
-		const old_class_vars = status.class_vars;
-		const old_self_is_ref = status.self_is_ref;
-		const old_self_is_local = status.self_is_local;
-		const old_current_struct = status.current_struct;
-		const old_return_type = status.function_return_type;
-		const old_variadic_params = status.function_variadic_params;
-		status.function_ref_params = new Set<string>();
-		status.class_vars = new Set<string>();
-		status.function_variadic_params = new Set<string>();
-		status.self_is_ref = is_class;
-		status.self_is_local = !is_class;
-		status.current_struct = node;
-		status.function_return_type = custom_init.return_type;
-		for (const p of custom_init.params) {
-			if (p.is_variadic) {
-				status.function_variadic_params!.add(c_function_name(p.name));
-			}
-			// Register a `ref` init param so body uses dereference it,
-			// matching the pointer the signature (classify_param) now emits.
-			// Class/trait-typed params follow the method loop's convention
-			// (class_vars — the pointer IS the value); primitives go through
-			// function_ref_params like a `ref` param of any free function.
-			if (!p.is_self_param && (p.is_ref || p.type.is_ref)) {
-				const pname = c_function_name(p.name);
-				const p_struct = status.structs.find((s) => s.name === p.type.name);
-				const p_trait = status.traits.find((t) => t.name === p.type.name);
-				if (p_struct?.is_class || p_trait) {
-					status.class_vars!.add(pname);
-				} else {
-					status.function_ref_params!.add(pname);
+			// Build the custom init body. For structs, `self` is a local by-value
+			// variable (self_is_local=true, field access uses `.`). For classes,
+			// `self` is a heap pointer (self_is_local=false, self_is_ref=true,
+			// field access uses `->`).
+			const old_ref_params = status.function_ref_params;
+			const old_class_vars = status.class_vars;
+			const old_self_is_ref = status.self_is_ref;
+			const old_self_is_local = status.self_is_local;
+			const old_current_struct = status.current_struct;
+			const old_return_type = status.function_return_type;
+			const old_variadic_params = status.function_variadic_params;
+			status.function_ref_params = new Set<string>();
+			status.class_vars = new Set<string>();
+			status.function_variadic_params = new Set<string>();
+			status.self_is_ref = is_class;
+			status.self_is_local = !is_class;
+			status.current_struct = node;
+			status.function_return_type = custom_init.return_type;
+			for (const p of custom_init.params) {
+				if (p.is_variadic) {
+					status.function_variadic_params!.add(c_function_name(p.name));
+				}
+				// Register a `ref` init param so body uses dereference it,
+				// matching the pointer the signature (classify_param) now emits.
+				// Class/trait-typed params follow the method loop's convention
+				// (class_vars — the pointer IS the value); primitives go through
+				// function_ref_params like a `ref` param of any free function.
+				if (!p.is_self_param && (p.is_ref || p.type.is_ref)) {
+					const pname = c_function_name(p.name);
+					const p_struct = status.structs.find((s) => s.name === p.type.name);
+					const p_trait = status.traits.find((t) => t.name === p.type.name);
+					if (p_struct?.is_class || p_trait) {
+						status.class_vars!.add(pname);
+					} else {
+						status.function_ref_params!.add(pname);
+					}
 				}
 			}
-		}
-		// Raw blocks inside a custom init are written against the thin char*
-		// string ABI: hoist a thin alias per by-value string param and
-		// rewrite the raw text to use it (the ctor signature stays fat).
-		const raw_string_params = custom_init.params.filter(
-			(p) => !p.is_self_param && p.type.name === "string" && !p.type.is_view && !p.type.is_array,
-		);
-		if (raw_string_params.length && custom_init.statements.some((s) => s.node_type === "raw")) {
-			for (const p of raw_string_params) {
-				const pname = c_function_name(p.name);
-				status.code += `const char* _thin_${pname} = ${pname}.ptr;\n`;
-			}
-			for (const stmt of custom_init.statements) {
-				if (stmt.node_type !== "raw") continue;
-				const raw_stmt = stmt as unknown as { value: string };
-				let value = raw_stmt.value;
+			// Raw blocks inside a custom init are written against the thin char*
+			// string ABI: hoist a thin alias per by-value string param and
+			// rewrite the raw text to use it (the ctor signature stays fat).
+			const raw_string_params = custom_init.params.filter(
+				(p) => !p.is_self_param && p.type.name === "string" && !p.type.is_view && !p.type.is_array,
+			);
+			if (raw_string_params.length && custom_init.statements.some((s) => s.node_type === "raw")) {
 				for (const p of raw_string_params) {
-					value = value.replace(
-						new RegExp(`\\b${c_function_name(p.name)}\\b`, "g"),
-						`_thin_${c_function_name(p.name)}`,
-					);
+					const pname = c_function_name(p.name);
+					status.code += `const char* _thin_${pname} = ${pname}.ptr;\n`;
 				}
-				raw_stmt.value = value;
+				for (const stmt of custom_init.statements) {
+					if (stmt.node_type !== "raw") continue;
+					const raw_stmt = stmt as unknown as { value: string };
+					let value = raw_stmt.value;
+					for (const p of raw_string_params) {
+						value = value.replace(
+							new RegExp(`\\b${c_function_name(p.name)}\\b`, "g"),
+							`_thin_${c_function_name(p.name)}`,
+						);
+					}
+					raw_stmt.value = value;
+				}
 			}
+			for (let child of custom_init.statements) {
+				build_node(child, status, true);
+			}
+			status.code += `return self;\n`;
+			status.code += `}\n`;
+			status.function_ref_params = old_ref_params;
+			status.class_vars = old_class_vars;
+			status.function_variadic_params = old_variadic_params;
+			status.self_is_ref = old_self_is_ref;
+			status.self_is_local = old_self_is_local;
+			status.current_struct = old_current_struct;
+			status.function_return_type = old_return_type;
 		}
-		for (let child of custom_init.statements) {
-			build_node(child, status, true);
-		}
-		status.code += `return self;\n`;
-		status.code += `}\n`;
-		status.function_ref_params = old_ref_params;
-		status.class_vars = old_class_vars;
-		status.function_variadic_params = old_variadic_params;
-		status.self_is_ref = old_self_is_ref;
-		status.self_is_local = old_self_is_local;
-		status.current_struct = old_current_struct;
-		status.function_return_type = old_return_type;
 
 		// Build all other struct functions (skip #init — handled above)
 		build_struct_functions(node, status, true);
@@ -292,7 +305,7 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 		// (e.g. `struct Big { var int b }` → `Big b; … b.b = b;`). `_self`
 		// matches the convention used by the method-build path above.
 		const object_name = "_self";
-		status.code += `${ctor}\n{\n`;
+		status.code += `${ctor_return} ${node.name}_init(${field_params})\n{\n`;
 		if (is_class) {
 			status.code += `struct ${node.name}* ${object_name} = malloc(sizeof(struct ${node.name}));\n`;
 		} else {

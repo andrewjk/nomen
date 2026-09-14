@@ -26,9 +26,14 @@ import {
 	collect_return_length,
 	substitute_constraint,
 } from "./utils/flow_bounds.ts";
-import { is_overloaded, mangled_label } from "./utils/function_overload.ts";
+import {
+	find_function_by_params,
+	is_overloaded,
+	mangled_label,
+} from "./utils/function_overload.ts";
 import { is_class_type, is_owning_struct_type_requiring_move } from "./utils/ownership.ts";
 import type_from_value from "./utils/type_from_value.ts";
+import type_from_value_node from "./utils/type_from_value_node.ts";
 
 /**
  * Find a plain (free) function by name. `status.functions` also holds every
@@ -58,15 +63,19 @@ export default function check_function_call_node(
 	if (!func) {
 		const struct = status.structs.findLast((s) => s.name === node.name);
 		if (struct) {
+			const arg_types = node.params.map((p) => type_from_value_node(p, status));
 			if (struct.type_params.length > 0 && node.type_args?.length) {
 				const mono = monomorphize(struct, node.type_args, status);
 				if (mono) {
-					func = mono.functions.find((f) => f.name === "#init");
+					func = find_function_by_params(mono.functions, "#init", arg_types);
 					if (func) {
 						const type = new Type(struct.name);
 						type.type_args = node.type_args;
 						node.type = type;
 						node.name = mono.name;
+						if (is_overloaded(mono, "#init")) {
+							node.mangled_name = mangled_label(func, mono.name);
+						}
 					}
 				}
 			} else if (
@@ -80,29 +89,35 @@ export default function check_function_call_node(
 				if (inferred) {
 					const mono = monomorphize(struct, inferred, status);
 					if (mono) {
-						func = mono.functions.find((f) => f.name === "#init");
+						func = find_function_by_params(mono.functions, "#init", arg_types);
 						if (func) {
 							const type = new Type(struct.name);
 							type.type_args = inferred;
 							node.type = type;
 							node.name = mono.name;
 							node.type_args = inferred;
+							if (is_overloaded(mono, "#init")) {
+								node.mangled_name = mangled_label(func, mono.name);
+							}
 						}
 					}
 				}
 				if (!func) {
-					func = struct.functions.find((f) => f.name === "#init");
+					func = find_function_by_params(struct.functions, "#init", arg_types);
 					if (func) {
 						const type = new Type(struct.name);
 						node.type = type;
 					}
 				}
 			} else {
-				func = struct.functions.find((f) => f.name === "#init");
+				func = find_function_by_params(struct.functions, "#init", arg_types);
 				if (func) {
 					const type = new Type(struct.name);
 					type.type_args = node.type_args;
 					node.type = type;
+					if (is_overloaded(struct, "#init")) {
+						node.mangled_name = mangled_label(func, struct.name);
+					}
 				}
 			}
 		}
@@ -484,41 +499,42 @@ export function monomorphize(
 		return copy;
 	});
 
-	const custom_init = generic_struct.functions.find((f) => f.name === "#init" && f.has_body);
+	const custom_inits = generic_struct.functions.filter((f) => f.name === "#init" && f.has_body);
 	// A variadic-tuple #init (`...[TK, TV] pairs`) whose tuple contains a
 	// CLASS/TRAIT element cannot be cloned for a reference-typed
 	// instantiation: the pair materializes as a value struct with a
 	// trait/class-typed field (rejected — byte-copy shares the reference),
 	// and the body's borrowed pair element can't feed a `move TV` param (the
-	// ownership chain breaks at the variadic boundary). Skip the custom init
-	// and fall through to the synthesized field-based init, so
+	// ownership chain breaks at the variadic boundary). Skip that init
+	// (per-overload) so the remaining overloads still clone and
 	// `Map<string, SomeTrait>()` + `set()` works fully; passing pairs is
 	// rejected at the call site with targeted guidance (see
 	// reject_variadic_pairs_on_reference_map).
 	// The concrete type args are in scope here (flat_args) — check THOSE,
 	// not the generic declaration's unresolved TK/TV params.
-	const variadic_init_unsupported =
-		!!custom_init &&
-		custom_init.params.some((p) => p.is_variadic && p.type.tuple_types?.length) &&
+	const variadic_init_unsupported = (init: FunctionNode) =>
+		init.params.some((p) => p.is_variadic && p.type.tuple_types?.length) &&
 		flat_args.some(
 			(arg) =>
 				status.traits.some((tr) => tr.name === arg.name) ||
 				status.structs.some((s) => s.name === arg.name && s.is_class),
 		);
-	const effective_custom_init = variadic_init_unsupported ? undefined : custom_init;
 	// Only treat a custom #init as the monomorphized constructor when its
 	// body is real Nomen code. A raw-`#arch`-only #init (e.g. Array<T>'s) is
 	// a hand-written primitive that assumes a pointer `self` and is never
 	// invoked through the normal constructor path — keep the old behaviour
-	// of synthesizing a field-based #init for those.
-	const custom_init_is_nomen =
-		!!effective_custom_init && effective_custom_init.statements.some((s) => s.node_type !== "raw");
-	if (effective_custom_init && custom_init_is_nomen) {
+	// of synthesizing a field-based #init for those. Every Nomen overload
+	// clones so an overloaded constructor template instantiates all of its
+	// signatures.
+	let cloned_custom_init = false;
+	for (const generic_init of custom_inits) {
+		if (variadic_init_unsupported(generic_init)) continue;
+		if (!generic_init.statements.some((s) => s.node_type !== "raw")) continue;
 		// A generic struct with a custom #init (e.g. Map<K,V>'s variadic-tuple
 		// constructor) is cloned + type-substituted + re-checked here, so its
 		// variadic tuple param materializes against the concrete type args and
 		// its body resolves self.method() against the monomorphized struct.
-		const cloned = clone_node(effective_custom_init) as FunctionNode;
+		const cloned = clone_node(generic_init) as FunctionNode;
 		substitute_raw_types(cloned, substitution, status.structs, status.traits);
 		fold_substituted_constant_ifs(cloned.statements);
 		rename_local_labels(cloned, mono_name);
@@ -567,7 +583,9 @@ export function monomorphize(
 			function_emission_names: status.function_emission_names,
 		};
 		check_function_node(cloned, root_status);
-	} else {
+		cloned_custom_init = true;
+	}
+	if (!cloned_custom_init) {
 		const init_params: ParameterNode[] = [];
 		for (const field of mono_fields) {
 			if (!field.value) {
@@ -1964,7 +1982,12 @@ function infer_init_type_args(
 	node: FunctionCallNode,
 	status: CheckStatus,
 ): Type[] | null {
-	const init = struct.functions.find((f) => f.name === "#init" && f.has_body);
+	const init =
+		// Prefer the variadic-tuple overload — the inference reads its tuple
+		// element types; with a single #init this is the same function.
+		struct.functions.find(
+			(f) => f.name === "#init" && f.has_body && f.params.some((p) => p.is_variadic),
+		) ?? struct.functions.find((f) => f.name === "#init" && f.has_body);
 	if (!init) return null;
 	const variadic_idx = init.params.findIndex((p) => p.is_variadic);
 	if (variadic_idx < 0) return null;

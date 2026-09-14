@@ -129,6 +129,26 @@ v.scale(v)
 		expect(compile_main(input)).toEqual([]);
 	});
 
+	test("constructor overloading", () => {
+		const input = `
+struct Point {
+    var int x
+    var int y
+    pub func #init = (ref self, int x, int y) {
+        self.x = x
+        self.y = y
+    }
+    pub func #init = (ref self, int x) {
+        self.x = x
+        self.y = 0
+    }
+}
+var a = Point(2, 3)
+var b = Point(5)
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
 	test("operator overloading", () => {
 		const input = `
 struct Vec2 {

@@ -67,6 +67,13 @@ export default class FunctionCallNode extends BaseNode {
 	 */
 	is_enum_shorthand?: boolean;
 	/**
+	 * The checker-stamped mangled label for a call resolved to an overloaded
+	 * callee (`Struct_method_int`). For struct constructor calls resolved to
+	 * an overloaded `#init`, the backends emit/bl the call through this label
+	 * so the right overload's definition is targeted.
+	 */
+	mangled_name?: string;
+	/**
 	 * The concrete FunctionNode the checker resolved this call to (plain
 	 * function, struct constructor, or monomorphized/specialized copy).
 	 * Build-time passes consult it for callee-signature facts that only the

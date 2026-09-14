@@ -184,9 +184,10 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 	const is_struct = status.structs.find((s) => s.name === node.name && !s.is_simple_type);
 	// A nested-function callee emits under its uniquified label (the checker
 	// stamps resolved_function on every resolved call); struct constructors
-	// and top-level functions keep their names.
+	// and top-level functions keep their names. An overloaded constructor
+	// carries the checker-stamped mangled label for the resolved overload.
 	const func_name = is_struct
-		? `${node.name}_init`
+		? (node.mangled_name ?? `${node.name}_init`)
 		: emission_label(node.resolved_function ?? node);
 	const param_regs = ["x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"];
 
@@ -326,7 +327,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 						}
 					}
 					status.code += `add x0, x29, #${slot_offset}\n`;
-					status.code += `bl ${fc.name}_init\n`;
+					status.code += `bl ${fc.mangled_name ?? `${fc.name}_init`}\n`;
 				} else if (elem_struct) {
 					// Struct value: copy from where it lives into the slot
 					emit_struct_address(arg, status);
