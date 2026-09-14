@@ -371,6 +371,27 @@ export default function check_function_call(
 		// Set expected_type to the function parameter's type so that
 		// untyped values (e.g. array literals) are inferred correctly,
 		// rather than leaking the outer declaration's expected_type.
+		// A lambda argument to a func-typed parameter infers its parameter
+		// and return types from the parameter's signature — the same merge a
+		// func-typed declaration/assignment does. Without it the lambda's
+		// params are untyped ("Unknown value: x"). Covers both a func-typed
+		// parameter and a func-typed struct FIELD's ctor param (both carry
+		// func_params/func_return_type).
+		if (param.node_type === "func" && func_param?.func_params?.length) {
+			const rhs_func = param as FunctionNode;
+			if (rhs_func.params.length === func_param.func_params.length) {
+				for (let i = 0; i < rhs_func.params.length; i++) {
+					if (!rhs_func.params[i].type.name && func_param.func_params[i].type.name) {
+						rhs_func.params[i].type = func_param.func_params[i].type;
+						rhs_func.params[i].type_start = func_param.func_params[i].type_start;
+					}
+				}
+			}
+			if (func_param.func_return_type && !rhs_func.return_type.name) {
+				rhs_func.return_type = func_param.func_return_type;
+			}
+		}
+
 		const old_expected_type = status.expected_type;
 		// Permit passing a nullable var — or the `null` literal — when the
 		// parameter itself is nullable. Mirrors the save/restore pattern used
@@ -730,14 +751,20 @@ export default function check_function_call(
 			expected_type = new Type(func_param.type.name);
 			expected_type.is_array = true;
 		}
-		check_type_and_value_match(
-			expected_type,
-			param_type,
-			param_value,
-			status,
-			param.start,
-			"param",
-		);
+		// A func-typed parameter accepts a lambda: the merge above filled its
+		// signature, and `check_type_and_value_match` can't compare func
+		// signatures anyway (`type_from_value_node` of a func node is its
+		// RETURN type, so it would report "int (expected func)").
+		if (!(expected_type.name === "func" && param.node_type === "func")) {
+			check_type_and_value_match(
+				expected_type,
+				param_type,
+				param_value,
+				status,
+				param.start,
+				"param",
+			);
+		}
 
 		if (param_type.is_array && param_type.length && !func_param.type.length) {
 			// Stamp the caller's compile-time `length` onto the callee param so

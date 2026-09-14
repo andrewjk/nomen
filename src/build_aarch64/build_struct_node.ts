@@ -1,5 +1,6 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import { struct_needs_auto_destroy } from "../build_common/destroy_analysis.ts";
+import emission_label from "../build_common/emission_label.ts";
 import { is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import scan_force_heap_strings from "../build_common/scan_force_heap_strings.ts";
 import { moved_param_is_consumed } from "../build_common/scan_moved_param_consumed.ts";
@@ -703,6 +704,11 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 						emit_pair_store_to(status, "x19", offset, "x1", "x2");
 					}
 					continue;
+				} else if (field.type.name === "func") {
+					// A func-typed default is a function VALUE: the symbol IS
+					// the code address, so store it directly (no deref — an
+					// `ldr [x1]` would load the function's first instruction).
+					status.code += `adr x1, ${emission_label((field.value as any).resolved_function ?? { name: val })}\n`;
 				} else {
 					// Non-literal default: a module-level const reference
 					// (e.g. `var int hi = INF` with `const int INF = …`).
@@ -1025,6 +1031,11 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 						emit_pair_store_to(status, "x19", offset, "x1", "x2");
 					}
 					continue;
+				} else if (field.type.name === "func") {
+					// A func-typed default is a function VALUE: the symbol IS
+					// the code address, so store it directly (no deref — an
+					// `ldr [x1]` would load the function's first instruction).
+					status.code += `adr x1, ${emission_label((field.value as any).resolved_function ?? { name: val })}\n`;
 				} else {
 					// Non-literal default: a module-level const reference
 					// (e.g. `var int hi = INF` with `const int INF = …`).

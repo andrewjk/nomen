@@ -1,11 +1,10 @@
 # TRAITS.md — trait-typed values, and why value structs can't be traits
 
 Why `value struct 'X' cannot be used as trait 'T'; declare 'X' as a class`
-exists, what a trait-typed value actually is at runtime, and how the "use a
-trait instead" pattern replaces func-typed struct fields. Everything here was
-verified against both backends. The one deliberate exception to the
-blanket rule — trait-typed _locals_ — is specified below ("The two-tier
-rule").
+exists, what a trait-typed value actually is at runtime, and when to reach
+for a trait versus a func-typed struct field. Everything here was verified
+against both backends. The one deliberate exception to the blanket rule —
+trait-typed _locals_ — is specified below ("The two-tier rule").
 
 ## What a trait-typed value is at runtime
 
@@ -89,11 +88,13 @@ gains a header, and no coercion ever allocates.
 
 ## "Use a trait instead": the strategy pattern
 
-The checker rejects func-typed struct fields
-(`struct fields cannot be function types — use a trait instead`). The
-substitute is a one-method trait: the trait method plays the role of the
-stored function, and the conformer's fields hold whatever state the function
-needs. TS's rule object:
+A struct/class field may be a function type (`var func (int, out bool)
+test`) — a func value is a capture-less code pointer, so the field is 8
+bytes and `r.test(x)` is an indirect call through it (supported on both
+backends; see test/func_field.test.ts). Reach for a one-method TRAIT
+instead when the "rule" needs state or identity, must be shared, or moves
+through containers: the trait method plays the role of the stored function
+and the conformer's fields hold whatever state it needs. TS's rule object:
 
 ```ts
 type BlockRule = { test: (line: string) => boolean };
@@ -123,20 +124,18 @@ func try_rule = (BlockRule rule, string line, out bool) => rule.test(line)
 ```
 
 Rules must be **classes** (value structs can't be trait-typed, per above),
-which buys the semantics a rule usually wants anyway: reference identity,
-`move` into containers/tables, shared caches. What it costs versus a func
-field: one wrapper class per function — the reason a first-class
-`func`-typed field feature remains interesting (a capture-less function
-value is just a code pointer, so the field would be pointer-sized; the work
-is indirect-call lowering and `#init`/copy/move semantics in both backends).
+which buys reference identity, `move` into containers/tables, and shared
+caches. The func-typed-field alternative costs no wrapper class but gives
+up polymorphism: the stored pointer is fixed at assignment, so a rule family
+dispatched over many shapes still wants a trait.
 
 ## Rules of thumb
 
 - Polymorphism with state or identity → `class : Trait`, hold as `Trait`.
-- A pure function value → func-typed **local or parameter** (fully
-  supported; SPEC "Function Types"). Only the _field_ case is rejected.
-- A rule/renderer family → one trait + class per rule (current port shape),
-  until/unless func-typed fields land.
+- A pure function value → func-typed **local, parameter, or field** (all
+  supported; SPEC "Function Types"). A field holds a fixed code pointer.
+- A rule/renderer family needing state, identity, or container storage →
+  one trait + class per rule (current port shape).
 - A polymorphic value confined to ONE function's body → a value struct
   conformer in a trait-typed local is fine (two-tier rule, tier 1); the
   moment it must cross a call or container boundary, promote it to a class.

@@ -8,6 +8,13 @@ export default class AccessFunctionCallNode extends BaseNode {
 	params: BaseNode[];
 
 	is_static?: boolean;
+	/**
+	 * `s.f(args)` where `f` is a func-typed FIELD (not a method): an indirect
+	 * call through the field's stored code pointer. Set by check_access_node;
+	 * the backends lower it as an indirect call (C casts the field to the
+	 * signature, aarch64 loads it and `blr`s).
+	 */
+	is_func_field_call?: boolean;
 	ref_param_indices?: number[];
 	move_param_indices?: number[];
 	/**

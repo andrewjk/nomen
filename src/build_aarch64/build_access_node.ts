@@ -18,6 +18,7 @@ import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
+import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import IndexNode from "../nodes/IndexNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import type StructNode from "../nodes/StructNode.ts";
@@ -30,6 +31,7 @@ import {
 	unwrap_noop_int_cast,
 } from "./access_staging.ts";
 import { array_licm_enabled } from "./array_licm.ts";
+import build_function_call_node from "./build_function_call_node.ts";
 import build_inline_method, {
 	begin_inline_splice,
 	end_inline_splice,
@@ -564,6 +566,52 @@ export function reset_access_temp_counter() {
 	access_temp_counter = 0;
 }
 
+let func_field_temp_counter = 0;
+
+/**
+ * A call through a func-typed struct FIELD (`s.f(args)`): load the field's
+ * stored code pointer, park it in a stack slot, then delegate to the ordinary
+ * func-VALUE call lowering (which loads the pointer into x8, evaluates the
+ * args into the AAPCS registers, and `blr`s). The func-value path already
+ * handles the arg forms a signature can carry (fat string pairs, etc.), so a
+ * field call behaves exactly like calling a func-typed local.
+ */
+function build_func_field_call(
+	node: AccessNode,
+	access_func: AccessFunctionCallNode,
+	status: BuildStatus,
+): void {
+	const target_type = type_from_value_node(node.target);
+	const struct = status.structs.find((s) => s.name === target_type.name);
+	const field = struct?.fields.find((f) => f.name === access_func.name);
+	if (!field || !field.func_params) {
+		// The checker only marks real func fields; fall back to a plain read.
+		build_node(node.target, status);
+		return;
+	}
+	// Load the field through the ordinary field-access path (handles `.`/`->`
+	// and ref receivers uniformly).
+	const field_access = new AccessNode(
+		node.start,
+		node.target,
+		new AccessFieldNode(node.start, access_func.name, field.type),
+	);
+	build_node(field_access, status);
+	if (!status.code.endsWith("\n")) status.code += "\n";
+	// Park the code pointer where the func-value call path expects to load it.
+	const temp = `_funcfield_${func_field_temp_counter++}`;
+	const off = allocate_stack_space(status, 8);
+	if (!status.stack_offsets) status.stack_offsets = new Map();
+	status.stack_offsets.set(temp, off);
+	status.code += `str x0, [x29, #${off}]\n`;
+	// Delegate: a synthetic func-value call named for the parked slot.
+	const call = new FunctionCallNode(node.start, temp);
+	call.is_func_param = true;
+	call.params = access_func.params;
+	call.type = access_func.type;
+	build_function_call_node(call, status);
+}
+
 export default function build_access_node(node: AccessNode, status: BuildStatus) {
 	// Consume-once marker for the fixed-array pipeline: a stale value from an
 	// earlier `.at()` must never leak into an unrelated field hop.
@@ -587,6 +635,12 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 			}
 			// Plain `string .at(i)` — same fat-pair layout, inline ldrb.
 			if (build_string_at_inline(node, access_func, status)) {
+				return;
+			}
+			// `s.f(args)` where `f` is a func-typed FIELD: an indirect call
+			// through the stored code pointer (`ldr x8, …; blr x8`).
+			if (access_func.is_func_field_call) {
+				build_func_field_call(node, access_func, status);
 				return;
 			}
 			build_access_method(node, access_func, status);
@@ -1040,7 +1094,15 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		}
 	}
 
-	if (access_field.type?.name === "func") {
+	// A func-typed access is a STATIC METHOD REFERENCE (`Console.write` used
+	// as a value → the function label) unless the struct actually stores a
+	// func-typed FIELD of that name, in which case it is a stored code
+	// pointer that falls through to the ordinary 8-byte field load below.
+	const func_field_owner = status.structs.find((s) => s.name === target_type?.name);
+	const is_stored_func_field = !!func_field_owner?.fields.find(
+		(f) => f.name === access_field.name && f.func_params,
+	);
+	if (access_field.type?.name === "func" && !is_stored_func_field) {
 		status.code += `adr x0, ${target_type.name}_${access_field.name}\n`;
 		return;
 	}

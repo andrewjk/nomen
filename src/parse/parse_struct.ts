@@ -63,7 +63,14 @@ export default function parse_struct(
 			func.params = struct.fields
 				.filter((f) => f.visibility !== "private" && !f.value)
 				.map((f) => {
-					const param = new ParameterNode(-1, f.name, f.type);
+					// A func-typed field's ctor param carries the SIGNATURE so a
+					// lambda argument (`Rule((x) => …)`) can infer its parameter
+					// types, exactly like a func-typed local's declaration does.
+					const param = new ParameterNode(-1, f.name, f.func_params ? new Type("func") : f.type);
+					if (f.func_params) {
+						param.func_params = f.func_params;
+						param.func_return_type = f.func_return_type;
+					}
 					if (f.declaration === "move") {
 						param.is_moved = true;
 					}

@@ -608,6 +608,24 @@ function check_access_function_node(
 		}
 	}
 	if (!func) {
+		// `s.f(args)` where `f` is a func-typed FIELD (not a method): an
+		// indirect call through the stored code pointer. The field carries the
+		// signature on func_params/func_return_type; mark the node so the
+		// backends lower it as an indirect call (C casts the field to the
+		// signature, aarch64 loads it and `blr`s). Args are checked like any
+		// call's.
+		const func_field = struct?.fields.find((fd) => fd.name === node.name && fd.func_params);
+		if (func_field) {
+			node.is_func_field_call = true;
+			for (const param of node.params) {
+				check_node(param, status);
+			}
+			node.type = func_field.func_return_type || new Type("void");
+			return true;
+		}
+	}
+
+	if (!func) {
 		add_error(status, `Function not found: ${target_type.name}.${node.name}`, node.start);
 		return false;
 	}

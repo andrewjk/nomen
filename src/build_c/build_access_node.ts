@@ -14,6 +14,7 @@ import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
 import build_nursery_spawn from "./build_nursery_spawn.ts";
 import { is_owned_heap_temp } from "./build_operation_node.ts";
+import build_parameter_node from "./build_parameter_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import { find_decl_in_c_scopes } from "./utils/c_scope.ts";
@@ -31,6 +32,50 @@ function view_element_c_type(view_type: Type, status: BuildStatus): string {
 	const is_struct = !!status.structs.find((s) => s.name === elem_name && !s.is_simple_type);
 	if (is_struct) return `struct ${elem_name}`;
 	return c_type(elem_name);
+}
+
+/**
+ * A call through a func-typed struct FIELD (`s.f(args)`): emit
+ * `((<ret> (*)(<param types>))<receiver>.<field>)(<args>)`. The field is a
+ * `void *` slot (8 bytes); the cast supplies the signature. Mirrors the
+ * func-typed local call form (`long (*f)(long) = fn; f(x)`), which C handles
+ * natively — only the field indirection needs the explicit cast.
+ */
+function build_func_field_call(
+	node: AccessNode,
+	access_func: AccessFunctionCallNode,
+	status: BuildStatus,
+): void {
+	const target_type = type_from_value_node(node.target);
+	const struct = status.structs.find((s) => s.name === target_type.name);
+	const field = struct?.fields.find((f) => f.name === access_func.name);
+	if (!field || !field.func_params) {
+		// The checker only marks real func fields; fall back to a plain
+		// field read so we never emit nothing.
+		build_node(node.target, status);
+		return;
+	}
+	const ret = c_type(field.func_return_type?.name || "void");
+	status.code += `((${ret} (*)(`;
+	for (let i = 0; i < field.func_params.length; i++) {
+		if (i > 0) status.code += ", ";
+		build_parameter_node(field.func_params[i], status);
+	}
+	status.code += `))`;
+	// The field access `receiver.field` — reuse the ordinary access path so
+	// `.`/`->` and ref receivers are handled uniformly.
+	const field_access = new AccessNode(
+		node.start,
+		node.target,
+		new AccessFieldNode(node.start, access_func.name, field.type),
+	);
+	build_node(field_access, status);
+	status.code += `)(`;
+	for (let i = 0; i < access_func.params.length; i++) {
+		if (i > 0) status.code += ", ";
+		build_node(access_func.params[i], status);
+	}
+	status.code += `)`;
 }
 
 /**
@@ -418,6 +463,12 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 			if (access_func.is_nursery_spawn) {
 				const nursery_ptr = nursery_pointer_expr(node.target, status);
 				build_nursery_spawn(access_func, nursery_ptr, status);
+				return;
+			}
+			// `s.f(args)` where `f` is a func-typed FIELD: an indirect call
+			// through the stored code pointer, cast to the field's signature.
+			if (access_func.is_func_field_call) {
+				build_func_field_call(node, access_func, status);
 				return;
 			}
 			// `view T` builtins operate on the universal (ptr, len) slice directly:

@@ -555,44 +555,29 @@ string field stores").
 Related: `move Trait` params are now supported (checker + both backends'
 epilogue reclaim via the trait `<Trait>_destroy` shim) — test/move_trait_param.test.ts.
 
-## Func-typed struct fields (allmark PORT) — deliberate trait alternative, currently unimplemented
+## Func-typed struct fields — IMPLEMENTED; lambda ARGUMENTS still fail on aarch64
 
-The checker rejects func-typed fields outright
-(`struct fields cannot be function types — use a trait instead`,
-check_struct_node), and Nomen's sanctioned answer is the strategy-pattern
-trait (TRAITS.md "Use a trait instead": one trait + one class per rule). The
-allmark port wanted the TS `BlockRule = { test: (line: string) => boolean }`
-object shape directly instead.
+IMPLEMENTED (2026-09-14): struct/class fields may be func-typed
+(`var func (int, out bool) test`), and `s.f(args)` calls through the stored
+8-byte code pointer. The checker resolves the call as an indirect call
+(check_access_node; the parser leaves the field's type name empty with the
+signature on func_params/func_return_type — check_struct_node now gives it
+an explicit `func` type), C emits `((<ret> (*)(<params>))s.f)(args)`, and
+aarch64 loads the field and reuses the func-VALUE call lowering
+(`ldr x8, …; blr x8`). Also handled: field reassignment, class fields,
+struct copies (the pointer is non-owning), func defaults, and `self.f(...)`.
+The aarch64 access path no longer treats a stored func field as a static
+METHOD reference (the `adr x0, Struct_field` hook now applies only when no
+such field exists). Covered by test/func_field.test.ts.
 
-Investigated 2026-09-14 — this is a deferred FEATURE, not a stale rejection
-or a small gap. With the rejection bypassed, the storage half largely works
-already: `struct Rule { var func (int, out int) f }`, the synthesized ctor
-taking a function value, and struct copy/layout all check and BUILD on both
-backends (a func value is an 8-byte code pointer — C declares a func-typed
-local as `long (*f)(long)`, so the field slot needs no layout change). Only
-the CALL is missing: `r.f(args)` parses as a method access, the checker has
-no func-typed-field branch, and it errors `Function not found: Rule.f`.
+Known gaps (both PRE-EXISTING and type-agnostic — func-typed PARAMETERS
+behave identically, so these are not field-specific):
 
-Implementation work (≈150–250 lines, checker + both call paths):
-
-- **checker**: lift the rejection; in check_access_function_node, when the
-  receiver's struct has a func-typed field `name` and no method `name`,
-  resolve the call as an indirect call through that field — attach the
-  field's signature (`field.func_params` / `field.func_return_type`) to the
-  call node and check the args against it (the same shared call machinery a
-  func-typed LOCAL call uses, which already builds a synthetic FunctionNode;
-  see check_function_call_node's `is_func_param`).
-- **C**: at the call site emit
-  `((<ret> (*)(<param c types>))<field access>)(args)` — the field stays a
-  `void*` slot, the cast supplies the signature; reuse the param spelling
-  from build_function_type_declaration. (Alternatively declare the field as
-  a real function pointer, which touches the struct typedef + accessors +
-  ctor param + defaults; the cast keeps the change local.)
-- **aarch64**: load the field into a scratch register, evaluate the args, and
-  `blr` — mirrors the existing func-value call (`is_func_param` →
-  `ldr x8, …; blr x8` in build_function_call_node) but reached through the
-  access path (build_access_node), whose arg machinery is already there.
-- also: assignment `s.f = someFunc` / func-typed field values.
-
-Until then the trait shape (one class per rule) remains the answer, which is
-what the port uses.
+- **A lambda as a func-typed ARGUMENT fails to build on aarch64** (C is
+  fine): `apply((y) => y * 4, 3)` / `Rule((x) => x * 3)` emit bad asm
+  (`:` / `_ = …`). The checker now infers the lambda's parameter types from
+  the parameter's signature (check_function_call), but the aarch64 lambda-
+  as-argument lowering is missing. Named functions work.
+- **Func SIGNATURE mismatches are not rejected**: `var func (int, out int) f
+= some_string_func` and `r.f = some_string_func` are accepted (verified
+  for both locals and fields) — there is no func-type compatibility check.

@@ -125,6 +125,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 			);
 			c.ref_param_indices = n.ref_param_indices?.slice();
 			c.move_param_indices = n.move_param_indices?.slice();
+			c.is_func_field_call = n.is_func_field_call;
 			c.swap_params = n.swap_params
 				? new Map([...n.swap_params].map(([k, v]) => [k, clone_node(v)]))
 				: undefined;
