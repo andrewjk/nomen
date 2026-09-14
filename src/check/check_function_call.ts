@@ -426,6 +426,28 @@ export default function check_function_call(
 		const param_value = value_from_value_node(param);
 		const has_ref_keyword = node.ref_param_indices?.includes(i) ?? false;
 		const has_mov_keyword = node.move_param_indices?.includes(i) ?? false;
+		// A `view string` argument cannot cross into an owned `string`
+		// parameter: the callee expects a heap-owned pair it may free or
+		// return, and the backends diverge today (aarch64 silently aliases
+		// the borrow; C fails to compile — `passing 'nomen_view' to
+		// parameter of incompatible type 'nomen_string'`). Materialize at
+		// the call site with `.to_string()`. (A `view string` PARAM — the
+		// reverse direction — is the supported implicit owned→view borrow,
+		// handled by view_param_indices below.)
+		if (
+			func_param &&
+			func_param.type.name === "string" &&
+			!func_param.type.is_view &&
+			!func_param.type.is_array &&
+			param_type.name === "string" &&
+			param_type.is_view
+		) {
+			add_error(
+				status,
+				`cannot pass a 'view string' to string parameter '${func_param.name}' — call .to_string() to materialize an owned copy`,
+				param.start,
+			);
+		}
 		if (func_param.type.is_ref && !has_ref_keyword) {
 			add_error(
 				status,

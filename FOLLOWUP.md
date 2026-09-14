@@ -226,34 +226,29 @@ ASM_PLAN_7 tranches:
 - Either delete `buffer_pipeline.ts` + its BuildStatus fields, or wire
   the enable switch, before it misleads another tranche.
 
-## View argument to owned `string` parameter (deferred design question)
+## View argument to owned `string` parameter (RESOLVED: reject at check time)
 
-Passing a `view string` where an owned `string` parameter is expected is
-allowed by omission (call-site type matching compares type names only) but
-has no designed semantics, and the backends disagree: aarch64 silently
-passes the pair through, C fails at clang (`passing 'nomen_view' to
-parameter of incompatible type 'nomen_string'`). The differator works
-around it by materializing (`.to_string()`) before such calls.
+RESOLVED (2026-09-14): passing a `view string` where an owned `string`
+parameter is expected is now a check-time rejection —
+`cannot pass a 'view string' to string parameter 's' — call .to_string()
+to materialize an owned copy` (check_function_call). The owner decision was
+"reject, require explicit `.to_string()`", matching declaration Rule 3's
+posture rather than inserting a hidden malloc at every call boundary (the
+materialize-at-boundary option would reintroduce the per-line copies the
+differator just eliminated). Rejection covers free functions, methods, and
+constructor field arguments; the reverse direction (owned `string` →
+`view string` param) remains the supported implicit borrow, and the other
+boundaries (assignment / declaration / `return move`) still materialize by
+design. The suite-wide audit was clean — nothing in the corpus relied on
+the silent coercion (as expected: it never compiled on C). Covered by
+test/view_to_owned_string.test.ts.
 
-Probed for soundness holes on aarch64 (all correct output, `--audit`
-clean, repeated runs): read-only callees, return passthrough (borrow
-normalization strdup's), container stores (`store_T` strdup's), and
-`move`-out into a return are all benign. Params are `const` (no
-reassign-and-free), which closes the obvious hole. No crash, leak, or
-wrong output constructed — so this is a coherence question, not a fire.
-
-The two coherent options mirror the two precedents set elsewhere:
-materialize at the boundary (what assignment/declaration/`return move`
-now do — but a hidden malloc per call would reintroduce exactly the
-per-line copies the differator just eliminated if it ever fires in a
-loop), or reject at check time (what declaration Rule 3 does for
-bindings — but that could break currently-passing aarch64 code; needs a
-suite-wide audit first). Needs an owner decision; until then the backend
-divergence stands (loud on C, silent alias on aarch64).
-
-Also adjacent and known: `Console.write` uses `printf("%s")`, so printing
-a mid-buffer (non-terminated) view over-reads to NUL. Callers materialize
-first; length-aware `==` is unaffected.
+Adjacent and still known: `Console.write` uses `printf("%s")`, so printing
+a mid-buffer (non-terminated) `view string` over-reads to NUL. The new
+rejection removes the bare-view call path (callers must materialize, which
+NUL-terminates), but any raw/FFI bridge that hands a non-terminated view's
+`char*` to `strlen`-based code retains the hazard — see "Residual
+string-byte hazards" below. Length-aware `==` is unaffected.
 
 ## Element iteration for remaining collections (split out of for-of-List)
 
