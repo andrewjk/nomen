@@ -109,7 +109,7 @@ pub class CheckBox : Control {
 		((void(*)(id, SEL, id))objc_msgSend)(
 			(id)self->handle, sel_registerName("setTitle:"),
 			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title));
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
 		```
 		```
 		#arch: aarch64_use_c

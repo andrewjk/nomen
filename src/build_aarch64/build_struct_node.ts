@@ -581,12 +581,21 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 			continue;
 		}
 		if (field.type.is_array && field.type.length && (field.type.length.start ?? -1) >= 0) {
-			const element_size = aarch64_size(field.type.name);
+			// A fixed-size string array's elements are fat (ptr, len) pairs:
+			// 16-byte stride, copied as a pair — an 8-byte word copy would
+			// leave every len half holding garbage.
+			const elem_is_fat_string = field.type.name === "string";
+			const element_size = elem_is_fat_string ? 16 : aarch64_size(field.type.name);
 			const length = parseInt((field.type.length as ValueNode).value || "0");
 			for (let e = 0; e < length; e++) {
 				const byte_offset = e * element_size;
-				status.code += load_element(src_reg, byte_offset, element_size);
-				status.code += store_element("x19", offset + byte_offset, element_size);
+				if (elem_is_fat_string) {
+					status.code += `ldp x9, x10, [${src_reg}, #${byte_offset}]\n`;
+					status.code += `stp x9, x10, [x19, #${offset + byte_offset}]\n`;
+				} else {
+					status.code += load_element(src_reg, byte_offset, element_size);
+					status.code += store_element("x19", offset + byte_offset, element_size);
+				}
 			}
 		} else if (
 			!field.type.is_ref &&

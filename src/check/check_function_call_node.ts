@@ -1659,10 +1659,9 @@ function raw_type_size(name: string, structs: StructNode[]): number {
  * (e.g. Nomen floats lower to C `double`, matching their 8-byte storage; they
  * historically drifted to 4-byte `float` here). `string` expands to the fat
  * nomen_string value — a raw T-generic body (Buffer_<T>/Array_<T> slots) then
- * gets 16-byte struct slots and `sizeof(T)` slab strides. Raw bodies written
- * against the thin char* ABI (String.nm, *_to_string, File/Console FFI) never
- * reference `T` — they are marshalled via _raw_ adapters instead (see
- * raw_string_abi.ts).
+ * gets 16-byte struct slots and `sizeof(T)` slab strides. Every raw body sees
+ * the same fat value (there is no thin ABI): a C `char*` there is an explicit
+ * `.ptr` (see docs/MEMORY.md).
  */
 function raw_c_type_name(name: string): string {
 	if (name === "string") return "nomen_string";

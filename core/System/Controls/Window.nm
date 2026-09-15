@@ -22,7 +22,7 @@ pub class Window: Control {
 		((id(*)(id, SEL, id))objc_msgSend)(
 			win, sel_registerName("setTitle:"),
 			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title));
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
 		((void(*)(id, SEL, double, double))objc_msgSend)(
 			win, sel_registerName("setFrameTopLeftPoint:"), 100.0, 100.0);
 		((void(*)(id, SEL, id))objc_msgSend)(win, sel_registerName("makeKeyAndOrderFront:"), (id)0);
@@ -115,7 +115,7 @@ pub class Window: Control {
 		((id(*)(id, SEL, id))objc_msgSend)(
 			(id)self->handle, sel_registerName("setTitle:"),
 			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title));
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
 		```
 		```
 		#arch: aarch64_use_c

@@ -12,7 +12,8 @@ pub struct int: Stringable, Hashable, Equatable {
 		int length = snprintf(NULL, 0, "%ld", self);
 		char* str = malloc(length + 1);
 		snprintf(str, length + 1, "%ld", self);
-		return str;
+		// Fat-string ABI: snprintf already counted the bytes.
+		return (nomen_string){ str, length };
 		```
 		```
 		#arch: aarch64
@@ -49,10 +50,11 @@ pub struct int: Stringable, Hashable, Equatable {
 	pub func parse = (string s, out int) {
 		```
 		#arch: c
-		return atoi(s);
+		return atoi(s.ptr);
 		```
 		```
 		#arch: aarch64
+		// Fat-string ABI: s = (x0 ptr, x1 len); atoi takes the ptr half.
 		bl _atoi
 		```
 	}

@@ -26,18 +26,12 @@ import { emit_method_body_from_nir } from "./emit_nir.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import { enter_c_scope, leave_c_scope } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
-import { set_c_thin_strings } from "./utils/c_type.ts";
 import {
 	emit_owning_buffer_body,
 	emit_owning_buffer_string_body,
 	owning_buffer_element,
 	owning_buffer_is_string_elem,
 } from "./utils/owning_buffer_specialize.ts";
-import {
-	emit_raw_string_adapter,
-	is_t_generic_struct,
-	raw_string_abi_needed,
-} from "./utils/raw_string_abi.ts";
 import scan_borrow_only_strings from "./utils/scan_borrow_only_strings.ts";
 
 export default function build_struct_node(node: StructNode, status: BuildStatus) {
@@ -258,30 +252,8 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 					}
 				}
 			}
-			// Raw blocks inside a custom init are written against the thin char*
-			// string ABI: hoist a thin alias per by-value string param and
-			// rewrite the raw text to use it (the ctor signature stays fat).
-			const raw_string_params = custom_init.params.filter(
-				(p) => !p.is_self_param && p.type.name === "string" && !p.type.is_view && !p.type.is_array,
-			);
-			if (raw_string_params.length && custom_init.statements.some((s) => s.node_type === "raw")) {
-				for (const p of raw_string_params) {
-					const pname = c_function_name(p.name);
-					status.code += `const char* _thin_${pname} = ${pname}.ptr;\n`;
-				}
-				for (const stmt of custom_init.statements) {
-					if (stmt.node_type !== "raw") continue;
-					const raw_stmt = stmt as unknown as { value: string };
-					let value = raw_stmt.value;
-					for (const p of raw_string_params) {
-						value = value.replace(
-							new RegExp(`\\b${c_function_name(p.name)}\\b`, "g"),
-							`_thin_${c_function_name(p.name)}`,
-						);
-					}
-					raw_stmt.value = value;
-				}
-			}
+			// Raw blocks inside a custom init see the same fat ABI as everywhere
+			// else (see docs/MEMORY.md) — no thin aliases, no text rewriting.
 			for (let child of custom_init.statements) {
 				build_node(child, status, true);
 			}
@@ -639,28 +611,11 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		status.function_return_type = func.return_type;
 		const self_param = func.params[0]?.is_self_param ? func.params[0] : null;
 		status.self_is_ref = !!self_param?.is_ref || self_param?.declaration === "var";
-		// Raw-block shim registry: by-value fat-string params (see build_raw_node).
-		// T-generic container methods (Buffer_<T>, Array_<T>, ...) are EXEMPT:
-		// the checker's T substitution makes their raw bodies natively
-		// fat-correct, so shimming a bare `T value` param to its ptr half
-		// would break `nomen_str_dup(value)`-style fat accesses. A raw-THIN
-		// method (raw_string_abi_needed) emits its whole body with thin
-		// char* params — nothing to shim either.
-		const t_generic = is_t_generic_struct(node.name);
-		const raw_thin = raw_string_abi_needed(func, node, status.platform ?? "");
-		status.fat_string_params = new Set<string>();
+		// Raw blocks see fat strings directly: bodies access a C `char*`
+		// via the explicit `.ptr` half — in T-generic container monos the
+		// checker's T substitution already wrote nomen_string-typed bodies.
+		// No shims, no thin ABI (see docs/MEMORY.md).
 		for (let param of func.params) {
-			if (
-				!t_generic &&
-				!raw_thin &&
-				param.type.name === "string" &&
-				!param.type.is_view &&
-				!param.type.is_array &&
-				!param.is_ref &&
-				!param.type.is_ref
-			) {
-				status.fat_string_params.add(c_function_name(param.name));
-			}
 			// A `view T` param lowers to a by-value nomen_view — record its
 			// name so call sites / declarations inside this body recognize
 			// bare uses as view VALUES (no owned→view re-wrap).
@@ -733,15 +688,9 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 
 		// Define the function
 		// HACK: Need to map names to types
-		// A raw-only method written against the thin char* string ABI
-		// (String.nm's libc bodies, *_to_string, File/Console
-		// FFI) is emitted under a `_raw_` label with thin string types plus a
-		// compiler-generated fat adapter (raw_string_abi.ts). Natively-fat
-		// structs (T-generic container monos via the checker's T
-		// substitution; Channel and StringBuilder via fat-aware authoring —
-		// see NATIVELY_FAT_PREFIXES) skip the adapter. (raw_thin was
-		// computed above, before the shim registry.)
-		if (raw_thin) set_c_thin_strings(true);
+		// Raw `#arch: c` bodies see fat `nomen_string` values directly —
+		// the function emits under its REAL label with its fat signature,
+		// and a C `char*` is an explicit `.ptr` (see docs/MEMORY.md).
 		const func_start = status.code.length;
 		let return_type = func.return_type.name || "void";
 		// For methods of specialized generic structs (e.g. Array_int),
@@ -755,9 +704,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		const func_label_name = is_overloaded(node, func.name)
 			? mangled_label(func, node.name)
 			: `${node.name}_${func.name.replace(/#/g, "")}`;
-		// A thin raw body is emitted under the `_raw_` alias; the fat adapter
-		// (emitted after the body) carries the real label.
-		const emit_label = `${raw_thin ? "_raw_" : ""}${func_label_name}`;
+		const emit_label = func_label_name;
 		if (func.return_type.is_array) {
 			// Returning array data pointer (e.g. out Array<T> becomes T[] after monomorphization)
 			// The #arch: c block returns void* containing struct header + data
@@ -833,12 +780,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		forward_decl_referenced_types(func, status);
 
 		// TODO: Only if top-level
-		if (raw_thin) {
-			const sig_text = status.code.substring(func_start);
-			status.code = status.code.substring(0, func_start) + `static ${sig_text};\n` + sig_text;
-		} else {
-			status.headers += `${status.code.substring(func_start)};\n`;
-		}
+		status.headers += `${status.code.substring(func_start)};\n`;
 
 		status.code += `\n{\n`;
 
@@ -886,11 +828,6 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		// declarations must be reclaimed.
 		build_auto_free(status);
 		status.code += `}\n`;
-		if (raw_thin) {
-			set_c_thin_strings(false);
-			emit_raw_string_adapter(func, func_label_name, status, build_parameter_node);
-			status.code += `\n`;
-		}
 		status.function_ref_params = old_ref_params;
 		status.class_vars = old_class_vars;
 		status.ref_class_params = old_ref_class_params;

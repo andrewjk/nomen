@@ -31,14 +31,36 @@ pub struct string: Stringable, Hashable, Equatable {
 		return h
 	}
 
-	// Returns an OWNED copy of self (`move out string`). Both backends hand
-	// back a fresh allocation the caller frees — never an alias of self's
-	// storage — so the result can outlive the receiver (e.g. escape a match
-	// branch that reclaims the scrutinee temp). Goes through the `strdup`
-	// extern: the adapter marshals self.ptr to libc and re-wraps the copy
-	// with its length.
+	// Returns an OWNED byte-exact copy of self (`move out string`). Fresh
+	// allocation, never an alias of self's storage — the result can outlive
+	// the receiver (e.g. escape a match branch that reclaims the scrutinee
+	// temp). Copies by tracked length, so embedded NULs survive (an extern
+	// strdup boundary would re-synthesize length via strlen and truncate).
 	pub func to_string = (self, move out string) {
-		return strdup(self)
+		```
+		#arch: c
+		// Fat-string ABI: copy self.len bytes; no strlen anywhere.
+		char* buf = (char*)malloc(self.len + 1);
+		memcpy(buf, self.ptr, self.len);
+		buf[self.len] = 0;
+		return (nomen_string){ buf, self.len };
+		```
+		```
+		#arch: aarch64
+		// x19/x20 = self (ptr, len). malloc + memcpy of known length;
+		// memcpy returns the dst in x0, which becomes the return ptr half.
+		sub sp, sp, #16
+		str x20, [sp, #0]
+		add x0, x20, #1
+		bl _malloc
+		mov x1, x19
+		mov x2, x20
+		bl _memcpy
+		ldr x1, [sp, #0]
+		add x2, x0, x1
+		strb wzr, [x2]            // NUL-terminate for libc consumers
+		add sp, sp, #16
+		```
 	}
 
 	// The indexing primitive everything string code builds on — `unsafe`
@@ -80,8 +102,9 @@ pub struct string: Stringable, Hashable, Equatable {
 	) {
 		```
 		#arch: c
+		// Fat-string ABI: slice out of the tracked buffer — no NUL scan.
 		nomen_view _r;
-		_r.ptr = (void*)(self + start);
+		_r.ptr = (void*)(self.ptr + start);
 		_r.len = (long)(end - start);
 		return _r;
 		```
@@ -104,7 +127,9 @@ pub struct string: Stringable, Hashable, Equatable {
 	pub func #op_eq = (self, string other, out bool) {
 		```
 		#arch: c
-		return strcmp(self, other) == 0;
+		// Length-aware compare: equal lengths + equal bytes. Embedded
+		// NULs are data, not terminators (strcmp truncated at the first).
+		return self.len == other.len && memcmp(self.ptr, other.ptr, self.len) == 0;
 		```
 		```
 		#arch: aarch64
@@ -130,12 +155,15 @@ pub struct string: Stringable, Hashable, Equatable {
 	pub func #op_add = (self, string other, out string) {
 		```
 		#arch: c
-		int left_len = strlen(self);
-		int right_len = strlen(other);
-		char* result = malloc(left_len + right_len + 1);
-		strcpy(result, self);
-		strcat(result, other);
-		return result;
+		// Fat-string ABI: one malloc sized by the tracked lens, two
+		// memcpys, NUL-terminate for libc consumers. No strlen/strcpy.
+		long left_len = self.len;
+		long right_len = other.len;
+		char* result = (char*)malloc(left_len + right_len + 1);
+		memcpy(result, self.ptr, left_len);
+		memcpy(result + left_len, other.ptr, right_len);
+		result[left_len + right_len] = 0;
+		return (nomen_string){ result, left_len + right_len };
 		```
 		```
 		#arch: aarch64
@@ -168,16 +196,17 @@ pub struct string: Stringable, Hashable, Equatable {
 	pub func #op_mul = (self, int count, out string) {
 		```
 		#arch: c
-		size_t str_len = strlen(self);
+		// Fat-string ABI: memcpy loop of the tracked stride. No strlen.
+		size_t str_len = self.len;
 		size_t total = str_len * (size_t)count + 1;
 		char* buf = malloc(total);
 		char* p = buf;
 		for (int i = 0; i < count; i++) {
-			memcpy(p, self, str_len);
+			memcpy(p, self.ptr, str_len);
 			p += str_len;
 		}
 		*p = 0;
-		return buf;
+		return (nomen_string){ buf, total - 1 };
 		```
 		```
 		#arch: aarch64

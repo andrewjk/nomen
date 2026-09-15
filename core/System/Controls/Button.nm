@@ -17,7 +17,7 @@ pub class Button : Control {
 		((void(*)(id, SEL, id))objc_msgSend)(
 			btn, sel_registerName("setTitle:"),
 			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title));
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
 		id contentView = ((id(*)(id, SEL))objc_msgSend)(
 			(id)window->handle, sel_registerName("contentView"));
 		((void(*)(id, SEL, id))objc_msgSend)(
@@ -53,7 +53,7 @@ pub class Button : Control {
 		((void(*)(id, SEL, unsigned long, id, id))objc_msgSend)(
 			btn, sel_registerName("setTitle:forState:"),
 			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title),
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr),
 			0); // UIControlStateNormal = 0
 		id parentView = ((id(*)(id, SEL))objc_msgSend)(
 			((id(*)(id, SEL))objc_msgSend)(
@@ -123,7 +123,7 @@ pub class Button : Control {
 		((void(*)(id, SEL, id))objc_msgSend)(
 			(id)self->handle, sel_registerName("setTitle:"),
 			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title));
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
 		```
 		```
 		#arch: aarch64_use_c
@@ -139,7 +139,7 @@ pub class Button : Control {
 		((void(*)(id, SEL, unsigned long, id, id))objc_msgSend)(
 			(id)self->handle, sel_registerName("setTitle:forState:"),
 			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title),
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr),
 			0); // UIControlStateNormal = 0
 		```
 		```

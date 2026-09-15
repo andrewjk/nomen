@@ -1,4 +1,5 @@
 import add_error from "../add_error.ts";
+import { scan_string_escapes } from "../build_common/string_escapes.ts";
 import { set_resolved_function } from "../nodes/set_resolved_function.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
@@ -24,6 +25,14 @@ export default function check_value_node(node: ValueNode, status: CheckStatus): 
 		return false;
 	}
 
+	// Degenerate string-literal escapes are rejected rather than silently
+	// diverging between the length counter's pair-counting and what
+	// clang/GAS actually decode (see build_common/string_escapes.ts).
+	if (node.value.startsWith('"')) {
+		for (const issue of scan_string_escapes(node.value)) {
+			add_error(status, issue, node.start);
+		}
+	}
 	// A function referenced as a VALUE (`apply(multiply, 4)`, `var func f = g`)
 	// resolves through this node in the build's value paths. Stamp the
 	// concrete FunctionNode so emitters can use its emission label (nested

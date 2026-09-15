@@ -12,7 +12,8 @@ pub struct uint8: Stringable, Hashable, Equatable {
 		int length = snprintf(NULL, 0, "%d", self);
 		char* str = malloc(length + 1);
 		snprintf(str, length + 1, "%d", self);
-		return str;
+		// Fat-string ABI: snprintf already counted the bytes.
+		return (nomen_string){ str, length };
 		```
 		```
 		#arch: aarch64

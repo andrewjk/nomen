@@ -380,9 +380,10 @@ function method_self_is_ref(access_func: AccessFunctionCallNode, status: CheckSt
  *   memory, and `bl` into a free/mutator can corrupt the caller's bytes. Any
  *   store mnemonic or mutating call target ⇒ reach. (Register spills store
  *   the POINTER, not through it — still conservatively a reach.)
- * - C: the raw body receives the param as a thin `char*`; any mention of the
- *   parameter (index/deref — reads and writes are indistinguishable at this
- *   granularity) or the byte-writing libc surface ⇒ reach.
+ * - C: the raw body receives the param as a fat `nomen_string` value; writes
+ *   go through the `.ptr` half (or `->ptr` for a `ref string`). Any use of
+ *   the pointer half (index/deref — reads and writes are indistinguishable at
+ *   this granularity) or the byte-writing libc surface ⇒ reach.
  */
 function raw_block_may_mutate(content: string, pname: string): boolean {
 	for (const block of split_raw_blocks(content)) {
@@ -446,17 +447,22 @@ function asm_block_may_mutate(code: string): boolean {
 
 function c_block_may_mutate(code: string, pname: string): boolean {
 	const name = escape_regex(pname);
-	// Indexing the thin char* param (`line[i] = c` — and reads, which are
+	// The pointer expressions a body can write through: the param's `.ptr`
+	// half (fat by-value param), `->ptr` (fat `ref string` param), or the
+	// bare name (pointer-typed interop shapes).
+	const ptr = `${name}(?:\\s*\\.\\s*ptr|\\s*->\\s*ptr)?`;
+	// Indexing the pointer (`p.ptr[i] = c` — and reads, which are
 	// indistinguishable at this granularity — conservative).
-	if (new RegExp(`${name}\\s*\\[`).test(code)) return true;
-	// Dereferencing it: `*line = c`, `(*line)[i]`, `*(line + i)`.
-	if (new RegExp(`\\*\\s*${name}\\b`).test(code)) return true;
-	if (new RegExp(`\\(\\s*\\*\\s*${name}\\b`).test(code)) return true;
-	// ANY call taking the param as its FIRST argument — C convention makes
-	// first pointer args destinations (`strcpy(line, …)`, `sprintf(line, …)`),
-	// and an arbitrary helper `mutate(line)` is unverifiable. Readers like
-	// `printf("%s", line)` pass the param in a LATER position and stay clean.
-	if (new RegExp(`\\b\\w+\\s*\\(\\s*(?:\\*\\s*)?${name}\\b`).test(code)) return true;
+	if (new RegExp(`${ptr}\\s*\\[`).test(code)) return true;
+	// Dereferencing it: `*p.ptr = c`, `(*p.ptr)[i]`, `*(p.ptr + i)`.
+	if (new RegExp(`\\*\\s*${ptr}\\b`).test(code)) return true;
+	if (new RegExp(`\\(\\s*\\*\\s*${ptr}\\b`).test(code)) return true;
+	// ANY call taking the pointer as its FIRST argument — C convention makes
+	// first pointer args destinations (`strcpy(p.ptr, …)`,
+	// `sprintf(p.ptr, …)`), and an arbitrary helper `mutate(p.ptr)` is
+	// unverifiable. Readers like `printf("%s", p.ptr)` pass the pointer in a
+	// LATER position and stay clean.
+	if (new RegExp(`\\b\\w+\\s*\\(\\s*(?:\\*\\s*)?${ptr}\\b`).test(code)) return true;
 	// The byte-writing / allocation libc surface anywhere at all.
 	if (
 		/\b(?:strcpy|strcat|sprintf|snprintf|memcpy|memmove|free|realloc|String_set)\s*\(/.test(code)

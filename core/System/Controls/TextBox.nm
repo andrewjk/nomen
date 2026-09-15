@@ -133,7 +133,7 @@ pub class TextBox : Control {
 		((void(*)(id, SEL, id))objc_msgSend)(
 			(id)self->handle, sel_registerName("setStringValue:"),
 			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text));
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text.ptr));
 		```
 		```
 		#arch: aarch64_use_c
@@ -149,7 +149,7 @@ pub class TextBox : Control {
 		((void(*)(id, SEL, id))objc_msgSend)(
 			(id)self->handle, sel_registerName("setText:"),
 			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text));
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text.ptr));
 		```
 		```
 		#arch: aarch64_use_c
@@ -169,7 +169,7 @@ pub class TextBox : Control {
 			(id)self->handle, sel_registerName("stringValue"));
 		const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(
 			str, sel_registerName("UTF8String"));
-		return strdup(cstr);
+		return (nomen_string){ strdup(cstr), (long)strlen(cstr) };
 		```
 		```
 		#arch: aarch64_use_c
@@ -178,7 +178,7 @@ pub class TextBox : Control {
 			(id)self->handle, sel_registerName("stringValue"));
 		const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(
 			str, sel_registerName("UTF8String"));
-		return strdup(cstr);
+		return (nomen_string){ strdup(cstr), (long)strlen(cstr) };
 		```
 		```
 		#arch: c
@@ -187,7 +187,7 @@ pub class TextBox : Control {
 			(id)self->handle, sel_registerName("text"));
 		const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(
 			str, sel_registerName("UTF8String"));
-		return strdup(cstr);
+		return (nomen_string){ strdup(cstr), (long)strlen(cstr) };
 		```
 		```
 		#arch: aarch64_use_c
@@ -196,7 +196,7 @@ pub class TextBox : Control {
 			(id)self->handle, sel_registerName("text.ptr"));
 		const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(
 			str, sel_registerName("UTF8String"));
-		return strdup(cstr);
+		return (nomen_string){ strdup(cstr), (long)strlen(cstr) };
 		```
 	}
 

@@ -2,6 +2,45 @@
 
 Skipped or out-of-scope items recorded for later.
 
+## Same-named nested type declarations poison the build's global type table
+
+The checker scopes type declarations (struct/class/enum/bitset) per function
+body — two sibling functions may each declare `struct Box` the same way
+sibling nested funcs are supported. But the BUILD flattens every type it
+traverses into one global table (`status.structs`, keyed by bare name), and
+all symbol emission (`Box_init`, `Box_destroy`, method labels) is keyed by
+that bare name too. When two same-named types are declared in different
+function scopes of ONE program (or a nested `struct Box<T>` coexists with a
+top-level `class Box`), `structs.find(name)` resolves by REGISTRATION ORDER:
+generic-container monomorphizations (`List<Box>`, `ClassBuffer<Box>`) and
+init/destroy dispatch can build against the WRONG type, and duplicate
+`Box_init`-style symbols are possible.
+
+Verified empirically (2026-09-15, test-harness batch build): a program
+containing both
+
+- a top-level `pub class Box { var List<int> items }` with `List<Box>`
+  usage (mono `List_Box_*`), and
+- a nested `struct Box<T> { var T value }` with a `pickin<T>` generic
+
+compiled without errors, but the `List_Box_pop`/`ClassBuffer_Box_slice`
+bodies differed from the isolated build (the owning-buffer specialization
+looked up the generic `Box<T>` instead of the class) and the program printed
+garbage (`-1280583200480871952`) where the isolated build printed `502`. The
+test/workaround for the batched test runner is `binpack_by_names` in
+`test/output_batch.ts` (never merge cases whose declared names intersect);
+user programs have no such guard today.
+
+Fix directions:
+
+1. _Check-time rejection (cheap, honest)_: reject a type declaration whose
+   name is already declared anywhere else in the program (mirroring the
+   `taken`-set discipline `assign_function_label` uses for nested funcs).
+2. _Scoped emission names (systemic)_: give nested type declarations
+   parent-prefixed emission labels (the nested-func `label_name` mechanism)
+   and key the build's type table by (scope, name). Touches mono naming,
+   init/destroy dispatch, and every `structs.find(name)` call site.
+
 ## Enum-with-string-payload ownership edges
 
 The core contract now works end to end on both backends (case construction
@@ -143,13 +182,12 @@ if it keeps biting.
   types — generic signatures (`TK key`) stay generic post-mono.
 - `_string_interpolate_N` (aarch64, build.ts): overflow pairs k≥3 read
   from `[x29_helper, #(16 + (k-3)*16)]`.
-- Raw `#arch: c` bodies are thin (char*) behind `_raw_` adapters
-  (`raw_string_abi.ts`); T-generic container bodies (Buffer_/Array_/…)
-  are natively fat via checker substitution (`raw_c_type_name` →
-  nomen_string, `raw_type_size` string→16 — and it must mirror
-  struct_layout's ALIGNED sizes). Dual-use
-  `#arch: c, aarch64_use_c` blocks were SPLIT into per-arch variants in
-  Controls/*.nm because the two sides see different param types.
+- Raw `#arch: c` bodies see FAT nomen_string values directly (the thin
+  `_raw_`-adapter ABI was removed 2026-09-15) — a C `char*` is an explicit
+  `.ptr` (docs/MEMORY.md, "Raw blocks"). T-generic container bodies
+  (Buffer_/Array_/…) are natively fat via checker substitution
+  (`raw_c_type_name` → nomen_string, `raw_type_size` string→16 — and it
+  must mirror struct_layout's ALIGNED sizes).
 - String literal lengths come from
   `src/build_common/string_literal_length.ts` (unescape-aware); do NOT use
   sizeof-1 (escapes miscount) or the raw token length.
@@ -226,30 +264,6 @@ ASM_PLAN_7 tranches:
 - Either delete `buffer_pipeline.ts` + its BuildStatus fields, or wire
   the enable switch, before it misleads another tranche.
 
-## View argument to owned `string` parameter (RESOLVED: reject at check time)
-
-RESOLVED (2026-09-14): passing a `view string` where an owned `string`
-parameter is expected is now a check-time rejection —
-`cannot pass a 'view string' to string parameter 's' — call .to_string()
-to materialize an owned copy` (check_function_call). The owner decision was
-"reject, require explicit `.to_string()`", matching declaration Rule 3's
-posture rather than inserting a hidden malloc at every call boundary (the
-materialize-at-boundary option would reintroduce the per-line copies the
-differator just eliminated). Rejection covers free functions, methods, and
-constructor field arguments; the reverse direction (owned `string` →
-`view string` param) remains the supported implicit borrow, and the other
-boundaries (assignment / declaration / `return move`) still materialize by
-design. The suite-wide audit was clean — nothing in the corpus relied on
-the silent coercion (as expected: it never compiled on C). Covered by
-test/view_to_owned_string.test.ts.
-
-Adjacent and still known: `Console.write` uses `printf("%s")`, so printing
-a mid-buffer (non-terminated) `view string` over-reads to NUL. The new
-rejection removes the bare-view call path (callers must materialize, which
-NUL-terminates), but any raw/FFI bridge that hands a non-terminated view's
-`char*` to `strlen`-based code retains the hazard — see "Residual
-string-byte hazards" below. Length-aware `==` is unaffected.
-
 ## Element iteration for remaining collections (split out of for-of-List)
 
 `for x of some_list` desugars to element iteration for `Array<T>` and now
@@ -288,39 +302,6 @@ same project reaches C emission without OOM (it fails on the
 trait_class_locals bug above), so the difference is the test path:
 `strip_main_functions` + the generated harness + build. Worth profiling
 `run_test_file`'s build phase on this corpus.
-
-## Residual string-byte hazards (narrowed from the Utf8-found set)
-
-The three hazards found while testing System.Text.Utf8 are fixed and
-covered (test/string_bytes.test.ts; `0x0` restored in test/utf8.test.ts):
-the aarch64 const-fold no longer folds escape-containing literals
-(`resolve_string_op` bails to runtime concat), `string_literal_length`
-does UTF-8 width math plus octal escapes, and StringBuilder's raw C
-bodies are natively fat (NATIVELY_FAT_PREFIXES) so embedded NULs survive
-`to_string`/`append_string` on C. What remains:
-
-- **Source-level hex escapes are emitted into C verbatim** (found
-  compiling the allmark port's 2125-entry entity table, whose literals
-  are full of `\x01` separators): `escape_c_string` (build_value_node)
-  intentionally leaves source escapes untouched, so `"\x01AMP"` reaches
-  C as `"\x01AMP"` — C's `\x` consumes ALL following hex digits
-  (`\x01A` = 0x1A, longer runs exceed 255) and clang rejects the TU with
-  `hex escape sequence out of range`. Fix direction: when emitting a
-  string literal that contains a `\x` escape (or any byte-level escape),
-  either re-encode those escapes with exactly-two-digit form split from
-  adjacent hex-digit characters (`"\x01" "AMP"`), or emit them as octal
-  (`\001`, self-terminating). The same greed applies to octal escapes
-  followed by a `0`–`7` digit.
-- **General NUL beyond StringBuilder.** The thin raw-string adapter still
-  synthesizes length via `strlen`, so any OTHER raw-C function returning
-  bytes with embedded NULs (File reads, FFI) truncates the same way.
-  Fixing each means fat-aware authoring + exemption per function, as done
-  for StringBuilder — or a length-carrying adapter protocol (big blast
-  radius; needs an owner decision).
-- **`\8`/`\9` and `\x`-with-no-digits are degenerate.** Octal handling
-  covers `\0`–`\7`; `\8`/`\9`/bare `\x` keep the old pair-counting while
-  clang/GAS do whatever they do (clang warns). Nobody writes these, but a
-  check-time rejection would be more honest than silent divergence.
 
 ## Cross-scope string field stores leak the stored copy (accepted, bounded)
 

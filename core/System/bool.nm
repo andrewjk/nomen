@@ -18,7 +18,8 @@ pub struct bool: Stringable, Hashable, Equatable {
 		int length = snprintf(NULL, 0, "%s", self ? "true" : "false");
 		char* str = malloc(length + 1);
 		snprintf(str, length + 1, "%s", self ? "true" : "false");
-		return str;
+		// Fat-string ABI: snprintf already counted the bytes.
+		return (nomen_string){ str, length };
 		```
 		```
 		#arch: aarch64

@@ -1,3 +1,4 @@
+import reencode_hex_escapes from "../build_common/string_escapes.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
 import { is_int_literal } from "../int_literal.ts";
 import ValueNode from "../nodes/ValueNode.ts";
@@ -104,8 +105,10 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 }
 
 function escape_c_string(s: string): string {
-	// Only escape RAW control characters (from multi-line strings). Source-level
-	// escape sequences like \n are already correct for C, so backslashes are
-	// left untouched.
-	return s.replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t");
+	// Escape RAW control characters (from multi-line strings), then
+	// re-encode source `\xHH` hex escapes as 3-digit octal — clang consumes
+	// `\x` greedily (all following hex digits), so `"\x01AMP"` would decode
+	// `\x01A` as one byte and longer runs exceed the byte range (see
+	// build_common/string_escapes.ts).
+	return reencode_hex_escapes(s.replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t"));
 }

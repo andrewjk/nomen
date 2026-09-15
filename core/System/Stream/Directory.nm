@@ -43,7 +43,7 @@ pub struct Directory {
 		```
 		```
 		#arch: c
-		if (mkdir(path, 0777)) return errno;
+		if (mkdir(path.ptr, 0777)) return errno;
 		return 0;
 		```
 		```
@@ -76,7 +76,7 @@ pub struct Directory {
 	func raw_remove = (string path, out int) {
 		```
 		#arch: c
-		if (rmdir(path)) return errno;
+		if (rmdir(path.ptr)) return errno;
 		return 0;
 		```
 		```
@@ -109,7 +109,7 @@ pub struct Directory {
 		```
 		#arch: c
 		struct stat st;
-		return stat(path, &st) == 0 ? 1 : 0;
+		return stat(path.ptr, &st) == 0 ? 1 : 0;
 		```
 		```
 		#arch: aarch64
@@ -147,7 +147,7 @@ pub struct Directory {
 		```
 		#arch: c
 		Result_string_DirectoryError r;
-		DIR *d = opendir(path);
+		DIR *d = opendir(path.ptr);
 		if (!d) {
 			int e = errno;
 			long de = 4;

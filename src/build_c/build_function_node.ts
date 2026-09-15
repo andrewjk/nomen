@@ -27,9 +27,7 @@ import array_struct_name from "./utils/array_struct.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import { enter_c_scope, leave_c_scope } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
-import { set_c_thin_strings } from "./utils/c_type.ts";
 import emit_enum_in_order from "./utils/emit_enum_in_order.ts";
-import { emit_raw_string_adapter, raw_string_abi_needed } from "./utils/raw_string_abi.ts";
 import scan_borrow_only_strings from "./utils/scan_borrow_only_strings.ts";
 
 export default function build_function_node(node: FunctionNode, status: BuildStatus) {
@@ -110,15 +108,10 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		node.params.length > 0 &&
 		node.params[0].type.name === "Init";
 
-	// A raw-only body written against the thin char* string ABI (String.nm,
-	// *_to_string, File/Http FFI...) is emitted under a `_raw_` label with
-	// thin string types, followed by a compiler-generated fat adapter (see
-	// raw_string_abi.ts). The adapter synthesizes the length exactly once,
-	// at the creation boundary.
-	const raw_thin =
-		!is_main_with_init && raw_string_abi_needed(node, undefined, status.platform ?? "");
-	if (raw_thin) set_c_thin_strings(true);
-
+	// A raw-only body written against the fat nomen_string ABI (see
+	// docs/MEMORY.md): the function emits with its REAL fat signature —
+	// strings are `nomen_string` values, C's `char*` is an explicit
+	// `.ptr`. There is no thin ABI and no adapter at this boundary.
 	const func_start = status.code.length;
 	if (is_main_with_init) {
 		status.code += `int main(int argc, char **argv)`;
@@ -172,7 +165,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		} else {
 			status.code += `void `;
 		}
-		status.code += `${raw_thin ? "_raw_" : ""}${c_function_name(emission_label(node))}(`;
+		status.code += `${c_function_name(emission_label(node))}(`;
 	}
 	if (!is_main_with_init) {
 		let first_param = true;
@@ -207,15 +200,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	}
 
 	// TODO: Only if top-level
-	if (raw_thin) {
-		// The thin body is TU-local: prototype it in the code stream (not the
-		// shared headers) as static, ahead of its definition, so the adapter
-		// below can call it.
-		const sig_text = status.code.substring(func_start);
-		status.code = status.code.substring(0, func_start) + `static ${sig_text};\n` + sig_text;
-	} else {
-		status.headers += `${status.code.substring(func_start)};\n\n`;
-	}
+	status.headers += `${status.code.substring(func_start)};\n\n`;
 
 	status.code += `\n{\n`;
 
@@ -253,22 +238,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	}
 	const old_function_name = status.current_function_name;
 	status.current_function_name = emission_label(node);
-	// Raw-block shim registry: by-value fat-string params (see build_raw_node).
-	// A raw-THIN function (raw_string_abi_needed) emits its whole body with
-	// thin char* params — there is nothing to shim, and shimming would emit
-	// `.ptr` accesses on plain char* (compile error).
-	status.fat_string_params = new Set<string>();
 	for (let param of node.params) {
-		if (
-			!raw_thin &&
-			param.type.name === "string" &&
-			!param.type.is_view &&
-			!param.type.is_array &&
-			!param.is_ref &&
-			!param.type.is_ref
-		) {
-			status.fat_string_params.add(c_function_name(param.name));
-		}
 		if (param.is_variadic) {
 			status.function_variadic_params.add(c_function_name(param.name));
 		}
@@ -431,17 +401,6 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	}
 
 	status.code += `}\n\n`;
-
-	if (raw_thin) {
-		set_c_thin_strings(false);
-		emit_raw_string_adapter(
-			node,
-			c_function_name(emission_label(node)),
-			status,
-			build_parameter_node,
-		);
-		status.code += `\n`;
-	}
 
 	leave_c_scope(status);
 	status.scoped_declarations = old_scoped_declarations;

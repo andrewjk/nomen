@@ -5,7 +5,9 @@ pub struct Console {
 	pub func write = (string line) {
 		```
 		#arch: c
-		printf("%s", line);
+		// Fat-string ABI: strings pass their ptr half. printf %s stops at
+		// the first embedded NUL on both backends (known display limit).
+		printf("%s", line.ptr);
 		```
 		```
 		#arch: aarch64
@@ -25,7 +27,7 @@ pub struct Console {
 	pub func write_line = (string line) {
 		```
 		#arch: c
-		printf("%s\n", line);
+		printf("%s\n", line.ptr);
 		```
 		```
 		#arch: aarch64

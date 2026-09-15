@@ -8,6 +8,7 @@ import call_in_set from "../build_common/call_in_set.ts";
 import { struct_needs_destroy } from "../build_common/destroy_analysis.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
+import reencode_hex_escapes from "../build_common/string_escapes.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
 import {
 	collect_expression_branch_values,
@@ -137,10 +138,14 @@ function is_value_struct_type_node(node: BaseNode, status: BuildStatus): boolean
 }
 
 function escape_asciz(value: string): string {
-	if (!value.includes("\n")) return value;
-	const quote = value[0];
-	const content = value.slice(1, value.endsWith(quote) ? -1 : undefined);
-	return quote + content.replace(/\n/g, "\\n") + (value.endsWith(quote) ? quote : "");
+	// Raw newlines break the directive; source `\xHH` hex escapes re-encode
+	// as 3-digit octal because GAS consumes `\x` greedily (see
+	// build_common/string_escapes.ts).
+	const reencoded = reencode_hex_escapes(value);
+	if (!reencoded.includes("\n")) return reencoded;
+	const quote = reencoded[0];
+	const content = reencoded.slice(1, reencoded.endsWith(quote) ? -1 : undefined);
+	return quote + content.replace(/\n/g, "\\n") + (reencoded.endsWith(quote) ? quote : "");
 }
 
 /** Allocate an array on the stack with an 8-byte length prefix.
@@ -591,20 +596,23 @@ function build_constructor_params(
 		}
 		if (param.node_type === "array" && param_type === "string") {
 			// Static string-array arg: emit a .quad data label and pass its address.
+			// Elements are fat (ptr, len) pairs — each row carries the label
+			// plus its byte length, matching the 16-byte stride pair readers
+			// (.at, element copies) load from the receiver side.
 			const arr = param as ArrayValuesNode;
-			const str_labels: string[] = [];
+			const rows: string[] = [];
 			arr.values.forEach((v, _idx) => {
 				const resolved = resolve_static_value(v, status);
 				if (resolved !== null && resolved.startsWith('"')) {
 					const label = `_arr_str_${string_array_counter++}`;
 					status.code += `${label}: .asciz ${escape_asciz(resolved)}\n.p2align 2\n`;
-					str_labels.push(label);
+					rows.push(`.quad ${label}\n\t.quad ${string_literal_length(resolved)}`);
 				} else {
-					str_labels.push(resolved !== null ? resolved : "0");
+					rows.push(`.quad ${resolved !== null ? resolved : "0"}\n\t.quad 0`);
 				}
 			});
 			const label = `_arr_param_${string_array_counter++}`;
-			status.code += `${label}: .quad ${str_labels.join(", ")}\n.p2align 2\n`;
+			status.code += `${label}: ${rows.join("\n\t")}\n.p2align 2\n`;
 			status.code += `adr x0, ${label}\n`;
 		} else if (fc.nullable_param_indices?.includes(i)) {
 			// A nullable struct value field (`T? field`, T a non-class
@@ -1526,6 +1534,11 @@ export default function build_declaration_node(
 
 			if (complex) {
 				const total_size = array_values.values.length * element_size;
+				// A string array's elements are fat (ptr, len) pairs: the
+				// staging stores must write BOTH halves, or the len slots
+				// hold stale stack bytes that a length-aware reader (at(),
+				// to_string copies) consumes as a garbage length.
+				const fat_string_elems = node.type.name === "string" && node.type.is_array;
 				if (status.function_return_label) {
 					const offset = alloc_array_with_prefix(status, array_values.values.length, element_size);
 					status.stack_offsets!.set(node.name, offset);
@@ -1564,6 +1577,10 @@ export default function build_declaration_node(
 									status.code += `strb w0, [x29, #${slot_offset}]\n`;
 								} else if (element_size === 4) {
 									status.code += `str w0, [x29, #${slot_offset}]\n`;
+								} else if (fat_string_elems) {
+									// Fat string element: the value rides the
+									// (x0 ptr, x1 len) pair — store both halves.
+									status.code += `stp x0, x1, [x29, #${slot_offset}]\n`;
 								} else {
 									status.code += `str x0, [x29, #${slot_offset}]\n`;
 								}
@@ -1600,6 +1617,9 @@ export default function build_declaration_node(
 									status.code += `strb w0, [${node.name} + ${i * element_size}]\n`;
 								} else if (element_size === 4) {
 									status.code += `str w0, [${node.name} + ${i * element_size}]\n`;
+								} else if (fat_string_elems) {
+									// Fat string element: store both halves.
+									status.code += `stp x0, x1, [${node.name} + ${i * element_size}]\n`;
 								} else {
 									status.code += `str x0, [${node.name} + ${i * element_size}]\n`;
 								}

@@ -100,7 +100,7 @@ pub class Text: Control {
 		((void(*)(id, SEL, id))objc_msgSend)(
 			(id)self->handle, sel_registerName("setStringValue:"),
 			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text));
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text.ptr));
 		```
 		```
 		#arch: aarch64_use_c
@@ -116,7 +116,7 @@ pub class Text: Control {
 		((void(*)(id, SEL, id))objc_msgSend)(
 			(id)self->handle, sel_registerName("setText:"),
 			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text));
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text.ptr));
 		```
 		```
 		#arch: aarch64_use_c

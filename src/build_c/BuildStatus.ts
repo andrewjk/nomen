@@ -119,11 +119,6 @@ export default interface BuildStatus {
 	 * function entry; reset per function.
 	 */
 	c_borrow_only_strings?: Set<string>;
-	/** Names of the current function's by-value fat-string params (C backend).
-	 *  Raw `#arch: c` blocks inside MIXED functions (Nomen statements + raw)
-	 *  were authored against the thin char* ABI — build_raw_node shims each
-	 *  such name to its `.ptr` for the duration of the block. */
-	fat_string_params?: Set<string>;
 	/**
 	 * Old class instances displaced by variable reassignment (`h = Holder(...)`)
 	 * whose reclamation is deferred to scope exit. Eagerly freeing them at the

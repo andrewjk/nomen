@@ -274,17 +274,11 @@ function generate_c_function(
 	let return_prefix = return_struct ? nm(return_type) : companion_type(return_type, status);
 	return_prefix += ` `;
 
-	// A fat-string RETURN (`out string`) can't come straight out of a raw
-	// body authored against the thin (char*) ABI. Emit the body under a
-	// `_raw_` label with a thin `char*` result and bridge it: the wrapper
-	// builds the {ptr, strlen} pair — which AAPCS returns in x0/x1, exactly
-	// the pair the assembly caller expects. String PARAMS likewise pass
-	// their ptr half into the thin body.
-	const returns_fat_string =
-		!is_class_init &&
-		return_type === "string" &&
-		!func.return_type?.is_view &&
-		!func.return_type?.is_array;
+	// Companion bodies see the same fat ABI as everywhere else (see
+	// docs/MEMORY.md): a `string` return is the `nomen_string` value the
+	// body builds itself — `(nomen_string){ ptr, len }` — and string params
+	// pass their `.ptr` half at C/ObjC boundaries. AAPCS returns the
+	// 16-byte pair in (x0, x1), exactly what the assembly caller expects.
 
 	// Struct-returning functions get a `_c` suffix because the aarch64
 	// assembly emits a thunk (under the bare name) that bridges the x8
@@ -305,46 +299,13 @@ function generate_c_function(
 	let param_list = "";
 	for (let i = 0; i < params.length; i++) {
 		if (i > 0) param_list += ", ";
-		param_list += generate_c_param(params[i], status, returns_fat_string);
+		param_list += generate_c_param(params[i], status);
 	}
 	if (params.length === 0) {
 		param_list += `void`;
 	}
 
 	let out = `// ${func_label}\n`;
-
-	if (returns_fat_string) {
-		const raw_symbol = `_raw_${symbol_label}`;
-		let thin_params = "";
-		for (let i = 0; i < params.length; i++) {
-			if (i > 0) thin_params += ", ";
-			thin_params += generate_c_param(params[i], status, true);
-		}
-		if (params.length === 0) thin_params = "void";
-		// Thin body: authored against the old char* ABI.
-		out += `char* ${raw_symbol}(${thin_params}) __asm__("${raw_symbol}");\n`;
-		out += `char* ${raw_symbol}(${thin_params})\n{\n`;
-		out += raw_code;
-		out += `\n}\n\n`;
-		// Fat wrapper: builds the {ptr, len} pair the asm caller consumes
-		// from the (x0, x1) register pair.
-		out += `${return_prefix}${symbol_label}(${param_list}) __asm__("${symbol_label}");\n`;
-		out += `${return_prefix}${symbol_label}(${param_list})\n{\n`;
-		const call_args = params
-			.map((p) => {
-				const pname = p.name;
-				return p.type.name === "string" && !p.type.is_view && !p.type.is_array
-					? p.is_ref
-						? `${pname}->ptr`
-						: `${pname}.ptr`
-					: pname;
-			})
-			.join(", ");
-		out += `char* _r = ${raw_symbol}(${call_args});\n`;
-		out += `return (nomen_string){ _r, (long)strlen(_r) };\n`;
-		out += `\n}\n\n`;
-		return out;
-	}
 
 	// On macOS, C functions get a leading `_` in the symbol table, but the
 	// aarch64 assembly references them without. Emit an asm label to force
@@ -376,7 +337,7 @@ function generate_c_function(
 	return out;
 }
 
-function generate_c_param(param: ParameterNode, status: BuildStatus, thin_string = false): string {
+function generate_c_param(param: ParameterNode, status: BuildStatus): string {
 	const struct_type = status.structs.find((s) => s.name === param.type.name);
 	const trait_type = status.traits.find((t) => t.name === param.type.name);
 	const is_struct =
@@ -385,11 +346,6 @@ function generate_c_param(param: ParameterNode, status: BuildStatus, thin_string
 	let out = "";
 	if (param.is_variadic) {
 		out += `long _${param.name}_len, `;
-	}
-	if (thin_string && param.type.name === "string" && !param.type.is_view && !param.type.is_array) {
-		// Thin raw body: a by-value string param is the bare char* ptr half.
-		if (param.is_ref || param.type.is_ref) return `char** ${param.name}`;
-		return `char* ${param.name}`;
 	}
 	// Struct/enum params use the mangled typedef (`nm_Foo`); the typedef is in
 	// scope above the function bodies. Pointer-ness is decided separately below.

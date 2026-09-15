@@ -18,16 +18,6 @@ export function set_c_typedef_mangling(on: boolean): void {
 	mangle_typedefs = on;
 }
 
-// Raw #arch bodies written against the thin char* string ABI are emitted
-// under a `_raw_` name with string types rendered thin (see
-// raw_string_abi.ts); the compiler-generated adapter carries the fat
-// nomen_string signature. Toggled around those emissions only.
-let thin_strings = false;
-
-export function set_c_thin_strings(on: boolean): void {
-	thin_strings = on;
-}
-
 /**
  * The mangled-or-plain TYPEDEF identifier for a user-defined struct/enum name.
  * Used at both the typedef definition site (`typedef struct Foo {...} <here>;`)
@@ -51,11 +41,10 @@ export default function c_type(type: string): string {
 			// nomen_string typedef in build.ts's prelude). The buffer is always
 			// NUL-terminated at ptr[len] so libc/FFI consumers (printf %s,
 			// fopen, stringWithUTF8String:) keep working unchanged; `.length`
-			// is a field load, never strlen. Raw #arch bodies still see a thin
-			// char* — build_function_node/build_struct_node emit them under a
-			// mangled `_raw_` name with a marshalling adapter (see
-			// raw_string_abi.ts).
-			return thin_strings ? "char*" : "nomen_string";
+			// is a field load, never strlen. Raw #arch bodies see the same
+			// fat value — a C `char*` there is an explicit `.ptr` (see
+			// docs/MEMORY.md).
+			return "nomen_string";
 		case "func":
 			return "void*";
 		case "void":

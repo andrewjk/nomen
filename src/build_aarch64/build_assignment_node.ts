@@ -1944,7 +1944,20 @@ export default function build_assignment_node(
 						status.code += "\n";
 					}
 					mark_moved_if_struct(node.right_value, status);
+					// A plain `string` field is a fat (ptr, len) pair: the RHS
+					// rides x0/x1 and BOTH halves must land in the field, or
+					// the len half holds stale bytes that pair-reading loads
+					// (.at, copies) consume as a garbage length.
+					const field_is_fat_string =
+						field_type?.name === "string" &&
+						!field_type.is_ref &&
+						!field_type.is_array &&
+						!field_type.is_view &&
+						!field_type.is_nullable;
 					status.code += `mov x2, x0\n`;
+					if (field_is_fat_string) {
+						status.code += `mov x3, x1\n`;
+					}
 					if (base_reg !== undefined) {
 						if (field_size === 1) {
 							status.code += `strb w2, [${base_reg}, #${offset}]\n`;
@@ -1954,6 +1967,9 @@ export default function build_assignment_node(
 							status.code += `str w2, [${base_reg}, #${offset}]\n`;
 						} else {
 							status.code += `str x2, [${base_reg}, #${offset}]\n`;
+						}
+						if (field_is_fat_string) {
+							status.code += `str x3, [${base_reg}, #${offset + 8}]\n`;
 						}
 					} else {
 						status.code += `ldr x0, [sp], #16\n`;
@@ -1966,6 +1982,9 @@ export default function build_assignment_node(
 							status.code += `str w2, [x0, #${offset}]\n`;
 						} else {
 							status.code += `str x2, [x0, #${offset}]\n`;
+						}
+						if (field_is_fat_string) {
+							status.code += `str x3, [x0, #${offset + 8}]\n`;
 						}
 					}
 				}

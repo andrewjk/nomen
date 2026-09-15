@@ -17,10 +17,17 @@ export default function string_literal_length(raw: string): number {
 	while (i < end) {
 		if (raw[i] === "\\") {
 			if (raw[i + 1] === "x") {
-				// `\xNN` hex escape — one decoded byte; consume the hex digits.
+				// `\xNN` hex escape — one decoded byte; consume AT MOST two
+				// hex digits (clang and GAS would greedily eat the whole run,
+				// so the emitters re-encode as self-terminating 3-digit octal
+				// and the language defines the run as capped at 2 — a
+				// following hex digit is ordinary text, `"\x01AMP"` is 4
+				// bytes).
 				i += 2;
-				while (i < end && /[0-9a-fA-F]/.test(raw[i])) {
+				let digits = 0;
+				while (i < end && digits < 2 && /[0-9a-fA-F]/.test(raw[i])) {
 					i += 1;
+					digits += 1;
 				}
 			} else if (raw[i + 1] >= "0" && raw[i + 1] <= "7") {
 				// Octal escape — up to 3 digits, one byte. Both clang and
