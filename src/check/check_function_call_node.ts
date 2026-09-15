@@ -424,11 +424,22 @@ export function monomorphize(
 		substitute_raw_types(cloned, substitution, status.structs, status.traits);
 		fold_substituted_constant_ifs(cloned.statements);
 		rename_local_labels(cloned, mono_name);
+		// Checker-hoisted call-argument temps (`const _param_N = <arg>` in
+		// func.allocations) are built as declarations ahead of the body — and
+		// their value trees carry the SAME generic node types the statements
+		// do. Every retype pass below must therefore walk the allocations
+		// alongside the statements, or a hoisted `self.value` (T field) keeps
+		// `self: Box` + `T` and the backends lower the load as a scalar (the
+		// len half of the mono fat-string field left as garbage).
+		const retype_roots: BaseNode[] = [
+			...cloned.statements,
+			...((cloned.allocations ?? []) as BaseNode[]),
+		];
 		// Substitute type-param names on body node `.type` fields (T -> Pt), so
 		// the builder lowers struct-typed locals/args/fields correctly. self is
 		// handled separately below (its type is the struct name, not a type
 		// param). Mirrors the trait-default retype pattern.
-		for (const stmt of cloned.statements) substitute_node_types(stmt, substitution);
+		for (const stmt of retype_roots) substitute_node_types(stmt, substitution);
 		materialize_mono_enum_types(cloned.statements, substitution, status);
 		// Repoint every `self` reference at the monomorphised struct (e.g.
 		// Box -> Box_Pt). The cloned body's `self` ValueNodes keep the generic
@@ -437,7 +448,7 @@ export function monomorphize(
 		// (item: T) resolves through the generic struct and the stale type
 		// param, lowering a struct field as a pointer. Mirrors the trait-default
 		// retype at the trait-method clone site.
-		retype_self_references(cloned.statements, mono_name);
+		retype_self_references(retype_roots, mono_name);
 		cloned.return_type = substitute_type(cloned.return_type, substitution);
 		if (cloned.return_type.type_args?.length) {
 			cloned.return_type = materialize_generic_enum_type(cloned.return_type, status);
@@ -464,17 +475,17 @@ export function monomorphize(
 		// so without this the builder sees an empty type on struct param uses
 		// and lowers them as scalars (wrong arg passing / storing). Sufficient
 		// for List<T>, whose only struct-typed value is the element param.
-		retype_param_references(cloned.statements, cloned.params);
-		retype_local_references(cloned.statements);
+		retype_param_references(retype_roots, cloned.params);
+		retype_local_references(retype_roots);
 		// Unsafe-body index nodes: the generic body was checked AFTER this
 		// clone was made (user code triggers monomorphization first), so the
 		// checker's stamps (element type, array-target flag) are absent.
 		// Re-derive them now that every type on the clone is concrete.
-		restamp_index_nodes(cloned.statements, mono_name);
+		restamp_index_nodes(retype_roots, mono_name);
 		resolve_mono_equality_ops(cloned.statements, status);
 		// Re-resolve plain free-function calls (see resolve_free_func_calls —
 		// extern callees must emit through their `extern_<name>` adapter).
-		resolve_free_func_calls(cloned.statements, status);
+		resolve_free_func_calls(retype_roots, status);
 		// Re-derive check-phase annotations on AccessFunctionCallNodes.
 		// The mono body is cloned from the unchecked generic body and never
 		// re-checked (cloned.checked = true below), so annotations the
@@ -484,7 +495,7 @@ export function monomorphize(
 		// each call's receiver type by tracing the access chain (using the
 		// concrete types set by the substitution passes above) and derives
 		// the annotations from the resolved method's signature and contracts.
-		rederive_access_func_annotations(cloned.statements, status);
+		rederive_access_func_annotations(retype_roots, status);
 		cloned.checked = true;
 		cloned_methods.push(cloned);
 		mono_struct.functions.push(cloned);
@@ -943,6 +954,16 @@ function retype_value_in_node(
 	if (any_node.item?.node_type) retype_value_in_node(any_node.item, resolver);
 	if (any_node.list?.node_type) retype_value_in_node(any_node.list, resolver);
 	if (any_node.constraint?.node_type) retype_value_in_node(any_node.constraint, resolver);
+	// Checker-hoisted call-argument temps ride on the call node itself
+	// (`func_call.allocations`), not in the statements list — their value
+	// trees carry the same generic types and must be retyped with the body.
+	if (Array.isArray(any_node.allocations)) {
+		for (const child of any_node.allocations) {
+			if (child && typeof child === "object" && "node_type" in child) {
+				retype_value_in_node(child, resolver);
+			}
+		}
+	}
 }
 
 /**
@@ -2367,6 +2388,11 @@ function substitute_node_types(
 			const n = node as FunctionCallNode;
 			for (const p of n.params) substitute_node_types(p, substitution);
 			if (n.type) n.type = substitute_type(n.type, substitution);
+			// Hoisted-argument temps attached to the call (n.allocations) are
+			// declarations too — substitute their types with the body.
+			if (Array.isArray(n.allocations)) {
+				for (const alloc of n.allocations) substitute_node_types(alloc, substitution, status);
+			}
 			break;
 		}
 		case "access": {

@@ -509,31 +509,3 @@ reachable by driving `Buffer`/`ClassBuffer` directly. Remediation shipped
   sibling System containers, so hiding needs a library-internal visibility
   concept). With `modify_T` + the contract comments, the safe path exists;
   (a)+(c-lite) is the accepted posture for now.
-
-Pre-existing bugs found while testing `modify_T` (all reproduce on the
-unmodified baseline — recorded here because the feature's test corpus
-reached them):
-
-- **aarch64: a ctor result passed straight into a container is
-  double-managed.** `cb.store_T(0, Counter(1))` — the instance temp is
-  registered for scope-exit destroy+free AND owned by the slot
-  (`Counter_destroy` runs twice on the same pointer; SIGABRT). Sound
-  pattern: bind to a local, take it with `move` at the boundary
-  (`func drive = (.., move Counter seed)`) and store the param — mirrors
-  List.push. Fix direction: the call-result-as-container-arg transfer
-  should mark the temp consumed (mirrors the C backend's
-  fresh-constructor recognition).
-- **aarch64: a class local loaded from a container aliases the slot.**
-  `var Counter c = cb.load_T(0)` — `c` is freed at scope exit AND the
-  container's `#destroy` frees the slot again. Read through the borrow
-  instead (`cb.load_T(0).value`), or extract with `move_T`. Fix direction:
-  borrow-accessor results (load_T/.at/…) stored into class locals should
-  mark the local an alias (the C backend normalises these via
-  string_return_analysis; aarch64 needs the class-typed equivalent).
-- **aarch64: auto-inline splices of generic-struct methods scalar-load
-  string fields.** `Box<string>.modify`'s spliced body loads `self.value`
-  with one `ldr` (ptr half only; len half = garbage) — the splice's field
-  access misses the mono-substituted fat-string field type. Repro:
-  test the string leg of a `Box<T> { var T value }`-style generic on
-  aarch64 (currently only the int leg is covered in
-  test/buffer_modify.test.ts). Unrelated to func params.

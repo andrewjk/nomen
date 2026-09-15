@@ -682,7 +682,10 @@ function build_constructor_params(
 	// AAPCS64: args past slot 7 go in the caller's outgoing area at [sp] at
 	// the moment of the bl. Lower sp by the outgoing area size and copy each
 	// overflow arg from its spill slot; the caller restores sp after the bl.
-	const overflow_count = Math.max(0, fc.params.length - (NUM_REG_ARGS - 1));
+	// SLOT count, not param count — a fat-string/view arg occupies two slots,
+	// so counting params would drop every overflow arg after the first (e.g.
+	// `Big(name, a..g)`: 8 params = 9 slots → 2 overflow args, not 1).
+	const overflow_count = Math.max(0, base_slot_count - (NUM_REG_ARGS - 1));
 	if (overflow_count > 0) {
 		const outgoing_size = Math.ceil((overflow_count * 8) / 16) * 16;
 		status.code += `sub sp, sp, #${outgoing_size}\n`;

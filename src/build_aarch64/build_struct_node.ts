@@ -461,6 +461,37 @@ function build_auto_destroy_function(node: StructNode, status: BuildStatus) {
 	status.stack_offsets = old_stack_offsets;
 }
 
+/**
+ * Spill the still-live incoming ctor arg registers across a call, run
+ * `emit_call`, then restore them (16-byte sp alignment preserved). The
+ * auto-init loop consumes arg slots in field order — every register from
+ * the current field's first slot onward still holds an argument a later
+ * field store needs (e.g. `Named(name, hits)`: hits rides x3 and the
+ * name-field's strdup call clobbers every caller-saved register).
+ * Overflow args (slots ≥ 8) live in the caller's outgoing-args area,
+ * which the callee cannot touch, so only x1–x7 ever need spilling.
+ */
+function with_live_arg_regs_spilled(
+	status: BuildStatus,
+	live_regs: string[],
+	emit_call: () => void,
+) {
+	const odd = live_regs.length % 2 === 1;
+	for (let r = 0; r + 1 < live_regs.length; r += 2) {
+		status.code += `stp ${live_regs[r]}, ${live_regs[r + 1]}, [sp, #-16]!\n`;
+	}
+	if (odd) {
+		status.code += `str ${live_regs[live_regs.length - 1]}, [sp, #-16]!\n`;
+	}
+	emit_call();
+	if (odd) {
+		status.code += `ldr ${live_regs[live_regs.length - 1]}, [sp], #16\n`;
+	}
+	for (let r = odd ? live_regs.length - 3 : live_regs.length - 2; r >= 0; r -= 2) {
+		status.code += `ldp ${live_regs[r]}, ${live_regs[r + 1]}, [sp], #16\n`;
+	}
+}
+
 function build_init_function(node: StructNode, status: BuildStatus) {
 	const func_name = `${node.name}_init`;
 	const required_fields = node.fields.filter((f) => f.value == null);
@@ -559,13 +590,17 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 				// strdup'd (the wrapper strlens it) — skip the copy and store
 				// the raw pair; the destroy's free(NULL) is a no-op. The
 				// strdup wrapper call clobbers every caller-saved register,
-				// so BOTH halves must be spilled across it.
+				// so EVERY still-live incoming arg register (this field's
+				// pair plus all later fields' registers) must be spilled
+				// across it.
 				const skip_label = `.field_strdup_skip_${field_strdup_guard_counter++}`;
 				status.code += `cbz ${src_reg}, ${skip_label}\n`;
-				status.code += `stp ${src_reg}, ${len_src ?? "xzr"}, [sp, #-16]!\n`;
-				status.code += `mov x0, ${src_reg}\n`;
-				emit_strdup(status);
-				status.code += `ldp ${src_reg}, ${len_src ?? "xzr"}, [sp], #16\n`;
+				with_live_arg_regs_spilled(status, param_regs.slice(slot - 1), () => {
+					status.code += `mov x0, ${src_reg}\n`;
+					emit_strdup(status);
+				});
+				// Write the strdup'd pointer back AFTER the pops — the restored
+				// live registers include src_reg's slot and would clobber it.
 				status.code += `mov ${src_reg}, x0\n`;
 				status.code += `${skip_label}:\n`;
 			}
@@ -635,11 +670,15 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 				!field.type.is_ref &&
 				!field.type.is_view
 			) {
-				status.code += `str ${src_reg}, [sp, #-16]!\n`;
-				status.code += `mov x0, ${src_reg}\n`;
-				status.code += `bl _strdup\n`;
+				// The strdup call clobbers every caller-saved register — spill
+				// the still-live incoming arg registers across it (see
+				// with_live_arg_regs_spilled).
+				with_live_arg_regs_spilled(status, param_regs.slice(slot - 1), () => {
+					status.code += `mov x0, ${src_reg}\n`;
+					status.code += `bl _strdup\n`;
+				});
+				// Write-back after the pops — see the fat-string case above.
 				status.code += `mov ${src_reg}, x0\n`;
-				status.code += `ldr x0, [sp], #16\n`;
 			}
 			emit_typed_store(status, src_reg, "x19", offset, field_size);
 		}

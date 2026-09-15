@@ -92,7 +92,7 @@ struct Buffer_driver {
 	func drive = (ref self, move Counter seed, out int) {
 		var ClassBuffer<Counter> cb = ClassBuffer<Counter>()
 		cb.alloc_int(2)
-		cb.store_T(0, seed)
+		cb.store_T(0, move seed)
 		cb.modify_T(0, make_bumped)
 		cb.modify_T(0, make_bumped)
 		Console.write("\\{cb.load_T(0).value}")
@@ -127,4 +127,108 @@ bi.modify(add10)
 Console.write("\\{bi.value}")
 `;
 	await build_and_check_output(input, "generic_func_param", "21");
+});
+
+// Regression: a fresh constructor result passed straight into the container
+// transfers ownership at the store — `store_T`/`replace_T` take `move T`, so
+// the hoisted instance temp is consumed and its scope-exit destroy+free is
+// suppressed (it used to run alongside the container's per-slot destroy —
+// `Counter_destroy` twice on one pointer, SIGABRT).
+test("ctor result straight into ClassBuffer.store_T", async () => {
+	const input = `
+class Counter {
+	var int value
+}
+
+struct Buffer_driver {
+	func drive = (ref self, out int) {
+		var ClassBuffer<Counter> cb = ClassBuffer<Counter>()
+		cb.alloc_int(2)
+		cb.store_T(0, Counter(1))
+		cb.modify_T(0, make_bumped)
+		Console.write("\\{cb.load_T(0).value}")
+		return 0
+	}
+}
+
+func make_bumped = (Counter c, out Counter) {
+	var Counter fresh = Counter(c.value + 1)
+	return fresh
+}
+
+var Buffer_driver d = Buffer_driver()
+d.drive()
+Console.write_line("")
+`;
+	await build_and_check_output(input, "classbuffer_store_ctor", "2\n");
+});
+
+// A class local loaded from a container aliases the slot (a borrow — the
+// container still owns the element): the local must NOT be destroy-tracked,
+// and storing it back with `move` must not double-free.
+test("ClassBuffer slot borrow kept alive across move_T", async () => {
+	const input = `
+class Counter {
+	var int value
+}
+
+struct Buffer_driver {
+	func drive = (ref self, move Counter seed, out int) {
+		var ClassBuffer<Counter> cb = ClassBuffer<Counter>()
+		cb.alloc_int(2)
+		cb.store_T(0, move seed)
+		var Counter c = cb.load_T(0)
+		Console.write("\\{c.value}")
+		var Counter taken = cb.move_T(0)
+		Console.write("\\{taken.value}")
+		return 0
+	}
+}
+
+var Buffer_driver d = Buffer_driver()
+d.drive(Counter(1))
+Console.write_line("")
+`;
+	await build_and_check_output(input, "classbuffer_load_borrow", "11\n");
+});
+
+// Regression (aarch64): the auto-init strdup for a class's always-heap string
+// field clobbered every still-live incoming arg register — a ctor like
+// `Named("alice", 1)` stored garbage in the fields AFTER the string.
+test("ctor scalar args survive a preceding string field (aarch64)", async () => {
+	const input = `
+class Named {
+	var string name
+	var int value
+}
+
+var Named n = Named("alice", 1)
+Console.write_line("\\{n.value}")
+Console.write_line("\\{n.name}")
+`;
+	await build_and_check_output(input, "ctor_string_then_scalar", "1\nalice\n");
+});
+
+// Regression (aarch64): the ctor call site computed its overflow-arg count
+// from the PARAM count, not the SLOT count — a fat-string arg consumes two
+// slots, so `Big(name, a..g)` dropped every overflow arg after the first.
+test("ctor overflow args after a string field (aarch64)", async () => {
+	const input = `
+class Big {
+	var string name
+	var int a
+	var int b
+	var int c
+	var int d
+	var int e
+	var int f
+	var int g
+}
+
+var Big r = Big("n", 1, 2, 3, 4, 5, 6, 7)
+var string s = r.name + " " + r.a.to_string() + r.b.to_string() + r.c.to_string()
+	+ r.d.to_string() + r.e.to_string() + r.f.to_string() + r.g.to_string()
+Console.write_line(s)
+`;
+	await build_and_check_output(input, "ctor_string_overflow_args", "n 1234567\n");
 });

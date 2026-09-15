@@ -94,11 +94,15 @@ pub struct ClassBuffer<T> {
 	}
 
 	// Store the owned class pointer `val` into slot `i`, which MUST be fresh
-	// (calloc'd, or zeroed by move_T/move_int). This is a plain pointer
-	// store — it does NOT destroy/free the slot's previous occupant, so a
-	// second `store_T` at an occupied index leaks that instance. Use
-	// replace_T (or replace_int) to overwrite a live slot.
-	inline func store_T = (ref self, int i: i >= 0 && i < self.cap, T val: val != 0) {
+	// (calloc'd, or zeroed by move_T/move_int). Takes OWNERSHIP of `val`
+	// (`move`): the slot's #destroy reclaims the instance, so the caller must
+	// not free its copy — a fresh constructor result transfers here directly,
+	// and a local must be moved (its own cleanup is suppressed at the call
+	// site). This is a plain pointer store — it does NOT destroy/free the
+	// slot's previous occupant, so a second `store_T` at an occupied index
+	// leaks that instance. Use replace_T (or replace_int) to overwrite a live
+	// slot.
+	inline func store_T = (ref self, int i: i >= 0 && i < self.cap, move T val: val != 0) {
 		```
 		#arch: c
 		((long*)(unsigned long long)self->data)[i] = (long)val;
@@ -251,7 +255,9 @@ pub struct ClassBuffer<T> {
 	// T-typed alias of replace_int: free the outgoing class pointer (destroy +
 	// free) then store the new one. Used by List.set so the uniform `_T` API
 	// preserves ownership for class elements.
-	func replace_T = (ref self, int i: i >= 0 && i < self.cap, T val: val != 0) {
+	// Overwrite a live slot: destroy + free the displaced instance, then take
+	// OWNERSHIP of `val` (`move`) — same transfer rule as store_T.
+	func replace_T = (ref self, int i: i >= 0 && i < self.cap, move T val: val != 0) {
 		```
 		#arch: c
 		long *slots = (long*)(unsigned long long)self->data;

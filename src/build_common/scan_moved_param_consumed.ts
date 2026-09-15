@@ -28,13 +28,17 @@ export function moved_param_is_consumed(
 	receiver_type?: string,
 	structs?: StructNode[],
 ): boolean {
+	// A raw `#arch` body is opaque to this scan — it may store the param into
+	// an owning container (ClassBuffer.store_T/replace_T do exactly that), so
+	// assume ownership escaped and let the body/callee manage the value.
+	// Emitting the epilogue reclaim would free a pointer the raw body just
+	// handed to its owner (a double free at the container's destroy).
+	const statements = (root as unknown as { statements?: unknown[] }).statements ?? [];
+	for (const stmt of statements) {
+		if ((stmt as { node_type?: string })?.node_type === "raw") return true;
+	}
 	const state = { structs, in_progress: new WeakSet<FunctionNode>() };
-	return scan_body(
-		(root as unknown as { statements?: unknown[] }).statements ?? [],
-		name,
-		receiver_type,
-		state,
-	);
+	return scan_body(statements, name, receiver_type, state);
 }
 
 type ScanState = {
