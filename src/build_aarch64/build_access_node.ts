@@ -1185,7 +1185,10 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 	if (bitset_node) {
 		const case_index = bitset_node.cases.indexOf(access_field.name);
 		if (case_index >= 0) {
-			status.code += `mov x0, #(1 << ${case_index})\n`;
+			// Emit the evaluated single-bit constant, not the `#(1 << N)`
+			// expression text — the asm validator (and GAS) only accept
+			// plain immediates here.
+			status.code += `mov x0, #${2 ** case_index}\n`;
 			return;
 		}
 	}

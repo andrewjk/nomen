@@ -70,7 +70,10 @@ function deref_load_instr(reg: string, type_name: string): string {
 
 export default function build_value_node(node: ValueNode, status: BuildStatus) {
 	const original_value = node.value;
-	let value = node.value.replace("self", "_self");
+	// The `self` keyword reads the `_self` local — but ONLY the bare keyword:
+	// a substring rewrite corrupts string literals and identifiers that
+	// merely contain "self" (`"myself"`, a variable named `selfish`).
+	let value = node.value === "self" ? "_self" : node.value;
 
 	// Full-unroll index substitution (ASM_PLAN_2 tranche E): inside an
 	// unrolled copy, reads of the induction become immediate loads — the
@@ -124,7 +127,8 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 			const case_name = value.substring(bitset_node.name.length + 1);
 			const case_index = bitset_node.cases.indexOf(case_name);
 			if (case_index >= 0) {
-				status.code += `mov x0, #(1 << ${case_index})\n`;
+				// Evaluated constant — see the access path above.
+				status.code += `mov x0, #${2 ** case_index}\n`;
 				return;
 			}
 		}

@@ -73,6 +73,16 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.heap_strings = new Set();
 	const old_owned_string_vars = status.owned_string_vars;
 	status.owned_string_vars = new Set();
+	// Array-ownership sets are name-keyed function-local marks like the
+	// string sets above: an `arr` registered as a heap array (or with a
+	// stack length) in one function must not leak into a later function
+	// declaring an unrelated same-named array — the call-site wrap and the
+	// scope-exit free would both miscompile it. (Mirrors the aarch64
+	// backend, which already resets heap_array_vars per function.)
+	const old_heap_array_vars = status.heap_array_vars;
+	status.heap_array_vars = undefined;
+	const old_stack_array_lengths = status.stack_array_lengths;
+	status.stack_array_lengths = undefined;
 	const old_moved = status.moved;
 	status.moved = new Set();
 	const old_borrow_only = status.c_borrow_only_strings;
@@ -416,6 +426,8 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.moved_string_vars = old_moved_string_vars;
 	status.heap_strings = old_heap_strings;
 	status.owned_string_vars = old_owned_string_vars;
+	status.heap_array_vars = old_heap_array_vars;
+	status.stack_array_lengths = old_stack_array_lengths;
 	status.moved = old_moved;
 }
 

@@ -594,6 +594,10 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		const old_scoped_declarations = status.scoped_declarations;
 		const old_borrow_only = status.c_borrow_only_strings;
 		const old_force_heap = status.force_heap_strings;
+		const old_heap_array_vars = status.heap_array_vars;
+		status.heap_array_vars = undefined;
+		const old_stack_array_lengths = status.stack_array_lengths;
+		status.stack_array_lengths = undefined;
 		const old_return_type = status.function_return_type;
 		const old_function_name = status.current_function_name;
 		const old_view_params = status.function_view_params;
@@ -837,6 +841,8 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		status.scoped_declarations = old_scoped_declarations;
 		status.c_borrow_only_strings = old_borrow_only;
 		status.force_heap_strings = old_force_heap;
+		status.heap_array_vars = old_heap_array_vars;
+		status.stack_array_lengths = old_stack_array_lengths;
 		status.function_return_type = old_return_type;
 		status.current_function_name = old_function_name;
 		status.function_view_params = old_view_params;

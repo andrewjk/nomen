@@ -910,7 +910,8 @@ function emit_immediate(target_reg: string, value: string, status: BuildStatus) 
 export function build_operand(node: BaseNode, target_reg: string, status: BuildStatus) {
 	if (node.node_type === "value") {
 		const raw_value = (node as ValueNode).value;
-		const value = raw_value.replace("self", "_self");
+		// Bare `self` keyword only — see build_value_node.
+		const value = raw_value === "self" ? "_self" : raw_value;
 		if (value === "true" || value === "false") {
 			emit_immediate(target_reg, value === "true" ? "1" : "0", status);
 			return;
@@ -1057,7 +1058,9 @@ function is_unsigned_type(node: BaseNode): boolean {
 
 export function build_float_operand(node: BaseNode, target_reg: string, status: BuildStatus) {
 	if (node.node_type === "value") {
-		const value = (node as ValueNode).value.replace("self", "_self");
+		const raw = (node as ValueNode).value;
+		// Bare `self` keyword only — see build_value_node.
+		const value = raw === "self" ? "_self" : raw;
 		if (/^(\+|-)*\d+.\d+$/.test(value)) {
 			const label = `_float_op_${string_counter++}`;
 			const data = `${label}: .double ${value}\n.p2align 2\n`;
@@ -1985,6 +1988,19 @@ function is_owned_heap_temp(node: BaseNode, status?: BuildStatus): boolean {
 	if (check_node.node_type === "func_call" || check_node.node_type === "access_func") {
 		const raw_name = (check_node as unknown as { name: string }).name;
 		const mangled = (check_node as unknown as { mangled_name?: string }).mangled_name || raw_name;
+		const dbg =
+			process.env.NOMEN_DBG_TEMP && typeof mangled === "string" && mangled.indexOf("replace") >= 0;
+		const dbg_heap_set = status?.heap_returning_functions;
+		const dbg_resolved = (
+			check_node as unknown as {
+				resolved_function?: { label_name?: string; name: string; returns_string_borrow?: boolean };
+			}
+		).resolved_function;
+		if (dbg) {
+			console.error(
+				`DBG temp: mangled=${mangled} target=${target_value} heap=${dbg_heap_set?.has(mangled)} ownedret=${!!(check_node as unknown as { owned_return?: boolean }).owned_return} resborrow=${dbg_resolved?.returns_string_borrow}`,
+			);
+		}
 		if (mangled.startsWith("_string_interpolate_")) return true;
 		if (mangled.endsWith("_to_string") && mangled !== "string_to_string") return true;
 		// A bare `.to_string()` on a non-string target (e.g. `n.to_string()`,
