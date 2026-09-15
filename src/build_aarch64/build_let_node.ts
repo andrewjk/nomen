@@ -39,7 +39,11 @@ export default function build_let_node(node: LetNode, status: BuildStatus) {
 				status.code += "\n";
 			}
 		}
-		const size = find_var_size(status.return_assign, status);
+		// The join slot's size comes from return_assign_size when set — the
+		// join target is not in scoped_declarations (the match/if/switch arms
+		// swap the frame out), so the fallback would return 8 and a fat
+		// string's len half would be dropped from the join slot.
+		const size = status.return_assign_size ?? find_var_size(status.return_assign, status);
 		emit_var_store(status, "x0", status.return_assign, size);
 	}
 }

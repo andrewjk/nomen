@@ -179,7 +179,7 @@ export default function build_return_node(
 
 	if (!node.value) {
 		if (status.return_assign) {
-			const size = find_var_size(status.return_assign, status);
+			const size = status.return_assign_size ?? find_var_size(status.return_assign, status);
 			status.code += `mov x0, #0\n`;
 			emit_var_store(status, "x0", status.return_assign, size);
 		} else if (status.function_return_label) {
@@ -312,12 +312,15 @@ export default function build_return_node(
 				is_owned_string_branch_value(v, status),
 			);
 		const old_return_assign = status.return_assign;
+		const old_return_assign_size = status.return_assign_size;
 		const old_join_owned = status.join_needs_owned_string;
 		status.return_assign = slot_name;
+		status.return_assign_size = ret_size;
 		if (return_join_owned_string) status.join_needs_owned_string = true;
 		build_node(node.value, status);
 		status.join_needs_owned_string = old_join_owned;
 		status.return_assign = old_return_assign;
+		status.return_assign_size = old_return_assign_size;
 		// Reload the chosen branch's value from the slot (x0 was clobbered by
 		// the branch scope-exit cleanup) and hand the owned result to the
 		// caller as-is.
@@ -603,7 +606,7 @@ export default function build_return_node(
 		if (!status.code.endsWith("\n")) {
 			status.code += "\n";
 		}
-		const size = find_var_size(status.return_assign, status);
+		const size = status.return_assign_size ?? find_var_size(status.return_assign, status);
 		emit_var_store(status, "x0", status.return_assign, size);
 	} else if (status.function_return_label) {
 		if (!status.code.endsWith("\n")) {

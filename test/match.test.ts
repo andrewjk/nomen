@@ -785,3 +785,40 @@ func main = () {
 		expect(parsed.errors[0].message).toContain("east");
 	});
 });
+
+// Regression (aarch64): the match-expression branch result is stored into a
+// join slot — the store must carry BOTH halves of a fat string. The join
+// target is not in scoped_declarations (the arms swap the frame out), so the
+// size lookup fell back to 8 and the len half was left as garbage in the
+// slot; a user-function call arg reloads the pair (ptr, len) and got a
+// corrupt length.
+test("match result as user-function call arg (fat pair join)", async () => {
+	const input = `
+func shout = (string msg, out string) {
+	return msg + "!!"
+}
+
+var int n = 42
+Console.write_line(shout(match true {
+	case true -> n.to_string()
+	case false -> n.to_string()
+}))
+`;
+	await build_and_check_output(input, "match_call_arg_pair", "42!!\n");
+});
+
+// Regression (C): a match on the RHS of a REASSIGNMENT lowered the C `switch`
+// statement into the initializer expression position (clang: "expected
+// expression"). Lower it through a join temp like the declaration path.
+test("match as reassignment RHS (C switch statement)", async () => {
+	const input = `
+var int n = 42
+var string m = "x"
+m = match true {
+	case true -> n.to_string()
+	case false -> n.to_string()
+}
+Console.write_line(m)
+`;
+	await build_and_check_output(input, "match_reassign_join", "42\n");
+});

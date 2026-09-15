@@ -426,26 +426,6 @@ first json_parse_pairs stop; the watch itself worked — capture the
 command output with `watchpoint command add`). The first write of 0
 names the miscompiled store directly.
 
-## Match-branch heap strings leak through a hoisted match-expression arg (pre-existing, narrow)
-
-Found while landing the class/trait enum-payload work (it is NOT
-payload-related — the repro has no enum at all). A match used directly as
-a call argument whose branch result is a heap string leaks that string on
-C: `Console.write_line(match true { case true -> s.speak() case false ->
-s.speak() })` reports `LEAK: 1 allocation(s)` (audit). The hoisted arg
-temp (`_param_N`) is only freed when `value_is_heap_string`
-(build_auto_free.ts) recognizes the initializer — and it only recognizes
-`access`/`func_call` node shapes, not `match`. A direct call in the same
-position IS freed (`Console.write_line(n.to_string())`), and binding the
-match to a variable first still leaks (the declaration free gate has the
-same shape gap). Leak-only, never unsound; bounded by one allocation per
-such statement. Fix direction: teach the hoisted-arg/declaration heap
-recognition that a `match` initializer is heap when any branch returns
-heap (mirroring how mixed string joins normalize ownership per branch), or
-have the match emission register its result temp in an owned-results set
-when it stored a heap value (the C backend already tracks
-`last_result_is_heap` per expression).
-
 ## User raw functions subscripting a `string` param no longer compile (C)
 
 `test/borrow_to_string_elision.test.ts` (2 tests) fails on both the working

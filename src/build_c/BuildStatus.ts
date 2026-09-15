@@ -137,6 +137,14 @@ export default interface BuildStatus {
 	interpolate_string_counts: Set<number>;
 	return_assign?: string;
 	/**
+	 * The byte size of the return_assign join slot (16 for a fat string, 8
+	 * for scalars/pointers). The branch-result store (build_let_node /
+	 * build_return_node) needs it to store BOTH halves of a fat string — the
+	 * join name is not in scoped_declarations (the match arms swap the frame
+	 * out), so find_var_size alone would return 8 and drop the len half.
+	 */
+	return_assign_size?: number;
+	/**
 	 * Set while building the branches of a string-typed match/switch/if
 	 * EXPRESSION whose branches are mixed (at least one produces a fresh owned
 	 * heap string, e.g. an interpolation): every non-owned branch value

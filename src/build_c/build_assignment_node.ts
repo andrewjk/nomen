@@ -560,6 +560,32 @@ export default function build_assignment_node(
 					// store would alias borrowed memory, and clang rejects
 					// nomen_view → nomen_string anyway).
 					const rhs_is_view = is_view_value(node.right_value, status);
+					// A match/switch/if lowers to a C `switch` STATEMENT — it
+					// cannot ride as an initializer expression. Lower it the
+					// way the declaration path does: declare the temp, let the
+					// branches assign it through the return_assign join, then
+					// free the displaced value and move the temp in. Every
+					// branch is forced to produce an owned copy (the temp may
+					// receive a literal/borrow branch value, and the LHS stays
+					// registered as an owning string for auto_free).
+					const rhs_is_branching =
+						node.right_value.node_type === "match" ||
+						node.right_value.node_type === "switch" ||
+						node.right_value.node_type === "if";
+					if (rhs_is_branching && !rhs_is_view) {
+						status.code += `nomen_string ${temp};\n`;
+						const old_return_assign = status.return_assign;
+						const old_join_owned = status.join_needs_owned_string;
+						status.return_assign = temp;
+						status.join_needs_owned_string = true;
+						build_node(node.right_value, status);
+						status.join_needs_owned_string = old_join_owned;
+						status.return_assign = old_return_assign;
+						status.code += `free(${lhs_name}.ptr);\n${lhs_name} = ${temp};\n`;
+						if (!status.heap_strings) status.heap_strings = new Set();
+						status.heap_strings.add(lhs_name);
+						return;
+					}
 					status.code += `nomen_string ${temp} = `;
 					if (rhs_is_view) {
 						c_materialize_view_string(node.right_value, status);

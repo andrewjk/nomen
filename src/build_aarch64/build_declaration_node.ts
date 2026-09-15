@@ -2350,7 +2350,9 @@ export default function build_declaration_node(
 				emit_data(status, `${node.name}: .space ${size}\n`);
 			}
 			const old_return_assign = status.return_assign;
+			const old_return_assign_size = status.return_assign_size;
 			status.return_assign = node.name;
+			status.return_assign_size = size;
 			// Mixed string-join ownership normalization: when any branch
 			// produces a fresh owned heap string (interpolation/concat/call),
 			// mark the variable as an owning heap string so scope-exit
@@ -2374,6 +2376,7 @@ export default function build_declaration_node(
 			emit_init_value(node.value, nir_init, status);
 			status.join_needs_owned_string = old_join_owned;
 			status.return_assign = old_return_assign;
+			status.return_assign_size = old_return_assign_size;
 			check_heap();
 		} else {
 			if (status.function_return_label) {
