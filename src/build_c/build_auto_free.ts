@@ -110,6 +110,12 @@ export function free_scoped_declarations(
 		}
 	}
 	for (const dec of decls) {
+		// A hoisted field-override temp (`_fov_N`, force_owned_string) is dead
+		// once the override assignments have consumed it — AFTER the return
+		// value is computed. The return-path reclaim (persist=true) must skip
+		// it: the epilogue's scope-exit auto_free always runs after (C
+		// fall-through), so freeing here AND there would free twice.
+		if (persist_string_field_records && dec.force_owned_string === true) continue;
 		// Emitted C identifier: raw Nomen names may collide with C/ObjC
 		// keywords (`id`), so every generated reference goes through the
 		// same mangling the declaration site used.
@@ -145,7 +151,12 @@ export function free_scoped_declarations(
 		const is_destructured_field_access =
 			dec.value?.node_type === "access" &&
 			(dec.value as AccessNode).access.node_type === "access_field" &&
-			!dec.value.is_moved;
+			!dec.value.is_moved &&
+			// A hoisted field-override temp with `force_owned_string` strdups
+			// the field's bytes into an OWNED copy (the source field may be
+			// displaced/freed by the base copy before the override runs) — it
+			// is not a view and must be freed.
+			dec.force_owned_string !== true;
 		// A string declaration initialized from an array element access
 		// (`args.at(n)`, `list.first()`) is a BORROW into the container's
 		// storage — including the hoisted `_param_N` temp for a call like
@@ -487,6 +498,31 @@ export function emit_struct_destroys(
 		} else {
 			emit_struct_destroys(status, field_struct, field_expr);
 		}
+	}
+}
+
+/**
+ * Release every RECORDED heap string field of a struct variable
+ * (`heap_string_fields` keys `<var>.<field>`, including nested
+ * `<var>.<inner>.<field>`) and drop the records. Called before a struct
+ * reassignment overwrites the variable's bytes: the displaced copies must be
+ * freed and the records dropped, or the next field write's displaced-free
+ * (and the scope-exit free) would act on the STALE record — freeing the
+ * post-copy value, which may be rodata (an invalid free) — and the displaced
+ * heap copy would leak. Mirrors aarch64's release_heap_string_fields step in
+ * emit_destroy_for_decl.
+ */
+export function release_recorded_string_fields(
+	status: BuildStatus,
+	struct: StructNode,
+	var_expr: string,
+): void {
+	if (!status.heap_string_fields?.size) return;
+	const prefix = `${var_expr}.`;
+	for (const key of Array.from(status.heap_string_fields)) {
+		if (!key.startsWith(prefix)) continue;
+		status.code += `nomen_free_wrap(${key}.ptr);\n`;
+		status.heap_string_fields.delete(key);
 	}
 }
 

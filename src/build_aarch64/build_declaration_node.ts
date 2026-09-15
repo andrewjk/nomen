@@ -839,7 +839,7 @@ export default function build_declaration_node(
 ) {
 	// Evaluate override values into temporaries before the base lands in the
 	// destination (see hoist_field_overrides).
-	hoist_field_overrides(node.value, build_node, status);
+	hoist_field_overrides(node.value, build_node, status, "", node.name);
 	status.last_result_is_heap = false;
 	const prev_heap = status.last_result_is_heap;
 
@@ -2409,7 +2409,7 @@ export default function build_declaration_node(
 				!node.type.is_view &&
 				!node.type.is_array &&
 				size === 16 &&
-				is_string_borrow(node.value) &&
+				(is_string_borrow(node.value) || node.force_owned_string === true) &&
 				!!status.force_heap_strings?.has(node.name)
 			) {
 				emit_init_value(node.value, nir_init, status);

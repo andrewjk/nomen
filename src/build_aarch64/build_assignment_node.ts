@@ -619,7 +619,13 @@ export default function build_assignment_node(
 ) {
 	// Evaluate override values into temporaries before the base lands in the
 	// destination (see hoist_field_overrides).
-	hoist_field_overrides(node.right_value, build_node, status);
+	hoist_field_overrides(
+		node.right_value,
+		build_node,
+		status,
+		"",
+		node.left_value.node_type === "value" ? (node.left_value as ValueNode).value : undefined,
+	);
 	// `unsafe` stores through a raw pointer: `p[i] = v` and `p[i].field = v`.
 	// The element address is computed first and pushed; the RHS builds with
 	// the standard rvalue conventions; then a width-matched store lands it.

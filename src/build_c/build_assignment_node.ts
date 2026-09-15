@@ -15,7 +15,11 @@ import DeclarationNode from "../nodes/DeclarationNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import { build_vtable_target } from "./build_access_node.ts";
-import { emit_struct_destroys, struct_needs_destroy_by_name } from "./build_auto_free.ts";
+import {
+	emit_struct_destroys,
+	release_recorded_string_fields,
+	struct_needs_destroy_by_name,
+} from "./build_auto_free.ts";
 import build_node from "./build_node.ts";
 import { is_owned_heap_temp } from "./build_operation_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
@@ -60,7 +64,13 @@ export default function build_assignment_node(
 	// Evaluate override values into temporaries before the base lands in the
 	// destination, so an override reading the destination (`m = [ .. x,
 	// node_type = m.node_type ]`) sees the pre-assignment value.
-	hoist_field_overrides(node.right_value, build_node, status, ";\n");
+	hoist_field_overrides(
+		node.right_value,
+		build_node,
+		status,
+		";\n",
+		node.left_value.node_type === "value" ? (node.left_value as ValueNode).value : undefined,
+	);
 	// Check whether this is an access of a field from a trait rather than a concrete type
 	// HACK: This needs to be much more comprehensive, e.g. to handle access
 	// chains where something in the middle is a trait
@@ -733,6 +743,15 @@ export default function build_assignment_node(
 				: null;
 			if (lhs_struct || lhs_mono_struct) {
 				const rhs = node.right_value;
+				// A base-seeded struct literal (`m = [ .. move x, f = v ]`) is a
+				// FRESH value (a copy of the base + overrides) — it discards the
+				// old `m` exactly like a fresh constructor, and its synthesized
+				// override assignments run through the field-write paths below
+				// the copy.
+				const rhs_is_base_literal =
+					rhs.node_type === "anon_struct" ||
+					(rhs.node_type === "func_call" &&
+						!!(rhs as import("../nodes/FunctionCallNode.ts").default).field_overrides?.length);
 				if (rhs.node_type === "value" && (rhs as ValueNode).is_moved) {
 					// `b = move a` — ownership transfers from `a` to `b`. The OLD
 					// `b` value is being discarded, so eagerly reclaim its
@@ -742,10 +761,25 @@ export default function build_assignment_node(
 					// own scope exit (b owns the data now and is freed instead).
 					// Mirrors aarch64's move-ownership transfer.
 					const move_struct_type = lhs_mono_struct ?? lhs_struct;
-					if (move_struct_type && struct_needs_destroy_by_name(move_struct_type.name, status)) {
-						emit_struct_destroys(status, move_struct_type, lhs_name);
+					if (move_struct_type) {
+						release_recorded_string_fields(status, move_struct_type, lhs_name);
+						if (struct_needs_destroy_by_name(move_struct_type.name, status)) {
+							emit_struct_destroys(status, move_struct_type, lhs_name);
+						}
 					}
 					splice_decl_from_c_scopes(status, (rhs as ValueNode).value);
+				} else if (rhs_is_base_literal) {
+					// The literal's bytes overwrite `m` without ever flowing
+					// through a constructor call, so the displaced value's
+					// recorded heap string fields must be released here (and the
+					// records dropped — the post-copy field values are the
+					// base's, and a stale record would free rodata at the next
+					// displaced-free or at scope exit). `m` stays registered so
+					// the NEW value's fields are reclaimed at scope exit.
+					const struct_type = lhs_mono_struct ?? lhs_struct;
+					if (struct_type) {
+						release_recorded_string_fields(status, struct_type, lhs_name);
+					}
 				} else {
 					// Non-move struct reassignment.
 					//
@@ -783,6 +817,9 @@ export default function build_assignment_node(
 						// Fresh constructor / factory: eagerly reclaim the
 						// discarded old value, then keep the variable for a
 						// scope-exit free of the new value.
+						if (struct_type) {
+							release_recorded_string_fields(status, struct_type, lhs_name);
+						}
 						if (needs_destroy) emit_struct_destroys(status, struct_type!, lhs_name);
 					} else if (is_self_method_call(node, lhs_name)) {
 						// `a = a.new(...)`: the method reuses/reallocs the

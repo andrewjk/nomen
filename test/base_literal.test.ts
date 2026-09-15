@@ -144,3 +144,87 @@ Console.write_line(m.flags.to_string())
 `;
 	await build_and_check_output(input, "fov_self_read", "2\n100");
 });
+
+// Regression: an override that READS THE DESTINATION (`label = m.label`) must
+// be evaluated before the base copy lands — the base overwrites the
+// destination's bytes, and the post-copy read observed the clobbered value
+// ("leaf:none" instead of "leaf:mine"). The value is hoisted into a temp that
+// OWNS a copy of the pre-assignment field (the base copy may displace/free
+// the old field, so a borrow alias would dangle).
+test("[ .. move base, override reading destination ]", async () => {
+	const input = `
+struct Rec {
+	var string kind
+	var string label = "none"
+	var int flags = 0
+}
+
+var Rec m = Rec("branch")
+m.label = "mine"
+var Rec x = Rec("leaf")
+m = [ .. move x, label = m.label ]
+Console.write_line("\\{m.kind}:\\{m.label}")
+`;
+	await build_and_check_output(input, "base_literal_dest_read_string", "leaf:mine\n");
+});
+
+// Same clobber hazard for a STRUCT-typed override (a snapshot of the
+// destination's pre-assignment field).
+test("[ .. move base, struct-typed override reading destination ]", async () => {
+	const input = `
+struct Inner {
+	var int v = 0
+}
+
+struct Rec {
+	var Inner inner = Inner()
+	var int flags = 0
+}
+
+var Rec m = Rec()
+m.inner.v = 7
+var Rec x = Rec()
+m = [ .. move x, inner = m.inner ]
+Console.write_line("\\{m.inner.v}:\\{m.flags}")
+`;
+	await build_and_check_output(input, "base_literal_dest_read_struct", "7:0\n");
+});
+
+// Regression (C): `m = move x` for a value struct owning heap string fields
+// freed the destination's recorded heap fields at the NEXT field write /
+// scope exit against the POST-COPY (base's) bytes — an invalid free of rodata
+// and a leak of the displaced copy. The recorded fields are now released
+// (and their records dropped) before the move copy lands.
+test("move reassignment releases displaced heap string fields", async () => {
+	const input = `
+struct Rec {
+	var string kind
+	var string label = "none"
+	var int flags = 0
+}
+
+var Rec m = Rec("branch")
+m.label = "mine"
+var Rec x = Rec("leaf")
+m = move x
+Console.write_line("\\{m.kind}:\\{m.label}")
+`;
+	await build_and_check_output(input, "base_literal_move_reassign", "leaf:none\n");
+});
+
+// A collection-typed field default initializes the field in `#init` and
+// reclaims it in the auto-destroy (both backends).
+test("List-typed field default", async () => {
+	const input = `
+struct TreeNode {
+	var int value = 0
+	var List<int> children = List<int>()
+}
+
+var TreeNode t = TreeNode()
+Console.write_line("\\{t.value}")
+t.children.push(5)
+Console.write_line("\\{t.children.length}")
+`;
+	await build_and_check_output(input, "base_literal_list_field_default", "0\n1\n");
+});

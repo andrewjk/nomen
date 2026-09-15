@@ -85,7 +85,7 @@ export default function build_declaration_node(
 ) {
 	// Evaluate override values into temporaries before the base lands in the
 	// destination (see hoist_field_overrides).
-	hoist_field_overrides(node.value, build_node, status, ";\n");
+	hoist_field_overrides(node.value, build_node, status, ";\n", node.name);
 	// TODO: malloc() if it's on the heap
 
 	// Function type declaration (explicit `var func (...) f = ...` or inferred
@@ -770,7 +770,7 @@ export default function build_declaration_node(
 					node.type.name === "string" &&
 					!node.type.is_view &&
 					!node.type.is_array &&
-					is_string_borrow(node.value) &&
+					(is_string_borrow(node.value) || node.force_owned_string === true) &&
 					!!status.force_heap_strings?.has(safe_name)
 				) {
 					// Borrow-INITIALIZED assignee that the force-heap scan proved

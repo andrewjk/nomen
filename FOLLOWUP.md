@@ -350,40 +350,6 @@ Fix directions, when picked up (either closes the leak class):
    `<Struct>_destroy` frees every field. Deletes `heap_string_fields` and
    this whole class; costs a malloc per literal store into a value struct.
 
-## Constructor field-override (`[ .. <base>, ... ]`) residual defects
-
-Found while verifying the allmark port's "struct literals / builders" ask.
-The base-seeded literal `[ .. <base>, field = value, ... ]` (which replaced
-the retired `T() + [ ... ]` syntax) is sound on both backends for scalar
-defaulted fields — constructor, factory, and variable bases — but:
-
-- **Override values that READ the destination are now hoisted into
-  temporaries before the base copy/init — but only for SCALAR-typed
-  overrides** (`m = [ .. x, flags = m.flags ]` now sees the
-  pre-assignment value; see the hoist in build/emit_field_overrides.ts and
-  the regression in test/base_literal.test.ts). STRING and STRUCT-typed
-  override values still evaluate after the base lands: hoisting them needs
-  ownership-aware temporaries (a hoisted string temp is a borrow that the
-  C auto-free machinery would free; a struct temp may own heap fields), so
-  `m = [ .. x, node_type = m.node_type ]` still silently yields the
-  clobbered value. Workaround unchanged: copy to a temp first.
-- **`Array<T>`/`List<T>`-typed fields cannot have default values.** A field
-  like `var Array<int> children = Array<int>()` emits `_self.children = {};`
-  on C (clang rejects it: "expected expression") and leaves the field
-  uninitialized on aarch64 (garbage length, latent segfault). Fixing it
-  needs the full heap-array field lifecycle on both backends: allocate the
-  buffer in `#init` AND reclaim it from the struct's auto-destroy
-  (destroy_analysis currently has no heap-array-field case). Defaults
-  remain limited to scalar-typed fields today, which blocks the
-  one-expression-factory pattern for any node struct carrying a children
-  list.
-- **Override values' reads are invisible to NIR traffic/liveness.** The
-  lowering keeps the base's reads (via the wrap expr) but the `[ ... ]`
-  field expressions ride the node (same exposure the `+` form had). Only
-  matters if an override value reads something whose last use is the
-  override itself; promotion would then conservatively keep it in memory —
-  sound, just not optimal.
-
 ## AARCH64 inline splices: bodies with calls are refused, root miscompile unsolved
 
 Auto method inline (ASM_PLAN_7 tranche 7) ships default ON but LEAF-ONLY

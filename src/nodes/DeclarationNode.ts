@@ -64,6 +64,13 @@ export default class DeclarationNode extends BaseNode {
 	 *  at build time by the C declaration builder; consumed when building
 	 *  another declaration initialized from this variable. */
 	trait_concrete_struct?: string;
+	/** True for a hoisted field-override temp (`_fov_N`) whose `string`
+	 *  initializer is a borrow the temp must OWN: the base of the literal
+	 *  lands (and may displace/free the source field) before the override
+	 *  assignment runs, so an alias would dangle. Both backends' declaration
+	 *  paths strdup the initializer and free the temp's copy at scope exit.
+	 *  Set at build time by hoist_field_overrides. */
+	force_owned_string?: boolean;
 	constructor(
 		start: number,
 		visibility: "pub" | "private",
