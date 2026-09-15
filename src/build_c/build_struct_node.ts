@@ -29,6 +29,7 @@ import c_type from "./utils/c_type.ts";
 import {
 	emit_owning_buffer_body,
 	emit_owning_buffer_string_body,
+	emit_trivial_struct_modify_T,
 	owning_buffer_element,
 	owning_buffer_is_string_elem,
 } from "./utils/owning_buffer_specialize.ts";
@@ -810,7 +811,8 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		const owning_elem = owning_buffer_element(node, status);
 		const specialized =
 			(owning_elem && emit_owning_buffer_body(func.name, owning_elem, status)) ||
-			(owning_buffer_is_string_elem(node) && emit_owning_buffer_string_body(func.name, status));
+			(owning_buffer_is_string_elem(node) && emit_owning_buffer_string_body(func.name, status)) ||
+			(func.name === "modify_T" && emit_trivial_struct_modify_T(node, status));
 		if (!specialized) {
 			emit_method_body_from_nir(func, status);
 		}

@@ -257,14 +257,32 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			}
 		}
 
-		// Evaluate params right-to-left
+		// Evaluate params right-to-left. A fat `string` (or `view T`) arg
+		// rides as a (ptr, len) register PAIR — matches the method ABI's
+		// argument-static-type pair detection (ASM gotchas) — so it consumes
+		// two consecutive registers, not one.
+		let arg_slot = start_reg;
 		for (let i = node.params.length - 1; i >= 0; i--) {
-			build_node(node.params[i], status);
-			const reg = param_regs[start_reg + i];
+			const param = node.params[i];
+			const param_type = type_from_value_node(param);
+			const is_pair = param_type?.name === "string";
+			build_node(param, status);
+			const reg = param_regs[arg_slot];
+			const len_reg = param_regs[arg_slot + 1];
+			if (is_pair && len_reg !== "x1") {
+				// Move the len half FIRST: the ptr move targets x1 for the
+				// first pair slot and would clobber it.
+				status.code += `\nmov ${len_reg}, x1\n`;
+			}
 			if (reg !== "x0") {
 				status.code += `\nmov ${reg}, x0\n`;
 			} else {
 				status.code += `\n`;
+			}
+			if (is_pair) {
+				arg_slot += 2;
+			} else {
+				arg_slot += 1;
 			}
 		}
 

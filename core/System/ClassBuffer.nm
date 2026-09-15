@@ -138,6 +138,51 @@ pub struct ClassBuffer<T> {
 		```
 	}
 
+	// Apply `f` to slot `i` in place — the owning-counterpart of Buffer's
+	// modify_T for class elements. `f` receives the current instance pointer
+	// as a borrow and returns the replacement instance (fresh, or the same
+	// pointer); the primitive frees the displaced instance (destroy + free)
+	// unless `f` returned it. Storing the returned instance raw is sound:
+	// the slot takes sole ownership and `f`'s return is not retained
+	// elsewhere. NOT `inline`: the body calls through the fn pointer.
+	func modify_T = (ref self, int i: i >= 0 && i < self.cap, func (T, out T) f) {
+		```
+		#arch: c
+		long *slots = (long*)(unsigned long long)self->data;
+		void *old = (void*)slots[i];
+		void *new_value = (void*)f(old);
+		slots[i] = (long)new_value;
+		if (old != new_value) {
+			T_destroy(old);
+			free(old);
+		}
+		```
+		```
+		#arch: aarch64
+		// x19 = self, x1 = i, x2 = f. Class slots are one pointer wide.
+		stp x20, x21, [sp, #-16]!
+		stp x22, x23, [sp, #-16]!
+		mov x22, x2
+		ldr x9, [x19, #8]
+		lsl x3, x1, #3
+		add x20, x9, x3
+		ldr x0, [x20]
+		blr x22
+		mov x23, x0
+		ldr x9, [x20]
+		str x23, [x20]
+		cmp x9, x23
+		b.eq .Lcb_modify_T_done
+		mov x0, x9
+		bl T_destroy
+		mov x0, x9
+		bl _free
+		.Lcb_modify_T_done:
+		ldp x22, x23, [sp], #16
+		ldp x20, x21, [sp], #16
+		```
+	}
+
 	inline func store_int = (ref self, int i: i >= 0 && i < self.cap, int val: val != 0) {
 		```
 		#arch: c

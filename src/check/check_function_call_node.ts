@@ -444,6 +444,7 @@ export function monomorphize(
 		}
 		for (const param of cloned.params) {
 			param.type = substitute_type(param.type, substitution);
+			substitute_param_signature(param, substitution);
 			if (param.type.type_args?.length) {
 				param.type = materialize_generic_enum_type(param.type, status);
 			}
@@ -552,6 +553,7 @@ export function monomorphize(
 		cloned.type_params = [];
 		for (const param of cloned.params) {
 			param.type = substitute_type(param.type, substitution);
+			substitute_param_signature(param, substitution);
 			if (param.constraint) {
 				substitute_raw_in_node(
 					param.constraint,
@@ -787,6 +789,7 @@ export function synthesize_generic_trait_defaults(struct: StructNode, status: Ch
 			cloned.return_type = substitute_type(cloned.return_type, substitution);
 			for (const param of cloned.params) {
 				param.type = substitute_type(param.type, substitution);
+				substitute_param_signature(param, substitution);
 			}
 			// The trait's `self` param is typed as the trait name (e.g. `Box`);
 			// the synthesized method belongs to the struct, so field access on
@@ -1356,6 +1359,34 @@ function rederive_nursery_spawn_annotations(fc: AccessFunctionCallNode, status: 
 	}
 }
 
+/**
+ * Substitute type-param names through a function-typed parameter's nested
+ * signature (`func (T, out T)` on a generic struct method or generic free
+ * function). The signature hangs off the ParameterNode itself (`func_params`
+ * / `func_return_type`), which the per-param `substitute_type(param.type)`
+ * loops never visit — without this, the monomorphized clone keeps the bare
+ * `T` and the C backend emits an unresolved type in the function-pointer
+ * signature (`T (*f)(T)`).
+ */
+function substitute_param_signature(param: ParameterNode, substitution: Map<string, string>): void {
+	param.type = substitute_type(param.type, substitution);
+	param.func_params = substitute_func_params(param.func_params, substitution);
+	param.func_return_type = param.func_return_type
+		? substitute_type(param.func_return_type, substitution)
+		: undefined;
+}
+
+function substitute_func_params(
+	params: ParameterNode[] | undefined,
+	substitution: Map<string, string>,
+): ParameterNode[] | undefined {
+	return params?.map((p) => {
+		const copy = clone_node(p) as ParameterNode;
+		substitute_param_signature(copy, substitution);
+		return copy;
+	});
+}
+
 export function substitute_type(type: Type, substitution: Map<string, string>): Type {
 	const resolved_name = substitution.get(type.name) || type.name;
 	const new_type = new Type(resolved_name, type.is_static, type.is_array, type.length);
@@ -1369,7 +1400,7 @@ export function substitute_type(type: Type, substitution: Map<string, string>): 
 	} else {
 		new_type.type_args = type.type_args?.map((t) => substitute_type(t, substitution));
 	}
-	new_type.func_params = type.func_params;
+	new_type.func_params = substitute_func_params(type.func_params, substitution);
 	new_type.func_return_type = type.func_return_type
 		? substitute_type(type.func_return_type, substitution)
 		: undefined;
@@ -2010,6 +2041,7 @@ function specialize_function(
 
 	for (const param of cloned.params) {
 		param.type = substitute_type(param.type, substitution);
+		substitute_param_signature(param, substitution);
 	}
 	if (cloned.return_type.name) {
 		cloned.return_type = substitute_type(cloned.return_type, substitution);

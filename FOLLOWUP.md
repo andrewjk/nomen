@@ -446,6 +446,19 @@ have the match emission register its result temp in an owned-results set
 when it stored a heap value (the C backend already tracks
 `last_result_is_heap` per expression).
 
+## User raw functions subscripting a `string` param no longer compile (C)
+
+`test/borrow_to_string_elision.test.ts` (2 tests) fails on both the working
+tree AND the unmodified baseline (verified 2026-09-15): a user raw function
+taking a `string` parameter (`func raw_touch = (string p) { p[0] = 'J' }`)
+emits `void raw_touch(nomen_string p) { p[0] = 'J'; }` — subscripting the
+fat struct ("subscripted value is not an array"). Fallout of the thin-`_raw_`
+adapter removal (2026-09-15): raw bodies now see fat `nomen_string` values,
+but user RAW functions that treat a `string` param as a C array need
+`p.ptr[0]`. Either fix the two test bodies (use `.ptr`) or teach the raw
+emitter to rewrite `p[i]` subscripts on `nomen_string` params to
+`p.ptr[i]`. Not a regression from modify_T.
+
 ## `Buffer`'s raw slot primitives are public, and `store_T` leaks on overwrite
 
 `default_visibility` makes struct members `pub` by default, so `Buffer<T>`'s
@@ -462,10 +475,65 @@ instance). Contract comments were added to both.
 
 Internal containers (`List`/`Map`/`Set`/`Arena`/…) are balanced — they use
 `store_T` on fresh slots and `replace_T` to overwrite — so the leak is only
-reachable by driving `Buffer`/`ClassBuffer` directly. Fix options:
-(a) accept the primitives as the documented low-level API (current);
-(b) make `store_T` free the displaced value — rejected, it breaks the
-round-trip self-store guard (`load_T`→modify→`store_T` back to the same
-slot would free the value being re-stored); (c) give the language a way to
-hide struct-internal members (e.g. `_`-prefixed names not exported) so raw
-primitives aren't user-visible at all.
+reachable by driving `Buffer`/`ClassBuffer` directly. Remediation shipped
+2026-09-15 (test/buffer_modify.test.ts):
+
+- **`modify_T(idx, f)` encodes the load→modify→store dance soundly** on both
+  backends for every element kind: the primitive applies `f` to a live slot
+  and owns the transition (displaced value freed; a returned field that
+  aliases the slot's own copy — the round-trip identity — is kept, not freed
+  or re-copied). Scalar elements round-trip through the raw width-matched
+  body; string/owning-struct elements take the specialised bodies
+  (owning_buffer_specialize.{ts} both backends); classes get
+  destroy+free-of-displaced with an identity guard. Contract: the fn's
+  returned owning fields must be fresh, null, or identical to the input's
+  (no cross-field aliasing) — sound for closures-free lambdas, whose returns
+  can only be fresh heap, boundary-normalised literals, or input-derived.
+  `modify_T` is deliberately NOT `inline` (raw splices would bypass the
+  per-element specialisations).
+- **Enabler: func-typed params substitute `T` at monomorphization** —
+  `substitute_param_signature` in check_function_call_node.ts now rewrites
+  `param.func_params`/`func_return_type` (and `Type.func_params`) through
+  the substitution map in all four clone loops; previously the C backend
+  emitted `T (*f)(T)` for any generic method taking `func (T, out T)`.
+  Also fixed en route: the C func-pointer signature now emits the struct
+  TAG (pointer form for classes and traits) for struct/class/trait element
+  types instead of `c_type` — the typedef form landed in the header before
+  the element's typedef line ("type specifier missing").
+- **aarch64 func-param calls now handle fat-pair args** — the
+  `is_func_param` call path moved one register per arg; a `string` arg now
+  occupies (xN, xN+1), matching the callee ABI (len half moved before the
+  ptr half, which targets x1 for the first pair slot).
+- Remaining exposure: the raw primitives are still public (option (c) below
+  — plain `private` is scope-based (is_visible.ts) and would lock out the
+  sibling System containers, so hiding needs a library-internal visibility
+  concept). With `modify_T` + the contract comments, the safe path exists;
+  (a)+(c-lite) is the accepted posture for now.
+
+Pre-existing bugs found while testing `modify_T` (all reproduce on the
+unmodified baseline — recorded here because the feature's test corpus
+reached them):
+
+- **aarch64: a ctor result passed straight into a container is
+  double-managed.** `cb.store_T(0, Counter(1))` — the instance temp is
+  registered for scope-exit destroy+free AND owned by the slot
+  (`Counter_destroy` runs twice on the same pointer; SIGABRT). Sound
+  pattern: bind to a local, take it with `move` at the boundary
+  (`func drive = (.., move Counter seed)`) and store the param — mirrors
+  List.push. Fix direction: the call-result-as-container-arg transfer
+  should mark the temp consumed (mirrors the C backend's
+  fresh-constructor recognition).
+- **aarch64: a class local loaded from a container aliases the slot.**
+  `var Counter c = cb.load_T(0)` — `c` is freed at scope exit AND the
+  container's `#destroy` frees the slot again. Read through the borrow
+  instead (`cb.load_T(0).value`), or extract with `move_T`. Fix direction:
+  borrow-accessor results (load_T/.at/…) stored into class locals should
+  mark the local an alias (the C backend normalises these via
+  string_return_analysis; aarch64 needs the class-typed equivalent).
+- **aarch64: auto-inline splices of generic-struct methods scalar-load
+  string fields.** `Box<string>.modify`'s spliced body loads `self.value`
+  with one `ldr` (ptr half only; len half = garbage) — the splice's field
+  access misses the mono-substituted fat-string field type. Repro:
+  test the string leg of a `Box<T> { var T value }`-style generic on
+  aarch64 (currently only the int leg is covered in
+  test/buffer_modify.test.ts). Unrelated to func params.

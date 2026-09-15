@@ -72,6 +72,7 @@ function has_owning_fields(node: StructNode, status: BuildStatus): boolean {
 export const OWNING_BUFFER_METHODS = new Set([
 	"store_T",
 	"replace_T",
+	"modify_T",
 	"shift_T",
 	"destroy",
 	"#destroy",
@@ -117,6 +118,18 @@ export function emit_owning_buffer_string_body(func_name: string, status: BuildS
 		status.code += `nomen_string* _slots = (nomen_string*)self->data;\n`;
 		status.code += `nomen_string _old = _slots[i];\n`;
 		status.code += `if (val.ptr != _old.ptr) { free(_old.ptr); _slots[i] = val.ptr ? nomen_str_dup(val) : (nomen_string){0,0}; }\n`;
+		return true;
+	}
+
+	if (func_name === "modify_T") {
+		// modify_T(self, i, f): apply the function to the slot in place —
+		// the encoded load→modify→store dance. Free the old slot's heap
+		// buffer and take over the returned one, unless the fn handed the
+		// slot's own string back (round-trip identity → keep, no free).
+		status.code += `nomen_string* _slots = (nomen_string*)self->data;\n`;
+		status.code += `nomen_string _old = _slots[i];\n`;
+		status.code += `nomen_string _new = f(_old);\n`;
+		status.code += `if (_new.ptr != _old.ptr) { free(_old.ptr); _slots[i] = _new; }\n`;
 		return true;
 	}
 
@@ -180,6 +193,22 @@ export function emit_owning_buffer_body(
 		status.code += `struct ${elem.name} _old = _slots[i];\n`;
 		status.code += `_slots[i] = (*val);\n`;
 		emit_deep_copy_fields(elem, "_slots[i]", "val", status, "_old");
+		return true;
+	}
+
+	if (func_name === "modify_T") {
+		// modify_T(self, i, f): apply the function to the slot in place.
+		// Per owning field, free the slot's displaced copy and take over the
+		// fn's returned pointer — unless the fn handed the slot's own copy
+		// back (round-trip identity → keep, no free, no re-copy). Scalar and
+		// non-owning struct fields are plain-copied from the returned value.
+		// The fn's returned owning fields must be fresh, null, or identical
+		// to the corresponding input fields (no cross-field aliasing) — the
+		// same contract `store_T`'s round-trip guard assumes for the dance.
+		status.code += `${Tptr}_slots = ${Tcast}(unsigned long long)self->data;\n`;
+		status.code += `struct ${elem.name} _old = _slots[i];\n`;
+		status.code += `struct ${elem.name} _new = f(&_old);\n`;
+		emit_take_over_fields(elem, "_slots[i]", "_new", "_old", status);
 		return true;
 	}
 
@@ -281,4 +310,74 @@ function emit_deep_copy_fields(
 /** A struct value uses `.`; a struct pointer uses `->`. `val` is a pointer. */
 function arrow(src: string): string {
 	return src === "val" ? "->" : ".";
+}
+
+/**
+ * modify_T's field pass: for each field of the element struct, move the
+ * function's returned value into the slot, reclaiming the displaced heap
+ * copy. String fields compare pointer identity against the slot's pre-call
+ * value (`old`): equal means the fn handed the slot's own copy back (the
+ * load→modify→store round-trip) — keep it, freeing nothing; different means
+ * the slot's copy was displaced — free it, take over the returned pointer
+ * (no strdup: with no closures, a lambda's return is fresh heap, a
+ * boundary-normalized literal, or derived from its input, so the returned
+ * pointer is either uniquely owned or the identity case). Nested owning
+ * struct fields recurse; every other field is a plain copy.
+ */
+function emit_take_over_fields(
+	elem: StructNode,
+	dst: string,
+	src_new: string,
+	src_old: string,
+	status: BuildStatus,
+): void {
+	for (const field of elem.fields) {
+		if (field.type.is_ref) continue;
+		if (field.type.is_view) {
+			status.code += `${dst}.${field.name} = ${src_new}.${field.name};\n`;
+			continue;
+		}
+		if (field.type.name === "string" && !field.type.is_array) {
+			status.code += `if (${src_new}.${field.name}.ptr != ${src_old}.${field.name}.ptr) {\n`;
+			status.code += `free(${src_old}.${field.name}.ptr);\n`;
+			status.code += `${dst}.${field.name} = ${src_new}.${field.name};\n`;
+			status.code += `}\n`;
+		} else if (field.type.name && !field.type.is_array) {
+			const field_struct = status.structs.find(
+				(s) => s.name === field.type.name && !s.is_simple_type && !s.is_generic,
+			);
+			if (field_struct && !field_struct.is_class && struct_needs_destroy(field_struct, status)) {
+				emit_take_over_fields(
+					field_struct,
+					`${dst}.${field.name}`,
+					`${src_new}.${field.name}`,
+					`${src_old}.${field.name}`,
+					status,
+				);
+			} else {
+				status.code += `${dst}.${field.name} = ${src_new}.${field.name};\n`;
+			}
+		} else {
+			status.code += `${dst}.${field.name} = ${src_new}.${field.name};\n`;
+		}
+	}
+}
+
+/**
+ * modify_T for a Buffer whose element is a TRIVIALLY-copyable value struct
+ * (no owning fields — the owning case is handled by emit_owning_buffer_body).
+ * The generic raw body assumes a scalar ABI; a struct element passes the slot
+ * by pointer and returns the replacement by value, so the build emits this
+ * instead. Returns true if the body was emitted.
+ */
+export function emit_trivial_struct_modify_T(node: StructNode, status: BuildStatus): boolean {
+	const elem_name = node.name.substring("Buffer_".length);
+	const elem = status.structs.find(
+		(s) => s.name === elem_name && !s.is_simple_type && !s.is_generic,
+	);
+	if (!elem || elem.is_class || elem.is_generic) return false;
+	if (has_owning_fields(elem, status)) return false;
+	status.code += `struct ${elem.name}* _slots = (struct ${elem.name}*)(unsigned long long)self->data;\n`;
+	status.code += `_slots[i] = f(&_slots[i]);\n`;
+	return true;
 }

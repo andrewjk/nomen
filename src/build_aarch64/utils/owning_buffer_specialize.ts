@@ -174,7 +174,12 @@ export function emit_owning_buffer_standalone_aarch64(
 ): boolean {
 	const elem = owning_buffer_element_aarch64(node, status);
 	if (elem) {
-		if (func_name !== "store_T" && func_name !== "replace_T" && func_name !== "shift_T") {
+		if (
+			func_name !== "store_T" &&
+			func_name !== "replace_T" &&
+			func_name !== "shift_T" &&
+			func_name !== "modify_T"
+		) {
 			return false;
 		}
 		emit_owning_standalone_struct(elem, func_name, status);
@@ -191,6 +196,10 @@ export function emit_owning_buffer_standalone_aarch64(
 		}
 		if (func_name === "shift_T") {
 			emit_string_shift_T(status, "x19");
+			return true;
+		}
+		if (func_name === "modify_T") {
+			emit_string_modify_T(status);
 			return true;
 		}
 		if (func_name === "load_T" || func_name === "move_T") {
@@ -217,6 +226,11 @@ function emit_owning_standalone_struct(elem: StructNode, func_name: string, stat
 
 	if (func_name === "shift_T") {
 		emit_owning_shift_T(elem, status, "x19");
+		return true;
+	}
+
+	if (func_name === "modify_T") {
+		emit_owning_modify_T(elem, status, T_SIZE, string_fields);
 		return true;
 	}
 
@@ -384,6 +398,92 @@ function emit_string_shift_T(status: BuildStatus, self_reg: string) {
 	status.code += `stp x9, x10, [x20]\n`;
 	status.code += `stp xzr, xzr, [x21]\n`;
 	status.code += `${done}:\n`;
+	status.code += `ldp x20, x21, [sp], #16\n`;
+}
+
+/**
+ * Specialized `Buffer<string>` modify_T (standalone: x19 = self, x1 = i,
+ * x2 = f). Apply the fn to the slot in place — the encoded load→modify→store
+ * dance. The fn receives the slot's (ptr, len) pair as a borrow and returns
+ * the replacement pair; the displaced heap copy is freed and the returned
+ * pointer taken over, unless the fn handed the slot's own string back
+ * (round-trip identity → keep, no free).
+ */
+function emit_string_modify_T(status: BuildStatus) {
+	const done = `.Lstr_md_done_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+	status.code += `stp x20, x21, [sp, #-16]!\n`;
+	status.code += `stp x22, x23, [sp, #-16]!\n`;
+	status.code += `mov x22, x2\n`; // f
+	status.code += `ldr x9, [x19, #8]\n`; // data base
+	status.code += `add x20, x9, x1, lsl #4\n`; // &slot[i] (16-byte slots)
+	status.code += `ldp x0, x1, [x20]\n`; // borrow the current pair as the arg
+	status.code += `blr x22\n`; // → (x0 = ptr, x1 = len)
+	status.code += `mov x23, x0\n`; // new.ptr
+	status.code += `ldr x9, [x20]\n`; // old.ptr
+	status.code += `cmp x23, x9\n`;
+	status.code += `b.eq ${done}\n`; // round-trip identity → keep
+	status.code += `str x23, [x20]\n`; // take over the returned pair
+	status.code += `str x1, [x20, #8]\n`;
+	status.code += `mov x0, x9\n`;
+	emit_free(status); // free the displaced copy
+	status.code += `${done}:\n`;
+	status.code += `ldp x22, x23, [sp], #16\n`;
+	status.code += `ldp x20, x21, [sp], #16\n`;
+}
+
+/**
+ * Specialized owning-value-struct modify_T (standalone: x19 = self, x1 = i,
+ * x2 = f). The fn receives a stack-stage copy of the slot (borrow, passed by
+ * address) and returns the replacement through the sret pointer (x8). Per
+ * string field, the slot's displaced copy is freed when the returned pointer
+ * differs (round-trip identity keeps it); then the returned struct is copied
+ * over the slot wholesale — identical fields are unchanged by the copy, and
+ * the freed ones are already overwritten. Requires the fn's returned owning
+ * fields to be fresh, null, or identical to the corresponding input fields.
+ */
+function emit_owning_modify_T(
+	elem: StructNode,
+	status: BuildStatus,
+	T_SIZE: number,
+	string_fields: { offset: number }[],
+) {
+	const ALIGNED = Math.ceil(T_SIZE / 16) * 16;
+	status.code += `stp x20, x21, [sp, #-16]!\n`;
+	status.code += `stp x22, x23, [sp, #-16]!\n`;
+	status.code += `mov x22, x2\n`; // f
+	status.code += `ldr x9, [x19, #8]\n`; // data base
+	status.code += `mov x23, #${T_SIZE}\n`; // memcpy size (callee-saved)
+	status.code += `madd x20, x1, x23, x9\n`; // x20 = &slot[i]
+	// Stage [sp, 0) = arg copy of the slot, [sp, ALIGNED) = sret buffer.
+	status.code += `sub sp, sp, #${2 * ALIGNED}\n`;
+	status.code += `mov x0, sp\n`;
+	status.code += `mov x1, x20\n`;
+	status.code += `mov x2, x23\n`;
+	status.code += `bl _memcpy\n`;
+	status.code += `mov x21, sp\n`;
+	status.code += `add x21, x21, #${ALIGNED}\n`; // x21 = sret buffer
+	status.code += `mov x0, sp\n`; // arg = &copy
+	status.code += `mov x8, x21\n`; // sret
+	status.code += `blr x22\n`;
+	// Free displaced string fields (flat offsets, includes nested owning
+	// struct fields — mirrors collect_string_fields).
+	for (const [i, { offset: foff }] of string_fields.entries()) {
+		const skip = `.Lskip_md_${(status.label_counter = (status.label_counter ?? 0) + 1)}_${i}`;
+		status.code += `ldr x9, [x21, #${foff}]\n`; // new.ptr
+		status.code += `ldr x10, [x20, #${foff}]\n`; // old.ptr
+		status.code += `cmp x9, x10\n`;
+		status.code += `b.eq ${skip}\n`;
+		status.code += `mov x0, x10\n`;
+		emit_free(status);
+		status.code += `${skip}:\n`;
+	}
+	// Copy the returned struct over the slot (frees already happened).
+	status.code += `mov x0, x20\n`;
+	status.code += `mov x1, x21\n`;
+	status.code += `mov x2, x23\n`;
+	status.code += `bl _memcpy\n`;
+	status.code += `add sp, sp, #${2 * ALIGNED}\n`;
+	status.code += `ldp x22, x23, [sp], #16\n`;
 	status.code += `ldp x20, x21, [sp], #16\n`;
 }
 
