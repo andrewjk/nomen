@@ -68,6 +68,10 @@ export default function parse_statement(status: ParseStatus) {
 				parse_declaration(default_visibility(status), value, status);
 				break;
 			}
+			case "readonly": {
+				parse_declaration(default_visibility(status), "var", status, true);
+				break;
+			}
 			case "struct": {
 				parse_struct(default_visibility(status), status);
 				break;

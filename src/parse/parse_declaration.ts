@@ -28,26 +28,32 @@ export default function parse_declaration(
 	visibility: "pub" | "private" | "internal",
 	declaration: "const" | "var" | "move" | "view",
 	status: ParseStatus,
+	is_readonly = false,
 ) {
 	const start = get_index(status);
 	accept(visibility, status);
+	// A `readonly` field parses as a `var` declaration (same storage and
+	// codegen) carrying an extra flag; only the keyword token differs.
+	const keyword = is_readonly ? "readonly" : declaration;
 
 	// Detect destructuring: `var [a, b, ...] = expr`
 	// Look ahead: if the bracketed names are followed by `=`, treat as destructuring.
 	if (
-		peek_current(status) === declaration &&
+		peek_current(status) === keyword &&
 		status.tokens[status.i + 1]?.value === "[" &&
 		looks_like_destructuring(status, status.i + 1)
 	) {
-		accept(declaration, status);
+		accept(keyword, status);
 		parse_destructuring(visibility, declaration, start, status);
 		return;
 	}
 
 	const decl = new DeclarationNode(start, visibility, declaration, "");
+	decl.is_readonly = is_readonly;
+	decl.is_view_keyword = declaration === "view";
 	status.stack.push(decl);
 
-	accept(declaration, status);
+	accept(keyword, status);
 	if (peek_current(status) === "func") {
 		parse_function_type_declaration(decl, status);
 	} else {
@@ -116,13 +122,20 @@ export default function parse_declaration(
 	// (`var func (string) run` — a func-typed variable/field) may have no
 	// initializer and no `out` return, so func_params must count as "typed".
 	if (!decl.type.name && !decl.value && !decl.func_return_type && !decl.func_params) {
-		add_error(status, `Expected type or default value`, decl.start + decl.declaration.length + 1);
+		add_error(status, `Expected type or default value`, decl.start + keyword.length + 1);
 	}
 
 	status.stack.pop();
 
 	// TODO: Move this into add_to_parent somehow
 	const parent = status.stack.at(-1)!;
+
+	// `readonly` describes a field's write access, so it only makes sense on a
+	// struct/class field (a local has no "outside").
+	if (is_readonly && parent.node_type !== "struct") {
+		add_error(status, `'readonly' can only be used on a struct or class field`, decl.start);
+	}
+
 	switch (parent.node_type) {
 		case "root":
 		case "func":

@@ -376,6 +376,8 @@ export function monomorphize(
 			);
 		}
 		mono_field.is_library = field.is_library;
+		mono_field.is_readonly = field.is_readonly;
+		mono_field.is_view_keyword = field.is_view_keyword;
 		return mono_field;
 	});
 

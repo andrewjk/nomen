@@ -20,8 +20,9 @@ variable, parameter, field, type, or enum case names:
 
 `as` `async` `bitset` `break` `case` `class` `const` `continue` `cp` `else`
 `enum` `extern` `extend` `for` `func` `if` `import` `in` `internal` `let`
-`match` `move` `of` `out` `panic` `private` `pub` `raw` `ref` `return` `spawn`
-`struct` `switch` `swap` `todo` `trait` `unsafe` `var` `view` `while`
+`match` `move` `of` `out` `panic` `private` `pub` `raw` `readonly` `ref`
+`return` `spawn` `struct` `switch` `swap` `todo` `trait` `unsafe` `var` `view`
+`while`
 
 The literals `true`, `false`, and `null`, and `self`, are reserved as well.
 Using a reserved word as a name is a compile error:
@@ -302,6 +303,41 @@ Structs are constructed by calling the struct name as a function. A `#init` func
 ```
 const point = Point(5, 10)
 ```
+
+#### Readonly Fields
+
+A `readonly` field is readable wherever the field is visible, but assignable
+only from within the declaring struct or class's own methods (including its
+`extend` blocks):
+
+```
+struct Counter {
+    readonly count = 0
+
+    func bump = (ref self) {
+        self.count = self.count + 1
+    }
+}
+
+var Counter c = Counter()
+c.bump()
+Console.write("\\{c.count}")   // 1
+```
+
+Writing a `readonly` field from outside its declaring type is an error:
+
+```
+struct Counter {
+    readonly count = 0
+}
+
+var Counter c = Counter()
+c.count = 5
+// Error: Cannot assign to readonly field 'count' from outside Counter
+```
+
+A `const` field, by contrast, is immutable everywhere — even inside the
+declaring type.
 
 ### Initializers
 
@@ -2106,6 +2142,10 @@ const result = Math.power(2, 10)
 - `pub`: Public (accessible from the parent scope)
 - `internal`: Internal (accessible only within the declaring module/library)
 - `private`: Private (accessible only within the same struct or scope)
+
+`readonly` is a separate field-write modifier, not a visibility: it leaves the
+field readable at its declared visibility but restricts assignment to the
+declaring type's own methods. See [Readonly Fields](#readonly-fields).
 
 ## Type Coercion
 

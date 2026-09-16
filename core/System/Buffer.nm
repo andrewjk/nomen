@@ -11,8 +11,10 @@
  * A flat, low-level buffer of value slots of type T — the backing store for arrays and collections
  **/
 internal struct Buffer<T> {
-	var uint64 data = 0
-	var cap = 0
+	internal var uint64 data = 0
+	// Publicly readable capacity (`i < self.cap` guards every accessor), but
+	// only Buffer's own methods may grow it — `readonly`.
+	readonly cap = 0
 
 	// Allocation / sizing primitives are `unsafe` Nomen single-sourced for
 	// both backends. They run once per container op (never per element), so

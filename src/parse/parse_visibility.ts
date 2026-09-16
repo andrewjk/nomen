@@ -37,6 +37,10 @@ export default function parse_visibility(
 			}
 			break;
 		}
+		case "readonly": {
+			parse_declaration(visibility, "var", status, true);
+			break;
+		}
 		case "struct": {
 			parse_struct(visibility, status);
 			break;
@@ -163,7 +167,7 @@ export default function parse_visibility(
 		default: {
 			add_error(
 				status,
-				`Visibility can only be set for const, var, move, class, struct, trait or func`,
+				`Visibility can only be set for const, var, move, readonly, class, struct, trait or func`,
 				get_index(status),
 			);
 			consume(status);

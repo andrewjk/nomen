@@ -132,6 +132,10 @@ const y = x + 1     // Error: 'x' is null
 (the System library uses it to hide implementation details). Everything else is
 private to its declaring scope.
 
+`readonly` is a field-write modifier, not a visibility: the field reads at its
+declared visibility but can only be assigned inside its declaring struct/class
+(and its `extend`s). `const` fields are immutable everywhere.
+
 ### Imports
 
 ```nomen

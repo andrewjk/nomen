@@ -173,6 +173,8 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.scope = n.scope;
 			c.allocations = n.allocations?.map(clone_node);
 			c.is_library = n.is_library;
+			c.is_readonly = n.is_readonly;
+			c.is_view_keyword = n.is_view_keyword;
 			return c;
 		}
 		case "assign": {

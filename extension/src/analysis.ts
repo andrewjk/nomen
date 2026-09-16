@@ -498,8 +498,9 @@ class Builder {
 
 	private declaration_signature(node: DeclarationNode): string {
 		const visibility = visibility_prefix(node.visibility);
+		const kind = node.is_readonly ? "readonly" : node.declaration;
 		const type = this.type_text(node.type);
-		return `${visibility}${node.declaration} ${type} ${node.name}`.replace(/\s+/g, " ").trim();
+		return `${visibility}${kind} ${type} ${node.name}`.replace(/\s+/g, " ").trim();
 	}
 
 	private type_text(type: Type | undefined): string {

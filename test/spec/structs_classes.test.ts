@@ -39,6 +39,41 @@ const p = Point(3, 4)
 	});
 });
 
+describe("spec: readonly fields", () => {
+	test("readonly field mutated by its own methods", () => {
+		const input = `
+struct Counter {
+    readonly count = 0
+
+    func bump = (ref self) {
+        self.count = self.count + 1
+    }
+}
+
+var Counter c = Counter()
+c.bump()
+Console.write("\\{c.count}")
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("readonly field write from outside is an error", () => {
+		const errors = compile_main(`
+struct Counter {
+    readonly count = 0
+}
+
+var Counter c = Counter()
+c.count = 5
+`);
+		expect(
+			errors.some((e) =>
+				e.message.includes("Cannot assign to readonly field 'count' from outside Counter"),
+			),
+		).toBe(true);
+	});
+});
+
 describe("spec: destroy functions", () => {
 	test("struct #destroy", () => {
 		const input = `

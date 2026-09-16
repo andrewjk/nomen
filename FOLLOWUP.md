@@ -319,6 +319,17 @@ Buffer internals opt in via `parse(..., { allow_internal: true })` (mirrors
 `allow_user_raw`); real user builds never set it. Negative coverage lives in
 `test/internal_visibility.test.ts`.
 
+**Follow-up landed (2026-09-16): `readonly` fields.** A new `readonly` field
+modifier gives "read anywhere (per visibility), assign only inside the
+declaring struct/class and its `extend`s". `Buffer.cap` is now `readonly` and
+`Buffer.data` is `internal`, closing the "forge the bounds precondition via a
+writable `cap` / reach the raw slab" holes without a getter method. `const`
+fields are also now actually enforced (previously `arr.length = 99` compiled).
+Coverage: `test/readonly_field.test.ts`; spec section "Readonly Fields". Still
+open before `Buffer` can be re-exposed: the raw `store_*`/`alloc`/`_int`/
+`_float` family should become `internal` (leaving the size-aware `_T` family
+public) and `slice` should bounds-check `end`.
+
 **Residual holes (new follow-ups):**
 
 1. **Type-name references are not visibility-checked.** `resolve_declared_type`

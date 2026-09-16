@@ -474,6 +474,39 @@ export default function check_assignment_node(
 			const target_type = type_from_value_node(access.target, status);
 			const struct = status.structs.findLast((s) => s.name === target_type.name);
 			const field = struct?.fields.find((f) => f.name === field_access.name);
+			// Write access for `const` / `readonly` fields:
+			//  - `const`: immutable to Nomen code (a raw `#arch` body may still
+			//    initialize one, as Array.length does), so every AST assignment
+			//    is an error. A `view` field is normalized to `declaration:
+			//    "const"` but stays re-pointable, so it is exempt.
+			//  - `readonly`: assignable only from within the declaring
+			//    struct/class's own methods — its body, `extend`s, and
+			//    monomorphized clones (`func.scope` names the owner).
+			const is_const_field = field?.declaration === "const" && !field.is_view_keyword;
+			if (field && (is_const_field || field.is_readonly)) {
+				const enclosing_func = status.stack.findLast((n) => n.node_type === "func") as
+					| FunctionNode
+					| undefined;
+				const owner = enclosing_func?.scope as { node_type?: string; name?: string } | undefined;
+				const inside_declaring_type =
+					!!owner && owner.node_type === "struct" && owner.name === struct?.name;
+				if (is_const_field) {
+					add_error(
+						status,
+						`Cannot assign to const field: ${field_access.name}`,
+						field_access.start,
+					);
+					return false;
+				}
+				if (!inside_declaring_type) {
+					add_error(
+						status,
+						`Cannot assign to readonly field '${field_access.name}' from outside ${struct?.name ?? "its declaring type"}`,
+						field_access.start,
+					);
+					return false;
+				}
+			}
 			// Owning (`move`) class fields take ownership of their instance.
 			// Storing a BORROWED reference (a non-`move` parameter, a field /
 			// container borrow, or an object alias) would let the field's

@@ -5,6 +5,21 @@ import Type from "./Type.ts";
 export default class DeclarationNode extends BaseNode {
 	visibility: "pub" | "private" | "internal";
 	declaration: "const" | "var" | "move" | "view";
+	/**
+	 * True for a `readonly` field: readable per its visibility, but assignable
+	 * only from within the declaring struct/class's own methods (including its
+	 * `extend`s and monomorphized clones). Stored as `declaration: "var"` so
+	 * every storage/codegen path treats it identically to a plain field; only
+	 * the write check in check_assignment_node consults this flag.
+	 */
+	is_readonly?: boolean;
+	/**
+	 * True for a declaration written with the `view` keyword (`view T x`).
+	 * The checker normalizes `declaration` to `"const"` for view bindings, so
+	 * this preserves the original keyword — a `view` field is a re-pointable
+	 * view, not an immutable `const` field.
+	 */
+	is_view_keyword?: boolean;
 	name: string;
 	type: Type;
 	value?: BaseNode;
