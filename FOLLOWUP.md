@@ -152,25 +152,6 @@ gate for flipping the default.
   loop-terminator bug — rebuild the repro from the test harness
   (check_output's audit path) instead.
 
-## `buffer_pipeline.ts` (ASM_PLAN_3 tranche K) is dead code
-
-Found while landing ASM_PLAN_7 tranche 3: the inline Buffer address
-pipeline never runs. `pipeline_on` initializes `false` and nothing in
-`src/` ever calls `set_buffer_pipeline_enabled(true)` — every
-`tryHoistBufferAddrs` invocation returns at the enable check
-(`NOMEN_PIPE_DBG=1` shows the `tryHoist` line and nothing else). The
-receiver data-pointer hoisting the pipeline was written for is actually
-performed by the region brackets (`region_pool.ts`, ASM_PLAN_5+) and the
-emit-time fallback added in tranche 3. Two consequences for the remaining
-ASM_PLAN_7 tranches:
-
-- Tranche 4 (constant rematerialization) and tranche 5 (stack-staging
-  elision) descriptions reference pipeline-adjacent behavior
-  (`buffer_base_cache` is likewise only ever populated by the dead
-  pipeline) — read those as "the region-bracket equivalents".
-- Either delete `buffer_pipeline.ts` + its BuildStatus fields, or wire
-  the enable switch, before it misleads another tranche.
-
 ## Element iteration for remaining collections (split out of for-of-List)
 
 `for x of some_list` desugars to element iteration for `Array<T>` and now
@@ -326,3 +307,19 @@ reachable by driving `Buffer`/`ClassBuffer` directly. Remediation shipped
    swap-size codegen bug below as latent heap corruption. Reclaiming the old
    slab inside `alloc` while keeping the exact cap needs per-element destroy
    (owning `T`), so it is deferred.
+
+## edigits/pidigits aarch64 binaries fail at HEAD (pre-existing)
+
+Found while removing the dead `buffer_pipeline.ts` (2026-09-16): with default
+flags and fresh `test/out` builds, `bench/nomen/edigits.nm` segfaults (exit 139) and `bench/nomen/pidigits.nm` emits wrong digits from position ~15
+(`3141592653589 20467…` vs `…9 79323…`) on the aarch64 backend. Verified
+pre-existing by stashing the removal and rebuilding from a clean
+`test/out/aarch64/{edigits,pidigits}_aarch64` — both fail identically at HEAD
+(`406f682e`), so the failure count with/without the dead-code removal is the
+same (the removed tranche-K paths were gated on an always-empty
+`buffer_base_cache` and never fired). Both benches are BigInt digit-loop
+code (Knuth-D shapes), so the bug is somewhere in the live BigInt aarch64
+path — region brackets, base-fold, staging, or unrolling interaction. Note
+`test/out` artifacts are git-tracked and the bench cache key is
+`generated asm + system hash`, so stale artifacts do not mask codegen
+changes; the failures reproduce deterministically.

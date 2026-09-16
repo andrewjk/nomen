@@ -111,16 +111,6 @@ function choose_scratch_fallback(status: BuildStatus, taken: Set<string>): strin
 		if (taken.has(reg)) continue;
 		if (status.region_pinned?.get(reg)) continue;
 		if (cached.has(reg)) continue;
-		if (status.buffer_base_cache) {
-			let hit = false;
-			for (const v of status.buffer_base_cache.values()) {
-				if (v.baseReg === reg || v.dataReg === reg) {
-					hit = true;
-					break;
-				}
-			}
-			if (hit) continue;
-		}
 		if (status.array_ptr_cache) {
 			let hit = false;
 			for (const r of status.array_ptr_cache.values()) {
@@ -165,17 +155,8 @@ function pin_borrowable(status: BuildStatus, pin: { reg: string; dead: string[] 
 	// same discipline covers region-scoped source variables (their register
 	// holds the loop-local's live value for the whole bracket).
 	if (status.region_pinned?.get(pin.reg)) return false;
-	// Live pipeline/base homes from an outer loop's hoists are invisible to
-	// the dead set (their names never enter register_allocations) yet live
-	// across this loop — never borrow under one. Data-cache entries are
-	// evicted below instead (the pointer re-derives on the next miss);
-	// base homes have their own invalidation logic and must not be
-	// disturbed, and neither may fixed-array pins.
-	if (status.buffer_base_cache) {
-		for (const v of status.buffer_base_cache.values()) {
-			if (v.baseReg === pin.reg || v.dataReg === pin.reg) return false;
-		}
-	}
+	// Data-cache entries are evicted below instead (the pointer re-derives
+	// on the next miss); fixed-array pins may never be disturbed.
 	if (status.array_ptr_cache) {
 		for (const r of status.array_ptr_cache.values()) {
 			if (r === pin.reg) return false;

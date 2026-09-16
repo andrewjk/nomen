@@ -4,7 +4,6 @@ import { expect, test } from "vite-plus/test";
 
 import build from "../src/build";
 import { set_access_staging_enabled } from "../src/build_aarch64/access_staging";
-import { set_buffer_pipeline_enabled } from "../src/build_aarch64/buffer_pipeline";
 import { set_cset_lowering_enabled } from "../src/build_aarch64/cset_lower";
 import { set_nir_emission_enabled } from "../src/build_aarch64/emit_nir";
 import { set_flag_form_enabled } from "../src/build_aarch64/flag_form";
@@ -62,7 +61,6 @@ function expect_byte_identical(source: string, raw = false, raw_statements = fal
 	// The carry-fold fuse (ASM_PLAN_3 tranche J) consumes up to four
 	// statements through the cursor — same treatment as the cset fuse.
 	set_flag_form_enabled(false);
-	set_buffer_pipeline_enabled(false);
 	// Access staging (ASM_PLAN_3 tranche L) is window-state-dependent: a
 	// pin filled by an earlier statement can never reproduce in a
 	// delegated single-statement rebuild — same treatment as the fuses.
@@ -92,7 +90,6 @@ function expect_byte_identical(source: string, raw = false, raw_statements = fal
 		set_cset_lowering_enabled(true);
 		set_forwarding_enabled(true);
 		set_flag_form_enabled(true);
-		set_buffer_pipeline_enabled(true);
 		set_access_staging_enabled(true);
 		set_value_numbering_enabled(true);
 		set_slp_pair_enabled(true);
@@ -843,7 +840,6 @@ test("whole benchmark corpus is byte-identical through NIR emission", () => {
 		set_cset_lowering_enabled(false);
 		set_forwarding_enabled(false);
 		set_flag_form_enabled(false);
-		set_buffer_pipeline_enabled(false);
 		set_access_staging_enabled(false);
 		set_value_numbering_enabled(false);
 		set_slp_pair_enabled(false);
@@ -856,7 +852,6 @@ test("whole benchmark corpus is byte-identical through NIR emission", () => {
 		set_cset_lowering_enabled(false);
 		set_forwarding_enabled(false);
 		set_flag_form_enabled(false);
-		set_buffer_pipeline_enabled(false);
 		set_region_pool_enabled(false);
 		set_access_staging_enabled(false);
 		set_value_numbering_enabled(false);
@@ -871,7 +866,6 @@ test("whole benchmark corpus is byte-identical through NIR emission", () => {
 			set_cset_lowering_enabled(true);
 			set_forwarding_enabled(true);
 			set_flag_form_enabled(true);
-			set_buffer_pipeline_enabled(true);
 			set_access_staging_enabled(true);
 			set_value_numbering_enabled(true);
 			set_slp_pair_enabled(true);

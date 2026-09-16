@@ -49,23 +49,13 @@ All eight tranches landed, but the plan's target is not fully met:
   container exists in the library but the class-allocation path isn't on it).
 - **General LICM of loop-invariant array bases/bounds — effectively
   SUPERSEDED.** The NIR CFG/dominance substrate + region brackets and
-  scratch/induction hoists (ASM_PLAN_5/6/7) now cover this; the only
-  leftover is the dead `buffer_pipeline.ts` below.
+  scratch/induction hoists (ASM_PLAN_5/6/7) now cover this.
 - **Doc refresh.** PERF.md's narrative sections are stale: the "aarch64
   release passes are perf-neutral" table and the SIMD-gap framing predate the
   ASM_PLAN_2–7 arc (NEON landed, spectral-norm closed, etc.), and the
   "Rejected" loop-unrolling row is outdated (implemented, default-off).
   Settled rows: NEON row is landed; the `str/ldr` and `Buffer.data` LICM
   rejections stand.
-
-## Related dead code (from FOLLOWUP.md)
-
-- **`src/build_aarch64/buffer_pipeline.ts` never runs.** `set_buffer_pipeline_enabled(true)`
-  is never called, so `tryHoistBufferAddrs` always returns at the enable
-  check. Its receiver data-pointer hoisting is now done by the region
-  brackets (`region_pool.ts`) + emit-time fallback. Either delete the file
-  and its `BuildStatus` fields, or wire the enable switch — before it
-  misleads another tranche.
 
 ## Parked / measured-not-shipped (already recorded in FOLLOWUP.md)
 
