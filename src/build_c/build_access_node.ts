@@ -1130,6 +1130,11 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 						const tname =
 							decl_hit?.frame[decl_hit.index].type?.name ?? (param as ValueNode).type?.name;
 						if (tname === "string") continue;
+						// An enum-with-data `move` arg keeps caller ownership:
+						// the owning Buffer/List store_T deep-copies it
+						// (`<Enum>_copy`), so auto_free must reclaim the temp.
+						if (tname && status.enums.find((e) => e.name === tname && e.has_associated_data))
+							continue;
 						const decl_struct = decl_hit
 							? status.structs.find((s) => s.name === tname && !s.is_simple_type)
 							: undefined;

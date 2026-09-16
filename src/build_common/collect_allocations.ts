@@ -9,6 +9,7 @@ import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import GroupedNode from "../nodes/GroupedNode.ts";
 import IfElseNode from "../nodes/IfElseNode.ts";
 import LetNode from "../nodes/LetNode.ts";
+import MatchNode from "../nodes/MatchNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import RangeNode from "../nodes/RangeNode.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
@@ -108,6 +109,16 @@ export default function collect_allocations(
 			const ifElse = node as IfElseNode;
 			result.push(...collect_allocations(ifElse.condition, options));
 			// Don't recurse into branches — they're blocks with their own boundaries
+			break;
+		}
+		case "match": {
+			// The scrutinee is captured as a single expression by the C backend
+			// (build_match_node builds it into a temp string), so any argument
+			// temporaries hoisted by the checker (`_param_N`) must surface at the
+			// statement boundary BEFORE the match emits its temp initializer —
+			// otherwise the declaration lands mid-expression (invalid C). Branch
+			// blocks are boundaries of their own; don't recurse into them.
+			result.push(...collect_allocations((node as MatchNode).value, options));
 			break;
 		}
 		case "while": {

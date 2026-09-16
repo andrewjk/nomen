@@ -1,5 +1,6 @@
 import { struct_needs_destroy } from "../../build_common/destroy_analysis.ts";
 import { has_string_fields } from "../../build_common/has_string_fields.ts";
+import type EnumNode from "../../nodes/EnumNode.ts";
 import StructNode from "../../nodes/StructNode.ts";
 import type BuildStatus from "../BuildStatus.ts";
 
@@ -86,6 +87,121 @@ export const OWNING_BUFFER_METHODS = new Set([
  */
 export function owning_buffer_is_string_elem(node: StructNode): boolean {
 	return node.name === "Buffer_string";
+}
+
+/**
+ * Detect a `Buffer_<E>` whose element is an enum-with-data carrying string
+ * payloads. Such a slot owns heap strings exactly like a `Buffer<string>` /
+ * owning value struct: `<E>_copy` deep-copies the active case's string
+ * payloads, `<E>_free_payloads` reclaims them. Enums whose owning payloads
+ * include a class/trait reference are NOT specialized — `<E>_copy` shares
+ * those pointers (case construction transfers ownership), so a container slot
+ * cannot take an independent copy; such programs retain the pre-existing
+ * shallow behaviour.
+ */
+export function owning_buffer_enum_element(
+	node: StructNode,
+	status: BuildStatus,
+): EnumNode | undefined {
+	if (!node.name.startsWith("Buffer_")) return undefined;
+	const elem_name = node.name.substring("Buffer_".length);
+	const elem = status.enums.find((e) => e.name === elem_name && !e.is_generic);
+	if (!elem?.has_associated_data) return undefined;
+	let has_string = false;
+	for (const c of elem.cases) {
+		for (const p of c.params) {
+			if (p.type.name === "string" && !p.type.is_array) {
+				has_string = true;
+				continue;
+			}
+			const ps = status.structs.find((s) => s.name === p.type.name);
+			if (ps?.is_class || status.traits.find((t) => t.name === p.type.name)) return undefined;
+		}
+	}
+	return has_string ? elem : undefined;
+}
+
+/**
+ * Emit a specialized C body for a Buffer method whose element is an
+ * enum-with-data owning string payloads. Returns true if the body was
+ * emitted. The signature + opening brace have already been emitted by
+ * build_struct_functions; `val` is a by-value enum (enums are not classified
+ * as value structs, so they are passed by value — see classify_param).
+ */
+export function emit_owning_buffer_enum_body(
+	func_name: string,
+	elem: EnumNode,
+	status: BuildStatus,
+): boolean {
+	if (func_name === "#destroy") func_name = "destroy";
+	const E = elem.name;
+	const slots = `(${E}*)(unsigned long long)self->data`;
+
+	if (func_name === "store_T") {
+		// Fresh-slot deep copy: slot owns its own payload copies. The source
+		// (a by-value arg) is reclaimed by its own scope — a `move` arg is NOT
+		// spliced for enums (see build_function_call_node), so the caller's
+		// auto-free releases it.
+		status.code += `${E}* _slots = ${slots};\n`;
+		status.code += `_slots[i] = ${E}_copy(val);\n`;
+		return true;
+	}
+
+	if (func_name === "load_T") {
+		// Owned read: the caller (local / match temp) reclaims the result, so
+		// it must not alias the slot's copy.
+		status.code += `${E}* _slots = ${slots};\n`;
+		status.code += `return ${E}_copy(_slots[i]);\n`;
+		return true;
+	}
+
+	if (func_name === "replace_T") {
+		status.code += `${E}* _slots = ${slots};\n`;
+		status.code += `${E}_free_payloads(&_slots[i]);\n`;
+		status.code += `_slots[i] = ${E}_copy(val);\n`;
+		return true;
+	}
+
+	if (func_name === "shift_T") {
+		status.code += `${E}* _slots = ${slots};\n`;
+		status.code += `if (dst != src) {\n`;
+		status.code += `${E}_free_payloads(&_slots[dst]);\n`;
+		status.code += `_slots[dst] = _slots[src];\n`;
+		status.code += `memset((void*)&_slots[src], 0, sizeof(${E}));\n`;
+		status.code += `}\n`;
+		return true;
+	}
+
+	if (func_name === "modify_T") {
+		// Apply the fn in place: free the displaced payload unless the fn
+		// returned an aliasing pointer (round-trip identity).
+		status.code += `${E}* _slots = ${slots};\n`;
+		status.code += `${E} _old = _slots[i];\n`;
+		status.code += `${E} _new = f(_old);\n`;
+		status.code += `_slots[i] = _new;\n`;
+		for (const c of elem.cases) {
+			for (const p of c.params) {
+				if (p.type.name !== "string" || p.type.is_array) continue;
+				const old_ref = `_old._data._${c.name}.${p.name}.ptr`;
+				const new_ref = `_new._data._${c.name}.${p.name}.ptr`;
+				status.code += `if (_old.tag == ${E}_${c.name} && (_new.tag != ${E}_${c.name} || ${new_ref} != ${old_ref})) { free(${old_ref}); }\n`;
+			}
+		}
+		return true;
+	}
+
+	if (func_name === "destroy") {
+		status.code += `if (self->data) {\n`;
+		status.code += `${E}* _slots = ${slots};\n`;
+		status.code += `for (int _i = 0; _i < self->cap; _i++) { ${E}_free_payloads(&_slots[_i]); }\n`;
+		status.code += `free(_slots);\n`;
+		status.code += `}\n`;
+		status.code += `self->data = 0;\n`;
+		status.code += `self->cap = 0;\n`;
+		return true;
+	}
+
+	return false;
 }
 
 /**

@@ -69,6 +69,35 @@ function emit_by_value_dep(type: Type, status: BuildStatus): void {
 }
 
 /**
+ * Pull every enum typedef a struct depends on — its fields AND its method
+ * signatures (params and return type) — into the header before the struct is
+ * emitted. A monomorphized container (`List<Maybe>`, `Buffer<Maybe>`) hoisted
+ * to root scope names the enum in its method prototypes, which the struct
+ * pass emits to the header; the enum itself may live nested inside a function
+ * body (the test harness wraps main-less input in `func main`), so it is not
+ * part of the root-statement enum pass and would otherwise land AFTER those
+ * prototypes ("unknown type name 'Maybe'"). Idempotent via emitted_enums.
+ */
+export function emit_enum_deps_for_struct(struct: StructNode, status: BuildStatus): void {
+	const pull = (type: Type) => {
+		if (!type?.name) return;
+		if (type.is_ref || type.is_view || type.is_array_heap) return;
+		const enum_node = status.enums.find((e) => e.name === mono_type_name(type) && !e.is_generic);
+		if (enum_node) emit_enum_in_order(enum_node, status);
+	};
+	for (const field of struct.fields) {
+		pull(field.type);
+	}
+	for (const fn of struct.functions) {
+		if (fn.is_generic) continue;
+		if (fn.return_type) pull(fn.return_type);
+		for (const p of fn.params) {
+			if (p.type) pull(p.type);
+		}
+	}
+}
+
+/**
  * Emit a value struct's typedef into the HEADER instead of its usual .m
  * position, because an enum typedef (header) embeds it by value and C needs
  * the complete type at that point. Idempotent via build_struct_body's

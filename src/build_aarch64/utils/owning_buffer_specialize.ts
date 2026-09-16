@@ -1,9 +1,11 @@
 import type BuildStatus from "../../build_c/BuildStatus.ts";
 import { has_string_fields } from "../../build_common/has_string_fields.ts";
+import type EnumNode from "../../nodes/EnumNode.ts";
 import StructNode from "../../nodes/StructNode.ts";
 import aarch64_size from "./aarch64_size.ts";
 import { emit_free, emit_strdup } from "./audit.ts";
-import { get_struct_size, get_type_size } from "./struct_layout.ts";
+import { emit_enum_payload_frees_at, emit_enum_payload_strdups_at } from "./auto_destroy.ts";
+import { get_enum_size, get_struct_size, get_type_size } from "./struct_layout.ts";
 
 /**
  * Detect whether a monomorphized struct is a `Buffer_<T>` whose element type
@@ -34,6 +36,122 @@ export function owning_buffer_element_aarch64(
  */
 export function owning_buffer_is_string_elem_aarch64(node: StructNode): boolean {
 	return node.name === "Buffer_string";
+}
+
+/**
+ * Detect a `Buffer_<E>` whose element is an enum-with-data carrying string
+ * payloads (string-only; class/trait payloads cannot be independently
+ * deep-copied — case construction transfers their ownership). Mirrors the C
+ * backend's owning_buffer_enum_element.
+ */
+export function owning_buffer_enum_element_aarch64(
+	node: StructNode,
+	status: BuildStatus,
+): EnumNode | undefined {
+	if (!node.name.startsWith("Buffer_")) return undefined;
+	const elem_name = node.name.substring("Buffer_".length);
+	const elem = status.enums.find((e) => e.name === elem_name && !e.is_generic);
+	if (!elem?.has_associated_data) return undefined;
+	let has_string = false;
+	for (const c of elem.cases) {
+		for (const p of c.params) {
+			if (p.type.name === "string" && !p.type.is_array) {
+				has_string = true;
+				continue;
+			}
+			const ps = status.structs.find((s) => s.name === p.type.name);
+			if (ps?.is_class || status.traits.find((t) => t.name === p.type.name)) return undefined;
+		}
+	}
+	return has_string ? elem : undefined;
+}
+
+/**
+ * Owning-enum `store_T` / `replace_T` / `load_T` for the aarch64 backend.
+ * Registers: `self_reg` holds the Buffer pointer (x0 inline, x19 standalone),
+ * x1 = i, x2 = val address (store/replace); load returns through x8 (sret).
+ * The slot takes an independent strdup of the active case's string payloads
+ * (store/replace) and a load deep-copies so the caller owns its result.
+ */
+function emit_enum_store_T(enum_node: EnumNode, status: BuildStatus, self_reg: string) {
+	const T_SIZE = get_enum_size(enum_node.name, status);
+	status.code += `stp x20, x21, [sp, #-16]!\n`;
+	status.code += `str x22, [sp, #-16]!\n`;
+	status.code += `ldr x20, [${self_reg}, #8]\n`;
+	status.code += `mov x22, #${T_SIZE}\n`;
+	status.code += `madd x20, x1, x22, x20\n`;
+	status.code += `mov x21, x2\n`;
+	status.code += `mov x0, x20\n`;
+	status.code += `mov x1, x21\n`;
+	status.code += `mov x2, x22\n`;
+	status.code += `bl _memcpy\n`;
+	status.code += `mov x0, x20\n`;
+	emit_enum_payload_strdups_at(status, enum_node.name, "x20");
+	status.code += `ldr x22, [sp], #16\n`;
+	status.code += `ldp x20, x21, [sp], #16\n`;
+}
+
+function emit_enum_replace_T(enum_node: EnumNode, status: BuildStatus, self_reg: string) {
+	const T_SIZE = get_enum_size(enum_node.name, status);
+	status.code += `stp x20, x21, [sp, #-16]!\n`;
+	status.code += `str x22, [sp, #-16]!\n`;
+	status.code += `ldr x20, [${self_reg}, #8]\n`;
+	status.code += `mov x22, #${T_SIZE}\n`;
+	status.code += `madd x20, x1, x22, x20\n`;
+	status.code += `mov x21, x2\n`;
+	status.code += `mov x0, x20\n`;
+	emit_enum_payload_frees_at(status, enum_node.name, "x20");
+	status.code += `mov x0, x20\n`;
+	status.code += `mov x1, x21\n`;
+	status.code += `mov x2, x22\n`;
+	status.code += `bl _memcpy\n`;
+	status.code += `mov x0, x20\n`;
+	emit_enum_payload_strdups_at(status, enum_node.name, "x20");
+	status.code += `ldr x22, [sp], #16\n`;
+	status.code += `ldp x20, x21, [sp], #16\n`;
+}
+
+function emit_enum_load_T(enum_node: EnumNode, status: BuildStatus, self_reg: string) {
+	const T_SIZE = get_enum_size(enum_node.name, status);
+	status.code += `stp x20, x21, [sp, #-16]!\n`;
+	status.code += `ldr x20, [${self_reg}, #8]\n`;
+	status.code += `mov x3, #${T_SIZE}\n`;
+	status.code += `madd x20, x1, x3, x20\n`;
+	status.code += `mov x21, x8\n`;
+	status.code += `mov x0, x21\n`;
+	status.code += `mov x1, x20\n`;
+	status.code += `mov x2, #${T_SIZE}\n`;
+	status.code += `bl _memcpy\n`;
+	status.code += `mov x0, x21\n`;
+	emit_enum_payload_strdups_at(status, enum_node.name, "x21");
+	status.code += `mov x0, x21\n`;
+	status.code += `ldp x20, x21, [sp], #16\n`;
+}
+
+function emit_enum_shift_T(enum_node: EnumNode, status: BuildStatus, self_reg: string) {
+	const T_SIZE = get_enum_size(enum_node.name, status);
+	const done = `.Lown_esh_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+	status.code += `stp x20, x21, [sp, #-16]!\n`;
+	status.code += `str x22, [sp, #-16]!\n`;
+	status.code += `ldr x9, [${self_reg}, #8]\n`;
+	status.code += `mov x22, #${T_SIZE}\n`;
+	status.code += `madd x20, x1, x22, x9\n`;
+	status.code += `madd x21, x2, x22, x9\n`;
+	status.code += `cmp x20, x21\n`;
+	status.code += `b.eq ${done}\n`;
+	status.code += `mov x0, x20\n`;
+	emit_enum_payload_frees_at(status, enum_node.name, "x20");
+	status.code += `mov x0, x20\n`;
+	status.code += `mov x1, x21\n`;
+	status.code += `mov x2, x22\n`;
+	status.code += `bl _memcpy\n`;
+	status.code += `mov x0, x21\n`;
+	status.code += `mov x1, #0\n`;
+	status.code += `mov x2, x22\n`;
+	status.code += `bl _memset\n`;
+	status.code += `${done}:\n`;
+	status.code += `ldr x22, [sp], #16\n`;
+	status.code += `ldp x20, x21, [sp], #16\n`;
 }
 
 /**
@@ -126,6 +244,28 @@ export function emit_owning_buffer_inline_aarch64(
 		}
 		return false;
 	}
+	const enum_elem = owning_buffer_enum_element_aarch64(struct_node, status);
+	if (enum_elem) {
+		if (func_name === "store_T") {
+			emit_enum_store_T(enum_elem, status, "x0");
+			return true;
+		}
+		if (func_name === "replace_T") {
+			emit_enum_replace_T(enum_elem, status, "x0");
+			return true;
+		}
+		if (func_name === "load_T") {
+			emit_enum_load_T(enum_elem, status, "x0");
+			return true;
+		}
+		if (func_name === "shift_T") {
+			emit_enum_shift_T(enum_elem, status, "x0");
+			return true;
+		}
+		// move_T is a raw memcpy + zero (ownership transfer) — correct once
+		// the element stride (T_SIZE) is the enum's real size.
+		return false;
+	}
 	if (owning_buffer_is_string_elem_aarch64(struct_node)) {
 		if (func_name === "store_T") {
 			emit_string_store_T(status, "x0");
@@ -184,6 +324,27 @@ export function emit_owning_buffer_standalone_aarch64(
 		}
 		emit_owning_standalone_struct(elem, func_name, status);
 		return true;
+	}
+	const enum_elem = owning_buffer_enum_element_aarch64(node, status);
+	if (enum_elem) {
+		if (func_name === "store_T") {
+			emit_enum_store_T(enum_elem, status, "x19");
+			return true;
+		}
+		if (func_name === "replace_T") {
+			emit_enum_replace_T(enum_elem, status, "x19");
+			return true;
+		}
+		if (func_name === "load_T") {
+			emit_enum_load_T(enum_elem, status, "x19");
+			return true;
+		}
+		if (func_name === "shift_T") {
+			emit_enum_shift_T(enum_elem, status, "x19");
+			return true;
+		}
+		// move_T raw (see the inline variant).
+		return false;
 	}
 	if (owning_buffer_is_string_elem_aarch64(node)) {
 		if (func_name === "store_T") {
@@ -617,12 +778,17 @@ function emit_owning_replace_T(elem: StructNode, status: BuildStatus) {
  */
 export function emit_owning_buffer_destroy_aarch64(node: StructNode, status: BuildStatus): boolean {
 	const elem = owning_buffer_element_aarch64(node, status);
-	const is_string = !elem && owning_buffer_is_string_elem_aarch64(node);
-	if (!elem && !is_string) return false;
+	const enum_elem = !elem ? owning_buffer_enum_element_aarch64(node, status) : undefined;
+	const is_string = !elem && !enum_elem && owning_buffer_is_string_elem_aarch64(node);
+	if (!elem && !enum_elem && !is_string) return false;
 
-	// string slots are 16-byte fat values (free the ptr half only); struct
-	// slots are T_SIZE bytes.
-	const T_SIZE = elem ? get_struct_size(elem.name, status) : 16;
+	// string slots are 16-byte fat values (free the ptr half only); struct and
+	// enum slots are T_SIZE bytes.
+	const T_SIZE = elem
+		? get_struct_size(elem.name, status)
+		: enum_elem
+			? get_enum_size(enum_elem.name, status)
+			: 16;
 	const func_label = `${node.name}_destroy`;
 
 	const old_scoped_declarations = status.scoped_declarations;
@@ -678,6 +844,9 @@ export function emit_owning_buffer_destroy_aarch64(node: StructNode, status: Bui
 		// &slot[i]; the ptr half is at offset 0.
 		status.code += `ldr x0, [x0]\n`;
 		emit_free(status);
+	} else if (enum_elem) {
+		// Tag-guarded reclaim of the active case's string payloads.
+		emit_enum_payload_frees_at(status, enum_elem.name, "x0");
 	} else {
 		status.code += `bl ${elem!.name}_destroy\n`;
 	}

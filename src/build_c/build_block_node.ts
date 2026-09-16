@@ -20,7 +20,7 @@ import { emit_stmt_from_nir } from "./emit_nir.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import c_type from "./utils/c_type.ts";
 import emit_allocations from "./utils/emit_allocations.ts";
-import emit_enum_in_order from "./utils/emit_enum_in_order.ts";
+import emit_enum_in_order, { emit_enum_deps_for_struct } from "./utils/emit_enum_in_order.ts";
 import { should_emit_definition } from "./utils/is_system_definition.ts";
 
 export default function build_block_node(
@@ -369,6 +369,13 @@ function emit_struct_in_order(struct: StructNode, status: BuildStatus, emitted: 
 	if (emitted.has(struct)) return;
 	if (struct.is_generic || struct.is_simple_type) return;
 	emitted.add(struct);
+
+	// Pull enum typedefs referenced by this struct's fields or method
+	// signatures into the header BEFORE the struct pass emits prototypes that
+	// name them (e.g. a hoisted `List<Maybe>` naming a nested `Maybe`). The
+	// root enum pass only covers root-statement enums; dependency-ordered and
+	// idempotent via emitted_enums.
+	emit_enum_deps_for_struct(struct, status);
 
 	// Emit dependencies first: any by-value struct field needs the referenced
 	// struct to be fully defined beforehand. Generic field types (e.g.

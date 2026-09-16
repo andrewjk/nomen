@@ -10,6 +10,10 @@ import type Type from "../nodes/Type.ts";
 export interface TypeTable {
 	structs: StructNode[];
 	traits: TraitNode[];
+	/** Concrete enum-with-data declarations, so value enums are passed by
+	 *  value (their C type is a by-value tagged-union struct, unlike a
+	 *  Nomen value struct's pointer convention). */
+	enums?: { name: string; has_associated_data?: boolean; is_generic?: boolean }[];
 }
 
 export interface ParamClassifyFlags {
@@ -69,6 +73,14 @@ export function classify_param(
 	const is_struct = (!!flags.is_self || !!struct || !!trait) && !struct?.is_simple_type;
 	const is_simple = !!struct?.is_simple_type;
 	const is_class = !!struct?.is_class;
+	// A concrete enum-with-data is a BY-VALUE tagged-union struct in C: a
+	// `move`/`var` param must not take the value-struct pointer convention
+	// (`T *value`), or the emitted body's `store_T(..., value)` and the
+	// caller's by-value argument disagree. Enums are never `is_struct` (the
+	// bare typedef name is the C type, not `struct Tag`).
+	const is_value_enum = !!table.enums?.find(
+		(e) => e.name === type_name && e.has_associated_data && !e.is_generic,
+	);
 	// Pointer rules:
 	//   - struct / trait params: by reference
 	//   - `ref` / array params: by pointer (modifications propagate)
@@ -82,7 +94,7 @@ export function classify_param(
 		!!trait ||
 		!!flags.is_ref ||
 		type.is_array ||
-		(!is_simple && flags.declaration === "var");
+		(!is_simple && !is_value_enum && flags.declaration === "var");
 	const is_ref_class = !!flags.is_ref && is_class && !flags.is_self;
 	return {
 		struct,

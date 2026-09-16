@@ -27,7 +27,7 @@ import array_struct_name from "./utils/array_struct.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import { enter_c_scope, leave_c_scope } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
-import emit_enum_in_order from "./utils/emit_enum_in_order.ts";
+import emit_enum_in_order, { emit_enum_deps_for_struct } from "./utils/emit_enum_in_order.ts";
 import scan_borrow_only_strings from "./utils/scan_borrow_only_strings.ts";
 
 export default function build_function_node(node: FunctionNode, status: BuildStatus) {
@@ -471,6 +471,9 @@ function emit_nested_declarations(node: FunctionNode, status: BuildStatus) {
 	// Pass 1: Emit struct bodies (skipped if already emitted at root level)
 	for (let child of block.statements) {
 		if (is_struct_node(child)) {
+			// Struct bodies/typedefs reference enum-typed fields and signature
+			// types; pull those enum typedefs into the header first.
+			emit_enum_deps_for_struct(child as StructNode, status);
 			build_struct_body(child as StructNode, status);
 		}
 	}

@@ -303,6 +303,11 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				// covers generic bodies the check-time filter can't see into.
 				const tname = decl_hit?.frame[decl_hit.index].type?.name ?? (param as ValueNode).type?.name;
 				if (tname === "string") continue;
+				// An enum-with-data `move` arg also keeps caller ownership:
+				// the owning Buffer/List store_T takes an independent deep copy
+				// (`<Enum>_copy`), so the caller's temp is left in
+				// scoped_declarations and auto_free reclaims its payloads.
+				if (tname && status.enums.find((e) => e.name === tname && e.has_associated_data)) continue;
 				const decl_struct = decl_hit
 					? status.structs.find((s) => s.name === tname && !s.is_simple_type)
 					: undefined;

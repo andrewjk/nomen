@@ -3207,6 +3207,10 @@ function build_access_method(
 					.find((d) => d.name === vname);
 				const tname = decl?.type?.name ?? (param as { type?: { name?: string } }).type?.name;
 				if (tname === "string") continue;
+				// An enum-with-data `move` arg also keeps caller ownership: an
+				// owning Buffer/List store_T deep-copies its string payloads,
+				// so the caller's temp must still be reclaimed at scope exit.
+				if (tname && status.enums.find((e) => e.name === tname && e.has_associated_data)) continue;
 			}
 			if (param) {
 				mark_moved_if_struct(param, status);

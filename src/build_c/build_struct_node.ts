@@ -28,9 +28,11 @@ import { enter_c_scope, leave_c_scope } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
 import {
 	emit_owning_buffer_body,
+	emit_owning_buffer_enum_body,
 	emit_owning_buffer_string_body,
 	emit_trivial_struct_modify_T,
 	owning_buffer_element,
+	owning_buffer_enum_element,
 	owning_buffer_is_string_elem,
 } from "./utils/owning_buffer_specialize.ts";
 import scan_borrow_only_strings from "./utils/scan_borrow_only_strings.ts";
@@ -828,7 +830,9 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		// instead of the raw primitive block. The raw block assumes trivially
 		// destructible elements and would leak/double-free owning fields.
 		const owning_elem = owning_buffer_element(node, status);
+		const owning_enum = owning_buffer_enum_element(node, status);
 		const specialized =
+			(owning_enum && emit_owning_buffer_enum_body(func.name, owning_enum, status)) ||
 			(owning_elem && emit_owning_buffer_body(func.name, owning_elem, status)) ||
 			(owning_buffer_is_string_elem(node) && emit_owning_buffer_string_body(func.name, status)) ||
 			(func.name === "modify_T" && emit_trivial_struct_modify_T(node, status));

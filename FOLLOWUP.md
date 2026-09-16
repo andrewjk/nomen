@@ -2,32 +2,6 @@
 
 Skipped or out-of-scope items recorded for later.
 
-## Enum-in-container and match-binding escapes
-
-The enum-with-string-payload ownership edge — an enum value stored inside a
-value struct and matched/returned through the field — is fixed (2026-09-16,
-both backends): field stores blob-copy + strdup the active case's string
-payloads (aarch64) or route through `<Enum>_copy` (C), struct auto-destroy
-walks enum fields, and the sret boundary takes owning copies for field-read
-returns. Covered by test/enum_field.test.ts (inline construction,
-reassignment, factory return, `return self.m`), green on both backends with
-audit on.
-
-Two independent gaps remain (both pre-existing at the parent commit — not
-regressions):
-
-- **Enums as generic-container element types are broken earlier still**:
-  `List<Maybe>`/`Buffer<Maybe>` on C fails at header emission ("unknown
-  type name 'Maybe'" — the `Buffer_Maybe_*` prototypes precede the enum
-  typedef), so the container element-payload walk can't even be evaluated on
-  C until that ordering is fixed. aarch64 stores/pushes cleanly, but reading
-  an element back (`match xs.at_or(0, .none)`) faults in the element
-  load/copy (EXC_BAD_ACCESS in memmove).
-- **A match binding that escapes its branch** (`case .some(v) -> v` inside a
-  `return match …`) relies on the return-boundary borrow normalization; the
-  probe faults on aarch64. Deeper escapes (storing the binding) are
-  untracked.
-
 ## Cold-run parallel test flakiness (pre-existing)
 
 A fully cold `npm test` (after `rm -rf test/out`) with default file
