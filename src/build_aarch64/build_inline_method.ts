@@ -200,6 +200,13 @@ export default function build_inline_method(
 	const old_stack_offsets = status.stack_offsets;
 	const old_param_regs = status.function_param_regs;
 	const old_param_vars = status.function_param_vars;
+	// The inline body's locals live in a FRESH name→slot map: sharing the
+	// caller's map let a body local with the same name as a caller local
+	// (e.g. `var JsonNode n` inside the spliced `set_kind` vs the caller's
+	// `var int n` node index) overwrite the caller's binding, so the caller
+	// reloaded the inline local's slot after the splice. Stack space keeps
+	// accumulating through the shared stack_size, so offsets stay unique.
+	status.stack_offsets = new Map();
 	// The caller's param types must not type-resolve the inlined body's
 	// same-named names (see the function_param_types reset below).
 	const old_param_types = status.function_param_types;
@@ -490,6 +497,13 @@ export function build_inline_function(func: FunctionNode, status: BuildStatus) {
 	const old_stack_offsets = status.stack_offsets;
 	const old_param_regs = status.function_param_regs;
 	const old_param_vars = status.function_param_vars;
+	// The inline body's locals live in a FRESH name→slot map: sharing the
+	// caller's map let a body local with the same name as a caller local
+	// (e.g. `var JsonNode n` inside the spliced `set_kind` vs the caller's
+	// `var int n` node index) overwrite the caller's binding, so the caller
+	// reloaded the inline local's slot after the splice. Stack space keeps
+	// accumulating through the shared stack_size, so offsets stay unique.
+	status.stack_offsets = new Map();
 	// The caller's param types must not type-resolve the inlined body's
 	// same-named names (see the function_param_types reset below).
 	const old_param_types = status.function_param_types;

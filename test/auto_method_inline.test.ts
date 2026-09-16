@@ -12,12 +12,13 @@ import { parse_raw } from "./parse_with_imports";
  * Auto method inlining (ASM_PLAN_7 tranche 7). Small unmarked methods
  * (the BigInt `ensure`/`clear` shape) splice through the proven
  * user-inline path, killing the per-call `bl` + ABI marshal at hot call
- * sites (282 samples in `BigInt_ensure` per D2 iteration). DEFAULT ON:
- * the JsonTree receipt crash class is refused by the T-generic-callee
- * gate — every crashing splice (`set_kind`, `get_child`, …) nested a
- * `Buffer<T>.load_T`/`store_T` splice, and bodies calling `_T`-suffixed
- * generic methods no longer auto-inline (see FOLLOWUP.md). The tests
- * here pin the ON behavior and the kill switch.
+ * sites (282 samples in `BigInt_ensure` per D2 iteration). DEFAULT ON.
+ * User-marked `inline` methods also splice when their bodies nest a
+ * `Buffer<T>.load_T`/`store_T` splice: the old JsonTree crash class was
+ * the inline body's local declarations clobbering the caller's
+ * `stack_offsets` name→slot entries (now isolated per splice). The
+ * tests here pin the ON behavior, the nested-generic splice, and the
+ * kill switch.
  */
 
 const ENSURE_SHAPE = `
@@ -107,13 +108,12 @@ pub func main = (Init init) {
 	expect(on).toContain("bl Down_walk");
 });
 
-test("generic-callee user-inline takes the bl (JsonTree receipt class)", () => {
+test("generic-callee user-inline splices (JsonTree receipt class)", () => {
 	// A USER-marked inline method whose body calls a `_T`-generic Buffer
-	// method must NOT splice — the nested generic splice miscompiles (the
-	// JsonTree receipt: parse of a JSON array lost the node count and
-	// child links). Two gates engage: the call site takes the real `bl`,
-	// and the standalone body IS emitted (user-inline methods normally
-	// skip standalone emission — the bl needs it).
+	// method splices: the nested generic splice is sound now that the
+	// inline body's locals own a fresh name→slot map (the JsonTree crash
+	// was the caller's `n` being remapped onto the body's `var Node n`).
+	// The call site splices and no standalone body is emitted.
 	const src = `
 import System
 
@@ -136,11 +136,49 @@ pub func main = (Init init) {
 }
 `;
 	const code = compile(src, true);
-	expect(code).toContain("bl Keeper_reserve");
-	// The standalone body is emitted despite the inline marker.
-	expect(code).toMatch(/Keeper_reserve:/);
-	// The call site did not splice the load/store pattern.
-	expect(code).not.toMatch(/\.LBuffer_JsonNode_buffer_load_T_copy/);
+	expect(code).not.toContain("bl Keeper_reserve");
+	// No standalone body for a spliced inline method.
+	expect(code).not.toMatch(/Keeper_reserve:/);
+});
+
+test("behavioral: splice isolates caller locals from body locals", async () => {
+	// Regression for the JsonTree receipt: a spliced method's stack-resident
+	// local (`var Inner n` — the JsonNode shape) used to overwrite the
+	// caller's same-named name→slot entry, so the caller read the body's
+	// slot after the splice, yielding 21 instead of 2 + 21.
+	const src = `
+import System
+
+struct Inner {
+	var int v = 0
+}
+
+struct Counter {
+	var int base = 1
+
+	pub func #init = (self) {
+		self.base = 1
+	}
+
+	pub inline func inner_add = (self, int x, out int) {
+		var Inner n = Inner()
+		n.v = x * 10
+		return n.v + 1
+	}
+
+	pub inline func outer = (self, int seed, out int) {
+		var int n = seed
+		var int r = self.inner_add(seed)
+		return n + r
+	}
+}
+
+pub func main = (Init init) {
+	var c = Counter()
+	Console.write("\\{c.outer(2)}\\n")
+}
+`;
+	await build_and_check_output(src, "inline_name_collision", "23\n", true);
 });
 
 test("behavioral: spliced ref-self mutation is exact (both backends)", async () => {

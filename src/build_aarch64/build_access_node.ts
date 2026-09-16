@@ -45,10 +45,7 @@ import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free, emit_malloc, emit_strdup } from "./utils/audit.ts";
 import { all_scope_frames, mark_moved_if_struct, trait_class_for } from "./utils/auto_destroy.ts";
 import { emit_index_address, pointer_element_size } from "./utils/ptr_access.ts";
-import {
-	is_auto_inline_method,
-	inline_method_splice_unsafe,
-} from "./utils/scan_inline_candidates.ts";
+import { is_auto_inline_method } from "./utils/scan_inline_candidates.ts";
 import { NUM_REG_ARGS } from "./utils/stack_args.ts";
 import {
 	allocate_stack_space,
@@ -2769,7 +2766,6 @@ function build_access_method(
 	const inline_func0 = inline_struct0?.functions.find(
 		(f) =>
 			f.is_inline &&
-			!inline_method_splice_unsafe(f) &&
 			f.name === access_func.name &&
 			(access_func.mangled_name
 				? mangled_label(f, mono_struct_name) === access_func.mangled_name
@@ -3043,7 +3039,6 @@ function build_access_method(
 	const inline_func = target_struct?.functions.find(
 		(f) =>
 			(f.is_inline || is_auto_inline_method(f)) &&
-			!inline_method_splice_unsafe(f) &&
 			f.name === access_func.name &&
 			(access_func.mangled_name
 				? mangled_label(f, mono_struct_name) === access_func.mangled_name

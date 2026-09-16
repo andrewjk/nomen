@@ -35,7 +35,6 @@ import {
 	raw_slot_reload_line,
 	type RawParamReloadLine,
 } from "./utils/raw_reload.ts";
-import { inline_method_splice_unsafe } from "./utils/scan_inline_candidates.ts";
 import {
 	NUM_REG_ARGS,
 	overflow_placeholder,
@@ -1255,12 +1254,9 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			continue;
 		}
 		if (func.name === "#destroy") continue;
-		// User-marked inline methods normally skip standalone emission
-		// (every call site splices). An UNSAFE one — a `_T`-generic callee
-		// in the body (the JsonTree receipt: the nested generic splice
-		// miscompiles) — is refused at its call sites and takes the real
-		// call, so its standalone body must exist.
-		if (func.is_inline && !inline_method_splice_unsafe(func)) continue;
+		// User-marked inline methods skip standalone emission — every call
+		// site splices.
+		if (func.is_inline) continue;
 		if (check_c_fallback(func, node.name, status)) continue;
 		if (func.is_extern) {
 			build_extern(func, status, node);

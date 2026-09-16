@@ -78,14 +78,14 @@ export function is_auto_inline_method(func: FunctionNode): boolean {
 	if (func.return_type?.is_array || func.return_type?.is_view) return false;
 	if (func.return_type?.name && !SIMPLE_TYPES.includes(func.return_type.name)) return false;
 
-	// LEAF-ONLY: the body may not call anything. Two measured receipts:
-	// (a) call-BEARING splices (ensure→grow_int chains expanded into hot
-	// loops) ran pidigits n=4000 +52–62% — the expanded frame traffic and
-	// defeated loop planning cost far more than the saved call; (b) a body
-	// calling a T-GENERIC method (`Buffer<T>.load_T`/`store_T`) nested a
-	// generic user-inline splice that miscompiled (the JsonTree crash —
-	// FOLLOWUP.md). Call-bearing methods keep the real call; the
-	// ensure-shaped win needs the frame-context work first.
+	// LEAF-ONLY: the body may not call anything. Measured receipt:
+	// call-BEARING splices (ensure→grow_int chains expanded into hot loops)
+	// ran pidigits n=4000 +52–62% — the expanded frame traffic and defeated
+	// loop planning cost far more than the saved call. Call-bearing methods
+	// keep the real call; the ensure-shaped win needs the frame-context
+	// work first. (The nested generic-splice miscompile that also motivated
+	// this gate — the JsonTree crash — is fixed; user-marked `inline`
+	// methods with call-bearing bodies now splice.)
 	if (body_has_call(func.statements)) return false;
 
 	return true;
@@ -105,46 +105,6 @@ function body_has_call(node: BaseNode | BaseNode[] | null | undefined): boolean 
 	if (nt === "access_func" || nt === "func_call") return true;
 	for (const child of child_nodes(node)) {
 		if (body_has_call(child as BaseNode)) return true;
-	}
-	return false;
-}
-
-/**
- * The generic-nested-splice refusal, applied to the USER-marked inline
- * dispatch as well: a method whose body calls a `_T`-suffixed generic
- * (`Buffer<T>.load_T`/`store_T`) miscompiles when spliced — the nested
- * generic user-inline splice materializes struct locals in the outer
- * splice's frame context (the JsonTree receipt: `Json.parse` returning
- * n=0 with broken child links). PRE-EXISTING user-inline path bug that
- * tranche 7's auto gate merely avoided; until the nested-frame context
- * work lands, such methods take the real call on every dispatch path.
- */
-export function inline_method_splice_unsafe(func: FunctionNode): boolean {
-	const found = calls_generic_method(func.statements);
-	return found;
-}
-
-/** Whether the subtree calls a `_T`-suffixed generic callee
- *  (`Buffer<T>.load_T`/`store_T` — the element-generic convention). */
-function calls_generic_method(node: BaseNode | BaseNode[] | null | undefined): boolean {
-	if (!node) return false;
-	if (Array.isArray(node)) {
-		for (const item of node) {
-			if (calls_generic_method(item)) return true;
-		}
-		return false;
-	}
-	if (typeof node !== "object") return false;
-	const any_node = node as any;
-	if (
-		any_node.node_type === "access_func" &&
-		typeof any_node.name === "string" &&
-		any_node.name.endsWith("_T")
-	) {
-		return true;
-	}
-	for (const child of child_nodes(any_node)) {
-		if (calls_generic_method(child as BaseNode)) return true;
 	}
 	return false;
 }

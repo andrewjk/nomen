@@ -27,12 +27,11 @@ import parse_with_imports from "./parse_with_imports";
 //    (class-element `Array.at` receivers travel in x0, not x19).
 
 describe("general-path method inlining", () => {
-	test("List.at (generic-callee user-inline) takes the real call (gate)", () => {
-		// List.at's body calls the `_T`-generic `Buffer.load_T` — the
-		// generic-nested splice class miscompiles (FOLLOWUP.md, the JsonTree
-		// receipt). `inline_method_splice_unsafe` gates it to the real call
-		// on every call site, and the standalone body is emitted for exactly
-		// this case, so the bl links and behaves.
+	test("List.at (generic-callee user-inline) splices", () => {
+		// List.at's body calls the `_T`-generic `Buffer.load_T`; the nested
+		// splice is sound now that each splice owns a fresh name→slot map
+		// (the JsonTree receipt), so the call site splices rather than
+		// taking the real call.
 		const parsed = parse_with_imports(`
 var List<int> list = List<int>()
 list.push(1)
@@ -47,7 +46,7 @@ Console.write("\\{sum}\\n")
 `);
 		expect(parsed.errors).toEqual([]);
 		const code = build(parsed.root, { arch: "aarch64", audit: false }).code;
-		expect(code).toContain("bl List_int_at\n");
+		expect(code).not.toContain("bl List_int_at\n");
 	});
 
 	test("inline label rewrite spares sibling method labels", () => {

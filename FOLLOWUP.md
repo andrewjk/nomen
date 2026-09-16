@@ -322,48 +322,6 @@ Fix directions, when picked up (either closes the leak class):
    `<Struct>_destroy` frees every field. Deletes `heap_string_fields` and
    this whole class; costs a malloc per literal store into a value struct.
 
-## AARCH64 inline splices: bodies with calls are refused, root miscompile unsolved
-
-Auto method inline (ASM_PLAN_7 tranche 7) ships default ON but LEAF-ONLY
-(`is_auto_inline_method` in `scan_inline_candidates.ts`: no calls, no
-T-generic callees, struct receivers, <=3 statements/params; measured
-spectral-norm -53%, knucleotide -26%, neutral elsewhere), and the
-user-marked `inline` dispatch is gated by the same refusal
-(`inline_method_splice_unsafe`); refused methods get standalone bodies
-(`build_struct_node`) so their call sites take the real call.
-
-**Investigation state (2026-09-14 session — reproducible in minutes):**
-
-- Repro: mark ONE `JsonTree` setter `pub inline`
-  (`core/System/Text/JsonTree.nm`) + disable
-  `inline_method_splice_unsafe` (return false) + run
-  `npm test test/json.test.ts` — the 3 parse tests fail (SIGSEGV /
-  wrong tree). Gate ON: all green.
-- Per-method bisection (one method marked at a time): splicing
-  `set_child` (field write at node offset 32) or the getters PASSES;
-  **splicing `set_kind` alone (field write at offset 8) fails** —
-  output shows node0.child = 0 and node0.val = 0 (should be 1 / -1)
-  plus 1 leaked allocation. The leaked node + zeroed fields say the
-  spliced body's nested `load_T` copied from ZEROED memory (a fresh
-  calloc region), and the store wrote that zeroed node back.
-- The nested raw bodies (load_T/store_T) index correctly (stride 56 =
-  raw_type_size(JsonNode), slab sized by grow_T's T_SIZE — verified in
-  the generated asm) and the arg parks read the right registers at the
-  set_kind site. So the wrong bytes come from the load's SOURCE
-  address or a lost data-pointer reload — not from sizing or parks.
-- Disproven this session: x23-x28 preservation at the splice boundary
-  (unconditional push/pop of the caller's pool regs in
-  build_inline_method) was implemented and did NOT change the
-  set_kind-only failure — reverted (no confirmed clobber vector; bench
-  cost unmeasured).
-
-Next step: in the set_kind-only failing build, watchpoint
-`node0.child` (slab + 32) through the parse and log every writing PC
-(lldb `watchpoint set expression -w write -s 8 -- <data+32>` at the
-first json_parse_pairs stop; the watch itself worked — capture the
-command output with `watchpoint command add`). The first write of 0
-names the miscompiled store directly.
-
 ## `Buffer`'s raw slot primitives are public, and `store_T` leaks on overwrite
 
 `default_visibility` makes struct members `pub` by default, so `Buffer<T>`'s
