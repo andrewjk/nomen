@@ -364,19 +364,6 @@ first json_parse_pairs stop; the watch itself worked — capture the
 command output with `watchpoint command add`). The first write of 0
 names the miscompiled store directly.
 
-## User raw functions subscripting a `string` param no longer compile (C)
-
-`test/borrow_to_string_elision.test.ts` (2 tests) fails on both the working
-tree AND the unmodified baseline (verified 2026-09-15): a user raw function
-taking a `string` parameter (`func raw_touch = (string p) { p[0] = 'J' }`)
-emits `void raw_touch(nomen_string p) { p[0] = 'J'; }` — subscripting the
-fat struct ("subscripted value is not an array"). Fallout of the thin-`_raw_`
-adapter removal (2026-09-15): raw bodies now see fat `nomen_string` values,
-but user RAW functions that treat a `string` param as a C array need
-`p.ptr[0]`. Either fix the two test bodies (use `.ptr`) or teach the raw
-emitter to rewrite `p[i]` subscripts on `nomen_string` params to
-`p.ptr[i]`. Not a regression from modify_T.
-
 ## `Buffer`'s raw slot primitives are public, and `store_T` leaks on overwrite
 
 `default_visibility` makes struct members `pub` by default, so `Buffer<T>`'s

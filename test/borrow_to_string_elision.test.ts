@@ -78,7 +78,7 @@ func consume = (string s, out int) {
 func raw_touch = (string p) {
 	\`\`\`
 	#arch: c
-	p[0] = 'J';
+	p.ptr[0] = 'J';
 	\`\`\`
 	\`\`\`
 	#arch: aarch64
@@ -112,7 +112,7 @@ func raw_touch = (string p) {
 		case true {
 			\`\`\`
 			#arch: c
-			p[0] = 'J';
+			p.ptr[0] = 'J';
 			\`\`\`
 			\`\`\`
 			#arch: aarch64
@@ -150,7 +150,7 @@ func forward = (string p, out int) {
 func raw_touch = (string p) {
 	\`\`\`
 	#arch: c
-	p[0] = 'Z';
+	p.ptr[0] = 'Z';
 	\`\`\`
 	\`\`\`
 	#arch: aarch64
@@ -257,7 +257,7 @@ import System
 func raw_touch = (string p) {
 	\`\`\`
 	#arch: c
-	p[0] = 'J';
+	p.ptr[0] = 'J';
 	\`\`\`
 	\`\`\`
 	#arch: aarch64
@@ -284,7 +284,7 @@ import System
 func raw_touch = (string p) {
 	\`\`\`
 	#arch: c
-	p[0] = 'J';
+	p.ptr[0] = 'J';
 	\`\`\`
 	\`\`\`
 	#arch: aarch64
@@ -368,7 +368,7 @@ func raw_print = (string p) {
 func raw_peek = (string p, out int) {
 	\`\`\`
 	#arch: c
-	return p[0];
+	return p.ptr[0];
 	\`\`\`
 	\`\`\`
 	#arch: aarch64
