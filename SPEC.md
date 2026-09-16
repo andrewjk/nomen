@@ -2059,7 +2059,12 @@ view T)` method. In practice a container just delegates to its backing
 pub struct UserList: Viewable {
     var int length = 0
     var Buffer<User> items = Buffer<User>()
-    pub func slice = (self, int start: start >= 0, int end: end >= start, out view User) {
+    pub func slice = (
+        self,
+        int start: start >= 0,
+        int end: end >= start && end <= self.items.cap,
+        out view User,
+    ) {
         return self.items.slice(start, end)
     }
 }
@@ -2067,6 +2072,10 @@ view sub = users.slice(10, 20)   // borrows from `users`
 sub.at(3)        // a User
 sub.length       // 10
 ```
+
+`Buffer.slice` borrows a `view` over its slab, so its `end` constraint is
+`end <= cap` — a wrapper that delegates must carry (or prove) a bound no larger
+than the backing capacity.
 
 A `view` borrows from its source, so the borrow checker enforces two rules:
 

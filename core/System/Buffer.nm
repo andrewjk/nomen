@@ -2,15 +2,18 @@
 // ClassBuffer<T>: no per-element freeing, store_int unconstrained. When T is a
 // class, the monomorphizer rewrites a Buffer<T> field to ClassBuffer<T>.
 //
-// `internal`: its low-level slot primitives are unsafe to drive directly
-// (e.g. `store_T` assumes a fresh slot and leaks on overwrite), so the type is
-// hidden from user code until a sound public surface exists. Containers in this
-// library reach it through `internal` visibility.
+// Public API is the size-aware family (`alloc`/`grow`/`load`/`replace`/
+// `move`/`modify`/`shift`/`slice` plus the readonly `cap`). `replace` is the
+// public write — it reclaims the displaced element, so it is correct on both
+// fresh and occupied slots. `store` (which assumes a fresh slot and leaks on
+// overwrite), `zero`, the fixed-width `*_u32`/`*_int`/`*_float` primitives,
+// and the raw `data` pointer are `internal` and reserved for the System
+// containers.
 
 /**
  * A flat, low-level buffer of value slots of type T — the backing store for arrays and collections
  **/
-internal struct Buffer<T> {
+pub struct Buffer<T> {
 	internal var uint64 data = 0
 	// Publicly readable capacity (`i < self.cap` guards every accessor), but
 	// only Buffer's own methods may grow it — `readonly`.
@@ -20,13 +23,13 @@ internal struct Buffer<T> {
 	// both backends. They run once per container op (never per element), so
 	// the aarch64 inline-method ABI cost that keeps the per-limb load/store
 	// primitives raw (see BigInt.nm) doesn't apply here.
-	func alloc = (ref self, int size, out int: out >= size) {
+	internal func alloc_u32 = (ref self, int size, out int: out >= size) {
 		self.cap = size
 		self.data = calloc(size, 4)
 		return self.cap
 	}
 
-	func grow = (ref self, int needed, out int: out >= needed) {
+	internal func grow_u32 = (ref self, int needed, out int: out >= needed) {
 		if self.cap >= needed {
 			return self.cap
 		}
@@ -41,11 +44,11 @@ internal struct Buffer<T> {
 		return self.cap
 	}
 
-	func zero = (ref self, int len) {
+	internal func zero_u32 = (ref self, int len) {
 		memset(self.data, 0, len * 4)
 	}
 
-	inline func load = (self, int i: i >= 0 && i < self.cap, out uint32) {
+	internal inline func load_u32 = (self, int i: i >= 0 && i < self.cap, out uint32) {
 		```
 		#arch: c
 		return ((unsigned int*)(unsigned long long)self->data)[i];
@@ -60,7 +63,7 @@ internal struct Buffer<T> {
 		```
 	}
 
-	inline func store = (ref self, int i: i >= 0 && i < self.cap, uint32 val) {
+	internal inline func store_u32 = (ref self, int i: i >= 0 && i < self.cap, uint32 val) {
 		```
 		#arch: c
 		((unsigned int*)(unsigned long long)self->data)[i] = val;
@@ -74,7 +77,7 @@ internal struct Buffer<T> {
 		```
 	}
 
-	inline func store_or = (ref self, int i: i >= 0 && i < self.cap, uint32 val) {
+	internal inline func store_or_u32 = (ref self, int i: i >= 0 && i < self.cap, uint32 val) {
 		```
 		#arch: c
 		((unsigned int*)(unsigned long long)self->data)[i] |= val;
@@ -90,13 +93,13 @@ internal struct Buffer<T> {
 		```
 	}
 
-	func alloc_int = (ref self, int size, out int: out >= size) {
+	internal func alloc_int = (ref self, int size, out int: out >= size) {
 		self.cap = size
 		self.data = calloc(size, 8)
 		return self.cap
 	}
 
-	func grow_int = (ref self, int needed, out int: out >= needed) {
+	internal func grow_int = (ref self, int needed, out int: out >= needed) {
 		if self.cap >= needed {
 			return self.cap
 		}
@@ -111,7 +114,7 @@ internal struct Buffer<T> {
 		return self.cap
 	}
 
-	inline func load_int = (self, int i: i >= 0 && i < self.cap, out int) {
+	internal inline func load_int = (self, int i: i >= 0 && i < self.cap, out int) {
 		```
 		#arch: c
 		return ((long*)(unsigned long long)self->data)[i];
@@ -125,7 +128,7 @@ internal struct Buffer<T> {
 		```
 	}
 
-	inline func store_int = (ref self, int i: i >= 0 && i < self.cap, int val) {
+	internal inline func store_int = (ref self, int i: i >= 0 && i < self.cap, int val) {
 		```
 		#arch: c
 		((long*)(unsigned long long)self->data)[i] = val;
@@ -143,7 +146,7 @@ internal struct Buffer<T> {
 	// the ownership-extracting primitive (used by e.g. List.pop) — unlike
 	// load_int (a borrow read), it relinquishes the slot so the buffer no
 	// longer owns the value.
-	inline func move_int = (ref self, int i: i >= 0 && i < self.cap, out int) {
+	internal inline func move_int = (ref self, int i: i >= 0 && i < self.cap, out int) {
 		```
 		#arch: c
 		long *slots = (long*)(unsigned long long)self->data;
@@ -164,7 +167,7 @@ internal struct Buffer<T> {
 	// Store into a slot, freeing the previous value when the buffer holds
 	// owned class pointers (has_class_refs). For non-class buffers this is a
 	// plain store, so it is safe to use anywhere store_int would be.
-	inline func replace_int = (ref self, int i: i >= 0 && i < self.cap, int val) {
+	internal inline func replace_int = (ref self, int i: i >= 0 && i < self.cap, int val) {
 		```
 		#arch: c
 		((long*)(unsigned long long)self->data)[i] = val;
@@ -178,7 +181,7 @@ internal struct Buffer<T> {
 		```
 	}
 
-	inline func zero_int = (ref self, int len) {
+	internal inline func zero_int = (ref self, int len) {
 		memset(self.data, 0, len * 8)
 	}
 
@@ -187,13 +190,13 @@ internal struct Buffer<T> {
 	// correctly. Classes route to ClassBuffer<T> (per-element destroy), so T
 	// reaching here is always a value type (primitive or struct).
 
-	func alloc_T = (ref self, int size, out int: out >= size) {
+	func alloc = (ref self, int size, out int: out >= size) {
 		self.cap = size
 		self.data = calloc(size, T_SIZE)
 		return self.cap
 	}
 
-	func grow_T = (ref self, int needed, out int: out >= needed) {
+	func grow = (ref self, int needed, out int: out >= needed) {
 		if self.cap >= needed {
 			return self.cap
 		}
@@ -212,7 +215,7 @@ internal struct Buffer<T> {
 	// call sites — the load/store pair behind every container `.at`/`set` is
 	// the hottest path in data-heavy code, and the naked-inline path keeps it
 	// to a handful of instructions with no call overhead.
-	inline func load_T = (self, int i: i >= 0 && i < self.cap, out T) {
+	inline func load = (self, int i: i >= 0 && i < self.cap, out T) {
 		```
 		#arch: c
 		return ((T*)(unsigned long long)self->data)[i];
@@ -256,12 +259,14 @@ internal struct Buffer<T> {
 	}
 
 	// Store `val` into slot `i`, which MUST be fresh (calloc'd, or zeroed by
-	// move_T). For an owning T (string, or a struct with string fields) the
+	// move). For an owning T (string, or a struct with string fields) the
 	// specialised body deep-copies the incoming value but does NOT free the
-	// slot's previous occupant — a second `store_T` at an occupied index
-	// leaks it. To overwrite a live slot use replace_T (frees the displaced
+	// slot's previous occupant — a second `store` at an occupied index
+	// leaks it. To overwrite a live slot use replace (frees the displaced
 	// value) — this is the primitive every container's `set` uses.
-	inline func store_T = (ref self, int i: i >= 0 && i < self.cap, T val) {
+	// Internal: assumes a FRESH slot (see the contract comment). The public
+	// write is `replace`, which is correct on fresh and occupied slots alike.
+	internal inline func store = (ref self, int i: i >= 0 && i < self.cap, T val) {
 		```
 		#arch: c
 		((T*)(unsigned long long)self->data)[i] = val;
@@ -307,7 +312,7 @@ internal struct Buffer<T> {
 	// the result is treated as OWNED by the borrow checker — the slot is
 	// relinquished, so the caller is the sole remaining owner. The value
 	// counterpart of ClassBuffer.move_int — used by List.pop for any value T.
-	inline func move_T = (ref self, int i: i >= 0 && i < self.cap, move out T) {
+	inline func move = (ref self, int i: i >= 0 && i < self.cap, move out T) {
 		```
 		#arch: c
 		T* _slots = (T*)(unsigned long long)self->data;
@@ -368,8 +373,8 @@ internal struct Buffer<T> {
 	// (by value) and returns the replacement; the primitive itself handles
 	// ownership — the displaced value is freed, and a returned field that
 	// aliases the slot's own copy (the round-trip case) is kept, not freed or
-	// re-copied. Unlike store_T this never leaks on overwrite, and unlike
-	// replace_T it is safe to derive the new value from the old one. The
+	// re-copied. Unlike store this never leaks on overwrite, and unlike
+	// replace it is safe to derive the new value from the old one. The
 	// returned struct's owning fields must be fresh, null, or identical to
 	// the corresponding input fields (no cross-field aliasing). For owning
 	// elements (string / structs with string fields) the build phase replaces
@@ -377,7 +382,7 @@ internal struct Buffer<T> {
 	// this raw form is correct for trivially-copyable elements only. NOT
 	// `inline`: the body calls through the fn pointer, so splicing the raw
 	// block into a caller would bypass the per-element specializations.
-	func modify_T = (ref self, int i: i >= 0 && i < self.cap, func (T, out T) f) {
+	func modify = (ref self, int i: i >= 0 && i < self.cap, func (T, out T) f) {
 		```
 		#arch: c
 		((T*)(unsigned long long)self->data)[i] = f(((T*)(unsigned long long)self->data)[i]);
@@ -455,9 +460,9 @@ internal struct Buffer<T> {
 	// owning value structs (with string fields), the build phase replaces this
 	// body with a specialised version that calls T_destroy on the old slot
 	// value, then deep-copies (strdup per string field). See
-	// owning_buffer_specialize.ts (both backends). ClassBuffer.replace_T
+	// owning_buffer_specialize.ts (both backends). ClassBuffer.replace
 	// destroys+frees class slots soundly.
-	inline func replace_T = (ref self, int i: i >= 0 && i < self.cap, T val) {
+	inline func replace = (ref self, int i: i >= 0 && i < self.cap, T val) {
 		```
 		#arch: c
 		((T*)(unsigned long long)self->data)[i] = val;
@@ -501,14 +506,14 @@ internal struct Buffer<T> {
 	// Move slot src into slot dst: overwrite dst with src's bytes and zero
 	// src, so exactly ONE slot owns the value afterwards. The
 	// ownership-transferring primitive behind backward-shift deletion
-	// (Map/Set.remove) — unlike store_T, which gives the slot its own deep
+	// (Map/Set.remove) — unlike store, which gives the slot its own deep
 	// copy and leaves the source slot intact, a shift transfers the source's
 	// heap pointers wholesale. For owning elements (string / value structs
 	// with string fields) the build replaces this body with a specialized
 	// version that also reclaims dst's previous value first (see
 	// owning_buffer_specialize.ts); this raw form is correct for
 	// trivially-destructible elements only.
-	inline func shift_T = (ref self, int dst: dst >= 0 && dst < self.cap, int src: src >= 0 && src < self.cap) {
+	inline func shift = (ref self, int dst: dst >= 0 && dst < self.cap, int src: src >= 0 && src < self.cap) {
 		```
 		#arch: c
 		T* _slots = (T*)(unsigned long long)self->data;
@@ -575,7 +580,7 @@ internal struct Buffer<T> {
 	// self's scope and is invalidated if self is reassigned. This is the single
 	// primitive every other slice (Array<T>, List<T>, user containers) builds
 	// on — higher layers just `return self.items.slice(start, end)`.
-	func slice = (self, int start: start >= 0, int end: end >= start, out view T) {
+	func slice = (self, int start: start >= 0, int end: end >= start && end <= self.cap, out view T) {
 		```
 		#arch: c
 		nomen_view _r;
@@ -594,11 +599,12 @@ internal struct Buffer<T> {
 		```
 	}
 
-	inline func zero_T = (ref self, int len) {
+	// Internal: zeroes slots without reclaiming owning elements.
+	internal inline func zero = (ref self, int len) {
 		memset(self.data, 0, len * T_SIZE)
 	}
 
-	inline func store_or_int = (ref self, int i: i >= 0 && i < self.cap, int val) {
+	internal inline func store_or_int = (ref self, int i: i >= 0 && i < self.cap, int val) {
 		```
 		#arch: c
 		((long*)(unsigned long long)self->data)[i] |= val;
@@ -614,13 +620,13 @@ internal struct Buffer<T> {
 		```
 	}
 
-	func alloc_float = (ref self, int size, out int: out >= size) {
+	internal func alloc_float = (ref self, int size, out int: out >= size) {
 		self.cap = size
 		self.data = calloc(size, 8)
 		return self.cap
 	}
 
-	inline func load_float = (self, int i: i >= 0 && i < self.cap, out float) {
+	internal inline func load_float = (self, int i: i >= 0 && i < self.cap, out float) {
 		```
 		#arch: c
 		return ((double*)(unsigned long long)self->data)[i];
@@ -634,7 +640,7 @@ internal struct Buffer<T> {
 		```
 	}
 
-	inline func store_float = (ref self, int i: i >= 0 && i < self.cap, float val) {
+	internal inline func store_float = (ref self, int i: i >= 0 && i < self.cap, float val) {
 		```
 		#arch: c
 		((double*)(unsigned long long)self->data)[i] = val;

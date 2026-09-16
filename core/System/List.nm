@@ -12,23 +12,23 @@ pub struct List<T>: Viewable {
 			if old_cap >= 4 {
 				new_cap = old_cap * 2
 			}
-			self.items.grow_T(new_cap)
+			self.items.grow(new_cap)
 		}
-		self.items.store_T(self.length, value)
+		self.items.store(self.length, value)
 		self.length += 1
 	}
 
 	pub func pop = (ref self, move out T) {
 		if self.length <= 0 {
-			return self.items.move_T(0)
+			return self.items.move(0)
 		}
 		var int idx = self.length - 1
 		self.length = idx
-		return self.items.move_T(idx)
+		return self.items.move(idx)
 	}
 
 	pub inline func at = (self, int i: i >= 0 && i < self.length, out T) {
-		return self.items.load_T(i)
+		return self.items.load(i)
 	}
 
 	// Bounds-checked access: `fallback` when i is outside [0, self.length) —
@@ -58,7 +58,7 @@ pub struct List<T>: Viewable {
 	}
 
 	pub func set = (ref self, int i: i >= 0 && i < self.length, move T value) {
-		self.items.replace_T(i, value)
+		self.items.replace(i, value)
 	}
 
 	// A deep copy: a fresh List<T> with an independent copy of every element.

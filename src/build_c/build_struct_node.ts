@@ -835,7 +835,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 			(owning_enum && emit_owning_buffer_enum_body(func.name, owning_enum, status)) ||
 			(owning_elem && emit_owning_buffer_body(func.name, owning_elem, status)) ||
 			(owning_buffer_is_string_elem(node) && emit_owning_buffer_string_body(func.name, status)) ||
-			(func.name === "modify_T" && emit_trivial_struct_modify_T(node, status));
+			(func.name === "modify" && emit_trivial_struct_modify_T(node, status));
 		if (!specialized) {
 			emit_method_body_from_nir(func, status);
 		}

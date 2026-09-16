@@ -430,7 +430,7 @@ export default function build_return_node(
 				// stay owned.
 				const is_container_borrow_accessor =
 					!fn.owned_return &&
-					(fn.name === "at" || fn.name === "first" || fn.name === "slice" || fn.name === "load_T");
+					(fn.name === "at" || fn.name === "first" || fn.name === "slice" || fn.name === "load");
 				if (is_container_borrow_accessor) {
 					// Only keep the borrow (skip strdup) when building the accessor
 					// method's OWN body — the caller invokes `.at`/`.first`, which

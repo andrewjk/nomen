@@ -39,8 +39,8 @@ const INLINE_BUFFER_ACCESSORS = new Set([
 	"store_float",
 	"load_int",
 	"store_int",
-	"load",
-	"store",
+	"load_u32",
+	"store_u32",
 ]);
 
 export function tree_has_call(node: BaseNode, seen: Set<unknown>): boolean {

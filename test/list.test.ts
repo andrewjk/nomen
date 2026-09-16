@@ -84,7 +84,7 @@ Console.write("\\{list.length}")
 describe("List of value structs", () => {
 	// Regression: List<T> used the 8-byte Buffer `_int` primitives, so a
 	// multi-field value struct read back as garbage / crashed. It now uses the
-	// size-aware `_T` primitives (memcpy-based), backed by the monomorphizer
+	// size-aware primitives (memcpy-based), backed by the monomorphizer
 	// retyping `self`/param/body value nodes and the C backend emitting the
 	// element struct's typedef to the header for by-value returns.
 	const PT = `struct Pt {
@@ -184,8 +184,8 @@ describe("List of owning value structs", () => {
 	// returned from a function, the hoisted temps that owned the strings were
 	// freed at the function's scope exit, leaving the caller reading freed
 	// memory (use-after-free). The fix: the constructor strdup's string args
-	// (so the struct field is always a heap copy), store_T deep-copies string
-	// fields into the slot (independent copy), replace_T destroys the old slot
+	// (so the struct field is always a heap copy), store deep-copies string
+	// fields into the slot (independent copy), replace destroys the old slot
 	// value before overwriting, and #destroy calls T_destroy per element. A
 	// T_destroy is auto-generated for value structs with owning fields; struct
 	// locals read from `.at()`/`.first()` are borrows (not destroyed, since the
@@ -343,13 +343,13 @@ for i of 0 .. xs.length {
 describe("List<string>", () => {
 	// Regression: a `List<string>` compiled but crashed at runtime on the
 	// aarch64 backend (SIGABRT) and on cleanup. The monomorphized
-	// `List<string>.at`/`.slice` bodies call `self.items.load_T(i)`, and
+	// `List<string>.at`/`.slice` bodies call `self.items.load(i)`, and
 	// because the monomorphized body's `self.items` access node carries no
-	// type, `value_is_owned_string` could not resolve `load_T` and fell back
+	// type, `value_is_owned_string` could not resolve `load` and fell back
 	// to the conservative "owned heap string" classification. That marked
 	// `.at`/`.slice` as heap-returning, so every call site freed the returned
 	// `char*` — a borrow of the buffer's slot (or a static literal address) —
-	// crashing on the free. The fix treats `.at`/`.first`/`.slice`/`load_T`
+	// crashing on the free. The fix treats `.at`/`.first`/`.slice`/`load`
 	// (without `owned_return`) as borrows in `value_is_owned_string`, mirroring
 	// the C backend's `is_string_borrow`. `pop` (move out T) stays owned.
 
@@ -407,7 +407,7 @@ Console.write("\\{same}")
 	// is `move out T` (owned_return), so the caller anchors and frees the
 	// result — but the Buffer<string> slot held a shallow copy of the literal
 	// (a `char*` into rodata), so the free aborted. The aarch64 backend now
-	// strdup's the `move_T` result at the `pop` return (mirroring the C
+	// strdup's the `move` result at the `pop` return (mirroring the C
 	// backend), so the caller frees a fresh heap copy. Push/at/set/iterate
 	// (the borrow paths) were always unaffected.
 
@@ -467,7 +467,7 @@ Console.write(x)
 
 	// Regression: a heap-string element (from concatenation) that stays in the
 	// list until it is destroyed must not leak. The slot owns an independent
-	// heap copy (store_T strdup's), freed by #destroy (per-slot free + slab).
+	// heap copy (store strdup's), freed by #destroy (per-slot free + slab).
 	// Previously #destroy freed only the slab, so the heap copy leaked.
 	test("heap concat elements destroyed with the list (no leak)", async () => {
 		const input = `

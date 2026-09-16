@@ -165,7 +165,7 @@ for i of 0 .. list.count {
 	});
 });
 
-describe("LinkedList<struct> (size-aware _T primitives)", () => {
+describe("LinkedList<struct> (size-aware primitives)", () => {
 	test("store and retrieve multi-word struct elements", async () => {
 		const input = `
 struct Point {

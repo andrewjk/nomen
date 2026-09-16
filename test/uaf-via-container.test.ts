@@ -52,7 +52,7 @@ Console.write("\\{x.letter} \\{y.letter}\\n")
 		// ClassBuffer slot — both lists would free the same instance on
 		// destroy (SIGABRT). The compiler rejects this at check time and
 		// points at the borrowed argument. The fix is to use a `move out T`
-		// accessor (.pop / items.move_T) so the source slot is relinquished,
+		// accessor (.pop / items.move) so the source slot is relinquished,
 		// or to restructure to not share the instance across owners.
 		const input = `
 class Animal { var char letter }
@@ -110,8 +110,8 @@ l2.push(l1.at(0))
 		expect(borrow_err).toBeDefined();
 	});
 
-	test("owning extraction via items.move_T is accepted", async () => {
-		// `items.move_T(i)` is now declared `move out T` — the result is
+	test("owning extraction via items.move is accepted", async () => {
+		// `items.move(i)` is now declared `move out T` — the result is
 		// OWNED (the source slot is relinquished), so it can be moved into
 		// a fresh owning container without creating shared ownership. The
 		// borrow checker resolves the call's `owned_return` flag and treats

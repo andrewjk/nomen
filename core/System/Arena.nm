@@ -76,8 +76,8 @@ pub struct Arena<T> {
 			self.generations.grow_int(index + 1)
 			self.generations.store_int(index, 0)
 		}
-		self.values.grow_T(index + 1)
-		self.values.store_T(index, value)
+		self.values.grow(index + 1)
+		self.values.store(index, value)
 		var ArenaRef<T> handle = ArenaRef<T>()
 		handle.index = index
 		handle.generation = self.generations.load_int(index)
@@ -92,7 +92,7 @@ pub struct Arena<T> {
 		if !self.is_valid(handle) {
 			panic("arena: free of a stale handle")
 		}
-		var T discarded = self.values.move_T(handle.index)
+		var T discarded = self.values.move(handle.index)
 		self.generations.store_int(handle.index, handle.generation + 1)
 		self.free_indices.grow_int(self.free_count + 1)
 		self.free_indices.store_int(self.free_count, handle.index)
@@ -124,7 +124,7 @@ pub struct Arena<T> {
 		if !self.is_valid(handle) {
 			panic("arena: get of a stale handle")
 		}
-		return self.values.load_T(handle.index)
+		return self.values.load(handle.index)
 	}
 
 	/**
@@ -134,7 +134,7 @@ pub struct Arena<T> {
 		if !self.is_valid(handle) {
 			return fallback
 		}
-		return self.values.load_T(handle.index)
+		return self.values.load(handle.index)
 	}
 
 	/**
@@ -144,7 +144,7 @@ pub struct Arena<T> {
 		if !self.is_valid(handle) {
 			panic("arena: set through a stale handle")
 		}
-		self.values.replace_T(handle.index, value)
+		self.values.replace(handle.index, value)
 	}
 
 	/**
@@ -161,6 +161,6 @@ pub struct Arena<T> {
 	 * generation-check; callers own the index bookkeeping.
 	 **/
 	pub func get_index = (self, int index: index >= 0 && index < self.count, out T) {
-		return self.values.load_T(index)
+		return self.values.load(index)
 	}
 }

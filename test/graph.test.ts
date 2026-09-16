@@ -219,7 +219,7 @@ Console.write("\\{sum}")
 	});
 });
 
-describe("Graph<struct> (size-aware _T primitives)", () => {
+describe("Graph<struct> (size-aware primitives)", () => {
 	test("store and retrieve multi-word struct node values", async () => {
 		const input = `
 struct Point {

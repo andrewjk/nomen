@@ -72,16 +72,18 @@ describe("array/list slice (runtime, both backends)", () => {
 					self.items.store_int(2, 7)
 					self.items.store_int(3, 8)
 				}
-				pub func slice = (self, int start: start >= 0, int end: end >= start, out view int) {
+				pub func slice = (self, int start: start >= 0, int end: end >= start && end <= self.items.cap, out view int) {
 					return self.items.slice(start, end)
 				}
 			}
 			var Store p = Store()
 			p.fill()
-			var view int v = p.slice(1, 3)
-			Console.write("\\{v.length}")
-			Console.write("\\{v.at(0)}")
-			Console.write("\\{v.at(1)}")`,
+			if 3 <= p.items.cap {
+				var view int v = p.slice(1, 3)
+				Console.write("\\{v.length}")
+				Console.write("\\{v.at(0)}")
+				Console.write("\\{v.at(1)}")
+			}`,
 			"user_slice",
 			"267",
 		);

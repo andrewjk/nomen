@@ -71,10 +71,10 @@ function has_owning_fields(node: StructNode, status: BuildStatus): boolean {
  * pointers).
  */
 export const OWNING_BUFFER_METHODS = new Set([
-	"store_T",
-	"replace_T",
-	"modify_T",
-	"shift_T",
+	"store",
+	"replace",
+	"modify",
+	"shift",
 	"destroy",
 	"#destroy",
 ]);
@@ -137,7 +137,7 @@ export function emit_owning_buffer_enum_body(
 	const E = elem.name;
 	const slots = `(${E}*)(unsigned long long)self->data`;
 
-	if (func_name === "store_T") {
+	if (func_name === "store") {
 		// Fresh-slot deep copy: slot owns its own payload copies. The source
 		// (a by-value arg) is reclaimed by its own scope — a `move` arg is NOT
 		// spliced for enums (see build_function_call_node), so the caller's
@@ -147,7 +147,7 @@ export function emit_owning_buffer_enum_body(
 		return true;
 	}
 
-	if (func_name === "load_T") {
+	if (func_name === "load") {
 		// Owned read: the caller (local / match temp) reclaims the result, so
 		// it must not alias the slot's copy.
 		status.code += `${E}* _slots = ${slots};\n`;
@@ -155,14 +155,14 @@ export function emit_owning_buffer_enum_body(
 		return true;
 	}
 
-	if (func_name === "replace_T") {
+	if (func_name === "replace") {
 		status.code += `${E}* _slots = ${slots};\n`;
 		status.code += `${E}_free_payloads(&_slots[i]);\n`;
 		status.code += `_slots[i] = ${E}_copy(val);\n`;
 		return true;
 	}
 
-	if (func_name === "shift_T") {
+	if (func_name === "shift") {
 		status.code += `${E}* _slots = ${slots};\n`;
 		status.code += `if (dst != src) {\n`;
 		status.code += `${E}_free_payloads(&_slots[dst]);\n`;
@@ -172,7 +172,7 @@ export function emit_owning_buffer_enum_body(
 		return true;
 	}
 
-	if (func_name === "modify_T") {
+	if (func_name === "modify") {
 		// Apply the fn in place: free the displaced payload unless the fn
 		// returned an aliasing pointer (round-trip identity).
 		status.code += `${E}* _slots = ${slots};\n`;
@@ -215,7 +215,7 @@ export function emit_owning_buffer_string_body(func_name: string, status: BuildS
 	if (func_name === "#destroy") func_name = "destroy";
 	if (!OWNING_BUFFER_METHODS.has(func_name)) return false;
 
-	if (func_name === "store_T") {
+	if (func_name === "store") {
 		// store_T(self, i, val): deep-copy the incoming fat string into the
 		// slot so the slot owns an independent heap buffer. The round-trip
 		// guard (val.ptr == old slot ptr) keeps the existing copy instead of
@@ -227,7 +227,7 @@ export function emit_owning_buffer_string_body(func_name: string, status: BuildS
 		return true;
 	}
 
-	if (func_name === "replace_T") {
+	if (func_name === "replace") {
 		// replace_T(self, i, val): free the old slot's heap buffer, then
 		// deep-copy the new value. When val aliases the old slot
 		// (round-trip), keep it.
@@ -237,7 +237,7 @@ export function emit_owning_buffer_string_body(func_name: string, status: BuildS
 		return true;
 	}
 
-	if (func_name === "modify_T") {
+	if (func_name === "modify") {
 		// modify_T(self, i, f): apply the function to the slot in place —
 		// the encoded load→modify→store dance. Free the old slot's heap
 		// buffer and take over the returned one, unless the fn handed the
@@ -249,7 +249,7 @@ export function emit_owning_buffer_string_body(func_name: string, status: BuildS
 		return true;
 	}
 
-	if (func_name === "shift_T") {
+	if (func_name === "shift") {
 		// shift_T(self, dst, src): move slot src into slot dst — free dst's
 		// heap buffer, take over src's {ptr, len} wholesale, zero src.
 		// Exactly one slot owns the string afterwards (Map/Set.remove's
@@ -299,7 +299,7 @@ export function emit_owning_buffer_body(
 	const Tptr = `struct ${elem.name} *`;
 	const Tcast = `(struct ${elem.name} *)`;
 
-	if (func_name === "store_T") {
+	if (func_name === "store") {
 		// store_T(self, i, val): shallow-copy the struct into the slot, then
 		// strdup each string field so the slot owns an independent copy.
 		// `emit_deep_copy_fields`'s round-trip guard (the captured `_old`
@@ -312,7 +312,7 @@ export function emit_owning_buffer_body(
 		return true;
 	}
 
-	if (func_name === "modify_T") {
+	if (func_name === "modify") {
 		// modify_T(self, i, f): apply the function to the slot in place.
 		// Per owning field, free the slot's displaced copy and take over the
 		// fn's returned pointer — unless the fn handed the slot's own copy
@@ -328,7 +328,7 @@ export function emit_owning_buffer_body(
 		return true;
 	}
 
-	if (func_name === "replace_T") {
+	if (func_name === "replace") {
 		// replace_T(self, i, val): destroy the old slot value (it owned
 		// heap memory), then shallow-copy + strdup the new value.
 		status.code += `${Tptr}_slots = ${Tcast}(unsigned long long)self->data;\n`;
@@ -338,7 +338,7 @@ export function emit_owning_buffer_body(
 		return true;
 	}
 
-	if (func_name === "shift_T") {
+	if (func_name === "shift") {
 		// shift_T(self, dst, src): move slot src into slot dst — destroy dst's
 		// old value (it owned heap memory), take over src's bytes wholesale
 		// (no deep copy: the moved struct's owned pointers transfer), and zero

@@ -5,7 +5,7 @@ import check_output from "./check_output";
 import parse_with_imports from "./parse_with_imports";
 
 // Regression tests for the FOLLOWUP.md Map/Set `remove` item: backward-shift
-// deletion moved entries with store_T (which strdups owning elements and
+// deletion moved entries with store (which strdups owning elements and
 // leaves the source slot intact), leaking every displaced allocation.
 
 async function build_and_run(input: string, name: string, expected: string) {

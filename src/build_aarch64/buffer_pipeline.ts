@@ -265,10 +265,10 @@ export function tryHoistBufferAddrs(
 					if (
 						[
 							"load_int",
-							"load",
+							"load_u32",
 							"load_float",
 							"store_int",
-							"store",
+							"store_u32",
 							"store_float",
 							"store_or_int",
 						].includes(fname)

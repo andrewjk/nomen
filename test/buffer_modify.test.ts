@@ -2,40 +2,40 @@ import { expect, test } from "vite-plus/test";
 
 import build_and_check_output from "./build_and_check_output";
 
-// Buffer.modify_T / ClassBuffer.modify_T: the encoded load→modify→store
+// Buffer.modify / ClassBuffer.modify: the encoded load→modify→store
 // round-trip. The primitive applies a `func (T, out T)` to a live slot and
 // handles ownership itself (displaced value freed, round-trip identity kept)
-// — unlike store_T, which assumes a fresh slot and leaks on overwrite.
+// — unlike store, which assumes a fresh slot and leaks on overwrite.
 
-test("Buffer.modify_T int element", async () => {
+test("Buffer.modify int element", async () => {
 	const input = `
 var Buffer<int> b = Buffer<int>()
-b.alloc_T(2)
-b.store_T(0, 1)
+b.alloc(2)
+b.store(0, 1)
 var func (int, out int) add10 = (x, out int) => x + 10
-b.modify_T(0, add10)
-Console.write("\\{b.load_T(0)}")
+b.modify(0, add10)
+Console.write("\\{b.load(0)}")
 `;
 	await build_and_check_output(input, "buffer_modify_int", "11");
 });
 
-test("Buffer.modify_T string element (fresh + round-trip identity)", async () => {
+test("Buffer.modify string element (fresh + round-trip identity)", async () => {
 	const input = `
 var Buffer<string> b = Buffer<string>()
-b.alloc_T(2)
-b.store_T(0, "a")
+b.alloc(2)
+b.store(0, "a")
 var func (string, out string) bang = (s, out string) => s + "!"
-b.modify_T(0, bang)
-Console.write("\\{b.load_T(0)}")
+b.modify(0, bang)
+Console.write("\\{b.load(0)}")
 // round-trip: fn returns the slot's own string — kept, not freed or re-copied
 var func (string, out string) keep = (s, out string) => s
-b.modify_T(0, keep)
-Console.write("\\{b.load_T(0)}")
+b.modify(0, keep)
+Console.write("\\{b.load(0)}")
 `;
 	await build_and_check_output(input, "buffer_modify_string", "a!a!");
 });
 
-test("Buffer.modify_T owning struct element", async () => {
+test("Buffer.modify owning struct element", async () => {
 	const input = `
 struct Named {
 	var string name
@@ -43,21 +43,21 @@ struct Named {
 }
 
 var Buffer<Named> b = Buffer<Named>()
-b.alloc_T(2)
-b.store_T(0, Named("x", 1))
+b.alloc(2)
+b.store(0, Named("x", 1))
 // Rebuilds the struct: 'name' aliases the slot's own copy (round-trip
 // identity — kept), 'hits' is a plain copy. No leak, no double free.
 var func (Named, out Named) touch = (n, out Named) {
 	return Named(n.name, n.hits + 1)
 }
-b.modify_T(0, touch)
-b.modify_T(0, touch)
-Console.write("\\{b.load_T(0).name}:\\{b.load_T(0).hits}")
+b.modify(0, touch)
+b.modify(0, touch)
+Console.write("\\{b.load(0).name}:\\{b.load(0).hits}")
 `;
 	await build_and_check_output(input, "buffer_modify_struct", "x:3");
 });
 
-test("Buffer.modify_T trivial struct element", async () => {
+test("Buffer.modify trivial struct element", async () => {
 	const input = `
 struct Pair {
 	var int a
@@ -65,19 +65,19 @@ struct Pair {
 }
 
 var Buffer<Pair> b = Buffer<Pair>()
-b.alloc_T(2)
-b.store_T(0, Pair(1, 2))
+b.alloc(2)
+b.store(0, Pair(1, 2))
 var func (Pair, out Pair) swap_or_add = (p, out Pair) {
 	return Pair(p.a + 10, p.b)
 }
-b.modify_T(0, swap_or_add)
-var Pair p = b.load_T(0)
+b.modify(0, swap_or_add)
+var Pair p = b.load(0)
 Console.write("\\{p.a}:\\{p.b}")
 `;
 	await build_and_check_output(input, "buffer_modify_trivial_struct", "11:2");
 });
 
-test("ClassBuffer.modify_T class element", async () => {
+test("ClassBuffer.modify class element", async () => {
 	const input = `
 class Counter {
 	var int value
@@ -92,10 +92,10 @@ struct Buffer_driver {
 	func drive = (ref self, move Counter seed, out int) {
 		var ClassBuffer<Counter> cb = ClassBuffer<Counter>()
 		cb.alloc_int(2)
-		cb.store_T(0, move seed)
-		cb.modify_T(0, make_bumped)
-		cb.modify_T(0, make_bumped)
-		Console.write("\\{cb.load_T(0).value}")
+		cb.store(0, move seed)
+		cb.modify(0, make_bumped)
+		cb.modify(0, make_bumped)
+		Console.write("\\{cb.load(0).value}")
 		return 0
 	}
 }
@@ -130,11 +130,11 @@ Console.write("\\{bi.value}")
 });
 
 // Regression: a fresh constructor result passed straight into the container
-// transfers ownership at the store — `store_T`/`replace_T` take `move T`, so
+// transfers ownership at the store — `store`/`replace` take `move T`, so
 // the hoisted instance temp is consumed and its scope-exit destroy+free is
 // suppressed (it used to run alongside the container's per-slot destroy —
 // `Counter_destroy` twice on one pointer, SIGABRT).
-test("ctor result straight into ClassBuffer.store_T", async () => {
+test("ctor result straight into ClassBuffer.store", async () => {
 	const input = `
 class Counter {
 	var int value
@@ -144,9 +144,9 @@ struct Buffer_driver {
 	func drive = (ref self, out int) {
 		var ClassBuffer<Counter> cb = ClassBuffer<Counter>()
 		cb.alloc_int(2)
-		cb.store_T(0, Counter(1))
-		cb.modify_T(0, make_bumped)
-		Console.write("\\{cb.load_T(0).value}")
+		cb.store(0, Counter(1))
+		cb.modify(0, make_bumped)
+		Console.write("\\{cb.load(0).value}")
 		return 0
 	}
 }
@@ -166,7 +166,7 @@ Console.write_line("")
 // A class local loaded from a container aliases the slot (a borrow — the
 // container still owns the element): the local must NOT be destroy-tracked,
 // and storing it back with `move` must not double-free.
-test("ClassBuffer slot borrow kept alive across move_T", async () => {
+test("ClassBuffer slot borrow kept alive across move", async () => {
 	const input = `
 class Counter {
 	var int value
@@ -176,10 +176,10 @@ struct Buffer_driver {
 	func drive = (ref self, move Counter seed, out int) {
 		var ClassBuffer<Counter> cb = ClassBuffer<Counter>()
 		cb.alloc_int(2)
-		cb.store_T(0, move seed)
-		var Counter c = cb.load_T(0)
+		cb.store(0, move seed)
+		var Counter c = cb.load(0)
 		Console.write("\\{c.value}")
-		var Counter taken = cb.move_T(0)
+		var Counter taken = cb.move(0)
 		Console.write("\\{taken.value}")
 		return 0
 	}

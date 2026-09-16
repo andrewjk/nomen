@@ -100,14 +100,14 @@ enum Maybe {
 }
 
 var Buffer<Maybe> b = Buffer<Maybe>()
-b.grow_T(2)
-b.store_T(0, Maybe.some("buf"))
-b.replace_T(1, Maybe.some("rep"))
-match b.load_T(0) {
+b.grow(2)
+b.store(0, Maybe.some("buf"))
+b.replace(1, Maybe.some("rep"))
+match b.load(0) {
   case .some(v) -> Console.write("a:\\{v}")
   case .none -> Console.write("a:none")
 }
-match b.load_T(1) {
+match b.load(1) {
   case .some(v) -> Console.write(" b:\\{v}")
   case .none -> Console.write(" b:none")
 }

@@ -2151,12 +2151,12 @@ function build_access_method(
 		// value in a callee-saved register stale.
 		const resize_methods = new Set([
 			"grow_int",
+			"grow_u32",
 			"grow",
-			"grow_T",
 			"grow_float",
 			"alloc_int",
+			"alloc_u32",
 			"alloc",
-			"alloc_T",
 			"alloc_float",
 		]);
 		if (resize_methods.has(method) && status.buffer_data_cache) {
@@ -2176,16 +2176,17 @@ function build_access_method(
 			if (key) status.buffer_data_cache.delete(key);
 		}
 
-		const buffer_load_methods = new Set(["load_int", "load", "load_float"]);
-		const buffer_store_methods = new Set(["store_int", "store", "store_float", "store_or_int"]);
+		const buffer_load_methods = new Set(["load_int", "load_u32", "load_float"]);
+		const buffer_store_methods = new Set(["store_int", "store_u32", "store_float", "store_or_int"]);
 		const is_buf_load = buffer_load_methods.has(method);
 		const is_buf_store = buffer_store_methods.has(method);
 
 		if (is_buf_load || is_buf_store) {
-			// Element size: load/store = 4 bytes (uint32), load_int/store_int/
-			// load_float/store_float/store_or_int = 8 bytes (long/double).
-			// store_or_int treats data as long* (8-byte stride, see Buffer.nm).
-			const elem_bytes = method === "load" || method === "store" ? 4 : 8;
+			// Element size: load_u32/store_u32 = 4 bytes (uint32),
+			// load_int/store_int/load_float/store_float/store_or_int = 8 bytes
+			// (long/double). store_or_int treats data as long* (8-byte stride,
+			// see Buffer.nm).
+			const elem_bytes = method === "load_u32" || method === "store_u32" ? 4 : 8;
 			const shift = elem_bytes === 8 ? 3 : 2;
 			const is_float = method === "load_float" || method === "store_float";
 
@@ -3281,7 +3282,7 @@ function build_access_method(
 	// monomorphized call's `owned_return`/type annotations are unset (a bare
 	// variable receiver's type isn't substituted after mono). Detect it by the
 	// mangled name (the only owning-string move primitive today).
-	if (method_name === "Buffer_string_move_T") {
+	if (method_name === "Buffer_string_move") {
 		status.last_result_is_heap = true;
 	}
 
@@ -3289,7 +3290,7 @@ function build_access_method(
 	// Channel.receive_string, List<string>.pop): the callee relinquishes an
 	// owned heap buffer to the caller (the checker stamps owned_return), so
 	// the receiving declaration must free it at scope exit. Generalizes the
-	// Buffer_string_move_T name-match above to the annotation-driven form.
+	// Buffer_string_move name-match above to the annotation-driven form.
 	if (
 		access_func.owned_return &&
 		access_func.type?.name === "string" &&

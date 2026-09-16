@@ -297,13 +297,19 @@ var v = str.slice(0, 5)
 pub struct UserList: Viewable {
 	var int length = 0
 	var Buffer<int> items = Buffer<int>()
-	pub func slice = (self, int start: start >= 0, int end: end >= start, out view int) {
+	pub func slice = (
+		self,
+		int start: start >= 0,
+		int end: end >= start && end <= self.items.cap,
+		out view int,
+	) {
 		return self.items.slice(start, end)
 	}
 }
 `;
 		// The struct declares a slice that returns a view borrowing from self —
-		// sound and allowed (the caller re-roots it at the receiver).
+		// sound and allowed (the caller re-roots it at the receiver). The
+		// delegation must carry the backing Buffer's `end <= cap` bound.
 		expect(compile_module(input)).toEqual([]);
 	});
 

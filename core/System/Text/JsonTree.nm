@@ -28,10 +28,10 @@ pub struct JsonTree {
 
 	func alloc_node = (ref self, out int) {
 		var int idx = self.count
-		self.nodes.grow_T(idx + 1)
+		self.nodes.grow(idx + 1)
 		self.count = idx + 1
 		var default = JsonNode()
-		self.nodes.store_T(idx, default)
+		self.nodes.store(idx, default)
 		// store_T deep-copies the owning `text` field (strdup of the shared
 		// empty-string literal) into the slot. JsonTree manages node texts
 		// manually (set_text strdup's into the slab; free_text/release frees
@@ -106,51 +106,51 @@ pub struct JsonTree {
 	}
 
 	func set_kind = (ref self, int idx, int val) {
-		var JsonNode n = self.nodes.load_T(idx)
+		var JsonNode n = self.nodes.load(idx)
 		n.kind = val
-		self.nodes.store_T(idx, n)
+		self.nodes.store(idx, n)
 	}
 
 	func set_child = (ref self, int idx, int val) {
-		var JsonNode n = self.nodes.load_T(idx)
+		var JsonNode n = self.nodes.load(idx)
 		n.child = val
-		self.nodes.store_T(idx, n)
+		self.nodes.store(idx, n)
 	}
 
 	func set_next = (ref self, int idx, int val) {
-		var JsonNode n = self.nodes.load_T(idx)
+		var JsonNode n = self.nodes.load(idx)
 		n.next = val
-		self.nodes.store_T(idx, n)
+		self.nodes.store(idx, n)
 	}
 
 	func set_val = (ref self, int idx, int val) {
-		var JsonNode n = self.nodes.load_T(idx)
+		var JsonNode n = self.nodes.load(idx)
 		n.val = val
-		self.nodes.store_T(idx, n)
+		self.nodes.store(idx, n)
 	}
 
 	func get_kind = (self, int idx, out int) {
-		var JsonNode n = self.nodes.load_T(idx)
+		var JsonNode n = self.nodes.load(idx)
 		return n.kind
 	}
 
 	func get_text = (self, int idx, out string) {
-		var JsonNode n = self.nodes.load_T(idx)
+		var JsonNode n = self.nodes.load(idx)
 		return n.text
 	}
 
 	func get_child = (self, int idx, out int) {
-		var JsonNode n = self.nodes.load_T(idx)
+		var JsonNode n = self.nodes.load(idx)
 		return n.child
 	}
 
 	func get_next = (self, int idx, out int) {
-		var JsonNode n = self.nodes.load_T(idx)
+		var JsonNode n = self.nodes.load(idx)
 		return n.next
 	}
 
 	func get_val = (self, int idx, out int) {
-		var JsonNode n = self.nodes.load_T(idx)
+		var JsonNode n = self.nodes.load(idx)
 		return n.val
 	}
 }

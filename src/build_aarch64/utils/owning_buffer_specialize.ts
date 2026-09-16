@@ -230,15 +230,15 @@ export function emit_owning_buffer_inline_aarch64(
 ): boolean {
 	const elem = owning_buffer_element_aarch64(struct_node, status);
 	if (elem) {
-		if (func_name === "store_T") {
+		if (func_name === "store") {
 			emit_owning_store_T(elem, status);
 			return true;
 		}
-		if (func_name === "replace_T") {
+		if (func_name === "replace") {
 			emit_owning_replace_T(elem, status);
 			return true;
 		}
-		if (func_name === "shift_T") {
+		if (func_name === "shift") {
 			emit_owning_shift_T(elem, status, "x0");
 			return true;
 		}
@@ -246,19 +246,19 @@ export function emit_owning_buffer_inline_aarch64(
 	}
 	const enum_elem = owning_buffer_enum_element_aarch64(struct_node, status);
 	if (enum_elem) {
-		if (func_name === "store_T") {
+		if (func_name === "store") {
 			emit_enum_store_T(enum_elem, status, "x0");
 			return true;
 		}
-		if (func_name === "replace_T") {
+		if (func_name === "replace") {
 			emit_enum_replace_T(enum_elem, status, "x0");
 			return true;
 		}
-		if (func_name === "load_T") {
+		if (func_name === "load") {
 			emit_enum_load_T(enum_elem, status, "x0");
 			return true;
 		}
-		if (func_name === "shift_T") {
+		if (func_name === "shift") {
 			emit_enum_shift_T(enum_elem, status, "x0");
 			return true;
 		}
@@ -267,19 +267,19 @@ export function emit_owning_buffer_inline_aarch64(
 		return false;
 	}
 	if (owning_buffer_is_string_elem_aarch64(struct_node)) {
-		if (func_name === "store_T") {
+		if (func_name === "store") {
 			emit_string_store_T(status, "x0");
 			return true;
 		}
-		if (func_name === "replace_T") {
+		if (func_name === "replace") {
 			emit_string_replace_T(status, "x0");
 			return true;
 		}
-		if (func_name === "shift_T") {
+		if (func_name === "shift") {
 			emit_string_shift_T(status, "x0");
 			return true;
 		}
-		if (func_name === "load_T" || func_name === "move_T") {
+		if (func_name === "load" || func_name === "move") {
 			// Fat-string elements return as the (ptr, len) register PAIR —
 			// not the x8 sret copy the T-generic raw body would emit for a
 			// 16-byte element. move_T additionally zeroes the slot pair.
@@ -287,7 +287,7 @@ export function emit_owning_buffer_inline_aarch64(
 			status.code += `ldr x20, [x0, #8]\n`; // data base
 			status.code += `ldr x21, [x0, #0]\n`; // cap (bounds already checked)
 			status.code += `add x20, x20, x1, lsl #4\n`; // &slot[i]
-			if (func_name === "load_T") {
+			if (func_name === "load") {
 				status.code += `ldp x0, x1, [x20]\n`;
 			} else {
 				status.code += `ldp x0, x1, [x20]\n`;
@@ -315,10 +315,10 @@ export function emit_owning_buffer_standalone_aarch64(
 	const elem = owning_buffer_element_aarch64(node, status);
 	if (elem) {
 		if (
-			func_name !== "store_T" &&
-			func_name !== "replace_T" &&
-			func_name !== "shift_T" &&
-			func_name !== "modify_T"
+			func_name !== "store" &&
+			func_name !== "replace" &&
+			func_name !== "shift" &&
+			func_name !== "modify"
 		) {
 			return false;
 		}
@@ -327,19 +327,19 @@ export function emit_owning_buffer_standalone_aarch64(
 	}
 	const enum_elem = owning_buffer_enum_element_aarch64(node, status);
 	if (enum_elem) {
-		if (func_name === "store_T") {
+		if (func_name === "store") {
 			emit_enum_store_T(enum_elem, status, "x19");
 			return true;
 		}
-		if (func_name === "replace_T") {
+		if (func_name === "replace") {
 			emit_enum_replace_T(enum_elem, status, "x19");
 			return true;
 		}
-		if (func_name === "load_T") {
+		if (func_name === "load") {
 			emit_enum_load_T(enum_elem, status, "x19");
 			return true;
 		}
-		if (func_name === "shift_T") {
+		if (func_name === "shift") {
 			emit_enum_shift_T(enum_elem, status, "x19");
 			return true;
 		}
@@ -347,28 +347,28 @@ export function emit_owning_buffer_standalone_aarch64(
 		return false;
 	}
 	if (owning_buffer_is_string_elem_aarch64(node)) {
-		if (func_name === "store_T") {
+		if (func_name === "store") {
 			emit_string_store_T(status, "x19");
 			return true;
 		}
-		if (func_name === "replace_T") {
+		if (func_name === "replace") {
 			emit_string_replace_T(status, "x19");
 			return true;
 		}
-		if (func_name === "shift_T") {
+		if (func_name === "shift") {
 			emit_string_shift_T(status, "x19");
 			return true;
 		}
-		if (func_name === "modify_T") {
+		if (func_name === "modify") {
 			emit_string_modify_T(status);
 			return true;
 		}
-		if (func_name === "load_T" || func_name === "move_T") {
+		if (func_name === "load" || func_name === "move") {
 			// Pair-returning loads (see the inline variant above).
 			status.code += `stp x20, x21, [sp, #-16]!\n`;
 			status.code += `ldr x20, [x19, #8]\n`; // data base
 			status.code += `add x20, x20, x1, lsl #4\n`; // &slot[i]
-			if (func_name === "load_T") {
+			if (func_name === "load") {
 				status.code += `ldp x0, x1, [x20]\n`;
 			} else {
 				status.code += `ldp x0, x1, [x20]\n`;
@@ -385,12 +385,12 @@ function emit_owning_standalone_struct(elem: StructNode, func_name: string, stat
 	const T_SIZE = get_struct_size(elem.name, status);
 	const string_fields = collect_string_fields(elem, status);
 
-	if (func_name === "shift_T") {
+	if (func_name === "shift") {
 		emit_owning_shift_T(elem, status, "x19");
 		return true;
 	}
 
-	if (func_name === "modify_T") {
+	if (func_name === "modify") {
 		emit_owning_modify_T(elem, status, T_SIZE, string_fields);
 		return true;
 	}
@@ -407,7 +407,7 @@ function emit_owning_standalone_struct(elem: StructNode, func_name: string, stat
 	// replace_T destroys the OLD slot value (its documented overwrite
 	// semantic). store_T does NOT — the round-trip guard below keeps the
 	// slot's own copy instead of orphaning it.
-	if (func_name === "replace_T") {
+	if (func_name === "replace") {
 		status.code += `mov x0, x20\n`;
 		status.code += `bl ${elem.name}_destroy\n`;
 	}
@@ -415,7 +415,7 @@ function emit_owning_standalone_struct(elem: StructNode, func_name: string, stat
 	// store_T: save each string field's OLD slot pointer (before memcpy) so
 	// the strdup can detect a load-modify-store round-trip (src aliases the
 	// slot's own copy) and keep it instead of orphaning it.
-	if (func_name === "store_T" && string_fields.length) {
+	if (func_name === "store" && string_fields.length) {
 		const tmp = Math.ceil((string_fields.length * 8) / 16) * 16;
 		status.code += `sub sp, sp, #${tmp}\n`;
 		string_fields.forEach((f, i) => {
@@ -430,7 +430,7 @@ function emit_owning_standalone_struct(elem: StructNode, func_name: string, stat
 	status.code += `mov x2, x22\n`;
 	status.code += `bl _memcpy\n`;
 
-	if (func_name === "store_T") {
+	if (func_name === "store") {
 		// strdup each string field, skipping NULL source fields and
 		// round-trips (source pointer identical to the slot's pre-copy pointer).
 		for (const [i, { offset: foff }] of string_fields.entries()) {

@@ -6,7 +6,7 @@ import parse_with_imports from "./parse_with_imports";
 // Codegen shape tests for the PERF.md Part 2 fixes, on the aarch64 backend:
 //  - the monomorphized element-width dispatch (`cmp xN, #8 / b.gt …` chains
 //    against a constant `mov xN, #T_SIZE`) is folded at substitution time,
-//  - `Buffer.load_T` / `Buffer.store_T` are `inline` (raw-only bodies take
+//  - `Buffer.load` / `Buffer.store` are `inline` (raw-only bodies take
 //    the naked-inline path, so no call frames in the accessor chain),
 //  - `Map`/`Set` bucket indexing uses a power-of-two mask, not sdiv/msub.
 
@@ -63,7 +63,7 @@ Console.write("\\{last_y}\\n")
 });
 
 describe("inlined buffer accessors", () => {
-	test("load_T and store_T are naked-inlined (no calls remain)", () => {
+	test("load and store are naked-inlined (no calls remain)", () => {
 		const code = build_aarch64(`
 var List<int> list = List<int>()
 list.push(7)
@@ -76,8 +76,8 @@ while j < list.length {
 }
 Console.write("\\{v}\\n")
 `);
-		expect(code).not.toContain("bl Buffer_int_load_T\n");
-		expect(code).not.toContain("bl Buffer_int_store_T\n");
+		expect(code).not.toContain("bl Buffer_int_load\n");
+		expect(code).not.toContain("bl Buffer_int_store\n");
 	});
 });
 
@@ -122,7 +122,7 @@ describe("value-struct list elements are flat storage (PERF.md Part 5)", () => {
 	// follow-up called for — value-struct `List<T>` element support — makes
 	// the natural encoding the fast one: elements live in a slab sized in
 	// multiples of T_SIZE, grown by amortized realloc, stored/loaded by the
-	// naked-inlined `_T` primitives, and freed once at scope exit.
+	// naked-inlined size-aware primitives, and freed once at scope exit.
 	const IDIOM = `
 struct Op {
 	var int kind = 0
@@ -148,12 +148,12 @@ sink += ops.length
 	test("aarch64: push is slab-grow + inline memcpy, no per-element malloc/free", () => {
 		const code = build_aarch64(IDIOM);
 		const push = asm_function_body(code, "List_Op_push:");
-		// The only allocation is amortized slab growth (grow_T reallocs), and
+		// The only allocation is amortized slab growth (grow reallocs), and
 		// the element store is the naked-inlined memcpy path.
 		expect(push).not.toContain("bl _malloc");
 		expect(push).not.toContain("bl _calloc");
 		expect(push).not.toContain("bl _free");
-		expect(push).toContain("bl Buffer_Op_grow_T");
+		expect(push).toContain("bl Buffer_Op_grow");
 		expect(push).toContain("bl _memcpy");
 		// The construct/mutate/push loop in main must not allocate either.
 		const main = asm_function_body(code, "_main:");
@@ -173,7 +173,7 @@ sink += ops.length
 		const push = code.slice(push_start, code.indexOf("List_Op_pop", push_start));
 		expect(push).not.toContain("malloc(");
 		expect(push).not.toContain("free(");
-		expect(push).toContain("Buffer_Op_grow_T(");
+		expect(push).toContain("Buffer_Op_grow(");
 		const main_start = code.indexOf("int main()");
 		expect(main_start).toBeGreaterThanOrEqual(0);
 		// main's closing brace is the first `}` line after the Auto-free

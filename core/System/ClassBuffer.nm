@@ -8,27 +8,28 @@
  * A flat buffer of owned class pointers of type T — the backing store for collections of classes
  **/
 pub struct ClassBuffer<T> {
-	var uint64 data = 0
-	var cap = 0
+	internal var uint64 data = 0
+	// Publicly readable; grown only by ClassBuffer's own methods (`readonly`).
+	readonly cap = 0
 
-	func alloc_int = (ref self, int size, out int: out >= size) {
+	internal func alloc_int = (ref self, int size, out int: out >= size) {
 		self.cap = size
 		self.data = calloc(size, 8)
 		return self.cap
 	}
 
-	// Semantic parity with Buffer<T>.alloc_T: generic code (e.g. Map#init's
-	// `self.values.alloc_T(N)`) forwards to either Buffer — where alloc_T is
+	// Semantic parity with Buffer<T>.alloc: generic code (e.g. Map#init's
+	// `self.values.alloc(N)`) forwards to either Buffer — where alloc is
 	// T_SIZE-aware (string slots are 16 bytes) — or this ClassBuffer, whose
 	// slots are always one pointer wide. The compiler routes value-struct
 	// element types to Buffer and class/trait elements to ClassBuffer
 	// (monomorphize's field rewrite), so a call arriving HERE is always
 	// pointer-sized: delegate to alloc_int.
-	func alloc_T = (ref self, int size, out int: out >= size) {
+	func alloc = (ref self, int size, out int: out >= size) {
 		return self.alloc_int(size)
 	}
 
-	func grow_int = (ref self, int needed, out int: out >= needed) {
+	internal func grow_int = (ref self, int needed, out int: out >= needed) {
 		if self.cap >= needed {
 			return self.cap
 		}
@@ -43,7 +44,7 @@ pub struct ClassBuffer<T> {
 		return self.cap
 	}
 
-	inline func load_int = (self, int i: i >= 0 && i < self.cap, out int) {
+	internal inline func load_int = (self, int i: i >= 0 && i < self.cap, out int) {
 		```
 		#arch: c
 		return ((long*)(unsigned long long)self->data)[i];
@@ -57,14 +58,14 @@ pub struct ClassBuffer<T> {
 		```
 	}
 
-	// T_SIZE-aware aliases of the _int primitives. ClassBuffer only ever holds
-	// 8-byte class pointers (T_SIZE is 8), so these are behaviorally identical
-	// to their _int counterparts — they exist so List<T> can call a single
-	// uniform `_T` API whether T is a value struct (Buffer) or a class
-	// (ClassBuffer, after the Buffer<T> field is rewritten). Bodies use 8-byte
-	// slots, matching _int.
+	// Generic (T-typed) counterparts of the _int primitives. ClassBuffer only
+	// ever holds 8-byte class pointers (T_SIZE is 8), so these are
+	// behaviorally identical to their _int counterparts — they exist so
+	// List<T> can call a single uniform API whether T is a value struct
+	// (Buffer) or a class (ClassBuffer, after the Buffer<T> field is
+	// rewritten). Bodies use 8-byte slots, matching _int.
 
-	func grow_T = (ref self, int needed, out int: out >= needed) {
+	func grow = (ref self, int needed, out int: out >= needed) {
 		if self.cap >= needed {
 			return self.cap
 		}
@@ -79,7 +80,7 @@ pub struct ClassBuffer<T> {
 		return self.cap
 	}
 
-	inline func load_T = (self, int i: i >= 0 && i < self.cap, out T) {
+	inline func load = (self, int i: i >= 0 && i < self.cap, out T) {
 		```
 		#arch: c
 		return (void*)((long*)(unsigned long long)self->data)[i];
@@ -94,15 +95,15 @@ pub struct ClassBuffer<T> {
 	}
 
 	// Store the owned class pointer `val` into slot `i`, which MUST be fresh
-	// (calloc'd, or zeroed by move_T/move_int). Takes OWNERSHIP of `val`
+	// (calloc'd, or zeroed by move/move_int). Takes OWNERSHIP of `val`
 	// (`move`): the slot's #destroy reclaims the instance, so the caller must
 	// not free its copy — a fresh constructor result transfers here directly,
 	// and a local must be moved (its own cleanup is suppressed at the call
 	// site). This is a plain pointer store — it does NOT destroy/free the
-	// slot's previous occupant, so a second `store_T` at an occupied index
-	// leaks that instance. Use replace_T (or replace_int) to overwrite a live
+	// slot's previous occupant, so a second `store` at an occupied index
+	// leaks that instance. Use replace (or replace_int) to overwrite a live
 	// slot.
-	inline func store_T = (ref self, int i: i >= 0 && i < self.cap, move T val: val != 0) {
+	internal inline func store = (ref self, int i: i >= 0 && i < self.cap, move T val: val != 0) {
 		```
 		#arch: c
 		((long*)(unsigned long long)self->data)[i] = (long)val;
@@ -120,11 +121,11 @@ pub struct ClassBuffer<T> {
 	// buffer no longer references it. Declared `move out T` so the borrow
 	// checker treats the result as OWNED — the slot is relinquished, so the
 	// caller is the sole remaining owner. This is the owning-extract primitive
-	// (parallel to List.pop); use it (not load_T) when transferring ownership
+	// (parallel to List.pop); use it (not load) when transferring ownership
 	// out of a ClassBuffer slot, or moving a value into a fresh owning
-	// container — load_T returns a BORROW (the slot is unchanged) and storing
+	// container — load returns a BORROW (the slot is unchanged) and storing
 	// it elsewhere would create shared ownership (double-free at destroy).
-	inline func move_T = (ref self, int i: i >= 0 && i < self.cap, move out T) {
+	inline func move = (ref self, int i: i >= 0 && i < self.cap, move out T) {
 		```
 		#arch: c
 		long *slots = (long*)(unsigned long long)self->data;
@@ -143,13 +144,13 @@ pub struct ClassBuffer<T> {
 	}
 
 	// Apply `f` to slot `i` in place — the owning-counterpart of Buffer's
-	// modify_T for class elements. `f` receives the current instance pointer
+	// modify for class elements. `f` receives the current instance pointer
 	// as a borrow and returns the replacement instance (fresh, or the same
 	// pointer); the primitive frees the displaced instance (destroy + free)
 	// unless `f` returned it. Storing the returned instance raw is sound:
 	// the slot takes sole ownership and `f`'s return is not retained
 	// elsewhere. NOT `inline`: the body calls through the fn pointer.
-	func modify_T = (ref self, int i: i >= 0 && i < self.cap, func (T, out T) f) {
+	func modify = (ref self, int i: i >= 0 && i < self.cap, func (T, out T) f) {
 		```
 		#arch: c
 		long *slots = (long*)(unsigned long long)self->data;
@@ -187,7 +188,7 @@ pub struct ClassBuffer<T> {
 		```
 	}
 
-	inline func store_int = (ref self, int i: i >= 0 && i < self.cap, int val: val != 0) {
+	internal inline func store_int = (ref self, int i: i >= 0 && i < self.cap, int val: val != 0) {
 		```
 		#arch: c
 		((long*)(unsigned long long)self->data)[i] = val;
@@ -201,7 +202,7 @@ pub struct ClassBuffer<T> {
 		```
 	}
 
-	inline func move_int = (ref self, int i: i >= 0 && i < self.cap, out int) {
+	internal inline func move_int = (ref self, int i: i >= 0 && i < self.cap, out int) {
 		```
 		#arch: c
 		long *slots = (long*)(unsigned long long)self->data;
@@ -221,7 +222,7 @@ pub struct ClassBuffer<T> {
 
 	// Store into a slot, freeing the previous value (it is an owned class
 	// pointer): run its destroy then free it before overwriting.
-	func replace_int = (ref self, int i: i >= 0 && i < self.cap, int val: val != 0) {
+	internal func replace_int = (ref self, int i: i >= 0 && i < self.cap, int val: val != 0) {
 		```
 		#arch: c
 		long *slots = (long*)(unsigned long long)self->data;
@@ -253,11 +254,11 @@ pub struct ClassBuffer<T> {
 	}
 
 	// T-typed alias of replace_int: free the outgoing class pointer (destroy +
-	// free) then store the new one. Used by List.set so the uniform `_T` API
+	// free) then store the new one. Used by List.set so the uniform API
 	// preserves ownership for class elements.
 	// Overwrite a live slot: destroy + free the displaced instance, then take
-	// OWNERSHIP of `val` (`move`) — same transfer rule as store_T.
-	func replace_T = (ref self, int i: i >= 0 && i < self.cap, move T val: val != 0) {
+	// OWNERSHIP of `val` (`move`) — same transfer rule as store.
+	func replace = (ref self, int i: i >= 0 && i < self.cap, move T val: val != 0) {
 		```
 		#arch: c
 		long *slots = (long*)(unsigned long long)self->data;
@@ -290,10 +291,10 @@ pub struct ClassBuffer<T> {
 
 	// Move slot src into slot dst: reclaim dst's previous instance (destroy +
 	// free), take over src's pointer, and zero src — exactly one slot owns the
-	// instance afterwards. The class-buffer counterpart of Buffer.shift_T,
+	// instance afterwards. The class-buffer counterpart of Buffer.shift,
 	// used by Map/Set.remove's backward-shift so shifting entries neither
 	// duplicates nor orphans owned instances.
-	func shift_T = (ref self, int dst: dst >= 0 && dst < self.cap, int src: src >= 0 && src < self.cap) {
+	func shift = (ref self, int dst: dst >= 0 && dst < self.cap, int src: src >= 0 && src < self.cap) {
 		```
 		#arch: c
 		long *slots = (long*)(unsigned long long)self->data;
@@ -337,7 +338,7 @@ pub struct ClassBuffer<T> {
 	// pointers, returned as a `view T` (T is a class, so each element is an
 	// 8-byte pointer). Borrows from self — invalidated on reassignment. Mirrors
 	// Buffer.slice; ClassBuffer stores 8-byte slots, so the element width is 8.
-	func slice = (self, int start: start >= 0, int end: end >= start, out view T) {
+	func slice = (self, int start: start >= 0, int end: end >= start && end <= self.cap, out view T) {
 		```
 		#arch: c
 		nomen_view _r;

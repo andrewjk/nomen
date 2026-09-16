@@ -347,7 +347,7 @@ export function is_owned_heap_temp(
 		// element slot directly, and the buffer still owns it.
 		const is_borrow =
 			check_node.node_type === "access_func" &&
-			(raw_name === "at" || raw_name === "first" || raw_name === "load_T") &&
+			(raw_name === "at" || raw_name === "first" || raw_name === "load") &&
 			!(check_node as unknown as { owned_return?: boolean }).owned_return;
 		return !is_borrow;
 	}

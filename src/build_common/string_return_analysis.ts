@@ -30,7 +30,7 @@ const EMPTY_SET: Set<string> = new Set();
  * `move_T`) relinquishes the slot and is NOT in this family.
  */
 export function is_container_borrow_accessor_name(name: string): boolean {
-	return name === "at" || name === "first" || name === "slice" || name === "load_T";
+	return name === "at" || name === "first" || name === "slice" || name === "load";
 }
 
 /**

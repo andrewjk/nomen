@@ -308,46 +308,20 @@ reachable by driving `Buffer`/`ClassBuffer` directly. Remediation shipped
   concept). With `modify_T` + the contract comments, the safe path exists;
   (a)+(c-lite) is the accepted posture for now.
 
-### Resolved (2026-09-16): `internal` visibility + `internal struct Buffer`
-
-A new `internal` visibility modifier landed — visible only within the
-declaring library/module (library-side of the appended System source), so
-sibling System files can still reach it while user code cannot. `Buffer<T>`
-is now `internal` (see `core/System/Buffer.nm`), closing the "drive the raw
-primitives from user code" hole. Tests/benchmarks that intentionally exercise
-Buffer internals opt in via `parse(..., { allow_internal: true })` (mirrors
-`allow_user_raw`); real user builds never set it. Negative coverage lives in
-`test/internal_visibility.test.ts`.
-
-**Follow-up landed (2026-09-16): `readonly` fields.** A new `readonly` field
-modifier gives "read anywhere (per visibility), assign only inside the
-declaring struct/class and its `extend`s". `Buffer.cap` is now `readonly` and
-`Buffer.data` is `internal`, closing the "forge the bounds precondition via a
-writable `cap` / reach the raw slab" holes without a getter method. `const`
-fields are also now actually enforced (previously `arr.length = 99` compiled).
-Coverage: `test/readonly_field.test.ts`; spec section "Readonly Fields". Still
-open before `Buffer` can be re-exposed: the raw `store_*`/`alloc`/`_int`/
-`_float` family should become `internal` (leaving the size-aware `_T` family
-public) and `slice` should bounds-check `end`.
-
-**Residual holes (new follow-ups):**
+### Residual holes
 
 1. **Type-name references are not visibility-checked.** `resolve_declared_type`
    / `check_type_exists` never consult `visibility`, so user code can still
-   _name_ `Buffer<int>` as a type (parameter, field, `var` without a
-   constructor) even though every way to obtain or use an instance is blocked.
-   Same is true of `private`/`internal` structs generally (only field access
-   and constructor/method calls are gated). Closing it means threading the
-   declaring node's `is_library` into `check_type_exists` — but library field
-   types are resolved in an upfront pass whose stack lacks the enclosing
-   function's library flag, so that pass needs a declaring-scope signal first.
-2. **`List.items` (and sibling backing fields) are still `pub` with type
-   `Buffer<T>`.** A user can read `list.items` and hold an opaque Buffer even
-   though they cannot call any of its methods. Marking the backing fields
-   `internal` (or `private`) would close this once (1) lets internal types be
-   named only in library scope.
-3. **SPEC.md's "User-defined sliceable containers" example backs a user
-   container with `Buffer`.** That is no longer legal user code. Replace it
-   with a non-Buffer storage story (or an `Array<T>`), and update
-   `test/spec/expressions.test.ts` accordingly — its snippet currently compiles
-   only because the spec harness runs with `allow_internal`.
+   _name_ an `internal`/`private` struct as a type (parameter, field, `var`
+   without a constructor) even when every constructor/method/field is gated.
+   Closing it means threading the declaring node's `is_library` into
+   `check_type_exists` — but library field types are resolved in an upfront
+   pass whose stack lacks the enclosing function's library flag, so that pass
+   needs a declaring-scope signal first.
+2. **`store` remains a footgun inside the library.** It is `internal` now, but
+   any System container that calls `store` on an occupied owning slot still
+   leaks. The containers are audited to store only on fresh slots; a
+   `store`-vs-`replace` mistake in new library code would not be caught.
+3. **`alloc` on a populated owning buffer leaks.** `alloc` reallocates a fresh
+   slab without reclaiming the old slots. It is only used to initialize empty
+   buffers; a guard (or folding into `grow`) would make it misuse-proof.

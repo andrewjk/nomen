@@ -7,7 +7,7 @@ import { parse_raw } from "./parse_with_imports";
 // for class/trait instantiations (the pair tuple can't satisfy the `move TV`
 // chain across the variadic boundary), so construction is `Map()` + `set()`.
 // Storage routes to ClassBuffer<TV>; the rehash body's `swap Buffer<TV>()`
-// and Map's alloc_T forwards route names to ClassBuffer.
+// and Map's alloc forwards route names to ClassBuffer.
 
 describe("Map with reference-typed values", () => {
 	test("variadic pairs constructor with value-struct values", async () => {

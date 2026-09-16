@@ -47,15 +47,15 @@ Nomen has no unsafe pointer casts or address-taken indexing; these blocks
 cast a `uint64` handle (or a struct pointer) to a `T*`, or need inline
 element storage.
 
-| File                   | Functions                                                                                                                         | Why raw                                                                                                                                                                                           |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Buffer.nm` (28 funcs) | alloc/grow/zero/load/store/store_or/move/replace/modify/shift + `_int`/`_T`/`_float` variants, slice, #destroy                    | `data` is a `uint64` slab handle, cast to `int*`/`T*`/`double*` per access; calloc/realloc/memset/memcpy; `modify_T` is the encoded load→modify→store round-trip (specialized per owning element) |
-| `ClassBuffer.nm` (14)  | alloc_int/grow_int/load_int/grow_T/load_T/store_T/move_T/modify_T/store_int/move_int/replace_int/replace_T/shift_T/slice/#destroy | Same pattern plus per-element destroy; monomorphizer rewrites `Buffer<T>` fields to this for classes; `modify_T` frees the displaced instance (identity-guarded)                                  |
-| `Array.nm` (9)         | #init, at, first, set, at_end, slice, with, add, mul                                                                              | Elements stored inline after the header (`(T*)((char*)self + sizeof(*self))`); `T_NEEDS_STRDUP` string-slot specialization                                                                        |
-| `BigInt.nm` (7)        | get, set, data_ptr, get_at, set_at, div128, mul_wide_hi                                                                           | uint64-as-pointer limb access; `div128` needs `unsigned __int128` 128/64 divide (aarch64: `___udivti3`); `mul_wide_hi` needs the high half of a 64×64 product (`umulh`) — no 128-bit ops in Nomen |
-| `StringBuilder.nm` (5) | ensure, append_char, append_string, to_string, #destroy                                                                           | uint64 byte-buffer handle + realloc/memcpy; `to_string` transfers ownership of the raw buffer                                                                                                     |
-| `JsonTree.nm` (3)      | alloc_node, free_text, set_text                                                                                                   | strdup directly into the node slab (file header: cannot go through load_T/store_T without double-free)                                                                                            |
-| `String.nm` (3)        | at, set, slice                                                                                                                    | Pointer arithmetic on the fat-string ptr (`self + start`, `(*self)[index]`) — this _is_ the primitive everything else indexes through                                                             |
+| File                   | Functions                                                                                                                                           | Why raw                                                                                                                                                                                           |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Buffer.nm` (28 funcs) | alloc/grow/zero/load/store/move/replace/modify/shift/slice (size-aware, public) + internal `*_u32`/`*_int`/`*_float` fixed-width variants, #destroy | `data` is a `uint64` slab handle, cast to `int*`/`T*`/`double*` per access; calloc/realloc/memset/memcpy; `modify` is the encoded load→modify→store round-trip (specialized per owning element)   |
+| `ClassBuffer.nm` (14)  | alloc/grow/load/store/move/replace/modify/shift/slice (public) + internal alloc_int/grow_int/load_int/store_int/move_int/replace_int, #destroy      | Same pattern plus per-element destroy; monomorphizer rewrites `Buffer<T>` fields to this for classes; `modify` frees the displaced instance (identity-guarded)                                    |
+| `Array.nm` (9)         | #init, at, first, set, at_end, slice, with, add, mul                                                                                                | Elements stored inline after the header (`(T*)((char*)self + sizeof(*self))`); `T_NEEDS_STRDUP` string-slot specialization                                                                        |
+| `BigInt.nm` (7)        | get, set, data_ptr, get_at, set_at, div128, mul_wide_hi                                                                                             | uint64-as-pointer limb access; `div128` needs `unsigned __int128` 128/64 divide (aarch64: `___udivti3`); `mul_wide_hi` needs the high half of a 64×64 product (`umulh`) — no 128-bit ops in Nomen |
+| `StringBuilder.nm` (5) | ensure, append_char, append_string, to_string, #destroy                                                                                             | uint64 byte-buffer handle + realloc/memcpy; `to_string` transfers ownership of the raw buffer                                                                                                     |
+| `JsonTree.nm` (3)      | alloc_node, free_text, set_text                                                                                                                     | strdup directly into the node slab (file header: cannot go through load/store without double-free)                                                                                                |
+| `String.nm` (3)        | at, set, slice                                                                                                                                      | Pointer arithmetic on the fat-string ptr (`self + start`, `(*self)[index]`) — this _is_ the primitive everything else indexes through                                                             |
 
 BigInt is the clearest example of the intended split: every algorithm
 (add/sub/mul/Karatsuba/Knuth-D/normalization) is plain Nomen; only the six
@@ -200,8 +200,9 @@ ptr char`, struct-pointer→`uint64`, and the generic constants `T_SIZE` /
   block — the `unsafe func` form exists but the library doesn't use it:
   unsafe-ness is an implementation detail callers shouldn't see, and the
   block form keeps the exposed signature identical to any other method.
-  - `Buffer.nm`: `alloc`, `grow`, `zero`, `alloc_int`, `grow_int`,
-    `zero_int`, `alloc_T`, `grow_T`, `zero_T`, `alloc_float`, `#destroy`
+  - `Buffer.nm`: `alloc`, `grow`, `zero`, `alloc_u32`, `grow_u32`,
+    `zero_u32`, `alloc_int`, `grow_int`, `zero_int`, `alloc_float`,
+    `#destroy`
   - `StringBuilder.nm`: `ensure`, `append_string`, `append_string_view`,
     `seed`, `#destroy`
   - `Array.nm`: `at`, `first`, `at_end`, `set` (the `set` body replaces
@@ -228,8 +229,8 @@ ptr char`, struct-pointer→`uint64`, and the generic constants `T_SIZE` /
     (+2.7%, within the observed noise band; was +124% through the
     general splice), outputs identical. `div128`/`mul_wide_hi` stay raw
     (128-bit ops).
-  - `Buffer.nm` load/store/store_or family, `move_T`, `replace_T`,
-    `shift_T` (inline splice targets — same ABI cost risk), plus
+  - `Buffer.nm` load/store/store_or_u32 family, `move`, `replace`,
+    `shift` (inline splice targets — same ABI cost risk), plus
     `slice` (needs a `view` constructor, not expressible yet).
   - `Array.nm` `#init` (variadic packing), `with`/`add`/`mul`
     (backend-specific result layouts: the C header is a real struct, the
@@ -289,7 +290,7 @@ No regressions beyond noise on either backend. The BigInt experiment
   is retired: spliced leaf bodies now compile to the same instructions
   the raw blocks hand-wrote.
 - A related gate landed alongside: user-marked `inline` methods whose
-  bodies call a `_T`-generic method (`Buffer.load_T`/`store_T` — e.g.
+  bodies call a generic size-aware method (`Buffer.load`/`store` — e.g.
   `List.at`) take the real call on every dispatch path. The
   generic-nested splice class miscompiles (the JsonTree receipt:
   `Json.parse` → n=0); until nested-frame splices land, such methods
@@ -310,7 +311,7 @@ No regressions beyond noise on either backend. The BigInt experiment
   `String.slice`/`#op_add`/`#op_mul` (need a view constructor or raw
   memcpy shapes), `JsonTree.#destroy` (calls the mono-only `T_destroy`
   symbol). CONVERTED this pass: `ClassBuffer.alloc_int`/`grow_int`/
-  `grow_T` (plain Nomen over the calloc/realloc/memset externs) and the
+  `grow` (plain Nomen over the calloc/realloc/memset externs) and the
   `JsonTree` slab trio (`alloc_node` coda, `free_text`, `set_text` —
   unsafe Nomen over malloc/memcpy/memset with the 7-word slab stride).
 

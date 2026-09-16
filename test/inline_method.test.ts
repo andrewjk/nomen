@@ -28,7 +28,7 @@ import parse_with_imports from "./parse_with_imports";
 
 describe("general-path method inlining", () => {
 	test("List.at (generic-callee user-inline) splices", () => {
-		// List.at's body calls the `_T`-generic `Buffer.load_T`; the nested
+		// List.at's body calls the generic `Buffer.load`; the nested
 		// splice is sound now that each splice owns a fresh name→slot map
 		// (the JsonTree receipt), so the call site splices rather than
 		// taking the real call.

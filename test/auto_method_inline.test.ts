@@ -14,7 +14,7 @@ import { parse_raw } from "./parse_with_imports";
  * user-inline path, killing the per-call `bl` + ABI marshal at hot call
  * sites (282 samples in `BigInt_ensure` per D2 iteration). DEFAULT ON.
  * User-marked `inline` methods also splice when their bodies nest a
- * `Buffer<T>.load_T`/`store_T` splice: the old JsonTree crash class was
+ * `Buffer<T>.load`/`store` splice: the old JsonTree crash class was
  * the inline body's local declarations clobbering the caller's
  * `stack_offsets` name→slot entries (now isolated per splice). The
  * tests here pin the ON behavior, the nested-generic splice, and the
@@ -109,7 +109,7 @@ pub func main = (Init init) {
 });
 
 test("generic-callee user-inline splices (JsonTree receipt class)", () => {
-	// A USER-marked inline method whose body calls a `_T`-generic Buffer
+	// A USER-marked inline method whose body calls a generic Buffer
 	// method splices: the nested generic splice is sound now that the
 	// inline body's locals own a fresh name→slot map (the JsonTree crash
 	// was the caller's `n` being remapped onto the body's `var Node n`).
@@ -121,11 +121,11 @@ struct Keeper {
 	var Buffer<JsonNode> nodes = Buffer<JsonNode>()
 
 	pub func #init = (self) {
-		self.nodes.grow_T(4)
+		self.nodes.grow(4)
 	}
 
 	pub inline func reserve = (ref self, int extra) {
-		self.nodes.grow_T(extra)
+		self.nodes.grow(extra)
 	}
 }
 

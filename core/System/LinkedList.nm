@@ -15,8 +15,8 @@ pub struct LinkedList<T>: Enumerable {
 
 	pub func add = (ref self, move T value) {
 		var int idx = self.count
-		self.values.grow_T(idx + 1)
-		self.values.store_T(idx, value)
+		self.values.grow(idx + 1)
+		self.values.store(idx, value)
 		self.nexts.grow_int(idx + 1)
 		self.nexts.store_int(idx, -1)
 		self.prevs.grow_int(idx + 1)
@@ -50,11 +50,11 @@ pub struct LinkedList<T>: Enumerable {
 	}
 
 	pub func first = (self: self.count > 0, out T) {
-		return self.values.load_T(0)
+		return self.values.load(0)
 	}
 
 	pub func at = (self, int idx: idx >= 0 && idx < self.count, out T) {
-		return self.values.load_T(idx)
+		return self.values.load(idx)
 	}
 
 	// Bounds-checked access: `fallback` when idx is outside [0, self.count).

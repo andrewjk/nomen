@@ -30,22 +30,22 @@ pub struct Map<TK: Hashable + Equatable, TV> {
 			// alloc_T: for Buffer<TK> it is T_SIZE-aware (string keys are
 			// 16-byte slots); for ClassBuffer<TV> it delegates to alloc_int
 			// (one pointer per slot). Both have it for generic parity.
-			cap = self.keys.alloc_T(8)
-			self.values.alloc_T(8)
-			self.used.alloc(8)
+			cap = self.keys.alloc(8)
+			self.values.alloc(8)
+			self.used.alloc_u32(8)
 		}
 		if self.length * 4 >= cap * 3 {
 			self.rehash(cap * 2)
 			cap = self.keys.cap
 		}
 		var int idx = self.find_slot(key, cap)
-		if self.used.load(idx) == 0 {
-			self.used.store(idx, 1)
-			self.keys.store_T(idx, key)
-			self.values.store_T(idx, value)
+		if self.used.load_u32(idx) == 0 {
+			self.used.store_u32(idx, 1)
+			self.keys.store(idx, key)
+			self.values.store(idx, value)
 			self.length += 1
 		} else {
-			self.values.replace_T(idx, value)
+			self.values.replace(idx, value)
 		}
 	}
 
@@ -55,10 +55,10 @@ pub struct Map<TK: Hashable + Equatable, TV> {
 			return 0
 		}
 		var int idx = self.find_slot(key, cap)
-		if self.used.load(idx) == 0 {
+		if self.used.load_u32(idx) == 0 {
 			return 0
 		}
-		return self.values.load_T(idx)
+		return self.values.load(idx)
 	}
 
 	// Fused lookup-with-fallback: one probe instead of the `has` + `get`
@@ -69,10 +69,10 @@ pub struct Map<TK: Hashable + Equatable, TV> {
 			return fallback
 		}
 		var int idx = self.find_slot(key, cap)
-		if self.used.load(idx) == 0 {
+		if self.used.load_u32(idx) == 0 {
 			return fallback
 		}
-		return self.values.load_T(idx)
+		return self.values.load(idx)
 	}
 
 	// Lookup that traps when the key is absent — for when a missing key is
@@ -83,10 +83,10 @@ pub struct Map<TK: Hashable + Equatable, TV> {
 			panic("key not found")
 		}
 		var int idx = self.find_slot(key, cap)
-		if self.used.load(idx) == 0 {
+		if self.used.load_u32(idx) == 0 {
 			panic("key not found")
 		}
-		return self.values.load_T(idx)
+		return self.values.load(idx)
 	}
 
 	pub func has = (self, TK key, out bool) {
@@ -95,7 +95,7 @@ pub struct Map<TK: Hashable + Equatable, TV> {
 			return false
 		}
 		var int idx = self.find_slot(key, cap)
-		return self.used.load(idx) != 0
+		return self.used.load_u32(idx) != 0
 	}
 
 	pub func remove = (ref self, TK key) {
@@ -104,7 +104,7 @@ pub struct Map<TK: Hashable + Equatable, TV> {
 			return
 		}
 		var int idx = self.find_slot(key, cap)
-		if self.used.load(idx) == 0 {
+		if self.used.load_u32(idx) == 0 {
 			return
 		}
 		// Backward-shift deletion for linear probing. `gap` is the empty slot
@@ -124,10 +124,10 @@ pub struct Map<TK: Hashable + Equatable, TV> {
 			if k >= cap {
 				k = 0
 			}
-			if self.used.load(k) == 0 {
+			if self.used.load_u32(k) == 0 {
 				break
 			}
-			var int home = (self.keys.load_T(k).hash() as int) & (cap - 1)
+			var int home = (self.keys.load(k).hash() as int) & (cap - 1)
 			var int dgap = gap - home
 			if dgap < 0 {
 				dgap = dgap + cap
@@ -142,13 +142,13 @@ pub struct Map<TK: Hashable + Equatable, TV> {
 				// would strdup a fresh copy into gap while leaving the source
 				// slot's pointer stranded at the vacated slot — leaked once
 				// used.store marks it empty (the buffer destroy skips it).
-				self.keys.shift_T(gap, k)
-				self.values.shift_T(gap, k)
-				self.used.store(gap, 1)
+				self.keys.shift(gap, k)
+				self.values.shift(gap, k)
+				self.used.store_u32(gap, 1)
 				gap = k
 			}
 		}
-		self.used.store(gap, 0)
+		self.used.store_u32(gap, 0)
 		self.length = self.length - 1
 	}
 
@@ -156,8 +156,8 @@ pub struct Map<TK: Hashable + Equatable, TV> {
 		// cap is a power of two, so this is `hash mod cap` via a mask —
 		// non-negative for any hash (two's complement), no adjustment.
 		var int idx = (key.hash() as int) & (cap - 1)
-		while self.used.load(idx) != 0 {
-			if self.keys.load_T(idx) == key {
+		while self.used.load_u32(idx) != 0 {
+			if self.keys.load(idx) == key {
 				return idx
 			}
 			idx += 1
@@ -174,14 +174,14 @@ pub struct Map<TK: Hashable + Equatable, TV> {
 		var Buffer<int> old_used = move self.used swap Buffer<int>()
 		var int old_cap = old_keys.cap
 
-		self.keys.alloc_T(new_cap)
-		self.values.alloc_T(new_cap)
-		self.used.alloc(new_cap)
+		self.keys.alloc(new_cap)
+		self.values.alloc(new_cap)
+		self.used.alloc_u32(new_cap)
 		self.length = 0
 
 		var i = 0
 		while i < old_cap; i += 1 {
-			if old_used.load(i) != 0 {
+			if old_used.load_u32(i) != 0 {
 				// move_T (not load_T) relinquishes the old slot, so each
 				// key/value is owned by exactly one buffer (the new self)
 				// afterwards. load_T would leave the old slot referencing
@@ -191,8 +191,8 @@ pub struct Map<TK: Hashable + Equatable, TV> {
 				// store_T strdup's) is freed here once the new buffer has
 				// made its own copy — passing them inline would orphan the
 				// move_T results.
-				var TK k = old_keys.move_T(i)
-				var TV v = old_values.move_T(i)
+				var TK k = old_keys.move(i)
+				var TV v = old_values.move(i)
 				self.set(move k, move v)
 			}
 		}

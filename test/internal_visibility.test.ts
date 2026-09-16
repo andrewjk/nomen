@@ -131,16 +131,23 @@ trait Broken {
 		]);
 	});
 
-	test("Buffer is internal to the System library", () => {
-		const input = `import System
+	test("Buffer is public but its raw primitives stay internal", () => {
+		const construct = `import System
 pub func main = () {
 	var Buffer<int> b = Buffer<int>()
+	var int c = b.cap
 }
 `;
-		const errors = parse(input, system).errors;
+		expect(parse(construct, system).errors).toEqual([]);
+
+		const misuse = `import System
+pub func main = () {
+	var Buffer<int> b = Buffer<int>()
+	b.alloc_int(4)
+}
+`;
+		const errors = parse(misuse, system).errors;
 		expect(errors.length).toBe(1);
-		// The constructor resolves against the monomorphized `Buffer_int`, so
-		// the message carries that emission name.
-		expect(errors[0].message).toMatch(/^Can't access internal function: Buffer/);
+		expect(errors[0].message).toMatch(/^Can't access internal function: alloc_int/);
 	});
 });

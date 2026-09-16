@@ -58,7 +58,7 @@ ${source}
 
 test("rederive owned_return on move-out method call inside mono body", () => {
 	// Instantiating List<int> monomorphises the generic. The `pop` method's
-	// body calls self.items.move_T(idx); move_T is `move out T`, so the call
+	// body calls self.items.move(idx); move is `move out T`, so the call
 	// must carry owned_return = true on the mono body. Without the
 	// re-derivation pass this annotation is absent (the mono body is never
 	// re-checked).
@@ -70,14 +70,14 @@ const int v = list.pop()
 	expect(parsed.errors).toEqual([]);
 
 	const calls = find_mono_method_calls(parsed.root as RootNode, "List_int", "pop");
-	const move_t_call = calls.find((c) => c.name === "move_T");
+	const move_t_call = calls.find((c) => c.name === "move");
 	expect(move_t_call).toBeDefined();
 	expect(move_t_call!.owned_return).toBe(true);
 });
 
 test("rederive owned_return absent on borrow accessor inside mono body", () => {
 	// Instantiating List<int> monomorphises the generic. The `at` method's
-	// body calls self.items.load_T(i); load_T is NOT move-out, so owned_return
+	// body calls self.items.load(i); load is NOT move-out, so owned_return
 	// must NOT be set.
 	const parsed = parse_with_system(`
 var List<int> list = List<int>()
@@ -86,15 +86,15 @@ list.push(1)
 	expect(parsed.errors).toEqual([]);
 
 	const calls = find_mono_method_calls(parsed.root as RootNode, "List_int", "at");
-	const load_t_call = calls.find((c) => c.name === "load_T");
+	const load_t_call = calls.find((c) => c.name === "load");
 	expect(load_t_call).toBeDefined();
 	expect(load_t_call!.owned_return).toBeUndefined();
 });
 
 test("rederive return_bounds from a return-contract call inside mono body", () => {
-	// List<T>.push's body calls self.items.grow_T(new_cap); Buffer<T>.grow_T
+	// List<T>.push's body calls self.items.grow(new_cap); Buffer<T>.grow
 	// declares `out int: out >= needed`, so the mono List_int.push body's
-	// grow_T call must carry the substituted return-contract bounds.
+	// grow call must carry the substituted return-contract bounds.
 	const parsed = parse_with_system(`
 var List<int> list = List<int>()
 list.push(1)
@@ -102,7 +102,7 @@ list.push(1)
 	expect(parsed.errors).toEqual([]);
 
 	const calls = find_mono_method_calls(parsed.root as RootNode, "List_int", "push");
-	const grow_call = calls.find((c) => c.name === "grow_T");
+	const grow_call = calls.find((c) => c.name === "grow");
 	expect(grow_call).toBeDefined();
 	expect(grow_call!.return_bounds).toBeDefined();
 	// `out >= needed` with the call arg substituted: needed → new_cap.

@@ -99,8 +99,8 @@ const MIN_TRIP = 8;
  * both the limit computation and the induction sync.
  */
 export interface ElemDesc {
-	readonly load: "load_float" | "load_int" | "load";
-	readonly store: "store_float" | "store_int" | "store";
+	readonly load: "load_float" | "load_int" | "load_u32";
+	readonly store: "store_float" | "store_int" | "store_u32";
 	readonly float: boolean;
 	/** Arrangement for add/sub/mul lanes. */
 	readonly arr: "2d" | "4s";
@@ -113,7 +113,7 @@ export interface ElemDesc {
 const ELEM_DESCS: readonly ElemDesc[] = [
 	{ load: "load_float", store: "store_float", float: true, arr: "2d", group_elems: 2, shift: 1 },
 	{ load: "load_int", store: "store_int", float: false, arr: "2d", group_elems: 2, shift: 1 },
-	{ load: "load", store: "store", float: false, arr: "4s", group_elems: 4, shift: 2 },
+	{ load: "load_u32", store: "store_u32", float: false, arr: "4s", group_elems: 4, shift: 2 },
 ];
 
 /** Name-derived element class of a scalar temp/invariant, for consistency

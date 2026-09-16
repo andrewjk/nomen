@@ -548,7 +548,7 @@ export default function build_return_node(
 	const move_T_ret_is_string =
 		node.value.node_type === "access" &&
 		(node.value as AccessNode).access.node_type === "access_func" &&
-		(node.value as AccessNode).access.name === "move_T" &&
+		(node.value as AccessNode).access.name === "move" &&
 		current_return_is_string(status);
 	if (move_T_ret_is_string) {
 		status.last_result_is_heap = true;

@@ -89,8 +89,8 @@ const WINDOW_SAFE_ACCESSORS = new Set([
 	"store_float",
 	"load_int",
 	"store_int",
-	"load",
-	"store",
+	"load_u32",
+	"store_u32",
 	"store_or_int",
 ]);
 

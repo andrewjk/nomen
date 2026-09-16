@@ -387,7 +387,7 @@ func bump = (ref Buffer<uint32> a, ref Buffer<uint32> b, int n) {
 	if n <= a.cap && n <= b.cap {
 		var i = 0
 		while i < n; i += 1 {
-			b.store(i, a.load(i) + 5)
+			b.store_u32(i, a.load_u32(i) + 5)
 		}
 	}
 }
@@ -848,7 +848,7 @@ func total = (ref Buffer<uint32> a, int n, out int) {
 		var uint32 acc = 0
 		var i = 0
 		while i < n; i += 1 {
-			acc = acc + a.load(i)
+			acc = acc + a.load_u32(i)
 		}
 		return acc as int
 	}
@@ -930,17 +930,17 @@ pub func main = () {
 		Console.write("\\{total(ref a, 9)} \\{range_sum(ref a, 9)} \\{total(ref a, 1)}")
 	}
 	var b = Buffer<uint32>()
-	b.alloc(9)
+	b.alloc_u32(9)
 	if 9 <= b.cap {
 		var i = 0
 		while i < 9 {
-			b.store(i, 4294967295 - 1000)
+			b.store_u32(i, 4294967295 - 1000)
 			i += 1
 		}
 		var uint32 acc = 0
 		var i2 = 0
 		while i2 < 9; i2 += 1 {
-			acc += b.load(i2)
+			acc += b.load_u32(i2)
 		}
 		Console.write(" \\{acc as int}")
 	}
