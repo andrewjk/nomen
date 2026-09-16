@@ -120,8 +120,17 @@ export default function build_match_node(
 	// result owns heap strings that need a home for the scope-exit free.
 	let value_expr = value_expr_raw;
 	const scrutinee_is_identifier = match_type.node_type === "value";
+	// Only CALL-shaped scrutinees become OWNED temps: their result blob would
+	// otherwise point into the callee's dead frame (or be a temporary whose
+	// payloads need a home). A variable/field-access scrutinee is a BORROW of
+	// its owner's storage — the temp copy shares the payload pointers, and
+	// freeing them at scope exit would dangle the owner's field.
+	const scrutinee_is_call =
+		match_type.node_type === "func_call" ||
+		(match_type.node_type === "access" &&
+			(match_type as AccessNode).access?.node_type === "access_func");
 	let match_scrutinee_temps: string[] = [];
-	if (!scrutinee_is_identifier && enum_name) {
+	if (!scrutinee_is_identifier && scrutinee_is_call && enum_name) {
 		const temp = `_match_val_${match_temp_counter++}`;
 		status.code += `${c_type(enum_name)} ${temp} = ${value_expr_raw};\n`;
 		value_expr = temp;

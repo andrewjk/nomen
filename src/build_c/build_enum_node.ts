@@ -101,4 +101,46 @@ function build_tagged_union_enum(node: EnumNode, status: BuildStatus) {
 		status.code += `return r;\n`;
 		status.code += `}\n`;
 	}
+
+	// Ownership helpers, emitted for EVERY data-carrying enum (struct fields
+	// of this enum type call them at the store sites and in
+	// `<Struct>_destroy`, so they must exist regardless of whether the
+	// payloads happen to be owning — the mono call sites don't re-derive
+	// that).
+	const owning = true;
+	if (owning) {
+		status.headers += `void ${node.name}_free_payloads(${c_typedef_name(node.name)}* v);\n`;
+		status.code += `void ${node.name}_free_payloads(${c_typedef_name(node.name)}* v)\n{\n`;
+		let first = true;
+		for (const c of node.cases) {
+			const stmts: string[] = [];
+			for (const p of c.params) {
+				const ref = payload_is_reference(p.type, status);
+				if (p.type.name === "string" && !ref) {
+					stmts.push(`free(v->_data._${c.name}.${p.name}.ptr);`);
+				} else if (ref) {
+					stmts.push(`${p.type.name}_destroy(v->_data._${c.name}.${p.name});`);
+					stmts.push(`free(v->_data._${c.name}.${p.name});`);
+				}
+			}
+			if (!stmts.length) continue;
+			status.code += `${first ? "if" : "else if"} (v->tag == ${node.name}_${c.name}) {\n${stmts.join("\n")}\n}\n`;
+			first = false;
+		}
+		status.code += `}\n`;
+
+		status.headers += `${c_typedef_name(node.name)} ${node.name}_copy(${c_typedef_name(node.name)} src);\n`;
+		status.code += `${c_typedef_name(node.name)} ${node.name}_copy(${c_typedef_name(node.name)} src)\n{\n`;
+		status.code += `${c_typedef_name(node.name)} r = src;\n`;
+		for (const c of node.cases) {
+			for (const p of c.params) {
+				const ref = payload_is_reference(p.type, status);
+				if (p.type.name === "string" && !ref) {
+					status.code += `if (r.tag == ${node.name}_${c.name}) { r._data._${c.name}.${p.name}.ptr = strdup(r._data._${c.name}.${p.name}.ptr); }\n`;
+				}
+			}
+		}
+		status.code += `return r;\n`;
+		status.code += `}\n`;
+	}
 }

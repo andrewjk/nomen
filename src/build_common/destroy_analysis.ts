@@ -3,6 +3,45 @@ import type { StructTable } from "./mono_name.ts";
 import { resolve_struct_type } from "./mono_name.ts";
 
 /**
+ * Optional enums/traits views callers may provide alongside the struct table
+ * (both backends' BuildStatus carry them). Used to detect enum-with-data
+ * fields whose payloads a struct owns.
+ */
+interface EnumFieldView {
+	name: string;
+	has_associated_data?: boolean;
+	cases: { params: { type: { name: string; is_array?: boolean } }[] }[];
+}
+
+interface EnumAwareTable extends StructTable {
+	enums?: EnumFieldView[];
+	traits?: { name: string }[];
+}
+
+/**
+ * Whether any field of the struct is an enum-with-data value owning heap
+ * payloads (a string payload — always heap, case construction strdups it —
+ * or a class/trait reference payload — construction transfers ownership).
+ * Such a field must be reclaimed when the struct dies.
+ */
+function struct_has_owning_enum_field(struct: StructNode, table: EnumAwareTable): boolean {
+	for (const field of struct.fields) {
+		if (field.type.is_ref) continue;
+		const en = table.enums?.find((e) => e.name === field.type.name);
+		if (!en?.has_associated_data) continue;
+		for (const c of en.cases) {
+			for (const p of c.params) {
+				if (p.type.name === "string" && !p.type.is_array) return true;
+				if (table.traits?.some((t) => t.name === p.type.name)) return true;
+				const ps = table.structs.find((s) => s.name === p.type.name);
+				if (ps?.is_class) return true;
+			}
+		}
+	}
+	return false;
+}
+
+/**
  * Whether a struct declares its own `#destroy` (user side effects /
  * resource release).
  */
@@ -38,7 +77,11 @@ export function has_struct_fields_with_destroy(struct: StructNode, table: Struct
  * count `string` fields (see `has_struct_fields_with_destroy`).
  */
 export function struct_needs_destroy(struct: StructNode, table: StructTable): boolean {
-	return has_destroy(struct) || has_struct_fields_with_destroy(struct, table);
+	return (
+		has_destroy(struct) ||
+		has_struct_fields_with_destroy(struct, table) ||
+		struct_has_owning_enum_field(struct, table)
+	);
 }
 
 /**
@@ -53,6 +96,7 @@ export function struct_needs_destroy(struct: StructNode, table: StructTable): bo
  */
 export function struct_needs_auto_destroy(struct: StructNode, table: StructTable): boolean {
 	if (struct_needs_destroy(struct, table)) return true;
+	if (struct_has_owning_enum_field(struct, table)) return true;
 	for (const field of struct.fields) {
 		if (field.type.is_ref) continue;
 		// A `view T` field is a non-owning borrow — nothing to free, so it

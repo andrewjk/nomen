@@ -40,6 +40,8 @@ import {
 	emit_destroy_for_anchor_slot,
 	emit_destroy_for_decl,
 	emit_enum_payload_frees,
+	emit_enum_payload_frees_at,
+	emit_enum_payload_strdups_at,
 	find_anchor_slot,
 	mark_anchor_destroy,
 	mark_moved_if_struct,
@@ -1826,6 +1828,10 @@ export default function build_assignment_node(
 				// struct-copy the whole value (the RHS builds to a temp address
 				// in x0), not just store that address. Mirrors the variable
 				// assignment path above and the struct-field branch beside it.
+				// Ownership: free the DISPLACED payloads (tag-guarded) before
+				// the copy, then take owning copies of the incoming string
+				// payloads — the RHS temp frees its own at scope exit, so the
+				// field's copies must be independent.
 				const offset = get_field_offset(target_type.name, field_name, status);
 				const enum_size = get_enum_size(rhs_type.name, status);
 				mark_moved_if_struct(node.right_value, status);
@@ -1846,8 +1852,23 @@ export default function build_assignment_node(
 				} else {
 					status.code += `ldr x0, [sp], #16\n`;
 				}
-
+				// x0 = the field's base, x1 = the RHS temp's base. Free the
+				// displaced payloads, copy the blob in, then take owning
+				// copies of the incoming string payloads and free the RHS
+				// temp's own copies (it is an expression temp with no
+				// scope-exit reclaim of its own). Both registers must be
+				// parked across the helper bodies — they emit `bl free`/
+				// `bl strdup`, which clobber the caller-saved x1.
+				status.code += `str x1, [sp, #-16]!\n`;
+				status.code += `str x0, [sp, #-16]!\n`;
+				emit_enum_payload_frees_at(status, rhs_type.name, "x0", offset);
+				status.code += `ldr x0, [sp], #16\n`;
+				status.code += `ldr x1, [sp], #16\n`;
 				emit_struct_copy("x1", "x0", offset, enum_size, status);
+				status.code += `str x1, [sp, #-16]!\n`;
+				emit_enum_payload_strdups_at(status, rhs_type.name, "x0", offset);
+				status.code += `ldr x1, [sp], #16\n`;
+				emit_enum_payload_frees_at(status, rhs_type.name, "x1");
 			} else {
 				const offset = get_field_offset(target_type.name, field_name, status);
 				const field_size = aarch64_size(field_type?.name ?? "int");

@@ -522,6 +522,29 @@ export default function build_return_node(
 			status.code += `)`;
 		}
 		status.code += `;\n`;
+		// An enum-with-data returned from a FIELD read (`return self.m`)
+		// bitwise-copies the blob — sharing the field's payload pointers with
+		// the struct, whose destroy still owns and frees them. Take an owning
+		// copy into `_return_val` (the source is left untouched), so the
+		// caller's value is independent of the source's lifetime. Only
+		// FIELD-read returns need the boundary copy: a pure call result
+		// already owns its payloads, and a variable return TRANSFERS them (the
+		// returned decl is spliced from the cleanup).
+		const ret_src_is_field_read =
+			node.value.node_type === "access" &&
+			(node.value as AccessNode).access?.node_type === "access_field";
+		const return_enum =
+			ret_src_is_field_read &&
+			!returns_string_zero &&
+			!returns_struct_zero &&
+			!returns_view_value &&
+			ret_type.name !== "string" &&
+			!ret_type.is_view &&
+			!ret_type.is_array &&
+			status.enums.find((e) => e.name === ret_type.name && e.has_associated_data);
+		if (return_enum) {
+			status.code += `_return_val = ${ret_type.name}_copy(_return_val);\n`;
+		}
 		// `return T(...) + [ ... ]`: apply the named-field overrides to the
 		// _return_val temp before returning it.
 		if (has_field_overrides(node.value)) {

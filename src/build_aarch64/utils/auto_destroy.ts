@@ -12,7 +12,7 @@ import type DeclarationNode from "../../nodes/DeclarationNode.ts";
 import StructNode from "../../nodes/StructNode.ts";
 import Type from "../../nodes/Type.ts";
 import aarch64_size from "./aarch64_size.ts";
-import { emit_free } from "./audit.ts";
+import { emit_free, emit_strdup } from "./audit.ts";
 import { allocate_stack_space } from "./stack_var.ts";
 import { emit_var_address, emit_var_load } from "./stack_var.ts";
 import {
@@ -489,29 +489,111 @@ export function resolve_struct_name(
 export function emit_enum_payload_frees(status: BuildStatus, enum_name: string, decl_name: string) {
 	const enum_node = status.enums.find((e) => e.name === enum_name);
 	if (!enum_node?.has_associated_data) return;
+	emit_var_address(status, "x0", decl_name);
+	emit_enum_payload_frees_at(status, enum_name, "x0");
+}
+
+/**
+ * Free the owned payloads of the enum-with-data blob at `[base_reg +
+ * base_offset]` (same tag-guarded contract as emit_enum_payload_frees).
+ */
+export function emit_enum_payload_frees_at(
+	status: BuildStatus,
+	enum_name: string,
+	base_reg: string,
+	base_offset = 0,
+) {
+	const enum_node = status.enums.find((e) => e.name === enum_name);
+	if (!enum_node?.has_associated_data) return;
 	const owning_cases = enum_node.cases.filter((c) =>
 		c.params.some((p) => p.type.name === "string" || enum_payload_is_reference(p, status)),
 	);
 	if (!owning_cases.length) return;
+	// Every call in the body clobbers all caller-saved registers — including
+	// `base_reg` itself — so the base is spilled around each call and
+	// reloaded from the stack afterward. Pre-call reads go through the
+	// (still-live) base register.
+	const tag_addr = base_offset ? `[${base_reg}, #${base_offset}]` : `[${base_reg}]`;
 	for (const c of owning_cases) {
 		for (const p of c.params) {
 			const is_ref = enum_payload_is_reference(p, status);
 			if (p.type.name !== "string" && !is_ref) continue;
 			const case_index = enum_node.cases.indexOf(c);
 			const payload_off = get_enum_payload_offset(enum_name, c.name, p.name, status);
-			emit_var_address(status, "x0", decl_name);
-			status.code += `ldr x9, [x0]\n`;
+			const payload_addr = base_offset
+				? `[${base_reg}, #${base_offset + payload_off}]`
+				: `[${base_reg}, #${payload_off}]`;
 			const skip = `.Lskip_epf_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+			status.code += `ldr x9, ${tag_addr}\n`;
 			status.code += `mov x10, #${case_index}\n`;
 			status.code += `cmp x9, x10\n`;
 			status.code += `b.ne ${skip}\n`;
-			status.code += `ldr x0, [x0, #${payload_off}]\n`;
+			// x13 parks the payload ptr so `base_reg` stays valid until its
+			// spill (the caller may pass x0 as the base).
+			status.code += `ldr x13, ${payload_addr}\n`;
+			status.code += `str ${base_reg}, [sp, #-16]!\n`;
 			if (is_ref) {
+				// The destroy call clobbers every caller-saved register, x13
+				// included — park the payload ptr too so the free after the
+				// destroy releases the instance, not the stack base.
+				status.code += `str x13, [sp, #-16]!\n`;
+				status.code += `mov x0, x13\n`;
 				status.code += `bl ${p.type.name}_destroy\n`;
+				status.code += `ldr x0, [sp], #16\n`;
 				emit_free(status);
 			} else {
+				status.code += `mov x0, x13\n`;
 				emit_free(status);
 			}
+			status.code += `ldr ${base_reg}, [sp], #16\n`;
+			status.code += `${skip}:\n`;
+		}
+	}
+}
+
+/**
+ * Take owning copies of the string payloads of the enum-with-data blob at
+ * `[base_reg + base_offset]` (tag-guarded, in place): each ACTIVE case's
+ * string payload ptr half is strdup'd. Used after an enum blob is copied into
+ * a struct field — the blob's payload pointers are shared with the source
+ * temp, which frees its own copies at scope exit; the field must own
+ * independent copies. Reference payloads are NOT duplicated: case
+ * construction transfers their ownership to the blob.
+ */
+export function emit_enum_payload_strdups_at(
+	status: BuildStatus,
+	enum_name: string,
+	base_reg: string,
+	base_offset = 0,
+) {
+	const enum_node = status.enums.find((e) => e.name === enum_name);
+	if (!enum_node?.has_associated_data) return;
+	// The strdup call clobbers all caller-saved registers — including
+	// `base_reg` — so the base is spilled around the call and reloaded
+	// afterward (pre-call reads go through the still-live base register).
+	const tag_addr = base_offset ? `[${base_reg}, #${base_offset}]` : `[${base_reg}]`;
+	for (const c of enum_node.cases) {
+		for (const p of c.params) {
+			if (p.type.name !== "string" || enum_payload_is_reference(p, status)) continue;
+			const case_index = enum_node.cases.indexOf(c);
+			const payload_off = get_enum_payload_offset(enum_name, c.name, p.name, status);
+			const payload_addr = base_offset
+				? `[${base_reg}, #${base_offset + payload_off}]`
+				: `[${base_reg}, #${payload_off}]`;
+			const skip = `.Lskip_eps_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+			status.code += `ldr x9, ${tag_addr}\n`;
+			status.code += `mov x10, #${case_index}\n`;
+			status.code += `cmp x9, x10\n`;
+			status.code += `b.ne ${skip}\n`;
+			status.code += `ldr x13, ${payload_addr}\n`;
+			status.code += `str ${base_reg}, [sp, #-16]!\n`;
+			status.code += `mov x0, x13\n`;
+			emit_strdup(status);
+			// Park the strdup'd copy (x0) before reloading the base — the pop
+			// would otherwise clobber the result.
+			status.code += `mov x13, x0\n`;
+			status.code += `ldr ${base_reg}, [sp], #16\n`;
+			status.code += `str x13, ${payload_addr}\n`;
 			status.code += `${skip}:\n`;
 		}
 	}
@@ -560,7 +642,19 @@ export function emit_destroy_for_decl(
 	const resolved_name = resolve_struct_name(decl_type_name, type_args, status);
 	const struct_type =
 		is_struct_type(resolved_name, status) || is_struct_type(decl_type_name, status);
-	if (!struct_type) return;
+	if (!struct_type) {
+		// An enum-with-data local owns its ACTIVE case's payloads (case
+		// construction strdups string args). The scope-exit path handles
+		// these before reaching emit_destroy_for_decl; this branch covers the
+		// return-path cleanup, where the payload must still be reclaimed (the
+		// blob was not transferred — field stores took their own copies).
+		const decl_enum = status.enums.find((e) => e.name === decl_type_name && e.has_associated_data);
+		if (decl_enum && !is_nullable) {
+			emit_var_address(status, "x0", decl_name);
+			emit_enum_payload_frees_at(status, decl_enum.name, "x0");
+		}
+		return;
+	}
 
 	// A nullable class instance is represented at runtime as a pointer that
 	// may be 0 (null). Guard the whole destroy + field-destroy sequence with
@@ -646,6 +740,23 @@ export function emit_field_destroys(
 ) {
 	for (const field of struct_type.fields) {
 		const offset = get_field_offset_of_fields(struct_type.fields, field.name, status);
+		// An enum-with-data field owns its ACTIVE case's payloads (case
+		// construction strdups string args / transfers reference pointers, and
+		// every enum-field store takes owning copies). Free them regardless of
+		// `free_strings` — unlike plain string fields, enum payloads are
+		// always heap.
+		const field_enum = !field.type.is_ref
+			? status.enums.find((e) => e.name === field.type.name && e.has_associated_data)
+			: undefined;
+		if (field_enum) {
+			const actual_offset = base_offset !== undefined ? base_offset + offset : offset;
+			if (decl_name) {
+				emit_base_ptr(status, decl_name, is_class_parent);
+			}
+			status.code += `add x0, x0, #${actual_offset}\n`;
+			emit_enum_payload_frees_at(status, field_enum.name, "x0");
+			continue;
+		}
 		const resolved = resolve_struct_name(field.type.name, field.type.type_args, status);
 		const field_struct =
 			is_struct_type(resolved, status) || is_struct_type(field.type.name, status);
@@ -1132,7 +1243,13 @@ export function mark_moved_if_struct(
 		(!!status.function_param_regs?.has(var_name) && is_struct_type(var_type.name, status));
 	if (!is_local && !has_anchor && !is_class_param) return;
 	const is_struct = is_struct_type(var_type.name, status);
-	if (is_struct) {
+	// An enum-with-data value is multi-word and owning (its payloads transfer
+	// with the blob): a moved-out enum local must be skipped by the cleanup
+	// exactly like a moved struct.
+	const is_enum_with_data = !!status.enums.find(
+		(e) => e.name === var_type.name && e.has_associated_data,
+	);
+	if (is_struct || is_enum_with_data) {
 		if (!status.moved) status.moved = new Set<string>();
 		status.moved.add(var_name);
 	}

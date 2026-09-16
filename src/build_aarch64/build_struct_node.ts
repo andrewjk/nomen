@@ -19,7 +19,11 @@ import { check_c_fallback } from "./build_raw_node.ts";
 import { build_body_with_cursor } from "./emit_nir.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free, emit_strdup } from "./utils/audit.ts";
-import { emit_destroy_for_anchor_slot, emit_field_destroys } from "./utils/auto_destroy.ts";
+import {
+	emit_destroy_for_anchor_slot,
+	emit_enum_payload_strdups_at,
+	emit_field_destroys,
+} from "./utils/auto_destroy.ts";
 import { find_enum_for_case } from "./utils/enum_case.ts";
 import { nir_regalloc_enabled, seed_function_allocations } from "./utils/nir_regalloc.ts";
 import {
@@ -632,6 +636,25 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 					status.code += store_element("x19", offset + byte_offset, element_size);
 				}
 			}
+		} else if (
+			!field.type.is_ref &&
+			status.enums.find((e) => e.name === field.type.name && e.has_associated_data)
+		) {
+			// Enum-with-data field: the argument arrives BY ADDRESS (the
+			// case-construction temp's blob — build_constructor_params passes
+			// owning enums by address). Copy the whole blob (tag + payloads),
+			// then strdup the ACTIVE case's string payloads in place — the
+			// blob shares them with the source temp, which frees its own
+			// copies at scope exit; the field must own independent copies.
+			// Reference payloads transfer ownership with the blob.
+			const enum_name = field.type.name;
+			const enum_size = get_enum_size(enum_name, status);
+			const words = Math.ceil(enum_size / 8);
+			for (let w = 0; w < words; w++) {
+				status.code += `ldr x9, [${src_reg}, #${w * 8}]\n`;
+				status.code += `str x9, [x19, #${offset + w * 8}]\n`;
+			}
+			emit_enum_payload_strdups_at(status, enum_name, "x19", offset);
 		} else if (
 			!field.type.is_ref &&
 			status.structs.find((s) => s.name === field.type.name && !s.is_simple_type && !s.is_class)

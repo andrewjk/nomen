@@ -1494,11 +1494,19 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 
 	const field_type_obj = resolve_field_type(access_field, target_type?.name, status);
 	const resolved_field_type = field_type_obj?.name || "";
-	const field_is_struct =
+	// An enum-with-data field is multi-word (tag + payloads) and lives on the
+	// stack like a struct: its "value" is its ADDRESS (consumers blob-copy
+	// from it), not the tag word a scalar load would produce.
+	const field_is_enum_with_data =
 		!!resolved_field_type &&
 		!field_type_obj?.is_ref &&
-		!field_type_obj?.is_nullable &&
-		is_struct_type(resolved_field_type, status);
+		!!status.enums.find((e) => e.name === resolved_field_type && e.has_associated_data);
+	const field_is_struct =
+		(!!resolved_field_type &&
+			!field_type_obj?.is_ref &&
+			!field_type_obj?.is_nullable &&
+			is_struct_type(resolved_field_type, status)) ||
+		field_is_enum_with_data;
 
 	if (field_is_struct) {
 		if (offset > 0) {

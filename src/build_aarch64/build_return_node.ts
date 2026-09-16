@@ -30,6 +30,7 @@ import {
 	all_scope_frames,
 	clear_heap_string_fields,
 	emit_destroy_for_decl,
+	emit_enum_payload_strdups_at,
 	emit_heap_slots_cleanup_for_return,
 	is_field_struct_borrow,
 	mark_moved_if_struct,
@@ -39,7 +40,12 @@ import { allocate_stack_space, emit_var_address, emit_var_store } from "./utils/
 
 let temp_counter = 0;
 import { emit_pair_store_x29, emit_strdup_string } from "./utils/string_pair.ts";
-import { emit_struct_copy, get_enum_sret_size, get_struct_size } from "./utils/struct_layout.ts";
+import {
+	emit_struct_copy,
+	get_enum_sret_size,
+	get_field_offset,
+	get_struct_size,
+} from "./utils/struct_layout.ts";
 import { emit_view_materialize_owned, is_view_value } from "./utils/view_value.ts";
 
 let return_val_counter = 0;
@@ -158,7 +164,10 @@ export default function build_return_node(
 			if (finalized.has(decl.name)) {
 				// A moved-out value struct still owns its recorded heap string
 				// fields (store_T deep-copied them) — release them here since
-				// the skip below bypasses emit_destroy_for_decl.
+				// the skip below bypasses emit_destroy_for_decl. Its
+				// enum-with-data fields transfer with the blob (a variable
+				// return's sret copy is bitwise), so they are deliberately NOT
+				// freed here — the caller now owns them.
 				release_heap_string_fields(status, decl.name, decl.type.name);
 				continue;
 			}
@@ -599,6 +608,29 @@ export default function build_return_node(
 				status.code += `mov x9, #1\n`;
 				status.code += `str x9, [x8, #${struct_size}]\n`;
 			}
+			// An enum-with-data return from a FIELD READ (`return self.m`)
+			// takes OWNING copies of the active case's string payloads on the
+			// sret buffer: the bitwise copy shares them with the struct, whose
+			// destroy frees them — the caller's value must be independent.
+			// Variable and call results TRANSFER their payloads (the source is
+			// moved, or a temp with no reclaim of its own), so copying those
+			// would leak the original.
+			const ret_src_is_field_read =
+				node.value.node_type === "access" &&
+				(node.value as AccessNode).access?.node_type === "access_field";
+			if (ret_enum_size !== undefined && ret_src_is_field_read) {
+				emit_enum_payload_strdups_at(status, status.function_return_type!.name, "x8");
+			} else if (ret_struct && ret_src_is_field_read) {
+				for (const field of ret_struct.fields) {
+					if (field.type.is_ref || field.type.is_view || field.type.is_array) continue;
+					const field_enum = status.enums.find(
+						(e) => e.name === field.type.name && e.has_associated_data,
+					);
+					if (!field_enum) continue;
+					const field_off = get_field_offset(ret_struct.name, field.name, status);
+					emit_enum_payload_strdups_at(status, field_enum.name, "x8", field_off);
+				}
+			}
 		}
 	}
 
@@ -711,7 +743,10 @@ export default function build_return_node(
 			if (finalized.has(decl.name)) {
 				// A moved-out value struct still owns its recorded heap string
 				// fields (store_T deep-copied them) — release them here since
-				// the skip below bypasses emit_destroy_for_decl.
+				// the skip below bypasses emit_destroy_for_decl. Its
+				// enum-with-data fields transfer with the blob (a variable
+				// return's sret copy is bitwise), so they are deliberately NOT
+				// freed here — the caller now owns them.
 				release_heap_string_fields(status, decl.name, decl.type.name);
 				continue;
 			}

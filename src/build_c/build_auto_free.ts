@@ -482,6 +482,17 @@ export function emit_struct_destroys(
 	}
 	for (const field of struct.fields) {
 		if (field.type.is_ref) continue;
+		// An enum-with-data field owns its ACTIVE case's payloads (case
+		// construction strdups string args / transfers reference pointers,
+		// and every enum-field store takes owning copies via <Enum>_copy).
+		const field_enum =
+			!field.type.is_array && !field.type.is_view
+				? status.enums.find((e) => e.name === field.type.name && e.has_associated_data)
+				: undefined;
+		if (field_enum) {
+			status.code += `${field_enum.name}_free_payloads(&${var_expr}.${field.name});\n`;
+			continue;
+		}
 		const field_struct = resolve_struct_type(field.type, status);
 		if (!field_struct) continue;
 		const field_expr = `${var_expr}.${field.name}`;

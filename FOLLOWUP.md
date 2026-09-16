@@ -41,59 +41,31 @@ Fix directions:
    and key the build's type table by (scope, name). Touches mono naming,
    init/destroy dispatch, and every `structs.find(name)` call site.
 
-## Enum-with-string-payload ownership edges
+## Enum-in-container and match-binding escapes
 
-The core contract now works end to end on both backends (case construction
-strdups string args; enum locals free payloads at scope exit; match hoists
-call scrutinees into owned temps and frees them; reassignment frees the
-displaced payload).
+The enum-with-string-payload ownership edge — an enum value stored inside a
+value struct and matched/returned through the field — is fixed (2026-09-16,
+both backends): field stores blob-copy + strdup the active case's string
+payloads (aarch64) or route through `<Enum>_copy` (C), struct auto-destroy
+walks enum fields, and the sret boundary takes owning copies for field-read
+returns. Covered by test/enum_field.test.ts (inline construction,
+reassignment, factory return, `return self.m`), green on both backends with
+audit on.
 
-FIXED (2026-09-14): **storing a borrowed class value into an OWNING class
-field** is now a check-time rejection (`cannot store 'b' into owning field
-'art' — the field takes ownership of a borrowed value; take a fresh
-instance, declare the parameter 'move', or pass it with 'move'`,
-check_assignment_node). The rule fires only for genuine borrows — a
-non-`move` parameter (resolved via the enclosing FunctionNode's params,
-since a `move` param parses with declaration "var" + `ParameterNode.is_moved`),
-a field/container borrow (`borrowed_from`), or an object alias
-(`class_alias_of`). Owner-carrying values stay legal: fresh
-constructors/call results, an explicit `move`, a `move`-param mutator
-(`self.art = a`), and an owned local implicitly transferred
-(`var TreeNode l = create_tree(...); node.left = l` — the backends already
-move the local into the field; that idiom is all over the bench corpus).
-`null` into a nullable owning field stays legal. Covered by
-test/owning_field_borrow.test.ts (the borrowed shape double-freed on both
-backends — aarch64 SIGSEGV verified before the fix).
+Two independent gaps remain (both pre-existing at the parent commit — not
+regressions):
 
-Still open, with today's probe evidence:
-
-- **Enum values stored INSIDE structs are not usable end to end — and not
-  just for ownership.** `struct Holder { var Maybe m }` with
-  `enum Maybe { case some(string) case none }`: `match h.m { case .some(v)
--> v }` binds an EMPTY/`(null)` payload even when the Holder is
-  constructed INLINE (aarch64 verified; the LOCAL enum `var Maybe m =
-Maybe.some("x")` matches fine, so it's the field-scrutinee path reading
-  the payload pair at the wrong offset). Independent of that, the LEAK
-  half stands: `<Struct>_destroy` (both backends) does not walk enum
-  fields' string payloads (LEAK: 1 verified through a `make() -> Holder`
-  boundary). Fixing the destroy walk alone won't make the shape usable —
-  the field-scrutinee binding needs its own investigation.
 - **Enums as generic-container element types are broken earlier still**:
   `List<Maybe>`/`Buffer<Maybe>` on C fails at header emission ("unknown
   type name 'Maybe'" — the `Buffer_Maybe_*` prototypes precede the enum
-  typedef), so the container element-payload walk can't even be evaluated
-  on C until that ordering is fixed. aarch64 runs `List<Maybe>` +
-  push/length under audit clean (payloads may be stored raw rather than
-  strdup'd — unverified which).
-- **Enum-valued struct FIELD returns** (`return self.last_result`)
-  bitwise-copy the payload without a boundary copy — aliasing with the
-  field's own lifetime is unchecked. (The `make() -> Holder` probe also
-  showed the payload not surviving to the match, so the by-value struct
-  return of an enum-carrying struct needs verification on both backends
-  once the field-scrutinee bug is fixed.)
-- **A match binding that escapes its branch** (`case .ok(t) -> return t`)
-  relies on the return-boundary borrow normalization; deeper escapes
-  (storing the binding) are untracked.
+  typedef), so the container element-payload walk can't even be evaluated on
+  C until that ordering is fixed. aarch64 stores/pushes cleanly, but reading
+  an element back (`match xs.at_or(0, .none)`) faults in the element
+  load/copy (EXC_BAD_ACCESS in memmove).
+- **A match binding that escapes its branch** (`case .some(v) -> v` inside a
+  `return match …`) relies on the return-boundary borrow normalization; the
+  probe faults on aarch64. Deeper escapes (storing the binding) are
+  untracked.
 
 ## Cold-run parallel test flakiness (pre-existing)
 

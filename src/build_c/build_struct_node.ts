@@ -327,6 +327,25 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 				// passed `<field>_has` as a sibling C parameter).
 				status.code += `${object_name}${accessor}${field.name} = *${field.name};\n`;
 				status.code += `${object_name}${accessor}${has_flag_name(field.name)} = ${has_flag_name(field.name)};\n`;
+			} else if (
+				!field.type.is_ref &&
+				!field.type.is_view &&
+				status.enums.find((e) => e.name === field.type.name && e.has_associated_data)
+			) {
+				// Enum-with-data field: take an OWNING copy of the incoming
+				// blob (the helper strdups the active case's string payloads)
+				// so the field's payloads are independent of the expression
+				// temp — which may be reclaimed at its own scope exit.
+				const field_enum_name = field.type.name;
+				if (!field.value) {
+					// Enum params pass BY VALUE (a tagged-union struct) — no
+					// pointer dereference, unlike struct params.
+					status.code += `${object_name}${accessor}${field.name} = ${field_enum_name}_copy(${field.name});\n`;
+				} else {
+					status.code += `${object_name}${accessor}${field.name} = ${field_enum_name}_copy(`;
+					build_node(field.value, status);
+					status.code += `);\n`;
+				}
 			} else {
 				// A class's plain string field is always heap-owned (freed
 				// unconditionally by <Class>_destroy): strdup the default /
@@ -899,6 +918,17 @@ function build_auto_destroy(node: StructNode, status: BuildStatus) {
 		// A `view T` field is a non-owning borrow: freeing its pointer half
 		// would be an invalid free (the storage is owned elsewhere).
 		if (field.type.is_view) continue;
+		// An enum-with-data field owns its ACTIVE case's payloads (case
+		// construction strdups string args / transfers reference pointers,
+		// and every enum-field store takes owning copies via <Enum>_copy).
+		const field_enum =
+			!field.type.is_array && !field.type.is_view
+				? status.enums.find((e) => e.name === field.type.name && e.has_associated_data)
+				: undefined;
+		if (field_enum) {
+			status.code += `${field_enum.name}_free_payloads(&self->${field.name});\n`;
+			continue;
+		}
 		// A `string` field owns heap memory: for VALUE structs the Buffer
 		// per-element destroy path frees slots strdup'd by store_T; for
 		// CLASSES the field is always heap-owned (`_init` strdup's defaults,

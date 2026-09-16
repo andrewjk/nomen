@@ -274,6 +274,35 @@ export default function build_assignment_node(
 		}
 	}
 
+	// Enum-with-data FIELD assignment (`obj.field = rhs`): the field owns its
+	// active case's payloads, so the displaced value's payloads are freed
+	// (tag-guarded) before the store. The RHS transfers ownership by value
+	// (case construction strdups its string args; a call result owns its
+	// payloads), matching the local-enum reassignment below. Reference
+	// payloads are released too via the enum's helper.
+	if (
+		!node.operator &&
+		node.left_value.node_type === "access" &&
+		(node.left_value as AccessNode).access.node_type === "access_field"
+	) {
+		const field_type = (node.left_value as AccessNode).access.type;
+		const field_enum =
+			field_type?.name && !field_type.is_ref
+				? status.enums.find((e) => e.name === field_type.name && e.has_associated_data)
+				: undefined;
+		if (field_enum) {
+			const before_len = status.code.length;
+			build_node(node.left_value, status);
+			const field_access = status.code.substring(before_len);
+			status.code = status.code.substring(0, before_len);
+			status.code += `${field_enum.name}_free_payloads(&${field_access});\n`;
+			status.code += `${field_access} = `;
+			emit_rhs_value(node.right_value, nir_rhs, status);
+			status.code += `;\n`;
+			return;
+		}
+	}
+
 	// Borrowed string RHS (e.g. `filename = init.args.at(1)`): the LHS gives up
 	// ownership — `args.at()` returns a pointer into argv (or a container's
 	// storage), which must not be freed. Record the LHS in string_borrow_vars so
