@@ -76,5 +76,7 @@ export default function clone_status(status: CheckStatus): CheckStatus {
 		// Nested-type label uniquification: same discipline as functions.
 		type_name_counts: status.type_name_counts,
 		type_emission_names: status.type_emission_names,
+		// Trusted-internal opt-in: a build-wide flag, inherited by every clone.
+		allow_internal: status.allow_internal,
 	};
 }

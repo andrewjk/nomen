@@ -824,7 +824,7 @@ test("whole benchmark corpus is byte-identical through NIR emission", () => {
 		if (!file.endsWith(".nm")) continue;
 		const source = join(`${bench_dir}/${file}`, "core");
 		const compile = (): string => {
-			const parsed = parse(source, lib);
+			const parsed = parse(source, lib, undefined, { allow_internal: true });
 			expect(parsed.errors, file).toEqual([]);
 			const result = build(parsed.root, { arch: "aarch64" });
 			return result.code;

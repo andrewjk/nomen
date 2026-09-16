@@ -19,7 +19,7 @@ func caller = () {
     restricted(0)
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
 			expect(parsed.errors.some((e) => e.message.includes("not satisfied"))).toBe(true);
 		});
@@ -34,7 +34,7 @@ func caller = () {
     restricted(5)
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors).toEqual([]);
 		});
 
@@ -48,7 +48,7 @@ func caller = () {
     restricted(Array("a", "b", "c"), 4)
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
 			expect(parsed.errors.some((e) => e.message.includes("not satisfied"))).toBe(true);
 		});
@@ -63,7 +63,7 @@ func caller = () {
     restricted(Array("a", "b", "c"), 2)
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors).toEqual([]);
 		});
 
@@ -77,7 +77,7 @@ func caller = () {
     restricted(Array("a", "b", "c"), 5)
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
 			expect(parsed.errors.some((e) => e.message.includes("not satisfied"))).toBe(true);
 		});
@@ -92,7 +92,7 @@ func caller = () {
     restricted(Array("a", "b", "c"), 2)
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors).toEqual([]);
 		});
 
@@ -107,7 +107,7 @@ func caller = () {
     restricted(things, 4)
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
 			expect(parsed.errors.some((e) => e.message.includes("not satisfied"))).toBe(true);
 		});
@@ -125,7 +125,7 @@ func caller = () {
     }
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors).toEqual([]);
 		});
 
@@ -143,7 +143,7 @@ func caller = () {
     }
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
 			// Loop iterators are const by default, so `i += 1` is rejected before
 			// the constraint check even runs — catching the mistake earlier.
@@ -164,7 +164,7 @@ func caller = () {
     }
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
 			expect(parsed.errors.some((e) => e.message.includes("cannot be verified"))).toBe(true);
 		});
@@ -181,7 +181,7 @@ func caller = () {
     }
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors).toEqual([]);
 		});
 
@@ -197,7 +197,7 @@ func caller = () {
     }
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors).toEqual([]);
 		});
 
@@ -213,7 +213,7 @@ func caller = () {
     }
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
 			expect(parsed.errors.some((e) => e.message.includes("not satisfied"))).toBe(true);
 		});
@@ -230,7 +230,7 @@ func caller = () {
     }
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
 			expect(parsed.errors.some((e) => e.message.includes("not satisfied"))).toBe(true);
 		});
@@ -247,7 +247,7 @@ func caller = () {
     }
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors).toEqual([]);
 		});
 
@@ -267,7 +267,7 @@ func caller = () {
     }
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors).toEqual([]);
 		});
 
@@ -278,7 +278,7 @@ func bad = (int i: i > "abc") {
     Console.write("ok")
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
 			expect(parsed.errors.some((e) => e.message.includes("Type mismatch"))).toBe(true);
 		});
@@ -290,7 +290,7 @@ func bad = (int i: 5) {
     Console.write("ok")
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors.some((e) => e.message.includes("boolean expression"))).toBe(true);
 		});
 
@@ -301,7 +301,7 @@ func bad = (int i: i + 1) {
     Console.write("ok")
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors.some((e) => e.message.includes("boolean expression"))).toBe(true);
 		});
 
@@ -312,7 +312,7 @@ func bad = (int i: "hello") {
     Console.write("ok")
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors.some((e) => e.message.includes("boolean expression"))).toBe(true);
 		});
 
@@ -323,7 +323,7 @@ func ok = (int i: i >= 0 && i < 10) {
     Console.write("ok")
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors).toEqual([]);
 		});
 
@@ -349,7 +349,7 @@ func caller = () {
     }
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
 			expect(parsed.errors.some((e) => e.message.includes("not satisfied"))).toBe(true);
 		});
@@ -370,7 +370,7 @@ func caller = () {
     }
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors).toEqual([]);
 		});
 
@@ -391,7 +391,7 @@ func caller = () {
     data.store_int(n, 1)
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
 			expect(parsed.errors.some((e) => e.message.includes("cannot be verified"))).toBe(true);
 		});
@@ -413,7 +413,7 @@ func caller = () {
     }
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors).toEqual([]);
 		});
 	});
@@ -428,7 +428,7 @@ func caller = () {
     var Foo f = Foo(2)
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
 			expect(parsed.errors.some((e) => e.message.includes("not satisfied"))).toBe(true);
 		});
@@ -442,7 +442,7 @@ func caller = () {
     var Foo f = Foo(10)
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors).toEqual([]);
 		});
 
@@ -452,7 +452,7 @@ struct Foo {
     var int x: x > 5 = 12
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors).toEqual([]);
 		});
 
@@ -462,7 +462,7 @@ struct Foo {
     var int x: x > 5 = 2
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
 			expect(parsed.errors.some((e) => e.message.includes("not satisfied"))).toBe(true);
 		});
@@ -477,7 +477,7 @@ func caller = () {
     f.x = 2
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
 			expect(parsed.errors.some((e) => e.message.includes("not satisfied"))).toBe(true);
 		});
@@ -492,7 +492,7 @@ func caller = () {
     f.x = 20
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors).toEqual([]);
 		});
 	});
@@ -549,7 +549,7 @@ pub func main = () {
     var int x: x > "abc" = 5
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors.some((e) => e.message.includes("Type mismatch"))).toBe(true);
 		});
 
@@ -560,7 +560,7 @@ pub func main = () {
     var int x: x + 1 = 5
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors.some((e) => e.message.includes("boolean expression"))).toBe(true);
 		});
 
@@ -598,7 +598,7 @@ func probe = (List<int> list, int i, out int) {
     return list.at(i)
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors).toEqual([]);
 		});
 
@@ -614,7 +614,7 @@ func probe = (List<int> list, out int) {
     return 0
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors).toEqual([]);
 		});
 
@@ -627,7 +627,7 @@ func probe = (List<int> list, int i, out int) {
     return 0
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors).toEqual([]);
 		});
 
@@ -646,7 +646,7 @@ func probe = (List<int> list, int i, out int) {
     return list.at(i)
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors).toEqual([]);
 		});
 
@@ -666,7 +666,7 @@ func probe = (List<int> list, int start, out int) {
     return list.at(i)
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors).toEqual([]);
 		});
 
@@ -682,7 +682,7 @@ func first_index = (List<int> list, out int) {
     return 0
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors).toEqual([]);
 		});
 
@@ -701,7 +701,7 @@ func probe = (string text, int start, int end, out string) {
     return text.slice(s, e).to_string()
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors).toEqual([]);
 		});
 	});
@@ -724,7 +724,7 @@ func last = (List<int> list, out int) {
     return 0
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors).toEqual([]);
 		});
 
@@ -739,7 +739,7 @@ func last = (Array<int> arr, out int) {
     return 0
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors).toEqual([]);
 		});
 
@@ -754,7 +754,7 @@ func last = (string s, out char) {
     return 65 as char
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors).toEqual([]);
 		});
 
@@ -773,7 +773,7 @@ func last = (List<int> list, out int) {
     return list.at(n - 1)
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
 			expect(
 				parsed.errors.some(
@@ -814,7 +814,7 @@ func collect = (string input, out string) {
     return result
 }
 `;
-			const parsed = parse(input, get_library(core));
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors).toEqual([]);
 		});
 	});

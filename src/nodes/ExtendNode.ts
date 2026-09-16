@@ -25,7 +25,7 @@ import Type from "./Type.ts";
  * type without special-casing.
  */
 export default class ExtendNode extends BaseNode {
-	visibility: "pub" | "private";
+	visibility: "pub" | "private" | "internal";
 	name: string;
 	is_class: boolean;
 	functions: FunctionNode[] = [];
@@ -40,7 +40,12 @@ export default class ExtendNode extends BaseNode {
 	/** The struct this extend was merged into (set during the check gather). */
 	scope?: BaseNode;
 
-	constructor(start: number, visibility: "pub" | "private", name: string, is_class = false) {
+	constructor(
+		start: number,
+		visibility: "pub" | "private" | "internal",
+		name: string,
+		is_class = false,
+	) {
 		super("extend", start);
 		this.visibility = visibility;
 		this.name = name;

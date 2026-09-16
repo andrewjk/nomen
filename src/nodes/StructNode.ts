@@ -5,7 +5,7 @@ import FunctionNode from "./FunctionNode.ts";
 import Type from "./Type.ts";
 
 export default class StructNode extends BaseNode {
-	visibility: "pub" | "private";
+	visibility: "pub" | "private" | "internal";
 	name: string;
 	traits: string[];
 	/**
@@ -46,7 +46,7 @@ export default class StructNode extends BaseNode {
 
 	constructor(
 		start: number,
-		visibility: "pub" | "private",
+		visibility: "pub" | "private" | "internal",
 		name: string,
 		traits?: string[],
 		fields?: DeclarationNode[],

@@ -392,10 +392,17 @@ function check_access_field_node(
 	if (field) {
 		const access_scope = status.stack.at(-1)!;
 		if (
-			field.visibility === "private" &&
-			!is_visible(field.scope, field.visibility, access_scope, status.stack)
+			field.visibility !== "pub" &&
+			!is_visible(
+				field.scope,
+				field.visibility,
+				access_scope,
+				status.stack,
+				!!field.is_library,
+				!!status.allow_internal,
+			)
 		) {
-			add_error(status, `Can't access private field: ${node.name}`, node.start);
+			add_error(status, `Can't access ${field.visibility} field: ${node.name}`, node.start);
 			return false;
 		} else {
 			node.type = field.type;

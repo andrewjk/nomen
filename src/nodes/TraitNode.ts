@@ -3,7 +3,7 @@ import DeclarationNode from "./DeclarationNode.ts";
 import FunctionNode from "./FunctionNode.ts";
 
 export default class TraitNode extends BaseNode {
-	visibility: "pub" | "private";
+	visibility: "pub" | "private" | "internal";
 	name: string;
 	fields: DeclarationNode[];
 	functions: FunctionNode[];
@@ -18,7 +18,7 @@ export default class TraitNode extends BaseNode {
 
 	constructor(
 		start: number,
-		visibility: "pub" | "private",
+		visibility: "pub" | "private" | "internal",
 		name: string,
 		fields?: DeclarationNode[],
 		functions?: FunctionNode[],

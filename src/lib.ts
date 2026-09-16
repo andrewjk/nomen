@@ -97,7 +97,11 @@ function extract_deps(source: string): string[] {
 		const trimmed = line.trim();
 		if (trimmed.startsWith("import ")) {
 			deps.push(trimmed.slice(7).trim());
-		} else if (trimmed.startsWith("pub struct ") || trimmed.startsWith("struct ")) {
+		} else if (
+			trimmed.startsWith("pub struct ") ||
+			trimmed.startsWith("internal struct ") ||
+			trimmed.startsWith("struct ")
+		) {
 			const colon_idx = trimmed.indexOf(":");
 			if (colon_idx >= 0) {
 				const after_colon = trimmed.slice(colon_idx + 1).trim();
@@ -105,7 +109,11 @@ function extract_deps(source: string): string[] {
 				if (trait_name) deps.push(trait_name);
 			}
 			break;
-		} else if (trimmed.startsWith("pub class ") || trimmed.startsWith("class ")) {
+		} else if (
+			trimmed.startsWith("pub class ") ||
+			trimmed.startsWith("internal class ") ||
+			trimmed.startsWith("class ")
+		) {
 			const colon_idx = trimmed.indexOf(":");
 			if (colon_idx >= 0) {
 				const after_colon = trimmed.slice(colon_idx + 1).trim();
@@ -113,7 +121,11 @@ function extract_deps(source: string): string[] {
 				if (trait_name) deps.push(trait_name);
 			}
 			break;
-		} else if (trimmed.startsWith("pub trait ") || trimmed.startsWith("trait ")) {
+		} else if (
+			trimmed.startsWith("pub trait ") ||
+			trimmed.startsWith("internal trait ") ||
+			trimmed.startsWith("trait ")
+		) {
 			break;
 		} else if (trimmed.length > 0 && !is_comment_line(trimmed)) {
 			break;
@@ -138,7 +150,9 @@ function extract_type_names(source: string): string[] {
 	const names: string[] = [];
 	for (let line of source.split("\n")) {
 		const trimmed = line.trim();
-		const m = trimmed.match(/^pub (?:must_use )?(?:struct|class|trait|enum|bitset) (\w+)/);
+		const m = trimmed.match(
+			/^(?:pub|internal) (?:must_use )?(?:struct|class|trait|enum|bitset) (\w+)/,
+		);
 		if (m) names.push(m[1]);
 	}
 	return names;
@@ -153,7 +167,7 @@ function extract_free_func_names(source: string): string[] {
 	for (let line of source.split("\n")) {
 		// `extern func` declarations are indexed too: a body token naming the
 		// wrapped symbol (e.g. `memcpy`) must pull the declaring file in.
-		const m = line.match(/^(?:pub\s+|extern\s+|pub\s+extern\s+)func\s+(\w+)/);
+		const m = line.match(/^(?:(?:pub|internal)\s+|extern\s+|pub\s+extern\s+)func\s+(\w+)/);
 		if (m) names.push(m[1]);
 	}
 	return names;

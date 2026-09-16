@@ -6,6 +6,7 @@
 export const KEYWORDS = new Set([
 	"pub",
 	"private",
+	"internal",
 	"struct",
 	"class",
 	"trait",

@@ -32,6 +32,11 @@ import type Type from "../../src/nodes/Type.ts";
 import type ValueNode from "../../src/nodes/ValueNode.ts";
 import type WhileLoopNode from "../../src/nodes/WhileLoopNode.ts";
 
+/** Render the source prefix for an item's visibility (`pub`/`internal`). */
+function visibility_prefix(visibility: "pub" | "private" | "internal" | undefined): string {
+	return visibility && visibility !== "private" ? `${visibility} ` : "";
+}
+
 export type DefKind =
 	| "variable"
 	| "param"
@@ -56,7 +61,7 @@ export interface Def {
 	type?: Type;
 	/** The struct/trait/enum that owns this field, method or case. */
 	container?: string;
-	visibility?: "pub" | "private";
+	visibility?: "pub" | "private" | "internal";
 	is_static?: boolean;
 	/** For locals and parameters: the start of the function they belong to. */
 	func_start?: number;
@@ -465,14 +470,14 @@ class Builder {
 		const params = node.type_params?.length ? `<${node.type_params.join(", ")}>` : "";
 		const traits = node.node_type === "struct" ? (node as StructNode).traits : [];
 		const conforms = traits.length ? `: ${traits.join(", ")}` : "";
-		return `${node.visibility === "pub" ? "pub " : ""}${kind} ${node.name}${params}${conforms}`;
+		return `${visibility_prefix(node.visibility)}${kind} ${node.name}${params}${conforms}`;
 	}
 
 	private function_signature(node: FunctionNode): string {
 		const params = node.params.map((p) => this.param_signature(p));
 		if (node.return_type?.name) params.push(`out ${type_name(node.return_type)}`);
 		const type_params = node.type_params?.length ? `<${node.type_params.join(", ")}>` : "";
-		const visibility = node.visibility === "pub" ? "pub " : "";
+		const visibility = visibility_prefix(node.visibility);
 		return `${visibility}func ${node.name}${type_params} = (${params.join(", ")})`;
 	}
 
@@ -492,7 +497,7 @@ class Builder {
 	}
 
 	private declaration_signature(node: DeclarationNode): string {
-		const visibility = node.visibility === "pub" ? "pub " : "";
+		const visibility = visibility_prefix(node.visibility);
 		const type = this.type_text(node.type);
 		return `${visibility}${node.declaration} ${type} ${node.name}`.replace(/\s+/g, " ").trim();
 	}

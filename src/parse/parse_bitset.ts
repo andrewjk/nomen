@@ -6,7 +6,10 @@ import consume_name from "./utils/consume_name.ts";
 import expect from "./utils/expect.ts";
 import get_index from "./utils/get_index.ts";
 
-export default function parse_bitset(visibility: "pub" | "private", status: ParseStatus) {
+export default function parse_bitset(
+	visibility: "pub" | "private" | "internal",
+	status: ParseStatus,
+) {
 	const start = get_index(status);
 	accept(visibility, status);
 	// Optional `must_use` modifier between visibility and `bitset`

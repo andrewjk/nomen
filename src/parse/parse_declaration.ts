@@ -25,7 +25,7 @@ import get_index from "./utils/get_index.ts";
 import peek_current from "./utils/peek_current.ts";
 
 export default function parse_declaration(
-	visibility: "pub" | "private",
+	visibility: "pub" | "private" | "internal",
 	declaration: "const" | "var" | "move" | "view",
 	status: ParseStatus,
 ) {
@@ -409,7 +409,7 @@ function looks_like_destructuring(status: ParseStatus, start_idx: number): boole
  *     bound to `name`
  */
 function parse_destructuring(
-	visibility: "pub" | "private",
+	visibility: "pub" | "private" | "internal",
 	declaration: "const" | "var" | "move" | "view",
 	start: number,
 	status: ParseStatus,

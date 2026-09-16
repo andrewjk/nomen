@@ -12,12 +12,12 @@ pub func main = () {
 ${source}
 }
 `;
-	return parse(source_to_parse, system, undefined, options);
+	return parse(source_to_parse, system, undefined, { allow_internal: true, ...options });
 }
 
 export function parse_raw(source: string) {
 	// The raw-splicing machinery tests hand-write user-shaped programs with
 	// `#arch:` blocks; production builds never set allow_user_raw, so real
 	// user code cannot reach raw pointer manipulation.
-	return parse(source, system, undefined, { allow_user_raw: true });
+	return parse(source, system, undefined, { allow_user_raw: true, allow_internal: true });
 }

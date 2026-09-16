@@ -12,11 +12,15 @@ import get_index from "./utils/get_index.ts";
 import peek_current from "./utils/peek_current.ts";
 import peek_next from "./utils/peek_next.ts";
 
-export default function parse_visibility(visibility: "pub" | "private", status: ParseStatus) {
+export default function parse_visibility(
+	visibility: "pub" | "private" | "internal",
+	status: ParseStatus,
+) {
 	// Declarations, funcs, structs and traits can have their visibility controlled
-	// Visibility options are `pub` and `private`
+	// Visibility options are `pub`, `private`, and `internal`
 	// `pub` is visible within the parent's scope (e.g. file, foler)
 	// `private` is visible within the scope (e.g. function, file) only
+	// `internal` is visible within the declaring module/library only
 	// Declarations, funcs, structs and traits have `private` visibility by default
 	// Struct fields have `pub` visibility by default
 	const next = peek_next(status);
@@ -25,8 +29,8 @@ export default function parse_visibility(visibility: "pub" | "private", status: 
 		case "var":
 		case "move":
 		case "view": {
-			if (visibility === "private" && status.stack.at(-1)?.node_type === "trait") {
-				add_error(status, `Trait fields cannot be private`, get_index(status));
+			if (visibility !== "pub" && status.stack.at(-1)?.node_type === "trait") {
+				add_error(status, `Trait fields cannot be ${visibility}`, get_index(status));
 				consume(status);
 			} else {
 				parse_declaration(visibility, next, status);
@@ -73,8 +77,8 @@ export default function parse_visibility(visibility: "pub" | "private", status: 
 			break;
 		}
 		case "func": {
-			if (visibility === "private" && status.stack.at(-1)?.node_type === "trait") {
-				add_error(status, `Trait functions cannot be private`, get_index(status));
+			if (visibility !== "pub" && status.stack.at(-1)?.node_type === "trait") {
+				add_error(status, `Trait functions cannot be ${visibility}`, get_index(status));
 				consume(status);
 			} else {
 				parse_function(visibility, status);

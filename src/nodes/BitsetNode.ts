@@ -1,7 +1,7 @@
 import BaseNode from "./BaseNode.ts";
 
 export default class BitsetNode extends BaseNode {
-	visibility: "pub" | "private";
+	visibility: "pub" | "private" | "internal";
 	name: string;
 	cases: string[];
 	/** True when this bitset is defined in the appended System library source. */
@@ -20,7 +20,12 @@ export default class BitsetNode extends BaseNode {
 	 */
 	source_name?: string;
 
-	constructor(start: number, visibility: "pub" | "private", name: string, cases?: string[]) {
+	constructor(
+		start: number,
+		visibility: "pub" | "private" | "internal",
+		name: string,
+		cases?: string[],
+	) {
 		super("bitset", start);
 		this.visibility = visibility;
 		this.name = name;

@@ -90,7 +90,7 @@ describe("array/list slice (runtime, both backends)", () => {
 
 // Check-only tests for borrow semantics on non-string views.
 function errors(src: string) {
-	return parse(src, lib).errors.map((e) => `${e.message}`);
+	return parse(src, lib, undefined, { allow_internal: true }).errors.map((e) => `${e.message}`);
 }
 
 describe("view T borrow semantics", () => {

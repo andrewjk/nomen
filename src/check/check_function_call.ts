@@ -201,17 +201,31 @@ export default function check_function_call(
 		const struct = status.structs.find((s) => s.name === struct_name);
 		if (
 			struct &&
-			struct.visibility === "private" &&
-			!is_visible(struct.scope, struct.visibility, access_scope, status.stack)
+			struct.visibility !== "pub" &&
+			!is_visible(
+				struct.scope,
+				struct.visibility,
+				access_scope,
+				status.stack,
+				!!struct.is_library,
+				!!status.allow_internal,
+			)
 		) {
-			add_error(status, `Can't access private function: ${node.name}`, node.start);
+			add_error(status, `Can't access ${struct.visibility} function: ${node.name}`, node.start);
 			return false;
 		}
 	} else if (
-		func.visibility === "private" &&
-		!is_visible(func.scope, func.visibility, access_scope, status.stack)
+		func.visibility !== "pub" &&
+		!is_visible(
+			func.scope,
+			func.visibility,
+			access_scope,
+			status.stack,
+			!!func.is_library,
+			!!status.allow_internal,
+		)
 	) {
-		add_error(status, `Can't access private function: ${node.name}`, node.start);
+		add_error(status, `Can't access ${func.visibility} function: ${node.name}`, node.start);
 		return false;
 	}
 

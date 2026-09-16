@@ -351,7 +351,8 @@ function is_import(line: Line): boolean {
  */
 function strip_redundant_type(pieces: Piece[]): Piece[] {
 	let i = 0;
-	if (pieces[i]?.text === "pub" || pieces[i]?.text === "private") i++;
+	if (pieces[i]?.text === "pub" || pieces[i]?.text === "private" || pieces[i]?.text === "internal")
+		i++;
 	const declaration = pieces[i]?.text;
 	if (declaration !== "var" && declaration !== "const" && declaration !== "move") return pieces;
 	i++;

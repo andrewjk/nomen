@@ -15,7 +15,7 @@ export default function parse(
 	source: string,
 	library?: Library,
 	file_path?: string,
-	options?: { allow_user_raw?: boolean },
+	options?: { allow_user_raw?: boolean; allow_internal?: boolean },
 ): ParseResult {
 	let user_source_length = source.length;
 	if (library) {
@@ -82,7 +82,7 @@ export default function parse(
 		};
 	}
 
-	const checked = check(root);
+	const checked = check(root, { allow_internal: options?.allow_internal });
 
 	return {
 		ok: !checked.errors.length,

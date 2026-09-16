@@ -20,7 +20,7 @@ import peek_current from "./utils/peek_current.ts";
 import peek_next from "./utils/peek_next.ts";
 
 export default function parse_function(
-	visibility: "pub" | "private",
+	visibility: "pub" | "private" | "internal",
 	status: ParseStatus,
 	name_override?: string,
 	is_inline?: boolean,

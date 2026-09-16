@@ -19,9 +19,9 @@ The following words are reserved by the language and cannot be used as
 variable, parameter, field, type, or enum case names:
 
 `as` `async` `bitset` `break` `case` `class` `const` `continue` `cp` `else`
-`enum` `extern` `extend` `for` `func` `if` `import` `in` `let` `match` `move`
-`of` `out` `panic` `private` `pub` `raw` `ref` `return` `spawn` `struct`
-`switch` `swap` `todo` `trait` `unsafe` `var` `view` `while`
+`enum` `extern` `extend` `for` `func` `if` `import` `in` `internal` `let`
+`match` `move` `of` `out` `panic` `private` `pub` `raw` `ref` `return` `spawn`
+`struct` `switch` `swap` `todo` `trait` `unsafe` `var` `view` `while`
 
 The literals `true`, `false`, and `null`, and `self`, are reserved as well.
 Using a reserved word as a name is a compile error:
@@ -2104,6 +2104,7 @@ const result = Math.power(2, 10)
 ## Visibility Modifiers
 
 - `pub`: Public (accessible from the parent scope)
+- `internal`: Internal (accessible only within the declaring module/library)
 - `private`: Private (accessible only within the same struct or scope)
 
 ## Type Coercion

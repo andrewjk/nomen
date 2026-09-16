@@ -180,4 +180,12 @@ export default interface CheckStatus {
 	 * through clones so two function scopes can't pick the same label.
 	 */
 	type_emission_names?: Set<string>;
+
+	/**
+	 * Trusted-mode opt-in: when true, `internal` items are visible everywhere,
+	 * as if the compiled program were itself part of the declaring library.
+	 * Set only by the test/benchmark harnesses that drive System-library
+	 * internals directly (mirrors `allow_user_raw`); never for real user code.
+	 */
+	allow_internal?: boolean;
 }

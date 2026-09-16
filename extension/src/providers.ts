@@ -116,7 +116,7 @@ function members_of(
 	for (const member of all_members(analysis.types, info)) {
 		if (seen.has(member.name)) continue;
 		if (member.name.startsWith("#")) continue;
-		if (!inside && member.visibility === "private") continue;
+		if (!inside && (member.visibility === "private" || member.visibility === "internal")) continue;
 		if (member.kind === "method" && !!member.is_static !== is_static) continue;
 		if (member.kind === "field" && is_static) continue;
 		seen.add(member.name);

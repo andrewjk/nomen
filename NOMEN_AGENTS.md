@@ -128,7 +128,9 @@ const y = x + 1     // Error: 'x' is null
 
 ### Visibility
 
-`pub` exports; everything else is module-private. There is no `private` keyword.
+`pub` exports. `internal` is visible only within the declaring library/module
+(the System library uses it to hide implementation details). Everything else is
+private to its declaring scope.
 
 ### Imports
 

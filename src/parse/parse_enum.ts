@@ -11,7 +11,10 @@ import expect_close_angle from "./utils/expect_close_angle.ts";
 import get_index from "./utils/get_index.ts";
 import peek_current from "./utils/peek_current.ts";
 
-export default function parse_enum(visibility: "pub" | "private", status: ParseStatus) {
+export default function parse_enum(
+	visibility: "pub" | "private" | "internal",
+	status: ParseStatus,
+) {
 	const start = get_index(status);
 	accept(visibility, status);
 	// Optional `must_use` modifier between visibility and `enum`

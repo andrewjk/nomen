@@ -172,6 +172,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.func_return_type = n.func_return_type ? clone_type(n.func_return_type) : undefined;
 			c.scope = n.scope;
 			c.allocations = n.allocations?.map(clone_node);
+			c.is_library = n.is_library;
 			return c;
 		}
 		case "assign": {

@@ -23,7 +23,7 @@ export function read_bench(name: string): string {
 }
 
 export function parse_bench(name: string) {
-	return parse(read_bench(name), lib);
+	return parse(read_bench(name), lib, undefined, { allow_internal: true });
 }
 
 /**
@@ -52,7 +52,7 @@ async function bench_options(
 
 export async function build_and_check_bench(name: string, expected: string) {
 	const source = read_bench(name);
-	const parsed = parse(source, lib);
+	const parsed = parse(source, lib, undefined, { allow_internal: true });
 	expect(parsed.errors).toEqual([]);
 	for (const arch of ["aarch64", "c"] as const) {
 		const { result, check_opts } = await bench_options(parsed, arch);
@@ -73,7 +73,7 @@ export async function build_and_check_bench_with_files(
 	variant?: string,
 ) {
 	const source = read_bench(name);
-	const parsed = parse(source, lib);
+	const parsed = parse(source, lib, undefined, { allow_internal: true });
 	expect(parsed.errors).toEqual([]);
 	const check_name = `${name}${variant ? `_${variant}` : ""}`;
 	for (const arch of ["aarch64", "c"] as const) {

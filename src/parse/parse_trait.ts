@@ -8,7 +8,10 @@ import expect from "./utils/expect.ts";
 import expect_close_angle from "./utils/expect_close_angle.ts";
 import get_index from "./utils/get_index.ts";
 
-export default function parse_trait(visibility: "pub" | "private", status: ParseStatus) {
+export default function parse_trait(
+	visibility: "pub" | "private" | "internal",
+	status: ParseStatus,
+) {
 	const start = get_index(status);
 	accept(visibility, status);
 	accept("trait", status);

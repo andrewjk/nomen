@@ -200,7 +200,9 @@ test("the real fannkuch-redux bench kernel keeps the sharing invariant", async (
 	const { default: parse } = await import("../src/parse");
 	const root_dir = path.resolve(import.meta.dirname, "..");
 	const source = join(path.join(root_dir, "bench/nomen/fannkuch-redux.nm"), "core");
-	const parsed = parse(source, get_library(path.join(root_dir, "core")));
+	const parsed = parse(source, get_library(path.join(root_dir, "core")), undefined, {
+		allow_internal: true,
+	});
 	expect(parsed.errors).toEqual([]);
 	expect_no_shared_interference(
 		parsed.root.statements.find(

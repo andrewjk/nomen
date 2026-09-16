@@ -307,3 +307,36 @@ reachable by driving `Buffer`/`ClassBuffer` directly. Remediation shipped
   sibling System containers, so hiding needs a library-internal visibility
   concept). With `modify_T` + the contract comments, the safe path exists;
   (a)+(c-lite) is the accepted posture for now.
+
+### Resolved (2026-09-16): `internal` visibility + `internal struct Buffer`
+
+A new `internal` visibility modifier landed — visible only within the
+declaring library/module (library-side of the appended System source), so
+sibling System files can still reach it while user code cannot. `Buffer<T>`
+is now `internal` (see `core/System/Buffer.nm`), closing the "drive the raw
+primitives from user code" hole. Tests/benchmarks that intentionally exercise
+Buffer internals opt in via `parse(..., { allow_internal: true })` (mirrors
+`allow_user_raw`); real user builds never set it. Negative coverage lives in
+`test/internal_visibility.test.ts`.
+
+**Residual holes (new follow-ups):**
+
+1. **Type-name references are not visibility-checked.** `resolve_declared_type`
+   / `check_type_exists` never consult `visibility`, so user code can still
+   _name_ `Buffer<int>` as a type (parameter, field, `var` without a
+   constructor) even though every way to obtain or use an instance is blocked.
+   Same is true of `private`/`internal` structs generally (only field access
+   and constructor/method calls are gated). Closing it means threading the
+   declaring node's `is_library` into `check_type_exists` — but library field
+   types are resolved in an upfront pass whose stack lacks the enclosing
+   function's library flag, so that pass needs a declaring-scope signal first.
+2. **`List.items` (and sibling backing fields) are still `pub` with type
+   `Buffer<T>`.** A user can read `list.items` and hold an opaque Buffer even
+   though they cannot call any of its methods. Marking the backing fields
+   `internal` (or `private`) would close this once (1) lets internal types be
+   named only in library scope.
+3. **SPEC.md's "User-defined sliceable containers" example backs a user
+   container with `Buffer`.** That is no longer legal user code. Replace it
+   with a non-Buffer storage story (or an `Array<T>`), and update
+   `test/spec/expressions.test.ts` accordingly — its snippet currently compiles
+   only because the spec harness runs with `allow_internal`.

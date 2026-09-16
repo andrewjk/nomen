@@ -19,7 +19,7 @@ function branch_has_return(statements: BaseNode[]): boolean {
 }
 
 export default class FunctionNode extends BaseNode implements BlockNode, ReturningNode {
-	visibility: "pub" | "private";
+	visibility: "pub" | "private" | "internal";
 	name: string;
 	return_type: Type;
 	params: ParameterNode[];
@@ -92,7 +92,7 @@ export default class FunctionNode extends BaseNode implements BlockNode, Returni
 
 	constructor(
 		start: number,
-		visibility: "pub" | "private",
+		visibility: "pub" | "private" | "internal",
 		name: string,
 		return_type: Type,
 		params?: ParameterNode[],

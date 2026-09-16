@@ -3,7 +3,7 @@ import ParameterNode from "./ParameterNode.ts";
 import Type from "./Type.ts";
 
 export default class EnumNode extends BaseNode {
-	visibility: "pub" | "private";
+	visibility: "pub" | "private" | "internal";
 	name: string;
 	cases: { name: string; params: ParameterNode[] }[];
 	/** True when this enum is defined in the appended System library source. */
@@ -33,7 +33,7 @@ export default class EnumNode extends BaseNode {
 
 	constructor(
 		start: number,
-		visibility: "pub" | "private",
+		visibility: "pub" | "private" | "internal",
 		name: string,
 		cases?: { name: string; params: ParameterNode[] }[],
 	) {

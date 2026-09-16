@@ -56,7 +56,8 @@ export default function parse_statement(status: ParseStatus) {
 				break;
 			}
 			case "pub":
-			case "private": {
+			case "private":
+			case "internal": {
 				parse_visibility(value, status);
 				break;
 			}
@@ -93,7 +94,7 @@ export default function parse_statement(status: ParseStatus) {
 					parse_enum(default_visibility(status), status);
 				} else if (next === "bitset") {
 					parse_bitset(default_visibility(status), status);
-				} else if (next === "pub" || next === "private") {
+				} else if (next === "pub" || next === "private" || next === "internal") {
 					consume(status);
 					parse_visibility(next, status);
 				} else {

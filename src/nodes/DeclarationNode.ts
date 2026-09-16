@@ -3,7 +3,7 @@ import ParameterNode from "./ParameterNode.ts";
 import Type from "./Type.ts";
 
 export default class DeclarationNode extends BaseNode {
-	visibility: "pub" | "private";
+	visibility: "pub" | "private" | "internal";
 	declaration: "const" | "var" | "move" | "view";
 	name: string;
 	type: Type;
@@ -73,7 +73,7 @@ export default class DeclarationNode extends BaseNode {
 	force_owned_string?: boolean;
 	constructor(
 		start: number,
-		visibility: "pub" | "private",
+		visibility: "pub" | "private" | "internal",
 		declaration: "const" | "var" | "move" | "view",
 		name: string,
 		type?: Type,

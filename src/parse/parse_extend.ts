@@ -22,7 +22,10 @@ import get_index from "./utils/get_index.ts";
  * traits declared in the body. The required trait methods may be supplied
  * in this extend's body, another extend, or the original body.
  */
-export default function parse_extend(visibility: "pub" | "private", status: ParseStatus) {
+export default function parse_extend(
+	visibility: "pub" | "private" | "internal",
+	status: ParseStatus,
+) {
 	const start = get_index(status);
 	accept(visibility, status);
 	accept("extend", status);

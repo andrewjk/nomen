@@ -57,7 +57,9 @@ if (lib_arg) {
 
 const source = join(resolved, lib_path);
 const library = lib_path ? get_library(lib_path) : undefined;
-const parsed = parse(source, library);
+// Benchmarks are trusted System consumers: several drive Buffer's low-level
+// primitives directly, which `internal` hides from real user code.
+const parsed = parse(source, library, undefined, { allow_internal: true });
 
 if (parsed.errors.length) {
 	for (const error of parsed.errors) {

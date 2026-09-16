@@ -375,6 +375,7 @@ export function monomorphize(
 				status.enums,
 			);
 		}
+		mono_field.is_library = field.is_library;
 		return mono_field;
 	});
 

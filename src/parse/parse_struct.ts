@@ -14,7 +14,7 @@ import expect_close_angle from "./utils/expect_close_angle.ts";
 import get_index from "./utils/get_index.ts";
 
 export default function parse_struct(
-	visibility: "pub" | "private",
+	visibility: "pub" | "private" | "internal",
 	status: ParseStatus,
 	is_class = false,
 ) {
