@@ -32,6 +32,28 @@ export default function check_type_exists(type: Type, status: CheckStatus, start
 	// build keys its flat type table by that emission name).
 	const declared = resolve_declared_type(type.name, status);
 	if (declared) {
+		// Visibility gate for type NAMES (not just constructor/field access).
+		// An `internal` type may be named only from library code: a reference
+		// at/after the library boundary, an enclosing library declaration, or
+		// a trusted (`allow_internal`) build. User code naming an internal
+		// library type is rejected. `private`/nested visibility is already
+		// enforced by resolve_declared_type's emission-scope walk.
+		const decl = declared as { visibility?: string; is_library?: boolean };
+		// Only gate references that carry a real source offset. Synthesized
+		// references (an auto-generated `#init`'s return type, etc.) have no
+		// offset and belong to the same unit as their declaration, so they are
+		// always allowed.
+		const has_source_offset = typeof start === "number" && start > 0;
+		if (decl.visibility === "internal" && has_source_offset) {
+			const access_is_library =
+				start >= (status.library_boundary ?? Number.POSITIVE_INFINITY) ||
+				status.stack.some((n) => !!(n as { is_library?: boolean }).is_library) ||
+				!!status.allow_internal;
+			if (!!decl.is_library !== access_is_library) {
+				add_error(status, `Type '${type.name}' is internal to the System library`, start);
+				return false;
+			}
+		}
 		type.name = declared.name;
 	} else if (!status.types.includes(type.name)) {
 		add_error(status, `Unknown type: ${type_name(type)}`, start);

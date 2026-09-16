@@ -2051,7 +2051,17 @@ export default function build_declaration_node(
 					status.code += `ldr x1, [sp], #16\n`;
 					const field_name = (access.access as AccessFieldNode).name;
 					const target_type = type_from_value_node(access.target);
-					const field_type = type_from_value_node(access.access);
+					// Resolve through the receiver struct's field list: inside a
+					// monomorphized generic method the AccessFieldNode's cached
+					// `type` can still name the generic template, whose size
+					// lookup is wrong (a 24-byte Buffer copied as one 8-byte
+					// word). The mono struct's fields carry `Buffer_int`.
+					const target_struct = target_type.name
+						? status.structs.find((s) => s.name === target_type.name)
+						: undefined;
+					const field_type =
+						target_struct?.fields.find((f) => f.name === field_name)?.type ??
+						type_from_value_node(access.access);
 					const offset = get_field_offset(target_type.name, field_name, status);
 					const field_size = get_struct_size(field_type.name, status);
 					emit_struct_copy("x1", "x0", offset, field_size, status);

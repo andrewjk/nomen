@@ -188,4 +188,12 @@ export default interface CheckStatus {
 	 * internals directly (mirrors `allow_user_raw`); never for real user code.
 	 */
 	allow_internal?: boolean;
+
+	/**
+	 * Source offset where the appended System library begins (0 when the file
+	 * being checked is itself library source). A type reference at/after this
+	 * offset is library code, so it may name `internal` library types; a
+	 * reference before it is user code and may not. Undefined with no library.
+	 */
+	library_boundary?: number;
 }

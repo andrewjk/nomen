@@ -78,5 +78,6 @@ export default function clone_status(status: CheckStatus): CheckStatus {
 		type_emission_names: status.type_emission_names,
 		// Trusted-internal opt-in: a build-wide flag, inherited by every clone.
 		allow_internal: status.allow_internal,
+		library_boundary: status.library_boundary,
 	};
 }

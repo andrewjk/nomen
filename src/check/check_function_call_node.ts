@@ -621,6 +621,7 @@ export function monomorphize(
 			function_emission_names: status.function_emission_names,
 			// Preserve the trusted-internal opt-in across the clone check.
 			allow_internal: status.allow_internal,
+			library_boundary: status.library_boundary,
 		};
 		check_function_node(cloned, root_status);
 		cloned_custom_init = true;
@@ -2158,6 +2159,7 @@ function specialize_function(
 		// Trusted-internal opt-in must survive monomorphization: a generic
 		// user function's cloned body is checked here with a fresh status.
 		allow_internal: status.allow_internal,
+		library_boundary: status.library_boundary,
 	};
 
 	check_function_node(cloned, root_status);

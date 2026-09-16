@@ -308,20 +308,21 @@ reachable by driving `Buffer`/`ClassBuffer` directly. Remediation shipped
   concept). With `modify_T` + the contract comments, the safe path exists;
   (a)+(c-lite) is the accepted posture for now.
 
-### Residual holes
+## Residual Buffer holes
 
-1. **Type-name references are not visibility-checked.** `resolve_declared_type`
-   / `check_type_exists` never consult `visibility`, so user code can still
-   _name_ an `internal`/`private` struct as a type (parameter, field, `var`
-   without a constructor) even when every constructor/method/field is gated.
-   Closing it means threading the declaring node's `is_library` into
-   `check_type_exists` — but library field types are resolved in an upfront
-   pass whose stack lacks the enclosing function's library flag, so that pass
-   needs a declaring-scope signal first.
-2. **`store` remains a footgun inside the library.** It is `internal` now, but
-   any System container that calls `store` on an occupied owning slot still
-   leaks. The containers are audited to store only on fresh slots; a
-   `store`-vs-`replace` mistake in new library code would not be caught.
-3. **`alloc` on a populated owning buffer leaks.** `alloc` reallocates a fresh
-   slab without reclaiming the old slots. It is only used to initialize empty
-   buffers; a guard (or folding into `grow`) would make it misuse-proof.
+1. **`store`'s fresh-slot contract: NOT removed (deletion was unsound).**
+   Removing `store` and routing every caller to `replace` broke the
+   load→modify→store round-trip uses (`JsonTree.set_kind`/`set_child`/…):
+   `load` returns a shallow (aliasing) copy for owning structs, and `replace`
+   frees the displaced value _before_ copying, so the aliased copy dangles.
+   `store`'s round-trip guard is load-bearing. Closing the remaining leak (a
+   `store` on an occupied, non-aliasing slot) needs per-element reclaim in the
+   owning specializations while preserving that guard — a backend change
+   deferred as its own task.
+
+2. **`alloc` discarding: NOT changed (folding into `grow` changes semantics).**
+   `alloc(n)` sets cap exactly `n`; `grow(n)` rounds up. Callers rely on the
+   exact cap, and routing `alloc` through `realloc` also surfaced the
+   swap-size codegen bug below as latent heap corruption. Reclaiming the old
+   slab inside `alloc` while keeping the exact cap needs per-element destroy
+   (owning `T`), so it is deferred.

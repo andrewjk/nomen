@@ -6,7 +6,10 @@ import BaseNode from "./nodes/BaseNode.ts";
 import { child_nodes } from "./nodes/child_nodes.ts";
 import type CheckResult from "./types/CheckResult.ts";
 
-export default function check(root: BaseNode, options?: { allow_internal?: boolean }): CheckResult {
+export default function check(
+	root: BaseNode,
+	options?: { allow_internal?: boolean; library_boundary?: number },
+): CheckResult {
 	const status: CheckStatus = {
 		stack: [root],
 		scope_depth: 0,
@@ -29,6 +32,7 @@ export default function check(root: BaseNode, options?: { allow_internal?: boole
 		type_name_counts: count_declared_type_names(root),
 		type_emission_names: new Set(),
 		allow_internal: options?.allow_internal,
+		library_boundary: options?.library_boundary,
 	};
 
 	check_node(root, status);

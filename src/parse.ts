@@ -82,7 +82,10 @@ export default function parse(
 		};
 	}
 
-	const checked = check(root, { allow_internal: options?.allow_internal });
+	const checked = check(root, {
+		allow_internal: options?.allow_internal,
+		library_boundary: library ? user_source_length : undefined,
+	});
 
 	return {
 		ok: !checked.errors.length,

@@ -37,6 +37,34 @@ const library = {
 	dir: path.resolve("/nonexistent-test-library"),
 };
 
+/**
+ * A second mini-library whose *type* (not just members) is `internal`, plus a
+ * `pub` function that names it — the library's own use must stay legal.
+ */
+const HIDDEN_SOURCE = `internal struct Hidden {
+	var int x = 0
+}
+pub func make_hidden = (out Hidden) {
+	return Hidden()
+}
+`;
+
+const hidden_library = {
+	name: "Hidden",
+	source: HIDDEN_SOURCE,
+	types: new Map([
+		["Hidden", { name: "Hidden", source: HIDDEN_SOURCE, path: "Test/Hidden.nm", deps: [] }],
+	]),
+	functions: new Map([
+		[
+			"make_hidden",
+			{ name: "make_hidden", source: HIDDEN_SOURCE, path: "Test/Hidden.nm", deps: [] },
+		],
+	]),
+	namespaces: new Map<string, Set<string>>(),
+	dir: path.resolve("/nonexistent-hidden-library"),
+};
+
 /** Build the expected error by locating `needle` in `source`. */
 function at(source: string, needle: string, message: string): CompileError {
 	const start = source.indexOf(needle);
@@ -129,6 +157,38 @@ trait Broken {
 			at(input, "internal var int x", "Trait fields cannot be internal"),
 			at(input, "internal func y", "Trait functions cannot be internal"),
 		]);
+	});
+
+	test("an internal library type cannot be named from user code", () => {
+		const input = `import System
+pub func main = () {
+	var Hidden h = null
+}
+`;
+		const errors = parse(input, hidden_library).errors;
+		expect(
+			errors.some((e) => e.message === "Type 'Hidden' is internal to the System library"),
+		).toBe(true);
+	});
+
+	test("library code may name its own internal type", () => {
+		// `make_hidden` (library) both returns and constructs `Hidden`; pulling
+		// the library in must not raise an internal-type error for its own use.
+		const input = `import System
+pub func main = () {
+	var _ = make_hidden()
+}
+`;
+		expect(parse(input, hidden_library).errors).toEqual([]);
+	});
+
+	test("allow_internal may name an internal type", () => {
+		const input = `import System
+pub func main = () {
+	var Hidden h = make_hidden()
+}
+`;
+		expect(parse(input, hidden_library, undefined, { allow_internal: true }).errors).toEqual([]);
 	});
 
 	test("Buffer is public but its raw primitives stay internal", () => {

@@ -37,6 +37,28 @@ Console.write("\\{h.content.value}")
 		await build_and_check_output(input, "mov_swap_funcall", "990");
 	});
 
+	test("swap restores a struct field fully inside a generic method", async () => {
+		// Regression: the swap-back used to copy only one 8-byte word of the
+		// replacement because the AccessFieldNode's cached type still named the
+		// generic template `Buffer<T>` (not the monomorphized `Buffer_int`), so
+		// `cap` kept the swapped-out buffer's value and the two buffers aliased
+		// their slab (double free).
+		const input = `
+struct Holder<T> {
+	var Buffer<T> buf = Buffer<T>()
+	pub func take = (ref self, out Buffer<T>) {
+		var Buffer<T> old = move self.buf swap Buffer<T>()
+		return old
+	}
+}
+var Holder<int> h = Holder<int>()
+h.buf.grow(8)
+var Buffer<int> old = h.take()
+Console.write("\\{h.buf.cap} \\{old.cap}")
+`;
+		await build_and_check_output(input, "mov_swap_generic_struct_field", "0 8");
+	});
+
 	test("swap without move is an error", () => {
 		const input = `
 class Box {

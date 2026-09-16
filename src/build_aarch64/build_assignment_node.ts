@@ -516,9 +516,19 @@ function build_swap(node: AssignmentNode, status: BuildStatus, nir_swap?: NirExp
 		const rhs_field = (rhs_access.access as AccessFieldNode).name;
 		const rhs_target_type = type_from_value_node(rhs_access.target);
 		const rhs_offset = get_field_offset(rhs_target_type.name, rhs_field, status);
-		// A struct field (e.g. Buffer) needs its bytes struct-copied back in;
-		// a class field is a single pointer store.
-		const field_type = type_from_value_node(rhs_access.access);
+		// Resolve the field's type through the RECEIVER struct's own field list
+		// first: inside a monomorphized generic method the AccessFieldNode's
+		// cached `type` can still name the generic template (`Buffer<TK>`),
+		// which isn't in `status.structs` at build time — the name lookup below
+		// would then classify a struct field as a scalar and emit a single-word
+		// store instead of a full struct copy (corrupting the receiver). The
+		// mono struct's fields carry the substituted type (`Buffer_int`).
+		const rhs_target_struct = rhs_target_type.name
+			? status.structs.find((s) => s.name === rhs_target_type.name)
+			: undefined;
+		const field_type =
+			rhs_target_struct?.fields.find((f) => f.name === rhs_field)?.type ??
+			type_from_value_node(rhs_access.access);
 		const field_struct = field_type.name
 			? status.structs.find((s) => s.name === field_type.name && !s.is_simple_type)
 			: undefined;
