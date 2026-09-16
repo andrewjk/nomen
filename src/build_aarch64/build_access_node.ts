@@ -1,5 +1,6 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
+import find_enum from "../build_common/find_enum.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import {
 	drop_self_written_string_field_records,
@@ -1104,7 +1105,7 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		return;
 	}
 
-	const enum_node = status.enums.find((e) => e.name === (target_name || target_type?.name));
+	const enum_node = find_enum(target_type?.name, status) ?? find_enum(target_name, status);
 	if (enum_node) {
 		const enum_case = enum_node.cases.find((c) => c.name === access_field.name);
 		if (enum_case) {
@@ -1128,9 +1129,8 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 	}
 
 	// Check for enum payload field access (e.g., insect.count)
-	const enum_with_data = status.enums.find(
-		(e) => e.name === (target_name || target_type?.name) && e.has_associated_data,
-	);
+	const enum_candidate = find_enum(target_type?.name, status) ?? find_enum(target_name, status);
+	const enum_with_data = enum_candidate?.has_associated_data ? enum_candidate : undefined;
 	if (enum_with_data) {
 		for (const c of enum_with_data.cases) {
 			const param = c.params.find((p) => p.name === access_field.name);
@@ -1601,7 +1601,7 @@ function build_access_method(
 	}
 	const target_name =
 		node.target.node_type === "value" ? (node.target as ValueNode).value : target_type?.name;
-	const enum_node = status.enums.find((e) => e.name === target_name);
+	const enum_node = find_enum(target_type?.name, status) ?? find_enum(target_name, status);
 	// Borrow-position `to_string()` elision (STRING_PLAN tranche 3): the
 	// checker verified the consumer takes the receiver's bytes as a plain
 	// `string` borrow and cannot mutate them — pass the receiver's (ptr, len)

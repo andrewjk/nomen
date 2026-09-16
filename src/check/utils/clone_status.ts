@@ -73,5 +73,8 @@ export default function clone_status(status: CheckStatus): CheckStatus {
 		// Nested-function label uniquification must see every emission name
 		// in the program — share the same set across all clones.
 		function_emission_names: status.function_emission_names,
+		// Nested-type label uniquification: same discipline as functions.
+		type_name_counts: status.type_name_counts,
+		type_emission_names: status.type_emission_names,
 	};
 }

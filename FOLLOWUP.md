@@ -2,45 +2,6 @@
 
 Skipped or out-of-scope items recorded for later.
 
-## Same-named nested type declarations poison the build's global type table
-
-The checker scopes type declarations (struct/class/enum/bitset) per function
-body — two sibling functions may each declare `struct Box` the same way
-sibling nested funcs are supported. But the BUILD flattens every type it
-traverses into one global table (`status.structs`, keyed by bare name), and
-all symbol emission (`Box_init`, `Box_destroy`, method labels) is keyed by
-that bare name too. When two same-named types are declared in different
-function scopes of ONE program (or a nested `struct Box<T>` coexists with a
-top-level `class Box`), `structs.find(name)` resolves by REGISTRATION ORDER:
-generic-container monomorphizations (`List<Box>`, `ClassBuffer<Box>`) and
-init/destroy dispatch can build against the WRONG type, and duplicate
-`Box_init`-style symbols are possible.
-
-Verified empirically (2026-09-15, test-harness batch build): a program
-containing both
-
-- a top-level `pub class Box { var List<int> items }` with `List<Box>`
-  usage (mono `List_Box_*`), and
-- a nested `struct Box<T> { var T value }` with a `pickin<T>` generic
-
-compiled without errors, but the `List_Box_pop`/`ClassBuffer_Box_slice`
-bodies differed from the isolated build (the owning-buffer specialization
-looked up the generic `Box<T>` instead of the class) and the program printed
-garbage (`-1280583200480871952`) where the isolated build printed `502`. The
-test/workaround for the batched test runner is `binpack_by_names` in
-`test/output_batch.ts` (never merge cases whose declared names intersect);
-user programs have no such guard today.
-
-Fix directions:
-
-1. _Check-time rejection (cheap, honest)_: reject a type declaration whose
-   name is already declared anywhere else in the program (mirroring the
-   `taken`-set discipline `assign_function_label` uses for nested funcs).
-2. _Scoped emission names (systemic)_: give nested type declarations
-   parent-prefixed emission labels (the nested-func `label_name` mechanism)
-   and key the build's type table by (scope, name). Touches mono naming,
-   init/destroy dispatch, and every `structs.find(name)` call site.
-
 ## Enum-in-container and match-binding escapes
 
 The enum-with-string-payload ownership edge — an enum value stored inside a

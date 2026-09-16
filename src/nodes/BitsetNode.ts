@@ -13,6 +13,12 @@ export default class BitsetNode extends BaseNode {
 	 * `var _ = f.flags()`) or use it.
 	 */
 	must_use?: boolean;
+	/**
+	 * The source-level name when `name` was rewritten to a scope-unique
+	 * emission label (see `assign_type_label` in check_block_node). Undefined
+	 * for top-level bitsets, whose source name IS their emission name.
+	 */
+	source_name?: string;
 
 	constructor(start: number, visibility: "pub" | "private", name: string, cases?: string[]) {
 		super("bitset", start);

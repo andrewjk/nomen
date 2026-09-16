@@ -322,6 +322,7 @@ function gather_structs(block: BlockNode, status: CheckStatus) {
 					add_error(status, `Struct already declared: ${struct.name}`, struct.start);
 				} else {
 					names_in_block.structs.add(struct.name);
+					assign_type_label(struct, block, status);
 					struct.scope = status.stack.at(-1) || block;
 					struct.is_generic = struct.type_params.length > 0;
 					// Strip parallel-length clauses from every method's params
@@ -389,6 +390,7 @@ function gather_structs(block: BlockNode, status: CheckStatus) {
 					add_error(status, `Enum already declared: ${enum_node.name}`, enum_node.start);
 				} else {
 					names_in_block.enums.add(enum_node.name);
+					assign_type_label(enum_node, block, status);
 					enum_node.is_generic = enum_node.type_params.length > 0;
 					status.types.push(enum_node.name);
 					status.enums.push(enum_node);
@@ -401,6 +403,7 @@ function gather_structs(block: BlockNode, status: CheckStatus) {
 					add_error(status, `Bitset already declared: ${bitset_node.name}`, bitset_node.start);
 				} else {
 					names_in_block.bitsets.add(bitset_node.name);
+					assign_type_label(bitset_node, block, status);
 					status.types.push(bitset_node.name);
 					status.bitsets.push(bitset_node);
 				}
@@ -408,6 +411,46 @@ function gather_structs(block: BlockNode, status: CheckStatus) {
 			}
 		}
 	}
+}
+
+/** A declared type node whose emission name may be scoped. */
+interface ScopedTypeNode {
+	name: string;
+	source_name?: string;
+	/** Emission label of the function whose body declares this type. */
+	emission_scope?: string;
+}
+
+/**
+ * Give a NESTED type declaration a scope-unique emission name when its source
+ * name is declared more than once in the program (the build flattens every type
+ * into one name-keyed table, so a same-named type in another function scope
+ * would otherwise poison init/destroy dispatch and monomorphization). Top-level
+ * declarations keep their source name — only nested ones are renamed, and only
+ * on an actual collision, so unique nested types (and library types) are
+ * unchanged. The label is `<enclosing function label>_<source name>`, uniquified
+ * against every assigned type emission name.
+ */
+function assign_type_label(node: ScopedTypeNode, block: BlockNode, status: CheckStatus) {
+	const counts = status.type_name_counts;
+	if (!counts || (counts.get(node.name) ?? 0) <= 1) return;
+	if (block.node_type === "root") return;
+	const taken = status.type_emission_names;
+	if (!taken) return;
+	const parent =
+		block.node_type === "func"
+			? (block as unknown as FunctionNode)
+			: (status.stack.findLast((n) => n.node_type === "func") as FunctionNode | undefined);
+	const source = node.name;
+	const scope_key = parent?.label_name ?? parent?.name;
+	const base = `${scope_key ?? "nested"}_${source}`;
+	let label = base;
+	let suffix = 2;
+	while (taken.has(label) || status.types.includes(label)) label = `${base}_${suffix++}`;
+	node.source_name = source;
+	node.name = label;
+	node.emission_scope = scope_key;
+	taken.add(label);
 }
 
 /**

@@ -164,4 +164,20 @@ export default interface CheckStatus {
 	 * uniquification sees the whole program, not just the current scope.
 	 */
 	function_emission_names?: Set<string>;
+
+	/**
+	 * How many times each declared type name (struct/class/enum/bitset/trait)
+	 * occurs in the program. Only names with a count > 1 get a scope-unique
+	 * emission label for their NESTED declarations, so the build's flat type
+	 * table can't be poisoned by a same-named type in another function scope.
+	 * Computed once by `check()`.
+	 */
+	type_name_counts?: Map<string, number>;
+
+	/**
+	 * Scope-unique emission labels assigned to nested type declarations that
+	 * collide with another type name in the program. Shared by reference
+	 * through clones so two function scopes can't pick the same label.
+	 */
+	type_emission_names?: Set<string>;
 }

@@ -1,6 +1,7 @@
 import add_error from "../../add_error.ts";
 import Type from "../../nodes/Type.ts";
 import type CheckStatus from "../CheckStatus.ts";
+import resolve_declared_type from "./resolve_declared_type.ts";
 import type_name from "./type_name.ts";
 
 export default function check_type_exists(type: Type, status: CheckStatus, start: number): boolean {
@@ -26,7 +27,13 @@ export default function check_type_exists(type: Type, status: CheckStatus, start
 		}
 		return ok;
 	}
-	if (!status.types.includes(type.name)) {
+	// Resolve to the declaration's emission name so a nested type whose source
+	// name was scope-labelled resolves consistently everywhere downstream (the
+	// build keys its flat type table by that emission name).
+	const declared = resolve_declared_type(type.name, status);
+	if (declared) {
+		type.name = declared.name;
+	} else if (!status.types.includes(type.name)) {
 		add_error(status, `Unknown type: ${type_name(type)}`, start);
 		return false;
 	}

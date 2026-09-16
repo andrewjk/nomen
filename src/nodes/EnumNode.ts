@@ -24,6 +24,12 @@ export default class EnumNode extends BaseNode {
 	template_name?: string;
 	/** Set on monomorphized instantiations: the concrete type args. */
 	template_args?: Type[];
+	/**
+	 * The source-level name when `name` was rewritten to a scope-unique
+	 * emission label (see `assign_type_label` in check_block_node). Undefined
+	 * for top-level enums, whose source name IS their emission name.
+	 */
+	source_name?: string;
 
 	constructor(
 		start: number,

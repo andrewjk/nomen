@@ -1,6 +1,7 @@
 import { is_int_literal } from "../../int_literal.ts";
 import Type from "../../nodes/Type.ts";
 import type CheckStatus from "../CheckStatus.ts";
+import resolve_declared_type from "./resolve_declared_type.ts";
 
 export default function type_from_value(value: string, status: CheckStatus): Type {
 	// `unsafe`-code generic constants: inside a generic struct's method, the
@@ -29,23 +30,12 @@ export default function type_from_value(value: string, status: CheckStatus): Typ
 		return decl_value.type;
 	}
 
-	// Is it a struct?
-	const struct_value = status.structs.findLast((s) => s.name === value);
-	if (struct_value) {
-		// NOTE: Maybe we should be storing this type on the struct?
-		return new Type(struct_value.name);
-	}
-
-	// Is it an enum?
-	const enum_value = status.enums.findLast((e) => e.name === value);
-	if (enum_value) {
-		return new Type(enum_value.name);
-	}
-
-	// Is it a bitset?
-	const bitset_value = status.bitsets.findLast((b) => b.name === value);
-	if (bitset_value) {
-		return new Type(bitset_value.name);
+	// Is it a declared struct/enum/bitset? Resolve by SOURCE name so a nested
+	// type on a scope-unique emission label still resolves here (and only
+	// while its declaring function is in scope).
+	const declared = resolve_declared_type(value, status);
+	if (declared) {
+		return new Type(declared.name);
 	}
 
 	const func_value = status.functions.findLast((f) => f.name === value);

@@ -32,6 +32,7 @@ import {
 	mangled_label,
 } from "./utils/function_overload.ts";
 import { is_class_type, is_owning_struct_type_requiring_move } from "./utils/ownership.ts";
+import { resolve_declared_struct } from "./utils/resolve_declared_type.ts";
 import type_from_value from "./utils/type_from_value.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 
@@ -61,7 +62,10 @@ export default function check_function_call_node(
 	let func = find_free_function(status, node.name);
 
 	if (!func) {
-		const struct = status.structs.findLast((s) => s.name === node.name);
+		// Resolve the constructed type's declaration by its SOURCE name,
+		// honouring scope (a nested type on a colliding name carries a
+		// scope-unique emission `name` plus its `source_name`).
+		const struct = resolve_declared_struct(node.name, status) as StructNode | undefined;
 		if (struct) {
 			const arg_types = node.params.map((p) => type_from_value_node(p, status));
 			if (struct.type_params.length > 0 && node.type_args?.length) {
@@ -107,6 +111,7 @@ export default function check_function_call_node(
 					if (func) {
 						const type = new Type(struct.name);
 						node.type = type;
+						node.name = struct.name;
 					}
 				}
 			} else {
@@ -115,6 +120,10 @@ export default function check_function_call_node(
 					const type = new Type(struct.name);
 					type.type_args = node.type_args;
 					node.type = type;
+					// Point the call at the resolved declaration's emission
+					// name so the build emits `<label>_init`, not a same-named
+					// sibling's.
+					node.name = struct.name;
 					if (is_overloaded(struct, "#init")) {
 						node.mangled_name = mangled_label(func, struct.name);
 					}

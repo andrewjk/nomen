@@ -3,6 +3,7 @@ import check_node from "./check/check_node.ts";
 import type CheckStatus from "./check/CheckStatus.ts";
 import emit_warnings from "./check/warnings.ts";
 import BaseNode from "./nodes/BaseNode.ts";
+import { child_nodes } from "./nodes/child_nodes.ts";
 import type CheckResult from "./types/CheckResult.ts";
 
 export default function check(root: BaseNode): CheckResult {
@@ -25,6 +26,8 @@ export default function check(root: BaseNode): CheckResult {
 		buffer_caps: new Map(),
 		mutated_local_names: new Set(),
 		function_emission_names: new Set(),
+		type_name_counts: count_declared_type_names(root),
+		type_emission_names: new Set(),
 	};
 
 	check_node(root, status);
@@ -80,4 +83,24 @@ function unwrap_unsafe_blocks(node: unknown): void {
 		const value = any_node[key];
 		if (value && typeof value === "object") unwrap_unsafe_blocks(value);
 	}
+}
+
+/**
+ * Count how many times each declared type name occurs across the whole program
+ * (root and nested, all declaration kinds). A name occurring more than once gets
+ * its NESTED declarations renamed to scope-unique emission labels (see
+ * `assign_type_label`), so the build's flat type table stays unambiguous.
+ */
+function count_declared_type_names(root: BaseNode): Map<string, number> {
+	const counts = new Map<string, number>();
+	const visit = (node: BaseNode) => {
+		const nt = node.node_type;
+		if (nt === "struct" || nt === "enum" || nt === "bitset" || nt === "trait") {
+			const name = (node as unknown as { name: string }).name;
+			if (name) counts.set(name, (counts.get(name) ?? 0) + 1);
+		}
+		for (const child of child_nodes(node)) visit(child);
+	};
+	visit(root);
+	return counts;
 }

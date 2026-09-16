@@ -36,6 +36,13 @@ export default class StructNode extends BaseNode {
 	source_type_args?: Type[];
 	/** True when this struct is defined in the appended System library source. */
 	is_library?: boolean;
+	/**
+	 * The source-level name when `name` was rewritten to a scope-unique
+	 * emission label (see `assign_type_label` in check_block_node). Undefined
+	 * for top-level types, whose source name IS their emission name. Type
+	 * resolution matches against `source_name ?? name`.
+	 */
+	source_name?: string;
 
 	constructor(
 		start: number,
