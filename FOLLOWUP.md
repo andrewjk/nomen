@@ -300,26 +300,9 @@ reachable by driving `Buffer`/`ClassBuffer` directly. Remediation shipped
    `store` on an occupied, non-aliasing slot) needs per-element reclaim in the
    owning specializations while preserving that guard — a backend change
    deferred as its own task.
-
 2. **`alloc` discarding: NOT changed (folding into `grow` changes semantics).**
    `alloc(n)` sets cap exactly `n`; `grow(n)` rounds up. Callers rely on the
    exact cap, and routing `alloc` through `realloc` also surfaced the
    swap-size codegen bug below as latent heap corruption. Reclaiming the old
    slab inside `alloc` while keeping the exact cap needs per-element destroy
    (owning `T`), so it is deferred.
-
-## edigits/pidigits aarch64 binaries fail at HEAD (pre-existing)
-
-Found while removing the dead `buffer_pipeline.ts` (2026-09-16): with default
-flags and fresh `test/out` builds, `bench/nomen/edigits.nm` segfaults (exit 139) and `bench/nomen/pidigits.nm` emits wrong digits from position ~15
-(`3141592653589 20467…` vs `…9 79323…`) on the aarch64 backend. Verified
-pre-existing by stashing the removal and rebuilding from a clean
-`test/out/aarch64/{edigits,pidigits}_aarch64` — both fail identically at HEAD
-(`406f682e`), so the failure count with/without the dead-code removal is the
-same (the removed tranche-K paths were gated on an always-empty
-`buffer_base_cache` and never fired). Both benches are BigInt digit-loop
-code (Knuth-D shapes), so the bug is somewhere in the live BigInt aarch64
-path — region brackets, base-fold, staging, or unrolling interaction. Note
-`test/out` artifacts are git-tracked and the bench cache key is
-`generated asm + system hash`, so stale artifacts do not mask codegen
-changes; the failures reproduce deterministically.

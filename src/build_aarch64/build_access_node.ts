@@ -2255,7 +2255,9 @@ function build_access_method(
 						? lookup_buffer_fold(node.target, access_func.params[0], status)
 						: null;
 				let store_index_reg = "x1";
-				if (!store_folded) {
+				if (store_folded) {
+					store_index_reg = store_folded.var_reg;
+				} else {
 					store_index_reg = staged_index_reg(access_func.params[0], status);
 				}
 				// Get data pointer (cached, pinned, or freshly loaded)
