@@ -18,7 +18,7 @@ import build_node from "./build_node.ts";
 import build_nursery_spawn from "./build_nursery_spawn.ts";
 import { is_owned_heap_temp } from "./build_operation_node.ts";
 import build_parameter_node from "./build_parameter_node.ts";
-import build_spawn_node, { FIBER_HEADER, POOL_HEADER } from "./build_spawn_node.ts";
+import build_spawn_node, { ensure_concurrency_runtime } from "./build_spawn_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import { find_decl_in_c_scopes } from "./utils/c_scope.ts";
@@ -465,13 +465,8 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 			// dispatches into the runtime (the aarch64 system object's
 			// wrappers reference it), so this TU must define it — and the
 			// main-end drain matters once fibers can be queued.
-			if (
-				node.target.node_type === "value" &&
-				(node.target as ValueNode).value === "Fiber" &&
-				!status.used_fibers
-			) {
-				if (!status.headers.includes("__nomen_pool_submit")) status.headers += POOL_HEADER;
-				if (!status.headers.includes("__nomen_fiber_spawn")) status.headers += FIBER_HEADER;
+			if (node.target.node_type === "value" && (node.target as ValueNode).value === "Fiber") {
+				ensure_concurrency_runtime(status);
 				status.used_fibers = true;
 			}
 			// `Thread(fn(args)).start()` — the surface form of a direct spawn

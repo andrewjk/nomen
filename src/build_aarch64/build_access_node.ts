@@ -44,7 +44,7 @@ import build_inline_method, {
 import build_node from "./build_node.ts";
 import build_nursery_spawn from "./build_nursery_spawn.ts";
 import { build_operand, tree_is_call_free } from "./build_operation_node.ts";
-import build_spawn_node, { FIBER_HEADER_C, POOL_HEADER_C } from "./build_spawn_node.ts";
+import build_spawn_node, { ensure_concurrency_runtime_a64 } from "./build_spawn_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free, emit_malloc, emit_strdup } from "./utils/audit.ts";
 import { all_scope_frames, mark_moved_if_struct, trait_class_for } from "./utils/auto_destroy.ts";
@@ -633,12 +633,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				(node.target as ValueNode).value === "Fiber" &&
 				!status.used_fibers
 			) {
-				if (!status.file_scope_c?.includes("__nomen_pool_submit")) {
-					status.file_scope_c = (status.file_scope_c ?? "") + POOL_HEADER_C;
-				}
-				if (!status.file_scope_c.includes("__nomen_fiber_spawn")) {
-					status.file_scope_c += FIBER_HEADER_C;
-				}
+				ensure_concurrency_runtime_a64(status);
 				status.used_fibers = true;
 			}
 			// `Thread(fn(args)).start()` — the surface form of a direct spawn

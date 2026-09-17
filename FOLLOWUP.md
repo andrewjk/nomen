@@ -358,3 +358,27 @@ C backend only. Fix: emit a base-register form for large frame offsets
 (`add x9, x29, #hi; add x9, x9, #lo; ... [x9, #off]`) at every `[x29, #imm]`
 and `add reg, x29, #imm` site, or allocate large locals off a secondary frame
 pointer.
+
+## Kill-trampoline teardown for parked fibers (ASYNC_PLAN Phase 2, deferred)
+
+Nursery cancel/timeout wakes a parked fiber (see `__nomen_future_cancel`) and
+the fiber then exits cooperatively by polling `Task.current_cancelled()` at
+its checkpoints — or by `Channel.receive` returning the zero value once
+cancelled. A fiber that never polls its flag (a tight CAS loop, or a raw
+blocking call) still holds up the nursery join. The ASYNC_PLAN design for
+this is a kill trampoline: push a teardown frame onto the parked stack,
+switch to it, and let normal scope-exit `#destroy` unwinding run every live
+frame. That needs forced stack unwinding of suspended frames (or a
+longjmp-style teardown entry), which is a substantial runtime feature and was
+out of scope. Until then cancellation is cooperative only.
+
+## Mutex.lock does not park in the threaded model
+
+`__nomen_mutex_lock` parks only in cooperative mode (try-lock + yield, where
+the holder is another fiber on the same thread and will run). A fiber on a
+worker that blocks on a contended mutex still blocks that worker (the pool
+grows on demand up to 64, so this is not a deadlock, just a held worker).
+Making it park needs a per-mutex wait list plus a wake on unlock and a
+sound answer for "cancelled while waiting for a lock" (returning without the
+lock would make the caller's matching `unlock` unsound). See ASYNC_PLAN.md
+Phase 2.

@@ -8,7 +8,7 @@ import type BaseNode from "../nodes/BaseNode.ts";
 import SpawnNode from "../nodes/SpawnNode.ts";
 import { emit_address_of } from "./build_access_node.ts";
 import build_node from "./build_node.ts";
-import { FIBER_HEADER_C, POOL_HEADER_C, spawn_arg_is_string } from "./build_spawn_node.ts";
+import { ensure_concurrency_runtime_a64, spawn_arg_is_string } from "./build_spawn_node.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
 
 /**
@@ -41,12 +41,7 @@ export default function build_fiber_spawn_node(
 
 	// Emit pool + fiber infrastructure on first fiber spawn (companion C,
 	// deduped; pool text first — the fiber text extends it).
-	if (!status.file_scope_c?.includes("__nomen_pool_submit")) {
-		status.file_scope_c = (status.file_scope_c ?? "") + POOL_HEADER_C;
-	}
-	if (!status.file_scope_c.includes("__nomen_fiber_spawn")) {
-		status.file_scope_c += FIBER_HEADER_C;
-	}
+	ensure_concurrency_runtime_a64(status);
 	status.used_fibers = true;
 
 	const struct_name = `__nomen_spawn_${id}_args`;
@@ -169,6 +164,7 @@ export default function build_fiber_spawn_node(
 	tramp_c += `\ta->future = f;\n`;
 	tramp_c += `\tf->owner_args = a;\n`;
 	tramp_c += `\tf->fiber_waiters = NULL;\n`;
+	tramp_c += `\tf->owning_fiber = 0;\n`;
 	tramp_c += `\t__nomen_fiber_spawn${start_on ? "_on" : ""}(${tramp_name}, a, f${
 		start_on ? ", __nomen_stack, (size_t)__nomen_stack_size" : ""
 	});\n`;

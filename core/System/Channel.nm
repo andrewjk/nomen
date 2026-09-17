@@ -25,6 +25,8 @@ pub class Channel: Sendable {
 	pub var uint64 not_empty_cv = 0
 	pub var uint64 head = 0
 	pub var uint64 tail = 0
+	// Head of the parked-fiber wait list (guarded by mu). Send wakes it.
+	pub var uint64 waiters = 0
 
 	pub func #init = (self) {
 		```
@@ -45,6 +47,7 @@ pub class Channel: Sendable {
 		pthread_cond_init((pthread_cond_t *)self->not_empty_cv, NULL);
 		self->head = 0;
 		self->tail = 0;
+		self->waiters = 0;
 		```
 		```
 		#arch: aarch64
@@ -60,6 +63,7 @@ pub class Channel: Sendable {
 		bl _pthread_cond_init
 		str xzr, [x19, #24]
 		str xzr, [x19, #32]
+		str xzr, [x19, #40]
 		```
 	}
 
@@ -78,6 +82,7 @@ pub class Channel: Sendable {
 		}
 		self->tail = (unsigned long long)n;
 		pthread_cond_signal((pthread_cond_t *)self->not_empty_cv);
+		__nomen_fiber_waitq_wake((struct nomen_fiber **)&self->waiters);
 		pthread_mutex_unlock((pthread_mutex_t *)self->mu);
 		```
 		```
@@ -104,6 +109,8 @@ pub class Channel: Sendable {
 		str x2, [x19, #32]        // tail = node
 		ldr x0, [x19, #16]        // not_empty_cv
 		bl _pthread_cond_signal
+		add x0, x19, #40          // &self->waiters
+		bl ___nomen_fiber_waitq_wake
 		ldr x0, [x19, #8]         // self->mu
 		bl _pthread_mutex_unlock
 		```
@@ -129,6 +136,7 @@ pub class Channel: Sendable {
 		}
 		self->tail = (unsigned long long)n;
 		pthread_cond_signal((pthread_cond_t *)self->not_empty_cv);
+		__nomen_fiber_waitq_wake((struct nomen_fiber **)&self->waiters);
 		pthread_mutex_unlock((pthread_mutex_t *)self->mu);
 		```
 		```
@@ -175,7 +183,13 @@ pub class Channel: Sendable {
 		#arch: c
 		pthread_mutex_lock((pthread_mutex_t *)self->mu);
 		while (!self->head) {
-			pthread_cond_wait((pthread_cond_t *)self->not_empty_cv, (pthread_mutex_t *)self->mu);
+			// Fibers park instead of blocking; a cancelled fiber returns the
+			// zero value rather than waiting forever (cooperative cancel).
+			if (!__nomen_fiber_waitq_park(
+					(struct nomen_fiber **)&self->waiters, (void *)self->mu, (void *)self->not_empty_cv)) {
+				pthread_mutex_unlock((pthread_mutex_t *)self->mu);
+				return 0;
+			}
 		}
 		struct nomen_channel_node *n = (struct nomen_channel_node *)self->head;
 		self->head = (unsigned long long)n->next;
@@ -193,10 +207,18 @@ pub class Channel: Sendable {
 		.Lchannel_receive_wait:
 		ldr x1, [x19, #24]        // head
 		cbnz x1, .Lchannel_receive_got
-		ldr x0, [x19, #16]        // not_empty_cv
+		add x0, x19, #40          // &self->waiters
 		ldr x1, [x19, #8]         // mu
-		bl _pthread_cond_wait
+		ldr x2, [x19, #16]        // not_empty_cv
+		bl ___nomen_fiber_waitq_park
+		cbz x0, .Lchannel_receive_cancelled
 		b .Lchannel_receive_wait
+		.Lchannel_receive_cancelled:
+		// Cancelled while waiting: return the zero value.
+		ldr x0, [x19, #8]         // self->mu
+		bl _pthread_mutex_unlock
+		mov x0, #0
+		b .Lchannel_receive_end
 		.Lchannel_receive_got:
 		// x1 = node
 		ldr x2, [x1, #16]         // node->next
@@ -211,6 +233,7 @@ pub class Channel: Sendable {
 		ldr x0, [x19, #8]         // self->mu
 		bl _pthread_mutex_unlock
 		ldr x0, [sp], #16         // pop value → x0 (return)
+		.Lchannel_receive_end:
 		```
 	}
 
@@ -223,7 +246,11 @@ pub class Channel: Sendable {
 		#arch: c
 		pthread_mutex_lock((pthread_mutex_t *)self->mu);
 		while (!self->head) {
-			pthread_cond_wait((pthread_cond_t *)self->not_empty_cv, (pthread_mutex_t *)self->mu);
+			if (!__nomen_fiber_waitq_park(
+					(struct nomen_fiber **)&self->waiters, (void *)self->mu, (void *)self->not_empty_cv)) {
+				pthread_mutex_unlock((pthread_mutex_t *)self->mu);
+				return (nomen_string){ 0, 0 };
+			}
 		}
 		struct nomen_channel_node *n = (struct nomen_channel_node *)self->head;
 		self->head = (unsigned long long)n->next;
@@ -243,10 +270,20 @@ pub class Channel: Sendable {
 		.Lchannel_receive_str_wait:
 		ldr x1, [x19, #24]        // head
 		cbnz x1, .Lchannel_receive_str_got
-		ldr x0, [x19, #16]        // not_empty_cv
+		add x0, x19, #40          // &self->waiters
 		ldr x1, [x19, #8]         // mu
-		bl _pthread_cond_wait
+		ldr x2, [x19, #16]        // not_empty_cv
+		bl ___nomen_fiber_waitq_park
+		cbz x0, .Lchannel_receive_str_cancelled
 		b .Lchannel_receive_str_wait
+		.Lchannel_receive_str_cancelled:
+		// Cancelled while waiting: return the empty fat string (x0 = ptr,
+		// x1 = len).
+		ldr x0, [x19, #8]         // self->mu
+		bl _pthread_mutex_unlock
+		mov x0, #0
+		mov x1, #0
+		b .Lchannel_receive_str_end
 		.Lchannel_receive_str_got:
 		// x1 = node
 		ldr x2, [x1, #16]         // node->next
@@ -264,6 +301,7 @@ pub class Channel: Sendable {
 		ldr x0, [x19, #8]         // self->mu
 		bl _pthread_mutex_unlock
 		ldp x0, x1, [sp], #16     // pop pair → x0/x1 (return)
+		.Lchannel_receive_str_end:
 		```
 	}
 

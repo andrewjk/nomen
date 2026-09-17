@@ -19,9 +19,17 @@ concurrency on both targets.
   is freed by destroy), `result_uint64()` (blocks, returns the value cast to
   `uint64`), `cancel()`, `current_cancelled()` (static, thread-local).
   Monomorphized per instantiation (e.g. `Task_uint64`).
-- **`Mutex`** — pthread-backed lock; `#destroy` releases the resource.
+- **`Mutex`** — pthread-backed lock; `#destroy` releases the resource. In
+  cooperative mode a fiber try-locks and yields (the holder runs on the same
+  thread); in the threaded model a fiber blocked on a contended mutex still
+  blocks its worker (see FOLLOWUP.md).
 - **`Channel`** — blocking FIFO queue (`send` / `receive` for uint64 words,
-  `send_string` / `receive_string` for fat strings).
+  `send_string` / `receive_string` for fat strings). Fibers do not block on
+  it: an empty `receive` parks the fiber on the channel's wait list
+  (park-before-signal under the channel's mutex) and `send` wakes the parked
+  receivers; other contexts still block on the condvar. A cancelled fiber
+  waiting on an empty channel resumes and returns the zero value rather than
+  waiting forever.
 - **`Thread`** — the thread class. `Thread(fn(args)).start()` is a statement
   (fire-and-forget) or expression yielding `Task<T>`. Args packed via a
   per-site trampoline, submitted to a global worker pool.
@@ -42,6 +50,12 @@ concurrency on both targets.
   waits or process exit (single-threaded/bare-metal mode). Registration is
   unchanged — a fiber spawned in an `async` block is joined at block exit —
   and the `Thread`/`Fiber` forms share one future, Task, and nursery.
+  Cancellation reaches parked fibers: `Task.cancel` (and the nursery
+  timeout/race paths) set the flag and schedule the owning fiber, which
+  resumes from whatever wait queue it was parked on and observes
+  `Task.current_cancelled()` at its next checkpoint. Every time a worker
+  resumes a fiber it restores that fiber's task-local cancel flag — a worker
+  runs many tasks, so the trampoline's entry-time value cannot be relied on.
 - **Unified `Task<T>` handle** — the future behind every spawn is
   reference-counted and shared between the trampoline, the returned Task, and
   the tracking nursery. Join-once semantics, so a Task captured inside a

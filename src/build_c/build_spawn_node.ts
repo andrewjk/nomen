@@ -51,10 +51,14 @@ struct nomen_future {
 	// Fibers parked waiting for this future (singly-linked via ->next).
 	// Woken by __nomen_future_complete. NULL when no fiber ever waited.
 	struct nomen_fiber *fiber_waiters;
+	// The fiber whose task this future is (set at fiber spawn). Cancellation
+	// uses it to wake a fiber parked on a primitive waitq.
+	struct nomen_fiber *owning_fiber;
 };
 // Fiber seam (defined in FIBER_HEADER, appended after this block). Declared
 // here — after struct nomen_future is complete — so the prototypes bind to
 // the file-scope type.
+static void __nomen_fiber_schedule(struct nomen_fiber *f);
 static void __nomen_fiber_park_on_future(struct nomen_future *f);
 static void __nomen_fiber_wake_waiters(struct nomen_fiber *w);
 static void __nomen_fiber_coop_drain(void);
@@ -110,13 +114,11 @@ static int __nomen_future_timedwait(struct nomen_future *f, long long deadline_m
 		pthread_mutex_unlock(&f->mu);
 		return 1;
 	}
+	// pthread_cond_timedwait wants an ABSOLUTE CLOCK_REALTIME deadline;
+	// deadline_ms already is one (the generated code builds now + timeout).
 	struct timespec ts;
-	clock_gettime(CLOCK_REALTIME, &ts);
-	long long now_ms = (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
-	long long remaining = deadline_ms - now_ms;
-	if (remaining < 0) remaining = 0;
-	ts.tv_sec = (time_t)(remaining / 1000);
-	ts.tv_nsec = (long)((remaining % 1000) * 1000000);
+	ts.tv_sec = (time_t)(deadline_ms / 1000);
+	ts.tv_nsec = (long)((deadline_ms % 1000) * 1000000);
 	while (!f->done) {
 		if (__nomen_current_cancel_flag && *__nomen_current_cancel_flag) {
 			pthread_mutex_unlock(&f->mu);
@@ -182,7 +184,7 @@ static void *__nomen_pool_worker(void *arg) {
 		while (!__nomen_pool_head && !__nomen_fiber_pending() && !__nomen_pool_quitting) {
 			pthread_cond_wait(&__nomen_pool_cv, &__nomen_pool_mu);
 		}
-		if (__nomen_pool_quitting && !__nomen_pool_head && !__nomen_fiber_pending()) {
+		if (__nomen_pool_quitting && !__nomen_pool_head) {
 			pthread_mutex_unlock(&__nomen_pool_mu);
 			return NULL;
 		}
@@ -256,6 +258,19 @@ static void __nomen_pool_submit(void (*fn)(void *), void *arg) {
 // tradeoff favors simplicity over a signaling mechanism.
 static void __nomen_future_cancel(struct nomen_future *f) {
 	if (f->cancel_flag) *(f->cancel_flag) = 1;
+	// A parked fiber is not running, so the flag alone would never be
+	// observed — requeue any fiber waiting on this future so it resumes and
+	// sees the cancellation at its next checkpoint. (The C backend's pool
+	// text forward-declares __nomen_fiber_wake_waiters.)
+	pthread_mutex_lock(&f->mu);
+	struct nomen_fiber *w = f->fiber_waiters;
+	f->fiber_waiters = NULL;
+	pthread_mutex_unlock(&f->mu);
+	if (w) __nomen_fiber_wake_waiters(w);
+	// The fiber that owns this task may be parked on a primitive waitq
+	// (Channel.receive); schedule it so it resumes and observes the flag.
+	// schedule() only queues PARKED fibers, so a double wake is harmless.
+	if (f->owning_fiber) __nomen_fiber_schedule(f->owning_fiber);
 }
 static int __nomen_future_is_done(struct nomen_future *f) {
 	pthread_mutex_lock(&f->mu);
@@ -280,6 +295,25 @@ static int __nomen_nursery_race_wait(struct nomen_future **futures, int count, l
 	}
 }
 `;
+/**
+ * Append the concurrency runtime (pool + fiber) to this build's header sink,
+ * once per build. Every sink that emits a trampoline, a nursery join, or a
+ * primitive whose raw body branches into the runtime calls this. The flags —
+ * not a header-content search — make it idempotent: a nested-function build
+ * clears status.headers mid-build, so a marker check would append twice.
+ */
+export function ensure_concurrency_runtime(status: BuildStatus): void {
+	if (status.pool_runtime_emitted && status.fiber_runtime_emitted) return;
+	if (!status.pool_runtime_emitted) {
+		status.headers += POOL_HEADER;
+		status.pool_runtime_emitted = true;
+	}
+	if (!status.fiber_runtime_emitted) {
+		status.headers += FIBER_HEADER;
+		status.fiber_runtime_emitted = true;
+	}
+}
+
 export const FIBER_HEADER = `
 #include <ucontext.h>
 #include <stdint.h>
@@ -293,7 +327,10 @@ struct nomen_fiber {
 	void (*fn)(void *);
 	void *args;
 	int state;
-	struct nomen_fiber *next;
+	struct nomen_fiber *next;        // run-queue link
+	struct nomen_fiber *wait_next;   // primitive waitq link (Channel/Mutex)
+	struct nomen_fiber **park_head;  // waitq we are linked in (NULL otherwise)
+	struct nomen_future *owning_future;  // this fiber's task future
 };
 static pthread_mutex_t __nomen_fq_mu = PTHREAD_MUTEX_INITIALIZER;
 static struct nomen_fiber *__nomen_fq_head = NULL;
@@ -308,6 +345,11 @@ static int __nomen_fiber_pending(void) {
 	return pending;
 }
 static void __nomen_fiber_schedule(struct nomen_fiber *f) {
+	// Only a parked fiber is queued: spawn/yield/park set PARKED first, and
+	// a second wake (cancel racing a send) then sees READY and is a no-op.
+	// This also makes stale waitq entries harmless.
+	if (f->state != NOMEN_FIBER_PARKED) return;
+	f->state = NOMEN_FIBER_READY;
 	f->next = NULL;
 	pthread_mutex_lock(&__nomen_fq_mu);
 	if (__nomen_fq_tail) __nomen_fq_tail->next = f;
@@ -376,6 +418,10 @@ static void __nomen_fiber_run_here(struct nomen_fiber *f) {
 	__nomen_fiber_ret = &ret;
 	f->state = NOMEN_FIBER_RUNNING;
 	__nomen_current_fiber = f;
+	// Restore the fiber's task-local state: the worker may have run other
+	// tasks since this fiber last ran, so the trampoline's entry-time values
+	// are long gone (and a stale NULL would hide cancellation).
+	__nomen_current_cancel_flag = f->owning_future ? f->owning_future->cancel_flag : NULL;
 	swapcontext(&ret, &f->ctx);
 	__nomen_current_fiber = NULL;
 	if (f->state == NOMEN_FIBER_DONE) {
@@ -394,9 +440,74 @@ static void __nomen_fiber_entry(uint32_t lo, uint32_t hi) {
 	self->state = NOMEN_FIBER_DONE;
 	__nomen_fiber_pause();
 }
+// Park the current fiber on a primitive's wait queue. The caller holds the
+// primitive's mutex (*mu) and has just checked its predicate false. The
+// fiber registers on *head, releases the mutex, parks, and on resume
+// re-acquires the mutex and unlinks itself (the waker may have cleared the
+// whole list already). Returns 0 when the fiber has been cancelled (it
+// resumes from the park to observe that — the cooperative contract), 1
+// otherwise. Outside a fiber it blocks on the condvar exactly as before.
+static int __nomen_fiber_waitq_park(struct nomen_fiber **head, void *mu, void *cv) {
+	if (__nomen_current_cancel_flag && *__nomen_current_cancel_flag) return 0;
+	struct nomen_fiber *self = __nomen_current_fiber;
+	if (!self) {
+		pthread_cond_wait((pthread_cond_t *)cv, (pthread_mutex_t *)mu);
+		return 1;
+	}
+	self->wait_next = *head;
+	*head = self;
+	self->park_head = head;
+	self->state = NOMEN_FIBER_PARKED;
+	pthread_mutex_unlock((pthread_mutex_t *)mu);
+	__nomen_fiber_pause();
+	pthread_mutex_lock((pthread_mutex_t *)mu);
+	if (self->park_head) {
+		struct nomen_fiber **p = self->park_head;
+		while (*p) {
+			if (*p == self) {
+				*p = self->wait_next;
+				break;
+			}
+			p = &(*p)->wait_next;
+		}
+		self->park_head = NULL;
+	}
+	self->wait_next = NULL;
+	return __nomen_current_cancel_flag && *__nomen_current_cancel_flag ? 0 : 1;
+}
+// Wake every fiber parked on a wait queue. The caller holds the primitive's
+// mutex (the same one the parkers released). Schedule() is idempotent, so a
+// fiber already woken by cancellation is simply skipped.
+static void __nomen_fiber_waitq_wake(struct nomen_fiber **head) {
+	struct nomen_fiber *w = *head;
+	*head = NULL;
+	while (w) {
+		struct nomen_fiber *nx = w->wait_next;
+		w->wait_next = NULL;
+		w->park_head = NULL;
+		__nomen_fiber_schedule(w);
+		w = nx;
+	}
+}
+static void __nomen_fiber_yield(void);
+// Lock a pthread mutex. In cooperative mode a fiber try-locks and yields
+// (the holder runs on this thread); otherwise it blocks as before — a task
+// blocked on a contended mutex in the threaded model is not parked (see
+// FOLLOWUP.md).
+static void __nomen_mutex_lock(void *mu) {
+	if (__nomen_current_fiber && __nomen_fiber_coop) {
+		while (pthread_mutex_trylock((pthread_mutex_t *)mu) != 0) {
+			__nomen_fiber_yield();
+		}
+		return;
+	}
+	pthread_mutex_lock((pthread_mutex_t *)mu);
+}
 static void __nomen_fiber_yield(void) {
-	if (!__nomen_current_fiber) return;
-	__nomen_fiber_schedule(__nomen_current_fiber);
+	struct nomen_fiber *self = __nomen_current_fiber;
+	if (!self) return;
+	self->state = NOMEN_FIBER_PARKED;
+	__nomen_fiber_schedule(self);
 	__nomen_fiber_pause();
 }
 // Run every currently-runnable fiber to its next suspension. Reentrancy is
@@ -426,12 +537,16 @@ static void __nomen_fiber_set_cooperative(int on) {
 // execution to the next drain (a would-block wait, or process exit) and
 // never starts worker threads; threaded mode ensures the pool exists so a
 // worker picks the fiber up.
-static void __nomen_fiber_spawn_common(void (*fn)(void *), void *args, void *stack, size_t stack_size) {
+static void __nomen_fiber_spawn_common(void (*fn)(void *), void *args, struct nomen_future *future, void *stack, size_t stack_size) {
 	struct nomen_fiber *f = (struct nomen_fiber *)malloc(sizeof(struct nomen_fiber));
 	f->fn = fn;
 	f->args = args;
-	f->state = NOMEN_FIBER_READY;
+	f->state = NOMEN_FIBER_PARKED;   // schedule() queues PARKED fibers
 	f->next = NULL;
+	f->wait_next = NULL;
+	f->park_head = NULL;
+	f->owning_future = future;
+	if (future) future->owning_fiber = f;
 	f->stack = NULL;
 	// Initialize and make the context IN PLACE: uc_mcontext may point into
 	// the ucontext itself, so copying one by value would dangle it.
@@ -458,12 +573,10 @@ static void __nomen_fiber_spawn_common(void (*fn)(void *), void *args, void *sta
 	}
 }
 static void __nomen_fiber_spawn(void (*fn)(void *), void *args, struct nomen_future *future) {
-	(void)future;
-	__nomen_fiber_spawn_common(fn, args, NULL, 0);
+	__nomen_fiber_spawn_common(fn, args, future, NULL, 0);
 }
 static void __nomen_fiber_spawn_on(void (*fn)(void *), void *args, struct nomen_future *future, void *stack, size_t stack_size) {
-	(void)future;
-	__nomen_fiber_spawn_common(fn, args, stack, stack_size);
+	__nomen_fiber_spawn_common(fn, args, future, stack, stack_size);
 }
 `;
 
@@ -485,13 +598,7 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	status.spawn_counter = id + 1;
 
 	// Emit pool infrastructure on first spawn (file scope, deduped).
-	if (!status.headers.includes("__nomen_pool_submit")) {
-		status.headers += POOL_HEADER;
-		// The fiber seam is part of the runtime (the pool worker loop and
-		// __nomen_future_wait reference it), so the scheduler text always
-		// accompanies the pool text.
-		status.headers += FIBER_HEADER;
-	}
+	ensure_concurrency_runtime(status);
 
 	const struct_name = `__nomen_spawn_${id}_args`;
 	const tramp_name = `__nomen_spawn_${id}_trampoline`;
@@ -598,6 +705,8 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	// The future owns the cancel flag and result slot.
 	status.code += `\t_future->cancel_flag = _cancel_ptr;\n`;
 	status.code += `\t_future->result_slot = _result_ptr;\n`;
+	status.code += `\t_future->fiber_waiters = NULL;\n`;
+	status.code += `\t_future->owning_fiber = NULL;\n`;
 	status.code += `\t_args->future = _future;\n`;
 	status.code += `\t_future->owner_args = _args;\n`;
 

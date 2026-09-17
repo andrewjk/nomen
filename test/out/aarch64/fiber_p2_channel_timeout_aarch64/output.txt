@@ -1,0 +1,2 @@
+observed cancel
+nursery exited

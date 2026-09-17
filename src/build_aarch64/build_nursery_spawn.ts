@@ -10,7 +10,7 @@ import type BaseNode from "../nodes/BaseNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
-import { FIBER_HEADER_C, POOL_HEADER_C } from "./build_spawn_node.ts";
+import { ensure_concurrency_runtime_a64 } from "./build_spawn_node.ts";
 import {
 	allocate_stack_space,
 	emit_deref_var_address,
@@ -47,13 +47,7 @@ export default function build_nursery_spawn(
 	const id = status.spawn_counter ?? 0;
 	status.spawn_counter = id + 1;
 
-	if (!status.file_scope_c?.includes("__nomen_pool_submit")) {
-		status.file_scope_c = (status.file_scope_c ?? "") + POOL_HEADER_C;
-		// The fiber seam is part of the runtime (the pool worker loop and
-		// __nomen_future_wait reference it), so the scheduler text always
-		// accompanies the pool text.
-		status.file_scope_c += FIBER_HEADER_C;
-	}
+	ensure_concurrency_runtime_a64(status);
 
 	const struct_name = `__nomen_spawn_${id}_args`;
 	const tramp_name = `__nomen_spawn_${id}_trampoline`;
@@ -162,6 +156,7 @@ export default function build_nursery_spawn(
 	tramp_c += `\ta->future = f;\n`;
 	tramp_c += `\tf->owner_args = a;\n`;
 	tramp_c += `\tf->fiber_waiters = NULL;\n`;
+	tramp_c += `\tf->owning_fiber = 0;\n`;
 	tramp_c += `\t__nomen_pool_submit(${tramp_name}, a);\n`;
 	tramp_c += `\t__nomen_nursery_futures[(*__nomen_nursery_count)++] = (unsigned long long)f;\n`;
 	if (fire_and_forget) {

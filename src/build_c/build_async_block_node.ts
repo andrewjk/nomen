@@ -2,7 +2,7 @@ import type { NirStmt } from "../nir/nir.ts";
 import AsyncBlockNode from "../nodes/AsyncBlockNode.ts";
 import build_auto_free from "./build_auto_free.ts";
 import build_node from "./build_node.ts";
-import { FIBER_HEADER, POOL_HEADER } from "./build_spawn_node.ts";
+import { ensure_concurrency_runtime } from "./build_spawn_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import { build_block_with_cursor } from "./emit_nir.ts";
 import { enter_c_scope, leave_c_scope } from "./utils/c_scope.ts";
@@ -40,12 +40,7 @@ export default function build_async_block_node(
 	// defines them is normally emitted on the first spawn — but a race
 	// nursery with no spawns wouldn't otherwise pull it in. Emit the pool
 	// header eagerly so the symbols always resolve.
-	if (node.mode === "race" && !status.headers.includes("__nomen_pool_submit")) {
-		status.headers += POOL_HEADER;
-		// The fiber seam is part of the runtime (referenced by the pool
-		// worker loop and __nomen_future_wait).
-		status.headers += FIBER_HEADER;
-	}
+	if (node.mode === "race") ensure_concurrency_runtime(status);
 
 	const futures_name = `__nomen_nursery_${id}_futures`;
 	const count_name = `__nomen_nursery_${id}_count`;
@@ -109,8 +104,9 @@ export default function build_async_block_node(
 	} else if (deadline_var) {
 		status.code += `\t\tint _done = __nomen_future_timedwait(_f, ${deadline_var});\n`;
 		status.code += `\t\tif (!_done) {\n`;
-		// Timeout expired — cancel this task and any remaining tasks.
-		status.code += `\t\t\tif (_f->cancel_flag) *(_f->cancel_flag) = 1;\n`;
+		// Timeout expired — cancel this task and any remaining tasks (the
+		// helper wakes a fiber parked on the future so it observes it).
+		status.code += `\t\t\t__nomen_future_cancel(_f);\n`;
 		status.code += `\t\t\t__nomen_future_timedwait(_f, ${deadline_var} + 1000);\n`;
 		status.code += `\t\t}\n`;
 	} else {

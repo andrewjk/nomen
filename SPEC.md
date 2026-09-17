@@ -2350,7 +2350,10 @@ automatically at scope exit.
 ### Channel
 
 Thread-safe unbounded FIFO queue for passing values between tasks. Blocking
-receive — `receive()` blocks the caller until a value is available.
+receive — `receive()` blocks the caller until a value is available. Inside a
+`Fiber` an empty `receive()` **parks** instead (freeing its worker); `send`
+wakes the parked receivers, and a receiver cancelled while waiting returns
+the zero value (the task observes `Task.current_cancelled()` itself).
 
 ```
 var Channel ch = Channel()

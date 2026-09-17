@@ -164,13 +164,23 @@ pub class Task<T> : Sendable {
 	pub func cancel = (ref self) {
 		```
 		#arch: c
-		if (self->cancel_flag) {
+		// Sets the flag and wakes any fiber parked on this task's future, so
+		// a parked task comes back to observe the cancellation.
+		if (self->future) {
+			__nomen_future_cancel((struct nomen_future *)self->future);
+		} else if (self->cancel_flag) {
 			*(unsigned long long *)self->cancel_flag = 1;
 		}
 		```
 		```
 		#arch: aarch64
-		// if (self->cancel_flag) *(self->cancel_flag) = 1
+		// if (self->future) __nomen_future_cancel(self->future);
+		// else if (self->cancel_flag) *(self->cancel_flag) = 1
+		ldr x0, [x19, #40]
+		cbz x0, .Lcancel_flag_path
+		bl ___nomen_future_cancel
+		b .Lcancel_done
+		.Lcancel_flag_path:
 		ldr x0, [x19, #32]
 		cbz x0, .Lcancel_done
 		mov x1, #1

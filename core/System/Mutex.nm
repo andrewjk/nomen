@@ -34,12 +34,14 @@ pub class Mutex: Sendable {
 	pub func lock = (self) {
 		```
 		#arch: c
-		pthread_mutex_lock((pthread_mutex_t *)self->handle);
+		// Fibers park instead of blocking the worker (try-lock poll); other
+		// contexts take the pthread lock directly.
+		__nomen_mutex_lock((void *)self->handle);
 		```
 		```
 		#arch: aarch64
 		ldr x0, [x19, #8]
-		bl _pthread_mutex_lock
+		bl ___nomen_mutex_lock
 		```
 	}
 

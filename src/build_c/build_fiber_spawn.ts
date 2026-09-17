@@ -3,7 +3,7 @@ import { mono_type_name } from "../build_common/mono_name.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import SpawnNode from "../nodes/SpawnNode.ts";
 import build_node from "./build_node.ts";
-import { FIBER_HEADER, POOL_HEADER, spawn_arg_c_types } from "./build_spawn_node.ts";
+import { ensure_concurrency_runtime, spawn_arg_c_types } from "./build_spawn_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import c_type from "./utils/c_type.ts";
@@ -57,12 +57,7 @@ export default function build_fiber_spawn_node(
 
 	// Emit pool + fiber infrastructure on first fiber spawn (file scope,
 	// deduped; pool text first — the fiber text extends it).
-	if (!status.headers.includes("__nomen_pool_submit")) {
-		status.headers += POOL_HEADER;
-	}
-	if (!status.headers.includes("__nomen_fiber_spawn")) {
-		status.headers += FIBER_HEADER;
-	}
+	ensure_concurrency_runtime(status);
 	status.used_fibers = true;
 
 	const struct_name = `__nomen_spawn_${id}_args`;
@@ -144,6 +139,7 @@ export default function build_fiber_spawn_node(
 	status.code += `\tpthread_cond_init(&_future->cv, NULL);\n`;
 	status.code += `\t_future->done = 0;\n`;
 	status.code += `\t_future->fiber_waiters = NULL;\n`;
+	status.code += `\t_future->owning_fiber = NULL;\n`;
 	status.code += `\t_future->cancel_flag = _cancel_ptr;\n`;
 	status.code += `\t_future->result_slot = _result_ptr;\n`;
 	status.code += `\t_args->future = _future;\n`;

@@ -3,7 +3,7 @@ import { mono_type_name } from "../build_common/mono_name.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import build_node from "./build_node.ts";
-import { FIBER_HEADER, POOL_HEADER, spawn_arg_c_types } from "./build_spawn_node.ts";
+import { ensure_concurrency_runtime, spawn_arg_c_types } from "./build_spawn_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import c_type from "./utils/c_type.ts";
@@ -39,13 +39,7 @@ export default function build_nursery_spawn(
 	status.spawn_counter = id + 1;
 
 	// Emit pool infrastructure on first spawn (file scope, deduped).
-	if (!status.headers.includes("__nomen_pool_submit")) {
-		status.headers += POOL_HEADER;
-		// The fiber seam is part of the runtime (the pool worker loop and
-		// __nomen_future_wait reference it), so the scheduler text always
-		// accompanies the pool text.
-		status.headers += FIBER_HEADER;
-	}
+	ensure_concurrency_runtime(status);
 
 	const struct_name = `__nomen_spawn_${id}_args`;
 	const tramp_name = `__nomen_spawn_${id}_trampoline`;
@@ -151,6 +145,7 @@ export default function build_nursery_spawn(
 	status.code += `\t_args->future = _future;\n`;
 	status.code += `\t_future->owner_args = _args;\n`;
 	status.code += `\t_future->fiber_waiters = NULL;\n`;
+	status.code += `\t_future->owning_fiber = NULL;\n`;
 	status.code += `\t__nomen_pool_submit(${tramp_name}, _args);\n`;
 	// Register the future with the nursery via its runtime pointers. The
 	// enclosing async block's join loop reads the same array + count. The

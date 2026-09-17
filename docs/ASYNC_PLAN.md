@@ -456,7 +456,21 @@ The "heavy runtime" cost of Go's model is mostly costs Nomen doesn't have:
 2. **Park-aware blocking.** `Task.result`/`wait`, `Channel.receive`,
    `Mutex.lock` consult `Runtime.current()` and park instead of blocking.
    Kill-trampoline teardown on nursery cancel. _Acceptance: nested fibers,
-   race mode, and timeout cancellation all work with fibers._
+   race mode, and timeout cancellation all work with fibers._ **Status:
+   landed** — `Task.result`/`wait` park on the future (Phase 1);
+   `Channel.receive`/`receive_string` park on a per-channel wait list
+   (park-before-signal under the channel's mutex, `send` wakes receivers,
+   idempotent scheduling via a state guard, a cancelled waiter returns the
+   zero value). Cancellation reaches parked fibers: `__nomen_future_cancel`
+   wakes future waiters and schedules the owning fiber (linked at spawn), and
+   `run_here` restores the fiber's task-local cancel flag on every resume.
+   `__nomen_future_timedwait` now builds a true absolute deadline (it
+   previously treated the duration as one, so the "wait for cancelled tasks"
+   step returned immediately). `Mutex.lock` parks cooperatively (try-lock +
+   yield); the threaded model still blocks its worker — deferred, see
+   FOLLOWUP.md. Forced-unwind kill-trampoline teardown is also deferred
+   (cooperative observation is in place); see FOLLOWUP.md. Test coverage:
+   `test/fiber_phase2.test.ts`.
 3. **Async I/O.** Netpoller (kqueue/epoll), non-blocking socket stdlib
    (`Tcp`, `Http`) through `wait_for_io`. _Acceptance: 10k concurrent
    connections on ~4 workers._

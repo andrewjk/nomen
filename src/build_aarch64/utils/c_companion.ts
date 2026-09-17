@@ -77,11 +77,13 @@ export function generate_companion(functions: CompanionFunction[], status: Build
 	// runtime; every companion must therefore define the pool + fiber
 	// symbols, whether or not this program uses concurrency itself.
 	// Deduped against any runtime text already queued in file_scope_c.
-	if (!status.file_scope_c?.includes("__nomen_pool_submit")) {
+	if (!status.pool_runtime_emitted) {
 		out += POOL_HEADER_C;
+		status.pool_runtime_emitted = true;
 	}
-	if (!status.file_scope_c?.includes("__nomen_fiber_spawn")) {
+	if (!status.fiber_runtime_emitted) {
 		out += FIBER_HEADER_C;
+		status.fiber_runtime_emitted = true;
 	}
 
 	// --- Enum + struct definitions ---

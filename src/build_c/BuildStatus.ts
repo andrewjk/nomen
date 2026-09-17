@@ -866,6 +866,15 @@ export default interface BuildStatus {
 	 */
 	used_fibers?: boolean;
 	/**
+	 * True once the pool runtime text (POOL_HEADER / POOL_HEADER_C) has been
+	 * appended to this build's header/companion sink. Content checks are
+	 * unreliable: a nested-function build clears status.headers mid-build, so
+	 * a marker-based guard would append a second copy.
+	 */
+	pool_runtime_emitted?: boolean;
+	/** True once the fiber runtime text (FIBER_HEADER / FIBER_HEADER_C) has been appended. */
+	fiber_runtime_emitted?: boolean;
+	/**
 	 * Stack of active async-nursery IDs. When non-empty, build_spawn_node
 	 * pushes the pthread handle into the topmost nursery's handle array
 	 * instead of detaching; build_async_block_node joins them all at exit.
