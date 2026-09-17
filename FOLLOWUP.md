@@ -372,31 +372,3 @@ this shape — worth fixing in `build_block_node`'s module-statement hoist
 (wrap them in the generated `main`, as the single-TU path does) and adding
 a split-build regression test when picked up.
 
-## aarch64 system object cannot carry `aarch64_use_c` bodies (Phase 3 follow-up)
-
-The aarch64 system library is built as assembly only — its companion C file is
-never linked (`test/system_lib.ts` writes `system.s` -> `system.o`). Any
-*library* function whose body is `aarch64_use_c` lands in that companion, so
-the system object references symbols nothing defines (`undefined symbol
-Tcp_listen_fd`, …) and every test linking `system.o` fails. `Stream/Tcp` is
-therefore excluded from the canonical system program (it compiles in the user
-TU, like the GUI types); `Stream/Http` also had to keep its raw blocking
-bodies, since porting it onto Tcp would make a library type depend on Tcp.
-
-Attempts and outcomes (do not repeat blindly):
-1. `ld -r` merging the system companion into `system.o`: links, but the
-   resulting object segfaults plain aarch64 programs.
-2. Compiling the companion and linking it as a **separate object** next to
-   `system.o` (infrastructure is in `system_lib.ts` / `check_output.ts`):
-   same symptom — plain programs segfault as soon as the system companion is
-   linked, even when they never touch its functions. The companion content
-   itself is fine (identical bodies work in user companions), so the fault is
-   in how the system companion object interacts with the system asm object or
-   the link line (candidates: the audit wrapping applied to the user TU but
-   not the companion, a duplicate/conflicting data symbol, or the
-   `.subsections_via_symbols`/`.space` divergence noted in
-   `system_lib_worker.ts`).
-
-Until this is understood, keep library code that needs `aarch64_use_c` out of
-the canonical system program.
-

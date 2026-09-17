@@ -1,4 +1,5 @@
 import type BuildStatus from "../../build_c/BuildStatus.ts";
+import { runtime_declarations } from "../../build_c/runtime_split.ts";
 import c_type from "../../build_c/utils/c_type.ts";
 import { is_overloaded, mangled_label } from "../../check/utils/function_overload.ts";
 import EnumNode from "../../nodes/EnumNode.ts";
@@ -53,7 +54,11 @@ export function generate_companion(functions: CompanionFunction[], status: Build
 	out += `#include <stdio.h>\n`;
 	out += `#include <string.h>\n`;
 	out += `#include <regex.h>\n`;
-	if (status.file_scope_c?.includes("pthread")) {
+	if (
+		status.file_scope_c?.includes("pthread") ||
+		// The system companion's runtime declarations name pthread types.
+		status.emit_mode === "system"
+	) {
 		out += `#include <pthread.h>\n`;
 	}
 	out += "\n";
@@ -79,8 +84,14 @@ export function generate_companion(functions: CompanionFunction[], status: Build
 	// Deduped against any runtime text already queued in file_scope_c.
 	// System-object builds carry only the library's `aarch64_use_c` bodies:
 	// their object is linked next to every program's own companion, which
-	// defines the runtime (see ensure_concurrency_runtime_a64).
-	if (status.emit_mode !== "system") {
+	// defines the runtime. Those bodies may CALL runtime entries
+	// (__nomen_io_wait, waitq park/wake, …), so the system companion
+	// declares the runtime instead of defining it — exactly one copy per
+	// process, resolved against the user companion at link.
+	if (status.emit_mode === "system") {
+		out += runtime_declarations(POOL_HEADER_C + FIBER_HEADER_C);
+		out += "\n";
+	} else {
 		if (!status.pool_runtime_emitted) {
 			out += POOL_HEADER_C;
 			status.pool_runtime_emitted = true;

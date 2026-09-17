@@ -163,4 +163,39 @@ pub func main = () {
 			await check_output(`tcp_scale_${arch}`, result, "echoed 64/64\n", options);
 		}
 	});
+
+	test("Tcp resolves through the precompiled system object (aarch64 split)", async () => {
+		// The canonical system program now carries Stream/Tcp: the raw-asm
+		// methods live in system.o, and the `aarch64_use_c` socket bodies
+		// ride in the system companion object, which declares (not defines)
+		// the concurrency runtime — the user companion stays the single
+		// definition. A user TU linking both objects must run a full Tcp
+		// exchange through that split (this is the shape that segfaulted
+		// before the companion went declarations-only — see FOLLOWUP.md).
+		const input = `
+import System
+
+pub func main = () {
+	var Tcp client = Tcp.connect("127.0.0.1", 1)
+	if client.fd < 0 {
+		Console.write_line("connect error \\{client.error}")
+	}
+}
+`;
+		const parsed = parse_raw(input);
+		expect(parsed.errors).toEqual([]);
+		const { load_system_struct_names, load_system_fn_names } = await import("./system_lib");
+		const result = build(parsed.root, {
+			arch: "aarch64",
+			audit: true,
+			emit_mode: "user",
+			system_struct_names: load_system_struct_names(),
+		});
+		await check_output(`tcp_system_lib_aarch64`, result, "connect error 3\n", {
+			arch: "aarch64",
+			audit: true,
+			system_lib: true,
+			system_fn_names: load_system_fn_names(),
+		});
+	});
 });

@@ -93,16 +93,12 @@ function canonical_program(): { source: string; lib_source_hash: string } {
 	// with the type keyword); they're pulled in via parse.ts BASE_TYPES.
 	const primitives = new Set<string>(built_in_types);
 	const types = (Array.from(lib.types.entries()) as [string, { path?: string }][])
-		// GUI types (Controls, ObjC/Cocoa) and Stream/Tcp are excluded: they
-		// need code that cannot live in the precompiled aarch64 system object
-		// (ObjC frameworks; `aarch64_use_c` bodies whose companion object
-		// segfaults plain programs when linked — see FOLLOWUP.md). Both
-		// compile in the user TU instead.
-		.filter(
-			([, entry]) =>
-				!String(entry.path).includes("Controls") &&
-				!String(entry.path).endsWith("Stream/Tcp.nm"),
-		)
+		// GUI types (Controls, ObjC/Cocoa) are excluded: they need the ObjC
+		// frameworks, which cannot live in the precompiled aarch64 system
+		// object. They compile in the user TU instead. Stream/Tcp's
+		// `aarch64_use_c` bodies ride in the system companion object (linked
+		// next to system.o by check_output), so Tcp IS canonical.
+		.filter(([, entry]) => !String(entry.path).includes("Controls"))
 		.map(([name]) => name)
 		.filter((name) => !primitives.has(name));
 	const decls = types.map((t) => `\tvar int ${t} = 0`);

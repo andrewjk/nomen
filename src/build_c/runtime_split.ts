@@ -88,14 +88,18 @@ export function globalize_runtime(text: string): string {
  * after preprocessing). Throws on a file-scope line it does not recognize —
  * a new definition shape must be taught here, so the declarations can never
  * silently miss a symbol.
+ *
+ * Defaults to the C backend's blob; the aarch64 companion passes its own
+ * (its split shares the runtime the other way — the user companion defines
+ * it, the system companion declares it).
  */
-export function runtime_declarations(): string {
+export function runtime_declarations(text: string = POOL_HEADER + FIBER_HEADER): string {
 	const out: string[] = [];
 	let depth = 0; // > 0: inside a struct or function body
 	let in_struct = false; // struct/enum body → copied verbatim
 	const preproc: boolean[] = []; // per `#if` nest level: is this branch counted?
 	const active = (): boolean => preproc.every((t) => t);
-	for (const raw of (POOL_HEADER + FIBER_HEADER).split("\n")) {
+	for (const raw of text.split("\n")) {
 		const line = raw.trim();
 		if (line.startsWith("#")) {
 			const dir = line.split(/\s+/)[0];
@@ -126,11 +130,29 @@ export function runtime_declarations(): string {
 			continue;
 		}
 		if (!line || line.startsWith("//")) continue;
-		if (line.startsWith("struct ") || line.startsWith("enum ") || line.startsWith("typedef ")) {
+		if (line.startsWith("typedef ")) {
 			out.push(raw);
 			depth += delta;
 			if (depth > 0) in_struct = true;
 			continue;
+		}
+		if (line.startsWith("struct ") || line.startsWith("enum ")) {
+			const is_type_shape =
+				// body-opening form (`struct X {`)
+				line.endsWith("{") ||
+				// bare forward declaration (`struct X;`)
+				/^(struct|enum) \w+;$/.test(line) ||
+				// one-line enum (`enum { A, B };`)
+				/^enum \{.*\};$/.test(line);
+			if (is_type_shape) {
+				out.push(raw);
+				depth += delta;
+				if (depth > 0) in_struct = true;
+				continue;
+			}
+			// Anything else starting with struct/enum is a VARIABLE whose
+			// type is a struct (`struct X *g = NULL;`) — fall through to the
+			// declaration forms below.
 		}
 		if (line.startsWith("static ")) {
 			const rest = line.slice("static ".length);
@@ -155,6 +177,29 @@ export function runtime_declarations(): string {
 				out.push(`extern ${decl_without_init(rest)}`);
 				continue;
 			}
+		}
+		// Non-static forms (the aarch64 runtime blob exports everything):
+		// same shapes without the `static ` prefix.
+		if (line.startsWith("__thread ")) {
+			out.push(`extern __thread ${decl_without_init(line.slice("__thread ".length))}`);
+			continue;
+		}
+		if (line.includes("(")) {
+			// function definition → prototype (body is skipped above)
+			if (line.endsWith("{")) {
+				out.push(`${line.slice(0, -1).trimEnd()};`);
+				depth += delta;
+				continue;
+			}
+			if (line.endsWith(";")) {
+				// already a prototype — copied verbatim
+				out.push(raw);
+				continue;
+			}
+		} else {
+			// variable (initializer optional) → extern declaration
+			out.push(`extern ${decl_without_init(line)}`);
+			continue;
 		}
 		throw new Error(
 			`runtime_declarations: unrecognized file-scope line in the runtime blob: ${JSON.stringify(line)}`,
