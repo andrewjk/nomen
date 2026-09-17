@@ -235,7 +235,9 @@ t.wait()
 		const input = `
 func busy = (uint64 arg) {
 	var int i = 0
-	while i < 10000000 {
+	// Long enough that the 50ms deadline always fires first (the timeout
+	// path is a real timed wait, not an immediate cancel).
+	while i < 1000000000 {
 		if Task.current_cancelled() {
 			Console.write_line("cancelled")
 			return

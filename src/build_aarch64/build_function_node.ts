@@ -1031,6 +1031,8 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		// companion defines __nomen_fiber_drain_all as a global symbol).
 		if (status.used_fibers) {
 			status.code += `bl ___nomen_fiber_drain_all\n`;
+			// Tear the netpoller down before the audit check (see the C backend).
+			status.code += `bl ___nomen_io_shutdown\n`;
 		}
 		if (status.audit) {
 			if (status.file_scope_c?.includes("__nomen_pool_submit")) {

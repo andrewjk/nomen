@@ -572,6 +572,204 @@ static void __nomen_fiber_spawn_common(void (*fn)(void *), void *args, struct no
 		__nomen_pool_ensure();
 	}
 }
+
+// ---- async I/O: netpoller (ASYNC_PLAN.md Phase 3) ----
+// Sockets are registered here by __nomen_io_wait. A poller thread waits on
+// kqueue (darwin) / epoll (linux) and schedules the parked fiber when its fd
+// is ready. Non-fiber contexts fall back to a short pollloop so the cancel
+// flag is still observed. One persistent waiter slot per fd, so a resumed or
+// cancelled fiber and a racing poller never touch freed memory.
+#include <poll.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <unistd.h>
+#if defined(__APPLE__)
+#include <sys/event.h>
+#else
+#include <sys/epoll.h>
+#endif
+struct nomen_io_waiter {
+	int fd;
+	int want_write;
+	int active;
+	struct nomen_fiber *fiber;
+};
+static pthread_mutex_t __nomen_io_mu = PTHREAD_MUTEX_INITIALIZER;
+static int __nomen_io_init = 0;
+static volatile int __nomen_io_quitting = 0;
+static int __nomen_io_pipe[2] = { -1, -1 };
+static pthread_t __nomen_io_thread;
+#if defined(__APPLE__)
+static int __nomen_io_kq = -1;
+#else
+static int __nomen_io_epfd = -1;
+#endif
+static struct nomen_io_waiter **__nomen_io_slots = NULL;
+static int __nomen_io_slots_cap = 0;
+static void *__nomen_io_poller(void *arg) {
+	(void)arg;
+	for (;;) {
+#if defined(__APPLE__)
+		struct kevent evs[128];
+		int n = kevent(__nomen_io_kq, NULL, 0, evs, 128, NULL);
+		if (n < 0) {
+			if (errno == EINTR) continue;
+			break;
+		}
+		for (int i = 0; i < n; i++) {
+			struct nomen_io_waiter *w = (struct nomen_io_waiter *)evs[i].udata;
+			int fd = (int)evs[i].ident;
+#else
+		struct epoll_event evs[128];
+		int n = epoll_wait(__nomen_io_epfd, evs, 128, -1);
+		if (n < 0) {
+			if (errno == EINTR) continue;
+			break;
+		}
+		for (int i = 0; i < n; i++) {
+			struct nomen_io_waiter *w = (struct nomen_io_waiter *)evs[i].data.ptr;
+			int fd = evs[i].data.fd;
+#endif
+			if (!w) continue;   // the shutdown pipe
+			pthread_mutex_lock(&__nomen_io_mu);
+			int was_active = w->active;
+			if (was_active && __nomen_io_slots && fd < __nomen_io_slots_cap &&
+			    __nomen_io_slots[fd] == w) {
+				w->active = 0;
+#if defined(__APPLE__)
+				struct kevent del;
+				EV_SET(&del, fd, w->want_write ? EVFILT_WRITE : EVFILT_READ, EV_DELETE, 0, 0, NULL);
+				kevent(__nomen_io_kq, &del, 1, NULL, 0, NULL);
+#else
+				epoll_ctl(__nomen_io_epfd, EPOLL_CTL_DEL, fd, NULL);
+#endif
+			}
+			pthread_mutex_unlock(&__nomen_io_mu);
+			if (was_active) __nomen_fiber_schedule(w->fiber);
+		}
+		if (__nomen_io_quitting) break;
+	}
+	return NULL;
+}
+static void __nomen_io_shutdown(void) {
+	if (!__nomen_io_init || __nomen_io_quitting) return;
+	__nomen_io_quitting = 1;
+	if (__nomen_io_pipe[1] >= 0) {
+		char b = 1;
+		ssize_t _r = write(__nomen_io_pipe[1], &b, 1);
+		(void)_r;
+	}
+	pthread_join(__nomen_io_thread, NULL);
+	pthread_mutex_lock(&__nomen_io_mu);
+	if (__nomen_io_slots) {
+		for (int i = 0; i < __nomen_io_slots_cap; i++) {
+			if (__nomen_io_slots[i]) free(__nomen_io_slots[i]);
+		}
+		free(__nomen_io_slots);
+		__nomen_io_slots = NULL;
+		__nomen_io_slots_cap = 0;
+	}
+#if defined(__APPLE__)
+	if (__nomen_io_kq >= 0) close(__nomen_io_kq);
+	__nomen_io_kq = -1;
+#else
+	if (__nomen_io_epfd >= 0) close(__nomen_io_epfd);
+	__nomen_io_epfd = -1;
+#endif
+	pthread_mutex_unlock(&__nomen_io_mu);
+	if (__nomen_io_pipe[0] >= 0) close(__nomen_io_pipe[0]);
+	if (__nomen_io_pipe[1] >= 0) close(__nomen_io_pipe[1]);
+	__nomen_io_pipe[0] = __nomen_io_pipe[1] = -1;
+}
+static struct nomen_io_waiter *__nomen_io_register(int fd, int want_write, struct nomen_fiber *fiber) {
+	pthread_mutex_lock(&__nomen_io_mu);
+	if (!__nomen_io_init) {
+		__nomen_io_init = 1;
+		pipe(__nomen_io_pipe);
+#if defined(__APPLE__)
+		__nomen_io_kq = kqueue();
+		struct kevent ch;
+		EV_SET(&ch, __nomen_io_pipe[0], EVFILT_READ, EV_ADD, 0, 0, NULL);
+		kevent(__nomen_io_kq, &ch, 1, NULL, 0, NULL);
+#else
+		__nomen_io_epfd = epoll_create1(0);
+		struct epoll_event ev;
+		ev.events = EPOLLIN;
+		ev.data.ptr = NULL;
+		ev.data.fd = __nomen_io_pipe[0];
+		epoll_ctl(__nomen_io_epfd, EPOLL_CTL_ADD, __nomen_io_pipe[0], &ev);
+#endif
+		pthread_create(&__nomen_io_thread, NULL, __nomen_io_poller, NULL);
+		atexit(__nomen_io_shutdown);
+	}
+	if (fd >= __nomen_io_slots_cap) {
+		int cap = __nomen_io_slots_cap ? __nomen_io_slots_cap : 64;
+		while (cap <= fd) cap *= 2;
+		__nomen_io_slots = (struct nomen_io_waiter **)realloc(__nomen_io_slots, sizeof(void *) * cap);
+		memset(__nomen_io_slots + __nomen_io_slots_cap, 0, sizeof(void *) * (cap - __nomen_io_slots_cap));
+		__nomen_io_slots_cap = cap;
+	}
+	struct nomen_io_waiter *w = __nomen_io_slots[fd];
+	if (!w) {
+		w = (struct nomen_io_waiter *)malloc(sizeof(struct nomen_io_waiter));
+		w->fd = fd;
+		__nomen_io_slots[fd] = w;
+	}
+	w->want_write = want_write;
+	w->fiber = fiber;
+	w->active = 1;
+#if defined(__APPLE__)
+	struct kevent ch;
+	EV_SET(&ch, fd, want_write ? EVFILT_WRITE : EVFILT_READ, EV_ADD, 0, 0, w);
+	kevent(__nomen_io_kq, &ch, 1, NULL, 0, NULL);
+#else
+	struct epoll_event ev;
+	ev.events = want_write ? EPOLLOUT : EPOLLIN;
+	ev.data.ptr = w;
+	ev.data.fd = fd;
+	epoll_ctl(__nomen_io_epfd, EPOLL_CTL_ADD, fd, &ev);
+#endif
+	pthread_mutex_unlock(&__nomen_io_mu);
+	return w;
+}
+static void __nomen_io_unregister(int fd, struct nomen_io_waiter *w) {
+	if (!w) return;
+	pthread_mutex_lock(&__nomen_io_mu);
+	if (w->active) {
+		w->active = 0;
+#if defined(__APPLE__)
+		struct kevent del;
+		EV_SET(&del, fd, w->want_write ? EVFILT_WRITE : EVFILT_READ, EV_DELETE, 0, 0, NULL);
+		kevent(__nomen_io_kq, &del, 1, NULL, 0, NULL);
+#else
+		epoll_ctl(__nomen_io_epfd, EPOLL_CTL_DEL, fd, NULL);
+#endif
+	}
+	pthread_mutex_unlock(&__nomen_io_mu);
+}
+// Wait until fd is ready for the requested direction. Returns 1 when ready,
+// 0 when the current (fiber) task was cancelled while waiting.
+static int __nomen_io_wait(int fd, int want_write) {
+	if (__nomen_current_cancel_flag && *__nomen_current_cancel_flag) return 0;
+	if (__nomen_current_fiber) {
+		struct nomen_fiber *self = __nomen_current_fiber;
+		struct nomen_io_waiter *w = __nomen_io_register(fd, want_write, self);
+		self->state = NOMEN_FIBER_PARKED;
+		__nomen_fiber_pause();
+		__nomen_io_unregister(fd, w);
+		return __nomen_current_cancel_flag && *__nomen_current_cancel_flag ? 0 : 1;
+	}
+	struct pollfd p;
+	p.fd = fd;
+	p.events = want_write ? POLLOUT : POLLIN;
+	p.revents = 0;
+	for (;;) {
+		int r = poll(&p, 1, 50);
+		if (r > 0) return 1;
+		if (__nomen_current_cancel_flag && *__nomen_current_cancel_flag) return 0;
+	}
+}
+
 static void __nomen_fiber_spawn(void (*fn)(void *), void *args, struct nomen_future *future) {
 	__nomen_fiber_spawn_common(fn, args, future, NULL, 0);
 }

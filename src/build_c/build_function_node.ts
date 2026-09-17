@@ -401,6 +401,9 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	// the audit check — mirrors the pool shutdown above.
 	if (node.name.toLocaleLowerCase() === "main" && status.used_fibers) {
 		status.code += `\n__nomen_fiber_drain_all();\n`;
+		// Tear the netpoller down (join the poller thread, free its slots)
+		// so the audit sees a balanced allocator.
+		status.code += `__nomen_io_shutdown();\n`;
 	}
 
 	if (node.name.toLocaleLowerCase() === "main" && status.audit) {

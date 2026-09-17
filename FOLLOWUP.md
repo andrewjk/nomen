@@ -382,3 +382,66 @@ Making it park needs a per-mutex wait list plus a wake on unlock and a
 sound answer for "cancelled while waiting for a lock" (returning without the
 lock would make the caller's matching `unlock` unsound). See ASYNC_PLAN.md
 Phase 2.
+
+## Tcp: concurrent fiber connections fail (Phase 3)
+
+`test/tcp.test.ts`'s scale test (`test.skip`ped) starts a fiber echo server
+and N fiber clients on a loopback port. With N = 1 the round trip works on
+both backends; with N = 8 every client reports failure (`echoed 0/8`), and
+before the port-conflict noise was cleaned up the run could also hang. The
+listener binds and the first connection works, so the fault is in the
+concurrent path — candidates:
+
+- The netpoller's fd-indexed waiter slots / EV_DELETE-vs-fire race when
+  several registrations and wakeups overlap (single-fd case never exercises
+  it).
+- `accept_fd`'s cancel/park return values collapsing to -1 for a cancelled
+  _listener_ wait, which the server loop treats as a dead listener.
+- The server loop's per-connection `Fiber(echo_one(conn)).start()` — a
+  fire-and-forget spawn from inside a fiber, which is not registered with the
+  surrounding nursery.
+
+Diagnose by running the N = 8 case with a handful of connections and stderr
+tracing in `__nomen_io_register`/`__nomen_io_wait`/`accept_fd`, and by
+checking whether the clients' failures are DNS (err 1), socket (err 2) or
+connect (err 3). Also re-check whether the pre-existing `fiber_nursery_join`
+/`fiber_string_result` binaries left running after a full-suite pass point at
+the same latent fiber-scheduling issue under load.
+
+## Runtime state is per-TU in C system_lib builds
+
+The C backend's precompiled `system.o` contains a _static_ copy of the
+concurrency runtime (pool queues, `__nomen_current_fiber`, the netpoller
+slots), and a user TU that emits the runtime gets a second copy. Library
+bodies (Channel.receive, Tcp.*) execute against the system copy while
+user-generated fibers run on the user copy, so parked waits from library
+code do not see the user's fiber context. Single-TU builds (`emit_mode
+"all"`, e.g. the `parse_raw` tests) are unaffected, and the aarch64 backend
+is unaffected (its runtime always lives in the one linked companion). Fix:
+emit the runtime as global definitions in the `system` build, extern
+declarations in the `user` build, so exactly one copy exists per process.
+
+## aarch64 system object cannot carry `aarch64_use_c` bodies (Phase 3 follow-up)
+
+The aarch64 system library is built as assembly only — its companion C file is
+never compiled or linked (`test/system_lib.ts` writes `system.s` → `system.o`
+and drops `built.companion`). Any *library* function whose body is
+`aarch64_use_c` therefore lands in that dropped companion, so the system
+object references symbols nothing defines (`undefined symbol Tcp_listen_fd`,
+etc.) and every test linking `system.o` fails. This is why `Tcp` is now
+excluded from the canonical system program in `test/system_lib.ts` (its
+methods compile in the user TU, like the GUI types) — a workaround, not a
+fix.
+
+Two candidate fixes, both explored and reverted once:
+1. Compile the system companion and merge it with `ld -r` into `system.o`.
+   The merge built and linked but the resulting object segfaulted at runtime
+   for plain aarch64 programs (`test/anon_enum.test.ts > core Option with full
+   form construction`), so a relocatable merge of asm + companion is not safe
+   as-is (suspect section/alignment handling in the pre-existing `.space 8`
+   system-build divergence noted in `system_lib_worker.ts`).
+2. Link the system companion as a second object (needs the tests' single
+   `system.o` link argument widened to both files).
+
+Until either lands, keep library code that needs `aarch64_use_c` out of the
+canonical system program.

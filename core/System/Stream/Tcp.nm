@@ -1,0 +1,441 @@
+// Tcp — non-blocking sockets for Nomen tasks.
+//
+// Sockets are put in non-blocking mode and every wait goes through the
+// runtime's netpoller hook (`__nomen_io_wait`): inside a Fiber the task parks
+// (freeing its worker) until the socket is readable/writable; on a plain
+// thread the hook blocks in poll(). So the same code scales from a handful of
+// connections to thousands, and no call blocks a shared worker while it
+// waits. See ASYNC_PLAN.md Phase 3.
+//
+// Raw helpers return file descriptors / error codes (int-shaped), so the
+// class wrappers construct the Tcp instances in Nomen. `error` mirrors
+// Http's convention: 0 = ok, 1 = DNS, 2 = socket, 3 = connect, 4 = listen,
+// 5 = closed.
+//
+//	var Tcp server = Tcp.listen(8080, 128)
+//	async {
+//		var Tcp conn = server.accept()
+//		var bool ok = conn.send("hello")
+//		conn.close()
+//	}
+//
+// The method bodies are C (compiled directly on the C backend, and via the
+// linked companion on aarch64) — OS socket/DNS interop, where hand-written
+// per-target assembly is not practical.
+
+/**
+ * A non-blocking TCP socket whose waits park the calling fiber
+ **/
+pub class Tcp : Sendable {
+	// The underlying file descriptor, -1 when closed/failed.
+	pub var int fd = -1
+	// 0 = ok; 1 = DNS, 2 = socket, 3 = connect, 4 = listen, 5 = closed.
+	pub var int error = 0
+
+	pub func #init = (self, int handle) {
+		self.fd = handle
+		self.error = 0
+	}
+
+	pub func #destroy = () {
+		```
+		#arch: c
+		if (self->fd >= 0) {
+			close(self->fd);
+			self->fd = -1;
+		}
+		```
+		```
+		#arch: aarch64_use_c
+		if (self->fd >= 0) {
+			close(self->fd);
+			self->fd = -1;
+		}
+		```
+	}
+
+	pub func close = (ref self) {
+		Tcp.close_fd(self.fd)
+		self.fd = -1
+	}
+
+	pub func is_open = (self, out bool) => self.fd >= 0
+
+	// ---- listening ----
+
+	// Create a listening socket bound to `port` on all interfaces.
+	pub func listen = (int port, int backlog, move out Tcp) {
+		var int handle = Tcp.listen_fd(port, backlog)
+		var Tcp t = Tcp(handle)
+		if handle < 0 {
+			t.error = 4
+		}
+		return t
+	}
+
+	// Accept the next connection, parking the fiber while the backlog is
+	// empty. The returned socket is -1 if the listener was cancelled or
+	// failed.
+	pub func accept = (ref self, move out Tcp) {
+		var int handle = Tcp.accept_fd(self.fd)
+		var Tcp t = Tcp(handle)
+		if handle < 0 {
+			t.error = 5
+		}
+		return t
+	}
+
+	// ---- connecting ----
+
+	// Connect to `host`:`port`. Check `fd >= 0` (or `error == 0`) for success.
+	pub func connect = (string host, int port, move out Tcp) {
+		var int handle = Tcp.socket_fd()
+		if handle < 0 {
+			var Tcp bad = Tcp(-1)
+			bad.error = 2
+			return bad
+		}
+		var int err = Tcp.connect_to(handle, host, port)
+		if err != 0 {
+			Tcp.close_fd(handle)
+			var Tcp bad = Tcp(-1)
+			bad.error = err
+			return bad
+		}
+		return Tcp(handle)
+	}
+
+	// ---- transferring ----
+
+	// Send every byte of `data`. Parks the fiber while the send buffer is
+	// full. Returns false on error or cancellation.
+	pub func send = (ref self, string data, out bool) {
+		return Tcp.send_all(self.fd, data)
+	}
+
+	// Receive up to `max` bytes. Parks the fiber until data arrives; returns
+	// the empty string at end-of-stream, on error, or when cancelled.
+	pub func recv = (ref self, int max, move out string) {
+		return Tcp.recv_some(self.fd, max)
+	}
+
+	// Receive until the peer closes (how Connection: close HTTP works).
+	pub func recv_all = (ref self, move out string) {
+		return Tcp.recv_until_close(self.fd)
+	}
+
+	// ---- raw helpers (int-shaped, so the wrappers above build the Tcp) ----
+
+	func socket_fd = (out int) {
+		```
+		#arch: c
+		#scope: file
+		#include <sys/socket.h>
+		#include <netdb.h>
+		#include <netinet/in.h>
+		#include <arpa/inet.h>
+		#include <fcntl.h>
+		#include <unistd.h>
+		#include <string.h>
+		#include <stdlib.h>
+		#include <errno.h>
+		#include <stdbool.h>
+		```
+		```
+		#arch: c
+		int handle = socket(AF_INET, SOCK_STREAM, 0);
+		if (handle < 0) return -1;
+		fcntl(handle, F_SETFL, fcntl(handle, F_GETFL, 0) | O_NONBLOCK);
+		return handle;
+		```
+		```
+		#arch: aarch64_use_c
+		#scope: file
+		#include <sys/socket.h>
+		#include <netdb.h>
+		#include <netinet/in.h>
+		#include <arpa/inet.h>
+		#include <fcntl.h>
+		#include <unistd.h>
+		#include <string.h>
+		#include <stdlib.h>
+		#include <errno.h>
+		#include <stdbool.h>
+		```
+		```
+		#arch: aarch64_use_c
+		int handle = socket(AF_INET, SOCK_STREAM, 0);
+		if (handle < 0) return -1;
+		fcntl(handle, F_SETFL, fcntl(handle, F_GETFL, 0) | O_NONBLOCK);
+		return handle;
+		```
+	}
+
+	func listen_fd = (int port, int backlog, out int) {
+		```
+		#arch: c
+		int handle = socket(AF_INET, SOCK_STREAM, 0);
+		if (handle < 0) return -1;
+		int one = 1;
+		setsockopt(handle, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+		struct sockaddr_in addr;
+		memset(&addr, 0, sizeof(addr));
+		addr.sin_family = AF_INET;
+		addr.sin_addr.s_addr = htonl(INADDR_ANY);
+		addr.sin_port = htons((unsigned short)port);
+		if (bind(handle, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+			close(handle);
+			return -1;
+		}
+		if (listen(handle, backlog) < 0) {
+			close(handle);
+			return -1;
+		}
+		fcntl(handle, F_SETFL, fcntl(handle, F_GETFL, 0) | O_NONBLOCK);
+		return handle;
+		```
+		```
+		#arch: aarch64_use_c
+		int handle = socket(AF_INET, SOCK_STREAM, 0);
+		if (handle < 0) return -1;
+		int one = 1;
+		setsockopt(handle, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+		struct sockaddr_in addr;
+		memset(&addr, 0, sizeof(addr));
+		addr.sin_family = AF_INET;
+		addr.sin_addr.s_addr = htonl(INADDR_ANY);
+		addr.sin_port = htons((unsigned short)port);
+		if (bind(handle, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+			close(handle);
+			return -1;
+		}
+		if (listen(handle, backlog) < 0) {
+			close(handle);
+			return -1;
+		}
+		fcntl(handle, F_SETFL, fcntl(handle, F_GETFL, 0) | O_NONBLOCK);
+		return handle;
+		```
+	}
+
+	func accept_fd = (int listener, out int) {
+		```
+		#arch: c
+		for (;;) {
+			int handle = accept(listener, NULL, NULL);
+			if (handle >= 0) {
+				fcntl(handle, F_SETFL, fcntl(handle, F_GETFL, 0) | O_NONBLOCK);
+				return handle;
+			}
+			if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) return -1;
+			if (!__nomen_io_wait(listener, 0)) return -1;
+		}
+		```
+		```
+		#arch: aarch64_use_c
+		for (;;) {
+			int handle = accept(listener, NULL, NULL);
+			if (handle >= 0) {
+				fcntl(handle, F_SETFL, fcntl(handle, F_GETFL, 0) | O_NONBLOCK);
+				return handle;
+			}
+			if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) return -1;
+			if (!__nomen_io_wait(listener, 0)) return -1;
+		}
+		```
+	}
+
+	// Returns 0 on success, or an error code (1 = DNS, 3 = connect).
+	func connect_to = (int handle, string host, int port, out int) {
+		```
+		#arch: c
+		char portstr[16];
+		snprintf(portstr, sizeof(portstr), "%d", port);
+		struct addrinfo hints, *res = NULL;
+		memset(&hints, 0, sizeof(hints));
+		hints.ai_family = AF_INET;
+		hints.ai_socktype = SOCK_STREAM;
+		if (getaddrinfo(host.ptr, portstr, &hints, &res) != 0) return 1;
+		int rc = connect(handle, res->ai_addr, res->ai_addrlen);
+		freeaddrinfo(res);
+		if (rc == 0) return 0;
+		if (errno != EINPROGRESS) return 3;
+		if (!__nomen_io_wait(handle, 1)) return 3;
+		int so_err = 0;
+		socklen_t so_len = sizeof(so_err);
+		if (getsockopt(handle, SOL_SOCKET, SO_ERROR, &so_err, &so_len) < 0) return 3;
+		return so_err == 0 ? 0 : 3;
+		```
+		```
+		#arch: aarch64_use_c
+		char portstr[16];
+		snprintf(portstr, sizeof(portstr), "%d", port);
+		struct addrinfo hints, *res = NULL;
+		memset(&hints, 0, sizeof(hints));
+		hints.ai_family = AF_INET;
+		hints.ai_socktype = SOCK_STREAM;
+		if (getaddrinfo(host.ptr, portstr, &hints, &res) != 0) return 1;
+		int rc = connect(handle, res->ai_addr, res->ai_addrlen);
+		freeaddrinfo(res);
+		if (rc == 0) return 0;
+		if (errno != EINPROGRESS) return 3;
+		if (!__nomen_io_wait(handle, 1)) return 3;
+		int so_err = 0;
+		socklen_t so_len = sizeof(so_err);
+		if (getsockopt(handle, SOL_SOCKET, SO_ERROR, &so_err, &so_len) < 0) return 3;
+		return so_err == 0 ? 0 : 3;
+		```
+	}
+
+	func send_all = (int handle, string data, out bool) {
+		```
+		#arch: c
+		long off = 0;
+		while (off < data.len) {
+			ssize_t n = send(handle, data.ptr + off, (size_t)(data.len - off), 0);
+			if (n > 0) {
+				off += (long)n;
+				continue;
+			}
+			if (errno == EAGAIN || errno == EWOULDBLOCK) {
+				if (!__nomen_io_wait(handle, 1)) return false;
+				continue;
+			}
+			if (errno == EINTR) continue;
+			return false;
+		}
+		return true;
+		```
+		```
+		#arch: aarch64_use_c
+		long off = 0;
+		while (off < data.len) {
+			ssize_t n = send(handle, data.ptr + off, (size_t)(data.len - off), 0);
+			if (n > 0) {
+				off += (long)n;
+				continue;
+			}
+			if (errno == EAGAIN || errno == EWOULDBLOCK) {
+				if (!__nomen_io_wait(handle, 1)) return false;
+				continue;
+			}
+			if (errno == EINTR) continue;
+			return false;
+		}
+		return true;
+		```
+	}
+
+	func recv_some = (int handle, int max, move out string) {
+		```
+		#arch: c
+		long cap = max > 0 ? max : 1;
+		char *buf = (char *)malloc((size_t)cap);
+		for (;;) {
+			ssize_t n = recv(handle, buf, (size_t)cap, 0);
+			if (n > 0) return (nomen_string){ buf, (long)n };
+			if (n == 0) {
+				free(buf);
+				return (nomen_string){ strdup(""), 0 };
+			}
+			if (errno == EAGAIN || errno == EWOULDBLOCK) {
+				if (!__nomen_io_wait(handle, 0)) {
+					free(buf);
+					return (nomen_string){ strdup(""), 0 };
+				}
+				continue;
+			}
+			if (errno == EINTR) continue;
+			free(buf);
+			return (nomen_string){ strdup(""), 0 };
+		}
+		```
+		```
+		#arch: aarch64_use_c
+		long cap = max > 0 ? max : 1;
+		char *buf = (char *)malloc((size_t)cap);
+		for (;;) {
+			ssize_t n = recv(handle, buf, (size_t)cap, 0);
+			if (n > 0) return (nomen_string){ buf, (long)n };
+			if (n == 0) {
+				free(buf);
+				return (nomen_string){ strdup(""), 0 };
+			}
+			if (errno == EAGAIN || errno == EWOULDBLOCK) {
+				if (!__nomen_io_wait(handle, 0)) {
+					free(buf);
+					return (nomen_string){ strdup(""), 0 };
+				}
+				continue;
+			}
+			if (errno == EINTR) continue;
+			free(buf);
+			return (nomen_string){ strdup(""), 0 };
+		}
+		```
+	}
+
+	func recv_until_close = (int handle, move out string) {
+		```
+		#arch: c
+		long cap = 4096, len = 0;
+		char *buf = (char *)malloc((size_t)cap);
+		for (;;) {
+			if (len + 1 >= cap) {
+				cap *= 2;
+				buf = (char *)realloc(buf, (size_t)cap);
+			}
+			ssize_t n = recv(handle, buf + len, (size_t)(cap - len - 1), 0);
+			if (n > 0) {
+				len += (long)n;
+				continue;
+			}
+			if (n == 0) break;
+			if (errno == EAGAIN || errno == EWOULDBLOCK) {
+				if (!__nomen_io_wait(handle, 0)) break;
+				continue;
+			}
+			if (errno == EINTR) continue;
+			break;
+		}
+		buf[len] = 0;
+		return (nomen_string){ buf, len };
+		```
+		```
+		#arch: aarch64_use_c
+		long cap = 4096, len = 0;
+		char *buf = (char *)malloc((size_t)cap);
+		for (;;) {
+			if (len + 1 >= cap) {
+				cap *= 2;
+				buf = (char *)realloc(buf, (size_t)cap);
+			}
+			ssize_t n = recv(handle, buf + len, (size_t)(cap - len - 1), 0);
+			if (n > 0) {
+				len += (long)n;
+				continue;
+			}
+			if (n == 0) break;
+			if (errno == EAGAIN || errno == EWOULDBLOCK) {
+				if (!__nomen_io_wait(handle, 0)) break;
+				continue;
+			}
+			if (errno == EINTR) continue;
+			break;
+		}
+		buf[len] = 0;
+		return (nomen_string){ buf, len };
+		```
+	}
+
+	func close_fd = (int handle) {
+		```
+		#arch: c
+		if (handle >= 0) close(handle);
+		```
+		```
+		#arch: aarch64_use_c
+		if (handle >= 0) close(handle);
+		```
+	}
+}
