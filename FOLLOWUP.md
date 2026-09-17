@@ -326,24 +326,6 @@ that rejects a `Thread`-typed value that is never consumed by `.start()` /
 Low priority — the form is degenerate misuse, but the current failure mode is
 confusing.
 
-## aarch64: addressing/loading locals past frame offset 4095 (blocks start_on with large buffers)
-
-The aarch64 backend emits frame accesses as single-instruction `[x29, #imm]`
-forms and `add xN, x29, #imm`, whose immediate fields top out at 4095 (add) /
-32760 (scaled 64-bit load/store, and only when the offset is a multiple of
-8). A local array of >= 16 KB pushes every later local past those limits, so
-taking the address of any local in the same function fails to assemble
-(`expected compatible register, symbol or integer in range [0, 4095]`). This
-is pre-existing and unrelated to fibers — reproduced with a plain
-`var uint64[2048] big` plus `bump(ref y)`.
-
-Consequence: `Fiber(fn(args)).start_on(buf)` cannot be compiled on aarch64
-with the >= 16 KB buffer the fiber runtime requires, so its test runs on the
-C backend only. Fix: emit a base-register form for large frame offsets
-(`add x9, x29, #hi; add x9, x9, #lo; ... [x9, #off]`) at every `[x29, #imm]`
-and `add reg, x29, #imm` site, or allocate large locals off a secondary frame
-pointer.
-
 ## Kill-trampoline teardown for parked fibers (ASYNC_PLAN Phase 2, deferred)
 
 Nursery cancel/timeout wakes a parked fiber (see `__nomen_future_cancel`) and
@@ -376,9 +358,10 @@ cause: the nursery's futures collection was a fixed stack array
 end (memory corruption; the failure threshold was exactly N = 64 with N = 63
 passing). Fixed by allocating the list on the heap (65536 entries) on the C
 backend and, on aarch64, an 8-byte stack slot holding a heap pointer
-(a larger stack array pushed later frame offsets past the 4095 immediate
-limit — see the frame-offset entry). The N = 256 echo test now passes on both
-backends.
+(a larger stack array would have pushed later frame offsets past the
+4095 immediate limit — large locals on aarch64 now work via the
+large-frame access shims, but the heap list also keeps the frame
+small). The N = 256 echo test now passes on both backends.
 
 Remaining: the capacity is still a cap (65536 per nursery), and the aarch64
 call sites now load the pointer from the slot. A growable list (realloc with

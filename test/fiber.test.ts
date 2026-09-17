@@ -128,12 +128,11 @@ pub func main = () {
 		}
 	});
 
-	test("start_on runs a fiber on a caller-provided static stack (C backend)", async () => {
+	test("start_on runs a fiber on a caller-provided static stack", async () => {
 		// 64 * 8 bytes would be too small; use a healthy fixed buffer. This
-		// is the caller-provided-stack path. C backend only: the aarch64
-		// backend cannot take the address of a local past frame offset 4095,
-		// and a >=16 KB buffer pushes every later local past it (pre-existing
-		// large-frame limitation — see FOLLOWUP.md).
+		// is the caller-provided-stack path. The >=16 KB buffer pushes the
+		// later frame offsets past the aarch64 imm12 encodings — the
+		// large-frame access shims (asm_large_frame.ts) keep it assemblable.
 		const input = `
 import System
 
@@ -153,7 +152,7 @@ pub func main = () {
 	}
 }
 `;
-		for (const arch of ["c"] as const) {
+		for (const arch of ARCHITECTURES) {
 			const parsed = parse_raw(input);
 			expect(parsed.errors).toEqual([]);
 			const options = { arch, ...OPTIONS };

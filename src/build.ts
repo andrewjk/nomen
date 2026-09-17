@@ -1,6 +1,7 @@
 import { coalesce_copies } from "./build_aarch64/asm_coalesce.ts";
 import { eliminate_dead_cycle_moves } from "./build_aarch64/asm_cycle_dead_moves.ts";
 import { convert_loop_invariant_branches } from "./build_aarch64/asm_if_convert.ts";
+import { rewrite_large_frame_offsets } from "./build_aarch64/asm_large_frame.ts";
 import { promote_loop_slots } from "./build_aarch64/asm_loop_promote.ts";
 import {
 	eliminate_dead_copy_moves,
@@ -264,6 +265,15 @@ export default function build(
 			status.code += `ldp x29, x30, [sp], #16\n`;
 			status.code += `ret\n`;
 		}
+		// Large-frame access shims — rewrite out-of-range `[x29, #imm]`,
+		// `add xN, x29, #imm`, and `sub/add sp, sp, #imm` forms (a >= 16 KB
+		// local array pushes frame offsets past the imm12 encodings; the
+		// function would not assemble). Must run BEFORE the optimization
+		// pipeline: no later pass should see an out-of-range form, and the
+		// x16/x17-claiming passes then see the x17 scratch in their
+		// text-liveness validations and refuse to claim it (see
+		// asm_large_frame.ts).
+		status.code = rewrite_large_frame_offsets(status.code);
 		// Release mode: run the optimization pipeline over the whole
 		// aarch64 program (constant folding/propagation, dead-branch folding,
 		// strength reduction, dead-code elimination, peepholes). This is the
