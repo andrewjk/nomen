@@ -17,7 +17,7 @@ func work = (uint64 arg) {
 	Console.write_line("hello from task")
 }
 
-var t = spawn work(0)
+var t = Thread(work(0)).start()
 t.wait()
 Console.write_line("done")
 `;
@@ -40,7 +40,7 @@ func work = (uint64 arg) {
 	}
 }
 
-var t = spawn work(42)
+var t = Thread(work(42)).start()
 t.wait()
 `;
 		for (const arch of ARCHITECTURES) {
@@ -62,8 +62,8 @@ func work_b = (uint64 arg) {
 	Console.write_line("b")
 }
 
-var t1 = spawn work_a(0)
-var t2 = spawn work_b(0)
+var t1 = Thread(work_a(0)).start()
+var t2 = Thread(work_b(0)).start()
 t1.wait()
 t2.wait()
 `;
@@ -105,7 +105,7 @@ pub struct Runner<T> {
 	pub var T value
 
 	pub func launch = (ref self, uint64 n, ref Nursery pool) {
-		pool.spawn(work(n))
+		pool.start(Thread(work(n)))
 	}
 }
 `;
@@ -126,7 +126,7 @@ func bg = (uint64 arg) {
 	Console.write_line("from background")
 }
 
-spawn bg(0)
+Thread(bg(0)).start()
 
 // Crude sleep: spin until the bg task has had a chance to run.
 var int i = 0
@@ -149,7 +149,7 @@ func bg = (uint64 arg) {
 	Console.write_line("ok")
 }
 
-spawn bg(0)
+Thread(bg(0)).start()
 var int i = 0
 while i < 1000000 {
 	i = i + 1
@@ -170,7 +170,7 @@ func bg = (uint64 arg) {
 	Console.write_line("from task")
 }
 
-var t = spawn bg(0)
+var t = Thread(bg(0)).start()
 t.wait()
 Console.write_line("after wait")
 `;
@@ -187,7 +187,7 @@ Console.write_line("after wait")
 		const input = `
 func compute = (uint64 n) => n + 1
 
-var t = spawn compute(41)
+var t = Thread(compute(41)).start()
 var uint64 r = t.result_uint64()
 if r == 42 {
 	Console.write_line("correct")
@@ -218,7 +218,7 @@ func long_running = (uint64 arg) {
 	Console.write_line("finished")
 }
 
-var t = spawn long_running(0)
+var t = Thread(long_running(0)).start()
 t.cancel()
 t.wait()
 `;
@@ -246,7 +246,7 @@ func busy = (uint64 arg) {
 }
 
 async(timeout: 50) {
-	spawn busy(0)
+	Thread(busy(0)).start()
 }
 `;
 		for (const arch of ARCHITECTURES) {
@@ -270,16 +270,16 @@ pub func main = () {
 	var Channel ch = Channel()
 
 	async {
-		spawn work(ch, 0)
-		spawn work(ch, 1)
-		spawn work(ch, 2)
-		spawn work(ch, 3)
-		spawn work(ch, 4)
-		spawn work(ch, 5)
-		spawn work(ch, 6)
-		spawn work(ch, 7)
-		spawn work(ch, 8)
-		spawn work(ch, 9)
+		Thread(work(ch, 0)).start()
+		Thread(work(ch, 1)).start()
+		Thread(work(ch, 2)).start()
+		Thread(work(ch, 3)).start()
+		Thread(work(ch, 4)).start()
+		Thread(work(ch, 5)).start()
+		Thread(work(ch, 6)).start()
+		Thread(work(ch, 7)).start()
+		Thread(work(ch, 8)).start()
+		Thread(work(ch, 9)).start()
 	}
 
 	var int sum = 0
@@ -331,8 +331,8 @@ pub func main = () {
 	var Channel b = Channel()
 
 	async {
-		spawn producer(a)
-		spawn filter(a, b)
+		Thread(producer(a)).start()
+		Thread(filter(a, b)).start()
 	}
 
 	// Consume from b in main
@@ -374,14 +374,14 @@ pub func main = () {
 		var Channel ch = Channel()
 
 		async {
-			spawn work(ch, 0)
-			spawn work(ch, 1)
-			spawn work(ch, 2)
-			spawn work(ch, 3)
-			spawn work(ch, 4)
-			spawn work(ch, 5)
-			spawn work(ch, 6)
-			spawn work(ch, 7)
+			Thread(work(ch, 0)).start()
+			Thread(work(ch, 1)).start()
+			Thread(work(ch, 2)).start()
+			Thread(work(ch, 3)).start()
+			Thread(work(ch, 4)).start()
+			Thread(work(ch, 5)).start()
+			Thread(work(ch, 6)).start()
+			Thread(work(ch, 7)).start()
 		}
 
 		var int sum = 0
@@ -422,8 +422,8 @@ func inner = (Channel ch, uint64 n) {
 func outer = (Channel ch, uint64 n) {
 	var uint64 m = n + 10
 	async {
-		spawn inner(ch, n)
-		spawn inner(ch, m)
+		Thread(inner(ch, n)).start()
+		Thread(inner(ch, m)).start()
 	}
 }
 
@@ -431,10 +431,10 @@ pub func main = () {
 	var Channel ch = Channel()
 
 	async {
-		spawn outer(ch, 0)
-		spawn outer(ch, 1)
-		spawn outer(ch, 2)
-		spawn outer(ch, 3)
+		Thread(outer(ch, 0)).start()
+		Thread(outer(ch, 1)).start()
+		Thread(outer(ch, 2)).start()
+		Thread(outer(ch, 3)).start()
 	}
 
 	// 8 inner results: 0, 10, 1, 11, 2, 12, 3, 13 = 52
@@ -467,7 +467,7 @@ func bg = (uint64 arg) {
 	Console.write_line("from background")
 }
 
-spawn bg(0)
+Thread(bg(0)).start()
 `;
 		for (const arch of ARCHITECTURES) {
 			const parsed = parse_with_imports(input);
@@ -484,7 +484,7 @@ func bg = (uint64 arg) {
 	Console.write_line("from background")
 }
 
-spawn bg(0)
+Thread(bg(0)).start()
 Task.shutdown_pool()
 Console.write_line("after shutdown")
 `;
@@ -511,7 +511,7 @@ func bg = (uint64 arg) {
 }
 
 async {
-	spawn bg(0)
+	Thread(bg(0)).start()
 }
 
 Console.write_line("after block")
@@ -541,8 +541,8 @@ func bg = (uint64 n) {
 }
 
 async {
-	spawn bg(0)
-	spawn bg(1)
+	Thread(bg(0)).start()
+	Thread(bg(1)).start()
 }
 
 Console.write_line("done")
@@ -562,7 +562,7 @@ Console.write_line("done")
 func compute = (uint64 n) => n + 1
 
 async {
-	var t = spawn compute(41)
+	var t = Thread(compute(41)).start()
 	var uint64 r = t.result_uint64()
 	if r == 42 {
 		Console.write_line("usable")
@@ -587,7 +587,7 @@ func bg = (uint64 arg) {
 }
 
 async {
-	var t = spawn bg(0)
+	var t = Thread(bg(0)).start()
 	t.wait()
 	Console.write_line("waited")
 }
@@ -612,8 +612,8 @@ func worker = (uint64 id) {
 }
 
 func spawn_two = (ref Nursery pool) {
-	pool.spawn(worker(0))
-	pool.spawn(worker(1))
+	pool.start(Thread(worker(0)))
+	pool.start(Thread(worker(1)))
 }
 
 async pool {
@@ -643,7 +643,7 @@ Console.write_line("after block")
 func compute = (uint64 n) => n + 1
 
 func spawn_one = (uint64 n, ref Nursery pool) {
-	var t = pool.spawn(compute(n))
+	var t = pool.start(Thread(compute(n)))
 	var uint64 r = t.result_uint64()
 	if r == 42 {
 		Console.write_line("got")
@@ -670,7 +670,7 @@ func worker = (uint64 id) {
 }
 
 async pool {
-	pool.spawn(worker(0))
+	pool.start(Thread(worker(0)))
 }
 `;
 		for (const arch of ARCHITECTURES) {
@@ -689,11 +689,11 @@ func worker = (uint64 id) {
 }
 
 func spawn_via_ref = (ref Nursery pool) {
-	pool.spawn(worker(0))
+	pool.start(Thread(worker(0)))
 }
 
 async pool {
-	spawn worker(1)
+	Thread(worker(1)).start()
 	spawn_via_ref(ref pool)
 }
 `;
@@ -714,7 +714,7 @@ func work = (uint64 arg) {
 }
 
 async pool = Nursery(timeout: 1000) {
-	spawn work(0)
+	Thread(work(0)).start()
 }
 `;
 		for (const arch of ARCHITECTURES) {
@@ -751,8 +751,8 @@ pub func main = () {
 	var Channel ch = Channel()
 
 	async(mode: race) {
-		spawn slow(ch)
-		spawn quick(ch)
+		Thread(slow(ch)).start()
+		Thread(quick(ch)).start()
 	}
 
 	var uint64 v = ch.receive()
@@ -791,7 +791,7 @@ pub func main = () {
 	var Channel ch = Channel()
 
 	async(mode: race, timeout: 50) {
-		spawn slow(ch)
+		Thread(slow(ch)).start()
 	}
 
 	// Both paths (slow cancels before sending) leave the channel empty.
@@ -843,8 +843,8 @@ func worker = (Mutex mu) {
 var Mutex mu = Mutex()
 
 async {
-	spawn worker(mu)
-	spawn worker(mu)
+	Thread(worker(mu)).start()
+	Thread(worker(mu)).start()
 }
 `;
 		for (const arch of ARCHITECTURES) {
@@ -884,7 +884,7 @@ func producer = (Channel ch) {
 var Channel ch = Channel()
 
 async {
-	spawn producer(ch)
+	Thread(producer(ch)).start()
 }
 
 var v1 = ch.receive()
@@ -915,7 +915,7 @@ describe("fat string payloads", () => {
 		const input = `
 func greet = (uint64 n) => "hello " + "world"
 
-var t = spawn greet(0)
+var t = Thread(greet(0)).start()
 var string s = t.result()
 Console.write_line(s)
 `;
@@ -934,7 +934,7 @@ Console.write_line(s)
 		const input = `
 func greet = (uint64 n) => "hello"
 
-var t = spawn greet(0)
+var t = Thread(greet(0)).start()
 var string s = t.result()
 if s.length == 5 {
 	Console.write_line("literal ok")
@@ -953,7 +953,7 @@ if s.length == 5 {
 		const input = `
 func greet = (uint64 n) => "hello " + "world"
 
-var t = spawn greet(0)
+var t = Thread(greet(0)).start()
 t.wait()
 Console.write_line("done")
 `;
@@ -975,7 +975,7 @@ func shout = (string s) {
 	Console.write_line(s)
 }
 
-var t = spawn shout("heap " + "arg")
+var t = Thread(shout("heap " + "arg")).start()
 t.wait()
 `;
 		for (const arch of ARCHITECTURES) {
@@ -992,7 +992,7 @@ t.wait()
 func greet = (uint64 n) => "from pool"
 
 func spawn_one = (ref Nursery pool) {
-	var t = pool.spawn(greet(0))
+	var t = pool.start(Thread(greet(0)))
 	var string s = t.result()
 	Console.write_line(s)
 }
@@ -1014,7 +1014,7 @@ async pool {
 		const input = `
 func compute = (uint64 n) => n + 1
 
-var t = spawn compute(41)
+var t = Thread(compute(41)).start()
 var uint64 r = t.result()
 if r == 42 {
 	Console.write_line("scalar ok")
@@ -1039,7 +1039,7 @@ func producer = (Channel ch) {
 var Channel ch = Channel()
 
 async {
-	spawn producer(ch)
+	Thread(producer(ch)).start()
 }
 
 var string a = ch.receive_string()
@@ -1076,7 +1076,7 @@ func producer = (Channel ch) {
 var Channel ch = Channel()
 
 async {
-	spawn producer(ch)
+	Thread(producer(ch)).start()
 }
 
 var string s = ch.receive_string()
@@ -1100,7 +1100,7 @@ func producer = (Channel ch) {
 var Channel ch = Channel()
 
 async {
-	spawn producer(ch)
+	Thread(producer(ch)).start()
 }
 
 Console.write_line("done")
@@ -1124,7 +1124,7 @@ func producer = (Channel ch) {
 var Channel ch = Channel()
 
 async {
-	spawn producer(ch)
+	Thread(producer(ch)).start()
 }
 
 var uint64 n = ch.receive()
@@ -1163,7 +1163,7 @@ pub func work = (HoldsClass h) {
 pub func main = () {
 	var Counter c = Counter()
 	var HoldsClass h = HoldsClass(c)
-	spawn work(h)
+	Thread(work(h)).start()
 }
 `;
 		const parsed = parse_raw(input);
@@ -1183,7 +1183,7 @@ pub func work = (Sendy s) {
 
 pub func main = () {
 	var Sendy s = Sendy(0)
-	spawn work(s)
+	Thread(work(s)).start()
 }
 `;
 		const parsed = parse_raw(input);
@@ -1204,7 +1204,7 @@ pub func work = (Point p) {
 
 pub func main = () {
 	var Point p = Point(0, 0)
-	spawn work(p)
+	Thread(work(p)).start()
 }
 `;
 		const parsed = parse_raw(input);
@@ -1224,7 +1224,7 @@ pub func work = (Counter c) {
 
 pub func main = () {
 	var Counter c = Counter()
-	spawn work(c)
+	Thread(work(c)).start()
 }
 `;
 		const parsed = parse_raw(input);

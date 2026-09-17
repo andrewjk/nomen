@@ -318,15 +318,17 @@ function emit_stmt_dispatch(
 			case "eval": {
 				// Expression-shaped statements (bare calls, lets): the value
 				// rides the NIR expression seam. build_node's with_semicolon
-				// path also stamps a bare nursery-spawn statement as
-				// fire-and-forget — the seam bypasses that case, so replicate
-				// the stamp here, then the usual newline tail.
+				// path also stamps a bare spawn statement (nursery.start or
+				// Thread(...).start()) as fire-and-forget — the seam bypasses
+				// that case, so replicate the stamp here, then the usual
+				// newline tail.
 				const eval_node = nstmt.expr.node;
 				if (eval_node.node_type === "access") {
 					const inner = (eval_node as AccessNode).access;
 					if (
 						inner.node_type === "access_func" &&
-						(inner as AccessFunctionCallNode).is_nursery_spawn
+						((inner as AccessFunctionCallNode).is_nursery_spawn ||
+							(inner as AccessFunctionCallNode).is_thread_start)
 					) {
 						(inner as AccessFunctionCallNode).is_statement = true;
 					}

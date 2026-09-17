@@ -81,6 +81,22 @@ export default class FunctionCallNode extends BaseNode {
 	 * string-length companion params (`ParameterNode.hidden_len`).
 	 */
 	resolved_function?: FunctionNode;
+	/**
+	 * Set during checking when this is the compiler-special `Thread(fn(args))`
+	 * constructor — the surface form of a spawn (see ASYNC_PLAN.md). The
+	 * single parameter is the call expression to launch. The construction is
+	 * consumed by `.start()` on it (direct spawn, check_access_node) or by
+	 * passing it to a nursery's `.start(...)` (the escape hatch, which
+	 * registers the future with that nursery). A user-declared function or
+	 * struct named `Thread` shadows the special form.
+	 */
+	is_thread_ctor?: boolean;
+	/**
+	 * For `Thread(fn(args))`: the wrapped function's return type, captured
+	 * during checking. Consumed by the `.start()` / nursery `.start()` build
+	 * paths to decide whether the trampoline captures a result.
+	 */
+	function_return_type?: Type;
 
 	constructor(start: number, name: string, type?: Type, params?: BaseNode[], is_static?: boolean) {
 		super("func_call", start);

@@ -428,7 +428,7 @@ test("value-position spawn folds its call arguments' reads into the flat stateme
 		`
 func work = (uint64 arg) {}
 pub func spawn_facts = (uint64 n) {
-    var t = spawn work(n)
+    var t = Thread(work(n)).start()
 }
 `,
 		"spawn_facts",

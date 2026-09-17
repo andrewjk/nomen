@@ -21,7 +21,7 @@ variable, parameter, field, type, or enum case names:
 `as` `async` `bitset` `break` `case` `class` `const` `continue` `cp` `else`
 `enum` `extern` `extend` `for` `func` `if` `import` `in` `internal` `let`
 `match` `move` `of` `out` `panic` `private` `pub` `raw` `readonly` `ref`
-`return` `spawn` `struct` `switch` `swap` `todo` `trait` `unsafe` `var` `view`
+`return` `struct` `switch` `swap` `todo` `trait` `unsafe` `var` `view`
 `while`
 
 The literals `true`, `false`, and `null`, and `self`, are reserved as well.
@@ -2307,10 +2307,11 @@ foreground colour. Styles: `bold`, `dim`, `italic`, `underline`, `blink`,
 ### Task
 
 A handle to a spawned unit of work running on a separate thread. `Task` is
-generic — `spawn` infers the type parameter from the function's return type:
+generic — `Thread(...).start()` infers the type parameter from the function's
+return type:
 
 ```
-var t = spawn compute(42)
+var t = Thread(compute(42)).start()
 var uint64 r = t.result()
 ```
 
@@ -2318,7 +2319,7 @@ var uint64 r = t.result()
 is safe. No-op if the task was never spawned or already joined.
 
 ```
-var t = spawn compute(42)
+var t = Thread(compute(42)).start()
 t.wait()
 ```
 
@@ -2339,7 +2340,7 @@ func worker = (Mutex m) {
 }
 
 async {
-    spawn worker(mu)
+    Thread(worker(mu)).start()
 }
 ```
 
@@ -2360,7 +2361,7 @@ func producer = (Channel c) {
 }
 
 async {
-    spawn producer(ch)
+    Thread(producer(ch)).start()
 }
 
 var v = ch.receive()   // blocks until ready
@@ -2380,7 +2381,7 @@ func producer = (Channel c) {
 }
 
 async {
-    spawn producer(ch)
+    Thread(producer(ch)).start()
 }
 
 var string s = ch.receive_string()   // blocks until ready
@@ -2423,25 +2424,26 @@ pub class SafeCounter : Sendable {   // Sendable: explicitly marked
 }
 ```
 
-Every value passed to `spawn` must be Sendable.
+Every value passed to `Thread(...)` must be Sendable.
 
-### spawn
+### Thread
 
-`spawn` runs a function call on a separate thread. It can be used as a
-statement (fire-and-forget) or an expression (capture the resulting `Task`):
+`Thread(fn(args)).start()` runs a function call on a separate thread. It can
+be used as a statement (fire-and-forget) or an expression (capture the
+resulting `Task`):
 
 ```
 func bg = (uint64 arg) {
     Console.write_line("from task")
 }
 
-spawn bg(0)                 // statement form
+Thread(bg(0)).start()                 // statement form
 
-var t = spawn bg(0)         // expression form
+var t = Thread(bg(0)).start()         // expression form
 t.wait()
 ```
 
-The expression yields a `Task` handle. The handle is usable whether or not
+The `start()` call yields a `Task` handle. The handle is usable whether or not
 the spawn happened inside a nursery: waiting is idempotent (join-once), and
 the nursery's implicit join at block exit shares the same underlying future.
 So a Task captured inside an `async` block can be waited on explicitly, and
@@ -2449,8 +2451,8 @@ the nursery's join at block exit simply observes the task is already done:
 
 ```
 async {
-    var t = spawn fetch(1)   // usable handle, even inside a nursery
-    t.wait()                  // explicit join
+    var t = Thread(fetch(1)).start()   // usable handle, even inside a nursery
+    t.wait()                           // explicit join
     // nursery joins t again at block exit — a no-op
 }
 ```
@@ -2459,15 +2461,16 @@ The nursery's join runs before block-scoped locals are destroyed, so a
 running task can safely hold pointers to values declared in the nursery
 (e.g. a `Channel`).
 
-Arguments to spawn must be `Sendable`. The spawned function's arguments are
-type-erased to `uint64` for the thread boundary, then cast back at the call
-site — primitives by value, classes/traits by pointer.
+Arguments to a spawned call must be `Sendable`. The spawned function's
+arguments are type-erased to `uint64` for the thread boundary, then cast back
+at the call site — primitives by value, classes/traits by pointer.
 
 ### async block (nursery)
 
-`async { ... }` defines a nursery: a scope in which `spawn` can be used. The
-block cannot exit until all tasks spawned within it have finished (implicit
-join at scope exit). This is the structured-concurrency primitive.
+`async { ... }` defines a nursery: a scope that bounds the tasks started
+within it. The block cannot exit until all tasks spawned within it have
+finished (implicit join at scope exit). This is the structured-concurrency
+primitive.
 
 ```
 func fetch = (uint64 id) {
@@ -2475,9 +2478,9 @@ func fetch = (uint64 id) {
 }
 
 async {
-    spawn fetch(1)
-    spawn fetch(2)
-    spawn fetch(3)
+    Thread(fetch(1)).start()
+    Thread(fetch(2)).start()
+    Thread(fetch(3)).start()
     // block does not exit until all three fetches finish
 }
 ```
@@ -2490,7 +2493,7 @@ the cancellation before joining.
 
 ```
 async(timeout: 500) {
-    spawn long_running(0)
+    Thread(long_running(0)).start()
     // if long_running doesn't finish within 500ms, it is cancelled
 }
 ```
@@ -2503,27 +2506,27 @@ combined: `async(mode: race, timeout: 500)`.
 
 ```
 async(mode: race) {
-    spawn fetch_from_cache(key)
-    spawn fetch_from_db(key)
+    Thread(fetch_from_cache(key)).start()
+    Thread(fetch_from_db(key)).start()
     // exits as soon as either task completes; the loser is cancelled
 }
 ```
 
 ### Nursery (escape hatch)
 
-`spawn` normally targets its lexically enclosing `async` block. A function that
+A spawn normally targets its lexically enclosing `async` block. A function that
 needs to spawn into its _caller's_ nursery takes the nursery explicitly — the
 Trio escape hatch. This is a _capability_, not a required parameter: most
 functions just `return`/compute and never need it.
 
 An `async` block may name its nursery. The name binds a `Nursery`-typed variable
 in the block's scope, which can be passed to functions (with `ref`) and used as
-the receiver of `.spawn`:
+the receiver of `.start`:
 
 ```
 func handle_connection = (uint64 conn, ref Nursery pool) {
-    pool.spawn(parse(conn))
-    pool.spawn(respond(conn))
+    pool.start(Thread(parse(conn)))
+    pool.start(Thread(respond(conn)))
 }
 
 async pool {
@@ -2532,16 +2535,16 @@ async pool {
 }
 ```
 
-`name.spawn(fn(args))` spawns `fn(args)` into the referenced nursery — the same
-call-expression shape as a bare `spawn fn(args)`. The arguments must be
-`Sendable`, exactly like a bare `spawn`. It may be used as a statement
+`name.start(Thread(fn(args)))` spawns `fn(args)` into the referenced nursery —
+the same `Thread(...)` construction a bare spawn takes. The arguments must be
+`Sendable`, exactly like a direct spawn. It may be used as a statement
 (fire-and-forget) or as an expression yielding a `Task<T>`:
 
 ```
 func compute = (uint64 n) => n + 1
 
 func spawn_one = (uint64 n, ref Nursery pool) {
-    var t = pool.spawn(compute(n))
+    var t = pool.start(Thread(compute(n)))
     var uint64 r = t.result_uint64()
 }
 ```
@@ -2557,8 +2560,8 @@ A named nursery may be configured (timeout, race mode) with `= Nursery(...)`:
 
 ```
 async pool = Nursery(timeout: 2000, mode: race) {
-    pool.spawn(fetch_from_cache(key))
-    pool.spawn(fetch_from_db(key))
+    pool.start(Thread(fetch_from_cache(key)))
+    pool.start(Thread(fetch_from_db(key)))
 }
 ```
 
@@ -2568,14 +2571,14 @@ block cannot exit until every task spawned through a passed `Nursery` has
 finished, so a running task can safely hold the `Nursery` (and pointers into
 nursery-local values).
 
-An unnamed `async { }` block supports only lexical `spawn` (no escape hatch) —
-naming the nursery is what makes it referenceable.
+An unnamed `async { }` block supports only lexical `Thread(...).start()`
+(no escape hatch) — naming the nursery is what makes it referenceable.
 
 ### Task
 
-The handle returned by `spawn`. Generic — `T` is inferred from the spawned
-function's return type (`Task<uint64>` for uint64-returning functions,
-`Task<uint64>` for void functions):
+The handle returned by `Thread(...).start()`. Generic — `T` is inferred from
+the spawned function's return type (`Task<uint64>` for uint64-returning
+functions, `Task<uint64>` for void functions):
 
 ```
 pub class Task<T> : Sendable {
@@ -2615,7 +2618,7 @@ func long_running = (uint64 arg) {
     }
 }
 
-var t = spawn long_running(0)
+var t = Thread(long_running(0)).start()
 t.cancel()
 t.wait()
 ```
@@ -2628,7 +2631,7 @@ spawned children can't starve the queue, because the pool starts an extra
 worker up to a cap of 64. This prevents deadlocks from nested spawns.
 
 ```
-Task.set_pool_size(8)  // must be called before the first spawn
+Task.set_pool_size(8)  // must be called before the first Thread(...).start()
 ```
 
 The pool shuts down automatically at process exit: every queued task is

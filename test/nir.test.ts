@@ -203,8 +203,8 @@ pub func nir_demo_ir = (out float) {
     const point = [x = 4, y = 5]
     Console.write("\\{point.x}")
     async(timeout: 50) {
-        spawn nir_worker_ir(1)
-        spawn nir_worker_ir(2)
+        Thread(nir_worker_ir(1)).start()
+        Thread(nir_worker_ir(2)).start()
     }
     return point.y as float
 }
@@ -351,11 +351,11 @@ pub func flow_demo = (int v, out int) {
 	}
 });
 
-test("value-position spawn lowers to the spawn expr carrying its call", () => {
+test("value-position Thread().start() lowers to the method_call expr carrying its call", () => {
 	const input = `
 func work = (uint64 arg) {}
 pub func spawn_value = (out uint64) {
-    var t = spawn work(3)
+    var t = Thread(work(3)).start()
     return t.result_uint64()
 }
 `;
@@ -366,9 +366,9 @@ pub func spawn_value = (out uint64) {
 	const lowered = lower_function(fn);
 	expect([...lowered.unknown_kinds]).toEqual([]);
 	const decl = lowered.body.find((s) => s.kind === "declare");
-	expect(decl && decl.kind === "declare" && decl.decl.init?.kind === "spawn").toBe(true);
-	if (decl!.kind !== "declare" || decl!.decl.init?.kind !== "spawn") return;
-	expect(decl!.decl.init.call.kind).toBe("call");
+	// The Thread-form spawn lowers as the standard method_call expr (the
+	// spawn trampoline is emitted from the access annotations at build time).
+	expect(decl && decl.kind === "declare" && decl.decl.init?.kind === "method_call").toBe(true);
 });
 
 test("nested type declarations lower to opaque without recording unknown kinds", () => {
@@ -412,7 +412,7 @@ pub func parity = (int q, out int) {
     return k
 }
 pub func parity_spawn = (int q) {
-    var t = spawn work(q)
+    var t = Thread(work(q)).start()
     t.wait()
 }
 func work = (int arg) {}

@@ -356,8 +356,8 @@ func work = (uint64 id) {
     Console.write_line("ok")
 }
 async nursery {
-    nursery.spawn(work(1))
-    var t = nursery.spawn(work(2))
+    nursery.start(Thread(work(1)))
+    var t = nursery.start(Thread(work(2)))
     t.wait()
 }
 `);
@@ -490,8 +490,8 @@ func work = (uint64 id) {
     Console.write_line("ok")
 }
 async nursery {
-    nursery.spawn(work(1))
-    var t = nursery.spawn(work(2))
+    nursery.start(Thread(work(1)))
+    var t = nursery.start(Thread(work(2)))
     t.wait()
 }
 `);
@@ -779,7 +779,7 @@ func work = (uint64 arg) {
     Console.write_line("worked")
 }
 pub func main = () {
-    var t = spawn work(3)
+    var t = Thread(work(3)).start()
     t.wait()
 }
 `);
@@ -796,7 +796,7 @@ func probe = (int v, out int) {
 func nursery_flow = (out int) {
     var int total = 0
     async(timeout: 2000) {
-        spawn probe(1)
+        Thread(probe(1)).start()
         if total == 0 {
             total = total + 40
         }

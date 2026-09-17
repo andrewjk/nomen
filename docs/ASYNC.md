@@ -6,8 +6,9 @@ For the user-facing contract, see SPEC.md's "Concurrency" section.
 ## Implementation status
 
 Shipped on both the C and aarch64 backends (Mutex, Task, Channel all have
-`#arch: aarch64` raw-asm blocks; `spawn` and `async` build phases emit aarch64
-assembly + C companion). End-to-end usable for concurrency on both targets.
+`#arch: aarch64` raw-asm blocks; the `Thread(...).start()` and `async` build
+phases emit aarch64 assembly + C companion). End-to-end usable for
+concurrency on both targets.
 
 - **`Sendable` trait** — marker, enforced on every spawn arg and every value
   moved into an `async` block. Auto-derived for structs whose fields are all
@@ -22,9 +23,9 @@ assembly + C companion). End-to-end usable for concurrency on both targets.
 - **`Mutex`** — pthread-backed lock; `#destroy` releases the resource.
 - **`Channel`** — blocking FIFO queue (`send` / `receive` for uint64 words,
   `send_string` / `receive_string` for fat strings).
-- **`spawn`** — statement (fire-and-forget) or expression
-  (`var t = spawn fn(args)`) yielding `Task<T>`. Args packed via a per-site
-  trampoline, submitted to a global worker pool.
+- **`Thread`** — the thread class. `Thread(fn(args)).start()` is a statement
+  (fire-and-forget) or expression yielding `Task<T>`. Args packed via a
+  per-site trampoline, submitted to a global worker pool.
 - **`async { ... }`** — nursery block. Waits on every spawned task at scope
   exit. The join runs before block-scoped locals are destroyed, so a running
   task can safely hold pointers to nursery-local values.
@@ -34,8 +35,7 @@ assembly + C companion). End-to-end usable for concurrency on both targets.
   nursery is fully usable (explicit `wait()`/`result()`), and the nursery's
   join at block exit is a no-op if the user already joined.
 - **Worker pool** — starts at a configurable size (default 4, via
-  `Task.set_pool_size(n)` before the first spawn) and grows on demand up to
-  64 workers when every worker is busy, preventing deadlocks from nested
+  `Task.set_pool_size(n)` before the first spawn) and grows on demand up to 64 workers when every worker is busy, preventing deadlocks from nested
   spawns. Drains and joins all workers at process exit;
   `Task.shutdown_pool()` does this explicitly.
 - **Cancellation scopes** — `async(timeout: N)` where N is milliseconds.
@@ -49,8 +49,8 @@ assembly + C companion). End-to-end usable for concurrency on both targets.
   `__nomen_nursery_race_wait`, which polls each future's done flag every 1ms.
 - **Nursery escape hatch** — a named `async` block (`async pool { }`) binds a
   `Nursery`-typed variable the caller passes with `ref`;
-  `name.spawn(fn(args))` spawns into that nursery. Config rides on the
-  declaration: `async pool = Nursery(timeout: N, mode: race) { }`.
+  `name.start(Thread(fn(args)))` spawns into that nursery. Config rides on
+  the declaration: `async pool = Nursery(timeout: N, mode: race) { }`.
 
 ## Foundations
 
@@ -84,16 +84,16 @@ const users = fetch_users(id)
 
 // concurrent — inside an async block:
 async {
-    let t1 = spawn fetch_users(id)
-    let t2 = spawn fetch_orders(id)
+    let t1 = Thread(fetch_users(id)).start()
+    let t2 = Thread(fetch_orders(id)).start()
     const users  = t1.result
     const orders = t2.result
 }
 ```
 
-- `spawn <call>` runs the call on the enclosing nursery's pool, returns
-  `Task<T>`. The runner is implicit, the way `return` implicitly targets the
-  enclosing function.
+- `Thread(fn(args)).start()` runs the call on the enclosing nursery's pool,
+  returns `Task<T>`. The runner is implicit, the way `return` implicitly
+  targets the enclosing function.
 - No `async` keyword on functions. Any function can be spawned.
 - `Task<T>.result` blocks the current thread until the task finishes. No
   `await` keyword is required for the thread-pool model (see "Next steps").
@@ -102,8 +102,8 @@ This works because Nomen's runtime is **thread-pool based**, not
 state-machine/coroutine based — there is no function-body transform that would
 require an annotation. A `TaskRunner` parameter was considered and rejected:
 it reintroduces coloring via return-type ambiguity (`User[]` vs `Task<User[]>`)
-and plumbing explosion, and its only sensible variant is just `spawn` at the
-call site.
+and plumbing explosion, and its only sensible variant is just
+`Thread(...).start()` at the call site.
 
 ### Escape hatch: passing the nursery
 
@@ -113,8 +113,8 @@ required parameter:
 
 ```
 func handle_connection = (Connection conn, ref Nursery pool) {
-    pool.spawn(parse(conn))
-    pool.spawn(respond(conn))
+    pool.start(Thread(parse(conn)))
+    pool.start(Thread(respond(conn)))
 }
 
 async pool {
@@ -195,20 +195,16 @@ Open questions, intentionally not yet in scope:
   move-out on receive — a message survives its sender's scope exit). A fully
   typed wrapper (`Channel<T>` with native T payloads) remains a
   straightforward stdlib addition.
-- **Coroutine-scale concurrency (if ever needed).** The v1 thread-pool model
-  caps out at thousands of concurrent tasks (~MB per OS thread). If
-  millions-of-tasks scale is ever required, the preferred path is **Go-style
-  stack-switching** — colorless, matches Nomen's philosophy, but requires a
-  heavy runtime (M:N scheduler, stack copier, syscall interception). The
-  **state-machine path** (Rust/Swift-style `async fn` + coloring) should be
-  avoided: it trades a permanent language tax for a lighter runtime, a bad
-  trade for a small language, and coloring is in fact forced by
-  coroutine-aware I/O, not by coroutines themselves. Nothing about
-  `async { }`, `Sendable`, `Task<T>`, or the nursery would need redesign
-  under either path — only extension. (The full trade-off analysis — runtime
-  model comparison, the coloring constraint argued precisely, and the
-  language-by-language survey — lived in earlier revisions of this file; see
-  git history if it's needed again.)
+- **Coroutine-scale concurrency.** Now planned: stackful fibers as a
+  library, built on a tiny stack-switch primitive with park-aware blocking
+  points and an ambient runtime — no coloring, no function transform, no new
+  keywords in v1. The design, phases, and open questions live in
+  [ASYNC_PLAN.md](ASYNC_PLAN.md). (The original framing — Go-style
+  stack-switching vs the state-machine path — and the full trade-off analysis
+  lived in earlier revisions of this file; see git history if needed. In
+  short: the state-machine path trades a permanent language tax for a lighter
+  runtime, a bad trade for a small language; the chosen path keeps the
+  colorless semantics either way.)
 - **Effect handlers.** A future effect system (a la Koka/OCaml 5) could give
   colorless concurrency without OS-thread-per-task. Large language feature;
   not planned.

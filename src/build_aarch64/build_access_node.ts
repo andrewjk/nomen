@@ -22,6 +22,7 @@ import type BaseNode from "../nodes/BaseNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import IndexNode from "../nodes/IndexNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
+import SpawnNode from "../nodes/SpawnNode.ts";
 import type StructNode from "../nodes/StructNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
@@ -42,6 +43,7 @@ import build_inline_method, {
 import build_node from "./build_node.ts";
 import build_nursery_spawn from "./build_nursery_spawn.ts";
 import { build_operand, tree_is_call_free } from "./build_operation_node.ts";
+import build_spawn_node from "./build_spawn_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free, emit_malloc, emit_strdup } from "./utils/audit.ts";
 import { all_scope_frames, mark_moved_if_struct, trait_class_for } from "./utils/auto_destroy.ts";
@@ -621,7 +623,19 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 		}
 		case "access_func": {
 			const access_func = node.access as AccessFunctionCallNode;
-			// Escape hatch: `nursery.spawn(fn, args...)`. See ASYNC.md.
+			// `Thread(fn(args)).start()` — the surface form of a direct spawn
+			// (see ASYNC_PLAN.md). Synthesize a SpawnNode from the wrapped
+			// call and emit the standard spawn trampoline; the receiver
+			// Thread construction itself emits nothing.
+			if (access_func.is_thread_start) {
+				const ctor = node.target as FunctionCallNode;
+				const spawn = new SpawnNode(node.start, ctor.params[0] as FunctionCallNode);
+				spawn.function_return_type = access_func.function_return_type;
+				spawn.is_statement = access_func.is_statement;
+				build_spawn_node(spawn, status);
+				return;
+			}
+			// Escape hatch: `nursery.start(Thread(fn(args)))`. See ASYNC.md.
 			if (access_func.is_nursery_spawn) {
 				build_nursery_spawn(node, access_func, status);
 				return;

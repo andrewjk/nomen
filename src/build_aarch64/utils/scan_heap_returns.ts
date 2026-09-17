@@ -24,29 +24,42 @@ export function scan_heap_returning_functions(root: BaseNode): Set<string> {
 }
 
 /**
- * Every string-returning function spawned via `spawn` / `pool.spawn(...)` is
- * consumed through the task's C trampoline, where the aarch64 backend's
- * declaration-level heap tracking can't see the result — the value lands in
- * the typed result slot and is later moved out to the `result()` caller, who
- * frees it unconditionally (a `move out string`). The callee must therefore
- * normalize EVERY return path to an owned heap copy (the return-site strdup
- * only fires for functions in this set), so a literal-only spawned function
- * doesn't hand `result()` a rodata pointer the caller would free.
+ * Every string-returning function spawned via `Thread(fn(args)).start()` /
+ * `pool.start(Thread(fn(args)))` is consumed through the task's C trampoline,
+ * where the aarch64 backend's declaration-level heap tracking can't see the
+ * result — the value lands in the typed result slot and is later moved out to
+ * the `result()` caller, who frees it unconditionally (a `move out string`).
+ * The callee must therefore normalize EVERY return path to an owned heap copy
+ * (the return-site strdup only fires for functions in this set), so a
+ * literal-only spawned function doesn't hand `result()` a rodata pointer the
+ * caller would free.
  */
 function scan_spawn_callees(root: BaseNode, result: Set<string>) {
 	const visit = (node: any): void => {
 		if (!node || typeof node !== "object") return;
-		const spawn_call =
-			node.node_type === "spawn"
-				? node.call
-				: node.node_type === "access_func" && node.is_nursery_spawn
-					? node.params?.[0]
-					: undefined;
+		// Spawn sites: the internal SpawnNode (retired keyword form),
+		// `Thread(fn(args)).start()` (direct), and
+		// `name.start(Thread(fn(args)))` (nursery escape hatch) — each
+		// resolves to the wrapped call plus the spawn's function return type.
+		let spawn_call: any;
+		let spawn_ret: any;
+		if (node.node_type === "spawn") {
+			spawn_call = node.call;
+			spawn_ret = node.function_return_type;
+		} else if (node.node_type === "access" && node.access?.node_type === "access_func") {
+			if (node.access.is_thread_start) {
+				spawn_call = node.target?.params?.[0];
+				spawn_ret = node.access.function_return_type;
+			} else if (node.access.is_nursery_spawn) {
+				spawn_call = node.access.params?.[0]?.params?.[0];
+				spawn_ret = node.access.function_return_type;
+			}
+		}
 		const name_and_ret: [string, { name?: string }] | undefined =
 			spawn_call && spawn_call.node_type === "func_call"
 				? [
 						emission_label(spawn_call.resolved_function ?? { name: spawn_call.name }),
-						node.function_return_type ?? {},
+						spawn_ret ?? {},
 					]
 				: undefined;
 		if (name_and_ret && name_and_ret[0] && name_and_ret[1].name === "string") {

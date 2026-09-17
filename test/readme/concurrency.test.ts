@@ -11,9 +11,9 @@ func fetch = (uint64 id) {
 
 pub func main = () {
     async nursery {
-        nursery.spawn(fetch(1))
-        nursery.spawn(fetch(2))
-        nursery.spawn(fetch(3))
+        nursery.start(Thread(fetch(1)))
+        nursery.start(Thread(fetch(2)))
+        nursery.start(Thread(fetch(3)))
     }
 }
 `;
@@ -28,7 +28,7 @@ func compute = (uint64 n) => n + 1
 
 pub func main = () {
     async nursery {
-        var t = nursery.spawn(compute(41))
+        var t = nursery.start(Thread(compute(41)))
         t.wait()
         var uint64 r = t.result_uint64()
     }

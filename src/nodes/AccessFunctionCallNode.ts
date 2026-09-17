@@ -59,12 +59,20 @@ export default class AccessFunctionCallNode extends BaseNode {
 	 */
 	inferred_array_length?: string;
 	/**
-	 * Set during checking when this is a `nursery.spawn(fn, args...)` escape-
-	 * hatch call (target type is `Nursery`, method name is `spawn`). The build
-	 * phase reads `function_return_type` and emits the spawn trampoline against
-	 * the passed Nursery's runtime futures/count pointers. See ASYNC.md.
+	 * Set during checking when this is a `nursery.start(Thread(fn(args)))`
+	 * escape-hatch call (target type is `Nursery`, method name is `start`).
+	 * The build phase reads `function_return_type` and emits the spawn
+	 * trampoline against the passed Nursery's runtime futures/count pointers.
+	 * See ASYNC.md and ASYNC_PLAN.md.
 	 */
 	is_nursery_spawn?: boolean;
+	/**
+	 * Set during checking when this is a `Thread(fn(args)).start()` call —
+	 * the surface form of a direct spawn (target type is `Thread`, method
+	 * name is `start`). The build phase synthesizes a SpawnNode from the
+	 * wrapped call and emits the standard spawn trampoline. See ASYNC_PLAN.md.
+	 */
+	is_thread_start?: boolean;
 	/**
 	 * For `nursery.spawn`: the spawned function's return type, captured during
 	 * checking (mirrors SpawnNode.function_return_type). Used by the build to

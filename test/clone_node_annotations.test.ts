@@ -130,14 +130,16 @@ const int v = m.get("a")
 	expect(find_slot_call!.return_bounds!.upper).toContain("cap");
 });
 
-test("rederive is_nursery_spawn on a nursery.spawn inside a mono body", () => {
-	// A generic method that receives a Nursery and calls pool.spawn(work(n)).
+test("rederive is_nursery_spawn on a nursery.start(Thread(...)) inside a mono body", () => {
+	// A generic method that receives a Nursery and calls pool.start(Thread(work(n))).
 	// The struct is declared AFTER main, so its generic body is unchecked at
 	// monomorphization time (the clone-before-check ordering) — the spawn
 	// annotations must come from the re-derivation pass. Mirrors what
 	// check_nursery_spawn sets on a checked body: is_nursery_spawn,
 	// owned_return, function_return_type, and Task<T> typing, plus the
-	// Task<T> monomorphization so the build can emit the struct body.
+	// Task<T> monomorphization so the build can emit the struct body. The
+	// Thread(fn(args)) constructor on the clone gets is_thread_ctor and the
+	// wrapped return type re-derived the same way.
 	const parsed = parse(
 		`
 import System
@@ -157,7 +159,7 @@ pub struct Runner<T> {
 	pub var T value
 
 	pub func run = (ref self, int n, ref Nursery pool) {
-		pool.spawn(work(n))
+		pool.start(Thread(work(n)))
 	}
 }
 `,
@@ -166,13 +168,22 @@ pub struct Runner<T> {
 	expect(parsed.errors).toEqual([]);
 
 	const calls = find_mono_method_calls(parsed.root as RootNode, "Runner_int", "run");
-	const spawn_call = calls.find((c) => c.name === "spawn");
-	expect(spawn_call).toBeDefined();
-	expect(spawn_call!.is_nursery_spawn).toBe(true);
-	expect(spawn_call!.owned_return).toBe(true);
-	expect(spawn_call!.function_return_type?.name).toBe("int");
-	expect(spawn_call!.type?.name).toBe("Task");
-	expect(spawn_call!.type?.type_args?.[0]?.name).toBe("int");
+	const start_call = calls.find((c) => c.name === "start");
+	expect(start_call).toBeDefined();
+	expect(start_call!.is_nursery_spawn).toBe(true);
+	expect(start_call!.owned_return).toBe(true);
+	expect(start_call!.function_return_type?.name).toBe("int");
+	expect(start_call!.type?.name).toBe("Task");
+	expect(start_call!.type?.type_args?.[0]?.name).toBe("int");
+	// The Thread(fn(args)) constructor is re-derived too — it hangs off the
+	// start call's params (the helper only collects access calls).
+	const thread_ctor = start_call!.params.find(
+		(p) => p.node_type === "func_call" && (p as any).is_thread_ctor,
+	) as any;
+	expect(thread_ctor).toBeDefined();
+	expect(thread_ctor.name).toBe("Thread");
+	expect(thread_ctor.type?.name).toBe("Thread");
+	expect(thread_ctor.function_return_type?.name).toBe("int");
 	// Task<int> must be materialized (its struct body is emitted at build).
 	const task_int = (parsed.root as RootNode).statements.find(
 		(s) => s.node_type === "struct" && (s as StructNode).name === "Task_int",

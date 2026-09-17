@@ -238,9 +238,10 @@ export function resolve_linked_types(source: string, library: Library, file_path
 		}
 	}
 
-	// `spawn` and `async` rely on the Task runtime even when Task isn't named
-	// directly (the build emits Task compound literals at spawn sites).
-	if (tokens.some((t) => t.value === "spawn" || t.value === "async")) {
+	// `Thread(...).start()` and `async` rely on the Task runtime even when
+	// Task isn't named directly (the build emits Task compound literals at
+	// spawn sites).
+	if (tokens.some((t) => t.value === "Thread" || t.value === "async")) {
 		needed.add("Task");
 		needed.add("Sendable");
 	}

@@ -19,7 +19,7 @@ pub func work = (Point p) {
 
 pub func main = () {
 	var Point p = Point(0, 0)
-	spawn work(p)
+	Thread(work(p)).start()
 }
 `;
 		expect(compile_module(input)).toEqual([]);
@@ -36,7 +36,7 @@ pub func work = (SafeCounter c) {
 
 pub func main = () {
 	var SafeCounter c = SafeCounter()
-	spawn work(c)
+	Thread(work(c)).start()
 }
 `;
 		expect(compile_module(input)).toEqual([]);
@@ -51,7 +51,7 @@ func bg = (uint64 arg) {
 }
 
 pub func main = () {
-	spawn bg(0)
+	Thread(bg(0)).start()
 }
 `;
 		expect(compile_module(input)).toEqual([]);
@@ -64,7 +64,7 @@ func bg = (uint64 arg) {
 }
 
 pub func main = () {
-	var t = spawn bg(0)
+	var t = Thread(bg(0)).start()
 	t.wait()
 }
 `;
@@ -82,7 +82,7 @@ func work = (Box b) {
 
 pub func main = () {
 	var Box b = Box()
-	spawn work(b)
+	Thread(work(b)).start()
 }
 `;
 		expect(compile_module(input)).toEqual([]);
@@ -98,8 +98,8 @@ func fetch = (uint64 id) {
 
 pub func main = () {
 	async {
-		spawn fetch(1)
-		spawn fetch(2)
+		Thread(fetch(1)).start()
+		Thread(fetch(2)).start()
 	}
 }
 `;
@@ -117,8 +117,8 @@ func respond = (uint64 conn) {
 }
 
 func handle_connection = (uint64 conn, ref Nursery pool) {
-	pool.spawn(parse(conn))
-	pool.spawn(respond(conn))
+	pool.start(Thread(parse(conn)))
+	pool.start(Thread(respond(conn)))
 }
 
 pub func main = () {
@@ -136,7 +136,7 @@ pub func main = () {
 func compute = (uint64 n) => n + 1
 
 func spawn_one = (uint64 n, ref Nursery pool) {
-	var t = pool.spawn(compute(n))
+	var t = pool.start(Thread(compute(n)))
 	var uint64 r = t.result_uint64()
 }
 
@@ -157,7 +157,7 @@ func parse = (uint64 conn) {
 pub func main = () {
 	var uint64 conn = 0
 	async pool {
-		pool.spawn(parse(conn))
+		pool.start(Thread(parse(conn)))
 	}
 }
 `;
@@ -171,7 +171,7 @@ func work = (uint64 arg) {
 
 pub func main = () {
 	async pool = Nursery(timeout: 500, mode: race) {
-		spawn work(0)
+		Thread(work(0)).start()
 	}
 }
 `;
@@ -190,7 +190,7 @@ func work = (Counter c) {
 pub func main = () {
 	var Counter c = Counter()
 	async pool {
-		pool.spawn(work(c))
+		pool.start(Thread(work(c)))
 	}
 }
 `;
@@ -205,7 +205,7 @@ describe("spec: concurrency - Task", () => {
 func compute = (uint64 n) => n + 1
 
 pub func main = () {
-	var t = spawn compute(41)
+	var t = Thread(compute(41)).start()
 	t.wait()
 	var uint64 r = t.result_uint64()
 }
@@ -226,7 +226,7 @@ func long_running = (uint64 arg) {
 }
 
 pub func main = () {
-	var t = spawn long_running(0)
+	var t = Thread(long_running(0)).start()
 	t.cancel()
 	t.wait()
 }
@@ -246,7 +246,7 @@ func worker = (Mutex m) {
 pub func main = () {
 	var Mutex m = Mutex()
 	async {
-		spawn worker(m)
+		Thread(worker(m)).start()
 	}
 }
 `;
@@ -264,7 +264,7 @@ func producer = (Channel c) {
 pub func main = () {
 	var Channel c = Channel()
 	async {
-		spawn producer(c)
+		Thread(producer(c)).start()
 	}
 	var uint64 v = c.receive()
 }
@@ -281,7 +281,7 @@ func producer = (Channel c) {
 pub func main = () {
 	var Channel c = Channel()
 	async {
-		spawn producer(c)
+		Thread(producer(c)).start()
 	}
 	var string s = c.receive_string()
 }
@@ -302,7 +302,7 @@ func work = (uint64 arg) {
 
 pub func main = () {
 	async(timeout: 500) {
-		spawn work(0)
+		Thread(work(0)).start()
 	}
 }
 `;
@@ -317,7 +317,7 @@ func work = (uint64 arg) {
 pub func main = () {
 	var uint64 ms = 100
 	async(timeout: ms * 2) {
-		spawn work(0)
+		Thread(work(0)).start()
 	}
 }
 `;
@@ -331,9 +331,9 @@ func work = (uint64 arg) {
 
 pub func main = () {
 	async(timeout: 1000) {
-		spawn work(1)
-		spawn work(2)
-		spawn work(3)
+		Thread(work(1)).start()
+		Thread(work(2)).start()
+		Thread(work(3)).start()
 	}
 }
 `;
@@ -349,8 +349,8 @@ func work = (uint64 arg) {
 
 pub func main = () {
 	async(mode: race) {
-		spawn work(0)
-		spawn work(1)
+		Thread(work(0)).start()
+		Thread(work(1)).start()
 	}
 }
 `;
@@ -364,8 +364,8 @@ func work = (uint64 arg) {
 
 pub func main = () {
 	async(mode: race, timeout: 500) {
-		spawn work(0)
-		spawn work(1)
+		Thread(work(0)).start()
+		Thread(work(1)).start()
 	}
 }
 `;

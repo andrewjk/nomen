@@ -139,11 +139,12 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 		}
 		case "access": {
 			const access = node as AccessNode;
-			// A nursery.spawn used as a top-level statement discards its Task
-			// → fire-and-forget (mirrors SpawnNode.is_statement).
+			// A nursery.start(Thread(...)) or Thread(...).start() used as a
+			// top-level statement discards its Task → fire-and-forget
+			// (mirrors SpawnNode.is_statement).
 			if (with_semicolon && access.access.node_type === "access_func") {
 				const afn = access.access as AccessFunctionCallNode;
-				if (afn.is_nursery_spawn) afn.is_statement = true;
+				if (afn.is_nursery_spawn || afn.is_thread_start) afn.is_statement = true;
 			}
 			build_access_node(access, status);
 			break;

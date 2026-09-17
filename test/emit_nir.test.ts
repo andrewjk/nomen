@@ -527,13 +527,13 @@ pub func main = () {
 	expect_byte_identical(source);
 });
 
-test("value-position spawn lowers to the spawn expr and stays NIR-eligible", () => {
+test("value-position Thread().start() lowers to the method_call expr and stays NIR-eligible", () => {
 	const source = `
 func work = (uint64 arg) {
     Console.write_line("worked")
 }
 pub func main = () {
-    var t = spawn work(3)
+    var t = Thread(work(3)).start()
     t.wait()
 }
 `;
@@ -555,7 +555,9 @@ pub func main = () {
 	const nir = lower_function(fn);
 	expect([...nir.unknown_kinds]).toEqual([]);
 	const decl = nir.body.find((s) => s.kind === "declare");
-	expect(decl && decl.kind === "declare" && decl.decl.init?.kind === "spawn").toBe(true);
+	// The Thread-form spawn lowers as the standard method_call expr (the
+	// spawn trampoline is emitted from the access annotations at build time).
+	expect(decl && decl.kind === "declare" && decl.decl.init?.kind === "method_call").toBe(true);
 	expect_byte_identical(source);
 });
 
@@ -570,7 +572,7 @@ func probe = (int v, out int) {
 func nursery_flow = (out int) {
     var int total = 0
     async(timeout: 2000) {
-        spawn probe(1)
+        Thread(probe(1)).start()
         if total == 0 {
             total = total + 40
         }
@@ -638,8 +640,8 @@ func work = (uint64 id) {
     Console.write_line("ok")
 }
 async nursery {
-    nursery.spawn(work(1))
-    var t = nursery.spawn(work(2))
+    nursery.start(Thread(work(1)))
+    var t = nursery.start(Thread(work(2)))
     t.wait()
 }
 `);

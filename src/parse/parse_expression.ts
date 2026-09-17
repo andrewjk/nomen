@@ -18,7 +18,6 @@ import { parse_anonymous_function } from "./parse_declaration.ts";
 import parse_function_call_parameter from "./parse_function_call_parameter.ts";
 import parse_if_else from "./parse_if_else.ts";
 import parse_match from "./parse_match.ts";
-import { parse_spawn_node } from "./parse_spawn.ts";
 import parse_string_interpolation from "./parse_string_interpolation.ts";
 import parse_switch from "./parse_switch.ts";
 import parse_type from "./parse_type.ts";
@@ -241,9 +240,6 @@ function parse_primary(status: ParseStatus, value: string): BaseNode {
 		}
 		case "switch": {
 			return parse_switch(status);
-		}
-		case "spawn": {
-			return parse_spawn_node(status);
 		}
 		case "{": {
 			const v = consume(status);

@@ -27,7 +27,11 @@ export default function build_nursery_spawn(
 	status: BuildStatus,
 ) {
 	if (node.params.length !== 1 || node.params[0].node_type !== "func_call") return;
-	const call = node.params[0] as FunctionCallNode;
+	// The parameter is the compiler-special Thread(fn(args)) constructor —
+	// unwrap it to the wrapped call.
+	const ctor = node.params[0] as FunctionCallNode;
+	if (!ctor.is_thread_ctor) return;
+	const call = ctor.params[0] as FunctionCallNode;
 	const func_name = c_function_name(emission_label(call.resolved_function ?? call));
 	const args = call.params;
 

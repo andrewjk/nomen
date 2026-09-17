@@ -306,3 +306,22 @@ reachable by driving `Buffer`/`ClassBuffer` directly. Remediation shipped
    swap-size codegen bug below as latent heap corruption. Reclaiming the old
    slab inside `alloc` while keeping the exact cap needs per-element destroy
    (owning `T`), so it is deferred.
+
+## Bare `Thread(fn(args))` construction is inert and unchecked (ASYNC_PLAN Phase 0)
+
+`Thread(fn(args))` is a compiler-special constructor (see
+`check_thread_ctor` in `src/check/check_function_call_node.ts`). It is meant
+to be consumed immediately — by `.start()` (direct spawn) or by
+`name.start(Thread(...))` (the nursery escape hatch). A construction that is
+never consumed (e.g. `var t = Thread(work(0))` with no `.start()`) type-checks
+(it is stamped with the inert type `Thread`, which has no fields or methods)
+but spawns nothing, and the checker never flags it. Downstream, the C backend
+would try to emit a call to an unresolved `Thread` function, producing an
+unhelpful link-time error.
+
+Fix idea: a small post-check pass (or a declaration/assignment-side check)
+that rejects a `Thread`-typed value that is never consumed by `.start()` /
+`nursery.start(...)`, with a message like
+"`Thread(fn(args)) must be started: append .start() or pass it to a nursery's .start()`".
+Low priority — the form is degenerate misuse, but the current failure mode is
+confusing.

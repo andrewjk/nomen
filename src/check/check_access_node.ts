@@ -436,13 +436,23 @@ function check_access_function_node(
 	node: AccessFunctionCallNode,
 	status: CheckStatus,
 ): boolean {
-	// Escape hatch: `nursery.spawn(fn, args...)` spawns `fn(args...)` into the
-	// nursery referenced by the receiver. The first param is the function name;
-	// the rest are its arguments. See ASYNC.md, "Escape hatch: passing the
-	// nursery". Special-cased (rather than a real method on Nursery) because the
-	// spawn needs the per-site trampoline machinery.
-	if (target_type.name === "Nursery" && node.name === "spawn") {
+	// Escape hatch: `name.start(Thread(fn(args)))` spawns the wrapped call
+	// into the nursery referenced by the receiver. The single parameter is
+	// the compiler-special Thread constructor wrapping the call to spawn.
+	// See ASYNC.md, "Escape hatch: passing the nursery", and ASYNC_PLAN.md.
+	// Special-cased (rather than a real method on Nursery) because the spawn
+	// needs the per-site trampoline machinery.
+	if (target_type.name === "Nursery" && node.name === "start") {
 		return check_nursery_spawn(node, status);
+	}
+
+	// `Thread(fn(args)).start()` — the surface form of a direct spawn (see
+	// ASYNC_PLAN.md). The receiver is the compiler-special Thread
+	// constructor; `.start()` launches the wrapped call and yields Task<T>.
+	// Special-cased (rather than a method on a Thread type) because the
+	// spawn needs the per-site trampoline machinery.
+	if (target_type.name === "Thread" && node.name === "start") {
+		return check_thread_start(target, node, status);
 	}
 
 	// `view T` builtins: .at is a compiler intrinsic that operates on the
@@ -959,35 +969,48 @@ function returns_value(node: BaseNode, visited: Set<BaseNode> = new Set()): bool
 }
 
 /**
- * Check a `nursery.spawn(fn, args...)` escape-hatch call. The first parameter
- * names the function to spawn; the remaining parameters are its arguments.
- * Reuses check_function_call_node by building a synthetic call, then enforces
- * Sendable on every argument and types the expression as `Task<T>` (mirroring
- * check_spawn_node). See ASYNC.md.
- */
-/**
- * Check a `name.spawn(fn(args))` escape-hatch call. The single parameter is the
- * call expression to spawn (same shape as bare `spawn fn(args)`); checking it
- * via check_function_call_node resolves the function, matches argument types,
- * and computes the return type. Enforces Sendable on every argument and types
- * the expression as `Task<T>` (mirroring check_spawn_node). See ASYNC.md.
+ * Check a `name.start(Thread(fn(args)))` escape-hatch call. The single
+ * parameter is the compiler-special Thread constructor wrapping the call to
+ * spawn; checking the wrapped call resolves the function, matches argument
+ * types, and computes the return type. Enforces Sendable on every argument
+ * and types the expression as `Task<T>`. See ASYNC.md and ASYNC_PLAN.md.
  */
 function check_nursery_spawn(node: AccessFunctionCallNode, status: CheckStatus): boolean {
 	if (node.params.length !== 1 || node.params[0].node_type !== "func_call") {
 		add_error(
 			status,
-			"nursery.spawn expects a single call expression, e.g. .spawn(work(n))",
+			"nursery.start expects Thread(fn(args)), e.g. .start(Thread(work(n)))",
 			node.start,
 		);
 		return false;
 	}
-	const call = node.params[0] as FunctionCallNode;
-
-	const ok = check_function_call_node(call, status);
-	if (!ok) {
-		add_error(status, `Spawned call '${call.name}' did not resolve`, node.start);
+	const ctor = node.params[0] as FunctionCallNode;
+	// The escape hatch's params are not pre-checked — check the Thread
+	// constructor here (this runs check_thread_ctor, which resolves the
+	// wrapped call and stamps is_thread_ctor).
+	if (!check_function_call_node(ctor, status)) {
+		add_error(
+			status,
+			"nursery.start expects Thread(fn(args)), e.g. .start(Thread(work(n)))",
+			ctor.start,
+		);
 		return false;
 	}
+	if (
+		!ctor.is_thread_ctor ||
+		ctor.params.length !== 1 ||
+		ctor.params[0].node_type !== "func_call"
+	) {
+		add_error(
+			status,
+			"nursery.start expects Thread(fn(args)), e.g. .start(Thread(work(n)))",
+			ctor.start,
+		);
+		return false;
+	}
+	const call = ctor.params[0] as FunctionCallNode;
+	// The wrapped call was already resolved by check_thread_ctor (run via
+	// the constructor check above) — no re-check here.
 
 	// Every argument moved into the spawned task must be Sendable.
 	for (const param of call.params) {
@@ -1020,9 +1043,86 @@ function check_nursery_spawn(node: AccessFunctionCallNode, status: CheckStatus):
 	node.function_return_type = return_type;
 	node.type = task_type;
 	node.is_nursery_spawn = true;
-	// The Task a nursery.spawn yields is a fresh heap allocation (not a borrow),
-	// so a capturing declaration owns and must free it. Without this, the
-	// declaration would be treated as a class alias and leak.
+	// The Task a nursery.start yields is a fresh heap allocation (not a
+	// borrow), so a capturing declaration owns and must free it. Without
+	// this, the declaration would be treated as a class alias and leak.
+	node.owned_return = true;
+
+	// Trigger monomorphization of Task<T> so the struct body is emitted.
+	const task_struct = status.structs.find((s) => s.name === "Task");
+	if (task_struct && task_struct.type_params.length > 0) {
+		monomorphize(task_struct, [result_type_arg], status);
+	}
+
+	return true;
+}
+
+/**
+ * Check a `Thread(fn(args)).start()` call — the surface form of a direct
+ * spawn (see ASYNC_PLAN.md). The receiver is the compiler-special Thread
+ * constructor (already checked — its wrapped call is resolved); this
+ * validates Sendable on every argument and types the expression as `Task<T>`
+ * (mirroring check_spawn_node for the retired `spawn fn(args)` keyword). The
+ * build synthesizes a SpawnNode from the wrapped call and emits the standard
+ * spawn trampoline.
+ */
+function check_thread_start(
+	target: BaseNode,
+	node: AccessFunctionCallNode,
+	status: CheckStatus,
+): boolean {
+	const ctor = target as FunctionCallNode;
+	if (
+		!ctor.is_thread_ctor ||
+		ctor.params.length !== 1 ||
+		ctor.params[0].node_type !== "func_call"
+	) {
+		add_error(
+			status,
+			"Thread(fn(args)).start expects a single call expression, e.g. Thread(work(n)).start()",
+			node.start,
+		);
+		return false;
+	}
+	const call = ctor.params[0] as FunctionCallNode;
+
+	// Every argument moved into the spawned task must be Sendable.
+	for (const param of call.params) {
+		let arg_type = type_from_value_node(param, status);
+		// A constant-folded argument (e.g. `"a" + "b"` → a synthetic data
+		// label value) resolves to no declared name — fall back to the
+		// checker-stamped node type, which the fold sets.
+		const stamped = (param as unknown as { type?: Type }).type;
+		if (!arg_type.name && stamped?.name) {
+			arg_type = stamped;
+		}
+		if (!is_sendable_type(arg_type.name, status)) {
+			add_error(
+				status,
+				`Spawn argument of type ${arg_type.name || "<unknown>"} is not Sendable`,
+				param.start,
+			);
+		}
+	}
+
+	// Type the expression as Task<T> where T is the spawned function's return
+	// type (uint64 for void functions — the result slot exists but is unused).
+	// Overwrite the wrapped call's type too: the build's spawn emission reads
+	// call.type.type_args for the monomorphized Task name.
+	const return_type = call.type;
+	const result_type_arg =
+		return_type && return_type.name && return_type.name !== "void" && return_type.name !== "?"
+			? new Type(return_type.name)
+			: new Type("uint64");
+	const task_type = new Type("Task");
+	task_type.type_args = [result_type_arg];
+	node.function_return_type = return_type;
+	node.type = task_type;
+	call.type = task_type;
+	node.is_thread_start = true;
+	// The Task a Thread.start yields is a fresh heap allocation (not a
+	// borrow), so a capturing declaration owns and must free it. Without
+	// this, the declaration would be treated as a class alias and leak.
 	node.owned_return = true;
 
 	// Trigger monomorphization of Task<T> so the struct body is emitted.

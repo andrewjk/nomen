@@ -35,7 +35,6 @@ export const KEYWORDS = new Set([
 	"while",
 	"break",
 	"continue",
-	"spawn",
 	"async",
 	"panic",
 	"todo",
