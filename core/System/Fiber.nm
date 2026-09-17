@@ -1,0 +1,68 @@
+// Fiber — a stackful coroutine (ASYNC_PLAN.md Phase 1). Fibers multiplex
+// over the worker pool's threads: a parked fiber frees its worker instead of
+// blocking it, so thousands of waiting tasks cost stacks (~64 KB each), not
+// threads (~MB each).
+//
+// `Fiber(fn(args)).start()` mirrors `Thread(fn(args)).start()` — same
+// per-site trampoline, same future, same Task<T> handle — but the wrapped
+// call runs on a fiber stack under the fiber scheduler. While it waits
+// (Task.result/wait, Channel.receive), the fiber parks and the worker moves
+// on; `Fiber.yield()` cooperatively hands the worker to the next runnable
+// fiber.
+//
+// `Fiber(fn(args)).start_on(buf)` runs the fiber on a caller-provided
+// fixed-size array stack (>= 16 KB) — the embedded/no-heap path.
+//
+// `Fiber.set_cooperative(true)` (before the first spawn) runs fibers on the
+// calling thread and never starts worker threads — a cooperative,
+// single-threaded runtime for bare-metal targets.
+//
+// The constructor, `.start`, and `.start_on` are compiler-special-cased
+// (they need the spawn trampoline machinery), so they are NOT regular
+// methods declared here. The runtime (scheduler, context switch) lives in
+// the build's emitted file-scope C — see build_fiber_spawn.
+
+/**
+ * A stackful coroutine: lightweight, cooperatively scheduled, parks instead of blocking
+ **/
+pub struct Fiber {
+	// Hand the worker to the next runnable fiber. No-op outside a fiber.
+	pub func yield = () {
+		```
+		#arch: c
+		__nomen_fiber_yield();
+		```
+		```
+		#arch: aarch64
+		bl ___nomen_fiber_yield
+		```
+	}
+
+	// Is the calling code running inside a fiber? True when Fiber.yield or
+	// fiber parking would take effect.
+	pub func is_fiber = (out bool) {
+		```
+		#arch: c
+		return __nomen_fiber_is_active();
+		```
+		```
+		#arch: aarch64
+		bl ___nomen_fiber_is_active
+		```
+	}
+
+	// Run fibers on the calling thread and never start worker threads. Must
+	// be called before the first fiber spawn; intended for single-threaded
+	// (bare-metal) targets. In cooperative mode a fiber that parks on an
+	// event only another thread could fire will never resume.
+	pub func set_cooperative = (bool on) {
+		```
+		#arch: c
+		__nomen_fiber_set_cooperative(on ? 1 : 0);
+		```
+		```
+		#arch: aarch64
+		bl ___nomen_fiber_set_cooperative
+		```
+	}
+}

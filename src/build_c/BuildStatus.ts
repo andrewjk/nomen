@@ -859,6 +859,13 @@ export default interface BuildStatus {
 	 */
 	spawn_counter?: number;
 	/**
+	 * True when the build emitted the fiber runtime (a fiber spawn, or a
+	 * Fiber static like yield/is_fiber). main drains pending fibers before
+	 * the audit check so deferred cooperative work completes (and frees)
+	 * deterministically — see build_fiber_spawn.
+	 */
+	used_fibers?: boolean;
+	/**
 	 * Stack of active async-nursery IDs. When non-empty, build_spawn_node
 	 * pushes the pthread handle into the topmost nursery's handle array
 	 * instead of detaching; build_async_block_node joins them all at exit.

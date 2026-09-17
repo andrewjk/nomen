@@ -446,13 +446,16 @@ function check_access_function_node(
 		return check_nursery_spawn(node, status);
 	}
 
-	// `Thread(fn(args)).start()` — the surface form of a direct spawn (see
-	// ASYNC_PLAN.md). The receiver is the compiler-special Thread
-	// constructor; `.start()` launches the wrapped call and yields Task<T>.
-	// Special-cased (rather than a method on a Thread type) because the
-	// spawn needs the per-site trampoline machinery.
+	// `Thread(fn(args)).start()` and `Fiber(fn(args)).start[_on](buf)` — the
+	// surface forms of a direct spawn (see ASYNC_PLAN.md). The receiver is
+	// the compiler-special magic constructor; `.start()` launches the
+	// wrapped call and yields Task<T>. Special-cased (rather than methods on
+	// real types) because the spawn needs the per-site trampoline machinery.
 	if (target_type.name === "Thread" && node.name === "start") {
-		return check_thread_start(target, node, status);
+		return check_spawn_start(target, node, status, "Thread", false);
+	}
+	if (target_type.name === "Fiber" && (node.name === "start" || node.name === "start_on")) {
+		return check_spawn_start(target, node, status, "Fiber", node.name === "start_on");
 	}
 
 	// `view T` builtins: .at is a compiler intrinsic that operates on the
@@ -1058,33 +1061,75 @@ function check_nursery_spawn(node: AccessFunctionCallNode, status: CheckStatus):
 }
 
 /**
- * Check a `Thread(fn(args)).start()` call — the surface form of a direct
- * spawn (see ASYNC_PLAN.md). The receiver is the compiler-special Thread
- * constructor (already checked — its wrapped call is resolved); this
- * validates Sendable on every argument and types the expression as `Task<T>`
- * (mirroring check_spawn_node for the retired `spawn fn(args)` keyword). The
- * build synthesizes a SpawnNode from the wrapped call and emits the standard
- * spawn trampoline.
+ * Check a `Thread(fn(args)).start()` / `Fiber(fn(args)).start[_on](buf)`
+ * call — the surface forms of a direct spawn (see ASYNC_PLAN.md). The
+ * receiver is the compiler-special magic constructor (already checked — its
+ * wrapped call is resolved); this validates Sendable on every argument and
+ * types the expression as `Task<T>`. For `start_on`, also validates the
+ * stack buffer: a fixed-size array of at least 16 KB. The build synthesizes
+ * a SpawnNode from the wrapped call and emits the standard spawn/fiber
+ * trampoline.
  */
-function check_thread_start(
+function check_spawn_start(
 	target: BaseNode,
 	node: AccessFunctionCallNode,
 	status: CheckStatus,
+	kind: "Thread" | "Fiber",
+	start_on: boolean,
 ): boolean {
 	const ctor = target as FunctionCallNode;
-	if (
-		!ctor.is_thread_ctor ||
-		ctor.params.length !== 1 ||
-		ctor.params[0].node_type !== "func_call"
-	) {
+	const ctor_flagged = kind === "Thread" ? ctor.is_thread_ctor : ctor.is_fiber_ctor;
+	if (!ctor_flagged || ctor.params.length !== 1 || ctor.params[0].node_type !== "func_call") {
 		add_error(
 			status,
-			"Thread(fn(args)).start expects a single call expression, e.g. Thread(work(n)).start()",
+			`${kind}(fn(args)).start expects a single call expression, e.g. ${kind}(work(n)).start()`,
 			node.start,
 		);
 		return false;
 	}
 	const call = ctor.params[0] as FunctionCallNode;
+
+	if (start_on) {
+		if (node.params.length !== 1) {
+			add_error(
+				status,
+				`start_on expects a stack buffer argument, e.g. ${kind}(work(n)).start_on(buf)`,
+				node.start,
+			);
+			return false;
+		}
+		const buf_type = type_from_value_node(node.params[0], status);
+		if (!buf_type.is_array) {
+			add_error(
+				status,
+				`start_on expects a fixed-size array stack buffer (T[N]), got ${buf_type.name || "<unknown>"}`,
+				node.params[0].start,
+			);
+			return false;
+		}
+		const elem_size = buf_type.name === "string" ? 16 : 8;
+		const len_node = buf_type.length;
+		const len =
+			len_node && len_node.node_type === "value"
+				? parseInt((len_node as ValueNode).value, 10)
+				: NaN;
+		if (Number.isNaN(len)) {
+			add_error(
+				status,
+				"start_on expects a fixed-size array (T[N]); the length must be known at compile time",
+				node.params[0].start,
+			);
+			return false;
+		}
+		if (len * elem_size < 16384) {
+			add_error(
+				status,
+				`Fiber stack too small: ${len * elem_size} bytes, minimum is 16384`,
+				node.params[0].start,
+			);
+			return false;
+		}
+	}
 
 	// Every argument moved into the spawned task must be Sendable.
 	for (const param of call.params) {
@@ -1119,10 +1164,11 @@ function check_thread_start(
 	node.function_return_type = return_type;
 	node.type = task_type;
 	call.type = task_type;
-	node.is_thread_start = true;
-	// The Task a Thread.start yields is a fresh heap allocation (not a
-	// borrow), so a capturing declaration owns and must free it. Without
-	// this, the declaration would be treated as a class alias and leak.
+	if (kind === "Thread") node.is_thread_start = true;
+	else node.is_fiber_start = true;
+	// The Task a spawn yields is a fresh heap allocation (not a borrow), so
+	// a capturing declaration owns and must free it. Without this, the
+	// declaration would be treated as a class alias and leak.
 	node.owned_return = true;
 
 	// Trigger monomorphization of Task<T> so the struct body is emitted.

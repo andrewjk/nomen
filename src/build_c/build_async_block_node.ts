@@ -2,7 +2,7 @@ import type { NirStmt } from "../nir/nir.ts";
 import AsyncBlockNode from "../nodes/AsyncBlockNode.ts";
 import build_auto_free from "./build_auto_free.ts";
 import build_node from "./build_node.ts";
-import { POOL_HEADER } from "./build_spawn_node.ts";
+import { FIBER_HEADER, POOL_HEADER } from "./build_spawn_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import { build_block_with_cursor } from "./emit_nir.ts";
 import { enter_c_scope, leave_c_scope } from "./utils/c_scope.ts";
@@ -42,6 +42,9 @@ export default function build_async_block_node(
 	// header eagerly so the symbols always resolve.
 	if (node.mode === "race" && !status.headers.includes("__nomen_pool_submit")) {
 		status.headers += POOL_HEADER;
+		// The fiber seam is part of the runtime (referenced by the pool
+		// worker loop and __nomen_future_wait).
+		status.headers += FIBER_HEADER;
 	}
 
 	const futures_name = `__nomen_nursery_${id}_futures`;

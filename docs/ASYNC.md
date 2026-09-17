@@ -14,8 +14,7 @@ concurrency on both targets.
   moved into an `async` block. Auto-derived for structs whose fields are all
   Sendable; classes must opt in explicitly.
 - **`Task<T>`** — generic, heap-allocated (with `#destroy` cleanup),
-  pthread-backed handle parameterised by the spawned function's return type.
-  Methods: `wait()` (idempotent), `result()` (blocks, moves the value out —
+  pthread-backed handle parameterised by the spawned function's return type. Methods: `wait()` (idempotent), `result()` (blocks, moves the value out —
   a `mov out T`, so a fat string result arrives whole and an unconsumed one
   is freed by destroy), `result_uint64()` (blocks, returns the value cast to
   `uint64`), `cancel()`, `current_cancelled()` (static, thread-local).
@@ -29,6 +28,20 @@ concurrency on both targets.
 - **`async { ... }`** — nursery block. Waits on every spawned task at scope
   exit. The join runs before block-scoped locals are destroyed, so a running
   task can safely hold pointers to nursery-local values.
+- **`Fiber`** — stackful coroutines over the worker pool (ASYNC_PLAN.md
+  Phase 1). `Fiber(fn(args)).start()` returns the same `Task<T>` handle as a
+  thread spawn, but the call runs on a ~64 KB coroutine stack; a fiber that
+  waits (`Task.result`/`wait`) **parks** — freeing its worker — and the
+  completion wakes it (park-before-signal under the future's mutex, kept in a
+  per-future waiter list; the resumer frees the stack at DONE). `Fiber.yield()`
+  yields cooperatively, `Fiber.is_fiber()` reports fiber context, and
+  `Fiber(fn(args)).start_on(buf)` runs on a caller-provided fixed-size array
+  stack (>= 16 KB; C backend only for now — aarch64 large-frame addressing
+  limit, see FOLLOWUP.md). `Fiber.set_cooperative(true)` runs fibers on the
+  calling thread and starts no worker threads: they execute at would-block
+  waits or process exit (single-threaded/bare-metal mode). Registration is
+  unchanged — a fiber spawned in an `async` block is joined at block exit —
+  and the `Thread`/`Fiber` forms share one future, Task, and nursery.
 - **Unified `Task<T>` handle** — the future behind every spawn is
   reference-counted and shared between the trampoline, the returned Task, and
   the tracking nursery. Join-once semantics, so a Task captured inside a

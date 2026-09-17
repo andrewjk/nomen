@@ -1027,6 +1027,11 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		// pool's atexit handler runs after audit_check and the workers
 		// array shows up as a false-positive leak. (Run before `mov x0, #0`
 		// so the void audit_check doesn't clobber main's return value.)
+		// Fibers: run anything still queued before the audit check (the
+		// companion defines __nomen_fiber_drain_all as a global symbol).
+		if (status.used_fibers) {
+			status.code += `bl ___nomen_fiber_drain_all\n`;
+		}
 		if (status.audit) {
 			if (status.file_scope_c?.includes("__nomen_pool_submit")) {
 				status.code += `bl ___nomen_pool_shutdown\n`;

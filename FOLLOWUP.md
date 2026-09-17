@@ -325,3 +325,36 @@ that rejects a `Thread`-typed value that is never consumed by `.start()` /
 "`Thread(fn(args)) must be started: append .start() or pass it to a nursery's .start()`".
 Low priority — the form is degenerate misuse, but the current failure mode is
 confusing.
+
+## Channel.#destroy frees uint64 payloads as pointers (pre-existing)
+
+`Channel.#destroy` drains queued nodes and calls `free((void *)n->value)` for
+any non-zero `value`, on the assumption that a payload is an owned string
+buffer (`send_string`). A `send(uint64)` message stores the raw number, so a
+message that is still queued when the channel is destroyed passes that number
+to `free` — e.g. an unconsumed `ch.send(42)` aborts with "pointer being freed
+was not allocated" (SIGABRT). Surfaced by a fiber test that sent a value and
+never received it.
+
+Fix: distinguish payload kinds on the node (a `kind`/`len` field set by
+`send_string` vs `send`) and only free string payloads in `#destroy` (both
+backends' raw bodies). Until then, every queued `send(...)` message must be
+received before the channel goes out of scope. See `core/System/Channel.nm`.
+
+## aarch64: addressing/loading locals past frame offset 4095 (blocks start_on with large buffers)
+
+The aarch64 backend emits frame accesses as single-instruction `[x29, #imm]`
+forms and `add xN, x29, #imm`, whose immediate fields top out at 4095 (add) /
+32760 (scaled 64-bit load/store, and only when the offset is a multiple of
+8). A local array of >= 16 KB pushes every later local past those limits, so
+taking the address of any local in the same function fails to assemble
+(`expected compatible register, symbol or integer in range [0, 4095]`). This
+is pre-existing and unrelated to fibers — reproduced with a plain
+`var uint64[2048] big` plus `bump(ref y)`.
+
+Consequence: `Fiber(fn(args)).start_on(buf)` cannot be compiled on aarch64
+with the >= 16 KB buffer the fiber runtime requires, so its test runs on the
+C backend only. Fix: emit a base-register form for large frame offsets
+(`add x9, x29, #hi; add x9, x9, #lo; ... [x9, #off]`) at every `[x29, #imm]`
+and `add reg, x29, #imm` site, or allocate large locals off a secondary frame
+pointer.

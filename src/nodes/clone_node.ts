@@ -99,6 +99,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.variadic_param_index = n.variadic_param_index;
 			c.is_enum_shorthand = n.is_enum_shorthand;
 			c.is_thread_ctor = n.is_thread_ctor;
+			c.is_fiber_ctor = n.is_fiber_ctor;
 			c.function_return_type = n.function_return_type
 				? clone_type(n.function_return_type)
 				: undefined;
@@ -151,6 +152,8 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.inferred_array_length = n.inferred_array_length;
 			c.is_nursery_spawn = n.is_nursery_spawn;
 			c.is_thread_start = n.is_thread_start;
+			c.is_fiber_start = n.is_fiber_start;
+			c.is_fiber_start_on = n.is_fiber_start_on;
 			c.function_return_type = n.function_return_type
 				? clone_type(n.function_return_type)
 				: undefined;

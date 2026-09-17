@@ -2465,6 +2465,94 @@ Arguments to a spawned call must be `Sendable`. The spawned function's
 arguments are type-erased to `uint64` for the thread boundary, then cast back
 at the call site — primitives by value, classes/traits by pointer.
 
+### Fiber
+
+`Fiber(fn(args)).start()` is the lightweight sibling of `Thread(...).start()`:
+same call shape, same `Task<T>` handle, but the wrapped call runs on a
+_stackful coroutine_ — a heap-allocated stack (~64 KB) multiplexed over the
+worker pool. A fiber that waits (`Task.result`, `Task.wait`, `Channel.receive`)
+**parks**: it frees its worker to run other fibers instead of blocking the
+thread. Thousands of waiting fiber tasks therefore cost stacks, not threads.
+
+```
+import System
+
+func compute = (uint64 n, out uint64) {
+    return n + 1
+}
+
+pub func main = () {
+    var f = Fiber(compute(41)).start()
+    var uint64 r = f.result()          // parks, not blocks
+    Console.write_line("\\{r}")
+}
+```
+
+`Fiber.yield()` cooperatively hands the worker to the next runnable fiber.
+`Fiber.is_fiber()` reports whether the calling code is running inside a fiber:
+
+```
+import System
+
+func step = (Channel ch, uint64 id) {
+    ch.send(id)
+    Fiber.yield()
+    ch.send(id)
+}
+
+pub func main = () {
+    var Channel ch = Channel()
+    var a = Fiber(step(ch, 1)).start()
+    var b = Fiber(step(ch, 2)).start()
+    a.wait()
+    b.wait()
+    Fiber.yield()                       // no-op on the main thread
+    if Fiber.is_fiber() {
+        Console.write_line("in a fiber")
+    }
+}
+```
+
+`start_on(buf)` runs the fiber on a caller-provided fixed-size array stack
+(at least 16 KB) instead of a heap stack:
+
+```
+import System
+
+func work = (uint64 n) {
+    Console.write_line("static stack")
+}
+
+pub func main = () {
+    var uint64[2048] stack_buf
+    var f = Fiber(work(0)).start_on(stack_buf)
+    f.wait()
+}
+```
+
+`Fiber.set_cooperative(true)` (before the first fiber spawn) runs fibers on
+the calling thread and never starts worker threads: fibers execute when the
+main thread would block on a task (or at process exit). This is the
+single-threaded/bare-metal mode; a fiber parked on an event only another
+thread could fire will never resume:
+
+```
+import System
+
+func background = (uint64 n) {
+    Console.write_line("ran")
+}
+
+pub func main = () {
+    Fiber.set_cooperative(true)
+    Fiber(background(0)).start()
+    // runs at the next would-block wait, or at process exit
+}
+```
+
+Like a spawned call, every argument to `Fiber(...)` must be `Sendable`, and a
+`Fiber` used inside an `async` block is joined at block exit.
+
 ### async block (nursery)
 
 `async { ... }` defines a nursery: a scope that bounds the tasks started

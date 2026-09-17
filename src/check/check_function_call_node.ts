@@ -59,22 +59,32 @@ export default function check_function_call_node(
 	node: FunctionCallNode,
 	status: CheckStatus,
 ): boolean {
-	// `Thread(fn(args))` — the compiler-special spawn constructor (see
-	// ASYNC_PLAN.md). A user-declared function or struct named `Thread`
-	// shadows it: the special form only applies when the name resolves to
-	// nothing else. The wrapped call is resolved here (so both consumers see
-	// its return type); Sendable validation and Task<T> stamping live with
-	// the consumers — `.start()` on the result, or a nursery's
+	// `Thread(fn(args))` / `Fiber(fn(args))` — the compiler-special spawn
+	// constructors (see ASYNC_PLAN.md). A user-declared function shadows
+	// either; a user struct named `Thread` shadows it, and a user struct
+	// named `Fiber` shadows it too (the stdlib's Fiber struct is marked with
+	// the library `is_library` stamp, which user declarations never carry).
+	// The wrapped call is resolved here (so both consumers see its return
+	// type); Sendable validation and Task<T> stamping live with the
+	// consumers — `.start()` on the result, or a nursery's
 	// `.start(Thread(fn(args)))` escape hatch — which know whether the spawn
 	// is direct or nursery-registered.
+	const magic_ctor =
+		node.name === "Thread"
+			? "Thread"
+			: node.name === "Fiber" &&
+				  !!(resolve_declared_struct("Fiber", status) as { is_library?: boolean } | undefined)
+						?.is_library
+				? "Fiber"
+				: undefined;
 	if (
-		node.name === "Thread" &&
+		magic_ctor &&
 		node.params.length === 1 &&
 		node.params[0].node_type === "func_call" &&
-		!find_free_function(status, "Thread") &&
-		!resolve_declared_struct("Thread", status)
+		!find_free_function(status, node.name) &&
+		!(magic_ctor === "Thread" && resolve_declared_struct("Thread", status))
 	) {
-		return check_thread_ctor(node, status);
+		return check_magic_ctor(node, status, magic_ctor);
 	}
 
 	let func = find_free_function(status, node.name);
@@ -1176,14 +1186,24 @@ function resolve_free_calls_in_node(node: BaseNode | undefined | null, status: C
 	const any_node = node as any;
 	if (node.node_type === "func_call" && !any_node.resolved_function) {
 		const name = (node as import("../nodes/FunctionCallNode.ts").default).name;
-		// A monomorphised clone of the compiler-special Thread(fn(args))
+		// A monomorphised clone of the compiler-special Thread/Fiber(fn(args))
 		// constructor needs its annotations re-derived (the clone is never
 		// re-checked) — mirrors the nursery.start rederivation.
-		if (name === "Thread") {
-			rederive_thread_ctor_annotations(
-				node as import("../nodes/FunctionCallNode.ts").default,
-				status,
-			);
+		if (name === "Thread" || name === "Fiber") {
+			const fiber_struct = resolve_declared_struct("Fiber", status);
+			const magic: "Thread" | "Fiber" | undefined =
+				name === "Thread"
+					? "Thread"
+					: !!(fiber_struct as { is_library?: boolean } | undefined)?.is_library
+						? "Fiber"
+						: undefined;
+			if (magic) {
+				rederive_magic_ctor_annotations(
+					node as import("../nodes/FunctionCallNode.ts").default,
+					status,
+					magic,
+				);
+			}
 		}
 		const func = find_free_function(status, name);
 		if (func) set_resolved_function(node as import("../nodes/FunctionCallNode.ts").default, func);
@@ -1289,10 +1309,15 @@ function derive_annotations_for_access_func(
 		rederive_nursery_spawn_annotations(fc, status);
 		return;
 	}
-	// `Thread(fn(args)).start()` is compiler-special-cased the same way —
-	// there is no Thread struct, so method resolution would bail.
+	// `Thread(fn(args)).start()` / `Fiber(fn(args)).start[_on](...)` are
+	// compiler-special-cased the same way — there are no Thread/Fiber
+	// methods to resolve, so method resolution would bail.
 	if (receiver_type === "Thread" && fc.name === "start") {
-		rederive_thread_start_annotations(access_node, fc, status);
+		rederive_spawn_start_annotations(access_node, fc, status, "Thread", false);
+		return;
+	}
+	if (receiver_type === "Fiber" && (fc.name === "start" || fc.name === "start_on")) {
+		rederive_spawn_start_annotations(access_node, fc, status, "Fiber", fc.name === "start_on");
 		return;
 	}
 	const struct = status.structs.find((s) => s.name === receiver_type);
@@ -1400,35 +1425,47 @@ function derive_annotations_for_access_func(
  * triggers Task<T> monomorphization so the struct body is emitted.
  */
 /**
- * Check the compiler-special `Thread(fn(args))` constructor. Resolves the
- * wrapped call (function resolution, argument types, return type) and stamps
- * the construction with type `Thread` plus the wrapped function's return
- * type. Sendable validation and Task<T> stamping happen at the consumers:
- * `.start()` (check_access_node.check_thread_start) or a nursery's
- * `.start(Thread(fn(args)))` (check_nursery_spawn). A `Thread` construction
- * that is never consumed is inert — nothing is spawned; see FOLLOWUP.md.
+ * Check the compiler-special `Thread(fn(args))` / `Fiber(fn(args))`
+ * constructor. Resolves the wrapped call (function resolution, argument
+ * types, return type) and stamps the construction with the magic type plus
+ * the wrapped function's return type. Sendable validation and Task<T>
+ * stamping happen at the consumers: `.start()` / `.start_on(buf)`
+ * (check_access_node) or a nursery's `.start(Thread(fn(args)))`. A magic
+ * construction that is never consumed is inert — nothing is spawned; see
+ * FOLLOWUP.md.
  */
-function check_thread_ctor(node: FunctionCallNode, status: CheckStatus): boolean {
+function check_magic_ctor(
+	node: FunctionCallNode,
+	status: CheckStatus,
+	name: "Thread" | "Fiber",
+): boolean {
 	const call = node.params[0] as FunctionCallNode;
 	if (!check_function_call_node(call, status)) {
 		add_error(status, `Spawned call '${call.name}' did not resolve`, node.start);
 		return false;
 	}
-	node.is_thread_ctor = true;
+	if (name === "Thread") node.is_thread_ctor = true;
+	else node.is_fiber_ctor = true;
 	node.function_return_type = call.type;
-	node.type = new Type("Thread");
+	node.type = new Type(name);
 	return true;
 }
 
 /**
- * Re-derive the check annotations for a `Thread(fn(args))` constructor inside a
- * monomorphised body. The mono body is cloned from the unchecked generic body
- * and never re-checked, so the clone's constructor lacks is_thread_ctor / the
- * wrapped return type. Mirrors check_thread_ctor without re-running call
- * resolution (resolve_free_calls_in_node has stamped the wrapped call).
+ * Re-derive the check annotations for a `Thread(fn(args))` /
+ * `Fiber(fn(args))` constructor inside a monomorphised body. The mono body
+ * is cloned from the unchecked generic body and never re-checked, so the
+ * clone's constructor lacks the ctor flag / the wrapped return type.
+ * Mirrors check_magic_ctor without re-running call resolution
+ * (resolve_free_calls_in_node has stamped the wrapped call).
  */
-function rederive_thread_ctor_annotations(fc: FunctionCallNode, status: CheckStatus) {
-	if (fc.is_thread_ctor) return;
+function rederive_magic_ctor_annotations(
+	fc: FunctionCallNode,
+	status: CheckStatus,
+	name: "Thread" | "Fiber",
+) {
+	const is_flagged = name === "Thread" ? fc.is_thread_ctor : fc.is_fiber_ctor;
+	if (is_flagged) return;
 	if (fc.params.length !== 1 || fc.params[0].node_type !== "func_call") return;
 	const call = fc.params[0] as FunctionCallNode;
 	let return_type = call.type;
@@ -1439,10 +1476,11 @@ function rederive_thread_ctor_annotations(fc: FunctionCallNode, status: CheckSta
 			call.type = func.return_type;
 		}
 	}
-	fc.is_thread_ctor = true;
+	if (name === "Thread") fc.is_thread_ctor = true;
+	else fc.is_fiber_ctor = true;
 	fc.function_return_type = return_type;
 	if (!fc.type?.name) {
-		fc.type = new Type("Thread");
+		fc.type = new Type(name);
 	}
 }
 
@@ -1453,7 +1491,7 @@ function rederive_nursery_spawn_annotations(fc: AccessFunctionCallNode, status: 
 	// New syntax: the parameter is the compiler-special Thread(fn(args))
 	// constructor — unwrap it to the wrapped call.
 	const ctor = fc.params[0] as FunctionCallNode;
-	rederive_thread_ctor_annotations(ctor, status);
+	rederive_magic_ctor_annotations(ctor, status, "Thread");
 	if (!ctor.is_thread_ctor) return;
 	const call = ctor.params[0] as FunctionCallNode;
 	// The spawned function's return type: reuse the inner call's type when
@@ -1485,24 +1523,29 @@ function rederive_nursery_spawn_annotations(fc: AccessFunctionCallNode, status: 
 }
 
 /**
- * Re-derive the annotations for a `Thread(fn(args)).start()` call inside a
- * monomorphised body — mirroring check_thread_start (check_access_node).
- * The build gates its spawn-trampoline emission on is_thread_start (without
- * it the call falls through to method resolution, which finds no `start`)
- * and the declaration-ownership analysis on owned_return (the Task a spawn
- * yields is a fresh heap allocation, not a borrow).
+ * Re-derive the annotations for a `Thread(fn(args)).start()` /
+ * `Fiber(fn(args)).start[_on](...)` call inside a monomorphised body —
+ * mirroring check_spawn_start (check_access_node). The build gates its
+ * spawn/fiber-trampoline emission on is_thread_start / is_fiber_start
+ * (without them the call falls through to method resolution, which finds no
+ * `start`) and the declaration-ownership analysis on owned_return (the Task
+ * a spawn yields is a fresh heap allocation, not a borrow).
  */
-function rederive_thread_start_annotations(
+function rederive_spawn_start_annotations(
 	access_node: any,
 	fc: AccessFunctionCallNode,
 	status: CheckStatus,
+	name: "Thread" | "Fiber",
+	start_on: boolean,
 ) {
-	// The Thread(fn(args)) constructor is the AccessNode's target; the
-	// rederive walk visits it first (rederive_annotations_in_node recurses
-	// into .target), so its annotations are already re-derived here.
+	// The magic constructor is the AccessNode's target; the rederive walk
+	// visits it first (rederive_annotations_in_node recurses into .target),
+	// so its annotations are already re-derived here.
 	const ctor = access_node?.target as FunctionCallNode | undefined;
-	if (!ctor || ctor.node_type !== "func_call" || !ctor.is_thread_ctor) return;
-	fc.is_thread_start = true;
+	const ctor_flagged = name === "Thread" ? ctor?.is_thread_ctor : ctor?.is_fiber_ctor;
+	if (!ctor || ctor.node_type !== "func_call" || !ctor_flagged) return;
+	if (name === "Thread") fc.is_thread_start = true;
+	else fc.is_fiber_start = true;
 	fc.owned_return = true;
 	const call = ctor.params[0] as FunctionCallNode;
 	let return_type = ctor.function_return_type ?? call.type;

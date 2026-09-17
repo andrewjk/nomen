@@ -6,6 +6,7 @@ import FunctionNode from "../../nodes/FunctionNode.ts";
 import ParameterNode from "../../nodes/ParameterNode.ts";
 import StructNode from "../../nodes/StructNode.ts";
 import TraitNode from "../../nodes/TraitNode.ts";
+import { FIBER_HEADER_C, POOL_HEADER_C } from "../build_spawn_node.ts";
 import { get_enum_sret_size, get_struct_size } from "./struct_layout.ts";
 
 export interface CompanionFunction {
@@ -22,7 +23,12 @@ export function generate_companion(functions: CompanionFunction[], status: Build
 	let out = "";
 
 	// --- Includes ---
-	if (status.platform === "macos" || status.platform === "ios") {
+	// The UI frameworks are only needed by `aarch64_use_c` bodies. Importing
+	// them unconditionally pulls MacTypes.h (`Point`, `Rect`, …) into every
+	// companion, colliding with the generated struct typedefs when a program
+	// has no UI bodies at all (e.g. a companion that only carries the
+	// concurrency runtime).
+	if (functions.length > 0 && (status.platform === "macos" || status.platform === "ios")) {
 		out += `#import <Foundation/Foundation.h>\n`;
 		out += `#include <objc/runtime.h>\n`;
 		out += `#include <objc/message.h>\n`;
@@ -65,39 +71,71 @@ export function generate_companion(functions: CompanionFunction[], status: Build
 		out += "\n";
 	}
 
-	// --- Enum definitions ---
-	// Emit every enum before the structs: a struct may have a field of enum
-	// type (e.g. LayoutParams.width: LayoutLength), and the typedef must be in
-	// scope. Enum case names keep the `Enum_case` form (they're only referenced
-	// by index from assembly, never by name in companion bodies). Type names are
-	// `nm_`-prefixed (see `nm`) to avoid collisions with system typedefs pulled
-	// in by the framework imports above (e.g. macOS MacTypes.h defines `Size`).
-	const emitted_enums = new Set<string>();
-	for (const e of status.enums) {
-		if (emitted_enums.has(e.name)) continue;
-		// Generic enums are templates with no concrete layout; only their
-		// monomorphized forms (also in status.enums) are real types.
-		if (e.is_generic) continue;
-		emitted_enums.add(e.name);
-		out += generate_enum_definition(e, status);
+	// --- Concurrency runtime ---
+	// The precompiled system object holds Fiber's static wrappers
+	// (Fiber.yield / is_fiber / set_cooperative), which branch into the
+	// runtime; every companion must therefore define the pool + fiber
+	// symbols, whether or not this program uses concurrency itself.
+	// Deduped against any runtime text already queued in file_scope_c.
+	if (!status.file_scope_c?.includes("__nomen_pool_submit")) {
+		out += POOL_HEADER_C;
 	}
-	out += "\n";
+	if (!status.file_scope_c?.includes("__nomen_fiber_spawn")) {
+		out += FIBER_HEADER_C;
+	}
 
-	// --- Struct definitions ---
-	// Emit every non-simple struct so the function bodies can reference them.
-	// Definitions are ordered so that a struct's value-field dependencies are
-	// defined before it (e.g. Buffer_JsonNode before JsonTree, which contains
-	// it by value). Pointer fields (generics → void *) need no ordering. Type
-	// names are `nm_`-prefixed (see `nm`) to dodge system-header collisions.
-	const structs_to_emit = order_structs_by_dependency(
-		status.structs.filter((s) => !s.is_simple_type && !s.is_generic),
-	);
-	const emitted = new Set<string>();
-	for (const struct of structs_to_emit) {
-		if (emitted.has(struct.name)) continue;
-		emitted.add(struct.name);
-		out += generate_struct_definition(struct, status);
+	// --- Enum + struct definitions ---
+	// Emit both kinds in dependency order: a struct may contain an enum by
+	// value (needs the enum first) and an enum payload may contain a struct by
+	// value (needs the struct first), so a fixed two-pass order cannot work.
+	// Independent types keep enums-before-structs. Enum case names keep the
+	// `Enum_case` form (only referenced by index from assembly) and type names
+	// are `nm_`-prefixed (see `nm`) to dodge system-header collisions.
+	const enum_nodes = status.enums.filter((e) => !e.is_generic);
+	const struct_nodes = status.structs.filter((s) => !s.is_simple_type && !s.is_generic);
+	const node_kind = new Map<string, "enum" | "struct" | "bitset">();
+	for (const e of enum_nodes) node_kind.set(e.name, "enum");
+	for (const st of struct_nodes) node_kind.set(st.name, "struct");
+	for (const b of status.bitsets) node_kind.set(b.name, "bitset");
+	const deps = new Map<string, Set<string>>();
+	for (const e of enum_nodes) {
+		const d = new Set<string>();
+		for (const c of e.cases) {
+			for (const p of c.params) {
+				if (node_kind.has(p.type.name) && p.type.name !== e.name) d.add(p.type.name);
+			}
+		}
+		deps.set(e.name, d);
 	}
+	for (const st of struct_nodes) {
+		const d = new Set<string>();
+		for (const f of st.fields) {
+			if (f.type.is_view) continue;
+			if (node_kind.has(f.type.name) && f.type.name !== st.name) d.add(f.type.name);
+		}
+		deps.set(st.name, d);
+	}
+	const emitted = new Set<string>();
+	const visiting = new Set<string>();
+	const node_list = [...enum_nodes, ...struct_nodes, ...status.bitsets];
+	const by_name = new Map<string, (typeof node_list)[number]>(node_list.map((n) => [n.name, n]));
+	const visit = (name: string) => {
+		if (emitted.has(name) || visiting.has(name)) return;
+		visiting.add(name);
+		for (const dep of deps.get(name) ?? []) visit(dep);
+		visiting.delete(name);
+		emitted.add(name);
+		const node = by_name.get(name);
+		if (!node) return;
+		if (node_kind.get(name) === "enum") {
+			out += generate_enum_definition(node as EnumNode, status);
+		} else if (node_kind.get(name) === "bitset") {
+			out += `typedef unsigned long ${nm(name)};\n`;
+		} else {
+			out += generate_struct_definition(node as StructNode, status);
+		}
+	};
+	for (const n of node_list) visit(n.name);
 	out += "\n";
 
 	// --- File-scope C code (pool infrastructure, #scope: file blocks) ---
@@ -142,11 +180,24 @@ function nm(name: string): string {
  * Generic structs lower to opaque 8-byte pointers (their element type lives in
  * the Nomen `Type`, not in the C layout).
  */
+/**
+ * The C type for a value stored BY VALUE in an enum payload: classes and
+ * traits are heap/shared references (pointers, and never have a companion
+ * typedef), everything else follows `companion_type`.
+ */
+function payload_type(typeName: string, status: BuildStatus): string {
+	const struct = status.structs.find((s) => s.name === typeName);
+	if (struct?.is_class) return `struct ${typeName} *`;
+	if (status.traits.find((t) => t.name === typeName)) return `struct ${typeName} *`;
+	return companion_type(typeName, status);
+}
+
 function companion_type(typeName: string, status: BuildStatus): string {
 	const struct = status.structs.find((s) => s.name === typeName);
 	if (struct?.is_generic) return "void *";
 	if (struct && !struct.is_simple_type) return nm(typeName);
 	if (!struct && status.enums.find((e) => e.name === typeName)) return nm(typeName);
+	if (status.bitsets.find((b) => b.name === typeName)) return nm(typeName);
 	return c_type(typeName);
 }
 
@@ -158,7 +209,7 @@ function companion_type(typeName: string, status: BuildStatus): string {
  * struct fields / function signatures can reference them). The struct tag keeps
  * the original Nomen name (see `nm`).
  */
-function generate_enum_definition(node: EnumNode, _status: BuildStatus): string {
+function generate_enum_definition(node: EnumNode, status: BuildStatus): string {
 	let out = "";
 	if (node.has_associated_data) {
 		out += `typedef enum { ${node.cases.map((c) => `${node.name}_${c.name}`).join(", ")} } ${nm(node.name)}_tag;\n`;
@@ -167,7 +218,7 @@ function generate_enum_definition(node: EnumNode, _status: BuildStatus): string 
 		out += `${nm(node.name)}_tag tag;\n`;
 		out += `union {\n`;
 		for (const c of node.cases) {
-			out += `struct { ${c.params.map((p) => `${c_type(p.type.name)} ${p.name}`).join("; ")}${c.params.length ? ";" : ""} } _${c.name};\n`;
+			out += `struct { ${c.params.map((p) => `${payload_type(p.type.name, status)} ${p.name}`).join("; ")}${c.params.length ? ";" : ""} } _${c.name};\n`;
 		}
 		out += `} _data;\n`;
 		out += `} ${nm(node.name)};\n`;
@@ -177,50 +228,13 @@ function generate_enum_definition(node: EnumNode, _status: BuildStatus): string 
 	return out;
 }
 
-/**
- * Order structs so that value-field dependencies are defined first.
- * A struct A that has a value field of type B (non-pointer, non-generic)
- * requires B's full definition to precede A's. Pointer fields (generics
- * rendered as void *) and primitive fields impose no ordering.
- */
-function order_structs_by_dependency(structs: StructNode[]): StructNode[] {
-	const by_name = new Map(structs.map((s) => [s.name, s]));
-	const deps = new Map<string, Set<string>>();
-	for (const s of structs) {
-		const s_deps = new Set<string>();
-		for (const field of s.fields) {
-			// A `view T` field lowers to nomen_view (no struct dependency).
-			if (field.type.is_view) continue;
-			const dep_struct = by_name.get(field.type.name);
-			if (dep_struct && !dep_struct.is_generic && !dep_struct.is_simple_type) {
-				s_deps.add(field.type.name);
-			}
-		}
-		deps.set(s.name, s_deps);
-	}
-	const result: StructNode[] = [];
-	const visited = new Set<string>();
-	const visiting = new Set<string>();
-	function visit(name: string) {
-		if (visited.has(name) || visiting.has(name)) return;
-		visiting.add(name);
-		for (const dep of deps.get(name) ?? []) visit(dep);
-		visiting.delete(name);
-		visited.add(name);
-		const s = by_name.get(name);
-		if (s) result.push(s);
-	}
-	for (const s of structs) visit(s.name);
-	return result;
-}
-
 function generate_struct_definition(struct: StructNode, status: BuildStatus): string {
 	let out = `typedef struct ${struct.name}\n{\n`;
 	out += `void *_vt;\n`;
 	for (const field of struct.fields) {
 		// A `view T` field is the universal (ptr, len) slice value — every
 		// view lowers to nomen_view regardless of its element type.
-		out += `${field.type.is_view ? "nomen_view" : companion_type(field.type.name, status)} ${field.name};\n`;
+		out += `${field.type.is_view ? "nomen_view" : payload_type(field.type.name, status)} ${field.name};\n`;
 	}
 	for (const traitName of struct.traits) {
 		const trait = status.traits.find((t) => t.name === traitName) as TraitNode | undefined;
@@ -228,7 +242,7 @@ function generate_struct_definition(struct: StructNode, status: BuildStatus): st
 		for (const field of trait.fields.filter(
 			(f) => !struct.fields.find((nf) => nf.name === f.name),
 		)) {
-			out += `${field.type.is_view ? "nomen_view" : companion_type(field.type.name, status)} ${field.name};\n`;
+			out += `${field.type.is_view ? "nomen_view" : payload_type(field.type.name, status)} ${field.name};\n`;
 		}
 	}
 	out += `} ${nm(struct.name)};\n`;

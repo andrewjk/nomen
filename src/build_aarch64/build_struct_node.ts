@@ -16,6 +16,7 @@ import build_extern from "./build_extern.ts";
 import build_function_node from "./build_function_node.ts";
 import build_node from "./build_node.ts";
 import { check_c_fallback } from "./build_raw_node.ts";
+import { FIBER_HEADER_C, POOL_HEADER_C } from "./build_spawn_node.ts";
 import { build_body_with_cursor } from "./emit_nir.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free, emit_strdup } from "./utils/audit.ts";
@@ -187,6 +188,18 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 	if (node.is_generic) return;
 
 	const is_nested = !!status.function_return_label;
+
+	// The Fiber class's statics (yield/is_fiber/set_cooperative) have raw
+	// asm bodies calling into the fiber runtime — any build of Fiber's
+	// methods pulls the runtime companion text in (deduped; extends the
+	// pool text).
+	if (node.name === "Fiber" && !status.file_scope_c?.includes("__nomen_fiber_spawn")) {
+		if (!status.file_scope_c?.includes("__nomen_pool_submit")) {
+			status.file_scope_c = (status.file_scope_c ?? "") + POOL_HEADER_C;
+		}
+		status.file_scope_c += FIBER_HEADER_C;
+		status.used_fibers = true;
+	}
 
 	let old_code: string | undefined;
 	if (is_nested) {

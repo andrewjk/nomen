@@ -22,6 +22,7 @@ import { reset_inline_counter } from "./build_aarch64/build_inline_method.ts";
 import { reset_label_counter as reset_match_label_counter } from "./build_aarch64/build_match_node.ts";
 import build_aarch64_node from "./build_aarch64/build_node.ts";
 import { reset_string_counter as reset_op_string_counter } from "./build_aarch64/build_operation_node.ts";
+import { FIBER_HEADER_C, POOL_HEADER_C } from "./build_aarch64/build_spawn_node.ts";
 import { reset_label_counter as reset_switch_label_counter } from "./build_aarch64/build_switch_node.ts";
 import { reset_string_counter as reset_value_string_counter } from "./build_aarch64/build_value_node.ts";
 import { reset_label_counter as reset_while_label_counter } from "./build_aarch64/build_while_loop_node.ts";
@@ -482,6 +483,18 @@ export default function build(
 		if (status.emit_mode === "user") {
 			status.headers = `#include "system.h"\n` + status.headers;
 		}
+	}
+
+	// aarch64: the precompiled system object holds Fiber's static wrappers
+	// (Fiber.yield / is_fiber / set_cooperative), which branch into the
+	// runtime. The system object is assembly-only — it cannot define those
+	// C symbols itself — so every user companion must carry the pool + fiber
+	// runtime, whether or not this program uses concurrency.
+	if (options.arch === "aarch64" && !status.file_scope_c?.includes("__nomen_fiber_spawn")) {
+		let runtime = status.file_scope_c ?? "";
+		if (!runtime.includes("__nomen_pool_submit")) runtime += POOL_HEADER_C;
+		runtime += FIBER_HEADER_C;
+		status.file_scope_c = runtime;
 	}
 
 	let companion: string | undefined;

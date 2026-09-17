@@ -33,6 +33,7 @@ import {
 	unwrap_noop_int_cast,
 } from "./access_staging.ts";
 import { array_licm_enabled } from "./array_licm.ts";
+import build_fiber_spawn_node from "./build_fiber_spawn.ts";
 import build_function_call_node from "./build_function_call_node.ts";
 import build_inline_method, {
 	begin_inline_splice,
@@ -43,7 +44,7 @@ import build_inline_method, {
 import build_node from "./build_node.ts";
 import build_nursery_spawn from "./build_nursery_spawn.ts";
 import { build_operand, tree_is_call_free } from "./build_operation_node.ts";
-import build_spawn_node from "./build_spawn_node.ts";
+import build_spawn_node, { FIBER_HEADER_C, POOL_HEADER_C } from "./build_spawn_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free, emit_malloc, emit_strdup } from "./utils/audit.ts";
 import { all_scope_frames, mark_moved_if_struct, trait_class_for } from "./utils/auto_destroy.ts";
@@ -623,6 +624,23 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 		}
 		case "access_func": {
 			const access_func = node.access as AccessFunctionCallNode;
+			// A Fiber static call (Fiber.yield / is_fiber / set_cooperative)
+			// dispatches into the runtime (the system object's wrappers
+			// reference it), so this companion must define it — and the
+			// main-end drain matters once fibers can be queued.
+			if (
+				node.target.node_type === "value" &&
+				(node.target as ValueNode).value === "Fiber" &&
+				!status.used_fibers
+			) {
+				if (!status.file_scope_c?.includes("__nomen_pool_submit")) {
+					status.file_scope_c = (status.file_scope_c ?? "") + POOL_HEADER_C;
+				}
+				if (!status.file_scope_c.includes("__nomen_fiber_spawn")) {
+					status.file_scope_c += FIBER_HEADER_C;
+				}
+				status.used_fibers = true;
+			}
 			// `Thread(fn(args)).start()` — the surface form of a direct spawn
 			// (see ASYNC_PLAN.md). Synthesize a SpawnNode from the wrapped
 			// call and emit the standard spawn trampoline; the receiver
@@ -633,6 +651,21 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				spawn.function_return_type = access_func.function_return_type;
 				spawn.is_statement = access_func.is_statement;
 				build_spawn_node(spawn, status);
+				return;
+			}
+			// `Fiber(fn(args)).start[_on](buf)` — the fiber flavor: same
+			// trampoline and future machinery, launched on the fiber
+			// scheduler (heap stack, or the caller's buffer for start_on).
+			if (access_func.is_fiber_start) {
+				const ctor = node.target as FunctionCallNode;
+				const spawn = new SpawnNode(node.start, ctor.params[0] as FunctionCallNode);
+				spawn.function_return_type = access_func.function_return_type;
+				spawn.is_statement = access_func.is_statement;
+				build_fiber_spawn_node(
+					spawn,
+					status,
+					access_func.is_fiber_start_on ? access_func.params[0] : undefined,
+				);
 				return;
 			}
 			// Escape hatch: `nursery.start(Thread(fn(args)))`. See ASYNC.md.

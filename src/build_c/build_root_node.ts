@@ -20,6 +20,14 @@ function collect_traits(node: BaseNode, acc: TraitNode[] = []): TraitNode[] {
 export default function build_root_node(node: RootNode, status: BuildStatus) {
 	status.headers += `#include <stdint.h>\n`;
 	status.code += `
+// Feature-test macro: must precede every system include so the whole TU
+// agrees on one definition of ucontext_t (the fiber runtime embeds it).
+// Without this, headers included earlier pin the small (pointer-mcontext)
+// layout while libSystem's ucontext entry points write the full one — the
+// fiber context allocation then overruns by hundreds of bytes.
+#ifndef _XOPEN_SOURCE
+#define _XOPEN_SOURCE 600
+#endif
 #pragma STDC FP_CONTRACT OFF
 #include <stdio.h>
 #include <stdlib.h>

@@ -74,6 +74,20 @@ export default class AccessFunctionCallNode extends BaseNode {
 	 */
 	is_thread_start?: boolean;
 	/**
+	 * Set during checking when this is a `Fiber(fn(args)).start()` call —
+	 * the fiber flavor of a direct spawn. The build synthesizes a SpawnNode
+	 * from the wrapped call and emits the fiber trampoline (the launch goes
+	 * to the fiber scheduler instead of the pool). See ASYNC_PLAN.md.
+	 */
+	is_fiber_start?: boolean;
+	/**
+	 * Set during checking when this is a `Fiber(fn(args)).start_on(buf)`
+	 * call — like is_fiber_start, but the fiber runs on the caller-provided
+	 * fixed-size array stack. The single parameter is the buffer. See
+	 * ASYNC_PLAN.md.
+	 */
+	is_fiber_start_on?: boolean;
+	/**
 	 * For `nursery.spawn`: the spawned function's return type, captured during
 	 * checking (mirrors SpawnNode.function_return_type). Used by the build to
 	 * decide whether the trampoline captures a result and to type the Task.

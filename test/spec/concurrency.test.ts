@@ -372,3 +372,72 @@ pub func main = () {
 		expect(compile_module(input)).toEqual([]);
 	});
 });
+
+describe("spec: concurrency - Fiber", () => {
+	test("Fiber spawn yields a parkable Task", () => {
+		const input = `
+func compute = (uint64 n, out uint64) {
+	return n + 1
+}
+
+pub func main = () {
+	var f = Fiber(compute(41)).start()
+	var uint64 r = f.result()
+	Console.write_line("\\{r}")
+}
+`;
+		expect(compile_module(input)).toEqual([]);
+	});
+
+	test("yield and is_fiber", () => {
+		const input = `
+func step = (Channel ch, uint64 id) {
+	ch.send(id)
+	Fiber.yield()
+	ch.send(id)
+}
+
+pub func main = () {
+	var Channel ch = Channel()
+	var a = Fiber(step(ch, 1)).start()
+	var b = Fiber(step(ch, 2)).start()
+	a.wait()
+	b.wait()
+	Fiber.yield()
+	if Fiber.is_fiber() {
+		Console.write_line("in a fiber")
+	}
+}
+`;
+		expect(compile_module(input)).toEqual([]);
+	});
+
+	test("start_on runs a fiber on a caller-provided stack", () => {
+		const input = `
+func work = (uint64 n) {
+	Console.write_line("static stack")
+}
+
+pub func main = () {
+	var uint64[2048] stack_buf
+	var f = Fiber(work(0)).start_on(stack_buf)
+	f.wait()
+}
+`;
+		expect(compile_module(input)).toEqual([]);
+	});
+
+	test("cooperative mode defers execution to waits or exit", () => {
+		const input = `
+func background = (uint64 n) {
+	Console.write_line("ran")
+}
+
+pub func main = () {
+	Fiber.set_cooperative(true)
+	Fiber(background(0)).start()
+}
+`;
+		expect(compile_module(input)).toEqual([]);
+	});
+});

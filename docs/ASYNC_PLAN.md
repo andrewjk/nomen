@@ -442,7 +442,17 @@ The "heavy runtime" cost of Go's model is mostly costs Nomen doesn't have:
    the worker pool, `start_on` static stacks, `CooperativeRuntime`.
    _Acceptance: a `Fiber`-running `fetch_pair`-style program with
    `Task.wait`-style sleeps interleaves; existing thread tests untouched; a
-   no-thread build runs a fiber on a static stack._
+   no-thread build runs a fiber on a static stack._ **Status: landed.** The
+   context switch is ucontext on the C backend and a naked-asm register switch
+   (x19–x28/FP/LR/SP) in the aarch64 companion; `Runtime.current()` is the
+   `__nomen_current_fiber` thread-local; pool workers drain the fiber queue
+   between pool tasks; `Task.result`/`wait` park a fiber (park-before-signal
+   under the future's mutex, wakers requeue it on completion); cooperative
+   mode runs fibers at would-block waits and process exit without starting
+   threads. `start_on` is implemented on the C backend only — the aarch64
+   backend cannot address locals past frame offset 4095, which any >= 16 KB
+   buffer trips (pre-existing; see FOLLOWUP.md). Test coverage:
+   `test/fiber.test.ts`.
 2. **Park-aware blocking.** `Task.result`/`wait`, `Channel.receive`,
    `Mutex.lock` consult `Runtime.current()` and park instead of blocking.
    Kill-trampoline teardown on nursery cancel. _Acceptance: nested fibers,

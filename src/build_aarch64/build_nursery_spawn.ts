@@ -10,7 +10,7 @@ import type BaseNode from "../nodes/BaseNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
-import { POOL_HEADER_C } from "./build_spawn_node.ts";
+import { FIBER_HEADER_C, POOL_HEADER_C } from "./build_spawn_node.ts";
 import {
 	allocate_stack_space,
 	emit_deref_var_address,
@@ -49,6 +49,10 @@ export default function build_nursery_spawn(
 
 	if (!status.file_scope_c?.includes("__nomen_pool_submit")) {
 		status.file_scope_c = (status.file_scope_c ?? "") + POOL_HEADER_C;
+		// The fiber seam is part of the runtime (the pool worker loop and
+		// __nomen_future_wait reference it), so the scheduler text always
+		// accompanies the pool text.
+		status.file_scope_c += FIBER_HEADER_C;
 	}
 
 	const struct_name = `__nomen_spawn_${id}_args`;
@@ -121,10 +125,7 @@ export default function build_nursery_spawn(
 		tramp_c += `\t*(a->result_slot) = _r;\n`;
 	}
 	tramp_c += `\t__nomen_current_cancel_flag = NULL;\n`;
-	tramp_c += `\tpthread_mutex_lock(&a->future->mu);\n`;
-	tramp_c += `\ta->future->done = 1;\n`;
-	tramp_c += `\tpthread_cond_broadcast(&a->future->cv);\n`;
-	tramp_c += `\tpthread_mutex_unlock(&a->future->mu);\n`;
+	tramp_c += `\t__nomen_future_complete(a->future);\n`;
 	tramp_c += `\t__nomen_future_release(a->future);\n`; // a freed via f->owner_args at last release
 	tramp_c += `}\n`;
 
@@ -160,6 +161,7 @@ export default function build_nursery_spawn(
 	tramp_c += `\tf->result_slot = a->result_slot;\n`;
 	tramp_c += `\ta->future = f;\n`;
 	tramp_c += `\tf->owner_args = a;\n`;
+	tramp_c += `\tf->fiber_waiters = NULL;\n`;
 	tramp_c += `\t__nomen_pool_submit(${tramp_name}, a);\n`;
 	tramp_c += `\t__nomen_nursery_futures[(*__nomen_nursery_count)++] = (unsigned long long)f;\n`;
 	if (fire_and_forget) {

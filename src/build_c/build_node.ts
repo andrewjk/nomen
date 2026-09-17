@@ -144,7 +144,8 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 			// (mirrors SpawnNode.is_statement).
 			if (with_semicolon && access.access.node_type === "access_func") {
 				const afn = access.access as AccessFunctionCallNode;
-				if (afn.is_nursery_spawn || afn.is_thread_start) afn.is_statement = true;
+				if (afn.is_nursery_spawn || afn.is_thread_start || afn.is_fiber_start)
+					afn.is_statement = true;
 			}
 			build_access_node(access, status);
 			break;

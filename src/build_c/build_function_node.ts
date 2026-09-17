@@ -396,6 +396,13 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	// workers array is freed before the audit runs. Without this, the pool's
 	// atexit handler fires after audit_check, and the workers array shows up
 	// as a false positive leak.
+	// Fibers: run anything still queued (a cooperative fire-and-forget, or a
+	// fiber spawned but never waited on) so its allocations are freed before
+	// the audit check — mirrors the pool shutdown above.
+	if (node.name.toLocaleLowerCase() === "main" && status.used_fibers) {
+		status.code += `\n__nomen_fiber_drain_all();\n`;
+	}
+
 	if (node.name.toLocaleLowerCase() === "main" && status.audit) {
 		const has_pool = status.headers.includes("__nomen_pool_submit");
 		if (has_pool) {

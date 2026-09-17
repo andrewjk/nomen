@@ -91,6 +91,8 @@ export default class FunctionCallNode extends BaseNode {
 	 * struct named `Thread` shadows the special form.
 	 */
 	is_thread_ctor?: boolean;
+	/** Fiber flavor of the magic spawn constructor (see is_thread_ctor). */
+	is_fiber_ctor?: boolean;
 	/**
 	 * For `Thread(fn(args))`: the wrapped function's return type, captured
 	 * during checking. Consumed by the `.start()` / nursery `.start()` build

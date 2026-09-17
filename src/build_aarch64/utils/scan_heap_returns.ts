@@ -47,7 +47,7 @@ function scan_spawn_callees(root: BaseNode, result: Set<string>) {
 			spawn_call = node.call;
 			spawn_ret = node.function_return_type;
 		} else if (node.node_type === "access" && node.access?.node_type === "access_func") {
-			if (node.access.is_thread_start) {
+			if (node.access.is_thread_start || node.access.is_fiber_start) {
 				spawn_call = node.target?.params?.[0];
 				spawn_ret = node.access.function_return_type;
 			} else if (node.access.is_nursery_spawn) {

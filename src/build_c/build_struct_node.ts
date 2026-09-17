@@ -20,6 +20,7 @@ import build_extern from "./build_extern.ts";
 import build_node from "./build_node.ts";
 import { is_owned_heap_temp } from "./build_operation_node.ts";
 import build_parameter_node from "./build_parameter_node.ts";
+import { FIBER_HEADER, POOL_HEADER } from "./build_spawn_node.ts";
 import build_struct_body from "./build_struct_body.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import { emit_method_body_from_nir } from "./emit_nir.ts";
@@ -39,6 +40,15 @@ import scan_borrow_only_strings from "./utils/scan_borrow_only_strings.ts";
 
 export default function build_struct_node(node: StructNode, status: BuildStatus) {
 	if (node.is_generic) return;
+
+	// The Fiber class's statics (yield/is_fiber/set_cooperative) have raw
+	// bodies calling into the fiber runtime — any build of Fiber's methods
+	// pulls the runtime header in (deduped; extends POOL_HEADER).
+	if (node.name === "Fiber" && !status.headers.includes("__nomen_fiber_spawn")) {
+		if (!status.headers.includes("__nomen_pool_submit")) status.headers += POOL_HEADER;
+		status.headers += FIBER_HEADER;
+		status.used_fibers = true;
+	}
 
 	// If it's an inbuilt type, only build its functions
 	// That way we can add e.g. traits like Stringable to ints

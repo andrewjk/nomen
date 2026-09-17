@@ -328,7 +328,8 @@ function emit_stmt_dispatch(
 					if (
 						inner.node_type === "access_func" &&
 						((inner as AccessFunctionCallNode).is_nursery_spawn ||
-							(inner as AccessFunctionCallNode).is_thread_start)
+							(inner as AccessFunctionCallNode).is_thread_start ||
+							(inner as AccessFunctionCallNode).is_fiber_start)
 					) {
 						(inner as AccessFunctionCallNode).is_statement = true;
 					}

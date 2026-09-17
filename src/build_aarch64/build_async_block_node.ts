@@ -2,7 +2,7 @@ import type BuildStatus from "../build_c/BuildStatus.ts";
 import type { NirStmt } from "../nir/nir.ts";
 import AsyncBlockNode from "../nodes/AsyncBlockNode.ts";
 import build_node from "./build_node.ts";
-import { POOL_HEADER_C } from "./build_spawn_node.ts";
+import { FIBER_HEADER_C, POOL_HEADER_C } from "./build_spawn_node.ts";
 import { build_block_with_cursor } from "./emit_nir.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
 
@@ -39,6 +39,9 @@ export default function build_async_block_node(
 	if (node.mode === "race" && !status.file_scope_c?.includes("__nomen_pool_submit")) {
 		if (!status.file_scope_c) status.file_scope_c = "";
 		status.file_scope_c += POOL_HEADER_C;
+		// The fiber seam is part of the runtime (referenced by the pool
+		// worker loop and __nomen_future_wait).
+		status.file_scope_c += FIBER_HEADER_C;
 	}
 
 	// Allocate per-invocation nursery state on this function's stack frame.
