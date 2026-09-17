@@ -77,13 +77,18 @@ export function generate_companion(functions: CompanionFunction[], status: Build
 	// runtime; every companion must therefore define the pool + fiber
 	// symbols, whether or not this program uses concurrency itself.
 	// Deduped against any runtime text already queued in file_scope_c.
-	if (!status.pool_runtime_emitted) {
-		out += POOL_HEADER_C;
-		status.pool_runtime_emitted = true;
-	}
-	if (!status.fiber_runtime_emitted) {
-		out += FIBER_HEADER_C;
-		status.fiber_runtime_emitted = true;
+	// System-object builds carry only the library's `aarch64_use_c` bodies:
+	// their object is linked next to every program's own companion, which
+	// defines the runtime (see ensure_concurrency_runtime_a64).
+	if (status.emit_mode !== "system") {
+		if (!status.pool_runtime_emitted) {
+			out += POOL_HEADER_C;
+			status.pool_runtime_emitted = true;
+		}
+		if (!status.fiber_runtime_emitted) {
+			out += FIBER_HEADER_C;
+			status.fiber_runtime_emitted = true;
+		}
 	}
 
 	// --- Enum + struct definitions ---

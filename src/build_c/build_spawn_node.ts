@@ -753,8 +753,12 @@ static int __nomen_io_wait(int fd, int want_write) {
 	if (__nomen_current_cancel_flag && *__nomen_current_cancel_flag) return 0;
 	if (__nomen_current_fiber) {
 		struct nomen_fiber *self = __nomen_current_fiber;
-		struct nomen_io_waiter *w = __nomen_io_register(fd, want_write, self);
+		// Park BEFORE registering: the poller can fire as soon as the fd is
+		// in the set (it may already be ready), and a wake delivered while
+		// state is still RUNNING would be dropped by schedule()'s guard —
+		// a lost wake with the event already consumed.
 		self->state = NOMEN_FIBER_PARKED;
+		struct nomen_io_waiter *w = __nomen_io_register(fd, want_write, self);
 		__nomen_fiber_pause();
 		__nomen_io_unregister(fd, w);
 		return __nomen_current_cancel_flag && *__nomen_current_cancel_flag ? 0 : 1;
@@ -921,7 +925,7 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	}
 	status.code += `\t__nomen_pool_submit(${tramp_name}, _args);\n`;
 	if (nursery_id !== undefined) {
-		status.code += `\t__nomen_nursery_${nursery_id}_futures[__nomen_nursery_${nursery_id}_count++] = (unsigned long long)_future;\n`;
+		status.code += `\t__nomen_nursery_${nursery_id}_futures[__nomen_nursery_${nursery_id}_count++] = _future;\n`;
 	}
 	if (fire_and_forget) {
 		// Fire-and-forget: no Task handle needed. The trampoline (and nursery,

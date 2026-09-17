@@ -42,6 +42,10 @@ export const SYSTEM_HASH = path.join(SYSTEM_LIB_DIR, "c", ".hash");
 export const SYSTEM_NAMES = path.join(SYSTEM_LIB_DIR, "c", "names.json");
 // aarch64 backend
 export const SYSTEM_OBJ_A64 = path.join(SYSTEM_LIB_DIR, "aarch64", "system.o");
+/** The aarch64 system object's companion (C bodies of `aarch64_use_c` library
+ *  functions, e.g. Stream/Tcp's socket helpers). Linked next to system.o —
+ *  the runtime is NOT here, so the user companion stays the single copy. */
+export const SYSTEM_COMPANION_A64 = path.join(SYSTEM_LIB_DIR, "aarch64", "system_companion.o");
 const SYSTEM_SRC_A64 = path.join(SYSTEM_LIB_DIR, "aarch64", "system.s");
 export const SYSTEM_HASH_A64 = path.join(SYSTEM_LIB_DIR, "aarch64", ".hash");
 /** Function names exported by the aarch64 system object. The user TU's
@@ -89,10 +93,11 @@ function canonical_program(): { source: string; lib_source_hash: string } {
 	// with the type keyword); they're pulled in via parse.ts BASE_TYPES.
 	const primitives = new Set<string>(built_in_types);
 	const types = (Array.from(lib.types.entries()) as [string, { path?: string }][])
-		// GUI (Controls) and Tcp are excluded: Controls need the ObjC
-		// frameworks, and Tcp's `aarch64_use_c` bodies cannot live in the
-		// system object (its companion is not linked; see FOLLOWUP.md).
-		// Both compile in the user TU instead.
+		// GUI types (Controls, ObjC/Cocoa) and Stream/Tcp are excluded: they
+		// need code that cannot live in the precompiled aarch64 system object
+		// (ObjC frameworks; `aarch64_use_c` bodies whose companion object
+		// segfaults plain programs when linked — see FOLLOWUP.md). Both
+		// compile in the user TU instead.
 		.filter(
 			([, entry]) =>
 				!String(entry.path).includes("Controls") &&
@@ -207,7 +212,8 @@ export async function ensure_system_lib(): Promise<boolean> {
 	fs.mkdirSync(path.dirname(SYSTEM_OBJ_A64), { recursive: true });
 	fs.writeFileSync(SYSTEM_NAMES_A64, JSON.stringify(a64_fn_names, null, "\t") + "\n");
 
-	const a64_hash = hash_of(lib_source_hash, a64_asm, "aarch64");
+	const a64_companion = built_a64.companion ?? "";
+	const a64_hash = hash_of(lib_source_hash, a64_asm, a64_companion, "aarch64");
 	const a64_warm =
 		a64_hash === (fs.existsSync(SYSTEM_HASH_A64) ? fs.readFileSync(SYSTEM_HASH_A64, "utf8") : "") &&
 		fs.existsSync(SYSTEM_OBJ_A64);
@@ -218,6 +224,15 @@ export async function ensure_system_lib(): Promise<boolean> {
 			await execPromise(`clang -c -x assembler ${SYSTEM_SRC_A64} -o ${tmp}`, {
 				maxBuffer: 10 * 1024 * 1024,
 			});
+			if (a64_companion.trim().length > 0) {
+				const comp_src = path.join(SYSTEM_LIB_DIR, "aarch64", "system_companion.m");
+				const comp_tmp = `${SYSTEM_COMPANION_A64}.tmp.${process.pid}`;
+				fs.writeFileSync(comp_src, a64_companion);
+				await execPromise(`clang -c ${comp_src} -o ${comp_tmp}`, {
+					maxBuffer: 10 * 1024 * 1024,
+				});
+				fs.renameSync(comp_tmp, SYSTEM_COMPANION_A64);
+			}
 			fs.renameSync(tmp, SYSTEM_OBJ_A64);
 			fs.writeFileSync(SYSTEM_HASH_A64, a64_hash);
 			rebuilt = true;

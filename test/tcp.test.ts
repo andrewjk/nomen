@@ -78,17 +78,17 @@ pub func main = () {
 		}
 	});
 
-	// TODO: enable once concurrent Tcp I/O works (FOLLOWUP.md "Tcp:
-	// concurrent fiber connections fail"). Single-connection echo/refused
-	// paths are verified above; at N > 1 every client fails.
-	test.skip("many concurrent fiber connections echo on few workers", async () => {
+	test("many concurrent fiber connections echo on few workers", async () => {
 		// The Phase 3 acceptance shape: N sockets in flight, handled by
 		// fibers that park on the netpoller (not by N blocked threads).
 		const input = `
 import System
 
-func echo_one = (Tcp peer) {
-	var Tcp conn = peer
+// The connection is handed to the handler as a bare fd: a class local in the
+// accept loop would be auto-destroyed (closing the socket) at the end of the
+// iteration, while the handler still needs it.
+func echo_one = (int handle) {
+	var Tcp conn = Tcp(handle)
 	var string msg = conn.recv(64)
 	if msg.length > 0 {
 		conn.send(msg)
@@ -104,7 +104,9 @@ func server_loop = (Tcp server, int n) {
 		if conn.fd < 0 {
 			return
 		}
-		Fiber(echo_one(conn)).start()
+		var int handle = conn.fd
+		conn.fd = -1        // ownership moves to the handler
+		Fiber(echo_one(handle)).start()
 		i = i + 1
 	}
 }
@@ -112,6 +114,7 @@ func server_loop = (Tcp server, int n) {
 func client = (int id, Channel done) {
 	var Tcp c = Tcp.connect("127.0.0.1", 18100)
 	if c.fd < 0 {
+		Console.write_line("client \\{id} connect err \\{c.error}")
 		done.send(0)
 		return
 	}
@@ -120,13 +123,14 @@ func client = (int id, Channel done) {
 	if reply.length == 4 {
 		done.send(1)
 	} else {
+		Console.write_line("client \\{id} recv len \\{reply.length}")
 		done.send(0)
 	}
 	c.close()
 }
 
 pub func main = () {
-	var int n = 8
+	var int n = 64
 	var Channel done = Channel()
 	var Tcp listener = Tcp.listen(18100, 1024)
 	if listener.fd < 0 {
@@ -156,7 +160,7 @@ pub func main = () {
 			expect(parsed.errors).toEqual([]);
 			const options = { arch, ...OPTIONS };
 			const result = build(parsed.root, options);
-			await check_output(`tcp_scale_${arch}`, result, "echoed 8/8\n", options);
+			await check_output(`tcp_scale_${arch}`, result, "echoed 64/64\n", options);
 		}
 	});
 });

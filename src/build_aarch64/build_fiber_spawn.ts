@@ -216,7 +216,7 @@ export default function build_fiber_spawn_node(
 		}
 		let tail_slot = call.params.reduce((n, p, i) => n + (fat_string_args[i] ? 2 : 1), 0);
 		if (nursery_off) {
-			status.code += `add x0, x29, #${nursery_off.futures_off}\n`;
+			status.code += `ldr x0, [x29, #${nursery_off.futures_off}]\n`;
 			status.code += `str x0, [x29, #${args_base + tail_slot * 8}]\n`;
 			tail_slot += 1;
 			status.code += `add x0, x29, #${nursery_off.count_off}\n`;

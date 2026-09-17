@@ -175,7 +175,7 @@ export default function build_fiber_spawn_node(
 	status.code += `);\n`;
 
 	if (nursery_id !== undefined) {
-		status.code += `\t__nomen_nursery_${nursery_id}_futures[__nomen_nursery_${nursery_id}_count++] = (unsigned long long)_future;\n`;
+		status.code += `\t__nomen_nursery_${nursery_id}_futures[__nomen_nursery_${nursery_id}_count++] = _future;\n`;
 	}
 	if (fire_and_forget) {
 		// Fire-and-forget: no Task handle needed. The trampoline (and

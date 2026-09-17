@@ -38,20 +38,27 @@ export default function build_async_block_node(
 	// in. Emit eagerly so the link always resolves.
 	if (node.mode === "race") ensure_concurrency_runtime_a64(status);
 
-	// Allocate per-invocation nursery state on this function's stack frame.
-	// 64 futures × 8 bytes = 512 bytes for the array, 8 bytes for the count,
-	// and (if the block names its nursery) 16 bytes for the Nursery capability
-	// struct (futures_ptr + count_ptr) the user references by name.
-	const futures_off = allocate_stack_space(status, 512, 16);
+	// Allocate per-invocation nursery state on this function's stack frame:
+	// an 8-byte slot holding a heap-allocated futures list (a stack array
+	// capped the nursery at 64 concurrent spawns, and a larger one pushes
+	// every later frame offset past the 4095 add-immediate limit — see
+	// FOLLOWUP.md), 8 bytes for the count, and (if the block names its
+	// nursery) 16 bytes for the Nursery capability struct.
+	const futures_off = allocate_stack_space(status, 8, 8);
 	const count_off = allocate_stack_space(status, 8, 8);
 	status.code += `str xzr, [x29, #${count_off}]\n`; // count = 0
+	// Space for 65536 registered futures; a growable list is the follow-up.
+	status.code += `ldr x0, =524288\n`;
+	status.code += `bl _malloc\n`;
+	status.code += `str x0, [x29, #${futures_off}]\n`; // futures = malloc(...)
+
 	let nursery_off: number | undefined;
 	if (node.nursery_name) {
 		nursery_off = allocate_stack_space(status, 16, 8);
 		// Build the Nursery capability struct pointing at this block's futures
 		// array + count slot, so the escape hatch (`ref name` / name.spawn)
 		// can register spawned futures with this nursery at runtime.
-		status.code += `add x0, x29, #${futures_off}\n`;
+		status.code += `ldr x0, [x29, #${futures_off}]\n`;
 		status.code += `str x0, [x29, #${nursery_off}]\n`; // futures_ptr
 		status.code += `add x0, x29, #${count_off}\n`;
 		status.code += `str x0, [x29, #${nursery_off + 8}]\n`; // count_ptr
@@ -91,7 +98,7 @@ export default function build_async_block_node(
 
 	// Emit join loop in assembly.
 	status.code += `// nursery ${id}: join all futures\n`;
-	status.code += `add x20, x29, #${futures_off}\n`; // x20 = &futures[0]
+	status.code += `ldr x20, [x29, #${futures_off}]\n`; // x20 = futures (heap)
 	status.code += `ldr w22, [x29, #${count_off}]\n`; // w22 = count
 
 	// If timeout is specified, compute deadline before the join loop.
@@ -184,4 +191,8 @@ export default function build_async_block_node(
 	status.code += `add x23, x23, #1\n`;
 	status.code += `b ${loop_start}\n`;
 	status.code += `${loop_end}:\n`;
+	// Release the heap futures list (every registration happens before the
+	// join completes).
+	status.code += `ldr x0, [x29, #${futures_off}]\n`;
+	status.code += `bl _free\n`;
 }

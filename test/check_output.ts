@@ -8,7 +8,14 @@ import { expect } from "vite-plus/test";
 
 import type BuildResult from "../src/types/BuildResult";
 import { postprocess_macos, postprocess_macos_for_user } from "./postprocess";
-import { SYSTEM_H, SYSTEM_HASH, SYSTEM_HASH_A64, SYSTEM_OBJ, SYSTEM_OBJ_A64 } from "./system_lib";
+import {
+	SYSTEM_COMPANION_A64,
+	SYSTEM_H,
+	SYSTEM_HASH,
+	SYSTEM_HASH_A64,
+	SYSTEM_OBJ,
+	SYSTEM_OBJ_A64,
+} from "./system_lib";
 
 const execPromise = util.promisify(exec);
 
@@ -125,6 +132,12 @@ export default async function check_output(
 		process.platform === "darwin" && uses_objc
 			? " -framework CoreGraphics -framework Foundation -framework AppKit -lobjc"
 			: "";
+	// aarch64 system builds also link the system companion object (the C
+	// bodies of library `aarch64_use_c` functions); it carries no runtime.
+	const system_companion =
+		system_lib && arch === "aarch64" && fs.existsSync(SYSTEM_COMPANION_A64)
+			? SYSTEM_COMPANION_A64
+			: null;
 	const system_obj = system_lib ? (arch === "aarch64" ? SYSTEM_OBJ_A64 : SYSTEM_OBJ) : null;
 
 	const cached_key = fs.existsSync(cachefile) ? fs.readFileSync(cachefile, "utf-8") : null;
@@ -180,6 +193,7 @@ export default async function check_output(
 			link_inputs += ` ${comp_obj}`;
 		}
 		if (system_obj) link_inputs += ` ${system_obj}`;
+		if (system_companion) link_inputs += ` ${system_companion}`;
 		if (audit_obj) link_inputs += ` ${audit_obj}`;
 		steps.push(`clang ${link_inputs} -o ${outfile}${framework_flags}`);
 		compileCmd = steps.join(" && ");
@@ -187,6 +201,7 @@ export default async function check_output(
 		let link_inputs = codefile;
 		if (has_companion) link_inputs += ` ${companionfile}`;
 		if (system_obj) link_inputs += ` ${system_obj}`;
+		if (system_companion) link_inputs += ` ${system_companion}`;
 		if (audit_obj) link_inputs += ` ${audit_obj}`;
 		compileCmd = `clang -o ${outfile} ${link_inputs}${framework_flags}`;
 	}

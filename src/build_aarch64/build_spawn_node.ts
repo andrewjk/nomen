@@ -279,6 +279,11 @@ int __nomen_nursery_race_wait(struct nomen_future **futures, int count, long lon
  * linked program must define them.
  */
 export function ensure_concurrency_runtime_a64(status: BuildStatus): void {
+	// The system object is linked into every program next to that program's
+	// own companion, which always defines the runtime; a copy here would
+	// duplicate every symbol at link time. The system object's references
+	// resolve against the user companion instead.
+	if (status.emit_mode === "system") return;
 	if (status.pool_runtime_emitted && status.fiber_runtime_emitted) return;
 	if (!status.pool_runtime_emitted) {
 		status.file_scope_c = (status.file_scope_c ?? "") + POOL_HEADER_C;
@@ -746,8 +751,12 @@ int __nomen_io_wait(int fd, int want_write) {
 	if (__nomen_current_cancel_flag && *__nomen_current_cancel_flag) return 0;
 	if (__nomen_current_fiber) {
 		struct nomen_fiber *self = __nomen_current_fiber;
-		struct nomen_io_waiter *w = __nomen_io_register(fd, want_write, self);
+		// Park BEFORE registering: the poller can fire as soon as the fd is
+		// in the set (it may already be ready), and a wake delivered while
+		// state is still RUNNING would be dropped by schedule()'s guard —
+		// a lost wake with the event already consumed.
 		self->state = NOMEN_FIBER_PARKED;
+		struct nomen_io_waiter *w = __nomen_io_register(fd, want_write, self);
 		__nomen_fiber_pause();
 		__nomen_io_unregister(fd, w);
 		return __nomen_current_cancel_flag && *__nomen_current_cancel_flag ? 0 : 1;
@@ -986,7 +995,7 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 		}
 		if (nursery_off) {
 			// Compute addresses of nursery futures array and count slot.
-			status.code += `add x0, x29, #${nursery_off.futures_off}\n`;
+			status.code += `ldr x0, [x29, #${nursery_off.futures_off}]\n`;
 			status.code += `str x0, [x29, #${args_base + (total_arg_slots - 2) * 8}]\n`;
 			status.code += `add x0, x29, #${nursery_off.count_off}\n`;
 			status.code += `str x0, [x29, #${args_base + (total_arg_slots - 1) * 8}]\n`;

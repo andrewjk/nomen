@@ -47,7 +47,10 @@ export default function build_async_block_node(
 	const idx_name = `__nomen_nursery_${id}_i`;
 
 	status.code += `{\n`;
-	status.code += `\tunsigned long long ${futures_name}[64];\n`;
+	// Heap-allocated futures list: a fixed stack array capped the nursery at
+	// 64 concurrent spawns (a one-past-the-end write at 65). The capacity is
+	// still a cap — a growable list is the follow-up (FOLLOWUP.md).
+	status.code += `\tstruct nomen_future **${futures_name} = (struct nomen_future **)malloc(65536 * sizeof(struct nomen_future *));\n`;
 	status.code += `\tint ${count_name} = 0;\n`;
 	// Declare the user-named Nursery capability (if any) pointing at this
 	// block's futures array + count slot, so the escape hatch (`ref name` /
@@ -114,6 +117,10 @@ export default function build_async_block_node(
 	}
 	status.code += `\t\t__nomen_future_release(_f);\n`;
 	status.code += `\t}\n`;
+
+	// Release the futures list once the join (and race wait) are done. Any
+	// late registration through a passed Nursery happens before this point.
+	status.code += `\tfree(${futures_name});\n`;
 
 	build_auto_free(status);
 
