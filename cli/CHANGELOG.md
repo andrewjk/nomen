@@ -5,6 +5,42 @@
 
 
 
+
+## 0.4.0
+<sub>2026-09-17</sub>
+
+-  *(minor)*
+  Constructor overloading: multiple #init functions with differing parameter types; constructor calls resolve the overload by argument count and types on both backends
+-  *(minor)* - replace BigInt.new with an int #init overload
+-  *(minor)*
+  Buffer/ClassBuffer modify_T: sound in-place slot mutation (the load-modify-store dance) on both backends; generic func (T, out T) params monomorphize correctly; C func-pointer signatures use tag forms; aarch64 func-param calls pass fat-string pairs
+-  *(patch)*
+  move-param leak fix: a method call on a moved class param no longer disables the callee's epilogue reclaim unless the method can retain its receiver
+-  *(patch)*
+  fix monomorphization of generic-enum returns from generic-struct methods (signature, locals, deferred case constructions)
+-  *(patch)*
+  base-seeded literals: scalar override values are evaluated into temporaries before the base copy/init, so an override reading the destination sees the pre-assignment value
+-  *(patch)* - fix aarch64 variadic-pairs Map constructor (value-struct TV tuple packing passed the first word instead of the address)
+-  *(patch)*
+  fix generic enums with class/trait payloads: mono case payload rides as a struct Tag pointer on C, payload ownership enforced at check time, payload destroy+free at scope exit on both backends
+-  *(patch)* - Fix: residual string hazards
+-  *(patch)* - Fix: bitset immediates, self rewrite, array scoping
+-  *(patch)* - Fix: modify_T-corpus aarch64 ownership bugs (store_T move, mono string fields, ctor clobber)
+-  *(patch)* - Fix: match-expression result lowering (aarch64 fat-pair join, C reassign switch)
+-  *(patch)* - Fix: field-override destination reads, move-reassign ownership
+-  *(patch)*
+  Fix enum-with-string-payload ownership in value structs (field stores, destroy walk, sret field-read returns) on both backends
+-  *(patch)* - Fix aarch64 inline splices: isolate body locals so nested generic splices (List.at, JsonTree) compile correctly
+-  *(patch)* - Scope-label same-named nested types so the build's flat type table can't be poisoned (struct/class/enum/bitset)
+-  *(patch)* - Enums with string payloads as container elements: owning Buffer/List deep-copy on both backends
+-  *(patch)* - Add internal visibility modifier; make Buffer internal to the System library
+-  *(patch)* - Add readonly fields (read anywhere, assignable only inside the declaring type)
+-  *(patch)* - Re-export Buffer with a sound public API; drop the _T suffix from the size-aware primitives
+-  *(patch)* - Enforce internal type-name visibility; fix generic struct-field swap codegen
+-  *(patch)* - Remove dead Buffer address pipeline (ASM_PLAN_3 tranche K) and its BuildStatus fields
+-  *(patch)*
+  Fix folded store addressing on aarch64: the region-bracket base-fold's bare-induction register was dropped when the tranche-K hoist block was removed, so store_int through a folded base indexed with a stale staging register (edigits segfault, pidigits wrong digits)
+
 ## 0.3.0
 <sub>2026-09-14</sub>
 

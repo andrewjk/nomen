@@ -3,6 +3,15 @@
 
 
 
+
+## 0.2.3
+<sub>2026-09-17</sub>
+
+-  *(patch)* - Add internal visibility modifier; make Buffer internal to the System library
+-  *(patch)* - Add readonly fields (read anywhere, assignable only inside the declaring type)
+-  *(patch)* - Re-export Buffer with a sound public API; drop the _T suffix from the size-aware primitives
+-  *(patch)* - Enforce internal type-name visibility; fix generic struct-field swap codegen
+
 ## 0.2.2
 <sub>2026-09-14</sub>
 
