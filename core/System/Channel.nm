@@ -1,11 +1,13 @@
 // Channel — thread-safe single-direction queue for passing values between
 // tasks. Unbounded, FIFO, blocking receive.
 //
-// The queue node's payload is two words wide: every message carries a
-// (value, len) pair. `send`/`receive` move uint64 values (len stays 0);
-// `send_string`/`receive_string` move fat strings without truncating the len
-// half. A typed Channel<T> wrapper can come later — the storage story is
-// identical, only the call-site types change.
+// The queue node's payload is three words wide: every message carries a
+// (value, len, kind) triple. `send`/`receive` move uint64 values (len and
+// kind stay 0); `send_string`/`receive_string` move fat strings (kind = 1)
+// without truncating the len half. `#destroy` frees only string payloads —
+// a raw uint64 payload is a value, not a pointer. A typed Channel<T>
+// wrapper can come later — the storage story is identical, only the
+// call-site types change.
 //
 // String payloads are copied in and moved out: `send_string` duplicates the
 // value into the node (the sender keeps its own string), and
@@ -33,11 +35,12 @@ pub class Channel: Sendable {
 		#arch: c
 		#scope: file
 		#include <pthread.h>
-		struct nomen_channel_node {
-			unsigned long long value;
-			unsigned long long len;
-			struct nomen_channel_node *next;
-		};
+	struct nomen_channel_node {
+		unsigned long long value;
+		unsigned long long len;
+		unsigned long long kind; // 0 = uint64 payload, 1 = owned string
+		struct nomen_channel_node *next;
+	};
 		```
 		```
 		#arch: c
@@ -73,6 +76,7 @@ pub class Channel: Sendable {
 		struct nomen_channel_node *n = (struct nomen_channel_node *)malloc(sizeof(struct nomen_channel_node));
 		n->value = value;
 		n->len = 0;
+		n->kind = 0;
 		n->next = NULL;
 		pthread_mutex_lock((pthread_mutex_t *)self->mu);
 		if (self->tail) {
@@ -89,19 +93,20 @@ pub class Channel: Sendable {
 		#arch: aarch64
 		// x19 = self (set by prologue), x1 = value
 		str x1, [sp, #-16]!       // save value on stack
-		mov x0, #24               // node = { value, len, next }
+		mov x0, #32               // node = { value, len, kind, next }
 		bl _malloc                // x0 = node
 		ldr x1, [sp], #16         // restore value
 		str x1, [x0, #0]          // node->value = value
 		str xzr, [x0, #8]         // node->len = 0
-		str xzr, [x0, #16]        // node->next = NULL
+		str xzr, [x0, #16]        // node->kind = 0 (uint64 payload)
+		str xzr, [x0, #24]        // node->next = NULL
 		str x0, [sp, #-16]!       // save node on stack
 		ldr x0, [x19, #8]         // self->mu
 		bl _pthread_mutex_lock
 		ldr x2, [sp], #16         // restore node
 		ldr x1, [x19, #32]        // tail
 		cbz x1, .Lchannel_send_empty
-		str x2, [x1, #16]         // tail->next = node
+		str x2, [x1, #24]         // tail->next = node
 		b .Lchannel_send_enqueued
 		.Lchannel_send_empty:
 		str x2, [x19, #24]        // head = node
@@ -127,6 +132,7 @@ pub class Channel: Sendable {
 		nomen_string _v = value.ptr ? nomen_str_dup(value) : (nomen_string){0, 0};
 		n->value = (unsigned long long)_v.ptr;
 		n->len = (unsigned long long)_v.len;
+		n->kind = 1;
 		n->next = NULL;
 		pthread_mutex_lock((pthread_mutex_t *)self->mu);
 		if (self->tail) {
@@ -143,7 +149,7 @@ pub class Channel: Sendable {
 		#arch: aarch64
 		// x19 = self (set by prologue), x1 = value.ptr, x2 = value.len
 		stp x1, x2, [sp, #-32]!   // [sp]=ptr [sp+8]=len [sp+16]=node scratch
-		mov x0, #24               // node = { value, len, next }
+		mov x0, #32               // node = { value, len, kind, next }
 		bl _malloc                // x0 = node
 		str x0, [sp, #16]         // save node across the strdup call
 		ldr x1, [sp, #0]          // value.ptr
@@ -158,13 +164,15 @@ pub class Channel: Sendable {
 		str x0, [x2, #0]          // node->value = copied ptr
 		ldr x1, [sp, #8]          // value.len
 		str x1, [x2, #8]          // node->len = len
-		str xzr, [x2, #16]        // node->next = NULL
+		mov x1, #1
+		str x1, [x2, #16]         // node->kind = 1 (owned string payload)
+		str xzr, [x2, #24]        // node->next = NULL
 		ldr x0, [x19, #8]         // self->mu
 		bl _pthread_mutex_lock
 		ldr x2, [sp, #16]         // restore node
 		ldr x1, [x19, #32]        // tail
 		cbz x1, .Lchannel_send_str_empty
-		str x2, [x1, #16]         // tail->next = node
+		str x2, [x1, #24]         // tail->next = node
 		b .Lchannel_send_str_enqueued
 		.Lchannel_send_str_empty:
 		str x2, [x19, #24]        // head = node
@@ -221,7 +229,7 @@ pub class Channel: Sendable {
 		b .Lchannel_receive_end
 		.Lchannel_receive_got:
 		// x1 = node
-		ldr x2, [x1, #16]         // node->next
+		ldr x2, [x1, #24]         // node->next
 		str x2, [x19, #24]        // head = node->next
 		cbnz x2, .Lchannel_receive_not_empty
 		str xzr, [x19, #32]       // tail = 0
@@ -286,7 +294,7 @@ pub class Channel: Sendable {
 		b .Lchannel_receive_str_end
 		.Lchannel_receive_str_got:
 		// x1 = node
-		ldr x2, [x1, #16]         // node->next
+		ldr x2, [x1, #24]         // node->next
 		str x2, [x19, #24]        // head = node->next
 		cbnz x2, .Lchannel_receive_str_not_empty
 		str xzr, [x19, #32]       // tail = 0
@@ -309,12 +317,13 @@ pub class Channel: Sendable {
 		```
 		#arch: c
 		if (self->mu) {
-			// Drain any pending nodes. A string payload that was never
-			// received still owns its buffer — free it with the node.
+			// Drain any pending nodes. A string payload (kind = 1) that was
+			// never received still owns its buffer — free it with the node.
+			// A uint64 payload (kind = 0) is a raw value, never a pointer.
 			struct nomen_channel_node *n = (struct nomen_channel_node *)self->head;
 			while (n) {
 				struct nomen_channel_node *next = n->next;
-				if (n->value) free((void *)n->value);
+				if (n->kind == 1 && n->value) free((void *)n->value);
 				free(n);
 				n = next;
 			}
@@ -333,14 +342,18 @@ pub class Channel: Sendable {
 		// x19 = self (set by prologue)
 		ldr x0, [x19, #8]         // self->mu
 		cbz x0, .Lchannel_destroy_done
-		// Drain nodes (freeing any unconsumed string payload)
+		// Drain nodes (freeing only owned-string payloads; a uint64
+		// payload is a raw value, never a pointer)
 		ldr x1, [x19, #24]        // head
 		.Lchannel_destroy_drain:
 		cbz x1, .Lchannel_destroy_drained
-		ldr x2, [x1, #16]         // next (before calls clobber x1)
+		ldr x2, [x1, #24]         // next (before calls clobber x1)
 		stp x1, x2, [sp, #-16]!   // save node + next
+		ldr x3, [x1, #16]         // payload kind (1 = owned string)
 		ldr x0, [x1, #0]          // payload ptr
 		cbz x0, .Lchannel_destroy_no_payload
+		cmp x3, #1
+		b.ne .Lchannel_destroy_no_payload
 		bl _free
 		.Lchannel_destroy_no_payload:
 		ldr x0, [sp, #0]          // node

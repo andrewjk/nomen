@@ -1116,6 +1116,31 @@ Console.write_line("done")
 		}
 	});
 
+	test("unreceived uint64 message is not freed as a pointer by Channel destroy", async () => {
+		// A queued send(uint64) stores the raw number in the node; #destroy's
+		// drain must only free owned-string payloads, not that value.
+		const input = `
+func producer = (Channel ch) {
+	ch.send(42)
+}
+
+var Channel ch = Channel()
+
+async {
+	Thread(producer(ch)).start()
+}
+
+Console.write_line("done")
+`;
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_with_imports(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			await check_output(`channel_uint64_unreceived_${arch}`, result, "done\n", options);
+		}
+	});
+
 	test("Channel mixes uint64 and string messages", async () => {
 		const input = `
 func producer = (Channel ch) {

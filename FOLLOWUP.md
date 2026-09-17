@@ -326,21 +326,6 @@ that rejects a `Thread`-typed value that is never consumed by `.start()` /
 Low priority — the form is degenerate misuse, but the current failure mode is
 confusing.
 
-## Channel.#destroy frees uint64 payloads as pointers (pre-existing)
-
-`Channel.#destroy` drains queued nodes and calls `free((void *)n->value)` for
-any non-zero `value`, on the assumption that a payload is an owned string
-buffer (`send_string`). A `send(uint64)` message stores the raw number, so a
-message that is still queued when the channel is destroyed passes that number
-to `free` — e.g. an unconsumed `ch.send(42)` aborts with "pointer being freed
-was not allocated" (SIGABRT). Surfaced by a fiber test that sent a value and
-never received it.
-
-Fix: distinguish payload kinds on the node (a `kind`/`len` field set by
-`send_string` vs `send`) and only free string payloads in `#destroy` (both
-backends' raw bodies). Until then, every queued `send(...)` message must be
-received before the channel goes out of scope. See `core/System/Channel.nm`.
-
 ## aarch64: addressing/loading locals past frame offset 4095 (blocks start_on with large buffers)
 
 The aarch64 backend emits frame accesses as single-instruction `[x29, #imm]`
