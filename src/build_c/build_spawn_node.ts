@@ -490,18 +490,80 @@ static void __nomen_fiber_waitq_wake(struct nomen_fiber **head) {
 	}
 }
 static void __nomen_fiber_yield(void);
-// Lock a pthread mutex. In cooperative mode a fiber try-locks and yields
-// (the holder runs on this thread); otherwise it blocks as before — a task
-// blocked on a contended mutex in the threaded model is not parked (see
-// FOLLOWUP.md).
-static void __nomen_mutex_lock(void *mu) {
+// Nomen Mutex layout — one allocation handed to the Mutex class raw bodies
+// (which call the helpers below; the class never dereferences the handle
+// itself). wmu guards the fiber wait list and is deliberately NOT the lock:
+// a holder may park mid-critical-section, and a waiter must be able to
+// register on the wait list without blocking behind it. Defined under a
+// guard because the runtime header and the Mutex class body compile into
+// the same TU in single-TU builds.
+#ifndef NOMEN_MUTEX_STRUCT
+#define NOMEN_MUTEX_STRUCT
+struct nomen_mutex {
+	pthread_mutex_t mu;   // the lock
+	pthread_mutex_t wmu;  // wait-list guard (held only for bookkeeping)
+	struct nomen_fiber *waiters;
+};
+#endif
+// Allocate and initialize a Mutex handle (Mutex.#init).
+static void *__nomen_mutex_create(void) {
+	struct nomen_mutex *m = (struct nomen_mutex *)malloc(sizeof(struct nomen_mutex));
+	pthread_mutex_init(&m->mu, NULL);
+	pthread_mutex_init(&m->wmu, NULL);
+	m->waiters = NULL;
+	return m;
+}
+// Unlock and wake fibers parked on the mutex (Mutex.unlock).
+static void __nomen_mutex_unlock_wake(void *mp) {
+	struct nomen_mutex *m = (struct nomen_mutex *)mp;
+	pthread_mutex_unlock(&m->mu);
+	pthread_mutex_lock(&m->wmu);
+	__nomen_fiber_waitq_wake(&m->waiters);
+	pthread_mutex_unlock(&m->wmu);
+}
+// Destroy and free the Mutex handle (Mutex.#destroy).
+static void __nomen_mutex_dispose(void *mp) {
+	struct nomen_mutex *m = (struct nomen_mutex *)mp;
+	pthread_mutex_destroy(&m->mu);
+	pthread_mutex_destroy(&m->wmu);
+	free(m);
+}
+// Lock a Nomen mutex. In cooperative mode a fiber try-locks and yields (the
+// holder runs on this thread). In the threaded model a fiber PARKS on the
+// mutex's wait list instead of blocking its worker; unlock wakes the list.
+// Cancellation while waiting does not return without the lock — the
+// caller's matching unlock would be unsound — so a cancelled waiter keeps
+// waiting (parked, not spinning) and observes the cancel flag at its next
+// checkpoint after acquiring. Non-fibers block on the pthread lock exactly
+// as before.
+static void __nomen_mutex_lock(void *mp) {
+	struct nomen_mutex *m = (struct nomen_mutex *)mp;
 	if (__nomen_current_fiber && __nomen_fiber_coop) {
-		while (pthread_mutex_trylock((pthread_mutex_t *)mu) != 0) {
+		while (pthread_mutex_trylock(&m->mu) != 0) {
 			__nomen_fiber_yield();
 		}
 		return;
 	}
-	pthread_mutex_lock((pthread_mutex_t *)mu);
+	if (__nomen_current_fiber) {
+		for (;;) {
+			if (pthread_mutex_trylock(&m->mu) == 0) return;
+			pthread_mutex_lock(&m->wmu);
+			// Re-check under the guard: the holder may have unlocked and
+			// woken (and cleared) the wait list before we registered.
+			if (pthread_mutex_trylock(&m->mu) == 0) {
+				pthread_mutex_unlock(&m->wmu);
+				return;
+			}
+			// The cv argument is unused here: waitq_park's non-fiber
+			// branch is unreachable (a fiber is parked on this thread).
+			__nomen_fiber_waitq_park(&m->waiters, &m->wmu, NULL);
+			pthread_mutex_unlock(&m->wmu);
+			if (__nomen_current_cancel_flag && *__nomen_current_cancel_flag) {
+				__nomen_fiber_yield();
+			}
+		}
+	}
+	pthread_mutex_lock(&m->mu);
 }
 static void __nomen_fiber_yield(void) {
 	struct nomen_fiber *self = __nomen_current_fiber;

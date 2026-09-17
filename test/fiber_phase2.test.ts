@@ -157,6 +157,54 @@ pub func main = () {
 			await check_output(`fiber_p2_mutex_${arch}`, result, "1,11,2,12,\n", options);
 		}
 	});
+
+	test("a threaded-model fiber parks on a lock held across a park", async () => {
+		// The holder locks, signals, and parks ON THE LOCK (its worker is
+		// freed while it still owns the mutex). The contender must park on
+		// the mutex's wait list rather than block its worker — unlock wakes
+		// it. This is the shape that pinned a pool worker before the
+		// threaded-model mutex park (see ASYNC_PLAN Phase 2).
+		const input = `
+import System
+
+func holder = (Mutex m, Channel go, Channel ack) {
+	m.lock()
+	go.send(1)
+	var uint64 x = ack.receive()
+	m.unlock()
+}
+
+func contender = (Mutex m, Channel done) {
+	m.lock()
+	m.unlock()
+	done.send(1)
+}
+
+pub func main = () {
+	var Mutex m = Mutex()
+	var Channel go = Channel()
+	var Channel ack = Channel()
+	var Channel done = Channel()
+	async {
+		Thread(holder(m, go, ack)).start()
+		Thread(contender(m, done)).start()
+		// The block joins its spawns at exit, so the release choreography
+		// runs here — the holder parks on ack while holding the lock.
+		var uint64 g = go.receive()
+		ack.send(1)
+		done.receive()
+	}
+	Console.write_line("contended ok")
+}
+`;
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_raw(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			await check_output(`fiber_p2_mutex_threaded_${arch}`, result, "contended ok\n", options);
+		}
+	});
 });
 
 describe("cancellation reaches fibers", () => {

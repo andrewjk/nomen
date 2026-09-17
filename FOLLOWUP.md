@@ -339,17 +339,6 @@ frame. That needs forced stack unwinding of suspended frames (or a
 longjmp-style teardown entry), which is a substantial runtime feature and was
 out of scope. Until then cancellation is cooperative only.
 
-## Mutex.lock does not park in the threaded model
-
-`__nomen_mutex_lock` parks only in cooperative mode (try-lock + yield, where
-the holder is another fiber on the same thread and will run). A fiber on a
-worker that blocks on a contended mutex still blocks that worker (the pool
-grows on demand up to 64, so this is not a deadlock, just a held worker).
-Making it park needs a per-mutex wait list plus a wake on unlock and a
-sound answer for "cancelled while waiting for a lock" (returning without the
-lock would make the caller's matching `unlock` unsound). See ASYNC_PLAN.md
-Phase 2.
-
 ## Nursery futures list is capped (Phase 3, partially fixed)
 
 `test/tcp.test.ts`'s scale test failed with `echoed 0/N` for N >= 64. Root
