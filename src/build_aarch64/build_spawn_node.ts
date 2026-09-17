@@ -270,6 +270,16 @@ int __nomen_nursery_race_wait(struct nomen_future **futures, int count, long lon
 		nanosleep(&sleep_ts, NULL);
 	}
 }
+// Register a future with a nursery's growable list — see the C backend's
+// POOL_HEADER. "slots" points at the list's storage slot (NULL, grown by
+// realloc); shared by the direct and escape-hatch registration sites.
+void __nomen_nursery_track(void **slots, int *count, int *cap, struct nomen_future *f) {
+	if (*count >= *cap) {
+		*cap = *cap ? *cap * 2 : 16;
+		*slots = realloc(*slots, (size_t)*cap * sizeof(struct nomen_future *));
+	}
+	((struct nomen_future **)*slots)[(*count)++] = f;
+}
 `;
 /**
  * aarch64 companion counterpart of the C backend's
@@ -962,7 +972,7 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	}
 	if (nursery_id !== undefined) {
 		if (arg_c_types.length > 0) tramp_c += ", ";
-		tramp_c += `unsigned long long *__nomen_nursery_futures, int *__nomen_nursery_count`;
+		tramp_c += `void **__nomen_nursery_futures, int *__nomen_nursery_count, int *__nomen_nursery_cap`;
 	}
 	tramp_c += `) {\n`;
 	tramp_c += `\tstruct ${struct_name} *a = (struct ${struct_name} *)malloc(sizeof(struct ${struct_name}));\n`;
@@ -988,7 +998,7 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	tramp_c += `\tf->owning_fiber = 0;\n`;
 	tramp_c += `\t__nomen_pool_submit(${tramp_name}, a);\n`;
 	if (nursery_id !== undefined) {
-		tramp_c += `\t__nomen_nursery_futures[(*__nomen_nursery_count)++] = (unsigned long long)f;\n`;
+		tramp_c += `\t__nomen_nursery_track(__nomen_nursery_futures, __nomen_nursery_count, __nomen_nursery_cap, f);\n`;
 	}
 	if (fire_and_forget) {
 		// Fire-and-forget: no Task handle needed. The trampoline (and nursery,
@@ -1013,10 +1023,10 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	// --- Emit assembly: build arg registers and call submit helper ---
 	status.code += `// spawn site ${id}\n`;
 
-	// When inside a nursery, two extra trailing args carry the addresses of
-	// the nursery's per-invocation futures array and count slot (on the
-	// caller's stack). They occupy the last two arg slots.
-	const nursery_extra = nursery_off ? 2 : 0;
+	// When inside a nursery, three extra trailing args carry the ADDRESSES of
+	// the nursery's per-invocation tracking slots (futures storage, count,
+	// capacity — on the caller's stack). They occupy the last three arg slots.
+	const nursery_extra = nursery_off ? 3 : 0;
 
 	// A fat `string` argument rides the (ptr, len) pair in x0/x1 and occupies
 	// TWO consecutive AAPCS slots (matching the `nomen_string` by-value param
@@ -1050,10 +1060,13 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 			}
 		}
 		if (nursery_off) {
-			// Compute addresses of nursery futures array and count slot.
-			status.code += `ldr x0, [x29, #${nursery_off.futures_off}]\n`;
-			status.code += `str x0, [x29, #${args_base + (total_arg_slots - 2) * 8}]\n`;
+			// Addresses of the nursery's tracking slots: futures storage (the
+			// helper reallocs and writes back through it), count, capacity.
+			status.code += `add x0, x29, #${nursery_off.futures_off}\n`;
+			status.code += `str x0, [x29, #${args_base + (total_arg_slots - 3) * 8}]\n`;
 			status.code += `add x0, x29, #${nursery_off.count_off}\n`;
+			status.code += `str x0, [x29, #${args_base + (total_arg_slots - 2) * 8}]\n`;
+			status.code += `add x0, x29, #${nursery_off.cap_off}\n`;
 			status.code += `str x0, [x29, #${args_base + (total_arg_slots - 1) * 8}]\n`;
 		}
 		// Load each staged slot into its argument register. Slots past x0..x7

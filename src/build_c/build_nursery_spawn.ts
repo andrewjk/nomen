@@ -147,11 +147,12 @@ export default function build_nursery_spawn(
 	status.code += `\t_future->fiber_waiters = NULL;\n`;
 	status.code += `\t_future->owning_fiber = NULL;\n`;
 	status.code += `\t__nomen_pool_submit(${tramp_name}, _args);\n`;
-	// Register the future with the nursery via its runtime pointers. The
-	// enclosing async block's join loop reads the same array + count. The
-	// pointer expression is parenthesized so `&struct` (the magic-identifier
-	// case) binds correctly against the trailing `->`.
-	status.code += `\t((unsigned long long *)(${nursery_ptr})->futures_ptr)[(*(int *)(${nursery_ptr})->count_ptr)++] = (unsigned long long)_future;\n`;
+	// Register the future with the nursery via its runtime pointers — the
+	// growable-list helper (the pointers address the enclosing async block's
+	// storage/count/capacity slots, so a realloc updates the block's own list
+	// in place). The pointer expressions are parenthesized so `&struct` (the
+	// magic-identifier case) binds correctly against the trailing `->`.
+	status.code += `\t__nomen_nursery_track((void **)(${nursery_ptr})->futures_ptr, (int *)(${nursery_ptr})->count_ptr, (int *)(${nursery_ptr})->cap_ptr, _future);\n`;
 	if (fire_and_forget) {
 		status.code += `\t(void)0;\n`;
 	} else {

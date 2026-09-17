@@ -473,16 +473,24 @@ The "heavy runtime" cost of Go's model is mostly costs Nomen doesn't have:
    `test/fiber_phase2.test.ts`.
 3. **Async I/O.** Netpoller (kqueue/epoll), non-blocking socket stdlib
    (`Tcp`, `Http`) through `wait_for_io`. _Acceptance: 10k concurrent
-   connections on ~4 workers._ **Status: partially landed** — the netpoller
-   runtime (`__nomen_io_wait`: lazily started poller thread on kqueue/epoll,
-   one persistent waiter slot per fd, the fiber parked and woken on socket
+   connections on ~4 workers._ **Status: landed** — the netpoller runtime
+   (`__nomen_io_wait`: lazily started poller thread on kqueue/epoll, one
+   persistent waiter slot per fd, the fiber parked and woken on socket
    readiness, plain `poll()` off-fiber, tore down before the audit check) and
    `core/System/Stream/Tcp.nm` (non-blocking listen/accept/connect/send/
    recv/recv_all/close, every wait through the hook) are shipped, with
    single-connection echo and connect-refused tests green on both backends.
-   Still open: concurrent many-connection scale (the N > 1 test fails — see
-   FOLLOWUP.md), porting `Http` from its blocking raw bodies onto `Tcp`, and
-   the C `system_lib` per-TU runtime-state issue in FOLLOWUP.md.
+   `Http` is now pure Nomen over `Tcp` (the blocking raw-asm bodies are
+   gone): URL parse, request build, send, `recv_until_close`, and status/
+   body split all ride the netpoller, so an `Http.get` inside a fiber parks
+   instead of blocking its worker. Loopback get/post tests cover the success
+   path (`test/http.test.ts`); the N = 64 concurrent-connection scale test
+   passes (`test/tcp.test.ts`). The nursery's futures list is growable
+   (realloc-doubling from 16; empty nurseries allocate nothing) — the old
+   65536-entry cap and 512 KB per-block allocation are gone. Windows (IOCP +
+   x86-64 `switch_context`) remains scoped as its own follow-on.
+   Remaining scale headroom: the 10k-connection acceptance run hasn't been
+   attempted yet; N = 64 is the tested ceiling.
 4. **Scale + ergonomics, on demand.** Smaller initial stacks (8 KB) with
    growth (guard page + handler, or compiler-inserted stack-limit checks — the
    one future compiler engagement), `await` sugar, additional `Runtime`

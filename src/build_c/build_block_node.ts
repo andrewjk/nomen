@@ -2,6 +2,7 @@ import emission_label from "../build_common/emission_label.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { has_return_statement } from "../build_common/string_return_analysis.ts";
 import { SIMPLE_TYPES } from "../built_in_types.ts";
+import type BaseNode from "../nodes/BaseNode.ts";
 import BitsetNode from "../nodes/BitsetNode.ts";
 import type BlockNode from "../nodes/BlockNode.ts";
 import { is_function_node, is_struct_node, is_trait_node } from "../nodes/check_node_type.ts";
@@ -59,6 +60,51 @@ export default function build_block_node(
 	// and to avoid redundant strdup. Runs before any function body is built so
 	// a call is correctly classified even when the callee is defined later.
 	gather_heap_returning_functions(node, status);
+
+	// Module-level runtime statements cannot live at C file scope: a bare
+	// compound statement (an `async { }` block) is a syntax error, and a `var`
+	// whose initializer is a call (`var Channel ch = Channel()`) is not a
+	// compile-time constant. Collect them — in source order — so
+	// build_function_node can splice them into main's body as a prologue;
+	// the hoist and tail loops below skip what was collected. Constant
+	// initializer forms (literals) stay file-scope globals: they are valid C
+	// and may be referenced by other functions.
+	const module_init_statements: BaseNode[] = [];
+	if (node.node_type === "root" && with_declarations) {
+		const is_literal_init = (value: BaseNode | undefined): boolean => {
+			if (!value || value.node_type !== "value") return false;
+			const text = (value as unknown as { value: string }).value ?? "";
+			return (
+				text.startsWith('"') ||
+				/^(\+|-)?\d+(\.\d+)?$/.test(text) ||
+				text === "true" ||
+				text === "false" ||
+				text === "null"
+			);
+		};
+		for (const child of node.statements) {
+			const is_type_shape =
+				is_struct_node(child) ||
+				is_trait_node(child) ||
+				is_function_node(child) ||
+				child.node_type === "enum" ||
+				child.node_type === "bitset";
+			if (is_type_shape) continue;
+			if (child.node_type === "declare") {
+				const decl = child as DeclarationNode;
+				if (decl.declaration === "const") continue;
+				if (inlined_const_names.has(decl.name)) continue;
+				if (is_literal_init(decl.value)) continue;
+				module_init_statements.push(child);
+			} else {
+				module_init_statements.push(child);
+			}
+		}
+		if (module_init_statements.length > 0) {
+			status.module_init_statements = module_init_statements;
+		}
+	}
+	const module_init_set = new Set(module_init_statements);
 
 	// When called from inside a function body (e.g. main), skip struct/function
 	// declarations — they're already emitted at file scope by the root's
@@ -228,6 +274,7 @@ export default function build_block_node(
 				const child = node.statements[index];
 				if (child.node_type !== "declare") continue;
 				if (inlined_const_names.has((child as DeclarationNode).name)) continue;
+				if (module_init_set.has(child)) continue;
 				if (
 					!should_emit_definition(
 						child,
@@ -261,9 +308,31 @@ export default function build_block_node(
 		}
 	}
 
+	// Module-level runtime statements (an `async { }` block, an expression
+	// statement, a `var` initialized by a call) cannot live at C file scope —
+	// the root scan collected them into status.module_init_statements. Splice
+	// them here as main's prologue (a function body: with_declarations is
+	// false), in source order — their declarations become scoped locals freed
+	// at main's exit, and the prologue array is not the NIR ctx's list, so
+	// the emitter falls back to the plain AST walk for exactly these
+	// statements.
+	if (
+		!with_declarations &&
+		(node as unknown as { name?: string }).name?.toLocaleLowerCase() === "main" &&
+		status.module_init_statements?.length
+	) {
+		const prologue = status.module_init_statements;
+		status.module_init_statements = undefined;
+		for (const stmt of prologue) {
+			emit_allocations(stmt, status);
+			emit_stmt_from_nir(stmt, prologue.indexOf(stmt), prologue, status);
+		}
+	}
+
 	// Build the block's statements
 	for (let index = 0; index < node.statements.length; index++) {
 		const child = node.statements[index];
+		if (module_init_set.has(child)) continue;
 		if (
 			!is_trait_node(child) &&
 			!is_struct_node(child) &&

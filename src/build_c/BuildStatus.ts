@@ -67,6 +67,15 @@ export default interface BuildStatus {
 	 */
 	lambda_definitions?: string;
 	/**
+	 * Module-level statements that cannot live at C file scope (an `async`
+	 * block, an expression statement, a `var` whose initializer is a call —
+	 * none are valid file-scope C) collected by build_block_node's root scan.
+	 * build_function_node splices them into `main`'s body as a prologue (in
+	 * source order), where their declarations become scoped locals freed at
+	 * main's exit.
+	 */
+	module_init_statements?: BaseNode[];
+	/**
 	 * Functions whose bodies are compiled as C (via `aarch64_use_c`).
 	 * Each entry records the function node, owning struct (if any), and the
 	 * concatenated raw C code — used to generate the companion file.
@@ -900,6 +909,7 @@ export default interface BuildStatus {
 		{
 			futures_off: number;
 			count_off: number;
+			cap_off?: number;
 			deadline_off?: number;
 		}
 	>;

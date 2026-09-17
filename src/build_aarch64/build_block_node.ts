@@ -3,6 +3,7 @@ import { should_emit_definition } from "../build_c/utils/is_system_definition.ts
 import emission_label from "../build_common/emission_label.ts";
 import { function_returns_owned } from "../build_common/string_return_analysis.ts";
 import { SIMPLE_TYPES } from "../built_in_types.ts";
+import type BaseNode from "../nodes/BaseNode.ts";
 import BitsetNode from "../nodes/BitsetNode.ts";
 import type BlockNode from "../nodes/BlockNode.ts";
 import { is_function_node, is_struct_node, is_trait_node } from "../nodes/check_node_type.ts";
@@ -48,6 +49,51 @@ export default function build_block_node(node: BlockNode, status: BuildStatus) {
 	// result at scope exit (build_auto_free / emit_string_length).
 	gather_heap_returning_functions(node, status);
 
+	// Module-level runtime statements (an `async { }` block, an expression
+	// statement, a `var` whose initializer is a call) execute at a bare
+	// module scope no function ever runs — and a class-typed root declaration
+	// cannot even be BUILT (its storage anchor assumes a stack frame). Collect
+	// them — in source order — so build_function_node splices them into
+	// main's body as a prologue; the statement loop below skips what was
+	// collected. Constant/literal `var` initializers keep their existing
+	// module-scope data emission.
+	const module_init_statements: BaseNode[] = [];
+	if (node.node_type === "root") {
+		const is_literal_init = (value: BaseNode | undefined): boolean => {
+			if (!value || value.node_type !== "value") return false;
+			const text = (value as unknown as { value: string }).value ?? "";
+			return (
+				text.startsWith('"') ||
+				/^(\+|-)?\d+(\.\d+)?$/.test(text) ||
+				text === "true" ||
+				text === "false" ||
+				text === "null"
+			);
+		};
+		for (const child of node.statements) {
+			const is_type_shape =
+				is_struct_node(child) ||
+				is_trait_node(child) ||
+				is_function_node(child) ||
+				child.node_type === "enum" ||
+				child.node_type === "bitset";
+			if (is_type_shape) continue;
+			if (child.node_type === "declare") {
+				const decl = child as DeclarationNode;
+				if (decl.declaration === "const") continue;
+				if (inlined_const_names.has(decl.name)) continue;
+				if (is_literal_init(decl.value)) continue;
+				module_init_statements.push(child);
+			} else {
+				module_init_statements.push(child);
+			}
+		}
+		if (module_init_statements.length > 0) {
+			status.module_init_statements = module_init_statements;
+		}
+	}
+	const module_init_set = new Set(module_init_statements);
+
 	if (!status.heap_cleanup_stack) status.heap_cleanup_stack = [];
 	status.heap_cleanup_stack.push({
 		heap_strings: new Set<string>(),
@@ -77,8 +123,32 @@ export default function build_block_node(node: BlockNode, status: BuildStatus) {
 		}
 	}
 
+	// Module-level runtime statements (an `async { }` block, an expression
+	// statement, a `var` initialized by a call) execute at a bare module
+	// scope no function ever runs — and a class-typed root declaration
+	// cannot even be BUILT (its storage anchor assumes a stack frame). The
+	// root scan collected them into status.module_init_statements; splice
+	// them here as main's prologue — INSIDE this block's bookkeeping, so
+	// their declarations and storage anchors are reclaimed at the body's
+	// scope exit exactly like in-body locals. The prologue array is not the
+	// NIR ctx's list, so the emitter falls back to the plain AST walk for
+	// exactly these statements.
+	if (
+		node.node_type !== "root" &&
+		(node as FunctionNode).name?.toLocaleLowerCase() === "main" &&
+		status.module_init_statements?.length
+	) {
+		const prologue = status.module_init_statements;
+		status.module_init_statements = undefined;
+		for (const stmt of prologue) {
+			emit_allocations(stmt, status);
+			emit_stmt_from_nir(stmt, prologue.indexOf(stmt), prologue, status);
+		}
+	}
+
 	for (let index = 0; index < node.statements.length; index++) {
 		const child = node.statements[index];
+		if (module_init_set.has(child)) continue;
 		if (
 			!is_trait_node(child) &&
 			!is_struct_node(child) &&

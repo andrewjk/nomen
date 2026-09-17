@@ -2,6 +2,23 @@
 
 Skipped or out-of-scope items recorded for later.
 
+## aarch64 `status.moved` is build-global and name-keyed (cross-function collision)
+
+`mark_moved_if_struct` (src/build_aarch64/utils/auto_destroy.ts) adds bare
+variable NAMES to `status.moved`, and the return-path heap-string cleanup
+skips any name in that set. The set is never cleared between functions, so a
+bare `return x` of a heap-string local in one function marks the name `x`
+moved for EVERY function built later in the same TU: an unrelated local also
+named `x` in a later function has its return-path free suppressed (leak), or
+a struct/enum local named `x` skips its destroy.
+
+Found while porting Http onto Tcp: `Http_raw_exchange`'s `return wire` (named
+`response` at the time) suppressed the return-path free of `Http_get`/`Http_post`'s
+own `response` local — `LEAK: 2 allocation(s)` in audit. Http.nm works around
+it by naming the local `wire`. The C backend is unaffected (per-function
+tracking). Fix direction: clear/scope `status.moved` per function build (a
+frame pushed in build_function_node), or key it by (function, name).
+
 ## Cold-run parallel test flakiness (pre-existing)
 
 A fully cold `npm test` (after `rm -rf test/out`) with default file
@@ -338,37 +355,3 @@ switch to it, and let normal scope-exit `#destroy` unwinding run every live
 frame. That needs forced stack unwinding of suspended frames (or a
 longjmp-style teardown entry), which is a substantial runtime feature and was
 out of scope. Until then cancellation is cooperative only.
-
-## Nursery futures list is capped (Phase 3, partially fixed)
-
-`test/tcp.test.ts`'s scale test failed with `echoed 0/N` for N >= 64. Root
-cause: the nursery's futures collection was a fixed stack array
-(`unsigned long long futures[64]`), so the 65th registration wrote past its
-end (memory corruption; the failure threshold was exactly N = 64 with N = 63
-passing). Fixed by allocating the list on the heap (65536 entries) on the C
-backend and, on aarch64, an 8-byte stack slot holding a heap pointer
-(a larger stack array would have pushed later frame offsets past the
-4095 immediate limit — large locals on aarch64 now work via the
-large-frame access shims, but the heap list also keeps the frame
-small). The N = 256 echo test now passes on both backends.
-
-Remaining: the capacity is still a cap (65536 per nursery), and the aarch64
-call sites now load the pointer from the slot. A growable list (realloc with
-a capacity slot, or a linked list of futures) would remove the ceiling and
-shrink the per-nursery allocation (512 KB is allocated even for tiny blocks).
-
-## C user TUs cannot compile module-level statements (system_lib split)
-
-In the C backend's system_lib split, a user TU whose MODULE scope carries
-statements (`var Channel ch = Channel()` or a module-level `async` block —
-anything outside a func) emits those statements at C file scope
-(`struct Channel *ch = Channel_init();` bare, then the async block's
-nursery bookkeeping), which fails to compile ("initializer element is not a
-compile-time constant", stray `{`). Verified on the unmodified baseline, so
-it is pre-existing and unrelated to the runtime-sharing change; module-level
-`var`/`async` in a single-TU ("all") build is fine. Every test sidesteps it
-by keeping statements inside `main`, so the split path is undertested for
-this shape — worth fixing in `build_block_node`'s module-statement hoist
-(wrap them in the generated `main`, as the single-TU path does) and adding
-a split-build regression test when picked up.
-

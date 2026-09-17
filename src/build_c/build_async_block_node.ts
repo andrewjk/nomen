@@ -44,21 +44,27 @@ export default function build_async_block_node(
 
 	const futures_name = `__nomen_nursery_${id}_futures`;
 	const count_name = `__nomen_nursery_${id}_count`;
+	const cap_name = `__nomen_nursery_${id}_cap`;
 	const idx_name = `__nomen_nursery_${id}_i`;
 
 	status.code += `{\n`;
-	// Heap-allocated futures list: a fixed stack array capped the nursery at
-	// 64 concurrent spawns (a one-past-the-end write at 65). The capacity is
-	// still a cap — a growable list is the follow-up (FOLLOWUP.md).
-	status.code += `\tstruct nomen_future **${futures_name} = (struct nomen_future **)malloc(65536 * sizeof(struct nomen_future *));\n`;
+	// Growable futures list (FOLLOWUP.md: the fixed array was first capped at
+	// 64, then at 65536 with a 512 KB allocation for every nursery — even a
+	// spawn-free block). The list starts empty; __nomen_nursery_track grows
+	// it by realloc on each registration.
+	status.code += `\tstruct nomen_future **${futures_name} = NULL;\n`;
 	status.code += `\tint ${count_name} = 0;\n`;
+	status.code += `\tint ${cap_name} = 0;\n`;
 	// Declare the user-named Nursery capability (if any) pointing at this
-	// block's futures array + count slot, so the escape hatch (`ref name` /
-	// `name.spawn(...)`) can register spawned futures with this nursery.
+	// block's tracking slots, so the escape hatch (`ref name` /
+	// `name.start(...)`) can register spawned futures with this nursery —
+	// the registration helper writes through these pointers, so a realloc
+	// inside a helper function updates the block's own list in place.
 	if (node.nursery_name) {
 		status.code += `\tstruct Nursery ${node.nursery_name};\n`;
-		status.code += `\t${node.nursery_name}.futures_ptr = (unsigned long long)${futures_name};\n`;
+		status.code += `\t${node.nursery_name}.futures_ptr = (unsigned long long)&${futures_name};\n`;
 		status.code += `\t${node.nursery_name}.count_ptr = (unsigned long long)&${count_name};\n`;
+		status.code += `\t${node.nursery_name}.cap_ptr = (unsigned long long)&${cap_name};\n`;
 	}
 
 	// If timeout is specified, compute deadline (absolute ms since epoch).
@@ -120,6 +126,7 @@ export default function build_async_block_node(
 
 	// Release the futures list once the join (and race wait) are done. Any
 	// late registration through a passed Nursery happens before this point.
+	// NULL (nothing was ever registered) frees nothing.
 	status.code += `\tfree(${futures_name});\n`;
 
 	build_auto_free(status);

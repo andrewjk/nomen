@@ -134,7 +134,7 @@ export default function build_nursery_spawn(
 		tramp_c += `${arg_c_types[i]} arg${i}`;
 	}
 	if (arg_c_types.length > 0) tramp_c += ", ";
-	tramp_c += `unsigned long long *__nomen_nursery_futures, int *__nomen_nursery_count`;
+	tramp_c += `void **__nomen_nursery_futures, int *__nomen_nursery_count, int *__nomen_nursery_cap`;
 	tramp_c += `) {\n`;
 	tramp_c += `\tstruct ${struct_name} *a = (struct ${struct_name} *)malloc(sizeof(struct ${struct_name}));\n`;
 	for (let i = 0; i < arg_c_types.length; i++) {
@@ -158,7 +158,7 @@ export default function build_nursery_spawn(
 	tramp_c += `\tf->fiber_waiters = NULL;\n`;
 	tramp_c += `\tf->owning_fiber = 0;\n`;
 	tramp_c += `\t__nomen_pool_submit(${tramp_name}, a);\n`;
-	tramp_c += `\t__nomen_nursery_futures[(*__nomen_nursery_count)++] = (unsigned long long)f;\n`;
+	tramp_c += `\t__nomen_nursery_track(__nomen_nursery_futures, __nomen_nursery_count, __nomen_nursery_cap, f);\n`;
 	if (fire_and_forget) {
 		tramp_c += `\treturn (void *)0;\n`;
 	} else {
@@ -179,8 +179,9 @@ export default function build_nursery_spawn(
 	// --- Assembly: load nursery futures/count, build args, call submit ---
 
 	// A fat `string` argument rides the (ptr, len) pair in x0/x1 and occupies
-	// TWO consecutive AAPCS slots (see build_spawn_node aarch64). The two
-	// trailing nursery futures/count args always follow.
+	// TWO consecutive AAPCS slots (see build_spawn_node aarch64). The three
+	// trailing nursery tracking args (futures storage, count, capacity) always
+	// follow.
 	const fat_string_args = args.map(spawn_arg_is_string);
 	const arg_slot: number[] = [];
 	let fn_arg_slots = 0;
@@ -188,17 +189,21 @@ export default function build_nursery_spawn(
 		arg_slot.push(fn_arg_slots);
 		fn_arg_slots += fat_string_args[i] ? 2 : 1;
 	}
-	const total_arg_slots = fn_arg_slots + 2;
+	const total_arg_slots = fn_arg_slots + 3;
 
 	status.code += `// nursery spawn site ${id}\n`;
 	const args_base = allocate_stack_space(status, total_arg_slots * 8, 16);
 
-	// Load the Nursery struct address into x0, then load futures_ptr (offset 0)
-	// and count_ptr (offset 8) and store them to the trailing arg slots.
+	// Load the Nursery struct address into x0, then load its tracking
+	// pointers — futures storage (offset 0, the ADDRESS of the async block's
+	// list slot so the helper can realloc in place), count (offset 8), and
+	// capacity (offset 16) — and store them to the trailing arg slots.
 	load_nursery_struct_address(node.target, status);
-	status.code += `ldr x1, [x0, #0]\n`; // futures_ptr
-	status.code += `str x1, [x29, #${args_base + (total_arg_slots - 2) * 8}]\n`;
+	status.code += `ldr x1, [x0, #0]\n`; // futures_ptr (→ &list slot)
+	status.code += `str x1, [x29, #${args_base + (total_arg_slots - 3) * 8}]\n`;
 	status.code += `ldr x1, [x0, #8]\n`; // count_ptr
+	status.code += `str x1, [x29, #${args_base + (total_arg_slots - 2) * 8}]\n`;
+	status.code += `ldr x1, [x0, #16]\n`; // cap_ptr
 	status.code += `str x1, [x29, #${args_base + (total_arg_slots - 1) * 8}]\n`;
 
 	// Build each function arg and spill it to its slot(s).

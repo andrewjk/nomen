@@ -295,6 +295,22 @@ static int __nomen_nursery_race_wait(struct nomen_future **futures, int count, l
 		nanosleep(&sleep_ts, NULL);
 	}
 }
+// Register a future with a nursery's growable list (ASYNC_PLAN.md Phase 3:
+// the fixed 65536-entry array was both a ceiling and a 512 KB allocation for
+// tiny blocks). "slots" points at the list's storage slot (which starts NULL
+// and grows by realloc — the join loop and any passed Nursery see updates
+// through the same slot), "count" is the registered count, "cap" the
+// capacity. Shared by all four registration sites: direct Thread/Fiber
+// spawns (per-backend) and the Nursery escape hatch (through the struct's
+// tracking pointers). Not thread-safe across concurrent spawns into ONE
+// nursery — the direct "count++" it replaces was not either.
+static void __nomen_nursery_track(void **slots, int *count, int *cap, struct nomen_future *f) {
+	if (*count >= *cap) {
+		*cap = *cap ? *cap * 2 : 16;
+		*slots = realloc(*slots, (size_t)*cap * sizeof(struct nomen_future *));
+	}
+	((struct nomen_future **)*slots)[(*count)++] = f;
+}
 `;
 /**
  * Append the concurrency runtime to this build, once per build. Every sink
@@ -1022,7 +1038,7 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	}
 	status.code += `\t__nomen_pool_submit(${tramp_name}, _args);\n`;
 	if (nursery_id !== undefined) {
-		status.code += `\t__nomen_nursery_${nursery_id}_futures[__nomen_nursery_${nursery_id}_count++] = _future;\n`;
+		status.code += `\t__nomen_nursery_track((void **)&__nomen_nursery_${nursery_id}_futures, &__nomen_nursery_${nursery_id}_count, &__nomen_nursery_${nursery_id}_cap, _future);\n`;
 	}
 	if (fire_and_forget) {
 		// Fire-and-forget: no Task handle needed. The trampoline (and nursery,

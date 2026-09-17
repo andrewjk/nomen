@@ -139,7 +139,7 @@ export default function build_fiber_spawn_node(
 	}
 	let trailing = "";
 	if (nursery_id !== undefined) {
-		trailing += `${trailing ? ", " : ""}unsigned long long *__nomen_nursery_futures, int *__nomen_nursery_count`;
+		trailing += `${trailing ? ", " : ""}void **__nomen_nursery_futures, int *__nomen_nursery_count, int *__nomen_nursery_cap`;
 	}
 	if (start_on) {
 		trailing += `${trailing ? ", " : ""}void *__nomen_stack, unsigned long long __nomen_stack_size`;
@@ -169,7 +169,7 @@ export default function build_fiber_spawn_node(
 		start_on ? ", __nomen_stack, (size_t)__nomen_stack_size" : ""
 	});\n`;
 	if (nursery_id !== undefined) {
-		tramp_c += `\t__nomen_nursery_futures[(*__nomen_nursery_count)++] = (unsigned long long)f;\n`;
+		tramp_c += `\t__nomen_nursery_track(__nomen_nursery_futures, __nomen_nursery_count, __nomen_nursery_cap, f);\n`;
 	}
 	if (fire_and_forget) {
 		tramp_c += `\treturn (void *)0;\n`;
@@ -190,7 +190,7 @@ export default function build_fiber_spawn_node(
 
 	// --- Call-site asm: build arg registers and call the submit helper ---
 	status.code += `// fiber spawn site ${id}\n`;
-	const nursery_extra = nursery_off ? 2 : 0;
+	const nursery_extra = nursery_off ? 3 : 0;
 	const start_on_extra = start_on ? 2 : 0;
 	const fat_string_args = call.params.map(spawn_arg_is_string);
 	const arg_slot: number[] = [];
@@ -216,10 +216,15 @@ export default function build_fiber_spawn_node(
 		}
 		let tail_slot = call.params.reduce((n, p, i) => n + (fat_string_args[i] ? 2 : 1), 0);
 		if (nursery_off) {
-			status.code += `ldr x0, [x29, #${nursery_off.futures_off}]\n`;
+			// Addresses of the nursery's tracking slots (futures storage,
+			// count, capacity) — the helper writes back through the first.
+			status.code += `add x0, x29, #${nursery_off.futures_off}\n`;
 			status.code += `str x0, [x29, #${args_base + tail_slot * 8}]\n`;
 			tail_slot += 1;
 			status.code += `add x0, x29, #${nursery_off.count_off}\n`;
+			status.code += `str x0, [x29, #${args_base + tail_slot * 8}]\n`;
+			tail_slot += 1;
+			status.code += `add x0, x29, #${nursery_off.cap_off}\n`;
 			status.code += `str x0, [x29, #${args_base + tail_slot * 8}]\n`;
 			tail_slot += 1;
 		}

@@ -39,29 +39,33 @@ export default function build_async_block_node(
 	if (node.mode === "race") ensure_concurrency_runtime_a64(status);
 
 	// Allocate per-invocation nursery state on this function's stack frame:
-	// an 8-byte slot holding a heap-allocated futures list (a stack array
-	// capped the nursery at 64 concurrent spawns, and a larger one pushes
-	// every later frame offset past the 4095 add-immediate limit — see
-	// FOLLOWUP.md), 8 bytes for the count, and (if the block names its
-	// nursery) 16 bytes for the Nursery capability struct.
+	// an 8-byte slot holding the growable futures list (NULL — the tracking
+	// helper reallocs on the first registration; a fixed stack array once
+	// capped the nursery at 64 spawns, and a heap pre-allocation cost 512 KB
+	// per nursery, see FOLLOWUP.md), 8 bytes for the count, 8 for the
+	// capacity, and (if the block names its nursery) 24 bytes for the Nursery
+	// capability struct.
 	const futures_off = allocate_stack_space(status, 8, 8);
 	const count_off = allocate_stack_space(status, 8, 8);
+	const cap_off = allocate_stack_space(status, 8, 8);
 	status.code += `str xzr, [x29, #${count_off}]\n`; // count = 0
-	// Space for 65536 registered futures; a growable list is the follow-up.
-	status.code += `ldr x0, =524288\n`;
-	status.code += `bl _malloc\n`;
-	status.code += `str x0, [x29, #${futures_off}]\n`; // futures = malloc(...)
+	status.code += `str xzr, [x29, #${cap_off}]\n`; // cap = 0
+	status.code += `str xzr, [x29, #${futures_off}]\n`; // futures = NULL (grown on first registration)
 
 	let nursery_off: number | undefined;
 	if (node.nursery_name) {
-		nursery_off = allocate_stack_space(status, 16, 8);
-		// Build the Nursery capability struct pointing at this block's futures
-		// array + count slot, so the escape hatch (`ref name` / name.spawn)
-		// can register spawned futures with this nursery at runtime.
-		status.code += `ldr x0, [x29, #${futures_off}]\n`;
+		nursery_off = allocate_stack_space(status, 24, 8);
+		// Build the Nursery capability struct pointing at this block's
+		// tracking slots (the ADDRESS of the futures slot, so the escape
+		// hatch's registration helper updates the list in place through a
+		// realloc), so `ref name` / name.start can register spawned futures
+		// with this nursery at runtime.
+		status.code += `add x0, x29, #${futures_off}\n`;
 		status.code += `str x0, [x29, #${nursery_off}]\n`; // futures_ptr
 		status.code += `add x0, x29, #${count_off}\n`;
 		status.code += `str x0, [x29, #${nursery_off + 8}]\n`; // count_ptr
+		status.code += `add x0, x29, #${cap_off}\n`;
+		status.code += `str x0, [x29, #${nursery_off + 16}]\n`; // cap_ptr
 		// Register the name as a stack local so build_value_node /
 		// emit_address_of resolve it like any other struct variable.
 		if (!status.stack_offsets) status.stack_offsets = new Map();
@@ -76,7 +80,7 @@ export default function build_async_block_node(
 	}
 
 	if (!status.nursery_offsets) status.nursery_offsets = new Map();
-	status.nursery_offsets.set(id, { futures_off, count_off, deadline_off });
+	status.nursery_offsets.set(id, { futures_off, count_off, cap_off, deadline_off });
 
 	status.nursery_stack ??= [];
 	status.nursery_stack.push(id);
@@ -191,8 +195,10 @@ export default function build_async_block_node(
 	status.code += `add x23, x23, #1\n`;
 	status.code += `b ${loop_start}\n`;
 	status.code += `${loop_end}:\n`;
-	// Release the heap futures list (every registration happens before the
-	// join completes).
+	// Release the growable futures list (every registration happens before
+	// the join completes); NULL when nothing was ever registered.
 	status.code += `ldr x0, [x29, #${futures_off}]\n`;
+	status.code += `cbz x0, __nursery_${id}_no_list\n`;
 	status.code += `bl _free\n`;
+	status.code += `__nursery_${id}_no_list:\n`;
 }

@@ -5,18 +5,19 @@
 // An `async` block names its nursery (`async pool { }`), binding a Nursery
 // variable in scope. That variable is passed to helper functions with `ref`
 // and is the receiver of `pool.spawn(fn(args))`. The Nursery wraps the
-// per-invocation tracking state of the `async { }` block — a pointer to the
-// futures array and a pointer to the count slot, both on the async block's
-// stack frame — so it is only valid for the lifetime of its enclosing block
-// (which is exactly the structured-concurrency invariant: the block cannot
-// exit until every spawned task, including those spawned through a passed
-// Nursery, has finished).
+// per-invocation tracking state of the `async { }` block — pointers to the
+// futures list's storage slot, the registered count, and the capacity (the
+// list starts empty and grows by realloc; the compiler's registration helper
+// writes through these pointers) — so it is only valid for the lifetime of
+// its enclosing block (which is exactly the structured-concurrency
+// invariant: the block cannot exit until every spawned task, including those
+// spawned through a passed Nursery, has finished).
 //
 // Config rides on the declaration: `async pool = Nursery(timeout: 2000) { }`.
 //
 // `name.spawn(fn(args))` is special-cased by the compiler (it needs the spawn
-// trampoline machinery), so it is NOT a regular method declared here. The two
-// fields are the full runtime contract.
+// trampoline machinery), so it is NOT a regular method declared here. The
+// three fields are the full runtime contract.
 
 /**
  * The capability for spawning into a caller's `async` block; owns and tracks its tasks
@@ -24,4 +25,5 @@
 pub struct Nursery: Sendable {
 	pub var uint64 futures_ptr = 0
 	pub var uint64 count_ptr = 0
+	pub var uint64 cap_ptr = 0
 }
