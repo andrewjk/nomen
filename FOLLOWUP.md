@@ -2,23 +2,6 @@
 
 Skipped or out-of-scope items recorded for later.
 
-## aarch64 `status.moved` is build-global and name-keyed (cross-function collision)
-
-`mark_moved_if_struct` (src/build_aarch64/utils/auto_destroy.ts) adds bare
-variable NAMES to `status.moved`, and the return-path heap-string cleanup
-skips any name in that set. The set is never cleared between functions, so a
-bare `return x` of a heap-string local in one function marks the name `x`
-moved for EVERY function built later in the same TU: an unrelated local also
-named `x` in a later function has its return-path free suppressed (leak), or
-a struct/enum local named `x` skips its destroy.
-
-Found while porting Http onto Tcp: `Http_raw_exchange`'s `return wire` (named
-`response` at the time) suppressed the return-path free of `Http_get`/`Http_post`'s
-own `response` local — `LEAK: 2 allocation(s)` in audit. Http.nm works around
-it by naming the local `wire`. The C backend is unaffected (per-function
-tracking). Fix direction: clear/scope `status.moved` per function build (a
-frame pushed in build_function_node), or key it by (function, name).
-
 ## Cold-run parallel test flakiness (pre-existing)
 
 A fully cold `npm test` (after `rm -rf test/out`) with default file

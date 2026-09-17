@@ -274,6 +274,11 @@ function build_destroy_function(node: StructNode, func: FunctionNode, status: Bu
 	// in one body cannot leak into later bodies (see build_function_node).
 	const old_trait_class_frames = status.trait_class_frames;
 	status.trait_class_frames = undefined;
+	// `moved` is name-keyed and per-body (see build_function_node): marks made
+	// while the destroy body builds must not suppress a LATER body's cleanup
+	// for an unrelated same-named local.
+	const old_moved = status.moved;
+	(status.moved as Set<string> | undefined) = undefined;
 	const old_heap_string_arrays = status.heap_string_arrays;
 	status.heap_string_arrays = undefined;
 	const old_heap_class_arrays = status.heap_class_arrays;
@@ -383,6 +388,7 @@ function build_destroy_function(node: StructNode, func: FunctionNode, status: Bu
 	status.scoped_declarations = old_scoped_declarations;
 	status.heap_strings = old_heap_strings;
 	status.trait_class_frames = old_trait_class_frames;
+	status.moved = old_moved;
 	status.heap_string_arrays = old_heap_string_arrays;
 	status.heap_class_arrays = old_heap_class_arrays;
 	status.heap_array_vars = old_heap_array_vars;
@@ -883,6 +889,11 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 	// in one body cannot leak into later bodies (see build_function_node).
 	const old_trait_class_frames = status.trait_class_frames;
 	status.trait_class_frames = undefined;
+	// `moved` is name-keyed and per-body (see build_function_node): marks made
+	// while the init body builds must not suppress a LATER body's cleanup for
+	// an unrelated same-named local.
+	const old_moved = status.moved;
+	(status.moved as Set<string> | undefined) = undefined;
 	const old_heap_string_arrays = status.heap_string_arrays;
 	status.heap_string_arrays = undefined;
 	const old_heap_class_arrays = status.heap_class_arrays;
@@ -1243,6 +1254,7 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 	status.scoped_declarations = old_scoped_declarations;
 	status.heap_strings = old_heap_strings;
 	status.trait_class_frames = old_trait_class_frames;
+	status.moved = old_moved;
 	status.heap_string_arrays = old_heap_string_arrays;
 	status.heap_class_arrays = old_heap_class_arrays;
 	status.heap_array_vars = old_heap_array_vars;
@@ -1279,6 +1291,13 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		// local in one monomorphized body cannot leak into later bodies.
 		const old_trait_class_frames = status.trait_class_frames;
 		status.trait_class_frames = undefined;
+		// `moved` is name-keyed; reset per body (mirrors build_function_node's
+		// save/clear). Without this, a bare `return x` of a heap-string local
+		// (or a `move x` arg) in one method body marks the name for every
+		// LATER body in the struct — an unrelated same-named local in a later
+		// method then has its return-path free / destroy suppressed (leak).
+		const old_moved = status.moved;
+		(status.moved as Set<string> | undefined) = undefined;
 		const old_heap_string_arrays = status.heap_string_arrays;
 		status.heap_string_arrays = undefined;
 		const old_heap_class_arrays = status.heap_class_arrays;
@@ -1889,6 +1908,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		status.scoped_declarations = old_scoped_declarations;
 		status.heap_strings = old_heap_strings;
 		status.trait_class_frames = old_trait_class_frames;
+		status.moved = old_moved;
 		status.heap_string_arrays = old_heap_string_arrays;
 		status.heap_class_arrays = old_heap_class_arrays;
 		status.heap_array_vars = old_heap_array_vars;
