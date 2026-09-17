@@ -875,6 +875,14 @@ export default interface BuildStatus {
 	/** True once the fiber runtime text (FIBER_HEADER / FIBER_HEADER_C) has been appended. */
 	fiber_runtime_emitted?: boolean;
 	/**
+	 * C split builds ("system" emit mode): the concurrency runtime text
+	 * globalized to external linkage, accumulated by
+	 * ensure_concurrency_runtime and flushed to file scope at the top of the
+	 * system TU's code by build(). The user TU declares the runtime instead
+	 * (via system.h) and links against this one copy.
+	 */
+	c_runtime_defs?: string;
+	/**
 	 * Stack of active async-nursery IDs. When non-empty, build_spawn_node
 	 * pushes the pthread handle into the topmost nursery's handle array
 	 * instead of detaching; build_async_block_node joins them all at exit.

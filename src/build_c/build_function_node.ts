@@ -407,8 +407,12 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	}
 
 	if (node.name.toLocaleLowerCase() === "main" && status.audit) {
-		const has_pool = status.headers.includes("__nomen_pool_submit");
-		if (has_pool) {
+		// The pool shutdown frees the workers array, so it must run before
+		// the audit check. Any concurrency primitive in the TU pulls the
+		// runtime (and its declarations), so gate on used_fibers — NOT on a
+		// header-text search: in split builds the definitions live in the
+		// system TU's code, not this TU's headers.
+		if (status.used_fibers) {
 			status.code += `\n__nomen_pool_shutdown();\n`;
 		}
 		status.code += `\nnomen_audit_check();\n`;

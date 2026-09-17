@@ -436,6 +436,19 @@ export default function build(
 		// the aarch64 companion's strategy. Off for every non-GUI program.
 		set_c_typedef_mangling(build_needs_objc(root, status.platform));
 		build_c_node(root, status);
+		// Split-build runtime definitions: the system TU defines the shared
+		// concurrency runtime with external linkage (ensure_concurrency_runtime
+		// accumulated it mid-emission, when status.code was mid-function) —
+		// flush it at the END of the code so the definitions sit at file
+		// scope, after main.h's declarations have been included (the TU's own
+		// code references the symbols through those). The user TU carries
+		// only the declarations (system.h) and links against this copy. Must
+		// run before the audit wrap below so the runtime's raw malloc/free
+		// calls are wrapped like the rest.
+		if (status.c_runtime_defs) {
+			status.code = status.code + "\n" + status.c_runtime_defs;
+			status.c_runtime_defs = undefined;
+		}
 		// A `view T` is a non-owning, non-escaping (ptr, len) slice into a
 		// container's buffer. Every view — `view string`, `view int`, `view
 		// User`, ... — lowers to the same C struct; the element type lives in

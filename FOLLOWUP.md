@@ -357,31 +357,20 @@ call sites now load the pointer from the slot. A growable list (realloc with
 a capacity slot, or a linked list of futures) would remove the ceiling and
 shrink the per-nursery allocation (512 KB is allocated even for tiny blocks).
 
-## Runtime state is per-TU in C system_lib builds
+## C user TUs cannot compile module-level statements (system_lib split)
 
-The C backend's precompiled `system.o` contains a _static_ copy of the
-concurrency runtime (pool queues, `__nomen_current_fiber`, the netpoller
-slots), and a user TU that emits the runtime gets a second copy. Library
-bodies (Channel.receive, Tcp.*) execute against the system copy while
-user-generated fibers run on the user copy, so `__nomen_current_fiber` is
-NULL inside library code: a fiber's `Channel.receive` or `Tcp.recv` call
-BLOCKS the worker on the condvar/poll path instead of parking, and a
-cancelled library-side wait is not woken (the nursery's extended-deadline
-wait then carries on). Results stay correct — the waits still complete — so
-tests pass; the loss is parking (and one poller thread per copy). Single-TU
-builds (`emit_mode "all"`, e.g. the `parse_raw` tests) and the aarch64
-backend (one linked companion) are unaffected.
-
-Fix: emit the runtime as global definitions in the `system` build and extern
-declarations in the `user` build, so exactly one copy exists per process. The
-symbols the user TU references are enumerable: the pool globals, the
-`nomen_future_*` family, the fiber spawn/drain/schedule entry points, the
-cancel-flag TLS, `__nomen_io_wait`/`__nomen_io_shutdown`, and
-`__nomen_mutex_lock`; struct types can stay defined in both TUs.
-
-This also affects feature work: an `Http` client built on `Tcp` (i.e. running
-its socket waits through the runtime) sees no parking in system_lib builds
-until this is fixed.
+In the C backend's system_lib split, a user TU whose MODULE scope carries
+statements (`var Channel ch = Channel()` or a module-level `async` block —
+anything outside a func) emits those statements at C file scope
+(`struct Channel *ch = Channel_init();` bare, then the async block's
+nursery bookkeeping), which fails to compile ("initializer element is not a
+compile-time constant", stray `{`). Verified on the unmodified baseline, so
+it is pre-existing and unrelated to the runtime-sharing change; module-level
+`var`/`async` in a single-TU ("all") build is fine. Every test sidesteps it
+by keeping statements inside `main`, so the split path is undertested for
+this shape — worth fixing in `build_block_node`'s module-statement hoist
+(wrap them in the generated `main`, as the single-TU path does) and adding
+a split-build regression test when picked up.
 
 ## aarch64 system object cannot carry `aarch64_use_c` bodies (Phase 3 follow-up)
 

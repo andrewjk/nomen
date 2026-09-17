@@ -7,6 +7,7 @@ import FunctionNode from "../nodes/FunctionNode.ts";
 import SpawnNode from "../nodes/SpawnNode.ts";
 import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
+import { globalize_runtime, runtime_declarations } from "./runtime_split.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import c_type from "./utils/c_type.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
@@ -296,14 +297,48 @@ static int __nomen_nursery_race_wait(struct nomen_future **futures, int count, l
 }
 `;
 /**
- * Append the concurrency runtime (pool + fiber) to this build's header sink,
- * once per build. Every sink that emits a trampoline, a nursery join, or a
- * primitive whose raw body branches into the runtime calls this. The flags —
- * not a header-content search — make it idempotent: a nested-function build
- * clears status.headers mid-build, so a marker check would append twice.
+ * Append the concurrency runtime to this build, once per build. Every sink
+ * that emits a trampoline, a nursery join, or a primitive whose raw body
+ * branches into the runtime calls this. The flags — not a header-content
+ * search — make it idempotent: a nested-function build clears status.headers
+ * mid-build, so a marker check would append twice.
+ *
+ * Single-TU builds ("all") paste the static definitions into the TU's
+ * headers exactly as before. Split builds share ONE runtime copy: the
+ * system build declares the runtime in its headers (system.h) and defines
+ * it with external linkage (accumulated onto status.c_runtime_defs, which
+ * build() flushes to file scope in the system TU's code); the user build
+ * emits only the declarations and links against system.o. Duplicate copies
+ * of the runtime state — one per TU — would fork the pool queues, the
+ * fiber scheduler's TLS, and the netpoller slots, so a library body could
+ * run against a different runtime copy than the user fibers (see
+ * FOLLOWUP.md).
  */
 export function ensure_concurrency_runtime(status: BuildStatus): void {
+	// Every caller that pulls the runtime in also makes fiber/pool exit
+	// hooks (main's drain_all / io_shutdown / pool_shutdown) meaningful —
+	// including split-build user TUs, whose concurrency TYPES live in the
+	// system TU and so never set the flags themselves.
+	status.used_fibers = true;
 	if (status.pool_runtime_emitted && status.fiber_runtime_emitted) return;
+	const mode = status.emit_mode ?? "all";
+	if (mode !== "all") {
+		if (!status.pool_runtime_emitted) {
+			// The system build declares the runtime in its headers (system.h,
+			// which every user TU includes) and defines it with external
+			// linkage (accumulated onto status.c_runtime_defs, flushed to
+			// file scope in the system TU's code by build()). The user build
+			// emits nothing — it would duplicate system.h's declarations.
+			if (mode === "system") {
+				status.headers += runtime_declarations();
+				status.c_runtime_defs =
+					(status.c_runtime_defs ?? "") + globalize_runtime(POOL_HEADER + FIBER_HEADER);
+			}
+			status.pool_runtime_emitted = true;
+			status.fiber_runtime_emitted = true;
+		}
+		return;
+	}
 	if (!status.pool_runtime_emitted) {
 		status.headers += POOL_HEADER;
 		status.pool_runtime_emitted = true;
