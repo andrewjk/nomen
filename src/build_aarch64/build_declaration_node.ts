@@ -945,6 +945,27 @@ export default function build_declaration_node(
 				status.code += "\n";
 			}
 			emit_var_store(status, "x0", node.name, 8);
+			// A func local initialized from a capturing lambda or another
+			// owning closure holds a heap descriptor it frees at scope exit;
+			// a move-transfer marks the source moved (CLOSURE_PLAN Phase 2c).
+			const val_is_capturing =
+				node.value.node_type === "func" && !!(node.value as FunctionNode).captures?.length;
+			const val_is_moved = node.value.node_type === "value" && !!(node.value as ValueNode).is_moved;
+			if (val_is_moved) {
+				if (!status.moved) status.moved = new Set();
+				status.moved.add((node.value as ValueNode).value);
+			}
+			if (val_is_capturing || val_is_moved) {
+				status.scoped_declarations.push(
+					new DeclarationNode(
+						node.start,
+						node.visibility,
+						node.declaration,
+						node.name,
+						new Type("func"),
+					),
+				);
+			}
 		}
 		return;
 	}

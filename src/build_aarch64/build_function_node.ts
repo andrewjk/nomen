@@ -17,7 +17,7 @@ import { prepare_nir_forwarding } from "./forward.ts";
 import { publish_slp_pairs } from "./slp_pair.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free } from "./utils/audit.ts";
-import { emit_destroy_for_anchor_slot } from "./utils/auto_destroy.ts";
+import { emit_destroy_for_anchor_slot, set_trait_class_local } from "./utils/auto_destroy.ts";
 import { closure_env_layout_a64 } from "./utils/closure_a64.ts";
 import { plan_function_promotions } from "./utils/func_regalloc.ts";
 import { nir_regalloc_enabled, plan_nir_registers } from "./utils/nir_regalloc.ts";
@@ -448,6 +448,15 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		status.code += `str x0, [x29, #${env_slot}]\n`;
 		status.closure_env_slot = env_slot;
 		status.closure_env_offsets = closure_env_layout_a64(node, status).offsets;
+		// A captured CLASS-BACKED trait reference is a pointer to the heap
+		// instance; register it so vtable dispatch dereferences the env field
+		// (trait_class_for) exactly like a trait-typed local (CLOSURE_PLAN
+		// Phase 2c).
+		for (const cap of node.captures) {
+			if (status.traits.find((t) => t.name === cap.type.name)) {
+				set_trait_class_local(status, cap.name, cap.type.name);
+			}
+		}
 	} else {
 		status.closure_env_slot = undefined;
 		status.closure_env_offsets = undefined;

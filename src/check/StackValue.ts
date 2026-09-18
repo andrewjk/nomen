@@ -158,6 +158,19 @@ export default interface StackValue {
 	 */
 	is_param?: boolean;
 	/**
+	 * True for a `move T` parameter (owned by the callee). A `move` parameter
+	 * may be move-captured into a closure; the callee's param cleanup then
+	 * honours the transfer.
+	 */
+	is_moved?: boolean;
+	/**
+	 * For a func-typed value: true when the slot holds a capturing closure
+	 * (a HEAP env + descriptor, `owned = 1`) rather than a static/capture-free
+	 * descriptor. Such a value is MOVE-ONLY (CLOSURE_PLAN Phase 2c): storing,
+	 * returning, assigning, or move-capturing it invalidates the source.
+	 */
+	owns_closure?: boolean;
+	/**
 	 * For function-typed variables: the parameter types from the declared
 	 * function signature. Used to infer parameter types on a lambda assigned
 	 * later (e.g. `adder = (a, b) => a + b`).

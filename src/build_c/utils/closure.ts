@@ -169,7 +169,9 @@ function capturing_closure_value(node: FunctionNode, status: BuildStatus): strin
 		} else if (elem) {
 			// A value struct is held by pointer: allocate + copy the value
 			// (a MOVE capture transfers the bytes; a copy capture snapshots).
-			out += `({ struct ${cap.type.name} *_v = (struct ${cap.type.name} *)malloc(sizeof(struct ${cap.type.name})); *_v = ${expr}; _v; })`;
+			// A struct PARAMETER donor is itself a pointer, so dereference it.
+			const src = cap.by_address ? `(*${expr})` : expr;
+			out += `({ struct ${cap.type.name} *_v = (struct ${cap.type.name} *)malloc(sizeof(struct ${cap.type.name})); *_v = ${src}; _v; })`;
 		} else {
 			// Class instance pointers and func descriptors transfer their
 			// pointer directly.

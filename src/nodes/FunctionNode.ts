@@ -65,7 +65,7 @@ export default class FunctionNode extends BaseNode implements BlockNode, Returni
 	 * through it. A capture-free lambda has no entry and never materializes an
 	 * env.
 	 */
-	captures?: { name: string; type: Type; is_move?: boolean }[];
+	captures?: { name: string; type: Type; is_move?: boolean; by_address?: boolean }[];
 	/**
 	 * True for a `move out T` return: the method transfers ownership of the
 	 * returned value to the caller (which must then free it), rather than

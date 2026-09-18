@@ -727,6 +727,20 @@ export default function build_return_node(
 		if (node.value?.node_type === "value") {
 			clear_heap_string_fields(status, (node.value as ValueNode).value);
 		}
+		// Returning a func-typed local closure transfers the descriptor to the
+		// caller (which frees it via the scope-exit free-if-owned arm); mark it
+		// moved so the callee's return cleanup doesn't double-free it
+		// (CLOSURE_PLAN Phase 2c).
+		if (node.value?.node_type === "value") {
+			const ret_name = (node.value as ValueNode).value;
+			const ret_decl = all_scope_frames(status)
+				.flat()
+				.find((d) => d.name === ret_name && d.type?.name === "func");
+			if (ret_decl) {
+				if (!status.moved) status.moved = new Set();
+				status.moved.add(ret_name);
+			}
+		}
 		const finalized = status.moved ?? new Set<string>();
 		// A string return rides the (x0, x1) pair — save BOTH halves around
 		// the cleanup calls (destroy clobbers x1). A float return rides d0.

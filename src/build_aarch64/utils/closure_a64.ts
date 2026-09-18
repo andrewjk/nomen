@@ -72,6 +72,7 @@ export function emit_env_free_a64(func: FunctionNode, status: BuildStatus): stri
 	const owned = (func.captures ?? []).some((c) => {
 		if (c.type.name === "string" && !c.type.is_view && !c.type.is_array) return true;
 		if (c.type.name === "func") return true;
+		if (status.traits.find((t) => t.name === c.type.name)) return true;
 		const elem = status.structs.find((s) => s.name === c.type.name);
 		if (!elem || elem.is_simple_type) return false;
 		if (elem.is_class) return true;
@@ -91,6 +92,7 @@ export function emit_env_free_a64(func: FunctionNode, status: BuildStatus): stri
 		const kind = (() => {
 			if (cap.type.name === "string" && !cap.type.is_view && !cap.type.is_array) return "string";
 			if (cap.type.name === "func") return "func";
+			if (status.traits.find((t) => t.name === cap.type.name)) return "trait";
 			const elem = status.structs.find((s) => s.name === cap.type.name);
 			if (elem?.is_class) return "class";
 			if (elem && !elem.is_simple_type) return "struct";
@@ -121,6 +123,18 @@ export function emit_env_free_a64(func: FunctionNode, status: BuildStatus): stri
 			continue;
 		}
 		if (kind === "class") {
+			const skip = `.Lenv_skip_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+			body += `ldr x0, [x19, #${off}]\n`;
+			body += `cbz x0, ${skip}\n`;
+			body += `bl ${cap.type.name}_destroy\n`;
+			body += `ldr x0, [x19, #${off}]\n`;
+			body += free_call;
+			body += `${skip}:\n`;
+			continue;
+		}
+		if (kind === "trait") {
+			// Dispatch through the trait's vtable destroy shim (the concrete
+			// instance type may vary), then free the instance.
 			const skip = `.Lenv_skip_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
 			body += `ldr x0, [x19, #${off}]\n`;
 			body += `cbz x0, ${skip}\n`;

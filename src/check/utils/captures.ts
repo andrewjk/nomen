@@ -1,4 +1,5 @@
 import add_error from "../../add_error.ts";
+import type BaseNode from "../../nodes/BaseNode.ts";
 import type FunctionNode from "../../nodes/FunctionNode.ts";
 import Type from "../../nodes/Type.ts";
 import type CheckStatus from "../CheckStatus.ts";
@@ -23,6 +24,39 @@ function is_func_value(value: StackValue): boolean {
  *  backends emit a closure-descriptor env field, not the return type). */
 function capture_type(value: StackValue): Type {
 	return is_func_value(value) ? new Type("func") : value.type;
+}
+
+/**
+ * Whether a func-typed initializer/RHS holds a capturing (heap) closure: a
+ * lambda node with captures, or a value reference to a func-typed local that
+ * itself owns one. Such values are MOVE-ONLY (CLOSURE_PLAN Phase 2c).
+ */
+export function value_owns_closure(node: BaseNode | undefined, status: CheckStatus): boolean {
+	if (!node) return false;
+	if (node.node_type === "func") return !!(node as FunctionNode).captures?.length;
+	if (node.node_type === "value") {
+		const sv = status.values.findLast((v) => v.name === (node as { value?: string }).value);
+		return !!sv?.owns_closure;
+	}
+	return false;
+}
+
+/**
+ * If `node` is a bare reference to a func-typed local that owns a capturing
+ * closure, mark it moved (transferring the descriptor to the new owner). The
+ * capture donor-local machinery already handles the capture case.
+ */
+export function move_closure_source(node: BaseNode | undefined, status: CheckStatus): void {
+	if (!node || node.node_type !== "value") return;
+	const name = (node as { value?: string }).value;
+	if (!name) return;
+	const sv = status.values.findLast((v) => v.name === name);
+	if (!sv?.owns_closure) return;
+	if (!status.moved_variables) status.moved_variables = new Set();
+	status.moved_variables.add(name);
+	// Stamp the node so the backends route it through the existing move
+	// machinery (splice/mark-moved) rather than copying the descriptor.
+	(node as { is_moved?: boolean }).is_moved = true;
 }
 
 /**
@@ -62,7 +96,19 @@ export function capture_rejection(value: StackValue, status: CheckStatus): strin
 		if (value.is_param) return "capturing a function parameter by move comes later";
 		return undefined;
 	}
-	if (status.traits.find((t) => t.name === type.name)) return "traits are owned at runtime";
+	if (status.traits.find((t) => t.name === type.name)) {
+		// A class-backed trait reference is an owned heap pointer (a vtable
+		// prefix + instance) and can be move-captured; its env destructor
+		// dispatches through the trait's `<Trait>_destroy` shim. A
+		// value-struct trait slot stores INLINE conformer bytes — deferred.
+		if (value.trait_slot_conformer) {
+			return "value-struct trait slots cannot be captured";
+		}
+		if (value.is_param && !value.is_moved) {
+			return "capturing a borrowed trait parameter comes later";
+		}
+		return undefined;
+	}
 	if (is_class_type(type.name, status)) {
 		// A class value is a heap pointer: moving it transfers ownership. A
 		// borrowed (field/container accessor) or aliased (`var Box b = a`)
@@ -70,7 +116,12 @@ export function capture_rejection(value: StackValue, status: CheckStatus): strin
 		if (value.borrow_depth !== undefined || value.borrowed_from || value.class_alias_of) {
 			return "a borrowed class reference is not owned and cannot be captured";
 		}
-		if (value.is_param) return "capturing a class parameter by move comes later";
+		if (value.is_param && !value.is_moved) {
+			return "capturing a borrowed class parameter comes later";
+		}
+	}
+	if (is_owning_struct_type_requiring_move(type, status) && value.is_param && !value.is_moved) {
+		return "capturing a borrowed owning-struct parameter comes later";
 	}
 	return undefined;
 }
@@ -85,6 +136,7 @@ function capture_is_move(value: StackValue, status: CheckStatus): boolean {
 	if (is_func_value(value)) return true;
 	const type = value.type;
 	if (is_class_type(type.name, status)) return true;
+	if (status.traits.find((t) => t.name === type.name)) return true;
 	// String-only owning structs copy (their string fields are non-owning at
 	// local scope exit — see ownership.ts), matching a plain local copy.
 	return is_owning_struct_type_requiring_move(type, status);
@@ -127,6 +179,10 @@ export function maybe_record_capture(
 			name,
 			type: capture_type(decl_value),
 			is_move: capture_is_move(decl_value, status) || undefined,
+			// A struct PARAMETER is passed by address (`struct T *` in C), so
+			// the C value-site copy must dereference it; a struct local is an
+			// lvalue already.
+			by_address: decl_value.is_param || undefined,
 		});
 	}
 	return true;

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
 
 import build_and_check_output from "./build_and_check_output";
-import parse_with_imports from "./parse_with_imports";
+import parse_with_imports, { parse_raw } from "./parse_with_imports";
 
 // Closure captures (docs/CLOSURE_PLAN.md Phase 2a): a lambda may capture outer
 // SCALARS by copy. The value site heap-allocates an env struct (one 8-byte
@@ -231,6 +231,167 @@ var func (out int) first = (out int) => o.data.at(0)
 Console.write("\\{o.data.length} \\{first()}")
 `).errors.some((m) => m.message.includes("used after move")),
 		).toBe(true);
+	});
+});
+
+describe("closure captures (move parameters)", () => {
+	test("a lambda moves a `move` class parameter into its env", async () => {
+		await build_and_check_output(
+			`
+import System
+
+class Box {
+	var int v
+}
+
+func use_box = (move Box b, out int) {
+	var func (out int) get = (out int) => b.v
+	return get()
+}
+
+pub func main = () {
+	Console.write("\\{use_box(Box(5))}")
+}`,
+			"lambda_capture_move_param_class",
+			"5",
+			true,
+		);
+	});
+
+	test("a lambda moves a `move` owning-struct parameter into its env", async () => {
+		await build_and_check_output(
+			`
+import System
+
+struct Owned {
+	var List<int> data
+}
+
+func use_owned = (move Owned o, out int) {
+	var func (out int) first = (out int) => o.data.at_or(0, -1)
+	return first()
+}
+
+pub func main = () {
+	var Owned o = Owned(List<int>())
+	o.data.push(9)
+	Console.write("\\{use_owned(move o)}")
+}
+`,
+			"lambda_capture_move_param_struct",
+			"9",
+			true,
+		);
+	});
+});
+
+describe("closure captures (ownership transfer)", () => {
+	test("a class func field owns and frees a captured closure", async () => {
+		await build_and_check_output(
+			`
+import System
+
+class Rule {
+	var func (out int) f
+}
+
+func make_rule = (int base, out Rule) {
+	return Rule((out int) => base + 1)
+}
+
+pub func main = () {
+	var Rule r = make_rule(7)
+	Console.write("\\{r.f()}")
+}
+`,
+			"lambda_class_func_field",
+			"8",
+			true,
+		);
+	});
+
+	test("initializing a func local from an owning closure moves it", async () => {
+		await build_and_check_output(
+			`
+import System
+
+pub func main = () {
+	var int base = 3
+	var func (out int) a = (out int) => base + 1
+	var func (out int) b = a
+	Console.write("\\{b()}")
+}
+`,
+			"lambda_move_local_to_local",
+			"4",
+			true,
+		);
+	});
+
+	test("storing a capturing closure in a value-struct func field is rejected", () => {
+		expect(
+			parse_with_imports(`
+struct Rule {
+	var func (out int) f
+}
+
+var int base = 3
+var Rule r = Rule((out int) => base)
+Console.write("\\{r.f()}")
+`).errors.some((m) => m.message.includes("cannot store a capturing closure")),
+		).toBe(true);
+	});
+});
+
+describe("closure captures (traits)", () => {
+	test("a lambda moves a class-backed trait reference into its env", async () => {
+		await build_and_check_output(
+			`
+import System
+
+trait Show {
+	func show = (self, out string)
+}
+
+class Dog : Show {
+	var string name
+
+	func show = (self, out string) => self.name
+}
+
+pub func main = () {
+	var Show s = Dog("Rex")
+	var func (out string) get = (out string) => s.show()
+	Console.write("\\{get()}")
+}
+`,
+			"lambda_capture_trait_class",
+			"Rex",
+			true,
+		);
+	});
+
+	test("capturing a value-struct trait slot is rejected", () => {
+		const parsed = parse_raw(`
+import System
+
+trait Show {
+	func show = (self, out string)
+}
+
+struct Note : Show {
+	var string text
+
+	func show = (self, out string) => self.text
+}
+
+pub func main = () {
+	var Show n = Note("hi")
+	var func (out string) get = (out string) => n.show()
+	Console.write("\\{get()}")
+}
+`);
+		expect(parsed.errors.some((e) => e.message.includes("value-struct trait slots"))).toBe(true);
 	});
 });
 

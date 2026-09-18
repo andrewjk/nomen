@@ -15,12 +15,13 @@ import c_type from "./c_type.ts";
  * import cycle.
  */
 
-type CaptureKind = "string" | "class" | "func" | "struct" | "scalar";
+type CaptureKind = "string" | "class" | "func" | "struct" | "trait" | "scalar";
 
 /** Classify one capture for env layout / destruction purposes. */
 function capture_kind(type: Type, status: BuildStatus): CaptureKind {
 	if (type.name === "string" && !type.is_view && !type.is_array) return "string";
 	if (type.name === "func") return "func";
+	if (status.traits.find((t) => t.name === type.name)) return "trait";
 	const elem = status.structs.find((s) => s.name === type.name);
 	if (elem?.is_class) return "class";
 	if (elem && !elem.is_simple_type) return "struct";
@@ -41,6 +42,10 @@ export function c_env_field_type(type: Type, status: BuildStatus): string {
 			return `struct ${type.name} *`;
 		case "class":
 			return `struct ${type.name} *`;
+		case "trait":
+			// A trait value is a `void *` to the concrete instance (vtable at
+			// its head) on the C backend.
+			return "void *";
 		case "func":
 			return "struct nomen_closure *";
 		default:
@@ -85,6 +90,12 @@ export function emit_closure_env_free(func: FunctionNode, status: BuildStatus): 
 			continue;
 		}
 		if (kind === "class") {
+			body += `\tif (_e->${field}) { ${cap.type.name}_destroy(_e->${field}); free(_e->${field}); }\n`;
+			continue;
+		}
+		if (kind === "trait") {
+			// Dispatch through the trait's vtable destroy shim (the concrete
+			// instance type may vary), then free the instance.
 			body += `\tif (_e->${field}) { ${cap.type.name}_destroy(_e->${field}); free(_e->${field}); }\n`;
 			continue;
 		}

@@ -73,6 +73,15 @@ function scan_body(
 			if (subtree_references(n, name)) consumed = true;
 			return;
 		}
+		if (node.node_type === "func") {
+			// A lambda captures values from this body into its closure env
+			// (CLOSURE_PLAN). A move param captured by a closure transfers
+			// ownership beyond the epilogue; a plain nested function cannot
+			// reference it, so this only fires for closures.
+			if ((n as { is_closure?: boolean }).is_closure && subtree_references(n, name)) {
+				consumed = true;
+			}
+		}
 		if (node.node_type === "access") {
 			const access = node.access as
 				| { node_type?: string; name?: string; params?: unknown[] }

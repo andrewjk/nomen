@@ -186,9 +186,18 @@ updated (+ test/spec).
 >   honours it, aarch64 already did).
 > - **Class instances**: captured by MOVE (the env owns the instance pointer;
 >   `destroy_env` runs `<Class>_destroy` + `free`). A borrowed (field/container
->   accessor), aliased (`var Box b = a`), or `move`-parameter class reference is
->   rejected — it is not the closure's to own.
-> - **Nested closures**: a func-valued local/param is captured by MOVE. A
+>   accessor) or aliased (`var Box b = a`) class reference is rejected — it is
+>   not the closure's to own. A `move Box` PARAMETER is owned by the callee and
+>   may be captured; `scan_moved_param_consumed` now treats a closure body that
+>   references the param as consuming it, so the callee's param reclaim is
+>   skipped and the env destructor owns it.
+> - **Class-backed trait references**: captured by MOVE (the env owns the
+>   pointer; `destroy_env` dispatches through the trait's `<Trait>_destroy`
+>   shim + `free`). aarch64 registers the capture in `trait_class_frames` so
+>   vtable dispatch dereferences the env field; C's `build_vtable_target`
+>   emits the captured `_env->name` pointer directly. A VALUE-STRUCT trait slot
+>   (inline conformer storage) is still rejected.
+> - **Nested closures**: a func-valued local is captured by MOVE. A
 >   func-valued StackValue from an `out`-returning signature carries the RETURN
 >   type, so capture analysis detects func values structurally
 >   (`func_params`/`func_return_type`) and records a normalized `func` type.
@@ -198,6 +207,14 @@ updated (+ test/spec).
 >   free-if-owned arm as a func-typed local. The nested-capture reference is
 >   recorded at the func-VALUE call resolver (not `type_from_value`), which had
 >   bypassed the funnel.
+> - **Move-on-assignment / storage**: a capturing closure is move-only. A
+>   func-typed binding initialized from, or assigned, a capturing lambda or
+>   another owning closure stamps the source value node `is_moved` and
+>   invalidates it in `moved_variables`; the backends splice/`mark_moved` the
+>   source and register the destination for the scope-exit free-if-owned arm.
+>   A CLASS func-typed field is reclaimed by `<Class>_destroy` (free-if-owned);
+>   a VALUE-struct func-typed field cannot own one (copies share the
+>   descriptor), so storing a capturing closure there is rejected.
 >
 > Also fixed en route: `build_function_node` (aarch64) now isolates
 > `heap_cleanup_stack` per function. Without it a lambda's return-path cleanup
@@ -205,15 +222,14 @@ updated (+ test/spec).
 > inside the lambda (double-free of a class local captured — or merely live —
 > around the lambda).
 >
-> **Still deferred (follow-ups, sound today)**: capturing a TRAIT (dispatched
-> destruction through the vtable shim), capturing a `move`-class / func
-> PARAMETER (the callee's own cleanup still runs), and STORING a capturing
-> closure in a func-typed field/container or returning it (the env+descriptor
-> leak — `owned`-flag/static descriptors keep it sound, never dangling; the
-> container case is a shared-ownership-family rejection). Move-on-assignment
-> for capturing values (the design's "assigning, passing, or returning a
-> capturing lambda moves it") is the prerequisite for the field/return arms
-> and remains unimplemented.
+> **Deliberate restrictions (documented, not gaps)**: capturing a `ref`/`var`
+> borrow, a view/array/pointer, a VALUE-STRUCT trait slot (inline conformer
+> storage), a borrowed (non-`move`) class/trait/owning-struct parameter, or a
+> func-typed PARAMETER (a borrow — the caller still owns the descriptor, so a
+> closure that outlives the call would dangle; the pass-to-param posture stays
+> a borrow). Containers/returns of func values are not expressible in the
+> language (generic type args and `out` return types don't parse `func (...)`),
+> so the shared-ownership container case is unreachable.
 
 **Phase 3 — the ASYNC_PLAN_2 payoff (separate landing).** `Thread`/`Fiber`
 de-specialized into library structs over capturing lambdas; the

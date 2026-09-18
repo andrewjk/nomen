@@ -12,6 +12,7 @@ import ValueNode from "../nodes/ValueNode.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { borrow_depth_of, borrow_owner_of, invalidate_view_borrows_of } from "./utils/borrow.ts";
+import { value_owns_closure } from "./utils/captures.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import evaluate_const_condition from "./utils/evaluate_const_condition.ts";
 import {
@@ -472,6 +473,21 @@ export default function check_assignment_node(
 		status.moved_variables.add((assign.right_value as ValueNode).value);
 	}
 
+	// A capturing closure is MOVE-ONLY (CLOSURE_PLAN Phase 2c): assigning it
+	// (to a local or a func-typed field) transfers the heap descriptor, so the
+	// source local is invalidated. Mark the RHS as moved so the backends don't
+	// also free the donor.
+	if (assign.right_value.node_type === "value") {
+		const rhs_sv = status.values.findLast(
+			(v) => v.name === (assign.right_value as ValueNode).value,
+		);
+		if (rhs_sv?.owns_closure) {
+			assign.right_value.is_moved = true;
+			if (!status.moved_variables) status.moved_variables = new Set();
+			status.moved_variables.add((assign.right_value as ValueNode).value);
+		}
+	}
+
 	// Check field constraints on assignment (e.g. foo.x = value where x has a constraint)
 	if (assign.left_value.node_type === "access") {
 		const access = assign.left_value as AccessNode;
@@ -556,6 +572,21 @@ export default function check_assignment_node(
 							assign.right_value.start,
 						);
 					}
+				}
+			}
+			if (field?.type?.name === "func") {
+				const target_struct_node = status.structs.findLast((s) => s.name === target_type.name);
+				if (
+					target_struct_node &&
+					!target_struct_node.is_class &&
+					value_owns_closure(assign.right_value, status)
+				) {
+					add_error(
+						status,
+						`cannot store a capturing closure in func field '${field_access.name}' of value struct '${target_type.name}' — value structs are copyable and would share the descriptor; use a class instead`,
+						assign.right_value.start,
+					);
+					return false;
 				}
 			}
 			if (field?.constraint) {

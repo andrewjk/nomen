@@ -875,6 +875,35 @@ export function emit_field_destroys(
 			}
 			status.code += `ldr x0, [x0, #${actual_offset}]\n`;
 			emit_free(status);
+		} else if (field.type.name === "func" && !field.type.is_array && struct_type.is_class) {
+			// A func-typed CLASS field may hold a capturing closure (heap env
+			// + descriptor, `owned = 1`) — reclaim it with the same
+			// free-if-owned arm a func-typed local uses. VALUE-struct func
+			// fields stay non-owning (copies share the descriptor), so this is
+			// class-only (CLOSURE_PLAN Phase 2c).
+			const actual_offset = base_offset !== undefined ? base_offset + offset : offset;
+			if (decl_name) {
+				emit_base_ptr(status, decl_name, is_class_parent);
+			}
+			const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+			const skip = `.Lfield_closure_done_${id}`;
+			const no_destroy = `.Lfield_closure_nodestroy_${id}`;
+			status.code += `ldr x0, [x0, #${actual_offset}]\n`;
+			status.code += `cbz x0, ${skip}\n`;
+			status.code += `ldr w9, [x0, #16]\n`;
+			status.code += `cbz w9, ${skip}\n`;
+			status.code += `str x0, [sp, #-16]!\n`;
+			status.code += `ldr x9, [x0, #24]\n`;
+			status.code += `cbz x9, ${no_destroy}\n`;
+			status.code += `ldr x0, [x0, #8]\n`;
+			status.code += `blr x9\n`;
+			status.code += `${no_destroy}:\n`;
+			status.code += `ldr x0, [sp]\n`;
+			status.code += `ldr x0, [x0, #8]\n`;
+			emit_free(status);
+			status.code += `ldr x0, [sp], #16\n`;
+			emit_free(status);
+			status.code += `${skip}:\n`;
 		} else if (field.type.is_array) {
 			const elem_struct = is_struct_type(field.type.name, status);
 			if (elem_struct) {

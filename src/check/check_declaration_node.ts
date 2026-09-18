@@ -10,6 +10,7 @@ import { instantiate_generic_type } from "./check_function_call_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { borrow_depth_of, borrow_owner_of } from "./utils/borrow.ts";
+import { move_closure_source, value_owns_closure } from "./utils/captures.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import check_type_exists from "./utils/check_type_exists.ts";
 import evaluate_const_condition from "./utils/evaluate_const_condition.ts";
@@ -147,7 +148,13 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 				// doesn't count) must match the declared signature in count
 				// and type.
 				const fn = status.functions.findLast((f) => f.name === (decl.value as ValueNode).value);
-				if (fn) {
+				// A func-typed LOCAL (a capturing closure) is not a named
+				// function to materialize: the build must read the local's
+				// descriptor (and move it), not synthesize a static one.
+				const is_value_local = status.values.some(
+					(v) => v.name === (decl.value as ValueNode).value,
+				);
+				if (fn && !is_value_local) {
 					// Stamp the resolution: the build materializes the closure
 					// descriptor at this value site (docs/CLOSURE_PLAN.md).
 					(decl.value as unknown as { resolved_function?: FunctionNode }).resolved_function = fn;
@@ -219,8 +226,14 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			})),
 			func_return_type: decl.func_return_type,
 			is_global: !in_function(status),
+			// A func-typed binding initialized from a capturing closure (or
+			// from a local that already owns one) owns a heap descriptor and
+			// is move-only (CLOSURE_PLAN Phase 2c). Initializing from another
+			// owning local transfers ownership, invalidating it.
+			owns_closure: value_owns_closure(decl.value, status) || undefined,
 		});
 		if (decl.value) {
+			move_closure_source(decl.value, status);
 			track_assignment_bounds(decl.name, decl.value, status);
 		}
 	} else {

@@ -960,6 +960,28 @@ function build_function_type_declaration(node: DeclarationNode, status: BuildSta
 			build_node(node.value, status);
 		}
 	}
+	// A func local initialized from a capturing lambda or from another owning
+	// closure holds a heap descriptor it must free at scope exit
+	// (CLOSURE_PLAN Phase 2c). The source of a move-transfer is spliced so the
+	// backends don't also free it.
+	const value_is_capturing_lambda =
+		node.value?.node_type === "func" && !!(node.value as FunctionNode).captures?.length;
+	const value_is_moved_closure =
+		node.value?.node_type === "value" && !!(node.value as ValueNode).is_moved;
+	if (value_is_capturing_lambda || value_is_moved_closure) {
+		if (value_is_moved_closure) {
+			splice_decl_from_c_scopes(status, (node.value as ValueNode).value);
+		}
+		status.scoped_declarations.push(
+			new DeclarationNode(
+				node.start,
+				node.visibility,
+				node.declaration,
+				node.name,
+				new Type("func"),
+			),
+		);
+	}
 }
 
 /**

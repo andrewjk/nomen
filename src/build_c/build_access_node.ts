@@ -143,6 +143,16 @@ export function build_vtable_target(node: BaseNode, status: BuildStatus) {
 			status.code += "self";
 			return;
 		}
+		// A CAPTURED trait/class receiver lives in the closure env as a
+		// pointer (`_env->name`); emit it directly — taking its address would
+		// pass the env slot, not the instance (CLOSURE_PLAN Phase 2c).
+		const captured_shadowed =
+			!!status.current_function?.params.some((p) => p.name === name) ||
+			!!find_decl_in_c_scopes(status, name);
+		if (!captured_shadowed && status.closure_env?.has(name)) {
+			status.code += status.closure_env.get(name)!;
+			return;
+		}
 		// ref/trait/class param — emitted as `struct T *name`, already a pointer.
 		if (status.function_ref_params?.has(name) || status.class_vars?.has(name)) {
 			status.code += c_function_name(name);

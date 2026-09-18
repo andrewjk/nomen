@@ -19,6 +19,7 @@ import { instantiate_generic_type } from "./check_function_call_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { borrow_depth_of } from "./utils/borrow.ts";
+import { value_owns_closure } from "./utils/captures.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import evaluate_const_condition, {
 	evaluate_numeric_or_bool,
@@ -433,6 +434,23 @@ export default function check_function_call(
 		}
 		status.expected_type = old_expected_type;
 		status.allow_null_value = old_allow_null;
+
+		// A capturing closure is a heap env + descriptor. A func-typed FIELD
+		// of a VALUE struct cannot own it: value structs are copyable, so the
+		// copies would share (and double-free) the descriptor, and the
+		// non-owning func-field contract leaves it un-destroyed. Reject at the
+		// constructor (CLOSURE_PLAN Phase 2c). Class func fields own it via
+		// `<Class>_destroy`.
+		if (func_param && func.name === "#init" && value_owns_closure(param, status)) {
+			const ctor_struct = status.structs.find((s) => s.name === node.name);
+			if (ctor_struct && !ctor_struct.is_class) {
+				add_error(
+					status,
+					`cannot store a capturing closure in a func field of value struct '${ctor_struct.name}' — value structs are copyable and would share the descriptor; use a class instead`,
+					param.start,
+				);
+			}
+		}
 
 		// A `null` literal arg to a nullable struct VALUE parameter (`T? p`,
 		// T a non-class struct) carries `Type("null")` from check_value_node,
