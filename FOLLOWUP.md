@@ -338,3 +338,94 @@ switch to it, and let normal scope-exit `#destroy` unwinding run every live
 frame. That needs forced stack unwinding of suspended frames (or a
 longjmp-style teardown entry), which is a substantial runtime feature and was
 out of scope. Until then cancellation is cooperative only.
+
+## Silent deadlocks: wait-for-graph detector at idle points
+
+Deadlocks fail silently today. The shape that hit the Phase 2 mutex test
+draft — main sends `ack` after the `async` block while a task parks on
+`ack.receive()` inside it (join-before-communicate) — hangs the binary on
+both backends with no diagnostic. Static rules were evaluated and rejected:
+
+- "starts must be read inside join" is redundant with the brace join (which
+  already reads every handle) and forbids documented patterns (race-mode
+  losers, timeout cancellations are never read by design).
+- "no receive across scope" bans the legitimate produce-inside /
+  consume-after-the-brace direction (`Channel.send` is unbounded, so only
+  waiter-inside/producer-outside hangs), misses cycles with no scope
+  crossing at all, and breaks timeout/race recovery choreography.
+- Session types (the real static answer — linearity + protocol-dual
+  checking) type-check the ack protocol cleanly and still miss the hang: the
+  cycle's extra edge is the join at the brace, a temporal fact about nursery
+  scoping, not a channel-state fact. Rust's scoped threads carry the
+  identical hazard; its borrow checker proves spatial properties only.
+  Keep session types in the back pocket as an opt-in stdlib tier if
+  foot-guns accumulate (same governance as the actor plan).
+
+The runtime already materializes the full wait graph at hang time. Detector
+design (Go's "all goroutines are asleep - deadlock!" model):
+
+- Trigger at each would-idle point: a pool worker about to condvar-wait on
+  an empty queue, and the cooperative loop finding nothing runnable.
+- Condition: runnable-fiber queue empty AND no busy workers AND the
+  netpoller holds no pending registered fds AND pending futures exist
+  (nursery-tracked, or still in flight at exit).
+- On trigger: abort with a wait-graph dump — each parked fiber, its park
+  site (future / channel wait list / mutex wait list), the object waited on,
+  and its likely waker (owning nursery / channel / mutex handle).
+- Known false-positive source: raw blocking FFI has no node in the graph —
+  the same limitation as Go's detector. Document as such.
+
+Regression tests: (1) the join-before-communicate shape, (2) an intra-block
+two-task cycle (A locks m then parks on `ch.receive`; B, ch's only sender,
+blocks on `m.lock()`) — neither is statically catchable.
+
+## Daemon tasks: no detached-spawn form
+
+The one legitimate `std::thread::spawn` use case — a process-lifetime
+service (log flusher, metrics loop, watchdog) that must NOT block exit — has
+no expressible form:
+
+- Inside `async { }`: the never-ending task blocks the brace join forever.
+- Spawned bare (statement form): the future has `refs = 1` (trampoline only,
+  `build_spawn_node.ts`), so nothing tracks it — but exit still hangs:
+  `__nomen_pool_shutdown` (registered via atexit) joins the workers, and
+  workers drain the queue before exiting, so the daemon keeps its worker
+  alive and the `pthread_join` never returns.
+
+Fix directions:
+
+1. Cheapest honest form: a dedicated detached spawn on its own pthread —
+   closest to std semantics (process exit kills it mid-execution, by
+   design); no pool interaction, the std contract is explicit.
+2. Pool-native detach: a detached flag in the trampoline args;
+   `__nomen_pool_shutdown` drains only non-detached tasks and leaves
+   workers running detached ones unjoined. Needs a per-task flag and care
+   with pool-growth accounting.
+3. Either way the daemon owns its own shutdown (explicit stop signal), not
+   process exit. SPEC's Concurrency section gains a sentence when this
+   lands.
+
+## Advisory parking-lint content (ASYNC_PLAN Phase 4)
+
+ASYNC_PLAN scopes the lint to fiber-reachable code; the deadlock-design
+discussion settled its content:
+
+- Baseline: flag park-capable calls (`Task.result`/`result_uint64`/`wait`,
+  `Channel.receive`/`receive_string`, `Mutex.lock`, `wait_for_io`-backed
+  primitives) transitively reachable from a `Fiber(...).start()` — shows
+  the wait edges without judging them.
+- Channel-end advisory (uses existing move/borrow tracking): when a
+  receive-end flows into a nursery and no send on that channel is reachable
+  inside the block, note "waits on a producer outside this block" — the
+  join-before-communicate shape, as a hint.
+- Explicitly advisory, never a rule: produce-inside /
+  consume-after-the-brace must keep compiling, and timeout/race recovery
+  choreography relies on cross-block sends.
+
+## Phase 4 remainder (pointer — ASYNC_PLAN.md is the source of truth)
+
+Unchanged from ASYNC_PLAN.md Phase 4: 8 KB initial stacks + growth (guard
+page + SIGSEGV handler vs compiler-inserted stack-limit checks), `await`
+sugar, an io_uring runtime, the parking lint (above), plus the Phase 3
+leftover: the 10k-connection acceptance run (N = 64 is the tested ceiling).
+Recorded here as a pointer only, to avoid doc drift.

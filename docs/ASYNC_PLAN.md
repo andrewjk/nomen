@@ -467,8 +467,12 @@ The "heavy runtime" cost of Go's model is mostly costs Nomen doesn't have:
    `__nomen_future_timedwait` now builds a true absolute deadline (it
    previously treated the duration as one, so the "wait for cancelled tasks"
    step returned immediately). `Mutex.lock` parks cooperatively (try-lock +
-   yield); the threaded model still blocks its worker — deferred, see
-   FOLLOWUP.md. Forced-unwind kill-trampoline teardown is also deferred
+   yield), and in the threaded model a fiber parks on the mutex's wait list
+   instead of blocking its worker — unlock wakes the list, and a cancelled
+   waiter keeps waiting (returning without the lock would be unsound) and
+   observes the flag at its next checkpoint after acquiring (landed after
+   the Phase 2 writeup; test: "a threaded-model fiber parks on a lock held
+   across a park"). Forced-unwind kill-trampoline teardown is also deferred
    (cooperative observation is in place); see FOLLOWUP.md. Test coverage:
    `test/fiber_phase2.test.ts`.
 3. **Async I/O.** Netpoller (kqueue/epoll), non-blocking socket stdlib

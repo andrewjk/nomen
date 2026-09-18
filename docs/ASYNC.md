@@ -21,8 +21,10 @@ concurrency on both targets.
   Monomorphized per instantiation (e.g. `Task_uint64`).
 - **`Mutex`** — pthread-backed lock; `#destroy` releases the resource. In
   cooperative mode a fiber try-locks and yields (the holder runs on the same
-  thread); in the threaded model a fiber blocked on a contended mutex still
-  blocks its worker (see FOLLOWUP.md).
+  thread); in the threaded model a fiber parks on the mutex's wait list
+  instead of blocking its worker — unlock wakes the waiters. A cancelled
+  waiter keeps waiting (returning without the lock would be unsound) and
+  observes the cancel flag at its next checkpoint after acquiring.
 - **`Channel`** — blocking FIFO queue (`send` / `receive` for uint64 words,
   `send_string` / `receive_string` for fat strings). Fibers do not block on
   it: an empty `receive` parks the fiber on the channel's wait list
@@ -95,6 +97,14 @@ requires are the ones Nomen already enforces:
   same idea applied to tasks.
 - **`mov` ownership** (see MEMORY.md). The natural primitive for "transfer this
   value to a new owner (a task)" — already implemented, already checked.
+
+The one responsibility the nursery keeps on the caller is liveness: the join at
+the closing brace is unconditional, so code after the block cannot help a task
+inside finish — a task waiting on a producer outside the block deadlocks
+(receive inside the block, or pass the consumer in). Rust's `thread::scope`
+carries the identical hazard; its docs resolve it the same way, with the
+choreography inside the closure. The runtime-level answer (a wait-for-graph
+deadlock detector at the pool's idle points) is scoped in FOLLOWUP.md.
 
 ## No function coloring
 

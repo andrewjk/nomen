@@ -2576,6 +2576,12 @@ async {
 }
 ```
 
+Because the join is unconditional, one rule applies: code after the closing
+brace of an `async` block cannot help a task inside it finish. A task that
+waits on a channel message, a lock release, or a task result that only code
+after the block would provide results in a deadlock and should instead be
+received inside the block, or the consumer passed in.
+
 A nursery can have a timeout: `async(timeout: N) { ... }` where `N` is the
 timeout in milliseconds. The deadline is computed before the nursery body
 runs. When the deadline expires, remaining tasks are cancelled cooperatively
