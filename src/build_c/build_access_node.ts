@@ -8,9 +8,7 @@ import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
-import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import type FunctionNode from "../nodes/FunctionNode.ts";
-import SpawnNode from "../nodes/SpawnNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_fiber_spawn_node from "./build_fiber_spawn.ts";
@@ -18,8 +16,9 @@ import build_node from "./build_node.ts";
 import build_nursery_spawn from "./build_nursery_spawn.ts";
 import { is_owned_heap_temp } from "./build_operation_node.ts";
 import build_parameter_node from "./build_parameter_node.ts";
-import build_spawn_node, {
-	build_detached_spawn_node,
+import {
+	build_thread_detach,
+	build_thread_start,
 	ensure_concurrency_runtime,
 } from "./build_spawn_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
@@ -513,46 +512,39 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				ensure_concurrency_runtime(status);
 				status.used_fibers = true;
 			}
-			// `Thread(fn(args)).start()` — the surface form of a direct spawn
-			// (see ASYNC_PLAN.md). Synthesize a SpawnNode from the wrapped
-			// call and emit the standard spawn trampoline; the receiver
-			// Thread construction itself emits nothing.
+			// `.start()` on a Thread construction (or a stored Thread
+			// binding) — the surface form of a direct spawn
+			// (docs/CLOSURE_PLAN.md Phase 3b). The receiver's fields carry
+			// the task closure packed eagerly at the construction site;
+			// submit it to the pool and yield Task<T>.
 			if (access_func.is_thread_start) {
-				const ctor = node.target as FunctionCallNode;
-				const spawn = new SpawnNode(node.start, ctor.params[0] as FunctionCallNode);
-				spawn.function_return_type = access_func.function_return_type;
-				spawn.is_statement = access_func.is_statement;
-				build_spawn_node(spawn, status);
+				build_thread_start(access_func, node.target, status);
 				return;
 			}
-			// `Thread(fn(args)).detach()` — the daemon form: a dedicated
+			// `.detach()` on a Thread — the daemon form: a dedicated
 			// detached pthread (never a pool worker), unjoinable, killed by
 			// process exit by design. See ASYNC.md, "Daemon tasks".
 			if (access_func.is_thread_detach) {
-				const ctor = node.target as FunctionCallNode;
-				const spawn = new SpawnNode(node.start, ctor.params[0] as FunctionCallNode);
-				spawn.function_return_type = access_func.function_return_type;
-				build_detached_spawn_node(spawn, status);
+				build_thread_detach(access_func, node.target, status);
 				return;
 			}
-			// `Fiber(fn(args)).start[_on](buf)` — the fiber flavor: same
-			// trampoline and future machinery, launched on the fiber
-			// scheduler (heap stack, or the caller's buffer for start_on).
+			// `.start[_on](buf)` on a Fiber — the fiber flavor: same packed
+			// task closure, launched on the fiber scheduler (heap stack, or
+			// the caller's buffer for start_on).
 			if (access_func.is_fiber_start) {
-				const ctor = node.target as FunctionCallNode;
-				const spawn = new SpawnNode(node.start, ctor.params[0] as FunctionCallNode);
-				spawn.function_return_type = access_func.function_return_type;
-				spawn.is_statement = access_func.is_statement;
 				build_fiber_spawn_node(
-					spawn,
+					access_func,
+					node.target,
 					status,
 					access_func.is_fiber_start_on ? access_func.params[0] : undefined,
 				);
 				return;
 			}
-			// Escape hatch: `nursery.start(Thread(fn(args)))` — emit the spawn
-			// trampoline against the receiver Nursery's runtime futures/count
-			// pointers. See ASYNC.md.
+			// Escape hatch: `nursery.start(Thread(fn(args)))` — the single
+			// parameter is the Thread construction (or a Thread-typed
+			// expression); launch its packed closure and register the future
+			// with the receiver Nursery's runtime futures/count pointers.
+			// See ASYNC.md.
 			if (access_func.is_nursery_spawn) {
 				const nursery_ptr = nursery_pointer_expr(node.target, status);
 				build_nursery_spawn(access_func, nursery_ptr, status);

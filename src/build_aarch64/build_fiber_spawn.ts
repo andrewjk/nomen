@@ -1,14 +1,13 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
-import c_function_name from "../build_c/utils/c_function_name.ts";
-import c_type from "../build_c/utils/c_type.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
-import emission_label from "../build_common/emission_label.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
+import type AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
-import SpawnNode from "../nodes/SpawnNode.ts";
+import type FunctionCallNode from "../nodes/FunctionCallNode.ts";
+import Type from "../nodes/Type.ts";
 import { emit_address_of } from "./build_access_node.ts";
 import build_node from "./build_node.ts";
-import { ensure_concurrency_runtime_a64, spawn_arg_is_string } from "./build_spawn_node.ts";
+import { ensure_concurrency_runtime_a64 } from "./build_spawn_node.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
 
 /**
@@ -23,108 +22,41 @@ import { allocate_stack_space } from "./utils/stack_var.ts";
  */
 
 /**
- * Build a `Fiber(fn(args)).start()` / `.start_on(buf)` node (aarch64
- * backend). Mirrors build_spawn_node — trampoline + per-site submit helper
- * in the companion C, call-site asm staging the arguments — with the pool
- * submit swapped for the fiber launch. For start_on, two extra trailing
- * submit parameters carry the stack buffer's address and byte size.
+ * Build a `.start()` / `.start_on(buf)` launch on a `Fiber(fn(args))`
+ * construction (or a stored Fiber binding) — aarch64 backend
+ * (docs/CLOSURE_PLAN.md Phase 3b). A companion-C helper reads the packed
+ * handles from the receiver's fields and launches the task closure on the
+ * fiber scheduler (a heap stack, or the caller's fixed-size array buffer
+ * for start_on — validated at check time, >= 16 KB), registers the future
+ * with the enclosing nursery (if any), transfers the handles out of the
+ * instance, and returns Task<T> (or NULL, fire-and-forget); the assembly
+ * builds the receiver pointer and calls it.
  */
 export default function build_fiber_spawn_node(
-	node: SpawnNode,
+	access_func: AccessFunctionCallNode,
+	target: BaseNode,
 	status: BuildStatus,
 	start_on?: BaseNode,
 ) {
-	const call = node.call;
-	const func_name = c_function_name(emission_label(call.resolved_function ?? call));
-	const id = status.spawn_counter ?? 0;
-	status.spawn_counter = id + 1;
-
-	// Emit pool + fiber infrastructure on first fiber spawn (companion C,
-	// deduped; pool text first — the fiber text extends it).
 	ensure_concurrency_runtime_a64(status);
 	status.used_fibers = true;
 
-	const struct_name = `__nomen_spawn_${id}_args`;
-	const tramp_name = `__nomen_spawn_${id}_trampoline`;
-	const submit_name = `nomen_fiber_${id}_submit`;
+	const id = status.spawn_counter ?? 0;
+	status.spawn_counter = id + 1;
+	const helper_name = `nomen_fiber_${id}_start`;
 
-	// Arg C types — same rule as the Thread path (fat strings ride the
-	// nomen_string pair).
-	const arg_c_types: string[] = [];
-	for (let i = 0; i < call.params.length; i++) {
-		const arg_type = type_from_value_node(call.params[i]);
-		const mono_name = mono_type_name(arg_type);
-		const is_class = !!status.structs.find(
-			(s: { name: string; is_class?: boolean }) => s.name === mono_name && s.is_class,
-		);
-		const is_trait = !!status.traits.find((t: { name: string }) => t.name === mono_name);
-		arg_c_types.push(is_class || is_trait ? `struct ${mono_name} *` : `${c_type(mono_name)}`);
-	}
+	const t_arg = spawn_result_type_arg(access_func.function_return_type);
+	const mono_fiber = mono_type_name("Fiber", [t_arg]);
+	const mono_task_name = mono_type_name("Task", [t_arg]);
 
-	const return_type_name = node.function_return_type?.name;
-	const returns_value = !!(
-		return_type_name &&
-		return_type_name !== "void" &&
-		return_type_name !== "?"
-	);
-	const is_class_ret = returns_value
-		? !!status.structs.find(
-				(s: { name: string; is_class?: boolean }) => s.name === return_type_name && s.is_class,
-			)
-		: false;
-	const c_ret_type = is_class_ret
-		? `struct ${return_type_name} *`
-		: returns_value
-			? c_type(return_type_name)
-			: "void";
-	const slot_c_type = returns_value ? c_ret_type : "unsigned long long";
-
-	// --- Trampoline + submit helper as companion C ---
-	let tramp_c = `// --- fiber spawn site ${id} trampoline ---\n`;
-	tramp_c += `${c_ret_type} ${func_name}(`;
-	for (let i = 0; i < arg_c_types.length; i++) {
-		if (i > 0) tramp_c += ", ";
-		tramp_c += `${arg_c_types[i]}`;
-	}
-	tramp_c += `);\n`;
-	tramp_c += `struct ${struct_name} {\n`;
-	for (let i = 0; i < arg_c_types.length; i++) {
-		tramp_c += `\t${arg_c_types[i]} arg${i};\n`;
-	}
-	tramp_c += `\t${slot_c_type} *result_slot;\n`;
-	tramp_c += `\tunsigned long long *cancel_flag;\n`;
-	tramp_c += `\tstruct nomen_future *future;\n`;
-	tramp_c += `};\n`;
-	tramp_c += `static void ${tramp_name}(struct nomen_closure *_c) {\n`;
-	tramp_c += `\tstruct ${struct_name} *a = (struct ${struct_name} *)_c->env;\n`;
-	tramp_c += `\t__nomen_current_cancel_flag = a->cancel_flag;\n`;
-	if (returns_value) {
-		tramp_c += `\t${c_ret_type} _r = ${func_name}(`;
-	} else {
-		tramp_c += `\t${func_name}(`;
-	}
-	for (let i = 0; i < arg_c_types.length; i++) {
-		if (i > 0) tramp_c += ", ";
-		tramp_c += `a->arg${i}`;
-	}
-	tramp_c += `);\n`;
-	if (returns_value) {
-		tramp_c += `\t*(a->result_slot) = _r;\n`;
-	}
-	tramp_c += `\t__nomen_current_cancel_flag = NULL;\n`;
-	tramp_c += `\t__nomen_future_complete(a->future);\n`;
-	tramp_c += `\t__nomen_future_release(a->future);\n`; // closure disposed at the last release
-	tramp_c += `}\n`;
-	// Static descriptor template; every fiber spawn copies it into a heap
-	// descriptor owning its env (the future's last release disposes it).
-	const desc_name = `__nomen_spawn_${id}_descriptor`;
-	tramp_c += `static struct nomen_closure ${desc_name} = { (void *)${tramp_name}, NULL, 0, NULL };\n`;
-
-	// Nursery state + fire-and-forget detection.
 	const nursery_id = status.nursery_stack?.at(-1);
 	const nursery_off =
 		nursery_id !== undefined ? status.nursery_offsets?.get(nursery_id) : undefined;
-	const fire_and_forget = !!node.is_statement;
+	const fire_and_forget = !!access_func.is_statement;
+	// A chained launch consumes a TEMPORARY instance (see build_thread_start).
+	const target_is_temp =
+		target.node_type === "func_call" &&
+		!!((target as FunctionCallNode).is_thread_ctor || (target as FunctionCallNode).is_fiber_ctor);
 	const refs = fire_and_forget
 		? nursery_id !== undefined
 			? 2
@@ -133,118 +65,76 @@ export default function build_fiber_spawn_node(
 			? 3
 			: 2;
 
-	// Submit helper: allocates args + future (same as the Thread path), then
-	// launches a fiber instead of submitting to the pool. start_on appends
-	// (stack, size) trailing params.
-	tramp_c += `void *${submit_name}(`;
-	for (let i = 0; i < arg_c_types.length; i++) {
-		if (i > 0) tramp_c += ", ";
-		tramp_c += `${arg_c_types[i]} arg${i}`;
-	}
+	// --- Companion C: the launch helper ---
+	let c = `// --- fiber start site ${id} ---\n`;
+	c += `void *${helper_name}(void *self`;
 	let trailing = "";
-	if (nursery_id !== undefined) {
-		trailing += `${trailing ? ", " : ""}void **__nomen_nursery_futures, int *__nomen_nursery_count, int *__nomen_nursery_cap`;
+	if (nursery_off) {
+		trailing += `void **__nomen_nursery_futures, int *__nomen_nursery_count, int *__nomen_nursery_cap`;
 	}
 	if (start_on) {
 		trailing += `${trailing ? ", " : ""}void *__nomen_stack, unsigned long long __nomen_stack_size`;
 	}
-	if (trailing) tramp_c += `${arg_c_types.length ? ", " : ""}${trailing}`;
-	tramp_c += `) {\n`;
-	tramp_c += `\tstruct ${struct_name} *a = (struct ${struct_name} *)malloc(sizeof(struct ${struct_name}));\n`;
-	for (let i = 0; i < arg_c_types.length; i++) {
-		tramp_c += `\ta->arg${i} = arg${i};\n`;
-	}
-	tramp_c += `\ta->result_slot = (${slot_c_type} *)malloc(16);\n`;
-	tramp_c += `\tmemset(a->result_slot, 0, 16);\n`;
-	tramp_c += `\ta->cancel_flag = (unsigned long long *)malloc(sizeof(unsigned long long));\n`;
-	tramp_c += `\t*(a->cancel_flag) = 0;\n`;
-	tramp_c += `\tstruct nomen_future *f = (struct nomen_future *)malloc(sizeof(struct nomen_future));\n`;
-	tramp_c += `\tpthread_mutex_init(&f->mu, NULL);\n`;
-	tramp_c += `\tpthread_cond_init(&f->cv, NULL);\n`;
-	tramp_c += `\tf->done = 0;\n`;
-	tramp_c += `\tf->refs = ${refs};\n`;
-	tramp_c += `\tf->cancel_flag = a->cancel_flag;\n`;
-	tramp_c += `\tf->result_slot = a->result_slot;\n`;
-	tramp_c += `\ta->future = f;\n`;
-	// The task closure: heap copy of the site's descriptor with the args
-	// struct as env; owned by the future (disposed at the last release).
-	tramp_c += `\tstruct nomen_closure *c = (struct nomen_closure *)malloc(sizeof(struct nomen_closure));\n`;
-	tramp_c += `\t*c = ${desc_name};\n`;
-	tramp_c += `\tc->env = a;\n`;
-	tramp_c += `\tc->owned = 1;\n`;
-	tramp_c += `\tf->owner_args = c;\n`;
-	tramp_c += `\tf->fiber_waiters = NULL;\n`;
-	tramp_c += `\tf->owning_fiber = 0;\n`;
-	tramp_c += `\t__nomen_fiber_spawn${start_on ? "_on" : ""}(c, f${
+	if (trailing) c += `, ${trailing}`;
+	c += `) {\n`;
+	c += `\tstruct ${mono_fiber} *t = (struct ${mono_fiber} *)self;\n`;
+	c += `\tstruct nomen_future *f = (struct nomen_future *)t->future;\n`;
+	c += `\tvoid *result_ptr = (void *)t->result_slot;\n`;
+	c += `\tunsigned long long *cancel_ptr = (unsigned long long *)t->cancel_flag;\n`;
+	c += `\tstruct nomen_closure *cl = (struct nomen_closure *)t->task;\n`;
+	c += `\tf->refs = ${refs};\n`;
+	c += `\t__nomen_fiber_spawn${start_on ? "_on" : ""}(cl, f${
 		start_on ? ", __nomen_stack, (size_t)__nomen_stack_size" : ""
 	});\n`;
-	if (nursery_id !== undefined) {
-		tramp_c += `\t__nomen_nursery_track(__nomen_nursery_futures, __nomen_nursery_count, __nomen_nursery_cap, f);\n`;
+	if (nursery_off) {
+		c += `\t__nomen_nursery_track(__nomen_nursery_futures, __nomen_nursery_count, __nomen_nursery_cap, f);\n`;
 	}
+	// Transfer the handles out of the instance (started; #destroy no-ops).
+	c += `\tt->task = 0;\n`;
+	c += `\tt->future = 0;\n`;
+	c += `\tt->result_slot = 0;\n`;
+	c += `\tt->cancel_flag = 0;\n`;
+	c += `\tt->started = 1;\n`;
+	if (target_is_temp) c += `\tfree(t);\n`;
 	if (fire_and_forget) {
-		tramp_c += `\treturn (void *)0;\n`;
+		c += `\treturn (void *)0;\n`;
 	} else {
-		const mono_task_name = mono_type_name("Task", call.type?.type_args);
-		tramp_c += `\tstruct ${mono_task_name} *t = (struct ${mono_task_name} *)malloc(sizeof(struct ${mono_task_name}));\n`;
-		tramp_c += `\tt->handle = 0;\n`;
-		tramp_c += `\tt->done = 0;\n`;
-		tramp_c += `\tt->result_slot = (unsigned long long)a->result_slot;\n`;
-		tramp_c += `\tt->cancel_flag = (unsigned long long)a->cancel_flag;\n`;
-		tramp_c += `\tt->future = (unsigned long long)f;\n`;
-		tramp_c += `\treturn t;\n`;
+		c += `\tstruct ${mono_task_name} *task = (struct ${mono_task_name} *)malloc(sizeof(struct ${mono_task_name}));\n`;
+		c += `\ttask->handle = 0;\n`;
+		c += `\ttask->done = 0;\n`;
+		c += `\ttask->result_slot = (unsigned long long)result_ptr;\n`;
+		c += `\ttask->cancel_flag = (unsigned long long)cancel_ptr;\n`;
+		c += `\ttask->future = (unsigned long long)f;\n`;
+		c += `\treturn task;\n`;
 	}
-	tramp_c += `}\n`;
-
+	c += `}\n`;
 	if (!status.file_scope_c) status.file_scope_c = "";
-	status.file_scope_c += tramp_c;
+	status.file_scope_c += c;
 
-	// --- Call-site asm: build arg registers and call the submit helper ---
-	status.code += `// fiber spawn site ${id}\n`;
-	const nursery_extra = nursery_off ? 3 : 0;
-	const start_on_extra = start_on ? 2 : 0;
-	const fat_string_args = call.params.map(spawn_arg_is_string);
-	const arg_slot: number[] = [];
-	let total_arg_slots = 0;
-	for (let i = 0; i < call.params.length; i++) {
-		arg_slot.push(total_arg_slots);
-		total_arg_slots += fat_string_args[i] ? 2 : 1;
-	}
-	total_arg_slots += nursery_extra + start_on_extra;
+	// --- Assembly: receiver pointer (+ nursery addresses + stack buffer) ---
+	status.code += `// fiber start site ${id}\n`;
+	build_node(target, status);
+	if (!status.code.endsWith("\n")) status.code += "\n";
 
-	if (total_arg_slots === 0) {
-		status.code += `bl _${submit_name}\n`;
-	} else {
-		const args_base = allocate_stack_space(status, total_arg_slots * 8, 16);
-		for (let i = 0; i < call.params.length; i++) {
-			status.code += `// Build arg${i}\n`;
-			build_node(call.params[i], status);
-			if (!status.code.endsWith("\n")) status.code += "\n";
-			status.code += `str x0, [x29, #${args_base + arg_slot[i] * 8}]\n`;
-			if (fat_string_args[i]) {
-				status.code += `str x1, [x29, #${args_base + (arg_slot[i] + 1) * 8}]\n`;
-			}
-		}
-		let tail_slot = call.params.reduce((n, p, i) => n + (fat_string_args[i] ? 2 : 1), 0);
+	// The trailing args park the receiver pointer in a stack slot first:
+	// emitting the buffer address / nursery addresses can clobber x0.
+	let extra_slots = 0;
+	if (nursery_off) extra_slots += 3;
+	if (start_on) extra_slots += 2;
+	if (extra_slots > 0) {
+		const park = allocate_stack_space(status, 8, 8);
+		status.code += `str x0, [x29, #${park}]\n`;
 		if (nursery_off) {
-			// Addresses of the nursery's tracking slots (futures storage,
-			// count, capacity) — the helper writes back through the first.
-			status.code += `add x0, x29, #${nursery_off.futures_off}\n`;
-			status.code += `str x0, [x29, #${args_base + tail_slot * 8}]\n`;
-			tail_slot += 1;
-			status.code += `add x0, x29, #${nursery_off.count_off}\n`;
-			status.code += `str x0, [x29, #${args_base + tail_slot * 8}]\n`;
-			tail_slot += 1;
-			status.code += `add x0, x29, #${nursery_off.cap_off}\n`;
-			status.code += `str x0, [x29, #${args_base + tail_slot * 8}]\n`;
-			tail_slot += 1;
+			status.code += `add x1, x29, #${nursery_off.futures_off}\n`;
+			status.code += `add x2, x29, #${nursery_off.count_off}\n`;
+			status.code += `add x3, x29, #${nursery_off.cap_off}\n`;
 		}
 		if (start_on) {
 			// The stack buffer is passed by ADDRESS (a word), plus its size.
 			status.code += `// Build stack buffer address\n`;
 			emit_address_of(start_on, status);
 			if (!status.code.endsWith("\n")) status.code += "\n";
-			status.code += `str x0, [x29, #${args_base + tail_slot * 8}]\n`;
-			tail_slot += 1;
+			status.code += `mov x${nursery_off ? 4 : 1}, x0\n`;
 			const buf_type = type_from_value_node(start_on);
 			const elem_size = buf_type.name === "string" ? 16 : 8;
 			const len_node = buf_type.length;
@@ -253,27 +143,18 @@ export default function build_fiber_spawn_node(
 					? parseInt((len_node as unknown as { value: string }).value, 10)
 					: NaN;
 			status.code += `// stack size = ${Number.isNaN(len) ? 0 : len} * ${elem_size}\n`;
-			status.code += `mov x0, #${Number.isNaN(len) ? 0 : len * elem_size}\n`;
-			status.code += `str x0, [x29, #${args_base + tail_slot * 8}]\n`;
+			status.code += `mov x${nursery_off ? 5 : 2}, #${Number.isNaN(len) ? 0 : len * elem_size}\n`;
 		}
-		const NUM_REG_ARGS = 8;
-		const overflow_count = Math.max(0, total_arg_slots - NUM_REG_ARGS);
-		if (overflow_count > 0) {
-			const outgoing_size = Math.ceil((overflow_count * 8) / 16) * 16;
-			status.code += `sub sp, sp, #${outgoing_size}\n`;
-			for (let k = 0; k < overflow_count; k++) {
-				status.code += `ldr x9, [x29, #${args_base + (NUM_REG_ARGS + k) * 8}]\n`;
-				status.code += `str x9, [sp, #${k * 8}]\n`;
-			}
-		}
-		for (let s = 0; s < Math.min(total_arg_slots, NUM_REG_ARGS); s++) {
-			status.code += `ldr x${s}, [x29, #${args_base + s * 8}]\n`;
-		}
-		status.code += `bl _${submit_name}\n`;
-		if (overflow_count > 0) {
-			const outgoing_size = Math.ceil((overflow_count * 8) / 16) * 16;
-			status.code += `add sp, sp, #${outgoing_size}\n`;
-		}
+		status.code += `ldr x0, [x29, #${park}]\n`;
 	}
-	// x0 = Task pointer (returned by submit helper).
+	status.code += `bl _${helper_name}\n`;
+	// x0 = Task pointer (or NULL for fire-and-forget).
+}
+
+/** The launch's T as a Type: the stamped wrapped-call return type, with
+ *  void coerced to uint64 (Task's result-slot convention). */
+function spawn_result_type_arg(return_type: { name?: string } | undefined): Type {
+	return return_type?.name && return_type.name !== "void" && return_type.name !== "?"
+		? new Type(return_type.name)
+		: new Type("uint64");
 }

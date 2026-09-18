@@ -194,11 +194,11 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 
 	const is_nested = !!status.function_return_label;
 
-	// The Fiber class's statics (yield/is_fiber/set_cooperative) have raw
-	// asm bodies calling into the fiber runtime — any build of Fiber's
-	// methods pulls the runtime companion text in (deduped; extends the
-	// pool text).
-	if (node.name === "Fiber") {
+	// The Fiber/Thread classes' raw bodies (#destroy must-start, Fiber's
+	// statics yield/is_fiber/set_cooperative) call into the fiber runtime —
+	// any build of their methods pulls the runtime companion text in
+	// (deduped; extends the pool text).
+	if (node.name === "Fiber" || node.name === "Thread") {
 		ensure_concurrency_runtime_a64(status);
 		status.used_fibers = true;
 	}

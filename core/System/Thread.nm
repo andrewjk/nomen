@@ -1,0 +1,83 @@
+// Thread — a task running on the shared worker pool (docs/CLOSURE_PLAN.md
+// Phase 3b). `Thread(fn(args))` constructs a Thread value: the arguments are
+// evaluated eagerly and packed into a task closure (a heap closure
+// descriptor over the pooled-args environment — the same ABI every lambda
+// lowers to); `.start()` submits that closure to the worker pool and yields
+// a `Task<T>` handle; `.detach()` runs it as an unjoinable daemon.
+//
+// Because the construction is a real value, it can be STORED and started
+// later:
+//
+//     var t = Thread(work(n))
+//     ...later...
+//     var Task<uint64> handle = t.start()
+//
+// The pool starts at a configurable size (default 4, via Task.set_pool_size
+// before the first spawn) and grows on demand up to 64 workers when every
+// worker is busy, preventing deadlocks from nested spawns. The pool drains
+// and joins all workers at process exit; Task.shutdown_pool does this
+// explicitly.
+//
+// The pool infrastructure (types, worker loop, submit, shutdown, cancel
+// thread-local) lives in build_spawn_node and is emitted as file-scope C
+// on the first spawn — not in Thread's own methods — so that Thread can be
+// generic without duplicating the pool per instantiation.
+//
+// MUST-START: a Thread value that is destroyed without ever being started
+// is a programming error — #destroy reports it and aborts. start/detach
+// (and nursery.start) transfer ownership of the packed task out of the
+// value, so a started Thread destroys as a no-op.
+//
+// See ASYNC.md for the design.
+
+/**
+ * A deferred function call, startable on the shared worker pool
+ **/
+pub class Thread<T> : Sendable {
+	// The packed task closure (a `struct nomen_closure *`); owned by this
+	// value until start/detach/nursery.start transfers it to the runtime.
+	pub var uint64 task = 0
+	// Result-slot / cancel-flag / future handles for the (single) launch.
+	pub var uint64 result_slot = 0
+	pub var uint64 cancel_flag = 0
+	pub var uint64 future = 0
+	// Must-start flag: set by .start() / .detach() / nursery.start.
+	pub var started = false
+
+	// Destroying an unstarted Thread is a programming error (the wrapped
+	// call would silently never run) — report it and abort. A started
+	// Thread owns nothing: the launch transferred the task closure, result
+	// slot, cancel flag, and future to the runtime, and cleared the fields.
+	pub func #destroy = () {
+		```
+		#arch: c
+		if (!self->started) {
+			__nomen_spawn_must_start_abort();
+		}
+		if (self->future) {
+			__nomen_future_release((struct nomen_future *)self->future);
+			self->future = 0;
+			self->result_slot = 0;
+			self->cancel_flag = 0;
+		}
+		```
+		```
+		#arch: aarch64
+		// if (!self->started) __nomen_spawn_must_start_abort()
+		ldrb w0, [x19, #40]
+		cbnz w0, .Lthr_started
+		bl ___nomen_spawn_must_start_abort
+		.Lthr_started:
+		// if (self->future) { release it (an unstarted task's future is
+		// unshared — refs == 1 — so this tears down slot + flag + future);
+		// zero the fields }
+		ldr x0, [x19, #32]
+		cbz x0, .Lthr_done
+		bl ___nomen_future_release
+		str xzr, [x19, #32]
+		str xzr, [x19, #16]
+		str xzr, [x19, #24]
+		.Lthr_done:
+		```
+	}
+}

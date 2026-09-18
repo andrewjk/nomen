@@ -29,7 +29,6 @@ import {
 	is_overloaded,
 	mangled_label,
 } from "./utils/function_overload.ts";
-import is_sendable_type from "./utils/is_sendable_type.ts";
 import is_visible from "./utils/is_visible.ts";
 import {
 	is_class_type,
@@ -37,6 +36,7 @@ import {
 	is_owning_struct_type_requiring_move,
 } from "./utils/ownership.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
+import validate_spawn_args_sendable from "./utils/validate_spawn_args_sendable.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 import { view_fields_invalidated } from "./utils/view_fields.ts";
 
@@ -447,18 +447,21 @@ function check_access_function_node(
 	}
 
 	// `Thread(fn(args)).start()` and `Fiber(fn(args)).start[_on](buf)` — the
-	// surface forms of a direct spawn (see ASYNC_PLAN.md). The receiver is
-	// the compiler-special magic constructor; `.start()` launches the
-	// wrapped call and yields Task<T>. Special-cased (rather than methods on
-	// real types) because the spawn needs the per-site trampoline machinery.
+	// surface forms of a direct spawn (see ASYNC_PLAN.md,
+	// docs/CLOSURE_PLAN.md Phase 3b). The receiver is the magic constructor
+	// or ANY expression of the spawn class's type (a stored
+	// `var t = Thread(...)` binding may be started later). `.start()`
+	// launches the packed task and yields Task<T>; special-cased (rather
+	// than methods on the library class) because the launch needs the
+	// per-site nursery/trampoline context.
 	if (target_type.name === "Thread" && node.name === "start") {
-		return check_spawn_start(target, node, status, "Thread", false);
+		return check_spawn_start(target, target_type, node, status, "Thread", false);
 	}
 	if (target_type.name === "Thread" && node.name === "detach") {
-		return check_spawn_detach(target, node, status);
+		return check_spawn_detach(target, target_type, node, status);
 	}
 	if (target_type.name === "Fiber" && (node.name === "start" || node.name === "start_on")) {
-		return check_spawn_start(target, node, status, "Fiber", node.name === "start_on");
+		return check_spawn_start(target, target_type, node, status, "Fiber", node.name === "start_on");
 	}
 
 	// `view T` builtins: .at is a compiler intrinsic that operates on the
@@ -1015,27 +1018,12 @@ function check_nursery_spawn(node: AccessFunctionCallNode, status: CheckStatus):
 		return false;
 	}
 	const call = ctor.params[0] as FunctionCallNode;
-	// The wrapped call was already resolved by check_thread_ctor (run via
+	// The wrapped call was already resolved by check_magic_ctor (run via
 	// the constructor check above) — no re-check here.
 
-	// Every argument moved into the spawned task must be Sendable.
-	for (const param of call.params) {
-		let arg_type = type_from_value_node(param, status);
-		// A constant-folded argument (e.g. `"a" + "b"` → a synthetic data
-		// label value) resolves to no declared name — fall back to the
-		// checker-stamped node type, which the fold sets.
-		const stamped = (param as unknown as { type?: Type }).type;
-		if (!arg_type.name && stamped?.name) {
-			arg_type = stamped;
-		}
-		if (!is_sendable_type(arg_type.name, status)) {
-			add_error(
-				status,
-				`Spawn argument of type ${arg_type.name || "<unknown>"} is not Sendable`,
-				param.start,
-			);
-		}
-	}
+	// Every argument packed into the spawned task must be Sendable (the
+	// shared validator — the same one the magic constructor runs).
+	validate_spawn_args_sendable(call, status);
 
 	// Type the expression as Task<T> where T is the spawned function's return
 	// type (uint64 for void functions — the result slot exists but is unused).
@@ -1065,32 +1053,43 @@ function check_nursery_spawn(node: AccessFunctionCallNode, status: CheckStatus):
 
 /**
  * Check a `Thread(fn(args)).start()` / `Fiber(fn(args)).start[_on](buf)`
- * call — the surface forms of a direct spawn (see ASYNC_PLAN.md). The
- * receiver is the compiler-special magic constructor (already checked — its
- * wrapped call is resolved); this validates Sendable on every argument and
- * types the expression as `Task<T>`. For `start_on`, also validates the
- * stack buffer: a fixed-size array of at least 16 KB. The build synthesizes
- * a SpawnNode from the wrapped call and emits the standard spawn/fiber
- * trampoline.
+ * call — the surface forms of a direct spawn (see ASYNC_PLAN.md,
+ * docs/CLOSURE_PLAN.md Phase 3b). The receiver is the magic constructor
+ * (already checked — its args were packed eagerly) or any expression of
+ * the spawn class's type; this types the expression as `Task<T>`. For
+ * `start_on`, also validates the stack buffer: a fixed-size array of at
+ * least 16 KB. The build launches the receiver's packed task closure
+ * (submitting it to the pool or fiber scheduler) and yields Task<T>.
  */
 function check_spawn_start(
 	target: BaseNode,
+	target_type: Type,
 	node: AccessFunctionCallNode,
 	status: CheckStatus,
 	kind: "Thread" | "Fiber",
 	start_on: boolean,
 ): boolean {
+	// The receiver is the magic constructor (the chained form
+	// `Thread(fn(args)).start()`) or any expression of the spawn class's
+	// type (Phase 3b: a stored `var t = Thread(fn(args))` binding). T — the
+	// wrapped call's return type — rides the receiver's type args either
+	// way; for the chained form, fall back to the wrapped call's own type.
 	const ctor = target as FunctionCallNode;
-	const ctor_flagged = kind === "Thread" ? ctor.is_thread_ctor : ctor.is_fiber_ctor;
-	if (!ctor_flagged || ctor.params.length !== 1 || ctor.params[0].node_type !== "func_call") {
+	const ctor_flagged =
+		target.node_type === "func_call" &&
+		(kind === "Thread" ? ctor.is_thread_ctor : ctor.is_fiber_ctor);
+	const wrapped_call = ctor_flagged ? (ctor.params[0] as FunctionCallNode) : undefined;
+	let return_type = target_type.type_args?.[0];
+	if (!return_type?.name && wrapped_call) return_type = wrapped_call.type;
+	if (!return_type?.name) {
 		add_error(
 			status,
-			`${kind}(fn(args)).start expects a single call expression, e.g. ${kind}(work(n)).start()`,
+			`${kind}(fn(args)).start expects a spawned call, e.g. ${kind}(work(n)).start()`,
 			node.start,
 		);
 		return false;
 	}
-	const call = ctor.params[0] as FunctionCallNode;
+	const call = wrapped_call;
 
 	if (start_on) {
 		if (node.params.length !== 1) {
@@ -1134,23 +1133,19 @@ function check_spawn_start(
 		}
 	}
 
-	// Every argument moved into the spawned task must be Sendable.
-	validate_spawn_args_sendable(call, status);
-
 	// Type the expression as Task<T> where T is the spawned function's return
 	// type (uint64 for void functions — the result slot exists but is unused).
-	// Overwrite the wrapped call's type too: the build's spawn emission reads
-	// call.type.type_args for the monomorphized Task name.
-	const return_type = call.type;
+	// For the chained form, overwrite the wrapped call's type too: the build's
+	// spawn emission reads call.type.type_args for the monomorphized Task name.
 	const result_type_arg =
-		return_type && return_type.name && return_type.name !== "void" && return_type.name !== "?"
-			? new Type(return_type.name)
+		return_type.name && return_type.name !== "void" && return_type.name !== "?"
+			? return_type
 			: new Type("uint64");
 	const task_type = new Type("Task");
 	task_type.type_args = [result_type_arg];
 	node.function_return_type = return_type;
 	node.type = task_type;
-	call.type = task_type;
+	if (call) call.type = task_type;
 	if (kind === "Thread") node.is_thread_start = true;
 	else node.is_fiber_start = true;
 	// The Task a spawn yields is a fresh heap allocation (not a borrow), so
@@ -1168,61 +1163,34 @@ function check_spawn_start(
 }
 
 /**
- * Validate that every argument of a spawn/detach is Sendable (shared by
- * `.start()` and `.detach()`).
- */
-function validate_spawn_args_sendable(call: FunctionCallNode, status: CheckStatus): void {
-	for (const param of call.params) {
-		let arg_type = type_from_value_node(param, status);
-		// A constant-folded argument (e.g. `"a" + "b"` → a synthetic data
-		// label value) resolves to no declared name — fall back to the
-		// checker-stamped node type, which the fold sets.
-		const stamped = (param as unknown as { type?: Type }).type;
-		if (!arg_type.name && stamped?.name) {
-			arg_type = stamped;
-		}
-		if (!is_sendable_type(arg_type.name, status)) {
-			add_error(
-				status,
-				`Spawn argument of type ${arg_type.name || "<unknown>"} is not Sendable`,
-				param.start,
-			);
-		}
-	}
-}
-
-/**
  * Check a `Thread(fn(args)).detach()` call — the daemon form (see
  * ASYNC.md, "Daemon tasks"). The wrapped call runs on a dedicated detached
  * pthread (never a pool worker); nobody joins it, and process exit kills it
  * mid-execution BY DESIGN — the std::thread::spawn contract. The daemon
  * owns its own shutdown (a stop channel or flag), not process exit. There
  * is no handle, no future, and no cancellation: statement form only, the
- * expression types as void.
+ * expression types as void. The receiver is the magic constructor or any
+ * Thread-typed expression (a stored daemon handle).
  */
 function check_spawn_detach(
 	target: BaseNode,
+	target_type: Type,
 	node: AccessFunctionCallNode,
 	status: CheckStatus,
 ): boolean {
 	const ctor = target as FunctionCallNode;
-	const ctor_flagged = ctor.is_thread_ctor;
-	if (!ctor_flagged || ctor.params.length !== 1 || ctor.params[0].node_type !== "func_call") {
-		add_error(
-			status,
-			"Thread(fn(args)).detach expects a single call expression, e.g. Thread(work(n)).detach()",
-			node.start,
-		);
-		return false;
-	}
-	const call = ctor.params[0] as FunctionCallNode;
-
-	// Every argument moved into the daemon must be Sendable.
-	validate_spawn_args_sendable(call, status);
+	const wrapped_call =
+		target.node_type === "func_call" && ctor.is_thread_ctor
+			? (ctor.params[0] as FunctionCallNode)
+			: undefined;
 
 	// No Task<T>: the daemon is unjoinable by design. The wrapped call's
-	// return type rides along only so the trampoline can call it correctly.
-	node.function_return_type = call.type;
+	// return type (T) rides along only so the launch can derive the mono
+	// names — from the wrapped call for the chained form, from the
+	// receiver's type args for a stored binding (never from the receiver's
+	// own type NAME, which is the spawn class itself).
+	node.function_return_type =
+		wrapped_call?.type ?? target_type.type_args?.[0] ?? new Type("uint64");
 	node.type = new Type("void");
 	node.is_thread_detach = true;
 	return true;

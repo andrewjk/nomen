@@ -39,7 +39,15 @@ import {
 import scan_borrow_only_strings from "./utils/scan_borrow_only_strings.ts";
 
 /** System types whose method bodies call into the concurrency runtime. */
-const CONCURRENCY_TYPES = new Set(["Task", "Fiber", "Channel", "Mutex", "Nursery", "Tcp"]);
+const CONCURRENCY_TYPES = new Set([
+	"Task",
+	"Thread",
+	"Fiber",
+	"Channel",
+	"Mutex",
+	"Nursery",
+	"Tcp",
+]);
 
 export default function build_struct_node(node: StructNode, status: BuildStatus) {
 	if (node.is_generic) return;

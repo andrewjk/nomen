@@ -36,6 +36,7 @@ import { is_class_type, is_owning_struct_type_requiring_move } from "./utils/own
 import { resolve_declared_struct } from "./utils/resolve_declared_type.ts";
 import type_from_value from "./utils/type_from_value.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
+import validate_spawn_args_sendable from "./utils/validate_spawn_args_sendable.ts";
 
 /**
  * Find a plain (free) function by name. `status.functions` also holds every
@@ -61,15 +62,18 @@ export default function check_function_call_node(
 	status: CheckStatus,
 ): boolean {
 	// `Thread(fn(args))` / `Fiber(fn(args))` — the compiler-special spawn
-	// constructors (see ASYNC_PLAN.md). A user-declared function shadows
-	// either; a user struct named `Thread` shadows it, and a user struct
-	// named `Fiber` shadows it too (the stdlib's Fiber struct is marked with
-	// the library `is_library` stamp, which user declarations never carry).
-	// The wrapped call is resolved here (so both consumers see its return
-	// type); Sendable validation and Task<T> stamping live with the
-	// consumers — `.start()` on the result, or a nursery's
-	// `.start(Thread(fn(args)))` escape hatch — which know whether the spawn
-	// is direct or nursery-registered.
+	// constructors (see ASYNC_PLAN.md, docs/CLOSURE_PLAN.md Phase 3b). A
+	// user-declared function shadows either; a USER struct named `Thread`
+	// shadows it (the stdlib's own Thread/Fiber classes carry the library
+	// `is_library` stamp, which user declarations never carry — they ARE
+	// the magic ctor's result type, not a shadow), and likewise for a user
+	// struct named `Fiber`. The wrapped call is resolved here, the args are
+	// Sendable-validated eagerly (they are packed into the task env at the
+	// construction site), and the construction is typed as the monomorphized
+	// library class Thread<T> / Fiber<T> — a real, storable value whose
+	// `#destroy` enforces must-start (the library pattern, ASYNC_PLAN_2).
+	// Task<T> stamping stays with the consumers — `.start()` on the result,
+	// or a nursery's `.start(Thread(fn(args)))` escape hatch.
 	const magic_ctor =
 		node.name === "Thread"
 			? "Thread"
@@ -78,12 +82,15 @@ export default function check_function_call_node(
 						?.is_library
 				? "Fiber"
 				: undefined;
+	const thread_shadow_struct = resolve_declared_struct("Thread", status) as
+		| { is_library?: boolean }
+		| undefined;
 	if (
 		magic_ctor &&
 		node.params.length === 1 &&
 		node.params[0].node_type === "func_call" &&
 		!find_free_function(status, node.name) &&
-		!(magic_ctor === "Thread" && resolve_declared_struct("Thread", status))
+		!(magic_ctor === "Thread" && thread_shadow_struct && !thread_shadow_struct.is_library)
 	) {
 		return check_magic_ctor(node, status, magic_ctor);
 	}
@@ -1448,12 +1455,15 @@ function derive_annotations_for_access_func(
 /**
  * Check the compiler-special `Thread(fn(args))` / `Fiber(fn(args))`
  * constructor. Resolves the wrapped call (function resolution, argument
- * types, return type) and stamps the construction with the magic type plus
- * the wrapped function's return type. Sendable validation and Task<T>
- * stamping happen at the consumers: `.start()` / `.start_on(buf)`
- * (check_access_node) or a nursery's `.start(Thread(fn(args)))`. A magic
- * construction that is never consumed is inert — nothing is spawned; see
- * FOLLOWUP.md.
+ * types, return type), validates Sendable on every argument (they are
+ * packed into the task environment EAGERLY, at the construction site —
+ * docs/CLOSURE_PLAN.md Phase 3b), and stamps the construction as the
+ * monomorphized library class `Thread<T>` / `Fiber<T>` (T = the wrapped
+ * call's return type, uint64 for void — the same convention as Task<T>).
+ * The result is a real, storable value: `.start()` / `.detach()` /
+ * `.start_on(buf)` launch it (from the construction expression itself or a
+ * stored binding), and its `#destroy` enforces must-start (the library
+ * pattern from ASYNC_PLAN_2).
  */
 function check_magic_ctor(
 	node: FunctionCallNode,
@@ -1465,10 +1475,23 @@ function check_magic_ctor(
 		add_error(status, `Spawned call '${call.name}' did not resolve`, node.start);
 		return false;
 	}
+	validate_spawn_args_sendable(call, status);
 	if (name === "Thread") node.is_thread_ctor = true;
 	else node.is_fiber_ctor = true;
-	node.function_return_type = call.type;
+	const return_type = call.type;
+	const result_type_arg =
+		return_type && return_type.name && return_type.name !== "void" && return_type.name !== "?"
+			? new Type(return_type.name)
+			: new Type("uint64");
+	// Monomorphize the library class for T so its body (fields, #destroy)
+	// is emitted for this instantiation.
+	const spawn_struct = status.structs.find((s) => s.name === name);
+	if (spawn_struct && spawn_struct.type_params.length > 0) {
+		monomorphize(spawn_struct, [result_type_arg], status);
+	}
+	node.function_return_type = return_type;
 	node.type = new Type(name);
+	node.type.type_args = [result_type_arg];
 	return true;
 }
 
@@ -1500,9 +1523,21 @@ function rederive_magic_ctor_annotations(
 	if (name === "Thread") fc.is_thread_ctor = true;
 	else fc.is_fiber_ctor = true;
 	fc.function_return_type = return_type;
+	const result_type_arg =
+		return_type && return_type.name && return_type.name !== "void" && return_type.name !== "?"
+			? new Type(return_type.name)
+			: new Type("uint64");
+	// The clone must see the monomorphized library class (its body is built
+	// per-instantiation) and carry the type args the build reads for the
+	// mono Thread/Fiber C name.
+	const spawn_struct = status.structs.find((s) => s.name === name);
+	if (spawn_struct && spawn_struct.type_params.length > 0) {
+		monomorphize(spawn_struct, [result_type_arg], status);
+	}
 	if (!fc.type?.name) {
 		fc.type = new Type(name);
 	}
+	fc.type.type_args = [result_type_arg];
 }
 
 function rederive_nursery_spawn_annotations(fc: AccessFunctionCallNode, status: CheckStatus) {
@@ -1559,26 +1594,36 @@ function rederive_spawn_start_annotations(
 	name: "Thread" | "Fiber",
 	start_on: boolean,
 ) {
-	// The magic constructor is the AccessNode's target; the rederive walk
-	// visits it first (rederive_annotations_in_node recurses into .target),
-	// so its annotations are already re-derived here.
+	// The receiver is either the magic constructor itself (the source body
+	// wrote `Thread(fn(args)).start()`) or ANY expression of the spawn
+	// class's type (Phase 3b: `var t = Thread(fn(args)); …; t.start()` —
+	// starts are no longer chained to the construction). The wrapped call's
+	// return type (T) rides the receiver's type args either way.
 	const ctor = access_node?.target as FunctionCallNode | undefined;
-	const ctor_flagged = name === "Thread" ? ctor?.is_thread_ctor : ctor?.is_fiber_ctor;
-	if (!ctor || ctor.node_type !== "func_call" || !ctor_flagged) return;
+	const ctor_flagged =
+		ctor?.node_type === "func_call" &&
+		(name === "Thread" ? ctor.is_thread_ctor : ctor.is_fiber_ctor);
 	if (name === "Thread") fc.is_thread_start = true;
 	else fc.is_fiber_start = true;
 	fc.owned_return = true;
-	const call = ctor.params[0] as FunctionCallNode;
-	let return_type = ctor.function_return_type ?? call.type;
-	if (!return_type?.name) {
-		const func = find_free_function(status, call.name);
-		if (func) return_type = func.return_type;
+	let return_type: Type | undefined;
+	if (ctor_flagged) {
+		const call = ctor.params[0] as FunctionCallNode;
+		return_type = ctor.function_return_type ?? call.type;
+		if (!return_type?.name) {
+			const func = find_free_function(status, call.name);
+			if (func) return_type = func.return_type;
+		}
+	} else {
+		// A stored receiver: its declared type is the mono spawn class, so
+		// its type args carry T directly.
+		const receiver_type = access_node?.target?.type as Type | undefined;
+		return_type = receiver_type?.type_args?.[0];
 	}
-	fc.function_return_type = return_type;
-	const result_type_arg =
-		return_type && return_type.name && return_type.name !== "void" && return_type.name !== "?"
-			? new Type(return_type.name)
-			: new Type("uint64");
+	if (!return_type?.name) return_type = new Type("uint64");
+	const is_void = !return_type.name || return_type.name === "void" || return_type.name === "?";
+	fc.function_return_type = is_void ? new Type("uint64") : return_type;
+	const result_type_arg = is_void ? new Type("uint64") : return_type;
 	if (!fc.type?.name) {
 		const task_type = new Type("Task");
 		task_type.type_args = [result_type_arg];
@@ -1600,20 +1645,25 @@ function rederive_spawn_detach_annotations(
 	fc: AccessFunctionCallNode,
 	status: CheckStatus,
 ) {
-	// The magic constructor is the AccessNode's target; the rederive walk
-	// visits it first (rederive_annotations_in_node recurses into .target),
-	// so its annotations are already re-derived here.
-	const ctor = access_node?.target as FunctionCallNode | undefined;
-	if (!ctor || ctor.node_type !== "func_call" || !ctor.is_thread_ctor) return;
-	if (ctor.params.length !== 1 || ctor.params[0].node_type !== "func_call") return;
+	// The receiver is the magic constructor or any Thread-typed expression
+	// (Phase 3b allows a stored daemon handle). Only the flag matters: the
+	// detach emitter reads the task closure from the receiver's fields.
 	fc.is_thread_detach = true;
-	const call = ctor.params[0] as FunctionCallNode;
-	let return_type = ctor.function_return_type ?? call.type;
-	if (!return_type?.name) {
-		const func = find_free_function(status, call.name);
-		if (func) return_type = func.return_type;
+	const ctor = access_node?.target as FunctionCallNode | undefined;
+	if (ctor?.node_type === "func_call" && ctor.is_thread_ctor && ctor.params[0]) {
+		const call = ctor.params[0] as FunctionCallNode;
+		let return_type = ctor.function_return_type ?? call.type;
+		if (!return_type?.name) {
+			const func = find_free_function(status, call.name);
+			if (func) return_type = func.return_type;
+		}
+		fc.function_return_type = return_type;
+	} else {
+		// A stored receiver: T rides the receiver's type args (never the
+		// receiver's own type NAME — that is the spawn class itself).
+		fc.function_return_type =
+			(access_node?.target?.type as Type | undefined)?.type_args?.[0] ?? new Type("uint64");
 	}
-	fc.function_return_type = return_type;
 	if (!fc.type?.name) {
 		fc.type = new Type("void");
 	}

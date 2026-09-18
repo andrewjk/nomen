@@ -12,7 +12,6 @@
 	"Ansi",
 	"Buffer_int",
 	"BigInt",
-	"Fiber",
 	"Init",
 	"Nursery",
 	"Time",

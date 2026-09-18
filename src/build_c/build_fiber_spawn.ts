@@ -1,12 +1,11 @@
-import emission_label from "../build_common/emission_label.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
+import type AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
-import SpawnNode from "../nodes/SpawnNode.ts";
+import type FunctionCallNode from "../nodes/FunctionCallNode.ts";
+import Type from "../nodes/Type.ts";
 import build_node from "./build_node.ts";
-import { ensure_concurrency_runtime, spawn_arg_c_types } from "./build_spawn_node.ts";
+import { ensure_concurrency_runtime } from "./build_spawn_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
-import c_function_name from "./utils/c_function_name.ts";
-import c_type from "./utils/c_type.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 
 /**
@@ -35,136 +34,60 @@ import type_from_value_node from "./utils/type_from_value_node.ts";
  */
 
 /**
- * Build a `Fiber(fn(args)).start()` / `.start_on(buf)` node (C backend).
- *
- * The arg struct, result slot, cancel flag, and future are identical to the
- * Thread path (build_spawn_node) — the Task<T> handle machinery is shared.
- * The only difference is the launch step: the per-site trampoline runs on a
- * fiber stack under the fiber scheduler instead of being submitted to the
- * thread pool. `future` is passed to the spawn helper for signature
- * symmetry with the aarch64 backend; lifetime stays with the future's
- * refcount.
+ * Build a `.start()` / `.start_on(buf)` launch on a `Fiber(fn(args))`
+ * construction (or a stored Fiber binding) — C backend
+ * (docs/CLOSURE_PLAN.md Phase 3b). The receiver's fields carry the task
+ * closure packed eagerly at the construction site, plus the result slot,
+ * cancel flag, and future. This launches the closure on the fiber
+ * scheduler (a heap stack, or the caller's fixed-size array buffer for
+ * start_on — validated at check time, >= 16 KB), registers the future with
+ * the enclosing nursery (if any), transfers the handles out of the
+ * instance, and yields Task<T> (or nothing, fire-and-forget).
  */
 export default function build_fiber_spawn_node(
-	node: SpawnNode,
+	access_func: AccessFunctionCallNode,
+	target: BaseNode,
 	status: BuildStatus,
 	start_on?: BaseNode,
 ) {
-	const call = node.call;
-	const func_name = c_function_name(emission_label(call.resolved_function ?? call));
-	const id = status.spawn_counter ?? 0;
-	status.spawn_counter = id + 1;
-
 	// Emit pool + fiber infrastructure on first fiber spawn (file scope,
 	// deduped; pool text first — the fiber text extends it).
 	ensure_concurrency_runtime(status);
 	status.used_fibers = true;
 
-	const struct_name = `__nomen_spawn_${id}_args`;
-	const tramp_name = `__nomen_spawn_${id}_trampoline`;
+	const t_arg = spawn_result_type_arg(access_func.function_return_type);
+	const mono_fiber = mono_type_name("Fiber", [t_arg]);
+	const mono_task_name = mono_type_name("Task", [t_arg]);
 
-	const arg_c_types = spawn_arg_c_types(call, status);
-
-	const return_type_name = node.function_return_type?.name;
-	const returns_value = !!(
-		return_type_name &&
-		return_type_name !== "void" &&
-		return_type_name !== "?"
-	);
-	const is_class_ret =
-		returns_value && !!status.structs.find((s) => s.name === return_type_name && s.is_class);
-	const is_trait_ret = returns_value && !!status.traits.find((t) => t.name === return_type_name);
-	const c_ret_type = !returns_value
-		? "void"
-		: is_class_ret || is_trait_ret
-			? `struct ${return_type_name} *`
-			: c_type(return_type_name);
-	const slot_c_type = returns_value ? c_ret_type : "unsigned long long";
-
-	let header = `${c_ret_type} ${func_name}(${arg_c_types.join(", ")});\n`;
-	header += `struct ${struct_name} {\n`;
-	for (let i = 0; i < arg_c_types.length; i++) {
-		header += `\t${arg_c_types[i]} arg${i};\n`;
-	}
-	header += `\t${slot_c_type} *result_slot;\n`;
-	header += `\tunsigned long long *cancel_flag;\n`;
-	header += `\tstruct nomen_future *future;\n`;
-	header += `};\n`;
-	header += `static void ${tramp_name}(struct nomen_closure *_c) {\n`;
-	header += `\tstruct ${struct_name} *a = (struct ${struct_name} *)_c->env;\n`;
-	header += `\t__nomen_current_cancel_flag = a->cancel_flag;\n`;
-	if (returns_value) {
-		header += `\t${c_ret_type} _r = ${func_name}(`;
-	} else {
-		header += `\t${func_name}(`;
-	}
-	for (let i = 0; i < arg_c_types.length; i++) {
-		if (i > 0) header += ", ";
-		header += `a->arg${i}`;
-	}
-	header += ");\n";
-	if (returns_value) {
-		header += `\t*(a->result_slot) = _r;\n`;
-	}
-	header += `\t__nomen_current_cancel_flag = NULL;\n`;
-	header += `\t__nomen_future_complete(a->future);\n`;
-	// The trampoline holds one future reference for the duration of the run —
-	// release it only after signaling. The final release disposes the task
-	// closure; the fiber itself is freed by the scheduler when the resumer
-	// observes DONE.
-	header += `\t__nomen_future_release(a->future);\n`;
-	header += `}\n`;
-	// Static descriptor template; every fiber spawn copies it into a heap
-	// descriptor owning its env (the future's last release disposes it).
-	const desc_name = `__nomen_spawn_${id}_descriptor`;
-	header += `static struct nomen_closure ${desc_name} = { (void *)${tramp_name}, NULL, 0, NULL };\n`;
-	status.headers += header;
-
-	const task_type_args = call.type?.type_args;
-	const mono_task_name = mono_type_name("Task", task_type_args);
-
-	// Statement-expression: set up args, allocate the future, launch the
-	// fiber, optionally yield a Task. Identical to build_spawn_node except
-	// the launch step.
-	status.code += `({\n`;
-	status.code += `\tstruct ${struct_name} *_args = (struct ${struct_name} *)malloc(sizeof(struct ${struct_name}));\n`;
-	for (let i = 0; i < call.params.length; i++) {
-		status.code += `\t_args->arg${i} = `;
-		build_node(call.params[i], status);
-		status.code += ";\n";
-	}
-	status.code += `\t${slot_c_type} *_result_ptr = (${slot_c_type} *)malloc(sizeof(${slot_c_type}));\n`;
-	status.code += `\tmemset(_result_ptr, 0, sizeof(${slot_c_type}));\n`;
-	status.code += `\t_args->result_slot = _result_ptr;\n`;
-	status.code += `\tunsigned long long *_cancel_ptr = (unsigned long long *)malloc(sizeof(unsigned long long));\n`;
-	status.code += `\t*_cancel_ptr = 0;\n`;
-	status.code += `\t_args->cancel_flag = _cancel_ptr;\n`;
-	status.code += `\tstruct nomen_future *_future = (struct nomen_future *)malloc(sizeof(struct nomen_future));\n`;
-	status.code += `\tpthread_mutex_init(&_future->mu, NULL);\n`;
-	status.code += `\tpthread_cond_init(&_future->cv, NULL);\n`;
-	status.code += `\t_future->done = 0;\n`;
-	status.code += `\t_future->fiber_waiters = NULL;\n`;
-	status.code += `\t_future->owning_fiber = NULL;\n`;
-	status.code += `\t_future->cancel_flag = _cancel_ptr;\n`;
-	status.code += `\t_future->result_slot = _result_ptr;\n`;
-	status.code += `\t_args->future = _future;\n`;
-	// The task closure: heap copy of the site's descriptor with the args
-	// struct as env; owned by the future (disposed at the last release).
-	status.code += `\tstruct nomen_closure *_closure = (struct nomen_closure *)malloc(sizeof(struct nomen_closure));\n`;
-	status.code += `\t*_closure = ${desc_name};\n`;
-	status.code += `\t_closure->env = _args;\n`;
-	status.code += `\t_closure->owned = 1;\n`;
-	status.code += `\t_future->owner_args = _closure;\n`;
-
-	// Future refs: trampoline + returned Task (+ nursery). Fire-and-forget
-	// drops the Task reference.
 	const nursery_id = status.nursery_stack?.at(-1);
-	const fire_and_forget = !!node.is_statement;
-	if (fire_and_forget) {
-		status.code += `\t_future->refs = ${nursery_id !== undefined ? 2 : 1};\n`;
-	} else {
-		status.code += `\t_future->refs = ${nursery_id !== undefined ? 3 : 2};\n`;
-	}
+	const fire_and_forget = !!access_func.is_statement;
+	// A chained launch (`Fiber(fn(args)).start()`) consumes a TEMPORARY
+	// instance — free it after transferring the handles; a stored binding's
+	// instance is freed by its owner's scope exit.
+	const target_is_temp =
+		target.node_type === "func_call" &&
+		!!((target as FunctionCallNode).is_thread_ctor || (target as FunctionCallNode).is_fiber_ctor);
+	// The construction's own reference is consumed by the launch — the
+	// pre-3b ref accounting (trampoline + Task [+ nursery]).
+	const refs = fire_and_forget
+		? nursery_id !== undefined
+			? 2
+			: 1
+		: nursery_id !== undefined
+			? 3
+			: 2;
+
+	// Statement expression: read the handles from the instance, launch the
+	// fiber, optionally yield a Task.
+	status.code += `({\n`;
+	status.code += `\tstruct ${mono_fiber} *_self = `;
+	build_node(target, status);
+	status.code += `;\n`;
+	status.code += `\tstruct nomen_future *_future = (struct nomen_future *)_self->future;\n`;
+	status.code += `\tvoid *_result_ptr = (void *)_self->result_slot;\n`;
+	status.code += `\tunsigned long long *_cancel_ptr = (unsigned long long *)_self->cancel_flag;\n`;
+	status.code += `\tstruct nomen_closure *_closure = (struct nomen_closure *)_self->task;\n`;
+	status.code += `\t_future->refs = ${refs};\n`;
 
 	// Launch on a fiber stack. start_on's buffer was validated at check time
 	// (fixed-size array, >= 16 KB); compute its byte size from the element
@@ -188,9 +111,16 @@ export default function build_fiber_spawn_node(
 	if (nursery_id !== undefined) {
 		status.code += `\t__nomen_nursery_track((void **)&__nomen_nursery_${nursery_id}_futures, &__nomen_nursery_${nursery_id}_count, &__nomen_nursery_${nursery_id}_cap, _future);\n`;
 	}
+	// Transfer the handles out of the instance (started; #destroy no-ops).
+	status.code += `\t_self->task = 0;\n`;
+	status.code += `\t_self->future = 0;\n`;
+	status.code += `\t_self->result_slot = 0;\n`;
+	status.code += `\t_self->cancel_flag = 0;\n`;
+	status.code += `\t_self->started = 1;\n`;
+	if (target_is_temp) status.code += `\tfree(_self);\n`;
 	if (fire_and_forget) {
-		// Fire-and-forget: no Task handle needed. The trampoline (and
-		// nursery, if any) manage the future lifetime.
+		// Fire-and-forget: no Task handle needed. The fiber (and nursery,
+		// if any) manage the future lifetime.
 		status.code += `\t(void)0;\n`;
 	} else {
 		status.code += `\tstruct ${mono_task_name} *_task = (struct ${mono_task_name} *)malloc(sizeof(struct ${mono_task_name}));\n`;
@@ -202,4 +132,12 @@ export default function build_fiber_spawn_node(
 		status.code += `\t_task;\n`;
 	}
 	status.code += `})\n`;
+}
+
+/** The launch's T as a Type: the stamped wrapped-call return type, with
+ *  void coerced to uint64 (Task's result-slot convention). */
+function spawn_result_type_arg(return_type: { name?: string } | undefined): Type {
+	return return_type?.name && return_type.name !== "void" && return_type.name !== "?"
+		? new Type(return_type.name)
+		: new Type("uint64");
 }

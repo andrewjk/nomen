@@ -2453,8 +2453,9 @@ Every value passed to `Thread(...)` must be Sendable.
 
 ### Thread
 
-`Thread(fn(args)).start()` runs a function call on a separate thread. It can
-be used as a statement (fire-and-forget) or an expression (capture the
+`Thread(fn(args))` constructs a deferred call: the arguments are evaluated
+eagerly and packed into the task. `.start()` runs it on a separate thread. It
+can be used as a statement (fire-and-forget) or an expression (capture the
 resulting `Task`):
 
 ```
@@ -2467,6 +2468,20 @@ Thread(bg(0)).start()                 // statement form
 var t = Thread(bg(0)).start()         // expression form
 t.wait()
 ```
+
+Because the construction is a real value, it can be stored and started later —
+the arguments are bound at construction, the call happens at `start()`:
+
+```
+var job = Thread(bg(0))
+// ...anything may happen here...
+job.start()
+```
+
+**Must-start**: a `Thread` (or `Fiber`) value that is destroyed without ever
+being started is a programming error — its `#destroy` reports it and aborts.
+Every construction must reach `.start()`, `.detach()`, or a nursery's
+`.start(...)`.
 
 The `start()` call yields a `Task` handle. The handle is usable whether or not
 the spawn happened inside a nursery: waiting is idempotent (join-once), and
@@ -2498,6 +2513,8 @@ _stackful coroutine_ — a heap-allocated stack (~64 KB) multiplexed over the
 worker pool. A fiber that waits (`Task.result`, `Task.wait`, `Channel.receive`)
 **parks**: it frees its worker to run other fibers instead of blocking the
 thread. Thousands of waiting fiber tasks therefore cost stacks, not threads.
+Like `Thread`, the construction is a storable value — and an unstarted one
+aborts at destroy (must-start).
 
 ```
 import System

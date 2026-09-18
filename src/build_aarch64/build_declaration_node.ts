@@ -290,8 +290,18 @@ function emit_data(status: BuildStatus, data: string) {
 	}
 }
 
+/** The compiler-special Thread/Fiber(fn(args)) construction: never a
+ *  struct-init call — build_node's func_call intercept packs the task
+ *  eagerly and yields the instance (docs/CLOSURE_PLAN.md Phase 3b). */
+function is_magic_spawn_ctor(node: BaseNode): boolean {
+	if (node.node_type !== "func_call") return false;
+	const fc = node as FunctionCallNode;
+	return !!(fc.is_thread_ctor || fc.is_fiber_ctor);
+}
+
 function is_struct_constructor(node: BaseNode, status: BuildStatus): boolean {
 	if (node.node_type !== "func_call") return false;
+	if (is_magic_spawn_ctor(node)) return false;
 	const fc = node as FunctionCallNode;
 	return !!status.structs.find((s) => s.name === fc.name && !s.is_simple_type);
 }
@@ -312,6 +322,7 @@ function arg_is_string(node: BaseNode): boolean {
 
 function is_class_constructor(node: BaseNode, status: BuildStatus): boolean {
 	if (node.node_type !== "func_call") return false;
+	if (is_magic_spawn_ctor(node)) return false;
 	const fc = node as FunctionCallNode;
 	const s = status.structs.find((s) => s.name === fc.name && !s.is_simple_type);
 	return !!s && !!s.is_class;
@@ -1062,7 +1073,7 @@ export default function build_declaration_node(
 					emit_data(status, `${node.name}: .space 8\n`);
 				}
 				const func_call = node.value as FunctionCallNode;
-				if (func_call.name === concrete.name) {
+				if (func_call.name === concrete.name && !is_magic_spawn_ctor(func_call)) {
 					status.code += `mov x0, #${struct_size}\n`;
 					emit_malloc(status);
 					emit_var_store(status, "x0", node.name, 8);
@@ -1111,7 +1122,7 @@ export default function build_declaration_node(
 			} else {
 				emit_data(status, `${node.name}: .space ${struct_size}\n`);
 			}
-			if (func_call.name === concrete.name) {
+			if (func_call.name === concrete.name && !is_magic_spawn_ctor(func_call)) {
 				const param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
 				const outgoing = build_constructor_params(func_call, param_regs, status);
 				emit_var_address(status, "x0", node.name);
@@ -1872,9 +1883,9 @@ export default function build_declaration_node(
 			status.function_ref_params.add(node.name);
 			if (node.value && node.value.node_type === "func_call") {
 				const func_call = node.value as FunctionCallNode;
-				const is_constructor = status.structs.find(
-					(s) => s.name === func_call.name && !s.is_simple_type,
-				);
+				const is_constructor =
+					!is_magic_spawn_ctor(func_call) &&
+					status.structs.find((s) => s.name === func_call.name && !s.is_simple_type);
 				if (is_constructor) {
 					const struct_size = get_struct_size(node.type.name, status);
 					status.code += `mov x0, #${struct_size}\n`;
@@ -2001,9 +2012,9 @@ export default function build_declaration_node(
 			}
 			if (node.value && node.value.node_type === "func_call") {
 				const func_call = node.value as FunctionCallNode;
-				const is_constructor = status.structs.find(
-					(s) => s.name === func_call.name && !s.is_simple_type,
-				);
+				const is_constructor =
+					!is_magic_spawn_ctor(func_call) &&
+					status.structs.find((s) => s.name === func_call.name && !s.is_simple_type);
 				if (is_constructor) {
 					// Evaluate params into x1-x7 first (before setting x0)
 					const param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];

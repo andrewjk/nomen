@@ -238,6 +238,41 @@ de-specialized into library structs over capturing lambdas; the
 enforces owned captures; must-start via the library `#destroy` pattern; the
 `Awaitable` construction side opens user-defined spawnables.
 
+> **Status: Phase 3b LANDED — Thread/Fiber are real library classes.**
+> `Thread(fn(args))` / `Fiber(fn(args))` now construct MONOMORPHIZED
+> library classes (`core/System/Thread.nm`, `Fiber.nm` — `class Thread<T>`
+> / `class Fiber<T> : Sendable` with `uint64` handle fields for the task
+> closure / result slot / cancel flag / future plus a `started` flag, the
+> same handle-through-uint64 pattern Task.nm established). The construction
+> packs the wrapped call's arguments EAGERLY (Sendable-validated at the
+> ctor — moved from the consumers) into the task env, allocates the
+> future machinery (refs = 1: the instance's own), builds the heap task
+> closure (the Phase-3a ABI), and yields the instance — a real, STORABLE
+> value: `var t = Thread(work(n))` … `t.start()` is now legal (the
+> checker's start/detach/start_on guards no longer require the receiver
+> to be the chained ctor; T rides the receiver's type args). The launch
+> emitters (start / detach / start_on / nursery escape hatch, both
+> backends) read the handles from the receiver's fields, submit the
+> packed closure, register the nursery, transfer the handles OUT of the
+> instance (fields zeroed, `started = 1`), free a chained TEMPORARY
+> instance (a stored binding's instance is freed by its owner's scope
+> exit), and yield Task<T>. MUST-START is the library `#destroy` pattern
+> (ASYNC_PLAN_2): destroying an unstarted value reports and aborts
+> (`__nomen_spawn_must_start_abort`); a never-consumed construction is no
+> longer an inert link-time error — the FOLLOWUP item is closed.
+> `.detach()` releases the construction's unused future (detaching the
+> closure from it — the daemon runner owns it). The per-site
+> trampoline/args/descriptor emission moved wholly into the ctor; the
+> launch sites are field-driven. Also fixed: a mono-construction
+> referenced from a declaration initializer hit the class-init fast path
+> (`bl Thread_init` — the generic init is never built); the aarch64
+> declaration fast paths now defer magic ctors to build_node's
+> intercept. Not yet (3c): borrow-capture kinds for the sugar, the
+> Awaitable construction side. Green: task/fiber/daemon/spec-concurrency
+> suites + new `test/thread_struct.test.ts` (6 tests, both backends:
+> chained, store-later-start Thread/Fiber/start_on, stored detach,
+> must-start abort, stored-nursery start) + full suite.
+>
 > **Status: Phase 3a LANDED — the spawn runtime speaks the closure ABI.**
 > The pool, the fiber scheduler, and the daemon launcher now take a
 > `struct nomen_closure *` task whose code receives the closure itself

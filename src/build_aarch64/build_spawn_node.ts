@@ -1,11 +1,10 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
-import c_function_name from "../build_c/utils/c_function_name.ts";
-import c_type from "../build_c/utils/c_type.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
-import emission_label from "../build_common/emission_label.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
+import type AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
-import SpawnNode from "../nodes/SpawnNode.ts";
+import type FunctionCallNode from "../nodes/FunctionCallNode.ts";
+import Type from "../nodes/Type.ts";
 import build_node from "./build_node.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
 
@@ -44,6 +43,12 @@ void __nomen_closure_dispose(struct nomen_closure *c) {
 	if (c->destroy_env) c->destroy_env(c->env);
 	free(c->env);
 	free(c);
+}
+// The library must-start contract (Thread/Fiber #destroy) — see the C
+// backend's POOL_HEADER. Non-static: raw asm branches into it.
+void __nomen_spawn_must_start_abort(void) {
+	fprintf(stderr, "error: a Thread(fn(args)) / Fiber(fn(args)) value was never started - append .start() (or .detach()) or pass it to a nursery's .start()\\n");
+	abort();
 }
 static __thread unsigned long long *__nomen_current_cancel_flag = NULL;
 // Fiber runtime (ASYNC_PLAN.md Phase 1). The pool and the fiber scheduler
@@ -1133,116 +1138,39 @@ static int __nomen_deadlock_check_worker(void) {
 `;
 
 /**
- * Build a `spawn <call>` node for aarch64.
- *
- * Strategy: the per-site trampoline is emitted as a C function in the
- * companion file (avoiding cross-object function pointer issues). The
- * assembly at the call site builds the arg struct, allocates the future,
- * then calls __nomen_spawn_submit (a C helper) which does the pool submit
- * and Task construction. This keeps the assembly minimal and the complex
- * allocation/submit logic in portable C.
+ * Build a `.start()` launch on a `Thread(fn(args))` construction (or a
+ * stored Thread binding) — aarch64 backend (docs/CLOSURE_PLAN.md Phase 3b).
+ * A companion-C helper reads the packed handles from the receiver's fields,
+ * submits the task closure to the pool, registers the future with the
+ * enclosing nursery (if any), transfers the handles out of the instance,
+ * and returns the Task<T> handle (or NULL, fire-and-forget); the assembly
+ * builds the receiver pointer and calls it.
  */
-export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
-	const call = node.call;
-	const func_name = c_function_name(emission_label(call.resolved_function ?? call));
-	const id = status.spawn_counter ?? 0;
-	status.spawn_counter = id + 1;
-
-	// Emit pool infrastructure on first spawn (file-scope C companion).
+export default function build_thread_start(
+	access_func: AccessFunctionCallNode,
+	target: BaseNode,
+	status: BuildStatus,
+) {
 	ensure_concurrency_runtime_a64(status);
 
-	const struct_name = `__nomen_spawn_${id}_args`;
-	const tramp_name = `__nomen_spawn_${id}_trampoline`;
-	const submit_name = `nomen_spawn_${id}_submit`;
+	const id = status.spawn_counter ?? 0;
+	status.spawn_counter = id + 1;
+	const helper_name = `nomen_thread_${id}_start`;
 
-	// Resolve each arg's C type. Primitives and the fat `string` (the
-	// 16-byte nomen_string — two AAPCS register slots) go through c_type so
-	// the companion C signature matches the asm's actual 64-bit values (the
-	// raw Nomen names either don't exist in C (`string`) or are the wrong
-	// width (`int` is C `long`)). Classes/traits are heap pointers.
-	const arg_c_types: string[] = [];
-	for (let i = 0; i < call.params.length; i++) {
-		const arg_type = type_from_value_node(call.params[i]);
-		const mono_name = mono_type_name(arg_type);
-		const is_class = !!status.structs.find((s) => s.name === mono_name && s.is_class);
-		const is_trait = !!status.traits.find((t) => t.name === mono_name);
-		arg_c_types.push(is_class || is_trait ? `struct ${mono_name} *` : `${c_type(mono_name)}`);
-	}
+	const t_arg = spawn_result_type_arg(access_func.function_return_type);
+	const mono_thread = mono_type_name("Thread", [t_arg]);
+	const mono_task_name = mono_type_name("Task", [t_arg]);
 
-	// Determine return type.
-	const return_type_name = node.function_return_type?.name;
-	const returns_value = !!(
-		return_type_name &&
-		return_type_name !== "void" &&
-		return_type_name !== "?"
-	);
-	const is_class_ret = returns_value
-		? !!status.structs.find((s) => s.name === return_type_name && s.is_class)
-		: false;
-	const c_ret_type = is_class_ret
-		? `struct ${return_type_name} *`
-		: returns_value
-			? c_type(return_type_name)
-			: "void";
-	// The result cell is always 16 bytes: Task.nm's raw `result` asm loads
-	// BOTH words ([slot], [slot+8]) for every T (fat strings ride the pair,
-	// scalars ignore x1), so the cell must be at least a pair wide even when
-	// the typed write below stores a single word.
-	const slot_c_type = returns_value ? c_ret_type : "unsigned long long";
-
-	// --- Emit trampoline + submit helper as C companion ---
-
-	let tramp_c = `// --- spawn site ${id} trampoline ---\n`;
-	// Forward-declare the user function.
-	tramp_c += `${c_ret_type} ${func_name}(`;
-	for (let i = 0; i < arg_c_types.length; i++) {
-		if (i > 0) tramp_c += ", ";
-		tramp_c += `${arg_c_types[i]}`;
-	}
-	tramp_c += `);\n`;
-	tramp_c += `struct ${struct_name} {\n`;
-	for (let i = 0; i < arg_c_types.length; i++) {
-		tramp_c += `\t${arg_c_types[i]} arg${i};\n`;
-	}
-	tramp_c += `\t${slot_c_type} *result_slot;\n`;
-	tramp_c += `\tunsigned long long *cancel_flag;\n`;
-	tramp_c += `\tstruct nomen_future *future;\n`;
-	tramp_c += `};\n`;
-
-	// Trampoline: closure body (the code receives the closure itself; the
-	// args struct rides in env — CLOSURE_PLAN Phase 3a). Static — only used
-	// within the companion; the pool worker dispatches through the
-	// descriptor.
-	tramp_c += `static void ${tramp_name}(struct nomen_closure *_c) {\n`;
-	tramp_c += `\tstruct ${struct_name} *a = (struct ${struct_name} *)_c->env;\n`;
-	tramp_c += `\t__nomen_current_cancel_flag = a->cancel_flag;\n`;
-	if (returns_value) {
-		tramp_c += `\t${c_ret_type} _r = ${func_name}(`;
-	} else {
-		tramp_c += `\t${func_name}(`;
-	}
-	for (let i = 0; i < arg_c_types.length; i++) {
-		if (i > 0) tramp_c += ", ";
-		tramp_c += `a->arg${i}`;
-	}
-	tramp_c += `);\n`;
-	if (returns_value) {
-		tramp_c += `\t*(a->result_slot) = _r;\n`;
-	}
-	tramp_c += `\t__nomen_current_cancel_flag = NULL;\n`;
-	tramp_c += `\t__nomen_future_complete(a->future);\n`;
-	tramp_c += `\t__nomen_future_release(a->future);\n`; // closure disposed at the last release
-	tramp_c += `}\n`;
-	// Static descriptor template; every spawn copies it into a heap
-	// descriptor owning its env (the future's last release disposes it).
-	const desc_name = `__nomen_spawn_${id}_descriptor`;
-	tramp_c += `static struct nomen_closure ${desc_name} = { (void *)${tramp_name}, NULL, 0, NULL };\n`;
-
-	// Nursery state + fire-and-forget detection.
 	const nursery_id = status.nursery_stack?.at(-1);
 	const nursery_off =
 		nursery_id !== undefined ? status.nursery_offsets?.get(nursery_id) : undefined;
-	const fire_and_forget = !!node.is_statement;
+	const fire_and_forget = !!access_func.is_statement;
+	// A chained launch consumes a TEMPORARY instance (the construction
+	// expression itself) — the helper frees it after the transfer; a stored
+	// binding's instance is freed by its owner's scope exit.
+	const target_is_temp =
+		target.node_type === "func_call" &&
+		!!((target as FunctionCallNode).is_thread_ctor || (target as FunctionCallNode).is_fiber_ctor);
 	const refs = fire_and_forget
 		? nursery_id !== undefined
 			? 2
@@ -1251,296 +1179,122 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 			? 3
 			: 2;
 
-	// Submit helper: allocates args struct, copies fields from asm values,
-	// allocates future, submits to pool. For captured spawns, also allocates
-	// Task and returns its pointer. For fire-and-forget, returns NULL.
-	// When inside a nursery, the asm spawn site passes the nursery's stack
-	// futures/count addresses as the last two args; the helper pushes the
-	// future to that per-invocation state.
-	// Called from asm with: x0=arg0, x1=arg1, ... (up to 6 args in regs).
-	tramp_c += `void *${submit_name}(`;
-	for (let i = 0; i < arg_c_types.length; i++) {
-		if (i > 0) tramp_c += ", ";
-		tramp_c += `${arg_c_types[i]} arg${i}`;
+	// --- Companion C: the launch helper ---
+	let c = `// --- thread start site ${id} ---\n`;
+	c += `void *${helper_name}(void *self`;
+	if (nursery_off) {
+		c += `, void **__nomen_nursery_futures, int *__nomen_nursery_count, int *__nomen_nursery_cap`;
 	}
-	if (nursery_id !== undefined) {
-		if (arg_c_types.length > 0) tramp_c += ", ";
-		tramp_c += `void **__nomen_nursery_futures, int *__nomen_nursery_count, int *__nomen_nursery_cap`;
+	c += `) {\n`;
+	c += `\tstruct ${mono_thread} *t = (struct ${mono_thread} *)self;\n`;
+	c += `\tstruct nomen_future *f = (struct nomen_future *)t->future;\n`;
+	c += `\tvoid *result_ptr = (void *)t->result_slot;\n`;
+	c += `\tunsigned long long *cancel_ptr = (unsigned long long *)t->cancel_flag;\n`;
+	c += `\tstruct nomen_closure *cl = (struct nomen_closure *)t->task;\n`;
+	c += `\tf->refs = ${refs};\n`;
+	c += `\t__nomen_pool_submit(cl);\n`;
+	if (nursery_off) {
+		c += `\t__nomen_nursery_track(__nomen_nursery_futures, __nomen_nursery_count, __nomen_nursery_cap, f);\n`;
 	}
-	tramp_c += `) {\n`;
-	tramp_c += `\tstruct ${struct_name} *a = (struct ${struct_name} *)malloc(sizeof(struct ${struct_name}));\n`;
-	for (let i = 0; i < arg_c_types.length; i++) {
-		tramp_c += `\ta->arg${i} = arg${i};\n`;
-	}
-	// Uniform 16-byte cell (see slot_c_type above), zeroed so the unwritten
-	// len half of a scalar result reads 0.
-	tramp_c += `\ta->result_slot = (${slot_c_type} *)malloc(16);\n`;
-	tramp_c += `\tmemset(a->result_slot, 0, 16);\n`;
-	tramp_c += `\ta->cancel_flag = (unsigned long long *)malloc(sizeof(unsigned long long));\n`;
-	tramp_c += `\t*(a->cancel_flag) = 0;\n`;
-	tramp_c += `\tstruct nomen_future *f = (struct nomen_future *)malloc(sizeof(struct nomen_future));\n`;
-	tramp_c += `\tpthread_mutex_init(&f->mu, NULL);\n`;
-	tramp_c += `\tpthread_cond_init(&f->cv, NULL);\n`;
-	tramp_c += `\tf->done = 0;\n`;
-	tramp_c += `\tf->refs = ${refs};\n`;
-	tramp_c += `\tf->cancel_flag = a->cancel_flag;\n`;
-	tramp_c += `\tf->result_slot = a->result_slot;\n`;
-	tramp_c += `\ta->future = f;\n`;
-	// The task closure: heap copy of the site's descriptor with the args
-	// struct as env; owned by the future (disposed at the last release).
-	tramp_c += `\tstruct nomen_closure *c = (struct nomen_closure *)malloc(sizeof(struct nomen_closure));\n`;
-	tramp_c += `\t*c = ${desc_name};\n`;
-	tramp_c += `\tc->env = a;\n`;
-	tramp_c += `\tc->owned = 1;\n`;
-	tramp_c += `\tf->owner_args = c;\n`;
-	tramp_c += `\tf->fiber_waiters = NULL;\n`;
-	tramp_c += `\tf->owning_fiber = 0;\n`;
-	tramp_c += `\t__nomen_pool_submit(c);\n`;
-	if (nursery_id !== undefined) {
-		tramp_c += `\t__nomen_nursery_track(__nomen_nursery_futures, __nomen_nursery_count, __nomen_nursery_cap, f);\n`;
-	}
+	// Transfer the handles out of the instance (started; #destroy no-ops).
+	c += `\tt->task = 0;\n`;
+	c += `\tt->future = 0;\n`;
+	c += `\tt->result_slot = 0;\n`;
+	c += `\tt->cancel_flag = 0;\n`;
+	c += `\tt->started = 1;\n`;
+	if (target_is_temp) c += `\tfree(t);\n`;
 	if (fire_and_forget) {
-		// Fire-and-forget: no Task handle needed. The trampoline (and nursery,
-		// if any) manage the future lifetime.
-		tramp_c += `\treturn (void *)0;\n`;
+		c += `\treturn (void *)0;\n`;
 	} else {
-		// Allocate Task and return pointer.
-		const mono_task_name = mono_type_name("Task", call.type?.type_args);
-		tramp_c += `\tstruct ${mono_task_name} *t = (struct ${mono_task_name} *)malloc(sizeof(struct ${mono_task_name}));\n`;
-		tramp_c += `\tt->handle = 0;\n`;
-		tramp_c += `\tt->done = 0;\n`;
-		tramp_c += `\tt->result_slot = (unsigned long long)a->result_slot;\n`;
-		tramp_c += `\tt->cancel_flag = (unsigned long long)a->cancel_flag;\n`;
-		tramp_c += `\tt->future = (unsigned long long)f;\n`;
-		tramp_c += `\treturn t;\n`;
+		c += `\tstruct ${mono_task_name} *task = (struct ${mono_task_name} *)malloc(sizeof(struct ${mono_task_name}));\n`;
+		c += `\ttask->handle = 0;\n`;
+		c += `\ttask->done = 0;\n`;
+		c += `\ttask->result_slot = (unsigned long long)result_ptr;\n`;
+		c += `\ttask->cancel_flag = (unsigned long long)cancel_ptr;\n`;
+		c += `\ttask->future = (unsigned long long)f;\n`;
+		c += `\treturn task;\n`;
 	}
-	tramp_c += `}\n`;
-
+	c += `}\n`;
 	if (!status.file_scope_c) status.file_scope_c = "";
-	status.file_scope_c += tramp_c;
+	status.file_scope_c += c;
 
-	// --- Emit assembly: build arg registers and call submit helper ---
-	status.code += `// spawn site ${id}\n`;
-
-	// When inside a nursery, three extra trailing args carry the ADDRESSES of
-	// the nursery's per-invocation tracking slots (futures storage, count,
-	// capacity — on the caller's stack). They occupy the last three arg slots.
-	const nursery_extra = nursery_off ? 3 : 0;
-
-	// A fat `string` argument rides the (ptr, len) pair in x0/x1 and occupies
-	// TWO consecutive AAPCS slots (matching the `nomen_string` by-value param
-	// of the submit helper) — same detection rule as arg_c_types above.
-	const fat_string_args = call.params.map(spawn_arg_is_string);
-	const arg_slot: number[] = [];
-	let total_arg_slots = 0;
-	for (let i = 0; i < call.params.length; i++) {
-		arg_slot.push(total_arg_slots);
-		total_arg_slots += fat_string_args[i] ? 2 : 1;
+	// --- Assembly: receiver pointer in x0 (+ nursery slot addresses), call.
+	status.code += `// thread start site ${id}\n`;
+	build_node(target, status);
+	if (!status.code.endsWith("\n")) status.code += "\n";
+	if (nursery_off) {
+		// Park the receiver pointer while the three nursery tracking
+		// addresses (futures storage, count, capacity) fill x1..x3.
+		const park = allocate_stack_space(status, 8, 8);
+		status.code += `str x0, [x29, #${park}]\n`;
+		status.code += `add x1, x29, #${nursery_off.futures_off}\n`;
+		status.code += `add x2, x29, #${nursery_off.count_off}\n`;
+		status.code += `add x3, x29, #${nursery_off.cap_off}\n`;
+		status.code += `ldr x0, [x29, #${park}]\n`;
 	}
-	total_arg_slots += nursery_extra;
-
-	if (total_arg_slots === 0) {
-		status.code += `bl _${submit_name}\n`;
-	} else {
-		// Build each arg and spill it to a dedicated frame slot (building an
-		// argument can clobber x1..x7, so registers are loaded only after
-		// every arg is staged), then load the argument registers and call.
-		// Mirrors the general call path in build_function_call_node.
-		const args_base = allocate_stack_space(status, total_arg_slots * 8, 16);
-		for (let i = 0; i < call.params.length; i++) {
-			status.code += `// Build arg${i}\n`;
-			build_node(call.params[i], status);
-			// Ensure newline after build_node (value nodes don't add one).
-			if (!status.code.endsWith("\n")) status.code += "\n";
-			status.code += `str x0, [x29, #${args_base + arg_slot[i] * 8}]\n`;
-			if (fat_string_args[i]) {
-				// The pair's len half rides x1 — spill both halves.
-				status.code += `str x1, [x29, #${args_base + (arg_slot[i] + 1) * 8}]\n`;
-			}
-		}
-		if (nursery_off) {
-			// Addresses of the nursery's tracking slots: futures storage (the
-			// helper reallocs and writes back through it), count, capacity.
-			status.code += `add x0, x29, #${nursery_off.futures_off}\n`;
-			status.code += `str x0, [x29, #${args_base + (total_arg_slots - 3) * 8}]\n`;
-			status.code += `add x0, x29, #${nursery_off.count_off}\n`;
-			status.code += `str x0, [x29, #${args_base + (total_arg_slots - 2) * 8}]\n`;
-			status.code += `add x0, x29, #${nursery_off.cap_off}\n`;
-			status.code += `str x0, [x29, #${args_base + (total_arg_slots - 1) * 8}]\n`;
-		}
-		// Load each staged slot into its argument register. Slots past x0..x7
-		// go in the caller's outgoing area at [sp] for the call (AAPCS64).
-		const NUM_REG_ARGS = 8;
-		const overflow_count = Math.max(0, total_arg_slots - NUM_REG_ARGS);
-		if (overflow_count > 0) {
-			const outgoing_size = Math.ceil((overflow_count * 8) / 16) * 16;
-			status.code += `sub sp, sp, #${outgoing_size}\n`;
-			for (let k = 0; k < overflow_count; k++) {
-				status.code += `ldr x9, [x29, #${args_base + (NUM_REG_ARGS + k) * 8}]\n`;
-				status.code += `str x9, [sp, #${k * 8}]\n`;
-			}
-		}
-		for (let s = 0; s < Math.min(total_arg_slots, NUM_REG_ARGS); s++) {
-			status.code += `ldr x${s}, [x29, #${args_base + s * 8}]\n`;
-		}
-		status.code += `bl _${submit_name}\n`;
-		if (overflow_count > 0) {
-			const outgoing_size = Math.ceil((overflow_count * 8) / 16) * 16;
-			status.code += `add sp, sp, #${outgoing_size}\n`;
-		}
-	}
-	// x0 = Task pointer (returned by submit helper).
+	status.code += `bl _${helper_name}\n`;
+	// x0 = Task pointer (or NULL for fire-and-forget).
 }
 
 /**
- * Build a `Thread(fn(args)).detach()` call — the daemon form (ASYNC.md,
- * "Daemon tasks"). Mirrors the C backend's build_detached_spawn_node: the
- * trampoline lives in the companion C (no future, no result slot, no
- * cancel flag, no nursery tracking — it frees its own args), and
- * `__nomen_task_detach` launches it on a dedicated detached pthread. The
- * asm stages the arguments and calls the submit helper, which returns NULL
- * (there is no Task).
+ * Build a `.detach()` launch on a Thread construction — the daemon form
+ * (ASYNC.md, "Daemon tasks"), aarch64 backend. The companion helper
+ * releases the construction's unused future (detaching the closure from
+ * it — the daemon runner owns the closure), hands the task to the detached
+ * launcher, and marks the instance started; the assembly calls it.
  */
-export function build_detached_spawn_node(node: SpawnNode, status: BuildStatus): void {
-	const call = node.call;
-	const func_name = c_function_name(emission_label(call.resolved_function ?? call));
-	const id = status.spawn_counter ?? 0;
-	status.spawn_counter = id + 1;
-
+export function build_thread_detach(
+	access_func: AccessFunctionCallNode,
+	target: BaseNode,
+	status: BuildStatus,
+): void {
 	ensure_concurrency_runtime_a64(status);
 
-	const struct_name = `__nomen_detach_${id}_args`;
-	const tramp_name = `__nomen_detach_${id}_trampoline`;
-	const submit_name = `nomen_detach_${id}_submit`;
+	const id = status.spawn_counter ?? 0;
+	status.spawn_counter = id + 1;
+	const helper_name = `nomen_detach_${id}_start`;
+	const t_arg = spawn_result_type_arg(access_func.function_return_type);
+	const mono_thread = mono_type_name("Thread", [t_arg]);
 
-	const arg_c_types: string[] = [];
-	for (let i = 0; i < call.params.length; i++) {
-		const arg_type = type_from_value_node(call.params[i]);
-		const mono_name = mono_type_name(arg_type);
-		const is_class = !!status.structs.find((s) => s.name === mono_name && s.is_class);
-		const is_trait = !!status.traits.find((t) => t.name === mono_name);
-		arg_c_types.push(is_class || is_trait ? `struct ${mono_name} *` : `${c_type(mono_name)}`);
-	}
-
-	const return_type_name = node.function_return_type?.name;
-	const returns_value = !!(
-		return_type_name &&
-		return_type_name !== "void" &&
-		return_type_name !== "?"
-	);
-	const is_class_ret = returns_value
-		? !!status.structs.find((s) => s.name === return_type_name && s.is_class)
-		: false;
-	const c_ret_type = is_class_ret
-		? `struct ${return_type_name} *`
-		: returns_value
-			? c_type(return_type_name)
-			: "void";
-
-	let tramp_c = `// --- detach site ${id} trampoline ---\n`;
-	tramp_c += `${c_ret_type} ${func_name}(`;
-	for (let i = 0; i < arg_c_types.length; i++) {
-		if (i > 0) tramp_c += ", ";
-		tramp_c += `${arg_c_types[i]}`;
-	}
-	tramp_c += `);\n`;
-	tramp_c += `struct ${struct_name} {\n`;
-	for (let i = 0; i < arg_c_types.length; i++) {
-		tramp_c += `\t${arg_c_types[i]} arg${i};\n`;
-	}
-	tramp_c += `};\n`;
-	tramp_c += `static void ${tramp_name}(struct nomen_closure *_c) {\n`;
-	tramp_c += `\tstruct ${struct_name} *a = (struct ${struct_name} *)_c->env;\n`;
-	tramp_c += `\t__nomen_current_cancel_flag = NULL;\n`;
-	if (returns_value) {
-		tramp_c += `\t${c_ret_type} _r = ${func_name}(`;
-	} else {
-		tramp_c += `\t${func_name}(`;
-	}
-	for (let i = 0; i < arg_c_types.length; i++) {
-		if (i > 0) tramp_c += ", ";
-		tramp_c += `a->arg${i}`;
-	}
-	tramp_c += `);\n`;
-	tramp_c += `\t__nomen_current_cancel_flag = NULL;\n`;
-	tramp_c += `}\n`;
-	// Static descriptor template; every detach copies it into a heap
-	// descriptor owning its env (the detached runner disposes it).
-	const desc_name = `__nomen_detach_${id}_descriptor`;
-	tramp_c += `static struct nomen_closure ${desc_name} = { (void *)${tramp_name}, NULL, 0, NULL };\n`;
-
-	// Submit helper: allocates the args struct and hands it to the detached
-	// launcher. Fat-string params ride the 16-byte by-value pair (see the
-	// spawn submit helper).
-	tramp_c += `void *${submit_name}(`;
-	for (let i = 0; i < arg_c_types.length; i++) {
-		if (i > 0) tramp_c += ", ";
-		tramp_c += `${arg_c_types[i]} arg${i}`;
-	}
-	tramp_c += `) {\n`;
-	tramp_c += `\tstruct ${struct_name} *a = (struct ${struct_name} *)malloc(sizeof(struct ${struct_name}));\n`;
-	for (let i = 0; i < arg_c_types.length; i++) {
-		tramp_c += `\ta->arg${i} = arg${i};\n`;
-	}
-	// The task closure: heap copy of the site's descriptor with the args
-	// struct as env; the detached runner disposes it after the call.
-	tramp_c += `\tstruct nomen_closure *c = (struct nomen_closure *)malloc(sizeof(struct nomen_closure));\n`;
-	tramp_c += `\t*c = ${desc_name};\n`;
-	tramp_c += `\tc->env = a;\n`;
-	tramp_c += `\tc->owned = 1;\n`;
-	tramp_c += `\t__nomen_task_detach(c);\n`;
-	tramp_c += `\treturn (void *)0;\n`;
-	tramp_c += `}\n`;
-
+	// A chained `Thread(fn(args)).detach()` consumes a TEMPORARY instance.
+	const target_is_temp =
+		target.node_type === "func_call" &&
+		!!((target as FunctionCallNode).is_thread_ctor || (target as FunctionCallNode).is_fiber_ctor);
+	let c = `// --- thread detach site ${id} ---\n`;
+	c += `void *${helper_name}(void *self) {\n`;
+	c += `\tstruct ${mono_thread} *t = (struct ${mono_thread} *)self;\n`;
+	c += `\tstruct nomen_future *unused = (struct nomen_future *)t->future;\n`;
+	c += `\tif (unused) {\n`;
+	// The detached runner owns the task closure; the future must not
+	// dispose it at release.
+	c += `\t\tunused->owner_args = NULL;\n`;
+	c += `\t\t__nomen_future_release(unused);\n`;
+	c += `\t}\n`;
+	c += `\t__nomen_task_detach((struct nomen_closure *)t->task);\n`;
+	c += `\tt->task = 0;\n`;
+	c += `\tt->future = 0;\n`;
+	c += `\tt->result_slot = 0;\n`;
+	c += `\tt->cancel_flag = 0;\n`;
+	c += `\tt->started = 1;\n`;
+	if (target_is_temp) c += `\tfree(t);\n`;
+	c += `\treturn (void *)0;\n`;
+	c += `}\n`;
 	if (!status.file_scope_c) status.file_scope_c = "";
-	status.file_scope_c += tramp_c;
+	status.file_scope_c += c;
 
-	// --- Emit assembly: build arg registers and call the submit helper ---
-	// Mirrors the spawn site minus the nursery extras (a daemon is never
-	// nursery-tracked).
-	status.code += `// detach site ${id}\n`;
-
-	const fat_string_args = call.params.map(spawn_arg_is_string);
-	const arg_slot: number[] = [];
-	let total_arg_slots = 0;
-	for (let i = 0; i < call.params.length; i++) {
-		arg_slot.push(total_arg_slots);
-		total_arg_slots += fat_string_args[i] ? 2 : 1;
-	}
-
-	if (total_arg_slots === 0) {
-		status.code += `bl _${submit_name}\n`;
-	} else {
-		const args_base = allocate_stack_space(status, total_arg_slots * 8, 16);
-		for (let i = 0; i < call.params.length; i++) {
-			status.code += `// Build arg${i}\n`;
-			build_node(call.params[i], status);
-			if (!status.code.endsWith("\n")) status.code += "\n";
-			status.code += `str x0, [x29, #${args_base + arg_slot[i] * 8}]\n`;
-			if (fat_string_args[i]) {
-				status.code += `str x1, [x29, #${args_base + (arg_slot[i] + 1) * 8}]\n`;
-			}
-		}
-		const NUM_REG_ARGS = 8;
-		const overflow_count = Math.max(0, total_arg_slots - NUM_REG_ARGS);
-		if (overflow_count > 0) {
-			const outgoing_size = Math.ceil((overflow_count * 8) / 16) * 16;
-			status.code += `sub sp, sp, #${outgoing_size}\n`;
-			for (let k = 0; k < overflow_count; k++) {
-				status.code += `ldr x9, [x29, #${args_base + (NUM_REG_ARGS + k) * 8}]\n`;
-				status.code += `str x9, [sp, #${k * 8}]\n`;
-			}
-		}
-		for (let s = 0; s < Math.min(total_arg_slots, NUM_REG_ARGS); s++) {
-			status.code += `ldr x${s}, [x29, #${args_base + s * 8}]\n`;
-		}
-		status.code += `bl _${submit_name}\n`;
-		if (overflow_count > 0) {
-			const outgoing_size = Math.ceil((overflow_count * 8) / 16) * 16;
-			status.code += `add sp, sp, #${outgoing_size}\n`;
-		}
-	}
+	status.code += `// thread detach site ${id}\n`;
+	build_node(target, status);
+	if (!status.code.endsWith("\n")) status.code += "\n";
+	status.code += `bl _${helper_name}\n`;
 	// x0 = NULL — a daemon yields no Task.
+}
+
+/** The launch's T as a Type: the stamped wrapped-call return type, with
+ *  void coerced to uint64 (Task's result-slot convention). */
+function spawn_result_type_arg(return_type: { name?: string } | undefined): Type {
+	return return_type?.name && return_type.name !== "void" && return_type.name !== "?"
+		? new Type(return_type.name)
+		: new Type("uint64");
 }
 
 /**

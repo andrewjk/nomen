@@ -42,13 +42,13 @@ import build_function_node from "./build_function_node.ts";
 import build_if_else_node from "./build_if_else_node.ts";
 import build_index_node from "./build_index_node.ts";
 import build_let_node from "./build_let_node.ts";
+import build_magic_ctor_node from "./build_magic_ctor.ts";
 import build_match_node from "./build_match_node.ts";
 import build_operation_node from "./build_operation_node.ts";
 import build_panic_node from "./build_panic_node.ts";
 import build_range_node from "./build_range_node.ts";
 import build_raw_node from "./build_raw_node.ts";
 import build_return_node from "./build_return_node.ts";
-import build_spawn_node from "./build_spawn_node.ts";
 import build_switch_node from "./build_switch_node.ts";
 import build_todo_node from "./build_todo_node.ts";
 import build_value_node from "./build_value_node.ts";
@@ -207,6 +207,14 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 			break;
 		}
 		case "func_call": {
+			// The compiler-special Thread/Fiber(fn(args)) construction packs
+			// its task eagerly and yields the instance (docs/CLOSURE_PLAN.md
+			// Phase 3b) — it never resolves as a call.
+			const fc = node as FunctionCallNode;
+			if (fc.is_thread_ctor || fc.is_fiber_ctor) {
+				build_magic_ctor_node(fc, status);
+				break;
+			}
 			build_function_call_node(node as FunctionCallNode, status);
 			break;
 		}
@@ -300,11 +308,6 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 		}
 		case "raw": {
 			build_raw_node(node as RawNode, status);
-			with_semicolon = false;
-			break;
-		}
-		case "spawn": {
-			build_spawn_node(node as any, status);
 			with_semicolon = false;
 			break;
 		}

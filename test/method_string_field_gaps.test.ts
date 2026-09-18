@@ -25,7 +25,7 @@ describe("struct-method string-field assignment: remaining gaps", () => {
 	// Canonicalize it to 0 for the cache; the fresh-run assertion still sees
 	// raw stdout, and the prefix expectation is unaffected by the rewrite.
 	const stabilize_tester_timing = (stdout: string): string =>
-		stdout.replace(/^((?:\\nomen\|done\|(?:[^|\n]*\|){3}))\d+(\n)/gm, "$<1>0$<2>");
+		stdout.replace(/^((?:\\nomen\|done\|(?:[^|\n]*\|){3}))\d+(\n)/gm, (_m, p1, p2) => `${p1}0${p2}`);
 
 	// #1 — a literal argument: the field holds a pointer into rodata, and
 	// Holder_destroy's free() aborts at scope exit.

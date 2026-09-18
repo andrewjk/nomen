@@ -22,7 +22,6 @@ import type BaseNode from "../nodes/BaseNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import IndexNode from "../nodes/IndexNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
-import SpawnNode from "../nodes/SpawnNode.ts";
 import type StructNode from "../nodes/StructNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
@@ -44,8 +43,8 @@ import build_inline_method, {
 import build_node from "./build_node.ts";
 import build_nursery_spawn from "./build_nursery_spawn.ts";
 import { build_operand, tree_is_call_free } from "./build_operation_node.ts";
-import build_spawn_node, {
-	build_detached_spawn_node,
+import build_thread_start, {
+	build_thread_detach,
 	ensure_concurrency_runtime_a64,
 } from "./build_spawn_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
@@ -640,38 +639,27 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				ensure_concurrency_runtime_a64(status);
 				status.used_fibers = true;
 			}
-			// `Thread(fn(args)).start()` — the surface form of a direct spawn
-			// (see ASYNC_PLAN.md). Synthesize a SpawnNode from the wrapped
-			// call and emit the standard spawn trampoline; the receiver
-			// Thread construction itself emits nothing.
+			// `.start()` on a Thread construction (or a stored Thread
+			// binding) — submit the packed task closure to the pool and
+			// yield Task<T> (docs/CLOSURE_PLAN.md Phase 3b).
 			if (access_func.is_thread_start) {
-				const ctor = node.target as FunctionCallNode;
-				const spawn = new SpawnNode(node.start, ctor.params[0] as FunctionCallNode);
-				spawn.function_return_type = access_func.function_return_type;
-				spawn.is_statement = access_func.is_statement;
-				build_spawn_node(spawn, status);
+				build_thread_start(access_func, node.target, status);
 				return;
 			}
-			// `Thread(fn(args)).detach()` — the daemon form: a dedicated
+			// `.detach()` on a Thread — the daemon form: a dedicated
 			// detached pthread (never a pool worker), unjoinable, killed by
 			// process exit by design. See ASYNC.md, "Daemon tasks".
 			if (access_func.is_thread_detach) {
-				const ctor = node.target as FunctionCallNode;
-				const spawn = new SpawnNode(node.start, ctor.params[0] as FunctionCallNode);
-				spawn.function_return_type = access_func.function_return_type;
-				build_detached_spawn_node(spawn, status);
+				build_thread_detach(access_func, node.target, status);
 				return;
 			}
-			// `Fiber(fn(args)).start[_on](buf)` — the fiber flavor: same
-			// trampoline and future machinery, launched on the fiber
-			// scheduler (heap stack, or the caller's buffer for start_on).
+			// `.start[_on](buf)` on a Fiber — the fiber flavor: same packed
+			// task closure, launched on the fiber scheduler (heap stack, or
+			// the caller's buffer for start_on).
 			if (access_func.is_fiber_start) {
-				const ctor = node.target as FunctionCallNode;
-				const spawn = new SpawnNode(node.start, ctor.params[0] as FunctionCallNode);
-				spawn.function_return_type = access_func.function_return_type;
-				spawn.is_statement = access_func.is_statement;
 				build_fiber_spawn_node(
-					spawn,
+					access_func,
+					node.target,
 					status,
 					access_func.is_fiber_start_on ? access_func.params[0] : undefined,
 				);

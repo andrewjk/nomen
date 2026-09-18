@@ -44,6 +44,22 @@ pub func main = () {
 });
 
 describe("spec: concurrency - spawn", () => {
+	test("a Thread construction is a storable value started later", () => {
+		// SPEC.md, "Thread": the construction binds its arguments eagerly;
+		// the call happens at start() — including for a stored value.
+		const input = `
+func bg = (uint64 arg) {
+	Console.write_line("from task")
+}
+
+pub func main = () {
+	var job = Thread(bg(0))
+	job.start()
+}
+`;
+		expect(compile_module(input)).toEqual([]);
+	});
+
 	test("spawn as statement (fire-and-forget)", () => {
 		const input = `
 func bg = (uint64 arg) {

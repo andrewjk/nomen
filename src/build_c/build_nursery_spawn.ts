@@ -1,161 +1,61 @@
-import emission_label from "../build_common/emission_label.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
-import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
-import FunctionCallNode from "../nodes/FunctionCallNode.ts";
+import type AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
+import type FunctionCallNode from "../nodes/FunctionCallNode.ts";
+import Type from "../nodes/Type.ts";
 import build_node from "./build_node.ts";
-import { ensure_concurrency_runtime, spawn_arg_c_types } from "./build_spawn_node.ts";
+import { ensure_concurrency_runtime } from "./build_spawn_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
-import c_function_name from "./utils/c_function_name.ts";
-import c_type from "./utils/c_type.ts";
 
 /**
- * Build a `name.spawn(fn(args))` escape-hatch call (C backend).
+ * Build a `name.start(Thread(fn(args)))` escape-hatch call (C backend,
+ * docs/CLOSURE_PLAN.md Phase 3b).
  *
- * Mirrors build_spawn_node, but the future is registered with the nursery
- * referenced by the receiver (`nursery_ptr`, a `struct Nursery *`) at runtime
- * — reading `futures_ptr` / `count_ptr` — instead of a compile-time-known
- * async-block ID. The enclosing async block's join loop reads the same array
- * and count slots, so futures spawned through a passed Nursery are joined at
- * the block's scope exit exactly like direct spawns.
+ * The single parameter is the `Thread(fn(args))` construction (or a
+ * Thread-typed expression) — its fields carry the task closure packed
+ * eagerly at the construction site, plus the result slot, cancel flag, and
+ * future. This submits the packed closure, registers the future with the
+ * nursery referenced by the receiver (`nursery_ptr`, a `struct Nursery *`)
+ * — reading `futures_ptr` / `count_ptr` — transfers the handles out of the
+ * instance, and yields Task<T>. The enclosing async block's join loop reads
+ * the same array and count slots, so futures spawned through a passed
+ * Nursery are joined at the block's scope exit exactly like direct spawns.
  *
- * The single parameter is the call expression to spawn (same shape as bare
- * `spawn fn(args)`). See ASYNC.md, "Escape hatch: passing the nursery".
+ * See ASYNC.md, "Escape hatch: passing the nursery".
  */
 export default function build_nursery_spawn(
 	node: AccessFunctionCallNode,
 	nursery_ptr: string,
 	status: BuildStatus,
 ) {
-	if (node.params.length !== 1 || node.params[0].node_type !== "func_call") return;
-	// The parameter is the compiler-special Thread(fn(args)) constructor —
-	// unwrap it to the wrapped call.
-	const ctor = node.params[0] as FunctionCallNode;
-	if (!ctor.is_thread_ctor) return;
-	const call = ctor.params[0] as FunctionCallNode;
-	const func_name = c_function_name(emission_label(call.resolved_function ?? call));
-	const args = call.params;
-
-	const id = status.spawn_counter ?? 0;
-	status.spawn_counter = id + 1;
-
-	// Emit pool infrastructure on first spawn (file scope, deduped).
-	ensure_concurrency_runtime(status);
-
-	const struct_name = `__nomen_spawn_${id}_args`;
-	const tramp_name = `__nomen_spawn_${id}_trampoline`;
-
-	// Resolve each arg's C type (from the callee's declared params — see
-	// spawn_arg_c_types; classes/traits are pointers).
-	const arg_c_types = spawn_arg_c_types(call, status);
-
-	// Determine the return type up front (shared by the forward declaration
-	// and the trampoline's result capture).
-	const return_type_name = node.function_return_type?.name;
-	const returns_value = !!(
-		return_type_name &&
-		return_type_name !== "void" &&
-		return_type_name !== "?"
-	);
-	const is_class_ret =
-		returns_value && !!status.structs.find((s) => s.name === return_type_name && s.is_class);
-	const is_trait_ret = returns_value && !!status.traits.find((t) => t.name === return_type_name);
-	const c_ret_type = !returns_value
-		? "void"
-		: is_class_ret || is_trait_ret
-			? `struct ${return_type_name} *`
-			: c_type(return_type_name);
-	// The result slot carries the full return VALUE — a fat `string` result is
-	// a 16-byte nomen_string, so the cell is typed (and sized) as the return
-	// type, not a fixed unsigned long long (which truncated the len half).
-	const slot_c_type = returns_value ? c_ret_type : "unsigned long long";
-
-	// Forward-declare the spawned function before the trampoline: the
-	// trampoline is a full function definition appended to the headers, and
-	// it may be appended BEFORE the function's own prototype lands there —
-	// struct methods are built before free functions, so a spawn inside a
-	// method (e.g. a monomorphized generic body) emits its trampoline ahead
-	// of any free function declared after the generic struct. A compatible
-	// redeclaration is legal C, so emitting this unconditionally is safe.
-	// Mirrors the aarch64 companion's trampoline declaration.
-	//
-	// Emit the arg struct + trampoline to headers (file scope). Identical to
-	// build_spawn_node — the trampoline is shared across both spawn forms.
-	let header = `${c_ret_type} ${func_name}(${arg_c_types.join(", ")});\n`;
-	header += `struct ${struct_name} {\n`;
-	for (let i = 0; i < arg_c_types.length; i++) {
-		header += `\t${arg_c_types[i]} arg${i};\n`;
-	}
-	header += `\t${slot_c_type} *result_slot;\n`;
-	header += `\tunsigned long long *cancel_flag;\n`;
-	header += `\tstruct nomen_future *future;\n`;
-	header += `};\n`;
-	header += `static void ${tramp_name}(struct nomen_closure *_c) {\n`;
-	header += `\tstruct ${struct_name} *a = (struct ${struct_name} *)_c->env;\n`;
-	header += `\t__nomen_current_cancel_flag = a->cancel_flag;\n`;
-	if (returns_value) {
-		header += `\t${c_ret_type} _r = ${func_name}(`;
-	} else {
-		header += `\t${func_name}(`;
-	}
-	for (let i = 0; i < arg_c_types.length; i++) {
-		if (i > 0) header += ", ";
-		header += `a->arg${i}`;
-	}
-	header += ");\n";
-	if (returns_value) {
-		header += `\t*(a->result_slot) = _r;\n`;
-	}
-	header += `\t__nomen_current_cancel_flag = NULL;\n`;
-	header += `\t__nomen_future_complete(a->future);\n`;
-	header += `\t__nomen_future_release(a->future);\n`; // closure disposed at the last release
-	header += `}\n`;
-	// Static descriptor template; every nursery spawn copies it into a heap
-	// descriptor owning its env (the future's last release disposes it).
-	const desc_name = `__nomen_spawn_${id}_descriptor`;
-	header += `static struct nomen_closure ${desc_name} = { (void *)${tramp_name}, NULL, 0, NULL };\n`;
-	status.headers += header;
-
-	// The future always has a nursery reference here (that's the point of the
-	// escape hatch), plus the trampoline and — for the captured form — the Task.
+	if (node.params.length !== 1) return;
 	const fire_and_forget = !!node.is_statement;
 	const refs = fire_and_forget ? 2 : 3;
 
-	// Resolve the monomorphized Task struct name for the captured form.
-	const task_type_args = node.type?.type_args;
-	const mono_task_name = mono_type_name("Task", task_type_args);
+	ensure_concurrency_runtime(status);
 
-	// Statement-expression: set up args, allocate the future, submit, register
-	// with the nursery (runtime futures/count pointers), optionally yield Task.
+	const t_arg = spawn_result_type_arg(node.function_return_type);
+	const mono_thread = mono_type_name("Thread", [t_arg]);
+	const mono_task_name = mono_type_name("Task", [t_arg]);
+
+	// A `pool.start(Thread(fn(args)))` argument is a TEMPORARY instance —
+	// free it after transferring the handles; a stored binding is freed by
+	// its owner.
+	const arg = node.params[0];
+	const arg_is_temp =
+		arg.node_type === "func_call" &&
+		!!((arg as FunctionCallNode).is_thread_ctor || (arg as FunctionCallNode).is_fiber_ctor);
 	status.code += `({\n`;
-	status.code += `\tstruct ${struct_name} *_args = (struct ${struct_name} *)malloc(sizeof(struct ${struct_name}));\n`;
-	for (let i = 0; i < args.length; i++) {
-		status.code += `\t_args->arg${i} = `;
-		build_node(args[i], status);
-		status.code += ";\n";
-	}
-	status.code += `\t${slot_c_type} *_result_ptr = (${slot_c_type} *)malloc(sizeof(${slot_c_type}));\n`;
-	status.code += `\tmemset(_result_ptr, 0, sizeof(${slot_c_type}));\n`;
-	status.code += `\t_args->result_slot = _result_ptr;\n`;
-	status.code += `\tunsigned long long *_cancel_ptr = (unsigned long long *)malloc(sizeof(unsigned long long));\n`;
-	status.code += `\t*_cancel_ptr = 0;\n`;
-	status.code += `\t_args->cancel_flag = _cancel_ptr;\n`;
-	status.code += `\tstruct nomen_future *_future = (struct nomen_future *)malloc(sizeof(struct nomen_future));\n`;
-	status.code += `\tpthread_mutex_init(&_future->mu, NULL);\n`;
-	status.code += `\tpthread_cond_init(&_future->cv, NULL);\n`;
-	status.code += `\t_future->done = 0;\n`;
-	status.code += `\t_future->cancel_flag = _cancel_ptr;\n`;
-	status.code += `\t_future->result_slot = _result_ptr;\n`;
+	status.code += `\tstruct ${mono_thread} *_self = `;
+	build_node(arg, status);
+	status.code += `;\n`;
+	status.code += `\tstruct nomen_future *_future = (struct nomen_future *)_self->future;\n`;
+	status.code += `\tvoid *_result_ptr = (void *)_self->result_slot;\n`;
+	status.code += `\tunsigned long long *_cancel_ptr = (unsigned long long *)_self->cancel_flag;\n`;
+	status.code += `\tstruct nomen_closure *_closure = (struct nomen_closure *)_self->task;\n`;
+	// The construction's own reference is consumed by the launch (this is a
+	// nursery-registered spawn: trampoline + Task [+ the instance's slot
+	// handed to the nursery side]).
 	status.code += `\t_future->refs = ${refs};\n`;
-	status.code += `\t_args->future = _future;\n`;
-	// The task closure: heap copy of the site's descriptor with the args
-	// struct as env; owned by the future (disposed at the last release).
-	status.code += `\tstruct nomen_closure *_closure = (struct nomen_closure *)malloc(sizeof(struct nomen_closure));\n`;
-	status.code += `\t*_closure = ${desc_name};\n`;
-	status.code += `\t_closure->env = _args;\n`;
-	status.code += `\t_closure->owned = 1;\n`;
-	status.code += `\t_future->owner_args = _closure;\n`;
-	status.code += `\t_future->fiber_waiters = NULL;\n`;
-	status.code += `\t_future->owning_fiber = NULL;\n`;
 	status.code += `\t__nomen_pool_submit(_closure);\n`;
 	// Register the future with the nursery via its runtime pointers — the
 	// growable-list helper (the pointers address the enclosing async block's
@@ -163,6 +63,13 @@ export default function build_nursery_spawn(
 	// in place). The pointer expressions are parenthesized so `&struct` (the
 	// magic-identifier case) binds correctly against the trailing `->`.
 	status.code += `\t__nomen_nursery_track((void **)(${nursery_ptr})->futures_ptr, (int *)(${nursery_ptr})->count_ptr, (int *)(${nursery_ptr})->cap_ptr, _future);\n`;
+	// Transfer the handles out of the instance (started; #destroy no-ops).
+	status.code += `\t_self->task = 0;\n`;
+	status.code += `\t_self->future = 0;\n`;
+	status.code += `\t_self->result_slot = 0;\n`;
+	status.code += `\t_self->cancel_flag = 0;\n`;
+	status.code += `\t_self->started = 1;\n`;
+	if (arg_is_temp) status.code += `\tfree(_self);\n`;
 	if (fire_and_forget) {
 		status.code += `\t(void)0;\n`;
 	} else {
@@ -175,4 +82,12 @@ export default function build_nursery_spawn(
 		status.code += `\t_task;\n`;
 	}
 	status.code += `})\n`;
+}
+
+/** The launch's T as a Type: the stamped wrapped-call return type, with
+ *  void coerced to uint64 (Task's result-slot convention). */
+function spawn_result_type_arg(return_type: { name?: string } | undefined): Type {
+	return return_type?.name && return_type.name !== "void" && return_type.name !== "?"
+		? new Type(return_type.name)
+		: new Type("uint64");
 }
