@@ -125,26 +125,75 @@ pub func main = () {
 	});
 });
 
+describe("closure captures (value structs)", () => {
+	test("a non-owning struct captures by copy (snapshot)", async () => {
+		await build_and_check_output(
+			`
+import System
+
+struct Point {
+	var int x
+	var int y
+}
+
+pub func main = () {
+	var Point p = Point(1, 2)
+	var func (out int) total = (out int) => p.x + p.y
+	p.x = 99
+	Console.write("\\{total()} \\{total()}")
+}
+`,
+			"lambda_capture_struct",
+			"3 3",
+			true,
+		);
+	});
+
+	test("a captured struct works as a method receiver", async () => {
+		await build_and_check_output(
+			`
+import System
+
+struct Point {
+	var int x
+	var int y
+
+	func sum = (self, out int) => self.x + self.y
+}
+
+pub func main = () {
+	var Point p = Point(4, 5)
+	var func (out int) total = (out int) => p.sum()
+	Console.write("\\{total()}")
+}
+`,
+			"lambda_capture_struct_method",
+			"9",
+			true,
+		);
+	});
+});
+
 describe("closure capture rejections", () => {
 	function errors(input: string): string[] {
 		return parse_raw(input).errors.map((e) => e.message);
 	}
 
-	test("capturing a struct is rejected", () => {
+	test("capturing an owning struct is rejected (move captures come later)", () => {
 		expect(
 			errors(`
 import System
 
-struct Pt {
-	var int x
+struct Owned {
+	var string name
 }
 
 pub func main = () {
-	var Pt p = Pt(1)
-	var func (out int) get = (out int) => p.x
-	Console.write("\\{get()}")
+	var Owned o = Owned("x")
+	var func (out int) len = (out int) => o.name.length
+	Console.write("\\{len()}")
 }
-`).some((m) => m.includes("Cannot capture 'p' in a closure")),
+`).some((m) => m.includes("Cannot capture 'o' in a closure")),
 		).toBe(true);
 	});
 

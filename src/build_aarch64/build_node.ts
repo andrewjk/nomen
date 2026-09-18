@@ -60,6 +60,8 @@ import {
 	emit_env_free_a64,
 	materialize_lambda_descriptor_a64,
 } from "./utils/closure_a64.ts";
+import { emit_var_address } from "./utils/stack_var.ts";
+import { get_struct_size } from "./utils/struct_layout.ts";
 
 /**
  * Emit a capturing lambda's value (CLOSURE_PLAN Phase 2): heap-allocate the
@@ -69,23 +71,41 @@ import {
  * builds (build_node clobbers x9/x10 freely).
  */
 function emit_capturing_closure_value_a64(fn: FunctionNode, status: BuildStatus): void {
-	const { offsets, size: env_size } = closure_env_layout_a64(fn);
+	const { offsets, size: env_size } = closure_env_layout_a64(fn, status);
 	status.code += `mov x0, #${env_size}\n`;
 	emit_malloc(status);
 	status.code += `str x0, [sp, #-16]!\n`;
 	for (const cap of fn.captures!) {
 		const off = offsets.get(cap.name)!;
+		const is_string = cap.type.name === "string" && !cap.type.is_view && !cap.type.is_array;
+		const cap_struct = status.structs.find((s) => s.name === cap.type.name && !s.is_simple_type);
+		if (cap_struct && !cap_struct.is_class) {
+			// A value struct captures by COPY: take the source's ADDRESS (a
+			// value struct is accessed by address) and memcpy its bytes into
+			// the env field. build_node would LOAD the first word instead.
+			emit_var_address(status, "x0", cap.name);
+			if (!status.code.endsWith("\n")) status.code += "\n";
+			const cap_size = get_struct_size(cap.type.name, status);
+			status.code += `mov x1, x0\n`;
+			status.code += `ldr x9, [sp]\n`;
+			status.code += `add x0, x9, #${off}\n`;
+			status.code += `mov x2, #${cap_size}\n`;
+			status.code += `bl _memcpy\n`;
+			continue;
+		}
 		build_node(new ValueNode(fn.start, cap.name, cap.type), status);
 		if (!status.code.endsWith("\n")) status.code += "\n";
-		const is_string = cap.type.name === "string" && !cap.type.is_view && !cap.type.is_array;
 		if (is_string) {
 			// Deep-copy the captured string into the env (the env destructor
 			// frees the copy); emit_strdup preserves the len half in x1.
 			emit_strdup(status);
+			status.code += `ldr x9, [sp]\n`;
+			status.code += `str x0, [x9, #${off}]\n`;
+			status.code += `str x1, [x9, #${off + 8}]\n`;
+		} else {
+			status.code += `ldr x9, [sp]\n`;
+			status.code += `str x0, [x9, #${off}]\n`;
 		}
-		status.code += `ldr x9, [sp]\n`;
-		status.code += `str x0, [x9, #${off}]\n`;
-		if (is_string) status.code += `str x1, [x9, #${off + 8}]\n`;
 	}
 	status.code += `mov x0, #32\n`;
 	emit_malloc(status);

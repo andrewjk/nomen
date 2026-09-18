@@ -28,10 +28,10 @@ export function capture_rejection(value: StackValue, status: CheckStatus): strin
 	}
 	if (is_class_type(type.name, status)) return "classes are owned — owned move captures come later";
 	if (status.traits.find((t) => t.name === type.name)) return "traits are owned at runtime";
-	if (is_owning_struct_type(type, status)) return "owning structs are not copyable";
-	if (status.structs.find((s) => s.name === type.name && !s.is_simple_type)) {
-		return "capturing a struct comes later";
-	}
+	// Non-owning value structs capture by copy (Phase 2c); owning structs need
+	// a MOVE capture with an env destructor — deferred.
+	if (is_owning_struct_type(type, status))
+		return "owning structs are captured by move — coming later";
 	return undefined;
 }
 

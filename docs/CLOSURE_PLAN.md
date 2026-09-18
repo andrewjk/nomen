@@ -163,15 +163,26 @@ updated (+ test/spec).
 > targets — not just `check_value_node`'s read path, which had missed
 > receivers.
 >
-> **Deferred to Phase 2c** (sound today via the `owned` flag / static
+> **Status: Phase 2c (part 1) LANDED — value-struct captures.** A lambda may
+> capture a NON-OWNING value struct by copy (snapshot semantics; mutation of
+> the source afterwards is not seen). The env field differs per backend: C
+> holds a POINTER to a malloc'd copy (the struct's full C definition lands in
+> the code, after the headers the env typedef is emitted into, so an inline
+> field would be an incomplete type) and the capture map reads it as
+> `(*_env->p)`; aarch64 stores the struct's bytes INLINE in the env (offset
+> layout by size) and reads the field's address. The env destructor frees the
+> C pointer copy; aarch64's is a no-op for scalars/structs (no owned fields).
+>
+> **Deferred to Phase 2c (part 2)** (sound today via the `owned` flag / static
 > descriptors, recorded rather than enforced): owning-struct/class/trait
 > captures (MOVE captures with donor-local invalidation), storing a capturing
 > closure in a field/container/return (currently leaks the env+descriptor —
 > sound, never dangling; passing one to a func-typed param is a borrow, the
-> same accepted posture as class pointers), capturing a struct by copy, and
-> capturing a nested closure. Also landed en route: func-value detection for
-> zero-arg `out` signatures (`func_params !== undefined`), a latent gap, and
-> the funnel-side capture analysis above.
+> same accepted posture as class pointers), and capturing a nested closure.
+> Also landed en route: func-value detection for zero-arg `out` signatures
+> (`func_params !== undefined`), a latent gap; the funnel-side capture
+> analysis; and the aarch64 method-receiver env-address fix
+> (`emit_var_address`).
 
 **Phase 3 — the ASYNC_PLAN_2 payoff (separate landing).** `Thread`/`Fiber`
 de-specialized into library structs over capturing lambdas; the

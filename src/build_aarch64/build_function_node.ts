@@ -438,7 +438,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		const env_slot = allocate_stack_space(status, 8, 8);
 		status.code += `str x0, [x29, #${env_slot}]\n`;
 		status.closure_env_slot = env_slot;
-		status.closure_env_offsets = closure_env_layout_a64(node).offsets;
+		status.closure_env_offsets = closure_env_layout_a64(node, status).offsets;
 	} else {
 		status.closure_env_slot = undefined;
 		status.closure_env_offsets = undefined;

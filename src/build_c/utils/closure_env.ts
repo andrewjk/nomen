@@ -22,14 +22,22 @@ import c_type from "./c_type.ts";
 export function c_env_field_type(type: Type, status: BuildStatus): string {
 	const name = type.name;
 	if (name === "string" && !type.is_view && !type.is_array) return "nomen_string";
+	// A value struct is held by POINTER: its full C definition lands in the
+	// CODE (after the headers this typedef is emitted into), so an inline
+	// field would be an incomplete type. The env owns the pointer (the
+	// destructor frees it) and the capture map reads it as `(*field)`.
 	const elem = status.structs.find((s) => s.name === name && !s.is_simple_type);
-	if (elem && !elem.is_class) return `struct ${name}`;
+	if (elem && !elem.is_class) return `struct ${name} *`;
 	return c_type(name);
 }
 
 /** Whether a lambda's env owns heap values needing a destructor. */
-export function lambda_has_owned_captures(func: FunctionNode): boolean {
-	return (func.captures ?? []).some((c) => c.type.name === "string");
+export function lambda_has_owned_captures(func: FunctionNode, status?: BuildStatus): boolean {
+	return (func.captures ?? []).some(
+		(c) =>
+			c.type.name === "string" ||
+			!!status?.structs.find((s) => s.name === c.type.name && !s.is_simple_type && !s.is_class),
+	);
 }
 
 /**
@@ -39,7 +47,7 @@ export function lambda_has_owned_captures(func: FunctionNode): boolean {
  * `destroy_env` is NULL). Returns the destructor's C name, or undefined.
  */
 export function emit_closure_env_free(func: FunctionNode, status: BuildStatus): string | undefined {
-	if (!lambda_has_owned_captures(func)) return undefined;
+	if (!lambda_has_owned_captures(func, status)) return undefined;
 	const env_name = `_nomen_env_${c_function_name(emission_label(func))}`;
 	const fn_name = `_nomen_env_free_${c_function_name(emission_label(func))}`;
 	const guard = `_nomen_env_free_emitted_${env_name}`;
@@ -48,8 +56,15 @@ export function emit_closure_env_free(func: FunctionNode, status: BuildStatus): 
 	status.closure_env_types.add(guard);
 	let body = "";
 	for (const cap of func.captures ?? []) {
-		if (cap.type.name !== "string") continue;
-		body += `\tif (_e->${c_function_name(cap.name)}.ptr) free(_e->${c_function_name(cap.name)}.ptr);\n`;
+		const field = c_function_name(cap.name);
+		if (cap.type.name === "string") {
+			body += `\tif (_e->${field}.ptr) free(_e->${field}.ptr);\n`;
+			continue;
+		}
+		const elem = status.structs.find((s) => s.name === cap.type.name && !s.is_simple_type);
+		if (elem && !elem.is_class) {
+			body += `\tif (_e->${field}) free(_e->${field});\n`;
+		}
 	}
 	status.headers += `static void ${fn_name}(void *);\n`;
 	status.closure_definitions =

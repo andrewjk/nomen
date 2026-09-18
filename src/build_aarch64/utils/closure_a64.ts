@@ -1,6 +1,7 @@
 import type BuildStatus from "../../build_c/BuildStatus.ts";
 import emission_label from "../../build_common/emission_label.ts";
 import type FunctionNode from "../../nodes/FunctionNode.ts";
+import { get_struct_size } from "./struct_layout.ts";
 
 /**
  * Closure descriptor ABI for the aarch64 backend (docs/CLOSURE_PLAN.md). A
@@ -28,16 +29,25 @@ export function emit_descriptor_address(
 	status.code += `add ${reg}, ${reg}, ${descriptor}@PAGEOFF\n`;
 }
 
-/** Byte size of one capture's env field (Phase 2b: strings are 16-byte fat
- *  pairs, scalars 8; both 8-byte aligned). */
-export function capture_size_a64(cap: {
-	type: { name: string; is_view?: boolean; is_array?: boolean };
-}): number {
-	return cap.type.name === "string" && !cap.type.is_view && !cap.type.is_array ? 16 : 8;
+/** Byte size of one capture's env field: 16-byte fat strings, the struct's
+ *  own size for value structs (Phase 2c), 8 for scalars — 8-byte aligned. */
+export function capture_size_a64(
+	cap: { type: { name: string; is_view?: boolean; is_array?: boolean } },
+	status: BuildStatus,
+): number {
+	if (cap.type.name === "string" && !cap.type.is_view && !cap.type.is_array) return 16;
+	const elem = status.structs.find((s) => s.name === cap.type.name && !s.is_simple_type);
+	if (elem && !elem.is_class) {
+		return Math.ceil(get_struct_size(cap.type.name, status) / 8) * 8;
+	}
+	return 8;
 }
 
 /** Env layout for a capturing lambda: name → byte offset, and total size. */
-export function closure_env_layout_a64(func: FunctionNode): {
+export function closure_env_layout_a64(
+	func: FunctionNode,
+	status: BuildStatus,
+): {
 	offsets: Map<string, number>;
 	size: number;
 } {
@@ -45,7 +55,7 @@ export function closure_env_layout_a64(func: FunctionNode): {
 	let off = 0;
 	for (const cap of func.captures ?? []) {
 		offsets.set(cap.name, off);
-		off += capture_size_a64(cap);
+		off += capture_size_a64(cap, status);
 	}
 	return { offsets, size: off };
 }
@@ -66,7 +76,7 @@ export function emit_env_free_a64(func: FunctionNode, status: BuildStatus): stri
 	const guard = `env_free:${label}`;
 	if (status.closure_descriptors.has(guard)) return label;
 	status.closure_descriptors.set(guard, label);
-	const { offsets } = closure_env_layout_a64(func);
+	const { offsets } = closure_env_layout_a64(func, status);
 	const free_call = status.audit ? `bl _nomen_free_wrap\n` : `bl _free\n`;
 	let body = `.p2align 2\n${label}:\nstp x29, x30, [sp, #-16]!\nstp x19, x20, [sp, #-16]!\nmov x19, x0\n`;
 	for (const cap of strings) {

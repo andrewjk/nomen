@@ -163,6 +163,11 @@ function capturing_closure_value(node: FunctionNode, status: BuildStatus): strin
 		// destructor frees the copy); scalars copy by value.
 		if (cap.type.name === "string" && !cap.type.is_view && !cap.type.is_array) {
 			out += `nomen_str_dup(${expr})`;
+		} else if (
+			status.structs.find((s) => s.name === cap.type.name && !s.is_simple_type && !s.is_class)
+		) {
+			// A value struct is held by pointer: allocate + copy the value.
+			out += `({ struct ${cap.type.name} *_v = (struct ${cap.type.name} *)malloc(sizeof(struct ${cap.type.name})); *_v = ${expr}; _v; })`;
 		} else {
 			out += expr;
 		}

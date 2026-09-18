@@ -237,11 +237,18 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 	if (status.closure_env_offsets?.has(value) && !status.function_param_regs?.has(value)) {
 		const off = status.closure_env_offsets.get(value)!;
 		status.code += `ldr x9, [x29, #${status.closure_env_slot}]\n`;
-		status.code += `ldr x0, [x9, #${off}]\n`;
-		// A captured string is a fat (ptr, len) pair in the env — load the len
-		// half too.
-		if (node.type?.name === "string" && !node.type.is_view && !node.type.is_array) {
-			status.code += `ldr x1, [x9, #${off + 8}]\n`;
+		const cap_struct = status.structs.find((s) => s.name === node.type?.name && !s.is_simple_type);
+		if (cap_struct && !cap_struct.is_class) {
+			// A captured value struct is read by ADDRESS (its env field is the
+			// struct's bytes), matching how local struct values are used.
+			status.code += `add x0, x9, #${off}\n`;
+		} else {
+			status.code += `ldr x0, [x9, #${off}]\n`;
+			// A captured string is a fat (ptr, len) pair in the env — load the
+			// len half too.
+			if (node.type?.name === "string" && !node.type.is_view && !node.type.is_array) {
+				status.code += `ldr x1, [x9, #${off + 8}]\n`;
+			}
 		}
 		return;
 	}

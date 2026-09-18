@@ -232,7 +232,13 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		status.code += `struct ${env_name} *_env = (struct ${env_name} *)_nomen_env;\n`;
 		status.closure_env = new Map();
 		for (const cap of node.captures) {
-			status.closure_env.set(cap.name, `_env->${c_function_name(cap.name)}`);
+			const field = `_env->${c_function_name(cap.name)}`;
+			const elem = status.structs.find(
+				(s) => s.name === cap.type.name && !s.is_simple_type && !s.is_class,
+			);
+			// A value struct's env field is a pointer (see c_env_field_type);
+			// `(*field)` reads it as the struct value/address everywhere.
+			status.closure_env.set(cap.name, elem ? `(*${field})` : field);
 		}
 	} else {
 		status.closure_env = undefined;
