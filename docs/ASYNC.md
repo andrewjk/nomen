@@ -35,6 +35,9 @@ concurrency on both targets.
 - **`Thread`** — the thread class. `Thread(fn(args)).start()` is a statement
   (fire-and-forget) or expression yielding `Task<T>`. Args packed via a
   per-site trampoline, submitted to a global worker pool.
+  `Thread(fn(args)).detach()` is the daemon form: the call runs on its own
+  dedicated pthread (never a pool worker), nobody joins it, and process exit
+  kills it mid-execution by design — see "Daemon tasks" below.
 - **`async { ... }`** — nursery block. Waits on every spawned task at scope
   exit. The join runs before block-scoped locals are destroyed, so a running
   task can safely hold pointers to nursery-local values.
@@ -103,8 +106,32 @@ the closing brace is unconditional, so code after the block cannot help a task
 inside finish — a task waiting on a producer outside the block deadlocks
 (receive inside the block, or pass the consumer in). Rust's `thread::scope`
 carries the identical hazard; its docs resolve it the same way, with the
-choreography inside the closure. The runtime-level answer (a wait-for-graph
-deadlock detector at the pool's idle points) is scoped in FOLLOWUP.md.
+choreography inside the closure. At runtime, a total deadlock is caught by
+the wait-graph detector (see "Deadlock detection" below).
+
+## Daemon tasks
+
+The one legitimate `std::thread::spawn` use case — a process-lifetime service
+(log flusher, metrics loop, watchdog) that must NOT block exit — is the
+daemon form:
+
+```
+Thread(flusher(out)).detach()
+```
+
+- **Its own pthread, never a pool worker** — a daemon that never returns
+  cannot starve or pin the pool, and `__nomen_pool_shutdown` (the atexit
+  join) never waits on it.
+- **The std detached-thread contract**: nobody joins the daemon; process
+  exit kills it mid-execution, by design. A daemon that must stop cleanly
+  owns its own shutdown (a stop channel or flag), not process exit.
+- **No handle, no future, no cancellation** — statement form only;
+  `Task.current_cancelled()` is always false inside. Args must be
+  `Sendable`, exactly like `.start()`.
+
+This is the deliberate exception to structured concurrency, kept honest by
+being explicit: `.start()` creates a bounded, joined task; `.detach()`
+creates an unbounded one and says so at the call site.
 
 ## No function coloring
 

@@ -16,6 +16,7 @@ import { allocate_stack_space } from "./utils/stack_var.ts";
  */
 export const POOL_HEADER_C = `
 #include <pthread.h>
+#include <stdio.h>
 #include <time.h>
 static __thread unsigned long long *__nomen_current_cancel_flag = NULL;
 // Fiber runtime (ASYNC_PLAN.md Phase 1). The pool and the fiber scheduler
@@ -317,6 +318,38 @@ void __nomen_nursery_track(void **slots, int *count, int *cap, struct nomen_futu
 		*slots = realloc(*slots, (size_t)*cap * sizeof(struct nomen_future *));
 	}
 	((struct nomen_future **)*slots)[(*count)++] = f;
+}
+// ---- detached daemon tasks: the Thread(fn(args)).detach() form ----
+// Mirror of the C backend's POOL_HEADER section — the std::thread::spawn
+// contract: the call runs on its OWN pthread, never a pool worker, and
+// nobody joins it; process exit kills it mid-execution by design.
+struct nomen_detached_start {
+	void (*fn)(void *);
+	void *args;
+};
+static void *__nomen_detached_run(void *p) {
+	struct nomen_detached_start *d = (struct nomen_detached_start *)p;
+	__nomen_current_cancel_flag = NULL;
+	d->fn(d->args);
+	free(d->args);
+	free(d);
+	return NULL;
+}
+static void __nomen_task_detach(void (*fn)(void *), void *args) {
+	struct nomen_detached_start *d =
+		(struct nomen_detached_start *)malloc(sizeof(struct nomen_detached_start));
+	d->fn = fn;
+	d->args = args;
+	pthread_attr_t attr;
+	pthread_attr_init(&attr);
+	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+	pthread_t t;
+	if (pthread_create(&t, &attr, __nomen_detached_run, d) != 0) {
+		free(d->args);
+		free(d);
+		fprintf(stderr, "warning: Thread(fn(args)).detach() could not start a thread\\n");
+	}
+	pthread_attr_destroy(&attr);
 }
 `;
 /**
@@ -1319,6 +1352,148 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 		}
 	}
 	// x0 = Task pointer (returned by submit helper).
+}
+
+/**
+ * Build a `Thread(fn(args)).detach()` call — the daemon form (ASYNC.md,
+ * "Daemon tasks"). Mirrors the C backend's build_detached_spawn_node: the
+ * trampoline lives in the companion C (no future, no result slot, no
+ * cancel flag, no nursery tracking — it frees its own args), and
+ * `__nomen_task_detach` launches it on a dedicated detached pthread. The
+ * asm stages the arguments and calls the submit helper, which returns NULL
+ * (there is no Task).
+ */
+export function build_detached_spawn_node(node: SpawnNode, status: BuildStatus): void {
+	const call = node.call;
+	const func_name = c_function_name(emission_label(call.resolved_function ?? call));
+	const id = status.spawn_counter ?? 0;
+	status.spawn_counter = id + 1;
+
+	ensure_concurrency_runtime_a64(status);
+
+	const struct_name = `__nomen_detach_${id}_args`;
+	const tramp_name = `__nomen_detach_${id}_trampoline`;
+	const submit_name = `nomen_detach_${id}_submit`;
+
+	const arg_c_types: string[] = [];
+	for (let i = 0; i < call.params.length; i++) {
+		const arg_type = type_from_value_node(call.params[i]);
+		const mono_name = mono_type_name(arg_type);
+		const is_class = !!status.structs.find((s) => s.name === mono_name && s.is_class);
+		const is_trait = !!status.traits.find((t) => t.name === mono_name);
+		arg_c_types.push(is_class || is_trait ? `struct ${mono_name} *` : `${c_type(mono_name)}`);
+	}
+
+	const return_type_name = node.function_return_type?.name;
+	const returns_value = !!(
+		return_type_name &&
+		return_type_name !== "void" &&
+		return_type_name !== "?"
+	);
+	const is_class_ret = returns_value
+		? !!status.structs.find((s) => s.name === return_type_name && s.is_class)
+		: false;
+	const c_ret_type = is_class_ret
+		? `struct ${return_type_name} *`
+		: returns_value
+			? c_type(return_type_name)
+			: "void";
+
+	let tramp_c = `// --- detach site ${id} trampoline ---\n`;
+	tramp_c += `${c_ret_type} ${func_name}(`;
+	for (let i = 0; i < arg_c_types.length; i++) {
+		if (i > 0) tramp_c += ", ";
+		tramp_c += `${arg_c_types[i]}`;
+	}
+	tramp_c += `);\n`;
+	tramp_c += `struct ${struct_name} {\n`;
+	for (let i = 0; i < arg_c_types.length; i++) {
+		tramp_c += `\t${arg_c_types[i]} arg${i};\n`;
+	}
+	tramp_c += `};\n`;
+	tramp_c += `static void ${tramp_name}(void *p) {\n`;
+	tramp_c += `\tstruct ${struct_name} *a = (struct ${struct_name} *)p;\n`;
+	tramp_c += `\t__nomen_current_cancel_flag = NULL;\n`;
+	if (returns_value) {
+		tramp_c += `\t${c_ret_type} _r = ${func_name}(`;
+	} else {
+		tramp_c += `\t${func_name}(`;
+	}
+	for (let i = 0; i < arg_c_types.length; i++) {
+		if (i > 0) tramp_c += ", ";
+		tramp_c += `a->arg${i}`;
+	}
+	tramp_c += `);\n`;
+	tramp_c += `\t__nomen_current_cancel_flag = NULL;\n`;
+	tramp_c += `\tfree(a);\n`;
+	tramp_c += `}\n`;
+
+	// Submit helper: allocates the args struct and hands it to the detached
+	// launcher. Fat-string params ride the 16-byte by-value pair (see the
+	// spawn submit helper).
+	tramp_c += `void *${submit_name}(`;
+	for (let i = 0; i < arg_c_types.length; i++) {
+		if (i > 0) tramp_c += ", ";
+		tramp_c += `${arg_c_types[i]} arg${i}`;
+	}
+	tramp_c += `) {\n`;
+	tramp_c += `\tstruct ${struct_name} *a = (struct ${struct_name} *)malloc(sizeof(struct ${struct_name}));\n`;
+	for (let i = 0; i < arg_c_types.length; i++) {
+		tramp_c += `\ta->arg${i} = arg${i};\n`;
+	}
+	tramp_c += `\t__nomen_task_detach(${tramp_name}, a);\n`;
+	tramp_c += `\treturn (void *)0;\n`;
+	tramp_c += `}\n`;
+
+	if (!status.file_scope_c) status.file_scope_c = "";
+	status.file_scope_c += tramp_c;
+
+	// --- Emit assembly: build arg registers and call the submit helper ---
+	// Mirrors the spawn site minus the nursery extras (a daemon is never
+	// nursery-tracked).
+	status.code += `// detach site ${id}\n`;
+
+	const fat_string_args = call.params.map(spawn_arg_is_string);
+	const arg_slot: number[] = [];
+	let total_arg_slots = 0;
+	for (let i = 0; i < call.params.length; i++) {
+		arg_slot.push(total_arg_slots);
+		total_arg_slots += fat_string_args[i] ? 2 : 1;
+	}
+
+	if (total_arg_slots === 0) {
+		status.code += `bl _${submit_name}\n`;
+	} else {
+		const args_base = allocate_stack_space(status, total_arg_slots * 8, 16);
+		for (let i = 0; i < call.params.length; i++) {
+			status.code += `// Build arg${i}\n`;
+			build_node(call.params[i], status);
+			if (!status.code.endsWith("\n")) status.code += "\n";
+			status.code += `str x0, [x29, #${args_base + arg_slot[i] * 8}]\n`;
+			if (fat_string_args[i]) {
+				status.code += `str x1, [x29, #${args_base + (arg_slot[i] + 1) * 8}]\n`;
+			}
+		}
+		const NUM_REG_ARGS = 8;
+		const overflow_count = Math.max(0, total_arg_slots - NUM_REG_ARGS);
+		if (overflow_count > 0) {
+			const outgoing_size = Math.ceil((overflow_count * 8) / 16) * 16;
+			status.code += `sub sp, sp, #${outgoing_size}\n`;
+			for (let k = 0; k < overflow_count; k++) {
+				status.code += `ldr x9, [x29, #${args_base + (NUM_REG_ARGS + k) * 8}]\n`;
+				status.code += `str x9, [sp, #${k * 8}]\n`;
+			}
+		}
+		for (let s = 0; s < Math.min(total_arg_slots, NUM_REG_ARGS); s++) {
+			status.code += `ldr x${s}, [x29, #${args_base + s * 8}]\n`;
+		}
+		status.code += `bl _${submit_name}\n`;
+		if (overflow_count > 0) {
+			const outgoing_size = Math.ceil((overflow_count * 8) / 16) * 16;
+			status.code += `add sp, sp, #${outgoing_size}\n`;
+		}
+	}
+	// x0 = NULL — a daemon yields no Task.
 }
 
 /**

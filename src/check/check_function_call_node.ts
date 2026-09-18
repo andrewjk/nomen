@@ -1316,6 +1316,10 @@ function derive_annotations_for_access_func(
 		rederive_spawn_start_annotations(access_node, fc, status, "Thread", false);
 		return;
 	}
+	if (receiver_type === "Thread" && fc.name === "detach") {
+		rederive_spawn_detach_annotations(access_node, fc, status);
+		return;
+	}
 	if (receiver_type === "Fiber" && (fc.name === "start" || fc.name === "start_on")) {
 		rederive_spawn_start_annotations(access_node, fc, status, "Fiber", fc.name === "start_on");
 		return;
@@ -1566,6 +1570,35 @@ function rederive_spawn_start_annotations(
 	const task_struct = status.structs.find((s) => s.name === "Task");
 	if (task_struct && task_struct.type_params.length > 0) {
 		monomorphize(task_struct, [result_type_arg], status);
+	}
+}
+
+/**
+ * Re-derive the annotations for a `Thread(fn(args)).detach()` call inside a
+ * monomorphised body — mirroring check_spawn_detach (check_access_node).
+ * The build gates its detached-pthread emission on is_thread_detach.
+ */
+function rederive_spawn_detach_annotations(
+	access_node: any,
+	fc: AccessFunctionCallNode,
+	status: CheckStatus,
+) {
+	// The magic constructor is the AccessNode's target; the rederive walk
+	// visits it first (rederive_annotations_in_node recurses into .target),
+	// so its annotations are already re-derived here.
+	const ctor = access_node?.target as FunctionCallNode | undefined;
+	if (!ctor || ctor.node_type !== "func_call" || !ctor.is_thread_ctor) return;
+	if (ctor.params.length !== 1 || ctor.params[0].node_type !== "func_call") return;
+	fc.is_thread_detach = true;
+	const call = ctor.params[0] as FunctionCallNode;
+	let return_type = ctor.function_return_type ?? call.type;
+	if (!return_type?.name) {
+		const func = find_free_function(status, call.name);
+		if (func) return_type = func.return_type;
+	}
+	fc.function_return_type = return_type;
+	if (!fc.type?.name) {
+		fc.type = new Type("void");
 	}
 }
 

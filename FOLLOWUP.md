@@ -339,32 +339,6 @@ frame. That needs forced stack unwinding of suspended frames (or a
 longjmp-style teardown entry), which is a substantial runtime feature and was
 out of scope. Until then cancellation is cooperative only.
 
-## Daemon tasks: no detached-spawn form
-
-The one legitimate `std::thread::spawn` use case — a process-lifetime
-service (log flusher, metrics loop, watchdog) that must NOT block exit — has
-no expressible form:
-
-- Inside `async { }`: the never-ending task blocks the brace join forever.
-- Spawned bare (statement form): the future has `refs = 1` (trampoline only,
-  `build_spawn_node.ts`), so nothing tracks it — but exit still hangs:
-  `__nomen_pool_shutdown` (registered via atexit) joins the workers, and
-  workers drain the queue before exiting, so the daemon keeps its worker
-  alive and the `pthread_join` never returns.
-
-Fix directions:
-
-1. Cheapest honest form: a dedicated detached spawn on its own pthread —
-   closest to std semantics (process exit kills it mid-execution, by
-   design); no pool interaction, the std contract is explicit.
-2. Pool-native detach: a detached flag in the trampoline args;
-   `__nomen_pool_shutdown` drains only non-detached tasks and leaves
-   workers running detached ones unjoined. Needs a per-task flag and care
-   with pool-growth accounting.
-3. Either way the daemon owns its own shutdown (explicit stop signal), not
-   process exit. SPEC's Concurrency section gains a sentence when this
-   lands.
-
 ## Advisory parking-lint content (ASYNC_PLAN Phase 4)
 
 ASYNC_PLAN scopes the lint to fiber-reachable code; the deadlock-design

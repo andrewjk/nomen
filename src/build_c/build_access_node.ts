@@ -18,7 +18,10 @@ import build_node from "./build_node.ts";
 import build_nursery_spawn from "./build_nursery_spawn.ts";
 import { is_owned_heap_temp } from "./build_operation_node.ts";
 import build_parameter_node from "./build_parameter_node.ts";
-import build_spawn_node, { ensure_concurrency_runtime } from "./build_spawn_node.ts";
+import build_spawn_node, {
+	build_detached_spawn_node,
+	ensure_concurrency_runtime,
+} from "./build_spawn_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import { find_decl_in_c_scopes } from "./utils/c_scope.ts";
@@ -479,6 +482,16 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				spawn.function_return_type = access_func.function_return_type;
 				spawn.is_statement = access_func.is_statement;
 				build_spawn_node(spawn, status);
+				return;
+			}
+			// `Thread(fn(args)).detach()` — the daemon form: a dedicated
+			// detached pthread (never a pool worker), unjoinable, killed by
+			// process exit by design. See ASYNC.md, "Daemon tasks".
+			if (access_func.is_thread_detach) {
+				const ctor = node.target as FunctionCallNode;
+				const spawn = new SpawnNode(node.start, ctor.params[0] as FunctionCallNode);
+				spawn.function_return_type = access_func.function_return_type;
+				build_detached_spawn_node(spawn, status);
 				return;
 			}
 			// `Fiber(fn(args)).start[_on](buf)` — the fiber flavor: same

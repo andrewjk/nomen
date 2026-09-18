@@ -44,7 +44,10 @@ import build_inline_method, {
 import build_node from "./build_node.ts";
 import build_nursery_spawn from "./build_nursery_spawn.ts";
 import { build_operand, tree_is_call_free } from "./build_operation_node.ts";
-import build_spawn_node, { ensure_concurrency_runtime_a64 } from "./build_spawn_node.ts";
+import build_spawn_node, {
+	build_detached_spawn_node,
+	ensure_concurrency_runtime_a64,
+} from "./build_spawn_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free, emit_malloc, emit_strdup } from "./utils/audit.ts";
 import { all_scope_frames, mark_moved_if_struct, trait_class_for } from "./utils/auto_destroy.ts";
@@ -646,6 +649,16 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				spawn.function_return_type = access_func.function_return_type;
 				spawn.is_statement = access_func.is_statement;
 				build_spawn_node(spawn, status);
+				return;
+			}
+			// `Thread(fn(args)).detach()` — the daemon form: a dedicated
+			// detached pthread (never a pool worker), unjoinable, killed by
+			// process exit by design. See ASYNC.md, "Daemon tasks".
+			if (access_func.is_thread_detach) {
+				const ctor = node.target as FunctionCallNode;
+				const spawn = new SpawnNode(node.start, ctor.params[0] as FunctionCallNode);
+				spawn.function_return_type = access_func.function_return_type;
+				build_detached_spawn_node(spawn, status);
 				return;
 			}
 			// `Fiber(fn(args)).start[_on](buf)` — the fiber flavor: same

@@ -152,6 +152,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.inferred_array_length = n.inferred_array_length;
 			c.is_nursery_spawn = n.is_nursery_spawn;
 			c.is_thread_start = n.is_thread_start;
+			c.is_thread_detach = n.is_thread_detach;
 			c.is_fiber_start = n.is_fiber_start;
 			c.is_fiber_start_on = n.is_fiber_start_on;
 			c.function_return_type = n.function_return_type

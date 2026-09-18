@@ -454,6 +454,9 @@ function check_access_function_node(
 	if (target_type.name === "Thread" && node.name === "start") {
 		return check_spawn_start(target, node, status, "Thread", false);
 	}
+	if (target_type.name === "Thread" && node.name === "detach") {
+		return check_spawn_detach(target, node, status);
+	}
 	if (target_type.name === "Fiber" && (node.name === "start" || node.name === "start_on")) {
 		return check_spawn_start(target, node, status, "Fiber", node.name === "start_on");
 	}
@@ -1132,23 +1135,7 @@ function check_spawn_start(
 	}
 
 	// Every argument moved into the spawned task must be Sendable.
-	for (const param of call.params) {
-		let arg_type = type_from_value_node(param, status);
-		// A constant-folded argument (e.g. `"a" + "b"` → a synthetic data
-		// label value) resolves to no declared name — fall back to the
-		// checker-stamped node type, which the fold sets.
-		const stamped = (param as unknown as { type?: Type }).type;
-		if (!arg_type.name && stamped?.name) {
-			arg_type = stamped;
-		}
-		if (!is_sendable_type(arg_type.name, status)) {
-			add_error(
-				status,
-				`Spawn argument of type ${arg_type.name || "<unknown>"} is not Sendable`,
-				param.start,
-			);
-		}
-	}
+	validate_spawn_args_sendable(call, status);
 
 	// Type the expression as Task<T> where T is the spawned function's return
 	// type (uint64 for void functions — the result slot exists but is unused).
@@ -1177,5 +1164,66 @@ function check_spawn_start(
 		monomorphize(task_struct, [result_type_arg], status);
 	}
 
+	return true;
+}
+
+/**
+ * Validate that every argument of a spawn/detach is Sendable (shared by
+ * `.start()` and `.detach()`).
+ */
+function validate_spawn_args_sendable(call: FunctionCallNode, status: CheckStatus): void {
+	for (const param of call.params) {
+		let arg_type = type_from_value_node(param, status);
+		// A constant-folded argument (e.g. `"a" + "b"` → a synthetic data
+		// label value) resolves to no declared name — fall back to the
+		// checker-stamped node type, which the fold sets.
+		const stamped = (param as unknown as { type?: Type }).type;
+		if (!arg_type.name && stamped?.name) {
+			arg_type = stamped;
+		}
+		if (!is_sendable_type(arg_type.name, status)) {
+			add_error(
+				status,
+				`Spawn argument of type ${arg_type.name || "<unknown>"} is not Sendable`,
+				param.start,
+			);
+		}
+	}
+}
+
+/**
+ * Check a `Thread(fn(args)).detach()` call — the daemon form (see
+ * ASYNC.md, "Daemon tasks"). The wrapped call runs on a dedicated detached
+ * pthread (never a pool worker); nobody joins it, and process exit kills it
+ * mid-execution BY DESIGN — the std::thread::spawn contract. The daemon
+ * owns its own shutdown (a stop channel or flag), not process exit. There
+ * is no handle, no future, and no cancellation: statement form only, the
+ * expression types as void.
+ */
+function check_spawn_detach(
+	target: BaseNode,
+	node: AccessFunctionCallNode,
+	status: CheckStatus,
+): boolean {
+	const ctor = target as FunctionCallNode;
+	const ctor_flagged = ctor.is_thread_ctor;
+	if (!ctor_flagged || ctor.params.length !== 1 || ctor.params[0].node_type !== "func_call") {
+		add_error(
+			status,
+			"Thread(fn(args)).detach expects a single call expression, e.g. Thread(work(n)).detach()",
+			node.start,
+		);
+		return false;
+	}
+	const call = ctor.params[0] as FunctionCallNode;
+
+	// Every argument moved into the daemon must be Sendable.
+	validate_spawn_args_sendable(call, status);
+
+	// No Task<T>: the daemon is unjoinable by design. The wrapped call's
+	// return type rides along only so the trampoline can call it correctly.
+	node.function_return_type = call.type;
+	node.type = new Type("void");
+	node.is_thread_detach = true;
 	return true;
 }

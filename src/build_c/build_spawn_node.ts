@@ -27,6 +27,7 @@ export const POOL_HEADER = `
 #define _XOPEN_SOURCE 600
 #endif
 #include <pthread.h>
+#include <stdio.h>
 #include <time.h>
 static __thread unsigned long long *__nomen_current_cancel_flag = NULL;
 // Fiber runtime (ASYNC_PLAN.md Phase 1). The pool and the fiber scheduler
@@ -355,6 +356,44 @@ static void __nomen_nursery_track(void **slots, int *count, int *cap, struct nom
 		*slots = realloc(*slots, (size_t)*cap * sizeof(struct nomen_future *));
 	}
 	((struct nomen_future **)*slots)[(*count)++] = f;
+}
+// ---- detached daemon tasks: the Thread(fn(args)).detach() form
+// (ASYNC.md, "Daemon tasks") ----
+// The std::thread::spawn contract: the call runs on its OWN pthread —
+// never a pool worker — and nobody joins it. Process exit kills it
+// mid-execution BY DESIGN (a process-lifetime service does not block
+// shutdown); the daemon owns its own shutdown (a stop channel or flag).
+// No future, no handle, no cancellation: Task.current_cancelled() is
+// always false inside, and the pool / shutdown machinery is untouched.
+struct nomen_detached_start {
+	void (*fn)(void *);
+	void *args;
+};
+static void *__nomen_detached_run(void *p) {
+	struct nomen_detached_start *d = (struct nomen_detached_start *)p;
+	__nomen_current_cancel_flag = NULL;
+	d->fn(d->args);
+	free(d->args);
+	free(d);
+	return NULL;
+}
+static void __nomen_task_detach(void (*fn)(void *), void *args) {
+	struct nomen_detached_start *d =
+		(struct nomen_detached_start *)malloc(sizeof(struct nomen_detached_start));
+	d->fn = fn;
+	d->args = args;
+	pthread_attr_t attr;
+	pthread_attr_init(&attr);
+	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+	pthread_t t;
+	if (pthread_create(&t, &attr, __nomen_detached_run, d) != 0) {
+		// Best effort, consistent with the pool's pthread_create handling:
+		// free what the daemon would have owned and say why it is gone.
+		free(d->args);
+		free(d);
+		fprintf(stderr, "warning: Thread(fn(args)).detach() could not start a thread\\n");
+	}
+	pthread_attr_destroy(&attr);
 }
 `;
 /**
@@ -1311,6 +1350,80 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 		status.code += `\t_task->future = (unsigned long long)_future;\n`;
 		status.code += `\t_task;\n`;
 	}
+	status.code += `})\n`;
+}
+
+/**
+ * Build a `Thread(fn(args)).detach()` call — the daemon form (ASYNC.md,
+ * "Daemon tasks"). Same per-site trampoline shape as a spawn, minus the
+ * future: no result slot, no cancel flag, no nursery tracking, no Task.
+ * The trampoline frees its own args (there is no future to own them and no
+ * joiner to reap anything), and `__nomen_task_detach` launches it on a
+ * dedicated detached pthread — never a pool worker, never joined, killed
+ * by process exit by design.
+ */
+export function build_detached_spawn_node(node: SpawnNode, status: BuildStatus): void {
+	const call = node.call;
+	const func_name = c_function_name(emission_label(call.resolved_function ?? call));
+	const id = status.spawn_counter ?? 0;
+	status.spawn_counter = id + 1;
+
+	ensure_concurrency_runtime(status);
+
+	const struct_name = `__nomen_detach_${id}_args`;
+	const tramp_name = `__nomen_detach_${id}_trampoline`;
+	const arg_c_types = spawn_arg_c_types(call, status);
+
+	const return_type_name = node.function_return_type?.name;
+	const returns_value = !!(
+		return_type_name &&
+		return_type_name !== "void" &&
+		return_type_name !== "?"
+	);
+	const is_class_ret =
+		returns_value && !!status.structs.find((s) => s.name === return_type_name && s.is_class);
+	const is_trait_ret = returns_value && !!status.traits.find((t) => t.name === return_type_name);
+	const c_ret_type = !returns_value
+		? "void"
+		: is_class_ret || is_trait_ret
+			? `struct ${return_type_name} *`
+			: c_type(return_type_name);
+
+	// Forward-declare the spawned function (see build_spawn_node for why
+	// this is unconditional).
+	let header = `${c_ret_type} ${func_name}(${arg_c_types.join(", ")});\n`;
+	header += `struct ${struct_name} {\n`;
+	for (let i = 0; i < arg_c_types.length; i++) {
+		header += `\t${arg_c_types[i]} arg${i};\n`;
+	}
+	header += `};\n`;
+	header += `static void ${tramp_name}(void *p) {\n`;
+	header += `\tstruct ${struct_name} *a = (struct ${struct_name} *)p;\n`;
+	header += `\t__nomen_current_cancel_flag = NULL;\n`;
+	if (returns_value) {
+		header += `\t${c_ret_type} _r = ${func_name}(`;
+	} else {
+		header += `\t${func_name}(`;
+	}
+	for (let i = 0; i < arg_c_types.length; i++) {
+		if (i > 0) header += ", ";
+		header += `a->arg${i}`;
+	}
+	header += `);\n`;
+	header += `\t__nomen_current_cancel_flag = NULL;\n`;
+	header += `\tfree(a);\n`;
+	header += `}\n`;
+	status.headers += header;
+
+	status.code += `({\n`;
+	status.code += `\tstruct ${struct_name} *_args = (struct ${struct_name} *)malloc(sizeof(struct ${struct_name}));\n`;
+	for (let i = 0; i < call.params.length; i++) {
+		status.code += `\t_args->arg${i} = `;
+		build_node(call.params[i], status);
+		status.code += ";\n";
+	}
+	status.code += `\t__nomen_task_detach(${tramp_name}, _args);\n`;
+	status.code += `\t(void)0;\n`;
 	status.code += `})\n`;
 }
 

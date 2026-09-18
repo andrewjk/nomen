@@ -74,6 +74,14 @@ export default class AccessFunctionCallNode extends BaseNode {
 	 */
 	is_thread_start?: boolean;
 	/**
+	 * Set during checking when this is a `Thread(fn(args)).detach()` call —
+	 * the daemon form. The build synthesizes a SpawnNode from the wrapped
+	 * call and emits a detached-pthread trampoline: never a pool worker,
+	 * nobody joins it, process exit kills it mid-execution by design (the
+	 * std::thread::spawn contract). See ASYNC.md, "Daemon tasks".
+	 */
+	is_thread_detach?: boolean;
+	/**
 	 * Set during checking when this is a `Fiber(fn(args)).start()` call —
 	 * the fiber flavor of a direct spawn. The build synthesizes a SpawnNode
 	 * from the wrapped call and emits the fiber trampoline (the launch goes
