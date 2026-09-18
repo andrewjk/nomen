@@ -19,6 +19,14 @@ import build_and_check_output from "./build_and_check_output";
 // correctly (exit 0), so these tests fail on the c arch only.
 
 describe("struct-method string-field assignment: remaining gaps", () => {
+	// The Tester done record's trailing field is a wall-clock nanoseconds
+	// measurement — nondeterministic across runs, which flapped the TRACKED
+	// cache artifact (test/out/**/output.txt) on every codegen change.
+	// Canonicalize it to 0 for the cache; the fresh-run assertion still sees
+	// raw stdout, and the prefix expectation is unaffected by the rewrite.
+	const stabilize_tester_timing = (stdout: string): string =>
+		stdout.replace(/^((?:\\nomen\|done\|(?:[^|\n]*\|){3}))\d+(\n)/gm, "$<1>0$<2>");
+
 	// #1 — a literal argument: the field holds a pointer into rodata, and
 	// Holder_destroy's free() aborts at scope exit.
 	test("method assigning a string parameter to a self field must not free the borrow on destroy", async () => {
@@ -84,6 +92,8 @@ pub func main = () {
 			"gap_tester_begin_test_destroy",
 			"\\nomen|start|demo\n\\nomen|done|demo|1|0|",
 			true,
+			{},
+			{ normalize_output: stabilize_tester_timing },
 		);
 	});
 });

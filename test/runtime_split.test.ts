@@ -29,7 +29,8 @@ describe("C runtime TU split", () => {
 		expect(decls).toContain("extern __thread unsigned long long *__nomen_current_cancel_flag;");
 		expect(decls).toContain("extern __thread struct nomen_fiber *__nomen_current_fiber;");
 		expect(decls).toContain("extern pthread_mutex_t __nomen_pool_mu;");
-		expect(decls).toContain("void __nomen_pool_submit(void (*fn)(void *), void *arg);");
+		expect(decls).toContain("void __nomen_pool_submit(struct nomen_closure *task);");
+		expect(decls).toContain("void __nomen_closure_dispose(struct nomen_closure *c);");
 		expect(decls).toContain("void *__nomen_mutex_create(void);");
 		// The definitions blob (statics) must NOT leak into the declarations.
 		expect(decls).not.toMatch(/^static /m);

@@ -95,8 +95,8 @@ export default function build_fiber_spawn_node(
 	tramp_c += `\tunsigned long long *cancel_flag;\n`;
 	tramp_c += `\tstruct nomen_future *future;\n`;
 	tramp_c += `};\n`;
-	tramp_c += `static void ${tramp_name}(void *p) {\n`;
-	tramp_c += `\tstruct ${struct_name} *a = (struct ${struct_name} *)p;\n`;
+	tramp_c += `static void ${tramp_name}(struct nomen_closure *_c) {\n`;
+	tramp_c += `\tstruct ${struct_name} *a = (struct ${struct_name} *)_c->env;\n`;
 	tramp_c += `\t__nomen_current_cancel_flag = a->cancel_flag;\n`;
 	if (returns_value) {
 		tramp_c += `\t${c_ret_type} _r = ${func_name}(`;
@@ -113,8 +113,12 @@ export default function build_fiber_spawn_node(
 	}
 	tramp_c += `\t__nomen_current_cancel_flag = NULL;\n`;
 	tramp_c += `\t__nomen_future_complete(a->future);\n`;
-	tramp_c += `\t__nomen_future_release(a->future);\n`;
+	tramp_c += `\t__nomen_future_release(a->future);\n`; // closure disposed at the last release
 	tramp_c += `}\n`;
+	// Static descriptor template; every fiber spawn copies it into a heap
+	// descriptor owning its env (the future's last release disposes it).
+	const desc_name = `__nomen_spawn_${id}_descriptor`;
+	tramp_c += `static struct nomen_closure ${desc_name} = { (void *)${tramp_name}, NULL, 0, NULL };\n`;
 
 	// Nursery state + fire-and-forget detection.
 	const nursery_id = status.nursery_stack?.at(-1);
@@ -162,10 +166,16 @@ export default function build_fiber_spawn_node(
 	tramp_c += `\tf->cancel_flag = a->cancel_flag;\n`;
 	tramp_c += `\tf->result_slot = a->result_slot;\n`;
 	tramp_c += `\ta->future = f;\n`;
-	tramp_c += `\tf->owner_args = a;\n`;
+	// The task closure: heap copy of the site's descriptor with the args
+	// struct as env; owned by the future (disposed at the last release).
+	tramp_c += `\tstruct nomen_closure *c = (struct nomen_closure *)malloc(sizeof(struct nomen_closure));\n`;
+	tramp_c += `\t*c = ${desc_name};\n`;
+	tramp_c += `\tc->env = a;\n`;
+	tramp_c += `\tc->owned = 1;\n`;
+	tramp_c += `\tf->owner_args = c;\n`;
 	tramp_c += `\tf->fiber_waiters = NULL;\n`;
 	tramp_c += `\tf->owning_fiber = 0;\n`;
-	tramp_c += `\t__nomen_fiber_spawn${start_on ? "_on" : ""}(${tramp_name}, a, f${
+	tramp_c += `\t__nomen_fiber_spawn${start_on ? "_on" : ""}(c, f${
 		start_on ? ", __nomen_stack, (size_t)__nomen_stack_size" : ""
 	});\n`;
 	if (nursery_id !== undefined) {

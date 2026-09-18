@@ -89,8 +89,8 @@ export default function build_nursery_spawn(
 	header += `\tunsigned long long *cancel_flag;\n`;
 	header += `\tstruct nomen_future *future;\n`;
 	header += `};\n`;
-	header += `static void ${tramp_name}(void *p) {\n`;
-	header += `\tstruct ${struct_name} *a = (struct ${struct_name} *)p;\n`;
+	header += `static void ${tramp_name}(struct nomen_closure *_c) {\n`;
+	header += `\tstruct ${struct_name} *a = (struct ${struct_name} *)_c->env;\n`;
 	header += `\t__nomen_current_cancel_flag = a->cancel_flag;\n`;
 	if (returns_value) {
 		header += `\t${c_ret_type} _r = ${func_name}(`;
@@ -107,8 +107,12 @@ export default function build_nursery_spawn(
 	}
 	header += `\t__nomen_current_cancel_flag = NULL;\n`;
 	header += `\t__nomen_future_complete(a->future);\n`;
-	header += `\t__nomen_future_release(a->future);\n`; // a freed via f->owner_args at last release
+	header += `\t__nomen_future_release(a->future);\n`; // closure disposed at the last release
 	header += `}\n`;
+	// Static descriptor template; every nursery spawn copies it into a heap
+	// descriptor owning its env (the future's last release disposes it).
+	const desc_name = `__nomen_spawn_${id}_descriptor`;
+	header += `static struct nomen_closure ${desc_name} = { (void *)${tramp_name}, NULL, 0, NULL };\n`;
 	status.headers += header;
 
 	// The future always has a nursery reference here (that's the point of the
@@ -143,10 +147,16 @@ export default function build_nursery_spawn(
 	status.code += `\t_future->result_slot = _result_ptr;\n`;
 	status.code += `\t_future->refs = ${refs};\n`;
 	status.code += `\t_args->future = _future;\n`;
-	status.code += `\t_future->owner_args = _args;\n`;
+	// The task closure: heap copy of the site's descriptor with the args
+	// struct as env; owned by the future (disposed at the last release).
+	status.code += `\tstruct nomen_closure *_closure = (struct nomen_closure *)malloc(sizeof(struct nomen_closure));\n`;
+	status.code += `\t*_closure = ${desc_name};\n`;
+	status.code += `\t_closure->env = _args;\n`;
+	status.code += `\t_closure->owned = 1;\n`;
+	status.code += `\t_future->owner_args = _closure;\n`;
 	status.code += `\t_future->fiber_waiters = NULL;\n`;
 	status.code += `\t_future->owning_fiber = NULL;\n`;
-	status.code += `\t__nomen_pool_submit(${tramp_name}, _args);\n`;
+	status.code += `\t__nomen_pool_submit(_closure);\n`;
 	// Register the future with the nursery via its runtime pointers — the
 	// growable-list helper (the pointers address the enclosing async block's
 	// storage/count/capacity slots, so a realloc updates the block's own list

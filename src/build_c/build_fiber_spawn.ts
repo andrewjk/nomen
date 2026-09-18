@@ -90,8 +90,8 @@ export default function build_fiber_spawn_node(
 	header += `\tunsigned long long *cancel_flag;\n`;
 	header += `\tstruct nomen_future *future;\n`;
 	header += `};\n`;
-	header += `static void ${tramp_name}(void *p) {\n`;
-	header += `\tstruct ${struct_name} *a = (struct ${struct_name} *)p;\n`;
+	header += `static void ${tramp_name}(struct nomen_closure *_c) {\n`;
+	header += `\tstruct ${struct_name} *a = (struct ${struct_name} *)_c->env;\n`;
 	header += `\t__nomen_current_cancel_flag = a->cancel_flag;\n`;
 	if (returns_value) {
 		header += `\t${c_ret_type} _r = ${func_name}(`;
@@ -109,10 +109,15 @@ export default function build_fiber_spawn_node(
 	header += `\t__nomen_current_cancel_flag = NULL;\n`;
 	header += `\t__nomen_future_complete(a->future);\n`;
 	// The trampoline holds one future reference for the duration of the run —
-	// release it only after signaling. The fiber itself is freed by the
-	// scheduler when the resumer observes DONE.
+	// release it only after signaling. The final release disposes the task
+	// closure; the fiber itself is freed by the scheduler when the resumer
+	// observes DONE.
 	header += `\t__nomen_future_release(a->future);\n`;
 	header += `}\n`;
+	// Static descriptor template; every fiber spawn copies it into a heap
+	// descriptor owning its env (the future's last release disposes it).
+	const desc_name = `__nomen_spawn_${id}_descriptor`;
+	header += `static struct nomen_closure ${desc_name} = { (void *)${tramp_name}, NULL, 0, NULL };\n`;
 	status.headers += header;
 
 	const task_type_args = call.type?.type_args;
@@ -143,7 +148,13 @@ export default function build_fiber_spawn_node(
 	status.code += `\t_future->cancel_flag = _cancel_ptr;\n`;
 	status.code += `\t_future->result_slot = _result_ptr;\n`;
 	status.code += `\t_args->future = _future;\n`;
-	status.code += `\t_future->owner_args = _args;\n`;
+	// The task closure: heap copy of the site's descriptor with the args
+	// struct as env; owned by the future (disposed at the last release).
+	status.code += `\tstruct nomen_closure *_closure = (struct nomen_closure *)malloc(sizeof(struct nomen_closure));\n`;
+	status.code += `\t*_closure = ${desc_name};\n`;
+	status.code += `\t_closure->env = _args;\n`;
+	status.code += `\t_closure->owned = 1;\n`;
+	status.code += `\t_future->owner_args = _closure;\n`;
 
 	// Future refs: trampoline + returned Task (+ nursery). Fire-and-forget
 	// drops the Task reference.
@@ -158,7 +169,7 @@ export default function build_fiber_spawn_node(
 	// Launch on a fiber stack. start_on's buffer was validated at check time
 	// (fixed-size array, >= 16 KB); compute its byte size from the element
 	// type (strings are the 16-byte fat pair, everything else is one word).
-	status.code += `\t__nomen_fiber_spawn${start_on ? "_on" : ""}(${tramp_name}, _args, _future`;
+	status.code += `\t__nomen_fiber_spawn${start_on ? "_on" : ""}(_closure, _future`;
 	if (start_on) {
 		const buf_type = type_from_value_node(start_on);
 		const elem_size = buf_type.name === "string" ? 16 : 8;

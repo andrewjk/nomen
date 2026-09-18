@@ -18,6 +18,33 @@ export const POOL_HEADER_C = `
 #include <pthread.h>
 #include <stdio.h>
 #include <time.h>
+// The spawn runtime speaks the closure descriptor ABI (docs/CLOSURE_PLAN.md):
+// a submitted task IS a "struct nomen_closure *" whose code receives the
+// closure itself ("void (*)(struct nomen_closure *)" — env is reachable
+// through it). Guarded so a companion that already carries the definition
+// (e.g. from a future preamble) stays single-definition.
+#ifndef NOMEN_CLOSURE_STRUCT
+#define NOMEN_CLOSURE_STRUCT
+struct nomen_closure {
+	void *code;
+	void *env;
+	int owned;
+	void (*destroy_env)(void *);
+};
+#endif
+// The uniform free-if-owned arm (the same teardown a func-typed local gets
+// at scope exit): a heap descriptor (owned = 1) runs its env destructor,
+// then frees the env and the descriptor. Static descriptors (owned = 0)
+// own nothing and are never freed. The future holds the task closure via
+// owner_args and disposes it at the last release — the same lifetime the
+// bare args struct had (ordered after every use, so a worker's free never
+// races the submitting thread's post-submit allocations).
+void __nomen_closure_dispose(struct nomen_closure *c) {
+	if (!c || !c->owned) return;
+	if (c->destroy_env) c->destroy_env(c->env);
+	free(c->env);
+	free(c);
+}
 static __thread unsigned long long *__nomen_current_cancel_flag = NULL;
 // Fiber runtime (ASYNC_PLAN.md Phase 1). The pool and the fiber scheduler
 // share one companion text: this block owns the future machinery and
@@ -164,13 +191,14 @@ void __nomen_future_release(struct nomen_future *f) {
 		pthread_cond_destroy(&f->cv);
 		free(f->cancel_flag);
 		free(f->result_slot);
-		if (f->owner_args) free(f->owner_args);
+		// The task closure is owned by the future — disposed at the last
+		// release (see __nomen_closure_dispose above for the lifetime note).
+		__nomen_closure_dispose((struct nomen_closure *)f->owner_args);
 		free(f);
 	}
 }
 struct nomen_pool_task {
-	void (*fn)(void *);
-	void *arg;
+	struct nomen_closure *task;
 	struct nomen_pool_task *next;
 };
 pthread_mutex_t __nomen_pool_mu = PTHREAD_MUTEX_INITIALIZER;
@@ -218,7 +246,7 @@ static void *__nomen_pool_worker(void *arg) {
 		if (!__nomen_pool_head) __nomen_pool_tail = NULL;
 		__nomen_pool_busy++;
 		pthread_mutex_unlock(&__nomen_pool_mu);
-		t->fn(t->arg);
+		((void (*)(struct nomen_closure *))t->task->code)(t->task);
 		free(t);
 		pthread_mutex_lock(&__nomen_pool_mu);
 		__nomen_pool_busy--;
@@ -252,11 +280,10 @@ void __nomen_pool_ensure(void) {
 	}
 	atexit(__nomen_pool_shutdown);
 }
-void __nomen_pool_submit(void (*fn)(void *), void *arg) {
+void __nomen_pool_submit(struct nomen_closure *task) {
 	__nomen_pool_ensure();
 	struct nomen_pool_task *t = (struct nomen_pool_task *)malloc(sizeof(struct nomen_pool_task));
-	t->fn = fn;
-	t->arg = arg;
+	t->task = task;
 	t->next = NULL;
 	pthread_mutex_lock(&__nomen_pool_mu);
 	if (__nomen_pool_busy >= __nomen_pool_nworkers && __nomen_pool_nworkers < ECHO_POOL_MAX_SIZE) {
@@ -322,30 +349,30 @@ void __nomen_nursery_track(void **slots, int *count, int *cap, struct nomen_futu
 // ---- detached daemon tasks: the Thread(fn(args)).detach() form ----
 // Mirror of the C backend's POOL_HEADER section — the std::thread::spawn
 // contract: the call runs on its OWN pthread, never a pool worker, and
-// nobody joins it; process exit kills it mid-execution by design.
+// nobody joins it; process exit kills it mid-execution by design. The
+// task closure is disposed by the one thread that ran it — never inside
+// the generated body (that was a double free before the closure ABI).
 struct nomen_detached_start {
-	void (*fn)(void *);
-	void *args;
+	struct nomen_closure *task;
 };
 static void *__nomen_detached_run(void *p) {
 	struct nomen_detached_start *d = (struct nomen_detached_start *)p;
 	__nomen_current_cancel_flag = NULL;
-	d->fn(d->args);
-	free(d->args);
+	((void (*)(struct nomen_closure *))d->task->code)(d->task);
+	__nomen_closure_dispose(d->task);
 	free(d);
 	return NULL;
 }
-static void __nomen_task_detach(void (*fn)(void *), void *args) {
+static void __nomen_task_detach(struct nomen_closure *task) {
 	struct nomen_detached_start *d =
 		(struct nomen_detached_start *)malloc(sizeof(struct nomen_detached_start));
-	d->fn = fn;
-	d->args = args;
+	d->task = task;
 	pthread_attr_t attr;
 	pthread_attr_init(&attr);
 	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
 	pthread_t t;
 	if (pthread_create(&t, &attr, __nomen_detached_run, d) != 0) {
-		free(d->args);
+		__nomen_closure_dispose(task);
 		free(d);
 		fprintf(stderr, "warning: Thread(fn(args)).detach() could not start a thread\\n");
 	}
@@ -388,8 +415,7 @@ typedef struct { void *regs[13]; } nomen_fiber_ctx;
 struct nomen_fiber {
 	nomen_fiber_ctx ctx;
 	void *stack;
-	void (*fn)(void *);
-	void *args;
+	struct nomen_closure *task;      // the spawned task closure (code sees it)
 	int state;
 	struct nomen_fiber *next;        // run-queue link
 	struct nomen_fiber *wait_next;   // primitive waitq link (Channel/Mutex)
@@ -481,7 +507,7 @@ __attribute__((naked)) void ___nomen_fiber_entry(void) {
 // asm, so the compiler must always emit the symbol.
 void nomen_fiber_run_body(struct nomen_fiber *self) {
 	__nomen_current_fiber = self;
-	self->fn(self->args);
+	((void (*)(struct nomen_closure *))self->task->code)(self->task);
 	self->state = NOMEN_FIBER_DONE;
 	___nomen_fiber_switch(&self->ctx, __nomen_fiber_ret);
 }
@@ -710,10 +736,9 @@ void __nomen_fiber_set_cooperative(int on) {
 // execution to the next drain (a would-block wait, or process exit) and
 // never starts worker threads; threaded mode ensures the pool exists so a
 // worker picks the fiber up.
-static void __nomen_fiber_spawn_common(void (*fn)(void *), void *args, struct nomen_future *future, void *stack, size_t stack_size) {
+static void __nomen_fiber_spawn_common(struct nomen_closure *task, struct nomen_future *future, void *stack, size_t stack_size) {
 	struct nomen_fiber *f = (struct nomen_fiber *)malloc(sizeof(struct nomen_fiber));
-	f->fn = fn;
-	f->args = args;
+	f->task = task;
 	f->state = NOMEN_FIBER_PARKED;   // schedule() queues PARKED fibers
 	f->next = NULL;
 	f->wait_next = NULL;
@@ -958,11 +983,11 @@ int __nomen_io_wait(int fd, int want_write) {
 	}
 }
 
-void __nomen_fiber_spawn(void (*fn)(void *), void *args, struct nomen_future *future) {
-	__nomen_fiber_spawn_common(fn, args, future, NULL, 0);
+void __nomen_fiber_spawn(struct nomen_closure *task, struct nomen_future *future) {
+	__nomen_fiber_spawn_common(task, future, NULL, 0);
 }
-void __nomen_fiber_spawn_on(void (*fn)(void *), void *args, struct nomen_future *future, void *stack, size_t stack_size) {
-	__nomen_fiber_spawn_common(fn, args, future, stack, stack_size);
+void __nomen_fiber_spawn_on(struct nomen_closure *task, struct nomen_future *future, void *stack, size_t stack_size) {
+	__nomen_fiber_spawn_common(task, future, stack, stack_size);
 }
 
 // ---- deadlock detection ("all tasks are asleep", Go's model) ----
@@ -1184,9 +1209,12 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	tramp_c += `\tstruct nomen_future *future;\n`;
 	tramp_c += `};\n`;
 
-	// Trampoline: called by pool worker. Static — only used within companion.
-	tramp_c += `static void ${tramp_name}(void *p) {\n`;
-	tramp_c += `\tstruct ${struct_name} *a = (struct ${struct_name} *)p;\n`;
+	// Trampoline: closure body (the code receives the closure itself; the
+	// args struct rides in env — CLOSURE_PLAN Phase 3a). Static — only used
+	// within the companion; the pool worker dispatches through the
+	// descriptor.
+	tramp_c += `static void ${tramp_name}(struct nomen_closure *_c) {\n`;
+	tramp_c += `\tstruct ${struct_name} *a = (struct ${struct_name} *)_c->env;\n`;
 	tramp_c += `\t__nomen_current_cancel_flag = a->cancel_flag;\n`;
 	if (returns_value) {
 		tramp_c += `\t${c_ret_type} _r = ${func_name}(`;
@@ -1203,8 +1231,12 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	}
 	tramp_c += `\t__nomen_current_cancel_flag = NULL;\n`;
 	tramp_c += `\t__nomen_future_complete(a->future);\n`;
-	tramp_c += `\t__nomen_future_release(a->future);\n`; // a freed via f->owner_args at last release
+	tramp_c += `\t__nomen_future_release(a->future);\n`; // closure disposed at the last release
 	tramp_c += `}\n`;
+	// Static descriptor template; every spawn copies it into a heap
+	// descriptor owning its env (the future's last release disposes it).
+	const desc_name = `__nomen_spawn_${id}_descriptor`;
+	tramp_c += `static struct nomen_closure ${desc_name} = { (void *)${tramp_name}, NULL, 0, NULL };\n`;
 
 	// Nursery state + fire-and-forget detection.
 	const nursery_id = status.nursery_stack?.at(-1);
@@ -1254,10 +1286,16 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	tramp_c += `\tf->cancel_flag = a->cancel_flag;\n`;
 	tramp_c += `\tf->result_slot = a->result_slot;\n`;
 	tramp_c += `\ta->future = f;\n`;
-	tramp_c += `\tf->owner_args = a;\n`;
+	// The task closure: heap copy of the site's descriptor with the args
+	// struct as env; owned by the future (disposed at the last release).
+	tramp_c += `\tstruct nomen_closure *c = (struct nomen_closure *)malloc(sizeof(struct nomen_closure));\n`;
+	tramp_c += `\t*c = ${desc_name};\n`;
+	tramp_c += `\tc->env = a;\n`;
+	tramp_c += `\tc->owned = 1;\n`;
+	tramp_c += `\tf->owner_args = c;\n`;
 	tramp_c += `\tf->fiber_waiters = NULL;\n`;
 	tramp_c += `\tf->owning_fiber = 0;\n`;
-	tramp_c += `\t__nomen_pool_submit(${tramp_name}, a);\n`;
+	tramp_c += `\t__nomen_pool_submit(c);\n`;
 	if (nursery_id !== undefined) {
 		tramp_c += `\t__nomen_nursery_track(__nomen_nursery_futures, __nomen_nursery_count, __nomen_nursery_cap, f);\n`;
 	}
@@ -1411,8 +1449,8 @@ export function build_detached_spawn_node(node: SpawnNode, status: BuildStatus):
 		tramp_c += `\t${arg_c_types[i]} arg${i};\n`;
 	}
 	tramp_c += `};\n`;
-	tramp_c += `static void ${tramp_name}(void *p) {\n`;
-	tramp_c += `\tstruct ${struct_name} *a = (struct ${struct_name} *)p;\n`;
+	tramp_c += `static void ${tramp_name}(struct nomen_closure *_c) {\n`;
+	tramp_c += `\tstruct ${struct_name} *a = (struct ${struct_name} *)_c->env;\n`;
 	tramp_c += `\t__nomen_current_cancel_flag = NULL;\n`;
 	if (returns_value) {
 		tramp_c += `\t${c_ret_type} _r = ${func_name}(`;
@@ -1425,8 +1463,11 @@ export function build_detached_spawn_node(node: SpawnNode, status: BuildStatus):
 	}
 	tramp_c += `);\n`;
 	tramp_c += `\t__nomen_current_cancel_flag = NULL;\n`;
-	tramp_c += `\tfree(a);\n`;
 	tramp_c += `}\n`;
+	// Static descriptor template; every detach copies it into a heap
+	// descriptor owning its env (the detached runner disposes it).
+	const desc_name = `__nomen_detach_${id}_descriptor`;
+	tramp_c += `static struct nomen_closure ${desc_name} = { (void *)${tramp_name}, NULL, 0, NULL };\n`;
 
 	// Submit helper: allocates the args struct and hands it to the detached
 	// launcher. Fat-string params ride the 16-byte by-value pair (see the
@@ -1441,7 +1482,13 @@ export function build_detached_spawn_node(node: SpawnNode, status: BuildStatus):
 	for (let i = 0; i < arg_c_types.length; i++) {
 		tramp_c += `\ta->arg${i} = arg${i};\n`;
 	}
-	tramp_c += `\t__nomen_task_detach(${tramp_name}, a);\n`;
+	// The task closure: heap copy of the site's descriptor with the args
+	// struct as env; the detached runner disposes it after the call.
+	tramp_c += `\tstruct nomen_closure *c = (struct nomen_closure *)malloc(sizeof(struct nomen_closure));\n`;
+	tramp_c += `\t*c = ${desc_name};\n`;
+	tramp_c += `\tc->env = a;\n`;
+	tramp_c += `\tc->owned = 1;\n`;
+	tramp_c += `\t__nomen_task_detach(c);\n`;
 	tramp_c += `\treturn (void *)0;\n`;
 	tramp_c += `}\n`;
 

@@ -238,6 +238,36 @@ de-specialized into library structs over capturing lambdas; the
 enforces owned captures; must-start via the library `#destroy` pattern; the
 `Awaitable` construction side opens user-defined spawnables.
 
+> **Status: Phase 3a LANDED — the spawn runtime speaks the closure ABI.**
+> The pool, the fiber scheduler, and the daemon launcher now take a
+> `struct nomen_closure *` task whose code receives the closure itself
+> (`void (*)(struct nomen_closure *)`; the args struct rides in `env`).
+> Every per-site trampoline (spawn / detached / fiber spawn-on /
+> nursery escape hatch, both backends) is a closure body — `static void
+tramp(struct nomen_closure *)` with env = args struct, plus a per-site
+> static descriptor template; the site copies it into a heap descriptor
+> (`owned = 1`) that the FUTURE owns via `owner_args` and the last
+> `__nomen_future_release` disposes through the uniform free-if-owned arm
+> (`__nomen_closure_dispose`: run `destroy_env`, free env, free descriptor
+> — the same teardown a func-typed local gets). Lifetime is unchanged from
+> the bare-args design: the free stays at the last future release, ordered
+> after every use, so a worker's free never races the submitting thread's
+> post-submit allocations. `spawn_arg_c_types` and the eager-arg packing
+> are untouched — no capture semantics changed (that is the sugar's 3b
+> work, with borrow-captures inside nurseries). Also fixed en route: the
+> daemon form double-freed its args struct on BOTH backends (the generated
+> trampoline freed it AND `__nomen_detached_run` freed `d->args` — the
+> same pointer); the closure runner now disposes the task exactly once,
+> after the body returns. The runtime text carries a NOMEN_CLOSURE_STRUCT-
+> guarded struct definition so the globalized split-build TU is
+> self-contained; `runtime_declarations` derives the new signatures
+> automatically (test/runtime_split.test.ts asserts them). Green: the full
+> suite (3433 passed / 3 known SPEC-gap skips), split-build objects for
+> both backends. Nothing user-visible changed — the language surface is
+> exactly the pre-3a sugar; the delta is that the spawn seam is now the
+> closure descriptor, which is the substrate Thread/Fiber-as-library-
+> structs (3b) and user-defined spawnables submit through.
+
 ## Tests
 
 - Phase gates: full suite per phase, both backends.

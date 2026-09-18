@@ -67,6 +67,14 @@ export default async function check_output(
 		/** Function names exported by the aarch64 system object — the user TU's
 		 *  references to them are rewritten to the Mach-O `_name` aliases. */
 		system_fn_names?: string[];
+		/** Canonicalize stdout before it is written to the cached output.txt
+		 *  (the cache-hit replay asserts against the canonicalized text too).
+		 *  The fresh-run assertion still checks RAW stdout — this only keeps
+		 *  the TRACKED cache artifact (test/out/**\/output.txt) stable across
+		 *  runs whose output embeds nondeterministic values (timing fields).
+		 *  Contract: the canonicalization must not break the caller's own
+		 *  expected prefix. */
+		normalize_output?: (stdout: string) => string;
 	} = { audit: true },
 ) {
 	const arch = options.arch ?? "c";
@@ -279,7 +287,7 @@ export default async function check_output(
 		purge_cache();
 		throw error;
 	}
-	write_atomic(outputfile, stdout);
+	write_atomic(outputfile, options.normalize_output ? options.normalize_output(stdout) : stdout);
 	write_atomic(cachefile, cache_key);
 }
 

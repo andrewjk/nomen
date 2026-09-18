@@ -29,6 +29,34 @@ export const POOL_HEADER = `
 #include <pthread.h>
 #include <stdio.h>
 #include <time.h>
+// The spawn runtime speaks the closure descriptor ABI (docs/CLOSURE_PLAN.md):
+// a submitted task IS a "struct nomen_closure *" whose code receives the
+// closure itself ("void (*)(struct nomen_closure *)" — env is reachable
+// through it). The preamble (build_root_node) already defines the struct in
+// the user TU's headers; this guarded copy keeps the runtime text
+// self-contained (split builds globalize it into a TU of its own).
+#ifndef NOMEN_CLOSURE_STRUCT
+#define NOMEN_CLOSURE_STRUCT
+struct nomen_closure {
+	void *code;
+	void *env;
+	int owned;
+	void (*destroy_env)(void *);
+};
+#endif
+// The uniform free-if-owned arm (the same teardown a func-typed local gets
+// at scope exit): a heap descriptor (owned = 1) runs its env destructor,
+// then frees the env and the descriptor. Static descriptors (owned = 0)
+// own nothing and are never freed. The future holds the task closure via
+// owner_args and disposes it at the last release — the same lifetime the
+// bare args struct had (ordered after every use, so a worker's free never
+// races the submitting thread's post-submit allocations).
+static void __nomen_closure_dispose(struct nomen_closure *c) {
+	if (!c || !c->owned) return;
+	if (c->destroy_env) c->destroy_env(c->env);
+	free(c->env);
+	free(c);
+}
 static __thread unsigned long long *__nomen_current_cancel_flag = NULL;
 // Fiber runtime (ASYNC_PLAN.md Phase 1). The pool and the fiber scheduler
 // share one header text: this block owns the future machinery and declares
@@ -182,19 +210,18 @@ static void __nomen_future_release(struct nomen_future *f) {
 		pthread_cond_destroy(&f->cv);
 		free(f->cancel_flag);
 		free(f->result_slot);
-		// The spawn args struct is owned by the future: freeing it here (the
+		// The task closure is owned by the future: disposing it here (the
 		// last release, ordered after every use — trampoline, Task destroy,
 		// nursery join) instead of inside the trampoline avoids the worker's
 		// free racing the submitting thread's post-submit allocations, which
 		// corrupted the freshly-allocated Task on macOS's nano allocator
 		// (intermittent SIGSEGV in Task.result).
-		if (f->owner_args) free(f->owner_args);
+		__nomen_closure_dispose((struct nomen_closure *)f->owner_args);
 		free(f);
 	}
 }
 struct nomen_pool_task {
-	void (*fn)(void *);
-	void *arg;
+	struct nomen_closure *task;
 	struct nomen_pool_task *next;
 };
 static pthread_mutex_t __nomen_pool_mu = PTHREAD_MUTEX_INITIALIZER;
@@ -245,7 +272,7 @@ static void *__nomen_pool_worker(void *arg) {
 		if (!__nomen_pool_head) __nomen_pool_tail = NULL;
 		__nomen_pool_busy++;
 		pthread_mutex_unlock(&__nomen_pool_mu);
-		t->fn(t->arg);
+		((void (*)(struct nomen_closure *))t->task->code)(t->task);
 		free(t);
 		pthread_mutex_lock(&__nomen_pool_mu);
 		__nomen_pool_busy--;
@@ -279,11 +306,10 @@ static void __nomen_pool_ensure(void) {
 	}
 	atexit(__nomen_pool_shutdown);
 }
-static void __nomen_pool_submit(void (*fn)(void *), void *arg) {
+static void __nomen_pool_submit(struct nomen_closure *task) {
 	__nomen_pool_ensure();
 	struct nomen_pool_task *t = (struct nomen_pool_task *)malloc(sizeof(struct nomen_pool_task));
-	t->fn = fn;
-	t->arg = arg;
+	t->task = task;
 	t->next = NULL;
 	pthread_mutex_lock(&__nomen_pool_mu);
 	if (__nomen_pool_busy >= __nomen_pool_nworkers && __nomen_pool_nworkers < ECHO_POOL_MAX_SIZE) {
@@ -365,23 +391,24 @@ static void __nomen_nursery_track(void **slots, int *count, int *cap, struct nom
 // shutdown); the daemon owns its own shutdown (a stop channel or flag).
 // No future, no handle, no cancellation: Task.current_cancelled() is
 // always false inside, and the pool / shutdown machinery is untouched.
+// The task closure is disposed here — by the one thread that ran it —
+// never inside the generated body (that was a double free before the
+// closure ABI: the body freed the args struct AND this runner freed it).
 struct nomen_detached_start {
-	void (*fn)(void *);
-	void *args;
+	struct nomen_closure *task;
 };
 static void *__nomen_detached_run(void *p) {
 	struct nomen_detached_start *d = (struct nomen_detached_start *)p;
 	__nomen_current_cancel_flag = NULL;
-	d->fn(d->args);
-	free(d->args);
+	((void (*)(struct nomen_closure *))d->task->code)(d->task);
+	__nomen_closure_dispose(d->task);
 	free(d);
 	return NULL;
 }
-static void __nomen_task_detach(void (*fn)(void *), void *args) {
+static void __nomen_task_detach(struct nomen_closure *task) {
 	struct nomen_detached_start *d =
 		(struct nomen_detached_start *)malloc(sizeof(struct nomen_detached_start));
-	d->fn = fn;
-	d->args = args;
+	d->task = task;
 	pthread_attr_t attr;
 	pthread_attr_init(&attr);
 	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
@@ -389,7 +416,7 @@ static void __nomen_task_detach(void (*fn)(void *), void *args) {
 	if (pthread_create(&t, &attr, __nomen_detached_run, d) != 0) {
 		// Best effort, consistent with the pool's pthread_create handling:
 		// free what the daemon would have owned and say why it is gone.
-		free(d->args);
+		__nomen_closure_dispose(task);
 		free(d);
 		fprintf(stderr, "warning: Thread(fn(args)).detach() could not start a thread\\n");
 	}
@@ -461,8 +488,7 @@ typedef ucontext_t nomen_fiber_ctx;
 struct nomen_fiber {
 	nomen_fiber_ctx ctx;
 	void *stack;
-	void (*fn)(void *);
-	void *args;
+	struct nomen_closure *task;      // the spawned task closure (code sees it)
 	int state;
 	struct nomen_fiber *next;        // run-queue link
 	struct nomen_fiber *wait_next;   // primitive waitq link (Channel/Mutex)
@@ -594,7 +620,7 @@ static void __nomen_fiber_run_here(struct nomen_fiber *f) {
 static void __nomen_fiber_entry(uint32_t lo, uint32_t hi) {
 	struct nomen_fiber *self = (struct nomen_fiber *)(((uintptr_t)hi << 32) | (uintptr_t)lo);
 	__nomen_current_fiber = self;
-	self->fn(self->args);
+	((void (*)(struct nomen_closure *))self->task->code)(self->task);
 	self->state = NOMEN_FIBER_DONE;
 	__nomen_fiber_pause();
 }
@@ -778,10 +804,9 @@ static void __nomen_fiber_set_cooperative(int on) {
 // execution to the next drain (a would-block wait, or process exit) and
 // never starts worker threads; threaded mode ensures the pool exists so a
 // worker picks the fiber up.
-static void __nomen_fiber_spawn_common(void (*fn)(void *), void *args, struct nomen_future *future, void *stack, size_t stack_size) {
+static void __nomen_fiber_spawn_common(struct nomen_closure *task, struct nomen_future *future, void *stack, size_t stack_size) {
 	struct nomen_fiber *f = (struct nomen_fiber *)malloc(sizeof(struct nomen_fiber));
-	f->fn = fn;
-	f->args = args;
+	f->task = task;
 	f->state = NOMEN_FIBER_PARKED;   // schedule() queues PARKED fibers
 	f->next = NULL;
 	f->wait_next = NULL;
@@ -1027,11 +1052,11 @@ static int __nomen_io_wait(int fd, int want_write) {
 	}
 }
 
-static void __nomen_fiber_spawn(void (*fn)(void *), void *args, struct nomen_future *future) {
-	__nomen_fiber_spawn_common(fn, args, future, NULL, 0);
+static void __nomen_fiber_spawn(struct nomen_closure *task, struct nomen_future *future) {
+	__nomen_fiber_spawn_common(task, future, NULL, 0);
 }
-static void __nomen_fiber_spawn_on(void (*fn)(void *), void *args, struct nomen_future *future, void *stack, size_t stack_size) {
-	__nomen_fiber_spawn_common(fn, args, future, stack, stack_size);
+static void __nomen_fiber_spawn_on(struct nomen_closure *task, struct nomen_future *future, void *stack, size_t stack_size) {
+	__nomen_fiber_spawn_common(task, future, stack, stack_size);
 }
 
 // ---- deadlock detection ("all tasks are asleep", Go's model) ----
@@ -1259,11 +1284,15 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	header += `\tunsigned long long *cancel_flag;\n`;
 	header += `\tstruct nomen_future *future;\n`;
 	header += `};\n`;
-	// Pool trampoline: signature is `void (*)(void*)` (no return). The pool
-	// worker calls it; the trampoline calls the user function and signals
-	// the future when done.
-	header += `static void ${tramp_name}(void *p) {\n`;
-	header += `\tstruct ${struct_name} *a = (struct ${struct_name} *)p;\n`;
+	// Pool trampoline: signature is the closure ABI — the code receives the
+	// closure itself, and the args struct rides in `env` (CLOSURE_PLAN
+	// Phase 3a: the spawn task IS a closure descriptor, so the pool, the
+	// fiber scheduler, and the daemon launcher all take one shape). The
+	// pool worker calls it; the trampoline calls the user function and
+	// signals the future when done. The closure itself is disposed by the
+	// future's last release (owner_args), not here.
+	header += `static void ${tramp_name}(struct nomen_closure *_c) {\n`;
+	header += `\tstruct ${struct_name} *a = (struct ${struct_name} *)_c->env;\n`;
 	header += `\t__nomen_current_cancel_flag = a->cancel_flag;\n`;
 	if (returns_value) {
 		header += `\t${c_ret_type} _r = ${func_name}(`;
@@ -1282,9 +1311,14 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	header += `\t__nomen_future_complete(a->future);\n`;
 	// The trampoline holds one future reference for the duration of the run —
 	// release it only after signaling, so the future (and the result slot it
-	// owns) is guaranteed alive while the result is written.
-	header += `\t__nomen_future_release(a->future);\n`; // a freed via f->owner_args at last release
+	// owns) is guaranteed alive while the result is written. The final
+	// release disposes the task closure (env + descriptor).
+	header += `\t__nomen_future_release(a->future);\n`;
 	header += `}\n`;
+	// Static descriptor template for this site: every spawn copies it into a
+	// heap descriptor (owned = 1) that carries the per-spawn env.
+	const desc_name = `__nomen_spawn_${id}_descriptor`;
+	header += `static struct nomen_closure ${desc_name} = { (void *)${tramp_name}, NULL, 0, NULL };\n`;
 	status.headers += header;
 
 	// Resolve the monomorphized Task struct name for the allocation.
@@ -1317,7 +1351,14 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	status.code += `\t_future->fiber_waiters = NULL;\n`;
 	status.code += `\t_future->owning_fiber = NULL;\n`;
 	status.code += `\t_args->future = _future;\n`;
-	status.code += `\t_future->owner_args = _args;\n`;
+	// The task closure: a heap copy of the site's static descriptor carrying
+	// the args struct as its env. The future owns it (owner_args) and the
+	// last release disposes it (free-if-owned).
+	status.code += `\tstruct nomen_closure *_closure = (struct nomen_closure *)malloc(sizeof(struct nomen_closure));\n`;
+	status.code += `\t*_closure = ${desc_name};\n`;
+	status.code += `\t_closure->env = _args;\n`;
+	status.code += `\t_closure->owned = 1;\n`;
+	status.code += `\t_future->owner_args = _closure;\n`;
 
 	// Inside a nursery: the nursery holds its own future reference (waits +
 	// releases at block exit). Outside: only the trampoline and the returned
@@ -1330,7 +1371,7 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	} else {
 		status.code += `\t_future->refs = ${nursery_id !== undefined ? 3 : 2};\n`;
 	}
-	status.code += `\t__nomen_pool_submit(${tramp_name}, _args);\n`;
+	status.code += `\t__nomen_pool_submit(_closure);\n`;
 	if (nursery_id !== undefined) {
 		status.code += `\t__nomen_nursery_track((void **)&__nomen_nursery_${nursery_id}_futures, &__nomen_nursery_${nursery_id}_count, &__nomen_nursery_${nursery_id}_cap, _future);\n`;
 	}
@@ -1357,10 +1398,10 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
  * Build a `Thread(fn(args)).detach()` call — the daemon form (ASYNC.md,
  * "Daemon tasks"). Same per-site trampoline shape as a spawn, minus the
  * future: no result slot, no cancel flag, no nursery tracking, no Task.
- * The trampoline frees its own args (there is no future to own them and no
- * joiner to reap anything), and `__nomen_task_detach` launches it on a
- * dedicated detached pthread — never a pool worker, never joined, killed
- * by process exit by design.
+ * The trampoline runs as a closure body (env = args struct) and frees
+ * nothing itself — `__nomen_task_detach` hands the closure to a dedicated
+ * detached pthread whose runner disposes it after the call (never a pool
+ * worker, never joined, killed by process exit by design).
  */
 export function build_detached_spawn_node(node: SpawnNode, status: BuildStatus): void {
 	const call = node.call;
@@ -1397,8 +1438,8 @@ export function build_detached_spawn_node(node: SpawnNode, status: BuildStatus):
 		header += `\t${arg_c_types[i]} arg${i};\n`;
 	}
 	header += `};\n`;
-	header += `static void ${tramp_name}(void *p) {\n`;
-	header += `\tstruct ${struct_name} *a = (struct ${struct_name} *)p;\n`;
+	header += `static void ${tramp_name}(struct nomen_closure *_c) {\n`;
+	header += `\tstruct ${struct_name} *a = (struct ${struct_name} *)_c->env;\n`;
 	header += `\t__nomen_current_cancel_flag = NULL;\n`;
 	if (returns_value) {
 		header += `\t${c_ret_type} _r = ${func_name}(`;
@@ -1411,8 +1452,11 @@ export function build_detached_spawn_node(node: SpawnNode, status: BuildStatus):
 	}
 	header += `);\n`;
 	header += `\t__nomen_current_cancel_flag = NULL;\n`;
-	header += `\tfree(a);\n`;
 	header += `}\n`;
+	// Static descriptor template; every detach copies it into a heap
+	// descriptor owning its env (the runner disposes it).
+	const desc_name = `__nomen_detach_${id}_descriptor`;
+	header += `static struct nomen_closure ${desc_name} = { (void *)${tramp_name}, NULL, 0, NULL };\n`;
 	status.headers += header;
 
 	status.code += `({\n`;
@@ -1422,7 +1466,11 @@ export function build_detached_spawn_node(node: SpawnNode, status: BuildStatus):
 		build_node(call.params[i], status);
 		status.code += ";\n";
 	}
-	status.code += `\t__nomen_task_detach(${tramp_name}, _args);\n`;
+	status.code += `\tstruct nomen_closure *_closure = (struct nomen_closure *)malloc(sizeof(struct nomen_closure));\n`;
+	status.code += `\t*_closure = ${desc_name};\n`;
+	status.code += `\t_closure->env = _args;\n`;
+	status.code += `\t_closure->owned = 1;\n`;
+	status.code += `\t__nomen_task_detach(_closure);\n`;
 	status.code += `\t(void)0;\n`;
 	status.code += `})\n`;
 }

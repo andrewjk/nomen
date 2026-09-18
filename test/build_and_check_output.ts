@@ -58,6 +58,7 @@ export default async function build_and_check_output(
 	expected: string,
 	raw = false,
 	extra_options: { fast_math?: boolean } = {},
+	check_options: Parameters<typeof check_output>[3] = {},
 ) {
 	let architectures = ["aarch64", "c"] as const;
 	// Struct names in the prebuilt C system.o — tells the user-TU build which
@@ -88,6 +89,7 @@ export default async function build_and_check_output(
 			...options,
 			system_lib: split,
 			system_fn_names,
+			...check_options,
 		});
 	}
 }
