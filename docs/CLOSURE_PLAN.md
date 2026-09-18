@@ -163,12 +163,6 @@ updated (+ test/spec).
 > targets — not just `check_value_node`'s read path, which had missed
 > receivers.
 >
-> **Known aarch64 gap**: a captured scalar read through a METHOD RECEIVER
-> (`n.to_string()`) mis-emits, because the receiver is built outside the
-> lambda's env context; field reads on captured values and plain reads are
-> correct. See FOLLOWUP.md ("Captured scalar used as a method receiver
-> mis-emits on aarch64").
->
 > **Deferred to Phase 2c** (sound today via the `owned` flag / static
 > descriptors, recorded rather than enforced): owning-struct/class/trait
 > captures (MOVE captures with donor-local invalidation), storing a capturing

@@ -45,6 +45,25 @@ pub func main = () {
 		);
 	});
 
+	test("a captured scalar works as a method receiver", async () => {
+		// Regression: address-taking paths (method receivers) must read through
+		// the env, not fall back to a data label (see emit_var_address).
+		await build_and_check_output(
+			`
+import System
+
+pub func main = () {
+	var int n = 7
+	var func (out string) show = (out string) => n.to_string()
+	Console.write("\\{show()}")
+}
+`,
+			"lambda_capture_receiver",
+			"7",
+			true,
+		);
+	});
+
 	test("the capture is a snapshot — later writes to the source are not seen", async () => {
 		await build_and_check_output(
 			`
@@ -83,11 +102,9 @@ pub func main = () {
 		);
 	});
 
-	test("captured strings and scalars mix, and the source may mutate afterwards", async () => {
-		// A captured scalar used as a METHOD RECEIVER (`n.to_string()`) is a
-		// known aarch64 gap (the receiver is re-built outside the lambda's env
-		// context — see FOLLOWUP.md); this shape avoids it by reading the
-		// captured string's field instead.
+	test("captured strings and scalars mix, even through a method receiver", async () => {
+		// `n.to_string()` takes the captured scalar as a method RECEIVER — the
+		// address-taking path that used to bypass the capture env on aarch64.
 		await build_and_check_output(
 			`
 import System
@@ -95,14 +112,14 @@ import System
 pub func main = () {
 	var int n = 1
 	var string tag = "a"
-	var func (out int) show = (out int) => n + tag.length
+	var func (out string) show = (out string) => tag + n.to_string()
 	n = 9
-	tag = "zzz"
+	tag = "z"
 	Console.write("\\{show()} \\{show()}")
 }
 `,
 			"lambda_capture_string_mix",
-			"2 2",
+			"a1 a1",
 			true,
 		);
 	});

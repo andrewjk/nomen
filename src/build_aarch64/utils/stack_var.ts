@@ -65,6 +65,16 @@ export function is_local_ref_var(name: string, status: BuildStatus): boolean {
 }
 
 export function emit_var_address(status: BuildStatus, reg: string, name: string) {
+	// A captured name inside a capturing lambda (CLOSURE_PLAN Phase 2) lives in
+	// the heap env, not this frame — its address is `env + field offset`. Must
+	// come first: `stack_offsets` doesn't know the name, so the global/data
+	// fallback below would emit `adr reg, name` for a stack local.
+	if (status.closure_env_offsets?.has(name) && status.closure_env_slot !== undefined) {
+		status.code += `ldr ${reg}, [x29, #${status.closure_env_slot}]\n`;
+		const off = status.closure_env_offsets.get(name)!;
+		if (off !== 0) status.code += `add ${reg}, ${reg}, #${off}\n`;
+		return;
+	}
 	const alloc_reg = status.register_allocations?.get(name);
 	if (alloc_reg) {
 		// Variable is in a register - spill it to stack so address is valid.
