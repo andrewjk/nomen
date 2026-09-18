@@ -1,3 +1,4 @@
+import { struct_needs_destroy } from "../../build_common/destroy_analysis.ts";
 import emission_label from "../../build_common/emission_label.ts";
 import FunctionNode from "../../nodes/FunctionNode.ts";
 import type Type from "../../nodes/Type.ts";
@@ -14,37 +15,51 @@ import c_type from "./c_type.ts";
  * import cycle.
  */
 
+type CaptureKind = "string" | "class" | "func" | "struct" | "scalar";
+
+/** Classify one capture for env layout / destruction purposes. */
+function capture_kind(type: Type, status: BuildStatus): CaptureKind {
+	if (type.name === "string" && !type.is_view && !type.is_array) return "string";
+	if (type.name === "func") return "func";
+	const elem = status.structs.find((s) => s.name === type.name);
+	if (elem?.is_class) return "class";
+	if (elem && !elem.is_simple_type) return "struct";
+	return "scalar";
+}
+
 /**
- * The C declaration type for one capture's env field. Only scalars and
- * non-owning value structs are capturable (Phase 2a), so the field is the
- * plain C value type (structs by value, never a pointer).
+ * The C declaration type for one capture's env field. Value structs (owning or
+ * not) and classes are held by POINTER — a struct's full C definition lands in
+ * the CODE (after the headers this typedef is emitted into), so an inline field
+ * would be an incomplete type; a class value already IS a pointer.
  */
 export function c_env_field_type(type: Type, status: BuildStatus): string {
-	const name = type.name;
-	if (name === "string" && !type.is_view && !type.is_array) return "nomen_string";
-	// A value struct is held by POINTER: its full C definition lands in the
-	// CODE (after the headers this typedef is emitted into), so an inline
-	// field would be an incomplete type. The env owns the pointer (the
-	// destructor frees it) and the capture map reads it as `(*field)`.
-	const elem = status.structs.find((s) => s.name === name && !s.is_simple_type);
-	if (elem && !elem.is_class) return `struct ${name} *`;
-	return c_type(name);
+	switch (capture_kind(type, status)) {
+		case "string":
+			return "nomen_string";
+		case "struct":
+			return `struct ${type.name} *`;
+		case "class":
+			return `struct ${type.name} *`;
+		case "func":
+			return "struct nomen_closure *";
+		default:
+			return c_type(type.name);
+	}
 }
 
 /** Whether a lambda's env owns heap values needing a destructor. */
-export function lambda_has_owned_captures(func: FunctionNode, status?: BuildStatus): boolean {
-	return (func.captures ?? []).some(
-		(c) =>
-			c.type.name === "string" ||
-			!!status?.structs.find((s) => s.name === c.type.name && !s.is_simple_type && !s.is_class),
-	);
+export function lambda_has_owned_captures(func: FunctionNode, status: BuildStatus): boolean {
+	return (func.captures ?? []).some((c) => capture_kind(c.type, status) !== "scalar");
 }
 
 /**
  * Emit (once per lambda per TU) the env destructor for a capturing lambda
- * whose env owns heap values (Phase 2b: captured strings are strdup'd into the
- * env). A capture-free or scalar-only lambda needs none (the descriptor's
- * `destroy_env` is NULL). Returns the destructor's C name, or undefined.
+ * whose env owns heap values. Phase 2b: captured strings are strdup'd into the
+ * env. Phase 2c part 2: owning value structs, classes and func descriptors are
+ * MOVED in, so the destructor destroys/frees them. A capture-free or
+ * scalar-only lambda needs none (the descriptor's `destroy_env` is NULL).
+ * Returns the destructor's C name, or undefined.
  */
 export function emit_closure_env_free(func: FunctionNode, status: BuildStatus): string | undefined {
 	if (!lambda_has_owned_captures(func, status)) return undefined;
@@ -57,13 +72,33 @@ export function emit_closure_env_free(func: FunctionNode, status: BuildStatus): 
 	let body = "";
 	for (const cap of func.captures ?? []) {
 		const field = c_function_name(cap.name);
-		if (cap.type.name === "string") {
+		const kind = capture_kind(cap.type, status);
+		if (kind === "string") {
 			body += `\tif (_e->${field}.ptr) free(_e->${field}.ptr);\n`;
 			continue;
 		}
-		const elem = status.structs.find((s) => s.name === cap.type.name && !s.is_simple_type);
-		if (elem && !elem.is_class) {
-			body += `\tif (_e->${field}) free(_e->${field});\n`;
+		if (kind === "func") {
+			// A captured func value may be a static (capture-free) descriptor
+			// (owned = 0) or a heap capturing closure (owned = 1). Same
+			// free-if-owned arm as a func-typed local.
+			body += `\tif (_e->${field} && _e->${field}->owned) { if (_e->${field}->destroy_env) _e->${field}->destroy_env(_e->${field}->env); free(_e->${field}->env); free(_e->${field}); }\n`;
+			continue;
+		}
+		if (kind === "class") {
+			body += `\tif (_e->${field}) { ${cap.type.name}_destroy(_e->${field}); free(_e->${field}); }\n`;
+			continue;
+		}
+		if (kind === "struct") {
+			const elem = status.structs.find((s) => s.name === cap.type.name && !s.is_simple_type);
+			// A MOVE-captured owning struct owns its heap fields: run the
+			// struct's destroy before freeing the env copy. A copied
+			// (non-owning) struct owns only the malloc'd copy.
+			if (cap.is_move && elem && struct_needs_destroy(elem, status)) {
+				body += `\tif (_e->${field}) { ${cap.type.name}_destroy(_e->${field}); free(_e->${field}); }\n`;
+			} else {
+				body += `\tif (_e->${field}) free(_e->${field});\n`;
+			}
+			continue;
 		}
 	}
 	status.headers += `static void ${fn_name}(void *);\n`;

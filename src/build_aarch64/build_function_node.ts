@@ -196,6 +196,15 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	const old_heap_array_vars = status.heap_array_vars;
 	status.heap_array_vars = undefined;
 
+	// heap_cleanup_stack holds the per-scope heap anchor slots (class
+	// instances, owning temporaries). Like heap_strings, it must be isolated
+	// per function: a lambda's return-path cleanup iterates the whole stack,
+	// and without a function boundary it would reclaim the ENCLOSING
+	// function's anchors from inside the lambda (double-free). The function's
+	// own body block pushes its frame from this empty base.
+	const old_heap_cleanup_stack = status.heap_cleanup_stack;
+	status.heap_cleanup_stack = undefined;
+
 	// trait_class_frames is scope-keyed per body and must not leak across
 	// functions for the same reason: a trait-typed local named `v` in one
 	// function (e.g. the monomorphized List<Trait>.copy from the core
@@ -1188,6 +1197,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.heap_owned_string_arrays = old_heap_owned_string_arrays;
 	status.heap_class_arrays = old_heap_class_arrays;
 	status.heap_array_vars = old_heap_array_vars;
+	status.heap_cleanup_stack = old_heap_cleanup_stack;
 	status.trait_class_frames = old_trait_class_frames;
 	status.current_function_name = old_function_name;
 	status.stack_size = old_stack_size;

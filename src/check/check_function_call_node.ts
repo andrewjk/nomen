@@ -20,6 +20,7 @@ import check_function_call from "./check_function_call.ts";
 import check_function_node from "./check_function_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
+import { maybe_record_capture } from "./utils/captures.ts";
 import { monomorphize_enum, enforce_case_payload_ownership } from "./utils/enum_mono.ts";
 import {
 	collect_return_bounds,
@@ -196,7 +197,8 @@ export default function check_function_call_node(
 	}
 
 	if (!func) {
-		const param_value = status.values.findLast((v) => v.name === node.name);
+		const param_index = status.values.findLastIndex((v) => v.name === node.name);
+		const param_value = param_index >= 0 ? status.values[param_index] : undefined;
 		// A func-typed value: either the type is literally `func`, or the
 		// declaration carried a signature (func_params). The latter covers
 		// `out`-returning signatures, whose StackValue type is the RETURN
@@ -208,6 +210,11 @@ export default function check_function_call_node(
 				param_value.func_params !== undefined ||
 				param_value.func_return_type !== undefined);
 		if (is_func_value && param_value) {
+			// Calling a CAPTURED func value from inside a lambda is itself a
+			// capture (CLOSURE_PLAN Phase 2c): resolve it through the funnel
+			// so the enclosing closure records it (a nested capturing closure
+			// is move-captured; a capture-free one needs no env).
+			maybe_record_capture(node.name, param_value, param_index, status);
 			func = new FunctionNode(
 				0,
 				"pub",

@@ -59,7 +59,16 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 	// `((Ret (*)(void *, Ps))v->code)(v->env, args...)`.
 	if (node.is_func_param) {
 		const func = node.resolved_function;
-		const callee = c_function_name(node.name);
+		// A captured func value inside a lambda body reads from the closure
+		// env (CLOSURE_PLAN Phase 2c): the env field holds the descriptor
+		// pointer. A nearer param/local shadows the capture.
+		const shadowed =
+			!!status.current_function?.params.some((p) => p.name === node.name) ||
+			!!find_decl_in_c_scopes(status, node.name);
+		const callee =
+			!shadowed && status.closure_env?.has(node.name)
+				? status.closure_env.get(node.name)!
+				: c_function_name(node.name);
 		// Preferred signature source: the ENCLOSING function's own parameter
 		// (same name) — its func-typed signature is substituted with concrete
 		// types by monomorphization. The synthesized callee on the call node

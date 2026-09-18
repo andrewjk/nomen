@@ -263,14 +263,17 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		// freely, so the descriptor's source (slot / param register / label)
 		// is re-read at the last moment.
 		const func_offset = status.stack_offsets?.get(node.name);
+		const env_off = status.closure_env_offsets?.get(node.name);
 		const paramReg =
 			func_offset === undefined ? status.function_param_regs?.get(node.name) : undefined;
 		const desc_source =
-			func_offset !== undefined
-				? `ldr x9, [x29, #${func_offset}]\n`
-				: paramReg
-					? `mov x9, ${paramReg}\n`
-					: `adr x9, ${node.name}\n`;
+			env_off !== undefined
+				? `ldr x9, [x29, #${status.closure_env_slot}]\nldr x9, [x9, #${env_off}]\n`
+				: func_offset !== undefined
+					? `ldr x9, [x29, #${func_offset}]\n`
+					: paramReg
+						? `mov x9, ${paramReg}\n`
+						: `adr x9, ${node.name}\n`;
 
 		// Evaluate params right-to-left. A fat `string` (or `view T`) arg
 		// rides as a (ptr, len) register PAIR — matches the method ABI's

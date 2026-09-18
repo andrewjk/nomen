@@ -176,6 +176,27 @@ var func (int, int, out int) adder = (a, b, out int) => a + b
 		expect(compile_main(input)).toEqual([]);
 	});
 
+	test("lambda captures an enclosing local", () => {
+		const input = `
+var int base = 10
+var func (int, out int) add_base = (x, out int) => x + base
+Console.write("\\{add_base(1)} \\{add_base(2)}")
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("lambda moves an owning struct capture", () => {
+		const input = `
+struct Owned {
+	var List<int> data
+}
+var Owned o = Owned(List<int>())
+var func (out int) first = (out int) => o.data.at_or(0, -1)
+Console.write("\\{first()}")
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
 	test("extern function declaration", () => {
 		// The SPEC example is library code (externs are library-only); from a
 		// user module the wrapped function is callable as usual.

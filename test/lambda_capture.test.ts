@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
 
 import build_and_check_output from "./build_and_check_output";
-import { parse_raw } from "./parse_with_imports";
+import parse_with_imports from "./parse_with_imports";
 
 // Closure captures (docs/CLOSURE_PLAN.md Phase 2a): a lambda may capture outer
 // SCALARS by copy. The value site heap-allocates an env struct (one 8-byte
@@ -174,32 +174,32 @@ pub func main = () {
 	});
 });
 
-describe("closure capture rejections", () => {
-	function errors(input: string): string[] {
-		return parse_raw(input).errors.map((e) => e.message);
-	}
-
-	test("capturing an owning struct is rejected (move captures come later)", () => {
-		expect(
-			errors(`
+describe("closure captures (owning structs & classes, move)", () => {
+	test("a lambda moves an owning struct into its env", async () => {
+		await build_and_check_output(
+			`
 import System
 
 struct Owned {
-	var string name
+	var List<int> data
 }
 
 pub func main = () {
-	var Owned o = Owned("x")
-	var func (out int) len = (out int) => o.name.length
-	Console.write("\\{len()}")
+	var Owned o = Owned(List<int>())
+	o.data.push(7)
+	var func (out int) first = (out int) => o.data.at_or(0, -1)
+	Console.write("\\{first()} \\{first()}")
 }
-`).some((m) => m.includes("Cannot capture 'o' in a closure")),
-		).toBe(true);
+`,
+			"lambda_capture_owning_struct",
+			"7 7",
+			true,
+		);
 	});
 
-	test("capturing a class is rejected", () => {
-		expect(
-			errors(`
+	test("a lambda moves a class instance into its env", async () => {
+		await build_and_check_output(
+			`
 import System
 
 class Box {
@@ -208,10 +208,48 @@ class Box {
 
 pub func main = () {
 	var Box b = Box()
+	b.v = 5
 	var func (out int) get = (out int) => b.v
 	Console.write("\\{get()}")
 }
-`).some((m) => m.includes("Cannot capture 'b' in a closure")),
+`,
+			"lambda_capture_class",
+			"5",
+			true,
+		);
+	});
+
+	test("move-capturing an owning struct invalidates the donor", () => {
+		expect(
+			parse_with_imports(`
+struct Owned {
+	var List<int> data
+}
+
+var Owned o = Owned(List<int>())
+var func (out int) first = (out int) => o.data.at(0)
+Console.write("\\{o.data.length} \\{first()}")
+`).errors.some((m) => m.message.includes("used after move")),
 		).toBe(true);
+	});
+});
+
+describe("closure captures (nested closures)", () => {
+	test("a lambda captures another capturing lambda by move", async () => {
+		await build_and_check_output(
+			`
+import System
+
+pub func main = () {
+	var int base = 3
+	var func (out int) inner = (out int) => base + 1
+	var func (out int) outer = (out int) => inner() + 1
+	Console.write("\\{outer()} \\{outer()}")
+}
+`,
+			"lambda_capture_nested_closure",
+			"5 5",
+			true,
+		);
 	});
 });

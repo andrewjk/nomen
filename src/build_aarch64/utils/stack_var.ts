@@ -125,6 +125,28 @@ export function emit_var_load(status: BuildStatus, reg: string, name: string, si
 		status.code += `mov ${reg}, #0\n`;
 		return;
 	}
+	// A captured name lives in the closure env, not this frame
+	// (docs/CLOSURE_PLAN.md). Load the env pointer, then the field. For a fat
+	// string (16 bytes) read the len half first and overwrite the base with
+	// the ptr half.
+	if (status.closure_env_offsets?.has(name) && status.closure_env_slot !== undefined) {
+		const off = status.closure_env_offsets.get(name)!;
+		status.code += `ldr ${reg}, [x29, #${status.closure_env_slot}]\n`;
+		if (size === 16 && reg.startsWith("x")) {
+			const n = parseInt(reg.substring(1), 10);
+			status.code += `ldr x${n + 1}, [${reg}, #${off + 8}]\n`;
+			status.code += `ldr ${reg}, [${reg}, #${off}]\n`;
+		} else if (size === 1) {
+			status.code += `ldrb ${reg.replace("x", "w")}, [${reg}, #${off}]\n`;
+		} else if (size === 2) {
+			status.code += `ldrh ${reg.replace("x", "w")}, [${reg}, #${off}]\n`;
+		} else if (size === 4) {
+			status.code += `ldr ${reg.replace("x", "w")}, [${reg}, #${off}]\n`;
+		} else {
+			status.code += `ldr ${reg}, [${reg}, #${off}]\n`;
+		}
+		return;
+	}
 	const alloc_reg = status.register_allocations?.get(name);
 	if (alloc_reg) {
 		if (alloc_reg.startsWith("d") && reg.startsWith("d")) {
@@ -184,6 +206,26 @@ export function emit_var_load(status: BuildStatus, reg: string, name: string, si
 }
 
 export function emit_var_store(status: BuildStatus, reg: string, name: string, size: number) {
+	// A captured name lives in the closure env (docs/CLOSURE_PLAN.md): store
+	// into its field. Use x9 as the env base (callers treat x0 as the value).
+	if (status.closure_env_offsets?.has(name) && status.closure_env_slot !== undefined) {
+		const off = status.closure_env_offsets.get(name)!;
+		status.code += `ldr x9, [x29, #${status.closure_env_slot}]\n`;
+		if (size === 16 && reg.startsWith("x")) {
+			const n = parseInt(reg.substring(1), 10);
+			status.code += `str ${reg}, [x9, #${off}]\n`;
+			status.code += `str x${n + 1}, [x9, #${off + 8}]\n`;
+		} else if (size === 1) {
+			status.code += `strb ${reg.replace("x", "w")}, [x9, #${off}]\n`;
+		} else if (size === 2) {
+			status.code += `strh ${reg.replace("x", "w")}, [x9, #${off}]\n`;
+		} else if (size === 4) {
+			status.code += `str ${reg.replace("x", "w")}, [x9, #${off}]\n`;
+		} else {
+			status.code += `str ${reg}, [x9, #${off}]\n`;
+		}
+		return;
+	}
 	const alloc_reg = status.register_allocations?.get(name);
 	if (alloc_reg) {
 		if (alloc_reg.startsWith("d") && reg.startsWith("d")) {

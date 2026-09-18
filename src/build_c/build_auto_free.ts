@@ -116,6 +116,11 @@ export function free_scoped_declarations(
 		// it: the epilogue's scope-exit auto_free always runs after (C
 		// fall-through), so freeing here AND there would free twice.
 		if (persist_string_field_records && dec.force_owned_string === true) continue;
+		// Ownership was transferred out of this local by a `move`/move-capture
+		// (or a `move` arg to a callee). The new owner's cleanup reclaims it;
+		// freeing here would double-free. Capture envs record the donor in the
+		// same per-function set the `move` paths use (CLOSURE_PLAN Phase 2c).
+		if (status.moved?.has(dec.name)) continue;
 		// Emitted C identifier: raw Nomen names may collide with C/ObjC
 		// keywords (`id`), so every generated reference goes through the
 		// same mangling the declaration site used.

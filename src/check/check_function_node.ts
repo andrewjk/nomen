@@ -173,6 +173,20 @@ export default function check_function_node(func: FunctionNode, status: CheckSta
 
 	check_block_node(func, function_status);
 
+	// Move-captures transfer ownership of the donating local into the
+	// lambda's env (docs/CLOSURE_PLAN.md Phase 2c part 2): invalidate it in
+	// the ENCLOSING scope so a later direct use is a use-after-move. The
+	// capture references inside the lambda body see the donor below
+	// `function_value_base`, so they are never flagged. `status` here is the
+	// enclosing status (this function was entered from it).
+	if (func.is_closure && func.captures?.length) {
+		for (const cap of func.captures) {
+			if (!cap.is_move) continue;
+			if (!status.moved_variables) status.moved_variables = new Set();
+			status.moved_variables.add(cap.name);
+		}
+	}
+
 	// Bubble up any tuple structs (and their types) materialized while
 	// checking this function's body so callers can resolve field accesses
 	// on returned tuples. Enums materialized here (anonymous enums, generic

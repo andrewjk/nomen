@@ -161,17 +161,33 @@ function capturing_closure_value(node: FunctionNode, status: BuildStatus): strin
 		const expr = status.closure_env?.get(cap.name) ?? c_function_name(cap.name);
 		// An OWNED string capture is deep-copied into the env (the env's
 		// destructor frees the copy); scalars copy by value.
+		const elem = status.structs.find(
+			(s) => s.name === cap.type.name && !s.is_simple_type && !s.is_class,
+		);
 		if (cap.type.name === "string" && !cap.type.is_view && !cap.type.is_array) {
 			out += `nomen_str_dup(${expr})`;
-		} else if (
-			status.structs.find((s) => s.name === cap.type.name && !s.is_simple_type && !s.is_class)
-		) {
-			// A value struct is held by pointer: allocate + copy the value.
+		} else if (elem) {
+			// A value struct is held by pointer: allocate + copy the value
+			// (a MOVE capture transfers the bytes; a copy capture snapshots).
 			out += `({ struct ${cap.type.name} *_v = (struct ${cap.type.name} *)malloc(sizeof(struct ${cap.type.name})); *_v = ${expr}; _v; })`;
 		} else {
+			// Class instance pointers and func descriptors transfer their
+			// pointer directly.
 			out += expr;
 		}
 		out += `;\n`;
+		// A MOVE capture transfers ownership out of the donating local: mark
+		// it so its scope-exit auto-free is skipped (the env destructor owns
+		// it now), and drop any heap-string-field records for it (the env's
+		// <T>_destroy reclaims the fields). Mirrors the `move`-arg path.
+		if (cap.is_move) {
+			if (!status.moved) status.moved = new Set();
+			status.moved.add(cap.name);
+			const prefix = `${cap.name}.`;
+			for (const key of Array.from(status.heap_string_fields ?? [])) {
+				if (key.startsWith(prefix)) status.heap_string_fields!.delete(key);
+			}
+		}
 	}
 	out += `struct nomen_closure *_c = (struct nomen_closure *)malloc(sizeof(struct nomen_closure));\n`;
 	const destroy = emit_closure_env_free(node, status);

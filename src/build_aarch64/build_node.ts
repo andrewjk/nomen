@@ -78,11 +78,15 @@ function emit_capturing_closure_value_a64(fn: FunctionNode, status: BuildStatus)
 	for (const cap of fn.captures!) {
 		const off = offsets.get(cap.name)!;
 		const is_string = cap.type.name === "string" && !cap.type.is_view && !cap.type.is_array;
-		const cap_struct = status.structs.find((s) => s.name === cap.type.name && !s.is_simple_type);
-		if (cap_struct && !cap_struct.is_class) {
+		const cap_struct = status.structs.find(
+			(s) => s.name === cap.type.name && !s.is_simple_type && !s.is_class,
+		);
+		if (cap_struct) {
 			// A value struct captures by COPY: take the source's ADDRESS (a
 			// value struct is accessed by address) and memcpy its bytes into
 			// the env field. build_node would LOAD the first word instead.
+			// (A MOVE capture transfers those bytes; the donor is marked moved
+			// below so it is not destroyed at scope exit.)
 			emit_var_address(status, "x0", cap.name);
 			if (!status.code.endsWith("\n")) status.code += "\n";
 			const cap_size = get_struct_size(cap.type.name, status);
@@ -91,20 +95,34 @@ function emit_capturing_closure_value_a64(fn: FunctionNode, status: BuildStatus)
 			status.code += `add x0, x9, #${off}\n`;
 			status.code += `mov x2, #${cap_size}\n`;
 			status.code += `bl _memcpy\n`;
-			continue;
-		}
-		build_node(new ValueNode(fn.start, cap.name, cap.type), status);
-		if (!status.code.endsWith("\n")) status.code += "\n";
-		if (is_string) {
-			// Deep-copy the captured string into the env (the env destructor
-			// frees the copy); emit_strdup preserves the len half in x1.
-			emit_strdup(status);
-			status.code += `ldr x9, [sp]\n`;
-			status.code += `str x0, [x9, #${off}]\n`;
-			status.code += `str x1, [x9, #${off + 8}]\n`;
 		} else {
-			status.code += `ldr x9, [sp]\n`;
-			status.code += `str x0, [x9, #${off}]\n`;
+			// Scalars, class instance pointers, and func descriptors transfer
+			// by value (build_node loads the descriptor / instance pointer).
+			build_node(new ValueNode(fn.start, cap.name, cap.type), status);
+			if (!status.code.endsWith("\n")) status.code += "\n";
+			if (is_string) {
+				// Deep-copy the captured string into the env (the env destructor
+				// frees the copy); emit_strdup preserves the len half in x1.
+				emit_strdup(status);
+				status.code += `ldr x9, [sp]\n`;
+				status.code += `str x0, [x9, #${off}]\n`;
+				status.code += `str x1, [x9, #${off + 8}]\n`;
+			} else {
+				status.code += `ldr x9, [sp]\n`;
+				status.code += `str x0, [x9, #${off}]\n`;
+			}
+		}
+		// A MOVE capture transfers ownership out of the donating local: mark it
+		// so scope exit skips destroying it (the env destructor owns it now),
+		// and drop its heap-string-field records (the env's <T>_destroy frees
+		// them). Mirrors the `move`-arg path.
+		if (cap.is_move) {
+			if (!status.moved) status.moved = new Set();
+			status.moved.add(cap.name);
+			const prefix = `${cap.name}.`;
+			for (const key of Array.from(status.heap_string_fields ?? [])) {
+				if (key.startsWith(prefix)) status.heap_string_fields!.delete(key);
+			}
 		}
 	}
 	status.code += `mov x0, #32\n`;

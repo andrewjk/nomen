@@ -1,4 +1,5 @@
 import type BuildStatus from "../../build_c/BuildStatus.ts";
+import { struct_needs_destroy } from "../../build_common/destroy_analysis.ts";
 import emission_label from "../../build_common/emission_label.ts";
 import type FunctionNode from "../../nodes/FunctionNode.ts";
 import { get_struct_size } from "./struct_layout.ts";
@@ -62,15 +63,21 @@ export function closure_env_layout_a64(
 
 /**
  * Emit (once) the asm env destructor for a capturing lambda whose env owns
- * heap values (Phase 2b: captured strings). Frees every captured string's ptr
- * half (free(NULL) is a no-op). Returns the destructor label, or undefined
- * when the env owns nothing.
+ * heap values. Phase 2b: captured strings are strdup'd in. Phase 2c part 2:
+ * owning value structs, classes and func descriptors are MOVED in, so the
+ * destructor destroys/reclaims them (the moved-in value is owned here).
+ * Returns the destructor label, or undefined when the env owns nothing.
  */
 export function emit_env_free_a64(func: FunctionNode, status: BuildStatus): string | undefined {
-	const strings = (func.captures ?? []).filter(
-		(c) => c.type.name === "string" && !c.type.is_view && !c.type.is_array,
-	);
-	if (!strings.length) return undefined;
+	const owned = (func.captures ?? []).some((c) => {
+		if (c.type.name === "string" && !c.type.is_view && !c.type.is_array) return true;
+		if (c.type.name === "func") return true;
+		const elem = status.structs.find((s) => s.name === c.type.name);
+		if (!elem || elem.is_simple_type) return false;
+		if (elem.is_class) return true;
+		return !!c.is_move; // owning value structs are destroyed; copies just free
+	});
+	if (!owned) return undefined;
 	const label = `_nomen_env_free_${emission_label(func)}`;
 	if (!status.closure_descriptors) status.closure_descriptors = new Map();
 	const guard = `env_free:${label}`;
@@ -79,8 +86,58 @@ export function emit_env_free_a64(func: FunctionNode, status: BuildStatus): stri
 	const { offsets } = closure_env_layout_a64(func, status);
 	const free_call = status.audit ? `bl _nomen_free_wrap\n` : `bl _free\n`;
 	let body = `.p2align 2\n${label}:\nstp x29, x30, [sp, #-16]!\nstp x19, x20, [sp, #-16]!\nmov x19, x0\n`;
-	for (const cap of strings) {
-		body += `ldr x0, [x19, #${offsets.get(cap.name)}]\n${free_call}`;
+	for (const cap of func.captures ?? []) {
+		const off = offsets.get(cap.name)!;
+		const kind = (() => {
+			if (cap.type.name === "string" && !cap.type.is_view && !cap.type.is_array) return "string";
+			if (cap.type.name === "func") return "func";
+			const elem = status.structs.find((s) => s.name === cap.type.name);
+			if (elem?.is_class) return "class";
+			if (elem && !elem.is_simple_type) return "struct";
+			return "scalar";
+		})();
+		if (kind === "string") {
+			body += `ldr x0, [x19, #${off}]\n${free_call}`;
+			continue;
+		}
+		if (kind === "func") {
+			const skip = `.Lenv_skip_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+			const no_destroy = `.Lenv_nodestroy_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+			body += `ldr x0, [x19, #${off}]\n`;
+			body += `cbz x0, ${skip}\n`;
+			body += `ldr w9, [x0, #16]\n`;
+			body += `cbz w9, ${skip}\n`;
+			body += `ldr x10, [x0, #24]\n`;
+			body += `cbz x10, ${no_destroy}\n`;
+			body += `ldr x0, [x0, #8]\n`;
+			body += `blr x10\n`;
+			body += `${no_destroy}:\n`;
+			body += `ldr x9, [x19, #${off}]\n`;
+			body += `ldr x0, [x9, #8]\n`;
+			body += free_call;
+			body += `ldr x0, [x19, #${off}]\n`;
+			body += free_call;
+			body += `${skip}:\n`;
+			continue;
+		}
+		if (kind === "class") {
+			const skip = `.Lenv_skip_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+			body += `ldr x0, [x19, #${off}]\n`;
+			body += `cbz x0, ${skip}\n`;
+			body += `bl ${cap.type.name}_destroy\n`;
+			body += `ldr x0, [x19, #${off}]\n`;
+			body += free_call;
+			body += `${skip}:\n`;
+			continue;
+		}
+		if (kind === "struct" && cap.is_move) {
+			const elem = status.structs.find((s) => s.name === cap.type.name && !s.is_simple_type);
+			if (elem && struct_needs_destroy(elem, status)) {
+				body += `add x0, x19, #${off}\n`;
+				body += `bl ${cap.type.name}_destroy\n`;
+			}
+			continue;
+		}
 	}
 	body += `ldp x19, x20, [sp], #16\nldp x29, x30, [sp], #16\nret\n\n`;
 	status.closure_definitions = (status.closure_definitions ?? "") + body;

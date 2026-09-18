@@ -151,6 +151,7 @@ export default function check_function_parameter_node(
 		type: param.type,
 		is_set: true,
 		is_null: param.type.is_nullable ? true : undefined,
+		is_param: true,
 	});
 
 	// Equalities already stripped at signature-registration time (so no call

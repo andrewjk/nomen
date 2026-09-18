@@ -1312,6 +1312,26 @@ var func (int, out int) tripler = (x, out int) {
 }
 ```
 
+A lambda may capture locals and parameters of the enclosing function. The
+capture is taken once, when the lambda value is created:
+
+- Scalars and non-owning value structs are **copied** (a later write to the
+  source is not seen by the lambda).
+- Strings are **deep-copied**.
+- Owning value structs, class instances, and other func-valued closures are
+  **moved** into the closure; the donating local is invalidated (using it again
+  is a use-after-move error).
+- `ref`/`var` borrows, views, arrays, raw pointers, traits, and borrowed or
+  aliased class references cannot be captured.
+
+```
+pub func main = () {
+    var int base = 10
+    var func (int, out int) add_base = (x, out int) => x + base
+    Console.write("\\{add_base(1)} \\{add_base(2)}")
+}
+```
+
 #### Nested Functions and Structs
 
 Functions and structs can be defined inside other functions:
