@@ -142,6 +142,9 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 				// and type.
 				const fn = status.functions.findLast((f) => f.name === (decl.value as ValueNode).value);
 				if (fn) {
+					// Stamp the resolution: the build materializes the closure
+					// descriptor at this value site (docs/CLOSURE_PLAN.md).
+					(decl.value as unknown as { resolved_function?: FunctionNode }).resolved_function = fn;
 					const rhs_params = fn.params.filter((p) => !p.is_self_param);
 					if (rhs_params.length !== decl.func_params.length) {
 						add_error(

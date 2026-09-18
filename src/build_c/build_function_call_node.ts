@@ -5,15 +5,23 @@ import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
+import FunctionNode from "../nodes/FunctionNode.ts";
+import ParameterNode from "../nodes/ParameterNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
+import build_parameter_node from "./build_parameter_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import array_struct_name from "./utils/array_struct.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import { find_decl_in_c_scopes } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
+import { materialize_func_value } from "./utils/closure.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import { c_view_string_arg } from "./utils/view_value.ts";
+
+function vn_resolved(v: ValueNode): FunctionNode | undefined {
+	return (v as unknown as { resolved_function?: FunctionNode }).resolved_function;
+}
 
 export default function build_function_call_node(node: FunctionCallNode, status: BuildStatus) {
 	// Shorthand enum-with-args constructor `.case(args)` (rewritten by the
@@ -44,14 +52,73 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 	}
 
 	const is_struct = status.structs.find((s) => s.name === node.name && !s.is_simple_type);
+
+	// A call through a func-typed VALUE (a local/param whose slot holds a
+	// closure descriptor — docs/CLOSURE_PLAN.md): load { code, env } and
+	// call with the env as the first argument:
+	// `((Ret (*)(void *, Ps))v->code)(v->env, args...)`.
+	if (node.is_func_param) {
+		const func = node.resolved_function;
+		const callee = c_function_name(node.name);
+		// Preferred signature source: the ENCLOSING function's own parameter
+		// (same name) — its func-typed signature is substituted with concrete
+		// types by monomorphization. The synthesized callee on the call node
+		// is cloned but never re-checked, so in a generic body it can still
+		// carry `T`; fall back to it, then to the argument types.
+		const enclosing_param = status.current_function?.params.find((p) => p.name === node.name);
+		const sig_params = enclosing_param?.func_params ?? func?.params;
+		// First NON-EMPTY name wins: an out-less signature may stamp an
+		// empty-named return Type, which must read as void.
+		const ret =
+			[
+				enclosing_param?.func_return_type?.name,
+				func?.return_type?.name,
+				(node.type as { name?: string } | undefined)?.name,
+			].find((n) => !!n) ?? "void";
+		const ret_c =
+			ret === "void"
+				? "void"
+				: status.structs.find((s) => s.name === ret && s.is_class) ||
+					  status.traits.find((t) => t.name === ret)
+					? `struct ${ret}*`
+					: c_type(ret);
+		status.code += `((${ret_c} (*)(void *`;
+		if (sig_params?.length) {
+			for (const p of sig_params) {
+				if (p.is_self_param) continue;
+				status.code += ", ";
+				build_parameter_node(p, status);
+			}
+		} else {
+			// No signature available (rare): derive slot shapes from the args.
+			for (const p of node.params) {
+				status.code += ", ";
+				status.code += c_cast_param_type(p, status);
+			}
+		}
+		status.code += `))${callee}->code)(${callee}->env`;
+		for (const p of node.params) {
+			status.code += ", ";
+			build_node(p, status);
+		}
+		status.code += `)`;
+		return;
+	}
+
 	// A nested-function callee emits under its uniquified label (the checker
 	// stamps resolved_function on every resolved call); struct constructors
 	// and top-level functions keep their names. An overloaded constructor
 	// carries the checker-stamped mangled label for the resolved overload.
+	const is_closure_callee = !!(
+		node.resolved_function as unknown as { is_closure?: boolean } | undefined
+	)?.is_closure;
 	const func_name = is_struct
 		? (node.mangled_name ?? `${node.name}_init`)
 		: c_function_name(emission_label(node.resolved_function ?? node));
-	status.code += `${func_name}(`;
+	// A DIRECT call to a closure (a declaration-named lambda used under its
+	// own name) still prepends the env — a plain NULL in Phase 1.
+	status.code += `${func_name}(${is_closure_callee ? "NULL" : ""}`;
+	if (is_closure_callee && node.params.length > 0) status.code += ", ";
 
 	const variadic_idx = node.variadic_param_name
 		? node.params.findIndex((p) => p.node_type === "array")
@@ -198,6 +265,25 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			}
 		}
 
+		// A func-typed parameter receives a closure DESCRIPTOR
+		// (docs/CLOSURE_PLAN.md): a bare function-name argument materializes
+		// its (thunk-backed) descriptor — a lambda arg already arrives as a
+		// descriptor through build_node's func case.
+		const callee_params = node.resolved_function?.params?.filter((p) => !p.is_self_param);
+		const callee_param = callee_params?.[i];
+		const callee_param_is_func =
+			!!(callee_param && (callee_param.func_params || callee_param.func_return_type)) ||
+			(!callee_params && param_type.name === "func");
+		if (
+			callee_param_is_func &&
+			node.params[i].node_type === "value" &&
+			vn_resolved(node.params[i] as ValueNode) !== undefined
+		) {
+			const desc = materialize_func_value(vn_resolved(node.params[i] as ValueNode)!, status);
+			status.code += desc;
+			continue;
+		}
+
 		build_node(node.params[i], status);
 		status.suppress_dereference = false;
 
@@ -339,6 +425,29 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			}
 		}
 	}
+}
+
+/**
+ * The C type for one cast parameter of an indirect (closure-descriptor) call,
+ * derived from the ARGUMENT node. A func-valued argument is a descriptor
+ * pointer; everything else renders through the ordinary parameter emitter
+ * (struct/class/trait/string shapes included).
+ */
+function c_cast_param_type(p: BaseNode, status: BuildStatus): string {
+	const t = type_from_value_node(p);
+	if (
+		p.node_type === "func" ||
+		t?.name === "func" ||
+		(p as unknown as { resolved_function?: unknown }).resolved_function
+	) {
+		return "struct nomen_closure *";
+	}
+	const saved = status.code;
+	status.code = "";
+	build_parameter_node(new ParameterNode(0, "", t), status);
+	const out = status.code;
+	status.code = saved;
+	return out;
 }
 
 let ns_default_counter = 0;

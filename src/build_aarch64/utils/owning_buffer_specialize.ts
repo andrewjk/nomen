@@ -574,20 +574,25 @@ function emit_string_modify_T(status: BuildStatus) {
 	const done = `.Lstr_md_done_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
 	status.code += `stp x20, x21, [sp, #-16]!\n`;
 	status.code += `stp x22, x23, [sp, #-16]!\n`;
-	status.code += `mov x22, x2\n`; // f
+	status.code += `stp x24, x25, [sp, #-16]!\n`;
+	status.code += `mov x22, x2\n`; // f (a closure descriptor)
 	status.code += `ldr x9, [x19, #8]\n`; // data base
 	status.code += `add x20, x9, x1, lsl #4\n`; // &slot[i] (16-byte slots)
-	status.code += `ldp x0, x1, [x20]\n`; // borrow the current pair as the arg
-	status.code += `blr x22\n`; // → (x0 = ptr, x1 = len)
+	status.code += `ldr x24, [x22]\n`; // code
+	status.code += `ldr x0, [x22, #8]\n`; // env → first arg
+	status.code += `ldp x1, x2, [x20]\n`; // borrow the current pair as the arg
+	status.code += `blr x24\n`; // → (x1 = ptr, x2 = len), result in x0/x1
 	status.code += `mov x23, x0\n`; // new.ptr
+	status.code += `mov x25, x1\n`; // new.len
 	status.code += `ldr x9, [x20]\n`; // old.ptr
 	status.code += `cmp x23, x9\n`;
 	status.code += `b.eq ${done}\n`; // round-trip identity → keep
 	status.code += `str x23, [x20]\n`; // take over the returned pair
-	status.code += `str x1, [x20, #8]\n`;
+	status.code += `str x25, [x20, #8]\n`;
 	status.code += `mov x0, x9\n`;
 	emit_free(status); // free the displaced copy
 	status.code += `${done}:\n`;
+	status.code += `ldp x24, x25, [sp], #16\n`;
 	status.code += `ldp x22, x23, [sp], #16\n`;
 	status.code += `ldp x20, x21, [sp], #16\n`;
 }
@@ -611,7 +616,8 @@ function emit_owning_modify_T(
 	const ALIGNED = Math.ceil(T_SIZE / 16) * 16;
 	status.code += `stp x20, x21, [sp, #-16]!\n`;
 	status.code += `stp x22, x23, [sp, #-16]!\n`;
-	status.code += `mov x22, x2\n`; // f
+	status.code += `stp x24, x25, [sp, #-16]!\n`;
+	status.code += `mov x22, x2\n`; // f (a closure descriptor)
 	status.code += `ldr x9, [x19, #8]\n`; // data base
 	status.code += `mov x23, #${T_SIZE}\n`; // memcpy size (callee-saved)
 	status.code += `madd x20, x1, x23, x9\n`; // x20 = &slot[i]
@@ -623,9 +629,11 @@ function emit_owning_modify_T(
 	status.code += `bl _memcpy\n`;
 	status.code += `mov x21, sp\n`;
 	status.code += `add x21, x21, #${ALIGNED}\n`; // x21 = sret buffer
-	status.code += `mov x0, sp\n`; // arg = &copy
-	status.code += `mov x8, x21\n`; // sret
-	status.code += `blr x22\n`;
+	status.code += `ldr x24, [x22]\n`; // code
+	status.code += `ldr x0, [x22, #8]\n`; // env → first arg
+	status.code += `mov x1, sp\n`; // arg = &copy
+	status.code += `mov x8, x21\n`; // sret (passes through unchanged)
+	status.code += `blr x24\n`;
 	// Free displaced string fields (flat offsets, includes nested owning
 	// struct fields — mirrors collect_string_fields).
 	for (const [i, { offset: foff }] of string_fields.entries()) {
@@ -644,6 +652,7 @@ function emit_owning_modify_T(
 	status.code += `mov x2, x23\n`;
 	status.code += `bl _memcpy\n`;
 	status.code += `add sp, sp, #${2 * ALIGNED}\n`;
+	status.code += `ldp x24, x25, [sp], #16\n`;
 	status.code += `ldp x22, x23, [sp], #16\n`;
 	status.code += `ldp x20, x21, [sp], #16\n`;
 }

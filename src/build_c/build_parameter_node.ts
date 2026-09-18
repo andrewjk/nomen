@@ -42,35 +42,13 @@ export default function build_parameter_node(node: ParameterNode, status: BuildS
 		}
 	}
 
-	// Function-type parameter: emit a function pointer type so the parameter
-	// can be called directly (e.g. `long (*f)(long)` instead of `void *f`,
-	// which can't be invoked). A struct/class/trait ELEMENT type returns via
-	// the struct TAG (`struct Counter (*f)(struct Counter *)`, pointer `*`
-	// for classes AND traits — class instances and trait values are heap
-	// pointers), not the typedef — method prototypes land in the header
-	// BEFORE the element's typedef line, and a tag needs no prior declaration
-	// (mirrors classify_param's tag form for struct params below).
+	// Function-type parameter: a closure descriptor (docs/CLOSURE_PLAN.md) —
+	// `struct nomen_closure *f` holding { code, env, owned }. The callee
+	// invokes through the descriptor (`code(env, args...)`); a raw body
+	// forwards through the same two words. The old typed
+	// `Ret (*f)(Args)` form can't carry the env.
 	if (node.func_params || node.func_return_type) {
-		const return_type_name = node.func_return_type?.name || "void";
-		const return_elem = status.structs.find(
-			(s) => s.name === return_type_name && !s.is_simple_type,
-		);
-		const return_trait = !!status.traits.find((t) => t.name === return_type_name);
-		let return_c_type = c_type(return_type_name);
-		if (return_elem?.is_class || return_trait) {
-			return_c_type = `struct ${return_type_name}*`;
-		} else if (return_elem) {
-			return_c_type = `struct ${return_type_name}`;
-		}
-		status.code += `${return_c_type} (*${c_function_name(node.name)})(`;
-		const params = node.func_params || [];
-		for (let i = 0; i < params.length; i++) {
-			if (i > 0) {
-				status.code += ", ";
-			}
-			build_parameter_node(params[i], status);
-		}
-		status.code += `)`;
+		status.code += `struct nomen_closure *${c_function_name(node.name)}`;
 		return;
 	}
 

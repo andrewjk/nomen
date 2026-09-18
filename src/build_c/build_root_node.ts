@@ -19,6 +19,12 @@ function collect_traits(node: BaseNode, acc: TraitNode[] = []): TraitNode[] {
 
 export default function build_root_node(node: RootNode, status: BuildStatus) {
 	status.headers += `#include <stdint.h>\n`;
+	// Closure descriptors (docs/CLOSURE_PLAN.md) — the struct must precede
+	// every function prototype: a tag first appearing inside a prototype has
+	// prototype scope in C, and a later file-scope definition would be a
+	// DIFFERENT type (conflicting-types errors at every func-param
+	// signature).
+	status.headers += `#ifndef NOMEN_CLOSURE_STRUCT\n#define NOMEN_CLOSURE_STRUCT\nstruct nomen_closure { void *code; void *env; int owned; };\n#endif\n`;
 	status.code += `
 // Feature-test macro: must precede every system include so the whole TU
 // agrees on one definition of ucontext_t (the fiber runtime embeds it).
@@ -70,6 +76,13 @@ export default function build_root_node(node: RootNode, status: BuildStatus) {
 	if (status.lambda_definitions) {
 		status.code += status.lambda_definitions;
 		status.lambda_definitions = undefined;
+	}
+	// Closure thunks (named functions used as func values —
+	// docs/CLOSURE_PLAN.md) flush at file scope like lambda definitions;
+	// headers carry their prototypes and the static descriptors.
+	if (status.closure_definitions) {
+		status.code += status.closure_definitions;
+		status.closure_definitions = undefined;
 	}
 
 	// Apple ObjC framework imports (Foundation/Cocoa) pull in MacTypes.h, which

@@ -25,6 +25,11 @@ import {
 	emit_enum_payload_strdups_at,
 	emit_field_destroys,
 } from "./utils/auto_destroy.ts";
+import {
+	emit_descriptor_address,
+	materialize_func_value_a64,
+	materialize_lambda_descriptor_a64,
+} from "./utils/closure_a64.ts";
 import { find_enum_for_case } from "./utils/enum_case.ts";
 import { nir_regalloc_enabled, seed_function_allocations } from "./utils/nir_regalloc.ts";
 import {
@@ -792,10 +797,14 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 					}
 					continue;
 				} else if (field.type.name === "func") {
-					// A func-typed default is a function VALUE: the symbol IS
-					// the code address, so store it directly (no deref — an
-					// `ldr [x1]` would load the function's first instruction).
-					status.code += `adr x1, ${emission_label((field.value as any).resolved_function ?? { name: val })}\n`;
+					// A func-typed default is a function VALUE: store its
+					// closure DESCRIPTOR (docs/CLOSURE_PLAN.md) — the raw
+					// code address can't be invoked through { code, env }.
+					const fn = (field.value as any).resolved_function;
+					const desc = fn
+						? materialize_func_value_a64(fn, status)
+						: emission_label((field.value as any) ?? { name: val });
+					emit_descriptor_address(status, "x1", desc);
 				} else {
 					// Non-literal default: a module-level const reference
 					// (e.g. `var int hi = INF` with `const int INF = …`).
@@ -849,7 +858,10 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 				build_function_node(field.value as FunctionNode, status);
 				status.function_return_label = prev_return_label;
 				if (!status.code.endsWith("\n")) status.code += "\n";
-				status.code += `adr x1, ${emission_label(field.value as FunctionNode)}\n`;
+				// The field stores the lambda's closure DESCRIPTOR
+				// (docs/CLOSURE_PLAN.md).
+				const desc = materialize_lambda_descriptor_a64(field.value as FunctionNode, status);
+				emit_descriptor_address(status, "x1", desc);
 				emit_typed_store(status, "x1", "x19", offset, 8);
 			}
 		}
@@ -1138,10 +1150,14 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 					}
 					continue;
 				} else if (field.type.name === "func") {
-					// A func-typed default is a function VALUE: the symbol IS
-					// the code address, so store it directly (no deref — an
-					// `ldr [x1]` would load the function's first instruction).
-					status.code += `adr x1, ${emission_label((field.value as any).resolved_function ?? { name: val })}\n`;
+					// A func-typed default is a function VALUE: store its
+					// closure DESCRIPTOR (docs/CLOSURE_PLAN.md) — the raw
+					// code address can't be invoked through { code, env }.
+					const fn = (field.value as any).resolved_function;
+					const desc = fn
+						? materialize_func_value_a64(fn, status)
+						: emission_label((field.value as any) ?? { name: val });
+					emit_descriptor_address(status, "x1", desc);
 				} else {
 					// Non-literal default: a module-level const reference
 					// (e.g. `var int hi = INF` with `const int INF = …`).

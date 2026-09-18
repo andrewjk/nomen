@@ -26,6 +26,7 @@ import type BuildStatus from "./BuildStatus.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import { find_decl_in_c_scopes } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
+import { materialize_func_value } from "./utils/closure.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import { c_view_string_arg } from "./utils/view_value.ts";
 
@@ -42,11 +43,11 @@ function view_element_c_type(view_type: Type, status: BuildStatus): string {
 }
 
 /**
- * A call through a func-typed struct FIELD (`s.f(args)`): emit
- * `((<ret> (*)(<param types>))<receiver>.<field>)(<args>)`. The field is a
- * `void *` slot (8 bytes); the cast supplies the signature. Mirrors the
- * func-typed local call form (`long (*f)(long) = fn; f(x)`), which C handles
- * natively — only the field indirection needs the explicit cast.
+ * A call through a func-typed struct FIELD (`s.f(args)`): the field is a
+ * `void *` slot holding a closure descriptor (docs/CLOSURE_PLAN.md) —
+ * load { code, env } and call with the env first:
+ * `((<ret> (*)(void *, <params>))((struct nomen_closure *)<field>)->code)
+ *    (((struct nomen_closure *)<field>)->env, <args>)`.
  */
 function build_func_field_call(
 	node: AccessNode,
@@ -63,23 +64,40 @@ function build_func_field_call(
 		return;
 	}
 	const ret = c_type(field.func_return_type?.name || "void");
-	status.code += `((${ret} (*)(`;
-	for (let i = 0; i < field.func_params.length; i++) {
-		if (i > 0) status.code += ", ";
-		build_parameter_node(field.func_params[i], status);
-	}
-	status.code += `))`;
 	// The field access `receiver.field` — reuse the ordinary access path so
-	// `.`/`->` and ref receivers are handled uniformly.
+	// `.`/`->` and ref receivers are handled uniformly. Built twice (code
+	// and env reads); both loads of the same descriptor slot.
 	const field_access = new AccessNode(
 		node.start,
 		node.target,
 		new AccessFieldNode(node.start, access_func.name, field.type),
 	);
-	build_node(field_access, status);
-	status.code += `)(`;
+	const capture = (fn: () => void): string => {
+		const saved = status.code;
+		status.code = "";
+		fn();
+		const out = status.code;
+		status.code = saved;
+		return out;
+	};
+	const desc_code = capture(() => {
+		status.code += `((struct nomen_closure *)`;
+		build_node(field_access, status);
+		status.code += `)->code`;
+	});
+	const desc_env = capture(() => {
+		status.code += `((struct nomen_closure *)`;
+		build_node(field_access, status);
+		status.code += `)->env`;
+	});
+	status.code += `((${ret} (*)(void *`;
+	for (let i = 0; i < field.func_params.length; i++) {
+		status.code += ", ";
+		build_parameter_node(field.func_params[i], status);
+	}
+	status.code += `))${desc_code})(${desc_env}`;
 	for (let i = 0; i < access_func.params.length; i++) {
-		if (i > 0) status.code += ", ";
+		status.code += ", ";
 		build_node(access_func.params[i], status);
 	}
 	status.code += `)`;
@@ -399,6 +417,19 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 						!s.fields?.some((f) => f.name === access_field.name),
 				);
 				if (target_struct) {
+					// A static method reference as a VALUE materializes its
+					// closure descriptor (docs/CLOSURE_PLAN.md) — the target
+					// method's signature is unchanged; the descriptor's thunk
+					// forwards (env, args...). The method's emission label is
+					// the `Struct_method` convention (the same name the
+					// non-value path emits below).
+					const method = target_struct.functions.find((f) => f.name === access_field.name);
+					if (method) {
+						const conventional = `${target_type.name}_${access_field.name.replace(/#/g, "")}`;
+						if (!method.label_name) method.label_name = conventional;
+						status.code += materialize_func_value(method, status);
+						return;
+					}
 					const fn_c_name = access_field.name.replace(/#/g, "");
 					status.code += `${target_type.name}_${fn_c_name}`;
 					return;

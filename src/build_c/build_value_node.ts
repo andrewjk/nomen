@@ -6,6 +6,7 @@ import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_char_literal from "./utils/c_char_literal.ts";
 import c_function_name from "./utils/c_function_name.ts";
+import { materialize_func_value } from "./utils/closure.ts";
 
 const INT_LITERAL_SUFFIX: Record<string, string> = {
 	int: "L",
@@ -56,10 +57,14 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 		// `0x`/`0o`/`0b` prefixes — with the width suffix appended. Underscore
 		// digit separators are stripped (C uses `'`, not `_`).
 		value = value.replace(/_/g, "") + (INT_LITERAL_SUFFIX[node.type?.name ?? "int"] ?? "");
-	} else if (node.resolved_function?.label_name) {
-		// A func-typed value referencing a function nested in another body
-		// emits under its uniquified label (stamped at check time).
-		value = c_function_name(node.resolved_function.label_name.replace(/#/g, ""));
+	} else if (node.resolved_function) {
+		// A bare function reference used as a VALUE (any resolved function —
+		// nested or top-level). It materializes its closure DESCRIPTOR
+		// (docs/CLOSURE_PLAN.md): a bare code pointer can't be invoked
+		// through the { code, env } ABI. (A function CALL is a func_call
+		// node and never reaches build_value_node.)
+		status.code += materialize_func_value(node.resolved_function, status);
+		return;
 	} else if (value.startsWith("'") && value.endsWith("'")) {
 		value = c_char_literal(value);
 	} else value = c_function_name(value);

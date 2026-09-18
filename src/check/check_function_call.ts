@@ -788,6 +788,20 @@ export default function check_function_call(
 			);
 		}
 
+		// A bare function name passed to a func-typed parameter: stamp the
+		// resolution so the build materializes the closure descriptor at
+		// this value site (docs/CLOSURE_PLAN.md).
+		if (
+			expected_type.name === "func" &&
+			param.node_type === "value" &&
+			!(param as unknown as { resolved_function?: unknown }).resolved_function
+		) {
+			const named = status.functions.findLast((f) => f.name === param_value);
+			if (named) {
+				(param as unknown as { resolved_function?: unknown }).resolved_function = named;
+			}
+		}
+
 		if (param_type.is_array && param_type.length && !func_param.type.length) {
 			// Stamp the caller's compile-time `length` onto the callee param so
 			// field/constructor length knowledge propagates (e.g. `c.items`

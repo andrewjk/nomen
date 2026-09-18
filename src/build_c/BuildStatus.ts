@@ -67,6 +67,18 @@ export default interface BuildStatus {
 	 */
 	lambda_definitions?: string;
 	/**
+	 * Closure support (docs/CLOSURE_PLAN.md). A func-typed VALUE is a
+	 * `struct nomen_closure *` — { code, env, owned }. These flags/buffers
+	 * back the descriptor ABI: the struct definition is emitted once per TU;
+	 * thunk definitions (named functions used as values — a thunk forwards
+	 * `(env, args…)` to the real function, whose signature is unchanged)
+	 * buffer here and flush at file scope next to lambda_definitions; the
+	 * descriptor map memoizes one static descriptor per target per TU.
+	 */
+	closure_runtime_emitted?: boolean;
+	closure_definitions?: string;
+	closure_descriptors?: Map<string, string>;
+	/**
 	 * Module-level statements that cannot live at C file scope (an `async`
 	 * block, an expression statement, a `var` whose initializer is a call —
 	 * none are valid file-scope C) collected by build_block_node's root scan.
@@ -505,6 +517,13 @@ export default interface BuildStatus {
 	last_result_is_heap?: boolean;
 	current_struct?: StructNode;
 	current_function_name?: string;
+	/**
+	 * The FunctionNode currently being built. Gives the body access to its
+	 * own parameter signatures — notably the SUBSTITUTED func-typed params
+	 * of a monomorphized generic body, which the call-site closure cast
+	 * needs (the synthesized callee on the call node may still carry `T`).
+	 */
+	current_function?: import("../nodes/FunctionNode.ts").default;
 	/**
 	 * Accumulates variable name → type across all scopes during building.
 	 * Used to resolve types for monomorphized generic functions whose ValueNodes

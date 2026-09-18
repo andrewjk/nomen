@@ -155,7 +155,7 @@ pub struct ClassBuffer<T> {
 		#arch: c
 		long *slots = (long*)(unsigned long long)self->data;
 		void *old = (void*)slots[i];
-		void *new_value = (void*)f(old);
+		void *new_value = (void*)((void *(*)(void *, void *))f->code)(f->env, old);
 		slots[i] = (long)new_value;
 		if (old != new_value) {
 			T_destroy(old);
@@ -164,15 +164,19 @@ pub struct ClassBuffer<T> {
 		```
 		```
 		#arch: aarch64
-		// x19 = self, x1 = i, x2 = f. Class slots are one pointer wide.
+		// x19 = self, x1 = i, x2 = f (a closure descriptor — env goes in x0,
+		// the old slot value shifts to x1). Class slots are one pointer wide.
 		stp x20, x21, [sp, #-16]!
 		stp x22, x23, [sp, #-16]!
+		stp x24, x25, [sp, #-16]!
 		mov x22, x2
 		ldr x9, [x19, #8]
 		lsl x3, x1, #3
 		add x20, x9, x3
-		ldr x0, [x20]
-		blr x22
+		ldr x24, [x22]
+		ldr x0, [x22, #8]
+		ldr x1, [x20]
+		blr x24
 		mov x23, x0
 		ldr x9, [x20]
 		str x23, [x20]
@@ -183,6 +187,7 @@ pub struct ClassBuffer<T> {
 		mov x0, x9
 		bl _free
 		.Lcb_modify_T_done:
+		ldp x24, x25, [sp], #16
 		ldp x22, x23, [sp], #16
 		ldp x20, x21, [sp], #16
 		```

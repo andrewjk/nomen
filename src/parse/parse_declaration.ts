@@ -266,6 +266,13 @@ export function parse_anonymous_function(
 
 	const func = new FunctionNode(start, default_visibility(status), name, new Type(""));
 
+	// EVERY anonymous function is a closure target (docs/CLOSURE_PLAN.md):
+	// its definition carries the hidden env parameter, direct calls prepend
+	// a NULL env, and value positions materialize a descriptor. Declaration
+	// lambdas are dual-natured (direct-called under their name AND
+	// value-passed), so the ABI must be uniform from the start.
+	(func as unknown as { is_closure?: boolean }).is_closure = true;
+
 	if (peek_current(status) !== ")") {
 		parse_anon_function_parameter(func, status);
 	}

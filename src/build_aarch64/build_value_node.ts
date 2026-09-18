@@ -7,6 +7,7 @@ import { is_int_literal, to_decimal_string } from "../int_literal.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
+import { emit_descriptor_address, materialize_func_value_a64 } from "./utils/closure_a64.ts";
 import { find_enum_for_case } from "./utils/enum_case.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
 import { emit_string_pair_load } from "./utils/string_pair.ts";
@@ -233,7 +234,13 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 	if (node.type?.name === "func") {
 		const func_offset = status.stack_offsets?.get(value);
 		if (func_offset !== undefined) {
+			// The slot holds a closure descriptor (docs/CLOSURE_PLAN.md).
 			status.code += `ldr x0, [x29, #${func_offset}]\n`;
+		} else if (node.resolved_function) {
+			// A named function as a VALUE materializes its closure
+			// descriptor — a bare code address can't carry the env.
+			const desc = materialize_func_value_a64(node.resolved_function, status);
+			emit_descriptor_address(status, "x0", desc);
 		} else {
 			status.code += `adr x0, ${emission_label(node.resolved_function ?? { name: value })}\n`;
 		}

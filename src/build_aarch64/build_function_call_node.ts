@@ -243,25 +243,40 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		start_reg = 1;
 	}
 
+	// A DIRECT call to a closure (a declaration-named lambda used under its
+	// own name) prepends the env — a plain NULL in Phase 1 — shifting the
+	// visible args one slot later.
+	const is_closure_callee = !!(
+		node.resolved_function as unknown as { is_closure?: boolean } | undefined
+	)?.is_closure;
+	if (is_closure_callee && !is_struct) {
+		status.code += `mov x0, #0\n`;
+		start_reg = 1;
+	}
+
 	if (node.is_func_param) {
-		// Load function pointer from stack
+		// The value holds a closure DESCRIPTOR (docs/CLOSURE_PLAN.md):
+		// { code, env, owned }. The visible args marshal into x1.. (slot 1
+		// on — the env occupies x0), then code + env reload from the
+		// descriptor and the call goes through the code pointer. Reloading
+		// AFTER the arg builds is required: build_node clobbers x8/x9
+		// freely, so the descriptor's source (slot / param register / label)
+		// is re-read at the last moment.
 		const func_offset = status.stack_offsets?.get(node.name);
-		if (func_offset !== undefined) {
-			status.code += `ldr x8, [x29, #${func_offset}]\n`;
-		} else {
-			const paramReg = status.function_param_regs?.get(node.name);
-			if (paramReg) {
-				status.code += `mov x8, ${paramReg}\n`;
-			} else {
-				status.code += `adr x8, ${node.name}\n`;
-			}
-		}
+		const paramReg =
+			func_offset === undefined ? status.function_param_regs?.get(node.name) : undefined;
+		const desc_source =
+			func_offset !== undefined
+				? `ldr x9, [x29, #${func_offset}]\n`
+				: paramReg
+					? `mov x9, ${paramReg}\n`
+					: `adr x9, ${node.name}\n`;
 
 		// Evaluate params right-to-left. A fat `string` (or `view T`) arg
 		// rides as a (ptr, len) register PAIR — matches the method ABI's
 		// argument-static-type pair detection (ASM gotchas) — so it consumes
 		// two consecutive registers, not one.
-		let arg_slot = start_reg;
+		let arg_slot = start_reg + 1;
 		for (let i = node.params.length - 1; i >= 0; i--) {
 			const param = node.params[i];
 			const param_type = type_from_value_node(param);
@@ -286,6 +301,11 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			}
 		}
 
+		status.code += desc_source;
+		// x9 holds the descriptor address; load { code, env } from it
+		// (descriptors live in __DATA — see closure_a64.ts).
+		status.code += `ldr x8, [x9]\n`;
+		status.code += `ldr x0, [x9, #8]\n`;
 		status.code += `blr x8\n`;
 	} else {
 		const variadic_idx = (node as FunctionCallNode).variadic_param_index;

@@ -179,6 +179,13 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	}
 	if (!is_main_with_init) {
 		let first_param = true;
+		// A closure target (an unnamed lambda — docs/CLOSURE_PLAN.md) carries
+		// the hidden env parameter: `Ret name(void *_nomen_env, Args...)`.
+		// Capture-free in Phase 1, so the body never reads it.
+		if ((node as unknown as { is_closure?: boolean }).is_closure) {
+			status.code += `void *_nomen_env`;
+			first_param = false;
+		}
 		for (let i = 0; i < node.params.length; i++) {
 			if (!first_param) {
 				status.code += ", ";
@@ -248,6 +255,8 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	}
 	const old_function_name = status.current_function_name;
 	status.current_function_name = emission_label(node);
+	const old_current_function = status.current_function;
+	status.current_function = node;
 	for (let param of node.params) {
 		if (param.is_variadic) {
 			status.function_variadic_params.add(c_function_name(param.name));
@@ -376,6 +385,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.function_return_type = old_return_type;
 	status.nullable_ret_has_param = old_nullable_ret_has;
 	status.current_function_name = old_function_name;
+	status.current_function = old_current_function;
 
 	// Always run auto_free at function exit. Functions with explicit returns
 	// already call build_auto_free at each return (which clears

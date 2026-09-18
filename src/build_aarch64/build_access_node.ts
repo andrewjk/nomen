@@ -51,6 +51,7 @@ import build_spawn_node, {
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free, emit_malloc, emit_strdup } from "./utils/audit.ts";
 import { all_scope_frames, mark_moved_if_struct, trait_class_for } from "./utils/auto_destroy.ts";
+import { emit_descriptor_address, materialize_func_value_a64 } from "./utils/closure_a64.ts";
 import { emit_index_address, pointer_element_size } from "./utils/ptr_access.ts";
 import { is_auto_inline_method } from "./utils/scan_inline_candidates.ts";
 import { NUM_REG_ARGS } from "./utils/stack_args.ts";
@@ -1156,6 +1157,17 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		(f) => f.name === access_field.name && f.func_params,
 	);
 	if (access_field.type?.name === "func" && !is_stored_func_field) {
+		// A static method reference as a VALUE materializes its closure
+		// descriptor (docs/CLOSURE_PLAN.md) under the Struct_method label
+		// convention.
+		const method = func_field_owner?.functions.find((f) => f.name === access_field.name);
+		if (method) {
+			const conventional = `${target_type.name}_${access_field.name}`;
+			if (!method.label_name) method.label_name = conventional;
+			const desc = materialize_func_value_a64(method, status);
+			emit_descriptor_address(status, "x0", desc);
+			return;
+		}
 		status.code += `adr x0, ${target_type.name}_${access_field.name}\n`;
 		return;
 	}

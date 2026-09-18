@@ -27,7 +27,6 @@ import build_array_values_node from "./build_array_values_node.ts";
 import { struct_needs_destroy_by_name } from "./build_auto_free.ts";
 import { pointer_element_c_type } from "./build_index_node.ts";
 import build_node from "./build_node.ts";
-import build_parameter_node from "./build_parameter_node.ts";
 import build_range_node, { evaluate_constant } from "./build_range_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import { emit_expr_from_nir, nir_array_elements } from "./emit_nir.ts";
@@ -35,6 +34,7 @@ import build_lambda_value from "./utils/build_lambda_value.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import { find_decl_in_c_scopes, splice_decl_from_c_scopes } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
+import { ensure_closure_runtime, materialize_func_value } from "./utils/closure.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import { c_materialize_view_string, is_view_value } from "./utils/view_value.ts";
 
@@ -919,23 +919,21 @@ function build_function_type_declaration(node: DeclarationNode, status: BuildSta
 		return;
 	}
 
-	// Otherwise, generate a function pointer declaration.
-	// Explicit syntax (`var func (string,) f`) stores params on the decl;
-	// inferred type (`var f = Console.write`) stores them on node.type.
-	const func_params = node.func_params || node.type.func_params || [];
-	const func_return_type = node.func_return_type || node.type.func_return_type;
-	const return_type_name = func_return_type?.name || "void";
-	status.code += `${c_type(return_type_name)} (*${node.name})(`;
-	for (let i = 0; i < func_params.length; i++) {
-		if (i > 0) {
-			status.code += ", ";
-		}
-		build_parameter_node(func_params[i], status);
-	}
-	status.code += `)`;
+	// Otherwise, generate a closure-descriptor declaration
+	// (docs/CLOSURE_PLAN.md): `struct nomen_closure *f = <descriptor>;` —
+	// the value is a static (thunk-backed) descriptor for a named function,
+	// or a lambda descriptor via build_node's func case.
+	ensure_closure_runtime(status);
+	status.code += `struct nomen_closure *${node.name}`;
 	if (node.value) {
 		status.code += " = ";
-		build_node(node.value, status);
+		const resolved = (node.value as unknown as { resolved_function?: FunctionNode })
+			.resolved_function;
+		if (node.value.node_type === "value" && resolved) {
+			status.code += materialize_func_value(resolved, status);
+		} else {
+			build_node(node.value, status);
+		}
 	}
 }
 

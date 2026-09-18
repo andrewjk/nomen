@@ -385,21 +385,26 @@ pub struct Buffer<T> {
 	func modify = (ref self, int i: i >= 0 && i < self.cap, func (T, out T) f) {
 		```
 		#arch: c
-		((T*)(unsigned long long)self->data)[i] = f(((T*)(unsigned long long)self->data)[i]);
+		((T*)(unsigned long long)self->data)[i] = ((T (*)(void *, T))f->code)(f->env, ((T*)(unsigned long long)self->data)[i]);
 		```
 		```
 		#arch: aarch64
-		// x19 = self, x1 = i, x2 = f. Scalar elements round-trip through x0
+		// x19 = self, x1 = i, x2 = f (a closure descriptor: { code, env,
+		// owned } — the call loads both words and passes env first, shifting
+		// the value argument to x1). Scalar elements round-trip through x1
 		// (width-matched); larger trivially-copyable structs pass the slot
 		// address and an sret pointer (x8) — the fn writes the replacement
 		// straight into the slot from a stack-stage copy of the old value.
 		stp x20, x21, [sp, #-16]!
 		stp x22, x23, [sp, #-16]!
+		stp x24, x25, [sp, #-16]!
 		mov x22, x2
 		ldr x9, [x19, #8]
 		mov x3, #T_SIZE
 		madd x20, x1, x3, xzr
 		add x20, x20, x9
+		ldr x24, [x22]
+		ldr x0, [x22, #8]
 		cmp x3, #8
 		b.gt .Lbuffer_modify_T_big
 		cmp x3, #1
@@ -408,18 +413,18 @@ pub struct Buffer<T> {
 		b.eq .Lbuffer_modify_T_ld2
 		cmp x3, #4
 		b.eq .Lbuffer_modify_T_ld4
-		ldr x0, [x20]
+		ldr x1, [x20]
 		b .Lbuffer_modify_T_call
 		.Lbuffer_modify_T_ld1:
-		ldrb w0, [x20]
+		ldrb w1, [x20]
 		b .Lbuffer_modify_T_call
 		.Lbuffer_modify_T_ld2:
-		ldrh w0, [x20]
+		ldrh w1, [x20]
 		b .Lbuffer_modify_T_call
 		.Lbuffer_modify_T_ld4:
-		ldr w0, [x20]
+		ldr w1, [x20]
 		.Lbuffer_modify_T_call:
-		blr x22
+		blr x24
 		cmp x3, #1
 		b.eq .Lbuffer_modify_T_st1
 		cmp x3, #2
@@ -445,11 +450,13 @@ pub struct Buffer<T> {
 		mov x1, x20
 		mov x2, x3
 		bl _memcpy
-		mov x0, sp
+		ldr x0, [x22, #8]
+		mov x1, sp
 		mov x8, x20
-		blr x22
+		blr x24
 		add sp, sp, x23
 		.Lbuffer_modify_T_end:
+		ldp x24, x25, [sp], #16
 		ldp x22, x23, [sp], #16
 		ldp x20, x21, [sp], #16
 		```

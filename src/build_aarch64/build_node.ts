@@ -1,5 +1,4 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
-import emission_label from "../build_common/emission_label.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import AnonStructNode from "../nodes/AnonStructNode.ts";
@@ -53,6 +52,7 @@ import build_switch_node from "./build_switch_node.ts";
 import build_todo_node from "./build_todo_node.ts";
 import build_value_node from "./build_value_node.ts";
 import build_while_loop_node from "./build_while_loop_node.ts";
+import { emit_descriptor_address, materialize_lambda_descriptor_a64 } from "./utils/closure_a64.ts";
 
 export default function build_node(node: BaseNode, status: BuildStatus, with_semicolon = false) {
 	// Build any associated declarations first, e.g. for function call params
@@ -102,7 +102,10 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 			// x0 to leave a value in; the definition alone is the emission.
 			build_function_node(node as FunctionNode, status);
 			if (status.function_return_label) {
-				status.code += `adr x0, ${emission_label(node as FunctionNode)}\n`;
+				// The value is the lambda's closure DESCRIPTOR
+				// (docs/CLOSURE_PLAN.md), not the raw code address.
+				const desc = materialize_lambda_descriptor_a64(node as FunctionNode, status);
+				emit_descriptor_address(status, "x0", desc);
 			}
 			with_semicolon = false;
 			break;

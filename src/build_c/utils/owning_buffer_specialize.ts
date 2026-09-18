@@ -177,7 +177,7 @@ export function emit_owning_buffer_enum_body(
 		// returned an aliasing pointer (round-trip identity).
 		status.code += `${E}* _slots = ${slots};\n`;
 		status.code += `${E} _old = _slots[i];\n`;
-		status.code += `${E} _new = f(_old);\n`;
+		status.code += `${E} _new = ((${E} (*)(void *, ${E}))f->code)(f->env, _old);\n`;
 		status.code += `_slots[i] = _new;\n`;
 		for (const c of elem.cases) {
 			for (const p of c.params) {
@@ -244,7 +244,7 @@ export function emit_owning_buffer_string_body(func_name: string, status: BuildS
 		// slot's own string back (round-trip identity → keep, no free).
 		status.code += `nomen_string* _slots = (nomen_string*)self->data;\n`;
 		status.code += `nomen_string _old = _slots[i];\n`;
-		status.code += `nomen_string _new = f(_old);\n`;
+		status.code += `nomen_string _new = ((nomen_string (*)(void *, nomen_string))f->code)(f->env, _old);\n`;
 		status.code += `if (_new.ptr != _old.ptr) { free(_old.ptr); _slots[i] = _new; }\n`;
 		return true;
 	}
@@ -323,7 +323,7 @@ export function emit_owning_buffer_body(
 		// same contract `store_T`'s round-trip guard assumes for the dance.
 		status.code += `${Tptr}_slots = ${Tcast}(unsigned long long)self->data;\n`;
 		status.code += `struct ${elem.name} _old = _slots[i];\n`;
-		status.code += `struct ${elem.name} _new = f(&_old);\n`;
+		status.code += `struct ${elem.name} _new = ((struct ${elem.name} (*)(void *, struct ${elem.name} *))f->code)(f->env, &_old);\n`;
 		emit_take_over_fields(elem, "_slots[i]", "_new", "_old", status);
 		return true;
 	}
@@ -494,6 +494,6 @@ export function emit_trivial_struct_modify_T(node: StructNode, status: BuildStat
 	if (!elem || elem.is_class || elem.is_generic) return false;
 	if (has_owning_fields(elem, status)) return false;
 	status.code += `struct ${elem.name}* _slots = (struct ${elem.name}*)(unsigned long long)self->data;\n`;
-	status.code += `_slots[i] = f(&_slots[i]);\n`;
+	status.code += `_slots[i] = ((struct ${elem.name} (*)(void *, struct ${elem.name} *))f->code)(f->env, &_slots[i]);\n`;
 	return true;
 }

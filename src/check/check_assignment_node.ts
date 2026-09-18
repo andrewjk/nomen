@@ -372,6 +372,12 @@ export default function check_assignment_node(
 			const rhs_fn = status.functions.findLast(
 				(f) => f.name === (assign.right_value as ValueNode).value,
 			);
+			// Stamp the resolution: the build materializes the closure
+			// descriptor at this value site (docs/CLOSURE_PLAN.md).
+			if (rhs_fn) {
+				(assign.right_value as unknown as { resolved_function?: FunctionNode }).resolved_function =
+					rhs_fn;
+			}
 			const rhs_params = (rhs_fn?.params ?? []).filter((p) => !p.is_self_param);
 			if (rhs_params.length !== lhs_func_params.length) {
 				add_error(

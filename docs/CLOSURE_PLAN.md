@@ -86,7 +86,7 @@ signatures; only capturing VALUES are move-only.
 ### Free-if-owned destruction
 
 - **func-typed locals**: at scope exit, `if (v && v->owned) { free(v->env);
-  free(v); }` — a new arm in both backends' scope-teardown/auto-free passes.
+free(v); }` — a new arm in both backends' scope-teardown/auto-free passes.
 - **func-typed fields**: `#destroy` gains the same arm.
 - **func-typed params**: the callee owns a moved-in capturing closure; the
   same arm frees at callee scope exit.
@@ -106,10 +106,26 @@ signatures; only capturing VALUES are move-only.
 gains the hidden env param (always NULL); every func-as-value site
 materializes a static descriptor; every call-through loads code+env and
 passes env first; raw `#arch: c` bodies that invoke func-typed params
-(`modify_T` and friends) route through an emitted `nomen_closure_call*`
-helper. Suite green; the only codegen delta is the two loads per indirect
-call. _Gate: full suite, both backends, byte-comparable outputs modulo the
-call sequences._
+(`modify_T` and friends) route through the descriptor ABI. Suite green; the
+only codegen delta is the two loads per indirect call. _Gate: full suite,
+both backends, byte-comparable outputs modulo the call sequences._
+
+> **Status: LANDED.** All func-typed params/fields/locals/returns are one
+> word; `struct nomen_closure { code, env, owned }` (C header-emitted once,
+> `NOMEN_CLOSURE_STRUCT`-guarded for split builds; aarch64 stores descriptors
+> as plain function-pointer tables in `__DATA` — text→text relocations are
+> illegal on arm64 Mach-O — reached via `adrp`+`add`). Lambdas take the
+> hidden env slot (direct calls to declaration-named lambdas pass NULL);
+> named functions used as values get an auto-generated thunk that shifts the
+> argument slots and tail-calls the unchanged original. Call-throughs
+> (`is_func_param`, func-typed fields, `Buffer`/`ClassBuffer.modify` raw
+> bodies on both backends) load `{ code, env }` and pass env first. The
+> closure cast's signature prefers the enclosing function's parameter (its
+> func signature is monomorphization-substituted) over the synthesized callee
+> (which may still carry `T`). Green: the full func/lambda suite on both
+> backends, plus the whole suite (one pre-existing timeout-margin flake in
+> `emit_nir`'s corpus test: baseline also runs ~25s against a 30s limit).
+> Nothing user-visible changed yet — no captures exist; `env` is always NULL.
 
 **Phase 2 — captures.** Checker: capture analysis replaces the
 `check_value_node` rejection (capture set, copy/move kinds, moved-local
@@ -118,7 +134,7 @@ struct emission per lambda, strdup/move capture prologue, free-if-owned arms
 (locals, fields, params), static-vs-heap descriptors. Tests: capture smoke
 per kind, move-only enforcement, audit-balanced frees, lambdas in generic
 bodies (mono clones re-derive captures). SPEC's Anonymous Functions section
-updated (+ test/spec).
+updated (+ test/spec). **Not started.**
 
 **Phase 3 — the ASYNC_PLAN_2 payoff (separate landing).** `Thread`/`Fiber`
 de-specialized into library structs over capturing lambdas; the

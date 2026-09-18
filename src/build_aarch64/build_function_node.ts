@@ -257,6 +257,11 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.stack_offsets = new Map();
 
 	const has_body = node.has_body && node.statements.length > 0;
+	// A closure target (an unnamed lambda — docs/CLOSURE_PLAN.md) carries the
+	// hidden env parameter in the FIRST ABI slot (x0); the visible params
+	// start one slot later. Capture-free in Phase 1, so the env register is
+	// never read.
+	const closure_slot_offset = (node as unknown as { is_closure?: boolean }).is_closure ? 1 : 0;
 
 	const callee_saved = ["x19", "x20", "x21", "x22"];
 	const callee_map = new Map<string, string>();
@@ -349,7 +354,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		// everything else = 1). The previous loop used the raw params index,
 		// which under-counted in the presence of a variadic param and so read
 		// the wrong register for a struct param that followed one.
-		let first_pass_slot = 0;
+		let first_pass_slot = closure_slot_offset;
 		for (let i = 0; i < node.params.length; i++) {
 			const param = node.params[i];
 			// Array-typed params (including variadic) hold a pointer, not a
@@ -586,7 +591,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	let raw_reload_plan_lines: RawParamReloadLine[] = [];
 
 	if (has_body) {
-		let param_idx = 0;
+		let param_idx = closure_slot_offset;
 		// Raw `#arch: aarch64` reload plan (see utils/raw_reload.ts): one
 		// line per entry ABI register whose value the prologue parks
 		// somewhere restorable. Overflow args (slot >= 8) never ride a
@@ -1150,6 +1155,12 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	if (status.nested_functions && !is_nested) {
 		status.code += status.nested_functions;
 		status.nested_functions = undefined;
+	}
+	// Closure thunks + descriptors (docs/CLOSURE_PLAN.md) flush in the same
+	// dead zone: after the function's `ret`, before the next label.
+	if (status.closure_definitions && !is_nested) {
+		status.code += status.closure_definitions;
+		status.closure_definitions = undefined;
 	}
 
 	status.scoped_declarations = old_scoped_declarations;

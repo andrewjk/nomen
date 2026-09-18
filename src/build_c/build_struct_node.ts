@@ -637,6 +637,8 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		status.stack_array_lengths = undefined;
 		const old_return_type = status.function_return_type;
 		const old_function_name = status.current_function_name;
+		const old_current_function = status.current_function;
+		status.current_function = func;
 		const old_view_params = status.function_view_params;
 		status.function_view_params = new Set<string>();
 		status.current_function_name = func.name;
@@ -885,6 +887,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		status.stack_array_lengths = old_stack_array_lengths;
 		status.function_return_type = old_return_type;
 		status.current_function_name = old_function_name;
+		status.current_function = old_current_function;
 		status.function_view_params = old_view_params;
 	}
 	status.current_struct = old_current_struct;
