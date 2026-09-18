@@ -6,7 +6,7 @@ import build_parameter_node from "../build_parameter_node.ts";
 import type BuildStatus from "../BuildStatus.ts";
 import c_function_name from "./c_function_name.ts";
 import c_type from "./c_type.ts";
-import { emit_closure_env_type } from "./closure_env.ts";
+import { emit_closure_env_free, emit_closure_env_type } from "./closure_env.ts";
 
 /**
  * Closure descriptor ABI (docs/CLOSURE_PLAN.md). A func-typed VALUE is a
@@ -107,7 +107,7 @@ function materialize_named_function_descriptor(func: FunctionNode, status: Build
 	const ret = c_return_type(func.return_type, status);
 	status.headers += `${ret} ${target}(${sig});\n`;
 	status.headers += `${ret} ${thunk}(void *_nomen_env, ${sig});\n`;
-	status.headers += `static struct nomen_closure ${descriptor} = { (void *)${thunk}, NULL, 0 };\n\n`;
+	status.headers += `static struct nomen_closure ${descriptor} = { (void *)${thunk}, NULL, 0, NULL };\n\n`;
 
 	const call = `${target}(${forwards.join(", ")})`;
 	const body = ret === "void" ? `\t${call};\n` : `\treturn ${call};\n`;
@@ -135,7 +135,7 @@ function materialize_lambda_descriptor(func: FunctionNode, status: BuildStatus):
 	const existing = status.closure_descriptors?.get(code);
 	if (existing) return existing;
 	const descriptor = `_nomen_closure_desc_${code}`;
-	status.headers += `static struct nomen_closure ${descriptor} = { (void *)${code}, NULL, 0 };\n`;
+	status.headers += `static struct nomen_closure ${descriptor} = { (void *)${code}, NULL, 0, NULL };\n`;
 	status.closure_descriptors!.set(code, `&${descriptor}`);
 	return `&${descriptor}`;
 }
@@ -158,11 +158,21 @@ function capturing_closure_value(node: FunctionNode, status: BuildStatus): strin
 		// the plain mangled C name. A name shadowed by a nearer local can't
 		// reach here — the checker records a capture only when the reference
 		// resolves to the outer value.
-		out += status.closure_env?.get(cap.name) ?? c_function_name(cap.name);
+		const expr = status.closure_env?.get(cap.name) ?? c_function_name(cap.name);
+		// An OWNED string capture is deep-copied into the env (the env's
+		// destructor frees the copy); scalars copy by value.
+		if (cap.type.name === "string" && !cap.type.is_view && !cap.type.is_array) {
+			out += `nomen_str_dup(${expr})`;
+		} else {
+			out += expr;
+		}
 		out += `;\n`;
 	}
 	out += `struct nomen_closure *_c = (struct nomen_closure *)malloc(sizeof(struct nomen_closure));\n`;
-	out += `_c->code = (void *)${label};\n_c->env = (void *)_e;\n_c->owned = 1;\n_c; })`;
+	const destroy = emit_closure_env_free(node, status);
+	out += `_c->code = (void *)${label};\n_c->env = (void *)_e;\n_c->owned = 1;\n`;
+	out += `_c->destroy_env = ${destroy ? `(void (*)(void *))${destroy}` : "NULL"};\n`;
+	out += `_c; })`;
 	return out;
 }
 

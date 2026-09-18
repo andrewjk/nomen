@@ -152,16 +152,32 @@ updated (+ test/spec).
 > (snapshot semantics, two captures, zero-arg `out` signature, rejections),
 > audit-balanced on both backends; full suite green.
 >
-> **Deferred to Phase 2b** (sound today via the `owned` flag / static
-> descriptors, recorded rather than enforced): owned captures (strings,
-> owning structs, classes — need an env destructor
-> `destroy_env`/strdup at capture), MOVE captures (donor-local invalidation),
-> storing a capturing closure in a field/container/return (currently leaks the
-> env+descriptor — sound, never dangling — and is a follow-up; passing one to a
-> func-typed param is a borrow, the same accepted posture as class pointers),
-> capturing a struct by copy, and capturing a nested closure. Also landed en
-> route: func-value detection for zero-arg `out` signatures
-> (`func_params !== undefined`), a latent gap.
+> **Status: Phase 2b LANDED — owned string captures.** A lambda may capture
+> outer STRINGS; the value site deep-copies each with `nomen_str_dup` into the
+> env (a 16-byte fat field), and the descriptor gains a fourth word
+> `destroy_env` (`void (*)(void *)`) pointing at a per-lambda env destructor
+> that frees the captured strings' ptr halves. The scope-exit free-if-owned arm
+> calls `destroy_env` before freeing the env+descriptor. Capture validation
+> moved into `type_from_value` (the value-resolution funnel), so every
+> reference form is covered — plain reads, method receivers, assignment
+> targets — not just `check_value_node`'s read path, which had missed
+> receivers.
+>
+> **Known aarch64 gap**: a captured scalar read through a METHOD RECEIVER
+> (`n.to_string()`) mis-emits, because the receiver is built outside the
+> lambda's env context; field reads on captured values and plain reads are
+> correct. See FOLLOWUP.md ("Captured scalar used as a method receiver
+> mis-emits on aarch64").
+>
+> **Deferred to Phase 2c** (sound today via the `owned` flag / static
+> descriptors, recorded rather than enforced): owning-struct/class/trait
+> captures (MOVE captures with donor-local invalidation), storing a capturing
+> closure in a field/container/return (currently leaks the env+descriptor —
+> sound, never dangling; passing one to a func-typed param is a borrow, the
+> same accepted posture as class pointers), capturing a struct by copy, and
+> capturing a nested closure. Also landed en route: func-value detection for
+> zero-arg `out` signatures (`func_params !== undefined`), a latent gap, and
+> the funnel-side capture analysis above.
 
 **Phase 3 — the ASYNC_PLAN_2 payoff (separate landing).** `Thread`/`Fiber`
 de-specialized into library structs over capturing lambdas; the

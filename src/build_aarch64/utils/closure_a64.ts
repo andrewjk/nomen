@@ -28,6 +28,55 @@ export function emit_descriptor_address(
 	status.code += `add ${reg}, ${reg}, ${descriptor}@PAGEOFF\n`;
 }
 
+/** Byte size of one capture's env field (Phase 2b: strings are 16-byte fat
+ *  pairs, scalars 8; both 8-byte aligned). */
+export function capture_size_a64(cap: {
+	type: { name: string; is_view?: boolean; is_array?: boolean };
+}): number {
+	return cap.type.name === "string" && !cap.type.is_view && !cap.type.is_array ? 16 : 8;
+}
+
+/** Env layout for a capturing lambda: name → byte offset, and total size. */
+export function closure_env_layout_a64(func: FunctionNode): {
+	offsets: Map<string, number>;
+	size: number;
+} {
+	const offsets = new Map<string, number>();
+	let off = 0;
+	for (const cap of func.captures ?? []) {
+		offsets.set(cap.name, off);
+		off += capture_size_a64(cap);
+	}
+	return { offsets, size: off };
+}
+
+/**
+ * Emit (once) the asm env destructor for a capturing lambda whose env owns
+ * heap values (Phase 2b: captured strings). Frees every captured string's ptr
+ * half (free(NULL) is a no-op). Returns the destructor label, or undefined
+ * when the env owns nothing.
+ */
+export function emit_env_free_a64(func: FunctionNode, status: BuildStatus): string | undefined {
+	const strings = (func.captures ?? []).filter(
+		(c) => c.type.name === "string" && !c.type.is_view && !c.type.is_array,
+	);
+	if (!strings.length) return undefined;
+	const label = `_nomen_env_free_${emission_label(func)}`;
+	if (!status.closure_descriptors) status.closure_descriptors = new Map();
+	const guard = `env_free:${label}`;
+	if (status.closure_descriptors.has(guard)) return label;
+	status.closure_descriptors.set(guard, label);
+	const { offsets } = closure_env_layout_a64(func);
+	const free_call = status.audit ? `bl _nomen_free_wrap\n` : `bl _free\n`;
+	let body = `.p2align 2\n${label}:\nstp x29, x30, [sp, #-16]!\nstp x19, x20, [sp, #-16]!\nmov x19, x0\n`;
+	for (const cap of strings) {
+		body += `ldr x0, [x19, #${offsets.get(cap.name)}]\n${free_call}`;
+	}
+	body += `ldp x19, x20, [sp], #16\nldp x29, x30, [sp], #16\nret\n\n`;
+	status.closure_definitions = (status.closure_definitions ?? "") + body;
+	return label;
+}
+
 const DATA_SECTION_OPEN = `.section __DATA,__data\n`;
 const TEXT_SECTION_RESTORE = `.text\n`;
 
@@ -98,7 +147,7 @@ export function materialize_func_value_a64(func: FunctionNode, status: BuildStat
 	status.closure_definitions =
 		(status.closure_definitions ?? "") +
 		DATA_SECTION_OPEN +
-		`.p2align 3\n${descriptor}:\n\t.quad ${thunk}\n\t.quad 0\n\t.quad 0\n` +
+		`.p2align 3\n${descriptor}:\n\t.quad ${thunk}\n\t.quad 0\n\t.quad 0\n\t.quad 0\n` +
 		TEXT_SECTION_RESTORE;
 
 	status.closure_descriptors.set(target, descriptor);
@@ -119,7 +168,7 @@ export function materialize_lambda_descriptor_a64(func: FunctionNode, status: Bu
 	status.closure_definitions =
 		(status.closure_definitions ?? "") +
 		DATA_SECTION_OPEN +
-		`.p2align 3\n${descriptor}:\n\t.quad ${code}\n\t.quad 0\n\t.quad 0\n` +
+		`.p2align 3\n${descriptor}:\n\t.quad ${code}\n\t.quad 0\n\t.quad 0\n\t.quad 0\n` +
 		TEXT_SECTION_RESTORE;
 	status.closure_descriptors.set(code, descriptor);
 	return descriptor;

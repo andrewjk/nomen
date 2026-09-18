@@ -635,16 +635,37 @@ export function emit_destroy_for_decl(
 	// freed. Only decls with a frame slot reach here.
 	if (decl_type_name === "func" && status.stack_offsets?.has(decl_name)) {
 		const skip = `.Lclosure_free_done_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+		const no_destroy = `.Lclosure_no_destroy_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
 		emit_var_load(status, "x0", decl_name, 8);
-		status.code += `cbz x0, ${skip}\n`;
-		status.code += `ldr w9, [x0, #16]\n`;
-		status.code += `cbz w9, ${skip}\n`;
-		status.code += `str x0, [sp, #-16]!\n`;
-		status.code += `ldr x0, [x0, #8]\n`;
+		status.code += `cbz x0, ${skip}
+`;
+		status.code += `ldr w9, [x0, #16]
+`;
+		status.code += `cbz w9, ${skip}
+`;
+		// Park the descriptor across the destructor call (it clobbers x9/x10).
+		status.code += `str x0, [sp, #-16]!
+`;
+		status.code += `ldr x10, [x0, #24]
+`;
+		status.code += `cbz x10, ${no_destroy}
+`;
+		status.code += `ldr x0, [x0, #8]
+`;
+		status.code += `blr x10
+`;
+		status.code += `${no_destroy}:
+`;
+		status.code += `ldr x9, [sp]
+`;
+		status.code += `ldr x0, [x9, #8]
+`;
 		emit_free(status);
-		status.code += `ldr x0, [sp], #16\n`;
+		status.code += `ldr x0, [sp], #16
+`;
 		emit_free(status);
-		status.code += `${skip}:\n`;
+		status.code += `${skip}:
+`;
 		return;
 	}
 

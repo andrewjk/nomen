@@ -1,6 +1,7 @@
 import { is_int_literal } from "../../int_literal.ts";
 import Type from "../../nodes/Type.ts";
 import type CheckStatus from "../CheckStatus.ts";
+import { maybe_record_capture } from "./captures.ts";
 import resolve_declared_type from "./resolve_declared_type.ts";
 
 export default function type_from_value(value: string, status: CheckStatus): Type {
@@ -25,8 +26,13 @@ export default function type_from_value(value: string, status: CheckStatus): Typ
 	}
 
 	// Is it a value that's been declared in a var/const or param?
-	const decl_value = status.values.findLast((v) => v.name === value);
+	const decl_index = status.values.findLastIndex((v) => v.name === value);
+	const decl_value = decl_index >= 0 ? status.values[decl_index] : undefined;
 	if (decl_value) {
+		// A reference to an ENCLOSING function's value from a closure lambda is
+		// a capture; recording here covers every reference form (reads, method
+		// receivers, assignment targets) — see check/utils/captures.ts.
+		maybe_record_capture(value, decl_value, decl_index, status);
 		return decl_value.type;
 	}
 

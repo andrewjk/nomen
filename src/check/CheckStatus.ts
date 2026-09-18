@@ -50,6 +50,9 @@ export default interface CheckStatus {
 	 * lambdas nested in a non-closure function.
 	 */
 	enclosing_closure?: import("../nodes/FunctionNode.ts").default;
+	/** (lambda, captured-name) pairs already reported, so the funnel's
+	 *  repeated type resolution can't spam duplicate capture errors. */
+	reported_capture_errors?: Set<string>;
 	/**
 	 * Structs in scope
 	 */

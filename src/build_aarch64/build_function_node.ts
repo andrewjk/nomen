@@ -18,6 +18,7 @@ import { publish_slp_pairs } from "./slp_pair.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free } from "./utils/audit.ts";
 import { emit_destroy_for_anchor_slot } from "./utils/auto_destroy.ts";
+import { closure_env_layout_a64 } from "./utils/closure_a64.ts";
 import { plan_function_promotions } from "./utils/func_regalloc.ts";
 import { nir_regalloc_enabled, plan_nir_registers } from "./utils/nir_regalloc.ts";
 import {
@@ -437,10 +438,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		const env_slot = allocate_stack_space(status, 8, 8);
 		status.code += `str x0, [x29, #${env_slot}]\n`;
 		status.closure_env_slot = env_slot;
-		status.closure_env_offsets = new Map();
-		for (const [i, cap] of node.captures.entries()) {
-			status.closure_env_offsets.set(cap.name, i * 8);
-		}
+		status.closure_env_offsets = closure_env_layout_a64(node).offsets;
 	} else {
 		status.closure_env_slot = undefined;
 		status.closure_env_offsets = undefined;

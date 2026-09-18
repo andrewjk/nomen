@@ -64,24 +64,54 @@ pub func main = () {
 	});
 });
 
+describe("closure captures (owned strings)", () => {
+	test("a lambda captures a string by deep copy", async () => {
+		await build_and_check_output(
+			`
+import System
+
+pub func main = () {
+	var string greeting = "hi"
+	var func (string, out string) decorate = (s, out string) => s + " " + greeting
+	var string r = decorate("yo")
+	Console.write("\\{r}")
+}
+`,
+			"lambda_capture_string",
+			"yo hi",
+			true,
+		);
+	});
+
+	test("captured strings and scalars mix, and the source may mutate afterwards", async () => {
+		// A captured scalar used as a METHOD RECEIVER (`n.to_string()`) is a
+		// known aarch64 gap (the receiver is re-built outside the lambda's env
+		// context — see FOLLOWUP.md); this shape avoids it by reading the
+		// captured string's field instead.
+		await build_and_check_output(
+			`
+import System
+
+pub func main = () {
+	var int n = 1
+	var string tag = "a"
+	var func (out int) show = (out int) => n + tag.length
+	n = 9
+	tag = "zzz"
+	Console.write("\\{show()} \\{show()}")
+}
+`,
+			"lambda_capture_string_mix",
+			"2 2",
+			true,
+		);
+	});
+});
+
 describe("closure capture rejections", () => {
 	function errors(input: string): string[] {
 		return parse_raw(input).errors.map((e) => e.message);
 	}
-
-	test("capturing a string is rejected", () => {
-		expect(
-			errors(`
-import System
-
-pub func main = () {
-	var string s = "hi"
-	var func (out int) len = (out int) => s.length
-	Console.write("\\{len()}")
-}
-`).some((m) => m.includes("Cannot capture 's' in a closure")),
-		).toBe(true);
-	});
 
 	test("capturing a struct is rejected", () => {
 		expect(

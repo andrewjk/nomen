@@ -129,7 +129,7 @@ export function free_scoped_declarations(
 				status.code += "\n// Auto-free\n";
 				commented = true;
 			}
-			status.code += `if (${cname} && ${cname}->owned) { free(${cname}->env); free(${cname}); }\n`;
+			status.code += `if (${cname} && ${cname}->owned) { if (${cname}->destroy_env) ${cname}->destroy_env(${cname}->env); free(${cname}->env); free(${cname}); }\n`;
 			continue;
 		}
 		// Call dispose() if it has the Disposable trait

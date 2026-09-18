@@ -24,7 +24,7 @@ export default function build_root_node(node: RootNode, status: BuildStatus) {
 	// prototype scope in C, and a later file-scope definition would be a
 	// DIFFERENT type (conflicting-types errors at every func-param
 	// signature).
-	status.headers += `#ifndef NOMEN_CLOSURE_STRUCT\n#define NOMEN_CLOSURE_STRUCT\nstruct nomen_closure { void *code; void *env; int owned; };\n#endif\n`;
+	status.headers += `#ifndef NOMEN_CLOSURE_STRUCT\n#define NOMEN_CLOSURE_STRUCT\nstruct nomen_closure { void *code; void *env; int owned; void (*destroy_env)(void *); };\n#endif\n`;
 	status.code += `
 // Feature-test macro: must precede every system include so the whole TU
 // agrees on one definition of ucontext_t (the fiber runtime embeds it).

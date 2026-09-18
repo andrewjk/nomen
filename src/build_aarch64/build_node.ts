@@ -53,8 +53,13 @@ import build_switch_node from "./build_switch_node.ts";
 import build_todo_node from "./build_todo_node.ts";
 import build_value_node from "./build_value_node.ts";
 import build_while_loop_node from "./build_while_loop_node.ts";
-import { emit_malloc } from "./utils/audit.ts";
-import { emit_descriptor_address, materialize_lambda_descriptor_a64 } from "./utils/closure_a64.ts";
+import { emit_malloc, emit_strdup } from "./utils/audit.ts";
+import {
+	closure_env_layout_a64,
+	emit_descriptor_address,
+	emit_env_free_a64,
+	materialize_lambda_descriptor_a64,
+} from "./utils/closure_a64.ts";
 
 /**
  * Emit a capturing lambda's value (CLOSURE_PLAN Phase 2): heap-allocate the
@@ -64,17 +69,25 @@ import { emit_descriptor_address, materialize_lambda_descriptor_a64 } from "./ut
  * builds (build_node clobbers x9/x10 freely).
  */
 function emit_capturing_closure_value_a64(fn: FunctionNode, status: BuildStatus): void {
-	const env_size = fn.captures!.length * 8;
+	const { offsets, size: env_size } = closure_env_layout_a64(fn);
 	status.code += `mov x0, #${env_size}\n`;
 	emit_malloc(status);
 	status.code += `str x0, [sp, #-16]!\n`;
-	for (const [i, cap] of fn.captures!.entries()) {
+	for (const cap of fn.captures!) {
+		const off = offsets.get(cap.name)!;
 		build_node(new ValueNode(fn.start, cap.name, cap.type), status);
 		if (!status.code.endsWith("\n")) status.code += "\n";
+		const is_string = cap.type.name === "string" && !cap.type.is_view && !cap.type.is_array;
+		if (is_string) {
+			// Deep-copy the captured string into the env (the env destructor
+			// frees the copy); emit_strdup preserves the len half in x1.
+			emit_strdup(status);
+		}
 		status.code += `ldr x9, [sp]\n`;
-		status.code += `str x0, [x9, #${i * 8}]\n`;
+		status.code += `str x0, [x9, #${off}]\n`;
+		if (is_string) status.code += `str x1, [x9, #${off + 8}]\n`;
 	}
-	status.code += `mov x0, #24\n`;
+	status.code += `mov x0, #32\n`;
 	emit_malloc(status);
 	status.code += `ldr x9, [sp], #16\n`;
 	status.code += `str x9, [x0, #8]\n`;
@@ -82,6 +95,13 @@ function emit_capturing_closure_value_a64(fn: FunctionNode, status: BuildStatus)
 	status.code += `str x10, [x0]\n`;
 	status.code += `mov w10, #1\n`;
 	status.code += `str w10, [x0, #16]\n`;
+	const destroy = emit_env_free_a64(fn, status);
+	if (destroy) {
+		status.code += `adr x10, ${destroy}\n`;
+		status.code += `str x10, [x0, #24]\n`;
+	} else {
+		status.code += `str xzr, [x0, #24]\n`;
+	}
 }
 
 export default function build_node(node: BaseNode, status: BuildStatus, with_semicolon = false) {

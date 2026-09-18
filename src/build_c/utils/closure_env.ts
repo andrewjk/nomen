@@ -21,9 +21,44 @@ import c_type from "./c_type.ts";
  */
 export function c_env_field_type(type: Type, status: BuildStatus): string {
 	const name = type.name;
+	if (name === "string" && !type.is_view && !type.is_array) return "nomen_string";
 	const elem = status.structs.find((s) => s.name === name && !s.is_simple_type);
 	if (elem && !elem.is_class) return `struct ${name}`;
 	return c_type(name);
+}
+
+/** Whether a lambda's env owns heap values needing a destructor. */
+export function lambda_has_owned_captures(func: FunctionNode): boolean {
+	return (func.captures ?? []).some((c) => c.type.name === "string");
+}
+
+/**
+ * Emit (once per lambda per TU) the env destructor for a capturing lambda
+ * whose env owns heap values (Phase 2b: captured strings are strdup'd into the
+ * env). A capture-free or scalar-only lambda needs none (the descriptor's
+ * `destroy_env` is NULL). Returns the destructor's C name, or undefined.
+ */
+export function emit_closure_env_free(func: FunctionNode, status: BuildStatus): string | undefined {
+	if (!lambda_has_owned_captures(func)) return undefined;
+	const env_name = `_nomen_env_${c_function_name(emission_label(func))}`;
+	const fn_name = `_nomen_env_free_${c_function_name(emission_label(func))}`;
+	const guard = `_nomen_env_free_emitted_${env_name}`;
+	if (!status.closure_env_types) status.closure_env_types = new Set();
+	if (status.closure_env_types.has(guard)) return fn_name;
+	status.closure_env_types.add(guard);
+	let body = "";
+	for (const cap of func.captures ?? []) {
+		if (cap.type.name !== "string") continue;
+		body += `\tif (_e->${c_function_name(cap.name)}.ptr) free(_e->${c_function_name(cap.name)}.ptr);\n`;
+	}
+	status.headers += `static void ${fn_name}(void *);\n`;
+	status.closure_definitions =
+		(status.closure_definitions ?? "") +
+		`static void ${fn_name}(void *_p) {\n` +
+		`\tstruct ${env_name} *_e = (struct ${env_name} *)_p;\n` +
+		body +
+		`}\n\n`;
+	return fn_name;
 }
 
 /**

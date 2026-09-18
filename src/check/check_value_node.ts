@@ -4,40 +4,8 @@ import { set_resolved_function } from "../nodes/set_resolved_function.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import type CheckStatus from "./CheckStatus.ts";
-import type StackValue from "./StackValue.ts";
 import { find_mono_enum, monomorphize_enum } from "./utils/enum_mono.ts";
-import { is_class_type, is_owning_struct_type } from "./utils/ownership.ts";
 import type_from_value from "./utils/type_from_value.ts";
-
-/**
- * Why a captured outer value cannot be captured, or undefined when the capture
- * is supported. Phase 2a supports COPY captures of scalars and non-owning
- * value structs (their bytes go straight into the env). Owned captures
- * (strings, owning structs, classes, traits — which need an env destructor),
- * borrowed parameters (`ref`/`var`), arrays/views/pointers, and nested closures
- * are follow-ups (docs/CLOSURE_PLAN.md).
- */
-function capture_rejection(value: StackValue, status: CheckStatus): string | undefined {
-	const type = value.type;
-	if (type.is_ref) return "a `ref`/`var` parameter is a borrow — capturing borrows comes later";
-	if (type.is_view) return "views are borrowed slices";
-	if (type.is_array) return "arrays are heap-backed";
-	if (type.is_pointer) return "raw pointers are not capturable";
-	if (type.name === "string") return "strings are owned — owned captures come later";
-	if (type.name === "func") return "capturing a closure comes later";
-	if (test_type_names.includes(type.name)) return `a ${type.name} value is not capturable`;
-	if (is_class_type(type.name, status)) return "classes are owned — owned captures come later";
-	if (status.traits.find((t) => t.name === type.name)) return "traits are owned at runtime";
-	if (is_owning_struct_type(type, status)) return "owning structs are not copyable";
-	// Phase 2a supports scalar captures only (8-byte env fields on both
-	// backends); struct captures are a follow-up.
-	if (status.structs.find((s) => s.name === type.name && !s.is_simple_type)) {
-		return "capturing a struct comes later";
-	}
-	return undefined;
-}
-
-const test_type_names = ["null", "void", "?"];
 
 export default function check_value_node(node: ValueNode, status: CheckStatus): boolean {
 	if (node.value === "null") {
@@ -81,29 +49,22 @@ export default function check_value_node(node: ValueNode, status: CheckStatus): 
 
 	const decl_index = status.values.findLastIndex((v) => v.name === node.value);
 	const decl_value = decl_index >= 0 ? status.values[decl_index] : undefined;
-	// A reference below the current function's value base (set in
-	// check_function_node) is a capture: legal inside a closure lambda — record
-	// it on the enclosing lambda (docs/CLOSURE_PLAN.md Phase 2) — but an error
-	// in a plain nested function. Module globals are file-scope in the
-	// generated code, so accessing one from any function is fine.
-	if (decl_value && decl_index < status.function_value_base && !decl_value.is_global) {
-		const lambda = status.enclosing_closure;
-		if (!lambda) {
-			add_error(
-				status,
-				`Nested function cannot capture outer local '${node.value}'; closures are not supported — pass it as a parameter`,
-				node.start,
-			);
-			return false;
-		}
-		const unsupported = capture_rejection(decl_value, status);
-		if (unsupported) {
-			add_error(status, `Cannot capture '${node.value}' in a closure: ${unsupported}`, node.start);
-			return false;
-		}
-		if (!lambda.captures!.some((c) => c.name === node.value)) {
-			lambda.captures!.push({ name: node.value, type: decl_value.type });
-		}
+	// A closure lambda's captures are recorded funnel-side (type_from_value →
+	// check/utils/captures.ts), which covers every reference form. This only
+	// rejects the plain nested function case, where there is no enclosing
+	// closure to capture into.
+	if (
+		decl_value &&
+		decl_index < status.function_value_base &&
+		!decl_value.is_global &&
+		!status.enclosing_closure
+	) {
+		add_error(
+			status,
+			`Nested function cannot capture outer local '${node.value}'; closures are not supported — pass it as a parameter`,
+			node.start,
+		);
+		return false;
 	}
 	if (decl_value?.borrow_invalidated && !status.is_assignment_target) {
 		const owner = decl_value.borrowed_from ? ` of '${decl_value.borrowed_from}'` : "";
