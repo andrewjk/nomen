@@ -1,6 +1,6 @@
 import { expect, test } from "vite-plus/test";
 
-import format, { format_source } from "../../src/format.ts";
+import format, { format_source } from "../src/format.ts";
 
 test("strips redundant constructor and literal types", () => {
 	// Non-generic constructor form.
