@@ -26,8 +26,10 @@ import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
+import FunctionNode from "../nodes/FunctionNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import RangeNode from "../nodes/RangeNode.ts";
+import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import { emit_address_of } from "./build_access_node.ts";
 import build_array_values_node, { resolve_static_value } from "./build_array_values_node.ts";
@@ -910,17 +912,32 @@ export default function build_declaration_node(
 			emit_data(status, `${node.name}: .space 8`);
 		}
 		if (node.value && node.value.node_type === "func") {
-			// A lambda initializer: build_node leaves the function's address
+			// A lambda initializer: build_node leaves the closure descriptor
 			// in x0 (the definition itself is buffered after this function).
-			// Store it so calls through the local resolve to the function —
-			// without the store the slot held garbage. File scope has no x0
-			// context; the definition alone is the emission there.
+			// Store it so calls through the local resolve through it — without
+			// the store the slot held garbage. File scope has no x0 context;
+			// the definition alone is the emission there.
 			emit_init_value(node.value, nir_init, status);
 			if (status.function_return_label) {
 				if (!status.code.endsWith("\n")) {
 					status.code += "\n";
 				}
 				emit_var_store(status, "x0", node.name, 8);
+			}
+			// A CAPTURING declaration-lambda owns a heap env + descriptor:
+			// register it so scope exit frees them (see emit_destroy_for_decl's
+			// func arm). A capture-free lambda points at a static descriptor
+			// and owns nothing.
+			if ((node.value as FunctionNode).captures?.length) {
+				status.scoped_declarations.push(
+					new DeclarationNode(
+						node.start,
+						node.visibility,
+						node.declaration,
+						node.name,
+						new Type("func"),
+					),
+				);
 			}
 		} else if (node.value) {
 			emit_init_value(node.value, nir_init, status);

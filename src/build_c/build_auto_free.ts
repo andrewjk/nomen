@@ -120,6 +120,18 @@ export function free_scoped_declarations(
 		// keywords (`id`), so every generated reference goes through the
 		// same mangling the declaration site used.
 		const cname = c_function_name(dec.name);
+		// A func-typed local holding a closure descriptor (CLOSURE_PLAN
+		// Phase 2): a capturing closure owns a heap env + heap descriptor
+		// (`owned = 1`); a capture-free one points at a static descriptor
+		// (`owned = 0`) and must not be freed. The runtime flag decides.
+		if (dec.type.name === "func") {
+			if (!commented) {
+				status.code += "\n// Auto-free\n";
+				commented = true;
+			}
+			status.code += `if (${cname} && ${cname}->owned) { free(${cname}->env); free(${cname}); }\n`;
+			continue;
+		}
 		// Call dispose() if it has the Disposable trait
 		const struct = status.structs.find((s) => s.name === dec.type.name);
 		if (struct && struct.traits.includes("Disposable")) {

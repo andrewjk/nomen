@@ -426,6 +426,26 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		status.return_buffer_stack_offset = return_buffer_stack_offset;
 	}
 
+	// A capturing lambda (docs/CLOSURE_PLAN Phase 2): park the hidden env
+	// parameter (x0) in a frame slot and record each capture's field offset
+	// (8 bytes each, scalar captures). Body reads of a captured name load the
+	// env from the slot and the field from the env. Saved/restored with the
+	// other per-function state so nested lambdas can't leak their map.
+	const old_closure_env_slot = status.closure_env_slot;
+	const old_closure_env_offsets = status.closure_env_offsets;
+	if (node.is_closure && node.captures?.length) {
+		const env_slot = allocate_stack_space(status, 8, 8);
+		status.code += `str x0, [x29, #${env_slot}]\n`;
+		status.closure_env_slot = env_slot;
+		status.closure_env_offsets = new Map();
+		for (const [i, cap] of node.captures.entries()) {
+			status.closure_env_offsets.set(cap.name, i * 8);
+		}
+	} else {
+		status.closure_env_slot = undefined;
+		status.closure_env_offsets = undefined;
+	}
+
 	// Save the enclosing function's param-tracking sets so a nested function
 	// build doesn't leak its params into the enclosing scope's statement
 	// phase (e.g. a nested `ref Nursery pool` colliding with a same-named
@@ -1174,6 +1194,8 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.current_function_name = old_function_name;
 	status.stack_size = old_stack_size;
 	status.stack_offsets = old_stack_offsets;
+	status.closure_env_slot = old_closure_env_slot;
+	status.closure_env_offsets = old_closure_env_offsets;
 	status.function_param_regs = old_function_param_regs;
 	status.function_param_vars = old_function_param_vars;
 	status.function_array_params = old_function_array_params;

@@ -119,11 +119,17 @@ export default function check_function_node(func: FunctionNode, status: CheckSta
 	// `ptr T` values, `p[i]` indexing and pointer casts are legal in it.
 	function_status.in_unsafe = !!func.is_unsafe;
 	// Everything inherited from the enclosing scope (now cloned into our
-	// `values`) is a capture target: this function may not reference any of
-	// those names. Record the boundary so check_value_node can reject such
-	// references — Nomen does not implement closures. For a top-level function
-	// the enclosing `values` is empty, so the base is 0.
+	// `values`) is a capture target: a closure lambda may capture it (recorded
+	// by check_value_node), while a plain nested function still may not
+	// reference any of those names. Record the boundary so check_value_node can
+	// tell the two apart. For a top-level function the enclosing `values` is
+	// empty, so the base is 0.
 	function_status.function_value_base = function_status.values.length;
+	// Only a closure lambda can capture (docs/CLOSURE_PLAN.md Phase 2); a
+	// plain nested function or a non-lambda function clears the hook so outer
+	// references keep erroring.
+	function_status.enclosing_closure = func.is_closure ? func : undefined;
+	if (func.is_closure && !func.captures) func.captures = [];
 	// Parallel-length equations are scoped to the function whose params
 	// declared them; a nested function's params may shadow the outer names,
 	// so it starts with a clean slate.

@@ -629,6 +629,25 @@ export function emit_destroy_for_decl(
 	release_heap_string_fields(status, decl_name, decl_type_name);
 	if (moved.has(decl_name)) return;
 
+	// A func-typed local holding a closure descriptor (CLOSURE_PLAN Phase 2):
+	// a capturing closure owns a heap env + descriptor (owned = 1); a
+	// capture-free one points at a static descriptor (owned = 0) and is never
+	// freed. Only decls with a frame slot reach here.
+	if (decl_type_name === "func" && status.stack_offsets?.has(decl_name)) {
+		const skip = `.Lclosure_free_done_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+		emit_var_load(status, "x0", decl_name, 8);
+		status.code += `cbz x0, ${skip}\n`;
+		status.code += `ldr w9, [x0, #16]\n`;
+		status.code += `cbz w9, ${skip}\n`;
+		status.code += `str x0, [sp, #-16]!\n`;
+		status.code += `ldr x0, [x0, #8]\n`;
+		emit_free(status);
+		status.code += `ldr x0, [sp], #16\n`;
+		emit_free(status);
+		status.code += `${skip}:\n`;
+		return;
+	}
+
 	if (status.heap_strings?.has(decl_name)) {
 		if (addr_offset !== undefined) {
 			status.code += `add x0, x0, #${addr_offset}\n`;
@@ -1022,6 +1041,14 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 				emit_free(status);
 				continue;
 			}
+			// A func-typed local holding a capturing closure owns a heap env +
+			// descriptor (CLOSURE_PLAN Phase 2) — reclaim them (the helper's
+			// func arm runs the owned-flag guard; capture-free closures point at
+			// static descriptors and are never freed).
+			if (decl.type.name === "func") {
+				emit_destroy_for_decl(status, decl.name, "func");
+				continue;
+			}
 			// A shallow field-struct borrow (e.g. the hoisted `_param_N` copy
 			// of `diff.changes`) is not destroyed — the owner frees it.
 			if (is_field_struct_borrow(decl)) continue;
@@ -1089,6 +1116,14 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 			emit_free(status);
 			status.code += `ldr x20, [sp], #16\n`;
 			status.code += `ldr x19, [sp], #16\n`;
+			continue;
+		}
+		// A func-typed local holding a capturing closure owns a heap env +
+		// descriptor (CLOSURE_PLAN Phase 2) — reclaim them (the helper's func
+		// arm runs the owned-flag guard; capture-free closures point at static
+		// descriptors and are never freed).
+		if (decl.type.name === "func") {
+			emit_destroy_for_decl(status, decl.name, "func");
 			continue;
 		}
 		// Heap-allocated arrays (e.g. from Array.with with a runtime count):

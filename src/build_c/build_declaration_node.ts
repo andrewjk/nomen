@@ -22,6 +22,7 @@ import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import RangeNode from "../nodes/RangeNode.ts";
+import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_array_values_node from "./build_array_values_node.ts";
 import { struct_needs_destroy_by_name } from "./build_auto_free.ts";
@@ -915,7 +916,31 @@ function build_function_type_declaration(node: DeclarationNode, status: BuildSta
 	// see build_lambda_value). The "declaration" is the definition itself:
 	// no local is emitted, and uses of the name resolve to the function.
 	if (node.value && node.value.node_type === "func") {
-		build_lambda_value(node.value as FunctionNode, status, false);
+		const lambda = node.value as FunctionNode;
+		if (lambda.captures?.length) {
+			// A capturing declaration-lambda: the variable holds a heap
+			// descriptor, because a direct call cannot pass the env (the
+			// checker re-routes calls to it through the value path). Rename
+			// the lambda's emission so it cannot collide with the slot's C
+			// name, then declare the slot and register it for scope-exit
+			// free-if-owned.
+			lambda.label_name = `${lambda.name}_closure`;
+			ensure_closure_runtime(status);
+			status.code += `struct nomen_closure *${node.name} = `;
+			build_lambda_value(lambda, status, true);
+			status.code += `;\n`;
+			status.scoped_declarations.push(
+				new DeclarationNode(
+					node.start,
+					node.visibility,
+					node.declaration,
+					node.name,
+					new Type("func"),
+				),
+			);
+			return;
+		}
+		build_lambda_value(lambda, status, false);
 		return;
 	}
 

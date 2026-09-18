@@ -51,6 +51,22 @@ export default class FunctionNode extends BaseNode implements BlockNode, Returni
 	/** True when this function is defined in the appended System library source. */
 	is_library?: boolean;
 	/**
+	 * True for an anonymous lambda (docs/CLOSURE_PLAN.md): its definition
+	 * carries the hidden env parameter and value positions materialize a
+	 * closure descriptor. Stamped at parse (parse_anonymous_function), so it
+	 * is set for both unnamed value-lambdas and declaration-named ones (which
+	 * are dual-natured: called under their own name AND passed as values).
+	 */
+	is_closure?: boolean;
+	/**
+	 * Captured outer locals (CLOSURE_PLAN Phase 2). One entry per variable the
+	 * lambda body references from an enclosing function; the backends emit an
+	 * env struct with one field per entry and rewrite the body's references
+	 * through it. A capture-free lambda has no entry and never materializes an
+	 * env.
+	 */
+	captures?: { name: string; type: Type }[];
+	/**
 	 * True for a `move out T` return: the method transfers ownership of the
 	 * returned value to the caller (which must then free it), rather than
 	 * lending a borrow. The canonical example is `List.pop`. Symmetric to a

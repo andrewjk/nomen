@@ -48,6 +48,6 @@ export default function build_lambda_value(
 	status.c_loop_frame_depth = saved_loop_frames;
 	status.class_vars_frames = saved_class_frames;
 	if (emit_name) {
-		status.code += build_lambda_closure_value(node, status);
+		status.code += build_lambda_closure_value(node, status, true);
 	}
 }

@@ -6,6 +6,7 @@ import build_parameter_node from "../build_parameter_node.ts";
 import type BuildStatus from "../BuildStatus.ts";
 import c_function_name from "./c_function_name.ts";
 import c_type from "./c_type.ts";
+import { emit_closure_env_type } from "./closure_env.ts";
 
 /**
  * Closure descriptor ABI (docs/CLOSURE_PLAN.md). A func-typed VALUE is a
@@ -140,11 +141,47 @@ function materialize_lambda_descriptor(func: FunctionNode, status: BuildStatus):
 }
 
 /**
- * Emit the C definition of a lambda in VALUE position and return the
- * descriptor expression for it (the value a func-typed slot receives).
+ * Emit a capturing lambda in VALUE position (CLOSURE_PLAN Phase 2): a heap
+ * env struct holding one field per capture (copied from the enclosing scope at
+ * materialization time), plus a heap descriptor (owned = 1) that the holder's
+ * scope-exit free-if-owned arm reclaims.
  */
-export function build_lambda_closure_value(node: FunctionNode, status: BuildStatus): string {
-	build_function_node(node, status);
+function capturing_closure_value(node: FunctionNode, status: BuildStatus): string {
+	const env_name = emit_closure_env_type(node, status);
+	const label = c_function_name(emission_label(node));
+	let out = `({ struct ${env_name} *_e = (struct ${env_name} *)malloc(sizeof(struct ${env_name}));\n`;
+	for (const cap of node.captures ?? []) {
+		const field = c_function_name(cap.name);
+		out += `_e->${field} = `;
+		// The capture expression: the enclosing lambda's env field when the
+		// name is itself captured by an outer closure (nested lambdas), else
+		// the plain mangled C name. A name shadowed by a nearer local can't
+		// reach here — the checker records a capture only when the reference
+		// resolves to the outer value.
+		out += status.closure_env?.get(cap.name) ?? c_function_name(cap.name);
+		out += `;\n`;
+	}
+	out += `struct nomen_closure *_c = (struct nomen_closure *)malloc(sizeof(struct nomen_closure));\n`;
+	out += `_c->code = (void *)${label};\n_c->env = (void *)_e;\n_c->owned = 1;\n_c; })`;
+	return out;
+}
+
+/**
+ * Emit the C definition of a lambda in VALUE position and return the
+ * descriptor expression for it (the value a func-typed slot receives). A
+ * capturing lambda yields a heap descriptor owning its env; a capture-free one
+ * yields a static descriptor.
+ */
+export function build_lambda_closure_value(
+	node: FunctionNode,
+	status: BuildStatus,
+	already_built = false,
+): string {
+	// build_lambda_value buffers the lambda's definition first (C cannot nest
+	// a function definition in an expression) and passes already_built so the
+	// definition isn't emitted a second time here.
+	if (!already_built) build_function_node(node, status);
+	if (node.captures?.length) return capturing_closure_value(node, status);
 	return materialize_lambda_descriptor(node, status);
 }
 

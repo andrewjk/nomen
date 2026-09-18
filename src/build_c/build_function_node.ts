@@ -27,6 +27,7 @@ import array_struct_name from "./utils/array_struct.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import { enter_c_scope, leave_c_scope } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
+import { emit_closure_env_type } from "./utils/closure_env.ts";
 import emit_enum_in_order, { emit_enum_deps_for_struct } from "./utils/emit_enum_in_order.ts";
 import scan_borrow_only_strings from "./utils/scan_borrow_only_strings.ts";
 
@@ -221,6 +222,22 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 
 	status.code += `\n{\n`;
 
+	// A capturing lambda (docs/CLOSURE_PLAN.md Phase 2): unpack the hidden env
+	// parameter and activate the capture-name rewrite for the body. The
+	// prologue and the saved/restored map mirror the other per-function state
+	// below.
+	const old_closure_env = status.closure_env;
+	if ((node as unknown as { is_closure?: boolean }).is_closure && node.captures?.length) {
+		const env_name = emit_closure_env_type(node, status);
+		status.code += `struct ${env_name} *_env = (struct ${env_name} *)_nomen_env;\n`;
+		status.closure_env = new Map();
+		for (const cap of node.captures) {
+			status.closure_env.set(cap.name, `_env->${c_function_name(cap.name)}`);
+		}
+	} else {
+		status.closure_env = undefined;
+	}
+
 	if (is_main_with_init) {
 		const pname = c_function_name(node.params[0].name);
 		status.code += `struct Init _nomen_init_data;\n`;
@@ -386,6 +403,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.nullable_ret_has_param = old_nullable_ret_has;
 	status.current_function_name = old_function_name;
 	status.current_function = old_current_function;
+	status.closure_env = old_closure_env;
 
 	// Always run auto_free at function exit. Functions with explicit returns
 	// already call build_auto_free at each return (which clears

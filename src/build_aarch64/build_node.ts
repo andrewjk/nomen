@@ -1,4 +1,5 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
+import emission_label from "../build_common/emission_label.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import AnonStructNode from "../nodes/AnonStructNode.ts";
@@ -52,7 +53,36 @@ import build_switch_node from "./build_switch_node.ts";
 import build_todo_node from "./build_todo_node.ts";
 import build_value_node from "./build_value_node.ts";
 import build_while_loop_node from "./build_while_loop_node.ts";
+import { emit_malloc } from "./utils/audit.ts";
 import { emit_descriptor_address, materialize_lambda_descriptor_a64 } from "./utils/closure_a64.ts";
+
+/**
+ * Emit a capturing lambda's value (CLOSURE_PLAN Phase 2): heap-allocate the
+ * env, copy each capture (scalar, 8-byte field) from the enclosing scope, then
+ * heap-allocate the descriptor { code, env, owned = 1 }. Leaves the descriptor
+ * pointer in x0. The env pointer is parked on the stack across the capture
+ * builds (build_node clobbers x9/x10 freely).
+ */
+function emit_capturing_closure_value_a64(fn: FunctionNode, status: BuildStatus): void {
+	const env_size = fn.captures!.length * 8;
+	status.code += `mov x0, #${env_size}\n`;
+	emit_malloc(status);
+	status.code += `str x0, [sp, #-16]!\n`;
+	for (const [i, cap] of fn.captures!.entries()) {
+		build_node(new ValueNode(fn.start, cap.name, cap.type), status);
+		if (!status.code.endsWith("\n")) status.code += "\n";
+		status.code += `ldr x9, [sp]\n`;
+		status.code += `str x0, [x9, #${i * 8}]\n`;
+	}
+	status.code += `mov x0, #24\n`;
+	emit_malloc(status);
+	status.code += `ldr x9, [sp], #16\n`;
+	status.code += `str x9, [x0, #8]\n`;
+	status.code += `adr x10, ${emission_label(fn)}\n`;
+	status.code += `str x10, [x0]\n`;
+	status.code += `mov w10, #1\n`;
+	status.code += `str w10, [x0, #16]\n`;
+}
 
 export default function build_node(node: BaseNode, status: BuildStatus, with_semicolon = false) {
 	// Build any associated declarations first, e.g. for function call params
@@ -103,9 +133,17 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 			build_function_node(node as FunctionNode, status);
 			if (status.function_return_label) {
 				// The value is the lambda's closure DESCRIPTOR
-				// (docs/CLOSURE_PLAN.md), not the raw code address.
-				const desc = materialize_lambda_descriptor_a64(node as FunctionNode, status);
-				emit_descriptor_address(status, "x0", desc);
+				// (docs/CLOSURE_PLAN.md), not the raw code address. A capturing
+				// lambda builds a heap env (one 8-byte scalar per capture) plus
+				// a heap descriptor (owned = 1); a capture-free one points at a
+				// static descriptor.
+				const fn = node as FunctionNode;
+				if (fn.captures?.length) {
+					emit_capturing_closure_value_a64(fn, status);
+				} else {
+					const desc = materialize_lambda_descriptor_a64(fn, status);
+					emit_descriptor_address(status, "x0", desc);
+				}
 			}
 			with_semicolon = false;
 			break;

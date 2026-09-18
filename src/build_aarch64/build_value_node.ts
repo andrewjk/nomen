@@ -229,6 +229,18 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 		return;
 	}
 
+	// A captured outer name inside a capturing lambda (CLOSURE_PLAN Phase 2):
+	// load the env pointer from its frame slot and the capture's field from
+	// the env. The checker records a capture only when the reference resolves
+	// to the outer value, so a nearer param/local can't be shadowed — guard
+	// anyway.
+	if (status.closure_env_offsets?.has(value) && !status.function_param_regs?.has(value)) {
+		const off = status.closure_env_offsets.get(value)!;
+		status.code += `ldr x9, [x29, #${status.closure_env_slot}]\n`;
+		status.code += `ldr x0, [x9, #${off}]\n`;
+		return;
+	}
+
 	// Function reference - need the address. A nested function emits under
 	// its uniquified label (stamped via resolved_function at check time).
 	if (node.type?.name === "func") {

@@ -38,10 +38,18 @@ export default interface CheckStatus {
 	 * Index in `values` below which every entry belongs to an *enclosing*
 	 * function rather than the one currently being checked. Set when entering a
 	 * function body (see `check_function_node`); top-level functions get 0.
-	 * Nomen does not implement closures, so any reference to an entry below
-	 * this boundary — a captured outer local/param — is a compile error.
+	 * A reference to an entry below this boundary is a capture: legal inside a
+	 * closure lambda (recorded on `enclosing_closure.captures`), an error in a
+	 * plain nested function.
 	 */
 	function_value_base: number;
+	/**
+	 * The closure lambda whose body is currently being checked, if any
+	 * (docs/CLOSURE_PLAN.md Phase 2). References below `function_value_base`
+	 * are recorded on it as captures. Cleared for ordinary functions and for
+	 * lambdas nested in a non-closure function.
+	 */
+	enclosing_closure?: import("../nodes/FunctionNode.ts").default;
 	/**
 	 * Structs in scope
 	 */

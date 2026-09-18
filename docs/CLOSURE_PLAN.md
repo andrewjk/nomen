@@ -134,7 +134,34 @@ struct emission per lambda, strdup/move capture prologue, free-if-owned arms
 (locals, fields, params), static-vs-heap descriptors. Tests: capture smoke
 per kind, move-only enforcement, audit-balanced frees, lambdas in generic
 bodies (mono clones re-derive captures). SPEC's Anonymous Functions section
-updated (+ test/spec). **Not started.**
+updated (+ test/spec).
+
+> **Status: Phase 2a LANDED — scalar copy-captures.** A lambda may capture
+> outer SCALARS by copy. `check_value_node` records captures on the enclosing
+> closure's `FunctionNode.captures`; strings/owning structs/classes/traits/
+> borrows/arrays/views/pointers/structs/nested closures are rejected with a
+> specific message. A capturing lambda lowers to a heap env struct (one 8-byte
+> field per capture, copied from the enclosing scope at materialization) plus a
+> heap descriptor (`owned = 1`); the lambda body reads captures through the env
+> (C: `_env->name`; aarch64: env pointer parked in a frame slot, `ldr` from
+> `[env, #off]`). A capturing declaration-lambda holds the descriptor in its
+> slot — the checker re-routes calls to it through the func-VALUE path (a direct
+> call can't pass the env) — and the holder frees env+descriptor at scope exit
+> via the descriptor's `owned` flag (capture-free closures point at static
+> descriptors and are never freed). Tests: `test/lambda_capture.test.ts`
+> (snapshot semantics, two captures, zero-arg `out` signature, rejections),
+> audit-balanced on both backends; full suite green.
+>
+> **Deferred to Phase 2b** (sound today via the `owned` flag / static
+> descriptors, recorded rather than enforced): owned captures (strings,
+> owning structs, classes — need an env destructor
+> `destroy_env`/strdup at capture), MOVE captures (donor-local invalidation),
+> storing a capturing closure in a field/container/return (currently leaks the
+> env+descriptor — sound, never dangling — and is a follow-up; passing one to a
+> func-typed param is a borrow, the same accepted posture as class pointers),
+> capturing a struct by copy, and capturing a nested closure. Also landed en
+> route: func-value detection for zero-arg `out` signatures
+> (`func_params !== undefined`), a latent gap.
 
 **Phase 3 — the ASYNC_PLAN_2 payoff (separate landing).** `Thread`/`Fiber`
 de-specialized into library structs over capturing lambdas; the

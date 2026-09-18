@@ -6,6 +6,7 @@ import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_char_literal from "./utils/c_char_literal.ts";
 import c_function_name from "./utils/c_function_name.ts";
+import { find_decl_in_c_scopes } from "./utils/c_scope.ts";
 import { materialize_func_value } from "./utils/closure.ts";
 
 const INT_LITERAL_SUFFIX: Record<string, string> = {
@@ -17,6 +18,19 @@ const INT_LITERAL_SUFFIX: Record<string, string> = {
 
 export default function build_value_node(node: ValueNode, status: BuildStatus) {
 	let value = node.value;
+	// A captured outer name inside a capturing lambda reads from its env
+	// (docs/CLOSURE_PLAN.md Phase 2). The checker records a capture only when
+	// the reference resolves to the outer value, so a nearer param/local of
+	// the lambda can't be shadowed by this rewrite — but guard anyway.
+	if (status.closure_env?.has(value)) {
+		const shadowed =
+			!!status.current_function?.params.some((p) => p.name === value) ||
+			!!find_decl_in_c_scopes(status, value);
+		if (!shadowed) {
+			status.code += status.closure_env.get(value)!;
+			return;
+		}
+	}
 	// A top-level non-primitive `const` (e.g. geometry-type constants like
 	// `DEFAULT_PARAMS`) is inlined at every use site rather than emitted as a
 	// file-scope global — the initializer is typically a struct constructor

@@ -79,6 +79,22 @@ export default interface BuildStatus {
 	closure_definitions?: string;
 	closure_descriptors?: Map<string, string>;
 	/**
+	 * Active closure env while building a lambda body (CLOSURE_PLAN Phase 2):
+	 * captured name → the C lvalue expression that reads it (`_env->name`).
+	 * Names shadowed by the lambda's own params/locals are excluded at the
+	 * lookup site.
+	 */
+	closure_env?: Map<string, string>;
+	/**
+	 * aarch64 closure capture env (CLOSURE_PLAN Phase 2): the frame slot
+	 * holding the current lambda's env pointer, and each capture's field
+	 * offset within it (8 bytes each, scalar captures).
+	 */
+	closure_env_slot?: number;
+	closure_env_offsets?: Map<string, number>;
+	/** Env struct typedefs already emitted (per TU, by struct name). */
+	closure_env_types?: Set<string>;
+	/**
 	 * Module-level statements that cannot live at C file scope (an `async`
 	 * block, an expression statement, a `var` whose initializer is a call —
 	 * none are valid file-scope C) collected by build_block_node's root scan.

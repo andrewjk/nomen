@@ -89,6 +89,13 @@ export default function check_function_call_node(
 
 	let func = find_free_function(status, node.name);
 
+	// A capturing closure's own name must NOT resolve as a direct call: a
+	// direct call cannot pass the env. Fall through to the func-VALUE path
+	// below, which synthesizes the call from the variable's declared signature
+	// and stamps is_func_param — the build then routes it through the closure
+	// descriptor (docs/CLOSURE_PLAN.md Phase 2).
+	if (func?.is_closure && func.captures?.length) func = undefined;
+
 	if (!func) {
 		// Resolve the constructed type's declaration by its SOURCE name,
 		// honouring scope (a nested type on a colliding name carries a
@@ -196,7 +203,10 @@ export default function check_function_call_node(
 		// type (`var func (int, out bool) f2` stores type bool) and would
 		// otherwise miss this branch entirely ("Function not found").
 		const is_func_value =
-			!!param_value && (param_value.type.name === "func" || !!param_value.func_params?.length);
+			!!param_value &&
+			(param_value.type.name === "func" ||
+				param_value.func_params !== undefined ||
+				param_value.func_return_type !== undefined);
 		if (is_func_value && param_value) {
 			func = new FunctionNode(
 				0,

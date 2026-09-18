@@ -132,7 +132,13 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			status.stack.push(decl);
 			check_node(decl.value, status);
 			status.stack.pop();
-			return;
+			// Only a CAPTURING lambda needs the func-typed StackValue below:
+			// the checker re-routes its calls through the value path (a direct
+			// call cannot pass the env), and that path resolves via
+			// `status.values`. A capture-free declaration-lambda keeps the
+			// Phase-1 shape — returning here leaves its name resolving as the
+			// direct function (`func`), which the arg type-check relies on.
+			if (!(decl.value as FunctionNode).captures?.length) return;
 		} else if (decl.value) {
 			if (decl.value.node_type === "value") {
 				// Signature compatibility for a named-function initializer
