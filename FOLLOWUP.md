@@ -339,46 +339,6 @@ frame. That needs forced stack unwinding of suspended frames (or a
 longjmp-style teardown entry), which is a substantial runtime feature and was
 out of scope. Until then cancellation is cooperative only.
 
-## Silent deadlocks: wait-for-graph detector at idle points
-
-Deadlocks fail silently today. The shape that hit the Phase 2 mutex test
-draft — main sends `ack` after the `async` block while a task parks on
-`ack.receive()` inside it (join-before-communicate) — hangs the binary on
-both backends with no diagnostic. Static rules were evaluated and rejected:
-
-- "starts must be read inside join" is redundant with the brace join (which
-  already reads every handle) and forbids documented patterns (race-mode
-  losers, timeout cancellations are never read by design).
-- "no receive across scope" bans the legitimate produce-inside /
-  consume-after-the-brace direction (`Channel.send` is unbounded, so only
-  waiter-inside/producer-outside hangs), misses cycles with no scope
-  crossing at all, and breaks timeout/race recovery choreography.
-- Session types (the real static answer — linearity + protocol-dual
-  checking) type-check the ack protocol cleanly and still miss the hang: the
-  cycle's extra edge is the join at the brace, a temporal fact about nursery
-  scoping, not a channel-state fact. Rust's scoped threads carry the
-  identical hazard; its borrow checker proves spatial properties only.
-  Keep session types in the back pocket as an opt-in stdlib tier if
-  foot-guns accumulate (same governance as the actor plan).
-
-The runtime already materializes the full wait graph at hang time. Detector
-design (Go's "all goroutines are asleep - deadlock!" model):
-
-- Trigger at each would-idle point: a pool worker about to condvar-wait on
-  an empty queue, and the cooperative loop finding nothing runnable.
-- Condition: runnable-fiber queue empty AND no busy workers AND the
-  netpoller holds no pending registered fds AND pending futures exist
-  (nursery-tracked, or still in flight at exit).
-- On trigger: abort with a wait-graph dump — each parked fiber, its park
-  site (future / channel wait list / mutex wait list), the object waited on,
-  and its likely waker (owning nursery / channel / mutex handle).
-- Known false-positive source: raw blocking FFI has no node in the graph —
-  the same limitation as Go's detector. Document as such.
-
-Regression tests: (1) the join-before-communicate shape, (2) an intra-block
-two-task cycle (A locks m then parks on `ch.receive`; B, ch's only sender,
-blocks on `m.lock()`) — neither is statically catchable.
-
 ## Daemon tasks: no detached-spawn form
 
 The one legitimate `std::thread::spawn` use case — a process-lifetime

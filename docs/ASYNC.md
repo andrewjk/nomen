@@ -203,6 +203,35 @@ both use ambient cancellation, and so does Nomen.
 
 None of these require a cancellation parameter.
 
+## Deadlock detection
+
+A total runtime deadlock aborts with a wait-graph dump instead of hanging
+silently (Go's "all goroutines are asleep - deadlock!" model):
+
+```
+fatal error: all tasks are asleep - deadlock! (waiting on a task)
+  task 0x… parked on channel receive (waiters 0x…)
+  task 0x… parked on mutex 0x… (held by task 0x…)
+```
+
+The check runs at the moments a thread commits to blocking forever — an
+indefinite task wait (`Task.result`/`wait`, the nursery join on a raw
+thread) and an idle pool worker's wait when some thread is so committed. It
+fires only when nothing can run: the fiber run queue is empty, no pool task
+is queued or executing, no fd is registered with the netpoller, and at
+least one fiber is parked. Both check paths re-verify after a short sleep,
+so a wake mid-delivery is never misjudged; each parked fiber is dumped with
+its park site (future / channel / mutex / io) and, for a mutex, the
+current holder.
+
+Known blind spot (the same one Go's detector has): a raw blocking call
+holds no node in the wait graph — blocking FFI, a `Thread`-model task
+parked on a `Channel`/`Mutex` condvar (which blocks its worker), or a
+non-fiber thread blocked in `Channel.receive`. A program kept alive only by
+such calls cannot be distinguished from a deadlock and may not be flagged.
+Timeouts and race mode never trip the detector: a deadline can still rescue
+the graph, so timed waits are exempt by design.
+
 ## Sharing data between tasks
 
 Three tiers, in increasing pain:

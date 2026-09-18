@@ -55,6 +55,22 @@ static void __nomen_fiber_wake_waiters(struct nomen_fiber *w);
 static void __nomen_fiber_coop_drain(void);
 // Tentative; the fiber header defines it with an initializer.
 static int __nomen_fiber_coop;
+// Non-fiber threads currently committed to a blocking wait — see the C
+// backend's POOL_HEADER: the worker-side deadlock check only fires when
+// this is nonzero, because a non-fiber thread not blocked here may be
+// mid-statement about to send/wake (invisible to the runtime).
+static int __nomen_block_waiters = 0;
+// Defined (initialized) in the pool section below — see the C backend's
+// POOL_HEADER for the tentative-declaration note. Non-static here to match
+// the pool section's external linkage (a static declaration followed by a
+// non-static definition is a linkage error).
+pthread_mutex_t __nomen_pool_mu;
+pthread_cond_t __nomen_pool_cv;
+// Deadlock detector (defined at the end of FIBER_HEADER_C) — see the C
+// backend's FIBER_HEADER for the full model: commit-point check from the
+// indefinite future waits, worker-side check from the idle pool loop.
+static void __nomen_deadlock_check(const char *site);
+static int __nomen_deadlock_check_worker(void);
 static void __nomen_pool_ensure(void);
 void __nomen_future_wait(struct nomen_future *f) {
 	// Inside a fiber: park the fiber instead of blocking the worker thread.
@@ -72,7 +88,15 @@ void __nomen_future_wait(struct nomen_future *f) {
 			pthread_mutex_unlock(&f->mu);
 			return;
 		}
+		// Block-forever commit — see the C backend's __nomen_future_wait.
+		pthread_mutex_lock(&__nomen_pool_mu);
+		__nomen_block_waiters++;
+		pthread_mutex_unlock(&__nomen_pool_mu);
+		__nomen_deadlock_check("waiting on a task");
 		pthread_cond_wait(&f->cv, &f->mu);
+		pthread_mutex_lock(&__nomen_pool_mu);
+		__nomen_block_waiters--;
+		pthread_mutex_unlock(&__nomen_pool_mu);
 	}
 	pthread_mutex_unlock(&f->mu);
 }
@@ -97,7 +121,16 @@ int __nomen_future_timedwait(struct nomen_future *f, long long deadline_ms) {
 				pthread_mutex_unlock(&f->mu);
 				return 0;
 			}
+			// Indefinite wait — see the C backend's __nomen_future_timedwait:
+			// finite deadlines self-wake and are skipped on purpose.
+			pthread_mutex_lock(&__nomen_pool_mu);
+			__nomen_block_waiters++;
+			pthread_mutex_unlock(&__nomen_pool_mu);
+			__nomen_deadlock_check("waiting on a task");
 			pthread_cond_wait(&f->cv, &f->mu);
+			pthread_mutex_lock(&__nomen_pool_mu);
+			__nomen_block_waiters--;
+			pthread_mutex_unlock(&__nomen_pool_mu);
 		}
 		pthread_mutex_unlock(&f->mu);
 		return 1;
@@ -163,6 +196,11 @@ static void *__nomen_pool_worker(void *arg) {
 		}
 		pthread_mutex_lock(&__nomen_pool_mu);
 		while (!__nomen_pool_head && !__nomen_fiber_pending() && !__nomen_pool_quitting) {
+			// Worker-side deadlock check — see the C backend's pool worker.
+			// A 1 return means the pool state moved while the detector
+			// slept; re-run the predicate instead of condvar-waiting past
+			// the signal that arrived during the release.
+			if (__nomen_deadlock_check_worker()) continue;
 			pthread_cond_wait(&__nomen_pool_cv, &__nomen_pool_mu);
 		}
 		if (__nomen_pool_quitting && !__nomen_pool_head) {
@@ -307,6 +345,8 @@ export function ensure_concurrency_runtime_a64(status: BuildStatus): void {
 
 export const FIBER_HEADER_C = `
 #include <stdint.h>
+#include <stdio.h>
+#include <stddef.h>
 #include <stdlib.h>
 #define NOMEN_FIBER_STACK_SIZE (64 * 1024)
 enum { NOMEN_FIBER_READY, NOMEN_FIBER_RUNNING, NOMEN_FIBER_PARKED, NOMEN_FIBER_DONE };
@@ -322,10 +362,20 @@ struct nomen_fiber {
 	struct nomen_fiber *wait_next;   // primitive waitq link (Channel/Mutex)
 	struct nomen_fiber **park_head;  // waitq we are linked in (NULL otherwise)
 	struct nomen_future *owning_future;  // this fiber's task future
+	struct nomen_fiber *all_next;    // all-fibers registry link (deadlock dump)
+	// Park diagnostics, read by the deadlock dump — see the C backend's
+	// FIBER_HEADER: set only once the park is fully registered, cleared on
+	// resume; PARKED with a NULL kind is a transient and never counted.
+	const char *park_kind;
+	void *park_obj;
 };
 static pthread_mutex_t __nomen_fq_mu = PTHREAD_MUTEX_INITIALIZER;
 static struct nomen_fiber *__nomen_fq_head = NULL;
 static struct nomen_fiber *__nomen_fq_tail = NULL;
+// All live fibers (guarded by __nomen_fq_mu) — see the C backend's
+// FIBER_HEADER: the deadlock dump walks this because a parked fiber lives
+// on no single list.
+static struct nomen_fiber *__nomen_fiber_all = NULL;
 static int __nomen_fiber_coop = 0;
 static __thread int __nomen_coop_running = 0;
 static __thread nomen_fiber_ctx *__nomen_fiber_ret = NULL;
@@ -430,9 +480,12 @@ static void __nomen_fiber_park_on_future(struct nomen_future *f) {
 	}
 	self->next = f->fiber_waiters;
 	f->fiber_waiters = self;
+	self->park_kind = "future";
+	self->park_obj = f;
 	self->state = NOMEN_FIBER_PARKED;
 	pthread_mutex_unlock(&f->mu);
 	__nomen_fiber_pause();
+	self->park_kind = NULL;
 }
 // Run a fiber on the calling thread until it suspends or finishes. Counted
 // as pool-busy so nested Thread spawns grow the pool instead of deadlocking.
@@ -451,6 +504,12 @@ static void __nomen_fiber_run_here(struct nomen_fiber *f) {
 	___nomen_fiber_switch(&ret, &f->ctx);
 	__nomen_current_fiber = NULL;
 	if (f->state == NOMEN_FIBER_DONE) {
+		// Unlink from the all-fibers registry before freeing.
+		pthread_mutex_lock(&__nomen_fq_mu);
+		struct nomen_fiber **all = &__nomen_fiber_all;
+		while (*all && *all != f) all = &(*all)->all_next;
+		if (*all) *all = f->all_next;
+		pthread_mutex_unlock(&__nomen_fq_mu);
 		free(f->stack);
 		free(f);
 	}
@@ -470,6 +529,10 @@ int __nomen_fiber_waitq_park(struct nomen_fiber **head, void *mu, void *cv) {
 	self->wait_next = *head;
 	*head = self;
 	self->park_head = head;
+	// Park kind inferred from the call shape (channel passes its condvar;
+	// the mutex site passes NULL) — see the C backend's FIBER_HEADER.
+	self->park_kind = cv ? "channel" : "mutex";
+	self->park_obj = head;
 	self->state = NOMEN_FIBER_PARKED;
 	pthread_mutex_unlock((pthread_mutex_t *)mu);
 	__nomen_fiber_pause();
@@ -486,6 +549,7 @@ int __nomen_fiber_waitq_park(struct nomen_fiber **head, void *mu, void *cv) {
 		self->park_head = NULL;
 	}
 	self->wait_next = NULL;
+	self->park_kind = NULL;
 	return __nomen_current_cancel_flag && *__nomen_current_cancel_flag ? 0 : 1;
 }
 void __nomen_fiber_waitq_wake(struct nomen_fiber **head) {
@@ -513,6 +577,8 @@ struct nomen_mutex {
 	pthread_mutex_t mu;   // the lock
 	pthread_mutex_t wmu;  // wait-list guard (held only for bookkeeping)
 	struct nomen_fiber *waiters;
+	void *owner;  // current holder (fiber handle; NULL for a non-fiber task) —
+	              // deadlock-dump diagnostics only, read without its own lock
 };
 #endif
 // Allocate and initialize a Mutex handle (Mutex.#init).
@@ -521,11 +587,13 @@ void *__nomen_mutex_create(void) {
 	pthread_mutex_init(&m->mu, NULL);
 	pthread_mutex_init(&m->wmu, NULL);
 	m->waiters = NULL;
+	m->owner = NULL;
 	return m;
 }
 // Unlock and wake fibers parked on the mutex (Mutex.unlock).
 void __nomen_mutex_unlock_wake(void *mp) {
 	struct nomen_mutex *m = (struct nomen_mutex *)mp;
+	m->owner = NULL;
 	pthread_mutex_unlock(&m->mu);
 	pthread_mutex_lock(&m->wmu);
 	__nomen_fiber_waitq_wake(&m->waiters);
@@ -548,14 +616,19 @@ void __nomen_mutex_lock(void *mp) {
 		while (pthread_mutex_trylock(&m->mu) != 0) {
 			__nomen_fiber_yield();
 		}
+		m->owner = __nomen_current_fiber;
 		return;
 	}
 	if (__nomen_current_fiber) {
 		for (;;) {
-			if (pthread_mutex_trylock(&m->mu) == 0) return;
+			if (pthread_mutex_trylock(&m->mu) == 0) {
+				m->owner = __nomen_current_fiber;
+				return;
+			}
 			pthread_mutex_lock(&m->wmu);
 			if (pthread_mutex_trylock(&m->mu) == 0) {
 				pthread_mutex_unlock(&m->wmu);
+				m->owner = __nomen_current_fiber;
 				return;
 			}
 			__nomen_fiber_waitq_park(&m->waiters, &m->wmu, NULL);
@@ -566,10 +639,15 @@ void __nomen_mutex_lock(void *mp) {
 		}
 	}
 	pthread_mutex_lock(&m->mu);
+	m->owner = NULL;
 }
 void __nomen_fiber_yield(void) {
 	struct nomen_fiber *self = __nomen_current_fiber;
 	if (!self) return;
+	// A yield is transient — never present it as a real park to the
+	// deadlock detector (see the C backend's FIBER_HEADER).
+	self->park_kind = NULL;
+	self->park_obj = NULL;
 	self->state = NOMEN_FIBER_PARKED;
 	__nomen_fiber_schedule(self);
 	__nomen_fiber_pause();
@@ -607,6 +685,8 @@ static void __nomen_fiber_spawn_common(void (*fn)(void *), void *args, struct no
 	f->next = NULL;
 	f->wait_next = NULL;
 	f->park_head = NULL;
+	f->park_kind = NULL;             // parked-without-a-kind = transient
+	f->park_obj = NULL;
 	f->owning_future = future;
 	if (future) future->owning_fiber = f;
 	f->stack = NULL;
@@ -626,6 +706,11 @@ static void __nomen_fiber_spawn_common(void (*fn)(void *), void *args, struct no
 	f->ctx.regs[10] = 0;
 	f->ctx.regs[11] = (void *)___nomen_fiber_entry;
 	f->ctx.regs[12] = (void *)sp;
+	// Join the all-fibers registry (deadlock dump) before first schedule.
+	pthread_mutex_lock(&__nomen_fq_mu);
+	f->all_next = __nomen_fiber_all;
+	__nomen_fiber_all = f;
+	pthread_mutex_unlock(&__nomen_fq_mu);
 	__nomen_fiber_schedule(f);
 	if (__nomen_fiber_coop) {
 		if (!__nomen_coop_atexit) {
@@ -817,13 +902,15 @@ int __nomen_io_wait(int fd, int want_write) {
 	if (__nomen_current_cancel_flag && *__nomen_current_cancel_flag) return 0;
 	if (__nomen_current_fiber) {
 		struct nomen_fiber *self = __nomen_current_fiber;
-		// Park BEFORE registering: the poller can fire as soon as the fd is
-		// in the set (it may already be ready), and a wake delivered while
-		// state is still RUNNING would be dropped by schedule()'s guard —
-		// a lost wake with the event already consumed.
+		// Park BEFORE registering (see the C backend's FIBER_HEADER) — and
+		// set the park kind only once the registration is live, so PARKED
+		// with a NULL kind stays the transient the deadlock detector skips.
 		self->state = NOMEN_FIBER_PARKED;
 		struct nomen_io_waiter *w = __nomen_io_register(fd, want_write, self);
+		self->park_kind = "io";
+		self->park_obj = (void *)(intptr_t)fd;
 		__nomen_fiber_pause();
+		self->park_kind = NULL;
 		__nomen_io_unregister(fd, w);
 		return __nomen_current_cancel_flag && *__nomen_current_cancel_flag ? 0 : 1;
 	}
@@ -843,6 +930,147 @@ void __nomen_fiber_spawn(void (*fn)(void *), void *args, struct nomen_future *fu
 }
 void __nomen_fiber_spawn_on(void (*fn)(void *), void *args, struct nomen_future *future, void *stack, size_t stack_size) {
 	__nomen_fiber_spawn_common(fn, args, future, stack, stack_size);
+}
+
+// ---- deadlock detection ("all tasks are asleep", Go's model) ----
+// Mirror of the C backend's FIBER_HEADER detector; read that for the full
+// model. Trigger points are the moments a thread COMMITS to blocking
+// forever: the indefinite future waits (nursery joins, Task.result/wait on
+// a raw thread) and an idle pool worker's wait loop when
+// __nomen_block_waiters says some thread is so committed. Stuck means: run
+// queue empty, pool queue empty, no worker busy, no registered io, and at
+// least one fiber parked with a park kind. Both paths sleep 10 ms and
+// re-verify before firing, so transient states (a wake mid-delivery) are
+// not misjudged. Raw blocking calls outside these primitives (blocking
+// FFI, a Thread-model task parked on a condvar) hold no node in the graph
+// — the same blind spot as Go's detector.
+static int __nomen_deadlock_fired = 0;
+// Caller holds __nomen_pool_mu (it stays held): evaluate everything except
+// the pool counters under fq_mu (+ io_mu), and count parked fibers.
+static int __nomen_deadlock_stuck_locked(int *parked_out) {
+	pthread_mutex_lock(&__nomen_fq_mu);
+	int stuck = __nomen_fq_head == NULL;
+	int parked = 0;
+	for (struct nomen_fiber *f = __nomen_fiber_all; f; f = f->all_next) {
+		if (f->state == NOMEN_FIBER_PARKED && f->park_kind) parked++;
+	}
+	pthread_mutex_lock(&__nomen_io_mu);
+	if (__nomen_io_slots) {
+		for (int i = 0; i < __nomen_io_slots_cap; i++) {
+			if (__nomen_io_slots[i] && __nomen_io_slots[i]->active) {
+				stuck = 0;
+				break;
+			}
+		}
+	}
+	pthread_mutex_unlock(&__nomen_io_mu);
+	pthread_mutex_unlock(&__nomen_fq_mu);
+	*parked_out = parked;
+	return stuck;
+}
+// Dump every parked fiber with its park site. Caller holds fq_mu (and
+// pool_mu where applicable); printing only — the fire paths unlock before
+// exiting, because exit(2) runs the atexit chain (pool shutdown, io
+// shutdown) which must be able to take those locks.
+static void __nomen_deadlock_dump(const char *site) {
+	fprintf(stderr, "fatal error: all tasks are asleep - deadlock! (%s)\\n", site);
+	for (struct nomen_fiber *f = __nomen_fiber_all; f; f = f->all_next) {
+		if (f->state != NOMEN_FIBER_PARKED || !f->park_kind) continue;
+		if (f->park_kind[0] == 'f') {
+			struct nomen_future *fu = (struct nomen_future *)f->park_obj;
+			if (fu && fu->owning_fiber) {
+				fprintf(stderr, "  task %p parked on future %p (awaiting task %p)\\n",
+					(void *)f, (void *)fu, (void *)fu->owning_fiber);
+			} else {
+				fprintf(stderr, "  task %p parked on future %p\\n", (void *)f, (void *)fu);
+			}
+		} else if (f->park_kind[0] == 'c') {
+			fprintf(stderr, "  task %p parked on channel receive (waiters %p)\\n",
+				(void *)f, f->park_obj);
+		} else if (f->park_kind[0] == 'm') {
+			struct nomen_mutex *m =
+				(struct nomen_mutex *)((char *)f->park_obj - offsetof(struct nomen_mutex, waiters));
+			if (m->owner) {
+				fprintf(stderr, "  task %p parked on mutex %p (held by task %p)\\n",
+					(void *)f, (void *)m, m->owner);
+			} else {
+				fprintf(stderr, "  task %p parked on mutex %p (held by a non-fiber task)\\n",
+					(void *)f, (void *)m);
+			}
+		} else {
+			fprintf(stderr, "  task %p parked on io (fd %d)\\n",
+				(void *)f, (int)(intptr_t)f->park_obj);
+		}
+	}
+}
+// Commit-point check: a non-fiber thread is about to condvar-wait forever
+// (future mutex held). Fire when the runtime is fully idle with parked
+// fibers; otherwise sleep-and-reverify catches wakes mid-delivery.
+static void __nomen_deadlock_check(const char *site) {
+	if (__nomen_current_fiber) return;
+	int parked = 0;
+	pthread_mutex_lock(&__nomen_pool_mu);
+	if (__nomen_deadlock_fired) {
+		pthread_mutex_unlock(&__nomen_pool_mu);
+		return;
+	}
+	if (__nomen_pool_head || __nomen_pool_busy ||
+	    !__nomen_deadlock_stuck_locked(&parked) || parked == 0) {
+		pthread_mutex_unlock(&__nomen_pool_mu);
+		return;
+	}
+	// Re-verify lock-free after a short sleep: a just-delivered wake
+	// resolves in microseconds; a real deadlock is unchanged.
+	pthread_mutex_unlock(&__nomen_pool_mu);
+	struct timespec ts = { 0, 10 * 1000 * 1000 };
+	nanosleep(&ts, NULL);
+	pthread_mutex_lock(&__nomen_pool_mu);
+	if (__nomen_deadlock_fired ||
+	    __nomen_pool_head || __nomen_pool_busy ||
+	    !__nomen_deadlock_stuck_locked(&parked) || parked == 0) {
+		pthread_mutex_unlock(&__nomen_pool_mu);
+		return;
+	}
+	__nomen_deadlock_fired = 1;
+	// Hold fq_mu for the registry walk: a fiber woken between the verify
+	// and the dump flips to READY under this lock, and the dump's PARKED
+	// filter skips it.
+	pthread_mutex_lock(&__nomen_fq_mu);
+	__nomen_deadlock_dump(site);
+	pthread_mutex_unlock(&__nomen_fq_mu);
+	pthread_mutex_unlock(&__nomen_pool_mu);
+	// The future's mutex stays held (the caller's); nothing in the atexit
+	// chain needs it.
+	exit(2);
+}
+// Worker-side check: called from the idle worker's wait loop with the pool
+// mutex held. Returns 1 when the pool state changed while the mutex was
+// released for the re-verify sleep, so the caller re-runs its wait
+// predicate instead of condvar-waiting past a lost signal.
+static int __nomen_deadlock_check_worker(void) {
+	if (__nomen_block_waiters == 0) return 0;
+	if (__nomen_pool_head || __nomen_pool_busy || __nomen_deadlock_fired) return 0;
+	int parked = 0;
+	if (!__nomen_deadlock_stuck_locked(&parked) || parked == 0) return 0;
+	// Same re-verify discipline as the commit-point check. The pool mutex
+	// is released for the sleep so a real waker can proceed.
+	pthread_mutex_unlock(&__nomen_pool_mu);
+	struct timespec ts = { 0, 10 * 1000 * 1000 };
+	nanosleep(&ts, NULL);
+	pthread_mutex_lock(&__nomen_pool_mu);
+	if (__nomen_block_waiters == 0) return 1;
+	if (__nomen_pool_head || __nomen_pool_busy || __nomen_pool_quitting ||
+	    __nomen_deadlock_fired) {
+		return 1;
+	}
+	if (!__nomen_deadlock_stuck_locked(&parked) || parked == 0) return 0;
+	__nomen_deadlock_fired = 1;
+	// Hold fq_mu for the registry walk (see the commit-point check).
+	pthread_mutex_lock(&__nomen_fq_mu);
+	__nomen_deadlock_dump("idle worker");
+	pthread_mutex_unlock(&__nomen_fq_mu);
+	pthread_mutex_unlock(&__nomen_pool_mu);
+	exit(2);
 }
 `;
 
