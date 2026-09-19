@@ -4,7 +4,7 @@ import build from "../src/build";
 import check_output from "./check_output";
 import { parse_raw } from "./parse_with_imports";
 
-// Fiber runtime — Phase 1 of ASYNC_PLAN.md. Each runtime test loops over the
+// Fiber runtime — Phase 1 of ASYNC.md. Each runtime test loops over the
 // C and aarch64 backends. A fiber is a stackful coroutine: it parks (frees
 // its worker) instead of blocking, and `Fiber.yield()` hands the worker to
 // the next runnable fiber.

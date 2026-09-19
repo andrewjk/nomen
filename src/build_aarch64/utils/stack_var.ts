@@ -65,7 +65,7 @@ export function is_local_ref_var(name: string, status: BuildStatus): boolean {
 }
 
 export function emit_var_address(status: BuildStatus, reg: string, name: string) {
-	// A captured name inside a capturing lambda (CLOSURE_PLAN Phase 2) lives in
+	// A captured name inside a capturing lambda (CLOSURE.md Phase 2) lives in
 	// the heap env, not this frame — its address is `env + field offset`. Must
 	// come first: `stack_offsets` doesn't know the name, so the global/data
 	// fallback below would emit `adr reg, name` for a stack local.
@@ -126,7 +126,7 @@ export function emit_var_load(status: BuildStatus, reg: string, name: string, si
 		return;
 	}
 	// A captured name lives in the closure env, not this frame
-	// (docs/CLOSURE_PLAN.md). Load the env pointer, then the field. For a fat
+	// (CLOSURE.md). Load the env pointer, then the field. For a fat
 	// string (16 bytes) read the len half first and overwrite the base with
 	// the ptr half.
 	if (status.closure_env_offsets?.has(name) && status.closure_env_slot !== undefined) {
@@ -206,7 +206,7 @@ export function emit_var_load(status: BuildStatus, reg: string, name: string, si
 }
 
 export function emit_var_store(status: BuildStatus, reg: string, name: string, size: number) {
-	// A captured name lives in the closure env (docs/CLOSURE_PLAN.md): store
+	// A captured name lives in the closure env (CLOSURE.md): store
 	// into its field. Use x9 as the env base (callers treat x0 as the value).
 	if (status.closure_env_offsets?.has(name) && status.closure_env_slot !== undefined) {
 		const off = status.closure_env_offsets.get(name)!;

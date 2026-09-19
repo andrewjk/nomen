@@ -5,7 +5,7 @@ import type FunctionNode from "../../nodes/FunctionNode.ts";
 import { get_struct_size } from "./struct_layout.ts";
 
 /**
- * Closure descriptor ABI for the aarch64 backend (docs/CLOSURE_PLAN.md). A
+ * Closure descriptor ABI for the aarch64 backend (CLOSURE.md). A
  * func-typed VALUE is a pointer to a 24-byte descriptor { code, env, owned }
  * embedded in the text stream as data (like string literals). `code` always
  * has the closure ABI (`code(env, args...)` — env in x0): lambdas are

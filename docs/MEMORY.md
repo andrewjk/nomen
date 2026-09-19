@@ -209,20 +209,11 @@ Variables declared inside loop bodies are cleaned up at each iteration. `break` 
 
 ---
 
-## Known Soundness Gaps
-
-These are memory-safety holes that are **not** currently caught at compile time.
-Resolved gaps (owning-struct copies, use-after-move, container-stored class
-leaks) are listed at the end of the section.
-
-### Borrowed references outliving their owner (use-after-free)
+## Borrow Lifetimes
 
 Borrowed class references — obtained from a field access (`h.c`), an accessor
-return, or an intermediate variable — used to carry no lifetime information, so
-a borrow could outlive the instance it points into (UAF).
-
-**Field-access and method-return borrows are now lifetime-checked at compile
-time.** The default for extracting a class reference is a borrow tied to a
+return, or an intermediate variable — are **lifetime-checked at compile
+time**. The default for extracting a class reference is a borrow tied to a
 scope; the compiler tracks a `scope_depth` per variable and rejects any borrow
 that would escape to a shallower (outer) scope:
 
@@ -258,9 +249,33 @@ the live instance each iteration — the variable keeps the last value and stays
 valid after the loop.
 
 The borrow-lifetime check is a scope-depth comparison, not full alias/lifetime
-tracking; deeper escapes through nested data structures aren't modelled. (The
-common cases — direct field access, smuggling through an intermediate variable,
-method returns, and `return` of a borrow — are all caught.)
+tracking — it doesn't model borrows flowing _through_ data structures. It
+doesn't need to: every route that stores a class reference INTO a longer-lived
+structure hits an ownership boundary with its own rejection, verified by probe
+(all rejected at compile time):
+
+- pushing a borrow into a container (`keep.push(temp.at_or_panic(0))`, the
+  element rooted at a callee's local) — "Cannot move a borrowed value into
+  owning parameter … it would create shared ownership";
+- the same via a field-access borrow (`keep.push(o.inner)`) or into a
+  file-scope global container — same rejection;
+- storing a borrow into a class's `move` field (`dst.inner = src.inner`) —
+  "cannot assign class field from another owner, use move with swap";
+- struct fields of class type cannot be declared at all ("struct fields
+  cannot be class types, use a class instead"), so no struct can carry a
+  borrowed pointer.
+
+The sanctioned escapes transfer ownership and are sound: `move` (with swap)
+out of a field, `move_T`/`pop` out of a container, and `field = owned_local`,
+which is a transfer, not an alias (verified: the value survives the donor
+scope with balanced frees).
+
+## Known Soundness Gaps
+
+These are memory-safety holes that are **not** currently caught at compile time.
+Resolved gaps (borrowed references outliving their owner, owning-struct
+copies, use-after-move, container-stored class leaks) are listed at the end of
+the section; borrow lifetimes are documented in their own section above.
 
 ### Tagged-union type confusion (not reachable)
 
@@ -291,6 +306,9 @@ borrows) will be required.**
 
 These were previously open gaps and are now enforced at compile time:
 
+- **Borrowed references outliving their owner** are rejected at compile time
+  (scope-depth lifetime check; every nested-structure store is closed by the
+  owning-parameter and move-field rules). See "Borrow Lifetimes" above.
 - **Owning-struct copies** (`var Own b = a`, `b = a`, and copies out of a field)
   are rejected — byte-copying a struct that owns heap resources would double-free.
   Transfer ownership with `move` (and `swap` for a field), or deep-copy via

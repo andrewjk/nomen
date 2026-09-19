@@ -19,7 +19,7 @@ function collect_traits(node: BaseNode, acc: TraitNode[] = []): TraitNode[] {
 
 export default function build_root_node(node: RootNode, status: BuildStatus) {
 	status.headers += `#include <stdint.h>\n`;
-	// Closure descriptors (docs/CLOSURE_PLAN.md) — the struct must precede
+	// Closure descriptors (CLOSURE.md) — the struct must precede
 	// every function prototype: a tag first appearing inside a prototype has
 	// prototype scope in C, and a later file-scope definition would be a
 	// DIFFERENT type (conflicting-types errors at every func-param
@@ -78,7 +78,7 @@ export default function build_root_node(node: RootNode, status: BuildStatus) {
 		status.lambda_definitions = undefined;
 	}
 	// Closure thunks (named functions used as func values —
-	// docs/CLOSURE_PLAN.md) flush at file scope like lambda definitions;
+	// CLOSURE.md) flush at file scope like lambda definitions;
 	// headers carry their prototypes and the static descriptors.
 	if (status.closure_definitions) {
 		status.code += status.closure_definitions;

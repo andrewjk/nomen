@@ -5,7 +5,7 @@ import build_and_check_output from "./build_and_check_output";
 import check_output from "./check_output";
 import { parse_raw } from "./parse_with_imports";
 
-// docs/CLOSURE_PLAN.md Phase 3d: the spawn sugar's packed env is an OWNING
+// CLOSURE.md Phase 3d: the spawn sugar's packed env is an OWNING
 // struct. String arguments are duplicated at pack (the env frees its copy
 // through the descriptor's destroy_env), and on the C backend an owning
 // value-struct argument is copied and `<T>_destroy`ed — the pre-3d raw

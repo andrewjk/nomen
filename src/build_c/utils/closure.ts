@@ -9,7 +9,7 @@ import c_type from "./c_type.ts";
 import { emit_closure_env_free, emit_closure_env_type } from "./closure_env.ts";
 
 /**
- * Closure descriptor ABI (docs/CLOSURE_PLAN.md). A func-typed VALUE is a
+ * Closure descriptor ABI (CLOSURE.md). A func-typed VALUE is a
  * `struct nomen_closure *` — { code, env, owned }:
  *
  *   - `code` always has the closure ABI (`Ret code(void *env, Args...)`).
@@ -141,7 +141,7 @@ function materialize_lambda_descriptor(func: FunctionNode, status: BuildStatus):
 }
 
 /**
- * Emit a capturing lambda in VALUE position (CLOSURE_PLAN Phase 2): a heap
+ * Emit a capturing lambda in VALUE position (CLOSURE.md Phase 2): a heap
  * env struct holding one field per capture (copied from the enclosing scope at
  * materialization time), plus a heap descriptor (owned = 1) that the holder's
  * scope-exit free-if-owned arm reclaims.

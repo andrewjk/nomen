@@ -5,7 +5,7 @@ import build_and_check_output from "./build_and_check_output";
 import check_output from "./check_output";
 import { parse_raw } from "./parse_with_imports";
 
-// docs/CLOSURE_PLAN.md Phase 3b: Thread/Fiber are real library classes.
+// CLOSURE.md Phase 3b: Thread/Fiber are real library classes.
 // The construction packs its arguments eagerly into a task closure and
 // yields a storable value; .start() / .detach() / .start_on(buf) launch
 // it — from the construction expression itself OR a stored binding — and

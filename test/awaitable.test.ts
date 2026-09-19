@@ -4,7 +4,7 @@ import build_and_check_output from "./build_and_check_output";
 import { parse_raw } from "./parse_with_imports";
 import { compile_module } from "./spec/_helpers.ts";
 
-// ASYNC_PLAN.md, "Awaitable trait": the consumption side of the async model
+// ASYNC.md, "Awaitable trait": the consumption side of the async model
 // is trait-able. `Task<T>` conforms — `wait` may park the current context —
 // so a generic helper taking `Awaitable` waits on any task, whatever started
 // it (a Thread, a Fiber, or a nursery spawn).

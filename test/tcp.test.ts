@@ -5,7 +5,7 @@ import check_output from "./check_output";
 import { parse_raw } from "./parse_with_imports";
 
 // Tcp — non-blocking sockets whose waits park the calling fiber (Phase 3 of
-// ASYNC_PLAN.md). The tests run a real loopback echo server and client on the
+// ASYNC.md). The tests run a real loopback echo server and client on the
 // C and aarch64 backends.
 
 const ARCHITECTURES = ["c", "aarch64"] as const;

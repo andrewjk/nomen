@@ -156,7 +156,7 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 				);
 				if (fn && !is_value_local) {
 					// Stamp the resolution: the build materializes the closure
-					// descriptor at this value site (docs/CLOSURE_PLAN.md).
+					// descriptor at this value site (CLOSURE.md).
 					(decl.value as unknown as { resolved_function?: FunctionNode }).resolved_function = fn;
 					const rhs_params = fn.params.filter((p) => !p.is_self_param);
 					if (rhs_params.length !== decl.func_params.length) {
@@ -228,7 +228,7 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			is_global: !in_function(status),
 			// A func-typed binding initialized from a capturing closure (or
 			// from a local that already owns one) owns a heap descriptor and
-			// is move-only (CLOSURE_PLAN Phase 2c). Initializing from another
+			// is move-only (CLOSURE.md Phase 2c). Initializing from another
 			// owning local transfers ownership, invalidating it.
 			owns_closure: value_owns_closure(decl.value, status) || undefined,
 		});

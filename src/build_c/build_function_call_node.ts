@@ -54,13 +54,13 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 	const is_struct = status.structs.find((s) => s.name === node.name && !s.is_simple_type);
 
 	// A call through a func-typed VALUE (a local/param whose slot holds a
-	// closure descriptor — docs/CLOSURE_PLAN.md): load { code, env } and
+	// closure descriptor — CLOSURE.md): load { code, env } and
 	// call with the env as the first argument:
 	// `((Ret (*)(void *, Ps))v->code)(v->env, args...)`.
 	if (node.is_func_param) {
 		const func = node.resolved_function;
 		// A captured func value inside a lambda body reads from the closure
-		// env (CLOSURE_PLAN Phase 2c): the env field holds the descriptor
+		// env (CLOSURE.md Phase 2c): the env field holds the descriptor
 		// pointer. A nearer param/local shadows the capture.
 		const shadowed =
 			!!status.current_function?.params.some((p) => p.name === node.name) ||
@@ -297,7 +297,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		}
 
 		// A func-typed parameter receives a closure DESCRIPTOR
-		// (docs/CLOSURE_PLAN.md): a bare function-name argument materializes
+		// (CLOSURE.md): a bare function-name argument materializes
 		// its (thunk-backed) descriptor — a lambda arg already arrives as a
 		// descriptor through build_node's func case.
 		const callee_params = node.resolved_function?.params?.filter((p) => !p.is_self_param);

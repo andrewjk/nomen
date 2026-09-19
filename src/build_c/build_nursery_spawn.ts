@@ -8,7 +8,7 @@ import type BuildStatus from "./BuildStatus.ts";
 
 /**
  * Build a `name.start(Thread(fn(args)))` escape-hatch call (C backend,
- * docs/CLOSURE_PLAN.md Phase 3b).
+ * CLOSURE.md Phase 3b).
  *
  * The single parameter is the `Thread(fn(args))` construction (or a
  * Thread-typed expression) — its fields carry the task closure packed

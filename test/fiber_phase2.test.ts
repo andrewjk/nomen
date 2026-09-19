@@ -4,7 +4,7 @@ import build from "../src/build";
 import check_output from "./check_output";
 import { parse_raw } from "./parse_with_imports";
 
-// Phase 2 of ASYNC_PLAN.md — park-aware blocking and cancellation reaching
+// Phase 2 of ASYNC.md — park-aware blocking and cancellation reaching
 // parked fibers:
 //   * Channel.receive parks the fiber (frees the worker) and resumes on send
 //   * Mutex.lock parks instead of blocking
@@ -163,7 +163,7 @@ pub func main = () {
 		// freed while it still owns the mutex). The contender must park on
 		// the mutex's wait list rather than block its worker — unlock wakes
 		// it. This is the shape that pinned a pool worker before the
-		// threaded-model mutex park (see ASYNC_PLAN Phase 2).
+		// threaded-model mutex park (see ASYNC.md Phase 2).
 		const input = `
 import System
 

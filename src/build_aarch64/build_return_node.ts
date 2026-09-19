@@ -730,7 +730,7 @@ export default function build_return_node(
 		// Returning a func-typed local closure transfers the descriptor to the
 		// caller (which frees it via the scope-exit free-if-owned arm); mark it
 		// moved so the callee's return cleanup doesn't double-free it
-		// (CLOSURE_PLAN Phase 2c).
+		// (CLOSURE.md Phase 2c).
 		if (node.value?.node_type === "value") {
 			const ret_name = (node.value as ValueNode).value;
 			const ret_decl = all_scope_frames(status)

@@ -229,7 +229,7 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 		return;
 	}
 
-	// A captured outer name inside a capturing lambda (CLOSURE_PLAN Phase 2):
+	// A captured outer name inside a capturing lambda (CLOSURE.md Phase 2):
 	// load the env pointer from its frame slot and the capture's field from
 	// the env. The checker records a capture only when the reference resolves
 	// to the outer value, so a nearer param/local can't be shadowed — guard
@@ -258,7 +258,7 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 	if (node.type?.name === "func") {
 		const func_offset = status.stack_offsets?.get(value);
 		if (func_offset !== undefined) {
-			// The slot holds a closure descriptor (docs/CLOSURE_PLAN.md).
+			// The slot holds a closure descriptor (CLOSURE.md).
 			status.code += `ldr x0, [x29, #${func_offset}]\n`;
 		} else if (node.resolved_function) {
 			// A named function as a VALUE materializes its closure

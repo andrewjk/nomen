@@ -255,7 +255,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 	}
 
 	if (node.is_func_param) {
-		// The value holds a closure DESCRIPTOR (docs/CLOSURE_PLAN.md):
+		// The value holds a closure DESCRIPTOR (CLOSURE.md):
 		// { code, env, owned }. The visible args marshal into x1.. (slot 1
 		// on — the env occupies x0), then code + env reload from the
 		// descriptor and the call goes through the code pointer. Reloading

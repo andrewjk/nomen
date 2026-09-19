@@ -180,7 +180,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	}
 	if (!is_main_with_init) {
 		let first_param = true;
-		// A closure target (an unnamed lambda — docs/CLOSURE_PLAN.md) carries
+		// A closure target (an unnamed lambda — CLOSURE.md) carries
 		// the hidden env parameter: `Ret name(void *_nomen_env, Args...)`.
 		// Capture-free in Phase 1, so the body never reads it.
 		if ((node as unknown as { is_closure?: boolean }).is_closure) {
@@ -222,7 +222,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 
 	status.code += `\n{\n`;
 
-	// A capturing lambda (docs/CLOSURE_PLAN.md Phase 2): unpack the hidden env
+	// A capturing lambda (CLOSURE.md Phase 2): unpack the hidden env
 	// parameter and activate the capture-name rewrite for the body. The
 	// prologue and the saved/restored map mirror the other per-function state
 	// below.

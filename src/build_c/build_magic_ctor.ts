@@ -18,7 +18,7 @@ import { emit_closure_env_type } from "./utils/closure_env.ts";
 
 /**
  * The compiler-special `Thread(fn(args))` / `Fiber(fn(args))` constructor
- * (docs/CLOSURE_PLAN.md Phase 3b): the construction packs the wrapped call's
+ * (CLOSURE.md Phase 3b): the construction packs the wrapped call's
  * arguments EAGERLY into a task environment, allocates the result slot,
  * cancel flag, and future, and builds the task closure — a heap descriptor
  * over that environment (the same ABI every lambda lowers to; the runtime's

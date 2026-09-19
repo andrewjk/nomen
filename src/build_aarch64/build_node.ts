@@ -64,7 +64,7 @@ import { emit_var_address } from "./utils/stack_var.ts";
 import { get_struct_size } from "./utils/struct_layout.ts";
 
 /**
- * Emit a capturing lambda's value (CLOSURE_PLAN Phase 2): heap-allocate the
+ * Emit a capturing lambda's value (CLOSURE.md Phase 2): heap-allocate the
  * env, copy each capture (scalar, 8-byte field) from the enclosing scope, then
  * heap-allocate the descriptor { code, env, owned = 1 }. Leaves the descriptor
  * pointer in x0. The env pointer is parked on the stack across the capture
@@ -191,7 +191,7 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 			build_function_node(node as FunctionNode, status);
 			if (status.function_return_label) {
 				// The value is the lambda's closure DESCRIPTOR
-				// (docs/CLOSURE_PLAN.md), not the raw code address. A capturing
+				// (CLOSURE.md), not the raw code address. A capturing
 				// lambda builds a heap env (one 8-byte scalar per capture) plus
 				// a heap descriptor (owned = 1); a capture-free one points at a
 				// static descriptor.
@@ -208,7 +208,7 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 		}
 		case "func_call": {
 			// The compiler-special Thread/Fiber(fn(args)) construction packs
-			// its task eagerly and yields the instance (docs/CLOSURE_PLAN.md
+			// its task eagerly and yields the instance (CLOSURE.md
 			// Phase 3b) — it never resolves as a call.
 			const fc = node as FunctionCallNode;
 			if (fc.is_thread_ctor || fc.is_fiber_ctor) {

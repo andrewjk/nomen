@@ -641,7 +641,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 			}
 			// `.start()` on a Thread construction (or a stored Thread
 			// binding) — submit the packed task closure to the pool and
-			// yield Task<T> (docs/CLOSURE_PLAN.md Phase 3b).
+			// yield Task<T> (CLOSURE.md Phase 3b).
 			if (access_func.is_thread_start) {
 				build_thread_start(access_func, node.target, status);
 				return;
@@ -1146,7 +1146,7 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 	);
 	if (access_field.type?.name === "func" && !is_stored_func_field) {
 		// A static method reference as a VALUE materializes its closure
-		// descriptor (docs/CLOSURE_PLAN.md) under the Struct_method label
+		// descriptor (CLOSURE.md) under the Struct_method label
 		// convention.
 		const method = func_field_owner?.functions.find((f) => f.name === access_field.name);
 		if (method) {

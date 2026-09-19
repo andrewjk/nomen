@@ -11,7 +11,7 @@ import { ensure_concurrency_runtime_a64 } from "./build_spawn_node.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
 
 /**
- * Fiber scheduler runtime (ASYNC_PLAN.md Phase 1), aarch64 backend.
+ * Fiber scheduler runtime (ASYNC.md Phase 1), aarch64 backend.
  *
  * Same scheduler as the C backend's FIBER_HEADER (which see), but the
  * context switch is a naked-asm function compiled into the companion C —
@@ -24,7 +24,7 @@ import { allocate_stack_space } from "./utils/stack_var.ts";
 /**
  * Build a `.start()` / `.start_on(buf)` launch on a `Fiber(fn(args))`
  * construction (or a stored Fiber binding) — aarch64 backend
- * (docs/CLOSURE_PLAN.md Phase 3b). A companion-C helper reads the packed
+ * (CLOSURE.md Phase 3b). A companion-C helper reads the packed
  * handles from the receiver's fields and launches the task closure on the
  * fiber scheduler (a heap stack, or the caller's fixed-size array buffer
  * for start_on — validated at check time, >= 16 KB), registers the future

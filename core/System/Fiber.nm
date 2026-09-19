@@ -1,4 +1,4 @@
-// Fiber — a stackful coroutine (ASYNC_PLAN.md Phase 1). Fibers multiplex
+// Fiber — a stackful coroutine (ASYNC.md Phase 1). Fibers multiplex
 // over the worker pool's threads: a parked fiber frees its worker instead of
 // blocking it, so thousands of waiting tasks cost stacks (~64 KB each), not
 // threads (~MB each).
@@ -14,7 +14,7 @@
 // started later (`var f = Fiber(work(n))`, then `f.start()` or
 // `f.start_on(buf)`), and destroying an unstarted Fiber is a programming
 // error that #destroy reports and aborts on (must-start — the library
-// pattern from ASYNC_PLAN_2).
+// pattern from ASYNC.md).
 //
 // `Fiber(fn(args)).start_on(buf)` runs the fiber on a caller-provided
 // fixed-size array stack (>= 16 KB) — the embedded/no-heap path.

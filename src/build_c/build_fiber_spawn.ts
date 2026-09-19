@@ -9,7 +9,7 @@ import type BuildStatus from "./BuildStatus.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 
 /**
- * Fiber scheduler runtime (ASYNC_PLAN.md Phase 1), C backend.
+ * Fiber scheduler runtime (ASYNC.md Phase 1), C backend.
  *
  * Appended immediately after POOL_HEADER (which forward-declares the fiber
  * seam, owns `__nomen_current_fiber` — Runtime.current() — and owns the
@@ -36,7 +36,7 @@ import type_from_value_node from "./utils/type_from_value_node.ts";
 /**
  * Build a `.start()` / `.start_on(buf)` launch on a `Fiber(fn(args))`
  * construction (or a stored Fiber binding) — C backend
- * (docs/CLOSURE_PLAN.md Phase 3b). The receiver's fields carry the task
+ * (CLOSURE.md Phase 3b). The receiver's fields carry the task
  * closure packed eagerly at the construction site, plus the result slot,
  * cancel flag, and future. This launches the closure on the fiber
  * scheduler (a heap stack, or the caller's fixed-size array buffer for

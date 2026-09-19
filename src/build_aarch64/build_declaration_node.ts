@@ -292,7 +292,7 @@ function emit_data(status: BuildStatus, data: string) {
 
 /** The compiler-special Thread/Fiber(fn(args)) construction: never a
  *  struct-init call — build_node's func_call intercept packs the task
- *  eagerly and yields the instance (docs/CLOSURE_PLAN.md Phase 3b). */
+ *  eagerly and yields the instance (CLOSURE.md Phase 3b). */
 function is_magic_spawn_ctor(node: BaseNode): boolean {
 	if (node.node_type !== "func_call") return false;
 	const fc = node as FunctionCallNode;
@@ -958,7 +958,7 @@ export default function build_declaration_node(
 			emit_var_store(status, "x0", node.name, 8);
 			// A func local initialized from a capturing lambda or another
 			// owning closure holds a heap descriptor it frees at scope exit;
-			// a move-transfer marks the source moved (CLOSURE_PLAN Phase 2c).
+			// a move-transfer marks the source moved (CLOSURE.md Phase 2c).
 			const val_is_capturing =
 				node.value.node_type === "func" && !!(node.value as FunctionNode).captures?.length;
 			const val_is_moved = node.value.node_type === "value" && !!(node.value as ValueNode).is_moved;

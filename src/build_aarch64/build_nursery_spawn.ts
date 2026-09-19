@@ -15,7 +15,7 @@ import {
 
 /**
  * Build a `name.start(Thread(fn(args)))` escape-hatch call for aarch64
- * (docs/CLOSURE_PLAN.md Phase 3b).
+ * (CLOSURE.md Phase 3b).
  *
  * A companion-C helper reads the packed handles from the Thread-typed
  * parameter's fields, submits the task closure, and registers the future

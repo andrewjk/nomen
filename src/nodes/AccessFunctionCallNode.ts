@@ -63,14 +63,14 @@ export default class AccessFunctionCallNode extends BaseNode {
 	 * escape-hatch call (target type is `Nursery`, method name is `start`).
 	 * The build phase reads `function_return_type` and emits the spawn
 	 * trampoline against the passed Nursery's runtime futures/count pointers.
-	 * See ASYNC.md and ASYNC_PLAN.md.
+	 * See ASYNC.md and ASYNC.md.
 	 */
 	is_nursery_spawn?: boolean;
 	/**
 	 * Set during checking when this is a `Thread(fn(args)).start()` call —
 	 * the surface form of a direct spawn (target type is `Thread`, method
 	 * name is `start`). The build phase synthesizes a SpawnNode from the
-	 * wrapped call and emits the standard spawn trampoline. See ASYNC_PLAN.md.
+	 * wrapped call and emits the standard spawn trampoline. See ASYNC.md.
 	 */
 	is_thread_start?: boolean;
 	/**
@@ -85,14 +85,14 @@ export default class AccessFunctionCallNode extends BaseNode {
 	 * Set during checking when this is a `Fiber(fn(args)).start()` call —
 	 * the fiber flavor of a direct spawn. The build synthesizes a SpawnNode
 	 * from the wrapped call and emits the fiber trampoline (the launch goes
-	 * to the fiber scheduler instead of the pool). See ASYNC_PLAN.md.
+	 * to the fiber scheduler instead of the pool). See ASYNC.md.
 	 */
 	is_fiber_start?: boolean;
 	/**
 	 * Set during checking when this is a `Fiber(fn(args)).start_on(buf)`
 	 * call — like is_fiber_start, but the fiber runs on the caller-provided
 	 * fixed-size array stack. The single parameter is the buffer. See
-	 * ASYNC_PLAN.md.
+	 * ASYNC.md.
 	 */
 	is_fiber_start_on?: boolean;
 	/**

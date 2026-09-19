@@ -629,7 +629,7 @@ export function emit_destroy_for_decl(
 	release_heap_string_fields(status, decl_name, decl_type_name);
 	if (moved.has(decl_name)) return;
 
-	// A func-typed local holding a closure descriptor (CLOSURE_PLAN Phase 2):
+	// A func-typed local holding a closure descriptor (CLOSURE.md Phase 2):
 	// a capturing closure owns a heap env + descriptor (owned = 1); a
 	// capture-free one points at a static descriptor (owned = 0) and is never
 	// freed. Only decls with a frame slot reach here.
@@ -880,7 +880,7 @@ export function emit_field_destroys(
 			// + descriptor, `owned = 1`) — reclaim it with the same
 			// free-if-owned arm a func-typed local uses. VALUE-struct func
 			// fields stay non-owning (copies share the descriptor), so this is
-			// class-only (CLOSURE_PLAN Phase 2c).
+			// class-only (CLOSURE.md Phase 2c).
 			const actual_offset = base_offset !== undefined ? base_offset + offset : offset;
 			if (decl_name) {
 				emit_base_ptr(status, decl_name, is_class_parent);
@@ -1092,7 +1092,7 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 				continue;
 			}
 			// A func-typed local holding a capturing closure owns a heap env +
-			// descriptor (CLOSURE_PLAN Phase 2) — reclaim them (the helper's
+			// descriptor (CLOSURE.md Phase 2) — reclaim them (the helper's
 			// func arm runs the owned-flag guard; capture-free closures point at
 			// static descriptors and are never freed).
 			if (decl.type.name === "func") {
@@ -1169,7 +1169,7 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 			continue;
 		}
 		// A func-typed local holding a capturing closure owns a heap env +
-		// descriptor (CLOSURE_PLAN Phase 2) — reclaim them (the helper's func
+		// descriptor (CLOSURE.md Phase 2) — reclaim them (the helper's func
 		// arm runs the owned-flag guard; capture-free closures point at static
 		// descriptors and are never freed).
 		if (decl.type.name === "func") {

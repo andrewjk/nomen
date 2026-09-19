@@ -13,7 +13,7 @@ export interface SpawnArgValidation {
 }
 
 /**
- * Validate a spawn's packed arguments (docs/CLOSURE_PLAN.md Phase 3d).
+ * Validate a spawn's packed arguments (CLOSURE.md Phase 3d).
  *
  * Every argument must be Sendable — EXCEPT, inside a nursery
  * (`allow_borrows`), a non-Sendable CLASS or TRAIT argument that is a named

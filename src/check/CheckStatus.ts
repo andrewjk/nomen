@@ -26,7 +26,7 @@ export default interface CheckStatus {
 	 * spawn construction inside a nursery may take BORROW captures of
 	 * non-Sendable class arguments: the nursery joins its tasks at block
 	 * exit, before any block-scoped donor is destroyed, so an aliased
-	 * argument is provably sound there (docs/CLOSURE_PLAN.md Phase 3d).
+	 * argument is provably sound there (CLOSURE.md Phase 3d).
 	 */
 	nursery_depth?: number;
 	/**
@@ -53,7 +53,7 @@ export default interface CheckStatus {
 	function_value_base: number;
 	/**
 	 * The closure lambda whose body is currently being checked, if any
-	 * (docs/CLOSURE_PLAN.md Phase 2). References below `function_value_base`
+	 * (CLOSURE.md Phase 2). References below `function_value_base`
 	 * are recorded on it as captures. Cleared for ordinary functions and for
 	 * lambdas nested in a non-closure function.
 	 */

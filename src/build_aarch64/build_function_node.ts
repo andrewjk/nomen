@@ -267,7 +267,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.stack_offsets = new Map();
 
 	const has_body = node.has_body && node.statements.length > 0;
-	// A closure target (an unnamed lambda — docs/CLOSURE_PLAN.md) carries the
+	// A closure target (an unnamed lambda — CLOSURE.md) carries the
 	// hidden env parameter in the FIRST ABI slot (x0); the visible params
 	// start one slot later. Capture-free in Phase 1, so the env register is
 	// never read.
@@ -436,7 +436,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		status.return_buffer_stack_offset = return_buffer_stack_offset;
 	}
 
-	// A capturing lambda (docs/CLOSURE_PLAN Phase 2): park the hidden env
+	// A capturing lambda (docs/CLOSURE.md Phase 2): park the hidden env
 	// parameter (x0) in a frame slot and record each capture's field offset
 	// (8 bytes each, scalar captures). Body reads of a captured name load the
 	// env from the slot and the field from the env. Saved/restored with the
@@ -450,7 +450,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		status.closure_env_offsets = closure_env_layout_a64(node, status).offsets;
 		// A captured CLASS-BACKED trait reference is a pointer to the heap
 		// instance; register it so vtable dispatch dereferences the env field
-		// (trait_class_for) exactly like a trait-typed local (CLOSURE_PLAN
+		// (trait_class_for) exactly like a trait-typed local (CLOSURE.md
 		// Phase 2c).
 		for (const cap of node.captures) {
 			if (status.traits.find((t) => t.name === cap.type.name)) {
@@ -1192,7 +1192,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		status.code += status.nested_functions;
 		status.nested_functions = undefined;
 	}
-	// Closure thunks + descriptors (docs/CLOSURE_PLAN.md) flush in the same
+	// Closure thunks + descriptors (CLOSURE.md) flush in the same
 	// dead zone: after the function's `ret`, before the next label.
 	if (status.closure_definitions && !is_nested) {
 		status.code += status.closure_definitions;

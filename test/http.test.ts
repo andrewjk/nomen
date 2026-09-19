@@ -11,7 +11,7 @@ import parse_with_imports, { parse_raw } from "./parse_with_imports";
 // touch the network: get/post fail with `HttpError.connect` and `status`
 // stays 0. The loopback tests run a real minimal HTTP server over Tcp and
 // exercise the success path (request build, status parse, body split) on
-// both backends — Http is ported onto Tcp (ASYNC_PLAN.md Phase 3), so the
+// both backends — Http is ported onto Tcp (ASYNC.md Phase 3), so the
 // client parks via the netpoller inside a fiber instead of blocking.
 
 describe("Http Result API", () => {

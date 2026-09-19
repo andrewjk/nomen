@@ -10,7 +10,7 @@ import { build_lambda_closure_value } from "./closure.ts";
  * prototype, so definition order among file-scope functions is irrelevant).
  *
  * The value left in the expression is the lambda's closure DESCRIPTOR (a
- * `struct nomen_closure *` — docs/CLOSURE_PLAN.md): the lambda's definition
+ * `struct nomen_closure *` — CLOSURE.md): the lambda's definition
  * carries the hidden env parameter, and every call through a func value
  * passes the env. Capture-free (Phase 1) lambdas get a static descriptor
  * with a NULL env.

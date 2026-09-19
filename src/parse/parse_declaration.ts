@@ -266,7 +266,7 @@ export function parse_anonymous_function(
 
 	const func = new FunctionNode(start, default_visibility(status), name, new Type(""));
 
-	// EVERY anonymous function is a closure target (docs/CLOSURE_PLAN.md):
+	// EVERY anonymous function is a closure target (CLOSURE.md):
 	// its definition carries the hidden env parameter, direct calls prepend
 	// a NULL env, and value positions materialize a descriptor. Declaration
 	// lambdas are dual-natured (direct-called under their name AND

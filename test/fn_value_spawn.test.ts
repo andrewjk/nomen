@@ -5,7 +5,7 @@ import build_and_check_output from "./build_and_check_output";
 import check_output from "./check_output";
 import { parse_raw } from "./parse_with_imports";
 
-// docs/CLOSURE_PLAN.md Phase 3c: the spawn construction accepts a
+// CLOSURE.md Phase 3c: the spawn construction accepts a
 // zero-argument FUNCTION VALUE — `Thread(() => work(n))`. The lambda's
 // CAPTURES are the eager arguments (Sendable-validated), the task closure
 // is a per-site adapter that calls the value through the descriptor ABI

@@ -29,7 +29,7 @@ function capture_type(value: StackValue): Type {
 /**
  * Whether a func-typed initializer/RHS holds a capturing (heap) closure: a
  * lambda node with captures, or a value reference to a func-typed local that
- * itself owns one. Such values are MOVE-ONLY (CLOSURE_PLAN Phase 2c).
+ * itself owns one. Such values are MOVE-ONLY (CLOSURE.md Phase 2c).
  */
 export function value_owns_closure(node: BaseNode | undefined, status: CheckStatus): boolean {
 	if (!node) return false;
@@ -60,7 +60,7 @@ export function move_closure_source(node: BaseNode | undefined, status: CheckSta
 }
 
 /**
- * Closure capture analysis (docs/CLOSURE_PLAN.md Phase 2). Called from
+ * Closure capture analysis (CLOSURE.md Phase 2). Called from
  * `type_from_value` — the value-resolution funnel — so EVERY reference form is
  * covered (plain reads, method receivers like `n.to_string()`, assignment
  * targets), not just check_value_node's read path.

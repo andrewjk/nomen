@@ -972,7 +972,7 @@ function build_auto_destroy(node: StructNode, status: BuildStatus) {
 		// free-if-owned arm a func-typed local uses. VALUE-struct func fields
 		// stay non-owning (struct copies share the descriptor; the existing
 		// non-owning copy contract), so this arm is class-only
-		// (CLOSURE_PLAN Phase 2c).
+		// (CLOSURE.md Phase 2c).
 		if (field.type.name === "func" && node.is_class) {
 			const f = `((struct nomen_closure *)self->${field.name})`;
 			status.code += `if (${f} && ${f}->owned) { if (${f}->destroy_env) ${f}->destroy_env(${f}->env); free(${f}->env); free(${f}); }\n`;

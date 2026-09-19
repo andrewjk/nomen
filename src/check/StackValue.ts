@@ -166,7 +166,7 @@ export default interface StackValue {
 	/**
 	 * For a func-typed value: true when the slot holds a capturing closure
 	 * (a HEAP env + descriptor, `owned = 1`) rather than a static/capture-free
-	 * descriptor. Such a value is MOVE-ONLY (CLOSURE_PLAN Phase 2c): storing,
+	 * descriptor. Such a value is MOVE-ONLY (CLOSURE.md Phase 2c): storing,
 	 * returning, assigning, or move-capturing it invalidates the source.
 	 */
 	owns_closure?: boolean;

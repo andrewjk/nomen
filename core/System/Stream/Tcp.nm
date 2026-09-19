@@ -5,7 +5,7 @@
 // (freeing its worker) until the socket is readable/writable; on a plain
 // thread the hook blocks in poll(). So the same code scales from a handful of
 // connections to thousands, and no call blocks a shared worker while it
-// waits. See ASYNC_PLAN.md Phase 3.
+// waits. See ASYNC.md Phase 3.
 //
 // Raw helpers return file descriptors / error codes (int-shaped), so the
 // class wrappers construct the Tcp instances in Nomen. `error` mirrors

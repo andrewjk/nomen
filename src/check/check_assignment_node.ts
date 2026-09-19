@@ -374,7 +374,7 @@ export default function check_assignment_node(
 				(f) => f.name === (assign.right_value as ValueNode).value,
 			);
 			// Stamp the resolution: the build materializes the closure
-			// descriptor at this value site (docs/CLOSURE_PLAN.md).
+			// descriptor at this value site (CLOSURE.md).
 			if (rhs_fn) {
 				(assign.right_value as unknown as { resolved_function?: FunctionNode }).resolved_function =
 					rhs_fn;
@@ -473,7 +473,7 @@ export default function check_assignment_node(
 		status.moved_variables.add((assign.right_value as ValueNode).value);
 	}
 
-	// A capturing closure is MOVE-ONLY (CLOSURE_PLAN Phase 2c): assigning it
+	// A capturing closure is MOVE-ONLY (CLOSURE.md Phase 2c): assigning it
 	// (to a local or a func-typed field) transfers the heap descriptor, so the
 	// source local is invalidated. Mark the RHS as moved so the backends don't
 	// also free the donor.

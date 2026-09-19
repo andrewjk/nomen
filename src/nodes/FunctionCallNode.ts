@@ -83,7 +83,7 @@ export default class FunctionCallNode extends BaseNode {
 	resolved_function?: FunctionNode;
 	/**
 	 * Set during checking when this is the compiler-special `Thread(fn(args))`
-	 * constructor — the surface form of a spawn (see ASYNC_PLAN.md). The
+	 * constructor — the surface form of a spawn (see ASYNC.md). The
 	 * single parameter is the call expression to launch. The construction is
 	 * consumed by `.start()` on it (direct spawn, check_access_node) or by
 	 * passing it to a nursery's `.start(...)` (the escape hatch, which
@@ -96,7 +96,7 @@ export default class FunctionCallNode extends BaseNode {
 	/**
 	 * The construction's single parameter is a zero-argument FUNCTION VALUE
 	 * (a lambda literal or a func-typed local, moved) rather than an
-	 * unevaluated call — docs/CLOSURE_PLAN.md Phase 3c, the user-defined
+	 * unevaluated call — CLOSURE.md Phase 3c, the user-defined
 	 * spawnables form: `Thread(() => work(x))`. The task closure wraps the
 	 * given closure through a per-site adapter; its CAPTURES are the eager
 	 * arguments (Sendable-validated).

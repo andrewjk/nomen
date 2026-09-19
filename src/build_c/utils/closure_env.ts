@@ -7,7 +7,7 @@ import c_function_name from "./c_function_name.ts";
 import c_type from "./c_type.ts";
 
 /**
- * Closure capture environments (docs/CLOSURE_PLAN.md Phase 2). A capturing
+ * Closure capture environments (CLOSURE.md Phase 2). A capturing
  * lambda gets a compiler-generated env struct with one field per capture; the
  * value site heap-allocates it and stores it in the closure descriptor. Kept
  * in this leaf module (it imports neither build_node nor build_function_node)

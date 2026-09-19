@@ -19,7 +19,7 @@ export default function synthesize_lambda_name(func: FunctionNode, status: Check
 	func.label_name = name;
 	// Value-position lambdas are closure targets: their definitions carry
 	// the hidden env parameter and they are invoked through descriptors
-	// (docs/CLOSURE_PLAN.md). Declaration-named lambdas (parse_declaration
+	// (CLOSURE.md). Declaration-named lambdas (parse_declaration
 	// names them after the variable) are called directly and never stamped.
 	(func as unknown as { is_closure?: boolean }).is_closure = true;
 	return name;

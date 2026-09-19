@@ -119,13 +119,13 @@ export function free_scoped_declarations(
 		// Ownership was transferred out of this local by a `move`/move-capture
 		// (or a `move` arg to a callee). The new owner's cleanup reclaims it;
 		// freeing here would double-free. Capture envs record the donor in the
-		// same per-function set the `move` paths use (CLOSURE_PLAN Phase 2c).
+		// same per-function set the `move` paths use (CLOSURE.md Phase 2c).
 		if (status.moved?.has(dec.name)) continue;
 		// Emitted C identifier: raw Nomen names may collide with C/ObjC
 		// keywords (`id`), so every generated reference goes through the
 		// same mangling the declaration site used.
 		const cname = c_function_name(dec.name);
-		// A func-typed local holding a closure descriptor (CLOSURE_PLAN
+		// A func-typed local holding a closure descriptor (CLOSURE.md
 		// Phase 2): a capturing closure owns a heap env + heap descriptor
 		// (`owned = 1`); a capture-free one points at a static descriptor
 		// (`owned = 0`) and must not be freed. The runtime flag decides.

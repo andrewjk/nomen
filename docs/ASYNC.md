@@ -1,7 +1,8 @@
 # Async / Concurrency Design
 
 Documents the concurrency model as shipped and the open questions remaining.
-For the user-facing contract, see SPEC.md's "Concurrency" section.
+For the user-facing contract, see SPEC.md's "Concurrency" section; for the
+closure machinery the spawn seam is built on, see [CLOSURE.md](CLOSURE.md).
 
 ## Implementation status
 
@@ -32,25 +33,31 @@ concurrency on both targets.
   receivers; other contexts still block on the condvar. A cancelled fiber
   waiting on an empty channel resumes and returns the zero value rather than
   waiting forever.
-- **`Thread`** — the thread class. `Thread(fn(args)).start()` is a statement
-  (fire-and-forget) or expression yielding `Task<T>`. Args packed via a
-  per-site trampoline, submitted to a global worker pool.
+- **`Thread`** — the thread class (`core/System/Thread.nm`).
+  `Thread(fn(args)).start()` is a statement (fire-and-forget) or expression
+  yielding `Task<T>`; the arguments are evaluated EAGERLY, at the
+  construction. The construction is a real, storable value:
+  `var t = Thread(work(n))` binds the arguments now and `t.start()` runs
+  later — and destroying an unstarted value is a programming error that its
+  `#destroy` reports and aborts on (must-start). Tasks run on a global
+  worker pool.
   `Thread(fn(args)).detach()` is the daemon form: the call runs on its own
   dedicated pthread (never a pool worker), nobody joins it, and process exit
   kills it mid-execution by design — see "Daemon tasks" below.
 - **`async { ... }`** — nursery block. Waits on every spawned task at scope
   exit. The join runs before block-scoped locals are destroyed, so a running
   task can safely hold pointers to nursery-local values.
-- **`Fiber`** — stackful coroutines over the worker pool (ASYNC_PLAN.md
-  Phase 1). `Fiber(fn(args)).start()` returns the same `Task<T>` handle as a
-  thread spawn, but the call runs on a ~64 KB coroutine stack; a fiber that
-  waits (`Task.result`/`wait`) **parks** — freeing its worker — and the
-  completion wakes it (park-before-signal under the future's mutex, kept in a
-  per-future waiter list; the resumer frees the stack at DONE). `Fiber.yield()`
-  yields cooperatively, `Fiber.is_fiber()` reports fiber context, and
+- **`Fiber`** — stackful coroutines over the worker pool
+  (`core/System/Fiber.nm`). `Fiber(fn(args)).start()` returns the same
+  `Task<T>` handle as a thread spawn, but the call runs on a ~64 KB
+  coroutine stack; a fiber that waits (`Task.result`/`wait`) **parks** —
+  freeing its worker — and the completion wakes it (park-before-signal under
+  the future's mutex, kept in a per-future waiter list; the resumer frees
+  the stack at DONE). Like `Thread`, the construction is a storable value
+  with must-start `#destroy`. `Fiber.yield()` yields cooperatively,
+  `Fiber.is_fiber()` reports fiber context, and
   `Fiber(fn(args)).start_on(buf)` runs on a caller-provided fixed-size array
-  stack (>= 16 KB; C backend only for now — aarch64 large-frame addressing
-  limit, see FOLLOWUP.md). `Fiber.set_cooperative(true)` runs fibers on the
+  stack (>= 16 KB). `Fiber.set_cooperative(true)` runs fibers on the
   calling thread and starts no worker threads: they execute at would-block
   waits or process exit (single-threaded/bare-metal mode). Registration is
   unchanged — a fiber spawned in an `async` block is joined at block exit —
@@ -61,6 +68,32 @@ concurrency on both targets.
   `Task.current_cancelled()` at its next checkpoint. Every time a worker
   resumes a fiber it restores that fiber's task-local cancel flag — a worker
   runs many tasks, so the trampoline's entry-time value cannot be relied on.
+  Channel waits in non-fiber contexts poll the cancel flag in bounded
+  slices, so a cancelled thread task's `receive` also returns the zero
+  value.
+- **Spawn arguments are owned by the task env** — string arguments are
+  deep-copied at pack (the env destructor frees its copy), and owning
+  value-struct arguments are copied and destroyed — a raw copy would alias
+  the donor's heap fields and dangle at the donor's scope exit. Class and
+  trait arguments stay shared pointers (the Sendable contract). See
+  [CLOSURE.md](CLOSURE.md) for the packing machinery.
+- **Nursery borrows** — the one Sendable exception: inside `async { }`, a
+  non-Sendable CLASS argument may be passed, where it is a borrow capture —
+  sound because the join at block exit provably bounds the borrow by the
+  donors' lifetimes. The donor must be a named local or parameter (a
+  temporary dies at the statement), and `.detach()` never accepts one (a
+  daemon outlives every scope and must own its arguments).
+- **Function-value constructions** — `Thread(() => work(base))` takes a
+  zero-argument function value in place of the unevaluated call: the
+  lambda's CAPTURES are the eager arguments (Sendable-validated; owning
+  captures move into the task, which owns and disposes the closure). A
+  func-typed binding handed to a construction is moved (use-after-move
+  afterwards). Also accepted by a nursery's `.start(...)`.
+- **`Awaitable`** — the consumption-side trait (`core/System/Awaitable.nm`):
+  park-flavored `func wait = (ref self)`. `Task<T>` conforms, so a generic
+  helper over `Awaitable` waits on any task — thread, fiber, or
+  nursery-spawned. Must-start is deliberately not a trait rule; it is each
+  spawn class's own `#destroy` contract.
 - **Unified `Task<T>` handle** — the future behind every spawn is
   reference-counted and shared between the trampoline, the returned Task, and
   the tracking nursery. Join-once semantics, so a Task captured inside a
@@ -73,11 +106,16 @@ concurrency on both targets.
 - **Cancellation scopes** — `async(timeout: N)` where N is milliseconds.
   Deadline computed before the nursery body runs; `__nomen_future_timedwait()`
   uses `pthread_cond_timedwait` with an absolute deadline. On expiry,
-  remaining tasks are cancelled (cancel_flag set) and briefly waited on
-  before joining.
+  remaining tasks are cancelled (cancel_flag set) and then waited on to
+  completion — unconditionally, because releasing a future under a still-
+  running task would let the block exit free its resources beneath it
+  (a Channel torn down under a still-blocked receiver). A task that never
+  observes cancellation hangs its join instead: the documented
+  kill-trampoline gap (see FOLLOWUP.md), a liveness hole, not a soundness
+  one.
 - **Race mode** — `async(mode: race) { ... }` exits as soon as the first
   spawned task completes (or the timeout fires); remaining tasks are
-  cancelled and joined. Default mode is `all`. Implemented via
+  cancelled and joined to completion. Default mode is `all`. Implemented via
   `__nomen_nursery_race_wait`, which polls each future's done flag every 1ms.
 - **Nursery escape hatch** — a named `async` block (`async pool { }`) binds a
   `Nursery`-typed variable the caller passes with `ref`;
@@ -127,7 +165,8 @@ Thread(flusher(out)).detach()
   owns its own shutdown (a stop channel or flag), not process exit.
 - **No handle, no future, no cancellation** — statement form only;
   `Task.current_cancelled()` is always false inside. Args must be
-  `Sendable`, exactly like `.start()`.
+  `Sendable`, exactly like `.start()` — and must be OWNED: `.detach()`
+  rejects the nursery-borrow form because the daemon outlives every scope.
 
 This is the deliberate exception to structured concurrency, kept honest by
 being explicit: `.start()` creates a bounded, joined task; `.detach()`
@@ -274,32 +313,55 @@ Three tiers, in increasing pain:
 Default stance: **no shared mutable state.** Tasks communicate by moving
 Sendable values (directly or through channels).
 
-## Next steps
+## Roadmap (remaining)
+
+The coroutine-scale arc (fibers, park-aware blocking, the netpoller) is
+shipped; what remains, in rough value order:
+
+- **Fiber stack growth.** Stacks are fixed at 64 KB (~16k tasks/GB). 8 KB
+  initial stacks with growth need either guard-page SIGSEGV handling
+  (library-only, hairy) or compiler-inserted stack-limit checks (small
+  codegen change). The scale lever: millions of tasks.
+- **10k-connection acceptance run.** The netpoller is validated to N = 64
+  concurrent connections (`test/tcp.test.ts`); the coroutine-scale
+  acceptance target has not been attempted.
+- **Parking-reachability lint.** Advisory ("this parks") diagnostics
+  scoped to fiber-reachable code: a baseline of park-capable calls
+  (`Task.result`/`wait`, `Channel.receive`, `Mutex.lock`,
+  `wait_for_io`-backed primitives) plus a channel-end advisory. Explicitly
+  never a rule — see "No function coloring".
+- **`Runtime` trait.** The single-threaded mode is a global flag
+  (`Fiber.set_cooperative`); the planned WorkerRuntime/CooperativeRuntime
+  trait abstraction (custom schedulers without retrofitting) is not built.
+- **io_uring backend.** Linux completion-based I/O alongside the
+  readiness-based kqueue/epoll poller.
+- **Forced-unwind kill trampoline.** Cancellation is cooperative; a task
+  that never polls its flag hangs its nursery's join. The full fix — push a
+  teardown frame onto the parked stack and let `#destroy` unwinding run —
+  needs forced stack unwinding of suspended frames (see FOLLOWUP.md).
+- **FFI reentry.** An `extern` C callback that calls back into Nomen gets
+  no fiber context (Go's cgo problem).
+- **Windows.** x86-64 `switch_context` plus an IOCP-shaped
+  `wait_for_io` (or a wepoll-style shim).
+- **`Fiber.dump_all()`.** Debug aid: backtrace-per-fiber, scheduler
+  visibility.
+- **`await` sugar.** Shelved by design — `.result()` inside a fiber IS the
+  await point; a keyword would be decorative (see "No function coloring").
+  Valid only as `await <Awaitable>` ≡ `.wait()` if grep-ability is ever
+  missed.
 
 Open questions, intentionally not yet in scope:
 
-- **`await` / suspension.** Needed only if Nomen adds cooperative async I/O
-  (state-machine or stack-switching transform). Not required for thread-pool
-  tasks, where `Task<T>.result` just blocks. Revisit when there's a real I/O
-  story.
 - **Typed `Channel<T>`.** `Channel` nodes carry a two-word `(value, len)`
   payload: `send`/`receive` move uint64 words, and
   `send_string`/`receive_string` marshal fat strings (copy-in on send,
   move-out on receive — a message survives its sender's scope exit). A fully
   typed wrapper (`Channel<T>` with native T payloads) remains a
   straightforward stdlib addition.
-- **Coroutine-scale concurrency.** Now planned: stackful fibers as a
-  library, built on a tiny stack-switch primitive with park-aware blocking
-  points and an ambient runtime — no coloring, no function transform, no new
-  keywords in v1. The design, phases, and open questions live in
-  [ASYNC_PLAN.md](ASYNC_PLAN.md). (The original framing — Go-style
-  stack-switching vs the state-machine path — and the full trade-off analysis
-  lived in earlier revisions of this file; see git history if needed. In
-  short: the state-machine path trades a permanent language tax for a lighter
-  runtime, a bad trade for a small language; the chosen path keeps the
-  colorless semantics either way.)
 - **Effect handlers.** A future effect system (a la Koka/OCaml 5) could give
-  colorless concurrency without OS-thread-per-task. Large language feature;
+  colorless concurrency without OS-thread-per-task — and `switch_context`
+  quietly makes handlers a possible library/stdlib feature later, without
+  committing to effect rows in the type system. Large language feature;
   not planned.
 - **Error propagation model.** Should nursery failures panic, return a
   `Result`, or both? Tied to the broader error-handling story.

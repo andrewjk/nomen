@@ -439,7 +439,7 @@ export default function check_function_call(
 		// of a VALUE struct cannot own it: value structs are copyable, so the
 		// copies would share (and double-free) the descriptor, and the
 		// non-owning func-field contract leaves it un-destroyed. Reject at the
-		// constructor (CLOSURE_PLAN Phase 2c). Class func fields own it via
+		// constructor (CLOSURE.md Phase 2c). Class func fields own it via
 		// `<Class>_destroy`.
 		if (func_param && func.name === "#init" && value_owns_closure(param, status)) {
 			const ctor_struct = status.structs.find((s) => s.name === node.name);
@@ -808,7 +808,7 @@ export default function check_function_call(
 
 		// A bare function name passed to a func-typed parameter: stamp the
 		// resolution so the build materializes the closure descriptor at
-		// this value site (docs/CLOSURE_PLAN.md).
+		// this value site (CLOSURE.md).
 		if (
 			expected_type.name === "func" &&
 			param.node_type === "value" &&

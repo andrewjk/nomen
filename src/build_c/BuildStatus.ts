@@ -67,7 +67,7 @@ export default interface BuildStatus {
 	 */
 	lambda_definitions?: string;
 	/**
-	 * Closure support (docs/CLOSURE_PLAN.md). A func-typed VALUE is a
+	 * Closure support (CLOSURE.md). A func-typed VALUE is a
 	 * `struct nomen_closure *` — { code, env, owned }. These flags/buffers
 	 * back the descriptor ABI: the struct definition is emitted once per TU;
 	 * thunk definitions (named functions used as values — a thunk forwards
@@ -79,14 +79,14 @@ export default interface BuildStatus {
 	closure_definitions?: string;
 	closure_descriptors?: Map<string, string>;
 	/**
-	 * Active closure env while building a lambda body (CLOSURE_PLAN Phase 2):
+	 * Active closure env while building a lambda body (CLOSURE.md Phase 2):
 	 * captured name → the C lvalue expression that reads it (`_env->name`).
 	 * Names shadowed by the lambda's own params/locals are excluded at the
 	 * lookup site.
 	 */
 	closure_env?: Map<string, string>;
 	/**
-	 * aarch64 closure capture env (CLOSURE_PLAN Phase 2): the frame slot
+	 * aarch64 closure capture env (CLOSURE.md Phase 2): the frame slot
 	 * holding the current lambda's env pointer, and each capture's field
 	 * offset within it (8 bytes each, scalar captures).
 	 */

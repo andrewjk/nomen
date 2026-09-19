@@ -14,7 +14,7 @@ import { allocate_stack_space } from "./utils/stack_var.ts";
 
 /**
  * The compiler-special `Thread(fn(args))` / `Fiber(fn(args))` construction
- * (docs/CLOSURE_PLAN.md Phase 3b), aarch64 backend: the per-site trampoline
+ * (CLOSURE.md Phase 3b), aarch64 backend: the per-site trampoline
  * and a constructor helper are emitted as C in the companion file; the
  * assembly stages the wrapped call's arguments and calls the helper, which
  * packs the env, allocates the future machinery, builds the task closure,

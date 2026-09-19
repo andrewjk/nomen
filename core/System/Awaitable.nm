@@ -1,4 +1,4 @@
-// Awaitable — the consumption side of the async model (ASYNC_PLAN.md,
+// Awaitable — the consumption side of the async model (ASYNC.md,
 // "Awaitable trait"). Park-flavored by design: `wait` MAY park the current
 // execution context (inside a fiber it parks the fiber and frees its
 // worker; on a raw thread it blocks). A Rust-style poll/Waker trait is
@@ -10,7 +10,7 @@
 // The trait is deliberately NOT the place for must-start semantics —
 // start-optional lifecycles are legitimate for user primitives; must-start
 // is a per-struct `#destroy` contract (see Thread.nm / Fiber.nm and
-// ASYNC_PLAN_2.md).
+// ASYNC.md).
 
 /**
  * Something whose completion can be waited on (may park the current context)

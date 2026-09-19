@@ -42,7 +42,7 @@ export default function build_parameter_node(node: ParameterNode, status: BuildS
 		}
 	}
 
-	// Function-type parameter: a closure descriptor (docs/CLOSURE_PLAN.md) —
+	// Function-type parameter: a closure descriptor (CLOSURE.md) —
 	// `struct nomen_closure *f` holding { code, env, owned }. The callee
 	// invokes through the descriptor (`code(env, args...)`); a raw body
 	// forwards through the same two words. The old typed

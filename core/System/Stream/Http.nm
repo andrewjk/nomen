@@ -9,7 +9,7 @@
  *
  * Every wait rides Tcp's netpoller hook: inside a Fiber the request parks
  * (freeing its worker) instead of blocking — the same `Http` code scales
- * from one call to thousands of concurrent fibers. See ASYNC_PLAN.md
+ * from one call to thousands of concurrent fibers. See ASYNC.md
  * Phase 3.
  *
  * URLs may carry an explicit port (`http://host:8080/path`); the default is

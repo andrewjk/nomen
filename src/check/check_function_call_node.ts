@@ -64,7 +64,7 @@ export default function check_function_call_node(
 	status: CheckStatus,
 ): boolean {
 	// `Thread(fn(args))` / `Fiber(fn(args))` — the compiler-special spawn
-	// constructors (see ASYNC_PLAN.md, docs/CLOSURE_PLAN.md Phase 3b). A
+	// constructors (see ASYNC.md, CLOSURE.md Phase 3b). A
 	// user-declared function shadows either; a USER struct named `Thread`
 	// shadows it (the stdlib's own Thread/Fiber classes carry the library
 	// `is_library` stamp, which user declarations never carry — they ARE
@@ -73,7 +73,7 @@ export default function check_function_call_node(
 	// Sendable-validated eagerly (they are packed into the task env at the
 	// construction site), and the construction is typed as the monomorphized
 	// library class Thread<T> / Fiber<T> — a real, storable value whose
-	// `#destroy` enforces must-start (the library pattern, ASYNC_PLAN_2).
+	// `#destroy` enforces must-start (the library pattern, ASYNC.md).
 	// Task<T> stamping stays with the consumers — `.start()` on the result,
 	// or a nursery's `.start(Thread(fn(args)))` escape hatch.
 	const magic_ctor =
@@ -90,7 +90,7 @@ export default function check_function_call_node(
 	// The construction takes an UNEVALUATED CALL (`Thread(work(n))`) or a
 	// zero-argument FUNCTION VALUE (`Thread(() => work(n))` — a lambda
 	// literal, or a func-typed local which the construction MOVES;
-	// docs/CLOSURE_PLAN.md Phase 3c, user-defined spawnables). A func-typed
+	// CLOSURE.md Phase 3c, user-defined spawnables). A func-typed
 	// local's StackValue carries its signature in func_params (its `type`
 	// is the RETURN type).
 	const first = node.params[0];
@@ -123,7 +123,7 @@ export default function check_function_call_node(
 	// direct call cannot pass the env. Fall through to the func-VALUE path
 	// below, which synthesizes the call from the variable's declared signature
 	// and stamps is_func_param — the build then routes it through the closure
-	// descriptor (docs/CLOSURE_PLAN.md Phase 2).
+	// descriptor (CLOSURE.md Phase 2).
 	if (func?.is_closure && func.captures?.length) func = undefined;
 
 	if (!func) {
@@ -240,7 +240,7 @@ export default function check_function_call_node(
 				param_value.func_return_type !== undefined);
 		if (is_func_value && param_value) {
 			// Calling a CAPTURED func value from inside a lambda is itself a
-			// capture (CLOSURE_PLAN Phase 2c): resolve it through the funnel
+			// capture (CLOSURE.md Phase 2c): resolve it through the funnel
 			// so the enclosing closure records it (a nested capturing closure
 			// is move-captured; a capture-free one needs no env).
 			maybe_record_capture(node.name, param_value, param_index, status);
@@ -1479,13 +1479,13 @@ function derive_annotations_for_access_func(
  * constructor. Resolves the wrapped call (function resolution, argument
  * types, return type), validates Sendable on every argument (they are
  * packed into the task environment EAGERLY, at the construction site —
- * docs/CLOSURE_PLAN.md Phase 3b), and stamps the construction as the
+ * CLOSURE.md Phase 3b), and stamps the construction as the
  * monomorphized library class `Thread<T>` / `Fiber<T>` (T = the wrapped
  * call's return type, uint64 for void — the same convention as Task<T>).
  * The result is a real, storable value: `.start()` / `.detach()` /
  * `.start_on(buf)` launch it (from the construction expression itself or a
  * stored binding), and its `#destroy` enforces must-start (the library
- * pattern from ASYNC_PLAN_2).
+ * pattern from ASYNC.md).
  */
 function check_magic_ctor(
 	node: FunctionCallNode,
@@ -1499,7 +1499,7 @@ function check_magic_ctor(
 	// captures become the eager arguments) — or `Thread(job)` where job is
 	// a zero-argument func-typed LOCAL, which the construction MOVES (the
 	// task owns and disposes the closure; a later use of the local is a
-	// use-after-move error). docs/CLOSURE_PLAN.md Phase 3c.
+	// use-after-move error). CLOSURE.md Phase 3c.
 	if (first.node_type !== "func_call") {
 		return check_magic_ctor_fn_value(node, status, name, first);
 	}
@@ -1573,7 +1573,7 @@ function check_magic_ctor_fn_value(
 		}
 		// Value-position lambdas are closures: synthesize the emission name
 		// and stamp is_closure so the definition carries the hidden env and
-		// captures are recorded during the body check (docs/CLOSURE_PLAN.md
+		// captures are recorded during the body check (CLOSURE.md
 		// Phase 2).
 		if (!lambda.name) synthesize_lambda_name(lambda, status);
 		if (!check_node(lambda, status)) return false;

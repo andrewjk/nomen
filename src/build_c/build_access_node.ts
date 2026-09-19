@@ -43,7 +43,7 @@ function view_element_c_type(view_type: Type, status: BuildStatus): string {
 
 /**
  * A call through a func-typed struct FIELD (`s.f(args)`): the field is a
- * `void *` slot holding a closure descriptor (docs/CLOSURE_PLAN.md) —
+ * `void *` slot holding a closure descriptor (CLOSURE.md) —
  * load { code, env } and call with the env first:
  * `((<ret> (*)(void *, <params>))((struct nomen_closure *)<field>)->code)
  *    (((struct nomen_closure *)<field>)->env, <args>)`.
@@ -144,7 +144,7 @@ export function build_vtable_target(node: BaseNode, status: BuildStatus) {
 		}
 		// A CAPTURED trait/class receiver lives in the closure env as a
 		// pointer (`_env->name`); emit it directly — taking its address would
-		// pass the env slot, not the instance (CLOSURE_PLAN Phase 2c).
+		// pass the env slot, not the instance (CLOSURE.md Phase 2c).
 		const captured_shadowed =
 			!!status.current_function?.params.some((p) => p.name === name) ||
 			!!find_decl_in_c_scopes(status, name);
@@ -427,7 +427,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				);
 				if (target_struct) {
 					// A static method reference as a VALUE materializes its
-					// closure descriptor (docs/CLOSURE_PLAN.md) — the target
+					// closure descriptor (CLOSURE.md) — the target
 					// method's signature is unchanged; the descriptor's thunk
 					// forwards (env, args...). The method's emission label is
 					// the `Struct_method` convention (the same name the
@@ -514,7 +514,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 			}
 			// `.start()` on a Thread construction (or a stored Thread
 			// binding) — the surface form of a direct spawn
-			// (docs/CLOSURE_PLAN.md Phase 3b). The receiver's fields carry
+			// (CLOSURE.md Phase 3b). The receiver's fields carry
 			// the task closure packed eagerly at the construction site;
 			// submit it to the pool and yield Task<T>.
 			if (access_func.is_thread_start) {

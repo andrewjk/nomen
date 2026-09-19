@@ -945,7 +945,7 @@ function build_function_type_declaration(node: DeclarationNode, status: BuildSta
 	}
 
 	// Otherwise, generate a closure-descriptor declaration
-	// (docs/CLOSURE_PLAN.md): `struct nomen_closure *f = <descriptor>;` —
+	// (CLOSURE.md): `struct nomen_closure *f = <descriptor>;` —
 	// the value is a static (thunk-backed) descriptor for a named function,
 	// or a lambda descriptor via build_node's func case.
 	ensure_closure_runtime(status);
@@ -962,7 +962,7 @@ function build_function_type_declaration(node: DeclarationNode, status: BuildSta
 	}
 	// A func local initialized from a capturing lambda or from another owning
 	// closure holds a heap descriptor it must free at scope exit
-	// (CLOSURE_PLAN Phase 2c). The source of a move-transfer is spliced so the
+	// (CLOSURE.md Phase 2c). The source of a move-transfer is spliced so the
 	// backends don't also free it.
 	const value_is_capturing_lambda =
 		node.value?.node_type === "func" && !!(node.value as FunctionNode).captures?.length;

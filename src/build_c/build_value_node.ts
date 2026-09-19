@@ -19,7 +19,7 @@ const INT_LITERAL_SUFFIX: Record<string, string> = {
 export default function build_value_node(node: ValueNode, status: BuildStatus) {
 	let value = node.value;
 	// A captured outer name inside a capturing lambda reads from its env
-	// (docs/CLOSURE_PLAN.md Phase 2). The checker records a capture only when
+	// (CLOSURE.md Phase 2). The checker records a capture only when
 	// the reference resolves to the outer value, so a nearer param/local of
 	// the lambda can't be shadowed by this rewrite — but guard anyway.
 	if (status.closure_env?.has(value)) {
@@ -74,7 +74,7 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 	} else if (node.resolved_function) {
 		// A bare function reference used as a VALUE (any resolved function —
 		// nested or top-level). It materializes its closure DESCRIPTOR
-		// (docs/CLOSURE_PLAN.md): a bare code pointer can't be invoked
+		// (CLOSURE.md): a bare code pointer can't be invoked
 		// through the { code, env } ABI. (A function CALL is a func_call
 		// node and never reaches build_value_node.)
 		status.code += materialize_func_value(node.resolved_function, status);

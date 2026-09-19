@@ -309,11 +309,11 @@ reachable by driving `Buffer`/`ClassBuffer` directly. Remediation shipped
 
 ## Bare `Thread(fn(args))` construction is inert and unchecked — RESOLVED (closures Phase 3b)
 
-RESOLVED by docs/CLOSURE_PLAN.md Phase 3b: `Thread`/`Fiber` are now real
+RESOLVED by CLOSURE.md (phase 3b): `Thread`/`Fiber` are now real
 library classes, the construction is a storable value whose arguments are
 bound eagerly, and a value that is never started aborts at `#destroy` with
 an explanation (`__nomen_spawn_must_start_abort`) — the library must-start
-pattern ASYNC_PLAN_2 recommended, replacing both the inert link-time-error
+pattern ASYNC.md recommends, replacing both the inert link-time-error
 failure mode and the transitional syntactic rule (which was never needed:
 making the type real made the dynamic check sufficient). Kept below for
 the historical record of the original report.
@@ -328,10 +328,10 @@ unresolved `Thread` function, producing an unhelpful link-time error.
 
 The broader design question (de-special-casing into a normal constructor,
 an `Awaitable` trait, static-vs-`#destroy` must-start enforcement) is
-analyzed in [docs/ASYNC_PLAN_2.md](docs/ASYNC_PLAN_2.md) and landed as
-CLOSURE_PLAN Phase 3b.
+analyzed in ASYNC.md's "Shared mutable state" companion analysis and landed as
+closures phases 3b/3c (see CLOSURE.md).
 
-## Kill-trampoline teardown for parked fibers (ASYNC_PLAN Phase 2, deferred)
+## Kill-trampoline teardown for parked fibers (deferred)
 
 Nursery cancel/timeout wakes a parked fiber (see `__nomen_future_cancel`) and
 the fiber then exits cooperatively by polling `Task.current_cancelled()` at
@@ -360,9 +360,9 @@ every live frame. That needs forced stack unwinding of suspended frames
 (or a longjmp-style teardown entry), a substantial runtime feature, and
 until then cancellation is cooperative only.
 
-## Advisory parking-lint content (ASYNC_PLAN Phase 4)
+## Advisory parking-lint content (remaining)
 
-ASYNC_PLAN scopes the lint to fiber-reachable code; the deadlock-design
+The lint is scoped to fiber-reachable code; the deadlock-design
 discussion settled its content:
 
 - Baseline: flag park-capable calls (`Task.result`/`result_uint64`/`wait`,
@@ -377,10 +377,10 @@ discussion settled its content:
   consume-after-the-brace must keep compiling, and timeout/race recovery
   choreography relies on cross-block sends.
 
-## Phase 4 remainder (pointer — ASYNC_PLAN.md is the source of truth)
+## Phase 4 remainder
 
-Unchanged from ASYNC_PLAN.md Phase 4: 8 KB initial stacks + growth (guard
+Unchanged — the remaining Phase 4 items: 8 KB initial stacks + growth (guard
 page + SIGSEGV handler vs compiler-inserted stack-limit checks), `await`
 sugar, an io_uring runtime, the parking lint (above), plus the Phase 3
 leftover: the 10k-connection acceptance run (N = 64 is the tested ceiling).
-Recorded here as a pointer only, to avoid doc drift.
+Recorded here as a pointer only; ASYNC.md's "Roadmap" is the source of truth.

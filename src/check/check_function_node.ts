@@ -125,7 +125,7 @@ export default function check_function_node(func: FunctionNode, status: CheckSta
 	// tell the two apart. For a top-level function the enclosing `values` is
 	// empty, so the base is 0.
 	function_status.function_value_base = function_status.values.length;
-	// Only a closure lambda can capture (docs/CLOSURE_PLAN.md Phase 2); a
+	// Only a closure lambda can capture (CLOSURE.md Phase 2); a
 	// plain nested function or a non-lambda function clears the hook so outer
 	// references keep erroring.
 	function_status.enclosing_closure = func.is_closure ? func : undefined;
@@ -174,7 +174,7 @@ export default function check_function_node(func: FunctionNode, status: CheckSta
 	check_block_node(func, function_status);
 
 	// Move-captures transfer ownership of the donating local into the
-	// lambda's env (docs/CLOSURE_PLAN.md Phase 2c part 2): invalidate it in
+	// lambda's env (CLOSURE.md Phase 2c part 2): invalidate it in
 	// the ENCLOSING scope so a later direct use is a use-after-move. The
 	// capture references inside the lambda body see the donor below
 	// `function_value_base`, so they are never flagged. `status` here is the

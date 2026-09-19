@@ -798,7 +798,7 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 					continue;
 				} else if (field.type.name === "func") {
 					// A func-typed default is a function VALUE: store its
-					// closure DESCRIPTOR (docs/CLOSURE_PLAN.md) — the raw
+					// closure DESCRIPTOR (CLOSURE.md) — the raw
 					// code address can't be invoked through { code, env }.
 					const fn = (field.value as any).resolved_function;
 					const desc = fn
@@ -859,7 +859,7 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 				status.function_return_label = prev_return_label;
 				if (!status.code.endsWith("\n")) status.code += "\n";
 				// The field stores the lambda's closure DESCRIPTOR
-				// (docs/CLOSURE_PLAN.md).
+				// (CLOSURE.md).
 				const desc = materialize_lambda_descriptor_a64(field.value as FunctionNode, status);
 				emit_descriptor_address(status, "x1", desc);
 				emit_typed_store(status, "x1", "x19", offset, 8);
@@ -1151,7 +1151,7 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 					continue;
 				} else if (field.type.name === "func") {
 					// A func-typed default is a function VALUE: store its
-					// closure DESCRIPTOR (docs/CLOSURE_PLAN.md) — the raw
+					// closure DESCRIPTOR (CLOSURE.md) — the raw
 					// code address can't be invoked through { code, env }.
 					const fn = (field.value as any).resolved_function;
 					const desc = fn

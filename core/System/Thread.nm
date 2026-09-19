@@ -1,4 +1,4 @@
-// Thread — a task running on the shared worker pool (docs/CLOSURE_PLAN.md
+// Thread — a task running on the shared worker pool (CLOSURE.md
 // Phase 3b). `Thread(fn(args))` constructs a Thread value: the arguments are
 // evaluated eagerly and packed into a task closure (a heap closure
 // descriptor over the pooled-args environment — the same ABI every lambda

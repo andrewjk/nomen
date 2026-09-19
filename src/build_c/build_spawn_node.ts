@@ -28,7 +28,7 @@ export const POOL_HEADER = `
 #include <pthread.h>
 #include <stdio.h>
 #include <time.h>
-// The spawn runtime speaks the closure descriptor ABI (docs/CLOSURE_PLAN.md):
+// The spawn runtime speaks the closure descriptor ABI (CLOSURE.md):
 // a submitted task IS a "struct nomen_closure *" whose code receives the
 // closure itself ("void (*)(struct nomen_closure *)" — env is reachable
 // through it). The preamble (build_root_node) already defines the struct in
@@ -65,7 +65,7 @@ void __nomen_spawn_must_start_abort(void) {
 	abort();
 }
 static __thread unsigned long long *__nomen_current_cancel_flag = NULL;
-// Fiber runtime (ASYNC_PLAN.md Phase 1). The pool and the fiber scheduler
+// Fiber runtime (ASYNC.md Phase 1). The pool and the fiber scheduler
 // share one header text: this block owns the future machinery and declares
 // the fiber seam; FIBER_HEADER (appended immediately after) defines the
 // scheduler. A worker drains runnable fibers between pool tasks, so a
@@ -374,7 +374,7 @@ static int __nomen_nursery_race_wait(struct nomen_future **futures, int count, l
 		nanosleep(&sleep_ts, NULL);
 	}
 }
-// Register a future with a nursery's growable list (ASYNC_PLAN.md Phase 3:
+// Register a future with a nursery's growable list (ASYNC.md Phase 3:
 // the fixed 65536-entry array was both a ceiling and a 512 KB allocation for
 // tiny blocks). "slots" points at the list's storage slot (which starts NULL
 // and grows by realloc — the join loop and any passed Nursery see updates
@@ -867,7 +867,7 @@ static void __nomen_fiber_spawn_common(struct nomen_closure *task, struct nomen_
 	}
 }
 
-// ---- async I/O: netpoller (ASYNC_PLAN.md Phase 3) ----
+// ---- async I/O: netpoller (ASYNC.md Phase 3) ----
 // Sockets are registered here by __nomen_io_wait. A poller thread waits on
 // kqueue (darwin) / epoll (linux) and schedules the parked fiber when its fd
 // is ready. Non-fiber contexts fall back to a short pollloop so the cancel
@@ -1237,7 +1237,7 @@ static int __nomen_deadlock_check_worker(void) {
 
 /**
  * Build a `.start()` launch on a `Thread(fn(args))` construction — the
- * surface form of a direct spawn (docs/CLOSURE_PLAN.md Phase 3b). The
+ * surface form of a direct spawn (CLOSURE.md Phase 3b). The
  * receiver is the construction expression itself or any Thread-typed
  * expression (a stored `var t = Thread(...)` binding); its fields carry the
  * task closure packed eagerly at the construction site, plus the result
@@ -1412,7 +1412,7 @@ export function spawn_arg_c_types(call: FunctionCallNode, status: BuildStatus): 
 /**
  * Resolve each spawn argument's TYPE (the callee's declared parameter when
  * resolvable, else the argument's own) — the ownership classification for
- * the task env reads these (docs/CLOSURE_PLAN.md Phase 3d: the env is an
+ * the task env reads these (CLOSURE.md Phase 3d: the env is an
  * OWNING struct — string args are duplicated at pack and freed by the env
  * destructor; owning value-struct args get `<T>_destroy` on the env's
  * copy).

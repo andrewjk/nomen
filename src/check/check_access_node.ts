@@ -439,7 +439,7 @@ function check_access_function_node(
 	// Escape hatch: `name.start(Thread(fn(args)))` spawns the wrapped call
 	// into the nursery referenced by the receiver. The single parameter is
 	// the compiler-special Thread constructor wrapping the call to spawn.
-	// See ASYNC.md, "Escape hatch: passing the nursery", and ASYNC_PLAN.md.
+	// See ASYNC.md, "Escape hatch: passing the nursery", and ASYNC.md.
 	// Special-cased (rather than a real method on Nursery) because the spawn
 	// needs the per-site trampoline machinery.
 	if (target_type.name === "Nursery" && node.name === "start") {
@@ -447,8 +447,8 @@ function check_access_function_node(
 	}
 
 	// `Thread(fn(args)).start()` and `Fiber(fn(args)).start[_on](buf)` — the
-	// surface forms of a direct spawn (see ASYNC_PLAN.md,
-	// docs/CLOSURE_PLAN.md Phase 3b). The receiver is the magic constructor
+	// surface forms of a direct spawn (see ASYNC.md,
+	// CLOSURE.md Phase 3b). The receiver is the magic constructor
 	// or ANY expression of the spawn class's type (a stored
 	// `var t = Thread(...)` binding may be started later). `.start()`
 	// launches the packed task and yields Task<T>; special-cased (rather
@@ -982,7 +982,7 @@ function returns_value(node: BaseNode, visited: Set<BaseNode> = new Set()): bool
  * parameter is the compiler-special Thread constructor wrapping the call to
  * spawn; checking the wrapped call resolves the function, matches argument
  * types, and computes the return type. Enforces Sendable on every argument
- * and types the expression as `Task<T>`. See ASYNC.md and ASYNC_PLAN.md.
+ * and types the expression as `Task<T>`. See ASYNC.md and ASYNC.md.
  */
 function check_nursery_spawn(node: AccessFunctionCallNode, status: CheckStatus): boolean {
 	if (node.params.length !== 1) {
@@ -997,7 +997,7 @@ function check_nursery_spawn(node: AccessFunctionCallNode, status: CheckStatus):
 	// The escape hatch's params are not pre-checked — check the Thread
 	// constructor here (this runs check_magic_ctor: the unevaluated-call
 	// form, or the Phase 3c function-value form — a lambda literal or a
-	// moved func-typed local; docs/CLOSURE_PLAN.md Phase 3c).
+	// moved func-typed local; CLOSURE.md Phase 3c).
 	if (ctor.node_type !== "func_call" || !check_function_call_node(ctor, status)) {
 		add_error(
 			status,
@@ -1041,8 +1041,8 @@ function check_nursery_spawn(node: AccessFunctionCallNode, status: CheckStatus):
 
 /**
  * Check a `Thread(fn(args)).start()` / `Fiber(fn(args)).start[_on](buf)`
- * call — the surface forms of a direct spawn (see ASYNC_PLAN.md,
- * docs/CLOSURE_PLAN.md Phase 3b). The receiver is the magic constructor
+ * call — the surface forms of a direct spawn (see ASYNC.md,
+ * CLOSURE.md Phase 3b). The receiver is the magic constructor
  * (already checked — its args were packed eagerly) or any expression of
  * the spawn class's type; this types the expression as `Task<T>`. For
  * `start_on`, also validates the stack buffer: a fixed-size array of at

@@ -3,7 +3,7 @@ import { describe, expect, test } from "vite-plus/test";
 import build_and_check_output from "./build_and_check_output";
 import parse_with_imports, { parse_raw } from "./parse_with_imports";
 
-// Closure captures (docs/CLOSURE_PLAN.md Phase 2a): a lambda may capture outer
+// Closure captures (CLOSURE.md Phase 2a): a lambda may capture outer
 // SCALARS by copy. The value site heap-allocates an env struct (one 8-byte
 // field per capture) and a heap descriptor; the holder (a func-typed local)
 // frees both at scope exit (audit-balanced). Strings/owning values/classes and

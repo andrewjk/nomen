@@ -134,7 +134,7 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 		}
 		case "func_call": {
 			// The compiler-special Thread/Fiber(fn(args)) construction packs
-			// its task eagerly and yields the instance (docs/CLOSURE_PLAN.md
+			// its task eagerly and yields the instance (CLOSURE.md
 			// Phase 3b) — it never resolves as a call.
 			const fc = node as FunctionCallNode;
 			if (fc.is_thread_ctor || fc.is_fiber_ctor) {
