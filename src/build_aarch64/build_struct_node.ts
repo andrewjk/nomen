@@ -2170,6 +2170,10 @@ function build_struct_traits(node: StructNode, status: BuildStatus) {
 
 	status.vtable_data += `.p2align 3\n`;
 	status.vtable_data += `_${node.name}_traits:\n`;
+	// Exported (even in single-TU builds) so the companion C — which cannot
+	// see asm symbols otherwise (separate objects) — can install the vtable
+	// pointer for instances it constructs (e.g. spawn-built Task handles).
+	status.vtable_data += `.globl _${node.name}_traits\n`;
 	// Slot [0] = destroy funcs (or 0); slots [1..traits.length] = per-trait
 	// funcs. The trait dispatch site in build_access_node.ts shifts
 	// trait_index by +1 to skip the destroy slot.

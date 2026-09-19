@@ -642,8 +642,22 @@ static int __nomen_fiber_waitq_park(struct nomen_fiber **head, void *mu, void *c
 	if (__nomen_current_cancel_flag && *__nomen_current_cancel_flag) return 0;
 	struct nomen_fiber *self = __nomen_current_fiber;
 	if (!self) {
-		pthread_cond_wait((pthread_cond_t *)cv, (pthread_mutex_t *)mu);
-		return 1;
+		// A plain thread task: block in bounded slices so a cancellation it
+		// cannot otherwise see (the producer was cancelled before sending)
+		// still returns the zero value — the cooperative contract. An
+		// unbounded cond_wait here would hold the task's future past the
+		// nursery join's grace period while the block exit tears the
+		// channel down under the still-blocked task.
+		if (__nomen_current_cancel_flag && *__nomen_current_cancel_flag) return 0;
+		struct timespec ts;
+		clock_gettime(CLOCK_REALTIME, &ts);
+		ts.tv_nsec += 100 * 1000 * 1000;
+		if (ts.tv_nsec >= 1000000000L) {
+			ts.tv_sec += 1;
+			ts.tv_nsec -= 1000000000L;
+		}
+		pthread_cond_timedwait((pthread_cond_t *)cv, (pthread_mutex_t *)mu, &ts);
+		return __nomen_current_cancel_flag && *__nomen_current_cancel_flag ? 0 : 1;
 	}
 	self->wait_next = *head;
 	*head = self;
@@ -1300,6 +1314,8 @@ export function build_thread_start(
 		// assigns and yield the pointer. The handle is fully usable whether
 		// or not a nursery also tracks the future (join-once semantics).
 		status.code += `\tstruct ${mono_task_name} *_task = (struct ${mono_task_name} *)malloc(sizeof(struct ${mono_task_name}));\n`;
+		// Install the vtable: the handle is trait-dispatchable (Awaitable).
+		status.code += `\t_task->_vt = &_${mono_task_name}_traits;\n`;
 		status.code += `\t_task->handle = 0;\n`;
 		status.code += `\t_task->done = 0;\n`;
 		status.code += `\t_task->result_slot = (unsigned long long)_result_ptr;\n`;
@@ -1378,7 +1394,31 @@ function spawn_result_type_arg(return_type: { name?: string } | undefined): Type
  * resolved at build time.
  */
 export function spawn_arg_c_types(call: FunctionCallNode, status: BuildStatus): string[] {
-	const arg_c_types: string[] = [];
+	return spawn_arg_types(call, status).map((t) => {
+		const mono_name = mono_type_name(t);
+		const is_class = !!status.structs.find((s) => s.name === mono_name && s.is_class);
+		const is_trait = !!status.traits.find((t) => t.name === mono_name);
+		if (is_class || is_trait) return `struct ${mono_name} *`;
+		// A known VALUE struct rides by value and needs the `struct` tag
+		// (c_type's bare name is only valid for builtins).
+		const is_struct = !!status.structs.find(
+			(s) => s.name === mono_name && !s.is_simple_type && !s.is_class,
+		);
+		if (is_struct) return `struct ${mono_name}`;
+		return c_type(mono_name);
+	});
+}
+
+/**
+ * Resolve each spawn argument's TYPE (the callee's declared parameter when
+ * resolvable, else the argument's own) — the ownership classification for
+ * the task env reads these (docs/CLOSURE_PLAN.md Phase 3d: the env is an
+ * OWNING struct — string args are duplicated at pack and freed by the env
+ * destructor; owning value-struct args get `<T>_destroy` on the env's
+ * copy).
+ */
+export function spawn_arg_types(call: FunctionCallNode, status: BuildStatus): Type[] {
+	const arg_types: Type[] = [];
 	const callee = find_spawn_callee(call.name, status);
 	const callee_params = callee?.params?.filter((p) => !p.is_self_param) ?? [];
 	for (let i = 0; i < call.params.length; i++) {
@@ -1389,12 +1429,9 @@ export function spawn_arg_c_types(call: FunctionCallNode, status: BuildStatus): 
 			callee_params[i]?.type && is_resolvable_c_type(callee_params[i].type!, status)
 				? callee_params[i].type!
 				: type_from_value_node(call.params[i]);
-		const mono_name = mono_type_name(param_type);
-		const is_class = !!status.structs.find((s) => s.name === mono_name && s.is_class);
-		const is_trait = !!status.traits.find((t) => t.name === mono_name);
-		arg_c_types.push(is_class || is_trait ? `struct ${mono_name} *` : c_type(mono_name));
+		arg_types.push(param_type);
 	}
-	return arg_c_types;
+	return arg_types;
 }
 
 /** Whether a Nomen type name lowers to a real C type in this build: a

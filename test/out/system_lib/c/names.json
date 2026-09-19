@@ -62,6 +62,7 @@
 	"Disposable",
 	"Viewable",
 	"Sendable",
+	"Awaitable",
 	"Enumerable",
 	"bool",
 	"int",

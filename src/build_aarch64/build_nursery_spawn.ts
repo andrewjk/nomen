@@ -57,7 +57,7 @@ export default function build_nursery_spawn(
 	// --- Companion C: the launch helper ---
 	let c = `// --- nursery spawn site ${id} ---\n`;
 	c += `void *${helper_name}(void *self, void **__nomen_nursery_futures, int *__nomen_nursery_count, int *__nomen_nursery_cap) {\n`;
-	c += `\tstruct ${mono_thread} *t = (struct ${mono_thread} *)self;\n`;
+	c += `\textern void *${mono_task_name}_traits[];\n\textern void *${mono_task_name}_traits[];\n\tstruct ${mono_thread} *t = (struct ${mono_thread} *)self;\n`;
 	c += `\tstruct nomen_future *f = (struct nomen_future *)t->future;\n`;
 	c += `\tvoid *result_ptr = (void *)t->result_slot;\n`;
 	c += `\tunsigned long long *cancel_ptr = (unsigned long long *)t->cancel_flag;\n`;
@@ -76,6 +76,7 @@ export default function build_nursery_spawn(
 		c += `\treturn (void *)0;\n`;
 	} else {
 		c += `\tstruct ${mono_task_name} *task = (struct ${mono_task_name} *)malloc(sizeof(struct ${mono_task_name}));\n`;
+		c += `\ttask->_vt = (void **)${mono_task_name}_traits;\n`;
 		c += `\ttask->handle = 0;\n`;
 		c += `\ttask->done = 0;\n`;
 		c += `\ttask->result_slot = (unsigned long long)result_ptr;\n`;

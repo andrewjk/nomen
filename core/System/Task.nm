@@ -14,9 +14,10 @@
 // See ASYNC.md for the design.
 
 /**
- * A handle to an asynchronously-running computation, backed by a shared thread pool
+ * A handle to an asynchronously-running computation, backed by a shared thread pool.
+ * Conforms to `Awaitable`: `.wait()` may park the current execution context.
  **/
-pub class Task<T> : Sendable {
+pub class Task<T> : Sendable, Awaitable {
 	pub var uint64 handle = 0
 	pub var done = false
 	pub var uint64 result_slot = 0

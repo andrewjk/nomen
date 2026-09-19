@@ -587,8 +587,19 @@ int __nomen_fiber_waitq_park(struct nomen_fiber **head, void *mu, void *cv) {
 	if (__nomen_current_cancel_flag && *__nomen_current_cancel_flag) return 0;
 	struct nomen_fiber *self = __nomen_current_fiber;
 	if (!self) {
-		pthread_cond_wait((pthread_cond_t *)cv, (pthread_mutex_t *)mu);
-		return 1;
+		// A plain thread task: bounded waits so a cancellation it cannot
+		// otherwise see still returns the zero value (the cooperative
+		// contract) — see the C backend's FIBER_HEADER for the full note.
+		if (__nomen_current_cancel_flag && *__nomen_current_cancel_flag) return 0;
+		struct timespec ts;
+		clock_gettime(CLOCK_REALTIME, &ts);
+		ts.tv_nsec += 100 * 1000 * 1000;
+		if (ts.tv_nsec >= 1000000000L) {
+			ts.tv_sec += 1;
+			ts.tv_nsec -= 1000000000L;
+		}
+		pthread_cond_timedwait((pthread_cond_t *)cv, (pthread_mutex_t *)mu, &ts);
+		return __nomen_current_cancel_flag && *__nomen_current_cancel_flag ? 0 : 1;
 	}
 	self->wait_next = *head;
 	*head = self;
@@ -1186,7 +1197,7 @@ export default function build_thread_start(
 		c += `, void **__nomen_nursery_futures, int *__nomen_nursery_count, int *__nomen_nursery_cap`;
 	}
 	c += `) {\n`;
-	c += `\tstruct ${mono_thread} *t = (struct ${mono_thread} *)self;\n`;
+	c += `\textern void *${mono_task_name}_traits[];\n\tstruct ${mono_thread} *t = (struct ${mono_thread} *)self;\n`;
 	c += `\tstruct nomen_future *f = (struct nomen_future *)t->future;\n`;
 	c += `\tvoid *result_ptr = (void *)t->result_slot;\n`;
 	c += `\tunsigned long long *cancel_ptr = (unsigned long long *)t->cancel_flag;\n`;
@@ -1207,6 +1218,7 @@ export default function build_thread_start(
 		c += `\treturn (void *)0;\n`;
 	} else {
 		c += `\tstruct ${mono_task_name} *task = (struct ${mono_task_name} *)malloc(sizeof(struct ${mono_task_name}));\n`;
+		c += `\ttask->_vt = (void **)${mono_task_name}_traits;\n`;
 		c += `\ttask->handle = 0;\n`;
 		c += `\ttask->done = 0;\n`;
 		c += `\ttask->result_slot = (unsigned long long)result_ptr;\n`;

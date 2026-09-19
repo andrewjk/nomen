@@ -2055,7 +2055,7 @@ function is_index_member_store(node: AssignmentNode): boolean {
  * the checker on the index node; falls back to resolving through the
  * pointer expression's type.
  */
-function index_elem_type(index: IndexNode, status: BuildStatus): Type {
+function index_elem_type(index: IndexNode, _status: BuildStatus): Type {
 	if (index.type?.name) return index.type;
 	const target_type = type_from_value_node(index.target);
 	return new Type(target_type.name);

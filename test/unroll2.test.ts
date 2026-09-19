@@ -41,7 +41,6 @@ const SUM_LOOP = [
 
 test("the cycle duplicates body and guard exactly once", () => {
 	const out = unroll(SUM_LOOP);
-	const text = out.join("\n");
 	// pre-guard + original + duplicate = 3 guard instances
 	expect(out.filter((l) => l === "cmp x24, x25").length).toBe(3);
 	// both copies keep their own increment — final j is bit-identical

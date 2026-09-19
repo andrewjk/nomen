@@ -307,37 +307,58 @@ reachable by driving `Buffer`/`ClassBuffer` directly. Remediation shipped
    slab inside `alloc` while keeping the exact cap needs per-element destroy
    (owning `T`), so it is deferred.
 
-## Bare `Thread(fn(args))` construction is inert and unchecked (ASYNC_PLAN Phase 0)
+## Bare `Thread(fn(args))` construction is inert and unchecked — RESOLVED (closures Phase 3b)
+
+RESOLVED by docs/CLOSURE_PLAN.md Phase 3b: `Thread`/`Fiber` are now real
+library classes, the construction is a storable value whose arguments are
+bound eagerly, and a value that is never started aborts at `#destroy` with
+an explanation (`__nomen_spawn_must_start_abort`) — the library must-start
+pattern ASYNC_PLAN_2 recommended, replacing both the inert link-time-error
+failure mode and the transitional syntactic rule (which was never needed:
+making the type real made the dynamic check sufficient). Kept below for
+the historical record of the original report.
 
 `Thread(fn(args))` is a compiler-special constructor (see
-`check_thread_ctor` in `src/check/check_function_call_node.ts`). It is meant
+`check_magic_ctor` in `src/check/check_function_call_node.ts`). It is meant
 to be consumed immediately — by `.start()` (direct spawn) or by
 `name.start(Thread(...))` (the nursery escape hatch). A construction that is
 never consumed (e.g. `var t = Thread(work(0))` with no `.start()`) type-checks
-(it is stamped with the inert type `Thread`, which has no fields or methods)
-but spawns nothing, and the checker never flags it. Downstream, the C backend
-would try to emit a call to an unresolved `Thread` function, producing an
-unhelpful link-time error.
+but spawns nothing; downstream, the C backend would try to emit a call to an
+unresolved `Thread` function, producing an unhelpful link-time error.
 
-Fix idea: a small post-check pass (or a declaration/assignment-side check)
-that rejects a `Thread`-typed value that is never consumed by `.start()` /
-`nursery.start(...)`, with a message like
-"`Thread(fn(args)) must be started: append .start() or pass it to a nursery's .start()`".
-Low priority — the form is degenerate misuse, but the current failure mode is
-confusing.
+The broader design question (de-special-casing into a normal constructor,
+an `Awaitable` trait, static-vs-`#destroy` must-start enforcement) is
+analyzed in [docs/ASYNC_PLAN_2.md](docs/ASYNC_PLAN_2.md) and landed as
+CLOSURE_PLAN Phase 3b.
 
 ## Kill-trampoline teardown for parked fibers (ASYNC_PLAN Phase 2, deferred)
 
 Nursery cancel/timeout wakes a parked fiber (see `__nomen_future_cancel`) and
 the fiber then exits cooperatively by polling `Task.current_cancelled()` at
 its checkpoints — or by `Channel.receive` returning the zero value once
-cancelled. A fiber that never polls its flag (a tight CAS loop, or a raw
-blocking call) still holds up the nursery join. The ASYNC_PLAN design for
-this is a kill trampoline: push a teardown frame onto the parked stack,
-switch to it, and let normal scope-exit `#destroy` unwinding run every live
-frame. That needs forced stack unwinding of suspended frames (or a
-longjmp-style teardown entry), which is a substantial runtime feature and was
-out of scope. Until then cancellation is cooperative only.
+cancelled. Two cooperatively-reachable gaps were closed en route (closures
+Phase 3d session):
+
+- `Channel.receive`'s non-fiber wait now blocks in bounded slices
+  (`__nomen_fiber_waitq_park`'s thread branch: 100 ms `cond_timedwait`
+  re-checking the cancel flag), so a cancelled THREAD task returns the zero
+  value within the join's grace instead of never observing cancellation.
+- The nursery join, after cancelling on timeout/race, now waits for done
+  UNCONDITIONALLY (both backends). The previous 1-second grace released
+  futures whose tasks were still running and let the block exit free
+  block-scoped resources (a Channel under a still-blocked receiver or a
+  producer that touches it later) — memory corruption
+  (test/kill_kick.test.ts reproduces both halves).
+
+What remains of the kill-trampoline: a task that NEVER observes
+cancellation (one long unobservable raw sleep, a tight CAS loop, a raw
+blocking FFI call) now hangs its nursery's join instead of corrupting
+memory — the join-before-exit contract holds, liveness doesn't. The full
+fix remains the kill trampoline: push a teardown frame onto the parked
+stack, switch to it, and let normal scope-exit `#destroy` unwinding run
+every live frame. That needs forced stack unwinding of suspended frames
+(or a longjmp-style teardown entry), a substantial runtime feature, and
+until then cancellation is cooperative only.
 
 ## Advisory parking-lint content (ASYNC_PLAN Phase 4)
 

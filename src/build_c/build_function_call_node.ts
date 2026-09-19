@@ -216,6 +216,28 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		}
 
 		const is_ref_param = node.ref_param_indices?.includes(i);
+		// A trait-typed REF param receives the trait-OBJECT pointer (the
+		// address of a cell whose first word is the vtable). For a
+		// CLASS-backed conformer the object IS the instance — its first word
+		// is the vtable — so pass the instance value, never the caller
+		// slot's address (which would make the callee read the local
+		// variable's storage as a vtable).
+		if (is_ref_param) {
+			const callee_params = node.resolved_function?.params?.filter((p) => !p.is_self_param);
+			const callee_param_type = callee_params?.[i]?.type;
+			const callee_param_is_trait =
+				!!callee_param_type && !!status.traits.find((t) => t.name === callee_param_type.name);
+			const arg_type = type_from_value_node(node.params[i]);
+			const arg_is_class_backed = !!status.structs.find(
+				(s) => s.name === arg_type.name && s.is_class,
+			);
+			if (callee_param_is_trait && arg_is_class_backed) {
+				status.suppress_dereference = true;
+				build_node(node.params[i], status);
+				status.suppress_dereference = false;
+				continue;
+			}
+		}
 		// Class-typed arguments are already pointers (the pointer IS the
 		// value). They must NOT be passed by address — `&h1->content` would
 		// produce a `struct Box**` instead of the intended `struct Box*`.

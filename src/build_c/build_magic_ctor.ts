@@ -1,9 +1,15 @@
+import { has_destroy, struct_needs_auto_destroy } from "../build_common/destroy_analysis.ts";
 import emission_label from "../build_common/emission_label.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
+import { is_built_in_type } from "../built_in_types.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import build_node from "./build_node.ts";
-import { ensure_concurrency_runtime, spawn_arg_c_types } from "./build_spawn_node.ts";
+import {
+	ensure_concurrency_runtime,
+	spawn_arg_c_types,
+	spawn_arg_types,
+} from "./build_spawn_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import c_type from "./utils/c_type.ts";
@@ -70,13 +76,75 @@ export function emit_spawn_task_body(
 	status: BuildStatus,
 	id: number,
 	task_c: SpawnTaskC,
-): { struct_name: string; desc_name: string; arg_c_types: string[]; func_name: string } {
+): {
+	struct_name: string;
+	desc_name: string;
+	arg_c_types: string[];
+	func_name: string;
+	owned_args: OwnedArg[];
+} {
 	const func_name = c_function_name(emission_label(call.resolved_function ?? call));
 	const struct_name = `__nomen_spawn_${id}_args`;
 	const tramp_name = `__nomen_spawn_${id}_trampoline`;
 	const desc_name = `__nomen_spawn_${id}_descriptor`;
+	const destroy_name = `__nomen_spawn_${id}_env_destroy`;
 	const arg_c_types = spawn_arg_c_types(call, status);
+	const arg_types = spawn_arg_types(call, status);
 	const { returns_value, c_ret_type, slot_c_type } = task_c;
+
+	// Ownership classification (Phase 3d): the env is an OWNING struct. A
+	// fat `string` arg is duplicated at pack time (a raw pair copy would
+	// alias and dangle the moment the caller's scope exit ran) and freed by
+	// the env destructor. An owning value-struct arg (a `#destroy`, owning
+	// fields, or heap string fields) is copied and `<T>_destroy`ed — the
+	// env owns its copy. Class and trait args stay shared pointers (the
+	// Sendable contract).
+	const arg_c_types_with_owned = arg_c_types.map((ct, i) => {
+		const st = arg_types[i]?.name
+			? status.structs.find(
+					(s) =>
+						s.name === arg_types[i].name &&
+						!s.is_class &&
+						!s.is_simple_type &&
+						!is_built_in_type(arg_types[i].name),
+				)
+			: undefined;
+		return st ? `struct ${st.name} *` : ct;
+	});
+	const owned_args: OwnedArg[] = arg_types.map((t, i) => {
+		if (t.name === "string" && !t.is_view && !t.is_array) {
+			return { index: i, kind: "string" as const };
+		}
+		if (!t.is_view && !t.is_array && t.name) {
+			const st = status.structs.find((s) => s.name === t.name && !s.is_class && !s.is_simple_type);
+			if (st) {
+				// The callee ABI passes value structs by POINTER, and an
+				// inline struct field would be incomplete at the env's
+				// definition point — the same shape the capture machinery
+				// chose (Phase 2c): the env holds a malloc'd COPY; when the
+				// struct owns anything the destructor destroys + frees it.
+				// Top-level string fields are deep-copied at pack (a raw
+				// byte copy would alias the donor's buffers — rodata for a
+				// literal field — and <T>_destroy would free them
+				// invalidly).
+				const owns = has_destroy(st) || struct_needs_auto_destroy(st, status);
+				const string_fields = st.fields
+					.filter(
+						(f) =>
+							f.type.name === "string" && !f.type.is_view && !f.type.is_array && !f.type.is_ref,
+					)
+					.map((f) => f.name);
+				return {
+					index: i,
+					kind: "struct" as const,
+					struct_name: st.name,
+					owns,
+					string_fields,
+				};
+			}
+		}
+		return { index: i, kind: "plain" as const };
+	});
 
 	// Forward-declare the wrapped function before the trampoline. The
 	// trampoline is a full function definition appended to the headers, and
@@ -85,16 +153,34 @@ export function emit_spawn_task_body(
 	// method (e.g. a monomorphized generic body) emits its trampoline ahead
 	// of any free function declared after the generic struct. A compatible
 	// redeclaration is legal C, so emitting this unconditionally is safe.
-	let header = `${c_ret_type} ${func_name}(${arg_c_types.join(", ")});\n`;
+	let header = `${c_ret_type} ${func_name}(${arg_c_types_with_owned.join(", ")});\n`;
 
 	header += `struct ${struct_name} {\n`;
-	for (let i = 0; i < arg_c_types.length; i++) {
-		header += `\t${arg_c_types[i]} arg${i};\n`;
+	for (let i = 0; i < arg_c_types_with_owned.length; i++) {
+		header += `\t${arg_c_types_with_owned[i]} arg${i};\n`;
 	}
 	header += `\t${slot_c_type} *result_slot;\n`;
 	header += `\tunsigned long long *cancel_flag;\n`;
 	header += `\tstruct nomen_future *future;\n`;
 	header += `};\n`;
+
+	// The env destructor (Phase 3d): frees each duplicated string and runs
+	// `<T>_destroy` on the env's owning-struct copies. Wired through the
+	// descriptor's destroy_env slot, so every release path (future release,
+	// daemon teardown) reclaims the env's owned state uniformly.
+	if (owned_args.some((o) => o.kind !== "plain")) {
+		header += `static void ${destroy_name}(void *_p) {\n`;
+		header += `\tstruct ${struct_name} *a = (struct ${struct_name} *)_p;\n`;
+		for (const o of owned_args) {
+			if (o.kind === "string") {
+				header += `\tfree(a->arg${o.index}.ptr);\n`;
+			} else if (o.kind === "struct") {
+				if (o.owns) header += `\t${o.struct_name}_destroy(a->arg${o.index});\n`;
+				header += `\tfree(a->arg${o.index});\n`;
+			}
+		}
+		header += `}\n`;
+	}
 	// Trampoline: signature is the closure ABI — the code receives the
 	// closure itself, and the args struct rides in `env`. The pool worker
 	// (or fiber scheduler) calls it; the trampoline calls the user function
@@ -108,7 +194,7 @@ export function emit_spawn_task_body(
 	} else {
 		header += `\t${func_name}(`;
 	}
-	for (let i = 0; i < arg_c_types.length; i++) {
+	for (let i = 0; i < arg_c_types_with_owned.length; i++) {
 		if (i > 0) header += ", ";
 		header += `a->arg${i}`;
 	}
@@ -125,11 +211,24 @@ export function emit_spawn_task_body(
 	header += `\t__nomen_future_release(a->future);\n`;
 	header += `}\n`;
 	// Static descriptor template for this site: every construction copies it
-	// into a heap descriptor (owned = 1) carrying the per-construction env.
-	header += `static struct nomen_closure ${desc_name} = { (void *)${tramp_name}, NULL, 0, NULL };\n`;
+	// into a heap descriptor (owned = 1) carrying the per-construction env —
+	// and the env destructor when the env owns anything.
+	const has_env_destroy = owned_args.some((o) => o.kind !== "plain");
+	header += `static struct nomen_closure ${desc_name} = { (void *)${tramp_name}, NULL, 0, ${
+		has_env_destroy ? `(void (*)(void *))${destroy_name}` : "NULL"
+	} };\n`;
 	status.headers += header;
 
-	return { struct_name, desc_name, arg_c_types, func_name };
+	return { struct_name, desc_name, arg_c_types, func_name, owned_args };
+}
+
+/** One spawn argument's env-ownership classification (Phase 3d). */
+export interface OwnedArg {
+	index: number;
+	kind: "string" | "struct" | "plain";
+	struct_name?: string;
+	owns?: boolean;
+	string_fields?: string[];
 }
 
 /**
@@ -152,7 +251,7 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 	}
 
 	const task_c = spawn_task_c_types(node.function_return_type, status);
-	const { struct_name, desc_name } = emit_spawn_task_body(call, status, id, task_c);
+	const { struct_name, desc_name, owned_args } = emit_spawn_task_body(call, status, id, task_c);
 	const { returns_value, slot_c_type } = task_c;
 	const mono_name = mono_type_name(kind, node.type?.type_args);
 
@@ -161,9 +260,30 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 	status.code += `({\n`;
 	status.code += `\tstruct ${struct_name} *_args = (struct ${struct_name} *)malloc(sizeof(struct ${struct_name}));\n`;
 	for (let i = 0; i < call.params.length; i++) {
-		status.code += `\t_args->arg${i} = `;
-		build_node(call.params[i], status);
-		status.code += ";\n";
+		const owned = owned_args.find((o) => o.index === i);
+		if (owned?.kind === "string") {
+			// The env owns a deep copy; the caller's own buffer is untouched.
+			status.code += `\t_args->arg${i} = nomen_str_dup(`;
+			build_node(call.params[i], status);
+			status.code += ");\n";
+		} else if (owned?.kind === "struct") {
+			// The env owns a malloc'd copy of the struct's bytes with its
+			// top-level string fields deep-copied; the env destructor
+			// destroys + frees it. A struct PARAMETER donor is itself a
+			// pointer, so dereference it.
+			const st = owned.struct_name;
+			status.code += `\t_args->arg${i} = ({ struct ${st} *_v = (struct ${st} *)malloc(sizeof(struct ${st})); *_v = `;
+			build_node(call.params[i], status);
+			status.code += `;`;
+			for (const f of owned.string_fields ?? []) {
+				status.code += ` { nomen_string _t = nomen_str_dup(_v->${f}); _v->${f} = _t; }`;
+			}
+			status.code += ` _v; });\n`;
+		} else {
+			status.code += `\t_args->arg${i} = `;
+			build_node(call.params[i], status);
+			status.code += ";\n";
+		}
 	}
 	if (returns_value) {
 		status.code += `\t${slot_c_type} *_result_ptr = (${slot_c_type} *)malloc(sizeof(${slot_c_type}));\n`;

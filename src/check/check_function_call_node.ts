@@ -1240,7 +1240,7 @@ function resolve_free_calls_in_node(node: BaseNode | undefined | null, status: C
 			const magic: "Thread" | "Fiber" | undefined =
 				name === "Thread"
 					? "Thread"
-					: !!(fiber_struct as { is_library?: boolean } | undefined)?.is_library
+					: (fiber_struct as { is_library?: boolean } | undefined)?.is_library === true
 						? "Fiber"
 						: undefined;
 			if (magic) {
@@ -1509,7 +1509,7 @@ function check_magic_ctor(
 		add_error(status, `Spawned call '${call.name}' did not resolve`, node.start);
 		return false;
 	}
-	validate_spawn_args_sendable(call, status);
+	validate_spawn_args_sendable(call, status, (status.nursery_depth ?? 0) > 0);
 	if (name === "Thread") node.is_thread_ctor = true;
 	else node.is_fiber_ctor = true;
 	const return_type = call.type;
@@ -1790,7 +1790,7 @@ function rederive_spawn_start_annotations(
 	fc: AccessFunctionCallNode,
 	status: CheckStatus,
 	name: "Thread" | "Fiber",
-	start_on: boolean,
+	_start_on: boolean,
 ) {
 	// The receiver is either the magic constructor itself (the source body
 	// wrote `Thread(fn(args)).start()`) or ANY expression of the spawn

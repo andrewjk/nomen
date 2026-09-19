@@ -19,6 +19,7 @@ import clone_status from "./utils/clone_status.ts";
  */
 export default function check_async_block_node(node: AsyncBlockNode, status: CheckStatus) {
 	const block_status = clone_status(status);
+	block_status.nursery_depth = (status.nursery_depth ?? 0) + 1;
 	if (node.nursery_name) {
 		block_status.values.push({
 			// The nursery is a mutable capability: tasks are spawned into it

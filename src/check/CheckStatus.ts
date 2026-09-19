@@ -22,6 +22,14 @@ export default interface CheckStatus {
 	 */
 	scope_depth: number;
 	/**
+	 * Nesting depth of enclosing `async { }` nursery blocks (0 = none). A
+	 * spawn construction inside a nursery may take BORROW captures of
+	 * non-Sendable class arguments: the nursery joins its tasks at block
+	 * exit, before any block-scoped donor is destroyed, so an aliased
+	 * argument is provably sound there (docs/CLOSURE_PLAN.md Phase 3d).
+	 */
+	nursery_depth?: number;
+	/**
 	 * Types (values, structs and traits) in scope
 	 */
 	types: string[];

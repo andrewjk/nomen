@@ -238,6 +238,43 @@ de-specialized into library structs over capturing lambdas; the
 enforces owned captures; must-start via the library `#destroy` pattern; the
 `Awaitable` construction side opens user-defined spawnables.
 
+> **Status: Phase 3d LANDED — the spawn sugar's env is an OWNING struct,
+> plus nursery borrows.** The hand-packed arg env gains a per-site
+> destructor wired through the descriptor's `destroy_env` (every release
+> path reclaims uniformly): fat `string` args are deep-copied at pack and
+> freed by the destructor — a raw pair copy aliased the caller's buffer and
+> dangled the moment the caller's scope exit ran. On C, an owning
+> value-struct arg is a malloc'd COPY whose top-level string fields are
+> strdup'd at pack, destroyed (`<T>_destroy`) and freed by the env
+> destructor — the pre-3d byte copy aliased the donor's heap fields
+> (rodata for a literal field) and `<T>_destroy` would free them
+> invalidly; the callee ABI's pointer form (value-struct args arrive as
+> `struct T *`) is now emitted correctly in the trampoline's forward
+> declaration too (a pre-existing tag-less/`conflicting types` gap). On
+> aarch64, string args get the same strdup+free treatment (companion-local
+> `nomen_str_dup`); by-value struct arg staging remains a pre-existing
+> limitation there. **Nursery borrows**: a non-Sendable CLASS argument may
+> be passed inside `async { }` — a BORROW capture, sound because the join
+> at block exit bounds it by the donors' lifetimes; the donor must be a
+> named local or parameter (a temp dies at the statement), and
+> `.detach()` rejects borrows outright (a daemon outlives every scope and
+> must own its arguments). Outside a nursery the Sendable rule is
+> unchanged. `nursery_depth` on CheckStatus tracks the enclosing async
+> block. En route (the same session, from the ASYNC backlog): the
+> `Awaitable` trait (Task<T> : Sendable, Awaitable — the consumption side
+> of ASYNC_PLAN_2; trait tables are now exported from aarch64 single-TU
+> builds and spawn-built Task handles install `_vt`, and a class
+> conformer behind a `ref` trait param passes the INSTANCE on both
+> backends — a pre-existing dispatch gap); and the first cooperative
+> kill-trampoline pieces (Channel's non-fiber wait polls cancellation in
+> bounded slices; the nursery join waits for done UNCONDITIONALLY after
+> cancel — the 1s grace released futures under still-running tasks and
+> let block teardown free a Channel beneath them). Still open (3e, if
+> ever): migrating the sugar's packing onto the capture machinery proper
+> (move semantics for owning donors); the forced-unwind kill trampoline.
+> Green: new `test/spawn_env_ownership.test.ts` (6),
+> `test/awaitable.test.ts` (4), `test/kill_kick.test.ts` (1) + full suite.
+>
 > **Status: Phase 3c LANDED — user-defined spawnables: the construction
 > accepts a function value.** `Thread(fn)` / `Fiber(fn)` now take a
 > ZERO-ARGUMENT function value in place of the unevaluated call: a lambda

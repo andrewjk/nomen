@@ -54,6 +54,6 @@ function ensure_newline(status: BuildStatus) {
 	if (!status.code.endsWith("\n")) status.code += "\n";
 }
 
-function elem_from_target(node: IndexNode, status: BuildStatus): Type {
+function elem_from_target(node: IndexNode, _status: BuildStatus): Type {
 	return type_from_value_node(node.target);
 }

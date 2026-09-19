@@ -77,7 +77,7 @@ export default function build_fiber_spawn_node(
 	}
 	if (trailing) c += `, ${trailing}`;
 	c += `) {\n`;
-	c += `\tstruct ${mono_fiber} *t = (struct ${mono_fiber} *)self;\n`;
+	c += `\textern void *${mono_task_name}_traits[];\n\tstruct ${mono_fiber} *t = (struct ${mono_fiber} *)self;\n`;
 	c += `\tstruct nomen_future *f = (struct nomen_future *)t->future;\n`;
 	c += `\tvoid *result_ptr = (void *)t->result_slot;\n`;
 	c += `\tunsigned long long *cancel_ptr = (unsigned long long *)t->cancel_flag;\n`;
@@ -100,6 +100,7 @@ export default function build_fiber_spawn_node(
 		c += `\treturn (void *)0;\n`;
 	} else {
 		c += `\tstruct ${mono_task_name} *task = (struct ${mono_task_name} *)malloc(sizeof(struct ${mono_task_name}));\n`;
+		c += `\ttask->_vt = (void **)${mono_task_name}_traits;\n`;
 		c += `\ttask->handle = 0;\n`;
 		c += `\ttask->done = 0;\n`;
 		c += `\ttask->result_slot = (unsigned long long)result_ptr;\n`;

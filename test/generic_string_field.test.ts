@@ -3,12 +3,7 @@ import { expect, test } from "vite-plus/test";
 import build from "../src/build";
 import check_output from "./check_output";
 import parse_with_imports from "./parse_with_imports";
-import {
-	SYSTEM_OBJ,
-	SYSTEM_OBJ_A64,
-	load_system_fn_names,
-	load_system_struct_names,
-} from "./system_lib";
+import {} from "./system_lib";
 
 // Regression: a generic struct method's monomorphized body must substitute
 // the element type through EVERYTHING the builder reads — including the

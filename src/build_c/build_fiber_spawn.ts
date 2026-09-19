@@ -124,6 +124,7 @@ export default function build_fiber_spawn_node(
 		status.code += `\t(void)0;\n`;
 	} else {
 		status.code += `\tstruct ${mono_task_name} *_task = (struct ${mono_task_name} *)malloc(sizeof(struct ${mono_task_name}));\n`;
+		status.code += `\t_task->_vt = &_${mono_task_name}_traits;\n`;
 		status.code += `\t_task->handle = 0;\n`;
 		status.code += `\t_task->done = 0;\n`;
 		status.code += `\t_task->result_slot = (unsigned long long)_result_ptr;\n`;

@@ -11,8 +11,6 @@ import { parse_raw } from "./parse_with_imports";
 // Cross-scope shapes therefore run with audit off; the same-scope and class
 // shapes ARE balanced and run with audit on to assert it.
 
-const opts = { arch: "aarch64", audit: false } as const;
-
 function run(input: string, name: string, expected: string, audit = false) {
 	return async () => {
 		const parsed = parse_raw(input);

@@ -109,14 +109,21 @@ export default function build_async_block_node(
 		// Cancel anything still running, then wait+release with a generous
 		// extended deadline so cancelled tasks actually exit before release.
 		status.code += `\t\t__nomen_future_cancel(_f);\n`;
-		status.code += `\t\t__nomen_future_timedwait(_f, ${deadline_var ? deadline_var : "0"} + 1000);\n`;
+		status.code += `\t\t__nomen_future_wait(_f);\n`;
 	} else if (deadline_var) {
 		status.code += `\t\tint _done = __nomen_future_timedwait(_f, ${deadline_var});\n`;
 		status.code += `\t\tif (!_done) {\n`;
 		// Timeout expired — cancel this task and any remaining tasks (the
-		// helper wakes a fiber parked on the future so it observes it).
+		// helper wakes a fiber parked on the future so it observes it),
+		// then wait for done UNCONDITIONALLY. A bounded grace here would
+		// release a future whose task is still running and let the block
+		// exit free its resources (a Channel under a still-blocked
+		// receiver) — memory corruption. Waiting honors the nursery's
+		// join-before-exit contract; a task that never observes
+		// cancellation hangs the join, which is the documented
+		// kill-trampoline gap (FOLLOWUP.md), not a soundness hole.
 		status.code += `\t\t\t__nomen_future_cancel(_f);\n`;
-		status.code += `\t\t\t__nomen_future_timedwait(_f, ${deadline_var} + 1000);\n`;
+		status.code += `\t\t\t__nomen_future_wait(_f);\n`;
 		status.code += `\t\t}\n`;
 	} else {
 		status.code += `\t\t__nomen_future_wait(_f);\n`;

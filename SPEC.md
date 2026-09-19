@@ -2449,7 +2449,13 @@ pub class SafeCounter : Sendable {   // Sendable: explicitly marked
 }
 ```
 
-Every value passed to `Thread(...)` must be Sendable.
+Every value passed to `Thread(...)` must be Sendable — with one exception: a
+non-Sendable CLASS argument may be passed inside a nursery (`async { }`),
+where it is a **borrow capture** — the task aliases the instance, and the
+join at block exit provably bounds the borrow by the donors' lifetimes. The
+borrowed argument must be a named local or parameter (a temporary would die
+before the task runs), and `.detach()` never accepts one (a daemon outlives
+every scope and must own its arguments).
 
 ### Thread
 

@@ -670,6 +670,25 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					}
 					status.code += `adr x0, ${label}`;
 				} else if (is_ref_param) {
+					// A trait-typed REF param receives the trait-OBJECT
+					// pointer: for a CLASS-backed conformer the object IS the
+					// instance, so pass the instance VALUE (never the caller
+					// slot's address — the callee would read the local's
+					// storage as a vtable).
+					const callee_params = node.resolved_function?.params?.filter((p) => !p.is_self_param);
+					const callee_param_type = callee_params?.[i]?.type;
+					const callee_param_is_trait =
+						!!callee_param_type && !!status.traits.find((t) => t.name === callee_param_type.name);
+					const arg_trait_type = (param as any).type?.name;
+					const arg_is_class_backed =
+						!!arg_trait_type &&
+						!!status.structs.find((s) => s.name === arg_trait_type && s.is_class);
+					if (callee_param_is_trait && arg_is_class_backed) {
+						build_node(param, status);
+						if (!status.code.endsWith("\n")) status.code += "\n";
+						status.code += `str x0, [x29, #${args_base + arg_slot[i] * 8}]\n`;
+						continue;
+					}
 					// A `ref` arg must pass the ADDRESS of the caller's slot so the
 					// callee can reassign it. A CLASS local's slot holds the heap
 					// pointer (it is an is_local_ref_var), so emit_address_of would

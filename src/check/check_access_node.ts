@@ -36,6 +36,7 @@ import {
 	is_owning_struct_type_requiring_move,
 } from "./utils/ownership.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
+import validate_spawn_args_sendable from "./utils/validate_spawn_args_sendable.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 import { view_fields_invalidated } from "./utils/view_fields.ts";
 
@@ -1170,6 +1171,16 @@ function check_spawn_detach(
 		target.node_type === "func_call" && ctor.is_thread_ctor
 			? (ctor.params[0] as FunctionCallNode)
 			: undefined;
+	// A daemon outlives every scope — it must OWN its arguments. A borrow
+	// accepted by the construction inside a nursery is sound only while the
+	// nursery joins; `.detach()` abandons that bound.
+	if (wrapped_call)
+		validate_spawn_args_sendable(
+			wrapped_call,
+			status,
+			false,
+			" — a detached task must own its arguments (it outlives every scope; only a nursery's join bounds a borrow)",
+		);
 
 	// No Task<T>: the daemon is unjoinable by design. The wrapped call's
 	// return type (T) rides along only so the launch can derive the mono

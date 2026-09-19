@@ -44,13 +44,21 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 
 	// Arg C types (fat strings ride the 16-byte nomen_string pair).
 	const arg_c_types: string[] = [];
+	const fat_string_args: boolean[] = [];
 	for (let i = 0; i < call.params.length; i++) {
 		const arg_type = type_from_value_node(call.params[i]);
 		const mono_name = mono_type_name(arg_type);
 		const is_class = !!status.structs.find((s) => s.name === mono_name && s.is_class);
 		const is_trait = !!status.traits.find((t) => t.name === mono_name);
 		arg_c_types.push(is_class || is_trait ? `struct ${mono_name} *` : `${c_type(mono_name)}`);
+		fat_string_args.push(spawn_arg_is_string(call.params[i]));
 	}
+	// Phase 3d: the env OWNS its fat-string args — duplicated at pack, freed
+	// by the env destructor (a raw pair copy would alias the caller's
+	// buffer). Owning value-struct args are not covered here: the aarch64
+	// arg staging passes one word per non-string arg, so a by-value struct
+	// arg never reaches the env intact (pre-existing limitation).
+	const has_env_destroy = fat_string_args.some(Boolean);
 
 	const return_type_name = node.function_return_type?.name;
 	const returns_value = !!(
@@ -74,6 +82,11 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 
 	// --- Companion C: trampoline + descriptor + constructor helper ---
 	let c = `// --- spawn construction site ${id} (${kind}) ---\n`;
+	if (has_env_destroy) {
+		// The companion cannot see main.h, where build.ts emits
+		// nomen_str_dup — carry a guarded local definition.
+		c += `#ifndef NOMEN_STR_DUP\n#define NOMEN_STR_DUP\nstatic nomen_string nomen_str_dup(nomen_string s) {\n\tchar *p = (char *)malloc(s.len + 1);\n\tmemcpy(p, s.ptr, s.len);\n\tp[s.len] = 0;\n\tnomen_string r = { p, s.len };\n\treturn r;\n}\n#endif\n`;
+	}
 	c += `${c_ret_type} ${func_name}(`;
 	for (let i = 0; i < arg_c_types.length; i++) {
 		if (i > 0) c += ", ";
@@ -88,6 +101,15 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 	c += `\tunsigned long long *cancel_flag;\n`;
 	c += `\tstruct nomen_future *future;\n`;
 	c += `};\n`;
+	// The env destructor (Phase 3d): frees each duplicated string.
+	if (has_env_destroy) {
+		c += `static void __nomen_spawn_${id}_env_destroy(void *_p) {\n`;
+		c += `\tstruct ${struct_name} *a = (struct ${struct_name} *)_p;\n`;
+		for (let i = 0; i < arg_c_types.length; i++) {
+			if (fat_string_args[i]) c += `\tfree(a->arg${i}.ptr);\n`;
+		}
+		c += `}\n`;
+	}
 	// Trampoline: closure ABI — the code receives the closure itself; the
 	// packed args ride in env. Disposal happens at the future's last release.
 	c += `static void ${tramp_name}(struct nomen_closure *_c) {\n`;
@@ -110,7 +132,9 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 	c += `\t__nomen_future_complete(a->future);\n`;
 	c += `\t__nomen_future_release(a->future);\n`;
 	c += `}\n`;
-	c += `static struct nomen_closure ${desc_name} = { (void *)${tramp_name}, NULL, 0, NULL };\n`;
+	c += `static struct nomen_closure ${desc_name} = { (void *)${tramp_name}, NULL, 0, ${
+		has_env_destroy ? `(void (*)(void *))__nomen_spawn_${id}_env_destroy` : "NULL"
+	} };\n`;
 	// Constructor helper: packs env + machinery + closure into a heap
 	// instance of the mono spawn class. Returns the instance pointer.
 	c += `void *${helper_name}(`;
@@ -121,7 +145,8 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 	c += `) {\n`;
 	c += `\tstruct ${struct_name} *a = (struct ${struct_name} *)malloc(sizeof(struct ${struct_name}));\n`;
 	for (let i = 0; i < arg_c_types.length; i++) {
-		c += `\ta->arg${i} = arg${i};\n`;
+		// The env owns a deep copy of each string arg (Phase 3d).
+		c += `\ta->arg${i} = ${fat_string_args[i] ? "nomen_str_dup(arg" + i + ")" : `arg${i}`};\n`;
 	}
 	c += `\ta->result_slot = (${slot_c_type} *)${returns_value ? `malloc(sizeof(${slot_c_type}))` : "malloc(16)"};\n`;
 	c += `\tmemset(a->result_slot, 0, ${returns_value ? `sizeof(${slot_c_type})` : "16"});\n`;
@@ -157,7 +182,6 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 
 	// --- Assembly: build arg registers and call the constructor helper ---
 	status.code += `// spawn construction site ${id} (${kind})\n`;
-	const fat_string_args = call.params.map(spawn_arg_is_string);
 	const arg_slot: number[] = [];
 	let total_arg_slots = 0;
 	for (let i = 0; i < call.params.length; i++) {

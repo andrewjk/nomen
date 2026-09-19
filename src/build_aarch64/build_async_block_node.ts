@@ -159,17 +159,15 @@ export default function build_async_block_node(
 	// Load futures[i] into x0.
 	status.code += `ldr x0, [x20, x23, lsl #3]\n`;
 	if (is_race) {
-		// Cancel the task (no-op if already done) and wait once more with an
-		// extended deadline so a cancelled task actually exits before release.
+		// Cancel the task (no-op if already done), then wait for done
+		// UNCONDITIONALLY — a bounded grace would release a future whose
+		// task is still running and let the block exit free its resources
+		// under it (memory corruption). A task that never observes
+		// cancellation hangs the join: the documented kill-trampoline gap
+		// (FOLLOWUP.md), not a soundness hole.
 		status.code += `bl ___nomen_future_cancel\n`;
 		status.code += `ldr x0, [x20, x23, lsl #3]\n`;
-		if (deadline_off !== undefined) {
-			status.code += `ldr x1, [x29, #${deadline_off}]\n`;
-		} else {
-			status.code += `mov x1, #0\n`;
-		}
-		status.code += `add x1, x1, #1000\n`;
-		status.code += `bl ___nomen_future_timedwait\n`;
+		status.code += `bl ___nomen_future_wait\n`;
 	} else if (deadline_off !== undefined) {
 		status.code += `ldr x1, [x29, #${deadline_off}]\n`;
 		status.code += `bl ___nomen_future_timedwait\n`;
@@ -177,14 +175,11 @@ export default function build_async_block_node(
 		status.code += `cbnz x0, ${loop_release}\n`;
 		// Timed out — cancel this task via the C helper (avoids hardcoding
 		// the cancel_flag offset, which differs per platform), then wait
-		// once more (with an extended deadline) so the task actually gets
-		// to observe the flag and exit before the nursery tears down.
+		// for done unconditionally (see the race note above).
 		status.code += `ldr x0, [x20, x23, lsl #3]\n`; // reload future
 		status.code += `bl ___nomen_future_cancel\n`;
 		status.code += `ldr x0, [x20, x23, lsl #3]\n`;
-		status.code += `ldr x1, [x29, #${deadline_off}]\n`;
-		status.code += `add x1, x1, #1000\n`; // extend deadline by 1s
-		status.code += `bl ___nomen_future_timedwait\n`;
+		status.code += `bl ___nomen_future_wait\n`;
 	} else {
 		status.code += `bl ___nomen_future_wait\n`;
 	}

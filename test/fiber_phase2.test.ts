@@ -2,7 +2,7 @@ import { expect, describe, test } from "vite-plus/test";
 
 import build from "../src/build";
 import check_output from "./check_output";
-import parse_with_imports, { parse_raw } from "./parse_with_imports";
+import { parse_raw } from "./parse_with_imports";
 
 // Phase 2 of ASYNC_PLAN.md — park-aware blocking and cancellation reaching
 // parked fibers:

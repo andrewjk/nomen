@@ -1,0 +1,21 @@
+// Awaitable — the consumption side of the async model (ASYNC_PLAN.md,
+// "Awaitable trait"). Park-flavored by design: `wait` MAY park the current
+// execution context (inside a fiber it parks the fiber and frees its
+// worker; on a raw thread it blocks). A Rust-style poll/Waker trait is
+// deliberately rejected — it would smuggle the state-machine transform back
+// in through the trait definition.
+//
+// `Task<T>` is the conformer: `Thread(...).start()` and `Fiber(...).start()`
+// both yield one, so a generic helper taking `Awaitable` waits on either.
+// The trait is deliberately NOT the place for must-start semantics —
+// start-optional lifecycles are legitimate for user primitives; must-start
+// is a per-struct `#destroy` contract (see Thread.nm / Fiber.nm and
+// ASYNC_PLAN_2.md).
+
+/**
+ * Something whose completion can be waited on (may park the current context)
+ **/
+pub trait Awaitable {
+	func wait = (ref self) {
+	}
+}
