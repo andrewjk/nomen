@@ -2,7 +2,30 @@
 
 Documents the closure model as shipped. For the user-facing contract, see
 SPEC.md's "Anonymous Functions (Lambdas)" section; for the memory-ownership
-rules captures build on, see MEMORY.md.
+rules captures build on, see MEMORY.md. The async machinery that motivated
+this work lives in [ASYNC.md](ASYNC.md) — closures are an independent
+language feature, and the spawn constructions are just one consumer of them.
+
+## Anonymous functions
+
+Three forms — an arrow expression, an arrow with a block, and a block
+without the arrow:
+
+```
+(a, b, out int) => a + b        // arrow expression (implicit return)
+(x, out int) => { return x * 2 } // arrow with block
+(x, out int) { return x * 3 }    // block without arrow
+```
+
+Parameter and return types are inferred from the target signature when the
+lambda arrives at a func-typed destination (a param, a func-typed field's
+constructor argument, a declaration's annotated type). Where no target
+signature exists, the lambda must be self-typed: parameter types are
+declared, an expression body's return type is inferred, and a block body
+declares its return as the leading `out T` (`(out int) => { ... }`). A bare
+`( ... )` group parses as a lambda only when `=>` follows the matching
+parenthesis, so the block-without-arrow form is a declaration-position form;
+there is no `func`-keyword anonymous value.
 
 ## The descriptor ABI
 
@@ -28,8 +51,8 @@ struct nomen_closure {
   (emitted once per function, never freed); capturing lambdas get heap
   descriptors that own their env. The destroy path is the uniform
   free-if-owned arm: `if (owned) { destroy_env(env); free(env); free(v); }`
-  — used for func-typed locals at scope exit, func-typed class fields'
-  `#destroy`, and the runtime's task teardown.
+  — used for func-typed locals at scope exit and func-typed class fields'
+  `#destroy`.
 - **Codegen cost**: two loads per indirect call. Nothing else.
 - aarch64 has no C struct: descriptors are 32-byte tables (`code`, `env`,
   `owned`, `destroy_env`) in `__DATA` — text→text relocations are illegal on
@@ -56,8 +79,8 @@ structs applies unchanged:
   value-struct trait slots (inline conformer storage), a borrowed (non-
   `move`) class/trait/owning-struct parameter, and a func-typed PARAMETER
   (a borrow — the caller still owns the descriptor). Borrow-captures exist
-  only in the spawn sugar (see "Spawn constructions" below), where the
-  nursery's join bounds them.
+  only in the spawn sugar's nursery form (ASYNC.md, "Nursery borrows"),
+  where the join at block exit bounds them.
 
 Capture stamps live on the lambda's `FunctionNode.captures`; the checker
 funnels every reference form through `type_from_value` (reads, method
@@ -79,110 +102,35 @@ rejected. Containers and return positions of func values are not
 expressible in the language (generic type args and `out` types don't parse
 `func (...)`), so the shared-ownership container case is unreachable.
 
-## Anonymous functions
+## The spawn seam
 
-Three forms — an arrow expression, an arrow with a block, and a block
-without the arrow. Parameter and return types are inferred from the target
-signature when the lambda arrives at a func-typed destination (a param, a
-func-typed field's constructor argument, a declaration's annotated type);
-standalone lambdas must be self-typed, with an expression body's return
-type inferred when no `out T` is declared.
-
-## Spawn constructions over closures
-
-`Thread`/`Fiber` are real library classes (`core/System/Thread.nm`,
-`Fiber.nm`): the construction packs a task closure and yields a storable
-value; the runtime's pool, fiber scheduler, and daemon launcher all take a
-`struct nomen_closure *` task whose code receives the closure itself.
-
-### The call form: `Thread(fn(args))`
-
-- Arguments are evaluated EAGERLY (at the construction, Sendable-validated)
-  and packed into the task env — the env is an OWNING struct: fat `string`
-  args are deep-copied at pack (the env destructor frees its copy), and on
-  the C backend an owning value-struct arg is a malloc'd copy whose
-  top-level string fields are strdup'd, then `<T>_destroy`ed and freed. A
-  raw byte copy would alias the donor's heap fields and dangle at the
-  donor's scope exit.
-- **Nursery borrows**: inside `async { }`, a non-Sendable CLASS argument may
-  be passed — a borrow capture, sound because the join at block exit bounds
-  it by the donors' lifetimes. The donor must be a named local or parameter
-  (a temporary dies at the statement). `.detach()` rejects borrows: a
-  daemon outlives every scope and must own its arguments. Outside a nursery
-  the Sendable rule is unchanged.
-- The construction is a real, STORABLE value: `var t = Thread(work(n))` …
-  `t.start()` is legal; `T` rides the receiver's type args. Launch
-  (`.start()` / `.start_on(buf)` / `.detach()` / a nursery's `.start(...)`)
-  reads the packed handles from the receiver's fields, submits, transfers
-  them out (fields zeroed, `started = 1`), and frees a chained TEMPORARY
-  instance; a stored binding's instance is freed by its owner.
-- **Must-start**: destroying an unstarted `Thread`/`Fiber` reports and
-  aborts (`#destroy` checks the started flag) — a never-consumed
-  construction is a runtime error, not a silent no-op.
-
-### The function-value form: `Thread(() => fn(args))`
-
-A zero-argument function value in place of the unevaluated call — the
-lambda's CAPTURES are the eager arguments (Sendable-validated; owning
-captures move). Accepted: a lambda literal (fully self-typed params; an
-expression body's return is inferred), a zero-arg func-typed binding, or a
-named function.
-
-- A func-typed LOCAL is MOVEd into the task: the task's adapter owns and
-  disposes the closure (which is what makes `.detach()`'s owned-capture
-  contract hold by construction); using the local afterwards is a
-  use-after-move error.
-- A named function / capture-free declaration lambda borrows its
-  thunk-backed STATIC descriptor — reusable, nothing to own.
-- The task closure is a per-site ADAPTER: env = { user closure, result
-  slot, cancel flag, future }; the code calls the value through the
-  descriptor ABI and completes the future. String results are alias-checked
-  against a literal's captured strings (transfer fresh, strdup an alias —
-  balanced); a moved local's opaque closure duplicates and leaks the
-  original (leak-never-dangle); class/trait/struct results skip the dispose
-  (they may alias the env).
-
-### `Awaitable`
-
-`core/System/Awaitable.nm` — the consumption side: park-flavored
-`func wait = (ref self)`. `Task<T>` conforms (`: Sendable, Awaitable`), and
-every spawn yields one, so a generic helper over `Awaitable` waits on any
-task — thread, fiber, or nursery-spawned. Must-start is deliberately NOT a
-trait rule: start-optional lifecycles are legitimate for user primitives;
-it is a per-struct `#destroy` contract.
-
-### The generalized flavor: user Awaitable classes
-
-The construction is not reserved for the two library names. Any user CLASS
-conforming to `Awaitable` that declares the spawn-field contract (uint64
-fields `task` / `result_slot` / `cancel_flag` / `future`; optional `started`
-bool) gets the same sugar — `MyThing(fn(args))` / `MyThing(() => work(n))`
-pack eagerly and yield a heap instance with the handles in the contract
-fields. Launch is the class's own business: pure-Nomen methods over the
-`Task.pool_submit` / `Task.future_*` seam (the same runtime calls the
-generated Thread/Fiber launch code makes — raw blocks stay library-only).
-A contract-missing class gets a dedicated compile error rather than a
-failed `#init` lookup; the construction zero-builds the instance (no
-`#init`, no field initializers); Sendable is enforced identically; and the
-construction materializes `Task<T>` so the seam's statics link. See
-ASYNC.md, "User-defined async primitives", and test/awaitable_ctor.test.ts.
+The async runtime speaks this ABI: a submitted task IS a
+`struct nomen_closure *` whose code receives the closure itself — the pool,
+the fiber scheduler, and the daemon launcher all take one. The spawn
+constructions (`Thread(fn(args))` / `Fiber(fn(args))`, the function-value
+form, and the generalized user-Awaitable flavor) pack the wrapped call's
+arguments eagerly into an owning env, or wrap a given function value
+through a per-site adapter. Those mechanics — eager packing and its
+ownership rules, Sendable validation, nursery borrows, must-start, the
+`Task.pool_submit` / `Task.future_*` launch seam — are documented in
+ASYNC.md ("Spawn arguments are owned by the task env", "Function-value
+constructions", "User-defined async primitives"), not here.
 
 ## Raw bodies and the descriptor ABI
 
 Raw `#arch: c` bodies that invoke func-typed parameters (`modify_T` and
-friends) route through the descriptor: call `((Ret (*)(void *, Ps))f->code)(f->env, args…)`. The `modify_T` return-shape contract is unchanged: the
-function's returned owning fields must be fresh, null, or identical to the
-input's — sound because lambdas' returns can only be fresh heap, boundary
-literals, or input-derived.
+friends) route through the descriptor: call
+`((Ret (*)(void *, Ps))f->code)(f->env, args…)`. The `modify_T`
+return-shape contract is unchanged: the function's returned owning fields
+must be fresh, null, or identical to the input's — sound because lambdas'
+returns can only be fresh heap, boundary literals, or input-derived.
 
 ## Current restrictions
 
 - Capturing lambdas stored in containers: unreachable (func values don't
   parse in generic type args or `out` positions).
 - Borrow-captures in general lambda positions: rejected; only the spawn
-  sugar's nursery borrows exist.
-- The spawn sugar's arg packing is not yet the capture machinery proper
-  (owning donors are copied, not moved — donor visibility unchanged). If
-  ever desired, that migration is the recorded "3e".
-- aarch64 spawn-arg staging passes one word per non-string arg: by-value
-  struct args are a pre-existing limitation there.
+  sugar's nursery borrows exist (ASYNC.md, "Nursery borrows").
+- The block-without-arrow form is a declaration-position form only (see
+  "Anonymous functions"); an inline self-typed block body must carry the
+  arrow plus a leading `out T`.

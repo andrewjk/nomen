@@ -74,9 +74,16 @@ concurrency on both targets.
 - **Spawn arguments are owned by the task env** — string arguments are
   deep-copied at pack (the env destructor frees its copy), and owning
   value-struct arguments are copied and destroyed — a raw copy would alias
-  the donor's heap fields and dangle at the donor's scope exit. Class and
-  trait arguments stay shared pointers (the Sendable contract). See
-  [CLOSURE.md](CLOSURE.md) for the packing machinery.
+  the donor's heap fields and dangle at the donor's scope exit. On the C
+  backend an owning value-struct arg is a malloc'd copy whose top-level
+  string fields are strdup'd, then `<T>_destroy`ed and freed by the env
+  destructor. Donors are copied, not moved (visibility unchanged);
+  migrating the packing onto the capture machinery proper is the recorded
+  "3e" migration (see CLOSURE.md). aarch64 staging passes one word per
+  non-string arg: by-value struct args do not reach the env intact there —
+  a pre-existing limitation. Class and trait arguments stay shared pointers
+  (the Sendable contract). See [CLOSURE.md](CLOSURE.md) for the packing
+  machinery.
 - **Nursery borrows** — the one Sendable exception: inside `async { }`, a
   non-Sendable CLASS argument may be passed, where it is a borrow capture —
   sound because the join at block exit provably bounds the borrow by the
@@ -88,7 +95,14 @@ concurrency on both targets.
   lambda's CAPTURES are the eager arguments (Sendable-validated; owning
   captures move into the task, which owns and disposes the closure). A
   func-typed binding handed to a construction is moved (use-after-move
-  afterwards). Also accepted by a nursery's `.start(...)`.
+  afterwards). Also accepted by a nursery's `.start(...)`. The task closure
+  is a per-site ADAPTER over the given value — env: { user closure, result
+  slot, cancel flag, future }; the code calls the value through the
+  descriptor ABI and completes the future. String results are alias-checked
+  against a literal's captured strings (transfer fresh, strdup an alias —
+  balanced); an opaque moved closure duplicates and leaks the original on a
+  string result (leak-never-dangle, bounded at one per run); class/trait/
+  value-struct results skip the dispose (they may alias the env).
 - **`Awaitable`** — the consumption-side trait (`core/System/Awaitable.nm`):
   park-flavored `func wait = (ref self)`. `Task<T>` conforms, so a generic
   helper over `Awaitable` waits on any task — thread, fiber, or
