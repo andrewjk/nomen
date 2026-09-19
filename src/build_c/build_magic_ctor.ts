@@ -4,6 +4,7 @@ import { mono_type_name } from "../build_common/mono_name.ts";
 import { is_built_in_type } from "../built_in_types.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
+import type StructNode from "../nodes/StructNode.ts";
 import build_node from "./build_node.ts";
 import {
 	ensure_concurrency_runtime,
@@ -17,17 +18,48 @@ import { materialize_func_value } from "./utils/closure.ts";
 import { emit_closure_env_type } from "./utils/closure_env.ts";
 
 /**
- * The compiler-special `Thread(fn(args))` / `Fiber(fn(args))` constructor
- * (CLOSURE.md Phase 3b): the construction packs the wrapped call's
+ * The compiler-special `Thread(fn(args))` / `Fiber(fn(args))` constructor —
+ * and its generalized flavor, a user Awaitable class's `MyThing(fn(args))`
+ * (ASYNC.md, "User-defined async primitives") — packs the wrapped call's
  * arguments EAGERLY into a task environment, allocates the result slot,
  * cancel flag, and future, and builds the task closure — a heap descriptor
  * over that environment (the same ABI every lambda lowers to; the runtime's
  * submit/fiber/detach seams all speak it since Phase 3a). The expression
- * yields a heap `Thread<T>` / `Fiber<T>` instance carrying the handles — a
- * real, storable value whose `#destroy` enforces must-start. The launch
- * (`.start()` / `.detach()` / `.start_on(buf)` / a nursery's `.start(...)`)
- * submits the packed closure and transfers the handles out of the instance.
+ * yields a heap instance carrying the handles — a real, storable value
+ * whose launch (`.start()` / `.detach()` / `.start_on(buf)` / a nursery's
+ * `.start(...)` for the library flavors; the class's own launch methods for
+ * a user primitive) submits the packed closure and transfers the handles
+ * out of the instance.
  */
+
+/** The instance class the construction stamps: the reserved library flavors
+ *  by flag, else the node's type name (the Awaitable class the checker
+ *  resolved). Shared by both backends. */
+export function spawn_ctor_class_name(node: FunctionCallNode): string {
+	if (node.is_fiber_ctor) return "Fiber";
+	if (node.is_thread_ctor) return "Thread";
+	return node.type?.name || "Thread";
+}
+
+/** Mono instance name + instance-field facts for one construction site:
+ *  `mono_name` flattens the class's T (a non-generic Awaitable class is
+ *  constructed bare), `has_started` gates the optional must-start flag
+ *  write, `traits` gates the vtable install (a user Awaitable instance is
+ *  trait-dispatchable — its `_vt` must point at the class's traits table;
+ *  Thread/Fiber keep their exact historical emission, vtable-less). */
+export function spawn_instance_info(
+	node: FunctionCallNode,
+	status: BuildStatus,
+): { mono_name: string; has_started: boolean; traits: boolean } {
+	const class_name = spawn_ctor_class_name(node);
+	const struct: StructNode | undefined = status.structs.find((s) => s.name === class_name);
+	const generic = !!struct && struct.type_params.length > 0;
+	return {
+		mono_name: generic ? mono_type_name(class_name, node.type?.type_args) : class_name,
+		has_started: !!struct?.fields.some((f) => f.name === "started"),
+		traits: !!node.is_awaitable_ctor && !!struct?.traits.length,
+	};
+}
 
 /** The trampoline/descriptor C types for one spawn site. */
 export interface SpawnTaskC {
@@ -232,12 +264,14 @@ export interface OwnedArg {
 }
 
 /**
- * Build the `Thread(fn(args))` / `Fiber(fn(args))` construction expression:
+ * Build a spawn-sugar construction expression (`Thread(fn(args))` /
+ * `Fiber(fn(args))`, or a user Awaitable class's `MyThing(fn(args))`):
  * a GCC statement expression that packs the args, allocates the machinery,
  * constructs the task closure, and yields the heap instance.
  */
 export default function build_magic_ctor_node(node: FunctionCallNode, status: BuildStatus) {
-	const kind = node.is_fiber_ctor ? "Fiber" : "Thread";
+	const kind = spawn_ctor_class_name(node);
+	const info = spawn_instance_info(node, status);
 	const call = node.params[0] as FunctionCallNode;
 	const id = status.spawn_counter ?? 0;
 	status.spawn_counter = id + 1;
@@ -246,14 +280,14 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 	ensure_concurrency_runtime(status);
 
 	if (node.is_func_value_ctor) {
-		build_fn_value_ctor(node, status, id, kind);
+		build_fn_value_ctor(node, status, id, kind, info);
 		return;
 	}
 
 	const task_c = spawn_task_c_types(node.function_return_type, status);
 	const { struct_name, desc_name, owned_args } = emit_spawn_task_body(call, status, id, task_c);
 	const { returns_value, slot_c_type } = task_c;
-	const mono_name = mono_type_name(kind, node.type?.type_args);
+	const mono_name = info.mono_name;
 
 	// Statement expression: pack args, allocate slot/flag/future, build the
 	// task closure, construct the instance.
@@ -314,16 +348,17 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 	status.code += `\t_closure->env = _args;\n`;
 	status.code += `\t_closure->owned = 1;\n`;
 	status.code += `\t_future->owner_args = _closure;\n`;
-	// The instance: zeroed first (a class's trait-table slot stays NULL
-	// unless trait-dispatched — the same posture as the spawn-built Task),
-	// then the handles.
+	// The instance: zeroed first, the handles, then — for the generalized
+	// Awaitable flavor — the trait vtable (the instance is
+	// trait-dispatchable; Thread/Fiber keep their vtable-less emission).
 	status.code += `\tstruct ${mono_name} *_self = (struct ${mono_name} *)malloc(sizeof(struct ${mono_name}));\n`;
 	status.code += `\tmemset(_self, 0, sizeof(struct ${mono_name}));\n`;
+	if (info.traits) status.code += `\t_self->_vt = &_${mono_name}_traits;\n`;
 	status.code += `\t_self->task = (unsigned long long)_closure;\n`;
 	status.code += `\t_self->result_slot = (unsigned long long)_result_ptr;\n`;
 	status.code += `\t_self->cancel_flag = (unsigned long long)_cancel_ptr;\n`;
 	status.code += `\t_self->future = (unsigned long long)_future;\n`;
-	status.code += `\t_self->started = 0;\n`;
+	if (info.has_started) status.code += `\t_self->started = 0;\n`;
 	status.code += `\t_self;\n`;
 	status.code += `})\n`;
 }
@@ -347,7 +382,8 @@ function build_fn_value_ctor(
 	node: FunctionCallNode,
 	status: BuildStatus,
 	id: number,
-	kind: "Thread" | "Fiber",
+	kind: string,
+	info: { mono_name: string; has_started: boolean; traits: boolean },
 ) {
 	const fn_value = node.params[0];
 	const task_c = spawn_task_c_types(node.function_return_type, status);
@@ -355,7 +391,7 @@ function build_fn_value_ctor(
 	const struct_name = `__nomen_spawn_${id}_args`;
 	const tramp_name = `__nomen_spawn_${id}_trampoline`;
 	const desc_name = `__nomen_spawn_${id}_descriptor`;
-	const mono_name = mono_type_name(kind, node.type?.type_args);
+	const mono_name = info.mono_name;
 	// A `string` result needs ownership care: a capturing lambda's returned
 	// string may ALIAS its env (returning a captured string), which the
 	// adapter's dispose would free under the Task's feet. For a LITERAL the
@@ -475,11 +511,12 @@ function build_fn_value_ctor(
 	status.code += `\t_future->owner_args = _closure;\n`;
 	status.code += `\tstruct ${mono_name} *_self = (struct ${mono_name} *)malloc(sizeof(struct ${mono_name}));\n`;
 	status.code += `\tmemset(_self, 0, sizeof(struct ${mono_name}));\n`;
+	if (info.traits) status.code += `\t_self->_vt = &_${mono_name}_traits;\n`;
 	status.code += `\t_self->task = (unsigned long long)_closure;\n`;
 	status.code += `\t_self->result_slot = (unsigned long long)_result_ptr;\n`;
 	status.code += `\t_self->cancel_flag = (unsigned long long)_cancel_ptr;\n`;
 	status.code += `\t_self->future = (unsigned long long)_future;\n`;
-	status.code += `\t_self->started = 0;\n`;
+	if (info.has_started) status.code += `\t_self->started = 0;\n`;
 	status.code += `\t_self;\n`;
 	status.code += `})\n`;
 }

@@ -255,6 +255,94 @@ pub class Task<T> : Sendable, Awaitable {
 		```
 	}
 
+	// ---- User-defined async primitive seam (ASYNC.md, "User-defined async
+	// primitives") ----
+	// The construction sugar stores the packed-task machinery in a user
+	// class's plain uint64 fields (task / result_slot / cancel_flag /
+	// future); these statics are the library boundary its own launch
+	// methods drive the runtime through — the same calls the generated
+	// Thread/Fiber launch code makes, so a user primitive parks fibers,
+	// deadlocks correctly, and frees exactly like a library spawn. The
+	// handles are opaque: the only contract is the field NAMES the sugar
+	// writes and these calls read.
+
+	// Submit a packed task closure (the `task` field's value) to the shared
+	// worker pool. The closure must come from a construction of an
+	// Awaitable-conforming class — it is not callable.
+	pub func pool_submit = (uint64 closure) {
+		```
+		#arch: c
+		__nomen_pool_submit((struct nomen_closure *)(void *)closure);
+		```
+		```
+		#arch: aarch64
+		// x0 = closure
+		bl ___nomen_pool_submit
+		```
+	}
+
+	// Park until the task completes (in a fiber this parks the fiber and
+	// frees its worker; on a raw thread it blocks). Idempotent once done.
+	pub func future_wait = (uint64 future) {
+		```
+		#arch: c
+		__nomen_future_wait((struct nomen_future *)(void *)future);
+		```
+		```
+		#arch: aarch64
+		// x0 = future
+		bl ___nomen_future_wait
+		```
+	}
+
+	// Read the uint64 result the task stored. The launch's ref accounting
+	// must still hold a reference (see future_set_refs) — read BEFORE the
+	// final release, which frees the slot.
+	pub func future_result_uint64 = (uint64 future, out uint64) {
+		```
+		#arch: c
+		return *(unsigned long long *)(void *)((struct nomen_future *)(void *)future)->result_slot;
+		```
+		```
+		#arch: aarch64
+		// x0 = future; result_slot at #128
+		ldr x0, [x0, #128]
+		ldr x0, [x0]
+		```
+	}
+
+	// Set the future's reference count before submitting. The construction
+	// leaves one reference (the value's own); a launch that parks on the
+	// future holds the wait-side reference: set_refs(f, 2), submit, and the
+	// running task's completion drops one; the join drops the last (the
+	// future frees its slot, flag, and packed closure at zero).
+	pub func future_set_refs = (uint64 future, int refs) {
+		```
+		#arch: c
+		((struct nomen_future *)(void *)future)->refs = refs;
+		```
+		```
+		#arch: aarch64
+		// x0 = future, x1 = refs (refs is at #116)
+		str w1, [x0, #116]
+		```
+	}
+
+	// Drop one reference to the future. At the last reference the future is
+	// freed along with the result slot, cancel flag, and packed task closure
+	// it owns. After a release the handle's fields are gone: zero them.
+	pub func future_release = (uint64 future) {
+		```
+		#arch: c
+		__nomen_future_release((struct nomen_future *)(void *)future);
+		```
+		```
+		#arch: aarch64
+		// x0 = future
+		bl ___nomen_future_release
+		```
+	}
+
 	// Release this handle's reference to the future. The future owns the
 	// result slot and cancel flag; it (and they) are freed only when the
 	// last reference — this handle, the running trampoline, or a tracking

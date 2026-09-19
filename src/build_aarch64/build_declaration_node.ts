@@ -290,13 +290,15 @@ function emit_data(status: BuildStatus, data: string) {
 	}
 }
 
-/** The compiler-special Thread/Fiber(fn(args)) construction: never a
- *  struct-init call — build_node's func_call intercept packs the task
- *  eagerly and yields the instance (CLOSURE.md Phase 3b). */
+/** The spawn-sugar construction (Thread/Fiber(fn(args)), or the
+ *  generalized user-Awaitable-class flavor): never a struct-init call —
+ *  build_node's func_call intercept packs the task eagerly and yields the
+ *  instance (CLOSURE.md Phase 3b, ASYNC.md "User-defined async
+ *  primitives"). */
 function is_magic_spawn_ctor(node: BaseNode): boolean {
 	if (node.node_type !== "func_call") return false;
 	const fc = node as FunctionCallNode;
-	return !!(fc.is_thread_ctor || fc.is_fiber_ctor);
+	return !!(fc.is_thread_ctor || fc.is_fiber_ctor || fc.is_awaitable_ctor);
 }
 
 function is_struct_constructor(node: BaseNode, status: BuildStatus): boolean {

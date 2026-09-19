@@ -94,6 +94,19 @@ export default class FunctionCallNode extends BaseNode {
 	/** Fiber flavor of the magic spawn constructor (see is_thread_ctor). */
 	is_fiber_ctor?: boolean;
 	/**
+	 * The GENERALIZED spawn-constructor flavor (ASYNC.md, "User-defined
+	 * async primitives"): the call's name resolves to a user CLASS
+	 * conforming to the core `Awaitable` trait and carrying the
+	 * spawn-handle field contract (uint64 fields task / result_slot /
+	 * cancel_flag / future — Thread/Fiber keep their own flags; they do not
+	 * conform to Awaitable). `X(fn(args))` packs the wrapped call eagerly
+	 * and yields a heap `X` instance (monomorphized `X<T>` when generic)
+	 * whose fields carry the launch machinery; the class's own launch
+	 * methods consume them. Typed/stamped by check_magic_ctor exactly like
+	 * the Thread/Fiber flavors.
+	 */
+	is_awaitable_ctor?: boolean;
+	/**
 	 * The construction's single parameter is a zero-argument FUNCTION VALUE
 	 * (a lambda literal or a func-typed local, moved) rather than an
 	 * unevaluated call — CLOSURE.md Phase 3c, the user-defined

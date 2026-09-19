@@ -307,30 +307,6 @@ reachable by driving `Buffer`/`ClassBuffer` directly. Remediation shipped
    slab inside `alloc` while keeping the exact cap needs per-element destroy
    (owning `T`), so it is deferred.
 
-## Bare `Thread(fn(args))` construction is inert and unchecked — RESOLVED (closures Phase 3b)
-
-RESOLVED by CLOSURE.md (phase 3b): `Thread`/`Fiber` are now real
-library classes, the construction is a storable value whose arguments are
-bound eagerly, and a value that is never started aborts at `#destroy` with
-an explanation (`__nomen_spawn_must_start_abort`) — the library must-start
-pattern ASYNC.md recommends, replacing both the inert link-time-error
-failure mode and the transitional syntactic rule (which was never needed:
-making the type real made the dynamic check sufficient). Kept below for
-the historical record of the original report.
-
-`Thread(fn(args))` is a compiler-special constructor (see
-`check_magic_ctor` in `src/check/check_function_call_node.ts`). It is meant
-to be consumed immediately — by `.start()` (direct spawn) or by
-`name.start(Thread(...))` (the nursery escape hatch). A construction that is
-never consumed (e.g. `var t = Thread(work(0))` with no `.start()`) type-checks
-but spawns nothing; downstream, the C backend would try to emit a call to an
-unresolved `Thread` function, producing an unhelpful link-time error.
-
-The broader design question (de-special-casing into a normal constructor,
-an `Awaitable` trait, static-vs-`#destroy` must-start enforcement) is
-analyzed in ASYNC.md's "Shared mutable state" companion analysis and landed as
-closures phases 3b/3c (see CLOSURE.md).
-
 ## Kill-trampoline teardown for parked fibers (deferred)
 
 Nursery cancel/timeout wakes a parked fiber (see `__nomen_future_cancel`) and

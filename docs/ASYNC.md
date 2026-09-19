@@ -94,6 +94,24 @@ concurrency on both targets.
   helper over `Awaitable` waits on any task — thread, fiber, or
   nursery-spawned. Must-start is deliberately not a trait rule; it is each
   spawn class's own `#destroy` contract.
+- **User-defined async primitives** — the construction sugar is not reserved
+  for `Thread`/`Fiber`: any user CLASS conforming to `Awaitable` and carrying
+  the spawn-field contract (uint64 fields `task` / `result_slot` /
+  `cancel_flag` / `future`; an optional `started` bool) can be constructed
+  the same way. `Job(fn(args))` / `Job(() => work(n))` pack eagerly and yield
+  a heap instance with the handles in the contract fields (vtable installed —
+  the value is trait-dispatchable; a generic class monomorphizes with T the
+  wrapped return type). Launching is the class's own methods, driving the
+  packed-task machinery through the library seam — `Task.pool_submit`,
+  `Task.future_wait`, `Task.future_result_uint64`, `Task.future_set_refs`,
+  `Task.future_release` — the same runtime calls the generated launch code
+  makes, so a user primitive parks fibers, participates in deadlock
+  detection, and frees exactly like a library spawn (raw `#arch` blocks
+  stay System-library-only). The construction materializes `Task<T>` so the
+  seam's statics link. No `#init` runs: the instance is zero-built and the
+  handles written, so field defaults stay zero-valid. Must-start is the
+  class's own `#destroy` contract, not the compiler's. Tests:
+  test/awaitable_ctor.test.ts; SPEC.md, "User-defined async primitives".
 - **Unified `Task<T>` handle** — the future behind every spawn is
   reference-counted and shared between the trampoline, the returned Task, and
   the tracking nursery. Join-once semantics, so a Task captured inside a

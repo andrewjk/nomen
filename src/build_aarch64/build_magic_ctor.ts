@@ -1,3 +1,4 @@
+import { spawn_ctor_class_name, spawn_instance_info } from "../build_c/build_magic_ctor.ts";
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import c_function_name from "../build_c/utils/c_function_name.ts";
 import c_type from "../build_c/utils/c_type.ts";
@@ -13,15 +14,18 @@ import { emit_descriptor_address, materialize_func_value_a64 } from "./utils/clo
 import { allocate_stack_space } from "./utils/stack_var.ts";
 
 /**
- * The compiler-special `Thread(fn(args))` / `Fiber(fn(args))` construction
- * (CLOSURE.md Phase 3b), aarch64 backend: the per-site trampoline
- * and a constructor helper are emitted as C in the companion file; the
- * assembly stages the wrapped call's arguments and calls the helper, which
- * packs the env, allocates the future machinery, builds the task closure,
- * constructs the mono Thread/Fiber instance, and returns it.
+ * The spawn-sugar construction (the compiler-special
+ * `Thread(fn(args))` / `Fiber(fn(args))`, or the generalized user
+ * Awaitable class's `MyThing(fn(args))` — CLOSURE.md Phase 3b, ASYNC.md
+ * "User-defined async primitives"), aarch64 backend: the per-site
+ * trampoline and a constructor helper are emitted as C in the companion
+ * file; the assembly stages the wrapped call's arguments and calls the
+ * helper, which packs the env, allocates the future machinery, builds the
+ * task closure, constructs the mono instance, and returns it.
  */
 export default function build_magic_ctor_node(node: FunctionCallNode, status: BuildStatus) {
-	const kind = node.is_fiber_ctor ? "Fiber" : "Thread";
+	const kind = spawn_ctor_class_name(node);
+	const info = spawn_instance_info(node, status);
 	const call = node.params[0] as FunctionCallNode;
 	const id = status.spawn_counter ?? 0;
 	status.spawn_counter = id + 1;
@@ -31,7 +35,7 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 	// Phase 3c: the zero-argument function-value form — the task closure is
 	// an adapter over the given closure (see the C backend's build_fn_value_ctor).
 	if (node.is_func_value_ctor) {
-		build_fn_value_ctor_a64(node, status, id, kind);
+		build_fn_value_ctor_a64(node, status, id, kind, info);
 		return;
 	}
 
@@ -78,10 +82,16 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 			? `struct ${return_type_name} *`
 			: c_type(return_type_name!);
 	const slot_c_type = returns_value ? c_ret_type : "unsigned long long";
-	const mono_name = mono_type_name(kind, node.type?.type_args);
+	const mono_name = info.mono_name;
 
 	// --- Companion C: trampoline + descriptor + constructor helper ---
 	let c = `// --- spawn construction site ${id} (${kind}) ---\n`;
+	// The generalized Awaitable instance is trait-dispatchable: the helper
+	// installs the class's traits table (extern — the table lives in the
+	// emitted data segment; Thread/Fiber keep their vtable-less emission).
+	if (info.traits) {
+		c += `extern void *${mono_name}_traits[];\n`;
+	}
 	if (has_env_destroy) {
 		// The companion cannot see main.h, where build.ts emits
 		// nomen_str_dup — carry a guarded local definition.
@@ -169,11 +179,12 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 	c += `\tf->owner_args = cl;\n`;
 	c += `\tstruct ${mono_name} *self = (struct ${mono_name} *)malloc(sizeof(struct ${mono_name}));\n`;
 	c += `\tmemset(self, 0, sizeof(struct ${mono_name}));\n`;
+	if (info.traits) c += `\tself->_vt = (void **)${mono_name}_traits;\n`;
 	c += `\tself->task = (unsigned long long)cl;\n`;
 	c += `\tself->result_slot = (unsigned long long)a->result_slot;\n`;
 	c += `\tself->cancel_flag = (unsigned long long)a->cancel_flag;\n`;
 	c += `\tself->future = (unsigned long long)f;\n`;
-	c += `\tself->started = 0;\n`;
+	if (info.has_started) c += `\tself->started = 0;\n`;
 	c += `\treturn self;\n`;
 	c += `}\n`;
 
@@ -236,14 +247,15 @@ function build_fn_value_ctor_a64(
 	node: FunctionCallNode,
 	status: BuildStatus,
 	id: number,
-	kind: "Thread" | "Fiber",
+	kind: string,
+	info: { mono_name: string; has_started: boolean; traits: boolean },
 ) {
 	const fn_value = node.params[0];
 	const helper_name = `nomen_fnval_${id}_ctor`;
 	const struct_name = `__nomen_spawn_${id}_args`;
 	const tramp_name = `__nomen_spawn_${id}_trampoline`;
 	const desc_name = `__nomen_spawn_${id}_descriptor`;
-	const mono_name = mono_type_name(kind, node.type?.type_args);
+	const mono_name = info.mono_name;
 
 	const return_type_name = node.function_return_type?.name;
 	const returns_value = !!(
@@ -307,6 +319,10 @@ function build_fn_value_ctor_a64(
 		!returns_value || dup_result || (!is_class_ret && !is_trait_ret && !is_struct_ret);
 
 	let c = `// --- function-value spawn construction site ${id} (${kind}) ---\n`;
+	// Trait vtable for the generalized Awaitable flavor (see the call form).
+	if (info.traits) {
+		c += `extern void *${mono_name}_traits[];\n`;
+	}
 	if (env_def) c += env_def;
 	if (dup_result) {
 		// The companion does not include main.h, where build.ts emits
@@ -358,11 +374,12 @@ function build_fn_value_ctor_a64(
 	c += `\tf->owner_args = cl;\n`;
 	c += `\tstruct ${mono_name} *self = (struct ${mono_name} *)malloc(sizeof(struct ${mono_name}));\n`;
 	c += `\tmemset(self, 0, sizeof(struct ${mono_name}));\n`;
+	if (info.traits) c += `\tself->_vt = (void **)${mono_name}_traits;\n`;
 	c += `\tself->task = (unsigned long long)cl;\n`;
 	c += `\tself->result_slot = (unsigned long long)a->result_slot;\n`;
 	c += `\tself->cancel_flag = (unsigned long long)a->cancel_flag;\n`;
 	c += `\tself->future = (unsigned long long)f;\n`;
-	c += `\tself->started = 0;\n`;
+	if (info.has_started) c += `\tself->started = 0;\n`;
 	c += `\treturn self;\n`;
 	c += `}\n`;
 

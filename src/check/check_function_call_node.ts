@@ -20,6 +20,9 @@ import check_function_call from "./check_function_call.ts";
 import check_function_node from "./check_function_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
+import resolve_awaitable_spawn_class, {
+	spawn_field_contract_gaps,
+} from "./utils/awaitable_spawn_class.ts";
 import { maybe_record_capture } from "./utils/captures.ts";
 import { monomorphize_enum, enforce_case_payload_ownership } from "./utils/enum_mono.ts";
 import {
@@ -107,14 +110,51 @@ export default function check_function_call_node(
 		(first?.node_type === "value" &&
 			typeof (first as ValueNode).value === "string" &&
 			(first_decl?.func_params !== undefined || !!first_fn));
-	if (
-		magic_ctor &&
+	// The sugar shape: one argument that is an unevaluated call or a
+	// zero-argument function value, with no free function shadowing the name.
+	const spawn_ctor_shape =
 		node.params.length === 1 &&
 		(node.params[0].node_type === "func_call" || func_value_arg) &&
-		!find_free_function(status, node.name) &&
+		!find_free_function(status, node.name);
+	// The GENERALIZED flavor (ASYNC.md, "User-defined async primitives"):
+	// any user CLASS conforming to the core `Awaitable` trait gets the same
+	// construction sugar — `MyThing(fn(args))` packs the call eagerly and
+	// yields a heap instance whose spawn-handle fields carry the launch
+	// machinery. The class must carry the field contract (uint64 task /
+	// result_slot / cancel_flag / future) and at most one type parameter
+	// (T = the wrapped call's return type); otherwise this is a dedicated,
+	// actionable error rather than a confusing missing-#init one. Thread and
+	// Fiber keep their reserved fast path above (they do not conform to
+	// Awaitable — the Task their start() yields does).
+	let awaitable_ctor: StructNode | undefined;
+	if (!magic_ctor && spawn_ctor_shape) {
+		const candidate = resolve_awaitable_spawn_class(node.name, status);
+		if (candidate) {
+			const gaps = spawn_field_contract_gaps(candidate);
+			if (gaps.length === 0 && candidate.type_params.length <= 1) {
+				awaitable_ctor = candidate;
+			} else {
+				const why = gaps.length
+					? `it lacks the spawn-field contract (${gaps.join("; ")})`
+					: `it has ${candidate.type_params.length} type parameters (the sugar types the class as C<T> with T the wrapped call's return type)`;
+				add_error(
+					status,
+					`'${node.name}' conforms to Awaitable but cannot take the ${node.name}(fn(args)) construction sugar: ${why}`,
+					node.start,
+				);
+				return false;
+			}
+		}
+	}
+	if (
+		magic_ctor &&
+		spawn_ctor_shape &&
 		!(magic_ctor === "Thread" && thread_shadow_struct && !thread_shadow_struct.is_library)
 	) {
 		return check_magic_ctor(node, status, magic_ctor);
+	}
+	if (awaitable_ctor) {
+		return check_magic_ctor(node, status, awaitable_ctor.name);
 	}
 
 	let func = find_free_function(status, node.name);
@@ -1232,9 +1272,10 @@ function resolve_free_calls_in_node(node: BaseNode | undefined | null, status: C
 	const any_node = node as any;
 	if (node.node_type === "func_call" && !any_node.resolved_function) {
 		const name = (node as import("../nodes/FunctionCallNode.ts").default).name;
-		// A monomorphised clone of the compiler-special Thread/Fiber(fn(args))
-		// constructor needs its annotations re-derived (the clone is never
-		// re-checked) — mirrors the nursery.start rederivation.
+		// A monomorphised clone of a spawn-sugar construction
+		// (Thread/Fiber(fn(args)), or a user Awaitable class's
+		// MyThing(fn(args))) needs its annotations re-derived (the clone is
+		// never re-checked) — mirrors the nursery.start rederivation.
 		if (name === "Thread" || name === "Fiber") {
 			const fiber_struct = resolve_declared_struct("Fiber", status);
 			const magic: "Thread" | "Fiber" | undefined =
@@ -1248,6 +1289,19 @@ function resolve_free_calls_in_node(node: BaseNode | undefined | null, status: C
 					node as import("../nodes/FunctionCallNode.ts").default,
 					status,
 					magic,
+				);
+			}
+		} else {
+			const candidate = resolve_awaitable_spawn_class(name, status);
+			if (
+				candidate &&
+				spawn_field_contract_gaps(candidate).length === 0 &&
+				candidate.type_params.length <= 1
+			) {
+				rederive_magic_ctor_annotations(
+					node as import("../nodes/FunctionCallNode.ts").default,
+					status,
+					candidate.name,
 				);
 			}
 		}
@@ -1475,23 +1529,22 @@ function derive_annotations_for_access_func(
  * triggers Task<T> monomorphization so the struct body is emitted.
  */
 /**
- * Check the compiler-special `Thread(fn(args))` / `Fiber(fn(args))`
- * constructor. Resolves the wrapped call (function resolution, argument
- * types, return type), validates Sendable on every argument (they are
+ * Check a spawn-sugar construction — `Thread(fn(args))` / `Fiber(fn(args))`
+ * (the reserved library flavors) or the generalized `MyThing(fn(args))`
+ * (any user Awaitable class carrying the spawn-field contract, ASYNC.md).
+ * Resolves the wrapped call (function resolution, argument types, return
+ * type), validates Sendable on every argument (they are
  * packed into the task environment EAGERLY, at the construction site —
  * CLOSURE.md Phase 3b), and stamps the construction as the
- * monomorphized library class `Thread<T>` / `Fiber<T>` (T = the wrapped
- * call's return type, uint64 for void — the same convention as Task<T>).
- * The result is a real, storable value: `.start()` / `.detach()` /
- * `.start_on(buf)` launch it (from the construction expression itself or a
- * stored binding), and its `#destroy` enforces must-start (the library
- * pattern from ASYNC.md).
+ * monomorphized library class `Thread<T>` / `Fiber<T>` (or the user's
+ * `MyThing<T>`) — T = the wrapped call's return type, uint64 for void —
+ * the same convention as Task<T>; a non-generic class is stamped bare).
+ * The result is a real, storable value: the launch (`.start()` /
+ * `.detach()` on the library flavors; the class's own launch methods for a
+ * user primitive) submits the packed closure, and the library flavors'
+ * `#destroy` enforces must-start (the library pattern from ASYNC.md).
  */
-function check_magic_ctor(
-	node: FunctionCallNode,
-	status: CheckStatus,
-	name: "Thread" | "Fiber",
-): boolean {
+function check_magic_ctor(node: FunctionCallNode, status: CheckStatus, name: string): boolean {
 	const first = node.params[0];
 
 	// ---- Phase 3c: the zero-argument FUNCTION VALUE form ----
@@ -1510,23 +1563,57 @@ function check_magic_ctor(
 		return false;
 	}
 	validate_spawn_args_sendable(call, status, (status.nursery_depth ?? 0) > 0);
-	if (name === "Thread") node.is_thread_ctor = true;
-	else node.is_fiber_ctor = true;
+	stamp_spawn_ctor(node, name);
 	const return_type = call.type;
+	// Monomorphize the class for T so its body (fields, #destroy) is
+	// emitted for this instantiation; a non-generic class is stamped bare.
 	const result_type_arg =
 		return_type && return_type.name && return_type.name !== "void" && return_type.name !== "?"
 			? new Type(return_type.name)
 			: new Type("uint64");
-	// Monomorphize the library class for T so its body (fields, #destroy)
-	// is emitted for this instantiation.
-	const spawn_struct = status.structs.find((s) => s.name === name);
-	if (spawn_struct && spawn_struct.type_params.length > 0) {
-		monomorphize(spawn_struct, [result_type_arg], status);
-	}
 	node.function_return_type = return_type;
 	node.type = new Type(name);
-	node.type.type_args = [result_type_arg];
+	stamp_spawn_type_args(node, status, name, result_type_arg);
 	return true;
+}
+
+/** Flag the construction with its flavor (Thread / Fiber / generalized
+ *  Awaitable class) so the build dispatches and the Thread/Fiber-only
+ *  launch paths recognize their own. */
+function stamp_spawn_ctor(node: FunctionCallNode, name: string) {
+	if (name === "Thread") node.is_thread_ctor = true;
+	else if (name === "Fiber") node.is_fiber_ctor = true;
+	else node.is_awaitable_ctor = true;
+}
+
+/** Monomorphize the spawn class for T and stamp the type args. A declared
+ *  NON-generic Awaitable class is constructed bare (a spurious type arg
+ *  would flatten into a nonexistent `X_T` mono name); everything else —
+ *  generic classes, and a name with no declared struct at all (the
+ *  library-less machinery-test parses, where `Thread`/`Fiber` resolve to
+ *  nothing) — carries T on the type args, which the `.start()` /
+ *  nursery paths read. Also materializes Task<T>: the launch seam a user
+ *  primitive drives is Task's runtime (Task.pool_submit / future_* —
+ *  ASYNC.md, "User-defined async primitives"), and statics on the bare
+ *  generic only link once a mono instantiation exists (the same
+ *  materialization a `.start()` launch performs). */
+function stamp_spawn_type_args(
+	node: FunctionCallNode,
+	status: CheckStatus,
+	name: string,
+	result_type_arg: Type,
+) {
+	const spawn_struct = status.structs.find((s) => s.name === name);
+	if (!spawn_struct || spawn_struct.type_params.length > 0) {
+		if (spawn_struct) {
+			monomorphize(spawn_struct, [result_type_arg], status);
+		}
+		node.type.type_args = [result_type_arg];
+	}
+	const task_struct = status.structs.find((s) => s.name === "Task");
+	if (task_struct && task_struct.type_params.length > 0) {
+		monomorphize(task_struct, [result_type_arg], status);
+	}
 }
 
 /**
@@ -1538,13 +1625,13 @@ function check_magic_ctor(
  * FUNC-TYPED LOCAL is moved into the task (the task's adapter owns and
  * disposes the closure — which also satisfies `.detach()`'s owned-capture
  * contract by construction). Either way the construction is typed as the
- * monomorphized `Thread<T>` / `Fiber<T>` with T the function value's return
- * type (uint64 for void).
+ * monomorphized `Thread<T>` / `Fiber<T>` (or the user's Awaitable class,
+ * ASYNC.md) with T the function value's return type (uint64 for void).
  */
 function check_magic_ctor_fn_value(
 	node: FunctionCallNode,
 	status: CheckStatus,
-	name: "Thread" | "Fiber",
+	name: string,
 	first: BaseNode,
 ): boolean {
 	const zero_arg_error = () =>
@@ -1627,8 +1714,7 @@ function check_magic_ctor_fn_value(
 		}
 	}
 
-	if (name === "Thread") node.is_thread_ctor = true;
-	else node.is_fiber_ctor = true;
+	stamp_spawn_ctor(node, name);
 	node.is_func_value_ctor = true;
 
 	// The captures become the eager arguments — everything crossing the
@@ -1648,30 +1734,28 @@ function check_magic_ctor_fn_value(
 		return_type && return_type.name && return_type.name !== "void" && return_type.name !== "?"
 			? new Type(return_type.name)
 			: new Type("uint64");
-	const spawn_struct = status.structs.find((s) => s.name === name);
-	if (spawn_struct && spawn_struct.type_params.length > 0) {
-		monomorphize(spawn_struct, [result_type_arg], status);
-	}
 	node.function_return_type = return_type ?? new Type("void");
 	node.type = new Type(name);
-	node.type.type_args = [result_type_arg];
+	stamp_spawn_type_args(node, status, name, result_type_arg);
 	return true;
 }
 
 /**
- * Re-derive the check annotations for a `Thread(fn(args))` /
- * `Fiber(fn(args))` constructor inside a monomorphised body. The mono body
+ * Re-derive the check annotations for a spawn-sugar construction
+ * (`Thread(fn(args))` / `Fiber(fn(args))` / a user Awaitable class's
+ * `MyThing(fn(args))`) inside a monomorphised body. The mono body
  * is cloned from the unchecked generic body and never re-checked, so the
  * clone's constructor lacks the ctor flag / the wrapped return type.
  * Mirrors check_magic_ctor without re-running call resolution
  * (resolve_free_calls_in_node has stamped the wrapped call).
  */
-function rederive_magic_ctor_annotations(
-	fc: FunctionCallNode,
-	status: CheckStatus,
-	name: "Thread" | "Fiber",
-) {
-	const is_flagged = name === "Thread" ? fc.is_thread_ctor : fc.is_fiber_ctor;
+function rederive_magic_ctor_annotations(fc: FunctionCallNode, status: CheckStatus, name: string) {
+	const is_flagged =
+		name === "Thread"
+			? fc.is_thread_ctor
+			: name === "Fiber"
+				? fc.is_fiber_ctor
+				: fc.is_awaitable_ctor;
 	if (is_flagged) return;
 	if (fc.params.length !== 1) return;
 	const first = fc.params[0];
@@ -1691,16 +1775,11 @@ function rederive_magic_ctor_annotations(
 			return_type && return_type.name && return_type.name !== "void" && return_type.name !== "?"
 				? new Type(return_type.name)
 				: new Type("uint64");
-		const spawn_struct = status.structs.find((s) => s.name === name);
-		if (spawn_struct && spawn_struct.type_params.length > 0) {
-			monomorphize(spawn_struct, [result_type_arg], status);
-		}
-		if (name === "Thread") fc.is_thread_ctor = true;
-		else fc.is_fiber_ctor = true;
+		stamp_spawn_ctor(fc, name);
 		fc.is_func_value_ctor = true;
 		fc.function_return_type = return_type ?? new Type("void");
 		if (!fc.type?.name) fc.type = new Type(name);
-		fc.type.type_args = [result_type_arg];
+		stamp_spawn_type_args(fc, status, name, result_type_arg);
 		return;
 	}
 	const call = first as FunctionCallNode;
@@ -1712,24 +1791,19 @@ function rederive_magic_ctor_annotations(
 			call.type = func.return_type;
 		}
 	}
-	if (name === "Thread") fc.is_thread_ctor = true;
-	else fc.is_fiber_ctor = true;
+	stamp_spawn_ctor(fc, name);
 	fc.function_return_type = return_type;
 	const result_type_arg =
 		return_type && return_type.name && return_type.name !== "void" && return_type.name !== "?"
 			? new Type(return_type.name)
 			: new Type("uint64");
-	// The clone must see the monomorphized library class (its body is built
+	// The clone must see the monomorphized class (its body is built
 	// per-instantiation) and carry the type args the build reads for the
-	// mono Thread/Fiber C name.
-	const spawn_struct = status.structs.find((s) => s.name === name);
-	if (spawn_struct && spawn_struct.type_params.length > 0) {
-		monomorphize(spawn_struct, [result_type_arg], status);
-	}
+	// mono C name.
 	if (!fc.type?.name) {
 		fc.type = new Type(name);
 	}
-	fc.type.type_args = [result_type_arg];
+	stamp_spawn_type_args(fc, status, name, result_type_arg);
 }
 
 function rederive_nursery_spawn_annotations(fc: AccessFunctionCallNode, status: CheckStatus) {

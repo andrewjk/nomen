@@ -100,6 +100,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.is_enum_shorthand = n.is_enum_shorthand;
 			c.is_thread_ctor = n.is_thread_ctor;
 			c.is_fiber_ctor = n.is_fiber_ctor;
+			c.is_awaitable_ctor = n.is_awaitable_ctor;
 			c.is_func_value_ctor = n.is_func_value_ctor;
 			c.function_return_type = n.function_return_type
 				? clone_type(n.function_return_type)

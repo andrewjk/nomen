@@ -151,6 +151,22 @@ task — thread, fiber, or nursery-spawned. Must-start is deliberately NOT a
 trait rule: start-optional lifecycles are legitimate for user primitives;
 it is a per-struct `#destroy` contract.
 
+### The generalized flavor: user Awaitable classes
+
+The construction is not reserved for the two library names. Any user CLASS
+conforming to `Awaitable` that declares the spawn-field contract (uint64
+fields `task` / `result_slot` / `cancel_flag` / `future`; optional `started`
+bool) gets the same sugar — `MyThing(fn(args))` / `MyThing(() => work(n))`
+pack eagerly and yield a heap instance with the handles in the contract
+fields. Launch is the class's own business: pure-Nomen methods over the
+`Task.pool_submit` / `Task.future_*` seam (the same runtime calls the
+generated Thread/Fiber launch code makes — raw blocks stay library-only).
+A contract-missing class gets a dedicated compile error rather than a
+failed `#init` lookup; the construction zero-builds the instance (no
+`#init`, no field initializers); Sendable is enforced identically; and the
+construction materializes `Task<T>` so the seam's statics link. See
+ASYNC.md, "User-defined async primitives", and test/awaitable_ctor.test.ts.
+
 ## Raw bodies and the descriptor ABI
 
 Raw `#arch: c` bodies that invoke func-typed parameters (`modify_T` and

@@ -2524,6 +2524,83 @@ Arguments to a spawned call must be `Sendable`. The spawned function's
 arguments are type-erased to `uint64` for the thread boundary, then cast back
 at the call site — primitives by value, classes/traits by pointer.
 
+### User-defined async primitives
+
+The construction sugar is not reserved for `Thread` and `Fiber`. Any user
+class that conforms to the core `Awaitable` trait and carries the spawn-field
+contract — four `uint64` instance fields named `task`, `result_slot`,
+`cancel_flag`, and `future` — can be constructed the same way. An optional
+`started` field receives the must-start flag (declare it if the class wants
+must-start semantics; omit it otherwise):
+
+```
+import System
+
+class Job : Awaitable {
+    pub var uint64 task = 0
+    pub var uint64 result_slot = 0
+    pub var uint64 cancel_flag = 0
+    pub var uint64 future = 0
+    pub var started = false
+
+    // Launch: hold the wait-side future ref, submit the packed task.
+    pub func start = (ref self) {
+        Task.future_set_refs(self.future, 2)
+        Task.pool_submit(self.task)
+        self.started = true
+    }
+
+    // Join: park on the future, drop the handle's ref, clear the fields.
+    pub func wait = (ref self) {
+        if self.future != 0 {
+            Task.future_wait(self.future)
+            Task.future_release(self.future)
+            self.future = 0
+            self.result_slot = 0
+            self.cancel_flag = 0
+        }
+    }
+}
+
+func ping = (uint64 id) {
+    Console.write_line("job \\{id}")
+}
+
+pub func main = () {
+    var job = Job(ping(1))
+    job.start()
+    job.wait()
+}
+```
+
+`Job(ping(1))` evaluates and packs the arguments eagerly, allocates the
+result slot, cancel flag, and future, and yields a heap instance with the
+handles stored in the contract fields — exactly what `Thread(...)` does,
+minus the launch. Launching is the class's own business: ordinary methods
+that drive the packed-task machinery through the library seam —
+`Task.pool_submit`, `Task.future_wait`, `Task.future_result_uint64`,
+`Task.future_set_refs`, `Task.future_release` — the same runtime calls the
+generated `Thread`/`Fiber` launch code makes, so a user primitive parks
+fibers, participates in deadlock detection, and frees exactly like a library
+spawn. The construction is a full citizen of the trait system — a user
+primitive flows into `ref Awaitable` and its `wait` dispatches through the
+vtable — and a generic class `Job<T>` is monomorphized with `T` the wrapped
+call's return type (`uint64` for `void`), so `result`-style methods can
+return `T`.
+
+The rules:
+
+- The type must be a class (the construction heap-allocates), conform to
+  `Awaitable`, and declare the four contract fields as `uint64`. A missing or
+  mistyped field is a dedicated compile error, not a failed method lookup.
+- Field initializers and `#init` do not run: the construction zero-builds the
+  instance and writes the handles. Keep field defaults zero-valid, as the
+  library spawn classes do.
+- `Sendable` is enforced on every packed argument (and on a function-value
+  form's captures), exactly as for `Thread`.
+- Must-start is not imposed: whether an unstarted construction aborts at
+  `#destroy` is the class's own contract.
+
 ### Fiber
 
 `Fiber(fn(args)).start()` is the lightweight sibling of `Thread(...).start()`:
