@@ -191,6 +191,21 @@ export default function build_return_node(
 		emit_return_value(node.value, nir_value, status);
 		status.code += `;\n`;
 		reclaim_all_c_scopes(status);
+	} else if (
+		(status.function_return_type?.name ?? node.type?.name) === "void" &&
+		!node.type?.is_array
+	) {
+		// A VOID expression in return position (an arrow-body lambda whose
+		// single statement calls a void function — e.g. `() => ch.send(1)`).
+		// There is no value to carry: emit the call as a statement and
+		// return. (Falling through would declare `_return_val` as `long`
+		// from the `c_type(name || "int")` fallback and return a void
+		// value — a C type error.)
+		emit_allocations(node.value, status);
+		emit_return_value(node.value, nir_value, status);
+		status.code += `;\n`;
+		reclaim_all_c_scopes(status);
+		status.code += `return;\n`;
 	} else {
 		emit_allocations(node.value, status);
 		// Use the function's declared return type for the _return_val temp.

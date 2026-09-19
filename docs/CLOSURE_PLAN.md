@@ -238,6 +238,36 @@ de-specialized into library structs over capturing lambdas; the
 enforces owned captures; must-start via the library `#destroy` pattern; the
 `Awaitable` construction side opens user-defined spawnables.
 
+> **Status: Phase 3c LANDED — user-defined spawnables: the construction
+> accepts a function value.** `Thread(fn)` / `Fiber(fn)` now take a
+> ZERO-ARGUMENT function value in place of the unevaluated call: a lambda
+> literal (`Thread(() => work(base))` — its CAPTURES are the eager
+> arguments, Sendable-validated; fully self-typed signature required, with
+> the return inferable from an expression body) or a zero-arg FUNC-TYPED
+> binding / named function. A func-typed LOCAL is MOVEd into the task
+> (use-after-move error; the adapter owns and disposes the closure — which
+> also satisfies `.detach()`'s owned-capture contract by construction); a
+> named function / capture-free declaration lambda borrows its
+> thunk-backed STATIC descriptor (reusable, nothing to own). The task
+> closure is a per-site ADAPTER (both backends): env = { user closure,
+> result slot, cancel flag, future }, code calls the value through the
+> descriptor ABI and completes the future. String results are
+> alias-checked against a literal's captured strings (transfer fresh,
+> strdup an alias — balanced); opaque closures (moved locals) duplicate
+> and leak the original (leak-never-dangle); class/trait/struct results
+> skip the dispose (may alias the env). En route: `parse_declaration`'s
+> anonymous-function arrow bodies now set `is_arrow_body` (matching
+> parse_function) so a lambda without a target signature infers its return
+> instead of erroring, and `build_return_node` emits void arrow-expression
+> returns as a statement (previously `long _return_val = <void call>`).
+> The nursery escape hatch accepts the form (`pool.start(Thread(() => …))`).
+> Not yet (3d): borrow-capture KINDS for the call-sugar's packed args
+> (today the sugar hand-packs Sendable args — an owning-struct arg's heap
+> fields still dangle; the capture machinery's move/strdup semantics are
+> the fix), and the `Awaitable` consumption-side trait per ASYNC_PLAN.
+> Green: new `test/fn_value_spawn.test.ts` (10 tests, both backends) +
+> full suite (3451 passed / 3 known skips).
+>
 > **Status: Phase 3b LANDED — Thread/Fiber are real library classes.**
 > `Thread(fn(args))` / `Fiber(fn(args))` now construct MONOMORPHIZED
 > library classes (`core/System/Thread.nm`, `Fiber.nm` — `class Thread<T>`

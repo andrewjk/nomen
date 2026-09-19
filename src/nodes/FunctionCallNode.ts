@@ -94,6 +94,15 @@ export default class FunctionCallNode extends BaseNode {
 	/** Fiber flavor of the magic spawn constructor (see is_thread_ctor). */
 	is_fiber_ctor?: boolean;
 	/**
+	 * The construction's single parameter is a zero-argument FUNCTION VALUE
+	 * (a lambda literal or a func-typed local, moved) rather than an
+	 * unevaluated call — docs/CLOSURE_PLAN.md Phase 3c, the user-defined
+	 * spawnables form: `Thread(() => work(x))`. The task closure wraps the
+	 * given closure through a per-site adapter; its CAPTURES are the eager
+	 * arguments (Sendable-validated).
+	 */
+	is_func_value_ctor?: boolean;
+	/**
 	 * For `Thread(fn(args))`: the wrapped function's return type, captured
 	 * during checking. Consumed by the `.start()` / nursery `.start()` build
 	 * paths to decide whether the trampoline captures a result.

@@ -1,11 +1,14 @@
 import emission_label from "../build_common/emission_label.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
+import FunctionNode from "../nodes/FunctionNode.ts";
 import build_node from "./build_node.ts";
 import { ensure_concurrency_runtime, spawn_arg_c_types } from "./build_spawn_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import c_type from "./utils/c_type.ts";
+import { materialize_func_value } from "./utils/closure.ts";
+import { emit_closure_env_type } from "./utils/closure_env.ts";
 
 /**
  * The compiler-special `Thread(fn(args))` / `Fiber(fn(args))` constructor
@@ -143,6 +146,11 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 	// Emit pool infrastructure on first spawn (file scope, deduped).
 	ensure_concurrency_runtime(status);
 
+	if (node.is_func_value_ctor) {
+		build_fn_value_ctor(node, status, id, kind);
+		return;
+	}
+
 	const task_c = spawn_task_c_types(node.function_return_type, status);
 	const { struct_name, desc_name } = emit_spawn_task_body(call, status, id, task_c);
 	const { returns_value, slot_c_type } = task_c;
@@ -198,4 +206,179 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 	status.code += `\t_self->started = 0;\n`;
 	status.code += `\t_self;\n`;
 	status.code += `})\n`;
+}
+
+/**
+ * The Phase 3c function-value construction (`Thread(() => work(n))` /
+ * `Thread(job)` with a zero-argument func-typed local): the task closure is
+ * an ADAPTER over the given closure. The adapter env carries the user
+ * closure pointer plus the machinery; the trampoline calls the user closure
+ * through the descriptor ABI (`code(env)` — a zero-arg function value takes
+ * no further arguments), stores the result, disposes the user closure (the
+ * task owns it — for a literal it was fresh, for a local the construction
+ * moved it), and completes the future. A `string` result is strdup'd into
+ * the slot: a capturing lambda's returned string aliases its env, which the
+ * dispose would otherwise free under the Task's feet. For class/trait/
+ * value-struct results the user closure is NOT disposed — a returned
+ * instance may alias the env's captures, and the codebase's posture is
+ * leak-never-dangle.
+ */
+function build_fn_value_ctor(
+	node: FunctionCallNode,
+	status: BuildStatus,
+	id: number,
+	kind: "Thread" | "Fiber",
+) {
+	const fn_value = node.params[0];
+	const task_c = spawn_task_c_types(node.function_return_type, status);
+	const { returns_value, c_ret_type, slot_c_type } = task_c;
+	const struct_name = `__nomen_spawn_${id}_args`;
+	const tramp_name = `__nomen_spawn_${id}_trampoline`;
+	const desc_name = `__nomen_spawn_${id}_descriptor`;
+	const mono_name = mono_type_name(kind, node.type?.type_args);
+	// A `string` result needs ownership care: a capturing lambda's returned
+	// string may ALIAS its env (returning a captured string), which the
+	// adapter's dispose would free under the Task's feet. For a LITERAL the
+	// capture set is known: compare the result against each captured string
+	// — an alias is duplicated into the slot (the env keeps its original,
+	// disposed with the closure); anything else is transferred as-is (the
+	// Task machinery owns the slot's buffer). For a moved local or a named
+	// function the closure is opaque: duplicate and LEAK the original
+	// (leak-never-dangle; bounded at one per run).
+	const dup_result = returns_value && node.function_return_type?.name === "string";
+	const lambda = fn_value.node_type === "func" ? (fn_value as FunctionNode) : undefined;
+	const string_caps = lambda
+		? (lambda.captures ?? []).filter(
+				(c) => c.type.name === "string" && !c.type.is_view && !c.type.is_array,
+			)
+		: [];
+	let result_store: string;
+	if (!dup_result) {
+		result_store = `*(a->result_slot) = _r;`;
+	} else if (lambda && string_caps.length === 0) {
+		// A literal with no captured strings: the result cannot alias the
+		// env — transfer it.
+		result_store = `*(a->result_slot) = _r;`;
+	} else if (lambda) {
+		const env_name = emit_closure_env_type(lambda, status);
+		const checks = string_caps
+			.map(
+				(c) =>
+					`_r.ptr == (char *)((struct ${env_name} *)a->fn->env)->${c_function_name(c.name)}.ptr`,
+			)
+			.join(" || ");
+		result_store = `*(a->result_slot) = (${checks}) ? nomen_str_dup(_r) : _r;`;
+	} else {
+		result_store = `*(a->result_slot) = nomen_str_dup(_r);`;
+	}
+
+	// The adapter env: the user closure + the machinery fields the
+	// trampoline and the Task handle share.
+	let header = `struct ${struct_name} {\n`;
+	header += `\tstruct nomen_closure *fn;\n`;
+	header += `\t${slot_c_type} *result_slot;\n`;
+	header += `\tunsigned long long *cancel_flag;\n`;
+	header += `\tstruct nomen_future *future;\n`;
+	header += `};\n`;
+	header += `static void ${tramp_name}(struct nomen_closure *_c) {\n`;
+	header += `\tstruct ${struct_name} *a = (struct ${struct_name} *)_c->env;\n`;
+	header += `\t__nomen_current_cancel_flag = a->cancel_flag;\n`;
+	if (returns_value) {
+		header += `\t${c_ret_type} _r = ((${c_ret_type} (*)(void *))a->fn->code)(a->fn->env);\n`;
+		header += `\t${result_store}\n`;
+	} else {
+		header += `\t((void (*)(void *))a->fn->code)(a->fn->env);\n`;
+	}
+	header += `\t__nomen_current_cancel_flag = NULL;\n`;
+	if (
+		!returns_value ||
+		dup_result ||
+		(!is_class_or_trait_ret(node, status) && !is_struct_ret(node, status))
+	) {
+		header += `\t__nomen_closure_dispose(a->fn);\n`;
+	}
+	header += `\t__nomen_future_complete(a->future);\n`;
+	header += `\t__nomen_future_release(a->future);\n`;
+	header += `}\n`;
+	header += `static struct nomen_closure ${desc_name} = { (void *)${tramp_name}, NULL, 0, NULL };\n`;
+	status.headers += header;
+
+	// Statement expression: build the function value, wrap it in the
+	// adapter closure, construct the instance.
+	status.code += `({\n`;
+	status.code += `\tstruct nomen_closure *_user_fn = `;
+	const resolved_fn = (
+		fn_value as unknown as { resolved_function?: import("../nodes/FunctionNode.ts").default }
+	).resolved_function;
+	if (fn_value.node_type === "func") {
+		// A lambda literal: the definition + descriptor (heap when
+		// capturing, static when capture-free).
+		build_node(fn_value, status);
+	} else if (resolved_fn) {
+		// A named function / capture-free declaration lambda: its
+		// thunk-backed static descriptor (nothing to own, nothing to move).
+		status.code += materialize_func_value(resolved_fn, status);
+	} else {
+		// A func-typed local: the stored descriptor, MOVED into the task.
+		build_node(fn_value, status);
+	}
+	status.code += `;\n`;
+	// A func-typed LOCAL was moved into the task: its scope-exit
+	// free-if-owned arm must skip it (the adapter owns the closure now).
+	if (fn_value.node_type === "value" && (fn_value as unknown as { is_moved?: boolean }).is_moved) {
+		const name = (fn_value as unknown as { value: string }).value;
+		if (!status.moved) status.moved = new Set();
+		status.moved.add(name);
+	}
+	status.code += `\t${slot_c_type} *_result_ptr = (${slot_c_type} *)${returns_value ? `malloc(sizeof(${slot_c_type}))` : "malloc(16)"};\n`;
+	status.code += `\tmemset(_result_ptr, 0, ${returns_value ? `sizeof(${slot_c_type})` : "16"});\n`;
+	status.code += `\tunsigned long long *_cancel_ptr = (unsigned long long *)malloc(sizeof(unsigned long long));\n`;
+	status.code += `\t*_cancel_ptr = 0;\n`;
+	status.code += `\tstruct nomen_future *_future = (struct nomen_future *)malloc(sizeof(struct nomen_future));\n`;
+	status.code += `\tpthread_mutex_init(&_future->mu, NULL);\n`;
+	status.code += `\tpthread_cond_init(&_future->cv, NULL);\n`;
+	status.code += `\t_future->done = 0;\n`;
+	status.code += `\t_future->cancel_flag = _cancel_ptr;\n`;
+	status.code += `\t_future->result_slot = _result_ptr;\n`;
+	status.code += `\t_future->fiber_waiters = NULL;\n`;
+	status.code += `\t_future->owning_fiber = NULL;\n`;
+	status.code += `\t_future->refs = 1;\n`;
+	status.code += `\tstruct nomen_closure *_closure = (struct nomen_closure *)malloc(sizeof(struct nomen_closure));\n`;
+	status.code += `\t*_closure = ${desc_name};\n`;
+	status.code += `\tstruct ${struct_name} *_args = (struct ${struct_name} *)malloc(sizeof(struct ${struct_name}));\n`;
+	status.code += `\t_args->fn = _user_fn;\n`;
+	status.code += `\t_args->result_slot = _result_ptr;\n`;
+	status.code += `\t_args->cancel_flag = _cancel_ptr;\n`;
+	status.code += `\t_args->future = _future;\n`;
+	status.code += `\t_closure->env = _args;\n`;
+	status.code += `\t_closure->owned = 1;\n`;
+	status.code += `\t_future->owner_args = _closure;\n`;
+	status.code += `\tstruct ${mono_name} *_self = (struct ${mono_name} *)malloc(sizeof(struct ${mono_name}));\n`;
+	status.code += `\tmemset(_self, 0, sizeof(struct ${mono_name}));\n`;
+	status.code += `\t_self->task = (unsigned long long)_closure;\n`;
+	status.code += `\t_self->result_slot = (unsigned long long)_result_ptr;\n`;
+	status.code += `\t_self->cancel_flag = (unsigned long long)_cancel_ptr;\n`;
+	status.code += `\t_self->future = (unsigned long long)_future;\n`;
+	status.code += `\t_self->started = 0;\n`;
+	status.code += `\t_self;\n`;
+	status.code += `})\n`;
+}
+
+/** Whether the wrapped function value returns a CLASS or TRAIT (pointer
+ *  result that may alias the closure env's captures). */
+function is_class_or_trait_ret(node: FunctionCallNode, status: BuildStatus): boolean {
+	const name = node.function_return_type?.name;
+	if (!name) return false;
+	return (
+		!!status.structs.find((s) => s.name === name && s.is_class) ||
+		!!status.traits.find((t) => t.name === name)
+	);
+}
+
+/** Whether the wrapped function value returns a value STRUCT (a byte result
+ *  whose heap fields may alias the closure env's captures). */
+function is_struct_ret(node: FunctionCallNode, status: BuildStatus): boolean {
+	const name = node.function_return_type?.name;
+	if (!name) return false;
+	return !!status.structs.find((s) => s.name === name && !s.is_class && !s.is_simple_type);
 }

@@ -285,6 +285,10 @@ export function parse_anonymous_function(
 				accept("(", status);
 				func.has_body = true;
 				func.has_return = true;
+				// An expression arrow infers its return type from the body
+				// when no `out T` was declared (check_return_node) — the
+				// same rule parse_function applies to `func f = () => e`.
+				func.is_arrow_body = true;
 				const return_expr = parse_expression(status);
 				expect(")", status);
 				func.statements.push(new ReturnNode(return_expr.start, return_expr));
@@ -304,6 +308,7 @@ export function parse_anonymous_function(
 				// Direct expression: (a, b, out int) => a + b
 				func.has_body = true;
 				func.has_return = true;
+				func.is_arrow_body = true;
 				const return_expr = parse_expression(status);
 				func.statements.push(new ReturnNode(return_expr.start, return_expr));
 			}

@@ -32,8 +32,10 @@ import {
 	is_overloaded,
 	mangled_label,
 } from "./utils/function_overload.ts";
+import is_sendable_type from "./utils/is_sendable_type.ts";
 import { is_class_type, is_owning_struct_type_requiring_move } from "./utils/ownership.ts";
 import { resolve_declared_struct } from "./utils/resolve_declared_type.ts";
+import synthesize_lambda_name from "./utils/synthesize_lambda_name.ts";
 import type_from_value from "./utils/type_from_value.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import validate_spawn_args_sendable from "./utils/validate_spawn_args_sendable.ts";
@@ -85,10 +87,30 @@ export default function check_function_call_node(
 	const thread_shadow_struct = resolve_declared_struct("Thread", status) as
 		| { is_library?: boolean }
 		| undefined;
+	// The construction takes an UNEVALUATED CALL (`Thread(work(n))`) or a
+	// zero-argument FUNCTION VALUE (`Thread(() => work(n))` — a lambda
+	// literal, or a func-typed local which the construction MOVES;
+	// docs/CLOSURE_PLAN.md Phase 3c, user-defined spawnables). A func-typed
+	// local's StackValue carries its signature in func_params (its `type`
+	// is the RETURN type).
+	const first = node.params[0];
+	const first_decl =
+		first?.node_type === "value" && typeof (first as ValueNode).value === "string"
+			? status.values.findLast((v) => v.name === (first as ValueNode).value)
+			: undefined;
+	const first_fn =
+		first?.node_type === "value" && typeof (first as ValueNode).value === "string"
+			? status.functions.findLast((f) => f.name === (first as ValueNode).value)
+			: undefined;
+	const func_value_arg =
+		first?.node_type === "func" ||
+		(first?.node_type === "value" &&
+			typeof (first as ValueNode).value === "string" &&
+			(first_decl?.func_params !== undefined || !!first_fn));
 	if (
 		magic_ctor &&
 		node.params.length === 1 &&
-		node.params[0].node_type === "func_call" &&
+		(node.params[0].node_type === "func_call" || func_value_arg) &&
 		!find_free_function(status, node.name) &&
 		!(magic_ctor === "Thread" && thread_shadow_struct && !thread_shadow_struct.is_library)
 	) {
@@ -1470,7 +1492,19 @@ function check_magic_ctor(
 	status: CheckStatus,
 	name: "Thread" | "Fiber",
 ): boolean {
-	const call = node.params[0] as FunctionCallNode;
+	const first = node.params[0];
+
+	// ---- Phase 3c: the zero-argument FUNCTION VALUE form ----
+	// `Thread(() => work(n))` — a lambda literal (fully self-typed; its
+	// captures become the eager arguments) — or `Thread(job)` where job is
+	// a zero-argument func-typed LOCAL, which the construction MOVES (the
+	// task owns and disposes the closure; a later use of the local is a
+	// use-after-move error). docs/CLOSURE_PLAN.md Phase 3c.
+	if (first.node_type !== "func_call") {
+		return check_magic_ctor_fn_value(node, status, name, first);
+	}
+
+	const call = first as FunctionCallNode;
 	if (!check_function_call_node(call, status)) {
 		add_error(status, `Spawned call '${call.name}' did not resolve`, node.start);
 		return false;
@@ -1496,6 +1530,135 @@ function check_magic_ctor(
 }
 
 /**
+ * The Phase 3c function-value flavor of the spawn constructor: the single
+ * parameter is a zero-argument function value. A LAMBDA LITERAL must be
+ * fully self-typed (explicit parameter types and an `out T` return — there
+ * is no target signature to infer against); checking it records its
+ * captures, which become the eager arguments and are Sendable-validated. A
+ * FUNC-TYPED LOCAL is moved into the task (the task's adapter owns and
+ * disposes the closure — which also satisfies `.detach()`'s owned-capture
+ * contract by construction). Either way the construction is typed as the
+ * monomorphized `Thread<T>` / `Fiber<T>` with T the function value's return
+ * type (uint64 for void).
+ */
+function check_magic_ctor_fn_value(
+	node: FunctionCallNode,
+	status: CheckStatus,
+	name: "Thread" | "Fiber",
+	first: BaseNode,
+): boolean {
+	const zero_arg_error = () =>
+		add_error(
+			status,
+			`${name}(fn) expects a zero-argument function value — func (out T) — bind the call's arguments with the lambda's captures`,
+			node.start,
+		);
+
+	let return_type: Type | undefined;
+	let lambda: FunctionNode | undefined;
+
+	if (first.node_type === "func") {
+		lambda = first as FunctionNode;
+		if (lambda.params.some((p) => !p.is_self_param && !p.type.name)) {
+			add_error(
+				status,
+				`a lambda passed to ${name}(...) must declare its parameter types (no target signature to infer against)`,
+				first.start,
+			);
+			return false;
+		}
+		if (lambda.params.filter((p) => !p.is_self_param).length > 0) {
+			zero_arg_error();
+			return false;
+		}
+		// Value-position lambdas are closures: synthesize the emission name
+		// and stamp is_closure so the definition carries the hidden env and
+		// captures are recorded during the body check (docs/CLOSURE_PLAN.md
+		// Phase 2).
+		if (!lambda.name) synthesize_lambda_name(lambda, status);
+		if (!check_node(lambda, status)) return false;
+		return_type = lambda.return_type;
+	} else {
+		const value = first as ValueNode;
+		const decl = status.values.findLast((v) => v.name === value.value);
+		if (decl && decl.func_params !== undefined) {
+			// A func-typed local: its StackValue carries the signature in
+			// func_params (its `type` is the RETURN type).
+			const value_params = (decl.func_params ?? []).filter((p) => !p.type.is_return_type);
+			if (value_params.length > 0) {
+				zero_arg_error();
+				return false;
+			}
+			if (status.moved_variables?.has(value.value)) {
+				add_error(status, `Variable '${value.value}' used after move`, first.start);
+				return false;
+			}
+			// The construction MOVES the closure out of the local: the task's
+			// adapter owns (and disposes) it, so the local's scope-exit
+			// free-if-owned arm must skip it.
+			if (!status.moved_variables) status.moved_variables = new Set<string>();
+			status.moved_variables.add(value.value);
+			value.is_moved = true;
+			return_type = decl.func_return_type;
+		} else {
+			// A named function (or a capture-free declaration lambda —
+			// check_declaration_node leaves those resolving as the direct
+			// function). Its static descriptor is borrowed, never owned:
+			// there is nothing to move.
+			const fn = status.functions.findLast((f) => f.name === value.value);
+			if (!fn) {
+				add_error(
+					status,
+					`${name}(fn) expects an unevaluated call or a zero-argument function value, got '${value.value}'`,
+					first.start,
+				);
+				return false;
+			}
+			if (fn.params.filter((p) => !p.is_self_param).length > 0) {
+				zero_arg_error();
+				return false;
+			}
+			// Stamp the resolution exactly as check_value_node does for a
+			// function referenced as a VALUE, so the build materializes the
+			// closure descriptor (thunk-backed) at this site.
+			value.type = new Type("func");
+			set_resolved_function(value, fn);
+			return_type = fn.return_type;
+		}
+	}
+
+	if (name === "Thread") node.is_thread_ctor = true;
+	else node.is_fiber_ctor = true;
+	node.is_func_value_ctor = true;
+
+	// The captures become the eager arguments — everything crossing the
+	// thread boundary must be Sendable (the same rule the call form's
+	// packed args follow).
+	for (const cap of lambda?.captures ?? []) {
+		if (!is_sendable_type(cap.type.name, status)) {
+			add_error(
+				status,
+				`Spawn argument of type ${cap.type.name || "<unknown>"} is not Sendable`,
+				first.start,
+			);
+		}
+	}
+
+	const result_type_arg =
+		return_type && return_type.name && return_type.name !== "void" && return_type.name !== "?"
+			? new Type(return_type.name)
+			: new Type("uint64");
+	const spawn_struct = status.structs.find((s) => s.name === name);
+	if (spawn_struct && spawn_struct.type_params.length > 0) {
+		monomorphize(spawn_struct, [result_type_arg], status);
+	}
+	node.function_return_type = return_type ?? new Type("void");
+	node.type = new Type(name);
+	node.type.type_args = [result_type_arg];
+	return true;
+}
+
+/**
  * Re-derive the check annotations for a `Thread(fn(args))` /
  * `Fiber(fn(args))` constructor inside a monomorphised body. The mono body
  * is cloned from the unchecked generic body and never re-checked, so the
@@ -1510,8 +1673,37 @@ function rederive_magic_ctor_annotations(
 ) {
 	const is_flagged = name === "Thread" ? fc.is_thread_ctor : fc.is_fiber_ctor;
 	if (is_flagged) return;
-	if (fc.params.length !== 1 || fc.params[0].node_type !== "func_call") return;
-	const call = fc.params[0] as FunctionCallNode;
+	if (fc.params.length !== 1) return;
+	const first = fc.params[0];
+	// Phase 3c: the function-value form. The clone carries the checked
+	// lambda (name, is_closure, captures survive the copy) or the moved
+	// func-typed local; only the ctor stamps and the mono class need
+	// re-derivation.
+	if (first.node_type !== "func_call") {
+		let return_type: Type | undefined;
+		if (first.node_type === "func") {
+			return_type = (first as FunctionNode).return_type;
+		} else {
+			return_type = status.values.findLast((v) => v.name === (first as ValueNode).value)?.type
+				?.func_return_type;
+		}
+		const result_type_arg =
+			return_type && return_type.name && return_type.name !== "void" && return_type.name !== "?"
+				? new Type(return_type.name)
+				: new Type("uint64");
+		const spawn_struct = status.structs.find((s) => s.name === name);
+		if (spawn_struct && spawn_struct.type_params.length > 0) {
+			monomorphize(spawn_struct, [result_type_arg], status);
+		}
+		if (name === "Thread") fc.is_thread_ctor = true;
+		else fc.is_fiber_ctor = true;
+		fc.is_func_value_ctor = true;
+		fc.function_return_type = return_type ?? new Type("void");
+		if (!fc.type?.name) fc.type = new Type(name);
+		fc.type.type_args = [result_type_arg];
+		return;
+	}
+	const call = first as FunctionCallNode;
 	let return_type = call.type;
 	if (!return_type?.name) {
 		const func = find_free_function(status, call.name);
@@ -1545,21 +1737,27 @@ function rederive_nursery_spawn_annotations(fc: AccessFunctionCallNode, status: 
 	fc.owned_return = true;
 	if (fc.params.length !== 1 || fc.params[0].node_type !== "func_call") return;
 	// New syntax: the parameter is the compiler-special Thread(fn(args))
-	// constructor — unwrap it to the wrapped call.
+	// constructor — unwrap it to the wrapped call (or, Phase 3c, a
+	// zero-argument function value).
 	const ctor = fc.params[0] as FunctionCallNode;
 	rederive_magic_ctor_annotations(ctor, status, "Thread");
 	if (!ctor.is_thread_ctor) return;
-	const call = ctor.params[0] as FunctionCallNode;
 	// The spawned function's return type: reuse the inner call's type when
 	// the clone already carried it (source body was checked before cloning),
 	// else resolve it from the function table (free functions carry their
 	// declared return type regardless of check order).
-	let return_type = call.type;
-	if (!return_type?.name) {
-		const func = find_free_function(status, call.name);
-		if (func) {
-			return_type = func.return_type;
-			call.type = func.return_type;
+	let return_type: Type | undefined;
+	if (ctor.is_func_value_ctor) {
+		return_type = ctor.function_return_type;
+	} else {
+		const call = ctor.params[0] as FunctionCallNode;
+		return_type = ctor.function_return_type ?? call.type;
+		if (!return_type?.name) {
+			const func = find_free_function(status, call.name);
+			if (func) {
+				return_type = func.return_type;
+				call.type = func.return_type;
+			}
 		}
 	}
 	fc.function_return_type = return_type;

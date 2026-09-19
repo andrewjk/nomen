@@ -36,7 +36,6 @@ import {
 	is_owning_struct_type_requiring_move,
 } from "./utils/ownership.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
-import validate_spawn_args_sendable from "./utils/validate_spawn_args_sendable.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 import { view_fields_invalidated } from "./utils/view_fields.ts";
 
@@ -985,7 +984,7 @@ function returns_value(node: BaseNode, visited: Set<BaseNode> = new Set()): bool
  * and types the expression as `Task<T>`. See ASYNC.md and ASYNC_PLAN.md.
  */
 function check_nursery_spawn(node: AccessFunctionCallNode, status: CheckStatus): boolean {
-	if (node.params.length !== 1 || node.params[0].node_type !== "func_call") {
+	if (node.params.length !== 1) {
 		add_error(
 			status,
 			"nursery.start expects Thread(fn(args)), e.g. .start(Thread(work(n)))",
@@ -995,9 +994,10 @@ function check_nursery_spawn(node: AccessFunctionCallNode, status: CheckStatus):
 	}
 	const ctor = node.params[0] as FunctionCallNode;
 	// The escape hatch's params are not pre-checked — check the Thread
-	// constructor here (this runs check_thread_ctor, which resolves the
-	// wrapped call and stamps is_thread_ctor).
-	if (!check_function_call_node(ctor, status)) {
+	// constructor here (this runs check_magic_ctor: the unevaluated-call
+	// form, or the Phase 3c function-value form — a lambda literal or a
+	// moved func-typed local; docs/CLOSURE_PLAN.md Phase 3c).
+	if (ctor.node_type !== "func_call" || !check_function_call_node(ctor, status)) {
 		add_error(
 			status,
 			"nursery.start expects Thread(fn(args)), e.g. .start(Thread(work(n)))",
@@ -1005,11 +1005,7 @@ function check_nursery_spawn(node: AccessFunctionCallNode, status: CheckStatus):
 		);
 		return false;
 	}
-	if (
-		!ctor.is_thread_ctor ||
-		ctor.params.length !== 1 ||
-		ctor.params[0].node_type !== "func_call"
-	) {
+	if (!ctor.is_thread_ctor) {
 		add_error(
 			status,
 			"nursery.start expects Thread(fn(args)), e.g. .start(Thread(work(n)))",
@@ -1017,24 +1013,15 @@ function check_nursery_spawn(node: AccessFunctionCallNode, status: CheckStatus):
 		);
 		return false;
 	}
-	const call = ctor.params[0] as FunctionCallNode;
-	// The wrapped call was already resolved by check_magic_ctor (run via
-	// the constructor check above) — no re-check here.
-
-	// Every argument packed into the spawned task must be Sendable (the
-	// shared validator — the same one the magic constructor runs).
-	validate_spawn_args_sendable(call, status);
 
 	// Type the expression as Task<T> where T is the spawned function's return
 	// type (uint64 for void functions — the result slot exists but is unused).
-	const return_type = call.type;
-	const result_type_arg =
-		return_type && return_type.name && return_type.name !== "void" && return_type.name !== "?"
-			? new Type(return_type.name)
-			: new Type("uint64");
+	// T rides the construction's type args for both forms; the Sendable
+	// validation ran inside the constructor (packed args, or captures).
+	const result_type_arg = ctor.type?.type_args?.[0] ?? new Type("uint64");
 	const task_type = new Type("Task");
 	task_type.type_args = [result_type_arg];
-	node.function_return_type = return_type;
+	node.function_return_type = ctor.function_return_type ?? new Type(result_type_arg.name);
 	node.type = task_type;
 	node.is_nursery_spawn = true;
 	// The Task a nursery.start yields is a fresh heap allocation (not a

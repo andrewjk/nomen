@@ -60,6 +60,22 @@ pub func main = () {
 		expect(compile_module(input)).toEqual([]);
 	});
 
+	test("a Thread construction accepts a zero-argument function value", () => {
+		// SPEC.md, "Thread": the lambda's captures are the eager arguments.
+		const input = `
+func bg = (uint64 arg) {
+	Console.write_line("from task")
+}
+
+pub func main = () {
+	var base = 20
+	var t = Thread(() => bg(base)).start()
+	t.wait()
+}
+`;
+		expect(compile_module(input)).toEqual([]);
+	});
+
 	test("spawn as statement (fire-and-forget)", () => {
 		const input = `
 func bg = (uint64 arg) {

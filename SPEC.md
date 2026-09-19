@@ -2478,6 +2478,19 @@ var job = Thread(bg(0))
 job.start()
 ```
 
+A construction can also take a zero-argument FUNCTION VALUE — a lambda whose
+CAPTURES are the eager arguments (every capture must be Sendable, and owning
+captures move into the task). A func-typed binding handed to a construction
+is moved: the task owns and frees the closure, and using the binding
+afterwards is a use-after-move error. `.detach()` and a nursery's
+`.start(...)` accept the form too:
+
+```
+var base = 20
+var t = Thread(() => bg(base)).start()
+t.wait()
+```
+
 **Must-start**: a `Thread` (or `Fiber`) value that is destroyed without ever
 being started is a programming error — its `#destroy` reports it and aborts.
 Every construction must reach `.start()`, `.detach()`, or a nursery's
