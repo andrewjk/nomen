@@ -198,7 +198,16 @@ function parse_function_type_declaration(decl: DeclarationNode, status: ParseSta
 				status.stack.pop();
 
 				decl.value = func;
-			} else if (has_equals && peek_current(status) === "(") {
+			} else if (has_equals && (peek_current(status) === "(" || peek_current(status) === "func")) {
+				// The initializer is an anonymous function: the bare `(params)
+				// body` forms, or the keyword form `func (params) body` (whose
+				// `func` is consumed here so parse_anonymous_function sees the
+				// parameter list). Parsing it HERE (not via parse_expression)
+				// names the lambda after the binding, exactly like the arrow
+				// forms have always done.
+				if (peek_current(status) === "func") {
+					accept("func", status);
+				}
 				const func = parse_anonymous_function(decl.name, status);
 				if (func) {
 					decl.value = func;

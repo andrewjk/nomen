@@ -175,3 +175,82 @@ pub func main = (Init init) {
 		expect(parsed.errors.length).toBeGreaterThan(0);
 	});
 });
+
+describe("the keyword and inline-block anonymous function forms", () => {
+	// Same three body shapes as the arrow family, in the two remaining value
+	// shapes: `func (params) body` (keyword form) and `(params) { body }`
+	// (block without arrow, inline). A self-typed BLOCK body must declare its
+	// return (`out T`) — rejecting an undeclared one is correct, and the
+	// last test pins that.
+	test("keyword form with a block body", async () => {
+		await run(
+			"lambda_func_keyword_block",
+			"12\n",
+			`
+func apply = (func (int, out int) f, int x, out int) { return f(x) }
+pub func main = (Init init) {
+	Console.write_line("\\{apply(func (int y, out int) { return y * 4 }, 3)}")
+}
+`,
+		);
+	});
+
+	test("keyword form with an arrow expression body", async () => {
+		await run(
+			"lambda_func_keyword_arrow",
+			"12\n",
+			`
+func apply = (func (int, out int) f, int x, out int) { return f(x) }
+pub func main = (Init init) {
+	Console.write_line("\\{apply(func (int y) => y * 4, 3)}")
+}
+`,
+		);
+	});
+
+	test("inline block without the arrow", async () => {
+		await run(
+			"lambda_inline_block",
+			"12\n",
+			`
+func apply = (func (int, out int) f, int x, out int) { return f(x) }
+pub func main = (Init init) {
+	Console.write_line("\\{apply((int y, out int) { return y * 4 }, 3)}")
+}
+`,
+		);
+	});
+
+	test("keyword form captures an enclosing local", async () => {
+		await run(
+			"lambda_func_keyword_capture",
+			"30\n",
+			`
+func apply = (func (out int) f, out int) { return f() }
+pub func main = (Init init) {
+	var int base = 10
+	// Bound to a local first: an inline capturing arg is a borrowed temp the
+	// call site does not yet dispose (FOLLOWUP.md) — the local's scope exit
+	// owns the descriptor.
+	var func (out int) f = func (out int) { return base * 3 }
+	Console.write_line("\\{apply(f)}")
+}
+`,
+		);
+	});
+
+	test("a self-typed block body without a declared return is rejected", () => {
+		const input = `import System
+
+func apply = (func (out int) f, out int) { return f() }
+
+pub func main = (Init init) {
+	var int a = 1
+	var int r = apply(() => { return a + 1 })
+}
+`;
+		const parsed = parse_raw(input);
+		expect(parsed.errors.length).toBeGreaterThan(0);
+		expect(parsed.errors[0].message).toContain("no 'out' return type");
+	});
+});

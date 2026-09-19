@@ -176,6 +176,44 @@ var func (int, int, out int) adder = (a, b, out int) => a + b
 		expect(compile_main(input)).toEqual([]);
 	});
 
+	test("anonymous function shapes: keyword form and inline forms", () => {
+		// SPEC.md, "Anonymous Functions (Lambdas)": all four shapes — the
+		// three `(params) body` forms plus the keyword form — also work as
+		// inline call arguments; a self-typed inline block body must declare
+		// its return.
+		const input = `
+var func (int, out int) quadrupler = func (x, out int) {
+	return x * 4
+}
+
+func apply = (func (out int) f, out int) { return f() }
+
+pub func main = () {
+	var int a = 1
+	var int b = 2
+	var int r1 = apply(() => a + b)
+	var int r2 = apply(func (out int) { return a + b })
+	var int r3 = apply((out int) => { return a + b })
+	var int r4 = apply((out int) { return a + b })
+	Console.write_line("\\{quadrupler(1)} \\{r1} \\{r2} \\{r3} \\{r4}")
+}
+`;
+		expect(compile_module(input)).toEqual([]);
+	});
+
+	test("an inline block body without a declared return is rejected", () => {
+		const input = `
+func apply = (func (out int) f, out int) { return f() }
+
+pub func main = () {
+	var int a = 1
+	var int r = apply(() => { return a + 1 })
+}
+`;
+		const errors = compile_module(input);
+		expect(errors.some((e) => e.message.includes("no 'out' return type"))).toBe(true);
+	});
+
 	test("lambda captures an enclosing local", () => {
 		const input = `
 var int base = 10

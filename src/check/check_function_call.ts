@@ -795,7 +795,19 @@ export default function check_function_call(
 		// signature, and `check_type_and_value_match` can't compare func
 		// signatures anyway (`type_from_value_node` of a func node is its
 		// RETURN type, so it would report "int (expected func)").
-		if (!(expected_type.name === "func" && param.node_type === "func")) {
+		// The same false mismatch applies to a VALUE naming a func-typed
+		// binding (`apply(f)` where `var func (out int) f = ...`): the
+		// binding's StackValue.type is its return type — the signature rides
+		// `func_params` — so skip the scalar comparison for it too. The
+		// build passes the descriptor uniformly either way.
+		const func_binding_name =
+			param.node_type === "value" && typeof (param as ValueNode).value === "string"
+				? (param as ValueNode).value
+				: undefined;
+		const arg_is_func_binding =
+			!!func_binding_name &&
+			status.values.findLast((v) => v.name === func_binding_name)?.func_params !== undefined;
+		if (!(expected_type.name === "func" && (param.node_type === "func" || arg_is_func_binding))) {
 			check_type_and_value_match(
 				expected_type,
 				param_type,
@@ -808,10 +820,13 @@ export default function check_function_call(
 
 		// A bare function name passed to a func-typed parameter: stamp the
 		// resolution so the build materializes the closure descriptor at
-		// this value site (CLOSURE.md).
+		// this value site (CLOSURE.md). A func-typed LOCAL of the same name
+		// shadows the function table — the arg must read the local's own
+		// (heap) descriptor, so no static materialization is stamped.
 		if (
 			expected_type.name === "func" &&
 			param.node_type === "value" &&
+			!arg_is_func_binding &&
 			!(param as unknown as { resolved_function?: unknown }).resolved_function
 		) {
 			const named = status.functions.findLast((f) => f.name === param_value);

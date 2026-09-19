@@ -1310,6 +1310,11 @@ var func (int, out int) doubler = (x, out int) => {
 var func (int, out int) tripler = (x, out int) {
     return x * 3
 }
+
+// Keyword form
+var func (int, out int) quadrupler = func (x, out int) {
+    return x * 4
+}
 ```
 
 A lambda may capture locals and parameters of the enclosing function. The
@@ -1333,6 +1338,14 @@ pub func main = () {
     Console.write("\\{add_base(1)} \\{add_base(2)}")
 }
 ```
+
+All four shapes also work INLINE as call arguments, where no target signature
+is available for inference: an arrow expression infers its return from the
+body (`apply(() => a + b)`), while a self-typed block body must declare its
+return (`apply(func (out int) { return a + b })`,
+`apply((out int) => { return a + b })`, or the bare block form
+`apply((out int) { return a + b })`) — a block body that returns a value
+without a declared `out T` is rejected.
 
 #### Nested Functions and Structs
 

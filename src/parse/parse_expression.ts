@@ -109,9 +109,14 @@ function try_parse_generic_args(status: ParseStatus): Type[] | null {
 	return type_args;
 }
 
-// Does the `(` at the current position start a lambda `(params) => body`
-// rather than a parenthesized expression? Look for a `=>` after the matching `)`.
-function is_anonymous_function(status: ParseStatus): boolean {
+// Does the `(` at the current position start an anonymous function body —
+// `(params) => e`, or `(params) { e }` inside a call's argument list —
+// rather than a parenthesized expression? A `)`-followed-by-`{` is a lambda
+// block ONLY in call-argument context: statement conditions are also
+// parenthesized-grouped expressions (`if (cond) {`), so the same lookahead
+// there would swallow every parenthesized condition. Returns the starter
+// token, or undefined for a grouped expression.
+function anonymous_function_body_start(status: ParseStatus): string | undefined {
 	let depth = 0;
 	for (let i = status.i; i < status.tokens.length; i++) {
 		const v = status.tokens[i].value;
@@ -119,11 +124,14 @@ function is_anonymous_function(status: ParseStatus): boolean {
 		else if (v === ")") {
 			depth--;
 			if (depth === 0) {
-				return status.tokens[i + 1]?.value === "=>";
+				const next = status.tokens[i + 1]?.value;
+				if (next === "=>") return next;
+				if (next === "{" && (status.call_arg_depth ?? 0) > 0) return next;
+				return undefined;
 			}
 		}
 	}
-	return false;
+	return undefined;
 }
 
 function parse_anon_struct(start: number, status: ParseStatus, base?: BaseNode): AnonStructNode {
@@ -221,9 +229,10 @@ function parse_primary(status: ParseStatus, value: string): BaseNode {
 			return node;
 		}
 		case "(": {
-			// A `(params) => body` group is an anonymous function value;
-			// otherwise it is a parenthesized expression.
-			if (is_anonymous_function(status)) {
+			// A `(params) => body` or `(params) { body }` group is an
+			// anonymous function value; otherwise it is a parenthesized
+			// expression.
+			if (anonymous_function_body_start(status)) {
 				const func = parse_anonymous_function("", status);
 				if (func) return func;
 			}
@@ -246,6 +255,18 @@ function parse_primary(status: ParseStatus, value: string): BaseNode {
 			return new ValueNode(start, v);
 		}
 		default: {
+			// The keyword form of an anonymous function value —
+			// `func (out int) { ... }` / `func (x) => x * 2` — alongside the
+			// bare `(params) ...` forms. The named-function statement is
+			// parsed at statement level and never reaches parse_expression,
+			// so `func` followed by a parameter list here is unambiguously
+			// the anonymous form; anything else falls through and errors
+			// naturally.
+			if (value === "func" && status.tokens[status.i + 1]?.value === "(") {
+				consume(status);
+				const func = parse_anonymous_function("", status);
+				if (func) return func;
+			}
 			if (value && value.startsWith('"') && (value.length === 1 || !value.endsWith('"'))) {
 				return parse_string_interpolation(status);
 			} else {

@@ -8,13 +8,14 @@ language feature, and the spawn constructions are just one consumer of them.
 
 ## Anonymous functions
 
-Three forms — an arrow expression, an arrow with a block, and a block
-without the arrow:
+Four shapes — the three `(params) body` forms (arrow expression, arrow with
+block, block without arrow) and the keyword form `func (params) body`:
 
 ```
 (a, b, out int) => a + b        // arrow expression (implicit return)
 (x, out int) => { return x * 2 } // arrow with block
-(x, out int) { return x * 3 }    // block without arrow
+(x, out int) { return x * 3 }    // block without arrow (declaration position)
+func (x, out int) { return x * 4 } // keyword form
 ```
 
 Parameter and return types are inferred from the target signature when the
@@ -22,10 +23,15 @@ lambda arrives at a func-typed destination (a param, a func-typed field's
 constructor argument, a declaration's annotated type). Where no target
 signature exists, the lambda must be self-typed: parameter types are
 declared, an expression body's return type is inferred, and a block body
-declares its return as the leading `out T` (`(out int) => { ... }`). A bare
-`( ... )` group parses as a lambda only when `=>` follows the matching
-parenthesis, so the block-without-arrow form is a declaration-position form;
-there is no `func`-keyword anonymous value.
+declares its return as the leading `out T` (`(out int) => { ... }`,
+`func (out int) { ... }`). All four shapes parse as inline call arguments.
+The bare `( ... )` group is recognized as a lambda when `=>` follows the
+matching parenthesis in any context, or when `{` follows it inside a call's
+argument list — and only there, because elsewhere a parenthesized group
+followed by a block is exactly a statement condition (`if (cond) { ... }`).
+In every shape the lambda is an ordinary anonymous function: `is_closure` is
+stamped at parse and the descriptor ABI below applies unchanged — closures
+added no syntax of their own.
 
 ## The descriptor ABI
 
@@ -131,6 +137,9 @@ returns can only be fresh heap, boundary literals, or input-derived.
   parse in generic type args or `out` positions).
 - Borrow-captures in general lambda positions: rejected; only the spawn
   sugar's nursery borrows exist (ASYNC.md, "Nursery borrows").
-- The block-without-arrow form is a declaration-position form only (see
-  "Anonymous functions"); an inline self-typed block body must carry the
-  arrow plus a leading `out T`.
+- An INLINE capturing lambda passed directly as a call argument leaks its
+  heap descriptor + env: the call borrows the parameter and never disposes
+  the temporary (capture-free inline lambdas use static descriptors and are
+  fine). Bind the closure to a func-typed local first — its scope exit
+  runs the free-if-owned arm. Recorded in FOLLOWUP.md ("Inline capturing
+  lambda as a direct call argument leaks its descriptor").
