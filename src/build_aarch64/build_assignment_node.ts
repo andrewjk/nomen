@@ -253,6 +253,37 @@ function get_self_param(node: BaseNode): BaseNode | null {
 	return null;
 }
 
+/**
+ * A custom `#init`'s first write to a `self.<field>` overwrites garbage
+ * (fresh malloc — only the first 8 bytes are zeroed), so the displaced-value
+ * reclaim must be skipped. Later writes in the same init DO displace a real
+ * value. Defaulted fields are pre-seeded in init_assigned_fields, so their
+ * first write reclaims the default normally.
+ */
+function is_first_init_field_write(
+	target_var: string,
+	field_name: string,
+	status: BuildStatus,
+): boolean {
+	return (
+		target_var === "self" &&
+		status.current_function?.name === "#init" &&
+		!status.init_assigned_fields?.has(`self.${field_name}`)
+	);
+}
+
+/** Record that `self.<field>` now holds a real value inside a custom `#init`. */
+function mark_init_field_write(
+	target_var: string,
+	field_name: string,
+	status: BuildStatus,
+): void {
+	if (target_var === "self" && status.current_function?.name === "#init") {
+		if (!status.init_assigned_fields) status.init_assigned_fields = new Set();
+		status.init_assigned_fields.add(`self.${field_name}`);
+	}
+}
+
 /** Whether an assignment target is a nullable struct slot. */
 function is_nullable_struct_assignment(node: AssignmentNode, status: BuildStatus): boolean {
 	if (node.left_value.node_type === "value") {
@@ -1629,7 +1660,11 @@ export default function build_assignment_node(
 					access.target.node_type === "value" ? (access.target as ValueNode).value : "";
 				const tracked_key = `${target_var}.${field_name}`;
 				const is_class_target = string_target.target_is_class;
-				const old_was_heap = is_class_target || !!status.heap_string_fields?.has(tracked_key);
+				const first_init_write = is_first_init_field_write(target_var, field_name, status);
+				mark_init_field_write(target_var, field_name, status);
+				const old_was_heap =
+					(is_class_target && !first_init_write) ||
+					!!status.heap_string_fields?.has(tracked_key);
 				const offset = get_field_offset(target_type.name, field_name, status);
 
 				const base_reg = deferred_field_base_reg(access, status);
@@ -1744,6 +1779,15 @@ export default function build_assignment_node(
 					const offset = get_field_offset(target_type.name, field_name, status);
 					mark_moved_if_struct(node.right_value, status);
 
+					const field_target_var =
+						access.target.node_type === "value" ? (access.target as ValueNode).value : "";
+					const first_init_write = is_first_init_field_write(
+						field_target_var,
+						field_name,
+						status,
+					);
+					mark_init_field_write(field_target_var, field_name, status);
+
 					const base_reg = deferred_field_base_reg(access, status);
 					if (base_reg !== undefined) {
 						status.code += `ldr x0, [${base_reg}, #${offset}]\n`;
@@ -1758,7 +1802,10 @@ export default function build_assignment_node(
 					// so a null (0) slot skips BOTH the #destroy call and the
 					// free — the audited free wrapper traps on an unknown/null
 					// pointer, and #destroy on null would dereference it.
+					// A custom `#init`'s FIRST write to a `self.<field>` skips the
+					// reclaim entirely — the pre-write bytes are garbage.
 					const field_has_destroy = !!field_struct.functions.find((f) => f.name === "#destroy");
+					if (!first_init_write) {
 					if (field_type?.is_nullable) {
 						const label_id = (status.label_counter = (status.label_counter ?? 0) + 1);
 						const skip = `.Lskip_fd_${label_id}`;
@@ -1777,6 +1824,7 @@ export default function build_assignment_node(
 						emit_free(status);
 					} else {
 						emit_free(status);
+					}
 					}
 
 					emit_rhs_value(node.right_value, nir_rhs, status);
@@ -1869,9 +1917,21 @@ export default function build_assignment_node(
 				// scope-exit reclaim of its own). Both registers must be
 				// parked across the helper bodies — they emit `bl free`/
 				// `bl strdup`, which clobber the caller-saved x1.
+				// A custom `#init`'s FIRST write to a `self.<field>` skips the
+				// displaced-payload free — the pre-write bytes are garbage.
+				const enum_target_var =
+					access.target.node_type === "value" ? (access.target as ValueNode).value : "";
+				const enum_first_init_write = is_first_init_field_write(
+					enum_target_var,
+					field_name,
+					status,
+				);
+				mark_init_field_write(enum_target_var, field_name, status);
 				status.code += `str x1, [sp, #-16]!\n`;
 				status.code += `str x0, [sp, #-16]!\n`;
-				emit_enum_payload_frees_at(status, rhs_type.name, "x0", offset);
+				if (!enum_first_init_write) {
+					emit_enum_payload_frees_at(status, rhs_type.name, "x0", offset);
+				}
 				status.code += `ldr x0, [sp], #16\n`;
 				status.code += `ldr x1, [sp], #16\n`;
 				emit_struct_copy("x1", "x0", offset, enum_size, status);

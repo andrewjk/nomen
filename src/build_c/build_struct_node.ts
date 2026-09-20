@@ -165,10 +165,23 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 				status.code += `self${accessor}_vt = &_${node.name}_traits;\n`;
 			}
 
+			// Track which `self.<field>`s hold a real value while the init body
+			// runs. The instance is a fresh `malloc` — fields start as garbage,
+			// so the FIRST body write to a field must skip the displaced-value
+			// reclaim. Defaulted fields (seeded below) hold a real value before
+			// the body, so their first write reclaims the default normally.
+			const old_init_assigned_fields = status.init_assigned_fields;
+			status.init_assigned_fields = new Set();
+
 			// Apply default field values BEFORE the custom init body runs, so any
 			// field the init doesn't explicitly assign still gets its default.
+			// A defaulted field holds a REAL value before the body — record it
+			// as already-assigned so the body's first write reclaims the
+			// default instead of skipping (only truly uninitialized fields
+			// start as garbage).
 			for (const field of node.fields) {
 				if (field.value) {
+					status.init_assigned_fields?.add(`self.${field.name}`);
 					if (
 						field.type.is_view &&
 						!field.type.is_array &&
@@ -251,12 +264,14 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 			const old_current_struct = status.current_struct;
 			const old_return_type = status.function_return_type;
 			const old_variadic_params = status.function_variadic_params;
+			const old_current_function = status.current_function;
 			status.function_ref_params = new Set<string>();
 			status.class_vars = new Set<string>();
 			status.function_variadic_params = new Set<string>();
 			status.self_is_ref = is_class;
 			status.self_is_local = !is_class;
 			status.current_struct = node;
+			status.current_function = custom_init;
 			status.function_return_type = custom_init.return_type;
 			for (const p of custom_init.params) {
 				if (p.is_variadic) {
@@ -291,6 +306,8 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 			status.self_is_ref = old_self_is_ref;
 			status.self_is_local = old_self_is_local;
 			status.current_struct = old_current_struct;
+			status.current_function = old_current_function;
+			status.init_assigned_fields = old_init_assigned_fields;
 			status.function_return_type = old_return_type;
 		}
 

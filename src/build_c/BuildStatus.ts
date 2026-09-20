@@ -435,6 +435,14 @@ export default interface BuildStatus {
 	 * is returned (the sret byte-copy transfers the string pointers).
 	 */
 	heap_string_fields?: Set<string>;
+	/**
+	 * `self.<field>` keys already assigned inside the current custom `#init`
+	 * body. A custom init starts from a fresh `malloc` — the fields hold
+	 * garbage until first written, so the FIRST write to a field must not
+	 * run the displaced-value destroy/free (it would reclaim uninitialized
+	 * memory). Later writes displace a real value and reclaim normally.
+	 */
+	init_assigned_fields?: Set<string>;
 	function_data?: string;
 	nested_functions?: string;
 	stack_size?: number;

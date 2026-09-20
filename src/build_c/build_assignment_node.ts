@@ -137,6 +137,20 @@ export default function build_assignment_node(
 			const field_def = target_struct?.fields.find((f) => f.name === field_access_node.name);
 			const field_is_owned = field_def?.declaration === "move";
 			if (field_is_owned) {
+				// A custom `#init`'s first write to a `self.<field>` overwrites
+				// garbage (fresh malloc — no displaced value to reclaim). Later
+				// writes in the same init DO displace a real instance and
+				// reclaim normally.
+				const init_target_is_self =
+					access_lhs.target.node_type === "value" &&
+					(access_lhs.target as ValueNode).value === "self" &&
+					status.current_function?.name === "#init";
+				const init_field_key = `self.${field_access_node.name}`;
+				const first_init_write =
+					init_target_is_self && !status.init_assigned_fields?.has(init_field_key);
+				if (init_target_is_self && status.init_assigned_fields) {
+					status.init_assigned_fields.add(init_field_key);
+				}
 				// Capture the emitted field-access expression (e.g. `h->c`) by
 				// building it into status.code then rolling back, so the normal
 				// assignment path below re-emits it exactly once.
@@ -144,10 +158,12 @@ export default function build_assignment_node(
 				build_node(node.left_value, status);
 				const field_access = status.code.substring(before_len);
 				status.code = status.code.substring(0, before_len);
-				if (field_type?.is_nullable) {
-					status.code += `if (${field_access}) { ${field_struct.name}_destroy(${field_access}); free(${field_access}); }\n`;
-				} else {
-					status.code += `${field_struct.name}_destroy(${field_access}); free(${field_access});\n`;
+				if (!first_init_write) {
+					if (field_type?.is_nullable) {
+						status.code += `if (${field_access}) { ${field_struct.name}_destroy(${field_access}); free(${field_access}); }\n`;
+					} else {
+						status.code += `${field_struct.name}_destroy(${field_access}); free(${field_access});\n`;
+					}
 				}
 				// Ownership transfer: assigning a bare variable to an owned
 				// (`move`) class field moves ownership from the source variable
@@ -224,7 +240,19 @@ export default function build_assignment_node(
 			access_lhs.target.node_type === "value" ? (access_lhs.target as ValueNode).value : "";
 		const self_target = target_var === "self";
 		const tracked_key = `${target_var}.${field_access_node.name}`;
-		const old_was_heap = !!target_struct?.is_class || !!status.heap_string_fields?.has(tracked_key);
+		// A custom `#init`'s first write to a `self.<field>` overwrites
+		// garbage — no displaced string to free (see init_assigned_fields).
+		const first_init_write =
+			self_target &&
+			status.current_function?.name === "#init" &&
+			!status.init_assigned_fields?.has(tracked_key);
+		if (self_target && status.current_function?.name === "#init") {
+			if (!status.init_assigned_fields) status.init_assigned_fields = new Set();
+			status.init_assigned_fields.add(tracked_key);
+		}
+		const old_was_heap =
+			(!!target_struct?.is_class && !first_init_write) ||
+			!!status.heap_string_fields?.has(tracked_key);
 		// A `self.field = …` write inside a VALUE-struct method writes through
 		// to the caller's storage (ownership is tracked by the CALLER via
 		// heap_string_fields, dropped at the call site by
@@ -295,7 +323,26 @@ export default function build_assignment_node(
 			build_node(node.left_value, status);
 			const field_access = status.code.substring(before_len);
 			status.code = status.code.substring(0, before_len);
-			status.code += `${field_enum.name}_free_payloads(&${field_access});\n`;
+			// A custom `#init`'s first write to a `self.<field>` overwrites
+			// garbage — there are no valid payloads to free.
+			const enum_target = (node.left_value as AccessNode).target;
+			const enum_field_key = `self.${field_access_node_name(node)}`;
+			const enum_first_init_write =
+				enum_target.node_type === "value" &&
+				(enum_target as ValueNode).value === "self" &&
+				status.current_function?.name === "#init" &&
+				!status.init_assigned_fields?.has(enum_field_key);
+			if (
+				enum_target.node_type === "value" &&
+				(enum_target as ValueNode).value === "self" &&
+				status.current_function?.name === "#init"
+			) {
+				if (!status.init_assigned_fields) status.init_assigned_fields = new Set();
+				status.init_assigned_fields.add(enum_field_key);
+			}
+			if (!enum_first_init_write) {
+				status.code += `${field_enum.name}_free_payloads(&${field_access});\n`;
+			}
 			status.code += `${field_access} = `;
 			emit_rhs_value(node.right_value, nir_rhs, status);
 			status.code += `;\n`;
@@ -303,7 +350,16 @@ export default function build_assignment_node(
 		}
 	}
 
-	// Borrowed string RHS (e.g. `filename = init.args.at(1)`): the LHS gives up
+	/**
+ * The field name of a `self.<field>` assignment LHS, for the
+ * `init_assigned_fields` bookkeeping in paths that don't bind `access_lhs`.
+ */
+function field_access_node_name(node: AssignmentNode): string {
+	const access = (node.left_value as AccessNode).access as AccessFieldNode;
+	return access.name;
+}
+
+// Borrowed string RHS (e.g. `filename = init.args.at(1)`): the LHS gives up
 	// ownership — `args.at()` returns a pointer into argv (or a container's
 	// storage), which must not be freed. Record the LHS in string_borrow_vars so
 	// auto_free — which runs in the variable's *declaration* scope, possibly an

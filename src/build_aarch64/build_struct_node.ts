@@ -1069,6 +1069,16 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 	const old_raw_param_reloads = status.raw_param_reloads;
 	install_raw_reload_plan(status, raw_reloads);
 
+	// Track which `self.<field>`s hold a real value while the init body runs.
+	// Only the first 8 bytes are zeroed above — the remaining fields hold
+	// garbage until first written, so the FIRST body write to a field must
+	// skip the displaced-value reclaim. Defaulted fields (seeded below) hold
+	// a real value before the body, so their first write reclaims normally.
+	const old_current_function = status.current_function;
+	status.current_function = func;
+	const old_init_assigned_fields = status.init_assigned_fields;
+	status.init_assigned_fields = new Set();
+
 	// Zero the struct memory
 	status.code += `str xzr, [x19]\n`;
 
@@ -1082,6 +1092,10 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 	// Initialize default field values
 	for (const field of node.fields) {
 		if (field.value) {
+			// A defaulted field holds a REAL value before the body — record it
+			// as already-assigned so the body's first write reclaims the
+			// default instead of skipping (see init_assigned_fields).
+			status.init_assigned_fields?.add(`self.${field.name}`);
 			if (init_nullable_field_default(node, field, "x19", status)) continue;
 			if (init_enum_shorthand_field_default(node, field, "x19", status)) continue;
 			const offset = get_field_offset(node.name, field.name, status);
@@ -1210,6 +1224,8 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 		build_body_with_cursor(func, status);
 	} finally {
 		status.raw_param_reloads = old_raw_param_reloads;
+		status.current_function = old_current_function;
+		status.init_assigned_fields = old_init_assigned_fields;
 	}
 
 	// The init body's own loop-promotion claims (the enclosing's set was
