@@ -379,3 +379,35 @@ page + SIGSEGV handler vs compiler-inserted stack-limit checks), `await`
 sugar, an io_uring runtime, the parking lint (above), plus the Phase 3
 leftover: the 10k-connection acceptance run (N = 64 is the tested ceiling).
 Recorded here as a pointer only; ASYNC.md's "Roadmap" is the source of truth.
+
+## aarch64 trait dispatch with a `ref` class-local argument mis-marshals
+
+Found while fixing the C backend's dropped address-of on trait-vtable `ref`
+args (PORT.md item; C side fixed in the same commit). On aarch64,
+`v.visit(ref s)` — trait-typed receiver `v`, `ref State` arg rooted at a
+class LOCAL `s` — crashes with SIGSEGV:
+
+- the arg marshal parks `&s` across the receiver build, but the receiver
+  ends up in x1 and `&s` in x0 (swapped vs the callee's `self=x0, s=x1`
+  convention), and
+- the `var State s = State()` initializer's result register is clobbered by
+  the `&s` address computation before the store — the instance leaks and
+  `s`'s slot holds garbage, which the vtable load then dereferences.
+
+The generic arg-setup rule ("structs/traits pass address") also gives the
+callee a `T*` where a `ref T` param wants `T**`. Needs the same
+declared-refness-driven marshalling the C path now does, plus an
+init-store ordering fix. Not fixed here: aarch64 remains gated behind its
+two known blockers (unbalanced-stack validator false positive, oversized
+`mov` immediates) and the port always builds `--arch c`.
+
+## Stale `cli/core` asset copy shadows the repo `core/` in dev
+
+`cli/scripts/bundle-assets.mjs` copies repo `core/` → `cli/core/` for
+packaging. `find_bundled` prefers `cli/core`, so a STALE copy (from an old
+`pnpm build`) silently wins over the current `core/` while it exists — a
+debugging tar pit (symptoms: monomorphized System bodies emit pre-closure
+ABI code, everything works in a fresh worktree). Dev suggestion:
+`find_bundled` should prefer `../core` (repo layout) when it exists, or
+bundle-assets should stamp the copy with the source mtime so staleness is
+detectable. Interim workaround: `rm -rf cli/core` after pulling changes.

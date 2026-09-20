@@ -904,13 +904,42 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 						!!status.traits.find((t) => t.name === param_type.name) ||
 						!!status.class_vars?.has(param_value);
 					if (arg_is_struct_or_trait) {
-						const param_is_ref_param =
-							!!status.function_ref_params?.has(param_value) ||
-							!!status.class_vars?.has(param_value);
-						if (!param_is_ref_param) {
-							status.code += "&";
+						// A `ref T` callee param (T a class/trait) takes the
+						// caller's SLOT by pointer (`T **`). An arg that is
+						// itself a `ref` param already IS the slot pointer —
+						// forward it as-is. A plain class LOCAL is a single
+						// `T *` — pass `&local` (dropping the address-of made
+						// the callee dereference the instance as the slot).
+						// A non-ref `T` param takes the instance pointer: a
+						// class/trait-backed arg passes bare, a value-struct
+						// arg passes by pointer (`&`).
+						const non_self_trait_params = trait_func.params.filter(
+							(p) => !p.is_self_param,
+						);
+						const trait_param = non_self_trait_params[i];
+						const callee_wants_ref = !!(
+							trait_param &&
+							(trait_param.is_ref || trait_param.type?.is_ref)
+						);
+						const arg_is_ref_slot =
+							!!status.ref_class_params?.has(param_value) ||
+							!!status.function_ref_params?.has(param_value);
+						if (callee_wants_ref) {
+							if (arg_is_ref_slot) {
+								status.suppress_dereference = true;
+							} else {
+								status.code += "&";
+							}
 						} else {
-							status.suppress_dereference = true;
+							const arg_is_class_backed =
+								!!status.structs.find((s) => s.name === param_type.name && s.is_class) ||
+								!!status.traits.find((t) => t.name === param_type.name) ||
+								!!status.class_vars?.has(param_value);
+							if (!arg_is_class_backed) {
+								status.code += "&";
+							} else {
+								status.suppress_dereference = true;
+							}
 						}
 						build_node(access_func.params[i], status);
 						status.suppress_dereference = false;

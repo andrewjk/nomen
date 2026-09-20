@@ -1,6 +1,9 @@
-import { describe, test } from "vite-plus/test";
+import { describe, test, expect } from "vite-plus/test";
 
 import build_and_check_output from "./build_and_check_output";
+import build from "../src/build";
+import check_output from "./check_output";
+import parse_with_imports from "./parse_with_imports";
 
 // A `ref` CLASS param is passed the ADDRESS of the caller's pointer slot (so the
 // callee can reassign it — see reassignment-loop.test.ts). The callee loads the
@@ -223,5 +226,36 @@ outer(ref a)
 Console.write("\\{a.v}\\n")
 `;
 		await build_and_check_output(input, "ref_class_method_forward_read_after", "42\n42\n");
+	});
+});
+
+describe("trait dispatch with a ref arg rooted at a class local (C backend)", () => {
+	// A trait-vtable call taking `ref State` must pass the ADDRESS of the
+	// caller's slot (`&s` → `State **`). Dropping the address-of handed the
+	// callee the instance pointer, which it dereferenced as the slot —
+	// garbage read/write (SIGSEGV). C-only: the aarch64 dispatch marshal for
+	// this shape is a separate known issue (FOLLOWUP.md).
+	test("mutation through the dispatched ref param lands in the caller's local", async () => {
+		const input = `
+class State {
+	var int v = 0
+}
+trait Visitor {
+	func visit = (self, ref State s)
+}
+struct Inc: Visitor {
+	func visit = (self, ref State s) {
+		s.v += 1
+	}
+}
+var Visitor v = Inc()
+var State s = State()
+v.visit(ref s)
+Console.write("\\{s.v}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = await build(parsed.root, { arch: "c", audit: true });
+		await check_output("trait_ref_class_local_arg", result, "1", { arch: "c", audit: true });
 	});
 });
