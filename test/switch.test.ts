@@ -296,6 +296,33 @@ Console.write("\\{result}")
 `;
 		await build_and_check_output(input, "switch_negation", "2");
 	});
+
+	test("case condition with string→view adapter arg (C backend)", async () => {
+		// The condition hoister used to split at EVERY semicolon, shredding
+		// the `({ ...; ...; })` statement-expression the C backend emits for
+		// a string argument borrowed into a `view string` param — the case's
+		// `if (` then landed at the END of the condition (invalid C).
+		const input = `
+import System
+
+func is_hi = (view string s, out bool) {
+	return s == "hi"
+}
+
+pub func main = (Init init) {
+	const string mode = "hi"
+	switch {
+		case is_hi(mode) && mode.contains("i;") == false {
+			Console.write("one")
+		}
+		else {
+			Console.write("other")
+		}
+	}
+}
+`;
+		await build_and_check_output(input, "switch_case_view_adapter", "one", true);
+	});
 });
 
 // ERRORS

@@ -23,13 +23,42 @@ export default function build_switch_node(
 		let cond_code = status.code.substring(cond_start);
 		status.code = status.code.substring(0, cond_start);
 
-		// Pull any statements (e.g. param allocations) out of the condition
+		// Pull any statements (e.g. param allocations) out of the condition.
+		// Split only at TOP-LEVEL semicolons: paren/brace depth tracking keeps
+		// statement expressions intact (the string→view adapter is
+		// `({ ... ; ...; })` — its inner semicolons must NOT split), and
+		// string-literal skipping keeps `"a;b"` intact.
 		const decls: string[] = [];
-		while (cond_code.includes(";")) {
-			const semi = cond_code.indexOf(";");
-			const stmt = cond_code.substring(0, semi + 1).trim();
-			cond_code = cond_code.substring(semi + 1).trim();
-			decls.push(stmt);
+		{
+			let depth = 0;
+			let stmt_start = 0;
+			let in_string = false;
+			let in_char = false;
+			let i = 0;
+			while (i < cond_code.length) {
+				const ch = cond_code[i];
+				if (in_string) {
+					if (ch === "\\") i += 1;
+					else if (ch === '"') in_string = false;
+				} else if (in_char) {
+					if (ch === "\\") i += 1;
+					else if (ch === "'") in_char = false;
+				} else if (ch === '"') {
+					in_string = true;
+				} else if (ch === "'") {
+					in_char = true;
+				} else if (ch === "(" || ch === "{") {
+					depth += 1;
+				} else if (ch === ")" || ch === "}") {
+					depth = Math.max(0, depth - 1);
+				} else if (ch === ";" && depth === 0) {
+					const stmt = cond_code.substring(stmt_start, i + 1).trim();
+					if (stmt) decls.push(stmt);
+					stmt_start = i + 1;
+				}
+				i += 1;
+			}
+			cond_code = cond_code.substring(stmt_start).trim();
 		}
 		cond_code = cond_code.trim();
 		while (cond_code.startsWith("(") && !cond_code.endsWith(")")) {
