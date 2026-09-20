@@ -80,3 +80,22 @@ pub func main = (Init init) {
 		);
 	});
 });
+
+describe("hex escapes do not glue across the following character", () => {
+	// The emitters re-encode `\xHH` as 3-digit octal (capped at 3 digits in
+	// both C and GAS, so the encoding is self-terminating). Without it,
+	// `"\x01AMP"` decoded as `\x01A` + `MP` (0x1A, 'M', 'P') — length 3.
+	test("\\x01AMP decodes as 0x01 'A' 'M' 'P' (both backends)", async () => {
+		const input = String.raw`
+import System
+
+pub func main = (Init init) {
+	const string blob = "\x01AMP"
+	Console.write("\{blob.length} \{blob.at(1) as int} \{blob.at(2) as int} \{blob.at(3) as int}\n")
+}
+`.trimStart();
+		const parsed = parse_raw(input);
+		expect(parsed.errors).toEqual([]);
+		await build_and_check_output(input, "string_hex_escape_boundary", "4 65 77 80\n", true);
+	});
+});
