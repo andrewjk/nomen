@@ -71,6 +71,17 @@ test("keeps namespace paths tight", () => {
 	);
 });
 
+test("keeps hyphenated import names intact", () => {
+	// Module names may contain hyphens; the general spacing rules render a
+	// `-` as a binary minus, which the tokenizer reads identically — so the
+	// safety net passes the mangle through and `import render - console`
+	// then fails to resolve.
+	expect(format("import render-console\n")).toBe("import render-console\n");
+	expect(format("import render - console\n")).toBe("import render-console\n");
+	expect(format("import render-console as rc\n")).toBe("import render-console as rc\n");
+	expect(format("import System:: sub-pack ::Thing\n")).toBe("import System::sub-pack::Thing\n");
+});
+
 test("wraps an argument list past the print width", () => {
 	const source =
 		"func f = (int aaaaaaaaa, int bbbbbbbbbb, int cccccccccc, int dddddddddd, int eeeeeeeeee) {}\n";

@@ -130,6 +130,20 @@ function render(lines: Line[], options: FormatOptions): string {
 			continue;
 		}
 
+		// Import lines join with import-specific rules: module names may
+		// contain hyphens (`import render-console`), and the general
+		// piece-joining spacing rules would render the hyphen as a binary
+		// minus (`import render - console`). The tokenizer reads both
+		// spellings identically, so the token-difference safety net cannot
+		// catch the mangle — and the spaced form fails to resolve at check
+		// time. Namespace paths stay tight, an intra-name `-` binds to the
+		// words around it, and a trailing comment keeps its space.
+		if (line.kind === "code" && line.pieces[0]?.text === "import") {
+			out.push(join_import(line.pieces));
+			previous = undefined;
+			continue;
+		}
+
 		let pieces = line.pieces;
 		if (options.strip_redundant_types) pieces = strip_redundant_type(pieces);
 
@@ -153,6 +167,32 @@ function render(lines: Line[], options: FormatOptions): string {
 }
 
 // --- Layout ------------------------------------------------------------------
+
+/**
+ * Join an `import` line's pieces. Namespace separators and an intra-name `-`
+ * bind tight; everything else (the `as` alias keyword, a trailing comment)
+ * keeps a single space.
+ */
+function join_import(pieces: Piece[]): string {
+	let out = "";
+	for (let i = 0; i < pieces.length; i++) {
+		const piece = pieces[i];
+		if (i === 0) {
+			out = piece.text;
+			continue;
+		}
+		const tight =
+			piece.text === "::" ||
+			piece.text === "." ||
+			piece.text === "-" ||
+			pieces[i - 1].text === "::" ||
+			pieces[i - 1].text === "." ||
+			pieces[i - 1].text === "-";
+		if (!tight) out += " ";
+		out += piece.text;
+	}
+	return out;
+}
 
 function indent(level: number, options: FormatOptions): string {
 	return options.use_tabs ? "\t".repeat(level) : " ".repeat(level * options.tab_width);
