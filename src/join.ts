@@ -60,8 +60,17 @@ export default function join(
 		// A folder is a module: every sibling `.nm` file's `pub` declarations are
 		// visible to the entry without an explicit `import`, mirroring how the
 		// System library concatenates its own files. Pull in every other file in
-		// the entry's folder so cross-file references resolve.
-		gather_module_siblings(folder_path, file_path, inputs, resolved_lib_path, visited);
+		// the entry's folder so cross-file references resolve. A `*.test.nm`
+		// entry is exempt: test files are STANDALONE programs (the harness adds
+		// its own `main`), so gathering their folder's siblings would inline the
+		// whole suite into every file's build — quadratic compile weight (for a
+		// 24-file suite the joined source grew 4x) and an OOM for `nomen test`.
+		// Tests import what they need explicitly (plus the `src/` module via
+		// `for_test` below), exactly like the standalone `*.test.nm` copies the
+		// run path compiles.
+		if (!for_test) {
+			gather_module_siblings(folder_path, file_path, inputs, resolved_lib_path, visited);
+		}
 		// Declarations one directory up are visible too — a file in `src/utils/`
 		// sees the `.nm` files directly in `src/`. Mirrors the editor extension,
 		// which does the same so diagnostics match what the compiler accepts.

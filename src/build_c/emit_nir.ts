@@ -80,6 +80,48 @@ export function set_c_nir_emission_enabled(enabled: boolean): void {
 	c_nir_emission_on = enabled;
 }
 
+
+/**
+ * Whether this statement's emitted C can end with a closing brace (a
+ * `match`/`switch`/`if` value lowered to a C block statement). Anything else
+ * lets `with_semicolon_tail` skip the O(code) `endsWith` scan.
+ */
+function statement_may_end_with_block(node: BaseNode): boolean {
+	if (node.node_type === "assign") {
+		// A string FIELD assignment lowers to a braced block (the displaced
+		// free + store), so only a bare-variable target with a non-branching
+		// RHS is provably brace-free.
+		const assign = node as AssignmentNode;
+		if (assign.left_value.node_type !== "value") return true;
+		// A swap assignment marshals through a braced block as well.
+		if (assign.swap) return true;
+		const rhs = assign.right_value;
+		return (
+			rhs.node_type === "match" || rhs.node_type === "switch" || rhs.node_type === "if"
+		);
+	}
+	if (node.node_type === "declare") {
+		const decl = node as DeclarationNode;
+		// A nullable declaration lowers to the paired-flag protocol — don't
+		// reason about its shape. A swap declaration marshals through a
+		// braced block too.
+		if (decl.type?.is_nullable || (decl as { swap?: unknown }).swap) return true;
+		const init = decl.value;
+		return (
+			!!init &&
+			(init.node_type === "match" || init.node_type === "switch" || init.node_type === "if")
+		);
+	}
+	if (node.node_type === "return") {
+		const value = (node as ReturnNode).value;
+		return (
+			!!value &&
+			(value.node_type === "match" || value.node_type === "switch" || value.node_type === "if")
+		);
+	}
+	return true;
+}
+
 /**
  * Statement dispatch for build_block_node's loop: consume the index-aligned
  * NIR entry when the active ctx owns this statement list and the kind is
@@ -122,7 +164,7 @@ export function emit_stmt_from_nir(
 				// with_semicolon suffix exactly.
 				build_return_node(child as ReturnNode, status, nstmt.value);
 				if (!(child as ReturnNode).from_inline) {
-					with_semicolon_tail(status);
+					with_semicolon_tail(status, child);
 				}
 				return;
 			case "declare":
@@ -133,7 +175,7 @@ export function emit_stmt_from_nir(
 				// initializer still gets one.
 				build_declaration_node(child as DeclarationNode, status, nstmt.decl.init, nstmt.decl.swap);
 				if (!nstmt.decl.init || nstmt.decl.init.node.node_type !== "func") {
-					with_semicolon_tail(status);
+					with_semicolon_tail(status, child);
 				}
 				return;
 			case "assign":
@@ -145,7 +187,7 @@ export function emit_stmt_from_nir(
 				// LetNode wrapping the assign expression, and the NIR stmt
 				// carries the inner AssignmentNode the builder needs.
 				build_assignment_node(nstmt.node as AssignmentNode, status, nstmt.rhs, nstmt.swap);
-				with_semicolon_tail(status);
+				with_semicolon_tail(status, nstmt.node);
 				return;
 			case "eval": {
 				// Expression-shaped statements (bare calls, lets): the value
@@ -167,7 +209,7 @@ export function emit_stmt_from_nir(
 					}
 				}
 				emit_expr_from_nir(nstmt.expr, status);
-				with_semicolon_tail(status);
+				with_semicolon_tail(status, eval_node);
 				return;
 			}
 			case "async_block":
@@ -246,8 +288,18 @@ export function emit_method_body_from_nir(func: FunctionNode, status: BuildStatu
  * arms call it so their output is byte-identical to the delegated
  * `build_node(child, status, true)` path.
  */
-function with_semicolon_tail(status: BuildStatus): void {
-	if (!status.code.endsWith("}\n")) {
+function with_semicolon_tail(status: BuildStatus, node?: BaseNode): void {
+	// `status.code.endsWith` forces a FULL flatten of the accumulated code
+	// rope (an O(code) copy); at corpus scale the per-statement flatten alone
+	// made builds quadratic in memory. Consult the string only for node
+	// shapes that can genuinely end with a closing brace (a branch lowered
+	// to a C `switch`/`if` statement); everything else provably ends with a
+	// value or `)` — append the `;` directly.
+	if (node === undefined || statement_may_end_with_block(node)) {
+		if (!status.code.endsWith("}\n")) {
+			status.code += ";\n";
+		}
+	} else {
 		status.code += ";\n";
 	}
 	// Flush frees deferred from move call sites inside this statement
