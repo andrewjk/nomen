@@ -28,6 +28,7 @@ import build_switch_node from "./build_switch_node.ts";
 import build_while_loop_node from "./build_while_loop_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import emit_allocations from "./utils/emit_allocations.ts";
+import { statement_ends_with_block } from "./utils/statement_tail.ts";
 
 /**
  * NIR-driven emission — C BACKEND (ASM_PLAN phase 4, canonical-IR stage 2+).
@@ -78,48 +79,6 @@ export function c_nir_emission_enabled(): boolean {
 
 export function set_c_nir_emission_enabled(enabled: boolean): void {
 	c_nir_emission_on = enabled;
-}
-
-
-/**
- * Whether this statement's emitted C can end with a closing brace (a
- * `match`/`switch`/`if` value lowered to a C block statement). Anything else
- * lets `with_semicolon_tail` skip the O(code) `endsWith` scan.
- */
-function statement_may_end_with_block(node: BaseNode): boolean {
-	if (node.node_type === "assign") {
-		// A string FIELD assignment lowers to a braced block (the displaced
-		// free + store), so only a bare-variable target with a non-branching
-		// RHS is provably brace-free.
-		const assign = node as AssignmentNode;
-		if (assign.left_value.node_type !== "value") return true;
-		// A swap assignment marshals through a braced block as well.
-		if (assign.swap) return true;
-		const rhs = assign.right_value;
-		return (
-			rhs.node_type === "match" || rhs.node_type === "switch" || rhs.node_type === "if"
-		);
-	}
-	if (node.node_type === "declare") {
-		const decl = node as DeclarationNode;
-		// A nullable declaration lowers to the paired-flag protocol — don't
-		// reason about its shape. A swap declaration marshals through a
-		// braced block too.
-		if (decl.type?.is_nullable || (decl as { swap?: unknown }).swap) return true;
-		const init = decl.value;
-		return (
-			!!init &&
-			(init.node_type === "match" || init.node_type === "switch" || init.node_type === "if")
-		);
-	}
-	if (node.node_type === "return") {
-		const value = (node as ReturnNode).value;
-		return (
-			!!value &&
-			(value.node_type === "match" || value.node_type === "switch" || value.node_type === "if")
-		);
-	}
-	return true;
 }
 
 /**
@@ -289,17 +248,13 @@ export function emit_method_body_from_nir(func: FunctionNode, status: BuildStatu
  * `build_node(child, status, true)` path.
  */
 function with_semicolon_tail(status: BuildStatus, node?: BaseNode): void {
-	// `status.code.endsWith` forces a FULL flatten of the accumulated code
-	// rope (an O(code) copy); at corpus scale the per-statement flatten alone
-	// made builds quadratic in memory. Consult the string only for node
-	// shapes that can genuinely end with a closing brace (a branch lowered
-	// to a C `switch`/`if` statement); everything else provably ends with a
-	// value or `)` — append the `;` directly.
-	if (node === undefined || statement_may_end_with_block(node)) {
-		if (!status.code.endsWith("}\n")) {
-			status.code += ";\n";
-		}
-	} else {
+	// Node-driven statement terminator (byte-identical to the delegated
+	// `build_node(child, status, true)` path — build_node's tail consults the
+	// same statement_ends_with_block classification). The historical
+	// `status.code.endsWith("}\n")` peek forced a FULL flatten of the
+	// accumulated code rope (an O(code) copy) at per-statement frequency,
+	// which made builds quadratic in memory.
+	if (!statement_ends_with_block(node, status)) {
 		status.code += ";\n";
 	}
 	// Flush frees deferred from move call sites inside this statement

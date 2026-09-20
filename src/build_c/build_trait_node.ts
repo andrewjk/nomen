@@ -4,6 +4,7 @@ import build_node from "./build_node.ts";
 import build_parameter_node from "./build_parameter_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_type from "./utils/c_type.ts";
+import { begin_code_scratch, end_code_scratch } from "./utils/code_scratch.ts";
 
 export default function build_trait_node(node: TraitNode, status: BuildStatus) {
 	// We only need to build a trait node if there are default functions
@@ -47,7 +48,10 @@ export default function build_trait_node(node: TraitNode, status: BuildStatus) {
 
 		// Define the function
 		// HACK: Need to map names to types
-		const func_start = status.code.length;
+		// The signature builds into a scratch buffer so its text can be
+		// copied to the header without a substring of (and a full-rope
+		// flatten of) the accumulated code — see code_scratch.ts.
+		const saved_sig = begin_code_scratch(status);
 		status.code += `${c_type(func.return_type.name || "void")} ${node.name}_${func.name.replace(/#/g, "")}(`;
 		for (let i = 0; i < func.params.length; i++) {
 			if (i > 0) {
@@ -58,7 +62,9 @@ export default function build_trait_node(node: TraitNode, status: BuildStatus) {
 		status.code += `)`;
 
 		// TODO: Only if top-level
-		status.headers += `${status.code.substring(func_start)};\n`;
+		const signature = end_code_scratch(status, saved_sig);
+		status.code += signature;
+		status.headers += `${signature};\n`;
 
 		status.code += `\n{\n`;
 

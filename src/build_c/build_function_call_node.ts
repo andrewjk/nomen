@@ -16,6 +16,7 @@ import c_function_name from "./utils/c_function_name.ts";
 import { find_decl_in_c_scopes } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
 import { materialize_func_value } from "./utils/closure.ts";
+import { begin_code_scratch, end_code_scratch } from "./utils/code_scratch.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import { c_view_string_arg } from "./utils/view_value.ts";
 
@@ -126,6 +127,16 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		: c_function_name(emission_label(node.resolved_function ?? node));
 	// A DIRECT call to a closure (a declaration-named lambda used under its
 	// own name) still prepends the env — a plain NULL in Phase 1.
+	// A nullable struct RETURN with no consumer-allocated flag wraps the
+	// whole call in a GCC statement-expression owning a throwaway flag temp.
+	// The call text builds in a scratch buffer so the wrap is a local
+	// splice — the historical `status.code.lastIndexOf(...)` +
+	// whole-string rebuild scanned and copied the entire accumulated code
+	// per wrapped call (O(code), quadratic in memory).
+	const wrap_nullable_call =
+		is_nullable_struct_type(node.type, status) && !status.current_nullable_call_flag;
+	const saved_call = wrap_nullable_call ? begin_code_scratch(status) : undefined;
+	let wrap_tmp: number | undefined;
 	status.code += `${func_name}(${is_closure_callee ? "NULL" : ""}`;
 	if (is_closure_callee && node.params.length > 0) status.code += ", ";
 
@@ -342,25 +353,28 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		if (flag_name) {
 			status.code += `, &${flag_name}`;
 		} else {
-			// Wrap the call (already emitted up to the open paren + args) in
-			// a statement-expression that owns the flag temp. The temp's
-			// `_has` value is discarded — this path is for consumers that
-			// treat the call result as a non-null value (e.g. the call is the
-			// whole RHS of an assignment to a non-nullable T, which the type
-			// checker only permits when the result is provably non-null).
-			const tmp = `_nsd_${ns_default_counter++}`;
-			const open = status.code.lastIndexOf(`${func_name}(`);
-			if (open !== -1) {
-				const before = status.code.slice(0, open);
-				const call = status.code.slice(open);
-				status.code = before + `({ unsigned char ${tmp} = 0; ` + call + `, &${tmp}); })`;
-			} else {
-				status.code += `, &${tmp}`;
-			}
+			// The wrap decision was made before the call text started (see
+			// wrap_nullable_call above): the flag temp is forwarded inside
+			// the scratch-built call, and the statement-expression wrapper
+			// is spliced on after the scratch is restored (below). The
+			// temp's `_has` value is discarded — this path is for consumers
+			// that treat the call result as a non-null value.
+			wrap_tmp = ns_default_counter++;
+			status.code += `, &_nsd_${wrap_tmp}`;
 		}
 	}
 
 	status.code += ")";
+
+	if (wrap_tmp !== undefined) {
+		const call_text = end_code_scratch(status, saved_call!);
+		status.code += `({ unsigned char _nsd_${wrap_tmp} = 0; ${call_text}; })`;
+		// The historical form left the call's own closing paren OUTSIDE the
+		// wrapper (it truncated at `lastIndexOf(func_name("(")` and rebuilt);
+		// the unconditional `)` below now lands inside the scratch, so it is
+		// re-appended here to keep the emitted bytes identical.
+		status.code += ")";
+	}
 
 	if (node.name.startsWith("_string_interpolate_")) {
 		status.interpolate_string_counts.add(node.params.length - 1);
@@ -520,10 +534,9 @@ function emit_nullable_arg_flag(arg: BaseNode, status: BuildStatus) {
 	if (arg.node_type === "access" && (arg as AccessNode).access.node_type === "access_field") {
 		const t = type_from_value_node(arg);
 		if (is_nullable_struct_type(t, status)) {
-			const before = status.code.length;
+			const saved = begin_code_scratch(status);
 			build_node(arg, status);
-			const expr = status.code.substring(before);
-			status.code = status.code.substring(0, before);
+			const expr = end_code_scratch(status, saved);
 			status.code += `${expr}_has`;
 		} else {
 			status.code += `1`;

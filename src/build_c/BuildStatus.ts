@@ -425,6 +425,22 @@ export default interface BuildStatus {
 	 */
 	pending_string_releases?: string[];
 	/**
+	 * C only. Self-report from build_assignment_node's string-FIELD store
+	 * path: its braced lowering (`{ …; field = temp; }`) is the statement's
+	 * final emission, so the statement tail must skip the terminating
+	 * `;\n`. Consumed (reset) on read by statement_ends_with_block — see
+	 * utils/statement_tail.ts. The shape alone can't decide this (a scalar
+	 * field store with the same AST ends `;\n`), hence the self-report.
+	 */
+	c_stmt_ends_block?: boolean;
+	/**
+	 * Depth counter for emit_field_overrides' synthetic assignment loop.
+	 * Those assignments are mid-statement (terminators are appended around
+	 * them), so the string-field store path must not self-report
+	 * `c_stmt_ends_block` from inside one.
+	 */
+	c_field_override_depth?: number;
+	/**
 	 * aarch64 only. VALUE-struct locals whose `string` field was assigned a
 	 * heap-owned value ("var.field" keys, e.g. "u.text"). Value-struct string
 	 * fields are NOT freed by the struct destroy (they may be rodata from

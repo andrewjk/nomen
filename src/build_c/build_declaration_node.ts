@@ -36,6 +36,7 @@ import c_function_name from "./utils/c_function_name.ts";
 import { find_decl_in_c_scopes, splice_decl_from_c_scopes } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
 import { ensure_closure_runtime, materialize_func_value } from "./utils/closure.ts";
+import { begin_code_scratch, end_code_scratch } from "./utils/code_scratch.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import { c_materialize_view_string, is_view_value } from "./utils/view_value.ts";
 
@@ -575,10 +576,9 @@ export default function build_declaration_node(
 				// `char* parts[3L]`); if absent, fall back to the value count.
 				let len_text = "0";
 				if (node.type.length) {
-					const before = status.code.length;
+					const saved = begin_code_scratch(status);
 					build_node(node.type.length, status);
-					len_text = status.code.substring(before);
-					status.code = status.code.substring(0, before);
+					len_text = end_code_scratch(status, saved);
 				} else if (node.value?.node_type === "array") {
 					len_text = String((node.value as ArrayValuesNode).values.length);
 				}
@@ -867,11 +867,10 @@ export default function build_declaration_node(
 			if (node.swap && node.value.node_type === "access") {
 				status.code += `;\n`;
 				// Re-emit the field-access expression (e.g. `self->slots`) by
-				// building the access node into status.code.
-				const before_len = status.code.length;
+				// building the access node into a scratch buffer.
+				const saved = begin_code_scratch(status);
 				build_node(node.value, status);
-				const field_access = status.code.substring(before_len);
-				status.code = status.code.substring(0, before_len);
+				const field_access = end_code_scratch(status, saved);
 				status.code += `${field_access} = `;
 				emit_swap_value(node.swap, nir_swap, status);
 			}

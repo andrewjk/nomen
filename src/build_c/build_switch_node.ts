@@ -6,6 +6,7 @@ import type BuildStatus from "./BuildStatus.ts";
 import { build_block_with_cursor } from "./emit_nir.ts";
 import { strip_outer_parens } from "./utils/build_condition.ts";
 import { enter_c_scope, leave_c_scope } from "./utils/c_scope.ts";
+import { begin_code_scratch, end_code_scratch } from "./utils/code_scratch.ts";
 
 export default function build_switch_node(
 	node: SwitchNode,
@@ -18,10 +19,12 @@ export default function build_switch_node(
 		const c = node.cases[i];
 		status.scoped_declarations = enter_c_scope(status);
 
-		const cond_start = status.code.length;
+		// The condition builds into a scratch buffer (code_scratch.ts) — the
+		// historical substring-and-truncate capture flattened the accumulated
+		// code rope per case (an O(code) copy, quadratic in memory).
+		const saved_code = begin_code_scratch(status);
 		build_node(c.condition, status);
-		let cond_code = status.code.substring(cond_start);
-		status.code = status.code.substring(0, cond_start);
+		let cond_code = end_code_scratch(status, saved_code);
 
 		// Pull any statements (e.g. param allocations) out of the condition.
 		// Split only at TOP-LEVEL semicolons: paren/brace depth tracking keeps
@@ -71,24 +74,30 @@ export default function build_switch_node(
 		if (decls.length > 0) {
 			status.code += decls.join("\n") + "\n";
 		}
-		const prefix = status.code.endsWith("} else ") ? "" : "";
-		status.code += `${prefix}if (${cond_code}) {\n`;
+		// The `} else ` connector separating the previous case (or nothing for
+		// the first) from this one — appended BEFORE the case's own decls/`if`
+		// so the byte order matches the historical emit-then-strip form.
+		if (i > 0) {
+			status.code += "} else ";
+		}
+		status.code += `if (${cond_code}) {\n`;
 		build_block_with_cursor(c.branch, nir?.arms[i]?.branch, status);
 		build_auto_free(status);
-		status.code += `} else `;
 		leave_c_scope(status);
 	}
 
 	if (node.else_branch) {
+		status.code += "} else ";
 		status.scoped_declarations = enter_c_scope(status);
 		status.code += `{\n`;
 		build_block_with_cursor(node.else_branch, nir?.otherwise ?? undefined, status);
 		build_auto_free(status);
 		status.code += `}\n`;
 		leave_c_scope(status);
-	} else {
-		// Strip the trailing `} else ` since there's no default branch
-		status.code = status.code.replace(/\} else $/, "}\n");
+	} else if (node.cases.length > 0) {
+		// Close the last case's `if` block (the connector that used to be
+		// rewritten into this by the trailing replace below).
+		status.code += "}\n";
 	}
 
 	status.scoped_declarations = old_scoped_declarations;

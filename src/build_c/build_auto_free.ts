@@ -10,6 +10,7 @@ import StructNode from "../nodes/StructNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_function_name from "./utils/c_function_name.ts";
+import { begin_code_scratch, end_code_scratch } from "./utils/code_scratch.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import { is_view_value } from "./utils/view_value.ts";
 
@@ -566,7 +567,7 @@ function capture_destroys(
 	var_expr: string,
 	accessor: string,
 ): string {
-	const before = status.code.length;
+	const saved = begin_code_scratch(status);
 	if (has_destroy(struct)) {
 		status.code += `${struct.name}_destroy(&${var_expr}); `;
 	}
@@ -582,17 +583,14 @@ function capture_destroys(
 		} else if (is_nullable_struct_type(field.type, status)) {
 			if (struct_needs_destroy(field_struct, status)) {
 				// Recurse into the nullable field's value, guarded by its flag.
-				const inner_before = status.code.length;
+				const inner_saved = begin_code_scratch(status);
 				capture_destroys(status, field_struct, field_expr, accessor);
-				const inner_body = status.code.substring(inner_before).trim();
-				status.code = status.code.substring(0, inner_before);
+				const inner_body = end_code_scratch(status, inner_saved).trim();
 				status.code += `if (${field_expr}_has) { ${inner_body} } `;
 			}
 		} else {
 			capture_destroys(status, field_struct, field_expr, accessor);
 		}
 	}
-	const captured = status.code.substring(before).replace(/\s+/g, " ").trim();
-	status.code = status.code.substring(0, before);
-	return captured;
+	return end_code_scratch(status, saved).replace(/\s+/g, " ").trim();
 }

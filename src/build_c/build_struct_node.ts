@@ -27,6 +27,7 @@ import { emit_method_body_from_nir } from "./emit_nir.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import { enter_c_scope, leave_c_scope } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
+import { begin_code_scratch, end_code_scratch } from "./utils/code_scratch.ts";
 import {
 	emit_owning_buffer_body,
 	emit_owning_buffer_enum_body,
@@ -759,7 +760,12 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		// Raw `#arch: c` bodies see fat `nomen_string` values directly —
 		// the function emits under its REAL label with its fat signature,
 		// and a C `char*` is an explicit `.ptr` (see docs/MEMORY.md).
-		const func_start = status.code.length;
+		// The signature builds into a scratch buffer so its text can be
+		// copied to the header without a substring of (and a full-rope
+		// flatten of) the accumulated code — see code_scratch.ts. The
+		// buffer-swap inside (build_struct_body writing the header) composes:
+		// it round-trips the scratch string through status.headers.
+		const saved_sig = begin_code_scratch(status);
 		let return_type = func.return_type.name || "void";
 		// For methods of specialized generic structs (e.g. Array_int),
 		// replace generic return type (e.g. Array) with the specialized name
@@ -848,7 +854,9 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		forward_decl_referenced_types(func, status);
 
 		// TODO: Only if top-level
-		status.headers += `${status.code.substring(func_start)};\n`;
+		const signature = end_code_scratch(status, saved_sig);
+		status.code += signature;
+		status.headers += `${signature};\n`;
 
 		status.code += `\n{\n`;
 

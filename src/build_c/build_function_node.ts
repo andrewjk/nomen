@@ -1,3 +1,5 @@
+import fs from "node:fs";
+
 import emission_label from "../build_common/emission_label.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
@@ -28,6 +30,7 @@ import c_function_name from "./utils/c_function_name.ts";
 import { enter_c_scope, leave_c_scope } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
 import { emit_closure_env_type } from "./utils/closure_env.ts";
+import { begin_code_scratch, end_code_scratch } from "./utils/code_scratch.ts";
 import emit_enum_in_order, { emit_enum_deps_for_struct } from "./utils/emit_enum_in_order.ts";
 import scan_borrow_only_strings from "./utils/scan_borrow_only_strings.ts";
 
@@ -113,6 +116,16 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	// TODO: Only if top-level
 	status.headers += `// Func ${node.name}\n`;
 	status.code += `// Func ${node.name}\n`;
+	if (process.env.NOMEN_FUNC_DEBUG)
+		fs.appendFileSync(
+			process.env.NOMEN_FUNC_DEBUG,
+			JSON.stringify({
+				at: 1,
+				name: node.name,
+				len: status.code.length,
+				tail: status.code.slice(-30),
+			}) + "\n",
+		);
 
 	const is_main_with_init =
 		node.name.toLocaleLowerCase() === "main" &&
@@ -123,7 +136,20 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	// docs/MEMORY.md): the function emits with its REAL fat signature —
 	// strings are `nomen_string` values, C's `char*` is an explicit
 	// `.ptr`. There is no thin ABI and no adapter at this boundary.
-	const func_start = status.code.length;
+	// The signature builds into a scratch buffer so its text can be copied
+	// to the header without a substring of (and a full-rope flatten of) the
+	// accumulated code — see code_scratch.ts.
+	const saved_sig = begin_code_scratch(status);
+	if (process.env.NOMEN_FUNC_DEBUG)
+		fs.appendFileSync(
+			process.env.NOMEN_FUNC_DEBUG,
+			JSON.stringify({
+				at: 2,
+				name: node.name,
+				len: status.code.length,
+				tail: status.code.slice(-30),
+			}) + "\n",
+		);
 	if (is_main_with_init) {
 		status.code += `int main(int argc, char **argv)`;
 	} else if (node.name.toLocaleLowerCase() === "main") {
@@ -218,7 +244,19 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	}
 
 	// TODO: Only if top-level
-	status.headers += `${status.code.substring(func_start)};\n\n`;
+	const signature = end_code_scratch(status, saved_sig);
+	if (process.env.NOMEN_FUNC_DEBUG)
+		fs.appendFileSync(
+			process.env.NOMEN_FUNC_DEBUG,
+			JSON.stringify({
+				at: 3,
+				name: node.name,
+				len: status.code.length,
+				tail: status.code.slice(-30),
+			}) + "\n",
+		);
+	status.code += signature;
+	status.headers += `${signature};\n\n`;
 
 	status.code += `\n{\n`;
 

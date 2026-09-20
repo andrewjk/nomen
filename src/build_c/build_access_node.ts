@@ -27,6 +27,7 @@ import c_function_name from "./utils/c_function_name.ts";
 import { find_decl_in_c_scopes } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
 import { materialize_func_value } from "./utils/closure.ts";
+import { begin_code_scratch, end_code_scratch } from "./utils/code_scratch.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import { c_view_string_arg } from "./utils/view_value.ts";
 
@@ -116,12 +117,11 @@ function nursery_pointer_expr(target: BaseNode, status: BuildStatus): string {
 		if (status.function_ref_params?.has(name)) return name;
 	}
 	// Any other Nursery lvalue: build it and take its address.
-	const before = status.code.length;
+	const saved = begin_code_scratch(status);
 	status.suppress_dereference = true;
 	build_node(target, status);
 	status.suppress_dereference = false;
-	const expr = status.code.substring(before);
-	status.code = status.code.substring(0, before);
+	const expr = end_code_scratch(status, saved);
 	return "&" + expr;
 }
 
@@ -177,12 +177,11 @@ export function build_vtable_target(node: BaseNode, status: BuildStatus) {
 		}
 	}
 	// Any other lvalue: build it without the ref-param deref and take its address.
-	const before = status.code.length;
+	const saved = begin_code_scratch(status);
 	status.suppress_dereference = true;
 	build_node(node, status);
 	status.suppress_dereference = false;
-	const expr = status.code.substring(before);
-	status.code = status.code.substring(0, before);
+	const expr = end_code_scratch(status, saved);
 	status.code += "&" + expr;
 }
 
@@ -221,21 +220,19 @@ function array_receiver_wrap(
 	if (status.stack_array_lengths?.has(target_value)) {
 		length = status.stack_array_lengths.get(target_value);
 	} else if (target_type.length) {
-		const before = status.code.length;
+		const saved = begin_code_scratch(status);
 		build_node(target_type.length, status);
-		length = status.code.substring(before);
-		status.code = status.code.substring(0, before);
+		length = end_code_scratch(status, saved);
 	} else if (status.function_variadic_params?.has(target_value)) {
 		length = `_${target_value}_len`;
 	}
 	if (!length) return undefined;
 	// Capture the receiver's C lvalue text (the bare array identifier).
-	const before = status.code.length;
+	const saved = begin_code_scratch(status);
 	status.suppress_dereference = true;
 	build_node(node.target, status);
 	status.suppress_dereference = false;
-	const recv = status.code.substring(before);
-	status.code = status.code.substring(0, before);
+	const recv = end_code_scratch(status, saved);
 
 	const elem_c = c_type(target_type.name);
 	const id = (status.label_counter = (status.label_counter ?? 0) + 1);
@@ -849,12 +846,11 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				let recv_temp_owned = false;
 				let recv_ret_temp: string | undefined;
 				if (recv_is_rvalue) {
-					const before = status.code.length;
+					const saved = begin_code_scratch(status);
 					status.suppress_dereference = true;
 					build_node(node.target, status);
 					status.suppress_dereference = false;
-					const recv_expr = status.code.substring(before);
-					status.code = status.code.substring(0, before);
+					const recv_expr = end_code_scratch(status, saved);
 					const id = (status.label_counter = (status.label_counter ?? 0) + 1);
 					recv_temp = `_trrecv_${id}`;
 					status.code += `({ void *${recv_temp} = (void*)(${recv_expr}); `;
@@ -913,9 +909,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 						// A non-ref `T` param takes the instance pointer: a
 						// class/trait-backed arg passes bare, a value-struct
 						// arg passes by pointer (`&`).
-						const non_self_trait_params = trait_func.params.filter(
-							(p) => !p.is_self_param,
-						);
+						const non_self_trait_params = trait_func.params.filter((p) => !p.is_self_param);
 						const trait_param = non_self_trait_params[i];
 						const callee_wants_ref = !!(
 							trait_param &&

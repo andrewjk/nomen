@@ -28,6 +28,7 @@ import { emit_expr_from_nir } from "./emit_nir.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import { find_decl_in_c_scopes, splice_decl_from_c_scopes } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
+import { begin_code_scratch, end_code_scratch } from "./utils/code_scratch.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import { c_materialize_view_string, c_view_string_arg, is_view_value } from "./utils/view_value.ts";
 
@@ -153,12 +154,11 @@ export default function build_assignment_node(
 					status.init_assigned_fields.add(init_field_key);
 				}
 				// Capture the emitted field-access expression (e.g. `h->c`) by
-				// building it into status.code then rolling back, so the normal
-				// assignment path below re-emits it exactly once.
-				const before_len = status.code.length;
+				// building it into a scratch buffer then rolling back, so the
+				// normal assignment path below re-emits it exactly once.
+				const saved_len = begin_code_scratch(status);
 				build_node(node.left_value, status);
-				const field_access = status.code.substring(before_len);
-				status.code = status.code.substring(0, before_len);
+				const field_access = end_code_scratch(status, saved_len);
 				if (!first_init_write) {
 					if (field_type?.is_nullable) {
 						status.code += `if (${field_access}) { ${field_struct.name}_destroy(${field_access}); free(${field_access}); }\n`;
@@ -200,19 +200,16 @@ export default function build_assignment_node(
 		const field_type = (access_lhs.access as AccessFieldNode).type;
 		const field_struct =
 			field_type?.name && !field_type.is_view && !field_type.is_array
-				? status.structs.find(
-						(s) => s.name === field_type.name && !s.is_simple_type && !s.is_class,
-					)
+				? status.structs.find((s) => s.name === field_type.name && !s.is_simple_type && !s.is_class)
 				: undefined;
 		if (field_struct) {
 			// Transfer: the source local (possibly declared in an OUTER scope
 			// when the assignment sits inside an if/loop branch) must not be
 			// destroyed at its scope exit.
 			splice_decl_from_c_scopes(status, (node.right_value as ValueNode).value);
-			const before_len = status.code.length;
+			const saved_len = begin_code_scratch(status);
 			build_node(node.left_value, status);
-			const field_access = status.code.substring(before_len);
-			status.code = status.code.substring(0, before_len);
+			const field_access = end_code_scratch(status, saved_len);
 			// Reclaim the field's displaced value (its current buffer/payloads)
 			// — the store overwrites them. A custom `#init`'s first write to a
 			// `self.<field>` overwrites garbage — nothing valid to destroy.
@@ -222,9 +219,11 @@ export default function build_assignment_node(
 				(access_lhs.target as ValueNode).value === "self" &&
 				status.current_function?.name === "#init" &&
 				!status.init_assigned_fields?.has(field_key);
-			if (access_lhs.target.node_type === "value" &&
+			if (
+				access_lhs.target.node_type === "value" &&
 				(access_lhs.target as ValueNode).value === "self" &&
-				status.current_function?.name === "#init") {
+				status.current_function?.name === "#init"
+			) {
 				if (!status.init_assigned_fields) status.init_assigned_fields = new Set();
 				status.init_assigned_fields.add(field_key);
 			}
@@ -250,10 +249,9 @@ export default function build_assignment_node(
 		(node.left_value as AccessNode).access.node_type === "access_field" &&
 		(node.left_value as AccessNode).access.type?.is_view
 	) {
-		const before_len = status.code.length;
+		const saved_len = begin_code_scratch(status);
 		build_node(node.left_value, status);
-		const field_access = status.code.substring(before_len);
-		status.code = status.code.substring(0, before_len);
+		const field_access = end_code_scratch(status, saved_len);
 		status.code += `${field_access} = `;
 		c_view_string_arg(node.right_value, status);
 		status.code += `;\n`;
@@ -330,11 +328,11 @@ export default function build_assignment_node(
 			const rhs_is_null_value =
 				node.right_value.node_type === "value" && (node.right_value as ValueNode).value === "null";
 			// Capture the field-access expression (e.g. `b->text`) by building
-			// it then rolling back, so it can be referenced multiple times.
-			const before_len = status.code.length;
+			// it in a scratch buffer then rolling back, so it can be referenced
+			// multiple times.
+			const saved_len = begin_code_scratch(status);
 			build_node(node.left_value, status);
-			const field_access = status.code.substring(before_len);
-			status.code = status.code.substring(0, before_len);
+			const field_access = end_code_scratch(status, saved_len);
 			const temp = `_nomen_strfield_${string_field_counter++}`;
 			status.code += `{\nnomen_string ${temp} = `;
 			if (rhs_is_null_value) {
@@ -355,6 +353,11 @@ export default function build_assignment_node(
 				if (!status.heap_string_fields) status.heap_string_fields = new Set<string>();
 				status.heap_string_fields.add(tracked_key);
 			}
+			// The braced store is this statement's final emission — self-report
+			// so the statement tail skips the `;\n` (statement_tail.ts). Not
+			// reported from inside emit_field_overrides' synthetic assignments
+			// (mid-statement; a terminator follows each).
+			if (!status.c_field_override_depth) status.c_stmt_ends_block = true;
 			return;
 		}
 	}
@@ -376,10 +379,9 @@ export default function build_assignment_node(
 				? status.enums.find((e) => e.name === field_type.name && e.has_associated_data)
 				: undefined;
 		if (field_enum) {
-			const before_len = status.code.length;
+			const saved_len = begin_code_scratch(status);
 			build_node(node.left_value, status);
-			const field_access = status.code.substring(before_len);
-			status.code = status.code.substring(0, before_len);
+			const field_access = end_code_scratch(status, saved_len);
 			// A custom `#init`'s first write to a `self.<field>` overwrites
 			// garbage — there are no valid payloads to free.
 			const enum_target = (node.left_value as AccessNode).target;
@@ -408,15 +410,15 @@ export default function build_assignment_node(
 	}
 
 	/**
- * The field name of a `self.<field>` assignment LHS, for the
- * `init_assigned_fields` bookkeeping in paths that don't bind `access_lhs`.
- */
-function field_access_node_name(node: AssignmentNode): string {
-	const access = (node.left_value as AccessNode).access as AccessFieldNode;
-	return access.name;
-}
+	 * The field name of a `self.<field>` assignment LHS, for the
+	 * `init_assigned_fields` bookkeeping in paths that don't bind `access_lhs`.
+	 */
+	function field_access_node_name(node: AssignmentNode): string {
+		const access = (node.left_value as AccessNode).access as AccessFieldNode;
+		return access.name;
+	}
 
-// Borrowed string RHS (e.g. `filename = init.args.at(1)`): the LHS gives up
+	// Borrowed string RHS (e.g. `filename = init.args.at(1)`): the LHS gives up
 	// ownership — `args.at()` returns a pointer into argv (or a container's
 	// storage), which must not be freed. Record the LHS in string_borrow_vars so
 	// auto_free — which runs in the variable's *declaration* scope, possibly an
@@ -1144,13 +1146,11 @@ function field_access_node_name(node: AssignmentNode): string {
 	}
 }
 
-/** Build a node into status.code, then return the emitted text and roll back. */
+/** Build a node into a scratch buffer, then return the emitted text. */
 function capture_build(node: any, status: BuildStatus): string {
-	const before = status.code.length;
+	const saved = begin_code_scratch(status);
 	build_node(node, status);
-	const expr = status.code.substring(before);
-	status.code = status.code.substring(0, before);
-	return expr;
+	return end_code_scratch(status, saved);
 }
 
 /** The nullable-struct type of an assignment LHS, or undefined if it isn't one. */

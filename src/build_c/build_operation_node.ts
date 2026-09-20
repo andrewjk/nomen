@@ -5,6 +5,7 @@ import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_type from "./utils/c_type.ts";
+import { begin_code_scratch, end_code_scratch } from "./utils/code_scratch.ts";
 import { enum_with_data_side, static_enum_case } from "./utils/enum_eq.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import { c_view_string_arg, is_view_value } from "./utils/view_value.ts";
@@ -33,7 +34,11 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			invert = !!func;
 		}
 		if (func && struct) {
-			node.operator_func = { struct_name: struct.name, func_name: func.name, invert };
+			node.operator_func = {
+				struct_name: struct.name,
+				func_name: func.name,
+				invert,
+			};
 		} else {
 			node.operator_func = undefined;
 		}
@@ -405,10 +410,9 @@ function build_nullable_has(node: any, status: BuildStatus): string {
 			return has_flag_name(name);
 		}
 	}
-	const before = status.code.length;
+	const saved = begin_code_scratch(status);
 	build_node(node, status);
-	const expr = status.code.substring(before);
-	status.code = status.code.substring(0, before);
+	const expr = end_code_scratch(status, saved);
 	return `${expr}_has`;
 }
 
@@ -474,10 +478,9 @@ function build_array_operand_for_call(node: any, status: BuildStatus) {
 	}
 	// Fallback: use compile-time type length if available
 	if (length === "1" && param_type.length) {
-		const before = status.code.length;
+		const saved = begin_code_scratch(status);
 		build_node(param_type.length, status);
-		length = status.code.substring(before);
-		status.code = status.code.substring(0, before);
+		length = end_code_scratch(status, saved);
 	}
 	const id = (status.label_counter = (status.label_counter ?? 0) + 1);
 	const wrap = `_arrwrap_${id}`;

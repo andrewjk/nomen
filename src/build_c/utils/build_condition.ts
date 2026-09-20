@@ -1,6 +1,7 @@
 import type BaseNode from "../../nodes/BaseNode.ts";
 import build_node from "../build_node.ts";
 import type BuildStatus from "../BuildStatus.ts";
+import { begin_code_scratch, end_code_scratch } from "./code_scratch.ts";
 
 /**
  * Build a controlling expression (an if/while/for condition or a switch-case
@@ -9,12 +10,20 @@ import type BuildStatus from "../BuildStatus.ts";
  * so emitting the condition verbatim would read `if ((a == b))`, which clang
  * flags as -Wparentheses-equality ("equality comparison with extraneous
  * parentheses").
+ *
+ * The condition builds into a scratch buffer (see code_scratch.ts) — the
+ * historical capture-and-rollback form rebuilt the WHOLE accumulated code
+ * string (`prefix + stripped_suffix`) per condition, an O(code) copy that
+ * made builds quadratic in memory.
  */
 export default function build_condition(node: BaseNode, status: BuildStatus) {
-	const before = status.code.length;
+	const saved = begin_code_scratch(status);
 	build_node(node, status);
-	status.code =
-		status.code.substring(0, before) + strip_outer_parens(status.code.substring(before));
+	// NOTE: `end_code_scratch` must run BEFORE `status.code +=` — a compound
+	// `status.code += end_code_scratch(...)` would read the EMPTY scratch on
+	// the left before the call restores the outer code, discarding it.
+	const cond = strip_outer_parens(end_code_scratch(status, saved));
+	status.code += cond;
 }
 
 /**

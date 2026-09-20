@@ -60,7 +60,13 @@ export default function emit_field_overrides(
 		const access = new AccessNode(override.value.start, target, access_field);
 		const assign = new AssignmentNode(override.value.start, access, override.value);
 		status.code += "\n";
+		// These assignments are mid-statement: a terminator is appended after
+		// each, so the C backend's string-field store path must not
+		// self-report a block-terminated statement from inside this loop
+		// (see BuildStatus.c_field_override_depth).
+		status.c_field_override_depth = (status.c_field_override_depth ?? 0) + 1;
 		build(assign, status);
+		status.c_field_override_depth = (status.c_field_override_depth ?? 1) - 1;
 		status.code += statement_terminator;
 	}
 }

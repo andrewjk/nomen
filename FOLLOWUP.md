@@ -2,6 +2,40 @@
 
 Skipped or out-of-scope items recorded for later.
 
+## aarch64 emitter: same quadratic string-volume disease (C-emitter fix not ported)
+
+The C-emitter quadratic fix (commit "fix quadratic string volume in C
+emitter": scratch-buffer speculative emission + node-driven statement
+tails) was NOT ported to the aarch64 backend — it has the same disease
+with a different shape:
+
+- **257 `status.code.endsWith` peek sites across 26 build_aarch64 files**
+  (mostly the `if (!status.code.endsWith("\n")) status.code += "\n";`
+  newline guard at per-instruction emission frequency). Each peek forces
+  V8 to flatten the accumulated code rope — an O(code) copy. Unlike the C
+  emitter there are NO substring capture/rollback sites, so the
+  `code_scratch` helper is not needed as-is.
+- Measured (synthetic 100-function corpus, ~570 KB asm output): build
+  ~3.5 s / 617 MB peak RSS, versus the C backend emitting the same corpus
+  in ~0.2 s / 261 MB. The per-line peeks dominate.
+- Hard pre-existing wall that fires FIRST at scale: `peephole_optimize`
+  (build_aarch64/build_function_node.ts:99) does `lines.push(...out)` —
+  a spread that blows the call stack on large functions (RangeError at a
+  ~400-function synthetic program, reproduced on the pre-fix baseline).
+- Urgency is tempered by the known aarch64 blockers (PORT.md: the port
+  always builds `--arch c`), but the bench matrix and any future aarch64
+  work pay this tax.
+
+Fix shape when picked up: the newline guards want the same
+never-flatten treatment — either a per-site node-driven/flag answer
+(where the emitting builder knows whether it just closed a line) or, more
+cleanly, a chunked CodeBuilder for the aarch64 emitter with
+`append_line`/`ensure_newline` semantics (also structurally removing the
+peek). Any attempt must keep the byte-exact suite green (the aarch64 asm
+post-processing passes in build.ts and the bench matrix are the
+regression tripwires), and the peephole spread overflow is a
+prerequisite for large-program builds anyway.
+
 ## Inline capturing lambda as a direct call argument leaks its descriptor
 
 A capturing lambda passed INLINE as a func-typed call argument
@@ -424,19 +458,3 @@ but a garbage/NULL class field still crashes in `<T>_destroy`, so the real
 fix is either calloc + null-guarded destroys, or a checker diagnostic
 ("field `x` is not assigned by `#init` and has no default"). Not fixed
 here; the port dodges it with declared defaults on every field.
-
-## Residual quadratic string volume in the C emitter
-
-`nomen test` OOM (PORT.md item) was dominated by the joiner inlining the
-whole suite into every test build (fixed), but the emitter still carries a
-quadratic term: every `status.code.endsWith/substring/lastIndexOf` peek
-forces V8 to flatten the accumulated code rope — an O(code) copy — and the
-speculative-emission "capture + rollback" pattern (`const before =
-status.code.length; …; status.code.substring(before); status.code =
-status.code.substring(0, before);`) does it at method-call frequency. The
-per-statement `with_semicolon_tail` endsWith is now node-driven (fixed),
-but the rollback sites remain. Proper fix: a chunked string-builder for
-`status.code` (append-only parts array + lazy join), or emit speculative
-segments into a scratch buffer. Measured on the allmark corpus: ~680 KB of
-allocation per emitted statement at the 4 MB-code point, ~20 GB volume for
-one build before the joiner fix.

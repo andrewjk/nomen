@@ -63,6 +63,7 @@ import build_value_node from "./build_value_node.ts";
 import build_while_loop_node from "./build_while_loop_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import build_lambda_value from "./utils/build_lambda_value.ts";
+import { statement_ends_with_block } from "./utils/statement_tail.ts";
 
 export default function build_node(node: BaseNode, status: BuildStatus, with_semicolon = false) {
 	// Build any associated declarations first, e.g. for function call params that
@@ -291,8 +292,12 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 
 	// Add a semicolon if this is a statement
 	if (with_semicolon) {
-		// But not if it was a declaration with an if statement etc
-		if (!status.code.endsWith("}\n")) {
+		// But not if the statement's emission ended with a block (a branch
+		// lowered to a C if/switch statement — see statement_ends_with_block).
+		// The historical `status.code.endsWith("}\n")` peek forced a FULL
+		// flatten of the accumulated code rope (an O(code) copy) at
+		// per-statement frequency, which made builds quadratic in memory.
+		if (!statement_ends_with_block(node, status)) {
 			status.code += ";\n";
 		}
 		// Flush frees deferred from move call sites inside this statement
