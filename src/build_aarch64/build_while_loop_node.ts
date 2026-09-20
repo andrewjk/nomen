@@ -11,6 +11,7 @@ import type { UnrollPlan } from "./unroll.ts";
 import { enter_scope_frame, exit_scope_frame } from "./utils/auto_destroy.ts";
 import { promote_loop_locals, type PromotedVar } from "./utils/loop_promotion.ts";
 import { emit_promoted_store, emit_var_store } from "./utils/stack_var.ts";
+import emit_allocations from "./utils/emit_allocations.ts";
 
 let label_counter = 0;
 
@@ -158,6 +159,10 @@ export default function build_while_loop_node(
 
 	let pushed_labels = false;
 	if (unroll) {
+		// The loop fully unrolls (no per-iteration condition check), so the
+		// checker-hoisted condition temporaries are evaluated exactly once —
+		// emit them before the copies.
+		emit_allocations(node, status);
 		// Full unrolling (ASM_PLAN_2 tranche A): the plan guarantees the trip
 		// count is exact (literal `<` bound, constant init, +1 step), the
 		// body never assigns the induction, and no break/continue targets
@@ -247,6 +252,17 @@ export default function build_while_loop_node(
 		}
 
 		status.code += `${start_label}:\n`;
+
+		// Re-emit the checker-hoisted condition (and update) temporaries at
+		// the loop head: the enclosing block no longer pre-emits them, and a
+		// temp capturing a loop-mutated variable would otherwise be FROZEN at
+		// its pre-loop value (infinite loop / early exit — e.g.
+		// `while is_num(code_at(src, i))` never re-reads `i`). The slot
+		// allocation is build-time state; the initializer stores emitted here
+		// run on every iteration, so the condition reads fresh values. The
+		// temp's scope-exit cleanup (registered by the declaration builder at
+		// this scope depth) reclaims the last value after the loop.
+		emit_allocations(node, status);
 
 		const is_always_true =
 			node.condition.node_type === "value" && (node.condition as any).value === "true";

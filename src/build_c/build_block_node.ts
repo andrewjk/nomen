@@ -349,7 +349,13 @@ export default function build_block_node(
 			if (node.node_type === "root" && with_declarations && child.node_type === "declare") {
 				continue;
 			}
-			emit_allocations(child, status);
+			// A while statement's condition allocations are handled by the
+			// while builder itself — it re-evaluates them inside the loop
+			// condition each iteration (a pre-loop evaluation would freeze any
+			// temp capturing a loop-mutated variable).
+			if (child.node_type !== "while") {
+				emit_allocations(child, status);
+			}
 			// NIR-driven dispatch (canonical-IR stage 2, C backend): consumes
 			// the index-aligned NIR entry when the emission ctx owns this
 			// statement list; falls back to the plain AST walk otherwise.

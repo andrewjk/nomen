@@ -272,3 +272,53 @@ while 1 / 0 {
 		expect(parsed.errors).toEqual(expected);
 	});
 });
+
+describe("while condition with hoisted view-adapter temps (C backend)", () => {
+	// Hoisted condition temporaries used to be evaluated ONCE before the
+	// loop — a temp capturing a loop-mutated variable froze the condition
+	// (infinite loop or early exit). They are re-evaluated inside the
+	// condition's statement expression on every check now.
+	test("call with string→view adapter arg re-evaluates per iteration", async () => {
+		const input = `
+import System
+
+func is_a = (view string s, out bool) {
+	return s.length > 0 && s.at(0) == 'a'
+}
+
+pub func main = (Init init) {
+	const string src = "aaab"
+	var int i = 0
+	while is_a(src.slice(i, src.length)) {
+		i += 1
+	}
+	Console.write("\\{i}")
+}
+`;
+		await build_and_check_output(input, "while_view_adapter_reeval", "3", true, {
+			audit: true,
+		});
+	});
+
+	test("compound condition with adapter arg (right side of &&)", async () => {
+		const input = `
+import System
+
+func is_space = (view string s, out bool) {
+	return s.length > 0 && s.at(0) == ' '
+}
+
+pub func main = (Init init) {
+	const string src = "  x"
+	var int q = 0
+	while q < src.length && is_space(src.slice(q, q + 1)) {
+		q += 1
+	}
+	Console.write("\\{q}")
+}
+`;
+		await build_and_check_output(input, "while_view_adapter_compound", "2", true, {
+			audit: true,
+		});
+	});
+});

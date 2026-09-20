@@ -157,7 +157,12 @@ export default function build_block_node(node: BlockNode, status: BuildStatus) {
 			child.node_type !== "bitset" &&
 			!(child.node_type === "declare" && inlined_const_names.has((child as DeclarationNode).name))
 		) {
-			emit_allocations(child, status);
+			// A while statement's condition allocations are emitted by the
+			// while builder itself, at the loop head — a pre-loop evaluation
+			// would freeze any temp capturing a loop-mutated variable.
+			if (child.node_type !== "while") {
+				emit_allocations(child, status);
+			}
 			// NIR-driven dispatch (phase 4 stage 2): consumes the index-aligned
 			// NIR entry when the emission ctx owns this statement list; falls
 			// back to the plain AST walk otherwise. Returns the number of
