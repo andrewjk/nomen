@@ -3,6 +3,7 @@ import {
 	drop_self_written_string_field_records,
 	scan_self_string_field_writes,
 } from "../build_common/scan_self_string_writes.ts";
+import { is_view_value } from "../build_common/view_value.ts";
 import { is_built_in_type } from "../built_in_types.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
@@ -1051,6 +1052,25 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 						const method_self_is_ref = !!target_method?.params?.some(
 							(p) => p.is_self_param && (p.is_ref || p.type?.is_ref),
 						);
+						// A `view T` receiver calling a method whose `self` is the
+						// OWNED pair type (any string method on `view string`): the
+						// view and the owned pair share the same 16-byte (ptr, len)
+						// ABI, so alias the view into the callee's pair — no copy,
+						// matching what aarch64 gets for free. Sound because
+						// by-value self params are caller-owned (no string method
+						// frees self). Statement-expression so the receiver
+						// evaluates exactly once. (`ref self` methods are excluded
+						// — they take the caller's slot by pointer below, and
+						// views are read-only.)
+						const method_self = target_method?.params?.find((p) => p.is_self_param);
+						const view_receiver_alias =
+							!method_self_is_ref &&
+							!!method_type &&
+							is_built_in_type(method_type.name) &&
+							method_type.name === "string" &&
+							!!method_self &&
+							!method_self.type?.is_view &&
+							is_view_value(node.target, status);
 						if (!is_built_in_type(method_type?.name || "") || method_self_is_ref) {
 							const target_value =
 								node.target.node_type === "value" ? (node.target as ValueNode).value : "";
@@ -1085,7 +1105,15 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 								status.suppress_dereference = true;
 							}
 						}
-						build_node(node.target, status);
+						if (view_receiver_alias) {
+							const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+							const tmp = `_vra_${id}`;
+							status.code += `({ nomen_view ${tmp} = `;
+							build_node(node.target, status);
+							status.code += `; (nomen_string){ (char*)${tmp}.ptr, ${tmp}.len }; })`;
+						} else {
+							build_node(node.target, status);
+						}
 						status.suppress_dereference = false;
 					}
 				}
