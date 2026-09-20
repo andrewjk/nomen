@@ -394,3 +394,64 @@ Console.write("\\{m.length} \\{hit} \\{miss}")
 		await build_and_check_output(input, "map_mask_stress_string", "60 45 -1");
 	});
 });
+
+describe("Map<string, int> rehash beside trait-typed lists (class fields)", () => {
+	// The port's footnote-renderer shape: a class holding a string field, a
+	// Map<string, int>, and a trait-typed List, with the map driven through
+	// several rehashes while the neighbours keep growing. A mis-compiled
+	// rehash smashed the adjacent heap (the string field's buffer); both
+	// backends must keep every value readable and the audit clean.
+	test("rehashing map leaves neighbouring class fields intact", async () => {
+		const input = `
+import System
+
+trait Render {
+	func draw = (self, out string)
+}
+
+class Dot: Render {
+	var int x = 0
+	func draw = (self, out string) {
+		return "dot"
+	}
+}
+
+pub class Holder {
+	pub var string output = ""
+	pub var Map<string, int> refs = Map<string, int>()
+	pub var List<Render> renders = List<Render>()
+
+	pub func add = (self, move Render r) {
+		self.renders.push(r)
+	}
+}
+
+pub func main = (Init init) {
+	var Holder h = Holder()
+	var int i = 0
+	while i < 40 {
+		h.refs.set("key\\{i}", i)
+		h.output = h.output + "."
+		h.add(Dot())
+		i += 1
+	}
+	var int miss = 0
+	var int j = 0
+	while j < 40 {
+		if h.refs.get_or("key\\{j}", -1) != j {
+			miss += 1
+		}
+		j += 1
+	}
+	Console.write("\\{h.output.length} \\{h.refs.length} \\{h.renders.length} \\{miss}")
+}
+`;
+		await build_and_check_output(
+			input,
+			"map_rehash_trait_lists_class_fields",
+			"40 40 40 0",
+			true,
+			{ audit: true },
+		);
+	});
+});
