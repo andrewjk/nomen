@@ -8,6 +8,7 @@ import { is_string_borrow } from "../build_common/string_return_analysis.ts";
 import { move_on_last_use_enabled } from "../check/utils/last_use.ts";
 import type { NirExpr } from "../nir/nir.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
+import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
@@ -628,19 +629,30 @@ function field_access_node_name(node: AssignmentNode): string {
 				// A TRAIT slot uses the trait's `<Trait>_destroy` shim (the
 				// concrete type may vary); it has no `lhs_struct` (traits
 				// aren't structs), so take the name from the declared type.
+				// A REBORROWING RHS (a non-`owned_return` accessor like
+				// `.at(i)`) keeps the alias a borrow: the new value is owned by
+				// its container, so the owns-flag is left at 0 and the
+				// flag-guarded scope-exit destroy never fires (an earlier
+				// owned-reassignment registration stays, harmlessly guarded).
 				const alias_destroy_name = lhs_struct?.name ?? lhs_type?.name;
+				const rhs_is_reborrow =
+					node.right_value.node_type === "access" &&
+					(node.right_value as AccessNode).access.node_type === "access_func" &&
+					!((node.right_value as AccessNode).access as AccessFunctionCallNode).owned_return;
 				if (alias_destroy_name) {
 					const flag = status.c_alias_owns_flags.get(lhs_name)!;
 					status.code += `if (${flag}) { ${alias_destroy_name}_destroy(${lhs_name}); free(${lhs_name}); }\n`;
-					status.code += `${flag} = 1;\n`;
-					const frame = status.alias_decl_frames?.get(lhs_name) ?? status.scoped_declarations;
-					if (!frame.some((d) => d.name === lhs_name)) {
-						const decl =
-							lhs_decl ?? new DeclarationNode(node.start, "private", "var", lhs_name, lhs_type!);
-						// The registration must carry the trait record so
-						// auto_free's trait branch reclaims through the shim.
-						if (!lhs_struct) decl.trait_class_trait = lhs_type?.name;
-						frame.push(decl);
+					status.code += `${flag} = ${rhs_is_reborrow ? 0 : 1};\n`;
+					if (!rhs_is_reborrow) {
+						const frame = status.alias_decl_frames?.get(lhs_name) ?? status.scoped_declarations;
+						if (!frame.some((d) => d.name === lhs_name)) {
+							const decl =
+								lhs_decl ?? new DeclarationNode(node.start, "private", "var", lhs_name, lhs_type!);
+							// The registration must carry the trait record so
+							// auto_free's trait branch reclaims through the shim.
+							if (!lhs_struct) decl.trait_class_trait = lhs_type?.name;
+							frame.push(decl);
+						}
 					}
 				}
 			} else if (lhs_is_string) {

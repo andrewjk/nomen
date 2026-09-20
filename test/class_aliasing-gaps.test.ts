@@ -178,3 +178,45 @@ Console.write("\\{q.v}\\n")
 		await build_and_check_output(input, "loop_reassign_alias", "2\n");
 	});
 });
+
+describe("borrowed alias reassigned from another borrow stays a borrow", () => {
+	// `var Node n = store.at(i)` re-roots as a borrow of the container's
+	// element. Re-assigning from ANOTHER borrow (`n = store.at(j)`) must not
+	// flip the alias to owned — the scope-exit destroy/free would reclaim
+	// the container's live element (use-after-free at the next read).
+	test("re-borrow keeps the alias non-owning (C + aarch64)", async () => {
+		const input = `
+import System
+
+pub class Node {
+	pub var int v
+}
+
+pub class Store {
+	var List<Node> items = List<Node>()
+
+	pub func add = (self, move Node n) {
+		self.items.push(move n)
+	}
+
+	pub func at = (self, int i, out Node) {
+		return self.items.at_or_panic(i)
+	}
+}
+
+pub func main = (Init init) {
+	var Store s = Store()
+	s.add(Node(7))
+	s.add(Node(9))
+	var Node n = s.at(0)
+	Console.write("\\{n.v}")
+	n = s.at(1)
+	Console.write(" \\{n.v}")
+	Console.write(" \\{s.at(1).v}")
+}
+`;
+		await build_and_check_output(input, "alias_reborrow_stays_borrow", "7 9 9", true, {
+			audit: true,
+		});
+	});
+});
