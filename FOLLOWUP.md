@@ -411,3 +411,32 @@ ABI code, everything works in a fresh worktree). Dev suggestion:
 `find_bundled` should prefer `../core` (repo layout) when it exists, or
 bundle-assets should stamp the copy with the source mtime so staleness is
 detectable. Interim workaround: `rm -rf cli/core` after pulling changes.
+
+## Custom `#init` leaves non-defaulted, unassigned fields as malloc garbage
+
+While fixing the #init displaced-reclaim bug (PORT.md item; C + aarch64
+fixed in the same commit): a class field that has NO declared default and is
+NEVER assigned inside the custom `#init` holds raw malloc garbage for the
+instance's whole life — the scope-exit `<Class>_destroy` then frees a
+garbage string pointer / destroys a garbage class pointer. Zero-init of the
+fresh instance would make scalar/string fields safe (free(NULL) is a no-op)
+but a garbage/NULL class field still crashes in `<T>_destroy`, so the real
+fix is either calloc + null-guarded destroys, or a checker diagnostic
+("field `x` is not assigned by `#init` and has no default"). Not fixed
+here; the port dodges it with declared defaults on every field.
+
+## Residual quadratic string volume in the C emitter
+
+`nomen test` OOM (PORT.md item) was dominated by the joiner inlining the
+whole suite into every test build (fixed), but the emitter still carries a
+quadratic term: every `status.code.endsWith/substring/lastIndexOf` peek
+forces V8 to flatten the accumulated code rope — an O(code) copy — and the
+speculative-emission "capture + rollback" pattern (`const before =
+status.code.length; …; status.code.substring(before); status.code =
+status.code.substring(0, before);`) does it at method-call frequency. The
+per-statement `with_semicolon_tail` endsWith is now node-driven (fixed),
+but the rollback sites remain. Proper fix: a chunked string-builder for
+`status.code` (append-only parts array + lazy join), or emit speculative
+segments into a scratch buffer. Measured on the allmark corpus: ~680 KB of
+allocation per emitted statement at the 4 MB-code point, ~20 GB volume for
+one build before the joiner fix.
