@@ -182,6 +182,62 @@ export default function build_assignment_node(
 		}
 	}
 
+	// A `field = move local` store into a VALUE-struct field (List/Map/Buffer
+	// …): ownership transfers from the local to the field. The plain store
+	// shallow-copies the struct, so WITHOUT the splice the source local's
+	// scope-exit destroy frees the buffer the field now points at (dangling
+	// field — UAF at first use). Splice the source from its scope frame and
+	// reclaim the displaced field value before the store. (`field = move c
+	// swap T()` was the sound workaround; this makes the plain form work.)
+	if (
+		!node.operator &&
+		node.left_value.node_type === "access" &&
+		(node.left_value as AccessNode).access.node_type === "access_field" &&
+		node.right_value.node_type === "value" &&
+		(node.right_value as ValueNode).is_moved
+	) {
+		const access_lhs = node.left_value as AccessNode;
+		const field_type = (access_lhs.access as AccessFieldNode).type;
+		const field_struct =
+			field_type?.name && !field_type.is_view && !field_type.is_array
+				? status.structs.find(
+						(s) => s.name === field_type.name && !s.is_simple_type && !s.is_class,
+					)
+				: undefined;
+		if (field_struct) {
+			// Transfer: the source local (possibly declared in an OUTER scope
+			// when the assignment sits inside an if/loop branch) must not be
+			// destroyed at its scope exit.
+			splice_decl_from_c_scopes(status, (node.right_value as ValueNode).value);
+			const before_len = status.code.length;
+			build_node(node.left_value, status);
+			const field_access = status.code.substring(before_len);
+			status.code = status.code.substring(0, before_len);
+			// Reclaim the field's displaced value (its current buffer/payloads)
+			// — the store overwrites them. A custom `#init`'s first write to a
+			// `self.<field>` overwrites garbage — nothing valid to destroy.
+			const field_key = `self.${(access_lhs.access as AccessFieldNode).name}`;
+			const first_init_write =
+				access_lhs.target.node_type === "value" &&
+				(access_lhs.target as ValueNode).value === "self" &&
+				status.current_function?.name === "#init" &&
+				!status.init_assigned_fields?.has(field_key);
+			if (access_lhs.target.node_type === "value" &&
+				(access_lhs.target as ValueNode).value === "self" &&
+				status.current_function?.name === "#init") {
+				if (!status.init_assigned_fields) status.init_assigned_fields = new Set();
+				status.init_assigned_fields.add(field_key);
+			}
+			if (!first_init_write && struct_needs_destroy_by_name(field_struct.name, status)) {
+				emit_struct_destroys(status, field_struct, field_access);
+			}
+			status.code += `${field_access} = `;
+			emit_rhs_value(node.right_value, nir_rhs, status);
+			status.code += `;\n`;
+			return;
+		}
+	}
+
 	// A `view T` field assignment (`obj.field = rhs`): the field is a
 	// non-owning (ptr, len) pair — store it raw. Nothing is duplicated and
 	// the displaced pair owns nothing, so there is no free / strdup /
