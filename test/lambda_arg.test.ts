@@ -176,12 +176,12 @@ pub func main = (Init init) {
 	});
 });
 
-describe("the keyword and inline-block anonymous function forms", () => {
-	// Same three body shapes as the arrow family, in the two remaining value
-	// shapes: `func (params) body` (keyword form) and `(params) { body }`
-	// (block without arrow, inline). A self-typed BLOCK body must declare its
-	// return (`out T`) — rejecting an undeclared one is correct, and the
-	// last test pins that.
+describe("the keyword anonymous function form", () => {
+	// The two remaining value shapes: the arrow expression `(params) => e`
+	// and the keyword block `func (params) { body }`. `=>` takes a single
+	// expression only — a block body requires the `func` keyword — and a
+	// self-typed BLOCK body must declare its return (`out T`); rejecting an
+	// undeclared one is correct, and the last tests pin that.
 	test("keyword form with a block body", async () => {
 		await run(
 			"lambda_func_keyword_block",
@@ -208,17 +208,18 @@ pub func main = (Init init) {
 		);
 	});
 
-	test("inline block without the arrow", async () => {
-		await run(
-			"lambda_inline_block",
-			"12\n",
-			`
+	test("an inline block without the arrow is rejected", () => {
+		// `(params) { body }` is not a lambda: block bodies require the
+		// `func` keyword, so the `{` after the group is a plain syntax error.
+		const input = `import System
+
 func apply = (func (int, out int) f, int x, out int) { return f(x) }
 pub func main = (Init init) {
 	Console.write_line("\\{apply((int y, out int) { return y * 4 }, 3)}")
 }
-`,
-		);
+`;
+		const parsed = parse_raw(input);
+		expect(parsed.errors.length).toBeGreaterThan(0);
 	});
 
 	test("keyword form captures an enclosing local", async () => {
@@ -239,7 +240,22 @@ pub func main = (Init init) {
 		);
 	});
 
-	test("a self-typed block body without a declared return is rejected", () => {
+	test("a keyword block body without a declared return is rejected", () => {
+		const input = `import System
+
+func apply = (func (out int) f, out int) { return f() }
+
+pub func main = (Init init) {
+	var int a = 1
+	var int r = apply(func () { return a + 1 })
+}
+`;
+		const parsed = parse_raw(input);
+		expect(parsed.errors.length).toBeGreaterThan(0);
+		expect(parsed.errors[0].message).toContain("no 'out' return type");
+	});
+
+	test("an arrow must be followed by an expression (no `=> { ... }`)", () => {
 		const input = `import System
 
 func apply = (func (out int) f, out int) { return f() }
@@ -251,6 +267,6 @@ pub func main = (Init init) {
 `;
 		const parsed = parse_raw(input);
 		expect(parsed.errors.length).toBeGreaterThan(0);
-		expect(parsed.errors[0].message).toContain("no 'out' return type");
+		expect(parsed.errors[0].message).toContain("'=>' must be followed by an expression");
 	});
 });

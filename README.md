@@ -18,7 +18,7 @@ Most types of memory corruption (use before initialization, use after free, doub
 - **Operator Overloading** — custom behavior for arithmetic operators
 - **Generics** — type-safe generic structs and classes with compile-time checking
 - **Constraints** — compile-time assertions on parameters, fields, and variables
-- **Higher-Order Functions** — first-class functions and lambdas (no closures)
+- **Higher-Order Functions** — first-class functions, lambdas, and closures
 - **Structured Concurrency** — run concurrent tasks via OS threads
 - **Core System Library** - small but growing, with data structures that remove the need for you to fight with the borrow checker
 - **GUI System** - a top-down/bottom-up layout system and a few different native controls (WIP)

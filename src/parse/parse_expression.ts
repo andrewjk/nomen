@@ -110,13 +110,12 @@ function try_parse_generic_args(status: ParseStatus): Type[] | null {
 }
 
 // Does the `(` at the current position start an anonymous function body —
-// `(params) => e`, or `(params) { e }` inside a call's argument list —
-// rather than a parenthesized expression? A `)`-followed-by-`{` is a lambda
-// block ONLY in call-argument context: statement conditions are also
-// parenthesized-grouped expressions (`if (cond) {`), so the same lookahead
-// there would swallow every parenthesized condition. Returns the starter
+// `(params) => expr` — rather than a parenthesized expression? Only `=>`
+// after the matching `)` qualifies: a block body requires the `func`
+// keyword, since a parenthesized group followed by a block is elsewhere
+// exactly a statement condition (`if (cond) { ... }`). Returns the starter
 // token, or undefined for a grouped expression.
-function anonymous_function_body_start(status: ParseStatus): string | undefined {
+export function anonymous_function_body_start(status: ParseStatus): string | undefined {
 	let depth = 0;
 	for (let i = status.i; i < status.tokens.length; i++) {
 		const v = status.tokens[i].value;
@@ -126,7 +125,6 @@ function anonymous_function_body_start(status: ParseStatus): string | undefined 
 			if (depth === 0) {
 				const next = status.tokens[i + 1]?.value;
 				if (next === "=>") return next;
-				if (next === "{" && (status.call_arg_depth ?? 0) > 0) return next;
 				return undefined;
 			}
 		}
@@ -229,9 +227,8 @@ function parse_primary(status: ParseStatus, value: string): BaseNode {
 			return node;
 		}
 		case "(": {
-			// A `(params) => body` or `(params) { body }` group is an
-			// anonymous function value; otherwise it is a parenthesized
-			// expression.
+			// A `(params) => expr` group is an anonymous function value;
+			// otherwise it is a parenthesized expression.
 			if (anonymous_function_body_start(status)) {
 				const func = parse_anonymous_function("", status);
 				if (func) return func;

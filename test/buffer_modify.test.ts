@@ -47,7 +47,7 @@ b.alloc(2)
 b.store(0, Named("x", 1))
 // Rebuilds the struct: 'name' aliases the slot's own copy (round-trip
 // identity — kept), 'hits' is a plain copy. No leak, no double free.
-var func (Named, out Named) touch = (n, out Named) {
+var func (Named, out Named) touch = func (n, out Named) {
 	return Named(n.name, n.hits + 1)
 }
 b.modify(0, touch)
@@ -67,7 +67,7 @@ struct Pair {
 var Buffer<Pair> b = Buffer<Pair>()
 b.alloc(2)
 b.store(0, Pair(1, 2))
-var func (Pair, out Pair) swap_or_add = (p, out Pair) {
+var func (Pair, out Pair) swap_or_add = func (p, out Pair) {
 	return Pair(p.a + 10, p.b)
 }
 b.modify(0, swap_or_add)

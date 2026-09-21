@@ -47,15 +47,6 @@ export default interface ParseStatus {
 	 */
 	allow_user_raw?: boolean;
 	/**
-	 * Depth of call-argument expression parsing (`parse_function_call_parameter`).
-	 * A `)`-followed-by-`{` group is an inline block-body lambda ONLY inside a
-	 * call's argument list — everywhere else (`if (cond) {`, `while (cond) {`,
-	 * statement conditions) the parens are a grouped expression and the `{`
-	 * opens the statement body, so the same lookahead there would break every
-	 * parenthesized condition. The arrow forms are unambiguous in any context.
-	 */
-	call_arg_depth?: number;
-	/**
 	 * Errors that have been encountered
 	 */
 	errors: CompileError[];

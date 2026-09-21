@@ -137,11 +137,29 @@ export default function parse_function(
 				// a marshalling adapter that calls the C symbol.
 				func.is_extern = true;
 			} else if (accept("=>", status)) {
-				func.has_body = true;
-				func.has_return = true;
-				func.is_arrow_body = true;
-				const return_expr = parse_expression(status);
-				func.statements.push(new ReturnNode(return_expr.start, return_expr));
+				if (peek_current(status) === "{") {
+					// `=>` introduces an implicit-return expression only; a
+					// block body must drop the arrow (`func f = (…) { … }`).
+					add_error(
+						status,
+						`'=>' must be followed by an expression; remove '=>' for a block body`,
+						get_index(status),
+					);
+					// Recover by parsing the block as the body so the token
+					// stream stays in sync for later errors.
+					accept("{", status);
+					func.has_body = true;
+					status.stack.push(func);
+					parse_statement(status);
+					expect("}", status);
+					status.stack.pop();
+				} else {
+					func.has_body = true;
+					func.has_return = true;
+					func.is_arrow_body = true;
+					const return_expr = parse_expression(status);
+					func.statements.push(new ReturnNode(return_expr.start, return_expr));
+				}
 			} else {
 				const has_body = parent.node_type === "trait" ? accept("{", status) : expect("{", status);
 				if (has_body) {

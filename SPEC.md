@@ -1301,21 +1301,16 @@ struct Vec2 {
 // Arrow expression (implicit return)
 var func (int, int, out int) adder = (a, b, out int) => a + b
 
-// Arrow with block body
-var func (int, out int) doubler = (x, out int) => {
-    return x * 2
-}
-
-// Block without arrow
-var func (int, out int) tripler = (x, out int) {
-    return x * 3
-}
-
-// Keyword form
+// Keyword form (block body, explicit return)
 var func (int, out int) quadrupler = func (x, out int) {
     return x * 4
 }
 ```
+
+`=>` is always followed by a single expression, which the lambda returns
+implicitly; a block body requires the `func` keyword and explicit `return`
+statements (`(x, out int) => { ... }` and the bare `(x, out int) { ... }`
+block are syntax errors).
 
 A lambda may capture locals and parameters of the enclosing function. The
 capture is taken once, when the lambda value is created:
@@ -1339,13 +1334,11 @@ pub func main = () {
 }
 ```
 
-All four shapes also work INLINE as call arguments, where no target signature
+Both shapes also work INLINE as call arguments, where no target signature
 is available for inference: an arrow expression infers its return from the
-body (`apply(() => a + b)`), while a self-typed block body must declare its
-return (`apply(func (out int) { return a + b })`,
-`apply((out int) => { return a + b })`, or the bare block form
-`apply((out int) { return a + b })`) — a block body that returns a value
-without a declared `out T` is rejected.
+body (`apply(() => a + b)`), while a self-typed keyword block must declare
+its return (`apply(func (out int) { return a + b })`) — a block body that
+returns a value without a declared `out T` is rejected.
 
 #### Nested Functions and Structs
 

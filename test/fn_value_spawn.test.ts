@@ -153,7 +153,7 @@ func bump = (Channel report) {
 
 pub func main = () {
 	var Channel report = Channel()
-	var d = Thread(() => { bump(report) })
+	var d = Thread(func () { bump(report) })
 	d.detach()
 	// The construction moved the channel into the daemon's closure — main
 	// touches neither the channel nor the handle again. The daemon's send

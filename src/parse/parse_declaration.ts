@@ -13,6 +13,7 @@ import StructNode from "../nodes/StructNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import parse_expression from "./parse_expression.ts";
+import { anonymous_function_body_start } from "./parse_expression.ts";
 import parse_statement from "./parse_statement.ts";
 import parse_type from "./parse_type.ts";
 import type ParseStatus from "./ParseStatus.ts";
@@ -198,13 +199,18 @@ function parse_function_type_declaration(decl: DeclarationNode, status: ParseSta
 				status.stack.pop();
 
 				decl.value = func;
-			} else if (has_equals && (peek_current(status) === "(" || peek_current(status) === "func")) {
-				// The initializer is an anonymous function: the bare `(params)
-				// body` forms, or the keyword form `func (params) body` (whose
-				// `func` is consumed here so parse_anonymous_function sees the
-				// parameter list). Parsing it HERE (not via parse_expression)
-				// names the lambda after the binding, exactly like the arrow
-				// forms have always done.
+			} else if (
+				has_equals &&
+				(peek_current(status) === "func" ||
+					(peek_current(status) === "(" && anonymous_function_body_start(status) === "=>"))
+			) {
+				// The initializer is an anonymous function: the arrow form
+				// `(params) => expr` (the lookahead confirms `=>` follows the
+				// matching `)`), or the keyword block form `func (params) body`
+				// (whose `func` is consumed here so parse_anonymous_function
+				// sees the parameter list). Parsing it HERE (not via
+				// parse_expression) names the lambda after the binding, exactly
+				// like the arrow forms have always done.
 				if (peek_current(status) === "func") {
 					accept("func", status);
 				}
@@ -302,17 +308,21 @@ export function parse_anonymous_function(
 				expect(")", status);
 				func.statements.push(new ReturnNode(return_expr.start, return_expr));
 			} else if (next === "{") {
-				// Arrow with block: (a, b, out int) => { return a + b }
+				// `=>` introduces an implicit-return expression only; a block
+				// body must drop the arrow and use the `func` keyword.
+				add_error(
+					status,
+					`'=>' must be followed by an expression; remove '=>' for a block body`,
+					get_index(status),
+				);
+				// Recover by parsing the block as the body so the token stream
+				// stays in sync for later errors.
 				accept("{", status);
 				func.has_body = true;
-
 				status.stack.push(func);
 				parse_statement(status);
 				expect("}", status);
 				status.stack.pop();
-
-				// Arrow with block always has implicit return
-				func.has_return = true;
 			} else {
 				// Direct expression: (a, b, out int) => a + b
 				func.has_body = true;
@@ -324,7 +334,7 @@ export function parse_anonymous_function(
 
 			return func;
 		} else {
-			// Block body without arrow: (a, b, out int) { return a + b }
+			// Block body (the `func` keyword form): func (a, b, out int) { return a + b }
 			accept("{", status);
 			func.has_body = true;
 

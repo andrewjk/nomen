@@ -11,11 +11,7 @@ export default function parse_function_call_parameter(
 ) {
 	const is_ref = accept("ref", status);
 	const is_move = accept("move", status);
-	// Mark the argument expression: inside call parens a `(...) { ... }`
-	// group is an inline block-body lambda (parse_expression's lookahead).
-	status.call_arg_depth = (status.call_arg_depth ?? 0) + 1;
 	const param = parse_expression(status);
-	status.call_arg_depth = (status.call_arg_depth ?? 1) - 1;
 	node.params.push(param);
 	const param_index = node.params.length - 1;
 	if (is_ref) {
@@ -29,9 +25,7 @@ export default function parse_function_call_parameter(
 	if (peek_current(status) === "swap") {
 		accept("swap", status);
 		if (!node.swap_params) node.swap_params = new Map();
-		status.call_arg_depth = (status.call_arg_depth ?? 0) + 1;
 		const swap_expr = parse_expression(status);
-		status.call_arg_depth = (status.call_arg_depth ?? 1) - 1;
 		node.swap_params.set(param_index, swap_expr);
 	}
 
