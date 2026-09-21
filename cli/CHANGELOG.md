@@ -6,6 +6,79 @@
 
 
 
+
+## 0.5.0
+<sub>2026-09-21</sub>
+
+-  *(minor)*
+  Replace the spawn keyword with the Thread class: spawn fn(args) becomes Thread(fn(args)).start(), and the nursery escape hatch name.spawn(fn(args)) becomes name.start(Thread(fn(args))); spawn leaves the reserved-words list (Phase 0 of ASYNC_PLAN.md)
+-  *(minor)*
+  Add Fiber: stackful coroutine tasks over the worker pool. Fiber(fn(args)).start() yields a Task<T> like Thread, but a waiting fiber parks (freeing its worker) instead of blocking; Fiber.yield/is_fiber, Fiber.start_on(buffer) on a caller-provided stack (C backend), and Fiber.set_cooperative for no-thread single-threaded runs
+-  *(minor)*
+  Park-aware Channel: an empty receive from a fiber parks on the channel wait list instead of blocking its worker, send wakes parked receivers, and a cancelled waiter returns instead of waiting forever; cancellation now reaches parked fibers (Task.cancel/nursery timeout schedule the owning fiber and restore its task-local cancel flag on resume); fix __nomen_future_timedwait to use a real absolute deadline
+-  *(minor)*
+  Add the async I/O netpoller (kqueue/epoll) with __nomen_io_wait parking fibers on socket readiness, and a non-blocking Tcp stdlib (listen/accept/connect/send/recv/recv_all/close); concurrent-connection scale validation and the Http port are still pending
+-  *(minor)* - Closure descriptor ABI: func values carry { code, env, owned } (Phase 1 of docs/CLOSURE_PLAN.md)
+-  *(minor)* - Closure captures phase 2a: lambdas capture outer scalars by copy (heap env + owned descriptor, freed at scope exit)
+-  *(minor)* - Closure captures phase 2b: lambdas capture outer strings (deep-copied into the env with a per-lambda destructor)
+-  *(minor)* - Closure captures phase 2c: lambdas capture non-owning value structs by copy
+-  *(minor)*
+  Closure captures phase 2c part 2: lambdas move-capture owning value structs, class instances, and nested capturing closures (donor-local invalidation, env destruction)
+-  *(minor)*
+  Closure captures follow-ups: move-captured move parameters, class-backed trait references, and move-only capturing values (func-field ownership, value-struct field rejection)
+-  *(minor)*
+  Make Thread(fn(args)) / Fiber(fn(args)) real storable library classes: eager argument binding, start-later, and must-start enforced by #destroy (destroying an unstarted value aborts with an explanation)
+-  *(minor)*
+  Accept zero-argument function values in the spawn construction — Thread(() => work(base)) with the lambda's captures as the eager arguments — including through the nursery escape hatch
+-  *(minor)*
+  Own the spawn env's packed arguments (deep-copied strings, copied-and-destroyed owning structs) so tasks cannot dangle their donors' buffers; allow non-Sendable class arguments inside nurseries as join-bounded borrows (detach still requires owned args); add the Awaitable trait (Task<T> conforms); and make cancellation observable to channel-waiting thread tasks with the nursery join waiting for done after cancel
+-  *(minor)*
+  The Awaitable construction sugar generalizes beyond Thread/Fiber: any user class conforming to Awaitable with the spawn-field contract (uint64 task/result_slot/cancel_flag/future, optional started) takes the same eagerly-packed construction, launches through the new Task.pool_submit / Task.future_* library seam, dispatches through the Awaitable vtable, and monomorphizes as C<T>; a contract-missing class gets a dedicated compile error
+-  *(minor)*
+  Anonymous functions gain the keyword form inline (func (out int) { ... }, func (x) => x * 2) and the block-without-arrow form parses inline too; passing a func-typed binding as a call argument no longer false-mismatches ('int (expected func)') or resolves to the static descriptor over the local's heap closure
+-  *(minor)* - Add #init field-completeness checker diagnostic
+-  *(minor)* - Remove block-body lambda forms: '=>' now takes a single expression only; block bodies require the func keyword
+-  *(minor)* - Missing return now fires for signature-merged lambdas (declaration annotation, func-typed arg, func-typed field)
+-  *(minor)* - Add nested func types and closure factories
+-  *(minor)* - Add Func<> function types
+-  *(patch)*
+  Fix the nursery futures list overflowing at 64 concurrent spawns (fixed stack array -> heap list on the C backend, pointer slot on aarch64); un-skips and passes the concurrent Tcp echo test at 256 connections on both backends
+-  *(patch)* - Fix: Channel #destroy frees only owned-string payloads
+-  *(patch)* - Fix: aarch64 frame offsets past the imm12 limit
+-  *(patch)* - Fix: Mutex.lock parks in the threaded model
+-  *(patch)* - Fix: one shared concurrency runtime per process in C system_lib builds
+-  *(patch)* - Fix: aarch64 system companion carries library aarch64_use_c bodies
+-  *(patch)* - Fix: finish async Phase 3 — Http over Tcp, growable nursery lists, module-level statements
+-  *(patch)* - Fix: scope aarch64 status.moved per struct method body
+-  *(patch)* - Runtime deadlock detector: abort with a wait-graph dump instead of hanging silently
+-  *(patch)* - Thread(fn(args)).detach(): daemon tasks on a dedicated detached pthread that never block nursery join or process exit
+-  *(patch)* - Fix aarch64 closure captures read through address-taking paths (method receivers)
+-  *(patch)*
+  Lower the spawn runtime onto the closure descriptor ABI (the pool, fiber scheduler, and daemon launcher take a single task closure) and fix the daemon form's double-free of its args struct
+-  *(patch)*
+  C backend: string methods on view string receivers alias the view into the callee's pair (test/view_string_methods.test.ts)
+-  *(patch)*
+  C backend: switch case-condition statement hoister no longer shreds statement expressions (splits at top-level semicolons only)
+-  *(patch)* - Custom #init first field write no longer destroys uninitialized garbage (C + aarch64)
+-  *(patch)* - Re-assigning a borrowed class alias from another borrow keeps it non-owning (C backend)
+-  *(patch)*
+  While-loop condition temporaries re-evaluate every iteration (C + aarch64); hoisted call args no longer freeze the condition
+-  *(patch)* - field = move local into a value-struct field transfers ownership (splices the source) instead of dangling it
+-  *(patch)* - C trait dispatch: ref args rooted at class locals now pass &slot (address-of was dropped)
+-  *(patch)* - nomen format: hyphenated import names survive formatting (intra-name hyphens bind tight)
+-  *(patch)*
+  nomen test: *.test.nm entries no longer inline their folder's sibling test files (quadratic build weight OOMed the suite)
+-  *(patch)*
+  fix quadratic string volume in the C emitter (scratch-buffer speculative emission + node-driven statement tails); 4MB-code builds no longer OOM
+-  *(patch)*
+  aarch64 emitter: chunked code buffer + per-function bodies kill the quadratic string-volume cost (endsWith peeks, whole-file peephole scans, peephole spread overflow)
+-  *(patch)* - Fix: aarch64 trait dispatch ref class-local arg marshal
+-  *(patch)* - Fix: dispose inline capturing lambda descriptors at direct call sites
+-  *(patch)* - Fix: dispose inline capturing lambda descriptors at method and trait-dispatch call sites
+-  *(patch)* - Fix: aarch64 closure direct-call inlining
+-  *(patch)* - Fix: check func value signatures at use sites
+-  *(patch)* - Fix: nested function absorbs enclosing hoisted temporaries
+
 ## 0.4.0
 <sub>2026-09-17</sub>
 
