@@ -20,6 +20,7 @@ import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
+import type FunctionNode from "../nodes/FunctionNode.ts";
 import IndexNode from "../nodes/IndexNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import type StructNode from "../nodes/StructNode.ts";
@@ -55,7 +56,11 @@ import {
 	mark_moved_if_struct,
 	trait_class_for,
 } from "./utils/auto_destroy.ts";
-import { emit_descriptor_address, materialize_func_value_a64 } from "./utils/closure_a64.ts";
+import {
+	emit_descriptor_address,
+	emit_dispose_lambda_args_a64,
+	materialize_func_value_a64,
+} from "./utils/closure_a64.ts";
 import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
 import { emit_index_address, pointer_element_size } from "./utils/ptr_access.ts";
 import { is_auto_inline_method } from "./utils/scan_inline_candidates.ts";
@@ -2391,6 +2396,17 @@ function build_access_method(
 		.find((s) => s.name === mono_struct_name && !s.is_generic)
 		?.functions.find((f) => f.name === access_func.name)
 		?.params?.some((p) => p.is_self_param && (p.is_ref || p.type?.is_ref));
+	// The concrete callee (struct method, else the trait method a trait-typed
+	// receiver would dispatch to) — signature source for the inline-lambda
+	// argument scan below.
+	const access_callee_method =
+		status.structs
+			.find((s) => s.name === mono_struct_name && !s.is_generic)
+			?.functions.find((f) => f.name === access_func.name) ??
+		status.traits
+			.find((t) => t.name === target_type.name)
+			?.functions.find((f) => f.name === access_func.name);
+	const access_callee_params = access_callee_method?.params?.filter((p) => !p.is_self_param);
 
 	// Check if method returns a struct. A `view T` return is a (ptr, len) pair
 	// in x0/x1, not a sret struct — exclude views even when T is a struct.
@@ -2696,6 +2712,21 @@ function build_access_method(
 	if (overflow_count > 0) {
 		overflow_base = allocate_stack_space(status, overflow_count * 8, 16);
 	}
+	// An INLINE capturing lambda argument to a func-typed (borrow) parameter
+	// materializes a one-shot HEAP descriptor + env (CLOSURE.md) that the
+	// callee never disposes — the call site owns them. The arg loop parks
+	// each such descriptor in a dedicated frame slot; the slots are reclaimed
+	// once the call has returned (after the outgoing-arg restore below).
+	const lambda_arg_indices = new Set<number>();
+	for (let i = 0; i < access_func.params.length; i++) {
+		const p = access_func.params[i];
+		if (p.node_type !== "func") continue;
+		if (!(p as FunctionNode).captures?.length) continue;
+		const cp = access_callee_params?.[i];
+		if (!cp || !(cp.func_params || cp.func_return_type)) continue;
+		lambda_arg_indices.add(i);
+	}
+	const lambda_arg_slots: number[] = [];
 	// View and fat-string pairs are spilled to a dedicated area and reloaded
 	// into their register pairs AFTER the loop — evaluating a later
 	// (lower-index) argument can use x0-x2 as scratch, which would clobber a
@@ -2834,6 +2865,13 @@ function build_access_method(
 			continue;
 		} else {
 			build_node(param, status);
+			// A capturing lambda's one-shot descriptor: park it for post-call
+			// reclamation (the callee only borrows it).
+			if (lambda_arg_indices.has(i)) {
+				const dispose_slot = allocate_stack_space(status, 8, 8);
+				emit_asm(status, `str x0, [x29, #${dispose_slot}]\n`);
+				lambda_arg_slots.push(dispose_slot);
+			}
 		}
 		const slot = start_reg + arg_slot[i];
 		ensure_newline(status);
@@ -3040,6 +3078,10 @@ function build_access_method(
 	if (outgoing_size > 0) {
 		emit_asm(status, `add sp, sp, #${outgoing_size}\n`);
 	}
+
+	// Inline capturing lambda args were borrowed by the call — reclaim their
+	// one-shot heap descriptors from the parked slots (x0/x1 preserved).
+	emit_dispose_lambda_args_a64(status, lambda_arg_slots);
 
 	// The callee (string_to_string) copied the receiver's storage — free the
 	// original temp now, preserving the result pair in x0/x1. Stack at this

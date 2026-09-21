@@ -26,7 +26,13 @@ import type BuildStatus from "./BuildStatus.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import { find_decl_in_c_scopes } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
-import { materialize_func_value } from "./utils/closure.ts";
+import {
+	closure_dispose_arm,
+	c_return_type,
+	materialize_func_value,
+	next_lambda_arg_temp,
+	next_lambda_ret_temp,
+} from "./utils/closure.ts";
 import { begin_code_scratch, end_code_scratch } from "./utils/code_scratch.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import { c_view_string_arg } from "./utils/view_value.ts";
@@ -786,6 +792,30 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				const func_index = trait.functions.indexOf(trait_func);
 				const has_self = trait_func.params.some((p) => p.is_self_param);
 
+				// An INLINE capturing lambda argument to the func-typed
+				// parameter is a one-shot heap descriptor the callee only
+				// borrows (CLOSURE.md) — capture each into a wrapper-declared
+				// temp at its argument position and reclaim once the dispatch
+				// returns. The wrapper opens here (outside the receiver temp's
+				// own statement expression) and closes after the dispatch.
+				const trait_callee_params = trait_func.params.filter((p) => !p.is_self_param);
+				const lambda_arg_temps = new Map<number, string>();
+				for (let i = 0; i < access_func.params.length; i++) {
+					const p = access_func.params[i];
+					if (p.node_type !== "func") continue;
+					if (!(p as FunctionNode).captures?.length) continue;
+					const tp = trait_callee_params[i];
+					if (!tp || !(tp.func_params || tp.func_return_type)) continue;
+					lambda_arg_temps.set(i, next_lambda_arg_temp());
+				}
+				if (lambda_arg_temps.size > 0) {
+					status.code += `({ `;
+					for (const tmp of lambda_arg_temps.values()) {
+						status.code += `struct nomen_closure *${tmp}; `;
+					}
+				}
+				let lambda_ret_tmp: string | undefined;
+
 				// A generic trait's method signature references its type params
 				// (e.g. `out T`), which are unresolved at the trait level. The
 				// per-conformer default bodies are synthesized + substituted, so
@@ -817,6 +847,11 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					: ret_is_struct
 						? `struct ${ret_name}`
 						: c_type(ret_name);
+				// The ret-forward temp is decided here (after the dispatch's own
+				// return type is known): when the owned-receiver path below
+				// already forwards the result (`recv_ret_temp`), its yield
+				// doubles as ours.
+				const lambda_ret_forwardable = lambda_arg_temps.size > 0 && ret_c !== "void";
 
 				const cast_params: string[] = [];
 				if (has_self) cast_params.push("void *");
@@ -867,6 +902,12 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 						status.code += `${ret_c} ${recv_ret_temp} = `;
 					}
 				}
+				// Forward the dispatch value out of the lambda wrapper (the
+				// dispose arms after the call would otherwise void it).
+				if (lambda_ret_forwardable && !recv_ret_temp) {
+					lambda_ret_tmp = next_lambda_ret_temp();
+					status.code += `${ret_c} ${lambda_ret_tmp} = `;
+				}
 
 				status.code += `(${cast}_get_trait_func(`;
 				if (recv_temp) {
@@ -890,6 +931,17 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				for (let i = 0; i < access_func.params.length; i++) {
 					if (need_comma) status.code += ", ";
 					need_comma = true;
+					// An inline capturing lambda arg: capture its one-shot heap
+					// descriptor into the wrapper temp (handled before the
+					// type-based routing — the lambda's VALUE-node type is its
+					// RETURN type and must not select the struct/erasure paths).
+					const lambda_tmp = lambda_arg_temps.get(i);
+					if (lambda_tmp) {
+						status.code += `(${lambda_tmp} = `;
+						build_node(access_func.params[i], status);
+						status.code += `)`;
+						continue;
+					}
 					const param_type = type_from_value_node(access_func.params[i]);
 					const param_value =
 						access_func.params[i].node_type === "value"
@@ -942,6 +994,17 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					}
 				}
 				status.code += `)`;
+				if (lambda_arg_temps.size > 0) {
+					for (const tmp of lambda_arg_temps.values()) {
+						status.code += `; ${closure_dispose_arm(tmp)}`;
+					}
+					if (lambda_ret_tmp) status.code += `; ${lambda_ret_tmp}`;
+					if (!recv_temp) {
+						// No receiver statement expression: this wrapper is the
+						// only one — close it here.
+						status.code += `; })`;
+					}
+				}
 				if (recv_temp) {
 					if (recv_temp_owned) {
 						status.code += `; ${trait.name}_destroy(${recv_temp}); free(${recv_temp})`;
@@ -1022,6 +1085,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				// If the method doesn't exist on the struct, check if it's a
 				// trait default method inherited by this struct.
 				let trait_default_label = "";
+				let trait_default_func: FunctionNode | undefined;
 				if (mono_struct_name && !access_func.mangled_name) {
 					const struct_node = status.structs.find(
 						(s) => s.name === mono_struct_name && !s.is_generic,
@@ -1035,12 +1099,43 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 								);
 								if (trait_func) {
 									trait_default_label = `${trait_name}_${access_func.name}`;
+									trait_default_func = trait_func;
 									break;
 								}
 							}
 						}
 					}
 				}
+				// An INLINE capturing lambda argument to the func-typed
+				// parameter is a one-shot heap descriptor the callee only
+				// borrows (CLOSURE.md) — capture each into a wrapper-declared
+				// temp at its argument position and reclaim once the call
+				// returns. The wrapper opens before the receiver/array
+				// statement expressions and closes after the call.
+				const method_callee_params = (target_method ?? trait_default_func)?.params?.filter(
+					(p) => !p.is_self_param,
+				);
+				const lambda_arg_temps = new Map<number, string>();
+				for (let i = 0; i < access_func.params.length; i++) {
+					const p = access_func.params[i];
+					if (p.node_type !== "func") continue;
+					if (!(p as FunctionNode).captures?.length) continue;
+					const mp = method_callee_params?.[i];
+					if (!mp || !(mp.func_params || mp.func_return_type)) continue;
+					lambda_arg_temps.set(i, next_lambda_arg_temp());
+				}
+				if (lambda_arg_temps.size > 0) {
+					status.code += `({ `;
+					for (const tmp of lambda_arg_temps.values()) {
+						status.code += `struct nomen_closure *${tmp}; `;
+					}
+				}
+				const lambda_ret_c =
+					lambda_arg_temps.size > 0
+						? c_return_type((target_method ?? trait_default_func)?.return_type, status)
+						: undefined;
+				const lambda_ret_tmp =
+					lambda_ret_c && lambda_ret_c !== "void" ? next_lambda_ret_temp() : undefined;
 				const label =
 					access_func.mangled_name ||
 					trait_default_label ||
@@ -1058,6 +1153,9 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				);
 				if (array_wrap) {
 					status.code += array_wrap.prefix;
+				}
+				if (lambda_ret_tmp) {
+					status.code += `${lambda_ret_c} ${lambda_ret_tmp} = `;
 				}
 				status.code += `${label}(`;
 				if (!access_func.is_static) {
@@ -1143,6 +1241,17 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				for (let i = 0; i < access_func.params.length; i++) {
 					if (!access_func.is_static || i > 0) {
 						status.code += ", ";
+					}
+					// An inline capturing lambda arg: capture its one-shot heap
+					// descriptor into the wrapper temp (handled before the
+					// type-based routing — the lambda's VALUE-node type is its
+					// RETURN type and must not select the struct/erasure paths).
+					const lambda_tmp = lambda_arg_temps.get(i);
+					if (lambda_tmp) {
+						status.code += `(${lambda_tmp} = `;
+						build_node(access_func.params[i], status);
+						status.code += `)`;
+						continue;
 					}
 					// A `view string` parameter receives a (ptr, len)
 					// nomen_view: a view-typed argument passes through; an
@@ -1245,8 +1354,17 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					}
 				}
 				status.code += ")";
+				if (lambda_arg_temps.size > 0) {
+					for (const tmp of lambda_arg_temps.values()) {
+						status.code += `; ${closure_dispose_arm(tmp)}`;
+					}
+					if (lambda_ret_tmp) status.code += `; ${lambda_ret_tmp}`;
+				}
 				if (array_wrap) {
 					status.code += array_wrap.suffix;
+				}
+				if (lambda_arg_temps.size > 0) {
+					status.code += `; })`;
 				}
 			}
 			// move parameter handling for method calls: same as

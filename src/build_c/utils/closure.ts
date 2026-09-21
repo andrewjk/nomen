@@ -230,3 +230,26 @@ export function materialize_func_value(resolved: FunctionNode, status: BuildStat
 	}
 	return materialize_named_function_descriptor(resolved, status);
 }
+
+let lambda_arg_temp_counter = 0;
+let lambda_ret_temp_counter = 0;
+
+/** A unique C temp name for one inline-lambda argument's captured descriptor. */
+export function next_lambda_arg_temp(): string {
+	return `_nomen_lambda_arg_${lambda_arg_temp_counter++}`;
+}
+
+/** A unique C temp name forwarding a wrapped call's value out of a wrapper. */
+export function next_lambda_ret_temp(): string {
+	return `_nomen_lambda_ret_${lambda_ret_temp_counter++}`;
+}
+
+/**
+ * The uniform free-if-owned arm (CLOSURE.md) reclaiming a heap closure
+ * descriptor held in the C local `tmp`: runs the env destructor when
+ * present, then frees the env and the descriptor. Capture-free lambdas
+ * point at static descriptors (owned = 0) and pass through untouched.
+ */
+export function closure_dispose_arm(tmp: string): string {
+	return `if (${tmp}->owned) { if (${tmp}->destroy_env) ${tmp}->destroy_env(${tmp}->env); free(${tmp}->env); free(${tmp}); }`;
+}

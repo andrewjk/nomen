@@ -18,21 +18,6 @@ headroom, the post passes want the same treatment: single-pass line
 scans, cached label/classification lookups, and skipping the lift when a
 pass makes no edits.
 
-## Inline capturing lambda in method/trait-dispatch calls still leaks
-
-Residual of the fixed direct-call shape: a capturing lambda passed INLINE
-as a func-typed argument of a METHOD call (`r.run(func (out int) { return
-base * 3 })`, same for trait dispatch) still leaks 2 allocations (heap
-closure descriptor + env) on both backends. Direct calls (`apply(func (out
-int) { return base * 3 })`) now dispose the one-shot descriptor after the
-callee returns — the C call site captures it into a wrapper-declared temp
-and runs the free-if-owned arm; aarch64 reclaims it from the arg spill
-slot (a dedicated frame slot on the indirect-call path). The method path
-builds args in build_access_node's own loops (several specialized variants
-per backend), which were left untouched to keep the direct-call fix
-scoped. Interim workaround: bind the closure to a func-typed local first
-(`var func (out int) f = ...; r.run(f)`).
-
 ## Cold-run parallel test flakiness (pre-existing)
 
 A fully cold `npm test` (after `rm -rf test/out`) with default file
@@ -45,6 +30,35 @@ A second (warm) run is fully green, and a cold run with
 concurrency/caching artifact in `check_output`'s cache write under load.
 Worth investigating `test/check_output.ts`'s `outputfile`/`cachefile` writes
 if it keeps biting.
+
+## Heap return temp of an indirect call leaks when consumed by an operation (aarch64)
+
+A fresh-heap value RETURNED from a call through a func-typed VALUE (`f(...)`
+where `f` is a func-typed param/field/local) leaks on the aarch64 backend
+when the result feeds an operation. Repro (audit on, aarch64 only):
+
+```
+struct Shout {
+	func exclaim = (self, func (out string) f, out string) { return f() + "!" }
+}
+
+var Shout s = Shout()
+var string r = s.exclaim(func (out string) { return 42.to_string() })
+// r == "42!" — but the callee's to_string() buffer (f()'s result,
+// consumed as the concat's left operand) leaks: LEAK: 1 allocation(s)
+```
+
+Verified CAPTURE-FREE (the lambda holds nothing), so it is not the
+descriptor-dispose machinery — that is balanced. The C backend is clean
+for the same program: its op-level tracking (`last_result_is_heap` /
+`is_owned_heap_temp`) frees a consumed call-result operand, while the
+aarch64 indirect-call paths (build_function_call_node's `is_func_param`
+arm, build_access_method) appear never to mark their result as a heap
+temp for that free pass. Suspected fix: give the aarch64 indirect call
+the same heap-result marker the direct-call path gets from
+heap_returning_functions, scoped to operands consumed by value ops.
+Discovered while probing the inline-capturing-lambda fixes; direct
+returns (`var string s = f()`) and borrow returns are unaffected.
 
 ## Residual ownership-tracking gaps (accepted, narrow)
 

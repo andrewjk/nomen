@@ -263,12 +263,13 @@ export function materialize_lambda_descriptor_a64(func: FunctionNode, status: Bu
  * of `slots` is an x29-relative frame slot holding a descriptor pointer:
  * the uniform free-if-owned arm runs per slot (a capturing closure has
  * owned = 1; a capture-free one points at a static descriptor and is never
- * freed). x0 — the call's return value — is preserved across the whole
- * sequence; x9/x10 are caller-saved scratch.
+ * freed). x0 AND x1 — the call's return value (a fat string returns the
+ * (ptr, len) pair) — are preserved across the whole sequence; x9/x10 are
+ * caller-saved scratch.
  */
 export function emit_dispose_lambda_args_a64(status: BuildStatus, slots: number[]): void {
 	if (slots.length === 0) return;
-	emit_asm(status, `str x0, [sp, #-16]!\n`);
+	emit_asm(status, `stp x0, x1, [sp, #-16]!\n`);
 	for (const slot of slots) {
 		const skip = `.Llambda_arg_done_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
 		const no_destroy = `.Llambda_arg_nodestroy_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
@@ -290,5 +291,5 @@ export function emit_dispose_lambda_args_a64(status: BuildStatus, slots: number[
 		emit_free(status);
 		emit_asm(status, `${skip}:\n`);
 	}
-	emit_asm(status, `ldr x0, [sp], #16\n`);
+	emit_asm(status, `ldp x0, x1, [sp], #16\n`);
 }

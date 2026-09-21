@@ -135,10 +135,10 @@ returns can only be fresh heap, boundary literals, or input-derived.
   parse in generic type args or `out` positions).
 - Borrow-captures in general lambda positions: rejected; only the spawn
   sugar's nursery borrows exist (ASYNC.md, "Nursery borrows").
-- An INLINE capturing lambda passed directly as a call argument is a
-  one-shot: the parameter is a borrow, so the call site disposes the
-  temporary heap descriptor + env once the call returns (both backends).
-  Capture-free inline lambdas were always fine (static descriptors).
-  METHOD and trait-dispatch calls don't dispose the temporary yet — bind
-  the closure to a func-typed local first in those positions (FOLLOWUP.md,
-  "Inline capturing lambda in method/trait-dispatch calls still leaks").
+- An INLINE capturing lambda passed directly as a call argument — plain,
+  method, or trait-dispatched — is a one-shot: the parameter is a borrow,
+  so the call site disposes the temporary heap descriptor + env once the
+  call returns (both backends). Capture-free inline lambdas were always
+  fine (static descriptors). A func-typed FIELD call (`s.f(lambda)`) never
+  carries lambda arguments today: a func signature cannot nest another
+  `func (...)` param.

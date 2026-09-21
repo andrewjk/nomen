@@ -15,7 +15,13 @@ import array_struct_name from "./utils/array_struct.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import { find_decl_in_c_scopes } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
-import { materialize_func_value, c_return_type } from "./utils/closure.ts";
+import {
+	closure_dispose_arm,
+	c_return_type,
+	materialize_func_value,
+	next_lambda_arg_temp,
+	next_lambda_ret_temp,
+} from "./utils/closure.ts";
 import { begin_code_scratch, end_code_scratch } from "./utils/code_scratch.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import { c_view_string_arg } from "./utils/view_value.ts";
@@ -151,7 +157,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			if (!(p as FunctionNode).captures?.length) continue;
 			const cp = callee_params?.[i];
 			if (!cp || !(cp.func_params || cp.func_return_type)) continue;
-			lambda_arg_temps.set(i, `_nomen_lambda_arg_${ns_lambda_arg_counter++}`);
+			lambda_arg_temps.set(i, next_lambda_arg_temp());
 		}
 	}
 	if (lambda_arg_temps.size > 0) {
@@ -162,9 +168,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 	}
 	const lambda_ret_c = lambda_arg_temps.size > 0 ? c_return_type(node.type, status) : undefined;
 	const lambda_ret_tmp =
-		lambda_ret_c && lambda_ret_c !== "void"
-			? `_nomen_lambda_ret_${ns_lambda_arg_counter++}`
-			: undefined;
+		lambda_ret_c && lambda_ret_c !== "void" ? next_lambda_ret_temp() : undefined;
 	if (lambda_ret_tmp) {
 		status.code += `${lambda_ret_c} ${lambda_ret_tmp} = `;
 	}
@@ -452,7 +456,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 	// forward the call's value out of it.
 	if (lambda_arg_temps.size > 0) {
 		for (const tmp of lambda_arg_temps.values()) {
-			status.code += `; if (${tmp}->owned) { if (${tmp}->destroy_env) ${tmp}->destroy_env(${tmp}->env); free(${tmp}->env); free(${tmp}); }`;
+			status.code += `; ${closure_dispose_arm(tmp)}`;
 		}
 		if (lambda_ret_tmp) status.code += `; ${lambda_ret_tmp}`;
 		status.code += `; })`;
@@ -547,8 +551,6 @@ let ns_default_counter = 0;
 export function reset_ns_default_counter() {
 	ns_default_counter = 0;
 }
-
-let ns_lambda_arg_counter = 0;
 
 /**
  * Emit the caller-side `_has` flag value for a nullable struct argument.

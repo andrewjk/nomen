@@ -444,3 +444,76 @@ pub func main = (Init init) {
 		);
 	});
 });
+
+describe("inline capturing lambda in method and trait-dispatch calls", () => {
+	// The residual shape: the same one-shot descriptor + env an inline
+	// capturing lambda materializes must also be reclaimed when the call is
+	// a METHOD call, a trait-dispatched call, or a func-typed FIELD call —
+	// the callee only borrows the parameter in every case.
+
+	test("method call, non-void return", async () => {
+		await run(
+			"lambda_arg_capture_method",
+			"31\n",
+			`
+struct Runner {
+	var int n
+
+	func run = (self, func (out int) f, out int) { return f() + self.n }
+}
+
+pub func main = (Init init) {
+	var int base = 10
+	var Runner r = Runner(1)
+	Console.write_line("\\{r.run(func (out int) { return base * 3 })}")
+}
+`,
+		);
+	});
+
+	test("method call returning a fresh heap string", async () => {
+		// The method returns a fat string pair in (x0, x1) on aarch64 — the
+		// descriptor disposal must preserve both halves. The lambda returns
+		// its captured string (a borrow of the env copy), keeping the lambda's
+		// own return out of the heap so only the descriptor + env are owned
+		// here.
+		await run(
+			"lambda_arg_capture_method_string",
+			"a!\n",
+			`
+struct Shout {
+	func exclaim = (self, func (out string) f, out string) { return f() + "!" }
+}
+
+pub func main = (Init init) {
+	var string tag = "a"
+	var Shout s = Shout()
+	var string r = s.exclaim(func (out string) { return tag })
+	Console.write_line(r)
+}
+`,
+		);
+	});
+
+	test("trait-dispatched call", async () => {
+		await run(
+			"lambda_arg_capture_trait",
+			"31\n",
+			`
+trait Runner {
+	func run = (self, func (out int) f, out int)
+}
+
+class Host : Runner {
+	func run = (self, func (out int) f, out int) { return f() + 1 }
+}
+
+pub func main = (Init init) {
+	var int base = 10
+	var Runner r = Host()
+	Console.write_line("\\{r.run(func (out int) { return base * 3 })}")
+}
+`,
+		);
+	});
+});
