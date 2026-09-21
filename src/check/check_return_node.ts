@@ -1,5 +1,6 @@
 import add_error from "../add_error.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
+import type FunctionNode from "../nodes/FunctionNode.ts";
 import type ReturningNode from "../nodes/ReturningNode.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
 import Type from "../nodes/Type.ts";
@@ -7,7 +8,10 @@ import ValueNode from "../nodes/ValueNode.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { borrow_depth_of, borrow_owner_of } from "./utils/borrow.ts";
+import { move_closure_source } from "./utils/captures.ts";
+import check_merged_missing_return from "./utils/check_merged_missing_return.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
+import synthesize_lambda_name from "./utils/synthesize_lambda_name.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 import {
@@ -146,7 +150,69 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 	}
 
 	if (func) {
-		if (func.return_type.name) {
+		if (func.return_type.name === "func") {
+			// A func-typed return (`out func (out int)` — a closure factory):
+			// the value is a lambda, a named function, or another func value.
+			// type_from_value_node of a lambda is its RETURN type (the usual
+			// func quirk), so the scalar comparison is skipped. An untyped
+			// lambda merges its signature from the return type, and
+			// returning a CAPTURING closure transfers ownership to the
+			// caller (a donating func-typed local is invalidated).
+			const value_func =
+				ret.value.node_type === "func"
+					? (ret.value as import("../nodes/FunctionNode.ts").default)
+					: undefined;
+			if (value_func && !value_func.name) {
+				// An anonymous lambda in return position needs an emission
+				// name — the same synthesis a call-argument lambda gets
+				// (both backends lower it to a file-scope function).
+				synthesize_lambda_name(value_func, status);
+			}
+			if (ret.value.node_type === "value" && !value_func) {
+				// A bare name in return position (`return five`): when it
+				// names a FUNCTION (not a local — a local shadows the table),
+				// stamp the resolution so the build materializes the closure
+				// descriptor at this site rather than the raw code address.
+				// The value's own stamped type may be the function's RETURN
+				// type (the out-signature StackValue convention), which is
+				// why check_value_node's stamp didn't fire.
+				const name = (ret.value as ValueNode).value;
+				const is_local = status.values.some((v) => v.name === name);
+				if (!is_local) {
+					const fn = status.functions.findLast((f) => f.name === name);
+					if (fn) {
+						(ret.value as unknown as { resolved_function?: FunctionNode }).resolved_function = fn;
+					}
+				}
+			}
+			const sig = func.return_type;
+			if (value_func && sig.func_params?.length) {
+				if (value_func.params.length !== sig.func_params.length) {
+					add_error(
+						status,
+						`Function signature mismatch: expected ${sig.func_params.length} parameter(s)`,
+						ret.value.start,
+					);
+				} else {
+					for (let i = 0; i < value_func.params.length; i++) {
+						if (!value_func.params[i].type.name && sig.func_params[i].type.name) {
+							value_func.params[i].type = sig.func_params[i].type;
+							value_func.params[i].type_start = sig.func_params[i].type_start;
+						}
+						if (sig.func_params[i].func_params && !value_func.params[i].func_params) {
+							// A nested func parameter carries its own signature —
+							// copy it so the lambda body can call through it.
+							value_func.params[i].func_params = sig.func_params[i].func_params;
+							value_func.params[i].func_return_type = sig.func_params[i].func_return_type;
+						}
+					}
+				}
+			}
+			if (value_func) {
+				check_merged_missing_return(value_func, status);
+			}
+			move_closure_source(ret.value, status);
+		} else if (func.return_type.name) {
 			if (func.return_type.name !== "?") {
 				const return_type = type_from_value_node(ret.value, status);
 				const return_value = value_from_value_node(ret.value);

@@ -961,17 +961,22 @@ export default function build_declaration_node(
 			emit_init_value(node.value, nir_init, status);
 			ensure_newline(status);
 			emit_var_store(status, "x0", node.name, 8);
-			// A func local initialized from a capturing lambda or another
-			// owning closure holds a heap descriptor it frees at scope exit;
-			// a move-transfer marks the source moved (CLOSURE.md Phase 2c).
+			// A func local initialized from a capturing lambda, from another
+			// owning closure, or from a CALL/access expression (`var func
+			// (out int) f = make()` — a closure factory, direct or
+			// method/trait-dispatched) holds a heap descriptor it frees at
+			// scope exit; a move-transfer marks the source moved (CLOSURE.md
+			// Phase 2c). An expression result is conservatively owned: the
+			// free-if-owned arm passes static descriptors through untouched.
 			const val_is_capturing =
 				node.value.node_type === "func" && !!(node.value as FunctionNode).captures?.length;
 			const val_is_moved = node.value.node_type === "value" && !!(node.value as ValueNode).is_moved;
+			const val_is_owned_expr = node.value.node_type !== "value";
 			if (val_is_moved) {
 				if (!status.moved) status.moved = new Set();
 				status.moved.add((node.value as ValueNode).value);
 			}
-			if (val_is_capturing || val_is_moved) {
+			if (val_is_capturing || val_is_moved || val_is_owned_expr) {
 				status.scoped_declarations.push(
 					new DeclarationNode(
 						node.start,

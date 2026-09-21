@@ -105,15 +105,18 @@ function materialize_named_function_descriptor(func: FunctionNode, status: Build
 	// target's own prototype lands in the headers — compatible
 	// redeclaration, the same trick the spawn trampolines use).
 	const ret = c_return_type(func.return_type, status);
+	// A zero-param target has an empty sig — the env parameter must not
+	// leave a trailing comma (e.g. `void *f(void *_nomen_env)`).
+	const thunk_params = sig ? `void *_nomen_env, ${sig}` : `void *_nomen_env`;
 	status.headers += `${ret} ${target}(${sig});\n`;
-	status.headers += `${ret} ${thunk}(void *_nomen_env, ${sig});\n`;
+	status.headers += `${ret} ${thunk}(${thunk_params});\n`;
 	status.headers += `static struct nomen_closure ${descriptor} = { (void *)${thunk}, NULL, 0, NULL };\n\n`;
 
 	const call = `${target}(${forwards.join(", ")})`;
 	const body = ret === "void" ? `\t${call};\n` : `\treturn ${call};\n`;
 	status.closure_definitions =
 		(status.closure_definitions ?? "") +
-		`${ret} ${thunk}(void *_nomen_env, ${sig}) {\n` +
+		`${ret} ${thunk}(${thunk_params}) {\n` +
 		`\t(void)_nomen_env;\n` +
 		body +
 		`}\n\n`;

@@ -71,6 +71,31 @@ function build_func_field_call(
 		return;
 	}
 	const ret = c_type(field.func_return_type?.name || "void");
+	// An INLINE capturing lambda argument to the func-typed parameter is a
+	// one-shot heap descriptor the callee only borrows (CLOSURE.md) —
+	// capture each into a wrapper-declared temp at its argument position
+	// and reclaim once the call returns. (The func_field_call arg loop is
+	// a plain value build — no type-based routing to interference.)
+	const lambda_arg_temps = new Map<number, string>();
+	for (let i = 0; i < access_func.params.length; i++) {
+		const p = access_func.params[i];
+		if (p.node_type !== "func") continue;
+		if (!(p as FunctionNode).captures?.length) continue;
+		const fp = field.func_params[i];
+		if (!fp || !(fp.func_params || fp.func_return_type)) continue;
+		lambda_arg_temps.set(i, next_lambda_arg_temp());
+	}
+	if (lambda_arg_temps.size > 0) {
+		status.code += `({ `;
+		for (const tmp of lambda_arg_temps.values()) {
+			status.code += `struct nomen_closure *${tmp}; `;
+		}
+	}
+	const lambda_ret_tmp =
+		lambda_arg_temps.size > 0 && ret !== "void" ? next_lambda_ret_temp() : undefined;
+	if (lambda_ret_tmp) {
+		status.code += `${ret} ${lambda_ret_tmp} = `;
+	}
 	// The field access `receiver.field` — reuse the ordinary access path so
 	// `.`/`->` and ref receivers are handled uniformly. Built twice (code
 	// and env reads); both loads of the same descriptor slot.
@@ -105,9 +130,19 @@ function build_func_field_call(
 	status.code += `))${desc_code})(${desc_env}`;
 	for (let i = 0; i < access_func.params.length; i++) {
 		status.code += ", ";
+		const lambda_tmp = lambda_arg_temps.get(i);
+		if (lambda_tmp) status.code += `(${lambda_tmp} = `;
 		build_node(access_func.params[i], status);
+		if (lambda_tmp) status.code += `)`;
 	}
 	status.code += `)`;
+	if (lambda_arg_temps.size > 0) {
+		for (const tmp of lambda_arg_temps.values()) {
+			status.code += `; ${closure_dispose_arm(tmp)}`;
+		}
+		if (lambda_ret_tmp) status.code += `; ${lambda_ret_tmp}`;
+		status.code += `; })`;
+	}
 }
 
 /**

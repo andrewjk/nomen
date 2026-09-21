@@ -17,6 +17,7 @@ import AccessNode from "../nodes/AccessNode.ts";
 import AnonStructNode from "../nodes/AnonStructNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
+import type FunctionNode from "../nodes/FunctionNode.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import { resolve_static_value } from "./build_array_values_node.ts";
@@ -36,6 +37,7 @@ import {
 	mark_moved_if_struct,
 	release_heap_string_fields,
 } from "./utils/auto_destroy.ts";
+import { emit_descriptor_address, materialize_func_value_a64 } from "./utils/closure_a64.ts";
 import { allocate_stack_space, emit_var_address, emit_var_store } from "./utils/stack_var.ts";
 
 let temp_counter = 0;
@@ -118,6 +120,22 @@ function emit_return_value(
 	nir_value: NirExpr | null | undefined,
 	status: BuildStatus,
 ): void {
+	// A bare named function / declaration-lambda returned from a func-typed
+	// return (`return five`): the value must be the function's closure
+	// DESCRIPTOR address in x0 (CLOSURE.md), not its raw code address. The
+	// checker stamps resolved_function on the value node (check_value_node).
+	// A bare named function / declaration-lambda returned from a func-typed
+	// return (`return five`): the value must be the function's closure
+	// DESCRIPTOR address in x0 (CLOSURE.md), not its raw code address. The
+	// checker stamps resolved_function on the value node (check_value_node).
+	const resolved_func =
+		value.node_type === "value" && status.function_return_type?.name === "func"
+			? (value as unknown as { resolved_function?: FunctionNode }).resolved_function
+			: undefined;
+	if (resolved_func) {
+		emit_descriptor_address(status, "x0", materialize_func_value_a64(resolved_func, status));
+		return;
+	}
 	if (nir_value) {
 		emit_expr_from_nir(nir_value, status);
 		return;

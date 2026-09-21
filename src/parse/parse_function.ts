@@ -17,6 +17,11 @@ import consume_name from "./utils/consume_name.ts";
 import expect from "./utils/expect.ts";
 import expect_close_angle from "./utils/expect_close_angle.ts";
 import get_index from "./utils/get_index.ts";
+import {
+	at_func_type,
+	parse_func_type,
+	parse_func_type_signature,
+} from "./utils/parse_func_type.ts";
 import peek_current from "./utils/peek_current.ts";
 import peek_next from "./utils/peek_next.ts";
 
@@ -211,7 +216,15 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 
 	if (accept("out", status)) {
 		func.return_type_start = get_index(status);
-		func.return_type = parse_type(status);
+		// A func-typed return (`out func (out int)`): a closure factory's
+		// return slot. The signature rides on the return Type
+		// (Type.func_params / Type.func_return_type).
+		if (at_func_type(status)) {
+			consume(status);
+			func.return_type = parse_func_type(status);
+		} else {
+			func.return_type = parse_type(status);
+		}
 		func.returns_move = returns_move;
 
 		// Optional return contract: `out TYPE: out >= 0 && out < cap`
@@ -307,29 +320,18 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 		const saved_i = status.i;
 		const saved_errors_length = status.errors.length;
 		param.type_start = get_index(status);
-		param.type = parse_type(status);
-
-		if (param.type.name === "func" && accept("(", status)) {
-			const func_type_params: ParameterNode[] = [];
-
-			if (peek_current(status) !== ")") {
-				parse_param_func_type_params(func_type_params, status);
-			}
-
-			if (expect(")", status)) {
-				for (const fp of func_type_params) {
-					if (fp.type.is_return_type) {
-						param.func_return_type = fp.type;
-					} else {
-						if (!param.func_params) param.func_params = [];
-						param.func_params.push(fp);
-					}
-				}
-			}
-
+		if (at_func_type(status)) {
+			// A func-typed parameter (`func (int, out int) f`): the `func`
+			// marker word is consumed here and the recursive signature —
+			// itself nesting-capable — lands on the ParameterNode.
+			consume(status);
+			param.type = new Type("func");
+			parse_func_type_signature(param, status);
 			param.name_start = get_index(status);
 			param.name = consume_name(status);
 		} else {
+			param.type = parse_type(status);
+
 			const next = peek_current(status);
 			if (next === "=" || next === ")" || next === "," || status.i >= status.tokens.length) {
 				status.i = saved_i;
@@ -360,31 +362,5 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 
 	if (accept(",", status) && peek_current(status) !== ")") {
 		parse_function_parameter(parent, func, status);
-	}
-}
-
-function parse_param_func_type_params(params: ParameterNode[], status: ParseStatus) {
-	const param_start = get_index(status);
-
-	if (accept("out", status)) {
-		const return_type = parse_type(status);
-		return_type.is_return_type = true;
-		const param = new ParameterNode(param_start, "", return_type);
-		param.type.is_return_type = true;
-		params.push(param);
-
-		if (accept(",", status) && peek_current(status) !== ")") {
-			parse_param_func_type_params(params, status);
-		}
-		return;
-	}
-
-	const param = new ParameterNode(param_start, "");
-	param.type_start = get_index(status);
-	param.type = parse_type(status);
-	params.push(param);
-
-	if (accept(",", status) && peek_current(status) !== ")") {
-		parse_param_func_type_params(params, status);
 	}
 }

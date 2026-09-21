@@ -409,6 +409,12 @@ export default function check_function_call(
 						rhs_func.params[i].type = func_param.func_params[i].type;
 						rhs_func.params[i].type_start = func_param.func_params[i].type_start;
 					}
+					if (func_param.func_params[i].func_params && !rhs_func.params[i].func_params) {
+						// A nested func parameter carries its own signature —
+						// copy it so the lambda body can call through it.
+						rhs_func.params[i].func_params = func_param.func_params[i].func_params;
+						rhs_func.params[i].func_return_type = func_param.func_params[i].func_return_type;
+					}
 				}
 			}
 			if (func_param.func_return_type && !rhs_func.return_type.name) {

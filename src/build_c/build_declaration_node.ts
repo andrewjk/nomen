@@ -959,15 +959,19 @@ function build_function_type_declaration(node: DeclarationNode, status: BuildSta
 			build_node(node.value, status);
 		}
 	}
-	// A func local initialized from a capturing lambda or from another owning
-	// closure holds a heap descriptor it must free at scope exit
-	// (CLOSURE.md Phase 2c). The source of a move-transfer is spliced so the
-	// backends don't also free it.
+	// A func local initialized from a capturing lambda, from another owning
+	// closure, or from a CALL/access expression (`var func (out int) f =
+	// make()` — a closure factory, direct or method/trait-dispatched) holds a
+	// heap descriptor it must free at scope exit (CLOSURE.md Phase 2c). The
+	// source of a move-transfer is spliced so the backends don't also free
+	// it. An expression result is conservatively owned: the free-if-owned
+	// arm passes static descriptors through untouched.
 	const value_is_capturing_lambda =
 		node.value?.node_type === "func" && !!(node.value as FunctionNode).captures?.length;
 	const value_is_moved_closure =
 		node.value?.node_type === "value" && !!(node.value as ValueNode).is_moved;
-	if (value_is_capturing_lambda || value_is_moved_closure) {
+	const value_is_owned_expr = !!node.value && node.value.node_type !== "value";
+	if (value_is_capturing_lambda || value_is_moved_closure || value_is_owned_expr) {
 		if (value_is_moved_closure) {
 			splice_decl_from_c_scopes(status, (node.value as ValueNode).value);
 		}

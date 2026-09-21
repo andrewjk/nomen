@@ -280,6 +280,13 @@ export default function check_function_call_node(
 				param_value.func_params !== undefined ||
 				param_value.func_return_type !== undefined);
 		if (is_func_value && param_value) {
+			// A moved func value (its descriptor was transferred to another
+			// owner) cannot be called — same use-after-move rule as a plain
+			// value read (check_value_node).
+			if (status.moved_variables?.has(node.name)) {
+				add_error(status, `Variable '${node.name}' used after move`, node.start);
+				return false;
+			}
 			// Calling a CAPTURED func value from inside a lambda is itself a
 			// capture (CLOSURE.md Phase 2c): resolve it through the funnel
 			// so the enclosing closure records it (a nested capturing closure

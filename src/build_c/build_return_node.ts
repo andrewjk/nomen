@@ -13,6 +13,7 @@ import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
+import type FunctionNode from "../nodes/FunctionNode.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_array_values_node from "./build_array_values_node.ts";
@@ -21,6 +22,7 @@ import type BuildStatus from "./BuildStatus.ts";
 import { emit_expr_from_nir, nir_array_elements } from "./emit_nir.ts";
 import { reclaim_all_c_scopes } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
+import { materialize_func_value } from "./utils/closure.ts";
 import emit_allocations from "./utils/emit_allocations.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import { c_materialize_view_string, is_view_value } from "./utils/view_value.ts";
@@ -39,6 +41,17 @@ function emit_return_value(
 	nir_value: NirExpr | null | undefined,
 	status: BuildStatus,
 ): void {
+	// A bare named function / declaration-lambda returned from a func-typed
+	// return (`return five`): the value must be the function's closure
+	// DESCRIPTOR (CLOSURE.md), not its raw code address. The checker stamps
+	// resolved_function on the value node (check_value_node).
+	if (value.node_type === "value" && status.function_return_type?.name === "func") {
+		const resolved = (value as unknown as { resolved_function?: FunctionNode }).resolved_function;
+		if (resolved) {
+			status.code += materialize_func_value(resolved, status);
+			return;
+		}
+	}
 	if (nir_value && nir_value.node === value) {
 		emit_expr_from_nir(nir_value, status);
 		return;

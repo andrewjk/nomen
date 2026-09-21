@@ -125,6 +125,12 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 						value_func.params[i].type = lhs_params[i].type;
 						value_func.params[i].type_start = lhs_params[i].type_start;
 					}
+					if (lhs_params[i].func_params && !value_func.params[i].func_params) {
+						// A nested func parameter carries its own signature —
+						// copy it so the lambda body can call through it.
+						value_func.params[i].func_params = lhs_params[i].func_params;
+						value_func.params[i].func_return_type = lhs_params[i].func_return_type;
+					}
 				}
 			}
 			if (decl.func_return_type && !value_func.return_type.name) {
@@ -231,8 +237,19 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			// A func-typed binding initialized from a capturing closure (or
 			// from a local that already owns one) owns a heap descriptor and
 			// is move-only (CLOSURE.md Phase 2c). Initializing from another
-			// owning local transfers ownership, invalidating it.
-			owns_closure: value_owns_closure(decl.value, status) || undefined,
+			// owning local transfers ownership, invalidating it. A CALL or
+			// access initializer (`var func (out int) f = make()` — a closure
+			// factory, direct or method/trait-dispatched) may return a
+			// capturing closure too — the caller owns whatever the callee
+			// produced — so the binding is conservatively owning (and
+			// move-only) as well.
+			owns_closure:
+				value_owns_closure(decl.value, status) ||
+				(!!decl.value &&
+					decl.value.node_type !== "func" &&
+					decl.value.node_type !== "value" &&
+					decl.func_params !== undefined) ||
+				undefined,
 		});
 		if (decl.value) {
 			move_closure_source(decl.value, status);

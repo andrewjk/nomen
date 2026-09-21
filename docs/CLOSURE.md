@@ -102,9 +102,20 @@ VALUES are move-only.
 A CLASS func-typed field can own a closure (`<Class>_destroy` reclaims it
 via the free-if-owned arm); a VALUE-struct func-typed field cannot (copies
 would share the descriptor), so storing a capturing closure in one is
-rejected. Containers and return positions of func values are not
-expressible in the language (generic type args and `out` types don't parse
-`func (...)`), so the shared-ownership container case is unreachable.
+rejected. Containers holding func values are not expressible (generic type
+args don't parse `func (...)`), so the shared-ownership container case is
+unreachable.
+
+A `func`-typed RETURN (`out func (out int)`) is expressible — a closure
+factory (SPEC, "Function-Typed Parameters"). The returned descriptor is
+owned by the CALLER: the call site's func-typed binding registers for the
+scope-exit free-if-owned arm and is move-only (a factory-produced closure
+may own captures), and a bare `return f` of a func-typed local transfers
+its descriptor (use-after-move afterwards). Signatures nest — a `func`
+type may appear as a parameter type or in a return slot at any depth
+(`func (func (out int), out int)`) — and the disposal gates for inline
+capturing lambda arguments key off the callee parameter's signature, so
+they apply unchanged at higher-order call sites.
 
 ## The spawn seam
 
@@ -132,13 +143,16 @@ returns can only be fresh heap, boundary literals, or input-derived.
 ## Current restrictions
 
 - Capturing lambdas stored in containers: unreachable (func values don't
-  parse in generic type args or `out` positions).
+  parse in generic type args).
 - Borrow-captures in general lambda positions: rejected; only the spawn
   sugar's nursery borrows exist (ASYNC.md, "Nursery borrows").
 - An INLINE capturing lambda passed directly as a call argument — plain,
   method, or trait-dispatched — is a one-shot: the parameter is a borrow,
   so the call site disposes the temporary heap descriptor + env once the
   call returns (both backends). Capture-free inline lambdas were always
-  fine (static descriptors). A func-typed FIELD call (`s.f(lambda)`) never
-  carries lambda arguments today: a func signature cannot nest another
-  `func (...)` param.
+  fine (static descriptors).
+- A func FIELD call (`s.f(...)`) cannot carry lambda arguments today: a
+  field's func signature cannot declare a nested `func (...)` param in the
+  field-declaration grammar (`var func (func (out int), out int) f` does
+  parse as a LOCAL type annotation, but the struct-field form rejects the
+  nested spelling).

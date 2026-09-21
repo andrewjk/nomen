@@ -108,6 +108,33 @@ apply(inc, 5)
 		expect(compile_main(input)).toEqual([]);
 	});
 
+	test("nested func types and closure factories", () => {
+		// SPEC.md, "Function-Typed Parameters (Higher-Order Functions)": a
+		// `func` type may itself appear inside another signature — as a
+		// parameter type or in the return slot (`out func (...)`, a closure
+		// factory whose result the caller owns) — nesting to arbitrary
+		// depth.
+		const input = `
+func twice = (func (out int) f, out int) { return f() + f() }
+
+func make_adder = (int n, out func (out int)) {
+    return () => n
+}
+
+func run = (func (func (out int), out int) g, func (out int) v, out int) {
+    return g(v)
+}
+
+func apply = (func (out int) f, out int) { return f() }
+
+pub func main = () {
+    var func (out int) add7 = make_adder(7)
+    Console.write_line("\\{add7()} \\{twice(add7)} \\{run(apply, () => 3)}")
+}
+`;
+		expect(compile_module(input)).toEqual([]);
+	});
+
 	test("function overloading", () => {
 		const input = `
 struct Vec2 {

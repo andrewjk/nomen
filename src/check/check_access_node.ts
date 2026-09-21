@@ -35,6 +35,7 @@ import {
 	is_owning_ref_type,
 	is_owning_struct_type_requiring_move,
 } from "./utils/ownership.ts";
+import synthesize_lambda_name from "./utils/synthesize_lambda_name.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import validate_spawn_args_sendable from "./utils/validate_spawn_args_sendable.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
@@ -651,6 +652,12 @@ function check_access_function_node(
 		if (func_field) {
 			node.is_func_field_call = true;
 			for (const param of node.params) {
+				// An anonymous lambda argument needs an emission name — the
+				// same synthesis a func-typed direct-call argument gets
+				// (both backends lower it to a file-scope function).
+				if (param.node_type === "func" && !(param as FunctionNode).name) {
+					synthesize_lambda_name(param as FunctionNode, status);
+				}
 				check_node(param, status);
 			}
 			node.type = func_field.func_return_type || new Type("void");

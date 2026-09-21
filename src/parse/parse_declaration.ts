@@ -24,6 +24,12 @@ import consume_name from "./utils/consume_name.ts";
 import default_visibility from "./utils/default_visibility.ts";
 import expect from "./utils/expect.ts";
 import get_index from "./utils/get_index.ts";
+import {
+	at_func_type,
+	parse_func_type,
+	parse_func_type_signature,
+	parse_signature_params,
+} from "./utils/parse_func_type.ts";
 import peek_current from "./utils/peek_current.ts";
 
 export default function parse_declaration(
@@ -168,7 +174,7 @@ function parse_function_type_declaration(decl: DeclarationNode, status: ParseSta
 		let return_type: Type | undefined;
 
 		if (peek_current(status) !== ")") {
-			parse_function_type_params(params, status);
+			parse_signature_params(params, status);
 			return_type = extract_return_type(params);
 		}
 
@@ -225,42 +231,6 @@ function parse_function_type_declaration(decl: DeclarationNode, status: ParseSta
 				decl.value = parse_expression(status);
 			}
 		}
-	}
-}
-
-function parse_function_type_params(params: ParameterNode[], status: ParseStatus) {
-	const param_start = get_index(status);
-
-	// Check for return type: `out type`
-	if (accept("out", status)) {
-		const return_type = parse_type(status);
-		return_type.is_return_type = true;
-		const param = new ParameterNode(param_start, "", return_type);
-		param.type.is_return_type = true;
-		params.push(param);
-
-		if (accept(",", status) && peek_current(status) !== ")") {
-			parse_function_type_params(params, status);
-		}
-		return;
-	}
-
-	const param = new ParameterNode(param_start, "");
-	param.type_start = get_index(status);
-	param.type = parse_type(status);
-
-	// In a function-type signature the parameters are bare types, so a token
-	// following a type is only treated as the parameter name when it is not
-	// the end of the parameter list or the start of the return type.
-	const next = peek_current(status);
-	if (next !== ")" && next !== "," && next !== "out" && status.i < status.tokens.length) {
-		param.name_start = get_index(status);
-		param.name = consume_name(status);
-	}
-	params.push(param);
-
-	if (accept(",", status) && peek_current(status) !== ")") {
-		parse_function_type_params(params, status);
 	}
 }
 
@@ -358,10 +328,15 @@ export function parse_anonymous_function(
 function parse_anon_function_parameter(func: FunctionNode, status: ParseStatus) {
 	const param_start = get_index(status);
 
-	// Check for return type: `out type`
+	// Check for return type: `out type` — itself nestable (`out func (out int)`)
 	if (accept("out", status)) {
 		func.return_type_start = get_index(status);
-		func.return_type = parse_type(status);
+		if (at_func_type(status)) {
+			consume(status);
+			func.return_type = parse_func_type(status);
+		} else {
+			func.return_type = parse_type(status);
+		}
 
 		if (accept(",", status)) {
 			parse_anon_function_parameter(func, status);
@@ -387,19 +362,29 @@ function parse_anon_function_parameter(func: FunctionNode, status: ParseStatus) 
 	const saved_i = status.i;
 	const saved_errors_length = status.errors.length;
 	param.type_start = get_index(status);
-	param.type = parse_type(status);
-
-	// If the next token is '=' or ')' or ',', what we parsed was actually the name
-	const next = peek_current(status);
-	if (next === "=" || next === ")" || next === "," || status.i >= status.tokens.length) {
-		status.i = saved_i;
-		status.errors.length = saved_errors_length;
-		param.type = new Type("");
-		param.type_start = undefined;
-		param.name = consume_name(status);
-	} else {
+	if (at_func_type(status)) {
+		// A func-typed lambda parameter (`(func (out int) g, out int) => ...`):
+		// the recursive signature lands on the ParameterNode, then the name.
+		consume(status);
+		param.type = new Type("func");
+		parse_func_type_signature(param, status);
 		param.name_start = get_index(status);
 		param.name = consume_name(status);
+	} else {
+		param.type = parse_type(status);
+
+		// If the next token is '=' or ')' or ',', what we parsed was actually the name
+		const next = peek_current(status);
+		if (next === "=" || next === ")" || next === "," || status.i >= status.tokens.length) {
+			status.i = saved_i;
+			status.errors.length = saved_errors_length;
+			param.type = new Type("");
+			param.type_start = undefined;
+			param.name = consume_name(status);
+		} else {
+			param.name_start = get_index(status);
+			param.name = consume_name(status);
+		}
 	}
 
 	// Parameter value
