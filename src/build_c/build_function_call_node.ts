@@ -15,7 +15,7 @@ import array_struct_name from "./utils/array_struct.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import { find_decl_in_c_scopes } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
-import { materialize_func_value } from "./utils/closure.ts";
+import { materialize_func_value, c_return_type } from "./utils/closure.ts";
 import { begin_code_scratch, end_code_scratch } from "./utils/code_scratch.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import { c_view_string_arg } from "./utils/view_value.ts";
@@ -133,6 +133,41 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 	// splice — the historical `status.code.lastIndexOf(...)` +
 	// whole-string rebuild scanned and copied the entire accumulated code
 	// per wrapped call (O(code), quadratic in memory).
+	// An INLINE capturing lambda argument to a func-typed (borrow)
+	// parameter materializes a one-shot HEAP descriptor + env that the
+	// callee never disposes (CLOSURE.md) — the call site owns them. Those
+	// args build inside `(_nomen_lambda_arg_N = <descriptor>)`, capturing
+	// the descriptor into a wrapper-declared temp; after the call the
+	// free-if-owned arm reclaims it (capture-free lambdas use static
+	// descriptors and need nothing). Constructors are excluded — a class
+	// func-typed field OWNS the closure (its #destroy reclaims it), and a
+	// value-struct func field cannot hold one (rejected at check time).
+	const callee_params = node.resolved_function?.params?.filter((p) => !p.is_self_param);
+	const lambda_arg_temps = new Map<number, string>();
+	if (!is_struct) {
+		for (let i = 0; i < node.params.length; i++) {
+			const p = node.params[i];
+			if (p.node_type !== "func") continue;
+			if (!(p as FunctionNode).captures?.length) continue;
+			const cp = callee_params?.[i];
+			if (!cp || !(cp.func_params || cp.func_return_type)) continue;
+			lambda_arg_temps.set(i, `_nomen_lambda_arg_${ns_lambda_arg_counter++}`);
+		}
+	}
+	if (lambda_arg_temps.size > 0) {
+		status.code += `({ `;
+		for (const tmp of lambda_arg_temps.values()) {
+			status.code += `struct nomen_closure *${tmp}; `;
+		}
+	}
+	const lambda_ret_c = lambda_arg_temps.size > 0 ? c_return_type(node.type, status) : undefined;
+	const lambda_ret_tmp =
+		lambda_ret_c && lambda_ret_c !== "void"
+			? `_nomen_lambda_ret_${ns_lambda_arg_counter++}`
+			: undefined;
+	if (lambda_ret_tmp) {
+		status.code += `${lambda_ret_c} ${lambda_ret_tmp} = `;
+	}
 	const wrap_nullable_call =
 		is_nullable_struct_type(node.type, status) && !status.current_nullable_call_flag;
 	const saved_call = wrap_nullable_call ? begin_code_scratch(status) : undefined;
@@ -311,7 +346,6 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		// (CLOSURE.md): a bare function-name argument materializes
 		// its (thunk-backed) descriptor — a lambda arg already arrives as a
 		// descriptor through build_node's func case.
-		const callee_params = node.resolved_function?.params?.filter((p) => !p.is_self_param);
 		const callee_param = callee_params?.[i];
 		const callee_param_is_func =
 			!!(callee_param && (callee_param.func_params || callee_param.func_return_type)) ||
@@ -326,7 +360,10 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			continue;
 		}
 
+		const lambda_tmp = lambda_arg_temps.get(i);
+		if (lambda_tmp) status.code += `(${lambda_tmp} = `;
 		build_node(node.params[i], status);
+		if (lambda_tmp) status.code += `)`;
 		status.suppress_dereference = false;
 
 		// If this argument corresponds to a nullable struct value parameter
@@ -408,6 +445,17 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				build_node(swap_expr, status);
 			}
 		}
+	}
+
+	// The inline capturing lambda args' descriptors are now borrowed-dead:
+	// run the uniform free-if-owned arm (CLOSURE.md) inside the wrapper and
+	// forward the call's value out of it.
+	if (lambda_arg_temps.size > 0) {
+		for (const tmp of lambda_arg_temps.values()) {
+			status.code += `; if (${tmp}->owned) { if (${tmp}->destroy_env) ${tmp}->destroy_env(${tmp}->env); free(${tmp}->env); free(${tmp}); }`;
+		}
+		if (lambda_ret_tmp) status.code += `; ${lambda_ret_tmp}`;
+		status.code += `; })`;
 	}
 
 	// move parameter handling: when a class-typed variable (or a hoisted
@@ -499,6 +547,8 @@ let ns_default_counter = 0;
 export function reset_ns_default_counter() {
 	ns_default_counter = 0;
 }
+
+let ns_lambda_arg_counter = 0;
 
 /**
  * Emit the caller-side `_has` flag value for a nullable struct argument.

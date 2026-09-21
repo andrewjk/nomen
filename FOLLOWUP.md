@@ -18,24 +18,20 @@ headroom, the post passes want the same treatment: single-pass line
 scans, cached label/classification lookups, and skipping the lift when a
 pass makes no edits.
 
-## Inline capturing lambda as a direct call argument leaks its descriptor
+## Inline capturing lambda in method/trait-dispatch calls still leaks
 
-A capturing lambda passed INLINE as a func-typed call argument
-(`apply(func (out int) { return base * 3 })`, same for the arrow form
-`apply((out int) => base * 3)`) leaks 2 allocations (heap closure
-descriptor + env) on both backends, audit-verified. The parameter is a
-BORROW (CLOSURE.md) — the callee never disposes — and the call site
-materializes a one-shot heap temporary with no binding to run the
-free-if-owned arm at scope exit. Capture-free inline lambdas are fine
-(static descriptor, nothing owned), and binding to a func-typed local
-first is the audited-clean pattern (`var func (out int) f = ...;
-apply(f)`).
-
-Fix shape: the checker already recognizes the shape (the func-param guard
-in check_function_call's arg loop, `arg_is_func_binding` / literal-lambda
-`node_type === "func"`); the backends would need to dispose a temporary
-heap descriptor after the call returns for exactly those args (stamped at
-check time). Kept out of the lambda-forms change to stay scoped.
+Residual of the fixed direct-call shape: a capturing lambda passed INLINE
+as a func-typed argument of a METHOD call (`r.run(func (out int) { return
+base * 3 })`, same for trait dispatch) still leaks 2 allocations (heap
+closure descriptor + env) on both backends. Direct calls (`apply(func (out
+int) { return base * 3 })`) now dispose the one-shot descriptor after the
+callee returns — the C call site captures it into a wrapper-declared temp
+and runs the free-if-owned arm; aarch64 reclaims it from the arg spill
+slot (a dedicated frame slot on the indirect-call path). The method path
+builds args in build_access_node's own loops (several specialized variants
+per backend), which were left untouched to keep the direct-call fix
+scoped. Interim workaround: bind the closure to a func-typed local first
+(`var func (out int) f = ...; r.run(f)`).
 
 ## Cold-run parallel test flakiness (pre-existing)
 

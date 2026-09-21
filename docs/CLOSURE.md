@@ -135,9 +135,10 @@ returns can only be fresh heap, boundary literals, or input-derived.
   parse in generic type args or `out` positions).
 - Borrow-captures in general lambda positions: rejected; only the spawn
   sugar's nursery borrows exist (ASYNC.md, "Nursery borrows").
-- An INLINE capturing lambda passed directly as a call argument leaks its
-  heap descriptor + env: the call borrows the parameter and never disposes
-  the temporary (capture-free inline lambdas use static descriptors and are
-  fine). Bind the closure to a func-typed local first — its scope exit
-  runs the free-if-owned arm. Recorded in FOLLOWUP.md ("Inline capturing
-  lambda as a direct call argument leaks its descriptor").
+- An INLINE capturing lambda passed directly as a call argument is a
+  one-shot: the parameter is a borrow, so the call site disposes the
+  temporary heap descriptor + env once the call returns (both backends).
+  Capture-free inline lambdas were always fine (static descriptors).
+  METHOD and trait-dispatch calls don't dispose the temporary yet — bind
+  the closure to a func-typed local first in those positions (FOLLOWUP.md,
+  "Inline capturing lambda in method/trait-dispatch calls still leaks").

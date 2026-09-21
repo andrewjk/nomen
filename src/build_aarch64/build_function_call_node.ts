@@ -19,6 +19,7 @@ import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_malloc } from "./utils/audit.ts";
 import { all_scope_frames, mark_moved_if_struct, find_anchor_slot } from "./utils/auto_destroy.ts";
 import { build_swap_params } from "./utils/build_swap.ts";
+import { emit_dispose_lambda_args_a64 } from "./utils/closure_a64.ts";
 import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
 import { find_enum_for_case } from "./utils/enum_case.ts";
 import { NUM_REG_ARGS } from "./utils/stack_args.ts";
@@ -275,13 +276,22 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		// Evaluate params right-to-left. A fat `string` (or `view T`) arg
 		// rides as a (ptr, len) register PAIR — matches the method ABI's
 		// argument-static-type pair detection (ASM gotchas) — so it consumes
-		// two consecutive registers, not one.
+		// two consecutive registers, not one. An INLINE capturing lambda arg
+		// materializes a one-shot heap descriptor (CLOSURE.md); the callee
+		// borrows it, so the descriptor is also parked in a frame slot and
+		// reclaimed once the call returns.
+		const lambda_arg_slots: number[] = [];
 		let arg_slot = start_reg + 1;
 		for (let i = node.params.length - 1; i >= 0; i--) {
 			const param = node.params[i];
 			const param_type = type_from_value_node(param);
 			const is_pair = param_type?.name === "string";
 			build_node(param, status);
+			if (param.node_type === "func" && (param as FunctionNode).captures?.length) {
+				const dispose_slot = allocate_stack_space(status, 8);
+				emit_asm(status, `str x0, [x29, #${dispose_slot}]\n`);
+				lambda_arg_slots.push(dispose_slot);
+			}
 			const reg = param_regs[arg_slot];
 			const len_reg = param_regs[arg_slot + 1];
 			if (is_pair && len_reg !== "x1") {
@@ -307,6 +317,9 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		emit_asm(status, `ldr x8, [x9]\n`);
 		emit_asm(status, `ldr x0, [x9, #8]\n`);
 		emit_asm(status, `blr x8\n`);
+		// Inline capturing lambda args were borrowed by the call — reclaim
+		// their one-shot heap descriptors (x0 is preserved).
+		emit_dispose_lambda_args_a64(status, lambda_arg_slots);
 	} else {
 		const variadic_idx = (node as FunctionCallNode).variadic_param_index;
 		// Collect `ref` class args whose caller-side anchor must be re-synced to
@@ -317,6 +330,28 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		// callee-saved register (which still holds the pre-call instance) must
 		// be reloaded from the slot once the call returns.
 		const ref_class_param_reload: string[] = [];
+
+		// An INLINE capturing lambda argument to a func-typed (borrow)
+		// parameter materializes a one-shot HEAP descriptor + env (CLOSURE.md)
+		// that the callee never disposes — the call site owns them. Those args
+		// spill their descriptor to its normal arg slot; the slots are
+		// collected here and reclaimed once the call returns. Constructors are
+		// excluded — a class func-typed field OWNS the closure (its #destroy
+		// reclaims it), and a value-struct func field cannot hold one
+		// (rejected at check time).
+		const callee_params = node.resolved_function?.params?.filter((p) => !p.is_self_param);
+		const lambda_arg_indices = new Set<number>();
+		if (!is_struct) {
+			for (let i = 0; i < node.params.length; i++) {
+				const p = node.params[i];
+				if (p.node_type !== "func") continue;
+				if (!(p as FunctionNode).captures?.length) continue;
+				const cp = callee_params?.[i];
+				if (!cp || !(cp.func_params || cp.func_return_type)) continue;
+				lambda_arg_indices.add(i);
+			}
+		}
+		const lambda_arg_slots: number[] = [];
 
 		// Outgoing stack-arg area size (0 unless this call passes more args
 		// than fit in x0..x7). Set below for both the non-variadic and the
@@ -771,6 +806,11 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					build_node(node.params[i], status);
 				}
 				ensure_newline(status);
+				// A capturing lambda arg's descriptor sits in its spill slot
+				// after the call — recorded for post-call reclamation.
+				if (lambda_arg_indices.has(i)) {
+					lambda_arg_slots.push(args_base + arg_slot[i] * 8);
+				}
 				emit_asm(status, `str x0, [x29, #${args_base + arg_slot[i] * 8}]\n`);
 			}
 
@@ -885,13 +925,16 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		const inline_candidate = status.inline_functions?.get(func_name);
 		// Inline candidates are small functions and don't expect > 8 params;
 		// the inline path also can't accept a pre-lowered outgoing-arg area,
-		// so disable inlining when this call has overflow args.
+		// so disable inlining when this call has overflow args — or inline
+		// lambda args (the inline body bypasses the post-call descriptor
+		// reclamation below).
 		if (
 			inline_candidate &&
 			(inline_candidate as any).node_type === "func" &&
 			!is_struct &&
 			(node as any).variadic_param_index === undefined &&
-			overflow_count === 0
+			overflow_count === 0 &&
+			lambda_arg_slots.length === 0
 		) {
 			const inlined = build_inline_function(inline_candidate as FunctionNode, status);
 			if (inlined) return;
@@ -975,6 +1018,10 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			}
 			emit_asm(status, `ldr x0, [sp], #16\n`);
 		}
+
+		// Inline capturing lambda args were borrowed by the call — reclaim
+		// their one-shot heap descriptors from the spill slots (x0 preserved).
+		emit_dispose_lambda_args_a64(status, lambda_arg_slots);
 
 		if (!is_struct && node.type?.name && !status.call_x8_preset) {
 			const return_struct = status.structs.find(

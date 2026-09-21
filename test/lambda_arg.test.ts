@@ -376,3 +376,71 @@ pub func main = (Init init) {
 		expect(messages).toHaveLength(0);
 	});
 });
+
+describe("inline capturing lambda as a direct call argument", () => {
+	// The func-typed parameter is a BORROW (CLOSURE.md) — the callee never
+	// disposes — so the call site owns the one-shot heap descriptor + env an
+	// inline CAPTURING lambda materializes and must reclaim them once the
+	// call returns. Audit on: a leak fails the test.
+
+	test("keyword block form, non-void return", async () => {
+		await run(
+			"lambda_arg_capture_block",
+			"30\n",
+			`
+func apply = (func (out int) f, out int) { return f() }
+pub func main = (Init init) {
+	var int base = 10
+	Console.write_line("\\{apply(func (out int) { return base * 3 })}")
+}
+`,
+		);
+	});
+
+	test("arrow form", async () => {
+		await run(
+			"lambda_arg_capture_arrow",
+			"30\n",
+			`
+func apply = (func (out int) f, out int) { return f() }
+pub func main = (Init init) {
+	var int base = 10
+	Console.write_line("\\{apply((out int) => base * 3)}")
+}
+`,
+		);
+	});
+
+	test("void-returning callee, string-capture env", async () => {
+		// The lambda returns its captured string (a borrow of the env copy —
+		// no fresh heap), so the only heap objects in play are the one-shot
+		// descriptor + env the call site must reclaim.
+		await run(
+			"lambda_arg_capture_void",
+			"a\n",
+			`
+func run_it = (func (out string) f) { Console.write_line(f()) }
+	pub func main = (Init init) {
+		var string tag = "a"
+		run_it(func (out string) { return tag })
+	}
+`,
+		);
+	});
+
+	test("capturing and capture-free args in one call, nested in an expression", async () => {
+		await run(
+			"lambda_arg_capture_mixed",
+			"46\n",
+			`
+func apply = (func (out int) f, out int) { return f() }
+func use = (func (out int) f, int x, out int) { return f() + x }
+pub func main = (Init init) {
+	var int base = 10
+	var int r = use(func (out int) { return base * 3 }, apply((out int) => base + 2)) + 4
+	Console.write_line("\\{r}")
+}
+`,
+		);
+	});
+});

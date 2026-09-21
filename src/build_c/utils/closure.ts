@@ -56,7 +56,7 @@ interface ParameterLike {
 }
 
 /** The C return type for a signature (a `func` return is a `void*` carrier). */
-function c_return_type(type: Type | undefined, status: BuildStatus): string {
+export function c_return_type(type: Type | undefined, status: BuildStatus): string {
 	const name = type?.name;
 	if (!name || name === "void") return "void";
 	if (type?.is_pointer) return `${name}*`;
