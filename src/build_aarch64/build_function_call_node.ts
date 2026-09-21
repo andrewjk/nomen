@@ -927,11 +927,15 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		// the inline path also can't accept a pre-lowered outgoing-arg area,
 		// so disable inlining when this call has overflow args — or inline
 		// lambda args (the inline body bypasses the post-call descriptor
-		// reclamation below).
+		// reclamation below). A CLOSURE callee (a declaration-lambda called
+		// directly — is_closure_callee prepends a NULL env) is excluded too:
+		// the spliced body would read the shifted argument registers as its
+		// parameters.
 		if (
 			inline_candidate &&
 			(inline_candidate as any).node_type === "func" &&
 			!is_struct &&
+			!is_closure_callee &&
 			(node as any).variadic_param_index === undefined &&
 			overflow_count === 0 &&
 			lambda_arg_slots.length === 0

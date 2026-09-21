@@ -64,6 +64,24 @@ pub func main = (Init init) {
 		);
 	});
 
+	test("a capture-free declaration-lambda called directly", async () => {
+		// A capture-free declaration-lambda is dual-natured: it resolves as a
+		// direct function call under its own name. The aarch64 inline path
+		// must not splice it (a closure callee's hidden env shifts the
+		// argument registers — inlining read the shifted registers and
+		// produced garbage).
+		await run(
+			"lambda_decl_direct_call",
+			"6\n",
+			`
+pub func main = (Init init) {
+	var func (int, out int) f = (x, out int) => x * 2
+	Console.write_line("\\{f(3)}")
+}
+`,
+		);
+	});
+
 	test("two lambdas in one program get distinct functions", async () => {
 		await run(
 			"lambda_arg_two",
