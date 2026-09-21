@@ -242,7 +242,9 @@ pub class Panel {
       self.text = doc.slice(1, 4)
     }
   }
-  pub func #init = (self) {}
+  pub func #init = (self) {
+    self.text = ""
+  }
 }
 
 pub func main = () {

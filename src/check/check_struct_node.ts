@@ -12,6 +12,7 @@ import {
 } from "./check_function_call_node.ts";
 import check_function_node from "./check_function_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
+import check_init_assigns_all_fields from "./utils/check_init_fields.ts";
 import { is_class_type, is_owning_struct_type_requiring_move } from "./utils/ownership.ts";
 import type_from_value from "./utils/type_from_value.ts";
 
@@ -206,6 +207,18 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 			continue;
 		}
 		check_function_node(func, status);
+	}
+
+	// A custom #init that skips a non-defaulted field leaves it as raw
+	// malloc/stack garbage for the instance's whole life (the scope-exit
+	// destroy then frees garbage pointers). Generic structs are checked in
+	// monomorphize() instead, against the cloned inits and substituted fields.
+	if (!struct.is_generic) {
+		check_init_assigns_all_fields(
+			struct,
+			struct.functions.filter((f) => f.name === "#init" && f.has_body),
+			status,
+		);
 	}
 
 	status.type_params.length = type_params_length_before;

@@ -24,6 +24,7 @@ import resolve_awaitable_spawn_class, {
 	spawn_field_contract_gaps,
 } from "./utils/awaitable_spawn_class.ts";
 import { maybe_record_capture } from "./utils/captures.ts";
+import check_init_assigns_all_fields from "./utils/check_init_fields.ts";
 import { monomorphize_enum, enforce_case_payload_ownership } from "./utils/enum_mono.ts";
 import {
 	collect_return_bounds,
@@ -677,6 +678,7 @@ export function monomorphize(
 	// clones so an overloaded constructor template instantiates all of its
 	// signatures.
 	let cloned_custom_init = false;
+	const cloned_inits: FunctionNode[] = [];
 	for (const generic_init of custom_inits) {
 		if (variadic_init_unsupported(generic_init)) continue;
 		if (!generic_init.statements.some((s) => s.node_type !== "raw")) continue;
@@ -738,8 +740,13 @@ export function monomorphize(
 			library_boundary: status.library_boundary,
 		};
 		check_function_node(cloned, root_status);
+		cloned_inits.push(cloned);
 		cloned_custom_init = true;
 	}
+	// Same completeness rule as check_struct_node's custom-#init hook,
+	// applied to the cloned inits against the monomorphized fields (the
+	// generic declaration's init is skipped there).
+	check_init_assigns_all_fields(mono_struct, cloned_inits, status);
 	if (!cloned_custom_init) {
 		const init_params: ParameterNode[] = [];
 		for (const field of mono_fields) {
