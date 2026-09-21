@@ -43,6 +43,7 @@ import { region_pool_enter, region_pool_exit } from "./region_pool.ts";
 import { slp_pair_enabled, try_emit_slp_pair } from "./slp_pair.ts";
 import { plan_full_unroll } from "./unroll.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
+import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
 import { emit_var_load, emit_var_store } from "./utils/stack_var.ts";
 import { value_number_loops } from "./value_number.ts";
 
@@ -188,9 +189,7 @@ function emit_stmt_dispatch(
 				const restore_return = apply_forward_use(ctx.use_sites, nstmt.node);
 				try {
 					build_return_node(child as ReturnNode, status, nstmt.value);
-					if (!status.code.endsWith("\n")) {
-						status.code += "\n";
-					}
+					ensure_newline(status);
 					return 1;
 				} finally {
 					restore_return?.();
@@ -277,9 +276,7 @@ function emit_stmt_dispatch(
 						nstmt.decl.swap,
 					);
 					if (nstmt.decl.init && nstmt.decl.init.node.node_type !== "func") {
-						if (!status.code.endsWith("\n")) {
-							status.code += "\n";
-						}
+						ensure_newline(status);
 					}
 					return 1;
 				} finally {
@@ -307,9 +304,7 @@ function emit_stmt_dispatch(
 						}
 					}
 					build_assignment_node(nstmt.node as AssignmentNode, status, nstmt.rhs, nstmt.swap);
-					if (!status.code.endsWith("\n")) {
-						status.code += "\n";
-					}
+					ensure_newline(status);
 					return 1;
 				} finally {
 					restore_assign?.();
@@ -338,9 +333,7 @@ function emit_stmt_dispatch(
 				const restore_eval = apply_forward_use(ctx.use_sites, nstmt.expr.node);
 				try {
 					emit_expr_from_nir(nstmt.expr, status);
-					if (!status.code.endsWith("\n")) {
-						status.code += "\n";
-					}
+					ensure_newline(status);
 					return 1;
 				} finally {
 					restore_eval?.();
@@ -429,24 +422,18 @@ function try_emit_cset_pair(
 	const flag_reg = status.register_allocations?.get(decl.name);
 	if (flag_reg?.startsWith("x") && !nstmt.decl.swap) {
 		emit_cond_cset(ifn.condition, status, flag_reg);
-		if (!status.code.endsWith("\n")) {
-			status.code += "\n";
-		}
+		ensure_newline(status);
 		return 2;
 	}
 	// Slot-home flag: the declare allocates the flag's frame slot, then the
 	// comparison materializes into x0 and stores to the same home.
 	build_declaration_node(decl, status, nstmt.decl.init, nstmt.decl.swap);
 	if (nstmt.decl.init && nstmt.decl.init.node.node_type !== "func") {
-		if (!status.code.endsWith("\n")) {
-			status.code += "\n";
-		}
+		ensure_newline(status);
 	}
 	emit_cond_cset(ifn.condition, status);
 	emit_var_store(status, "x0", decl.name, aarch64_size(decl.type?.name ?? "int"));
-	if (!status.code.endsWith("\n")) {
-		status.code += "\n";
-	}
+	ensure_newline(status);
 	return 2;
 }
 
@@ -667,29 +654,21 @@ function try_emit_carry_fold(
 		const rs = in_place(init_op.right_value);
 		const mnemonic = init_op.op === "+" ? "adds" : "subs";
 		if (ls && rs) {
-			status.code += `${mnemonic} ${prod_reg}, ${ls}, ${rs}\n`;
+			emit_asm(status, `${mnemonic} ${prod_reg}, ${ls}, ${rs}\n`);
 		} else if (ls) {
 			build_operand(init_op.right_value, "x0", status);
-			if (!status.code.endsWith("\n")) {
-				status.code += "\n";
-			}
-			status.code += `${mnemonic} ${prod_reg}, ${ls}, x0\n`;
+			ensure_newline(status);
+			emit_asm(status, `${mnemonic} ${prod_reg}, ${ls}, x0\n`);
 		} else if (rs) {
 			build_operand(init_op.left_value, "x0", status);
-			if (!status.code.endsWith("\n")) {
-				status.code += "\n";
-			}
-			status.code += `${mnemonic} ${prod_reg}, x0, ${rs}\n`;
+			ensure_newline(status);
+			emit_asm(status, `${mnemonic} ${prod_reg}, x0, ${rs}\n`);
 		} else {
 			build_operand(init_op.right_value, "x2", status);
-			if (!status.code.endsWith("\n")) {
-				status.code += "\n";
-			}
+			ensure_newline(status);
 			build_operand(init_op.left_value, "x1", status);
-			if (!status.code.endsWith("\n")) {
-				status.code += "\n";
-			}
-			status.code += `${mnemonic} ${prod_reg}, x1, x2\n`;
+			ensure_newline(status);
+			emit_asm(status, `${mnemonic} ${prod_reg}, x1, x2\n`);
 		}
 	};
 	const emit_intervening = (): void => {
@@ -697,9 +676,7 @@ function try_emit_carry_fold(
 			const restore = apply_forward_use(ctx.use_sites, s.node);
 			try {
 				build_assignment_node(s.node as AssignmentNode, status, s.rhs, s.swap);
-				if (!status.code.endsWith("\n")) {
-					status.code += "\n";
-				}
+				ensure_newline(status);
 			} finally {
 				restore?.();
 			}
@@ -734,13 +711,11 @@ function try_emit_carry_fold(
 		emit_intervening();
 		const flag_reg = status.register_allocations?.get(fd.ast.name);
 		if (flag_reg?.startsWith("x") && !fd.n.decl.swap) {
-			status.code += `cset ${flag_reg}, ${cc}\n`;
+			emit_asm(status, `cset ${flag_reg}, ${cc}\n`);
 		} else {
 			build_declaration_node(fd.ast, status, fd.n.decl.init, fd.n.decl.swap);
-			if (!status.code.endsWith("\n")) {
-				status.code += "\n";
-			}
-			status.code += `cset x0, ${cc}\n`;
+			ensure_newline(status);
+			emit_asm(status, `cset x0, ${cc}\n`);
 			emit_var_store(status, "x0", fd.ast.name, aarch64_size(fd_type));
 		}
 		return intervening.length + 3;
@@ -762,11 +737,11 @@ function try_emit_carry_fold(
 	emit_intervening();
 	const inc_reg = status.register_allocations?.get(inc_name);
 	if (inc_reg?.startsWith("x")) {
-		status.code += `cinc ${inc_reg}, ${inc_reg}, ${cc}\n`;
+		emit_asm(status, `cinc ${inc_reg}, ${inc_reg}, ${cc}\n`);
 	} else {
-		status.code += `cset x0, ${cc}\n`;
+		emit_asm(status, `cset x0, ${cc}\n`);
 		emit_var_load(status, "x1", inc_name, aarch64_size(inc_type));
-		status.code += `add x1, x1, x0\n`;
+		emit_asm(status, `add x1, x1, x0\n`);
 		emit_var_store(status, "x1", inc_name, aarch64_size(inc_type));
 	}
 	return intervening.length + 2;

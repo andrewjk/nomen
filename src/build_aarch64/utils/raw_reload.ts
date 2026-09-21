@@ -1,4 +1,5 @@
 import type BuildStatus from "../../build_c/BuildStatus.ts";
+import { asm_code_len } from "./code_buffer.ts";
 
 /**
  * Raw `#arch: aarch64` blocks are spliced verbatim wherever their statement
@@ -53,7 +54,7 @@ export function install_raw_reload_plan(
 	status: BuildStatus,
 	lines: RawParamReloadLine[],
 ): RawParamReloadPlan {
-	const plan: RawParamReloadPlan = { entry_marker: status.code.length, lines };
+	const plan: RawParamReloadPlan = { entry_marker: asm_code_len(status), lines };
 	status.raw_param_reloads = plan;
 	return plan;
 }

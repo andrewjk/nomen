@@ -6,6 +6,7 @@ import type BaseNode from "../nodes/BaseNode.ts";
 import type FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import Type from "../nodes/Type.ts";
 import build_node from "./build_node.ts";
+import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
 
 /**
@@ -1231,20 +1232,20 @@ export default function build_thread_start(
 	status.file_scope_c += c;
 
 	// --- Assembly: receiver pointer in x0 (+ nursery slot addresses), call.
-	status.code += `// thread start site ${id}\n`;
+	emit_asm(status, `// thread start site ${id}\n`);
 	build_node(target, status);
-	if (!status.code.endsWith("\n")) status.code += "\n";
+	ensure_newline(status);
 	if (nursery_off) {
 		// Park the receiver pointer while the three nursery tracking
 		// addresses (futures storage, count, capacity) fill x1..x3.
 		const park = allocate_stack_space(status, 8, 8);
-		status.code += `str x0, [x29, #${park}]\n`;
-		status.code += `add x1, x29, #${nursery_off.futures_off}\n`;
-		status.code += `add x2, x29, #${nursery_off.count_off}\n`;
-		status.code += `add x3, x29, #${nursery_off.cap_off}\n`;
-		status.code += `ldr x0, [x29, #${park}]\n`;
+		emit_asm(status, `str x0, [x29, #${park}]\n`);
+		emit_asm(status, `add x1, x29, #${nursery_off.futures_off}\n`);
+		emit_asm(status, `add x2, x29, #${nursery_off.count_off}\n`);
+		emit_asm(status, `add x3, x29, #${nursery_off.cap_off}\n`);
+		emit_asm(status, `ldr x0, [x29, #${park}]\n`);
 	}
-	status.code += `bl _${helper_name}\n`;
+	emit_asm(status, `bl _${helper_name}\n`);
 	// x0 = Task pointer (or NULL for fire-and-forget).
 }
 
@@ -1294,10 +1295,10 @@ export function build_thread_detach(
 	if (!status.file_scope_c) status.file_scope_c = "";
 	status.file_scope_c += c;
 
-	status.code += `// thread detach site ${id}\n`;
+	emit_asm(status, `// thread detach site ${id}\n`);
 	build_node(target, status);
-	if (!status.code.endsWith("\n")) status.code += "\n";
-	status.code += `bl _${helper_name}\n`;
+	ensure_newline(status);
+	emit_asm(status, `bl _${helper_name}\n`);
 	// x0 = NULL — a daemon yields no Task.
 }
 

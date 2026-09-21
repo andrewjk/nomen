@@ -9,6 +9,7 @@ import type OperationNode from "../nodes/OperationNode.ts";
 import type ValueNode from "../nodes/ValueNode.ts";
 import { build_operand, int_tree_depth } from "./build_operation_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
+import { asm_code_len, emit_asm, ensure_newline } from "./utils/code_buffer.ts";
 
 /**
  * Access staging bypass (ASM_PLAN_3 tranche L).
@@ -132,7 +133,7 @@ function fill_pin(status: BuildStatus, key: string, reg: string, names: string[]
 	status.access_pins.entries.set(key, {
 		key,
 		reg,
-		len: status.code.length,
+		len: asm_code_len(status),
 		names,
 		snap: new Set(status.access_pins.written),
 	});
@@ -293,16 +294,16 @@ export function build_index_chain(chain: IndexChain, dest: string, status: Build
 	for (const leaf of chain.leaves) {
 		if (first) {
 			build_operand(leaf.node, dest, status);
-			if (!status.code.endsWith("\n")) status.code += "\n";
+			ensure_newline(status);
 			first = false;
 			continue;
 		}
 		if (leaf.imm !== null && BigInt(leaf.imm) >= 0n && BigInt(leaf.imm) <= 4095n) {
-			status.code += `add ${dest}, ${dest}, #${leaf.imm}\n`;
+			emit_asm(status, `add ${dest}, ${dest}, #${leaf.imm}\n`);
 		} else {
 			build_operand(leaf.node, "x3", status);
-			if (!status.code.endsWith("\n")) status.code += "\n";
-			status.code += `add ${dest}, ${dest}, x3\n`;
+			ensure_newline(status);
+			emit_asm(status, `add ${dest}, ${dest}, x3\n`);
 		}
 	}
 }
@@ -580,13 +581,13 @@ export function staged_index_reg(param: BaseNode, status: BuildStatus): string {
 	const effective = forwarded ?? param;
 	if (!access_staging_on) {
 		build_operand(effective, "x1", status);
-		if (!status.code.endsWith("\n")) status.code += "\n";
+		ensure_newline(status);
 		return "x1";
 	}
 	const chain = collect_index_chain(effective);
 	if (!chain) {
 		build_operand(effective, "x1", status);
-		if (!status.code.endsWith("\n")) status.code += "\n";
+		ensure_newline(status);
 		return "x1";
 	}
 	const live = consult_pin(status, chain.key);
@@ -618,7 +619,7 @@ export function staged_data_reg(
 	if (reg !== "x9") return reg;
 	const pin = alloc_pin_reg(status);
 	if (!pin) return reg;
-	status.code += `mov ${pin}, x9\n`;
+	emit_asm(status, `mov ${pin}, x9\n`);
 	fill_pin(status, key, pin, names);
 	return pin;
 }

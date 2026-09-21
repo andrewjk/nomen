@@ -39,6 +39,7 @@ import {
 import { allocate_stack_space, emit_var_address, emit_var_store } from "./utils/stack_var.ts";
 
 let temp_counter = 0;
+import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
 import { emit_pair_store_x29, emit_strdup_string } from "./utils/string_pair.ts";
 import {
 	emit_struct_copy,
@@ -152,8 +153,8 @@ export default function build_return_node(
 		// struct value is left uninitialised — the caller won't read it).
 		if (status.return_buffer_stack_offset !== undefined) {
 			const struct_size = get_struct_size(status.function_return_type!.name, status);
-			status.code += `ldr x8, [x29, #${status.return_buffer_stack_offset}]\n`;
-			status.code += `str xzr, [x8, #${struct_size}]\n`;
+			emit_asm(status, `ldr x8, [x29, #${status.return_buffer_stack_offset}]\n`);
+			emit_asm(status, `str xzr, [x8, #${struct_size}]\n`);
 		}
 		// Run scope-exit cleanup for remaining declarations and jump to the
 		// return epilogue (mirrors the void-return path above).
@@ -182,14 +183,14 @@ export default function build_return_node(
 			);
 		}
 		emit_heap_slots_cleanup_for_return(status);
-		status.code += `b ${status.function_return_label}\n`;
+		emit_asm(status, `b ${status.function_return_label}\n`);
 		return;
 	}
 
 	if (!node.value) {
 		if (status.return_assign) {
 			const size = status.return_assign_size ?? find_var_size(status.return_assign, status);
-			status.code += `mov x0, #0\n`;
+			emit_asm(status, `mov x0, #0\n`);
 			emit_var_store(status, "x0", status.return_assign, size);
 		} else if (status.function_return_label) {
 			const finalized = status.moved ?? new Set<string>();
@@ -212,8 +213,8 @@ export default function build_return_node(
 				);
 			}
 			emit_heap_slots_cleanup_for_return(status);
-			status.code += `mov x0, #0\n`;
-			status.code += `b ${status.function_return_label}\n`;
+			emit_asm(status, `mov x0, #0\n`);
+			emit_asm(status, `b ${status.function_return_label}\n`);
 		}
 		return;
 	}
@@ -237,8 +238,8 @@ export default function build_return_node(
 				: get_struct_size(return_type_top.name, status)
 			: aarch64_size(return_type_top.name);
 		const start = allocate_stack_space(status, 8 + array_literal_len * element_size, element_size);
-		status.code += `mov x0, #${array_literal_len}\n`;
-		status.code += `str x0, [x29, #${start}]\n`;
+		emit_asm(status, `mov x0, #${array_literal_len}\n`);
+		emit_asm(status, `str x0, [x29, #${start}]\n`);
 		array_literal_offset = start + 8;
 		// String elements are stored as pointers to static (.asciz) labels —
 		// matching how a `var words = ["a", "b"]` declaration lays them out
@@ -255,18 +256,18 @@ export default function build_return_node(
 				// strdup makes the buffer OWN its rows — scope-exit destroy
 				// frees each slot, so rodata pointers must never land here.
 				const label = resolve_array_element(raw, str_labels);
-				status.code += `adr x0, ${label}\n`;
+				emit_asm(status, `adr x0, ${label}\n`);
 				emit_strdup(status);
-				status.code += `mov x1, #${string_literal_length(raw)}\n`;
+				emit_asm(status, `mov x1, #${string_literal_length(raw)}\n`);
 				emit_pair_store_x29(status, slot, "x0", "x1");
 			} else if (raw !== null) {
-				status.code += `mov x0, #${raw}\n`;
+				emit_asm(status, `mov x0, #${raw}\n`);
 				if (element_size === 1) {
-					status.code += `strb w0, [x29, #${slot}]\n`;
+					emit_asm(status, `strb w0, [x29, #${slot}]\n`);
 				} else if (element_size === 4) {
-					status.code += `str w0, [x29, #${slot}]\n`;
+					emit_asm(status, `str w0, [x29, #${slot}]\n`);
 				} else {
-					status.code += `str x0, [x29, #${slot}]\n`;
+					emit_asm(status, `str x0, [x29, #${slot}]\n`);
 				}
 			} else {
 				// NIR mode: array literals lower to a `call` whose args are the
@@ -276,17 +277,15 @@ export default function build_return_node(
 						? nir_value.facts.args[i]
 						: undefined;
 				emit_return_value(value, nir_elem, status);
-				if (!status.code.endsWith("\n")) {
-					status.code += "\n";
-				}
-				status.code += `str x0, [x29, #${slot}]\n`;
+				ensure_newline(status);
+				emit_asm(status, `str x0, [x29, #${slot}]\n`);
 			}
 		});
 	}
 
 	let return_join_owned_string = false;
 	if (array_literal_len > 0) {
-		status.code += `add x0, x29, #${array_literal_offset}\n`;
+		emit_asm(status, `add x0, x29, #${array_literal_offset}\n`);
 	} else if (
 		!status.return_assign &&
 		(node.value.node_type === "match" ||
@@ -333,9 +332,9 @@ export default function build_return_node(
 		// Reload the chosen branch's value from the slot (x0 was clobbered by
 		// the branch scope-exit cleanup) and hand the owned result to the
 		// caller as-is.
-		status.code += `ldr x0, [x29, #${slot}]\n`;
+		emit_asm(status, `ldr x0, [x29, #${slot}]\n`);
 		if (current_return_is_float(status)) {
-			status.code += `fmov d0, x0\n`;
+			emit_asm(status, `fmov d0, x0\n`);
 		}
 		if (return_join_owned_string) {
 			status.last_result_is_heap = true;
@@ -368,7 +367,7 @@ export default function build_return_node(
 			if (!status.variable_types) status.variable_types = new Map();
 			status.variable_types.set(temp_name, anon.type!);
 			get_source_address(anon.base!, status);
-			if (!status.code.endsWith("\n")) status.code += "\n";
+			ensure_newline(status);
 			emit_var_address(status, "x1", temp_name);
 			emit_struct_copy("x0", "x1", 0, struct_size, status);
 			if ((anon.base! as ValueNode).is_moved) {
@@ -380,20 +379,16 @@ export default function build_return_node(
 			emit_return_value(node.value, nir_value, status);
 		}
 		if (ret_is_float) {
-			if (!status.code.endsWith("\n")) {
-				status.code += "\n";
-			}
+			ensure_newline(status);
 			if (status.float_result_in_d0) {
 				// Flag unconsumed — value is in x0 as raw bits.
-				status.code += `fmov d0, x0\n`;
+				emit_asm(status, `fmov d0, x0\n`);
 			}
 			status.float_result_in_d0 = false;
 		}
 		if (override_ctor) status.struct_return_buffer = saved_buffer;
 	}
-	if (!status.code.endsWith("\n")) {
-		status.code += "\n";
-	}
+	ensure_newline(status);
 
 	// A `view string` return of a NON-view expression (an owned string, a
 	// field read, a literal) must leave the (ptr, len) pair in x0/x1 — the
@@ -430,9 +425,7 @@ export default function build_return_node(
 		) {
 			// strdup the ptr half, keep the len half (x1 survives the call).
 			emit_strdup_string(status);
-			if (!status.code.endsWith("\n")) {
-				status.code += "\n";
-			}
+			ensure_newline(status);
 			status.last_result_is_heap = true;
 		}
 	}
@@ -527,9 +520,7 @@ export default function build_return_node(
 		} else {
 			emit_strdup_string(status);
 		}
-		if (!status.code.endsWith("\n")) {
-			status.code += "\n";
-		}
+		ensure_newline(status);
 		status.last_result_is_heap = true;
 	}
 
@@ -577,7 +568,7 @@ export default function build_return_node(
 			: get_enum_sret_size(status.function_return_type!.name, status);
 		if (ret_struct || ret_enum_size !== undefined) {
 			if (status.return_buffer_stack_offset !== undefined) {
-				status.code += `ldr x8, [x29, #${status.return_buffer_stack_offset}]\n`;
+				emit_asm(status, `ldr x8, [x29, #${status.return_buffer_stack_offset}]\n`);
 			}
 			const struct_size = ret_struct
 				? get_struct_size(status.function_return_type!.name, status)
@@ -605,8 +596,8 @@ export default function build_return_node(
 			// null-return path is handled at the top of this function.)
 			// Enums are never nullable, so this stays struct-only.
 			if (ret_struct && returns_nullable_struct) {
-				status.code += `mov x9, #1\n`;
-				status.code += `str x9, [x8, #${struct_size}]\n`;
+				emit_asm(status, `mov x9, #1\n`);
+				emit_asm(status, `str x9, [x8, #${struct_size}]\n`);
 			}
 			// An enum-with-data return from a FIELD READ (`return self.m`)
 			// takes OWNING copies of the active case's string payloads on the
@@ -635,15 +626,11 @@ export default function build_return_node(
 	}
 
 	if (status.return_assign) {
-		if (!status.code.endsWith("\n")) {
-			status.code += "\n";
-		}
+		ensure_newline(status);
 		const size = status.return_assign_size ?? find_var_size(status.return_assign, status);
 		emit_var_store(status, "x0", status.return_assign, size);
 	} else if (status.function_return_label) {
-		if (!status.code.endsWith("\n")) {
-			status.code += "\n";
-		}
+		ensure_newline(status);
 
 		const return_type = status.function_return_type;
 		if (return_type?.is_array) {
@@ -679,20 +666,20 @@ export default function build_return_node(
 			}
 			const total_size = array_len * element_size;
 			if (total_size > 0) {
-				status.code += `str x0, [sp, #-16]!\n`;
-				status.code += `mov x0, #${8 + total_size}\n`;
+				emit_asm(status, `str x0, [sp, #-16]!\n`);
+				emit_asm(status, `mov x0, #${8 + total_size}\n`);
 				emit_malloc(status);
-				status.code += `mov x1, x0\n`;
-				status.code += `mov x2, #${array_len}\n`;
-				status.code += `str x2, [x1]\n`;
-				status.code += `add x1, x1, #8\n`;
-				status.code += `ldr x2, [sp]\n`;
+				emit_asm(status, `mov x1, x0\n`);
+				emit_asm(status, `mov x2, #${array_len}\n`);
+				emit_asm(status, `str x2, [x1]\n`);
+				emit_asm(status, `add x1, x1, #8\n`);
+				emit_asm(status, `ldr x2, [sp]\n`);
 				const words = Math.ceil(total_size / 8);
 				for (let i = 0; i < words; i++) {
-					status.code += `ldr x3, [x2, #${i * 8}]\n`;
-					status.code += `str x3, [x1, #${i * 8}]\n`;
+					emit_asm(status, `ldr x3, [x2, #${i * 8}]\n`);
+					emit_asm(status, `str x3, [x1, #${i * 8}]\n`);
 				}
-				status.code += `add sp, sp, #16\n`;
+				emit_asm(status, `add sp, sp, #16\n`);
 			}
 			if (struct_element?.is_class && var_name) {
 				if (!status.moved) status.moved = new Set();
@@ -747,11 +734,11 @@ export default function build_return_node(
 		const returns_fat_pair = current_return_is_string(status);
 		const returns_float = current_return_is_float(status);
 		if (returns_fat_pair) {
-			status.code += `stp x0, x1, [sp, #-16]!\n`;
+			emit_asm(status, `stp x0, x1, [sp, #-16]!\n`);
 		} else if (returns_float) {
-			status.code += `str d0, [sp, #-16]!\n`;
+			emit_asm(status, `str d0, [sp, #-16]!\n`);
 		} else {
-			status.code += `str x0, [sp, #-16]!\n`;
+			emit_asm(status, `str x0, [sp, #-16]!\n`);
 		}
 		for (const decl of all_scope_frames(status).flat()) {
 			if (finalized.has(decl.name)) {
@@ -776,12 +763,12 @@ export default function build_return_node(
 		}
 		emit_heap_slots_cleanup_for_return(status);
 		if (returns_fat_pair) {
-			status.code += `ldp x0, x1, [sp], #16\n`;
+			emit_asm(status, `ldp x0, x1, [sp], #16\n`);
 		} else if (returns_float) {
-			status.code += `ldr d0, [sp], #16\n`;
+			emit_asm(status, `ldr d0, [sp], #16\n`);
 		} else {
-			status.code += `ldr x0, [sp], #16\n`;
+			emit_asm(status, `ldr x0, [sp], #16\n`);
 		}
-		status.code += `b ${status.function_return_label}\n`;
+		emit_asm(status, `b ${status.function_return_label}\n`);
 	}
 }

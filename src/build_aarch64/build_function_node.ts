@@ -19,6 +19,7 @@ import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free } from "./utils/audit.ts";
 import { emit_destroy_for_anchor_slot, set_trait_class_local } from "./utils/auto_destroy.ts";
 import { closure_env_layout_a64 } from "./utils/closure_a64.ts";
+import { emit_asm } from "./utils/code_buffer.ts";
 import { plan_function_promotions } from "./utils/func_regalloc.ts";
 import { nir_regalloc_enabled, plan_nir_registers } from "./utils/nir_regalloc.ts";
 import {
@@ -55,7 +56,7 @@ function peephole_optimize(code: string): string {
 		ls: "hi",
 	};
 
-	const lines = code.split("\n");
+	let lines = code.split("\n");
 
 	// Pass 1: cset + cmp #0 + b.eq/b.ne → direct conditional branch
 	{
@@ -95,8 +96,7 @@ function peephole_optimize(code: string): string {
 			}
 			out.push(lines[i]);
 		}
-		lines.length = 0;
-		lines.push(...out);
+		lines = out;
 	}
 
 	// Pass 2: eliminate immediately-adjacent str xN, [sp, #-16]! / ldr xN, [sp], #16
@@ -124,8 +124,7 @@ function peephole_optimize(code: string): string {
 			}
 			out.push(lines[i]);
 		}
-		lines.length = 0;
-		lines.push(...out);
+		lines = out;
 	}
 
 	// Disabled - causes incorrect code generation for some patterns
@@ -231,11 +230,14 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 
 	const is_nested = !!old_return_label && node.name !== "main";
 
-	let old_code: string | undefined;
-	if (is_nested) {
-		old_code = status.code;
-		status.code = "";
-	}
+	// EVERY function body builds into a fresh buffer (the nested path always
+	// did; the quadratic-fix makes it universal). Per-function isolation keeps
+	// the exit passes (peephole split/join, placeholder patching, prologue
+	// splices) and the emitter's newline guards O(function) instead of
+	// O(accumulated file) — the whole-file scans made builds quadratic.
+	// The body rejoins the outer text with a single O(1) rope append.
+	const old_code = status.code;
+	status.code = "";
 
 	// A `view T` return is a (ptr, len) pair in x0/x1 — never a sret struct,
 	// even when the element T is itself a struct. Exclude views here so a
@@ -278,9 +280,9 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	const callee_param_slots = new Map<string, number>();
 	let callee_idx = 0;
 
-	status.code += `.p2align 2\n`;
+	emit_asm(status, `.p2align 2\n`);
 	if (node.name === "main") {
-		status.code += `.globl _main\n`;
+		emit_asm(status, `.globl _main\n`);
 	}
 	// Make user functions visible to the companion C file (spawn trampolines
 	// call user functions defined in assembly). On macOS, C symbols have a
@@ -291,16 +293,16 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	// collide); top-level functions keep their own name.
 	const label_name = emission_label(node);
 	if (node.name === "main") {
-		status.code += `_main:\n`;
+		emit_asm(status, `_main:\n`);
 	} else {
-		status.code += `.globl ${label_name}\n`;
-		status.code += `${label_name}:\n`;
+		emit_asm(status, `.globl ${label_name}\n`);
+		emit_asm(status, `${label_name}:\n`);
 		if (status.platform !== "windows") {
-			status.code += `.globl _${label_name}\n`;
-			status.code += `_${label_name} = ${label_name}\n`;
+			emit_asm(status, `.globl _${label_name}\n`);
+			emit_asm(status, `_${label_name} = ${label_name}\n`);
 		}
 	}
-	status.code += `stp x29, x30, [sp, #-16]!\n`;
+	emit_asm(status, `stp x29, x30, [sp, #-16]!\n`);
 
 	const is_main_with_init =
 		node.name === "main" &&
@@ -320,43 +322,43 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		// changes, and round the frame up to 16 for AAPCS64 alignment.
 		const is_tty_offset = get_field_offset("Init", "is_tty", status) || args_offset + 264;
 		init_struct_size = Math.ceil((get_struct_size("Init", status) || is_tty_offset + 1) / 16) * 16;
-		status.code += `sub sp, sp, #${init_struct_size}\n`;
-		status.code += `str x0, [sp, #${argc_offset}]\n`;
-		status.code += `str x1, [sp, #${args_offset}]\n`;
-		status.code += `mov x20, x1\n`;
-		status.code += `mov x2, #0\n`;
+		emit_asm(status, `sub sp, sp, #${init_struct_size}\n`);
+		emit_asm(status, `str x0, [sp, #${argc_offset}]\n`);
+		emit_asm(status, `str x1, [sp, #${args_offset}]\n`);
+		emit_asm(status, `mov x20, x1\n`);
+		emit_asm(status, `mov x2, #0\n`);
 		const loop_label = `.Linit_loop_${label_counter}`;
 		const end_label = `.Linit_end_${label_counter}`;
 		label_counter++;
-		status.code += `${loop_label}:\n`;
-		status.code += `ldr x3, [sp, #${argc_offset}]\n`;
-		status.code += `cmp x2, x3\n`;
-		status.code += `b.ge ${end_label}\n`;
-		status.code += `cmp x2, #${args_count}\n`;
-		status.code += `b.ge ${end_label}\n`;
+		emit_asm(status, `${loop_label}:\n`);
+		emit_asm(status, `ldr x3, [sp, #${argc_offset}]\n`);
+		emit_asm(status, `cmp x2, x3\n`);
+		emit_asm(status, `b.ge ${end_label}\n`);
+		emit_asm(status, `cmp x2, #${args_count}\n`);
+		emit_asm(status, `b.ge ${end_label}\n`);
 		// Copy argv[i] into the fat-string element {ptr, len} — the len half
 		// is strlen(argv[i]) (argv strings are NUL-terminated C strings).
 		// i (x2) and argv[i] are spilled across the strlen call; x20 (argv)
 		// is callee-saved and survives it.
-		status.code += `ldr x0, [x20, x2, lsl #3]\n`;
-		status.code += `stp x2, x0, [sp, #-16]!\n`;
-		status.code += `bl _strlen\n`;
-		status.code += `ldp x2, x1, [sp], #16\n`;
-		status.code += `mov x4, #${args_offset}\n`;
-		status.code += `add x4, x4, x2, lsl #4\n`;
-		status.code += `str x1, [sp, x4]\n`;
-		status.code += `add x4, x4, #8\n`;
-		status.code += `str x0, [sp, x4]\n`;
-		status.code += `add x2, x2, #1\n`;
-		status.code += `b ${loop_label}\n`;
-		status.code += `${end_label}:\n`;
+		emit_asm(status, `ldr x0, [x20, x2, lsl #3]\n`);
+		emit_asm(status, `stp x2, x0, [sp, #-16]!\n`);
+		emit_asm(status, `bl _strlen\n`);
+		emit_asm(status, `ldp x2, x1, [sp], #16\n`);
+		emit_asm(status, `mov x4, #${args_offset}\n`);
+		emit_asm(status, `add x4, x4, x2, lsl #4\n`);
+		emit_asm(status, `str x1, [sp, x4]\n`);
+		emit_asm(status, `add x4, x4, #8\n`);
+		emit_asm(status, `str x0, [sp, x4]\n`);
+		emit_asm(status, `add x2, x2, #1\n`);
+		emit_asm(status, `b ${loop_label}\n`);
+		emit_asm(status, `${end_label}:\n`);
 		// `init.is_tty = isatty(1)` — whether stdout is a terminal, for
 		// renderer selection. Done after the argv loop (x20/x2/x3 are dead
 		// here) and before any callee-saved param regs are live.
-		status.code += `mov x0, #1\n`;
-		status.code += `bl _isatty\n`;
-		status.code += `strb w0, [sp, #${is_tty_offset}]\n`;
-		status.code += `mov x0, sp\n`;
+		emit_asm(status, `mov x0, #1\n`);
+		emit_asm(status, `bl _isatty\n`);
+		emit_asm(status, `strb w0, [sp, #${is_tty_offset}]\n`);
+		emit_asm(status, `mov x0, sp\n`);
 	}
 
 	if (has_body) {
@@ -408,16 +410,16 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				callee_idx < callee_saved.length
 			) {
 				const saved_reg = callee_saved[callee_idx++];
-				status.code += `str ${saved_reg}, [sp, #-16]!\n`;
+				emit_asm(status, `str ${saved_reg}, [sp, #-16]!\n`);
 				if (first_pass_slot < NUM_REG_ARGS) {
-					status.code += `mov ${saved_reg}, ${param_regs[first_pass_slot]}\n`;
+					emit_asm(status, `mov ${saved_reg}, ${param_regs[first_pass_slot]}\n`);
 				} else {
 					// Overflow: this arg arrived in the caller's outgoing stack
 					// area. After the push above, sp = caller_sp - 16 -
 					// 16*callee_idx, so the k-th stack arg (slot 8+k) lives at
 					// [sp, #(16 + 16*callee_idx + k*8)].
 					const k = first_pass_slot - NUM_REG_ARGS;
-					status.code += `ldr ${saved_reg}, [sp, #${16 + 16 * callee_idx + k * 8}]\n`;
+					emit_asm(status, `ldr ${saved_reg}, [sp, #${16 + 16 * callee_idx + k * 8}]\n`);
 				}
 				callee_map.set(param.name, saved_reg);
 				callee_param_slots.set(param.name, first_pass_slot);
@@ -427,12 +429,12 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	}
 
 	const stack_placeholder = `STACK_SIZE_${label_name}`;
-	status.code += `sub sp, sp, #${stack_placeholder}\n`;
-	status.code += `mov x29, sp\n`;
+	emit_asm(status, `sub sp, sp, #${stack_placeholder}\n`);
+	emit_asm(status, `mov x29, sp\n`);
 
 	if (return_struct) {
 		const return_buffer_stack_offset = allocate_stack_space(status, 8, 8);
-		status.code += `str x8, [x29, #${return_buffer_stack_offset}]\n`;
+		emit_asm(status, `str x8, [x29, #${return_buffer_stack_offset}]\n`);
 		status.return_buffer_stack_offset = return_buffer_stack_offset;
 	}
 
@@ -445,7 +447,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	const old_closure_env_offsets = status.closure_env_offsets;
 	if (node.is_closure && node.captures?.length) {
 		const env_slot = allocate_stack_space(status, 8, 8);
-		status.code += `str x0, [x29, #${env_slot}]\n`;
+		emit_asm(status, `str x0, [x29, #${env_slot}]\n`);
 		status.closure_env_slot = env_slot;
 		status.closure_env_offsets = closure_env_layout_a64(node, status).offsets;
 		// A captured CLASS-BACKED trait reference is a pointer to the heap
@@ -647,15 +649,15 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				status.stack_offsets!.set(`_${param.name}_len`, len_offset);
 				if (param_idx < NUM_REG_ARGS) {
 					const len_reg = param_regs[param_idx];
-					status.code += `str ${len_reg}, [x29, #${len_offset}]\n`;
+					emit_asm(status, `str ${len_reg}, [x29, #${len_offset}]\n`);
 					raw_reloads.push({
 						reg: len_reg,
 						asm: `ldr ${len_reg}, [x29, #${len_offset}]`,
 					});
 				} else {
 					const k = param_idx - NUM_REG_ARGS;
-					status.code += `ldr x9, [x29, #${overflow_placeholder(label_name, k)}]\n`;
-					status.code += `str x9, [x29, #${len_offset}]\n`;
+					emit_asm(status, `ldr x9, [x29, #${overflow_placeholder(label_name, k)}]\n`);
+					emit_asm(status, `str x9, [x29, #${len_offset}]\n`);
 				}
 				param_idx++;
 			}
@@ -676,15 +678,15 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				for (const half of [0, 1] as const) {
 					const p_slot = param_idx + half;
 					if (p_slot < NUM_REG_ARGS) {
-						status.code += `str ${param_regs[p_slot]}, [x29, #${offset + half * 8}]\n`;
+						emit_asm(status, `str ${param_regs[p_slot]}, [x29, #${offset + half * 8}]\n`);
 						raw_reloads.push({
 							reg: param_regs[p_slot],
 							asm: `ldr ${param_regs[p_slot]}, [x29, #${offset + half * 8}]`,
 						});
 					} else {
 						const k = p_slot - NUM_REG_ARGS;
-						status.code += `ldr x9, [x29, #${overflow_placeholder(label_name, k)}]\n`;
-						status.code += `str x9, [x29, #${offset + half * 8}]\n`;
+						emit_asm(status, `ldr x9, [x29, #${overflow_placeholder(label_name, k)}]\n`);
+						emit_asm(status, `str x9, [x29, #${offset + half * 8}]\n`);
 					}
 				}
 				param_idx += 2;
@@ -712,15 +714,15 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				for (const half of [0, 1] as const) {
 					const p_slot = param_idx + half;
 					if (p_slot < NUM_REG_ARGS) {
-						status.code += `str ${param_regs[p_slot]}, [x29, #${offset + half * 8}]\n`;
+						emit_asm(status, `str ${param_regs[p_slot]}, [x29, #${offset + half * 8}]\n`);
 						raw_reloads.push({
 							reg: param_regs[p_slot],
 							asm: `ldr ${param_regs[p_slot]}, [x29, #${offset + half * 8}]`,
 						});
 					} else {
 						const k = p_slot - NUM_REG_ARGS;
-						status.code += `ldr x9, [x29, #${overflow_placeholder(label_name, k)}]\n`;
-						status.code += `str x9, [x29, #${offset + half * 8}]\n`;
+						emit_asm(status, `ldr x9, [x29, #${overflow_placeholder(label_name, k)}]\n`);
+						emit_asm(status, `str x9, [x29, #${offset + half * 8}]\n`);
 					}
 				}
 				param_idx += 2;
@@ -744,8 +746,8 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 					const is_class = !!status.structs.find((s) => s.name === param.type.name && s.is_class);
 					if (is_class) {
 						const ref_slot = allocate_stack_space(status, 8, 8);
-						status.code += `str ${reg}, [x29, #${ref_slot}]\n`;
-						status.code += `ldr ${reg}, [${reg}]\n`;
+						emit_asm(status, `str ${reg}, [x29, #${ref_slot}]\n`);
+						emit_asm(status, `ldr ${reg}, [${reg}]\n`);
 						status.ref_class_slots?.set(param.name, ref_slot);
 						if (abi_slot !== undefined && abi_slot < NUM_REG_ARGS) {
 							// The raw entry value is &caller-storage, not the
@@ -808,21 +810,21 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 					const reg = param_regs[param_idx];
 					if (promoted_reg && size === 8) {
 						if (param_is_float) {
-							status.code += `fmov ${promoted_reg}, ${reg}\n`;
+							emit_asm(status, `fmov ${promoted_reg}, ${reg}\n`);
 							raw_reloads.push({ reg, asm: `fmov ${reg}, ${promoted_reg}` });
 						} else {
-							status.code += `mov ${promoted_reg}, ${reg}\n`;
+							emit_asm(status, `mov ${promoted_reg}, ${reg}\n`);
 							raw_reloads.push({ reg, asm: `mov ${reg}, ${promoted_reg}` });
 						}
 					} else {
 						if (size === 1) {
-							status.code += `strb ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
+							emit_asm(status, `strb ${reg.replace("x", "w")}, [x29, #${offset}]\n`);
 						} else if (size === 2) {
-							status.code += `strh ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
+							emit_asm(status, `strh ${reg.replace("x", "w")}, [x29, #${offset}]\n`);
 						} else if (size === 4) {
-							status.code += `str ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
+							emit_asm(status, `str ${reg.replace("x", "w")}, [x29, #${offset}]\n`);
 						} else {
-							status.code += `str ${reg}, [x29, #${offset}]\n`;
+							emit_asm(status, `str ${reg}, [x29, #${offset}]\n`);
 						}
 						// The slot holds the entry value (sub-word spills store
 						// the param's declared width; the matching load
@@ -842,17 +844,20 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 					// what the register path would have produced.
 					const k = param_idx - NUM_REG_ARGS;
 					if (promoted_reg && size === 8) {
-						status.code += `ldr ${promoted_reg}, [x29, #${overflow_placeholder(label_name, k)}]\n`;
+						emit_asm(
+							status,
+							`ldr ${promoted_reg}, [x29, #${overflow_placeholder(label_name, k)}]\n`,
+						);
 					} else {
-						status.code += `ldr x9, [x29, #${overflow_placeholder(label_name, k)}]\n`;
+						emit_asm(status, `ldr x9, [x29, #${overflow_placeholder(label_name, k)}]\n`);
 						if (size === 1) {
-							status.code += `strb w9, [x29, #${offset}]\n`;
+							emit_asm(status, `strb w9, [x29, #${offset}]\n`);
 						} else if (size === 2) {
-							status.code += `strh w9, [x29, #${offset}]\n`;
+							emit_asm(status, `strh w9, [x29, #${offset}]\n`);
 						} else if (size === 4) {
-							status.code += `str w9, [x29, #${offset}]\n`;
+							emit_asm(status, `str w9, [x29, #${offset}]\n`);
 						} else {
-							status.code += `str x9, [x29, #${offset}]\n`;
+							emit_asm(status, `str x9, [x29, #${offset}]\n`);
 						}
 						if (promoted_reg) {
 							emit_promoted_load(status, promoted_reg, offset, param.type.name);
@@ -938,7 +943,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				const reg = callee_map.get(param.name) ?? param_regs[pidx];
 				status.moved_class_params!.set(param.name, reg);
 				const save_offset = allocate_stack_space(status, 8);
-				status.code += `str ${reg}, [x29, #${save_offset}]\n`;
+				emit_asm(status, `str ${reg}, [x29, #${save_offset}]\n`);
 				moved_param_save_slots.set(param.name, {
 					offset: save_offset,
 					type_name: param.type.name,
@@ -1060,7 +1065,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		status.heap_returning_functions.add(label_name);
 	}
 
-	status.code += `${return_label}:\n`;
+	emit_asm(status, `${return_label}:\n`);
 	if (node.name === "main") {
 		// In audit mode, call nomen_audit_check at main exit (linked from
 		// audit_runtime.c). If the pool was used (spawn was emitted), shut
@@ -1071,17 +1076,17 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		// Fibers: run anything still queued before the audit check (the
 		// companion defines __nomen_fiber_drain_all as a global symbol).
 		if (status.used_fibers) {
-			status.code += `bl ___nomen_fiber_drain_all\n`;
+			emit_asm(status, `bl ___nomen_fiber_drain_all\n`);
 			// Tear the netpoller down before the audit check (see the C backend).
-			status.code += `bl ___nomen_io_shutdown\n`;
+			emit_asm(status, `bl ___nomen_io_shutdown\n`);
 		}
 		if (status.audit) {
 			if (status.file_scope_c?.includes("__nomen_pool_submit")) {
-				status.code += `bl ___nomen_pool_shutdown\n`;
+				emit_asm(status, `bl ___nomen_pool_shutdown\n`);
 			}
-			status.code += `bl _nomen_audit_check\n`;
+			emit_asm(status, `bl _nomen_audit_check\n`);
 		}
-		status.code += `mov x0, #0\n`;
+		emit_asm(status, `mov x0, #0\n`);
 	}
 
 	// Reclaim moved class params: run #destroy + field destroys (which free
@@ -1099,7 +1104,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		let return_save: number | undefined;
 		if (need_guard || need_save) {
 			return_save = allocate_stack_space(status, 8);
-			status.code += `str x0, [x29, #${return_save}]\n`;
+			emit_asm(status, `str x0, [x29, #${return_save}]\n`);
 		}
 		for (const [name, info] of moved_param_save_slots) {
 			if (moved_set?.has(name)) continue;
@@ -1109,10 +1114,10 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			// on the param only counts when the callee may retain its receiver.
 			if (moved_param_is_consumed(node, name, info.type_name, status.structs)) continue;
 			if (need_guard) {
-				status.code += `ldr x0, [x29, #${info.offset}]\n`;
-				status.code += `ldr x1, [x29, #${return_save!}]\n`;
-				status.code += `cmp x0, x1\n`;
-				status.code += `beq ${keep_prefix}_${name}\n`;
+				emit_asm(status, `ldr x0, [x29, #${info.offset}]\n`);
+				emit_asm(status, `ldr x1, [x29, #${return_save!}]\n`);
+				emit_asm(status, `cmp x0, x1\n`);
+				emit_asm(status, `beq ${keep_prefix}_${name}\n`);
 			}
 			emit_destroy_for_anchor_slot(
 				status,
@@ -1121,14 +1126,14 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				info.type_args,
 				info.is_nullable,
 			);
-			status.code += `ldr x0, [x29, #${info.offset}]\n`;
+			emit_asm(status, `ldr x0, [x29, #${info.offset}]\n`);
 			emit_free(status);
 			if (need_guard) {
-				status.code += `${keep_prefix}_${name}:\n`;
+				emit_asm(status, `${keep_prefix}_${name}:\n`);
 			}
 		}
 		if (need_guard || need_save) {
-			status.code += `ldr x0, [x29, #${return_save!}]\n`;
+			emit_asm(status, `ldr x0, [x29, #${return_save!}]\n`);
 		}
 	}
 
@@ -1148,7 +1153,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	// emitted instruction stream between the first-pass saves and the sub, so
 	// they count here.)
 	if (total_stack > 0) {
-		status.code += `add sp, sp, #${total_stack}\n`;
+		emit_asm(status, `add sp, sp, #${total_stack}\n`);
 	}
 	status.code = patch_overflow_placeholders(
 		status.code,
@@ -1158,45 +1163,49 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	);
 
 	for (let i = loop_regs_used.length - 1; i >= 0; i--) {
-		status.code += `ldr ${loop_regs_used[i]}, [sp], #16\n`;
+		emit_asm(status, `ldr ${loop_regs_used[i]}, [sp], #16\n`);
 	}
 
 	for (let ci = callee_idx - 1; ci >= 0; ci--) {
-		status.code += `ldr ${callee_saved[ci]}, [sp], #16\n`;
+		emit_asm(status, `ldr ${callee_saved[ci]}, [sp], #16\n`);
 	}
 
 	if (init_struct_size > 0) {
-		status.code += `add sp, sp, #${init_struct_size}\n`;
+		emit_asm(status, `add sp, sp, #${init_struct_size}\n`);
 	}
 
-	status.code += `ldp x29, x30, [sp], #16\n`;
-	status.code += `ret\n`;
+	emit_asm(status, `ldp x29, x30, [sp], #16\n`);
+	emit_asm(status, `ret\n`);
 
 	status.code = peephole_optimize(status.code);
 
 	if (is_nested) {
 		if (status.function_data) {
-			status.code += status.function_data;
+			emit_asm(status, status.function_data);
 			status.function_data = undefined;
 		}
 		if (!status.nested_functions) status.nested_functions = "";
 		status.nested_functions += status.code;
-		status.code = old_code!;
-	}
-
-	if (status.function_data) {
-		status.code += status.function_data;
-		status.function_data = undefined;
-	}
-	if (status.nested_functions && !is_nested) {
-		status.code += status.nested_functions;
-		status.nested_functions = undefined;
-	}
-	// Closure thunks + descriptors (CLOSURE.md) flush in the same
-	// dead zone: after the function's `ret`, before the next label.
-	if (status.closure_definitions && !is_nested) {
-		status.code += status.closure_definitions;
-		status.closure_definitions = undefined;
+		status.code = old_code;
+	} else {
+		// Rejoin the outer text with one append. The literal-pool data and
+		// nested/closure definitions flush AFTER this in the dead zone, so
+		// the emitted order matches the historical whole-file accumulation.
+		status.code = old_code + status.code;
+		if (status.function_data) {
+			emit_asm(status, status.function_data);
+			status.function_data = undefined;
+		}
+		if (status.nested_functions) {
+			emit_asm(status, status.nested_functions);
+			status.nested_functions = undefined;
+		}
+		// Closure thunks + descriptors (CLOSURE.md) flush in the same
+		// dead zone: after the function's `ret`, before the next label.
+		if (status.closure_definitions) {
+			emit_asm(status, status.closure_definitions);
+			status.closure_definitions = undefined;
+		}
 	}
 
 	status.scoped_declarations = old_scoped_declarations;

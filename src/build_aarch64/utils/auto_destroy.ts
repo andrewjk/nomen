@@ -13,6 +13,7 @@ import StructNode from "../../nodes/StructNode.ts";
 import Type from "../../nodes/Type.ts";
 import aarch64_size from "./aarch64_size.ts";
 import { emit_free, emit_strdup } from "./audit.ts";
+import { emit_asm } from "./code_buffer.ts";
 import { allocate_stack_space } from "./stack_var.ts";
 import { emit_var_address, emit_var_load } from "./stack_var.ts";
 import {
@@ -80,7 +81,7 @@ export function release_heap_string_fields(
 	for (const field of fields) {
 		const offset = get_field_offset(decl_type_name, field, status);
 		emit_var_address(status, "x0", decl_name);
-		status.code += `ldr x0, [x0, #${offset}]\n`;
+		emit_asm(status, `ldr x0, [x0, #${offset}]\n`);
 		emit_free(status);
 		status.heap_string_fields.delete(`${decl_name}.${field}`);
 	}
@@ -182,7 +183,7 @@ export function anchor_heap_pointer(
 	is_nullable?: boolean,
 ): number {
 	const offset = allocate_stack_space(status, 8, 8);
-	status.code += `str x0, [x29, #${offset}]\n`;
+	emit_asm(status, `str x0, [x29, #${offset}]\n`);
 	if (status.heap_cleanup_stack?.length) {
 		// By default a fresh anchor belongs to the current scope. But when
 		// reassigning a variable declared in an outer scope (e.g. inside a loop
@@ -324,14 +325,14 @@ export function emit_destroy_for_anchor_slot(
 	if (!struct_type && status.traits.find((t) => t.name === type_name)) {
 		let skip_label: string | undefined;
 		if (is_nullable) {
-			status.code += `ldr x0, [x29, #${offset}]\n`;
+			emit_asm(status, `ldr x0, [x29, #${offset}]\n`);
 			skip_label = `.Lskip_na_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
-			status.code += `cbz x0, ${skip_label}\n`;
+			emit_asm(status, `cbz x0, ${skip_label}\n`);
 		}
-		status.code += `ldr x0, [x29, #${offset}]\n`;
-		status.code += `bl ${type_name}_destroy\n`;
+		emit_asm(status, `ldr x0, [x29, #${offset}]\n`);
+		emit_asm(status, `bl ${type_name}_destroy\n`);
 		if (skip_label) {
-			status.code += `${skip_label}:\n`;
+			emit_asm(status, `${skip_label}:\n`);
 		}
 		return;
 	}
@@ -340,17 +341,17 @@ export function emit_destroy_for_anchor_slot(
 	// slot may hold 0 (null), which owns nothing and must not be dereferenced.
 	let skip_label: string | undefined;
 	if (is_nullable && struct_type.is_class) {
-		status.code += `ldr x0, [x29, #${offset}]\n`;
+		emit_asm(status, `ldr x0, [x29, #${offset}]\n`);
 		skip_label = `.Lskip_na_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
-		status.code += `cbz x0, ${skip_label}\n`;
+		emit_asm(status, `cbz x0, ${skip_label}\n`);
 	}
 	if (has_destroy(struct_type)) {
-		status.code += `ldr x0, [x29, #${offset}]\n`;
-		status.code += `bl ${resolved_name}_destroy\n`;
+		emit_asm(status, `ldr x0, [x29, #${offset}]\n`);
+		emit_asm(status, `bl ${resolved_name}_destroy\n`);
 	}
 	emit_field_destroys_from_slot(status, struct_type, offset);
 	if (skip_label) {
-		status.code += `${skip_label}:\n`;
+		emit_asm(status, `${skip_label}:\n`);
 	}
 }
 
@@ -366,20 +367,26 @@ function emit_field_destroys_from_slot(
 			is_struct_type(field.type.name, status);
 		if (field_struct) {
 			if (field_struct.is_class && !field.type.is_ref) {
-				status.code += `ldr x0, [x29, #${base_offset}]\n`;
-				status.code += `ldr x0, [x0, #${offset}]\n`;
-				status.code += `str x0, [sp, #-16]!\n`;
+				emit_asm(status, `ldr x0, [x29, #${base_offset}]\n`);
+				emit_asm(status, `ldr x0, [x0, #${offset}]\n`);
+				emit_asm(status, `str x0, [sp, #-16]!\n`);
 				const label_id = (status.label_counter = (status.label_counter ?? 0) + 1);
 				const skip_label = `.Lskip_defer_${label_id}`;
-				status.code += `cbz x0, ${skip_label}\n`;
-				status.code += `bl ${resolve_struct_name(field_struct.name, field.type.type_args, status)}_destroy\n`;
-				status.code += `${skip_label}:\n`;
-				status.code += `ldr x0, [sp], #16\n`;
+				emit_asm(status, `cbz x0, ${skip_label}\n`);
+				emit_asm(
+					status,
+					`bl ${resolve_struct_name(field_struct.name, field.type.type_args, status)}_destroy\n`,
+				);
+				emit_asm(status, `${skip_label}:\n`);
+				emit_asm(status, `ldr x0, [sp], #16\n`);
 				emit_free(status);
 			} else if (has_destroy(field_struct)) {
-				status.code += `ldr x0, [x29, #${base_offset}]\n`;
-				status.code += `add x0, x0, #${offset}\n`;
-				status.code += `bl ${resolve_struct_name(field_struct.name, field.type.type_args, status)}_destroy\n`;
+				emit_asm(status, `ldr x0, [x29, #${base_offset}]\n`);
+				emit_asm(status, `add x0, x0, #${offset}\n`);
+				emit_asm(
+					status,
+					`bl ${resolve_struct_name(field_struct.name, field.type.type_args, status)}_destroy\n`,
+				);
 			}
 			emit_nested_field_destroys_from_slot(status, field_struct, base_offset + offset);
 		} else if (
@@ -393,8 +400,8 @@ function emit_field_destroys_from_slot(
 			// hold always-heap fields (`_init` strdup's defaults, assignments
 			// strdup non-heap RHS) — either way the slot owns the string. A
 			// `view T` field is excluded: non-owning borrow, nothing to free.
-			status.code += `ldr x0, [x29, #${base_offset}]\n`;
-			status.code += `ldr x0, [x0, #${offset}]\n`;
+			emit_asm(status, `ldr x0, [x29, #${base_offset}]\n`);
+			emit_asm(status, `ldr x0, [x0, #${offset}]\n`);
 			emit_free(status);
 		}
 	}
@@ -412,9 +419,12 @@ function emit_nested_field_destroys_from_slot(
 			is_struct_type(field.type.name, status);
 		if (field_struct) {
 			if (has_destroy(field_struct)) {
-				status.code += `ldr x0, [x29, #${base_offset}]\n`;
-				status.code += `add x0, x0, #${offset}\n`;
-				status.code += `bl ${resolve_struct_name(field_struct.name, field.type.type_args, status)}_destroy\n`;
+				emit_asm(status, `ldr x0, [x29, #${base_offset}]\n`);
+				emit_asm(status, `add x0, x0, #${offset}\n`);
+				emit_asm(
+					status,
+					`bl ${resolve_struct_name(field_struct.name, field.type.type_args, status)}_destroy\n`,
+				);
 			}
 			emit_nested_field_destroys_from_slot(status, field_struct, base_offset + offset);
 		}
@@ -442,7 +452,7 @@ function free_anchor_slot(
 			slot.is_nullable,
 		);
 	}
-	status.code += `ldr x0, [x29, #${slot.offset}]\n`;
+	emit_asm(status, `ldr x0, [x29, #${slot.offset}]\n`);
 	emit_free(status);
 }
 
@@ -524,29 +534,29 @@ export function emit_enum_payload_frees_at(
 				? `[${base_reg}, #${base_offset + payload_off}]`
 				: `[${base_reg}, #${payload_off}]`;
 			const skip = `.Lskip_epf_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
-			status.code += `ldr x9, ${tag_addr}\n`;
-			status.code += `mov x10, #${case_index}\n`;
-			status.code += `cmp x9, x10\n`;
-			status.code += `b.ne ${skip}\n`;
+			emit_asm(status, `ldr x9, ${tag_addr}\n`);
+			emit_asm(status, `mov x10, #${case_index}\n`);
+			emit_asm(status, `cmp x9, x10\n`);
+			emit_asm(status, `b.ne ${skip}\n`);
 			// x13 parks the payload ptr so `base_reg` stays valid until its
 			// spill (the caller may pass x0 as the base).
-			status.code += `ldr x13, ${payload_addr}\n`;
-			status.code += `str ${base_reg}, [sp, #-16]!\n`;
+			emit_asm(status, `ldr x13, ${payload_addr}\n`);
+			emit_asm(status, `str ${base_reg}, [sp, #-16]!\n`);
 			if (is_ref) {
 				// The destroy call clobbers every caller-saved register, x13
 				// included — park the payload ptr too so the free after the
 				// destroy releases the instance, not the stack base.
-				status.code += `str x13, [sp, #-16]!\n`;
-				status.code += `mov x0, x13\n`;
-				status.code += `bl ${p.type.name}_destroy\n`;
-				status.code += `ldr x0, [sp], #16\n`;
+				emit_asm(status, `str x13, [sp, #-16]!\n`);
+				emit_asm(status, `mov x0, x13\n`);
+				emit_asm(status, `bl ${p.type.name}_destroy\n`);
+				emit_asm(status, `ldr x0, [sp], #16\n`);
 				emit_free(status);
 			} else {
-				status.code += `mov x0, x13\n`;
+				emit_asm(status, `mov x0, x13\n`);
 				emit_free(status);
 			}
-			status.code += `ldr ${base_reg}, [sp], #16\n`;
-			status.code += `${skip}:\n`;
+			emit_asm(status, `ldr ${base_reg}, [sp], #16\n`);
+			emit_asm(status, `${skip}:\n`);
 		}
 	}
 }
@@ -581,20 +591,20 @@ export function emit_enum_payload_strdups_at(
 				? `[${base_reg}, #${base_offset + payload_off}]`
 				: `[${base_reg}, #${payload_off}]`;
 			const skip = `.Lskip_eps_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
-			status.code += `ldr x9, ${tag_addr}\n`;
-			status.code += `mov x10, #${case_index}\n`;
-			status.code += `cmp x9, x10\n`;
-			status.code += `b.ne ${skip}\n`;
-			status.code += `ldr x13, ${payload_addr}\n`;
-			status.code += `str ${base_reg}, [sp, #-16]!\n`;
-			status.code += `mov x0, x13\n`;
+			emit_asm(status, `ldr x9, ${tag_addr}\n`);
+			emit_asm(status, `mov x10, #${case_index}\n`);
+			emit_asm(status, `cmp x9, x10\n`);
+			emit_asm(status, `b.ne ${skip}\n`);
+			emit_asm(status, `ldr x13, ${payload_addr}\n`);
+			emit_asm(status, `str ${base_reg}, [sp, #-16]!\n`);
+			emit_asm(status, `mov x0, x13\n`);
 			emit_strdup(status);
 			// Park the strdup'd copy (x0) before reloading the base — the pop
 			// would otherwise clobber the result.
-			status.code += `mov x13, x0\n`;
-			status.code += `ldr ${base_reg}, [sp], #16\n`;
-			status.code += `str x13, ${payload_addr}\n`;
-			status.code += `${skip}:\n`;
+			emit_asm(status, `mov x13, x0\n`);
+			emit_asm(status, `ldr ${base_reg}, [sp], #16\n`);
+			emit_asm(status, `str x13, ${payload_addr}\n`);
+			emit_asm(status, `${skip}:\n`);
 		}
 	}
 }
@@ -637,41 +647,80 @@ export function emit_destroy_for_decl(
 		const skip = `.Lclosure_free_done_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
 		const no_destroy = `.Lclosure_no_destroy_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
 		emit_var_load(status, "x0", decl_name, 8);
-		status.code += `cbz x0, ${skip}
-`;
-		status.code += `ldr w9, [x0, #16]
-`;
-		status.code += `cbz w9, ${skip}
-`;
+		emit_asm(
+			status,
+			`cbz x0, ${skip}
+`,
+		);
+		emit_asm(
+			status,
+			`ldr w9, [x0, #16]
+`,
+		);
+		emit_asm(
+			status,
+			`cbz w9, ${skip}
+`,
+		);
 		// Park the descriptor across the destructor call (it clobbers x9/x10).
-		status.code += `str x0, [sp, #-16]!
-`;
-		status.code += `ldr x10, [x0, #24]
-`;
-		status.code += `cbz x10, ${no_destroy}
-`;
-		status.code += `ldr x0, [x0, #8]
-`;
-		status.code += `blr x10
-`;
-		status.code += `${no_destroy}:
-`;
-		status.code += `ldr x9, [sp]
-`;
-		status.code += `ldr x0, [x9, #8]
-`;
+		emit_asm(
+			status,
+			`str x0, [sp, #-16]!
+`,
+		);
+		emit_asm(
+			status,
+			`ldr x10, [x0, #24]
+`,
+		);
+		emit_asm(
+			status,
+			`cbz x10, ${no_destroy}
+`,
+		);
+		emit_asm(
+			status,
+			`ldr x0, [x0, #8]
+`,
+		);
+		emit_asm(
+			status,
+			`blr x10
+`,
+		);
+		emit_asm(
+			status,
+			`${no_destroy}:
+`,
+		);
+		emit_asm(
+			status,
+			`ldr x9, [sp]
+`,
+		);
+		emit_asm(
+			status,
+			`ldr x0, [x9, #8]
+`,
+		);
 		emit_free(status);
-		status.code += `ldr x0, [sp], #16
-`;
+		emit_asm(
+			status,
+			`ldr x0, [sp], #16
+`,
+		);
 		emit_free(status);
-		status.code += `${skip}:
-`;
+		emit_asm(
+			status,
+			`${skip}:
+`,
+		);
 		return;
 	}
 
 	if (status.heap_strings?.has(decl_name)) {
 		if (addr_offset !== undefined) {
-			status.code += `add x0, x0, #${addr_offset}\n`;
+			emit_asm(status, `add x0, x0, #${addr_offset}\n`);
 		} else {
 			emit_var_load(status, "x0", decl_name, 8);
 		}
@@ -706,7 +755,7 @@ export function emit_destroy_for_decl(
 	if (guard_null) {
 		emit_var_load(status, "x0", decl_name, 8);
 		skip_label = `.Lskip_nd_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
-		status.code += `cbz x0, ${skip_label}\n`;
+		emit_asm(status, `cbz x0, ${skip_label}\n`);
 	}
 
 	// Every class HAS a `<Class>_destroy` function — a user `#destroy` or the
@@ -718,24 +767,24 @@ export function emit_destroy_for_decl(
 	if (has_destroy(struct_type) || struct_type.is_class) {
 		if (struct_type.is_class) {
 			if (addr_offset !== undefined) {
-				status.code += `ldr x0, [x0, #${addr_offset}]\n`;
+				emit_asm(status, `ldr x0, [x0, #${addr_offset}]\n`);
 			} else {
 				emit_var_load(status, "x0", decl_name, 8);
 			}
 		} else {
 			if (addr_offset !== undefined) {
-				status.code += `add x0, x0, #${addr_offset}\n`;
+				emit_asm(status, `add x0, x0, #${addr_offset}\n`);
 			} else {
 				emit_var_address(status, "x0", decl_name);
 			}
 		}
-		status.code += `bl ${resolved_name}_destroy\n`;
+		emit_asm(status, `bl ${resolved_name}_destroy\n`);
 	}
 
 	if (struct_type.is_class) {
 		if (status.heap_strings?.has(decl_name)) {
 			if (addr_offset !== undefined) {
-				status.code += `add x0, x0, #${addr_offset}\n`;
+				emit_asm(status, `add x0, x0, #${addr_offset}\n`);
 			} else {
 				emit_var_load(status, "x0", decl_name, 8);
 			}
@@ -758,7 +807,7 @@ export function emit_destroy_for_decl(
 	}
 
 	if (skip_label) {
-		status.code += `${skip_label}:\n`;
+		emit_asm(status, `${skip_label}:\n`);
 	}
 }
 
@@ -793,7 +842,7 @@ export function emit_field_destroys(
 			if (decl_name) {
 				emit_base_ptr(status, decl_name, is_class_parent);
 			}
-			status.code += `add x0, x0, #${actual_offset}\n`;
+			emit_asm(status, `add x0, x0, #${actual_offset}\n`);
 			emit_enum_payload_frees_at(status, field_enum.name, "x0");
 			continue;
 		}
@@ -806,23 +855,26 @@ export function emit_field_destroys(
 					emit_base_ptr(status, decl_name, is_class_parent);
 				}
 				const actual_offset = base_offset !== undefined ? base_offset + offset : offset;
-				status.code += `ldr x0, [x0, #${actual_offset}]\n`;
+				emit_asm(status, `ldr x0, [x0, #${actual_offset}]\n`);
 				// Save child pointer, recursively destroy its fields, then free it
-				status.code += `str x0, [sp, #-16]!\n`;
+				emit_asm(status, `str x0, [sp, #-16]!\n`);
 				const label_id = (status.label_counter = (status.label_counter ?? 0) + 1);
 				const skip_label = `.Lskip_destroy_${label_id}`;
-				status.code += `cbz x0, ${skip_label}\n`;
-				status.code += `bl ${resolve_struct_name(field_struct.name, field.type.type_args, status)}_destroy\n`;
+				emit_asm(status, `cbz x0, ${skip_label}\n`);
+				emit_asm(
+					status,
+					`bl ${resolve_struct_name(field_struct.name, field.type.type_args, status)}_destroy\n`,
+				);
 				// The pop runs on BOTH paths (the push above is unconditional) —
 				// then the free alone is null-guarded: a null field has nothing
 				// to release and the audited free wrapper traps on a null
 				// pointer.
-				status.code += `${skip_label}:\n`;
-				status.code += `ldr x0, [sp], #16\n`;
+				emit_asm(status, `${skip_label}:\n`);
+				emit_asm(status, `ldr x0, [sp], #16\n`);
 				const free_label = `.Lskip_destroy_free_${label_id}`;
-				status.code += `cbz x0, ${free_label}\n`;
+				emit_asm(status, `cbz x0, ${free_label}\n`);
 				emit_free(status);
-				status.code += `${free_label}:\n`;
+				emit_asm(status, `${free_label}:\n`);
 			} else {
 				// Call the nested struct's OWN destroy if it has one (an explicit
 				// `#destroy`) OR needs an auto-generated one (owning fields such as
@@ -840,8 +892,11 @@ export function emit_field_destroys(
 					if (decl_name) {
 						emit_base_ptr(status, decl_name, is_class_parent);
 					}
-					status.code += `add x0, x0, #${actual_offset}\n`;
-					status.code += `bl ${resolve_struct_name(field_struct.name, field.type.type_args, status)}_destroy\n`;
+					emit_asm(status, `add x0, x0, #${actual_offset}\n`);
+					emit_asm(
+						status,
+						`bl ${resolve_struct_name(field_struct.name, field.type.type_args, status)}_destroy\n`,
+					);
 				}
 				if (field_has_explicit_destroy) {
 					emit_nested_field_destroys(
@@ -873,7 +928,7 @@ export function emit_field_destroys(
 			if (decl_name) {
 				emit_base_ptr(status, decl_name, is_class_parent);
 			}
-			status.code += `ldr x0, [x0, #${actual_offset}]\n`;
+			emit_asm(status, `ldr x0, [x0, #${actual_offset}]\n`);
 			emit_free(status);
 		} else if (field.type.name === "func" && !field.type.is_array && struct_type.is_class) {
 			// A func-typed CLASS field may hold a capturing closure (heap env
@@ -888,22 +943,22 @@ export function emit_field_destroys(
 			const id = (status.label_counter = (status.label_counter ?? 0) + 1);
 			const skip = `.Lfield_closure_done_${id}`;
 			const no_destroy = `.Lfield_closure_nodestroy_${id}`;
-			status.code += `ldr x0, [x0, #${actual_offset}]\n`;
-			status.code += `cbz x0, ${skip}\n`;
-			status.code += `ldr w9, [x0, #16]\n`;
-			status.code += `cbz w9, ${skip}\n`;
-			status.code += `str x0, [sp, #-16]!\n`;
-			status.code += `ldr x9, [x0, #24]\n`;
-			status.code += `cbz x9, ${no_destroy}\n`;
-			status.code += `ldr x0, [x0, #8]\n`;
-			status.code += `blr x9\n`;
-			status.code += `${no_destroy}:\n`;
-			status.code += `ldr x0, [sp]\n`;
-			status.code += `ldr x0, [x0, #8]\n`;
+			emit_asm(status, `ldr x0, [x0, #${actual_offset}]\n`);
+			emit_asm(status, `cbz x0, ${skip}\n`);
+			emit_asm(status, `ldr w9, [x0, #16]\n`);
+			emit_asm(status, `cbz w9, ${skip}\n`);
+			emit_asm(status, `str x0, [sp, #-16]!\n`);
+			emit_asm(status, `ldr x9, [x0, #24]\n`);
+			emit_asm(status, `cbz x9, ${no_destroy}\n`);
+			emit_asm(status, `ldr x0, [x0, #8]\n`);
+			emit_asm(status, `blr x9\n`);
+			emit_asm(status, `${no_destroy}:\n`);
+			emit_asm(status, `ldr x0, [sp]\n`);
+			emit_asm(status, `ldr x0, [x0, #8]\n`);
 			emit_free(status);
-			status.code += `ldr x0, [sp], #16\n`;
+			emit_asm(status, `ldr x0, [sp], #16\n`);
 			emit_free(status);
-			status.code += `${skip}:\n`;
+			emit_asm(status, `${skip}:\n`);
 		} else if (field.type.is_array) {
 			const elem_struct = is_struct_type(field.type.name, status);
 			if (elem_struct) {
@@ -939,8 +994,11 @@ function emit_nested_field_destroys(
 		if (field_struct) {
 			if (has_destroy(field_struct)) {
 				emit_base_ptr(status, decl_name, is_class_parent);
-				status.code += `add x0, x0, #${base_offset + offset}\n`;
-				status.code += `bl ${resolve_struct_name(field_struct.name, field.type.type_args, status)}_destroy\n`;
+				emit_asm(status, `add x0, x0, #${base_offset + offset}\n`);
+				emit_asm(
+					status,
+					`bl ${resolve_struct_name(field_struct.name, field.type.type_args, status)}_destroy\n`,
+				);
 			}
 			emit_nested_field_destroys(
 				status,
@@ -962,8 +1020,8 @@ function emit_destroy_for_array_elem(
 ) {
 	if (has_destroy(struct_type)) {
 		emit_base_ptr(status, decl_name, is_class_parent);
-		status.code += `add x0, x0, #${elem_offset}\n`;
-		status.code += `bl ${struct_type.name}_destroy\n`;
+		emit_asm(status, `add x0, x0, #${elem_offset}\n`);
+		emit_asm(status, `bl ${struct_type.name}_destroy\n`);
 	}
 	let offset = 8;
 	for (const field of struct_type.fields) {
@@ -1056,34 +1114,34 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 				const len = status.heap_string_arrays.get(decl.name)!;
 				for (let j = 0; j < len; j++) {
 					emit_var_address(status, "x0", decl.name);
-					status.code += `ldr x0, [x0, #${j * 16}]\n`;
+					emit_asm(status, `ldr x0, [x0, #${j * 16}]\n`);
 					emit_free(status);
 				}
 				continue;
 			}
 			if (status.heap_class_arrays?.has(decl.name)) {
-				status.code += `str x19, [sp, #-16]!\n`;
-				status.code += `str x20, [sp, #-16]!\n`;
+				emit_asm(status, `str x19, [sp, #-16]!\n`);
+				emit_asm(status, `str x20, [sp, #-16]!\n`);
 				emit_var_load(status, "x0", decl.name, 8);
-				status.code += `mov x19, x0\n`;
-				status.code += `ldr x20, [x19]\n`;
-				status.code += `cbz x20, .Lskip_cls_${decl.name}\n`;
-				status.code += `add x19, x19, #8\n`;
+				emit_asm(status, `mov x19, x0\n`);
+				emit_asm(status, `ldr x20, [x19]\n`);
+				emit_asm(status, `cbz x20, .Lskip_cls_${decl.name}\n`);
+				emit_asm(status, `add x19, x19, #8\n`);
 				const label = `.Lcls_${decl.name}`;
-				status.code += `${label}:\n`;
-				status.code += `ldr x0, [x19]\n`;
+				emit_asm(status, `${label}:\n`);
+				emit_asm(status, `ldr x0, [x19]\n`);
 				emit_free(status);
-				status.code += `add x19, x19, #8\n`;
-				status.code += `sub x20, x20, #1\n`;
-				status.code += `cbnz x20, ${label}\n`;
-				status.code += `.Lskip_cls_${decl.name}:\n`;
+				emit_asm(status, `add x19, x19, #8\n`);
+				emit_asm(status, `sub x20, x20, #1\n`);
+				emit_asm(status, `cbnz x20, ${label}\n`);
+				emit_asm(status, `.Lskip_cls_${decl.name}:\n`);
 				// The elements are freed above; free the malloc'd buffer
 				// itself too (x19 may have advanced past the data area, so
 				// reload the pointer from the variable).
 				emit_var_load(status, "x0", decl.name, 8);
 				emit_free(status);
-				status.code += `ldr x20, [sp], #16\n`;
-				status.code += `ldr x19, [sp], #16\n`;
+				emit_asm(status, `ldr x20, [sp], #16\n`);
+				emit_asm(status, `ldr x19, [sp], #16\n`);
 				continue;
 			}
 			if (status.heap_strings?.has(decl.name)) {
@@ -1140,32 +1198,32 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 			const len = status.heap_string_arrays.get(decl.name)!;
 			for (let j = 0; j < len; j++) {
 				emit_var_address(status, "x0", decl.name);
-				status.code += `ldr x0, [x0, #${j * 16}]\n`;
+				emit_asm(status, `ldr x0, [x0, #${j * 16}]\n`);
 				emit_free(status);
 			}
 			continue;
 		}
 		if (status.heap_class_arrays?.has(decl.name)) {
-			status.code += `str x19, [sp, #-16]!\n`;
-			status.code += `str x20, [sp, #-16]!\n`;
+			emit_asm(status, `str x19, [sp, #-16]!\n`);
+			emit_asm(status, `str x20, [sp, #-16]!\n`);
 			emit_var_load(status, "x0", decl.name, 8);
-			status.code += `mov x19, x0\n`;
-			status.code += `ldr x20, [x19]\n`;
-			status.code += `cbz x20, .Lskip_cls_${decl.name}\n`;
-			status.code += `add x19, x19, #8\n`;
+			emit_asm(status, `mov x19, x0\n`);
+			emit_asm(status, `ldr x20, [x19]\n`);
+			emit_asm(status, `cbz x20, .Lskip_cls_${decl.name}\n`);
+			emit_asm(status, `add x19, x19, #8\n`);
 			const label = `.Lcls_${decl.name}`;
-			status.code += `${label}:\n`;
-			status.code += `ldr x0, [x19]\n`;
+			emit_asm(status, `${label}:\n`);
+			emit_asm(status, `ldr x0, [x19]\n`);
 			emit_free(status);
-			status.code += `add x19, x19, #8\n`;
-			status.code += `sub x20, x20, #1\n`;
-			status.code += `cbnz x20, ${label}\n`;
-			status.code += `.Lskip_cls_${decl.name}:\n`;
+			emit_asm(status, `add x19, x19, #8\n`);
+			emit_asm(status, `sub x20, x20, #1\n`);
+			emit_asm(status, `cbnz x20, ${label}\n`);
+			emit_asm(status, `.Lskip_cls_${decl.name}:\n`);
 			// Free the malloc'd buffer itself (see the heap_slots branch).
 			emit_var_load(status, "x0", decl.name, 8);
 			emit_free(status);
-			status.code += `ldr x20, [sp], #16\n`;
-			status.code += `ldr x19, [sp], #16\n`;
+			emit_asm(status, `ldr x20, [sp], #16\n`);
+			emit_asm(status, `ldr x19, [sp], #16\n`);
 			continue;
 		}
 		// A func-typed local holding a capturing closure owns a heap env +
@@ -1184,25 +1242,25 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 			if (status.heap_owned_string_arrays?.has(decl.name)) {
 				// Owned fat-string elements: free every slot's ptr half
 				// (16-byte stride, data at buffer+8), then the buffer.
-				status.code += `str x19, [sp, #-16]!\n`;
-				status.code += `str x20, [sp, #-16]!\n`;
+				emit_asm(status, `str x19, [sp, #-16]!\n`);
+				emit_asm(status, `str x20, [sp, #-16]!\n`);
 				emit_var_load(status, "x0", decl.name, 8);
-				status.code += `mov x19, x0\n`;
-				status.code += `ldr x20, [x19]\n`;
-				status.code += `add x19, x19, #8\n`;
+				emit_asm(status, `mov x19, x0\n`);
+				emit_asm(status, `ldr x20, [x19]\n`);
+				emit_asm(status, `add x19, x19, #8\n`);
 				const loop = `.Lhosa_${decl.name}`;
-				status.code += `${loop}:\n`;
-				status.code += `cbz x20, .Lhosa_done_${decl.name}\n`;
-				status.code += `ldr x0, [x19]\n`;
+				emit_asm(status, `${loop}:\n`);
+				emit_asm(status, `cbz x20, .Lhosa_done_${decl.name}\n`);
+				emit_asm(status, `ldr x0, [x19]\n`);
 				emit_free(status);
-				status.code += `add x19, x19, #16\n`;
-				status.code += `sub x20, x20, #1\n`;
-				status.code += `b ${loop}\n`;
-				status.code += `.Lhosa_done_${decl.name}:\n`;
+				emit_asm(status, `add x19, x19, #16\n`);
+				emit_asm(status, `sub x20, x20, #1\n`);
+				emit_asm(status, `b ${loop}\n`);
+				emit_asm(status, `.Lhosa_done_${decl.name}:\n`);
 				emit_var_load(status, "x0", decl.name, 8);
 				emit_free(status);
-				status.code += `ldr x20, [sp], #16\n`;
-				status.code += `ldr x19, [sp], #16\n`;
+				emit_asm(status, `ldr x20, [sp], #16\n`);
+				emit_asm(status, `ldr x19, [sp], #16\n`);
 				continue;
 			}
 			emit_var_load(status, "x0", decl.name, 8);
@@ -1262,7 +1320,7 @@ export function emit_cleanup_to_loop_depth(status: BuildStatus) {
 				const len = status.heap_string_arrays.get(name)!;
 				for (let j = 0; j < len; j++) {
 					emit_var_address(status, "x0", name);
-					status.code += `ldr x0, [x0, #${j * 8}]\n`;
+					emit_asm(status, `ldr x0, [x0, #${j * 8}]\n`);
 					emit_free(status);
 				}
 				continue;

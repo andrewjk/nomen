@@ -6,6 +6,7 @@ import FunctionCallNode from "../../nodes/FunctionCallNode.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
 import build_node from "../build_node.ts";
 import { find_anchor_slot, is_struct_type } from "./auto_destroy.ts";
+import { emit_asm, ensure_newline } from "./code_buffer.ts";
 import { emit_var_address, emit_var_load } from "./stack_var.ts";
 import { get_field_offset } from "./struct_layout.ts";
 
@@ -17,9 +18,9 @@ export function build_swap_params(node: FunctionCallNode, status: BuildStatus) {
 		if (!source) continue;
 
 		build_node(swap_expr, status);
-		if (!status.code.endsWith("\n")) status.code += "\n";
+		ensure_newline(status);
 
-		status.code += `str x0, [sp, #-16]!\n`;
+		emit_asm(status, `str x0, [sp, #-16]!\n`);
 
 		if (
 			source.node_type === "access" &&
@@ -37,18 +38,18 @@ export function build_swap_params(node: FunctionCallNode, status: BuildStatus) {
 			} else {
 				emit_var_address(status, "x0", target_name);
 			}
-			if (!status.code.endsWith("\n")) status.code += "\n";
-			status.code += `ldr x1, [sp], #16\n`;
-			status.code += `str x1, [x0, #${src_offset}]\n`;
+			ensure_newline(status);
+			emit_asm(status, `ldr x1, [sp], #16\n`);
+			emit_asm(status, `str x1, [x0, #${src_offset}]\n`);
 		} else if (source.node_type === "value") {
 			const src_name = (source as ValueNode).value;
 			emit_var_address(status, "x0", src_name);
-			if (!status.code.endsWith("\n")) status.code += "\n";
-			status.code += `ldr x1, [sp], #16\n`;
-			status.code += `str x1, [x0]\n`;
+			ensure_newline(status);
+			emit_asm(status, `ldr x1, [sp], #16\n`);
+			emit_asm(status, `str x1, [x0]\n`);
 			const anchor = find_anchor_slot(status, src_name);
 			if (anchor !== undefined) {
-				status.code += `str x1, [x29, #${anchor}]\n`;
+				emit_asm(status, `str x1, [x29, #${anchor}]\n`);
 			}
 			status.moved?.delete(src_name);
 		}

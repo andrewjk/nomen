@@ -24,6 +24,7 @@ import build_node from "./build_node.ts";
 import { slp_pair_enabled } from "./slp_pair.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free } from "./utils/audit.ts";
+import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
 import { allocate_stack_space, emit_var_address, emit_var_load } from "./utils/stack_var.ts";
 import { emit_pair_load_x29, emit_pair_store_x29 } from "./utils/string_pair.ts";
 import {
@@ -308,8 +309,8 @@ export function build_float_tree(
 							const n1 = parseInt(xreg.slice(1), 10);
 							if (n1 >= 3) {
 								const tmp = `v${tree_temp(next, status)}`;
-								status.code += `fmul ${tmp}.2d, v${n1}.2d, v${n1}.2d\n`;
-								status.code += `faddp ${dest}, ${tmp}.2d\n`;
+								emit_asm(status, `fmul ${tmp}.2d, v${n1}.2d, v${n1}.2d\n`);
+								emit_asm(status, `faddp ${dest}, ${tmp}.2d\n`);
 								return dest;
 							}
 						}
@@ -322,7 +323,7 @@ export function build_float_tree(
 			const rs = src_reg(op.right_value);
 			const rreg = rs ?? `d${tree_temp(next, status)}`;
 			if (!rs) build_float_tree(op.right_value, rreg, next, status);
-			status.code += `${map_float_op(op.op)} ${dest}, ${lreg}, ${rreg}\n`;
+			emit_asm(status, `${map_float_op(op.op)} ${dest}, ${lreg}, ${rreg}\n`);
 			return dest;
 		}
 	}
@@ -438,20 +439,20 @@ function build_int_tree_inner(
 			const ls = src_reg(op.left_value);
 			const lreg = ls ?? `x${INT_TREE_FIRST + next.v++}`;
 			if (!ls) build_int_tree(op.left_value, lreg, next, status);
-			if (!status.code.endsWith("\n")) status.code += "\n";
+			ensure_newline(status);
 			const rs = src_reg(op.right_value);
 			const rreg = rs ?? `x${INT_TREE_FIRST + next.v++}`;
 			if (!rs) build_int_tree(op.right_value, rreg, next, status);
-			if (!status.code.endsWith("\n")) status.code += "\n";
+			ensure_newline(status);
 			const unsigned = is_unsigned_type(op.left_value) || is_unsigned_type(op.right_value);
-			status.code += `${map_op(op.op, unsigned)} ${dest}, ${lreg}, ${rreg}\n`;
+			emit_asm(status, `${map_op(op.op, unsigned)} ${dest}, ${lreg}, ${rreg}\n`);
 			return dest;
 		}
 	}
 	// Leaf: materialize into dest (promoted-reg mov, slot ldr, immediate,
 	// inline Buffer accessor, cast, call — call-free verified upstream).
 	build_operand(n, dest, status);
-	if (!status.code.endsWith("\n")) status.code += "\n";
+	ensure_newline(status);
 	return dest;
 }
 
@@ -568,7 +569,7 @@ export function emit_cond_branch(
 			const skip = `.Lcb_${cond_branch_counter++}`;
 			emit_cond_branch(op_node.left_value, skip, false, status);
 			emit_cond_branch(op_node.right_value, target, true, status);
-			status.code += `${skip}:\n`;
+			emit_asm(status, `${skip}:\n`);
 			return;
 		}
 		if (op === "||" && op_node.left_value && op_node.right_value) {
@@ -580,7 +581,7 @@ export function emit_cond_branch(
 			const skip = `.Lcb_${cond_branch_counter++}`;
 			emit_cond_branch(op_node.left_value, skip, true, status);
 			emit_cond_branch(op_node.right_value, target, false, status);
-			status.code += `${skip}:\n`;
+			emit_asm(status, `${skip}:\n`);
 			return;
 		}
 		// Float comparisons branch directly off `fcmp` (IEEE semantics —
@@ -600,26 +601,26 @@ export function emit_cond_branch(
 			const need_spill = !left_simple_f && !is_simple(op_node.right_value!);
 			if (!left_simple_f) {
 				build_float_operand(op_node.left_value!, "d0", status);
-				if (!status.code.endsWith("\n")) status.code += "\n";
+				ensure_newline(status);
 				if (need_spill) {
-					status.code += `str d0, [sp, #-16]!\n`;
+					emit_asm(status, `str d0, [sp, #-16]!\n`);
 					build_float_operand(op_node.right_value!, "d0", status);
-					if (!status.code.endsWith("\n")) status.code += "\n";
-					status.code += `fmov d1, d0\n`;
-					status.code += `ldr d0, [sp], #16\n`;
+					ensure_newline(status);
+					emit_asm(status, `fmov d1, d0\n`);
+					emit_asm(status, `ldr d0, [sp], #16\n`);
 				} else {
 					build_float_operand(op_node.right_value!, "d1", status);
-					if (!status.code.endsWith("\n")) status.code += "\n";
+					ensure_newline(status);
 				}
 			} else {
 				build_float_operand(op_node.right_value!, "d1", status);
-				if (!status.code.endsWith("\n")) status.code += "\n";
+				ensure_newline(status);
 				build_float_operand(op_node.left_value!, "d0", status);
-				if (!status.code.endsWith("\n")) status.code += "\n";
+				ensure_newline(status);
 			}
-			status.code += `fcmp d0, d1\n`;
+			emit_asm(status, `fcmp d0, d1\n`);
 			const cond = map_float_cmp(op);
-			status.code += `b.${on_true ? cond : invert_cond(cond)} ${target}\n`;
+			emit_asm(status, `b.${on_true ? cond : invert_cond(cond)} ${target}\n`);
 			return;
 		}
 		// Direct-branch fast path for comparisons the value builder lowers
@@ -651,28 +652,28 @@ export function emit_cond_branch(
 			const need_spill = !left_simple_i && !is_simple(op_node.right_value);
 			if (!left_simple_i) {
 				build_operand(op_node.left_value, "x1", status);
-				if (!status.code.endsWith("\n")) status.code += "\n";
+				ensure_newline(status);
 				if (need_spill) {
-					status.code += `str x1, [sp, #-16]!\n`;
+					emit_asm(status, `str x1, [sp, #-16]!\n`);
 					build_operand(op_node.right_value, "x1", status);
-					if (!status.code.endsWith("\n")) status.code += "\n";
-					status.code += `mov x2, x1\n`;
-					status.code += `ldr x1, [sp], #16\n`;
+					ensure_newline(status);
+					emit_asm(status, `mov x2, x1\n`);
+					emit_asm(status, `ldr x1, [sp], #16\n`);
 				} else {
 					build_operand(op_node.right_value, "x2", status);
-					if (!status.code.endsWith("\n")) status.code += "\n";
+					ensure_newline(status);
 				}
 			} else {
 				build_operand(op_node.right_value, "x2", status);
-				if (!status.code.endsWith("\n")) status.code += "\n";
+				ensure_newline(status);
 				build_operand(op_node.left_value, "x1", status);
-				if (!status.code.endsWith("\n")) status.code += "\n";
+				ensure_newline(status);
 			}
 			const unsigned =
 				is_unsigned_type(op_node.left_value) || is_unsigned_type(op_node.right_value);
-			status.code += `cmp x1, x2\n`;
+			emit_asm(status, `cmp x1, x2\n`);
 			const cond = map_cmp(op, unsigned);
-			status.code += `b.${on_true ? cond : invert_cond(cond)} ${target}\n`;
+			emit_asm(status, `b.${on_true ? cond : invert_cond(cond)} ${target}\n`);
 			return;
 		}
 	}
@@ -680,9 +681,9 @@ export function emit_cond_branch(
 	// the constant-fold path (literal comparisons) and arbitrary boolean
 	// expressions working unchanged.
 	build_node(node, status);
-	if (!status.code.endsWith("\n")) status.code += "\n";
-	status.code += `cmp x0, #0\n`;
-	status.code += `${on_true ? "bne" : "beq"} ${target}\n`;
+	ensure_newline(status);
+	emit_asm(status, `cmp x0, #0\n`);
+	emit_asm(status, `${on_true ? "bne" : "beq"} ${target}\n`);
 }
 
 function is_comparison(op: string): boolean {
@@ -742,9 +743,9 @@ export function emit_cond_cset(node: BaseNode, status: BuildStatus, dest_reg = "
 	const op_node = n as OperationNode;
 	if (op_node.op === "!") {
 		emit_cond_cset((op_node.left_value ?? op_node.right_value)!, status);
-		status.code += `eor x0, x0, #1\n`;
+		emit_asm(status, `eor x0, x0, #1\n`);
 		if (dest_reg !== "x0") {
-			status.code += `mov ${dest_reg}, x0\n`;
+			emit_asm(status, `mov ${dest_reg}, x0\n`);
 		}
 		return;
 	}
@@ -756,26 +757,26 @@ export function emit_cond_cset(node: BaseNode, status: BuildStatus, dest_reg = "
 	const need_spill = !left_simple && !is_simple(rv);
 	if (!left_simple) {
 		build_operand(lv, "x1", status);
-		if (!status.code.endsWith("\n")) status.code += "\n";
+		ensure_newline(status);
 		if (need_spill) {
-			status.code += `str x1, [sp, #-16]!\n`;
+			emit_asm(status, `str x1, [sp, #-16]!\n`);
 			build_operand(rv, "x1", status);
-			if (!status.code.endsWith("\n")) status.code += "\n";
-			status.code += `mov x2, x1\n`;
-			status.code += `ldr x1, [sp], #16\n`;
+			ensure_newline(status);
+			emit_asm(status, `mov x2, x1\n`);
+			emit_asm(status, `ldr x1, [sp], #16\n`);
 		} else {
 			build_operand(rv, "x2", status);
-			if (!status.code.endsWith("\n")) status.code += "\n";
+			ensure_newline(status);
 		}
 	} else {
 		build_operand(rv, "x2", status);
-		if (!status.code.endsWith("\n")) status.code += "\n";
+		ensure_newline(status);
 		build_operand(lv, "x1", status);
-		if (!status.code.endsWith("\n")) status.code += "\n";
+		ensure_newline(status);
 	}
 	const unsigned = is_unsigned_type(lv) || is_unsigned_type(rv);
-	status.code += `cmp x1, x2\n`;
-	status.code += `cset ${dest_reg}, ${map_cmp(op_node.op, unsigned)}\n`;
+	emit_asm(status, `cmp x1, x2\n`);
+	emit_asm(status, `cset ${dest_reg}, ${map_cmp(op_node.op, unsigned)}\n`);
 }
 
 /**
@@ -795,7 +796,7 @@ function build_enum_tag_operand(
 	const case_name = static_enum_case(operand, enum_node, status);
 	if (case_name) {
 		const idx = enum_node.cases.findIndex((c) => c.name === case_name);
-		status.code += `mov ${target_reg}, #${idx}\n`;
+		emit_asm(status, `mov ${target_reg}, #${idx}\n`);
 		return;
 	}
 	let node = operand;
@@ -820,11 +821,11 @@ function build_enum_tag_operand(
 		(node.node_type === "access" &&
 			(node as unknown as { access: { node_type: string } }).access.node_type === "access_func");
 	build_operand(node, "x0", status);
-	if (!status.code.endsWith("\n")) status.code += "\n";
+	ensure_newline(status);
 	if (yields_address) {
-		status.code += `ldr ${target_reg}, [x0]\n`;
+		emit_asm(status, `ldr ${target_reg}, [x0]\n`);
 	} else if (target_reg !== "x0") {
-		status.code += `mov ${target_reg}, x0\n`;
+		emit_asm(status, `mov ${target_reg}, x0\n`);
 	}
 }
 
@@ -901,9 +902,9 @@ function emit_immediate(target_reg: string, value: string, status: BuildStatus) 
 	const dec = to_decimal_string(value);
 	const n = parse_int_literal_bigint(value);
 	if (n !== null && n >= 0n && n <= 65535n) {
-		status.code += `mov ${target_reg}, #${dec}`;
+		emit_asm(status, `mov ${target_reg}, #${dec}`);
 	} else {
-		status.code += `ldr ${target_reg}, =${dec}`;
+		emit_asm(status, `ldr ${target_reg}, =${dec}`);
 	}
 }
 
@@ -938,7 +939,7 @@ export function build_operand(node: BaseNode, target_reg: string, status: BuildS
 			const promoted = status.register_allocations?.get(raw_value);
 			if (promoted && promoted.startsWith("x")) {
 				if (promoted !== target_reg) {
-					status.code += `mov ${target_reg}, ${promoted}\n`;
+					emit_asm(status, `mov ${target_reg}, ${promoted}\n`);
 				}
 				return;
 			}
@@ -951,13 +952,13 @@ export function build_operand(node: BaseNode, target_reg: string, status: BuildS
 					param_type_name && status.structs.find((s) => s.name === param_type_name && s.is_class);
 				if (is_class) {
 					if (paramReg !== target_reg) {
-						status.code += `mov ${target_reg}, ${paramReg}`;
+						emit_asm(status, `mov ${target_reg}, ${paramReg}`);
 					}
 				} else {
-					status.code += `ldr ${target_reg}, [${paramReg}]`;
+					emit_asm(status, `ldr ${target_reg}, [${paramReg}]`);
 				}
 			} else if (paramReg !== target_reg) {
-				status.code += `mov ${target_reg}, ${paramReg}`;
+				emit_asm(status, `mov ${target_reg}, ${paramReg}`);
 			}
 			return;
 		}
@@ -990,19 +991,28 @@ export function build_operand(node: BaseNode, target_reg: string, status: BuildS
 				const size = aarch64_size(type_name);
 				const signed = is_signed_type(type_name);
 				if (size === 1) {
-					status.code += signed
-						? `ldrsb ${target_reg}, [x29, #${slot_offset}]\n`
-						: `ldrb ${target_reg.replace("x", "w")}, [x29, #${slot_offset}]\n`;
+					emit_asm(
+						status,
+						signed
+							? `ldrsb ${target_reg}, [x29, #${slot_offset}]\n`
+							: `ldrb ${target_reg.replace("x", "w")}, [x29, #${slot_offset}]\n`,
+					);
 				} else if (size === 2) {
-					status.code += signed
-						? `ldrsh ${target_reg}, [x29, #${slot_offset}]\n`
-						: `ldrh ${target_reg.replace("x", "w")}, [x29, #${slot_offset}]\n`;
+					emit_asm(
+						status,
+						signed
+							? `ldrsh ${target_reg}, [x29, #${slot_offset}]\n`
+							: `ldrh ${target_reg.replace("x", "w")}, [x29, #${slot_offset}]\n`,
+					);
 				} else if (size === 4) {
-					status.code += signed
-						? `ldrsw ${target_reg}, [x29, #${slot_offset}]\n`
-						: `ldr ${target_reg.replace("x", "w")}, [x29, #${slot_offset}]\n`;
+					emit_asm(
+						status,
+						signed
+							? `ldrsw ${target_reg}, [x29, #${slot_offset}]\n`
+							: `ldr ${target_reg.replace("x", "w")}, [x29, #${slot_offset}]\n`,
+					);
 				} else {
-					status.code += `ldr ${target_reg}, [x29, #${slot_offset}]\n`;
+					emit_asm(status, `ldr ${target_reg}, [x29, #${slot_offset}]\n`);
 				}
 				return;
 			}
@@ -1010,9 +1020,9 @@ export function build_operand(node: BaseNode, target_reg: string, status: BuildS
 		if (value.startsWith("'") && value.endsWith("'") && value.length === 3) {
 			const char_code = value.charCodeAt(1);
 			if (char_code <= 65535) {
-				status.code += `mov ${target_reg}, #${char_code}`;
+				emit_asm(status, `mov ${target_reg}, #${char_code}`);
 			} else {
-				status.code += `ldr ${target_reg}, =${char_code}`;
+				emit_asm(status, `ldr ${target_reg}, =${char_code}`);
 			}
 			return;
 		}
@@ -1020,9 +1030,9 @@ export function build_operand(node: BaseNode, target_reg: string, status: BuildS
 			const label = `_str_op_${string_counter++}`;
 			status.strings!.set(label, value);
 			// Fat-string literal: emit the (ptr, len) pair.
-			status.code += `adr ${target_reg}, ${label}\n`;
+			emit_asm(status, `adr ${target_reg}, ${label}\n`);
 			const n = parseInt(target_reg.substring(1), 10);
-			status.code += `mov x${n + 1}, #${string_literal_length(value)}\n`;
+			emit_asm(status, `mov x${n + 1}, #${string_literal_length(value)}\n`);
 			return;
 		}
 	}
@@ -1035,10 +1045,8 @@ export function build_operand(node: BaseNode, target_reg: string, status: BuildS
 	}
 	build_node(node, status);
 	if (target_reg !== "x0") {
-		if (!status.code.endsWith("\n")) {
-			status.code += "\n";
-		}
-		status.code += `mov ${target_reg}, x0\n`;
+		ensure_newline(status);
+		emit_asm(status, `mov ${target_reg}, x0\n`);
 	}
 }
 
@@ -1068,15 +1076,15 @@ export function build_float_operand(node: BaseNode, target_reg: string, status: 
 				if (!status.function_data) status.function_data = "";
 				status.function_data += data;
 			} else {
-				status.code += data;
+				emit_asm(status, data);
 			}
-			status.code += `adr x3, ${label}\n`;
-			status.code += `ldr ${target_reg}, [x3]\n`;
+			emit_asm(status, `adr x3, ${label}\n`);
+			emit_asm(status, `ldr ${target_reg}, [x3]\n`);
 			return;
 		}
 		if (/^(\+|-)*\d+$/.test(value)) {
-			status.code += `ldr x3, =${to_decimal_string(value)}\n`;
-			status.code += `scvtf ${target_reg}, x3\n`;
+			emit_asm(status, `ldr x3, =${to_decimal_string(value)}\n`);
+			emit_asm(status, `scvtf ${target_reg}, x3\n`);
 			return;
 		}
 		// An inline body's float param rides an x callee-saved register as raw
@@ -1086,17 +1094,17 @@ export function build_float_operand(node: BaseNode, target_reg: string, status: 
 		// what made a same-named inline param alias the caller's local).
 		const param_reg = status.function_param_regs?.get(value);
 		if (param_reg) {
-			status.code += `fmov ${target_reg}, ${param_reg}\n`;
+			emit_asm(status, `fmov ${target_reg}, ${param_reg}\n`);
 			return;
 		}
 		const alloc_reg_op = status.register_allocations?.get(value);
 		if (alloc_reg_op) {
-			status.code += `fmov ${target_reg}, ${alloc_reg_op}\n`;
+			emit_asm(status, `fmov ${target_reg}, ${alloc_reg_op}\n`);
 			return;
 		}
 		const offset = status.stack_offsets?.get(value);
 		if (offset !== undefined) {
-			status.code += `ldr ${target_reg}, [x29, #${offset}]\n`;
+			emit_asm(status, `ldr ${target_reg}, [x29, #${offset}]\n`);
 			return;
 		}
 	}
@@ -1105,14 +1113,14 @@ export function build_float_operand(node: BaseNode, target_reg: string, status: 
 		status.float_result_in_d0 = true;
 	}
 	build_node(node, status);
-	if (!status.code.endsWith("\n")) status.code += "\n";
+	ensure_newline(status);
 	if (child_is_float && !status.float_result_in_d0) {
 		if (target_reg !== "d0") {
-			status.code += `fmov ${target_reg}, d0\n`;
+			emit_asm(status, `fmov ${target_reg}, d0\n`);
 		}
 	} else {
 		status.float_result_in_d0 = false;
-		status.code += `fmov ${target_reg}, x0\n`;
+		emit_asm(status, `fmov ${target_reg}, x0\n`);
 	}
 }
 
@@ -1146,9 +1154,9 @@ function build_operator_operand(node: BaseNode, target_reg: string, status: Buil
 	// address — build_operand would load its first word as a value.
 	if (node.node_type === "access" && is_struct_type(node, status)) {
 		emit_address_of(node, status);
-		if (!status.code.endsWith("\n")) status.code += "\n";
+		ensure_newline(status);
 		if (target_reg !== "x0") {
-			status.code += `mov ${target_reg}, x0\n`;
+			emit_asm(status, `mov ${target_reg}, x0\n`);
 		}
 		return;
 	}
@@ -1191,28 +1199,24 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 
 	if (node.op === "!") {
 		build_node(node.right_value, status);
-		if (!status.code.endsWith("\n")) {
-			status.code += "\n";
-		}
-		status.code += `cmp x0, #0\n`;
-		status.code += `cset x0, eq\n`;
+		ensure_newline(status);
+		emit_asm(status, `cmp x0, #0\n`);
+		emit_asm(status, `cset x0, eq\n`);
 		return;
 	}
 
 	// Unary minus: evaluate the operand into x0, then negate it.
 	if (node.op === "u-") {
 		build_node(node.right_value, status);
-		if (!status.code.endsWith("\n")) {
-			status.code += "\n";
-		}
+		ensure_newline(status);
 		if (is_float_type(node.right_value!)) {
 			// A double's negation flips only the sign bit — integer `neg`
 			// (two's-complement of the bit pattern) is not that.
-			status.code += `fmov d0, x0\n`;
-			status.code += `fneg d0, d0\n`;
-			status.code += `fmov x0, d0\n`;
+			emit_asm(status, `fmov d0, x0\n`);
+			emit_asm(status, `fneg d0, d0\n`);
+			emit_asm(status, `fmov x0, d0\n`);
 		} else {
-			status.code += `neg x0, x0\n`;
+			emit_asm(status, `neg x0, x0\n`);
 		}
 		return;
 	}
@@ -1227,35 +1231,31 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		// first, spill to a stack slot, then load the flag and branch.
 		if (is_nullable_struct_type(type_from_value_node(node.left_value), status)) {
 			build_operand(node.left_value, "x0", status);
-			if (!status.code.endsWith("\n")) status.code += "\n";
+			ensure_newline(status);
 			const spill = allocate_stack_space(status, 8);
-			status.code += `str x0, [x29, #${spill}]\n`;
+			emit_asm(status, `str x0, [x29, #${spill}]\n`);
 			load_nullable_has(node.left_value, "x0", status);
-			if (!status.code.endsWith("\n")) status.code += "\n";
+			ensure_newline(status);
 			const have_label = `.Lcoalesce_have_${coalesce_counter++}`;
 			const done_label = `.Lcoalesce_done_${coalesce_counter++}`;
-			status.code += `cmp x0, #0\n`;
-			status.code += `b.ne ${have_label}\n`;
+			emit_asm(status, `cmp x0, #0\n`);
+			emit_asm(status, `b.ne ${have_label}\n`);
 			build_operand(node.right_value, "x0", status);
-			if (!status.code.endsWith("\n")) status.code += "\n";
-			status.code += `b ${done_label}\n`;
-			status.code += `${have_label}:\n`;
-			status.code += `ldr x0, [x29, #${spill}]\n`;
-			status.code += `${done_label}:\n`;
+			ensure_newline(status);
+			emit_asm(status, `b ${done_label}\n`);
+			emit_asm(status, `${have_label}:\n`);
+			emit_asm(status, `ldr x0, [x29, #${spill}]\n`);
+			emit_asm(status, `${done_label}:\n`);
 			return;
 		}
 		build_operand(node.left_value, "x0", status);
-		if (!status.code.endsWith("\n")) {
-			status.code += "\n";
-		}
-		status.code += `cmp x0, #0\n`;
+		ensure_newline(status);
+		emit_asm(status, `cmp x0, #0\n`);
 		const label = `.Lcoalesce_have_${coalesce_counter++}`;
-		status.code += `b.ne ${label}\n`;
+		emit_asm(status, `b.ne ${label}\n`);
 		build_operand(node.right_value, "x0", status);
-		if (!status.code.endsWith("\n")) {
-			status.code += "\n";
-		}
-		status.code += `${label}:\n`;
+		ensure_newline(status);
+		emit_asm(status, `${label}:\n`);
 		return;
 	}
 
@@ -1270,10 +1270,10 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			: node.right_value;
 		if (is_nullable_struct_type(type_from_value_node(nullable_side), status)) {
 			load_nullable_has(nullable_side, "x1", status);
-			if (!status.code.endsWith("\n")) status.code += "\n";
+			ensure_newline(status);
 			// has==1 means non-null. `== null` → !has (eq 0); `!= null` → has (ne 0).
-			status.code += `cmp x1, #0\n`;
-			status.code += `cset x0, ${node.op === "==" ? "eq" : "ne"}\n`;
+			emit_asm(status, `cmp x1, #0\n`);
+			emit_asm(status, `cset x0, ${node.op === "==" ? "eq" : "ne"}\n`);
 			return;
 		}
 	}
@@ -1289,11 +1289,11 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 	) {
 		const enum_node = enum_with_data_side(node.left_value, node.right_value, status)!;
 		build_enum_tag_operand(node.right_value, enum_node, "x2", status);
-		status.code += `str x2, [sp, #-16]!\n`;
+		emit_asm(status, `str x2, [sp, #-16]!\n`);
 		build_enum_tag_operand(node.left_value, enum_node, "x1", status);
-		status.code += `ldr x2, [sp], #16\n`;
-		status.code += `cmp x1, x2\n`;
-		status.code += `cset x0, ${node.op === "==" ? "eq" : "ne"}\n`;
+		emit_asm(status, `ldr x2, [sp], #16\n`);
+		emit_asm(status, `cmp x1, x2\n`);
+		emit_asm(status, `cset x0, ${node.op === "==" ? "eq" : "ne"}\n`);
 		return;
 	}
 
@@ -1311,24 +1311,24 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		const done_label = `.Lview_cmp_done_${id}`;
 		// (ptr, len) for the right operand, spilled; then the left.
 		emit_view_string_arg(node.right_value, status);
-		status.code += `stp x0, x1, [sp, #-16]!\n`;
+		emit_asm(status, `stp x0, x1, [sp, #-16]!\n`);
 		emit_view_string_arg(node.left_value, status);
-		status.code += `ldr x2, [sp, #8]\n`;
-		status.code += `cmp x1, x2\n`;
-		status.code += `b.ne ${len_ne_label}\n`;
-		status.code += `mov x2, x1\n`; // size
-		status.code += `ldr x1, [sp]\n`; // right ptr
-		status.code += `bl _memcmp\n`;
-		status.code += `cmp x0, #0\n`;
-		status.code += `cset x0, ${node.op === "==" ? "eq" : "ne"}\n`;
-		status.code += `b ${done_label}\n`;
-		status.code += `${len_ne_label}:\n`;
-		status.code += `mov x0, #0\n`;
+		emit_asm(status, `ldr x2, [sp, #8]\n`);
+		emit_asm(status, `cmp x1, x2\n`);
+		emit_asm(status, `b.ne ${len_ne_label}\n`);
+		emit_asm(status, `mov x2, x1\n`); // size
+		emit_asm(status, `ldr x1, [sp]\n`); // right ptr
+		emit_asm(status, `bl _memcmp\n`);
+		emit_asm(status, `cmp x0, #0\n`);
+		emit_asm(status, `cset x0, ${node.op === "==" ? "eq" : "ne"}\n`);
+		emit_asm(status, `b ${done_label}\n`);
+		emit_asm(status, `${len_ne_label}:\n`);
+		emit_asm(status, `mov x0, #0\n`);
 		if (node.op === "!=") {
-			status.code += `mov x0, #1\n`;
+			emit_asm(status, `mov x0, #1\n`);
 		}
-		status.code += `${done_label}:\n`;
-		status.code += `add sp, sp, #16\n`;
+		emit_asm(status, `${done_label}:\n`);
+		emit_asm(status, `add sp, sp, #16\n`);
 		return;
 	}
 
@@ -1348,7 +1348,7 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 				status,
 				return_struct ? get_struct_size(node.type!.name, status) : return_enum_size!,
 			);
-			status.code += `add x8, x29, #${return_temp_offset}\n`;
+			emit_asm(status, `add x8, x29, #${return_temp_offset}\n`);
 		}
 
 		// For array + and *, allocate result with length prefix and call the
@@ -1362,7 +1362,7 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			// Allocate result buffer with length prefix
 			const alloc_start = allocate_stack_space(status, 8 + elem_size * result_len);
 			return_temp_offset = alloc_start + 8;
-			status.code += `add x8, x29, #${return_temp_offset}\n`;
+			emit_asm(status, `add x8, x29, #${return_temp_offset}\n`);
 		}
 
 		// Check if operands are owned heap temps before building them. A
@@ -1389,16 +1389,12 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			// result's pair is spilled across the frees.
 			const right_spill_pair = allocate_stack_space(status, 16, 16);
 			build_operator_operand(node.right_value, "x0", status);
-			if (!status.code.endsWith("\n")) {
-				status.code += "\n";
-			}
+			ensure_newline(status);
 			emit_pair_store_x29(status, right_spill_pair);
 
 			const left_spill_pair = allocate_stack_space(status, 16, 16);
 			build_operator_operand(node.left_value, "x0", status);
-			if (!status.code.endsWith("\n")) {
-				status.code += "\n";
-			}
+			ensure_newline(status);
 			emit_pair_store_x29(status, left_spill_pair);
 			// Self = left pair in (x0, x1); other = right pair in (x2, x3).
 			emit_pair_load_x29(status, left_spill_pair);
@@ -1407,7 +1403,7 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			const op_label =
 				node.operator_func.mangled_name ||
 				`${node.operator_func.struct_name}_${node.operator_func.func_name}`;
-			status.code += `bl ${op_label}\n`;
+			emit_asm(status, `bl ${op_label}\n`);
 
 			const returns_string = node.type?.name === "string";
 			let result_pair_spill: number | undefined;
@@ -1417,19 +1413,19 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			}
 
 			if (left_is_heap) {
-				status.code += `ldr x0, [x29, #${left_spill_pair}]\n`;
+				emit_asm(status, `ldr x0, [x29, #${left_spill_pair}]\n`);
 				emit_free(status);
 			}
 			if (right_is_heap) {
-				status.code += `ldr x0, [x29, #${right_spill_pair}]\n`;
+				emit_asm(status, `ldr x0, [x29, #${right_spill_pair}]\n`);
 				emit_free(status);
 			}
 			if (result_pair_spill !== undefined) {
 				emit_pair_load_x29(status, result_pair_spill);
 			}
 			if (node.operator_func.invert) {
-				status.code += `cmp x0, #0\n`;
-				status.code += `cset x0, eq\n`;
+				emit_asm(status, `cmp x0, #0\n`);
+				emit_asm(status, `cset x0, eq\n`);
 			}
 			if (returns_string) {
 				status.last_result_is_heap = true;
@@ -1440,60 +1436,56 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		// Evaluate right operand, spill to stack (left evaluation may clobber x1)
 		const right_spill = allocate_stack_space(status, 8);
 		build_operator_operand(node.right_value, "x0", status);
-		if (!status.code.endsWith("\n")) {
-			status.code += "\n";
-		}
-		status.code += `str x0, [x29, #${right_spill}]\n`;
+		ensure_newline(status);
+		emit_asm(status, `str x0, [x29, #${right_spill}]\n`);
 
 		// Always spill left operand — nested ops (e.g. s * n) return in x0
 		// which we must preserve through the spill/restore sequence.
 		const left_spill = allocate_stack_space(status, 8);
 		build_operator_operand(node.left_value, "x0", status);
-		if (!status.code.endsWith("\n")) {
-			status.code += "\n";
-		}
-		status.code += `str x0, [x29, #${left_spill}]\n`;
+		ensure_newline(status);
+		emit_asm(status, `str x0, [x29, #${left_spill}]\n`);
 
 		// Restore right operand into x1
-		status.code += `ldr x1, [x29, #${right_spill}]\n`;
+		emit_asm(status, `ldr x1, [x29, #${right_spill}]\n`);
 
 		const label =
 			node.operator_func.mangled_name ||
 			`${node.operator_func.struct_name}_${node.operator_func.func_name}`;
-		status.code += `bl ${label}\n`;
+		emit_asm(status, `bl ${label}\n`);
 
 		// Save result before freeing heap temps (emit_free clobbers x0).
 		const has_heap_temps = left_is_heap || right_is_heap;
 		let result_spill: number | undefined;
 		if (has_heap_temps) {
 			result_spill = allocate_stack_space(status, 8);
-			status.code += `str x0, [x29, #${result_spill}]\n`;
+			emit_asm(status, `str x0, [x29, #${result_spill}]\n`);
 		}
 
 		if (return_temp_offset !== undefined && (return_struct || return_enum_size !== undefined)) {
-			status.code += `add x0, x29, #${return_temp_offset}\n`;
+			emit_asm(status, `add x0, x29, #${return_temp_offset}\n`);
 		}
 
 		// Free owned heap temp operands AFTER the operator has consumed them.
 		if (left_is_heap) {
-			status.code += `ldr x0, [x29, #${left_spill}]\n`;
+			emit_asm(status, `ldr x0, [x29, #${left_spill}]\n`);
 			emit_free(status);
 		}
 		if (right_is_heap) {
-			status.code += `ldr x0, [x29, #${right_spill}]\n`;
+			emit_asm(status, `ldr x0, [x29, #${right_spill}]\n`);
 			emit_free(status);
 		}
 
 		// Restore result if it was spilled.
 		if (result_spill !== undefined) {
-			status.code += `ldr x0, [x29, #${result_spill}]\n`;
+			emit_asm(status, `ldr x0, [x29, #${result_spill}]\n`);
 		}
 
 		// `!=` dispatched to a struct's `eq` (or `==` to `ne`): invert the
 		// boolean call result in x0.
 		if (node.operator_func.invert) {
-			status.code += `cmp x0, #0\n`;
-			status.code += `cset x0, eq\n`;
+			emit_asm(status, `cmp x0, #0\n`);
+			emit_asm(status, `cset x0, eq\n`);
 		}
 
 		// Operator functions that return strings produce heap-allocated results.
@@ -1576,7 +1568,7 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			}
 			if (result !== undefined) {
 				emit_immediate("x0", String(result), status);
-				if (!status.code.endsWith("\n")) status.code += "\n";
+				ensure_newline(status);
 				return;
 			}
 		}
@@ -1596,25 +1588,25 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		const need_float_spill = !left_simple && !is_simple(node.right_value);
 		if (!left_simple) {
 			build_float_operand(node.left_value, "d0", status);
-			if (!status.code.endsWith("\n")) status.code += "\n";
+			ensure_newline(status);
 			if (need_float_spill) {
-				status.code += `str d0, [sp, #-16]!\n`;
+				emit_asm(status, `str d0, [sp, #-16]!\n`);
 				build_float_operand(node.right_value, "d0", status);
-				if (!status.code.endsWith("\n")) status.code += "\n";
-				status.code += `fmov d1, d0\n`;
-				status.code += `ldr d0, [sp], #16\n`;
+				ensure_newline(status);
+				emit_asm(status, `fmov d1, d0\n`);
+				emit_asm(status, `ldr d0, [sp], #16\n`);
 			} else {
 				build_float_operand(node.right_value, "d1", status);
-				if (!status.code.endsWith("\n")) status.code += "\n";
+				ensure_newline(status);
 			}
 		} else {
 			build_float_operand(node.right_value, "d1", status);
-			if (!status.code.endsWith("\n")) status.code += "\n";
+			ensure_newline(status);
 			build_float_operand(node.left_value, "d0", status);
-			if (!status.code.endsWith("\n")) status.code += "\n";
+			ensure_newline(status);
 		}
-		status.code += `fcmp d0, d1\n`;
-		status.code += `cset x0, ${map_float_cmp(node.op)}\n`;
+		emit_asm(status, `fcmp d0, d1\n`);
+		emit_asm(status, `cset x0, ${map_float_cmp(node.op)}\n`);
 		return;
 	}
 
@@ -1644,7 +1636,7 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		const hinted = dest !== "d0";
 		status.float_dest_hint = undefined;
 		const emit_fop = (mnemonic: string, a: string, b: string) => {
-			status.code += `${mnemonic} ${dest}, ${a}, ${b}\n`;
+			emit_asm(status, `${mnemonic} ${dest}, ${a}, ${b}\n`);
 		};
 		const tail = () => {
 			if (hinted) {
@@ -1654,7 +1646,7 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			if (caller_wants_d0) {
 				status.float_result_in_d0 = false;
 			} else {
-				status.code += `fmov x0, d0\n`;
+				emit_asm(status, `fmov x0, d0\n`);
 			}
 		};
 
@@ -1684,14 +1676,14 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		}
 		if (ls) {
 			build_float_operand(node.right_value, "d0", status);
-			if (!status.code.endsWith("\n")) status.code += "\n";
+			ensure_newline(status);
 			emit_fop(map_float_op(node.op), ls, "d0");
 			tail();
 			return;
 		}
 		if (rs) {
 			build_float_operand(node.left_value, "d0", status);
-			if (!status.code.endsWith("\n")) status.code += "\n";
+			ensure_newline(status);
 			emit_fop(map_float_op(node.op), "d0", rs);
 			tail();
 			return;
@@ -1726,20 +1718,20 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 				// right_mul: c + n*m → fmadd,  c - n*m → fnmadd
 				const mnemonic = node.op === "+" ? "fmadd" : left_mul ? "fmsub" : "fnmadd";
 				build_float_operand(c_node!, "d0", status);
-				status.code += `str d0, [sp, #-16]!\n`;
+				emit_asm(status, `str d0, [sp, #-16]!\n`);
 				build_float_operand(mul.left_value, "d0", status);
-				status.code += `str d0, [sp, #-16]!\n`;
+				emit_asm(status, `str d0, [sp, #-16]!\n`);
 				build_float_operand(mul.right_value, "d0", status);
-				status.code += `fmov d1, d0\n`;
-				status.code += `ldr d0, [sp], #16\n`;
-				status.code += `ldr d2, [sp], #16\n`;
-				status.code += `${mnemonic} ${fma_dest}, d0, d1, d2\n`;
+				emit_asm(status, `fmov d1, d0\n`);
+				emit_asm(status, `ldr d0, [sp], #16\n`);
+				emit_asm(status, `ldr d2, [sp], #16\n`);
+				emit_asm(status, `${mnemonic} ${fma_dest}, d0, d1, d2\n`);
 				if (hinted_fma) {
 					// Result already in the target register.
 				} else if (caller_wants_d0) {
 					status.float_result_in_d0 = false;
 				} else {
-					status.code += `fmov x0, d0\n`;
+					emit_asm(status, `fmov x0, d0\n`);
 				}
 				return;
 			}
@@ -1755,28 +1747,28 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			// right is complex too, its eval would clobber d0 — spill the
 			// LEFT around it; a simple right just lands in d1 untouched.
 			build_float_operand(node.left_value, "d0", status);
-			if (!status.code.endsWith("\n")) status.code += "\n";
+			ensure_newline(status);
 			if (need_float_spill) {
-				status.code += `str d0, [sp, #-16]!\n`;
+				emit_asm(status, `str d0, [sp, #-16]!\n`);
 				build_float_operand(node.right_value, "d0", status);
-				if (!status.code.endsWith("\n")) status.code += "\n";
-				status.code += `fmov d1, d0\n`;
-				status.code += `ldr d0, [sp], #16\n`;
+				ensure_newline(status);
+				emit_asm(status, `fmov d1, d0\n`);
+				emit_asm(status, `ldr d0, [sp], #16\n`);
 			} else {
 				build_float_operand(node.right_value, "d1", status);
-				if (!status.code.endsWith("\n")) status.code += "\n";
+				ensure_newline(status);
 			}
 		} else {
 			build_float_operand(node.right_value, "d1", status);
-			if (!status.code.endsWith("\n")) status.code += "\n";
+			ensure_newline(status);
 			build_float_operand(node.left_value, "d0", status);
-			if (!status.code.endsWith("\n")) status.code += "\n";
+			ensure_newline(status);
 		}
-		status.code += `${map_float_op(node.op)} ${dest}, d0, d1\n`;
+		emit_asm(status, `${map_float_op(node.op)} ${dest}, d0, d1\n`);
 		if (caller_wants_d0) {
 			status.float_result_in_d0 = false;
 		} else {
-			status.code += `fmov x0, d0\n`;
+			emit_asm(status, `fmov x0, d0\n`);
 		}
 		return;
 	}
@@ -1790,21 +1782,21 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		const skip_right = `.Lsc_skip_${id}`;
 		const done = `.Lsc_done_${id}`;
 		build_operand(node.left_value, "x0", status);
-		if (!status.code.endsWith("\n")) status.code += "\n";
-		status.code += `cmp x0, #0\n`;
-		status.code += node.op === "&&" ? `b.eq ${skip_right}\n` : `b.ne ${skip_right}\n`;
+		ensure_newline(status);
+		emit_asm(status, `cmp x0, #0\n`);
+		emit_asm(status, node.op === "&&" ? `b.eq ${skip_right}\n` : `b.ne ${skip_right}\n`);
 		build_operand(node.right_value, "x0", status);
-		if (!status.code.endsWith("\n")) status.code += "\n";
-		status.code += `cmp x0, #0\n`;
-		status.code += `cset x0, ne\n`;
-		status.code += `b ${done}\n`;
-		status.code += `${skip_right}:\n`;
+		ensure_newline(status);
+		emit_asm(status, `cmp x0, #0\n`);
+		emit_asm(status, `cset x0, ne\n`);
+		emit_asm(status, `b ${done}\n`);
+		emit_asm(status, `${skip_right}:\n`);
 		if (node.op === "&&") {
-			status.code += `mov x0, #0\n`;
+			emit_asm(status, `mov x0, #0\n`);
 		} else {
-			status.code += `mov x0, #1\n`;
+			emit_asm(status, `mov x0, #1\n`);
 		}
-		status.code += `${done}:\n`;
+		emit_asm(status, `${done}:\n`);
 		return;
 	}
 
@@ -1843,19 +1835,19 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		const rs = int_source(node.right_value);
 		if (ls && rs) {
 			const dest = hint ?? "x0";
-			status.code += `${mnemonic} ${dest}, ${ls}, ${rs}\n`;
+			emit_asm(status, `${mnemonic} ${dest}, ${ls}, ${rs}\n`);
 			return;
 		}
 		if (ls) {
 			build_operand(node.right_value, "x0", status);
-			if (!status.code.endsWith("\n")) status.code += "\n";
-			status.code += `${mnemonic} ${hint ?? "x0"}, ${ls}, x0\n`;
+			ensure_newline(status);
+			emit_asm(status, `${mnemonic} ${hint ?? "x0"}, ${ls}, x0\n`);
 			return;
 		}
 		if (rs) {
 			build_operand(node.left_value, "x0", status);
-			if (!status.code.endsWith("\n")) status.code += "\n";
-			status.code += `${mnemonic} ${hint ?? "x0"}, x0, ${rs}\n`;
+			ensure_newline(status);
+			emit_asm(status, `${mnemonic} ${hint ?? "x0"}, x0, ${rs}\n`);
 			return;
 		}
 		if (hint) {
@@ -1866,24 +1858,24 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			const need_spill = !left_simple && !is_simple(node.right_value);
 			if (!left_simple) {
 				build_operand(node.left_value, "x1", status);
-				if (!status.code.endsWith("\n")) status.code += "\n";
+				ensure_newline(status);
 				if (need_spill) {
-					status.code += `str x1, [sp, #-16]!\n`;
+					emit_asm(status, `str x1, [sp, #-16]!\n`);
 					build_operand(node.right_value, "x1", status);
-					if (!status.code.endsWith("\n")) status.code += "\n";
-					status.code += `mov x2, x1\n`;
-					status.code += `ldr x1, [sp], #16\n`;
+					ensure_newline(status);
+					emit_asm(status, `mov x2, x1\n`);
+					emit_asm(status, `ldr x1, [sp], #16\n`);
 				} else {
 					build_operand(node.right_value, "x2", status);
-					if (!status.code.endsWith("\n")) status.code += "\n";
+					ensure_newline(status);
 				}
 			} else {
 				build_operand(node.right_value, "x2", status);
-				if (!status.code.endsWith("\n")) status.code += "\n";
+				ensure_newline(status);
 				build_operand(node.left_value, "x1", status);
-				if (!status.code.endsWith("\n")) status.code += "\n";
+				ensure_newline(status);
 			}
-			status.code += `${mnemonic} ${hint}, x1, x2\n`;
+			emit_asm(status, `${mnemonic} ${hint}, x1, x2\n`);
 			return;
 		}
 	}
@@ -1897,46 +1889,36 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 	if (!left_simple_op) {
 		build_operand(node.left_value, "x1", status);
 		if (need_spill) {
-			if (!status.code.endsWith("\n")) {
-				status.code += "\n";
-			}
-			status.code += `str x1, [sp, #-16]!\n`;
+			ensure_newline(status);
+			emit_asm(status, `str x1, [sp, #-16]!\n`);
 			build_operand(node.right_value, "x1", status);
-			if (!status.code.endsWith("\n")) {
-				status.code += "\n";
-			}
-			status.code += `mov x2, x1\n`;
-			status.code += `ldr x1, [sp], #16\n`;
+			ensure_newline(status);
+			emit_asm(status, `mov x2, x1\n`);
+			emit_asm(status, `ldr x1, [sp], #16\n`);
 		} else {
 			build_operand(node.right_value, "x2", status);
-			if (!status.code.endsWith("\n")) {
-				status.code += "\n";
-			}
+			ensure_newline(status);
 		}
 	} else {
 		build_operand(node.right_value, "x2", status);
-		if (!status.code.endsWith("\n")) {
-			status.code += "\n";
-		}
+		ensure_newline(status);
 		build_operand(node.left_value, "x1", status);
-		if (!status.code.endsWith("\n")) {
-			status.code += "\n";
-		}
+		ensure_newline(status);
 	}
 
 	const unsigned = is_unsigned_type(node.left_value) || is_unsigned_type(node.right_value);
 
 	if (is_comparison(node.op)) {
-		status.code += `cmp x1, x2\n`;
-		status.code += `cset x0, ${map_cmp(node.op, unsigned)}\n`;
+		emit_asm(status, `cmp x1, x2\n`);
+		emit_asm(status, `cset x0, ${map_cmp(node.op, unsigned)}\n`);
 	} else {
 		const op = map_op(node.op, unsigned);
 		if (op === "mod") {
 			const div_op = unsigned ? "udiv" : "sdiv";
-			status.code += `${div_op} x3, x1, x2\n`;
-			status.code += `msub x0, x3, x2, x1\n`;
+			emit_asm(status, `${div_op} x3, x1, x2\n`);
+			emit_asm(status, `msub x0, x3, x2, x1\n`);
 		} else {
-			status.code += `${op} x0, x1, x2\n`;
+			emit_asm(status, `${op} x0, x1, x2\n`);
 		}
 	}
 }
@@ -2077,11 +2059,11 @@ function load_nullable_has(node: BaseNode, target_reg: string, status: BuildStat
 			const t = (node as ValueNode).type;
 			if (t?.name) {
 				const struct_size = get_struct_size(t.name, status);
-				if (!status.code.endsWith("\n")) status.code += "\n";
+				ensure_newline(status);
 				if (target_reg !== param_reg) {
-					status.code += `mov ${target_reg}, ${param_reg}\n`;
+					emit_asm(status, `mov ${target_reg}, ${param_reg}\n`);
 				}
-				status.code += `ldr ${target_reg}, [${target_reg}, #${struct_size}]\n`;
+				emit_asm(status, `ldr ${target_reg}, [${target_reg}, #${struct_size}]\n`);
 				return;
 			}
 		}
@@ -2097,14 +2079,14 @@ function load_nullable_has(node: BaseNode, target_reg: string, status: BuildStat
 			// Resolve the target object's base address into x0 (NOT its value —
 			// ref params must not be dereferenced here), then load the flag word.
 			get_source_address(access.target, status);
-			if (!status.code.endsWith("\n")) status.code += "\n";
+			ensure_newline(status);
 			if (target_reg !== "x0") {
-				status.code += `mov ${target_reg}, x0\n`;
+				emit_asm(status, `mov ${target_reg}, x0\n`);
 			}
 			if (has_off === 0) {
-				status.code += `ldr ${target_reg}, [${target_reg}]\n`;
+				emit_asm(status, `ldr ${target_reg}, [${target_reg}]\n`);
 			} else {
-				status.code += `ldr ${target_reg}, [${target_reg}, #${has_off}]\n`;
+				emit_asm(status, `ldr ${target_reg}, [${target_reg}, #${has_off}]\n`);
 			}
 			return;
 		}
@@ -2118,8 +2100,8 @@ function load_nullable_has(node: BaseNode, target_reg: string, status: BuildStat
 			// Build the call expression: it leaves x0 = address of the temp
 			// (struct value start). Load the flag from there.
 			build_operand(node, target_reg, status);
-			if (!status.code.endsWith("\n")) status.code += "\n";
-			status.code += `ldr ${target_reg}, [${target_reg}, #${struct_size}]\n`;
+			ensure_newline(status);
+			emit_asm(status, `ldr ${target_reg}, [${target_reg}, #${struct_size}]\n`);
 			return;
 		}
 	}

@@ -3,6 +3,7 @@ import { emit_buffer_struct_addr } from "./build_access_node.ts";
 import build_node from "./build_node.ts";
 import { build_float_operand } from "./build_operation_node.ts";
 import type { ElemDesc, NeonLaneExpr, NeonLaneStmt, NeonPlan } from "./neon_plan.ts";
+import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
 import { emit_var_store } from "./utils/stack_var.ts";
 
 /**
@@ -110,7 +111,7 @@ function emit_lane_expr(
 	switch (e.k) {
 		case "load": {
 			const reg = buffer_regs.get(e.buffer) ?? "x11";
-			status.code += `ldr q0, [${reg}, ${idx}, lsl #4]\n`;
+			emit_asm(status, `ldr q0, [${reg}, ${idx}, lsl #4]\n`);
 			return;
 		}
 		case "lit":
@@ -121,16 +122,16 @@ function emit_lane_expr(
 			// v0; ints ride the ordinary value path into x0.
 			if (plan.elem.float) {
 				build_float_operand(e.node, "d0", status);
-				status.code += `dup v0.2d, v0.d[0]\n`;
+				emit_asm(status, `dup v0.2d, v0.d[0]\n`);
 			} else {
 				build_node(e.node, status);
-				if (!status.code.endsWith("\n")) status.code += "\n";
-				status.code += `dup v0.${plan.elem.arr}, ${plan.elem.arr === "4s" ? "w0" : "x0"}\n`;
+				ensure_newline(status);
+				emit_asm(status, `dup v0.${plan.elem.arr}, ${plan.elem.arr === "4s" ? "w0" : "x0"}\n`);
 			}
 			return;
 		}
 		case "temp": {
-			status.code += `mov v0.16b, ${lane_reg_of(e.name, plan)}.16b\n`;
+			emit_asm(status, `mov v0.16b, ${lane_reg_of(e.name, plan)}.16b\n`);
 			return;
 		}
 		case "op": {
@@ -149,24 +150,24 @@ function emit_lane_expr(
 				const mul = left_mul ?? right_mul;
 				if (mul && (e.op === "+" || !left_mul)) {
 					emit_lane_expr(left_mul ? e.right : e.left, status, plan, buffer_regs, idx, depth + 1);
-					status.code += `mov v8.16b, v0.16b\n`;
+					emit_asm(status, `mov v8.16b, v0.16b\n`);
 					emit_lane_expr(mul.left, status, plan, buffer_regs, idx, depth + 1);
-					status.code += `mov ${spill_reg(depth + 1)}.16b, v0.16b\n`;
+					emit_asm(status, `mov ${spill_reg(depth + 1)}.16b, v0.16b\n`);
 					emit_lane_expr(mul.right, status, plan, buffer_regs, idx, depth + 1);
-					status.code += `mov v1.16b, v0.16b\n`;
-					status.code += `mov v0.16b, ${spill_reg(depth + 1)}.16b\n`;
-					status.code += `${e.op === "+" ? "fmla" : "fmls"} v8.2d, v0.2d, v1.2d\n`;
-					status.code += `mov v0.16b, v8.16b\n`;
+					emit_asm(status, `mov v1.16b, v0.16b\n`);
+					emit_asm(status, `mov v0.16b, ${spill_reg(depth + 1)}.16b\n`);
+					emit_asm(status, `${e.op === "+" ? "fmla" : "fmls"} v8.2d, v0.2d, v1.2d\n`);
+					emit_asm(status, `mov v0.16b, v8.16b\n`);
 					return;
 				}
 			}
 			emit_lane_expr(e.left, status, plan, buffer_regs, idx, depth + 1);
-			status.code += `mov ${spill_reg(depth)}.16b, v0.16b\n`;
+			emit_asm(status, `mov ${spill_reg(depth)}.16b, v0.16b\n`);
 			emit_lane_expr(e.right, status, plan, buffer_regs, idx, depth + 1);
-			status.code += `mov v1.16b, v0.16b\n`;
-			status.code += `mov v0.16b, ${spill_reg(depth)}.16b\n`;
+			emit_asm(status, `mov v1.16b, v0.16b\n`);
+			emit_asm(status, `mov v0.16b, ${spill_reg(depth)}.16b\n`);
 			const { mnemonic, arr } = lane_op(e.op, plan.elem);
-			status.code += `${mnemonic} v0.${arr}, v0.${arr}, v1.${arr}\n`;
+			emit_asm(status, `${mnemonic} v0.${arr}, v0.${arr}, v1.${arr}\n`);
 			return;
 		}
 	}
@@ -213,7 +214,7 @@ function emit_lane_stmt(
 ): void {
 	if (lane.kind === "temp_def") {
 		emit_lane_expr(lane.value, status, plan, buffer_regs, idx, 0);
-		status.code += `mov ${lane_reg_of(lane.name, plan)}.16b, v0.16b\n`;
+		emit_asm(status, `mov ${lane_reg_of(lane.name, plan)}.16b, v0.16b\n`);
 		return;
 	}
 	if (lane.kind === "reduction") {
@@ -223,12 +224,15 @@ function emit_lane_stmt(
 		emit_lane_expr(lane.operand, status, plan, buffer_regs, idx, 0);
 		const acc = acc_regs.get(lane.name) ?? "v2";
 		const mn = lane.op === "+" ? (plan.elem.float ? "fadd" : "add") : "fmul";
-		status.code += `${mn} ${acc}.${plan.elem.arr}, ${acc}.${plan.elem.arr}, v0.${plan.elem.arr}\n`;
+		emit_asm(
+			status,
+			`${mn} ${acc}.${plan.elem.arr}, ${acc}.${plan.elem.arr}, v0.${plan.elem.arr}\n`,
+		);
 		return;
 	}
 	emit_lane_expr(lane.value, status, plan, buffer_regs, idx, 0);
 	const reg = buffer_regs.get(lane.buffer) ?? "x11";
-	status.code += `str q0, [${reg}, ${idx}, lsl #4]\n`;
+	emit_asm(status, `str q0, [${reg}, ${idx}, lsl #4]\n`);
 }
 
 /**
@@ -254,7 +258,7 @@ export function emit_neon_vector_loop(plan: NeonPlan, status: BuildStatus): bool
 	status.float_result_in_d0 = false;
 	const shift = plan.elem.shift;
 
-	if (!status.code.endsWith("\n")) status.code += "\n";
+	ensure_newline(status);
 
 	// Preheader: pin one data pointer per Buffer (emit_buffer_struct_addr
 	// targets x9, so these come before the limit lands there).
@@ -262,7 +266,7 @@ export function emit_neon_vector_loop(plan: NeonPlan, status: BuildStatus): bool
 	plan.buffers.forEach((b, i) => {
 		emit_buffer_struct_addr(b.node, status);
 		const reg = BUFFER_PTR_REGS[i] ?? "x11";
-		status.code += `ldr ${reg}, [x9, #8]\n`;
+		emit_asm(status, `ldr ${reg}, [x9, #8]\n`);
 		buffer_regs.set(b.name, reg);
 	});
 
@@ -272,33 +276,33 @@ export function emit_neon_vector_loop(plan: NeonPlan, status: BuildStatus): bool
 		const reg = REDUCTION_REGS[i] ?? "v2";
 		if (plan.elem.float) {
 			build_float_operand(r.init_node, "d0", status);
-			status.code += `dup ${reg}.2d, v0.d[0]\n`;
+			emit_asm(status, `dup ${reg}.2d, v0.d[0]\n`);
 		} else {
 			build_node(r.init_node, status);
-			if (!status.code.endsWith("\n")) status.code += "\n";
-			status.code += `dup ${reg}.${plan.elem.arr}, ${plan.elem.arr === "4s" ? "w0" : "x0"}\n`;
+			ensure_newline(status);
+			emit_asm(status, `dup ${reg}.${plan.elem.arr}, ${plan.elem.arr === "4s" ? "w0" : "x0"}\n`);
 		}
 		acc_regs.set(r.name, reg);
 	});
 
 	// lim = floor(bound / group_elems) double-groups.
 	build_node(plan.bound_node, status);
-	if (!status.code.endsWith("\n")) status.code += "\n";
-	status.code += `mov x9, x0\n`;
-	status.code += `asr x9, x9, #${shift}\n`;
-	status.code += `bic x9, x9, #1\n`;
-	status.code += `mov x10, #0\n`;
+	ensure_newline(status);
+	emit_asm(status, `mov x9, x0\n`);
+	emit_asm(status, `asr x9, x9, #${shift}\n`);
+	emit_asm(status, `bic x9, x9, #1\n`);
+	emit_asm(status, `mov x10, #0\n`);
 
 	const label = `.Lneon_${neon_counter++}`;
-	status.code += `${label}:\n`;
-	status.code += `cmp x10, x9\n`;
-	status.code += `b.hs ${label}_end\n`;
+	emit_asm(status, `${label}:\n`);
+	emit_asm(status, `cmp x10, x9\n`);
+	emit_asm(status, `b.hs ${label}_end\n`);
 	for (const lane of plan.lanes) emit_lane_stmt(lane, status, plan, buffer_regs, "x10", acc_regs);
-	status.code += `add x14, x10, #1\n`;
+	emit_asm(status, `add x14, x10, #1\n`);
 	for (const lane of plan.lanes) emit_lane_stmt(lane, status, plan, buffer_regs, "x14", acc_regs);
-	status.code += `add x10, x10, #2\n`;
-	status.code += `b ${label}\n`;
-	status.code += `${label}_end:\n`;
+	emit_asm(status, `add x10, x10, #2\n`);
+	emit_asm(status, `b ${label}\n`);
+	emit_asm(status, `${label}_end:\n`);
 
 	// Horizontal-combine each accumulator into its scalar and store — the
 	// scalar tail continues from the combined value. Floats: FADDP (pair) or
@@ -312,25 +316,25 @@ export function emit_neon_vector_loop(plan: NeonPlan, status: BuildStatus): bool
 		const reg = acc_regs.get(r.name) ?? "v2";
 		if (plan.elem.float) {
 			if (r.op === "+") {
-				status.code += `faddp d0, ${reg}.2d\n`;
+				emit_asm(status, `faddp d0, ${reg}.2d\n`);
 			} else {
-				status.code += `fmul d0, ${reg}.d[0], ${reg}.d[1]\n`;
+				emit_asm(status, `fmul d0, ${reg}.d[0], ${reg}.d[1]\n`);
 			}
 			emit_var_store(status, "d0", r.name, 8);
 		} else if (plan.elem.arr === "2d") {
-			status.code += `addp d0, ${reg}.2d\n`;
-			status.code += `fmov x0, d0\n`;
+			emit_asm(status, `addp d0, ${reg}.2d\n`);
+			emit_asm(status, `fmov x0, d0\n`);
 			emit_var_store(status, "x0", r.name, 8);
 		} else {
-			status.code += `addv s0, ${reg}.4s\n`;
-			status.code += `fmov w0, s0\n`;
+			emit_asm(status, `addv s0, ${reg}.4s\n`);
+			emit_asm(status, `fmov w0, s0\n`);
 			emit_var_store(status, "x0", r.name, 4);
 		}
 	}
 
 	// Sync the induction: the scalar tail resumes at the vector loop's exit
 	// counter (group units → element index). (int = 8-byte slot / x-reg.)
-	status.code += `lsl x0, x10, #${shift}\n`;
+	emit_asm(status, `lsl x0, x10, #${shift}\n`);
 	emit_var_store(status, "x0", plan.induction, 8);
 
 	status.float_result_in_d0 = saved_d0;

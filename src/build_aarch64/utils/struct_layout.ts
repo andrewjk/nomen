@@ -4,6 +4,7 @@ import { get_built_in_type } from "../../built_in_types.ts";
 import DeclarationNode from "../../nodes/DeclarationNode.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
 import aarch64_size from "./aarch64_size.ts";
+import { emit_asm } from "./code_buffer.ts";
 
 const VT_SIZE = 8;
 
@@ -227,11 +228,11 @@ export function emit_struct_copy(
 ) {
 	const words = Math.ceil(struct_size / 8);
 	for (let i = 0; i < words; i++) {
-		status.code += `ldr x3, [${src_addr_reg}, #${i * 8}]\n`;
+		emit_asm(status, `ldr x3, [${src_addr_reg}, #${i * 8}]\n`);
 		if (dst_offset + i * 8 === 0) {
-			status.code += `str x3, [${dst_base_reg}]\n`;
+			emit_asm(status, `str x3, [${dst_base_reg}]\n`);
 		} else {
-			status.code += `str x3, [${dst_base_reg}, #${dst_offset + i * 8}]\n`;
+			emit_asm(status, `str x3, [${dst_base_reg}, #${dst_offset + i * 8}]\n`);
 		}
 	}
 }

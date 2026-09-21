@@ -4,6 +4,7 @@ import IfElseNode from "../nodes/IfElseNode.ts";
 import { emit_cond_branch } from "./build_operation_node.ts";
 import { build_block_with_cursor } from "./emit_nir.ts";
 import { enter_scope_frame, exit_scope_frame } from "./utils/auto_destroy.ts";
+import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
 
 let label_counter = 0;
 
@@ -33,9 +34,7 @@ export default function build_if_else_node(
 		false,
 		status,
 	);
-	if (!status.code.endsWith("\n")) {
-		status.code += "\n";
-	}
+	ensure_newline(status);
 
 	// Snapshot the Buffer data-pointer cache before the conditional so each
 	// branch starts from the dominating (pre-branch) state. A cache entry
@@ -48,8 +47,8 @@ export default function build_if_else_node(
 		status.buffer_data_cache = new Map(pre_cache);
 		status.array_ptr_cache = new Map(pre_array_cache);
 		build_block_with_cursor(node.if_branch!, nir?.then_branch, status);
-		status.code += `b end_${label}\n`;
-		status.code += `else_${label}:\n`;
+		emit_asm(status, `b end_${label}\n`);
+		emit_asm(status, `else_${label}:\n`);
 		status.buffer_data_cache = new Map(pre_cache);
 		status.array_ptr_cache = new Map(pre_array_cache);
 		build_block_with_cursor(node.else_branch, nir?.else_branch, status);
@@ -64,7 +63,7 @@ export default function build_if_else_node(
 	status.buffer_data_cache = pre_cache;
 	status.array_ptr_cache = pre_array_cache;
 
-	status.code += `end_${label}:\n`;
+	emit_asm(status, `end_${label}:\n`);
 
 	exit_scope_frame(status, old_scoped_declarations);
 }

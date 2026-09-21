@@ -4,6 +4,7 @@ import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
+import { emit_asm } from "./utils/code_buffer.ts";
 import { find_enum_for_case } from "./utils/enum_case.ts";
 
 function get_raw_value(node: ValueNode, status: BuildStatus): string {
@@ -73,12 +74,12 @@ export { resolve_static_value };
 
 export default function build_array_values_node(node: ArrayValuesNode, status: BuildStatus) {
 	node.values.forEach((value, i) => {
-		if (i > 0) status.code += ", ";
+		if (i > 0) emit_asm(status, ", ");
 		const resolved = resolve_static_value(value, status);
 		if (resolved !== null) {
-			status.code += resolved;
+			emit_asm(status, resolved);
 		} else {
-			status.code += "/* complex */";
+			emit_asm(status, "/* complex */");
 		}
 	});
 }

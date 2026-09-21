@@ -11,6 +11,7 @@ import type FunctionNode from "../nodes/FunctionNode.ts";
 import build_node from "./build_node.ts";
 import { ensure_concurrency_runtime_a64, spawn_arg_is_string } from "./build_spawn_node.ts";
 import { emit_descriptor_address, materialize_func_value_a64 } from "./utils/closure_a64.ts";
+import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
 
 /**
@@ -192,7 +193,7 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 	status.file_scope_c += c;
 
 	// --- Assembly: build arg registers and call the constructor helper ---
-	status.code += `// spawn construction site ${id} (${kind})\n`;
+	emit_asm(status, `// spawn construction site ${id} (${kind})\n`);
 	const arg_slot: number[] = [];
 	let total_arg_slots = 0;
 	for (let i = 0; i < call.params.length; i++) {
@@ -201,35 +202,35 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 	}
 
 	if (total_arg_slots === 0) {
-		status.code += `bl _${helper_name}\n`;
+		emit_asm(status, `bl _${helper_name}\n`);
 	} else {
 		const args_base = allocate_stack_space(status, total_arg_slots * 8, 16);
 		for (let i = 0; i < call.params.length; i++) {
-			status.code += `// Build arg${i}\n`;
+			emit_asm(status, `// Build arg${i}\n`);
 			build_node(call.params[i], status);
-			if (!status.code.endsWith("\n")) status.code += "\n";
-			status.code += `str x0, [x29, #${args_base + arg_slot[i] * 8}]\n`;
+			ensure_newline(status);
+			emit_asm(status, `str x0, [x29, #${args_base + arg_slot[i] * 8}]\n`);
 			if (fat_string_args[i]) {
-				status.code += `str x1, [x29, #${args_base + (arg_slot[i] + 1) * 8}]\n`;
+				emit_asm(status, `str x1, [x29, #${args_base + (arg_slot[i] + 1) * 8}]\n`);
 			}
 		}
 		const NUM_REG_ARGS = 8;
 		const overflow_count = Math.max(0, total_arg_slots - NUM_REG_ARGS);
 		if (overflow_count > 0) {
 			const outgoing_size = Math.ceil((overflow_count * 8) / 16) * 16;
-			status.code += `sub sp, sp, #${outgoing_size}\n`;
+			emit_asm(status, `sub sp, sp, #${outgoing_size}\n`);
 			for (let k = 0; k < overflow_count; k++) {
-				status.code += `ldr x9, [x29, #${args_base + (NUM_REG_ARGS + k) * 8}]\n`;
-				status.code += `str x9, [sp, #${k * 8}]\n`;
+				emit_asm(status, `ldr x9, [x29, #${args_base + (NUM_REG_ARGS + k) * 8}]\n`);
+				emit_asm(status, `str x9, [sp, #${k * 8}]\n`);
 			}
 		}
 		for (let s = 0; s < Math.min(total_arg_slots, NUM_REG_ARGS); s++) {
-			status.code += `ldr x${s}, [x29, #${args_base + s * 8}]\n`;
+			emit_asm(status, `ldr x${s}, [x29, #${args_base + s * 8}]\n`);
 		}
-		status.code += `bl _${helper_name}\n`;
+		emit_asm(status, `bl _${helper_name}\n`);
 		if (overflow_count > 0) {
 			const outgoing_size = Math.ceil((overflow_count * 8) / 16) * 16;
-			status.code += `add sp, sp, #${outgoing_size}\n`;
+			emit_asm(status, `add sp, sp, #${outgoing_size}\n`);
 		}
 	}
 	// x0 = the Thread/Fiber instance pointer.
@@ -387,7 +388,7 @@ function build_fn_value_ctor_a64(
 	status.file_scope_c += c;
 
 	// --- Assembly: the function value into x0, call the helper ---
-	status.code += `// function-value spawn construction site ${id} (${kind})\n`;
+	emit_asm(status, `// function-value spawn construction site ${id} (${kind})\n`);
 	const resolved_fn = (fn_value as unknown as { resolved_function?: FunctionNode })
 		.resolved_function;
 	if (fn_value.node_type === "func") {
@@ -402,7 +403,7 @@ function build_fn_value_ctor_a64(
 		// A func-typed local: the stored descriptor, MOVED into the task.
 		build_node(fn_value, status);
 	}
-	if (!status.code.endsWith("\n")) status.code += "\n";
+	ensure_newline(status);
 	// A func-typed LOCAL was moved into the task: its scope-exit
 	// free-if-owned arm must skip it.
 	if (fn_value.node_type === "value" && (fn_value as unknown as { is_moved?: boolean }).is_moved) {
@@ -410,6 +411,6 @@ function build_fn_value_ctor_a64(
 		if (!status.moved) status.moved = new Set();
 		status.moved.add(name);
 	}
-	status.code += `bl _${helper_name}\n`;
+	emit_asm(status, `bl _${helper_name}\n`);
 	// x0 = the Thread/Fiber instance pointer.
 }

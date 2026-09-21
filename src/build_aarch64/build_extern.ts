@@ -3,6 +3,7 @@ import emission_label from "../build_common/emission_label.ts";
 import { is_overloaded, mangled_label } from "../check/utils/function_overload.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import StructNode from "../nodes/StructNode.ts";
+import { emit_asm } from "./utils/code_buffer.ts";
 
 /**
  * Emit an `extern func` for the aarch64 backend: a fixed-shape adapter that
@@ -59,22 +60,22 @@ export default function build_extern(
 	);
 	const use_float = float_params.length === 1 && node.params.length === 1;
 
-	status.code += `.p2align 2\n`;
-	status.code += `.globl ${label}\n`;
-	status.code += `${label}:\n`;
+	emit_asm(status, `.p2align 2\n`);
+	emit_asm(status, `.globl ${label}\n`);
+	emit_asm(status, `${label}:\n`);
 	if (status.platform !== "windows") {
-		status.code += `.globl _${label}\n`;
-		status.code += `_${label} = ${label}\n`;
+		emit_asm(status, `.globl _${label}\n`);
+		emit_asm(status, `_${label} = ${label}\n`);
 	}
-	status.code += `stp x29, x30, [sp, #-16]!\n`;
-	status.code += `mov x29, sp\n`;
+	emit_asm(status, `stp x29, x30, [sp, #-16]!\n`);
+	emit_asm(status, `mov x29, sp\n`);
 
 	if (use_float) {
 		// (float x) -> symbol(d0); bits arrive in x0.
-		status.code += `fmov d0, x0\n`;
-		status.code += `bl ${symbol}\n`;
+		emit_asm(status, `fmov d0, x0\n`);
+		emit_asm(status, `bl ${symbol}\n`);
 		if (node.return_type.name) {
-			status.code += `fmov x0, d0\n`;
+			emit_asm(status, `fmov x0, d0\n`);
 		}
 	} else {
 		// Compute each param's (incoming slot, outgoing slot) pair.
@@ -94,29 +95,29 @@ export default function build_extern(
 		for (let i = moves.length - 1; i >= 0; i--) {
 			const { out, in: inc } = moves[i];
 			if (out !== inc) {
-				status.code += `mov x${out}, x${inc}\n`;
+				emit_asm(status, `mov x${out}, x${inc}\n`);
 			}
 		}
-		status.code += `bl ${symbol}\n`;
+		emit_asm(status, `bl ${symbol}\n`);
 
 		if (node.return_type.name === "string") {
 			// Wrap the returned char* into the fat (ptr, len) pair: x0 = ptr.
 			// strlen clobbers x0 and x30, so spill the pointer and the
 			// adapter-internal return address first.
-			status.code += `stp x0, x30, [sp, #-16]!\n`;
-			status.code += `bl ${prefix}strlen\n`;
-			status.code += `mov x1, x0\n`;
-			status.code += `ldp x0, x30, [sp], #16\n`;
+			emit_asm(status, `stp x0, x30, [sp, #-16]!\n`);
+			emit_asm(status, `bl ${prefix}strlen\n`);
+			emit_asm(status, `mov x1, x0\n`);
+			emit_asm(status, `ldp x0, x30, [sp], #16\n`);
 		} else if (
 			node.return_type.name.startsWith("float") ||
 			node.return_type.name.startsWith("ufloat")
 		) {
 			// A float-returning extern returns d0 — move the bits back to x0.
-			status.code += `fmov x0, d0\n`;
+			emit_asm(status, `fmov x0, d0\n`);
 		}
 	}
 
-	status.code += `ldp x29, x30, [sp], #16\n`;
-	status.code += `ret\n`;
-	status.code += `\n`;
+	emit_asm(status, `ldp x29, x30, [sp], #16\n`);
+	emit_asm(status, `ret\n`);
+	emit_asm(status, `\n`);
 }

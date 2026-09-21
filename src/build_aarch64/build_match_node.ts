@@ -17,6 +17,7 @@ import {
 	emit_enum_payload_frees,
 	set_trait_class_local,
 } from "./utils/auto_destroy.ts";
+import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
 import { emit_pair_store_x29 } from "./utils/string_pair.ts";
 import {
@@ -29,12 +30,6 @@ let label_counter = 0;
 
 export function reset_label_counter() {
 	label_counter = 0;
-}
-
-function ensure_newline(status: BuildStatus) {
-	if (!status.code.endsWith("\n")) {
-		status.code += "\n";
-	}
 }
 
 /** Extract the case tag from a match pattern node.
@@ -65,7 +60,7 @@ function emit_pattern_tag(match_value: BaseNode, enum_name: string, status: Buil
 		const case_tag = extract_case_tag(v, enum_name);
 		if (case_tag) {
 			const idx = get_enum_case_index(enum_name, case_tag, status);
-			status.code += `mov x0, #${idx}\n`;
+			emit_asm(status, `mov x0, #${idx}\n`);
 			return;
 		}
 	}
@@ -119,10 +114,10 @@ export default function build_match_node(
 			ensure_newline(status);
 			// Copy the returned blob (x0 = &tag+payload) into the slot.
 			for (let off = 0; off < enum_size; off += 8) {
-				status.code += `ldr x9, [x0, #${off}]\n`;
-				status.code += `str x9, [x29, #${temp_blob_slot + off}]\n`;
+				emit_asm(status, `ldr x9, [x0, #${off}]\n`);
+				emit_asm(status, `str x9, [x29, #${temp_blob_slot + off}]\n`);
 			}
-			status.code += `add x0, x29, #${temp_blob_slot}\n`;
+			emit_asm(status, `add x0, x29, #${temp_blob_slot}\n`);
 		} else {
 			emit_address_of(node.value, status);
 		}
@@ -132,11 +127,11 @@ export default function build_match_node(
 	ensure_newline(status);
 
 	if (enum_with_data) {
-		status.code += `str x0, [x29, #${addr_slot}]\n`;
-		status.code += `ldr x9, [x0]\n`;
-		status.code += `str x9, [x29, #${tag_slot}]\n`;
+		emit_asm(status, `str x0, [x29, #${addr_slot}]\n`);
+		emit_asm(status, `ldr x9, [x0]\n`);
+		emit_asm(status, `str x9, [x29, #${tag_slot}]\n`);
 	} else {
-		status.code += `str x0, [x29, #${tag_slot}]\n`;
+		emit_asm(status, `str x0, [x29, #${tag_slot}]\n`);
 	}
 
 	// Snapshot the Buffer data-pointer cache before the match so each case
@@ -187,26 +182,26 @@ export default function build_match_node(
 					// Load the field value from the matched enum (base address
 					// reloaded from its slot + payload offset) and store it
 					// into the binding's slot.
-					status.code += `ldr x10, [x29, #${addr_slot}]\n`;
+					emit_asm(status, `ldr x10, [x29, #${addr_slot}]\n`);
 					if (field.type.name === "string") {
 						// A fat-string payload rides as a (ptr, len) pair —
 						// copy BOTH halves or the binding's length is stale.
 						// The binding slot can sit beyond the ldp/stp ±504
 						// range in large frames, so use the guarded helper.
-						status.code += `ldp x9, x11, [x10, #${payload_off}]\n`;
+						emit_asm(status, `ldp x9, x11, [x10, #${payload_off}]\n`);
 						emit_pair_store_x29(status, slot, "x9", "x11");
 					} else if (size === 1) {
-						status.code += `ldrb w9, [x10, #${payload_off}]\n`;
-						status.code += `strb w9, [x29, #${slot}]\n`;
+						emit_asm(status, `ldrb w9, [x10, #${payload_off}]\n`);
+						emit_asm(status, `strb w9, [x29, #${slot}]\n`);
 					} else if (size === 2) {
-						status.code += `ldrh w9, [x10, #${payload_off}]\n`;
-						status.code += `strh w9, [x29, #${slot}]\n`;
+						emit_asm(status, `ldrh w9, [x10, #${payload_off}]\n`);
+						emit_asm(status, `strh w9, [x29, #${slot}]\n`);
 					} else if (size === 4) {
-						status.code += `ldr w9, [x10, #${payload_off}]\n`;
-						status.code += `str w9, [x29, #${slot}]\n`;
+						emit_asm(status, `ldr w9, [x10, #${payload_off}]\n`);
+						emit_asm(status, `str w9, [x29, #${slot}]\n`);
 					} else {
-						status.code += `ldr x9, [x10, #${payload_off}]\n`;
-						status.code += `str x9, [x29, #${slot}]\n`;
+						emit_asm(status, `ldr x9, [x10, #${payload_off}]\n`);
+						emit_asm(status, `str x9, [x29, #${slot}]\n`);
 					}
 					// Register the binding as a scoped declaration so the branch
 					// can resolve its type (e.g. for follow-up to_string).
@@ -230,20 +225,20 @@ export default function build_match_node(
 			build_node(match_case.match_value, status);
 		}
 		ensure_newline(status);
-		status.code += `ldr x9, [x29, #${tag_slot}]\n`;
-		status.code += `cmp x0, x9\n`;
+		emit_asm(status, `ldr x9, [x29, #${tag_slot}]\n`);
+		emit_asm(status, `cmp x0, x9\n`);
 
 		if (i < node.cases.length - 1 || node.else_branch) {
-			status.code += `bne case_next_${label}_${i}\n`;
+			emit_asm(status, `bne case_next_${label}_${i}\n`);
 		} else {
-			status.code += `bne end_match_${label}\n`;
+			emit_asm(status, `bne end_match_${label}\n`);
 		}
 		status.buffer_data_cache = new Map(pre_cache);
 		status.array_ptr_cache = new Map(pre_array_cache);
 		build_block_with_cursor(match_case.branch, nir?.arms[i]?.branch, status);
-		status.code += `b end_match_${label}\n`;
+		emit_asm(status, `b end_match_${label}\n`);
 
-		status.code += `case_next_${label}_${i}:\n`;
+		emit_asm(status, `case_next_${label}_${i}:\n`);
 	}
 
 	if (node.else_branch) {
@@ -256,7 +251,7 @@ export default function build_match_node(
 	status.buffer_data_cache = pre_cache;
 	status.array_ptr_cache = pre_array_cache;
 
-	status.code += `end_match_${label}:\n`;
+	emit_asm(status, `end_match_${label}:\n`);
 
 	// A hoisted scrutinee temp dies with the match: free its string payloads
 	// (tag-guarded). Identifier/field scrutinees are NOT freed here — their

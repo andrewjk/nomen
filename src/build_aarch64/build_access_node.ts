@@ -51,6 +51,7 @@ import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free, emit_malloc, emit_strdup } from "./utils/audit.ts";
 import { all_scope_frames, mark_moved_if_struct, trait_class_for } from "./utils/auto_destroy.ts";
 import { emit_descriptor_address, materialize_func_value_a64 } from "./utils/closure_a64.ts";
+import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
 import { emit_index_address, pointer_element_size } from "./utils/ptr_access.ts";
 import { is_auto_inline_method } from "./utils/scan_inline_candidates.ts";
 import { NUM_REG_ARGS } from "./utils/stack_args.ts";
@@ -100,25 +101,23 @@ function emit_string_length(target: BaseNode, status: BuildStatus) {
 		const name = (target as ValueNode).value;
 		if (name === "self" && status.current_struct?.name === "string") {
 			status.last_result_is_heap = false;
-			status.code += `mov x0, x20\n`;
+			emit_asm(status, `mov x0, x20\n`);
 			return;
 		}
 	}
 	status.last_result_is_heap = false;
 	build_node(target, status);
-	if (!status.code.endsWith("\n")) {
-		status.code += "\n";
-	}
+	ensure_newline(status);
 	// x0/x1 = the fat value. An owned heap temp's ptr must be freed after
 	// the read (the caller keeps only the length). The len half is spilled
 	// across the free call — a temporary register would be clobbered (x9-x15
 	// are caller-saved).
 	if (status.last_result_is_heap) {
-		status.code += `str x1, [sp, #-16]!\n`;
+		emit_asm(status, `str x1, [sp, #-16]!\n`);
 		emit_free(status);
-		status.code += `ldr x0, [sp], #16\n`;
+		emit_asm(status, `ldr x0, [sp], #16\n`);
 	} else {
-		status.code += `mov x0, x1\n`;
+		emit_asm(status, `mov x0, x1\n`);
 	}
 	status.last_result_is_heap = false;
 }
@@ -151,9 +150,9 @@ function build_string_at_inline(
 	if (base === undefined) return false;
 	// index → x1, ptr → x0, zero-extended byte load (char is unsigned).
 	build_operand(access_func.params[0], "x1", status);
-	if (!status.code.endsWith("\n")) status.code += "\n";
-	status.code += `ldr x0, [x29, #${base}]\n`;
-	status.code += `ldrb w0, [x0, x1]\n`;
+	ensure_newline(status);
+	emit_asm(status, `ldr x0, [x29, #${base}]\n`);
+	emit_asm(status, `ldrb w0, [x0, x1]\n`);
 	return true;
 }
 
@@ -195,10 +194,10 @@ function build_view_op(
 	}
 	if (base === undefined) {
 		build_node(node.target, status);
-		if (!status.code.endsWith("\n")) status.code += "\n";
+		ensure_newline(status);
 		const temp_base = allocate_stack_space(status, 16, 16);
-		status.code += `str x0, [x29, #${temp_base}]\n`;
-		status.code += `str x1, [x29, #${temp_base + 8}]\n`;
+		emit_asm(status, `str x0, [x29, #${temp_base}]\n`);
+		emit_asm(status, `str x1, [x29, #${temp_base + 8}]\n`);
 		base = temp_base;
 	}
 	// When only is_view_value recognized the receiver (e.g. a view param
@@ -211,21 +210,21 @@ function build_view_op(
 	if (access_func.name === "at" && access_func.params.length === 1) {
 		// index → x0, then x1=index, x0=ptr
 		build_operand(access_func.params[0], "x1", status);
-		if (!status.code.endsWith("\n")) status.code += "\n";
-		status.code += `ldr x0, [x29, #${base}]\n`;
+		ensure_newline(status);
+		emit_asm(status, `ldr x0, [x29, #${base}]\n`);
 		const elem_struct = status.structs.find((s) => s.name === elem_name && !s.is_simple_type);
 		if (elem_struct) {
 			// Struct element: addr = ptr + index*size; memcpy into a sret temp;
 			// leave x0 = temp address (matches struct-returning method calls).
 			const size = get_struct_size(elem_name, status);
-			status.code += `mov x2, #${size}\n`;
-			status.code += `madd x0, x1, x2, x0\n`; // x0 = ptr + index*size
+			emit_asm(status, `mov x2, #${size}\n`);
+			emit_asm(status, `madd x0, x1, x2, x0\n`); // x0 = ptr + index*size
 			const temp_offset = allocate_stack_space(status, size);
-			status.code += `mov x1, x0\n`; // x1 = elem addr (src)
-			status.code += `add x0, x29, #${temp_offset}\n`; // x0 = temp (dst)
-			status.code += `mov x2, #${size}\n`;
-			status.code += `bl _memcpy\n`;
-			status.code += `add x0, x29, #${temp_offset}\n`; // reload dst
+			emit_asm(status, `mov x1, x0\n`); // x1 = elem addr (src)
+			emit_asm(status, `add x0, x29, #${temp_offset}\n`); // x0 = temp (dst)
+			emit_asm(status, `mov x2, #${size}\n`);
+			emit_asm(status, `bl _memcpy\n`);
+			emit_asm(status, `add x0, x29, #${temp_offset}\n`); // reload dst
 			return true;
 		}
 		// Primitive element: scaled load based on element width. char is a
@@ -234,21 +233,21 @@ function build_view_op(
 		const size = aarch64_size(elem_name);
 		const signed = is_signed_int_type(elem_name);
 		if (size === 1) {
-			status.code += signed ? `ldrsb x0, [x0, x1]\n` : `ldrb w0, [x0, x1]\n`;
+			emit_asm(status, signed ? `ldrsb x0, [x0, x1]\n` : `ldrb w0, [x0, x1]\n`);
 		} else if (size === 2) {
-			status.code += signed ? `ldrsh x0, [x0, x1, lsl #1]\n` : `ldrh w0, [x0, x1, lsl #1]\n`;
+			emit_asm(status, signed ? `ldrsh x0, [x0, x1, lsl #1]\n` : `ldrh w0, [x0, x1, lsl #1]\n`);
 		} else if (size === 4) {
-			status.code += signed ? `ldrsw x0, [x0, x1, lsl #2]\n` : `ldr w0, [x0, x1, lsl #2]\n`;
+			emit_asm(status, signed ? `ldrsw x0, [x0, x1, lsl #2]\n` : `ldr w0, [x0, x1, lsl #2]\n`);
 		} else {
-			status.code += `ldr x0, [x0, x1, lsl #3]\n`;
+			emit_asm(status, `ldr x0, [x0, x1, lsl #3]\n`);
 		}
 		return true;
 	}
 	if (access_func.name === "to_string" && view_elem === "string") {
 		// Load ptr/len into x0/x1, then materialize an owned, len-bounded
 		// copy (malloc(len+1); memcpy; null-terminate).
-		status.code += `ldr x0, [x29, #${base}]\n`;
-		status.code += `ldr x1, [x29, #${base + 8}]\n`;
+		emit_asm(status, `ldr x0, [x29, #${base}]\n`);
+		emit_asm(status, `ldr x1, [x29, #${base + 8}]\n`);
 		emit_view_materialize_owned(status);
 		status.last_result_is_heap = true;
 		return true;
@@ -284,19 +283,28 @@ function emit_scalar_field_load(
 	const size = aarch64_size(field_type_name);
 	const signed = is_signed_type(field_type_name);
 	if (size === 1) {
-		status.code += signed
-			? `ldrsb ${target_reg}, [${base}, #${offset}]\n`
-			: `ldrb ${target_reg.replace("x", "w")}, [${base}, #${offset}]\n`;
+		emit_asm(
+			status,
+			signed
+				? `ldrsb ${target_reg}, [${base}, #${offset}]\n`
+				: `ldrb ${target_reg.replace("x", "w")}, [${base}, #${offset}]\n`,
+		);
 	} else if (size === 2) {
-		status.code += signed
-			? `ldrsh ${target_reg}, [${base}, #${offset}]\n`
-			: `ldrh ${target_reg.replace("x", "w")}, [${base}, #${offset}]\n`;
+		emit_asm(
+			status,
+			signed
+				? `ldrsh ${target_reg}, [${base}, #${offset}]\n`
+				: `ldrh ${target_reg.replace("x", "w")}, [${base}, #${offset}]\n`,
+		);
 	} else if (size === 4) {
-		status.code += signed
-			? `ldrsw ${target_reg}, [${base}, #${offset}]\n`
-			: `ldr ${target_reg.replace("x", "w")}, [${base}, #${offset}]\n`;
+		emit_asm(
+			status,
+			signed
+				? `ldrsw ${target_reg}, [${base}, #${offset}]\n`
+				: `ldr ${target_reg.replace("x", "w")}, [${base}, #${offset}]\n`,
+		);
 	} else {
-		status.code += `ldr ${target_reg}, [${base}, #${offset}]\n`;
+		emit_asm(status, `ldr ${target_reg}, [${base}, #${offset}]\n`);
 	}
 }
 
@@ -492,7 +500,7 @@ export function emit_address_of(node: BaseNode, status: BuildStatus) {
 				const paramReg = get_param_reg(name, status);
 				if (paramReg) {
 					if (paramReg !== "x0") {
-						status.code += `mov x0, ${paramReg}\n`;
+						emit_asm(status, `mov x0, ${paramReg}\n`);
 					}
 				} else if (is_local_ref_var(name, status)) {
 					emit_deref_var_address(status, "x0", name);
@@ -501,24 +509,18 @@ export function emit_address_of(node: BaseNode, status: BuildStatus) {
 				}
 			} else {
 				emit_address_of(access.target, status);
-				if (!status.code.endsWith("\n")) {
-					status.code += "\n";
-				}
+				ensure_newline(status);
 			}
 			if (offset) {
-				status.code += `add x0, x0, #${offset}\n`;
+				emit_asm(status, `add x0, x0, #${offset}\n`);
 			}
 		} else {
 			build_node(node, status);
-			if (!status.code.endsWith("\n")) {
-				status.code += "\n";
-			}
+			ensure_newline(status);
 		}
 	} else {
 		build_node(node, status);
-		if (!status.code.endsWith("\n")) {
-			status.code += "\n";
-		}
+		ensure_newline(status);
 	}
 }
 
@@ -601,13 +603,13 @@ function build_func_field_call(
 		new AccessFieldNode(node.start, access_func.name, field.type),
 	);
 	build_node(field_access, status);
-	if (!status.code.endsWith("\n")) status.code += "\n";
+	ensure_newline(status);
 	// Park the code pointer where the func-value call path expects to load it.
 	const temp = `_funcfield_${func_field_temp_counter++}`;
 	const off = allocate_stack_space(status, 8);
 	if (!status.stack_offsets) status.stack_offsets = new Map();
 	status.stack_offsets.set(temp, off);
-	status.code += `str x0, [x29, #${off}]\n`;
+	emit_asm(status, `str x0, [x29, #${off}]\n`);
 	// Delegate: a synthetic func-value call named for the parked slot.
 	const call = new FunctionCallNode(node.start, temp);
 	call.is_func_param = true;
@@ -775,7 +777,7 @@ export function emit_buffer_struct_addr(target: BaseNode, status: BuildStatus) {
 		const name = (target as ValueNode).value;
 		const paramReg = get_param_reg(name, status);
 		if (paramReg) {
-			status.code += `mov x9, ${paramReg}\n`;
+			emit_asm(status, `mov x9, ${paramReg}\n`);
 		} else if (is_local_ref_var(name, status)) {
 			emit_deref_var_address(status, "x9", name);
 		} else {
@@ -808,7 +810,7 @@ export function emit_buffer_struct_addr(target: BaseNode, status: BuildStatus) {
 			const bname = (inner.target as ValueNode).value;
 			const bpReg = get_param_reg(bname, status);
 			if (bpReg) {
-				status.code += `mov x9, ${bpReg}\n`;
+				emit_asm(status, `mov x9, ${bpReg}\n`);
 			} else if (is_local_ref_var(bname, status)) {
 				emit_deref_var_address(status, "x9", bname);
 			} else {
@@ -816,16 +818,16 @@ export function emit_buffer_struct_addr(target: BaseNode, status: BuildStatus) {
 			}
 		} else {
 			build_node(inner.target, status);
-			if (!status.code.endsWith("\n")) status.code += "\n";
-			status.code += `mov x9, x0\n`;
+			ensure_newline(status);
+			emit_asm(status, `mov x9, x0\n`);
 		}
 		if (foff > 0) {
-			status.code += `add x9, x9, #${foff}\n`;
+			emit_asm(status, `add x9, x9, #${foff}\n`);
 		}
 	} else {
 		build_node(target, status);
-		if (!status.code.endsWith("\n")) status.code += "\n";
-		status.code += `mov x9, x0\n`;
+		ensure_newline(status);
+		emit_asm(status, `mov x9, x0\n`);
 	}
 }
 
@@ -874,11 +876,11 @@ function get_buffer_data_ptr(target: BaseNode, status: BuildStatus): string {
 		return status.buffer_data_cache.get(key)!;
 	}
 	emit_buffer_struct_addr(target, status);
-	status.code += `ldr x9, [x9, #8]\n`;
+	emit_asm(status, `ldr x9, [x9, #8]\n`);
 	if (key && status.function_return_label) {
 		const cache_reg = alloc_buffer_cache_reg(status);
 		if (cache_reg) {
-			status.code += `mov ${cache_reg}, x9\n`;
+			emit_asm(status, `mov ${cache_reg}, x9\n`);
 			if (!status.buffer_data_cache) status.buffer_data_cache = new Map();
 			status.buffer_data_cache.set(key, cache_reg);
 			if (!status.callee_saved_regs_used) status.callee_saved_regs_used = new Set();
@@ -1064,12 +1066,12 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		const access_field_early = node.access as AccessFieldNode;
 		const elem = index.type ?? new Type(type_from_value_node(index.target).name);
 		build_node(index.target, status);
-		if (!status.code.endsWith("\n")) status.code += "\n";
-		status.code += `str x0, [sp, #-16]!\n`;
+		ensure_newline(status);
+		emit_asm(status, `str x0, [sp, #-16]!\n`);
 		build_node(index.index, status);
-		if (!status.code.endsWith("\n")) status.code += "\n";
-		status.code += `mov x1, x0\n`;
-		status.code += `ldr x0, [sp], #16\n`;
+		ensure_newline(status);
+		emit_asm(status, `mov x1, x0\n`);
+		emit_asm(status, `ldr x0, [sp], #16\n`);
 		emit_index_address(pointer_element_size(elem, status), status);
 		let offset: number;
 		if (elem.name === "string") {
@@ -1077,17 +1079,17 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		} else {
 			offset = get_field_offset(elem.name, access_field_early.name, status);
 		}
-		if (offset > 0) status.code += `add x9, x9, #${offset}\n`;
+		if (offset > 0) emit_asm(status, `add x9, x9, #${offset}\n`);
 		const field_type = access_field_early.type;
 		if (field_type?.name === "string") {
-			status.code += `ldp x0, x1, [x9]\n`;
+			emit_asm(status, `ldp x0, x1, [x9]\n`);
 			return;
 		}
 		const fsize = aarch64_size(field_type?.name || elem.name);
-		if (fsize === 1) status.code += `ldrb w0, [x9]\n`;
-		else if (fsize === 2) status.code += `ldrh w0, [x9]\n`;
-		else if (fsize === 4) status.code += `ldr w0, [x9]\n`;
-		else status.code += `ldr x0, [x9]\n`;
+		if (fsize === 1) emit_asm(status, `ldrb w0, [x9]\n`);
+		else if (fsize === 2) emit_asm(status, `ldrh w0, [x9]\n`);
+		else if (fsize === 4) emit_asm(status, `ldr w0, [x9]\n`);
+		else emit_asm(status, `ldr x0, [x9]\n`);
 		return;
 	}
 	let target_type = type_from_value_node(node.target);
@@ -1129,9 +1131,9 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		const self_reg = get_param_reg("self", status);
 		if (self_reg) {
 			if (self_reg !== "x0") {
-				status.code += `mov x0, ${self_reg}\n`;
+				emit_asm(status, `mov x0, ${self_reg}\n`);
 			}
-			status.code += `ldr x0, [x0, #-8]\n`;
+			emit_asm(status, `ldr x0, [x0, #-8]\n`);
 			return;
 		}
 	}
@@ -1156,7 +1158,7 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 			emit_descriptor_address(status, "x0", desc);
 			return;
 		}
-		status.code += `adr x0, ${target_type.name}_${access_field.name}\n`;
+		emit_asm(status, `adr x0, ${target_type.name}_${access_field.name}\n`);
 		return;
 	}
 
@@ -1170,14 +1172,14 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 				const temp_name = `_enum_${access_temp_counter++}`;
 				const temp_offset = allocate_stack_space(status, enum_size);
 				status.stack_offsets!.set(temp_name, temp_offset);
-				status.code += `add x0, x29, #${temp_offset}\n`;
-				status.code += `mov x1, #${case_index}\n`;
-				status.code += `str x1, [x0]\n`;
+				emit_asm(status, `add x0, x29, #${temp_offset}\n`);
+				emit_asm(status, `mov x1, #${case_index}\n`);
+				emit_asm(status, `str x1, [x0]\n`);
 				for (let off = 8; off < enum_size; off += 8) {
-					status.code += `str xzr, [x0, #${off}]\n`;
+					emit_asm(status, `str xzr, [x0, #${off}]\n`);
 				}
 			} else {
-				status.code += `mov x0, #${case_index}\n`;
+				emit_asm(status, `mov x0, #${case_index}\n`);
 			}
 			return;
 		}
@@ -1200,33 +1202,35 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 					const paramReg = get_param_reg(name, status);
 					if (paramReg) {
 						if (paramReg !== "x0") {
-							status.code += `mov x0, ${paramReg}\n`;
+							emit_asm(status, `mov x0, ${paramReg}\n`);
 						}
 					} else if (is_local_ref_var(name, status)) {
 						emit_deref_var_address(status, "x0", name);
 					} else if (status.heap_array_vars?.has(name)) {
 						emit_var_load(status, "x0", name, 8);
-						status.code += `add x0, x0, #8\n`;
+						emit_asm(status, `add x0, x0, #8\n`);
 					} else {
 						emit_var_address(status, "x0", name);
 					}
 				} else {
 					build_node(node.target, status);
-					if (!status.code.endsWith("\n")) status.code += "\n";
+					ensure_newline(status);
 				}
 				const field_type = access_field.type?.name || "int";
 				const field_size = aarch64_size(field_type);
 				const signed = is_signed_type(field_type);
 				if (field_size === 1) {
-					status.code += signed
-						? `ldrsb x0, [x0, #${payload_offset}]\n`
-						: `ldrb w0, [x0, #${payload_offset}]\n`;
+					emit_asm(
+						status,
+						signed ? `ldrsb x0, [x0, #${payload_offset}]\n` : `ldrb w0, [x0, #${payload_offset}]\n`,
+					);
 				} else if (field_size === 4) {
-					status.code += signed
-						? `ldrsw x0, [x0, #${payload_offset}]\n`
-						: `ldr w0, [x0, #${payload_offset}]\n`;
+					emit_asm(
+						status,
+						signed ? `ldrsw x0, [x0, #${payload_offset}]\n` : `ldr w0, [x0, #${payload_offset}]\n`,
+					);
 				} else {
-					status.code += `ldr x0, [x0, #${payload_offset}]\n`;
+					emit_asm(status, `ldr x0, [x0, #${payload_offset}]\n`);
 				}
 				return;
 			}
@@ -1240,7 +1244,7 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 			// Emit the evaluated single-bit constant, not the `#(1 << N)`
 			// expression text — the asm validator (and GAS) only accept
 			// plain immediates here.
-			status.code += `mov x0, #${2 ** case_index}\n`;
+			emit_asm(status, `mov x0, #${2 ** case_index}\n`);
 			return;
 		}
 	}
@@ -1254,9 +1258,9 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 			const name = (node.target as ValueNode).value;
 			const offset = status.stack_offsets?.get(`_${name}_len`);
 			if (offset !== undefined) {
-				status.code += `ldr x0, [x29, #${offset}]\n`;
+				emit_asm(status, `ldr x0, [x29, #${offset}]\n`);
 			} else {
-				status.code += `mov x0, #0\n`;
+				emit_asm(status, `mov x0, #0\n`);
 			}
 			return;
 		}
@@ -1267,8 +1271,8 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		) {
 			const name = (node.target as ValueNode).value;
 			emit_var_load(status, "x0", name, 8);
-			if (!status.code.endsWith("\n")) status.code += "\n";
-			status.code += `ldr x0, [x0]\n`;
+			ensure_newline(status);
+			emit_asm(status, `ldr x0, [x0]\n`);
 			return;
 		}
 		// For stack arrays: load length from the 8-byte prefix at [base - 8]
@@ -1278,16 +1282,16 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 			if (offset !== undefined) {
 				// Array parameters store a pointer — dereference to get length from [ptr - 8]
 				if (status.function_array_params?.has(name)) {
-					status.code += `ldr x0, [x29, #${offset}]\n`;
-					status.code += `ldr x0, [x0, #-8]\n`;
+					emit_asm(status, `ldr x0, [x29, #${offset}]\n`);
+					emit_asm(status, `ldr x0, [x0, #-8]\n`);
 				} else {
-					status.code += `ldr x0, [x29, #${offset - 8}]\n`;
+					emit_asm(status, `ldr x0, [x29, #${offset - 8}]\n`);
 				}
 				return;
 			}
 			// Global array: length prefix is at label - 8
-			status.code += `adr x0, ${name}\n`;
-			status.code += `ldr x0, [x0, #-8]\n`;
+			emit_asm(status, `adr x0, ${name}\n`);
+			emit_asm(status, `ldr x0, [x0, #-8]\n`);
 			return;
 		}
 		// Heap `Array<T>` FIELD (`obj.items.length`): the field holds a pointer
@@ -1302,7 +1306,7 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 					const name = (base as ValueNode).value;
 					const paramReg = get_param_reg(name, status);
 					if (paramReg) {
-						if (paramReg !== "x0") status.code += `mov x0, ${paramReg}\n`;
+						if (paramReg !== "x0") emit_asm(status, `mov x0, ${paramReg}\n`);
 					} else if (is_local_ref_var(name, status)) {
 						emit_deref_var_address(status, "x0", name);
 					} else {
@@ -1310,17 +1314,17 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 					}
 				} else {
 					build_node(base, status);
-					if (!status.code.endsWith("\n")) status.code += "\n";
+					ensure_newline(status);
 				}
 				if (offset > 0) {
-					status.code += `add x0, x0, #${offset}\n`;
+					emit_asm(status, `add x0, x0, #${offset}\n`);
 				}
-				status.code += `ldr x0, [x0]\n`;
-				status.code += `ldr x0, [x0]\n`;
+				emit_asm(status, `ldr x0, [x0]\n`);
+				emit_asm(status, `ldr x0, [x0]\n`);
 				return;
 			}
 		}
-		status.code += `mov x0, #0\n`;
+		emit_asm(status, `mov x0, #0\n`);
 		return;
 	}
 
@@ -1334,15 +1338,15 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 			const name = (node.target as ValueNode).value;
 			const offset = status.stack_offsets?.get(name);
 			if (offset !== undefined) {
-				status.code += `ldr x0, [x29, #${offset + 8}]\n`;
+				emit_asm(status, `ldr x0, [x29, #${offset + 8}]\n`);
 			} else {
-				status.code += `mov x0, #0\n`;
+				emit_asm(status, `mov x0, #0\n`);
 			}
 			return;
 		}
 		build_node(node.target, status);
-		if (!status.code.endsWith("\n")) status.code += "\n";
-		status.code += `mov x0, x1\n`;
+		ensure_newline(status);
+		emit_asm(status, `mov x0, x1\n`);
 		return;
 	}
 
@@ -1371,9 +1375,7 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 
 	if (target_is_method_access) {
 		build_node(node.target, status);
-		if (!status.code.endsWith("\n")) {
-			status.code += "\n";
-		}
+		ensure_newline(status);
 		const final_offset = offset;
 		const field_type = access_field.type?.name || "";
 		// Fixed-array pipeline (ASM_PLAN_3 tranche A): when the `.at()` just
@@ -1395,31 +1397,35 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 			// float bits from x0).
 			const caller_wants_d0 = status.float_result_in_d0 ?? false;
 			status.float_result_in_d0 = false;
-			status.code += `ldr d0, [${load_base}, #${final_offset}]\n`;
+			emit_asm(status, `ldr d0, [${load_base}, #${final_offset}]\n`);
 			if (!caller_wants_d0) {
-				status.code += `fmov x0, d0\n`;
+				emit_asm(status, `fmov x0, d0\n`);
 			}
 			return;
 		}
 		if (size === 1) {
-			status.code += signed
-				? `ldrsb x0, [${load_base}, #${final_offset}]\n`
-				: `ldrb w0, [${load_base}, #${final_offset}]\n`;
+			emit_asm(
+				status,
+				signed
+					? `ldrsb x0, [${load_base}, #${final_offset}]\n`
+					: `ldrb w0, [${load_base}, #${final_offset}]\n`,
+			);
 		} else if (size === 4) {
-			status.code += signed
-				? `ldrsw x0, [${load_base}, #${final_offset}]\n`
-				: `ldr w0, [${load_base}, #${final_offset}]\n`;
+			emit_asm(
+				status,
+				signed
+					? `ldrsw x0, [${load_base}, #${final_offset}]\n`
+					: `ldr w0, [${load_base}, #${final_offset}]\n`,
+			);
 		} else {
-			status.code += `ldr x0, [${load_base}, #${final_offset}]\n`;
+			emit_asm(status, `ldr x0, [${load_base}, #${final_offset}]\n`);
 		}
 		return;
 	}
 
 	if (target_is_class_access) {
 		build_node(node.target, status);
-		if (!status.code.endsWith("\n")) {
-			status.code += "\n";
-		}
+		ensure_newline(status);
 		const final_offset = get_field_offset(target_type?.name || "", access_field.name, status);
 		const field_type = access_field.type?.name || "";
 		if (field_type === "string" || access_field.type?.is_view) {
@@ -1429,15 +1435,17 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		const size = aarch64_size(field_type);
 		const signed = is_signed_type(field_type);
 		if (size === 1) {
-			status.code += signed
-				? `ldrsb x0, [x0, #${final_offset}]\n`
-				: `ldrb w0, [x0, #${final_offset}]\n`;
+			emit_asm(
+				status,
+				signed ? `ldrsb x0, [x0, #${final_offset}]\n` : `ldrb w0, [x0, #${final_offset}]\n`,
+			);
 		} else if (size === 4) {
-			status.code += signed
-				? `ldrsw x0, [x0, #${final_offset}]\n`
-				: `ldr w0, [x0, #${final_offset}]\n`;
+			emit_asm(
+				status,
+				signed ? `ldrsw x0, [x0, #${final_offset}]\n` : `ldr w0, [x0, #${final_offset}]\n`,
+			);
 		} else {
-			status.code += `ldr x0, [x0, #${final_offset}]\n`;
+			emit_asm(status, `ldr x0, [x0, #${final_offset}]\n`);
 		}
 		return;
 	}
@@ -1449,23 +1457,23 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 
 	if (target_is_ref_access) {
 		build_node(node.target, status);
-		if (!status.code.endsWith("\n")) {
-			status.code += "\n";
-		}
+		ensure_newline(status);
 		const final_offset = get_field_offset(access_field.type?.name || "", access_field.name, status);
 		const field_type = access_field.type?.name || "";
 		const size = aarch64_size(field_type);
 		const signed = is_signed_type(field_type);
 		if (size === 1) {
-			status.code += signed
-				? `ldrsb x0, [x0, #${final_offset}]\n`
-				: `ldrb w0, [x0, #${final_offset}]\n`;
+			emit_asm(
+				status,
+				signed ? `ldrsb x0, [x0, #${final_offset}]\n` : `ldrb w0, [x0, #${final_offset}]\n`,
+			);
 		} else if (size === 4) {
-			status.code += signed
-				? `ldrsw x0, [x0, #${final_offset}]\n`
-				: `ldr w0, [x0, #${final_offset}]\n`;
+			emit_asm(
+				status,
+				signed ? `ldrsw x0, [x0, #${final_offset}]\n` : `ldr w0, [x0, #${final_offset}]\n`,
+			);
 		} else {
-			status.code += `ldr x0, [x0, #${final_offset}]\n`;
+			emit_asm(status, `ldr x0, [x0, #${final_offset}]\n`);
 		}
 		return;
 	}
@@ -1479,7 +1487,7 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		const paramReg = get_param_reg(name, status);
 		if (paramReg) {
 			if (paramReg !== "x0") {
-				status.code += `mov x0, ${paramReg}\n`;
+				emit_asm(status, `mov x0, ${paramReg}\n`);
 			}
 		} else {
 			emit_var_load(status, "x0", name, 8);
@@ -1498,7 +1506,7 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 			is_struct_type(resolved_field_type, status);
 		if (field_is_struct) {
 			if (final_offset > 0) {
-				status.code += `add x0, x0, #${final_offset}\n`;
+				emit_asm(status, `add x0, x0, #${final_offset}\n`);
 			}
 			return;
 		}
@@ -1511,15 +1519,17 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		const size = aarch64_size(field_type);
 		const signed = is_signed_type(field_type);
 		if (size === 1) {
-			status.code += signed
-				? `ldrsb x0, [x0, #${final_offset}]\n`
-				: `ldrb w0, [x0, #${final_offset}]\n`;
+			emit_asm(
+				status,
+				signed ? `ldrsb x0, [x0, #${final_offset}]\n` : `ldrb w0, [x0, #${final_offset}]\n`,
+			);
 		} else if (size === 4) {
-			status.code += signed
-				? `ldrsw x0, [x0, #${final_offset}]\n`
-				: `ldr w0, [x0, #${final_offset}]\n`;
+			emit_asm(
+				status,
+				signed ? `ldrsw x0, [x0, #${final_offset}]\n` : `ldr w0, [x0, #${final_offset}]\n`,
+			);
 		} else {
-			status.code += `ldr x0, [x0, #${final_offset}]\n`;
+			emit_asm(status, `ldr x0, [x0, #${final_offset}]\n`);
 		}
 		return;
 	}
@@ -1530,7 +1540,7 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		const paramReg = get_param_reg(name, status);
 		if (paramReg) {
 			if (paramReg !== "x0") {
-				status.code += `mov x0, ${paramReg}\n`;
+				emit_asm(status, `mov x0, ${paramReg}\n`);
 			}
 		} else if (is_local_ref_var(name, status)) {
 			emit_deref_var_address(status, "x0", name);
@@ -1539,9 +1549,7 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		}
 	} else {
 		build_node(base, status);
-		if (!status.code.endsWith("\n")) {
-			status.code += "\n";
-		}
+		ensure_newline(status);
 	}
 
 	const field_type_obj = resolve_field_type(access_field, target_type?.name, status);
@@ -1562,7 +1570,7 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 
 	if (field_is_struct) {
 		if (offset > 0) {
-			status.code += `add x0, x0, #${offset}\n`;
+			emit_asm(status, `add x0, x0, #${offset}\n`);
 		}
 		return;
 	}
@@ -1577,11 +1585,11 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 	const size = aarch64_size(resolved_field_type);
 	const signed = is_signed_type(resolved_field_type);
 	if (size === 1) {
-		status.code += signed ? `ldrsb x0, [x0, #${offset}]\n` : `ldrb w0, [x0, #${offset}]\n`;
+		emit_asm(status, signed ? `ldrsb x0, [x0, #${offset}]\n` : `ldrb w0, [x0, #${offset}]\n`);
 	} else if (size === 4) {
-		status.code += signed ? `ldrsw x0, [x0, #${offset}]\n` : `ldr w0, [x0, #${offset}]\n`;
+		emit_asm(status, signed ? `ldrsw x0, [x0, #${offset}]\n` : `ldr w0, [x0, #${offset}]\n`);
 	} else {
-		status.code += `ldr x0, [x0, #${offset}]\n`;
+		emit_asm(status, `ldr x0, [x0, #${offset}]\n`);
 	}
 }
 
@@ -1669,7 +1677,7 @@ function build_access_method(
 		!target_type.is_array
 	) {
 		build_node(node.target, status);
-		if (!status.code.endsWith("\n")) status.code += "\n";
+		ensure_newline(status);
 		status.last_result_is_heap = false;
 		return;
 	}
@@ -1691,13 +1699,13 @@ function build_access_method(
 						mark_moved_if_struct(access_func.params[idx], status);
 					}
 				}
-				status.code += `add x0, x29, #${temp_offset}\n`;
-				status.code += `mov x1, #${case_index}\n`;
-				status.code += `str x1, [x0]\n`;
+				emit_asm(status, `add x0, x29, #${temp_offset}\n`);
+				emit_asm(status, `mov x1, #${case_index}\n`);
+				emit_asm(status, `str x1, [x0]\n`);
 				let payload_offset = 8;
 				for (let i = access_func.params.length - 1; i >= 0; i--) {
 					build_node(access_func.params[i], status);
-					if (!status.code.endsWith("\n")) status.code += "\n";
+					ensure_newline(status);
 					const param_type_name = enum_case.params[i].type.name;
 					const param_size = aarch64_size(param_type_name);
 					const abs_offset = temp_offset + payload_offset;
@@ -1707,20 +1715,20 @@ function build_access_method(
 						// the enum value outlives the producer's local, and
 						// the scope-exit payload free needs a heap ptr.
 						emit_strdup_string(status);
-						status.code += `str x0, [x29, #${abs_offset}]\n`;
-						status.code += `str x1, [x29, #${abs_offset + 8}]\n`;
+						emit_asm(status, `str x0, [x29, #${abs_offset}]\n`);
+						emit_asm(status, `str x1, [x29, #${abs_offset + 8}]\n`);
 					} else if (param_size === 1) {
-						status.code += `strb w0, [x29, #${abs_offset}]\n`;
+						emit_asm(status, `strb w0, [x29, #${abs_offset}]\n`);
 					} else if (param_size === 4) {
-						status.code += `str w0, [x29, #${abs_offset}]\n`;
+						emit_asm(status, `str w0, [x29, #${abs_offset}]\n`);
 					} else {
-						status.code += `str x0, [x29, #${abs_offset}]\n`;
+						emit_asm(status, `str x0, [x29, #${abs_offset}]\n`);
 					}
 					payload_offset += param_size;
 				}
-				status.code += `add x0, x29, #${temp_offset}\n`;
+				emit_asm(status, `add x0, x29, #${temp_offset}\n`);
 			} else {
-				status.code += `mov x0, #${case_index}\n`;
+				emit_asm(status, `mov x0, #${case_index}\n`);
 			}
 			return;
 		}
@@ -1736,19 +1744,17 @@ function build_access_method(
 			const paramReg = get_param_reg(name, status);
 			if (paramReg) {
 				if (paramReg !== "x0") {
-					status.code += `mov x0, ${paramReg}\n`;
+					emit_asm(status, `mov x0, ${paramReg}\n`);
 				}
 			} else {
 				emit_var_address(status, "x0", name);
 			}
-			status.code += `ldr x0, [x0]\n`;
+			emit_asm(status, `ldr x0, [x0]\n`);
 		} else {
 			build_node(node.target, status);
-			if (!status.code.endsWith("\n")) {
-				status.code += "\n";
-			}
+			ensure_newline(status);
 		}
-		status.code += `bl int_to_string\n`;
+		emit_asm(status, `bl int_to_string\n`);
 		status.last_result_is_heap = true;
 		return;
 	}
@@ -1820,19 +1826,19 @@ function build_access_method(
 				const name = (node.target as ValueNode).value;
 				const paramReg = get_param_reg(name, status);
 				if (paramReg) {
-					status.code += `mov x9, ${paramReg}\n`;
+					emit_asm(status, `mov x9, ${paramReg}\n`);
 				} else if (is_local_ref_var(name, status)) {
 					emit_deref_var_address(status, "x9", name);
 				} else if (status.heap_array_vars?.has(name)) {
 					emit_var_address(status, "x9", name);
-					status.code += `ldr x9, [x9]\n`;
-					status.code += `add x9, x9, #8\n`;
+					emit_asm(status, `ldr x9, [x9]\n`);
+					emit_asm(status, `add x9, x9, #8\n`);
 				} else if (
 					status.function_array_params?.has(name) ||
 					status.function_variadic_params?.has(name)
 				) {
 					emit_var_address(status, "x9", name);
-					status.code += `ldr x9, [x9]\n`;
+					emit_asm(status, `ldr x9, [x9]\n`);
 				} else {
 					emit_var_address(status, "x9", name);
 				}
@@ -1845,49 +1851,49 @@ function build_access_method(
 					// caller-saved — park them in x19-x21 across the
 					// free/strdup calls.
 					build_node(access_func.params[1], status);
-					if (!status.code.endsWith("\n")) status.code += "\n";
+					ensure_newline(status);
 					const val_spill = allocate_stack_space(status, 16, 16);
 					emit_pair_store_x29(status, val_spill);
 					build_operand(access_func.params[0], "x1", status);
-					if (!status.code.endsWith("\n")) status.code += "\n";
+					ensure_newline(status);
 					emit_pair_load_x29(status, val_spill, "x2", "x3");
-					status.code += `stp x19, x20, [sp, #-16]!\n`;
-					status.code += `stp x21, x22, [sp, #-16]!\n`;
-					status.code += `mov x20, x2\n`;
-					status.code += `mov x21, x3\n`;
-					status.code += `lsl x10, x1, #4\n`;
-					status.code += `add x19, x9, x10\n`;
-					status.code += `ldr x0, [x19]\n`;
+					emit_asm(status, `stp x19, x20, [sp, #-16]!\n`);
+					emit_asm(status, `stp x21, x22, [sp, #-16]!\n`);
+					emit_asm(status, `mov x20, x2\n`);
+					emit_asm(status, `mov x21, x3\n`);
+					emit_asm(status, `lsl x10, x1, #4\n`);
+					emit_asm(status, `add x19, x9, x10\n`);
+					emit_asm(status, `ldr x0, [x19]\n`);
 					emit_free(status);
-					status.code += `mov x0, x20\n`;
+					emit_asm(status, `mov x0, x20\n`);
 					emit_strdup(status);
-					status.code += `str x0, [x19]\n`;
-					status.code += `str x21, [x19, #8]\n`;
-					status.code += `ldp x21, x22, [sp], #16\n`;
-					status.code += `ldp x19, x20, [sp], #16\n`;
+					emit_asm(status, `str x0, [x19]\n`);
+					emit_asm(status, `str x21, [x19, #8]\n`);
+					emit_asm(status, `ldp x21, x22, [sp], #16\n`);
+					emit_asm(status, `ldp x19, x20, [sp], #16\n`);
 					return;
 				}
 				// index → x1
 				build_operand(access_func.params[0], "x1", status);
-				if (!status.code.endsWith("\n")) status.code += "\n";
+				ensure_newline(status);
 				// value → x2 (simple value node: build only writes x0)
 				build_node(access_func.params[1], status);
-				if (!status.code.endsWith("\n")) status.code += "\n";
-				status.code += `mov x2, x0\n`;
+				ensure_newline(status);
+				emit_asm(status, `mov x2, x0\n`);
 				// store
 				if (elem_size === 8) {
-					status.code += `str x2, [x9, x1, lsl #3]\n`;
+					emit_asm(status, `str x2, [x9, x1, lsl #3]\n`);
 				} else {
-					status.code += `mov x3, #${elem_size}\n`;
-					status.code += `mul x1, x1, x3\n`;
+					emit_asm(status, `mov x3, #${elem_size}\n`);
+					emit_asm(status, `mul x1, x1, x3\n`);
 					if (elem_size === 1) {
-						status.code += `strb w2, [x9, x1]\n`;
+						emit_asm(status, `strb w2, [x9, x1]\n`);
 					} else if (elem_size === 2) {
-						status.code += `strh w2, [x9, x1]\n`;
+						emit_asm(status, `strh w2, [x9, x1]\n`);
 					} else if (elem_size === 4) {
-						status.code += `str w2, [x9, x1]\n`;
+						emit_asm(status, `str w2, [x9, x1]\n`);
 					} else {
-						status.code += `str x2, [x9, x1]\n`;
+						emit_asm(status, `str x2, [x9, x1]\n`);
 					}
 				}
 				return;
@@ -1904,7 +1910,7 @@ function build_access_method(
 				if (licm_key) {
 					const cached = status.array_ptr_cache?.get(licm_key);
 					if (cached) {
-						status.code += `mov x0, ${cached}\n`;
+						emit_asm(status, `mov x0, ${cached}\n`);
 						status.at_addr_reg = cached;
 						return;
 					}
@@ -1913,26 +1919,26 @@ function build_access_method(
 				// literals emit 1 instruction), compute base → x9, load
 				if (access_func.params.length > 0) {
 					build_operand(access_func.params[0], "x1", status);
-					if (!status.code.endsWith("\n")) status.code += "\n";
+					ensure_newline(status);
 				}
 				// Build target (array base) into x9
 				if (node.target.node_type === "value") {
 					const name = (node.target as ValueNode).value;
 					const paramReg = get_param_reg(name, status);
 					if (paramReg) {
-						status.code += `mov x9, ${paramReg}\n`;
+						emit_asm(status, `mov x9, ${paramReg}\n`);
 					} else if (is_local_ref_var(name, status)) {
 						emit_deref_var_address(status, "x9", name);
 					} else if (status.heap_array_vars?.has(name)) {
 						emit_var_address(status, "x9", name);
-						status.code += `ldr x9, [x9]\n`;
-						status.code += `add x9, x9, #8\n`;
+						emit_asm(status, `ldr x9, [x9]\n`);
+						emit_asm(status, `add x9, x9, #8\n`);
 					} else if (
 						status.function_array_params?.has(name) ||
 						status.function_variadic_params?.has(name)
 					) {
 						emit_var_address(status, "x9", name);
-						status.code += `ldr x9, [x9]\n`;
+						emit_asm(status, `ldr x9, [x9]\n`);
 					} else {
 						emit_var_address(status, "x9", name);
 					}
@@ -1950,7 +1956,7 @@ function build_access_method(
 						const base_name = (inner_base as ValueNode).value;
 						const bpReg = get_param_reg(base_name, status);
 						if (bpReg) {
-							status.code += `mov x9, ${bpReg}\n`;
+							emit_asm(status, `mov x9, ${bpReg}\n`);
 						} else if (is_local_ref_var(base_name, status)) {
 							emit_deref_var_address(status, "x9", base_name);
 						} else {
@@ -1958,11 +1964,11 @@ function build_access_method(
 						}
 					} else {
 						build_node(inner_base, status);
-						if (!status.code.endsWith("\n")) status.code += "\n";
-						status.code += `mov x9, x0\n`;
+						ensure_newline(status);
+						emit_asm(status, `mov x9, x0\n`);
 					}
 					if (field_offset > 0) {
-						status.code += `add x9, x9, #${field_offset}\n`;
+						emit_asm(status, `add x9, x9, #${field_offset}\n`);
 					}
 				}
 				// Load element
@@ -1974,13 +1980,13 @@ function build_access_method(
 					if (licm_key && alloc_array_cache_reg(status) !== null) {
 						const reg = alloc_array_cache_reg(status)!;
 						if ((elem_size & (elem_size - 1)) === 0) {
-							status.code += `add ${reg}, x9, x1, lsl #${Math.log2(elem_size)}\n`;
+							emit_asm(status, `add ${reg}, x9, x1, lsl #${Math.log2(elem_size)}\n`);
 						} else {
-							status.code += `mov x2, #${elem_size}\n`;
-							status.code += `mul x1, x1, x2\n`;
-							status.code += `add ${reg}, x9, x1\n`;
+							emit_asm(status, `mov x2, #${elem_size}\n`);
+							emit_asm(status, `mul x1, x1, x2\n`);
+							emit_asm(status, `add ${reg}, x9, x1\n`);
 						}
-						status.code += `mov x0, ${reg}\n`;
+						emit_asm(status, `mov x0, ${reg}\n`);
 						if (!status.array_ptr_cache) status.array_ptr_cache = new Map();
 						status.array_ptr_cache.set(licm_key, reg);
 						if (!status.callee_saved_regs_used) status.callee_saved_regs_used = new Set();
@@ -1989,30 +1995,30 @@ function build_access_method(
 						return;
 					}
 					if (elem_size === 8) {
-						status.code += `add x0, x9, x1, lsl #3\n`;
+						emit_asm(status, `add x0, x9, x1, lsl #3\n`);
 					} else {
-						status.code += `mov x2, #${elem_size}\n`;
-						status.code += `mul x1, x1, x2\n`;
-						status.code += `add x0, x9, x1\n`;
+						emit_asm(status, `mov x2, #${elem_size}\n`);
+						emit_asm(status, `mul x1, x1, x2\n`);
+						emit_asm(status, `add x0, x9, x1\n`);
 					}
 				} else if (elem_is_fat_string) {
 					// Fat-string element: load the (ptr, len) pair.
-					status.code += `add x0, x9, x1, lsl #4\n`;
-					status.code += `ldp x0, x1, [x0]\n`;
+					emit_asm(status, `add x0, x9, x1, lsl #4\n`);
+					emit_asm(status, `ldp x0, x1, [x0]\n`);
 				} else {
 					if (elem_size === 8) {
-						status.code += `ldr x0, [x9, x1, lsl #3]\n`;
+						emit_asm(status, `ldr x0, [x9, x1, lsl #3]\n`);
 					} else {
-						status.code += `mov x2, #${elem_size}\n`;
-						status.code += `mul x1, x1, x2\n`;
+						emit_asm(status, `mov x2, #${elem_size}\n`);
+						emit_asm(status, `mul x1, x1, x2\n`);
 						if (elem_size === 1) {
-							status.code += elem_signed ? `ldrsb x0, [x9, x1]\n` : `ldrb w0, [x9, x1]\n`;
+							emit_asm(status, elem_signed ? `ldrsb x0, [x9, x1]\n` : `ldrb w0, [x9, x1]\n`);
 						} else if (elem_size === 2) {
-							status.code += elem_signed ? `ldrsh x0, [x9, x1]\n` : `ldrh w0, [x9, x1]\n`;
+							emit_asm(status, elem_signed ? `ldrsh x0, [x9, x1]\n` : `ldrh w0, [x9, x1]\n`);
 						} else if (elem_size === 4) {
-							status.code += elem_signed ? `ldrsw x0, [x9, x1]\n` : `ldr w0, [x9, x1]\n`;
+							emit_asm(status, elem_signed ? `ldrsw x0, [x9, x1]\n` : `ldr w0, [x9, x1]\n`);
 						} else {
-							status.code += `ldr x0, [x9, x1]\n`;
+							emit_asm(status, `ldr x0, [x9, x1]\n`);
 						}
 					}
 				}
@@ -2020,29 +2026,29 @@ function build_access_method(
 			}
 
 			// .set(): still uses x19 save/restore (both index and value params)
-			status.code += `str x19, [sp, #-16]!\n`;
+			emit_asm(status, `str x19, [sp, #-16]!\n`);
 
 			// Build target (array pointer) into x19
 			if (node.target.node_type === "value") {
 				const name = (node.target as ValueNode).value;
 				const paramReg = get_param_reg(name, status);
 				if (paramReg) {
-					status.code += `mov x19, ${paramReg}\n`;
+					emit_asm(status, `mov x19, ${paramReg}\n`);
 				} else if (is_local_ref_var(name, status)) {
 					emit_deref_var_address(status, "x19", name);
 				} else if (status.heap_array_vars?.has(name)) {
 					// Heap-allocated array: variable stores a heap pointer with an 8-byte
 					// length prefix. Dereference and skip the prefix to get the first element.
 					emit_var_address(status, "x19", name);
-					status.code += `ldr x19, [x19]\n`;
-					status.code += `add x19, x19, #8\n`;
+					emit_asm(status, `ldr x19, [x19]\n`);
+					emit_asm(status, `add x19, x19, #8\n`);
 				} else if (
 					status.function_array_params?.has(name) ||
 					status.function_variadic_params?.has(name)
 				) {
 					// Array passed as a param: variable stores a pointer to raw data (no prefix)
 					emit_var_address(status, "x19", name);
-					status.code += `ldr x19, [x19]\n`;
+					emit_asm(status, `ldr x19, [x19]\n`);
 				} else {
 					// Local var/const array: data is inline, emit_var_address points to first element
 					emit_var_address(status, "x19", name);
@@ -2064,49 +2070,49 @@ function build_access_method(
 					emit_var_address(status, "x19", base_name);
 				} else {
 					build_node(inner_base, status);
-					if (!status.code.endsWith("\n")) status.code += "\n";
-					status.code += `mov x19, x0\n`;
+					ensure_newline(status);
+					emit_asm(status, `mov x19, x0\n`);
 				}
 				if (field_offset > 0) {
-					status.code += `add x19, x19, #${field_offset}\n`;
+					emit_asm(status, `add x19, x19, #${field_offset}\n`);
 				}
 			}
 			// Build index argument into x1 (promoted vars/literals emit 1
 			// instruction via build_operand's direct paths)
 			if (access_func.params.length > 0) {
 				build_operand(access_func.params[0], "x1", status);
-				if (!status.code.endsWith("\n")) status.code += "\n";
+				ensure_newline(status);
 			}
 
 			if (access_func.name === "at") {
 				if (elem_struct) {
 					// Struct element: compute address (base + index * elem_size), return pointer
 					if (elem_size === 8) {
-						status.code += `add x0, x19, x1, lsl #3\n`;
+						emit_asm(status, `add x0, x19, x1, lsl #3\n`);
 					} else {
-						status.code += `mov x2, #${elem_size}\n`;
-						status.code += `mul x1, x1, x2\n`;
-						status.code += `add x0, x19, x1\n`;
+						emit_asm(status, `mov x2, #${elem_size}\n`);
+						emit_asm(status, `mul x1, x1, x2\n`);
+						emit_asm(status, `add x0, x19, x1\n`);
 					}
 				} else if (elem_is_fat_string) {
 					// Fat-string element: load the (ptr, len) pair.
-					status.code += `add x9, x19, x1, lsl #4\n`;
-					status.code += `ldp x0, x1, [x9]\n`;
+					emit_asm(status, `add x9, x19, x1, lsl #4\n`);
+					emit_asm(status, `ldp x0, x1, [x9]\n`);
 				} else {
 					// Simple element: compute offset and load value
 					if (elem_size === 8) {
-						status.code += `ldr x0, [x19, x1, lsl #3]\n`;
+						emit_asm(status, `ldr x0, [x19, x1, lsl #3]\n`);
 					} else {
-						status.code += `mov x2, #${elem_size}\n`;
-						status.code += `mul x1, x1, x2\n`;
+						emit_asm(status, `mov x2, #${elem_size}\n`);
+						emit_asm(status, `mul x1, x1, x2\n`);
 						if (elem_size === 1) {
-							status.code += elem_signed ? `ldrsb x0, [x19, x1]\n` : `ldrb w0, [x19, x1]\n`;
+							emit_asm(status, elem_signed ? `ldrsb x0, [x19, x1]\n` : `ldrb w0, [x19, x1]\n`);
 						} else if (elem_size === 2) {
-							status.code += elem_signed ? `ldrsh x0, [x19, x1]\n` : `ldrh w0, [x19, x1]\n`;
+							emit_asm(status, elem_signed ? `ldrsh x0, [x19, x1]\n` : `ldrh w0, [x19, x1]\n`);
 						} else if (elem_size === 4) {
-							status.code += elem_signed ? `ldrsw x0, [x19, x1]\n` : `ldr w0, [x19, x1]\n`;
+							emit_asm(status, elem_signed ? `ldrsw x0, [x19, x1]\n` : `ldr w0, [x19, x1]\n`);
 						} else {
-							status.code += `ldr x0, [x19, x1]\n`;
+							emit_asm(status, `ldr x0, [x19, x1]\n`);
 						}
 					}
 				}
@@ -2124,7 +2130,7 @@ function build_access_method(
 						const vname = (value_param as ValueNode).value;
 						const vReg = get_param_reg(vname, status);
 						if (vReg) {
-							status.code += `mov x2, ${vReg}\n`;
+							emit_asm(status, `mov x2, ${vReg}\n`);
 						} else if (is_local_ref_var(vname, status)) {
 							emit_deref_var_address(status, "x2", vname);
 						} else {
@@ -2132,57 +2138,57 @@ function build_access_method(
 						}
 					} else {
 						build_node(value_param, status);
-						if (!status.code.endsWith("\n")) status.code += "\n";
-						status.code += `mov x2, x0\n`;
+						ensure_newline(status);
+						emit_asm(status, `mov x2, x0\n`);
 					}
 				}
 				if (elem_is_fat_string) {
 					// Deep-copy semantics: free the outgoing ptr, strdup the
 					// incoming one, carry the len half. x19 base, x1 index,
 					// value pair in (x2, x3).
-					status.code += `stp x20, x21, [sp, #-16]!\n`;
-					status.code += `lsl x21, x1, #4\n`;
-					status.code += `add x9, x19, x21\n`;
-					status.code += `ldr x0, [x9]\n`;
+					emit_asm(status, `stp x20, x21, [sp, #-16]!\n`);
+					emit_asm(status, `lsl x21, x1, #4\n`);
+					emit_asm(status, `add x9, x19, x21\n`);
+					emit_asm(status, `ldr x0, [x9]\n`);
 					emit_free(status);
-					status.code += `mov x0, x2\n`;
+					emit_asm(status, `mov x0, x2\n`);
 					emit_strdup(status);
-					status.code += `str x0, [x9]\n`;
-					status.code += `str x3, [x9, #8]\n`;
-					status.code += `ldp x20, x21, [sp], #16\n`;
+					emit_asm(status, `str x0, [x9]\n`);
+					emit_asm(status, `str x3, [x9, #8]\n`);
+					emit_asm(status, `ldp x20, x21, [sp], #16\n`);
 					return;
 				}
 				if (elem_struct) {
 					// Struct element: x2 is address of value, memcpy to computed address
 					if (elem_size === 8) {
-						status.code += `add x0, x19, x1, lsl #3\n`;
+						emit_asm(status, `add x0, x19, x1, lsl #3\n`);
 					} else {
-						status.code += `mov x3, #${elem_size}\n`;
-						status.code += `mul x1, x1, x3\n`;
-						status.code += `add x0, x19, x1\n`;
+						emit_asm(status, `mov x3, #${elem_size}\n`);
+						emit_asm(status, `mul x1, x1, x3\n`);
+						emit_asm(status, `add x0, x19, x1\n`);
 					}
-					status.code += `mov x1, x2\n`;
-					status.code += `mov x2, #${elem_size}\n`;
-					status.code += `bl _memcpy\n`;
+					emit_asm(status, `mov x1, x2\n`);
+					emit_asm(status, `mov x2, #${elem_size}\n`);
+					emit_asm(status, `bl _memcpy\n`);
 				} else {
 					if (elem_size === 8) {
-						status.code += `str x2, [x19, x1, lsl #3]\n`;
+						emit_asm(status, `str x2, [x19, x1, lsl #3]\n`);
 					} else {
-						status.code += `mov x3, #${elem_size}\n`;
-						status.code += `mul x1, x1, x3\n`;
+						emit_asm(status, `mov x3, #${elem_size}\n`);
+						emit_asm(status, `mul x1, x1, x3\n`);
 						if (elem_size === 1) {
-							status.code += `strb w2, [x19, x1]\n`;
+							emit_asm(status, `strb w2, [x19, x1]\n`);
 						} else if (elem_size === 2) {
-							status.code += `strh w2, [x19, x1]\n`;
+							emit_asm(status, `strh w2, [x19, x1]\n`);
 						} else if (elem_size === 4) {
-							status.code += `str w2, [x19, x1]\n`;
+							emit_asm(status, `str w2, [x19, x1]\n`);
 						} else {
-							status.code += `str x2, [x19, x1]\n`;
+							emit_asm(status, `str x2, [x19, x1]\n`);
 						}
 					}
 				}
 			}
-			status.code += `ldr x19, [sp], #16\n`;
+			emit_asm(status, `ldr x19, [sp], #16\n`);
 			return;
 		}
 	}
@@ -2280,14 +2286,14 @@ function build_access_method(
 					// produce `nan`, which was the pre-existing spectral-norm bug.
 					const caller_wants_d0 = status.float_result_in_d0 ?? false;
 					status.float_result_in_d0 = false;
-					status.code += `ldr d0, [${data_reg}, ${load_index_reg}, lsl #${shift}]\n`;
+					emit_asm(status, `ldr d0, [${data_reg}, ${load_index_reg}, lsl #${shift}]\n`);
 					if (!caller_wants_d0) {
-						status.code += `fmov x0, d0\n`;
+						emit_asm(status, `fmov x0, d0\n`);
 					}
 				} else if (elem_bytes === 8) {
-					status.code += `ldr x0, [${data_reg}, ${load_index_reg}, lsl #3]\n`;
+					emit_asm(status, `ldr x0, [${data_reg}, ${load_index_reg}, lsl #3]\n`);
 				} else {
-					status.code += `ldr w0, [${data_reg}, ${load_index_reg}, lsl #2]\n`;
+					emit_asm(status, `ldr w0, [${data_reg}, ${load_index_reg}, lsl #2]\n`);
 				}
 			} else {
 				// Store: evaluate value (→x2), index (→x1) — value first so a
@@ -2300,7 +2306,7 @@ function build_access_method(
 					? unwrap_noop_int_cast(value_forwarded)
 					: access_func.params[1];
 				build_operand(value_node, "x2", status);
-				if (!status.code.endsWith("\n")) status.code += "\n";
+				ensure_newline(status);
 				// Base-folded addressing (ASM_PLAN_6 tranche 3): a folded
 				// receiver pin replaces the index staging and the data
 				// derivation — the value (already staged in x2) stores
@@ -2324,13 +2330,13 @@ function build_access_method(
 				// Strided store
 				if (method === "store_or_int") {
 					if (elem_bytes === 8) {
-						status.code += `ldr x0, [${data_reg}, ${store_index_reg}, lsl #3]\n`;
-						status.code += `orr x2, x0, x2\n`;
-						status.code += `str x2, [${data_reg}, ${store_index_reg}, lsl #3]\n`;
+						emit_asm(status, `ldr x0, [${data_reg}, ${store_index_reg}, lsl #3]\n`);
+						emit_asm(status, `orr x2, x0, x2\n`);
+						emit_asm(status, `str x2, [${data_reg}, ${store_index_reg}, lsl #3]\n`);
 					} else {
-						status.code += `ldr w0, [${data_reg}, ${store_index_reg}, lsl #2]\n`;
-						status.code += `orr w2, w0, w2\n`;
-						status.code += `str w2, [${data_reg}, ${store_index_reg}, lsl #2]\n`;
+						emit_asm(status, `ldr w0, [${data_reg}, ${store_index_reg}, lsl #2]\n`);
+						emit_asm(status, `orr w2, w0, w2\n`);
+						emit_asm(status, `str w2, [${data_reg}, ${store_index_reg}, lsl #2]\n`);
 					}
 				} else if (is_float) {
 					// The value was built via build_node and moved to x2 as a raw
@@ -2338,11 +2344,11 @@ function build_access_method(
 					// NOT d0, which holds whatever stale float a prior op left
 					// behind. (Pre-existing latent bug masked by d0 usually
 					// happening to still hold the right value.)
-					status.code += `str x2, [${data_reg}, ${store_index_reg}, lsl #${shift}]\n`;
+					emit_asm(status, `str x2, [${data_reg}, ${store_index_reg}, lsl #${shift}]\n`);
 				} else if (elem_bytes === 8) {
-					status.code += `str x2, [${data_reg}, ${store_index_reg}, lsl #3]\n`;
+					emit_asm(status, `str x2, [${data_reg}, ${store_index_reg}, lsl #3]\n`);
 				} else {
-					status.code += `str w2, [${data_reg}, ${store_index_reg}, lsl #2]\n`;
+					emit_asm(status, `str w2, [${data_reg}, ${store_index_reg}, lsl #2]\n`);
 				}
 			}
 			return;
@@ -2405,7 +2411,7 @@ function build_access_method(
 			return_enum_size ?? get_struct_size(access_func.type.name, status),
 		);
 		status.stack_offsets!.set(temp_addr, temp_offset);
-		status.code += `add x8, x29, #${temp_offset}\n`;
+		emit_asm(status, `add x8, x29, #${temp_offset}\n`);
 	}
 
 	// A fat-STRING receiver is a (ptr, len) value: build it into the x0/x1
@@ -2443,7 +2449,7 @@ function build_access_method(
 		// emit_string_length: the flag reflects exactly this expression.
 		status.last_result_is_heap = false;
 		build_node(node.target, status);
-		if (!status.code.endsWith("\n")) status.code += "\n";
+		ensure_newline(status);
 		// A consuming `move out string` call (`string_to_string`, the identity
 		// until the signature flipped to a real strdup) copies the receiver's
 		// storage — when that receiver is itself an owning temp, the original
@@ -2452,7 +2458,7 @@ function build_access_method(
 		frees_string_receiver = method_name === "string_to_string" && status.last_result_is_heap;
 		status.last_result_is_heap = false;
 		// Pair now in x0/x1. Save both halves across argument evaluation.
-		status.code += `stp x0, x1, [sp, #-16]!\n`;
+		emit_asm(status, `stp x0, x1, [sp, #-16]!\n`);
 	}
 
 	// Deferred self (ASM_PLAN_2 tranche H — call-site operand-home
@@ -2492,13 +2498,11 @@ function build_access_method(
 				if (paramReg !== "x0" && /^x(?:19|2[0-8])$/.test(paramReg)) {
 					deferred_self_code = `mov x0, ${paramReg}\n`;
 				} else if (paramReg !== "x0") {
-					status.code += `mov x0, ${paramReg}\n`;
+					emit_asm(status, `mov x0, ${paramReg}\n`);
 				}
 			} else if (is_literal_value || (name.startsWith("'") && name.endsWith("'"))) {
 				build_node(node.target, status);
-				if (!status.code.endsWith("\n")) {
-					status.code += "\n";
-				}
+				ensure_newline(status);
 			} else {
 				const has_stack_offset = status.stack_offsets?.has(name);
 				if (is_local_ref_var(name, status)) {
@@ -2513,14 +2517,14 @@ function build_access_method(
 					status.heap_array_vars?.has(name) &&
 					!is_local_ref_var(name, status)
 				) {
-					status.code += `ldr x0, [x0]\n`;
-					status.code += `add x0, x0, #8\n`;
+					emit_asm(status, `ldr x0, [x0]\n`);
+					emit_asm(status, `add x0, x0, #8\n`);
 				} else if (
 					target_type.is_array &&
 					(status.function_array_params?.has(name) || status.function_variadic_params?.has(name)) &&
 					!is_local_ref_var(name, status)
 				) {
-					status.code += `ldr x0, [x0]\n`;
+					emit_asm(status, `ldr x0, [x0]\n`);
 				} else if (
 					target_is_simple &&
 					!target_type.is_array &&
@@ -2533,13 +2537,13 @@ function build_access_method(
 					const size = aarch64_size(target_type.name);
 					const signed = is_signed_type(target_type.name);
 					if (size === 1) {
-						status.code += signed ? `ldrsb x0, [x0]\n` : `ldrb w0, [x0]\n`;
+						emit_asm(status, signed ? `ldrsb x0, [x0]\n` : `ldrb w0, [x0]\n`);
 					} else if (size === 2) {
-						status.code += signed ? `ldrsh x0, [x0]\n` : `ldrh w0, [x0]\n`;
+						emit_asm(status, signed ? `ldrsh x0, [x0]\n` : `ldrh w0, [x0]\n`);
 					} else if (size === 4) {
-						status.code += signed ? `ldrsw x0, [x0]\n` : `ldr w0, [x0]\n`;
+						emit_asm(status, signed ? `ldrsw x0, [x0]\n` : `ldr w0, [x0]\n`);
 					} else {
-						status.code += `ldr x0, [x0]\n`;
+						emit_asm(status, `ldr x0, [x0]\n`);
 					}
 				}
 			}
@@ -2553,7 +2557,7 @@ function build_access_method(
 					const paramReg = get_param_reg(name, status);
 					if (paramReg) {
 						if (paramReg !== "x0") {
-							status.code += `mov x0, ${paramReg}\n`;
+							emit_asm(status, `mov x0, ${paramReg}\n`);
 						}
 					} else if (is_local_ref_var(name, status)) {
 						emit_deref_var_address(status, "x0", name);
@@ -2562,37 +2566,31 @@ function build_access_method(
 					}
 				} else {
 					build_node(base, status);
-					if (!status.code.endsWith("\n")) {
-						status.code += "\n";
-					}
+					ensure_newline(status);
 				}
 				if (offset > 0) {
-					status.code += `add x0, x0, #${offset}\n`;
+					emit_asm(status, `add x0, x0, #${offset}\n`);
 				}
 				// A heap `Array<T>` field holds a POINTER to the heap buffer
 				// (length at [0], data at [8]). The array methods expect the
 				// DATA pointer, so dereference and skip the length prefix.
 				if (target_type.is_array && target_type.is_array_heap) {
-					status.code += `ldr x0, [x0]\n`;
-					status.code += `add x0, x0, #8\n`;
+					emit_asm(status, `ldr x0, [x0]\n`);
+					emit_asm(status, `add x0, x0, #8\n`);
 				}
 			} else {
 				build_node(node.target, status);
-				if (!status.code.endsWith("\n")) {
-					status.code += "\n";
-				}
+				ensure_newline(status);
 			}
 		} else {
 			build_node(node.target, status);
-			if (!status.code.endsWith("\n")) {
-				status.code += "\n";
-			}
+			ensure_newline(status);
 			// A heap `Array<T>` value built by build_node (e.g. a field load
 			// `obj.items` → the buffer BASE pointer, or a call result) must be
 			// advanced to the DATA pointer the array methods expect (length at
 			// [base], data at [base+8]).
 			if (target_type.is_array && target_type.is_array_heap) {
-				status.code += `add x0, x0, #8\n`;
+				emit_asm(status, `add x0, x0, #8\n`);
 			}
 		}
 	}
@@ -2611,7 +2609,7 @@ function build_access_method(
 	let trait_recv_slot: number | undefined;
 	if (will_trait_dispatch && node.target.node_type !== "value" && !receiver_is_string) {
 		trait_recv_slot = allocate_stack_space(status, 8, 8);
-		status.code += `str x0, [x29, #${trait_recv_slot}]\n`;
+		emit_asm(status, `str x0, [x29, #${trait_recv_slot}]\n`);
 	}
 
 	const raw_needs_self =
@@ -2634,7 +2632,7 @@ function build_access_method(
 		raw_needs_self && !!inline_func0 && naked_inline_skips_self(inline_func0, status.platform);
 	const needs_self_save = raw_needs_self && !elide_self_save && !deferred_self_code;
 	if (needs_self_save) {
-		status.code += `str x0, [sp, #-16]!\n`;
+		emit_asm(status, `str x0, [sp, #-16]!\n`);
 	}
 
 	// Evaluate params. For an instance method, x0 holds self (saved above)
@@ -2745,8 +2743,8 @@ function build_access_method(
 		// passes through, an owned string is wrapped with its strlen.
 		if (view_arg_set.has(i)) {
 			emit_view_string_arg(param, status);
-			status.code += `str x0, [x29, #${view_half_store(i, 0)}]\n`;
-			status.code += `str x1, [x29, #${view_half_store(i, 1)}]\n`;
+			emit_asm(status, `str x0, [x29, #${view_half_store(i, 0)}]\n`);
+			emit_asm(status, `str x1, [x29, #${view_half_store(i, 1)}]\n`);
 			continue;
 		}
 		// A fat `string` argument is already the (ptr, len) pair in x0/x1 —
@@ -2755,16 +2753,14 @@ function build_access_method(
 		// leaves only x0 = 0, and x1 would carry garbage into the callee.
 		if (string_arg_set.has(i)) {
 			if (param.node_type === "value" && (param as ValueNode).value === "null") {
-				status.code += `mov x0, #0\n`;
-				status.code += `mov x1, #0\n`;
+				emit_asm(status, `mov x0, #0\n`);
+				emit_asm(status, `mov x1, #0\n`);
 			} else {
 				build_node(param, status);
-				if (!status.code.endsWith("\n")) {
-					status.code += "\n";
-				}
+				ensure_newline(status);
 			}
-			status.code += `str x0, [x29, #${view_half_store(i, 0)}]\n`;
-			status.code += `str x1, [x29, #${view_half_store(i, 1)}]\n`;
+			emit_asm(status, `str x0, [x29, #${view_half_store(i, 0)}]\n`);
+			emit_asm(status, `str x1, [x29, #${view_half_store(i, 1)}]\n`);
 			continue;
 		}
 		// Enum-with-data values (tag + payload, 16 bytes) use the same
@@ -2780,7 +2776,7 @@ function build_access_method(
 				// holds the instance, but the callee dereferences its ref-param
 				// argument at entry — pass the caller's slot address stored in
 				// ref_class_slots instead (mirrors the plain-call path).
-				status.code += `ldr x0, [x29, #${rp_slot}]\n`;
+				emit_asm(status, `ldr x0, [x29, #${rp_slot}]\n`);
 				ref_class_param_reload.push(rp_name!);
 			} else {
 				emit_address_of(param, status);
@@ -2791,7 +2787,7 @@ function build_access_method(
 				const paramReg = status.function_param_regs?.get(name);
 				if (paramReg) {
 					if (paramReg !== "x0") {
-						status.code += `mov x0, ${paramReg}\n`;
+						emit_asm(status, `mov x0, ${paramReg}\n`);
 					}
 				} else if (is_local_ref_var(name, status)) {
 					emit_deref_var_address(status, "x0", name);
@@ -2800,9 +2796,7 @@ function build_access_method(
 				}
 			} else {
 				build_node(param, status);
-				if (!status.code.endsWith("\n")) {
-					status.code += "\n";
-				}
+				ensure_newline(status);
 			}
 		} else if (arg_deferrable(i)) {
 			deferred_args.push({ param, slot: arg_slot[i] });
@@ -2811,22 +2805,20 @@ function build_access_method(
 			build_node(param, status);
 		}
 		const slot = start_reg + arg_slot[i];
-		if (!status.code.endsWith("\n")) {
-			status.code += "\n";
-		}
+		ensure_newline(status);
 		if (slot >= NUM_REG_ARGS) {
 			// Overflow: spill to a local slot; copied to the outgoing area
 			// once self has been restored to x0 below.
-			status.code += `str x0, [x29, #${overflow_base + (slot - NUM_REG_ARGS) * 8}]\n`;
+			emit_asm(status, `str x0, [x29, #${overflow_base + (slot - NUM_REG_ARGS) * 8}]\n`);
 		} else {
 			// The AAPCS register IS the slot index: static args start at x0,
 			// instance args at x1 (self = slot 0), fat-string-receiver args
 			// at x2 (the receiver pair owns slots 0-1).
 			const reg = `x${slot}`;
 			if (reg !== "x0") {
-				status.code += `mov ${reg}, x0\n`;
+				emit_asm(status, `mov ${reg}, x0\n`);
 			} else if (static_arg0_needs_spill) {
-				status.code += `str x0, [x29, #${static_arg0_spill}]\n`;
+				emit_asm(status, `str x0, [x29, #${static_arg0_spill}]\n`);
 			}
 		}
 	}
@@ -2841,7 +2833,7 @@ function build_access_method(
 	deferred_args.sort((a, b) => b.slot - a.slot);
 	for (const d of deferred_args) {
 		build_operand(d.param, `x${start_reg + d.slot}`, status);
-		if (!status.code.endsWith("\n")) status.code += "\n";
+		ensure_newline(status);
 	}
 	// Reload the spilled view/string pairs into their register slots AFTER
 	// the deferred materializations (a leaf parking through x0 would clobber
@@ -2853,31 +2845,32 @@ function build_access_method(
 			for (const half of [0, 1] as const) {
 				const half_slot = start_reg + arg_slot[j] + half;
 				if (half_slot >= NUM_REG_ARGS) continue;
-				status.code += `ldr x${half_slot}, [x29, #${view_spill_base + (arg_slot[j] + half) * 8}]\n`;
+				emit_asm(
+					status,
+					`ldr x${half_slot}, [x29, #${view_spill_base + (arg_slot[j] + half) * 8}]\n`,
+				);
 			}
 		}
 	}
 	// Restore the static first argument last of all: everything above (the
 	// deferred materializations, the pair reloads) may pass through x0.
 	if (static_arg0_needs_spill) {
-		if (!status.code.endsWith("\n")) status.code += "\n";
-		status.code += `ldr x0, [x29, #${static_arg0_spill}]\n`;
+		ensure_newline(status);
+		emit_asm(status, `ldr x0, [x29, #${static_arg0_spill}]\n`);
 	}
 
-	if (!status.code.endsWith("\n")) {
-		status.code += "\n";
-	}
+	ensure_newline(status);
 	if (receiver_is_string) {
 		// Restore the fat receiver's pair into x0/x1. When the call consumes
 		// an OWNED receiver temp (frees_string_receiver), keep the pair's
 		// stack frame so the ptr half can be freed after the call.
-		status.code += frees_string_receiver ? `ldp x0, x1, [sp]\n` : `ldp x0, x1, [sp], #16\n`;
+		emit_asm(status, frees_string_receiver ? `ldp x0, x1, [sp]\n` : `ldp x0, x1, [sp], #16\n`);
 	} else if (deferred_self_code) {
 		// The self value lived in a callee-saved register all along — load
 		// it now (after argument evaluation) instead of push/pop round-trips.
-		status.code += deferred_self_code;
+		emit_asm(status, deferred_self_code);
 	} else if (needs_self_save) {
-		status.code += `ldr x0, [sp], #16\n`;
+		emit_asm(status, `ldr x0, [sp], #16\n`);
 	}
 
 	// AAPCS64: args past x0..x7 go in the caller's outgoing stack area at
@@ -2887,10 +2880,10 @@ function build_access_method(
 	let outgoing_size = 0;
 	if (overflow_count > 0) {
 		outgoing_size = Math.ceil((overflow_count * 8) / 16) * 16;
-		status.code += `sub sp, sp, #${outgoing_size}\n`;
+		emit_asm(status, `sub sp, sp, #${outgoing_size}\n`);
 		for (let k = 0; k < overflow_count; k++) {
-			status.code += `ldr x9, [x29, #${overflow_base + k * 8}]\n`;
-			status.code += `str x9, [sp, #${k * 8}]\n`;
+			emit_asm(status, `ldr x9, [x29, #${overflow_base + k * 8}]\n`);
+			emit_asm(status, `str x9, [sp, #${k * 8}]\n`);
 		}
 	}
 
@@ -2926,7 +2919,7 @@ function build_access_method(
 			const name = (node.target as ValueNode).value;
 			const paramReg = get_param_reg(name, status);
 			if (paramReg) {
-				status.code += `mov x9, ${paramReg}\n`;
+				emit_asm(status, `mov x9, ${paramReg}\n`);
 			} else {
 				emit_var_address(status, "x9", name);
 				// A trait-typed class local stores a POINTER to the heap
@@ -2940,7 +2933,7 @@ function build_access_method(
 				// inherited one (dereferencing an inline struct's first field
 				// as a vtable pointer corrupts the dispatch).
 				if (trait_class_for(status, name) !== undefined) {
-					status.code += `ldr x9, [x9]\n`;
+					emit_asm(status, `ldr x9, [x9]\n`);
 					// The callee's self argument must likewise be the instance
 					// pointer, not &local. The target build left x0 = &local;
 					// overwrite it with the dereferenced instance so an
@@ -2949,26 +2942,26 @@ function build_access_method(
 					// here — for them &local IS the inline instance. Static /
 					// no-self methods keep x0 as their first real argument.)
 					if (!access_func.is_static) {
-						status.code += `mov x0, x9\n`;
+						emit_asm(status, `mov x0, x9\n`);
 					}
 				}
 			}
 		} else if (trait_recv_slot !== undefined) {
-			status.code += `ldr x9, [x29, #${trait_recv_slot}]\n`;
+			emit_asm(status, `ldr x9, [x29, #${trait_recv_slot}]\n`);
 		} else {
 			build_node(node.target, status);
-			if (!status.code.endsWith("\n")) status.code += "\n";
-			status.code += `mov x9, x0\n`;
+			ensure_newline(status);
+			emit_asm(status, `mov x9, x0\n`);
 		}
-		status.code += `ldr x10, [x9]\n`;
+		emit_asm(status, `ldr x10, [x9]\n`);
 		// +1 to skip the destroy slot at vtable[0].
-		status.code += `ldr x10, [x10, #${(trait_index + 1) * 8}]\n`;
-		status.code += `ldr x10, [x10, #${func_index * 8}]\n`;
-		status.code += `blr x10\n`;
+		emit_asm(status, `ldr x10, [x10, #${(trait_index + 1) * 8}]\n`);
+		emit_asm(status, `ldr x10, [x10, #${func_index * 8}]\n`);
+		emit_asm(status, `blr x10\n`);
 		// A float-returning trait method hands its result back in d0 —
 		// bit-cast to x0 for the generic consumers.
 		if (is_float_type(access_func.type.name)) {
-			status.code += `fmov x0, d0\n`;
+			emit_asm(status, `fmov x0, d0\n`);
 		}
 		// An owned receiver (a `move out T` call like pop() spilled to the
 		// trait_recv_slot above): the slot owns the instance, so destroy it
@@ -2980,14 +2973,14 @@ function build_access_method(
 			node.target.node_type === "access" &&
 			!!((node.target as AccessNode).access as AccessFunctionCallNode).owned_return
 		) {
-			status.code += `str x0, [sp, #-16]!\n`;
-			status.code += `str x1, [sp, #-16]!\n`;
-			status.code += `ldr x0, [x29, #${trait_recv_slot}]\n`;
-			status.code += `bl ${trait_target.name}_destroy\n`;
-			status.code += `ldr x0, [x29, #${trait_recv_slot}]\n`;
+			emit_asm(status, `str x0, [sp, #-16]!\n`);
+			emit_asm(status, `str x1, [sp, #-16]!\n`);
+			emit_asm(status, `ldr x0, [x29, #${trait_recv_slot}]\n`);
+			emit_asm(status, `bl ${trait_target.name}_destroy\n`);
+			emit_asm(status, `ldr x0, [x29, #${trait_recv_slot}]\n`);
 			emit_free(status);
-			status.code += `ldr x1, [sp], #16\n`;
-			status.code += `ldr x0, [sp], #16\n`;
+			emit_asm(status, `ldr x1, [sp], #16\n`);
+			emit_asm(status, `ldr x0, [sp], #16\n`);
 		}
 	} else if (
 		inline_func &&
@@ -3004,17 +2997,17 @@ function build_access_method(
 		build_inline_method(target_struct!, inline_func, status);
 		end_inline_splice(mono_struct_name, access_func.name);
 	} else {
-		status.code += `bl ${method_name}\n`;
+		emit_asm(status, `bl ${method_name}\n`);
 		// A float-returning method hands its result back in d0 (the d0
 		// return convention) — bit-cast to x0 for the generic consumers.
 		if (is_float_type(access_func.type.name)) {
-			status.code += `fmov x0, d0\n`;
+			emit_asm(status, `fmov x0, d0\n`);
 		}
 	}
 
 	// Free the outgoing stack-arg area now that the call has read it.
 	if (outgoing_size > 0) {
-		status.code += `add sp, sp, #${outgoing_size}\n`;
+		emit_asm(status, `add sp, sp, #${outgoing_size}\n`);
 	}
 
 	// The callee (string_to_string) copied the receiver's storage — free the
@@ -3022,14 +3015,14 @@ function build_access_method(
 	// point: [sp]=receiver.ptr, [sp+8]=receiver.len (kept by the non-popping
 	// restore above).
 	if (frees_string_receiver) {
-		status.code += `ldr x9, [sp]\n`;
-		status.code += `str x0, [sp, #-16]!\n`;
-		status.code += `str x1, [sp, #-16]!\n`;
-		status.code += `mov x0, x9\n`;
-		status.code += `bl _nomen_free_wrap\n`;
-		status.code += `ldr x1, [sp], #16\n`;
-		status.code += `ldr x0, [sp], #16\n`;
-		status.code += `add sp, sp, #16\n`;
+		emit_asm(status, `ldr x9, [sp]\n`);
+		emit_asm(status, `str x0, [sp, #-16]!\n`);
+		emit_asm(status, `str x1, [sp, #-16]!\n`);
+		emit_asm(status, `mov x0, x9\n`);
+		emit_asm(status, `bl _nomen_free_wrap\n`);
+		emit_asm(status, `ldr x1, [sp], #16\n`);
+		emit_asm(status, `ldr x0, [sp], #16\n`);
+		emit_asm(status, `add sp, sp, #16\n`);
 	}
 
 	// A forwarded `ref` class PARAM may have been reassigned by the callee,
@@ -3038,16 +3031,16 @@ function build_access_method(
 	// freed) — reload it from the slot so subsequent uses target the live
 	// instance. x9 is caller-saved scratch; x0 (return value) is preserved.
 	if (ref_class_param_reload.length > 0) {
-		status.code += `str x0, [sp, #-16]!\n`;
+		emit_asm(status, `str x0, [sp, #-16]!\n`);
 		for (const reload_name of ref_class_param_reload) {
 			const slot = status.ref_class_slots?.get(reload_name);
 			const reg = status.function_param_regs?.get(reload_name);
 			if (slot !== undefined && reg) {
-				status.code += `ldr x9, [x29, #${slot}]\n`;
-				status.code += `ldr ${reg}, [x9]\n`;
+				emit_asm(status, `ldr x9, [x29, #${slot}]\n`);
+				emit_asm(status, `ldr ${reg}, [x9]\n`);
 			}
 		}
-		status.code += `ldr x0, [sp], #16\n`;
+		emit_asm(status, `ldr x0, [sp], #16\n`);
 	}
 
 	if (access_func.move_param_indices?.length) {
@@ -3158,7 +3151,7 @@ function build_access_method(
 	}
 
 	if (return_struct) {
-		status.code += `add x0, x29, #${temp_offset}\n`;
+		emit_asm(status, `add x0, x29, #${temp_offset}\n`);
 	}
 }
 
@@ -3172,7 +3165,7 @@ function build_int_array_to_string(node: AccessNode, target_type: Type, status: 
 		const paramReg = get_param_reg(name, status);
 		if (paramReg) {
 			if (paramReg !== "x0") {
-				status.code += `mov x0, ${paramReg}\n`;
+				emit_asm(status, `mov x0, ${paramReg}\n`);
 			}
 		} else if (status.heap_array_vars?.has(name)) {
 			// Heap-allocated array: the variable holds a pointer to a malloc'd
@@ -3180,60 +3173,58 @@ function build_int_array_to_string(node: AccessNode, target_type: Type, status: 
 			// and skip the prefix so x19 ends up at the first element (matching
 			// the inline storage a stack array would have).
 			emit_var_address(status, "x0", name);
-			status.code += `ldr x0, [x0]\n`;
-			status.code += `add x0, x0, #8\n`;
+			emit_asm(status, `ldr x0, [x0]\n`);
+			emit_asm(status, `add x0, x0, #8\n`);
 		} else {
 			emit_var_address(status, "x0", name);
 		}
 	} else {
 		build_node(node.target, status);
-		if (!status.code.endsWith("\n")) {
-			status.code += "\n";
-		}
+		ensure_newline(status);
 	}
 
 	// Save x19, x20
-	status.code += `str x19, [sp, #-16]!\n`;
-	status.code += `str x20, [sp, #-16]!\n`;
-	status.code += `mov x19, x0\n`;
+	emit_asm(status, `str x19, [sp, #-16]!\n`);
+	emit_asm(status, `str x20, [sp, #-16]!\n`);
+	emit_asm(status, `mov x19, x0\n`);
 
 	// Allocate result buffer - estimate 20 bytes per int element
 	const buf_size = Math.max(length * 20, 32);
-	status.code += `mov x0, #${buf_size}\n`;
+	emit_asm(status, `mov x0, #${buf_size}\n`);
 	emit_malloc(status);
-	status.code += `mov x20, x0\n`;
+	emit_asm(status, `mov x20, x0\n`);
 
 	// Zero out the buffer
-	status.code += `strb wzr, [x20]\n`;
+	emit_asm(status, `strb wzr, [x20]\n`);
 
 	// Loop through elements
 	for (let i = 0; i < length; i++) {
 		// Load element
 		const offset = i * element_size;
 		if (element_size === 1) {
-			status.code += `ldrb w0, [x19, #${offset}]\n`;
-			status.code += `uxtb w0, w0\n`;
+			emit_asm(status, `ldrb w0, [x19, #${offset}]\n`);
+			emit_asm(status, `uxtb w0, w0\n`);
 		} else {
-			status.code += `ldr x0, [x19, #${offset}]\n`;
+			emit_asm(status, `ldr x0, [x19, #${offset}]\n`);
 		}
 
 		// Call int_to_string (or appropriate to_string)
 		const to_string_fn = `${target_type.name}_to_string`;
-		status.code += `bl ${to_string_fn}\n`;
+		emit_asm(status, `bl ${to_string_fn}\n`);
 
 		// Concatenate: strcat(x20, x0)
-		status.code += `str x0, [sp, #-16]!\n`;
-		status.code += `mov x1, x0\n`;
-		status.code += `mov x0, x20\n`;
-		status.code += `bl _strcat\n`;
-		status.code += `ldr x0, [sp], #16\n`;
+		emit_asm(status, `str x0, [sp, #-16]!\n`);
+		emit_asm(status, `mov x1, x0\n`);
+		emit_asm(status, `mov x0, x20\n`);
+		emit_asm(status, `bl _strcat\n`);
+		emit_asm(status, `ldr x0, [sp], #16\n`);
 		emit_free(status);
 	}
 
 	// Return result in x0
-	status.code += `mov x0, x20\n`;
-	status.code += `ldr x20, [sp], #16\n`;
-	status.code += `ldr x19, [sp], #16\n`;
+	emit_asm(status, `mov x0, x20\n`);
+	emit_asm(status, `ldr x20, [sp], #16\n`);
+	emit_asm(status, `ldr x19, [sp], #16\n`);
 }
 
 function build_char_array_to_string(node: AccessNode, length: string, status: BuildStatus) {
@@ -3244,7 +3235,7 @@ function build_char_array_to_string(node: AccessNode, length: string, status: Bu
 		const paramReg = get_param_reg(name, status);
 		if (paramReg) {
 			if (paramReg !== "x0") {
-				status.code += `mov x0, ${paramReg}\n`;
+				emit_asm(status, `mov x0, ${paramReg}\n`);
 			}
 		} else if (status.heap_array_vars?.has(name)) {
 			// Heap-allocated array: the variable holds a pointer to a malloc'd
@@ -3252,29 +3243,27 @@ function build_char_array_to_string(node: AccessNode, length: string, status: Bu
 			// and skip the prefix so x19 ends up pointing at the first char
 			// (matching the inline storage a stack array would have).
 			emit_var_address(status, "x0", name);
-			status.code += `ldr x0, [x0]\n`;
-			status.code += `add x0, x0, #8\n`;
+			emit_asm(status, `ldr x0, [x0]\n`);
+			emit_asm(status, `add x0, x0, #8\n`);
 		} else {
 			emit_var_address(status, "x0", name);
 		}
 	} else {
 		build_node(node.target, status);
-		if (!status.code.endsWith("\n")) {
-			status.code += "\n";
-		}
+		ensure_newline(status);
 	}
 
-	status.code += `str x19, [sp, #-16]!\n`;
-	status.code += `mov x19, x0\n`;
-	status.code += `mov x0, #${len + 1}\n`;
+	emit_asm(status, `str x19, [sp, #-16]!\n`);
+	emit_asm(status, `mov x19, x0\n`);
+	emit_asm(status, `mov x0, #${len + 1}\n`);
 	emit_malloc(status);
 
 	for (let i = 0; i < len; i++) {
-		status.code += `ldrb w1, [x19, #${i}]\n`;
-		status.code += `strb w1, [x0, #${i}]\n`;
+		emit_asm(status, `ldrb w1, [x19, #${i}]\n`);
+		emit_asm(status, `strb w1, [x0, #${i}]\n`);
 	}
-	status.code += `strb wzr, [x0, #${len}]\n`;
-	status.code += `ldr x19, [sp], #16\n`;
+	emit_asm(status, `strb wzr, [x0, #${len}]\n`);
+	emit_asm(status, `ldr x19, [sp], #16\n`);
 }
 
 function resolve_access_type(node: AccessNode, status: BuildStatus): Type | null {

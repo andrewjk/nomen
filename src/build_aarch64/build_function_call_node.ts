@@ -19,6 +19,7 @@ import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_malloc } from "./utils/audit.ts";
 import { all_scope_frames, mark_moved_if_struct, find_anchor_slot } from "./utils/auto_destroy.ts";
 import { build_swap_params } from "./utils/build_swap.ts";
+import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
 import { find_enum_for_case } from "./utils/enum_case.ts";
 import { NUM_REG_ARGS } from "./utils/stack_args.ts";
 import {
@@ -70,7 +71,7 @@ function emit_ref_class_param_slot(
 	name: string,
 	reload: string[],
 ) {
-	status.code += `ldr x0, [x29, #${ref_param_slot}]\n`;
+	emit_asm(status, `ldr x0, [x29, #${ref_param_slot}]\n`);
 	reload.push(name);
 }
 
@@ -101,16 +102,14 @@ function emit_struct_address(node: BaseNode, status: BuildStatus) {
 			const found = find_enum_for_case(name, status);
 			if (found?.enum_node.has_associated_data) {
 				build_node(node, status);
-				if (!status.code.endsWith("\n")) {
-					status.code += "\n";
-				}
+				ensure_newline(status);
 				return;
 			}
 		}
 		const paramReg = status.function_param_regs?.get(name);
 		if (paramReg) {
 			if (paramReg !== "x0") {
-				status.code += `mov x0, ${paramReg}\n`;
+				emit_asm(status, `mov x0, ${paramReg}\n`);
 			}
 		} else if (is_local_ref_var(name, status)) {
 			emit_deref_var_address(status, "x0", name);
@@ -119,9 +118,7 @@ function emit_struct_address(node: BaseNode, status: BuildStatus) {
 		}
 	} else {
 		build_node(node, status);
-		if (!status.code.endsWith("\n")) {
-			status.code += "\n";
-		}
+		ensure_newline(status);
 	}
 }
 
@@ -170,13 +167,13 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 						mark_moved_if_struct(node.params[idx], status);
 					}
 				}
-				status.code += `add x0, x29, #${temp_offset}\n`;
-				status.code += `mov x1, #${case_index}\n`;
-				status.code += `str x1, [x0]\n`;
+				emit_asm(status, `add x0, x29, #${temp_offset}\n`);
+				emit_asm(status, `mov x1, #${case_index}\n`);
+				emit_asm(status, `str x1, [x0]\n`);
 				let payload_offset = 8;
 				for (let i = node.params.length - 1; i >= 0; i--) {
 					build_node(node.params[i], status);
-					if (!status.code.endsWith("\n")) status.code += "\n";
+					ensure_newline(status);
 					const param_type_name = enum_case.params[i].type.name;
 					const param_size = aarch64_size(param_type_name);
 					const abs_offset = temp_offset + payload_offset;
@@ -186,18 +183,18 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 						// the enum value outlives the producer's local, and
 						// the scope-exit payload free needs a heap ptr.
 						emit_strdup_string(status);
-						status.code += `str x0, [x29, #${abs_offset}]\n`;
-						status.code += `str x1, [x29, #${abs_offset + 8}]\n`;
+						emit_asm(status, `str x0, [x29, #${abs_offset}]\n`);
+						emit_asm(status, `str x1, [x29, #${abs_offset + 8}]\n`);
 					} else if (param_size === 1) {
-						status.code += `strb w0, [x29, #${abs_offset}]\n`;
+						emit_asm(status, `strb w0, [x29, #${abs_offset}]\n`);
 					} else if (param_size === 4) {
-						status.code += `str w0, [x29, #${abs_offset}]\n`;
+						emit_asm(status, `str w0, [x29, #${abs_offset}]\n`);
 					} else {
-						status.code += `str x0, [x29, #${abs_offset}]\n`;
+						emit_asm(status, `str x0, [x29, #${abs_offset}]\n`);
 					}
 					payload_offset += param_size;
 				}
-				status.code += `add x0, x29, #${temp_offset}\n`;
+				emit_asm(status, `add x0, x29, #${temp_offset}\n`);
 				build_swap_params(node, status);
 				return;
 			}
@@ -219,17 +216,17 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 	if (is_struct) {
 		if (is_struct.is_class) {
 			const struct_size = get_struct_size(node.name, status);
-			status.code += `mov x0, #${struct_size}\n`;
+			emit_asm(status, `mov x0, #${struct_size}\n`);
 			emit_malloc(status);
-			status.code += `str x0, [sp, #-16]!\n`;
+			emit_asm(status, `str x0, [sp, #-16]!\n`);
 		} else if (status.struct_return_buffer) {
 			// Reload the incoming sret pointer from its frame slot: x8 is
 			// destructible (AAPCS64), so intervening calls in this body may
 			// have clobbered the live register. The prologue spilled it.
 			if (status.return_buffer_stack_offset !== undefined) {
-				status.code += `ldr x8, [x29, #${status.return_buffer_stack_offset}]\n`;
+				emit_asm(status, `ldr x8, [x29, #${status.return_buffer_stack_offset}]\n`);
 			}
-			status.code += `mov x0, ${status.struct_return_buffer}\n`;
+			emit_asm(status, `mov x0, ${status.struct_return_buffer}\n`);
 		} else {
 			const dest_addr = `_temp_${temp_counter++}`;
 			const struct_size = get_struct_size(node.name, status);
@@ -250,7 +247,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		node.resolved_function as unknown as { is_closure?: boolean } | undefined
 	)?.is_closure;
 	if (is_closure_callee && !is_struct) {
-		status.code += `mov x0, #0\n`;
+		emit_asm(status, `mov x0, #0\n`);
 		start_reg = 1;
 	}
 
@@ -290,12 +287,12 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			if (is_pair && len_reg !== "x1") {
 				// Move the len half FIRST: the ptr move targets x1 for the
 				// first pair slot and would clobber it.
-				status.code += `\nmov ${len_reg}, x1\n`;
+				emit_asm(status, `\nmov ${len_reg}, x1\n`);
 			}
 			if (reg !== "x0") {
-				status.code += `\nmov ${reg}, x0\n`;
+				emit_asm(status, `\nmov ${reg}, x0\n`);
 			} else {
-				status.code += `\n`;
+				emit_asm(status, `\n`);
 			}
 			if (is_pair) {
 				arg_slot += 2;
@@ -304,12 +301,12 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			}
 		}
 
-		status.code += desc_source;
+		emit_asm(status, desc_source);
 		// x9 holds the descriptor address; load { code, env } from it
 		// (descriptors live in __DATA — see closure_a64.ts).
-		status.code += `ldr x8, [x9]\n`;
-		status.code += `ldr x0, [x9, #8]\n`;
-		status.code += `blr x8\n`;
+		emit_asm(status, `ldr x8, [x9]\n`);
+		emit_asm(status, `ldr x0, [x9, #8]\n`);
+		emit_asm(status, `blr x8\n`);
 	} else {
 		const variadic_idx = (node as FunctionCallNode).variadic_param_index;
 		// Collect `ref` class args whose caller-side anchor must be re-synced to
@@ -355,8 +352,8 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				16,
 			);
 			const data_base = arr_offset + 8;
-			status.code += `mov x0, #${arr.values.length}\n`;
-			status.code += `str x0, [x29, #${arr_offset}]\n`;
+			emit_asm(status, `mov x0, #${arr.values.length}\n`);
+			emit_asm(status, `str x0, [x29, #${arr_offset}]\n`);
 
 			// Evaluate all variadic args and store on stack
 			for (let j = arr.values.length - 1; j >= 0; j--) {
@@ -388,40 +385,40 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 						} else {
 							build_node(fc.params[k], status);
 						}
-						if (!status.code.endsWith("\n")) status.code += "\n";
+						ensure_newline(status);
 						const reg_idx = fc_slots[k];
 						if (arg_is_string(fc.params[k]) && reg_idx + 1 < fc_param_regs.length) {
 							// Move the LEN half FIRST: the pair rides in x0/x1,
 							// and for slot 0 the ptr destination IS x1 — moving
 							// it first would destroy the length.
-							status.code += `mov ${fc_param_regs[reg_idx + 1]}, x1\n`;
-							status.code += `mov ${fc_param_regs[reg_idx]}, x0\n`;
+							emit_asm(status, `mov ${fc_param_regs[reg_idx + 1]}, x1\n`);
+							emit_asm(status, `mov ${fc_param_regs[reg_idx]}, x0\n`);
 						} else {
-							status.code += `mov ${fc_param_regs[reg_idx]}, x0\n`;
+							emit_asm(status, `mov ${fc_param_regs[reg_idx]}, x0\n`);
 						}
 					}
-					status.code += `add x0, x29, #${slot_offset}\n`;
-					status.code += `bl ${fc.mangled_name ?? `${fc.name}_init`}\n`;
+					emit_asm(status, `add x0, x29, #${slot_offset}\n`);
+					emit_asm(status, `bl ${fc.mangled_name ?? `${fc.name}_init`}\n`);
 				} else if (elem_struct) {
 					// Struct value: copy from where it lives into the slot
 					emit_struct_address(arg, status);
-					if (!status.code.endsWith("\n")) status.code += "\n";
-					status.code += `mov x1, x0\n`;
-					status.code += `add x0, x29, #${slot_offset}\n`;
+					ensure_newline(status);
+					emit_asm(status, `mov x1, x0\n`);
+					emit_asm(status, `add x0, x29, #${slot_offset}\n`);
 					for (let b = 0; b < elem_size; b += 8) {
-						status.code += `ldr x2, [x1, #${b}]\n`;
-						status.code += `str x2, [x0, #${b}]\n`;
+						emit_asm(status, `ldr x2, [x1, #${b}]\n`);
+						emit_asm(status, `str x2, [x0, #${b}]\n`);
 					}
 				} else if (elem_is_string) {
 					// Fat string element: store both (ptr, len) halves.
 					build_node(arr.values[j], status);
-					if (!status.code.endsWith("\n")) status.code += "\n";
-					status.code += `str x0, [x29, #${slot_offset}]\n`;
-					status.code += `str x1, [x29, #${slot_offset + 8}]\n`;
+					ensure_newline(status);
+					emit_asm(status, `str x0, [x29, #${slot_offset}]\n`);
+					emit_asm(status, `str x1, [x29, #${slot_offset + 8}]\n`);
 				} else {
 					build_node(arr.values[j], status);
-					if (!status.code.endsWith("\n")) status.code += "\n";
-					status.code += `str x0, [x29, #${slot_offset}]\n`;
+					ensure_newline(status);
+					emit_asm(status, `str x0, [x29, #${slot_offset}]\n`);
 				}
 			}
 
@@ -473,8 +470,8 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				const ep = non_variadic[i];
 				if (ep.is_view) {
 					emit_view_string_arg(ep.node, status);
-					status.code += `str x0, [x29, #${slots_base + nv_slot[i] * 8}]\n`;
-					status.code += `str x1, [x29, #${slots_base + (nv_slot[i] + 1) * 8}]\n`;
+					emit_asm(status, `str x0, [x29, #${slots_base + nv_slot[i] * 8}]\n`);
+					emit_asm(status, `str x1, [x29, #${slots_base + (nv_slot[i] + 1) * 8}]\n`);
 					continue;
 				}
 				if (ep.is_struct) {
@@ -491,15 +488,15 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				} else {
 					build_node(ep.node, status);
 				}
-				if (!status.code.endsWith("\n")) status.code += "\n";
-				status.code += `str x0, [x29, #${slots_base + nv_slot[i] * 8}]\n`;
+				ensure_newline(status);
+				emit_asm(status, `str x0, [x29, #${slots_base + nv_slot[i] * 8}]\n`);
 			}
 
 			// Store the count and array pointer into their slots.
-			status.code += `mov x0, #${arr.values.length}\n`;
-			status.code += `str x0, [x29, #${count_slot}]\n`;
-			status.code += `add x0, x29, #${data_base}\n`;
-			status.code += `str x0, [x29, #${ptr_slot}]\n`;
+			emit_asm(status, `mov x0, #${arr.values.length}\n`);
+			emit_asm(status, `str x0, [x29, #${count_slot}]\n`);
+			emit_asm(status, `add x0, x29, #${data_base}\n`);
+			emit_asm(status, `str x0, [x29, #${ptr_slot}]\n`);
 
 			// Load each in-register slot into its argument register. Slot 0
 			// maps to x0 unless this is a struct-constructor call (x0 is the
@@ -510,10 +507,10 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				if (slot >= NUM_REG_ARGS) continue;
 				const reg = param_regs[slot];
 				if (reg === "x0") continue;
-				status.code += `ldr ${reg}, [x29, #${slots_base + s * 8}]\n`;
+				emit_asm(status, `ldr ${reg}, [x29, #${slots_base + s * 8}]\n`);
 			}
 			if (start_reg === 0) {
-				status.code += `ldr x0, [x29, #${slots_base}]\n`;
+				emit_asm(status, `ldr x0, [x29, #${slots_base}]\n`);
 			}
 
 			// AAPCS64: slots past x0..x7 go in the caller's outgoing area at
@@ -522,11 +519,11 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			overflow_count = Math.max(0, total_slots - (NUM_REG_ARGS - start_reg));
 			if (overflow_count > 0) {
 				outgoing_size = Math.ceil((overflow_count * 8) / 16) * 16;
-				status.code += `sub sp, sp, #${outgoing_size}\n`;
+				emit_asm(status, `sub sp, sp, #${outgoing_size}\n`);
 				const overflow_first = NUM_REG_ARGS - start_reg;
 				for (let k = 0; k < overflow_count; k++) {
-					status.code += `ldr x9, [x29, #${slots_base + (overflow_first + k) * 8}]\n`;
-					status.code += `str x9, [sp, #${k * 8}]\n`;
+					emit_asm(status, `ldr x9, [x29, #${slots_base + (overflow_first + k) * 8}]\n`);
+					emit_asm(status, `str x9, [sp, #${k * 8}]\n`);
 				}
 			}
 		} else {
@@ -599,8 +596,8 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				// wrapped with its strlen (the caller keeps ownership).
 				if (view_arg_set.has(i)) {
 					emit_view_string_arg(param, status);
-					status.code += `str x0, [x29, #${args_base + arg_slot[i] * 8}]\n`;
-					status.code += `str x1, [x29, #${args_base + (arg_slot[i] + 1) * 8}]\n`;
+					emit_asm(status, `str x0, [x29, #${args_base + arg_slot[i] * 8}]\n`);
+					emit_asm(status, `str x1, [x29, #${args_base + (arg_slot[i] + 1) * 8}]\n`);
 					continue;
 				}
 				// A fat `string` argument is already the (ptr, len) pair in
@@ -610,14 +607,14 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				// into the callee.
 				if (string_arg_set.has(i)) {
 					if (param.node_type === "value" && (param as ValueNode).value === "null") {
-						status.code += `mov x0, #0\n`;
-						status.code += `mov x1, #0\n`;
+						emit_asm(status, `mov x0, #0\n`);
+						emit_asm(status, `mov x1, #0\n`);
 					} else {
 						build_node(param, status);
-						if (!status.code.endsWith("\n")) status.code += "\n";
+						ensure_newline(status);
 					}
-					status.code += `str x0, [x29, #${args_base + arg_slot[i] * 8}]\n`;
-					status.code += `str x1, [x29, #${args_base + (arg_slot[i] + 1) * 8}]\n`;
+					emit_asm(status, `str x0, [x29, #${args_base + arg_slot[i] * 8}]\n`);
+					emit_asm(status, `str x1, [x29, #${args_base + (arg_slot[i] + 1) * 8}]\n`);
 					continue;
 				}
 				// An `Array<T>` argument that is itself a heap-array value (a
@@ -645,7 +642,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 						arr.values.forEach((v, idx) => {
 							if (v.node_type === "value" && (v as ValueNode).value.startsWith('"')) {
 								const str_label = `_arr_str_${array_param_counter++}_${idx}`;
-								status.code += `${str_label}: .asciz ${(v as ValueNode).value}\n.p2align 2\n`;
+								emit_asm(status, `${str_label}: .asciz ${(v as ValueNode).value}\n.p2align 2\n`);
 								str_labels.push(str_label);
 							} else {
 								str_labels.push(null);
@@ -661,14 +658,14 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 								return `.quad ${raw}\n\t.quad 0`;
 							})
 							.join(", ");
-						status.code += `${label}: ${row}\n.p2align 2\n`;
+						emit_asm(status, `${label}: ${row}\n.p2align 2\n`);
 					} else {
 						const values = arr.values
 							.map((v) => (v.node_type === "value" ? get_raw_value(v as ValueNode, status) : "0"))
 							.join(", ");
-						status.code += `${label}: .quad ${values}\n.p2align 2\n`;
+						emit_asm(status, `${label}: .quad ${values}\n.p2align 2\n`);
 					}
-					status.code += `adr x0, ${label}`;
+					emit_asm(status, `adr x0, ${label}`);
 				} else if (is_ref_param) {
 					// A trait-typed REF param receives the trait-OBJECT
 					// pointer: for a CLASS-backed conformer the object IS the
@@ -685,8 +682,8 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 						!!status.structs.find((s) => s.name === arg_trait_type && s.is_class);
 					if (callee_param_is_trait && arg_is_class_backed) {
 						build_node(param, status);
-						if (!status.code.endsWith("\n")) status.code += "\n";
-						status.code += `str x0, [x29, #${args_base + arg_slot[i] * 8}]\n`;
+						ensure_newline(status);
+						emit_asm(status, `str x0, [x29, #${args_base + arg_slot[i] * 8}]\n`);
 						continue;
 					}
 					// A `ref` arg must pass the ADDRESS of the caller's slot so the
@@ -737,8 +734,8 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 						// value bytes are left uninitialised — the callee
 						// won't read them when the flag is 0.
 						const off = allocate_stack_space(status, struct_size + 8);
-						status.code += `str xzr, [x29, #${off + struct_size}]\n`;
-						status.code += `add x0, x29, #${off}\n`;
+						emit_asm(status, `str xzr, [x29, #${off + struct_size}]\n`);
+						emit_asm(status, `add x0, x29, #${off}\n`);
 					} else if (
 						arg.node_type === "value" &&
 						is_nullable_struct_type((arg as ValueNode).type, status)
@@ -751,16 +748,16 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 						// x0 for a struct rvalue, since emit_struct_address /
 						// build_node for a struct leaves the temp's address).
 						emit_struct_address(arg, status);
-						if (!status.code.endsWith("\n")) status.code += "\n";
+						ensure_newline(status);
 						const off = allocate_stack_space(status, struct_size + 8);
 						// Copy the struct value word-by-word, set flag = 1.
 						for (let b = 0; b < struct_size; b += 8) {
-							status.code += `ldr x9, [x0, #${b}]\n`;
-							status.code += `str x9, [x29, #${off + b}]\n`;
+							emit_asm(status, `ldr x9, [x0, #${b}]\n`);
+							emit_asm(status, `str x9, [x29, #${off + b}]\n`);
 						}
-						status.code += `mov x9, #1\n`;
-						status.code += `str x9, [x29, #${off + struct_size}]\n`;
-						status.code += `add x0, x29, #${off}\n`;
+						emit_asm(status, `mov x9, #1\n`);
+						emit_asm(status, `str x9, [x29, #${off + struct_size}]\n`);
+						emit_asm(status, `add x0, x29, #${off}\n`);
 					}
 				} else if (
 					is_struct_type(param_type, status) ||
@@ -773,10 +770,8 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				} else {
 					build_node(node.params[i], status);
 				}
-				if (!status.code.endsWith("\n")) {
-					status.code += "\n";
-				}
-				status.code += `str x0, [x29, #${args_base + arg_slot[i] * 8}]\n`;
+				ensure_newline(status);
+				emit_asm(status, `str x0, [x29, #${args_base + arg_slot[i] * 8}]\n`);
 			}
 
 			// Load each spilled argument into its target register. For struct
@@ -793,7 +788,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					if (reg === "x0") continue;
 					const deferred = deferred_args.find((d) => d.slot === s);
 					if (deferred) continue;
-					status.code += `ldr ${reg}, [x29, #${args_base + s * 8}]\n`;
+					emit_asm(status, `ldr ${reg}, [x29, #${args_base + s * 8}]\n`);
 				}
 			}
 			// Deferred leaf arguments (tranche H): materialize directly into
@@ -807,7 +802,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				const slot = start_reg + d.slot;
 				if (slot >= NUM_REG_ARGS) continue;
 				build_operand(d.param, param_regs[slot], status);
-				if (!status.code.endsWith("\n")) status.code += "\n";
+				ensure_newline(status);
 			}
 			// The arg-0 load waits until AFTER the deferred materializations:
 			// a leaf that parks its value through x0 would otherwise clobber
@@ -818,7 +813,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			if (has_args && !is_struct) {
 				const deferred0 = deferred_args.find((d) => start_reg + d.slot === 0);
 				if (!deferred0) {
-					status.code += `ldr x0, [x29, #${args_base}]\n`;
+					emit_asm(status, `ldr x0, [x29, #${args_base}]\n`);
 				}
 			}
 			// AAPCS64: arguments past x0..x7 go in the caller's outgoing area,
@@ -829,11 +824,11 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			overflow_count = Math.max(0, total_slots - (NUM_REG_ARGS - start_reg));
 			if (overflow_count > 0) {
 				outgoing_size = Math.ceil((overflow_count * 8) / 16) * 16;
-				status.code += `sub sp, sp, #${outgoing_size}\n`;
+				emit_asm(status, `sub sp, sp, #${outgoing_size}\n`);
 				const overflow_first = NUM_REG_ARGS - start_reg;
 				for (let k = 0; k < overflow_count; k++) {
-					status.code += `ldr x9, [x29, #${args_base + (overflow_first + k) * 8}]\n`;
-					status.code += `str x9, [sp, #${k * 8}]\n`;
+					emit_asm(status, `ldr x9, [x29, #${args_base + (overflow_first + k) * 8}]\n`);
+					emit_asm(status, `str x9, [sp, #${k * 8}]\n`);
 				}
 			}
 		}
@@ -843,15 +838,15 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			// matching reload above): x8 may have been clobbered by any call
 			// emitted between the prologue and here.
 			if (status.return_buffer_stack_offset !== undefined) {
-				status.code += `ldr x8, [x29, #${status.return_buffer_stack_offset}]\n`;
+				emit_asm(status, `ldr x8, [x29, #${status.return_buffer_stack_offset}]\n`);
 			}
-			status.code += `mov x0, ${status.struct_return_buffer}\n`;
+			emit_asm(status, `mov x0, ${status.struct_return_buffer}\n`);
 		} else if (is_struct && is_struct.is_class) {
-			status.code += `ldr x0, [sp]\n`;
+			emit_asm(status, `ldr x0, [sp]\n`);
 		} else if (is_struct && !is_struct.is_class) {
 			const temp_addr = `_temp_${temp_counter - 1}`;
 			const temp_offset = status.stack_offsets!.get(temp_addr)!;
-			status.code += `add x0, x29, #${temp_offset}\n`;
+			emit_asm(status, `add x0, x29, #${temp_offset}\n`);
 		} else if (!is_struct && node.type?.name && !status.call_x8_preset) {
 			const return_struct = status.structs.find(
 				(s) => s.name === node.type!.name && !s.is_simple_type && !s.is_class,
@@ -883,7 +878,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				// x8 currently holds caller-saved garbage). Only a pre-set
 				// destination (call_x8_preset, a struct declaration
 				// initialiser) suppresses this.
-				status.code += `add x8, x29, #${offset}\n`;
+				emit_asm(status, `add x8, x29, #${offset}\n`);
 			}
 		}
 
@@ -902,14 +897,14 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			if (inlined) return;
 		}
 
-		status.code += `bl ${func_name}\n`;
+		emit_asm(status, `bl ${func_name}\n`);
 
 		// A float-returning callee hands its result back in d0 (the d0
 		// return convention). Bit-cast to x0 so every existing consumer
 		// (build_float_operand's fallback, declarations, assignments) keeps
 		// seeing the raw pattern in x0.
 		if (is_float_type(node.type.name)) {
-			status.code += `fmov x0, d0\n`;
+			emit_asm(status, `fmov x0, d0\n`);
 		}
 
 		// Free the outgoing stack-arg area now that the call has read it.
@@ -917,7 +912,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		// popping the class-constructor pointer below) keeps the rest of the
 		// path unchanged.
 		if (outgoing_size > 0) {
-			status.code += `add sp, sp, #${outgoing_size}\n`;
+			emit_asm(status, `add sp, sp, #${outgoing_size}\n`);
 		}
 
 		// A non-inlined call may (transitively, via a `ref`/`var`/`move` receiver
@@ -950,15 +945,15 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		// not reassign, the slot is unchanged and this is a no-op. Preserve x0
 		// across the sync — it holds the call's return value.
 		if (ref_class_sync_names.some((n) => find_anchor_slot(status, n) !== undefined)) {
-			status.code += `str x0, [sp, #-16]!\n`;
+			emit_asm(status, `str x0, [sp, #-16]!\n`);
 			for (const sync_name of ref_class_sync_names) {
 				const anchor = find_anchor_slot(status, sync_name);
 				if (anchor !== undefined) {
 					emit_var_load(status, "x0", sync_name, 8);
-					status.code += `str x0, [x29, #${anchor}]\n`;
+					emit_asm(status, `str x0, [x29, #${anchor}]\n`);
 				}
 			}
-			status.code += `ldr x0, [sp], #16\n`;
+			emit_asm(status, `ldr x0, [sp], #16\n`);
 		}
 
 		// A forwarded `ref` class PARAM may have been reassigned by the callee,
@@ -969,16 +964,16 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		// caller-saved scratch (free right after the call); x0 (return value) is
 		// preserved across the reload.
 		if (ref_class_param_reload.length > 0) {
-			status.code += `str x0, [sp, #-16]!\n`;
+			emit_asm(status, `str x0, [sp, #-16]!\n`);
 			for (const reload_name of ref_class_param_reload) {
 				const slot = status.ref_class_slots?.get(reload_name);
 				const reg = status.function_param_regs?.get(reload_name);
 				if (slot !== undefined && reg) {
-					status.code += `ldr x9, [x29, #${slot}]\n`;
-					status.code += `ldr ${reg}, [x9]\n`;
+					emit_asm(status, `ldr x9, [x29, #${slot}]\n`);
+					emit_asm(status, `ldr ${reg}, [x9]\n`);
 				}
 			}
-			status.code += `ldr x0, [sp], #16\n`;
+			emit_asm(status, `ldr x0, [sp], #16\n`);
 		}
 
 		if (!is_struct && node.type?.name && !status.call_x8_preset) {
@@ -989,7 +984,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			if (return_struct || return_enum_size !== undefined) {
 				const temp_name = `_call_ret_${temp_counter - 1}`;
 				const offset = status.stack_offsets!.get(temp_name)!;
-				status.code += `add x0, x29, #${offset}\n`;
+				emit_asm(status, `add x0, x29, #${offset}\n`);
 			}
 		}
 	}
@@ -999,18 +994,18 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 	// For struct constructors with a temp, load temp address into x0
 	if (is_struct && !status.struct_return_buffer) {
 		if (is_struct.is_class) {
-			status.code += `ldr x0, [sp], #16\n`;
+			emit_asm(status, `ldr x0, [sp], #16\n`);
 		} else {
 			const temp_addr = `_temp_${temp_counter - 1}`;
 			const offset = status.stack_offsets!.get(temp_addr)!;
-			status.code += `add x0, x29, #${offset}\n`;
+			emit_asm(status, `add x0, x29, #${offset}\n`);
 			// `T(...) + [ ... ]` in an expression position (e.g. a call arg or
 			// return value) lands in the temp above; apply the named-field
 			// overrides to that same temp, then restore x0 (building the
 			// override values may have clobbered it).
 			if (node.field_overrides?.length) {
 				emit_field_overrides(temp_addr, node, build_node, status);
-				status.code += `add x0, x29, #${offset}\n`;
+				emit_asm(status, `add x0, x29, #${offset}\n`);
 			}
 		}
 	}

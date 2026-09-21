@@ -1,5 +1,6 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import { emit_cleanup_to_loop_depth } from "./utils/auto_destroy.ts";
+import { emit_asm } from "./utils/code_buffer.ts";
 
 export default function build_continue_node(status: BuildStatus) {
 	const loop = status.loop_labels?.[status.loop_labels.length - 1];
@@ -7,6 +8,6 @@ export default function build_continue_node(status: BuildStatus) {
 		emit_cleanup_to_loop_depth(status);
 		// Persist any mutated `for ref x` loop variable before continuing.
 		status.loop_writebacks?.[status.loop_writebacks.length - 1]?.();
-		status.code += `b ${loop.start}\n`;
+		emit_asm(status, `b ${loop.start}\n`);
 	}
 }

@@ -5,6 +5,7 @@ import StructNode from "../../nodes/StructNode.ts";
 import aarch64_size from "./aarch64_size.ts";
 import { emit_free, emit_strdup } from "./audit.ts";
 import { emit_enum_payload_frees_at, emit_enum_payload_strdups_at } from "./auto_destroy.ts";
+import { emit_asm } from "./code_buffer.ts";
 import { get_enum_size, get_struct_size, get_type_size } from "./struct_layout.ts";
 
 /**
@@ -75,83 +76,83 @@ export function owning_buffer_enum_element_aarch64(
  */
 function emit_enum_store_T(enum_node: EnumNode, status: BuildStatus, self_reg: string) {
 	const T_SIZE = get_enum_size(enum_node.name, status);
-	status.code += `stp x20, x21, [sp, #-16]!\n`;
-	status.code += `str x22, [sp, #-16]!\n`;
-	status.code += `ldr x20, [${self_reg}, #8]\n`;
-	status.code += `mov x22, #${T_SIZE}\n`;
-	status.code += `madd x20, x1, x22, x20\n`;
-	status.code += `mov x21, x2\n`;
-	status.code += `mov x0, x20\n`;
-	status.code += `mov x1, x21\n`;
-	status.code += `mov x2, x22\n`;
-	status.code += `bl _memcpy\n`;
-	status.code += `mov x0, x20\n`;
+	emit_asm(status, `stp x20, x21, [sp, #-16]!\n`);
+	emit_asm(status, `str x22, [sp, #-16]!\n`);
+	emit_asm(status, `ldr x20, [${self_reg}, #8]\n`);
+	emit_asm(status, `mov x22, #${T_SIZE}\n`);
+	emit_asm(status, `madd x20, x1, x22, x20\n`);
+	emit_asm(status, `mov x21, x2\n`);
+	emit_asm(status, `mov x0, x20\n`);
+	emit_asm(status, `mov x1, x21\n`);
+	emit_asm(status, `mov x2, x22\n`);
+	emit_asm(status, `bl _memcpy\n`);
+	emit_asm(status, `mov x0, x20\n`);
 	emit_enum_payload_strdups_at(status, enum_node.name, "x20");
-	status.code += `ldr x22, [sp], #16\n`;
-	status.code += `ldp x20, x21, [sp], #16\n`;
+	emit_asm(status, `ldr x22, [sp], #16\n`);
+	emit_asm(status, `ldp x20, x21, [sp], #16\n`);
 }
 
 function emit_enum_replace_T(enum_node: EnumNode, status: BuildStatus, self_reg: string) {
 	const T_SIZE = get_enum_size(enum_node.name, status);
-	status.code += `stp x20, x21, [sp, #-16]!\n`;
-	status.code += `str x22, [sp, #-16]!\n`;
-	status.code += `ldr x20, [${self_reg}, #8]\n`;
-	status.code += `mov x22, #${T_SIZE}\n`;
-	status.code += `madd x20, x1, x22, x20\n`;
-	status.code += `mov x21, x2\n`;
-	status.code += `mov x0, x20\n`;
+	emit_asm(status, `stp x20, x21, [sp, #-16]!\n`);
+	emit_asm(status, `str x22, [sp, #-16]!\n`);
+	emit_asm(status, `ldr x20, [${self_reg}, #8]\n`);
+	emit_asm(status, `mov x22, #${T_SIZE}\n`);
+	emit_asm(status, `madd x20, x1, x22, x20\n`);
+	emit_asm(status, `mov x21, x2\n`);
+	emit_asm(status, `mov x0, x20\n`);
 	emit_enum_payload_frees_at(status, enum_node.name, "x20");
-	status.code += `mov x0, x20\n`;
-	status.code += `mov x1, x21\n`;
-	status.code += `mov x2, x22\n`;
-	status.code += `bl _memcpy\n`;
-	status.code += `mov x0, x20\n`;
+	emit_asm(status, `mov x0, x20\n`);
+	emit_asm(status, `mov x1, x21\n`);
+	emit_asm(status, `mov x2, x22\n`);
+	emit_asm(status, `bl _memcpy\n`);
+	emit_asm(status, `mov x0, x20\n`);
 	emit_enum_payload_strdups_at(status, enum_node.name, "x20");
-	status.code += `ldr x22, [sp], #16\n`;
-	status.code += `ldp x20, x21, [sp], #16\n`;
+	emit_asm(status, `ldr x22, [sp], #16\n`);
+	emit_asm(status, `ldp x20, x21, [sp], #16\n`);
 }
 
 function emit_enum_load_T(enum_node: EnumNode, status: BuildStatus, self_reg: string) {
 	const T_SIZE = get_enum_size(enum_node.name, status);
-	status.code += `stp x20, x21, [sp, #-16]!\n`;
-	status.code += `ldr x20, [${self_reg}, #8]\n`;
-	status.code += `mov x3, #${T_SIZE}\n`;
-	status.code += `madd x20, x1, x3, x20\n`;
-	status.code += `mov x21, x8\n`;
-	status.code += `mov x0, x21\n`;
-	status.code += `mov x1, x20\n`;
-	status.code += `mov x2, #${T_SIZE}\n`;
-	status.code += `bl _memcpy\n`;
-	status.code += `mov x0, x21\n`;
+	emit_asm(status, `stp x20, x21, [sp, #-16]!\n`);
+	emit_asm(status, `ldr x20, [${self_reg}, #8]\n`);
+	emit_asm(status, `mov x3, #${T_SIZE}\n`);
+	emit_asm(status, `madd x20, x1, x3, x20\n`);
+	emit_asm(status, `mov x21, x8\n`);
+	emit_asm(status, `mov x0, x21\n`);
+	emit_asm(status, `mov x1, x20\n`);
+	emit_asm(status, `mov x2, #${T_SIZE}\n`);
+	emit_asm(status, `bl _memcpy\n`);
+	emit_asm(status, `mov x0, x21\n`);
 	emit_enum_payload_strdups_at(status, enum_node.name, "x21");
-	status.code += `mov x0, x21\n`;
-	status.code += `ldp x20, x21, [sp], #16\n`;
+	emit_asm(status, `mov x0, x21\n`);
+	emit_asm(status, `ldp x20, x21, [sp], #16\n`);
 }
 
 function emit_enum_shift_T(enum_node: EnumNode, status: BuildStatus, self_reg: string) {
 	const T_SIZE = get_enum_size(enum_node.name, status);
 	const done = `.Lown_esh_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
-	status.code += `stp x20, x21, [sp, #-16]!\n`;
-	status.code += `str x22, [sp, #-16]!\n`;
-	status.code += `ldr x9, [${self_reg}, #8]\n`;
-	status.code += `mov x22, #${T_SIZE}\n`;
-	status.code += `madd x20, x1, x22, x9\n`;
-	status.code += `madd x21, x2, x22, x9\n`;
-	status.code += `cmp x20, x21\n`;
-	status.code += `b.eq ${done}\n`;
-	status.code += `mov x0, x20\n`;
+	emit_asm(status, `stp x20, x21, [sp, #-16]!\n`);
+	emit_asm(status, `str x22, [sp, #-16]!\n`);
+	emit_asm(status, `ldr x9, [${self_reg}, #8]\n`);
+	emit_asm(status, `mov x22, #${T_SIZE}\n`);
+	emit_asm(status, `madd x20, x1, x22, x9\n`);
+	emit_asm(status, `madd x21, x2, x22, x9\n`);
+	emit_asm(status, `cmp x20, x21\n`);
+	emit_asm(status, `b.eq ${done}\n`);
+	emit_asm(status, `mov x0, x20\n`);
 	emit_enum_payload_frees_at(status, enum_node.name, "x20");
-	status.code += `mov x0, x20\n`;
-	status.code += `mov x1, x21\n`;
-	status.code += `mov x2, x22\n`;
-	status.code += `bl _memcpy\n`;
-	status.code += `mov x0, x21\n`;
-	status.code += `mov x1, #0\n`;
-	status.code += `mov x2, x22\n`;
-	status.code += `bl _memset\n`;
-	status.code += `${done}:\n`;
-	status.code += `ldr x22, [sp], #16\n`;
-	status.code += `ldp x20, x21, [sp], #16\n`;
+	emit_asm(status, `mov x0, x20\n`);
+	emit_asm(status, `mov x1, x21\n`);
+	emit_asm(status, `mov x2, x22\n`);
+	emit_asm(status, `bl _memcpy\n`);
+	emit_asm(status, `mov x0, x21\n`);
+	emit_asm(status, `mov x1, #0\n`);
+	emit_asm(status, `mov x2, x22\n`);
+	emit_asm(status, `bl _memset\n`);
+	emit_asm(status, `${done}:\n`);
+	emit_asm(status, `ldr x22, [sp], #16\n`);
+	emit_asm(status, `ldp x20, x21, [sp], #16\n`);
 }
 
 /**
@@ -206,11 +207,11 @@ function emit_strdup_field(
 	foff: number,
 	label_id: number,
 ) {
-	status.code += `ldr x0, [${src}, #${foff}]\n`;
-	status.code += `cbz x0, .Lskip_strdup_${label_id}\n`;
+	emit_asm(status, `ldr x0, [${src}, #${foff}]\n`);
+	emit_asm(status, `cbz x0, .Lskip_strdup_${label_id}\n`);
 	emit_strdup(status);
-	status.code += `str x0, [${dst}, #${foff}]\n`;
-	status.code += `.Lskip_strdup_${label_id}:\n`;
+	emit_asm(status, `str x0, [${dst}, #${foff}]\n`);
+	emit_asm(status, `.Lskip_strdup_${label_id}:\n`);
 }
 
 /**
@@ -283,17 +284,17 @@ export function emit_owning_buffer_inline_aarch64(
 			// Fat-string elements return as the (ptr, len) register PAIR —
 			// not the x8 sret copy the T-generic raw body would emit for a
 			// 16-byte element. move_T additionally zeroes the slot pair.
-			status.code += `stp x20, x21, [sp, #-16]!\n`;
-			status.code += `ldr x20, [x0, #8]\n`; // data base
-			status.code += `ldr x21, [x0, #0]\n`; // cap (bounds already checked)
-			status.code += `add x20, x20, x1, lsl #4\n`; // &slot[i]
+			emit_asm(status, `stp x20, x21, [sp, #-16]!\n`);
+			emit_asm(status, `ldr x20, [x0, #8]\n`); // data base
+			emit_asm(status, `ldr x21, [x0, #0]\n`); // cap (bounds already checked)
+			emit_asm(status, `add x20, x20, x1, lsl #4\n`); // &slot[i]
 			if (func_name === "load") {
-				status.code += `ldp x0, x1, [x20]\n`;
+				emit_asm(status, `ldp x0, x1, [x20]\n`);
 			} else {
-				status.code += `ldp x0, x1, [x20]\n`;
-				status.code += `stp xzr, xzr, [x20]\n`;
+				emit_asm(status, `ldp x0, x1, [x20]\n`);
+				emit_asm(status, `stp xzr, xzr, [x20]\n`);
 			}
-			status.code += `ldp x20, x21, [sp], #16\n`;
+			emit_asm(status, `ldp x20, x21, [sp], #16\n`);
 			return true;
 		}
 	}
@@ -365,16 +366,16 @@ export function emit_owning_buffer_standalone_aarch64(
 		}
 		if (func_name === "load" || func_name === "move") {
 			// Pair-returning loads (see the inline variant above).
-			status.code += `stp x20, x21, [sp, #-16]!\n`;
-			status.code += `ldr x20, [x19, #8]\n`; // data base
-			status.code += `add x20, x20, x1, lsl #4\n`; // &slot[i]
+			emit_asm(status, `stp x20, x21, [sp, #-16]!\n`);
+			emit_asm(status, `ldr x20, [x19, #8]\n`); // data base
+			emit_asm(status, `add x20, x20, x1, lsl #4\n`); // &slot[i]
 			if (func_name === "load") {
-				status.code += `ldp x0, x1, [x20]\n`;
+				emit_asm(status, `ldp x0, x1, [x20]\n`);
 			} else {
-				status.code += `ldp x0, x1, [x20]\n`;
-				status.code += `stp xzr, xzr, [x20]\n`;
+				emit_asm(status, `ldp x0, x1, [x20]\n`);
+				emit_asm(status, `stp xzr, xzr, [x20]\n`);
 			}
-			status.code += `ldp x20, x21, [sp], #16\n`;
+			emit_asm(status, `ldp x20, x21, [sp], #16\n`);
 			return true;
 		}
 	}
@@ -396,20 +397,20 @@ function emit_owning_standalone_struct(elem: StructNode, func_name: string, stat
 	}
 
 	// x19 = self, x1 = i, x2 = val (struct address)
-	status.code += `stp x20, x21, [sp, #-16]!\n`;
-	status.code += `str x22, [sp, #-16]!\n`;
-	status.code += `ldr x20, [x19, #8]\n`; // data base
-	status.code += `mov x22, #${T_SIZE}\n`; // x22 = T_SIZE (callee-saved, survives calls)
-	status.code += `madd x4, x1, x22, xzr\n`;
-	status.code += `add x20, x20, x4\n`; // x20 = &slot[i]
-	status.code += `mov x21, x2\n`; // x21 = val
+	emit_asm(status, `stp x20, x21, [sp, #-16]!\n`);
+	emit_asm(status, `str x22, [sp, #-16]!\n`);
+	emit_asm(status, `ldr x20, [x19, #8]\n`); // data base
+	emit_asm(status, `mov x22, #${T_SIZE}\n`); // x22 = T_SIZE (callee-saved, survives calls)
+	emit_asm(status, `madd x4, x1, x22, xzr\n`);
+	emit_asm(status, `add x20, x20, x4\n`); // x20 = &slot[i]
+	emit_asm(status, `mov x21, x2\n`); // x21 = val
 
 	// replace_T destroys the OLD slot value (its documented overwrite
 	// semantic). store_T does NOT — the round-trip guard below keeps the
 	// slot's own copy instead of orphaning it.
 	if (func_name === "replace") {
-		status.code += `mov x0, x20\n`;
-		status.code += `bl ${elem.name}_destroy\n`;
+		emit_asm(status, `mov x0, x20\n`);
+		emit_asm(status, `bl ${elem.name}_destroy\n`);
 	}
 
 	// store_T: save each string field's OLD slot pointer (before memcpy) so
@@ -417,37 +418,37 @@ function emit_owning_standalone_struct(elem: StructNode, func_name: string, stat
 	// slot's own copy) and keep it instead of orphaning it.
 	if (func_name === "store" && string_fields.length) {
 		const tmp = Math.ceil((string_fields.length * 8) / 16) * 16;
-		status.code += `sub sp, sp, #${tmp}\n`;
+		emit_asm(status, `sub sp, sp, #${tmp}\n`);
 		string_fields.forEach((f, i) => {
-			status.code += `ldr x9, [x20, #${f.offset}]\n`;
-			status.code += `str x9, [sp, #${i * 8}]\n`;
+			emit_asm(status, `ldr x9, [x20, #${f.offset}]\n`);
+			emit_asm(status, `str x9, [sp, #${i * 8}]\n`);
 		});
 	}
 
 	// memcpy(slot, val, T_SIZE) — x22 holds T_SIZE (preserved across calls)
-	status.code += `mov x0, x20\n`;
-	status.code += `mov x1, x21\n`;
-	status.code += `mov x2, x22\n`;
-	status.code += `bl _memcpy\n`;
+	emit_asm(status, `mov x0, x20\n`);
+	emit_asm(status, `mov x1, x21\n`);
+	emit_asm(status, `mov x2, x22\n`);
+	emit_asm(status, `bl _memcpy\n`);
 
 	if (func_name === "store") {
 		// strdup each string field, skipping NULL source fields and
 		// round-trips (source pointer identical to the slot's pre-copy pointer).
 		for (const [i, { offset: foff }] of string_fields.entries()) {
 			const lbl = `.Lskip_st_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
-			status.code += `ldr x1, [x21, #${foff}]\n`;
-			status.code += `cbz x1, ${lbl}\n`;
-			status.code += `ldr x2, [sp, #${i * 8}]\n`;
-			status.code += `cmp x1, x2\n`;
-			status.code += `b.eq ${lbl}\n`;
-			status.code += `mov x0, x1\n`;
+			emit_asm(status, `ldr x1, [x21, #${foff}]\n`);
+			emit_asm(status, `cbz x1, ${lbl}\n`);
+			emit_asm(status, `ldr x2, [sp, #${i * 8}]\n`);
+			emit_asm(status, `cmp x1, x2\n`);
+			emit_asm(status, `b.eq ${lbl}\n`);
+			emit_asm(status, `mov x0, x1\n`);
 			emit_strdup(status);
-			status.code += `str x0, [x20, #${foff}]\n`;
-			status.code += `${lbl}:\n`;
+			emit_asm(status, `str x0, [x20, #${foff}]\n`);
+			emit_asm(status, `${lbl}:\n`);
 		}
 		if (string_fields.length) {
 			const tmp = Math.ceil((string_fields.length * 8) / 16) * 16;
-			status.code += `add sp, sp, #${tmp}\n`;
+			emit_asm(status, `add sp, sp, #${tmp}\n`);
 		}
 	} else {
 		// replace_T: the old value was destroyed, so every non-NULL source
@@ -463,8 +464,8 @@ function emit_owning_standalone_struct(elem: StructNode, func_name: string, stat
 		}
 	}
 
-	status.code += `ldr x22, [sp], #16\n`;
-	status.code += `ldp x20, x21, [sp], #16\n`;
+	emit_asm(status, `ldr x22, [sp], #16\n`);
+	emit_asm(status, `ldp x20, x21, [sp], #16\n`);
 	return true;
 }
 
@@ -483,26 +484,26 @@ function emit_string_store_T(status: BuildStatus, self_reg: string) {
 	// Fat-string slots are 16 bytes: (ptr @ +0, len @ +8). The incoming
 	// value is the (x2 ptr, x3 len) pair. strdup the ptr half, carry the
 	// len half through the call.
-	status.code += `stp x20, x21, [sp, #-16]!\n`;
-	status.code += `str x22, [sp, #-16]!\n`;
-	status.code += `ldr x20, [${self_reg}, #8]\n`; // data base
-	status.code += `add x20, x20, x1, lsl #4\n`; // &slot[i] (i * 16)
-	status.code += `mov x21, x2\n`; // val ptr
-	status.code += `mov x22, x3\n`; // val len
-	status.code += `ldr x0, [x20]\n`; // old slot ptr
-	status.code += `cmp x21, x0\n`;
-	status.code += `b.eq ${done}\n`; // round-trip alias → keep slot as-is
-	status.code += `cbz x21, ${store_null}\n`; // NULL → zero the slot pair
-	status.code += `mov x0, x21\n`;
+	emit_asm(status, `stp x20, x21, [sp, #-16]!\n`);
+	emit_asm(status, `str x22, [sp, #-16]!\n`);
+	emit_asm(status, `ldr x20, [${self_reg}, #8]\n`); // data base
+	emit_asm(status, `add x20, x20, x1, lsl #4\n`); // &slot[i] (i * 16)
+	emit_asm(status, `mov x21, x2\n`); // val ptr
+	emit_asm(status, `mov x22, x3\n`); // val len
+	emit_asm(status, `ldr x0, [x20]\n`); // old slot ptr
+	emit_asm(status, `cmp x21, x0\n`);
+	emit_asm(status, `b.eq ${done}\n`); // round-trip alias → keep slot as-is
+	emit_asm(status, `cbz x21, ${store_null}\n`); // NULL → zero the slot pair
+	emit_asm(status, `mov x0, x21\n`);
 	emit_strdup(status);
-	status.code += `str x0, [x20]\n`;
-	status.code += `str x22, [x20, #8]\n`;
-	status.code += `b ${done}\n`;
-	status.code += `${store_null}:\n`;
-	status.code += `stp xzr, xzr, [x20]\n`;
-	status.code += `${done}:\n`;
-	status.code += `ldr x22, [sp], #16\n`;
-	status.code += `ldp x20, x21, [sp], #16\n`;
+	emit_asm(status, `str x0, [x20]\n`);
+	emit_asm(status, `str x22, [x20, #8]\n`);
+	emit_asm(status, `b ${done}\n`);
+	emit_asm(status, `${store_null}:\n`);
+	emit_asm(status, `stp xzr, xzr, [x20]\n`);
+	emit_asm(status, `${done}:\n`);
+	emit_asm(status, `ldr x22, [sp], #16\n`);
+	emit_asm(status, `ldp x20, x21, [sp], #16\n`);
 }
 
 /**
@@ -516,25 +517,25 @@ function emit_string_replace_T(status: BuildStatus, self_reg: string) {
 	const done = lbl("done");
 	// Fat slots (16 bytes): free the old ptr half, strdup the new ptr half,
 	// store the new len half. The incoming value is the (x2, x3) pair.
-	status.code += `stp x20, x21, [sp, #-16]!\n`;
-	status.code += `str x22, [sp, #-16]!\n`;
-	status.code += `ldr x20, [${self_reg}, #8]\n`; // data base
-	status.code += `add x20, x20, x1, lsl #4\n`; // &slot[i]
-	status.code += `mov x21, x2\n`; // val ptr
-	status.code += `mov x22, x3\n`; // val len
-	status.code += `ldr x0, [x20]\n`; // old slot ptr
+	emit_asm(status, `stp x20, x21, [sp, #-16]!\n`);
+	emit_asm(status, `str x22, [sp, #-16]!\n`);
+	emit_asm(status, `ldr x20, [${self_reg}, #8]\n`); // data base
+	emit_asm(status, `add x20, x20, x1, lsl #4\n`); // &slot[i]
+	emit_asm(status, `mov x21, x2\n`); // val ptr
+	emit_asm(status, `mov x22, x3\n`); // val len
+	emit_asm(status, `ldr x0, [x20]\n`); // old slot ptr
 	emit_free(status); // free(old)
-	status.code += `cbz x21, ${skip}\n`; // NULL val → zero the slot pair
-	status.code += `mov x0, x21\n`;
+	emit_asm(status, `cbz x21, ${skip}\n`); // NULL val → zero the slot pair
+	emit_asm(status, `mov x0, x21\n`);
 	emit_strdup(status);
-	status.code += `str x0, [x20]\n`;
-	status.code += `str x22, [x20, #8]\n`;
-	status.code += `b ${done}\n`;
-	status.code += `${skip}:\n`;
-	status.code += `stp xzr, xzr, [x20]\n`;
-	status.code += `${done}:\n`;
-	status.code += `ldr x22, [sp], #16\n`;
-	status.code += `ldp x20, x21, [sp], #16\n`;
+	emit_asm(status, `str x0, [x20]\n`);
+	emit_asm(status, `str x22, [x20, #8]\n`);
+	emit_asm(status, `b ${done}\n`);
+	emit_asm(status, `${skip}:\n`);
+	emit_asm(status, `stp xzr, xzr, [x20]\n`);
+	emit_asm(status, `${done}:\n`);
+	emit_asm(status, `ldr x22, [sp], #16\n`);
+	emit_asm(status, `ldp x20, x21, [sp], #16\n`);
 }
 
 /**
@@ -547,19 +548,19 @@ function emit_string_shift_T(status: BuildStatus, self_reg: string) {
 	const done = `.Lstr_sh_done_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
 	// Fat slots (16 bytes): free dst's ptr half, move the (ptr, len) pair
 	// wholesale from src, zero src's pair.
-	status.code += `stp x20, x21, [sp, #-16]!\n`;
-	status.code += `ldr x9, [${self_reg}, #8]\n`; // data base
-	status.code += `add x20, x9, x1, lsl #4\n`; // &slot[dst]
-	status.code += `add x21, x9, x2, lsl #4\n`; // &slot[src]
-	status.code += `cmp x20, x21\n`;
-	status.code += `b.eq ${done}\n`;
-	status.code += `ldr x0, [x20]\n`;
+	emit_asm(status, `stp x20, x21, [sp, #-16]!\n`);
+	emit_asm(status, `ldr x9, [${self_reg}, #8]\n`); // data base
+	emit_asm(status, `add x20, x9, x1, lsl #4\n`); // &slot[dst]
+	emit_asm(status, `add x21, x9, x2, lsl #4\n`); // &slot[src]
+	emit_asm(status, `cmp x20, x21\n`);
+	emit_asm(status, `b.eq ${done}\n`);
+	emit_asm(status, `ldr x0, [x20]\n`);
 	emit_free(status); // free(dst-old); free(NULL) is a no-op
-	status.code += `ldp x9, x10, [x21]\n`;
-	status.code += `stp x9, x10, [x20]\n`;
-	status.code += `stp xzr, xzr, [x21]\n`;
-	status.code += `${done}:\n`;
-	status.code += `ldp x20, x21, [sp], #16\n`;
+	emit_asm(status, `ldp x9, x10, [x21]\n`);
+	emit_asm(status, `stp x9, x10, [x20]\n`);
+	emit_asm(status, `stp xzr, xzr, [x21]\n`);
+	emit_asm(status, `${done}:\n`);
+	emit_asm(status, `ldp x20, x21, [sp], #16\n`);
 }
 
 /**
@@ -572,29 +573,29 @@ function emit_string_shift_T(status: BuildStatus, self_reg: string) {
  */
 function emit_string_modify_T(status: BuildStatus) {
 	const done = `.Lstr_md_done_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
-	status.code += `stp x20, x21, [sp, #-16]!\n`;
-	status.code += `stp x22, x23, [sp, #-16]!\n`;
-	status.code += `stp x24, x25, [sp, #-16]!\n`;
-	status.code += `mov x22, x2\n`; // f (a closure descriptor)
-	status.code += `ldr x9, [x19, #8]\n`; // data base
-	status.code += `add x20, x9, x1, lsl #4\n`; // &slot[i] (16-byte slots)
-	status.code += `ldr x24, [x22]\n`; // code
-	status.code += `ldr x0, [x22, #8]\n`; // env → first arg
-	status.code += `ldp x1, x2, [x20]\n`; // borrow the current pair as the arg
-	status.code += `blr x24\n`; // → (x1 = ptr, x2 = len), result in x0/x1
-	status.code += `mov x23, x0\n`; // new.ptr
-	status.code += `mov x25, x1\n`; // new.len
-	status.code += `ldr x9, [x20]\n`; // old.ptr
-	status.code += `cmp x23, x9\n`;
-	status.code += `b.eq ${done}\n`; // round-trip identity → keep
-	status.code += `str x23, [x20]\n`; // take over the returned pair
-	status.code += `str x25, [x20, #8]\n`;
-	status.code += `mov x0, x9\n`;
+	emit_asm(status, `stp x20, x21, [sp, #-16]!\n`);
+	emit_asm(status, `stp x22, x23, [sp, #-16]!\n`);
+	emit_asm(status, `stp x24, x25, [sp, #-16]!\n`);
+	emit_asm(status, `mov x22, x2\n`); // f (a closure descriptor)
+	emit_asm(status, `ldr x9, [x19, #8]\n`); // data base
+	emit_asm(status, `add x20, x9, x1, lsl #4\n`); // &slot[i] (16-byte slots)
+	emit_asm(status, `ldr x24, [x22]\n`); // code
+	emit_asm(status, `ldr x0, [x22, #8]\n`); // env → first arg
+	emit_asm(status, `ldp x1, x2, [x20]\n`); // borrow the current pair as the arg
+	emit_asm(status, `blr x24\n`); // → (x1 = ptr, x2 = len), result in x0/x1
+	emit_asm(status, `mov x23, x0\n`); // new.ptr
+	emit_asm(status, `mov x25, x1\n`); // new.len
+	emit_asm(status, `ldr x9, [x20]\n`); // old.ptr
+	emit_asm(status, `cmp x23, x9\n`);
+	emit_asm(status, `b.eq ${done}\n`); // round-trip identity → keep
+	emit_asm(status, `str x23, [x20]\n`); // take over the returned pair
+	emit_asm(status, `str x25, [x20, #8]\n`);
+	emit_asm(status, `mov x0, x9\n`);
 	emit_free(status); // free the displaced copy
-	status.code += `${done}:\n`;
-	status.code += `ldp x24, x25, [sp], #16\n`;
-	status.code += `ldp x22, x23, [sp], #16\n`;
-	status.code += `ldp x20, x21, [sp], #16\n`;
+	emit_asm(status, `${done}:\n`);
+	emit_asm(status, `ldp x24, x25, [sp], #16\n`);
+	emit_asm(status, `ldp x22, x23, [sp], #16\n`);
+	emit_asm(status, `ldp x20, x21, [sp], #16\n`);
 }
 
 /**
@@ -614,47 +615,47 @@ function emit_owning_modify_T(
 	string_fields: { offset: number }[],
 ) {
 	const ALIGNED = Math.ceil(T_SIZE / 16) * 16;
-	status.code += `stp x20, x21, [sp, #-16]!\n`;
-	status.code += `stp x22, x23, [sp, #-16]!\n`;
-	status.code += `stp x24, x25, [sp, #-16]!\n`;
-	status.code += `mov x22, x2\n`; // f (a closure descriptor)
-	status.code += `ldr x9, [x19, #8]\n`; // data base
-	status.code += `mov x23, #${T_SIZE}\n`; // memcpy size (callee-saved)
-	status.code += `madd x20, x1, x23, x9\n`; // x20 = &slot[i]
+	emit_asm(status, `stp x20, x21, [sp, #-16]!\n`);
+	emit_asm(status, `stp x22, x23, [sp, #-16]!\n`);
+	emit_asm(status, `stp x24, x25, [sp, #-16]!\n`);
+	emit_asm(status, `mov x22, x2\n`); // f (a closure descriptor)
+	emit_asm(status, `ldr x9, [x19, #8]\n`); // data base
+	emit_asm(status, `mov x23, #${T_SIZE}\n`); // memcpy size (callee-saved)
+	emit_asm(status, `madd x20, x1, x23, x9\n`); // x20 = &slot[i]
 	// Stage [sp, 0) = arg copy of the slot, [sp, ALIGNED) = sret buffer.
-	status.code += `sub sp, sp, #${2 * ALIGNED}\n`;
-	status.code += `mov x0, sp\n`;
-	status.code += `mov x1, x20\n`;
-	status.code += `mov x2, x23\n`;
-	status.code += `bl _memcpy\n`;
-	status.code += `mov x21, sp\n`;
-	status.code += `add x21, x21, #${ALIGNED}\n`; // x21 = sret buffer
-	status.code += `ldr x24, [x22]\n`; // code
-	status.code += `ldr x0, [x22, #8]\n`; // env → first arg
-	status.code += `mov x1, sp\n`; // arg = &copy
-	status.code += `mov x8, x21\n`; // sret (passes through unchanged)
-	status.code += `blr x24\n`;
+	emit_asm(status, `sub sp, sp, #${2 * ALIGNED}\n`);
+	emit_asm(status, `mov x0, sp\n`);
+	emit_asm(status, `mov x1, x20\n`);
+	emit_asm(status, `mov x2, x23\n`);
+	emit_asm(status, `bl _memcpy\n`);
+	emit_asm(status, `mov x21, sp\n`);
+	emit_asm(status, `add x21, x21, #${ALIGNED}\n`); // x21 = sret buffer
+	emit_asm(status, `ldr x24, [x22]\n`); // code
+	emit_asm(status, `ldr x0, [x22, #8]\n`); // env → first arg
+	emit_asm(status, `mov x1, sp\n`); // arg = &copy
+	emit_asm(status, `mov x8, x21\n`); // sret (passes through unchanged)
+	emit_asm(status, `blr x24\n`);
 	// Free displaced string fields (flat offsets, includes nested owning
 	// struct fields — mirrors collect_string_fields).
 	for (const [i, { offset: foff }] of string_fields.entries()) {
 		const skip = `.Lskip_md_${(status.label_counter = (status.label_counter ?? 0) + 1)}_${i}`;
-		status.code += `ldr x9, [x21, #${foff}]\n`; // new.ptr
-		status.code += `ldr x10, [x20, #${foff}]\n`; // old.ptr
-		status.code += `cmp x9, x10\n`;
-		status.code += `b.eq ${skip}\n`;
-		status.code += `mov x0, x10\n`;
+		emit_asm(status, `ldr x9, [x21, #${foff}]\n`); // new.ptr
+		emit_asm(status, `ldr x10, [x20, #${foff}]\n`); // old.ptr
+		emit_asm(status, `cmp x9, x10\n`);
+		emit_asm(status, `b.eq ${skip}\n`);
+		emit_asm(status, `mov x0, x10\n`);
 		emit_free(status);
-		status.code += `${skip}:\n`;
+		emit_asm(status, `${skip}:\n`);
 	}
 	// Copy the returned struct over the slot (frees already happened).
-	status.code += `mov x0, x20\n`;
-	status.code += `mov x1, x21\n`;
-	status.code += `mov x2, x23\n`;
-	status.code += `bl _memcpy\n`;
-	status.code += `add sp, sp, #${2 * ALIGNED}\n`;
-	status.code += `ldp x24, x25, [sp], #16\n`;
-	status.code += `ldp x22, x23, [sp], #16\n`;
-	status.code += `ldp x20, x21, [sp], #16\n`;
+	emit_asm(status, `mov x0, x20\n`);
+	emit_asm(status, `mov x1, x21\n`);
+	emit_asm(status, `mov x2, x23\n`);
+	emit_asm(status, `bl _memcpy\n`);
+	emit_asm(status, `add sp, sp, #${2 * ALIGNED}\n`);
+	emit_asm(status, `ldp x24, x25, [sp], #16\n`);
+	emit_asm(status, `ldp x22, x23, [sp], #16\n`);
+	emit_asm(status, `ldp x20, x21, [sp], #16\n`);
 }
 
 /**
@@ -666,27 +667,27 @@ function emit_owning_modify_T(
 function emit_owning_shift_T(elem: StructNode, status: BuildStatus, self_reg: string) {
 	const T_SIZE = get_struct_size(elem.name, status);
 	const done = `.Lown_sh_done_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
-	status.code += `stp x20, x21, [sp, #-16]!\n`;
-	status.code += `str x22, [sp, #-16]!\n`;
-	status.code += `ldr x9, [${self_reg}, #8]\n`; // data base
-	status.code += `mov x22, #${T_SIZE}\n`; // callee-saved, survives calls
-	status.code += `madd x20, x1, x22, x9\n`; // &slot[dst]
-	status.code += `madd x21, x2, x22, x9\n`; // &slot[src]
-	status.code += `cmp x20, x21\n`;
-	status.code += `b.eq ${done}\n`;
-	status.code += `mov x0, x20\n`;
-	status.code += `bl ${elem.name}_destroy\n`;
-	status.code += `mov x0, x20\n`;
-	status.code += `mov x1, x21\n`;
-	status.code += `mov x2, x22\n`;
-	status.code += `bl _memcpy\n`;
-	status.code += `mov x0, x21\n`;
-	status.code += `mov x1, #0\n`;
-	status.code += `mov x2, x22\n`;
-	status.code += `bl _memset\n`;
-	status.code += `${done}:\n`;
-	status.code += `ldr x22, [sp], #16\n`;
-	status.code += `ldp x20, x21, [sp], #16\n`;
+	emit_asm(status, `stp x20, x21, [sp, #-16]!\n`);
+	emit_asm(status, `str x22, [sp, #-16]!\n`);
+	emit_asm(status, `ldr x9, [${self_reg}, #8]\n`); // data base
+	emit_asm(status, `mov x22, #${T_SIZE}\n`); // callee-saved, survives calls
+	emit_asm(status, `madd x20, x1, x22, x9\n`); // &slot[dst]
+	emit_asm(status, `madd x21, x2, x22, x9\n`); // &slot[src]
+	emit_asm(status, `cmp x20, x21\n`);
+	emit_asm(status, `b.eq ${done}\n`);
+	emit_asm(status, `mov x0, x20\n`);
+	emit_asm(status, `bl ${elem.name}_destroy\n`);
+	emit_asm(status, `mov x0, x20\n`);
+	emit_asm(status, `mov x1, x21\n`);
+	emit_asm(status, `mov x2, x22\n`);
+	emit_asm(status, `bl _memcpy\n`);
+	emit_asm(status, `mov x0, x21\n`);
+	emit_asm(status, `mov x1, #0\n`);
+	emit_asm(status, `mov x2, x22\n`);
+	emit_asm(status, `bl _memset\n`);
+	emit_asm(status, `${done}:\n`);
+	emit_asm(status, `ldr x22, [sp], #16\n`);
+	emit_asm(status, `ldp x20, x21, [sp], #16\n`);
 }
 
 function emit_owning_store_T(elem: StructNode, status: BuildStatus) {
@@ -695,52 +696,52 @@ function emit_owning_store_T(elem: StructNode, status: BuildStatus) {
 
 	// x0 = self, x1 = i, x2 = val (address)
 	// Save callee-saved registers
-	status.code += `stp x20, x21, [sp, #-16]!\n`;
-	status.code += `str x22, [sp, #-16]!\n`;
+	emit_asm(status, `stp x20, x21, [sp, #-16]!\n`);
+	emit_asm(status, `str x22, [sp, #-16]!\n`);
 	// Compute slot address: data + i * T_SIZE
-	status.code += `ldr x20, [x0, #8]\n`; // x20 = data base
-	status.code += `mov x22, #${T_SIZE}\n`; // x22 = T_SIZE (callee-saved)
-	status.code += `madd x4, x1, x22, xzr\n`; // byte offset
-	status.code += `add x20, x20, x4\n`; // x20 = &slot[i]
-	status.code += `mov x21, x2\n`; // x21 = val (save across calls)
+	emit_asm(status, `ldr x20, [x0, #8]\n`); // x20 = data base
+	emit_asm(status, `mov x22, #${T_SIZE}\n`); // x22 = T_SIZE (callee-saved)
+	emit_asm(status, `madd x4, x1, x22, xzr\n`); // byte offset
+	emit_asm(status, `add x20, x20, x4\n`); // x20 = &slot[i]
+	emit_asm(status, `mov x21, x2\n`); // x21 = val (save across calls)
 	// Save each string field's OLD slot pointer (before memcpy) so the
 	// strdup can detect a load-modify-store round-trip (src aliases the slot's
 	// own copy) and keep it instead of orphaning it. The temp area is padded to
 	// 16 bytes so sp stays AAPCS-aligned across the `bl _memcpy`.
 	if (string_fields.length) {
 		const tmp = Math.ceil((string_fields.length * 8) / 16) * 16;
-		status.code += `sub sp, sp, #${tmp}\n`;
+		emit_asm(status, `sub sp, sp, #${tmp}\n`);
 		string_fields.forEach((f, i) => {
-			status.code += `ldr x9, [x20, #${f.offset}]\n`;
-			status.code += `str x9, [sp, #${i * 8}]\n`;
+			emit_asm(status, `ldr x9, [x20, #${f.offset}]\n`);
+			emit_asm(status, `str x9, [sp, #${i * 8}]\n`);
 		});
 	}
 	// memcpy(slot, val, T_SIZE)
-	status.code += `mov x0, x20\n`; // dest
-	status.code += `mov x1, x21\n`; // src
-	status.code += `mov x2, x22\n`; // size
-	status.code += `bl _memcpy\n`;
+	emit_asm(status, `mov x0, x20\n`); // dest
+	emit_asm(status, `mov x1, x21\n`); // src
+	emit_asm(status, `mov x2, x22\n`); // size
+	emit_asm(status, `bl _memcpy\n`);
 	// strdup each string field, skipping NULL source fields and round-trips
 	// (source pointer identical to the slot's pre-copy pointer).
 	for (const [i, { offset: foff }] of string_fields.entries()) {
 		const lbl = `.Lskip_st_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
-		status.code += `ldr x1, [x21, #${foff}]\n`; // src field
-		status.code += `cbz x1, ${lbl}\n`;
-		status.code += `ldr x2, [sp, #${i * 8}]\n`; // old slot field
-		status.code += `cmp x1, x2\n`;
-		status.code += `b.eq ${lbl}\n`;
-		status.code += `mov x0, x1\n`;
+		emit_asm(status, `ldr x1, [x21, #${foff}]\n`); // src field
+		emit_asm(status, `cbz x1, ${lbl}\n`);
+		emit_asm(status, `ldr x2, [sp, #${i * 8}]\n`); // old slot field
+		emit_asm(status, `cmp x1, x2\n`);
+		emit_asm(status, `b.eq ${lbl}\n`);
+		emit_asm(status, `mov x0, x1\n`);
 		emit_strdup(status);
-		status.code += `str x0, [x20, #${foff}]\n`;
-		status.code += `${lbl}:\n`;
+		emit_asm(status, `str x0, [x20, #${foff}]\n`);
+		emit_asm(status, `${lbl}:\n`);
 	}
 	if (string_fields.length) {
 		const tmp = Math.ceil((string_fields.length * 8) / 16) * 16;
-		status.code += `add sp, sp, #${tmp}\n`;
+		emit_asm(status, `add sp, sp, #${tmp}\n`);
 	}
 	// Restore
-	status.code += `ldr x22, [sp], #16\n`;
-	status.code += `ldp x20, x21, [sp], #16\n`;
+	emit_asm(status, `ldr x22, [sp], #16\n`);
+	emit_asm(status, `ldp x20, x21, [sp], #16\n`);
 }
 
 function emit_owning_replace_T(elem: StructNode, status: BuildStatus) {
@@ -748,22 +749,22 @@ function emit_owning_replace_T(elem: StructNode, status: BuildStatus) {
 	const string_fields = collect_string_fields(elem, status);
 
 	// x0 = self, x1 = i, x2 = val (address)
-	status.code += `stp x20, x21, [sp, #-16]!\n`;
-	status.code += `str x22, [sp, #-16]!\n`;
+	emit_asm(status, `stp x20, x21, [sp, #-16]!\n`);
+	emit_asm(status, `str x22, [sp, #-16]!\n`);
 	// Compute slot address
-	status.code += `ldr x20, [x0, #8]\n`; // data base
-	status.code += `mov x22, #${T_SIZE}\n`; // x22 = T_SIZE (callee-saved)
-	status.code += `madd x4, x1, x22, xzr\n`;
-	status.code += `add x20, x20, x4\n`; // x20 = &slot[i]
-	status.code += `mov x21, x2\n`; // x21 = val
+	emit_asm(status, `ldr x20, [x0, #8]\n`); // data base
+	emit_asm(status, `mov x22, #${T_SIZE}\n`); // x22 = T_SIZE (callee-saved)
+	emit_asm(status, `madd x4, x1, x22, xzr\n`);
+	emit_asm(status, `add x20, x20, x4\n`); // x20 = &slot[i]
+	emit_asm(status, `mov x21, x2\n`); // x21 = val
 	// Destroy old slot value
-	status.code += `mov x0, x20\n`;
-	status.code += `bl ${elem.name}_destroy\n`;
+	emit_asm(status, `mov x0, x20\n`);
+	emit_asm(status, `bl ${elem.name}_destroy\n`);
 	// memcpy(slot, val, T_SIZE) — x22 preserved across destroy call
-	status.code += `mov x0, x20\n`;
-	status.code += `mov x1, x21\n`;
-	status.code += `mov x2, x22\n`;
-	status.code += `bl _memcpy\n`;
+	emit_asm(status, `mov x0, x20\n`);
+	emit_asm(status, `mov x1, x21\n`);
+	emit_asm(status, `mov x2, x22\n`);
+	emit_asm(status, `bl _memcpy\n`);
 	// strdup each string field (NULL source fields stay NULL — no strdup)
 	for (const { offset: foff } of string_fields) {
 		emit_strdup_field(
@@ -775,8 +776,8 @@ function emit_owning_replace_T(elem: StructNode, status: BuildStatus) {
 		);
 	}
 	// Restore
-	status.code += `ldr x22, [sp], #16\n`;
-	status.code += `ldp x20, x21, [sp], #16\n`;
+	emit_asm(status, `ldr x22, [sp], #16\n`);
+	emit_asm(status, `ldp x20, x21, [sp], #16\n`);
 }
 
 /**
@@ -815,62 +816,62 @@ export function emit_owning_buffer_destroy_aarch64(node: StructNode, status: Bui
 	status.function_return_label = return_label;
 	const stack_placeholder = `STACK_SIZE_${func_label}`;
 
-	status.code += `.p2align 2\n`;
-	status.code += `${func_label}:\n`;
+	emit_asm(status, `.p2align 2\n`);
+	emit_asm(status, `${func_label}:\n`);
 	// Export for the precompiled system object (Mach-O `_name` alias). Only in
 	// system mode; single-TU builds keep the method file-local.
 	if (status.emit_mode === "system" && status.platform !== "windows") {
-		status.code += `.globl _${func_label}\n`;
-		status.code += `_${func_label} = ${func_label}\n`;
+		emit_asm(status, `.globl _${func_label}\n`);
+		emit_asm(status, `_${func_label} = ${func_label}\n`);
 	}
-	status.code += `stp x29, x30, [sp, #-16]!\n`;
-	status.code += `str x19, [sp, #-16]!\n`;
-	status.code += `mov x19, x0\n`; // x19 = self
-	status.code += `sub sp, sp, #${stack_placeholder}\n`;
-	status.code += `mov x29, sp\n`;
+	emit_asm(status, `stp x29, x30, [sp, #-16]!\n`);
+	emit_asm(status, `str x19, [sp, #-16]!\n`);
+	emit_asm(status, `mov x19, x0\n`); // x19 = self
+	emit_asm(status, `sub sp, sp, #${stack_placeholder}\n`);
+	emit_asm(status, `mov x29, sp\n`);
 
 	status.function_param_regs = new Map();
 	status.function_param_vars = new Set();
 	status.function_param_regs.set("self", "x19");
 
 	// if (self->data == 0) goto end
-	status.code += `ldr x0, [x19, #8]\n`;
-	status.code += `cbz x0, .Lownbuf_destroy_end_${func_label}\n`;
+	emit_asm(status, `ldr x0, [x19, #8]\n`);
+	emit_asm(status, `cbz x0, .Lownbuf_destroy_end_${func_label}\n`);
 	// Save callee-saved
-	status.code += `stp x20, x21, [sp, #-16]!\n`;
-	status.code += `str x22, [sp, #-16]!\n`;
-	status.code += `mov x20, x0\n`; // x20 = data base
-	status.code += `ldr x21, [x19, #16]\n`; // x21 = cap
-	status.code += `mov x22, #0\n`; // x22 = i = 0
-	status.code += `.Lownbuf_destroy_loop_${func_label}:\n`;
-	status.code += `cmp x22, x21\n`;
-	status.code += `b.ge .Lownbuf_destroy_done_${func_label}\n`;
+	emit_asm(status, `stp x20, x21, [sp, #-16]!\n`);
+	emit_asm(status, `str x22, [sp, #-16]!\n`);
+	emit_asm(status, `mov x20, x0\n`); // x20 = data base
+	emit_asm(status, `ldr x21, [x19, #16]\n`); // x21 = cap
+	emit_asm(status, `mov x22, #0\n`); // x22 = i = 0
+	emit_asm(status, `.Lownbuf_destroy_loop_${func_label}:\n`);
+	emit_asm(status, `cmp x22, x21\n`);
+	emit_asm(status, `b.ge .Lownbuf_destroy_done_${func_label}\n`);
 	// &slot[i] = x20 + i * T_SIZE
-	status.code += `mov x3, #${T_SIZE}\n`;
-	status.code += `madd x0, x22, x3, x20\n`;
+	emit_asm(status, `mov x3, #${T_SIZE}\n`);
+	emit_asm(status, `madd x0, x22, x3, x20\n`);
 	if (is_string) {
 		// free(slot[i].ptr) — a NULL/zeroed slot is a no-op free. x0 holds
 		// &slot[i]; the ptr half is at offset 0.
-		status.code += `ldr x0, [x0]\n`;
+		emit_asm(status, `ldr x0, [x0]\n`);
 		emit_free(status);
 	} else if (enum_elem) {
 		// Tag-guarded reclaim of the active case's string payloads.
 		emit_enum_payload_frees_at(status, enum_elem.name, "x0");
 	} else {
-		status.code += `bl ${elem!.name}_destroy\n`;
+		emit_asm(status, `bl ${elem!.name}_destroy\n`);
 	}
-	status.code += `add x22, x22, #1\n`;
-	status.code += `b .Lownbuf_destroy_loop_${func_label}\n`;
-	status.code += `.Lownbuf_destroy_done_${func_label}:\n`;
-	status.code += `mov x0, x20\n`;
+	emit_asm(status, `add x22, x22, #1\n`);
+	emit_asm(status, `b .Lownbuf_destroy_loop_${func_label}\n`);
+	emit_asm(status, `.Lownbuf_destroy_done_${func_label}:\n`);
+	emit_asm(status, `mov x0, x20\n`);
 	emit_free(status);
-	status.code += `ldr x22, [sp], #16\n`;
-	status.code += `ldp x20, x21, [sp], #16\n`;
-	status.code += `.Lownbuf_destroy_end_${func_label}:\n`;
-	status.code += `str xzr, [x19, #8]\n`;
-	status.code += `str xzr, [x19, #16]\n`;
+	emit_asm(status, `ldr x22, [sp], #16\n`);
+	emit_asm(status, `ldp x20, x21, [sp], #16\n`);
+	emit_asm(status, `.Lownbuf_destroy_end_${func_label}:\n`);
+	emit_asm(status, `str xzr, [x19, #8]\n`);
+	emit_asm(status, `str xzr, [x19, #16]\n`);
 
-	status.code += `${return_label}:\n`;
+	emit_asm(status, `${return_label}:\n`);
 
 	const total_stack = Math.ceil((status.stack_size || 0) / 16) * 16;
 	status.code = status.code.replace(
@@ -878,11 +879,11 @@ export function emit_owning_buffer_destroy_aarch64(node: StructNode, status: Bui
 		total_stack > 0 ? `sub sp, sp, #${total_stack}` : `// no stack needed`,
 	);
 	if (total_stack > 0) {
-		status.code += `add sp, sp, #${total_stack}\n`;
+		emit_asm(status, `add sp, sp, #${total_stack}\n`);
 	}
-	status.code += `ldr x19, [sp], #16\n`;
-	status.code += `ldp x29, x30, [sp], #16\n`;
-	status.code += `ret\n`;
+	emit_asm(status, `ldr x19, [sp], #16\n`);
+	emit_asm(status, `ldp x29, x30, [sp], #16\n`);
+	emit_asm(status, `ret\n`);
 
 	status.scoped_declarations = old_scoped_declarations;
 	status.function_param_regs = old_param_regs;

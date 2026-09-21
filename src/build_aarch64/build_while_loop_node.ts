@@ -9,9 +9,10 @@ import { emit_neon_vector_loop } from "./neon_emit.ts";
 import type { NeonPlan } from "./neon_plan.ts";
 import type { UnrollPlan } from "./unroll.ts";
 import { enter_scope_frame, exit_scope_frame } from "./utils/auto_destroy.ts";
+import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
+import emit_allocations from "./utils/emit_allocations.ts";
 import { promote_loop_locals, type PromotedVar } from "./utils/loop_promotion.ts";
 import { emit_promoted_store, emit_var_store } from "./utils/stack_var.ts";
-import emit_allocations from "./utils/emit_allocations.ts";
 
 let label_counter = 0;
 
@@ -32,7 +33,7 @@ function node_condition_name(node: WhileLoopNode): string {
 }
 
 function mov_immediate_x0_and_store(status: BuildStatus, name: string, value: number): void {
-	status.code += `mov x0, #${value}\n`;
+	emit_asm(status, `mov x0, #${value}\n`);
 	emit_var_store(status, "x0", name, 8);
 }
 
@@ -251,7 +252,7 @@ export default function build_while_loop_node(
 			emit_neon_vector_loop(vector, status);
 		}
 
-		status.code += `${start_label}:\n`;
+		emit_asm(status, `${start_label}:\n`);
 
 		// Re-emit the checker-hoisted condition (and update) temporaries at
 		// the loop head: the enclosing block no longer pre-emits them, and a
@@ -271,23 +272,19 @@ export default function build_while_loop_node(
 			// Branch-aware condition lowering: comparisons branch directly off
 			// the operand `cmp` instead of materializing a 0/1 into x0 first.
 			emit_cond_branch(node.condition, end_label, false, status);
-			if (!status.code.endsWith("\n")) {
-				status.code += "\n";
-			}
+			ensure_newline(status);
 		}
 
 		build_block_with_cursor(node, nir?.body, status);
 
 		if (node.update) {
-			status.code += `${continue_label}:\n`;
+			emit_asm(status, `${continue_label}:\n`);
 			build_node(node.update, status);
-			if (!status.code.endsWith("\n")) {
-				status.code += "\n";
-			}
+			ensure_newline(status);
 		}
 
-		status.code += `b ${start_label}\n`;
-		status.code += `${end_label}:\n`;
+		emit_asm(status, `b ${start_label}\n`);
+		emit_asm(status, `${end_label}:\n`);
 	}
 
 	for (const p of promoted) {

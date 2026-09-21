@@ -3,6 +3,7 @@ import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import IndexNode from "../nodes/IndexNode.ts";
 import type Type from "../nodes/Type.ts";
 import build_node from "./build_node.ts";
+import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
 import {
 	emit_index_address,
 	emit_index_load,
@@ -31,27 +32,23 @@ export default function build_index_node(node: IndexNode, status: BuildStatus) {
 		if (fused) {
 			build_node(node.index, status);
 			ensure_newline(status);
-			status.code += `mov x1, x0\n`;
+			emit_asm(status, `mov x1, x0\n`);
 			build_node(node.target, status);
 			ensure_newline(status);
-			status.code += `${fused}\n`;
+			emit_asm(status, `${fused}\n`);
 			return;
 		}
 	}
 
 	build_node(node.target, status);
 	ensure_newline(status);
-	status.code += `str x0, [sp, #-16]!\n`;
+	emit_asm(status, `str x0, [sp, #-16]!\n`);
 	build_node(node.index, status);
 	ensure_newline(status);
-	status.code += `mov x1, x0\n`;
-	status.code += `ldr x0, [sp], #16\n`;
+	emit_asm(status, `mov x1, x0\n`);
+	emit_asm(status, `ldr x0, [sp], #16\n`);
 	emit_index_address(size, status);
 	emit_index_load(elem, status);
-}
-
-function ensure_newline(status: BuildStatus) {
-	if (!status.code.endsWith("\n")) status.code += "\n";
 }
 
 function elem_from_target(node: IndexNode, _status: BuildStatus): Type {

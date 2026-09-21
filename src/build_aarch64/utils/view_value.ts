@@ -4,6 +4,7 @@ import type BaseNode from "../../nodes/BaseNode.ts";
 import type ValueNode from "../../nodes/ValueNode.ts";
 import build_node from "../build_node.ts";
 import { emit_malloc } from "./audit.ts";
+import { emit_asm, ensure_newline } from "./code_buffer.ts";
 
 export { is_view_value };
 
@@ -20,17 +21,17 @@ export function emit_view_string_arg(arg: BaseNode, status: BuildStatus) {
 		if (arg.node_type === "value") {
 			const base = status.stack_offsets?.get((arg as ValueNode).value);
 			if (base !== undefined) {
-				status.code += `ldr x0, [x29, #${base}]\n`;
-				status.code += `ldr x1, [x29, #${base + 8}]\n`;
+				emit_asm(status, `ldr x0, [x29, #${base}]\n`);
+				emit_asm(status, `ldr x1, [x29, #${base + 8}]\n`);
 				return;
 			}
 		}
 		build_node(arg, status);
-		if (!status.code.endsWith("\n")) status.code += "\n";
+		ensure_newline(status);
 		return;
 	}
 	build_node(arg, status);
-	if (!status.code.endsWith("\n")) status.code += "\n";
+	ensure_newline(status);
 }
 
 /**
@@ -41,18 +42,18 @@ export function emit_view_string_arg(arg: BaseNode, status: BuildStatus) {
  * view `.to_string` builtin sequence.
  */
 export function emit_view_materialize_owned(status: BuildStatus) {
-	status.code += `stp x0, x1, [sp, #-16]!\n`; // [sp]=ptr, [sp+8]=len
-	status.code += `add x0, x1, #1\n`; // len+1
+	emit_asm(status, `stp x0, x1, [sp, #-16]!\n`); // [sp]=ptr, [sp+8]=len
+	emit_asm(status, `add x0, x1, #1\n`); // len+1
 	emit_malloc(status); // x0 = dst
 	// Second push: [sp]=dst, [sp+16]=ptr, [sp+24]=len (the first frame's
 	// slots sit 16 bytes above the new sp — NOT at [sp+8]/[sp+16]).
-	status.code += `str x0, [sp, #-16]!\n`;
-	status.code += `ldr x1, [sp, #16]\n`; // ptr
-	status.code += `ldr x2, [sp, #24]\n`; // len
-	status.code += `ldr x0, [sp]\n`; // dst
-	status.code += `bl _memcpy\n`;
-	status.code += `ldr x0, [sp]\n`; // dst (don't trust memcpy's return)
-	status.code += `ldr x1, [sp, #24]\n`; // len
-	status.code += `strb wzr, [x0, x1]\n`; // dst[len] = 0
-	status.code += `add sp, sp, #32\n`;
+	emit_asm(status, `str x0, [sp, #-16]!\n`);
+	emit_asm(status, `ldr x1, [sp, #16]\n`); // ptr
+	emit_asm(status, `ldr x2, [sp, #24]\n`); // len
+	emit_asm(status, `ldr x0, [sp]\n`); // dst
+	emit_asm(status, `bl _memcpy\n`);
+	emit_asm(status, `ldr x0, [sp]\n`); // dst (don't trust memcpy's return)
+	emit_asm(status, `ldr x1, [sp, #24]\n`); // len
+	emit_asm(status, `strb wzr, [x0, x1]\n`); // dst[len] = 0
+	emit_asm(status, `add sp, sp, #32\n`);
 }

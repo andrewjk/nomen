@@ -4,6 +4,7 @@ import AsyncBlockNode from "../nodes/AsyncBlockNode.ts";
 import build_node from "./build_node.ts";
 import { ensure_concurrency_runtime_a64 } from "./build_spawn_node.ts";
 import { build_block_with_cursor } from "./emit_nir.ts";
+import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
 
 /**
@@ -48,9 +49,9 @@ export default function build_async_block_node(
 	const futures_off = allocate_stack_space(status, 8, 8);
 	const count_off = allocate_stack_space(status, 8, 8);
 	const cap_off = allocate_stack_space(status, 8, 8);
-	status.code += `str xzr, [x29, #${count_off}]\n`; // count = 0
-	status.code += `str xzr, [x29, #${cap_off}]\n`; // cap = 0
-	status.code += `str xzr, [x29, #${futures_off}]\n`; // futures = NULL (grown on first registration)
+	emit_asm(status, `str xzr, [x29, #${count_off}]\n`); // count = 0
+	emit_asm(status, `str xzr, [x29, #${cap_off}]\n`); // cap = 0
+	emit_asm(status, `str xzr, [x29, #${futures_off}]\n`); // futures = NULL (grown on first registration)
 
 	let nursery_off: number | undefined;
 	if (node.nursery_name) {
@@ -60,12 +61,12 @@ export default function build_async_block_node(
 		// hatch's registration helper updates the list in place through a
 		// realloc), so `ref name` / name.start can register spawned futures
 		// with this nursery at runtime.
-		status.code += `add x0, x29, #${futures_off}\n`;
-		status.code += `str x0, [x29, #${nursery_off}]\n`; // futures_ptr
-		status.code += `add x0, x29, #${count_off}\n`;
-		status.code += `str x0, [x29, #${nursery_off + 8}]\n`; // count_ptr
-		status.code += `add x0, x29, #${cap_off}\n`;
-		status.code += `str x0, [x29, #${nursery_off + 16}]\n`; // cap_ptr
+		emit_asm(status, `add x0, x29, #${futures_off}\n`);
+		emit_asm(status, `str x0, [x29, #${nursery_off}]\n`); // futures_ptr
+		emit_asm(status, `add x0, x29, #${count_off}\n`);
+		emit_asm(status, `str x0, [x29, #${nursery_off + 8}]\n`); // count_ptr
+		emit_asm(status, `add x0, x29, #${cap_off}\n`);
+		emit_asm(status, `str x0, [x29, #${nursery_off + 16}]\n`); // cap_ptr
 		// Register the name as a stack local so build_value_node /
 		// emit_address_of resolve it like any other struct variable.
 		if (!status.stack_offsets) status.stack_offsets = new Map();
@@ -75,8 +76,8 @@ export default function build_async_block_node(
 	if (node.timeout) {
 		deadline_off = allocate_stack_space(status, 8, 8);
 		// Sentinel: -1 means "no deadline computed yet".
-		status.code += `mov x0, #-1\n`;
-		status.code += `str x0, [x29, #${deadline_off}]\n`;
+		emit_asm(status, `mov x0, #-1\n`);
+		emit_asm(status, `str x0, [x29, #${deadline_off}]\n`);
 	}
 
 	if (!status.nursery_offsets) status.nursery_offsets = new Map();
@@ -101,38 +102,38 @@ export default function build_async_block_node(
 	status.nursery_offsets.delete(id);
 
 	// Emit join loop in assembly.
-	status.code += `// nursery ${id}: join all futures\n`;
-	status.code += `ldr x20, [x29, #${futures_off}]\n`; // x20 = futures (heap)
-	status.code += `ldr w22, [x29, #${count_off}]\n`; // w22 = count
+	emit_asm(status, `// nursery ${id}: join all futures\n`);
+	emit_asm(status, `ldr x20, [x29, #${futures_off}]\n`); // x20 = futures (heap)
+	emit_asm(status, `ldr w22, [x29, #${count_off}]\n`); // w22 = count
 
 	// If timeout is specified, compute deadline before the join loop.
 	if (deadline_off !== undefined) {
-		status.code += `// Compute deadline: now + timeout_ms\n`;
+		emit_asm(status, `// Compute deadline: now + timeout_ms\n`);
 		// Build the timeout expression first → x0, and save it across the
 		// clock_gettime call. (Building it here in asm — not into a C helper —
 		// because build_node emits assembly, not C.)
 		build_node(node.timeout!, status);
-		if (!status.code.endsWith("\n")) status.code += "\n";
-		status.code += `str x0, [sp, #-16]!\n`; // save timeout_ms
-		status.code += `sub sp, sp, #16\n`;
-		status.code += `mov x1, sp\n`; // timespec buffer
-		status.code += `mov x0, #0\n`; // CLOCK_REALTIME
-		status.code += `bl _clock_gettime\n`;
-		status.code += `ldr x0, [sp]\n`; // tv_sec
-		status.code += `ldr x1, [sp, #8]\n`; // tv_nsec
-		status.code += `add sp, sp, #16\n`;
-		status.code += `mov x2, #1000\n`;
-		status.code += `mul x0, x0, x2\n`; // tv_sec * 1000
+		ensure_newline(status);
+		emit_asm(status, `str x0, [sp, #-16]!\n`); // save timeout_ms
+		emit_asm(status, `sub sp, sp, #16\n`);
+		emit_asm(status, `mov x1, sp\n`); // timespec buffer
+		emit_asm(status, `mov x0, #0\n`); // CLOCK_REALTIME
+		emit_asm(status, `bl _clock_gettime\n`);
+		emit_asm(status, `ldr x0, [sp]\n`); // tv_sec
+		emit_asm(status, `ldr x1, [sp, #8]\n`); // tv_nsec
+		emit_asm(status, `add sp, sp, #16\n`);
+		emit_asm(status, `mov x2, #1000\n`);
+		emit_asm(status, `mul x0, x0, x2\n`); // tv_sec * 1000
 		// 1000000 doesn't fit in a single mov immediate; load from literal pool.
-		status.code += `ldr x2, =1000000\n`;
-		status.code += `udiv x1, x1, x2\n`; // tv_nsec / 1000000
-		status.code += `add x0, x0, x1\n`; // now_ms
-		status.code += `ldr x1, [sp], #16\n`; // restore timeout_ms
-		status.code += `add x0, x1, x0\n`; // deadline = timeout + now
-		status.code += `str x0, [x29, #${deadline_off}]\n`;
+		emit_asm(status, `ldr x2, =1000000\n`);
+		emit_asm(status, `udiv x1, x1, x2\n`); // tv_nsec / 1000000
+		emit_asm(status, `add x0, x0, x1\n`); // now_ms
+		emit_asm(status, `ldr x1, [sp], #16\n`); // restore timeout_ms
+		emit_asm(status, `add x0, x1, x0\n`); // deadline = timeout + now
+		emit_asm(status, `str x0, [x29, #${deadline_off}]\n`);
 	}
 
-	status.code += `mov x23, #0\n`; // x23 = i
+	emit_asm(status, `mov x23, #0\n`); // x23 = i
 	const loop_start = `__nursery_${id}_join_start`;
 	const loop_end = `__nursery_${id}_join_end`;
 	const loop_release = `__nursery_${id}_release`;
@@ -143,21 +144,21 @@ export default function build_async_block_node(
 		// Race mode: poll until any future completes (or the deadline hits),
 		// then fall through to the per-future cancel+wait+release loop.
 		// __nomen_nursery_race_wait(futures_ptr, count, deadline_ms_or_0).
-		status.code += `mov x0, x20\n`;
-		status.code += `mov x1, x22\n`;
+		emit_asm(status, `mov x0, x20\n`);
+		emit_asm(status, `mov x1, x22\n`);
 		if (deadline_off !== undefined) {
-			status.code += `ldr x2, [x29, #${deadline_off}]\n`;
+			emit_asm(status, `ldr x2, [x29, #${deadline_off}]\n`);
 		} else {
-			status.code += `mov x2, #0\n`;
+			emit_asm(status, `mov x2, #0\n`);
 		}
-		status.code += `bl ___nomen_nursery_race_wait\n`;
+		emit_asm(status, `bl ___nomen_nursery_race_wait\n`);
 	}
 
-	status.code += `${loop_start}:\n`;
-	status.code += `cmp x23, x22\n`;
-	status.code += `b.ge ${loop_end}\n`;
+	emit_asm(status, `${loop_start}:\n`);
+	emit_asm(status, `cmp x23, x22\n`);
+	emit_asm(status, `b.ge ${loop_end}\n`);
 	// Load futures[i] into x0.
-	status.code += `ldr x0, [x20, x23, lsl #3]\n`;
+	emit_asm(status, `ldr x0, [x20, x23, lsl #3]\n`);
 	if (is_race) {
 		// Cancel the task (no-op if already done), then wait for done
 		// UNCONDITIONALLY — a bounded grace would release a future whose
@@ -165,35 +166,35 @@ export default function build_async_block_node(
 		// under it (memory corruption). A task that never observes
 		// cancellation hangs the join: the documented kill-trampoline gap
 		// (FOLLOWUP.md), not a soundness hole.
-		status.code += `bl ___nomen_future_cancel\n`;
-		status.code += `ldr x0, [x20, x23, lsl #3]\n`;
-		status.code += `bl ___nomen_future_wait\n`;
+		emit_asm(status, `bl ___nomen_future_cancel\n`);
+		emit_asm(status, `ldr x0, [x20, x23, lsl #3]\n`);
+		emit_asm(status, `bl ___nomen_future_wait\n`);
 	} else if (deadline_off !== undefined) {
-		status.code += `ldr x1, [x29, #${deadline_off}]\n`;
-		status.code += `bl ___nomen_future_timedwait\n`;
+		emit_asm(status, `ldr x1, [x29, #${deadline_off}]\n`);
+		emit_asm(status, `bl ___nomen_future_timedwait\n`);
 		// x0 = 1 if done, 0 if timed out.
-		status.code += `cbnz x0, ${loop_release}\n`;
+		emit_asm(status, `cbnz x0, ${loop_release}\n`);
 		// Timed out — cancel this task via the C helper (avoids hardcoding
 		// the cancel_flag offset, which differs per platform), then wait
 		// for done unconditionally (see the race note above).
-		status.code += `ldr x0, [x20, x23, lsl #3]\n`; // reload future
-		status.code += `bl ___nomen_future_cancel\n`;
-		status.code += `ldr x0, [x20, x23, lsl #3]\n`;
-		status.code += `bl ___nomen_future_wait\n`;
+		emit_asm(status, `ldr x0, [x20, x23, lsl #3]\n`); // reload future
+		emit_asm(status, `bl ___nomen_future_cancel\n`);
+		emit_asm(status, `ldr x0, [x20, x23, lsl #3]\n`);
+		emit_asm(status, `bl ___nomen_future_wait\n`);
 	} else {
-		status.code += `bl ___nomen_future_wait\n`;
+		emit_asm(status, `bl ___nomen_future_wait\n`);
 	}
-	status.code += `${loop_release}:\n`;
+	emit_asm(status, `${loop_release}:\n`);
 	// Load future pointer again for release.
-	status.code += `ldr x0, [x20, x23, lsl #3]\n`;
-	status.code += `bl ___nomen_future_release\n`;
-	status.code += `add x23, x23, #1\n`;
-	status.code += `b ${loop_start}\n`;
-	status.code += `${loop_end}:\n`;
+	emit_asm(status, `ldr x0, [x20, x23, lsl #3]\n`);
+	emit_asm(status, `bl ___nomen_future_release\n`);
+	emit_asm(status, `add x23, x23, #1\n`);
+	emit_asm(status, `b ${loop_start}\n`);
+	emit_asm(status, `${loop_end}:\n`);
 	// Release the growable futures list (every registration happens before
 	// the join completes); NULL when nothing was ever registered.
-	status.code += `ldr x0, [x29, #${futures_off}]\n`;
-	status.code += `cbz x0, __nursery_${id}_no_list\n`;
-	status.code += `bl _free\n`;
-	status.code += `__nursery_${id}_no_list:\n`;
+	emit_asm(status, `ldr x0, [x29, #${futures_off}]\n`);
+	emit_asm(status, `cbz x0, __nursery_${id}_no_list\n`);
+	emit_asm(status, `bl _free\n`);
+	emit_asm(status, `__nursery_${id}_no_list:\n`);
 }

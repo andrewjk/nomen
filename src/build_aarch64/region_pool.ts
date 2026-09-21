@@ -46,6 +46,7 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import { emit_buffer_struct_addr } from "./build_access_node.ts";
+import { emit_asm } from "./utils/code_buffer.ts";
 import { CALLER_SAVED_EXT_X, NIR_SCRATCH_X, region_pool_enabled } from "./utils/nir_regalloc.ts";
 import {
 	allocate_stack_space,
@@ -315,7 +316,7 @@ export function region_pool_enter(
 				}
 			}
 			for (const d of resolved) {
-				status.code += `str ${reg}, [x29, #${d.slot}]\n`;
+				emit_asm(status, `str ${reg}, [x29, #${d.slot}]\n`);
 			}
 		}
 		let had_claim = false;
@@ -351,8 +352,8 @@ export function region_pool_enter(
 		if (!status.region_pinned) status.region_pinned = new Map();
 		status.region_pinned.set(reg, (status.region_pinned.get(reg) ?? 0) + 1);
 		emit_buffer_struct_addr(receiver.node, status);
-		status.code += `ldr x9, [x9, #8]\n`;
-		status.code += `mov ${reg}, x9\n`;
+		emit_asm(status, `ldr x9, [x9, #8]\n`);
+		emit_asm(status, `mov ${reg}, x9\n`);
 		// Base-folded addressing (ASM_PLAN_6 tranche 3): preload each
 		// plan-assigned fold register with `pin + base*8`. The base is
 		// loop-invariant (plan-proved) and its slot/register was written
@@ -367,10 +368,10 @@ export function region_pool_enter(
 		for (const f of pin.folds ?? []) {
 			if (/^\d+$/.test(f.base)) {
 				// Literal base: the fold is a constant offset.
-				status.code += `add ${f.reg}, ${reg}, #${Number(f.base) * 8}\n`;
+				emit_asm(status, `add ${f.reg}, ${reg}, #${Number(f.base) * 8}\n`);
 			} else {
 				emit_var_load(status, "x10", f.base, 8);
-				status.code += `add ${f.reg}, ${reg}, x10, lsl #3\n`;
+				emit_asm(status, `add ${f.reg}, ${reg}, x10, lsl #3\n`);
 			}
 			status.region_pinned.set(f.reg, (status.region_pinned.get(f.reg) ?? 0) + 1);
 			fold_regs.push(f.reg);
@@ -403,7 +404,7 @@ export function region_pool_enter(
 			}
 		}
 		for (const d of resolved) {
-			status.code += `str ${v.reg}, [x29, #${d.slot}]\n`;
+			emit_asm(status, `str ${v.reg}, [x29, #${d.slot}]\n`);
 		}
 		let had_claim = false;
 		if (CALLER_SAVED_EXT_X.includes(v.reg)) {
@@ -484,7 +485,7 @@ export function region_pool_exit(status: BuildStatus, lease: RegionLease | null)
 		// post-body patch and the function would destroy the CALLER's
 		// value in that register (the layout corruption receipt).
 		for (const d of l.displaced) {
-			status.code += `ldr ${l.reg}, [x29, #${d.slot}]\n`;
+			emit_asm(status, `ldr ${l.reg}, [x29, #${d.slot}]\n`);
 		}
 		// The promotion-sharing refusal lifts when the last bracket holding
 		// the register closes (nesting: an inner bracket borrowing the same

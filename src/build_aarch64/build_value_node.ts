@@ -8,6 +8,7 @@ import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_descriptor_address, materialize_func_value_a64 } from "./utils/closure_a64.ts";
+import { emit_asm } from "./utils/code_buffer.ts";
 import { find_enum_for_case } from "./utils/enum_case.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
 import { emit_string_pair_load } from "./utils/string_pair.ts";
@@ -29,21 +30,21 @@ function emit_immediate(reg: string, value: string, status: BuildStatus) {
 	if (value.includes(".")) {
 		const label = `_float_lit_${string_counter++}`;
 		status.float_literals!.set(label, value);
-		status.code += `adr ${reg}, ${label}\n`;
-		status.code += `ldr ${reg}, [${reg}]`;
+		emit_asm(status, `adr ${reg}, ${label}\n`);
+		emit_asm(status, `ldr ${reg}, [${reg}]`);
 		return;
 	}
 	const num = parseInt(value, 10);
 	if (!isNaN(num) && can_encode_as_mov(value)) {
 		if (num >= 0 && num <= 65535) {
-			status.code += `mov ${reg}, #${value}`;
+			emit_asm(status, `mov ${reg}, #${value}`);
 		} else if (num < 0 && num >= -65536) {
-			status.code += `movn ${reg}, #${-num - 1}`;
+			emit_asm(status, `movn ${reg}, #${-num - 1}`);
 		} else {
-			status.code += `ldr ${reg}, =${value}`;
+			emit_asm(status, `ldr ${reg}, =${value}`);
 		}
 	} else {
-		status.code += `ldr ${reg}, =${value}`;
+		emit_asm(status, `ldr ${reg}, =${value}`);
 	}
 }
 
@@ -81,7 +82,7 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 	// copy's value is a compile-time constant.
 	const const_idx = status.induction_const?.get(original_value);
 	if (const_idx !== undefined) {
-		status.code += `mov x0, #${const_idx}\n`;
+		emit_asm(status, `mov x0, #${const_idx}\n`);
 		return;
 	}
 
@@ -111,14 +112,14 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 				if (enum_node.has_associated_data) {
 					const enum_size = get_enum_size(enum_node.name, status);
 					const temp_offset = allocate_stack_space(status, enum_size);
-					status.code += `mov x9, #${case_index}\n`;
-					status.code += `str x9, [x29, #${temp_offset}]\n`;
+					emit_asm(status, `mov x9, #${case_index}\n`);
+					emit_asm(status, `str x9, [x29, #${temp_offset}]\n`);
 					for (let off = 8; off < enum_size; off += 8) {
-						status.code += `str xzr, [x29, #${temp_offset + off}]\n`;
+						emit_asm(status, `str xzr, [x29, #${temp_offset + off}]\n`);
 					}
-					status.code += `add x0, x29, #${temp_offset}\n`;
+					emit_asm(status, `add x0, x29, #${temp_offset}\n`);
 				} else {
-					status.code += `mov x0, #${case_index}\n`;
+					emit_asm(status, `mov x0, #${case_index}\n`);
 				}
 				return;
 			}
@@ -129,7 +130,7 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 			const case_index = bitset_node.cases.indexOf(case_name);
 			if (case_index >= 0) {
 				// Evaluated constant — see the access path above.
-				status.code += `mov x0, #${2 ** case_index}\n`;
+				emit_asm(status, `mov x0, #${2 ** case_index}\n`);
 				return;
 			}
 		}
@@ -156,8 +157,8 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 		(original_value === "self" || value === "_self") &&
 		status.current_struct?.name === "string"
 	) {
-		status.code += `mov x0, x19\n`;
-		status.code += `mov x1, x20\n`;
+		emit_asm(status, `mov x0, x19\n`);
+		emit_asm(status, `mov x1, x20\n`);
 		return;
 	}
 
@@ -165,12 +166,12 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 		if (original_value === "self" || value === "_self") {
 			// self is always the struct address, don't dereference
 			if (paramReg !== "x0") {
-				status.code += `mov x0, ${paramReg}`;
+				emit_asm(status, `mov x0, ${paramReg}`);
 			}
 		} else if (node.type?.is_pointer) {
 			// A `ptr T` param is a bare machine word in its register.
 			if (paramReg !== "x0") {
-				status.code += `mov x0, ${paramReg}`;
+				emit_asm(status, `mov x0, ${paramReg}`);
 			}
 		} else if (
 			status.function_param_vars?.has(original_value) ||
@@ -185,15 +186,15 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 				!!status.class_vars?.has(original_value);
 			if (is_class) {
 				if (paramReg !== "x0") {
-					status.code += `mov x0, ${paramReg}`;
+					emit_asm(status, `mov x0, ${paramReg}`);
 				}
 			} else {
-				status.code += deref_load_instr(paramReg, param_type_name);
+				emit_asm(status, deref_load_instr(paramReg, param_type_name));
 			}
 		} else {
 			// const param - value in register
 			if (paramReg !== "x0") {
-				status.code += `mov x0, ${paramReg}`;
+				emit_asm(status, `mov x0, ${paramReg}`);
 			}
 			// if already x0, no-op
 		}
@@ -211,9 +212,9 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 		const char_code = decode_char_literal(value);
 		if (char_code !== undefined) {
 			if (char_code <= 65535) {
-				status.code += `mov x0, #${char_code}`;
+				emit_asm(status, `mov x0, #${char_code}`);
 			} else {
-				status.code += `ldr x0, =${char_code}`;
+				emit_asm(status, `ldr x0, =${char_code}`);
 			}
 			return;
 		}
@@ -224,8 +225,8 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 		status.strings!.set(label, value);
 		// Fat string: the literal is the (ptr, len) pair — the length is the
 		// unescaped byte count, computed at compile time (no strlen).
-		status.code += `adr x0, ${label}\n`;
-		status.code += `mov x1, #${string_literal_length(value)}\n`;
+		emit_asm(status, `adr x0, ${label}\n`);
+		emit_asm(status, `mov x1, #${string_literal_length(value)}\n`);
 		return;
 	}
 
@@ -236,18 +237,18 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 	// anyway.
 	if (status.closure_env_offsets?.has(value) && !status.function_param_regs?.has(value)) {
 		const off = status.closure_env_offsets.get(value)!;
-		status.code += `ldr x9, [x29, #${status.closure_env_slot}]\n`;
+		emit_asm(status, `ldr x9, [x29, #${status.closure_env_slot}]\n`);
 		const cap_struct = status.structs.find((s) => s.name === node.type?.name && !s.is_simple_type);
 		if (cap_struct && !cap_struct.is_class) {
 			// A captured value struct is read by ADDRESS (its env field is the
 			// struct's bytes), matching how local struct values are used.
-			status.code += `add x0, x9, #${off}\n`;
+			emit_asm(status, `add x0, x9, #${off}\n`);
 		} else {
-			status.code += `ldr x0, [x9, #${off}]\n`;
+			emit_asm(status, `ldr x0, [x9, #${off}]\n`);
 			// A captured string is a fat (ptr, len) pair in the env — load the
 			// len half too.
 			if (node.type?.name === "string" && !node.type.is_view && !node.type.is_array) {
-				status.code += `ldr x1, [x9, #${off + 8}]\n`;
+				emit_asm(status, `ldr x1, [x9, #${off + 8}]\n`);
 			}
 		}
 		return;
@@ -259,14 +260,14 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 		const func_offset = status.stack_offsets?.get(value);
 		if (func_offset !== undefined) {
 			// The slot holds a closure descriptor (CLOSURE.md).
-			status.code += `ldr x0, [x29, #${func_offset}]\n`;
+			emit_asm(status, `ldr x0, [x29, #${func_offset}]\n`);
 		} else if (node.resolved_function) {
 			// A named function as a VALUE materializes its closure
 			// descriptor — a bare code address can't carry the env.
 			const desc = materialize_func_value_a64(node.resolved_function, status);
 			emit_descriptor_address(status, "x0", desc);
 		} else {
-			status.code += `adr x0, ${emission_label(node.resolved_function ?? { name: value })}\n`;
+			emit_asm(status, `adr x0, ${emission_label(node.resolved_function ?? { name: value })}\n`);
 		}
 		return;
 	}
@@ -277,13 +278,13 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 		if (node.type?.is_pointer) {
 			// A `ptr T` local promoted to a register holds the address itself.
 			if (alloc_reg !== "x0") {
-				status.code += `mov x0, ${alloc_reg}\n`;
+				emit_asm(status, `mov x0, ${alloc_reg}\n`);
 			}
 			return;
 		}
 		if (status.function_ref_params?.has(value) || status.function_ref_params?.has(original_value)) {
 			if (alloc_reg !== "x0") {
-				status.code += `mov x0, ${alloc_reg}\n`;
+				emit_asm(status, `mov x0, ${alloc_reg}\n`);
 			}
 			const param_type_name = node.type?.name;
 			const is_class =
@@ -291,14 +292,14 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 				!!status.class_vars?.has(value) ||
 				!!status.class_vars?.has(original_value);
 			if (!is_class) {
-				status.code += deref_load_instr("x0", param_type_name);
+				emit_asm(status, deref_load_instr("x0", param_type_name));
 			}
 		} else {
 			if (alloc_reg !== "x0") {
 				if (alloc_reg.startsWith("d")) {
-					status.code += `fmov x0, ${alloc_reg}`;
+					emit_asm(status, `fmov x0, ${alloc_reg}`);
 				} else {
-					status.code += `mov x0, ${alloc_reg}`;
+					emit_asm(status, `mov x0, ${alloc_reg}`);
 				}
 			}
 		}
@@ -313,7 +314,7 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 		const is_array = node.type?.is_array || false;
 		if (node.type?.is_pointer) {
 			// A `ptr T` local is a single 8-byte word: the address itself.
-			status.code += `ldr x0, [x29, #${offset}]`;
+			emit_asm(status, `ldr x0, [x29, #${offset}]`);
 			return;
 		}
 		const is_ref =
@@ -332,16 +333,16 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 			// `add x0, x29, #offset` form: their slot IS the inline elements,
 			// and by-reference passes (e.g. to an array param) want &slot.
 			if (status.heap_array_vars?.has(value)) {
-				status.code += `ldr x0, [x29, #${offset}]`;
+				emit_asm(status, `ldr x0, [x29, #${offset}]`);
 			} else {
-				status.code += `add x0, x29, #${offset}`;
+				emit_asm(status, `add x0, x29, #${offset}`);
 			}
 		} else if (status.enums.find((e) => e.name === type_name && e.has_associated_data)) {
 			// An enum-with-data local is a multi-word (tag + payload) blob —
 			// a value reference (return, assignment RHS, argument) passes its
 			// ADDRESS so consumers struct-copy the full value. The generic
 			// scalar path below would load only the 8-byte tag word.
-			status.code += `add x0, x29, #${offset}`;
+			emit_asm(status, `add x0, x29, #${offset}`);
 		} else if (
 			type_name === "string" &&
 			!is_ref &&
@@ -352,9 +353,9 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 			// `ref self` on the string struct: the slot holds the RAW incoming
 			// &receiver (one word — never the pair the by-value convention
 			// spills), so the fat value is rebuilt by dereferencing it.
-			status.code += `ldr x9, [x29, #${offset}]\n`;
-			status.code += `ldr x0, [x9]\n`;
-			status.code += `ldr x1, [x9, #8]\n`;
+			emit_asm(status, `ldr x9, [x29, #${offset}]\n`);
+			emit_asm(status, `ldr x0, [x9]\n`);
+			emit_asm(status, `ldr x1, [x9, #8]\n`);
 		} else if (type_name === "string" && !is_ref) {
 			// Fat string slot: load the (ptr, len) pair.
 			emit_string_pair_load(status, value);
@@ -362,32 +363,32 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 			// The slot holds an 8-byte pointer to the caller's storage. Load
 			// the pointer, then dereference with the pointed-to value's width
 			// (e.g. `ldrb` for `ref bool`) — NOT the 8-byte `ldr` used before.
-			status.code += `ldr x0, [x29, #${offset}]\n`;
-			status.code += deref_load_instr("x0", type_name);
+			emit_asm(status, `ldr x0, [x29, #${offset}]\n`);
+			emit_asm(status, deref_load_instr("x0", type_name));
 		} else {
 			const size = aarch64_size(type_name);
 			const signed = is_signed_type(type_name);
 			if (size === 1) {
-				status.code += signed ? `ldrsb x0, [x29, #${offset}]` : `ldrb w0, [x29, #${offset}]`;
+				emit_asm(status, signed ? `ldrsb x0, [x29, #${offset}]` : `ldrb w0, [x29, #${offset}]`);
 			} else if (size === 2) {
-				status.code += signed ? `ldrsh x0, [x29, #${offset}]` : `ldrh w0, [x29, #${offset}]`;
+				emit_asm(status, signed ? `ldrsh x0, [x29, #${offset}]` : `ldrh w0, [x29, #${offset}]`);
 			} else if (size === 4) {
-				status.code += signed ? `ldrsw x0, [x29, #${offset}]` : `ldr w0, [x29, #${offset}]`;
+				emit_asm(status, signed ? `ldrsw x0, [x29, #${offset}]` : `ldr w0, [x29, #${offset}]`);
 			} else {
-				status.code += `ldr x0, [x29, #${offset}]`;
+				emit_asm(status, `ldr x0, [x29, #${offset}]`);
 			}
 		}
 	} else {
 		const type_name = node.type?.name || "";
 		const is_array = node.type?.is_array || false;
 		if (is_array) {
-			status.code += `adr x0, ${value}`;
+			emit_asm(status, `adr x0, ${value}`);
 		} else if (type_name === "string" && status.string_literal_names?.has(value)) {
 			// A named folded-const string literal: the label's byte length was
 			// recorded when the data was emitted (string_literal_lengths).
 			const len = status.string_literal_lengths?.get(value) ?? 0;
-			status.code += `adr x0, ${value}\n`;
-			status.code += `mov x1, #${len}\n`;
+			emit_asm(status, `adr x0, ${value}\n`);
+			emit_asm(status, `mov x1, #${len}\n`);
 		} else {
 			const size =
 				type_name === "uint8" ||
@@ -399,11 +400,11 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 						? 2
 						: 8;
 			if (size === 1) {
-				status.code += `adr x0, ${value}\nldrb w0, [x0]`;
+				emit_asm(status, `adr x0, ${value}\nldrb w0, [x0]`);
 			} else if (size === 2) {
-				status.code += `adr x0, ${value}\nldrh w0, [x0]`;
+				emit_asm(status, `adr x0, ${value}\nldrh w0, [x0]`);
 			} else {
-				status.code += `adr x0, ${value}\nldr x0, [x0]`;
+				emit_asm(status, `adr x0, ${value}\nldr x0, [x0]`);
 			}
 		}
 	}

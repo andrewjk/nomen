@@ -10,6 +10,7 @@ import type DeclarationNode from "../nodes/DeclarationNode.ts";
 import type OperationNode from "../nodes/OperationNode.ts";
 import type ValueNode from "../nodes/ValueNode.ts";
 import { resolve_at_element_addr } from "./build_access_node.ts";
+import { asm_code_len, emit_asm, ensure_newline } from "./utils/code_buffer.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
 import { get_field_offset } from "./utils/struct_layout.ts";
 
@@ -321,8 +322,8 @@ function sync_lane1(vreg: string, b: string, status: BuildStatus): void {
 		if (!status.stack_offsets) status.stack_offsets = new Map();
 		status.stack_offsets.set(b, slot);
 	}
-	status.code += `mov v0.d[0], ${vreg}.d[1]\n`;
-	status.code += `str d0, [x29, #${slot}]\n`;
+	emit_asm(status, `mov v0.d[0], ${vreg}.d[1]\n`);
+	emit_asm(status, `str d0, [x29, #${slot}]\n`);
 }
 
 /** Build a pair expression into `dest` (a v-temp or pair v-register).
@@ -334,14 +335,14 @@ function emit_pnode(p: PNode, dest: string, temps: { n: number }, status: BuildS
 	switch (p.k) {
 		case "fieldpair": {
 			const base = resolve_at_element_addr(p.at, status)!;
-			status.code += `ldur ${qname(dest)}, [${base}, #${p.offA}]\n`;
+			emit_asm(status, `ldur ${qname(dest)}, [${base}, #${p.offA}]\n`);
 			return;
 		}
 		case "pair":
-			status.code += `fmov ${dest}.2d, ${p.vreg}.2d\n`;
+			emit_asm(status, `fmov ${dest}.2d, ${p.vreg}.2d\n`);
 			return;
 		case "scalar":
-			status.code += `dup ${dest}.2d, v${p.reg.slice(1)}.d[0]\n`;
+			emit_asm(status, `dup ${dest}.2d, v${p.reg.slice(1)}.d[0]\n`);
 			return;
 		case "op": {
 			const lop = pnode_operand(p.left);
@@ -367,7 +368,7 @@ function emit_pnode(p: PNode, dest: string, temps: { n: number }, status: BuildS
 			if (dup_left) {
 				const reg = (p.left as { k: "scalar"; name: string; reg: string }).reg;
 				const tmp = `v${temps.n++}`;
-				status.code += `dup ${tmp}.2d, v${reg.slice(1)}.d[0]\n`;
+				emit_asm(status, `dup ${tmp}.2d, v${reg.slice(1)}.d[0]\n`);
 				lstr = `${tmp}.2d`;
 			}
 			if (!lstr) {
@@ -381,7 +382,7 @@ function emit_pnode(p: PNode, dest: string, temps: { n: number }, status: BuildS
 				emit_pnode(p.right, tmp, temps, status);
 			}
 			const mn = p.op === "+" ? "fadd" : p.op === "-" ? "fsub" : "fmul";
-			status.code += `${mn} ${dest}.2d, ${lstr}, ${rstr}\n`;
+			emit_asm(status, `${mn} ${dest}.2d, ${lstr}, ${rstr}\n`);
 			return;
 		}
 	}
@@ -592,8 +593,8 @@ export function slp_pair_hints(
 export function slp_pair_entry_pack(vreg: string, b: string, status: BuildStatus): void {
 	const slot = status.stack_offsets?.get(b);
 	if (slot === undefined) return;
-	status.code += `ldr d0, [x29, #${slot}]\n`;
-	status.code += `mov ${vreg}.d[1], v0.d[0]\n`;
+	emit_asm(status, `ldr d0, [x29, #${slot}]\n`);
+	emit_asm(status, `mov ${vreg}.d[1], v0.d[0]\n`);
 }
 
 export type SlpPair = { a: string; b: string; vreg: string };
@@ -643,7 +644,7 @@ function try_declare_pair(
 	if (root.k === "fieldpair") {
 		const base = pin_field_receiver(root, status);
 		if (!base) return false;
-		status.code += `ldur ${qname(dest)}, [${base}, #${root.offA}]\n`;
+		emit_asm(status, `ldur ${qname(dest)}, [${base}, #${root.offA}]\n`);
 		sync_lane1(dest, db.name, status);
 		return true;
 	}
@@ -687,7 +688,7 @@ function try_var_assign_pair(
 		const base = pin_field_receiver(root.right, status);
 		if (!base) return false;
 		emit_pnode(root.right, "v1", { n: 2 }, status);
-		status.code += `${mn(root.op)} ${dest}.2d, ${dest}.2d, v1.2d\n`;
+		emit_asm(status, `${mn(root.op)} ${dest}.2d, ${dest}.2d, v1.2d\n`);
 		sync_lane1(dest, nb, status);
 		return true;
 	}
@@ -695,7 +696,7 @@ function try_var_assign_pair(
 		const base = pin_field_receiver(root.left, status);
 		if (!base) return false;
 		emit_pnode(root.left, "v1", { n: 2 }, status);
-		status.code += `${mn(root.op)} ${dest}.2d, v1.2d, ${dest}.2d\n`;
+		emit_asm(status, `${mn(root.op)} ${dest}.2d, v1.2d, ${dest}.2d\n`);
 		sync_lane1(dest, nb, status);
 		return true;
 	}
@@ -768,15 +769,15 @@ function try_field_assign_pair(
 				const base = resolve_at_element_addr(fa.at, status);
 				if (!base) return false;
 				status.last_result_is_heap = false;
-				status.code += `ldur q0, [${base}, #${offA}]\n`;
+				emit_asm(status, `ldur q0, [${base}, #${offA}]\n`);
 				emit_pnode(rest, "v1", { n: 2 }, status);
 				const mn = oa.op === "+" ? "fadd" : "fsub";
 				if (left_is_old) {
-					status.code += `${mn} v0.2d, v0.2d, v1.2d\n`;
+					emit_asm(status, `${mn} v0.2d, v0.2d, v1.2d\n`);
 				} else {
-					status.code += `${mn} v0.2d, v1.2d, v0.2d\n`;
+					emit_asm(status, `${mn} v0.2d, v1.2d, v0.2d\n`);
 				}
-				status.code += `stur q0, [${base}, #${offA}]\n`;
+				emit_asm(status, `stur q0, [${base}, #${offA}]\n`);
 				return true;
 			}
 		}
@@ -797,11 +798,11 @@ function try_field_assign_pair(
 	if (!base) return false;
 	status.last_result_is_heap = false;
 	if (root.k === "pair") {
-		status.code += `stur ${qname(root.vreg)}, [${base}, #${offA}]\n`;
+		emit_asm(status, `stur ${qname(root.vreg)}, [${base}, #${offA}]\n`);
 		return true;
 	}
 	emit_pnode(root, "v0", { n: 1 }, status);
-	status.code += `stur q0, [${base}, #${offA}]\n`;
+	emit_asm(status, `stur q0, [${base}, #${offA}]\n`);
 	return true;
 }
 
@@ -833,7 +834,7 @@ export function try_emit_slp_pair(
 	if (!ast_a || !ast_b) return 1;
 	if (ast_a.node_type !== kind || ast_b.node_type !== kind) return 1;
 
-	const before = status.code.length;
+	const before = asm_code_len(status);
 	let fused = false;
 	if (kind === "declare") {
 		const na = ctx_stmts[index] as { decl?: { swap?: unknown } };
@@ -850,8 +851,6 @@ export function try_emit_slp_pair(
 		status.code = status.code.slice(0, before);
 		return 1;
 	}
-	if (!status.code.endsWith("\n")) {
-		status.code += "\n";
-	}
+	ensure_newline(status);
 	return 2;
 }

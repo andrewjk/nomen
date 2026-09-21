@@ -25,6 +25,15 @@ export default interface BuildStatus {
 	headers: string;
 	code: string;
 	/**
+	 * aarch64-only. Chunked-buffer internals for `code` (see
+	 * build_aarch64/utils/code_buffer.ts): the emitter appends through
+	 * `emit_asm`, which tracks the buffer's newline tail so the per-line
+	 * guards never peek (and never flatten) the accumulated text. Installed
+	 * per build in build(); the property is undefined when the buffer isn't
+	 * installed (C backend) and every helper falls back to raw string ops.
+	 */
+	asm_code_state?: import("../build_aarch64/utils/code_buffer.ts").AsmCodeState;
+	/**
 	 * Which translation unit this build is emitting, for the System-lib
 	 * tiering split:
 	 * - "all" (default/undefined): emit everything into one TU (the

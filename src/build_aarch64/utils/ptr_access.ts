@@ -1,5 +1,6 @@
 import type BuildStatus from "../../build_c/BuildStatus.ts";
 import type Type from "../../nodes/Type.ts";
+import { emit_asm } from "./code_buffer.ts";
 import { get_struct_size } from "./struct_layout.ts";
 
 /**
@@ -43,11 +44,11 @@ function aarch64_scalar_size(name: string): number {
  */
 export function emit_index_address(size: number, status: BuildStatus) {
 	if (size === 1) {
-		status.code += `add x9, x0, x1\n`;
+		emit_asm(status, `add x9, x0, x1\n`);
 		return;
 	}
-	status.code += `mov x2, #${size}\n`;
-	status.code += `madd x9, x1, x2, x0\n`;
+	emit_asm(status, `mov x2, #${size}\n`);
+	emit_asm(status, `madd x9, x1, x2, x0\n`);
 }
 
 /**
@@ -61,21 +62,21 @@ export function emit_index_load(elem: Type, status: BuildStatus) {
 	const name = elem.name;
 	const size = pointer_element_size(elem, status);
 	if (name === "string") {
-		status.code += `ldp x0, x1, [x9]\n`;
+		emit_asm(status, `ldp x0, x1, [x9]\n`);
 		return;
 	}
 	const is_struct = !!status.structs.find(
 		(s) => s.name === name && !s.is_simple_type && !s.is_class,
 	);
 	if (is_struct && size > 8) {
-		status.code += `mov x0, x8\n`;
-		status.code += `mov x1, x9\n`;
-		status.code += `mov x2, #${size}\n`;
-		status.code += `bl _memcpy\n`;
-		status.code += `mov x0, x8\n`;
+		emit_asm(status, `mov x0, x8\n`);
+		emit_asm(status, `mov x1, x9\n`);
+		emit_asm(status, `mov x2, #${size}\n`);
+		emit_asm(status, `bl _memcpy\n`);
+		emit_asm(status, `mov x0, x8\n`);
 		return;
 	}
-	status.code += `${scalar_load_instr(name, size)}\n`;
+	emit_asm(status, `${scalar_load_instr(name, size)}\n`);
 }
 
 /** Width-matched store of the element at x9; the value follows the standard
@@ -85,20 +86,20 @@ export function emit_index_store(elem: Type, status: BuildStatus) {
 	const name = elem.name;
 	const size = pointer_element_size(elem, status);
 	if (name === "string") {
-		status.code += `stp x0, x1, [x9]\n`;
+		emit_asm(status, `stp x0, x1, [x9]\n`);
 		return;
 	}
 	const is_struct = !!status.structs.find(
 		(s) => s.name === name && !s.is_simple_type && !s.is_class,
 	);
 	if (is_struct && size > 8) {
-		status.code += `mov x1, x0\n`;
-		status.code += `mov x0, x9\n`;
-		status.code += `mov x2, #${size}\n`;
-		status.code += `bl _memcpy\n`;
+		emit_asm(status, `mov x1, x0\n`);
+		emit_asm(status, `mov x0, x9\n`);
+		emit_asm(status, `mov x2, #${size}\n`);
+		emit_asm(status, `bl _memcpy\n`);
 		return;
 	}
-	status.code += `${scalar_store_instr(name, size)}\n`;
+	emit_asm(status, `${scalar_store_instr(name, size)}\n`);
 }
 
 export function scalar_load_instr(name: string, size: number): string {

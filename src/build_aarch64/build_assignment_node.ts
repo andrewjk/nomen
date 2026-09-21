@@ -48,6 +48,7 @@ import {
 	record_heap_string_field,
 	trait_class_for,
 } from "./utils/auto_destroy.ts";
+import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
 import { emit_index_address, emit_index_store, pointer_element_size } from "./utils/ptr_access.ts";
 import {
 	allocate_stack_space,
@@ -108,16 +109,16 @@ function field_is_struct_string(
 function load_ref_param_pointer(reg: string, name: string, status: BuildStatus) {
 	const alloc_reg = status.register_allocations?.get(name);
 	if (alloc_reg) {
-		status.code += `${alloc_reg.startsWith("d") ? "fmov" : "mov"} ${reg}, ${alloc_reg}\n`;
+		emit_asm(status, `${alloc_reg.startsWith("d") ? "fmov" : "mov"} ${reg}, ${alloc_reg}\n`);
 		return;
 	}
 	const offset = status.stack_offsets?.get(name);
 	if (offset !== undefined) {
-		status.code += `ldr ${reg}, [x29, #${offset}]\n`;
+		emit_asm(status, `ldr ${reg}, [x29, #${offset}]\n`);
 		return;
 	}
 	emit_var_address(status, reg, name);
-	status.code += `ldr ${reg}, [${reg}]\n`;
+	emit_asm(status, `ldr ${reg}, [${reg}]\n`);
 }
 
 function get_store_instruction(size: number): string {
@@ -183,7 +184,7 @@ function get_base_address(access: AccessNode, status: BuildStatus, reg: string) 
 		const paramReg = status.function_param_regs?.get(name);
 		if (paramReg) {
 			if (paramReg !== reg) {
-				status.code += `mov ${reg}, ${paramReg}\n`;
+				emit_asm(status, `mov ${reg}, ${paramReg}\n`);
 			}
 		} else if (is_local_ref_var(name, status)) {
 			emit_deref_var_address(status, reg, name);
@@ -192,11 +193,9 @@ function get_base_address(access: AccessNode, status: BuildStatus, reg: string) 
 		}
 	} else {
 		emit_address_of(access.target, status);
-		if (!status.code.endsWith("\n")) {
-			status.code += "\n";
-		}
+		ensure_newline(status);
 		if (reg !== "x0") {
-			status.code += `mov ${reg}, x0\n`;
+			emit_asm(status, `mov ${reg}, x0\n`);
 		}
 	}
 }
@@ -273,11 +272,7 @@ function is_first_init_field_write(
 }
 
 /** Record that `self.<field>` now holds a real value inside a custom `#init`. */
-function mark_init_field_write(
-	target_var: string,
-	field_name: string,
-	status: BuildStatus,
-): void {
+function mark_init_field_write(target_var: string, field_name: string, status: BuildStatus): void {
 	if (target_var === "self" && status.current_function?.name === "#init") {
 		if (!status.init_assigned_fields) status.init_assigned_fields = new Set();
 		status.init_assigned_fields.add(`self.${field_name}`);
@@ -316,17 +311,17 @@ function is_nullable_struct_assignment(node: AssignmentNode, status: BuildStatus
  */
 function emit_compound_op(op: string, status: BuildStatus, target_is_float = false) {
 	if (target_is_float) {
-		status.code += `fmov d1, x1\n`;
-		status.code += `fmov d0, x0\n`;
-		if (op === "+=") status.code += `fadd d0, d1, d0\n`;
-		else if (op === "-=") status.code += `fsub d0, d1, d0\n`;
-		else if (op === "*=") status.code += `fmul d0, d1, d0\n`;
-		status.code += `fmov x0, d0\n`;
+		emit_asm(status, `fmov d1, x1\n`);
+		emit_asm(status, `fmov d0, x0\n`);
+		if (op === "+=") emit_asm(status, `fadd d0, d1, d0\n`);
+		else if (op === "-=") emit_asm(status, `fsub d0, d1, d0\n`);
+		else if (op === "*=") emit_asm(status, `fmul d0, d1, d0\n`);
+		emit_asm(status, `fmov x0, d0\n`);
 		return;
 	}
-	if (op === "+=") status.code += `add x0, x1, x0\n`;
-	else if (op === "-=") status.code += `sub x0, x1, x0\n`;
-	else if (op === "*=") status.code += `mul x0, x1, x0\n`;
+	if (op === "+=") emit_asm(status, `add x0, x1, x0\n`);
+	else if (op === "-=") emit_asm(status, `sub x0, x1, x0\n`);
+	else if (op === "*=") emit_asm(status, `mul x0, x1, x0\n`);
 }
 
 function emit_rhs_value(rhs: BaseNode, nir: NirExpr | null | undefined, status: BuildStatus): void {
@@ -353,7 +348,7 @@ export function emit_swap_value(
 	} else {
 		build_node(swap, status);
 	}
-	if (!status.code.endsWith("\n")) status.code += "\n";
+	ensure_newline(status);
 }
 
 function build_nullable_struct_assignment(
@@ -373,14 +368,14 @@ function build_nullable_struct_assignment(
 		}
 		// Build the value (a constructor or another struct value) → address in x0.
 		emit_rhs_value(node.right_value, nir_rhs, status);
-		if (!status.code.endsWith("\n")) status.code += "\n";
+		ensure_newline(status);
 		// Copy the struct value into the variable's slot, then set the flag.
 		const decl = status.scoped_declarations.find((d) => d.name === name);
 		const type_name = decl?.type?.name || status.variable_types?.get(name)?.name || "";
 		const struct_size = get_struct_size(type_name, status);
 		const dst_offset = status.stack_offsets?.get(name);
 		emit_struct_copy("x0", "x29", dst_offset ?? 0, struct_size, status);
-		status.code += `mov x9, #1\n`;
+		emit_asm(status, `mov x9, #1\n`);
 		emit_var_store(status, "x9", flag_name, 8);
 		return;
 	}
@@ -397,22 +392,22 @@ function build_nullable_struct_assignment(
 
 	// Resolve the target object's address into x9 (preserved across RHS build).
 	get_source_address(access.target, status);
-	if (!status.code.endsWith("\n")) status.code += "\n";
-	status.code += `str x0, [sp, #-16]!\n`;
+	ensure_newline(status);
+	emit_asm(status, `str x0, [sp, #-16]!\n`);
 
 	if (rhs_is_null) {
-		status.code += `ldr x9, [sp], #16\n`;
-		status.code += `str xzr, [x9, #${has_offset}]\n`;
+		emit_asm(status, `ldr x9, [sp], #16\n`);
+		emit_asm(status, `str xzr, [x9, #${has_offset}]\n`);
 		return;
 	}
 
 	emit_rhs_value(node.right_value, nir_rhs, status);
-	if (!status.code.endsWith("\n")) status.code += "\n";
-	status.code += `ldr x9, [sp], #16\n`;
+	ensure_newline(status);
+	emit_asm(status, `ldr x9, [sp], #16\n`);
 	// x0 = source address, x9 = object base. Copy value in, set flag.
 	emit_struct_copy("x0", "x9", field_offset, struct_size, status);
-	status.code += `mov x0, #1\n`;
-	status.code += `str x0, [x9, #${has_offset}]\n`;
+	emit_asm(status, `mov x0, #1\n`);
+	emit_asm(status, `str x0, [x9, #${has_offset}]\n`);
 }
 
 /**
@@ -485,16 +480,16 @@ function try_float_field_rmw(
 	status.last_result_is_heap = false;
 	status.float_result_in_d0 = false;
 	build_float_tree(rest, "d0", { v: 0 }, status);
-	status.code += `ldr d1, [${base_reg}, #${offset}]\n`;
+	emit_asm(status, `ldr d1, [${base_reg}, #${offset}]\n`);
 	if (op.op === "+") {
 		// old + rhs ≡ rhs + old (bitwise).
-		status.code += `fadd d0, d0, d1\n`;
+		emit_asm(status, `fadd d0, d0, d1\n`);
 	} else if (old_is_left) {
-		status.code += `fsub d0, d1, d0\n`;
+		emit_asm(status, `fsub d0, d1, d0\n`);
 	} else {
-		status.code += `fsub d0, d0, d1\n`;
+		emit_asm(status, `fsub d0, d0, d1\n`);
 	}
-	status.code += `str d0, [${base_reg}, #${offset}]\n`;
+	emit_asm(status, `str d0, [${base_reg}, #${offset}]\n`);
 	return true;
 }
 
@@ -566,36 +561,32 @@ function build_swap(node: AssignmentNode, status: BuildStatus, nir_swap?: NirExp
 		const field_is_struct = !!field_struct && !field_struct.is_class;
 
 		emit_swap_value(node.swap, nir_swap, status);
-		status.code += `// swap: store replacement to rhs source field\n`;
-		status.code += `str x0, [sp, #-16]!\n`;
+		emit_asm(status, `// swap: store replacement to rhs source field\n`);
+		emit_asm(status, `str x0, [sp, #-16]!\n`);
 
 		get_source_address(rhs_access.target, status);
-		if (!status.code.endsWith("\n")) {
-			status.code += "\n";
-		}
-		status.code += `ldr x1, [sp], #16\n`;
+		ensure_newline(status);
+		emit_asm(status, `ldr x1, [sp], #16\n`);
 		if (field_is_struct) {
 			const field_size = get_struct_size(field_type!.name, status);
 			emit_struct_copy("x1", "x0", rhs_offset, field_size, status);
 		} else {
-			status.code += `str x1, [x0, #${rhs_offset}]\n`;
+			emit_asm(status, `str x1, [x0, #${rhs_offset}]\n`);
 		}
 	} else if (rhs.node_type === "value") {
 		const rhs_value = rhs as ValueNode;
 		emit_swap_value(node.swap, nir_swap, status);
-		status.code += `// swap: store replacement to rhs variable\n`;
-		status.code += `str x0, [sp, #-16]!\n`;
+		emit_asm(status, `// swap: store replacement to rhs variable\n`);
+		emit_asm(status, `str x0, [sp, #-16]!\n`);
 		const rhs_name = rhs_value.value;
 		const paramReg = status.function_param_regs?.get(rhs_name);
 		if (paramReg) {
-			status.code += `mov x0, ${paramReg}\n`;
+			emit_asm(status, `mov x0, ${paramReg}\n`);
 		} else {
 			emit_var_address(status, "x0", rhs_name);
 		}
-		if (!status.code.endsWith("\n")) {
-			status.code += "\n";
-		}
-		status.code += `ldr x1, [sp], #16\n`;
+		ensure_newline(status);
+		emit_asm(status, `ldr x1, [sp], #16\n`);
 		// A struct variable needs its bytes struct-copied back in; a class
 		// variable is a single pointer store (plus an anchor-slot update).
 		const rhs_type = type_from_value_node(rhs);
@@ -606,10 +597,10 @@ function build_swap(node: AssignmentNode, status: BuildStatus, nir_swap?: NirExp
 			const rhs_size = get_struct_size(rhs_type.name, status);
 			emit_struct_copy("x1", "x0", 0, rhs_size, status);
 		} else {
-			status.code += `str x1, [x0]\n`;
+			emit_asm(status, `str x1, [x0]\n`);
 			const rhs_anchor = find_anchor_slot(status, rhs_name);
 			if (rhs_anchor !== undefined) {
-				status.code += `str x1, [x29, #${rhs_anchor}]\n`;
+				emit_asm(status, `str x1, [x29, #${rhs_anchor}]\n`);
 			}
 		}
 		status.moved?.delete(rhs_name);
@@ -635,7 +626,7 @@ export function get_source_address(value: BaseNode, status: BuildStatus, nir?: N
 		const name = (value as ValueNode).value;
 		const paramReg = status.function_param_regs?.get(name);
 		if (paramReg) {
-			status.code += `mov x0, ${paramReg}\n`;
+			emit_asm(status, `mov x0, ${paramReg}\n`);
 		} else if (is_local_ref_var(name, status)) {
 			emit_deref_var_address(status, "x0", name);
 		} else {
@@ -643,14 +634,10 @@ export function get_source_address(value: BaseNode, status: BuildStatus, nir?: N
 		}
 	} else if (nir && nir.node === value) {
 		emit_expr_from_nir(nir, status);
-		if (!status.code.endsWith("\n")) {
-			status.code += "\n";
-		}
+		ensure_newline(status);
 	} else {
 		build_node(value, status);
-		if (!status.code.endsWith("\n")) {
-			status.code += "\n";
-		}
+		ensure_newline(status);
 	}
 }
 
@@ -781,21 +768,21 @@ export default function build_assignment_node(
 							const label_id = (status.label_counter = (status.label_counter ?? 0) + 1);
 							const no_free_label = `.Ltrait_no_free_${label_id}`;
 							emit_var_load(status, "x0", name, 8);
-							status.code += `cbz x0, ${no_free_label}\n`;
-							status.code += `bl ${trait_class_trait}_destroy\n`;
+							emit_asm(status, `cbz x0, ${no_free_label}\n`);
+							emit_asm(status, `bl ${trait_class_trait}_destroy\n`);
 							emit_var_load(status, "x0", name, 8);
 							emit_free(status);
-							status.code += `${no_free_label}:\n`;
+							emit_asm(status, `${no_free_label}:\n`);
 						}
 						mark_moved_if_struct(node.right_value, status);
 						status.moved?.delete(name);
 						emit_rhs_value(node.right_value, nir_rhs, status);
-						if (!status.code.endsWith("\n")) status.code += "\n";
+						ensure_newline(status);
 						anchor_heap_pointer(status, name, decl_frame);
 						mark_anchor_destroy(status, name, trait_class_trait);
 						const offset = status.stack_offsets?.get(name);
 						if (offset !== undefined) {
-							status.code += `str x0, [x29, #${offset}]\n`;
+							emit_asm(status, `str x0, [x29, #${offset}]\n`);
 						}
 						build_swap(node, status, nir_swap);
 						return;
@@ -817,9 +804,9 @@ export default function build_assignment_node(
 					const ref_slot = status.ref_class_slots?.get(name);
 					if (ref_slot !== undefined) {
 						const tmp = allocate_stack_space(status, 8, 8);
-						status.code += `ldr x1, [x29, #${ref_slot}]\n`;
-						status.code += `ldr x0, [x1]\n`;
-						status.code += `str x0, [x29, #${tmp}]\n`;
+						emit_asm(status, `ldr x1, [x29, #${ref_slot}]\n`);
+						emit_asm(status, `ldr x0, [x1]\n`);
+						emit_asm(status, `str x0, [x29, #${tmp}]\n`);
 						emit_destroy_for_anchor_slot(
 							status,
 							tmp,
@@ -827,15 +814,15 @@ export default function build_assignment_node(
 							rhs_type.type_args,
 							rhs_type.is_nullable,
 						);
-						status.code += `ldr x0, [x29, #${tmp}]\n`;
+						emit_asm(status, `ldr x0, [x29, #${tmp}]\n`);
 						emit_free(status);
 						mark_moved_if_struct(node.right_value, status);
 						emit_rhs_value(node.right_value, nir_rhs, status);
-						if (!status.code.endsWith("\n")) status.code += "\n";
-						status.code += `ldr x1, [x29, #${ref_slot}]\n`;
-						status.code += `str x0, [x1]\n`;
+						ensure_newline(status);
+						emit_asm(status, `ldr x1, [x29, #${ref_slot}]\n`);
+						emit_asm(status, `str x0, [x1]\n`);
 						if (paramReg) {
-							status.code += `mov ${paramReg}, x0\n`;
+							emit_asm(status, `mov ${paramReg}, x0\n`);
 						}
 						build_swap(node, status, nir_swap);
 						return;
@@ -851,14 +838,14 @@ export default function build_assignment_node(
 						}
 						mark_moved_if_struct(node.right_value, status);
 						emit_rhs_value(node.right_value, nir_rhs, status);
-						if (!status.code.endsWith("\n")) status.code += "\n";
+						ensure_newline(status);
 						anchor_heap_pointer(status, name, decl_frame);
 						if (is_alias) {
 							mark_anchor_destroy(status, name, rhs_type.name, rhs_type.type_args);
 						}
 						const offset = status.stack_offsets?.get(name);
 						if (offset !== undefined) {
-							status.code += `str x0, [x29, #${offset}]\n`;
+							emit_asm(status, `str x0, [x29, #${offset}]\n`);
 						}
 						build_swap(node, status, nir_swap);
 						return;
@@ -903,8 +890,8 @@ export default function build_assignment_node(
 					} else if (alias_flag !== undefined) {
 						const label_id = (status.label_counter = (status.label_counter ?? 0) + 1);
 						const no_free_label = `.Lalias_no_free_${label_id}`;
-						status.code += `ldr x9, [x29, #${alias_flag}]\n`;
-						status.code += `cbz x9, ${no_free_label}\n`;
+						emit_asm(status, `ldr x9, [x29, #${alias_flag}]\n`);
+						emit_asm(status, `cbz x9, ${no_free_label}\n`);
 						emit_destroy_for_decl(
 							status,
 							name,
@@ -915,34 +902,34 @@ export default function build_assignment_node(
 						);
 						emit_var_load(status, "x0", name, 8);
 						emit_free(status);
-						status.code += `${no_free_label}:\n`;
+						emit_asm(status, `${no_free_label}:\n`);
 					} else if (decl_is_nullable && !status.moved?.has(name)) {
 						const label_id = (status.label_counter = (status.label_counter ?? 0) + 1);
 						const no_free_label = `.Lnullable_no_free_${label_id}`;
 						emit_var_load(status, "x0", name, 8);
-						status.code += `cbz x0, ${no_free_label}\n`;
+						emit_asm(status, `cbz x0, ${no_free_label}\n`);
 						emit_destroy_for_decl(status, name, rhs_type.name, undefined, rhs_type.type_args, true);
 						emit_var_load(status, "x0", name, 8);
 						emit_free(status);
-						status.code += `${no_free_label}:\n`;
+						emit_asm(status, `${no_free_label}:\n`);
 					}
 					mark_moved_if_struct(node.right_value, status);
 					// Reassignment gives the variable a new valid value — clear any
 					// stale moved flag so scope-exit cleanup frees this instance.
 					status.moved?.delete(name);
 					emit_rhs_value(node.right_value, nir_rhs, status);
-					if (!status.code.endsWith("\n")) status.code += "\n";
+					ensure_newline(status);
 					anchor_heap_pointer(status, name, decl_frame);
 					if (is_alias) {
 						mark_anchor_destroy(status, name, rhs_type.name, rhs_type.type_args);
 					}
 					const offset = status.stack_offsets?.get(name);
 					if (offset !== undefined) {
-						status.code += `str x0, [x29, #${offset}]\n`;
+						emit_asm(status, `str x0, [x29, #${offset}]\n`);
 					}
 					if (alias_flag !== undefined) {
-						status.code += `mov x9, #1\n`;
-						status.code += `str x9, [x29, #${alias_flag}]\n`;
+						emit_asm(status, `mov x9, #1\n`);
+						emit_asm(status, `str x9, [x29, #${alias_flag}]\n`);
 					}
 					build_swap(node, status, nir_swap);
 					return;
@@ -981,24 +968,22 @@ export default function build_assignment_node(
 				);
 			}
 			get_source_address(node.right_value, status, nir_rhs);
-			if (!status.code.endsWith("\n")) {
-				status.code += "\n";
-			}
+			ensure_newline(status);
 			if (paramReg && is_mutable_param(name, status)) {
 				if (status.function_ref_params?.has(name)) {
-					status.code += `mov ${paramReg}, x0\n`;
+					emit_asm(status, `mov ${paramReg}, x0\n`);
 				} else {
-					status.code += `mov x1, ${paramReg}\n`;
+					emit_asm(status, `mov x1, ${paramReg}\n`);
 					emit_struct_copy("x0", "x1", 0, struct_size, status);
 				}
 			} else if (paramReg) {
-				status.code += `// cannot assign to const param\n`;
+				emit_asm(status, `// cannot assign to const param\n`);
 			} else if (is_local_ref_var(name, status)) {
 				if (rhs_struct) {
 					const anchor = find_anchor_slot(status, name);
 					if (anchor !== undefined) {
 						const var_offset = status.stack_offsets?.get(name);
-						status.code += `str x0, [sp, #-16]!\n`;
+						emit_asm(status, `str x0, [sp, #-16]!\n`);
 						// Destroy the old instance (#destroy + free owned fields)
 						// before freeing its memory, so a class with class fields
 						// doesn't leak them each reassignment (compounds in a loop).
@@ -1009,30 +994,30 @@ export default function build_assignment_node(
 							rhs_type.type_args,
 							rhs_type.is_nullable,
 						);
-						status.code += `ldr x0, [x29, #${anchor}]\n`;
+						emit_asm(status, `ldr x0, [x29, #${anchor}]\n`);
 						emit_free(status);
-						status.code += `ldr x3, [sp], #16\n`;
-						status.code += `str x3, [x29, #${anchor}]\n`;
+						emit_asm(status, `ldr x3, [sp], #16\n`);
+						emit_asm(status, `str x3, [x29, #${anchor}]\n`);
 						if (var_offset !== undefined) {
-							status.code += `str x3, [x29, #${var_offset}]\n`;
+							emit_asm(status, `str x3, [x29, #${var_offset}]\n`);
 						} else {
 							emit_var_address(status, "x1", name);
-							status.code += `str x3, [x1]\n`;
+							emit_asm(status, `str x3, [x1]\n`);
 						}
 					} else {
 						emit_var_address(status, "x1", name);
-						status.code += `str x0, [x1]\n`;
+						emit_asm(status, `str x0, [x1]\n`);
 					}
 				} else {
 					emit_var_address(status, "x1", name);
-					status.code += `str x0, [x1]\n`;
+					emit_asm(status, `str x0, [x1]\n`);
 				}
 			} else {
 				if (rhs_struct) {
 					const anchor = find_anchor_slot(status, name);
 					if (anchor !== undefined) {
 						const var_offset = status.stack_offsets?.get(name);
-						status.code += `str x0, [sp, #-16]!\n`;
+						emit_asm(status, `str x0, [sp, #-16]!\n`);
 						// Run the old instance's #destroy (and free its owned class
 						// fields) before freeing its memory — a bare free here would
 						// leak the fields every reassignment, which compounds in a
@@ -1044,15 +1029,15 @@ export default function build_assignment_node(
 							rhs_type.type_args,
 							rhs_type.is_nullable,
 						);
-						status.code += `ldr x0, [x29, #${anchor}]\n`;
+						emit_asm(status, `ldr x0, [x29, #${anchor}]\n`);
 						emit_free(status);
-						status.code += `ldr x3, [sp], #16\n`;
-						status.code += `str x3, [x29, #${anchor}]\n`;
+						emit_asm(status, `ldr x3, [sp], #16\n`);
+						emit_asm(status, `str x3, [x29, #${anchor}]\n`);
 						if (var_offset !== undefined) {
-							status.code += `str x3, [x29, #${var_offset}]\n`;
+							emit_asm(status, `str x3, [x29, #${var_offset}]\n`);
 						} else {
 							emit_var_address(status, "x1", name);
-							status.code += `str x3, [x1]\n`;
+							emit_asm(status, `str x3, [x1]\n`);
 						}
 					} else {
 						emit_var_address(status, "x1", name);
@@ -1085,7 +1070,7 @@ export default function build_assignment_node(
 				emit_enum_payload_frees(status, rhs_type.name, name);
 			}
 			emit_rhs_value(node.right_value, nir_rhs, status);
-			if (!status.code.endsWith("\n")) status.code += "\n";
+			ensure_newline(status);
 			emit_var_address(status, "x1", name);
 			emit_struct_copy("x0", "x1", 0, enum_size, status);
 			build_swap(node, status, nir_swap);
@@ -1102,25 +1087,25 @@ export default function build_assignment_node(
 		const store_reg = get_store_reg("x0", size);
 		if (paramReg) {
 			if (is_mutable_param(name, status)) {
-				status.code += `mov x2, ${paramReg}\n`;
+				emit_asm(status, `mov x2, ${paramReg}\n`);
 				emit_rhs_value(node.right_value, nir_rhs, status);
 				if (node.operator) {
 					// x0 holds the RHS; the old value lands in x1. (The
 					// historical `mov x1, x0` here clobbered the old value
 					// with the RHS, making `p += r` compute r + r.)
-					status.code += `\nstr x0, [sp, #-16]!\n`;
+					emit_asm(status, `\nstr x0, [sp, #-16]!\n`);
 					const load_op = get_load_instruction(size);
 					const load_reg = get_load_reg("x1", size);
-					status.code += `${load_op} ${load_reg}, [x2]\n`;
-					status.code += `str x1, [sp, #-16]!\n`;
-					status.code += `ldr x0, [sp], #16\n`;
-					status.code += `ldr x1, [sp], #16\n`;
+					emit_asm(status, `${load_op} ${load_reg}, [x2]\n`);
+					emit_asm(status, `str x1, [sp, #-16]!\n`);
+					emit_asm(status, `ldr x0, [sp], #16\n`);
+					emit_asm(status, `ldr x1, [sp], #16\n`);
 					emit_compound_op(node.operator, status, is_float_type(lhs_type_name));
 				}
-				status.code += `\n${store_op} ${store_reg}, [x2]\n`;
+				emit_asm(status, `\n${store_op} ${store_reg}, [x2]\n`);
 			} else {
 				emit_rhs_value(node.right_value, nir_rhs, status);
-				status.code += `\n// cannot assign to const param\n`;
+				emit_asm(status, `\n// cannot assign to const param\n`);
 			}
 		} else if (status.function_ref_params?.has(name)) {
 			const struct_type = status.structs.find((s) => s.name === lhs_type_name && s.is_class);
@@ -1131,11 +1116,11 @@ export default function build_assignment_node(
 				);
 				if (is_constructor) {
 					emit_rhs_value(node.right_value, nir_rhs, status);
-					if (!status.code.endsWith("\n")) status.code += "\n";
+					ensure_newline(status);
 					anchor_heap_pointer(status, name);
 					const offset = status.stack_offsets?.get(name);
 					if (offset !== undefined) {
-						status.code += `str x0, [x29, #${offset}]\n`;
+						emit_asm(status, `str x0, [x29, #${offset}]\n`);
 					}
 					build_swap(node, status, nir_swap);
 					return;
@@ -1144,7 +1129,7 @@ export default function build_assignment_node(
 			if (struct_type && !node.operator) {
 				status.last_result_is_heap = false;
 				emit_rhs_value(node.right_value, nir_rhs, status);
-				if (!status.code.endsWith("\n")) status.code += "\n";
+				ensure_newline(status);
 				// Reclaim a nullable class instance being overwritten by a non-
 				// constructor RHS (e.g. `a = null` or `a = other_nullable`).
 				// The constructor path above handles its own reclamation; this
@@ -1153,7 +1138,7 @@ export default function build_assignment_node(
 				// free when the var was moved — the callee already freed it.
 				const was_moved = !!status.moved?.has(name);
 				if (find_anchor_slot(status, name) !== undefined) {
-					status.code += `str x0, [sp, #-16]!\n`;
+					emit_asm(status, `str x0, [sp, #-16]!\n`);
 					if (!was_moved) {
 						emit_destroy_for_decl(
 							status,
@@ -1167,7 +1152,7 @@ export default function build_assignment_node(
 						emit_free(status);
 					}
 					consume_anchor_slot(status, name);
-					status.code += `ldr x0, [sp], #16\n`;
+					emit_asm(status, `ldr x0, [sp], #16\n`);
 				}
 				// Only anchor when the RHS produced a fresh heap allocation
 				// (e.g. a factory function). Borrowed references returned by
@@ -1178,7 +1163,7 @@ export default function build_assignment_node(
 				}
 				const offset = status.stack_offsets?.get(name);
 				if (offset !== undefined) {
-					status.code += `str x0, [x29, #${offset}]\n`;
+					emit_asm(status, `str x0, [x29, #${offset}]\n`);
 				}
 				build_swap(node, status, nir_swap);
 				return;
@@ -1203,20 +1188,20 @@ export default function build_assignment_node(
 				load_ref_param_pointer("x2", name, status);
 				const load_op = get_load_instruction(ref_size);
 				const load_reg = get_load_reg("x1", ref_size);
-				status.code += `${load_op} ${load_reg}, [x2]\n`;
+				emit_asm(status, `${load_op} ${load_reg}, [x2]\n`);
 				const keep = rhs_preserves_x1(node, status);
 				if (!keep) {
-					status.code += `str x2, [sp, #-16]!\n`;
-					status.code += `str x1, [sp, #-16]!\n`;
+					emit_asm(status, `str x2, [sp, #-16]!\n`);
+					emit_asm(status, `str x1, [sp, #-16]!\n`);
 				}
 				emit_rhs_value(node.right_value, nir_rhs, status);
-				status.code += `\n`;
+				emit_asm(status, `\n`);
 				if (!keep) {
-					status.code += `ldr x1, [sp], #16\n`;
-					status.code += `ldr x2, [sp], #16\n`;
+					emit_asm(status, `ldr x1, [sp], #16\n`);
+					emit_asm(status, `ldr x2, [sp], #16\n`);
 				}
 				emit_compound_op(node.operator, status, is_float_type(ref_type_name));
-				status.code += `${ref_store_op} ${ref_store_reg}, [x2]\n`;
+				emit_asm(status, `${ref_store_op} ${ref_store_reg}, [x2]\n`);
 			} else {
 				// Plain assignment. Build the RHS FIRST: its reads of the ref
 				// param re-derive the caller's pointer from the stack slot, so
@@ -1226,7 +1211,7 @@ export default function build_assignment_node(
 				// final store would hit a garbage address.
 				status.last_result_is_heap = false;
 				emit_rhs_value(node.right_value, nir_rhs, status);
-				if (!status.code.endsWith("\n")) status.code += "\n";
+				ensure_newline(status);
 				// A `ref string` pointee: the write goes through to the
 				// CALLER's storage, whose scope-exit ownership tracking
 				// (heap_strings) may free it. Storing a non-owning value (a
@@ -1243,10 +1228,10 @@ export default function build_assignment_node(
 				if (ref_size === 16) {
 					// Fat string: write BOTH halves through the caller's
 					// pointer (ptr at +0, len at +8).
-					status.code += `str x0, [x2]\n`;
-					status.code += `str x1, [x2, #8]\n`;
+					emit_asm(status, `str x0, [x2]\n`);
+					emit_asm(status, `str x1, [x2, #8]\n`);
 				} else {
-					status.code += `${ref_store_op} ${ref_store_reg}, [x2]\n`;
+					emit_asm(status, `${ref_store_op} ${ref_store_reg}, [x2]\n`);
 				}
 			}
 		} else if (node.operator) {
@@ -1268,7 +1253,7 @@ export default function build_assignment_node(
 					const mag = parse_int_literal_bigint(lit);
 					if (mag !== null && mag >= 0n && mag <= 4095n) {
 						const mn = arith_op === "+" ? "add" : "sub";
-						status.code += `${mn} ${alloc_reg_op}, ${alloc_reg_op}, #${mag.toString()}\n`;
+						emit_asm(status, `${mn} ${alloc_reg_op}, ${alloc_reg_op}, #${mag.toString()}\n`);
 						build_swap(node, status, nir_swap);
 						return;
 					}
@@ -1276,38 +1261,38 @@ export default function build_assignment_node(
 			}
 			if (alloc_reg_op) {
 				if (alloc_reg_op.startsWith("d")) {
-					status.code += `fmov x1, ${alloc_reg_op}\n`;
+					emit_asm(status, `fmov x1, ${alloc_reg_op}\n`);
 				} else {
-					status.code += `mov x1, ${alloc_reg_op}\n`;
+					emit_asm(status, `mov x1, ${alloc_reg_op}\n`);
 				}
 				const keep = rhs_preserves_x1(node, status);
-				if (!keep) status.code += `str x1, [sp, #-16]!\n`;
+				if (!keep) emit_asm(status, `str x1, [sp, #-16]!\n`);
 				emit_rhs_value(node.right_value, nir_rhs, status);
-				status.code += `\n`;
-				if (!keep) status.code += `ldr x1, [sp], #16\n`;
+				emit_asm(status, `\n`);
+				if (!keep) emit_asm(status, `ldr x1, [sp], #16\n`);
 				emit_compound_op(
 					node.operator,
 					status,
 					alloc_reg_op.startsWith("d") || is_float_type(lhs_type_name),
 				);
 				if (alloc_reg_op.startsWith("d")) {
-					status.code += `fmov ${alloc_reg_op}, x0\n`;
+					emit_asm(status, `fmov ${alloc_reg_op}, x0\n`);
 				} else {
-					status.code += `mov ${alloc_reg_op}, x0\n`;
+					emit_asm(status, `mov ${alloc_reg_op}, x0\n`);
 				}
 			} else {
 				emit_var_address(status, "x1", name);
 				const load_op = get_load_instruction(size);
 				const load_reg = get_load_reg("x1", size);
-				status.code += `${load_op} ${load_reg}, [x1]\n`;
+				emit_asm(status, `${load_op} ${load_reg}, [x1]\n`);
 				const keep = rhs_preserves_x1(node, status);
-				if (!keep) status.code += `str x1, [sp, #-16]!\n`;
+				if (!keep) emit_asm(status, `str x1, [sp, #-16]!\n`);
 				emit_rhs_value(node.right_value, nir_rhs, status);
-				status.code += `\n`;
-				if (!keep) status.code += `ldr x1, [sp], #16\n`;
+				emit_asm(status, `\n`);
+				if (!keep) emit_asm(status, `ldr x1, [sp], #16\n`);
 				emit_compound_op(node.operator, status, is_float_type(lhs_type_name));
 				emit_var_address(status, "x1", name);
-				status.code += `${store_op} ${store_reg}, [x1]\n`;
+				emit_asm(status, `${store_op} ${store_reg}, [x1]\n`);
 			}
 		} else {
 			const lhs_is_heap = status.heap_strings?.has(name);
@@ -1337,7 +1322,7 @@ export default function build_assignment_node(
 						if (float_tree_ok(node.right_value, budget)) {
 							status.float_result_in_d0 = false;
 							build_float_tree(node.right_value, alloc_reg_fast, { v: 0 }, status);
-							if (!status.code.endsWith("\n")) status.code += "\n";
+							ensure_newline(status);
 							build_swap(node, status, nir_swap);
 							return;
 						}
@@ -1353,16 +1338,16 @@ export default function build_assignment_node(
 				emit_rhs_value(node.right_value, nir_rhs, status);
 				const hint_consumed = hint_ok && status.float_dest_hint === undefined;
 				status.float_dest_hint = undefined;
-				if (!status.code.endsWith("\n")) status.code += "\n";
+				ensure_newline(status);
 				if (hint_consumed) {
 					// The root op already wrote the target register.
 				} else if (!status.float_result_in_d0) {
 					if (alloc_reg_fast !== "d0") {
-						status.code += `fmov ${alloc_reg_fast}, d0\n`;
+						emit_asm(status, `fmov ${alloc_reg_fast}, d0\n`);
 					}
 				} else {
 					status.float_result_in_d0 = false;
-					status.code += `fmov ${alloc_reg_fast}, x0\n`;
+					emit_asm(status, `fmov ${alloc_reg_fast}, x0\n`);
 				}
 				build_swap(node, status, nir_swap);
 				return;
@@ -1387,7 +1372,7 @@ export default function build_assignment_node(
 						const allocs = count_int_tree_allocs(node.right_value, status);
 						if (allocs <= INT_TREE_POOL) {
 							build_int_tree(node.right_value, alloc_reg_int, { v: 0 }, status);
-							if (!status.code.endsWith("\n")) status.code += "\n";
+							ensure_newline(status);
 							build_swap(node, status, nir_swap);
 							return;
 						}
@@ -1400,11 +1385,11 @@ export default function build_assignment_node(
 					status.int_dest_hint = alloc_reg_int;
 				}
 				emit_rhs_value(node.right_value, nir_rhs, status);
-				if (!status.code.endsWith("\n")) status.code += "\n";
+				ensure_newline(status);
 				const hint_consumed = status.int_dest_hint === undefined;
 				status.int_dest_hint = undefined;
 				if (!hint_consumed && alloc_reg_int !== "x0") {
-					status.code += `mov ${alloc_reg_int}, x0\n`;
+					emit_asm(status, `mov ${alloc_reg_int}, x0\n`);
 				}
 				build_swap(node, status, nir_swap);
 				return;
@@ -1413,7 +1398,7 @@ export default function build_assignment_node(
 			// Build the RHS first: it may read the current (old) value of `name`
 			// (e.g. `s = s + "x"`), so the old value must still be alive here.
 			emit_rhs_value(node.right_value, nir_rhs, status);
-			if (!status.code.endsWith("\n")) status.code += "\n";
+			ensure_newline(status);
 			// A `view string` RHS into an owned string slot (`s = v`)
 			// materializes an OWNED heap copy bounded by the view's len —
 			// never an alias of the source buffer (mirrors the declaration
@@ -1432,15 +1417,15 @@ export default function build_assignment_node(
 				is_view_value(node.right_value, status);
 			if (rhs_is_view_into_owned) {
 				emit_view_materialize_owned(status);
-				if (!status.code.endsWith("\n")) status.code += "\n";
+				ensure_newline(status);
 			}
 			// Preserve the freshly computed value across freeing the old value.
 			// A fat string rides the (x0, x1) pair — save BOTH halves.
 			const saves_fat_pair = size === 16;
 			if (saves_fat_pair) {
-				status.code += `stp x0, x1, [sp, #-16]!\n`;
+				emit_asm(status, `stp x0, x1, [sp, #-16]!\n`);
 			} else {
-				status.code += `str x0, [sp, #-16]!\n`;
+				emit_asm(status, `str x0, [sp, #-16]!\n`);
 			}
 			if (lhs_is_heap) {
 				emit_var_load(status, "x0", name, 8);
@@ -1448,9 +1433,9 @@ export default function build_assignment_node(
 				status.heap_strings!.delete(name);
 			}
 			if (saves_fat_pair) {
-				status.code += `ldp x0, x1, [sp], #16\n`;
+				emit_asm(status, `ldp x0, x1, [sp], #16\n`);
 			} else {
-				status.code += `ldr x0, [sp], #16\n`;
+				emit_asm(status, `ldr x0, [sp], #16\n`);
 			}
 			// Ownership of the new value. last_result_is_heap means the RHS
 			// produced a fresh heap string, so the target now owns a heap
@@ -1529,7 +1514,7 @@ export default function build_assignment_node(
 				// owns the transferred bytes now.
 				status.heap_strings.add(name);
 			}
-			status.code += `\n`;
+			emit_asm(status, `\n`);
 			emit_var_store(status, "x0", name, size);
 		}
 	} else if (node.left_value.node_type === "access") {
@@ -1553,7 +1538,7 @@ export default function build_assignment_node(
 				const name = (access.target as ValueNode).value;
 				const paramReg = status.function_param_regs?.get(name);
 				if (paramReg && name !== "self" && !is_mutable_param(name, status)) {
-					status.code += `// cannot assign to field of value param\n`;
+					emit_asm(status, `// cannot assign to field of value param\n`);
 					build_swap(node, status, nir_swap);
 					return;
 				}
@@ -1565,20 +1550,18 @@ export default function build_assignment_node(
 				const base_reg = deferred_field_base_reg(access, status);
 				if (base_reg === undefined) {
 					get_base_address(access, status, "x0");
-					status.code += `str x0, [sp, #-16]!\n`;
+					emit_asm(status, `str x0, [sp, #-16]!\n`);
 				}
 
 				get_source_address(node.right_value, status, nir_rhs);
-				if (!status.code.endsWith("\n")) {
-					status.code += "\n";
-				}
+				ensure_newline(status);
 				if (base_reg !== undefined) {
-					status.code += `str x0, [${base_reg}, #${offset}]\n`;
+					emit_asm(status, `str x0, [${base_reg}, #${offset}]\n`);
 				} else {
-					status.code += `mov x2, x0\n`;
-					status.code += `ldr x0, [sp], #16\n`;
+					emit_asm(status, `mov x2, x0\n`);
+					emit_asm(status, `ldr x0, [sp], #16\n`);
 
-					status.code += `str x2, [x0, #${offset}]\n`;
+					emit_asm(status, `str x2, [x0, #${offset}]\n`);
 				}
 			} else if (field_type?.is_view && !node.operator) {
 				// A `view T` field store (`line.text = doc.slice(0, 5)`): the
@@ -1589,38 +1572,36 @@ export default function build_assignment_node(
 				const base_reg = deferred_field_base_reg(access, status);
 				if (base_reg === undefined) {
 					get_base_address(access, status, "x0");
-					status.code += `str x0, [sp, #-16]!\n`;
+					emit_asm(status, `str x0, [sp, #-16]!\n`);
 				}
 
 				emit_rhs_value(node.right_value, nir_rhs, status);
-				if (!status.code.endsWith("\n")) {
-					status.code += "\n";
-				}
+				ensure_newline(status);
 				mark_moved_if_struct(node.right_value, status);
 				if (field_type.name === "string" || is_view_value(node.right_value, status)) {
 					// A fat string / view value builds as the full pair.
-					status.code += `stp x0, x1, [sp, #-16]!\n`;
-					status.code += `ldp x2, x3, [sp], #16\n`;
+					emit_asm(status, `stp x0, x1, [sp, #-16]!\n`);
+					emit_asm(status, `ldp x2, x3, [sp], #16\n`);
 					if (base_reg !== undefined) {
-						status.code += `str x2, [${base_reg}, #${offset}]\n`;
-						status.code += `str x3, [${base_reg}, #${offset + 8}]\n`;
+						emit_asm(status, `str x2, [${base_reg}, #${offset}]\n`);
+						emit_asm(status, `str x3, [${base_reg}, #${offset + 8}]\n`);
 					} else {
-						status.code += `ldr x0, [sp], #16\n`;
-						status.code += `str x2, [x0, #${offset}]\n`;
-						status.code += `str x3, [x0, #${offset + 8}]\n`;
+						emit_asm(status, `ldr x0, [sp], #16\n`);
+						emit_asm(status, `str x2, [x0, #${offset}]\n`);
+						emit_asm(status, `str x3, [x0, #${offset + 8}]\n`);
 					}
 				} else {
 					// A scalar RHS has no pair identity: store the value half,
 					// zero the length half (an empty slice over that value).
-					status.code += `str x0, [sp, #-16]!\n`;
-					status.code += `ldr x2, [sp], #16\n`;
+					emit_asm(status, `str x0, [sp, #-16]!\n`);
+					emit_asm(status, `ldr x2, [sp], #16\n`);
 					if (base_reg !== undefined) {
-						status.code += `str x2, [${base_reg}, #${offset}]\n`;
-						status.code += `str xzr, [${base_reg}, #${offset + 8}]\n`;
+						emit_asm(status, `str x2, [${base_reg}, #${offset}]\n`);
+						emit_asm(status, `str xzr, [${base_reg}, #${offset + 8}]\n`);
 					} else {
-						status.code += `ldr x0, [sp], #16\n`;
-						status.code += `str x2, [x0, #${offset}]\n`;
-						status.code += `str xzr, [x0, #${offset + 8}]\n`;
+						emit_asm(status, `ldr x0, [sp], #16\n`);
+						emit_asm(status, `str x2, [x0, #${offset}]\n`);
+						emit_asm(status, `str xzr, [x0, #${offset + 8}]\n`);
 					}
 				}
 			} else if (
@@ -1663,14 +1644,13 @@ export default function build_assignment_node(
 				const first_init_write = is_first_init_field_write(target_var, field_name, status);
 				mark_init_field_write(target_var, field_name, status);
 				const old_was_heap =
-					(is_class_target && !first_init_write) ||
-					!!status.heap_string_fields?.has(tracked_key);
+					(is_class_target && !first_init_write) || !!status.heap_string_fields?.has(tracked_key);
 				const offset = get_field_offset(target_type.name, field_name, status);
 
 				const base_reg = deferred_field_base_reg(access, status);
 				if (base_reg === undefined) {
 					get_base_address(access, status, "x0");
-					status.code += `str x0, [sp, #-16]!\n`;
+					emit_asm(status, `str x0, [sp, #-16]!\n`);
 				}
 
 				status.last_result_is_heap = false;
@@ -1681,13 +1661,11 @@ export default function build_assignment_node(
 					node.right_value.node_type === "value" &&
 					(node.right_value as ValueNode).value === "null";
 				if (rhs_is_null_literal) {
-					status.code += `mov x0, #0\n`;
-					status.code += `mov x1, #0\n`;
+					emit_asm(status, `mov x0, #0\n`);
+					emit_asm(status, `mov x1, #0\n`);
 				} else {
 					emit_rhs_value(node.right_value, nir_rhs, status);
-					if (!status.code.endsWith("\n")) {
-						status.code += "\n";
-					}
+					ensure_newline(status);
 				}
 				let rhs_is_heap = status.last_result_is_heap;
 				// A heap-owned string VARIABLE loads as a plain pair with no
@@ -1725,42 +1703,42 @@ export default function build_assignment_node(
 				// register the old value loads from and the halves store
 				// through the register — no base push/pop, no [sp,#16] reload.
 				if (field_type?.name === "string") {
-					status.code += `stp x0, x1, [sp, #-16]!\n`;
+					emit_asm(status, `stp x0, x1, [sp, #-16]!\n`);
 					if (old_was_heap) {
 						if (base_reg !== undefined) {
-							status.code += `ldr x0, [${base_reg}, #${offset}]\n`;
+							emit_asm(status, `ldr x0, [${base_reg}, #${offset}]\n`);
 						} else {
-							status.code += `ldr x0, [sp, #16]\n`;
-							status.code += `ldr x0, [x0, #${offset}]\n`;
+							emit_asm(status, `ldr x0, [sp, #16]\n`);
+							emit_asm(status, `ldr x0, [x0, #${offset}]\n`);
 						}
 						emit_free(status);
 					}
-					status.code += `ldp x2, x3, [sp], #16\n`;
+					emit_asm(status, `ldp x2, x3, [sp], #16\n`);
 					if (base_reg !== undefined) {
-						status.code += `str x2, [${base_reg}, #${offset}]\n`;
-						status.code += `str x3, [${base_reg}, #${offset + 8}]\n`;
+						emit_asm(status, `str x2, [${base_reg}, #${offset}]\n`);
+						emit_asm(status, `str x3, [${base_reg}, #${offset + 8}]\n`);
 					} else {
-						status.code += `ldr x0, [sp], #16\n`;
-						status.code += `str x2, [x0, #${offset}]\n`;
-						status.code += `str x3, [x0, #${offset + 8}]\n`;
+						emit_asm(status, `ldr x0, [sp], #16\n`);
+						emit_asm(status, `str x2, [x0, #${offset}]\n`);
+						emit_asm(status, `str x3, [x0, #${offset + 8}]\n`);
 					}
 				} else {
-					status.code += `str x0, [sp, #-16]!\n`;
+					emit_asm(status, `str x0, [sp, #-16]!\n`);
 					if (old_was_heap) {
 						if (base_reg !== undefined) {
-							status.code += `ldr x0, [${base_reg}, #${offset}]\n`;
+							emit_asm(status, `ldr x0, [${base_reg}, #${offset}]\n`);
 						} else {
-							status.code += `ldr x0, [sp, #16]\n`;
-							status.code += `ldr x0, [x0, #${offset}]\n`;
+							emit_asm(status, `ldr x0, [sp, #16]\n`);
+							emit_asm(status, `ldr x0, [x0, #${offset}]\n`);
 						}
 						emit_free(status);
 					}
-					status.code += `ldr x2, [sp], #16\n`;
+					emit_asm(status, `ldr x2, [sp], #16\n`);
 					if (base_reg !== undefined) {
-						status.code += `str x2, [${base_reg}, #${offset}]\n`;
+						emit_asm(status, `str x2, [${base_reg}, #${offset}]\n`);
 					} else {
-						status.code += `ldr x0, [sp], #16\n`;
-						status.code += `str x2, [x0, #${offset}]\n`;
+						emit_asm(status, `ldr x0, [sp], #16\n`);
+						emit_asm(status, `str x2, [x0, #${offset}]\n`);
 					}
 				}
 				// `self.field = …` inside a value-struct method writes through
@@ -1781,20 +1759,16 @@ export default function build_assignment_node(
 
 					const field_target_var =
 						access.target.node_type === "value" ? (access.target as ValueNode).value : "";
-					const first_init_write = is_first_init_field_write(
-						field_target_var,
-						field_name,
-						status,
-					);
+					const first_init_write = is_first_init_field_write(field_target_var, field_name, status);
 					mark_init_field_write(field_target_var, field_name, status);
 
 					const base_reg = deferred_field_base_reg(access, status);
 					if (base_reg !== undefined) {
-						status.code += `ldr x0, [${base_reg}, #${offset}]\n`;
+						emit_asm(status, `ldr x0, [${base_reg}, #${offset}]\n`);
 					} else {
 						get_base_address(access, status, "x0");
-						status.code += `str x0, [sp, #-16]!\n`;
-						status.code += `ldr x0, [x0, #${offset}]\n`;
+						emit_asm(status, `str x0, [sp, #-16]!\n`);
+						emit_asm(status, `ldr x0, [x0, #${offset}]\n`);
 					}
 					// Run #destroy + free on the old field value, not just a raw
 					// free — otherwise resources the instance owns (nested heap,
@@ -1806,54 +1780,52 @@ export default function build_assignment_node(
 					// reclaim entirely — the pre-write bytes are garbage.
 					const field_has_destroy = !!field_struct.functions.find((f) => f.name === "#destroy");
 					if (!first_init_write) {
-					if (field_type?.is_nullable) {
-						const label_id = (status.label_counter = (status.label_counter ?? 0) + 1);
-						const skip = `.Lskip_fd_${label_id}`;
-						status.code += `cbz x0, ${skip}\n`;
-						if (field_has_destroy) {
-							status.code += `str x0, [sp, #-16]!\n`;
-							status.code += `bl ${field_type!.name}_destroy\n`;
-							status.code += `ldr x0, [sp], #16\n`;
+						if (field_type?.is_nullable) {
+							const label_id = (status.label_counter = (status.label_counter ?? 0) + 1);
+							const skip = `.Lskip_fd_${label_id}`;
+							emit_asm(status, `cbz x0, ${skip}\n`);
+							if (field_has_destroy) {
+								emit_asm(status, `str x0, [sp, #-16]!\n`);
+								emit_asm(status, `bl ${field_type!.name}_destroy\n`);
+								emit_asm(status, `ldr x0, [sp], #16\n`);
+							}
+							emit_free(status);
+							emit_asm(status, `${skip}:\n`);
+						} else if (field_has_destroy) {
+							emit_asm(status, `str x0, [sp, #-16]!\n`);
+							emit_asm(status, `bl ${field_type!.name}_destroy\n`);
+							emit_asm(status, `ldr x0, [sp], #16\n`);
+							emit_free(status);
+						} else {
+							emit_free(status);
 						}
-						emit_free(status);
-						status.code += `${skip}:\n`;
-					} else if (field_has_destroy) {
-						status.code += `str x0, [sp, #-16]!\n`;
-						status.code += `bl ${field_type!.name}_destroy\n`;
-						status.code += `ldr x0, [sp], #16\n`;
-						emit_free(status);
-					} else {
-						emit_free(status);
-					}
 					}
 
 					emit_rhs_value(node.right_value, nir_rhs, status);
-					if (!status.code.endsWith("\n")) {
-						status.code += "\n";
-					}
-					status.code += `mov x2, x0\n`;
+					ensure_newline(status);
+					emit_asm(status, `mov x2, x0\n`);
 
 					const field_size = aarch64_size(field_type?.name ?? "int");
 					if (base_reg !== undefined) {
 						if (field_size === 1) {
-							status.code += `strb w2, [${base_reg}, #${offset}]\n`;
+							emit_asm(status, `strb w2, [${base_reg}, #${offset}]\n`);
 						} else if (field_size === 2) {
-							status.code += `strh w2, [${base_reg}, #${offset}]\n`;
+							emit_asm(status, `strh w2, [${base_reg}, #${offset}]\n`);
 						} else if (field_size === 4) {
-							status.code += `str w2, [${base_reg}, #${offset}]\n`;
+							emit_asm(status, `str w2, [${base_reg}, #${offset}]\n`);
 						} else {
-							status.code += `str x2, [${base_reg}, #${offset}]\n`;
+							emit_asm(status, `str x2, [${base_reg}, #${offset}]\n`);
 						}
 					} else {
-						status.code += `ldr x0, [sp], #16\n`;
+						emit_asm(status, `ldr x0, [sp], #16\n`);
 						if (field_size === 1) {
-							status.code += `strb w2, [x0, #${offset}]\n`;
+							emit_asm(status, `strb w2, [x0, #${offset}]\n`);
 						} else if (field_size === 2) {
-							status.code += `strh w2, [x0, #${offset}]\n`;
+							emit_asm(status, `strh w2, [x0, #${offset}]\n`);
 						} else if (field_size === 4) {
-							status.code += `str w2, [x0, #${offset}]\n`;
+							emit_asm(status, `str w2, [x0, #${offset}]\n`);
 						} else {
-							status.code += `str x2, [x0, #${offset}]\n`;
+							emit_asm(status, `str x2, [x0, #${offset}]\n`);
 						}
 					}
 				} else {
@@ -1864,18 +1836,16 @@ export default function build_assignment_node(
 					const base_reg = deferred_field_base_reg(access, status);
 					if (base_reg === undefined) {
 						get_base_address(access, status, "x0");
-						status.code += `str x0, [sp, #-16]!\n`;
+						emit_asm(status, `str x0, [sp, #-16]!\n`);
 					}
 
 					get_source_address(node.right_value, status, nir_rhs);
-					if (!status.code.endsWith("\n")) {
-						status.code += "\n";
-					}
-					status.code += `mov x1, x0\n`;
+					ensure_newline(status);
+					emit_asm(status, `mov x1, x0\n`);
 					if (base_reg !== undefined) {
-						status.code += `mov x0, ${base_reg}\n`;
+						emit_asm(status, `mov x0, ${base_reg}\n`);
 					} else {
-						status.code += `ldr x0, [sp], #16\n`;
+						emit_asm(status, `ldr x0, [sp], #16\n`);
 					}
 
 					emit_struct_copy("x1", "x0", offset, struct_size, status);
@@ -1897,18 +1867,16 @@ export default function build_assignment_node(
 				const base_reg = deferred_field_base_reg(access, status);
 				if (base_reg === undefined) {
 					get_base_address(access, status, "x0");
-					status.code += `str x0, [sp, #-16]!\n`;
+					emit_asm(status, `str x0, [sp, #-16]!\n`);
 				}
 
 				emit_rhs_value(node.right_value, nir_rhs, status);
-				if (!status.code.endsWith("\n")) {
-					status.code += "\n";
-				}
-				status.code += `mov x1, x0\n`;
+				ensure_newline(status);
+				emit_asm(status, `mov x1, x0\n`);
 				if (base_reg !== undefined) {
-					status.code += `mov x0, ${base_reg}\n`;
+					emit_asm(status, `mov x0, ${base_reg}\n`);
 				} else {
-					status.code += `ldr x0, [sp], #16\n`;
+					emit_asm(status, `ldr x0, [sp], #16\n`);
 				}
 				// x0 = the field's base, x1 = the RHS temp's base. Free the
 				// displaced payloads, copy the blob in, then take owning
@@ -1927,17 +1895,17 @@ export default function build_assignment_node(
 					status,
 				);
 				mark_init_field_write(enum_target_var, field_name, status);
-				status.code += `str x1, [sp, #-16]!\n`;
-				status.code += `str x0, [sp, #-16]!\n`;
+				emit_asm(status, `str x1, [sp, #-16]!\n`);
+				emit_asm(status, `str x0, [sp, #-16]!\n`);
 				if (!enum_first_init_write) {
 					emit_enum_payload_frees_at(status, rhs_type.name, "x0", offset);
 				}
-				status.code += `ldr x0, [sp], #16\n`;
-				status.code += `ldr x1, [sp], #16\n`;
+				emit_asm(status, `ldr x0, [sp], #16\n`);
+				emit_asm(status, `ldr x1, [sp], #16\n`);
 				emit_struct_copy("x1", "x0", offset, enum_size, status);
-				status.code += `str x1, [sp, #-16]!\n`;
+				emit_asm(status, `str x1, [sp, #-16]!\n`);
 				emit_enum_payload_strdups_at(status, rhs_type.name, "x0", offset);
-				status.code += `ldr x1, [sp], #16\n`;
+				emit_asm(status, `ldr x1, [sp], #16\n`);
 				emit_enum_payload_frees_at(status, rhs_type.name, "x1");
 			} else {
 				const offset = get_field_offset(target_type.name, field_name, status);
@@ -1956,63 +1924,59 @@ export default function build_assignment_node(
 					const base_reg = deferred_field_base_reg(access, status);
 					get_base_address(access, status, "x0");
 					if (field_size === 1) {
-						status.code += `ldrb w1, [x0, #${offset}]\n`;
+						emit_asm(status, `ldrb w1, [x0, #${offset}]\n`);
 					} else if (field_size === 2) {
-						status.code += `ldrh w1, [x0, #${offset}]\n`;
+						emit_asm(status, `ldrh w1, [x0, #${offset}]\n`);
 					} else if (field_size === 4) {
-						status.code += `ldr w1, [x0, #${offset}]\n`;
+						emit_asm(status, `ldr w1, [x0, #${offset}]\n`);
 					} else {
-						status.code += `ldr x1, [x0, #${offset}]\n`;
+						emit_asm(status, `ldr x1, [x0, #${offset}]\n`);
 					}
 					if (rhs_preserves_x1(node, status)) {
-						status.code += `mov x2, x0\n`;
+						emit_asm(status, `mov x2, x0\n`);
 						emit_rhs_value(node.right_value, nir_rhs, status);
-						if (!status.code.endsWith("\n")) {
-							status.code += "\n";
-						}
+						ensure_newline(status);
 						emit_compound_op(node.operator, status, is_float_type(field_type?.name ?? ""));
 						if (field_size === 1) {
-							status.code += `strb w0, [x2, #${offset}]\n`;
+							emit_asm(status, `strb w0, [x2, #${offset}]\n`);
 						} else if (field_size === 2) {
-							status.code += `strh w0, [x2, #${offset}]\n`;
+							emit_asm(status, `strh w0, [x2, #${offset}]\n`);
 						} else if (field_size === 4) {
-							status.code += `str w0, [x2, #${offset}]\n`;
+							emit_asm(status, `str w0, [x2, #${offset}]\n`);
 						} else {
-							status.code += `str x0, [x2, #${offset}]\n`;
+							emit_asm(status, `str x0, [x2, #${offset}]\n`);
 						}
 						build_swap(node, status, nir_swap);
 						return;
 					}
 					if (base_reg === undefined) {
-						status.code += `str x0, [sp, #-16]!\n`;
+						emit_asm(status, `str x0, [sp, #-16]!\n`);
 					}
-					status.code += `str x1, [sp, #-16]!\n`;
+					emit_asm(status, `str x1, [sp, #-16]!\n`);
 					emit_rhs_value(node.right_value, nir_rhs, status);
-					if (!status.code.endsWith("\n")) {
-						status.code += "\n";
-					}
-					status.code += `ldr x1, [sp], #16\n`;
+					ensure_newline(status);
+					emit_asm(status, `ldr x1, [sp], #16\n`);
 					emit_compound_op(node.operator, status, is_float_type(field_type?.name ?? ""));
 					if (base_reg !== undefined) {
 						if (field_size === 1) {
-							status.code += `strb w0, [${base_reg}, #${offset}]\n`;
+							emit_asm(status, `strb w0, [${base_reg}, #${offset}]\n`);
 						} else if (field_size === 2) {
-							status.code += `strh w0, [${base_reg}, #${offset}]\n`;
+							emit_asm(status, `strh w0, [${base_reg}, #${offset}]\n`);
 						} else if (field_size === 4) {
-							status.code += `str w0, [${base_reg}, #${offset}]\n`;
+							emit_asm(status, `str w0, [${base_reg}, #${offset}]\n`);
 						} else {
-							status.code += `str x0, [${base_reg}, #${offset}]\n`;
+							emit_asm(status, `str x0, [${base_reg}, #${offset}]\n`);
 						}
 					} else {
-						status.code += `ldr x1, [sp], #16\n`;
+						emit_asm(status, `ldr x1, [sp], #16\n`);
 						if (field_size === 1) {
-							status.code += `strb w0, [x1, #${offset}]\n`;
+							emit_asm(status, `strb w0, [x1, #${offset}]\n`);
 						} else if (field_size === 2) {
-							status.code += `strh w0, [x1, #${offset}]\n`;
+							emit_asm(status, `strh w0, [x1, #${offset}]\n`);
 						} else if (field_size === 4) {
-							status.code += `str w0, [x1, #${offset}]\n`;
+							emit_asm(status, `str w0, [x1, #${offset}]\n`);
 						} else {
-							status.code += `str x0, [x1, #${offset}]\n`;
+							emit_asm(status, `str x0, [x1, #${offset}]\n`);
 						}
 					}
 				} else {
@@ -2023,9 +1987,7 @@ export default function build_assignment_node(
 						field_size === 8 &&
 						try_float_field_rmw(access, field_name, field_type, offset, node.right_value, status)
 					) {
-						if (!status.code.endsWith("\n")) {
-							status.code += "\n";
-						}
+						ensure_newline(status);
 						build_swap(node, status, nir_swap);
 						return;
 					}
@@ -2033,13 +1995,11 @@ export default function build_assignment_node(
 					const base_reg = deferred_field_base_reg(access, status);
 					if (base_reg === undefined) {
 						get_base_address(access, status, "x0");
-						status.code += `str x0, [sp, #-16]!\n`;
+						emit_asm(status, `str x0, [sp, #-16]!\n`);
 					}
 
 					emit_rhs_value(node.right_value, nir_rhs, status);
-					if (!status.code.endsWith("\n")) {
-						status.code += "\n";
-					}
+					ensure_newline(status);
 					mark_moved_if_struct(node.right_value, status);
 					// A plain `string` field is a fat (ptr, len) pair: the RHS
 					// rides x0/x1 and BOTH halves must land in the field, or
@@ -2051,48 +2011,48 @@ export default function build_assignment_node(
 						!field_type.is_array &&
 						!field_type.is_view &&
 						!field_type.is_nullable;
-					status.code += `mov x2, x0\n`;
+					emit_asm(status, `mov x2, x0\n`);
 					if (field_is_fat_string) {
-						status.code += `mov x3, x1\n`;
+						emit_asm(status, `mov x3, x1\n`);
 					}
 					if (base_reg !== undefined) {
 						if (field_size === 1) {
-							status.code += `strb w2, [${base_reg}, #${offset}]\n`;
+							emit_asm(status, `strb w2, [${base_reg}, #${offset}]\n`);
 						} else if (field_size === 2) {
-							status.code += `strh w2, [${base_reg}, #${offset}]\n`;
+							emit_asm(status, `strh w2, [${base_reg}, #${offset}]\n`);
 						} else if (field_size === 4) {
-							status.code += `str w2, [${base_reg}, #${offset}]\n`;
+							emit_asm(status, `str w2, [${base_reg}, #${offset}]\n`);
 						} else {
-							status.code += `str x2, [${base_reg}, #${offset}]\n`;
+							emit_asm(status, `str x2, [${base_reg}, #${offset}]\n`);
 						}
 						if (field_is_fat_string) {
-							status.code += `str x3, [${base_reg}, #${offset + 8}]\n`;
+							emit_asm(status, `str x3, [${base_reg}, #${offset + 8}]\n`);
 						}
 					} else {
-						status.code += `ldr x0, [sp], #16\n`;
+						emit_asm(status, `ldr x0, [sp], #16\n`);
 
 						if (field_size === 1) {
-							status.code += `strb w2, [x0, #${offset}]\n`;
+							emit_asm(status, `strb w2, [x0, #${offset}]\n`);
 						} else if (field_size === 2) {
-							status.code += `strh w2, [x0, #${offset}]\n`;
+							emit_asm(status, `strh w2, [x0, #${offset}]\n`);
 						} else if (field_size === 4) {
-							status.code += `str w2, [x0, #${offset}]\n`;
+							emit_asm(status, `str w2, [x0, #${offset}]\n`);
 						} else {
-							status.code += `str x2, [x0, #${offset}]\n`;
+							emit_asm(status, `str x2, [x0, #${offset}]\n`);
 						}
 						if (field_is_fat_string) {
-							status.code += `str x3, [x0, #${offset + 8}]\n`;
+							emit_asm(status, `str x3, [x0, #${offset + 8}]\n`);
 						}
 					}
 				}
 			}
 		} else {
 			emit_rhs_value(node.right_value, nir_rhs, status);
-			status.code += `\n// complex assignment\n`;
+			emit_asm(status, `\n// complex assignment\n`);
 		}
 	} else {
 		emit_rhs_value(node.right_value, nir_rhs, status);
-		status.code += `\n// complex assignment\n`;
+		emit_asm(status, `\n// complex assignment\n`);
 	}
 
 	build_swap(node, status, nir_swap);
@@ -2127,12 +2087,12 @@ function index_elem_type(index: IndexNode, _status: BuildStatus): Type {
  */
 function build_index_element_address(index: IndexNode, status: BuildStatus) {
 	build_node(index.target, status);
-	if (!status.code.endsWith("\n")) status.code += "\n";
-	status.code += `str x0, [sp, #-16]!\n`;
+	ensure_newline(status);
+	emit_asm(status, `str x0, [sp, #-16]!\n`);
 	build_node(index.index, status);
-	if (!status.code.endsWith("\n")) status.code += "\n";
-	status.code += `mov x1, x0\n`;
-	status.code += `ldr x0, [sp], #16\n`;
+	ensure_newline(status);
+	emit_asm(status, `mov x1, x0\n`);
+	emit_asm(status, `ldr x0, [sp], #16\n`);
 	emit_index_address(pointer_element_size(index_elem_type(index, status), status), status);
 }
 
@@ -2154,7 +2114,7 @@ function build_index_store(node: AssignmentNode, status: BuildStatus, nir_rhs?: 
 	const elem_is_string = elem.name === "string";
 
 	build_index_element_address(index, status);
-	if (!status.code.endsWith("\n")) status.code += "\n";
+	ensure_newline(status);
 
 	let offset = 0;
 	if (member) {
@@ -2167,11 +2127,11 @@ function build_index_store(node: AssignmentNode, status: BuildStatus, nir_rhs?: 
 		}
 	}
 
-	status.code += `add x9, x9, #${offset}\n`;
-	status.code += `str x9, [sp, #-16]!\n`;
+	emit_asm(status, `add x9, x9, #${offset}\n`);
+	emit_asm(status, `str x9, [sp, #-16]!\n`);
 	emit_rhs_value(node.right_value, nir_rhs, status);
-	if (!status.code.endsWith("\n")) status.code += "\n";
-	status.code += `ldr x9, [sp], #16\n`;
+	ensure_newline(status);
+	emit_asm(status, `ldr x9, [sp], #16\n`);
 
 	if (member) {
 		// A string member (.ptr / .len) is one 8-byte word; struct members
@@ -2179,14 +2139,14 @@ function build_index_store(node: AssignmentNode, status: BuildStatus, nir_rhs?: 
 		// (ptr, len) pair.
 		const field_type = member.type;
 		if (field_type?.name === "string") {
-			status.code += `stp x0, x1, [x9]\n`;
+			emit_asm(status, `stp x0, x1, [x9]\n`);
 			return;
 		}
 		const fsize = aarch64_size(field_type?.name || elem.name);
-		if (fsize === 1) status.code += `strb w0, [x9]\n`;
-		else if (fsize === 2) status.code += `strh w0, [x9]\n`;
-		else if (fsize === 4) status.code += `str w0, [x9]\n`;
-		else status.code += `str x0, [x9]\n`;
+		if (fsize === 1) emit_asm(status, `strb w0, [x9]\n`);
+		else if (fsize === 2) emit_asm(status, `strh w0, [x9]\n`);
+		else if (fsize === 4) emit_asm(status, `str w0, [x9]\n`);
+		else emit_asm(status, `str x0, [x9]\n`);
 		return;
 	}
 	emit_index_store(elem, status);

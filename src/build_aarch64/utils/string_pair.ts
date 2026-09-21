@@ -1,6 +1,7 @@
 import type BuildStatus from "../../build_c/BuildStatus.ts";
 import aarch64_size from "./aarch64_size.ts";
 import { emit_free, emit_malloc, emit_strdup } from "./audit.ts";
+import { emit_asm } from "./code_buffer.ts";
 
 /**
  * Fat-string register-pair helpers (aarch64).
@@ -37,11 +38,11 @@ export function emit_string_pair_load(status: BuildStatus, name: string, base = 
 	const n = parseInt(w.substring(1), 10);
 	// ldp/stp simm7-scaled range tops out at +504 — split beyond it.
 	if (offset + 8 > 504) {
-		status.code += `ldr ${w}, [x29, #${offset}]\n`;
-		status.code += `ldr x${n + 1}, [x29, #${offset + 8}]\n`;
+		emit_asm(status, `ldr ${w}, [x29, #${offset}]\n`);
+		emit_asm(status, `ldr x${n + 1}, [x29, #${offset + 8}]\n`);
 		return true;
 	}
-	status.code += `ldp ${w}, x${n + 1}, [x29, #${offset}]\n`;
+	emit_asm(status, `ldp ${w}, x${n + 1}, [x29, #${offset}]\n`);
 	return true;
 }
 
@@ -52,11 +53,11 @@ export function emit_string_pair_store(status: BuildStatus, name: string, base =
 	const w = base.startsWith("x") ? base : "x0";
 	const n = parseInt(w.substring(1), 10);
 	if (offset + 8 > 504) {
-		status.code += `str ${w}, [x29, #${offset}]\n`;
-		status.code += `str x${n + 1}, [x29, #${offset + 8}]\n`;
+		emit_asm(status, `str ${w}, [x29, #${offset}]\n`);
+		emit_asm(status, `str x${n + 1}, [x29, #${offset + 8}]\n`);
 		return true;
 	}
-	status.code += `stp ${w}, x${n + 1}, [x29, #${offset}]\n`;
+	emit_asm(status, `stp ${w}, x${n + 1}, [x29, #${offset}]\n`);
 	return true;
 }
 
@@ -69,7 +70,7 @@ export function emit_string_pair_store_at(
 ) {
 	const w = base.startsWith("x") ? base : "x0";
 	const n = parseInt(w.substring(1), 10);
-	status.code += `stp ${w}, x${n + 1}, [${addr_reg}, #${offset}]\n`;
+	emit_asm(status, `stp ${w}, x${n + 1}, [${addr_reg}, #${offset}]\n`);
 }
 
 /** Load the pair at [addr_reg, #offset] into (base, base+1). */
@@ -81,7 +82,7 @@ export function emit_string_pair_load_at(
 ) {
 	const w = base.startsWith("x") ? base : "x0";
 	const n = parseInt(w.substring(1), 10);
-	status.code += `ldp ${w}, x${n + 1}, [${addr_reg}, #${offset}]\n`;
+	emit_asm(status, `ldp ${w}, x${n + 1}, [${addr_reg}, #${offset}]\n`);
 }
 
 /**
@@ -90,14 +91,14 @@ export function emit_string_pair_load_at(
  * ownership of the original.
  */
 export function emit_strdup_string(status: BuildStatus) {
-	status.code += `str x1, [sp, #-16]!\n`;
-	status.code += status.audit ? `bl _nomen_strdup_wrap\n` : `bl _strdup\n`;
-	status.code += `ldr x1, [sp], #16\n`;
+	emit_asm(status, `str x1, [sp, #-16]!\n`);
+	emit_asm(status, status.audit ? `bl _nomen_strdup_wrap\n` : `bl _strdup\n`);
+	emit_asm(status, `ldr x1, [sp], #16\n`);
 }
 
 /** free(ptr-half) of the fat value whose ptr is in x0. */
 export function emit_free_string_ptr(status: BuildStatus) {
-	status.code += status.audit ? `bl _nomen_free_wrap\n` : `bl _free\n`;
+	emit_asm(status, status.audit ? `bl _nomen_free_wrap\n` : `bl _free\n`);
 }
 
 /**
@@ -106,20 +107,20 @@ export function emit_free_string_ptr(status: BuildStatus) {
  */
 export function emit_pair_load_x29(status: BuildStatus, offset: number, a = "x0", b = "x1") {
 	if (offset + 8 > 504) {
-		status.code += `ldr ${a}, [x29, #${offset}]\n`;
-		status.code += `ldr ${b}, [x29, #${offset + 8}]\n`;
+		emit_asm(status, `ldr ${a}, [x29, #${offset}]\n`);
+		emit_asm(status, `ldr ${b}, [x29, #${offset + 8}]\n`);
 		return;
 	}
-	status.code += `ldp ${a}, ${b}, [x29, #${offset}]\n`;
+	emit_asm(status, `ldp ${a}, ${b}, [x29, #${offset}]\n`);
 }
 
 export function emit_pair_store_x29(status: BuildStatus, offset: number, a = "x0", b = "x1") {
 	if (offset + 8 > 504) {
-		status.code += `str ${a}, [x29, #${offset}]\n`;
-		status.code += `str ${b}, [x29, #${offset + 8}]\n`;
+		emit_asm(status, `str ${a}, [x29, #${offset}]\n`);
+		emit_asm(status, `str ${b}, [x29, #${offset + 8}]\n`);
 		return;
 	}
-	status.code += `stp ${a}, ${b}, [x29, #${offset}]\n`;
+	emit_asm(status, `stp ${a}, ${b}, [x29, #${offset}]\n`);
 }
 
 /**
@@ -140,75 +141,75 @@ export function emit_owning_array_string_specialize(
 ): boolean {
 	if (func_name === "with") {
 		// Entry: x0 = value.ptr, x1 = value.len, x2 = count.
-		status.code += `stp x19, x20, [sp, #-16]!\n`;
-		status.code += `stp x21, x22, [sp, #-16]!\n`;
-		status.code += `stp x24, x25, [sp, #-16]!\n`;
-		status.code += `mov x19, x0\n`; // value ptr
-		status.code += `mov x20, x1\n`; // value len
-		status.code += `mov x21, x2\n`; // count
+		emit_asm(status, `stp x19, x20, [sp, #-16]!\n`);
+		emit_asm(status, `stp x21, x22, [sp, #-16]!\n`);
+		emit_asm(status, `stp x24, x25, [sp, #-16]!\n`);
+		emit_asm(status, `mov x19, x0\n`); // value ptr
+		emit_asm(status, `mov x20, x1\n`); // value len
+		emit_asm(status, `mov x21, x2\n`); // count
 		// malloc(8 + count * 16)
-		status.code += `add x0, x21, #1\n`;
-		status.code += `lsl x0, x0, #4\n`;
+		emit_asm(status, `add x0, x21, #1\n`);
+		emit_asm(status, `lsl x0, x0, #4\n`);
 		emit_malloc(status);
-		status.code += `mov x22, x0\n`;
-		status.code += `str x21, [x22]\n`; // length prefix
-		status.code += `mov x23, #8\n`; // byte cursor (first slot)
-		status.code += `mov x24, #0\n`; // i
-		status.code += `.Larr_str_with_loop:\n`;
-		status.code += `cmp x24, x21\n`;
-		status.code += `b.ge .Larr_str_with_done\n`;
-		status.code += `mov x0, x19\n`;
+		emit_asm(status, `mov x22, x0\n`);
+		emit_asm(status, `str x21, [x22]\n`); // length prefix
+		emit_asm(status, `mov x23, #8\n`); // byte cursor (first slot)
+		emit_asm(status, `mov x24, #0\n`); // i
+		emit_asm(status, `.Larr_str_with_loop:\n`);
+		emit_asm(status, `cmp x24, x21\n`);
+		emit_asm(status, `b.ge .Larr_str_with_done\n`);
+		emit_asm(status, `mov x0, x19\n`);
 		emit_strdup(status);
 		// slot address = buf + cursor (stp has no register-offset form).
-		status.code += `add x25, x22, x23\n`;
-		status.code += `stp x0, x20, [x25]\n`; // slot = {dup, len}
-		status.code += `add x23, x23, #16\n`;
-		status.code += `add x24, x24, #1\n`;
-		status.code += `b .Larr_str_with_loop\n`;
-		status.code += `.Larr_str_with_done:\n`;
-		status.code += `mov x0, x22\n`;
-		status.code += `ldp x24, x25, [sp], #16\n`;
-		status.code += `ldp x21, x22, [sp], #16\n`;
-		status.code += `ldp x19, x20, [sp], #16\n`;
+		emit_asm(status, `add x25, x22, x23\n`);
+		emit_asm(status, `stp x0, x20, [x25]\n`); // slot = {dup, len}
+		emit_asm(status, `add x23, x23, #16\n`);
+		emit_asm(status, `add x24, x24, #1\n`);
+		emit_asm(status, `b .Larr_str_with_loop\n`);
+		emit_asm(status, `.Larr_str_with_done:\n`);
+		emit_asm(status, `mov x0, x22\n`);
+		emit_asm(status, `ldp x24, x25, [sp], #16\n`);
+		emit_asm(status, `ldp x21, x22, [sp], #16\n`);
+		emit_asm(status, `ldp x19, x20, [sp], #16\n`);
 		return true;
 	}
 	if (func_name === "at" || func_name === "first" || func_name === "at_end") {
 		// Pair-RETURNING loads: the raw T-generic body would sret-copy a
 		// 16-byte element through x8, but string returns ride the (x0, x1)
 		// register pair.
-		status.code += `stp x20, x21, [sp, #-16]!\n`;
+		emit_asm(status, `stp x20, x21, [sp, #-16]!\n`);
 		if (func_name === "at") {
-			status.code += `lsl x9, x1, #4\n`;
-			status.code += `add x9, ${self_reg}, x9\n`;
+			emit_asm(status, `lsl x9, x1, #4\n`);
+			emit_asm(status, `add x9, ${self_reg}, x9\n`);
 		} else if (func_name === "at_end") {
-			status.code += `ldr x9, [${self_reg}, #-8]\n`; // length
-			status.code += `sub x9, x9, #1\n`;
-			status.code += `lsl x9, x9, #4\n`;
-			status.code += `add x9, ${self_reg}, x9\n`;
+			emit_asm(status, `ldr x9, [${self_reg}, #-8]\n`); // length
+			emit_asm(status, `sub x9, x9, #1\n`);
+			emit_asm(status, `lsl x9, x9, #4\n`);
+			emit_asm(status, `add x9, ${self_reg}, x9\n`);
 		} else {
-			status.code += `add x9, ${self_reg}, #0\n`;
+			emit_asm(status, `add x9, ${self_reg}, #0\n`);
 		}
-		status.code += `ldp x0, x1, [x9]\n`;
-		status.code += `ldp x20, x21, [sp], #16\n`;
+		emit_asm(status, `ldp x0, x1, [x9]\n`);
+		emit_asm(status, `ldp x20, x21, [sp], #16\n`);
 		return true;
 	}
 	if (func_name === "set") {
 		// Entry: self_reg = first element, x1 = index, x2/x3 = value pair.
-		status.code += `stp x20, x21, [sp, #-16]!\n`;
-		status.code += `lsl x9, x1, #4\n`;
-		status.code += `add x9, ${self_reg}, x9\n`; // &slot[index]
+		emit_asm(status, `stp x20, x21, [sp, #-16]!\n`);
+		emit_asm(status, `lsl x9, x1, #4\n`);
+		emit_asm(status, `add x9, ${self_reg}, x9\n`); // &slot[index]
 		// Free the outgoing value. x2/x3 are caller-saved and _free clobbers
 		// them, so the incoming value pair parks in x20/x21 (saved above).
-		status.code += `ldr x0, [x9]\n`;
-		status.code += `mov x20, x2\n`;
-		status.code += `mov x21, x3\n`;
+		emit_asm(status, `ldr x0, [x9]\n`);
+		emit_asm(status, `mov x20, x2\n`);
+		emit_asm(status, `mov x21, x3\n`);
 		emit_free(status);
 		// Deep-copy the incoming value.
-		status.code += `mov x0, x20\n`;
+		emit_asm(status, `mov x0, x20\n`);
 		emit_strdup(status);
-		status.code += `str x0, [x9]\n`;
-		status.code += `str x21, [x9, #8]\n`;
-		status.code += `ldp x20, x21, [sp], #16\n`;
+		emit_asm(status, `str x0, [x9]\n`);
+		emit_asm(status, `str x21, [x9, #8]\n`);
+		emit_asm(status, `ldp x20, x21, [sp], #16\n`);
 		return true;
 	}
 	return false;
@@ -224,9 +225,9 @@ export function emit_pair_store_to(
 ) {
 	const ok = offset % 8 === 0 && offset + 8 <= 504 && offset >= 0;
 	if (ok) {
-		status.code += `stp ${a}, ${b}, [${base_reg}, #${offset}]\n`;
+		emit_asm(status, `stp ${a}, ${b}, [${base_reg}, #${offset}]\n`);
 	} else {
-		status.code += `stur ${a}, [${base_reg}, #${offset}]\n`;
-		status.code += `stur ${b}, [${base_reg}, #${offset + 8}]\n`;
+		emit_asm(status, `stur ${a}, [${base_reg}, #${offset}]\n`);
+		emit_asm(status, `stur ${b}, [${base_reg}, #${offset + 8}]\n`);
 	}
 }

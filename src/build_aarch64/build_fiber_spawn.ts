@@ -8,6 +8,7 @@ import Type from "../nodes/Type.ts";
 import { emit_address_of } from "./build_access_node.ts";
 import build_node from "./build_node.ts";
 import { ensure_concurrency_runtime_a64 } from "./build_spawn_node.ts";
+import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
 
 /**
@@ -113,9 +114,9 @@ export default function build_fiber_spawn_node(
 	status.file_scope_c += c;
 
 	// --- Assembly: receiver pointer (+ nursery addresses + stack buffer) ---
-	status.code += `// fiber start site ${id}\n`;
+	emit_asm(status, `// fiber start site ${id}\n`);
 	build_node(target, status);
-	if (!status.code.endsWith("\n")) status.code += "\n";
+	ensure_newline(status);
 
 	// The trailing args park the receiver pointer in a stack slot first:
 	// emitting the buffer address / nursery addresses can clobber x0.
@@ -124,18 +125,18 @@ export default function build_fiber_spawn_node(
 	if (start_on) extra_slots += 2;
 	if (extra_slots > 0) {
 		const park = allocate_stack_space(status, 8, 8);
-		status.code += `str x0, [x29, #${park}]\n`;
+		emit_asm(status, `str x0, [x29, #${park}]\n`);
 		if (nursery_off) {
-			status.code += `add x1, x29, #${nursery_off.futures_off}\n`;
-			status.code += `add x2, x29, #${nursery_off.count_off}\n`;
-			status.code += `add x3, x29, #${nursery_off.cap_off}\n`;
+			emit_asm(status, `add x1, x29, #${nursery_off.futures_off}\n`);
+			emit_asm(status, `add x2, x29, #${nursery_off.count_off}\n`);
+			emit_asm(status, `add x3, x29, #${nursery_off.cap_off}\n`);
 		}
 		if (start_on) {
 			// The stack buffer is passed by ADDRESS (a word), plus its size.
-			status.code += `// Build stack buffer address\n`;
+			emit_asm(status, `// Build stack buffer address\n`);
 			emit_address_of(start_on, status);
-			if (!status.code.endsWith("\n")) status.code += "\n";
-			status.code += `mov x${nursery_off ? 4 : 1}, x0\n`;
+			ensure_newline(status);
+			emit_asm(status, `mov x${nursery_off ? 4 : 1}, x0\n`);
 			const buf_type = type_from_value_node(start_on);
 			const elem_size = buf_type.name === "string" ? 16 : 8;
 			const len_node = buf_type.length;
@@ -143,12 +144,15 @@ export default function build_fiber_spawn_node(
 				len_node && len_node.node_type === "value"
 					? parseInt((len_node as unknown as { value: string }).value, 10)
 					: NaN;
-			status.code += `// stack size = ${Number.isNaN(len) ? 0 : len} * ${elem_size}\n`;
-			status.code += `mov x${nursery_off ? 5 : 2}, #${Number.isNaN(len) ? 0 : len * elem_size}\n`;
+			emit_asm(status, `// stack size = ${Number.isNaN(len) ? 0 : len} * ${elem_size}\n`);
+			emit_asm(
+				status,
+				`mov x${nursery_off ? 5 : 2}, #${Number.isNaN(len) ? 0 : len * elem_size}\n`,
+			);
 		}
-		status.code += `ldr x0, [x29, #${park}]\n`;
+		emit_asm(status, `ldr x0, [x29, #${park}]\n`);
 	}
-	status.code += `bl _${helper_name}\n`;
+	emit_asm(status, `bl _${helper_name}\n`);
 	// x0 = Task pointer (or NULL for fire-and-forget).
 }
 

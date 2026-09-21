@@ -4,6 +4,7 @@ import { is_float_type } from "../built_in_types.ts";
 import CastNode from "../nodes/CastNode.ts";
 import build_node from "./build_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
+import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
 import { allocate_stack_space, emit_var_address } from "./utils/stack_var.ts";
 import { get_struct_size } from "./utils/struct_layout.ts";
 
@@ -11,12 +12,6 @@ let cast_temp_counter = 0;
 
 export function reset_cast_temp_counter() {
 	cast_temp_counter = 0;
-}
-
-function ensure_newline(status: BuildStatus) {
-	if (!status.code.endsWith("\n")) {
-		status.code += "\n";
-	}
 }
 
 export default function build_cast_node(node: CastNode, status: BuildStatus) {
@@ -46,15 +41,15 @@ export default function build_cast_node(node: CastNode, status: BuildStatus) {
 	const is_to_float = is_float_type(to);
 
 	if (is_from_float && !is_to_float) {
-		status.code += `fcvtzs x0, d0\n`;
-		status.code += `fmov d0, x0\n`;
+		emit_asm(status, `fcvtzs x0, d0\n`);
+		emit_asm(status, `fmov d0, x0\n`);
 		return;
 	}
 
 	if (!is_from_float && is_to_float) {
-		status.code += `fmov d0, x0\n`;
-		status.code += `scvtf d0, d0\n`;
-		status.code += `fmov x0, d0\n`;
+		emit_asm(status, `fmov d0, x0\n`);
+		emit_asm(status, `scvtf d0, d0\n`);
+		emit_asm(status, `fmov x0, d0\n`);
 		return;
 	}
 
@@ -65,27 +60,27 @@ export default function build_cast_node(node: CastNode, status: BuildStatus) {
 	if (ts > fs) {
 		if (from === "bool" || from === "int8" || from === "uint8" || from === "char") {
 			if (from === "int8") {
-				status.code += `sxtb x0, x0\n`;
+				emit_asm(status, `sxtb x0, x0\n`);
 			} else {
 				// bool, uint8, char: zero-extend (char is an unsigned code point).
-				status.code += `and x0, x0, #0xFF\n`;
+				emit_asm(status, `and x0, x0, #0xFF\n`);
 			}
 		} else if (from === "int16") {
-			status.code += `sxth x0, x0\n`;
+			emit_asm(status, `sxth x0, x0\n`);
 		} else if (from === "uint16") {
-			status.code += `and x0, x0, #0xFFFF\n`;
+			emit_asm(status, `and x0, x0, #0xFFFF\n`);
 		} else if (from === "int32" || from === "int") {
-			status.code += `sxtw x0, x0\n`;
+			emit_asm(status, `sxtw x0, x0\n`);
 		} else if (from === "uint32" || from === "uint") {
-			status.code += `and x0, x0, #0xFFFFFFFF\n`;
+			emit_asm(status, `and x0, x0, #0xFFFFFFFF\n`);
 		}
 	} else if (ts < fs) {
 		if (to === "bool" || to === "int8" || to === "uint8" || to === "char") {
-			status.code += `and x0, x0, #0xFF\n`;
+			emit_asm(status, `and x0, x0, #0xFF\n`);
 		} else if (to === "int16" || to === "uint16") {
-			status.code += `and x0, x0, #0xFFFF\n`;
+			emit_asm(status, `and x0, x0, #0xFFFF\n`);
 		} else if (to === "int32" || to === "uint32") {
-			status.code += `and x0, x0, #0xFFFFFFFF\n`;
+			emit_asm(status, `and x0, x0, #0xFFFFFFFF\n`);
 		}
 	}
 }
@@ -101,7 +96,7 @@ function build_struct_cast(node: CastNode, status: BuildStatus) {
 		const offset = allocate_stack_space(status, struct_size);
 		temp_label = `_cast_temp_${cast_temp_counter++}`;
 		status.stack_offsets!.set(temp_label, offset);
-		status.code += `add x8, x29, #${offset}\n`;
+		emit_asm(status, `add x8, x29, #${offset}\n`);
 	}
 
 	if (node.value.node_type === "value") {
@@ -109,7 +104,7 @@ function build_struct_cast(node: CastNode, status: BuildStatus) {
 		const paramReg = status.function_param_regs?.get(name);
 		if (paramReg) {
 			if (paramReg !== "x0") {
-				status.code += `mov x0, ${paramReg}\n`;
+				emit_asm(status, `mov x0, ${paramReg}\n`);
 			}
 		} else {
 			emit_var_address(status, "x0", name);
@@ -119,10 +114,10 @@ function build_struct_cast(node: CastNode, status: BuildStatus) {
 		ensure_newline(status);
 	}
 
-	status.code += `bl ${node.operator_func!.struct_name}_as\n`;
+	emit_asm(status, `bl ${node.operator_func!.struct_name}_as\n`);
 
 	if (target_struct && temp_label) {
 		const offset = status.stack_offsets!.get(temp_label)!;
-		status.code += `add x0, x29, #${offset}\n`;
+		emit_asm(status, `add x0, x29, #${offset}\n`);
 	}
 }

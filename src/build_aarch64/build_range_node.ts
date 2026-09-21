@@ -3,6 +3,7 @@ import GroupedNode from "../nodes/GroupedNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import RangeNode from "../nodes/RangeNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
+import { emit_asm } from "./utils/code_buffer.ts";
 
 export default function build_range_node(node: RangeNode, status: BuildStatus) {
 	const start = evaluate_constant(node.left_value);
@@ -10,10 +11,13 @@ export default function build_range_node(node: RangeNode, status: BuildStatus) {
 
 	if (start !== undefined && end !== undefined) {
 		const actual_end = end;
-		status.code += `${[...Array(actual_end - start).keys()].map((value) => start + value).join(", ")}`;
+		emit_asm(
+			status,
+			`${[...Array(actual_end - start).keys()].map((value) => start + value).join(", ")}`,
+		);
 	} else {
 		// Dynamic bounds - not supported for static array generation
-		status.code += `/* dynamic range */`;
+		emit_asm(status, `/* dynamic range */`);
 	}
 }
 

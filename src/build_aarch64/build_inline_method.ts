@@ -5,6 +5,7 @@ import StructNode from "../nodes/StructNode.ts";
 import { parse_raw_directives } from "../raw_directives.ts";
 import { build_body_with_cursor } from "./emit_nir.ts";
 import { extract_nomen_naked_asm } from "./naked_inline.ts";
+import { asm_code_len, emit_asm } from "./utils/code_buffer.ts";
 import { emit_owning_buffer_inline_aarch64 } from "./utils/owning_buffer_specialize.ts";
 import { install_raw_reload_plan, type RawParamReloadLine } from "./utils/raw_reload.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
@@ -140,7 +141,7 @@ function build_naked_inline_from_asm(
 	const site = inline_counter++;
 	asm = asm.replace(/(\.L[A-Za-z0-9_]+)/g, `$1__ni${site}`);
 
-	status.code += prologue + asm + "\n" + epilogue;
+	emit_asm(status, prologue + asm + "\n" + epilogue);
 }
 
 export default function build_inline_method(
@@ -280,8 +281,8 @@ export default function build_inline_method(
 	status.nir_site_allocs = undefined;
 
 	if (needs_x19) {
-		status.code += `str x19, [sp, #-16]!\n`;
-		status.code += `mov x19, x0\n`;
+		emit_asm(status, `str x19, [sp, #-16]!\n`);
+		emit_asm(status, `mov x19, x0\n`);
 	}
 
 	const param_regs = ["x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"];
@@ -339,10 +340,10 @@ export default function build_inline_method(
 		if (is_struct_type && callee_idx < callee_saved.length) {
 			const saved_reg = callee_saved[callee_idx++];
 			if (saved_reg !== "x19" || !needs_x19) {
-				status.code += `str ${saved_reg}, [sp, #-16]!\n`;
+				emit_asm(status, `str ${saved_reg}, [sp, #-16]!\n`);
 				inline_push_count++;
 			}
-			status.code += `mov ${saved_reg}, ${param_regs[i]}\n`;
+			emit_asm(status, `mov ${saved_reg}, ${param_regs[i]}\n`);
 			status.function_param_regs.set(param.name, saved_reg);
 			if (i < param_regs.length) {
 				inline_reloads.push({
@@ -352,7 +353,7 @@ export default function build_inline_method(
 			}
 		} else if (!is_struct_type) {
 			if (param.type.is_ref || callee_idx >= callee_saved.length) {
-				status.code += `str ${param_regs[i]}, [sp, #-16]!\n`;
+				emit_asm(status, `str ${param_regs[i]}, [sp, #-16]!\n`);
 				saved_stack_slots.push(param.name);
 				if (i < param_regs.length) {
 					inline_push_slots.push({
@@ -364,10 +365,10 @@ export default function build_inline_method(
 			} else {
 				const saved_reg = callee_saved[callee_idx++];
 				if (saved_reg !== "x19" || !needs_x19) {
-					status.code += `str ${saved_reg}, [sp, #-16]!\n`;
+					emit_asm(status, `str ${saved_reg}, [sp, #-16]!\n`);
 					inline_push_count++;
 				}
-				status.code += `mov ${saved_reg}, ${param_regs[i]}\n`;
+				emit_asm(status, `mov ${saved_reg}, ${param_regs[i]}\n`);
 				status.function_param_regs.set(param.name, saved_reg);
 				if (i < param_regs.length) {
 					inline_reloads.push({
@@ -402,7 +403,7 @@ export default function build_inline_method(
 		// incoming value to a frame slot — the return path reloads it before
 		// the final struct copy (mirrors the standalone-function prologue).
 		const return_buffer_stack_offset = allocate_stack_space(status, 8, 8);
-		status.code += `str x8, [x29, #${return_buffer_stack_offset}]\n`;
+		emit_asm(status, `str x8, [x29, #${return_buffer_stack_offset}]\n`);
 		status.return_buffer_stack_offset = return_buffer_stack_offset;
 	}
 
@@ -414,7 +415,7 @@ export default function build_inline_method(
 	// standalone function fell into a random caller's code (segfault) —
 	// and prefix-mangled sibling labels (`b .return_List_int_at_or` became
 	// `b .inline_ret_N_or`, an undefined symbol).
-	const code_length_before_body = status.code.length;
+	const code_length_before_body = asm_code_len(status);
 
 	// Finalize the sp-push reloads: at any statement boundary in the body,
 	// push #p (0-based) sits at [sp, #16*(total-1-p)].
@@ -447,18 +448,18 @@ export default function build_inline_method(
 		status.code.slice(0, code_length_before_body) +
 		body.replaceAll(`b ${standalone_return_label}\n`, `b ${return_label}\n`);
 
-	status.code += `${return_label}:\n`;
+	emit_asm(status, `${return_label}:\n`);
 
 	for (let i = saved_stack_slots.length - 1; i >= 0; i--) {
-		status.code += `add sp, sp, #16\n`;
+		emit_asm(status, `add sp, sp, #16\n`);
 	}
 
 	for (let ci = callee_idx - 1; ci >= 0; ci--) {
 		if (callee_saved[ci] === "x19" && needs_x19) continue;
-		status.code += `ldr ${callee_saved[ci]}, [sp], #16\n`;
+		emit_asm(status, `ldr ${callee_saved[ci]}, [sp], #16\n`);
 	}
 	if (needs_x19) {
-		status.code += `ldr x19, [sp], #16\n`;
+		emit_asm(status, `ldr x19, [sp], #16\n`);
 	}
 
 	status.scoped_declarations = old_scoped_declarations;
@@ -600,9 +601,9 @@ export function build_inline_function(func: FunctionNode, status: BuildStatus) {
 		);
 		if (is_struct_type && callee_idx < callee_saved.length) {
 			const saved_reg = callee_saved[callee_idx++];
-			status.code += `str ${saved_reg}, [sp, #-16]!\n`;
+			emit_asm(status, `str ${saved_reg}, [sp, #-16]!\n`);
 			inline_push_count++;
-			status.code += `mov ${saved_reg}, ${param_regs[i]}\n`;
+			emit_asm(status, `mov ${saved_reg}, ${param_regs[i]}\n`);
 			status.function_param_regs.set(param.name, saved_reg);
 			if (i < param_regs.length) {
 				inline_reloads.push({
@@ -612,7 +613,7 @@ export function build_inline_function(func: FunctionNode, status: BuildStatus) {
 			}
 		} else if (!is_struct_type) {
 			if (param.type.is_ref || callee_idx >= callee_saved.length) {
-				status.code += `str ${param_regs[i]}, [sp, #-16]!\n`;
+				emit_asm(status, `str ${param_regs[i]}, [sp, #-16]!\n`);
 				saved_stack_slots.push(param.name);
 				if (i < param_regs.length) {
 					inline_push_slots.push({
@@ -623,9 +624,9 @@ export function build_inline_function(func: FunctionNode, status: BuildStatus) {
 				inline_push_count++;
 			} else {
 				const saved_reg = callee_saved[callee_idx++];
-				status.code += `str ${saved_reg}, [sp, #-16]!\n`;
+				emit_asm(status, `str ${saved_reg}, [sp, #-16]!\n`);
 				inline_push_count++;
-				status.code += `mov ${saved_reg}, ${param_regs[i]}\n`;
+				emit_asm(status, `mov ${saved_reg}, ${param_regs[i]}\n`);
 				status.function_param_regs.set(param.name, saved_reg);
 				if (i < param_regs.length) {
 					inline_reloads.push({
@@ -657,7 +658,7 @@ export function build_inline_function(func: FunctionNode, status: BuildStatus) {
 		// See build_inline_method: spill the caller's x8 sret pointer so an
 		// inner struct-returning call can't clobber it before the return copy.
 		const return_buffer_stack_offset = allocate_stack_space(status, 8, 8);
-		status.code += `str x8, [x29, #${return_buffer_stack_offset}]\n`;
+		emit_asm(status, `str x8, [x29, #${return_buffer_stack_offset}]\n`);
 		status.return_buffer_stack_offset = return_buffer_stack_offset;
 	}
 
@@ -682,14 +683,14 @@ export function build_inline_function(func: FunctionNode, status: BuildStatus) {
 
 	status.raw_param_reloads = old_raw_param_reloads;
 
-	status.code += `${return_label}:\n`;
+	emit_asm(status, `${return_label}:\n`);
 
 	for (let i = saved_stack_slots.length - 1; i >= 0; i--) {
-		status.code += `add sp, sp, #16\n`;
+		emit_asm(status, `add sp, sp, #16\n`);
 	}
 
 	for (let ci = callee_idx - 1; ci >= 0; ci--) {
-		status.code += `ldr ${callee_saved[ci]}, [sp], #16\n`;
+		emit_asm(status, `ldr ${callee_saved[ci]}, [sp], #16\n`);
 	}
 
 	status.scoped_declarations = old_scoped_declarations;

@@ -1,5 +1,6 @@
 import type BuildStatus from "../../build_c/BuildStatus.ts";
 import aarch64_size from "./aarch64_size.ts";
+import { emit_asm } from "./code_buffer.ts";
 
 export function allocate_stack_space(status: BuildStatus, size: number, alignment = 8): number {
 	if (!status.stack_size) status.stack_size = 0;
@@ -27,13 +28,13 @@ export function emit_promoted_load(
 ) {
 	const size = aarch64_size(type_name);
 	if (size === 1) {
-		status.code += `ldrb ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
+		emit_asm(status, `ldrb ${reg.replace("x", "w")}, [x29, #${offset}]\n`);
 	} else if (size === 2) {
-		status.code += `ldrh ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
+		emit_asm(status, `ldrh ${reg.replace("x", "w")}, [x29, #${offset}]\n`);
 	} else if (size === 4) {
-		status.code += `ldr ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
+		emit_asm(status, `ldr ${reg.replace("x", "w")}, [x29, #${offset}]\n`);
 	} else {
-		status.code += `ldr ${reg}, [x29, #${offset}]\n`;
+		emit_asm(status, `ldr ${reg}, [x29, #${offset}]\n`);
 	}
 }
 
@@ -50,13 +51,13 @@ export function emit_promoted_store(
 ) {
 	const size = aarch64_size(type_name);
 	if (size === 1) {
-		status.code += `strb ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
+		emit_asm(status, `strb ${reg.replace("x", "w")}, [x29, #${offset}]\n`);
 	} else if (size === 2) {
-		status.code += `strh ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
+		emit_asm(status, `strh ${reg.replace("x", "w")}, [x29, #${offset}]\n`);
 	} else if (size === 4) {
-		status.code += `str ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
+		emit_asm(status, `str ${reg.replace("x", "w")}, [x29, #${offset}]\n`);
 	} else {
-		status.code += `str ${reg}, [x29, #${offset}]\n`;
+		emit_asm(status, `str ${reg}, [x29, #${offset}]\n`);
 	}
 }
 
@@ -70,9 +71,9 @@ export function emit_var_address(status: BuildStatus, reg: string, name: string)
 	// come first: `stack_offsets` doesn't know the name, so the global/data
 	// fallback below would emit `adr reg, name` for a stack local.
 	if (status.closure_env_offsets?.has(name) && status.closure_env_slot !== undefined) {
-		status.code += `ldr ${reg}, [x29, #${status.closure_env_slot}]\n`;
+		emit_asm(status, `ldr ${reg}, [x29, #${status.closure_env_slot}]\n`);
 		const off = status.closure_env_offsets.get(name)!;
-		if (off !== 0) status.code += `add ${reg}, ${reg}, #${off}\n`;
+		if (off !== 0) emit_asm(status, `add ${reg}, ${reg}, #${off}\n`);
 		return;
 	}
 	const alloc_reg = status.register_allocations?.get(name);
@@ -88,7 +89,7 @@ export function emit_var_address(status: BuildStatus, reg: string, name: string)
 			if (type_name) {
 				emit_promoted_store(status, alloc_reg, offset, type_name);
 			} else {
-				status.code += `str ${alloc_reg}, [x29, #${offset}]\n`;
+				emit_asm(status, `str ${alloc_reg}, [x29, #${offset}]\n`);
 			}
 		}
 	}
@@ -98,17 +99,17 @@ export function emit_var_address(status: BuildStatus, reg: string, name: string)
 			// A spilled struct param's slot holds the POINTER to the caller's
 			// struct (by-address convention) — the "address of the variable" is
 			// the slot's VALUE, not the slot's address.
-			status.code += `ldr ${reg}, [x29, #${offset}]\n`;
+			emit_asm(status, `ldr ${reg}, [x29, #${offset}]\n`);
 		} else {
-			status.code += `add ${reg}, x29, #${offset}\n`;
+			emit_asm(status, `add ${reg}, x29, #${offset}\n`);
 		}
 	} else {
 		const param_reg = status.function_param_regs?.get(name);
 		if (param_reg) {
 			// Variable is in a callee-saved register — move it to the target reg
-			status.code += `mov ${reg}, ${param_reg}\n`;
+			emit_asm(status, `mov ${reg}, ${param_reg}\n`);
 		} else {
-			status.code += `adr ${reg}, ${name}\n`;
+			emit_asm(status, `adr ${reg}, ${name}\n`);
 		}
 	}
 }
@@ -116,13 +117,13 @@ export function emit_var_address(status: BuildStatus, reg: string, name: string)
 export function emit_deref_var_address(status: BuildStatus, reg: string, name: string) {
 	emit_var_address(status, reg, name);
 	if (is_local_ref_var(name, status)) {
-		status.code += `ldr ${reg}, [${reg}]\n`;
+		emit_asm(status, `ldr ${reg}, [${reg}]\n`);
 	}
 }
 
 export function emit_var_load(status: BuildStatus, reg: string, name: string, size: number) {
 	if (name === "null") {
-		status.code += `mov ${reg}, #0\n`;
+		emit_asm(status, `mov ${reg}, #0\n`);
 		return;
 	}
 	// A captured name lives in the closure env, not this frame
@@ -131,19 +132,19 @@ export function emit_var_load(status: BuildStatus, reg: string, name: string, si
 	// the ptr half.
 	if (status.closure_env_offsets?.has(name) && status.closure_env_slot !== undefined) {
 		const off = status.closure_env_offsets.get(name)!;
-		status.code += `ldr ${reg}, [x29, #${status.closure_env_slot}]\n`;
+		emit_asm(status, `ldr ${reg}, [x29, #${status.closure_env_slot}]\n`);
 		if (size === 16 && reg.startsWith("x")) {
 			const n = parseInt(reg.substring(1), 10);
-			status.code += `ldr x${n + 1}, [${reg}, #${off + 8}]\n`;
-			status.code += `ldr ${reg}, [${reg}, #${off}]\n`;
+			emit_asm(status, `ldr x${n + 1}, [${reg}, #${off + 8}]\n`);
+			emit_asm(status, `ldr ${reg}, [${reg}, #${off}]\n`);
 		} else if (size === 1) {
-			status.code += `ldrb ${reg.replace("x", "w")}, [${reg}, #${off}]\n`;
+			emit_asm(status, `ldrb ${reg.replace("x", "w")}, [${reg}, #${off}]\n`);
 		} else if (size === 2) {
-			status.code += `ldrh ${reg.replace("x", "w")}, [${reg}, #${off}]\n`;
+			emit_asm(status, `ldrh ${reg.replace("x", "w")}, [${reg}, #${off}]\n`);
 		} else if (size === 4) {
-			status.code += `ldr ${reg.replace("x", "w")}, [${reg}, #${off}]\n`;
+			emit_asm(status, `ldr ${reg.replace("x", "w")}, [${reg}, #${off}]\n`);
 		} else {
-			status.code += `ldr ${reg}, [${reg}, #${off}]\n`;
+			emit_asm(status, `ldr ${reg}, [${reg}, #${off}]\n`);
 		}
 		return;
 	}
@@ -151,12 +152,12 @@ export function emit_var_load(status: BuildStatus, reg: string, name: string, si
 	if (alloc_reg) {
 		if (alloc_reg.startsWith("d") && reg.startsWith("d")) {
 			if (reg !== alloc_reg) {
-				status.code += `fmov ${reg}, ${alloc_reg}\n`;
+				emit_asm(status, `fmov ${reg}, ${alloc_reg}\n`);
 			}
 		} else if (alloc_reg.startsWith("d")) {
-			status.code += `fmov ${reg}, ${alloc_reg}\n`;
+			emit_asm(status, `fmov ${reg}, ${alloc_reg}\n`);
 		} else if (reg !== alloc_reg) {
-			status.code += `mov ${reg}, ${alloc_reg}\n`;
+			emit_asm(status, `mov ${reg}, ${alloc_reg}\n`);
 		}
 		return;
 	}
@@ -168,38 +169,38 @@ export function emit_var_load(status: BuildStatus, reg: string, name: string, si
 		if (size === 16 && reg.startsWith("x")) {
 			const n = parseInt(reg.substring(1), 10);
 			if (offset + 8 > 504) {
-				status.code += `ldr ${reg}, [x29, #${offset}]\n`;
-				status.code += `ldr x${n + 1}, [x29, #${offset + 8}]\n`;
+				emit_asm(status, `ldr ${reg}, [x29, #${offset}]\n`);
+				emit_asm(status, `ldr x${n + 1}, [x29, #${offset + 8}]\n`);
 			} else {
-				status.code += `ldp ${reg}, x${n + 1}, [x29, #${offset}]\n`;
+				emit_asm(status, `ldp ${reg}, x${n + 1}, [x29, #${offset}]\n`);
 			}
 			return;
 		}
 		if (size === 1) {
-			status.code += `ldrb ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
+			emit_asm(status, `ldrb ${reg.replace("x", "w")}, [x29, #${offset}]\n`);
 		} else if (size === 2) {
-			status.code += `ldrh ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
+			emit_asm(status, `ldrh ${reg.replace("x", "w")}, [x29, #${offset}]\n`);
 		} else if (size === 4) {
-			status.code += `ldr ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
+			emit_asm(status, `ldr ${reg.replace("x", "w")}, [x29, #${offset}]\n`);
 		} else {
-			status.code += `ldr ${reg}, [x29, #${offset}]\n`;
+			emit_asm(status, `ldr ${reg}, [x29, #${offset}]\n`);
 		}
 	} else {
 		const param_reg = status.function_param_regs?.get(name);
 		if (param_reg) {
 			if (reg !== param_reg) {
-				status.code += `mov ${reg}, ${param_reg}\n`;
+				emit_asm(status, `mov ${reg}, ${param_reg}\n`);
 			}
 		} else {
-			status.code += `adr ${reg}, ${name}\n`;
+			emit_asm(status, `adr ${reg}, ${name}\n`);
 			if (size === 1) {
-				status.code += `ldrb ${reg.replace("x", "w")}, [${reg}]\n`;
+				emit_asm(status, `ldrb ${reg.replace("x", "w")}, [${reg}]\n`);
 			} else if (size === 2) {
-				status.code += `ldrh ${reg.replace("x", "w")}, [${reg}]\n`;
+				emit_asm(status, `ldrh ${reg.replace("x", "w")}, [${reg}]\n`);
 			} else if (size === 4) {
-				status.code += `ldr ${reg.replace("x", "w")}, [${reg}]\n`;
+				emit_asm(status, `ldr ${reg.replace("x", "w")}, [${reg}]\n`);
 			} else {
-				status.code += `ldr ${reg}, [${reg}]\n`;
+				emit_asm(status, `ldr ${reg}, [${reg}]\n`);
 			}
 		}
 	}
@@ -210,19 +211,19 @@ export function emit_var_store(status: BuildStatus, reg: string, name: string, s
 	// into its field. Use x9 as the env base (callers treat x0 as the value).
 	if (status.closure_env_offsets?.has(name) && status.closure_env_slot !== undefined) {
 		const off = status.closure_env_offsets.get(name)!;
-		status.code += `ldr x9, [x29, #${status.closure_env_slot}]\n`;
+		emit_asm(status, `ldr x9, [x29, #${status.closure_env_slot}]\n`);
 		if (size === 16 && reg.startsWith("x")) {
 			const n = parseInt(reg.substring(1), 10);
-			status.code += `str ${reg}, [x9, #${off}]\n`;
-			status.code += `str x${n + 1}, [x9, #${off + 8}]\n`;
+			emit_asm(status, `str ${reg}, [x9, #${off}]\n`);
+			emit_asm(status, `str x${n + 1}, [x9, #${off + 8}]\n`);
 		} else if (size === 1) {
-			status.code += `strb ${reg.replace("x", "w")}, [x9, #${off}]\n`;
+			emit_asm(status, `strb ${reg.replace("x", "w")}, [x9, #${off}]\n`);
 		} else if (size === 2) {
-			status.code += `strh ${reg.replace("x", "w")}, [x9, #${off}]\n`;
+			emit_asm(status, `strh ${reg.replace("x", "w")}, [x9, #${off}]\n`);
 		} else if (size === 4) {
-			status.code += `str ${reg.replace("x", "w")}, [x9, #${off}]\n`;
+			emit_asm(status, `str ${reg.replace("x", "w")}, [x9, #${off}]\n`);
 		} else {
-			status.code += `str ${reg}, [x9, #${off}]\n`;
+			emit_asm(status, `str ${reg}, [x9, #${off}]\n`);
 		}
 		return;
 	}
@@ -230,12 +231,12 @@ export function emit_var_store(status: BuildStatus, reg: string, name: string, s
 	if (alloc_reg) {
 		if (alloc_reg.startsWith("d") && reg.startsWith("d")) {
 			if (reg !== alloc_reg) {
-				status.code += `fmov ${alloc_reg}, ${reg}\n`;
+				emit_asm(status, `fmov ${alloc_reg}, ${reg}\n`);
 			}
 		} else if (alloc_reg.startsWith("d")) {
-			status.code += `fmov ${alloc_reg}, ${reg}\n`;
+			emit_asm(status, `fmov ${alloc_reg}, ${reg}\n`);
 		} else if (reg !== alloc_reg) {
-			status.code += `mov ${alloc_reg}, ${reg}\n`;
+			emit_asm(status, `mov ${alloc_reg}, ${reg}\n`);
 		}
 		return;
 	}
@@ -246,36 +247,36 @@ export function emit_var_store(status: BuildStatus, reg: string, name: string, s
 		if (size === 16 && reg.startsWith("x")) {
 			const n = parseInt(reg.substring(1), 10);
 			if (offset + 8 > 504) {
-				status.code += `str ${reg}, [x29, #${offset}]\n`;
-				status.code += `str x${n + 1}, [x29, #${offset + 8}]\n`;
+				emit_asm(status, `str ${reg}, [x29, #${offset}]\n`);
+				emit_asm(status, `str x${n + 1}, [x29, #${offset + 8}]\n`);
 			} else {
-				status.code += `stp ${reg}, x${n + 1}, [x29, #${offset}]\n`;
+				emit_asm(status, `stp ${reg}, x${n + 1}, [x29, #${offset}]\n`);
 			}
 			return;
 		}
 		if (size === 1) {
-			status.code += `strb ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
+			emit_asm(status, `strb ${reg.replace("x", "w")}, [x29, #${offset}]\n`);
 		} else if (size === 2) {
-			status.code += `strh ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
+			emit_asm(status, `strh ${reg.replace("x", "w")}, [x29, #${offset}]\n`);
 		} else if (size === 4) {
-			status.code += `str ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
+			emit_asm(status, `str ${reg.replace("x", "w")}, [x29, #${offset}]\n`);
 		} else {
-			status.code += `str ${reg}, [x29, #${offset}]\n`;
+			emit_asm(status, `str ${reg}, [x29, #${offset}]\n`);
 		}
 	} else {
 		const param_reg = status.function_param_regs?.get(name);
 		if (param_reg) {
-			status.code += `mov ${param_reg}, ${reg}\n`;
+			emit_asm(status, `mov ${param_reg}, ${reg}\n`);
 		} else {
-			status.code += `adr x1, ${name}\n`;
+			emit_asm(status, `adr x1, ${name}\n`);
 			if (size === 1) {
-				status.code += `strb ${reg.replace("x", "w")}, [x1]\n`;
+				emit_asm(status, `strb ${reg.replace("x", "w")}, [x1]\n`);
 			} else if (size === 2) {
-				status.code += `strh ${reg.replace("x", "w")}, [x1]\n`;
+				emit_asm(status, `strh ${reg.replace("x", "w")}, [x1]\n`);
 			} else if (size === 4) {
-				status.code += `str ${reg.replace("x", "w")}, [x1]\n`;
+				emit_asm(status, `str ${reg.replace("x", "w")}, [x1]\n`);
 			} else {
-				status.code += `str ${reg}, [x1]\n`;
+				emit_asm(status, `str ${reg}, [x1]\n`);
 			}
 		}
 	}

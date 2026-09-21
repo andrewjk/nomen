@@ -60,6 +60,7 @@ import {
 	emit_env_free_a64,
 	materialize_lambda_descriptor_a64,
 } from "./utils/closure_a64.ts";
+import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
 import { emit_var_address } from "./utils/stack_var.ts";
 import { get_struct_size } from "./utils/struct_layout.ts";
 
@@ -72,9 +73,9 @@ import { get_struct_size } from "./utils/struct_layout.ts";
  */
 function emit_capturing_closure_value_a64(fn: FunctionNode, status: BuildStatus): void {
 	const { offsets, size: env_size } = closure_env_layout_a64(fn, status);
-	status.code += `mov x0, #${env_size}\n`;
+	emit_asm(status, `mov x0, #${env_size}\n`);
 	emit_malloc(status);
-	status.code += `str x0, [sp, #-16]!\n`;
+	emit_asm(status, `str x0, [sp, #-16]!\n`);
 	for (const cap of fn.captures!) {
 		const off = offsets.get(cap.name)!;
 		const is_string = cap.type.name === "string" && !cap.type.is_view && !cap.type.is_array;
@@ -88,28 +89,28 @@ function emit_capturing_closure_value_a64(fn: FunctionNode, status: BuildStatus)
 			// (A MOVE capture transfers those bytes; the donor is marked moved
 			// below so it is not destroyed at scope exit.)
 			emit_var_address(status, "x0", cap.name);
-			if (!status.code.endsWith("\n")) status.code += "\n";
+			ensure_newline(status);
 			const cap_size = get_struct_size(cap.type.name, status);
-			status.code += `mov x1, x0\n`;
-			status.code += `ldr x9, [sp]\n`;
-			status.code += `add x0, x9, #${off}\n`;
-			status.code += `mov x2, #${cap_size}\n`;
-			status.code += `bl _memcpy\n`;
+			emit_asm(status, `mov x1, x0\n`);
+			emit_asm(status, `ldr x9, [sp]\n`);
+			emit_asm(status, `add x0, x9, #${off}\n`);
+			emit_asm(status, `mov x2, #${cap_size}\n`);
+			emit_asm(status, `bl _memcpy\n`);
 		} else {
 			// Scalars, class instance pointers, and func descriptors transfer
 			// by value (build_node loads the descriptor / instance pointer).
 			build_node(new ValueNode(fn.start, cap.name, cap.type), status);
-			if (!status.code.endsWith("\n")) status.code += "\n";
+			ensure_newline(status);
 			if (is_string) {
 				// Deep-copy the captured string into the env (the env destructor
 				// frees the copy); emit_strdup preserves the len half in x1.
 				emit_strdup(status);
-				status.code += `ldr x9, [sp]\n`;
-				status.code += `str x0, [x9, #${off}]\n`;
-				status.code += `str x1, [x9, #${off + 8}]\n`;
+				emit_asm(status, `ldr x9, [sp]\n`);
+				emit_asm(status, `str x0, [x9, #${off}]\n`);
+				emit_asm(status, `str x1, [x9, #${off + 8}]\n`);
 			} else {
-				status.code += `ldr x9, [sp]\n`;
-				status.code += `str x0, [x9, #${off}]\n`;
+				emit_asm(status, `ldr x9, [sp]\n`);
+				emit_asm(status, `str x0, [x9, #${off}]\n`);
 			}
 		}
 		// A MOVE capture transfers ownership out of the donating local: mark it
@@ -125,20 +126,20 @@ function emit_capturing_closure_value_a64(fn: FunctionNode, status: BuildStatus)
 			}
 		}
 	}
-	status.code += `mov x0, #32\n`;
+	emit_asm(status, `mov x0, #32\n`);
 	emit_malloc(status);
-	status.code += `ldr x9, [sp], #16\n`;
-	status.code += `str x9, [x0, #8]\n`;
-	status.code += `adr x10, ${emission_label(fn)}\n`;
-	status.code += `str x10, [x0]\n`;
-	status.code += `mov w10, #1\n`;
-	status.code += `str w10, [x0, #16]\n`;
+	emit_asm(status, `ldr x9, [sp], #16\n`);
+	emit_asm(status, `str x9, [x0, #8]\n`);
+	emit_asm(status, `adr x10, ${emission_label(fn)}\n`);
+	emit_asm(status, `str x10, [x0]\n`);
+	emit_asm(status, `mov w10, #1\n`);
+	emit_asm(status, `str w10, [x0, #16]\n`);
 	const destroy = emit_env_free_a64(fn, status);
 	if (destroy) {
-		status.code += `adr x10, ${destroy}\n`;
-		status.code += `str x10, [x0, #24]\n`;
+		emit_asm(status, `adr x10, ${destroy}\n`);
+		emit_asm(status, `str x10, [x0, #24]\n`);
 	} else {
-		status.code += `str xzr, [x0, #24]\n`;
+		emit_asm(status, `str xzr, [x0, #24]\n`);
 	}
 }
 
@@ -358,8 +359,6 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 	}
 
 	if (with_semicolon) {
-		if (!status.code.endsWith("\n")) {
-			status.code += "\n";
-		}
+		ensure_newline(status);
 	}
 }

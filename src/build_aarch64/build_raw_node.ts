@@ -3,6 +3,7 @@ import { is_overloaded, mangled_label } from "../check/utils/function_overload.t
 import FunctionNode from "../nodes/FunctionNode.ts";
 import RawNode from "../nodes/RawNode.ts";
 import { check_raw_arch_coverage, parse_raw_directives } from "../raw_directives.ts";
+import { asm_code_len, emit_asm } from "./utils/code_buffer.ts";
 import { raw_reload_lines_for } from "./utils/raw_reload.ts";
 import { get_enum_sret_size, get_struct_size } from "./utils/struct_layout.ts";
 
@@ -33,10 +34,10 @@ export default function build_raw_node(node: RawNode, status: BuildStatus) {
 		// register-slot param in a home (stack slot or callee-saved
 		// register) that stays live at every statement boundary. Only the
 		// registers the block actually names are reloaded.
-		for (const line of raw_reload_lines_for(code, status.raw_param_reloads, status.code.length)) {
-			status.code += `${line}\n`;
+		for (const line of raw_reload_lines_for(code, status.raw_param_reloads, asm_code_len(status))) {
+			emit_asm(status, `${line}\n`);
 		}
-		status.code += `${code}\n`;
+		emit_asm(status, `${code}\n`);
 	}
 }
 
@@ -153,22 +154,22 @@ function emit_struct_return_thunk(
 	const c_label = `${func_label}_c`;
 	const words = Math.ceil(struct_size / 8);
 
-	status.code += `.p2align 2\n`;
-	status.code += `${func_label}:\n`;
-	status.code += `stp x29, x30, [sp, #-16]!\n`;
-	status.code += `sub sp, sp, #16\n`;
-	status.code += `str x8, [sp, #0]\n`;
-	status.code += `bl ${c_label}\n`;
-	status.code += `ldr x8, [sp, #0]\n`;
+	emit_asm(status, `.p2align 2\n`);
+	emit_asm(status, `${func_label}:\n`);
+	emit_asm(status, `stp x29, x30, [sp, #-16]!\n`);
+	emit_asm(status, `sub sp, sp, #16\n`);
+	emit_asm(status, `str x8, [sp, #0]\n`);
+	emit_asm(status, `bl ${c_label}\n`);
+	emit_asm(status, `ldr x8, [sp, #0]\n`);
 	for (let i = 0; i < words; i++) {
 		const reg = i === 0 ? "x0" : i === 1 ? "x1" : `x${i}`;
 		if (i === 0) {
-			status.code += `str ${reg}, [x8]\n`;
+			emit_asm(status, `str ${reg}, [x8]\n`);
 		} else {
-			status.code += `str ${reg}, [x8, #${i * 8}]\n`;
+			emit_asm(status, `str ${reg}, [x8, #${i * 8}]\n`);
 		}
 	}
-	status.code += `add sp, sp, #16\n`;
-	status.code += `ldp x29, x30, [sp], #16\n`;
-	status.code += `ret\n`;
+	emit_asm(status, `add sp, sp, #16\n`);
+	emit_asm(status, `ldp x29, x30, [sp], #16\n`);
+	emit_asm(status, `ret\n`);
 }

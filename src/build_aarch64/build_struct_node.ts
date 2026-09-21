@@ -30,6 +30,7 @@ import {
 	materialize_func_value_a64,
 	materialize_lambda_descriptor_a64,
 } from "./utils/closure_a64.ts";
+import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
 import { find_enum_for_case } from "./utils/enum_case.ts";
 import { nir_regalloc_enabled, seed_function_allocations } from "./utils/nir_regalloc.ts";
 import {
@@ -70,13 +71,13 @@ function emit_typed_store(
 	const wreg = src_reg.replace("x", "w");
 	const addr = offset === 0 ? `[${dst_base}]` : `[${dst_base}, #${offset}]`;
 	if (size === 1) {
-		status.code += `strb ${wreg}, ${addr}\n`;
+		emit_asm(status, `strb ${wreg}, ${addr}\n`);
 	} else if (size === 2) {
-		status.code += `strh ${wreg}, ${addr}\n`;
+		emit_asm(status, `strh ${wreg}, ${addr}\n`);
 	} else if (size === 4) {
-		status.code += `str ${wreg}, ${addr}\n`;
+		emit_asm(status, `str ${wreg}, ${addr}\n`);
 	} else {
-		status.code += `str ${src_reg}, ${addr}\n`;
+		emit_asm(status, `str ${src_reg}, ${addr}\n`);
 	}
 }
 
@@ -110,19 +111,19 @@ function init_enum_shorthand_field_default(
 		const enum_size = get_enum_size(enum_node.name, status);
 		const temp_offset = (status.stack_size || 0) + 16;
 		status.stack_size = (status.stack_size || 0) + 16 + enum_size;
-		status.code += `mov x9, #${case_index}\n`;
-		status.code += `str x9, [x29, #${temp_offset}]\n`;
+		emit_asm(status, `mov x9, #${case_index}\n`);
+		emit_asm(status, `str x9, [x29, #${temp_offset}]\n`);
 		for (let off = 8; off < enum_size; off += 8) {
-			status.code += `str xzr, [x29, #${temp_offset + off}]\n`;
+			emit_asm(status, `str xzr, [x29, #${temp_offset + off}]\n`);
 		}
 		const words = Math.ceil(enum_size / 8);
 		for (let w = 0; w < words; w++) {
-			status.code += `ldr x9, [x29, #${temp_offset + w * 8}]\n`;
-			status.code += `str x9, [${base_reg}, #${offset + w * 8}]\n`;
+			emit_asm(status, `ldr x9, [x29, #${temp_offset + w * 8}]\n`);
+			emit_asm(status, `str x9, [${base_reg}, #${offset + w * 8}]\n`);
 		}
 	} else {
 		// Simple enum: case index is the whole value (8 bytes).
-		status.code += `mov x1, #${case_index}\n`;
+		emit_asm(status, `mov x1, #${case_index}\n`);
 		emit_typed_store(status, "x1", base_reg, offset, 8);
 	}
 	return true;
@@ -145,21 +146,21 @@ function init_nullable_field_default(
 	const has_offset = get_field_has_offset(node.name, field.name, status);
 	const is_null = field.value.node_type === "value" && (field.value as any).value === "null";
 	if (is_null) {
-		status.code += `str xzr, [${base_reg}, #${has_offset}]\n`;
+		emit_asm(status, `str xzr, [${base_reg}, #${has_offset}]\n`);
 		return true;
 	}
 	// Non-null default: build the value (a constructor) and copy it in.
 	build_node(field.value, status);
-	if (!status.code.endsWith("\n")) status.code += "\n";
+	ensure_newline(status);
 	// Result address in x0; copy word-by-word into the field.
 	const field_size = get_struct_size(field.type.name, status);
 	const words = Math.ceil(field_size / 8);
 	for (let w = 0; w < words; w++) {
-		status.code += `ldr x9, [x0, #${w * 8}]\n`;
-		status.code += `str x9, [${base_reg}, #${offset + w * 8}]\n`;
+		emit_asm(status, `ldr x9, [x0, #${w * 8}]\n`);
+		emit_asm(status, `str x9, [${base_reg}, #${offset + w * 8}]\n`);
 	}
-	status.code += `mov x9, #1\n`;
-	status.code += `str x9, [${base_reg}, #${has_offset}]\n`;
+	emit_asm(status, `mov x9, #1\n`);
+	emit_asm(status, `str x9, [${base_reg}, #${has_offset}]\n`);
 	return true;
 }
 
@@ -264,8 +265,8 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
  */
 function emit_method_export(label: string, status: BuildStatus) {
 	if (status.emit_mode === "system" && status.platform !== "windows") {
-		status.code += `.globl _${label}\n`;
-		status.code += `_${label} = ${label}\n`;
+		emit_asm(status, `.globl _${label}\n`);
+		emit_asm(status, `_${label} = ${label}\n`);
 	}
 }
 
@@ -314,19 +315,19 @@ function build_destroy_function(node: StructNode, func: FunctionNode, status: Bu
 
 	const stack_placeholder = `STACK_SIZE_${func_label}`;
 
-	status.code += `.p2align 2\n`;
-	status.code += `${func_label}:\n`;
+	emit_asm(status, `.p2align 2\n`);
+	emit_asm(status, `${func_label}:\n`);
 	emit_method_export(func_label, status);
-	status.code += `stp x29, x30, [sp, #-16]!\n`;
-	status.code += `str x19, [sp, #-16]!\n`;
-	status.code += `mov x19, x0\n`;
+	emit_asm(status, `stp x29, x30, [sp, #-16]!\n`);
+	emit_asm(status, `str x19, [sp, #-16]!\n`);
+	emit_asm(status, `mov x19, x0\n`);
 
 	status.function_param_regs = new Map();
 	status.function_param_vars = new Set();
 	status.function_param_regs.set("self", "x19");
 
-	status.code += `sub sp, sp, #${stack_placeholder}\n`;
-	status.code += `mov x29, sp\n`;
+	emit_asm(status, `sub sp, sp, #${stack_placeholder}\n`);
+	emit_asm(status, `mov x29, sp\n`);
 
 	status.buffer_data_cache = undefined;
 	status.array_ptr_cache = undefined;
@@ -371,7 +372,7 @@ function build_destroy_function(node: StructNode, func: FunctionNode, status: Bu
 		emit_field_destroys(status, node, "self", undefined, false);
 	}
 
-	status.code += `${return_label}:\n`;
+	emit_asm(status, `${return_label}:\n`);
 
 	const total_stack = Math.ceil((status.stack_size || 0) / 16) * 16;
 	status.code = status.code.replace(
@@ -379,16 +380,16 @@ function build_destroy_function(node: StructNode, func: FunctionNode, status: Bu
 		total_stack > 0 ? `sub sp, sp, #${total_stack}` : `// no stack needed`,
 	);
 	if (total_stack > 0) {
-		status.code += `add sp, sp, #${total_stack}\n`;
+		emit_asm(status, `add sp, sp, #${total_stack}\n`);
 	}
 
 	for (let i = destroy_loop_regs.length - 1; i >= 0; i--) {
-		status.code += `ldr ${destroy_loop_regs[i]}, [sp], #16\n`;
+		emit_asm(status, `ldr ${destroy_loop_regs[i]}, [sp], #16\n`);
 	}
 
-	status.code += `ldr x19, [sp], #16\n`;
-	status.code += `ldp x29, x30, [sp], #16\n`;
-	status.code += `ret\n`;
+	emit_asm(status, `ldr x19, [sp], #16\n`);
+	emit_asm(status, `ldp x29, x30, [sp], #16\n`);
+	emit_asm(status, `ret\n`);
 
 	status.scoped_declarations = old_scoped_declarations;
 	status.heap_strings = old_heap_strings;
@@ -436,19 +437,19 @@ function build_auto_destroy_function(node: StructNode, status: BuildStatus) {
 
 	const stack_placeholder = `STACK_SIZE_${func_label}`;
 
-	status.code += `.p2align 2\n`;
-	status.code += `${func_label}:\n`;
+	emit_asm(status, `.p2align 2\n`);
+	emit_asm(status, `${func_label}:\n`);
 	emit_method_export(func_label, status);
-	status.code += `stp x29, x30, [sp, #-16]!\n`;
-	status.code += `str x19, [sp, #-16]!\n`;
-	status.code += `mov x19, x0\n`;
+	emit_asm(status, `stp x29, x30, [sp, #-16]!\n`);
+	emit_asm(status, `str x19, [sp, #-16]!\n`);
+	emit_asm(status, `mov x19, x0\n`);
 
 	status.function_param_regs = new Map();
 	status.function_param_vars = new Set();
 	status.function_param_regs.set("self", "x19");
 
-	status.code += `sub sp, sp, #${stack_placeholder}\n`;
-	status.code += `mov x29, sp\n`;
+	emit_asm(status, `sub sp, sp, #${stack_placeholder}\n`);
+	emit_asm(status, `mov x29, sp\n`);
 
 	// No user body — just destroy class-typed fields. free_strings for
 	// classes: a class's plain string fields are always heap-owned (`_init`
@@ -457,7 +458,7 @@ function build_auto_destroy_function(node: StructNode, status: BuildStatus) {
 	// hold rodata literals; only the strdup'ing Buffer store path owns).
 	emit_field_destroys(status, node, "self", undefined, false, node.is_class);
 
-	status.code += `${return_label}:\n`;
+	emit_asm(status, `${return_label}:\n`);
 
 	const total_stack = Math.ceil((status.stack_size || 0) / 16) * 16;
 	status.code = status.code.replace(
@@ -465,12 +466,12 @@ function build_auto_destroy_function(node: StructNode, status: BuildStatus) {
 		total_stack > 0 ? `sub sp, sp, #${total_stack}` : `// no stack needed`,
 	);
 	if (total_stack > 0) {
-		status.code += `add sp, sp, #${total_stack}\n`;
+		emit_asm(status, `add sp, sp, #${total_stack}\n`);
 	}
 
-	status.code += `ldr x19, [sp], #16\n`;
-	status.code += `ldp x29, x30, [sp], #16\n`;
-	status.code += `ret\n`;
+	emit_asm(status, `ldr x19, [sp], #16\n`);
+	emit_asm(status, `ldp x29, x30, [sp], #16\n`);
+	emit_asm(status, `ret\n`);
 
 	status.scoped_declarations = old_scoped_declarations;
 	status.heap_strings = old_heap_strings;
@@ -502,17 +503,17 @@ function with_live_arg_regs_spilled(
 ) {
 	const odd = live_regs.length % 2 === 1;
 	for (let r = 0; r + 1 < live_regs.length; r += 2) {
-		status.code += `stp ${live_regs[r]}, ${live_regs[r + 1]}, [sp, #-16]!\n`;
+		emit_asm(status, `stp ${live_regs[r]}, ${live_regs[r + 1]}, [sp, #-16]!\n`);
 	}
 	if (odd) {
-		status.code += `str ${live_regs[live_regs.length - 1]}, [sp, #-16]!\n`;
+		emit_asm(status, `str ${live_regs[live_regs.length - 1]}, [sp, #-16]!\n`);
 	}
 	emit_call();
 	if (odd) {
-		status.code += `ldr ${live_regs[live_regs.length - 1]}, [sp], #16\n`;
+		emit_asm(status, `ldr ${live_regs[live_regs.length - 1]}, [sp], #16\n`);
 	}
 	for (let r = odd ? live_regs.length - 3 : live_regs.length - 2; r >= 0; r -= 2) {
-		status.code += `ldp ${live_regs[r]}, ${live_regs[r + 1]}, [sp], #16\n`;
+		emit_asm(status, `ldp ${live_regs[r]}, ${live_regs[r + 1]}, [sp], #16\n`);
 	}
 }
 
@@ -527,20 +528,20 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 
 	const stack_placeholder = `STACK_SIZE_${func_name}`;
 
-	status.code += `.p2align 2\n`;
-	status.code += `${func_name}:\n`;
+	emit_asm(status, `.p2align 2\n`);
+	emit_asm(status, `${func_name}:\n`);
 	emit_method_export(func_name, status);
-	status.code += `stp x29, x30, [sp, #-16]!\n`;
+	emit_asm(status, `stp x29, x30, [sp, #-16]!\n`);
 	// self lives in x19 across the whole init so a defaulted struct field
 	// (e.g. `var Inner child = Inner()`) can run a constructor call without
 	// losing the destination pointer — the call sequence clobbers x0 with
 	// the return-temp address.
-	status.code += `str x19, [sp, #-16]!\n`;
-	status.code += `mov x19, x0\n`;
-	status.code += `sub sp, sp, #${stack_placeholder}\n`;
-	status.code += `mov x29, sp\n`;
+	emit_asm(status, `str x19, [sp, #-16]!\n`);
+	emit_asm(status, `mov x19, x0\n`);
+	emit_asm(status, `sub sp, sp, #${stack_placeholder}\n`);
+	emit_asm(status, `mov x29, sp\n`);
 
-	status.code += `str xzr, [x19]\n`;
+	emit_asm(status, `str xzr, [x19]\n`);
 
 	// If the struct conforms to any trait, install its vtable pointer at
 	// offset 0 (the reserved VT_SIZE slot) so trait-typed dispatch can resolve
@@ -549,9 +550,9 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 	if (node.traits.length > 0) {
 		// adrp+add (not adr): the vtable lives in the __DATA segment, so the
 		// cross-section address needs page-relative addressing on Mach-O.
-		status.code += `adrp x9, _${node.name}_traits@PAGE\n`;
-		status.code += `add x9, x9, _${node.name}_traits@PAGEOFF\n`;
-		status.code += `str x9, [x19]\n`;
+		emit_asm(status, `adrp x9, _${node.name}_traits@PAGE\n`);
+		emit_asm(status, `add x9, x9, _${node.name}_traits@PAGEOFF\n`);
+		emit_asm(status, `str x9, [x19]\n`);
 	}
 	const param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
 	// Fat-string fields consume TWO AAPCS slots (ptr, len pair) — track the
@@ -584,7 +585,7 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 			src_reg = param_regs[slot - 1];
 		} else {
 			const k = slot - NUM_REG_ARGS;
-			status.code += `ldr x10, [x29, #${overflow_placeholder(func_name, k)}]\n`;
+			emit_asm(status, `ldr x10, [x29, #${overflow_placeholder(func_name, k)}]\n`);
 			src_reg = "x10";
 		}
 		// A view FIELD stores both halves of the incoming pair verbatim —
@@ -596,9 +597,9 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 			} else {
 				// Pair straddles the register/overflow boundary.
 				const k2 = slot + 1 - NUM_REG_ARGS;
-				status.code += `str ${src_reg}, [x19, #${offset}]\n`;
-				status.code += `ldr x9, [x29, #${overflow_placeholder(func_name, k2)}]\n`;
-				status.code += `str x9, [x19, #${offset + 8}]\n`;
+				emit_asm(status, `str ${src_reg}, [x19, #${offset}]\n`);
+				emit_asm(status, `ldr x9, [x29, #${overflow_placeholder(func_name, k2)}]\n`);
+				emit_asm(status, `str x9, [x19, #${offset + 8}]\n`);
 			}
 			continue;
 		}
@@ -618,24 +619,24 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 				// pair plus all later fields' registers) must be spilled
 				// across it.
 				const skip_label = `.field_strdup_skip_${field_strdup_guard_counter++}`;
-				status.code += `cbz ${src_reg}, ${skip_label}\n`;
+				emit_asm(status, `cbz ${src_reg}, ${skip_label}\n`);
 				with_live_arg_regs_spilled(status, param_regs.slice(slot - 1), () => {
-					status.code += `mov x0, ${src_reg}\n`;
+					emit_asm(status, `mov x0, ${src_reg}\n`);
 					emit_strdup(status);
 				});
 				// Write the strdup'd pointer back AFTER the pops — the restored
 				// live registers include src_reg's slot and would clobber it.
-				status.code += `mov ${src_reg}, x0\n`;
-				status.code += `${skip_label}:\n`;
+				emit_asm(status, `mov ${src_reg}, x0\n`);
+				emit_asm(status, `${skip_label}:\n`);
 			}
 			if (len_src) {
 				emit_pair_store_to(status, "x19", offset, src_reg, len_src);
 			} else {
 				// Pair straddles the register/overflow boundary.
 				const k2 = slot + 1 - NUM_REG_ARGS;
-				status.code += `str ${src_reg}, [x19, #${offset}]\n`;
-				status.code += `ldr x9, [x29, #${overflow_placeholder(func_name, k2)}]\n`;
-				status.code += `str x9, [x19, #${offset + 8}]\n`;
+				emit_asm(status, `str ${src_reg}, [x19, #${offset}]\n`);
+				emit_asm(status, `ldr x9, [x29, #${overflow_placeholder(func_name, k2)}]\n`);
+				emit_asm(status, `str x9, [x19, #${offset + 8}]\n`);
 			}
 			continue;
 		}
@@ -649,11 +650,11 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 			for (let e = 0; e < length; e++) {
 				const byte_offset = e * element_size;
 				if (elem_is_fat_string) {
-					status.code += `ldp x9, x10, [${src_reg}, #${byte_offset}]\n`;
-					status.code += `stp x9, x10, [x19, #${offset + byte_offset}]\n`;
+					emit_asm(status, `ldp x9, x10, [${src_reg}, #${byte_offset}]\n`);
+					emit_asm(status, `stp x9, x10, [x19, #${offset + byte_offset}]\n`);
 				} else {
-					status.code += load_element(src_reg, byte_offset, element_size);
-					status.code += store_element("x19", offset + byte_offset, element_size);
+					emit_asm(status, load_element(src_reg, byte_offset, element_size));
+					emit_asm(status, store_element("x19", offset + byte_offset, element_size));
 				}
 			}
 		} else if (
@@ -671,8 +672,8 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 			const enum_size = get_enum_size(enum_name, status);
 			const words = Math.ceil(enum_size / 8);
 			for (let w = 0; w < words; w++) {
-				status.code += `ldr x9, [${src_reg}, #${w * 8}]\n`;
-				status.code += `str x9, [x19, #${offset + w * 8}]\n`;
+				emit_asm(status, `ldr x9, [${src_reg}, #${w * 8}]\n`);
+				emit_asm(status, `str x9, [x19, #${offset + w * 8}]\n`);
 			}
 			emit_enum_payload_strdups_at(status, enum_name, "x19", offset);
 		} else if (
@@ -687,8 +688,8 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 			const field_size = get_struct_size(field.type.name, status);
 			const words = Math.ceil(field_size / 8);
 			for (let w = 0; w < words; w++) {
-				status.code += `ldr x9, [${src_reg}, #${w * 8}]\n`;
-				status.code += `str x9, [x19, #${offset + w * 8}]\n`;
+				emit_asm(status, `ldr x9, [${src_reg}, #${w * 8}]\n`);
+				emit_asm(status, `str x9, [x19, #${offset + w * 8}]\n`);
 			}
 			// A nullable struct value field (`T? f`) is passed at the call
 			// site as combined `[struct | flag]` storage. After copying the
@@ -697,8 +698,8 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 			// source) into the field's has-offset in self.
 			if (is_nullable_struct_type(field.type, status)) {
 				const has_off = get_field_has_offset(node.name, field.name, status);
-				status.code += `ldr x9, [${src_reg}, #${field_size}]\n`;
-				status.code += `str x9, [x19, #${has_off}]\n`;
+				emit_asm(status, `ldr x9, [${src_reg}, #${field_size}]\n`);
+				emit_asm(status, `str x9, [x19, #${has_off}]\n`);
 			}
 		} else {
 			const field_size = get_type_size(field.type, status);
@@ -717,11 +718,11 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 				// the still-live incoming arg registers across it (see
 				// with_live_arg_regs_spilled).
 				with_live_arg_regs_spilled(status, param_regs.slice(slot - 1), () => {
-					status.code += `mov x0, ${src_reg}\n`;
-					status.code += `bl _strdup\n`;
+					emit_asm(status, `mov x0, ${src_reg}\n`);
+					emit_asm(status, `bl _strdup\n`);
 				});
 				// Write-back after the pops — see the fat-string case above.
-				status.code += `mov ${src_reg}, x0\n`;
+				emit_asm(status, `mov ${src_reg}, x0\n`);
 			}
 			emit_typed_store(status, src_reg, "x19", offset, field_size);
 		}
@@ -747,9 +748,9 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 			}
 			if (field.value.node_type === "value") {
 				if (val === "true") {
-					status.code += `mov x1, #1\n`;
+					emit_asm(status, `mov x1, #1\n`);
 				} else if (val === "false") {
-					status.code += `mov x1, #0\n`;
+					emit_asm(status, `mov x1, #0\n`);
 				} else if (val === "null") {
 					// A `null` default on a fat string field zeroes BOTH halves:
 					// the generic single-word store below would leave the len
@@ -761,18 +762,18 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 						!field.type.is_view &&
 						!field.type.is_array
 					) {
-						status.code += `mov x1, #0\n`;
-						status.code += `mov x2, #0\n`;
+						emit_asm(status, `mov x1, #0\n`);
+						emit_asm(status, `mov x2, #0\n`);
 						emit_pair_store_to(status, "x19", offset, "x1", "x2");
 						continue;
 					}
-					status.code += `mov x1, #0\n`;
+					emit_asm(status, `mov x1, #0\n`);
 				} else if (/^(\+|-)*\d+$/.test(val)) {
-					status.code += `ldr x1, =${val}\n`;
+					emit_asm(status, `ldr x1, =${val}\n`);
 				} else if (val.startsWith('"')) {
 					const label = `_str_${func_name}_${field.name}`;
 					status.strings!.set(label, val);
-					status.code += `adr x1, ${label}\n`;
+					emit_asm(status, `adr x1, ${label}\n`);
 					// A class's default string literal must be heap-owned —
 					// the field is freed unconditionally at destroy. (The
 					// literal `bl _strdup` is rewritten to the audit wrapper
@@ -783,13 +784,13 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 						!field.type.is_ref &&
 						!field.type.is_view
 					) {
-						status.code += `mov x0, x1\n`;
-						status.code += `bl _strdup\n`;
-						status.code += `mov x1, x0\n`;
+						emit_asm(status, `mov x0, x1\n`);
+						emit_asm(status, `bl _strdup\n`);
+						emit_asm(status, `mov x1, x0\n`);
 					}
 					// Fat-string default: carry the compile-time length half,
 					// then skip the generic single-word store below.
-					status.code += `mov x2, #${string_literal_length(val)}\n`;
+					emit_asm(status, `mov x2, #${string_literal_length(val)}\n`);
 					if (offset + 8 > 504) {
 						emit_pair_store_to(status, "x19", offset, "x1", "x2");
 					} else {
@@ -814,18 +815,18 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 					// PC-relative adr + typed load of the stored value.
 					const resolved = resolve_global_const_value(val, status);
 					if (resolved !== undefined) {
-						status.code += `ldr x1, =${resolved}\n`;
+						emit_asm(status, `ldr x1, =${resolved}\n`);
 					} else {
 						const vsize = get_type_size(field.type, status);
-						status.code += `adr x1, ${val}\n`;
+						emit_asm(status, `adr x1, ${val}\n`);
 						if (vsize <= 1) {
-							status.code += `ldrb w1, [x1]\n`;
+							emit_asm(status, `ldrb w1, [x1]\n`);
 						} else if (vsize <= 2) {
-							status.code += `ldrh w1, [x1]\n`;
+							emit_asm(status, `ldrh w1, [x1]\n`);
 						} else if (vsize <= 4) {
-							status.code += `ldr w1, [x1]\n`;
+							emit_asm(status, `ldr w1, [x1]\n`);
 						} else {
-							status.code += `ldr x1, [x1]\n`;
+							emit_asm(status, `ldr x1, [x1]\n`);
 						}
 					}
 				}
@@ -840,12 +841,12 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 					// result word-by-word into the field slot. self lives in
 					// x19, so it survives the call.
 					build_node(field.value, status);
-					if (!status.code.endsWith("\n")) status.code += "\n";
+					ensure_newline(status);
 					const field_size = get_struct_size(field.type.name, status);
 					const words = Math.ceil(field_size / 8);
 					for (let w = 0; w < words; w++) {
-						status.code += `ldr x9, [x0, #${w * 8}]\n`;
-						status.code += `str x9, [x19, #${offset + w * 8}]\n`;
+						emit_asm(status, `ldr x9, [x0, #${w * 8}]\n`);
+						emit_asm(status, `str x9, [x19, #${offset + w * 8}]\n`);
 					}
 				}
 			} else if (field.value.node_type === "func" && field.type.name === "func") {
@@ -857,7 +858,7 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 				status.function_return_label = `.return_${func_name}`;
 				build_function_node(field.value as FunctionNode, status);
 				status.function_return_label = prev_return_label;
-				if (!status.code.endsWith("\n")) status.code += "\n";
+				ensure_newline(status);
 				// The field stores the lambda's closure DESCRIPTOR
 				// (CLOSURE.md).
 				const desc = materialize_lambda_descriptor_a64(field.value as FunctionNode, status);
@@ -867,7 +868,7 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 		}
 	}
 
-	status.code += `.return_${func_name}:\n`;
+	emit_asm(status, `.return_${func_name}:\n`);
 
 	const total_stack = Math.ceil((status.stack_size || 0) / 16) * 16;
 	status.code = status.code.replace(
@@ -879,11 +880,11 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 	// callee_saved_pushes = 1.
 	status.code = patch_overflow_placeholders(status.code, func_name, 1, total_stack);
 	if (total_stack > 0) {
-		status.code += `add sp, sp, #${total_stack}\n`;
+		emit_asm(status, `add sp, sp, #${total_stack}\n`);
 	}
-	status.code += `ldr x19, [sp], #16\n`;
-	status.code += `ldp x29, x30, [sp], #16\n`;
-	status.code += `ret\n`;
+	emit_asm(status, `ldr x19, [sp], #16\n`);
+	emit_asm(status, `ldp x29, x30, [sp], #16\n`);
+	emit_asm(status, `ret\n`);
 
 	status.stack_size = old_stack_size;
 	status.stack_offsets = old_stack_offsets;
@@ -938,13 +939,13 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 
 	const stack_placeholder = `STACK_SIZE_${func_name}`;
 
-	status.code += `.p2align 2\n`;
-	status.code += `${func_name}:\n`;
+	emit_asm(status, `.p2align 2\n`);
+	emit_asm(status, `${func_name}:\n`);
 	emit_method_export(func_name, status);
-	status.code += `stp x29, x30, [sp, #-16]!\n`;
+	emit_asm(status, `stp x29, x30, [sp, #-16]!\n`);
 
-	status.code += `str x19, [sp, #-16]!\n`;
-	status.code += `mov x19, x0\n`;
+	emit_asm(status, `str x19, [sp, #-16]!\n`);
+	emit_asm(status, `mov x19, x0\n`);
 
 	status.function_param_regs = new Map();
 	status.function_param_vars = new Set();
@@ -960,8 +961,8 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 		status.function_param_vars.add(param.name);
 	}
 
-	status.code += `sub sp, sp, #${stack_placeholder}\n`;
-	status.code += `mov x29, sp\n`;
+	emit_asm(status, `sub sp, sp, #${stack_placeholder}\n`);
+	emit_asm(status, `mov x29, sp\n`);
 
 	// self occupies x0 (moved to x19 above); custom-init params arrive in
 	// x1, x2, ... Variadic params consume two register slots — a hidden
@@ -985,15 +986,15 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 			const len_offset = allocate_stack_space(status, 8, 8);
 			status.stack_offsets!.set(`_${param.name}_len`, len_offset);
 			if (param_idx < NUM_REG_ARGS) {
-				status.code += `str ${param_regs[param_idx]}, [x29, #${len_offset}]\n`;
+				emit_asm(status, `str ${param_regs[param_idx]}, [x29, #${len_offset}]\n`);
 				raw_reloads.push({
 					reg: param_regs[param_idx],
 					asm: `ldr ${param_regs[param_idx]}, [x29, #${len_offset}]`,
 				});
 			} else {
 				const k = param_idx - NUM_REG_ARGS;
-				status.code += `ldr x9, [x29, #${overflow_placeholder(func_name, k)}]\n`;
-				status.code += `str x9, [x29, #${len_offset}]\n`;
+				emit_asm(status, `ldr x9, [x29, #${overflow_placeholder(func_name, k)}]\n`);
+				emit_asm(status, `str x9, [x29, #${len_offset}]\n`);
 			}
 			param_idx++;
 		}
@@ -1014,15 +1015,15 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 			for (const half of [0, 1] as const) {
 				const p_slot = param_idx + half;
 				if (p_slot < NUM_REG_ARGS) {
-					status.code += `str ${param_regs[p_slot]}, [x29, #${offset + half * 8}]\n`;
+					emit_asm(status, `str ${param_regs[p_slot]}, [x29, #${offset + half * 8}]\n`);
 					raw_reloads.push({
 						reg: param_regs[p_slot],
 						asm: `ldr ${param_regs[p_slot]}, [x29, #${offset + half * 8}]`,
 					});
 				} else {
 					const k = p_slot - NUM_REG_ARGS;
-					status.code += `ldr x9, [x29, #${overflow_placeholder(func_name, k)}]\n`;
-					status.code += `str x9, [x29, #${offset + half * 8}]\n`;
+					emit_asm(status, `ldr x9, [x29, #${overflow_placeholder(func_name, k)}]\n`);
+					emit_asm(status, `str x9, [x29, #${offset + half * 8}]\n`);
 				}
 			}
 			param_idx += 2;
@@ -1037,26 +1038,26 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 		if (param_idx < NUM_REG_ARGS) {
 			const reg = param_regs[param_idx];
 			if (size === 1) {
-				status.code += `strb ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
+				emit_asm(status, `strb ${reg.replace("x", "w")}, [x29, #${offset}]\n`);
 			} else if (size === 2) {
-				status.code += `strh ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
+				emit_asm(status, `strh ${reg.replace("x", "w")}, [x29, #${offset}]\n`);
 			} else if (size === 4) {
-				status.code += `str ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
+				emit_asm(status, `str ${reg.replace("x", "w")}, [x29, #${offset}]\n`);
 			} else {
-				status.code += `str ${reg}, [x29, #${offset}]\n`;
+				emit_asm(status, `str ${reg}, [x29, #${offset}]\n`);
 			}
 			raw_reloads.push({ reg, asm: raw_slot_reload_line(reg, offset, size) });
 		} else {
 			const k = param_idx - NUM_REG_ARGS;
-			status.code += `ldr x9, [x29, #${overflow_placeholder(func_name, k)}]\n`;
+			emit_asm(status, `ldr x9, [x29, #${overflow_placeholder(func_name, k)}]\n`);
 			if (size === 1) {
-				status.code += `strb w9, [x29, #${offset}]\n`;
+				emit_asm(status, `strb w9, [x29, #${offset}]\n`);
 			} else if (size === 2) {
-				status.code += `strh w9, [x29, #${offset}]\n`;
+				emit_asm(status, `strh w9, [x29, #${offset}]\n`);
 			} else if (size === 4) {
-				status.code += `str w9, [x29, #${offset}]\n`;
+				emit_asm(status, `str w9, [x29, #${offset}]\n`);
 			} else {
-				status.code += `str x9, [x29, #${offset}]\n`;
+				emit_asm(status, `str x9, [x29, #${offset}]\n`);
 			}
 		}
 		param_idx++;
@@ -1080,13 +1081,13 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 	status.init_assigned_fields = new Set();
 
 	// Zero the struct memory
-	status.code += `str xzr, [x19]\n`;
+	emit_asm(status, `str xzr, [x19]\n`);
 
 	// Install the vtable pointer at offset 0 for trait-conforming structs.
 	if (node.traits.length > 0) {
-		status.code += `adrp x9, _${node.name}_traits@PAGE\n`;
-		status.code += `add x9, x9, _${node.name}_traits@PAGEOFF\n`;
-		status.code += `str x9, [x19]\n`;
+		emit_asm(status, `adrp x9, _${node.name}_traits@PAGE\n`);
+		emit_asm(status, `add x9, x9, _${node.name}_traits@PAGEOFF\n`);
+		emit_asm(status, `str x9, [x19]\n`);
 	}
 
 	// Initialize default field values
@@ -1114,9 +1115,9 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 			}
 			if (field.value.node_type === "value") {
 				if (val === "true") {
-					status.code += `mov x1, #1\n`;
+					emit_asm(status, `mov x1, #1\n`);
 				} else if (val === "false") {
-					status.code += `mov x1, #0\n`;
+					emit_asm(status, `mov x1, #0\n`);
 				} else if (val === "null") {
 					// A `null` default on a fat string field zeroes BOTH halves:
 					// the generic single-word store below would leave the len
@@ -1128,18 +1129,18 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 						!field.type.is_view &&
 						!field.type.is_array
 					) {
-						status.code += `mov x1, #0\n`;
-						status.code += `mov x2, #0\n`;
+						emit_asm(status, `mov x1, #0\n`);
+						emit_asm(status, `mov x2, #0\n`);
 						emit_pair_store_to(status, "x19", offset, "x1", "x2");
 						continue;
 					}
-					status.code += `mov x1, #0\n`;
+					emit_asm(status, `mov x1, #0\n`);
 				} else if (/^(\+|-)*\d+$/.test(val)) {
-					status.code += `ldr x1, =${val}\n`;
+					emit_asm(status, `ldr x1, =${val}\n`);
 				} else if (val.startsWith('"')) {
 					const label = `_str_${func_name}_${field.name}`;
 					status.strings!.set(label, val);
-					status.code += `adr x1, ${label}\n`;
+					emit_asm(status, `adr x1, ${label}\n`);
 					// A class's default string literal must be heap-owned —
 					// the field is freed unconditionally at destroy. (The
 					// literal `bl _strdup` is rewritten to the audit wrapper
@@ -1150,13 +1151,13 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 						!field.type.is_ref &&
 						!field.type.is_view
 					) {
-						status.code += `mov x0, x1\n`;
-						status.code += `bl _strdup\n`;
-						status.code += `mov x1, x0\n`;
+						emit_asm(status, `mov x0, x1\n`);
+						emit_asm(status, `bl _strdup\n`);
+						emit_asm(status, `mov x1, x0\n`);
 					}
 					// Fat-string default: carry the compile-time length half,
 					// then skip the generic single-word store below.
-					status.code += `mov x2, #${string_literal_length(val)}\n`;
+					emit_asm(status, `mov x2, #${string_literal_length(val)}\n`);
 					if (offset + 8 > 504) {
 						emit_pair_store_to(status, "x19", offset, "x1", "x2");
 					} else {
@@ -1181,18 +1182,18 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 					// PC-relative adr + typed load of the stored value.
 					const resolved = resolve_global_const_value(val, status);
 					if (resolved !== undefined) {
-						status.code += `ldr x1, =${resolved}\n`;
+						emit_asm(status, `ldr x1, =${resolved}\n`);
 					} else {
 						const vsize = get_type_size(field.type, status);
-						status.code += `adr x1, ${val}\n`;
+						emit_asm(status, `adr x1, ${val}\n`);
 						if (vsize <= 1) {
-							status.code += `ldrb w1, [x1]\n`;
+							emit_asm(status, `ldrb w1, [x1]\n`);
 						} else if (vsize <= 2) {
-							status.code += `ldrh w1, [x1]\n`;
+							emit_asm(status, `ldrh w1, [x1]\n`);
 						} else if (vsize <= 4) {
-							status.code += `ldr w1, [x1]\n`;
+							emit_asm(status, `ldr w1, [x1]\n`);
 						} else {
-							status.code += `ldr x1, [x1]\n`;
+							emit_asm(status, `ldr x1, [x1]\n`);
 						}
 					}
 				}
@@ -1206,12 +1207,12 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 					// the field slot. self lives in x19, so it survives the
 					// call (which clobbers x0 with the temp address).
 					build_node(field.value, status);
-					if (!status.code.endsWith("\n")) status.code += "\n";
+					ensure_newline(status);
 					const field_size = get_struct_size(field.type.name, status);
 					const words = Math.ceil(field_size / 8);
 					for (let w = 0; w < words; w++) {
-						status.code += `ldr x9, [x0, #${w * 8}]\n`;
-						status.code += `str x9, [x19, #${offset + w * 8}]\n`;
+						emit_asm(status, `ldr x9, [x0, #${w * 8}]\n`);
+						emit_asm(status, `str x9, [x19, #${offset + w * 8}]\n`);
 					}
 				}
 			}
@@ -1254,7 +1255,7 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 		}
 	}
 
-	status.code += `${return_label}:\n`;
+	emit_asm(status, `${return_label}:\n`);
 
 	const total_stack = Math.ceil((status.stack_size || 0) / 16) * 16;
 	status.code = status.code.replace(
@@ -1272,16 +1273,16 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 		total_stack,
 	);
 	if (total_stack > 0) {
-		status.code += `add sp, sp, #${total_stack}\n`;
+		emit_asm(status, `add sp, sp, #${total_stack}\n`);
 	}
 
 	for (let i = init_loop_regs.length - 1; i >= 0; i--) {
-		status.code += `ldr ${init_loop_regs[i]}, [sp], #16\n`;
+		emit_asm(status, `ldr ${init_loop_regs[i]}, [sp], #16\n`);
 	}
 
-	status.code += `ldr x19, [sp], #16\n`;
-	status.code += `ldp x29, x30, [sp], #16\n`;
-	status.code += `ret\n`;
+	emit_asm(status, `ldr x19, [sp], #16\n`);
+	emit_asm(status, `ldp x29, x30, [sp], #16\n`);
+	emit_asm(status, `ret\n`);
 
 	status.scoped_declarations = old_scoped_declarations;
 	status.heap_strings = old_heap_strings;
@@ -1378,10 +1379,10 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 
 		const stack_placeholder = `STACK_SIZE_${func_label}`;
 
-		status.code += `.p2align 2\n`;
-		status.code += `${func_label}:\n`;
+		emit_asm(status, `.p2align 2\n`);
+		emit_asm(status, `${func_label}:\n`);
 		emit_method_export(func_label, status);
-		status.code += `stp x29, x30, [sp, #-16]!\n`;
+		emit_asm(status, `stp x29, x30, [sp, #-16]!\n`);
 
 		const is_self_param = func.params[0]?.is_self_param;
 		const self_is_var = is_self_param && func.params[0]?.declaration === "var";
@@ -1402,12 +1403,12 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		const x19_through_ref = needs_x19 && self_is_var;
 		if (needs_x19) {
 			if (self_is_string) {
-				status.code += `stp x19, x20, [sp, #-16]!\n`;
-				status.code += x19_through_ref ? `ldr x19, [x0]\n` : `mov x19, x0\n`;
-				if (!x19_through_ref) status.code += `mov x20, x1\n`;
+				emit_asm(status, `stp x19, x20, [sp, #-16]!\n`);
+				emit_asm(status, x19_through_ref ? `ldr x19, [x0]\n` : `mov x19, x0\n`);
+				if (!x19_through_ref) emit_asm(status, `mov x20, x1\n`);
 			} else {
-				status.code += `str x19, [sp, #-16]!\n`;
-				status.code += x19_through_ref ? `ldr x19, [x0]\n` : `mov x19, x0\n`;
+				emit_asm(status, `str x19, [sp, #-16]!\n`);
+				emit_asm(status, x19_through_ref ? `ldr x19, [x0]\n` : `mov x19, x0\n`);
 			}
 		}
 
@@ -1510,10 +1511,10 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			if (is_struct_type && callee_idx < callee_saved.length) {
 				const saved_reg = callee_saved[callee_idx++];
 				if (saved_reg !== "x19" || !needs_x19) {
-					status.code += `str ${saved_reg}, [sp, #-16]!\n`;
+					emit_asm(status, `str ${saved_reg}, [sp, #-16]!\n`);
 				}
 				if (slot_idx < NUM_REG_ARGS) {
-					status.code += `mov ${saved_reg}, ${param_regs[slot_idx]}\n`;
+					emit_asm(status, `mov ${saved_reg}, ${param_regs[slot_idx]}\n`);
 				} else {
 					// Overflow: arg arrived in the caller's outgoing stack
 					// area. After the push above, sp = caller_sp - 16 -
@@ -1521,7 +1522,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 					// push when needs_x19), so the k-th stack arg (slot 8+k)
 					// lives at [sp, #(16 + 16*callee_idx + k*8)].
 					const k = slot_idx - NUM_REG_ARGS;
-					status.code += `ldr ${saved_reg}, [sp, #${16 + 16 * callee_idx + k * 8}]\n`;
+					emit_asm(status, `ldr ${saved_reg}, [sp, #${16 + 16 * callee_idx + k * 8}]\n`);
 				}
 				status.function_param_regs.set(param.name, saved_reg);
 				callee_param_slots.set(param.name, slot_idx);
@@ -1546,12 +1547,12 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			slot_idx++;
 		}
 
-		status.code += `sub sp, sp, #${stack_placeholder}\n`;
-		status.code += `mov x29, sp\n`;
+		emit_asm(status, `sub sp, sp, #${stack_placeholder}\n`);
+		emit_asm(status, `mov x29, sp\n`);
 
 		if (return_struct) {
 			return_buffer_stack_offset = allocate_stack_space(status, 8, 8);
-			status.code += `str x8, [x29, #${return_buffer_stack_offset}]\n`;
+			emit_asm(status, `str x8, [x29, #${return_buffer_stack_offset}]\n`);
 			status.return_buffer_stack_offset = return_buffer_stack_offset;
 		}
 
@@ -1587,15 +1588,15 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 				for (const half of [0, 1] as const) {
 					const p_slot = second_slot_idx + half;
 					if (p_slot < NUM_REG_ARGS) {
-						status.code += `str ${param_regs[p_slot]}, [x29, #${offset + half * 8}]\n`;
+						emit_asm(status, `str ${param_regs[p_slot]}, [x29, #${offset + half * 8}]\n`);
 						raw_reloads.push({
 							reg: param_regs[p_slot],
 							asm: `ldr ${param_regs[p_slot]}, [x29, #${offset + half * 8}]`,
 						});
 					} else {
 						const k = p_slot - NUM_REG_ARGS;
-						status.code += `ldr x9, [x29, #${overflow_placeholder(func_label, k)}]\n`;
-						status.code += `str x9, [x29, #${offset + half * 8}]\n`;
+						emit_asm(status, `ldr x9, [x29, #${overflow_placeholder(func_label, k)}]\n`);
+						emit_asm(status, `str x9, [x29, #${offset + half * 8}]\n`);
 					}
 				}
 				second_slot_idx += 2;
@@ -1614,15 +1615,15 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 				for (const half of [0, 1] as const) {
 					const p_slot = second_slot_idx + half;
 					if (p_slot < NUM_REG_ARGS) {
-						status.code += `str ${param_regs[p_slot]}, [x29, #${offset + half * 8}]\n`;
+						emit_asm(status, `str ${param_regs[p_slot]}, [x29, #${offset + half * 8}]\n`);
 						raw_reloads.push({
 							reg: param_regs[p_slot],
 							asm: `ldr ${param_regs[p_slot]}, [x29, #${offset + half * 8}]`,
 						});
 					} else {
 						const k = p_slot - NUM_REG_ARGS;
-						status.code += `ldr x9, [x29, #${overflow_placeholder(func_label, k)}]\n`;
-						status.code += `str x9, [x29, #${offset + half * 8}]\n`;
+						emit_asm(status, `ldr x9, [x29, #${overflow_placeholder(func_label, k)}]\n`);
+						emit_asm(status, `str x9, [x29, #${offset + half * 8}]\n`);
 					}
 				}
 				second_slot_idx += 2;
@@ -1646,7 +1647,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 					// the slot must hold the RAW incoming &receiver (x0); x19
 					// carries the dereferenced value for raw bodies only.
 					const save_reg = x19_through_ref ? "x0" : needs_x19 ? "x19" : param_regs[second_slot_idx];
-					status.code += `str ${save_reg}, [x29, #${offset}]\n`;
+					emit_asm(status, `str ${save_reg}, [x29, #${offset}]\n`);
 					// needs_x19 parks self in callee-saved x19 (live for the
 					// whole method); the raw entry register is x0 either way.
 					if (second_slot_idx < NUM_REG_ARGS) {
@@ -1658,11 +1659,11 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 				} else if (second_slot_idx < NUM_REG_ARGS) {
 					const reg = param_regs[second_slot_idx];
 					if (size === 1) {
-						status.code += `strb ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
+						emit_asm(status, `strb ${reg.replace("x", "w")}, [x29, #${offset}]\n`);
 					} else if (size === 4) {
-						status.code += `str ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
+						emit_asm(status, `str ${reg.replace("x", "w")}, [x29, #${offset}]\n`);
 					} else {
-						status.code += `str ${reg}, [x29, #${offset}]\n`;
+						emit_asm(status, `str ${reg}, [x29, #${offset}]\n`);
 					}
 					raw_reloads.push({
 						reg,
@@ -1670,13 +1671,13 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 					});
 				} else {
 					const k = second_slot_idx - NUM_REG_ARGS;
-					status.code += `ldr x9, [x29, #${overflow_placeholder(func_label, k)}]\n`;
+					emit_asm(status, `ldr x9, [x29, #${overflow_placeholder(func_label, k)}]\n`);
 					if (size === 1) {
-						status.code += `strb w9, [x29, #${offset}]\n`;
+						emit_asm(status, `strb w9, [x29, #${offset}]\n`);
 					} else if (size === 4) {
-						status.code += `str w9, [x29, #${offset}]\n`;
+						emit_asm(status, `str w9, [x29, #${offset}]\n`);
 					} else {
-						status.code += `str x9, [x29, #${offset}]\n`;
+						emit_asm(status, `str x9, [x29, #${offset}]\n`);
 					}
 				}
 			} else {
@@ -1692,8 +1693,8 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 						const reg = status.function_param_regs.get(param.name);
 						if (reg) {
 							const ref_slot = allocate_stack_space(status, 8, 8);
-							status.code += `str ${reg}, [x29, #${ref_slot}]\n`;
-							status.code += `ldr ${reg}, [${reg}]\n`;
+							emit_asm(status, `str ${reg}, [x29, #${ref_slot}]\n`);
+							emit_asm(status, `ldr ${reg}, [${reg}]\n`);
 							status.ref_class_slots!.set(param.name, ref_slot);
 						}
 					}
@@ -1757,7 +1758,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			const reg = status.function_param_regs.get(param.name);
 			if (reg) {
 				const save_offset = allocate_stack_space(status, 8);
-				status.code += `str ${reg}, [x29, #${save_offset}]\n`;
+				emit_asm(status, `str ${reg}, [x29, #${save_offset}]\n`);
 				moved_param_save_slots.set(param.name, {
 					offset: save_offset,
 					type_name: param.type.name,
@@ -1851,7 +1852,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			}
 		}
 
-		status.code += `${return_label}:\n`;
+		emit_asm(status, `${return_label}:\n`);
 
 		// Reclaim moved class params at the return label (every return jumps
 		// here): #destroy + field destroys, then free — skipping params moved
@@ -1871,16 +1872,16 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			let return_save: number | undefined;
 			if (ret_is_class || need_save) {
 				return_save = allocate_stack_space(status, 8);
-				status.code += `str x0, [x29, #${return_save}]\n`;
+				emit_asm(status, `str x0, [x29, #${return_save}]\n`);
 			}
 			for (const [name, info] of moved_param_save_slots) {
 				if (status.moved?.has(name) && !moved_before.has(name)) continue;
 				if (moved_param_is_consumed(func, name, info.type_name, status.structs)) continue;
 				if (ret_is_class) {
-					status.code += `ldr x0, [x29, #${info.offset}]\n`;
-					status.code += `ldr x1, [x29, #${return_save!}]\n`;
-					status.code += `cmp x0, x1\n`;
-					status.code += `beq ${keep_prefix}_${name}\n`;
+					emit_asm(status, `ldr x0, [x29, #${info.offset}]\n`);
+					emit_asm(status, `ldr x1, [x29, #${return_save!}]\n`);
+					emit_asm(status, `cmp x0, x1\n`);
+					emit_asm(status, `beq ${keep_prefix}_${name}\n`);
 				}
 				emit_destroy_for_anchor_slot(
 					status,
@@ -1889,14 +1890,14 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 					info.type_args,
 					info.is_nullable,
 				);
-				status.code += `ldr x0, [x29, #${info.offset}]\n`;
+				emit_asm(status, `ldr x0, [x29, #${info.offset}]\n`);
 				emit_free(status);
 				if (ret_is_class) {
-					status.code += `${keep_prefix}_${name}:\n`;
+					emit_asm(status, `${keep_prefix}_${name}:\n`);
 				}
 			}
 			if (ret_is_class || need_save) {
-				status.code += `ldr x0, [x29, #${return_save!}]\n`;
+				emit_asm(status, `ldr x0, [x29, #${return_save!}]\n`);
 			}
 		}
 
@@ -1916,26 +1917,26 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			total_stack,
 		);
 		if (total_stack > 0) {
-			status.code += `add sp, sp, #${total_stack}\n`;
+			emit_asm(status, `add sp, sp, #${total_stack}\n`);
 		}
 
 		for (let i = loop_regs_used.length - 1; i >= 0; i--) {
-			status.code += `ldr ${loop_regs_used[i]}, [sp], #16\n`;
+			emit_asm(status, `ldr ${loop_regs_used[i]}, [sp], #16\n`);
 		}
 
 		for (let ci = callee_idx - 1; ci >= 0; ci--) {
 			if (callee_saved[ci] === "x19" && needs_x19) continue;
-			status.code += `ldr ${callee_saved[ci]}, [sp], #16\n`;
+			emit_asm(status, `ldr ${callee_saved[ci]}, [sp], #16\n`);
 		}
 		if (needs_x19) {
 			if (self_is_string) {
-				status.code += `ldp x19, x20, [sp], #16\n`;
+				emit_asm(status, `ldp x19, x20, [sp], #16\n`);
 			} else {
-				status.code += `ldr x19, [sp], #16\n`;
+				emit_asm(status, `ldr x19, [sp], #16\n`);
 			}
 		}
-		status.code += `ldp x29, x30, [sp], #16\n`;
-		status.code += `ret\n`;
+		emit_asm(status, `ldp x29, x30, [sp], #16\n`);
+		emit_asm(status, `ret\n`);
 
 		status.scoped_declarations = old_scoped_declarations;
 		status.heap_strings = old_heap_strings;
@@ -1972,10 +1973,10 @@ function build_trait_functions(node: StructNode, status: BuildStatus) {
 			const func_label = `${node.name}_${func.name.replace(/#/g, "")}`;
 			const trait_func_label = `${trait_name}_${func.name.replace(/#/g, "")}`;
 
-			status.code += `.p2align 2\n`;
-			status.code += `${func_label}:\n`;
+			emit_asm(status, `.p2align 2\n`);
+			emit_asm(status, `${func_label}:\n`);
 			emit_method_export(func_label, status);
-			status.code += `b ${trait_func_label}\n`;
+			emit_asm(status, `b ${trait_func_label}\n`);
 		}
 	}
 
@@ -2023,17 +2024,17 @@ function build_trait_functions(node: StructNode, status: BuildStatus) {
 
 			const stack_placeholder = `STACK_SIZE_${trait_func_label}`;
 
-			status.code += `.p2align 2\n`;
-			status.code += `${trait_func_label}:\n`;
+			emit_asm(status, `.p2align 2\n`);
+			emit_asm(status, `${trait_func_label}:\n`);
 			emit_method_export(trait_func_label, status);
-			status.code += `stp x29, x30, [sp, #-16]!\n`;
+			emit_asm(status, `stp x29, x30, [sp, #-16]!\n`);
 
 			const is_self_param = func.params[0]?.is_self_param;
 			const self_is_var = is_self_param && func.params[0]?.declaration === "var";
 			const needs_x19 = is_self_param && !self_is_var;
 			if (needs_x19) {
-				status.code += `str x19, [sp, #-16]!\n`;
-				status.code += `mov x19, x0\n`;
+				emit_asm(status, `str x19, [sp, #-16]!\n`);
+				emit_asm(status, `mov x19, x0\n`);
 			}
 
 			status.function_param_regs = new Map();
@@ -2043,8 +2044,8 @@ function build_trait_functions(node: StructNode, status: BuildStatus) {
 				status.function_param_regs.set("self", "x19");
 			}
 
-			status.code += `sub sp, sp, #${stack_placeholder}\n`;
-			status.code += `mov x29, sp\n`;
+			emit_asm(status, `sub sp, sp, #${stack_placeholder}\n`);
+			emit_asm(status, `mov x29, sp\n`);
 
 			// See build_struct_functions: clear the enclosing function's
 			// promotion maps while the shared default body builds.
@@ -2091,7 +2092,7 @@ function build_trait_functions(node: StructNode, status: BuildStatus) {
 				}
 			}
 
-			status.code += `${return_label}:\n`;
+			emit_asm(status, `${return_label}:\n`);
 
 			const total_stack = Math.ceil((status.stack_size || 0) / 16) * 16;
 			status.code = status.code.replace(
@@ -2099,18 +2100,18 @@ function build_trait_functions(node: StructNode, status: BuildStatus) {
 				total_stack > 0 ? `sub sp, sp, #${total_stack}` : `// no stack needed`,
 			);
 			if (total_stack > 0) {
-				status.code += `add sp, sp, #${total_stack}\n`;
+				emit_asm(status, `add sp, sp, #${total_stack}\n`);
 			}
 
 			for (let i = trait_loop_regs.length - 1; i >= 0; i--) {
-				status.code += `ldr ${trait_loop_regs[i]}, [sp], #16\n`;
+				emit_asm(status, `ldr ${trait_loop_regs[i]}, [sp], #16\n`);
 			}
 
 			if (needs_x19) {
-				status.code += `ldr x19, [sp], #16\n`;
+				emit_asm(status, `ldr x19, [sp], #16\n`);
 			}
-			status.code += `ldp x29, x30, [sp], #16\n`;
-			status.code += `ret\n`;
+			emit_asm(status, `ldp x29, x30, [sp], #16\n`);
+			emit_asm(status, `ret\n`);
 
 			status.scoped_declarations = old_scoped_declarations;
 			status.heap_strings = old_heap_strings;

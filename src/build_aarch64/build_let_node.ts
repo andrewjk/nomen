@@ -4,6 +4,7 @@ import LetNode from "../nodes/LetNode.ts";
 import build_node from "./build_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_strdup } from "./utils/audit.ts";
+import { ensure_newline } from "./utils/code_buffer.ts";
 import { emit_var_store } from "./utils/stack_var.ts";
 
 function find_var_size(name: string, status: BuildStatus): number {
@@ -17,9 +18,7 @@ function find_var_size(name: string, status: BuildStatus): number {
 export default function build_let_node(node: LetNode, status: BuildStatus) {
 	build_node(node.value, status);
 	if (status.return_assign) {
-		if (!status.code.endsWith("\n")) {
-			status.code += "\n";
-		}
+		ensure_newline(status);
 		// Mixed string-join normalization: when the enclosing match/switch/if
 		// expression has both owned (interpolation/concat/call) and non-owned
 		// branches, strdup the non-owned values (a literal's rodata pointer, a
@@ -35,9 +34,7 @@ export default function build_let_node(node: LetNode, status: BuildStatus) {
 			!is_owned_string_branch_value(node.value, status)
 		) {
 			emit_strdup(status);
-			if (!status.code.endsWith("\n")) {
-				status.code += "\n";
-			}
+			ensure_newline(status);
 		}
 		// The join slot's size comes from return_assign_size when set — the
 		// join target is not in scoped_declarations (the match/if/switch arms

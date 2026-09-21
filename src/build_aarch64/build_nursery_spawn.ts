@@ -7,6 +7,7 @@ import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
 import { ensure_concurrency_runtime_a64 } from "./build_spawn_node.ts";
+import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
 import {
 	allocate_stack_space,
 	emit_deref_var_address,
@@ -89,7 +90,7 @@ export default function build_nursery_spawn(
 	status.file_scope_c += c;
 
 	// --- Assembly: Thread arg in x0, nursery tracking pointers in x1..x3 ---
-	status.code += `// nursery spawn site ${id}\n`;
+	emit_asm(status, `// nursery spawn site ${id}\n`);
 	const nursery_park = allocate_stack_space(status, 8, 16);
 	const self_park = allocate_stack_space(status, 8, 8);
 
@@ -99,19 +100,19 @@ export default function build_nursery_spawn(
 	// capacity (offset 16) — are loaded into x1..x3 after the Thread argument
 	// is built (emitting it can clobber x0..x3).
 	load_nursery_struct_address(node.target, status);
-	if (!status.code.endsWith("\n")) status.code += "\n";
-	status.code += `str x0, [x29, #${nursery_park}]\n`;
+	ensure_newline(status);
+	emit_asm(status, `str x0, [x29, #${nursery_park}]\n`);
 	// Build the Thread argument (the construction packs eagerly); park the
 	// instance pointer, load the nursery pointers, then restore the arg.
 	build_node(arg, status);
-	if (!status.code.endsWith("\n")) status.code += "\n";
-	status.code += `str x0, [x29, #${self_park}]\n`;
-	status.code += `ldr x0, [x29, #${nursery_park}]\n`;
-	status.code += `ldr x1, [x0, #0]\n`; // futures_ptr (→ &list slot)
-	status.code += `ldr x2, [x0, #8]\n`; // count_ptr
-	status.code += `ldr x3, [x0, #16]\n`; // cap_ptr
-	status.code += `ldr x0, [x29, #${self_park}]\n`;
-	status.code += `bl _${helper_name}\n`;
+	ensure_newline(status);
+	emit_asm(status, `str x0, [x29, #${self_park}]\n`);
+	emit_asm(status, `ldr x0, [x29, #${nursery_park}]\n`);
+	emit_asm(status, `ldr x1, [x0, #0]\n`); // futures_ptr (→ &list slot)
+	emit_asm(status, `ldr x2, [x0, #8]\n`); // count_ptr
+	emit_asm(status, `ldr x3, [x0, #16]\n`); // cap_ptr
+	emit_asm(status, `ldr x0, [x29, #${self_park}]\n`);
+	emit_asm(status, `bl _${helper_name}\n`);
 	// x0 = Task pointer (or NULL for fire-and-forget).
 }
 

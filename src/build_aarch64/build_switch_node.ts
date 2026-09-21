@@ -4,6 +4,7 @@ import SwitchNode from "../nodes/SwitchNode.ts";
 import build_node from "./build_node.ts";
 import { build_block_with_cursor } from "./emit_nir.ts";
 import { enter_scope_frame, exit_scope_frame } from "./utils/auto_destroy.ts";
+import { emit_asm } from "./utils/code_buffer.ts";
 
 let label_counter = 0;
 
@@ -25,20 +26,20 @@ export default function build_switch_node(
 		status.scoped_declarations = [];
 
 		build_node(node.cases[i].condition, status);
-		status.code += `\ncmp x0, #0\n`;
+		emit_asm(status, `\ncmp x0, #0\n`);
 
 		if (i < node.cases.length - 1 || node.else_branch) {
-			status.code += `beq sw_next_${label}_${i}\n`;
+			emit_asm(status, `beq sw_next_${label}_${i}\n`);
 		} else {
-			status.code += `beq end_switch_${label}\n`;
+			emit_asm(status, `beq end_switch_${label}\n`);
 		}
 
 		status.buffer_data_cache = new Map(pre_cache);
 		status.array_ptr_cache = new Map(pre_array_cache);
 		build_block_with_cursor(node.cases[i].branch, nir?.arms[i]?.branch, status);
-		status.code += `b end_switch_${label}\n`;
+		emit_asm(status, `b end_switch_${label}\n`);
 
-		status.code += `sw_next_${label}_${i}:\n`;
+		emit_asm(status, `sw_next_${label}_${i}:\n`);
 	}
 
 	if (node.else_branch) {
@@ -51,7 +52,7 @@ export default function build_switch_node(
 	status.buffer_data_cache = pre_cache;
 	status.array_ptr_cache = pre_array_cache;
 
-	status.code += `end_switch_${label}:\n`;
+	emit_asm(status, `end_switch_${label}:\n`);
 
 	exit_scope_frame(status, old_scoped_declarations);
 }

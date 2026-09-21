@@ -2,6 +2,7 @@ import type BuildStatus from "../../build_c/BuildStatus.ts";
 import { struct_needs_destroy } from "../../build_common/destroy_analysis.ts";
 import emission_label from "../../build_common/emission_label.ts";
 import type FunctionNode from "../../nodes/FunctionNode.ts";
+import { emit_asm } from "./code_buffer.ts";
 import { get_struct_size } from "./struct_layout.ts";
 
 /**
@@ -26,8 +27,8 @@ export function emit_descriptor_address(
 	reg: string,
 	descriptor: string,
 ): void {
-	status.code += `adrp ${reg}, ${descriptor}@PAGE\n`;
-	status.code += `add ${reg}, ${reg}, ${descriptor}@PAGEOFF\n`;
+	emit_asm(status, `adrp ${reg}, ${descriptor}@PAGE\n`);
+	emit_asm(status, `add ${reg}, ${reg}, ${descriptor}@PAGEOFF\n`);
 }
 
 /** Byte size of one capture's env field: 16-byte fat strings, the struct's
