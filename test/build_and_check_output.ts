@@ -57,7 +57,7 @@ export default async function build_and_check_output(
 	name: string,
 	expected: string,
 	raw = false,
-	extra_options: { fast_math?: boolean } = {},
+	extra_options: { fast_math?: boolean; audit?: boolean } = {},
 	check_options: Parameters<typeof check_output>[3] = {},
 ) {
 	let architectures = ["aarch64", "c"] as const;

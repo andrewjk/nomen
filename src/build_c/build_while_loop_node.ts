@@ -1,16 +1,21 @@
+import collect_allocations from "../build_common/collect_allocations.ts";
 import type { NirStmt } from "../nir/nir.ts";
-import type DeclarationNode from "../nodes/DeclarationNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
+import type DeclarationNode from "../nodes/DeclarationNode.ts";
 import ParameterNode from "../nodes/ParameterNode.ts";
 import WhileLoopNode from "../nodes/WhileLoopNode.ts";
-import collect_allocations from "../build_common/collect_allocations.ts";
 import build_auto_free from "./build_auto_free.ts";
 import build_node from "./build_node.ts";
+import build_parameter_node from "./build_parameter_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import { build_block_with_cursor } from "./emit_nir.ts";
 import build_condition from "./utils/build_condition.ts";
-import { enter_c_scope, leave_c_scope, pop_c_loop_frame, push_c_loop_frame } from "./utils/c_scope.ts";
-import build_parameter_node from "./build_parameter_node.ts";
+import {
+	enter_c_scope,
+	leave_c_scope,
+	pop_c_loop_frame,
+	push_c_loop_frame,
+} from "./utils/c_scope.ts";
 
 /**
  * Whether a hoisted condition temporary can be RE-EVALUATED per iteration

@@ -570,7 +570,7 @@ export function slp_pair_hints(
 	let changed = true;
 	while (changed) {
 		changed = false;
-		for (const c of [...candidates]) {
+		for (const c of candidates.slice()) {
 			if (!writes_pair_safe(c.a, c.b, c.decl_a, c.decl_b, hints, status, statements)) {
 				hints.delete(c.a);
 				hints.delete(c.b);

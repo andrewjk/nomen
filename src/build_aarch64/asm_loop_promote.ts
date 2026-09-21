@@ -179,7 +179,7 @@ export function promote_loop_slots(code: string): string {
 	const out = lines.slice();
 	const owned = new Set<number>();
 	const cycles: { head: string; headIdx: number; end: number }[] = [];
-	for (const [head, headIdx] of [...labels.entries()]) {
+	for (const [head, headIdx] of labels) {
 		for (const jp of jumps) {
 			if (jp.target !== head || jp.cond || jp.from <= headIdx) continue;
 			cycles.push({ head, headIdx, end: jp.from });

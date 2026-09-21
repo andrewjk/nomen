@@ -293,7 +293,7 @@ export function coalesce_copies(code: string): string {
 	const kill_reg = (reg: string): void => {
 		if (!reg) return;
 		const sib = sibling_reg(reg);
-		for (const [d, c] of [...copies]) {
+		for (const [d, c] of copies) {
 			if (d === reg || d === sib || c.src === reg || c.src === sib) {
 				copies.delete(d);
 			}
@@ -302,7 +302,7 @@ export function coalesce_copies(code: string): string {
 			if (memo.base === reg || memo.base === sib) {
 				memo = null;
 			} else {
-				for (const h of [...memo.holders]) {
+				for (const h of memo.holders) {
 					if (h === reg || h === sib) memo.holders.delete(h);
 				}
 				if (memo.holders.size === 0) memo = null;

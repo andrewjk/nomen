@@ -1475,7 +1475,7 @@ export function plan_nir_registers(
 				}
 			}
 			if (refuse) continue;
-			for (const key of [...receivers.keys()]) {
+			for (const key of receivers.keys()) {
 				if (roots_refused.has(key)) receivers.delete(key);
 			}
 			// Scratch-set modeling (ASM_PLAN_6): a call-free loop's emission

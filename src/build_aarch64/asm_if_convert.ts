@@ -308,7 +308,7 @@ export function find_containing_cycle(
 function convert_one(code: string): string | null {
 	const lines = code.split("\n");
 	const n = lines.length;
-	const parsed: (AsmInstruction | null)[] = new Array(n).fill(null);
+	const parsed: (AsmInstruction | null)[] = Array.from({ length: n }, () => null);
 	const labels = new Map<string, number[]>();
 	const jumps: { from: number; token: string; target: number | null; cond: boolean }[] = [];
 

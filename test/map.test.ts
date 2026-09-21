@@ -446,12 +446,8 @@ pub func main = (Init init) {
 	Console.write("\\{h.output.length} \\{h.refs.length} \\{h.renders.length} \\{miss}")
 }
 `;
-		await build_and_check_output(
-			input,
-			"map_rehash_trait_lists_class_fields",
-			"40 40 40 0",
-			true,
-			{ audit: true },
-		);
+		await build_and_check_output(input, "map_rehash_trait_lists_class_fields", "40 40 40 0", true, {
+			audit: true,
+		});
 	});
 });

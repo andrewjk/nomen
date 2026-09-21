@@ -472,7 +472,7 @@ export function optimize_float_forwarding(code: string): string {
 		const sib = sibling_reg(reg);
 		held.delete(reg);
 		if (sib) held.delete(sib);
-		for (const [k, v] of [...held]) {
+		for (const [k, v] of held) {
 			if (v === reg || (sib !== null && v === sib)) held.delete(k);
 		}
 	};
@@ -584,7 +584,7 @@ ALL_TRACKED_REGS.push("sp", "xzr");
  */
 function eliminate_dead_float_stage_moves(code: string): string {
 	const lines = code.split("\n");
-	const out = new Array<string>(lines.length);
+	const out = Array.from({ length: lines.length }, () => "");
 	const live = new Set<string>();
 
 	// AArch64 is dest-first: the def is the LEADING register operand
@@ -779,7 +779,7 @@ const GPR_PRUNE_SKIP_DESTS = new Set(["sp", "x29", "x30"]);
 export function eliminate_dead_copy_moves(code: string): string {
 	if (!dead_moves_on) return code;
 	const lines = code.split("\n");
-	const out = new Array<string>(lines.length);
+	const out = Array.from({ length: lines.length }, () => "");
 	const live = new Set<string>();
 	const tainted = new Set<string>();
 

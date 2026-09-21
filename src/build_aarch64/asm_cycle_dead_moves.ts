@@ -282,8 +282,8 @@ export function analyze_function_at(
 function analyze(code: string): Analysis | null {
 	const lines = code.split("\n");
 	const n = lines.length;
-	const parsed: (AsmInstruction | null)[] = new Array(n).fill(null);
-	const kind: ("label" | "instr" | "skip")[] = new Array(n).fill("skip");
+	const parsed: (AsmInstruction | null)[] = Array.from({ length: n }, () => null);
+	const kind: ("label" | "instr" | "skip")[] = Array.from({ length: n }, () => "skip" as const);
 	const labels = new Map<string, number[]>();
 	const unknown = new Set<number>();
 	const raw_jumps: { from: number; token: string; cond: boolean }[] = [];
@@ -344,7 +344,7 @@ function analyze(code: string): Analysis | null {
 	// Blocks: start at labels (or the first instruction after control
 	// flow), end at branch/ret.
 	const blocks: Block[] = [];
-	const line_block: number[] = new Array(n).fill(-1);
+	const line_block: number[] = Array.from({ length: n }, () => -1);
 	const label_block = new Map<number, number>();
 	let cur: Block | null = null;
 	let pending_labels: number[] = [];
@@ -470,7 +470,7 @@ export function eliminate_dead_cycle_moves(code: string): string {
 	for (let round = 0; round < 4; round++) {
 		const a = analyze(code);
 		if (!a) return code;
-		const in_cycle = new Array(a.lines.length).fill(false);
+		const in_cycle: boolean[] = Array.from({ length: a.lines.length }, () => false);
 		for (const { head, end } of a.cycles) {
 			for (let i = head + 1; i < end; i++) in_cycle[i] = true;
 		}

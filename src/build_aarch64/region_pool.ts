@@ -311,7 +311,7 @@ export function region_pool_enter(
 			// emission-time claims are evicted — the pointer is re-derived
 			// on the next miss).
 			if (status.buffer_data_cache) {
-				for (const [k, v] of [...status.buffer_data_cache]) {
+				for (const [k, v] of status.buffer_data_cache) {
 					if (v === reg) status.buffer_data_cache.delete(k);
 				}
 			}
@@ -399,7 +399,7 @@ export function region_pool_enter(
 		const resolved = resolve_displaced(status, v.displaced);
 		if (!pin_borrowable(status, v)) continue;
 		if (status.buffer_data_cache) {
-			for (const [k, creg] of [...status.buffer_data_cache]) {
+			for (const [k, creg] of status.buffer_data_cache) {
 				if (creg === v.reg) status.buffer_data_cache.delete(k);
 			}
 		}

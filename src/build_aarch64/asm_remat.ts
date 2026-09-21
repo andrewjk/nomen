@@ -304,7 +304,7 @@ export function build_tables(code: string): {
 	jumps: { from: number; token: string; target: number | null; cond: boolean }[];
 } {
 	const lines = code.split("\n");
-	const parsed: (AsmInstruction | null)[] = new Array(lines.length).fill(null);
+	const parsed: (AsmInstruction | null)[] = Array.from({ length: lines.length }, () => null);
 	const labels = new Map<string, number[]>();
 	const jumps: { from: number; token: string; target: number | null; cond: boolean }[] = [];
 	for (let i = 0; i < lines.length; i++) {

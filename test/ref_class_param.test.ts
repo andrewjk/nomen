@@ -255,7 +255,7 @@ Console.write("\\{s.v}")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
-		const result = await build(parsed.root, { arch: "c", audit: true });
+		const result = build(parsed.root, { arch: "c", audit: true });
 		await check_output("trait_ref_class_local_arg", result, "1", { arch: "c", audit: true });
 	});
 });
