@@ -135,32 +135,39 @@ pub func main = () {
 		expect(compile_module(input)).toEqual([]);
 	});
 
-	test("arrow func type spelling", () => {
+	test("Func<> func type spelling", () => {
 		// SPEC.md, "Function-Typed Parameters (Higher-Order Functions)":
-		// `(T1, T2) => R` is the arrow spelling of the same signature type as
-		// `func (T1, T2, out R)` — interchangeable in every type position and
-		// at any nesting depth.
+		// `Func<T1, ..., Tn>` is the same signature type as
+		// `func (T1, ..., out Tn)` with the result LAST; `void` in the
+		// result slot means no result. It is usable in every type position
+		// and nests at any depth.
 		const input = `
-func apply = ((int) => int mapper, int value, out int) {
+func apply = (Func<int, int> mapper, int value, out int) {
     return mapper(value)
 }
 
-func run_arrow = (func ((int) => int g, out int) h, (int) => int f, out int) {
+func run = (func (func (out int), out int) g, func (out int) v, out int) {
+    return g(v)
+}
+
+func run_alias = (Func<Func<int, int>, int> h, Func<int, int> f, out int) {
     return h(f)
 }
 
-func make_arrow = (int n, out () => int) {
-    return () => n
+func make_three = (out Func<int>) {
+    return () => 3
 }
 
-func id = ((int) => int f, out int) { return f(0) }
+func id = (Func<int, int> f, out int) { return f(0) }
 
 pub func main = () {
-    var (int) => int doubler = (x) => x * 2
-    var () => int add7 = make_arrow(7)
+    var Func<int, int> doubler = (x) => x * 2
+    var Func<int> three = make_three()
+    var Func<int, void> log = func (int x) { Console.write("\\{x}") }
     var int a = apply(doubler, 5)
-    var int b = run_arrow(id, doubler)
-    var int c = add7()
+    var int b = run_alias(id, doubler)
+    var int c = three()
+    log(7)
     Console.write_line("\\{a} \\{b} \\{c}")
 }
 `;

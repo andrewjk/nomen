@@ -66,6 +66,18 @@ export default function check_type_exists(type: Type, status: CheckStatus, start
 	}
 	if (type.type_args) {
 		for (const arg of type.type_args) {
+			// A func value is a one-word closure descriptor; containers and
+			// other generic instantiations have no layout for one
+			// (CLOSURE.md restrictions). `Func<...>` IS the func type — it
+			// desugars in the parser and never reaches here as a generic.
+			if (arg.name === "func") {
+				add_error(
+					status,
+					`func types cannot be used as type arguments ('${type.name}<...>')`,
+					start,
+				);
+				continue;
+			}
 			check_type_exists(arg, status, start);
 		}
 	} else {

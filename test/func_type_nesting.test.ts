@@ -3,11 +3,13 @@ import { describe, expect, test } from "vite-plus/test";
 import build_and_check_output from "./build_and_check_output";
 import { parse_raw } from "./parse_with_imports";
 
-// Nested func types (CLOSURE.md / SPEC "Parameters can be function types"):
-// a `func` type may appear anywhere inside a signature — as a parameter
-// type (`func (func (out int), out int) g`) or in a return slot
-// (`out func (out int)`, a closure factory). The descriptor ABI needs no
-// changes: a func value stays one word at any depth.
+// Nested func types (CLOSURE.md / SPEC "Function-Typed Parameters"): a func
+// type may appear anywhere inside a signature — as a parameter type
+// (`func (func (out int), out int) g`, `Func<Func<int, int>, int>`) or in a
+// return slot (`out func (out int)`, a closure factory). The two spellings
+// (`func (...)` with a trailing `out`, and `Func<..., R>` with the result
+// last) parse to the same Type. The descriptor ABI needs no changes: a func
+// value stays one word at any depth.
 
 function run(name: string, expected: string, body: string) {
 	const input = `import System\n${body}`;
@@ -202,57 +204,97 @@ pub func main = (Init init) {
 	});
 });
 
-describe("arrow function types", () => {
-	// `(T1, T2) => R` is the same signature Type as `func (T1, T2, out R)` —
+describe("Func<> function types", () => {
+	// `Func<T1, ..., Tn>` is the same signature Type as `func (T1, ..., out Tn)`
+	// with the result LAST; `void` in the result slot means no result. It is
 	// usable in every type position, at any nesting depth.
 
-	test("a local declared with an arrow type", async () => {
+	test("a local declared with Func<>", async () => {
 		await run(
-			"arrow_type_local",
+			"func_alias_local",
 			"6\n",
 			`
 pub func main = (Init init) {
-	var (int) => int f = (x) => x * 2
+	var Func<int, int> f = (x) => x * 2
 	Console.write_line("\\{f(3)}")
 }
 `,
 		);
 	});
 
-	test("a zero-argument arrow type", async () => {
+	test("a zero-argument Func<>", async () => {
 		await run(
-			"arrow_type_zero",
+			"func_alias_zero",
 			"7\n",
 			`
 pub func main = (Init init) {
-	var () => int f = () => 7
+	var Func<int> f = () => 7
 	Console.write_line("\\{f()}")
 }
 `,
 		);
 	});
 
-	test("an arrow-typed parameter and return in a signature", async () => {
+	test("a void-result Func<> parameter and call", async () => {
 		await run(
-			"arrow_type_param",
-			"12\n",
+			"func_alias_void",
+			"5\n",
 			`
-func run = ((int) => int f, int x, out int) { return f(x) }
+func apply_void = (Func<int, void> f, int x) { f(x) }
 
 pub func main = (Init init) {
-	Console.write_line("\\{run((y) => y * 4, 3)}")
+	apply_void(func (int x) { Console.write_line("\\{x}") }, 5)
 }
 `,
 		);
 	});
 
-	test("mixed nesting: arrow inside func and func inside arrow", async () => {
+	test("a Func<> parameter and a Func<> return (closure factory)", async () => {
+		// NOTE: the two interpolations are separate statements on purpose — a
+		// lambda argument in a NON-FIRST interpolation slot miscompiles on
+		// aarch64 (pre-existing; FOLLOWUP "Lambda argument in a non-first
+		// interpolation slot").
 		await run(
-			"arrow_type_mixed",
+			"func_alias_factory",
+			"9\n9\n",
+			`
+func run = (Func<int, int> f, int x, out int) { return f(x) }
+
+func make = (int n, out Func<int>) {
+	return () => n
+}
+
+pub func main = (Init init) {
+	var Func<int> make9 = make(9)
+	Console.write_line("\\{make9()}")
+	Console.write_line("\\{run(() => 9, 0)}")
+}
+`,
+		);
+	});
+
+	test("higher-order Func<> nesting", async () => {
+		await run(
+			"func_alias_higher",
+			"6\n",
+			`
+func apply_to = (Func<int, int> f, out int) { return f(2) }
+
+pub func main = (Init init) {
+	var int base = 3
+	Console.write_line("\\{apply_to((x) => x * base)}")
+}
+`,
+		);
+	});
+
+	test("a deep nesting: func inside Func and Func inside func", async () => {
+		await run(
+			"func_alias_mixed",
 			"3\n",
 			`
-func apply_to = ((int) => int f, out int) { return f(1) }
-func run = (func ((int) => int g, out int) h, (int) => int f, out int) { return h(f) }
+func apply_to = (Func<int, int> f, out int) { return f(1) }
+func run = (func (Func<int, int> g, out int) h, Func<int, int> f, out int) { return h(f) }
 
 pub func main = (Init init) {
 	var int base = 3
@@ -262,47 +304,18 @@ pub func main = (Init init) {
 		);
 	});
 
-	test("higher-order arrow type: a function taking a function", async () => {
+	test("a Func<>-typed struct field and its func call", async () => {
+		// Nested type arguments use the alias spelling too: the keyword
+		// `func (...)` form is signature syntax, not part of `Func<...>`.
 		await run(
-			"arrow_type_higher",
-			"22\n",
-			`
-func apply_to = (((int) => int) => int g, (int) => int f, out int) { return g(f) }
-
-pub func main = (Init init) {
-	Console.write_line("\\{apply_to((h) => h(11) * 2, (x) => x)}")
-}
-`,
-		);
-	});
-
-	test("a closure factory with an arrow return type", async () => {
-		await run(
-			"arrow_type_factory",
-			"9 9\n",
-			`
-func make = (int n, out () => int) {
-	return () => n
-}
-
-pub func main = (Init init) {
-	var () => int f = make(9)
-	Console.write_line("\\{f()} \\{f()}")
-}
-`,
-		);
-	});
-
-	test("an arrow-typed struct field and its func call", async () => {
-		await run(
-			"arrow_type_field",
+			"func_alias_field",
 			"30\n",
 			`
 struct Plug {
-	var (func (out int)) => int f
+	var Func<Func<int>, int> f
 }
 
-func apply = (func (out int) g, out int) { return g() }
+func apply = (Func<int> g, out int) { return g() }
 
 pub func main = (Init init) {
 	var int base = 10
@@ -312,16 +325,57 @@ pub func main = (Init init) {
 `,
 		);
 	});
+});
 
-	test("an arrow type may not spell its return with `out`", () => {
+describe("Func<> rejections", () => {
+	test("void is only allowed in the result slot", () => {
 		const parsed = parse_raw(`
 import System
 
 pub func main = (Init init) {
-	var (out int) => int f = () => 1
+	var Func<void, int> f = () => 1
 	Console.write_line("\\{f()}")
 }
 `);
-		expect(parsed.errors.some((e) => e.message.includes("after '=>'"))).toBe(true);
+		expect(parsed.errors.some((e) => e.message.includes("result (last) type argument"))).toBe(true);
+	});
+
+	test("out void is rejected", () => {
+		const parsed = parse_raw(`
+import System
+
+func make = (out void) { }
+
+pub func main = (Init init) {
+	Console.write_line("keep")
+}
+`);
+		expect(parsed.errors.some((e) => e.message.includes("`void` has no value"))).toBe(true);
+	});
+
+	test("func types cannot be container element types", () => {
+		const parsed = parse_raw(`
+import System
+
+pub func main = (Init init) {
+	var List<Func<int, int>> fs = List<Func<int, int>>()
+	Console.write_line("keep")
+}
+`);
+		expect(
+			parsed.errors.some((e) => e.message.includes("func types cannot be used as type arguments")),
+		).toBe(true);
+	});
+
+	test("Func<> cannot be an array element type", () => {
+		const parsed = parse_raw(`
+import System
+
+pub func main = (Init init) {
+	var Array<Func<int, int>> fs = Array<Func<int, int>>()
+	Console.write_line("keep")
+}
+`);
+		expect(parsed.errors.some((e) => e.message.includes("array or container element"))).toBe(true);
 	});
 });

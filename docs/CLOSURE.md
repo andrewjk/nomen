@@ -114,10 +114,11 @@ may own captures), and a bare `return f` of a func-typed local transfers
 its descriptor (use-after-move afterwards). Signatures nest — a `func`
 type may appear as a parameter type or in a return slot at any depth
 (`func (func (out int), out int)`) — and each signature has two spellings:
-the keyword form `func (T1, T2, out R)` and the arrow form
-`(T1, T2) => R`. Both parse to the same Type, so the disposal gates for
-inline capturing lambda arguments — which key off the callee parameter's
-signature — apply unchanged at higher-order call sites.
+the keyword form `func (T1, T2, out R)` and the alias form
+`Func<T1, T2, R>` (result last; `void` = no result). Both parse to the same
+Type, so the disposal gates for inline capturing lambda arguments — which
+key off the callee parameter's signature — apply unchanged at
+higher-order call sites.
 
 ## The spawn seam
 

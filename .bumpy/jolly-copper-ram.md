@@ -2,4 +2,4 @@
 nomen-lang: minor
 ---
 
-Add arrow function types
+Add Func<> function types

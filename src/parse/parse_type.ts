@@ -1,4 +1,5 @@
 import add_error from "../add_error.ts";
+import ParameterNode from "../nodes/ParameterNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import type ParseStatus from "./ParseStatus.ts";
@@ -106,11 +107,56 @@ export default function parse_type(status: ParseStatus): Type {
 	// ROADBLOCKS `Array<T>.set` entry.
 	if (type.is_array === undefined && type.name === "Array" && type.type_args?.length === 1) {
 		const elem = type.type_args[0];
+		if (elem.name === "func") {
+			add_error(status, `Func<...> cannot be an array or container element type`, start);
+		}
 		type.name = elem.name;
 		type.is_array = true;
 		type.is_nullable = elem.is_nullable;
 		type.is_array_heap = true;
 		type.type_args = undefined;
+	}
+	// `Func<T1, ..., Tn>` — the alias spelling of a func type (SPEC,
+	// "Function-Typed Parameters"): every type argument but the LAST is a
+	// parameter; the last is the result. `void` in the result slot means no
+	// result — the same as omitting `out` in the `func (...)` spelling. The
+	// alias always desugars to the one-word `func` type, so it composes with
+	// signatures at any depth (`Func<Func<int, int>, int>`).
+	if (type.name === "Func" && type.type_args?.length) {
+		if (type.is_nullable || type.is_array || type.is_pointer || type.is_view || type.is_ref) {
+			add_error(status, `Func<...> cannot be combined with '?'/'[]'/'ptr'/'view'/'ref'`, start);
+			return type;
+		}
+		const args = type.type_args;
+		const func_type = new Type("func");
+		func_type.start = type.start;
+		// Always a (possibly empty) array: consumers detect a func-typed
+		// binding/value by `func_params !== undefined`.
+		func_type.func_params = [];
+		for (let i = 0; i < args.length - 1; i++) {
+			if (args[i].name === "void") {
+				add_error(
+					status,
+					`'void' is only allowed as the result (last) type argument of Func<...>`,
+					start,
+				);
+				continue;
+			}
+			const param = new ParameterNode(start, "");
+			if (args[i].name === "func") {
+				// A nested func parameter carries its signature on the
+				// ParameterNode (the convention every consumer reads).
+				param.type = new Type("func");
+				param.func_params = args[i].func_params;
+				param.func_return_type = args[i].func_return_type;
+			} else {
+				param.type = args[i];
+			}
+			func_type.func_params.push(param);
+		}
+		const result = args[args.length - 1];
+		if (result.name !== "void") func_type.func_return_type = result;
+		return func_type;
 	}
 	return type;
 }
