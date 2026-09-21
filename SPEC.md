@@ -1213,6 +1213,15 @@ func apply = (func (int, out int) mapper, int value, out int) {
 }
 ```
 
+Every func type also has an arrow spelling — `(T1, T2) => R` — with the
+return after `=>` instead of a trailing `out`:
+
+```
+func apply = ((int) => int mapper, int value, out int) {
+    return mapper(value)
+}
+```
+
 A `func` type may itself appear inside another signature — as a parameter
 type or in the return slot. A `func`-typed return (`out func (...)`) makes
 the function a closure factory: the returned closure is OWNED by the
@@ -1226,11 +1235,20 @@ func make_adder = (int n, out func (out int)) {
 }
 ```
 
-Higher-order signatures nest to arbitrary depth:
+Higher-order signatures nest to arbitrary depth, and the two spellings are
+interchangeable in every type position:
 
 ```
 func run = (func (func (out int), out int) g, func (out int) v, out int) {
     return g(v)
+}
+
+func run_arrow = (func ((int) => int g, out int) h, (int) => int f, out int) {
+    return h(f)
+}
+
+func make_arrow = (int n, out () => int) {
+    return () => n
 }
 ```
 

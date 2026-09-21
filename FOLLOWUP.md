@@ -60,6 +60,31 @@ heap_returning_functions, scoped to operands consumed by value ops.
 Discovered while probing the inline-capturing-lambda fixes; direct
 returns (`var string s = f()`) and borrow returns are unaffected.
 
+## Func-value arguments are not signature-checked
+
+Passing a named function (or another func value) whose signature does not
+match the expected func-typed parameter is not diagnosed — the call
+compiles and the ABI mismatch produces garbage at runtime. Repro
+(arrow-spelling higher-order param, but the `func (...)` spelling behaves
+identically):
+
+```
+func twice = ((int) => int f, int x, out int) { return f(x) + f(x) }
+// h is declared to take ONE func param, but twice takes (func, int):
+func run = (func ((int) => int g, out int) h, int x, out int) { return h((y) => y + x) }
+run(twice, 5)   // no error; prints garbage (observed 716)
+```
+
+`check_function_call`'s func-param guard skips `check_type_and_value_match`
+for func-typed arguments (it cannot compare func signatures — a lambda's
+`type_from_value_node` is its return type), and the named-function path
+compares signatures only in DECLARATION initializers
+(`check_declaration`'s `var func (int, out int) f = takes_string`). A
+proper fix compares arity + parameter types (including nested func/arrow
+signatures) + return type for named-function and func-typed-value
+arguments, and reports a signature mismatch at the argument site.
+Discovered while adding arrow func types.
+
 ## Residual ownership-tracking gaps (accepted, narrow)
 
 - **Trait-dispatched value-struct methods bypass the self-write record

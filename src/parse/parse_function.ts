@@ -18,7 +18,9 @@ import expect from "./utils/expect.ts";
 import expect_close_angle from "./utils/expect_close_angle.ts";
 import get_index from "./utils/get_index.ts";
 import {
+	at_arrow_func_type,
 	at_func_type,
+	parse_arrow_func_type,
 	parse_func_type,
 	parse_func_type_signature,
 } from "./utils/parse_func_type.ts";
@@ -216,12 +218,14 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 
 	if (accept("out", status)) {
 		func.return_type_start = get_index(status);
-		// A func-typed return (`out func (out int)`): a closure factory's
-		// return slot. The signature rides on the return Type
-		// (Type.func_params / Type.func_return_type).
+		// A func-typed return (`out func (out int)` / `out () => int`): a
+		// closure factory's return slot. The signature rides on the return
+		// Type (Type.func_params / Type.func_return_type).
 		if (at_func_type(status)) {
 			consume(status);
 			func.return_type = parse_func_type(status);
+		} else if (at_arrow_func_type(status)) {
+			func.return_type = parse_arrow_func_type(status);
 		} else {
 			func.return_type = parse_type(status);
 		}
@@ -327,6 +331,15 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 			consume(status);
 			param.type = new Type("func");
 			parse_func_type_signature(param, status);
+			param.name_start = get_index(status);
+			param.name = consume_name(status);
+		} else if (at_arrow_func_type(status)) {
+			// An arrow func-typed parameter (`(int) => int f`): same landing
+			// spot, parsed from the arrow spelling.
+			const nested = parse_arrow_func_type(status);
+			param.type = new Type("func");
+			param.func_params = nested.func_params;
+			param.func_return_type = nested.func_return_type;
 			param.name_start = get_index(status);
 			param.name = consume_name(status);
 		} else {

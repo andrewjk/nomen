@@ -201,3 +201,127 @@ pub func main = (Init init) {
 		).toBe(true);
 	});
 });
+
+describe("arrow function types", () => {
+	// `(T1, T2) => R` is the same signature Type as `func (T1, T2, out R)` —
+	// usable in every type position, at any nesting depth.
+
+	test("a local declared with an arrow type", async () => {
+		await run(
+			"arrow_type_local",
+			"6\n",
+			`
+pub func main = (Init init) {
+	var (int) => int f = (x) => x * 2
+	Console.write_line("\\{f(3)}")
+}
+`,
+		);
+	});
+
+	test("a zero-argument arrow type", async () => {
+		await run(
+			"arrow_type_zero",
+			"7\n",
+			`
+pub func main = (Init init) {
+	var () => int f = () => 7
+	Console.write_line("\\{f()}")
+}
+`,
+		);
+	});
+
+	test("an arrow-typed parameter and return in a signature", async () => {
+		await run(
+			"arrow_type_param",
+			"12\n",
+			`
+func run = ((int) => int f, int x, out int) { return f(x) }
+
+pub func main = (Init init) {
+	Console.write_line("\\{run((y) => y * 4, 3)}")
+}
+`,
+		);
+	});
+
+	test("mixed nesting: arrow inside func and func inside arrow", async () => {
+		await run(
+			"arrow_type_mixed",
+			"3\n",
+			`
+func apply_to = ((int) => int f, out int) { return f(1) }
+func run = (func ((int) => int g, out int) h, (int) => int f, out int) { return h(f) }
+
+pub func main = (Init init) {
+	var int base = 3
+	Console.write_line("\\{run(apply_to, (x) => x * base)}")
+}
+`,
+		);
+	});
+
+	test("higher-order arrow type: a function taking a function", async () => {
+		await run(
+			"arrow_type_higher",
+			"22\n",
+			`
+func apply_to = (((int) => int) => int g, (int) => int f, out int) { return g(f) }
+
+pub func main = (Init init) {
+	Console.write_line("\\{apply_to((h) => h(11) * 2, (x) => x)}")
+}
+`,
+		);
+	});
+
+	test("a closure factory with an arrow return type", async () => {
+		await run(
+			"arrow_type_factory",
+			"9 9\n",
+			`
+func make = (int n, out () => int) {
+	return () => n
+}
+
+pub func main = (Init init) {
+	var () => int f = make(9)
+	Console.write_line("\\{f()} \\{f()}")
+}
+`,
+		);
+	});
+
+	test("an arrow-typed struct field and its func call", async () => {
+		await run(
+			"arrow_type_field",
+			"30\n",
+			`
+struct Plug {
+	var (func (out int)) => int f
+}
+
+func apply = (func (out int) g, out int) { return g() }
+
+pub func main = (Init init) {
+	var int base = 10
+	var Plug p = Plug(apply)
+	Console.write_line("\\{p.f(func (out int) { return base * 3 })}")
+}
+`,
+		);
+	});
+
+	test("an arrow type may not spell its return with `out`", () => {
+		const parsed = parse_raw(`
+import System
+
+pub func main = (Init init) {
+	var (out int) => int f = () => 1
+	Console.write_line("\\{f()}")
+}
+`);
+		expect(parsed.errors.some((e) => e.message.includes("after '=>'"))).toBe(true);
+	});
+});

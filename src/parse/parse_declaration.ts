@@ -25,7 +25,9 @@ import default_visibility from "./utils/default_visibility.ts";
 import expect from "./utils/expect.ts";
 import get_index from "./utils/get_index.ts";
 import {
+	at_arrow_func_type,
 	at_func_type,
+	parse_arrow_func_type,
 	parse_func_type,
 	parse_func_type_signature,
 	parse_signature_params,
@@ -64,6 +66,8 @@ export default function parse_declaration(
 	accept(keyword, status);
 	if (peek_current(status) === "func") {
 		parse_function_type_declaration(decl, status);
+	} else if (at_arrow_func_type(status)) {
+		parse_arrow_func_declaration(decl, status);
 	} else {
 		// Try parsing a type, and backtrack if it turns out to be the name
 		const saved_i = status.i;
@@ -234,6 +238,40 @@ function parse_function_type_declaration(decl: DeclarationNode, status: ParseSta
 	}
 }
 
+/**
+ * `var (T1, T2) => R name [= init]` — an arrow func-type declaration. The
+ * signature lands on the DeclarationNode exactly like the `var func (...)`
+ * spelling (decl.func_params / decl.func_return_type), so every checker and
+ * build path is shared. Only an initializer is accepted (a `{ body }` after
+ * an arrow TYPE would be ambiguous with a declaration followed by a block).
+ */
+function parse_arrow_func_declaration(decl: DeclarationNode, status: ParseStatus) {
+	const sig = parse_arrow_func_type(status);
+	decl.name_start = get_index(status);
+	decl.name = consume_name(status);
+	decl.func_params = sig.func_params;
+	decl.func_return_type = sig.func_return_type;
+
+	const has_equals = accept("=", status);
+	if (
+		has_equals &&
+		(peek_current(status) === "func" ||
+			(peek_current(status) === "(" && anonymous_function_body_start(status) === "=>"))
+	) {
+		// A lambda initializer is parsed here (not via parse_expression) so it
+		// is NAMED after the binding, exactly like the func-type spelling.
+		if (peek_current(status) === "func") {
+			accept("func", status);
+		}
+		const func = parse_anonymous_function(decl.name, status);
+		if (func) {
+			decl.value = func;
+		}
+	} else if (has_equals) {
+		decl.value = parse_expression(status);
+	}
+}
+
 function extract_return_type(params: ParameterNode[]): Type | undefined {
 	for (const param of params) {
 		if (param.type.is_return_type) {
@@ -328,12 +366,15 @@ export function parse_anonymous_function(
 function parse_anon_function_parameter(func: FunctionNode, status: ParseStatus) {
 	const param_start = get_index(status);
 
-	// Check for return type: `out type` — itself nestable (`out func (out int)`)
+	// Check for return type: `out type` — itself nestable (`out func (out int)`,
+	// `out () => int`)
 	if (accept("out", status)) {
 		func.return_type_start = get_index(status);
 		if (at_func_type(status)) {
 			consume(status);
 			func.return_type = parse_func_type(status);
+		} else if (at_arrow_func_type(status)) {
+			func.return_type = parse_arrow_func_type(status);
 		} else {
 			func.return_type = parse_type(status);
 		}
@@ -368,6 +409,14 @@ function parse_anon_function_parameter(func: FunctionNode, status: ParseStatus) 
 		consume(status);
 		param.type = new Type("func");
 		parse_func_type_signature(param, status);
+		param.name_start = get_index(status);
+		param.name = consume_name(status);
+	} else if (at_arrow_func_type(status)) {
+		// An arrow func-typed lambda parameter (`((int) => int g, out int) => ...`).
+		const nested = parse_arrow_func_type(status);
+		param.type = new Type("func");
+		param.func_params = nested.func_params;
+		param.func_return_type = nested.func_return_type;
 		param.name_start = get_index(status);
 		param.name = consume_name(status);
 	} else {
