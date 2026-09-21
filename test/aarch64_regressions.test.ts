@@ -739,3 +739,23 @@ pub func main = (Init init) {
 `;
 	await build_and_check_output(input, "ref_deref_static_call_keeps_arg0", "a=5", true);
 });
+
+// A lambda argument in a NON-FIRST interpolation slot used to swallow the
+// preceding slot's hoisted `_param_N` declaration into its own body: the
+// outer statement kept only the reference, so aarch64 emitted
+// `adr xN, _param_N` (a data-label load) and clang rejected the assembly.
+// The checker now gives each nested function a fresh allocation scope, so an
+// enclosing expression's hoisted temporaries stay in the enclosing function.
+// Both backsends must compile and run this.
+test("lambda argument in a non-first interpolation slot", async () => {
+	const input = `import System
+
+func run = (func (out int) f, int x, out int) { return f() + x }
+
+pub func main = (Init init) {
+  var int a = 5
+  Console.write_line("\\{a} \\{run(() => 9, 0)}")
+}
+`;
+	await build_and_check_output(input, "interp_lambda_second_slot", "5 9\n", true);
+});

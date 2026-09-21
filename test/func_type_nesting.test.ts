@@ -250,13 +250,13 @@ pub func main = (Init init) {
 	});
 
 	test("a Func<> parameter and a Func<> return (closure factory)", async () => {
-		// NOTE: the two interpolations are separate statements on purpose — a
-		// lambda argument in a NON-FIRST interpolation slot miscompiles on
-		// aarch64 (pre-existing; FOLLOWUP "Lambda argument in a non-first
+		// The lambda argument sits in the SECOND interpolation slot — the
+		// shape that used to miscompile on aarch64 (see
+		// test/aarch64_regressions.test.ts, "lambda argument in a non-first
 		// interpolation slot").
 		await run(
 			"func_alias_factory",
-			"9\n9\n",
+			"9 9\n",
 			`
 func run = (Func<int, int> f, int x, out int) { return f(x) }
 
@@ -266,8 +266,7 @@ func make = (int n, out Func<int>) {
 
 pub func main = (Init init) {
 	var Func<int> make9 = make(9)
-	Console.write_line("\\{make9()}")
-	Console.write_line("\\{run((y) => y + 9, 0)}")
+	Console.write_line("\\{make9()} \\{run((y) => y + 9, 0)}")
 }
 `,
 		);

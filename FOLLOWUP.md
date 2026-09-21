@@ -60,31 +60,6 @@ heap_returning_functions, scoped to operands consumed by value ops.
 Discovered while probing the inline-capturing-lambda fixes; direct
 returns (`var string s = f()`) and borrow returns are unaffected.
 
-## Lambda in a non-first interpolation slot miscompiles (aarch64)
-
-An interpolation slot whose expression contains an inline lambda
-miscompiles on aarch64 unless it is the FIRST slot: the preceding slot's
-emitted code bleeds into the lambda's buffered definition, and the earlier
-argument is left as a raw `adr x0, _param_N` (a data-label load) instead of
-its computed value — clang rejects the assembly with "unknown AArch64
-fixup kind". Pre-existing (uses no recent features):
-
-```
-func run = (func (out int) f, int x, out int) { return f() + x }
-pub func main = (Init init) {
-    var int a = 5
-    Console.write_line("\{a} \{run(() => 9, 0)}")   // aarch64: assembler error
-}
-```
-
-Verified: moving the lambda to the first slot, or giving it its own
-interpolation statement, compiles and runs correctly; the C backend is
-unaffected. Suspected cause: the aarch64 nested-function buffering
-(`build_function_node`'s lambda-definition buffer) captures the caller's
-pending `status.code` when a lambda is built while an earlier interpolation
-argument's emission is still in flight. Recorded while adding `Func<...>`
-types (that test splits the interpolations to avoid the shape).
-
 ## Residual ownership-tracking gaps (accepted, narrow)
 
 - **Trait-dispatched value-struct methods bypass the self-write record

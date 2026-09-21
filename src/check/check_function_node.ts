@@ -115,6 +115,17 @@ export default function check_function_node(func: FunctionNode, status: CheckSta
 	}
 
 	let function_status = clone_status(status);
+	// A nested function (or lambda) begins a fresh statement scope: the
+	// allocations hoisted in the ENCLOSING expression must not be absorbed
+	// into the nested body — nor cleared from the enclosing statement's
+	// pending list. `clone_status` deliberately SHARES the array for block
+	// clones (if/while bodies stay in the same function), so entering a
+	// function must reset it. Without this, a lambda argument in a
+	// non-first interpolation slot swallowed the preceding argument's
+	// hoisted `_param_N` declaration into its own body while the outer
+	// statement kept only the reference (aarch64 emitted `adr xN, _param_N`
+	// and clang rejected it).
+	function_status.allocations = [];
 	// Unsafe context: an `unsafe func` body is one big unsafe region —
 	// `ptr T` values, `p[i]` indexing and pointer casts are legal in it.
 	function_status.in_unsafe = !!func.is_unsafe;
