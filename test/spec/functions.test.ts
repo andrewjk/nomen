@@ -280,6 +280,16 @@ var func (int, out int) square = func (n, out int) {
 		expect(compile_main(input)).toEqual([]);
 	});
 
+	test("a declaration block body with a declared return must return", () => {
+		const input = `
+var func (int, out int) square {
+	var int a = 1
+}
+`;
+		const errors = compile_main(input);
+		expect(errors.some((e) => e.message.includes("Missing return"))).toBe(true);
+	});
+
 	test("function-typed variable declared then assigned later", () => {
 		const input = `
 var func (int a, int b, out int) adder

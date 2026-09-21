@@ -2,6 +2,26 @@
 
 Skipped or out-of-scope items recorded for later.
 
+## Signature-merged lambdas skip the `Missing return` net
+
+The parse-time `Missing return` check (`src/parse/utils/check_missing_return.ts`)
+fires when a block body's return type is declared IN THE BODY (the leading
+`out T` of a lambda's param list, a named func's `out T` param). A lambda
+whose return type comes from the TARGET SIGNATURE instead —
+`var func (int, out int) sq = func (x) { }` (declaration annotation),
+`apply(func (int x) { })` (func-typed param), or a func-typed field's ctor
+arg — has an empty `return_type` at parse time, so no error fires; the
+checker merges the signature later (check_declaration_node /
+check_function_call / check_assignment_node) and nothing re-runs the
+check. The call then yields garbage.
+
+Fix shape: after each of the three signature merges, if the merged
+`func_return_type` is set and the RHS lambda is block-bodied
+(`has_body && !has_return && !is_arrow_body`), report `Missing return`
+(same raw-only exemption). Kept out of the lambda-forms change because it
+spans three check-phase sites; the self-typed forms (the common case) are
+already covered at parse.
+
 ## aarch64 post-processing passes dominate large builds (linear but heavy)
 
 Follow-up to the emitter quadratic fix (chunked code buffer +

@@ -18,6 +18,7 @@ import parse_statement from "./parse_statement.ts";
 import parse_type from "./parse_type.ts";
 import type ParseStatus from "./ParseStatus.ts";
 import accept from "./utils/accept.ts";
+import check_missing_return from "./utils/check_missing_return.ts";
 import consume from "./utils/consume.ts";
 import consume_name from "./utils/consume_name.ts";
 import default_visibility from "./utils/default_visibility.ts";
@@ -198,6 +199,8 @@ function parse_function_type_declaration(decl: DeclarationNode, status: ParseSta
 				expect("}", status);
 				status.stack.pop();
 
+				check_missing_return(func, status);
+
 				decl.value = func;
 			} else if (
 				has_equals &&
@@ -342,6 +345,8 @@ export function parse_anonymous_function(
 			parse_statement(status);
 			expect("}", status);
 			status.stack.pop();
+
+			check_missing_return(func, status);
 
 			return func;
 		}

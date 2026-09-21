@@ -11,6 +11,7 @@ import parse_statement from "./parse_statement.ts";
 import parse_type from "./parse_type.ts";
 import type ParseStatus from "./ParseStatus.ts";
 import accept from "./utils/accept.ts";
+import check_missing_return from "./utils/check_missing_return.ts";
 import consume from "./utils/consume.ts";
 import consume_name from "./utils/consume_name.ts";
 import expect from "./utils/expect.ts";
@@ -170,17 +171,10 @@ export default function parse_function(
 					expect("}", status);
 					status.stack.pop();
 
-					if (
-						func.return_type.name &&
-						!func.has_return &&
-						name !== "#init" &&
-						name !== "#destroy"
-					) {
-						const is_raw_only =
-							func.statements.length > 0 && func.statements.every((s) => s.node_type === "raw");
-						if (!is_raw_only) {
-							add_error(status, `Missing return`, status.tokens[status.i - 2].i);
-						}
+					// Constructors and destructors return through their own
+					// machinery, not a Nomen `return`.
+					if (name !== "#init" && name !== "#destroy") {
+						check_missing_return(func, status);
 					}
 				}
 			}

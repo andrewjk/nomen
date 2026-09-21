@@ -255,6 +255,22 @@ pub func main = (Init init) {
 		expect(parsed.errors[0].message).toContain("no 'out' return type");
 	});
 
+	test("a keyword block body with a declared return must return", () => {
+		// Same parse-time `Missing return` check as named functions: a block
+		// body that declares `out T` must contain a `return`.
+		const input = `import System
+
+func apply = (func (out int) f, out int) { return f() }
+
+pub func main = (Init init) {
+	var int r = apply(func (out int) { var int a = 1 })
+}
+`;
+		const parsed = parse_raw(input);
+		expect(parsed.errors.length).toBeGreaterThan(0);
+		expect(parsed.errors[0].message).toContain("Missing return");
+	});
+
 	test("an arrow must be followed by an expression (no `=> { ... }`)", () => {
 		const input = `import System
 
