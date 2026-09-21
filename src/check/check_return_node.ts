@@ -9,6 +9,7 @@ import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { borrow_depth_of, borrow_owner_of } from "./utils/borrow.ts";
 import { move_closure_source } from "./utils/captures.ts";
+import check_func_argument_signature from "./utils/check_func_argument_signature.ts";
 import check_merged_missing_return from "./utils/check_merged_missing_return.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import synthesize_lambda_name from "./utils/synthesize_lambda_name.ts";
@@ -187,13 +188,7 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 			}
 			const sig = func.return_type;
 			if (value_func && sig.func_params?.length) {
-				if (value_func.params.length !== sig.func_params.length) {
-					add_error(
-						status,
-						`Function signature mismatch: expected ${sig.func_params.length} parameter(s)`,
-						ret.value.start,
-					);
-				} else {
+				if (value_func.params.length === sig.func_params.length) {
 					for (let i = 0; i < value_func.params.length; i++) {
 						if (!value_func.params[i].type.name && sig.func_params[i].type.name) {
 							value_func.params[i].type = sig.func_params[i].type;
@@ -211,6 +206,11 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 			if (value_func) {
 				check_merged_missing_return(value_func, status);
 			}
+			// The returned func value's signature must match the declared
+			// return (arity + parameter types + result, nested included) —
+			// the same check arguments get. Runs after the lambda merge so a
+			// correctly-inferred lambda compares equal.
+			check_func_argument_signature(sig, ret.value, status, ret.value.start);
 			move_closure_source(ret.value, status);
 		} else if (func.return_type.name) {
 			if (func.return_type.name !== "?") {

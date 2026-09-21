@@ -13,6 +13,7 @@ import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { borrow_depth_of, borrow_owner_of, invalidate_view_borrows_of } from "./utils/borrow.ts";
 import { value_owns_closure } from "./utils/captures.ts";
+import check_func_argument_signature from "./utils/check_func_argument_signature.ts";
 import check_merged_missing_return from "./utils/check_merged_missing_return.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import evaluate_const_condition from "./utils/evaluate_const_condition.ts";
@@ -354,52 +355,45 @@ export default function check_assignment_node(
 	const lhs_func_params = lhs_value?.func_params ?? lambda_signature.params;
 	const rhs_is_func_marker = type_from_value_node(assign.right_value, status).name === "func";
 	const rhs_is_lambda = assign.right_value.node_type === "func";
-	if (lhs_func_params?.length && (rhs_is_func_marker || rhs_is_lambda)) {
-		if (rhs_is_lambda) {
-			// The lambda's parameter types were inferred from the target's
-			// signature above; verify the count matches.
-			const rhs_fn = assign.right_value as FunctionNode;
-			if (rhs_fn.params.length !== lhs_func_params.length) {
-				add_error(
-					status,
-					`Function signature mismatch: expected ${lhs_func_params.length} parameter(s)`,
-					assign.right_value.start,
-				);
-			}
-		} else if (assign.right_value.node_type !== "value") {
-			add_error(status, `Expected a function name`, assign.right_value.start);
-		} else {
-			// Signature compatibility: the RHS function's params (minus the
-			// `out` return slot, which type_from_value doesn't count) must
-			// match the declared signature in count and type.
-			const rhs_fn = status.functions.findLast(
-				(f) => f.name === (assign.right_value as ValueNode).value,
-			);
-			// Stamp the resolution: the build materializes the closure
-			// descriptor at this value site (CLOSURE.md).
-			if (rhs_fn) {
-				(assign.right_value as unknown as { resolved_function?: FunctionNode }).resolved_function =
-					rhs_fn;
-			}
-			const rhs_params = (rhs_fn?.params ?? []).filter((p) => !p.is_self_param);
-			if (rhs_params.length !== lhs_func_params.length) {
-				add_error(
-					status,
-					`Function signature mismatch: expected ${lhs_func_params.length} parameter(s)`,
-					assign.right_value.start,
-				);
+	const rhs_value_name =
+		assign.right_value.node_type === "value" ? (assign.right_value as ValueNode).value : undefined;
+	const rhs_is_func_binding =
+		!!rhs_value_name &&
+		status.values.findLast((v) => v.name === rhs_value_name)?.func_params !== undefined;
+	if (
+		lhs_func_params !== undefined &&
+		(rhs_is_func_marker || rhs_is_lambda || rhs_is_func_binding)
+	) {
+		if (!rhs_is_lambda && !rhs_is_func_binding) {
+			if (assign.right_value.node_type !== "value") {
+				add_error(status, `Expected a function name`, assign.right_value.start);
 			} else {
-				for (let i = 0; i < lhs_func_params.length; i++) {
-					if (lhs_func_params[i].type.name !== rhs_params[i].type.name) {
-						add_error(
-							status,
-							`Function signature mismatch: parameter ${i + 1} is ${rhs_params[i].type.name}, expected ${lhs_func_params[i].type.name}`,
-							assign.right_value.start,
-						);
-					}
+				// Stamp the resolution: the build materializes the closure
+				// descriptor at this value site (CLOSURE.md).
+				const rhs_fn = status.functions.findLast(
+					(f) => f.name === (assign.right_value as ValueNode).value,
+				);
+				if (rhs_fn) {
+					(
+						assign.right_value as unknown as { resolved_function?: FunctionNode }
+					).resolved_function = rhs_fn;
 				}
 			}
 		}
+		// Arity + parameter types + result must match the declared signature
+		// (lambda params were merged from it above, so inferred parts compare
+		// equal).
+		check_func_argument_signature(
+			{
+				func_params: lhs_func_params,
+				// A field target has no StackValue — its return type rides
+				// `lambda_signature` (harvested from the field declaration).
+				func_return_type: lhs_value?.func_return_type ?? lambda_signature.return_type,
+			},
+			assign.right_value,
+			status,
+			assign.right_value.start,
+		);
 	} else
 		check_type_and_value_match(
 			type_from_value_node(assign.left_value, status),

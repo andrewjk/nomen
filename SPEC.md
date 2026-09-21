@@ -1256,6 +1256,12 @@ func run_alias = (Func<Func<int, int>, int> h, Func<int, int> f, out int) {
 }
 ```
 
+A func value's signature must match where it is used: an argument against
+the parameter's signature, a returned value against a `func`-typed return,
+and an initializer or assignment against the declared type. The comparison
+covers the parameter count, each parameter type (nested func parameters
+included), and the result type.
+
 #### Extern Functions
 
 A body-less `extern func` declaration maps a Nomen function onto a C

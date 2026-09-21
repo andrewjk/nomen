@@ -18,6 +18,7 @@ import check_function_call_node, {
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { invalidate_borrows_of, receiver_owner_of } from "./utils/borrow.ts";
+import check_func_argument_signature from "./utils/check_func_argument_signature.ts";
 import {
 	enforce_case_payload_ownership,
 	find_mono_enum,
@@ -651,7 +652,8 @@ function check_access_function_node(
 		const func_field = struct?.fields.find((fd) => fd.name === node.name && fd.func_params);
 		if (func_field) {
 			node.is_func_field_call = true;
-			for (const param of node.params) {
+			for (let i = 0; i < node.params.length; i++) {
+				const param = node.params[i];
 				// An anonymous lambda argument needs an emission name — the
 				// same synthesis a func-typed direct-call argument gets
 				// (both backends lower it to a file-scope function).
@@ -659,6 +661,12 @@ function check_access_function_node(
 					synthesize_lambda_name(param as FunctionNode, status);
 				}
 				check_node(param, status);
+				// Each argument is compared against the FIELD signature's
+				// corresponding parameter (itself a func type).
+				const field_param = func_field.func_params?.[i];
+				if (field_param) {
+					check_func_argument_signature(field_param, param, status, param.start);
+				}
 			}
 			node.type = func_field.func_return_type || new Type("void");
 			return true;

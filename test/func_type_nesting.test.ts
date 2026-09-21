@@ -267,7 +267,7 @@ func make = (int n, out Func<int>) {
 pub func main = (Init init) {
 	var Func<int> make9 = make(9)
 	Console.write_line("\\{make9()}")
-	Console.write_line("\\{run(() => 9, 0)}")
+	Console.write_line("\\{run((y) => y + 9, 0)}")
 }
 `,
 		);
@@ -377,5 +377,257 @@ pub func main = (Init init) {
 }
 `);
 		expect(parsed.errors.some((e) => e.message.includes("array or container element"))).toBe(true);
+	});
+});
+
+describe("func signature checking (arguments and returns)", () => {
+	// Passing a lambda / named function / func-typed value whose signature
+	// does not match a func-typed parameter — or RETURNING one that does not
+	// match a func-typed return — is a compile error (SPEC "Function-Typed
+	// Parameters"). Before this check the mismatch compiled and produced an
+	// ABI mismatch at runtime.
+
+	function expect_error(source: string, message: string) {
+		const errors = parse_raw(`import System\n${source}`).errors.map((e) => e.message);
+		expect(errors.some((m) => m.includes(message))).toBe(true);
+	}
+
+	const HELPERS = `
+func takes_int = (int x, out int) => x
+func takes_string = (string s, out int) => s.length
+func returns_string = (int x, out string) => x.to_string()
+
+func apply = (func (int, out int) f, int x, out int) { return f(x) }
+`;
+
+	test("arity mismatch", () => {
+		expect_error(
+			`
+func two_params = (func (out int) f, int x, out int) { return f() + x }
+func run = (func (func (out int), out int) g, func (out int) v, out int) { return g(v) }
+pub func main = (Init init) {
+	run(two_params, () => 3)
+}
+`,
+			"expected 1 parameter(s)",
+		);
+	});
+
+	test("parameter type mismatch (named function)", () => {
+		expect_error(
+			`${HELPERS}
+pub func main = (Init init) {
+	apply(takes_string, 3)
+}
+`,
+			"parameter 1 is string, expected int",
+		);
+	});
+
+	test("return type mismatch", () => {
+		expect_error(
+			`${HELPERS}
+pub func main = (Init init) {
+	apply(returns_string, 3)
+}
+`,
+			"returns string, expected int",
+		);
+	});
+
+	test("introduced value where a void result is expected", () => {
+		expect_error(
+			`${HELPERS}
+func log = (Func<int, void> f, int x) { f(x) }
+pub func main = (Init init) {
+	log(takes_int, 3)
+}
+`,
+			"returns int, expected void",
+		);
+	});
+
+	test("nested func parameter mismatch", () => {
+		expect_error(
+			`
+func gives = (func (string, out int) h, out int) { return h("x") }
+func wants = (func (func (int, out int), out int) g, out int) { return g(gives) }
+pub func main = (Init init) {
+	Console.write_line("\\{wants(gives)}")
+}
+`,
+			"parameter 1 is string, expected int",
+		);
+	});
+
+	test("func-typed binding argument mismatch", () => {
+		expect_error(
+			`${HELPERS}
+pub func main = (Init init) {
+	var func (string, out int) g = takes_string
+	apply(g, 3)
+}
+`,
+			"parameter 1 is string, expected int",
+		);
+	});
+
+	test("method argument mismatch", () => {
+		expect_error(
+			`${HELPERS}
+struct Engine {
+	func run = (self, func (int, out int) f, int x, out int) { return f(x) }
+}
+pub func main = (Init init) {
+	var Engine e = Engine()
+	e.run(takes_string, 3)
+}
+`,
+			"parameter 1 is string, expected int",
+		);
+	});
+
+	test("func-typed FIELD call argument mismatch", () => {
+		expect_error(
+			`${HELPERS}
+struct Plug {
+	var Func<Func<string, int>, int> f
+}
+func apply_s = (Func<string, int> g, out int) { return g("x") }
+pub func main = (Init init) {
+	var Plug p = Plug(apply_s)
+	p.f(takes_int)
+}
+`,
+			"parameter 1 is int, expected string",
+		);
+	});
+
+	test("matching signatures still compile", () => {
+		const input = `
+func takes_int = (int x, out int) => x
+func apply = (func (int, out int) f, int x, out int) { return f(x) }
+func run = (func (int, out int) g, int x, out int) { return g(x) }
+pub func main = (Init init) {
+	Console.write_line("\\{apply(takes_int, 1)} \\{run(takes_int, 2)} \\{apply((y) => y + 1, 3)}")
+}
+`;
+		expect(parse_raw(`import System\n${input}`).errors).toEqual([]);
+	});
+
+	test("returned named function parameter mismatch", () => {
+		expect_error(
+			`
+func takes_string = (string s, out int) => s.length
+func make = (out Func<int, int>) { return takes_string }
+pub func main = (Init init) {
+	Console.write_line("\\{make()(1)}")
+}
+`,
+			"parameter 1 is string, expected int",
+		);
+	});
+
+	test("returned function arity mismatch", () => {
+		expect_error(
+			`
+func two = (int a, int b, out int) { return a + b }
+func make = (out Func<int>) { return two }
+pub func main = (Init init) {
+	Console.write_line("\\{make()()}")
+}
+`,
+			"expected 0 parameter(s)",
+		);
+	});
+});
+
+describe("func signature checking (declarations and assignments)", () => {
+	function expect_error(source: string, message: string) {
+		const errors = parse_raw(`import System\n${source}`).errors.map((e) => e.message);
+		expect(errors.some((m) => m.includes(message))).toBe(true);
+	}
+
+	const HELPERS = `
+func takes_int = (int x, out int) => x
+func takes_string = (string s, out int) => s.length
+func returns_string = (int x, out string) => x.to_string()
+func two_params = (int a, int b, out int) { return a + b }
+`;
+
+	test("declaration: named function return mismatch", () => {
+		expect_error(
+			`${HELPERS}
+pub func main = (Init init) {
+	var func (int, out int) f = returns_string
+	Console.write_line("\\{f(1)}")
+}
+`,
+			"returns string, expected int",
+		);
+	});
+
+	test("declaration: named function parameter mismatch", () => {
+		expect_error(
+			`${HELPERS}
+pub func main = (Init init) {
+	var func (int, out int) f = takes_string
+	Console.write_line("\\{f(1)}")
+}
+`,
+			"parameter 1 is string, expected int",
+		);
+	});
+
+	test("declaration: self-typed lambda parameter mismatch", () => {
+		expect_error(
+			`${HELPERS}
+pub func main = (Init init) {
+	var func (int, out int) f = (string s, out int) => 0
+	Console.write_line("\\{f(1)}")
+}
+`,
+			"parameter 1 is string, expected int",
+		);
+	});
+
+	test("assignment: named function return mismatch", () => {
+		expect_error(
+			`${HELPERS}
+pub func main = (Init init) {
+	var func (int, out int) f = takes_int
+	f = returns_string
+	Console.write_line("\\{f(1)}")
+}
+`,
+			"returns string, expected int",
+		);
+	});
+
+	test("assignment: func-typed value mismatch", () => {
+		expect_error(
+			`${HELPERS}
+pub func main = (Init init) {
+	var func (int, out int) f = takes_int
+	var func (string, out int) g = takes_string
+	f = g
+	Console.write_line("\\{f(1)}")
+}
+`,
+			"parameter 1 is string, expected int",
+		);
+	});
+
+	test("assignment: arity mismatch", () => {
+		expect_error(
+			`${HELPERS}
+pub func main = (Init init) {
+	var func (int, out int) f = takes_int
+	f = two_params
+	Console.write_line("\\{f(1)}")
+}
+`,
+			"expected 1 parameter(s)",
+		);
 	});
 });

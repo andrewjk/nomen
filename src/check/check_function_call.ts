@@ -20,6 +20,7 @@ import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { borrow_depth_of } from "./utils/borrow.ts";
 import { value_owns_closure } from "./utils/captures.ts";
+import check_func_argument_signature from "./utils/check_func_argument_signature.ts";
 import check_merged_missing_return from "./utils/check_merged_missing_return.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import evaluate_const_condition, {
@@ -824,6 +825,14 @@ export default function check_function_call(
 				param.start,
 				"param",
 			);
+		}
+		// A func-typed parameter's signature is compared against the
+		// argument's (lambda, named function, or func-typed value) — the
+		// scalar comparison above cannot do it (`type_from_value_node` of a
+		// lambda is its RETURN type). An unresolvable argument signature is
+		// skipped, never guessed.
+		if (expected_type.name === "func") {
+			check_func_argument_signature(func_param, param, status, param.start);
 		}
 
 		// A bare function name passed to a func-typed parameter: stamp the
