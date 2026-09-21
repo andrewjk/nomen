@@ -233,8 +233,7 @@ describe("trait dispatch with a ref arg rooted at a class local (C backend)", ()
 	// A trait-vtable call taking `ref State` must pass the ADDRESS of the
 	// caller's slot (`&s` → `State **`). Dropping the address-of handed the
 	// callee the instance pointer, which it dereferenced as the slot —
-	// garbage read/write (SIGSEGV). C-only: the aarch64 dispatch marshal for
-	// this shape is a separate known issue (FOLLOWUP.md).
+	// garbage read/write (SIGSEGV).
 	test("mutation through the dispatched ref param lands in the caller's local", async () => {
 		const input = `
 class State {
@@ -257,5 +256,55 @@ Console.write("\\{s.v}")
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "c", audit: true });
 		await check_output("trait_ref_class_local_arg", result, "1", { arch: "c", audit: true });
+	});
+});
+
+// The aarch64 dispatch marshal had the same hole: `emit_address_of` on a
+// class local DEREFS the slot (class locals are is_local_ref_var), handing
+// the callee the instance pointer (T*) where its `ref T` ABI wants &slot
+// (T**) — the callee then read/wrote through the vtable word (SIGSEGV). The
+// trait path now mirrors the plain-call marshal: raw slot address, plus an
+// anchor re-sync after the call for callee reassignment.
+describe("trait dispatch with a ref arg rooted at a class local (both backends)", () => {
+	const trait_input = `
+class State {
+	var int v = 0
+}
+trait Visitor {
+	func visit = (self, ref State s)
+}
+struct Inc: Visitor {
+	func visit = (self, ref State s) {
+		s.v += 1
+	}
+}
+var Visitor v = Inc()
+var State s = State()
+v.visit(ref s)
+Console.write("\\{s.v}")
+`;
+	test("mutation through the dispatched ref param lands in the caller's local", async () => {
+		await build_and_check_output(trait_input, "trait_ref_class_local_arg_a64", "1");
+	});
+
+	test("reassignment through the dispatched ref param propagates", async () => {
+		const input = `
+class State {
+	var int v
+}
+trait Visitor {
+	func visit = (self, ref State s)
+}
+struct New: Visitor {
+	func visit = (self, ref State s) {
+		s = State(9)
+	}
+}
+var Visitor v = New()
+var State s = State(1)
+v.visit(ref s)
+Console.write("\\{s.v}")
+`;
+		await build_and_check_output(input, "trait_ref_class_local_reassign", "9");
 	});
 });

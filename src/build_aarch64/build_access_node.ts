@@ -49,7 +49,12 @@ import build_thread_start, {
 } from "./build_spawn_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free, emit_malloc, emit_strdup } from "./utils/audit.ts";
-import { all_scope_frames, mark_moved_if_struct, trait_class_for } from "./utils/auto_destroy.ts";
+import {
+	all_scope_frames,
+	find_anchor_slot,
+	mark_moved_if_struct,
+	trait_class_for,
+} from "./utils/auto_destroy.ts";
 import { emit_descriptor_address, materialize_func_value_a64 } from "./utils/closure_a64.ts";
 import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
 import { emit_index_address, pointer_element_size } from "./utils/ptr_access.ts";
@@ -2735,6 +2740,11 @@ function build_access_method(
 	// callee-saved registers can be reloaded from the caller's slot once the
 	// call returns (the callee may have reassigned it).
 	const ref_class_param_reload: string[] = [];
+	// `ref` class LOCAL args passed by raw slot address: the callee may
+	// reassign them (writing the new instance into the caller's slot), so the
+	// scope-exit anchor slot is re-synced to the slot's current value after
+	// the call.
+	const ref_class_sync_names: string[] = [];
 	for (let i = access_func.params.length - 1; i >= 0; i--) {
 		const param = access_func.params[i];
 		const is_ref_param = access_func.ref_param_indices?.includes(i);
@@ -2779,7 +2789,28 @@ function build_access_method(
 				emit_asm(status, `ldr x0, [x29, #${rp_slot}]\n`);
 				ref_class_param_reload.push(rp_name!);
 			} else {
-				emit_address_of(param, status);
+				// A `ref` CLASS local arg must pass the ADDRESS of the caller's
+				// slot (`T**`): the callee dereferences it once at entry and may
+				// reassign through it. emit_address_of would deref the local
+				// (class locals are is_local_ref_var) and hand the callee the
+				// instance pointer (T*) — which the callee then treats as the
+				// slot, corrupting memory through the vtable word. A `ref`
+				// struct local keeps emit_address_of: its slot points at the
+				// struct, so the deref IS the struct's address, which is what
+				// the callee wants. (Mirrors the plain-call path; the anchor is
+				// re-synced after the call.)
+				const arg_name = rp_name;
+				let arg_is_class = false;
+				if (arg_name) {
+					const tn = (param as any).type?.name ?? status.variable_types?.get(arg_name)?.name;
+					arg_is_class = !!tn && !!status.structs.find((s) => s.name === tn && s.is_class);
+				}
+				if (arg_name !== undefined && is_local_ref_var(arg_name, status) && arg_is_class) {
+					emit_var_address(status, "x0", arg_name);
+					ref_class_sync_names.push(arg_name);
+				} else {
+					emit_address_of(param, status);
+				}
 			}
 		} else if (is_struct) {
 			if (param.node_type === "value") {
@@ -3023,6 +3054,25 @@ function build_access_method(
 		emit_asm(status, `ldr x1, [sp], #16\n`);
 		emit_asm(status, `ldr x0, [sp], #16\n`);
 		emit_asm(status, `add sp, sp, #16\n`);
+	}
+
+	// A `ref` class arg may have been reassigned by the callee, which wrote
+	// the new pointer into the caller's slot. The caller's anchor slot (used
+	// for cleanup at scope exit) still holds the old pointer — sync it to the
+	// slot's current value so the new instance is freed once and the old one
+	// (already freed by the callee) is not double-freed. If the callee did
+	// not reassign, the slot is unchanged and this is a no-op. Preserve x0
+	// across the sync — it holds the call's return value.
+	if (ref_class_sync_names.some((n) => find_anchor_slot(status, n) !== undefined)) {
+		emit_asm(status, `str x0, [sp, #-16]!\n`);
+		for (const sync_name of ref_class_sync_names) {
+			const anchor = find_anchor_slot(status, sync_name);
+			if (anchor !== undefined) {
+				emit_var_load(status, "x0", sync_name, 8);
+				emit_asm(status, `str x0, [x29, #${anchor}]\n`);
+			}
+		}
+		emit_asm(status, `ldr x0, [sp], #16\n`);
 	}
 
 	// A forwarded `ref` class PARAM may have been reassigned by the callee,

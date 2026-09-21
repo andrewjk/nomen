@@ -205,12 +205,6 @@ Also still open from the same area: `for ref x of list` is rejected with
 a dedicated error (List `set` takes `move T`, so the array writeback
 shape doesn't transfer — needs its own design).
 
-Converting the allmark markdown library (~170 TS files) to Nomen hit the
-following. The port currently builds around all of these (traits instead of
-func fields, `Map<string, int>` indices instead of reference-valued maps,
-`--arch c` for the aarch64 mis-binds, no string-literal defaults on class
-fields), but each should be fixed in the compiler:
-
 ## CLI: `nomen test` build phase runs out of memory (OOM) on the allmark project
 
 `nomen check --in test/<file>.test.nm` completes in ~6s (12k warnings, 0
@@ -395,27 +389,6 @@ page + SIGSEGV handler vs compiler-inserted stack-limit checks), `await`
 sugar, an io_uring runtime, the parking lint (above), plus the Phase 3
 leftover: the 10k-connection acceptance run (N = 64 is the tested ceiling).
 Recorded here as a pointer only; ASYNC.md's "Roadmap" is the source of truth.
-
-## aarch64 trait dispatch with a `ref` class-local argument mis-marshals
-
-Found while fixing the C backend's dropped address-of on trait-vtable `ref`
-args (PORT.md item; C side fixed in the same commit). On aarch64,
-`v.visit(ref s)` — trait-typed receiver `v`, `ref State` arg rooted at a
-class LOCAL `s` — crashes with SIGSEGV:
-
-- the arg marshal parks `&s` across the receiver build, but the receiver
-  ends up in x1 and `&s` in x0 (swapped vs the callee's `self=x0, s=x1`
-  convention), and
-- the `var State s = State()` initializer's result register is clobbered by
-  the `&s` address computation before the store — the instance leaks and
-  `s`'s slot holds garbage, which the vtable load then dereferences.
-
-The generic arg-setup rule ("structs/traits pass address") also gives the
-callee a `T*` where a `ref T` param wants `T**`. Needs the same
-declared-refness-driven marshalling the C path now does, plus an
-init-store ordering fix. Not fixed here: aarch64 remains gated behind its
-two known blockers (unbalanced-stack validator false positive, oversized
-`mov` immediates) and the port always builds `--arch c`.
 
 ## Stale `cli/core` asset copy shadows the repo `core/` in dev
 
