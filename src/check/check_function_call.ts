@@ -20,6 +20,7 @@ import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { borrow_depth_of } from "./utils/borrow.ts";
 import { value_owns_closure } from "./utils/captures.ts";
+import check_merged_missing_return from "./utils/check_merged_missing_return.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import evaluate_const_condition, {
 	evaluate_numeric_or_bool,
@@ -412,6 +413,7 @@ export default function check_function_call(
 			}
 			if (func_param.func_return_type && !rhs_func.return_type.name) {
 				rhs_func.return_type = func_param.func_return_type;
+				check_merged_missing_return(rhs_func, status);
 			}
 		}
 

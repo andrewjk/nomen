@@ -286,3 +286,93 @@ pub func main = (Init init) {
 		expect(parsed.errors[0].message).toContain("'=>' must be followed by an expression");
 	});
 });
+
+describe("signature-merged lambdas miss their return", () => {
+	// A lambda whose return type comes from the TARGET signature (not its own
+	// `out T` param) skips the parse-time `Missing return` check — the checker
+	// merges the return type in, and each merge site re-runs the net here.
+	// Block-bodied only, exactly once per site (self-typed lambdas are caught
+	// at parse and must not double-report).
+	function expect_one_missing_return(body: string) {
+		const input = `import System
+${body}
+`;
+		const messages = parse_raw(input)
+			.errors.map((e) => e.message)
+			.filter((m) => m === "Missing return");
+		expect(messages).toHaveLength(1);
+	}
+
+	test("declaration annotation", () => {
+		expect_one_missing_return(`
+func apply = (func (int, out int) f, int x, out int) { return f(x) }
+pub func main = (Init init) {
+	var func (int, out int) sq = func (x) { }
+	var int r = apply(sq, 3)
+	Console.write_line("\\{r}")
+}
+`);
+	});
+
+	test("func-typed call argument", () => {
+		expect_one_missing_return(`
+func apply = (func (int, out int) f, int x, out int) { return f(x) }
+pub func main = (Init init) {
+	var int r = apply(func (x) { var int y = x }, 3)
+	Console.write_line("\\{r}")
+}
+`);
+	});
+
+	test("func-typed field's ctor argument", () => {
+		expect_one_missing_return(`
+struct Rule {
+	var func (int, out int) f
+}
+pub func main = (Init init) {
+	var Rule r = Rule(func (x) { var int y = x })
+	Console.write_line("\\{r.f(4)}")
+}
+`);
+	});
+
+	test("func-typed field assignment", () => {
+		expect_one_missing_return(`
+struct Rule {
+	var func (int, out int) f
+}
+pub func main = (Init init) {
+	var Rule r = Rule()
+	r.f = func (x) { var int y = x }
+	Console.write_line("\\{r.f(4)}")
+}
+`);
+	});
+
+	test("a self-typed lambda is still reported exactly once", () => {
+		expect_one_missing_return(`
+func apply = (func (out int) f, out int) { return f() }
+pub func main = (Init init) {
+	var int r = apply(func (out int) { var int a = 1 })
+	Console.write_line("\\{r}")
+}
+`);
+	});
+
+	test("merged arrow bodies and returning bodies stay exempt", () => {
+		const input = `import System
+
+func apply = (func (int, out int) f, int x, out int) { return f(x) }
+pub func main = (Init init) {
+	var func (int, out int) sq = (x) => x * x
+	var func (int, out int) cube = func (x) { return x * x * x }
+	Console.write_line("\\{apply(sq, 3)}")
+	Console.write_line("\\{apply(cube, 3)}")
+}
+`;
+		const messages = parse_raw(input)
+			.errors.map((e) => e.message)
+			.filter((m) => m === "Missing return");
+		expect(messages).toHaveLength(0);
+	});
+});

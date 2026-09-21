@@ -11,6 +11,7 @@ import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { borrow_depth_of, borrow_owner_of } from "./utils/borrow.ts";
 import { move_closure_source, value_owns_closure } from "./utils/captures.ts";
+import check_merged_missing_return from "./utils/check_merged_missing_return.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import check_type_exists from "./utils/check_type_exists.ts";
 import evaluate_const_condition from "./utils/evaluate_const_condition.ts";
@@ -128,6 +129,7 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			}
 			if (decl.func_return_type && !value_func.return_type.name) {
 				value_func.return_type = decl.func_return_type;
+				check_merged_missing_return(value_func, status);
 			}
 
 			status.stack.push(decl);

@@ -13,6 +13,7 @@ import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { borrow_depth_of, borrow_owner_of, invalidate_view_borrows_of } from "./utils/borrow.ts";
 import { value_owns_closure } from "./utils/captures.ts";
+import check_merged_missing_return from "./utils/check_merged_missing_return.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import evaluate_const_condition from "./utils/evaluate_const_condition.ts";
 import {
@@ -118,6 +119,7 @@ export default function check_assignment_node(
 		}
 		if (lambda_signature.return_type && !rhs_func.return_type.name) {
 			rhs_func.return_type = lambda_signature.return_type;
+			check_merged_missing_return(rhs_func, status);
 		}
 	}
 
