@@ -1,5 +1,6 @@
 import { coalesce_copies } from "./build_aarch64/asm_coalesce.ts";
 import { eliminate_dead_cycle_moves } from "./build_aarch64/asm_cycle_dead_moves.ts";
+import { expand_far_adr_addresses } from "./build_aarch64/asm_expand_adr.ts";
 import { expand_large_mov_immediates } from "./build_aarch64/asm_expand_mov.ts";
 import { convert_loop_invariant_branches } from "./build_aarch64/asm_if_convert.ts";
 import { rewrite_large_frame_offsets } from "./build_aarch64/asm_large_frame.ts";
@@ -389,6 +390,11 @@ export default function build(
 		// plain `mov` form) and before the validators (which accept movz/
 		// movk but not the unencodable form).
 		status.code = expand_large_mov_immediates(status.code);
+		// Far-address expansion — `adr xN, SYM` cannot reach a `.data` label
+		// more than 1 MB away (the huge generated allmark tests), so rewrite
+		// non-local targets to the `adrp`/`add` page pair. Runs last so the
+		// optimizer passes still see the canonical `adr` form.
+		status.code = expand_far_adr_addresses(status.code);
 		if (options.audit) {
 			// The main-function audit_check + pool shutdown hook is emitted
 			// directly by build_function_node (it knows main's return label).
