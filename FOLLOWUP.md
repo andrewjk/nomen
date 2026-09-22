@@ -411,36 +411,22 @@ ABI code, everything works in a fresh worktree). Dev suggestion:
 bundle-assets should stamp the copy with the source mtime so staleness is
 detectable. Interim workaround: `rm -rf cli/core` after pulling changes.
 
-## aarch64: `move` class arg marshalling + moved-param destroy slot mismatch
+## aarch64: `adr` ±1 MB range on very large translation units
 
-Two remaining aarch64 miscompiles surfaced while porting allmark (the
-2026-09-22 wave fixed the stack-imbalance, large-immediate, class-ctor and
-value-struct-ctor-result bugs; these two stay). Both are aarch64-only — the
-C backend and the whole `npm test` suite are green.
+allmark's giant generated test files (`spec-cm.test.nm`, `spec-gfm.test.nm`,
+the `ext-*`/`gfm-*` files) assemble to 1.5-3 MB `.s` and fail to link with
+hundreds of `error: fixup value out of range` on `adr xN, _str_NNN` lines: the
+`adr` (PC-relative ±1 MB) idiom cannot reach the string literals once the
+program is large. Only 2 of 24 allmark aarch64 test files fit inside the
+range; the tiny programs (smoke test, demo) are fine.
 
-1. **`move <Class>` param after a fat-string + sret return.** A function
-   shaped `func f = (string s, move Rules r, out int)` called as
-   `f("x", core())` arrives with `r` empty (reading `r.blocks.length` gives
-   0) or SIGSEGVs, depending on the body. This is what makes allmark's
-   `parse("…", core())` produce a single document node (no rules run) even
-   though `core()` itself returns 14 blocks when inspected directly. The
-   register marshalling for a class `move` arg in slot 2 (after the
-   `(ptr,len)` string pair) is the suspect: `parse` saves x2 into x19, but
-   the caller-side arg build or the callee's `str x19, …` seems to pass /
-   keep the wrong value.
+The emitter uses `adr` for string literals, function addresses, and local
+labels. A global `.s` pass could rewrite `adr xN, sym` → `adrp xN,
+sym@PAGE` + `add xN, xN, sym@PAGEOFF` (adrp reaches ±4 GB) for the
+data/function symbols, matching how the adrp/add idioms are already emitted
+elsewhere; local intra-function labels could stay `adr` or move to
+`adrp`/`add` too. Watch for byte-identity test churn and for the branches
+that compare/emit `adr` textually (asm_opt, remat, coalesce).
 
-2. **Moved-param destroy reads the wrong slot for a class with an inline
-   value-struct list field.** `take_move(make())` (a factory call result
-   passed into a `move` param) prints the right length and then aborts at
-   exit destroying the param. The cleanup loads the param pointer from
-   `[x29, #8]` while the prologue saved it at `[x29, #0]`:
-   `emit_field_destroys_from_slot` recurses via
-   `emit_nested_field_destroys_from_slot(status, field_struct, base_offset + offset)`,
-   which treats the sub-struct as slot-resident (`[x29, base+offset]`) — but
-   for an *inline* value-struct field of a heap class the parent pointer must
-   be loaded and the offset added, not the slot re-addressed. The bad load
-   feeds a garbage `ClassBuffer` header into the destroy loop. Minimal repro
-   lives in a `Box { List<int> }`-style project with `move Box` params.
-
-Together these keep `nomen test --arch aarch64` from going green on allmark
-even though the suite now builds, links, and runs (exit 0, empty output).
+Not a regression from the 2026-09-22 fixes — the suite never got past the
+build validator before, so this range limit was simply never reached.
