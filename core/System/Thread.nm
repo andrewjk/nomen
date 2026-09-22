@@ -35,7 +35,7 @@
 /**
  * A deferred function call, startable on the shared worker pool
  **/
-pub class Thread<T> : Sendable {
+pub class Thread<T> : Sendable, Spawnable<T> {
 	// The packed task closure (a `struct nomen_closure *`); owned by this
 	// value until start/detach/nursery.start transfers it to the runtime.
 	pub var uint64 task = 0

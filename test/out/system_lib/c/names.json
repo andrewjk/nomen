@@ -64,6 +64,7 @@
 	"Sendable",
 	"Awaitable",
 	"Enumerable",
+	"Spawnable",
 	"bool",
 	"int",
 	"uint",

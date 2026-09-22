@@ -564,6 +564,13 @@ export function monomorphize(
 	mono_struct.source_type_args = flat_args;
 	mono_struct.is_class = generic_struct.is_class;
 	mono_struct.is_library = generic_struct.is_library;
+	// Trait conformance args ride along, substituted (`class Thread<T> :
+	// Spawnable<T>` monomorphizes to `Thread_uint64 : Spawnable_uint64`).
+	// Without this the mono clone's trait_args are empty and the conformance
+	// arity check mis-reports the generic trait as bare.
+	mono_struct.trait_args = (generic_struct.trait_args ?? []).map((args) =>
+		args?.map((t) => substitute_type(t, substitution)),
+	);
 
 	// Register the mono struct BEFORE processing methods, so the
 	// re-derivation pass (and the custom #init re-check below) can resolve

@@ -33,7 +33,7 @@
 /**
  * A stackful coroutine: lightweight, cooperatively scheduled, parks instead of blocking
  **/
-pub class Fiber<T> : Sendable {
+pub class Fiber<T> : Sendable, Spawnable<T> {
 	// The packed task closure (a `struct nomen_closure *`); owned by this
 	// value until start/start_on/nursery.start transfers it to the runtime.
 	pub var uint64 task = 0
@@ -104,6 +104,14 @@ pub class Fiber<T> : Sendable {
 		self.cancel_flag = 0
 		self.started = true
 		return t
+	}
+
+	// Run the deferred call fire-and-forget (the Spawnable daemon role).
+	// The fiber is launched exactly like start, but the handle is dropped
+	// immediately: the future's refs are released as the discarded Task is
+	// reclaimed, and the fiber completes into the void — nothing joins it.
+	pub func detach = (ref self) {
+		self.start()
 	}
 
 	// Destroying an unstarted Fiber is a programming error (the wrapped

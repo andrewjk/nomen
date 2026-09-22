@@ -1,0 +1,18 @@
+// Spawnable — the trait role of a deferred-work LAUNCHER (ASYNC_PLAN
+// phase 2, the C# shape). A Spawnable class packs a deferred unit of work
+// (the construction special form) and its `start` submits it, yielding the
+// library-owned `Task<T>` handle — so the await half is guaranteed by the
+// return type and each type carries exactly one role: `Thread<T>`/`Fiber<T>`
+// are spawnable, `Task<T>` is awaitable. `Awaitable` stays non-generic (its
+// `wait` does not mention T); `Spawnable` is generic because `start`'s
+// return type does.
+//
+// `detach` is the daemon role: run the work unjoinable, statement only.
+
+/**
+ * A class that can launch a deferred call and hand back its Task<T> handle
+ **/
+pub trait Spawnable<T> {
+	func start = (ref self, move out Task<T>)
+	func detach = (ref self)
+}

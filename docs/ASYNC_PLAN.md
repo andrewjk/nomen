@@ -297,9 +297,16 @@ Each phase is independently landable; later ones assume earlier ones.
    recorded on the wrapped call (`spawned_borrow_args`) and the daemon launch
    rejects it, preserving the phase-3d diagnostic that used to live in the
    deleted `check_spawn_detach`.
-2. **Traits.** Introduce `Spawnable<T>` (`start` returns `Task<T>`; `detach`);
-   keep `Awaitable`; `Thread`/`Fiber` conform to `Spawnable<T>`, `Task<T>` to
-   `Awaitable`.
+2. **Traits.** ✅ **DONE**. `core/System/Spawnable.nm` declares
+   `pub trait Spawnable<T>` (`func start = (ref self, move out Task<T>)`;
+   `func detach = (ref self)` — both required); `Awaitable` stays as-is and
+   non-generic. `Thread<T>`/`Fiber<T>` now declare `: Sendable, Spawnable<T>`;
+   `Task<T>` already declared `: Sendable, Awaitable`. Fiber gains a `detach`
+   (fire-and-forget: launch and drop the handle) so it satisfies the trait's
+   required method. Compiler fix this surfaced: the monomorphizer dropped
+   `trait_args` when cloning a generic struct, so `Thread_uint64`'s
+   `Spawnable` conformance looked bare — trait args now ride the clone
+   substituted (`Thread_uint64 : Spawnable_uint64`-shaped args).
 3. **The `#spawn` marker.** Add `#spawn` as the `Spawnable<T>` construction hook
    (single argument: a call or a zero-arg function value; anything else is a
    compile error); key the special form on the member instead of
