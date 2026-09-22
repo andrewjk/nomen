@@ -33,11 +33,11 @@ export default function build_async_block_node(
 	const id = status.spawn_counter ?? 0;
 	status.spawn_counter = id + 1;
 
-	// In race mode the join loop calls the cancel/race_wait/release helpers
-	// directly. The pool infrastructure that defines them is normally emitted
-	// on the first spawn — but a race nursery with no spawns wouldn't pull it
-	// in. Emit eagerly so the link always resolves.
-	if (node.mode === "race") ensure_concurrency_runtime_a64(status);
+	// The block's own join loop calls the future wait/cancel/release helpers
+	// (and the race-mode helpers) unconditionally, so every nursery build
+	// pulls the runtime in eagerly — the dependency is the emitted code's
+	// own (ASYNC_PLAN phase 6).
+	ensure_concurrency_runtime_a64(status);
 
 	// Allocate per-invocation nursery state on this function's stack frame:
 	// an 8-byte slot holding the growable futures list (NULL — the tracking

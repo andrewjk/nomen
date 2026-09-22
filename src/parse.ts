@@ -238,16 +238,13 @@ export function resolve_linked_types(source: string, library: Library, file_path
 		}
 	}
 
-	// `Thread(...).start()`, `Fiber(...).start()` and `async` rely on the
-	// Task runtime even when Task isn't named directly (the build emits Task
-	// compound literals at spawn sites).
-	if (tokens.some((t) => t.value === "Thread" || t.value === "Fiber" || t.value === "async")) {
-		needed.add("Task");
-		needed.add("Sendable");
-	}
-	// A named `async` block (`async pool { }`) binds a Nursery variable in
-	// scope without naming the type, so pull the Nursery struct in whenever
-	// `async` is used. See ASYNC.md escape hatch.
+	// A named `async` block (`async pool { }`, `async(timeout: N)`) binds a
+	// Nursery capability WITHOUT the source naming the type — the binding is
+	// compiler syntax, invisible to the token scan above by construction —
+	// so `async` implies the Nursery import. (ASYNC_PLAN phase 6: the old
+	// `Thread`/`Fiber` → Task+Sendable special case is gone — pulling the
+	// Thread/Fiber type pulls its declared library dependencies, `import
+	// Task` in Thread.nm/Fiber.nm among them.)
 	if (tokens.some((t) => t.value === "async")) {
 		needed.add("Nursery");
 	}

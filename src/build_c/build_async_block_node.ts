@@ -35,12 +35,11 @@ export default function build_async_block_node(
 	const id = status.spawn_counter ?? 0;
 	status.spawn_counter = id + 1;
 
-	// In race mode the join loop references the cancel/timedwait/release
-	// helpers (and the race_wait helper) directly. The pool header that
-	// defines them is normally emitted on the first spawn — but a race
-	// nursery with no spawns wouldn't otherwise pull it in. Emit the pool
-	// header eagerly so the symbols always resolve.
-	if (node.mode === "race") ensure_concurrency_runtime(status);
+	// The block's own join loop references the runtime unconditionally
+	// (__nomen_future_wait / __nomen_future_release — and the race-mode
+	// helpers), so this build always pulls the runtime in (deduped;
+	// ASYNC_PLAN phase 6: the dependency is the emitted code's own).
+	ensure_concurrency_runtime(status);
 
 	const futures_name = `__nomen_nursery_${id}_futures`;
 	const count_name = `__nomen_nursery_${id}_count`;

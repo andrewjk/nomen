@@ -1336,3 +1336,45 @@ function find_spawn_callee(name: string, status: BuildStatus): FunctionNode | un
 	visit(status.root);
 	return found;
 }
+
+/**
+ * ASYNC_PLAN phase 6: whether any raw `#arch` body under this node
+ * references the concurrency runtime (`__nomen_*` symbols — pool, futures,
+ * fiber scheduler, nursery tracking, netpoller). The runtime is the
+ * LIBRARY's dependency: a method whose raw body drives it pulls it in,
+ * keyed on body CONTENT — never on a type name.
+ */
+function raw_bodies_reference_runtime(node: BaseNode | undefined): boolean {
+	if (!node || typeof node !== "object") return false;
+	if ((node as { node_type?: string }).node_type === "raw") {
+		const raw = (node as { value?: unknown }).value;
+		return typeof raw === "string" && raw.includes("__nomen_");
+	}
+	for (const key of Object.keys(node as unknown as Record<string, unknown>)) {
+		if (key === "parent" || key === "scope") continue;
+		const v = (node as unknown as Record<string, unknown>)[key];
+		if (Array.isArray(v)) {
+			for (const item of v) {
+				if (raw_bodies_reference_runtime(item as BaseNode)) return true;
+			}
+		} else if (v && typeof v === "object" && "node_type" in v) {
+			if (raw_bodies_reference_runtime(v as BaseNode)) return true;
+		}
+	}
+	return false;
+}
+
+/**
+ * Pull the concurrency runtime in when this struct method's raw bodies
+ * reference it (deduped by the ensure flags). Replaces the old per-type-name
+ * gates (CONCURRENCY_TYPES / the aarch64 Fiber||Thread check): the runtime
+ * dependency now belongs to the library code itself.
+ */
+export function ensure_runtime_for_method(func: FunctionNode, status: BuildStatus): void {
+	for (const stmt of func.statements ?? []) {
+		if (raw_bodies_reference_runtime(stmt)) {
+			ensure_concurrency_runtime(status);
+			return;
+		}
+	}
+}

@@ -16,7 +16,6 @@ import build_node from "./build_node.ts";
 import build_nursery_spawn from "./build_nursery_spawn.ts";
 import { is_owned_heap_temp } from "./build_operation_node.ts";
 import build_parameter_node from "./build_parameter_node.ts";
-import { ensure_concurrency_runtime } from "./build_spawn_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import { find_decl_in_c_scopes } from "./utils/c_scope.ts";
@@ -538,14 +537,6 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 		}
 		case "access_func": {
 			const access_func = node.access as AccessFunctionCallNode;
-			// A Fiber static call (Fiber.yield / is_fiber / set_cooperative)
-			// dispatches into the runtime (the aarch64 system object's
-			// wrappers reference it), so this TU must define it — and the
-			// main-end drain matters once fibers can be queued.
-			if (node.target.node_type === "value" && (node.target as ValueNode).value === "Fiber") {
-				ensure_concurrency_runtime(status);
-				status.used_fibers = true;
-			}
 			// Thread.start / Thread.detach / Fiber.start are ordinary
 			// methods on the library classes (ASYNC_PLAN phase 1);
 			// start_on's checker rewrites it to start after validating the

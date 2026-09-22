@@ -30,6 +30,10 @@
 // scheduler. The runtime (scheduler, context switch) lives in the build's
 // emitted companion C — see build_fiber_spawn.
 
+// The launch surface's return type (ASYNC_PLAN phase 6: the dependency is
+// declared by the library file, not inferred from user-source tokens).
+import Task
+
 /**
  * A stackful coroutine: lightweight, cooperatively scheduled, parks instead of blocking
  **/

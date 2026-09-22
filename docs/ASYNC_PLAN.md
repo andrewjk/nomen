@@ -346,9 +346,28 @@ zero-argument function value (bind arguments in the lambda's captures) ``.
    retired. SPEC's Sendable section and docs/ASYNC.md describe the shrunk
    rule; the phase-3d spawn-env tests and the SPEC nursery-escape-hatch
    tests now assert rejection inside nurseries and the `move` exemption.
-6. **Runtime dependency + parse auto-imports.** Ship the concurrency runtime in
-   the System library's companion C; replace `CONCURRENCY_TYPES`, the aarch64
-   name checks, and the `parse.ts` token scan with the companion link.
+6. **Runtime dependency + parse auto-imports.** ✅ **DONE** (one deliberate
+   mechanism deviation, below). The per-type-name gates are gone:
+   `CONCURRENCY_TYPES` (C `build_struct_node`), the aarch64
+   `Fiber || Thread` check, and the `receiver === "Fiber"` static-call
+   checks in both access builders are replaced by a content scan —
+   `ensure_runtime_for_method` / `ensure_runtime_for_method_a64` walk a
+   struct's method bodies (including `#destroy`) and pull the runtime in
+   when any raw `#arch` body references `__nomen_*` symbols, so the runtime
+   dependency belongs to the library code itself. Both `async` block
+   builders now pull the runtime unconditionally (their join loops reference
+   the future helpers whether or not a spawn occurs). The parse token scan
+   is reduced to its one irreducible case — `async` implies `Nursery` (the
+   capability is bound by compiler syntax, invisible to the type-token scan)
+   — and the `Thread`/`Fiber` → Task+Sendable special case is replaced by
+   explicit declared dependencies: `import Task` in Thread.nm/Fiber.nm rides
+   the existing `extract_deps` mechanism (their Sendable/Spawnable
+   conformance deps were already extracted from the class line).
+   _Deviation:_ the plan sketched shipping the runtime text in the library's
+   companion C file; instead the runtime stays compiler-emitted but keyed on
+   library-body content, which achieves the stated goal — link/emission is
+   the library's concern and no per-type-name logic remains — without
+   moving the runtime text out of `build_spawn_node`.
 
 **Branching.** Do the whole arc on a branch (not `main`) — it touches parse,
 check, both backends, and the runtime together, and the existing runtime tests

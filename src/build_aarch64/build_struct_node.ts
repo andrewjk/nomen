@@ -17,7 +17,7 @@ import build_extern from "./build_extern.ts";
 import build_function_node from "./build_function_node.ts";
 import build_node from "./build_node.ts";
 import { check_c_fallback } from "./build_raw_node.ts";
-import { ensure_concurrency_runtime_a64 } from "./build_spawn_node.ts";
+import { ensure_runtime_for_method_a64 } from "./build_spawn_node.ts";
 import { build_body_with_cursor } from "./emit_nir.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free, emit_strdup } from "./utils/audit.ts";
@@ -196,13 +196,12 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 
 	const is_nested = !!status.function_return_label;
 
-	// The Fiber/Thread classes' raw bodies (#destroy must-start, Fiber's
-	// statics yield/is_fiber/set_cooperative) call into the fiber runtime —
-	// any build of their methods pulls the runtime companion text in
-	// (deduped; extends the pool text).
-	if (node.name === "Fiber" || node.name === "Thread") {
-		ensure_concurrency_runtime_a64(status);
-		status.used_fibers = true;
+	// The runtime is the library's dependency (ASYNC_PLAN phase 6): if any
+	// of this struct's raw bodies reference the concurrency runtime, pull it
+	// in — keyed on body content, never on a type name (the old
+	// `node.name === "Fiber" || "Thread"` check is gone).
+	for (const func of node.functions) {
+		ensure_runtime_for_method_a64(func, status);
 	}
 
 	let old_code: string | undefined;

@@ -1,6 +1,7 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
+import type FunctionNode from "../nodes/FunctionNode.ts";
 
 /**
  * Pool infrastructure emitted as file-scope C on the first spawn.
@@ -1161,4 +1162,39 @@ export function spawn_arg_is_string(node: BaseNode): boolean {
 	}
 	const t = type_from_value_node(node);
 	return t?.name === "string" && !t.is_view && !t.is_array;
+}
+
+/**
+ * ASYNC_PLAN phase 6 (aarch64 backend): pull the concurrency runtime in
+ * when this struct method's raw bodies reference it — keyed on body
+ * content, never on a type name. See the C backend's
+ * ensure_runtime_for_method.
+ */
+export function ensure_runtime_for_method_a64(func: FunctionNode, status: BuildStatus): void {
+	for (const stmt of func.statements ?? []) {
+		if (raw_bodies_reference_runtime(stmt)) {
+			ensure_concurrency_runtime_a64(status);
+			return;
+		}
+	}
+}
+
+function raw_bodies_reference_runtime(node: BaseNode | undefined): boolean {
+	if (!node || typeof node !== "object") return false;
+	if ((node as { node_type?: string }).node_type === "raw") {
+		const raw = (node as { value?: unknown }).value;
+		return typeof raw === "string" && raw.includes("__nomen_");
+	}
+	for (const key of Object.keys(node as unknown as Record<string, unknown>)) {
+		if (key === "parent" || key === "scope") continue;
+		const v = (node as unknown as Record<string, unknown>)[key];
+		if (Array.isArray(v)) {
+			for (const item of v) {
+				if (raw_bodies_reference_runtime(item as BaseNode)) return true;
+			}
+		} else if (v && typeof v === "object" && "node_type" in v) {
+			if (raw_bodies_reference_runtime(v as BaseNode)) return true;
+		}
+	}
+	return false;
 }

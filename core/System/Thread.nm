@@ -32,6 +32,10 @@
 //
 // See ASYNC.md for the design.
 
+// The launch surface's return type (ASYNC_PLAN phase 6: the dependency is
+// declared by the library file, not inferred from user-source tokens).
+import Task
+
 /**
  * A deferred function call, startable on the shared worker pool
  **/

@@ -20,7 +20,7 @@ import build_extern from "./build_extern.ts";
 import build_node from "./build_node.ts";
 import { is_owned_heap_temp } from "./build_operation_node.ts";
 import build_parameter_node from "./build_parameter_node.ts";
-import { ensure_concurrency_runtime } from "./build_spawn_node.ts";
+import { ensure_runtime_for_method } from "./build_spawn_node.ts";
 import build_struct_body from "./build_struct_body.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import { emit_method_body_from_nir } from "./emit_nir.ts";
@@ -39,29 +39,15 @@ import {
 } from "./utils/owning_buffer_specialize.ts";
 import scan_borrow_only_strings from "./utils/scan_borrow_only_strings.ts";
 
-/** System types whose method bodies call into the concurrency runtime. */
-const CONCURRENCY_TYPES = new Set([
-	"Task",
-	"Thread",
-	"Fiber",
-	"Channel",
-	"Mutex",
-	"Nursery",
-	"Tcp",
-]);
-
 export default function build_struct_node(node: StructNode, status: BuildStatus) {
 	if (node.is_generic) return;
 
-	// The concurrency primitives' raw bodies branch into the runtime —
-	// Fiber's statics (yield/is_fiber/set_cooperative), Task's cancel,
-	// Channel's receive park/wake, Mutex's lock. Whichever of them this TU
-	// compiles pulls the runtime headers in (deduped; the fiber text extends
-	// POOL_HEADER). In a system-object build these bodies live in system.o
-	// instead and the user TU needs nothing here.
-	if (CONCURRENCY_TYPES.has(node.name)) {
-		ensure_concurrency_runtime(status);
-		status.used_fibers = true;
+	// The runtime is the library's dependency (ASYNC_PLAN phase 6): if any
+	// of this struct's raw bodies reference the concurrency runtime, pull it
+	// in — keyed on body content, never on a type name (the old
+	// CONCURRENCY_TYPES set is gone).
+	for (const func of node.functions) {
+		ensure_runtime_for_method(func, status);
 	}
 
 	// If it's an inbuilt type, only build its functions
