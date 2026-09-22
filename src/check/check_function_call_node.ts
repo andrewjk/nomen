@@ -20,9 +20,6 @@ import check_function_call from "./check_function_call.ts";
 import check_function_node from "./check_function_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
-import resolve_awaitable_spawn_class, {
-	spawn_field_contract_gaps,
-} from "./utils/awaitable_spawn_class.ts";
 import { maybe_record_capture } from "./utils/captures.ts";
 import check_init_assigns_all_fields from "./utils/check_init_fields.ts";
 import { monomorphize_enum, enforce_case_payload_ownership } from "./utils/enum_mono.ts";
@@ -128,42 +125,12 @@ export default function check_function_call_node(
 		);
 		return false;
 	}
-	// The GENERALIZED flavor (ASYNC.md, "User-defined async primitives"):
-	// any user CLASS conforming to the core `Awaitable` trait gets the same
-	// construction sugar — `MyThing(fn(args))` packs the call eagerly and
-	// yields a heap instance whose spawn-handle fields carry the launch
-	// machinery. The class must carry the field contract (uint64 task /
-	// result_slot / cancel_flag / future) and at most one type parameter
-	// (T = the wrapped call's return type); otherwise this is a dedicated,
-	// actionable error rather than a confusing missing-#init one. A
-	// `#spawn`-bearing class (Thread/Fiber) keeps its reserved fast path
-	// above (it does not conform to Awaitable — the Task its start() yields
-	// does).
-	let awaitable_ctor: StructNode | undefined;
-	if (!magic_ctor && spawn_ctor_shape) {
-		const candidate = resolve_awaitable_spawn_class(node.name, status);
-		if (candidate) {
-			const gaps = spawn_field_contract_gaps(candidate);
-			if (gaps.length === 0 && candidate.type_params.length <= 1) {
-				awaitable_ctor = candidate;
-			} else {
-				const why = gaps.length
-					? `it lacks the spawn-field contract (${gaps.join("; ")})`
-					: `it has ${candidate.type_params.length} type parameters (the sugar types the class as C<T> with T the wrapped call's return type)`;
-				add_error(
-					status,
-					`'${node.name}' conforms to Awaitable but cannot take the ${node.name}(fn(args)) construction sugar: ${why}`,
-					node.start,
-				);
-				return false;
-			}
-		}
-	}
+	// The GENERALIZED flavor (ASYNC.md, "User-defined async primitives") is
+	// RETIRED (ASYNC_PLAN phase 4): an Awaitable-conforming class no longer
+	// gets the `X(fn(args))` construction by conformance — the special form
+	// belongs to classes that declare the `#spawn` hook, resolved above.
 	if (magic_ctor && spawn_ctor_shape) {
 		return check_magic_ctor(node, status, magic_ctor);
-	}
-	if (awaitable_ctor) {
-		return check_magic_ctor(node, status, awaitable_ctor.name);
 	}
 
 	let func = find_free_function(status, node.name);
@@ -1320,38 +1287,19 @@ function resolve_free_calls_in_node(node: BaseNode | undefined | null, status: C
 	const any_node = node as any;
 	if (node.node_type === "func_call" && !any_node.resolved_function) {
 		const name = (node as import("../nodes/FunctionCallNode.ts").default).name;
-		// A monomorphised clone of a spawn-sugar construction
-		// (Thread/Fiber(fn(args)), or a user Awaitable class's
-		// MyThing(fn(args))) needs its annotations re-derived (the clone is
-		// never re-checked) — mirrors the nursery.start rederivation.
-		if (name === "Thread" || name === "Fiber") {
-			const fiber_struct = resolve_declared_struct("Fiber", status);
-			const magic: "Thread" | "Fiber" | undefined =
-				name === "Thread"
-					? "Thread"
-					: (fiber_struct as { is_library?: boolean } | undefined)?.is_library === true
-						? "Fiber"
-						: undefined;
-			if (magic) {
-				rederive_magic_ctor_annotations(
-					node as import("../nodes/FunctionCallNode.ts").default,
-					status,
-					magic,
-				);
-			}
-		} else {
-			const candidate = resolve_awaitable_spawn_class(name, status);
-			if (
-				candidate &&
-				spawn_field_contract_gaps(candidate).length === 0 &&
-				candidate.type_params.length <= 1
-			) {
-				rederive_magic_ctor_annotations(
-					node as import("../nodes/FunctionCallNode.ts").default,
-					status,
-					candidate.name,
-				);
-			}
+		// A monomorphised clone of a `#spawn` construction needs its
+		// annotations re-derived (the clone is never re-checked) — keyed on
+		// the declared `#spawn` member, never the name (ASYNC_PLAN phase 3;
+		// the Awaitable-conformance sugar is retired in phase 4).
+		const spawn_struct = resolve_declared_struct(name, status) as
+			| import("../nodes/StructNode.ts").default
+			| undefined;
+		if (spawn_struct?.functions.some((f) => f.name === "#spawn")) {
+			rederive_magic_ctor_annotations(
+				node as import("../nodes/FunctionCallNode.ts").default,
+				status,
+				name,
+			);
 		}
 		const func = find_free_function(status, name);
 		if (func) set_resolved_function(node as import("../nodes/FunctionCallNode.ts").default, func);

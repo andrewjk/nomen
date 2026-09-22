@@ -1,10 +1,10 @@
 import { describe, expect, test } from "vite-plus/test";
 
 import build from "../src/build";
-import check_output from "./check_output";
 import { get_library } from "../src/lib";
-import { parse_raw } from "./parse_with_imports";
 import parse from "../src/parse";
+import check_output from "./check_output";
+import { parse_raw } from "./parse_with_imports";
 
 // `Thread(fn(args)).detach()` — the daemon form (ASYNC.md, "Daemon tasks";
 // SPEC.md, "Daemon tasks"): a process-lifetime service on its own dedicated

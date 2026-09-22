@@ -323,10 +323,17 @@ Each phase is independently landable; later ones assume earlier ones.
 zero-argument function value (bind arguments in the lambda's captures) ``.
    Trait conformance skips `#spawn` as a lifecycle hook (not a contract
    method). SPEC's Thread section documents the marker.
-4. **Drop the generalized `Awaitable` sugar.** Remove the `X(fn(args))`
-   construction for arbitrary `Awaitable` classes; retire `SPAWN_FIELD_CONTRACT`
-   / `resolve_awaitable_spawn_class`, and delete the SPEC "User-defined async
-   primitives" section and its test (`test/awaitable_ctor.test.ts`).
+4. **Drop the generalized `Awaitable` sugar.** ✅ **DONE**.
+   `resolve_awaitable_spawn_class` / `SPAWN_FIELD_CONTRACT` /
+   `spawn_field_contract_gaps` (`src/check/utils/awaitable_spawn_class.ts`)
+   are deleted; the checker's Awaitable-conformance dispatch and the
+   `resolve_free_calls_in_node` awaitable arm with them (both construction
+   dispatch and mono re-derivation key on the `#spawn` member). The SPEC
+   "User-defined async primitives" section is removed along with its spec
+   block tests; `test/awaitable_ctor.test.ts` is deleted. `is_awaitable_ctor`
+   survives only as the below-checker flavor stamp for a `#spawn`-bearing
+   class that is neither Thread nor Fiber (a user class declaring its own
+   hook — still member-keyed, per phase 3).
 5. **Shrink `Sendable`.** Require it for shared class/trait references; exempt
    moved and copied values; retire the nursery-borrow path. Update
    `is_sendable_type.ts` / `validate_spawn_args_sendable.ts`.
