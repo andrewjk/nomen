@@ -410,3 +410,24 @@ ABI code, everything works in a fresh worktree). Dev suggestion:
 `find_bundled` should prefer `../core` (repo layout) when it exists, or
 bundle-assets should stamp the copy with the source mtime so staleness is
 detectable. Interim workaround: `rm -rf cli/core` after pulling changes.
+
+## Opaque-closure spawn result leaks the original string (closure form)
+
+The function-value spawn construction (`Thread(() => …)` / `Fiber(() => …)`, or
+a moved func-typed local, or a named function) duplicates and leaks a `string`
+result when the closure is opaque to the compiler. For a capturing lambda
+literal the result is alias-checked against the captured strings and only
+`strdup`'d when it aliases the env (balanced, no leak); for a capture-free
+literal it transfers as-is. An opaque closure (a moved func-typed local, or a
+named function materialized as a thunk) instead gets `nomen_str_dup(_r)` with
+the original leaked — "leak-never-dangle", bounded at one allocation per run
+(`src/build_c/build_magic_ctor.ts:395-429`, aarch64 `:284-317`;
+docs/ASYNC.md:103).
+
+The direct-call form (`Thread(fn(args))`) is unaffected: its trampoline calls
+the function and stores the result with no aliasing question. Posture decided
+in docs/ASYNC_PLAN.md: keep the documented leak for now. Possible fixes if it
+matters: extend the closure descriptor ABI to carry result ownership so the
+adapter can transfer vs duplicate exactly, or reject an opaque string-returning
+closure with a diagnostic (forcing a lambda literal whose captures the compiler
+can see).
