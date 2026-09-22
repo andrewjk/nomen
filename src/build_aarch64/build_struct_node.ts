@@ -842,11 +842,21 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 					// x19, so it survives the call.
 					build_node(field.value, status);
 					ensure_newline(status);
-					const field_size = get_struct_size(field.type.name, status);
-					const words = Math.ceil(field_size / 8);
-					for (let w = 0; w < words; w++) {
-						emit_asm(status, `ldr x9, [x0, #${w * 8}]\n`);
-						emit_asm(status, `str x9, [x19, #${offset + w * 8}]\n`);
+					if (field_struct.is_class) {
+						// A CLASS-typed field stores the heap instance POINTER
+						// the constructor returned — struct-copying the
+						// instance's bytes would embed it inline (corrupting
+						// every following field AND overflowing the malloc'd
+						// self block, whose layout gives a class field 8
+						// bytes).
+						emit_typed_store(status, "x0", "x19", offset, 8);
+					} else {
+						const field_size = get_struct_size(field.type.name, status);
+						const words = Math.ceil(field_size / 8);
+						for (let w = 0; w < words; w++) {
+							emit_asm(status, `ldr x9, [x0, #${w * 8}]\n`);
+							emit_asm(status, `str x9, [x19, #${offset + w * 8}]\n`);
+						}
 					}
 				}
 			} else if (field.value.node_type === "func" && field.type.name === "func") {
@@ -1208,11 +1218,21 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 					// call (which clobbers x0 with the temp address).
 					build_node(field.value, status);
 					ensure_newline(status);
-					const field_size = get_struct_size(field.type.name, status);
-					const words = Math.ceil(field_size / 8);
-					for (let w = 0; w < words; w++) {
-						emit_asm(status, `ldr x9, [x0, #${w * 8}]\n`);
-						emit_asm(status, `str x9, [x19, #${offset + w * 8}]\n`);
+					if (field_struct.is_class) {
+						// A CLASS-typed field stores the heap instance POINTER
+						// the constructor returned — struct-copying the
+						// instance's bytes would embed it inline (corrupting
+						// every following field AND overflowing the malloc'd
+						// self block, whose layout gives a class field 8
+						// bytes).
+						emit_typed_store(status, "x0", "x19", offset, 8);
+					} else {
+						const field_size = get_struct_size(field.type.name, status);
+						const words = Math.ceil(field_size / 8);
+						for (let w = 0; w < words; w++) {
+							emit_asm(status, `ldr x9, [x0, #${w * 8}]\n`);
+							emit_asm(status, `str x9, [x19, #${offset + w * 8}]\n`);
+						}
 					}
 				}
 			}
