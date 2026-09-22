@@ -37,3 +37,21 @@ pub func main = () {
 		expect(compile_module(input)).toEqual([]);
 	});
 });
+
+describe("readme: concurrency — Fiber", () => {
+	test("a fiber parks while it waits", () => {
+		const input = `
+func compute = (uint64 n, out uint64) {
+    return n + 1
+}
+
+pub func main = () {
+    async {
+        var f = Fiber(compute(41)).start()
+        var uint64 r = f.result()          // parks, not blocks
+    }
+}
+`;
+		expect(compile_module(input)).toEqual([]);
+	});
+});

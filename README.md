@@ -19,7 +19,7 @@ Most types of memory corruption (use before initialization, use after free, doub
 - **Generics** — type-safe generic structs and classes with compile-time checking
 - **Constraints** — compile-time assertions on parameters, fields, and variables
 - **Higher-Order Functions** — first-class functions, lambdas, and closures
-- **Structured Concurrency** — run concurrent tasks via OS threads
+- **Structured Concurrency** — nurseries, OS threads, and lightweight fibers, with channels and cooperative cancellation
 - **Core System Library** - small but growing, with data structures that remove the need for you to fight with the borrow checker
 - **GUI System** - a top-down/bottom-up layout system and a few different native controls (WIP)
 - **VS Code Extension** - with syntax highlighting for `.nm` files as well as the usual LSP niceties
@@ -647,7 +647,9 @@ const string p = Console.platform()
 ## Concurrency
 
 Nomen uses **structured concurrency via nurseries**: every concurrent split
-rejoins before its lexical scope exits.
+rejoins before its lexical scope exits. Functions are uncolored — you choose to
+run a call concurrently at the call site, so there is no `async`/`await` on
+function signatures.
 
 ```nomen
 func fetch = (uint64 id) {
@@ -664,7 +666,9 @@ pub func main = () {
 }
 ```
 
-A `Task` handle lets you wait on or cancel a spawned call:
+Spawn on an OS thread with `Thread(...)`, or on a lightweight coroutine with
+`Fiber(...)`. Both return the same `Task<T>` handle for waiting on, reading, or
+cancelling the call:
 
 ```nomen
 func compute = (uint64 n) => n + 1
@@ -677,6 +681,27 @@ pub func main = () {
     }
 }
 ```
+
+A `Fiber` **parks** while it waits instead of blocking its worker, so thousands
+of waiting tasks cost stacks, not threads:
+
+```nomen
+func compute = (uint64 n, out uint64) {
+    return n + 1
+}
+
+pub func main = () {
+    async {
+        var f = Fiber(compute(41)).start()
+        var uint64 r = f.result()          // parks, not blocks
+    }
+}
+```
+
+Nurseries can take a `timeout` (milliseconds) and a `mode` — `async(mode: race)`
+exits as soon as the first task finishes. Tasks communicate by moving `Sendable`
+values, directly or through a `Channel`, and respond to cancellation by polling
+`Task.current_cancelled()`.
 
 See [ASYNC.md](docs/ASYNC.md) for the full design.
 
