@@ -750,6 +750,59 @@ function get_base_target(node: AccessNode): ValueNode | AccessNode {
 	return node.target as ValueNode;
 }
 
+/**
+ * Resolve the concrete type of an access target (a local/param/`self` value or
+ * a nested access), consulting the containing struct's field declarations when
+ * a cached type is absent — an inferred `move` class field
+ * (`pub move rules = RuleSet()`) carries no cached AccessFieldNode.type.
+ */
+function resolve_access_target_type(target: BaseNode, status: BuildStatus): Type | undefined {
+	if (target.node_type === "value") {
+		const name = (target as ValueNode).value;
+		if (name === "self" && status.current_struct) return new Type(status.current_struct.name);
+		if (status.variable_types?.has(name)) return status.variable_types.get(name);
+		const decl = status.scoped_declarations.findLast((d) => d.name === name);
+		if (decl?.type?.name) return decl.type;
+		return type_from_value_node(target);
+	}
+	if (target.node_type === "access") {
+		return (
+			type_from_value_node(target) ?? resolve_access_type(target as AccessNode, status) ?? undefined
+		);
+	}
+	return type_from_value_node(target);
+}
+
+/**
+ * Whether reading the final field of `node` must dereference an intermediate
+ * pointer. The summed-offset-from-root load (`compute_field_offset` + the
+ * base address) is only valid while every hop is an INLINE value struct. A
+ * class-typed field — or a class-typed root value — stores a POINTER, so the
+ * chain has to be built recursively (each pointer hop loaded) before the
+ * final field is read. Without this, `state.rules.blocks.length` (State/
+ * BlockParserState is a class) summed 8+8+8 and loaded from `state + 24`.
+ */
+function access_chain_crosses_class(node: AccessNode, status: BuildStatus): boolean {
+	const base = get_base_target(node);
+	const base_type = resolve_access_target_type(base, status);
+	if (base_type?.name && status.structs.find((s) => s.name === base_type.name && s.is_class)) {
+		return true;
+	}
+	let cursor: BaseNode = node;
+	while (cursor.node_type === "access") {
+		const acc = cursor as AccessNode;
+		if (acc.access.node_type !== "access_field") return false;
+		const ft = resolve_field_type(
+			acc.access as AccessFieldNode,
+			resolve_access_target_type(acc.target, status)?.name,
+			status,
+		);
+		if (ft?.name && status.structs.find((s) => s.name === ft.name && s.is_class)) return true;
+		cursor = acc.target;
+	}
+	return false;
+}
+
 function get_param_reg(name: string, status: BuildStatus): string | undefined {
 	return status.function_param_regs?.get(name);
 }
@@ -1366,16 +1419,28 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		return;
 	}
 
-	const offset = compute_field_offset(node, status);
+	let offset = compute_field_offset(node, status);
 	const base = get_base_target(node);
 
-	const target_is_class_access =
+	const target_access_field =
 		node.target.node_type === "access" &&
-		(node.target as AccessNode).access.node_type === "access_field" &&
-		!!status.structs.find(
-			(s) =>
-				s.name === ((node.target as AccessNode).access as AccessFieldNode).type?.name && s.is_class,
-		);
+		(node.target as AccessNode).access.node_type === "access_field"
+			? ((node.target as AccessNode).access as AccessFieldNode)
+			: undefined;
+	// Resolve the intermediate field's type through the containing struct's
+	// field declarations, not just the cached AccessFieldNode.type — an
+	// inferred `move` class field (`pub move rules = RuleSet()`) has no cached
+	// type, so the cached-only check missed the pointer hop entirely.
+	const target_class_field_type = target_access_field
+		? resolve_field_type(
+				target_access_field,
+				resolve_access_target_type((node.target as AccessNode).target, status)?.name,
+				status,
+			)
+		: undefined;
+	const target_is_class_access =
+		!!target_class_field_type?.name &&
+		!!status.structs.find((s) => s.name === target_class_field_type.name && s.is_class);
 
 	// When target is a method call (e.g., points.at(0).x), build the method call
 	// which leaves the result in x0, then apply the field offset from x0
@@ -1437,8 +1502,35 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		build_node(node.target, status);
 		ensure_newline(status);
 		const final_offset = get_field_offset(target_type?.name || "", access_field.name, status);
-		const field_type = access_field.type?.name || "";
-		if (field_type === "string" || access_field.type?.is_view) {
+		// A STRUCT-typed field of a class instance is embedded inline; its
+		// "value" is its address (instance + offset). Prefer the struct's FIELD
+		// DECLARATION type and monomorphize it (`List<BlockRule>` →
+		// `List_BlockRule`): the cached AccessFieldNode.type can be the bare
+		// generic, and a missed struct check would emit a scalar load that
+		// dereferences the value's `_vt` as a pointer.
+		const containing_struct = status.structs.find(
+			(s) => s.name === (target_type?.name || "") && !s.is_simple_type,
+		);
+		const field_decl_type = containing_struct?.fields.find(
+			(f) => f.name === access_field.name,
+		)?.type;
+		const class_access_field_type =
+			field_decl_type ?? resolve_field_type(access_field, target_type?.name, status);
+		const field_type = class_access_field_type?.type_args?.length
+			? mono_type_name(class_access_field_type)
+			: class_access_field_type?.name || access_field.type?.name || "";
+		const class_access_is_struct =
+			!!field_type &&
+			!class_access_field_type?.is_ref &&
+			!class_access_field_type?.is_nullable &&
+			is_struct_type(field_type, status);
+		if (class_access_is_struct) {
+			if (final_offset > 0) {
+				emit_asm(status, `add x0, x0, #${final_offset}\n`);
+			}
+			return;
+		}
+		if (field_type === "string" || class_access_field_type?.is_view) {
 			emit_string_pair_load_at(status, "x0", final_offset);
 			return;
 		}
@@ -1507,8 +1599,24 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		// "value" is its address (instance + offset) — same convention as the
 		// generic field_is_struct path below. Loading a word here would hand
 		// consumers the field's first scalar (e.g. Span.index) as a pointer.
-		const field_type_obj = resolve_field_type(access_field, target_type?.name, status);
-		const resolved_field_type = field_type_obj?.name || "";
+		// Prefer the struct's FIELD DECLARATION type: the cached
+		// AccessFieldNode.type can be the bare generic (`List`) without its
+		// type args, which would miss the monomorphized struct.
+		const containing_struct = status.structs.find(
+			(s) => s.name === (target_type?.name || "") && !s.is_simple_type,
+		);
+		const field_decl_type = containing_struct?.fields.find(
+			(f) => f.name === access_field.name,
+		)?.type;
+		const field_type_obj =
+			field_decl_type ?? resolve_field_type(access_field, target_type?.name, status);
+		// Monomorphize a generic field type (`List<BlockRule>` → `List_BlockRule`)
+		// before the struct lookup — the bare generic name isn't in the struct
+		// table, so a `List` field would fall through to a scalar load and
+		// dereference the value's `_vt` as if it were a pointer.
+		const resolved_field_type = field_type_obj?.type_args?.length
+			? mono_type_name(field_type_obj)
+			: field_type_obj?.name || "";
 		const field_is_struct =
 			!!resolved_field_type &&
 			!field_type_obj?.is_ref &&
@@ -1520,9 +1628,9 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 			}
 			return;
 		}
-		const field_type = access_field.type?.name || "";
+		const field_type = resolved_field_type;
 		// A fat-string FIELD loads as the (ptr, len) pair.
-		if (field_type === "string" || access_field.type?.is_view) {
+		if (field_type === "string" || field_type_obj?.is_view) {
 			emit_string_pair_load_at(status, "x0", final_offset);
 			return;
 		}
@@ -1544,22 +1652,37 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		return;
 	}
 
-	// Get base address into x0
-	if (base.node_type === "value") {
-		const name = (base as ValueNode).value;
-		const paramReg = get_param_reg(name, status);
-		if (paramReg) {
-			if (paramReg !== "x0") {
-				emit_asm(status, `mov x0, ${paramReg}\n`);
-			}
-		} else if (is_local_ref_var(name, status)) {
-			emit_deref_var_address(status, "x0", name);
-		} else {
-			emit_var_address(status, "x0", name);
-		}
-	} else {
-		build_node(base, status);
+	// A nested chain crossing a class-typed field (or a class-typed root)
+	// cannot use the summed-offset-from-root load: every pointer hop must be
+	// dereferenced. Build the target recursively (which loads each pointer)
+	// and read the FINAL field from its result in x0. Value-only chains keep
+	// the single base + summed offset below.
+	let target_built = false;
+	if (node.target.node_type === "access" && access_chain_crosses_class(node, status)) {
+		build_node(node.target, status);
 		ensure_newline(status);
+		offset = get_field_offset(target_type?.name || "", access_field.name, status);
+		target_built = true;
+	}
+
+	// Get base address into x0
+	if (!target_built) {
+		if (base.node_type === "value") {
+			const name = (base as ValueNode).value;
+			const paramReg = get_param_reg(name, status);
+			if (paramReg) {
+				if (paramReg !== "x0") {
+					emit_asm(status, `mov x0, ${paramReg}\n`);
+				}
+			} else if (is_local_ref_var(name, status)) {
+				emit_deref_var_address(status, "x0", name);
+			} else {
+				emit_var_address(status, "x0", name);
+			}
+		} else {
+			build_node(base, status);
+			ensure_newline(status);
+		}
 	}
 
 	const field_type_obj = resolve_field_type(access_field, target_type?.name, status);
@@ -2571,26 +2694,35 @@ function build_access_method(
 		} else if (!target_is_simple && node.target.node_type === "access") {
 			const access_target = node.target as AccessNode;
 			if (access_target.access.node_type === "access_field") {
-				const offset = compute_field_offset(access_target, status);
-				const base = get_base_target(access_target);
-				if (base.node_type === "value") {
-					const name = (base as ValueNode).value;
-					const paramReg = get_param_reg(name, status);
-					if (paramReg) {
-						if (paramReg !== "x0") {
-							emit_asm(status, `mov x0, ${paramReg}\n`);
-						}
-					} else if (is_local_ref_var(name, status)) {
-						emit_deref_var_address(status, "x0", name);
-					} else {
-						emit_var_address(status, "x0", name);
-					}
-				} else {
-					build_node(base, status);
+				if (access_chain_crosses_class(access_target, status)) {
+					// Nested chain through a class-typed field (`state.rules.blocks`)
+					// — the summed-offset-from-root receiver address would skip the
+					// pointer dereference. Build the target, which loads each
+					// pointer hop: its result IS the receiver address.
+					build_node(access_target, status);
 					ensure_newline(status);
-				}
-				if (offset > 0) {
-					emit_asm(status, `add x0, x0, #${offset}\n`);
+				} else {
+					const offset = compute_field_offset(access_target, status);
+					const base = get_base_target(access_target);
+					if (base.node_type === "value") {
+						const name = (base as ValueNode).value;
+						const paramReg = get_param_reg(name, status);
+						if (paramReg) {
+							if (paramReg !== "x0") {
+								emit_asm(status, `mov x0, ${paramReg}\n`);
+							}
+						} else if (is_local_ref_var(name, status)) {
+							emit_deref_var_address(status, "x0", name);
+						} else {
+							emit_var_address(status, "x0", name);
+						}
+					} else {
+						build_node(base, status);
+						ensure_newline(status);
+					}
+					if (offset > 0) {
+						emit_asm(status, `add x0, x0, #${offset}\n`);
+					}
 				}
 				// A heap `Array<T>` field holds a POINTER to the heap buffer
 				// (length at [0], data at [8]). The array methods expect the
