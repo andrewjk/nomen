@@ -1547,11 +1547,7 @@ function check_magic_ctor(node: FunctionCallNode, status: CheckStatus, name: str
 		add_error(status, `Spawned call '${call.name}' did not resolve`, node.start);
 		return false;
 	}
-	const validation = validate_spawn_args_sendable(call, status, (status.nursery_depth ?? 0) > 0);
-	// Record whether the Sendable validation used the enclosing nursery's
-	// borrow exception — the daemon launch (detach) rejects such a
-	// construction, since a daemon outlives the nursery's join bound.
-	call.spawned_borrow_args = validation.borrow_args;
+	validate_spawn_args_sendable(call, status);
 	stamp_spawn_ctor(node, name);
 	const return_type = call.type;
 	// Monomorphize the class for T so its body (fields, #destroy) is

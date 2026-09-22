@@ -465,26 +465,6 @@ function check_access_function_node(
 		// Fall through: the rewritten call resolves as the ordinary method.
 	}
 
-	// The daemon launch abandons every scope (ASYNC.md, "Daemon tasks"): a
-	// construction that relied on the enclosing nursery's borrow exception
-	// is sound only while the nursery's join bounds the borrow, which
-	// detach() gives up. The construction records the borrow (see
-	// check_magic_ctor); reject the daemon form here. (The borrow exception
-	// itself is retired in ASYNC_PLAN phase 5, removing this check too.)
-	const detach_target = target.node_type === "func_call" ? (target as FunctionCallNode) : undefined;
-	if (
-		node.name === "detach" &&
-		detach_target?.is_thread_ctor &&
-		(detach_target.params[0] as FunctionCallNode | undefined)?.spawned_borrow_args === true
-	) {
-		add_error(
-			status,
-			"a detached task must own its arguments — it outlives every scope; only a nursery's join bounds a borrow",
-			node.start,
-		);
-		return false;
-	}
-
 	// Thread.start / Thread.detach / Fiber.start resolve as ordinary methods
 	// on the library classes below.
 

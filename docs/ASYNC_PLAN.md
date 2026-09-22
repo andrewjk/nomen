@@ -334,9 +334,18 @@ zero-argument function value (bind arguments in the lambda's captures) ``.
    survives only as the below-checker flavor stamp for a `#spawn`-bearing
    class that is neither Thread nor Fiber (a user class declaring its own
    hook — still member-keyed, per phase 3).
-5. **Shrink `Sendable`.** Require it for shared class/trait references; exempt
-   moved and copied values; retire the nursery-borrow path. Update
-   `is_sendable_type.ts` / `validate_spawn_args_sendable.ts`.
+5. **Shrink `Sendable`.** ✅ **DONE**. `validate_spawn_args_sendable` now
+   gates exactly the shared case: a class/trait reference passed as a plain
+   argument (the packed env aliases the instance) must be `Sendable`.
+   Exemptions: moved arguments (the wrapped callee's `move T` parameter
+   takes exclusive ownership) and copied values (scalars/strings deep-copy
+   at pack; owning value structs are env-copied, with `is_sendable_type`'s
+   field recursion still rejecting a struct holding an unsafe class field).
+   The nursery-borrow path (`allow_borrows`, the donor/distinguishing
+   errors, and the `spawned_borrow_args` daemon diagnostic from phase 1) is
+   retired. SPEC's Sendable section and docs/ASYNC.md describe the shrunk
+   rule; the phase-3d spawn-env tests and the SPEC nursery-escape-hatch
+   tests now assert rejection inside nurseries and the `move` exemption.
 6. **Runtime dependency + parse auto-imports.** Ship the concurrency runtime in
    the System library's companion C; replace `CONCURRENCY_TYPES`, the aarch64
    name checks, and the `parse.ts` token scan with the companion link.

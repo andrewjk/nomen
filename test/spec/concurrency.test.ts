@@ -229,11 +229,11 @@ pub func main = () {
 		expect(compile_module(input)).toEqual([]);
 	});
 
-	test("a non-Sendable class argument is borrowed inside a nursery, rejected outside", () => {
-		// SPEC.md, "Sendable" + "Thread": a non-Sendable CLASS argument may
-		// be passed only inside a nursery — it is a BORROW capture, sound
-		// because the join at block exit bounds the borrow by the donors'
-		// lifetimes. Outside a nursery it is rejected.
+	test("a non-Sendable class argument is rejected inside a nursery and outside", () => {
+		// SPEC.md, "Sendable" (ASYNC_PLAN phase 5): the nursery-borrow
+		// exception is retired — a non-Sendable CLASS reference is a shared
+		// crossing and is rejected everywhere. Mark it Sendable, move it in
+		// (a `move` parameter), or share it through a Sendable primitive.
 		const input = `
 pub class Counter {
 	var int count = 0
@@ -249,7 +249,8 @@ pub func main = () {
 	}
 }
 `;
-		expect(compile_module(input)).toEqual([]);
+		const inside = compile_module(input);
+		expect(inside.some((e) => e.message.includes("not Sendable"))).toBe(true);
 
 		const outside = `
 pub class Counter {
@@ -268,23 +269,21 @@ pub func main = () {
 		expect(errors.some((e) => e.message.includes("not Sendable"))).toBe(true);
 	});
 
-	test("a borrowed argument must be a named local or parameter", () => {
+	test("a moved non-Sendable class argument is exempt from Sendable", () => {
 		const input = `
 pub class Counter {
 	var int count = 0
 }
 
-func work = (Counter c) {
+func work = (move Counter c) {
 }
 
 pub func main = () {
-	async pool {
-		pool.start(Thread(work(Counter())))
-	}
+	var Counter c = Counter()
+	Thread(work(move c)).start()
 }
 `;
-		const errors = compile_module(input);
-		expect(errors.some((e) => e.message.includes("named local or parameter"))).toBe(true);
+		expect(compile_module(input)).toEqual([]);
 	});
 });
 

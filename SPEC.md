@@ -2504,13 +2504,21 @@ pub class SafeCounter : Sendable {   // Sendable: explicitly marked
 }
 ```
 
-Every value passed to `Thread(...)` must be Sendable — with one exception: a
-non-Sendable CLASS argument may be passed inside a nursery (`async { }`),
-where it is a **borrow capture** — the task aliases the instance, and the
-join at block exit provably bounds the borrow by the donors' lifetimes. The
-borrowed argument must be a named local or parameter (a temporary would die
-before the task runs), and `.detach()` never accepts one (a daemon outlives
-every scope and must own its arguments).
+What must be Sendable is exactly what is **shared**: a class or trait
+reference passed as a plain argument aliases the instance for the task, so it
+must be marked `: Sendable`. Everything else crossing the boundary is exempt:
+
+- **Moved** arguments — a callee parameter declared `move T` takes exclusive
+  ownership, so a non-Sendable class can cross as a `move` (the caller gives
+  up its access).
+- **Copied** arguments — primitives and strings are copied at the boundary,
+  and owning value structs are deep-copied (their string fields duplicated),
+  so the task and the caller hold independent values.
+
+There is no borrow exception: a non-Sendable class/trait cannot cross into a
+task even inside a nursery — mark it `Sendable`, move it in, or share it
+through a `Sendable` primitive (`Mutex`, `Channel`). The same rules gate a
+lambda's captures (every capture is an eager argument).
 
 ### Thread
 

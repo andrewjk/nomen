@@ -84,12 +84,13 @@ concurrency on both targets.
   a pre-existing limitation. Class and trait arguments stay shared pointers
   (the Sendable contract). See [CLOSURE.md](CLOSURE.md) for the packing
   machinery.
-- **Nursery borrows** — the one Sendable exception: inside `async { }`, a
-  non-Sendable CLASS argument may be passed, where it is a borrow capture —
-  sound because the join at block exit provably bounds the borrow by the
-  donors' lifetimes. The donor must be a named local or parameter (a
-  temporary dies at the statement), and `.detach()` never accepts one (a
-  daemon outlives every scope and must own its arguments).
+- **No nursery borrows** (ASYNC_PLAN phase 5 retired the exception):
+  `Sendable` gates exactly the shared case — a class/trait reference passed
+  as a plain argument aliases the instance. Moved arguments (a `move T`
+  parameter) and copied values are exempt; a non-Sendable class/trait
+  cannot cross into a task inside a nursery or out — mark it `Sendable`,
+  move it in, or share it through a `Sendable` primitive (`Mutex`,
+  `Channel`).
 - **Function-value constructions** — `Thread(() => work(base))` takes a
   zero-argument function value in place of the unevaluated call: the
   lambda's CAPTURES are the eager arguments (Sendable-validated; owning

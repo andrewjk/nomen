@@ -5,18 +5,17 @@ import build_and_check_output from "./build_and_check_output";
 import check_output from "./check_output";
 import { parse_raw } from "./parse_with_imports";
 
-// CLOSURE.md Phase 3d: the spawn sugar's packed env is an OWNING
-// struct. String arguments are duplicated at pack (the env frees its copy
-// through the descriptor's destroy_env), and on the C backend an owning
-// value-struct argument is copied and `<T>_destroy`ed — the pre-3d raw
-// byte-copy aliased the donor's heap fields and dangled when the donor's
-// scope exit ran before the task read them. Non-Sendable CLASS arguments
-// may be borrowed inside a nursery (`async { }`), where the join at block
-// exit provably bounds the borrow by the donors' lifetimes; anywhere else
-// (and always for `.detach()`, which outlives every scope) they are
-// rejected.
+// CLOSURE.md Phase 3d, ASYNC_PLAN phase 5: the spawn sugar's packed env is
+// an OWNING struct. String arguments are duplicated at pack (the env frees
+// its copy through the descriptor's destroy_env), and an owning value-struct
+// argument is copied and `<T>_destroy`ed. `Sendable` gates exactly the
+// SHARED case — a class/trait reference passed as a plain argument aliases
+// the instance — and everything else is exempt: moved arguments (a `move T`
+// parameter takes exclusive ownership) and copied values. The nursery-borrow
+// exception is retired: a non-Sendable class/trait cannot cross into a task,
+// inside a nursery or out.
 
-describe("spawn env ownership + nursery borrows (Phase 3d)", () => {
+describe("spawn env ownership + shrunk Sendable (Phase 3d, ASYNC_PLAN phase 5)", () => {
 	test("a string argument is deep-copied into the task env", async () => {
 		const input = `import System
 
@@ -68,7 +67,30 @@ pub func main = () {
 		});
 	});
 
-	test("a non-Sendable class argument is borrowed inside a nursery", async () => {
+	test("a non-Sendable class MOVED in (a move parameter) is exempt", () => {
+		const input = `import System
+
+pub class Conn {
+	var int id = 0
+}
+
+func work = (move Conn c) {
+	Console.write_line(c.id.to_string())
+}
+
+pub func main = () {
+	var Conn c = Conn()
+	c.id = 7
+	var t = Thread(work(move c)).start()
+	t.wait()
+}
+`;
+		const parsed = parse_raw(input);
+		const messages = parsed.errors.map((e) => e.message);
+		expect(messages.filter((m) => m.includes("not Sendable"))).toEqual([]);
+	});
+
+	test("a non-Sendable class reference inside a nursery is still rejected", () => {
 		const input = `import System
 
 pub class Conn {
@@ -85,13 +107,14 @@ pub func main = () {
 	async {
 		Thread(work(c)).start()
 	}
-	Console.write_line("joined")
 }
 `;
-		await build_and_check_output(input, "spawn_borrow_nursery", "7\njoined\n", true);
+		const parsed = parse_raw(input);
+		expect(parsed.errors.length).toBeGreaterThan(0);
+		expect(parsed.errors[0].message).toContain("not Sendable");
 	});
 
-	test("a borrowed argument must be a named local or parameter", () => {
+	test("a temporary non-Sendable class argument is rejected", () => {
 		const input = `import System
 
 pub class Conn {
@@ -110,10 +133,10 @@ pub func main = () {
 `;
 		const parsed = parse_raw(input);
 		expect(parsed.errors.length).toBeGreaterThan(0);
-		expect(parsed.errors[0].message).toContain("named local or parameter");
+		expect(parsed.errors[0].message).toContain("not Sendable");
 	});
 
-	test("a non-Sendable class argument outside a nursery is still rejected", () => {
+	test("a non-Sendable class argument outside a nursery is rejected", () => {
 		const input = `import System
 
 pub class Conn {
@@ -132,10 +155,10 @@ pub func main = () {
 		const parsed = parse_raw(input);
 		expect(parsed.errors.length).toBeGreaterThan(0);
 		expect(parsed.errors[0].message).toContain("not Sendable");
-		expect(parsed.errors[0].message).toContain("nursery");
+		expect(parsed.errors[0].message).toContain("marked Sendable");
 	});
 
-	test("a detached task must own its arguments", () => {
+	test("a detached task's shared arguments are rejected like any spawn", () => {
 		const input = `import System
 
 pub class Conn {
@@ -155,6 +178,6 @@ pub func main = () {
 `;
 		const parsed = parse_raw(input);
 		expect(parsed.errors.length).toBeGreaterThan(0);
-		expect(parsed.errors[0].message).toContain("must own its arguments");
+		expect(parsed.errors[0].message).toContain("not Sendable");
 	});
 });

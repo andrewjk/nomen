@@ -1,36 +1,42 @@
 import add_error from "../../add_error.ts";
 import type FunctionCallNode from "../../nodes/FunctionCallNode.ts";
+import type FunctionNode from "../../nodes/FunctionNode.ts";
 import type Type from "../../nodes/Type.ts";
 import type CheckStatus from "../CheckStatus.ts";
 import is_sendable_type from "./is_sendable_type.ts";
 import type_from_value_node from "./type_from_value_node.ts";
 
-export interface SpawnArgValidation {
-	/** At least one argument was accepted as a nursery BORROW (a
-	 *  non-Sendable class/trait aliased into the task — sound only because
-	 *  the enclosing nursery joins before block-scoped donors die). */
-	borrow_args: boolean;
-}
-
 /**
- * Validate a spawn's packed arguments (CLOSURE.md Phase 3d).
+ * Validate a spawn's packed arguments (CLOSURE.md Phase 3d; ASYNC_PLAN
+ * phase 5 — the shrunk `Sendable`).
  *
- * Every argument must be Sendable — EXCEPT, inside a nursery
- * (`allow_borrows`), a non-Sendable CLASS or TRAIT argument that is a named
- * local or parameter: it is a BORROW capture (the env aliases the instance
- * for the task's lifetime, which the nursery's join-at-exit bounds by the
- * donors' lifetimes). Temps and field accesses are not borrowable — a temp
- * dies at the statement, and a field's owner may be shallower than the
- * task.
+ * `Sendable` gates exactly the case that can race: a SHARED class/trait
+ * reference crossing the task boundary (a plain argument — the packed env
+ * aliases the instance). Everything else is exempt:
+ *
+ * - MOVED arguments: the callee's `move T` parameter takes exclusive
+ *   ownership, so no one else can touch the instance concurrently;
+ * - scalars, strings, and everything `is_sendable_type` accepts (copied or
+ *   safe by value — strings are deep-copied at pack);
+ * - owning VALUE structs whose fields are all safe (the pack deep-copies
+ *   them; `is_sendable_type`'s field recursion rejects a struct with an
+ *   unsafe class field).
+ *
+ * The nursery-borrow exception (a non-Sendable class aliased into a task
+ * inside `async { }`) is RETIRED: mark the class `Sendable`, move it in
+ * (a `move` parameter), or share it through a `Sendable` primitive
+ * (`Mutex`/`Channel`).
  */
 export default function validate_spawn_args_sendable(
 	call: FunctionCallNode,
 	status: CheckStatus,
-	allow_borrows = false,
 	reason?: string,
-): SpawnArgValidation {
-	const result: SpawnArgValidation = { borrow_args: false };
-	for (const param of call.params) {
+): void {
+	const callee_params = (call.resolved_function as FunctionNode | undefined)?.params?.filter(
+		(p) => !p.is_self_param,
+	);
+	for (let i = 0; i < call.params.length; i++) {
+		const param = call.params[i];
 		let arg_type: Type = type_from_value_node(param, status);
 		// A constant-folded argument (e.g. `"a" + "b"` → a synthetic data
 		// label value) resolves to no declared name — fall back to the
@@ -39,39 +45,21 @@ export default function validate_spawn_args_sendable(
 		if (!arg_type.name && stamped?.name) {
 			arg_type = stamped;
 		}
+		// MOVED: the callee's `move T` parameter takes exclusive ownership
+		// of the argument — no sharing, no race.
+		if (callee_params?.[i]?.is_moved) {
+			continue;
+		}
 		if (is_sendable_type(arg_type.name, status)) {
-			continue;
-		}
-		const donor =
-			param.node_type === "value"
-				? status.values.findLast((v) => v.name === (param as unknown as { value: string }).value)
-				: undefined;
-		const is_pointer_arg = (() => {
-			const struct = status.structs.find((s) => s.name === arg_type.name);
-			return !!struct && (struct.is_class || struct.traits.length > 0);
-		})();
-		if (allow_borrows && is_pointer_arg && donor) {
-			result.borrow_args = true;
-			continue;
-		}
-		if (allow_borrows && is_pointer_arg && !donor) {
-			add_error(
-				status,
-				`Spawn argument '${arg_type.name}' is not Sendable and may only be borrowed from a named local or parameter (a temporary would die before the task runs)`,
-				param.start,
-			);
 			continue;
 		}
 		add_error(
 			status,
 			`Spawn argument of type ${arg_type.name || "<unknown>"} is not Sendable${
-				is_pointer_arg && !allow_borrows
-					? (reason ??
-						" — a non-Sendable class may only be passed inside a nursery (async { }), where the join bounds the borrow")
-					: ""
+				reason ??
+				" — a shared class/trait reference crossing a task boundary must be marked Sendable; move it in (a `move` parameter) or share it through a Sendable primitive (Mutex/Channel)"
 			}`,
 			param.start,
 		);
 	}
-	return result;
 }
