@@ -325,13 +325,13 @@ function is_list_open(pieces: Piece[], i: number): boolean {
 		// (`x as int`) is a single value — so only a `(` preceded by a value
 		// (a call or construction) is a list.
 		const previous = pieces[i - 1];
-		return !!previous && is_value_end(previous) && previous.text !== "=";
+		return !!previous && is_value_end(pieces, i - 1) && previous.text !== "=";
 	}
 	if (bracket === "[") {
 		const previous = pieces[i - 1];
 		// `var [a, b] = pair` is a destructuring pattern, not a list.
 		if (previous?.kind === "word" && KEYWORDS.has(previous.text)) return false;
-		return !previous || !is_value_end(previous);
+		return !previous || !is_value_end(pieces, i - 1);
 	}
 	return false;
 }

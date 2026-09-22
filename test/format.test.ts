@@ -71,6 +71,26 @@ test("keeps namespace paths tight", () => {
 	);
 });
 
+test("binds panic and todo tightly to their parens", () => {
+	expect(format('panic ( "key not found" )\n')).toBe('panic("key not found")\n');
+	expect(format('todo ( "not done" )\n')).toBe('todo("not done")\n');
+	// The paren-less forms are untouched.
+	expect(format('panic "no parens"\n')).toBe('panic "no parens"\n');
+	// Control-flow keywords keep their space.
+	expect(format("func f = () {\n\tif ( x ) { return }\n}\n")).toBe(
+		"func f = () {\n\tif (x) { return }\n}\n",
+	);
+});
+
+test("binds a call to a keyword member name after a dot", () => {
+	// `move` is a keyword, but after a `.` it is a member name, so the call
+	// binds tight.
+	expect(format("var int k = old_keys . move ( 0 )\n")).toBe("var int k = old_keys.move(0)\n");
+	expect(format("var Buffer<int> b = b . swap ( other )\n")).toBe(
+		"var Buffer<int> b = b.swap(other)\n",
+	);
+});
+
 test("keeps hyphenated import names intact", () => {
 	// Module names may contain hyphens; the general spacing rules render a
 	// `-` as a binary minus, which the tokenizer reads identically — so the
