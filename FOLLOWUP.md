@@ -410,23 +410,3 @@ ABI code, everything works in a fresh worktree). Dev suggestion:
 `find_bundled` should prefer `../core` (repo layout) when it exists, or
 bundle-assets should stamp the copy with the source mtime so staleness is
 detectable. Interim workaround: `rm -rf cli/core` after pulling changes.
-
-## aarch64: runtime crashes in the large allmark test binaries
-
-The `adr` / literal-pool ±1 MB range limit was fixed (2026-09-22: `adr xN, SYM`
-on a non-local symbol becomes `adrp`/`add`; `ldr xN, =K` becomes a movz/movk /
-movn+movk materialization — see `asm_expand_adr.ts` and `asm_expand_mov.ts`).
-The whole allmark corpus now assembles and links.
-
-What remains is runtime: 22 of 24 `nomen test -a aarch64` files abort
-(SIGSEGV/SIGABRT/SIGTRAP) even though the same programs run clean under
-`--arch c` and nomen's own 3,573-test suite is green on both backends. The
-smoke test and the demo render correctly; the failures are in the larger
-generated binaries (core-heading 880 KB, spec-gfm several MB). One backtrace
-dies in `_platform_strlen` on a null pointer (a string field/pointer that
-should have been initialized), i.e. another value/offset miscompile. Each
-crash needs the usual bisect: dump the generated asm, compare against the C
-backend's output for the same source, and narrow to a function.
-
-Repro: `cd ~/Source/allmark/nomen && nomen test -a aarch64` (24 files, 2 pass,
-91 tests pass, 22 crash).
