@@ -2,7 +2,9 @@ import { describe, expect, test } from "vite-plus/test";
 
 import build from "../src/build";
 import check_output from "./check_output";
+import { get_library } from "../src/lib";
 import { parse_raw } from "./parse_with_imports";
+import parse from "../src/parse";
 
 // `Thread(fn(args)).detach()` — the daemon form (ASYNC.md, "Daemon tasks";
 // SPEC.md, "Daemon tasks"): a process-lifetime service on its own dedicated
@@ -122,7 +124,12 @@ pub func main = () {
 	});
 
 	test("detach arguments must be Sendable", () => {
+		// Thread.start is a library method and the construction resolves
+		// through Thread's declared #spawn member, so the source imports
+		// System explicitly (no parse_raw auto-import here: the input is a
+		// full program with its own main).
 		const input = `
+import System
 pub class Unsafe {
 	var uint64 code = 0
 }
@@ -135,7 +142,9 @@ pub func main = () {
 	Thread(leak(u)).detach()
 }
 `;
-		const parsed = parse_raw(input);
+		// This input is a full program (its own main), so it parses directly
+		// with the System library — parse_raw would wrap it in a second main.
+		const parsed = parse(input, get_library("core"));
 		const messages = parsed.errors.map((e) => e.message);
 		expect(messages.some((m) => m.includes("not Sendable"))).toBe(true);
 	});

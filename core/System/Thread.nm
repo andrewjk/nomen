@@ -36,6 +36,15 @@
  * A deferred function call, startable on the shared worker pool
  **/
 pub class Thread<T> : Sendable, Spawnable<T> {
+	// The construction hook (ASYNC_PLAN phase 3): declares this class's
+	// construction as the deferred-call special form — the single argument
+	// is a call (args packed eagerly, call deferred) or a zero-arg function
+	// value. The compiler matches this member, never the class name; the
+	// construction itself is compiler-generated (pack the args, allocate the
+	// future machinery, build the instance), so the body is a declaration.
+	#spawn = () {
+	}
+
 	// The packed task closure (a `struct nomen_closure *`); owned by this
 	// value until start/detach/nursery.start transfers it to the runtime.
 	pub var uint64 task = 0

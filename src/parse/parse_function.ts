@@ -69,7 +69,7 @@ export default function parse_function(
 	const parent_for_type = status.stack.at(-1);
 	let return_type = new Type("");
 	if (
-		name === "#init" &&
+		(name === "#init" || name === "#spawn") &&
 		(parent_for_type?.node_type === "struct" || parent_for_type?.node_type === "extend")
 	) {
 		return_type = new Type((parent_for_type as StructNode).name);
@@ -115,12 +115,15 @@ export default function parse_function(
 			parse_function_parameter(parent, func, status);
 		}
 
-		// `#destroy` may be written with no parameter list (`func #destroy = ()`)
-		// or with an explicit `self`/`ref self`. Only auto-inject a mutable self
-		// when the author didn't supply one — otherwise a duplicate "self"
-		// parameter is created and the author's (mutable) declaration is lost.
+		// `#destroy` and `#spawn` may be written with no parameter list
+		// (`func #destroy = ()`) or with an explicit `self`/`ref self`. Only
+		// auto-inject a mutable self when the author didn't supply one —
+		// otherwise a duplicate "self" parameter is created and the author's
+		// (mutable) declaration is lost. (`#spawn` is the Spawnable
+		// construction marker — ASYNC_PLAN phase 3; its body is a
+		// declaration, the compiler generates the construction.)
 		if (
-			name === "#destroy" &&
+			(name === "#destroy" || name === "#spawn") &&
 			parent.node_type === "struct" &&
 			!func.params.some((p) => p.is_self_param)
 		) {
@@ -178,9 +181,10 @@ export default function parse_function(
 					expect("}", status);
 					status.stack.pop();
 
-					// Constructors and destructors return through their own
-					// machinery, not a Nomen `return`.
-					if (name !== "#init" && name !== "#destroy") {
+					// Constructors, destructors and the Spawnable construction
+					// marker return through their own machinery, not a Nomen
+					// `return`.
+					if (name !== "#init" && name !== "#destroy" && name !== "#spawn") {
 						check_missing_return(func, status);
 					}
 				}

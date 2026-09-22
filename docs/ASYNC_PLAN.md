@@ -307,11 +307,22 @@ Each phase is independently landable; later ones assume earlier ones.
    `trait_args` when cloning a generic struct, so `Thread_uint64`'s
    `Spawnable` conformance looked bare — trait args now ride the clone
    substituted (`Thread_uint64 : Spawnable_uint64`-shaped args).
-3. **The `#spawn` marker.** Add `#spawn` as the `Spawnable<T>` construction hook
-   (single argument: a call or a zero-arg function value; anything else is a
-   compile error); key the special form on the member instead of
-   `node.name === "Thread"/"Fiber"` in `check_function_call_node.ts` /
-   `build_magic_ctor.ts`.
+3. **The `#spawn` marker.** ✅ **DONE**. `#spawn` parses as a lifecycle
+   marker beside `#init`/`#destroy` (bare or `<visibility> #spawn` form; body
+   is a declaration — both backends skip its emission, and declaring it
+   suppresses the default `#init`, so a `#spawn` class is not ordinarily
+   constructible). `Thread.nm`/`Fiber.nm` declare `#spawn`, and the special
+   form keys on the member: the checker resolves the call's name to a
+   declared struct and takes the deferred-call path iff that struct declares
+   `#spawn` — the `node.name === "Thread"/"Fiber"` dispatch and its
+   is_library/shadow guardrails are deleted (a user struct named `Thread`
+   without `#spawn` shadows the sugar naturally; a user struct that declares
+   its own `#spawn` gains it). A `#spawn`-bearing class constructed with a
+   malformed argument — a plain value or a parameterized lambda — gets the
+   dedicated error, anchored at the argument: `` `#spawn` expects a call or a
+zero-argument function value (bind arguments in the lambda's captures) ``.
+   Trait conformance skips `#spawn` as a lifecycle hook (not a contract
+   method). SPEC's Thread section documents the marker.
 4. **Drop the generalized `Awaitable` sugar.** Remove the `X(fn(args))`
    construction for arbitrary `Awaitable` classes; retire `SPAWN_FIELD_CONTRACT`
    / `resolve_awaitable_spawn_class`, and delete the SPEC "User-defined async

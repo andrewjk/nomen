@@ -80,17 +80,17 @@ export default function check_function_call_node(
 	// `#destroy` enforces must-start (the library pattern, ASYNC.md).
 	// Task<T> stamping stays with the consumers — `.start()` on the result,
 	// or a nursery's `.start(Thread(fn(args)))` escape hatch.
-	const magic_ctor =
-		node.name === "Thread"
-			? "Thread"
-			: node.name === "Fiber" &&
-				  !!(resolve_declared_struct("Fiber", status) as { is_library?: boolean } | undefined)
-						?.is_library
-				? "Fiber"
-				: undefined;
-	const thread_shadow_struct = resolve_declared_struct("Thread", status) as
-		| { is_library?: boolean }
-		| undefined;
+	// ASYNC_PLAN phase 3: the special form is keyed on the `#spawn` MEMBER,
+	// never on a type's name. A class whose construction hook is `#spawn`
+	// (the Spawnable construction marker — the library Thread/Fiber declare
+	// it) takes the deferred-call form; a user struct that merely shares the
+	// name resolves ordinarily below, and a user struct that DECLARES its
+	// own `#spawn` gains the sugar. The old `node.name === "Thread"/"Fiber"`
+	// name dispatch — and its is_library/shadow guardrails — are gone.
+	const spawn_hook_struct = resolve_declared_struct(node.name, status) as StructNode | undefined;
+	const magic_ctor = spawn_hook_struct?.functions.some((f) => f.name === "#spawn")
+		? node.name
+		: undefined;
 	// The construction takes an UNEVALUATED CALL (`Thread(work(n))`) or a
 	// zero-argument FUNCTION VALUE (`Thread(() => work(n))` — a lambda
 	// literal, or a func-typed local which the construction MOVES;
@@ -117,6 +117,17 @@ export default function check_function_call_node(
 		node.params.length === 1 &&
 		(node.params[0].node_type === "func_call" || func_value_arg) &&
 		!find_free_function(status, node.name);
+	// A `#spawn`-bearing class with a MALFORMED argument — a plain value, or
+	// a lambda with parameters — is the dedicated #spawn error, anchored at
+	// the argument, not a confusing missing-#init one.
+	if (magic_ctor && !spawn_ctor_shape && !find_free_function(status, node.name)) {
+		add_error(
+			status,
+			"`#spawn` expects a call or a zero-argument function value (bind arguments in the lambda's captures)",
+			first?.start ?? node.start,
+		);
+		return false;
+	}
 	// The GENERALIZED flavor (ASYNC.md, "User-defined async primitives"):
 	// any user CLASS conforming to the core `Awaitable` trait gets the same
 	// construction sugar — `MyThing(fn(args))` packs the call eagerly and
@@ -124,9 +135,10 @@ export default function check_function_call_node(
 	// machinery. The class must carry the field contract (uint64 task /
 	// result_slot / cancel_flag / future) and at most one type parameter
 	// (T = the wrapped call's return type); otherwise this is a dedicated,
-	// actionable error rather than a confusing missing-#init one. Thread and
-	// Fiber keep their reserved fast path above (they do not conform to
-	// Awaitable — the Task their start() yields does).
+	// actionable error rather than a confusing missing-#init one. A
+	// `#spawn`-bearing class (Thread/Fiber) keeps its reserved fast path
+	// above (it does not conform to Awaitable — the Task its start() yields
+	// does).
 	let awaitable_ctor: StructNode | undefined;
 	if (!magic_ctor && spawn_ctor_shape) {
 		const candidate = resolve_awaitable_spawn_class(node.name, status);
@@ -147,11 +159,7 @@ export default function check_function_call_node(
 			}
 		}
 	}
-	if (
-		magic_ctor &&
-		spawn_ctor_shape &&
-		!(magic_ctor === "Thread" && thread_shadow_struct && !thread_shadow_struct.is_library)
-	) {
+	if (magic_ctor && spawn_ctor_shape) {
 		return check_magic_ctor(node, status, magic_ctor);
 	}
 	if (awaitable_ctor) {

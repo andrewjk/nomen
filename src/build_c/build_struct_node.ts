@@ -638,6 +638,12 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 	const old_current_struct = status.current_struct;
 	status.current_struct = node;
 	for (let func of node.functions) {
+		// The #spawn construction marker (ASYNC_PLAN phase 3): the
+		// construction is compiler-generated (build_magic_ctor); the member
+		// itself is a declaration and never emits.
+		if (func.name === "#spawn") {
+			continue;
+		}
 		if (func.name === "#init" && !func.has_body) {
 			continue;
 		}

@@ -34,6 +34,10 @@
  * A stackful coroutine: lightweight, cooperatively scheduled, parks instead of blocking
  **/
 pub class Fiber<T> : Sendable, Spawnable<T> {
+	// The construction hook (see Thread.nm): the deferred-call special form.
+	#spawn = () {
+	}
+
 	// The packed task closure (a `struct nomen_closure *`); owned by this
 	// value until start/start_on/nursery.start transfers it to the runtime.
 	pub var uint64 task = 0

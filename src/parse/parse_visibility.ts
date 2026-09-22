@@ -157,8 +157,13 @@ export default function parse_visibility(
 				consume(status); // consume #
 				consume(status); // consume destroy
 				parse_function(visibility, status, "#destroy");
+			} else if (next2 === "spawn") {
+				consume(status); // consume pub
+				consume(status); // consume #
+				consume(status); // consume spawn
+				parse_function(visibility, status, "#spawn");
 			} else {
-				add_error(status, `Expected #init or #destroy after pub`, get_index(status));
+				add_error(status, `Expected #init, #destroy or #spawn after pub`, get_index(status));
 				consume(status);
 			}
 			break;

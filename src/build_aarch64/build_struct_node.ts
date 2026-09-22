@@ -1322,6 +1322,9 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 
 function build_struct_functions(node: StructNode, status: BuildStatus) {
 	for (const func of node.functions) {
+		// The #spawn construction marker (ASYNC_PLAN phase 3): the
+		// construction is compiler-generated; the member never emits.
+		if (func.name === "#spawn") continue;
 		if (func.name === "#init" && !func.has_body) continue;
 		if (func.name === "#init" && func.has_body) {
 			if (!check_c_fallback(func, node.name, status)) {

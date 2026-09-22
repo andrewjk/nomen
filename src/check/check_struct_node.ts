@@ -370,8 +370,9 @@ export function resolve_struct_field_types(status: CheckStatus) {
  *
  * A trait method with a default body need not be overridden; if it isn't,
  * the default is inherited (and, for generic traits, already synthesized
- * onto the struct by synthesize_generic_trait_defaults). `#init` and
- * `#destroy` are lifecycle hooks, not contract methods, so they're skipped.
+ * onto the struct by synthesize_generic_trait_defaults). `#init`,
+ * `#destroy` and `#spawn` are lifecycle hooks, not contract methods, so
+ * they're skipped.
  */
 function check_trait_conformance(struct: StructNode, status: CheckStatus) {
 	for (let i = 0; i < struct.traits.length; i++) {
@@ -393,7 +394,12 @@ function check_trait_conformance(struct: StructNode, status: CheckStatus) {
 		}
 
 		for (const trait_func of trait.functions) {
-			if (trait_func.name === "#init" || trait_func.name === "#destroy") continue;
+			if (
+				trait_func.name === "#init" ||
+				trait_func.name === "#destroy" ||
+				trait_func.name === "#spawn"
+			)
+				continue;
 
 			const overrides = struct.functions.filter((f) => f.name === trait_func.name);
 

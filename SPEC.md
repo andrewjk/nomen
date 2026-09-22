@@ -2530,6 +2530,14 @@ var t = Thread(bg(0)).start()         // expression form
 t.wait()
 ```
 
+The construction is a **special form keyed on the class's `#spawn` member** —
+a lifecycle marker, like `#init`/`#destroy`, that declares the class's
+construction hook. `Thread` and `Fiber` declare `#spawn`; the compiler treats
+`X(...)` on a `#spawn`-bearing class as the deferred-call construction, and a
+class that merely shares the name does not gain it. A `#spawn` constructor's
+single argument is either a deferred call or a zero-arg function value;
+anything else is an error anchored at the argument.
+
 Because the construction is a real value, it can be stored and started later —
 the arguments are bound at construction, the call happens at `start()`:
 
