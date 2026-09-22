@@ -14,6 +14,7 @@
 		{ "include": "#numbers" },
 		{ "include": "#types" },
 		{ "include": "#function-call" },
+		{ "include": "#generic-brackets" },
 		{ "include": "#operators" }
 	],
 	"repository": {
@@ -192,11 +193,23 @@
 		},
 		"constants": {
 			"name": "entity.name.constant.nm",
-			"match": "\\b[A-Z]{2,}[A-Z0-9_]*\\b"
+			"match": "\\b(?:[A-Z][A-Z0-9]*_[A-Z0-9_]*|[A-Z]{3,}[A-Z0-9_]*)\\b"
+		},
+		"generic-brackets": {
+			"name": "meta.generic.nm",
+			"begin": "(?<=\\w)<(?=[^>\\n]*>)",
+			"end": ">",
+			"beginCaptures": {
+				"0": { "name": "punctuation.definition.generic.begin.nm" }
+			},
+			"endCaptures": {
+				"0": { "name": "punctuation.definition.generic.end.nm" }
+			},
+			"patterns": [{ "include": "$self" }]
 		},
 		"operators": {
 			"name": "keyword.operator.nm",
-			"match": "->|=>|==|!=|>=|<=|<<|>>|&&|\\|\\||\\?\\?|\\+=|-=|\\*=|\\.\\."
+			"match": "->|=>|==|!=|>=|<=|<<|>>|&&|\\|\\||\\?\\?|\\+=|-=|\\*=|\\.\\.|<|>"
 		}
 	}
 }

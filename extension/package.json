@@ -47,7 +47,10 @@
 			{
 				"language": "nomen",
 				"scopeName": "source.nm",
-				"path": "./syntaxes/nomen.tmLanguage.json"
+				"path": "./syntaxes/nomen.tmLanguage.json",
+				"unbalancedBracketScopes": [
+					"keyword.operator.nm"
+				]
 			}
 		],
 		"commands": [
