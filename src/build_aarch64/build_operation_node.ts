@@ -948,8 +948,14 @@ export function build_operand(node: BaseNode, target_reg: string, status: BuildS
 		if (paramReg) {
 			if (status.function_param_vars?.has(value) || status.function_ref_params?.has(value)) {
 				const param_type_name = (node as ValueNode).type?.name;
+				// A trait-typed value is a POINTER (vtable-bearing instance),
+				// exactly like a class — the register holds the value itself,
+				// so it moves verbatim; only non-class/non-trait var/ref
+				// params ride the pointer-to-storage dereference.
 				const is_class =
-					param_type_name && status.structs.find((s) => s.name === param_type_name && s.is_class);
+					(param_type_name &&
+						status.structs.find((s) => s.name === param_type_name && s.is_class)) ||
+					(!!param_type_name && !!status.traits.find((t) => t.name === param_type_name));
 				if (is_class) {
 					if (paramReg !== target_reg) {
 						emit_asm(status, `mov ${target_reg}, ${paramReg}`);

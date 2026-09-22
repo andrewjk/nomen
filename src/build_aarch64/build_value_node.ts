@@ -180,8 +180,12 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 			status.function_ref_params?.has(value)
 		) {
 			const param_type_name = node.type?.name;
+			// A trait-typed value is a POINTER (vtable-bearing instance), like
+			// a class — the register holds the value itself; only non-class/
+			// non-trait var/ref params ride the pointer-to-storage deref.
 			const is_class =
 				(param_type_name && status.structs.find((s) => s.name === param_type_name && s.is_class)) ||
+				(!!param_type_name && !!status.traits.find((t) => t.name === param_type_name)) ||
 				!!status.class_vars?.has(value) ||
 				!!status.class_vars?.has(original_value);
 			if (is_class) {
@@ -287,8 +291,11 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 				emit_asm(status, `mov x0, ${alloc_reg}\n`);
 			}
 			const param_type_name = node.type?.name;
+			// Trait-typed values are pointers like classes — no deref (see the
+			// paramReg branch above).
 			const is_class =
 				(param_type_name && status.structs.find((s) => s.name === param_type_name && s.is_class)) ||
+				(!!param_type_name && !!status.traits.find((t) => t.name === param_type_name)) ||
 				!!status.class_vars?.has(value) ||
 				!!status.class_vars?.has(original_value);
 			if (!is_class) {

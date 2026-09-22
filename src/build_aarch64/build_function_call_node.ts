@@ -739,7 +739,11 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					let arg_is_class = false;
 					if (arg_name) {
 						const tn = (arg as any).type?.name ?? status.variable_types?.get(arg_name)?.name;
-						arg_is_class = !!tn && !!status.structs.find((s) => s.name === tn && s.is_class);
+						// Trait-typed values are pointers like classes.
+						arg_is_class =
+							!!tn &&
+							(!!status.structs.find((s) => s.name === tn && s.is_class) ||
+								!!status.traits.find((t) => t.name === tn));
 					}
 					const ref_param_slot =
 						arg_name !== undefined ? status.ref_class_slots?.get(arg_name) : undefined;

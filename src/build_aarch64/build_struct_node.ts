@@ -1502,12 +1502,17 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			}
 			// Enum-with-data params arrive as a pointer to the 16-byte
 			// tag+payload blob (same convention as struct params) — mirrors
-			// the is_enum_with_data handling in build_function_node. A class
-			// param is a heap pointer the body reads as a value, so it stays
-			// in the callee-saved register path (see build_function_node).
+			// the is_enum_with_data handling in build_function_node. A trait
+			// param is a pointer to the concrete struct (vtable at offset 0)
+			// and parks in the callee-saved register path like a struct param,
+			// so trait-typed dispatch reads the receiver from the register.
+			// A class param is a heap pointer the body reads as a value, so it
+			// stays in the callee-saved register path too (see
+			// build_function_node).
 			const is_struct_type =
 				!!status.structs.find((s) => s.name === param.type.name && !s.is_simple_type) ||
-				!!status.enums.find((e) => e.name === param.type.name && e.has_associated_data);
+				!!status.enums.find((e) => e.name === param.type.name && e.has_associated_data) ||
+				!!status.traits.find((t) => t.name === param.type.name);
 			if (is_struct_type && callee_idx < callee_saved.length) {
 				const saved_reg = callee_saved[callee_idx++];
 				if (saved_reg !== "x19" || !needs_x19) {
@@ -1631,7 +1636,8 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			}
 			const is_struct_type =
 				!!status.structs.find((s) => s.name === param.type.name && !s.is_simple_type) ||
-				!!status.enums.find((e) => e.name === param.type.name && e.has_associated_data);
+				!!status.enums.find((e) => e.name === param.type.name && e.has_associated_data) ||
+				!!status.traits.find((t) => t.name === param.type.name);
 			if (!is_struct_type) {
 				// A `ref T` param receives an 8-byte pointer to the caller's
 				// storage regardless of T's size, so the local slot must
