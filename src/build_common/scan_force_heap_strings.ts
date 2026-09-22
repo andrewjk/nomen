@@ -121,6 +121,20 @@ function visit(node: BaseNode | undefined, result: Set<string>, structs?: Struct
 // those would strdup every plain borrow read (a leak).
 function is_fresh_heap_string(node: BaseNode | undefined): boolean {
 	if (!node) return false;
+	// `x.to_string()` always yields an OWNED string copy (heap), and its
+	// cached `.type` is not always stamped — special-case it before the type
+	// gate so a literal-initialized target that is later reassigned from
+	// `.to_string()` is force-heap (the literal gets strdup'd, so the
+	// reassignment's free of the previous value is valid).
+	if (node.node_type === "access") {
+		const access = (node as AccessNode).access;
+		if (
+			access.node_type === "access_func" &&
+			(access as AccessFunctionCallNode).name === "to_string"
+		) {
+			return true;
+		}
+	}
 	const type_name = (node as unknown as { type?: { name?: string } }).type?.name;
 	if (type_name !== "string") return false;
 	if (node.node_type === "op") return true;
