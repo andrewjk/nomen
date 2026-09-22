@@ -63,11 +63,13 @@ export function try_parse_operands(parts: string[]): Operand[] | null {
 			operands.push(parsed);
 			continue;
 		}
-		// Shift qualifier on the previous register operand.
+		// Shift qualifier on the previous register or immediate operand —
+		// `add x0, x1, x2, lsl #3` rides the register; `movk x0, #1, lsl #16`
+		// is part of the immediate's own encoding (bit position).
 		const shift_m = SHIFT_TOKEN_RE.exec(tok);
 		if (shift_m && operands.length > 0) {
 			const prev = operands[operands.length - 1];
-			if (prev.kind === "reg") continue;
+			if (prev.kind === "reg" || prev.kind === "imm") continue;
 		}
 		return null;
 	}

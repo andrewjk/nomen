@@ -1,5 +1,6 @@
 import { coalesce_copies } from "./build_aarch64/asm_coalesce.ts";
 import { eliminate_dead_cycle_moves } from "./build_aarch64/asm_cycle_dead_moves.ts";
+import { expand_large_mov_immediates } from "./build_aarch64/asm_expand_mov.ts";
 import { convert_loop_invariant_branches } from "./build_aarch64/asm_if_convert.ts";
 import { rewrite_large_frame_offsets } from "./build_aarch64/asm_large_frame.ts";
 import { promote_loop_slots } from "./build_aarch64/asm_loop_promote.ts";
@@ -382,6 +383,12 @@ export default function build(
 		// function keeps its text (the measured-loss convention of the
 		// function-wide dead-move pass).
 		status.code = eliminate_dead_cycle_moves(status.code);
+		// Large-immediate expansion — `mov xN, #K` with |K| outside the
+		// movz/movn encoding range becomes a movz/movk chunk chain. Runs
+		// unconditionally and AFTER every optimizer (they pattern-match the
+		// plain `mov` form) and before the validators (which accept movz/
+		// movk but not the unencodable form).
+		status.code = expand_large_mov_immediates(status.code);
 		if (options.audit) {
 			// The main-function audit_check + pool shutdown hook is emitted
 			// directly by build_function_node (it knows main's return label).

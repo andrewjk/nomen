@@ -151,6 +151,9 @@ export const MNEMONICS: Record<string, MnemonicSig> = {
 		],
 	},
 	movz: { shapes: [["r", "i"]] },
+	// movk keeps bit-position 16/32/48 — the immediate's shift qualifier is
+	// absorbed by the operand parser (a shift may follow an immediate).
+	movk: { shapes: [["r", "i"]] },
 	mvn: { shapes: [["r", "r"]] },
 	fmov: {
 		shapes: [
