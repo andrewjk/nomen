@@ -23,7 +23,7 @@ struct JsonNode {
  * A flat, buffer-backed pool of JSON tree nodes — the parsed representation `Json.parse` produces
  **/
 pub struct JsonTree {
-	var Buffer<JsonNode> nodes = Buffer<JsonNode>()
+	var nodes = Buffer<JsonNode>()
 	var count = 0
 
 	func alloc_node = (ref self, out int) {

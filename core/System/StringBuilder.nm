@@ -24,7 +24,7 @@ pub struct StringBuilder {
 		if new_cap == 0 {
 			new_cap = 16
 		}
-		while new_cap < needed; new_cap *= 2 {}
+		while new_cap < needed; new_cap *= 2 { }
 		self.data = realloc(self.data, new_cap)
 		self.cap = new_cap
 	}

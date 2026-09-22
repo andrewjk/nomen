@@ -65,7 +65,12 @@ pub struct Regex {
 	// group that did not participate in the match) and return true. Return
 	// false with `out` untouched when nothing matches. A group that repeats
 	// (`(a)+`) reports its LAST iteration.
-	pub func captures = (string pattern, string input, ref List<string> dst, out bool) {		var int pat_len = pattern.length
+	pub func captures = (
+		string pattern,
+		string input,
+		ref List<string> dst,
+		out bool
+	) { var int pat_len = pattern.length
 		var int len = input.length
 		var string charset = first_byte_set(pattern, pat_len)
 		var int clen = charset.length
@@ -83,7 +88,7 @@ pub struct Regex {
 			if end >= 0 {
 				var string whole = input.substring(i, end)
 				dst.push(whole)
-				var int g = 1
+				var g = 1
 				while g <= groups; g += 1 {
 					var int at = last_capture_index(caps, g)
 					if at >= 0 {
@@ -166,7 +171,12 @@ pub struct Regex {
 	}
 
 	// Replace all non-overlapping occurrences of pattern in input with replacement.
-	pub func replace_all = (string pattern, string input, string replacement, out string) {		var sb = StringBuilder()
+	pub func replace_all = (
+		string pattern,
+		string input,
+		string replacement,
+		out string
+	) { var sb = StringBuilder()
 		var int pat_len = pattern.length
 		var int len = input.length
 		var string charset = first_byte_set(pattern, pat_len)
@@ -241,7 +251,7 @@ pub struct Regex {
 func fold_pattern = (string pattern, move out string) {
 	var int n = pattern.length
 	var sb = StringBuilder()
-	var int i = 0
+	var i = 0
 	while i < n; i += 1 {
 		var char c = pattern.at(i)
 		if (c as int) == 92 {
@@ -412,7 +422,13 @@ func first_byte_set = (string pattern, int pat_len, out string) {
 // byte(s) of each alternative to sb. Alternations at depth 0 are split on '|'.
 // Returns -1 when any alternative's first-byte set can't be determined (the
 // caller must then disable the prefilter), 0 otherwise.
-func collect_first_bytes = (string pattern, int pat_pos, int pat_end, ref StringBuilder sb, out int) {
+func collect_first_bytes = (
+	string pattern,
+	int pat_pos,
+	int pat_end,
+	ref StringBuilder sb,
+	out int
+) {
 	var depth = 0
 	var int i = pat_pos
 	var int alt_start = pat_pos
@@ -506,7 +522,7 @@ func alt_first_bytes = (string pattern, int start, int end, ref StringBuilder sb
 			// can also come from whatever follows it. A second '?' marks the
 			// quantifier lazy and is skipped either way.
 			var int after = a_end
-			var int nullable = 0
+			var nullable = 0
 			if after < end {
 				var char q = pattern.at(after)
 				if q == '?' || q == '*' {
@@ -568,7 +584,7 @@ func add_class_chars = (string pattern, int start, int end, ref StringBuilder sb
 			}
 		} else {
 			sb.append_char(pattern.at(i))
-				i += 1
+			i += 1
 		}
 	}
 }
@@ -613,7 +629,15 @@ func match_here = (
 				}
 				if (c as int) == 124 {
 					if depth == 0 {
-						var int left = match_here(pattern, pat_pos, i, input, in_pos, in_len, ref caps)
+						var int left = match_here(
+							pattern,
+							pat_pos,
+							i,
+							input,
+							in_pos,
+							in_len,
+							ref caps,
+						)
 						if left >= 0 {
 							return left
 						}
@@ -655,7 +679,7 @@ func match_here = (
 	if a_end < pat_end {
 		var char q = pattern.at(a_end)
 		if q == '*' || q == '+' || q == '?' {
-			var int lazy = 0
+			var lazy = 0
 			var int rest = a_end + 1
 			if rest < pat_end {
 				if pattern.at(rest) == '?' {
@@ -664,12 +688,47 @@ func match_here = (
 				}
 			}
 			if q == '*' {
-				return match_star(pattern, pat_pos, a_end, rest, pat_end, input, in_pos, 0, lazy, in_len, ref caps)
+				return match_star(
+					pattern,
+					pat_pos,
+					a_end,
+					rest,
+					pat_end,
+					input,
+					in_pos,
+					0,
+					lazy,
+					in_len,
+					ref caps,
+				)
 			}
 			if q == '+' {
-				return match_star(pattern, pat_pos, a_end, rest, pat_end, input, in_pos, 1, lazy, in_len, ref caps)
+				return match_star(
+					pattern,
+					pat_pos,
+					a_end,
+					rest,
+					pat_end,
+					input,
+					in_pos,
+					1,
+					lazy,
+					in_len,
+					ref caps,
+				)
 			}
-			return match_optional(pattern, pat_pos, a_end, rest, pat_end, input, in_pos, lazy, in_len, ref caps)
+			return match_optional(
+				pattern,
+				pat_pos,
+				a_end,
+				rest,
+				pat_end,
+				input,
+				in_pos,
+				lazy,
+				in_len,
+				ref caps,
+			)
 		}
 	}
 
@@ -768,7 +827,15 @@ func match_single_atom = (
 			old_start = caps.at(at + 1)
 			old_end = caps.at(at + 2)
 		}
-		var int next = match_here(pattern, atom_start + 1, atom_end - 1, input, in_pos, in_len, ref caps)
+		var int next = match_here(
+			pattern,
+			atom_start + 1,
+			atom_end - 1,
+			input,
+			in_pos,
+			in_len,
+			ref caps,
+		)
 		if next >= 0 {
 			record_capture(ref caps, g, in_pos, next)
 			return next
@@ -958,7 +1025,15 @@ func match_star_group = (
 				return stop
 			}
 		}
-		var int next = match_single_atom(pattern, atom_start, atom_end, input, in_pos, in_len, ref caps)
+		var int next = match_single_atom(
+			pattern,
+			atom_start,
+			atom_end,
+			input,
+			in_pos,
+			in_len,
+			ref caps,
+		)
 		if next >= 0 {
 			if next != in_pos {
 				var new_min = 0
@@ -1035,7 +1110,15 @@ func match_optional = (
 		if skip >= 0 {
 			return skip
 		}
-		var int next = match_single_atom(pattern, atom_start, atom_end, input, in_pos, in_len, ref caps)
+		var int next = match_single_atom(
+			pattern,
+			atom_start,
+			atom_end,
+			input,
+			in_pos,
+			in_len,
+			ref caps,
+		)
 		if next >= 0 {
 			return match_here(pattern, rest, pat_end, input, next, in_len, ref caps)
 		}
@@ -1136,8 +1219,8 @@ func char_in_class = (
 // groups).
 func capture_count = (string pattern, out int) {
 	var int n = pattern.length
-	var int count = 0
-	var int i = 0
+	var count = 0
+	var i = 0
 	while i < n; i += 1 {
 		var char c = pattern.at(i)
 		if (c as int) == 92 {
@@ -1159,8 +1242,8 @@ func capture_count = (string pattern, out int) {
 // open_pos: one more than the number of capture opens before it in the
 // pattern (the whole match is group 0).
 func group_index_at = (string pattern, int open_pos, out int) {
-	var int count = 0
-	var int i = 0
+	var count = 0
+	var i = 0
 	while i < open_pos; i += 1 {
 		var char c = pattern.at(i)
 		if (c as int) == 92 {
@@ -1198,7 +1281,7 @@ func record_capture = (ref List<int> caps, int group, int start, int end) {
 // has no entry. Entries are (group, start, end) triples.
 func last_capture_index = (List<int> caps, int group, out int) {
 	var int best = -1
-	var int i = 0
+	var i = 0
 	while i < caps.length; i += 3 {
 		if caps.at(i) == group {
 			best = i
@@ -1211,11 +1294,11 @@ func last_capture_index = (List<int> caps, int group, out int) {
  * A Regex.find result: whether the pattern matched, where, and what
  **/
 pub struct RegexMatch {
-	var bool found = false
-	var int start = 0
-	var int end = 0
-	var int length = 0
-	var string text = ""
+	var found = false
+	var start = 0
+	var end = 0
+	var length = 0
+	var text = ""
 }
 
 // Whether the escaped character c (the byte after a backslash) is a
@@ -1233,7 +1316,14 @@ func backref_group = (char c, out int) {
 // Match the text capture group `group` last matched, at in_pos. Returns the
 // position after the span, or -1 when the group has no span here (it did not
 // participate) or the text differs.
-func match_backref = (string input, int group, int in_pos, int in_len, ref List<int> caps, out int) {
+func match_backref = (
+	string input,
+	int group,
+	int in_pos,
+	int in_len,
+	ref List<int> caps,
+	out int
+) {
 	var int at = last_capture_index(caps, group)
 	if at < 0 {
 		return -1
@@ -1246,7 +1336,7 @@ func match_backref = (string input, int group, int in_pos, int in_len, ref List<
 	if in_pos + len > in_len {
 		return -1
 	}
-	var int i = 0
+	var i = 0
 	while i < len; i += 1 {
 		if input.at(in_pos + i) != input.at(s + i) {
 			return -1
@@ -1372,22 +1462,22 @@ func shorthand_members = (char c, ref StringBuilder sb, out int) {
 		return -1
 	}
 	if kind == 100 {
-		var int code = 48
+		var code = 48
 		while code <= 57; code += 1 {
 			sb.append_char(code as char)
 		}
 		return 0
 	}
 	if kind == 119 {
-		var int code = 48
+		var code = 48
 		while code <= 57; code += 1 {
 			sb.append_char(code as char)
 		}
-		var int upper = 65
+		var upper = 65
 		while upper <= 90; upper += 1 {
 			sb.append_char(upper as char)
 		}
-		var int lower = 97
+		var lower = 97
 		while lower <= 122; lower += 1 {
 			sb.append_char(lower as char)
 		}
@@ -1395,7 +1485,7 @@ func shorthand_members = (char c, ref StringBuilder sb, out int) {
 		return 0
 	}
 	// \s: tab, LF, VT, FF, CR, space
-	var int w = 9
+	var w = 9
 	while w <= 13; w += 1 {
 		sb.append_char(w as char)
 	}

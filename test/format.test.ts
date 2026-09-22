@@ -16,10 +16,16 @@ test("strips redundant constructor and literal types", () => {
 	expect(format("var int8 b = 5\n")).toBe("var int8 b = 5\n");
 	// Enum shorthand must keep its type.
 	expect(format("var Direction d = .east\n")).toBe("var Direction d = .east\n");
-	// Generic constructor calls (concrete or not) do not infer, so the type stays.
-	expect(format("var Buffer<T> items = Buffer<T>()\n")).toBe("var Buffer<T> items = Buffer<T>()\n");
-	expect(format("var Map<int, int> keys = Map<int, int>()\n")).toBe(
-		"var Map<int, int> keys = Map<int, int>()\n",
+	// Generic constructors strip when the written type arguments are
+	// identical: the constructed type is exactly the declared type, so the
+	// checker has nothing to infer.
+	expect(format("var Buffer<T> items = Buffer<T>()\n")).toBe("var items = Buffer<T>()\n");
+	expect(format("var Map<int, int> keys = Map<int, int>()\n")).toBe("var keys = Map<int, int>()\n");
+	// A constructor that differs from the declared type (different name, or
+	// type arguments left for the checker to infer) keeps the annotation.
+	expect(format("var Buffer<int> items = Buffer()\n")).toBe("var Buffer<int> items = Buffer()\n");
+	expect(format("var Map<int, int> keys = Map(pairs)\n")).toBe(
+		"var Map<int, int> keys = Map(pairs)\n",
 	);
 });
 

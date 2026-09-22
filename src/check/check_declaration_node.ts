@@ -317,6 +317,25 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 
 			if (!decl.type.name) {
 				decl.type = type_from_value_node(decl.value, status);
+				// A constructor call inside a generic body defers (see the
+				// type_params deferral in check_function_call_node), leaving the
+				// call's type unstamped — so inference would come up empty. Stamp
+				// the declared type from the call's written form
+				// (`var items = Buffer<T>()` → `Buffer<T>`): exactly what an
+				// explicit annotation would have said, so monomorphization
+				// substitutes it identically.
+				if (
+					!decl.type.name &&
+					status.type_params.length > 0 &&
+					decl.value.node_type === "func_call"
+				) {
+					const call = decl.value as FunctionCallNode;
+					if (call.type_args?.length) {
+						const constructed = new Type(call.name);
+						constructed.type_args = call.type_args;
+						decl.type = constructed;
+					}
+				}
 			} else if (decl.type.is_array && decl.value.node_type === "array") {
 				const value_type = type_from_value_node(decl.value, status);
 				if (value_type.is_array && value_type.length) {

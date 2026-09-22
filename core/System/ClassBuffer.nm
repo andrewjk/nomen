@@ -37,7 +37,7 @@ pub struct ClassBuffer<T> {
 		if new_cap == 0 {
 			new_cap = 4
 		}
-		while new_cap < needed; new_cap *= 2 {}
+		while new_cap < needed; new_cap *= 2 { }
 		self.data = realloc(self.data, new_cap * 8)
 		memset(self.data + self.cap * 8, 0, (new_cap - self.cap) * 8)
 		self.cap = new_cap
@@ -73,7 +73,7 @@ pub struct ClassBuffer<T> {
 		if new_cap == 0 {
 			new_cap = 4
 		}
-		while new_cap < needed; new_cap *= 2 {}
+		while new_cap < needed; new_cap *= 2 { }
 		self.data = realloc(self.data, new_cap * 8)
 		memset(self.data + self.cap * 8, 0, (new_cap - self.cap) * 8)
 		self.cap = new_cap
@@ -150,7 +150,7 @@ pub struct ClassBuffer<T> {
 	// unless `f` returned it. Storing the returned instance raw is sound:
 	// the slot takes sole ownership and `f`'s return is not retained
 	// elsewhere. NOT `inline`: the body calls through the fn pointer.
-	func modify = (ref self, int i: i >= 0 && i < self.cap, func (T, out T) f) {
+	func modify = (ref self, int i: i >= 0 && i < self.cap, func(T, out T) f) {
 		```
 		#arch: c
 		long *slots = (long*)(unsigned long long)self->data;
@@ -299,7 +299,11 @@ pub struct ClassBuffer<T> {
 	// instance afterwards. The class-buffer counterpart of Buffer.shift,
 	// used by Map/Set.remove's backward-shift so shifting entries neither
 	// duplicates nor orphans owned instances.
-	func shift = (ref self, int dst: dst >= 0 && dst < self.cap, int src: src >= 0 && src < self.cap) {
+	func shift = (
+		ref self,
+		int dst: dst >= 0 && dst < self.cap,
+		int src: src >= 0 && src < self.cap
+	) {
 		```
 		#arch: c
 		long *slots = (long*)(unsigned long long)self->data;
@@ -343,7 +347,12 @@ pub struct ClassBuffer<T> {
 	// pointers, returned as a `view T` (T is a class, so each element is an
 	// 8-byte pointer). Borrows from self — invalidated on reassignment. Mirrors
 	// Buffer.slice; ClassBuffer stores 8-byte slots, so the element width is 8.
-	func slice = (self, int start: start >= 0, int end: end >= start && end <= self.cap, out view T) {
+	func slice = (
+		self,
+		int start: start >= 0,
+		int end: end >= start && end <= self.cap,
+		out view T
+	) {
 		```
 		#arch: c
 		nomen_view _r;

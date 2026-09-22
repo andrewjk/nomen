@@ -45,8 +45,8 @@ pub struct Utf8 {
 		if b0 < 0xF0 {
 			// E0 forbids second bytes below A0 (overlong); ED forbids
 			// AA-BF (surrogate halves).
-			var int lo = 0x80
-			var int hi = 0xBF
+			var lo = 0x80
+			var hi = 0xBF
 			if b0 == 0xE0 {
 				lo = 0xA0
 			}
@@ -68,8 +68,8 @@ pub struct Utf8 {
 		}
 		// F0 forbids second bytes below 90 (overlong); F4 forbids above 8F
 		// (past U+10FFFF).
-		var int lo = 0x80
-		var int hi = 0xBF
+		var lo = 0x80
+		var hi = 0xBF
 		if b0 == 0xF0 {
 			lo = 0x90
 		}
@@ -138,8 +138,8 @@ pub struct Utf8 {
 	// Count the code points in text (one pass; malformed bytes each count
 	// as one U+FFFD).
 	pub func char_count = (view string text, out int) {
-		var int n = 0
-		var int pos = 0
+		var n = 0
+		var pos = 0
 		var int len = text.length
 		while pos < len {
 			pos = pos + Utf8.width_at(text, pos)

@@ -488,6 +488,25 @@ export function monomorphize(
 		// Substitute type params in field default values (e.g. Buffer<T>()
 		// becomes Buffer_int() when Tree<T> is monomorphized to Tree_int).
 		if (mono_field.value) {
+			// A field whose type was inferred from its constructor call
+			// (`var items = Buffer<T>()`, no annotation) has no type yet when
+			// the generic is monomorphized ahead of its own file being checked —
+			// which is the norm for library structs, since user code triggers
+			// the mono. Recover the constructed type from the initializer
+			// (`Buffer` + the substituted type args) so the block below
+			// monomorphizes the buffer and the emitted field type is concrete,
+			// exactly as an annotation would have made it. Runs before the raw
+			// substitution, which would otherwise rename the call to a mono name
+			// that does not exist yet.
+			if (!mono_field.type.name && mono_field.value.node_type === "func_call") {
+				const call = mono_field.value as FunctionCallNode;
+				const target = status.structs.find((s) => s.name === call.name);
+				if (target?.type_params.length && call.type_args?.length === target.type_params.length) {
+					const constructed = new Type(call.name);
+					constructed.type_args = call.type_args.map((arg) => substitute_type(arg, substitution));
+					mono_field.type = constructed;
+				}
+			}
 			substitute_raw_in_node(
 				mono_field.value,
 				substitution,
@@ -2509,6 +2528,26 @@ function substitute_raw_in_node(
 		any_node.access.type_args = any_node.access.type_args.map((t: Type) =>
 			substitute_type(t, substitution),
 		);
+	}
+	// A declaration whose type was left to inference (`var dst = List<T>()`)
+	// carries no type when the generic body is cloned for monomorphization
+	// ahead of its file being checked — the normal case for library structs,
+	// since user code triggers the mono. Recover the constructed type from the
+	// initializer (generic name + written type args) so the substitution block
+	// below treats it exactly like the annotation it stands in for. A generic
+	// FUNCTION call is not a type, so it is left to check-time inference.
+	if (
+		node.node_type === "declare" &&
+		!any_node.type?.name &&
+		any_node.value?.node_type === "func_call"
+	) {
+		const call = any_node.value as FunctionCallNode;
+		const target = structs.find((s) => s.name === call.name);
+		if (target?.type_params.length && call.type_args?.length === target.type_params.length) {
+			const constructed = new Type(call.name);
+			constructed.type_args = call.type_args;
+			any_node.type = constructed;
+		}
 	}
 	// Substitute declared types on local declarations inside a generic body
 	// (e.g. `var Buffer<TK> old_keys` becomes `var Buffer_int old_keys` when

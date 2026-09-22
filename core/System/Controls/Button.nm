@@ -1,7 +1,7 @@
 /**
  * A push-button control that triggers an action when clicked
  **/
-pub class Button : Control {
+pub class Button: Control {
 	var uint64 handle = 0
 
 	pub func #init = (self, Window window, string title) {
@@ -162,7 +162,7 @@ pub class Button : Control {
 
 	pub func intrinsic_size = (self, out Size) {
 		var [w, h] = native_intrinsic(self.handle)
-		var Size s = Size()
+		var s = Size()
 		s.width = w
 		s.height = h
 		return s

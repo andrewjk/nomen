@@ -248,7 +248,7 @@ pub func native_intrinsic = (uint64 handle, out [int, int]) {
  * so a `Container` can also be driven polymorphically as a `Control` (passed to
  * a `Control`-taking function, stored in a `ClassBuffer<Control>`, etc.).
  **/
-pub class Container : Control {
+pub class Container: Control {
 	var kinds = Buffer<int>()
 	// Per-leaf requested size, stored as a (kind, value) pair per axis. The
 	// kind is one of LEN_* (auto/fixed/percent/fill); the value is the pixel
@@ -1358,7 +1358,7 @@ pub class Container : Control {
 			constraints.max_height,
 		)
 		var int h = self.rh.load_int(self.root)
-		var Size s = Size()
+		var s = Size()
 		s.width = w
 		s.height = h
 		return s
@@ -1371,7 +1371,7 @@ pub class Container : Control {
 	pub func intrinsic_size = (self, out Size) {
 		var int w = self.measure_node(self.root, 0, INF, 0, INF)
 		var int h = self.rh.load_int(self.root)
-		var Size s = Size()
+		var s = Size()
 		s.width = w
 		s.height = h
 		return s

@@ -422,16 +422,15 @@ function strip_redundant_type(pieces: Piece[]): Piece[] {
 }
 
 function is_redundant(type: Piece[], value: Piece[]): boolean {
-	// `var T x = T(...)` with a non-generic, identical constructor is safe to
-	// strip: the type is exactly the constructed type. Nomen can't infer a
-	// variable's type from a generic constructor call, so those are kept.
+	// `var T x = T(...)` with an identical constructor is safe to strip: the
+	// type is exactly the constructed type, generic arguments included
+	// (`var Map<int, int> keys = Map<int, int>()`), because the written type
+	// arguments leave the checker nothing to infer.
 	if (value.length > type.length && value[type.length].text === "(") {
 		const close = match_bracket(value, type.length);
 		if (close === value.length - 1) {
 			const constructor = value.slice(0, type.length);
-			if (!constructor.some((piece) => piece.text === "<" || piece.text === ">")) {
-				if (type.every((piece, index) => piece.text === constructor[index].text)) return true;
-			}
+			if (type.every((piece, index) => piece.text === constructor[index].text)) return true;
 		}
 	}
 	// `var T x = <literal>`: strip when the literal unambiguously infers exactly

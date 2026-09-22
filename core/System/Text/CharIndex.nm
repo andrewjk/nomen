@@ -22,18 +22,18 @@ pub struct CharRun {
  **/
 pub struct CharIndex {
 	var view string source
-	var List<CharRun> runs = List<CharRun>()
-	var int char_count = 0
+	var runs = List<CharRun>()
+	var char_count = 0
 
 	pub func #init = (self, view string source) {
 		self.source = source
-		var int pos = 0
+		var pos = 0
 		var int len = source.length
-		var int chars = 0
+		var chars = 0
 		var int open_at = -1
-		var int open_width = 0
-		var int open_start = 0
-		var int open_count = 0
+		var open_width = 0
+		var open_start = 0
+		var open_count = 0
 		while pos < len {
 			var int w = Utf8.width_at(source, pos)
 			switch {
@@ -122,7 +122,7 @@ pub struct CharIndex {
 	// Rightmost run whose key (char_start when by_char, else byte_index) is
 	// <= target, or -1 when all runs start after it.
 	func rightmost_run = (self, int target, bool by_char, out int) {
-		var int lo = 0
+		var lo = 0
 		var int hi = self.runs.length - 1
 		var int found = -1
 		while lo <= hi {

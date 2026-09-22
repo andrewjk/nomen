@@ -26,11 +26,11 @@
 /**
  * A non-blocking TCP socket whose waits park the calling fiber
  **/
-pub class Tcp : Sendable {
+pub class Tcp: Sendable {
 	// The underlying file descriptor, -1 when closed/failed.
 	pub var int fd = -1
 	// 0 = ok; 1 = DNS, 2 = socket, 3 = connect, 4 = listen, 5 = closed.
-	pub var int error = 0
+	pub var error = 0
 
 	pub func #init = (self, int handle) {
 		self.fd = handle
@@ -66,7 +66,7 @@ pub class Tcp : Sendable {
 	// Create a listening socket bound to `port` on all interfaces.
 	pub func listen = (int port, int backlog, move out Tcp) {
 		var int handle = Tcp.listen_fd(port, backlog)
-		var Tcp t = Tcp(handle)
+		var t = Tcp(handle)
 		if handle < 0 {
 			t.error = 4
 		}
@@ -78,7 +78,7 @@ pub class Tcp : Sendable {
 	// failed.
 	pub func accept = (ref self, move out Tcp) {
 		var int handle = Tcp.accept_fd(self.fd)
-		var Tcp t = Tcp(handle)
+		var t = Tcp(handle)
 		if handle < 0 {
 			t.error = 5
 		}
@@ -91,14 +91,14 @@ pub class Tcp : Sendable {
 	pub func connect = (string host, int port, move out Tcp) {
 		var int handle = Tcp.socket_fd()
 		if handle < 0 {
-			var Tcp bad = Tcp(-1)
+			var bad = Tcp(-1)
 			bad.error = 2
 			return bad
 		}
 		var int err = Tcp.connect_to(handle, host, port)
 		if err != 0 {
 			Tcp.close_fd(handle)
-			var Tcp bad = Tcp(-1)
+			var bad = Tcp(-1)
 			bad.error = err
 			return bad
 		}

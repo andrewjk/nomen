@@ -331,20 +331,25 @@ function infer_field_type_from_value(
  * Resolving inferred field types upfront (right after gather_structs registers
  * every struct) makes them visible regardless of declaration order.
  *
- * Only non-generic structs are handled here, mirroring check_struct_node's own
- * field-type rewrite. The inference is structural to avoid re-running the full
- * declaration check and its side effects; check_struct_node later skips
- * already-resolved fields, so each field is resolved exactly once.
+ * Only the field-type inference runs for generic structs too: a generic
+ * field's initializer names the constructed type in terms of the struct's own
+ * type params (`var items = Buffer<T>()` → `Buffer<T>`), which is exactly the
+ * annotation it replaces, so recording it upfront is safe and keeps it visible
+ * to the ownership classifier and to monomorphization. The buffer rewrite and
+ * owning-param marking stay non-generic, mirroring check_struct_node. The
+ * inference is structural to avoid re-running the full declaration check and
+ * its side effects; check_struct_node later skips already-resolved fields, so
+ * each field is resolved exactly once.
  */
 export function resolve_struct_field_types(status: CheckStatus) {
 	for (const struct of status.structs) {
-		if (struct.is_generic) continue;
 		for (const field of struct.fields) {
 			if (field.type.name) continue;
 			if (!field.value) continue;
 			const t = infer_field_type_from_value(field.value, status);
 			if (t?.name) field.type = t;
 		}
+		if (struct.is_generic) continue;
 		rewrite_generic_buffer_fields(struct, status);
 		// Mark auto-init params of owning-struct fields as `move` upfront for
 		// the same reason the type inference above runs here: user functions

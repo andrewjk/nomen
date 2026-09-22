@@ -7,7 +7,7 @@
  * A tree of values connected by parent/child links
  **/
 pub struct Tree<T>: Enumerable {
-	var Buffer<T> values = Buffer<T>()
+	var values = Buffer<T>()
 	var lefts = Buffer<int>()
 	var rights = Buffer<int>()
 	var parents = Buffer<int>()

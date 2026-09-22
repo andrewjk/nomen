@@ -3,7 +3,7 @@
  **/
 pub struct List<T>: Viewable {
 	var length = 0
-	var Buffer<T> items = Buffer<T>()
+	var items = Buffer<T>()
 
 	pub func push = (ref self, move T value) {
 		if self.length >= self.items.cap {
@@ -70,8 +70,8 @@ pub struct List<T>: Viewable {
 	// never re-checked, so it can't rely on check-time call-arg hoisting for
 	// struct element types.
 	pub func copy = (self, out List<T>) {
-		var List<T> dst = List<T>()
-		var int i = 0
+		var dst = List<T>()
+		var i = 0
 		while i < self.length {
 			var T v = self.at(i)
 			dst.push(v)

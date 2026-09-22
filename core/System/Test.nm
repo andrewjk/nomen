@@ -48,17 +48,17 @@
  **/
 pub class Tester {
 	// Has the *current* test recorded a failure? Reset by `begin_test`.
-	pub var bool has_failed = false
+	pub var has_failed = false
 
 	// Assertion tallies for the current test.
-	var int passed = 0
-	var int failed = 0
+	var passed = 0
+	var failed = 0
 
 	// Tallies for the whole file, so `done` records stay per-test while the
 	// process still knows whether anything failed overall.
-	var int total_failed = 0
+	var total_failed = 0
 
-	var string current = ""
+	var current = ""
 	var uint64 started = 0
 
 	// Benchmark capture state. `bench`/`bench_n` record the label and sample
@@ -66,9 +66,9 @@ pub class Tester {
 	// function and drives the actual timing loop (Nomen can't store or call a
 	// function pointer, so the harness measures `bench_fn` itself). `bench_fn`
 	// is reconstructed by the harness from the call site, not stored here.
-	var bool bench_pending = false
-	var string bench_label = ""
-	var int bench_samples = 1000
+	var bench_pending = false
+	var bench_label = ""
+	var bench_samples = 1000
 
 	// (harness) Start timing `name` and clear the per-test state. Called by
 	// the `main` that `nomen test` generates — not by test code.
@@ -188,7 +188,7 @@ pub class Tester {
 	 * (default 1000, override with `bench_n`) and computes min / median /
 	 * mean / max / stddev over the per-iteration durations.
 	 **/
-	pub func bench = (ref self, string label, func () body) {
+	pub func bench = (ref self, string label, func() body) {
 		if self.has_failed {
 			return
 		}
@@ -202,7 +202,7 @@ pub class Tester {
 	 * for slow functions (where the default 1000 would dominate the suite) or
 	 * for reproducible sample counts.
 	 **/
-	pub func bench_n = (ref self, string label, func () body, int samples) {
+	pub func bench_n = (ref self, string label, func() body, int samples) {
 		if self.has_failed {
 			return
 		}
@@ -219,7 +219,16 @@ pub class Tester {
 	 * If a test has already recorded a failure, benchmarks are skipped and
 	 * this is a no-op.
 	 **/
-	pub func record_bench = (ref self, string label, int n, int min, int median, int max, float mean, float stddev) {
+	pub func record_bench = (
+		ref self,
+		string label,
+		int n,
+		int min,
+		int median,
+		int max,
+		float mean,
+		float stddev
+	) {
 		if self.has_failed {
 			return
 		}

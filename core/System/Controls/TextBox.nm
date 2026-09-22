@@ -1,7 +1,7 @@
 /**
  * An editable single-line text input control
  **/
-pub class TextBox : Control {
+pub class TextBox: Control {
 	var uint64 handle = 0
 
 	pub func #init = (self, Window window) {
@@ -203,7 +203,7 @@ pub class TextBox : Control {
 	// ── Control trait conformance ──
 	pub func intrinsic_size = (self, out Size) {
 		var [w, h] = native_intrinsic(self.handle)
-		var Size s = Size()
+		var s = Size()
 		s.width = w
 		s.height = h
 		return s

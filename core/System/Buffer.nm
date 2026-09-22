@@ -37,7 +37,7 @@ pub struct Buffer<T> {
 		if new_cap == 0 {
 			new_cap = 8
 		}
-		while new_cap < needed; new_cap *= 2 {}
+		while new_cap < needed; new_cap *= 2 { }
 		self.data = realloc(self.data, new_cap * 4)
 		memset(self.data + self.cap * 4, 0, (new_cap - self.cap) * 4)
 		self.cap = new_cap
@@ -107,7 +107,7 @@ pub struct Buffer<T> {
 		if new_cap == 0 {
 			new_cap = 4
 		}
-		while new_cap < needed; new_cap *= 2 {}
+		while new_cap < needed; new_cap *= 2 { }
 		self.data = realloc(self.data, new_cap * 8)
 		memset(self.data + self.cap * 8, 0, (new_cap - self.cap) * 8)
 		self.cap = new_cap
@@ -204,7 +204,7 @@ pub struct Buffer<T> {
 		if new_cap == 0 {
 			new_cap = 4
 		}
-		while new_cap < needed; new_cap *= 2 {}
+		while new_cap < needed; new_cap *= 2 { }
 		self.data = realloc(self.data, new_cap * T_SIZE)
 		memset(self.data + self.cap * T_SIZE, 0, (new_cap - self.cap) * T_SIZE)
 		self.cap = new_cap
@@ -382,7 +382,7 @@ pub struct Buffer<T> {
 	// this raw form is correct for trivially-copyable elements only. NOT
 	// `inline`: the body calls through the fn pointer, so splicing the raw
 	// block into a caller would bypass the per-element specializations.
-	func modify = (ref self, int i: i >= 0 && i < self.cap, func (T, out T) f) {
+	func modify = (ref self, int i: i >= 0 && i < self.cap, func(T, out T) f) {
 		```
 		#arch: c
 		((T*)(unsigned long long)self->data)[i] = ((T (*)(void *, T))f->code)(f->env, ((T*)(unsigned long long)self->data)[i]);
@@ -520,7 +520,11 @@ pub struct Buffer<T> {
 	// version that also reclaims dst's previous value first (see
 	// owning_buffer_specialize.ts); this raw form is correct for
 	// trivially-destructible elements only.
-	inline func shift = (ref self, int dst: dst >= 0 && dst < self.cap, int src: src >= 0 && src < self.cap) {
+	inline func shift = (
+		ref self,
+		int dst: dst >= 0 && dst < self.cap,
+		int src: src >= 0 && src < self.cap
+	) {
 		```
 		#arch: c
 		T* _slots = (T*)(unsigned long long)self->data;
@@ -587,7 +591,12 @@ pub struct Buffer<T> {
 	// self's scope and is invalidated if self is reassigned. This is the single
 	// primitive every other slice (Array<T>, List<T>, user containers) builds
 	// on — higher layers just `return self.items.slice(start, end)`.
-	func slice = (self, int start: start >= 0, int end: end >= start && end <= self.cap, out view T) {
+	func slice = (
+		self,
+		int start: start >= 0,
+		int end: end >= start && end <= self.cap,
+		out view T
+	) {
 		```
 		#arch: c
 		nomen_view _r;

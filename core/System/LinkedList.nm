@@ -7,7 +7,7 @@
  * A doubly-linked list of values
  **/
 pub struct LinkedList<T>: Enumerable {
-	var Buffer<T> values = Buffer<T>()
+	var values = Buffer<T>()
 	var nexts = Buffer<int>()
 	var prevs = Buffer<int>()
 	var int head = -1

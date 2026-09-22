@@ -36,17 +36,17 @@ pub struct Arena<T> {
 	// Slot payloads. T = value struct/primitive routes to Buffer<T>; T =
 	// class/trait routes to ClassBuffer<T> (monomorphize rewrites the field),
 	// so slot ownership follows the usual element rules.
-	var Buffer<T> values = Buffer<T>()
+	var values = Buffer<T>()
 	// Per-slot generation, bumped on every free. Slots are calloc'd, so a
 	// fresh slot's generation is 0.
-	var Buffer<int> generations = Buffer<int>()
+	var generations = Buffer<int>()
 	// Freed slot indices available for reuse (LIFO free list). A raw Buffer
 	// plus an explicit count: a `List<int>` field would need its own
 	// monomorphization from inside a generic struct body.
-	var Buffer<int> free_indices = Buffer<int>()
-	var int free_count = 0
+	var free_indices = Buffer<int>()
+	var free_count = 0
 	// High-water mark: every index < count has a slot (live or free).
-	var int count = 0
+	var count = 0
 
 	/**
 	 * A fresh arena with no slots.
@@ -78,7 +78,7 @@ pub struct Arena<T> {
 		}
 		self.values.grow(index + 1)
 		self.values.store(index, value)
-		var ArenaRef<T> handle = ArenaRef<T>()
+		var handle = ArenaRef<T>()
 		handle.index = index
 		handle.generation = self.generations.load_int(index)
 		return handle

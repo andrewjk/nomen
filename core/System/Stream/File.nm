@@ -39,7 +39,7 @@ pub struct File {
 	pub var eof = false
 	// errno of the last operation; 0 = success. Raw #arch bodies set it,
 	// the Result-returning wrappers map it to FileError.
-	var int error = 0
+	var error = 0
 
 	// Maps an errno to its FileError case.
 	func error_of = (int err, out FileError) {
@@ -569,7 +569,7 @@ pub struct File {
 	// (static) Read the entire contents of `path` in one open/read/close.
 	pub func read_all = (string path, out Result<string, FileError>) {
 		var Result<string, FileError> result = .error(FileError.other)
-		var File f = File()
+		var f = File()
 		match f.open(path, "r") {
 			case .ok(did) {
 				match f.readAll() {
@@ -594,7 +594,7 @@ pub struct File {
 	// be deliberate).
 	pub func write_all = (string path, string data, out Result<bool, FileError>) {
 		var Result<bool, FileError> result = .error(FileError.other)
-		var File f = File()
+		var f = File()
 		match f.open(path, "w") {
 			case .ok(did) {
 				match f.writeAll(data) {

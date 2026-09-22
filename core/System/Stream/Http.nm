@@ -28,13 +28,13 @@
 pub struct Http {
 	// HTTP status code from the most recent request (e.g. 200). 0 when the
 	// request failed (the `error` side of the get/post Result says why).
-	pub var int status = 0
+	pub var status = 0
 
 	// Internal failure code from the most recent request: 0 = success,
 	// 1 = DNS resolution, 2 = socket creation, 3 = connect, 6 = send failed.
 	// Mirrors Tcp's codes on the connect path; the Result-returning wrappers
 	// map it to HttpError.
-	var int error = 0
+	var error = 0
 
 	// Maps the raw failure code to its HttpError case.
 	func error_of = (int err, out HttpError) {
@@ -61,7 +61,7 @@ pub struct Http {
 	// on failure).
 	func raw_exchange = (ref self, string method, string url, string body, move out string) {
 		// Parse the URL: [http://]host[:port][/path]
-		var int host_start = 0
+		var host_start = 0
 		if url.starts_with("http://") {
 			host_start = 7
 		}
@@ -77,13 +77,13 @@ pub struct Http {
 				name_end = colon
 			}
 		}
-		var int port = 80
+		var port = 80
 		if name_end != host_end {
 			var string port_text = url.substring(name_end + 1, host_end)
 			port = int.parse(port_text)
 		}
 		var string host = url.substring(host_start, name_end)
-		var string path = "/"
+		var path = "/"
 		if slash >= 0 {
 			path = url.substring(slash, url.length)
 		}

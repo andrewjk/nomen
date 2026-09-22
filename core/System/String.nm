@@ -248,7 +248,7 @@ pub struct string: Stringable, Hashable, Equatable {
 	// are only ever read.
 	pub func replace_first = (self, view string needle, view string replacement, out string) {
 		var sb = StringBuilder()
-		var int i = 0
+		var i = 0
 		var int n = self.length
 		var int nlen = needle.length
 		var bool replaced = nlen == 0
@@ -269,7 +269,7 @@ pub struct string: Stringable, Hashable, Equatable {
 	// left to right. Same edge behavior as replace_first.
 	pub func replace_all = (self, view string needle, view string replacement, out string) {
 		var sb = StringBuilder()
-		var int i = 0
+		var i = 0
 		var int n = self.length
 		var int nlen = needle.length
 		while i < n {
@@ -391,7 +391,7 @@ pub struct string: Stringable, Hashable, Equatable {
 	// Owned copy of self with leading and trailing ASCII whitespace
 	// (tab, LF, VT, FF, CR, space) removed. All-whitespace yields "".
 	pub func trim = (self, out string) {
-		var int start = 0
+		var start = 0
 		while start < self.length; start += 1 {
 			if !self.at(start).is_ascii_space() {
 				break
@@ -421,7 +421,7 @@ pub struct string: Stringable, Hashable, Equatable {
 
 	// Owned copy of self with leading ASCII whitespace removed.
 	pub func trim_start = (self, out string) {
-		var int start = 0
+		var start = 0
 		while start < self.length; start += 1 {
 			if !self.at(start).is_ascii_space() {
 				break
@@ -435,7 +435,7 @@ pub struct string: Stringable, Hashable, Equatable {
 	// bytes — including UTF-8 sequences — pass through unchanged).
 	pub func to_lowercase = (self, out string) {
 		var sb = StringBuilder()
-		var int i = 0
+		var i = 0
 		while i < self.length; i += 1 {
 			var int code = self.at(i) as int
 			if code > 64 && code < 91 {
@@ -450,7 +450,7 @@ pub struct string: Stringable, Hashable, Equatable {
 	// bytes — including UTF-8 sequences — pass through unchanged).
 	pub func to_uppercase = (self, out string) {
 		var sb = StringBuilder()
-		var int i = 0
+		var i = 0
 		while i < self.length; i += 1 {
 			var int code = self.at(i) as int
 			if code > 96 && code < 123 {
@@ -465,7 +465,7 @@ pub struct string: Stringable, Hashable, Equatable {
 // needle matches text at byte offset pos (caller guarantees pos + len fits;
 // the trailing guard makes the bound explicit so `.at` verifies).
 func match_at = (view string text, view string needle, int pos, out bool) {
-	var int i = 0
+	var i = 0
 	var int nlen = needle.length
 	var int n = text.length
 	while i < nlen && pos + i < n {

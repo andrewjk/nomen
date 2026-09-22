@@ -9,7 +9,7 @@
  **/
 pub struct Chars {
 	var view string source
-	var int byte_pos = 0
+	var byte_pos = 0
 
 	pub func #init = (self, view string source) {
 		self.source = source

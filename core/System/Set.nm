@@ -9,7 +9,7 @@
  **/
 pub struct Set<T: Hashable + Equatable> {
 	var length = 0
-	var Buffer<T> slots = Buffer<T>()
+	var slots = Buffer<T>()
 	var used = Buffer<int>()
 
 	pub func add = (ref self, move T value) {

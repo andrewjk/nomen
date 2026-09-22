@@ -16,7 +16,7 @@
 pub class Mutex: Sendable {
 	pub var uint64 handle = 0
 
-pub func #init = (self) {
+	pub func #init = (self) {
 	```
 	#arch: c
 	self->handle = (unsigned long long)__nomen_mutex_create();
@@ -26,9 +26,9 @@ pub func #init = (self) {
 	bl ___nomen_mutex_create
 	str x0, [x19, #8]
 	```
-}
+	}
 
-pub func lock = (self) {
+	pub func lock = (self) {
 	```
 	#arch: c
 	// Fibers park instead of blocking the worker (both models); other
@@ -40,9 +40,9 @@ pub func lock = (self) {
 	ldr x0, [x19, #8]
 	bl ___nomen_mutex_lock
 	```
-}
+	}
 
-pub func unlock = (self) {
+	pub func unlock = (self) {
 	```
 	#arch: c
 	__nomen_mutex_unlock_wake((void *)self->handle);
@@ -52,9 +52,9 @@ pub func unlock = (self) {
 	ldr x0, [x19, #8]
 	bl ___nomen_mutex_unlock_wake
 	```
-}
+	}
 
-pub func #destroy = () {
+	pub func #destroy = () {
 	```
 	#arch: c
 	if (self->handle) {
@@ -70,5 +70,5 @@ pub func #destroy = () {
 	str xzr, [x19, #8]
 	.Lmutex_destroy_end:
 	```
-}
+	}
 }
