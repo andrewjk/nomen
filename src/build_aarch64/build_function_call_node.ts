@@ -873,7 +873,14 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			}
 		}
 
-		if (is_struct && status.struct_return_buffer) {
+		// A class constructor's destination is its staged malloc pointer,
+		// regardless of the enclosing function's sret status — the
+		// return-buffer path below is for VALUE structs only (a class ctor
+		// here would initialize the caller's out slot and orphan the staged
+		// pointer: the -32-at-ret imbalance on allmark's parse).
+		if (is_struct && is_struct.is_class) {
+			emit_asm(status, `ldr x0, [sp]\n`);
+		} else if (is_struct && status.struct_return_buffer) {
 			// Reload the incoming sret pointer from its frame slot (see the
 			// matching reload above): x8 may have been clobbered by any call
 			// emitted between the prologue and here.
@@ -881,8 +888,6 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				emit_asm(status, `ldr x8, [x29, #${status.return_buffer_stack_offset}]\n`);
 			}
 			emit_asm(status, `mov x0, ${status.struct_return_buffer}\n`);
-		} else if (is_struct && is_struct.is_class) {
-			emit_asm(status, `ldr x0, [sp]\n`);
 		} else if (is_struct && !is_struct.is_class) {
 			const temp_addr = `_temp_${temp_counter - 1}`;
 			const temp_offset = status.stack_offsets!.get(temp_addr)!;
@@ -1042,22 +1047,23 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 
 	build_swap_params(node, status);
 
-	// For struct constructors with a temp, load temp address into x0
-	if (is_struct && !status.struct_return_buffer) {
-		if (is_struct.is_class) {
-			emit_asm(status, `ldr x0, [sp], #16\n`);
-		} else {
-			const temp_addr = `_temp_${temp_counter - 1}`;
-			const offset = status.stack_offsets!.get(temp_addr)!;
+	// For struct constructors with a temp, load temp address into x0. The
+	// class pop runs unconditionally — the staged malloc pointer is pushed
+	// for every class ctor (line ~222) and must be popped even inside a
+	// value-struct-returning function (where struct_return_buffer is set).
+	if (is_struct && is_struct.is_class) {
+		emit_asm(status, `ldr x0, [sp], #16\n`);
+	} else if (is_struct && !status.struct_return_buffer) {
+		const temp_addr = `_temp_${temp_counter - 1}`;
+		const offset = status.stack_offsets!.get(temp_addr)!;
+		emit_asm(status, `add x0, x29, #${offset}\n`);
+		// `T(...) + [ ... ]` in an expression position (e.g. a call arg or
+		// return value) lands in the temp above; apply the named-field
+		// overrides to that same temp, then restore x0 (building the
+		// override values may have clobbered it).
+		if (node.field_overrides?.length) {
+			emit_field_overrides(temp_addr, node, build_node, status);
 			emit_asm(status, `add x0, x29, #${offset}\n`);
-			// `T(...) + [ ... ]` in an expression position (e.g. a call arg or
-			// return value) lands in the temp above; apply the named-field
-			// overrides to that same temp, then restore x0 (building the
-			// override values may have clobbered it).
-			if (node.field_overrides?.length) {
-				emit_field_overrides(temp_addr, node, build_node, status);
-				emit_asm(status, `add x0, x29, #${offset}\n`);
-			}
 		}
 	}
 
