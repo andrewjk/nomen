@@ -494,11 +494,19 @@ export default function build_return_node(
 			const is_numeric = /^(\+|-)?\d+$/.test(raw_value);
 			// A bare VARIABLE whose current value is not a heap allocation
 			// owned by this frame (not in heap_strings) holds a borrow — copy
-			// it. String literals are excluded (handled above) and numerics
-			// are excluded (`return 0` hands the caller NULL, which free
-			// tolerates). A var in heap_strings transfers ownership directly
-			// (mark_moved_if_struct below skips its scope-exit free).
-			if (!is_str_lit && !is_numeric && !status.heap_strings?.has(raw_value)) {
+			// it. String literals are excluded (handled above), numerics are
+			// excluded (`return 0` hands the caller NULL, which free
+			// tolerates), and `null` is excluded (`return null` in a
+			// `string?`/nullable return hands back a null pair — strdup'ing it
+			// passes a null pointer to strdup and aborts). A var in
+			// heap_strings transfers ownership directly (mark_moved_if_struct
+			// below skips its scope-exit free).
+			if (
+				!is_str_lit &&
+				!is_numeric &&
+				raw_value !== "null" &&
+				!status.heap_strings?.has(raw_value)
+			) {
 				needs_borrow_strdup = true;
 			}
 		} else if (is_container_borrow_access(node.value)) {
