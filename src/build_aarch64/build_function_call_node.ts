@@ -1057,6 +1057,18 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 	// value-struct-returning function (where struct_return_buffer is set).
 	if (is_struct && is_struct.is_class) {
 		emit_asm(status, `ldr x0, [sp], #16\n`);
+	} else if (is_struct && status.struct_return_buffer) {
+		// A value-struct `_init` leaves x0 at its own internal temp, NOT at
+		// the destination — and the return-buffer path above placed this
+		// value straight at the ENCLOSING function's sret slot. Reload that
+		// slot so a caller that reads x0 as "the fresh value's address"
+		// (e.g. a swap's replacement) copies the real value instead of the
+		// callee's dead frame (the corrupt `List<MarkdownNode>` header).
+		if (status.return_buffer_stack_offset !== undefined) {
+			emit_asm(status, `ldr x0, [x29, #${status.return_buffer_stack_offset}]\n`);
+		} else {
+			emit_asm(status, `mov x0, ${status.struct_return_buffer}\n`);
+		}
 	} else if (is_struct && !status.struct_return_buffer) {
 		const temp_addr = `_temp_${temp_counter - 1}`;
 		const offset = status.stack_offsets!.get(temp_addr)!;
