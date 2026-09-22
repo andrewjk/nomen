@@ -44,19 +44,29 @@ export default function build_if_else_node(
 	const pre_array_cache = status.array_ptr_cache;
 
 	if (node.else_branch) {
+		// Each branch is its OWN scope: a `then`-branch local (e.g. a heap
+		// string) must not stay visible while the `else` branch builds, or a
+		// `return`/fall-through cleanup in the else branch would free it a
+		// second time (it was already released at the then-branch's end).
+		const then_frame = enter_scope_frame(status);
 		status.buffer_data_cache = new Map(pre_cache);
 		status.array_ptr_cache = new Map(pre_array_cache);
 		build_block_with_cursor(node.if_branch!, nir?.then_branch, status);
+		exit_scope_frame(status, then_frame);
 		emit_asm(status, `b end_${label}\n`);
 		emit_asm(status, `else_${label}:\n`);
+		const else_frame = enter_scope_frame(status);
 		status.buffer_data_cache = new Map(pre_cache);
 		status.array_ptr_cache = new Map(pre_array_cache);
 		build_block_with_cursor(node.else_branch, nir?.else_branch, status);
+		exit_scope_frame(status, else_frame);
 	} else {
 		if (node.if_branch) {
+			const then_frame = enter_scope_frame(status);
 			status.buffer_data_cache = new Map(pre_cache);
 			status.array_ptr_cache = new Map(pre_array_cache);
 			build_block_with_cursor(node.if_branch, nir?.then_branch, status);
+			exit_scope_frame(status, then_frame);
 		}
 	}
 
