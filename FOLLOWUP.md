@@ -411,22 +411,22 @@ ABI code, everything works in a fresh worktree). Dev suggestion:
 bundle-assets should stamp the copy with the source mtime so staleness is
 detectable. Interim workaround: `rm -rf cli/core` after pulling changes.
 
-## aarch64: `adr` ±1 MB range on very large translation units
+## aarch64: runtime crashes in the large allmark test binaries
 
-allmark's giant generated test files (`spec-cm.test.nm`, `spec-gfm.test.nm`,
-the `ext-*`/`gfm-*` files) assemble to 1.5-3 MB `.s` and fail to link with
-hundreds of `error: fixup value out of range` on `adr xN, _str_NNN` lines: the
-`adr` (PC-relative ±1 MB) idiom cannot reach the string literals once the
-program is large. Only 2 of 24 allmark aarch64 test files fit inside the
-range; the tiny programs (smoke test, demo) are fine.
+The `adr` / literal-pool ±1 MB range limit was fixed (2026-09-22: `adr xN, SYM`
+on a non-local symbol becomes `adrp`/`add`; `ldr xN, =K` becomes a movz/movk /
+movn+movk materialization — see `asm_expand_adr.ts` and `asm_expand_mov.ts`).
+The whole allmark corpus now assembles and links.
 
-The emitter uses `adr` for string literals, function addresses, and local
-labels. A global `.s` pass could rewrite `adr xN, sym` → `adrp xN,
-sym@PAGE` + `add xN, xN, sym@PAGEOFF` (adrp reaches ±4 GB) for the
-data/function symbols, matching how the adrp/add idioms are already emitted
-elsewhere; local intra-function labels could stay `adr` or move to
-`adrp`/`add` too. Watch for byte-identity test churn and for the branches
-that compare/emit `adr` textually (asm_opt, remat, coalesce).
+What remains is runtime: 22 of 24 `nomen test -a aarch64` files abort
+(SIGSEGV/SIGABRT/SIGTRAP) even though the same programs run clean under
+`--arch c` and nomen's own 3,573-test suite is green on both backends. The
+smoke test and the demo render correctly; the failures are in the larger
+generated binaries (core-heading 880 KB, spec-gfm several MB). One backtrace
+dies in `_platform_strlen` on a null pointer (a string field/pointer that
+should have been initialized), i.e. another value/offset miscompile. Each
+crash needs the usual bisect: dump the generated asm, compare against the C
+backend's output for the same source, and narrow to a function.
 
-Not a regression from the 2026-09-22 fixes — the suite never got past the
-build validator before, so this range limit was simply never reached.
+Repro: `cd ~/Source/allmark/nomen && nomen test -a aarch64` (24 files, 2 pass,
+91 tests pass, 22 crash).
