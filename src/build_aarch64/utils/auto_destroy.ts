@@ -355,20 +355,54 @@ export function emit_destroy_for_anchor_slot(
 	}
 }
 
+/**
+ * Load the address of the sub-object at accumulated offset `acc` from the
+ * object rooted at frame slot `root_slot` into x0. A CLASS root is a pointer
+ * stored in the slot; a VALUE-struct root is inline AT the slot. Nested
+ * value-struct fields keep accumulating offsets from that single base — they
+ * are never re-addressed as if each nested field had its own frame slot. (The
+ * old bug loaded `[x29, root_slot + field_offset]` for a heap class's inline
+ * `List` field, feeding a garbage buffer header to the destroy loop.)
+ */
+function emit_slot_base(
+	status: BuildStatus,
+	root_slot: number,
+	root_is_class: boolean,
+	acc: number,
+) {
+	if (root_is_class) {
+		emit_asm(status, `ldr x0, [x29, #${root_slot}]\n`);
+	} else {
+		emit_asm(status, `add x0, x29, #${root_slot}\n`);
+	}
+	if (acc !== 0) emit_asm(status, `add x0, x0, #${acc}\n`);
+}
+
 function emit_field_destroys_from_slot(
 	status: BuildStatus,
 	struct_type: StructNode,
 	base_offset: number,
+) {
+	emit_field_destroys_at(status, struct_type, base_offset, 0, !!struct_type.is_class);
+}
+
+function emit_field_destroys_at(
+	status: BuildStatus,
+	struct_type: StructNode,
+	root_slot: number,
+	acc: number,
+	root_is_class: boolean,
 ) {
 	for (const field of struct_type.fields) {
 		const offset = get_field_offset_of_fields(struct_type.fields, field.name, status);
 		const field_struct =
 			is_struct_type(resolve_struct_name(field.type.name, field.type.type_args, status), status) ||
 			is_struct_type(field.type.name, status);
+		const field_acc = acc + offset;
 		if (field_struct) {
 			if (field_struct.is_class && !field.type.is_ref) {
-				emit_asm(status, `ldr x0, [x29, #${base_offset}]\n`);
-				emit_asm(status, `ldr x0, [x0, #${offset}]\n`);
+				emit_slot_base(status, root_slot, root_is_class, field_acc);
+				emit_asm(status, `ldr x0, [x0]\n`);
 				emit_asm(status, `str x0, [sp, #-16]!\n`);
 				const label_id = (status.label_counter = (status.label_counter ?? 0) + 1);
 				const skip_label = `.Lskip_defer_${label_id}`;
@@ -381,14 +415,13 @@ function emit_field_destroys_from_slot(
 				emit_asm(status, `ldr x0, [sp], #16\n`);
 				emit_free(status);
 			} else if (has_destroy(field_struct)) {
-				emit_asm(status, `ldr x0, [x29, #${base_offset}]\n`);
-				emit_asm(status, `add x0, x0, #${offset}\n`);
+				emit_slot_base(status, root_slot, root_is_class, field_acc);
 				emit_asm(
 					status,
 					`bl ${resolve_struct_name(field_struct.name, field.type.type_args, status)}_destroy\n`,
 				);
 			}
-			emit_nested_field_destroys_from_slot(status, field_struct, base_offset + offset);
+			emit_field_destroys_at(status, field_struct, root_slot, field_acc, root_is_class);
 		} else if (
 			field.type.name === "string" &&
 			!field.type.is_array &&
@@ -400,33 +433,9 @@ function emit_field_destroys_from_slot(
 			// hold always-heap fields (`_init` strdup's defaults, assignments
 			// strdup non-heap RHS) — either way the slot owns the string. A
 			// `view T` field is excluded: non-owning borrow, nothing to free.
-			emit_asm(status, `ldr x0, [x29, #${base_offset}]\n`);
-			emit_asm(status, `ldr x0, [x0, #${offset}]\n`);
+			emit_slot_base(status, root_slot, root_is_class, field_acc);
+			emit_asm(status, `ldr x0, [x0]\n`);
 			emit_free(status);
-		}
-	}
-}
-
-function emit_nested_field_destroys_from_slot(
-	status: BuildStatus,
-	struct_type: StructNode,
-	base_offset: number,
-) {
-	for (const field of struct_type.fields) {
-		const offset = get_field_offset_of_fields(struct_type.fields, field.name, status);
-		const field_struct =
-			is_struct_type(resolve_struct_name(field.type.name, field.type.type_args, status), status) ||
-			is_struct_type(field.type.name, status);
-		if (field_struct) {
-			if (has_destroy(field_struct)) {
-				emit_asm(status, `ldr x0, [x29, #${base_offset}]\n`);
-				emit_asm(status, `add x0, x0, #${offset}\n`);
-				emit_asm(
-					status,
-					`bl ${resolve_struct_name(field_struct.name, field.type.type_args, status)}_destroy\n`,
-				);
-			}
-			emit_nested_field_destroys_from_slot(status, field_struct, base_offset + offset);
 		}
 	}
 }
