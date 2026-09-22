@@ -12,16 +12,11 @@ import BaseNode from "../nodes/BaseNode.ts";
 import type FunctionNode from "../nodes/FunctionNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
-import build_fiber_spawn_node from "./build_fiber_spawn.ts";
 import build_node from "./build_node.ts";
 import build_nursery_spawn from "./build_nursery_spawn.ts";
 import { is_owned_heap_temp } from "./build_operation_node.ts";
 import build_parameter_node from "./build_parameter_node.ts";
-import {
-	build_thread_detach,
-	build_thread_start,
-	ensure_concurrency_runtime,
-} from "./build_spawn_node.ts";
+import { ensure_concurrency_runtime } from "./build_spawn_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import { find_decl_in_c_scopes } from "./utils/c_scope.ts";
@@ -551,34 +546,10 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				ensure_concurrency_runtime(status);
 				status.used_fibers = true;
 			}
-			// `.start()` on a Thread construction (or a stored Thread
-			// binding) — the surface form of a direct spawn
-			// (CLOSURE.md Phase 3b). The receiver's fields carry
-			// the task closure packed eagerly at the construction site;
-			// submit it to the pool and yield Task<T>.
-			if (access_func.is_thread_start) {
-				build_thread_start(access_func, node.target, status);
-				return;
-			}
-			// `.detach()` on a Thread — the daemon form: a dedicated
-			// detached pthread (never a pool worker), unjoinable, killed by
-			// process exit by design. See ASYNC.md, "Daemon tasks".
-			if (access_func.is_thread_detach) {
-				build_thread_detach(access_func, node.target, status);
-				return;
-			}
-			// `.start[_on](buf)` on a Fiber — the fiber flavor: same packed
-			// task closure, launched on the fiber scheduler (heap stack, or
-			// the caller's buffer for start_on).
-			if (access_func.is_fiber_start) {
-				build_fiber_spawn_node(
-					access_func,
-					node.target,
-					status,
-					access_func.is_fiber_start_on ? access_func.params[0] : undefined,
-				);
-				return;
-			}
+			// Thread.start / Thread.detach / Fiber.start are ordinary
+			// methods on the library classes (ASYNC_PLAN phase 1);
+			// start_on's checker rewrites it to start after validating the
+			// stack buffer.
 			// Escape hatch: `nursery.start(Thread(fn(args)))` — the single
 			// parameter is the Thread construction (or a Thread-typed
 			// expression); launch its packed closure and register the future
@@ -1189,12 +1160,70 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				if (array_wrap) {
 					status.code += array_wrap.prefix;
 				}
+				// A chained spawn-class construction receiver
+				// (`Thread(fn(args)).start()`) is a TEMPORARY instance: the
+				// launch transfers its handles out (the instance's #destroy
+				// is then a no-op) and the instance itself must be freed —
+				// the call is wrapped in a statement expression that does
+				// exactly that. A stored binding is freed by its owner.
+				// ASYNC_PLAN phase 1: the old build_thread_start /
+				// build_thread_detach `target_is_temp` free, moved to the
+				// receiver emission now that start/detach are ordinary
+				// methods. Keyed on the construction flags, never the name.
+				const ctor_target_node =
+					node.target.node_type === "func_call"
+						? (node.target as unknown as {
+								is_thread_ctor?: boolean;
+								is_fiber_ctor?: boolean;
+								is_awaitable_ctor?: boolean;
+							})
+						: undefined;
+				const ctor_temp_receiver = !!(
+					ctor_target_node &&
+					(ctor_target_node.is_thread_ctor ||
+						ctor_target_node.is_fiber_ctor ||
+						ctor_target_node.is_awaitable_ctor)
+				);
+				let ctor_temp_free: string | undefined;
+				let ctor_temp_val: string | undefined;
+				if (ctor_temp_receiver) {
+					const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+					ctor_temp_free = `_ctorr_${id}`;
+					const ctor_mono = mono_type_name(type_from_value_node(node.target));
+					status.code += `({ struct ${ctor_mono} *${ctor_temp_free} = `;
+					{
+						const saved_suppress = status.suppress_dereference;
+						status.suppress_dereference = true;
+						build_node(node.target, status);
+						status.suppress_dereference = saved_suppress;
+					}
+					status.code += `; `;
+					// A non-void launch yields Task<T>: capture the call's
+					// result into a temp so the free can follow the call and
+					// the statement expression still yields the handle (the
+					// last EXPRESSION statement is the value). The type comes
+					// from the call's substituted type (the method's declared
+					// return is still generic — `Task<T>`).
+					const ret = (target_method ?? trait_default_func)?.return_type;
+					if (ret?.name && ret.name !== "void") {
+						const mono_ret = mono_type_name(access_func.type);
+						const ret_is_ptr =
+							!!status.structs.find((s) => s.name === mono_ret && s.is_class) ||
+							!!status.traits.find((t) => t.name === mono_ret);
+						const ret_c = ret_is_ptr ? `struct ${mono_ret} *` : c_type(mono_ret);
+						ctor_temp_val = `_ctorv_${id}`;
+						status.code += `${ret_c} ${ctor_temp_val} = `;
+					}
+				}
 				if (lambda_ret_tmp) {
 					status.code += `${lambda_ret_c} ${lambda_ret_tmp} = `;
 				}
 				status.code += `${label}(`;
 				if (!access_func.is_static) {
-					if (array_wrap) {
+					if (ctor_temp_free) {
+						// The wrapped temp is already the instance pointer.
+						status.code += ctor_temp_free;
+					} else if (array_wrap) {
 						status.code += array_wrap.self_expr;
 					} else {
 						// Emit the receiver (`self`) for a method call. A plain local
@@ -1389,6 +1418,14 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					}
 				}
 				status.code += ")";
+				if (ctor_temp_free) {
+					// Close the temp-receiver statement expression: the
+					// launch consumed the handles, the instance is dead. A
+					// captured result is yielded as the final expression.
+					status.code += `; free(${ctor_temp_free});`;
+					if (ctor_temp_val) status.code += ` ${ctor_temp_val};`;
+					status.code += ` })`;
+				}
 				if (lambda_arg_temps.size > 0) {
 					for (const tmp of lambda_arg_temps.values()) {
 						status.code += `; ${closure_dispose_arm(tmp)}`;

@@ -359,8 +359,32 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 	status.code += `\t_self->cancel_flag = (unsigned long long)_cancel_ptr;\n`;
 	status.code += `\t_self->future = (unsigned long long)_future;\n`;
 	if (info.has_started) status.code += `\t_self->started = 0;\n`;
+	emit_nursery_capture_c(status, kind, (field, expr) => {
+		status.code += `\t_self->${field} = ${expr};\n`;
+	});
 	status.code += `\t_self;\n`;
 	status.code += `})\n`;
+}
+
+/**
+ * LEXICAL NURSERY CAPTURE (ASYNC_PLAN phase 1): a construction lexically
+ * inside an `async` block stores the block's tracking-slot pointers in the
+ * instance, so `.start()` — an ordinary method on the spawn class —
+ * registers the future with the scope that CREATED the deferred call rather
+ * than wherever the launch happens. Library spawn classes only: Thread/Fiber
+ * carry the three capture fields (the generalized Awaitable flavor's field
+ * contract predates them and keeps its historical emission).
+ */
+export function emit_nursery_capture_c(
+	status: BuildStatus,
+	kind: string,
+	emit_field: (field: string, expr: string) => void,
+): void {
+	const nursery_id = status.nursery_stack?.at(-1);
+	if (nursery_id === undefined || (kind !== "Thread" && kind !== "Fiber")) return;
+	emit_field("nursery_futures", `(unsigned long long)&__nomen_nursery_${nursery_id}_futures`);
+	emit_field("nursery_count", `(unsigned long long)&__nomen_nursery_${nursery_id}_count`);
+	emit_field("nursery_cap", `(unsigned long long)&__nomen_nursery_${nursery_id}_cap`);
 }
 
 /**
@@ -517,6 +541,9 @@ function build_fn_value_ctor(
 	status.code += `\t_self->cancel_flag = (unsigned long long)_cancel_ptr;\n`;
 	status.code += `\t_self->future = (unsigned long long)_future;\n`;
 	if (info.has_started) status.code += `\t_self->started = 0;\n`;
+	emit_nursery_capture_c(status, kind, (field, expr) => {
+		status.code += `\t_self->${field} = ${expr};\n`;
+	});
 	status.code += `\t_self;\n`;
 	status.code += `})\n`;
 }

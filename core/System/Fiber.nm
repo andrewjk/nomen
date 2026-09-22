@@ -23,10 +23,12 @@
 // calling thread and never starts worker threads — a cooperative,
 // single-threaded runtime for bare-metal targets.
 //
-// The constructor, `.start`, and `.start_on` are compiler-special-cased
-// (they need the per-site spawn/trampoline machinery), so they are NOT
-// regular methods declared here. The runtime (scheduler, context switch)
-// lives in the build's emitted companion C — see build_fiber_spawn.
+// The constructor and `.start_on(buf)` are compiler-special-cased (they
+// need the per-site spawn/trampoline machinery and the buffer's compile-time
+// byte size); `.start()` is a regular method over the runtime seam — it
+// reads the packed handles from the instance's fields and drives the
+// scheduler. The runtime (scheduler, context switch) lives in the build's
+// emitted companion C — see build_fiber_spawn.
 
 /**
  * A stackful coroutine: lightweight, cooperatively scheduled, parks instead of blocking
@@ -41,6 +43,68 @@ pub class Fiber<T> : Sendable {
 	pub var uint64 future = 0
 	// Must-start flag: set by .start() / .start_on(buf) / nursery.start.
 	pub var started = false
+	// LEXICAL NURSERY CAPTURE (ASYNC_PLAN phase 1): the tracking slots of the
+	// `async` block that lexically encloses the CONSTRUCTION, or 0 when the
+	// construction is outside any block. `.start()` registers the future
+	// through these stored pointers — registration follows the scope that
+	// created the deferred call, not the one that happens to start it. See
+	// Thread.nm's matching fields.
+	pub var uint64 nursery_futures = 0
+	pub var uint64 nursery_count = 0
+	pub var uint64 nursery_cap = 0
+
+	// Start the deferred call on the fiber scheduler and yield the Task<T>
+	// handle. Same shape as Thread.start: consume the machinery, register
+	// with the construction-time nursery (if captured), transfer the handles
+	// out of the instance (started; #destroy no-ops), return the handle.
+	// While the fiber waits, it parks and frees its worker instead of
+	// blocking it.
+	pub func start = (ref self, move out Task<T>) {
+		```
+		#arch: c
+		struct nomen_future *_f = (struct nomen_future *)self->future;
+		_f->refs = self->nursery_futures ? 3 : 2;
+		__nomen_fiber_spawn((struct nomen_closure *)self->task, _f);
+		if (self->nursery_futures) {
+			__nomen_nursery_track((void **)self->nursery_futures, (int *)self->nursery_count, (int *)self->nursery_cap, _f);
+		}
+		```
+		```
+		#arch: aarch64
+		// x19 = self. f = self->future (#32); nursery_futures at #48.
+		ldr x0, [x19, #32]
+		ldr x1, [x19, #48]
+		mov w2, #2
+		cbz x1, .Lnomen_fstart_refs
+		mov w2, #3
+		.Lnomen_fstart_refs:
+		str w2, [x0, #116]
+		// __nomen_fiber_spawn(self->task, f)
+		ldr x0, [x19, #8]
+		ldr x1, [x19, #32]
+		bl ___nomen_fiber_spawn
+		// if (self->nursery_futures) __nomen_nursery_track(futures, count, cap, f)
+		ldr x0, [x19, #48]
+		cbz x0, .Lnomen_fstart_notrack
+		ldr x1, [x19, #56]
+		ldr x2, [x19, #64]
+		ldr x3, [x19, #32]
+		bl ___nomen_nursery_track
+		.Lnomen_fstart_notrack:
+		```
+		var t = Task<T>()
+		t.result_slot = self.result_slot
+		t.cancel_flag = self.cancel_flag
+		t.future = self.future
+		// Transfer the handles out of the instance: the runtime owns
+		// everything now, and #destroy must not touch (or must-start-abort).
+		self.task = 0
+		self.future = 0
+		self.result_slot = 0
+		self.cancel_flag = 0
+		self.started = true
+		return t
+	}
 
 	// Destroying an unstarted Fiber is a programming error (the wrapped
 	// call would silently never run) — report it and abort. A started

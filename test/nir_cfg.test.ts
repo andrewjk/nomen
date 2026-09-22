@@ -16,8 +16,10 @@ import { lower_function } from "../src/nir/from_ast";
 import type FunctionNode from "../src/nodes/FunctionNode";
 import parse from "../src/parse";
 
-function compile_cfg(source: string, name: string): FunctionCfg {
-	const parsed = parse(source, undefined, undefined, { allow_user_raw: true });
+function compile_cfg(source: string, name: string, with_library = false): FunctionCfg {
+	const parsed = parse(source, with_library ? get_library("core") : undefined, undefined, {
+		allow_user_raw: true,
+	});
 	expect(parsed.errors).toEqual([]);
 	const fn = parsed.root.statements.find(
 		(s) => s.node_type === "func" && (s as FunctionNode).name === name,
@@ -425,13 +427,18 @@ pub func flow_facts = (int q, out int) {
 
 test("value-position spawn folds its call arguments' reads into the flat statement", () => {
 	const cfg = compile_cfg(
+		// Thread.start is a library method (ASYNC_PLAN phase 1), so the CFG
+		// test's spawn source imports System to pull the library in.
 		`
+import System
+
 func work = (uint64 arg) {}
 pub func spawn_facts = (uint64 n) {
     var t = Thread(work(n)).start()
 }
 `,
 		"spawn_facts",
+		true,
 	);
 	const decl = cfg.blocks[0].stmts.find((s) => s.op === "declare");
 	expect(decl?.reads).toContain("n");

@@ -21,7 +21,9 @@
 // The pool infrastructure (types, worker loop, submit, shutdown, cancel
 // thread-local) lives in build_spawn_node and is emitted as file-scope C
 // on the first spawn — not in Thread's own methods — so that Thread can be
-// generic without duplicating the pool per instantiation.
+// generic without duplicating the pool per instantiation. The construction
+// (`Thread(fn(args))`, the deferred-call special form) is compiler-emitted;
+// `.start()` / `.detach()` are regular methods over the runtime seam.
 //
 // MUST-START: a Thread value that is destroyed without ever being started
 // is a programming error — #destroy reports it and aborts. start/detach
@@ -43,6 +45,107 @@ pub class Thread<T> : Sendable {
 	pub var uint64 future = 0
 	// Must-start flag: set by .start() / .detach() / nursery.start.
 	pub var started = false
+	// LEXICAL NURSERY CAPTURE (ASYNC_PLAN phase 1): the tracking slots of the
+	// `async` block that lexically encloses the CONSTRUCTION, or 0 when the
+	// construction is outside any block. `.start()` registers the future
+	// through these stored pointers, so registration follows the scope that
+	// created the deferred call — not the one that happens to start it — and
+	// works through an indirect receiver. The pointers address the block's
+	// own futures list slots (the block cannot exit until every registered
+	// task has finished, so a started-before-exit task never registers into
+	// dead storage).
+	pub var uint64 nursery_futures = 0
+	pub var uint64 nursery_count = 0
+	pub var uint64 nursery_cap = 0
+
+	// Start the deferred call on the shared worker pool and yield the
+	// Task<T> handle. Consumes the instance's launch machinery (submit, then
+	// register with the construction-time nursery, if any) and zeroes the
+	// fields, so #destroy becomes a no-op afterwards. The future's refs
+	// account for the trampoline, the returned handle, and the nursery (when
+	// captured).
+	pub func start = (ref self, move out Task<T>) {
+		```
+		#arch: c
+		struct nomen_future *_f = (struct nomen_future *)self->future;
+		_f->refs = self->nursery_futures ? 3 : 2;
+		__nomen_pool_submit((struct nomen_closure *)self->task);
+		if (self->nursery_futures) {
+			__nomen_nursery_track((void **)self->nursery_futures, (int *)self->nursery_count, (int *)self->nursery_cap, _f);
+		}
+		```
+		```
+		#arch: aarch64
+		// x19 = self. f = self->future (#32); nursery_futures at #48.
+		ldr x0, [x19, #32]
+		ldr x1, [x19, #48]
+		mov w2, #2
+		cbz x1, .Lnomen_start_refs
+		mov w2, #3
+		.Lnomen_start_refs:
+		str w2, [x0, #116]
+		// __nomen_pool_submit(self->task)
+		ldr x0, [x19, #8]
+		bl ___nomen_pool_submit
+		// if (self->nursery_futures) __nomen_nursery_track(futures, count, cap, f)
+		ldr x0, [x19, #48]
+		cbz x0, .Lnomen_start_notrack
+		ldr x1, [x19, #56]
+		ldr x2, [x19, #64]
+		ldr x3, [x19, #32]
+		bl ___nomen_nursery_track
+		.Lnomen_start_notrack:
+		```
+		// The handle is a fresh heap Task built through the internal #init;
+		// the caller owns it (a discarded statement form is reclaimed at
+		// scope exit, releasing its refs share).
+		var t = Task<T>()
+		t.result_slot = self.result_slot
+		t.cancel_flag = self.cancel_flag
+		t.future = self.future
+		// Transfer the handles out of the instance: the runtime owns
+		// everything now, and #destroy must not touch (or must-start-abort).
+		self.task = 0
+		self.future = 0
+		self.result_slot = 0
+		self.cancel_flag = 0
+		self.started = true
+		return t
+	}
+
+	// Run the deferred call on a dedicated detached pthread — the daemon
+	// form. Never a pool worker, never joined; process exit kills it
+	// mid-execution BY DESIGN. The unused future (a Thread always carries
+	// the full machinery) is released — first detaching the closure from it,
+	// so the daemon runner owns the closure now.
+	pub func detach = (ref self) {
+		```
+		#arch: c
+		struct nomen_future *_uf = (struct nomen_future *)self->future;
+		if (_uf) {
+			_uf->owner_args = NULL;
+			__nomen_future_release(_uf);
+		}
+		__nomen_task_detach((struct nomen_closure *)self->task);
+		```
+		```
+		#arch: aarch64
+		// if (self->future) { owner_args = NULL; release it }
+		ldr x0, [x19, #32]
+		cbz x0, .Lnomen_detach_nofut
+		str xzr, [x0, #136]
+		bl ___nomen_future_release
+		.Lnomen_detach_nofut:
+		// __nomen_task_detach(self->task)
+		ldr x0, [x19, #8]
+		bl ___nomen_task_detach
+		```
+		self.task = 0
+		self.future = 0
+		self.result_slot = 0
+		self.cancel_flag = 0
+		self.started = true
+	}
 
 	// Destroying an unstarted Thread is a programming error (the wrapped
 	// call would silently never run) — report it and abort. A started

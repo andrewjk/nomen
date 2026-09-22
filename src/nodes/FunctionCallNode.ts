@@ -91,6 +91,16 @@ export default class FunctionCallNode extends BaseNode {
 	 * struct named `Thread` shadows the special form.
 	 */
 	is_thread_ctor?: boolean;
+	/**
+	 * Set by check_magic_ctor when the construction's Sendable validation
+	 * used the enclosing nursery's BORROW exception (phase 3d): a
+	 * non-Sendable class arg crossed as a nursery-bounded borrow. The bound
+	 * is the nursery's join; a `.detach()` launch abandons it, so the
+	 * daemon form rejects a construction carrying this flag (see
+	 * check_access_node). ASYNC_PLAN phase 5 retires the borrow exception
+	 * and with it this flag.
+	 */
+	spawned_borrow_args?: boolean;
 	/** Fiber flavor of the magic spawn constructor (see is_thread_ctor). */
 	is_fiber_ctor?: boolean;
 	/**

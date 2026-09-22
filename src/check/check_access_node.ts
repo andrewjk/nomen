@@ -38,7 +38,6 @@ import {
 } from "./utils/ownership.ts";
 import synthesize_lambda_name from "./utils/synthesize_lambda_name.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
-import validate_spawn_args_sendable from "./utils/validate_spawn_args_sendable.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 import { view_fields_invalidated } from "./utils/view_fields.ts";
 
@@ -443,28 +442,51 @@ function check_access_function_node(
 	// the compiler-special Thread constructor wrapping the call to spawn.
 	// See ASYNC.md, "Escape hatch: passing the nursery", and ASYNC.md.
 	// Special-cased (rather than a real method on Nursery) because the spawn
-	// needs the per-site trampoline machinery.
+	// needs the per-site trampoline machinery. (ASYNC_PLAN: Thread.start /
+	// Fiber.start are ordinary methods as of phase 1 — only this escape
+	// hatch and Fiber.start_on's compile-time stack-buffer validation remain
+	// special-cased.)
 	if (target_type.name === "Nursery" && node.name === "start") {
 		return check_nursery_spawn(node, status);
 	}
 
-	// `Thread(fn(args)).start()` and `Fiber(fn(args)).start[_on](buf)` — the
-	// surface forms of a direct spawn (see ASYNC.md,
-	// CLOSURE.md Phase 3b). The receiver is the magic constructor
-	// or ANY expression of the spawn class's type (a stored
-	// `var t = Thread(...)` binding may be started later). `.start()`
-	// launches the packed task and yields Task<T>; special-cased (rather
-	// than methods on the library class) because the launch needs the
-	// per-site nursery/trampoline context.
-	if (target_type.name === "Thread" && node.name === "start") {
-		return check_spawn_start(target, target_type, node, status, "Thread", false);
+	// `Fiber(fn(args)).start_on(buf)` — the compile-time stack-buffer
+	// validation (fixed array, >= 16 KB) stays as the documented surface
+	// contract; the launch itself delegates to the ordinary Fiber.start
+	// method (ASYNC_PLAN phase 1 — the caller-buffer storage story does not
+	// exist yet, so the fiber runs on a heap stack exactly as before the
+	// migration).
+	if (target_type.name === "Fiber" && node.name === "start_on") {
+		if (!check_spawn_start_on(target, target_type, node, status)) {
+			return false;
+		}
+		node.name = "start";
+		node.params = [];
+		// Fall through: the rewritten call resolves as the ordinary method.
 	}
-	if (target_type.name === "Thread" && node.name === "detach") {
-		return check_spawn_detach(target, target_type, node, status);
+
+	// The daemon launch abandons every scope (ASYNC.md, "Daemon tasks"): a
+	// construction that relied on the enclosing nursery's borrow exception
+	// is sound only while the nursery's join bounds the borrow, which
+	// detach() gives up. The construction records the borrow (see
+	// check_magic_ctor); reject the daemon form here. (The borrow exception
+	// itself is retired in ASYNC_PLAN phase 5, removing this check too.)
+	const detach_target = target.node_type === "func_call" ? (target as FunctionCallNode) : undefined;
+	if (
+		node.name === "detach" &&
+		detach_target?.is_thread_ctor &&
+		(detach_target.params[0] as FunctionCallNode | undefined)?.spawned_borrow_args === true
+	) {
+		add_error(
+			status,
+			"a detached task must own its arguments — it outlives every scope; only a nursery's join bounds a borrow",
+			node.start,
+		);
+		return false;
 	}
-	if (target_type.name === "Fiber" && (node.name === "start" || node.name === "start_on")) {
-		return check_spawn_start(target, target_type, node, status, "Fiber", node.name === "start_on");
-	}
+
+	// Thread.start / Thread.detach / Fiber.start resolve as ordinary methods
+	// on the library classes below.
 
 	// `view T` builtins: .at is a compiler intrinsic that operates on the
 	// (ptr, len) slice directly. It must NOT resolve to the underlying struct's
@@ -1055,156 +1077,55 @@ function check_nursery_spawn(node: AccessFunctionCallNode, status: CheckStatus):
 }
 
 /**
- * Check a `Thread(fn(args)).start()` / `Fiber(fn(args)).start[_on](buf)`
- * call — the surface forms of a direct spawn (see ASYNC.md,
- * CLOSURE.md Phase 3b). The receiver is the magic constructor
- * (already checked — its args were packed eagerly) or any expression of
- * the spawn class's type; this types the expression as `Task<T>`. For
- * `start_on`, also validates the stack buffer: a fixed-size array of at
- * least 16 KB. The build launches the receiver's packed task closure
- * (submitting it to the pool or fiber scheduler) and yields Task<T>.
+ * Validate a `Fiber(fn(args)).start_on(buf)` call's stack buffer (see
+ * ASYNC.md): a fixed-size array of at least 16 KB. The caller rewrites the
+ * access to the ordinary Fiber.start afterwards — this function is
+ * validation only.
  */
-function check_spawn_start(
+function check_spawn_start_on(
 	target: BaseNode,
 	target_type: Type,
 	node: AccessFunctionCallNode,
 	status: CheckStatus,
-	kind: "Thread" | "Fiber",
-	start_on: boolean,
 ): boolean {
 	// The receiver is the magic constructor (the chained form
-	// `Thread(fn(args)).start()`) or any expression of the spawn class's
-	// type (Phase 3b: a stored `var t = Thread(fn(args))` binding). T — the
-	// wrapped call's return type — rides the receiver's type args either
-	// way; for the chained form, fall back to the wrapped call's own type.
-	const ctor = target as FunctionCallNode;
-	const ctor_flagged =
-		target.node_type === "func_call" &&
-		(kind === "Thread" ? ctor.is_thread_ctor : ctor.is_fiber_ctor);
-	const wrapped_call = ctor_flagged ? (ctor.params[0] as FunctionCallNode) : undefined;
-	let return_type = target_type.type_args?.[0];
-	if (!return_type?.name && wrapped_call) return_type = wrapped_call.type;
-	if (!return_type?.name) {
+	// `Fiber(fn(args)).start_on(buf)`) or any Fiber-typed expression.
+	if (node.params.length !== 1) {
 		add_error(
 			status,
-			`${kind}(fn(args)).start expects a spawned call, e.g. ${kind}(work(n)).start()`,
+			`start_on expects a stack buffer argument, e.g. Fiber(work(n)).start_on(buf)`,
 			node.start,
 		);
 		return false;
 	}
-	const call = wrapped_call;
-
-	if (start_on) {
-		if (node.params.length !== 1) {
-			add_error(
-				status,
-				`start_on expects a stack buffer argument, e.g. ${kind}(work(n)).start_on(buf)`,
-				node.start,
-			);
-			return false;
-		}
-		const buf_type = type_from_value_node(node.params[0], status);
-		if (!buf_type.is_array) {
-			add_error(
-				status,
-				`start_on expects a fixed-size array stack buffer (T[N]), got ${buf_type.name || "<unknown>"}`,
-				node.params[0].start,
-			);
-			return false;
-		}
-		const elem_size = buf_type.name === "string" ? 16 : 8;
-		const len_node = buf_type.length;
-		const len =
-			len_node && len_node.node_type === "value"
-				? parseInt((len_node as ValueNode).value, 10)
-				: NaN;
-		if (Number.isNaN(len)) {
-			add_error(
-				status,
-				"start_on expects a fixed-size array (T[N]); the length must be known at compile time",
-				node.params[0].start,
-			);
-			return false;
-		}
-		if (len * elem_size < 16384) {
-			add_error(
-				status,
-				`Fiber stack too small: ${len * elem_size} bytes, minimum is 16384`,
-				node.params[0].start,
-			);
-			return false;
-		}
-	}
-
-	// Type the expression as Task<T> where T is the spawned function's return
-	// type (uint64 for void functions — the result slot exists but is unused).
-	// For the chained form, overwrite the wrapped call's type too: the build's
-	// spawn emission reads call.type.type_args for the monomorphized Task name.
-	const result_type_arg =
-		return_type.name && return_type.name !== "void" && return_type.name !== "?"
-			? return_type
-			: new Type("uint64");
-	const task_type = new Type("Task");
-	task_type.type_args = [result_type_arg];
-	node.function_return_type = return_type;
-	node.type = task_type;
-	if (call) call.type = task_type;
-	if (kind === "Thread") node.is_thread_start = true;
-	else node.is_fiber_start = true;
-	// The Task a spawn yields is a fresh heap allocation (not a borrow), so
-	// a capturing declaration owns and must free it. Without this, the
-	// declaration would be treated as a class alias and leak.
-	node.owned_return = true;
-
-	// Trigger monomorphization of Task<T> so the struct body is emitted.
-	const task_struct = status.structs.find((s) => s.name === "Task");
-	if (task_struct && task_struct.type_params.length > 0) {
-		monomorphize(task_struct, [result_type_arg], status);
-	}
-
-	return true;
-}
-
-/**
- * Check a `Thread(fn(args)).detach()` call — the daemon form (see
- * ASYNC.md, "Daemon tasks"). The wrapped call runs on a dedicated detached
- * pthread (never a pool worker); nobody joins it, and process exit kills it
- * mid-execution BY DESIGN — the std::thread::spawn contract. The daemon
- * owns its own shutdown (a stop channel or flag), not process exit. There
- * is no handle, no future, and no cancellation: statement form only, the
- * expression types as void. The receiver is the magic constructor or any
- * Thread-typed expression (a stored daemon handle).
- */
-function check_spawn_detach(
-	target: BaseNode,
-	target_type: Type,
-	node: AccessFunctionCallNode,
-	status: CheckStatus,
-): boolean {
-	const ctor = target as FunctionCallNode;
-	const wrapped_call =
-		target.node_type === "func_call" && ctor.is_thread_ctor
-			? (ctor.params[0] as FunctionCallNode)
-			: undefined;
-	// A daemon outlives every scope — it must OWN its arguments. A borrow
-	// accepted by the construction inside a nursery is sound only while the
-	// nursery joins; `.detach()` abandons that bound.
-	if (wrapped_call)
-		validate_spawn_args_sendable(
-			wrapped_call,
+	const buf_type = type_from_value_node(node.params[0], status);
+	if (!buf_type.is_array) {
+		add_error(
 			status,
-			false,
-			" — a detached task must own its arguments (it outlives every scope; only a nursery's join bounds a borrow)",
+			`start_on expects a fixed-size array stack buffer (T[N]), got ${buf_type.name || "<unknown>"}`,
+			node.params[0].start,
 		);
-
-	// No Task<T>: the daemon is unjoinable by design. The wrapped call's
-	// return type (T) rides along only so the launch can derive the mono
-	// names — from the wrapped call for the chained form, from the
-	// receiver's type args for a stored binding (never from the receiver's
-	// own type NAME, which is the spawn class itself).
-	node.function_return_type =
-		wrapped_call?.type ?? target_type.type_args?.[0] ?? new Type("uint64");
-	node.type = new Type("void");
-	node.is_thread_detach = true;
+		return false;
+	}
+	const elem_size = buf_type.name === "string" ? 16 : 8;
+	const len_node = buf_type.length;
+	const len =
+		len_node && len_node.node_type === "value" ? parseInt((len_node as ValueNode).value, 10) : NaN;
+	if (Number.isNaN(len)) {
+		add_error(
+			status,
+			"start_on expects a fixed-size array (T[N]); the length must be known at compile time",
+			node.params[0].start,
+		);
+		return false;
+	}
+	if (len * elem_size < 16384) {
+		add_error(
+			status,
+			`Fiber stack too small: ${len * elem_size} bytes, minimum is 16384`,
+			node.params[0].start,
+		);
+		return false;
+	}
 	return true;
 }

@@ -24,6 +24,14 @@ pub class Task<T> : Sendable, Awaitable {
 	pub var uint64 cancel_flag = 0
 	pub var uint64 future = 0
 
+	// INTERNAL (library-only): constructs a zeroed handle. `Thread.start` /
+	// `Fiber.start` build the Task they return through this — a user can
+	// wait/result/cancel a handle, but never constructs a bare one (it would
+	// reference no task at all). The auto-free pass reclaims the returned
+	// handle via #destroy, exactly like a spawn-yielded Task.
+	internal #init = () {
+	}
+
 	// Block until the task finishes. Idempotent — calling twice is safe, and
 	// a Task captured from a nursery spawn can be waited on here AND joined
 	// by the nursery at block exit (both wait on the same shared future).

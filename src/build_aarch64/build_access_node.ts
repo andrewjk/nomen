@@ -33,7 +33,6 @@ import {
 	unwrap_noop_int_cast,
 } from "./access_staging.ts";
 import { array_licm_enabled } from "./array_licm.ts";
-import build_fiber_spawn_node from "./build_fiber_spawn.ts";
 import build_function_call_node from "./build_function_call_node.ts";
 import build_inline_method, {
 	begin_inline_splice,
@@ -44,10 +43,7 @@ import build_inline_method, {
 import build_node from "./build_node.ts";
 import build_nursery_spawn from "./build_nursery_spawn.ts";
 import { build_operand, tree_is_call_free } from "./build_operation_node.ts";
-import build_thread_start, {
-	build_thread_detach,
-	ensure_concurrency_runtime_a64,
-} from "./build_spawn_node.ts";
+import { ensure_concurrency_runtime_a64 } from "./build_spawn_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free, emit_malloc, emit_strdup } from "./utils/audit.ts";
 import {
@@ -651,32 +647,10 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				ensure_concurrency_runtime_a64(status);
 				status.used_fibers = true;
 			}
-			// `.start()` on a Thread construction (or a stored Thread
-			// binding) — submit the packed task closure to the pool and
-			// yield Task<T> (CLOSURE.md Phase 3b).
-			if (access_func.is_thread_start) {
-				build_thread_start(access_func, node.target, status);
-				return;
-			}
-			// `.detach()` on a Thread — the daemon form: a dedicated
-			// detached pthread (never a pool worker), unjoinable, killed by
-			// process exit by design. See ASYNC.md, "Daemon tasks".
-			if (access_func.is_thread_detach) {
-				build_thread_detach(access_func, node.target, status);
-				return;
-			}
-			// `.start[_on](buf)` on a Fiber — the fiber flavor: same packed
-			// task closure, launched on the fiber scheduler (heap stack, or
-			// the caller's buffer for start_on).
-			if (access_func.is_fiber_start) {
-				build_fiber_spawn_node(
-					access_func,
-					node.target,
-					status,
-					access_func.is_fiber_start_on ? access_func.params[0] : undefined,
-				);
-				return;
-			}
+			// Thread.start / Thread.detach / Fiber.start are ordinary
+			// methods on the library classes (ASYNC_PLAN phase 1);
+			// start_on's checker rewrites it to start after validating the
+			// stack buffer.
 			// Escape hatch: `nursery.start(Thread(fn(args)))`. See ASYNC.md.
 			if (access_func.is_nursery_spawn) {
 				build_nursery_spawn(node, access_func, status);
@@ -2765,6 +2739,31 @@ function build_access_method(
 		emit_asm(status, `str x0, [x29, #${trait_recv_slot}]\n`);
 	}
 
+	// A chained spawn-class construction receiver (`Thread(fn(args)).start()`)
+	// is a TEMPORARY instance — park the pointer so it can be freed once the
+	// call has transferred its handles (ASYNC_PLAN phase 1: the old
+	// build_thread_start / build_thread_detach temp free, keyed on the
+	// construction flags).
+	const ctor_temp_node =
+		node.target.node_type === "func_call"
+			? (node.target as unknown as {
+					is_thread_ctor?: boolean;
+					is_fiber_ctor?: boolean;
+					is_awaitable_ctor?: boolean;
+				})
+			: undefined;
+	const ctor_temp_receiver = !!(
+		ctor_temp_node &&
+		(ctor_temp_node.is_thread_ctor ||
+			ctor_temp_node.is_fiber_ctor ||
+			ctor_temp_node.is_awaitable_ctor)
+	);
+	let ctor_recv_slot: number | undefined;
+	if (ctor_temp_receiver && !access_func.is_static && !receiver_is_string) {
+		ctor_recv_slot = allocate_stack_space(status, 8, 8);
+		emit_asm(status, `str x0, [x29, #${ctor_recv_slot}]\n`);
+	}
+
 	const raw_needs_self =
 		!access_func.is_static && access_func.params.length > 0 && !receiver_is_string;
 	// Self-marshal elision (ASM_PLAN_2 tranche F): a raw-only inline
@@ -3214,6 +3213,18 @@ function build_access_method(
 	// Inline capturing lambda args were borrowed by the call — reclaim their
 	// one-shot heap descriptors from the parked slots (x0/x1 preserved).
 	emit_dispose_lambda_args_a64(status, lambda_arg_slots);
+
+	// Free the temporary construction receiver now that the launch has
+	// transferred its handles out of the instance (#destroy would no-op) —
+	// preserving the call's result in x0 (/x1 for a fat pair).
+	if (ctor_recv_slot !== undefined) {
+		emit_asm(status, `str x0, [sp, #-16]!\n`);
+		emit_asm(status, `str x1, [sp, #-16]!\n`);
+		emit_asm(status, `ldr x0, [x29, #${ctor_recv_slot}]\n`);
+		emit_free(status);
+		emit_asm(status, `ldr x1, [sp], #16\n`);
+		emit_asm(status, `ldr x0, [sp], #16\n`);
+	}
 
 	// The callee (string_to_string) copied the receiver's storage — free the
 	// original temp now, preserving the result pair in x0/x1. Stack at this

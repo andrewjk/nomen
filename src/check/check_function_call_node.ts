@@ -1442,21 +1442,10 @@ function derive_annotations_for_access_func(
 		rederive_nursery_spawn_annotations(fc, status);
 		return;
 	}
-	// `Thread(fn(args)).start()` / `Fiber(fn(args)).start[_on](...)` are
-	// compiler-special-cased the same way — there are no Thread/Fiber
-	// methods to resolve, so method resolution would bail.
-	if (receiver_type === "Thread" && fc.name === "start") {
-		rederive_spawn_start_annotations(access_node, fc, status, "Thread", false);
-		return;
-	}
-	if (receiver_type === "Thread" && fc.name === "detach") {
-		rederive_spawn_detach_annotations(access_node, fc, status);
-		return;
-	}
-	if (receiver_type === "Fiber" && (fc.name === "start" || fc.name === "start_on")) {
-		rederive_spawn_start_annotations(access_node, fc, status, "Fiber", fc.name === "start_on");
-		return;
-	}
+	// Thread.start / Thread.detach / Fiber.start are ordinary library
+	// methods (ASYNC_PLAN phase 1); the start_on checker rewrites it to
+	// start after validating the stack buffer, so monomorphised bodies only
+	// ever contain the ordinary method call.
 	const struct = status.structs.find((s) => s.name === receiver_type);
 	if (!struct) return;
 	const func = struct.functions.find((f) => f.name === fc.name);
@@ -1595,7 +1584,11 @@ function check_magic_ctor(node: FunctionCallNode, status: CheckStatus, name: str
 		add_error(status, `Spawned call '${call.name}' did not resolve`, node.start);
 		return false;
 	}
-	validate_spawn_args_sendable(call, status, (status.nursery_depth ?? 0) > 0);
+	const validation = validate_spawn_args_sendable(call, status, (status.nursery_depth ?? 0) > 0);
+	// Record whether the Sendable validation used the enclosing nursery's
+	// borrow exception — the daemon launch (detach) rejects such a
+	// construction, since a daemon outlives the nursery's join bound.
+	call.spawned_borrow_args = validation.borrow_args;
 	stamp_spawn_ctor(node, name);
 	const return_type = call.type;
 	// Monomorphize the class for T so its body (fields, #destroy) is
@@ -1880,97 +1873,6 @@ function rederive_nursery_spawn_annotations(fc: AccessFunctionCallNode, status: 
 	const task_struct = status.structs.find((s) => s.name === "Task");
 	if (task_struct && task_struct.type_params.length > 0) {
 		monomorphize(task_struct, [result_type_arg], status);
-	}
-}
-
-/**
- * Re-derive the annotations for a `Thread(fn(args)).start()` /
- * `Fiber(fn(args)).start[_on](...)` call inside a monomorphised body —
- * mirroring check_spawn_start (check_access_node). The build gates its
- * spawn/fiber-trampoline emission on is_thread_start / is_fiber_start
- * (without them the call falls through to method resolution, which finds no
- * `start`) and the declaration-ownership analysis on owned_return (the Task
- * a spawn yields is a fresh heap allocation, not a borrow).
- */
-function rederive_spawn_start_annotations(
-	access_node: any,
-	fc: AccessFunctionCallNode,
-	status: CheckStatus,
-	name: "Thread" | "Fiber",
-	_start_on: boolean,
-) {
-	// The receiver is either the magic constructor itself (the source body
-	// wrote `Thread(fn(args)).start()`) or ANY expression of the spawn
-	// class's type (Phase 3b: `var t = Thread(fn(args)); …; t.start()` —
-	// starts are no longer chained to the construction). The wrapped call's
-	// return type (T) rides the receiver's type args either way.
-	const ctor = access_node?.target as FunctionCallNode | undefined;
-	const ctor_flagged =
-		ctor?.node_type === "func_call" &&
-		(name === "Thread" ? ctor.is_thread_ctor : ctor.is_fiber_ctor);
-	if (name === "Thread") fc.is_thread_start = true;
-	else fc.is_fiber_start = true;
-	fc.owned_return = true;
-	let return_type: Type | undefined;
-	if (ctor_flagged) {
-		const call = ctor.params[0] as FunctionCallNode;
-		return_type = ctor.function_return_type ?? call.type;
-		if (!return_type?.name) {
-			const func = find_free_function(status, call.name);
-			if (func) return_type = func.return_type;
-		}
-	} else {
-		// A stored receiver: its declared type is the mono spawn class, so
-		// its type args carry T directly.
-		const receiver_type = access_node?.target?.type as Type | undefined;
-		return_type = receiver_type?.type_args?.[0];
-	}
-	if (!return_type?.name) return_type = new Type("uint64");
-	const is_void = !return_type.name || return_type.name === "void" || return_type.name === "?";
-	fc.function_return_type = is_void ? new Type("uint64") : return_type;
-	const result_type_arg = is_void ? new Type("uint64") : return_type;
-	if (!fc.type?.name) {
-		const task_type = new Type("Task");
-		task_type.type_args = [result_type_arg];
-		fc.type = task_type;
-	}
-	const task_struct = status.structs.find((s) => s.name === "Task");
-	if (task_struct && task_struct.type_params.length > 0) {
-		monomorphize(task_struct, [result_type_arg], status);
-	}
-}
-
-/**
- * Re-derive the annotations for a `Thread(fn(args)).detach()` call inside a
- * monomorphised body — mirroring check_spawn_detach (check_access_node).
- * The build gates its detached-pthread emission on is_thread_detach.
- */
-function rederive_spawn_detach_annotations(
-	access_node: any,
-	fc: AccessFunctionCallNode,
-	status: CheckStatus,
-) {
-	// The receiver is the magic constructor or any Thread-typed expression
-	// (Phase 3b allows a stored daemon handle). Only the flag matters: the
-	// detach emitter reads the task closure from the receiver's fields.
-	fc.is_thread_detach = true;
-	const ctor = access_node?.target as FunctionCallNode | undefined;
-	if (ctor?.node_type === "func_call" && ctor.is_thread_ctor && ctor.params[0]) {
-		const call = ctor.params[0] as FunctionCallNode;
-		let return_type = ctor.function_return_type ?? call.type;
-		if (!return_type?.name) {
-			const func = find_free_function(status, call.name);
-			if (func) return_type = func.return_type;
-		}
-		fc.function_return_type = return_type;
-	} else {
-		// A stored receiver: T rides the receiver's type args (never the
-		// receiver's own type NAME — that is the spawn class itself).
-		fc.function_return_type =
-			(access_node?.target?.type as Type | undefined)?.type_args?.[0] ?? new Type("uint64");
-	}
-	if (!fc.type?.name) {
-		fc.type = new Type("void");
 	}
 }
 

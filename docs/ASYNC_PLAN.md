@@ -271,14 +271,32 @@ diagnostic (forcing a lambda literal whose captures the compiler can see).
 
 Each phase is independently landable; later ones assume earlier ones.
 
-1. **`start`/`detach`/`start_on` as real methods.** Declare them in
-   `Thread.nm`/`Fiber.nm` over the `Task.*` seam; give `Task<T>` a real,
-   **internal** `#init` so `start` can return it as a declared type. Registration
-   moves to **lexical-at-construction**: the `#spawn` construction captures the
-   enclosing nursery's tracking slots into the instance, and `start` registers
-   from the stored pointer. Drop the name dispatch in `check_access_node.ts` /
-   `check_function_call_node.ts`. (This is the crux — the per-site trampoline and
-   packed env are unchanged; only the dispatch and the nursery source move.)
+1. **`start`/`detach`/`start_on` as real methods.** ✅ **DONE** (branch
+   `async`). `Thread.nm` declares `start` (returns `move out Task<T>` via a
+   real **internal** `#init` on `Task<T>`) and `detach`; `Fiber.nm` declares
+   `start` — raw `#arch: c`/`#arch: aarch64` bodies over the runtime seam,
+   plus Nomen tail code that builds the Task through the internal `#init` and
+   transfers the handles. Registration is **lexical-at-construction**: Thread/
+   Fiber carry `nursery_futures`/`nursery_count`/`nursery_cap` capture fields
+   that both backends' constructions fill from the enclosing async block's
+   tracking slots, and `start` registers through the stored pointers (refs are
+   uniform: 2, or 3 with a captured nursery — a discarded statement-form Task
+   releases its share via the hoisted-temp destroy, as before). The Thread/
+   Fiber name dispatch is gone from `check_access_node.ts` /
+   `check_function_call_node.ts`, and the per-site `build_thread_start` /
+   `build_thread_detach` / `build_fiber_spawn_node` emitters are deleted. Two
+   deliberate exceptions remain, both recorded at their sites: the
+   **nursery.start escape hatch** (its arg is the construction special form)
+   and **`Fiber.start_on`'s compile-time stack-buffer validation** — the
+   caller-buffer storage story does not exist yet (pre-existing: both
+   backends already ran start_on fibers on heap stacks), so its checker
+   validates the >= 16 KB fixed array and then rewrites the call to the
+   ordinary `Fiber.start`. The chained-temp free moved into the receiver
+   emission of both backends' method-call paths, keyed on the construction
+   flags (never the name). The construction's Sendable borrow exception is
+   recorded on the wrapped call (`spawned_borrow_args`) and the daemon launch
+   rejects it, preserving the phase-3d diagnostic that used to live in the
+   deleted `check_spawn_detach`.
 2. **Traits.** Introduce `Spawnable<T>` (`start` returns `Task<T>`; `detach`);
    keep `Awaitable`; `Thread`/`Fiber` conform to `Spawnable<T>`, `Task<T>` to
    `Awaitable`.

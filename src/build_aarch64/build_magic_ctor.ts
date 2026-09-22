@@ -47,6 +47,11 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 	const desc_name = `__nomen_spawn_${id}_descriptor`;
 	const struct_name = `__nomen_spawn_${id}_args`;
 
+	const nursery_id = status.nursery_stack?.at(-1);
+	const nursery_off =
+		nursery_id !== undefined ? status.nursery_offsets?.get(nursery_id) : undefined;
+	const capture = nursery_capture_a64(status, kind);
+
 	// Arg C types (fat strings ride the 16-byte nomen_string pair).
 	const arg_c_types: string[] = [];
 	const fat_string_args: boolean[] = [];
@@ -153,6 +158,7 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 		if (i > 0) c += ", ";
 		c += `${arg_c_types[i]} arg${i}`;
 	}
+	if (capture) c += capture.helper_params;
 	c += `) {\n`;
 	c += `\tstruct ${struct_name} *a = (struct ${struct_name} *)malloc(sizeof(struct ${struct_name}));\n`;
 	for (let i = 0; i < arg_c_types.length; i++) {
@@ -186,6 +192,7 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 	c += `\tself->cancel_flag = (unsigned long long)a->cancel_flag;\n`;
 	c += `\tself->future = (unsigned long long)f;\n`;
 	if (info.has_started) c += `\tself->started = 0;\n`;
+	if (capture) c += capture.field_stores.join("");
 	c += `\treturn self;\n`;
 	c += `}\n`;
 
@@ -200,6 +207,11 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 		arg_slot.push(total_arg_slots);
 		total_arg_slots += fat_string_args[i] ? 2 : 1;
 	}
+	// The capture addresses ride as trailing helper arguments: the wrapped
+	// call's args fill the leading slots, the three frame addresses the last
+	// three (see nursery_capture_a64).
+	const capture_base_slot = total_arg_slots;
+	if (capture) total_arg_slots += capture.arg_count;
 
 	if (total_arg_slots === 0) {
 		emit_asm(status, `bl _${helper_name}\n`);
@@ -212,6 +224,16 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 			emit_asm(status, `str x0, [x29, #${args_base + arg_slot[i] * 8}]\n`);
 			if (fat_string_args[i]) {
 				emit_asm(status, `str x1, [x29, #${args_base + (arg_slot[i] + 1) * 8}]\n`);
+			}
+		}
+		// The nursery capture slots hold FRAME ADDRESSES of the enclosing
+		// async block's tracking slots (nursery_offsets) — built after the
+		// wrapped-call args (only scratch x9 is touched).
+		if (capture && nursery_off) {
+			const addrs = [nursery_off.futures_off, nursery_off.count_off, nursery_off.cap_off];
+			for (let k = 0; k < addrs.length; k++) {
+				emit_asm(status, `add x9, x29, #${addrs[k]}\n`);
+				emit_asm(status, `str x9, [x29, #${args_base + (capture_base_slot + k) * 8}]\n`);
 			}
 		}
 		const NUM_REG_ARGS = 8;
@@ -351,7 +373,8 @@ function build_fn_value_ctor_a64(
 	c += `\t__nomen_future_release(a->future);\n`;
 	c += `}\n`;
 	c += `static struct nomen_closure ${desc_name} = { (void *)${tramp_name}, NULL, 0, NULL };\n`;
-	c += `void *${helper_name}(struct nomen_closure *fn) {\n`;
+	const fnval_capture = nursery_capture_a64(status, kind);
+	c += `void *${helper_name}(struct nomen_closure *fn${fnval_capture?.helper_params ?? ""}) {\n`;
 	c += `\tstruct ${struct_name} *a = (struct ${struct_name} *)malloc(sizeof(struct ${struct_name}));\n`;
 	c += `\ta->fn = fn;\n`;
 	c += `\ta->result_slot = (${slot_c_type} *)${returns_value ? `malloc(sizeof(${slot_c_type}))` : "malloc(16)"};\n`;
@@ -381,6 +404,7 @@ function build_fn_value_ctor_a64(
 	c += `\tself->cancel_flag = (unsigned long long)a->cancel_flag;\n`;
 	c += `\tself->future = (unsigned long long)f;\n`;
 	if (info.has_started) c += `\tself->started = 0;\n`;
+	if (fnval_capture) c += fnval_capture.field_stores.join("");
 	c += `\treturn self;\n`;
 	c += `}\n`;
 
@@ -411,6 +435,48 @@ function build_fn_value_ctor_a64(
 		if (!status.moved) status.moved = new Set();
 		status.moved.add(name);
 	}
+	// Nursery capture addresses ride as trailing helper args (x1-x3; the
+	// user closure occupies x0).
+	if (fnval_capture) {
+		const fnval_nursery_id = status.nursery_stack?.at(-1);
+		const fnval_off =
+			fnval_nursery_id !== undefined ? status.nursery_offsets?.get(fnval_nursery_id) : undefined;
+		if (fnval_off) {
+			const fnval_park = allocate_stack_space(status, 8, 8);
+			emit_asm(status, `str x0, [x29, #${fnval_park}]\n`);
+			emit_asm(status, `add x1, x29, #${fnval_off.futures_off}\n`);
+			emit_asm(status, `add x2, x29, #${fnval_off.count_off}\n`);
+			emit_asm(status, `add x3, x29, #${fnval_off.cap_off}\n`);
+			emit_asm(status, `ldr x0, [x29, #${fnval_park}]\n`);
+		}
+	}
 	emit_asm(status, `bl _${helper_name}\n`);
 	// x0 = the Thread/Fiber instance pointer.
+}
+
+/**
+ * LEXICAL NURSERY CAPTURE (ASYNC_PLAN phase 1), aarch64 backend. The
+ * construction helper is companion C and cannot address the enclosing async
+ * block's frame, so the assembly passes the three tracking-slot addresses as
+ * trailing helper arguments and the helper stores them into the instance's
+ * capture fields — the lexical-at-construction counterpart of the C
+ * backend's emit_nursery_capture_c. Applies to Thread/Fiber only (they
+ * carry the capture fields).
+ */
+function nursery_capture_a64(
+	status: BuildStatus,
+	kind: string,
+): { helper_params: string; field_stores: string[]; arg_count: number } | undefined {
+	const nursery_id = status.nursery_stack?.at(-1);
+	if (nursery_id === undefined || (kind !== "Thread" && kind !== "Fiber")) return undefined;
+	return {
+		helper_params:
+			", unsigned long long nursery_futures, unsigned long long nursery_count, unsigned long long nursery_cap",
+		field_stores: [
+			`\tself->nursery_futures = nursery_futures;\n`,
+			`\tself->nursery_count = nursery_count;\n`,
+			`\tself->nursery_cap = nursery_cap;\n`,
+		],
+		arg_count: 3,
+	};
 }

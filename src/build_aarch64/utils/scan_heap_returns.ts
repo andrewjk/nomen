@@ -38,19 +38,22 @@ function scan_spawn_callees(root: BaseNode, result: Set<string>) {
 	const visit = (node: any): void => {
 		if (!node || typeof node !== "object") return;
 		// Spawn sites: the internal SpawnNode (retired keyword form),
-		// `Thread(fn(args)).start()` (direct), and
-		// `name.start(Thread(fn(args)))` (nursery escape hatch) — each
-		// resolves to the wrapped call plus the spawn's function return type.
+		// `Thread(fn(args))` / `Fiber(fn(args))` constructions (direct or
+		// chained, incl. `.start()` / `.start_on(...)` / `.detach()` and the
+		// nursery escape hatch `name.start(Thread(...))`) — each resolves to
+		// the wrapped call plus the spawn's function return type.
 		let spawn_call: any;
 		let spawn_ret: any;
 		if (node.node_type === "spawn") {
 			spawn_call = node.call;
 			spawn_ret = node.function_return_type;
+		} else if (node.node_type === "func_call") {
+			if (node.is_thread_ctor || node.is_fiber_ctor) {
+				spawn_call = node.params?.[0];
+				spawn_ret = node.function_return_type;
+			}
 		} else if (node.node_type === "access" && node.access?.node_type === "access_func") {
-			if (node.access.is_thread_start || node.access.is_fiber_start) {
-				spawn_call = node.target?.params?.[0];
-				spawn_ret = node.access.function_return_type;
-			} else if (node.access.is_nursery_spawn) {
+			if (node.access.is_nursery_spawn) {
 				spawn_call = node.access.params?.[0]?.params?.[0];
 				spawn_ret = node.access.function_return_type;
 			}

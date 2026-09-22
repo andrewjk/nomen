@@ -1,13 +1,6 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
-import { mono_type_name } from "../build_common/mono_name.ts";
-import type AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
-import type FunctionCallNode from "../nodes/FunctionCallNode.ts";
-import Type from "../nodes/Type.ts";
-import build_node from "./build_node.ts";
-import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
-import { allocate_stack_space } from "./utils/stack_var.ts";
 
 /**
  * Pool infrastructure emitted as file-scope C on the first spawn.
@@ -369,7 +362,8 @@ static void *__nomen_detached_run(void *p) {
 	free(d);
 	return NULL;
 }
-static void __nomen_task_detach(struct nomen_closure *task) {
+// Non-static: raw asm (Thread.nm's #destroy/detach bodies) branches into it.
+void __nomen_task_detach(struct nomen_closure *task) {
 	struct nomen_detached_start *d =
 		(struct nomen_detached_start *)malloc(sizeof(struct nomen_detached_start));
 	d->task = task;
@@ -393,6 +387,12 @@ static void __nomen_task_detach(struct nomen_closure *task) {
  * linked program must define them.
  */
 export function ensure_concurrency_runtime_a64(status: BuildStatus): void {
+	// Every caller that pulls the runtime in also makes fiber/pool exit
+	// hooks (main's drain_all / io_shutdown / pool_shutdown) meaningful —
+	// mirror the C backend's ensure_concurrency_runtime, which sets the flag
+	// for exactly this reason (ASYNC_PLAN phase 1: the launch sites moved
+	// into the library's raw bodies, so no per-call-site flag remains).
+	status.used_fibers = true;
 	// The system object is linked into every program next to that program's
 	// own companion, which always defines the runtime; a copy here would
 	// duplicate every symbol at link time. The system object's references
@@ -1148,167 +1148,6 @@ static int __nomen_deadlock_check_worker(void) {
 	exit(2);
 }
 `;
-
-/**
- * Build a `.start()` launch on a `Thread(fn(args))` construction (or a
- * stored Thread binding) — aarch64 backend (CLOSURE.md Phase 3b).
- * A companion-C helper reads the packed handles from the receiver's fields,
- * submits the task closure to the pool, registers the future with the
- * enclosing nursery (if any), transfers the handles out of the instance,
- * and returns the Task<T> handle (or NULL, fire-and-forget); the assembly
- * builds the receiver pointer and calls it.
- */
-export default function build_thread_start(
-	access_func: AccessFunctionCallNode,
-	target: BaseNode,
-	status: BuildStatus,
-) {
-	ensure_concurrency_runtime_a64(status);
-
-	const id = status.spawn_counter ?? 0;
-	status.spawn_counter = id + 1;
-	const helper_name = `nomen_thread_${id}_start`;
-
-	const t_arg = spawn_result_type_arg(access_func.function_return_type);
-	const mono_thread = mono_type_name("Thread", [t_arg]);
-	const mono_task_name = mono_type_name("Task", [t_arg]);
-
-	const nursery_id = status.nursery_stack?.at(-1);
-	const nursery_off =
-		nursery_id !== undefined ? status.nursery_offsets?.get(nursery_id) : undefined;
-	const fire_and_forget = !!access_func.is_statement;
-	// A chained launch consumes a TEMPORARY instance (the construction
-	// expression itself) — the helper frees it after the transfer; a stored
-	// binding's instance is freed by its owner's scope exit.
-	const target_is_temp =
-		target.node_type === "func_call" &&
-		!!((target as FunctionCallNode).is_thread_ctor || (target as FunctionCallNode).is_fiber_ctor);
-	const refs = fire_and_forget
-		? nursery_id !== undefined
-			? 2
-			: 1
-		: nursery_id !== undefined
-			? 3
-			: 2;
-
-	// --- Companion C: the launch helper ---
-	let c = `// --- thread start site ${id} ---\n`;
-	c += `void *${helper_name}(void *self`;
-	if (nursery_off) {
-		c += `, void **__nomen_nursery_futures, int *__nomen_nursery_count, int *__nomen_nursery_cap`;
-	}
-	c += `) {\n`;
-	c += `\textern void *${mono_task_name}_traits[];\n\tstruct ${mono_thread} *t = (struct ${mono_thread} *)self;\n`;
-	c += `\tstruct nomen_future *f = (struct nomen_future *)t->future;\n`;
-	c += `\tvoid *result_ptr = (void *)t->result_slot;\n`;
-	c += `\tunsigned long long *cancel_ptr = (unsigned long long *)t->cancel_flag;\n`;
-	c += `\tstruct nomen_closure *cl = (struct nomen_closure *)t->task;\n`;
-	c += `\tf->refs = ${refs};\n`;
-	c += `\t__nomen_pool_submit(cl);\n`;
-	if (nursery_off) {
-		c += `\t__nomen_nursery_track(__nomen_nursery_futures, __nomen_nursery_count, __nomen_nursery_cap, f);\n`;
-	}
-	// Transfer the handles out of the instance (started; #destroy no-ops).
-	c += `\tt->task = 0;\n`;
-	c += `\tt->future = 0;\n`;
-	c += `\tt->result_slot = 0;\n`;
-	c += `\tt->cancel_flag = 0;\n`;
-	c += `\tt->started = 1;\n`;
-	if (target_is_temp) c += `\tfree(t);\n`;
-	if (fire_and_forget) {
-		c += `\treturn (void *)0;\n`;
-	} else {
-		c += `\tstruct ${mono_task_name} *task = (struct ${mono_task_name} *)malloc(sizeof(struct ${mono_task_name}));\n`;
-		c += `\ttask->_vt = (void **)${mono_task_name}_traits;\n`;
-		c += `\ttask->handle = 0;\n`;
-		c += `\ttask->done = 0;\n`;
-		c += `\ttask->result_slot = (unsigned long long)result_ptr;\n`;
-		c += `\ttask->cancel_flag = (unsigned long long)cancel_ptr;\n`;
-		c += `\ttask->future = (unsigned long long)f;\n`;
-		c += `\treturn task;\n`;
-	}
-	c += `}\n`;
-	if (!status.file_scope_c) status.file_scope_c = "";
-	status.file_scope_c += c;
-
-	// --- Assembly: receiver pointer in x0 (+ nursery slot addresses), call.
-	emit_asm(status, `// thread start site ${id}\n`);
-	build_node(target, status);
-	ensure_newline(status);
-	if (nursery_off) {
-		// Park the receiver pointer while the three nursery tracking
-		// addresses (futures storage, count, capacity) fill x1..x3.
-		const park = allocate_stack_space(status, 8, 8);
-		emit_asm(status, `str x0, [x29, #${park}]\n`);
-		emit_asm(status, `add x1, x29, #${nursery_off.futures_off}\n`);
-		emit_asm(status, `add x2, x29, #${nursery_off.count_off}\n`);
-		emit_asm(status, `add x3, x29, #${nursery_off.cap_off}\n`);
-		emit_asm(status, `ldr x0, [x29, #${park}]\n`);
-	}
-	emit_asm(status, `bl _${helper_name}\n`);
-	// x0 = Task pointer (or NULL for fire-and-forget).
-}
-
-/**
- * Build a `.detach()` launch on a Thread construction — the daemon form
- * (ASYNC.md, "Daemon tasks"), aarch64 backend. The companion helper
- * releases the construction's unused future (detaching the closure from
- * it — the daemon runner owns the closure), hands the task to the detached
- * launcher, and marks the instance started; the assembly calls it.
- */
-export function build_thread_detach(
-	access_func: AccessFunctionCallNode,
-	target: BaseNode,
-	status: BuildStatus,
-): void {
-	ensure_concurrency_runtime_a64(status);
-
-	const id = status.spawn_counter ?? 0;
-	status.spawn_counter = id + 1;
-	const helper_name = `nomen_detach_${id}_start`;
-	const t_arg = spawn_result_type_arg(access_func.function_return_type);
-	const mono_thread = mono_type_name("Thread", [t_arg]);
-
-	// A chained `Thread(fn(args)).detach()` consumes a TEMPORARY instance.
-	const target_is_temp =
-		target.node_type === "func_call" &&
-		!!((target as FunctionCallNode).is_thread_ctor || (target as FunctionCallNode).is_fiber_ctor);
-	let c = `// --- thread detach site ${id} ---\n`;
-	c += `void *${helper_name}(void *self) {\n`;
-	c += `\tstruct ${mono_thread} *t = (struct ${mono_thread} *)self;\n`;
-	c += `\tstruct nomen_future *unused = (struct nomen_future *)t->future;\n`;
-	c += `\tif (unused) {\n`;
-	// The detached runner owns the task closure; the future must not
-	// dispose it at release.
-	c += `\t\tunused->owner_args = NULL;\n`;
-	c += `\t\t__nomen_future_release(unused);\n`;
-	c += `\t}\n`;
-	c += `\t__nomen_task_detach((struct nomen_closure *)t->task);\n`;
-	c += `\tt->task = 0;\n`;
-	c += `\tt->future = 0;\n`;
-	c += `\tt->result_slot = 0;\n`;
-	c += `\tt->cancel_flag = 0;\n`;
-	c += `\tt->started = 1;\n`;
-	if (target_is_temp) c += `\tfree(t);\n`;
-	c += `\treturn (void *)0;\n`;
-	c += `}\n`;
-	if (!status.file_scope_c) status.file_scope_c = "";
-	status.file_scope_c += c;
-
-	emit_asm(status, `// thread detach site ${id}\n`);
-	build_node(target, status);
-	ensure_newline(status);
-	emit_asm(status, `bl _${helper_name}\n`);
-	// x0 = NULL — a daemon yields no Task.
-}
-
-/** The launch's T as a Type: the stamped wrapped-call return type, with
- *  void coerced to uint64 (Task's result-slot convention). */
-function spawn_result_type_arg(return_type: { name?: string } | undefined): Type {
-	return return_type?.name && return_type.name !== "void" && return_type.name !== "?"
-		? new Type(return_type.name)
-		: new Type("uint64");
-}
 
 /**
  * Whether a spawn argument rides the fat-string (ptr, len) pair ABI: its
