@@ -4,6 +4,7 @@ import emission_label from "../build_common/emission_label.ts";
 import { resolve_mono_type } from "../build_common/mono_name.ts";
 import scan_force_heap_strings from "../build_common/scan_force_heap_strings.ts";
 import { moved_param_is_consumed } from "../build_common/scan_moved_param_consumed.ts";
+import scan_reassigned_vars from "../build_common/scan_reassigned_vars.ts";
 import { ALL_FLOAT_TYPES } from "../built_in_types.ts";
 import { lower_function } from "../nir/from_ast.ts";
 import type { NirFunction, NirStmt } from "../nir/nir.ts";
@@ -957,6 +958,8 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 
 	const old_force_heap = status.force_heap_strings;
 	status.force_heap_strings = scan_force_heap_strings(node.statements, status.structs);
+	const old_reassigned_vars = status.reassigned_vars;
+	status.reassigned_vars = scan_reassigned_vars(node.statements);
 
 	// Each function body starts with a fresh Buffer data-pointer cache so a
 	// cache entry established while building an earlier function can't leak in
@@ -1017,6 +1020,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.buffer_data_cache = old_buffer_data_cache;
 	status.array_ptr_cache = old_array_ptr_cache;
 	status.force_heap_strings = old_force_heap;
+	status.reassigned_vars = old_reassigned_vars;
 
 	const loop_regs_used = status.callee_saved_regs_used
 		? [...status.callee_saved_regs_used].sort()

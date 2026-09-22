@@ -4,6 +4,7 @@ import emission_label from "../build_common/emission_label.ts";
 import { is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import scan_force_heap_strings from "../build_common/scan_force_heap_strings.ts";
 import { moved_param_is_consumed } from "../build_common/scan_moved_param_consumed.ts";
+import scan_reassigned_vars from "../build_common/scan_reassigned_vars.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
 import { is_overloaded, mangled_label } from "../check/utils/function_overload.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
@@ -1363,6 +1364,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		const old_param_vars = status.function_param_vars;
 		const old_return_label = status.function_return_label;
 		const old_force_heap = status.force_heap_strings;
+		const old_reassigned_vars = status.reassigned_vars;
 		const old_function_name = status.current_function_name;
 		// A struct declared INSIDE a function body builds its methods while
 		// the enclosing function's whole-function promotions are live. Clear
@@ -1805,6 +1807,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		}
 
 		status.force_heap_strings = scan_force_heap_strings(func.statements, status.structs);
+		status.reassigned_vars = scan_reassigned_vars(func.statements);
 		status.buffer_data_cache = undefined;
 		status.array_ptr_cache = undefined;
 		// Snapshot the moved set so the reclaim below can tell a param moved
@@ -1978,6 +1981,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		status.function_view_params = old_view_params;
 		status.function_return_label = old_return_label;
 		status.force_heap_strings = old_force_heap;
+		status.reassigned_vars = old_reassigned_vars;
 		status.struct_return_buffer = undefined;
 		status.function_return_type = undefined;
 		status.current_function_name = old_function_name;

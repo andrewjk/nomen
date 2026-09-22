@@ -522,6 +522,14 @@ export default interface BuildStatus {
 	 */
 	force_heap_strings?: Set<string>;
 	/**
+	 * Names reassigned anywhere in the current function body (any scope). A
+	 * variable operand of a string concat must NOT be constant-folded to its
+	 * declaration initializer once it is in this set: the reassigned runtime
+	 * value would be ignored (`var tag = ""; tag = f(); "</" + tag + ">"` used
+	 * to fold to `"</>"`). Populated per function by scan_reassigned_vars.
+	 */
+	reassigned_vars?: Set<string>;
+	/**
 	 * String variables that have been reassigned a BORROWED value (e.g.
 	 * `filename = init.args.at(1)`, where `args.at()` returns a pointer into
 	 * argv). Such variables no longer own their value and must NOT be freed at

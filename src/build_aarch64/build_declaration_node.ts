@@ -776,6 +776,10 @@ function resolve_string_value(node: any, status: BuildStatus): string | null {
 	if (node.node_type === "value") {
 		const val = (node as ValueNode).value;
 		if (val.startsWith('"') && val.endsWith('"')) return val;
+		// Only resolve a variable to its declaration initializer while it still
+		// holds it: a reassigned name (`tag = …`) must fold at RUNTIME, not to
+		// the stale initializer.
+		if (status.reassigned_vars?.has(val)) return null;
 		const decl = status.scoped_declarations.find((d) => d.name === val);
 		if (decl && decl.value) return resolve_string_value(decl.value, status);
 	}
