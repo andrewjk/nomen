@@ -216,4 +216,29 @@ pub func main = (Init init) {
 `,
 		);
 	});
+
+	test("heap string returned through an indirect call", async () => {
+		// `call_it(shout, 42)` — a fresh heap string (to_string + concat)
+		// crossing a func-typed value. Cross-function leakage of the build
+		// status's variable_types map once mis-typed `v.to_string()` here (a
+		// library function's `view string v` param answered the lookup), and
+		// the same shape segfaulted both backends.
+		await run(
+			"ff_heap_indirect_return",
+			"42!\ndone\n",
+			`
+func shout = (int v, out string) {
+	return v.to_string() + "!"
+}
+func call_it = (func (int, out string) f, int x, out string) {
+	return f(x)
+}
+pub func main = (Init init) {
+	var string r = call_it(shout, 42)
+	Console.write_line(r)
+	Console.write_line("done")
+}
+`,
+		);
+	});
 });

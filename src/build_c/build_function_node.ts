@@ -308,6 +308,15 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.function_view_params = new Set<string>();
 	const old_return_type = status.function_return_type;
 	status.function_return_type = node.return_type;
+	// variable_types is a per-body NAME→Type map used to recover view-ness and
+	// container-ness of bare identifiers. Scope it to THIS body: a flat map
+	// shared across function builds let a previous function's param/local
+	// (`view string v` in some library method, say) answer this body's name
+	// lookup and mis-type a same-named scalar (`v.to_string()` on an `int v`
+	// emitted a nomen_view load of a long). Params and locals register into
+	// the fresh map below; the outer map returns on the way out.
+	const old_variable_types = status.variable_types;
+	status.variable_types = new Map();
 	const old_nullable_ret_has = status.nullable_ret_has_param;
 	if (is_nullable_struct_type(node.return_type, status)) {
 		status.nullable_ret_has_param = "_ret_has";
@@ -450,6 +459,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.function_variadic_params = old_variadic_params;
 	status.function_view_params = old_view_params;
 	status.function_return_type = old_return_type;
+	status.variable_types = old_variable_types;
 	status.nullable_ret_has_param = old_nullable_ret_has;
 	status.current_function_name = old_function_name;
 	status.current_function = old_current_function;

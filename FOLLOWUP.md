@@ -54,11 +54,28 @@ for the same program: its op-level tracking (`last_result_is_heap` /
 `is_owned_heap_temp`) frees a consumed call-result operand, while the
 aarch64 indirect-call paths (build_function_call_node's `is_func_param`
 arm, build_access_method) appear never to mark their result as a heap
-temp for that free pass. Suspected fix: give the aarch64 indirect call
-the same heap-result marker the direct-call path gets from
-heap_returning_functions, scoped to operands consumed by value ops.
-Discovered while probing the inline-capturing-lambda fixes; direct
-returns (`var string s = f()`) and borrow returns are unaffected.
+temp for that free pass. Discovered while probing the
+inline-capturing-lambda fixes; direct returns (`var string s = f()`) and
+borrow returns are unaffected.
+
+**Update (2026-09-24):** the original SEGFAULT of this shape is fixed —
+the root cause was cross-function leakage of the build status's
+`variable_types` map (a library function's `view string v` param
+answering a later body's same-named scalar lookup, e.g. `v.to_string()`
+on an `int v`, emitting a nomen_view load of a long). Both backends now
+scope `variable_types` per function body. The LEAK remains, and the
+previously "suspected fix" (free the indirect result by SIGNATURE) is
+UNSOUND: the func-type grammar has no `move out` spelling, so
+`func (out string)` cannot express ownership, and a lambda whose body
+returns a borrow of its captured env (the designed behavior asserted by
+test `lambda_arg_capture_method_string`) binds to the same signature as
+a heap-returning lambda — the operator inside `exclaim` cannot
+distinguish them at compile time. Viable fixes: (a) callee-side
+normalization — every closure/NAMED function bound as a func value
+strdups non-heap `out string` returns (what the C backend does for all
+functions via `returns_borrow_var`), making signature-based caller frees
+sound; or (b) an ownership bit on the func-type grammar
+(`func (move out string)`). (a) matches the C ABI today.
 
 ## Residual ownership-tracking gaps (accepted, narrow)
 

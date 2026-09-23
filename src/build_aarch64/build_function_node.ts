@@ -483,6 +483,13 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	const old_struct_param_slots = status.function_struct_param_slots;
 	const old_function_param_types = status.function_param_types;
 	const old_function_local_types = status.function_local_types;
+	// variable_types is a per-body NAME→Type map for bare-identifier typing.
+	// Scope it to THIS body like the maps above: a flat map shared across
+	// function builds let a previous function's local (`view string v` in
+	// some library method) answer this body's lookup and mis-type a
+	// same-named scalar. Declarations register into the fresh map; the
+	// enclosing body's map returns on the way out.
+	const old_variable_types = status.variable_types;
 	status.function_param_regs = new Map();
 	status.function_param_vars = new Set();
 	status.function_array_params = new Set();
@@ -491,6 +498,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.function_struct_param_slots = new Set();
 	status.function_param_types = new Map();
 	status.function_local_types = new Map();
+	status.variable_types = new Map();
 	const old_variadic_params_aarch64 = status.function_variadic_params;
 	const old_view_params = status.function_view_params;
 	status.function_variadic_params = new Set();
@@ -1242,6 +1250,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.function_struct_param_slots = old_struct_param_slots;
 	status.function_param_types = old_function_param_types;
 	status.function_local_types = old_function_local_types;
+	status.variable_types = old_variable_types;
 	status.function_variadic_params = old_variadic_params_aarch64;
 	status.function_view_params = old_view_params;
 	status.function_return_label = old_return_label;
