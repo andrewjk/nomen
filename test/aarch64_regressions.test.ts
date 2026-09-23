@@ -1,6 +1,8 @@
-import { test } from "vite-plus/test";
+import { expect, test } from "vite-plus/test";
 
+import build from "../src/build";
 import build_and_check_output from "./build_and_check_output";
+import { parse_raw } from "./parse_with_imports";
 
 // Regression tests for aarch64 backend bugs found via the Differator port
 // (each ran correctly on C but crashed or corrupted memory on aarch64).
@@ -758,4 +760,35 @@ pub func main = (Init init) {
 }
 `;
 	await build_and_check_output(input, "interp_lambda_second_slot", "5 9\n", true);
+});
+
+// An owned-temp receiver of a consuming `move out string` call
+// (`mk(3).to_string()`, the string_to_string path) frees the temp after the
+// callee copies it. The free emission hardcoded the audit wrapper
+// (`bl _nomen_free_wrap`), so every NON-audit aarch64 link failed with
+// "Undefined symbols: _nomen_free_wrap" — the wrapper only exists in
+// audit_runtime.c. The emission must go through emit_free (audit-conditional).
+test("owned-temp to_string receiver links in non-audit builds", async () => {
+	const input = `
+import System
+
+func mk = (int n, out string) {
+	return n.to_string()
+}
+
+pub func main = (Init init) {
+	Console.write_line(mk(3).to_string())
+	Console.write_line("done")
+}
+`;
+	await build_and_check_output(input, "owned_temp_to_string_free_link", "3\ndone\n", true);
+	// The suite links the audit runtime unconditionally, so the broken config
+	// (a plain `nomen run`/`nomen build` without --audit) can't be exercised
+	// here — assert the emission instead: a non-audit aarch64 build must not
+	// reference the audit-only wrapper at all.
+	const parsed = parse_raw(input);
+	expect(parsed.errors).toEqual([]);
+	const result = build(parsed.root, { arch: "aarch64", audit: false });
+	expect(result.errors ?? []).toEqual([]);
+	expect(result.code).not.toContain("_nomen_free_wrap");
 });

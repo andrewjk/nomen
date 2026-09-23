@@ -1,0 +1,9 @@
+# Repro: owned-temp receiver of a consuming .to_string() on aarch64 (NON-audit build)
+# Before fix: emission hardcoded 'bl _nomen_free_wrap' (audit-only wrapper) =>
+#   link fails: Undefined symbols for architecture arm64: _nomen_free_wrap
+# After fix (nomen run, no --audit):
+3
+done
+--- audit run (wrapper correctly used):
+3
+done

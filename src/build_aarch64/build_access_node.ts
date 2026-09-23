@@ -3222,7 +3222,10 @@ function build_access_method(
 		emit_asm(status, `str x0, [sp, #-16]!\n`);
 		emit_asm(status, `str x1, [sp, #-16]!\n`);
 		emit_asm(status, `mov x0, x9\n`);
-		emit_asm(status, `bl _nomen_free_wrap\n`);
+		// emit_free picks the audit wrapper only when status.audit is set —
+		// a hardcoded `bl _nomen_free_wrap` here left non-audit links with
+		// an undefined symbol (the wrapper exists only in audit_runtime.c).
+		emit_free(status);
 		emit_asm(status, `ldr x1, [sp], #16\n`);
 		emit_asm(status, `ldr x0, [sp], #16\n`);
 		emit_asm(status, `add sp, sp, #16\n`);
