@@ -549,3 +549,38 @@ paired with an audit-wrapped free, or vice versa, along the fiber park/resume
 path. The new `fiber_p2_channel_string_wake_*` regression test runs with
 `audit: false` for this reason. Worth reconciling so fiber programs can be
 audited cleanly.
+
+## aarch64: pure-Nomen 64-bit arithmetic emits looser code than a raw `#arch` body
+
+`Random.next` (splitmix64) was rewritten from a raw `#arch: c`/`#arch: aarch64`
+pair to pure Nomen — verified bit-identical by `test/random.test.ts`'s exact
+BigInt reference on both backends. The C backend lowers it identically (one
+native op per step), but the aarch64 output is ~40 instructions where the
+hand-written body was ~14 (all cheap ALU ops, still call-free):
+
+```
+self.state = self.state + 0x9E3779B97F4A7C15
+var uint64 z = self.state
+z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9
+z = (z ^ (z >> 27)) * 0x94D049BB133111EB
+return z ^ (z >> 31)
+```
+
+The gaps, if this ever becomes hot (or `Random` lands in a tight loop):
+
+1. **Constant materialization.** Each 64-bit literal becomes `movz` + three
+   `movk` (4 instructions); the raw body used one `ldr xN, =CONST` from the
+   literal pool. Hoisting the three constants into `const uint64` locals does
+   not currently help (`asm_remat`/`asm_coalesce` do not fold them here).
+2. **Field-value forwarding.** `self.state = …; var z = self.state` stores and
+   then reloads the field (`str x0, [x19, #8]; mov x0, x19; ldr x0, [x0, #8]`)
+   instead of keeping the value in a register.
+3. **Immediate shift counts.** `z >> 30` does `mov x0, #30; lsr x0, x12, x0`
+   rather than an immediate `lsr x2, x0, #30`. Same for the `mov x1, x0`
+   leftovers around the multiplies.
+
+Neither the C backend nor correctness is affected — this is a code-quality
+note only. Two ways to close it: restore the raw `#arch` bodies (the git
+history has them, plus the pre-rewrite `Random.nm`), or teach the aarch64 ASM
+optimizer the three folds above (which would benefit all pure-Nomen 64-bit
+arithmetic, not just this generator).

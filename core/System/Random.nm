@@ -33,35 +33,18 @@ pub class Random {
 		self.state = seed
 	}
 
-	// The next raw 64-bit value.
+	// The next 64-bit value (splitmix64: golden-ratio step, then two
+	// multiply-xor rounds). Pure Nomen — the 64-bit arithmetic, bitwise
+	// operators, and hex literals all lower directly. The aarch64 codegen is
+	// a little looser than a hand-written `#arch` body would be (constant
+	// materialization, field reloads, non-immediate shift counts); see
+	// FOLLOWUP.md if this ever needs to be hot.
 	pub func next = (ref self, out uint64) {
-		```
-		#arch: c
-		unsigned long long z = (self->state += 0x9E3779B97F4A7C15ULL);
-		z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
-		z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
-		return z ^ (z >> 31);
-		```
-		```
-		#arch: aarch64
-		// x19 = self; state at [x19, #8].
-		ldr x0, [x19, #8]
-		ldr x1, =0x9E3779B97F4A7C15
-		add x0, x0, x1
-		str x0, [x19, #8]
-		// z = (z ^ (z >> 30)) * C1
-		lsr x2, x0, #30
-		eor x0, x0, x2
-		ldr x1, =0xBF58476D1CE4E5B9
-		mul x0, x0, x1
-		// z = (z ^ (z >> 27)) * C2; return z ^ (z >> 31)
-		lsr x2, x0, #27
-		eor x0, x0, x2
-		ldr x1, =0x94D049BB133111EB
-		mul x0, x0, x1
-		lsr x2, x0, #31
-		eor x0, x0, x2
-		```
+		self.state = self.state + 0x9E3779B97F4A7C15
+		var uint64 z = self.state
+		z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9
+		z = (z ^ (z >> 27)) * 0x94D049BB133111EB
+		return z ^ (z >> 31)
 	}
 
 	// The next value in [0, bound). A bound of 0 returns 0. Slight modulo
