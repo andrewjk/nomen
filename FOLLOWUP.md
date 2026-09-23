@@ -584,3 +584,50 @@ note only. Two ways to close it: restore the raw `#arch` bodies (the git
 history has them, plus the pre-rewrite `Random.nm`), or teach the aarch64 ASM
 optimizer the three folds above (which would benefit all pure-Nomen 64-bit
 arithmetic, not just this generator).
+
+## aarch64: zero-argument deferred-call construction fails to compile
+
+`Thread(fn())` / `Fiber(fn())` where the wrapped function takes no arguments
+emits a malformed companion ctor on aarch64 — `void *nomen_spawn_1_ctor(,
+unsigned long long nursery_futures, …)` with an empty first parameter — and
+the clang step rejects it. Found while verifying announcement examples
+(`test/out/aarch64/announce_example/main_companion.m`). The C backend compiles
+and runs the same program cleanly, so the ctor signature emitter drops the
+leading parameter only when the arg list is empty. Every example in
+SPEC.md/README.md happens to pass at least one argument, which is why the
+suite never caught it.
+
+## aarch64: capture-free function-value construction crashes at runtime
+
+`Fiber(() => fn(1)).start()` (capture-free lambda, ≥ 1 argument) compiles but
+the binary crashes at runtime on aarch64; the identical program runs cleanly
+on C. A capturing lambda (`Fiber(() => fn(who))` with `who` a local) works on
+both backends, and the zero-arg capture-free form crashes too. Found while
+verifying announcement examples. Likely the static-descriptor path through the
+spawn adapter (a capture-free lambda gets a static descriptor per CLOSURE.md)
+mis-hands the env/arg slots on aarch64. Related to the recorded
+opaque-closure spawn issues, but distinct: this is a crash, not a leak.
+
+## Chaining `.start().result()` on the temporary Task leaks (both backends)
+
+`const user = Fiber(get_user(id)).start().result()` — calling `result()` on
+the temporary handle instead of storing it — leaks 6 allocations per task on
+BOTH backends (audit: future, result slot, cancel flag, closure, env…). The
+storable-handle form (`var t = Fiber(...).start(); … t.result()`) is clean:
+the handle's `#destroy` runs the release path at scope exit, the temporary's
+evidently does not. Found while verifying announcement examples; the SPEC
+examples all use the handle form, which is why nothing caught it. Same smell
+as the `return`-inside-async join skip: a missing `__nomen_future_release`
+path for a handle that never becomes an lvalue.
+
+## race mode + string-returning tasks leak 2 allocations
+
+`async(mode: race) { Thread(f(key)).start() … }` where `f` returns a `string`
+leaks 2 allocations per nursery on both backends — the unconsumed string
+result slots (winner and loser) never reach a free. `uint64`- and
+void-returning tasks in race mode are clean, and the same string-returning
+tasks in a default `async { }` with `result()` consumed are clean. Consistent
+with the recorded "opaque-closure spawn result leaks the original string"
+posture (leak-never-dangle, bounded), but this is the direct-call form, so the
+trampoline path also needs the unconsumed-result free in the race-wait
+release loop.
