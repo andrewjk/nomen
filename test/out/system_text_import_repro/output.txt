@@ -1,0 +1,149 @@
+# Repro: import System::Text::Regex + one .test.nm, nomen test --arch c
+# Before fix: test TU emitted as .c with Controls/ObjC dragged in ->
+#   Foundation @class NSString errors at clang compile.
+# After fix: Controls not pulled; test TUs use .m + frameworks on macos.
+$ nomen test --in <repro> --arch c
+
+~ NOMEN ~
+
+Found 1 test file(s)
+
+ [32m✓[0m ../../../../../var/folders/j7/hblq8b2n0t5258cz04tslkg80000gp/T/opencode/repro1/src/main.test.nm [2m(1 tests)[0m [2m814ms[0m
+
+ [2mFiles [0m [32m1 passed[0m[2m (1)[0m
+ [2mTests [0m [32m1 passed[0m[2m (1)[0m
+ [2m Time [0m 814ms
+
+
+$ nomen run --in <repro>/src/main.nm --arch c
+
+~ NOMEN ~
+
+Processing /var/folders/j7/hblq8b2n0t5258cz04tslkg80000gp/T/opencode/repro1/src/main.nm
+Created /var/folders/j7/hblq8b2n0t5258cz04tslkg80000gp/T/opencode/repro1/src/build/main.m in 269.88ms
+
+/var/folders/j7/hblq8b2n0t5258cz04tslkg80000gp/T/opencode/repro1/src/build/main.m:4111:8: warning: equality comparison with extraneous parentheses [-Wparentheses-equality]
+ 4111 | if ((c == '(')) {
+      |      ~~^~~~~~
+/var/folders/j7/hblq8b2n0t5258cz04tslkg80000gp/T/opencode/repro1/src/build/main.m:4111:8: note: remove extraneous parentheses around the comparison to silence this warning
+ 4111 | if ((c == '(')) {
+      |     ~  ^     ~
+/var/folders/j7/hblq8b2n0t5258cz04tslkg80000gp/T/opencode/repro1/src/build/main.m:4111:8: note: use '=' to turn this equality comparison into an assignment
+ 4111 | if ((c == '(')) {
+      |        ^~
+      |        =
+/var/folders/j7/hblq8b2n0t5258cz04tslkg80000gp/T/opencode/repro1/src/build/main.m:4114:8: warning: equality comparison with extraneous parentheses [-Wparentheses-equality]
+ 4114 | if ((c == ')')) {
+      |      ~~^~~~~~
+/var/folders/j7/hblq8b2n0t5258cz04tslkg80000gp/T/opencode/repro1/src/build/main.m:4114:8: note: remove extraneous parentheses around the comparison to silence this warning
+ 4114 | if ((c == ')')) {
+      |     ~  ^     ~
+/var/folders/j7/hblq8b2n0t5258cz04tslkg80000gp/T/opencode/repro1/src/build/main.m:4114:8: note: use '=' to turn this equality comparison into an assignment
+ 4114 | if ((c == ')')) {
+      |        ^~
+      |        =
+/var/folders/j7/hblq8b2n0t5258cz04tslkg80000gp/T/opencode/repro1/src/build/main.m:4186:8: warning: equality comparison with extraneous parentheses [-Wparentheses-equality]
+ 4186 | if ((c == '(')) {
+      |      ~~^~~~~~
+/var/folders/j7/hblq8b2n0t5258cz04tslkg80000gp/T/opencode/repro1/src/build/main.m:4186:8: note: remove extraneous parentheses around the comparison to silence this warning
+ 4186 | if ((c == '(')) {
+      |     ~  ^     ~
+/var/folders/j7/hblq8b2n0t5258cz04tslkg80000gp/T/opencode/repro1/src/build/main.m:4186:8: note: use '=' to turn this equality comparison into an assignment
+ 4186 | if ((c == '(')) {
+      |        ^~
+      |        =
+/var/folders/j7/hblq8b2n0t5258cz04tslkg80000gp/T/opencode/repro1/src/build/main.m:4287:8: warning: equality comparison with extraneous parentheses [-Wparentheses-equality]
+ 4287 | if ((c == '(')) {
+      |      ~~^~~~~~
+/var/folders/j7/hblq8b2n0t5258cz04tslkg80000gp/T/opencode/repro1/src/build/main.m:4287:8: note: remove extraneous parentheses around the comparison to silence this warning
+ 4287 | if ((c == '(')) {
+      |     ~  ^     ~
+/var/folders/j7/hblq8b2n0t5258cz04tslkg80000gp/T/opencode/repro1/src/build/main.m:4287:8: note: use '=' to turn this equality comparison into an assignment
+ 4287 | if ((c == '(')) {
+      |        ^~
+      |        =
+/var/folders/j7/hblq8b2n0t5258cz04tslkg80000gp/T/opencode/repro1/src/build/main.m:4290:8: warning: equality comparison with extraneous parentheses [-Wparentheses-equality]
+ 4290 | if ((c == ')')) {
+      |      ~~^~~~~~
+/var/folders/j7/hblq8b2n0t5258cz04tslkg80000gp/T/opencode/repro1/src/build/main.m:4290:8: note: remove extraneous parentheses around the comparison to silence this warning
+ 4290 | if ((c == ')')) {
+      |     ~  ^     ~
+/var/folders/j7/hblq8b2n0t5258cz04tslkg80000gp/T/opencode/repro1/src/build/main.m:4290:8: note: use '=' to turn this equality comparison into an assignment
+ 4290 | if ((c == ')')) {
+      |        ^~
+      |        =
+/var/folders/j7/hblq8b2n0t5258cz04tslkg80000gp/T/opencode/repro1/src/build/main.m:4401:9: warning: equality comparison with extraneous parentheses [-Wparentheses-equality]
+ 4401 | if ((pc == '(')) {
+      |      ~~~^~~~~~
+/var/folders/j7/hblq8b2n0t5258cz04tslkg80000gp/T/opencode/repro1/src/build/main.m:4401:9: note: remove extraneous parentheses around the comparison to silence this warning
+ 4401 | if ((pc == '(')) {
+      |     ~   ^     ~
+/var/folders/j7/hblq8b2n0t5258cz04tslkg80000gp/T/opencode/repro1/src/build/main.m:4401:9: note: use '=' to turn this equality comparison into an assignment
+ 4401 | if ((pc == '(')) {
+      |         ^~
+      |         =
+/var/folders/j7/hblq8b2n0t5258cz04tslkg80000gp/T/opencode/repro1/src/build/main.m:4406:8: warning: equality comparison with extraneous parentheses [-Wparentheses-equality]
+ 4406 | if ((c == '(')) {
+      |      ~~^~~~~~
+/var/folders/j7/hblq8b2n0t5258cz04tslkg80000gp/T/opencode/repro1/src/build/main.m:4406:8: note: remove extraneous parentheses around the comparison to silence this warning
+ 4406 | if ((c == '(')) {
+      |     ~  ^     ~
+/var/folders/j7/hblq8b2n0t5258cz04tslkg80000gp/T/opencode/repro1/src/build/main.m:4406:8: note: use '=' to turn this equality comparison into an assignment
+ 4406 | if ((c == '(')) {
+      |        ^~
+      |        =
+/var/folders/j7/hblq8b2n0t5258cz04tslkg80000gp/T/opencode/repro1/src/build/main.m:4409:8: warning: equality comparison with extraneous parentheses [-Wparentheses-equality]
+ 4409 | if ((c == ')')) {
+      |      ~~^~~~~~
+/var/folders/j7/hblq8b2n0t5258cz04tslkg80000gp/T/opencode/repro1/src/build/main.m:4409:8: note: remove extraneous parentheses around the comparison to silence this warning
+ 4409 | if ((c == ')')) {
+      |     ~  ^     ~
+/var/folders/j7/hblq8b2n0t5258cz04tslkg80000gp/T/opencode/repro1/src/build/main.m:4409:8: note: use '=' to turn this equality comparison into an assignment
+ 4409 | if ((c == ')')) {
+      |        ^~
+      |        =
+/var/folders/j7/hblq8b2n0t5258cz04tslkg80000gp/T/opencode/repro1/src/build/main.m:4465:9: warning: equality comparison with extraneous parentheses [-Wparentheses-equality]
+ 4465 | if ((pc == '(')) {
+      |      ~~~^~~~~~
+/var/folders/j7/hblq8b2n0t5258cz04tslkg80000gp/T/opencode/repro1/src/build/main.m:4465:9: note: remove extraneous parentheses around the comparison to silence this warning
+ 4465 | if ((pc == '(')) {
+      |     ~   ^     ~
+/var/folders/j7/hblq8b2n0t5258cz04tslkg80000gp/T/opencode/repro1/src/build/main.m:4465:9: note: use '=' to turn this equality comparison into an assignment
+ 4465 | if ((pc == '(')) {
+      |         ^~
+      |         =
+/var/folders/j7/hblq8b2n0t5258cz04tslkg80000gp/T/opencode/repro1/src/build/main.m:4588:9: warning: equality comparison with extraneous parentheses [-Wparentheses-equality]
+ 4588 | if ((pc == '(')) {
+      |      ~~~^~~~~~
+/var/folders/j7/hblq8b2n0t5258cz04tslkg80000gp/T/opencode/repro1/src/build/main.m:4588:9: note: remove extraneous parentheses around the comparison to silence this warning
+ 4588 | if ((pc == '(')) {
+      |     ~   ^     ~
+/var/folders/j7/hblq8b2n0t5258cz04tslkg80000gp/T/opencode/repro1/src/build/main.m:4588:9: note: use '=' to turn this equality comparison into an assignment
+ 4588 | if ((pc == '(')) {
+      |         ^~
+      |         =
+/var/folders/j7/hblq8b2n0t5258cz04tslkg80000gp/T/opencode/repro1/src/build/main.m:4821:8: warning: equality comparison with extraneous parentheses [-Wparentheses-equality]
+ 4821 | if ((c == '(')) {
+      |      ~~^~~~~~
+/var/folders/j7/hblq8b2n0t5258cz04tslkg80000gp/T/opencode/repro1/src/build/main.m:4821:8: note: remove extraneous parentheses around the comparison to silence this warning
+ 4821 | if ((c == '(')) {
+      |     ~  ^     ~
+/var/folders/j7/hblq8b2n0t5258cz04tslkg80000gp/T/opencode/repro1/src/build/main.m:4821:8: note: use '=' to turn this equality comparison into an assignment
+ 4821 | if ((c == '(')) {
+      |        ^~
+      |        =
+/var/folders/j7/hblq8b2n0t5258cz04tslkg80000gp/T/opencode/repro1/src/build/main.m:4845:8: warning: equality comparison with extraneous parentheses [-Wparentheses-equality]
+ 4845 | if ((c == '(')) {
+      |      ~~^~~~~~
+/var/folders/j7/hblq8b2n0t5258cz04tslkg80000gp/T/opencode/repro1/src/build/main.m:4845:8: note: remove extraneous parentheses around the comparison to silence this warning
+ 4845 | if ((c == '(')) {
+      |     ~  ^     ~
+/var/folders/j7/hblq8b2n0t5258cz04tslkg80000gp/T/opencode/repro1/src/build/main.m:4845:8: note: use '=' to turn this equality comparison into an assignment
+ 4845 | if ((c == '(')) {
+      |        ^~
+      |        =
+12 warnings generated.
+yes
+
+
+Completed in 217.51ms

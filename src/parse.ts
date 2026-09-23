@@ -229,7 +229,35 @@ export function resolve_linked_types(source: string, library: Library, file_path
 			user_declared_funcs.add(tokens[i + 1].value);
 		}
 	}
-	for (const token of tokens) {
+	// Tokens belonging to an `import A::B::C` statement are path segments, not
+	// type/function references. Scanning them lets a segment that happens to
+	// share a name with an unrelated library type (`Text` in
+	// `import System::Text::Regex` vs `Controls::Text`) drag that type — and
+	// its whole dependency subtree (Controls::Text → Window → the ObjC
+	// runtime) — into the build. Namespaces reached via `import System::<ns>`
+	// are handled separately by the namespace scan above.
+	const import_tokens = new Set<number>();
+	for (let i = 0; i < tokens.length; i++) {
+		if (tokens[i].value !== "import") continue;
+		import_tokens.add(i);
+		let j = i + 1;
+		if (j < tokens.length && /^\w+$/.test(tokens[j].value)) {
+			import_tokens.add(j);
+			j += 1;
+			while (
+				j + 1 < tokens.length &&
+				tokens[j].value === "::" &&
+				/^\w+$/.test(tokens[j + 1].value)
+			) {
+				import_tokens.add(j);
+				import_tokens.add(j + 1);
+				j += 2;
+			}
+		}
+	}
+	for (let i = 0; i < tokens.length; i++) {
+		if (import_tokens.has(i)) continue;
+		const token = tokens[i];
 		if (user_defined.has(token.value)) continue;
 		if (library.types.has(token.value) && !BASE_TYPES.includes(token.value)) {
 			needed.add(token.value);

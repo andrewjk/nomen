@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import build from "../../src/build.ts";
+import build, { default_platform } from "../../src/build.ts";
 import join from "../../src/join.ts";
 import { get_library } from "../../src/lib.ts";
 import parse from "../../src/parse.ts";
@@ -329,7 +329,12 @@ export function run_test_file(
 		audit_obj = path.join(buildDir, "audit_runtime.o");
 		execFileSync("clang", ["-c", runtime_src, "-o", audit_obj]);
 	}
-	const ext = arch === "aarch64" ? ".s" : ".c";
+	const platform = default_platform();
+	// Match the run/build command's emission: ObjC-bearing sources (GUI code
+	// pulled in through the library graph) must land in a `.m` TU on Apple
+	// platforms — the ObjC framework headers are Objective-C, and including
+	// them from a plain `.c` TU fails with `@class NSString` syntax errors.
+	const ext = arch === "aarch64" ? ".s" : platform === "macos" || platform === "ios" ? ".m" : ".c";
 	const codefile = path.join(buildDir, path.basename(entry_path, ".nm") + ext);
 	const outfile = path.join(buildDir, path.basename(entry_path, ".nm"));
 	// The C backend's generated source does `#include "main.h"`, so write the
@@ -337,10 +342,23 @@ export function run_test_file(
 	fs.writeFileSync(path.join(buildDir, "main.h"), buildResult.headers ?? "");
 	fs.writeFileSync(codefile, buildResult.code);
 
-	// Link the harness binary. The harness uses only Console/Time (printf,
-	// clock_gettime), so no platform frameworks are required.
+	// Link the harness binary. Frameworks are passed on Apple platforms for
+	// the same reason as the run/build command: the joined source may reference
+	// ObjC runtime symbols even when the test body doesn't, and unused
+	// frameworks cost nothing at link time.
 	const link_args = ["-o", outfile, codefile];
 	if (audit_obj) link_args.push(audit_obj);
+	if (platform === "macos" || platform === "ios") {
+		link_args.push(
+			"-framework",
+			"CoreGraphics",
+			"-framework",
+			"Foundation",
+			"-framework",
+			"AppKit",
+			"-lobjc",
+		);
+	}
 	try {
 		execFileSync("clang", link_args, {
 			encoding: "utf8",
