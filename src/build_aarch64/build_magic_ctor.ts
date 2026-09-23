@@ -1,9 +1,9 @@
 import { spawn_ctor_class_name, spawn_instance_info } from "../build_c/build_magic_ctor.ts";
+import { spawn_arg_types } from "../build_c/build_spawn_node.ts";
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import c_function_name from "../build_c/utils/c_function_name.ts";
 import c_type from "../build_c/utils/c_type.ts";
 import { c_env_field_type, emit_closure_env_type } from "../build_c/utils/closure_env.ts";
-import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import emission_label from "../build_common/emission_label.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import type FunctionCallNode from "../nodes/FunctionCallNode.ts";
@@ -52,12 +52,18 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 		nursery_id !== undefined ? status.nursery_offsets?.get(nursery_id) : undefined;
 	const capture = nursery_capture_a64(status, kind);
 
-	// Arg C types (fat strings ride the 16-byte nomen_string pair).
+	// Arg C types (fat strings ride the 16-byte nomen_string pair). The type
+	// comes from the CALLEE's declared parameter whenever it resolves
+	// (spawn_arg_types — the same source the C backend reads): an argument's
+	// own node type can differ (an int literal `21` for a `uint64` param
+	// lowers to `long`), which made two construction sites of one callee in
+	// the same TU emit conflicting forward declarations of it and clang
+	// rejected the companion.
+	const arg_types = spawn_arg_types(call, status);
 	const arg_c_types: string[] = [];
 	const fat_string_args: boolean[] = [];
 	for (let i = 0; i < call.params.length; i++) {
-		const arg_type = type_from_value_node(call.params[i]);
-		const mono_name = mono_type_name(arg_type);
+		const mono_name = mono_type_name(arg_types[i]);
 		const is_class = !!status.structs.find((s) => s.name === mono_name && s.is_class);
 		const is_trait = !!status.traits.find((t) => t.name === mono_name);
 		arg_c_types.push(is_class || is_trait ? `struct ${mono_name} *` : `${c_type(mono_name)}`);

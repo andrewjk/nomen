@@ -48,8 +48,7 @@ func pick = (uint64 n, out uint64) {
 			var t = Thread(work(n)).start()
 			return t.result_uint64()
 		}
-		var uint64 m = 21
-		var f = Fiber(work(m)).start()
+		var f = Fiber(work(21)).start()
 		Console.write_line("fallback")
 		var uint64 _ = f.result_uint64()
 	}

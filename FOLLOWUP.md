@@ -432,33 +432,6 @@ adapter can transfer vs duplicate exactly, or reject an opaque string-returning
 closure with a diagnostic (forcing a lambda literal whose captures the compiler
 can see).
 
-## aarch64: repeated spawn constructions of one callee emit conflicting forward declarations
-
-When one function spawns the SAME callee at two construction sites whose
-argument expressions resolve to different C types, the companion file gets
-two conflicting forward declarations of the callee and clang rejects the TU:
-
-```
-func pick = (uint64 n, out uint64) {
-	async {
-		if n > 0 {
-			var t = Thread(work(n)).start()   // arg uint64 → `unsigned long long work(unsigned long long)`
-		}
-		var f = Fiber(work(21)).start()       // literal arg → `unsigned long long work(long)`  ← conflict
-	}
-}
-```
-
-Found while writing the return-in-nursery tests (pre-existing; the same
-program fails to compile on the pre-return-join-fix compiler). The ctor
-helper's parameter type for each packed argument should come from the
-CALLEE's declared parameter type, not the argument expression's inferred
-type — the trampoline already resolves the callee signature correctly
-(src/build_aarch64/build_magic_ctor.ts, the direct-call ctor emission; the
-C backend resolves through the checked call node and is unaffected).
-Workaround: bind the argument to a correctly-typed local first
-(`var uint64 m = 21`).
-
 ## `Fiber.start_on(buf)` runs on a heap stack (spec/impl gap; last name-keyed launch site)
 
 The async migration (docs/ASYNC.md, "Design decisions") made `Thread.start`/`.detach` and `Fiber.start` ordinary
