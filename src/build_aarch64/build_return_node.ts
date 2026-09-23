@@ -22,6 +22,7 @@ import ReturnNode from "../nodes/ReturnNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import { resolve_static_value } from "./build_array_values_node.ts";
 import { get_source_address } from "./build_assignment_node.ts";
+import { emit_nursery_joins_on_return_a64 } from "./build_async_block_node.ts";
 import { emit_string_array_labels, resolve_array_element } from "./build_declaration_node.ts";
 import build_node from "./build_node.ts";
 import { emit_expr_from_nir } from "./emit_nir.ts";
@@ -175,7 +176,9 @@ export default function build_return_node(
 			emit_asm(status, `str xzr, [x8, #${struct_size}]\n`);
 		}
 		// Run scope-exit cleanup for remaining declarations and jump to the
-		// return epilogue (mirrors the void-return path above).
+		// return epilogue (mirrors the void-return path above). The
+		// enclosing nurseries' joins run first (join-before-destroy).
+		emit_nursery_joins_on_return_a64(status);
 		const finalized = status.moved ?? new Set<string>();
 		// A return exits every enclosing scope, not just the innermost frame —
 		// clean declarations from all of them (all_scope_frames).
@@ -211,6 +214,7 @@ export default function build_return_node(
 			emit_asm(status, `mov x0, #0\n`);
 			emit_var_store(status, "x0", status.return_assign, size);
 		} else if (status.function_return_label) {
+			emit_nursery_joins_on_return_a64(status);
 			const finalized = status.moved ?? new Set<string>();
 			for (const decl of all_scope_frames(status).flat()) {
 				if (finalized.has(decl.name)) {
@@ -766,6 +770,12 @@ export default function build_return_node(
 		} else {
 			emit_asm(status, `str x0, [sp, #-16]!\n`);
 		}
+		// The return value is parked on the stack — route through every
+		// enclosing nursery's join BEFORE the scope-exit destroys (the
+		// structured-concurrency contract: a task may hold pointers into
+		// block-scoped resources). The join's `bl`s clobber x0/x1 — the
+		// parked copy is what reaches the epilogue.
+		emit_nursery_joins_on_return_a64(status);
 		for (const decl of all_scope_frames(status).flat()) {
 			if (finalized.has(decl.name)) {
 				// A moved-out value struct still owns its recorded heap string

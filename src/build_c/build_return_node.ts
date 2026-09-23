@@ -17,6 +17,7 @@ import type FunctionNode from "../nodes/FunctionNode.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_array_values_node from "./build_array_values_node.ts";
+import { emit_nursery_joins_on_return_c } from "./build_async_block_node.ts";
 import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import { emit_expr_from_nir, nir_array_elements } from "./emit_nir.ts";
@@ -83,6 +84,7 @@ export default function build_return_node(
 		// value, signal non-null first so the struct-return path below is
 		// free to use _return_val normally.
 		if (ret_is_null) {
+			emit_nursery_joins_on_return_c(status);
 			reclaim_all_c_scopes(status);
 			status.code += `*${ret_has} = 0;\n`;
 			status.code += `return (struct ${status.function_return_type!.name}){0};\n`;
@@ -91,6 +93,7 @@ export default function build_return_node(
 		status.code += `*${ret_has} = 1;\n`;
 	}
 	if (!node.value) {
+		emit_nursery_joins_on_return_c(status);
 		reclaim_all_c_scopes(status);
 		if (status.return_assign) {
 			status.code += `${status.return_assign} = 0;\n`;
@@ -189,6 +192,7 @@ export default function build_return_node(
 		status.code += `_return_val->length = ${return_array_len};\n`;
 		status.code += `${elem_c_type}* _return_data = (${elem_c_type}*)((char*)_return_val + sizeof(struct ${array_struct}));\n`;
 		status.code += `for (long _i = 0; _i < ${return_array_len}; _i++) _return_data[_i] = ${return_array_var}[_i];\n`;
+		emit_nursery_joins_on_return_c(status);
 		reclaim_all_c_scopes(status);
 		status.code += `return _return_val;\n`;
 		return;
@@ -217,6 +221,7 @@ export default function build_return_node(
 		emit_allocations(node.value, status);
 		emit_return_value(node.value, nir_value, status);
 		status.code += `;\n`;
+		emit_nursery_joins_on_return_c(status);
 		reclaim_all_c_scopes(status);
 		status.code += `return;\n`;
 	} else {
@@ -290,6 +295,7 @@ export default function build_return_node(
 			build_node(node.value, status);
 			status.join_needs_owned_string = old_join_owned;
 			status.return_assign = old_return_assign;
+			emit_nursery_joins_on_return_c(status);
 			reclaim_all_c_scopes(status);
 			if (string_join) {
 				status.code += any_branch_owned
@@ -578,6 +584,7 @@ export default function build_return_node(
 		if (has_field_overrides(node.value)) {
 			emit_field_overrides("_return_val", node.value, build_node, status, "", ";\n");
 		}
+		emit_nursery_joins_on_return_c(status);
 		reclaim_all_c_scopes(status);
 		status.code += `return _return_val;\n`;
 	}

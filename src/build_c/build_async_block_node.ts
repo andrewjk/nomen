@@ -44,7 +44,9 @@ export default function build_async_block_node(
 	const futures_name = `__nomen_nursery_${id}_futures`;
 	const count_name = `__nomen_nursery_${id}_count`;
 	const cap_name = `__nomen_nursery_${id}_cap`;
-	const idx_name = `__nomen_nursery_${id}_i`;
+
+	if (!status.nursery_meta) status.nursery_meta = new Map();
+	status.nursery_meta.set(id, { mode: node.mode ?? "all", has_deadline: !!node.timeout });
 
 	status.code += `{\n`;
 	// Growable futures list (FOLLOWUP.md: the fixed array was first capped at
@@ -93,8 +95,41 @@ export default function build_async_block_node(
 
 	status.nursery_stack.pop();
 
-	const is_race = node.mode === "race";
+	emit_nursery_join_c(status, id);
 
+	build_auto_free(status);
+
+	status.code += `}\n`;
+
+	leave_c_scope(status);
+	status.scoped_declarations = old_scoped_declarations;
+	status.deferred_frees = old_deferred_frees;
+}
+
+/**
+ * Emit one nursery's join sequence: the race-mode wait (if any), the
+ * wait+release loop over every registered future, and the futures-list
+ * free. Shared by the block exit and the RETURN path — a `return` inside an
+ * `async { }` block must route through the join (the structured-concurrency
+ * contract: the block's scoped resources must not die under still-running
+ * tasks, and the per-future release must not be skipped). The names are
+ * deterministic per nursery id, so a return site inside the block can
+ * re-emit the same sequence textually (the block's tracking locals are
+ * still in C scope there).
+ */
+export function emit_nursery_join_c(status: BuildStatus, id: number, is_return_path = false): void {
+	const meta = status.nursery_meta?.get(id) ?? { mode: "all", has_deadline: false };
+	const futures_name = `__nomen_nursery_${id}_futures`;
+	const count_name = `__nomen_nursery_${id}_count`;
+	const idx_name = `__nomen_nursery_${id}_i`;
+	// The deadline slot is computed at BLOCK ENTRY (before the body runs —
+	// the SPEC's deadline contract), so its local is in scope at a return
+	// site inside the block; at block exit the same local is reused.
+	const deadline_var = meta.has_deadline ? `_deadline_ms_${id}` : "";
+	if (is_return_path) {
+		status.code += `\t// return inside async block: join nursery ${id} before leaving\n`;
+	}
+	const is_race = meta.mode === "race";
 	if (is_race) {
 		// Race mode: wait until any future completes (or the deadline hits),
 		// then cancel the remaining tasks, then join + release every future
@@ -134,12 +169,20 @@ export default function build_async_block_node(
 	// late registration through a passed Nursery happens before this point.
 	// NULL (nothing was ever registered) frees nothing.
 	status.code += `\tfree(${futures_name});\n`;
+}
 
-	build_auto_free(status);
-
-	status.code += `}\n`;
-
-	leave_c_scope(status);
-	status.scoped_declarations = old_scoped_declarations;
-	status.deferred_frees = old_deferred_frees;
+/**
+ * Emit the join sequence for every nursery the current `return` must route
+ * through — innermost first. Only nurseries belonging to the CURRENT
+ * function (stack depth >= the function's entry depth) apply: a lambda
+ * defined inside an `async { }` block inherits the block's id on
+ * nursery_stack (for lexical spawn captures), but its `return` exits the
+ * lambda, whose frame has no nursery state.
+ */
+export function emit_nursery_joins_on_return_c(status: BuildStatus): void {
+	if (!status.nursery_stack?.length) return;
+	const base = status.function_nursery_depth ?? 0;
+	for (let i = status.nursery_stack.length - 1; i >= base; i--) {
+		emit_nursery_join_c(status, status.nursery_stack[i], true);
+	}
 }

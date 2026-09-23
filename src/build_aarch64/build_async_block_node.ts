@@ -75,44 +75,15 @@ export default function build_async_block_node(
 	let deadline_off: number | undefined;
 	if (node.timeout) {
 		deadline_off = allocate_stack_space(status, 8, 8);
-		// Sentinel: -1 means "no deadline computed yet".
-		emit_asm(status, `mov x0, #-1\n`);
-		emit_asm(status, `str x0, [x29, #${deadline_off}]\n`);
-	}
-
-	if (!status.nursery_offsets) status.nursery_offsets = new Map();
-	status.nursery_offsets.set(id, { futures_off, count_off, cap_off, deadline_off });
-
-	status.nursery_stack ??= [];
-	status.nursery_stack.push(id);
-
-	// Build the nursery body (spawns will look up offsets via nursery_stack).
-	// The body is its own scope: give it a fresh scoped_declarations list (like
-	// if/while/for/match/switch branches do) so its declarations are destroyed
-	// ONCE, at the body's scope exit — otherwise they stay in the function's
-	// list and the function-return cleanup destroys them a SECOND time, after
-	// their memory was already reclaimed (use-after-free; flaky because the
-	// freed block usually still holds the zeroed fields).
-	const old_scoped_declarations = status.scoped_declarations;
-	status.scoped_declarations = [];
-	build_block_with_cursor(node, nir?.body, status);
-	status.scoped_declarations = old_scoped_declarations;
-
-	status.nursery_stack.pop();
-	status.nursery_offsets.delete(id);
-
-	// Emit join loop in assembly.
-	emit_asm(status, `// nursery ${id}: join all futures\n`);
-	emit_asm(status, `ldr x20, [x29, #${futures_off}]\n`); // x20 = futures (heap)
-	emit_asm(status, `ldr w22, [x29, #${count_off}]\n`); // w22 = count
-
-	// If timeout is specified, compute deadline before the join loop.
-	if (deadline_off !== undefined) {
-		emit_asm(status, `// Compute deadline: now + timeout_ms\n`);
+		// Compute the deadline EAGERLY at block entry — the SPEC's contract
+		// ("the deadline is computed before the nursery body runs"), and the
+		// same point the C backend computes it. Both the block-exit join and
+		// a return-path join then simply load the slot.
 		// Build the timeout expression first → x0, and save it across the
 		// clock_gettime call. (Building it here in asm — not into a C helper —
 		// because build_node emits assembly, not C.)
-		build_node(node.timeout!, status);
+		emit_asm(status, `// Compute deadline: now + timeout_ms\n`);
+		build_node(node.timeout, status);
 		ensure_newline(status);
 		emit_asm(status, `str x0, [sp, #-16]!\n`); // save timeout_ms
 		emit_asm(status, `sub sp, sp, #16\n`);
@@ -133,12 +104,63 @@ export default function build_async_block_node(
 		emit_asm(status, `str x0, [x29, #${deadline_off}]\n`);
 	}
 
-	emit_asm(status, `mov x23, #0\n`); // x23 = i
-	const loop_start = `__nursery_${id}_join_start`;
-	const loop_end = `__nursery_${id}_join_end`;
-	const loop_release = `__nursery_${id}_release`;
+	if (!status.nursery_offsets) status.nursery_offsets = new Map();
+	status.nursery_offsets.set(id, { futures_off, count_off, cap_off, deadline_off });
+	if (!status.nursery_meta) status.nursery_meta = new Map();
+	status.nursery_meta.set(id, { mode: node.mode ?? "all", has_deadline: !!node.timeout });
 
-	const is_race = node.mode === "race";
+	status.nursery_stack ??= [];
+	status.nursery_stack.push(id);
+
+	// Build the nursery body (spawns will look up offsets via nursery_stack).
+	// The body is its own scope: give it a fresh scoped_declarations list (like
+	// if/while/for/match/switch branches do) so its declarations are destroyed
+	// ONCE, at the body's scope exit — otherwise they stay in the function's
+	// list and the function-return cleanup destroys them a SECOND time, after
+	// their memory was already reclaimed (use-after-free; flaky because the
+	// freed block usually still holds the zeroed fields).
+	const old_scoped_declarations = status.scoped_declarations;
+	status.scoped_declarations = [];
+	build_block_with_cursor(node, nir?.body, status);
+	status.scoped_declarations = old_scoped_declarations;
+
+	status.nursery_stack.pop();
+
+	// Emit join loop in assembly. The offsets entry stays registered until
+	// after the join emission (the shared helper reads it); a return inside
+	// the body already emitted its own join sequence via the same helper.
+	emit_asm(status, `// nursery ${id}: join all futures\n`);
+	emit_nursery_join_a64(status, id, `__nursery_${id}`);
+	status.nursery_offsets.delete(id);
+	status.nursery_meta?.delete(id);
+}
+
+/**
+ * Emit one nursery's join sequence in assembly: the race-mode wait (if any),
+ * the wait+release loop over every registered future, and the futures-list
+ * free. Shared by the block exit and the RETURN path — a `return` inside an
+ * `async { }` block must route through the join (the structured-concurrency
+ * contract). The nursery's per-invocation state lives at this function's
+ * stack frame (offsets from x29), so a return site inside the block reaches
+ * the same state. `label_prefix` must be unique per emission: the block exit
+ * uses `__nursery_<id>`, a return site `__nursery_<id>_retjoin<N>` (the
+ * block-exit labels would collide with a second loop in the same function).
+ * Clobbers x0-x3, x20, x22, x23 (backend scratch — nothing live across a
+ * join).
+ */
+export function emit_nursery_join_a64(status: BuildStatus, id: number, label_prefix: string): void {
+	const offsets = status.nursery_offsets?.get(id);
+	if (!offsets) return;
+	const { futures_off, count_off, deadline_off } = offsets;
+	const meta = status.nursery_meta?.get(id) ?? { mode: "all", has_deadline: false };
+	const is_race = meta.mode === "race";
+	const loop_start = `${label_prefix}_join_start`;
+	const loop_end = `${label_prefix}_join_end`;
+	const loop_release = `${label_prefix}_release`;
+	const no_list = `${label_prefix}_no_list`;
+
+	emit_asm(status, `ldr x20, [x29, #${futures_off}]\n`); // x20 = futures (heap)
+	emit_asm(status, `ldr w22, [x29, #${count_off}]\n`); // w22 = count
 
 	if (is_race) {
 		// Race mode: poll until any future completes (or the deadline hits),
@@ -154,6 +176,7 @@ export default function build_async_block_node(
 		emit_asm(status, `bl ___nomen_nursery_race_wait\n`);
 	}
 
+	emit_asm(status, `mov x23, xzr\n`); // x23 = i, zeroed once before the loop
 	emit_asm(status, `${loop_start}:\n`);
 	emit_asm(status, `cmp x23, x22\n`);
 	emit_asm(status, `b.ge ${loop_end}\n`);
@@ -194,7 +217,28 @@ export default function build_async_block_node(
 	// Release the growable futures list (every registration happens before
 	// the join completes); NULL when nothing was ever registered.
 	emit_asm(status, `ldr x0, [x29, #${futures_off}]\n`);
-	emit_asm(status, `cbz x0, __nursery_${id}_no_list\n`);
+	emit_asm(status, `cbz x0, ${no_list}\n`);
 	emit_asm(status, `bl _free\n`);
-	emit_asm(status, `__nursery_${id}_no_list:\n`);
+	emit_asm(status, `${no_list}:\n`);
+}
+
+let retjoin_counter = 0;
+
+/**
+ * Emit the join sequence for every nursery the current `return` must route
+ * through — innermost first. Only nurseries belonging to the CURRENT
+ * function (stack depth >= the function's entry depth) apply: a lambda
+ * defined inside an `async { }` block inherits the block's id on
+ * nursery_stack (for lexical spawn captures), but its `return` exits the
+ * lambda, whose frame has no nursery state. The return value must already
+ * be parked (the join's `bl`s clobber x0/x1).
+ */
+export function emit_nursery_joins_on_return_a64(status: BuildStatus): void {
+	if (!status.nursery_stack?.length) return;
+	const base = status.function_nursery_depth ?? 0;
+	for (let i = status.nursery_stack.length - 1; i >= base; i--) {
+		const id = status.nursery_stack[i];
+		emit_asm(status, `// return inside async block: join nursery ${id} before leaving\n`);
+		emit_nursery_join_a64(status, id, `__nursery_${id}_retjoin${retjoin_counter++}`);
+	}
 }

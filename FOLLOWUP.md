@@ -432,38 +432,32 @@ adapter can transfer vs duplicate exactly, or reject an opaque string-returning
 closure with a diagnostic (forcing a lambda literal whose captures the compiler
 can see).
 
-## `return` inside an `async { }` block skips the nursery join (leak + soundness hole)
+## aarch64: repeated spawn constructions of one callee emit conflicting forward declarations
 
-A `return` lexically inside an `async { }` block is emitted BEFORE the block's
-join loop, leaving the join (and its per-future release) unreachable. Found
-while writing `demos/async`: a coordinator that returned the concatenated task
-results from inside its nursery leaked every task's machinery (future, result
-slot, cancel flag, closure, env — ~6 allocations per task) because the
-nursery's `__nomen_future_release` loop never ran; the `result()` calls had
-already joined the tasks, so only the nursery's reference leaked.
+When one function spawns the SAME callee at two construction sites whose
+argument expressions resolve to different C types, the companion file gets
+two conflicting forward declarations of the callee and clang rejects the TU:
 
 ```
-func run_fetch = (out string) {
+func pick = (uint64 n, out uint64) {
 	async {
-		var Task<string> ta = Thread(sleep_letter("A")).start()
-		...
-		return ta.result() + tb.result()   // emitted before the join loop
-	}                                      // <-- join loop lands here: dead code
+		if n > 0 {
+			var t = Thread(work(n)).start()   // arg uint64 → `unsigned long long work(unsigned long long)`
+		}
+		var f = Fiber(work(21)).start()       // literal arg → `unsigned long long work(long)`  ← conflict
+	}
 }
 ```
 
-Both backends are affected (the async block builders emit
-`body → join loop → auto_free`, and the return path in the body short-circuits
-past them). This is more than a leak: the block's join-before-scope-exit
-contract is the structured-concurrency guarantee, so an early return also lets
-block-scoped resources die under still-running tasks. Fix shape: route a
-`return` inside an async block through the block's join (like `break`/
-`continue` reclaim enclosing scopes — see `free_scoped_declarations` in
-build_break_node), or hoist the return value into a block-local and emit the
-return after the join (what the demo does as a workaround).
-
-Discovered 2026-09-23. Workaround in `demos/async/src/main.nm`: assign to a
-local inside the block, return after it.
+Found while writing the return-in-nursery tests (pre-existing; the same
+program fails to compile on the pre-return-join-fix compiler). The ctor
+helper's parameter type for each packed argument should come from the
+CALLEE's declared parameter type, not the argument expression's inferred
+type — the trampoline already resolves the callee signature correctly
+(src/build_aarch64/build_magic_ctor.ts, the direct-call ctor emission; the
+C backend resolves through the checked call node and is unaffected).
+Workaround: bind the argument to a correctly-typed local first
+(`var uint64 m = 21`).
 
 ## `Fiber.start_on(buf)` runs on a heap stack (spec/impl gap; last name-keyed launch site)
 

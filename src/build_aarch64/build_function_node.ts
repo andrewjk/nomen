@@ -172,6 +172,12 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 
 	const old_function_name = status.current_function_name;
 	status.current_function_name = emission_label(node);
+	// The nursery_stack depth at body-entry: a `return` inside this body may
+	// only route through enclosing async nurseries at or above this depth
+	// (ids below belong to an OUTER function's frame — e.g. this is a lambda
+	// defined inside an `async { }` block, whose stack id leaks into this
+	// build for lexical spawn captures).
+	status.function_nursery_depth = status.nursery_stack?.length ?? 0;
 
 	const old_scoped_declarations = status.scoped_declarations;
 	status.scoped_declarations = [];

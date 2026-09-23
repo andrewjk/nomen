@@ -974,6 +974,23 @@ export default interface BuildStatus {
 	 */
 	nursery_stack?: number[];
 	/**
+	 * Per-nursery build metadata keyed by nursery id: the block's race mode
+	 * and whether a deadline slot exists. The return path re-emits a
+	 * nursery's join inline (a `return` inside an `async { }` block must
+	 * route through the join — the structured-concurrency contract), and
+	 * needs the mode/deadline facts to emit the same sequence as block exit.
+	 */
+	nursery_meta?: Map<number, { mode: string; has_deadline: boolean }>;
+	/**
+	 * The nursery_stack depth at the point the CURRENT function body started
+	 * building. A lambda defined inside an `async { }` block builds while the
+	 * block's id is still on the stack (deliberate — its spawn constructions
+	 * capture the lexical nursery), but a `return` inside that lambda exits
+	 * the LAMBDA, not the enclosing function: the return-path join may only
+	 * route through nursery ids at or above this depth.
+	 */
+	function_nursery_depth?: number;
+	/**
 	 * aarch64-only: per-nursery stack frame offsets for the futures array,
 	 * count slot, and (if timeout) deadline slot. Spawns inside a nursery
 	 * pass these addresses to the submit helper so concurrent nursery
