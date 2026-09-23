@@ -585,18 +585,6 @@ history has them, plus the pre-rewrite `Random.nm`), or teach the aarch64 ASM
 optimizer the three folds above (which would benefit all pure-Nomen 64-bit
 arithmetic, not just this generator).
 
-## aarch64: zero-argument deferred-call construction fails to compile
-
-`Thread(fn())` / `Fiber(fn())` where the wrapped function takes no arguments
-emits a malformed companion ctor on aarch64 — `void *nomen_spawn_1_ctor(,
-unsigned long long nursery_futures, …)` with an empty first parameter — and
-the clang step rejects it. Found while verifying announcement examples
-(`test/out/aarch64/announce_example/main_companion.m`). The C backend compiles
-and runs the same program cleanly, so the ctor signature emitter drops the
-leading parameter only when the arg list is empty. Every example in
-SPEC.md/README.md happens to pass at least one argument, which is why the
-suite never caught it.
-
 ## race mode + string-returning tasks leak 2 allocations
 
 `async(mode: race) { Thread(f(key)).start() … }` where `f` returns a `string`

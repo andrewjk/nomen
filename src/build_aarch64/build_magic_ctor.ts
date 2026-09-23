@@ -158,7 +158,13 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 		if (i > 0) c += ", ";
 		c += `${arg_c_types[i]} arg${i}`;
 	}
-	if (capture) c += capture.helper_params;
+	// capture.helper_params carries NO leading comma (a zero-argument
+	// wrapped call has an empty leading list — emitting it verbatim after
+	// `(` produced `ctor(, unsigned long long …)` and clang rejected it).
+	if (capture) {
+		if (arg_c_types.length > 0) c += ", ";
+		c += capture.helper_params;
+	}
 	c += `) {\n`;
 	c += `\tstruct ${struct_name} *a = (struct ${struct_name} *)malloc(sizeof(struct ${struct_name}));\n`;
 	for (let i = 0; i < arg_c_types.length; i++) {
@@ -374,7 +380,7 @@ function build_fn_value_ctor_a64(
 	c += `}\n`;
 	c += `static struct nomen_closure ${desc_name} = { (void *)${tramp_name}, NULL, 0, NULL };\n`;
 	const fnval_capture = nursery_capture_a64(status, kind);
-	c += `void *${helper_name}(struct nomen_closure *fn${fnval_capture?.helper_params ?? ""}) {\n`;
+	c += `void *${helper_name}(struct nomen_closure *fn${fnval_capture ? `, ${fnval_capture.helper_params}` : ""}) {\n`;
 	c += `\tstruct ${struct_name} *a = (struct ${struct_name} *)malloc(sizeof(struct ${struct_name}));\n`;
 	c += `\ta->fn = fn;\n`;
 	c += `\ta->result_slot = (${slot_c_type} *)${returns_value ? `malloc(sizeof(${slot_c_type}))` : "malloc(16)"};\n`;
@@ -470,8 +476,10 @@ function nursery_capture_a64(
 	const nursery_id = status.nursery_stack?.at(-1);
 	if (nursery_id === undefined || (kind !== "Thread" && kind !== "Fiber")) return undefined;
 	return {
+		// No leading comma — the consumers join this onto their existing
+		// parameter list (which may be EMPTY: a zero-argument wrapped call).
 		helper_params:
-			", unsigned long long nursery_futures, unsigned long long nursery_count, unsigned long long nursery_cap",
+			"unsigned long long nursery_futures, unsigned long long nursery_count, unsigned long long nursery_cap",
 		field_stores: [
 			`\tself->nursery_futures = nursery_futures;\n`,
 			`\tself->nursery_count = nursery_count;\n`,
