@@ -1,0 +1,84 @@
+import System
+import System::Controls
+
+// One spawned task: sleep a random 1-10 s, then report its letter by sending
+// it down the channel. Sends arrive in the order the tasks finish, so the
+// channel carries the results in completion order.
+func fetch_one = (Channel done, string letter) {
+	var Random rng = Random()
+	Time.sleep_ms(rng.range(1000, 10000))
+	done.send_string(letter)
+}
+
+// The coordinator: spawns the five tasks into a nursery, waits for them to
+// rejoin, then drains the channel. Sends arrive in finish order, so
+// `letters` ends up ordered by completion, e.g. "B E D A C". Runs on a
+// fiber — it parks (and frees its worker) while the nursery joins.
+func run_fetch = (Channel done, out string) {
+	var string letters = ""
+	async {
+		Thread(fetch_one(done, "A")).start()
+		Thread(fetch_one(done, "B")).start()
+		Thread(fetch_one(done, "C")).start()
+		Thread(fetch_one(done, "D")).start()
+		Thread(fetch_one(done, "E")).start()
+	}
+	// The nursery has rejoined: all five tasks have finished, so the channel
+	// holds five messages in the order the tasks finished.
+	var int i = 0
+	while i < 5 {
+		letters = letters + done.receive_string() + " "
+		i += 1
+	}
+	return letters
+}
+
+pub func main = () {
+	const win = Window("Nomen Async", 380, 150)
+
+	var status = Text(win)
+	status.set_text("Press Fetch to run 5 tasks")
+
+	const fetch_btn = Button(win, "Fetch")
+
+	// A single-column grid: the status label, then the button.
+	var Container grid = Grid(1, 2)
+	grid.padding = 16
+	grid.add(status.handle, 0, 30, 1)
+	grid.add(fetch_btn.handle, 0, 32, 1)
+	grid.layout(win)
+	grid.set_resize_callback(win)
+
+	win.show()
+
+	// The result channel: lives for the whole loop, drained exactly five
+	// times per fetch.
+	const Channel done = Channel()
+	var fetching = false
+	// The coordinator's handle. Main never blocks on it: the event loop
+	// polls is_done() each frame, so the window stays responsive while the
+	// five tasks sleep.
+	var Task<string> fetch = Task<string>()
+
+	while win.is_visible() {
+		const int had_click = Window.process_events()
+
+		if had_click == 1 {
+			const int cx = win.click_x()
+			const int cy = win.click_y()
+			if grid.contains(fetch_btn.handle, cx, cy) && !fetching {
+				fetching = true
+				status.set_text("Fetching...")
+				fetch = Fiber(run_fetch(done)).start()
+			}
+		}
+
+		// The coordinator fiber parks on the channel (then on its nursery
+		// join); when it is done, collect its result — on the main thread,
+		// the only thread that touches controls.
+		if fetching && fetch.is_done() {
+			fetching = false
+			status.set_text("Done! " + fetch.result())
+		}
+	}
+}

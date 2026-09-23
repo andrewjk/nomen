@@ -432,6 +432,39 @@ adapter can transfer vs duplicate exactly, or reject an opaque string-returning
 closure with a diagnostic (forcing a lambda literal whose captures the compiler
 can see).
 
+## `return` inside an `async { }` block skips the nursery join (leak + soundness hole)
+
+A `return` lexically inside an `async { }` block is emitted BEFORE the block's
+join loop, leaving the join (and its per-future release) unreachable. Found
+while writing `demos/async`: a coordinator that returned the concatenated task
+results from inside its nursery leaked every task's machinery (future, result
+slot, cancel flag, closure, env — ~6 allocations per task) because the
+nursery's `__nomen_future_release` loop never ran; the `result()` calls had
+already joined the tasks, so only the nursery's reference leaked.
+
+```
+func run_fetch = (out string) {
+	async {
+		var Task<string> ta = Thread(sleep_letter("A")).start()
+		...
+		return ta.result() + tb.result()   // emitted before the join loop
+	}                                      // <-- join loop lands here: dead code
+}
+```
+
+Both backends are affected (the async block builders emit
+`body → join loop → auto_free`, and the return path in the body short-circuits
+past them). This is more than a leak: the block's join-before-scope-exit
+contract is the structured-concurrency guarantee, so an early return also lets
+block-scoped resources die under still-running tasks. Fix shape: route a
+`return` inside an async block through the block's join (like `break`/
+`continue` reclaim enclosing scopes — see `free_scoped_declarations` in
+build_break_node), or hoist the return value into a block-local and emit the
+return after the join (what the demo does as a workaround).
+
+Discovered 2026-09-23. Workaround in `demos/async/src/main.nm`: assign to a
+local inside the block, return after it.
+
 ## `Fiber.start_on(buf)` runs on a heap stack (spec/impl gap; last name-keyed launch site)
 
 The async migration (docs/ASYNC.md, "Design decisions") made `Thread.start`/`.detach` and `Fiber.start` ordinary
@@ -471,6 +504,36 @@ validation is a compile error — and the runtime behavior (heap stack) matches
 the pre-migration compiler exactly, so nothing regressed; the SPEC's
 "caller-provided fixed-size array stack" sentence (SPEC.md, Fiber section) is
 the documented-but-untrue bit.
+
+## aarch64: string accumulation in a loop inside `async { }` silently yields ""
+
+Found while writing `demos/async`. On the aarch64 backend, assigning a
+concatenation to an outer `string` local inside a loop inside an `async { }`
+block leaves the local EMPTY (and leaks); the same code outside the block —
+or a single non-loop assignment inside it — is correct, and the C backend is
+correct in both shapes:
+
+```
+func in_async = (out string) {
+	var string s = ""
+	async {
+		var int i = 0
+		while i < 3 {
+			s = s + "y"      // s stays "" and the block's concat temps leak
+			i += 1
+		}
+	}
+	return s                 // ""
+}
+```
+
+Isolated shapes: plain loop → `"yyy"`; single assignment inside async →
+`"A B "`; loop inside async → `""`. The demo works around it by draining the
+channel AFTER the nursery join (loop outside the block). Likely the async
+block's per-invocation frame and the loop's string-slot writeback/promotion
+disagree (the block builder plus `asm_loop_promote`); the return reads a stale
+slot. Not investigated further — real codegen bug, worth a focused repro
+against the aarch64 ASM optimizer.
 
 ## aarch64: audit counts go negative for fiber programs that use string channels
 
