@@ -1,0 +1,84 @@
+// Random — a small, fast pseudo-random generator (splitmix64).
+//
+// Splitmix64 steps a 64-bit state by the golden ratio, then runs two
+// multiply-xor rounds. Streams from nearby seeds are fully decorrelated
+// (each seed is its own stream), so `Random()` — seeded from the wall
+// clock — is safe to construct repeatedly in quick succession (e.g. one
+// per spawned task, all starting within the same microsecond).
+//
+// Not cryptographically secure; `below`/`range` have slight modulo bias
+// for very large bounds.
+//
+//	var Random rng = Random()
+//	var uint64 roll = rng.below(6)          // 0..5
+//	var uint64 ms = rng.range(1000, 10000)  // 1000..10000, inclusive
+//
+import Time
+
+/**
+ * A fast splitmix64 pseudo-random number generator
+ **/
+pub class Random {
+	// The raw 64-bit generator state (seeded from the wall clock by the
+	// no-arg constructor, or an explicit seed for reproducible sequences).
+	pub var uint64 state = 0
+
+	// Seed from the wall clock (nanoseconds since the epoch).
+	pub func #init = (self) {
+		self.state = Time.now_ns()
+	}
+
+	// Seed from an explicit value — reproducible sequences for tests.
+	pub func #init = (self, uint64 seed) {
+		self.state = seed
+	}
+
+	// The next raw 64-bit value.
+	pub func next = (ref self, out uint64) {
+		```
+		#arch: c
+		unsigned long long z = (self->state += 0x9E3779B97F4A7C15ULL);
+		z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+		z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+		return z ^ (z >> 31);
+		```
+		```
+		#arch: aarch64
+		// x19 = self; state at [x19, #8].
+		ldr x0, [x19, #8]
+		ldr x1, =0x9E3779B97F4A7C15
+		add x0, x0, x1
+		str x0, [x19, #8]
+		// z = (z ^ (z >> 30)) * C1
+		lsr x2, x0, #30
+		eor x0, x0, x2
+		ldr x1, =0xBF58476D1CE4E5B9
+		mul x0, x0, x1
+		// z = (z ^ (z >> 27)) * C2; return z ^ (z >> 31)
+		lsr x2, x0, #27
+		eor x0, x0, x2
+		ldr x1, =0x94D049BB133111EB
+		mul x0, x0, x1
+		lsr x2, x0, #31
+		eor x0, x0, x2
+		```
+	}
+
+	// The next value in [0, bound). A bound of 0 returns 0. Slight modulo
+	// bias for very large bounds — irrelevant at demo scale.
+	pub func below = (ref self, uint64 bound, out uint64) {
+		if bound == 0 {
+			return 0
+		}
+		return self.next() % bound
+	}
+
+	// The next value in [lo, hi], both ends inclusive. A hi <= lo
+	// returns lo.
+	pub func range = (ref self, uint64 lo, uint64 hi, out uint64) {
+		if hi <= lo {
+			return lo
+		}
+		return lo + self.below(hi - lo + 1)
+	}
+}
