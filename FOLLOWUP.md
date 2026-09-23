@@ -608,18 +608,6 @@ spawn adapter (a capture-free lambda gets a static descriptor per CLOSURE.md)
 mis-hands the env/arg slots on aarch64. Related to the recorded
 opaque-closure spawn issues, but distinct: this is a crash, not a leak.
 
-## Chaining `.start().result()` on the temporary Task leaks (both backends)
-
-`const user = Fiber(get_user(id)).start().result()` — calling `result()` on
-the temporary handle instead of storing it — leaks 6 allocations per task on
-BOTH backends (audit: future, result slot, cancel flag, closure, env…). The
-storable-handle form (`var t = Fiber(...).start(); … t.result()`) is clean:
-the handle's `#destroy` runs the release path at scope exit, the temporary's
-evidently does not. Found while verifying announcement examples; the SPEC
-examples all use the handle form, which is why nothing caught it. Same smell
-as the `return`-inside-async join skip: a missing `__nomen_future_release`
-path for a handle that never becomes an lvalue.
-
 ## race mode + string-returning tasks leak 2 allocations
 
 `async(mode: race) { Thread(f(key)).start() … }` where `f` returns a `string`

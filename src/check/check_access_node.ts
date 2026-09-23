@@ -77,6 +77,40 @@ export default function check_access_node(node: AccessNode, status: CheckStatus)
 		node.target = new ValueNode(node.target.start, decl.name, target_type);
 	}
 
+	// Same lifetime gap for an OWNED CLASS result used inline as the receiver
+	// (`Thread(fn()).start().result()`): the `move out T` method handed the
+	// caller a fresh instance, and as a bare receiver it never reaches a
+	// `#destroy` — for a `Task<T>` handle that destroy IS the future release
+	// (result slot, cancel flag, closure, env all leak with it). Hoist the
+	// receiver into a scoped `var` declaration so the scope-exit cleanup runs
+	// the class destroy, exactly like the stored-handle form. Keyed on the
+	// checker's `owned_return` stamp — a borrowed (shared-reference) return
+	// aliases an instance someone else owns and must NOT be destroyed here.
+	// `var`, not `const`: consuming calls on the handle (`result()`) are
+	// `ref self` methods.
+	if (
+		node.target.node_type === "access" &&
+		(node.target as AccessNode).access.node_type === "access_func" &&
+		((node.target as AccessNode).access as AccessFunctionCallNode).owned_return &&
+		!!status.structs.find(
+			(s) =>
+				(s.name === target_type.name ||
+					(target_type.type_args?.length && s.name === mono_type_name(target_type))) &&
+				s.is_class,
+		)
+	) {
+		const decl = new DeclarationNode(
+			node.target.start,
+			"private",
+			"var",
+			`_recv_${status.var_name_counter.value++}`,
+			target_type,
+			node.target,
+		);
+		status.allocations.push(decl);
+		node.target = new ValueNode(node.target.start, decl.name, target_type);
+	}
+
 	// Resolve destructuring placeholders (`var [a, b] = expr`) from the RHS
 	// type. A positional binding becomes a tuple field (`._i`), an array
 	// element (direct index), or a struct/class field (`.name`). See
