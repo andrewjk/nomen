@@ -189,4 +189,36 @@ pub func main = () {
 `;
 		await build_and_check_output(input, "fnval_nursery", "42\n", true);
 	});
+
+	test("a capture-free lambda wrapping a string function hands result() a heap copy", async () => {
+		// The lambda's return value flows to the task's result slot unchanged
+		// and the `result()` caller frees a string unconditionally — the
+		// wrapped callee must normalize its literal return to heap (the
+		// aarch64 return-site strdup), or the caller frees rodata (SIGABRT).
+		const input = `import System
+
+func get_user = (uint64 id, out string) {
+	Time.sleep_ms(20)
+	return "ada"
+}
+
+pub func main = () {
+	var user_task = Fiber(() => get_user(1)).start()
+	var string user = user_task.result()
+	Console.write_line(user)
+}
+`;
+		await build_and_check_output(input, "fnval_capture_free_string", "ada\n", true);
+	});
+
+	test("a literal-returning lambda hands result() a heap copy", async () => {
+		const input = `import System
+
+pub func main = () {
+	var t = Fiber(() => "ada").start()
+	Console.write_line(t.result())
+}
+`;
+		await build_and_check_output(input, "fnval_literal_string", "ada\n", true);
+	});
 });

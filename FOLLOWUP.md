@@ -597,17 +597,6 @@ leading parameter only when the arg list is empty. Every example in
 SPEC.md/README.md happens to pass at least one argument, which is why the
 suite never caught it.
 
-## aarch64: capture-free function-value construction crashes at runtime
-
-`Fiber(() => fn(1)).start()` (capture-free lambda, ≥ 1 argument) compiles but
-the binary crashes at runtime on aarch64; the identical program runs cleanly
-on C. A capturing lambda (`Fiber(() => fn(who))` with `who` a local) works on
-both backends, and the zero-arg capture-free form crashes too. Found while
-verifying announcement examples. Likely the static-descriptor path through the
-spawn adapter (a capture-free lambda gets a static descriptor per CLOSURE.md)
-mis-hands the env/arg slots on aarch64. Related to the recorded
-opaque-closure spawn issues, but distinct: this is a crash, not a leak.
-
 ## race mode + string-returning tasks leak 2 allocations
 
 `async(mode: race) { Thread(f(key)).start() … }` where `f` returns a `string`

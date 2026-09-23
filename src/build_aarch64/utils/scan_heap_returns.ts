@@ -58,6 +58,17 @@ function scan_spawn_callees(root: BaseNode, result: Set<string>) {
 				spawn_ret = node.access.function_return_type;
 			}
 		}
+		// The Phase 3c function-value form — `Thread(() => fn(args))`: the
+		// spawned closure is a LAMBDA, and its return value lands in the task's
+		// result slot exactly like the direct-call form's. The lambda's return
+		// paths (and the return paths of any function whose result the lambda
+		// passes straight through) must be heap-normalized, or `result()`
+		// hands the caller a rodata pointer it frees.
+		if (spawn_call && spawn_call.node_type === "func") {
+			mark_fn_value_callees(spawn_call, spawn_ret, result);
+			spawn_call = undefined;
+			spawn_ret = undefined;
+		}
 		const name_and_ret: [string, { name?: string }] | undefined =
 			spawn_call && spawn_call.node_type === "func_call"
 				? [
@@ -79,6 +90,49 @@ function scan_spawn_callees(root: BaseNode, result: Set<string>) {
 		}
 	};
 	visit(root);
+}
+
+/**
+ * Heap-normalize a function-value spawn's lambda (spawn_ret is the
+ * construction's function return type; the lambda's own signature is the
+ * fallback). Two marks:
+ *
+ * 1. The LAMBDA's emission label — a literal or borrowed-variable return
+ *    inside the lambda is then strdup'd at the lambda's return site (the
+ *    return build classifies through the same label).
+ * 2. Every string-returning call the lambda returns DIRECTLY
+ *    (`() => fn(args)`): the call's pair flows to the slot unchanged (a call
+ *    result is not re-strdup'd at return), so the callee itself must
+ *    normalize — the same mark the direct-call form puts on its callee.
+ */
+function mark_fn_value_callees(
+	lambda: FunctionNode,
+	spawn_ret: { name?: string } | undefined,
+	result: Set<string>,
+): void {
+	const ret_name = spawn_ret?.name ?? lambda.return_type?.name;
+	if (ret_name !== "string") return;
+	result.add(emission_label(lambda));
+	const visit = (node: any): void => {
+		if (!node || typeof node !== "object") return;
+		if (
+			node.node_type === "return" &&
+			node.value?.node_type === "func_call" &&
+			node.value.type?.name === "string"
+		) {
+			result.add(emission_label(node.value.resolved_function ?? { name: node.value.name }));
+		}
+		for (const key of Object.keys(node)) {
+			if (key === "parent" || key === "scope") continue;
+			const val = node[key];
+			if (Array.isArray(val)) {
+				for (const item of val) visit(item);
+			} else if (val && typeof val === "object") {
+				visit(val);
+			}
+		}
+	};
+	for (const s of lambda.statements ?? []) visit(s);
 }
 
 function scan_statements(statements: any[], result: Set<string>, struct_name: string | undefined) {
