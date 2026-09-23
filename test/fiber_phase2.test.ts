@@ -49,6 +49,47 @@ pub func main = () {
 		}
 	});
 
+	test("a fiber parked in receive_string wakes on a thread producer's send_string", async () => {
+		// Regression: the aarch64 send_string raw body was missing the
+		// __nomen_fiber_waitq_wake call, so a fiber parked in receive_string
+		// never woke (uint64 send/receive were fine). Audit is off because
+		// the fiber path over-reports frees in the audit accounting on
+		// aarch64 (results are correct; see FOLLOWUP.md).
+		const input = `
+import System
+
+func producer = (Channel ch) {
+	ch.send_string("ping")
+}
+
+func consumer = (Channel ch) {
+	var string v = ch.receive_string()   // parks the fiber until the message arrives
+	Console.write_line("fiber got " + v)
+}
+
+pub func main = () {
+	var Channel ch = Channel()
+	async {
+		Thread(producer(ch)).start()
+		var f = Fiber(consumer(ch)).start()
+		f.wait()
+	}
+}
+`;
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_raw(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, audit: false };
+			const result = build(parsed.root, options);
+			await check_output(
+				`fiber_p2_channel_string_wake_${arch}`,
+				result,
+				"fiber got ping\n",
+				options,
+			);
+		}
+	});
+
 	test("a fiber parked in receive resumes when the main thread sends", async () => {
 		const input = `
 import System

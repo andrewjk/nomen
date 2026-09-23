@@ -168,6 +168,24 @@ pub class Task<T> : Sendable, Awaitable {
 		```
 	}
 
+	// Has the task finished? A poll — never blocks. True once the task's
+	// future has completed; false while it may still be running (and for a
+	// handle whose machinery was already consumed). The missing peek
+	// between wait (blocking) and cancel (cooperative): event loops use it
+	// to notice a finished task without parking the UI thread.
+	pub func is_done = (ref self, out bool) {
+		```
+		#arch: c
+		return __nomen_future_is_done((struct nomen_future *)self->future);
+		```
+		```
+		#arch: aarch64
+		// x0 = self->future; result in x0.
+		ldr x0, [x19, #40]
+		bl ___nomen_future_is_done
+		```
+	}
+
 	// Request that the task stop. Cooperative — the task observes this via
 	// `Task.current_cancelled()` at its own checkpoints. No preemption.
 	pub func cancel = (ref self) {

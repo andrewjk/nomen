@@ -497,7 +497,12 @@ export default function build_assignment_node(
 		// same-named entry never leaks in.
 		const lhs_in_class_vars = !!status.class_vars?.has(lhs_name);
 		const lhs_type = lhs_decl?.type || status.variable_types?.get(lhs_name);
-		const lhs_struct = lhs_type ? status.structs.find((s) => s.name === lhs_type.name) : null;
+		// Resolve the MONO struct (`Task<string>` → Task_string): a generic
+		// class var's declared type carries type args, and the destroy/free
+		// must target the monomorphized struct's functions, not the bare
+		// generic (which has none). No-op for non-generic types.
+		const lhs_mono_name = lhs_type ? mono_type_name(lhs_type) : "";
+		const lhs_struct = lhs_mono_name ? status.structs.find((s) => s.name === lhs_mono_name) : null;
 		const lhs_is_string = lhs_type?.name === "string";
 		const lhs_is_class = !!lhs_struct?.is_class || lhs_in_class_vars;
 		// A trait-typed class local (`var Speaker s = Dog(); s = Cat()`)
@@ -667,11 +672,14 @@ export default function build_assignment_node(
 				// so it is freed exactly once via deferred_frees).
 				const id = (status.label_counter = (status.label_counter ?? 0) + 1);
 				const temp = `_deferred_${id}`;
-				status.code += `struct ${lhs_struct.name}* ${temp} = ${lhs_name};\n`;
+				const destroy_name = lhs_struct.name.startsWith(lhs_type!.name)
+					? lhs_struct.name
+					: lhs_type!.name;
+				status.code += `struct ${destroy_name}* ${temp} = ${lhs_name};\n`;
 				if (!status.deferred_frees) status.deferred_frees = [];
 				status.deferred_frees.push({
 					temp,
-					struct_name: lhs_struct.name,
+					struct_name: destroy_name,
 					is_nullable: !!lhs_type?.is_nullable,
 				});
 			} else if (lhs_is_class && lhs_is_alias && status.c_alias_owns_flags?.has(lhs_name)) {

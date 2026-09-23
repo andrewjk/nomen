@@ -1258,3 +1258,37 @@ pub func main = () {
 		expect(parsed.errors.some((e) => e.message.includes("not Sendable"))).toBe(true);
 	});
 });
+
+describe("Task.is_done", () => {
+	test("is_done flips to true once a running task completes", async () => {
+		const input = `
+func slow = (uint64 ms, out uint64) {
+	Time.sleep_ms(ms)
+	return 42
+}
+
+var Task<uint64> t = Task<uint64>()
+if t.is_done() {
+	Console.write_line("empty handle done")
+}
+t = Thread(slow(200)).start()
+var uint64 polls = 0
+while !t.is_done() && polls < 200 {
+	Time.sleep_ms(50)
+	polls += 1
+}
+if t.is_done() {
+	Console.write_line("done: \\{t.result_uint64()}")
+} else {
+	Console.write_line("still running")
+}
+`;
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_with_imports(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			await check_output(`task_is_done_${arch}`, result, "done: 42\n", options);
+		}
+	});
+});

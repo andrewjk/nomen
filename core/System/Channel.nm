@@ -180,6 +180,8 @@ pub class Channel: Sendable {
 		str x2, [x19, #32]        // tail = node
 		ldr x0, [x19, #16]        // not_empty_cv
 		bl _pthread_cond_signal
+		add x0, x19, #40          // &self->waiters — wake parked fibers
+		bl ___nomen_fiber_waitq_wake
 		ldr x0, [x19, #8]         // self->mu
 		bl _pthread_mutex_unlock
 		add sp, sp, #32

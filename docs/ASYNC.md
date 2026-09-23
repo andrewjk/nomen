@@ -19,7 +19,9 @@ targets.
   pthread-backed handle parameterised by the spawned function's return type. Methods: `wait()` (idempotent), `result()` (blocks, moves the value out —
   a `mov out T`, so a fat string result arrives whole and an unconsumed one
   is freed by destroy), `result_uint64()` (blocks, returns the value cast to
-  `uint64`), `cancel()`, `current_cancelled()` (static, thread-local).
+  `uint64`), `is_done()` (never blocks — the poll that lets an event loop
+  notice a finished task without parking the UI thread; see `demos/async`),
+  `cancel()`, `current_cancelled()` (static, thread-local).
   Monomorphized per instantiation (e.g. `Task_uint64`).
 - **`Mutex`** — pthread-backed lock; `#destroy` releases the resource. In
   cooperative mode a fiber try-locks and yields (the holder runs on the same

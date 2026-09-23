@@ -471,3 +471,18 @@ validation is a compile error — and the runtime behavior (heap stack) matches
 the pre-migration compiler exactly, so nothing regressed; the SPEC's
 "caller-provided fixed-size array stack" sentence (SPEC.md, Fiber section) is
 the documented-but-untrue bit.
+
+## aarch64: audit counts go negative for fiber programs that use string channels
+
+An audited aarch64 build of a fiber that parks/resumes over a `Channel` with
+`send_string`/`receive_string` reports `LEAK: -N allocation(s)` — more
+`nomen_free_wrap` calls than `nomen_malloc_wrap`. The program is
+memory-correct (correct output, no crash, both backends agree), and the
+equivalent main-thread receiver counts zero
+(`test/task.test.ts`'s `channel_string_payload_*` passes with audit on), so
+this is an accounting asymmetry, not a double free — likely a raw
+`malloc`/`strdup` in the aarch64 library asm (or the companion runtime)
+paired with an audit-wrapped free, or vice versa, along the fiber park/resume
+path. The new `fiber_p2_channel_string_wake_*` regression test runs with
+`audit: false` for this reason. Worth reconciling so fiber programs can be
+audited cleanly.

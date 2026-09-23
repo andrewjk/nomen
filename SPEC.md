@@ -2400,6 +2400,11 @@ var t = Thread(compute(42)).start()
 t.wait()
 ```
 
+`is_done()` is the non-blocking poll: it returns whether the task has
+finished without waiting, so an event loop can notice completion without
+parking the caller (`demos/async` uses it). `result()` and `result_uint64()`
+block and move the value out — call them once, after the task is done.
+
 ### Mutex
 
 pthread-backed lock for shared mutable state. The default stance in Nomen is

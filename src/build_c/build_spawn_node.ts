@@ -350,7 +350,11 @@ static void __nomen_future_cancel(struct nomen_future *f) {
 	// schedule() only queues PARKED fibers, so a double wake is harmless.
 	if (f->owning_fiber) __nomen_fiber_schedule(f->owning_fiber);
 }
+// Non-blocking completion peek (Task.is_done): 1 once the future's task has
+// finished, 0 while it may still be running (and for a NULL — a consumed or
+// never-launched handle).
 static int __nomen_future_is_done(struct nomen_future *f) {
+	if (!f) return 0;
 	pthread_mutex_lock(&f->mu);
 	int d = f->done;
 	pthread_mutex_unlock(&f->mu);

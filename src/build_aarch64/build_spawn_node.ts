@@ -182,6 +182,15 @@ int __nomen_future_timedwait(struct nomen_future *f, long long deadline_ms) {
 	pthread_mutex_unlock(&f->mu);
 	return 1;
 }
+// Non-blocking completion peek (Task.is_done) — non-static: raw asm
+// branches into it.
+int __nomen_future_is_done(struct nomen_future *f) {
+	if (!f) return 0;
+	pthread_mutex_lock(&f->mu);
+	int done = f->done;
+	pthread_mutex_unlock(&f->mu);
+	return done;
+}
 void __nomen_future_release(struct nomen_future *f) {
 	pthread_mutex_lock(&f->mu);
 	int last = --f->refs == 0;
@@ -313,13 +322,9 @@ void __nomen_future_cancel(struct nomen_future *f) {
 	// schedule it so it resumes and observes the flag (idempotent).
 	if (f->owning_fiber) __nomen_fiber_schedule(f->owning_fiber);
 }
-// Race-mode helpers — see build_c POOL_HEADER for semantics.
-int __nomen_future_is_done(struct nomen_future *f) {
-	pthread_mutex_lock(&f->mu);
-	int d = f->done;
-	pthread_mutex_unlock(&f->mu);
-	return d;
-}
+// Race-mode helpers — see build_c POOL_HEADER for semantics. (The
+// non-blocking peek itself, __nomen_future_is_done, lives with the future
+// machinery above — non-static: Task.is_done's raw asm branches into it.)
 int __nomen_nursery_race_wait(struct nomen_future **futures, int count, long long deadline_ms) {
 	if (count <= 0) return 0;
 	struct timespec sleep_ts = {0, 1000000};
