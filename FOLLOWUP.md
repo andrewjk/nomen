@@ -506,15 +506,3 @@ note only. Two ways to close it: restore the raw `#arch` bodies (the git
 history has them, plus the pre-rewrite `Random.nm`), or teach the aarch64 ASM
 optimizer the three folds above (which would benefit all pure-Nomen 64-bit
 arithmetic, not just this generator).
-
-## race mode + string-returning tasks leak 2 allocations
-
-`async(mode: race) { Thread(f(key)).start() … }` where `f` returns a `string`
-leaks 2 allocations per nursery on both backends — the unconsumed string
-result slots (winner and loser) never reach a free. `uint64`- and
-void-returning tasks in race mode are clean, and the same string-returning
-tasks in a default `async { }` with `result()` consumed are clean. Consistent
-with the recorded "opaque-closure spawn result leaks the original string"
-posture (leak-never-dangle, bounded), but this is the direct-call form, so the
-trampoline path also needs the unconsumed-result free in the race-wait
-release loop.

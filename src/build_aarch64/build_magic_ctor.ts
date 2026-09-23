@@ -188,6 +188,9 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 	c += `\tf->refs = 1;\n`; // the instance's own reference
 	c += `\tf->cancel_flag = a->cancel_flag;\n`;
 	c += `\tf->result_slot = a->result_slot;\n`;
+	// The last release frees an unconsumed fat-string result (see the
+	// runtime's __nomen_future_release).
+	c += `\tf->slot_fat = ${slot_c_type === "nomen_string" ? 1 : 0};\n`;
 	c += `\tf->fiber_waiters = NULL;\n`;
 	c += `\tf->owning_fiber = 0;\n`;
 	c += `\ta->future = f;\n`;
@@ -400,6 +403,9 @@ function build_fn_value_ctor_a64(
 	c += `\tf->refs = 1;\n`;
 	c += `\tf->cancel_flag = a->cancel_flag;\n`;
 	c += `\tf->result_slot = a->result_slot;\n`;
+	// dup_result is exactly "the result is a fat string" here; the last
+	// release frees it when never consumed.
+	c += `\tf->slot_fat = ${dup_result ? 1 : 0};\n`;
 	c += `\tf->fiber_waiters = NULL;\n`;
 	c += `\tf->owning_fiber = 0;\n`;
 	c += `\ta->future = f;\n`;

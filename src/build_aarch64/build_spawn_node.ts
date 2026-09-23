@@ -73,6 +73,14 @@ struct nomen_future {
 	// The fiber whose task this future is (set at fiber spawn). Cancellation
 	// uses it to wake a fiber parked on a primitive waitq.
 	struct nomen_fiber *owning_fiber;
+	// 1 when the result slot holds a FAT string (set at construction, which
+	// knows the wrapped call's return type). The last release frees an
+	// unconsumed string buffer from the cell: result() zeroes the cell when
+	// it moves the value out, and Task's #destroy zeroes after its own
+	// free, so a non-NULL ptr at the last release means "never consumed".
+	// Appended LAST: raw bodies read refs/result_slot/owner_args at fixed
+	// offsets (#116/#128/#136), which must not shift.
+	int slot_fat;
 };
 // Fiber seam (defined in FIBER_HEADER_C, appended after this block).
 // Declared here — after struct nomen_future is complete — so the
@@ -199,6 +207,19 @@ void __nomen_future_release(struct nomen_future *f) {
 		pthread_mutex_destroy(&f->mu);
 		pthread_cond_destroy(&f->cv);
 		free(f->cancel_flag);
+		// An unconsumed fat-string result: free the buffer the trampoline
+		// stored (race-mode and fire-and-forget tasks never hand it to a
+		// consumer). Every consumer path zeroes the cell first — result()
+		// on move-out, Task's #destroy after its own free — so a non-NULL
+		// ptr here is unambiguous and the free happens exactly once.
+		if (f->slot_fat && f->result_slot) {
+			unsigned long long *_s = (unsigned long long *)f->result_slot;
+			if (_s[0]) {
+				free((void *)_s[0]);
+				_s[0] = 0;
+				_s[1] = 0;
+			}
+		}
 		free(f->result_slot);
 		// The task closure is owned by the future — disposed at the last
 		// release (see __nomen_closure_dispose above for the lifetime note).

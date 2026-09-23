@@ -380,14 +380,18 @@ pub class Task<T> : Sendable, Awaitable {
 		```
 		#arch: c
 		if (self->future) {
-		#if T_NEEDS_STRDUP
-			// T is the fat nomen_string here (the guard is 0 for every other
-			// T, and the preprocessor removes this region before parsing).
-			if (self->result_slot) {
-				T _s = *(T *)self->result_slot;
-				if (_s.ptr) free(_s.ptr);
-			}
-		#endif
+	#if T_NEEDS_STRDUP
+		// T is the fat nomen_string here (the guard is 0 for every other
+		// T, and the preprocessor removes this region before parsing).
+		if (self->result_slot) {
+			T _s = *(T *)self->result_slot;
+			if (_s.ptr) free(_s.ptr);
+			// Zero the cell: the future's last release also frees an
+			// unconsumed fat result, keyed on a non-NULL ptr (see
+			// __nomen_future_release) — this free must be the only one.
+			memset((void *)self->result_slot, 0, sizeof(T));
+		}
+	#endif
 			__nomen_future_release((struct nomen_future *)self->future);
 			self->future = 0;
 			self->result_slot = 0;
@@ -409,6 +413,10 @@ pub class Task<T> : Sendable, Awaitable {
 		cbz x8, .Ldestroy_nofree
 		ldr x0, [x8]
 		cbz x0, .Ldestroy_nofree
+		// Mark consumed BEFORE the free (x8 is caller-saved and dead after
+		// the call): the future's last release also frees an unconsumed
+		// fat result, keyed on a non-NULL cell (see __nomen_future_release).
+		stp xzr, xzr, [x8]
 		bl _free
 		.Ldestroy_nofree:
 		ldr x0, [x19, #40]

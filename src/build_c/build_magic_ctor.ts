@@ -339,6 +339,9 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 	status.code += `\t_future->done = 0;\n`;
 	status.code += `\t_future->cancel_flag = _cancel_ptr;\n`;
 	status.code += `\t_future->result_slot = _result_ptr;\n`;
+	// The last release frees an unconsumed fat-string result (see the
+	// runtime's __nomen_future_release).
+	status.code += `\t_future->slot_fat = ${slot_c_type === "nomen_string" ? 1 : 0};\n`;
 	status.code += `\t_future->fiber_waiters = NULL;\n`;
 	status.code += `\t_future->owning_fiber = NULL;\n`;
 	// One reference: this instance. The launch (or #destroy) releases it.
@@ -521,6 +524,9 @@ function build_fn_value_ctor(
 	status.code += `\t_future->done = 0;\n`;
 	status.code += `\t_future->cancel_flag = _cancel_ptr;\n`;
 	status.code += `\t_future->result_slot = _result_ptr;\n`;
+	// dup_result is exactly "the result is a fat string" here (see its
+	// definition); the last release frees it when never consumed.
+	status.code += `\t_future->slot_fat = ${dup_result ? 1 : 0};\n`;
 	status.code += `\t_future->fiber_waiters = NULL;\n`;
 	status.code += `\t_future->owning_fiber = NULL;\n`;
 	status.code += `\t_future->refs = 1;\n`;
