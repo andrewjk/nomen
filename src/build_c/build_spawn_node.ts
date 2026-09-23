@@ -1338,7 +1338,7 @@ function find_spawn_callee(name: string, status: BuildStatus): FunctionNode | un
 }
 
 /**
- * ASYNC_PLAN phase 6: whether any raw `#arch` body under this node
+ * Whether any raw `#arch` body under this node
  * references the concurrency runtime (`__nomen_*` symbols — pool, futures,
  * fiber scheduler, nursery tracking, netpoller). The runtime is the
  * LIBRARY's dependency: a method whose raw body drives it pulls it in,

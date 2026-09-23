@@ -427,7 +427,7 @@ pub func flow_facts = (int q, out int) {
 
 test("value-position spawn folds its call arguments' reads into the flat statement", () => {
 	const cfg = compile_cfg(
-		// Thread.start is a library method (ASYNC_PLAN phase 1), so the CFG
+		// Thread.start is a library method (ASYNC.md), so the CFG
 		// test's spawn source imports System to pull the library in.
 		`
 import System

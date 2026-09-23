@@ -15,10 +15,10 @@ import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
 
 /**
- * The spawn-sugar construction (the compiler-special
- * `Thread(fn(args))` / `Fiber(fn(args))`, or the generalized user
- * Awaitable class's `MyThing(fn(args))` — CLOSURE.md Phase 3b, ASYNC.md
- * "User-defined async primitives"), aarch64 backend: the per-site
+ * The `#spawn` construction (the deferred-call special form — the library
+ * `Thread(fn(args))` / `Fiber(fn(args))`, or any class declaring its own
+ * `#spawn` hook; docs/ASYNC.md, "The construction special form"),
+ * aarch64 backend: the per-site
  * trampoline and a constructor helper are emitted as C in the companion
  * file; the assembly stages the wrapped call's arguments and calls the
  * helper, which packs the env, allocates the future machinery, builds the
@@ -455,7 +455,7 @@ function build_fn_value_ctor_a64(
 }
 
 /**
- * LEXICAL NURSERY CAPTURE (ASYNC_PLAN phase 1), aarch64 backend. The
+ * LEXICAL NURSERY CAPTURE (ASYNC.md), aarch64 backend. The
  * construction helper is companion C and cannot address the enclosing async
  * block's frame, so the assembly passes the three tracking-slot addresses as
  * trailing helper arguments and the helper stores them into the instance's

@@ -538,7 +538,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 		case "access_func": {
 			const access_func = node.access as AccessFunctionCallNode;
 			// Thread.start / Thread.detach / Fiber.start are ordinary
-			// methods on the library classes (ASYNC_PLAN phase 1);
+			// methods on the library classes (ASYNC.md);
 			// start_on's checker rewrites it to start after validating the
 			// stack buffer.
 			// Escape hatch: `nursery.start(Thread(fn(args)))` — the single
@@ -1157,7 +1157,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				// is then a no-op) and the instance itself must be freed —
 				// the call is wrapped in a statement expression that does
 				// exactly that. A stored binding is freed by its owner.
-				// ASYNC_PLAN phase 1: the old build_thread_start /
+				// ASYNC.md: the old build_thread_start /
 				// build_thread_detach `target_is_temp` free, moved to the
 				// receiver emission now that start/detach are ordinary
 				// methods. Keyed on the construction flags, never the name.

@@ -194,7 +194,7 @@ export default function parse_statement(status: ParseStatus) {
 					consume(status); // consume destroy
 					parse_destroy(default_visibility(status), status, "#destroy");
 				} else if (next === "spawn") {
-					// The Spawnable construction hook (ASYNC_PLAN phase 3):
+					// The Spawnable construction hook (ASYNC.md):
 					// declares the class's construction as the deferred-call
 					// special form. Like #init/#destroy, a lifecycle marker —
 					// the compiler generates the construction; the body is a

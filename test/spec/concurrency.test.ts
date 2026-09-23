@@ -230,7 +230,7 @@ pub func main = () {
 	});
 
 	test("a non-Sendable class argument is rejected inside a nursery and outside", () => {
-		// SPEC.md, "Sendable" (ASYNC_PLAN phase 5): the nursery-borrow
+		// SPEC.md, "Sendable" (ASYNC.md): the nursery-borrow
 		// exception is retired — a non-Sendable CLASS reference is a shared
 		// crossing and is rejected everywhere. Mark it Sendable, move it in
 		// (a `move` parameter), or share it through a Sendable primitive.

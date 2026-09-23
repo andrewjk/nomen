@@ -32,7 +32,7 @@
 //
 // See ASYNC.md for the design.
 
-// The launch surface's return type (ASYNC_PLAN phase 6: the dependency is
+// The launch surface's return type (ASYNC.md: the dependency is
 // declared by the library file, not inferred from user-source tokens).
 import Task
 
@@ -40,7 +40,7 @@ import Task
  * A deferred function call, startable on the shared worker pool
  **/
 pub class Thread<T> : Sendable, Spawnable<T> {
-	// The construction hook (ASYNC_PLAN phase 3): declares this class's
+	// The construction hook (ASYNC.md): declares this class's
 	// construction as the deferred-call special form — the single argument
 	// is a call (args packed eagerly, call deferred) or a zero-arg function
 	// value. The compiler matches this member, never the class name; the
@@ -58,7 +58,7 @@ pub class Thread<T> : Sendable, Spawnable<T> {
 	pub var uint64 future = 0
 	// Must-start flag: set by .start() / .detach() / nursery.start.
 	pub var started = false
-	// LEXICAL NURSERY CAPTURE (ASYNC_PLAN phase 1): the tracking slots of the
+	// LEXICAL NURSERY CAPTURE (ASYNC.md): the tracking slots of the
 	// `async` block that lexically encloses the CONSTRUCTION, or 0 when the
 	// construction is outside any block. `.start()` registers the future
 	// through these stored pointers, so registration follows the scope that

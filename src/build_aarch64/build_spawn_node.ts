@@ -391,7 +391,7 @@ export function ensure_concurrency_runtime_a64(status: BuildStatus): void {
 	// Every caller that pulls the runtime in also makes fiber/pool exit
 	// hooks (main's drain_all / io_shutdown / pool_shutdown) meaningful —
 	// mirror the C backend's ensure_concurrency_runtime, which sets the flag
-	// for exactly this reason (ASYNC_PLAN phase 1: the launch sites moved
+	// for exactly this reason (ASYNC.md: the launch sites moved
 	// into the library's raw bodies, so no per-call-site flag remains).
 	status.used_fibers = true;
 	// The system object is linked into every program next to that program's
@@ -1165,7 +1165,7 @@ export function spawn_arg_is_string(node: BaseNode): boolean {
 }
 
 /**
- * ASYNC_PLAN phase 6 (aarch64 backend): pull the concurrency runtime in
+ * Aarch64 backend: pull the concurrency runtime in
  * when this struct method's raw bodies reference it — keyed on body
  * content, never on a type name. See the C backend's
  * ensure_runtime_for_method.

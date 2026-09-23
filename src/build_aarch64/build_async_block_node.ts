@@ -36,7 +36,7 @@ export default function build_async_block_node(
 	// The block's own join loop calls the future wait/cancel/release helpers
 	// (and the race-mode helpers) unconditionally, so every nursery build
 	// pulls the runtime in eagerly — the dependency is the emitted code's
-	// own (ASYNC_PLAN phase 6).
+	// own (ASYNC.md).
 	ensure_concurrency_runtime_a64(status);
 
 	// Allocate per-invocation nursery state on this function's stack frame:

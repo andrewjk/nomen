@@ -196,7 +196,7 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 
 	const is_nested = !!status.function_return_label;
 
-	// The runtime is the library's dependency (ASYNC_PLAN phase 6): if any
+	// The runtime is the library's dependency (ASYNC.md): if any
 	// of this struct's raw bodies reference the concurrency runtime, pull it
 	// in — keyed on body content, never on a type name (the old
 	// `node.name === "Fiber" || "Thread"` check is gone).
@@ -1321,7 +1321,7 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 
 function build_struct_functions(node: StructNode, status: BuildStatus) {
 	for (const func of node.functions) {
-		// The #spawn construction marker (ASYNC_PLAN phase 3): the
+		// The #spawn construction marker (ASYNC.md): the
 		// construction is compiler-generated; the member never emits.
 		if (func.name === "#spawn") continue;
 		if (func.name === "#init" && !func.has_body) continue;

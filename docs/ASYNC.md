@@ -7,9 +7,10 @@ closure machinery the spawn seam is built on, see [CLOSURE.md](CLOSURE.md).
 ## Implementation status
 
 Shipped on both the C and aarch64 backends (Mutex, Task, Channel all have
-`#arch: aarch64` raw-asm blocks; the `Thread(...).start()` and `async` build
-phases emit aarch64 assembly + C companion). End-to-end usable for
-concurrency on both targets.
+`#arch: aarch64` raw-asm blocks; the `#spawn` construction and `async` build
+phases emit aarch64 assembly + C companion, and the launch methods are
+library code with raw bodies). End-to-end usable for concurrency on both
+targets.
 
 - **`Sendable` trait** — marker, enforced on every spawn arg and every value
   moved into an `async` block. Auto-derived for structs whose fields are all
@@ -33,20 +34,32 @@ concurrency on both targets.
   receivers; other contexts still block on the condvar. A cancelled fiber
   waiting on an empty channel resumes and returns the zero value rather than
   waiting forever.
-- **`Thread`** — the thread class (`core/System/Thread.nm`).
+- **`Thread`** — the thread class (`core/System/Thread.nm`), a plain library
+  class whose launch surface is real methods, not compiler dispatch.
   `Thread(fn(args)).start()` is a statement (fire-and-forget) or expression
   yielding `Task<T>`; the arguments are evaluated EAGERLY, at the
   construction. The construction is a real, storable value:
   `var t = Thread(work(n))` binds the arguments now and `t.start()` runs
   later — and destroying an unstarted value is a programming error that its
   `#destroy` reports and aborts on (must-start). Tasks run on a global
-  worker pool.
+  worker pool. `.start()`'s body drives the runtime through the packed
+  handles the construction stored on the instance (submit, register with the
+  captured nursery, build the `Task<T>` through `Task`'s internal `#init`)
+  and transfers the handles out, so a started value's `#destroy` is a no-op;
+  a statement-form `.start()` is the same call — the discarded `Task` is a
+  hoisted temporary destroyed at scope exit, releasing its share of the
+  future's references.
   `Thread(fn(args)).detach()` is the daemon form: the call runs on its own
   dedicated pthread (never a pool worker), nobody joins it, and process exit
   kills it mid-execution by design — see "Daemon tasks" below.
 - **`async { ... }`** — nursery block. Waits on every spawned task at scope
   exit. The join runs before block-scoped locals are destroyed, so a running
-  task can safely hold pointers to nursery-local values.
+  task can safely hold pointers to nursery-local values. Registration is
+  **lexical at construction**: a `Thread`/`Fiber` built inside the block
+  captures the block's tracking-slot pointers in its own fields, and
+  `.start()` registers the future from the stored pointers — the deferred
+  call belongs to the scope that CREATED it, not wherever the launch happens,
+  and registration works through an indirect (e.g. trait-typed) receiver.
 - **`Fiber`** — stackful coroutines over the worker pool
   (`core/System/Fiber.nm`). `Fiber(fn(args)).start()` returns the same
   `Task<T>` handle as a thread spawn, but the call runs on a ~64 KB
@@ -54,14 +67,20 @@ concurrency on both targets.
   freeing its worker — and the completion wakes it (park-before-signal under
   the future's mutex, kept in a per-future waiter list; the resumer frees
   the stack at DONE). Like `Thread`, the construction is a storable value
-  with must-start `#destroy`. `Fiber.yield()` yields cooperatively,
+  with must-start `#destroy`, `.start()` is a real method over the same
+  seam, and `Fiber.detach()` is the fire-and-forget form (launch and drop
+  the handle). `Fiber.yield()` yields cooperatively,
   `Fiber.is_fiber()` reports fiber context, and
-  `Fiber(fn(args)).start_on(buf)` runs on a caller-provided fixed-size array
-  stack (>= 16 KB). `Fiber.set_cooperative(true)` runs fibers on the
+  `Fiber(fn(args)).start_on(buf)` is validated at compile time to take a
+  fixed-size array stack buffer (>= 16 KB) — the caller-provided-stack
+  execution itself is the one open gap (the buffer's storage and byte size
+  have no representation in a method body yet, so the fiber runs on a heap
+  stack; see FOLLOWUP.md, "`Fiber.start_on(buf)` runs on a heap stack").
+  `Fiber.set_cooperative(true)` runs fibers on the
   calling thread and starts no worker threads: they execute at would-block
-  waits or process exit (single-threaded/bare-metal mode). Registration is
-  unchanged — a fiber spawned in an `async` block is joined at block exit —
-  and the `Thread`/`Fiber` forms share one future, Task, and nursery.
+  waits or process exit (single-threaded/bare-metal mode). A fiber spawned
+  in an `async` block is joined at block exit — the `Thread`/`Fiber` forms
+  share one future, Task, and nursery.
   Cancellation reaches parked fibers: `Task.cancel` (and the nursery
   timeout/race paths) set the flag and schedule the owning fiber, which
   resumes from whatever wait queue it was parked on and observes
@@ -84,7 +103,7 @@ concurrency on both targets.
   a pre-existing limitation. Class and trait arguments stay shared pointers
   (the Sendable contract). See [CLOSURE.md](CLOSURE.md) for the packing
   machinery.
-- **No nursery borrows** (ASYNC_PLAN phase 5 retired the exception):
+- **No nursery borrows** (the exception was retired — see "Design decisions"):
   `Sendable` gates exactly the shared case — a class/trait reference passed
   as a plain argument aliases the instance. Moved arguments (a `move T`
   parameter) and copied values are exempt; a non-Sendable class/trait
@@ -109,24 +128,40 @@ concurrency on both targets.
   helper over `Awaitable` waits on any task — thread, fiber, or
   nursery-spawned. Must-start is deliberately not a trait rule; it is each
   spawn class's own `#destroy` contract.
-- **User-defined async primitives** — the construction sugar is not reserved
-  for `Thread`/`Fiber`: any user CLASS conforming to `Awaitable` and carrying
-  the spawn-field contract (uint64 fields `task` / `result_slot` /
-  `cancel_flag` / `future`; an optional `started` bool) can be constructed
-  the same way. `Job(fn(args))` / `Job(() => work(n))` pack eagerly and yield
-  a heap instance with the handles in the contract fields (vtable installed —
-  the value is trait-dispatchable; a generic class monomorphizes with T the
-  wrapped return type). Launching is the class's own methods, driving the
-  packed-task machinery through the library seam — `Task.pool_submit`,
-  `Task.future_wait`, `Task.future_result_uint64`, `Task.future_set_refs`,
-  `Task.future_release` — the same runtime calls the generated launch code
-  makes, so a user primitive parks fibers, participates in deadlock
-  detection, and frees exactly like a library spawn (raw `#arch` blocks
-  stay System-library-only). The construction materializes `Task<T>` so the
-  seam's statics link. No `#init` runs: the instance is zero-built and the
-  handles written, so field defaults stay zero-valid. Must-start is the
-  class's own `#destroy` contract, not the compiler's. Tests:
-  test/awaitable_ctor.test.ts; SPEC.md, "User-defined async primitives".
+- **`Spawnable<T>`** — the production-side trait
+  (`core/System/Spawnable.nm`): `func start = (ref self, move out Task<T>)`
+  and `func detach = (ref self)`, both required. `Thread<T>` and `Fiber<T>`
+  conform (Fiber's `detach` launches and drops the handle), and `Task<T>`
+  conforms to `Awaitable` — so each type carries exactly one role: the
+  spawn classes are spawnable, the handle is awaitable. The split is
+  deliberate: `Spawnable` produces an awaitable, `Awaitable` consumes one;
+  merging them would force both roles onto every type (the self-handle
+  mistake at the trait level). `Spawnable` is generic because `start`'s
+  return type mentions `T`; `Awaitable` stays non-generic (`wait` does not).
+  A generic helper over `Spawnable<T>` can `start` any spawn class; the
+  await half is guaranteed by the return type, so an author cannot forget it.
+- **Extension: a class with its own `#spawn`** — the construction special
+  form belongs to any class that declares the `#spawn` hook, not to the
+  names `Thread`/`Fiber` (see "The construction special form" below). A user
+  class declaring `#spawn` gains the `X(fn(args))` construction and packs
+  the wrapped call's machinery into its own uint64 fields (`task` /
+  `result_slot` / `cancel_flag` / `future` — the handles the `Task.*` seam's
+  statics drive); its own launch methods consume them exactly like the
+  library's, so it parks fibers, participates in deadlock detection, and
+  frees like a library spawn. No `#init` runs (declaring `#spawn`
+  suppresses the default): the construction is compiler-generated and the
+  handles written directly, so field defaults stay zero-valid. Must-start is
+  the class's own `#destroy` contract.
+- **Runtime dependency is the library's own** — the concurrency runtime
+  (pool, futures, fiber scheduler, netpoller, nursery tracking) is emitted
+  into a build when any library method's raw `#arch` body references its
+  `__nomen_*` symbols, keyed on body CONTENT, never on a type-name list;
+  the async block's join loop pulls it unconditionally. Type-level
+  dependencies are declared by the library files themselves (`import Task`
+  in Thread.nm/Fiber.nm rides the ordinary dependency extraction;
+  `Sendable`/`Spawnable` come from the conformance lists). The one
+  keyword-driven import left: `async` implies `Nursery`, because the
+  capability binding is compiler syntax a token scan cannot see.
 - **Unified `Task<T>` handle** — the future behind every spawn is
   reference-counted and shared between the trampoline, the returned Task, and
   the tracking nursery. Join-once semantics, so a Task captured inside a
@@ -198,12 +233,133 @@ Thread(flusher(out)).detach()
   owns its own shutdown (a stop channel or flag), not process exit.
 - **No handle, no future, no cancellation** — statement form only;
   `Task.current_cancelled()` is always false inside. Args must be
-  `Sendable`, exactly like `.start()` — and must be OWNED: `.detach()`
-  rejects the nursery-borrow form because the daemon outlives every scope.
+  `Sendable`, exactly like `.start()` — and there is no borrow escape
+  hatch anywhere (a daemon outlives every scope, so a shared reference has
+  nothing bounding it): a non-Sendable class/trait must be moved in (a
+  `move` parameter) or not cross at all.
 
 This is the deliberate exception to structured concurrency, kept honest by
 being explicit: `.start()` creates a bounded, joined task; `.detach()`
 creates an unbounded one and says so at the call site.
+
+## The construction special form: `#spawn`
+
+`Thread(fn(args))` is a **special form**: the argument is an _unevaluated
+call_. The compiler resolves the function, evaluates and packs its arguments
+eagerly, and defers the call into a per-site trampoline. A closure form also
+exists — `Thread(() => work(n))`, whose captures become the eager arguments.
+
+The form is spelled with an explicit marker. A spawn class declares its
+construction hook as `#spawn` — a lifecycle marker beside `#init` and
+`#destroy` — and the compiler treats `X(...)` on a `#spawn`-bearing class as
+the special form. Declaring `#spawn` suppresses the default `#init`, so the
+class is not ordinarily constructible, and the compiler matches the MEMBER,
+never a type's name: a user struct that happens to be named `Thread` does
+not gain the sugar, and a user struct that declares its own `#spawn` does.
+
+The design property this upholds:
+
+> **The compiler may know a construct is special; it must not know a library
+> type's name. Special forms are spelled with a marker the user can see.**
+
+A `#spawn` constructor takes no ordinary parameters. Its single argument is,
+by syntax:
+
+- a **deferred call** — `Thread(work(n))`: the arguments are evaluated and
+  packed eagerly, the call runs later; or
+- a **zero-argument function value** — `Thread(() => work(n))` (captures are
+  the eager arguments), or a func-typed local (moved into the task).
+
+Anything else — a plain value, or a lambda with parameters — is a compile
+error anchored at the argument: `` `#spawn` expects a call or a
+zero-argument function value (bind arguments in the lambda's captures) ``.
+Selection is by syntax, not overload resolution: the call form's argument is
+not a value, so there is no type for an overload to match.
+
+**Why the call form is kept** (not closure-only): eager argument evaluation
+is semantics a closure cannot recover — `Thread(fetch(next_id()))` evaluates
+`next_id()` at the spawn site and packs it, while
+`Thread(() => fetch(next_id()))` runs it on the task (Go's `go f(x)` is
+eager for the same reason; Rust/C#/Swift chose closures and force hoisting
+into a `const`). And the direct-call trampoline stores a string result with
+no aliasing question, where the closure path must reason about whether a
+returned string aliases the closure env (the reason the opaque-closure form
+leaks — see FOLLOWUP.md). A third historical reason — the closure form's
+captures are moves, so it could not express the nursery's borrowed-class
+exception — fell away when that exception was retired (see "Design
+decisions").
+
+## Design decisions (and the alternatives rejected)
+
+The concurrency surface was reworked once, from compiler magic keyed on
+library type names to the library-owned shape described above. The
+decisions, with the paths not taken:
+
+- **`Task<T>` stays the returned handle; `start` yields it.** A spawn class
+  implements only `Spawnable<T>`; the handle supplies `Awaitable`, so the
+  consumption half cannot be forgotten and each type carries one role.
+  `Task<T>`'s `#init` is internal: `start` builds the handle through it,
+  users cannot construct a bare handle that references no task.
+  _Rejected:_ the self-handle shape (`Thread<T>` implementing both traits,
+  `.start()` returning `self`) — one type, but it forces both roles onto
+  every type and loses the guaranteed await surface.
+- **`Spawnable<T>` is a separate trait, not rolled into `Awaitable`.** The
+  two are duals — produce an awaitable, consume one — so merging would
+  force both roles onto every type. Keeping the trait also documents the
+  required methods instead of relying on magic method names.
+- **Nursery registration is lexical at construction** — captured into the
+  instance where the special form already knows the enclosing block, and
+  registered by `.start()` from the stored pointers.
+  _Rejected:_ **lexical at start** (the compiler injects registration at
+  the `.start()` call site) — it breaks under trait dispatch, where the
+  compiler sees a `Spawnable<T>` method rather than a concrete launch, so
+  the task would silently escape the nursery. **Dynamic** (an ambient
+  current-nursery read by `.start()`) — mechanically plain, but captures a
+  helper's internal spawns and can turn a detached task into a joined one.
+- **`Sendable` gates exactly the shared case.** A class/trait reference
+  passed as a plain argument aliases the instance, so it must be marked;
+  moved arguments (a `move T` parameter takes exclusive ownership) and
+  copied values (strings deep-copy at pack; owning value structs are
+  env-copied) are exempt. The nursery-borrow exception — a non-Sendable
+  class crossing as a join-bounded borrow inside `async { }` — was retired:
+  mark the class `Sendable`, move it in, or share it through a `Sendable`
+  primitive. _Rejected:_ keeping the borrow as an explicit unchecked
+  convenience (a second marker trait) or keeping it silent — both preserve
+  a second, quieter path across the boundary for the one case `Sendable`
+  exists to police.
+- **The generalized `Awaitable` construction sugar was removed.** An
+  earlier design gave `X(fn(args))` to any class conforming to `Awaitable`
+  carrying the four-field contract. It was dropped: its contract was a
+  compile-time field layout rather than an interface (invisible coupling —
+  exactly what the marker-based design removes), its only example
+  re-derived `Thread`, and the plausible use (policy wrappers) is served by
+  a plain class conforming to `Awaitable` over a `Thread`. Extension is now
+  explicit: declare your own `#spawn`. _Downside accepted:_ a user
+  `Spawnable<T>` class cannot be passed to a nursery's `.start(...)` /
+  `.detach()` escape hatch (those take the `Thread` construction); it is
+  `.start()`ed explicitly. _Path not taken:_ keep the sugar and re-motivate
+  it with a real wrapper example.
+- **`Nursery.current()` stays internal.** The current nursery is captured
+  at construction and stored in the instance, so no ambient accessor is
+  needed; `async pool { }` + `ref pool` remains the user-facing way to
+  spawn into a caller's nursery. _Rejected:_ exposing it as a capability —
+  redundant once construction captures it, and it reintroduces an ambient
+  grab.
+- **The opaque-closure string leak is kept** (the function-value form with
+  a moved func-typed local or a named function: the result is duplicated
+  and the original leaked — leak-never-dangle, bounded at one per run).
+  _Rejected:_ extending the closure descriptor ABI with result ownership,
+  or rejecting the opaque case with a diagnostic. See FOLLOWUP.md.
+- **The runtime dependency is content-keyed.** A build pulls the runtime in
+  when a library method's raw body references its symbols — never via a
+  type-name list. _Rejected:_ moving the runtime text itself into the
+  library's companion C file; the emission is compiler-owned text, but
+  keyed on the library's bodies, which achieves the goal (link/emission is
+  the library's concern) without relocating the runtime.
+- **`Fiber.start_on`'s buffer remains checker-validated, not yet
+  executable.** The gap and its fix (storage for no-init `T[N]`
+  declarations; a compile-time byte-size representation in a method body)
+  are in FOLLOWUP.md.
 
 ## No function coloring
 
@@ -227,9 +383,9 @@ async {
 }
 ```
 
-- `Thread(fn(args)).start()` runs the call on the enclosing nursery's pool,
-  returns `Task<T>`. The runner is implicit, the way `return` implicitly
-  targets the enclosing function.
+- `Thread(fn(args)).start()` runs the call on the shared worker pool
+  (tracked by the enclosing nursery, if any), returns `Task<T>`. The runner
+  is implicit, the way `return` implicitly targets the enclosing function.
 - No `async` keyword on functions. Any function can be spawned.
 - `Task<T>.result` blocks the current thread until the task finishes. No
   `await` keyword is required for the thread-pool model (see "Next steps").
@@ -335,8 +491,10 @@ the graph, so timed waits are exempt by design.
 
 Three tiers, in increasing pain:
 
-1. **Move in.** `mov` or by-value params. Value must be `Sendable`. Ownership
-   leaves the caller; the task owns it. Already solved by the `mov` model.
+1. **Move in.** A `move T` parameter takes exclusive ownership, so any
+   value can cross moved — including a non-Sendable class (the caller gives
+   up its access). Ownership leaves the caller; the task owns it. Already
+   solved by the move model.
 2. **`Channel`.** One-way queue; ownership transfers per message. The channel
    lives in the nursery's scope, so its lifetime is bounded.
 3. **`Mutex` / `Atomic`.** Explicit shared mutable state, gated by `Sendable`
@@ -344,7 +502,8 @@ Three tiers, in increasing pain:
    prefer an actor (see "Shared mutable state: actors vs. Mutex" below).
 
 Default stance: **no shared mutable state.** Tasks communicate by moving
-Sendable values (directly or through channels).
+values (directly or through channels); anything actually shared — a
+class/trait reference crossing as a plain argument — must be `Sendable`.
 
 ## Roadmap (remaining)
 
@@ -378,6 +537,10 @@ shipped; what remains, in rough value order:
   `wait_for_io` (or a wepoll-style shim).
 - **`Fiber.dump_all()`.** Debug aid: backtrace-per-fiber, scheduler
   visibility.
+- **`start_on` storage.** The caller-provided-stack path is validated at
+  compile time but executes on a heap stack until no-init `T[N]`
+  declarations materialize storage and method bodies can see a parameter's
+  compile-time byte size (see FOLLOWUP.md).
 - **`await` sugar.** Shelved by design — `.result()` inside a fiber IS the
   await point; a keyword would be decorative (see "No function coloring").
   Valid only as `await <Awaitable>` ≡ `.wait()` if grep-ability is ever

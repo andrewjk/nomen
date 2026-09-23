@@ -442,9 +442,9 @@ function check_access_function_node(
 	// the compiler-special Thread constructor wrapping the call to spawn.
 	// See ASYNC.md, "Escape hatch: passing the nursery", and ASYNC.md.
 	// Special-cased (rather than a real method on Nursery) because the spawn
-	// needs the per-site trampoline machinery. (ASYNC_PLAN: Thread.start /
-	// Fiber.start are ordinary methods as of phase 1 — only this escape
-	// hatch and Fiber.start_on's compile-time stack-buffer validation remain
+	// needs the per-site trampoline machinery. (Thread.start / Fiber.start
+	// are ordinary library methods — docs/ASYNC.md; only this escape hatch
+	// and Fiber.start_on's compile-time stack-buffer validation remain
 	// special-cased.)
 	if (target_type.name === "Nursery" && node.name === "start") {
 		return check_nursery_spawn(node, status);
@@ -453,7 +453,7 @@ function check_access_function_node(
 	// `Fiber(fn(args)).start_on(buf)` — the compile-time stack-buffer
 	// validation (fixed array, >= 16 KB) stays as the documented surface
 	// contract; the launch itself delegates to the ordinary Fiber.start
-	// method (ASYNC_PLAN phase 1 — the caller-buffer storage story does not
+	// method (ASYNC.md — the caller-buffer storage story does not
 	// exist yet, so the fiber runs on a heap stack exactly as before the
 	// migration).
 	if (target_type.name === "Fiber" && node.name === "start_on") {

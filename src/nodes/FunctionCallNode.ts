@@ -96,9 +96,9 @@ export default class FunctionCallNode extends BaseNode {
 	/**
 	 * The catch-all spawn-constructor flavor: a `#spawn`-bearing class that
 	 * is neither Thread nor Fiber (a user class declaring its own
-	 * construction hook — ASYNC_PLAN phase 3/4). The construction is keyed
+	 * construction hook — ASYNC.md). The construction is keyed
 	 * on the `#spawn` member, never on Awaitable conformance (the old
-	 * field-contract sugar retired in phase 4). `X(fn(args))` packs the
+	 * field-contract sugar retired; see docs/ASYNC.md, "Design decisions"). `X(fn(args))` packs the
 	 * wrapped call eagerly and yields a heap `X` instance (monomorphized
 	 * `X<T>` when generic) whose fields carry the launch machinery (the
 	 * uint64 task / result_slot / cancel_flag / future contract the

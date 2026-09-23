@@ -635,7 +635,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 		case "access_func": {
 			const access_func = node.access as AccessFunctionCallNode;
 			// Thread.start / Thread.detach / Fiber.start are ordinary
-			// methods on the library classes (ASYNC_PLAN phase 1);
+			// methods on the library classes (ASYNC.md);
 			// start_on's checker rewrites it to start after validating the
 			// stack buffer.
 			// Escape hatch: `nursery.start(Thread(fn(args)))`. See ASYNC.md.
@@ -2728,7 +2728,7 @@ function build_access_method(
 
 	// A chained spawn-class construction receiver (`Thread(fn(args)).start()`)
 	// is a TEMPORARY instance — park the pointer so it can be freed once the
-	// call has transferred its handles (ASYNC_PLAN phase 1: the old
+	// call has transferred its handles (ASYNC.md: the old
 	// build_thread_start / build_thread_detach temp free, keyed on the
 	// construction flags).
 	const ctor_temp_node =

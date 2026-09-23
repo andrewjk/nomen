@@ -7,8 +7,8 @@ import is_sendable_type from "./is_sendable_type.ts";
 import type_from_value_node from "./type_from_value_node.ts";
 
 /**
- * Validate a spawn's packed arguments (CLOSURE.md Phase 3d; ASYNC_PLAN
- * phase 5 — the shrunk `Sendable`).
+ * Validate a spawn's packed arguments (CLOSURE.md Phase 3d; the shrunk
+ * `Sendable` — docs/ASYNC.md, "Design decisions").
  *
  * `Sendable` gates exactly the case that can race: a SHARED class/trait
  * reference crossing the task boundary (a plain argument — the packed env

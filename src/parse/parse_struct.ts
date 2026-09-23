@@ -57,7 +57,7 @@ export default function parse_struct(
 		expect("}", status);
 		status.stack.pop();
 
-		// A `#spawn` construction hook (ASYNC_PLAN phase 3) suppresses the
+		// A `#spawn` construction hook (ASYNC.md) suppresses the
 		// default `#init` too: the class constructs through the compiler's
 		// deferred-call special form, not an ordinary constructor.
 		const has_custom_init = struct.functions.some((f) => f.name === "#init" || f.name === "#spawn");

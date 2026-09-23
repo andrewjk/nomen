@@ -5,7 +5,7 @@ import build_and_check_output from "./build_and_check_output";
 import check_output from "./check_output";
 import { parse_raw } from "./parse_with_imports";
 
-// CLOSURE.md Phase 3d, ASYNC_PLAN phase 5: the spawn sugar's packed env is
+// CLOSURE.md Phase 3d, ASYNC.md: the spawn sugar's packed env is
 // an OWNING struct. String arguments are duplicated at pack (the env frees
 // its copy through the descriptor's destroy_env), and an owning value-struct
 // argument is copied and `<T>_destroy`ed. `Sendable` gates exactly the
@@ -15,7 +15,7 @@ import { parse_raw } from "./parse_with_imports";
 // exception is retired: a non-Sendable class/trait cannot cross into a task,
 // inside a nursery or out.
 
-describe("spawn env ownership + shrunk Sendable (Phase 3d, ASYNC_PLAN phase 5)", () => {
+describe("spawn env ownership + shrunk Sendable (Phase 3d, ASYNC.md)", () => {
 	test("a string argument is deep-copied into the task env", async () => {
 		const input = `import System
 

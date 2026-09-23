@@ -426,8 +426,48 @@ docs/ASYNC.md:103).
 
 The direct-call form (`Thread(fn(args))`) is unaffected: its trampoline calls
 the function and stores the result with no aliasing question. Posture decided
-in docs/ASYNC_PLAN.md: keep the documented leak for now. Possible fixes if it
+in docs/ASYNC.md ("Design decisions"): keep the documented leak for now. Possible fixes if it
 matters: extend the closure descriptor ABI to carry result ownership so the
 adapter can transfer vs duplicate exactly, or reject an opaque string-returning
 closure with a diagnostic (forcing a lambda literal whose captures the compiler
 can see).
+
+## `Fiber.start_on(buf)` runs on a heap stack (spec/impl gap; last name-keyed launch site)
+
+The async migration (docs/ASYNC.md, "Design decisions") made `Thread.start`/`.detach` and `Fiber.start` ordinary
+library methods, but `Fiber.start_on(buf)` remains special-cased: the checker
+validates the compile-time stack buffer (`check_spawn_start_on` — fixed-size
+array, ≥ 16 KB) and then REWRITES the access to the ordinary `Fiber.start`
+(`src/check/check_access_node.ts` — the `target_type.name === "Fiber" &&
+node.name === "start_on"` arm). The fiber therefore runs on a HEAP stack,
+never the caller's buffer — on both backends, and it always did: the old
+checker never even stamped `is_fiber_start_on`, so the build's `spawn_on`
+emission was unreachable and the committed runtime tests passed on heap
+stacks. The phase-1 change exposed that latent gap rather than creating it.
+
+Two things are missing to make it real:
+
+1. **Storage for `T[N]` no-init declarations.** `var uint64[2048] stack_buf`
+   lowers to an UNINITIALIZED `T*` element pointer in the C backend
+   (`build_declaration_node`: a stack C array requires a literal/range
+   initializer) — there is no buffer to hand the fiber. Both backends need a
+   no-init `T[N]` form that materializes the caller's storage (or an explicit
+   zero-init/`uninit T[N]` spelling).
+
+2. **A method-body representation of the buffer's compile-time byte size.**
+   `Fiber.start_on`'s raw body needs `len * sizeof(elem)` (strings are the
+   16-byte fat pair, everything else one word). A method signature has no
+   way to accept "any fixed array, byte size known at compile time": no
+   sized-array parameter form, and no `T_SIZE`-style substitution for a
+   parameter's element size (the existing constants substitute for the
+   class's own type param, not an arbitrary param type).
+
+When both exist: declare `start_on` as a real `Fiber` method over the
+runtime seam (mirroring `Thread.start`'s body), delete the checker rewrite,
+and the last name-keyed launch dispatch is gone. It can stay Fiber-specific
+(embedded/no-heap path); `Spawnable<T>`'s surface remains `start`/`detach`.
+Until picked up, the surface contract holds — the ≥ 16 KB fixed-array
+validation is a compile error — and the runtime behavior (heap stack) matches
+the pre-migration compiler exactly, so nothing regressed; the SPEC's
+"caller-provided fixed-size array stack" sentence (SPEC.md, Fiber section) is
+the documented-but-untrue bit.

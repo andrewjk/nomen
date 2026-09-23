@@ -125,14 +125,14 @@ higher-order call sites.
 The async runtime speaks this ABI: a submitted task IS a
 `struct nomen_closure *` whose code receives the closure itself — the pool,
 the fiber scheduler, and the daemon launcher all take one. The spawn
-constructions (`Thread(fn(args))` / `Fiber(fn(args))`, the function-value
-form, and the generalized user-Awaitable flavor) pack the wrapped call's
-arguments eagerly into an owning env, or wrap a given function value
-through a per-site adapter. Those mechanics — eager packing and its
-ownership rules, Sendable validation, nursery borrows, must-start, the
+constructions (`Thread(fn(args))` / `Fiber(fn(args))` — or any class
+declaring its own `#spawn` hook — plus the function-value form) pack the
+wrapped call's arguments eagerly into an owning env, or wrap a given
+function value through a per-site adapter. Those mechanics — eager packing
+and its ownership rules, Sendable validation, must-start, the
 `Task.pool_submit` / `Task.future_*` launch seam — are documented in
 ASYNC.md ("Spawn arguments are owned by the task env", "Function-value
-constructions", "User-defined async primitives"), not here.
+constructions", "The construction special form: `#spawn`"), not here.
 
 ## Raw bodies and the descriptor ABI
 

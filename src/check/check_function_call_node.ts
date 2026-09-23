@@ -77,7 +77,7 @@ export default function check_function_call_node(
 	// `#destroy` enforces must-start (the library pattern, ASYNC.md).
 	// Task<T> stamping stays with the consumers — `.start()` on the result,
 	// or a nursery's `.start(Thread(fn(args)))` escape hatch.
-	// ASYNC_PLAN phase 3: the special form is keyed on the `#spawn` MEMBER,
+	// ASYNC.md: the special form is keyed on the `#spawn` MEMBER,
 	// never on a type's name. A class whose construction hook is `#spawn`
 	// (the Spawnable construction marker — the library Thread/Fiber declare
 	// it) takes the deferred-call form; a user struct that merely shares the
@@ -125,10 +125,10 @@ export default function check_function_call_node(
 		);
 		return false;
 	}
-	// The GENERALIZED flavor (ASYNC.md, "User-defined async primitives") is
-	// RETIRED (ASYNC_PLAN phase 4): an Awaitable-conforming class no longer
-	// gets the `X(fn(args))` construction by conformance — the special form
-	// belongs to classes that declare the `#spawn` hook, resolved above.
+	// The generalized Awaitable-conformance sugar is RETIRED (docs/ASYNC.md,
+	// "Design decisions"): an Awaitable-conforming class no longer gets the
+	// `X(fn(args))` construction by conformance — the special form belongs
+	// to classes that declare the `#spawn` hook, resolved above.
 	if (magic_ctor && spawn_ctor_shape) {
 		return check_magic_ctor(node, status, magic_ctor);
 	}
@@ -1289,7 +1289,7 @@ function resolve_free_calls_in_node(node: BaseNode | undefined | null, status: C
 		const name = (node as import("../nodes/FunctionCallNode.ts").default).name;
 		// A monomorphised clone of a `#spawn` construction needs its
 		// annotations re-derived (the clone is never re-checked) — keyed on
-		// the declared `#spawn` member, never the name (ASYNC_PLAN phase 3;
+		// the declared `#spawn` member, never the name (ASYNC.md;
 		// the Awaitable-conformance sugar is retired in phase 4).
 		const spawn_struct = resolve_declared_struct(name, status) as
 			| import("../nodes/StructNode.ts").default
@@ -1406,7 +1406,7 @@ function derive_annotations_for_access_func(
 		return;
 	}
 	// Thread.start / Thread.detach / Fiber.start are ordinary library
-	// methods (ASYNC_PLAN phase 1); the start_on checker rewrites it to
+	// methods (ASYNC.md); the start_on checker rewrites it to
 	// start after validating the stack buffer, so monomorphised bodies only
 	// ever contain the ordinary method call.
 	const struct = status.structs.find((s) => s.name === receiver_type);
@@ -1579,7 +1579,8 @@ function stamp_spawn_ctor(node: FunctionCallNode, name: string) {
  *  nothing) — carries T on the type args, which the `.start()` /
  *  nursery paths read. Also materializes Task<T>: the launch seam a user
  *  primitive drives is Task's runtime (Task.pool_submit / future_* —
- *  ASYNC.md, "User-defined async primitives"), and statics on the bare
+ *  docs/ASYNC.md, "Extension: a class with its own `#spawn`"), and
+ *  statics on the bare
  *  generic only link once a mono instantiation exists (the same
  *  materialization a `.start()` launch performs). */
 function stamp_spawn_type_args(

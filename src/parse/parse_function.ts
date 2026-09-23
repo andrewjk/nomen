@@ -120,7 +120,7 @@ export default function parse_function(
 		// auto-inject a mutable self when the author didn't supply one —
 		// otherwise a duplicate "self" parameter is created and the author's
 		// (mutable) declaration is lost. (`#spawn` is the Spawnable
-		// construction marker — ASYNC_PLAN phase 3; its body is a
+		// construction marker — ASYNC.md; its body is a
 		// declaration, the compiler generates the construction.)
 		if (
 			(name === "#destroy" || name === "#spawn") &&

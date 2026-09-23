@@ -18,9 +18,10 @@ import { materialize_func_value } from "./utils/closure.ts";
 import { emit_closure_env_type } from "./utils/closure_env.ts";
 
 /**
- * The compiler-special `Thread(fn(args))` / `Fiber(fn(args))` constructor —
- * and its generalized flavor, a user Awaitable class's `MyThing(fn(args))`
- * (ASYNC.md, "User-defined async primitives") — packs the wrapped call's
+ * The `#spawn` construction (the deferred-call special form — the library
+ * `Thread(fn(args))` / `Fiber(fn(args))`, or any class declaring its own
+ * `#spawn` hook; docs/ASYNC.md, "The construction special form") — packs
+ * the wrapped call's
  * arguments EAGERLY into a task environment, allocates the result slot,
  * cancel flag, and future, and builds the task closure — a heap descriptor
  * over that environment (the same ABI every lambda lowers to; the runtime's
@@ -367,7 +368,7 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 }
 
 /**
- * LEXICAL NURSERY CAPTURE (ASYNC_PLAN phase 1): a construction lexically
+ * LEXICAL NURSERY CAPTURE (ASYNC.md): a construction lexically
  * inside an `async` block stores the block's tracking-slot pointers in the
  * instance, so `.start()` — an ordinary method on the spawn class —
  * registers the future with the scope that CREATED the deferred call rather

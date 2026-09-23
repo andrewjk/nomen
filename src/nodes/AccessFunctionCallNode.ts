@@ -63,36 +63,24 @@ export default class AccessFunctionCallNode extends BaseNode {
 	 * escape-hatch call (target type is `Nursery`, method name is `start`).
 	 * The build phase reads `function_return_type` and emits the spawn
 	 * trampoline against the passed Nursery's runtime futures/count pointers.
-	 * See ASYNC.md and ASYNC.md.
+	 * See ASYNC.md, "Nursery escape hatch".
 	 */
 	is_nursery_spawn?: boolean;
 	/**
-	 * Set during checking when this is a `Thread(fn(args)).start()` call —
-	 * the surface form of a direct spawn (target type is `Thread`, method
-	 * name is `start`). The build phase synthesizes a SpawnNode from the
-	 * wrapped call and emits the standard spawn trampoline. See ASYNC.md.
+	 * RETIRED with the pre-migration launch dispatch: `.start()`/`.detach()`
+	 * are ordinary methods on the library `Thread` class now (docs/ASYNC.md).
+	 * The flags remain only because monomorphized clones can carry them from
+	 * older stamps; nothing sets or consumes them on fresh checks.
 	 */
 	is_thread_start?: boolean;
-	/**
-	 * Set during checking when this is a `Thread(fn(args)).detach()` call —
-	 * the daemon form. The build synthesizes a SpawnNode from the wrapped
-	 * call and emits a detached-pthread trampoline: never a pool worker,
-	 * nobody joins it, process exit kills it mid-execution by design (the
-	 * std::thread::spawn contract). See ASYNC.md, "Daemon tasks".
-	 */
+	/** Retired — see is_thread_start. */
 	is_thread_detach?: boolean;
-	/**
-	 * Set during checking when this is a `Fiber(fn(args)).start()` call —
-	 * the fiber flavor of a direct spawn. The build synthesizes a SpawnNode
-	 * from the wrapped call and emits the fiber trampoline (the launch goes
-	 * to the fiber scheduler instead of the pool). See ASYNC.md.
-	 */
+	/** Retired — see is_thread_start. */
 	is_fiber_start?: boolean;
 	/**
-	 * Set during checking when this is a `Fiber(fn(args)).start_on(buf)`
-	 * call — like is_fiber_start, but the fiber runs on the caller-provided
-	 * fixed-size array stack. The single parameter is the buffer. See
-	 * ASYNC.md.
+	 * RETIRED with the pre-migration launch dispatch: `.start_on(buf)` is
+	 * checker-validated and rewritten to the ordinary `Fiber.start` method
+	 * (docs/ASYNC.md). Kept only for old clone stamps.
 	 */
 	is_fiber_start_on?: boolean;
 	/**

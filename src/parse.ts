@@ -241,7 +241,7 @@ export function resolve_linked_types(source: string, library: Library, file_path
 	// A named `async` block (`async pool { }`, `async(timeout: N)`) binds a
 	// Nursery capability WITHOUT the source naming the type — the binding is
 	// compiler syntax, invisible to the token scan above by construction —
-	// so `async` implies the Nursery import. (ASYNC_PLAN phase 6: the old
+	// so `async` implies the Nursery import. (ASYNC.md: the old
 	// `Thread`/`Fiber` → Task+Sendable special case is gone — pulling the
 	// Thread/Fiber type pulls its declared library dependencies, `import
 	// Task` in Thread.nm/Fiber.nm among them.)

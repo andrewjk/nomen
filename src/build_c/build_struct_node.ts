@@ -42,7 +42,7 @@ import scan_borrow_only_strings from "./utils/scan_borrow_only_strings.ts";
 export default function build_struct_node(node: StructNode, status: BuildStatus) {
 	if (node.is_generic) return;
 
-	// The runtime is the library's dependency (ASYNC_PLAN phase 6): if any
+	// The runtime is the library's dependency (ASYNC.md): if any
 	// of this struct's raw bodies reference the concurrency runtime, pull it
 	// in — keyed on body content, never on a type name (the old
 	// CONCURRENCY_TYPES set is gone).
@@ -624,7 +624,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 	const old_current_struct = status.current_struct;
 	status.current_struct = node;
 	for (let func of node.functions) {
-		// The #spawn construction marker (ASYNC_PLAN phase 3): the
+		// The #spawn construction marker (ASYNC.md): the
 		// construction is compiler-generated (build_magic_ctor); the member
 		// itself is a declaration and never emits.
 		if (func.name === "#spawn") {

@@ -30,7 +30,7 @@
 // scheduler. The runtime (scheduler, context switch) lives in the build's
 // emitted companion C — see build_fiber_spawn.
 
-// The launch surface's return type (ASYNC_PLAN phase 6: the dependency is
+// The launch surface's return type (ASYNC.md: the dependency is
 // declared by the library file, not inferred from user-source tokens).
 import Task
 
@@ -51,7 +51,7 @@ pub class Fiber<T> : Sendable, Spawnable<T> {
 	pub var uint64 future = 0
 	// Must-start flag: set by .start() / .start_on(buf) / nursery.start.
 	pub var started = false
-	// LEXICAL NURSERY CAPTURE (ASYNC_PLAN phase 1): the tracking slots of the
+	// LEXICAL NURSERY CAPTURE (ASYNC.md): the tracking slots of the
 	// `async` block that lexically encloses the CONSTRUCTION, or 0 when the
 	// construction is outside any block. `.start()` registers the future
 	// through these stored pointers — registration follows the scope that

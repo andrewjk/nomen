@@ -208,11 +208,10 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 			break;
 		}
 		case "func_call": {
-			// The compiler-special Thread/Fiber(fn(args)) construction — and
-			// the generalized user-Awaitable-class flavor — packs its task
-			// eagerly and yields the instance (CLOSURE.md Phase 3b,
-			// ASYNC.md "User-defined async primitives") — it never resolves
-			// as a call.
+			// The `#spawn` construction (the deferred-call special form —
+			// Thread/Fiber(fn(args)) or any class declaring its own hook)
+			// packs its task eagerly and yields the instance (docs/ASYNC.md,
+			// "The construction special form") — it never resolves as a call.
 			const fc = node as FunctionCallNode;
 			if (fc.is_thread_ctor || fc.is_fiber_ctor || fc.is_awaitable_ctor) {
 				build_magic_ctor_node(fc, status);
