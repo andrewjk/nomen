@@ -1,20 +1,14 @@
 import { expect, test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
-import parse_with_imports, { parse_raw } from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
+import parse_with_imports from "./parse_with_imports";
 
 // Regression tests for the FOLLOWUP.md BUGS entries fixed alongside the
 // view-string work: `&&` short-circuiting on aarch64, and declaration-order
 // independence of parallel-length contract stripping.
 
 async function build_and_run(input: string, name: string, expected: string, raw = false) {
-	for (const arch of ["aarch64", "c"] as const) {
-		const parsed = raw ? parse_raw(input) : parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch, audit: true });
-		await check_output(name, result, expected, { arch, audit: true });
-	}
+	await build_and_check_output(input, name, expected, raw);
 }
 
 // `y < n && xs.at(y).text == "one"` used to evaluate BOTH operands on

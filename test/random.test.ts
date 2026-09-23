@@ -1,15 +1,10 @@
-import { describe, expect, test } from "vite-plus/test";
+import { describe, test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 
 // Random — the splitmix64 generator in core/System/Random.nm. The raw
 // sequence is fully determined by the seed, so the expected values are
 // computed here (BigInt splitmix64) and asserted exactly, on both backends.
-
-const ARCHITECTURES = ["c", "aarch64"] as const;
-const OPTIONS = { audit: true } as const;
 
 const M64 = (1n << 64n) - 1n;
 const GOLDEN = 0x9e3779b97f4a7c15n;
@@ -50,13 +45,7 @@ Console.write(",")
 Console.write("\\{rng.next()}")
 `;
 		const expected_text = expected.join(",");
-		for (const arch of ARCHITECTURES) {
-			const parsed = parse_with_imports(input);
-			expect(parsed.errors).toEqual([]);
-			const options = { arch, ...OPTIONS };
-			const result = build(parsed.root, options);
-			await check_output(`random_next_${arch}`, result, expected_text, options);
-		}
+		await build_and_check_output(input, "random_next", expected_text);
 	});
 
 	test("below() stays in [0, bound) and matches next() % bound", async () => {
@@ -74,13 +63,7 @@ while i < 8 {
 	i += 1
 }
 `;
-		for (const arch of ARCHITECTURES) {
-			const parsed = parse_with_imports(input);
-			expect(parsed.errors).toEqual([]);
-			const options = { arch, ...OPTIONS };
-			const result = build(parsed.root, options);
-			await check_output(`random_below_${arch}`, result, expected, options);
-		}
+		await build_and_check_output(input, "random_below", expected);
 	});
 
 	test("range() stays in [lo, hi] inclusive", async () => {
@@ -99,12 +82,6 @@ while i < 6 {
 	i += 1
 }
 `;
-		for (const arch of ARCHITECTURES) {
-			const parsed = parse_with_imports(input);
-			expect(parsed.errors).toEqual([]);
-			const options = { arch, ...OPTIONS };
-			const result = build(parsed.root, options);
-			await check_output(`random_range_${arch}`, result, expected, options);
-		}
+		await build_and_check_output(input, "random_range", expected);
 	});
 });

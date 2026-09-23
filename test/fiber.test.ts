@@ -1,16 +1,12 @@
 import { expect, describe, test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
+import build_and_check_output from "./build_and_check_output";
 import { parse_raw } from "./parse_with_imports";
 
 // Fiber runtime — Phase 1 of ASYNC.md. Each runtime test loops over the
 // C and aarch64 backends. A fiber is a stackful coroutine: it parks (frees
 // its worker) instead of blocking, and `Fiber.yield()` hands the worker to
 // the next runnable fiber.
-
-const ARCHITECTURES = ["c", "aarch64"] as const;
-const OPTIONS = { audit: true } as const;
 
 describe("Fiber runtime", () => {
 	test("fibers interleave round-robin via yield (cooperative, deterministic)", async () => {
@@ -45,13 +41,7 @@ pub func main = () {
 	Console.write_line(order)
 }
 `;
-		for (const arch of ARCHITECTURES) {
-			const parsed = parse_raw(input);
-			expect(parsed.errors).toEqual([]);
-			const options = { arch, ...OPTIONS };
-			const result = build(parsed.root, options);
-			await check_output(`fiber_yield_interleave_${arch}`, result, "1212\n", options);
-		}
+		await build_and_check_output(input, "fiber_yield_interleave", "1212\n", true);
 	});
 
 	test("a fiber parks on a Thread task's result and wakes on completion", async () => {
@@ -82,13 +72,7 @@ pub func main = () {
 	}
 }
 `;
-		for (const arch of ARCHITECTURES) {
-			const parsed = parse_raw(input);
-			expect(parsed.errors).toEqual([]);
-			const options = { arch, ...OPTIONS };
-			const result = build(parsed.root, options);
-			await check_output(`fiber_park_on_task_${arch}`, result, "park ok\n", options);
-		}
+		await build_and_check_output(input, "fiber_park_on_task", "park ok\n", true);
 	});
 
 	test("Fiber.is_fiber is true inside a fiber and false outside", async () => {
@@ -114,18 +98,7 @@ pub func main = () {
 	}
 }
 `;
-		for (const arch of ARCHITECTURES) {
-			const parsed = parse_raw(input);
-			expect(parsed.errors).toEqual([]);
-			const options = { arch, ...OPTIONS };
-			const result = build(parsed.root, options);
-			await check_output(
-				`fiber_is_fiber_${arch}`,
-				result,
-				"main not fiber\nfiber is fiber\n",
-				options,
-			);
-		}
+		await build_and_check_output(input, "fiber_is_fiber", "main not fiber\nfiber is fiber\n", true);
 	});
 
 	test("start_on runs a fiber on a caller-provided static stack", async () => {
@@ -152,13 +125,7 @@ pub func main = () {
 	}
 }
 `;
-		for (const arch of ARCHITECTURES) {
-			const parsed = parse_raw(input);
-			expect(parsed.errors).toEqual([]);
-			const options = { arch, ...OPTIONS };
-			const result = build(parsed.root, options);
-			await check_output(`fiber_start_on_${arch}`, result, "static stack ok\n", options);
-		}
+		await build_and_check_output(input, "fiber_start_on", "static stack ok\n", true);
 	});
 
 	test("fibers spawned inside a nursery are joined at block exit", async () => {
@@ -181,13 +148,7 @@ pub func main = () {
 	}
 }
 `;
-		for (const arch of ARCHITECTURES) {
-			const parsed = parse_raw(input);
-			expect(parsed.errors).toEqual([]);
-			const options = { arch, ...OPTIONS };
-			const result = build(parsed.root, options);
-			await check_output(`fiber_nursery_join_${arch}`, result, "nursery joined fiber\n", options);
-		}
+		await build_and_check_output(input, "fiber_nursery_join", "nursery joined fiber\n", true);
 	});
 
 	test("a string result moves out of a fiber task intact", async () => {
@@ -205,18 +166,7 @@ pub func main = () {
 	Console.write_line(s)
 }
 `;
-		for (const arch of ARCHITECTURES) {
-			const parsed = parse_raw(input);
-			expect(parsed.errors).toEqual([]);
-			const options = { arch, ...OPTIONS };
-			const result = build(parsed.root, options);
-			await check_output(
-				`fiber_string_result_${arch}`,
-				result,
-				"len ok\nhello from fiber\n",
-				options,
-			);
-		}
+		await build_and_check_output(input, "fiber_string_result", "len ok\nhello from fiber\n", true);
 	});
 
 	test("nested fibers do not deadlock: a fiber spawning fibers", async () => {
@@ -252,13 +202,7 @@ pub func main = () {
 	}
 }
 `;
-		for (const arch of ARCHITECTURES) {
-			const parsed = parse_raw(input);
-			expect(parsed.errors).toEqual([]);
-			const options = { arch, ...OPTIONS };
-			const result = build(parsed.root, options);
-			await check_output(`fiber_nested_${arch}`, result, "nested ok\n", options);
-		}
+		await build_and_check_output(input, "fiber_nested", "nested ok\n", true);
 	});
 
 	test("fire-and-forget fiber runs to completion before process exit", async () => {
@@ -275,19 +219,13 @@ pub func main = () {
 	Console.write_line("after start")
 }
 `;
-		for (const arch of ARCHITECTURES) {
-			const parsed = parse_raw(input);
-			expect(parsed.errors).toEqual([]);
-			const options = { arch, ...OPTIONS };
-			const result = build(parsed.root, options);
-			await check_output(
-				`fiber_fire_forget_${arch}`,
-				result,
-				// Cooperative: the fiber runs at the exit drain, after main.
-				"after start\nfrom fiber background\n",
-				options,
-			);
-		}
+		await build_and_check_output(
+			input,
+			`fiber_fire_forget`,
+			// Cooperative: the fiber runs at the exit drain, after main.
+			"after start\nfrom fiber background\n",
+			true,
+		);
 	});
 });
 

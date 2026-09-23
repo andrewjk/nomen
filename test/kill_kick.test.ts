@@ -1,8 +1,6 @@
-import { describe, expect, test } from "vite-plus/test";
+import { describe, test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
-import { parse_raw } from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 
 // A fiber parked on a channel whose producer is cancelled by the nursery
 // timeout: nothing wakes the receiver (cancel only wakes the producer's own
@@ -40,14 +38,8 @@ pub func main = () {
 	Console.write_line("survived")
 }
 `;
-		const parsed = parse_raw(input);
-		expect(parsed.errors).toEqual([]);
-		for (const arch of ["c", "aarch64"] as const) {
-			const built = build(parsed.root, { arch, audit: false });
-			await check_output("kill_kick_channel", built, "receiver done\nsurvived\n", {
-				arch,
-				audit: false,
-			});
-		}
+		await build_and_check_output(input, "kill_kick_channel", "receiver done\nsurvived\n", true, {
+			audit: false,
+		});
 	}, 30000);
 });

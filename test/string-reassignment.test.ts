@@ -1,20 +1,13 @@
-import { expect, test } from "vite-plus/test";
+import { test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 
 // Regression tests for the FOLLOWUP.md issues "Reassigning a string to a bare
 // literal stores rodata, then scope-exit free aborts" and "`String.set` traps
 // on aarch64".
 
 async function build_and_run(input: string, name: string, expected: string, audit = true) {
-	for (const arch of ["aarch64", "c"] as const) {
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch, audit });
-		await check_output(name, result, expected, { arch, audit });
-	}
+	await build_and_check_output(input, name, expected, false, { audit });
 }
 
 // A `var string` initialized with a literal is heap-owned at declaration, but

@@ -381,15 +381,7 @@ pub func main = () {
   Console.write("\\{b.hi}")
 }
 `;
-		for (const arch of ["aarch64", "c"] as const) {
-			const parsed = parse_raw(source);
-			expect(parsed.errors).toEqual([]);
-			const result = build(parsed.root, { arch, audit: true });
-			await check_output(`struct_const_field_default_${arch}`, result, "2147483647", {
-				arch,
-				audit: true,
-			});
-		}
+		await build_and_check_output(source, "struct_const_field_default", "2147483647", true);
 	});
 
 	test("value method copies self into a local", async () => {

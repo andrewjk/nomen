@@ -1,8 +1,6 @@
-import { expect, describe, test } from "vite-plus/test";
+import { describe, test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
-import { parse_raw } from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 
 // Phase 2 of ASYNC.md — park-aware blocking and cancellation reaching
 // parked fibers:
@@ -11,9 +9,6 @@ import { parse_raw } from "./parse_with_imports";
 //   * Task.cancel()/nursery timeout/race wake or reach passive waiters
 // Acceptance: nested fibers, race mode, and timeout cancellation all work
 // with fibers. Each runtime test loops over the C and aarch64 backends.
-
-const ARCHITECTURES = ["c", "aarch64"] as const;
-const OPTIONS = { audit: true } as const;
 
 describe("park-aware Channel", () => {
 	test("a fiber parked in receive wakes on a thread producer's send", async () => {
@@ -40,13 +35,7 @@ pub func main = () {
 	}
 }
 `;
-		for (const arch of ARCHITECTURES) {
-			const parsed = parse_raw(input);
-			expect(parsed.errors).toEqual([]);
-			const options = { arch, ...OPTIONS };
-			const result = build(parsed.root, options);
-			await check_output(`fiber_p2_channel_wake_${arch}`, result, "fiber received\n", options);
-		}
+		await build_and_check_output(input, "fiber_p2_channel_wake", "fiber received\n", true);
 	});
 
 	test("a fiber parked in receive_string wakes on a thread producer's send_string", async () => {
@@ -79,18 +68,7 @@ pub func main = () {
 	}
 }
 `;
-		for (const arch of ARCHITECTURES) {
-			const parsed = parse_raw(input);
-			expect(parsed.errors).toEqual([]);
-			const options = { arch, ...OPTIONS };
-			const result = build(parsed.root, options);
-			await check_output(
-				`fiber_p2_channel_string_wake_${arch}`,
-				result,
-				"fiber got ping\n",
-				options,
-			);
-		}
+		await build_and_check_output(input, "fiber_p2_channel_string_wake", "fiber got ping\n", true);
 	});
 
 	test("a fiber parked in receive resumes when the main thread sends", async () => {
@@ -114,13 +92,7 @@ pub func main = () {
 	}
 }
 `;
-		for (const arch of ARCHITECTURES) {
-			const parsed = parse_raw(input);
-			expect(parsed.errors).toEqual([]);
-			const options = { arch, ...OPTIONS };
-			const result = build(parsed.root, options);
-			await check_output(`fiber_p2_channel_main_${arch}`, result, "parked receive ok\n", options);
-		}
+		await build_and_check_output(input, "fiber_p2_channel_main", "parked receive ok\n", true);
 	});
 
 	test("a cancelled fiber waiting on an empty channel returns instead of hanging", async () => {
@@ -144,18 +116,12 @@ pub func main = () {
 	Console.write_line("nursery exited")
 }
 `;
-		for (const arch of ARCHITECTURES) {
-			const parsed = parse_raw(input);
-			expect(parsed.errors).toEqual([]);
-			const options = { arch, ...OPTIONS };
-			const result = build(parsed.root, options);
-			await check_output(
-				`fiber_p2_channel_timeout_${arch}`,
-				result,
-				"observed cancel\nnursery exited\n",
-				options,
-			);
-		}
+		await build_and_check_output(
+			input,
+			"fiber_p2_channel_timeout",
+			"observed cancel\nnursery exited\n",
+			true,
+		);
 	});
 });
 
@@ -192,14 +158,7 @@ pub func main = () {
 	Console.write_line(order)
 }
 `;
-		for (const arch of ARCHITECTURES) {
-			const parsed = parse_raw(input);
-			expect(parsed.errors).toEqual([]);
-			const options = { arch, ...OPTIONS };
-			const result = build(parsed.root, options);
-			// A: 1, 11 (holds the lock through the yield); then B: 2, 12.
-			await check_output(`fiber_p2_mutex_${arch}`, result, "1,11,2,12,\n", options);
-		}
+		await build_and_check_output(input, "fiber_p2_mutex", "1,11,2,12,\n", true);
 	});
 
 	test("a threaded-model fiber parks on a lock held across a park", async () => {
@@ -241,13 +200,7 @@ pub func main = () {
 	Console.write_line("contended ok")
 }
 `;
-		for (const arch of ARCHITECTURES) {
-			const parsed = parse_raw(input);
-			expect(parsed.errors).toEqual([]);
-			const options = { arch, ...OPTIONS };
-			const result = build(parsed.root, options);
-			await check_output(`fiber_p2_mutex_threaded_${arch}`, result, "contended ok\n", options);
-		}
+		await build_and_check_output(input, "fiber_p2_mutex_threaded", "contended ok\n", true);
 	});
 });
 
@@ -285,13 +238,7 @@ pub func main = () {
 	}
 }
 `;
-		for (const arch of ARCHITECTURES) {
-			const parsed = parse_raw(input);
-			expect(parsed.errors).toEqual([]);
-			const options = { arch, ...OPTIONS };
-			const result = build(parsed.root, options);
-			await check_output(`fiber_p2_cancel_wake_${arch}`, result, "fiber woke\n", options);
-		}
+		await build_and_check_output(input, "fiber_p2_cancel_wake", "fiber woke\n", true);
 	});
 
 	test("async(mode: race) exits on the first fiber and cancels the loser", async () => {
@@ -327,12 +274,6 @@ pub func main = () {
 	}
 }
 `;
-		for (const arch of ARCHITECTURES) {
-			const parsed = parse_raw(input);
-			expect(parsed.errors).toEqual([]);
-			const options = { arch, ...OPTIONS };
-			const result = build(parsed.root, options);
-			await check_output(`fiber_p2_race_${arch}`, result, "quick fiber won\n", options);
-		}
+		await build_and_check_output(input, "fiber_p2_race", "quick fiber won\n", true);
 	});
 });

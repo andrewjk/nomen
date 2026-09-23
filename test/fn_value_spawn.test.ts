@@ -1,8 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
 
-import build from "../src/build";
 import build_and_check_output from "./build_and_check_output";
-import check_output from "./check_output";
 import { parse_raw } from "./parse_with_imports";
 
 // CLOSURE.md Phase 3c: the spawn construction accepts a
@@ -163,12 +161,7 @@ pub func main = () {
 `;
 		// Audit off, mirroring daemon.test.ts: a daemon still running (or
 		// killed) at process exit leaks its task closure by construction.
-		const parsed = parse_raw(input);
-		expect(parsed.errors).toEqual([]);
-		for (const arch of ["c", "aarch64"] as const) {
-			const built = build(parsed.root, { arch, audit: false });
-			await check_output("fnval_detach", built, "detached\n", { arch, audit: false });
-		}
+		await build_and_check_output(input, "fnval_detach", "detached\n", true, { audit: false });
 	});
 
 	test("a lambda spawned through the nursery escape hatch is joined", async () => {

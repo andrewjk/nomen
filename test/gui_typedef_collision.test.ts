@@ -1,10 +1,6 @@
-import { expect, describe, test } from "vite-plus/test";
+import { describe, test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
-import { parse_raw } from "./parse_with_imports";
-
-const ARCHS = ["aarch64", "c"] as const;
+import build_and_check_output from "./build_and_check_output";
 
 // Building a program that pulls in the GUI controls (Window/Text, whose raw
 // `#arch` blocks reference the objc runtime) forces the C backend to
@@ -16,12 +12,7 @@ const ARCHS = ["aarch64", "c"] as const;
 // must build + run on both backends. Without typedef mangling (the `nm_`
 // strategy) the C backend fails to compile.
 async function run(name: string, program: string, expected: string) {
-	const parsed = parse_raw(program);
-	expect(parsed.errors).toEqual([]);
-	for (const arch of ARCHS) {
-		const result = build(parsed.root, { arch, platform: "macos" });
-		await check_output(`${name}_${arch}`, result, expected, { arch, audit: false });
-	}
+	await build_and_check_output(program, name, expected, true, { platform: "macos", audit: false });
 }
 
 describe("GUI typedef collision (Size/BoxConstraints + Cocoa)", () => {

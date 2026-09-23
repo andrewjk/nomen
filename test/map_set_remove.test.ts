@@ -1,21 +1,10 @@
-import { expect, test } from "vite-plus/test";
+import { test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 
 // Regression tests for the FOLLOWUP.md Map/Set `remove` item: backward-shift
 // deletion moved entries with store (which strdups owning elements and
 // leaves the source slot intact), leaking every displaced allocation.
-
-async function build_and_run(input: string, name: string, expected: string) {
-	for (const arch of ["aarch64", "c"] as const) {
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch, audit: true });
-		await check_output(name, result, expected, { arch, audit: true });
-	}
-}
 
 test("Map<string, int> remove does not leak shifted keys", async () => {
 	const input = `
@@ -35,7 +24,7 @@ while i < 60 {
 var string probe = 8.to_string()
 Console.write_line("\\{m.length} \\{m.get_or(probe, -1)}")
 `;
-	await build_and_run(input, "map_remove_no_leak", "30 -1");
+	await build_and_check_output(input, "map_remove_no_leak", "30 -1");
 });
 
 test("Set<string> remove does not leak shifted slots", async () => {
@@ -56,5 +45,5 @@ while i < 60 {
 var string probe = 8.to_string()
 Console.write_line("\\{s.length} \\{s.has(probe)}")
 `;
-	await build_and_run(input, "set_remove_no_leak", "30 false");
+	await build_and_check_output(input, "set_remove_no_leak", "30 false");
 });

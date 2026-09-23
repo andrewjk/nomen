@@ -2,10 +2,9 @@ import path from "node:path";
 
 import { expect, describe, test } from "vite-plus/test";
 
-import build from "../src/build";
 import { get_library } from "../src/lib";
 import parse from "../src/parse";
-import check_output from "./check_output";
+import build_and_check_output from "./build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 
 // `unsafe` — the minimal typed-pointer subset that lets core memory
@@ -238,14 +237,8 @@ pub func main = () {
 	Console.write("\\{a.at(0)}\\{a.at(1)}\\{a.at(2)}")
 }
 `;
-		const parsed = parse(input, core);
-		expect(parsed.errors).toEqual([]);
 		const expected = "789";
-		for (const arch of ["aarch64", "c"] as const) {
-			const result = build(parsed.root, { arch });
-			expect(result.errors ?? []).toEqual([]);
-			await check_output("unsafe_array_roundtrip", result, expected, { arch });
-		}
+		await build_and_check_output(input, "unsafe_array_roundtrip", expected, true);
 	});
 
 	test("string slot set deep-copies (T_NEEDS_STRDUP constant folds per instantiation)", async () => {
@@ -259,13 +252,7 @@ pub func main = () {
 	Console.write(strings.at(1))
 }
 `;
-		const parsed = parse(input, core);
-		expect(parsed.errors).toEqual([]);
 		const expected = "cc aa";
-		for (const arch of ["aarch64", "c"] as const) {
-			const result = build(parsed.root, { arch });
-			expect(result.errors ?? []).toEqual([]);
-			await check_output("unsafe_string_slot_set", result, expected, { arch });
-		}
+		await build_and_check_output(input, "unsafe_string_slot_set", expected, true);
 	});
 });

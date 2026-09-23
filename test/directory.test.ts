@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, test } from "vite-plus/test";
 
 import build from "../src/build";
+import build_and_check_output from "./build_and_check_output";
 import check_output from "./check_output";
 import parse_with_imports from "./parse_with_imports";
 
@@ -23,13 +24,7 @@ if Directory.exists("dir_exists_test") {
 	Console.write("none")
 }
 `;
-		for (const arch of ARCHITECTURES) {
-			const parsed = parse_with_imports(input);
-			expect(parsed.errors).toEqual([]);
-			const options = { arch, audit: true };
-			const result = build(parsed.root, options);
-			await check_output(`directory_exists_${arch}`, result, "one", options);
-		}
+		await build_and_check_output(input, "directory_exists", "one");
 	});
 
 	test("Directory.list on missing path yields not_found", async () => {
@@ -44,13 +39,7 @@ match Directory.list("dir_no_such_xyz_123") {
 	}
 }
 `;
-		for (const arch of ARCHITECTURES) {
-			const parsed = parse_with_imports(input);
-			expect(parsed.errors).toEqual([]);
-			const options = { arch, audit: true };
-			const result = build(parsed.root, options);
-			await check_output(`directory_list_missing_${arch}`, result, "empty", options);
-		}
+		await build_and_check_output(input, "directory_list_missing", "empty");
 	});
 
 	test("Directory.list returns created entry", async () => {
@@ -86,12 +75,6 @@ if Directory.exists("dir_remove_test") {
 	Console.write("gone")
 }
 `;
-		for (const arch of ARCHITECTURES) {
-			const parsed = parse_with_imports(input);
-			expect(parsed.errors).toEqual([]);
-			const options = { arch, audit: true };
-			const result = build(parsed.root, options);
-			await check_output(`directory_remove_${arch}`, result, "gone", options);
-		}
+		await build_and_check_output(input, "directory_remove", "gone");
 	});
 });

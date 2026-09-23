@@ -2,11 +2,9 @@ import path from "node:path";
 
 import { expect, describe, test } from "vite-plus/test";
 
-import build from "../src/build";
 import { get_library } from "../src/lib";
 import parse from "../src/parse";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 
 // `extern func` declarations map a body-less Nomen function onto a C
 // library symbol. The core library uses them for atoi (Init.parse_int) and
@@ -23,15 +21,8 @@ pub func main = () {
 	Console.write("\\{parse_int(digits) + 1}")
 }
 `;
-		const parsed = parse(input, core);
-		expect(parsed.errors).toEqual([]);
-		expect(parsed.errors).toEqual([]);
 		const expected = "42";
-		for (const arch of ["aarch64", "c"] as const) {
-			const result = build(parsed.root, { arch, audit: true });
-			expect(result.errors ?? []).toEqual([]);
-			await check_output(`extern_atoi_${arch}`, result, expected, { arch, audit: true });
-		}
+		await build_and_check_output(input, "extern_atoi", expected, true);
 	});
 
 	test("extern returning a string re-wraps the fat pair (strdup via to_string)", async () => {
@@ -41,14 +32,8 @@ const string copy = original.to_string()
 Console.write(copy)
 Console.write("\\{copy.length}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
 		const expected = "owned copy10";
-		for (const arch of ["aarch64", "c"] as const) {
-			const result = build(parsed.root, { arch, audit: true });
-			expect(result.errors ?? []).toEqual([]);
-			await check_output(`extern_strdup_${arch}`, result, expected, { arch, audit: true });
-		}
+		await build_and_check_output(input, "extern_strdup", expected);
 	});
 
 	test("method externs marshal sole float params (Math.sqrt/log)", async () => {
@@ -59,14 +44,8 @@ Console.write("\\{r}")
 Console.write("\\n")
 Console.write("\\{l}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
 		const expected = "2.000000\n0.000000";
-		for (const arch of ["aarch64", "c"] as const) {
-			const result = build(parsed.root, { arch, audit: true });
-			expect(result.errors ?? []).toEqual([]);
-			await check_output(`extern_sqrt_log_${arch}`, result, expected, { arch, audit: true });
-		}
+		await build_and_check_output(input, "extern_sqrt_log", expected);
 	});
 
 	test("extern outside the System library is rejected", () => {

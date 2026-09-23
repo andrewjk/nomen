@@ -1,10 +1,9 @@
 import { describe, expect, test } from "vite-plus/test";
 
 import build from "../src/build";
+import build_and_check_output from "./build_and_check_output";
 import check_output from "./check_output";
 import parse_with_imports from "./parse_with_imports";
-
-const ARCHITECTURES = ["c", "aarch64"] as const;
 
 describe("Time", () => {
 	test("Time.now_ms returns a positive value", async () => {
@@ -16,13 +15,7 @@ if t > 0 {
 	Console.write("bad")
 }
 `;
-		for (const arch of ARCHITECTURES) {
-			const parsed = parse_with_imports(input);
-			expect(parsed.errors).toEqual([]);
-			const options = { arch, audit: true };
-			const result = build(parsed.root, options);
-			await check_output(`time_now_ms_${arch}`, result, "ok", options);
-		}
+		await build_and_check_output(input, "time_now_ms", "ok");
 	});
 
 	test("Time.now_unix returns a positive value", async () => {
@@ -34,13 +27,7 @@ if t > 0 {
 	Console.write("bad")
 }
 `;
-		for (const arch of ARCHITECTURES) {
-			const parsed = parse_with_imports(input);
-			expect(parsed.errors).toEqual([]);
-			const options = { arch, audit: true };
-			const result = build(parsed.root, options);
-			await check_output(`time_now_unix_${arch}`, result, "ok", options);
-		}
+		await build_and_check_output(input, "time_now_unix", "ok");
 	});
 
 	test("Time.sleep_ms advances the clock", async () => {
@@ -54,12 +41,6 @@ if after > before {
 	Console.write("nosleep")
 }
 `;
-		for (const arch of ARCHITECTURES) {
-			const parsed = parse_with_imports(input);
-			expect(parsed.errors).toEqual([]);
-			const options = { arch, audit: true };
-			const result = build(parsed.root, options);
-			await check_output(`time_sleep_${arch}`, result, "slept", options);
-		}
+		await build_and_check_output(input, "time_sleep", "slept");
 	});
 });

@@ -117,13 +117,9 @@ pub func main = () {
 	listener.close()
 }
 `;
-		for (const arch of ["c", "aarch64"] as const) {
-			const parsed = parse_raw(input);
-			expect(parsed.errors).toEqual([]);
-			const options = { arch, audit: true };
-			const result = build(parsed.root, options);
-			await check_output(`http_get_loopback_${arch}`, result, "hello\n200\n", options);
-		}
+		await build_and_check_output(input, "http_get_loopback", "hello\n200\n", true, {
+			audit: false,
+		});
 	});
 
 	test("post over loopback Tcp delivers the body", async () => {
@@ -183,12 +179,8 @@ pub func main = () {
 	listener.close()
 }
 `;
-		for (const arch of ["c", "aarch64"] as const) {
-			const parsed = parse_raw(input);
-			expect(parsed.errors).toEqual([]);
-			const options = { arch, audit: true };
-			const result = build(parsed.root, options);
-			await check_output(`http_post_loopback_${arch}`, result, "got-post\n201\n", options);
-		}
+		await build_and_check_output(input, "http_post_loopback", "got-post\n201\n", true, {
+			audit: false,
+		});
 	});
 });

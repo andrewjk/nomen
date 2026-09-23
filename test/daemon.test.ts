@@ -1,10 +1,8 @@
 import { describe, expect, test } from "vite-plus/test";
 
-import build from "../src/build";
 import { get_library } from "../src/lib";
 import parse from "../src/parse";
-import check_output from "./check_output";
-import { parse_raw } from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 
 // `Thread(fn(args)).detach()` — the daemon form (ASYNC.md, "Daemon tasks";
 // SPEC.md, "Daemon tasks"): a process-lifetime service on its own dedicated
@@ -15,8 +13,6 @@ import { parse_raw } from "./parse_with_imports";
 // below returns from main while the daemon is still running. Daemon tests
 // run with audit off: a daemon killed mid-flight leaks its trampoline args
 // by construction. Each runtime test loops over the C and aarch64 backends.
-
-const ARCHITECTURES = ["c", "aarch64"] as const;
 
 describe("daemon tasks (Thread.detach)", () => {
 	test("a daemon does not block main or process exit", async () => {
@@ -38,13 +34,9 @@ pub func main = () {
 	// returning does not wait for the daemon
 }
 `;
-		for (const arch of ARCHITECTURES) {
-			const parsed = parse_raw(input);
-			expect(parsed.errors).toEqual([]);
-			const options = { arch, audit: false };
-			const result = build(parsed.root, options);
-			await check_output(`daemon_detached_${arch}`, result, "daemon alive\n", options);
-		}
+		await build_and_check_output(input, "daemon_detached", "daemon alive\n", true, {
+			audit: false,
+		});
 	});
 
 	test("a tight-loop daemon that never parks still does not block exit", async () => {
@@ -72,13 +64,7 @@ pub func main = () {
 	}
 }
 `;
-		for (const arch of ARCHITECTURES) {
-			const parsed = parse_raw(input);
-			expect(parsed.errors).toEqual([]);
-			const options = { arch, audit: false };
-			const result = build(parsed.root, options);
-			await check_output(`daemon_spin_${arch}`, result, "spinner up\n", options);
-		}
+		await build_and_check_output(input, "daemon_spin", "spinner up\n", true, { audit: false });
 	});
 
 	test("detach inside a nursery is not tracked by the join", async () => {
@@ -109,18 +95,13 @@ pub func main = () {
 	}
 }
 `;
-		for (const arch of ARCHITECTURES) {
-			const parsed = parse_raw(input);
-			expect(parsed.errors).toEqual([]);
-			const options = { arch, audit: false };
-			const result = build(parsed.root, options);
-			await check_output(
-				`daemon_nursery_escape_${arch}`,
-				result,
-				"session done, daemon outlives it\n",
-				options,
-			);
-		}
+		await build_and_check_output(
+			input,
+			"daemon_nursery_escape",
+			"session done, daemon outlives it\n",
+			true,
+			{ audit: false },
+		);
 	});
 
 	test("detach arguments must be Sendable", () => {

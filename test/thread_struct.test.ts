@@ -1,9 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
 
-import build from "../src/build";
 import build_and_check_output from "./build_and_check_output";
-import check_output from "./check_output";
-import { parse_raw } from "./parse_with_imports";
 
 // CLOSURE.md Phase 3b: Thread/Fiber are real library classes.
 // The construction packs its arguments eagerly into a task closure and
@@ -84,15 +81,9 @@ pub func main = () {
 		// running at process exit leaks its task closure by construction —
 		// the detached runner disposes it, but the audit check at main exit
 		// races it.
-		const parsed = parse_raw(input);
-		expect(parsed.errors).toEqual([]);
-		for (const arch of ["c", "aarch64"] as const) {
-			const built = build(parsed.root, { arch, audit: false });
-			await check_output("thread_struct_detach_store", built, "detached\n", {
-				arch,
-				audit: false,
-			});
-		}
+		await build_and_check_output(input, "thread_struct_detach_store", "detached\n", true, {
+			audit: false,
+		});
 	});
 
 	test("destroying an unstarted Thread aborts with an explanation", async () => {
@@ -107,19 +98,11 @@ pub func main = () {
 	Console.write_line("made")
 }
 `;
-		const parsed = parse_raw(input);
-		expect(parsed.errors).toEqual([]);
 		let failed = false;
 		try {
-			await check_output(
-				"thread_struct_must_start",
-				build(parsed.root, { arch: "c", audit: false }),
-				"made\n",
-				{
-					arch: "c",
-					audit: false,
-				},
-			);
+			await build_and_check_output(input, "thread_struct_must_start", "made\n", true, {
+				audit: false,
+			});
 		} catch (e) {
 			failed = true;
 			const err = e as { stderr?: string; message?: string };

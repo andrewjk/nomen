@@ -13,6 +13,7 @@ async function run(name: string, input: string, expected: string) {
 		const result = build(parsed.root, { arch, platform: "macos" });
 		await check_output(`${name}_${arch}`, result, expected, { arch, audit: false });
 	}
+	//await build_and_check_output(input, name , expected, false, { platform: "macos" })
 }
 
 describe("geometry types", () => {

@@ -1,10 +1,6 @@
-import { expect, describe, test } from "vite-plus/test";
+import { describe, test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
-
-const ARCHS = ["aarch64", "c"] as const;
+import build_and_check_output from "./build_and_check_output";
 
 // Run a container geometry snippet on both backends and assert the printed
 // frames match. The `compute` / `fmt_frame` path is pure math (no native
@@ -12,12 +8,7 @@ const ARCHS = ["aarch64", "c"] as const;
 // would otherwise only surface on one backend (e.g. the module-level const
 // text-relocation bug that went unnoticed because these tests were c-only).
 async function run(name: string, input: string, expected: string) {
-	const parsed = parse_with_imports(input);
-	expect(parsed.errors).toEqual([]);
-	for (const arch of ARCHS) {
-		const result = build(parsed.root, { arch, platform: "macos" });
-		await check_output(`${name}_${arch}`, result, expected, { arch, audit: false });
-	}
+	await build_and_check_output(input, name, expected, false, { platform: "macos", audit: false });
 }
 
 describe("container layout", () => {

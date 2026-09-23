@@ -1,15 +1,13 @@
 import { expect, describe, test } from "vite-plus/test";
 
 import build from "../src/build";
+import build_and_check_output from "./build_and_check_output";
 import check_output from "./check_output";
 import { parse_raw } from "./parse_with_imports";
 
 // Tcp — non-blocking sockets whose waits park the calling fiber (Phase 3 of
 // ASYNC.md). The tests run a real loopback echo server and client on the
 // C and aarch64 backends.
-
-const ARCHITECTURES = ["c", "aarch64"] as const;
-const OPTIONS = { audit: true } as const;
 
 describe("Tcp", () => {
 	test("a fiber server echoes a request and the client reads it back", async () => {
@@ -49,13 +47,7 @@ pub func main = () {
 	server.close()
 }
 `;
-		for (const arch of ARCHITECTURES) {
-			const parsed = parse_raw(input);
-			expect(parsed.errors).toEqual([]);
-			const options = { arch, ...OPTIONS };
-			const result = build(parsed.root, options);
-			await check_output(`tcp_echo_${arch}`, result, "echo:hello\n", options);
-		}
+		await build_and_check_output(input, "tcp_echo", "echo:hello\n", true);
 	});
 
 	test("a refused connection reports a connect error", async () => {
@@ -69,13 +61,7 @@ pub func main = () {
 	}
 }
 `;
-		for (const arch of ARCHITECTURES) {
-			const parsed = parse_raw(input);
-			expect(parsed.errors).toEqual([]);
-			const options = { arch, ...OPTIONS };
-			const result = build(parsed.root, options);
-			await check_output(`tcp_refused_${arch}`, result, "connect error 3\n", options);
-		}
+		await build_and_check_output(input, "tcp_refused", "connect error 3\n", true);
 	});
 
 	test("many concurrent fiber connections echo on few workers", async () => {
@@ -155,13 +141,7 @@ pub func main = () {
 	Console.write_line("echoed \\{ok}/\\{n}")
 }
 `;
-		for (const arch of ARCHITECTURES) {
-			const parsed = parse_raw(input);
-			expect(parsed.errors).toEqual([]);
-			const options = { arch, ...OPTIONS };
-			const result = build(parsed.root, options);
-			await check_output(`tcp_scale_${arch}`, result, "echoed 64/64\n", options);
-		}
+		await build_and_check_output(input, "tcp_scale", "echoed 64/64\n", true);
 	});
 
 	test("Tcp resolves through the precompiled system object (aarch64 split)", async () => {
