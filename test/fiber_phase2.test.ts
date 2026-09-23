@@ -52,9 +52,12 @@ pub func main = () {
 	test("a fiber parked in receive_string wakes on a thread producer's send_string", async () => {
 		// Regression: the aarch64 send_string raw body was missing the
 		// __nomen_fiber_waitq_wake call, so a fiber parked in receive_string
-		// never woke (uint64 send/receive were fine). Audit is off because
-		// the fiber path over-reports frees in the audit accounting on
-		// aarch64 (results are correct; see FOLLOWUP.md).
+		// never woke (uint64 send/receive were fine). Runs with audit on —
+		// the string payload's strdup/free are wrap-consistent on both
+		// backends (the raw-asm `_strdup`/`_malloc`/`_free` calls in the
+		// Channel bodies are rewritten to the audit wrappers in audit
+		// builds, and the receiver's moved-out payload is freed through the
+		// wrapped free too).
 		const input = `
 import System
 
@@ -79,7 +82,7 @@ pub func main = () {
 		for (const arch of ARCHITECTURES) {
 			const parsed = parse_raw(input);
 			expect(parsed.errors).toEqual([]);
-			const options = { arch, audit: false };
+			const options = { arch, ...OPTIONS };
 			const result = build(parsed.root, options);
 			await check_output(
 				`fiber_p2_channel_string_wake_${arch}`,
