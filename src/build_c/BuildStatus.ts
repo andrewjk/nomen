@@ -231,6 +231,18 @@ export default interface BuildStatus {
 	 * alongside the other param-tracking sets.
 	 */
 	function_param_types?: Map<string, Type>;
+	/**
+	 * Every declared local's type name for the current function (aarch64),
+	 * recorded by the declaration builder in build order. Loop promotion
+	 * consults it when a candidate resolves through NO scoped_declarations
+	 * frame: an `async { }` block swaps in a fresh declaration list, so an
+	 * OUTER local is invisible to the frame lookup — without this registry
+	 * a `string` fell through to the ""→int default and its 16-byte fat pair
+	 * promoted as an 8-byte scalar, so only the ptr half round-tripped and
+	 * the len half was read from an unrelated register. Reset and restored
+	 * per function/inline expansion like function_param_types.
+	 */
+	function_local_types?: Map<string, string>;
 	function_ref_params?: Set<string>;
 	/**
 	 * Names of the current function's/method's `view T` parameters. On C

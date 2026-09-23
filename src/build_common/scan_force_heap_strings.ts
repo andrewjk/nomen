@@ -82,6 +82,15 @@ function visit(node: BaseNode | undefined, result: Set<string>, structs?: Struct
 			walk((node as unknown as { statements: BaseNode[] }).statements, result, structs);
 			break;
 		}
+		case "async_block": {
+			// A nursery body reassigns outer string locals exactly like a
+			// loop body does (`s = s + "x"` inside `async { }`): missing this
+			// walk left the target out of the set, so its literal initializer
+			// stayed a borrowed rodata pointer (never heap, never freed) and
+			// each reassignment silently leaked the displaced value.
+			walk((node as unknown as { statements: BaseNode[] }).statements, result, structs);
+			break;
+		}
 		case "if": {
 			const n = node as IfElseNode;
 			walk(n.if_branch?.statements, result, structs);

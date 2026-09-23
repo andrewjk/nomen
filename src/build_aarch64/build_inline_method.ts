@@ -211,6 +211,7 @@ export default function build_inline_method(
 	// The caller's param types must not type-resolve the inlined body's
 	// same-named names (see the function_param_types reset below).
 	const old_param_types = status.function_param_types;
+	const old_local_types = status.function_local_types;
 	const old_return_label = status.function_return_label;
 	const old_ref_params = status.function_ref_params;
 	const old_struct_return_buffer = status.struct_return_buffer;
@@ -315,6 +316,10 @@ export default function build_inline_method(
 	for (const p of func.params) {
 		if (p.type) status.function_param_types.set(p.name, p.type);
 	}
+	// Same isolation for the local-type registry: the body's declares record
+	// into a fresh map so the caller's same-named locals can't gate this
+	// body's loop promotion (and vice versa).
+	status.function_local_types = new Map();
 
 	if (needs_x19) {
 		status.function_param_regs.set("self", "x19");
@@ -466,6 +471,7 @@ export default function build_inline_method(
 	status.function_param_regs = old_param_regs;
 	status.function_param_vars = old_param_vars;
 	status.function_param_types = old_param_types;
+	status.function_local_types = old_local_types;
 	status.function_ref_params = old_ref_params;
 	status.function_return_label = old_return_label;
 	status.stack_offsets = old_stack_offsets;
@@ -508,6 +514,7 @@ export function build_inline_function(func: FunctionNode, status: BuildStatus) {
 	// The caller's param types must not type-resolve the inlined body's
 	// same-named names (see the function_param_types reset below).
 	const old_param_types = status.function_param_types;
+	const old_local_types = status.function_local_types;
 	const old_return_label = status.function_return_label;
 	const old_ref_params = status.function_ref_params;
 	const old_struct_return_buffer = status.struct_return_buffer;
@@ -583,6 +590,8 @@ export function build_inline_function(func: FunctionNode, status: BuildStatus) {
 	for (const p of func.params) {
 		if (p.type) status.function_param_types.set(p.name, p.type);
 	}
+	// Same isolation for the local-type registry (see build_inline_method).
+	status.function_local_types = new Map();
 
 	const saved_stack_slots: string[] = [];
 
@@ -697,6 +706,7 @@ export function build_inline_function(func: FunctionNode, status: BuildStatus) {
 	status.function_param_regs = old_param_regs;
 	status.function_param_vars = old_param_vars;
 	status.function_param_types = old_param_types;
+	status.function_local_types = old_local_types;
 	status.function_ref_params = old_ref_params;
 	status.function_return_label = old_return_label;
 	status.stack_offsets = old_stack_offsets;

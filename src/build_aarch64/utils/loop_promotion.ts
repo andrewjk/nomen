@@ -348,6 +348,20 @@ export function promote_loop_locals(
 				}
 				type_name = ptype.name;
 			}
+			// Not a parameter either: consult the declare-type registry before
+			// the int default. An `async { }` block swaps in a FRESH
+			// scoped_declarations list, so an outer local resolves through no
+			// frame here — without the registry its recorded type was lost and
+			// a `string` (16-byte ptr/len pair) promoted as an 8-byte scalar:
+			// only the ptr half round-tripped, the len half read whatever
+			// happened to occupy the partner register, and the post-loop use
+			// saw a wrong or empty string (the async-loop string receipt).
+			// Only `string` is rejected here — the fat pair is the one scalar
+			// the register model can't hold. Other non-scalars keep the legacy
+			// int-default promotion (an 8-byte pointer/first-word cache whose
+			// slot stays authoritative at address-take and call boundaries),
+			// which existing codegen materializes and depends on.
+			if (status.function_local_types?.get(name) === "string") continue;
 			// Genuinely unknown (""): explicit INT default — for-loop items
 			// and `while i < n` int params legitimately promote through it.
 		}

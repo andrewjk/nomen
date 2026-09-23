@@ -863,6 +863,15 @@ export default function build_declaration_node(
 	nir_init?: NirExpr | null,
 	nir_swap?: NirExpr | null,
 ) {
+	// Record the declared type for the whole-function registry (see
+	// BuildStatus.function_local_types): loop promotion resolves candidates
+	// invisible to the scoped_declarations frames (outer locals under an
+	// `async { }` block's hard swap) through it, so a `string` never
+	// promotes as an 8-byte scalar (its 16-byte pair loses the len half).
+	if (node.name && node.type?.name) {
+		if (!status.function_local_types) status.function_local_types = new Map();
+		status.function_local_types.set(node.name, node.type.name);
+	}
 	// Evaluate override values into temporaries before the base lands in the
 	// destination (see hoist_field_overrides).
 	hoist_field_overrides(node.value, build_node, status, "", node.name);

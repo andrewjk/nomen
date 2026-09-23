@@ -499,36 +499,6 @@ the pre-migration compiler exactly, so nothing regressed; the SPEC's
 "caller-provided fixed-size array stack" sentence (SPEC.md, Fiber section) is
 the documented-but-untrue bit.
 
-## aarch64: string accumulation in a loop inside `async { }` silently yields ""
-
-Found while writing `demos/async`. On the aarch64 backend, assigning a
-concatenation to an outer `string` local inside a loop inside an `async { }`
-block leaves the local EMPTY (and leaks); the same code outside the block —
-or a single non-loop assignment inside it — is correct, and the C backend is
-correct in both shapes:
-
-```
-func in_async = (out string) {
-	var string s = ""
-	async {
-		var int i = 0
-		while i < 3 {
-			s = s + "y"      // s stays "" and the block's concat temps leak
-			i += 1
-		}
-	}
-	return s                 // ""
-}
-```
-
-Isolated shapes: plain loop → `"yyy"`; single assignment inside async →
-`"A B "`; loop inside async → `""`. The demo works around it by draining the
-channel AFTER the nursery join (loop outside the block). Likely the async
-block's per-invocation frame and the loop's string-slot writeback/promotion
-disagree (the block builder plus `asm_loop_promote`); the return reads a stale
-slot. Not investigated further — real codegen bug, worth a focused repro
-against the aarch64 ASM optimizer.
-
 ## aarch64: pure-Nomen 64-bit arithmetic emits looser code than a raw `#arch` body
 
 `Random.next` (splitmix64) was rewritten from a raw `#arch: c`/`#arch: aarch64`
