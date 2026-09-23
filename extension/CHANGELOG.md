@@ -4,6 +4,14 @@
 
 
 
+
+## 0.2.4
+<sub>2026-09-23</sub>
+
+-  *(patch)* - Feat: highlight types and balance angle brackets
+-  *(patch)*
+  Strip redundant generic constructor annotations (`var keys = Buffer<TK>()`); infer the type instead. Colour generic `<...>` brackets and type parameters in the extension.
+
 ## 0.2.3
 <sub>2026-09-17</sub>
 

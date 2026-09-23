@@ -7,6 +7,42 @@
 
 
 
+
+## 0.6.0
+<sub>2026-09-23</sub>
+
+-  *(minor)* - Thread.start/detach and Fiber.start become real library methods with lexical nursery capture (ASYNC_PLAN phase 1)
+-  *(minor)* - Spawnable<T> trait; Thread/Fiber conform; mono clones carry substituted trait args (ASYNC_PLAN phase 2)
+-  *(minor)* - #spawn construction marker; special form keyed on the member, not the name (ASYNC_PLAN phase 3)
+-  *(minor)* - Drop generalized Awaitable construction sugar; #spawn is the only construction hook (ASYNC_PLAN phase 4)
+-  *(minor)* - Shrink Sendable to shared class/trait refs; exempt moved and copied values; retire nursery borrows (ASYNC_PLAN phase 5)
+-  *(minor)* - Runtime dependency keyed on library body content; declared Task deps replace token scan (ASYNC_PLAN phase 6)
+-  *(minor)* - Add Random (splitmix64) to the System library
+-  *(minor)* - Add Task.is_done; fix aarch64 Channel.send_string fiber wake
+-  *(patch)* - Fix aarch64 large immediate expansion
+-  *(patch)* - Fix aarch64 class ctor stack imbalance
+-  *(patch)* - Fix aarch64 trait dispatch receiver marshalling
+-  *(patch)* - Fix aarch64 class field ctor default
+-  *(patch)* - Fix aarch64 value-struct ctor dest in return buffer
+-  *(patch)* - Fix aarch64 class-field chain receiver
+-  *(patch)* - Fix aarch64 moved-param destroy base
+-  *(patch)* - Fix aarch64 adr and literal-pool range
+-  *(patch)* - Fix aarch64 null string return strdup
+-  *(patch)* - Fix aarch64 if/else branch scope frames
+-  *(patch)* - Fix aarch64 to_string force-heap init
+-  *(patch)* - Fix aarch64 fold of reassigned string vars
+-  *(patch)* - Fix: no space before paren in `panic(`, `move(`, etc
+-  *(patch)*
+  Strip redundant generic constructor annotations (`var keys = Buffer<TK>()`); infer the type instead. Colour generic `<...>` brackets and type parameters in the extension.
+-  *(patch)* - Add demos/async GUI demo app; record async-loop FOLLOWUP notes
+-  *(patch)* - Fix owned-return receiver leak (chained Task handles)
+-  *(patch)* - Fix aarch64 fn-value spawn rodata result crash
+-  *(patch)* - Fix aarch64 zero-arg spawn ctor signature
+-  *(patch)* - Return inside async block joins the nursery
+-  *(patch)* - Fix aarch64 string accumulation in a loop inside async
+-  *(patch)* - Fix aarch64 spawn ctor arg types conflicting across sites
+-  *(patch)* - Free unconsumed string task results at future release
+
 ## 0.5.0
 <sub>2026-09-21</sub>
 
