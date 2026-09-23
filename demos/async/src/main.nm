@@ -5,8 +5,8 @@ import System::Controls
 // it down the channel. Sends arrive in the order the tasks finish, so the
 // channel carries the results in completion order.
 func fetch_one = (Channel done, string letter) {
-	var Random rng = Random()
-	Time.sleep_ms(rng.range(1000, 10000))
+	var rng = Random()
+	Time.sleep_ms(rng.range(1000, 2000))
 	done.send_string(letter)
 }
 
@@ -15,7 +15,7 @@ func fetch_one = (Channel done, string letter) {
 // `letters` ends up ordered by completion, e.g. "B E D A C". Runs on a
 // fiber — it parks (and frees its worker) while the nursery joins.
 func run_fetch = (Channel done, out string) {
-	var string letters = ""
+	var letters = ""
 	async {
 		Thread(fetch_one(done, "A")).start()
 		Thread(fetch_one(done, "B")).start()
@@ -25,7 +25,7 @@ func run_fetch = (Channel done, out string) {
 	}
 	// The nursery has rejoined: all five tasks have finished, so the channel
 	// holds five messages in the order the tasks finished.
-	var int i = 0
+	var i = 0
 	while i < 5 {
 		letters = letters + done.receive_string() + " "
 		i += 1
@@ -53,7 +53,7 @@ pub func main = () {
 
 	// The result channel: lives for the whole loop, drained exactly five
 	// times per fetch.
-	const Channel done = Channel()
+	const done = Channel()
 	var fetching = false
 	// The coordinator's handle. Main never blocks on it: the event loop
 	// polls is_done() each frame, so the window stays responsive while the
