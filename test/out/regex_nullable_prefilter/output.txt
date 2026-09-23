@@ -1,0 +1,17 @@
+# Repro: Regex first-byte prefilter vs nullable leading atoms
+# Before fix (charset under-approximated to the nullable atom's byte):
+#   test("a?b", "b")=false  count("a?b", "b ab aab")=1 (missed "b" starts)
+# After fix:
+3
+3
+2
+2
+2
+2
+
+$ npx vp test test/regex.test.ts
+ Test Files  1 passed (1)
+      Tests  35 passed (35)
+   Start at  08:44:23
+   Duration  34.88s (transform 899ms, setup 0ms, import 1.10s, tests 28.59s, environment 0ms)
+

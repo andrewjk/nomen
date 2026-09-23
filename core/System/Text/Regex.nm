@@ -469,10 +469,10 @@ func collect_first_bytes = (
 //
 // Handles the shapes the engine's matcher can produce: a leading anchor is
 // zero-width (skipped), a leading group contributes its CONTENT's first bytes
-// (recursively over the group's own top-level alternatives), and a group
-// quantified with '?'/'*' is nullable — what FOLLOWS it can also be first, so
-// the scan continues past it. A wildcard '.' or an empty alternative makes the
-// set indeterminable.
+// (recursively over the group's own top-level alternatives), and ANY leading
+// atom — literal, escaped, class, or group — quantified with '?'/'*' is
+// nullable: what FOLLOWS it can also be first, so the scan continues past it.
+// A wildcard '.' or an empty alternative makes the set indeterminable.
 func alt_first_bytes = (string pattern, int start, int end, ref StringBuilder sb, out int) {
 	var int i = start
 	while i < end {
@@ -490,9 +490,17 @@ func alt_first_bytes = (string pattern, int start, int end, ref StringBuilder sb
 					if shorthand_members(e, ref sb) < 0 {
 						return -1
 					}
+				} else {
+					sb.append_char(e)
+				}
+				// A '?'/'*' quantifier makes the atom nullable — the first
+				// byte can also come from whatever follows it.
+				var int cont = nullable_quant_after(pattern, i + 2, end)
+				if cont < 0 {
 					return 0
 				}
-				sb.append_char(e)
+				i = cont
+				continue
 			}
 			return 0
 		}
@@ -509,7 +517,12 @@ func alt_first_bytes = (string pattern, int start, int end, ref StringBuilder sb
 				}
 			}
 			add_class_chars(pattern, i + 1, a_end - 1, ref sb)
-			return 0
+			var int cont = nullable_quant_after(pattern, a_end, end)
+			if cont < 0 {
+				return 0
+			}
+			i = cont
+			continue
 		}
 		if c == '(' {
 			var int a_end = atom_end_pos(pattern, i, end)
@@ -518,27 +531,11 @@ func alt_first_bytes = (string pattern, int start, int end, ref StringBuilder sb
 			if collect_first_bytes(pattern, i + 1, a_end - 1, ref sb) < 0 {
 				return -1
 			}
-			// A '?'/'*' quantifier makes the group nullable — the first byte
-			// can also come from whatever follows it. A second '?' marks the
-			// quantifier lazy and is skipped either way.
-			var int after = a_end
-			var nullable = 0
-			if after < end {
-				var char q = pattern.at(after)
-				if q == '?' || q == '*' {
-					nullable = 1
-					after += 1
-					if after < end {
-						if pattern.at(after) == '?' {
-							after += 1
-						}
-					}
-				}
-			}
-			if nullable == 0 {
+			var int cont = nullable_quant_after(pattern, a_end, end)
+			if cont < 0 {
 				return 0
 			}
-			i = after
+			i = cont
 			continue
 		}
 		if c == '^' || c == '$' {
@@ -552,9 +549,40 @@ func alt_first_bytes = (string pattern, int start, int end, ref StringBuilder sb
 			return -1
 		}
 		sb.append_char(c)
-		return 0
+		var int cont = nullable_quant_after(pattern, i + 1, end)
+		if cont < 0 {
+			return 0
+		}
+		i = cont
+		continue
 	}
-	// An empty alternative can match at any position — indeterminable.
+	// An empty alternative (nothing left after nullable atoms — or nothing at
+	// all) can match at any position — indeterminable.
+	return -1
+}
+
+// If the atom ending at `after` carries a nullable quantifier ('?' or '*',
+// optionally marked lazy by a second '?'), return the position just past the
+// quantifier; otherwise return -1. Callers keep scanning from the returned
+// position: a nullable leading atom means the alternative's match can also
+// START with whatever follows, so those bytes belong in the first-byte set
+// too. ('+' is NOT nullable — the atom must match once — so it leaves the
+// atom's own bytes as the whole first set.)
+func nullable_quant_after = (string pattern, int after, int end, out int) {
+	var int j = after
+	if j >= end {
+		return -1
+	}
+	var char q = pattern.at(j)
+	if q == '?' || q == '*' {
+		j += 1
+		if j < end {
+			if pattern.at(j) == '?' {
+				j += 1
+			}
+		}
+		return j
+	}
 	return -1
 }
 

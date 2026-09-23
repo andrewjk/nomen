@@ -313,6 +313,85 @@ Console.write(Regex.count("(a)?(b)?c", "c bc ac abc").to_string())
 		await check_output("regex_prefilter_chained_opt_count", result, "4", opts);
 	});
 
+	test("optional literal: match can start after the literal", async () => {
+		// `a?b` — first bytes {a, b}. The literal branch of the first-byte
+		// scan historically returned right after appending `a`, so the
+		// prefilter was {a} and every standalone `b` position was skipped
+		// (count 1 instead of 3).
+		const input = `
+Console.write(Regex.count("a?b", "b ab aab").to_string())
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64" });
+		await check_output("regex_prefilter_opt_literal_count", result, "3", opts);
+	});
+
+	test("optional class: match can start after the class", async () => {
+		// `[ab]?c` — first bytes {a, b, c}.
+		const input = `
+Console.write(Regex.count("[ab]?c", "c ac xbc").to_string())
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64" });
+		await check_output("regex_prefilter_opt_class_count", result, "3", opts);
+	});
+
+	test("optional escaped shorthand: match can start after it", async () => {
+		// `\d?x` — first bytes {0..9, x}. `\\\\` in this template is the
+		// nomen escaped-backslash pair producing a real `\d` in the pattern.
+		const input = `
+Console.write(Regex.count("\\\\d?x", "x 3x").to_string())
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64" });
+		await check_output("regex_prefilter_opt_shorthand_count", result, "2", opts);
+	});
+
+	test("lazy optional literal: still nullable for the first-byte set", async () => {
+		// `a??b` — the lazy `??` is nullable exactly like `?`.
+		const input = `
+Console.write(Regex.count("a??b", "b ab").to_string())
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64" });
+		await check_output("regex_prefilter_lazy_opt_count", result, "2", opts);
+	});
+
+	test("plus quantifier is not nullable: first set stays the atom", async () => {
+		// `a+b` — `a` must match once, so `b` can NEVER be first; a prefilter
+		// containing `b` would only over-approximate (harmless), but the
+		// count must still be 2 here.
+		const input = `
+Console.write(Regex.count("a+b", "b xab aab").to_string())
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64" });
+		await check_output("regex_prefilter_plus_count", result, "2", opts);
+	});
+
+	test("optional real-CR literal before LF (blank-line shape)", async () => {
+		// `\r?\n` spelled with real CR/LF bytes in the pattern — the
+		// link-reference blank-line test. First bytes {CR, LF}. `\\\\` in
+		// this template is the nomen escaped-backslash pair, so nomen's own
+		// `\r`/`\n` string escapes produce the real control bytes.
+		const input = `
+if Regex.test("\\r?\\n", "line1\\nline2") {
+	Console.write("blank")
+} else {
+	Console.write("none")
+}
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64" });
+		await check_output("regex_prefilter_opt_cr_text", result, "blank", opts);
+	});
+
 	test("anchored pattern: the anchor is not a first byte", async () => {
 		// `^ab` — first byte {a}; skipping the anchor must not disable or
 		// corrupt the set.
