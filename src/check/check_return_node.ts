@@ -232,6 +232,17 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 			func.return_type = ret.type;
 		} else {
 			func.return_type = ret.type;
+			// An arrow-body lambda whose single expression is a VOID call
+			// (`() => Console.write_line("x")`, `() => ch.send(1)`) yields no
+			// value: the call's type carries an empty name, which would leave
+			// the lambda's return type unnamed and the backends emitting a
+			// value-returning body (`long _return_val = <void call>`) for it.
+			// Normalize to void — the same Type a bare `return` produces — so
+			// the implicit return lowers as a plain statement.
+			if (!ret.type?.name) {
+				func.return_type = new Type("void");
+				ret.type = new Type("void");
+			}
 		}
 	}
 }

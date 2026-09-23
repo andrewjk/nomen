@@ -127,4 +127,93 @@ pub func main = (Init init) {
 `,
 		);
 	});
+
+	test("value-struct func field round-trips through a List<T>", async () => {
+		// The ruleset shape the allmark port needs: rules pushed into a
+		// List, read back with at_or_panic, then called through the field.
+		// Historically SIGSEGV'd on aarch64 (the direct-construction twin
+		// worked), so the port kept trait classes for its rulesets.
+		await run(
+			"ff_list_roundtrip",
+			"r:hash\nr2:quote\nfor:hash\nfor:other\ndone\n",
+			`
+func is_hash = (string s, out bool) { return s.at_or(0, ' ') == '#' }
+func is_quote = (string s, out bool) { return s.at_or(0, ' ') == '>' }
+struct BlockRule {
+	var func (string, out bool) test
+}
+pub func main = (Init init) {
+	var List<BlockRule> blocks = List<BlockRule>()
+	blocks.push(BlockRule(is_hash))
+	blocks.push(BlockRule(is_quote))
+	var BlockRule r = blocks.at_or_panic(0)
+	if r.test("# h") {
+		Console.write_line("r:hash")
+	}
+	var BlockRule r2 = blocks.at_or_panic(1)
+	if r2.test("> q") {
+		Console.write_line("r2:quote")
+	}
+	for b of blocks {
+		if b.test("# x") {
+			Console.write_line("for:hash")
+		} else {
+			Console.write_line("for:other")
+		}
+	}
+	Console.write_line("done")
+}
+`,
+		);
+	});
+
+	test("List round-trip survives growth and a lifted field call", async () => {
+		await run(
+			"ff_list_growth",
+			"256\n10\ndone\n",
+			`
+func dbl = (int n, out int) { return n * 2 }
+struct Rule {
+	var string name
+	var func (int, out int) f
+}
+pub func main = (Init init) {
+	var List<Rule> rules = List<Rule>()
+	var int i = 0
+	while i < 64; i += 1 {
+		rules.push(Rule("r", dbl))
+	}
+	var int total = 0
+	for r of rules {
+		total += r.f(2)
+	}
+	var func (int, out int) lifted = rules.at_or_panic(10).f
+	Console.write_line("\\{total}")
+	Console.write_line("\\{lifted(5)}")
+	Console.write_line("done")
+}
+`,
+		);
+	});
+
+	test("void lambda in a func field (C emitted a value return for it)", async () => {
+		// `() => Console.write_line(...)` is an arrow body whose single
+		// expression is a VOID call. The lambda's return type used to stay
+		// unnamed and the C backend lowered the implicit return as
+		// `long _return_val = <void call>` — a compile error.
+		await run(
+			"ff_void_lambda",
+			"lambda b\ndone\n",
+			`
+struct Rule {
+	var func () f
+}
+pub func main = (Init init) {
+	var Rule r = Rule(() => Console.write_line("lambda b"))
+	r.f()
+	Console.write_line("done")
+}
+`,
+		);
+	});
 });

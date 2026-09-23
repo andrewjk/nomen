@@ -1,0 +1,5 @@
+r:hash
+r2:quote
+for:hash
+for:other
+done
