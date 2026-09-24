@@ -310,9 +310,7 @@ function processFolder(folder: string, config: Config, mode: Mode, program_args:
 	let dirent;
 	while ((dirent = dir.readSync()) !== null) {
 		if (shouldProcessFile(dirent.name)) {
-			// Folder mode checks each file in its own context — anchoring
-			// here would recompile the whole project once per file.
-			processFile(path.join(folder, dirent.name), config, mode, program_args, false);
+			processFile(path.join(folder, dirent.name), config, mode, program_args);
 			// @ts-ignore
 			let _ = fs.watch;
 		}
@@ -324,46 +322,7 @@ function shouldProcessFile(filename: string) {
 	return path.extname(filename) === SUPPORTED_EXTENSION;
 }
 
-/**
- * The project's entry file for `file_path`: walk up to the nearest
- * `package.jsonc` and resolve its `entry` field, so any file inside a project
- * is checked with the entry's import context (`import types` resolves
- * against the project's `src/`, not the file's own folder). Returns
- * undefined when the file is standalone, IS the entry, sits in an
- * entry-less project (e.g. a library checkout), or the config is malformed.
- */
-function project_entry_for(file_path: string): string | undefined {
-	let dir = path.dirname(file_path);
-	for (let i = 0; i < 20; i++) {
-		const config_path = path.join(dir, "package.jsonc");
-		if (fs.existsSync(config_path)) {
-			try {
-				const raw = fs.readFileSync(config_path, "utf8");
-				const json = raw.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
-				const parsed = JSON.parse(json);
-				if (parsed.entry) {
-					const entry = path.resolve(dir, parsed.entry);
-					if (entry !== file_path && fs.existsSync(entry)) return entry;
-				}
-			} catch {
-				// malformed config — keep the file's own context
-			}
-			return undefined;
-		}
-		const parent = path.dirname(dir);
-		if (parent === dir) return undefined;
-		dir = parent;
-	}
-	return undefined;
-}
-
-function processFile(
-	filename: string,
-	config: Config,
-	mode: Mode,
-	program_args: string[],
-	anchor_to_project = true,
-) {
+function processFile(filename: string, config: Config, mode: Mode, program_args: string[]) {
 	console.log("Processing", filename);
 
 	const arch = config.arch || "aarch64";
@@ -374,22 +333,15 @@ function processFile(
 		config.lib = resolve_lib(resolved);
 	}
 
-	// A `*.test.nm` file keeps its own join context: the test harness
-	// anchors at the test's folder and pulls the program's `src/` module in
-	// with `main` stripped, which the entry's context would not do.
-	const anchor =
-		anchor_to_project && !resolved.endsWith(".test.nm")
-			? (project_entry_for(resolved) ?? resolved)
-			: resolved;
-	if (anchor !== resolved) {
-		console.log("Anchored to project entry", anchor);
-	}
-
 	let startTime = performance.now();
 
-	const input = join(anchor, config.lib);
+	// Compile the file the user named (or the discovered entry). `join`
+	// resolves its imports relative to its own folder and gathers the
+	// project's module declarations, so an explicitly-passed `--in` is never
+	// silently replaced by the `package.jsonc` `entry`.
+	const input = join(resolved, config.lib);
 	const library = config.lib ? get_library(config.lib) : undefined;
-	const parsed = parse(input, library, anchor);
+	const parsed = parse(input, library, resolved);
 
 	let errors = parsed.errors;
 
