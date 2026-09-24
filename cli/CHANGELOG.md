@@ -8,6 +8,17 @@
 
 
 
+
+## 0.6.1
+<sub>2026-09-24</sub>
+
+-  *(patch)* - Fix: System::Text import dragging Controls into builds; test TUs as .m on macos
+-  *(patch)* - Fix: Regex prefilter dropped nullable first atoms
+-  *(patch)* - Fix: void lambda lowered as value return
+-  *(patch)* - Fix: variable_types leaked across function builds
+-  *(patch)* - Fix: audit-only free wrapper emitted in non-audit asm
+-  *(patch)* - Feat: StringBuilder read-back/trim API
+
 ## 0.6.0
 <sub>2026-09-23</sub>
 

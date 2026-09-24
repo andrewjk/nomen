@@ -5,6 +5,12 @@
 
 
 
+
+## 0.2.5
+<sub>2026-09-24</sub>
+
+-  *(patch)* - Fix: async keyword, variables in string interpolation
+
 ## 0.2.4
 <sub>2026-09-23</sub>
 
