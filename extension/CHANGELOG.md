@@ -6,6 +6,12 @@
 
 
 
+
+## 0.2.6
+<sub>2026-09-24</sub>
+
+-  *(patch)* - Fix: triangle bracket matching
+
 ## 0.2.5
 <sub>2026-09-24</sub>
 

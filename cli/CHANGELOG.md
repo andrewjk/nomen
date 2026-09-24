@@ -9,6 +9,20 @@
 
 
 
+
+## 0.6.2
+<sub>2026-09-24</sub>
+
+-  *(patch)* - Fix: Regex engine escapes (\r, \n, \t) and pattern-escape lint
+-  *(patch)* - aarch64: spill call args across sibling arg evaluation
+-  *(patch)* - fold composed const strings into single literals
+-  *(patch)* - regex: continuation-aware alternation backtracking
+-  *(patch)* - add List.set_or_panic (runtime-checked write)
+-  *(patch)* - hoist composed module consts like functions
+-  *(patch)* - StringBuilder: explicit member visibility
+-  *(patch)* - nomen test: name the failing stage in reports
+-  *(patch)* - fold module-level primitive const initializers
+
 ## 0.6.1
 <sub>2026-09-24</sub>
 
