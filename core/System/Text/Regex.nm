@@ -2,10 +2,12 @@
 //
 // `test` reports whether a pattern matches anywhere in the input; `match`
 // returns the first matched substring (or "" when there is no match).
-// Patterns use POSIX Extended Regular Expression syntax.
+// Patterns use POSIX Extended Regular Expression syntax, extended with
+// non-capturing groups `(?:...)`, lookaround (`(?=...)` / `(?!...)` /
+// `(?<=...)` / `(?<!...)`), and counted repetition (`{n}` / `{n,}` / `{n,m}`).
 
 /**
- * Regular-expression helpers (`test`/`match`/`count`/`replace_all`) using POSIX ERE syntax
+ * Regular-expression helpers (`test`/`match`/`count`/`replace_all`) using POSIX ERE syntax plus `(?:...)`, lookaround, and `{n,m}` counted repetition
  **/
 pub struct Regex {
 	// Test whether pattern matches anywhere in input.
@@ -530,9 +532,17 @@ func alt_first_bytes = (string pattern, int start, int end, ref StringBuilder sb
 		}
 		if c == '(' {
 			var int a_end = atom_end_pos(pattern, i, end)
+			var int kind = group_kind(pattern, i, end)
+			if kind >= 2 {
+				// Lookaround: zero-width — contributes no byte, so the first
+				// byte comes from whatever follows.
+				i = a_end
+				continue
+			}
 			// The group's first bytes are the union of its content's
 			// top-level alternatives' first bytes.
-			if collect_first_bytes(pattern, i + 1, a_end - 1, ref sb) < 0 {
+			var int inner = group_inner_start(pattern, i, end)
+			if collect_first_bytes(pattern, inner, a_end - 1, ref sb) < 0 {
 				return -1
 			}
 			var int cont = nullable_quant_after(pattern, a_end, end)
@@ -587,13 +597,128 @@ func nullable_quant_after = (string pattern, int after, int end, out int) {
 		}
 		return j
 	}
+	if q == '{' {
+		// A counted bound is nullable only when its minimum is 0 ({0}, {0,},
+		// {0,m}); the first byte then also comes from what follows.
+		var int qe = counted_quant_end(pattern, j, end)
+		if qe >= 0 {
+			var int qmin = counted_quant_min(pattern, j)
+			if qmin == 0 {
+				var int k = qe
+				if k < end {
+					if pattern.at(k) == '?' {
+						k += 1
+					}
+				}
+				return k
+			}
+			return -1
+		}
+	}
 	return -1
+}
+
+// Parse a counted repetition bound `{n}`, `{n,}`, or `{n,m}` whose '{' is at
+// pos. Returns the position just past the closing '}', or -1 when the braces
+// are not a valid bound (the '{' is then a literal character).
+func counted_quant_end = (string pattern, int pos, int pat_end, out int) {
+	var int i = pos + 1
+	var int digits = i
+	while i < pat_end {
+		if is_digit_byte(pattern.at(i)) {
+			i += 1
+		} else {
+			break
+		}
+	}
+	if i == digits {
+		return -1
+	}
+	if i < pat_end {
+		if pattern.at(i) == ',' {
+			i += 1
+			while i < pat_end {
+				if is_digit_byte(pattern.at(i)) {
+					i += 1
+				} else {
+					break
+				}
+			}
+		}
+	}
+	if i < pat_end {
+		if pattern.at(i) == '}' {
+			return i + 1
+		}
+	}
+	return -1
+}
+
+// The minimum repetition count of a `{...}` bound at pos (assumes a valid
+// bound was found by counted_quant_end).
+func counted_quant_min = (string pattern, int pos, out int) {
+	var int i = pos + 1
+	var value = 0
+	while i < pattern.length {
+		if is_digit_byte(pattern.at(i)) {
+			value = value * 10 + ((pattern.at(i) as int) - 48)
+			i += 1
+		} else {
+			break
+		}
+	}
+	return value
+}
+
+// The maximum repetition count of a `{...}` bound at pos: the value after the
+// comma for `{n,m}`, -1 for the unbounded `{n,}`, and the minimum for `{n}`.
+func counted_quant_max = (string pattern, int pos, int pat_end, out int) {
+	var int i = pos + 1
+	while i < pat_end {
+		if is_digit_byte(pattern.at(i)) {
+			i += 1
+		} else {
+			break
+		}
+	}
+	if i >= pat_end {
+		return counted_quant_min(pattern, pos)
+	}
+	if pattern.at(i) != ',' {
+		return counted_quant_min(pattern, pos)
+	}
+	var int j = i + 1
+	var value = 0
+	var int digits = j
+	while j < pat_end {
+		if is_digit_byte(pattern.at(j)) {
+			value = value * 10 + ((pattern.at(j) as int) - 48)
+			j += 1
+		} else {
+			break
+		}
+	}
+	if j == digits {
+		// `{n,}` — unbounded maximum.
+		return -1
+	}
+	return value
+}
+
+// Whether a pattern character is an ASCII digit.
+func is_digit_byte = (char c, out bool) {
+	var int code = c as int
+	return code >= 48 && code <= 57
 }
 
 // Append the members of character class [start..end) to sb. Ranges (a-z) are
 // expanded; negation (^) is ignored (we want all candidates).
-func add_class_chars = (string pattern, int start, int end, ref StringBuilder sb) {
-	var int cs = start
+func add_class_chars = (
+	string pattern,
+	int start,
+	int end,
+	ref StringBuilder sb
+) { var int cs = start
 	if cs < end {
 		if pattern.at(cs) == '^' {
 			cs += 1
@@ -714,6 +839,28 @@ func match_here = (
 		return match_here(pattern, pat_pos + 1, pat_end, input, in_pos, in_len, ref caps)
 	}
 
+	// Lookaround assertions are zero-width: evaluate the inner pattern and
+	// continue matching the rest at the SAME input position.
+	if pc == '(' && is_non_capturing_open(pattern, pat_pos, pat_end) {
+		var int look_kind = group_kind(pattern, pat_pos, pat_end)
+		if look_kind >= 2 {
+			var int look_end = atom_end_pos(pattern, pat_pos, pat_end)
+			var int look_inner = group_inner_start(pattern, pat_pos, pat_end)
+			if lookaround_succeeds(
+				look_kind,
+				pattern,
+				look_inner,
+				look_end - 1,
+				input,
+				in_pos,
+				in_len,
+			) == false {
+				return -1
+			}
+			return match_here(pattern, look_end, pat_end, input, in_pos, in_len, ref caps)
+		}
+	}
+
 	// Determine the bounds of the current atom.
 	var int a_end = atom_end_pos(pattern, pat_pos, pat_end)
 
@@ -773,6 +920,37 @@ func match_here = (
 				in_len,
 				ref caps,
 			)
+		}
+		if q == '{' {
+			// Counted repetition: {n}, {n,}, {n,m}, optionally lazy ({..}?).
+			var int qe = counted_quant_end(pattern, a_end, pat_end)
+			if qe >= 0 {
+				var int qmin = counted_quant_min(pattern, a_end)
+				var int qmax = counted_quant_max(pattern, a_end, pat_end)
+				var counted_lazy = 0
+				var int counted_rest = qe
+				if counted_rest < pat_end {
+					if pattern.at(counted_rest) == '?' {
+						counted_lazy = 1
+						counted_rest += 1
+					}
+				}
+				return match_counted(
+					pattern,
+					pat_pos,
+					a_end,
+					counted_rest,
+					pat_end,
+					input,
+					in_pos,
+					qmin,
+					qmax,
+					counted_lazy,
+					0,
+					in_len,
+					ref caps,
+				)
+			}
 		}
 	}
 
@@ -864,7 +1042,7 @@ func match_group_then_rest = (
 		old_start = caps.at(at + 1)
 		old_end = caps.at(at + 2)
 	}
-	var int inner_start = atom_start + 1
+	var int inner_start = group_inner_start(pattern, atom_start, pat_end)
 	var int inner_end = atom_end - 1
 	var int s = inner_start
 	while s <= inner_end {
@@ -980,7 +1158,7 @@ func match_single_atom = (
 		}
 		var int next = match_here(
 			pattern,
-			atom_start + 1,
+			group_inner_start(pattern, atom_start, atom_end),
 			atom_end - 1,
 			input,
 			in_pos,
@@ -1064,6 +1242,149 @@ func char_matches_atom = (
 		return false
 	}
 	return pc == ic
+}
+
+// Evaluate a lookaround assertion at in_pos:
+//   2 (?=inner)   succeeds when inner matches starting here
+//   3 (?!inner)   succeeds when inner does NOT match starting here
+//   4 (?<=inner)  succeeds when inner matches ending exactly here
+//   5 (?<!inner)  succeeds when no such match ends here
+// Captures inside lookarounds are not recorded (a throwaway capture log is
+// used) — the supported patterns are capture-free assertions.
+func lookaround_succeeds = (
+	int kind,
+	string pattern,
+	int inner,
+	int inner_end,
+	string input,
+	int in_pos,
+	int in_len,
+	out bool
+) {
+	if kind == 2 {
+		var trial = List<int>()
+		return match_here(pattern, inner, inner_end, input, in_pos, in_len, ref trial) >= 0
+	}
+	if kind == 3 {
+		var trial = List<int>()
+		return match_here(pattern, inner, inner_end, input, in_pos, in_len, ref trial) < 0
+	}
+	var found = false
+	var s = 0
+	while s <= in_pos {
+		var trial = List<int>()
+		var int e = match_here(pattern, inner, inner_end, input, s, in_len, ref trial)
+		if e == in_pos {
+			found = true
+			break
+		}
+		s += 1
+	}
+	if kind == 4 {
+		return found
+	}
+	return found == false
+}
+
+// Match the atom [atom_start..atom_end) between min_count and max_count times
+// (max_count -1 means unbounded), then the continuation [rest..pat_end). This
+// backs counted repetition `{n}` / `{n,}` / `{n,m}`; greedy tries one more
+// iteration before stopping, lazy stops first. An atom that matches the empty
+// string is not repeated further (an empty iteration cannot make progress).
+func match_counted = (
+	string pattern,
+	int atom_start,
+	int atom_end,
+	int rest,
+	int pat_end,
+	string input,
+	int in_pos,
+	int min_count,
+	int max_count,
+	int lazy,
+	int count,
+	int in_len,
+	ref List<int> caps,
+	out int
+) {
+	var can_stop = count >= min_count
+	var can_more = max_count < 0 || count < max_count
+	if lazy > 0 {
+		if can_stop {
+			var int stop = match_here(pattern, rest, pat_end, input, in_pos, in_len, ref caps)
+			if stop >= 0 {
+				return stop
+			}
+		}
+		if can_more {
+			var int next = match_single_atom(
+				pattern,
+				atom_start,
+				atom_end,
+				input,
+				in_pos,
+				in_len,
+				ref caps,
+			)
+			if next >= 0 {
+				if next != in_pos {
+					return match_counted(
+						pattern,
+						atom_start,
+						atom_end,
+						rest,
+						pat_end,
+						input,
+						next,
+						min_count,
+						max_count,
+						lazy,
+						count + 1,
+						in_len,
+						ref caps,
+					)
+				}
+			}
+		}
+		return -1
+	}
+	if can_more {
+		var int next = match_single_atom(
+			pattern,
+			atom_start,
+			atom_end,
+			input,
+			in_pos,
+			in_len,
+			ref caps,
+		)
+		if next >= 0 {
+			if next != in_pos {
+				var int r = match_counted(
+					pattern,
+					atom_start,
+					atom_end,
+					rest,
+					pat_end,
+					input,
+					next,
+					min_count,
+					max_count,
+					lazy,
+					count + 1,
+					in_len,
+					ref caps,
+				)
+				if r >= 0 {
+					return r
+				}
+			}
+		}
+	}
+	if can_stop {
+		return match_here(pattern, rest, pat_end, input, in_pos, in_len, ref caps)
+	}
+	return -1
 }
 
 // Match the atom [atom_start..atom_end) followed by the rest of the pattern
@@ -1244,7 +1565,7 @@ func match_group_iteration = (
 		old_start = caps.at(at + 1)
 		old_end = caps.at(at + 2)
 	}
-	var int inner_start = atom_start + 1
+	var int inner_start = group_inner_start(pattern, atom_start, pat_end)
 	var int inner_end = atom_end - 1
 	var int s = inner_start
 	while s <= inner_end {
@@ -1354,7 +1675,15 @@ func match_optional = (
 			return grouped
 		}
 	} else {
-		var int next = match_single_atom(pattern, atom_start, atom_end, input, in_pos, in_len, ref caps)
+		var int next = match_single_atom(
+			pattern,
+			atom_start,
+			atom_end,
+			input,
+			in_pos,
+			in_len,
+			ref caps,
+		)
 		if next >= 0 {
 			var int r = match_here(pattern, rest, pat_end, input, next, in_len, ref caps)
 			if r >= 0 {
@@ -1445,9 +1774,70 @@ func char_in_class = (
 	return found
 }
 
+// Whether the '(' at open_pos opens a non-capturing construct: `(?:` or one
+// of the lookaround forms `(?=`, `(?!`, `(?<=`, `(?<!`. Every supported
+// group whose open paren is immediately followed by '?' is non-capturing.
+func is_non_capturing_open = (string pattern, int open_pos, int pat_end, out bool) {
+	if open_pos + 1 >= pat_end {
+		return false
+	}
+	return pattern.at(open_pos + 1) == '?'
+}
+
+// Classify the group opening at open_pos:
+//   0 capturing group (...)
+//   1 non-capturing group (?:...)
+//   2 positive lookahead (?=...)
+//   3 negative lookahead (?!...)
+//   4 positive lookbehind (?<=...)
+//   5 negative lookbehind (?<!...)
+func group_kind = (string pattern, int open_pos, int pat_end, out int) {
+	if is_non_capturing_open(pattern, open_pos, pat_end) == false {
+		return 0
+	}
+	if open_pos + 2 >= pat_end {
+		return 0
+	}
+	var char c = pattern.at(open_pos + 2)
+	if c == ':' {
+		return 1
+	}
+	if c == '=' {
+		return 2
+	}
+	if c == '!' {
+		return 3
+	}
+	if c == '<' {
+		if open_pos + 3 < pat_end {
+			if pattern.at(open_pos + 3) == '=' {
+				return 4
+			}
+			if pattern.at(open_pos + 3) == '!' {
+				return 5
+			}
+		}
+	}
+	return 0
+}
+
+// The position of the first byte INSIDE the group whose '(' opens at
+// open_pos: past `(?:`, `(?=`, `(?!`, or `(?<=`/`(?<!` for the prefixed
+// forms, or open_pos + 1 for a plain capturing group.
+func group_inner_start = (string pattern, int open_pos, int pat_end, out int) {
+	var int kind = group_kind(pattern, open_pos, pat_end)
+	if kind == 1 || kind == 2 || kind == 3 {
+		return open_pos + 3
+	}
+	if kind == 4 || kind == 5 {
+		return open_pos + 4
+	}
+	return open_pos + 1
+}
+
 // The number of capture groups in the whole pattern: every '(' that is not
-// escaped and not inside a character class (POSIX ERE has no non-capturing
-// groups).
+// escaped, not inside a character class, and not a non-capturing prefix
+// (`(?:`, `(?=`, `(?!`, `(?<=`, `(?<!`).
 func capture_count = (string pattern, out int) {
 	var int n = pattern.length
 	var count = 0
@@ -1461,7 +1851,9 @@ func capture_count = (string pattern, out int) {
 				i = atom_end_pos(pattern, i, n) - 1
 			} else {
 				if c == '(' {
-					count += 1
+					if is_non_capturing_open(pattern, i, n) == false {
+						count += 1
+					}
 				}
 			}
 		}
@@ -1470,8 +1862,9 @@ func capture_count = (string pattern, out int) {
 }
 
 // The capture-group index (1-based) of the group whose '(' opens at
-// open_pos: one more than the number of capture opens before it in the
-// pattern (the whole match is group 0).
+// open_pos: one more than the number of capturing opens before it in the
+// pattern (the whole match is group 0). Returns 0 for a non-capturing
+// construct so callers record no span.
 func group_index_at = (string pattern, int open_pos, out int) {
 	var count = 0
 	var i = 0
@@ -1484,10 +1877,15 @@ func group_index_at = (string pattern, int open_pos, out int) {
 				i = atom_end_pos(pattern, i, open_pos) - 1
 			} else {
 				if c == '(' {
-					count += 1
+					if is_non_capturing_open(pattern, i, open_pos) == false {
+						count += 1
+					}
 				}
 			}
 		}
+	}
+	if is_non_capturing_open(pattern, open_pos, pattern.length) {
+		return 0
 	}
 	return count + 1
 }
@@ -1497,6 +1895,9 @@ func group_index_at = (string pattern, int open_pos, out int) {
 // a repeated group reports its last iteration; a failed group records
 // (-1, -1) so stale spans from an abandoned attempt never surface.
 func record_capture = (ref List<int> caps, int group, int start, int end) {
+	if group <= 0 {
+		return
+	}
 	var int at = last_capture_index(caps, group)
 	if at >= 0 {
 		caps.set(at + 1, start)

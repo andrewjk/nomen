@@ -2,7 +2,7 @@
 
 ## `struct Regex`
 
-Regular-expression helpers (`test`/`match`/`count`/`replace_all`) using POSIX ERE syntax
+Regular-expression helpers (`test`/`match`/`count`/`replace_all`) using POSIX ERE syntax plus `(?:...)`, lookaround, and `{n,m}` counted repetition
 
 **Members:**
 
