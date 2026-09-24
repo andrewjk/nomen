@@ -40,6 +40,12 @@ export interface TestFileResult {
 	// Set when the compiled binary crashed before finishing (e.g. a segfault
 	// in a test). We still surface whatever records it managed to emit.
 	crashed?: string;
+	/**
+	 * The pipeline stage that produced `crashed`, so the report can name it
+	 * accurately — a binary that BUILT fine and then segfaulted before
+	 * emitting any record is not a build failure (see report_file).
+	 */
+	phase?: "parse" | "build" | "setup" | "link" | "run";
 	ms: number;
 }
 
@@ -289,6 +295,7 @@ export function run_test_file(
 	const parsed = parse(source, library, resolved);
 	if (parsed.errors.length) {
 		result.ok = false;
+		result.phase = "parse";
 		result.crashed = parsed.errors
 			.map((e) => `${e.message} (${e.line ?? "?"}:${e.column ?? "?"})`)
 			.join("\n");
@@ -302,6 +309,7 @@ export function run_test_file(
 	});
 	if (buildResult.errors && buildResult.errors.length) {
 		result.ok = false;
+		result.phase = "build";
 		result.crashed = buildResult.errors
 			.map((e) => `${e.message} (${e.line ?? "?"}:${e.column ?? "?"})`)
 			.join("\n");
@@ -321,6 +329,7 @@ export function run_test_file(
 			: find_audit_runtime(path.dirname(resolved));
 		if (!runtime_src || !fs.existsSync(runtime_src)) {
 			result.ok = false;
+			result.phase = "setup";
 			result.crashed =
 				"Audit enabled but audit_runtime.c was not found. Pass --audit-runtime <path>.";
 			result.ms = performance.now() - start;
@@ -367,6 +376,7 @@ export function run_test_file(
 	} catch (err: any) {
 		const stderr = err.stderr ? err.stderr.toString() : (err.message ?? "");
 		result.ok = false;
+		result.phase = "link";
 		result.crashed = `link failed: ${stderr.trim() || "clang error"}`;
 		result.ms = performance.now() - start;
 		return result;
@@ -399,6 +409,7 @@ export function run_test_file(
 	result.benches = records.benches;
 	result.other = records.other;
 	result.crashed = crashed;
+	if (crashed) result.phase = "run";
 	// A file "passes" when it reported no failed asserts and didn't crash.
 	const failed = result.fails.length > 0 || result.tests.some((t) => t.failed > 0);
 	result.ok = !failed && crashed === undefined;
@@ -435,7 +446,18 @@ const C = {
 export function report_file(result: TestFileResult): void {
 	const rel = path.relative(process.cwd(), result.file);
 	if (result.crashed && result.tests.length === 0 && result.fails.length === 0) {
-		console.log(` ${C.red("✗")} ${rel} ${C.red("(failed to build)")}`);
+		// Name the stage that actually failed. A binary that linked fine and
+		// then died before emitting any record (e.g. SIGSEGV) is NOT a build
+		// failure — conflating the two sent debugging to the wrong layer.
+		const label =
+			result.phase === "run"
+				? "(crashed before records)"
+				: result.phase === "link"
+					? "(link failed)"
+					: result.phase === "setup"
+						? "(setup failed)"
+						: "(failed to build)";
+		console.log(` ${C.red("✗")} ${rel} ${C.red(label)}`);
 		console.log(C.red(result.crashed));
 		return;
 	}
