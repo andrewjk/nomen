@@ -1,4 +1,5 @@
 import add_error from "../add_error.ts";
+import { is_int_literal } from "../int_literal.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
@@ -184,16 +185,22 @@ function must_use_type_display_name(en: EnumNode | BitsetNode, type: Type): stri
  */
 function gather_top_level_consts(block: BlockNode, status: CheckStatus) {
 	const seen = new Set<string>();
+	const candidates: DeclarationNode[] = [];
 	for (const child of block.statements) {
 		if (child.node_type !== "declare") continue;
 		const decl = child as DeclarationNode;
 		if (decl.declaration !== "const") continue;
-		if (!decl.name || !decl.type?.name) continue;
-		if (decl.type.is_array) continue;
+		if (!decl.name) continue;
 		if (seen.has(decl.name)) continue;
 		seen.add(decl.name);
+		candidates.push(decl);
+	}
+	infer_const_decl_types(candidates, status);
+	for (const decl of candidates) {
+		if (!decl.type?.name) continue;
+		if (decl.type.is_array) continue;
 		status.values.push({
-			declaration: decl.declaration,
+			declaration: "const",
 			name: decl.name,
 			type: decl.type,
 			is_set: !!decl.value,
@@ -201,6 +208,73 @@ function gather_top_level_consts(block: BlockNode, status: CheckStatus) {
 			is_global: true,
 		});
 	}
+}
+
+/**
+ * Give every root-level `const` a declared type BEFORE the statement walk,
+ * so a const declared BELOW its first use resolves like a free function
+ * (which hoists across the whole file). Parse can only infer the type when
+ * the initializer is a bare literal; a composed chain (`const TAG = "<" +
+ * TAG_NAME + ">"`, the allmark htmlPatterns shape) stayed typeless and its
+ * use-above-declaration failed with "Unknown value".
+ *
+ * The inference iterates until nothing new is derivable, so a chain may
+ * reference consts declared BELOW itself too. Recognized initializers:
+ * literals, references to other (typed) consts, and arithmetic/concat
+ * operations (the result type is the left operand's, mirroring
+ * check_operation_node). Anything else (constructor calls, function calls)
+ * keeps today's behavior: annotate the type or declare before use.
+ */
+function infer_const_decl_types(decls: DeclarationNode[], status: CheckStatus) {
+	const known = new Map<string, Type>();
+	for (const decl of decls) {
+		if (decl.type?.name) known.set(decl.name, decl.type);
+	}
+	let progress = true;
+	while (progress) {
+		progress = false;
+		for (const decl of decls) {
+			if (decl.type?.name) continue;
+			const inferred = infer_const_expr_type(decl.value, known, status);
+			if (!inferred) continue;
+			decl.type = inferred;
+			known.set(decl.name, inferred);
+			progress = true;
+		}
+	}
+}
+
+function infer_const_expr_type(
+	node: BaseNode | undefined,
+	known: Map<string, Type>,
+	status: CheckStatus,
+): Type | undefined {
+	if (!node) return undefined;
+	if (node.node_type === "value") {
+		const raw = (node as { value?: string }).value;
+		if (typeof raw !== "string") return undefined;
+		if (raw.startsWith('"')) return new Type("string", true);
+		if (raw === "true" || raw === "false") return new Type("bool", true);
+		if (raw.startsWith("'") && raw.endsWith("'")) return new Type("char", true);
+		if (is_int_literal(raw)) return new Type("int", true);
+		if (/^(\+|-)*\d+.\d+([eE](\+|-)?\d+)?$/.test(raw)) return new Type("float", true);
+		const declared = known.get(raw);
+		if (declared) return declared;
+		return undefined;
+	}
+	if (node.node_type === "op") {
+		const op = node as unknown as { op: string; left_value: BaseNode };
+		return infer_const_expr_type(op.left_value, known, status);
+	}
+	if (node.node_type === "func_call") {
+		// A constructor call `Name(...)` for a known non-generic struct
+		// yields that struct's value.
+		const call = node as FunctionCallNode;
+		const target = status.structs.find((s) => s.name === call.name && !s.is_simple_type);
+		if (target && target.type_params.length === 0) return new Type(target.name);
+		return undefined;
+	}
+	return undefined;
 }
 
 /**

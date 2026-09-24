@@ -2,6 +2,25 @@
 
 Skipped or out-of-scope items recorded for later.
 
+## Module-level primitive `const` with a non-literal initializer is uninitialized on aarch64
+
+`pub const LEVELS = 3 + 4` at module (root) scope reserves the global's
+storage (`LEVELS: .space 8`) but never lowers the initializer, so every
+read observes 0 — in BOTH declaration orders (it is not the below-use bug;
+that was the checker's "Unknown value", fixed in
+check_block_node's `infer_const_decl_types`). The C backend is correct: it
+emits `long LEVELS = (3L + 4L);` and C folds the constant expression.
+Discovered while adding the const-below-use test (test/const_below_use.test.ts,
+which keeps to the string shapes for this reason).
+
+Fix shape: the aarch64 build's global-declaration path should either (a)
+fold compile-time-constant primitive initializers (literal op chains, and
+now also foldable const-string chains via fold_string_const) into the data
+emission, or (b) splice non-foldable const inits into main's prologue the
+way module_init_statements already handles runtime `var` initializers —
+line 83 of build_aarch64/build_block_node.ts (`if (decl.declaration ===
+"const") continue;`) is the skip that loses them.
+
 ## aarch64 post-processing passes dominate large builds (linear but heavy)
 
 Follow-up to the emitter quadratic fix (chunked code buffer +
