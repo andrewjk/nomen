@@ -37,6 +37,9 @@ export interface TestFileResult {
 	fails: FailRecord[];
 	benches: BenchRecord[];
 	other: string[];
+	// "LEAK: N allocation(s)" lines the audits runtime printed at exit. Empty
+	// unless the file was run with --audit; a non-empty list fails the file.
+	leaks: string[];
 	// Set when the compiled binary crashed before finishing (e.g. a segfault
 	// in a test). We still surface whatever records it managed to emit.
 	crashed?: string;
@@ -257,6 +260,14 @@ export function parse_records(stdout: string): RunRecord {
 	return { tests, fails, benches, other };
 }
 
+/** Pull the exit-time audit "LEAK: N allocation(s)" lines out of stdout. */
+export function extract_leaks(stdout: string): string[] {
+	return stdout
+		.split("\n")
+		.map((l) => l.trim())
+		.filter((l) => l.startsWith("LEAK:"));
+}
+
 /**
  * Compile one `*.test.nm` file (with the generated harness) and run it,
  * returning its parsed records and any crash info.
@@ -281,6 +292,7 @@ export function run_test_file(
 		fails: [],
 		benches: [],
 		other: [],
+		leaks: [],
 		ms: 0,
 	};
 
@@ -408,11 +420,21 @@ export function run_test_file(
 	result.fails = records.fails;
 	result.benches = records.benches;
 	result.other = records.other;
+	// Under --audit the exit-time audit check prints "LEAK: N allocation(s)"
+	// to stdout when the malloc/free balance is nonzero. Treat any such line
+	// as a failure so a leaked test file cannot stay green.
+	result.leaks = audit ? extract_leaks(runStdout) : [];
+	// Leak lines are surfaced explicitly above; drop them from the generic
+	// stdout dump so they are not printed twice.
+	if (result.leaks.length) {
+		result.other = result.other.filter((l) => !l.trim().startsWith("LEAK:"));
+	}
 	result.crashed = crashed;
 	if (crashed) result.phase = "run";
-	// A file "passes" when it reported no failed asserts and didn't crash.
+	// A file "passes" when it reported no failed asserts, didn't crash, and
+	// (under --audit) leaked nothing.
 	const failed = result.fails.length > 0 || result.tests.some((t) => t.failed > 0);
-	result.ok = !failed && crashed === undefined;
+	result.ok = !failed && crashed === undefined && result.leaks.length === 0;
 
 	result.ms = performance.now() - start;
 	return result;
@@ -474,6 +496,9 @@ export function report_file(result: TestFileResult): void {
 	// the per-test detail and a separate count line would just repeat names.
 	for (const f of result.fails) {
 		console.log(`   ${C.red("✗")} ${f.test} ${C.dim(">")} ${f.message}`);
+	}
+	for (const leak of result.leaks) {
+		console.log(`   ${C.yellow("⚠")} ${C.yellow(leak)}`);
 	}
 	for (const b of result.benches) {
 		console.log(
@@ -540,6 +565,7 @@ export function runTests(root: string, options: RunTestsOptions = {}): boolean {
 	const totalTests = results.reduce((a, r) => a + r.tests.length, 0);
 	const totalFailed = results.reduce((a, r) => a + r.tests.reduce((x, t) => x + t.failed, 0), 0);
 	const totalPassed = totalTests - totalFailed;
+	const totalLeaks = results.reduce((a, r) => a + r.leaks.length, 0);
 	const anyFailed = results.some((r) => !r.ok);
 
 	console.log("");
@@ -556,6 +582,12 @@ export function runTests(root: string, options: RunTestsOptions = {}): boolean {
 			(totalFailed ? ` ${C.dim("|")} ${C.red(`${totalFailed} failed`)}` : "") +
 			C.dim(` (${totalTests})`),
 	);
+	if (totalLeaks) {
+		console.log(
+			` ${C.dim("Leaks ")} ${C.yellow(`${totalLeaks} reported`)}` +
+				C.dim(" (--audit; leaked files count as failures)"),
+		);
+	}
 	console.log(` ${C.dim(" Time ")} ${format_duration(elapsed)}`);
 	console.log("");
 

@@ -15,6 +15,7 @@ function base(overrides: Partial<TestFileResult>): TestFileResult {
 		fails: [],
 		benches: [],
 		other: [],
+		leaks: [],
 		ms: 1,
 		...overrides,
 	};
@@ -69,5 +70,17 @@ describe("nomen test failure report labels", () => {
 		);
 		expect(lines[0]).toContain("(1 tests)");
 		expect(lines.join("\n")).not.toContain("(crashed before records)");
+	});
+
+	test("audit leak lines are surfaced and fail the file", () => {
+		report_file(
+			base({
+				ok: false,
+				tests: [{ name: "a", passed: 1, failed: 0, ns: 100 }],
+				leaks: ["LEAK: 256 allocation(s)"],
+			}),
+		);
+		expect(lines[0]).toContain("✗");
+		expect(lines.join("\n")).toContain("LEAK: 256 allocation(s)");
 	});
 });

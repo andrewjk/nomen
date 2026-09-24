@@ -3,6 +3,7 @@ import { expect, test } from "vite-plus/test";
 import {
 	collect_test_files,
 	extract_bench_functions,
+	extract_leaks,
 	extract_test_functions,
 	generate_harness,
 	parse_records,
@@ -175,4 +176,17 @@ test("parse_records treats an empty stdout as nothing", () => {
 	expect(r.fails).toEqual([]);
 	expect(r.benches).toEqual([]);
 	expect(r.other).toEqual([]);
+});
+
+// ---------------------------------------------------------------------------
+// extract_leaks
+// ---------------------------------------------------------------------------
+
+test("extract_leaks pulls exit-time audit leak lines out of stdout", () => {
+	const stdout = ["\\nomen|done|t|1|0|5", "LEAK: 256 allocation(s)", "trailing noise"].join("\n");
+	expect(extract_leaks(stdout)).toEqual(["LEAK: 256 allocation(s)"]);
+});
+
+test("extract_leaks returns [] for a clean run", () => {
+	expect(extract_leaks("\\nomen|done|t|1|0|5\n")).toEqual([]);
 });
