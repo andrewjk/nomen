@@ -16,7 +16,9 @@ pub struct StringBuilder {
 	// Ensure capacity for at least `needed` bytes. Grows geometrically.
 	// Plain Nomen + the memory externs — no pointer arithmetic needed, so
 	// this doesn't even require an unsafe context.
-	func ensure = (ref self, int needed) {
+	// `internal`: capacity plumbing for the builder's own appenders; not
+	// part of the user surface.
+	internal func ensure = (ref self, int needed) {
 		if self.cap >= needed {
 			return
 		}
@@ -84,7 +86,10 @@ pub struct StringBuilder {
 	// Append a null-terminated string. `unsafe` Nomen single-sourced for
 	// both backends: the fat pair's pointer half feeds memcpy directly, and
 	// the tracked length replaces the strlen the old C body paid.
-	func append_string = (ref self, string s) {
+	// `internal`: a library-implementation append — user code appends with
+	// `append_char` / `append_string_view`; the library's own structs (Json,
+	// Regex) are on the trusted side of the boundary.
+	internal func append_string = (ref self, string s) {
 		unsafe {
 			var int sl = s.length
 			self.ensure(self.len + sl + 1)
@@ -175,7 +180,7 @@ pub struct StringBuilder {
 	// to [0, len]; the returned string is always an independent allocation.
 	// (`move out string` — the raw body mallocs the result, so the caller
 	// owns it by signature, like `Console.read_line`.)
-	func take_since = (ref self, int mark, move out string) {
+	pub func take_since = (ref self, int mark, move out string) {
 		```
 		#arch: c
 		int start = mark;
@@ -237,7 +242,10 @@ pub struct StringBuilder {
 
 	// Finalize: null-terminate, return the byte buffer as a string, and
 	// release ownership (sets `data` to 0 so the destructor won't free it).
-	func to_string = (ref self, out string) {
+	// Explicitly `pub`: struct members default to pub, but this is the
+	// builder's primary read-back — the contract should not depend on the
+	// default.
+	pub func to_string = (ref self, out string) {
 		```
 		#arch: c
 		int idx = self->len;
