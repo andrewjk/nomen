@@ -24,10 +24,14 @@ import peek_current from "./peek_current.ts";
  *     (`type.func_params` / `type.func_return_type`).
  */
 
-/** Whether the current token starts a nested func type: `func` immediately
- *  followed by `(` (the bare word `func` alone is the plain marker type). */
+/** Whether the current token starts a nested func type: `func` (optionally
+ *  nullable, `func?`) immediately followed by `(` (the bare word `func` alone
+ *  is the plain marker type). */
 export function at_func_type(status: ParseStatus): boolean {
-	return peek_current(status) === "func" && status.tokens[status.i + 1]?.value === "(";
+	if (peek_current(status) !== "func") return false;
+	const next = status.tokens[status.i + 1]?.value;
+	if (next === "(") return true;
+	return next === "?" && status.tokens[status.i + 2]?.value === "(";
 }
 
 /**
@@ -54,6 +58,7 @@ export function reject_void_type(type: Type, status: ParseStatus, at: number): v
 export function adopt_func_param_type(param: ParameterNode, type: Type): boolean {
 	if (type.name !== "func") return false;
 	param.type = new Type("func");
+	param.type.is_nullable = type.is_nullable;
 	param.func_params = type.func_params;
 	param.func_return_type = type.func_return_type;
 	return true;
@@ -83,11 +88,15 @@ export function parse_func_type_signature(param: ParameterNode, status: ParseSta
 
 /**
  * Parse a full nested func type — the `func` word is consumed by the caller
- * (at_func_type confirmed the `(` follows) — and return it as a Type whose
- * func_params/func_return_type carry the signature.
+ * (at_func_type confirmed the `(` follows, possibly after a `?`) — and return
+ * it as a Type whose func_params/func_return_type carry the signature. A
+ * `func?` spelling marks the type nullable (it may hold `null`).
  */
 export function parse_func_type(status: ParseStatus): Type {
 	const type = new Type("func");
+	if (accept("?", status)) {
+		type.is_nullable = true;
+	}
 	const param = new ParameterNode(get_index(status), "");
 	parse_func_type_signature(param, status);
 	type.func_params = param.func_params;
@@ -128,10 +137,13 @@ export function parse_signature_params(params: ParameterNode[], status: ParseSta
 		const param = new ParameterNode(param_start, "");
 		param.type_start = get_index(status);
 		if (at_func_type(status)) {
-			// A nested func parameter: consume the `func` marker word and
-			// parse its signature onto the ParameterNode.
+			// A nested func parameter: consume the `func` marker word (and an
+			// optional `?`) and parse its signature onto the ParameterNode.
 			consume(status);
 			param.type = new Type("func");
+			if (accept("?", status)) {
+				param.type.is_nullable = true;
+			}
 			parse_func_type_signature(param, status);
 		} else {
 			param.type = parse_type(status);

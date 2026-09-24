@@ -77,10 +77,18 @@ export default function parse_declaration(
 			// `var Func<...> name` — normalize to the func-declaration shape
 			// (the keyword spelling `var func (...) name`): the signature
 			// lives on the declaration, not the Type, so every checker and
-			// build path is shared.
+			// build path is shared. A nullable alias (`Func<...>?`) keeps a
+			// nullable `func` marker on the type so null checks/narrowing see
+			// it.
 			decl.func_params = decl.type.func_params ?? [];
 			decl.func_return_type = decl.type.func_return_type;
-			decl.type = new Type("");
+			if (decl.type.is_nullable) {
+				const nullable_marker = new Type("func");
+				nullable_marker.is_nullable = true;
+				decl.type = nullable_marker;
+			} else {
+				decl.type = new Type("");
+			}
 		}
 
 		// If the next token is '=' or EOF, what we parsed was actually the name
@@ -195,6 +203,11 @@ export default function parse_declaration(
 
 function parse_function_type_declaration(decl: DeclarationNode, status: ParseStatus) {
 	accept("func", status);
+	// `func?` — a nullable func binding (it may hold `null`). Recorded on
+	// decl.type as a nullable `func` marker once the signature has parsed;
+	// non-nullable bindings keep the historical empty type (the signature
+	// lives on decl.func_params / decl.func_return_type).
+	const func_nullable = accept("?", status);
 
 	if (expect("(", status)) {
 		const params: ParameterNode[] = [];
@@ -210,6 +223,10 @@ function parse_function_type_declaration(decl: DeclarationNode, status: ParseSta
 			decl.name = consume_name(status);
 			decl.func_params = params.filter((p) => !p.type.is_return_type);
 			decl.func_return_type = return_type;
+			if (func_nullable) {
+				decl.type = new Type("func");
+				decl.type.is_nullable = true;
+			}
 
 			// Check for function body with or without `=`
 			const has_equals = accept("=", status);
@@ -393,8 +410,12 @@ function parse_anon_function_parameter(func: FunctionNode, status: ParseStatus) 
 	if (at_func_type(status)) {
 		// A func-typed lambda parameter (`(func (out int) g, out int) => ...`):
 		// the recursive signature lands on the ParameterNode, then the name.
+		// `func?` marks the parameter nullable.
 		consume(status);
 		param.type = new Type("func");
+		if (accept("?", status)) {
+			param.type.is_nullable = true;
+		}
 		parse_func_type_signature(param, status);
 		param.name_start = get_index(status);
 		param.name = consume_name(status);

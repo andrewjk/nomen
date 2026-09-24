@@ -383,6 +383,39 @@ const int sum = adder(5, 2)
 		expect(compile_module(input)).toEqual([]);
 	});
 
+	test("nullable func parameter with a guarded call", () => {
+		const input = `
+func run = (func? (out int) callback) {
+    if callback != null {
+        callback()
+    } else {
+        Console.write("skipped")
+    }
+}
+
+func five = (out int) {
+    return 5
+}
+
+run(five)
+run(null)
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("nullable func call requires a null check", () => {
+		const input = `
+var func? (out int) f = null
+f()
+if f != null {
+    f()
+}
+`;
+		const errors = compile_main(input);
+		expect(errors.length).toBe(1);
+		expect(errors[0].message).toContain("may be null");
+	});
+
 	test("nested functions and structs", () => {
 		const input = `
 func process = (int value, out int) {

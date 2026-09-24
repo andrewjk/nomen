@@ -89,6 +89,20 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 		if (is_view_keyword) {
 			add_error(status, `'view' cannot declare a function-typed binding`, decl.start);
 		}
+		// A `null` initializer needs a nullable func binding (`func?` / `Func<...>?`).
+		// The keyword spelling's type is otherwise empty, which would sail
+		// through the generic type match ("unknown target = ok").
+		if (
+			decl.value?.node_type === "value" &&
+			(decl.value as ValueNode).value === "null" &&
+			!(decl.type.name === "func" && decl.type.is_nullable)
+		) {
+			add_error(
+				status,
+				`cannot assign null to a non-nullable func — declare it 'func?' (or 'Func<...>?')`,
+				decl.value.start,
+			);
+		}
 		if (decl.func_return_type) {
 			check_type_exists(decl.func_return_type, status, -1);
 			const materialized = materialize_type(decl.func_return_type, status);
@@ -213,7 +227,14 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 		status.values.push({
 			declaration: declaration,
 			name: decl.name,
-			type: decl.func_return_type || decl.type,
+			// A nullable func binding (`var func? (out int) f`) keeps the
+			// nullable `func` marker type so null checks/narrowing see
+			// is_nullable; non-nullable bindings store the return type (the
+			// historical shape).
+			type:
+				decl.type.name === "func" && decl.type.is_nullable
+					? decl.type
+					: decl.func_return_type || decl.type,
 			is_set: !!decl.value,
 			start: decl.start,
 			is_null: decl.value?.node_type === "value" && (decl.value as any).value === "null",

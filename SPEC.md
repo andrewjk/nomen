@@ -1262,6 +1262,45 @@ and an initializer or assignment against the declared type. The comparison
 covers the parameter count, each parameter type (nested func parameters
 included), and the result type.
 
+#### Nullable Function Types
+
+A func type can be made nullable with `?` — `func?` (or `Func<...>?`) — so
+the binding may hold `null`. This is the spelling for optional callbacks:
+the callee null-checks before calling.
+
+```
+func run = (func? (out int) callback) {
+    if callback != null {
+        callback()
+    } else {
+        Console.write("skipped")
+    }
+}
+
+func five = (out int) {
+    return 5
+}
+
+run(five)   // calls the callback
+run(null)   // prints "skipped"
+```
+
+Assigning `null` to a non-nullable func type is a compile error, and the
+compiler rejects a call through a binding that may still be null — only a
+passed null check (`!= null`) narrows it:
+
+```
+var func? (out int) f = null
+f()                        // Error: Variable 'f' may be null
+if f != null {
+    f()                    // OK
+}
+```
+
+Nullability applies at every func-type position: parameters (including
+nested ones), `out` return slots (`out func? (...)`), locals, and
+struct/class fields (`var func? (int) close_node = null`).
+
 #### Extern Functions
 
 A body-less `extern func` declaration maps a Nomen function onto a C

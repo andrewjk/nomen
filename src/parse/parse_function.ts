@@ -330,9 +330,13 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 		if (at_func_type(status)) {
 			// A func-typed parameter (`func (int, out int) f`): the `func`
 			// marker word is consumed here and the recursive signature —
-			// itself nesting-capable — lands on the ParameterNode.
+			// itself nesting-capable — lands on the ParameterNode. `func?`
+			// marks the parameter nullable (it may hold `null`).
 			consume(status);
 			param.type = new Type("func");
+			if (accept("?", status)) {
+				param.type.is_nullable = true;
+			}
 			parse_func_type_signature(param, status);
 			param.name_start = get_index(status);
 			param.name = consume_name(status);

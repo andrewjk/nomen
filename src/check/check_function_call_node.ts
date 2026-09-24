@@ -255,6 +255,16 @@ export default function check_function_call_node(
 				param_value.func_params !== undefined ||
 				param_value.func_return_type !== undefined);
 		if (is_func_value && param_value) {
+			// A nullable func value (`var func? (out int) f = null`) called
+			// while the checker still tracks it as null: reject like any
+			// other null-variable use. A `f != null` guard narrows the
+			// branch's copy (check_if_else_node), so guarded calls pass.
+			// (A plain value reference goes through check_value_node's gate;
+			// a call's callee name never does, so it is checked here.)
+			if (param_value.is_null && !status.allow_null_value) {
+				add_error(status, `Variable '${node.name}' may be null`, node.start);
+				return false;
+			}
 			// A moved func value (its descriptor was transferred to another
 			// owner) cannot be called — same use-after-move rule as a plain
 			// value read (check_value_node).

@@ -147,10 +147,14 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 		// puts the signature on func_params/func_return_type; give it an
 		// explicit `func` type so struct layout, field emission, and call
 		// resolution (`s.f(args)` — an indirect call through the field) all
-		// see a concrete type. The field is non-owning (nothing to destroy),
-		// so byte-copying the struct is sound.
+		// see a concrete type. A nullable func field (`func? (...) f`) already
+		// carries the nullable `func` marker from the parser — keep it so
+		// `self.f != null` sees is_nullable. The field is non-owning (nothing
+		// to destroy), so byte-copying the struct is sound.
 		if (decl.func_params) {
-			decl.type = new Type("func");
+			if (decl.type.name !== "func") {
+				decl.type = new Type("func");
+			}
 			check_declaration_node(decl, status);
 			continue;
 		}

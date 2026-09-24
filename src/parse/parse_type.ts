@@ -123,13 +123,17 @@ export default function parse_type(status: ParseStatus): Type {
 	// alias always desugars to the one-word `func` type, so it composes with
 	// signatures at any depth (`Func<Func<int, int>, int>`).
 	if (type.name === "Func" && type.type_args?.length) {
-		if (type.is_nullable || type.is_array || type.is_pointer || type.is_view || type.is_ref) {
-			add_error(status, `Func<...> cannot be combined with '?'/'[]'/'ptr'/'view'/'ref'`, start);
+		if (type.is_array || type.is_pointer || type.is_view || type.is_ref) {
+			add_error(status, `Func<...> cannot be combined with '[]'/'ptr'/'view'/'ref'`, start);
 			return type;
 		}
 		const args = type.type_args;
 		const func_type = new Type("func");
 		func_type.start = type.start;
+		// `Func<...>?` — the nullable marker carries onto the func type.
+		if (type.is_nullable) {
+			func_type.is_nullable = true;
+		}
 		// Always a (possibly empty) array: consumers detect a func-typed
 		// binding/value by `func_params !== undefined`.
 		func_type.func_params = [];
