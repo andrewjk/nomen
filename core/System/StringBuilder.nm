@@ -120,6 +120,121 @@ pub struct StringBuilder {
 		}
 	}
 
+	// Read-back: how many bytes the buffer currently holds. (The `len` field
+	// is private; this is the O(1) peek the incremental-builder flow needs —
+	// e.g. recording a mark before appending a section.)
+	pub func length = (self, out int) {
+		return self.len
+	}
+
+	// Whether the buffer's current bytes end with `suffix` (an empty suffix
+	// is always true). Reads the buffer tail in place — no copy of either
+	// side (`view string` avoids materializing the checked suffix).
+	pub func ends_with = (ref self, view string suffix, out bool) {
+		unsafe {
+			var int sl = suffix.length
+			if sl > self.len {
+				return false
+			}
+			var int start = self.len - sl
+			var int i = 0
+			while i < sl; i += 1 {
+				if (self.data as ptr char)[start + i] != (suffix as ptr char)[i] {
+					return false
+				}
+			}
+		}
+		return true
+	}
+
+	// Truncate the buffer to `new_len` bytes (clamped to [0, len]). Capacity
+	// is kept, so a subsequent append reuses the storage without a realloc.
+	pub func truncate = (ref self, int new_len) {
+		var int n = new_len
+		if n < 0 {
+			n = 0
+		}
+		if n > self.len {
+			n = self.len
+		}
+		self.len = n
+	}
+
+	// Drop the last byte (a no-op when the buffer is empty). The common
+	// chomp-the-trailing-separator shape.
+	pub func chomp = (ref self) {
+		if self.len > 0 {
+			self.len = self.len - 1
+		}
+	}
+
+	// Extract the bytes from `mark` to the end as a fresh owned string and
+	// rewind the buffer to `mark` bytes (capacity kept). The mid-render
+	// measure-and-restart shape: record `length()`, append a section, then
+	// `take_since(mark)` to measure it and re-emit decorated. `mark` clamps
+	// to [0, len]; the returned string is always an independent allocation.
+	// (`move out string` — the raw body mallocs the result, so the caller
+	// owns it by signature, like `Console.read_line`.)
+	func take_since = (ref self, int mark, move out string) {
+		```
+		#arch: c
+		int start = mark;
+		if (start < 0) start = 0;
+		if (start > self->len) start = self->len;
+		int n = self->len - start;
+		char* buf = (char*)malloc((size_t)n + 1);
+		if (n > 0) memcpy(buf, (void*)(unsigned long long)(self->data + start), n);
+		buf[n] = 0;
+		self->len = start;
+		// Fat-string ABI: return the (ptr, len) pair — no strlen.
+		return (nomen_string){ buf, n };
+		```
+		```
+		#arch: aarch64
+		// x19 = self, x1 = mark. Clamp start to [0, len]; malloc(n+1),
+		// copy the tail, null-terminate, rewind len. Live values live in a
+		// 32-byte (16-aligned) frame across the calls (x0-x18 are
+		// caller-saved): [sp]=start, [sp+8]=n, [sp+16]=buf.
+		ldr x2, [x19, #16]          // len
+		mov x3, x1                  // start = mark
+		cmp x3, #0
+		b.ge .Lsb_tk_hi
+		mov x3, #0
+		.Lsb_tk_hi:
+		cmp x3, x2
+		b.le .Lsb_tk_ok
+		mov x3, x2                  // start = min(start, len)
+		.Lsb_tk_ok:
+		sub x4, x2, x3              // n = len - start
+		sub sp, sp, #32
+		str x3, [sp, #0]            // start
+		str x4, [sp, #8]            // n
+		add x0, x4, #1
+		// buf = malloc(n + 1) — bare call line: the audit pass rewrites
+		// `bl _malloc` (line-exact) to the counter-wrapped allocator.
+		bl _malloc
+		str x0, [sp, #16]
+		ldr x1, [sp, #8]            // n
+		cbz x1, .Lsb_tk_copied
+		ldr x0, [sp, #16]           // dst = buf
+		ldr x3, [x19, #8]           // data
+		ldr x4, [sp, #0]            // start
+		add x1, x3, x4              // src = data + start
+		ldr x2, [sp, #8]            // n
+		bl _memcpy
+		.Lsb_tk_copied:
+		ldr x0, [sp, #16]           // buf
+		ldr x1, [sp, #8]            // n
+		add x2, x0, x1
+		strb wzr, [x2]              // buf[n] = 0
+		ldr x3, [sp, #0]            // start
+		str x3, [x19, #16]          // len = start
+		ldr x0, [sp, #16]           // return pair: (buf, n)
+		ldr x1, [sp, #8]
+		add sp, sp, #32
+		```
+	}
+
 	// Finalize: null-terminate, return the byte buffer as a string, and
 	// release ownership (sets `data` to 0 so the destructor won't free it).
 	func to_string = (ref self, out string) {

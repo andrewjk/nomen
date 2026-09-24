@@ -1,0 +1,28 @@
+# StringBuilder read-back/trim: length, ends_with, chomp, truncate, take_since
+# nomen run --arch c and --arch aarch64 (also verified --audit, balanced):
+--- arch c:
+23 |     var string mid = sb2.take_since(3)
+1 warning found.
+13
+ew:yes
+12
+<p>
+XYZ
+abc
+3
+done
+--- arch aarch64:
+23 |     var string mid = sb2.take_since(3)
+1 warning found.
+13
+ew:yes
+12
+<p>
+XYZ
+abc
+3
+done
+$ npx vp test test/string_builder_readback.test.ts
+   Start at  10:18:41
+   Duration  8.25s (transform 945ms, setup 0ms, import 1.17s, tests 189ms, environment 0ms)
+
