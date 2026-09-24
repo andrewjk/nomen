@@ -54,6 +54,10 @@ export default function clone_status(status: CheckStatus): CheckStatus {
 		var_name_counter: status.var_name_counter,
 		type_params: status.type_params,
 		errors: status.errors,
+		// Share the warnings array like errors: a lint recorded inside a
+		// cloned (block/function) scope must survive the clone's discard and
+		// reach the root's warning pass.
+		warnings: status.warnings,
 		// Buffer cap tracking: share the same map (writes propagate to parent)
 		buffer_caps: status.buffer_caps,
 		// Parallel-length equations: block clones stay in the same function,

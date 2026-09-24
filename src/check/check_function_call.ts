@@ -43,6 +43,7 @@ import {
 	is_owning_ref_type,
 	is_owning_struct_type_requiring_move,
 } from "./utils/ownership.ts";
+import lint_regex_pattern from "./utils/regex_pattern_lint.ts";
 import { maybe_mark_borrow_to_string_arg } from "./utils/string_mutation_scan.ts";
 import synthesize_lambda_name from "./utils/synthesize_lambda_name.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
@@ -197,7 +198,9 @@ export default function check_function_call(
 	// companion params (`ParameterNode.hidden_len`). Non-enumerable by
 	// design (see set_resolved_function).
 	set_resolved_function(node, func);
+	lint_regex_entry_pattern(node, func, status);
 	const access_scope = status.stack.at(-1)!;
+
 	// For init functions, check the struct's visibility
 	if (func.name === "#init") {
 		const struct_name = target_type?.name || func.return_type.name;
@@ -1547,4 +1550,63 @@ function receiver_is_const(
 	if (!self_value || self_value === "self" || self_value === "?") return false;
 	const binding = status.values.findLast((v) => v.name === self_value);
 	return !!binding && binding.declaration === "const" && !binding.type.is_ref;
+}
+
+/**
+ * Regex entry points whose FIRST parameter is the pattern. When that argument
+ * is a static string literal, flag engine escapes outside the known set as
+ * probable typos (see regex_pattern_lint.ts) — a dynamic runtime pattern
+ * can't be validated this way.
+ */
+const REGEX_PATTERN_ENTRY_POINTS = new Set([
+	"test",
+	"match",
+	"count",
+	"find",
+	"replace_all",
+	"captures",
+	"test_ci",
+	"match_ci",
+	"find_ci",
+	"captures_ci",
+	"replace_all_ci",
+]);
+
+/**
+ * Lint a static string-literal pattern passed to a Regex entry point. Only
+ * the library's own `Regex` struct qualifies (a user struct of the same name
+ * with a same-named method is left alone), and only when the first argument
+ * is a literal — anything else is a runtime value.
+ */
+function lint_regex_entry_pattern(
+	node: FunctionCallNode | AccessFunctionCallNode,
+	func: FunctionNode,
+	status: CheckStatus,
+): void {
+	if (!is_library_regex_func(func, status)) return;
+	if (!REGEX_PATTERN_ENTRY_POINTS.has(func.name)) return;
+	const pattern = node.params[0];
+	if (!pattern || pattern.node_type !== "value") return;
+	const raw = (pattern as ValueNode).value;
+	if (!raw.startsWith('"')) return;
+	if (!status.warnings) status.warnings = [];
+	for (const message of lint_regex_pattern(raw)) {
+		status.warnings.push({ message, start: pattern.start, line: 0, column: 0 });
+	}
+}
+
+/**
+ * Whether `func` is a method of the library's `Regex` struct. Two paths: the
+ * method's enclosing struct is stamped on it for calls checked after the
+ * struct gather (library bodies, later files), and for user call sites —
+ * which are checked BEFORE the gather stamps `func.scope` — the callee is
+ * matched against the gathered library struct's own methods.
+ */
+function is_library_regex_func(func: FunctionNode, status: CheckStatus): boolean {
+	const scope = func.scope as StructNode | undefined;
+	if (scope && scope.node_type === "struct" && scope.is_library && scope.name === "Regex") {
+		return true;
+	}
+	const regex_struct = status.structs.find((s) => s.is_library && s.name === "Regex");
+	return !!regex_struct && regex_struct.functions.includes(func);
 }

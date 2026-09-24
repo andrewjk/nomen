@@ -255,12 +255,13 @@ func fold_pattern = (string pattern, move out string) {
 	while i < n; i += 1 {
 		var char c = pattern.at(i)
 		if (c as int) == 92 {
-			// Escaped char: shorthands and backrefs keep their backslash;
-			// other escaped letters become both-case classes; escaped
-			// punctuation is copied literally.
+			// Escaped char: shorthands, backrefs, and control escapes
+			// (\n \r \t) keep their backslash; other escaped letters
+			// become both-case classes; escaped punctuation is copied
+			// literally.
 			if i + 1 < n {
 				var char e = pattern.at(i + 1)
-				if is_shorthand(e) || is_backref_digit(e) {
+				if is_shorthand(e) || is_backref_digit(e) || is_control_escape(e) {
 					sb.append_char(c)
 					sb.append_char(e)
 				} else {
@@ -317,9 +318,10 @@ func fold_class = (string pattern, int cs, int ce, ref StringBuilder dst) {
 			if i + 1 < content_end {
 				var char e = pattern.at(i + 1)
 				dst.append_char(e)
-				// A shorthand keeps its backslash; other escaped letters
-				// gain their case counterpart.
-				if is_alpha_byte(e) && !is_shorthand(e) {
+				// A shorthand or control escape (\n \r \t) keeps its
+				// backslash; other escaped letters gain their case
+				// counterpart.
+				if is_alpha_byte(e) && !is_shorthand(e) && !is_control_escape(e) {
 					dst.append_char(swap_case_byte(e))
 				}
 				i += 1
@@ -478,9 +480,11 @@ func alt_first_bytes = (string pattern, int start, int end, ref StringBuilder sb
 	while i < end {
 		var char c = pattern.at(i)
 		if (c as int) == 92 {
-			// escaped literal: first byte is the escaped char — unless it's
-			// a backreference (depends on a capture) or a complement
-			// shorthand (not an inclusion set), which disable the prefilter.
+			// escaped literal: first byte is the byte the escape names
+			// (\n is LF, \r is CR, \t is TAB; any other escaped character
+			// is its own literal byte) — unless it's a backreference
+			// (depends on a capture) or a complement shorthand (not an
+			// inclusion set), which disable the prefilter.
 			if i + 1 < end {
 				var char e = pattern.at(i + 1)
 				if is_backref_digit(e) {
@@ -491,7 +495,7 @@ func alt_first_bytes = (string pattern, int start, int end, ref StringBuilder sb
 						return -1
 					}
 				} else {
-					sb.append_char(e)
+					sb.append_char(escaped_byte_value(e) as char)
 				}
 				// A '?'/'*' quantifier makes the atom nullable — the first
 				// byte can also come from whatever follows it.
@@ -597,22 +601,34 @@ func add_class_chars = (string pattern, int start, int end, ref StringBuilder sb
 	}
 	var int i = cs
 	while i < end {
-		if i + 2 < end {
-			if pattern.at(i + 1) == '-' {
-				var int lo = pattern.at(i) as int
-				var int hi = pattern.at(i + 2) as int
-				while lo <= hi {
-					sb.append_char(lo as char)
-					lo += 1
+		var char c = pattern.at(i)
+		if (c as int) == 92 {
+			// Escaped byte: contribute the byte the escape names (\n is
+			// LF, \r is CR, \t is TAB; any other escaped character is its
+			// own literal byte) so the prefilter stays a superset of the
+			// matcher's first bytes.
+			if i + 1 < end {
+				sb.append_char(escaped_byte_value(pattern.at(i + 1)) as char)
+			}
+			i += 2
+		} else {
+			if i + 2 < end {
+				if pattern.at(i + 1) == '-' {
+					var int lo = pattern.at(i) as int
+					var int hi = pattern.at(i + 2) as int
+					while lo <= hi {
+						sb.append_char(lo as char)
+						lo += 1
+					}
+					i += 3
+				} else {
+					sb.append_char(c)
+					i += 1
 				}
-				i += 3
 			} else {
-				sb.append_char(pattern.at(i))
+				sb.append_char(c)
 				i += 1
 			}
-		} else {
-			sb.append_char(pattern.at(i))
-			i += 1
 		}
 	}
 }
@@ -888,7 +904,7 @@ func match_single_atom = (
 				return -1
 			}
 			if in_pos < in_len {
-				if input.at(in_pos) == ec {
+				if (input.at(in_pos) as int) == escaped_byte_value(ec) {
 					return in_pos + 1
 				}
 			}
@@ -936,7 +952,7 @@ func char_matches_atom = (
 			if is_shorthand(ec) {
 				return matches_shorthand(ec, ic)
 			}
-			return ic == ec
+			return (ic as int) == escaped_byte_value(ec)
 		}
 		return false
 	}
@@ -1201,7 +1217,7 @@ func char_in_class = (
 						found = true
 					}
 				} else {
-					if ic == e {
+					if (ic as int) == escaped_byte_value(e) {
 						found = true
 					}
 				}
@@ -1454,6 +1470,29 @@ func match_star_backref = (
 func is_shorthand = (char c, out bool) {
 	var int code = c as int
 	return code == 100 || code == 68 || code == 119 || code == 87 || code == 115 || code == 83
+}
+
+// Whether the escaped character c names a control-character shorthand
+// (\n \r \t) that the engine maps to its real control byte.
+func is_control_escape = (char c, out bool) {
+	var int code = c as int
+	return code == 110 || code == 114 || code == 116
+}
+
+// The byte an escaped atom names: \n is LF (10), \r is CR (13), \t is TAB
+// (9); every other escaped character is the literal byte of that character.
+func escaped_byte_value = (char c, out int) {
+	var int code = c as int
+	if code == 110 {
+		return 10
+	}
+	if code == 114 {
+		return 13
+	}
+	if code == 116 {
+		return 9
+	}
+	return code
 }
 
 // Whether byte b belongs to the shorthand class named by c. Uppercase names
