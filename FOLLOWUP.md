@@ -523,3 +523,20 @@ note only. Two ways to close it: restore the raw `#arch` bodies (the git
 history has them, plus the pre-rewrite `Random.nm`), or teach the aarch64 ASM
 optimizer the three folds above (which would benefit all pure-Nomen 64-bit
 arithmetic, not just this generator).
+
+## Assigning a lambda to an existing func variable doesn't lower
+
+A lambda may only arrive as a DECLARATION initializer (`var func (out int) f
+= () => 5`) — assigning one to an already-declared func binding (`f = () =>
+5`) emits broken code on both backends (aarch64: literal `:` / `_ = ` lines
+in the .s; the assignment path never routes a FunctionNode RHS through
+build_lambda_value). Assigning a NAMED function works (`f = five`), and
+declaration-initializer lambdas work, so the workaround is to initialize at
+the declaration or wrap the lambda in a named function.
+
+Surfaced by the nullable-func-types tests (allmark PORT.md's class-per-rule
+notes); confirmed pre-existing on main with a non-nullable `var func (out
+int) f = () => 5` + `f = () => 6` repro. Fix shape: the assignment paths
+(build_assignment_node, both backends) need the same FunctionNode-RHS
+handling the declaration paths have (emit the lambda at file scope, store
+its descriptor/label into the slot).
