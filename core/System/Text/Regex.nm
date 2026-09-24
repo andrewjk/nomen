@@ -776,12 +776,119 @@ func match_here = (
 		}
 	}
 
-	// No quantifier: match the atom once, then the rest of the pattern.
+	// No quantifier: match the atom once, then the rest of the pattern. A
+	// GROUP atom goes through the continuation-aware path: its inner
+	// alternatives retry when the rest fails on an earlier one (JS-style
+	// backtracking — `(head|header)(\s|$|>)` must still match "header>").
+	if pc == '(' {
+		return match_group_then_rest(
+			pattern,
+			pat_pos,
+			a_end,
+			a_end,
+			pat_end,
+			input,
+			in_pos,
+			in_len,
+			ref caps,
+		)
+	}
 	var int next = match_single_atom(pattern, pat_pos, a_end, input, in_pos, in_len, ref caps)
 	if next < 0 {
 		return -1
 	}
 	return match_here(pattern, a_end, pat_end, input, next, in_len, ref caps)
+}
+
+// The position of the first top-level '|' in [start, end), or -1. Escapes,
+// character classes, and nested groups are skipped so only depth-0
+// alternation operators count (same scanning discipline as match_here).
+func next_top_level_alt = (string pattern, int start, int end, out int) {
+	var depth = 0
+	var int i = start
+	while i < end {
+		var char c = pattern.at(i)
+		if (c as int) == 92 {
+			i += 2
+		} else {
+			if c == '[' {
+				i = atom_end_pos(pattern, i, end)
+			} else {
+				if c == '(' {
+					depth += 1
+				}
+				if c == ')' {
+					if depth > 0 {
+						depth -= 1
+					}
+				}
+				if (c as int) == 124 {
+					if depth == 0 {
+						return i
+					}
+				}
+				i += 1
+			}
+		}
+	}
+	return -1
+}
+
+// Match the group atom spanning [atom_start, atom_end) ('(' at atom_start)
+// and then the continuation [rest, pat_end), retrying the group's LATER
+// alternatives whenever the continuation fails on an earlier one. Without
+// this, a group commits to the first alternative that matches the group
+// ALONE and a failing continuation aborts the whole match — the engine had
+// no backtracking into a group's alternatives (PORT.md: `(head|header)`
+// never reached `header` when `(\s|$|>)` rejected what `head` left behind).
+// A group without a top-level '|' behaves exactly like the old
+// match-atom-then-continue path, and a failed trial restores the group's
+// previous capture span before the next attempt.
+func match_group_then_rest = (
+	string pattern,
+	int atom_start,
+	int atom_end,
+	int rest,
+	int pat_end,
+	string input,
+	int in_pos,
+	int in_len,
+	ref List<int> caps,
+	out int
+) {
+	var int g = group_index_at(pattern, atom_start)
+	var int at = last_capture_index(caps, g)
+	var int old_start = -1
+	var int old_end = -1
+	if at >= 0 {
+		old_start = caps.at(at + 1)
+		old_end = caps.at(at + 2)
+	}
+	var int inner_start = atom_start + 1
+	var int inner_end = atom_end - 1
+	var int s = inner_start
+	while s <= inner_end {
+		var int bar = next_top_level_alt(pattern, s, inner_end)
+		var int e = inner_end
+		if bar >= 0 {
+			e = bar
+		}
+		var int next = match_here(pattern, s, e, input, in_pos, in_len, ref caps)
+		if next >= 0 {
+			record_capture(ref caps, g, in_pos, next)
+			var int r = match_here(pattern, rest, pat_end, input, next, in_len, ref caps)
+			if r >= 0 {
+				return r
+			}
+		}
+		record_capture(ref caps, g, old_start, old_end)
+		if bar >= 0 {
+			s = bar + 1
+		} else {
+			s = inner_end + 1
+		}
+	}
+	return -1
 }
 
 // Return the position just past the atom that starts at pat_pos. Handles
@@ -1062,29 +1169,99 @@ func match_star_group = (
 ) {
 	if lazy > 0 {
 		// Lazy: stop repeating first (minimum met), then try one more
-		// iteration before giving up.
+		// iteration before giving up. The iteration retries the group's
+		// top-level alternatives (see match_group_iteration).
 		if min_count <= 0 {
 			var int stop = match_here(pattern, rest, pat_end, input, in_pos, in_len, ref caps)
 			if stop >= 0 {
 				return stop
 			}
 		}
-		var int next = match_single_atom(
+		return match_group_iteration(
 			pattern,
 			atom_start,
 			atom_end,
+			rest,
+			pat_end,
 			input,
 			in_pos,
+			min_count,
+			lazy,
 			in_len,
 			ref caps,
 		)
+	}
+	// Try matching the group one more time (greedy) — each top-level
+	// alternative in turn — before stopping.
+	var int r = match_group_iteration(
+		pattern,
+		atom_start,
+		atom_end,
+		rest,
+		pat_end,
+		input,
+		in_pos,
+		min_count,
+		lazy,
+		in_len,
+		ref caps,
+	)
+	if r >= 0 {
+		return r
+	}
+	// Stop repeating and try the rest of the pattern, if the minimum is met.
+	if min_count <= 0 {
+		return match_here(pattern, rest, pat_end, input, in_pos, in_len, ref caps)
+	}
+	return -1
+}
+
+// Try ONE further iteration of a quantified group at in_pos, retrying the
+// group's top-level alternatives while the remaining star recursion fails.
+// Returns the recursion's result, or -1 when no alternative leads to a
+// match. An alternative that matches the empty string is not recursed into
+// (an empty iteration cannot make progress; the caller's stop path covers
+// it), and every failed trial restores the group's previous capture span.
+func match_group_iteration = (
+	string pattern,
+	int atom_start,
+	int atom_end,
+	int rest,
+	int pat_end,
+	string input,
+	int in_pos,
+	int min_count,
+	int lazy,
+	int in_len,
+	ref List<int> caps,
+	out int
+) {
+	var int g = group_index_at(pattern, atom_start)
+	var int at = last_capture_index(caps, g)
+	var int old_start = -1
+	var int old_end = -1
+	if at >= 0 {
+		old_start = caps.at(at + 1)
+		old_end = caps.at(at + 2)
+	}
+	var int inner_start = atom_start + 1
+	var int inner_end = atom_end - 1
+	var int s = inner_start
+	while s <= inner_end {
+		var int bar = next_top_level_alt(pattern, s, inner_end)
+		var int e = inner_end
+		if bar >= 0 {
+			e = bar
+		}
+		var int next = match_here(pattern, s, e, input, in_pos, in_len, ref caps)
 		if next >= 0 {
+			record_capture(ref caps, g, in_pos, next)
 			if next != in_pos {
 				var new_min = 0
 				if min_count > 0 {
 					new_min = min_count - 1
 				}
-				return match_star_group(
+				var int r = match_star_group(
 					pattern,
 					atom_start,
 					atom_end,
@@ -1097,39 +1274,17 @@ func match_star_group = (
 					in_len,
 					ref caps,
 				)
+				if r >= 0 {
+					return r
+				}
 			}
 		}
-		return -1
-	}
-	// Try matching the group one more time (greedy).
-	var int next = match_single_atom(pattern, atom_start, atom_end, input, in_pos, in_len, ref caps)
-	if next >= 0 {
-		if next != in_pos {
-			var new_min = 0
-			if min_count > 0 {
-				new_min = min_count - 1
-			}
-			var int r = match_star_group(
-				pattern,
-				atom_start,
-				atom_end,
-				rest,
-				pat_end,
-				input,
-				next,
-				new_min,
-				lazy,
-				in_len,
-				ref caps,
-			)
-			if r >= 0 {
-				return r
-			}
+		record_capture(ref caps, g, old_start, old_end)
+		if bar >= 0 {
+			s = bar + 1
+		} else {
+			s = inner_end + 1
 		}
-	}
-	// Stop repeating and try the rest of the pattern, if the minimum is met.
-	if min_count <= 0 {
-		return match_here(pattern, rest, pat_end, input, in_pos, in_len, ref caps)
 	}
 	return -1
 }
@@ -1154,6 +1309,21 @@ func match_optional = (
 		if skip >= 0 {
 			return skip
 		}
+		// A group atom includes continuation-aware alternative retries (see
+		// match_group_then_rest) in both moods.
+		if pattern.at(atom_start) == '(' {
+			return match_group_then_rest(
+				pattern,
+				atom_start,
+				atom_end,
+				rest,
+				pat_end,
+				input,
+				in_pos,
+				in_len,
+				ref caps,
+			)
+		}
 		var int next = match_single_atom(
 			pattern,
 			atom_start,
@@ -1168,11 +1338,28 @@ func match_optional = (
 		}
 		return -1
 	}
-	var int next = match_single_atom(pattern, atom_start, atom_end, input, in_pos, in_len, ref caps)
-	if next >= 0 {
-		var int r = match_here(pattern, rest, pat_end, input, next, in_len, ref caps)
-		if r >= 0 {
-			return r
+	if pattern.at(atom_start) == '(' {
+		var int grouped = match_group_then_rest(
+			pattern,
+			atom_start,
+			atom_end,
+			rest,
+			pat_end,
+			input,
+			in_pos,
+			in_len,
+			ref caps,
+		)
+		if grouped >= 0 {
+			return grouped
+		}
+	} else {
+		var int next = match_single_atom(pattern, atom_start, atom_end, input, in_pos, in_len, ref caps)
+		if next >= 0 {
+			var int r = match_here(pattern, rest, pat_end, input, next, in_len, ref caps)
+			if r >= 0 {
+				return r
+			}
 		}
 	}
 	return match_here(pattern, rest, pat_end, input, in_pos, in_len, ref caps)
