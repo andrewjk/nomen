@@ -128,3 +128,15 @@ export function scan_string_escapes(raw: string): string[] {
 	}
 	return issues;
 }
+
+/** Escape one raw string-literal token (quotes included) for a GAS
+ *  `.asciz` directive: source `\xHH` hex escapes re-encode as 3-digit octal
+ *  (GAS consumes `\x` greedily — see reencode_hex_escapes) and raw newlines
+ *  (multi-line strings) become `\n` so the directive stays one line. */
+export function escape_asciz(value: string): string {
+	const reencoded = reencode_hex_escapes(value);
+	if (!reencoded.includes("\n")) return reencoded;
+	const quote = reencoded[0];
+	const content = reencoded.slice(1, reencoded.endsWith(quote) ? -1 : undefined);
+	return quote + content.replace(/\n/g, "\\n") + (reencoded.endsWith(quote) ? quote : "");
+}

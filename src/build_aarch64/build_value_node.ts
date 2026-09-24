@@ -1,6 +1,7 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import decode_char_literal from "../build_common/decode_char_literal.ts";
 import emission_label from "../build_common/emission_label.ts";
+import fold_string_const from "../build_common/fold_string_const.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
 import { is_signed_int_type, is_signed_type } from "../built_in_types.ts";
 import { is_int_literal, to_decimal_string } from "../int_literal.ts";
@@ -94,7 +95,9 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 	// applied by the caller via `emit_field_overrides`.
 	const inlined = status.top_level_consts?.get(original_value);
 	if (inlined?.value) {
-		build_node(inlined.value, status);
+		// A string `+` chain of literals/other consts folds to one literal
+		// (see fold_string_const) — otherwise every use rebuilds the chain.
+		build_node(fold_string_const(inlined, status.top_level_consts!) ?? inlined.value, status);
 		return;
 	}
 

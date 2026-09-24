@@ -6,9 +6,10 @@ import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import call_in_set from "../build_common/call_in_set.ts";
 import { struct_needs_destroy } from "../build_common/destroy_analysis.ts";
+import fold_string_const from "../build_common/fold_string_const.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
-import reencode_hex_escapes from "../build_common/string_escapes.ts";
+import { escape_asciz } from "../build_common/string_escapes.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
 import {
 	collect_expression_branch_values,
@@ -138,17 +139,6 @@ function is_value_struct_type_node(node: BaseNode, status: BuildStatus): boolean
 	return (
 		!!t?.name && !!status.structs.find((s) => s.name === t.name && !s.is_simple_type && !s.is_class)
 	);
-}
-
-function escape_asciz(value: string): string {
-	// Raw newlines break the directive; source `\xHH` hex escapes re-encode
-	// as 3-digit octal because GAS consumes `\x` greedily (see
-	// build_common/string_escapes.ts).
-	const reencoded = reencode_hex_escapes(value);
-	if (!reencoded.includes("\n")) return reencoded;
-	const quote = reencoded[0];
-	const content = reencoded.slice(1, reencoded.endsWith(quote) ? -1 : undefined);
-	return quote + content.replace(/\n/g, "\\n") + (reencoded.endsWith(quote) ? quote : "");
 }
 
 /** Allocate an array on the stack with an 8-byte length prefix.
@@ -885,7 +875,11 @@ export default function build_declaration_node(
 	// emit `adr x1, DEFAULT_PARAMS` against a global that no longer exists.
 	if (node.value?.node_type === "value") {
 		const inlined = status.top_level_consts?.get((node.value as ValueNode).value);
-		if (inlined?.value) node.value = inlined.value;
+		if (inlined?.value) {
+			// A string `+` chain of literals/other consts folds to one literal
+			// (see fold_string_const) — otherwise every use rebuilds the chain.
+			node.value = fold_string_const(inlined, status.top_level_consts!) ?? inlined.value;
+		}
 	}
 
 	function check_heap() {

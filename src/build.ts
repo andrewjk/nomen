@@ -45,6 +45,7 @@ import type BuildStatus from "./build_c/BuildStatus.ts";
 import { set_c_typedef_mangling } from "./build_c/utils/c_type.ts";
 import { optimize_asm } from "./build_common/optimize_asm.ts";
 import { scan_borrow_returning_functions } from "./build_common/scan_borrow_returns.ts";
+import { escape_asciz } from "./build_common/string_escapes.ts";
 import { stamp_last_use_moves } from "./check/utils/last_use.ts";
 import BaseNode from "./nodes/BaseNode.ts";
 import { child_nodes } from "./nodes/child_nodes.ts";
@@ -189,8 +190,7 @@ export default function build(
 		if (status.strings && status.strings.size > 0) {
 			status.code += "\n";
 			for (const [label, value] of status.strings) {
-				const escaped = value.replace(/\n/g, "\\n");
-				status.code += `${label}: .asciz ${escaped}\n`;
+				status.code += `${label}: .asciz ${escape_asciz(value)}\n`;
 			}
 		}
 		if (status.float_literals && status.float_literals.size > 0) {

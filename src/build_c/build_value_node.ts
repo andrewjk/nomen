@@ -1,3 +1,4 @@
+import fold_string_const from "../build_common/fold_string_const.ts";
 import reencode_hex_escapes from "../build_common/string_escapes.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
 import { is_int_literal } from "../int_literal.ts";
@@ -40,7 +41,9 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 	// `emit_field_overrides` once the destination slot is known.
 	const inlined = status.top_level_consts?.get(value);
 	if (inlined?.value) {
-		build_node(inlined.value, status);
+		// A string `+` chain of literals/other consts folds to one literal
+		// (see fold_string_const) — otherwise every use rebuilds the chain.
+		build_node(fold_string_const(inlined, status.top_level_consts!) ?? inlined.value, status);
 		return;
 	}
 	// Shorthand enum case `.case` (rewritten by the checker to `Enum_case`
