@@ -250,6 +250,9 @@ function infer_const_expr_type(
 	status: CheckStatus,
 ): Type | undefined {
 	if (!node) return undefined;
+	if (node.node_type === "grouped") {
+		return infer_const_expr_type((node as unknown as { value: BaseNode }).value, known, status);
+	}
 	if (node.node_type === "value") {
 		const raw = (node as { value?: string }).value;
 		if (typeof raw !== "string") return undefined;

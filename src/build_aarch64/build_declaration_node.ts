@@ -816,6 +816,129 @@ function resolve_string_op(op: OperationNode, status: BuildStatus): string | nul
 	return null;
 }
 
+const FLOAT_LITERAL_RE = /^(\+|-)?\d+\.\d+([eE](\+|-)?\d+)?$/;
+
+/**
+ * Fold a module-level primitive `const`/`var` initializer to a literal string
+ * when it is a compile-time constant: literal operands, references to other
+ * foldable module-level consts, and arithmetic/bitwise operators over them.
+ * Returns null when the value can only be computed at runtime (a call, a
+ * field read, …), which a file-scope `.quad` initializer cannot express.
+ *
+ * Without this, `pub const N = 3 + 4` at module scope reserved
+ * `N: .space 8` and emitted its store as dead code between functions, so
+ * every read observed 0 (FOLLOWUP.md). Integer math is exact via BigInt so
+ * 64-bit constants are not rounded through JS doubles; float arithmetic
+ * falls back to JS doubles (which match Nomen's `float`).
+ */
+function fold_const_scalar(
+	node: BaseNode | undefined,
+	status: BuildStatus,
+	seen: Set<string>,
+): string | null {
+	if (!node) return null;
+	if (node.node_type === "grouped") {
+		return fold_const_scalar((node as unknown as { value: BaseNode }).value, status, seen);
+	}
+	if (node.node_type === "value") {
+		const value_node = node as ValueNode;
+		const raw = get_raw_value(value_node, status);
+		if (is_int_literal(raw)) return to_decimal_string(raw);
+		if (FLOAT_LITERAL_RE.test(raw)) return raw;
+		// A reference to another module-level const: fold it through,
+		// cycle-guarded so `const A = B; const B = A` can't recurse forever.
+		if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(raw) && !seen.has(raw)) {
+			const decl = find_global_const(raw, status);
+			if (decl?.value) {
+				seen.add(raw);
+				const folded = fold_const_scalar(decl.value, status, seen);
+				seen.delete(raw);
+				return folded;
+			}
+		}
+		return null;
+	}
+	if (node.node_type === "op") {
+		const op = node as OperationNode;
+		// A resolved operator overload is a user function, never a constant.
+		if (op.operator_func) return null;
+		const left = fold_const_scalar(op.left_value, status, seen);
+		if (left === null) return null;
+		const right = fold_const_scalar(op.right_value, status, seen);
+		if (right === null) return null;
+		return apply_const_op(op.op, left, right);
+	}
+	return null;
+}
+
+/** Apply one arithmetic/bitwise operator to two folded literal strings.
+ *  Float operands use JS doubles; integral operands stay exact via BigInt. */
+function apply_const_op(op: string, left: string, right: string): string | null {
+	if (FLOAT_LITERAL_RE.test(left) || FLOAT_LITERAL_RE.test(right)) {
+		const a = Number(left);
+		const b = Number(right);
+		if (!isFinite(a) || !isFinite(b)) return null;
+		switch (op) {
+			case "+":
+				return String(a + b);
+			case "-":
+				return String(a - b);
+			case "*":
+				return String(a * b);
+			case "/":
+				return b === 0 ? null : String(a / b);
+			default:
+				return null;
+		}
+	}
+	let a: bigint;
+	let b: bigint;
+	try {
+		a = BigInt(left);
+		b = BigInt(right);
+	} catch {
+		return null;
+	}
+	switch (op) {
+		case "+":
+			return (a + b).toString();
+		case "-":
+			return (a - b).toString();
+		case "*":
+			return (a * b).toString();
+		case "/":
+			return b === 0n ? null : (a / b).toString();
+		case "%":
+			return b === 0n ? null : (a % b).toString();
+		case "<<":
+			return (a << b).toString();
+		case ">>":
+			return (a >> b).toString();
+		case "&":
+			return (a & b).toString();
+		case "|":
+			return (a | b).toString();
+		case "^":
+			return (a ^ b).toString();
+		default:
+			return null;
+	}
+}
+
+/** The root-scope `const` declaration named `name` (used to fold a const
+ *  reference through to its initializer). Mutable `var`s are deliberately
+ *  excluded: their value is established by module init, so baking in the
+ *  declaration's initializer could differ from the runtime value. */
+function find_global_const(name: string, status: BuildStatus): DeclarationNode | undefined {
+	const statements = (status.root as unknown as { statements?: BaseNode[] }).statements ?? [];
+	return statements.find(
+		(s): s is DeclarationNode =>
+			s.node_type === "declare" &&
+			(s as DeclarationNode).declaration === "const" &&
+			(s as DeclarationNode).name === name,
+	);
+}
+
 /**
  * Emit a declaration INITIALIZER expression. Under NIR-driven emission the
  * lowered `NirExpr` rides in and descends through `emit_expr_from_nir` (the
@@ -2441,6 +2564,16 @@ export default function build_declaration_node(
 				const offset = declare_slot_offset(status, node.name, size);
 				status.stack_offsets!.set(node.name, offset);
 			} else {
+				// File scope: a compile-time-constant initializer folds straight
+				// into the data directive. Without this, `pub const N = 3 + 4`
+				// reserved zeroed storage and emitted its store as dead code
+				// between functions (FOLLOWUP.md), so every read observed 0.
+				const folded = fold_const_scalar(node.value, status, new Set());
+				if (folded !== null) {
+					emit_data(status, `${node.name}: ${directive} ${folded}\n`);
+					if (size % 4 !== 0) emit_data(status, `.p2align 2\n`);
+					return;
+				}
 				emit_data(status, `${node.name}: .space ${size}\n`);
 			}
 			// A `string` declaration initialized from a VIEW value
