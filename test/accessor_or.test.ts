@@ -80,6 +80,58 @@ Console.write("\\{xs.at_or_panic(i)}")
 	});
 });
 
+// `set` carries the same compile-time constraint as `at`, so a cross-module
+// call with a runtime index can never discharge it ("Parameter constraint
+// cannot be verified: i" — the allmark port had to emulate writes with
+// pop+push). `set_or_panic` is the runtime-checked escape hatch, mirroring
+// `at_or_panic` for writes.
+
+describe("List set_or_panic", () => {
+	test("set_or_panic with a runtime index writes in-bounds", async () => {
+		const input = `
+var List<int> xs = List<int>()
+xs.push(10)
+xs.push(20)
+xs.push(30)
+var int i = 0
+i += 1
+xs.set_or_panic(i, 99)
+Console.write("\\{xs.at_or(0, -1)} \\{xs.at_or(1, -1)} \\{xs.at_or(2, -1)}")
+`;
+		await build_and_check_output(input, "list_set_or_panic_hit", "10 99 30");
+	});
+
+	test("set_or_panic with owned string elements", async () => {
+		const input = `
+var List<string> xs = List<string>()
+xs.push("a")
+xs.push("b")
+var int i = 0
+i += 1
+xs.set_or_panic(i, "z")
+Console.write("\\{xs.at_or(0, "q")}\\{xs.at_or(1, "q")}\\{xs.at_or(2, "q")}")
+`;
+		await build_and_check_output(input, "list_set_or_panic_string", "azq");
+	});
+
+	test("set_or_panic out-of-bounds emits the trap", () => {
+		const input = `
+var List<int> xs = List<int>()
+xs.push(7)
+var int i = 0
+i += 5
+xs.set_or_panic(i, 0)
+Console.write("unreachable")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		for (const arch of ["aarch64", "c"] as const) {
+			const result = build(parsed.root, { arch, audit: false });
+			expect(result.code).toContain("index out of range");
+		}
+	});
+});
+
 // Array.at_or / at_or_panic were the first Array methods with Nomen-level
 // bodies (every other member is a raw #arch body) — they drove the receiver
 // fixes that made those work: C non-heap receivers are wrapped in a

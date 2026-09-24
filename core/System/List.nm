@@ -61,6 +61,18 @@ pub struct List<T>: Viewable {
 		self.items.replace(i, value)
 	}
 
+	// Bounds-checked write that traps when i is outside [0, self.length) —
+	// for indices that can't be proven at compile time (cross-module calls
+	// can never discharge `set`'s parameter constraint) and out-of-range is
+	// a bug, not a case.
+	pub func set_or_panic = (ref self, int i, move T value) {
+		if i >= 0 && i < self.length {
+			self.set(i, value)
+			return
+		}
+		panic("index out of range")
+	}
+
 	// A deep copy: a fresh List<T> with an independent copy of every element.
 	// For owning element types (strings, owning value structs) each slot in the
 	// copy owns its own heap data (Buffer deep-copies on store), so the source
