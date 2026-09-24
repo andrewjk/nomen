@@ -319,7 +319,12 @@ export default function build_assignment_node(
 		// otherwise the field ends up holding a borrow (a rodata literal or a
 		// caller-owned heap string) that destroy invalidly frees. Mirrors the
 		// aarch64 backend's `target_is_class ||` gate.
-		if (target_struct && target_var && (!self_target || target_struct.is_class)) {
+		// A nested class target (`a.x.s` where `x` is a class) has no direct
+		// `target_var`, but it is still an always-heap class field, so it must
+		// take this ownership-normalized lowering too (otherwise the field
+		// holds a rodata literal/<Class>_destroy frees it).
+		const is_class_target = !!target_struct?.is_class;
+		if (target_struct && (target_var || is_class_target) && (!self_target || is_class_target)) {
 			const fresh_heap = is_owned_heap_temp(node.right_value, status);
 			// A literal `null` RHS zero-initializes the nullable field's pair
 			// (a bare `0` inside nomen_str_dup(...) would be a C type error;

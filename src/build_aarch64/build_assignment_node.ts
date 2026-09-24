@@ -19,7 +19,11 @@ import IndexNode from "../nodes/IndexNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
-import { emit_address_of, resolve_at_element_addr } from "./build_access_node.ts";
+import {
+	access_chain_crosses_class,
+	emit_address_of,
+	resolve_at_element_addr,
+} from "./build_access_node.ts";
 import build_node from "./build_node.ts";
 import {
 	build_float_tree,
@@ -190,6 +194,17 @@ function get_base_address(access: AccessNode, status: BuildStatus, reg: string) 
 			emit_deref_var_address(status, reg, name);
 		} else {
 			emit_var_address(status, reg, name);
+		}
+	} else if (access_chain_crosses_class(access, status)) {
+		// A chain crossing a class-typed hop (`a.x.s = …` where `x` is a
+		// class) stores through the POINTER, not the pointer slot: build the
+		// target recursively (loading each hop) so x0 is the instance address.
+		// `emit_address_of` would hand back `&a->x` (the slot), so the store
+		// would land past the field (mirrors the read path).
+		build_node(access.target, status);
+		ensure_newline(status);
+		if (reg !== "x0") {
+			emit_asm(status, `mov ${reg}, x0\n`);
 		}
 	} else {
 		emit_address_of(access.target, status);

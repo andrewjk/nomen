@@ -512,6 +512,12 @@ export function emit_address_of(node: BaseNode, status: BuildStatus) {
 				} else {
 					emit_var_address(status, "x0", name);
 				}
+			} else if (access_chain_crosses_class(access, status)) {
+				// The target chain crosses a class-typed hop: it evaluates to a
+				// POINTER, so recurse by building it (loading each hop) rather
+				// than taking the address of the pointer slot.
+				build_node(access.target, status);
+				ensure_newline(status);
 			} else {
 				emit_address_of(access.target, status);
 				ensure_newline(status);
@@ -743,7 +749,7 @@ function resolve_access_target_type(target: BaseNode, status: BuildStatus): Type
  * final field is read. Without this, `state.rules.blocks.length` (State/
  * BlockParserState is a class) summed 8+8+8 and loaded from `state + 24`.
  */
-function access_chain_crosses_class(node: AccessNode, status: BuildStatus): boolean {
+export function access_chain_crosses_class(node: AccessNode, status: BuildStatus): boolean {
 	const base = get_base_target(node);
 	const base_type = resolve_access_target_type(base, status);
 	if (base_type?.name && status.structs.find((s) => s.name === base_type.name && s.is_class)) {
