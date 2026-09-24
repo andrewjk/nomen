@@ -2826,10 +2826,6 @@ function build_access_method(
 		return true;
 	};
 	const overflow_count = Math.max(0, total_arg_slots - (NUM_REG_ARGS - start_reg));
-	let overflow_base = 0;
-	if (overflow_count > 0) {
-		overflow_base = allocate_stack_space(status, overflow_count * 8, 16);
-	}
 	// An INLINE capturing lambda argument to a func-typed (borrow) parameter
 	// materializes a one-shot HEAP descriptor + env (CLOSURE.md) that the
 	// callee never disposes — the call site owns them. The arg loop parks
@@ -2845,46 +2841,34 @@ function build_access_method(
 		lambda_arg_indices.add(i);
 	}
 	const lambda_arg_slots: number[] = [];
-	// View and fat-string pairs are spilled to a dedicated area and reloaded
-	// into their register pairs AFTER the loop — evaluating a later
-	// (lower-index) argument can use x0-x2 as scratch, which would clobber a
-	// pair claimed inline. A pair half whose register slot is past x7 goes to
-	// the outgoing-area slot it occupies (copied down at the bl, like every
-	// other overflow arg).
-	const has_pair_args = view_arg_set.size > 0 || string_arg_set.size > 0;
-	let view_spill_base = 0;
-	if (has_pair_args) {
-		view_spill_base = allocate_stack_space(status, total_arg_slots * 8, 16);
-	}
-	const view_half_store = (j: number, half: 0 | 1): number => {
-		const half_slot = start_reg + arg_slot[j] + half;
-		return half_slot >= NUM_REG_ARGS
-			? overflow_base + (half_slot - NUM_REG_ARGS) * 8
-			: view_spill_base + (arg_slot[j] + half) * 8;
+	// EVERY argument spills to a dedicated frame slot while the remaining
+	// (right-to-left) arguments evaluate, and the slots reload into their
+	// registers only after ALL evaluations: caller-saved registers cannot
+	// hold a parked value across a later argument's build — any call in one
+	// (a composed-const `+` chain, an operation, a nested call) clobbers it.
+	// The allmark port's `Regex.find(COMPOSED, tail, ref m)` SIGSEGV'd
+	// exactly this way: the ref address parked in x4 died inside the pattern
+	// chain's string_add/_free calls before the bl. The area covers every
+	// slot — pair halves, in-register args, and overflow slots — so the
+	// in-loop spills, the late reloads, and the outgoing-area copy at the bl
+	// all share one layout. (Pair halves used to spill separately; the
+	// static arg-0 slot had its own spill too; both fold in here.)
+	const arg_builds_in_loop = (i: number): boolean => {
+		if (view_arg_set.has(i) || string_arg_set.has(i)) return true;
+		if ((access_func.ref_param_indices ?? []).includes(i)) return true;
+		const param_type = (access_func.params[i] as any).type?.name || "";
+		if (is_struct_type(param_type, status) || is_enum_with_data_type(param_type, status)) {
+			return true;
+		}
+		return !arg_deferrable(i);
 	};
-	// A STATIC method's first argument occupies x0 — the register every
-	// deferred leaf's materialization parks its value through (func refs,
-	// globals, ref scalars). Spill it in-loop and reload it after the
-	// deferred materializations. A first argument that defers (a plain leaf
-	// — `ref`/struct/enum args build in-loop before the deferral branch)
-	// materializes last on its own, and pair args reload late, so neither
-	// needs this.
-	const param0 = access_func.params[0];
-	const param0_is_pair = view_arg_set.has(0) || string_arg_set.has(0);
-	const param0_is_ref = (access_func.ref_param_indices ?? []).includes(0);
-	const param0_type_name = (param0 as any)?.type?.name || "";
-	const param0_builds_in_loop =
-		access_func.params.length > 0 &&
-		(param0_is_ref ||
-			is_struct_type(param0_type_name, status) ||
-			is_enum_with_data_type(param0_type_name, status) ||
-			!arg_deferrable(0));
-	const static_arg0_needs_spill =
-		start_reg === 0 && access_func.params.length > 0 && !param0_is_pair && param0_builds_in_loop;
-	let static_arg0_spill = 0;
-	if (static_arg0_needs_spill) {
-		static_arg0_spill = allocate_stack_space(status, 8, 8);
+	const any_in_loop_arg = access_func.params.some((_, i) => arg_builds_in_loop(i));
+	let arg_spill_base = 0;
+	if (any_in_loop_arg) {
+		arg_spill_base = allocate_stack_space(status, total_arg_slots * 8, 16);
 	}
+	const view_half_store = (j: number, half: 0 | 1): number =>
+		arg_spill_base + (arg_slot[j] + half) * 8;
 	// `ref` class PARAMS forwarded to a method's `ref` param: tracked so their
 	// callee-saved registers can be reloaded from the caller's slot once the
 	// call returns (the callee may have reassigned it).
@@ -2991,23 +2975,12 @@ function build_access_method(
 				lambda_arg_slots.push(dispose_slot);
 			}
 		}
-		const slot = start_reg + arg_slot[i];
 		ensure_newline(status);
-		if (slot >= NUM_REG_ARGS) {
-			// Overflow: spill to a local slot; copied to the outgoing area
-			// once self has been restored to x0 below.
-			emit_asm(status, `str x0, [x29, #${overflow_base + (slot - NUM_REG_ARGS) * 8}]\n`);
-		} else {
-			// The AAPCS register IS the slot index: static args start at x0,
-			// instance args at x1 (self = slot 0), fat-string-receiver args
-			// at x2 (the receiver pair owns slots 0-1).
-			const reg = `x${slot}`;
-			if (reg !== "x0") {
-				emit_asm(status, `mov ${reg}, x0\n`);
-			} else if (static_arg0_needs_spill) {
-				emit_asm(status, `str x0, [x29, #${static_arg0_spill}]\n`);
-			}
-		}
+		// Spill (never register-park): a later-evaluated argument may call,
+		// and caller-saved registers die inside those calls. Overflow slots
+		// spill to their area position too — copied to the outgoing stack
+		// area once self has been restored to x0 below.
+		emit_asm(status, `str x0, [x29, #${arg_spill_base + arg_slot[i] * 8}]\n`);
 	}
 	// Deferred leaf arguments (tranche H): materialize directly into their
 	// slot registers — every argument evaluation is complete, so nothing can
@@ -3022,28 +2995,17 @@ function build_access_method(
 		build_operand(d.param, `x${start_reg + d.slot}`, status);
 		ensure_newline(status);
 	}
-	// Reload the spilled view/string pairs into their register slots AFTER
-	// the deferred materializations (a leaf parking through x0 would clobber
-	// an earlier x0 pair half). Halves at register slots past x7 stay in the
-	// outgoing-area slots.
-	if (has_pair_args) {
-		for (let j = 0; j < access_func.params.length; j++) {
-			if (!view_arg_set.has(j) && !string_arg_set.has(j)) continue;
-			for (const half of [0, 1] as const) {
-				const half_slot = start_reg + arg_slot[j] + half;
-				if (half_slot >= NUM_REG_ARGS) continue;
-				emit_asm(
-					status,
-					`ldr x${half_slot}, [x29, #${view_spill_base + (arg_slot[j] + half) * 8}]\n`,
-				);
-			}
-		}
-	}
-	// Restore the static first argument last of all: everything above (the
-	// deferred materializations, the pair reloads) may pass through x0.
-	if (static_arg0_needs_spill) {
-		ensure_newline(status);
-		emit_asm(status, `ldr x0, [x29, #${static_arg0_spill}]\n`);
+	// Reload every spilled register slot AFTER the deferred materializations
+	// (a leaf parking its value through x0 would clobber an earlier reload).
+	// Deferred slots materialized directly into their registers and are
+	// skipped; slots past x7 stay in the area — copied to the outgoing stack
+	// area at the bl below.
+	const deferred_slots = new Set(deferred_args.map((d) => start_reg + d.slot));
+	for (let s = 0; s < total_arg_slots; s++) {
+		const slot = start_reg + s;
+		if (slot >= NUM_REG_ARGS) continue;
+		if (deferred_slots.has(slot)) continue;
+		emit_asm(status, `ldr x${slot}, [x29, #${arg_spill_base + s * 8}]\n`);
 	}
 
 	ensure_newline(status);
@@ -3068,8 +3030,9 @@ function build_access_method(
 	if (overflow_count > 0) {
 		outgoing_size = Math.ceil((overflow_count * 8) / 16) * 16;
 		emit_asm(status, `sub sp, sp, #${outgoing_size}\n`);
+		const overflow_first = NUM_REG_ARGS - start_reg;
 		for (let k = 0; k < overflow_count; k++) {
-			emit_asm(status, `ldr x9, [x29, #${overflow_base + k * 8}]\n`);
+			emit_asm(status, `ldr x9, [x29, #${arg_spill_base + (overflow_first + k) * 8}]\n`);
 			emit_asm(status, `str x9, [sp, #${k * 8}]\n`);
 		}
 	}
