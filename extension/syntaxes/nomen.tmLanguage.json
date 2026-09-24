@@ -98,7 +98,10 @@
 			"endCaptures": {
 				"0": { "name": "punctuation.section.interpolation.end.nm" }
 			},
-			"patterns": [{ "include": "$self" }]
+			"patterns": [
+				{ "include": "$self" },
+				{ "name": "variable.other.nm", "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b" }
+			]
 		},
 		"chars": {
 			"name": "string.quoted.single.nm",
@@ -139,7 +142,7 @@
 			"patterns": [
 				{
 					"name": "keyword.control.nm",
-					"match": "\\b(?:if|else|while|for|of|in|break|continue|return|switch|case|match)\\b"
+					"match": "\\b(?:if|else|while|for|of|in|break|continue|return|switch|case|match|async)\\b"
 				},
 				{
 					"name": "storage.type.nm",
