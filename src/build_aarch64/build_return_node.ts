@@ -34,6 +34,7 @@ import {
 	emit_destroy_for_decl,
 	emit_enum_payload_strdups_at,
 	emit_heap_slots_cleanup_for_return,
+	emit_string_field_strdups_at,
 	is_field_struct_borrow,
 	mark_moved_if_struct,
 	release_heap_string_fields,
@@ -650,6 +651,48 @@ export default function build_return_node(
 					if (!field_enum) continue;
 					const field_off = get_field_offset(ret_struct.name, field.name, status);
 					emit_enum_payload_strdups_at(status, field_enum.name, "x8", field_off);
+				}
+			}
+			// Return-boundary normalization for value structs with string
+			// fields, for the TRANSFER shape only: `return <bare
+			// local/parameter>`. The returned variable dies at the return, so
+			// the boundary makes the value uniformly heap-owned — recorded
+			// (heap) fields transfer raw (their records are cleared below),
+			// unrecorded fields (rodata or borrows) are strdup'd on the sret
+			// buffer — and the caller records every string field of a binding
+			// of a REGISTERED normalizing function and frees them at scope
+			// exit (see record_call_init_string_fields). Every other shape
+			// keeps the status quo: forwarded registered calls already carry
+			// uniformly-owned values, container borrow accessors keep their
+			// slot-owned borrow semantics, and owned accessors (move_T) are
+			// freed by the recorded caller without an extra copy. The set of
+			// normalizing functions comes from the whole-program pre-pass
+			// (struct_return_classification.ts).
+			if (ret_struct && !returns_nullable_struct) {
+				// A LOCAL only: `return <param>` aliases the caller's argument
+				// (params pass by address) — normalizing it would hand the
+				// caller fresh copies nobody frees. The spliced declaration
+				// (cleared from the scope frames below) is the transfer proof.
+				const returned_var =
+					node.value.node_type === "value" ? (node.value as ValueNode).value : "";
+				const returned_is_local =
+					returned_var !== "" &&
+					returned_var !== "0" &&
+					returned_var !== "null" &&
+					all_scope_frames(status)
+						.flat()
+						.some((d) => d.name === returned_var);
+				const bare_local_return = returned_is_local;
+				if (bare_local_return) {
+					let skip_fields: Set<string> | undefined;
+					const prefix = `${(node.value as ValueNode).value}.`;
+					for (const key of status.heap_string_fields ?? []) {
+						if (key.startsWith(prefix)) {
+							skip_fields ??= new Set<string>();
+							skip_fields.add(key.slice(prefix.length));
+						}
+					}
+					emit_string_field_strdups_at(status, ret_struct.name, "x8", 0, skip_fields);
 				}
 			}
 		}

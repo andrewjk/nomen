@@ -46,6 +46,7 @@ import { set_c_typedef_mangling } from "./build_c/utils/c_type.ts";
 import { optimize_asm } from "./build_common/optimize_asm.ts";
 import { scan_borrow_returning_functions } from "./build_common/scan_borrow_returns.ts";
 import { escape_asciz } from "./build_common/string_escapes.ts";
+import { gather_normalized_struct_returners } from "./build_common/struct_return_classification.ts";
 import { stamp_last_use_moves } from "./check/utils/last_use.ts";
 import BaseNode from "./nodes/BaseNode.ts";
 import { child_nodes } from "./nodes/child_nodes.ts";
@@ -119,6 +120,14 @@ export default function build(
 	// AST — idempotent, and cleared by the kill-switch (the consumers also
 	// check the live switch, so a toggled rebuild stays deterministic).
 	stamp_last_use_moves(root);
+
+	// Return-boundary normalization classification (whole-program AST
+	// pre-pass): which functions return value structs whose string fields
+	// are uniformly heap-owned. Must run BEFORE any function body builds —
+	// callers consult it during declaration builds, and a build-order
+	// registry would be invisible to enclosing-function callers (nested
+	// functions build after the enclosing body).
+	gather_normalized_struct_returners(root, status);
 
 	if (options.arch === "aarch64") {
 		// Chunked code buffer (build_aarch64/utils/code_buffer.ts): the

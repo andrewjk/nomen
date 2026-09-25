@@ -5,6 +5,7 @@ import emit_field_overrides, {
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import call_in_set from "../build_common/call_in_set.ts";
+import { record_call_init_string_fields } from "../build_common/call_init_string_fields.ts";
 import { struct_needs_destroy } from "../build_common/destroy_analysis.ts";
 import fold_string_const from "../build_common/fold_string_const.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
@@ -2176,6 +2177,11 @@ export default function build_declaration_node(
 						status.struct_return_buffer = old_buffer;
 						status.call_x8_preset = old_preset;
 						emit_var_address(status, "x0", node.name);
+						// The callee's return-boundary normalization made the
+						// returned struct uniformly heap-owned — record its
+						// string fields so scope exit frees them (mirrors the
+						// sret branch above).
+						record_call_init_string_fields(node, status);
 					} else {
 						emit_init_value(node.value, nir_init, status);
 						emit_var_store(status, "x0", node.name, struct_size);
@@ -2241,6 +2247,14 @@ export default function build_declaration_node(
 					const field_size = get_struct_size(field_type.name, status);
 					emit_struct_copy("x1", "x0", offset, field_size, status);
 				}
+				// A value struct with string fields, initialized from a CALL: the
+				// callee's return-boundary normalization made the struct
+				// UNIFORMLY heap-owned, so record every string field —
+				// release_heap_string_fields frees them at scope exit, and a
+				// later `b.field = …` write sees old_was_heap and reclaims the
+				// displaced buffer. (Constructor and move inits are NOT
+				// recorded.)
+				record_call_init_string_fields(node, status);
 			}
 		}
 	} else if (node.value) {

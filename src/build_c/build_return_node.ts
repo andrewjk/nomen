@@ -2,6 +2,7 @@ import emit_field_overrides, {
 	has_field_overrides,
 	hoist_field_overrides,
 } from "../build/emit_field_overrides.ts";
+import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import {
 	collect_expression_branch_values,
@@ -154,6 +155,12 @@ export default function build_return_node(
 	// only affects the current frame (an outer-frame decl is left for its own
 	// scope-exit cleanup, which is dead code after a return anyway).
 	let returned_value_decl: DeclarationNode | undefined;
+	// The returned variable's RECORDED string fields (snapshot taken before the
+	// transfer-drop below): a recorded field's buffer transfers to the caller
+	// raw (owned), while an UNRECORDED field may hold rodata/borrowed bytes the
+	// caller cannot free — the struct-return normalization below strdups those
+	// into _return_val so the returned value is uniformly heap-owned.
+	let returned_recorded_string_fields: Set<string> | undefined;
 	if (node.value.node_type === "value") {
 		const value = (node.value as ValueNode).value;
 		returned_value_decl = find_decl_across_scopes(value, status);
@@ -175,7 +182,11 @@ export default function build_return_node(
 		if (status.heap_string_fields?.size) {
 			const prefix = `${value}.`;
 			for (const key of Array.from(status.heap_string_fields)) {
-				if (key.startsWith(prefix)) status.heap_string_fields.delete(key);
+				if (key.startsWith(prefix)) {
+					returned_recorded_string_fields ??= new Set<string>();
+					returned_recorded_string_fields.add(key.slice(prefix.length));
+					status.heap_string_fields.delete(key);
+				}
 			}
 		}
 	}
@@ -583,6 +594,43 @@ export default function build_return_node(
 		// _return_val temp before returning it.
 		if (has_field_overrides(node.value)) {
 			emit_field_overrides("_return_val", node.value, build_node, status, "", ";\n");
+		}
+		// Return-boundary normalization for value structs with string fields,
+		// for the TRANSFER shape only: `return <bare local/parameter>`. The
+		// returned variable dies at the return, so the boundary makes the
+		// value uniformly heap-owned — recorded (heap) fields transfer raw
+		// (their records were dropped above), unrecorded fields (rodata or
+		// borrows) are strdup'd — and the caller records every string field
+		// of a binding of a REGISTERED normalizing function and frees them at
+		// scope exit (see record_call_init_string_fields). Every other shape
+		// keeps the status quo: forwarded registered calls already carry
+		// uniformly-owned values (skipping avoids leaking the inner
+		// buffers), and container borrow accessors keep their slot-owned
+		// borrow semantics (normalizing them would leak in expression-temp
+		// consumers). The set of normalizing functions comes from the
+		// whole-program pre-pass (struct_return_classification.ts).
+		const bare_local_return =
+			node.value.node_type === "value" &&
+			(node.value as ValueNode).value !== "0" &&
+			(node.value as ValueNode).value !== "null" &&
+			// A LOCAL only: `return <param>` aliases the caller's argument
+			// (params pass by address), so normalizing it would hand the
+			// caller fresh copies nobody frees. The spliced declaration is
+			// the ownership-transfer proof.
+			!!returned_value_decl;
+		if (
+			is_struct &&
+			!return_is_class &&
+			!ret_type.is_view &&
+			!ret_type.is_array &&
+			return_struct &&
+			!returns_struct_zero &&
+			bare_local_return
+		) {
+			for (const field of direct_string_fields(return_struct)) {
+				if (returned_recorded_string_fields?.has(field.name)) continue;
+				status.code += `_return_val.${field.name} = nomen_str_dup(_return_val.${field.name});\n`;
+			}
 		}
 		emit_nursery_joins_on_return_c(status);
 		reclaim_all_c_scopes(status);

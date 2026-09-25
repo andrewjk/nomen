@@ -3,6 +3,7 @@ import emit_field_overrides, {
 	hoist_field_overrides,
 } from "../build/emit_field_overrides.ts";
 import call_in_set from "../build_common/call_in_set.ts";
+import { record_call_init_string_fields } from "../build_common/call_init_string_fields.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import { is_string_borrow } from "../build_common/string_return_analysis.ts";
@@ -883,6 +884,15 @@ export default function build_declaration_node(
 			if (has_field_overrides(node.value)) {
 				emit_field_overrides(safe_name, node.value, build_node, status, ";\n", ";\n");
 			}
+			// A value struct with string fields, initialized from a CALL: the
+			// callee's return-boundary normalization made the struct
+			// UNIFORMLY heap-owned, so record every string field — scope-exit
+			// auto_free frees them, and a later `b.field = …` write sees
+			// old_was_heap and reclaims the displaced buffer. (Constructor
+			// and move inits are NOT recorded: construction leaves rodata
+			// borrows in the fields, and a move transfers the source's
+			// records.)
+			record_call_init_string_fields(node, status);
 		}
 	}
 }

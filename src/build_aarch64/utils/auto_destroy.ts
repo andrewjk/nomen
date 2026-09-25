@@ -5,6 +5,7 @@ import {
 	struct_needs_auto_destroy,
 	struct_needs_destroy,
 } from "../../build_common/destroy_analysis.ts";
+import { direct_string_fields } from "../../build_common/has_string_fields.ts";
 import { mono_type_name } from "../../build_common/mono_name.ts";
 import { superseded_param_temp_names } from "../../build_common/temp_anchor_consolidation.ts";
 import AccessNode from "../../nodes/AccessNode.ts";
@@ -16,6 +17,7 @@ import { emit_free, emit_strdup } from "./audit.ts";
 import { emit_asm } from "./code_buffer.ts";
 import { allocate_stack_space } from "./stack_var.ts";
 import { emit_var_address, emit_var_load } from "./stack_var.ts";
+import { emit_string_pair_load_at, emit_strdup_string, emit_pair_store_to } from "./string_pair.ts";
 import {
 	get_enum_payload_offset,
 	get_field_offset,
@@ -1416,5 +1418,37 @@ export function mark_moved_if_struct(
 	if (opts?.for_return && status.heap_strings?.has(var_name)) {
 		if (!status.moved) status.moved = new Set<string>();
 		status.moved.add(var_name);
+	}
+}
+
+/**
+ * strdup the UNRECORDED direct string fields of a value struct whose base is
+ * in `base_reg` (+ base_offset) — the return-boundary normalization: the
+ * sret byte-copy transfers the RECORDED (heap) fields raw, but unrecorded
+ * fields may hold rodata/borrowed bytes the caller cannot free, so they are
+ * deep-copied here and the returned struct is uniformly heap-owned.
+ */
+export function emit_string_field_strdups_at(
+	status: BuildStatus,
+	struct_name: string,
+	base_reg: string,
+	base_offset = 0,
+	skip_fields?: Set<string>,
+) {
+	const struct = status.structs.find(
+		(s) => s.name === struct_name && !s.is_simple_type && !s.is_class,
+	);
+	if (!struct) return;
+	for (const field of direct_string_fields(struct)) {
+		if (skip_fields?.has(field.name)) continue;
+		const off = base_offset + get_field_offset(struct_name, field.name, status);
+		emit_string_pair_load_at(status, base_reg, off);
+		// The strdup bl clobbers base_reg — spill it around the call (the
+		// same discipline emit_enum_payload_strdups_at uses).
+		emit_asm(status, `str ${base_reg}, [sp, #-16]!\n`);
+		emit_strdup_string(status);
+		emit_asm(status, `mov x13, x0\n`);
+		emit_asm(status, `ldr ${base_reg}, [sp], #16\n`);
+		emit_pair_store_to(status, base_reg, off, "x13", "x1");
 	}
 }

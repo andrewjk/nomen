@@ -294,45 +294,25 @@ Fix directions, when picked up (either closes the leak class):
    `<Struct>_destroy` frees every field. Deletes `heap_string_fields` and
    this whole class; costs a malloc per literal store into a value struct.
 
-## Returned value structs leak their heap string fields (accepted, narrow)
-
-The RETURN-boundary sibling of the cross-scope section above. When a function
-returns a value struct, `build_return_node` deliberately DROPS the callee's
-`heap_string_fields` records for the returned variable ("the returned struct's
-bytes — including its string-field pointers — transfer to the caller"), but
-the caller never re-records them, so nothing frees them at the owner's scope
-exit. Minimal repro (leaks 1 allocation on BOTH backends, audit on):
-
-```
-struct Info { var markup = "" }
-
-func make = (out Info) {
-	var info = Info()
-	info.markup = 42.to_string()   // heap-owned, recorded in the callee
-	return info                    // record dropped -> transferred to caller
-}
-
-var Info i = make()                // caller never records i.markup -> leak
-Console.write_line(i.markup)
-```
-
-The direct-construction shape (`var Info i = Info(); i.markup = …` in one
-scope) is fully balanced — the same-scope record frees at exit. Only the
-return (and, by the same reasoning, any caller that receives a struct without
-building it) leaks. A conservative caller-side record would be UNSOUND: a
-returned struct can carry rodata defaults (`Info_init` stores the literal
-`""` directly, no strdup), so freeing every string field would invalid-free.
-Sound fixes: (a) make returns normalize — at the return site strdup every
-non-recorded string field of the returned struct so the caller can record and
-free ALL of them (a malloc per field per return), or (b) tier 3
-always-heap value-struct string fields, which subsumes this.
-
-Found while root-causing allmark PORT.md's "parse stage leaks" item: its
-`ListInfo` was a value struct whose `delimiter`/`markup` fields hold fresh
-heap strings, returned from `bulleted_get_markup`/`ordered_get_markup` —
-3 leaked allocations per bullet list, every one stacking through the return.
-Fixed port-side by making `ListInfo` a class (class fields are always-heap
-and the class destructor frees them).
+**Return boundary FIXED (2026-09-24).** The RETURN-boundary sibling of this
+hole — a returned value struct's records were dropped at the boundary and the
+caller never re-recorded them, leaking every heap string field — is closed by
+return-boundary normalization: `build_return_node` (both backends) strdups
+the returned struct's UNRECORDED string fields when the return is a BARE
+LOCAL/PARAMETER (the transfer shape — the returned variable dies at the
+return), making the value uniformly heap-owned (recorded fields transfer
+raw). Every other shape keeps the status quo (borrow accessors such as
+`Map.get`'s `load_T`, owned accessors, constructors) — normalizing those
+leaks in expression-temp consumers nothing frees. The caller side records
+via `record_call_init_string_fields`
+(build_common/call_init_string_fields.ts), gated on the whole-program
+pre-pass `gather_normalized_struct_returners`
+(build_common/struct_return_classification.ts), which classifies at parse-
+time-free AST level which functions normalize (every struct-return is a bare
+local, transitively through forwarded registered calls) — a build-order
+registry cannot work here (nested functions build after the enclosing
+body's declarations consult it). Covered by
+test/struct_return_normalization.test.ts.
 
 ## `Buffer`'s raw slot primitives are public, and `store_T` leaks on overwrite
 

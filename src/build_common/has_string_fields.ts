@@ -24,3 +24,16 @@ export function has_string_fields(node: StructNode, status: BuildStatus): boolea
 	}
 	return false;
 }
+
+/**
+ * The DIRECT `string` fields of a value struct (nested struct fields are not
+ * descended into — nested string fields are outside the per-field ownership
+ * tracking everywhere else too). Used by the return-boundary normalization:
+ * the returned struct's unrecorded fields are strdup'd so the value the
+ * caller receives is uniformly heap-owned.
+ */
+export function direct_string_fields(node: StructNode): StructNode["fields"] {
+	return node.fields.filter(
+		(f) => !f.type.is_ref && !f.type.is_view && !f.type.is_array && f.type.name === "string",
+	);
+}

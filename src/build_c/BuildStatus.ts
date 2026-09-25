@@ -519,6 +519,17 @@ export default interface BuildStatus {
 	moved?: Set<string>;
 	heap_returning_functions?: Set<string>;
 	/**
+	 * Functions whose struct return is UNIFORMLY heap-owned on their
+	 * normalized return paths (return-boundary normalization ran — see
+	 * build_return_node). A caller binding a call result of such a function
+	 * records the struct's string fields and frees them at scope exit;
+	 * bindings of NON-registered callees stay unrecorded borrows (the
+	 * pre-existing status quo). Keyed by emission name; best-effort ordering
+	 * — a caller built before its callee sees the callee unregistered and
+	 * keeps the borrow behavior (no worse than before).
+	 */
+	normalized_struct_returners?: Set<string>;
+	/**
 	 * Strings that currently OWN their heap bytes because a plain `s = t`
 	 * assignment strdup'd (or transferred) an owned copy into them
 	 * (assignment value semantics). auto_free adds this as a positive term to
