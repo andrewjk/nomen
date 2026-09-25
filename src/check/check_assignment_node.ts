@@ -93,22 +93,36 @@ export default function check_assignment_node(
 			const fd = struct?.fields.find((f) => f.name === (field as AccessFieldNode).name);
 			lambda_signature = { params: fd?.func_params, return_type: fd?.func_return_type };
 		}
-	} else if (lhs_value?.func_params?.length) {
+	} else if (lhs_value?.func_params !== undefined) {
 		lambda_signature = { params: lhs_value.func_params, return_type: lhs_value.func_return_type };
 	}
-	if (
-		assign.right_value.node_type === "func" &&
-		lambda_signature.params &&
-		lambda_signature.params.length
-	) {
+	// A ZERO-PARAMETER signature (`var func (out int) f`) carries func_params
+	// === []: the gate is "the target declares a func signature", not "it has
+	// parameters". Gating on .length left zero-param lambda assignments
+	// unnamed, and the backends then emitted an empty descriptor label.
+	if (assign.right_value.node_type === "func" && Array.isArray(lambda_signature.params)) {
+		// A capture-free declaration-lambda binding (`var func f = () => …`)
+		// pushes no values entry — the binding IS the emitted function, with
+		// no reassignable storage. A lambda (or any descriptor) assignment to
+		// it cannot lower; say so instead of emitting a nameless descriptor.
+		if (!lhs_value && assign.left_value.node_type === "value") {
+			add_error(
+				status,
+				`cannot assign a lambda to '${lhs_value_name}' — the binding was initialized with a capture-free lambda and has no reassignable slot; declare it with '= null' (or from a named function) to reassign`,
+				assign.right_value.start,
+			);
+			return false;
+		}
 		const rhs_func = assign.right_value as FunctionNode;
-		if (assign.left_value.node_type === "value") {
-			// A bare variable target names the lambda after the variable —
-			// uses of the variable then resolve to the emitted function.
-			rhs_func.name = lhs_value_name;
-		} else if (!rhs_func.name) {
-			// A field target must not name the lambda after the root
-			// variable; give it a unique emission name.
+		if (!rhs_func.name || assign.left_value.node_type === "value") {
+			// The lambda needs a program-unique EMISSION name. A bare variable
+			// target used to borrow the variable's name, but the variable is a
+			// SLOT here (the capture-free declaration-lambda shape — where the
+			// binding IS the function — has no values entry and errors above):
+			// calls resolve through the slot's descriptor, never through the
+			// lambda's name, and two assignments to one variable would
+			// otherwise emit two same-named functions ("symbol already
+			// defined"). Field targets have always synthesized.
 			synthesize_lambda_name(rhs_func, status);
 		}
 		if (rhs_func.params.length === lambda_signature.params.length) {

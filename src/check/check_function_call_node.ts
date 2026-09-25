@@ -133,7 +133,17 @@ export default function check_function_call_node(
 		return check_magic_ctor(node, status, magic_ctor);
 	}
 
-	let func = find_free_function(status, node.name);
+	// A func-typed VARIABLE holding a signature (`var func (out int) f`,
+	// a func-typed param, a capturing declaration-lambda) shadows a free
+	// function of the same name: the call routes through the variable's
+	// descriptor (is_func_param) — after `f = () => …` the slot holds a
+	// different target than any same-named function. The capture-free
+	// DECLARATION-lambda shape (`var func f = () => …`) pushes no values
+	// entry (the binding IS the emitted function) and keeps its direct call.
+	const callee_slot = status.values.findLast(
+		(v) => v.name === node.name && v.func_params !== undefined,
+	);
+	let func = callee_slot ? undefined : find_free_function(status, node.name);
 
 	// A capturing closure's own name must NOT resolve as a direct call: a
 	// direct call cannot pass the env. Fall through to the func-VALUE path
