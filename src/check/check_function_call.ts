@@ -1,9 +1,11 @@
 import add_error from "../add_error.ts";
+import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
+import AssignmentNode from "../nodes/AssignmentNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import { clone_type } from "../nodes/clone_node.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
@@ -77,6 +79,57 @@ function is_heap_array_type(type: Type | undefined): boolean {
  * with one) — the "owning element" case for containers. Mirrors the build's
  * `struct_needs_auto_destroy` / `has_string_fields` (owning_buffer_specialize).
  */
+/**
+ * Whether the function's body DIRECTLY writes string fields of its own
+ * parameter `param_name` (`p.<field> = …` where `<field>` is one of the
+ * struct's direct string fields). Nested-field writes (`p.inner.s = …`) are
+ * untracked raw stores everywhere — borrow semantics, nothing stranded — and
+ * don't count. Nested function declarations are not descended into (a
+ * closure writing the outer param's field is a different, deferred write).
+ */
+function fn_writes_param_string_fields(
+	fn: FunctionNode,
+	param_name: string,
+	field_names: Set<string>,
+): boolean {
+	const seen = new Set<BaseNode>();
+	const walk = (node: BaseNode): boolean => {
+		if (!node || typeof node !== "object" || seen.has(node)) return false;
+		seen.add(node);
+		if ((node as FunctionNode).node_type === "func") return false;
+		const assign = node as unknown as AssignmentNode;
+		if (assign.left_value !== undefined && assign.right_value !== undefined) {
+			if (
+				assign.left_value.node_type === "access" &&
+				(assign.left_value as AccessNode).target.node_type === "value" &&
+				((assign.left_value as AccessNode).target as ValueNode).value === param_name &&
+				(assign.left_value as AccessNode).access.node_type === "access_field"
+			) {
+				const field_name = ((assign.left_value as AccessNode).access as AccessFieldNode).name;
+				if (field_names.has(field_name)) return true;
+			}
+		}
+		for (const key of Object.keys(node)) {
+			if (key === "parent" || key === "scope") continue;
+			const child = (node as unknown as Record<string, unknown>)[key];
+			if (Array.isArray(child)) {
+				for (const item of child) {
+					if (item && typeof item === "object" && "node_type" in item) {
+						if (walk(item as BaseNode)) return true;
+					}
+				}
+			} else if (child && typeof child === "object" && "node_type" in child) {
+				if (walk(child as BaseNode)) return true;
+			}
+		}
+		return false;
+	};
+	for (const statement of fn.statements ?? []) {
+		if (walk(statement)) return true;
+	}
+	return false;
+}
+
 function struct_has_string_fields(node: StructNode, status: CheckStatus): boolean {
 	for (const field of node.fields) {
 		if (field.type.is_ref) continue;
@@ -748,6 +801,54 @@ export default function check_function_call(
 			add_error(
 				status,
 				`cannot copy field '${field_name}' into parameter '${func_param.name}' by value — it owns heap resources; use 'move ... swap <replacement>' or .copy()`,
+				param.start,
+			);
+		}
+		// Passing an OWNING value struct (string fields) as a bare ALIAS — a
+		// plain variable or field access without `ref`/`move` — hands the
+		// callee a by-address view of the caller's storage: string-field
+		// writes record in the callee's scope and die at its return (the
+		// cross-scope leak), and mutations reach the caller invisibly.
+		// Require explicit `ref` (borrow/mutate) or `move` (transfer) — or
+		// pass a fresh value (a construction, a call result, `.copy()`),
+		// which is already uniformly owned. Library/core internals are
+		// trusted (status quo); nullable params marshal by value (a copy);
+		// variadic params pack.
+		const arg_param_struct =
+			func_param &&
+			!func_param.is_self_param &&
+			!func_param.is_variadic &&
+			!func_param.type.is_ref &&
+			!func_param.type.is_nullable &&
+			!func_param.is_moved &&
+			func_param.type.name
+				? status.structs.find(
+						(st) => st.name === func_param.type.name && !st.is_simple_type && !st.is_class,
+					)
+				: undefined;
+		if (
+			arg_param_struct &&
+			!is_inside_core_method(status) &&
+			!node.swap_params?.has(i) &&
+			!has_mov_keyword &&
+			!has_ref_keyword &&
+			(param.node_type === "value" || param.node_type === "access") &&
+			direct_string_fields(arg_param_struct).length > 0 &&
+			// … AND the callee actually WRITES those fields: a read-only
+			// callee (printBox, maybe_render, spawn workers) aliases soundly
+			// — the slot/owner keeps ownership and nothing dies with the
+			// callee's scope. The write is what strands the strdup'd
+			// assignment copy in the dead callee scope.
+			func !== undefined &&
+			fn_writes_param_string_fields(
+				func,
+				func_param.name,
+				new Set(direct_string_fields(arg_param_struct).map((f) => f.name)),
+			)
+		) {
+			add_error(
+				status,
+				`cannot pass '${func_param.type.name}' by value — it owns heap resources; declare the parameter 'ref' (with 'ref' at the call site) or 'move', or pass a fresh value`,
 				param.start,
 			);
 		}

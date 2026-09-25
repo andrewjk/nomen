@@ -280,6 +280,17 @@ whose scope exit never frees it.
 Posture: leak, never double-free/invalid-free — the same trade
 `drop_self_written_string_field_records` makes for displaced `self`-writes.
 
+**Aliased-arg gate added (2026-09-24).** The most common route INTO this
+hole — passing an owning value struct as a plain (non-`ref`, non-`move`)
+argument, which aliases the caller's storage by address — is now rejected at
+check time when the callee actually WRITES the param's string fields
+(`fn_writes_param_string_fields` scan in check_function_call.ts; a read-only
+callee aliases soundly and stays legal). Library/core internals are exempt
+(`is_inside_core_method`), as are nullable params (marshal by value),
+variadic params, constructions/call results (fresh values), and tuple
+temporaries. The leak itself therefore survives only for explicit `ref`
+params and fresh-arg writes (bounded per write).
+
 Fix directions, when picked up (either closes the leak class):
 
 1. **Caller-side record propagation.** At each direct call `fill(ref b)`,
