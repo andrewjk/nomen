@@ -285,10 +285,11 @@ hole — passing an owning value struct as a plain (non-`ref`, non-`move`)
 argument, which aliases the caller's storage by address — is now rejected at
 check time when the callee actually WRITES the param's string fields
 (`fn_writes_param_string_fields` scan in check_function_call.ts; a read-only
-callee aliases soundly and stays legal). Library/core internals are exempt
-(`is_inside_core_method`), as are nullable params (marshal by value),
-variadic params, constructions/call results (fresh values), and tuple
-temporaries. The leak itself therefore survives only for explicit `ref`
+callee aliases soundly and stays legal). Library/core call sites are NOT
+exempt — ownership bookkeeping is statically reason-able, and no System call
+site trips the gate (full suite green). Exempt: nullable params (marshal by
+value), variadic params, constructions/call results (fresh values), and
+tuple temporaries. The leak itself therefore survives only for explicit `ref`
 params and fresh-arg writes (bounded per write).
 
 Fix directions, when picked up (either closes the leak class):

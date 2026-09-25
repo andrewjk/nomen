@@ -828,7 +828,6 @@ export default function check_function_call(
 				: undefined;
 		if (
 			arg_param_struct &&
-			!is_inside_core_method(status) &&
 			!node.swap_params?.has(i) &&
 			!has_mov_keyword &&
 			!has_ref_keyword &&
