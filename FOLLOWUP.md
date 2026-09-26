@@ -280,6 +280,36 @@ whose scope exit never frees it.
 Posture: leak, never double-free/invalid-free — the same trade
 `drop_self_written_string_field_records` makes for displaced `self`-writes.
 
+**Pass-by-value for owning-struct args — designed, partially implemented on
+branch `pass-by-value-args` (paused 2026-09-24).** The full value-semantics
+model: the call boundary materializes a uniformly heap-owned shell (struct
+copy + per-string-field strdup) for every owning-struct argument, and the
+CALLEE owns it — its string-field records are seeded at entry and the fields
+(+ shell) are freed at the callee's scope exit. Writes through the param then
+stay local, the cross-scope record leak disappears for by-value args, and
+mutation requires spelled-out `ref`. `move` transfers without a copy.
+
+The branch contains a working C-backend implementation (shell materialization
+as a GCC statement-expression at the call site, `->`-form record frees seeded
+at the callee's entry, counted wrappers balanced) plus the whole-program
+pre-pass (`struct_return_classification.ts`) that classifies which functions
+are materializing (free functions with owning value-struct params, minus
+address-escaped ones). The aarch64 materialization + seeding are also on the
+branch but the integration is incomplete.
+
+**Why paused**: the seeding keys on the FUNCTION, but the materialization is
+per CALL SITE — sound only when EVERY call materializes. Three caller shapes
+don't: (1) monomorphized container internals (`Buffer_Named_modify`'s raw
+block passes a SLOT borrow to the `touch` closure — the seeded record frees
+the container's string), (2) spawn-env argument copies, (3) closures invoked
+through descriptors. A sound rule needs whole-program "address-taken"
+analysis (which functions are ever referenced as func values AND which
+variables alias them through func-typed variables) — sketched in
+`struct_return_classification.ts` on the branch, but the func-variable
+aliasing case (`var f = next; f(p)`) still resolves imperfectly. Until that
+analysis is exact, the checker gate (d808c61a) — rejecting aliased args only
+when the callee writes — remains the shipped behavior on main.
+
 **Aliased-arg gate added (2026-09-24).** The most common route INTO this
 hole — passing an owning value struct as a plain (non-`ref`, non-`move`)
 argument, which aliases the caller's storage by address — is now rejected at
