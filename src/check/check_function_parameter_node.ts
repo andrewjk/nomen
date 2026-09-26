@@ -103,6 +103,10 @@ export default function check_function_parameter_node(
 		!is_class_type(param.type.name, status) &&
 		!is_trait_type(param.type.name, status) &&
 		!is_owning_struct_type_requiring_move(param.type, status) &&
+		// A pass-by-value owning struct takes `move` too: the TRANSFER row
+		// of the ownership table — no boundary copy, the callee's seeded
+		// records own (and free) the argument's string fields.
+		!is_pass_by_value_owning_struct(param.type, status) &&
 		!status.type_params.includes(param.type.name) &&
 		!status.structs.some((s) => s.type_params.includes(param.type.name))
 	) {

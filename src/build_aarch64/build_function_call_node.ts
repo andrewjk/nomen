@@ -25,6 +25,7 @@ import {
 	mark_moved_if_struct,
 	find_anchor_slot,
 	resolve_struct_name,
+	clear_heap_string_fields,
 } from "./utils/auto_destroy.ts";
 import { build_swap_params } from "./utils/build_swap.ts";
 import { emit_dispose_lambda_args_a64 } from "./utils/closure_a64.ts";
@@ -810,6 +811,52 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					is_struct_type(param_type, status) ||
 					is_enum_with_data_type(param_type, status)
 				) {
+					// TRANSFER arg (a `move T` parameter of a pass-by-value
+					// owning struct — move_owned_param_indices): the callee's
+					// seeded records free EVERY direct string field at its
+					// exit, so unrecorded (rodata/borrow) fields must be
+					// strdup'd IN PLACE before the call — a freed static
+					// literal is a crash. Recorded fields are already heap and
+					// transfer raw. Must run before the bl: the callee's exit
+					// frees run during the call.
+					if (node.move_owned_param_indices?.includes(i) && node.params[i].node_type === "value") {
+						const transfer_struct = status.structs.find(
+							(st) =>
+								st.name ===
+									resolve_struct_name(
+										param_type,
+										(param as { type?: { type_args?: Type[] } }).type?.type_args,
+										status,
+									) &&
+								!st.is_simple_type &&
+								!st.is_class &&
+								!st.is_generic,
+						);
+						const transfer_var = (node.params[i] as ValueNode).value;
+						if (
+							transfer_struct &&
+							direct_string_fields(transfer_struct).length > 0 &&
+							transfer_var
+						) {
+							const recorded = new Set<string>();
+							for (const key of status.heap_string_fields ?? []) {
+								if (key.startsWith(`${transfer_var}.`)) {
+									recorded.add(key.slice(transfer_var.length + 1));
+								}
+							}
+							const unrecorded = direct_string_fields(transfer_struct).filter(
+								(f) => !recorded.has(f.name),
+							);
+							if (unrecorded.length > 0) {
+								emit_struct_address(node.params[i], status);
+								ensure_newline(status);
+								emit_string_field_strdups_at(status, transfer_struct.name, "x0", 0, recorded);
+								if (status.call_x8_preset && status.struct_return_buffer_var) {
+									emit_var_address(status, "x8", status.struct_return_buffer_var);
+								}
+							}
+						}
+					}
 					// OWNED value-struct parameter (pass-by-value): materialize
 					// a normalized stack copy — struct-copy the argument, then
 					// strdup its string fields — and pass the copy's address.
@@ -1193,6 +1240,14 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				// owning Buffer/List store_T deep-copies its string payloads,
 				// so the caller's temp must still be reclaimed at scope exit.
 				if (tname && status.enums.find((e) => e.name === tname && e.has_associated_data)) continue;
+				// A TRANSFER param (a `move T` parameter of a pass-by-value
+				// owning struct — see move_owned_param_indices): the callee's
+				// seeded records own the strings now, so the donor's records
+				// are DROPPED here — the scope-exit release-before-moved-check
+				// must not free what the callee now owns.
+				if (vname !== undefined && (node.move_owned_param_indices?.includes(idx) ?? false)) {
+					clear_heap_string_fields(status, vname);
+				}
 			}
 			if (param) {
 				mark_moved_if_struct(param, status);

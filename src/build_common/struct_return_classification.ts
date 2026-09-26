@@ -221,6 +221,11 @@ export function gather_normalized_struct_returners(root: BaseNode, status: Build
 	for (const fn of fns) {
 		if (!is_free_function_node(fn)) continue;
 		if (address_taken.has(fn.name)) continue;
+		// A struct METHOD (self param) — including monomorphized method
+		// clones, whose `scope` back-pointer may be unset — receives its
+		// receiver by address for in-place access: never pass-by-value, and
+		// its `move T` params keep the plain callee-copies convention.
+		if (fn.params.some((p) => p.is_self_param)) continue;
 		// The checker's node-level escape flag is authoritative: a function
 		// whose address escapes (a func-typed binding, a spawn-wrapped call)
 		// is invoked through a pointer with a BORROWED argument — the env /
@@ -234,7 +239,12 @@ export function gather_normalized_struct_returners(root: BaseNode, status: Build
 		// by-address convention, so callers must not materialize for it.
 		if (!fn.has_body) continue;
 		for (const param of fn.params ?? []) {
-			if (param.is_self_param || param.is_variadic || param.is_moved) continue;
+			// A `move`-declared pass-by-value owning-struct param registers
+			// too: the TRANSFER row — the callee seeds (and frees) the
+			// argument's string records, callers drop instead of materialize.
+			// The struct-shape conjunction below still excludes structs with
+			// non-string ownership (a transfer of those can't be seeded).
+			if (param.is_self_param || param.is_variadic) continue;
 			if (param.type.is_ref || param.type.is_nullable || param.type.is_view || param.type.is_array)
 				continue;
 			const struct = param.type.name

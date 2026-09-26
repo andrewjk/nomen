@@ -910,12 +910,21 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			//   - the callee is in the materializing registry (the pre-pass
 			//     registered it; in split builds a library callee is not in
 			//     the user-TU registry and keeps by-address aliasing).
+			//
+			// A `move`-declared param of the same shape seeds TOO — the
+			// TRANSFER row: the argument's string ownership moved into the
+			// callee (callers stamped move_owned_param_indices drop their
+			// records instead of freeing). The shell is the caller's stack
+			// storage there, so only the fields are freed (never the case on
+			// aarch64 — there is no owned_heap_shell concept).
 			const is_free_function =
-				!node.scope || node.scope.node_type === "root" || node.scope.node_type === "func";
+				(!node.scope || node.scope.node_type === "root" || node.scope.node_type === "func") &&
+				// Structural method check (mono clones can have unset scope):
+				// a self param means the receiver rides by address.
+				!node.params.some((p) => p.is_self_param);
 			const owned_value_param =
 				!param.is_self_param &&
 				!param.is_variadic &&
-				!param.is_moved &&
 				!param.type.is_ref &&
 				!param.type.is_nullable &&
 				!param.type.is_view &&

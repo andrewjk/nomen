@@ -438,8 +438,18 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			// structs with class/nested-owning fields keep by-address
 			// aliasing (their non-string members alias by design and a
 			// wholesale destroy would reclaim the caller's instances).
+			//
+			// A `move`-declared param of the same shape seeds TOO — the
+			// TRANSFER row: the argument's string ownership moved into the
+			// callee (callers stamped move_owned_param_indices drop their
+			// records instead of freeing). The param pointer is the CALLER's
+			// variable in that case, so owned_heap_shell stays off: the
+			// fields are freed, the storage is not.
 			const is_free_function =
-				!node.scope || node.scope.node_type === "root" || node.scope.node_type === "func";
+				(!node.scope || node.scope.node_type === "root" || node.scope.node_type === "func") &&
+				// Structural method check (mono clones can have unset scope):
+				// a self param means the receiver rides by address.
+				!node.params.some((p) => p.is_self_param);
 			const fn_name = node.name;
 			const fn_label = emission_label(node);
 			const owned_value_struct =
@@ -447,7 +457,6 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				!node.address_escaped &&
 				!param.is_self_param &&
 				!param.is_variadic &&
-				!param.is_moved &&
 				!param.type.is_ref &&
 				!param.type.is_nullable &&
 				!param.type.is_view &&
@@ -469,7 +478,10 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			) {
 				const decl = new DeclarationNode(param.start, "private", "var", pname, param.type);
 				decl.string_fields_via_pointer = true;
-				decl.owned_heap_shell = true;
+				// Transfer params point at the caller's storage — free the
+				// fields, never the shell. Only a materialized pbv shell is
+				// callee-owned heap memory.
+				decl.owned_heap_shell = !param.is_moved;
 				status.scoped_declarations.push(decl);
 				if (!status.heap_string_fields) status.heap_string_fields = new Set();
 				for (const field of direct_string_fields(owned_value_struct)) {

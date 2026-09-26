@@ -45,6 +45,7 @@ import {
 	is_owning_ref_type,
 	is_owning_struct_type,
 	is_owning_struct_type_requiring_move,
+	is_pass_by_value_owning_struct,
 } from "./utils/ownership.ts";
 import lint_regex_pattern from "./utils/regex_pattern_lint.ts";
 import { maybe_mark_borrow_to_string_arg } from "./utils/string_mutation_scan.ts";
@@ -506,8 +507,14 @@ export default function check_function_call(
 		// materialization + param record seeding). Stamped when the callee
 		// has a body (it frees the param's string fields at its scope exit),
 		// the parameter is a concrete value struct with direct string
-		// fields, and it is not the receiver / a ref / move / nullable /
-		// variadic parameter (those keep their existing conventions).
+		// fields, and it is not the receiver / a ref / nullable / variadic
+		// parameter (those keep their existing conventions).
+		//
+		// A `move T` parameter of that same shape gets the TRANSFER row of
+		// the ownership table instead: no boundary copy, the argument's
+		// string ownership moves into the callee (whose seeded records free
+		// it) — stamped as move_owned_param_indices so the builds drop the
+		// donor's records rather than freeing them.
 		if (
 			func &&
 			func_param &&
@@ -515,8 +522,12 @@ export default function check_function_call(
 			// Free functions only: methods of structs (and mono container
 			// clones) receive elements/slots by address for in-place access
 			// (Buffer.modify, Map internals) — seeding them as owned would
-			// free the container's storage at the method's exit.
+			// free the container's storage at the method's exit. The
+			// self-param check is structural: monomorphized method clones can
+			// have an unset `scope` back-pointer, but they always carry the
+			// cloned `self`.
 			(!func.scope || func.scope.node_type !== "struct") &&
+			!func.params.some((p) => p.is_self_param) &&
 			// Functions whose address escapes into a func-typed value are
 			// invoked through pointers with BORROWED arguments — no
 			// pass-by-value.
@@ -525,7 +536,6 @@ export default function check_function_call(
 			!func_param.is_variadic &&
 			!func_param.type.is_ref &&
 			!func_param.type.is_nullable &&
-			!func_param.is_moved &&
 			func_param.type.name &&
 			!is_owning_struct_type_requiring_move(func_param.type, status)
 		) {
@@ -538,10 +548,12 @@ export default function check_function_call(
 				direct_string_fields(owned_struct).length > 0 &&
 				!struct_needs_destroy(owned_struct, status)
 			) {
-				if (!(node as FunctionCallNode).owned_value_param_indices)
-					(node as FunctionCallNode).owned_value_param_indices = [];
-				if (!(node as FunctionCallNode).owned_value_param_indices!.includes(i)) {
-					(node as FunctionCallNode).owned_value_param_indices!.push(i);
+				const transfer = func_param.is_moved;
+				const indices = transfer
+					? ((node as FunctionCallNode).move_owned_param_indices ??= [])
+					: ((node as FunctionCallNode).owned_value_param_indices ??= []);
+				if (!indices.includes(i)) {
+					indices.push(i);
 				}
 			}
 		}
@@ -705,11 +717,17 @@ export default function check_function_call(
 		// soundly — see the shared-ownership check below), move is implicit, a
 		// no-op, or the borrow check below fires first.
 		const param_is_class = func_param.type.name && is_class_type(func_param.type.name, status);
+		// TRANSFER applies only where the callee actually seeds (a registered
+		// free function — the move_owned stamp): for methods and mono
+		// container clones the plain move convention (callee deep-copies)
+		// still governs, so their `move T` params don't demand the keyword
+		// for value-struct args.
+		const param_transfers = !!(node as FunctionCallNode).move_owned_param_indices?.includes(i);
 		const param_is_owning_struct =
 			func_param.is_moved &&
 			!func_param.type.is_nullable &&
 			!!func_param.type.name &&
-			is_owning_struct_type_requiring_move(func_param.type, status);
+			(is_owning_struct_type_requiring_move(func_param.type, status) || param_transfers);
 		const arg_is_variable = param.node_type === "value";
 		const arg_is_owned_value = arg_is_variable && borrow_depth_of(param, status) === undefined;
 		if (
@@ -762,7 +780,13 @@ export default function check_function_call(
 			} else if (
 				field_type.name &&
 				!field_type.is_nullable &&
-				is_owning_struct_type_requiring_move(field_type, status)
+				(is_owning_struct_type_requiring_move(field_type, status) ||
+					// A pass-by-value owning struct field transferred with
+					// `move` (to a seeding callee — param_transfers) hands its
+					// string ownership to the callee while the field's own
+					// records stay live on the struct — the same
+					// dangling-field hazard, so the same swap rule.
+					(param_transfers && is_pass_by_value_owning_struct(field_type, status)))
 			) {
 				// The owning-struct counterpart of the class rule above: a
 				// bare `move obj.field` leaves the field moved-out (its

@@ -1,6 +1,8 @@
 import { describe, expect, test } from "vite-plus/test";
 
+import build from "../src/build";
 import build_and_check_output from "./build_and_check_output";
+import check_output from "./check_output";
 import parse_with_imports from "./parse_with_imports";
 
 describe("owning value struct copy()", () => {
@@ -59,8 +61,6 @@ Console.write_line(a.name)
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
-		const { default: build } = await import("../src/build");
-		const { default: check_output } = await import("./check_output");
 		const result = build(parsed.root, { arch: "c", audit: false });
 		await check_output("pbv_ref_write_through", result, "changed\n", {
 			audit: false,
@@ -152,6 +152,76 @@ show(make("built"))
 `,
 			"pbv_fresh_args",
 			"got: \ngot: built!\n",
+		);
+	});
+});
+
+describe("move transfer of owning value structs", () => {
+	test("transfer: callee owns and frees the strings, no copy at the boundary", async () => {
+		await build_and_check_output(
+			`
+struct Info { var string name = "" }
+func consume = (move Info p) {
+	p.name = "consumed"
+	Console.write_line(p.name)
+}
+var Info a = Info()
+a.name = "mine"
+consume(move a)
+Console.write_line("done")
+`,
+			"pbv_move_transfer",
+			"consumed\ndone\n",
+		);
+	});
+
+	test("transfer param requires the move keyword for owned variables", () => {
+		const input = `
+struct Info { var string name = "" }
+func consume = (move Info p) {
+	Console.write_line(p.name)
+}
+var Info a = Info()
+a.name = "mine"
+consume(a)
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([
+			expect.objectContaining({
+				message: expect.stringContaining("Missing 'move' keyword for move parameter 'p'"),
+			}),
+		]);
+	});
+
+	test("transferred source is invalidated", () => {
+		const input = `
+struct Info { var string name = "" }
+func consume = (move Info p) {
+	Console.write_line(p.name)
+}
+var Info a = Info()
+a.name = "mine"
+consume(move a)
+Console.write_line(a.name)
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.some((e) => e.message.includes("used after move"))).toBe(true);
+	});
+
+	test("moving a pbv struct out of a field requires swap", () => {
+		const input = `
+struct Info { var string name = "" }
+struct Holder { var Info info = Info() }
+func consume = (move Info p) {
+	Console.write_line(p.name)
+}
+var Holder h = Holder()
+h.info.name = "inner"
+consume(move h.info)
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.some((e) => e.message.includes("use 'move ... swap <replacement>'"))).toBe(
+			true,
 		);
 	});
 });

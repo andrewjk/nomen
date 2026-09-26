@@ -203,6 +203,49 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 
 		const param_type = type_from_value_node(node.params[i]);
 
+		// TRANSFER arg (a `move T` parameter of a pass-by-value owning
+		// struct — move_owned_param_indices): the callee's seeded records
+		// free EVERY direct string field at its exit, so unrecorded
+		// (rodata/borrow) fields must be strdup'd IN PLACE before the call —
+		// a freed static literal is a crash. The statement-expression
+		// normalizes the donor and yields its address; recorded (heap)
+		// fields transfer raw.
+		if (node.move_owned_param_indices?.includes(i) && node.params[i].node_type === "value") {
+			const transfer_struct = status.structs.find(
+				(st) =>
+					st.name === mono_type_name(param_type) &&
+					!st.is_simple_type &&
+					!st.is_class &&
+					!st.is_generic,
+			);
+			const transfer_var = (node.params[i] as ValueNode).value;
+			if (transfer_struct && direct_string_fields(transfer_struct).length > 0 && transfer_var) {
+				const recorded = new Set<string>();
+				for (const key of status.heap_string_fields ?? []) {
+					if (key.startsWith(`${transfer_var}.`)) {
+						recorded.add(key.slice(transfer_var.length + 1));
+					}
+				}
+				const unrecorded = direct_string_fields(transfer_struct).filter(
+					(f) => !recorded.has(f.name),
+				);
+				if (unrecorded.length > 0) {
+					const saved_arg = begin_code_scratch(status);
+					status.code += `(void *)&`;
+					status.suppress_dereference = true;
+					build_node(node.params[i], status);
+					status.suppress_dereference = false;
+					const addr_text = end_code_scratch(status, saved_arg);
+					status.code += `(void *)({ struct ${transfer_struct.name} *_t = (struct ${transfer_struct.name} *)${addr_text}; `;
+					for (const f of unrecorded) {
+						status.code += `_t->${f.name} = nomen_str_dup(_t->${f.name}); `;
+					}
+					status.code += `(void *)_t; })`;
+					continue;
+				}
+			}
+		}
+
 		// A `null` literal arg to a nullable struct value parameter
 		// (`use(null)` where `use` takes `T? p`): emit a zero'd compound
 		// literal of the param's struct type (so `&(struct T){0}` is valid C)
@@ -552,10 +595,21 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				// included) and need no release.
 				if (is_value_struct) {
 					const prefix = `${vname}.`;
+					// A TRANSFER param (a `move T` parameter of a
+					// pass-by-value owning struct — see
+					// move_owned_param_indices): the callee's seeded records
+					// own the strings now, so the records are dropped WITHOUT
+					// freeing — freeing here (or at scope exit) would double
+					// free with the callee's exit. The plain move convention
+					// (owning containers strdup their own copies) still
+					// releases the caller's originals.
+					const transfer = node.move_owned_param_indices?.includes(idx) ?? false;
 					for (const key of Array.from(status.heap_string_fields ?? [])) {
 						if (key.startsWith(prefix)) {
-							if (!status.pending_string_releases) status.pending_string_releases = [];
-							status.pending_string_releases.push(`free(${key}.ptr);`);
+							if (!transfer) {
+								if (!status.pending_string_releases) status.pending_string_releases = [];
+								status.pending_string_releases.push(`free(${key}.ptr);`);
+							}
 							status.heap_string_fields!.delete(key);
 						}
 					}
