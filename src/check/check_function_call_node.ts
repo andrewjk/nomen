@@ -1567,6 +1567,13 @@ function check_magic_ctor(node: FunctionCallNode, status: CheckStatus, name: str
 		add_error(status, `Spawned call '${call.name}' did not resolve`, node.start);
 		return false;
 	}
+	// The trampoline invokes the wrapped function through the task closure
+	// with the ENV's storage — the env's own deep copy is the ownership
+	// boundary (Phase 3d). The callee therefore keeps by-address aliasing:
+	// pass-by-value must not apply (a seeded param would free the env's
+	// copy under the env destructor's feet — a double free).
+	const spawned = call.resolved_function;
+	if (spawned) spawned.address_escaped = true;
 	validate_spawn_args_sendable(call, status);
 	stamp_spawn_ctor(node, name);
 	const return_type = call.type;

@@ -86,6 +86,16 @@ export default class DeclarationNode extends BaseNode {
 	 *  paths strdup the initializer and free the temp's copy at scope exit.
 	 *  Set at build time by hoist_field_overrides. */
 	force_owned_string?: boolean;
+	/** True for an OWNED value-struct PARAMETER whose string fields the
+	 *  callee frees at scope exit: the field accesses (and the record-free
+	 *  emitted by free_scoped_declarations) go through the param POINTER
+	 *  (`p->field`) instead of value syntax (`p.field`). Set at build time
+	 *  when the function builder seeds pass-by-value struct params. */
+	string_fields_via_pointer?: boolean;
+	/** True alongside string_fields_via_pointer when the caller materialized
+	 *  a heap shell for the argument (pass-by-value): the callee frees the
+	 *  shell itself at scope exit (`free(p)`) after freeing the fields. */
+	owned_heap_shell?: boolean;
 	constructor(
 		start: number,
 		visibility: "pub" | "private" | "internal",

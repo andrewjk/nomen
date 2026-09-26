@@ -58,6 +58,12 @@ export default class FunctionNode extends BaseNode implements BlockNode, Returni
 	 * are dual-natured: called under their own name AND passed as values).
 	 */
 	is_closure?: boolean;
+	/** The function's address escapes into a func-typed value (bound to a
+	 *  `var func …` variable/field, passed as a func value, …) — so it may be
+	 *  invoked through a pointer with a BORROWED argument: pass-by-value
+	 *  normalization (owned-param record seeding / call-site shell
+	 *  materialization) must not apply. Set during check. */
+	address_escaped?: boolean;
 	/**
 	 * Captured outer locals (CLOSURE.md Phase 2). One entry per variable the
 	 * lambda body references from an enclosing function; the backends emit an

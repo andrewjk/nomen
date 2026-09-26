@@ -101,7 +101,16 @@ export default function build_block_node(node: BlockNode, status: BuildStatus) {
 		struct_decls: [],
 	});
 
-	const declarations_before = status.scoped_declarations.length;
+	// A FUNCTION body's frame already holds the pass-by-value param
+	// declarations (seeded by build_function_node's prologue BEFORE this
+	// block runs — build_function_node resets scoped_declarations to a
+	// fresh array at entry). Capturing `length` here would exclude them
+	// from the scope-exit cleanup below, so the callee would never free
+	// the shell's strdup'd string fields. Start from 0 so the whole frame
+	// — params first, then body locals — is reclaimed. Nested scopes enter
+	// through enter_scope_frame (a fresh empty frame), where both forms
+	// agree; root frames start empty too.
+	const declarations_before = node.node_type === "func" ? 0 : status.scoped_declarations.length;
 
 	for (let child of node.statements) {
 		if (is_struct_node(child)) {

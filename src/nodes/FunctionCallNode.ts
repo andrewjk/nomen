@@ -12,6 +12,10 @@ export default class FunctionCallNode extends BaseNode {
 	type_args?: Type[];
 	ref_param_indices?: number[];
 	move_param_indices?: number[];
+	// Indices of parameters that are OWNED value structs with string fields —
+	// the call site materializes a normalized (uniformly heap-owned) copy and
+	// the callee owns it (see check_function_call / build_function_call_node).
+	owned_value_param_indices?: number[];
 	/**
 	 * Indices of arguments whose corresponding callee parameter is a nullable
 	 * struct value type (`T?` where T is a non-class struct). Populated during

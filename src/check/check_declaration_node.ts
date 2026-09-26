@@ -89,6 +89,16 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 		if (is_view_keyword) {
 			add_error(status, `'view' cannot declare a function-typed binding`, decl.start);
 		}
+		// A func-typed BINDING takes the initializer's address: the lambda (or
+		// named function) is invoked through the variable's func value with a
+		// BORROWED argument, so pass-by-value normalization must not apply to
+		// it.
+		if (decl.value?.node_type === "func") {
+			(decl.value as FunctionNode).address_escaped = true;
+		} else if (decl.value?.node_type === "value") {
+			const fn = status.functions.findLast((f) => f.name === (decl.value as ValueNode).value);
+			if (fn) fn.address_escaped = true;
+		}
 		// A `null` initializer needs a nullable func binding (`func?` / `Func<...>?`).
 		// The keyword spelling's type is otherwise empty, which would sail
 		// through the generic type match ("unknown target = ok").

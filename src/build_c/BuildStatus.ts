@@ -392,6 +392,10 @@ export default interface BuildStatus {
 		}[];
 	}[];
 	struct_return_buffer?: string;
+	/** The variable whose storage `struct_return_buffer` points at (a
+	 *  declaration initializer's local) — re-emitted after argument
+	 *  evaluation, because a struct-returning call ARGUMENT clobbers x8. */
+	struct_return_buffer_var?: string;
 	return_buffer_stack_offset?: number;
 	/**
 	 * aarch64 only. True while building a call whose sret destination has
@@ -529,6 +533,9 @@ export default interface BuildStatus {
 	 * keeps the borrow behavior (no worse than before).
 	 */
 	normalized_struct_returners?: Set<string>;
+	/** Functions whose address escapes into a func-typed value (invoked
+	 *  through pointers with borrowed arguments) — pass-by-value excluded. */
+	func_address_taken?: Set<string>;
 	/**
 	 * Strings that currently OWN their heap bytes because a plain `s = t`
 	 * assignment strdup'd (or transferred) an owned copy into them

@@ -2,6 +2,7 @@ import emit_field_overrides, { hoist_field_overrides } from "../build/emit_field
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import emission_label from "../build_common/emission_label.ts";
+import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
 import { is_float_type } from "../built_in_types.ts";
@@ -10,6 +11,7 @@ import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
+import type Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import { emit_address_of } from "./build_access_node.ts";
 import { build_inline_function } from "./build_inline_method.ts";
@@ -17,7 +19,13 @@ import build_node from "./build_node.ts";
 import { build_operand, tree_is_call_free } from "./build_operation_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_malloc } from "./utils/audit.ts";
-import { all_scope_frames, mark_moved_if_struct, find_anchor_slot } from "./utils/auto_destroy.ts";
+import {
+	emit_string_field_strdups_at,
+	all_scope_frames,
+	mark_moved_if_struct,
+	find_anchor_slot,
+	resolve_struct_name,
+} from "./utils/auto_destroy.ts";
 import { build_swap_params } from "./utils/build_swap.ts";
 import { emit_dispose_lambda_args_a64 } from "./utils/closure_a64.ts";
 import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
@@ -802,7 +810,62 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					is_struct_type(param_type, status) ||
 					is_enum_with_data_type(param_type, status)
 				) {
-					emit_struct_address(node.params[i], status);
+					// OWNED value-struct parameter (pass-by-value): materialize
+					// a normalized stack copy — struct-copy the argument, then
+					// strdup its string fields — and pass the copy's address.
+					// The callee owns the copy (its seeded records free the
+					// fields at scope exit), so the caller's variable is never
+					// aliased or mutated. The registry gate mirrors the C
+					// caller: in split builds the pre-pass only registered USER
+					// functions, so a call into the precompiled system library
+					// keeps by-address aliasing (its callee cannot seed). The
+					// arg struct resolves through the type args — a generic
+					// call site carries `Box` + [string], and only the mono
+					// `Box_string` has the substituted (string) field layout.
+					const arg_struct = status.structs.find(
+						(st) =>
+							st.name ===
+								resolve_struct_name(
+									param_type,
+									(param as { type?: { type_args?: Type[] } }).type?.type_args,
+									status,
+								) &&
+							!st.is_simple_type &&
+							!st.is_class &&
+							!st.is_generic,
+					);
+					if (
+						node.owned_value_param_indices?.includes(i) &&
+						arg_struct &&
+						!(arg_struct.traits ?? []).length &&
+						direct_string_fields(arg_struct).length > 0 &&
+						status.normalized_struct_returners?.has(func_name) &&
+						!status.func_address_taken?.has(func_name)
+					) {
+						const mono_name = arg_struct.name;
+						const struct_size = get_struct_size(mono_name, status);
+						const off = allocate_stack_space(status, struct_size);
+						emit_struct_address(node.params[i], status);
+						ensure_newline(status);
+						emit_asm(status, `mov x1, x0\n`);
+						emit_asm(status, `add x0, x29, #${off}\n`);
+						for (let b = 0; b < struct_size; b += 8) {
+							emit_asm(status, `ldr x2, [x1, #${b}]\n`);
+							emit_asm(status, `str x2, [x0, #${b}]\n`);
+						}
+						emit_asm(status, `add x0, x29, #${off}\n`);
+						// X8 may hold the pending sret destination for THIS call
+						// (a `var p = callee(...)` initializer presets x8 before
+						// the args are built). The strdup calls below are bls —
+						// x8 is caller-saved — so re-establish the preset after
+						// them instead of staging x8 through the optimizer.
+						emit_string_field_strdups_at(status, mono_name, "x0");
+						if (status.call_x8_preset && status.struct_return_buffer_var) {
+							emit_var_address(status, "x8", status.struct_return_buffer_var);
+						}
+					} else {
+						emit_struct_address(node.params[i], status);
+					}
 				} else if (arg_deferrable(i)) {
 					deferred_args.push({ param: node.params[i], slot: arg_slot[i] });
 					continue;
@@ -860,6 +923,9 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					emit_asm(status, `ldr x0, [x29, #${args_base}]\n`);
 				}
 			}
+			// A struct-returning CALLEE receives its destination in x8 — but a
+			// struct-returning call ARGUMENT (e.g. `next(build(1, "one"))`)
+			// overwrote x8 with its own sret buffer while the arguments were
 			// AAPCS64: arguments past x0..x7 go in the caller's outgoing area,
 			// which must be at [sp] at the moment of the bl. Lower sp by the
 			// outgoing area size and copy each overflow arg from its spill slot

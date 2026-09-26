@@ -1,8 +1,10 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
+import emission_label from "../build_common/emission_label.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
 import StructNode from "../nodes/StructNode.ts";
+import { struct_needs_destroy } from "./destroy_analysis.ts";
 import { direct_string_fields } from "./has_string_fields.ts";
 
 /**
@@ -90,55 +92,193 @@ function direct_returns(fn: FunctionNode): ReturnNode[] {
 	return out;
 }
 
+/** Whether the function is a FREE function: not a method of a struct (whose
+ *  element/slot params are passed by address for in-place access) and not a
+ *  monomorphized container clone. */
+export function is_free_function_node(fn: FunctionNode): boolean {
+	const scope = fn.scope as { node_type?: string } | undefined;
+	return !scope || scope.node_type === "root" || scope.node_type === "func";
+}
+
 /**
- * Populate `status.normalized_struct_returners` from the whole program AST.
+ * Whole-program pre-pass: classify free functions that take an OWNING value
+ * struct parameter (string fields) — those get pass-by-value semantics:
+ *
+ *   - the CALL SITE materializes a uniformly heap-owned shell (struct-copy
+ *     + per-string-field strdup) and passes its address;
+ *   - the CALLEE seeds the param's string-field records at entry and frees
+ *     the surviving fields (and the shell) at scope exit.
+ *
+ * Writes through the param then stay local to the callee; the caller's
+ * variable is never aliased or mutated. Functions whose address escapes
+ * into a func-typed value (`var f = g`, `apply(g, …)`, `b.modify(0, touch)`)
+ * are EXCLUDED: they may be invoked through a pointer with a borrowed
+ * argument, and keep the status quo (borrow + the documented write leak).
+ *
+ * Populates `status.normalized_struct_returners` (the materializing set) and
+ * `status.func_address_taken` (the excluded set) for the call-site and
+ * function-definition builders.
  */
 export function gather_normalized_struct_returners(root: BaseNode, status: BuildStatus): void {
 	const fns: FunctionNode[] = [];
 	const structs: StructNode[] = [];
 	collect(root, fns, structs, new Set());
 
-	// The functions whose STRUCT return type carries string fields — only
-	// their classification matters (callers of other functions have no
-	// string fields to record).
-	const candidates: FunctionNode[] = [];
+	// Functions whose address escapes into a func-typed VALUE (`var f = g`,
+	// `apply(g, …)`, `b.modify(0, touch)`) may be invoked through a pointer
+	// with a BORROWED argument — pass-by-value must not apply to them.
+	const address_taken = new Set<string>();
+	const value_walk = (node: BaseNode) => {
+		if (!node || typeof node !== "object") return;
+		if (node.node_type === "value") {
+			const v = node as unknown as {
+				value?: unknown;
+				type?: { name?: string };
+			};
+			if (typeof v.value === "string" && v.type?.name === "func" && /^[A-Za-z_]/.test(v.value)) {
+				address_taken.add(v.value);
+			}
+		}
+		for (const key of Object.keys(node)) {
+			if (key === "parent" || key === "scope") continue;
+			const child = (node as unknown as Record<string, unknown>)[key];
+			if (Array.isArray(child)) {
+				for (const item of child) {
+					if (item && typeof item === "object" && "node_type" in item) value_walk(item as BaseNode);
+				}
+			} else if (child && typeof child === "object" && "node_type" in child) {
+				value_walk(child as BaseNode);
+			}
+		}
+	};
+	value_walk(root);
+
+	// Func-typed DECLARATIONS (`var func … f = …`) escape too: the variable
+	// can be reassigned or invoked through a pointer.
+	const decl_walk = (node: BaseNode) => {
+		if (!node || typeof node !== "object") return;
+		const d = node as unknown as {
+			name?: unknown;
+			node_type?: string;
+			type?: { name?: string };
+		};
+		if (d.node_type === "declaration" && typeof d.name === "string" && d.type?.name === "func") {
+			address_taken.add(d.name);
+		}
+		for (const key of Object.keys(node)) {
+			if (key === "parent" || key === "scope") continue;
+			const child = (node as unknown as Record<string, unknown>)[key];
+			if (Array.isArray(child)) {
+				for (const item of child) {
+					if (item && typeof item === "object" && "node_type" in item) decl_walk(item as BaseNode);
+				}
+			} else if (child && typeof child === "object" && "node_type" in child) {
+				decl_walk(child as BaseNode);
+			}
+		}
+	};
+	decl_walk(root);
+
+	// RETURN-side candidates: functions whose struct-typed returns are ALL
+	// bare locals/params (the transfer shape — e1a9c122), so the caller can
+	// record the returned binding's string fields. Fixpoint: forwarded calls
+	// (`return make()`) are owned iff the callee is normalizing.
+	const return_candidates: FunctionNode[] = [];
 	for (const fn of fns) {
+		if (!is_free_function_node(fn)) continue;
+		if (address_taken.has(fn.name)) continue;
 		const ret = fn.return_type;
 		if (!ret || ret.is_array || ret.is_view) continue;
-		const struct = structs.find((s) => s.name === ret.name && !s.is_simple_type && !s.is_class);
-		if (!struct) continue;
-		if (!direct_string_fields(struct).length) continue;
-		candidates.push(fn);
+		const ret_struct = structs.find(
+			(st) => st.name === ret.name && !st.is_simple_type && !st.is_class,
+		);
+		if (!ret_struct || direct_string_fields(ret_struct).length === 0) continue;
+		return_candidates.push(fn);
 	}
-	if (!candidates.length) return;
-
-	// Fixpoint: a candidate is normalizing iff EVERY struct-return returns a
-	// bare variable, OR a call to another normalizing candidate (a forwarded
-	// uniformly-owned value). Start optimistic, drop violators, repeat.
-	const normalizing = new Set<string>(candidates.map((c) => c.name));
+	const return_normalizing = new Set<string>(return_candidates.map((c) => c.name));
 	let changed = true;
 	while (changed) {
 		changed = false;
-		for (const fn of candidates) {
-			if (!normalizing.has(fn.name)) continue;
+		for (const fn of return_candidates) {
+			if (!return_normalizing.has(fn.name)) continue;
 			for (const ret of direct_returns(fn)) {
 				const value = ret.value ?? undefined;
-				// Bare variable (local/parameter) — the transfer shape.
 				if (value && value.node_type === "value") continue;
-				// Forwarded call to another normalizing candidate.
 				if (
 					value &&
 					value.node_type === "func_call" &&
-					normalizing.has((value as { name?: string }).name ?? "")
+					return_normalizing.has((value as unknown as { name?: string }).name ?? "")
 				) {
 					continue;
 				}
-				normalizing.delete(fn.name);
+				return_normalizing.delete(fn.name);
 				changed = true;
 				break;
 			}
 		}
 	}
-	if (!status.normalized_struct_returners) status.normalized_struct_returners = new Set();
-	for (const name of normalizing) status.normalized_struct_returners.add(name);
+
+	for (const fn of fns) {
+		if (!is_free_function_node(fn)) continue;
+		if (address_taken.has(fn.name)) continue;
+		// The checker's node-level escape flag is authoritative: a function
+		// whose address escapes (a func-typed binding, a spawn-wrapped call)
+		// is invoked through a pointer with a BORROWED argument — the env /
+		// caller's storage is the ownership boundary, and neither the call
+		// sites nor the callee may apply pass-by-value. (The name walk above
+		// catches the direct `var f = g` shape; this covers lambda and spawn
+		// targets whose source names never appear as func-typed values.)
+		if (fn.address_escaped) continue;
+		// A body-less function (extern / forward declaration) has no callee
+		// side to seed the param's records — its parameter keeps the plain
+		// by-address convention, so callers must not materialize for it.
+		if (!fn.has_body) continue;
+		for (const param of fn.params ?? []) {
+			if (param.is_self_param || param.is_variadic || param.is_moved) continue;
+			if (param.type.is_ref || param.type.is_nullable || param.type.is_view || param.type.is_array)
+				continue;
+			const struct = param.type.name
+				? structs.find((st) => st.name === param.type.name && !st.is_simple_type && !st.is_class)
+				: undefined;
+			if (!struct) continue;
+			if (
+				direct_string_fields(struct).length > 0 &&
+				!(struct.traits ?? []).length &&
+				!struct_needs_destroy(struct, status as never)
+			) {
+				if (!status.normalized_struct_returners) status.normalized_struct_returners = new Set();
+				// Register under BOTH the emission label and the source name:
+				// call sites look the callee up by its emission label (nested
+				// functions emit under `<parent>_<name>`), while source-level
+				// references (address-taken checks) use the source name.
+				status.normalized_struct_returners.add(fn.name);
+				status.normalized_struct_returners.add(emission_label(fn));
+				break;
+			}
+		}
+		// The RETURN-side set: bare-local struct returns transfer ownership
+		// to the caller, so the caller records the returned binding's fields.
+		if (return_normalizing.has(fn.name)) {
+			if (!status.normalized_struct_returners) status.normalized_struct_returners = new Set();
+			status.normalized_struct_returners.add(fn.name);
+			status.normalized_struct_returners.add(emission_label(fn));
+		}
+	}
+
+	// Struct `copy` methods (synthesized for owning value structs, or
+	// user-written): their bare-local `return c` is normalized at the return
+	// boundary like any function, so a binding of the result records the
+	// struct's string fields. Method calls register under their EMISSION
+	// LABEL (`<Struct>_copy`) — the bare method name would conflate
+	// unrelated types' methods (is_normalized_struct_call resolves the
+	// receiver's type to the mono name before looking the label up).
+	for (const struct of structs) {
+		if (struct.is_class || struct.is_generic || struct.is_simple_type) continue;
+		if (!struct.functions.some((f) => f.name === "copy" && f.has_body)) continue;
+		if (direct_string_fields(struct).length === 0) continue;
+		if (!status.normalized_struct_returners) status.normalized_struct_returners = new Set();
+		status.normalized_struct_returners.add(`${struct.name}_copy`);
+	}
+	if (!status.func_address_taken) status.func_address_taken = new Set();
+	for (const name of address_taken) status.func_address_taken.add(name);
 }

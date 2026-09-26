@@ -1278,12 +1278,15 @@ export default function build_declaration_node(
 			} else {
 				// Struct-returning function: pass the destination address via x8.
 				const old_buffer = status.struct_return_buffer;
+				const old_buffer_var = status.struct_return_buffer_var;
 				const old_preset = status.call_x8_preset;
 				emit_var_address(status, "x8", node.name);
+				status.struct_return_buffer_var = node.name;
 				status.struct_return_buffer = "x8";
 				status.call_x8_preset = true;
 				emit_init_value(node.value, nir_init, status);
 				status.struct_return_buffer = old_buffer;
+				status.struct_return_buffer_var = old_buffer_var;
 				status.call_x8_preset = old_preset;
 			}
 			return;
@@ -2169,12 +2172,15 @@ export default function build_declaration_node(
 					);
 					if (func_return_struct && status.function_return_label) {
 						const old_buffer = status.struct_return_buffer;
+						const old_buffer_var = status.struct_return_buffer_var;
 						const old_preset = status.call_x8_preset;
 						emit_var_address(status, "x8", node.name);
+						status.struct_return_buffer_var = node.name;
 						status.struct_return_buffer = "x8";
 						status.call_x8_preset = true;
 						emit_init_value(node.value, nir_init, status);
 						status.struct_return_buffer = old_buffer;
+						status.struct_return_buffer_var = old_buffer_var;
 						status.call_x8_preset = old_preset;
 						emit_var_address(status, "x0", node.name);
 						// The callee's return-boundary normalization made the

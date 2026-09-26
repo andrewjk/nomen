@@ -1442,10 +1442,11 @@ export function emit_string_field_strdups_at(
 	for (const field of direct_string_fields(struct)) {
 		if (skip_fields?.has(field.name)) continue;
 		const off = base_offset + get_field_offset(struct_name, field.name, status);
-		emit_string_pair_load_at(status, base_reg, off);
-		// The strdup bl clobbers base_reg — spill it around the call (the
-		// same discipline emit_enum_payload_strdups_at uses).
+		// The strdup bl clobbers base_reg (and the pair load would clobber it
+		// when base_reg is x0) — spill the base BEFORE the load, strdup, then
+		// restore and store the owned pair.
 		emit_asm(status, `str ${base_reg}, [sp, #-16]!\n`);
+		emit_string_pair_load_at(status, base_reg, off);
 		emit_strdup_string(status);
 		emit_asm(status, `mov x13, x0\n`);
 		emit_asm(status, `ldr ${base_reg}, [sp], #16\n`);

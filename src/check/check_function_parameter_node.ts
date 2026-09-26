@@ -8,7 +8,11 @@ import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import check_type_exists from "./utils/check_type_exists.ts";
 import { apply_bounds, strip_length_equalities } from "./utils/flow_bounds.ts";
 import materialize_type from "./utils/materialize_type.ts";
-import { is_class_type, is_owning_struct_type_requiring_move } from "./utils/ownership.ts";
+import {
+	is_class_type,
+	is_pass_by_value_owning_struct,
+	is_owning_struct_type_requiring_move,
+} from "./utils/ownership.ts";
 import { is_trait_type } from "./utils/trait_slot.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
@@ -63,11 +67,19 @@ export default function check_function_parameter_node(
 	// local `var` inside the body. (`move`, `ref`, and `self` params set
 	// declaration="var" too but are distinguished by is_moved / type.is_ref /
 	// is_self_param and are excluded here.)
+	//
+	// EXCEPTION — pass-by-value owning structs: a parameter of a concrete
+	// value struct whose only ownership is its direct string fields is fully
+	// owned by the callee (the call boundary materializes a private,
+	// uniformly heap-owned copy), so a `var` param of that shape can never
+	// reach the caller's storage — the ban's premise is gone and field
+	// writes stay local by construction.
 	if (
 		param.declaration === "var" &&
 		!param.is_moved &&
 		!param.is_self_param &&
-		!param.type.is_ref
+		!param.type.is_ref &&
+		!is_pass_by_value_owning_struct(param.type, status)
 	) {
 		add_error(
 			status,
@@ -146,7 +158,15 @@ export default function check_function_parameter_node(
 	}
 
 	status.values.push({
-		declaration: param.declaration,
+		// A pass-by-value owning-struct parameter is a private, fully owned
+		// value (the call boundary materializes the callee's copy), so it is
+		// mutable like a local: field writes inside the body stay local by
+		// construction. Every other param keeps its declared (const)
+		// discipline — mutation of the caller's storage is spelled `ref`.
+		declaration:
+			param.declaration === "var" || is_pass_by_value_owning_struct(param.type, status)
+				? "var"
+				: param.declaration,
 		name: param.name,
 		type: param.type,
 		is_set: true,

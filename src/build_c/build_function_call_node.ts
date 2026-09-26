@@ -1,4 +1,6 @@
 import emission_label from "../build_common/emission_label.ts";
+import { direct_string_fields } from "../build_common/has_string_fields.ts";
+import { mono_type_name } from "../build_common/mono_name.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
@@ -308,6 +310,50 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			status.suppress_dereference = true;
 			build_node(arg, status);
 			status.suppress_dereference = false;
+			continue;
+		}
+		// OWNED value-struct parameter (pass-by-value): materialize a
+		// normalized heap shell at the call boundary — struct-copy the
+		// argument, strdup its string fields — and pass the shell's address.
+		// The callee owns the shell: its seeded param records free the
+		// fields at the callee's scope exit, then the shell itself. The
+		// statement-expression keeps argument evaluation order (the
+		// materialization runs where the argument would have) and the shell
+		// lives to the end of the full expression, covering the call.
+		// The struct resolves through the type args — a generic call site
+		// carries `Box` + [string], and only the mono `Box_string` has the
+		// substituted (string) field layout the strdup loop needs.
+		const arg_struct = status.structs.find(
+			(st) =>
+				st.name === mono_type_name(param_type) &&
+				!st.is_simple_type &&
+				!st.is_class &&
+				!st.is_generic,
+		);
+		if (
+			node.owned_value_param_indices?.includes(i) &&
+			!param_is_class &&
+			arg_struct &&
+			!(arg_struct.traits ?? []).length &&
+			direct_string_fields(arg_struct).length > 0 &&
+			status.normalized_struct_returners?.has(func_name) &&
+			!status.func_address_taken?.has(func_name)
+		) {
+			const struct_name = arg_struct.name;
+			const fields = direct_string_fields(arg_struct);
+			const saved_arg = begin_code_scratch(status);
+			status.code += `(void *)&`;
+			status.suppress_dereference = true;
+			build_node(node.params[i], status);
+			status.suppress_dereference = false;
+			const addr_text = end_code_scratch(status, saved_arg);
+			status.code += `(void *)({ struct ${struct_name} *_src = (struct ${struct_name} *)${addr_text}; `;
+			status.code += `struct ${struct_name} *_own = (struct ${struct_name} *)malloc(sizeof(struct ${struct_name})); `;
+			status.code += `*_own = *_src; `;
+			for (const field of fields) {
+				status.code += `_own->${field.name} = nomen_str_dup(_own->${field.name}); `;
+			}
+			status.code += `_own; })`;
 			continue;
 		}
 		const wants_address =
