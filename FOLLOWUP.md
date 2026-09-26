@@ -560,19 +560,15 @@ arithmetic, not just this generator).
 
 While landing pass-by-value for owning value-struct args (params own their
 structs; call sites materialize a uniformly heap-owned shell; callees seed
-the param's string-field records), a few adjacent items were deliberately
-left as they are:
+the param's string-field records), a few adjacent items were considered.
+Two were fixed in the same series (move-declared pass-by-value params now
+TRANSFER ownership — the design table's `f(move a)` row — with the caller
+normalizing unrecorded rodata fields in place before the call and dropping
+its records after; and `copy()` is now synthesized for monomorphized
+structs and for structs whose auto `#init` takes required params, checked
+inline at monomorphization). One remains:
 
-1. **`move Info p` parameters are still rejected for string-only structs**
-   (`move is only allowed for class, trait, or owning struct types`).
-   The design's `f(move a)` row (transfer, no copy) therefore has no
-   spelling for structs whose ownership is strings only — those args always
-   pay the boundary copy. Extending the move-param type check with
-   `is_pass_by_value_owning_struct` plus a callee-side transfer path would
-   close it; skipped because the design said to keep the ref/move pairing
-   rules and the copy is bounded (one strdup per string field).
-
-2. **Dead duplicate auto-free block in C function epilogues.** For a
+1. **Dead duplicate auto-free block in C function epilogues.** For a
    function whose seeded pass-by-value params free fields at a `return`
    (persist records), the fall-through auto-free emits the same frees again
    AFTER the `return` statement — unreachable text (the first block runs,
@@ -580,12 +576,3 @@ left as they are:
    double free at runtime. Visible in e.g. the mono-clone C output
    (`pickin_Box_string_Box_string`). Worth suppressing when the body is
    known to end in a return.
-
-3. **`.copy()` on monomorphized structs.** The synthesized `copy` method
-   runs in the per-block derive pre-pass, so structs monomorphized later
-   (e.g. `Box<string>` created by a mid-block construction when the generic
-   `Box<T>` was declared without triggering a mono at check-gather time)
-   never get a synthesized `copy`; `.copy()` on such a mono resolves to
-   "Function not found". Non-generic structs are unaffected. Closing it
-   means running the copy-synthesis predicate over mono structs when they
-   are materialized in `monomorphize()`.

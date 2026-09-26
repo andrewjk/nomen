@@ -200,9 +200,7 @@ function synthesize_for_struct(struct: StructNode, status: CheckStatus): void {
 	// declaration/assignment copy-discipline errors direct users to
 	// `.copy()`, so it must exist wherever it is sound (see
 	// struct_is_copyable).
-	if (struct_is_copyable(struct, status) && !struct_has_function(struct, "copy")) {
-		struct.functions.push(build_copy(struct, status));
-	}
+	synthesize_copy_method(struct, status);
 }
 
 function build_to_string(struct: StructNode, fields: { name: string }[]): FunctionNode {
@@ -275,13 +273,25 @@ export function struct_is_copyable(struct: StructNode, status: CheckStatus): boo
 	if (struct.is_class || struct.is_generic || struct.is_simple_type) return false;
 	if (direct_string_fields(struct).length === 0) return false;
 	if (struct_owns_non_string_heap(struct, status, new Set())) return false;
-	// The body constructs `Struct()` — a zero-argument `#init` must exist
-	// (the auto-generated one does unless the user defined only params-full
-	// overloads).
-	const zero_arg_init = struct.functions.some(
-		(f) => f.name === "#init" && f.params.filter((p) => !p.is_self_param).length === 0,
-	);
-	return zero_arg_init;
+	return struct_copy_ctor_args(struct) !== null;
+}
+
+/**
+ * How a synthesized `copy` constructs the fresh value: the zero-argument
+ * `#init` overload when one exists (auto or user), else the bodyless AUTO
+ * `#init` whose params map 1:1 onto non-defaulted fields (pass
+ * `self.<param>` for each). Null when neither shape exists — a user #init
+ * with params only cannot be invoked without re-running its custom logic,
+ * so no `copy` is synthesized.
+ */
+function struct_copy_ctor_args(struct: StructNode): string[] | null {
+	const inits = struct.functions.filter((f) => f.name === "#init");
+	if (inits.some((f) => f.params.filter((p) => !p.is_self_param).length === 0)) {
+		return [];
+	}
+	const auto = inits.find((f) => !f.has_body);
+	if (!auto) return null;
+	return auto.params.filter((p) => !p.is_self_param).map((p) => p.name);
 }
 
 /** Whether `type` names a struct that has (or will get) a `copy` method.
@@ -304,15 +314,15 @@ function field_type_is_copyable(type: Type, status: CheckStatus): boolean {
  * value with no extra copies.
  */
 function build_copy(struct: StructNode, status: CheckStatus): FunctionNode {
+	const ctor_args = struct_copy_ctor_args(struct) ?? [];
+	const ctor = new FunctionCallNode(
+		-1,
+		struct.name,
+		new Type(struct.name),
+		ctor_args.map((name) => field_access("self", name)),
+	);
 	const statements: BaseNode[] = [
-		new DeclarationNode(
-			-1,
-			"private",
-			"var",
-			"c",
-			new Type(struct.name),
-			new FunctionCallNode(-1, struct.name, new Type(struct.name), []),
-		),
+		new DeclarationNode(-1, "private", "var", "c", new Type(struct.name), ctor),
 	];
 	for (const field of struct.fields) {
 		const right = field_type_is_copyable(field.type, status)
@@ -329,4 +339,20 @@ function build_copy(struct: StructNode, status: CheckStatus): FunctionNode {
 		[self_param(struct)],
 		statements,
 	);
+}
+
+/**
+ * Synthesize the `copy` method on `struct` when eligible and not already
+ * present. Called from the block-level derive pre-pass (which runs before
+ * the struct is checked, so the method's body is checked with it) AND from
+ * `monomorphize` — a mono struct materializes mid-check, after that pre-pass
+ * ran, so without this hook `Box<string>.copy()` — advertised by the
+ * copy-discipline error messages — would resolve to "Function not found".
+ * The caller is responsible for checking the synthesized body when no later
+ * struct check will (see monomorphize).
+ */
+export function synthesize_copy_method(struct: StructNode, status: CheckStatus): void {
+	if (struct_has_function(struct, "copy")) return;
+	if (!struct_is_copyable(struct, status)) return;
+	struct.functions.push(build_copy(struct, status));
 }

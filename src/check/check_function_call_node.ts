@@ -20,6 +20,7 @@ import check_function_call from "./check_function_call.ts";
 import check_function_node from "./check_function_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
+import { synthesize_copy_method } from "./utils/auto_derive.ts";
 import { maybe_record_capture } from "./utils/captures.ts";
 import check_init_assigns_all_fields from "./utils/check_init_fields.ts";
 import { monomorphize_enum, enforce_case_payload_ownership } from "./utils/enum_mono.ts";
@@ -808,6 +809,37 @@ export function monomorphize(
 			init_params,
 		);
 		mono_struct.functions.push(init_func);
+	}
+
+	// A mono struct materializes mid-check, after the block-level derive
+	// pre-pass ran — synthesize its `copy` method here (same eligibility:
+	// owning value struct with a constructible init) and check the body
+	// now, since no later struct check will. Without this,
+	// `Box<string>.copy()` resolves to "Function not found".
+	synthesize_copy_method(mono_struct, status);
+	const mono_copy = mono_struct.functions.find((f) => f.name === "copy");
+	if (mono_copy && !mono_copy.checked) {
+		mono_copy.scope = mono_struct;
+		const copy_status: CheckStatus = {
+			stack: status.stack,
+			scope_depth: status.scope_depth,
+			types: status.types,
+			values: [],
+			function_value_base: 0,
+			structs: status.structs,
+			traits: status.traits,
+			enums: status.enums,
+			bitsets: status.bitsets,
+			functions: status.functions,
+			allocations: [],
+			var_name_counter: status.var_name_counter,
+			type_params: [],
+			errors: status.errors,
+			function_emission_names: status.function_emission_names,
+			allow_internal: status.allow_internal,
+			library_boundary: status.library_boundary,
+		};
+		check_function_node(mono_copy, copy_status);
 	}
 
 	// The mono struct was registered in status.structs/types above, before
