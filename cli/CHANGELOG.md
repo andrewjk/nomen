@@ -10,6 +10,25 @@
 
 
 
+
+## 0.6.3
+<sub>2026-09-27</sub>
+
+-  *(patch)* - nested field write through a class-typed field
+-  *(patch)* - nomen test: audit leaks count as failures
+-  *(patch)* - honor --in over package entry
+-  *(patch)* - Regex: lookbehind, counted repetition, non-capturing groups
+-  *(patch)* - nullable func types (func? / Func<...>?)
+-  *(patch)* - lambda assignment to func variables/fields
+-  *(patch)* - returned value structs no longer leak string fields
+-  *(patch)* - owning struct args: reject aliased params the callee writes
+-  *(patch)* - owning-struct arg gate applies to library too
+-  *(patch)* - pass-by-value for owning value-struct args
+-  *(patch)* - move-declared params of owning value structs transfer ownership (no boundary copy, source invalidated)
+-  *(patch)* - copy() synthesized for monomorphized structs and required-param inits
+-  *(patch)*
+  CLI: dev-tree asset resolution prefers the repo's live core/ over a stale cli/core bundle copy left by an old build (published installs unchanged)
+
 ## 0.6.2
 <sub>2026-09-24</sub>
 
