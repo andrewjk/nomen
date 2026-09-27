@@ -575,3 +575,76 @@ inline at monomorphization). One remains:
    double free at runtime. Visible in e.g. the mono-clone C output
    (`pickin_Box_string_Box_string`). Worth suppressing when the body is
    known to end in a return.
+
+## Nullable struct local reassignment leaks the old value's recorded fields
+
+Discovered while fixing the scope-exit free guard (aarch64 heap corruption
+from the allmark port, 2026-09-27). `build_nullable_struct_assignment`
+(src/build_aarch64/build_assignment_node.ts) handles `parsed = <value>` on a
+nullable struct local by copying the value in and setting the `_has` flag —
+it never reclaims the OLD value's recorded heap string fields, and `= null`
+just clears the flag, leaving the previous heap buffers unreachable
+(scope-exit release is now flag-guarded, so it will not free them either).
+The C backend's nullable assignment path (build_assignment_node.ts, the
+"copy the value (if non-null) and update the companion flag" arm) has the
+same shape. Leak-only (never a double free), bounded at one value per
+nullable slot, and it needs a call-initialized nullable (fields recorded via
+`record_call_init_string_fields`) reassigned mid-scope — the allmark port
+never reassigns one, which is why nothing surfaced in its 1940-test suite.
+Fix shape: in the non-null reassignment arm, if the flag is set, free the
+old value's recorded string fields (and nested owning fields) before the
+copy — the same reclaim `old_was_heap` does for plain struct field writes.
+
+## Global const `string[]` still emits an invalid C static initializer
+
+A global `const string[] X = [...]` emits `nomen_str_dup` calls inside a
+static initializer — invalid C (function calls are not constant
+expressions), so the program fails to compile. This is why allmark's entity
+table is two fixed-width static string blobs instead of a plain const array
+(allmark nomen/PORT.md, decodeEntities note: "the blobs avoid ... a global
+const `string[]` still emits nomen_str_dup calls in a static initializer
+(invalid C)"). Either lower the literal strings to static byte arrays and
+emit a plain `{...}` initializer of fat pointers into them, or emit a lazy
+runtime initializer guard. Same likely applies to `Map`/`List` globals with
+literal initializers.
+
+## Checker: container type not seen through a view-receiver call result
+
+Two usability wrinkles found while probing the allmark Arena migration, both
+worked around by binding the call result to a local first:
+
+1. `for x of arena.get(h).children { ... }` fails with "For loop list must
+   be an array, List, or Enumerable, not List" — the for-of desugar does not
+   resolve the element type through the generic view-receiver `get` call.
+2. `arena.get(h).children.at(0)` fails with "Parameter constraint cannot be
+   verified: i >= 0 && i < self.length" even for a literal index — the
+   constraint check cannot evaluate `self.length` through the borrow chain,
+   pushing callers to `at_or_panic` (which has no contract).
+
+Both compile fine as `var children = arena.get(h).children` followed by the
+loop/`at` (modulo owning-field copies — see the next entry), so this is
+inference/constraint-propagation only, not a soundness gap.
+
+## Anon-struct / tuple destructuring cannot move owning fields out
+
+`var [a, b] = <tuple of List<string>, List<int>>` is rejected with "cannot
+copy 'List' out of field ... by value — it owns heap resources; use
+'move ... swap <replacement>'" — and destructuring gives non-owning views
+anyway (SPEC, Destructuring), so there is NO spelling to take ownership of
+destructured fields. Multi-returns of owning containers must either use
+named `ref` out-params (what allmark's table wrap now does) or keep the
+awkward per-field `x = move t._0 swap List<T>()` dance (what its call site
+had before). Worth a `move` destructuring form (`var [move a, move b] = t`)
+or per-binding move annotations; it would also give anon structs a real
+multi-return story (today they cannot even be written as an out type — the
+type must be inferred at the return, and the generated `_Anon_*` name is
+unwritable at the declaration).
+
+## Closures remain unsupported (blocks allmark port slimming)
+
+Still the one open nomen-side item in allmark's nomen/PORT.md ("Open —
+port-side migrations / cleanups"): ~40 class-per-rule shapes exist in the
+port purely because capturing closures do not exist. Nullable func types,
+lambda→func-variable assignment, and func-signature checking HAVE landed,
+so only the capture-env machinery (CLOSURE.md's capturing-lambda work for
+value contexts) is missing to delete those classes.
