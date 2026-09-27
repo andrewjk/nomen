@@ -1,0 +1,4 @@
+alpha
+gamma
+3 4
+30 3

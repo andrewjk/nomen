@@ -742,6 +742,14 @@ export default function build_declaration_node(
 				status.code += ` = {0, 0}`;
 			} else {
 				status.code += " = ";
+				// A FILE-SCOPE fixed-size `string[]` literal must initialize
+				// STATICALLY: `nomen_str_dup` calls are rejected in a static
+				// initializer. Flag the array-values emission so string
+				// literals lower to constant `{ ptr, len }` pairs (globals
+				// own nothing and have no scope exit to free them).
+				const static_string_array =
+					is_stack_array && !status.current_function && node.type.name === "string";
+				status.static_string_array_inits = static_string_array;
 				// A `var string` declared with a string literal must own a
 				// heap-allocated copy: auto_free will free it at scope exit, and
 				// freeing a string literal crashes. Emit strdup() (and bump the
@@ -863,6 +871,7 @@ export default function build_declaration_node(
 					} else {
 						emit_init_value(node.value, nir_init, status);
 					}
+					status.static_string_array_inits = false;
 				}
 			}
 			// `var X b = move obj.field swap <rep>`: the field's bytes were

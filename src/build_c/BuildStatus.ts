@@ -327,6 +327,14 @@ export default interface BuildStatus {
 	moved_class_params?: Map<string, string>;
 	heap_array_vars?: Set<string>;
 	/**
+	 * Set while building a FILE-SCOPE fixed-size `string[]` literal
+	 * initializer: static C initializers cannot call `nomen_str_dup`, so
+	 * `build_array_values_node` lowers string-literal elements to static
+	 * `{ ptr, len }` pairs instead of heap dups (globals own nothing and
+	 * have no scope exit to free them).
+	 */
+	static_string_array_inits?: boolean;
+	/**
 	 * Stack (fixed-size) C arrays whose elements own heap data — i.e. the
 	 * element type is `string`, a `class`, or a struct that needs destroying.
 	 * The backing array itself is not malloc'd (it's a local C array), but each

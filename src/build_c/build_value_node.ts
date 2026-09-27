@@ -126,7 +126,7 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 	status.code += value;
 }
 
-function escape_c_string(s: string): string {
+export function escape_c_string(s: string): string {
 	// Escape RAW control characters (from multi-line strings), then
 	// re-encode source `\xHH` hex escapes as 3-digit octal — clang consumes
 	// `\x` greedily (all following hex digits), so `"\x01AMP"` would decode

@@ -80,7 +80,24 @@ export default function build_block_node(node: BlockNode, status: BuildStatus) {
 			if (is_type_shape) continue;
 			if (child.node_type === "declare") {
 				const decl = child as DeclarationNode;
-				if (decl.declaration === "const") continue;
+				if (decl.declaration === "const") {
+					// A root `const string[] = [...]` cannot be a static pointer
+					// table: Mach-O arm64 forbids pointer relocations in data
+					// sections, so the fat (ptr, len) rows must be stored by
+					// RUNTIME code. The declaration still lays out its static
+					// storage (length word + zeroed space) at file scope; here
+					// it is collected so main's prologue stores the rodata
+					// label addresses.
+					if (
+						decl.type?.name === "string" &&
+						decl.type.is_array &&
+						decl.value?.node_type === "array"
+					) {
+						decl.global_runtime_init = true;
+						module_init_statements.push(child);
+					}
+					continue;
+				}
 				if (inlined_const_names.has(decl.name)) continue;
 				if (is_literal_init(decl.value)) continue;
 				module_init_statements.push(child);

@@ -576,19 +576,6 @@ inline at monomorphization). One remains:
    (`pickin_Box_string_Box_string`). Worth suppressing when the body is
    known to end in a return.
 
-## Global const `string[]` still emits an invalid C static initializer
-
-A global `const string[] X = [...]` emits `nomen_str_dup` calls inside a
-static initializer — invalid C (function calls are not constant
-expressions), so the program fails to compile. This is why allmark's entity
-table is two fixed-width static string blobs instead of a plain const array
-(allmark nomen/PORT.md, decodeEntities note: "the blobs avoid ... a global
-const `string[]` still emits nomen_str_dup calls in a static initializer
-(invalid C)"). Either lower the literal strings to static byte arrays and
-emit a plain `{...}` initializer of fat pointers into them, or emit a lazy
-runtime initializer guard. Same likely applies to `Map`/`List` globals with
-literal initializers.
-
 ## Checker: container type not seen through a view-receiver call result
 
 Two usability wrinkles found while probing the allmark Arena migration, both

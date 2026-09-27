@@ -55,6 +55,13 @@ export default class DeclarationNode extends BaseNode {
 	 *  struct layout. Set at check time by check_function_call; consumed by the
 	 *  build backends' declaration emitters. */
 	is_heap_array_literal?: boolean;
+	/** True for a root `const string[] = [...]` declaration: Mach-O arm64
+	 *  forbids pointer relocations in data sections, so the file-scope data
+	 *  emission lays out only the length word + zeroed element space, and the
+	 *  declaration is collected into main's prologue to store the rodata
+	 *  label addresses at runtime. Set by the aarch64 build_block_node root
+	 *  scan; consumed by build_declaration_node's rebuild inside main. */
+	global_runtime_init?: boolean;
 	/** True for a hoisted call-argument temp (`_param_N`) that is a heap COPY
 	 *  of a stack-array local, bound to a heap `Array<T>` param (non-`ref`).
 	 *  `value` is the source ValueNode; the temp is materialised as a heap
