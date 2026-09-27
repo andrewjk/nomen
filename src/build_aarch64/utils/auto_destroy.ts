@@ -7,6 +7,7 @@ import {
 } from "../../build_common/destroy_analysis.ts";
 import { direct_string_fields } from "../../build_common/has_string_fields.ts";
 import { mono_type_name } from "../../build_common/mono_name.ts";
+import { has_flag_name } from "../../build_common/nullable_struct.ts";
 import { superseded_param_temp_names } from "../../build_common/temp_anchor_consolidation.ts";
 import AccessNode from "../../nodes/AccessNode.ts";
 import type DeclarationNode from "../../nodes/DeclarationNode.ts";
@@ -68,11 +69,18 @@ export function clear_heap_string_fields(status: BuildStatus, var_name: string) 
  * fields are unconditionally heap and freed by the destroy path. Called from
  * emit_destroy_for_decl and directly from cleanup loops that skip moved
  * declarations before reaching it.
+ *
+ * For a nullable struct local (`is_nullable`), the frees are guarded on the
+ * companion `_has` flag: the null representation leaves the value bytes
+ * uninitialized (a `return null` callee writes only the flag), so reading a
+ * field pointer without the guard frees stale stack garbage. Mirrors the C
+ * backend's `if (<name>_has)` auto-free guard.
  */
 export function release_heap_string_fields(
 	status: BuildStatus,
 	decl_name: string,
 	decl_type_name: string,
+	is_nullable?: boolean,
 ) {
 	if (!status.heap_string_fields?.size) return;
 	const prefix = `${decl_name}.`;
@@ -80,12 +88,24 @@ export function release_heap_string_fields(
 		.filter((k) => k.startsWith(prefix))
 		.map((k) => k.slice(prefix.length));
 	if (!fields.length) return;
+	let skip_label: string | undefined;
+	if (is_nullable) {
+		const flag_off = status.stack_offsets?.get(has_flag_name(decl_name));
+		if (flag_off !== undefined && flag_off >= 0) {
+			skip_label = `.Lskip_rhs_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+			emit_asm(status, `ldr x0, [x29, #${flag_off}]\n`);
+			emit_asm(status, `cbz x0, ${skip_label}\n`);
+		}
+	}
 	for (const field of fields) {
 		const offset = get_field_offset(decl_type_name, field, status);
 		emit_var_address(status, "x0", decl_name);
 		emit_asm(status, `ldr x0, [x0, #${offset}]\n`);
 		emit_free(status);
 		status.heap_string_fields.delete(`${decl_name}.${field}`);
+	}
+	if (skip_label) {
+		emit_asm(status, `${skip_label}:\n`);
 	}
 }
 
@@ -647,7 +667,7 @@ export function emit_destroy_for_decl(
 	// strings, so the source's own heap copies would otherwise be abandoned.
 	// (A RETURN clears the records instead — the sret byte-copy transfers the
 	// string pointers to the caller.)
-	release_heap_string_fields(status, decl_name, decl_type_name);
+	release_heap_string_fields(status, decl_name, decl_type_name, is_nullable);
 	if (moved.has(decl_name)) return;
 
 	// A func-typed local holding a closure descriptor (CLOSURE.md Phase 2):
@@ -762,11 +782,26 @@ export function emit_destroy_for_decl(
 	// (addr_offset is for nested fields, which are always non-null here since
 	// the caller already loaded a live base pointer.)
 	const guard_null = !!is_nullable && struct_type.is_class && addr_offset === undefined;
+	// A nullable VALUE struct local guards on the companion `_has` flag word
+	// (stored after the value): the null representation leaves the value
+	// bytes uninitialized, so the field frees below must not run when the
+	// flag is 0 — same predicate as release_heap_string_fields above.
+	const guard_has_flag = !!is_nullable && !struct_type.is_class && addr_offset === undefined;
 	let skip_label: string | undefined;
 	if (guard_null) {
 		emit_var_load(status, "x0", decl_name, 8);
 		skip_label = `.Lskip_nd_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
 		emit_asm(status, `cbz x0, ${skip_label}\n`);
+	} else if (
+		guard_has_flag &&
+		(has_destroy(struct_type) || struct_needs_destroy(struct_type, status))
+	) {
+		const flag_off = status.stack_offsets?.get(has_flag_name(decl_name));
+		if (flag_off !== undefined && flag_off >= 0) {
+			skip_label = `.Lskip_nd_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+			emit_asm(status, `ldr x0, [x29, #${flag_off}]\n`);
+			emit_asm(status, `cbz x0, ${skip_label}\n`);
+		}
 	}
 
 	// Every class HAS a `<Class>_destroy` function — a user `#destroy` or the
@@ -1106,7 +1141,7 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 			// the gates below: a string-only value struct is skipped by the
 			// struct_needs_destroy gate, and a moved-out struct's records were
 			// already dropped by the release (store_T deep-copied them).
-			release_heap_string_fields(status, decl.name, decl.type.name);
+			release_heap_string_fields(status, decl.name, decl.type.name, decl.type.is_nullable);
 			if (moved.has(decl.name)) {
 				continue;
 			}
@@ -1194,7 +1229,7 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 		const decl = status.scoped_declarations[i];
 		// See the heap_slots branch above: recorded heap string fields are
 		// released before the moved / struct_needs_destroy gates.
-		release_heap_string_fields(status, decl.name, decl.type.name);
+		release_heap_string_fields(status, decl.name, decl.type.name, decl.type.is_nullable);
 		if (moved.has(decl.name)) {
 			continue;
 		}

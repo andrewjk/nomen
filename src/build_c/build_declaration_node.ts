@@ -612,6 +612,12 @@ export default function build_declaration_node(
 						status.current_nullable_call_flag = flag;
 						emit_init_value(node.value, nir_init, status);
 						status.current_nullable_call_flag = old;
+						// The callee's return-boundary normalization made the
+						// returned struct's string fields uniformly heap-owned —
+						// record them so scope exit frees them (flag-guarded in
+						// auto_free: the null path leaves the value bytes
+						// uninitialized). Mirrors the aarch64 sret branch.
+						record_call_init_string_fields(node, status);
 					} else {
 						emit_init_value(node.value, nir_init, status);
 						status.code += `;\n${flag} = 1`;
