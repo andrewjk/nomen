@@ -63,13 +63,22 @@ nomen test
 `;
 }
 
-// Resolve a bundled asset (core/ or NOMEN_AGENTS.md) shipped alongside the
+// Resolve a bundled asset (core/, n/ or NOMEN_AGENTS.md) shipped alongside the
 // CLI. In the published package these sit next to dist/; in the dev tree they
-// live one level up (the repo root), so check both.
+// live one level up (the repo root), so check both. In the dev tree the
+// REPO's live copy wins — a stale `cli/core` bundle left by an old
+// `pnpm build` must not shadow the current `core/` (a silent-wrong-library
+// tar pit; see FOLLOWUP.md, "Stale cli/core asset copy"). In a published
+// install (running from node_modules) the shipped copy wins, so a consumer
+// project's sibling `core/` directory is never picked up.
 export function find_bundled(filename: string): string | undefined {
 	const here = path.dirname(fileURLToPath(import.meta.url));
 	const cli_root = path.dirname(here);
-	const candidates = [path.join(cli_root, filename), path.join(cli_root, "..", filename)];
+	const repo_root = path.join(cli_root, "..");
+	const dev_tree = !cli_root.includes("node_modules");
+	const candidates = dev_tree
+		? [path.join(repo_root, filename), path.join(cli_root, filename)]
+		: [path.join(cli_root, filename), path.join(repo_root, filename)];
 	for (const c of candidates) {
 		if (fs.existsSync(c)) return path.resolve(c);
 	}

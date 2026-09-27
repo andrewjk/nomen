@@ -280,17 +280,16 @@ whose scope exit never frees it.
 Posture: leak, never double-free/invalid-free — the same trade
 `drop_self_written_string_field_records` makes for displaced `self`-writes.
 
-**Aliased-arg gate added (2026-09-24).** The most common route INTO this
-hole — passing an owning value struct as a plain (non-`ref`, non-`move`)
-argument, which aliases the caller's storage by address — is now rejected at
-check time when the callee actually WRITES the param's string fields
-(`fn_writes_param_string_fields` scan in check_function_call.ts; a read-only
-callee aliases soundly and stays legal). Library/core call sites are NOT
-exempt — ownership bookkeeping is statically reason-able, and no System call
-site trips the gate (full suite green). Exempt: nullable params (marshal by
-value), variadic params, constructions/call results (fresh values), and
-tuple temporaries. The leak itself therefore survives only for explicit `ref`
-params and fresh-arg writes (bounded per write).
+**Aliasing route closed by pass-by-value (2026-09-26).** The most common
+route INTO this hole — passing an owning value struct as a plain
+(non-`ref`, non-`move`) argument, which aliased the caller's storage by
+address — is gone entirely: those arguments are now PASS-BY-VALUE (the call
+boundary materializes a uniformly heap-owned copy the callee owns), so a
+non-`ref` callee can never write through to the caller's struct. An earlier
+check-time gate (`fn_writes_param_string_fields`, which rejected aliased
+args only when the callee actually wrote the param's string fields) was
+removed as superseded. The leak below therefore survives only for explicit
+`ref` parameters — the shapes in this entry — bounded per write.
 
 Fix directions, when picked up (either closes the leak class):
 
