@@ -576,25 +576,6 @@ inline at monomorphization). One remains:
    (`pickin_Box_string_Box_string`). Worth suppressing when the body is
    known to end in a return.
 
-## Nullable struct local reassignment leaks the old value's recorded fields
-
-Discovered while fixing the scope-exit free guard (aarch64 heap corruption
-from the allmark port, 2026-09-27). `build_nullable_struct_assignment`
-(src/build_aarch64/build_assignment_node.ts) handles `parsed = <value>` on a
-nullable struct local by copying the value in and setting the `_has` flag —
-it never reclaims the OLD value's recorded heap string fields, and `= null`
-just clears the flag, leaving the previous heap buffers unreachable
-(scope-exit release is now flag-guarded, so it will not free them either).
-The C backend's nullable assignment path (build_assignment_node.ts, the
-"copy the value (if non-null) and update the companion flag" arm) has the
-same shape. Leak-only (never a double free), bounded at one value per
-nullable slot, and it needs a call-initialized nullable (fields recorded via
-`record_call_init_string_fields`) reassigned mid-scope — the allmark port
-never reassigns one, which is why nothing surfaced in its 1940-test suite.
-Fix shape: in the non-null reassignment arm, if the flag is set, free the
-old value's recorded string fields (and nested owning fields) before the
-copy — the same reclaim `old_was_heap` does for plain struct field writes.
-
 ## Global const `string[]` still emits an invalid C static initializer
 
 A global `const string[] X = [...]` emits `nomen_str_dup` calls inside a

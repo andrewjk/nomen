@@ -4,6 +4,8 @@ import emit_field_overrides, {
 } from "../build/emit_field_overrides.ts";
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
+import { is_normalized_struct_call } from "../build_common/call_init_string_fields.ts";
+import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import { is_string_borrow } from "../build_common/string_return_analysis.ts";
 import { is_float_type } from "../built_in_types.ts";
@@ -41,11 +43,13 @@ import {
 	anchor_heap_pointer,
 	consume_anchor_slot,
 	defer_anchor_destroy,
+	drop_heap_string_field_records,
 	emit_destroy_for_anchor_slot,
 	emit_destroy_for_decl,
 	emit_enum_payload_frees,
 	emit_enum_payload_frees_at,
 	emit_enum_payload_strdups_at,
+	emit_recorded_field_reclaim_for_slot,
 	find_anchor_slot,
 	mark_anchor_destroy,
 	mark_moved_if_struct,
@@ -377,16 +381,92 @@ function build_nullable_struct_assignment(
 	if (node.left_value.node_type === "value") {
 		const name = (node.left_value as ValueNode).value;
 		const flag_name = has_flag_name(name);
+		const decl = status.scoped_declarations.find((d) => d.name === name);
+		const type_name = decl?.type?.name || status.variable_types?.get(name)?.name || "";
+		const rhs_is_same_var =
+			node.right_value.node_type === "value" && (node.right_value as ValueNode).value === name;
+
+		// The slot may currently hold a value whose recorded heap string
+		// fields are owned by it. Free them before the new value lands (the
+		// copy would overwrite the only pointer to them), guarded on the
+		// flag — a null slot's value bytes are stale garbage. A same-variable
+		// RHS (`p = p`) aliases the old value, so it must not be reclaimed.
+		// The records are then retargeted for the new value: only a
+		// normalized nullable-returning call re-establishes uniform heap
+		// ownership; null, constructors (rodata borrows on this backend) and
+		// variable copies own nothing — the same rule the declaration path
+		// uses to decide whether to record.
+		const reclaimable =
+			!rhs_is_same_var &&
+			!!status.heap_string_fields?.size &&
+			Array.from(status.heap_string_fields).some((k) => k.startsWith(`${name}.`));
 		if (rhs_is_null) {
+			if (reclaimable) {
+				emit_recorded_field_reclaim_for_slot(status, name, type_name);
+			}
 			emit_var_store(status, "xzr", flag_name, 8);
+			drop_heap_string_field_records(status, name);
+			return;
+		}
+		// Retarget the records for the new value regardless of whether the
+		// old one was reclaimed: a normalized nullable-returning call
+		// re-establishes uniform heap ownership (the only case the
+		// declaration path records too); any other RHS owns nothing.
+		const retarget_records = () => {
+			drop_heap_string_field_records(status, name);
+			if (is_normalized_struct_call(node.right_value, status)) {
+				const struct = status.structs.find(
+					(s) => s.name === type_name && !s.is_simple_type && !s.is_class,
+				);
+				if (struct) {
+					if (!status.heap_string_fields) status.heap_string_fields = new Set();
+					for (const field of direct_string_fields(struct)) {
+						status.heap_string_fields.add(`${name}.${field.name}`);
+					}
+				}
+			}
+		};
+
+		// A nullable-returning CALL callee writes BOTH the value and the
+		// `_has` flag through the sret buffer (x8) — a null result must land
+		// as null, so the call aims directly at the slot instead of the
+		// copy+hardcoded-flag shape below (which would mark a null result
+		// non-null over garbage bytes).
+		const value_is_nullable_call =
+			node.right_value.node_type === "func_call" &&
+			is_nullable_struct_type((node.right_value as FunctionCallNode).type, status);
+		if (value_is_nullable_call) {
+			if (reclaimable) {
+				// The call writes the slot's bytes directly — reclaim the old
+				// value BEFORE it lands.
+				emit_recorded_field_reclaim_for_slot(status, name, type_name);
+			}
+			retarget_records();
+			const old_buffer = status.struct_return_buffer;
+			const old_buffer_var = status.struct_return_buffer_var;
+			const old_preset = status.call_x8_preset;
+			emit_var_address(status, "x8", name);
+			status.struct_return_buffer_var = name;
+			status.struct_return_buffer = "x8";
+			status.call_x8_preset = true;
+			emit_rhs_value(node.right_value, nir_rhs, status);
+			status.struct_return_buffer = old_buffer;
+			status.struct_return_buffer_var = old_buffer_var;
+			status.call_x8_preset = old_preset;
 			return;
 		}
 		// Build the value (a constructor or another struct value) → address in x0.
 		emit_rhs_value(node.right_value, nir_rhs, status);
 		ensure_newline(status);
+		if (reclaimable) {
+			// The RHS build left the new value's address in x0 — park it
+			// around the frees.
+			emit_asm(status, `str x0, [sp, #-16]!\n`);
+			emit_recorded_field_reclaim_for_slot(status, name, type_name);
+			emit_asm(status, `ldr x0, [sp], #16\n`);
+		}
+		retarget_records();
 		// Copy the struct value into the variable's slot, then set the flag.
-		const decl = status.scoped_declarations.find((d) => d.name === name);
-		const type_name = decl?.type?.name || status.variable_types?.get(name)?.name || "";
 		const struct_size = get_struct_size(type_name, status);
 		const dst_offset = status.stack_offsets?.get(name);
 		emit_struct_copy("x0", "x29", dst_offset ?? 0, struct_size, status);

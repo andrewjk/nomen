@@ -1131,6 +1131,54 @@ function resolve_decl_struct(
 	return undefined;
 }
 
+/**
+ * Emit the reclaim of a nullable struct local's OLD value before a
+ * reassignment (`p = <value>` / `p = null`): when the slot's `_has` flag is
+ * set, free every heap string field currently recorded for it. The frees are
+ * emitted reading the slot's CURRENT bytes, so this must run before the new
+ * value is copied in. Records are left intact — the caller retargets them
+ * for the new value (the scope-exit release still owns the final state).
+ * Returns true when anything was emitted.
+ */
+export function emit_recorded_field_reclaim_for_slot(
+	status: BuildStatus,
+	decl_name: string,
+	decl_type_name: string,
+): boolean {
+	if (!status.heap_string_fields?.size) return false;
+	const prefix = `${decl_name}.`;
+	const fields = Array.from(status.heap_string_fields)
+		.filter((k) => k.startsWith(prefix))
+		.map((k) => k.slice(prefix.length));
+	if (!fields.length) return false;
+	const flag_off = status.stack_offsets?.get(has_flag_name(decl_name));
+	if (flag_off === undefined || flag_off < 0) return false;
+	const skip = `.Lskip_reclaim_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+	emit_asm(status, `ldr x0, [x29, #${flag_off}]\n`);
+	emit_asm(status, `cbz x0, ${skip}\n`);
+	for (const field of fields) {
+		const offset = get_field_offset(decl_type_name, field, status);
+		emit_var_address(status, "x0", decl_name);
+		emit_asm(status, `ldr x0, [x0, #${offset}]\n`);
+		emit_free(status);
+	}
+	emit_asm(status, `${skip}:\n`);
+	return true;
+}
+
+/**
+ * Drop every heap-string-field record under `prefix` (a variable name plus
+ * dot). Used when a slot's ownership is retargeted — the records describe
+ * the OLD value, which the caller has just reclaimed or displaced.
+ */
+export function drop_heap_string_field_records(status: BuildStatus, decl_name: string) {
+	if (!status.heap_string_fields?.size) return;
+	const prefix = `${decl_name}.`;
+	for (const key of Array.from(status.heap_string_fields)) {
+		if (key.startsWith(prefix)) status.heap_string_fields.delete(key);
+	}
+}
+
 export function emit_destroy_for_scope(status: BuildStatus, declarations_before: number) {
 	const moved = status.moved ?? new Set();
 	const current_scope = status.heap_cleanup_stack?.[status.heap_cleanup_stack.length - 1];

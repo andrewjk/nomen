@@ -833,3 +833,46 @@ pub func main = (Init init) {
 `;
 	await build_and_check_output(input, "nullable_struct_flag_guarded_free", "n1;n1;n1;done\n", true);
 });
+
+// A nullable struct local REASSIGNED mid-scope (`p = make(2)`, `p = null`)
+// must reclaim the old value's recorded heap string fields: the copy
+// overwrites the only pointers to them, and the flag-guarded scope-exit
+// release (see the test above) intentionally skips null/stale slots. The
+// reclaim is guarded on the `_has` flag (a null slot's bytes are garbage),
+// skips same-variable aliasing (`p = p`), and retargets the records to the
+// new value — only a normalized nullable-returning call re-establishes heap
+// ownership (constructors leave rodata borrows; variable copies alias).
+// Runs under audit on BOTH backends: any displaced value reports
+// `LEAK: N allocation(s)`.
+test("nullable struct reassignment reclaims old value", async () => {
+	const input = `
+import System
+
+pub struct Pair {
+	pub var name = ""
+	pub var title = ""
+}
+
+func make = (int n, move out Pair?) {
+	if n == 0 {
+		return null
+	}
+	var p = Pair()
+	p.name = "n\\{n}"
+	p.title = "t\\{n}"
+	return p
+}
+
+pub func main = (Init init) {
+	var Pair? p = make(1)
+	p = make(2)
+	p = null
+	p = make(3)
+	if p != null {
+		Console.write_line(p.name)
+	}
+	Console.write_line("done")
+}
+`;
+	await build_and_check_output(input, "nullable_struct_reassign_reclaim", "n3\ndone\n", true);
+});
