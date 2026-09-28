@@ -634,38 +634,3 @@ arr.at(0)]` — the fresh temp is freed by the return-path cleanup while
    container. Rejection would be the sound stopgap; normalization (strdup
    non-heap fields at the return, record + free on the caller's temp) the
    complete one.
-
-## aarch64: mutating method on a call-chained field receiver hits a copy
-
-Found while fixing the for-of access-chain wrinkle (2026-09-28). A method call
-whose receiver is a FIELD accessed through a call result — the arena shape
-`s.get().children.push(7)` — mutates a COPY on aarch64: the pushes are lost
-(reading `s.box.children.length` back prints 0; C prints 2) and the copy's
-buffer leaks (`LEAK: 1` under audit). In the fuller arena-shaped program
-(alloc + `arena.get(parent).children.push(...)` + iteration) the copy
-handling corrupts the heap and a later Buffer grow aborts in `realloc`
-(SIGABRT); the same corruption reproduces with a plain `while` loop, so it is
-independent of the for-of desugar.
-
-Minimal repro (aarch64 only; C correct):
-
-    pub class Box { pub var children = List<int>() }
-    pub class Store {
-        pub move box = Box()
-        pub func get = (self, out Box) { return self.box }
-    }
-    pub func main = (Init init) {
-        var s = Store()
-        s.get().children.push(7)
-        s.get().children.push(8)
-        Console.write_line("\{s.box.children.length}")   // 0 on aarch64
-    }
-
-The receiver address must be computed THROUGH the class instance pointer
-(`*(call result) + field offset`); the aarch64 access builder appears to
-materialise the field into a temporary and pass the temporary's address
-instead. Workaround: bind the instance (not the List field) to a local first
-(`var b = arena.get(h); b.children.push(...)`) — what the allmark port does.
-For-of over such a chain also keeps the must-be-array error (the
-`chain_is_call_free` guard in check_for_loop_node); field chains over a
-variable (`holder.children`) desugar and work on both backends.

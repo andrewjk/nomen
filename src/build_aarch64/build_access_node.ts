@@ -749,6 +749,23 @@ function resolve_access_target_type(target: BaseNode, status: BuildStatus): Type
  * final field is read. Without this, `state.rules.blocks.length` (State/
  * BlockParserState is a class) summed 8+8+8 and loaded from `state + 24`.
  */
+/**
+ * True when every hop in the access chain is a FIELD access (no call
+ * segments) — the shape whose field address is the root base plus the sum of
+ * field offsets. A call segment (`arena.get(handle).children`,
+ * `make().field`) makes the summed-offset computation invalid: the call
+ * result is different storage than the root base, so the receiver address
+ * must be built from the call (`build_node` of the object) plus the field
+ * offset instead.
+ */
+function chain_is_pure_fields(node: BaseNode): boolean {
+	if (node.node_type === "value") return true;
+	if (node.node_type !== "access") return false;
+	const acc = node as AccessNode;
+	if (acc.access.node_type !== "access_field") return false;
+	return chain_is_pure_fields(acc.target);
+}
+
 export function access_chain_crosses_class(node: AccessNode, status: BuildStatus): boolean {
 	const base = get_base_target(node);
 	const base_type = resolve_access_target_type(base, status);
@@ -1420,6 +1437,29 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		ensure_newline(status);
 		const final_offset = offset;
 		const field_type = access_field.type?.name || "";
+		// A STRUCT-typed field is embedded inline in the call result: its
+		// "value" is its ADDRESS (object + offset). Taking a scalar load here
+		// would read the struct's first word and treat it as a pointer — the
+		// arena `.children.length` read. Same rule as the class-crossing
+		// branch below.
+		const method_field_decl_type = status.structs
+			.find((s) => s.name === (target_type?.name || "") && !s.is_simple_type)
+			?.fields.find((f) => f.name === access_field.name)?.type;
+		const method_field_type = method_field_decl_type ?? access_field.type;
+		const method_field_name = method_field_type?.type_args?.length
+			? mono_type_name(method_field_type)
+			: method_field_type?.name || "";
+		if (
+			method_field_name &&
+			!method_field_type?.is_ref &&
+			!method_field_type?.is_nullable &&
+			is_struct_type(method_field_name, status)
+		) {
+			if (final_offset > 0) {
+				emit_asm(status, `add x0, x0, #${final_offset}\n`);
+			}
+			return;
+		}
 		// Fixed-array pipeline (ASM_PLAN_3 tranche A): when the `.at()` just
 		// built resolved through the pointer cache, load the field straight
 		// from the pinned register instead of the x0 round trip.
@@ -1465,7 +1505,12 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		return;
 	}
 
-	if (target_is_class_access) {
+	// The target hop may itself be a call result (`arena.get(handle).children`
+	// feeding this `.length`) — the summed-offset-from-root load would read
+	// the ROOT's frame slot instead of the call result's field. Build the
+	// object and load THIS field at its own offset, exactly like the
+	// class-crossing case.
+	if (target_is_class_access || !chain_is_pure_fields(node.target)) {
 		build_node(node.target, status);
 		ensure_newline(status);
 		const final_offset = get_field_offset(target_type?.name || "", access_field.name, status);
@@ -2661,13 +2706,31 @@ function build_access_method(
 		} else if (!target_is_simple && node.target.node_type === "access") {
 			const access_target = node.target as AccessNode;
 			if (access_target.access.node_type === "access_field") {
-				if (access_chain_crosses_class(access_target, status)) {
-					// Nested chain through a class-typed field (`state.rules.blocks`)
-					// — the summed-offset-from-root receiver address would skip the
-					// pointer dereference. Build the target, which loads each
-					// pointer hop: its result IS the receiver address.
-					build_node(access_target, status);
+				if (
+					!chain_is_pure_fields(access_target) ||
+					access_chain_crosses_class(access_target, status)
+				) {
+					// The receiver chain crosses a class-typed hop (the base is a
+					// class pointer, or an intermediate field is one) — the
+					// summed-offset-from-root address would skip the pointer
+					// dereference. Build the OBJECT (each pointer hop loads its
+					// pointer), then add THIS field's offset. Building the full
+					// field access instead is not address-stable across base
+					// shapes: a call-rooted base (`s.get().children`) LOADS the
+					// field value — passing it to a `ref self` method mutates a
+					// copy (see FOLLOWUP.md "mutating method on a call-chained
+					// field receiver").
+					const object_type = type_from_value_node(access_target.target);
+					const field_offset = get_field_offset(
+						object_type?.name || "",
+						(access_target.access as AccessFieldNode).name,
+						status,
+					);
+					build_node(access_target.target, status);
 					ensure_newline(status);
+					if (field_offset > 0) {
+						emit_asm(status, `add x0, x0, #${field_offset}\n`);
+					}
 				} else {
 					const offset = compute_field_offset(access_target, status);
 					const base = get_base_target(access_target);

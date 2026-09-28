@@ -876,3 +876,36 @@ pub func main = (Init init) {
 `;
 	await build_and_check_output(input, "nullable_struct_reassign_reclaim", "n3\ndone\n", true);
 });
+
+// A method call whose receiver is a FIELD reached through a call result
+// (`s.get().children.push(7)`) used to take the field's VALUE for `ref self`
+// receivers instead of its address: the mutation landed on a copy (writes
+// lost, copy's buffer leaked) and, in the arena-shaped program, corrupted
+// the heap so a later Buffer grow aborted in realloc. The receiver path now
+// builds the object and adds the field offset for chains that cross a class
+// hop or contain a call segment; the field-VALUE read path (`.length` over
+// such a chain) takes the embedded struct field's address the same way.
+test("mutating a field through a call-chained receiver", async () => {
+	const input = `
+import System
+
+pub class Box {
+	pub var children = List<int>()
+}
+
+pub class Store {
+	pub move box = Box()
+	pub func get = (self, out Box) {
+		return self.box
+	}
+}
+
+pub func main = (Init init) {
+	var s = Store()
+	s.get().children.push(7)
+	s.get().children.push(8)
+	Console.write_line("\\{s.get().children.length} \\{s.get().children.at_or_panic(1)}")
+}
+`;
+	await build_and_check_output(input, "chained_field_receiver_mutation", "2 8\n", true);
+});
