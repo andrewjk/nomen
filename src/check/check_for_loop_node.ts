@@ -51,13 +51,16 @@ export default function check_for_loop_node(for_loop: ForLoopNode, status: Check
 	//   for __idx of 0..arr.length { var x = arr.at(__idx) }
 	// so the element is obtained through `.at` (whose `index < self.length`
 	// constraint is satisfied by the loop bounds) and the body sees `x` as a
-	// value of type T. Only desugar simple (value) list expressions so the
-	// list isn't evaluated more than once; richer expressions fall through to
-	// the array path below.
+	// value of type T. Desugar simple (value) list expressions and field
+	// access chains (`holder.children`) — the chain is re-evaluated per
+	// iteration, benign for load-only chains. A chain through a CALL result
+	// (`arena.get(handle).children`) still falls through to the array path's
+	// must-be-array-or-Enumerable error: its desugared `.at` bounds cannot be
+	// discharged (see FOLLOWUP.md) and the shape miscompiles on aarch64.
 	if (
 		for_loop.list &&
 		!(for_loop.list instanceof RangeNode) &&
-		for_loop.list.node_type === "value"
+		(for_loop.list.node_type === "value" || for_loop.list.node_type === "access")
 	) {
 		// type_from_value_node is read-only (no error side effects); the list is
 		// checked normally below (or by the recursive call after desugaring).
@@ -122,6 +125,31 @@ export default function check_for_loop_node(for_loop: ForLoopNode, status: Check
 		const is_enumerable = list_type.name
 			? has_trait(list_type.name, "Enumerable", for_status)
 			: false;
+
+		// `for x of <expr>` where <expr> resolves to a `List<T>` — including
+		// field access chains (`holder.children`), whose types only resolve
+		// NOW, after the expression was checked (the bare-variable desugar
+		// gate above probes read-only, before checking, and cannot see a
+		// field's type). The desugar produces the same index-loop shape, with
+		// the cloned list expression re-checked fresh in the recursive pass.
+		// Call-free chains only: a chain through a CALL result
+		// (`arena.get(handle).children`) cannot discharge its desugared
+		// `.at` bounds and miscompiles on aarch64 (see FOLLOWUP.md), so it
+		// falls through to the clear must-be-array-or-Enumerable error.
+		const chained_list_elem = list_element_type(list_type, for_status);
+		if (chained_list_elem && !is_enumerable && chain_is_call_free(for_loop.list)) {
+			if (for_loop.item_is_ref) {
+				add_error(
+					for_status,
+					`'ref' iteration is not supported for List<T> — index explicitly (for i of 0..xs.length) and use .set to write back`,
+					for_loop.item.start,
+				);
+				return;
+			}
+			desugar_array_for_loop(for_loop, list_type, chained_list_elem);
+			check_for_loop_node(for_loop, for_status);
+			return;
+		}
 
 		if (!list_type.is_array && !is_enumerable && list_type.name) {
 			add_error(
@@ -224,6 +252,25 @@ export default function check_for_loop_node(for_loop: ForLoopNode, status: Check
  * break/continue so mutations persist on all exit paths. (The write-back is
  * skipped on `return`, matching Rust's copy semantics.)
  */
+
+/**
+ * Whether an iterable expression contains no call segments — the guard for
+ * the post-check List desugar (`for x of holder.children`). A chain through
+ * a CALL result (`arena.get(handle).children`) cannot discharge the
+ * desugared `.at` bounds and miscompiles on aarch64 (FOLLOWUP.md), so it
+ * keeps the clear must-be-array-or-Enumerable error.
+ */
+function chain_is_call_free(node: import("../nodes/BaseNode.ts").default): boolean {
+	if (!node || typeof node !== "object") return true;
+	if (node.node_type === "func_call") return false;
+	if (node.node_type === "access") {
+		const access = node as import("../nodes/AccessNode.ts").default;
+		if (access.access.node_type === "access_func") return false;
+		return chain_is_call_free(access.target);
+	}
+	return true;
+}
+
 function desugar_array_for_loop(for_loop: ForLoopNode, array_type: Type, elem_type?: Type) {
 	const list = for_loop.list;
 	const start = list.start;

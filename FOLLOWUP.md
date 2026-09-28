@@ -576,23 +576,6 @@ inline at monomorphization). One remains:
    (`pickin_Box_string_Box_string`). Worth suppressing when the body is
    known to end in a return.
 
-## Checker: container type not seen through a view-receiver call result
-
-Two usability wrinkles found while probing the allmark Arena migration, both
-worked around by binding the call result to a local first:
-
-1. `for x of arena.get(h).children { ... }` fails with "For loop list must
-   be an array, List, or Enumerable, not List" — the for-of desugar does not
-   resolve the element type through the generic view-receiver `get` call.
-2. `arena.get(h).children.at(0)` fails with "Parameter constraint cannot be
-   verified: i >= 0 && i < self.length" even for a literal index — the
-   constraint check cannot evaluate `self.length` through the borrow chain,
-   pushing callers to `at_or_panic` (which has no contract).
-
-Both compile fine as `var children = arena.get(h).children` followed by the
-loop/`at` (modulo owning-field copies — see the next entry), so this is
-inference/constraint-propagation only, not a soundness gap.
-
 ## Closures remain unsupported (blocks allmark port slimming)
 
 Still the one open nomen-side item in allmark's nomen/PORT.md ("Open —
@@ -651,3 +634,38 @@ arr.at(0)]` — the fresh temp is freed by the return-path cleanup while
    container. Rejection would be the sound stopgap; normalization (strdup
    non-heap fields at the return, record + free on the caller's temp) the
    complete one.
+
+## aarch64: mutating method on a call-chained field receiver hits a copy
+
+Found while fixing the for-of access-chain wrinkle (2026-09-28). A method call
+whose receiver is a FIELD accessed through a call result — the arena shape
+`s.get().children.push(7)` — mutates a COPY on aarch64: the pushes are lost
+(reading `s.box.children.length` back prints 0; C prints 2) and the copy's
+buffer leaks (`LEAK: 1` under audit). In the fuller arena-shaped program
+(alloc + `arena.get(parent).children.push(...)` + iteration) the copy
+handling corrupts the heap and a later Buffer grow aborts in `realloc`
+(SIGABRT); the same corruption reproduces with a plain `while` loop, so it is
+independent of the for-of desugar.
+
+Minimal repro (aarch64 only; C correct):
+
+    pub class Box { pub var children = List<int>() }
+    pub class Store {
+        pub move box = Box()
+        pub func get = (self, out Box) { return self.box }
+    }
+    pub func main = (Init init) {
+        var s = Store()
+        s.get().children.push(7)
+        s.get().children.push(8)
+        Console.write_line("\{s.box.children.length}")   // 0 on aarch64
+    }
+
+The receiver address must be computed THROUGH the class instance pointer
+(`*(call result) + field offset`); the aarch64 access builder appears to
+materialise the field into a temporary and pass the temporary's address
+instead. Workaround: bind the instance (not the List field) to a local first
+(`var b = arena.get(h); b.children.push(...)`) — what the allmark port does.
+For-of over such a chain also keeps the must-be-array error (the
+`chain_is_call_free` guard in check_for_loop_node); field chains over a
+variable (`holder.children`) desugar and work on both backends.

@@ -557,4 +557,33 @@ for ref x of xs {
 		const parsed = parse(input, get_library(core));
 		expect(parsed.errors).toEqual(expected);
 	});
+
+	// A for-of over an ACCESS CHAIN (`holder.children`, `arena.get(h).children`)
+	// used to be rejected ("For loop list must be an array, List, or Enumerable,
+	// not List"): the List/array desugar gates only accepted bare variables, and
+	// the general path had no List handling. The desugar now accepts access
+	// chains (and the general path desugars chains whose type only resolves once
+	// checked), so field-chain iteration compiles and runs on both backends.
+	test("for loop over an access chain", async () => {
+		const input = `
+import System
+
+pub class Holder {
+	pub var children = List<int>()
+}
+
+pub func main = (Init init) {
+	var h = Holder()
+	h.children.push(7)
+	h.children.push(8)
+	var n = 0
+	for c of h.children {
+		Console.write_line("\\{c}")
+		n += 1
+	}
+	Console.write_line("\\{n}")
+}
+`;
+		await build_and_check_output(input, "for_loop_access_chain", "7\n8\n2\n", true);
+	});
 });

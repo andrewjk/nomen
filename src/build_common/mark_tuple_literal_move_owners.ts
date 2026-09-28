@@ -16,8 +16,6 @@ export default function mark_tuple_literal_move_owners(
 	node: FunctionCallNode,
 	status: { moved?: Set<string> },
 ): void {
-	if (process.env.NOMEN_DBG)
-		console.error(`DBG mtlmo: ${node.type?.name ?? node.name} params=${node.params.length}`);
 	if (!node.type?.name?.startsWith("_Tuple_")) return;
 	if (!status.moved) status.moved = new Set();
 	for (const p of node.params) {
