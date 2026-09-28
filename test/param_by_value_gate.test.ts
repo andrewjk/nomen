@@ -74,6 +74,30 @@ Console.write_line("caller done")
 		});
 	});
 
+	test("no dead auto-free block after a return that always exits", () => {
+		// A body whose last statement is a `return` cannot fall through, so
+		// the function-tail auto-free must be suppressed — otherwise the C
+		// epilogue re-emits the return-site frees as unreachable text after
+		// the `return` (the param's field would be freed twice in the source,
+		// though only the first block runs).
+		const parsed = parse_with_imports(`
+struct Pair { var int n = 0  var string tag = "" }
+func next = (Pair p, out Pair) {
+	var q = Pair()
+	q.n = p.n + 1
+	q.tag = p.tag
+	return q
+}
+var p = next(Pair())
+Console.write_line(p.tag)
+`);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "c", audit: true });
+		const code = result.code as string;
+		const fn = code.slice(code.indexOf("// Func next"), code.indexOf("// Func main"));
+		expect(fn.split("nomen_free_wrap(p->tag.ptr);").length - 1).toEqual(1);
+	});
+
 	test("ref arg mutates the caller's struct in place", async () => {
 		// The in-place store strdups the assignment copy and records it in
 		// the callee scope, whose exit drops the record — the documented

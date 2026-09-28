@@ -555,26 +555,22 @@ history has them, plus the pre-rewrite `Random.nm`), or teach the aarch64 ASM
 optimizer the three folds above (which would benefit all pure-Nomen 64-bit
 arithmetic, not just this generator).
 
-## Pass-by-value gaps recorded during the owning-struct args work
+## Redundant statement terminator after `return` (cosmetic)
 
-While landing pass-by-value for owning value-struct args (params own their
-structs; call sites materialize a uniformly heap-owned shell; callees seed
-the param's string-field records), a few adjacent items were considered.
-Two were fixed in the same series (move-declared pass-by-value params now
-TRANSFER ownership — the design table's `f(move a)` row — with the caller
-normalizing unrecorded rodata fields in place before the call and dropping
-its records after; and `copy()` is now synthesized for monomorphized
-structs and for structs whose auto `#init` takes required params, checked
-inline at monomorphization). One remains:
+Every C `return` emits its own `;\n`, and the statement tail then appends
+another `;\n` (via `with_semicolon_tail` / `build_node`'s `with_semicolon`
+suffix), yielding a stray `;` on the next line after each `return`:
 
-1. **Dead duplicate auto-free block in C function epilogues.** For a
-   function whose seeded pass-by-value params free fields at a `return`
-   (persist records), the fall-through auto-free emits the same frees again
-   AFTER the `return` statement — unreachable text (the first block runs,
-   then the function exits), so it is dead weight in the generated C, not a
-   double free at runtime. Visible in e.g. the mono-clone C output
-   (`pickin_Box_string_Box_string`). Worth suppressing when the body is
-   known to end in a return.
+```c
+return _return_val;
+;
+```
+
+Harmless dead text, and byte-identical in both the NIR-native and delegated
+statement paths. Removing it would need `return` added to
+`statement_ends_with_block` and every code-text test expectation updated, so
+it is left alone (recorded here as noted-out-of-scope, not a correctness
+issue).
 
 ## Closures remain unsupported (blocks allmark port slimming)
 

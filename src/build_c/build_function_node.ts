@@ -8,6 +8,7 @@ import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable
 import scan_force_heap_strings from "../build_common/scan_force_heap_strings.ts";
 import { moved_param_is_consumed } from "../build_common/scan_moved_param_consumed.ts";
 import { lower_function } from "../nir/from_ast.ts";
+import type BaseNode from "../nodes/BaseNode.ts";
 import BitsetNode from "../nodes/BitsetNode.ts";
 import type BlockNode from "../nodes/BlockNode.ts";
 import { is_function_node, is_struct_node, is_trait_node } from "../nodes/check_node_type.ts";
@@ -16,7 +17,7 @@ import EnumNode from "../nodes/EnumNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import TraitNode from "../nodes/TraitNode.ts";
-import build_auto_free from "./build_auto_free.ts";
+import build_auto_free, { discard_string_field_records } from "./build_auto_free.ts";
 import build_bitset_node from "./build_bitset_node.ts";
 import build_block_node from "./build_block_node.ts";
 import build_extern from "./build_extern.ts";
@@ -35,6 +36,31 @@ import { emit_closure_env_type } from "./utils/closure_env.ts";
 import { begin_code_scratch, end_code_scratch } from "./utils/code_scratch.ts";
 import emit_enum_in_order, { emit_enum_deps_for_struct } from "./utils/emit_enum_in_order.ts";
 import scan_borrow_only_strings from "./utils/scan_borrow_only_strings.ts";
+
+/**
+ * True when control cannot reach the end of `statements` — the last statement
+ * is a `return`, or an `if`/`else` whose every arm itself definitely returns.
+ * Used to suppress the fall-through auto-free: when no path falls through, the
+ * epilogue reclaim is unreachable text after the last `return`.
+ */
+function statements_definitely_return(statements?: BaseNode[]): boolean {
+	if (!statements?.length) return false;
+	const last = statements[statements.length - 1];
+	if (last.node_type === "return") return true;
+	if (last.node_type === "if") {
+		const branch = last as unknown as {
+			if_branch?: { statements?: BaseNode[] };
+			else_branch?: { statements?: BaseNode[] };
+		};
+		return (
+			!!branch.if_branch &&
+			!!branch.else_branch &&
+			statements_definitely_return(branch.if_branch.statements) &&
+			statements_definitely_return(branch.else_branch.statements)
+		);
+	}
+	return false;
+}
 
 export default function build_function_node(node: FunctionNode, status: BuildStatus) {
 	if (node.is_generic) return;
@@ -529,13 +555,18 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.current_function = old_current_function;
 	status.closure_env = old_closure_env;
 
-	// Always run auto_free at function exit. Functions with explicit returns
-	// already call build_auto_free at each return (which clears
-	// scoped_declarations), so this is a no-op for those paths — but a void
-	// function that has a CONDITIONAL early return still falls through to here,
-	// and its fall-through declarations must be reclaimed. Without this, such
-	// functions leak every declaration on the fall-through path.
-	build_auto_free(status);
+	// Auto-free the fall-through path. A body that cannot fall through (its
+	// last statement is a `return`, or an if/else whose every arm returns) has
+	// already emitted its frees at the return site, so the epilogue's copy
+	// would be unreachable text after the `return` — skip the emission, but
+	// still drop the records so they don't leak into the next function build.
+	// A function with only a CONDITIONAL early return does fall through and
+	// still needs this reclaim, or it would leak every declaration on that path.
+	if (statements_definitely_return(node.statements)) {
+		discard_string_field_records(status, status.scoped_declarations);
+	} else {
+		build_auto_free(status);
+	}
 
 	// In audit mode, call nomen_audit_check (from audit_runtime.c) at main exit.
 	// It prints "LEAK: N allocation(s)" when the balanced malloc/free counter

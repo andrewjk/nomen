@@ -46,6 +46,23 @@ function emit_enum_payload_reclaim(
 	}
 }
 
+/**
+ * Drop the `name.field` heap-string records belonging to `decls` WITHOUT
+ * emitting any free code. Used when the emitted reclaim would be unreachable
+ * (a function body that cannot fall through — see build_function_node): the
+ * return-site reclaim already emitted the frees, so the records must be
+ * cleared for the next function build but must not produce a second block.
+ */
+export function discard_string_field_records(status: BuildStatus, decls: DeclarationNode[]) {
+	if (!status.heap_string_fields?.size) return;
+	for (const dec of decls) {
+		const prefix = `${dec.name}.`;
+		for (const key of Array.from(status.heap_string_fields)) {
+			if (key.startsWith(prefix)) status.heap_string_fields.delete(key);
+		}
+	}
+}
+
 export default function build_auto_free(status: BuildStatus) {
 	free_scoped_declarations(status, status.scoped_declarations);
 
