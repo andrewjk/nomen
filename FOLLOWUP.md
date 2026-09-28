@@ -526,15 +526,6 @@ statement paths. Removing it would need `return` added to
 it is left alone (recorded here as noted-out-of-scope, not a correctness
 issue).
 
-## Closures remain unsupported (blocks allmark port slimming)
-
-Still the one open nomen-side item in allmark's nomen/PORT.md ("Open —
-port-side migrations / cleanups"): ~40 class-per-rule shapes exist in the
-port purely because capturing closures do not exist. Nullable func types,
-lambda→func-variable assignment, and func-signature checking HAVE landed,
-so only the capture-env machinery (CLOSURE.md's capturing-lambda work for
-value contexts) is missing to delete those classes.
-
 ## `move` on owning value-struct field declarations is redundant (cleanup)
 
 The compiler derives ownership of `List`/`Buffer`/owning-value-struct fields
