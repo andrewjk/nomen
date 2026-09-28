@@ -98,15 +98,15 @@ pub func main = () {
 		expect(compile_module(input)).toEqual([]);
 	});
 
-	test("move tuple destructuring takes ownership", () => {
+	test("tuple literal transfers at last use; bindings own the temp", () => {
 		const input = `
 func make = (out [List<string>, List<int>]) {
 	var t = List<string>()
 	var c = List<int>()
-	return [move t, move c]
+	return [t, c]
 }
 pub func main = () {
-	var [move a, move b] = make()
+	var [a, b] = make()
 	Console.write("{a.length} {b.length}")
 }
 `;
@@ -140,12 +140,30 @@ pub func main = () {
 		).toBe(true);
 	});
 
-	test("plain owning variable as a tuple element is an error", () => {
+	test("explicit move destructuring from a named source", () => {
+		const input = `
+func make = (out [List<string>, List<int>]) {
+	var t = List<string>()
+	var c = List<int>()
+	return [t, c]
+}
+pub func main = () {
+	var pair = make()
+	var [move a, move b] = pair
+	Console.write("done")
+}
+`;
+		expect(compile_module(input)).toEqual([]);
+	});
+
+	test("tuple element read after the literal is an error", () => {
 		const input = `
 pub func main = () {
 	var t = List<string>()
 	var c = List<int>()
 	var pair = [t, c]
+	t.push("more")
+	Console.write(c.length.to_string())
 }
 `;
 		const errors = compile_module(input);

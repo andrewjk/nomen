@@ -152,6 +152,16 @@ interface AssignmentRecord {
 	loop_ranges: LoopRange[];
 }
 
+/** A bracket literal (`[a, b]`) whose bare-var element names were recorded
+ *  for last-use move inference. */
+interface LiteralRecord {
+	node: BaseNode;
+	enter: number;
+	exit: number;
+	loop_ranges: LoopRange[];
+	names: string[];
+}
+
 interface DeclareRecord {
 	name: string;
 	declaration: "const" | "var" | "move" | "view";
@@ -170,7 +180,16 @@ class Walk {
 	readonly reads: ReadRecord[] = [];
 	readonly declares: DeclareRecord[] = [];
 	readonly assignments: AssignmentRecord[] = [];
+	readonly literals: LiteralRecord[] = [];
 	private loop_stack: LoopRange[] = [];
+
+	literal(node: BaseNode, names: string[], body: () => void): void {
+		const loop_ranges = [...this.loop_stack];
+		const enter = ++this.stamp;
+		body();
+		const exit = ++this.stamp;
+		this.literals.push({ node, enter, exit, loop_ranges, names });
+	}
 
 	interval<T>(body: () => T): { enter: number; exit: number } {
 		const enter = ++this.stamp;
@@ -399,6 +418,92 @@ function classify_declare(
 	};
 }
 
+/**
+ * Stamps `literal_last_use_move` on bracket-literal elements (`[a, b]`) that
+ * are bare `var` locals at their LAST USE: the literal then TRANSFERS
+ * ownership of those locals instead of aliasing them (the checker's
+ * tuple-element ownership rule consumes the stamp as an inferred `move`).
+ *
+ * Same conservative posture as the string pass: it may MISS a last use (the
+ * element then needs an explicit `move`), never invent one — reads after the
+ * literal, reads under an enclosing loop whose binding outlives the loop,
+ * reads in spawn/async subtrees, any re-assignment of the source, and any
+ * raw `#arch` body in the function all refuse the inference. Types are NOT
+ * consulted here (this runs before checking) — the checker applies the
+ * owning-type filter when consuming the stamp.
+ *
+ * Only the FIRST occurrence of a name per literal is stamped: two elements
+ * moving the same local would alias each other inside the tuple.
+ */
+export function stamp_literal_element_moves(root: BaseNode): number {
+	if (!move_enabled) return 0;
+	let count = 0;
+	const visit_functions = (node: BaseNode): void => {
+		if (node.node_type === "func") {
+			count += scan_function_literal_element_moves(node as unknown as FunctionNode);
+		}
+		for (const child of child_nodes(node)) visit_functions(child);
+	};
+	visit_functions(root);
+	return count;
+}
+
+function scan_function_literal_element_moves(func: FunctionNode): number {
+	if (!func.statements?.length) return 0;
+	const walk = new Walk();
+	const param_names = new Set(func.params.map((p) => p.name));
+	for (const stmt of func.statements) walk_stmt(walk, stmt);
+	if (walk.has_raw) return 0;
+	let count = 0;
+	for (const site of walk.literals) {
+		const eligible: string[] = [];
+		for (const name of site.names) {
+			if (eligible.includes(name)) continue; // second transfer of one local aliases itself
+			if (param_names.has(name)) continue; // params are not movable here
+			const binding = walk.declares.filter((d) => d.name === name && d.enter < site.enter).at(-1);
+			if (!binding || binding.declaration !== "var") continue; // consts are not movable
+			const write_count = walk.writes.filter((w) => w.name === name).length;
+			if (write_count > 1) continue; // re-assignment refuses the transfer
+			let killed = false;
+			for (const r of walk.reads) {
+				if (r.name !== name) continue;
+				if (r.opaque) {
+					killed = true;
+					break;
+				}
+				if (r.enter > site.exit) {
+					killed = true;
+					break;
+				}
+				if (r.enter >= site.enter && r.enter <= site.exit) continue; // the element read itself
+				for (const loop of site.loop_ranges) {
+					if (r.enter >= loop.enter && r.enter <= loop.exit) {
+						// A read inside an enclosing loop kills the candidate
+						// unless the binding is loop-local (a fresh binding
+						// each iteration; the back edge re-reads a dead var).
+						const binding_in_loop = binding.enter >= loop.enter && binding.exit <= loop.exit;
+						if (!binding_in_loop) {
+							killed = true;
+							break;
+						}
+					}
+				}
+				if (killed) break;
+			}
+			if (!killed) eligible.push(name);
+		}
+		const values = (site.node as unknown as { values: BaseNode[] }).values;
+		for (const v of values) {
+			const vn = v as ValueNode;
+			if (vn.node_type === "value" && typeof vn.value === "string" && eligible.includes(vn.value)) {
+				(vn as unknown as { literal_last_use_move?: boolean }).literal_last_use_move = true;
+				count++;
+			}
+		}
+	}
+	return count;
+}
+
 // ---------------------------------------------------------------------------
 // Statement / expression walk
 // ---------------------------------------------------------------------------
@@ -606,7 +711,18 @@ function walk_expr(walk: Walk, node: BaseNode): void {
 		}
 		case "array": {
 			const arr = node as unknown as { values: BaseNode[] };
-			for (const v of arr.values) walk_expr(walk, v);
+			const names = arr.values
+				.map((v) => v as ValueNode)
+				.filter(
+					(v) =>
+						v.node_type === "value" &&
+						typeof v.value === "string" &&
+						/^[A-Za-z_][A-Za-z0-9_]*$/.test(v.value),
+				)
+				.map((v) => v.value as string);
+			walk.literal(node, names, () => {
+				for (const v of arr.values) walk_expr(walk, v);
+			});
 			return;
 		}
 		default: {

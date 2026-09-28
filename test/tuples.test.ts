@@ -343,11 +343,14 @@ Console.write("\\{t._0.name} \\{t._0.n} \\{t._1}")
 		await build_and_check_output(input, "anon_in_tuple", "x 1 true");
 	});
 
-	test("move tuple destructuring transfers ownership", async () => {
-		// `var [move a, move b] = <tuple>` moves the fields OUT (the source's
-		// storage is revalidated with fresh defaults), so a and b own their
-		// lists. Runs under audit on both backends: any double-free or leak
-		// of the transferred buffers fails the test.
+	test("tuple literal transfers ownership by last-use inference", async () => {
+		// No `move` written anywhere: the return literal's elements are at
+		// their last use, so the literal TRANSFERS them (the check's
+		// literal-element last-use stamp + tuple-element ownership rule) —
+		// and the destructuring bindings off the returned temp own their
+		// lists (the temp dies after the bindings). Runs under audit on
+		// both backends: any double-free or leak of the transferred buffers
+		// fails the test.
 		const input = `
 import System
 
@@ -356,18 +359,40 @@ func make = (out [List<string>, List<int>]) {
 	t.push("hello")
 	var c = List<int>()
 	c.push(7)
-	return [move t, move c]
+	return [t, c]
 }
 
 pub func main = (Init init) {
-	var [move a, move b] = make()
+	var [a, b] = make()
 	Console.write_line("\\{a.length} \\{a.at_or_panic(0)} \\{b.at_or_panic(0)}")
 }
 `;
 		await build_and_check_output(input, "tuple_move_destructure", "1 hello 7\n", true);
 	});
 
+	test("explicit move destructuring from a named source", async () => {
+		// A NAMED source keeps the explicit form: plain bindings would be
+		// views into a live local (dangling), so `move` transfers.
+		const input = `
+import System
+
+pub func main = (Init init) {
+	var t = List<string>()
+	t.push("hello")
+	var c = List<int>()
+	c.push(7)
+	var pair = [move t, move c]
+	var [move a, move b] = pair
+	Console.write_line("\\{a.length} \\{a.at_or_panic(0)} \\{b.at_or_panic(0)}")
+}
+`;
+		await build_and_check_output(input, "tuple_move_named_source", "1 hello 7\n", true);
+	});
+
 	test("partial move destructuring keeps the source usable", async () => {
+		// The moved element transfers (t is at its last use — nothing reads it
+		// after the literal); the scalar element stays a plain copy. The
+		// source `t` must not be read after the transfer — and it is not.
 		const input = `
 import System
 

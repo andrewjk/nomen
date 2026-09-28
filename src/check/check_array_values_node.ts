@@ -78,21 +78,37 @@ export default function check_array_values_node(
  * the appropriate auto-generated tuple struct.
  */
 /**
- * A tuple literal element that is a BARE owning-struct variable (`[t, c]`
- * where t is a `List<string>`) byte-copies the struct — the tuple's field
- * aliases the local's buffer, and both cleanups free it (double-free).
- * Rejected exactly like the declaration-path owning-struct copy rule:
- * transfer with `move` (the tuple takes ownership) or deep-copy with
- * `.copy()`. Strings and non-owning structs stay ordinary by-value copies.
+ * Tuple-element ownership resolution. A bare owning-struct variable element
+ * (`[t, c]` where t is a `List<string>`) byte-copies the struct — the
+ * tuple's field would alias the local's buffer, and both cleanups free it
+ * (double-free). Three outcomes per element:
+ *
+ *   - explicit `move t` — transfer (registered like the move-assignment
+ *     path; the tuple's field cleanup owns the buffer now);
+ *   - plain `t` stamped by the literal last-use pass — INFERRED transfer
+ *     (t is provably never read again, so copy-then-drop and move are
+ *     observationally identical; the move is free);
+ *   - plain `t` still referenced later — rejected, exactly like the
+ *     declaration-path owning-struct copy rule: transfer with `move` or
+ *     deep-copy with `.copy()`.
+ *
+ * Strings and non-owning structs are ordinary by-value copies (views).
  */
-function reject_owning_copy_elements(array: ArrayValuesNode, status: CheckStatus): boolean {
+function check_tuple_element_ownership(array: ArrayValuesNode, status: CheckStatus): boolean {
 	let rejected = false;
 	for (const value of array.values) {
 		const vn = value as ValueNode;
-		if (vn.node_type !== "value" || vn.is_moved || vn.value === "null") continue;
-		if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(vn.value)) continue;
+		if (vn.node_type !== "value") continue;
+		if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(vn.value) || vn.value === "null") continue;
 		const t = type_from_value_node(value, status);
-		if (t.name && is_owning_struct_type(t, status)) {
+		if (!t.name || !is_owning_struct_type(t, status)) continue;
+		if (vn.is_moved || vn.literal_last_use_move) {
+			// Ownership transfers to the tuple: the source's cleanup must
+			// skip it (use-after-move on later reads is checked separately).
+			vn.is_moved = true;
+			if (!status.moved_variables) status.moved_variables = new Set();
+			status.moved_variables.add(vn.value);
+		} else {
 			add_error(
 				status,
 				`cannot copy '${t.name}' by value — it owns heap resources; use 'move ${vn.value}' or '${vn.value}.copy()'`,
@@ -138,29 +154,10 @@ function check_as_tuple(
 		);
 	}
 
-	if (reject_owning_copy_elements(array, status)) result = false;
+	if (check_tuple_element_ownership(array, status)) result = false;
 
 	const struct_name = tuple_struct_name(tuple_element_types);
 	get_or_create_tuple_struct(tuple_element_types, status);
-
-	// A `move <local>` element TRANSFERS the local's ownership into the
-	// tuple: the constructor copies the struct bytes by pointer, so the
-	// caller's cleanup must skip the local (the tuple's own field cleanup
-	// now owns the buffer). Registered like the move-assignment path so
-	// later uses are flagged and the build suppresses the source free.
-	array.values.forEach((v) => {
-		const vn = v as ValueNode;
-		if (
-			vn.node_type === "value" &&
-			vn.is_moved &&
-			typeof vn.value === "string" &&
-			vn.value !== "null" &&
-			/^[A-Za-z_]/.test(vn.value)
-		) {
-			if (!status.moved_variables) status.moved_variables = new Set();
-			status.moved_variables.add(vn.value);
-		}
-	});
 
 	const constructor = new FunctionCallNode(array.start, struct_name);
 	constructor.params = array.values.slice();
@@ -329,7 +326,7 @@ function check_as_array_or_inferred_tuple(
 				);
 			}
 
-			if (reject_owning_copy_elements(array, status)) result = false;
+			if (check_tuple_element_ownership(array, status)) result = false;
 
 			const struct_name = tuple_struct_name(elem_types);
 			get_or_create_tuple_struct(elem_types, status);
