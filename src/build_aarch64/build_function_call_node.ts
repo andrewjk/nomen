@@ -284,6 +284,27 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 						? `mov x9, ${paramReg}\n`
 						: `adr x9, ${node.name}\n`;
 
+		// The closure ABI puts the env in x(start_reg); the visible args take
+		// slots (start_reg+1)..NUM_REG_ARGS-1. A call whose visible args exceed
+		// that spills the surplus to the outgoing stack-arg area, which must sit
+		// at [sp] at the bl (AAPCS64) — the named-function-with-many-args case
+		// used to emit `mov undefined, x0` past x7. Slots are POSITIONAL: each
+		// param's first slot is the sum of the preceding params' slot widths
+		// (a fat string/view = 2). The loop below evaluates params right-to-left
+		// for side-effect order but stores each at its positional slot.
+		const param_slots: number[] = [];
+		let total_visible_slots = 0;
+		for (const p of node.params) {
+			param_slots.push(total_visible_slots);
+			total_visible_slots += type_from_value_node(p)?.name === "string" ? 2 : 1;
+		}
+		const reg_capacity = NUM_REG_ARGS - (start_reg + 1);
+		const overflow_count = Math.max(0, total_visible_slots - reg_capacity);
+		let outgoing_size = 0;
+		let spill_base = 0;
+		if (overflow_count > 0) {
+			spill_base = allocate_stack_space(status, overflow_count * 8, 8);
+		}
 		// Evaluate params right-to-left. A fat `string` (or `view T`) arg
 		// rides as a (ptr, len) register PAIR — matches the method ABI's
 		// argument-static-type pair detection (ASM gotchas) — so it consumes
@@ -292,33 +313,46 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		// borrows it, so the descriptor is also parked in a frame slot and
 		// reclaimed once the call returns.
 		const lambda_arg_slots: number[] = [];
-		let arg_slot = start_reg + 1;
+		// Marshal one half of an argument: into its register when `slot` is a
+		// register slot, else into the frame spill area (copied to the outgoing
+		// area after the loop, so sp is lowered only at the call).
+		const store_arg_half = (value_reg: string, slot: number) => {
+			if (slot < NUM_REG_ARGS) {
+				const reg = param_regs[slot];
+				if (reg === value_reg) {
+					emit_asm(status, `\n`);
+				} else {
+					emit_asm(status, `\nmov ${reg}, ${value_reg}\n`);
+				}
+			} else {
+				emit_asm(status, `\nstr ${value_reg}, [x29, #${spill_base + (slot - NUM_REG_ARGS) * 8}]\n`);
+			}
+		};
 		for (let i = node.params.length - 1; i >= 0; i--) {
 			const param = node.params[i];
-			const param_type = type_from_value_node(param);
-			const is_pair = param_type?.name === "string";
+			const is_pair = type_from_value_node(param)?.name === "string";
 			build_node(param, status);
 			if (param.node_type === "func" && (param as FunctionNode).captures?.length) {
 				const dispose_slot = allocate_stack_space(status, 8);
 				emit_asm(status, `str x0, [x29, #${dispose_slot}]\n`);
 				lambda_arg_slots.push(dispose_slot);
 			}
-			const reg = param_regs[arg_slot];
-			const len_reg = param_regs[arg_slot + 1];
-			if (is_pair && len_reg !== "x1") {
-				// Move the len half FIRST: the ptr move targets x1 for the
-				// first pair slot and would clobber it.
-				emit_asm(status, `\nmov ${len_reg}, x1\n`);
-			}
-			if (reg !== "x0") {
-				emit_asm(status, `\nmov ${reg}, x0\n`);
-			} else {
-				emit_asm(status, `\n`);
-			}
-			if (is_pair) {
-				arg_slot += 2;
-			} else {
-				arg_slot += 1;
+			// Positional slots (absolute): env at start_reg, param i starts at
+			// (start_reg + 1) + param_slots[i] and consumes 1 or 2.
+			const arg_slot = start_reg + 1 + param_slots[i];
+			// Store the len half FIRST: the ptr move targets x1 for the first
+			// pair slot and would clobber it.
+			if (is_pair) store_arg_half("x1", arg_slot + 1);
+			store_arg_half("x0", arg_slot);
+		}
+		// Lower sp and copy the spill slots into the outgoing area; the callee
+		// reads them relative to its own sp, which is this lowered sp.
+		if (overflow_count > 0) {
+			outgoing_size = Math.ceil((overflow_count * 8) / 16) * 16;
+			emit_asm(status, `sub sp, sp, #${outgoing_size}\n`);
+			for (let k = 0; k < overflow_count; k++) {
+				emit_asm(status, `ldr x9, [x29, #${spill_base + k * 8}]\n`);
+				emit_asm(status, `str x9, [sp, #${k * 8}]\n`);
 			}
 		}
 
@@ -331,6 +365,9 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		// Inline capturing lambda args were borrowed by the call — reclaim
 		// their one-shot heap descriptors (x0 is preserved).
 		emit_dispose_lambda_args_a64(status, lambda_arg_slots);
+		if (outgoing_size > 0) {
+			emit_asm(status, `add sp, sp, #${outgoing_size}\n`);
+		}
 		// A func-VALUE indirect call returning a non-view string yields an
 		// OWNED heap string: closures normalize their string returns to heap
 		// (build_return_node) and named-function thunks dup borrow returns

@@ -223,25 +223,40 @@ export function materialize_func_value_a64(func: FunctionNode, status: BuildStat
 			status.heap_returning_functions?.has(target) ||
 			(status.heap_returning_functions?.has(func.name ?? "") ?? false)
 		);
+	// Map the closure ABI (env in x0, visible slot v at x(v+1) for v<7, else on
+	// the stack at [sp0+(v-7)*8]) onto the plain ABI the target expects (visible
+	// slot v at x(v) for v<8, else at [sp+(v-8)*8]). `slots` includes the env,
+	// so there are V = slots-1 visible slots.
+	const V = slots - 1;
 	// When normalizing, the tail `b` becomes a `bl` (the pair must be dup'd
-	// after it returns). `bl` clobbers x30 and needs a frame — so the thunk
-	// saves {x29, x30} with a 16-byte push. That push moves sp, which shifts
-	// every OVERFLOW arg's address by 16; the load offsets below account for it
-	// (the target reads its stack args relative to the new sp, so the store
-	// offsets stay put).
-	const frame_pad = normalizes_borrow_return ? 16 : 0;
+	// after it returns), which clobbers x30 and needs a frame. The saved frame
+	// lives at [sp] — where the target's OUTGOING stack args must also sit — so
+	// the thunk first carves a dedicated `dest_area` for those, BELOW the frame:
+	//   [sp .. sp+dest_area)          target stack args (dest v>=8)
+	//   [sp+dest_area .. +16)         saved {x29, x30}
+	//   [sp+dest_area+16 .. )         incoming stack args (frame_pad)
+	// A tail-call thunk (no normalization) has no frame, so dest args land at
+	// [sp] directly and frame_pad is 0.
+	const dest_stack_slots = Math.max(0, V - 8);
+	const dest_area = normalizes_borrow_return ? Math.ceil((dest_stack_slots * 8) / 16) * 16 : 0;
+	const frame_pad = normalizes_borrow_return ? dest_area + 16 : 0;
 	if (normalizes_borrow_return) {
 		lines.push(`stp x29, x30, [sp, #-16]!`);
+		if (dest_area > 0) lines.push(`sub sp, sp, #${dest_area}`);
 	}
-	// Shift every register arg down one slot (ascending = forward move).
-	const reg_shift = Math.min(slots, 8);
-	for (let s = 0; s < reg_shift - 1; s++) {
+	// Register shift: dest v<7 <- incoming v<7 in x(v+1) (ascending = forward).
+	const reg_moves = Math.min(V, 7);
+	for (let s = 0; s < reg_moves; s++) {
 		lines.push(`mov x${s}, x${s + 1}`);
 	}
-	// Overflow args: incoming slot 8+k sits at [sp, #(k+1)*8] (the env was
-	// slot 0, in a register), dest slot 8+k at [sp, #k*8]. The extra
-	// `frame_pad` compensates for the frame push above.
-	for (let k = 0; slots + k > 8 && k < 64; k++) {
+	// Incoming visible slot 7 (the 8th) is on the stack -> dest register x7.
+	// Load it BEFORE the stack shift below overwrites the destination slot.
+	if (V >= 8) {
+		lines.push(`ldr x7, [sp, #${frame_pad}]`);
+	}
+	// Stack shift: dest v>=8 at [sp+(v-8)*8] <- incoming v+1 at
+	// [sp0+(v-7)*8] = [sp+frame_pad+(v-8)*8].
+	for (let k = 0; k < V - 8; k++) {
 		lines.push(`ldr x9, [sp, #${frame_pad + (k + 1) * 8}]`);
 		lines.push(`str x9, [sp, #${k * 8}]`);
 	}
@@ -252,6 +267,7 @@ export function materialize_func_value_a64(func: FunctionNode, status: BuildStat
 		lines.push(`str x1, [sp, #-16]!`);
 		lines.push(status.audit ? `bl _nomen_strdup_wrap` : `bl _strdup`);
 		lines.push(`ldr x1, [sp], #16`);
+		if (dest_area > 0) lines.push(`add sp, sp, #${dest_area}`);
 		lines.push(`ldp x29, x30, [sp], #16`);
 		lines.push(`ret`);
 	} else {

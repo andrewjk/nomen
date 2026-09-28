@@ -50,15 +50,6 @@ the bug is in the inline-argument prototype path (the inferred param type is
 not stamped before the prototype is emitted). Found while fixing the
 func-value string-return leak.
 
-## aarch64: a named function with >8 argument slots as a func value fails to materialize
-
-Passing a named function whose closure ABI needs more than 8 argument slots as
-a func VALUE aborts codegen: `asm: 'mov' operand shape mismatch: got
-label,reg … mov undefined, x0` — the thunk/descriptor label resolves to the
-literal `undefined`. Repro: `func pick = (int×8, string s, out string) { return s }`
-bound to `var func (…) f = pick` (or passed to a method taking that func
-signature). Pre-existing (reproduced with the func-value leak fix stashed).
-
 ## Residual ownership-tracking gaps (accepted, narrow)
 
 - **Trait-dispatched value-struct methods bypass the self-write record
