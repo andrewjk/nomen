@@ -1,6 +1,8 @@
 import fs from "node:fs";
 
+import { struct_needs_destroy } from "../build_common/destroy_analysis.ts";
 import emission_label from "../build_common/emission_label.ts";
+import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import scan_force_heap_strings from "../build_common/scan_force_heap_strings.ts";
@@ -423,6 +425,68 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				const decl = new DeclarationNode(param.start, "private", "move", pname, param.type);
 				if (param_trait && !param_struct?.is_class) decl.trait_class_trait = param.type.name;
 				status.scoped_declarations.push(decl);
+			}
+			// OWNED value-struct parameter (pass-by-value): the caller
+			// materialized a uniformly heap-owned copy (string fields
+			// strdup'd at the call boundary — see the owned_value_param
+			// materialization in build_function_call_node). Seed the param's
+			// string-field records so (a) field writes inside the body see
+			// old_was_heap and reclaim displaced buffers, and (b) scope exit
+			// frees the surviving fields. The param is a POINTER to the
+			// caller-side shell, so the record-free emits `->` and the shell
+			// itself is freed after the fields. String-only structs only:
+			// structs with class/nested-owning fields keep by-address
+			// aliasing (their non-string members alias by design and a
+			// wholesale destroy would reclaim the caller's instances).
+			//
+			// A `move`-declared param of the same shape seeds TOO — the
+			// TRANSFER row: the argument's string ownership moved into the
+			// callee (callers stamped move_owned_param_indices drop their
+			// records instead of freeing). The param pointer is the CALLER's
+			// variable in that case, so owned_heap_shell stays off: the
+			// fields are freed, the storage is not.
+			const is_free_function =
+				(!node.scope || node.scope.node_type === "root" || node.scope.node_type === "func") &&
+				// Structural method check (mono clones can have unset scope):
+				// a self param means the receiver rides by address.
+				!node.params.some((p) => p.is_self_param);
+			const fn_name = node.name;
+			const fn_label = emission_label(node);
+			const owned_value_struct =
+				is_free_function &&
+				!node.address_escaped &&
+				!param.is_self_param &&
+				!param.is_variadic &&
+				!param.type.is_ref &&
+				!param.type.is_nullable &&
+				!param.type.is_view &&
+				!param.type.is_array &&
+				param.type.name
+					? status.structs.find(
+							(st) => st.name === param.type.name && !st.is_simple_type && !st.is_class,
+						)
+					: undefined;
+			if (
+				owned_value_struct &&
+				!(owned_value_struct.traits ?? []).length &&
+				direct_string_fields(owned_value_struct).length > 0 &&
+				!struct_needs_destroy(owned_value_struct, status) &&
+				(status.normalized_struct_returners?.has(fn_name) ||
+					status.normalized_struct_returners?.has(fn_label)) &&
+				!status.func_address_taken?.has(fn_name) &&
+				!status.func_address_taken?.has(fn_label)
+			) {
+				const decl = new DeclarationNode(param.start, "private", "var", pname, param.type);
+				decl.string_fields_via_pointer = true;
+				// Transfer params point at the caller's storage — free the
+				// fields, never the shell. Only a materialized pbv shell is
+				// callee-owned heap memory.
+				decl.owned_heap_shell = !param.is_moved;
+				status.scoped_declarations.push(decl);
+				if (!status.heap_string_fields) status.heap_string_fields = new Set();
+				for (const field of direct_string_fields(owned_value_struct)) {
+					status.heap_string_fields.add(`${pname}.${field.name}`);
+				}
 			}
 		}
 	}

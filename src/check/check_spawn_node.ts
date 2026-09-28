@@ -20,6 +20,12 @@ export default function check_spawn_node(node: SpawnNode, status: CheckStatus): 
 		add_error(status, "Spawned call did not resolve", node.start);
 		return false;
 	}
+	// The trampoline invokes the wrapped function through the task closure
+	// with the ENV's storage — the env's own deep copy is the ownership
+	// boundary (Phase 3d). The callee keeps by-address aliasing: no
+	// pass-by-value (see check_magic_ctor's matching mark).
+	const spawned = node.call.resolved_function;
+	if (spawned) spawned.address_escaped = true;
 
 	// Validate each argument is Sendable.
 	for (const param of node.call.params) {

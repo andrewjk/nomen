@@ -2,6 +2,8 @@ import emit_field_overrides, { hoist_field_overrides } from "../build/emit_field
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import emission_label from "../build_common/emission_label.ts";
+import { direct_string_fields } from "../build_common/has_string_fields.ts";
+import mark_tuple_literal_move_owners from "../build_common/mark_tuple_literal_move_owners.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
 import { is_float_type } from "../built_in_types.ts";
@@ -10,6 +12,7 @@ import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
+import type Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import { emit_address_of } from "./build_access_node.ts";
 import { build_inline_function } from "./build_inline_method.ts";
@@ -17,7 +20,14 @@ import build_node from "./build_node.ts";
 import { build_operand, tree_is_call_free } from "./build_operation_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_malloc } from "./utils/audit.ts";
-import { all_scope_frames, mark_moved_if_struct, find_anchor_slot } from "./utils/auto_destroy.ts";
+import {
+	emit_string_field_strdups_at,
+	all_scope_frames,
+	mark_moved_if_struct,
+	find_anchor_slot,
+	resolve_struct_name,
+	clear_heap_string_fields,
+} from "./utils/auto_destroy.ts";
 import { build_swap_params } from "./utils/build_swap.ts";
 import { emit_dispose_lambda_args_a64 } from "./utils/closure_a64.ts";
 import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
@@ -203,6 +213,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 	}
 
 	const is_struct = status.structs.find((s) => s.name === node.name && !s.is_simple_type);
+	mark_tuple_literal_move_owners(node, status);
 	// A nested-function callee emits under its uniquified label (the checker
 	// stamps resolved_function on every resolved call); struct constructors
 	// and top-level functions keep their names. An overloaded constructor
@@ -802,7 +813,108 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					is_struct_type(param_type, status) ||
 					is_enum_with_data_type(param_type, status)
 				) {
-					emit_struct_address(node.params[i], status);
+					// TRANSFER arg (a `move T` parameter of a pass-by-value
+					// owning struct — move_owned_param_indices): the callee's
+					// seeded records free EVERY direct string field at its
+					// exit, so unrecorded (rodata/borrow) fields must be
+					// strdup'd IN PLACE before the call — a freed static
+					// literal is a crash. Recorded fields are already heap and
+					// transfer raw. Must run before the bl: the callee's exit
+					// frees run during the call.
+					if (node.move_owned_param_indices?.includes(i) && node.params[i].node_type === "value") {
+						const transfer_struct = status.structs.find(
+							(st) =>
+								st.name ===
+									resolve_struct_name(
+										param_type,
+										(param as { type?: { type_args?: Type[] } }).type?.type_args,
+										status,
+									) &&
+								!st.is_simple_type &&
+								!st.is_class &&
+								!st.is_generic,
+						);
+						const transfer_var = (node.params[i] as ValueNode).value;
+						if (
+							transfer_struct &&
+							direct_string_fields(transfer_struct).length > 0 &&
+							transfer_var
+						) {
+							const recorded = new Set<string>();
+							for (const key of status.heap_string_fields ?? []) {
+								if (key.startsWith(`${transfer_var}.`)) {
+									recorded.add(key.slice(transfer_var.length + 1));
+								}
+							}
+							const unrecorded = direct_string_fields(transfer_struct).filter(
+								(f) => !recorded.has(f.name),
+							);
+							if (unrecorded.length > 0) {
+								emit_struct_address(node.params[i], status);
+								ensure_newline(status);
+								emit_string_field_strdups_at(status, transfer_struct.name, "x0", 0, recorded);
+								if (status.call_x8_preset && status.struct_return_buffer_var) {
+									emit_var_address(status, "x8", status.struct_return_buffer_var);
+								}
+							}
+						}
+					}
+					// OWNED value-struct parameter (pass-by-value): materialize
+					// a normalized stack copy — struct-copy the argument, then
+					// strdup its string fields — and pass the copy's address.
+					// The callee owns the copy (its seeded records free the
+					// fields at scope exit), so the caller's variable is never
+					// aliased or mutated. The registry gate mirrors the C
+					// caller: in split builds the pre-pass only registered USER
+					// functions, so a call into the precompiled system library
+					// keeps by-address aliasing (its callee cannot seed). The
+					// arg struct resolves through the type args — a generic
+					// call site carries `Box` + [string], and only the mono
+					// `Box_string` has the substituted (string) field layout.
+					const arg_struct = status.structs.find(
+						(st) =>
+							st.name ===
+								resolve_struct_name(
+									param_type,
+									(param as { type?: { type_args?: Type[] } }).type?.type_args,
+									status,
+								) &&
+							!st.is_simple_type &&
+							!st.is_class &&
+							!st.is_generic,
+					);
+					if (
+						node.owned_value_param_indices?.includes(i) &&
+						arg_struct &&
+						!(arg_struct.traits ?? []).length &&
+						direct_string_fields(arg_struct).length > 0 &&
+						status.normalized_struct_returners?.has(func_name) &&
+						!status.func_address_taken?.has(func_name)
+					) {
+						const mono_name = arg_struct.name;
+						const struct_size = get_struct_size(mono_name, status);
+						const off = allocate_stack_space(status, struct_size);
+						emit_struct_address(node.params[i], status);
+						ensure_newline(status);
+						emit_asm(status, `mov x1, x0\n`);
+						emit_asm(status, `add x0, x29, #${off}\n`);
+						for (let b = 0; b < struct_size; b += 8) {
+							emit_asm(status, `ldr x2, [x1, #${b}]\n`);
+							emit_asm(status, `str x2, [x0, #${b}]\n`);
+						}
+						emit_asm(status, `add x0, x29, #${off}\n`);
+						// X8 may hold the pending sret destination for THIS call
+						// (a `var p = callee(...)` initializer presets x8 before
+						// the args are built). The strdup calls below are bls —
+						// x8 is caller-saved — so re-establish the preset after
+						// them instead of staging x8 through the optimizer.
+						emit_string_field_strdups_at(status, mono_name, "x0");
+						if (status.call_x8_preset && status.struct_return_buffer_var) {
+							emit_var_address(status, "x8", status.struct_return_buffer_var);
+						}
+					} else {
+						emit_struct_address(node.params[i], status);
+					}
 				} else if (arg_deferrable(i)) {
 					deferred_args.push({ param: node.params[i], slot: arg_slot[i] });
 					continue;
@@ -860,6 +972,9 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					emit_asm(status, `ldr x0, [x29, #${args_base}]\n`);
 				}
 			}
+			// A struct-returning CALLEE receives its destination in x8 — but a
+			// struct-returning call ARGUMENT (e.g. `next(build(1, "one"))`)
+			// overwrote x8 with its own sret buffer while the arguments were
 			// AAPCS64: arguments past x0..x7 go in the caller's outgoing area,
 			// which must be at [sp] at the moment of the bl. Lower sp by the
 			// outgoing area size and copy each overflow arg from its spill slot
@@ -1127,6 +1242,14 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				// owning Buffer/List store_T deep-copies its string payloads,
 				// so the caller's temp must still be reclaimed at scope exit.
 				if (tname && status.enums.find((e) => e.name === tname && e.has_associated_data)) continue;
+				// A TRANSFER param (a `move T` parameter of a pass-by-value
+				// owning struct — see move_owned_param_indices): the callee's
+				// seeded records own the strings now, so the donor's records
+				// are DROPPED here — the scope-exit release-before-moved-check
+				// must not free what the callee now owns.
+				if (vname !== undefined && (node.move_owned_param_indices?.includes(idx) ?? false)) {
+					clear_heap_string_fields(status, vname);
+				}
 			}
 			if (param) {
 				mark_moved_if_struct(param, status);

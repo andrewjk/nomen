@@ -8,6 +8,7 @@ import call_in_set from "../build_common/call_in_set.ts";
 import { record_call_init_string_fields } from "../build_common/call_init_string_fields.ts";
 import { struct_needs_destroy } from "../build_common/destroy_analysis.ts";
 import fold_string_const from "../build_common/fold_string_const.ts";
+import mark_tuple_literal_move_owners from "../build_common/mark_tuple_literal_move_owners.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import { escape_asciz } from "../build_common/string_escapes.ts";
@@ -372,6 +373,10 @@ function build_constructor_params(
 	param_regs: string[],
 	status: BuildStatus,
 ): number {
+	// A tuple-literal constructor (`[move t, move c]`): register every bare
+	// `move <local>` argument so the source's scope-exit cleanup is
+	// suppressed (the tuple's fields own the transferred buffers now).
+	mark_tuple_literal_move_owners(fc, status);
 	const variadic_idx = fc.variadic_param_index;
 	if (
 		variadic_idx !== undefined &&
@@ -1278,12 +1283,15 @@ export default function build_declaration_node(
 			} else {
 				// Struct-returning function: pass the destination address via x8.
 				const old_buffer = status.struct_return_buffer;
+				const old_buffer_var = status.struct_return_buffer_var;
 				const old_preset = status.call_x8_preset;
 				emit_var_address(status, "x8", node.name);
+				status.struct_return_buffer_var = node.name;
 				status.struct_return_buffer = "x8";
 				status.call_x8_preset = true;
 				emit_init_value(node.value, nir_init, status);
 				status.struct_return_buffer = old_buffer;
+				status.struct_return_buffer_var = old_buffer_var;
 				status.call_x8_preset = old_preset;
 			}
 			return;
@@ -1851,15 +1859,47 @@ export default function build_declaration_node(
 			} else if (status.function_return_label) {
 				const labels = emit_string_array_labels(array_values.values, status);
 				if (needs_runtime_array_init(array_values.values, status)) {
-					const offset = alloc_array_with_prefix(status, array_values.values.length, element_size);
-					status.stack_offsets!.set(node.name, offset);
-					array_values.values.forEach((value, i) => {
-						const slot_offset = offset + i * element_size;
-						const resolved = resolve_static_value(value, status);
-						if (resolved !== null) {
-							emit_string_array_element(status, resolved, labels, "x29", slot_offset);
-						}
-					});
+					if (node.global_runtime_init) {
+						// A global string array initializing from main's
+						// prologue: the storage is WRITABLE `.data` (the
+						// prologue stores rodata label addresses into it, and
+						// __TEXT is read-only), laid out as the length word +
+						// zeroed fat elements. emit_data routes it to file
+						// scope via function_data; the stores below run in
+						// main before any reader.
+						emit_data(status, `.data\n`);
+						emit_data(status, `.quad ${array_values.values.length}\n`);
+						emit_data(status, `${node.name}:\n`);
+						emit_data(status, `.space ${array_values.values.length * 16}\n`);
+						emit_data(status, `.p2align 2\n`);
+						emit_data(status, `.text\n`);
+						emit_asm(status, `adrp x0, ${node.name}@PAGE\n`);
+						emit_asm(status, `add x0, x0, ${node.name}@PAGEOFF\n`);
+						array_values.values.forEach((value, i) => {
+							const resolved = resolve_static_value(value, status);
+							if (resolved !== null && resolved.startsWith('"')) {
+								const label = resolve_array_element(resolved, labels);
+								emit_asm(status, `adr x1, ${label}\n`);
+								emit_asm(status, `str x1, [x0, #${i * 16}]\n`);
+								emit_asm(status, `mov x1, #${string_literal_length(resolved)}\n`);
+								emit_asm(status, `str x1, [x0, #${i * 16 + 8}]\n`);
+							}
+						});
+					} else {
+						const offset = alloc_array_with_prefix(
+							status,
+							array_values.values.length,
+							element_size,
+						);
+						status.stack_offsets!.set(node.name, offset);
+						array_values.values.forEach((value, i) => {
+							const slot_offset = offset + i * element_size;
+							const resolved = resolve_static_value(value, status);
+							if (resolved !== null) {
+								emit_string_array_element(status, resolved, labels, "x29", slot_offset);
+							}
+						});
+					}
 				} else {
 					emit_data(status, `${node.name}: ${directive} `);
 					let first = true;
@@ -1876,24 +1916,30 @@ export default function build_declaration_node(
 					emit_data(status, `\n.p2align 2\n`);
 				}
 			} else if (node.type.name === "string" && node.type.is_array) {
-				const labels = emit_string_array_labels(array_values.values, status);
-				emit_asm(status, `${node.name}: ${directive} `);
-				array_values.values.forEach((value, i) => {
-					if (i > 0) emit_data(status, ", ");
-					const resolved = resolve_static_value(value, status);
-					if (resolved !== null && resolved.startsWith('"')) {
-						// Fat-string row: ptr label + len half (16 bytes).
-						const label = resolve_array_element(resolved, labels);
-						emit_asm(status, `.quad ${label}\n\t.quad ${string_literal_length(resolved)}`);
-					} else {
-						emit_asm(status, ".quad 0\n\t.quad 0");
-					}
-				});
-				emit_asm(status, `\n.p2align 2\n`);
+				// A global `string[N] = [...]`: the Array_* accessors read the
+				// length from the word BEFORE the symbol and elements at a
+				// 16-byte fat (ptr, len) stride. Mach-O arm64 forbids pointer
+				// relocations in data sections, so the pointer rows cannot be
+				// static — lay out the length word + zeroed space here, and
+				// store the rodata label addresses from main's prologue (the
+				// declaration is collected into module_init_statements with
+				// global_runtime_init set).
+				emit_data(status, `.quad ${array_values.values.length}\n`);
+				emit_data(
+					status,
+					`${node.name}: .space ${array_values.values.length * 16}\n\t.p2align 2\n`,
+				);
 			} else {
-				emit_asm(status, `${node.name}: ${directive} `);
-				build_array_values_node(array_values, status);
-				emit_asm(status, `\n.p2align 2\n`);
+				// A global `int[N]`-style array: the accessors read the length
+				// from [symbol - 8], so the same length-prefix word is
+				// required before the elements.
+				emit_data(status, `.quad ${array_values.values.length}\n`);
+				emit_data(status, `${node.name}:\n`);
+				array_values.values.forEach((value) => {
+					const resolved = resolve_static_value(value, status);
+					emit_data(status, `\t${directive} ${resolved !== null ? resolved : "0"}\n`);
+				});
+				emit_data(status, `\t.p2align 2\n`);
 			}
 		} else if (node.value && node.value.node_type === "range") {
 			if (status.function_return_label) {
@@ -2169,12 +2215,15 @@ export default function build_declaration_node(
 					);
 					if (func_return_struct && status.function_return_label) {
 						const old_buffer = status.struct_return_buffer;
+						const old_buffer_var = status.struct_return_buffer_var;
 						const old_preset = status.call_x8_preset;
 						emit_var_address(status, "x8", node.name);
+						status.struct_return_buffer_var = node.name;
 						status.struct_return_buffer = "x8";
 						status.call_x8_preset = true;
 						emit_init_value(node.value, nir_init, status);
 						status.struct_return_buffer = old_buffer;
+						status.struct_return_buffer_var = old_buffer_var;
 						status.call_x8_preset = old_preset;
 						emit_var_address(status, "x0", node.name);
 						// The callee's return-boundary normalization made the

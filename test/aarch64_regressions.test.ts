@@ -792,3 +792,87 @@ pub func main = (Init init) {
 	expect(result.errors ?? []).toEqual([]);
 	expect(result.code).not.toContain("_nomen_free_wrap");
 });
+
+// A nullable STRUCT local (`var T? p = make()`) whose recorded heap string
+// fields are released at scope exit must honor the `_has` flag: the null
+// representation leaves the value bytes UNINITIALIZED (a `return null`
+// callee writes only the flag word), so an unguarded free reads stale stack
+// garbage. In a loop, the previous iteration's freed string pointers stay in
+// the slots — the next null iteration freed them AGAIN (allmark's spec
+// binaries aborted in parse_link_inline's null path once a successful parse
+// had warmed the slots). The aarch64 backend now guards the release on the
+// flag, mirroring the C backend's `if (<name>_has)` auto-free guard.
+test("nullable struct local frees guarded on _has flag", async () => {
+	const input = `
+import System
+
+pub struct Pair {
+	pub var name = ""
+	pub var title = ""
+}
+
+func make = (int n, move out Pair?) {
+	if n == 0 {
+		return null
+	}
+	var p = Pair()
+	p.name = "n\\{n}"
+	p.title = "t\\{n}"
+	return p
+}
+
+pub func main = (Init init) {
+	for i of 0 .. 6 {
+		var Pair? p = make(i % 2)
+		if p != null {
+			Console.write("\\{p.name};")
+		}
+	}
+	Console.write_line("done")
+}
+`;
+	await build_and_check_output(input, "nullable_struct_flag_guarded_free", "n1;n1;n1;done\n", true);
+});
+
+// A nullable struct local REASSIGNED mid-scope (`p = make(2)`, `p = null`)
+// must reclaim the old value's recorded heap string fields: the copy
+// overwrites the only pointers to them, and the flag-guarded scope-exit
+// release (see the test above) intentionally skips null/stale slots. The
+// reclaim is guarded on the `_has` flag (a null slot's bytes are garbage),
+// skips same-variable aliasing (`p = p`), and retargets the records to the
+// new value — only a normalized nullable-returning call re-establishes heap
+// ownership (constructors leave rodata borrows; variable copies alias).
+// Runs under audit on BOTH backends: any displaced value reports
+// `LEAK: N allocation(s)`.
+test("nullable struct reassignment reclaims old value", async () => {
+	const input = `
+import System
+
+pub struct Pair {
+	pub var name = ""
+	pub var title = ""
+}
+
+func make = (int n, move out Pair?) {
+	if n == 0 {
+		return null
+	}
+	var p = Pair()
+	p.name = "n\\{n}"
+	p.title = "t\\{n}"
+	return p
+}
+
+pub func main = (Init init) {
+	var Pair? p = make(1)
+	p = make(2)
+	p = null
+	p = make(3)
+	if p != null {
+		Console.write_line(p.name)
+	}
+	Console.write_line("done")
+}
+`;
+	await build_and_check_output(input, "nullable_struct_reassign_reclaim", "n3\ndone\n", true);
+});

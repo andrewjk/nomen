@@ -80,7 +80,24 @@ export default function build_block_node(node: BlockNode, status: BuildStatus) {
 			if (is_type_shape) continue;
 			if (child.node_type === "declare") {
 				const decl = child as DeclarationNode;
-				if (decl.declaration === "const") continue;
+				if (decl.declaration === "const") {
+					// A root `const string[] = [...]` cannot be a static pointer
+					// table: Mach-O arm64 forbids pointer relocations in data
+					// sections, so the fat (ptr, len) rows must be stored by
+					// RUNTIME code. The declaration still lays out its static
+					// storage (length word + zeroed space) at file scope; here
+					// it is collected so main's prologue stores the rodata
+					// label addresses.
+					if (
+						decl.type?.name === "string" &&
+						decl.type.is_array &&
+						decl.value?.node_type === "array"
+					) {
+						decl.global_runtime_init = true;
+						module_init_statements.push(child);
+					}
+					continue;
+				}
 				if (inlined_const_names.has(decl.name)) continue;
 				if (is_literal_init(decl.value)) continue;
 				module_init_statements.push(child);
@@ -101,7 +118,16 @@ export default function build_block_node(node: BlockNode, status: BuildStatus) {
 		struct_decls: [],
 	});
 
-	const declarations_before = status.scoped_declarations.length;
+	// A FUNCTION body's frame already holds the pass-by-value param
+	// declarations (seeded by build_function_node's prologue BEFORE this
+	// block runs — build_function_node resets scoped_declarations to a
+	// fresh array at entry). Capturing `length` here would exclude them
+	// from the scope-exit cleanup below, so the callee would never free
+	// the shell's strdup'd string fields. Start from 0 so the whole frame
+	// — params first, then body locals — is reclaimed. Nested scopes enter
+	// through enter_scope_frame (a fresh empty frame), where both forms
+	// agree; root frames start empty too.
+	const declarations_before = node.node_type === "func" ? 0 : status.scoped_declarations.length;
 
 	for (let child of node.statements) {
 		if (is_struct_node(child)) {

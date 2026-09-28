@@ -13,6 +13,21 @@ export default class FunctionCallNode extends BaseNode {
 	ref_param_indices?: number[];
 	move_param_indices?: number[];
 	/**
+	 * Indices of arguments bound to a `move T` parameter where T is a
+	 * pass-by-value owning struct on a registered free function: ownership
+	 * TRANSFERS at the boundary (the callee seeds the param's string-field
+	 * records and frees them at its exit), so the caller drops its records
+	 * instead of freeing them. The plain `move_param_indices` convention
+	 * (callee deep-copies, caller frees the originals) still governs
+	 * container stores and every non-transfer shape. Stamped by
+	 * check_function_call alongside owned_value_param_indices.
+	 */
+	move_owned_param_indices?: number[];
+	// Indices of parameters that are OWNED value structs with string fields —
+	// the call site materializes a normalized (uniformly heap-owned) copy and
+	// the callee owns it (see check_function_call / build_function_call_node).
+	owned_value_param_indices?: number[];
+	/**
 	 * Indices of arguments whose corresponding callee parameter is a nullable
 	 * struct value type (`T?` where T is a non-class struct). Populated during
 	 * the check pass when the callee's signature is resolved. The build uses

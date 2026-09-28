@@ -1,11 +1,11 @@
 import add_error from "../add_error.ts";
+import { struct_needs_destroy } from "../build_common/destroy_analysis.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
-import AssignmentNode from "../nodes/AssignmentNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import { clone_type } from "../nodes/clone_node.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
@@ -43,7 +43,9 @@ import is_visible from "./utils/is_visible.ts";
 import {
 	is_class_type,
 	is_owning_ref_type,
+	is_owning_struct_type,
 	is_owning_struct_type_requiring_move,
+	is_pass_by_value_owning_struct,
 } from "./utils/ownership.ts";
 import lint_regex_pattern from "./utils/regex_pattern_lint.ts";
 import { maybe_mark_borrow_to_string_arg } from "./utils/string_mutation_scan.ts";
@@ -79,57 +81,6 @@ function is_heap_array_type(type: Type | undefined): boolean {
  * with one) — the "owning element" case for containers. Mirrors the build's
  * `struct_needs_auto_destroy` / `has_string_fields` (owning_buffer_specialize).
  */
-/**
- * Whether the function's body DIRECTLY writes string fields of its own
- * parameter `param_name` (`p.<field> = …` where `<field>` is one of the
- * struct's direct string fields). Nested-field writes (`p.inner.s = …`) are
- * untracked raw stores everywhere — borrow semantics, nothing stranded — and
- * don't count. Nested function declarations are not descended into (a
- * closure writing the outer param's field is a different, deferred write).
- */
-function fn_writes_param_string_fields(
-	fn: FunctionNode,
-	param_name: string,
-	field_names: Set<string>,
-): boolean {
-	const seen = new Set<BaseNode>();
-	const walk = (node: BaseNode): boolean => {
-		if (!node || typeof node !== "object" || seen.has(node)) return false;
-		seen.add(node);
-		if ((node as FunctionNode).node_type === "func") return false;
-		const assign = node as unknown as AssignmentNode;
-		if (assign.left_value !== undefined && assign.right_value !== undefined) {
-			if (
-				assign.left_value.node_type === "access" &&
-				(assign.left_value as AccessNode).target.node_type === "value" &&
-				((assign.left_value as AccessNode).target as ValueNode).value === param_name &&
-				(assign.left_value as AccessNode).access.node_type === "access_field"
-			) {
-				const field_name = ((assign.left_value as AccessNode).access as AccessFieldNode).name;
-				if (field_names.has(field_name)) return true;
-			}
-		}
-		for (const key of Object.keys(node)) {
-			if (key === "parent" || key === "scope") continue;
-			const child = (node as unknown as Record<string, unknown>)[key];
-			if (Array.isArray(child)) {
-				for (const item of child) {
-					if (item && typeof item === "object" && "node_type" in item) {
-						if (walk(item as BaseNode)) return true;
-					}
-				}
-			} else if (child && typeof child === "object" && "node_type" in child) {
-				if (walk(child as BaseNode)) return true;
-			}
-		}
-		return false;
-	};
-	for (const statement of fn.statements ?? []) {
-		if (walk(statement)) return true;
-	}
-	return false;
-}
-
 function struct_has_string_fields(node: StructNode, status: CheckStatus): boolean {
 	for (const field of node.fields) {
 		if (field.type.is_ref) continue;
@@ -551,6 +502,61 @@ export default function check_function_call(
 		const param_type = type_from_value_node(param, status);
 		const param_value = value_from_value_node(param);
 		const has_ref_keyword = node.ref_param_indices?.includes(i) ?? false;
+		// OWNED value-struct parameter: the callee fully owns a normalized
+		// copy of the argument (pass-by-value — see the build-side
+		// materialization + param record seeding). Stamped when the callee
+		// has a body (it frees the param's string fields at its scope exit),
+		// the parameter is a concrete value struct with direct string
+		// fields, and it is not the receiver / a ref / nullable / variadic
+		// parameter (those keep their existing conventions).
+		//
+		// A `move T` parameter of that same shape gets the TRANSFER row of
+		// the ownership table instead: no boundary copy, the argument's
+		// string ownership moves into the callee (whose seeded records free
+		// it) — stamped as move_owned_param_indices so the builds drop the
+		// donor's records rather than freeing them.
+		if (
+			func &&
+			func_param &&
+			func.has_body &&
+			// Free functions only: methods of structs (and mono container
+			// clones) receive elements/slots by address for in-place access
+			// (Buffer.modify, Map internals) — seeding them as owned would
+			// free the container's storage at the method's exit. The
+			// self-param check is structural: monomorphized method clones can
+			// have an unset `scope` back-pointer, but they always carry the
+			// cloned `self`.
+			(!func.scope || func.scope.node_type !== "struct") &&
+			!func.params.some((p) => p.is_self_param) &&
+			// Functions whose address escapes into a func-typed value are
+			// invoked through pointers with BORROWED arguments — no
+			// pass-by-value.
+			!func.address_escaped &&
+			!func_param.is_self_param &&
+			!func_param.is_variadic &&
+			!func_param.type.is_ref &&
+			!func_param.type.is_nullable &&
+			func_param.type.name &&
+			!is_owning_struct_type_requiring_move(func_param.type, status)
+		) {
+			const owned_struct = status.structs.find(
+				(st) => st.name === func_param.type.name && !st.is_simple_type && !st.is_class,
+			);
+			if (
+				owned_struct &&
+				!(owned_struct.traits ?? []).length &&
+				direct_string_fields(owned_struct).length > 0 &&
+				!struct_needs_destroy(owned_struct, status)
+			) {
+				const transfer = func_param.is_moved;
+				const indices = transfer
+					? ((node as FunctionCallNode).move_owned_param_indices ??= [])
+					: ((node as FunctionCallNode).owned_value_param_indices ??= []);
+				if (!indices.includes(i)) {
+					indices.push(i);
+				}
+			}
+		}
 		const has_mov_keyword = node.move_param_indices?.includes(i) ?? false;
 		// A `view string` argument cannot cross into an owned `string`
 		// parameter: the callee expects a heap-owned pair it may free or
@@ -711,11 +717,17 @@ export default function check_function_call(
 		// soundly — see the shared-ownership check below), move is implicit, a
 		// no-op, or the borrow check below fires first.
 		const param_is_class = func_param.type.name && is_class_type(func_param.type.name, status);
+		// TRANSFER applies only where the callee actually seeds (a registered
+		// free function — the move_owned stamp): for methods and mono
+		// container clones the plain move convention (callee deep-copies)
+		// still governs, so their `move T` params don't demand the keyword
+		// for value-struct args.
+		const param_transfers = !!(node as FunctionCallNode).move_owned_param_indices?.includes(i);
 		const param_is_owning_struct =
 			func_param.is_moved &&
 			!func_param.type.is_nullable &&
 			!!func_param.type.name &&
-			is_owning_struct_type_requiring_move(func_param.type, status);
+			(is_owning_struct_type_requiring_move(func_param.type, status) || param_transfers);
 		const arg_is_variable = param.node_type === "value";
 		const arg_is_owned_value = arg_is_variable && borrow_depth_of(param, status) === undefined;
 		if (
@@ -744,7 +756,7 @@ export default function check_function_call(
 			if (
 				func_param.type.name &&
 				(is_class_type(func_param.type.name, status) ||
-					(func_param.is_moved && is_owning_struct_type_requiring_move(func_param.type, status)))
+					(func_param.is_moved && is_owning_struct_type(func_param.type, status)))
 			) {
 				if (!status.moved_variables) status.moved_variables = new Set();
 				status.moved_variables.add(param_value);
@@ -768,7 +780,13 @@ export default function check_function_call(
 			} else if (
 				field_type.name &&
 				!field_type.is_nullable &&
-				is_owning_struct_type_requiring_move(field_type, status)
+				(is_owning_struct_type_requiring_move(field_type, status) ||
+					// A pass-by-value owning struct field transferred with
+					// `move` (to a seeding callee — param_transfers) hands its
+					// string ownership to the callee while the field's own
+					// records stay live on the struct — the same
+					// dangling-field hazard, so the same swap rule.
+					(param_transfers && is_pass_by_value_owning_struct(field_type, status)))
 			) {
 				// The owning-struct counterpart of the class rule above: a
 				// bare `move obj.field` leaves the field moved-out (its
@@ -801,53 +819,6 @@ export default function check_function_call(
 			add_error(
 				status,
 				`cannot copy field '${field_name}' into parameter '${func_param.name}' by value — it owns heap resources; use 'move ... swap <replacement>' or .copy()`,
-				param.start,
-			);
-		}
-		// Passing an OWNING value struct (string fields) as a bare ALIAS — a
-		// plain variable or field access without `ref`/`move` — hands the
-		// callee a by-address view of the caller's storage: string-field
-		// writes record in the callee's scope and die at its return (the
-		// cross-scope leak), and mutations reach the caller invisibly.
-		// Require explicit `ref` (borrow/mutate) or `move` (transfer) — or
-		// pass a fresh value (a construction, a call result, `.copy()`),
-		// which is already uniformly owned. Library/core internals are
-		// trusted (status quo); nullable params marshal by value (a copy);
-		// variadic params pack.
-		const arg_param_struct =
-			func_param &&
-			!func_param.is_self_param &&
-			!func_param.is_variadic &&
-			!func_param.type.is_ref &&
-			!func_param.type.is_nullable &&
-			!func_param.is_moved &&
-			func_param.type.name
-				? status.structs.find(
-						(st) => st.name === func_param.type.name && !st.is_simple_type && !st.is_class,
-					)
-				: undefined;
-		if (
-			arg_param_struct &&
-			!node.swap_params?.has(i) &&
-			!has_mov_keyword &&
-			!has_ref_keyword &&
-			(param.node_type === "value" || param.node_type === "access") &&
-			direct_string_fields(arg_param_struct).length > 0 &&
-			// … AND the callee actually WRITES those fields: a read-only
-			// callee (printBox, maybe_render, spawn workers) aliases soundly
-			// — the slot/owner keeps ownership and nothing dies with the
-			// callee's scope. The write is what strands the strdup'd
-			// assignment copy in the dead callee scope.
-			func !== undefined &&
-			fn_writes_param_string_fields(
-				func,
-				func_param.name,
-				new Set(direct_string_fields(arg_param_struct).map((f) => f.name)),
-			)
-		) {
-			add_error(
-				status,
-				`cannot pass '${func_param.type.name}' by value — it owns heap resources; declare the parameter 'ref' (with 'ref' at the call site) or 'move', or pass a fresh value`,
 				param.start,
 			);
 		}

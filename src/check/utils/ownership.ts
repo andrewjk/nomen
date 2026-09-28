@@ -1,3 +1,4 @@
+import { direct_string_fields } from "../../build_common/has_string_fields.ts";
 import { mono_type_name } from "../../build_common/mono_name.ts";
 import type BaseNode from "../../nodes/BaseNode.ts";
 import { child_nodes } from "../../nodes/child_nodes.ts";
@@ -121,7 +122,25 @@ export function is_owning_struct_type_requiring_move(type: Type, status: CheckSt
 	return struct_owns_non_string_heap(s, status, new Set());
 }
 
-function struct_owns_non_string_heap(
+/**
+ * Whether `type` is a concrete value struct with direct string fields whose
+ * only ownership those strings — the pass-by-value convention's domain: a
+ * parameter of this type is fully owned by the callee (the call boundary
+ * materializes a uniformly heap-owned copy), so `var` field writes inside
+ * the body stay local and no call-site acknowledgment is needed. Excludes
+ * structs that own non-string heap (those keep `move ... swap` / `ref`
+ * semantics) and structs conforming to traits (trait dispatch aliases).
+ */
+export function is_pass_by_value_owning_struct(type: Type, status: CheckStatus): boolean {
+	const s = resolve_struct(type, status);
+	if (!s || s.is_class || s.is_generic || s.is_simple_type) return false;
+	if ((s.traits ?? []).length > 0) return false;
+	if (direct_string_fields(s).length === 0) return false;
+	if (struct_owns_non_string_heap(s, status, new Set())) return false;
+	return true;
+}
+
+export function struct_owns_non_string_heap(
 	s: StructNode,
 	status: CheckStatus,
 	visited: Set<string>,

@@ -93,24 +93,57 @@ export function free_scoped_declarations(
 	if (status.heap_string_fields?.size) {
 		for (const dec of decls) {
 			const prefix = `${dec.name}.`;
-			for (const key of Array.from(status.heap_string_fields)) {
-				if (key.startsWith(prefix)) {
-					if (!commented) {
-						status.code += "\n// Auto-free\n";
-						commented = true;
-					}
-					// The record key is the raw Nomen name; emitted C must use
-					// the keyword-mangled form (`id` → `_nomen_id` in ObjC .m).
-					const dot = key.indexOf(".");
-					status.code += `free(${c_function_name(key.substring(0, dot))}${key.substring(dot)}.ptr);\n`;
-					if (!persist_string_field_records) {
-						status.heap_string_fields.delete(key);
-					}
+			const keys = Array.from(status.heap_string_fields).filter((key) => key.startsWith(prefix));
+			if (!keys.length) continue;
+			if (!commented) {
+				status.code += "\n// Auto-free\n";
+				commented = true;
+			}
+			// A nullable struct local's value bytes are stale garbage when the
+			// companion `_has` flag is 0 (a `return null` callee writes only the
+			// flag word) — guard the frees on the flag, mirroring the
+			// aarch64 backend's flag-guarded release_heap_string_fields.
+			const nullable_flag = is_nullable_struct_type(dec.type, status)
+				? has_flag_name(c_function_name(dec.name))
+				: undefined;
+			if (nullable_flag) {
+				status.code += `if (${nullable_flag}) { `;
+			}
+			for (const key of keys) {
+				// The record key is the raw Nomen name; emitted C must use
+				// the keyword-mangled form (`id` → `_nomen_id` in ObjC .m).
+				// An OWNED value-struct PARAM is a pointer to the caller's
+				// shell — its fields are reached through `->`. The fields
+				// were strdup'd by the call-boundary normalization, so the
+				// free must go through the counted wrapper (audit builds).
+				const dot = key.indexOf(".");
+				const base = c_function_name(key.substring(0, dot));
+				const arrow = dec.string_fields_via_pointer ? "->" : ".";
+				const field = key.substring(dot + 1);
+				const free_fn = status.audit ? "nomen_free_wrap" : "free";
+				status.code += `${free_fn}(${base}${arrow}${field}.ptr);\n`;
+				if (!persist_string_field_records) {
+					status.heap_string_fields.delete(key);
 				}
+			}
+			if (nullable_flag) {
+				status.code += `}\n`;
 			}
 		}
 	}
 	for (const dec of decls) {
+		// An OWNED value-struct PARAM (pass-by-value shell): the caller
+		// malloc'd the shell via nomen_malloc_wrap; the callee frees its
+		// fields above (the record loop) and the shell itself here through
+		// the counted wrapper.
+		if (dec.owned_heap_shell) {
+			if (!commented) {
+				status.code += "\n// Auto-free\n";
+				commented = true;
+			}
+			status.code += `${status.audit ? "nomen_free_wrap" : "free"}(${c_function_name(dec.name)});\n`;
+			continue;
+		}
 		// A hoisted field-override temp (`_fov_N`, force_owned_string) is dead
 		// once the override assignments have consumed it — AFTER the return
 		// value is computed. The return-path reclaim (persist=true) must skip

@@ -2,6 +2,8 @@ import emit_field_overrides, {
 	has_field_overrides,
 	hoist_field_overrides,
 } from "../build/emit_field_overrides.ts";
+import { is_normalized_struct_call } from "../build_common/call_init_string_fields.ts";
+import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import { is_string_borrow } from "../build_common/string_return_analysis.ts";
@@ -13,6 +15,7 @@ import AccessNode from "../nodes/AccessNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
+import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import { build_vtable_target } from "./build_access_node.ts";
@@ -73,6 +76,87 @@ export default function build_assignment_node(
 		";\n",
 		node.left_value.node_type === "value" ? (node.left_value as ValueNode).value : undefined,
 	);
+	// Assignment to a nullable struct slot (local var or struct field): write
+	// the value (if non-null) and update the companion `<slot>_has` flag.
+	const lhs_nullable_type = lhs_nullable_struct_type(node, status);
+	if (!node.operator && lhs_nullable_type) {
+		const lhs_expr = capture_build(node.left_value, status);
+		const flag = `${lhs_expr}_has`;
+		const rhs_is_null =
+			node.right_value.node_type === "value" && (node.right_value as ValueNode).value === "null";
+		// The slot may currently hold a value whose recorded heap string
+		// fields are owned by it. Free them before the store overwrites the
+		// only pointers to them, guarded on the flag — a null slot's value
+		// bytes are stale garbage. A same-variable RHS (`p = p`) aliases the
+		// old value and must not be reclaimed. The records are then
+		// retargeted for the new value: only a normalized nullable-returning
+		// call re-establishes uniform heap ownership; null, constructors
+		// (rodata borrows) and variable copies own nothing — the same rule
+		// the declaration path uses to decide whether to record. (Locals
+		// only: nested slot records have their owner's tracking.)
+		const lhs_is_local = node.left_value.node_type === "value";
+		const lhs_name = lhs_is_local ? (node.left_value as ValueNode).value : "";
+		const rhs_is_same_var =
+			lhs_is_local &&
+			node.right_value.node_type === "value" &&
+			(node.right_value as ValueNode).value === lhs_name;
+		const decl = lhs_is_local
+			? status.scoped_declarations.find((d) => d.name === lhs_name)
+			: undefined;
+		const type_name = decl?.type?.name || "";
+		if (lhs_is_local && !rhs_is_same_var && type_name) {
+			const prefix = `${lhs_name}.`;
+			const recorded = status.heap_string_fields
+				? Array.from(status.heap_string_fields).filter((k) => k.startsWith(prefix))
+				: [];
+			if (recorded.length > 0) {
+				const free_fn = status.audit ? "nomen_free_wrap" : "free";
+				const frees = recorded.map((k) => {
+					const dot = k.indexOf(".");
+					return `${free_fn}(${lhs_expr}.${k.slice(dot + 1)}.ptr)`;
+				});
+				status.code += `if (${flag}) { ${frees.join("; ")}; }\n`;
+				for (const k of recorded) {
+					status.heap_string_fields!.delete(k);
+				}
+			}
+			if (!rhs_is_null && is_normalized_struct_call(node.right_value, status)) {
+				const struct = status.structs.find(
+					(s) => s.name === type_name && !s.is_simple_type && !s.is_class,
+				);
+				if (struct) {
+					if (!status.heap_string_fields) status.heap_string_fields = new Set();
+					for (const field of direct_string_fields(struct)) {
+						status.heap_string_fields.add(`${lhs_name}.${field.name}`);
+					}
+				}
+			}
+		}
+		if (rhs_is_null) {
+			status.code += `${flag} = 0`;
+		} else {
+			// A nullable-returning CALL forwards `&<flag>` as the hidden
+			// `_ret_has` out-parameter, so the callee writes the REAL
+			// null/non-null bit (a null result must land as null) — the
+			// hardcoded `= 1` below is only for non-call values.
+			const value_is_nullable_call =
+				node.right_value.node_type === "func_call" &&
+				is_nullable_struct_type((node.right_value as FunctionCallNode).type, status);
+			if (value_is_nullable_call) {
+				const old = status.current_nullable_call_flag;
+				status.current_nullable_call_flag = flag;
+				status.code += `${lhs_expr} = `;
+				emit_rhs_value(node.right_value, nir_rhs, status);
+				status.current_nullable_call_flag = old;
+			} else {
+				status.code += `${lhs_expr} = `;
+				emit_rhs_value(node.right_value, nir_rhs, status);
+				status.code += `;\n${flag} = 1`;
+			}
+		}
+		return;
+	}
+
 	// Check whether this is an access of a field from a trait rather than a concrete type
 	// HACK: This needs to be much more comprehensive, e.g. to handle access
 	// chains where something in the middle is a trait
@@ -1018,24 +1102,6 @@ export default function build_assignment_node(
 	}
 
 	status.code += ``;
-
-	// Assignment to a nullable struct slot (local var or struct field): write
-	// the value (if non-null) and update the companion `<slot>_has` flag.
-	const lhs_nullable_type = lhs_nullable_struct_type(node, status);
-	if (!node.operator && lhs_nullable_type) {
-		const lhs_expr = capture_build(node.left_value, status);
-		const flag = `${lhs_expr}_has`;
-		const rhs_is_null =
-			node.right_value.node_type === "value" && (node.right_value as ValueNode).value === "null";
-		if (rhs_is_null) {
-			status.code += `${flag} = 0`;
-		} else {
-			status.code += `${lhs_expr} = `;
-			emit_rhs_value(node.right_value, nir_rhs, status);
-			status.code += `;\n${flag} = 1`;
-		}
-		return;
-	}
 
 	// A `ref string` param reassignment (`s = …` inside `func f = (ref string
 	// s)`) writes through to the CALLER's storage, whose ownership tracking

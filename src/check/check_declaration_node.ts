@@ -89,6 +89,16 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 		if (is_view_keyword) {
 			add_error(status, `'view' cannot declare a function-typed binding`, decl.start);
 		}
+		// A func-typed BINDING takes the initializer's address: the lambda (or
+		// named function) is invoked through the variable's func value with a
+		// BORROWED argument, so pass-by-value normalization must not apply to
+		// it.
+		if (decl.value?.node_type === "func") {
+			(decl.value as FunctionNode).address_escaped = true;
+		} else if (decl.value?.node_type === "value") {
+			const fn = status.functions.findLast((f) => f.name === (decl.value as ValueNode).value);
+			if (fn) fn.address_escaped = true;
+		}
 		// A `null` initializer needs a nullable func binding (`func?` / `Func<...>?`).
 		// The keyword spelling's type is otherwise empty, which would sail
 		// through the generic type match ("unknown target = ok").
@@ -441,19 +451,56 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 		) {
 			const field_type = type_from_value_node(decl.value, status);
 			if (field_type.name && is_owning_struct_type_requiring_move(field_type, status)) {
-				const field_name = ((decl.value as AccessNode).access as AccessFieldNode).name;
-				if (!decl.value.is_moved) {
+				const access_field = (decl.value as AccessNode).access as AccessFieldNode;
+				const field_name = access_field.name;
+				// A destructuring binding off a compiler TEMP (`var [a, b] =
+				// make()`): the temp exists only to feed these bindings and is
+				// never read again — the transfer is unambiguous, so it is
+				// INFERRED without an explicit `move` (a view binding would
+				// dangle: the temp's cleanup frees its fields). A named-source
+				// binding (`= pair`) keeps the explicit forms: view (plain),
+				// transfer (`move`).
+				const target_name =
+					(decl.value as AccessNode).target.node_type === "value"
+						? ((decl.value as AccessNode).target as ValueNode).value
+						: "";
+				const temp_rhs = af_is_destructure_temp(target_name);
+				if (!decl.value.is_moved && !temp_rhs) {
 					add_error(
 						status,
 						`cannot copy '${field_type.name}' out of field '${field_name}' by value — it owns heap resources; use 'move ... swap <replacement>'`,
 						decl.value.start,
 					);
 				} else if (!decl.swap) {
-					add_error(
-						status,
-						`move out of a field requires a swap to revalidate it`,
-						decl.value.start,
-					);
+					if (!access_field.destructure_move && !temp_rhs) {
+						add_error(
+							status,
+							`move out of a field requires a swap to revalidate it`,
+							decl.value.start,
+						);
+					} else {
+						// A move-DESTRUCTURING binding (`var [move a] = t`, or a
+						// plain binding off a dead temp — inferred): the field
+						// only resolves to its position/type at check time
+						// (after the destructure rewrite), so the revalidating
+						// swap is synthesized here — a fresh default of the
+						// field's type, exactly the replacement a hand-written
+						// `move t._0 swap <replacement>` would carry. The build
+						// then runs the proven move+swap pipeline unchanged.
+						decl.value.is_moved = true;
+						decl.swap = synthesized_swap_value(field_type, decl.value.start);
+						const swap_ok = check_node(decl.swap, status);
+						if (swap_ok) {
+							check_type_and_value_match(
+								field_type,
+								type_from_value_node(decl.swap, status),
+								undefined,
+								status,
+								decl.swap.start,
+								"swap",
+							);
+						}
+					}
 				} else {
 					// Inside a generic struct's body, a swap like `Buffer<TK>()`
 					// can't be resolved yet (deferred until monomorphization), so
@@ -708,4 +755,40 @@ function extract_const_value(
 	if (/^[+-]?\d+$/.test(vn.value)) return parseInt(vn.value, 10);
 	if (/^[+-]?\d+\.\d+$/.test(vn.value)) return parseFloat(vn.value);
 	return undefined;
+}
+
+/**
+ * The revalidating swap value synthesized for a move-DESTRUCTURING binding
+ * (`var [move a] = t`): a fresh default of the moved field's type. A string
+ * swaps in an empty literal; an owning struct (List/Buffer/Map/...) swaps in
+ * its no-argument constructor (type_args carried so `List<string>` swaps in
+ * `List<string>()`). The zero/empty replacement makes the source field's own
+ * cleanup a no-op instead of a double-free of the transferred buffer.
+ */
+function synthesized_swap_value(
+	field_type: Type,
+	start: number,
+): import("../nodes/BaseNode.ts").default {
+	if (field_type.name === "string") {
+		return new ValueNode(start, '""', new Type("string"));
+	}
+	const constructor = new FunctionCallNode(start, field_type.name);
+	constructor.type = new Type(field_type.name);
+	if (field_type.type_args?.length) {
+		constructor.type_args = field_type.type_args;
+	}
+	return constructor;
+}
+
+/**
+ * Whether a destructuring binding's access targets the compiler-created
+ * `_tuple_dst_N` temp (a non-simple destructuring RHS): the temp exists only
+ * to feed the bindings and is never read again, so an owning field's
+ * ownership transfer to the binding is INFERRED (a view binding would
+ * dangle — the temp's cleanup frees its fields). (`is_destructure` itself
+ * is cleared by the time the binding's owning-field check runs — the access
+ * rewrite consumes it — so only the temp-name convention identifies this.)
+ */
+function af_is_destructure_temp(target_name: string): boolean {
+	return !!target_name && target_name.startsWith("_tuple_dst_");
 }

@@ -1,9 +1,13 @@
+import { direct_string_fields } from "../../build_common/has_string_fields.ts";
 import { is_hashable_scalar } from "../../built_in_types.ts";
 import AccessFieldNode from "../../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../../nodes/AccessNode.ts";
+import AssignmentNode from "../../nodes/AssignmentNode.ts";
 import BaseNode from "../../nodes/BaseNode.ts";
 import CastNode from "../../nodes/CastNode.ts";
+import DeclarationNode from "../../nodes/DeclarationNode.ts";
+import FunctionCallNode from "../../nodes/FunctionCallNode.ts";
 import FunctionNode from "../../nodes/FunctionNode.ts";
 import OperationNode from "../../nodes/OperationNode.ts";
 import ParameterNode from "../../nodes/ParameterNode.ts";
@@ -12,6 +16,7 @@ import StructNode from "../../nodes/StructNode.ts";
 import Type from "../../nodes/Type.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
 import type CheckStatus from "../CheckStatus.ts";
+import { struct_owns_non_string_heap } from "./ownership.ts";
 
 function struct_has_function(struct: StructNode, name: string): boolean {
 	return struct.functions.some((f) => f.name === name);
@@ -190,6 +195,12 @@ function synthesize_for_struct(struct: StructNode, status: CheckStatus): void {
 	) {
 		struct.functions.push(build_hash(struct, fields));
 	}
+
+	// A `copy` method for owning value structs — no trait opt-in: the
+	// declaration/assignment copy-discipline errors direct users to
+	// `.copy()`, so it must exist wherever it is sound (see
+	// struct_is_copyable).
+	synthesize_copy_method(struct, status);
 }
 
 function build_to_string(struct: StructNode, fields: { name: string }[]): FunctionNode {
@@ -244,4 +255,104 @@ function build_hash(struct: StructNode, fields: { name: string; type: Type }[]):
 	}
 	const ret = new ReturnNode(-1, expr);
 	return new FunctionNode(-1, "pub", "hash", new Type("uint"), [self_param(struct)], [ret]);
+}
+
+// --- `copy` synthesis (owning value structs) ---
+
+/**
+ * Whether `struct` is eligible for a synthesized `copy` method: a value
+ * struct whose only ownership is its DIRECT string fields — the same set
+ * the pass-by-value argument convention covers. A struct that additionally
+ * owns non-string heap (a resource-releasing `#destroy`, a class field, a
+ * nested requiring-move struct) cannot be deep-copied by "byte copy +
+ * strdup the strings" — its copy stays unwritten (move/swap remains the
+ * escape hatch) — and a struct with no string fields is already soundly
+ * byte-copyable, so it needs no method.
+ */
+export function struct_is_copyable(struct: StructNode, status: CheckStatus): boolean {
+	if (struct.is_class || struct.is_generic || struct.is_simple_type) return false;
+	if (direct_string_fields(struct).length === 0) return false;
+	if (struct_owns_non_string_heap(struct, status, new Set())) return false;
+	return struct_copy_ctor_args(struct) !== null;
+}
+
+/**
+ * How a synthesized `copy` constructs the fresh value: the zero-argument
+ * `#init` overload when one exists (auto or user), else the bodyless AUTO
+ * `#init` whose params map 1:1 onto non-defaulted fields (pass
+ * `self.<param>` for each). Null when neither shape exists — a user #init
+ * with params only cannot be invoked without re-running its custom logic,
+ * so no `copy` is synthesized.
+ */
+function struct_copy_ctor_args(struct: StructNode): string[] | null {
+	const inits = struct.functions.filter((f) => f.name === "#init");
+	if (inits.some((f) => f.params.filter((p) => !p.is_self_param).length === 0)) {
+		return [];
+	}
+	const auto = inits.find((f) => !f.has_body);
+	if (!auto) return null;
+	return auto.params.filter((p) => !p.is_self_param).map((p) => p.name);
+}
+
+/** Whether `type` names a struct that has (or will get) a `copy` method.
+ *  Order-independent: it re-evaluates the eligibility predicate instead of
+ *  looking for an already-synthesized method, so an outer struct nested in
+ *  the same pre-pass resolves a later-declared field struct. */
+function field_type_is_copyable(type: Type, status: CheckStatus): boolean {
+	if (!type.name || type.is_array || type.is_ref || type.is_view || type.is_nullable) return false;
+	const nested = status.structs.find((s) => s.name === type.name);
+	return !!nested && struct_is_copyable(nested, status);
+}
+
+/**
+ * Synthesize `pub func copy(self) -> Struct` for owning value structs: a
+ * fresh `Struct()` whose every field is rewritten from `self` — string
+ * field writes strdup the source (the backends' field-write path), nested
+ * copyable structs recurse through their own `copy`, everything else byte
+ * copies. `return c` hits the return-boundary normalization (all fields
+ * recorded → transfer raw), so the caller receives a uniformly heap-owned
+ * value with no extra copies.
+ */
+function build_copy(struct: StructNode, status: CheckStatus): FunctionNode {
+	const ctor_args = struct_copy_ctor_args(struct) ?? [];
+	const ctor = new FunctionCallNode(
+		-1,
+		struct.name,
+		new Type(struct.name),
+		ctor_args.map((name) => field_access("self", name)),
+	);
+	const statements: BaseNode[] = [
+		new DeclarationNode(-1, "private", "var", "c", new Type(struct.name), ctor),
+	];
+	for (const field of struct.fields) {
+		const right = field_type_is_copyable(field.type, status)
+			? method_call(field_access("self", field.name), "copy")
+			: field_access("self", field.name);
+		statements.push(new AssignmentNode(-1, field_access("c", field.name), right, "="));
+	}
+	statements.push(new ReturnNode(-1, new ValueNode(-1, "c")));
+	return new FunctionNode(
+		-1,
+		"pub",
+		"copy",
+		new Type(struct.name),
+		[self_param(struct)],
+		statements,
+	);
+}
+
+/**
+ * Synthesize the `copy` method on `struct` when eligible and not already
+ * present. Called from the block-level derive pre-pass (which runs before
+ * the struct is checked, so the method's body is checked with it) AND from
+ * `monomorphize` — a mono struct materializes mid-check, after that pre-pass
+ * ran, so without this hook `Box<string>.copy()` — advertised by the
+ * copy-discipline error messages — would resolve to "Function not found".
+ * The caller is responsible for checking the synthesized body when no later
+ * struct check will (see monomorphize).
+ */
+export function synthesize_copy_method(struct: StructNode, status: CheckStatus): void {
+	if (struct_has_function(struct, "copy")) return;
+	if (!struct_is_copyable(struct, status)) return;
+	struct.functions.push(build_copy(struct, status));
 }

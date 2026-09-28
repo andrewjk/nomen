@@ -1,6 +1,7 @@
 import built_in_types from "./built_in_types.ts";
 import check_node from "./check/check_node.ts";
 import type CheckStatus from "./check/CheckStatus.ts";
+import { stamp_literal_element_moves } from "./check/utils/last_use.ts";
 import emit_warnings from "./check/warnings.ts";
 import BaseNode from "./nodes/BaseNode.ts";
 import { child_nodes } from "./nodes/child_nodes.ts";
@@ -34,6 +35,12 @@ export default function check(
 		allow_internal: options?.allow_internal,
 		library_boundary: options?.library_boundary,
 	};
+
+	// Move-on-last-use stamping for bracket-literal elements (`[t, c]`):
+	// pure syntax/position analysis (no types yet) — the checker's
+	// tuple-element ownership rule consumes the stamp as an inferred `move`
+	// when the element's type turns out to be an owning struct.
+	stamp_literal_element_moves(root);
 
 	check_node(root, status);
 

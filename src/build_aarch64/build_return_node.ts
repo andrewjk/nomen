@@ -191,7 +191,7 @@ export default function build_return_node(
 				// enum-with-data fields transfer with the blob (a variable
 				// return's sret copy is bitwise), so they are deliberately NOT
 				// freed here — the caller now owns them.
-				release_heap_string_fields(status, decl.name, decl.type.name);
+				release_heap_string_fields(status, decl.name, decl.type.name, decl.type.is_nullable);
 				continue;
 			}
 			if (is_field_struct_borrow(decl)) continue;
@@ -222,7 +222,7 @@ export default function build_return_node(
 					// A moved-out value struct still owns its recorded heap string
 					// fields (store_T deep-copied them) — release them here since
 					// the skip below bypasses emit_destroy_for_decl.
-					release_heap_string_fields(status, decl.name, decl.type.name);
+					release_heap_string_fields(status, decl.name, decl.type.name, decl.type.is_nullable);
 					continue;
 				}
 				if (is_field_struct_borrow(decl)) continue;
@@ -827,7 +827,7 @@ export default function build_return_node(
 				// enum-with-data fields transfer with the blob (a variable
 				// return's sret copy is bitwise), so they are deliberately NOT
 				// freed here — the caller now owns them.
-				release_heap_string_fields(status, decl.name, decl.type.name);
+				release_heap_string_fields(status, decl.name, decl.type.name, decl.type.is_nullable);
 				continue;
 			}
 			if (is_field_struct_borrow(decl)) continue;

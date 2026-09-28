@@ -827,6 +827,46 @@ error. The destructured bindings are non-owning views into the right-hand
 side value, so they are not freed at scope exit (the right-hand side retains
 ownership).
 
+#### Move Destructuring and Literal Transfers
+
+A binding prefixed with `move` takes OWNERSHIP of the destructured field
+instead of binding a view. The field's storage is revalidated (replaced with
+a fresh default of its type), so the right-hand side's cleanup stays sound:
+
+```
+func make = (out [List<string>, List<int>]) {
+    var t = List<string>()
+    var c = List<int>()
+    return [move t, move c]
+}
+
+var [move a, move b] = make()
+Console.write("\{a.length} \{b.length}")   // 0 0 — a and b own their lists
+```
+
+The explicit `move` is only needed when the source outlives the binding.
+Because a temporary right-hand side (a call or a literal) exists only to
+feed the bindings, its fields are transferred WITHOUT `move`:
+
+```
+func make = (out [List<string>, List<int>]) {
+    var t = List<string>()
+    var c = List<int>()
+    return [t, c]        // t and c are at their last use: the literal
+}                        // transfers them — no `move` required
+
+var [a, b] = make()      // the temp dies after the bindings: a and b own
+```
+
+The same last-use inference applies to the literal's own elements: `[t, c]`
+transfers `t` and `c` when neither is read again afterward; if one is read
+later, that element is rejected exactly like the declaration-path copy rule
+(`use 'move t' or 't.copy()'`). Both binding forms accept the prefix —
+positional (`[move a]`) and renamed (`[field = move name]`). Moved bindings
+are ordinary owned values: they are freed at scope exit, and the moved-out
+source may not be used again. Arrays cannot be move-destructured (an element
+has no field storage to revalidate).
+
 ### Trait Types
 
 Interfaces that can be implemented by structs:

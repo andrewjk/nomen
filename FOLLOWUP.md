@@ -280,47 +280,17 @@ whose scope exit never frees it.
 Posture: leak, never double-free/invalid-free — the same trade
 `drop_self_written_string_field_records` makes for displaced `self`-writes.
 
-**Pass-by-value for owning-struct args — designed, partially implemented on
-branch `pass-by-value-args` (paused 2026-09-24).** The full value-semantics
-model: the call boundary materializes a uniformly heap-owned shell (struct
-copy + per-string-field strdup) for every owning-struct argument, and the
-CALLEE owns it — its string-field records are seeded at entry and the fields
-(+ shell) are freed at the callee's scope exit. Writes through the param then
-stay local, the cross-scope record leak disappears for by-value args, and
-mutation requires spelled-out `ref`. `move` transfers without a copy.
+**Aliasing route closed by pass-by-value (2026-09-26).** The most common
+route INTO this hole — passing an owning value struct as a plain
+(non-`ref`, non-`move`) argument, which aliased the caller's storage by
+address — is gone entirely: those arguments are now PASS-BY-VALUE (the call
+boundary materializes a uniformly heap-owned copy the callee owns), so a
+non-`ref` callee can never write through to the caller's struct. An earlier
+check-time gate (`fn_writes_param_string_fields`, which rejected aliased
+args only when the callee actually wrote the param's string fields) was
+removed as superseded. The leak below therefore survives only for explicit
+`ref` parameters — the shapes in this entry — bounded per write.
 
-The branch contains a working C-backend implementation (shell materialization
-as a GCC statement-expression at the call site, `->`-form record frees seeded
-at the callee's entry, counted wrappers balanced) plus the whole-program
-pre-pass (`struct_return_classification.ts`) that classifies which functions
-are materializing (free functions with owning value-struct params, minus
-address-escaped ones). The aarch64 materialization + seeding are also on the
-branch but the integration is incomplete.
-
-**Why paused**: the seeding keys on the FUNCTION, but the materialization is
-per CALL SITE — sound only when EVERY call materializes. Three caller shapes
-don't: (1) monomorphized container internals (`Buffer_Named_modify`'s raw
-block passes a SLOT borrow to the `touch` closure — the seeded record frees
-the container's string), (2) spawn-env argument copies, (3) closures invoked
-through descriptors. A sound rule needs whole-program "address-taken"
-analysis (which functions are ever referenced as func values AND which
-variables alias them through func-typed variables) — sketched in
-`struct_return_classification.ts` on the branch, but the func-variable
-aliasing case (`var f = next; f(p)`) still resolves imperfectly. Until that
-analysis is exact, the checker gate (d808c61a) — rejecting aliased args only
-when the callee writes — remains the shipped behavior on main.
-
-**Aliased-arg gate added (2026-09-24).** The most common route INTO this
-hole — passing an owning value struct as a plain (non-`ref`, non-`move`)
-argument, which aliases the caller's storage by address — is now rejected at
-check time when the callee actually WRITES the param's string fields
-(`fn_writes_param_string_fields` scan in check_function_call.ts; a read-only
-callee aliases soundly and stays legal). Library/core call sites are NOT
-exempt — ownership bookkeeping is statically reason-able, and no System call
-site trips the gate (full suite green). Exempt: nullable params (marshal by
-value), variadic params, constructions/call results (fresh values), and
-tuple temporaries. The leak itself therefore survives only for explicit `ref`
-params and fresh-arg writes (bounded per write).
 
 Fix directions, when picked up (either closes the leak class):
 
@@ -585,3 +555,73 @@ note only. Two ways to close it: restore the raw `#arch` bodies (the git
 history has them, plus the pre-rewrite `Random.nm`), or teach the aarch64 ASM
 optimizer the three folds above (which would benefit all pure-Nomen 64-bit
 arithmetic, not just this generator).
+
+## Pass-by-value gaps recorded during the owning-struct args work
+
+While landing pass-by-value for owning value-struct args (params own their
+structs; call sites materialize a uniformly heap-owned shell; callees seed
+the param's string-field records), a few adjacent items were considered.
+Two were fixed in the same series (move-declared pass-by-value params now
+TRANSFER ownership — the design table's `f(move a)` row — with the caller
+normalizing unrecorded rodata fields in place before the call and dropping
+its records after; and `copy()` is now synthesized for monomorphized
+structs and for structs whose auto `#init` takes required params, checked
+inline at monomorphization). One remains:
+
+1. **Dead duplicate auto-free block in C function epilogues.** For a
+   function whose seeded pass-by-value params free fields at a `return`
+   (persist records), the fall-through auto-free emits the same frees again
+   AFTER the `return` statement — unreachable text (the first block runs,
+   then the function exits), so it is dead weight in the generated C, not a
+   double free at runtime. Visible in e.g. the mono-clone C output
+   (`pickin_Box_string_Box_string`). Worth suppressing when the body is
+   known to end in a return.
+
+## Checker: container type not seen through a view-receiver call result
+
+Two usability wrinkles found while probing the allmark Arena migration, both
+worked around by binding the call result to a local first:
+
+1. `for x of arena.get(h).children { ... }` fails with "For loop list must
+   be an array, List, or Enumerable, not List" — the for-of desugar does not
+   resolve the element type through the generic view-receiver `get` call.
+2. `arena.get(h).children.at(0)` fails with "Parameter constraint cannot be
+   verified: i >= 0 && i < self.length" even for a literal index — the
+   constraint check cannot evaluate `self.length` through the borrow chain,
+   pushing callers to `at_or_panic` (which has no contract).
+
+Both compile fine as `var children = arena.get(h).children` followed by the
+loop/`at` (modulo owning-field copies — see the next entry), so this is
+inference/constraint-propagation only, not a soundness gap.
+
+## Closures remain unsupported (blocks allmark port slimming)
+
+Still the one open nomen-side item in allmark's nomen/PORT.md ("Open —
+port-side migrations / cleanups"): ~40 class-per-rule shapes exist in the
+port purely because capturing closures do not exist. Nullable func types,
+lambda→func-variable assignment, and func-signature checking HAVE landed,
+so only the capture-env machinery (CLOSURE.md's capturing-lambda work for
+value contexts) is missing to delete those classes.
+
+## `move` on owning value-struct field declarations is redundant (cleanup)
+
+The compiler derives ownership of `List`/`Buffer`/owning-value-struct fields
+from the TYPE, not the keyword: `mark_owning_auto_init_params`
+(src/check/check_struct_node.ts) auto-stamps the synthesized `#init`
+parameter `is_moved` for any field whose type satisfies
+`is_owning_struct_type_requiring_move` (the monomorphized-struct path
+mirrors this in check_function_call_node), and the destroy /
+displaced-value-reclaim / pass-by-value paths key on that same type
+analysis. So `pub move items = List<string>()` and
+`pub var items = List<string>()` behave identically — the keyword is dead
+weight on value-struct field declarations.
+
+The allmark port writes a few of these (`pub move List<int> items`);
+sweep them to plain `var`. KEEP the keyword on CLASS-typed fields, though:
+there `move` is the ownership DECLARATION (container owns + destroys the
+instance, eagerly reclaims displaced assignments, and borrow stores are
+rejected), and own-vs-borrow is observable behavior — not inferable the way
+tuple-literal last-use moves are. Worth considering alongside the sweep: a
+checker warning for `move` on value-struct fields so it does not
+re-accumulate, and a line in docs/MEMORY.md stating that field `move` is
+meaningful only for class-typed fields.

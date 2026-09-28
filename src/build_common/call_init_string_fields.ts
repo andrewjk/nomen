@@ -65,7 +65,20 @@ export function is_normalized_struct_call(
 		// but its generic body is not classified, so it stays unrecorded —
 		// the pre-existing status quo (the moved-out buffers leak).
 		if (is_container_borrow_accessor_name(name)) return false;
-		return !!status.normalized_struct_returners?.has(name);
+		if (status.normalized_struct_returners?.has(name)) return true;
+		// A METHOD call (`a.copy()`) registers under its emission label
+		// `<Receiver>_copy` (methods are per-struct symbols, so the bare
+		// method name would conflate unrelated types' methods). Resolve the
+		// receiver's stamped type to the mono name and look the label up.
+		const target = (value as AccessNode).target;
+		const receiver_type = target
+			? ((target as unknown as { type?: Type }).type ?? undefined)
+			: undefined;
+		if (receiver_type?.name) {
+			const label = `${mono_type_name(receiver_type)}_${name}`;
+			if (status.normalized_struct_returners?.has(label)) return true;
+		}
+		return false;
 	}
 	return false;
 }

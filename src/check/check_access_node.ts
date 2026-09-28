@@ -120,6 +120,14 @@ export default function check_access_node(node: AccessNode, status: CheckStatus)
 		if (af.is_destructure) {
 			const i = af.destructure_index!;
 			if (target_type.is_array) {
+				if (af.destructure_move) {
+					add_error(
+						status,
+						`move destructuring requires a tuple or struct (an array element has no field storage to revalidate)`,
+						node.start,
+					);
+					return false;
+				}
 				if (af.is_destructure_rename) {
 					add_error(status, `Cannot rename elements when destructuring an array`, node.start);
 					return false;

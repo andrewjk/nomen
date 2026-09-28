@@ -97,4 +97,76 @@ pub func main = () {
 `;
 		expect(compile_module(input)).toEqual([]);
 	});
+
+	test("tuple literal transfers at last use; bindings own the temp", () => {
+		const input = `
+func make = (out [List<string>, List<int>]) {
+	var t = List<string>()
+	var c = List<int>()
+	return [t, c]
+}
+pub func main = () {
+	var [a, b] = make()
+	Console.write("{a.length} {b.length}")
+}
+`;
+		expect(compile_module(input)).toEqual([]);
+	});
+
+	test("move struct destructuring with rename", () => {
+		const input = `
+struct Slot {
+	var List<string> items = List<string>()
+}
+pub func main = () {
+	var s = Slot()
+	var [items = move mine] = s
+	Console.write(mine.length.to_string())
+}
+`;
+		expect(compile_module(input)).toEqual([]);
+	});
+
+	test("array move destructuring is an error", () => {
+		const input = `
+pub func main = () {
+	const int[] arr = [1, 2, 3]
+	var [move a] = arr
+}
+`;
+		const errors = compile_module(input);
+		expect(
+			errors.some((e) => e.message.includes("move destructuring requires a tuple or struct")),
+		).toBe(true);
+	});
+
+	test("explicit move destructuring from a named source", () => {
+		const input = `
+func make = (out [List<string>, List<int>]) {
+	var t = List<string>()
+	var c = List<int>()
+	return [t, c]
+}
+pub func main = () {
+	var pair = make()
+	var [move a, move b] = pair
+	Console.write("done")
+}
+`;
+		expect(compile_module(input)).toEqual([]);
+	});
+
+	test("tuple element read after the literal is an error", () => {
+		const input = `
+pub func main = () {
+	var t = List<string>()
+	var c = List<int>()
+	var pair = [t, c]
+	t.push("more")
+	Console.write(c.length.to_string())
+}
+`;
+		const errors = compile_module(input);
+		expect(errors.some((e) => e.message.includes("cannot copy 'List"))).toBe(true);
+	});
 });

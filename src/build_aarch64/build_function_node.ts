@@ -1,6 +1,8 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import array_struct_name from "../build_c/utils/array_struct.ts";
+import { struct_needs_destroy } from "../build_common/destroy_analysis.ts";
 import emission_label from "../build_common/emission_label.ts";
+import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import { resolve_mono_type } from "../build_common/mono_name.ts";
 import scan_force_heap_strings from "../build_common/scan_force_heap_strings.ts";
 import { moved_param_is_consumed } from "../build_common/scan_moved_param_consumed.ts";
@@ -8,6 +10,7 @@ import scan_reassigned_vars from "../build_common/scan_reassigned_vars.ts";
 import { ALL_FLOAT_TYPES } from "../built_in_types.ts";
 import { lower_function } from "../nir/from_ast.ts";
 import type { NirFunction, NirStmt } from "../nir/nir.ts";
+import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import type Type from "../nodes/Type.ts";
 import build_block_node from "./build_block_node.ts";
@@ -886,6 +889,77 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 
 			if (param.declaration === "var") {
 				status.function_param_vars.add(param.name);
+			}
+			// OWNED value-struct parameter (pass-by-value): the caller
+			// materialized a uniformly heap-owned shell and passed its
+			// address (the by-address convention). Register the param as
+			// mutable (field writes proceed), seed its string-field records
+			// (writes see old_was_heap and reclaim displaced buffers), and
+			// push a cleanup decl so scope exit frees the surviving fields
+			// through the shell pointer. String-only structs only: structs
+			// with class/nested-owning fields keep by-address aliasing.
+			//
+			// The gates mirror the C callee seeding exactly — they must stay
+			// in lockstep with the call-site materialization conditions:
+			//   - free functions only (methods / mono container clones get
+			//     slots by address for in-place access — seeding would free
+			//     the container's storage at the method's exit);
+			//   - NOT address-escaped (a func-typed binding invokes through
+			//     a pointer with a BORROWED argument — e.g. a lambda passed
+			//     to Buffer.modify must not free the slot's strings);
+			//   - the callee is in the materializing registry (the pre-pass
+			//     registered it; in split builds a library callee is not in
+			//     the user-TU registry and keeps by-address aliasing).
+			//
+			// A `move`-declared param of the same shape seeds TOO — the
+			// TRANSFER row: the argument's string ownership moved into the
+			// callee (callers stamped move_owned_param_indices drop their
+			// records instead of freeing). The shell is the caller's stack
+			// storage there, so only the fields are freed (never the case on
+			// aarch64 — there is no owned_heap_shell concept).
+			const is_free_function =
+				(!node.scope || node.scope.node_type === "root" || node.scope.node_type === "func") &&
+				// Structural method check (mono clones can have unset scope):
+				// a self param means the receiver rides by address.
+				!node.params.some((p) => p.is_self_param);
+			const owned_value_param =
+				!param.is_self_param &&
+				!param.is_variadic &&
+				!param.type.is_ref &&
+				!param.type.is_nullable &&
+				!param.type.is_view &&
+				!param.type.is_array &&
+				param.type.name
+					? status.structs.find(
+							(st) => st.name === param.type.name && !st.is_simple_type && !st.is_class,
+						)
+					: undefined;
+			if (
+				is_free_function &&
+				!node.address_escaped &&
+				owned_value_param &&
+				direct_string_fields(owned_value_param).length > 0 &&
+				!(owned_value_param.traits ?? []).length &&
+				!struct_needs_destroy(owned_value_param, status) &&
+				(status.normalized_struct_returners?.has(node.name) ||
+					status.normalized_struct_returners?.has(label_name)) &&
+				!status.func_address_taken?.has(node.name) &&
+				!status.func_address_taken?.has(label_name)
+			) {
+				status.function_param_vars.add(param.name);
+				const param_decl = new DeclarationNode(
+					param.start,
+					"private",
+					"var",
+					param.name,
+					param.type,
+				);
+				param_decl.string_fields_via_pointer = true;
+				status.scoped_declarations.push(param_decl);
+				if (!status.heap_string_fields) status.heap_string_fields = new Set();
+				for (const field of direct_string_fields(owned_value_param)) {
+					status.heap_string_fields.add(`${param.name}.${field.name}`);
+				}
 			}
 			if (param.type.is_array) {
 				// An `Array<T>` parameter (parse-rewritten to `{name: T, is_array:
