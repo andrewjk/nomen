@@ -11,6 +11,24 @@
 
 
 
+
+## 0.6.4
+<sub>2026-09-28</sub>
+
+-  *(patch)* - aarch64 nullable struct local frees guarded on _has flag
+-  *(patch)* - nullable struct reassignment reclaims old value
+-  *(patch)* - global const array literal initializers
+-  *(patch)* - move destructuring for tuples and structs
+-  *(patch)* - last-use move inference for tuple literals
+-  *(patch)* - tuple return string transfer, no dangle
+-  *(patch)* - for-of over field access chains
+-  *(patch)* - aarch64 call-chained field receiver address
+-  *(patch)* - tuple return string normalization
+-  *(patch)* - drop dead C epilogue auto-free
+-  *(patch)* - fix aarch64 func-value string return leak
+-  *(patch)* - fix aarch64 func-value arg overflow and ordering
+-  *(patch)* - reject lambda arity mismatch against zero-param func type
+
 ## 0.6.3
 <sub>2026-09-27</sub>
 
