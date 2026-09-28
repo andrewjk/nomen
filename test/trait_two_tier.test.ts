@@ -227,6 +227,40 @@ test()
 		);
 	});
 
+	test("a moved value-struct local into a trait-typed List is rejected", () => {
+		// Regression: a bare `move <local>` argument skipped the hoist block
+		// that carried the tier-2 check, so a concrete value-struct local
+		// slipped into a `List<Trait>` (mis-boxed: `-Wincompatible-pointer-
+		// types`, aborting at exit through the wrong destroy).
+		expect_error(
+			PRELUDE +
+				`
+func test = () {
+	var List<Rule> rules = List<Rule>()
+	var HeadingV h = HeadingV()
+	rules.push(move h)
+}
+test()
+`,
+			"value struct 'HeadingV' cannot be used as trait 'Rule'",
+		);
+	});
+
+	test("a moved value-struct local into a `move Trait` parameter is rejected", () => {
+		expect_error(
+			PRELUDE +
+				`
+func take = (move Rule rule) { }
+func test = () {
+	var HeadingV h = HeadingV()
+	take(move h)
+}
+test()
+`,
+			"value struct 'HeadingV' cannot be used as trait 'Rule'",
+		);
+	});
+
 	test("class-backed trait slot copy is rejected", () => {
 		expect_error(
 			PRELUDE +
