@@ -3,6 +3,7 @@ import emit_field_overrides, {
 	hoist_field_overrides,
 } from "../build/emit_field_overrides.ts";
 import type BuildStatus from "../build_c/BuildStatus.ts";
+import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import { is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
 import {
@@ -11,12 +12,14 @@ import {
 	is_container_borrow_access,
 	is_owned_string_branch_value,
 } from "../build_common/string_return_analysis.ts";
+import tuple_return_owned_element from "../build_common/tuple_return_owned_element.ts";
 import { is_float_type } from "../built_in_types.ts";
 import type { NirExpr } from "../nir/nir.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import AnonStructNode from "../nodes/AnonStructNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
+import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import type FunctionNode from "../nodes/FunctionNode.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
@@ -690,6 +693,32 @@ export default function build_return_node(
 						if (key.startsWith(prefix)) {
 							skip_fields ??= new Set<string>();
 							skip_fields.add(key.slice(prefix.length));
+						}
+					}
+					emit_string_field_strdups_at(status, ret_struct.name, "x8", 0, skip_fields);
+				}
+				// Tuple-literal RETURN normalization (mirror of the C
+				// backend): `return [a, b]` (the literal is now a `_Tuple_`
+				// constructor call) hands the caller a tuple whose STRING
+				// fields are uniformly heap-owned, so the caller's
+				// destructured bindings can take ownership without a
+				// per-element heap check across the call. Elements that
+				// already own heap (a transferred heap local, a fresh
+				// non-borrow expression) stay raw; everything else — string
+				// literals, rodata or non-transferred locals, parameters,
+				// borrow accessors — is strdup'd in place on the sret buffer.
+				if (
+					node.value?.node_type === "func_call" &&
+					String((node.value as FunctionCallNode).name ?? "").startsWith("_Tuple_") &&
+					(node.value as FunctionCallNode).type?.name?.startsWith("_Tuple_")
+				) {
+					const tuple_call = node.value as FunctionCallNode;
+					const skip_fields = new Set<string>();
+					for (const field of direct_string_fields(ret_struct)) {
+						const idx = parseInt(field.name.replace(/^_/, ""), 10);
+						const element = tuple_call.params[idx];
+						if (element && tuple_return_owned_element(element, status.heap_strings)) {
+							skip_fields.add(field.name);
 						}
 					}
 					emit_string_field_strdups_at(status, ret_struct.name, "x8", 0, skip_fields);

@@ -9,11 +9,13 @@ import {
 	is_owned_string_branch_value,
 } from "../build_common/string_return_analysis.ts";
 import { is_string_borrow } from "../build_common/string_return_analysis.ts";
+import tuple_return_owned_element from "../build_common/tuple_return_owned_element.ts";
 import type { NirExpr } from "../nir/nir.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
+import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import type FunctionNode from "../nodes/FunctionNode.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
@@ -629,6 +631,34 @@ export default function build_return_node(
 		) {
 			for (const field of direct_string_fields(return_struct)) {
 				if (returned_recorded_string_fields?.has(field.name)) continue;
+				status.code += `_return_val.${field.name} = nomen_str_dup(_return_val.${field.name});\n`;
+			}
+		}
+		// Tuple-literal RETURN normalization: `return [a, b]` (the literal is
+		// now a `_Tuple_` constructor call) hands the caller a tuple whose
+		// STRING fields must be uniformly heap-owned, so the caller's
+		// destructured bindings can take ownership (and free at scope exit)
+		// without a per-element heap check across the call. Elements that
+		// already own heap (a transferred heap local, a fresh non-borrow
+		// expression) stay raw; everything else — string literals,
+		// non-transferred locals, parameters, borrow accessors — is strdup'd
+		// in place on the return temp.
+		if (
+			is_struct &&
+			!return_is_class &&
+			!ret_type.is_view &&
+			!ret_type.is_array &&
+			return_struct &&
+			!returns_struct_zero &&
+			node.value?.node_type === "func_call" &&
+			String((node.value as FunctionCallNode).name ?? "").startsWith("_Tuple_") &&
+			!!(node.value as FunctionCallNode).type?.name?.startsWith("_Tuple_")
+		) {
+			const tuple_call = node.value as FunctionCallNode;
+			for (const field of direct_string_fields(return_struct)) {
+				const idx = parseInt(field.name.replace(/^_/, ""), 10);
+				const element = tuple_call.params[idx];
+				if (element && tuple_return_owned_element(element, status.heap_strings)) continue;
 				status.code += `_return_val.${field.name} = nomen_str_dup(_return_val.${field.name});\n`;
 			}
 		}

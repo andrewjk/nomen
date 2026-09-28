@@ -1243,6 +1243,21 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 				emit_free(status);
 				continue;
 			}
+			// A TUPLE variable's normalized heap string fields (a
+			// string-only tuple local is not destroyed): free each recorded
+			// field in place.
+			const tuple_field_offsets = status.heap_string_tuple_fields?.get(decl.name);
+			if (tuple_field_offsets?.length) {
+				const var_offset = status.stack_offsets?.get(decl.name);
+				if (var_offset !== undefined && var_offset >= 0) {
+					for (const field_offset of tuple_field_offsets) {
+						emit_asm(status, `add x0, x29, #${var_offset}\n`);
+						emit_asm(status, `ldr x0, [x0, #${field_offset}]\n`);
+						emit_free(status);
+					}
+					continue;
+				}
+			}
 			// A func-typed local holding a capturing closure owns a heap env +
 			// descriptor (CLOSURE.md Phase 2) — reclaim them (the helper's
 			// func arm runs the owned-flag guard; capture-free closures point at
@@ -1365,6 +1380,20 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 			emit_var_load(status, "x0", decl.name, 8);
 			emit_free(status);
 			continue;
+		}
+		// A TUPLE variable's normalized heap string fields (see the
+		// heap_slots branch above).
+		const tuple_field_offsets = status.heap_string_tuple_fields?.get(decl.name);
+		if (tuple_field_offsets?.length) {
+			const var_offset = status.stack_offsets?.get(decl.name);
+			if (var_offset !== undefined && var_offset >= 0) {
+				for (const field_offset of tuple_field_offsets) {
+					emit_asm(status, `add x0, x29, #${var_offset}\n`);
+					emit_asm(status, `ldr x0, [x0, #${field_offset}]\n`);
+					emit_free(status);
+				}
+				continue;
+			}
 		}
 		// A shallow field-struct borrow is not destroyed — see the
 		// heap_slots branch above.

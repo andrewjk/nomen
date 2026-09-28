@@ -554,6 +554,14 @@ export default interface BuildStatus {
 	 */
 	heap_strings?: Set<string>;
 	/**
+	 * TUPLE variables (`var pair = make()`) whose heap string fields must be
+	 * freed at scope exit: variable name -> the fields' byte offsets within
+	 * the tuple struct. The tuple analog of `heap_strings` (a plain string
+	 * local) — a string-only tuple local is not destroyed, so its normalized
+	 * string fields would otherwise leak.
+	 */
+	heap_string_tuple_fields?: Map<string, number[]>;
+	/**
 	 * String variables that are reassigned a freshly-allocated (heap) value at
 	 * some point (e.g. `s = s + "x"` in a loop). Their initial literal value is
 	 * heap-allocated too, so reassignment can always free the old value.

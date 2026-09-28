@@ -607,30 +607,3 @@ tuple-literal last-use moves are. Worth considering alongside the sweep: a
 checker warning for `move` on value-struct fields so it does not
 re-accumulate, and a line in docs/MEMORY.md stating that field `move` is
 meaningful only for class-typed fields.
-
-## Tuple-return string elements: residual shapes after the transfer fix
-
-The masked read-after-free for `return [s, 42]` is fixed (2026-09-28): a
-heap string local at its last use is TRANSFERRED into the tuple — the
-callee's cleanup skips it (moved set) and the destructured binding takes
-the buffer raw and frees it at scope exit (C: heap_strings + moved marker;
-aarch64: mark_heap_string gated on the source actually being heap — rodata
-literal sources bind as static aliases instead). A string local READ after
-the literal is rejected with a clear message.
-
-What remains (pre-existing, narrower — both are "no valid owner" shapes
-that need the tuple return-boundary normalization project, i.e. the
-`_Tuple_` analog of `record_call_init_string_fields`, whose comment
-explicitly excludes tuple temporaries today):
-
-1. **C call-shaped RHS**: `var [a, n] = make()` — the binding-ownership
-   hook cannot see the callee's element moves through the call (no ctor
-   params to read), so the transferred buffer leaks: bounded, one
-   allocation per string element, never a double-free. aarch64 is fully
-   balanced for the same shape.
-2. **Call-result / borrow string elements**: `return [to_string(x),
-arr.at(0)]` — the fresh temp is freed by the return-path cleanup while
-   the tuple field aliases it (masked UAF), and borrows dangle with their
-   container. Rejection would be the sound stopgap; normalization (strdup
-   non-heap fields at the return, record + free on the caller's temp) the
-   complete one.

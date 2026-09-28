@@ -8,6 +8,7 @@ import call_in_set from "../build_common/call_in_set.ts";
 import { record_call_init_string_fields } from "../build_common/call_init_string_fields.ts";
 import { struct_needs_destroy } from "../build_common/destroy_analysis.ts";
 import fold_string_const from "../build_common/fold_string_const.ts";
+import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import mark_tuple_literal_move_owners from "../build_common/mark_tuple_literal_move_owners.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
@@ -18,6 +19,7 @@ import {
 	is_owned_string_branch_value,
 	is_string_borrow,
 } from "../build_common/string_return_analysis.ts";
+import tuple_return_owned_element from "../build_common/tuple_return_owned_element.ts";
 import { is_float_type } from "../built_in_types.ts";
 import { move_on_last_use_enabled } from "../check/utils/last_use.ts";
 import { is_int_literal, parse_int_literal_bigint, to_decimal_string } from "../int_literal.ts";
@@ -993,6 +995,91 @@ export default function build_declaration_node(
 	}
 	// Evaluate override values into temporaries before the base lands in the
 	// destination (see hoist_field_overrides).
+	// A destructured STRING binding off a tuple temp owns the transferred
+	// field's buffer and frees it at scope exit. Two temp shapes:
+	//   - a tuple-returning CALL (`var [a, n] = make()`): the callee's
+	//     return-boundary normalization makes every string field heap-owned,
+	//     so the binding takes ownership uniformly (no per-element info
+	//     crosses the call);
+	//   - a tuple LITERAL (`var [a] = [move s, 42]`): only an element that
+	//     was actually transferred AND is heap (`move`/last-use inference on
+	//     a heap local) hands the field a buffer the binding owns — a rodata
+	//     source (`var s = "lit"`) binds as a static alias and must not be
+	//     freed.
+	// Without the ownership mark the raw pair read strands the buffer.
+	// A TUPLE variable (`var pair = make()` / `var pair = [move s, 42]`)
+	// owns the heap string fields of the returned/built tuple: record each
+	// field's offset so scope exit frees `pair._N`. The destructuring temp
+	// (`_tuple_dst_N`) is excluded — its bindings take the fields over and
+	// free them instead. A tuple-returning CALL is normalized at its return
+	// (every string field heap-owned); a tuple LITERAL records only the
+	// fields whose elements already own heap (a transferred heap local, a
+	// fresh non-borrow expression) — the rest alias rodata/borrows.
+	if (
+		node.declaration === "var" &&
+		node.type.name?.startsWith("_Tuple_") &&
+		!node.name.startsWith("_tuple_dst_") &&
+		node.value?.node_type === "func_call"
+	) {
+		const tuple_call = node.value as FunctionCallNode;
+		const tuple_struct = status.structs.find(
+			(st) => st.name === node.type.name && !st.is_simple_type,
+		);
+		const init_is_tuple_call =
+			!String(tuple_call.name ?? "").startsWith("_Tuple_") &&
+			!!tuple_call.type?.name?.startsWith("_Tuple_");
+		const init_is_tuple_literal = String(tuple_call.name ?? "").startsWith("_Tuple_");
+		if (tuple_struct && (init_is_tuple_call || init_is_tuple_literal)) {
+			const offsets: number[] = [];
+			for (const field of direct_string_fields(tuple_struct)) {
+				if (init_is_tuple_literal) {
+					const idx = parseInt(field.name.replace(/^_/, ""), 10);
+					const element = tuple_call.params[idx];
+					if (!element || !tuple_return_owned_element(element, status.heap_strings)) continue;
+				}
+				offsets.push(get_field_offset(tuple_struct.name, field.name, status));
+			}
+			if (offsets.length) {
+				if (!status.heap_string_tuple_fields) status.heap_string_tuple_fields = new Map();
+				status.heap_string_tuple_fields.set(node.name, offsets);
+			}
+		}
+	}
+
+	if (node.declaration === "var" && node.type.name === "string" && !node.type.is_array) {
+		const binding_value = (node as unknown as { value?: AccessNode }).value;
+		if (
+			binding_value?.node_type === "access" &&
+			binding_value.access.node_type === "access_field" &&
+			binding_value.target.node_type === "value" &&
+			String((binding_value.target as ValueNode).value ?? "").startsWith("_tuple_dst_")
+		) {
+			const temp_name = String((binding_value.target as ValueNode).value);
+			const temp_decl = status.scoped_declarations.findLast((d) => d.name === temp_name);
+			const temp_init = temp_decl?.value as FunctionCallNode | undefined;
+			const m = /^_(\d+)$/.exec(String((binding_value.access as AccessFieldNode).name ?? ""));
+			const temp_is_tuple_call =
+				temp_init?.node_type === "func_call" &&
+				!String((temp_init as FunctionCallNode).name ?? "").startsWith("_Tuple_") &&
+				!!(temp_init as FunctionCallNode).type?.name?.startsWith("_Tuple_");
+			if (temp_is_tuple_call) {
+				mark_heap_string(status, node.name);
+				binding_value.is_moved = true;
+			} else if (temp_init?.type?.name?.startsWith("_Tuple_") && m) {
+				const param = temp_init.params[parseInt(m[1], 10)] as ValueNode | undefined;
+				const src_name = param?.node_type === "value" ? String(param.value) : "";
+				if (
+					param?.node_type === "value" &&
+					param.is_moved &&
+					!!src_name &&
+					!!status.heap_strings?.has(src_name)
+				) {
+					mark_heap_string(status, node.name);
+				}
+			}
+		}
+	}
+
 	hoist_field_overrides(node.value, build_node, status, "", node.name);
 	status.last_result_is_heap = false;
 	const prev_heap = status.last_result_is_heap;
@@ -1721,44 +1808,6 @@ export default function build_declaration_node(
 			}
 			return;
 		}
-		// A destructured STRING binding off a tuple temp whose element was
-		// moved into it (explicitly, or inferred at last use) OWNS the
-		// transferred buffer: mark it as an owned heap string so scope exit
-		// frees it. The temp never frees its string fields — the transfer
-		// handed ownership to this binding. Without the mark the binding's
-		// raw pair read strands the buffer (leak).
-		const tuple_binding_value = (node as unknown as { value?: AccessNode }).value;
-		if (
-			status.function_return_label &&
-			node.declaration === "var" &&
-			node.type.name === "string" &&
-			!node.type.is_array &&
-			tuple_binding_value?.node_type === "access" &&
-			tuple_binding_value.access.node_type === "access_field" &&
-			tuple_binding_value.target.node_type === "value" &&
-			String((tuple_binding_value.target as ValueNode).value ?? "").startsWith("_tuple_dst_")
-		) {
-			const temp_name = String((tuple_binding_value.target as ValueNode).value);
-			const temp_decl = status.scoped_declarations.findLast((d) => d.name === temp_name);
-			const ctor = temp_decl?.value as FunctionCallNode | undefined;
-			const m = /^_(\d+)$/.exec(String((tuple_binding_value.access as AccessFieldNode).name ?? ""));
-			if (ctor?.type?.name?.startsWith("_Tuple_") && m) {
-				const param = ctor.params[parseInt(m[1], 10)] as ValueNode | undefined;
-				const src_name = param?.node_type === "value" ? String(param.value) : "";
-				// Mark heap ownership only when the transferred source buffer
-				// is actually heap: a rodata-derived source (`var s = "lit"`)
-				// binds as a static alias — freeing it would abort.
-				if (
-					param?.node_type === "value" &&
-					param.is_moved &&
-					!!src_name &&
-					!!status.heap_strings?.has(src_name)
-				) {
-					mark_heap_string(status, node.name);
-				}
-			}
-		}
-
 		if (node.value && node.value.node_type === "array") {
 			const array_values = node.value as ArrayValuesNode;
 			const complex = has_complex_elements(array_values.values, status);

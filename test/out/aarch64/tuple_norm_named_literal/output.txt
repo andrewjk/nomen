@@ -1,0 +1,2 @@
+hello world, a string long enough to be heap 5
+literal element 5

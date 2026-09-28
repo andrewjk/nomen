@@ -4,6 +4,7 @@ import emit_field_overrides, {
 } from "../build/emit_field_overrides.ts";
 import call_in_set from "../build_common/call_in_set.ts";
 import { record_call_init_string_fields } from "../build_common/call_init_string_fields.ts";
+import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import { is_string_borrow } from "../build_common/string_return_analysis.ts";
@@ -12,6 +13,7 @@ import {
 	is_owned_string_branch_value,
 } from "../build_common/string_return_analysis.ts";
 import { superseded_param_temp_names } from "../build_common/temp_anchor_consolidation.ts";
+import tuple_return_owned_element from "../build_common/tuple_return_owned_element.ts";
 import { move_on_last_use_enabled } from "../check/utils/last_use.ts";
 import type { NirExpr } from "../nir/nir.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
@@ -135,6 +137,44 @@ export default function build_declaration_node(
 		status.code += `] = {${variables.map((v) => `&${v}`).join(", ")}}`;
 	} else {
 		const safe_name = c_function_name(node.name);
+		// A TUPLE variable (`var pair = make()` / `var pair = [move s, 42]`)
+		// owns the heap string fields of the returned/built tuple: record
+		// them so scope-exit auto_free frees each `pair._N.ptr`. The
+		// destructuring temp (`_tuple_dst_N`) is excluded — its bindings take
+		// the fields over (and free them) instead. A tuple-returning CALL is
+		// normalized at its return (every string field heap-owned); a tuple
+		// LITERAL records only the fields whose elements already own heap
+		// (a transferred heap local, a fresh non-borrow expression) — the
+		// rest alias rodata/borrows and must not be freed.
+		if (
+			node.type.name?.startsWith("_Tuple_") &&
+			!node.name.startsWith("_tuple_dst_") &&
+			node.value?.node_type === "func_call"
+		) {
+			const tuple_call = node.value as FunctionCallNode;
+			const tuple_struct = status.structs.find(
+				(st) => st.name === node.type.name && !st.is_simple_type,
+			);
+			const init_is_tuple_call =
+				!String(tuple_call.name ?? "").startsWith("_Tuple_") &&
+				!!tuple_call.type?.name?.startsWith("_Tuple_");
+			const init_is_tuple_literal = String(tuple_call.name ?? "").startsWith("_Tuple_");
+			if (tuple_struct && init_is_tuple_call) {
+				for (const field of direct_string_fields(tuple_struct)) {
+					if (!status.heap_string_fields) status.heap_string_fields = new Set();
+					status.heap_string_fields.add(`${node.name}.${field.name}`);
+				}
+			} else if (tuple_struct && init_is_tuple_literal) {
+				for (const field of direct_string_fields(tuple_struct)) {
+					const idx = parseInt(field.name.replace(/^_/, ""), 10);
+					const element = tuple_call.params[idx];
+					if (element && tuple_return_owned_element(element, status.heap_strings)) {
+						if (!status.heap_string_fields) status.heap_string_fields = new Set();
+						status.heap_string_fields.add(`${node.name}.${field.name}`);
+					}
+				}
+			}
+		}
 		// A destructured STRING binding off a tuple temp whose element was
 		// moved into it (explicitly, or inferred at last use) OWNS the
 		// transferred buffer: register it as an owned heap string so scope
@@ -158,10 +198,24 @@ export default function build_declaration_node(
 			const tuple_binding_value = (node as unknown as { value: AccessNode }).value as AccessNode;
 			const temp_name = String((tuple_binding_value.target as ValueNode).value);
 			const temp_decl = status.scoped_declarations.findLast((d) => d.name === temp_name);
-			const ctor = temp_decl?.value as FunctionCallNode | undefined;
+			const temp_init = temp_decl?.value as FunctionCallNode | undefined;
 			const m = /^_(\d+)$/.exec(String((tuple_binding_value.access as AccessFieldNode).name ?? ""));
-			if (ctor?.type?.name?.startsWith("_Tuple_") && m) {
-				const param = ctor.params[parseInt(m[1], 10)] as ValueNode | undefined;
+			// A tuple-returning CALL (`var [a, n] = make()`): the callee's
+			// return-boundary normalization makes every string field
+			// heap-owned, so this binding takes ownership uniformly (raw pair,
+			// freed at scope exit) — no per-element information needed across
+			// the call. The literal-shaped temp (`[move s, 42]`, init named
+			// `_Tuple_..._init`) keeps the per-element rule below.
+			const temp_is_tuple_call =
+				temp_init?.node_type === "func_call" &&
+				!String((temp_init as FunctionCallNode).name ?? "").startsWith("_Tuple_") &&
+				!!(temp_init as FunctionCallNode).type?.name?.startsWith("_Tuple_");
+			if (temp_is_tuple_call) {
+				if (!status.heap_strings) status.heap_strings = new Set();
+				status.heap_strings.add(safe_name);
+				tuple_binding_value.is_moved = true;
+			} else if (temp_init?.type?.name?.startsWith("_Tuple_") && m) {
+				const param = temp_init.params[parseInt(m[1], 10)] as ValueNode | undefined;
 				if (param?.node_type === "value" && param.is_moved) {
 					if (!status.heap_strings) status.heap_strings = new Set();
 					status.heap_strings.add(safe_name);
