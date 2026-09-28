@@ -827,6 +827,31 @@ error. The destructured bindings are non-owning views into the right-hand
 side value, so they are not freed at scope exit (the right-hand side retains
 ownership).
 
+#### Move Destructuring
+
+A binding prefixed with `move` takes OWNERSHIP of the destructured field
+instead of binding a view. The field's storage is revalidated (replaced with
+a fresh default of its type), so the right-hand side's cleanup stays sound:
+
+```
+func make = (out [List<string>, List<int>]) {
+    var t = List<string>()
+    var c = List<int>()
+    return [move t, move c]
+}
+
+var [move a, move b] = make()
+Console.write("\{a.length} \{b.length}")   // 0 0 — a and b own their lists
+```
+
+Both binding forms accept the prefix — positional (`[move a]`) and renamed
+(`[field = move name]`). Moved bindings are ordinary owned values: they are
+freed at scope exit, and the moved-out source may not be used again. Arrays
+cannot be move-destructured (an element has no field storage to revalidate),
+and a plain (non-`move`) owning-struct variable is rejected as a tuple
+element exactly like the declaration-path copy rule — transfer with `move`
+or deep-copy with `.copy()`.
+
 ### Trait Types
 
 Interfaces that can be implemented by structs:

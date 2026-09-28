@@ -7,6 +7,7 @@ import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import hoist_struct_params from "./utils/hoist_struct_params.ts";
+import { is_owning_struct_type } from "./utils/ownership.ts";
 import {
 	is_trait_type,
 	is_value_struct_conformer,
@@ -76,6 +77,33 @@ export default function check_array_values_node(
  * On success, mutates `array` in-place into a FunctionCallNode that constructs
  * the appropriate auto-generated tuple struct.
  */
+/**
+ * A tuple literal element that is a BARE owning-struct variable (`[t, c]`
+ * where t is a `List<string>`) byte-copies the struct — the tuple's field
+ * aliases the local's buffer, and both cleanups free it (double-free).
+ * Rejected exactly like the declaration-path owning-struct copy rule:
+ * transfer with `move` (the tuple takes ownership) or deep-copy with
+ * `.copy()`. Strings and non-owning structs stay ordinary by-value copies.
+ */
+function reject_owning_copy_elements(array: ArrayValuesNode, status: CheckStatus): boolean {
+	let rejected = false;
+	for (const value of array.values) {
+		const vn = value as ValueNode;
+		if (vn.node_type !== "value" || vn.is_moved || vn.value === "null") continue;
+		if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(vn.value)) continue;
+		const t = type_from_value_node(value, status);
+		if (t.name && is_owning_struct_type(t, status)) {
+			add_error(
+				status,
+				`cannot copy '${t.name}' by value — it owns heap resources; use 'move ${vn.value}' or '${vn.value}.copy()'`,
+				value.start,
+			);
+			rejected = true;
+		}
+	}
+	return rejected;
+}
+
 function check_as_tuple(
 	array: ArrayValuesNode,
 	tuple_element_types: Type[],
@@ -110,8 +138,29 @@ function check_as_tuple(
 		);
 	}
 
+	if (reject_owning_copy_elements(array, status)) result = false;
+
 	const struct_name = tuple_struct_name(tuple_element_types);
 	get_or_create_tuple_struct(tuple_element_types, status);
+
+	// A `move <local>` element TRANSFERS the local's ownership into the
+	// tuple: the constructor copies the struct bytes by pointer, so the
+	// caller's cleanup must skip the local (the tuple's own field cleanup
+	// now owns the buffer). Registered like the move-assignment path so
+	// later uses are flagged and the build suppresses the source free.
+	array.values.forEach((v) => {
+		const vn = v as ValueNode;
+		if (
+			vn.node_type === "value" &&
+			vn.is_moved &&
+			typeof vn.value === "string" &&
+			vn.value !== "null" &&
+			/^[A-Za-z_]/.test(vn.value)
+		) {
+			if (!status.moved_variables) status.moved_variables = new Set();
+			status.moved_variables.add(vn.value);
+		}
+	});
 
 	const constructor = new FunctionCallNode(array.start, struct_name);
 	constructor.params = array.values.slice();
@@ -240,17 +289,26 @@ function check_as_array_or_inferred_tuple(
 	// Only infer a tuple from heterogeneous values when there's no outer
 	// expected array type — otherwise we'd silently accept mismatched arrays.
 	if (!has_outer_expected) {
-		// Detect heterogeneity (skip "null" values, which are ambiguous)
+		// Detect heterogeneity (skip "null" values, which are ambiguous).
+		// Generic instances differing only in type_args (`List<string>` vs
+		// `List<int>`) are DIFFERENT types — an array of the first would
+		// silently mistype the rest — so they tuple-ize like any other
+		// heterogeneous literal.
 		const meaningful = value_types.filter((t) => t.name && t.name !== "null");
 		const first_meaningful = meaningful[0];
-		const all_same =
-			meaningful.length > 0 &&
-			meaningful.every(
-				(t) =>
-					t.name === first_meaningful.name &&
-					!t.tuple_types?.length &&
-					!first_meaningful.tuple_types?.length,
+		const same_generic_shape = (a: Type, b: Type): boolean => {
+			if (a.name !== b.name) return false;
+			const aa = a.type_args ?? [];
+			const bb = b.type_args ?? [];
+			return (
+				aa.length === bb.length &&
+				aa.every((t, i) => t.name === bb[i]?.name) &&
+				!a.tuple_types?.length &&
+				!b.tuple_types?.length
 			);
+		};
+		const all_same =
+			meaningful.length > 0 && meaningful.every((t) => same_generic_shape(t, first_meaningful));
 
 		if (!all_same && array.values.length > 0) {
 			const elem_types = value_types.map((t, _i) => {
@@ -270,6 +328,8 @@ function check_as_array_or_inferred_tuple(
 					"tuple",
 				);
 			}
+
+			if (reject_owning_copy_elements(array, status)) result = false;
 
 			const struct_name = tuple_struct_name(elem_types);
 			get_or_create_tuple_struct(elem_types, status);

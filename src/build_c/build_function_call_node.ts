@@ -1,5 +1,6 @@
 import emission_label from "../build_common/emission_label.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
+import mark_tuple_literal_move_owners from "../build_common/mark_tuple_literal_move_owners.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
@@ -152,6 +153,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 	// value-struct func field cannot hold one (rejected at check time).
 	const callee_params = node.resolved_function?.params?.filter((p) => !p.is_self_param);
 	const lambda_arg_temps = new Map<number, string>();
+	mark_tuple_literal_move_owners(node, status);
 	if (!is_struct) {
 		for (let i = 0; i < node.params.length; i++) {
 			const p = node.params[i];

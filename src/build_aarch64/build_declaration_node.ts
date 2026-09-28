@@ -8,6 +8,7 @@ import call_in_set from "../build_common/call_in_set.ts";
 import { record_call_init_string_fields } from "../build_common/call_init_string_fields.ts";
 import { struct_needs_destroy } from "../build_common/destroy_analysis.ts";
 import fold_string_const from "../build_common/fold_string_const.ts";
+import mark_tuple_literal_move_owners from "../build_common/mark_tuple_literal_move_owners.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import { escape_asciz } from "../build_common/string_escapes.ts";
@@ -372,6 +373,10 @@ function build_constructor_params(
 	param_regs: string[],
 	status: BuildStatus,
 ): number {
+	// A tuple-literal constructor (`[move t, move c]`): register every bare
+	// `move <local>` argument so the source's scope-exit cleanup is
+	// suppressed (the tuple's fields own the transferred buffers now).
+	mark_tuple_literal_move_owners(fc, status);
 	const variadic_idx = fc.variadic_param_index;
 	if (
 		variadic_idx !== undefined &&

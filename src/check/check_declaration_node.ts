@@ -459,11 +459,34 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 						decl.value.start,
 					);
 				} else if (!decl.swap) {
-					add_error(
-						status,
-						`move out of a field requires a swap to revalidate it`,
-						decl.value.start,
-					);
+					const destructure_move = (decl.value as AccessNode).access as AccessFieldNode;
+					if (!destructure_move.destructure_move) {
+						add_error(
+							status,
+							`move out of a field requires a swap to revalidate it`,
+							decl.value.start,
+						);
+					} else {
+						// A move-DESTRUCTURING binding (`var [move a] = t`): the
+						// field only resolves to its position/type at check time
+						// (after the destructure rewrite), so the revalidating
+						// swap is synthesized here — a fresh default of the
+						// field's type, exactly the replacement a hand-written
+						// `move t._0 swap <replacement>` would carry. The build
+						// then runs the proven move+swap pipeline unchanged.
+						decl.swap = synthesized_swap_value(field_type, decl.value.start);
+						const swap_ok = check_node(decl.swap, status);
+						if (swap_ok) {
+							check_type_and_value_match(
+								field_type,
+								type_from_value_node(decl.swap, status),
+								undefined,
+								status,
+								decl.swap.start,
+								"swap",
+							);
+						}
+					}
 				} else {
 					// Inside a generic struct's body, a swap like `Buffer<TK>()`
 					// can't be resolved yet (deferred until monomorphization), so
@@ -718,4 +741,27 @@ function extract_const_value(
 	if (/^[+-]?\d+$/.test(vn.value)) return parseInt(vn.value, 10);
 	if (/^[+-]?\d+\.\d+$/.test(vn.value)) return parseFloat(vn.value);
 	return undefined;
+}
+
+/**
+ * The revalidating swap value synthesized for a move-DESTRUCTURING binding
+ * (`var [move a] = t`): a fresh default of the moved field's type. A string
+ * swaps in an empty literal; an owning struct (List/Buffer/Map/...) swaps in
+ * its no-argument constructor (type_args carried so `List<string>` swaps in
+ * `List<string>()`). The zero/empty replacement makes the source field's own
+ * cleanup a no-op instead of a double-free of the transferred buffer.
+ */
+function synthesized_swap_value(
+	field_type: Type,
+	start: number,
+): import("../nodes/BaseNode.ts").default {
+	if (field_type.name === "string") {
+		return new ValueNode(start, '""', new Type("string"));
+	}
+	const constructor = new FunctionCallNode(start, field_type.name);
+	constructor.type = new Type(field_type.name);
+	if (field_type.type_args?.length) {
+		constructor.type_args = field_type.type_args;
+	}
+	return constructor;
 }

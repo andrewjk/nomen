@@ -593,21 +593,6 @@ Both compile fine as `var children = arena.get(h).children` followed by the
 loop/`at` (modulo owning-field copies — see the next entry), so this is
 inference/constraint-propagation only, not a soundness gap.
 
-## Anon-struct / tuple destructuring cannot move owning fields out
-
-`var [a, b] = <tuple of List<string>, List<int>>` is rejected with "cannot
-copy 'List' out of field ... by value — it owns heap resources; use
-'move ... swap <replacement>'" — and destructuring gives non-owning views
-anyway (SPEC, Destructuring), so there is NO spelling to take ownership of
-destructured fields. Multi-returns of owning containers must either use
-named `ref` out-params (what allmark's table wrap now does) or keep the
-awkward per-field `x = move t._0 swap List<T>()` dance (what its call site
-had before). Worth a `move` destructuring form (`var [move a, move b] = t`)
-or per-binding move annotations; it would also give anon structs a real
-multi-return story (today they cannot even be written as an out type — the
-type must be inferred at the return, and the generated `_Anon_*` name is
-unwritable at the declaration).
-
 ## Closures remain unsupported (blocks allmark port slimming)
 
 Still the one open nomen-side item in allmark's nomen/PORT.md ("Open —

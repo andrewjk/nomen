@@ -3,6 +3,7 @@ import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import emission_label from "../build_common/emission_label.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
+import mark_tuple_literal_move_owners from "../build_common/mark_tuple_literal_move_owners.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
 import { is_float_type } from "../built_in_types.ts";
@@ -212,6 +213,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 	}
 
 	const is_struct = status.structs.find((s) => s.name === node.name && !s.is_simple_type);
+	mark_tuple_literal_move_owners(node, status);
 	// A nested-function callee emits under its uniquified label (the checker
 	// stamps resolved_function on every resolved call); struct constructors
 	// and top-level functions keep their names. An overloaded constructor

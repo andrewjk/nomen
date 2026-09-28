@@ -97,4 +97,58 @@ pub func main = () {
 `;
 		expect(compile_module(input)).toEqual([]);
 	});
+
+	test("move tuple destructuring takes ownership", () => {
+		const input = `
+func make = (out [List<string>, List<int>]) {
+	var t = List<string>()
+	var c = List<int>()
+	return [move t, move c]
+}
+pub func main = () {
+	var [move a, move b] = make()
+	Console.write("{a.length} {b.length}")
+}
+`;
+		expect(compile_module(input)).toEqual([]);
+	});
+
+	test("move struct destructuring with rename", () => {
+		const input = `
+struct Slot {
+	var List<string> items = List<string>()
+}
+pub func main = () {
+	var s = Slot()
+	var [items = move mine] = s
+	Console.write(mine.length.to_string())
+}
+`;
+		expect(compile_module(input)).toEqual([]);
+	});
+
+	test("array move destructuring is an error", () => {
+		const input = `
+pub func main = () {
+	const int[] arr = [1, 2, 3]
+	var [move a] = arr
+}
+`;
+		const errors = compile_module(input);
+		expect(
+			errors.some((e) => e.message.includes("move destructuring requires a tuple or struct")),
+		).toBe(true);
+	});
+
+	test("plain owning variable as a tuple element is an error", () => {
+		const input = `
+pub func main = () {
+	var t = List<string>()
+	var c = List<int>()
+	var pair = [t, c]
+}
+`;
+		const errors = compile_module(input);
+		expect(errors.some((e) => e.message.includes("cannot copy 'List"))).toBe(true);
+	});
 });

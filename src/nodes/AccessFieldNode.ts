@@ -15,6 +15,12 @@ export default class AccessFieldNode extends BaseNode {
 	destructure_index?: number;
 	/** `[field = new_name]` rename form — struct/class targets only. */
 	is_destructure_rename?: boolean;
+	/** `move` binding (`var [move a, field = move n] = expr`): the binding
+	 *  TAKES OWNERSHIP of the field. The checker synthesizes the
+	 *  revalidating swap (a fresh default of the field's type) once the
+	 *  field resolves, so the build reuses the plain
+	 *  `move field swap <replacement>` pipeline unchanged. */
+	destructure_move?: boolean;
 
 	constructor(start: number, name: string, type?: Type) {
 		super("access_field", start);

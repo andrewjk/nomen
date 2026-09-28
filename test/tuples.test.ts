@@ -342,4 +342,42 @@ Console.write("\\{t._0.name} \\{t._0.n} \\{t._1}")
 `;
 		await build_and_check_output(input, "anon_in_tuple", "x 1 true");
 	});
+
+	test("move tuple destructuring transfers ownership", async () => {
+		// `var [move a, move b] = <tuple>` moves the fields OUT (the source's
+		// storage is revalidated with fresh defaults), so a and b own their
+		// lists. Runs under audit on both backends: any double-free or leak
+		// of the transferred buffers fails the test.
+		const input = `
+import System
+
+func make = (out [List<string>, List<int>]) {
+	var t = List<string>()
+	t.push("hello")
+	var c = List<int>()
+	c.push(7)
+	return [move t, move c]
+}
+
+pub func main = (Init init) {
+	var [move a, move b] = make()
+	Console.write_line("\\{a.length} \\{a.at_or_panic(0)} \\{b.at_or_panic(0)}")
+}
+`;
+		await build_and_check_output(input, "tuple_move_destructure", "1 hello 7\n", true);
+	});
+
+	test("partial move destructuring keeps the source usable", async () => {
+		const input = `
+import System
+
+pub func main = (Init init) {
+	var t = List<string>()
+	t.push("hello")
+	var [move a, n] = [move t, 42]
+	Console.write_line("\\{a.at_or_panic(0)} \\{n}")
+}
+`;
+		await build_and_check_output(input, "tuple_move_partial", "hello 42\n", true);
+	});
 });

@@ -493,6 +493,10 @@ function looks_like_destructuring(status: ParseStatus, start_idx: number): boole
  *   - bare name: `a` — positional (tuples/arrays) or same-named field (structs)
  *   - rename:    `field = name` — struct/class field accessed as `field`,
  *     bound to `name`
+ *
+ * Either form may be prefixed with `move` (`[move a]`, `[field = move n]`):
+ * the binding TAKES OWNERSHIP of the field (see destructure_move) instead of
+ * binding a non-owning view.
  */
 function parse_destructuring(
 	visibility: "pub" | "private" | "internal",
@@ -501,16 +505,26 @@ function parse_destructuring(
 	status: ParseStatus,
 ) {
 	expect("[", status);
-	const bindings: { name: string; field: string; rename: boolean }[] = [];
+	const bindings: { name: string; field: string; rename: boolean; move: boolean }[] = [];
 	let index = 0;
 	while (peek_current(status) !== "]" && status.i < status.tokens.length) {
 		const first = consume(status);
 		let field = first;
 		let name = first;
 		let rename = false;
-		// `[field = name]` rename form (struct/class destructuring only)
-		if (peek_current(status) === "=") {
+		let move = false;
+		// `move a` — an owning binding (tuple/struct field move-out)
+		if (first === "move" && peek_current(status) !== "=" && peek_current(status) !== "]") {
+			move = true;
+			name = consume(status);
+			field = name;
+		} else if (peek_current(status) === "=") {
 			accept("=", status);
+			// `[field = move name]` — the rename form with an owning binding
+			if (peek_current(status) === "move") {
+				consume(status);
+				move = true;
+			}
 			name = consume_name(status);
 			field = first;
 			rename = true;
@@ -521,7 +535,7 @@ function parse_destructuring(
 				status.tokens[status.i - 1]?.i ?? 0,
 			);
 		}
-		bindings.push({ name, field, rename });
+		bindings.push({ name, field, rename, move });
 		index++;
 		if (!accept(",", status)) break;
 	}
@@ -549,7 +563,9 @@ function parse_destructuring(
 	};
 
 	// If the RHS is a simple value, access fields directly off it without
-	// introducing a temporary. Otherwise create a temp.
+	// introducing a temporary. Otherwise create a temp. A move binding moves
+	// fields OUT of the temp (`const` storage would reject the move-out), so
+	// the temp is `var` for those.
 	const value_is_simple = value.node_type === "value";
 	let base_node: BaseNode;
 	if (value_is_simple) {
@@ -558,10 +574,11 @@ function parse_destructuring(
 		const temp_counter = (status as any).__tuple_destructure_counter || 0;
 		(status as any).__tuple_destructure_counter = temp_counter + 1;
 		const temp_name = `_tuple_dst_${temp_counter}`;
+		const any_move = bindings.some((b) => b.move);
 		const temp_decl = new DeclarationNode(
 			start,
 			"private",
-			"const",
+			any_move ? "var" : "const",
 			temp_name,
 			new Type(""),
 			value,
@@ -586,7 +603,9 @@ function parse_destructuring(
 		access_field.is_destructure = true;
 		access_field.destructure_index = i;
 		access_field.is_destructure_rename = binding.rename;
+		access_field.destructure_move = binding.move;
 		const access = new AccessNode(start, base_node, access_field);
+		access.is_moved = binding.move;
 		const name_decl = new DeclarationNode(
 			start,
 			visibility,
