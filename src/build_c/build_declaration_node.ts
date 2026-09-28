@@ -14,10 +14,11 @@ import {
 import { superseded_param_temp_names } from "../build_common/temp_anchor_consolidation.ts";
 import { move_on_last_use_enabled } from "../check/utils/last_use.ts";
 import type { NirExpr } from "../nir/nir.ts";
+import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
-import type BaseNode from "../nodes/BaseNode.ts";
+import BaseNode from "../nodes/BaseNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
@@ -134,6 +135,40 @@ export default function build_declaration_node(
 		status.code += `] = {${variables.map((v) => `&${v}`).join(", ")}}`;
 	} else {
 		const safe_name = c_function_name(node.name);
+		// A destructured STRING binding off a tuple temp whose element was
+		// moved into it (explicitly, or inferred at last use) OWNS the
+		// transferred buffer: register it as an owned heap string so scope
+		// exit frees it, and mark the access moved so auto_free's
+		// destructured-view skip does not strand the buffer. The temp never
+		// frees its string fields — the transfer handed ownership here.
+		if (
+			node.declaration === "var" &&
+			node.type.name === "string" &&
+			!node.type.is_array &&
+			(node as unknown as { value?: BaseNode }).value?.node_type === "access" &&
+			((node as unknown as { value: AccessNode }).value as AccessNode).access.node_type ===
+				"access_field" &&
+			((node as unknown as { value: AccessNode }).value as AccessNode).target.node_type ===
+				"value" &&
+			String(
+				(((node as unknown as { value: AccessNode }).value as AccessNode).target as ValueNode)
+					.value ?? "",
+			).startsWith("_tuple_dst_")
+		) {
+			const tuple_binding_value = (node as unknown as { value: AccessNode }).value as AccessNode;
+			const temp_name = String((tuple_binding_value.target as ValueNode).value);
+			const temp_decl = status.scoped_declarations.findLast((d) => d.name === temp_name);
+			const ctor = temp_decl?.value as FunctionCallNode | undefined;
+			const m = /^_(\d+)$/.exec(String((tuple_binding_value.access as AccessFieldNode).name ?? ""));
+			if (ctor?.type?.name?.startsWith("_Tuple_") && m) {
+				const param = ctor.params[parseInt(m[1], 10)] as ValueNode | undefined;
+				if (param?.node_type === "value" && param.is_moved) {
+					if (!status.heap_strings) status.heap_strings = new Set();
+					status.heap_strings.add(safe_name);
+					tuple_binding_value.is_moved = true;
+				}
+			}
+		}
 		const mono_name = mono_type_name(node.type);
 		const mono_struct = status.structs.find(
 			(s) => s.name === mono_name && !s.is_simple_type && !s.is_generic,

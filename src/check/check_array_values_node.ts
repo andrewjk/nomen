@@ -101,20 +101,48 @@ function check_tuple_element_ownership(array: ArrayValuesNode, status: CheckStat
 		if (vn.node_type !== "value") continue;
 		if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(vn.value) || vn.value === "null") continue;
 		const t = type_from_value_node(value, status);
-		if (!t.name || !is_owning_struct_type(t, status)) continue;
-		if (vn.is_moved || vn.literal_last_use_move) {
-			// Ownership transfers to the tuple: the source's cleanup must
-			// skip it (use-after-move on later reads is checked separately).
-			vn.is_moved = true;
-			if (!status.moved_variables) status.moved_variables = new Set();
-			status.moved_variables.add(vn.value);
-		} else {
-			add_error(
-				status,
-				`cannot copy '${t.name}' by value — it owns heap resources; use 'move ${vn.value}' or '${vn.value}.copy()'`,
-				value.start,
-			);
-			rejected = true;
+		if (!t.name) continue;
+		if (is_owning_struct_type(t, status)) {
+			if (vn.is_moved || vn.literal_last_use_move) {
+				// Ownership transfers to the tuple: the source's cleanup must
+				// skip it (use-after-move on later reads is checked separately).
+				vn.is_moved = true;
+				if (!status.moved_variables) status.moved_variables = new Set();
+				status.moved_variables.add(vn.value);
+			} else {
+				add_error(
+					status,
+					`cannot copy '${t.name}' by value — it owns heap resources; use 'move ${vn.value}' or '${vn.value}.copy()'`,
+					value.start,
+				);
+				rejected = true;
+			}
+			continue;
+		}
+		// A string local is in the same boat as an owning struct: the tuple
+		// field aliases its buffer, and the callee's scope-exit free would
+		// leave the returned tuple reading freed memory (masked — the freed
+		// block usually still holds the bytes). At the variable's last use
+		// the transfer is inferred; read again later, it is rejected (the
+		// caller would read freed memory). Static (rodata-derived) strings
+		// transfer too: on C the local is a heap strdup, on aarch64 it is
+		// static storage — the backends' binding emitters handle each.
+		if (t.name === "string" && !t.is_view && !t.is_array) {
+			if (vn.is_moved || vn.literal_last_use_move) {
+				// Transfer: the callee's cleanup must skip the local (the
+				// tuple's field now owns the buffer) and the receiving
+				// binding takes it over (see the destructuring build).
+				vn.is_moved = true;
+				if (!status.moved_variables) status.moved_variables = new Set();
+				status.moved_variables.add(vn.value);
+			} else {
+				add_error(
+					status,
+					`string local '${vn.value}' is read again after the literal — use 'move ${vn.value}' or '${vn.value}.to_string()'`,
+					value.start,
+				);
+				rejected = true;
+			}
 		}
 	}
 	return rejected;

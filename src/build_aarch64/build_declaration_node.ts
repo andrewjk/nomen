@@ -1721,6 +1721,44 @@ export default function build_declaration_node(
 			}
 			return;
 		}
+		// A destructured STRING binding off a tuple temp whose element was
+		// moved into it (explicitly, or inferred at last use) OWNS the
+		// transferred buffer: mark it as an owned heap string so scope exit
+		// frees it. The temp never frees its string fields — the transfer
+		// handed ownership to this binding. Without the mark the binding's
+		// raw pair read strands the buffer (leak).
+		const tuple_binding_value = (node as unknown as { value?: AccessNode }).value;
+		if (
+			status.function_return_label &&
+			node.declaration === "var" &&
+			node.type.name === "string" &&
+			!node.type.is_array &&
+			tuple_binding_value?.node_type === "access" &&
+			tuple_binding_value.access.node_type === "access_field" &&
+			tuple_binding_value.target.node_type === "value" &&
+			String((tuple_binding_value.target as ValueNode).value ?? "").startsWith("_tuple_dst_")
+		) {
+			const temp_name = String((tuple_binding_value.target as ValueNode).value);
+			const temp_decl = status.scoped_declarations.findLast((d) => d.name === temp_name);
+			const ctor = temp_decl?.value as FunctionCallNode | undefined;
+			const m = /^_(\d+)$/.exec(String((tuple_binding_value.access as AccessFieldNode).name ?? ""));
+			if (ctor?.type?.name?.startsWith("_Tuple_") && m) {
+				const param = ctor.params[parseInt(m[1], 10)] as ValueNode | undefined;
+				const src_name = param?.node_type === "value" ? String(param.value) : "";
+				// Mark heap ownership only when the transferred source buffer
+				// is actually heap: a rodata-derived source (`var s = "lit"`)
+				// binds as a static alias — freeing it would abort.
+				if (
+					param?.node_type === "value" &&
+					param.is_moved &&
+					!!src_name &&
+					!!status.heap_strings?.has(src_name)
+				) {
+					mark_heap_string(status, node.name);
+				}
+			}
+		}
+
 		if (node.value && node.value.node_type === "array") {
 			const array_values = node.value as ArrayValuesNode;
 			const complex = has_complex_elements(array_values.values, status);
