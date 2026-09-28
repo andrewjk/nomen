@@ -291,7 +291,6 @@ args only when the callee actually wrote the param's string fields) was
 removed as superseded. The leak below therefore survives only for explicit
 `ref` parameters — the shapes in this entry — bounded per write.
 
-
 Fix directions, when picked up (either closes the leak class):
 
 1. **Caller-side record propagation.** At each direct call `fill(ref b)`,
