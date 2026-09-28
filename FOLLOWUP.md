@@ -601,3 +601,26 @@ port purely because capturing closures do not exist. Nullable func types,
 lambda→func-variable assignment, and func-signature checking HAVE landed,
 so only the capture-env machinery (CLOSURE.md's capturing-lambda work for
 value contexts) is missing to delete those classes.
+
+## `move` on owning value-struct field declarations is redundant (cleanup)
+
+The compiler derives ownership of `List`/`Buffer`/owning-value-struct fields
+from the TYPE, not the keyword: `mark_owning_auto_init_params`
+(src/check/check_struct_node.ts) auto-stamps the synthesized `#init`
+parameter `is_moved` for any field whose type satisfies
+`is_owning_struct_type_requiring_move` (the monomorphized-struct path
+mirrors this in check_function_call_node), and the destroy /
+displaced-value-reclaim / pass-by-value paths key on that same type
+analysis. So `pub move items = List<string>()` and
+`pub var items = List<string>()` behave identically — the keyword is dead
+weight on value-struct field declarations.
+
+The allmark port writes a few of these (`pub move List<int> items`);
+sweep them to plain `var`. KEEP the keyword on CLASS-typed fields, though:
+there `move` is the ownership DECLARATION (container owns + destroys the
+instance, eagerly reclaims displaced assignments, and borrow stores are
+rejected), and own-vs-borrow is observable behavior — not inferable the way
+tuple-literal last-use moves are. Worth considering alongside the sweep: a
+checker warning for `move` on value-struct fields so it does not
+re-accumulate, and a line in docs/MEMORY.md stating that field `move` is
+meaningful only for class-typed fields.
