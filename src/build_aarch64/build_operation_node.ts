@@ -1984,8 +1984,9 @@ function is_owned_heap_temp(node: BaseNode, status?: BuildStatus): boolean {
 		// consumed it. (The C backend has the same rule via its blanket
 		// string-call free.)
 		if (
-			(check_node as unknown as { is_func_param?: boolean }).is_func_param ||
-			(check_node as unknown as { is_func_field_call?: boolean }).is_func_field_call
+			!(check_node as unknown as { type?: { is_view?: boolean } }).type?.is_view &&
+			((check_node as unknown as { is_func_param?: boolean }).is_func_param ||
+				(check_node as unknown as { is_func_field_call?: boolean }).is_func_field_call)
 		) {
 			return true;
 		}
