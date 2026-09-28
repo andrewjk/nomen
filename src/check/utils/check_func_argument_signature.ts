@@ -177,12 +177,19 @@ export default function check_func_argument_signature(
 	status: CheckStatus,
 	start: number,
 ): void {
+	const expected_params = expected.func_params ?? expected.type?.func_params;
+	const expected_return = expected.func_return_type ?? expected.type?.func_return_type;
 	const expected_sig: FuncSignature = {
-		params: expected.func_params ?? expected.type?.func_params,
-		return_type: expected.func_return_type ?? expected.type?.func_return_type,
+		// A ZERO-parameter func type (`func (out string)`) carries no params
+		// array at all — normalize it to an empty list so arity is still
+		// compared. Otherwise a lambda argument with extra parameters slips
+		// through, its params never get an inferred type, and the C backend
+		// emits a prototype with an untyped parameter (invalid C).
+		params: expected_params ?? (expected_return ? [] : undefined),
+		return_type: expected_return,
 	};
 	// Without a declared signature there is nothing to compare against (a
-	// bare `func` marker param).
+	// bare `func` marker param, whose params and return are both absent).
 	if (!expected_sig.params && !expected_sig.return_type) return;
 	const actual_sig = arg_signature(arg, status);
 	if (!actual_sig) return;

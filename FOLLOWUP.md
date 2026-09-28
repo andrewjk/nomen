@@ -31,25 +31,6 @@ concurrency/caching artifact in `check_output`'s cache write under load.
 Worth investigating `test/check_output.ts`'s `outputfile`/`cachefile` writes
 if it keeps biting.
 
-## C: an inline lambda argument drops an inferred parameter type in the prototype
-
-An inline capturing lambda passed directly as a CALL ARGUMENT whose parameter
-type is INFERRED from the target signature emits that parameter without a type
-in the generated C function prototype, producing invalid C:
-
-```c
-nomen_string _lambda_0(void *_nomen_env,  s2);   /* `s2` has no type */
-```
-
-Repro (C backend only; aarch64 is fine): a method taking
-`func (string, out string) f`, called as
-`s.exclaim((s2, out string) => prefix)` — clang rejects it ("type specifier
-missing, defaults to 'int'"). A lambda bound to a LOCAL
-(`var func (string, out string) f = (s, out string) => …`) is unaffected, so
-the bug is in the inline-argument prototype path (the inferred param type is
-not stamped before the prototype is emitted). Found while fixing the
-func-value string-return leak.
-
 ## Residual ownership-tracking gaps (accepted, narrow)
 
 - **Trait-dispatched value-struct methods bypass the self-write record

@@ -87,4 +87,49 @@ pub func main = (Init init) {
 			parse_raw(bad_input).errors.some((e) => e.message.includes("Function signature mismatch")),
 		).toBe(true);
 	});
+
+	test("an inline lambda with extra params is rejected against a zero-param func type", () => {
+		// A zero-parameter func type (`func (out string)`) carries no params
+		// array, so the arity comparison used to be skipped — a lambda with an
+		// extra parameter (no target param to infer its type from) slipped
+		// through untyped, and the C backend emitted a prototype with an
+		// untyped parameter (invalid C: "type specifier missing"). It is now a
+		// signature mismatch.
+		const bad_input = `
+import System
+
+struct Shout {
+	func exclaim = (self, func (out string) f, out string) { return f() + "!" }
+}
+
+pub func main = (Init init) {
+	var Shout s = Shout()
+	Console.write_line(s.exclaim((extra, out string) => "lit"))
+}
+`;
+		expect(
+			parse_raw(bad_input).errors.some((e) => e.message.includes("Function signature mismatch")),
+		).toBe(true);
+	});
+
+	test("an inline lambda's inferred parameter type is stamped", async () => {
+		await build_and_check_output(
+			`
+import System
+
+struct Shout {
+	func exclaim = (self, func (string, out string) f, out string) { return f("x") + "!" }
+}
+
+pub func main = (Init init) {
+	var string prefix = "L> "
+	var Shout s = Shout()
+	Console.write_line(s.exclaim((w, out string) => prefix + w))
+}
+`,
+			"funcval_inline_lambda_inferred_param",
+			"L> x!\n",
+			true,
+		);
+	});
 });
