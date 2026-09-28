@@ -175,6 +175,11 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 
 	const old_function_name = status.current_function_name;
 	status.current_function_name = emission_label(node);
+	// Closures are only reachable through a descriptor, so their string
+	// returns must be uniformly heap-owned (build_return_node normalizes
+	// borrows when this is set). Save/restore around the body build.
+	const old_is_closure = status.current_function_is_closure;
+	status.current_function_is_closure = !!node.is_closure;
 	// The nursery_stack depth at body-entry: a `return` inside this body may
 	// only route through enclosing async nurseries at or above this depth
 	// (ids below belong to an OUTER function's frame — e.g. this is a lambda
@@ -1312,6 +1317,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.heap_cleanup_stack = old_heap_cleanup_stack;
 	status.trait_class_frames = old_trait_class_frames;
 	status.current_function_name = old_function_name;
+	status.current_function_is_closure = old_is_closure;
 	status.stack_size = old_stack_size;
 	status.stack_offsets = old_stack_offsets;
 	status.closure_env_slot = old_closure_env_slot;

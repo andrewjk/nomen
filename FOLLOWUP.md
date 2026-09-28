@@ -31,51 +31,33 @@ concurrency/caching artifact in `check_output`'s cache write under load.
 Worth investigating `test/check_output.ts`'s `outputfile`/`cachefile` writes
 if it keeps biting.
 
-## Heap return temp of an indirect call leaks when consumed by an operation (aarch64)
+## C: an inline lambda argument drops an inferred parameter type in the prototype
 
-A fresh-heap value RETURNED from a call through a func-typed VALUE (`f(...)`
-where `f` is a func-typed param/field/local) leaks on the aarch64 backend
-when the result feeds an operation. Repro (audit on, aarch64 only):
+An inline capturing lambda passed directly as a CALL ARGUMENT whose parameter
+type is INFERRED from the target signature emits that parameter without a type
+in the generated C function prototype, producing invalid C:
 
-```
-struct Shout {
-	func exclaim = (self, func (out string) f, out string) { return f() + "!" }
-}
-
-var Shout s = Shout()
-var string r = s.exclaim(func (out string) { return 42.to_string() })
-// r == "42!" — but the callee's to_string() buffer (f()'s result,
-// consumed as the concat's left operand) leaks: LEAK: 1 allocation(s)
+```c
+nomen_string _lambda_0(void *_nomen_env,  s2);   /* `s2` has no type */
 ```
 
-Verified CAPTURE-FREE (the lambda holds nothing), so it is not the
-descriptor-dispose machinery — that is balanced. The C backend is clean
-for the same program: its op-level tracking (`last_result_is_heap` /
-`is_owned_heap_temp`) frees a consumed call-result operand, while the
-aarch64 indirect-call paths (build_function_call_node's `is_func_param`
-arm, build_access_method) appear never to mark their result as a heap
-temp for that free pass. Discovered while probing the
-inline-capturing-lambda fixes; direct returns (`var string s = f()`) and
-borrow returns are unaffected.
+Repro (C backend only; aarch64 is fine): a method taking
+`func (string, out string) f`, called as
+`s.exclaim((s2, out string) => prefix)` — clang rejects it ("type specifier
+missing, defaults to 'int'"). A lambda bound to a LOCAL
+(`var func (string, out string) f = (s, out string) => …`) is unaffected, so
+the bug is in the inline-argument prototype path (the inferred param type is
+not stamped before the prototype is emitted). Found while fixing the
+func-value string-return leak.
 
-**Update (2026-09-24):** the original SEGFAULT of this shape is fixed —
-the root cause was cross-function leakage of the build status's
-`variable_types` map (a library function's `view string v` param
-answering a later body's same-named scalar lookup, e.g. `v.to_string()`
-on an `int v`, emitting a nomen_view load of a long). Both backends now
-scope `variable_types` per function body. The LEAK remains, and the
-previously "suspected fix" (free the indirect result by SIGNATURE) is
-UNSOUND: the func-type grammar has no `move out` spelling, so
-`func (out string)` cannot express ownership, and a lambda whose body
-returns a borrow of its captured env (the designed behavior asserted by
-test `lambda_arg_capture_method_string`) binds to the same signature as
-a heap-returning lambda — the operator inside `exclaim` cannot
-distinguish them at compile time. Viable fixes: (a) callee-side
-normalization — every closure/NAMED function bound as a func value
-strdups non-heap `out string` returns (what the C backend does for all
-functions via `returns_borrow_var`), making signature-based caller frees
-sound; or (b) an ownership bit on the func-type grammar
-(`func (move out string)`). (a) matches the C ABI today.
+## aarch64: a named function with >8 argument slots as a func value fails to materialize
+
+Passing a named function whose closure ABI needs more than 8 argument slots as
+a func VALUE aborts codegen: `asm: 'mov' operand shape mismatch: got
+label,reg … mov undefined, x0` — the thunk/descriptor label resolves to the
+literal `undefined`. Repro: `func pick = (int×8, string s, out string) { return s }`
+bound to `var func (…) f = pick` (or passed to a method taking that func
+signature). Pre-existing (reproduced with the func-value leak fix stashed).
 
 ## Residual ownership-tracking gaps (accepted, narrow)
 

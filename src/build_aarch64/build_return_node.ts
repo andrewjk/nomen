@@ -402,6 +402,14 @@ export default function build_return_node(
 			emit_field_overrides(temp_name, anon, build_node, status);
 			emit_var_address(status, "x0", temp_name);
 		} else {
+			// Reset the owned-result flag so the value build below gives a
+			// FRESH answer: a builder that produces a fresh heap string sets
+			// it true; a borrow-producing builder leaves it false. Closures
+			// read it (needs_borrow_strdup) to decide whether a call result
+			// must be dup'd — a stale true from an earlier statement would
+			// otherwise let a borrow through and the indirect caller would
+			// free it.
+			status.last_result_is_heap = false;
 			emit_return_value(node.value, nir_value, status);
 		}
 		if (ret_is_float) {
@@ -440,10 +448,12 @@ export default function build_return_node(
 		const fn_name = status.current_function_name;
 		const mangled = status.current_struct ? `${status.current_struct.name}_${fn_name}` : fn_name;
 		if (
-			fn_name &&
-			((!!status.heap_returning_functions &&
-				(status.heap_returning_functions.has(fn_name) ||
-					(mangled !== undefined && status.heap_returning_functions.has(mangled)))) ||
+			fn_name && // A LAMBDA's literal return must be heap-owned too (its callers are
+			// indirect and free every string result — see normalizes_borrow_returns).
+			(status.current_function_is_closure ||
+				(!!status.heap_returning_functions &&
+					(status.heap_returning_functions.has(fn_name) ||
+						(mangled !== undefined && status.heap_returning_functions.has(mangled)))) ||
 				// A `move out string` function hands the caller an OWNED value by
 				// signature — a literal return path must be copied into heap
 				// storage or the caller frees rodata.
@@ -486,12 +496,17 @@ export default function build_return_node(
 		!is_call_site_borrow_accessor(borrow_fn_name) &&
 		current_return_is_string(status) &&
 		// Either the function is classified heap-returning (its callers free
-		// every result) or it declares `move out string` (the caller owns the
-		// result by signature) — in both cases every return path must hand
-		// over a heap pointer.
-		((!!status.heap_returning_functions &&
-			(status.heap_returning_functions.has(borrow_fn_name) ||
-				(borrow_mangled !== undefined && status.heap_returning_functions.has(borrow_mangled)))) ||
+		// every result), it declares `move out string` (the caller owns the
+		// result by signature), or it is a LAMBDA — closures are only ever
+		// called through a descriptor (indirect), where the call site cannot
+		// know the callee's return classification, so every closure string
+		// return must be uniformly heap-owned (CLOSURE.md fix (a); mirrors the
+		// C backend, which strdups every string return). In all cases every
+		// return path must hand over a heap pointer.
+		(!!status.current_function_is_closure ||
+			(!!status.heap_returning_functions &&
+				(status.heap_returning_functions.has(borrow_fn_name) ||
+					(borrow_mangled !== undefined && status.heap_returning_functions.has(borrow_mangled)))) ||
 			current_function_returns_move_string(status));
 	let needs_borrow_strdup = false;
 	if (normalizes_borrow_returns) {
@@ -528,6 +543,21 @@ export default function build_return_node(
 		) {
 			// `return self.name` / `return obj.field` — the storage belongs
 			// to the struct instance.
+			needs_borrow_strdup = true;
+		} else if (
+			// A CLOSURE returning a call result the callee classification did
+			// NOT mark as owned (e.g. a trait-dispatched method that hands back
+			// a field/literal borrow, or a borrow accessor reached indirectly):
+			// dup it so the closure still hands its (indirect) caller an owned
+			// copy. The value build above reset `last_result_is_heap` and set it
+			// only for owned results, giving a fresh signal here.
+			status.current_function_is_closure &&
+			(node.value.node_type === "func_call" ||
+				(node.value.node_type === "access" &&
+					(node.value as AccessNode).access.node_type === "access_func")) &&
+			!status.last_result_is_heap &&
+			!is_container_borrow_access(node.value)
+		) {
 			needs_borrow_strdup = true;
 		} else if (
 			(node.value.node_type === "match" || node.value.node_type === "switch") &&

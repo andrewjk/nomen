@@ -628,6 +628,14 @@ export default interface BuildStatus {
 	 */
 	current_function?: import("../nodes/FunctionNode.ts").default;
 	/**
+	 * True while the aarch64 backend builds a LAMBDA body. Closures are only
+	 * ever called indirectly (through a descriptor), so their string returns
+	 * must be uniformly heap-owned — the return boundary normalizes borrows
+	 * there when this is set (see build_return_node). The C backend already
+	 * strdups every string return, so it does not consult this.
+	 */
+	current_function_is_closure?: boolean;
+	/**
 	 * Accumulates variable name → type across all scopes during building.
 	 * Used to resolve types for monomorphized generic functions whose ValueNodes
 	 * were never type-resolved by the check pass.

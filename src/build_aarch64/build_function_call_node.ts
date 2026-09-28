@@ -331,6 +331,15 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		// Inline capturing lambda args were borrowed by the call — reclaim
 		// their one-shot heap descriptors (x0 is preserved).
 		emit_dispose_lambda_args_a64(status, lambda_arg_slots);
+		// A func-VALUE indirect call returning a non-view string yields an
+		// OWNED heap string: closures normalize their string returns to heap
+		// (build_return_node) and named-function thunks dup borrow returns
+		// (materialize_func_value_a64), so the caller owns and frees the
+		// result. Without this, `var string r = f()` leaked the callee's
+		// fresh buffer.
+		if (node.type?.name === "string" && !node.type.is_view) {
+			status.last_result_is_heap = true;
+		}
 	} else {
 		const variadic_idx = (node as FunctionCallNode).variadic_param_index;
 		// Collect `ref` class args whose caller-side anchor must be re-synced to

@@ -1974,6 +1974,21 @@ function is_owned_heap_temp(node: BaseNode, status?: BuildStatus): boolean {
 	if (check_type_name !== "string") return false;
 	if (check_node.node_type === "op") return true;
 	if (check_node.node_type === "func_call" || check_node.node_type === "access_func") {
+		// A func-VALUE indirect call — `f()` on a func-typed param/local
+		// (is_func_param) or `s.render()` on a func-typed struct field
+		// (is_func_field_call). The callee's return classification is
+		// unknowable at the call site, so closures normalize their string
+		// returns to heap (build_return_node) and named-function thunks dup
+		// borrow returns (materialize_func_value_a64); every such string
+		// result is therefore owned and the operator must free it once it has
+		// consumed it. (The C backend has the same rule via its blanket
+		// string-call free.)
+		if (
+			(check_node as unknown as { is_func_param?: boolean }).is_func_param ||
+			(check_node as unknown as { is_func_field_call?: boolean }).is_func_field_call
+		) {
+			return true;
+		}
 		const raw_name = (check_node as unknown as { name: string }).name;
 		const mangled = (check_node as unknown as { mangled_name?: string }).mangled_name || raw_name;
 		const dbg =

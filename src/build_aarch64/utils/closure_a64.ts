@@ -207,19 +207,56 @@ export function materialize_func_value_a64(func: FunctionNode, status: BuildStat
 	const lines: string[] = [];
 	lines.push(`.p2align 2`);
 	lines.push(`${thunk}:`);
+	// A named function used as a FUNC VALUE is only ever called indirectly
+	// (through this thunk's descriptor), and the call site cannot know the
+	// callee's string-return classification — so a borrow-returning function's
+	// result must be normalized to an OWNED copy here, or the indirect caller
+	// (which unconditionally frees every func-value string result) would free
+	// a borrow. Direct calls to the original symbol are unaffected (they keep
+	// the borrow and never free it). Closures normalize in build_return_node.
+	const normalizes_borrow_return =
+		func.return_type?.name === "string" &&
+		!func.return_type?.is_view &&
+		!func.returns_move &&
+		func.returns_string_borrow !== false &&
+		!(
+			status.heap_returning_functions?.has(target) ||
+			(status.heap_returning_functions?.has(func.name ?? "") ?? false)
+		);
+	// When normalizing, the tail `b` becomes a `bl` (the pair must be dup'd
+	// after it returns). `bl` clobbers x30 and needs a frame — so the thunk
+	// saves {x29, x30} with a 16-byte push. That push moves sp, which shifts
+	// every OVERFLOW arg's address by 16; the load offsets below account for it
+	// (the target reads its stack args relative to the new sp, so the store
+	// offsets stay put).
+	const frame_pad = normalizes_borrow_return ? 16 : 0;
+	if (normalizes_borrow_return) {
+		lines.push(`stp x29, x30, [sp, #-16]!`);
+	}
 	// Shift every register arg down one slot (ascending = forward move).
 	const reg_shift = Math.min(slots, 8);
 	for (let s = 0; s < reg_shift - 1; s++) {
 		lines.push(`mov x${s}, x${s + 1}`);
 	}
 	// Overflow args: incoming slot 8+k sits at [sp, #(k+1)*8] (the env was
-	// slot 0, in a register), dest slot 8+k at [sp, #k*8]. No pushes were
-	// made, so sp is the caller's.
+	// slot 0, in a register), dest slot 8+k at [sp, #k*8]. The extra
+	// `frame_pad` compensates for the frame push above.
 	for (let k = 0; slots + k > 8 && k < 64; k++) {
-		lines.push(`ldr x9, [sp, #${(k + 1) * 8}]`);
+		lines.push(`ldr x9, [sp, #${frame_pad + (k + 1) * 8}]`);
 		lines.push(`str x9, [sp, #${k * 8}]`);
 	}
-	lines.push(`b ${target}`);
+	if (normalizes_borrow_return) {
+		// `bl` so the (ptr, len) pair can be duplicated: the len half rides x1
+		// across the strdup call, which only consumes the ptr in x0.
+		lines.push(`bl ${target}`);
+		lines.push(`str x1, [sp, #-16]!`);
+		lines.push(status.audit ? `bl _nomen_strdup_wrap` : `bl _strdup`);
+		lines.push(`ldr x1, [sp], #16`);
+		lines.push(`ldp x29, x30, [sp], #16`);
+		lines.push(`ret`);
+	} else {
+		lines.push(`b ${target}`);
+	}
 	lines.push(``);
 	status.closure_definitions = (status.closure_definitions ?? "") + lines.join("\n") + "\n";
 
