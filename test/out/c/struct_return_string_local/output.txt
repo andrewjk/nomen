@@ -1,0 +1,2 @@
+no_loop a=1 b=xy
+with_call a=1 b=xy

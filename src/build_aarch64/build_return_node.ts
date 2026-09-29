@@ -4,6 +4,7 @@ import emit_field_overrides, {
 } from "../build/emit_field_overrides.ts";
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
+import ctor_return_owned_string_fields from "../build_common/ctor_return_owned.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { is_nullable_struct_type } from "../build_common/nullable_struct.ts";
@@ -752,6 +753,23 @@ export default function build_return_node(
 							skip_fields.add(key.slice(prefix.length));
 						}
 					}
+					emit_string_field_strdups_at(status, ret_struct.name, "x8", 0, skip_fields);
+				}
+				// Struct-CONSTRUCTOR RETURN normalization (`return R(a, b)`):
+				// strdup every string field the caller would otherwise free as
+				// rodata / dangle after the argument's reclaim. Arguments that
+				// already own heap transfer raw.
+				if (
+					node.value?.node_type === "func_call" &&
+					(node.value as FunctionCallNode).name === ret_struct.name &&
+					!ret_struct.name.startsWith("_") &&
+					!(node.value as FunctionCallNode).field_overrides?.length
+				) {
+					const skip_fields = ctor_return_owned_string_fields(
+						ret_struct,
+						node.value as FunctionCallNode,
+						status.heap_strings,
+					);
 					emit_string_field_strdups_at(status, ret_struct.name, "x8", 0, skip_fields);
 				}
 				// Tuple-literal RETURN normalization (mirror of the C

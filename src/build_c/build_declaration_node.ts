@@ -872,7 +872,13 @@ export default function build_declaration_node(
 				const val_is_heap_string_var =
 					node.value.node_type === "value" &&
 					!val_is_string_literal &&
-					!!status.scoped_declarations.find((d) => d.name === val_node.value);
+					(!!status.scoped_declarations.find((d) => d.name === val_node.value) ||
+						// A bare value source not declared in ANY C scope is a
+						// function parameter (or a global): it is a BORROW of
+						// the caller's storage, so the local must take its own
+						// heap copy (otherwise scope exit would free the
+						// caller's bytes — a use-after-free / bad free).
+						!find_decl_in_c_scopes(status, val_node.value));
 				// A `string` declaration initialized from a VIEW value
 				// (`const string s = v`, incl. a hoisted interpolation
 				// `_param_N = v`) materializes an OWNED heap copy bounded by

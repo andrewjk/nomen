@@ -201,6 +201,9 @@ export function gather_normalized_struct_returners(root: BaseNode, status: Build
 		changed = false;
 		for (const fn of return_candidates) {
 			if (!return_normalizing.has(fn.name)) continue;
+			const ret_struct = structs.find(
+				(st) => st.name === fn.return_type?.name && !st.is_simple_type && !st.is_class,
+			);
 			for (const ret of direct_returns(fn)) {
 				const value = ret.value ?? undefined;
 				if (value && value.node_type === "value") continue;
@@ -208,6 +211,21 @@ export function gather_normalized_struct_returners(root: BaseNode, status: Build
 					value &&
 					value.node_type === "func_call" &&
 					return_normalizing.has((value as unknown as { name?: string }).name ?? "")
+				) {
+					continue;
+				}
+				// A USER struct CONSTRUCTOR return (`return R(a, b)`) is
+				// normalizable: the return boundary strdups the returned
+				// struct's string fields, so the caller can uniformly own
+				// them. Synthetic returns (`_Tuple_…`, `_Anon…`) carry their
+				// own normalization and are excluded.
+				if (
+					value &&
+					value.node_type === "func_call" &&
+					!!ret_struct &&
+					(value as unknown as { name?: string }).name === ret_struct.name &&
+					!ret_struct.name.startsWith("_") &&
+					!(value as unknown as { field_overrides?: unknown[] }).field_overrides?.length
 				) {
 					continue;
 				}

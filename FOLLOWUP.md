@@ -21,6 +21,20 @@ Two ownership corners remain, both deliberately left:
   a trait-declared class field inside a nested/array element is not
   recursively destroyed.
 
+## Override-constructor returns are not normalized
+
+Return-boundary normalization covers a plain struct-constructor return
+(`return R(a, b)`): every string field is strdup'd unless the argument already
+owns heap, and the function is registered so callers record/free the fields
+(`struct_return_classification.ts` + both `build_return_node`s). The
+ANONYMOUS override constructor (`return [ .. R(), field = local ]`, a
+`func_call` with `field_overrides`) is deliberately EXCLUDED: when such a
+return feeds an anon-struct BASE literal assigned to a binding, the caller
+does not record the normalized fields, so normalizing leaks. A returned
+override struct that stores a heap local into a string field can therefore
+still dangle when the callee's scope exit reclaims the local. Fixing needs
+caller-side recording through anon-struct base positions.
+
 ## Nullable scalars: remaining in-band corners
 
 Nullable scalars (`bool?`, `int?`, …) now carry a companion `<slot>_has` flag

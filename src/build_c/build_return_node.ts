@@ -2,6 +2,7 @@ import emit_field_overrides, {
 	has_field_overrides,
 	hoist_field_overrides,
 } from "../build/emit_field_overrides.ts";
+import ctor_return_owned_string_fields from "../build_common/ctor_return_owned.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
@@ -642,6 +643,33 @@ export default function build_return_node(
 		) {
 			for (const field of direct_string_fields(return_struct)) {
 				if (returned_recorded_string_fields?.has(field.name)) continue;
+				status.code += `_return_val.${field.name} = nomen_str_dup(_return_val.${field.name});\n`;
+			}
+		}
+		// Struct-CONSTRUCTOR RETURN normalization (`return R(a, b)`): the
+		// constructor stored its string arguments raw (borrows), so the return
+		// boundary strdup's every string field the caller would otherwise free
+		// as rodata / dangle after the callee's scope-exit reclaims the
+		// argument. Arguments that already own heap transfer raw.
+		if (
+			is_struct &&
+			!return_is_class &&
+			!ret_type.is_view &&
+			!ret_type.is_array &&
+			return_struct &&
+			!returns_struct_zero &&
+			node.value?.node_type === "func_call" &&
+			(node.value as FunctionCallNode).name === return_struct.name &&
+			!return_struct.name.startsWith("_") &&
+			!(node.value as FunctionCallNode).field_overrides?.length
+		) {
+			const skip = ctor_return_owned_string_fields(
+				return_struct,
+				node.value as FunctionCallNode,
+				status.heap_strings,
+			);
+			for (const field of direct_string_fields(return_struct)) {
+				if (skip.has(field.name)) continue;
 				status.code += `_return_val.${field.name} = nomen_str_dup(_return_val.${field.name});\n`;
 			}
 		}
