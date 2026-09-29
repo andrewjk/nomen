@@ -1,0 +1,4 @@
+name=cite
+pattern null
+name=href
+pattern=http

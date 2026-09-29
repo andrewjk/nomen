@@ -499,6 +499,7 @@ export default function build(
 			// in audit_runtime.o, linked separately).
 			(options.audit ? `void *nomen_strdup_wrap(const char *);\n` : "") +
 			`static nomen_string nomen_str_dup(nomen_string s) {\n` +
+			`\tif (!s.ptr) return s;\n` +
 			`\tnomen_string r = { strdup(s.ptr), s.len };\n` +
 			`\treturn r;\n` +
 			`}\n` +

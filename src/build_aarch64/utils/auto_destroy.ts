@@ -1591,9 +1591,22 @@ export function emit_string_field_strdups_at(
 		// restore and store the owned pair.
 		emit_asm(status, `str ${base_reg}, [sp, #-16]!\n`);
 		emit_string_pair_load_at(status, base_reg, off);
-		emit_strdup_string(status);
-		emit_asm(status, `mov x13, x0\n`);
-		emit_asm(status, `ldr ${base_reg}, [sp], #16\n`);
-		emit_pair_store_to(status, base_reg, off, "x13", "x1");
+		// A NULL nullable string field (`{NULL, 0}`) stays null: strdup on a
+		// null ptr would crash / fabricate a non-null empty string.
+		if (field.type.is_nullable) {
+			const skip_label = `.Lskip_nullable_strdup_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+			emit_asm(status, `mov x13, x0\n`);
+			emit_asm(status, `cbz x0, ${skip_label}\n`);
+			emit_strdup_string(status);
+			emit_asm(status, `mov x13, x0\n`);
+			emit_asm(status, `${skip_label}:\n`);
+			emit_asm(status, `ldr ${base_reg}, [sp], #16\n`);
+			emit_pair_store_to(status, base_reg, off, "x13", "x1");
+		} else {
+			emit_strdup_string(status);
+			emit_asm(status, `mov x13, x0\n`);
+			emit_asm(status, `ldr ${base_reg}, [sp], #16\n`);
+			emit_pair_store_to(status, base_reg, off, "x13", "x1");
+		}
 	}
 }

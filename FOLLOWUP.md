@@ -2,6 +2,17 @@
 
 Skipped or out-of-scope items recorded for later.
 
+## C: `nullable ?? "literal"` frees the rodata literal
+
+`var string? p = null; var s = p ?? "none"` prints correctly but then aborts
+on C (invalid free): the `??` lowering yields the chosen branch directly, and
+the consumer (interpolation/let) frees the result as if it were heap. When the
+fallback branch is a string literal (rodata) or any borrow, that free is
+invalid. aarch64 happens to survive. Repro: a `string?` that is null coalesced
+with a string literal used as an interpolation/let value. Fix direction: the
+`??` string result must be normalized to owned (strdup the chosen branch) when
+the consumer frees, or the consumer must not free a `??` borrow.
+
 ## aarch64: crash passing an array literal AND a string[] var to array params in one wrapped main
 
 Reproduced on both the current tree and the pre-change baseline (so not a
