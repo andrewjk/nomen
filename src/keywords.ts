@@ -41,7 +41,6 @@ export const KEYWORDS = new Set([
 	"let",
 	"as",
 	"swap",
-	"raw",
 	"extern",
 	"unsafe",
 ]);

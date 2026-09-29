@@ -258,7 +258,18 @@ export default function parse_statement(status: ParseStatus) {
 				break;
 			}
 			case "raw": {
-				parse_raw(status);
+				// `raw` is a CONTEXTUAL keyword: a fenced ``` #arch ``` block
+				// tokenizes as a `raw` token whose NEXT token (the fence body)
+				// shares its start offset. Any other `raw` is an ordinary
+				// identifier (`var raw = …`, `raw = …`, a field/param named
+				// `raw`). User raw blocks are still rejected by parse_raw's
+				// library-only lockdown.
+				const is_raw_block = status.tokens[status.i + 1]?.i === status.tokens[status.i]?.i;
+				if (is_raw_block) {
+					parse_raw(status);
+				} else {
+					parse_statement_start(status);
+				}
 				break;
 			}
 			case "async": {
