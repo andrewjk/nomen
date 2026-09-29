@@ -391,6 +391,20 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 			}
 			// HACK:
 			if (target_type.is_array && access_field.name === "length") {
+				// A fixed-array PARAMETER decays to a pointer in the C
+				// signature, so `sizeof(x) / sizeof(elem)` yields
+				// pointer-size / elem-size (0 for fat strings). When the
+				// checker stamped a compile-time length on the param's type
+				// (from the call site's array literal), emit it directly.
+				const target_is_param =
+					node.target.node_type === "value" &&
+					!!status.current_function?.params.some(
+						(p) => !p.is_self_param && p.name === (node.target as ValueNode).value,
+					);
+				if (target_is_param && target_type.length) {
+					build_node(target_type.length, status);
+					return;
+				}
 				const type = c_type(target_type.name);
 				status.code += "(sizeof(";
 				build_node(node.target, status);
