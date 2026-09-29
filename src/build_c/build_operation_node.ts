@@ -60,12 +60,19 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		const left_type = type_from_value_node(node.left_value);
 		if (left_type?.is_nullable && left_type.name === "string") {
 			// Nullable string: null is the in-band {NULL, 0} fat zero — the
-			// null test is `left.ptr != 0`. Evaluate the left once.
+			// null test is `left.ptr != 0`. Evaluate the left once. The
+			// CHOSEN branch is dup'd into an independently owned copy: the
+			// result feeds consumers that free it (interpolation args, let
+			// bindings, return-boundary ownership), and yielding the payload
+			// or the fallback directly would free the left's own buffer at
+			// its scope exit (alias → double free) or rodata (the
+			// `nullable ?? "literal"` SIGABRT). nomen_str_dup is the prelude
+			// helper (null-safe) so both arms are one expression.
 			status.code += `({ nomen_string _nss_${ns_tmp_counter} = `;
 			build_node(node.left_value, status);
-			status.code += `; _nss_${ns_tmp_counter}.ptr ? _nss_${ns_tmp_counter} : `;
+			status.code += `; _nss_${ns_tmp_counter}.ptr ? nomen_str_dup(_nss_${ns_tmp_counter}) : nomen_str_dup(`;
 			build_node(node.right_value, status);
-			status.code += `; })`;
+			status.code += `); })`;
 			ns_tmp_counter++;
 		} else if (is_nullable_scalar_type(left_type)) {
 			// Nullable scalar (`int? ?? fb`): the flag is `<expr>_has`. A

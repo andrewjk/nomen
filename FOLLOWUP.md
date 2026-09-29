@@ -2,16 +2,17 @@
 
 Skipped or out-of-scope items recorded for later.
 
-## C: `nullable ?? "literal"` frees the rodata literal
+## C: nullable local assigned from an owned string aliases it (double free)
 
-`var string? p = null; var s = p ?? "none"` prints correctly but then aborts
-on C (invalid free): the `??` lowering yields the chosen branch directly, and
-the consumer (interpolation/let) frees the result as if it were heap. When the
-fallback branch is a string literal (rodata) or any borrow, that free is
-invalid. aarch64 happens to survive. Repro: a `string?` that is null coalesced
-with a string literal used as an interpolation/let value. Fix direction: the
-`??` string result must be normalized to owned (strdup the chosen branch) when
-the consumer frees, or the consumer must not free a `??` borrow.
+`var string own = "heap" + "!"; var string? owns = own` — the C assignment
+copies own's fat pair RAW, so `owns.ptr == own.ptr`, and both locals'
+auto-frees release the same buffer (SIGABRT: double free). A literal
+initializer is fine (`nomen_str_dup`'d — see the `??` normalization), and the
+`??` string result is now independently owned, so this aliasing is the
+remaining in-band nullable-string corner. Fix direction: the nullable-string
+local assignment should dup non-owned RHS (mirroring the plain `string` local
+assignment's ownership normalization) or the aliasing pair's release must be
+single-owner.
 
 ## aarch64: crash passing an array literal AND a string[] var to array params in one wrapped main
 
@@ -652,4 +653,3 @@ class-per-rule shapes don't see it. Fix direction: at a call site whose
 callee takes a `ref` struct param, transfer the callee's recorded string-field
 writes onto the caller's records (mirror of
 `drop_self_written_string_field_records`, in the add direction).
-
