@@ -1,0 +1,3 @@
+after_str=5
+between=11
+temp=4

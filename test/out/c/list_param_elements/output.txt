@@ -1,0 +1,4 @@
+sum=10
+rules=2
+names=alice
+uac=3
