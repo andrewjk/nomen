@@ -15,9 +15,18 @@ export default function build_switch_node(
 ) {
 	const old_scoped_declarations = status.scoped_declarations;
 
+	// heap_string_fields records are per-path "may be heap" facts, and the
+	// cases are mutually exclusive: each case (and the else branch) must
+	// start from the PRE-switch records, or an earlier case's store made a
+	// later case free the still-constructed literal as heap. The join keeps
+	// the union across all cases (see build_if_else_node).
+	const pre_heap_string_fields = status.heap_string_fields;
+	const case_field_sets: (Set<string> | undefined)[] = [];
+
 	for (let i = 0; i < node.cases.length; i++) {
 		const c = node.cases[i];
 		status.scoped_declarations = enter_c_scope(status);
+		status.heap_string_fields = pre_heap_string_fields;
 
 		// The condition builds into a scratch buffer (code_scratch.ts) — the
 		// historical substring-and-truncate capture flattened the accumulated
@@ -83,21 +92,36 @@ export default function build_switch_node(
 		status.code += `if (${cond_code}) {\n`;
 		build_block_with_cursor(c.branch, nir?.arms[i]?.branch, status);
 		build_auto_free(status);
+		case_field_sets.push(status.heap_string_fields);
 		leave_c_scope(status);
 	}
 
 	if (node.else_branch) {
 		status.code += "} else ";
 		status.scoped_declarations = enter_c_scope(status);
+		status.heap_string_fields = pre_heap_string_fields;
 		status.code += `{\n`;
 		build_block_with_cursor(node.else_branch, nir?.otherwise ?? undefined, status);
 		build_auto_free(status);
+		case_field_sets.push(status.heap_string_fields);
 		status.code += `}\n`;
 		leave_c_scope(status);
 	} else if (node.cases.length > 0) {
 		// Close the last case's `if` block (the connector that used to be
 		// rewritten into this by the trailing replace below).
 		status.code += "}\n";
+	}
+
+	if (case_field_sets.length > 1) {
+		const first = case_field_sets[0];
+		const all_same = case_field_sets.every((s) => s === first);
+		if (!all_same) {
+			const merged = new Set(pre_heap_string_fields ?? []);
+			for (const set of case_field_sets) {
+				for (const key of set ?? []) merged.add(key);
+			}
+			status.heap_string_fields = merged;
+		}
 	}
 
 	status.scoped_declarations = old_scoped_declarations;

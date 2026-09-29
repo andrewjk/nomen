@@ -43,6 +43,15 @@ export default function build_if_else_node(
 	const pre_cache = status.buffer_data_cache;
 	const pre_array_cache = status.array_ptr_cache;
 
+	// heap_string_fields records are per-path "may be heap" facts. Each
+	// branch gets a copy of the pre-branch set — the then branch's records
+	// describe a path that did not run when the else branch builds, and
+	// trusting them made the else branch's store free the still-constructed
+	// literal as heap. The join keeps the union (a field recorded by EITHER
+	// branch holds heap on that path, so the scope-exit reclaim must cover
+	// both); mirroring the C backend's build_if_else_node.
+	const pre_heap_string_fields = status.heap_string_fields;
+
 	if (node.else_branch) {
 		// Each branch is its OWN scope: a `then`-branch local (e.g. a heap
 		// string) must not stay visible while the `else` branch builds, or a
@@ -51,20 +60,29 @@ export default function build_if_else_node(
 		const then_frame = enter_scope_frame(status);
 		status.buffer_data_cache = new Map(pre_cache);
 		status.array_ptr_cache = new Map(pre_array_cache);
+		status.heap_string_fields = new Set(pre_heap_string_fields ?? []);
 		build_block_with_cursor(node.if_branch!, nir?.then_branch, status);
+		const then_fields = status.heap_string_fields;
 		exit_scope_frame(status, then_frame);
 		emit_asm(status, `b end_${label}\n`);
 		emit_asm(status, `else_${label}:\n`);
 		const else_frame = enter_scope_frame(status);
 		status.buffer_data_cache = new Map(pre_cache);
 		status.array_ptr_cache = new Map(pre_array_cache);
+		status.heap_string_fields = new Set(pre_heap_string_fields ?? []);
 		build_block_with_cursor(node.else_branch, nir?.else_branch, status);
+		const else_fields = status.heap_string_fields;
 		exit_scope_frame(status, else_frame);
+		const merged = new Set(pre_heap_string_fields ?? []);
+		for (const key of then_fields ?? []) merged.add(key);
+		for (const key of else_fields ?? []) merged.add(key);
+		status.heap_string_fields = merged;
 	} else {
 		if (node.if_branch) {
 			const then_frame = enter_scope_frame(status);
 			status.buffer_data_cache = new Map(pre_cache);
 			status.array_ptr_cache = new Map(pre_array_cache);
+			status.heap_string_fields = new Set(pre_heap_string_fields ?? []);
 			build_block_with_cursor(node.if_branch, nir?.then_branch, status);
 			exit_scope_frame(status, then_frame);
 		}
