@@ -1,0 +1,2 @@
+empty null
+direct=2

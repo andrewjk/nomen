@@ -505,7 +505,13 @@ function build_nullable_struct_assignment(
 			rhs_flag_slot = allocate_stack_space(status, 8);
 			emit_asm(status, `str x9, [x29, #${rhs_flag_slot}]\n`);
 		}
-		emit_rhs_value(node.right_value, nir_rhs, status);
+		if (is_scalar) {
+			emit_rhs_value(node.right_value, nir_rhs, status);
+		} else {
+			// A struct RHS must yield its ADDRESS in x0 (a bare value local's
+			// build would load only its first word).
+			get_source_address(node.right_value, status, nir_rhs);
+		}
 		ensure_newline(status);
 		if (reclaimable) {
 			// The RHS build left the new value's address in x0 — park it
@@ -515,6 +521,9 @@ function build_nullable_struct_assignment(
 			emit_asm(status, `ldr x0, [sp], #16\n`);
 		}
 		retarget_records();
+		// A `move`/last-use struct RHS transfers ownership to the field: mark
+		// the source moved so its scope exit doesn't ALSO destroy it.
+		mark_moved_if_struct(node.right_value, status);
 		// Copy the value into the variable's slot, then set the flag.
 		if (is_scalar) {
 			emit_var_store(status, "x0", name, scalar_size);
@@ -575,9 +584,16 @@ function build_nullable_struct_assignment(
 		emit_asm(status, `str x10, [x29, #${rhs_flag_slot}]\n`);
 	}
 
-	emit_rhs_value(node.right_value, nir_rhs, status);
+	if (field_is_scalar) {
+		emit_rhs_value(node.right_value, nir_rhs, status);
+	} else {
+		// A struct RHS must yield its ADDRESS in x0.
+		get_source_address(node.right_value, status, nir_rhs);
+	}
 	ensure_newline(status);
 	emit_asm(status, `ldr x9, [sp], #16\n`);
+	// A `move`/last-use struct RHS transfers ownership to the field.
+	mark_moved_if_struct(node.right_value, status);
 	// x0 = source address/value, x9 = object base. Copy value in, set flag.
 	if (field_is_scalar) {
 		emit_typed_store(status, "x0", "x9", field_offset, aarch64_size(type_name));

@@ -7,7 +7,7 @@ import {
 } from "../../build_common/destroy_analysis.ts";
 import { direct_string_fields } from "../../build_common/has_string_fields.ts";
 import { mono_type_name } from "../../build_common/mono_name.ts";
-import { has_flag_name } from "../../build_common/nullable_struct.ts";
+import { has_flag_name, is_nullable_struct_type } from "../../build_common/nullable_struct.ts";
 import { superseded_param_temp_names } from "../../build_common/temp_anchor_consolidation.ts";
 import AccessNode from "../../nodes/AccessNode.ts";
 import type DeclarationNode from "../../nodes/DeclarationNode.ts";
@@ -21,6 +21,7 @@ import { emit_var_address, emit_var_load } from "./stack_var.ts";
 import { emit_string_pair_load_at, emit_strdup_string, emit_pair_store_to } from "./string_pair.ts";
 import {
 	get_enum_payload_offset,
+	get_field_has_offset,
 	get_field_offset,
 	get_field_offset_of_fields,
 	get_struct_size,
@@ -946,14 +947,34 @@ export function emit_field_destroys(
 					field_has_explicit_destroy || struct_needs_auto_destroy(field_struct, status);
 				if (field_needs_destroy) {
 					const actual_offset = base_offset !== undefined ? base_offset + offset : offset;
-					if (decl_name) {
-						emit_base_ptr(status, decl_name, is_class_parent);
+					// A nullable struct field (`T? f`): destroy only when the
+					// companion `_has` flag is set — a null field's bytes are
+					// stale garbage, so destroying them frees junk.
+					if (is_nullable_struct_type(field.type, status)) {
+						const has_off = get_field_has_offset(struct_type.name, field.name, status);
+						const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+						const skip = `.Lskip_nullable_destroy_${id}`;
+						if (decl_name) {
+							emit_base_ptr(status, decl_name, is_class_parent);
+						}
+						emit_asm(status, `ldrb w9, [x0, #${has_off}]\n`);
+						emit_asm(status, `cbz w9, ${skip}\n`);
+						emit_asm(status, `add x0, x0, #${actual_offset}\n`);
+						emit_asm(
+							status,
+							`bl ${resolve_struct_name(field_struct.name, field.type.type_args, status)}_destroy\n`,
+						);
+						emit_asm(status, `${skip}:\n`);
+					} else {
+						if (decl_name) {
+							emit_base_ptr(status, decl_name, is_class_parent);
+						}
+						emit_asm(status, `add x0, x0, #${actual_offset}\n`);
+						emit_asm(
+							status,
+							`bl ${resolve_struct_name(field_struct.name, field.type.type_args, status)}_destroy\n`,
+						);
 					}
-					emit_asm(status, `add x0, x0, #${actual_offset}\n`);
-					emit_asm(
-						status,
-						`bl ${resolve_struct_name(field_struct.name, field.type.type_args, status)}_destroy\n`,
-					);
 				}
 				if (field_has_explicit_destroy) {
 					emit_nested_field_destroys(

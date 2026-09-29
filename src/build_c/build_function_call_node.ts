@@ -269,7 +269,10 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			if (is_nullable_scalar_type(callee_null_param_type)) {
 				status.code += `0, 0`;
 			} else {
-				status.code += `(void *)&(struct ${param_type.name}){0}, 0`;
+				// Use the MONOMORPHIZED struct tag (a generic nullable field
+				// `List<int>?` must emit `struct List_int`, not the incomplete
+				// bare `struct List`).
+				status.code += `(void *)&(struct ${mono_type_name(callee_null_param_type)}){0}, 0`;
 			}
 			continue;
 		}

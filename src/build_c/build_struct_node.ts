@@ -1100,12 +1100,21 @@ function build_auto_destroy(node: StructNode, status: BuildStatus) {
 				}
 			}
 		} else if (field_struct.functions.find((f) => f.name === "#destroy")) {
-			status.code += `${field_struct.name}_destroy(&self->${field.name});\n`;
+			if (is_nullable_struct_type(field.type, status)) {
+				status.code += `if (self->${field.name}_has) { ${field_struct.name}_destroy(&self->${field.name}); }\n`;
+			} else {
+				status.code += `${field_struct.name}_destroy(&self->${field.name});\n`;
+			}
 		} else if (struct_needs_destroy(field_struct, status)) {
 			// A nested value struct whose owning fields (string, class, ...)
 			// trigger an auto-generated destroy. Call it to recursively free
-			// owned resources.
-			status.code += `${field_struct.name}_destroy(&self->${field.name});\n`;
+			// owned resources. A nullable struct field destroys only when its
+			// companion `_has` flag is set (the null value's bytes are stale).
+			if (is_nullable_struct_type(field.type, status)) {
+				status.code += `if (self->${field.name}_has) { ${field_struct.name}_destroy(&self->${field.name}); }\n`;
+			} else {
+				status.code += `${field_struct.name}_destroy(&self->${field.name});\n`;
+			}
 		}
 	}
 	status.code += `}\n`;
