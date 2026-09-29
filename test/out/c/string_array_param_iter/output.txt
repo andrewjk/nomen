@@ -1,0 +1,2 @@
+joined=abc
+literal=xy

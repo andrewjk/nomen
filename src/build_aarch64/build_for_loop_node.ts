@@ -212,9 +212,14 @@ export default function build_for_loop_node(
 			: type.name
 				? aarch64_size(type.name)
 				: 8;
+		// A fat `string` element is a (ptr, len) pair (16 bytes) that must be
+		// copied with a PAIR load into a 16-byte item slot — a single `ldr`
+		// (and an 8-byte slot) dropped the length half (the loop index leaked
+		// into it: `for w of string_array` yielded only one element's bytes).
+		const is_fat_string_elem = type.name === "string" && !type.is_view && element_size === 16;
 		const idx_name = `_idx_${item_name}`;
 
-		if (struct_type && status.function_return_label) {
+		if ((struct_type || is_fat_string_elem) && status.function_return_label) {
 			const struct_size = element_size;
 			const item_offset = allocate_stack_space(status, struct_size);
 			status.stack_offsets!.set(item_name, item_offset);
@@ -306,7 +311,11 @@ export default function build_for_loop_node(
 			emit_asm(status, `mul x1, x1, x2\n`);
 			emit_asm(status, `add x0, x3, x1\n`);
 		}
-		if (struct_type) {
+		// A fat `string` element is a (ptr, len) pair (16 bytes) that must be
+		// copied with a PAIR load — a single `ldr` would drop the length half
+		// (the loop index leaked into it: `for w of string_array` yielded only
+		// the last element's bytes).
+		if (struct_type || is_fat_string_elem) {
 			const item_offset = status.stack_offsets!.get(item_name);
 			if (item_offset !== undefined) {
 				const words = Math.ceil(element_size / 8);
