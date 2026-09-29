@@ -48,6 +48,35 @@ pub func main = (Init init) {
 		);
 	});
 
+	test("value-struct local field stores across branches", async () => {
+		const input = `
+import System
+
+struct Pair {
+	var a = ""
+}
+
+func decorated = (string v, move out string) {
+	return "[" + v + "]"
+}
+
+func commit = (string raw, out int) {
+	var p = Pair()
+	if raw.length > 2 {
+		p.a = raw
+	} else {
+		p.a = decorated(raw)
+	}
+	return p.a.length
+}
+
+pub func main = (Init init) {
+	Console.write("short=\\{commit("x")} long=\\{commit("hello")}\\n")
+}
+`;
+		await build_and_check_output(input, "branch_field_store_local", "short=3 long=5\n", true);
+	});
+
 	test("class field store across switch cases", async () => {
 		const input = `
 import System

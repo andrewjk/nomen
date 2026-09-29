@@ -43,14 +43,20 @@ export default function emit_field_overrides(
 	// anon-struct literal and the ctor call) — the synthetic assignment's
 	// target needs it so backends resolve the field write through the normal
 	// ownership paths (the C string-field lowering keys on the target's
-	// struct). Applied ONLY for user-visible destinations: at the sret return
-	// path the destination is the compiler-generated `_return_val`, and
-	// routing its field writes through the strdup+record lowering would
-	// orphan the heap-field record at the struct-return boundary (the
-	// caller's copy is untracked → leak).
-	const carrier_type = var_name.startsWith("_return_val")
-		? undefined
-		: (value as unknown as { type?: unknown }).type;
+	// struct). Applied ONLY for user-visible destinations: at sret/expression
+	// boundaries the destination is a compiler-generated temp (`_return_val*`
+	// — including the aarch64's `_return_val_anon_*` — or the expression-
+	// position `_temp_N` both backends use), and routing its field writes
+	// through the strdup+record lowering would orphan the heap-field record
+	// at the struct-return boundary (the caller's copy is untracked → leak;
+	// the new_block factory receipt leaked one strdup per
+	// `[ .. Node(), node_type = t ]` return). Override stores at those
+	// destinations stay raw borrows — the documented override-constructor
+	// return gap.
+	const carrier_type =
+		var_name.startsWith("_return_val") || var_name.startsWith("_temp_")
+			? undefined
+			: (value as unknown as { type?: unknown }).type;
 	for (const override of overrides) {
 		const target = new ValueNode(override.value.start, var_name);
 		if (carrier_type) {
@@ -59,6 +65,13 @@ export default function emit_field_overrides(
 		const access_field = new AccessFieldNode(override.value.start, override.name, override.type as any);
 		const access = new AccessNode(override.value.start, target, access_field);
 		const assign = new AssignmentNode(override.value.start, access, override.value);
+		if (!carrier_type) {
+			// A compiler-temp destination: force the RAW pair store even when
+			// the backend resolves the temp's struct type on its own (the
+			// aarch64 registers `_temp_N` in variable_types, which would
+			// otherwise route the write through the strdup+record lowering).
+			(assign as unknown as { raw_field_store?: boolean }).raw_field_store = true;
+		}
 		status.code += "\n";
 		// These assignments are mid-statement: a terminator is appended after
 		// each, so the C backend's string-field store path must not

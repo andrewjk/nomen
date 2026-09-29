@@ -653,23 +653,3 @@ callee takes a `ref` struct param, transfer the callee's recorded string-field
 writes onto the caller's records (mirror of
 `drop_self_written_string_field_records`, in the add direction).
 
-## aarch64: value-struct LOCAL with a branch field store crashes
-
-A value-struct local whose string field is assigned in BOTH arms of an
-if/else (one arm a call, the other a borrowed param) SIGSEGVs on aarch64
-before producing output; the C backend is correct (found while fixing the
-exclusive-branch field-store bug; the value-struct repro at
-`/tmp`-repro-shape lives in the PORT.md thread of `test/branch_string_field_store.test.ts`).
-The class form passes on both backends, and C passes the value-struct form
-with the union-join records, so the remaining defect is in the aarch64
-assignment/destroy path for value-struct locals with branch-disjoint stores
-(likely the exit store-back or the field record's slot sync). Repro shape:
-
-```nomen
-struct Pair { var a = "" }
-func commit = (string raw, out int) {
-	var p = Pair()
-	if raw.length > 2 { p.a = raw } else { p.a = decorated(raw) }
-	return p.a.length
-}
-```

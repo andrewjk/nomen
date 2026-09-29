@@ -391,9 +391,18 @@ export default function build_return_node(
 			// (the return must not alias the base's storage), apply the
 			// overrides to the temp, and leave x0 = temp address so the copy
 			// below (x0 → return buffer) carries the full value through.
+			// The temp is named with the `_return_val` prefix so
+			// emit_field_overrides' sret gate applies (no carrier type on the
+			// synthetic assignments): an override store at the return boundary
+			// stays a RAW borrow — routing it through the strdup+record field
+			// lowering would orphan the heap-field record at the struct-return
+			// boundary (the caller's copy is untracked → leak; the
+			// new_block receipt leaked one strdup per factory call). The
+			// override-constructor ownership gap at this boundary is the
+			// documented FOLLOWUP item.
 			const anon = node.value as AnonStructNode;
 			const struct_size = get_struct_size(anon.type!.name, status);
-			const temp_name = `_anon_ret_${temp_counter++}`;
+			const temp_name = `_return_val_anon_${temp_counter++}`;
 			const offset = allocate_stack_space(status, struct_size);
 			status.stack_offsets!.set(temp_name, offset);
 			if (!status.variable_types) status.variable_types = new Map();
@@ -551,13 +560,19 @@ export default function build_return_node(
 			// to the struct instance.
 			needs_borrow_strdup = true;
 		} else if (
-			// A CLOSURE returning a call result the callee classification did
-			// NOT mark as owned (e.g. a trait-dispatched method that hands back
-			// a field/literal borrow, or a borrow accessor reached indirectly):
-			// dup it so the closure still hands its (indirect) caller an owned
-			// copy. The value build above reset `last_result_is_heap` and set it
-			// only for owned results, giving a fresh signal here.
-			status.current_function_is_closure &&
+			// A CALL result the callee classification did NOT mark as owned
+			// (a trait-dispatched method handing back a field/literal borrow,
+			// a borrow accessor reached indirectly, a plain `get`-style
+			// method returning `self.item`): dup it so the freeing caller
+			// receives an owned copy while the callee's storage keeps the
+			// original. The value build above reset `last_result_is_heap`
+			// and set it only for owned results, giving a fresh signal here.
+			// Before the loop-promotion field-store dup made value-struct
+			// fields heap-owned, a field-borrow call result could only alias
+			// rodata/borrow storage that was never freed; now the owner's
+			// scope-exit reclaim frees it, so passing the raw pair through
+			// handed the caller a dangling pointer (the StrBox `get` receipt:
+			// `return b.get()` printed garbage after go freed b.item).
 			(node.value.node_type === "func_call" ||
 				(node.value.node_type === "access" &&
 					(node.value as AccessNode).access.node_type === "access_func")) &&
@@ -592,6 +607,37 @@ export default function build_return_node(
 		}
 		ensure_newline(status);
 		status.last_result_is_heap = true;
+	}
+
+	// A string return whose value is a CALL result the callee classification
+	// did NOT mark as owned — while this function's scope exit will reclaim
+	// recorded heap string fields — must hand the caller a COPY: the call may
+	// have returned a field borrow of a local this exit frees (a `get`-style
+	// method returning `self.item`), and freeing the field invalidates the
+	// returned pair (the StrBox receipt: `return b.get()` printed garbage
+	// once value-struct field stores owned their copies). The function is
+	// stamped heap-returning so its callers free the copy — the gather pass
+	// classified it before this body built (a call return was conservatively
+	// borrow); direct call sites built AFTER this function see the stamp.
+	if (
+		!needs_borrow_strdup &&
+		current_return_is_string(status) &&
+		!is_container_borrow_access(node.value) &&
+		(node.value.node_type === "func_call" ||
+			(node.value.node_type === "access" &&
+				(node.value as AccessNode).access.node_type === "access_func")) &&
+		!status.last_result_is_heap &&
+		status.heap_string_fields?.size
+	) {
+		emit_strdup_string(status);
+		ensure_newline(status);
+		status.last_result_is_heap = true;
+		if (borrow_fn_name) {
+			status.heap_returning_functions?.add(borrow_fn_name);
+			if (borrow_mangled !== undefined) {
+				status.heap_returning_functions?.add(borrow_mangled);
+			}
+		}
 	}
 
 	// A `move_T` result returned from a string-returning function (e.g.

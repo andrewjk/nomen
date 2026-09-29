@@ -361,7 +361,12 @@ export default function build_assignment_node(
 		(node.left_value as AccessNode).access.node_type === "access_field" &&
 		(node.left_value as AccessNode).access.type?.name === "string" &&
 		!(node.left_value as AccessNode).access.type?.is_ref &&
-		!(node.left_value as AccessNode).access.type?.is_array
+		!(node.left_value as AccessNode).access.type?.is_array &&
+		// A compiler-temp destination override (sret/expression boundary —
+		// emit_field_overrides stamps `raw_field_store`) must stay a RAW
+		// pair store: the strdup+record lowering would orphan the heap-field
+		// record at the struct-return boundary.
+		!(node as unknown as { raw_field_store?: boolean }).raw_field_store
 	) {
 		const access_lhs = node.left_value as AccessNode;
 		const field_access_node = access_lhs.access as AccessFieldNode;

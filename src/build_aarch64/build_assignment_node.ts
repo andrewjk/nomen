@@ -1811,6 +1811,11 @@ export default function build_assignment_node(
 			} else if (
 				field_is_struct_string(target_type, field_type, status) &&
 				!node.operator &&
+				// A compiler-temp destination override (sret/expression
+				// boundary — emit_field_overrides stamps `raw_field_store`)
+				// must stay a RAW pair store: the strdup+record lowering would
+				// orphan the heap-field record at the struct-return boundary.
+				!(node as unknown as { raw_field_store?: boolean }).raw_field_store &&
 				// Only for CLASS targets (always-heap fields) or a named
 				// local/param target whose ownership can be tracked in
 				// heap_string_fields. A `self.field = …` write inside a
@@ -1827,19 +1832,21 @@ export default function build_assignment_node(
 			) {
 				// A struct instance's plain `string` field assignment. For
 				// CLASSES the field is always heap (`_init` strdup's the
-				// default, `<Class>_destroy` frees the final value): strdup any
-				// non-heap RHS, free the displaced old value unconditionally.
-				// For VALUE structs the field holds borrow semantics (rodata
-				// literals / borrows are stored RAW — the checker's borrow
-				// discipline already forbids mutating a source an outstanding
-				// borrow points into, and a raw store can never dangle a
-				// tracked record, mirroring the C backend's raw store for
-				// non-tracked shapes): only a fresh-heap RHS
-				// (last_result_is_heap) transfers an owned value into the
-				// field, recorded in heap_string_fields for the scope-exit
-				// release (and the move-into-container release). Overwriting a
-				// recorded heap value with a non-heap one frees it and drops
-				// the record.
+				// default, `<Class>_destroy` frees the final value). For
+				// VALUE structs the field is heap-owned from the first store
+				// on: every non-heap RHS (rodata literal, borrowed param,
+				// heap-owned variable) is strdup'd into an owned copy —
+				// mirroring the C backend, which dup's every non-fresh field
+				// RHS — and recorded in `heap_string_fields` for the
+				// scope-exit release. A raw store of a borrow/literal would
+				// make the field's ownership PATH-DEPENDENT (heap on a
+				// branch that stored a fresh value, borrow on a sibling), so
+				// the join-point record would free the sibling's borrow
+				// (the "pointer being freed was not allocated" class). Only
+				// a fresh-heap RHS (last_result_is_heap) transfers the owned
+				// value into the field without a copy. Overwriting a recorded
+				// heap value frees it; a null RHS zeroes the pair and drops
+				// the record (free(NULL) is a no-op at the scope exit).
 				const string_target = field_is_struct_string(target_type, field_type, status)!;
 				const target_var =
 					access.target.node_type === "value" ? (access.target as ValueNode).value : "";
@@ -1872,32 +1879,29 @@ export default function build_assignment_node(
 					ensure_newline(status);
 				}
 				let rhs_is_heap = status.last_result_is_heap;
-				// A heap-owned string VARIABLE loads as a plain pair with no
-				// fresh-heap mark — but its own scope-exit release still
-				// fires. Raw-storing the pair would hand the field a pointer
-				// that the variable's free reclaims (dangling the moment this
-				// function returns and the caller reads the field, e.g. a
-				// `ref Box dst` param whose `dst.s = s` aliases a callee
-				// local). Dup the bytes and own the copy, mirroring the C
-				// backend, which strdups every non-fresh field RHS.
-				const rhs_value_node =
-					node.right_value.node_type === "value" ? (node.right_value as ValueNode) : undefined;
-				const rhs_heap_local =
-					!rhs_is_heap &&
-					!rhs_is_null_literal &&
-					!!rhs_value_node &&
-					typeof rhs_value_node.value === "string" &&
-					rhs_value_node.type?.name === "string" &&
-					!!status.heap_strings?.has(rhs_value_node.value);
-				if (rhs_heap_local) {
-					emit_strdup(status);
-					rhs_is_heap = true;
-				}
+				// Every non-heap RHS is dup'd into an owned copy — for CLASS
+				// targets (always-heap fields) and for tracked VALUE-struct
+				// fields alike, so a field is never a borrow once stored and
+				// the scope-exit record is valid on every path.
 				if (rhs_is_null_literal) {
 					// A null pair stores raw — no dup, nothing owned (and the
 					// destroy-side free(NULL) is a no-op).
-				} else if (is_class_target && !rhs_is_heap) {
-					emit_strdup(status);
+				} else if (!rhs_is_heap) {
+					// A nullable RHS (a `string?` field, or a nullable-typed
+					// variable/call) may carry a NULL pointer — libc strdup
+					// dereferences it. Guard the dup: a null pair stores raw
+					// (the scope-exit free(NULL) is a no-op).
+					const rhs_type_nullable = !!(node.right_value as ValueNode).type?.is_nullable;
+					if (field_type?.is_nullable || rhs_type_nullable) {
+						const skip_dup = `.Lskip_field_dup_${(status.label_counter =
+							(status.label_counter ?? 0) + 1)}`;
+						emit_asm(status, `cbz x0, ${skip_dup}\n`);
+						emit_strdup(status);
+						emit_asm(status, `${skip_dup}:\n`);
+					} else {
+						emit_strdup(status);
+					}
+					rhs_is_heap = true;
 				}
 				mark_moved_if_struct(node.right_value, status);
 				// Spill the new value (x2/x3 are caller-saved — the free call
