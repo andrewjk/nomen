@@ -379,7 +379,19 @@ function check_as_array_or_inferred_tuple(
 		array.type.is_array = true;
 		array.type.is_nullable = old_expected.is_nullable;
 		array.type.type_args = old_expected.type_args;
-		array.type.length = old_expected.length;
+		// The expected compile-time length must agree with the literal's own
+		// element count. A MISMATCH means the expected type carries a stale
+		// stamped length from an earlier call site of the same unsized
+		// `T[]` parameter (check_function_call's length stamping) — keep the
+		// literal's true count so the call-site conflict check rejects it;
+		// inheriting the stale bound here would silently truncate the
+		// literal to it.
+		if (
+			!old_expected.length ||
+			String((old_expected.length as ValueNode).value) === String(array.values.length)
+		) {
+			array.type.length = old_expected.length;
+		}
 	} else if (!array.type.name) {
 		// Infer element type from first value
 		const first_type = value_types[0];

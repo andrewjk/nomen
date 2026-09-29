@@ -14,18 +14,6 @@ local assignment should dup non-owned RHS (mirroring the plain `string` local
 assignment's ownership normalization) or the aliasing pair's release must be
 single-owner.
 
-## aarch64: crash passing an array literal AND a string[] var to array params in one wrapped main
-
-Reproduced on both the current tree and the pre-change baseline (so not a
-regression): a top-level program (the `parse_with_imports` wrapper) whose
-`main` calls a `string[]`-parameter function twice — once with a `string[N]`
-variable, once with a string-array LITERAL — SIGSEGVs on aarch64 in
-`_platform_memmove` while building the literal argument (each call alone is
-fine). Likely the literal-array materialization for a raw `T[]` param collides
-with the earlier call's stack/temp layout in the wrapper frame. Worth a
-dedicated repro; the workaround is to keep the two call shapes in separate
-functions or use `Array<string>`.
-
 ## Trait-declared field ownership corners
 
 The aarch64 layout/size model now includes trait-declared fields

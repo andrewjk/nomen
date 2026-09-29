@@ -24,13 +24,13 @@ func join_words = (string[] words, out string) {
 pub func main = (Init init) {
 	var string[3] items = ["a", "b", "c"]
 	Console.write("joined=\\{join_words(items)}\\n")
-	Console.write("literal=\\{join_words(["x", "y"])}\\n")
+	Console.write("literal=\\{join_words(["x", "y", "z"])}\\n")
 }
 `;
 		await build_and_check_output(
 			input,
 			"string_array_param_iter",
-			"joined=abc\nliteral=xy\n",
+			"joined=abc\nliteral=xyz\n",
 			true,
 		);
 	});

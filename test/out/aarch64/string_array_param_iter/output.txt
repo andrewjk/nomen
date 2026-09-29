@@ -1,2 +1,2 @@
 joined=abc
-literal=xy
+literal=xyz
