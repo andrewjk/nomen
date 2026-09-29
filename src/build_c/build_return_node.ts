@@ -2,6 +2,8 @@ import emit_field_overrides, {
 	has_field_overrides,
 	hoist_field_overrides,
 } from "../build/emit_field_overrides.ts";
+import { is_normalized_struct_call } from "../build_common/call_init_string_fields.ts";
+import { override_return_string_fields } from "../build_common/ctor_return_owned.ts";
 import ctor_return_owned_string_fields from "../build_common/ctor_return_owned.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
@@ -15,6 +17,7 @@ import { is_string_borrow } from "../build_common/string_return_analysis.ts";
 import tuple_return_owned_element from "../build_common/tuple_return_owned_element.ts";
 import type { NirExpr } from "../nir/nir.ts";
 import AccessNode from "../nodes/AccessNode.ts";
+import AnonStructNode from "../nodes/AnonStructNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
@@ -605,7 +608,34 @@ export default function build_return_node(
 			status.code += `_return_val = ${ret_type.name}_copy(_return_val);\n`;
 		}
 		// `return T(...) + [ ... ]`: apply the named-field overrides to the
-		// _return_val temp before returning it.
+		// _return_val temp before returning it. A FORWARDED normalizing base
+		// (`[ .. make(), f = v ]`) owns DEEP COPIES in its string fields — an
+		// override store would displace the copy un-freed — so reclaim each
+		// overridden string field's displaced value BEFORE the raw store.
+		const forwarded_override_base =
+			node.value?.node_type === "func_call" &&
+			(node.value as FunctionCallNode).field_overrides?.length
+				? node.value
+				: node.value?.node_type === "anon_struct" && (node.value as AnonStructNode).base
+					? (node.value as AnonStructNode).base
+					: undefined;
+		if (
+			is_struct &&
+			!return_is_class &&
+			return_struct &&
+			forwarded_override_base?.node_type === "func_call" &&
+			(node.value as FunctionCallNode).name !== return_struct.name &&
+			is_normalized_struct_call(forwarded_override_base, status)
+		) {
+			const overrides =
+				node.value.node_type === "func_call"
+					? (node.value as FunctionCallNode).field_overrides
+					: (node.value as unknown as { fields: { name: string; value: BaseNode }[] }).fields;
+			for (const field of direct_string_fields(return_struct)) {
+				if (!overrides?.some((o) => o.name === field.name)) continue;
+				status.code += `free(_return_val.${field.name}.ptr);\n`;
+			}
+		}
 		if (has_field_overrides(node.value)) {
 			emit_field_overrides("_return_val", node.value, build_node, status, "", ";\n");
 		}
@@ -646,11 +676,16 @@ export default function build_return_node(
 				status.code += `_return_val.${field.name} = nomen_str_dup(_return_val.${field.name});\n`;
 			}
 		}
-		// Struct-CONSTRUCTOR RETURN normalization (`return R(a, b)`): the
+		// Struct-CONSTRUCTOR RETURN normalization (`return R(a, b)`, and the
+		// override-constructor form `return [ .. R(a), f = v ]`): the
 		// constructor stored its string arguments raw (borrows), so the return
 		// boundary strdup's every string field the caller would otherwise free
 		// as rodata / dangle after the callee's scope-exit reclaims the
-		// argument. Arguments that already own heap transfer raw.
+		// argument. Arguments that already own heap transfer raw. For the
+		// override form the overrides were applied to `_return_val` above
+		// (raw pair stores), so an overridden field holds the OVERRIDE value's
+		// pair and follows ITS ownership (a heap local the callee's exit would
+		// otherwise reclaim — the dangling shape — is copied).
 		if (
 			is_struct &&
 			!return_is_class &&
@@ -660,14 +695,44 @@ export default function build_return_node(
 			!returns_struct_zero &&
 			node.value?.node_type === "func_call" &&
 			(node.value as FunctionCallNode).name === return_struct.name &&
-			!return_struct.name.startsWith("_") &&
-			!(node.value as FunctionCallNode).field_overrides?.length
+			!return_struct.name.startsWith("_")
 		) {
-			const skip = ctor_return_owned_string_fields(
-				return_struct,
-				node.value as FunctionCallNode,
-				status.heap_strings,
-			);
+			const call = node.value as FunctionCallNode;
+			const skip = call.field_overrides?.length
+				? override_return_string_fields(return_struct, call.field_overrides, status.heap_strings, {
+						base_skip: ctor_return_owned_string_fields(return_struct, call, status.heap_strings),
+					})
+				: ctor_return_owned_string_fields(return_struct, call, status.heap_strings);
+			for (const field of direct_string_fields(return_struct)) {
+				if (skip.has(field.name)) continue;
+				status.code += `_return_val.${field.name} = nomen_str_dup(_return_val.${field.name});\n`;
+			}
+		}
+		// FORWARDED normalizing base with overrides, in both checked shapes:
+		// `return [ .. make(), f = v ]` as a rewritten func_call with
+		// `field_overrides`, or as a base-bearing anonymous struct literal.
+		// The base's string fields arrived uniformly heap-owned (transfer
+		// raw); an overridden field holds the override value's pair and is
+		// strdup'd unless that value owns heap (its displaced copy was
+		// reclaimed before the override store above).
+		if (
+			is_struct &&
+			!return_is_class &&
+			!ret_type.is_view &&
+			!ret_type.is_array &&
+			return_struct &&
+			!returns_struct_zero &&
+			forwarded_override_base?.node_type === "func_call" &&
+			(node.value as FunctionCallNode).name !== return_struct.name &&
+			is_normalized_struct_call(forwarded_override_base, status)
+		) {
+			const overrides =
+				node.value.node_type === "func_call"
+					? (node.value as FunctionCallNode).field_overrides
+					: (node.value as unknown as { fields: { name: string; value: BaseNode }[] }).fields;
+			const skip = override_return_string_fields(return_struct, overrides, status.heap_strings, {
+				base_uniformly_owned: true,
+			});
 			for (const field of direct_string_fields(return_struct)) {
 				if (skip.has(field.name)) continue;
 				status.code += `_return_val.${field.name} = nomen_str_dup(_return_val.${field.name});\n`;

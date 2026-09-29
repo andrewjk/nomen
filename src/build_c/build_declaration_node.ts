@@ -1023,6 +1023,18 @@ export default function build_declaration_node(
 				status.code += `${field_access} = `;
 				emit_swap_value(node.swap, nir_swap, status);
 			}
+			// A value struct with string fields, initialized from a CALL: the
+			// callee's return-boundary normalization made the struct
+			// UNIFORMLY heap-owned, so record every string field — scope-exit
+			// auto_free frees them, and a later `b.field = …` write sees
+			// old_was_heap and reclaims the displaced buffer. (Constructor
+			// and move inits are NOT recorded: construction leaves rodata
+			// borrows in the fields, and a move transfers the source's
+			// records.) Recording MUST precede the field overrides below: an
+			// override replaces a normalized (heap) field value, and its
+			// assignment path frees the displaced buffer only when the record
+			// already exists — recording after would leak it.
+			record_call_init_string_fields(node, status);
 			// Named-field struct literal overrides (e.g. `[ grow = 2 ]` on a
 			// struct whose `grow` field has a declared default) are applied as
 			// post-construction field assignments after the constructor call
@@ -1032,15 +1044,6 @@ export default function build_declaration_node(
 			if (has_field_overrides(node.value)) {
 				emit_field_overrides(safe_name, node.value, build_node, status, ";\n", ";\n");
 			}
-			// A value struct with string fields, initialized from a CALL: the
-			// callee's return-boundary normalization made the struct
-			// UNIFORMLY heap-owned, so record every string field — scope-exit
-			// auto_free frees them, and a later `b.field = …` write sees
-			// old_was_heap and reclaims the displaced buffer. (Constructor
-			// and move inits are NOT recorded: construction leaves rodata
-			// borrows in the fields, and a move transfers the source's
-			// records.)
-			record_call_init_string_fields(node, status);
 		}
 	}
 }

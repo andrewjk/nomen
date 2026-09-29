@@ -4,6 +4,8 @@ import emit_field_overrides, {
 } from "../build/emit_field_overrides.ts";
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
+import { is_normalized_struct_call } from "../build_common/call_init_string_fields.ts";
+import { override_return_string_fields } from "../build_common/ctor_return_owned.ts";
 import ctor_return_owned_string_fields from "../build_common/ctor_return_owned.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
@@ -414,6 +416,23 @@ export default function build_return_node(
 			if ((anon.base! as ValueNode).is_moved) {
 				mark_moved_if_struct(anon.base!, status);
 			}
+			// A FORWARDED normalizing base (a registered returner) owns DEEP
+			// COPIES in its string fields — the override stores below would
+			// displace them un-freed — so reclaim each overridden string
+			// field's displaced value before the raw store.
+			if (anon.base!.node_type === "func_call" && is_normalized_struct_call(anon.base!, status)) {
+				const base_struct = status.structs.find(
+					(s) => s.name === anon.type!.name && !s.is_simple_type && !s.is_class,
+				);
+				if (base_struct) {
+					for (const field of direct_string_fields(base_struct)) {
+						if (!anon.fields.some((o) => o.name === field.name)) continue;
+						const field_off = get_field_offset(base_struct.name, field.name, status);
+						emit_asm(status, `ldp x0, x1, [x29, #${offset + field_off}]\n`);
+						emit_asm(status, `bl _nomen_free_wrap\n`);
+					}
+				}
+			}
 			emit_field_overrides(temp_name, anon, build_node, status);
 			emit_var_address(status, "x0", temp_name);
 		} else {
@@ -801,22 +820,58 @@ export default function build_return_node(
 					}
 					emit_string_field_strdups_at(status, ret_struct.name, "x8", 0, skip_fields);
 				}
-				// Struct-CONSTRUCTOR RETURN normalization (`return R(a, b)`):
-				// strdup every string field the caller would otherwise free as
-				// rodata / dangle after the argument's reclaim. Arguments that
-				// already own heap transfer raw.
+				// Struct-CONSTRUCTOR RETURN normalization (`return R(a, b)`, and
+				// the override-constructor form
+				// `return [ .. R(a), f = v ]`): strdup every string field the
+				// caller would otherwise free as rodata / dangle after the
+				// argument's reclaim. Arguments that already own heap transfer
+				// raw. For the override form the overrides were applied to the
+				// temp above (raw pair stores), so an overridden field holds
+				// the OVERRIDE value's pair and follows ITS ownership.
 				if (
 					node.value?.node_type === "func_call" &&
 					(node.value as FunctionCallNode).name === ret_struct.name &&
-					!ret_struct.name.startsWith("_") &&
-					!(node.value as FunctionCallNode).field_overrides?.length
+					!ret_struct.name.startsWith("_")
 				) {
-					const skip_fields = ctor_return_owned_string_fields(
-						ret_struct,
-						node.value as FunctionCallNode,
-						status.heap_strings,
-					);
+					const call = node.value as FunctionCallNode;
+					const skip_fields = call.field_overrides?.length
+						? override_return_string_fields(ret_struct, call.field_overrides, status.heap_strings, {
+								base_skip: ctor_return_owned_string_fields(ret_struct, call, status.heap_strings),
+							})
+						: ctor_return_owned_string_fields(ret_struct, call, status.heap_strings);
 					emit_string_field_strdups_at(status, ret_struct.name, "x8", 0, skip_fields);
+				}
+				// FORWARDED normalizing base with overrides, in both checked
+				// shapes: `return [ .. make(), f = v ]` as a base-bearing
+				// anonymous struct literal (non-ctor bases are not rewritten),
+				// or as a rewritten func_call with `field_overrides`. The
+				// base's string fields arrived uniformly heap-owned (transfer
+				// raw); an overridden field is strdup'd unless the override
+				// value owns heap.
+				{
+					const anon =
+						node.value?.node_type === "anon_struct" ? (node.value as AnonStructNode) : undefined;
+					const forwarded_base =
+						node.value?.node_type === "func_call" &&
+						(node.value as FunctionCallNode).field_overrides?.length
+							? node.value
+							: anon?.base && anon.base.node_type === "func_call"
+								? anon.base
+								: undefined;
+					if (
+						forwarded_base &&
+						(node.value as FunctionCallNode).name !== ret_struct.name &&
+						is_normalized_struct_call(forwarded_base, status)
+					) {
+						const overrides = anon ? anon.fields : (node.value as FunctionCallNode).field_overrides;
+						const skip_fields = override_return_string_fields(
+							ret_struct,
+							overrides,
+							status.heap_strings,
+							{ base_uniformly_owned: true },
+						);
+						emit_string_field_strdups_at(status, ret_struct.name, "x8", 0, skip_fields);
+					}
 				}
 				// Tuple-literal RETURN normalization (mirror of the C
 				// backend): `return [a, b]` (the literal is now a `_Tuple_`

@@ -31,3 +31,40 @@ export default function ctor_return_owned_string_fields(
 	}
 	return skip;
 }
+
+/** The OVERRIDE value of a string field, when the field is overridden. */
+function override_value_for_field(
+	overrides: { name: string; value: BaseNode }[] | undefined,
+	field_name: string,
+): BaseNode | undefined {
+	return overrides?.find((o) => o.name === field_name)?.value;
+}
+
+/**
+ * The skip set for an OVERRIDE return (`return [ .. <base>, f = v, ... ]` in
+ * its checked forms: a ctor call with `field_overrides`, or a base-bearing
+ * anonymous struct literal). The overrides were applied to the return temp
+ * BEFORE this analysis runs, so an overridden field holds the OVERRIDE
+ * value's pair: it stays raw only when that value owns heap (a transferred
+ * heap local, a fresh non-borrow expression). A non-overridden field keeps
+ * the base's value: with `base_uniformly_owned` (a forwarded registered
+ * normalizing base) it transfers raw; otherwise it follows `base_skip` (the
+ * plain constructor-argument ownership analysis).
+ */
+export function override_return_string_fields(
+	return_struct: StructNode,
+	overrides: { name: string; value: BaseNode }[] | undefined,
+	heap_strings: Set<string> | undefined,
+	opts: { base_skip?: Set<string>; base_uniformly_owned?: boolean },
+): Set<string> {
+	const skip = new Set<string>();
+	for (const field of direct_string_fields(return_struct)) {
+		const override = override_value_for_field(overrides, field.name);
+		if (override) {
+			if (tuple_return_owned_element(override, heap_strings)) skip.add(field.name);
+		} else if (opts.base_uniformly_owned || opts.base_skip?.has(field.name)) {
+			skip.add(field.name);
+		}
+	}
+	return skip;
+}

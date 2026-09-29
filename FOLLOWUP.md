@@ -37,19 +37,36 @@ Two ownership corners remain, both deliberately left:
   a trait-declared class field inside a nested/array element is not
   recursively destroyed.
 
-## Override-constructor returns are not normalized
+## Override-constructor returns: residual displaced-copy corners
 
-Return-boundary normalization covers a plain struct-constructor return
-(`return R(a, b)`): every string field is strdup'd unless the argument already
-owns heap, and the function is registered so callers record/free the fields
-(`struct_return_classification.ts` + both `build_return_node`s). The
-ANONYMOUS override constructor (`return [ .. R(), field = local ]`, a
-`func_call` with `field_overrides`) is deliberately EXCLUDED: when such a
-return feeds an anon-struct BASE literal assigned to a binding, the caller
-does not record the normalized fields, so normalizing leaks. A returned
-override struct that stores a heap local into a string field can therefore
-still dangle when the callee's scope exit reclaims the local. Fixing needs
-caller-side recording through anon-struct base positions.
+FIXED (2026-09-30): the ANONYMOUS override constructor return
+(`return [ .. R(), field = local ]`) is now normalized like the plain
+constructor return — the classification registers the function (ctor bases
+with `field_overrides`, and forwarded bases — a rewritten call or a
+base-bearing anon literal — whose callee is itself registered), the return
+boundary strdups the overridden string fields unless the override value owns
+heap (and reclaims the forwarded base's displaced deep copy before the raw
+override store), and caller bindings record/free every field
+(`record_call_init_string_fields` now also looks through an anon-struct
+base). Covered by test/override_ctor_return.test.ts.
+
+Two deliberately-unfixed displaced-copy corners remain, both requiring a
+transferred-heap value that an override then displaces raw:
+
+- `return [ .. R(s), f = v ]` where the ctor argument `s` already owns heap
+  (a moved local or a fresh call result): the ctor seeds the field with
+  s's buffer (transferred raw), the override displaces it raw, and nobody
+  frees it (1 allocation). The override store happens in
+  `emit_field_overrides` before the boundary knows the displaced value was
+  owned; fixing needs the skip-set analysis (`ctor_return_owned_string_fields`
+  ∩ overrides) to emit displaced frees ahead of the stores.
+- The same displacement inside a non-return override chain (a statement-
+  position `[ .. R(move s), f = v ]` assigned to a binding) — the assignment
+  paths' override stores have no displaced-value ownership model either.
+
+Both leak (never dangle), bounded at one allocation per overridden
+transferred-heap field, and strictly no worse than before normalization
+(those functions' fields were never freed at all).
 
 ## Nullable scalars: remaining in-band corners
 

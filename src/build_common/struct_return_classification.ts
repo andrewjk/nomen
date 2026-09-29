@@ -205,7 +205,16 @@ export function gather_normalized_struct_returners(root: BaseNode, status: Build
 				(st) => st.name === fn.return_type?.name && !st.is_simple_type && !st.is_class,
 			);
 			for (const ret of direct_returns(fn)) {
-				const value = ret.value ?? undefined;
+				// A base-bearing anonymous struct literal (`[ .. <base>, f = v ]`)
+				// is classed by its BASE: a non-ctor base keeps the literal node
+				// (only ctor-call bases are rewritten to `field_overrides`), and
+				// a registered-normalizer base is the forwarded-override shape —
+				// the boundary strdups the overridden fields.
+				let value = ret.value ?? undefined;
+				if (value?.node_type === "anon_struct") {
+					const base = (value as unknown as { base?: BaseNode }).base;
+					if (base?.node_type === "func_call") value = base;
+				}
 				if (value && value.node_type === "value") continue;
 				if (
 					value &&
@@ -214,18 +223,24 @@ export function gather_normalized_struct_returners(root: BaseNode, status: Build
 				) {
 					continue;
 				}
-				// A USER struct CONSTRUCTOR return (`return R(a, b)`) is
-				// normalizable: the return boundary strdups the returned
-				// struct's string fields, so the caller can uniformly own
-				// them. Synthetic returns (`_Tuple_…`, `_Anon…`) carry their
-				// own normalization and are excluded.
+				// A USER struct CONSTRUCTOR return (`return R(a, b)`) — including
+				// the override-constructor form (`return [ .. R(a), f = v ]`, a
+				// func_call with `field_overrides`) — is normalizable: the return
+				// boundary strdups the returned struct's non-owned string fields
+				// (override-aware), so the caller can uniformly own them. A
+				// FORWARDED call carrying overrides (`return [ .. make(), f = v ]`)
+				// is normalizable when the forwarded callee is itself registered:
+				// the base's fields are already uniformly owned and the boundary
+				// strdups the overridden ones. Synthetic returns (`_Tuple_…`,
+				// `_Anon…`) carry their own normalization and are excluded.
 				if (
 					value &&
 					value.node_type === "func_call" &&
 					!!ret_struct &&
-					(value as unknown as { name?: string }).name === ret_struct.name &&
 					!ret_struct.name.startsWith("_") &&
-					!(value as unknown as { field_overrides?: unknown[] }).field_overrides?.length
+					((value as unknown as { name?: string }).name === ret_struct.name ||
+						(!!(value as unknown as { field_overrides?: unknown[] }).field_overrides?.length &&
+							return_normalizing.has((value as unknown as { name?: string }).name ?? "")))
 				) {
 					continue;
 				}

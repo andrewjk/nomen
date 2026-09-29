@@ -46,6 +46,15 @@ export function is_normalized_struct_call(
 	},
 ): boolean {
 	if (!value) return false;
+	// A base-bearing anonymous struct literal (`[ .. make(), f = v ]`) is
+	// ownership-wise its BASE: the destination receives a byte copy of the
+	// base's uniformly heap-owned fields (the overrides replace fields after
+	// the copy and reclaim through their own assignment path).
+	if (value.node_type === "anon_struct") {
+		const base = (value as unknown as { base?: BaseNode }).base;
+		if (!base) return false;
+		value = base;
+	}
 	if (value.node_type === "func_call") {
 		const call = value as FunctionCallNode;
 		// Struct constructions resolve to the struct's `#init`, which bypasses
