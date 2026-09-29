@@ -12,6 +12,19 @@
 
 
 
+
+## 0.6.5
+<sub>2026-09-29</sub>
+
+-  *(patch)* - reject moved value-struct local at trait boundary
+-  *(patch)* - Fix: nullable scalar values track null via a companion flag
+-  *(patch)* - Fix: initialize and free trait-declared fields
+-  *(patch)* - Fix: nullable struct member ownership
+-  *(patch)* - Fix: normalize struct constructor returns
+-  *(patch)* - Fix: pair-load string array elements
+-  *(patch)* - Fix: treat field-read string locals as borrows
+-  *(patch)* - Fix: allow raw as an identifier
+
 ## 0.6.4
 <sub>2026-09-28</sub>
 
