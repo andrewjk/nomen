@@ -1697,14 +1697,29 @@ export default function build_assignment_node(
 			const rhs_is_borrow_reception =
 				!node.swap && size === 16 && is_string_borrow(node.right_value);
 			const borrow_needs_dup = rhs_is_borrow_reception && !!status.force_heap_strings?.has(name);
+			// The move transfer is sound only when the source ACTUALLY owns
+			// heap: a source holding non-heap data (a folded string-literal
+			// concat lands in rodata; a borrow holds container memory) owns
+			// nothing, so the raw pair transfer would leave the heap-marked
+			// target freeing rodata/container bytes at scope exit (a nullable
+			// `owns = own` target auto-frees — SIGABRT). strdup an owned copy
+			// instead, mirroring the C backend's `string_var_owns_heap` move
+			// gate and the declaration path's `is_heap_alias` test.
+			const move_source_owns_heap =
+				move_source !== undefined && !!status.heap_strings?.has(move_source);
 			if (rhs_is_view_into_owned) {
 				if (!status.heap_strings) status.heap_strings = new Set();
 				status.heap_strings.add(name);
-			} else if ((rhs_is_string_var && move_source === undefined) || borrow_needs_dup) {
+			} else if (
+				(rhs_is_string_var && (move_source === undefined || !move_source_owns_heap)) ||
+				borrow_needs_dup
+			) {
 				emit_strdup_string(status);
 			}
 			if (rhs_is_string_var || borrow_needs_dup) {
-				if (move_source !== undefined) status.heap_strings?.delete(move_source);
+				if (move_source !== undefined && move_source_owns_heap) {
+					status.heap_strings?.delete(move_source);
+				}
 				if (!status.heap_strings) status.heap_strings = new Set();
 				status.heap_strings.add(name);
 			} else if (status.last_result_is_heap) {

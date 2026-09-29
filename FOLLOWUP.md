@@ -2,17 +2,21 @@
 
 Skipped or out-of-scope items recorded for later.
 
-## C: nullable local assigned from an owned string aliases it (double free)
+## Last-use scan cannot see reads inside interpolation templates
 
-`var string own = "heap" + "!"; var string? owns = own` — the C assignment
-copies own's fat pair RAW, so `owns.ptr == own.ptr`, and both locals'
-auto-frees release the same buffer (SIGABRT: double free). A literal
-initializer is fine (`nomen_str_dup`'d — see the `??` normalization), and the
-`??` string result is now independently owned, so this aliasing is the
-remaining in-band nullable-string corner. Fix direction: the nullable-string
-local assignment should dup non-owned RHS (mirroring the plain `string` local
-assignment's ownership normalization) or the aliasing pair's release must be
-single-owner.
+`stamp_last_use_moves`' read walk treats a double-quoted string as one
+opaque `value` node, so `own` inside `"owes=\{own}\n"` is invisible: an
+assignment/declare whose only later reads are interpolation holes is
+mis-stamped as a last-use move even though the source is read after. This
+is BENIGN for heap-owned sources (the transfer keeps the buffer alive to
+scope exit; the later reads precede any free), and the aarch64 nullable
+fix (`move_source_owns_heap` gate in build_assignment_node) makes it
+benign for rodata-held sources too (they strdup instead of transferring).
+Worth closing for hygiene when the pass is next touched: extract
+identifiers from `\{...}` holes in template values and record them as
+reads (over-recording only refuses moves, which is the sound direction).
+The literal-element stamp (`stamp_literal_element_moves`) shares the
+blindness.
 
 ## Trait-declared field ownership corners
 
