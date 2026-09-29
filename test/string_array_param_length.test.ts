@@ -28,12 +28,7 @@ pub func main = (Init init) {
 	Console.write("total=\\{total}\\n")
 }
 `;
-		await build_and_check_output(
-			input,
-			"string_array_param_length",
-			"total=5\n",
-			true,
-		);
+		await build_and_check_output(input, "string_array_param_length", "total=5\n", true);
 	});
 
 	test("int[] parameter length drives a for loop", async () => {

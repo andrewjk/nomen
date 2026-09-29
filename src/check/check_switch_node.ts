@@ -15,6 +15,20 @@ export default function check_switch_node(switch_node: SwitchNode, status: Check
 
 	for (let switch_case of switch_node.cases) {
 		check_node(switch_case.condition, status);
+		// The case condition's parent is the switch (not a block), so
+		// promote_allocations can't attach hoisted call-argument temps
+		// (`const _param_N = <arg>`) — they would stay pending and leak into
+		// the next checked statement, which the builders emit INSIDE the case
+		// branch (after the `if` that reads them: an undeclared identifier /
+		// undefined `_param_N` link error). Anchor them on the condition node
+		// instead: build_switch_node builds the condition first, and its
+		// top-level statement splitter hoists the emitted declarations ahead
+		// of the `if`.
+		if (status.allocations.length) {
+			switch_case.condition.allocations ??= [];
+			switch_case.condition.allocations.push(...status.allocations);
+			status.allocations.length = 0;
+		}
 		const condition_type = type_from_value_node(switch_case.condition, status);
 		if (!is_bool_condition(condition_type)) {
 			add_error(
