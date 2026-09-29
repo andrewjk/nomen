@@ -933,7 +933,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		// freeing them leaks. Mirrors build_auto_destroy and the aarch64
 		// backend's build_destroy_function (emit_field_destroys).
 		if (func.name === "#destroy" && node.is_class) {
-			for (const field of node.fields) {
+			for (const field of class_destroy_fields(node, status)) {
 				if (field.type.is_ref || field.type.is_array || field.type.is_view) continue;
 				if (field.type.name === "string") {
 					status.code += `free(self->${field.name}.ptr);\n`;
@@ -1002,12 +1002,32 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 	}
 }
 
+/**
+ * The fields a class's destroy must reclaim, INCLUDING trait-declared fields
+ * the class does not override. A class's trait string defaults are strdup'd by
+ * the constructor (always heap-owned), so the destroy must free them —
+ * otherwise they leak. Value structs keep their own field list: their trait
+ * string defaults are borrowed rodata and must NOT be freed.
+ */
+function class_destroy_fields(node: StructNode, status: BuildStatus): DeclarationNode[] {
+	if (!node.is_class || !node.traits.length) return node.fields;
+	const extra: DeclarationNode[] = [];
+	for (const trait_name of node.traits) {
+		const trait = status.traits.find((t) => t.name === trait_name);
+		if (!trait) continue;
+		for (const f of trait.fields) {
+			if (!node.fields.find((nf) => nf.name === f.name)) extra.push(f);
+		}
+	}
+	return extra.length ? [...node.fields, ...extra] : node.fields;
+}
+
 function build_auto_destroy(node: StructNode, status: BuildStatus) {
 	const func_label = `${node.name}_destroy`;
 	const sig = `void ${func_label}(struct ${node.name} *self)`;
 	status.headers += `${sig};\n`;
 	status.code += `${sig}\n{\n`;
-	for (const field of node.fields) {
+	for (const field of class_destroy_fields(node, status)) {
 		if (field.type.is_ref) continue;
 		// A `view T` field is a non-owning borrow: freeing its pointer half
 		// would be an invalid free (the storage is owned elsewhere).

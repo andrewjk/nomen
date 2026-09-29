@@ -2,6 +2,25 @@
 
 Skipped or out-of-scope items recorded for later.
 
+## Trait-declared field ownership corners
+
+The aarch64 layout/size model now includes trait-declared fields
+(`layout_fields` in `src/build_aarch64/utils/struct_layout.ts`), and CLASS
+destroy reclamation frees trait-declared `string` fields (whose defaults the
+ctor strdup's) on both backends — see `test/trait_field_defaults.test.ts`.
+Two ownership corners remain, both deliberately left:
+
+- **Value-struct trait `string` fields are borrowed rodata.** The ctor seeds
+  a trait string default RAW (no strdup, mirroring the C backend), and the
+  destroy excludes value-struct trait fields so it never frees rodata. A
+  later heap assignment into such a field is therefore not reclaimed (leak),
+  and a later reassignment frees the previous `.ptr` (rodata) — the same
+  pre-existing hazard plain value-struct string fields have.
+- **Nested trait class-typed fields**: `emit_nested_field_destroys` /
+  `emit_destroy_for_array_elem` (aarch64) still walk `struct.fields` only, so
+  a trait-declared class field inside a nested/array element is not
+  recursively destroyed.
+
 ## Nullable scalars: remaining in-band corners
 
 Nullable scalars (`bool?`, `int?`, …) now carry a companion `<slot>_has` flag

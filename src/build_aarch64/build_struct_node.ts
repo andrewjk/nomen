@@ -935,6 +935,64 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 		}
 	}
 
+	// Default fields from traits (mirrors the C backend's auto-init): a
+	// trait-declared field not overridden by the struct gets its default
+	// seeded here. Without this, trait default fields (e.g. a `string` tag)
+	// were left holding garbage in the malloc'd instance.
+	for (const trait_name of node.traits) {
+		const trait = status.traits.find((t) => t.name === trait_name);
+		if (!trait) continue;
+		for (const field of trait.fields) {
+			if (!field.value) continue;
+			if (node.fields.find((nf) => nf.name === field.name)) continue;
+			const offset = get_field_offset(node.name, field.name, status);
+			const val = field.value.node_type === "value" ? (field.value as any).value : undefined;
+			// A `null` default on a nullable trait field clears the companion
+			// flag (scalar: 1 byte; struct: 8-byte word); the value is unused.
+			if (
+				val === "null" &&
+				(is_nullable_scalar_type(field.type) || is_nullable_struct_type(field.type, status))
+			) {
+				const has_off = get_field_has_offset(node.name, field.name, status);
+				if (is_nullable_scalar_type(field.type)) {
+					emit_asm(status, `strb wzr, [x19, #${has_off}]\n`);
+				} else {
+					emit_asm(status, `str xzr, [x19, #${has_off}]\n`);
+				}
+				continue;
+			}
+			const is_fat_string =
+				field.type.name === "string" &&
+				!field.type.is_ref &&
+				!field.type.is_view &&
+				!field.type.is_array;
+			if (is_fat_string && val === "null") {
+				emit_asm(status, `mov x1, #0\n`);
+				emit_asm(status, `mov x2, #0\n`);
+				emit_pair_store_to(status, "x19", offset, "x1", "x2");
+				continue;
+			}
+			if (is_fat_string && typeof val === "string" && val.startsWith('"')) {
+				const label = `_str_${func_name}_${field.name}`;
+				status.strings!.set(label, val);
+				emit_asm(status, `adr x1, ${label}\n`);
+				// A class's default string literal must be heap-owned (the
+				// field is freed unconditionally at destroy).
+				if (node.is_class) {
+					emit_asm(status, `mov x0, x1\n`);
+					emit_asm(status, `bl _strdup\n`);
+					emit_asm(status, `mov x1, x0\n`);
+				}
+				emit_asm(status, `mov x2, #${string_literal_length(val)}\n`);
+				emit_pair_store_to(status, "x19", offset, "x1", "x2");
+				continue;
+			}
+			build_node(field.value, status);
+			ensure_newline(status);
+			emit_typed_store(status, "x0", "x19", offset, get_type_size(field.type, status));
+		}
+	}
+
 	emit_asm(status, `.return_${func_name}:\n`);
 
 	const total_stack = Math.ceil((status.stack_size || 0) / 16) * 16;

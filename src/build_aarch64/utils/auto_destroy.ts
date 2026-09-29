@@ -25,6 +25,7 @@ import {
 	get_field_offset_of_fields,
 	get_struct_size,
 	get_type_size,
+	layout_fields,
 } from "./struct_layout.ts";
 
 /**
@@ -415,8 +416,12 @@ function emit_field_destroys_at(
 	acc: number,
 	root_is_class: boolean,
 ) {
-	for (const field of struct_type.fields) {
-		const offset = get_field_offset_of_fields(struct_type.fields, field.name, status);
+	// A CLASS's trait-declared fields are owned (the ctor strdup's their string
+	// defaults), so include them in the destroy. Value-struct trait fields stay
+	// out: their defaults are borrowed rodata (mirroring the C backend).
+	const fields = struct_type.is_class ? layout_fields(struct_type, status) : struct_type.fields;
+	for (const field of fields) {
+		const offset = get_field_offset_of_fields(fields, field.name, status);
 		const field_struct =
 			is_struct_type(resolve_struct_name(field.type.name, field.type.type_args, status), status) ||
 			is_struct_type(field.type.name, status);
@@ -873,8 +878,14 @@ export function emit_field_destroys(
 	is_class_parent?: boolean,
 	free_strings = true,
 ) {
-	for (const field of struct_type.fields) {
-		const offset = get_field_offset_of_fields(struct_type.fields, field.name, status);
+	// A CLASS's trait-declared fields are owned (the ctor strdup's their
+	// string defaults), so include them. Value-struct trait fields stay out:
+	// their defaults are borrowed rodata (mirroring the C backend).
+	const destroy_fields = struct_type.is_class
+		? layout_fields(struct_type, status)
+		: struct_type.fields;
+	for (const field of destroy_fields) {
+		const offset = get_field_offset_of_fields(destroy_fields, field.name, status);
 		// An enum-with-data field owns its ACTIVE case's payloads (case
 		// construction strdups string args / transfers reference pointers, and
 		// every enum-field store takes owning copies). Free them regardless of

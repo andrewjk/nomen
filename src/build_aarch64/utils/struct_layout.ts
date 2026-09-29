@@ -51,7 +51,7 @@ export function get_struct_size(name: string, status: BuildStatus): number {
 	if (!struct) return VT_SIZE;
 	if (struct.is_simple_type) return VT_SIZE;
 	let size = VT_SIZE;
-	for (const field of struct.fields) {
+	for (const field of layout_fields(struct, status)) {
 		size = align_to(size, get_type_alignment(field.type, status));
 		size += get_type_size(field.type, status);
 		// A nullable struct field carries a companion 8-byte `_has` flag; a
@@ -64,6 +64,28 @@ export function get_struct_size(name: string, status: BuildStatus): number {
 	// keep every element aligned (matches C's sizeof).
 	size = align_to(size, 8);
 	return size;
+}
+
+/**
+ * The struct's fields in layout order, INCLUDING trait-declared fields that
+ * the struct does not override. The C backend emits trait fields into the
+ * typedef (the C compiler lays them out); the aarch64 layout must account for
+ * them too, or a trait field's offset lands past the allocated instance.
+ */
+export function layout_fields(
+	struct: { fields: DeclarationNode[]; traits?: string[] },
+	status: BuildStatus,
+): DeclarationNode[] {
+	if (!struct.traits?.length) return struct.fields;
+	const extra: DeclarationNode[] = [];
+	for (const trait_name of struct.traits) {
+		const trait = status.traits.find((t) => t.name === trait_name);
+		if (!trait) continue;
+		for (const f of trait.fields) {
+			if (!struct.fields.find((nf) => nf.name === f.name)) extra.push(f);
+		}
+	}
+	return extra.length ? [...struct.fields, ...extra] : struct.fields;
 }
 
 export function get_type_size(
@@ -102,7 +124,7 @@ export function get_field_offset(
 ): number {
 	const struct = status.structs.find((s) => s.name === struct_name);
 	if (!struct) return VT_SIZE;
-	return get_field_offset_of_fields(struct.fields, field_name, status);
+	return get_field_offset_of_fields(layout_fields(struct, status), field_name, status);
 }
 
 /**
@@ -150,7 +172,8 @@ function get_type_size_for_field(
 	status: BuildStatus,
 ): number {
 	const struct = status.structs.find((s) => s.name === struct_name);
-	const field = struct?.fields.find((f) => f.name === field_name);
+	if (!struct) return 0;
+	const field = layout_fields(struct, status).find((f) => f.name === field_name);
 	if (!field) return 0;
 	return get_type_size(field.type, status);
 }
