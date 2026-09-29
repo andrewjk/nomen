@@ -2,6 +2,7 @@ import path from "node:path";
 
 import { expect, test } from "vite-plus/test";
 
+import check from "../src/check";
 import { scan_last_use_string_moves, type LastUseSite } from "../src/check/utils/last_use";
 import { get_library } from "../src/lib";
 import parse from "../src/parse";
@@ -11,6 +12,18 @@ const system = get_library(path.resolve(import.meta.dirname, "../core"));
 function scan(src: string): LastUseSite[] {
 	const parsed = parse(src, system, undefined, { allow_user_raw: true });
 	expect(parsed.errors).toEqual([]);
+	return scan_last_use_string_moves(parsed.root);
+}
+
+/** Scan the POST-CHECK tree: the checker hoists interpolation args into
+ *  `node.allocations` declares (`const _param_N = t.to_string()`) and
+ *  rewrites the call's argument to the bare `_param_N` — the read of `t`
+ *  moves into a sub-statement the walk must visit explicitly. */
+function scan_checked(src: string): LastUseSite[] {
+	const parsed = parse(src, system, undefined, { allow_user_raw: true });
+	expect(parsed.errors).toEqual([]);
+	const checked = check(parsed.root);
+	expect(checked.errors).toEqual([]);
 	return scan_last_use_string_moves(parsed.root);
 }
 
@@ -202,4 +215,48 @@ pub func main = () {
 }
 `);
 	expect(compound).toHaveLength(0);
+});
+
+test("refuses when the only later read is a checker-hoisted interpolation arg", () => {
+	// Post-check, `"\{t}"` becomes `const _param_N = t.to_string()` attached
+	// as the Console.write statement's `allocations` with the call argument
+	// rewritten to the bare temp — the read of `t` is invisible unless the
+	// walk descends into the hoisted declares.
+	const sites = scan_checked(`
+import System
+pub func main = () {
+	var t = "a".to_string()
+	var s = "b".to_string()
+	s = t
+	Console.write_line("v=\\{t}")
+}
+`);
+	expect(sites).toHaveLength(0);
+});
+
+test("refuses the declare form against a hoisted interpolation read too", () => {
+	const sites = scan_checked(`
+import System
+pub func main = () {
+	var t = "a".to_string()
+	var u = t
+	Console.write_line("v=\\{t}")
+	Console.write_line(u)
+}
+`);
+	expect(sites).toHaveLength(0);
+});
+
+test("still detects a last use when a hoisted interpolation reads another variable", () => {
+	const sites = scan_checked(`
+import System
+pub func main = () {
+	var t = "a".to_string()
+	var s = "b".to_string()
+	s = t
+	Console.write_line("v=\\{s}")
+}
+`);
+	expect(sites).toHaveLength(1);
+	expect(sites[0]).toMatchObject({ target: "s", source: "t" });
 });

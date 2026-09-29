@@ -509,6 +509,16 @@ function scan_function_literal_element_moves(func: FunctionNode): number {
 // ---------------------------------------------------------------------------
 
 function walk_stmt(walk: Walk, node: BaseNode): void {
+	// Checker-hoisted interpolation args ride as `node.allocations` declare
+	// statements (`const _param_N = x.to_string()`) that the block builder
+	// emits BEFORE this statement. Their bodies READ the sources they wrap —
+	// an interpolation of `own` after an `owns = own` assignment is a real
+	// later read, so the hoisted declares must be walked here (at the
+	// carrying statement's position) or the move candidates' last-use test
+	// never sees those reads.
+	if (node.allocations?.length) {
+		for (const alloc of node.allocations) walk_stmt(walk, alloc);
+	}
 	switch (node.node_type) {
 		case "declare": {
 			const decl = node as unknown as {

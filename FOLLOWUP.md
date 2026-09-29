@@ -2,22 +2,6 @@
 
 Skipped or out-of-scope items recorded for later.
 
-## Last-use scan cannot see reads inside interpolation templates
-
-`stamp_last_use_moves`' read walk treats a double-quoted string as one
-opaque `value` node, so `own` inside `"owes=\{own}\n"` is invisible: an
-assignment/declare whose only later reads are interpolation holes is
-mis-stamped as a last-use move even though the source is read after. This
-is BENIGN for heap-owned sources (the transfer keeps the buffer alive to
-scope exit; the later reads precede any free), and the aarch64 nullable
-fix (`move_source_owns_heap` gate in build_assignment_node) makes it
-benign for rodata-held sources too (they strdup instead of transferring).
-Worth closing for hygiene when the pass is next touched: extract
-identifiers from `\{...}` holes in template values and record them as
-reads (over-recording only refuses moves, which is the sound direction).
-The literal-element stamp (`stamp_literal_element_moves`) shares the
-blindness.
-
 ## Trait-declared field ownership corners
 
 The aarch64 layout/size model now includes trait-declared fields
