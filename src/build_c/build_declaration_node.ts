@@ -448,16 +448,39 @@ export default function build_declaration_node(
 			(node.value as ValueNode).value.length >= 2 &&
 			(node.value as ValueNode).value.startsWith('"') &&
 			(node.value as ValueNode).value.endsWith('"');
+		// A `var string t = obj.field` local reads a BORROW of the struct's
+		// storage — it must not be freed at scope exit, and a `return t` must
+		// strdup it (the caller frees every string return). Mark it borrow-only
+		// (mirrors the aarch64 backend, where a non-heap source is a borrow).
+		// Exception: a TUPLE-DESTRUCTURE binding (`var [a, n] = f()` lowers to
+		// `a = _tuple_dst._0`) TRANSFERS the tuple temp's normalized (heap)
+		// field — that binding owns its copy.
+		const field_access_target_name =
+			node.value?.node_type === "access" && (node.value as AccessNode).target?.node_type === "value"
+				? ((node.value as AccessNode).target as ValueNode).value
+				: "";
+		const val_is_field_access =
+			!val_is_string_literal &&
+			node.value?.node_type === "access" &&
+			(node.value as AccessNode).access?.node_type === "access_field" &&
+			!field_access_target_name.startsWith("_tuple");
 		const is_borrow_only_string =
 			node.type.name === "string" &&
 			val_is_string_literal &&
 			(node.declaration === "const" ||
 				(node.declaration === "var" && !!status.c_borrow_only_strings?.has(safe_name)));
-		if (is_borrow_only_string) {
+		const is_borrow_field_string =
+			node.type.name === "string" && node.declaration === "var" && val_is_field_access;
+		if (is_borrow_only_string || is_borrow_field_string) {
 			if (!status.string_borrow_vars) status.string_borrow_vars = new Set();
 			status.string_borrow_vars.add(safe_name);
 		}
-		if (!val_is_class_alias && !is_borrow_only_string && !node.type.is_view) {
+		if (
+			!val_is_class_alias &&
+			!is_borrow_only_string &&
+			!is_borrow_field_string &&
+			!node.type.is_view
+		) {
 			status.scoped_declarations.push(node);
 			// Track owned string vars in a set that persists across scope
 			// resets (unlike scoped_declarations). A reassignment inside a
