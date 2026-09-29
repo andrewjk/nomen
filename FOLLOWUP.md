@@ -637,3 +637,39 @@ tuple-literal last-use moves are. Worth considering alongside the sweep: a
 checker warning for `move` on value-struct fields so it does not
 re-accumulate, and a line in docs/MEMORY.md stating that field `move` is
 meaningful only for class-typed fields.
+
+## Owned string stored into a ref-param struct field leaks (caller never records it)
+
+`func set = (ref Pair p, string raw) { p.a = raw }` — the callee strdups the
+borrow and records `p.a` in its own `heap_string_fields`, but the record never
+crosses the call boundary, so the CALLER never frees the field: every call
+leaks one allocation (audited builds report `LEAK: 1 allocation(s)`; found
+while fixing the exclusive-branch field-store SIGABRT — see
+`test/branch_string_field_store.test.ts`, whose value-struct repro was
+abandoned for this). CLASS targets are unaffected (their destroy reclaims
+string fields unconditionally), which is why the allmark port's
+class-per-rule shapes don't see it. Fix direction: at a call site whose
+callee takes a `ref` struct param, transfer the callee's recorded string-field
+writes onto the caller's records (mirror of
+`drop_self_written_string_field_records`, in the add direction).
+
+## aarch64: value-struct LOCAL with a branch field store crashes
+
+A value-struct local whose string field is assigned in BOTH arms of an
+if/else (one arm a call, the other a borrowed param) SIGSEGVs on aarch64
+before producing output; the C backend is correct (found while fixing the
+exclusive-branch field-store bug; the value-struct repro at
+`/tmp`-repro-shape lives in the PORT.md thread of `test/branch_string_field_store.test.ts`).
+The class form passes on both backends, and C passes the value-struct form
+with the union-join records, so the remaining defect is in the aarch64
+assignment/destroy path for value-struct locals with branch-disjoint stores
+(likely the exit store-back or the field record's slot sync). Repro shape:
+
+```nomen
+struct Pair { var a = "" }
+func commit = (string raw, out int) {
+	var p = Pair()
+	if raw.length > 2 { p.a = raw } else { p.a = decorated(raw) }
+	return p.a.length
+}
+```
