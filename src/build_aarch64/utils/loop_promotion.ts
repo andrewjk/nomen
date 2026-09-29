@@ -75,6 +75,18 @@ export interface PromotedVar {
 function can_share_claimed_register(status: BuildStatus, name: string, reg: string): boolean {
 	const shared = status.nir_alloc_shared;
 	if (!shared || !status.register_allocations) return false;
+	// A candidate the function plan has NO facts about (its name owns no
+	// source key — a body-declared local the plan never tracked, or a
+	// prior loop promotion's bracket binding) must never share: the
+	// adjacency lookup below is then VACUOUS (no keys → no edges → "no
+	// interference"), yet the bracketing entry load / exit store-back move
+	// a different variable through this register across the whole loop. An
+	// occupant whose only live supply crosses the bracket boundary without
+	// a textual overlap (loop-carried, read once per iteration at the
+	// header: `search` read by `index_of_from("<", search)`) is clobbered
+	// before its first read (the find_raw_text_end receipt: t/matched
+	// shared x24/x25 onto search and the loop ran from a garbage index).
+	if (!shared.source_keys.has(name)) return false;
 	// Active region pins (ASM_PLAN_5) never share: the pin holds a loop's
 	// materialized data pointer for the whole bracket, and the interference
 	// adjacency knows nothing about it — sharing the induction (or any loop
@@ -83,13 +95,24 @@ function can_share_claimed_register(status: BuildStatus, name: string, reg: stri
 	// x26 and loaded `[x26, x26, lsl #3]`). Fresh claims already avoid pins
 	// through callee_saved_regs_used; this closes the sharing path.
 	if (status.region_pinned?.get(reg)) return false;
-	const cand_keys = shared.source_keys.get(name) ?? [name];
+	// Loop-carried registers (BuildStatus.nir_loop_carry_regs) never share:
+	// an occupant live into a loop header has its crossing value in this
+	// register, and the bracket's entry load / exit store-back would
+	// replace it with the candidate's (the pairwise adjacency carries no
+	// edge for a header-only read — the vacuous-proof case above).
+	if (status.nir_loop_carry_regs?.has(reg)) return false;
+	const cand_keys = shared.source_keys.get(name)!;
 	let occupants = 0;
 	for (const [occupant, occupant_reg] of status.register_allocations) {
 		if (occupant_reg !== reg || occupant === name) continue;
 		occupants++;
 		if (shared.pinned.has(occupant)) return false;
-		for (const occ_key of shared.source_keys.get(occupant) ?? [occupant]) {
+		// Same vacuous-lookup rule for the occupant side: an occupant the
+		// plan has no keys for (another loop promotion's binding) carries
+		// no adjacency facts — its register cannot be provably disjoint.
+		const occ_keys = shared.source_keys.get(occupant);
+		if (!occ_keys) return false;
+		for (const occ_key of occ_keys) {
 			for (const cand_key of cand_keys) {
 				if (shared.adj.get(cand_key)?.has(occ_key)) return false;
 			}
@@ -468,6 +491,11 @@ export function promote_loop_locals(
 	if (status.region_pinned) {
 		for (const r of status.region_pinned.keys()) used_x.add(r);
 	}
+	// Loop-carried registers (see BuildStatus.nir_loop_carry_regs): the
+	// bracket's entry load / exit store-back would clobber the occupant's
+	// crossing value. Blocked for fresh claims via the used-sets below, and
+	// for bracket shares inside can_share_claimed_register.
+	const loop_carry_regs = status.nir_loop_carry_regs;
 	// Decl-site registers (stage 3) are PRIVATE to their declare sites: the
 	// emitter binds them at the declare (when the name has no live
 	// binding), and the function allocator's occupancy check for a shared
@@ -525,6 +553,10 @@ export function promote_loop_locals(
 						continue;
 					}
 					if (site_regs.has(reg0) || site_regs.has(reg1)) {
+						d_idx++;
+						continue;
+					}
+					if (loop_carry_regs?.has(reg0) || loop_carry_regs?.has(reg1)) {
 						d_idx++;
 						continue;
 					}
@@ -591,6 +623,10 @@ export function promote_loop_locals(
 					d_idx++;
 					continue;
 				}
+				if (loop_carry_regs?.has(float_pool[d_idx])) {
+					d_idx++;
+					continue;
+				}
 				if (!used_d.has(float_pool[d_idx])) break;
 				if (can_share_claimed_register(status, v.name, float_pool[d_idx])) break;
 				d_idx++;
@@ -614,6 +650,10 @@ export function promote_loop_locals(
 			// Share-aware scan, same contract as the float branch above.
 			while (x_idx < x_pool.length) {
 				if (site_regs.has(x_pool[x_idx])) {
+					x_idx++;
+					continue;
+				}
+				if (loop_carry_regs?.has(x_pool[x_idx])) {
 					x_idx++;
 					continue;
 				}

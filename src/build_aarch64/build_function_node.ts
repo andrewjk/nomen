@@ -640,6 +640,9 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			);
 			if (status.nir_region_free.size === 0) status.nir_region_free = undefined;
 			status.region_preseed = undefined;
+			// Loop-carried registers (see the computation site): the
+			// emit-side loop promotion refuses to claim or share these.
+			status.nir_loop_carry_regs = plan.loop_carry_regs.size > 0 ? plan.loop_carry_regs : undefined;
 		} else {
 			fn_allocs = plan_function_promotions(node, plan_nir!);
 			// Legacy pass has no decl-site table — clear any enclosing
@@ -647,6 +650,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			status.nir_site_allocs = undefined;
 			status.nir_region_free = undefined;
 			status.region_preseed = undefined;
+			status.nir_loop_carry_regs = undefined;
 		}
 	} else {
 		// No body (no NIR): nothing of this function can bind; drop any

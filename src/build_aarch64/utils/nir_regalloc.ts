@@ -339,7 +339,12 @@ export interface NirRegisterPlan {
 	 *  check allows a pin whose register is bound only to proven-dead
 	 *  names, so function-wide occupants (visible in the live
 	 *  register_allocations map but dead here) borrow while emit-time
-	 *  promotion claims (unknown to the plan) still refuse. */
+	 *  promotion claims (unknown to the plan) still refuse. */ /** Registers holding a LOOP-CARRIED name (live into some loop header):
+	 *  the emit-side loop promotion must never claim or bracket-share one
+	 *  of these — its entry load / exit store-back would clobber the
+	 *  occupant's crossing value (see the computation site for the full
+	 *  receipt). */
+	loop_carry_regs: Set<string>;
 	region_free: {
 		node: BaseNode;
 		pins: {
@@ -2058,6 +2063,22 @@ export function plan_nir_registers(
 			});
 		}
 	}
+	// Registers holding a LOOP-CARRIED name (live into some loop header —
+	// the `loop_blocked` facts). The emit-side loop promotion brackets
+	// (entry load before the header, exit store-back) must never move a
+	// different variable through one of these: an occupant whose only live
+	// supply crosses the bracket boundary WITHOUT a textual overlap (read
+	// once per iteration at the header) has no adjacency edge with an
+	// in-loop candidate, so the pairwise-interference share proof is
+	// vacuous exactly where it matters (the find_raw_text_end receipt:
+	// t/matched bracket-shared x24/x25 over `search` and the scan ran from
+	// a garbage index). Published for loop_promotion's claim + share scans.
+	const loop_carry_regs = new Set<string>();
+	for (const [key, f] of facts) {
+		if (!f.loop_blocked) continue;
+		const reg = allocs.get(key);
+		if (reg) loop_carry_regs.add(reg);
+	}
 	return {
 		allocs,
 		callee_saved,
@@ -2067,6 +2088,7 @@ export function plan_nir_registers(
 		sites: site_allocs,
 		pairs: slp_pairs,
 		region_free,
+		loop_carry_regs,
 	};
 }
 
@@ -2157,6 +2179,9 @@ export function seed_function_allocations(
 	);
 	if (status.nir_region_free.size === 0) status.nir_region_free = undefined;
 	status.region_preseed = undefined;
+	// Loop-carried registers (see the computation site): the emit-side
+	// loop promotion refuses to claim or share these.
+	status.nir_loop_carry_regs = plan.loop_carry_regs.size > 0 ? plan.loop_carry_regs : undefined;
 	for (const param of func.params) {
 		const reg = plan.allocs.get(param.name);
 		if (!reg || !reg.startsWith("x")) continue;

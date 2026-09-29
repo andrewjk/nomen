@@ -781,6 +781,18 @@ export default interface BuildStatus {
 		source_keys: Map<string, string[]>;
 	};
 	/**
+	 * aarch64-only: registers holding a LOOP-CARRIED name (live into some
+	 * loop header — the plan's `loop_blocked` facts). The loop promotion's
+	 * claim and share scans must refuse these: the bracketing entry load /
+	 * exit store-back move a different variable through the register across
+	 * the whole loop, and an occupant whose only live supply crosses the
+	 * bracket boundary without a textual overlap (read once per iteration
+	 * at the header) has no adjacency edge with an in-loop candidate — the
+	 * pairwise-interference share proof is vacuous exactly where it
+	 * matters. Undefined = no loop-carried claims (nothing to refuse).
+	 */
+	nir_loop_carry_regs?: Set<string>;
+	/**
 	 * aarch64-only (ASM_PLAN_3 tranche L): cross-statement access-staging
 	 * pins. Straight-line windows of plain declares/assigns may keep a
 	 * Buffer-accessor index sum and the receiver's data pointer in x10/x11
