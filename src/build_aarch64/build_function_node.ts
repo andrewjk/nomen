@@ -4,6 +4,8 @@ import { struct_needs_destroy } from "../build_common/destroy_analysis.ts";
 import emission_label from "../build_common/emission_label.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import { resolve_mono_type } from "../build_common/mono_name.ts";
+import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
+import { has_flag_name } from "../build_common/nullable_struct.ts";
 import scan_force_heap_strings from "../build_common/scan_force_heap_strings.ts";
 import { moved_param_is_consumed } from "../build_common/scan_moved_param_consumed.ts";
 import scan_reassigned_vars from "../build_common/scan_reassigned_vars.ts";
@@ -274,7 +276,12 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			(s) => s.name === node.return_type.name && !s.is_simple_type && !s.is_class,
 		) ||
 			get_enum_sret_size(node.return_type.name, status) !== undefined);
-	if (return_struct) {
+	// A nullable SCALAR return (`out int?`) also rides the x8 sret buffer:
+	// the callee must hand back BOTH the value and its companion `_has` flag,
+	// which a single x0 return cannot carry.
+	const nullable_scalar_ret = is_nullable_scalar_type(node.return_type) && !node.return_type.is_ref;
+	const uses_sret = return_struct || nullable_scalar_ret;
+	if (uses_sret) {
 		status.struct_return_buffer = "x8";
 	}
 	status.function_return_type = node.return_type;
@@ -395,10 +402,16 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				continue;
 			}
 			// A fat `string` or `view T` param arrives as a (ptr, len)
-			// REGISTER PAIR — two AAPCS64 slots. It is not a by-address
-			// struct param (excluded from the callee-saved pool; spilled to
-			// a 16-byte stack slot in the second pass below).
+			// REGISTER PAIR — two AAPCS64 slots. A nullable SCALAR param
+			// (`int? x`) arrives as a (value, flag) pair — also two slots.
+			// Neither is a by-address struct param (excluded from the
+			// callee-saved pool; spilled to a 16-byte stack slot in the
+			// second pass below).
 			if (param.type.is_view || param.type.name === "string") {
+				first_pass_slot += 2;
+				continue;
+			}
+			if (is_nullable_scalar_type(param.type)) {
 				first_pass_slot += 2;
 				continue;
 			}
@@ -447,7 +460,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	emit_asm(status, `sub sp, sp, #${stack_placeholder}\n`);
 	emit_asm(status, `mov x29, sp\n`);
 
-	if (return_struct) {
+	if (uses_sret) {
 		const return_buffer_stack_offset = allocate_stack_space(status, 8, 8);
 		emit_asm(status, `str x8, [x29, #${return_buffer_stack_offset}]\n`);
 		status.return_buffer_stack_offset = return_buffer_stack_offset;
@@ -715,6 +728,68 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 					}
 				}
 				param_idx += 2;
+				continue;
+			}
+
+			// A nullable SCALAR param (`int? x`) arrives as a (value, flag)
+			// register pair: spill the value half at its natural width and
+			// the flag half as a full word into a sibling `<name>_has` slot.
+			// The flag slot registers in stack_offsets exactly like a local's
+			// companion flag, so reads (load_nullable_has) and writes work
+			// unchanged. Consumes two param register slots.
+			if (is_nullable_scalar_type(param.type) && !param.type.is_ref && !param.type.is_array) {
+				const size = aarch64_size(param.type.name);
+				const offset = allocate_stack_space(status, size, size);
+				status.stack_offsets!.set(param.name, offset);
+				const flag_offset = allocate_stack_space(status, 8, 8);
+				status.stack_offsets!.set(has_flag_name(param.name), flag_offset);
+				for (const half of [0, 1] as const) {
+					const p_slot = param_idx + half;
+					if (p_slot < NUM_REG_ARGS) {
+						const reg = param_regs[p_slot];
+						if (half === 0) {
+							if (size === 1) {
+								emit_asm(status, `strb ${reg.replace("x", "w")}, [x29, #${offset}]\n`);
+							} else if (size === 2) {
+								emit_asm(status, `strh ${reg.replace("x", "w")}, [x29, #${offset}]\n`);
+							} else if (size === 4) {
+								emit_asm(status, `str ${reg.replace("x", "w")}, [x29, #${offset}]\n`);
+							} else {
+								emit_asm(status, `str ${reg}, [x29, #${offset}]\n`);
+							}
+							raw_reloads.push({
+								reg,
+								asm: raw_slot_reload_line(reg, offset, size),
+							});
+						} else {
+							emit_asm(status, `str ${reg}, [x29, #${flag_offset}]\n`);
+							raw_reloads.push({
+								reg,
+								asm: `ldr ${reg}, [x29, #${flag_offset}]`,
+							});
+						}
+					} else {
+						const k = p_slot - NUM_REG_ARGS;
+						emit_asm(status, `ldr x9, [x29, #${overflow_placeholder(label_name, k)}]\n`);
+						if (half === 0) {
+							if (size === 1) {
+								emit_asm(status, `strb w9, [x29, #${offset}]\n`);
+							} else if (size === 2) {
+								emit_asm(status, `strh w9, [x29, #${offset}]\n`);
+							} else if (size === 4) {
+								emit_asm(status, `str w9, [x29, #${offset}]\n`);
+							} else {
+								emit_asm(status, `str x9, [x29, #${offset}]\n`);
+							}
+						} else {
+							emit_asm(status, `str x9, [x29, #${flag_offset}]\n`);
+						}
+					}
+				}
+				param_idx += 2;
+				if (param.declaration === "var") {
+					status.function_param_vars.add(param.name);
+				}
 				continue;
 			}
 
@@ -1002,7 +1077,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		// An sret return parks the caller's result buffer (x8) in its own slot
 		// so the return path can reload it after the body's calls — a mid-body
 		// raw block that stores through x8 needs the same reload.
-		if (return_struct && status.return_buffer_stack_offset !== undefined) {
+		if (uses_sret && status.return_buffer_stack_offset !== undefined) {
 			raw_reloads.push({
 				reg: "x8",
 				asm: `ldr x8, [x29, #${status.return_buffer_stack_offset}]`,

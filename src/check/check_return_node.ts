@@ -52,12 +52,23 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 	if (func?.return_type?.name && func.return_type.name !== "?") {
 		status.expected_type = func.return_type;
 	}
+	// A nullable return type (`out T?`) accepts a may-be-null value — the
+	// null-ness travels with the value (both backends carry a companion
+	// `_has` flag for nullable struct/scalar returns). Without this, `return x`
+	// on a `T?` parameter errors with "Variable 'x' may be null" even though
+	// the return type is exactly as nullable as the value.
+	const old_allow_null = status.allow_null_value;
+	if (func?.return_type?.is_nullable) {
+		status.allow_null_value = true;
+	}
 
 	if (!check_node(ret.value, status)) {
 		status.expected_type = old_expected_type;
+		status.allow_null_value = old_allow_null;
 		return;
 	}
 	status.expected_type = old_expected_type;
+	status.allow_null_value = old_allow_null;
 
 	ret.type = type_from_value_node(ret.value, status);
 

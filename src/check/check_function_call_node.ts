@@ -1,6 +1,7 @@
 import add_error from "../add_error.ts";
 import { fold_asm_constants } from "../build_common/fold_asm_constants.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
+import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { get_built_in_type } from "../built_in_types.ts";
 import type AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
@@ -1495,14 +1496,18 @@ function derive_annotations_for_access_func(
 	}
 
 	// nullable_param_indices: which call args correspond to nullable struct
-	// value params (T? where T is a non-class struct).
+	// value params (T? where T is a non-class struct) or nullable scalar
+	// params (bool?/int?/…).
 	const self_offset = func.params.findIndex((p) => p.is_self_param);
 	const nullable_indices: number[] = [];
 	for (let i = 0; i < func.params.length; i++) {
 		const p = func.params[i];
 		if (p.is_self_param) continue;
 		if (!p.type?.is_nullable) continue;
-		if (status.structs.find((s) => s.name === p.type.name && !s.is_class)) {
+		if (
+			status.structs.find((s) => s.name === p.type.name && !s.is_class) ||
+			is_nullable_scalar_type(p.type)
+		) {
 			// Map callee param index to call arg index (skip self).
 			nullable_indices.push(i - (self_offset >= 0 ? self_offset + 1 : 0));
 		}
@@ -2243,7 +2248,12 @@ function raw_type_size(
 			field.type.is_nullable &&
 			structs.find((s) => s.name === field.type.name && !s.is_simple_type && !s.is_class)
 		) {
+			// Nullable struct field: 8-byte `_has` flag word right after.
 			size += 8;
+		} else if (is_nullable_scalar_type(field.type)) {
+			// Nullable scalar field: 1-byte `_has` flag right after the
+			// scalar (matches C's `unsigned char <f>_has;` member).
+			size += 1;
 		}
 	}
 	return raw_align_to(size, 8);

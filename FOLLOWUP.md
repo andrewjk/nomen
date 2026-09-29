@@ -2,6 +2,39 @@
 
 Skipped or out-of-scope items recorded for later.
 
+## Nullable scalars: remaining in-band corners
+
+Nullable scalars (`bool?`, `int?`, …) now carry a companion `<slot>_has` flag
+(locals, params, returns, struct/class fields; both backends — see
+`src/build_common/nullable_scalar.ts` and `test/nullable_scalar.test.ts`).
+These corners still use the old in-band `null == 0` representation:
+
+- **Container / array elements** (`List<int?>`, `Buffer<bool?>`, `int?[]`):
+  element storage is sized from the type name with no flag slot, so `0`/`false`
+  read back as null again. Fixing needs per-element flag storage in the
+  containers' raw T-generic bodies (or forbidding nullable element types).
+- **Nullable enums / bitsets** (`MyEnum?`): represented as a bare tag word;
+  `null` is tag 0 (conflates with the first case). Would need the same flag
+  treatment, keyed on `is_nullable` + non-built-in.
+- **Top-level (file-scope) nullable scalar globals**: the declaration reserves
+  the flag and treats the global as null; a non-null initializer is NOT applied
+  on either backend (the C path emits a static flag but skips the generic
+  `= value` static init; aarch64 emits `.space`). Top-level nullable scalars
+  are rare, but `var int? g = 5` currently reads null.
+
+Also, aarch64 nullable scalar method/function returns used as a plain
+(non-null) value allocate a discard sret temp (the nullness is dropped, never
+diagnosed) — matching the C backend's disposable compound-literal `_ret_has`.
+
+## Nullable-typed bindings now accept may-be-null values (checker relaxation)
+
+`check_return_node` and `check_assignment_node` set `allow_null_value` when the
+target/return type is nullable, so `return x` (x a `T?` param) and
+`field = nullableParam` no longer error "Variable 'x' may be null". This is
+intended (the value's null-ness travels with it), but it is a checker
+behavior change: review if any future diagnostic wants to warn on
+may-be-null propagation.
+
 ## aarch64 post-processing passes dominate large builds (linear but heavy)
 
 Follow-up to the emitter quadratic fix (chunked code buffer +

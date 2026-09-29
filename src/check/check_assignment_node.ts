@@ -140,7 +140,16 @@ export default function check_assignment_node(
 
 	const old_expected_type = status.expected_type;
 	status.expected_type = type_from_value_node(assign.left_value, status);
+	// Assigning a may-be-null value to a nullable target is safe — the
+	// target's own null-ness tracks the RHS (`x = y` where both are `T?`).
+	// Without this, `field = nullableParam` errors "Variable '…' may be null"
+	// even though the value is merely being stored.
+	const old_allow_null = status.allow_null_value;
+	if (status.expected_type?.is_nullable) {
+		status.allow_null_value = true;
+	}
 	const result = check_node(assign.right_value, status);
+	status.allow_null_value = old_allow_null;
 	status.expected_type = old_expected_type;
 	if (!result) {
 		return false;

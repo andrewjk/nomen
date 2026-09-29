@@ -4,6 +4,7 @@ import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import emission_label from "../build_common/emission_label.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import mark_tuple_literal_move_owners from "../build_common/mark_tuple_literal_move_owners.ts";
+import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
 import { is_float_type } from "../built_in_types.ts";
@@ -638,11 +639,29 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					string_arg_set.add(i);
 				}
 			}
+			// A nullable SCALAR parameter (`int? p`) consumes two slots —
+			// (value, flag) — matching the callee prologue's pair spilling.
+			// Detection is by the checker-stamped callee param indices, then
+			// the scalar shape distinguishes them from the nullable STRUCT
+			// branch (which passes an address to combined storage).
+			const nullable_scalar_arg_set = new Set<number>();
+			for (let i = 0; i < node.params.length; i++) {
+				if (!node.nullable_param_indices?.includes(i)) continue;
+				const arg_type = (node.params[i] as any).type;
+				const callee_param = node.resolved_function?.params?.[i];
+				if (
+					is_nullable_scalar_type(arg_type) ||
+					(callee_param && is_nullable_scalar_type(callee_param.type))
+				) {
+					nullable_scalar_arg_set.add(i);
+				}
+			}
 			const arg_slot: number[] = [];
 			let total_slots = 0;
 			for (let i = 0; i < node.params.length; i++) {
 				arg_slot.push(total_slots);
-				total_slots += view_arg_set.has(i) || string_arg_set.has(i) ? 2 : 1;
+				total_slots +=
+					view_arg_set.has(i) || string_arg_set.has(i) || nullable_scalar_arg_set.has(i) ? 2 : 1;
 			}
 			// Evaluate each param into x0 (and x1 for a view pair) and spill
 			// it to a dedicated stack slot, then load all slots into argument
@@ -812,6 +831,32 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					} else {
 						emit_address_of(arg, status);
 					}
+				} else if (nullable_scalar_arg_set.has(i)) {
+					// A nullable SCALAR parameter arrives as a (value, flag) pair:
+					//   - `null` literal → both halves zero.
+					//   - bare nullable VARIABLE → its value and its `<v>_has`
+					//     flag word (both slot-resident).
+					//   - anything else → the value and flag = 1 (assumed
+					//     non-null).
+					const arg = node.params[i];
+					if (arg.node_type === "value" && (arg as ValueNode).value === "null") {
+						emit_asm(status, `mov x0, #0\n`);
+						emit_asm(status, `mov x1, #0\n`);
+					} else if (
+						arg.node_type === "value" &&
+						is_nullable_scalar_type((arg as ValueNode).type)
+					) {
+						const vname = (arg as ValueNode).value;
+						emit_var_load(status, "x0", vname, aarch64_size(param_type.name));
+						emit_var_load(status, "x1", has_flag_name(vname), 8);
+					} else {
+						build_node(arg, status);
+						ensure_newline(status);
+						emit_asm(status, `mov x1, #1\n`);
+					}
+					emit_asm(status, `str x0, [x29, #${args_base + arg_slot[i] * 8}]\n`);
+					emit_asm(status, `str x1, [x29, #${args_base + (arg_slot[i] + 1) * 8}]\n`);
+					continue;
 				} else if (node.nullable_param_indices?.includes(i)) {
 					// A nullable struct value parameter (`T? p`) needs combined
 					// `[struct | flag]` storage at the call site so the callee
@@ -1065,7 +1110,11 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			// build_function_node) — preset x8 with a caller-owned temp so the
 			// result blob lands in THIS frame instead of the callee's dead one.
 			const return_enum_size = get_enum_sret_size(node.type?.name, status);
-			if (return_struct || return_enum_size !== undefined) {
+			// A nullable SCALAR return (`out int?`) also rides sret: the
+			// buffer holds the value (padded to a word) + the `_has` flag
+			// word, so the callee can write the null/non-null bit.
+			const nullable_scalar_ret = is_nullable_scalar_type(node.type);
+			if (return_struct || return_enum_size !== undefined || nullable_scalar_ret) {
 				// A nullable struct return's temp must hold both the struct value
 				// AND its companion `_has` flag (struct_size + 8 bytes), so the
 				// callee can write the null/non-null bit at [temp + struct_size].
@@ -1073,12 +1122,14 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				const nullable_ret = is_nullable_struct_type(node.type, status);
 				const struct_size = return_struct
 					? get_struct_size(node.type!.name, status)
-					: return_enum_size!;
-				const total = nullable_ret ? struct_size + 8 : struct_size;
+					: nullable_scalar_ret
+						? 8
+						: return_enum_size!;
+				const total = nullable_ret || nullable_scalar_ret ? struct_size + 8 : struct_size;
 				const temp_name = `_call_ret_${temp_counter++}`;
 				const offset = allocate_stack_space(status, total);
 				status.stack_offsets!.set(temp_name, offset);
-				if (nullable_ret) {
+				if (nullable_ret || nullable_scalar_ret) {
 					status.stack_offsets!.set(has_flag_name(temp_name), offset + struct_size);
 				}
 				// The callee copies its result through the incoming sret pointer,
@@ -1202,7 +1253,11 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				(s) => s.name === node.type!.name && !s.is_simple_type && !s.is_class,
 			);
 			const return_enum_size = get_enum_sret_size(node.type?.name, status);
-			if (return_struct || return_enum_size !== undefined) {
+			// A nullable SCALAR return rides the same `_call_ret_` temp; leave
+			// x0 = the temp address so consumers (load_nullable_has, `??`)
+			// can read the value at +0 and the flag word at +8.
+			const nullable_scalar_ret = is_nullable_scalar_type(node.type);
+			if (return_struct || return_enum_size !== undefined || nullable_scalar_ret) {
 				const temp_name = `_call_ret_${temp_counter - 1}`;
 				const offset = status.stack_offsets!.get(temp_name)!;
 				emit_asm(status, `add x0, x29, #${offset}\n`);

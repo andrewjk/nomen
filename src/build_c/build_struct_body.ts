@@ -1,4 +1,5 @@
 import { mono_type_name } from "../build_common/mono_name.ts";
+import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import StructNode from "../nodes/StructNode.ts";
 import TraitNode from "../nodes/TraitNode.ts";
@@ -61,8 +62,9 @@ export default function build_struct_body(node: StructNode, status: BuildStatus)
 			status.code += `];\n`;
 		} else {
 			status.code += `${field_c_type(field.type, status)} ${field.name};\n`;
-			// A nullable struct value field gets a companion `<field>_has` flag.
-			if (is_nullable_struct_type(field.type, status)) {
+			// A nullable struct value field or nullable scalar field gets a
+			// companion `<field>_has` flag.
+			if (is_nullable_struct_type(field.type, status) || is_nullable_scalar_type(field.type)) {
 				status.code += `unsigned char ${has_flag_name(field.name)};\n`;
 			}
 		}

@@ -1,4 +1,6 @@
 import { mono_type_name } from "../build_common/mono_name.ts";
+import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
+import { is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import {
 	drop_self_written_string_field_records,
 	scan_self_string_field_writes,
@@ -12,6 +14,7 @@ import BaseNode from "../nodes/BaseNode.ts";
 import type FunctionNode from "../nodes/FunctionNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
+import { emit_nullable_arg_flag } from "./build_function_call_node.ts";
 import build_node from "./build_node.ts";
 import build_nursery_spawn from "./build_nursery_spawn.ts";
 import { is_owned_heap_temp } from "./build_operation_node.ts";
@@ -1407,6 +1410,38 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 						build_node(access_func.params[i], status);
 						status.suppress_dereference = false;
 					}
+					// A nullable struct/scalar method parameter (`T? p`) takes a
+					// companion `unsigned char <p>_has` flag as the very next C
+					// parameter (mirrors build_function_call_node's free-call
+					// forwarding; the signature declares it in
+					// build_struct_node). Forward the caller-side flag: a `null`
+					// literal → 0; a bare nullable variable / field access →
+					// its `_has` expression; anything else → 1 (assumed
+					// non-null).
+					if (
+						target_param &&
+						!target_param.is_self_param &&
+						(is_nullable_struct_type(target_param.type, status) ||
+							is_nullable_scalar_type(target_param.type))
+					) {
+						status.code += `, `;
+						emit_nullable_arg_flag(access_func.params[i], status);
+					}
+				}
+				// A nullable method RETURN (struct or scalar) adds a hidden
+				// `unsigned char *_ret_has` out-parameter. Forward the
+				// consumer's pre-allocated flag when one exists; otherwise a
+				// disposable compound-literal address (the null-ness is
+				// discarded — the consumer treats the result as a value).
+				const method_ret_type =
+					(target_method ?? trait_default_func)?.return_type ?? access_func.type;
+				if (
+					is_nullable_struct_type(method_ret_type, status) ||
+					is_nullable_scalar_type(method_ret_type)
+				) {
+					const flag_name = status.current_nullable_call_flag;
+					status.code += `, `;
+					status.code += flag_name ? `&${flag_name}` : `(unsigned char *)&(unsigned char){0}`;
 				}
 				status.code += ")";
 				if (ctor_temp_free) {

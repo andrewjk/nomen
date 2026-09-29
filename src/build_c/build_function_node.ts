@@ -4,6 +4,7 @@ import { struct_needs_destroy } from "../build_common/destroy_analysis.ts";
 import emission_label from "../build_common/emission_label.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
+import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import scan_force_heap_strings from "../build_common/scan_force_heap_strings.ts";
 import { moved_param_is_consumed } from "../build_common/scan_moved_param_consumed.ts";
@@ -251,20 +252,28 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			}
 			build_parameter_node(node.params[i], status);
 			// A nullable struct value parameter (`T? p`, T a non-class struct)
-			// is lowered as TWO C parameters: the struct pointer (built above)
-			// plus a sibling `unsigned char <name>_has` flag the caller
-			// forwards alongside. The body reads the flag through the param
-			// name directly (build_nullable_has emits `<name>_has`).
-			if (is_nullable_struct_type(node.params[i].type, status) && !node.params[i].is_self_param) {
+			// or nullable scalar parameter (`int? p`) is lowered as TWO C
+			// parameters: the value (built above) plus a sibling
+			// `unsigned char <name>_has` flag the caller forwards alongside.
+			// The body reads the flag through the param name directly
+			// (build_nullable_has emits `<name>_has`).
+			if (
+				(is_nullable_struct_type(node.params[i].type, status) ||
+					is_nullable_scalar_type(node.params[i].type)) &&
+				!node.params[i].is_self_param
+			) {
 				status.code += `, unsigned char ${has_flag_name(c_function_name(node.params[i].name))}`;
 			}
 		}
-		// A nullable struct RETURN type (`func f(...) out T?`) adds a hidden
-		// `unsigned char *_ret_has` out-parameter after the regular params: the
-		// callee writes 0 (null) or 1 (value) so the caller can materialise
-		// both the struct value and its companion flag (C can't return both as
-		// a single by-value struct).
-		if (is_nullable_struct_type(node.return_type, status)) {
+		// A nullable RETURN type (`func f(...) out T?`, T a struct or scalar)
+		// adds a hidden `unsigned char *_ret_has` out-parameter after the
+		// regular params: the callee writes 0 (null) or 1 (value) so the
+		// caller can materialise both the value and its companion flag (C
+		// can't return both as a single by-value result).
+		if (
+			is_nullable_struct_type(node.return_type, status) ||
+			is_nullable_scalar_type(node.return_type)
+		) {
 			if (!first_param) status.code += ", ";
 			status.code += `unsigned char *_ret_has`;
 		}
@@ -346,7 +355,10 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	const old_variable_types = status.variable_types;
 	status.variable_types = new Map();
 	const old_nullable_ret_has = status.nullable_ret_has_param;
-	if (is_nullable_struct_type(node.return_type, status)) {
+	if (
+		is_nullable_struct_type(node.return_type, status) ||
+		is_nullable_scalar_type(node.return_type)
+	) {
 		status.nullable_ret_has_param = "_ret_has";
 	} else {
 		status.nullable_ret_has_param = undefined;

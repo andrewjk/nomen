@@ -1,6 +1,7 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import { enum_with_data_side, static_enum_case } from "../build_c/utils/enum_eq.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
+import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
 import {
@@ -1231,11 +1232,35 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 	// the left is null. This matters when the fallback allocates (e.g.
 	// `x ?? Box(99)`) — eagerly evaluating it would leak the unused instance.
 	if (node.op === "??") {
-		// Nullable struct `??` checks the `_has` flag instead of the value.
-		// The left operand's ADDRESS (the struct value start) must survive
-		// across the flag load and be the result when non-null. Build it
-		// first, spill to a stack slot, then load the flag and branch.
-		if (is_nullable_struct_type(type_from_value_node(node.left_value), status)) {
+		// Nullable struct/scalar `??` checks the `_has` flag instead of the
+		// value. The left operand's value (struct address or scalar) must
+		// survive across the flag load and be the result when non-null.
+		const left_t = type_from_value_node(node.left_value);
+		const left_is_nullable_struct = is_nullable_struct_type(left_t, status);
+		const left_is_nullable_scalar = is_nullable_scalar_type(left_t);
+		if (left_is_nullable_scalar && node.left_value.node_type === "func_call") {
+			// A nullable scalar CALL result lives in a `_call_ret_` temp
+			// (x0 = temp address): read the value at +0 and the flag word at
+			// +8 directly — building the call once only.
+			build_operand(node.left_value, "x0", status);
+			ensure_newline(status);
+			emit_asm(status, `ldr x1, [x0]\n`);
+			emit_asm(status, `ldr x2, [x0, #8]\n`);
+			const spill = allocate_stack_space(status, 8);
+			emit_asm(status, `str x1, [x29, #${spill}]\n`);
+			const have_label = `.Lcoalesce_have_${coalesce_counter++}`;
+			const done_label = `.Lcoalesce_done_${coalesce_counter++}`;
+			emit_asm(status, `cmp x2, #0\n`);
+			emit_asm(status, `b.ne ${have_label}\n`);
+			build_operand(node.right_value, "x0", status);
+			ensure_newline(status);
+			emit_asm(status, `b ${done_label}\n`);
+			emit_asm(status, `${have_label}:\n`);
+			emit_asm(status, `ldr x0, [x29, #${spill}]\n`);
+			emit_asm(status, `${done_label}:\n`);
+			return;
+		}
+		if (left_is_nullable_struct || left_is_nullable_scalar) {
 			build_operand(node.left_value, "x0", status);
 			ensure_newline(status);
 			const spill = allocate_stack_space(status, 8);
@@ -1265,16 +1290,22 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		return;
 	}
 
-	// `x == null` / `x != null` against a nullable struct: compare its
-	// companion `_has` flag rather than the struct value.
+	// `x == null` / `x != null` against a nullable struct or nullable scalar:
+	// compare its companion `_has` flag rather than the value (0/false are
+	// real scalar values, so an in-band compare would conflate them).
 	if (
 		(node.op === "==" || node.op === "!=") &&
 		is_null_literal(node.left_value) !== is_null_literal(node.right_value)
 	) {
-		const nullable_side = is_nullable_struct_type(type_from_value_node(node.left_value), status)
+		const nullable_flagged_side = (n: BaseNode) => {
+			const t = type_from_value_node(n);
+			return is_nullable_struct_type(t, status) || is_nullable_scalar_type(t);
+		};
+		const nullable_side = nullable_flagged_side(node.left_value)
 			? node.left_value
 			: node.right_value;
-		if (is_nullable_struct_type(type_from_value_node(nullable_side), status)) {
+		const side_type = type_from_value_node(nullable_side);
+		if (is_nullable_struct_type(side_type, status) || is_nullable_scalar_type(side_type)) {
 			load_nullable_has(nullable_side, "x1", status);
 			ensure_newline(status);
 			// has==1 means non-null. `== null` → !has (eq 0); `!= null` → has (ne 0).
@@ -2070,7 +2101,7 @@ function is_null_literal(node: BaseNode): boolean {
  *     with both the struct value and the flag; load the flag from
  *     `[temp + struct_size]`)
  */
-function load_nullable_has(node: BaseNode, target_reg: string, status: BuildStatus) {
+export function load_nullable_has(node: BaseNode, target_reg: string, status: BuildStatus) {
 	if (node.node_type === "value") {
 		const name = (node as ValueNode).value;
 		// A nullable struct PARAMETER: the param's pointer lives in a
@@ -2099,16 +2130,22 @@ function load_nullable_has(node: BaseNode, target_reg: string, status: BuildStat
 		if (target_type?.name) {
 			const has_off = get_field_has_offset(target_type.name, field_name, status);
 			// Resolve the target object's base address into x0 (NOT its value —
-			// ref params must not be dereferenced here), then load the flag word.
+			// ref params must not be dereferenced here), then load the flag.
 			get_source_address(access.target, status);
 			ensure_newline(status);
 			if (target_reg !== "x0") {
 				emit_asm(status, `mov ${target_reg}, x0\n`);
 			}
+			// A nullable SCALAR field's flag is a single byte (matching C's
+			// `unsigned char <f>_has;` member); a nullable struct field's is
+			// an 8-byte word.
+			const scalar_field = is_nullable_scalar_type(access.access.type);
+			const wreg = target_reg.replace("x", "w");
+			const load_op = scalar_field ? `ldrb ${wreg}` : `ldr ${target_reg}`;
 			if (has_off === 0) {
-				emit_asm(status, `ldr ${target_reg}, [${target_reg}]\n`);
+				emit_asm(status, `${load_op}, [${target_reg}]\n`);
 			} else {
-				emit_asm(status, `ldr ${target_reg}, [${target_reg}, #${has_off}]\n`);
+				emit_asm(status, `${load_op}, [${target_reg}, #${has_off}]\n`);
 			}
 			return;
 		}

@@ -1,0 +1,5 @@
+a=5
+b null
+is_set(5)=true is_set(null)=false
+find null
+or_default(null)=42

@@ -1,3 +1,4 @@
+import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
@@ -66,6 +67,36 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			build_node(node.right_value, status);
 			status.code += `; })`;
 			ns_tmp_counter++;
+		} else if (is_nullable_scalar_type(left_type)) {
+			// Nullable scalar (`int? ?? fb`): the flag is `<expr>_has`. A
+			// nullable scalar CALL on the LHS must be materialised ONCE (the
+			// flag lives in the hidden `_ret_has` out-param) — hoist a value
+			// temp + flag temp in a statement expression.
+			if (
+				node.left_value.node_type === "func_call" &&
+				is_nullable_scalar_type((node.left_value as any).type)
+			) {
+				const id = ns_tmp_counter++;
+				const flag = `_nsh_${id}`;
+				const val = `_nsv_${id}`;
+				const c_t = c_type(left_type.name);
+				status.code += `({ unsigned char ${flag} = 0; ${c_t} ${val} = `;
+				const old = status.current_nullable_call_flag;
+				status.current_nullable_call_flag = flag;
+				build_node(node.left_value, status);
+				status.current_nullable_call_flag = old;
+				status.code += `; ${flag} ? ${val} : `;
+				build_node(node.right_value, status);
+				status.code += `; })`;
+			} else {
+				status.code += `(`;
+				status.code += build_nullable_has(node.left_value, status);
+				status.code += ` ? `;
+				build_node(node.left_value, status);
+				status.code += ` : `;
+				build_node(node.right_value, status);
+				status.code += `)`;
+			}
 		} else if (is_nullable_struct_type(left_type, status)) {
 			// Special case: a nullable struct function call on the LHS must be
 			// materialised ONCE (calling it twice — once for the flag, once
@@ -125,6 +156,32 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			else status.code += `((`;
 			build_node(nullable_side, status);
 			status.code += `.ptr != 0))`;
+		} else if (
+			is_nullable_scalar_type(type_from_value_node(nullable_side)) &&
+			type?.is_nullable &&
+			type.name !== "string"
+		) {
+			// Nullable scalar: null is the companion `_has` flag, not a value
+			// compare (0/false are real values).
+			if (
+				nullable_side.node_type === "func_call" &&
+				is_nullable_scalar_type((nullable_side as any).type)
+			) {
+				const id = ns_tmp_counter++;
+				const flag = `_nsh_${id}`;
+				const val = `_nsv_${id}`;
+				const c_t = c_type(type.name);
+				status.code += `({ unsigned char ${flag} = 0; ${c_t} ${val} = `;
+				const old = status.current_nullable_call_flag;
+				status.current_nullable_call_flag = flag;
+				build_node(nullable_side, status);
+				status.current_nullable_call_flag = old;
+				status.code += `; ${node.op === "==" ? `!${flag}` : `(${flag})`}; })`;
+			} else {
+				const has = build_nullable_has(nullable_side, status);
+				// `== null` → !has ; `!= null` → has
+				status.code += node.op === "==" ? `(!${has})` : `(${has})`;
+			}
 		} else if (is_nullable_struct_type(type, status)) {
 			// A nullable struct CALL result must be materialised once
 			// (calling twice would duplicate side effects). Wrap in a
@@ -379,34 +436,37 @@ function is_null_comparison(node: OperationNode): boolean {
 }
 
 function is_nullable_struct_side(node: any, status: BuildStatus): boolean {
-	return is_nullable_struct_type(type_from_value_node(node), status);
+	const t = type_from_value_node(node);
+	return is_nullable_struct_type(t, status) || is_nullable_scalar_type(t);
 }
 
 /**
- * Build the companion `_has` flag expression for a nullable-struct lvalue by
- * building the lvalue's C expression and appending `_has`. This works because
- * every nullable-struct lvalue (a bare variable or a `.field`/`->field` access)
- * ends in an identifier.
+ * Build the companion `_has` flag expression for a nullable-struct or
+ * nullable-scalar lvalue by building the lvalue's C expression and appending
+ * `_has`. This works because every such lvalue (a bare variable or a
+ * `.field`/`->field` access) ends in an identifier.
  *
- * Special case: a nullable struct PARAMETER (`T? p`) lowers to TWO C
- * parameters (`struct T *p, unsigned char p_has`). The flag lives in a
- * sibling parameter named `<pname>_has`, not derived from dereferencing `p`.
- * Detect this case (the value is in `function_ref_params` AND its type is
- * nullable-struct) and emit the bare `<pname>_has` identifier — building the
- * lvalue would emit `(*p)` and appending `_has` would give the syntactically
- * wrong `(*p)_has`.
+ * Special case: a nullable PARAMETER (`T? p` — struct or scalar) lowers to
+ * TWO C parameters (`T *p, unsigned char p_has` for structs; `T p, unsigned
+ * char p_has` for scalars). The flag lives in a sibling parameter named
+ * `<pname>_has`, not derived from the value parameter. Detect this case and
+ * emit the bare `<pname>_has` identifier — building the lvalue and appending
+ * `_has` would give the syntactically wrong `(*p)_has` / `p_has` misread.
  */
 function build_nullable_has(node: any, status: BuildStatus): string {
 	if (node.node_type === "value") {
 		const name = node.value;
-		// A nullable struct parameter's flag is the sibling `<pname>_has` C
-		// parameter (not the dereffed struct's `_has`).
-		if (status.function_ref_params?.has(name) && is_nullable_struct_type(node.type, status)) {
+		// A nullable parameter's flag is the sibling `<pname>_has` C
+		// parameter (not the value's).
+		if (
+			status.function_ref_params?.has(name) &&
+			(is_nullable_struct_type(node.type, status) || is_nullable_scalar_type(node.type))
+		) {
 			return has_flag_name(name);
 		}
-		// A nullable struct LOCAL's flag is the sibling `<name>_has` C
-		// variable emitted in build_declaration_node.
-		if (is_nullable_struct_type(node.type, status)) {
+		// A nullable LOCAL's flag is the sibling `<name>_has` C variable
+		// emitted in build_declaration_node.
+		if (is_nullable_struct_type(node.type, status) || is_nullable_scalar_type(node.type)) {
 			return has_flag_name(name);
 		}
 	}

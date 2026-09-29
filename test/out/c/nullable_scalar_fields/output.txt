@@ -1,0 +1,6 @@
+flag false
+count zero
+count cleared
+p=true 7
+local false
+local cleared

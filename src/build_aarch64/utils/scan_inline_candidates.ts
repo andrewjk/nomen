@@ -69,6 +69,11 @@ export function is_auto_inline_method(func: FunctionNode): boolean {
 		if (param.type.is_ref) return false;
 		if (param.is_moved) return false;
 		if (param.declaration === "var") return false;
+		// A nullable scalar param rides the (value, flag) pair ABI and a
+		// nullable scalar return the x8 sret buffer; the inline splice parks
+		// params in callee-saved registers as plain scalars, which corrupts
+		// both. Keep such functions on the real `bl` path.
+		if (param.type.is_nullable) return false;
 	}
 	// Param shadowing corrupts the inline path the same way it corrupts
 	// the flat path (params park in registers that shadowed locals would
@@ -76,6 +81,7 @@ export function is_auto_inline_method(func: FunctionNode): boolean {
 	const param_names = new Set(func.params.filter((p) => !p.is_self_param).map((p) => p.name));
 	if (declares_any_name(func.statements, param_names)) return false;
 	if (func.return_type?.is_array || func.return_type?.is_view) return false;
+	if (func.return_type?.is_nullable) return false;
 	if (func.return_type?.name && !SIMPLE_TYPES.includes(func.return_type.name)) return false;
 
 	// LEAF-ONLY: the body may not call anything. Measured receipt:
@@ -176,6 +182,11 @@ function is_inline_candidate(func: FunctionNode): boolean {
 		if (param.type.is_ref) return false;
 		if (param.is_moved) return false;
 		if (param.declaration === "var") return false;
+		// A nullable scalar param rides the (value, flag) pair ABI and a
+		// nullable scalar return the x8 sret buffer; the inline splice parks
+		// params in callee-saved registers as plain scalars, which corrupts
+		// both. Keep such functions on the real `bl` path.
+		if (param.type.is_nullable) return false;
 	}
 	// A body that redeclares a param name (shadowing) can't be inlined: the
 	// inline path parks params in callee-saved registers that emit paths
@@ -189,6 +200,7 @@ function is_inline_candidate(func: FunctionNode): boolean {
 	// (and e.g. an array-literal return emits data the inline path can't
 	// splice — a bare `1, 2, 3` line reached the assembler).
 	if (func.return_type?.is_array || func.return_type?.is_view) return false;
+	if (func.return_type?.is_nullable) return false;
 	if (func.return_type && func.return_type.name && !SIMPLE_TYPES.includes(func.return_type.name)) {
 		return false;
 	}

@@ -11,6 +11,7 @@ import fold_string_const from "../build_common/fold_string_const.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import mark_tuple_literal_move_owners from "../build_common/mark_tuple_literal_move_owners.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
+import { call_result_type, is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import { escape_asciz } from "../build_common/string_escapes.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
@@ -556,10 +557,13 @@ function build_constructor_params(
 	const has_args = fc.params.length > 0;
 	// Fat-string args consume TWO AAPCS slots (ptr, len pair); so does every
 	// `view T` argument (the universal pair ABI), matching the init
-	// prologue's two-slot consumption per view field.
+	// prologue's two-slot consumption per view field. A nullable SCALAR
+	// field argument (`int? f`) is a (value, flag) pair — also two slots.
 	const arg_pair: boolean[] = [];
 	const arg_is_view: boolean[] = [];
+	const arg_is_nullable_scalar: boolean[] = [];
 	let base_slot_count = 0;
+	const ctor_callee_params = fc.resolved_function?.params?.filter((p) => !p.is_self_param);
 	for (let i = 0; i < fc.params.length; i++) {
 		const p = fc.params[i];
 		const pt = (p as any).type?.name || "";
@@ -568,9 +572,31 @@ function build_constructor_params(
 				? ((p as ValueNode).value as string).startsWith('"')
 				: false;
 		const is_view = !!(p as any).type?.is_view;
-		const is_pair = pt === "string" || lit || is_view;
+		// Nullable scalar detection: the checker stamped the callee param
+		// index; prefer the callee param type, then the argument's static
+		// type (a bare `int?` arg). A non-null scalar lifted into an `int?`
+		// field is not advertised as a pair by the argument type alone — for
+		// that case consult the constructor's required field types.
+		let nullable_scalar = false;
+		if (fc.nullable_param_indices?.includes(i)) {
+			const cp = ctor_callee_params?.[i];
+			if (cp && is_nullable_scalar_type(cp.type)) {
+				nullable_scalar = true;
+			} else if (is_nullable_scalar_type((p as any).type)) {
+				nullable_scalar = true;
+			} else if (!cp) {
+				// Auto-ctor: the i-th arg maps to the i-th required (no-default)
+				// field of the constructed struct.
+				const ctor_struct = status.structs.find((s) => s.name === fc.name && !s.is_simple_type);
+				const required = ctor_struct?.fields.filter((f) => f.value == null);
+				const field = required?.[i];
+				if (field && is_nullable_scalar_type(field.type)) nullable_scalar = true;
+			}
+		}
+		const is_pair = pt === "string" || lit || is_view || nullable_scalar;
 		arg_pair.push(is_pair);
 		arg_is_view.push(is_view);
+		arg_is_nullable_scalar.push(nullable_scalar);
 		base_slot_count += is_pair ? 2 : 1;
 	}
 	let base = 0;
@@ -588,6 +614,27 @@ function build_constructor_params(
 	for (let i = fc.params.length - 1; i >= 0; i--) {
 		const param = fc.params[i];
 		const param_type = (param as any).type?.name || "";
+		if (arg_is_nullable_scalar[i]) {
+			// A nullable scalar field argument is a (value, flag) pair:
+			// `null` → both zero; a bare nullable variable → its value + flag;
+			// anything else → the value with flag = 1.
+			const arg = param;
+			if (arg.node_type === "value" && (arg as ValueNode).value === "null") {
+				emit_asm(status, `mov x0, #0\n`);
+				emit_asm(status, `mov x1, #0\n`);
+			} else if (arg.node_type === "value" && is_nullable_scalar_type((arg as ValueNode).type)) {
+				const vname = (arg as ValueNode).value;
+				emit_var_load(status, "x0", vname, aarch64_size((arg as ValueNode).type!.name));
+				emit_var_load(status, "x1", has_flag_name(vname), 8);
+			} else {
+				build_node(arg, status);
+				ensure_newline(status);
+				emit_asm(status, `mov x1, #1\n`);
+			}
+			emit_asm(status, `str x0, [x29, #${base + arg_slot_base[i] * 8}]\n`);
+			emit_asm(status, `str x1, [x29, #${base + (arg_slot_base[i] + 1) * 8}]\n`);
+			continue;
+		}
 		if (arg_pair[i]) {
 			// A view argument rides the (ptr, len) pair ABI whatever its
 			// element type — a non-string view value's bare build loads only
@@ -1248,6 +1295,71 @@ export default function build_declaration_node(
 			emit_asm(status, `mov x0, #0\n`);
 		}
 		emit_var_store(status, "x0", node.name, 8);
+		return;
+	}
+
+	// A nullable SCALAR local (`int? x`): the value occupies a full word and
+	// a companion `<name>_has` flag word tracks nullness (0 = null). Handle
+	// its slot allocation and initialization here, before the generic scalar
+	// routing. Inside a function the sret call-initializer shape (`var int? x
+	// = f()`) presets x8 to the local's storage so the callee writes BOTH the
+	// value and the flag. FILE SCOPE: `.space` zero-fills, so the slot is
+	// null; a non-null initializer is not applied (mirrors the C backend's
+	// top-level posture — record_call_init-style static flag init would need
+	// data-section support).
+	if (is_nullable_scalar_type(node.type)) {
+		if (status.function_return_label) {
+			const offset = allocate_stack_space(status, 16, 16);
+			status.stack_offsets!.set(node.name, offset);
+			status.stack_offsets!.set(has_flag_name(node.name), offset + 8);
+			const is_null_init =
+				!node.value ||
+				(node.value.node_type === "value" && (node.value as ValueNode).value === "null");
+			if (is_null_init) {
+				emit_asm(status, `str xzr, [x29, #${offset + 8}]\n`);
+				return;
+			}
+			const init_value = node.value!;
+			const init_type = call_result_type(init_value) ?? type_from_value_node(init_value);
+			const value_is_nullable_call =
+				init_value.node_type === "func_call" && is_nullable_scalar_type(init_type);
+			// A nullable-scalar-returning METHOD call (`obj.find()`) leaves the
+			// value + flag in the access node's temp (x0 = temp address): copy
+			// both into the local's combined storage.
+			const value_is_nullable_access =
+				init_value.node_type === "access" && is_nullable_scalar_type(init_type);
+			if (value_is_nullable_access) {
+				emit_init_value(init_value, nir_init, status);
+				ensure_newline(status);
+				emit_asm(status, `ldr x9, [x0]\n`);
+				emit_asm(status, `str x9, [x29, #${offset}]\n`);
+				emit_asm(status, `ldr x9, [x0, #8]\n`);
+				emit_asm(status, `str x9, [x29, #${offset + 8}]\n`);
+			} else if (value_is_nullable_call) {
+				// Preset x8 to the local's combined storage; the callee writes
+				// value + flag through it.
+				const old_buffer = status.struct_return_buffer;
+				const old_buffer_var = status.struct_return_buffer_var;
+				const old_preset = status.call_x8_preset;
+				emit_asm(status, `add x8, x29, #${offset}\n`);
+				status.struct_return_buffer_var = node.name;
+				status.struct_return_buffer = "x8";
+				status.call_x8_preset = true;
+				emit_init_value(init_value, nir_init, status);
+				status.struct_return_buffer = old_buffer;
+				status.struct_return_buffer_var = old_buffer_var;
+				status.call_x8_preset = old_preset;
+			} else {
+				emit_init_value(init_value, nir_init, status);
+				ensure_newline(status);
+				emit_var_store(status, "x0", node.name, 8);
+				emit_asm(status, `mov x9, #1\n`);
+				emit_asm(status, `str x9, [x29, #${offset + 8}]\n`);
+			}
+			return;
+		}
+		emit_data(status, `${node.name}: .space 16\n`);
+		status.stack_offsets!.set(has_flag_name(node.name), -1);
 		return;
 	}
 

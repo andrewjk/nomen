@@ -2,6 +2,8 @@ import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import find_enum from "../build_common/find_enum.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
+import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
+import { has_flag_name } from "../build_common/nullable_struct.ts";
 import {
 	drop_self_written_string_field_records,
 	scan_self_string_field_writes,
@@ -2556,17 +2558,30 @@ function build_access_method(
 			(s) => s.name === access_func.type.name && !s.is_simple_type && !s.is_class,
 		) ||
 			get_enum_sret_size(access_func.type.name, status) !== undefined);
+	// A nullable SCALAR method return (`out int?`) also rides the x8 sret
+	// buffer (value + flag word) — a single x0 return cannot carry the flag.
+	// Use the declared method return type (the inner `access_func.type` may
+	// drop `is_nullable`).
+	const method_ret_type = access_callee_method?.return_type ?? access_func.type;
+	const nullable_scalar_ret = is_nullable_scalar_type(method_ret_type) && !method_ret_type.is_ref;
 
 	let temp_addr = "";
 	let temp_offset = 0;
-	if (return_struct) {
+	if (return_struct || nullable_scalar_ret) {
 		const return_enum_size = get_enum_sret_size(access_func.type.name, status);
 		temp_addr = `_access_temp_${access_temp_counter++}`;
 		temp_offset = allocate_stack_space(
 			status,
-			return_enum_size ?? get_struct_size(access_func.type.name, status),
+			(return_enum_size ?? nullable_scalar_ret)
+				? nullable_scalar_ret
+					? 16
+					: get_struct_size(access_func.type.name, status)
+				: get_struct_size(access_func.type.name, status),
 		);
 		status.stack_offsets!.set(temp_addr, temp_offset);
+		if (nullable_scalar_ret) {
+			status.stack_offsets!.set(has_flag_name(temp_addr), temp_offset + 8);
+		}
 		emit_asm(status, `add x8, x29, #${temp_offset}\n`);
 	}
 
@@ -2867,11 +2882,27 @@ function build_access_method(
 			string_arg_set.add(i);
 		}
 	}
+	// A nullable SCALAR method parameter (`int? p`) also consumes TWO slots —
+	// the (value, flag) pair — matching the callee prologue's pair spilling.
+	// Detection is by the resolved callee param type, falling back to the
+	// argument's static type (a bare `int?` arg rides the pair ABI).
+	const nullable_scalar_arg_set = new Set<number>();
+	for (let i = 0; i < access_func.params.length; i++) {
+		if ((access_func.ref_param_indices ?? []).includes(i)) continue;
+		const cp = access_callee_params?.[i];
+		if (
+			(cp && is_nullable_scalar_type(cp.type)) ||
+			is_nullable_scalar_type((access_func.params[i] as any).type)
+		) {
+			nullable_scalar_arg_set.add(i);
+		}
+	}
 	const arg_slot: number[] = [];
 	let total_arg_slots = 0;
 	for (let i = 0; i < access_func.params.length; i++) {
 		arg_slot.push(total_arg_slots);
-		total_arg_slots += view_arg_set.has(i) || string_arg_set.has(i) ? 2 : 1;
+		total_arg_slots +=
+			view_arg_set.has(i) || string_arg_set.has(i) || nullable_scalar_arg_set.has(i) ? 2 : 1;
 	}
 	// Leaf-argument deferrability (tranche H): a scalar leaf whose
 	// materialization is a single build_operand instruction can defer to the
@@ -2923,7 +2954,7 @@ function build_access_method(
 	// all share one layout. (Pair halves used to spill separately; the
 	// static arg-0 slot had its own spill too; both fold in here.)
 	const arg_builds_in_loop = (i: number): boolean => {
-		if (view_arg_set.has(i) || string_arg_set.has(i)) return true;
+		if (view_arg_set.has(i) || string_arg_set.has(i) || nullable_scalar_arg_set.has(i)) return true;
 		if ((access_func.ref_param_indices ?? []).includes(i)) return true;
 		const param_type = (access_func.params[i] as any).type?.name || "";
 		if (is_struct_type(param_type, status) || is_enum_with_data_type(param_type, status)) {
@@ -2951,6 +2982,27 @@ function build_access_method(
 		const param = access_func.params[i];
 		const is_ref_param = access_func.ref_param_indices?.includes(i);
 		const param_type = (param as any).type?.name || "";
+		// A nullable SCALAR method argument is a (value, flag) pair:
+		// `null` → both zero; a bare nullable variable → its value + flag;
+		// anything else → the value with flag = 1.
+		if (nullable_scalar_arg_set.has(i)) {
+			const arg = param;
+			if (arg.node_type === "value" && (arg as ValueNode).value === "null") {
+				emit_asm(status, `mov x0, #0\n`);
+				emit_asm(status, `mov x1, #0\n`);
+			} else if (arg.node_type === "value" && is_nullable_scalar_type((arg as ValueNode).type)) {
+				const vname = (arg as ValueNode).value;
+				emit_var_load(status, "x0", vname, aarch64_size((arg as ValueNode).type!.name));
+				emit_var_load(status, "x1", has_flag_name(vname), 8);
+			} else {
+				build_node(arg, status);
+				ensure_newline(status);
+				emit_asm(status, `mov x1, #1\n`);
+			}
+			emit_asm(status, `str x0, [x29, #${view_half_store(i, 0)}]\n`);
+			emit_asm(status, `str x1, [x29, #${view_half_store(i, 1)}]\n`);
+			continue;
+		}
 		// A `view string` argument: (ptr, len) pair in x0/x1 — a view VALUE
 		// passes through, an owned string is wrapped with its strlen.
 		if (view_arg_set.has(i)) {
@@ -3407,7 +3459,7 @@ function build_access_method(
 		status.last_result_is_heap = true;
 	}
 
-	if (return_struct) {
+	if (return_struct || nullable_scalar_ret) {
 		emit_asm(status, `add x0, x29, #${temp_offset}\n`);
 	}
 }

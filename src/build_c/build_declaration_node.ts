@@ -6,6 +6,7 @@ import call_in_set from "../build_common/call_in_set.ts";
 import { record_call_init_string_fields } from "../build_common/call_init_string_fields.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
+import { call_result_type, is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import { is_string_borrow } from "../build_common/string_return_analysis.ts";
 import {
@@ -29,6 +30,7 @@ import RangeNode from "../nodes/RangeNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_array_values_node from "./build_array_values_node.ts";
+import { nullable_value_flag_expr } from "./build_assignment_node.ts";
 import { struct_needs_destroy_by_name } from "./build_auto_free.ts";
 import { pointer_element_c_type } from "./build_index_node.ts";
 import build_node from "./build_node.ts";
@@ -675,26 +677,38 @@ export default function build_declaration_node(
 				status.stack_array_lengths.set(safe_name, len_text);
 			}
 		}
-		// Nullable struct value-type local: the struct value is stored normally
-		// (above), and a companion `<name>_has` flag tracks nullness. Handle its
-		// initialization here and skip the generic `= value` path below.
-		if (is_nullable_struct_type(node.type, status)) {
+		// Nullable struct value-type / nullable scalar local: the value is
+		// stored normally (above), and a companion `<name>_has` flag tracks
+		// nullness. Handle initialization here and skip the generic
+		// `= value` path below.
+		if (is_nullable_struct_type(node.type, status) || is_nullable_scalar_type(node.type)) {
 			const flag = has_flag_name(safe_name);
-			status.code += `;\nunsigned char ${flag} = 0`;
-			if (node.value) {
-				const is_null =
-					node.value.node_type === "value" && (node.value as ValueNode).value === "null";
-				if (!is_null) {
-					// A nullable struct function-call initializer
-					// (`var T? x = f(...)`) writes both the struct value AND
-					// the null/non-null flag through the hidden `_ret_has`
-					// out-param — set status.current_nullable_call_flag so
+			const is_null =
+				!node.value ||
+				(node.value.node_type === "value" && (node.value as ValueNode).value === "null");
+			// FILE SCOPE: statics are zero-initialized, so `= 0` / no
+			// initializer is already null. A non-null literal initializer
+			// keeps the generic `= value` static path below and the flag is
+			// statically 1. (A top-level nullable scalar is therefore null
+			// unless its initializer is a compile-time constant.)
+			if (!status.current_function && is_nullable_scalar_type(node.type)) {
+				status.code += `;\nunsigned char ${flag} = ${is_null ? 0 : 1}`;
+				if (is_null) return;
+			} else {
+				status.code += `;\nunsigned char ${flag} = 0`;
+				if (node.value && !is_null) {
+					// A nullable function-call initializer
+					// (`var T? x = f(...)`, T a struct or scalar) writes both
+					// the value AND the null/non-null flag through the hidden
+					// `_ret_has` out-param — set
+					// status.current_nullable_call_flag so
 					// build_function_call_node forwards `&<flag>` and the
 					// callee writes the real null/non-null bit into it. Skip
 					// the unconditional `<flag> = 1` otherwise.
+					const call_ret = call_result_type(node.value);
 					const value_is_nullable_call =
-						node.value.node_type === "func_call" &&
-						is_nullable_struct_type((node.value as FunctionCallNode).type, status);
+						!!call_ret &&
+						(is_nullable_struct_type(call_ret, status) || is_nullable_scalar_type(call_ret));
 					status.code += `;\n${safe_name} = `;
 					if (value_is_nullable_call) {
 						const old = status.current_nullable_call_flag;
@@ -708,12 +722,13 @@ export default function build_declaration_node(
 						// uninitialized). Mirrors the aarch64 sret branch.
 						record_call_init_string_fields(node, status);
 					} else {
+						const rhs_flag = nullable_value_flag_expr(node.value!, status);
 						emit_init_value(node.value, nir_init, status);
-						status.code += `;\n${flag} = 1`;
+						status.code += `;\n${flag} = ${rhs_flag ?? "1"}`;
 					}
 				}
+				return;
 			}
-			return;
 		}
 		if (node.value) {
 			// A hoisted array-literal/range temp bound to a heap `Array<T>`

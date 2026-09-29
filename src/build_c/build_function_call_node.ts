@@ -2,6 +2,7 @@ import emission_label from "../build_common/emission_label.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import mark_tuple_literal_move_owners from "../build_common/mark_tuple_literal_move_owners.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
+import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
@@ -177,7 +178,8 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		status.code += `${lambda_ret_c} ${lambda_ret_tmp} = `;
 	}
 	const wrap_nullable_call =
-		is_nullable_struct_type(node.type, status) && !status.current_nullable_call_flag;
+		(is_nullable_struct_type(node.type, status) || is_nullable_scalar_type(node.type)) &&
+		!status.current_nullable_call_flag;
 	const saved_call = wrap_nullable_call ? begin_code_scratch(status) : undefined;
 	let wrap_tmp: number | undefined;
 	status.code += `${func_name}(${is_closure_callee ? "NULL" : ""}`;
@@ -251,15 +253,24 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		// A `null` literal arg to a nullable struct value parameter
 		// (`use(null)` where `use` takes `T? p`): emit a zero'd compound
 		// literal of the param's struct type (so `&(struct T){0}` is valid C)
-		// and `0` for the companion flag. Skip the rest of the per-arg
-		// machinery — the flag-forwarding step below would otherwise try to
-		// take `&0` (invalid).
+		// and `0` for the companion flag. A `null` arg to a nullable SCALAR
+		// parameter (`int? p`) is just `0, 0` (value 0, flag 0). Skip the
+		// rest of the per-arg machinery — the flag-forwarding step below
+		// would otherwise try to take `&0` (invalid).
 		if (
 			node.nullable_param_indices?.includes(i) &&
 			node.params[i].node_type === "value" &&
 			(node.params[i] as ValueNode).value === "null"
 		) {
-			status.code += `(void *)&(struct ${param_type.name}){0}, 0`;
+			// The checker rewrites a null literal arg's type to the param's
+			// type for struct/string params; scalar params keep the bare
+			// "null" type — consult the CALLEE param type for the shape.
+			const callee_null_param_type = callee_params?.[i]?.type ?? param_type;
+			if (is_nullable_scalar_type(callee_null_param_type)) {
+				status.code += `0, 0`;
+			} else {
+				status.code += `(void *)&(struct ${param_type.name}){0}, 0`;
+			}
 			continue;
 		}
 
@@ -473,17 +484,20 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		}
 	}
 
-	// A nullable struct RETURN type adds a hidden `unsigned char *_ret_has`
-	// out-parameter as the LAST callee parameter. Forward `&<flag>` so the
-	// callee can write null-ness back. The flag name comes from
-	// `status.current_nullable_call_flag` when a consumer has pre-allocated
-	// storage (e.g. a `var T? x = f()` declaration uses its own `_has` flag);
-	// otherwise the call is wrapped in a GCC statement-expression that
-	// synthesises a throwaway flag temp.
-	if (is_nullable_struct_type(node.type, status)) {
+	// A nullable RETURN type (struct or scalar) adds a hidden
+	// `unsigned char *_ret_has` out-parameter as the LAST callee parameter.
+	// Forward `&<flag>` so the callee can write null-ness back. The flag name
+	// comes from `status.current_nullable_call_flag` when a consumer has
+	// pre-allocated storage (e.g. a `var T? x = f()` declaration uses its own
+	// `_has` flag); otherwise the call is wrapped in a GCC statement-expression
+	// that synthesises a throwaway flag temp.
+	if (is_nullable_struct_type(node.type, status) || is_nullable_scalar_type(node.type)) {
 		const flag_name = status.current_nullable_call_flag;
+		// A zero-argument call has no comma to extend — append the flag
+		// directly inside the parens.
+		const arg_list_empty = node.params.length === 0 && !is_closure_callee;
 		if (flag_name) {
-			status.code += `, &${flag_name}`;
+			status.code += `${arg_list_empty ? "" : ", "}&${flag_name}`;
 		} else {
 			// The wrap decision was made before the call text started (see
 			// wrap_nullable_call above): the flag temp is forwarded inside
@@ -492,7 +506,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			// temp's `_has` value is discarded — this path is for consumers
 			// that treat the call result as a non-null value.
 			wrap_tmp = ns_default_counter++;
-			status.code += `, &_nsd_${wrap_tmp}`;
+			status.code += `${arg_list_empty ? "" : ", "}&_nsd_${wrap_tmp}`;
 		}
 	}
 
@@ -500,12 +514,10 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 
 	if (wrap_tmp !== undefined) {
 		const call_text = end_code_scratch(status, saved_call!);
+		// The call's own closing paren is inside the scratch (appended after
+		// the `_ret_has` argument), so the statement-expression wrapper is
+		// self-contained and yields the call's value.
 		status.code += `({ unsigned char _nsd_${wrap_tmp} = 0; ${call_text}; })`;
-		// The historical form left the call's own closing paren OUTSIDE the
-		// wrapper (it truncated at `lastIndexOf(func_name("(")` and rebuilt);
-		// the unconditional `)` below now lands inside the scratch, so it is
-		// re-appended here to keep the emitted bytes identical.
-		status.code += ")";
 	}
 
 	if (node.name.startsWith("_string_interpolate_")) {
@@ -663,19 +675,20 @@ export function reset_ns_default_counter() {
  * struct value (a fresh constructor, a hoisted `_param_N`, a non-nullable
  * local) → 1 (it's a real value being lifted into the nullable param type).
  */
-function emit_nullable_arg_flag(arg: BaseNode, status: BuildStatus) {
+export function emit_nullable_arg_flag(arg: BaseNode, status: BuildStatus) {
 	// `null` literal
 	if (arg.node_type === "value" && (arg as ValueNode).value === "null") {
 		status.code += `0`;
 		return;
 	}
 	// Bare variable: forward its flag IF the variable itself is a nullable
-	// struct value (a `var T? x = ...` local). A non-nullable struct value
-	// (a hoisted `_param_N` from a constructor, a plain `T x` local) is being
-	// lifted into the nullable param type — emit `1`.
+	// struct value or nullable scalar (a `var T? x = ...` local). A
+	// non-nullable struct value (a hoisted `_param_N` from a constructor, a
+	// plain `T x` local) is being lifted into the nullable param type —
+	// emit `1`.
 	if (arg.node_type === "value") {
 		const vn = arg as ValueNode;
-		if (is_nullable_struct_type(vn.type, status)) {
+		if (is_nullable_struct_type(vn.type, status) || is_nullable_scalar_type(vn.type)) {
 			status.code += `${has_flag_name(vn.value)}`;
 		} else {
 			status.code += `1`;
@@ -683,11 +696,11 @@ function emit_nullable_arg_flag(arg: BaseNode, status: BuildStatus) {
 		return;
 	}
 	// Field access `obj.field` / `obj->field` — if the field's type is a
-	// nullable struct, build the lvalue and append `_has`. Otherwise (a
-	// non-nullable struct field being lifted), emit `1`.
+	// nullable struct or nullable scalar, build the lvalue and append `_has`.
+	// Otherwise (a non-nullable struct field being lifted), emit `1`.
 	if (arg.node_type === "access" && (arg as AccessNode).access.node_type === "access_field") {
 		const t = type_from_value_node(arg);
-		if (is_nullable_struct_type(t, status)) {
+		if (is_nullable_struct_type(t, status) || is_nullable_scalar_type(t)) {
 			const saved = begin_code_scratch(status);
 			build_node(arg, status);
 			const expr = end_code_scratch(status, saved);

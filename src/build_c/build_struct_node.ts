@@ -3,6 +3,7 @@ import {
 	struct_needs_destroy,
 } from "../build_common/destroy_analysis.ts";
 import { mono_struct_name, mono_type_name } from "../build_common/mono_name.ts";
+import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import { classify_param } from "../build_common/param_classify.ts";
 import scan_force_heap_strings from "../build_common/scan_force_heap_strings.ts";
@@ -90,7 +91,7 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 		.filter((f) => f.value == null)
 		.map((f) => {
 			let decl = c_param_decl(f.type, f.name, status);
-			if (is_nullable_struct_type(f.type, status)) {
+			if (is_nullable_struct_type(f.type, status) || is_nullable_scalar_type(f.type)) {
 				decl += `, unsigned char ${has_flag_name(f.name)}`;
 			}
 			return decl;
@@ -112,11 +113,14 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 					declaration: p.declaration,
 				});
 				// A nullable struct value param (`T? f`, T a non-class
-				// struct) takes a companion `unsigned char <name>_has`
-				// flag as the very next C parameter (mirrors
-				// build_function_node). The constructor body reads the
-				// flag through the param name directly.
-				if (!p.is_variadic && is_nullable_struct_type(p.type, status)) {
+				// struct) or nullable scalar param (`int? f`) takes a
+				// companion `unsigned char <name>_has` flag as the very next
+				// C parameter (mirrors build_function_node). The constructor
+				// body reads the flag through the param name directly.
+				if (
+					!p.is_variadic &&
+					(is_nullable_struct_type(p.type, status) || is_nullable_scalar_type(p.type))
+				) {
 					decl += `, unsigned char ${has_flag_name(p.name)}`;
 				}
 				return decl;
@@ -183,9 +187,12 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 						} else {
 							status.code += `self${accessor}${field.name} = (nomen_view){0};\n`;
 						}
-					} else if (is_nullable_struct_type(field.type, status)) {
+					} else if (
+						is_nullable_struct_type(field.type, status) ||
+						is_nullable_scalar_type(field.type)
+					) {
 						// Default is either `null` (flag 0, value untouched) or a
-						// struct value (copy it in, flag 1).
+						// struct/scalar value (copy it in, flag 1).
 						const is_null =
 							field.value.node_type === "value" && (field.value as any).value === "null";
 						if (is_null) {
@@ -340,8 +347,11 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 			} else if (field.type.storage_kind === "stack_array" && field.type.length) {
 				// Fixed-size stack array fields — use memcpy instead of assignment
 				status.code += `memcpy(${object_name}${accessor}${field.name}, ${field.name}, sizeof(${object_name}${accessor}${field.name}));\n`;
-			} else if (is_nullable_struct_type(field.type, status) && field.value) {
-				// Nullable struct field with a default (typically `= null`).
+			} else if (
+				(is_nullable_struct_type(field.type, status) || is_nullable_scalar_type(field.type)) &&
+				field.value
+			) {
+				// Nullable struct/scalar field with a default (typically `= null`).
 				const is_null = field.value.node_type === "value" && (field.value as any).value === "null";
 				if (is_null) {
 					status.code += `${object_name}${accessor}${has_flag_name(field.name)} = 0;\n`;
@@ -355,6 +365,11 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 				// the param and forward the companion flag (the call site
 				// passed `<field>_has` as a sibling C parameter).
 				status.code += `${object_name}${accessor}${field.name} = *${field.name};\n`;
+				status.code += `${object_name}${accessor}${has_flag_name(field.name)} = ${has_flag_name(field.name)};\n`;
+			} else if (is_nullable_scalar_type(field.type)) {
+				// Nullable scalar field WITHOUT a default: copy the value from
+				// the (by-value) param and forward the companion flag.
+				status.code += `${object_name}${accessor}${field.name} = ${field.name};\n`;
 				status.code += `${object_name}${accessor}${has_flag_name(field.name)} = ${has_flag_name(field.name)};\n`;
 			} else if (
 				!field.type.is_ref &&
@@ -670,6 +685,18 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		// heap ownership for string vars that receive a heap value later.
 		status.force_heap_strings = scan_force_heap_strings(func.statements ?? [], status.structs);
 		status.function_return_type = func.return_type;
+		// A nullable struct/scalar method return signals null-ness through
+		// the hidden `_ret_has` out-parameter (declared above), mirroring
+		// free functions.
+		const old_nullable_ret_has = status.nullable_ret_has_param;
+		if (
+			is_nullable_struct_type(func.return_type, status) ||
+			is_nullable_scalar_type(func.return_type)
+		) {
+			status.nullable_ret_has_param = "_ret_has";
+		} else {
+			status.nullable_ret_has_param = undefined;
+		}
 		const self_param = func.params[0]?.is_self_param ? func.params[0] : null;
 		status.self_is_ref = !!self_param?.is_ref || self_param?.declaration === "var";
 		// Raw blocks see fat strings directly: bodies access a C `char*`
@@ -835,6 +862,25 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 				status.code += ", ";
 			}
 			build_parameter_node(func.params[i], status);
+			// A nullable struct/scalar parameter (`T? p`) takes a companion
+			// `unsigned char <name>_has` flag as the very next C parameter
+			// (mirrors build_function_node; call sites forward the flag).
+			if (
+				!func.params[i].is_self_param &&
+				(is_nullable_struct_type(func.params[i].type, status) ||
+					is_nullable_scalar_type(func.params[i].type))
+			) {
+				status.code += `, unsigned char ${has_flag_name(c_function_name(func.params[i].name))}`;
+			}
+		}
+		// A nullable RETURN type (struct or scalar) adds a hidden
+		// `unsigned char *_ret_has` out-parameter, mirroring free functions.
+		if (
+			is_nullable_struct_type(func.return_type, status) ||
+			is_nullable_scalar_type(func.return_type)
+		) {
+			if (func.params.length > 0) status.code += `, `;
+			status.code += `unsigned char *_ret_has`;
 		}
 		status.code += `)`;
 
@@ -911,6 +957,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		status.heap_array_vars = old_heap_array_vars;
 		status.stack_array_lengths = old_stack_array_lengths;
 		status.function_return_type = old_return_type;
+		status.nullable_ret_has_param = old_nullable_ret_has;
 		status.current_function_name = old_function_name;
 		status.current_function = old_current_function;
 		status.function_view_params = old_view_params;

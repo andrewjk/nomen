@@ -1,11 +1,13 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import { struct_needs_auto_destroy } from "../build_common/destroy_analysis.ts";
 import emission_label from "../build_common/emission_label.ts";
-import { is_nullable_struct_type } from "../build_common/nullable_struct.ts";
+import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
+import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import scan_force_heap_strings from "../build_common/scan_force_heap_strings.ts";
 import { moved_param_is_consumed } from "../build_common/scan_moved_param_consumed.ts";
 import scan_reassigned_vars from "../build_common/scan_reassigned_vars.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
+import { get_built_in_type } from "../built_in_types.ts";
 import { is_overloaded, mangled_label } from "../check/utils/function_overload.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
@@ -62,7 +64,7 @@ import {
 
 let field_strdup_guard_counter = 0;
 
-function emit_typed_store(
+export function emit_typed_store(
 	status: BuildStatus,
 	src_reg: string,
 	dst_base: string,
@@ -131,9 +133,9 @@ function init_enum_shorthand_field_default(
 }
 
 /**
- * Initialize a nullable struct field's default value, returning true if this
- * field was handled (caller should `continue`). `base_reg` is the struct base
- * register (`x0` for auto-init, `x19` for custom-init).
+ * Initialize a nullable struct/scalar field's default value, returning true
+ * if this field was handled (caller should `continue`). `base_reg` is the
+ * struct base register (`x0` for auto-init, `x19` for custom-init).
  */
 function init_nullable_field_default(
 	node: StructNode,
@@ -141,13 +143,30 @@ function init_nullable_field_default(
 	base_reg: string,
 	status: BuildStatus,
 ): boolean {
-	if (!is_nullable_struct_type(field.type, status)) return false;
+	const scalar_nullable = is_nullable_scalar_type(field.type);
+	if (!is_nullable_struct_type(field.type, status) && !scalar_nullable) return false;
 	if (!field.value) return false;
 	const offset = get_field_offset(node.name, field.name, status);
 	const has_offset = get_field_has_offset(node.name, field.name, status);
 	const is_null = field.value.node_type === "value" && (field.value as any).value === "null";
 	if (is_null) {
-		emit_asm(status, `str xzr, [${base_reg}, #${has_offset}]\n`);
+		if (scalar_nullable) {
+			// A 1-byte flag for scalar fields (matches C's unsigned char
+			// member); nullable struct fields keep the 8-byte flag word.
+			emit_asm(status, `strb wzr, [${base_reg}, #${has_offset}]\n`);
+		} else {
+			emit_asm(status, `str xzr, [${base_reg}, #${has_offset}]\n`);
+		}
+		return true;
+	}
+	if (scalar_nullable) {
+		// Non-null scalar default: build the value (in x0) and store it at
+		// its natural width, then set the 1-byte flag.
+		build_node(field.value, status);
+		ensure_newline(status);
+		emit_scalar_store_from_x0(offset, field.type, base_reg, status);
+		emit_asm(status, `mov w9, #1\n`);
+		emit_asm(status, `strb w9, [${base_reg}, #${has_offset}]\n`);
 		return true;
 	}
 	// Non-null default: build the value (a constructor) and copy it in.
@@ -163,6 +182,27 @@ function init_nullable_field_default(
 	emit_asm(status, `mov x9, #1\n`);
 	emit_asm(status, `str x9, [${base_reg}, #${has_offset}]\n`);
 	return true;
+}
+
+/** Store the scalar in x0 into `[base_reg + offset]` at its natural width. */
+function emit_scalar_store_from_x0(
+	offset: number,
+	type: Type,
+	base_reg: string,
+	status: BuildStatus,
+) {
+	const name = type.name;
+	if (name === "bool" || name === "char" || name === "int8" || name === "uint8") {
+		emit_asm(status, `strb w0, [${base_reg}, #${offset}]\n`);
+	} else if (name === "int16" || name === "uint16") {
+		emit_asm(status, `strh w0, [${base_reg}, #${offset}]\n`);
+	} else if (name === "int32" || name === "uint32") {
+		emit_asm(status, `str w0, [${base_reg}, #${offset}]\n`);
+	} else if (get_built_in_type(name)?.kind === "float") {
+		emit_asm(status, `str d0, [${base_reg}, #${offset}]\n`);
+	} else {
+		emit_asm(status, `str x0, [${base_reg}, #${offset}]\n`);
+	}
 }
 
 /**
@@ -578,7 +618,8 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 			!field.type.is_view &&
 			!field.type.is_ref &&
 			!field.type.is_array;
-		if (field_is_view || field_is_fat_string) ctor_slot += 2;
+		const field_is_nullable_scalar = is_nullable_scalar_type(field.type);
+		if (field_is_view || field_is_fat_string || field_is_nullable_scalar) ctor_slot += 2;
 		else ctor_slot += 1;
 		let src_reg: string;
 		if (slot < NUM_REG_ARGS) {
@@ -600,6 +641,22 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 				emit_asm(status, `str ${src_reg}, [x19, #${offset}]\n`);
 				emit_asm(status, `ldr x9, [x29, #${overflow_placeholder(func_name, k2)}]\n`);
 				emit_asm(status, `str x9, [x19, #${offset + 8}]\n`);
+			}
+			continue;
+		}
+		// A nullable SCALAR field (`T? f`, no default) arrives as a (value,
+		// flag) pair: store the value at its natural width and the 1-byte
+		// `_has` flag from the next slot.
+		if (field_is_nullable_scalar) {
+			emit_typed_store(status, src_reg, "x19", offset, aarch64_size(field.type.name));
+			const has_off = get_field_has_offset(node.name, field.name, status);
+			if (slot + 1 < NUM_REG_ARGS) {
+				const flag_reg = param_regs[slot].replace("x", "w");
+				emit_asm(status, `strb ${flag_reg}, [x19, #${has_off}]\n`);
+			} else {
+				const k2 = slot + 1 - NUM_REG_ARGS;
+				emit_asm(status, `ldr x9, [x29, #${overflow_placeholder(func_name, k2)}]\n`);
+				emit_asm(status, `strb w9, [x19, #${has_off}]\n`);
 			}
 			continue;
 		}
@@ -1039,6 +1096,55 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 			param_idx += 2;
 			continue;
 		}
+		// A nullable SCALAR param (`int? x`) is a (value, flag) pair: spill
+		// the value at its natural width and the flag as a word into a sibling
+		// `<name>_has` slot. Consumes two param register slots.
+		if (is_nullable_scalar_type(param.type) && !param.type.is_ref && !param.type.is_array) {
+			const size = aarch64_size(param.type.name);
+			const offset = allocate_stack_space(status, size, size);
+			status.stack_offsets!.set(param.name, offset);
+			const flag_offset = allocate_stack_space(status, 8, 8);
+			status.stack_offsets!.set(has_flag_name(param.name), flag_offset);
+			for (const half of [0, 1] as const) {
+				const p_slot = param_idx + half;
+				if (p_slot < NUM_REG_ARGS) {
+					const reg = param_regs[p_slot];
+					if (half === 0) {
+						if (size === 1) {
+							emit_asm(status, `strb ${reg.replace("x", "w")}, [x29, #${offset}]\n`);
+						} else if (size === 2) {
+							emit_asm(status, `strh ${reg.replace("x", "w")}, [x29, #${offset}]\n`);
+						} else if (size === 4) {
+							emit_asm(status, `str ${reg.replace("x", "w")}, [x29, #${offset}]\n`);
+						} else {
+							emit_asm(status, `str ${reg}, [x29, #${offset}]\n`);
+						}
+						raw_reloads.push({ reg, asm: raw_slot_reload_line(reg, offset, size) });
+					} else {
+						emit_asm(status, `str ${reg}, [x29, #${flag_offset}]\n`);
+						raw_reloads.push({ reg, asm: `ldr ${reg}, [x29, #${flag_offset}]` });
+					}
+				} else {
+					const k = p_slot - NUM_REG_ARGS;
+					emit_asm(status, `ldr x9, [x29, #${overflow_placeholder(func_name, k)}]\n`);
+					if (half === 0) {
+						if (size === 1) {
+							emit_asm(status, `strb w9, [x29, #${offset}]\n`);
+						} else if (size === 2) {
+							emit_asm(status, `strh w9, [x29, #${offset}]\n`);
+						} else if (size === 4) {
+							emit_asm(status, `str w9, [x29, #${offset}]\n`);
+						} else {
+							emit_asm(status, `str x9, [x29, #${offset}]\n`);
+						}
+					} else {
+						emit_asm(status, `str x9, [x29, #${flag_offset}]\n`);
+					}
+				}
+			}
+			param_idx += 2;
+			continue;
+		}
 		const size = aarch64_size(param.type.name);
 		const offset = allocate_stack_space(status, size, size);
 		status.stack_offsets!.set(param.name, offset);
@@ -1465,6 +1571,11 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 				(s) => s.name === func.return_type?.name && !s.is_simple_type && !s.is_class,
 			) ||
 				get_enum_sret_size(func.return_type?.name, status) !== undefined);
+		// A nullable SCALAR return (`out int?`) also rides the x8 sret buffer
+		// (value + flag word) — a single x0 return cannot carry the flag.
+		const nullable_scalar_ret =
+			!!func.return_type && is_nullable_scalar_type(func.return_type) && !func.return_type.is_ref;
+		const uses_sret = return_struct || nullable_scalar_ret;
 		let return_buffer_stack_offset: number | undefined;
 		// Record the function name so build_return_node can register the
 		// function in heap_returning_functions and look up its return type
@@ -1473,7 +1584,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		// setting it unconditionally changes the string-ownership analysis
 		// (literal-return strdup) for methods that were previously fine.
 		status.current_function_name = func.name;
-		if (return_struct) {
+		if (uses_sret) {
 			status.function_return_type = func.return_type;
 			status.struct_return_buffer = "x8";
 		}
@@ -1521,6 +1632,15 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 				param.type.is_view ||
 				(param.type.name === "string" && !(param.is_self_param && param.is_ref))
 			) {
+				slot_idx += 2;
+				continue;
+			}
+			// A nullable SCALAR param (`int? x`) is a (value, flag) pair — two
+			// AAPCS64 slots (spilled in the second pass).
+			if (is_nullable_scalar_type(param.type) && !param.type.is_ref) {
+				if (param.declaration === "var") {
+					status.function_param_vars.add(param.name);
+				}
 				slot_idx += 2;
 				continue;
 			}
@@ -1579,7 +1699,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		emit_asm(status, `sub sp, sp, #${stack_placeholder}\n`);
 		emit_asm(status, `mov x29, sp\n`);
 
-		if (return_struct) {
+		if (uses_sret) {
 			return_buffer_stack_offset = allocate_stack_space(status, 8, 8);
 			emit_asm(status, `str x8, [x29, #${return_buffer_stack_offset}]\n`);
 			status.return_buffer_stack_offset = return_buffer_stack_offset;
@@ -1653,6 +1773,55 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 						const k = p_slot - NUM_REG_ARGS;
 						emit_asm(status, `ldr x9, [x29, #${overflow_placeholder(func_label, k)}]\n`);
 						emit_asm(status, `str x9, [x29, #${offset + half * 8}]\n`);
+					}
+				}
+				second_slot_idx += 2;
+				continue;
+			}
+			// A nullable SCALAR param (`int? x`) is a (value, flag) pair:
+			// spill the value at its natural width and the flag as a word into
+			// a sibling `<name>_has` slot. Consumes two register slots.
+			if (is_nullable_scalar_type(param.type) && !param.type.is_ref) {
+				const size = aarch64_size(param.type.name);
+				const offset = allocate_stack_space(status, size, size);
+				status.stack_offsets!.set(param.name, offset);
+				const flag_offset = allocate_stack_space(status, 8, 8);
+				status.stack_offsets!.set(has_flag_name(param.name), flag_offset);
+				for (const half of [0, 1] as const) {
+					const p_slot = second_slot_idx + half;
+					if (p_slot < NUM_REG_ARGS) {
+						const reg = param_regs[p_slot];
+						if (half === 0) {
+							if (size === 1) {
+								emit_asm(status, `strb ${reg.replace("x", "w")}, [x29, #${offset}]\n`);
+							} else if (size === 2) {
+								emit_asm(status, `strh ${reg.replace("x", "w")}, [x29, #${offset}]\n`);
+							} else if (size === 4) {
+								emit_asm(status, `str ${reg.replace("x", "w")}, [x29, #${offset}]\n`);
+							} else {
+								emit_asm(status, `str ${reg}, [x29, #${offset}]\n`);
+							}
+							raw_reloads.push({ reg, asm: raw_slot_reload_line(reg, offset, size) });
+						} else {
+							emit_asm(status, `str ${reg}, [x29, #${flag_offset}]\n`);
+							raw_reloads.push({ reg, asm: `ldr ${reg}, [x29, #${flag_offset}]` });
+						}
+					} else {
+						const k = p_slot - NUM_REG_ARGS;
+						emit_asm(status, `ldr x9, [x29, #${overflow_placeholder(func_label, k)}]\n`);
+						if (half === 0) {
+							if (size === 1) {
+								emit_asm(status, `strb w9, [x29, #${offset}]\n`);
+							} else if (size === 2) {
+								emit_asm(status, `strh w9, [x29, #${offset}]\n`);
+							} else if (size === 4) {
+								emit_asm(status, `str w9, [x29, #${offset}]\n`);
+							} else {
+								emit_asm(status, `str x9, [x29, #${offset}]\n`);
+							}
+						} else {
+							emit_asm(status, `str x9, [x29, #${flag_offset}]\n`);
+						}
 					}
 				}
 				second_slot_idx += 2;

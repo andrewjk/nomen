@@ -1,6 +1,7 @@
 import add_error from "../add_error.ts";
 import { struct_needs_destroy } from "../build_common/destroy_analysis.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
+import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
@@ -359,10 +360,11 @@ export default function check_function_call(
 		const func_param = func.params[i + self_offset];
 
 		// Record which arguments correspond to a nullable struct value
-		// parameter (`T? p`, T a non-class struct). The build backends use
-		// this to emit a companion `_has` flag alongside the struct pointer
-		// (see ROADBLOCKS "Nullable structs"). Self-params (`ref self` /
-		// bare `self`) are skipped — the receiver is never a nullable value.
+		// parameter (`T? p`, T a non-class struct) or a nullable scalar
+		// parameter (`bool?`/`int?`/…). The build backends use this to emit
+		// a companion `_has` flag alongside the value (see ROADBLOCKS
+		// "Nullable structs"). Self-params (`ref self` / bare `self`) are
+		// skipped — the receiver is never a nullable value.
 		if (
 			func_param &&
 			func_param.type.is_nullable &&
@@ -373,7 +375,7 @@ export default function check_function_call(
 			const s = status.structs.find(
 				(st) => st.name === func_param.type.name && !st.is_class && !st.is_simple_type,
 			);
-			if (s) {
+			if (s || is_nullable_scalar_type(func_param.type)) {
 				if (!node.nullable_param_indices) node.nullable_param_indices = [];
 				if (!node.nullable_param_indices.includes(i)) {
 					node.nullable_param_indices.push(i);

@@ -4,6 +4,8 @@ import emit_field_overrides, {
 } from "../build/emit_field_overrides.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
+import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
+import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import {
 	collect_expression_branch_values,
 	is_owned_string_branch_value,
@@ -27,6 +29,7 @@ import { emit_expr_from_nir, nir_array_elements } from "./emit_nir.ts";
 import { reclaim_all_c_scopes } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
 import { materialize_func_value } from "./utils/closure.ts";
+import { begin_code_scratch, end_code_scratch } from "./utils/code_scratch.ts";
 import emit_allocations from "./utils/emit_allocations.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import { c_materialize_view_string, is_view_value } from "./utils/view_value.ts";
@@ -71,10 +74,11 @@ export default function build_return_node(
 	// Evaluate override values into temporaries before the base lands in the
 	// return slot (see hoist_field_overrides).
 	hoist_field_overrides(node.value, build_node, status, ";\n");
-	// For a nullable struct return type, the callee signals null-ness to the
-	// caller through the hidden `*_ret_has` out-parameter (0 = null,
-	// 1 = value). Detect once: a bare `return` (void) only fires for non-nullable
-	// returns (the type system rejects it), so just `return null` vs value.
+	// For a nullable return type (struct or scalar), the callee signals
+	// null-ness to the caller through the hidden `*_ret_has` out-parameter
+	// (0 = null, 1 = value). Detect once: a bare `return` (void) only fires
+	// for non-nullable returns (the type system rejects it), so just
+	// `return null` vs value.
 	const ret_has = status.nullable_ret_has_param;
 	const returns_nullable_struct = !!ret_has;
 	const ret_is_null =
@@ -83,17 +87,24 @@ export default function build_return_node(
 			(node.value.node_type === "value" && (node.value as ValueNode).value === "null"));
 	if (returns_nullable_struct) {
 		// For `return null`, signal null and return an uninitialised temp —
-		// the caller won't read the struct value (the flag is 0). For a real
-		// value, signal non-null first so the struct-return path below is
-		// free to use _return_val normally.
+		// the caller won't read the value (the flag is 0). For a real value,
+		// signal non-null first so the return path below is free to use
+		// _return_val normally — unless the returned value is ITSELF a
+		// nullable local/param/field, whose companion `_has` flag must be
+		// FORWARDED (hardcoding 1 would turn a returned null into non-null).
 		if (ret_is_null) {
 			emit_nursery_joins_on_return_c(status);
 			reclaim_all_c_scopes(status);
 			status.code += `*${ret_has} = 0;\n`;
-			status.code += `return (struct ${status.function_return_type!.name}){0};\n`;
+			if (status.function_return_type && is_nullable_scalar_type(status.function_return_type)) {
+				status.code += `return (${c_type(status.function_return_type.name)})0;\n`;
+			} else {
+				status.code += `return (struct ${status.function_return_type!.name}){0};\n`;
+			}
 			return;
 		}
-		status.code += `*${ret_has} = 1;\n`;
+		const forwarded_flag = nullable_flag_expr_of_value(node.value, status);
+		status.code += `*${ret_has} = ${forwarded_flag ?? "1"};\n`;
 	}
 	if (!node.value) {
 		emit_nursery_joins_on_return_c(status);
@@ -683,6 +694,34 @@ function find_decl_across_scopes(name: string, status: BuildStatus): Declaration
 			decl = stack[i].find((d) => d.name === name);
 			if (decl) return decl;
 		}
+	}
+	return undefined;
+}
+
+/**
+ * C expression for the companion `_has` flag of a returned nullable value
+ * (struct or scalar), or undefined when the returned value isn't nullable.
+ * A bare variable/param's flag is the sibling `<name>_has` (emitted by the
+ * declaration path / the two-C-parameter ABI); a field access appends `_has`
+ * to the built lvalue.
+ */
+function nullable_flag_expr_of_value(
+	value: BaseNode | undefined | null,
+	status: BuildStatus,
+): string | undefined {
+	if (!value) return undefined;
+	const t = type_from_value_node(value);
+	if (!t?.is_nullable) return undefined;
+	const flagged = is_nullable_struct_type(t, status) || is_nullable_scalar_type(t);
+	if (!flagged) return undefined;
+	if (value.node_type === "value") {
+		return has_flag_name((value as ValueNode).value);
+	}
+	if (value.node_type === "access") {
+		const saved = begin_code_scratch(status);
+		build_node(value, status);
+		const expr = end_code_scratch(status, saved);
+		return `${expr}_has`;
 	}
 	return undefined;
 }

@@ -3,7 +3,9 @@ import emit_field_overrides, {
 	hoist_field_overrides,
 } from "../build/emit_field_overrides.ts";
 import type BuildStatus from "../build_c/BuildStatus.ts";
+import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
+import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
 import {
@@ -28,6 +30,8 @@ import { get_source_address } from "./build_assignment_node.ts";
 import { emit_nursery_joins_on_return_a64 } from "./build_async_block_node.ts";
 import { emit_string_array_labels, resolve_array_element } from "./build_declaration_node.ts";
 import build_node from "./build_node.ts";
+import { load_nullable_has } from "./build_operation_node.ts";
+import { emit_typed_store } from "./build_struct_node.ts";
 import { emit_expr_from_nir } from "./emit_nir.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_malloc, emit_strdup } from "./utils/audit.ts";
@@ -160,20 +164,21 @@ export default function build_return_node(
 		return;
 	}
 
-	// For a nullable struct return type, the sret buffer (x8) is sized
-	// `struct_size + 8`: bytes [0..struct_size] hold the struct value, the
-	// 8-byte word at [struct_size] is the companion `_has` flag (0 = null,
+	// For a nullable struct/scalar return type, the sret buffer (x8) is sized
+	// `struct_size + 8` (8 bytes for a scalar): bytes [0..size] hold the
+	// value, the 8-byte word at [size] is the companion `_has` flag (0 = null,
 	// 1 = value). The callee writes BOTH through x8 — the caller's local is
 	// laid out the same way, so the sret writes land directly on the local's
 	// value+flag (no extra copy or hardcoded flag at the call site).
 	const returns_nullable_struct = is_nullable_struct_type(status.function_return_type, status);
+	const returns_nullable_scalar = is_nullable_scalar_type(status.function_return_type);
 	const nullable_ret_is_null =
-		returns_nullable_struct &&
+		(returns_nullable_struct || returns_nullable_scalar) &&
 		(!node.value ||
 			(node.value.node_type === "value" && (node.value as ValueNode).value === "null"));
 	if (nullable_ret_is_null) {
 		// `return null`: write 0 to the flag slot in the sret buffer (the
-		// struct value is left uninitialised — the caller won't read it).
+		// value is left uninitialised — the caller won't read it when null).
 		if (status.return_buffer_stack_offset !== undefined) {
 			const struct_size = get_struct_size(status.function_return_type!.name, status);
 			emit_asm(status, `ldr x8, [x29, #${status.return_buffer_stack_offset}]\n`);
@@ -615,6 +620,28 @@ export default function build_return_node(
 			if (process.env.NOMEN_DBG_HEAP)
 				console.error(`DBG registering heap-returning: ${status.current_function_name}`);
 			status.heap_returning_functions.add(status.current_function_name);
+		}
+	}
+
+	if (returns_nullable_scalar && status.function_return_label && status.struct_return_buffer) {
+		// A nullable SCALAR return: store the value (already in x0) and the
+		// companion `_has` flag into the caller's sret buffer — value at +0
+		// (natural width), flag word at +8. The flag is FORWARDED when the
+		// returned value is itself a nullable scalar local/param/field
+		// (`return x`); otherwise the value is real (flag = 1).
+		if (status.return_buffer_stack_offset !== undefined) {
+			emit_asm(status, `ldr x8, [x29, #${status.return_buffer_stack_offset}]\n`);
+		}
+		const scalar_size = aarch64_size(status.function_return_type!.name);
+		emit_typed_store(status, "x0", "x8", 0, scalar_size);
+		const value_type = node.value ? type_from_value_node(node.value) : undefined;
+		if (node.value && value_type?.is_nullable && is_nullable_scalar_type(value_type)) {
+			load_nullable_has(node.value, "x9", status);
+			ensure_newline(status);
+			emit_asm(status, `str x9, [x8, #8]\n`);
+		} else {
+			emit_asm(status, `mov x9, #1\n`);
+			emit_asm(status, `str x9, [x8, #8]\n`);
 		}
 	}
 

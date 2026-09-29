@@ -5,7 +5,8 @@ import emit_field_overrides, {
 import { is_normalized_struct_call } from "../build_common/call_init_string_fields.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
-import { is_nullable_struct_type } from "../build_common/nullable_struct.ts";
+import { call_result_type, is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
+import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import { is_string_borrow } from "../build_common/string_return_analysis.ts";
 import { move_on_last_use_enabled } from "../check/utils/last_use.ts";
 import type { NirExpr } from "../nir/nir.ts";
@@ -15,7 +16,6 @@ import AccessNode from "../nodes/AccessNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
-import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import { build_vtable_target } from "./build_access_node.ts";
@@ -76,8 +76,9 @@ export default function build_assignment_node(
 		";\n",
 		node.left_value.node_type === "value" ? (node.left_value as ValueNode).value : undefined,
 	);
-	// Assignment to a nullable struct slot (local var or struct field): write
-	// the value (if non-null) and update the companion `<slot>_has` flag.
+	// Assignment to a nullable struct slot or nullable scalar slot (local var
+	// or struct field): write the value (if non-null) and update the
+	// companion `<slot>_has` flag.
 	const lhs_nullable_type = lhs_nullable_struct_type(node, status);
 	if (!node.operator && lhs_nullable_type) {
 		const lhs_expr = capture_build(node.left_value, status);
@@ -138,10 +139,12 @@ export default function build_assignment_node(
 			// A nullable-returning CALL forwards `&<flag>` as the hidden
 			// `_ret_has` out-parameter, so the callee writes the REAL
 			// null/non-null bit (a null result must land as null) — the
-			// hardcoded `= 1` below is only for non-call values.
+			// hardcoded `= 1` below is only for values that are NOT already
+			// nullable. A nullable VARIABLE/FIELD RHS forwards its own flag.
+			const call_ret = call_result_type(node.right_value);
 			const value_is_nullable_call =
-				node.right_value.node_type === "func_call" &&
-				is_nullable_struct_type((node.right_value as FunctionCallNode).type, status);
+				!!call_ret &&
+				(is_nullable_struct_type(call_ret, status) || is_nullable_scalar_type(call_ret));
 			if (value_is_nullable_call) {
 				const old = status.current_nullable_call_flag;
 				status.current_nullable_call_flag = flag;
@@ -149,9 +152,10 @@ export default function build_assignment_node(
 				emit_rhs_value(node.right_value, nir_rhs, status);
 				status.current_nullable_call_flag = old;
 			} else {
+				const rhs_flag = nullable_value_flag_expr(node.right_value, status);
 				status.code += `${lhs_expr} = `;
 				emit_rhs_value(node.right_value, nir_rhs, status);
-				status.code += `;\n${flag} = 1`;
+				status.code += `;\n${flag} = ${rhs_flag ?? "1"}`;
 			}
 		}
 		return;
@@ -1232,22 +1236,44 @@ function capture_build(node: any, status: BuildStatus): string {
 	return end_code_scratch(status, saved);
 }
 
-/** The nullable-struct type of an assignment LHS, or undefined if it isn't one. */
+/** The nullable-struct or nullable-scalar type of an assignment LHS, or false. */
 function lhs_nullable_struct_type(node: AssignmentNode, status: BuildStatus): boolean {
 	if (node.left_value.node_type === "value") {
 		const name = (node.left_value as ValueNode).value;
 		const decl = status.scoped_declarations.find((d) => d.name === name);
 		const t = decl?.type || status.variable_types?.get(name);
-		return is_nullable_struct_type(t, status);
+		return is_nullable_struct_type(t, status) || is_nullable_scalar_type(t);
 	}
 	if (
 		node.left_value.node_type === "access" &&
 		(node.left_value as AccessNode).access.node_type === "access_field"
 	) {
 		const field_type = (node.left_value as AccessNode).access.type;
-		return is_nullable_struct_type(field_type, status);
+		return is_nullable_struct_type(field_type, status) || is_nullable_scalar_type(field_type);
 	}
 	return false;
+}
+
+/**
+ * The C expression for a nullable RHS value's companion `_has` flag, or
+ * undefined when the RHS is not itself nullable (a non-null value lifted into
+ * a nullable target). A bare variable's flag is `<name>_has`; a field access
+ * appends `_has` to its built lvalue.
+ */
+export function nullable_value_flag_expr(value: BaseNode, status: BuildStatus): string | undefined {
+	const t = type_from_value_node(value);
+	if (!t?.is_nullable) return undefined;
+	if (!is_nullable_struct_type(t, status) && !is_nullable_scalar_type(t)) return undefined;
+	if (value.node_type === "value") {
+		return has_flag_name((value as ValueNode).value);
+	}
+	if (value.node_type === "access" && (value as AccessNode).access.node_type === "access_field") {
+		const saved = begin_code_scratch(status);
+		build_node(value, status);
+		const expr = end_code_scratch(status, saved);
+		return `${expr}_has`;
+	}
+	return undefined;
 }
 
 /**
