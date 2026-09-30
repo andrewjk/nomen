@@ -6,6 +6,7 @@ import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import call_in_set from "../build_common/call_in_set.ts";
 import { record_call_init_string_fields } from "../build_common/call_init_string_fields.ts";
+import record_ctor_heap_default_fields from "../build_common/ctor_heap_default_fields.ts";
 import { struct_needs_destroy } from "../build_common/destroy_analysis.ts";
 import fold_string_const from "../build_common/fold_string_const.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
@@ -44,6 +45,7 @@ import build_node from "./build_node.ts";
 import {
 	build_float_tree,
 	float_tree_ok,
+	is_owned_heap_temp,
 	tree_has_call,
 	tree_is_call_free,
 } from "./build_operation_node.ts";
@@ -2405,6 +2407,21 @@ export default function build_declaration_node(
 						}
 					}
 					build_swap_params(func_call, status);
+					// Record the string fields whose DEFAULT the constructor
+					// evaluated fresh as a heap-owning expression: the struct
+					// alone owns the buffer, so scope exit frees it and a
+					// displaced store (the field overrides below, a later
+					// reassignment) reclaims it via the record's old_was_heap.
+					// MUST precede the overrides — their displaced-free keys on
+					// the record.
+					const ctor_struct = status.structs.find(
+						(s) => s.name === func_call.name && !s.is_simple_type && !s.is_class,
+					);
+					if (ctor_struct) {
+						record_ctor_heap_default_fields(node.name, ctor_struct, status, (seed) =>
+							is_owned_heap_temp(seed, status),
+						);
+					}
 				} else {
 					const func_return_struct = status.structs.find(
 						(s) =>

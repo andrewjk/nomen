@@ -1,6 +1,7 @@
 import emit_field_overrides, { hoist_field_overrides } from "../build/emit_field_overrides.ts";
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
+import { ctor_heap_displaced_string_fields } from "../build_common/ctor_return_owned.ts";
 import emission_label from "../build_common/emission_label.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import mark_tuple_literal_move_owners from "../build_common/mark_tuple_literal_move_owners.ts";
@@ -18,9 +19,9 @@ import ValueNode from "../nodes/ValueNode.ts";
 import { emit_address_of } from "./build_access_node.ts";
 import { build_inline_function } from "./build_inline_method.ts";
 import build_node from "./build_node.ts";
-import { build_operand, tree_is_call_free } from "./build_operation_node.ts";
+import { build_operand, is_owned_heap_temp, tree_is_call_free } from "./build_operation_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
-import { emit_malloc } from "./utils/audit.ts";
+import { emit_free, emit_malloc } from "./utils/audit.ts";
 import {
 	emit_string_field_strdups_at,
 	all_scope_frames,
@@ -42,7 +43,12 @@ import {
 	is_local_ref_var,
 } from "./utils/stack_var.ts";
 import { emit_strdup_string } from "./utils/string_pair.ts";
-import { get_enum_sret_size, get_enum_size, get_struct_size } from "./utils/struct_layout.ts";
+import {
+	get_enum_sret_size,
+	get_enum_size,
+	get_field_offset,
+	get_struct_size,
+} from "./utils/struct_layout.ts";
 import { emit_view_string_arg } from "./utils/view_value.ts";
 
 let temp_counter = 0;
@@ -1294,6 +1300,25 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		// overrides to that same temp, then restore x0 (building the
 		// override values may have clobbered it).
 		if (node.field_overrides?.length) {
+			// The constructor seeded each overridden field with its DEFAULT;
+			// a non-literal default was evaluated fresh into the temp and is
+			// owned by the temp alone — reclaim it before the raw override
+			// store (a compiler-temp destination keeps raw stores, so no
+			// heap_string_fields record exists to key the reclaim on).
+			const ctor_struct = status.structs.find(
+				(s) => s.name === node.name && !s.is_simple_type && !s.is_class,
+			);
+			if (ctor_struct) {
+				for (const fname of ctor_heap_displaced_string_fields(
+					ctor_struct,
+					node.field_overrides,
+					(seed) => is_owned_heap_temp(seed, status),
+				)) {
+					const field_off = get_field_offset(ctor_struct.name, fname, status);
+					emit_asm(status, `ldr x0, [x29, #${offset + field_off}]\n`);
+					emit_free(status);
+				}
+			}
 			emit_field_overrides(temp_addr, node, build_node, status);
 			emit_asm(status, `add x0, x29, #${offset}\n`);
 		}

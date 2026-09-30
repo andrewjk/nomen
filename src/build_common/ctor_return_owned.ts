@@ -99,3 +99,33 @@ export function override_displaced_string_fields(
 	}
 	return displaced;
 }
+
+/**
+ * The aarch64 counterpart of override_displaced_string_fields: the
+ * overridden string fields whose ctor-seeded default is a non-literal
+ * expression that produced a HEAP value. The extra `is_owned_heap` check
+ * (the aarch64 is_owned_heap_temp) matters because the aarch64 backend does
+ * NOT strdup every string return: a literal-returning user function leaves
+ * RODATA in the seeded field, which must never be freed. Used at the
+ * expression-temp override boundaries (no heap_string_fields records exist
+ * there, so the stores stay raw and the seed needs an explicit reclaim).
+ */
+export function ctor_heap_displaced_string_fields(
+	struct_node: StructNode,
+	overrides: { name: string; value: BaseNode }[] | undefined,
+	is_owned_heap: (seed: BaseNode) => boolean,
+): string[] {
+	if (!overrides?.length) return [];
+	const displaced: string[] = [];
+	for (const override of overrides) {
+		const field = struct_node.fields.find((f) => f.name === override.name);
+		if (!field) continue;
+		if (field.type.name !== "string" || field.type.is_array || field.type.is_view) continue;
+		const seed = field.value;
+		if (!seed || seed.node_type === "value") continue;
+		if (is_string_borrow(seed)) continue;
+		if (!is_owned_heap(seed)) continue;
+		displaced.push(override.name);
+	}
+	return displaced;
+}

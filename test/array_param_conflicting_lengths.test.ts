@@ -30,11 +30,9 @@ Console.write("a=\\{sum_lengths(items)}\\n")
 var string[3] more = ["ab", "cde", "x"]
 Console.write("b=\\{sum_lengths(more)}\\n")
 `);
-	expect(
-		parsed.errors.some((e) =>
-			e.message.includes("whose compile-time length is 2"),
-		),
-	).toBe(true);
+	expect(parsed.errors.some((e) => e.message.includes("whose compile-time length is 2"))).toBe(
+		true,
+	);
 });
 
 test("literal conflicting with a stamped variable call is rejected too", () => {
@@ -44,11 +42,9 @@ var string[2] items = ["abc", "de"]
 Console.write("a=\\{sum_lengths(items)}\\n")
 Console.write("b=\\{sum_lengths(["zz", "yy", "x"])}\\n")
 `);
-	expect(
-		parsed.errors.some((e) =>
-			e.message.includes("whose compile-time length is 2"),
-		),
-	).toBe(true);
+	expect(parsed.errors.some((e) => e.message.includes("whose compile-time length is 2"))).toBe(
+		true,
+	);
 });
 
 test("consistent lengths across call sites still check clean", () => {

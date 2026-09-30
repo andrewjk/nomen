@@ -45,38 +45,25 @@ surfaced now (`collect_allocations` walks the rewritten func_call's
 `.base`) — the return-override shape used to reference an undeclared temp
 (C: use of undeclared identifier; aarch64: undefined symbol at link).
 
-Remaining corners, both deliberately left:
+Remaining corner, deliberately left:
 
 - **Custom `#init` computed seeds** (`self.a = s + "!"` in an init body):
   the seed owns heap but is not analyzed (the helper reads field DEFAULT
   expressions only), so an override displaces it un-freed (1 allocation).
   Detecting it needs a self-write scan of the `#init` body (the
   `scan_self_string_field_writes` machinery could be reused).
-- **Non-literal ctor-seeded defaults are unrecorded generally** (the
-  pre-existing family around these corners): the checker's
-  "construction leaves rodata borrows" premise behind never recording ctor
-  inits broke when non-literal defaults landed — on C, plain
-  `var Pair p = Pair("x")` (holding, no override) leaks the default's
-  allocation, and a ctor REASSIGNMENT (`p = Pair("y")`) displaces the old
-  one un-freed. Recording only the heap-default fields at ctor-binding
-  sites (declaration + fresh-constructor reassignment) would close the
-  family; recording everything would break rodata-seeded shapes.
 
-## aarch64: non-literal struct field defaults are never evaluated
-
-The aarch64 backend never evaluates a non-literal string field DEFAULT
-(`var string a = "de" + "fault"`): the auto-constructor leaves the field
-uninitialized (stack garbage), so `var Pair p = Pair("x");
-Console.write(p.a)` SEGFAULTS (the C backend evaluates the default per
-construction and works — it just doesn't reclaim it, see the override
-entry above). Literal defaults are seeded fine (rodata stores in the
-ctor). The ctor/call-site prefill that the C backend's `#init` lowering
-performs (`_self.a = <default expr>`) has no aarch64 counterpart for
-non-literal expressions. Fixing needs the aarch64 ctor body to evaluate
-the default expression into the field slot (or the caller to prefill the
-sret buffer before `bl <T>_init`), plus the displaced-reclaim treatment
-from the override entry. Found while probing the displaced-copy corners;
-repro: any value struct with an expression default, auto-ctor, field read.
+The NON-LITERAL ctor-seeded DEFAULT family is fixed (2026-09-30): the
+heap-default fields are now recorded at the ctor-binding sites on both
+backends (`record_ctor_heap_default_fields`), gated on the backend's
+`is_owned_heap_temp` so a literal-returning call's rodata seed is never
+recorded (never freed) — closing the plain `var Pair p = Pair("x")` hold
+and the fresh `p = Pair("y")` reassignment shapes; overridden fields are
+skipped where a seed is reclaimed out-of-band (the C backend's explicit
+displaced free, the aarch64 expression-temp override reclaim). The same
+fix landed the aarch64 evaluation of non-literal field DEFAULTS (the ctor
+used to leave the field as stack garbage — SEGFAULT on first read) — see
+`test/nonliteral_field_defaults.test.ts`.
 
 ## Nullable scalars: remaining in-band corners
 

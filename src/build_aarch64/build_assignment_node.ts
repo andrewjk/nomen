@@ -5,6 +5,7 @@ import emit_field_overrides, {
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import { is_normalized_struct_call } from "../build_common/call_init_string_fields.ts";
+import record_ctor_heap_default_fields from "../build_common/ctor_heap_default_fields.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import { call_result_type, is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
@@ -28,7 +29,7 @@ import {
 	resolve_at_element_addr,
 } from "./build_access_node.ts";
 import build_node from "./build_node.ts";
-import { load_nullable_has } from "./build_operation_node.ts";
+import { is_owned_heap_temp, load_nullable_has } from "./build_operation_node.ts";
 import {
 	build_float_tree,
 	build_int_tree,
@@ -1250,6 +1251,38 @@ export default function build_assignment_node(
 				} else {
 					emit_var_address(status, "x1", name);
 					emit_struct_copy("x0", "x1", 0, struct_size, status);
+				}
+			}
+			// A fresh CONSTRUCTOR reassignment (`p = Pair("y")`) seeds the
+			// string fields whose defaults are non-literal heap expressions
+			// — record them so scope exit frees the evaluated default and a
+			// displaced store reclaims it. MUST precede the overrides below
+			// — their displaced-free keys on the record. Plain locals only:
+			// a `ref` param writes through to the caller's storage, which
+			// the caller's own records track (a record here would free the
+			// caller's field at this scope's exit). OVERRIDDEN fields are
+			// skipped: the RHS ctor built into an expression temp whose
+			// raw override stores already replaced the seed (reclaimed at
+			// that boundary), so the field holds the OVERRIDE value — its
+			// ownership is not the default's.
+			if (
+				node.right_value.node_type === "func_call" &&
+				!paramReg &&
+				!is_local_ref_var(name, status)
+			) {
+				const rhs_call = node.right_value as FunctionCallNode;
+				const rhs_ctor_struct = status.structs.find(
+					(s) => s.name === rhs_call.name && !s.is_simple_type && !s.is_class,
+				);
+				if (rhs_ctor_struct) {
+					const overridden = new Set(rhs_call.field_overrides?.map((o) => o.name) ?? []);
+					record_ctor_heap_default_fields(
+						name,
+						rhs_ctor_struct,
+						status,
+						(seed) => is_owned_heap_temp(seed, status),
+						overridden,
+					);
 				}
 			}
 			// `x = [ .. <base>, f = v ]`: the copy above landed the base's

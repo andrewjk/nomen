@@ -3,7 +3,11 @@ import emit_field_overrides, {
 	hoist_field_overrides,
 } from "../build/emit_field_overrides.ts";
 import call_in_set from "../build_common/call_in_set.ts";
-import { record_call_init_string_fields } from "../build_common/call_init_string_fields.ts";
+import {
+	is_normalized_struct_call,
+	record_call_init_string_fields,
+} from "../build_common/call_init_string_fields.ts";
+import record_ctor_heap_default_fields from "../build_common/ctor_heap_default_fields.ts";
 import { override_displaced_string_fields } from "../build_common/ctor_return_owned.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
@@ -35,6 +39,7 @@ import { nullable_value_flag_expr } from "./build_assignment_node.ts";
 import { struct_needs_destroy_by_name } from "./build_auto_free.ts";
 import { pointer_element_c_type } from "./build_index_node.ts";
 import build_node from "./build_node.ts";
+import { is_owned_heap_temp } from "./build_operation_node.ts";
 import build_range_node, { evaluate_constant } from "./build_range_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import { emit_expr_from_nir, nir_array_elements } from "./emit_nir.ts";
@@ -1068,6 +1073,35 @@ export default function build_declaration_node(
 					)) {
 						status.code += `free(${safe_name}.${name}.ptr);\n`;
 					}
+				}
+			}
+			// A plain CONSTRUCTOR init (`var Pair p = Pair("x")`): record the
+			// string fields whose DEFAULT the constructor evaluated fresh as a
+			// heap-owning expression — the struct alone owns the buffer, so
+			// scope-exit auto_free reclaims it and a displaced store sees
+			// old_was_heap. OVERRIDDEN fields are skipped: the explicit
+			// displaced free above reclaims their seed (recording them would
+			// double-free it at the override store), and the override store
+			// re-records them itself.
+			if (
+				node.value?.node_type === "func_call" &&
+				(node.value as FunctionCallNode).name === node.type?.name &&
+				!is_normalized_struct_call(node.value, status)
+			) {
+				const ctor_struct = status.structs.find(
+					(s) => s.name === node.type!.name && !s.is_simple_type && !s.is_class,
+				);
+				if (ctor_struct) {
+					const overridden = new Set(
+						(node.value as FunctionCallNode).field_overrides?.map((o) => o.name) ?? [],
+					);
+					record_ctor_heap_default_fields(
+						safe_name,
+						ctor_struct,
+						status,
+						(seed) => is_owned_heap_temp(seed, status),
+						overridden,
+					);
 				}
 			}
 			// Named-field struct literal overrides (e.g. `[ grow = 2 ]` on a

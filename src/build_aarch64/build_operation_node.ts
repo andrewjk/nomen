@@ -1964,7 +1964,7 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 // once consumed (nested concat/repeat, interpolation, or a *_to_string call).
 // Variables, literals, and arbitrary function calls are NOT freed here because
 // they may be static or owned elsewhere.
-function is_owned_heap_temp(node: BaseNode, status?: BuildStatus): boolean {
+export function is_owned_heap_temp(node: BaseNode, status?: BuildStatus): boolean {
 	// Method calls land in an `access` node wrapping an `access_func` (e.g.
 	// `Ansi.green(...)`). Unwrap and check the mangled `StructName_func` label,
 	// and pull the result type off the access_func since the wrapping access

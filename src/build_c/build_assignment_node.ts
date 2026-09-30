@@ -3,6 +3,7 @@ import emit_field_overrides, {
 	hoist_field_overrides,
 } from "../build/emit_field_overrides.ts";
 import { is_normalized_struct_call } from "../build_common/call_init_string_fields.ts";
+import record_ctor_heap_default_fields from "../build_common/ctor_heap_default_fields.ts";
 import { override_displaced_string_fields } from "../build_common/ctor_return_owned.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
@@ -1082,6 +1083,27 @@ export default function build_assignment_node(
 						// scope-exit free of the new value.
 						if (struct_type) {
 							release_recorded_string_fields(status, struct_type, lhs_name);
+							// A fresh CONSTRUCTOR (`p = Pair("y")`) seeds the string
+							// fields whose defaults are non-literal heap expressions
+							// — record them so scope exit frees the evaluated default
+							// and a displaced store sees old_was_heap. OVERRIDDEN
+							// fields are skipped: the explicit displaced free ahead
+							// of the override stores reclaims their seed.
+							if (
+								node.right_value.node_type === "func_call" &&
+								(node.right_value as FunctionCallNode).name === struct_type.name
+							) {
+								const overridden = new Set(
+									(node.right_value as FunctionCallNode).field_overrides?.map((o) => o.name) ?? [],
+								);
+								record_ctor_heap_default_fields(
+									lhs_name,
+									struct_type,
+									status,
+									(seed) => is_owned_heap_temp(seed, status),
+									overridden,
+								);
+							}
 						}
 						if (needs_destroy) emit_struct_destroys(status, struct_type!, lhs_name);
 					} else if (is_self_method_call(node, lhs_name)) {

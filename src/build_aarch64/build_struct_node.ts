@@ -51,7 +51,11 @@ import {
 	patch_overflow_placeholders,
 } from "./utils/stack_args.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
-import { emit_owning_array_string_specialize, emit_pair_store_to } from "./utils/string_pair.ts";
+import {
+	emit_owning_array_string_specialize,
+	emit_pair_store_to,
+	emit_strdup_string,
+} from "./utils/string_pair.ts";
 import {
 	get_enum_case_index,
 	get_enum_sret_size,
@@ -182,6 +186,56 @@ function init_nullable_field_default(
 	emit_asm(status, `mov x9, #1\n`);
 	emit_asm(status, `str x9, [${base_reg}, #${has_offset}]\n`);
 	return true;
+}
+
+/**
+ * Initialize a field whose default is a non-literal EXPRESSION (a string op
+ * like `"de" + "fault"`, a call returning a non-struct, a grouped expr, …):
+ * evaluate it and store the result into the field slot. x0 carries the
+ * result — a fat string as the (x0, x1) pair, a by-value struct as the sret
+ * temp's address. A class's plain string field is strdup'd when the result
+ * is not itself fresh heap (the field is freed unconditionally at destroy);
+ * a value struct's heap-owning default is stored raw — the ctor-binding
+ * sites record it (record_ctor_heap_default_fields) so scope exit frees it.
+ */
+function init_expr_field_default(
+	node: StructNode,
+	field: any,
+	offset: number,
+	base_reg: string,
+	status: BuildStatus,
+) {
+	build_node(field.value, status);
+	ensure_newline(status);
+	const t = field.type;
+	const is_fat_string = t.name === "string" && !t.is_ref && !t.is_view && !t.is_array;
+	if (is_fat_string) {
+		if (node.is_class && !status.last_result_is_heap) {
+			// dup the (x0=ptr, x1=len) pair — the len half is preserved
+			// across the call and the owned copy's pair lands in (x0, x1).
+			emit_strdup_string(status);
+		}
+		emit_pair_store_to(status, base_reg, offset, "x0", "x1");
+		return;
+	}
+	const field_struct = status.structs.find((s) => s.name === t.name && !s.is_simple_type);
+	if (field_struct?.is_class) {
+		emit_typed_store(status, "x0", base_reg, offset, 8);
+		return;
+	}
+	if (field_struct) {
+		// A non-class struct default from a non-constructor expression is
+		// not reachable today (the func_call branch above takes constructor
+		// calls); a grouped/copy shape copies word-by-word defensively.
+		const field_size = get_struct_size(t.name, status);
+		const words = Math.ceil(field_size / 8);
+		for (let w = 0; w < words; w++) {
+			emit_asm(status, `ldr x9, [x0, #${w * 8}]\n`);
+			emit_asm(status, `str x9, [${base_reg}, #${offset + w * 8}]\n`);
+		}
+		return;
+	}
+	emit_typed_store(status, "x0", base_reg, offset, get_type_size(t, status));
 }
 
 /** Store the scalar in x0 into `[base_reg + offset]` at its natural width. */
@@ -888,32 +942,33 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 					}
 				}
 				emit_typed_store(status, "x1", "x19", offset, get_type_size(field.type, status));
-			} else if (field.value.node_type === "func_call") {
+			} else if (
+				field.value.node_type === "func_call" &&
+				status.structs.find((s) => s.name === field.type.name && !s.is_simple_type)
+			) {
+				// Run the constructor (e.g. `Inner()`); the call sequence
+				// leaves x0 pointing at the return-value temp. Copy the
+				// result word-by-word into the field slot. self lives in
+				// x19, so it survives the call.
+				build_node(field.value, status);
+				ensure_newline(status);
 				const field_struct = status.structs.find(
 					(s) => s.name === field.type.name && !s.is_simple_type,
-				);
-				if (field_struct) {
-					// Run the constructor (e.g. `Inner()`); the call sequence
-					// leaves x0 pointing at the return-value temp. Copy the
-					// result word-by-word into the field slot. self lives in
-					// x19, so it survives the call.
-					build_node(field.value, status);
-					ensure_newline(status);
-					if (field_struct.is_class) {
-						// A CLASS-typed field stores the heap instance POINTER
-						// the constructor returned — struct-copying the
-						// instance's bytes would embed it inline (corrupting
-						// every following field AND overflowing the malloc'd
-						// self block, whose layout gives a class field 8
-						// bytes).
-						emit_typed_store(status, "x0", "x19", offset, 8);
-					} else {
-						const field_size = get_struct_size(field.type.name, status);
-						const words = Math.ceil(field_size / 8);
-						for (let w = 0; w < words; w++) {
-							emit_asm(status, `ldr x9, [x0, #${w * 8}]\n`);
-							emit_asm(status, `str x9, [x19, #${offset + w * 8}]\n`);
-						}
+				)!;
+				if (field_struct.is_class) {
+					// A CLASS-typed field stores the heap instance POINTER
+					// the constructor returned — struct-copying the
+					// instance's bytes would embed it inline (corrupting
+					// every following field AND overflowing the malloc'd
+					// self block, whose layout gives a class field 8
+					// bytes).
+					emit_typed_store(status, "x0", "x19", offset, 8);
+				} else {
+					const field_size = get_struct_size(field.type.name, status);
+					const words = Math.ceil(field_size / 8);
+					for (let w = 0; w < words; w++) {
+						emit_asm(status, `ldr x9, [x0, #${w * 8}]\n`);
+						emit_asm(status, `str x9, [x19, #${offset + w * 8}]\n`);
 					}
 				}
 			} else if (field.value.node_type === "func" && field.type.name === "func") {
@@ -931,6 +986,8 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 				const desc = materialize_lambda_descriptor_a64(field.value as FunctionNode, status);
 				emit_descriptor_address(status, "x1", desc);
 				emit_typed_store(status, "x1", "x19", offset, 8);
+			} else {
+				init_expr_field_default(node, field, offset, "x19", status);
 			}
 		}
 	}
@@ -1372,33 +1429,36 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 					}
 				}
 				emit_typed_store(status, "x1", "x19", offset, get_type_size(field.type, status));
-			} else if (field.value.node_type === "func_call") {
+			} else if (
+				field.value.node_type === "func_call" &&
+				status.structs.find((s) => s.name === field.type.name && !s.is_simple_type)
+			) {
+				// Run the constructor and copy the return-value temp into
+				// the field slot. self lives in x19, so it survives the
+				// call (which clobbers x0 with the temp address).
+				build_node(field.value, status);
+				ensure_newline(status);
 				const field_struct = status.structs.find(
 					(s) => s.name === field.type.name && !s.is_simple_type,
-				);
-				if (field_struct) {
-					// Run the constructor and copy the return-value temp into
-					// the field slot. self lives in x19, so it survives the
-					// call (which clobbers x0 with the temp address).
-					build_node(field.value, status);
-					ensure_newline(status);
-					if (field_struct.is_class) {
-						// A CLASS-typed field stores the heap instance POINTER
-						// the constructor returned — struct-copying the
-						// instance's bytes would embed it inline (corrupting
-						// every following field AND overflowing the malloc'd
-						// self block, whose layout gives a class field 8
-						// bytes).
-						emit_typed_store(status, "x0", "x19", offset, 8);
-					} else {
-						const field_size = get_struct_size(field.type.name, status);
-						const words = Math.ceil(field_size / 8);
-						for (let w = 0; w < words; w++) {
-							emit_asm(status, `ldr x9, [x0, #${w * 8}]\n`);
-							emit_asm(status, `str x9, [x19, #${offset + w * 8}]\n`);
-						}
+				)!;
+				if (field_struct.is_class) {
+					// A CLASS-typed field stores the heap instance POINTER
+					// the constructor returned — struct-copying the
+					// instance's bytes would embed it inline (corrupting
+					// every following field AND overflowing the malloc'd
+					// self block, whose layout gives a class field 8
+					// bytes).
+					emit_typed_store(status, "x0", "x19", offset, 8);
+				} else {
+					const field_size = get_struct_size(field.type.name, status);
+					const words = Math.ceil(field_size / 8);
+					for (let w = 0; w < words; w++) {
+						emit_asm(status, `ldr x9, [x0, #${w * 8}]\n`);
+						emit_asm(status, `str x9, [x19, #${offset + w * 8}]\n`);
 					}
 				}
+			} else {
+				init_expr_field_default(node, field, offset, "x19", status);
 			}
 		}
 	}
