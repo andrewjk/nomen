@@ -13,10 +13,31 @@
 
 
 
+
+## 0.6.6
+<sub>2026-09-30</sub>
+
+-  *(patch)* - Fix: null-safe string dup on struct return
+-  *(patch)* - Fix: string[] parameter length on C
+-  *(patch)* - Fix: switch case condition temp placement
+-  *(patch)* - Fix: exclusive-branch string field records
+-  *(patch)* - Fix: loop promotion shared carried registers
+-  *(patch)* - Fix: aarch64 value-struct branch field stores
+-  *(patch)* - Fix: nullable ?? string result ownership
+-  *(patch)* - Fix: conflicting array param lengths rejected
+-  *(patch)* - Fix: nullable string local assignment aliasing the source (aarch64 dup gate)
+-  *(patch)* - Fix: override-constructor returns normalized (dangling heap-local fields)
+-  *(patch)* - Fix: last-use scan misses checker-hoisted interpolation reads
+-  *(patch)* - Fix: override ctor displaced-copy reclamation + hoisted arg emission
+-  *(patch)* - Fix: aarch64 never evaluated non-literal field defaults
+-  *(patch)* - Fix: #init computed-seed ownership: record/reclaim on both backends
+-  *(patch)* - Fix: ref-param field stores transfer records to caller
+-  *(patch)* - Fix: warn on redundant move on value-struct fields
+
 ## 0.6.5
 <sub>2026-09-29</sub>
 
--  *(patch)* - reject moved value-struct local at trait boundary
+-  *(patch)* - Fix: reject moved value-struct local at trait boundary
 -  *(patch)* - Fix: nullable scalar values track null via a companion flag
 -  *(patch)* - Fix: initialize and free trait-declared fields
 -  *(patch)* - Fix: nullable struct member ownership
