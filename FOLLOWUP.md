@@ -2,6 +2,29 @@
 
 Skipped or out-of-scope items recorded for later.
 
+## aarch64: value-struct elements in a heap `Array<T>` read garbage / SIGSEGV
+
+Found 2026-09-30 while unblocking the allmark port's protocol lists
+(varying-length `Array<T>` params — that part now works; these are the
+pre-existing element-handling gaps behind it, both C-correct):
+
+- **`Array<Pair>(p)` element read returns garbage.** `Pair` a plain value
+  struct (one `int` field): `var pairs = Array<Pair>(p)` prints
+  `length == 1` fine, but `pairs.at_or_panic(0).a` reads a pointer-looking
+  value (~0x16…, a stack address) on aarch64. C prints the stored `3`.
+  The mono `Array_<Pair>` element path (ctor slot store or the inline
+  `.at` load — not yet bisected) mishandles the 8-byte struct element;
+  `int`/`string` elements are fine (`test/array_param_varying_lengths.test.ts`
+  covers those).
+- **An `Array<Pair>` parameter called with a literal SIGSEGVs.** The
+  call-site heap materialization (`is_heap_array_literal`) of value-struct
+  elements aborts before `main`'s first write on aarch64 (exit 139, no
+  output); the identical program runs on C. Single call site — unrelated to
+  varying lengths.
+
+Until fixed, value-struct element arrays want `List<T>` (whose element
+transfers/deep-copies are specialized) rather than `Array<T>`.
+
 ## Trait-declared field ownership corners
 
 The aarch64 layout/size model now includes trait-declared fields

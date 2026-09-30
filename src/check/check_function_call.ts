@@ -932,37 +932,47 @@ export default function check_function_call(
 			// Stamp the caller's compile-time `length` onto the callee param so
 			// field/constructor length knowledge propagates (e.g. `c.items`
 			// after `Container(Array("a","b"))` → `c.items.length == 2`, which
-			// discharges `.at(i)` bounds). This is safe for heap `Array<T>`
-			// params too: the build's `array_struct_name` gate is now flag-based
-			// (`is_array_heap`), not length-based, so the param still lowers to
-			// `struct Array_<T>*`, and the for-of desugar uses the RUNTIME
-			// `.length` bound for heap arrays (see desugar_array_for_loop).
-			// Variadic params are excluded: their count legitimately varies
-			// per call (the hidden `_<name>_len` carries the runtime length).
+			// discharges `.at(i)` bounds). Variadic params are excluded: their
+			// count legitimately varies per call (the hidden `_<name>_len`
+			// carries the runtime length).
+			//
+			// For a HEAP `Array<T>` param the stamp is a BOUND-DISCHARGE HINT
+			// only: the `Array_<T>` ABI carries the runtime length, so the
+			// builds never bake the stamp into codegen (the for-of desugar
+			// explicitly refuses it; `.length`/`.at` dispatch runtime). A
+			// second call site passing a DIFFERENT literal length therefore
+			// doesn't reject the call — it DROPS the hint (the param's length
+			// is no longer known), so later `.at(i)` proofs fall back to
+			// runtime-checked alternatives. The FIRST call site keeps its
+			// discharged proofs, which is sound: its argument's length equaled
+			// the stamp when they were made.
+			//
+			// A RAW `T[]` param is different: the raw array ABI carries no
+			// runtime length, so the builds bake the stamp into the callee's
+			// loops, bounds checks and per-call materializations. A conflicting
+			// length would run the callee with a stale bound — reading past a
+			// shorter caller's array (the `_platform_memmove` SIGSEGV class) or
+			// truncating it silently. Reject the conflict: one unsized `T[]`
+			// param serves exactly one compile-time length across its call
+			// graph; runtime-varying lengths need `Array<T>`.
 			if (!func_param.type.length) {
 				func_param.type.length = param_type.length;
 			} else {
-				// The stamp is shared by EVERY call site of this function —
-				// the builds bake it into the callee's loops, bounds checks
-				// and per-call materializations (there is no runtime length
-				// in the raw `T[]` ABI). A second call site passing a
-				// DIFFERENT compile-time length would run the callee with a
-				// stale bound — reading past a shorter caller's array (the
-				// `_platform_memmove` SIGSEGV class) or truncating it
-				// silently. Reject the conflict: one unsized `T[]` param
-				// serves exactly one compile-time length across its call
-				// graph; runtime-varying lengths need `Array<T>`.
 				const stamped = String((func_param.type.length as ValueNode).value);
 				const incoming = String((param_type.length as ValueNode).value);
 				if (stamped !== incoming) {
-					add_error(
-						status,
-						`Call passes ${incoming} elements to array parameter '${func_param.name}' ` +
-							`whose compile-time length is ${stamped} — the raw array ABI carries no ` +
-							`runtime length, so one parameter serves one compile-time length; ` +
-							`use Array<${func_param.type.name}> for varying lengths`,
-						param.start,
-					);
+					if (is_heap_array_type(func_param.type)) {
+						func_param.type.length = undefined;
+					} else {
+						add_error(
+							status,
+							`Call passes ${incoming} elements to array parameter '${func_param.name}' ` +
+								`whose compile-time length is ${stamped} — the raw array ABI carries no ` +
+								`runtime length, so one parameter serves one compile-time length; ` +
+								`use Array<${func_param.type.name}> for varying lengths`,
+							param.start,
+						);
+					}
 				}
 			}
 		}
