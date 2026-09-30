@@ -14,6 +14,14 @@
 
 
 
+
+## 0.6.7
+<sub>2026-09-30</sub>
+
+-  *(patch)* - Fix: owning container fields transfer/deep-copy in containers
+-  *(patch)* - Fix: normalize plain = assignment operator
+-  *(patch)* - Fix: nullable scalars everywhere: simple enums/bitsets get the _has flag, file-scope globals apply initializers, flagged-nullable container/array elements and data enums are rejected
+
 ## 0.6.6
 <sub>2026-09-30</sub>
 
