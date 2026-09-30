@@ -2729,8 +2729,11 @@ pub func main = () {
 }
 ```
 
-`start_on(buf)` runs the fiber on a caller-provided fixed-size array stack
-(at least 16 KB) instead of a heap stack:
+`start_on(buf)` takes a caller-provided fixed-size array stack (at least
+16 KB — the size/fixed-array shape is validated at compile time) intended for
+running the fiber off the heap. The validation is enforced today; the fiber
+itself currently always runs on a heap stack (the caller-provided storage is
+not wired through yet):
 
 ```
 import System

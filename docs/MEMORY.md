@@ -135,6 +135,16 @@ The `move` keyword explicitly transfers ownership. It works in three positions:
 - **assignment**: `b = move a` — `a`'s value moves into `b`; `a` is invalidated (and `b`'s old value freed first).
 - **declaration**: `var Box b = move a` — same, on initialization.
 
+On FIELD declarations `move` is meaningful only for CLASS-typed fields: there
+it is the ownership declaration (the container owns and destroys the instance,
+eagerly reclaims displaced assignments, and borrow stores are rejected —
+own-vs-borrow is observable behavior). For VALUE-struct fields the keyword is
+dead weight: ownership of container/owning-typed value-struct fields is
+derived from the TYPE (`mark_owning_auto_init_params` in
+src/check/check_struct_node.ts auto-stamps the synthesized `#init` param), so
+`pub move items = List<string>()` and `pub var items = List<string>()`
+behave identically — prefer plain `var`.
+
 A moved variable may not be used again until it is reassigned (which revalidates it):
 
 ```

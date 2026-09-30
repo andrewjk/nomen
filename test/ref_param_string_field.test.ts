@@ -6,12 +6,12 @@ import { parse_raw } from "./parse_with_imports";
 
 // A store to a string field through a `ref` struct param writes caller-owned
 // storage, but heap_string_fields records are scope-local — the callee's
-// record dies at return, so the stored copy leaks (documented in
-// FOLLOWUP.md, "Cross-scope string field stores leak the stored copy").
-// Cross-scope shapes therefore run with audit off; the same-scope and class
-// shapes ARE balanced and run with audit on to assert it.
+// record used to die at return, so the stored copy leaked (FOLLOWUP.md,
+// "Cross-scope string field stores"). The call-site record transfer
+// (transfer_ref_param_field_records) now attributes the callee's direct
+// stores to the caller's variable, so every shape here is audit-balanced.
 
-function run(input: string, name: string, expected: string, audit = false) {
+function run(input: string, name: string, expected: string, audit = true) {
 	return async () => {
 		const parsed = parse_raw(input);
 		expect(parsed.errors).toEqual([]);
@@ -73,6 +73,31 @@ pub func main = (Init init) {
 `,
 			"ref_param_field_reassign",
 			"[second]\n",
+		),
+	);
+
+	test(
+		"a fresh call-result store through the ref param",
+		run(
+			`
+import System
+
+struct Box {
+	var string s = ""
+}
+
+func fill = (ref Box dst, string raw) {
+	dst.s = raw.substring(0, 2)
+}
+
+pub func main = (Init init) {
+	var Box b = Box()
+	fill(ref b, "hello")
+	Console.write("[" + b.s + "]\\n")
+}
+`,
+			"ref_param_field_call_result",
+			"[he]\n",
 		),
 	);
 

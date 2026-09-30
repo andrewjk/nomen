@@ -277,38 +277,39 @@ trait_class_locals bug above), so the difference is the test path:
 `strip_main_functions` + the generated harness + build. Worth profiling
 `run_test_file`'s build phase on this corpus.
 
-## Cross-scope string field stores leak the stored copy (accepted, bounded)
+## Cross-scope string field stores (dangling + leak halves FIXED; residual conditional stores)
 
-The dangling half of this is FIXED. Assigning a heap-owned string local into
+The DANGLING half is fixed. Assigning a heap-owned string local into
 a struct field through a `ref` struct parameter used to raw-store the local's
 (ptr, len) and then reclaim the buffer at the local's scope exit — the field
 dangled the moment the callee returned (C was correct; it strdups). The
 aarch64 backend now strdups the pair at the store and records the field as
 heap (mirroring C), so the field owns an independent copy and the local's own
-free stays sound. Covered by test/ref_param_string_field.test.ts.
+free stays sound.
 
-What remains — and was already true before the fix — is a LEAK for every
-cross-scope owning store, because `heap_string_fields` records are
-scope-local: the record that "this field holds heap" lands in the CALLEE's
-scope and dies at return, while the field lives in the CALLER's variable,
-whose scope exit never frees it.
+The LEAK half is fixed too (2026-09-30), via fix direction 1 below: at every
+call taking a `ref` value-struct param, the callee's definitely-executed
+direct stores are transferred onto the caller's records
+(`transfer_ref_param_field_records` / `scan_ref_param_string_field_writes` —
+the same machinery that closed the ref-param FOLLOWUP entry, wired into all
+four call builders). `dst.s = <fresh call result>` (Regex.find's
+`dst.text = input.substring(...)`) and `dst.s = <heap-owned local>` now free
+at the owner's scope exit on both backends; the covering tests run with audit
+ON (test/ref_param_string_field.test.ts).
 
-- `dst.s = <fresh call result>` (e.g. Regex.find's
-  `dst.text = input.substring(...)`) — transferred raw; the buffer leaks.
-  Pre-existing; invisible until audited because the covering tests ran with
-  audit off.
-- `dst.s = <heap-owned local>` — the strdup'd copy leaks (new since the
-  dangle fix; strictly better than the corruption it replaces).
-- Repeated stores free each displaced copy (`old_was_heap`); only the final
-  value leaks, so the leak is bounded by fields, not stores.
-- Same-scope stores (`b.s = s` where `b` is the local being stored into) and
-  class fields are fully balanced — the record (or the class destroy) frees
-  at the owner's scope exit. test/ref_param_string_field.test.ts asserts the
-  same-scope shape with audit ON and the cross-scope shapes with audit OFF
-  (they report `LEAK: 1 allocation(s)` by design).
+Residual (bounded leak, never an invalid free — the same posture
+`drop_self_written_string_field_records` takes):
 
-Posture: leak, never double-free/invalid-free — the same trade
-`drop_self_written_string_field_records` makes for displaced `self`-writes.
+- Stores nested in branches/loops are NOT transferred: a conditional store
+  can leave the pre-call value in the field, and a record over it would free
+  rodata at the caller's exit. Closing it needs the must-executed
+  (dominator) analysis the original fix direction anticipated. The final
+  stored copy from a conditional store leaks.
+- Stores reached through trait dispatch (vtable) are not scanned — see the
+  trait-dispatch entry below.
+- Direction 2 remains the systemic alternative: always-heap value-struct
+  string fields (tier 3 in the trait-dispatch entry) would delete
+  `heap_string_fields` and this whole class at a malloc-per-literal cost.
 
 **Aliasing route closed by pass-by-value (2026-09-26).** The most common
 route INTO this hole — passing an owning value struct as a plain
@@ -318,22 +319,7 @@ boundary materializes a uniformly heap-owned copy the callee owns), so a
 non-`ref` callee can never write through to the caller's struct. An earlier
 check-time gate (`fn_writes_param_string_fields`, which rejected aliased
 args only when the callee actually wrote the param's string fields) was
-removed as superseded. The leak below therefore survives only for explicit
-`ref` parameters — the shapes in this entry — bounded per write.
-
-Fix directions, when picked up (either closes the leak class):
-
-1. **Caller-side record propagation.** At each direct call `fill(ref b)`,
-   scan the callee (transitively, like `scan_self_string_field_writes`) for
-   writes to its ref params' string fields, then add/refresh the caller's
-   `b.s` record so the owner's scope exit frees. Soundness needs
-   must-executed (dominator) + always-heap analysis: a record over a field a
-   not-taken store left holding a borrow would free rodata at exit. Shapes
-   that can't be proven keep the leak.
-2. **Always-heap value-struct string fields** (tier 3 in the trait-dispatch
-   entry above): strdup on every assignment including literals,
-   `<Struct>_destroy` frees every field. Deletes `heap_string_fields` and
-   this whole class; costs a malloc per literal store into a value struct.
+removed as superseded.
 
 **Return boundary FIXED (2026-09-24).** The RETURN-boundary sibling of this
 hole — a returned value struct's records were dropped at the boundary and the
@@ -477,17 +463,6 @@ page + SIGSEGV handler vs compiler-inserted stack-limit checks), `await`
 sugar, an io_uring runtime, the parking lint (above), plus the Phase 3
 leftover: the 10k-connection acceptance run (N = 64 is the tested ceiling).
 Recorded here as a pointer only; ASYNC.md's "Roadmap" is the source of truth.
-
-## Stale `cli/core` asset copy shadows the repo `core/` in dev
-
-`cli/scripts/bundle-assets.mjs` copies repo `core/` → `cli/core/` for
-packaging. `find_bundled` prefers `cli/core`, so a STALE copy (from an old
-`pnpm build`) silently wins over the current `core/` while it exists — a
-debugging tar pit (symptoms: monomorphized System bodies emit pre-closure
-ABI code, everything works in a fresh worktree). Dev suggestion:
-`find_bundled` should prefer `../core` (repo layout) when it exists, or
-bundle-assets should stamp the copy with the source mtime so staleness is
-detectable. Interim workaround: `rm -rf cli/core` after pulling changes.
 
 ## Opaque-closure spawn result leaks the original string (closure form)
 
