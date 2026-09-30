@@ -1,5 +1,6 @@
-import { struct_needs_destroy } from "../../build_common/destroy_analysis.ts";
+import { has_destroy, struct_needs_destroy } from "../../build_common/destroy_analysis.ts";
 import { has_string_fields } from "../../build_common/has_string_fields.ts";
+import { resolve_struct_type } from "../../build_common/mono_name.ts";
 import type EnumNode from "../../nodes/EnumNode.ts";
 import StructNode from "../../nodes/StructNode.ts";
 import type BuildStatus from "../BuildStatus.ts";
@@ -65,19 +66,111 @@ function has_owning_fields(node: StructNode, status: BuildStatus): boolean {
 
 /**
  * The names of Buffer methods that get specialized for owning value structs.
- * load_T and move_T are NOT specialized: load_T returns a shallow copy (a
- * borrow — the caller's struct local is not destroyed, so no double-free);
- * move_T transfers ownership (the slot is zeroed, the caller takes the
- * pointers).
+ * load_T IS specialized when the element has owning container fields (a
+ * `List<T>` member): the returned copy must own independent containers, or
+ * the caller's scope-exit destroy would free the slot's buffer (double-free
+ * at container teardown). String fields stay BORROWED on load (struct-local
+ * teardown only frees RECORDED heap strings, so strdup'ing them would leak);
+ * container fields have no such borrow convention — a struct local's
+ * container fields are ALWAYS destroyed — so they must be deep-copied.
+ * move_T is NOT specialized: it transfers ownership (the slot is zeroed, the
+ * caller takes the pointers).
  */
 export const OWNING_BUFFER_METHODS = new Set([
 	"store",
 	"replace",
+	"load",
 	"modify",
 	"shift",
 	"destroy",
 	"#destroy",
 ]);
+
+/**
+ * Emit the transfer half of owning store_T/replace_T: the slot bytes were
+ * already memcpy'd from the source, so zeroing each owned CONTAINER field
+ * of the SOURCE completes the move — the slot is the sole owner, and the
+ * source's own teardown (when it still runs: an unstamped generic-body
+ * local) finds zeroed fields and reclaims nothing. Nested value struct
+ * fields recurse so their container leaves are zeroed at their own paths;
+ * their string fields are untouched (the slot aliases them — the pre-existing
+ * nested-string convention). Class/enum payload fields are left alone
+ * (recorded in FOLLOWUP.md).
+ */
+function emit_transfer_owning_fields(
+	elem: StructNode,
+	src: string,
+	status: BuildStatus,
+	prefix = "",
+): void {
+	for (const field of elem.fields) {
+		if (field.type.is_ref || field.type.is_view) continue;
+		if (field.type.is_array || field.type.is_nullable) continue;
+		const field_struct = resolve_struct_type(field.type, status);
+		if (!field_struct || field_struct.is_class) continue;
+		const src_field = `${prefix}${src}${arrow(src)}${field.name}`;
+		if (has_destroy(field_struct)) {
+			// A container (List/Buffer/… mono): the slot took the bytes
+			// wholesale — zero the source's field.
+			status.code += `memset((void*)&${src_field}, 0, sizeof(${src_field}));\n`;
+		} else if (struct_needs_destroy(field_struct, status)) {
+			// Nested user struct: recurse for its container leaves.
+			emit_transfer_owning_fields(field_struct, src_field, status, "");
+		}
+	}
+}
+
+/**
+ * Emit the deep-copy half of owning load_T: for each field whose type has a
+ * monomorphized `copy` helper that yields an independent value (a `List<T>`
+ * field — `<List_T>_copy` deep-copies slots per the owning store contract —
+ * or an enum-with-data field whose string payloads `<E>_copy` duplicates),
+ * overwrite the shallow-copied bytes with an owned copy. Fields without a
+ * copyable shape (nested owning user structs, class fields) stay shallow —
+ * recorded in FOLLOWUP.md ("remaining shallow container-field shapes").
+ */
+function emit_load_deep_copy_fields(elem: StructNode, dst: string, status: BuildStatus): void {
+	for (const field of elem.fields) {
+		if (field.type.is_ref || field.type.is_view || field.type.is_array) continue;
+		if (field.type.is_nullable) continue;
+		if (field.type.name === "string") continue;
+		// List<T> field: the mono's `copy` method deep-copies slots (the
+		// owning store contract makes each slot's copy independent).
+		const field_struct = resolve_struct_type(field.type, status);
+		if (
+			field_struct &&
+			!field_struct.is_class &&
+			field_struct.name.startsWith("List_") &&
+			struct_needs_destroy(field_struct, status) &&
+			field_struct.functions.find((f) => f.name === "copy")
+		) {
+			status.code += `${dst}.${field.name} = ${field_struct.name}_copy(&${dst}.${field.name});\n`;
+			continue;
+		}
+		// Enum-with-data field whose payloads are all deep-copyable (no
+		// class/trait references): `<E>_copy` takes the enum BY VALUE and
+		// strdups the active case's string payloads.
+		const field_enum = status.enums.find(
+			(e) => e.name === field.type.name && e.has_associated_data,
+		);
+		if (field_enum && enum_copy_is_deep(field_enum, status)) {
+			status.code += `${dst}.${field.name} = ${field_enum.name}_copy(${dst}.${field.name});\n`;
+		}
+	}
+}
+
+/** Whether `<E>_copy` yields a fully independent value: no case payload is a
+ *  class/trait reference (those are shared pointers the copy cannot
+ *  duplicate — mirroring owning_buffer_enum_element's gate). */
+function enum_copy_is_deep(elem: EnumNode, status: BuildStatus): boolean {
+	for (const c of elem.cases) {
+		for (const p of c.params) {
+			const ps = status.structs.find((s) => s.name === p.type.name);
+			if (ps?.is_class || status.traits.find((t) => t.name === p.type.name)) return false;
+		}
+	}
+	return true;
+}
 
 /**
  * A `Buffer<string>` owns an independent heap copy of each slot (strdup on
@@ -305,10 +398,27 @@ export function emit_owning_buffer_body(
 		// `emit_deep_copy_fields`'s round-trip guard (the captured `_old`
 		// value) skips the strdup when the slot already owns the exact copy —
 		// a load-modify-store round-trip re-store must not orphan its string.
+		// Then transfer every owned container/class/enum field: the slot
+		// took the source's bytes, so the source's field is zeroed (its own
+		// teardown — when it still runs — reclaims nothing).
 		status.code += `${Tptr}_slots = ${Tcast}(unsigned long long)self->data;\n`;
 		status.code += `struct ${elem.name} _old = _slots[i];\n`;
 		status.code += `_slots[i] = (*val);\n`;
 		emit_deep_copy_fields(elem, "_slots[i]", "val", status, "_old");
+		emit_transfer_owning_fields(elem, "val", status);
+		return true;
+	}
+
+	if (func_name === "load") {
+		// load_T(self, i): the caller's scope-exit destroy ALWAYS reclaims a
+		// struct local's container fields, so the returned copy must own
+		// independent containers — a shallow return would double-free the
+		// slot's buffer at the caller's teardown. String fields stay borrowed
+		// (struct-local teardown only frees RECORDED heap strings, so a
+		// strdup here would leak).
+		status.code += `struct ${elem.name} _loaded = ((struct ${elem.name} *)(unsigned long long)self->data)[i];\n`;
+		emit_load_deep_copy_fields(elem, "_loaded", status);
+		status.code += `return _loaded;\n`;
 		return true;
 	}
 
@@ -330,11 +440,14 @@ export function emit_owning_buffer_body(
 
 	if (func_name === "replace") {
 		// replace_T(self, i, val): destroy the old slot value (it owned
-		// heap memory), then shallow-copy + strdup the new value.
+		// heap memory), then shallow-copy + strdup the new value, and
+		// transfer the new value's owned container fields (zeroed at the
+		// source — the slot took its bytes).
 		status.code += `${Tptr}_slots = ${Tcast}(unsigned long long)self->data;\n`;
 		status.code += `${elem.name}_destroy(&_slots[i]);\n`;
 		status.code += `_slots[i] = (*val);\n`;
 		emit_deep_copy_fields(elem, "_slots[i]", "val", status);
+		emit_transfer_owning_fields(elem, "val", status);
 		return true;
 	}
 
@@ -370,12 +483,13 @@ export function emit_owning_buffer_body(
 }
 
 /**
- * For each string field on the element struct, overwrite the shallow-copied
- * pointer in `dst` with a fresh strdup of `src`'s field. This breaks the
- * pointer aliasing between the source and the slot so each can be destroyed
- * independently. For nested owning value struct fields, recursively call the
- * nested struct's destroy + deep-copy (the nested destroy frees the
- * shallow-copied owned sub-fields, then the deep-copy re-strdup's them).
+ * For each DIRECT string field on the element struct, overwrite the
+ * shallow-copied pointer in `dst` with a fresh strdup of `src`'s field. This
+ * breaks the pointer aliasing between the source and the slot so each can be
+ * destroyed independently. Nested value struct fields are NOT walked: their
+ * string fields stay aliased (the pre-existing convention — a spliced
+ * `move` donor has no teardown, so the slot is the sole owner), and their
+ * container leaves are transferred by `emit_transfer_owning_fields`.
  *
  * `old_expr` (optional) is the slot's PRE-copy value expression. When the
  * source field pointer equals the old slot field pointer, the slot already
@@ -403,21 +517,6 @@ function emit_deep_copy_fields(
 				status.code += `${dst}.${field.name} = (${src_field}.ptr && ${src_field}.ptr != ${old_expr}.${field.name}.ptr) ? nomen_str_dup(${src_field}) : ${src_field};\n`;
 			} else {
 				status.code += `${dst}.${field.name} = ${src_field}.ptr ? nomen_str_dup(${src_field}) : ${src_field};\n`;
-			}
-		} else if (field.type.name && !field.type.is_array) {
-			const field_struct = status.structs.find(
-				(s) => s.name === field.type.name && !s.is_simple_type && !s.is_generic,
-			);
-			if (field_struct && !field_struct.is_class && struct_needs_destroy(field_struct, status)) {
-				// Nested owning value struct: destroy the shallow-copied
-				// sub-struct's fields, then deep-copy from source.
-				status.code += `${field_struct.name}_destroy(&${dst}.${field.name});\n`;
-				emit_deep_copy_fields(
-					field_struct,
-					`${dst}.${field.name}`,
-					`${src}${arrow(src)}${field.name}`,
-					status,
-				);
 			}
 		}
 	}

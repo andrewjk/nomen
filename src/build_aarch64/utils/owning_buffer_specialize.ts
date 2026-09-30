@@ -1,5 +1,7 @@
 import type BuildStatus from "../../build_c/BuildStatus.ts";
+import { has_destroy, struct_needs_destroy } from "../../build_common/destroy_analysis.ts";
 import { has_string_fields } from "../../build_common/has_string_fields.ts";
+import { resolve_struct_type } from "../../build_common/mono_name.ts";
 import type EnumNode from "../../nodes/EnumNode.ts";
 import StructNode from "../../nodes/StructNode.ts";
 import aarch64_size from "./aarch64_size.ts";
@@ -24,9 +26,11 @@ export function owning_buffer_element_aarch64(
 		(s) => s.name === elem_name && !s.is_simple_type && !s.is_generic,
 	);
 	if (!elem || elem.is_class) return undefined;
-	// Only specialize if the element has string fields (the owning case that
-	// needs deep-copy + per-element destroy).
-	if (!has_string_fields(elem, status)) return undefined;
+	// Mirror the C backend's `has_owning_fields`: string fields need the
+	// deep-copy store/destroy, and so do owning container fields (`List<T>`
+	// members — the shallow primitives would alias the source's buffer and
+	// double-free at teardown).
+	if (!has_string_fields(elem, status) && !struct_needs_destroy(elem, status)) return undefined;
 	return elem;
 }
 
@@ -195,6 +199,108 @@ function collect_string_fields(
 }
 
 /**
+ * Collect the (offset, size) pairs of every owned CONTAINER field (`List<T>`/
+ * `Buffer<T>`/… mono with a `#destroy`) the element's teardown would reclaim.
+ * The owning store_T/replace_T memcpy the source's bytes into the slot, so
+ * zeroing these fields of the SOURCE completes the ownership transfer: the
+ * slot is the sole owner and the source's own teardown (when it still runs)
+ * finds zeroed fields. Nested value struct fields recurse so their container
+ * leaves are zeroed at their own flat offsets; their string fields are
+ * untouched (the slot owns the strdup'd copies via collect_string_fields).
+ * Mirrors the C backend's `emit_transfer_owning_fields`. `view T`/nullable
+ * fields are skipped; class/enum payload fields are left alone (recorded in
+ * FOLLOWUP.md).
+ */
+function collect_transfer_fields(
+	elem: StructNode,
+	status: BuildStatus,
+	base_offset = 0,
+): { offset: number; size: number }[] {
+	const result: { offset: number; size: number }[] = [];
+	let offset = 8; // VT_SIZE prefix
+	for (const field of elem.fields) {
+		const size = get_type_size(field.type, status);
+		if (
+			!field.type.is_ref &&
+			!field.type.is_view &&
+			!field.type.is_array &&
+			!field.type.is_nullable
+		) {
+			const field_struct = resolve_struct_type(field.type, status);
+			if (field_struct && !field_struct.is_class) {
+				if (has_destroy(field_struct)) {
+					result.push({ offset: base_offset + offset, size });
+				} else if (struct_needs_destroy(field_struct, status)) {
+					result.push(...collect_transfer_fields(field_struct, status, base_offset + offset));
+				}
+			}
+		}
+		offset += size;
+	}
+	return result;
+}
+
+/**
+ * Emit `memset(&src.field, 0, size)` for every owned field collected by
+ * `collect_transfer_fields`. `src` is the register holding the SOURCE struct
+ * address (x2 inline / x21 standalone for store_T). Clobbers x0-x2.
+ */
+function emit_transfer_owning_fields(
+	status: BuildStatus,
+	src: string,
+	fields: { offset: number; size: number }[],
+) {
+	for (const { offset, size } of fields) {
+		emit_asm(status, `add x0, ${src}, #${offset}\n`);
+		emit_asm(status, `mov x1, #0\n`);
+		emit_asm(status, `mov x2, #${size}\n`);
+		emit_asm(status, `bl _memset\n`);
+	}
+}
+
+/**
+ * Emit the deep-copy half of owning load_T into the sret buffer (x8): for
+ * each `List<T>` field whose mono has a `copy` method, replace the
+ * shallow-copied field with `<List_T>_copy(&slot.field)` (sret → the sret
+ * buffer's field; self == x8 is safe — the copy reads its input before the
+ * final result write). Mirrors the C backend's `emit_load_deep_copy_fields`.
+ * `sret` is the register holding the returned struct's address; `slot` holds
+ * the source slot's address (the copy reads from the slot, writes to sret).
+ */
+function emit_load_deep_copy_fields(
+	elem: StructNode,
+	status: BuildStatus,
+	sret: string,
+	slot: string,
+): void {
+	let offset = 8; // VT_SIZE prefix
+	for (const field of elem.fields) {
+		const size = get_type_size(field.type, status);
+		if (
+			!field.type.is_ref &&
+			!field.type.is_view &&
+			!field.type.is_array &&
+			!field.type.is_nullable &&
+			field.type.name !== "string"
+		) {
+			const field_struct = resolve_struct_type(field.type, status);
+			if (
+				field_struct &&
+				!field_struct.is_class &&
+				field_struct.name.startsWith("List_") &&
+				struct_needs_destroy(field_struct, status) &&
+				field_struct.functions.find((f) => f.name === "copy")
+			) {
+				emit_asm(status, `add x8, ${sret}, #${offset}\n`);
+				emit_asm(status, `add x0, ${slot}, #${offset}\n`);
+				emit_asm(status, `bl ${field_struct.name}_copy\n`);
+			}
+		}
+		offset += size;
+	}
+}
+
+/**
  * Emit `slot.field = strdup(src.field)` guarded against a NULL source field
  * (e.g. JsonTree's "no text" sentinel): a NULL field is copied as NULL —
  * strdup(NULL) would crash. `src`/`dst` are the register names holding the
@@ -241,6 +347,10 @@ export function emit_owning_buffer_inline_aarch64(
 		}
 		if (func_name === "shift") {
 			emit_owning_shift_T(elem, status, "x0");
+			return true;
+		}
+		if (func_name === "load") {
+			emit_owning_load_T(elem, status, "x0");
 			return true;
 		}
 		return false;
@@ -319,7 +429,8 @@ export function emit_owning_buffer_standalone_aarch64(
 			func_name !== "store" &&
 			func_name !== "replace" &&
 			func_name !== "shift" &&
-			func_name !== "modify"
+			func_name !== "modify" &&
+			func_name !== "load"
 		) {
 			return false;
 		}
@@ -385,6 +496,7 @@ export function emit_owning_buffer_standalone_aarch64(
 function emit_owning_standalone_struct(elem: StructNode, func_name: string, status: BuildStatus) {
 	const T_SIZE = get_struct_size(elem.name, status);
 	const string_fields = collect_string_fields(elem, status);
+	const transfer_fields = collect_transfer_fields(elem, status);
 
 	if (func_name === "shift") {
 		emit_owning_shift_T(elem, status, "x19");
@@ -393,6 +505,31 @@ function emit_owning_standalone_struct(elem: StructNode, func_name: string, stat
 
 	if (func_name === "modify") {
 		emit_owning_modify_T(elem, status, T_SIZE, string_fields);
+		return true;
+	}
+
+	if (func_name === "load") {
+		// Standalone load_T: x19 = self, x1 = i, x8 = sret. The caller's
+		// scope-exit destroy ALWAYS reclaims a struct local's container
+		// fields, so the returned copy must own independent containers — a
+		// shallow return would double-free the slot's buffer at the caller's
+		// teardown. String fields stay borrowed (struct-local teardown only
+		// frees RECORDED heap strings, so a strdup here would leak).
+		emit_asm(status, `stp x20, x21, [sp, #-16]!\n`);
+		emit_asm(status, `stp x22, x23, [sp, #-16]!\n`);
+		emit_asm(status, `ldr x20, [x19, #8]\n`); // data base
+		emit_asm(status, `mov x9, #${T_SIZE}\n`);
+		emit_asm(status, `madd x21, x1, x9, x20\n`); // x21 = &slot[i]
+		emit_asm(status, `mov x22, x8\n`); // x22 = sret (x8 is caller-saved)
+		emit_asm(status, `mov x0, x22\n`);
+		emit_asm(status, `mov x1, x21\n`);
+		emit_asm(status, `mov x2, x9\n`);
+		emit_asm(status, `bl _memcpy\n`);
+		// Deep-copy the List fields into the sret buffer (reads the slot).
+		emit_load_deep_copy_fields(elem, status, "x22", "x21");
+		emit_asm(status, `mov x0, x22\n`);
+		emit_asm(status, `ldp x22, x23, [sp], #16\n`);
+		emit_asm(status, `ldp x20, x21, [sp], #16\n`);
 		return true;
 	}
 
@@ -463,6 +600,11 @@ function emit_owning_standalone_struct(elem: StructNode, func_name: string, stat
 			);
 		}
 	}
+
+	// Transfer the owned container/class/enum fields: the slot took the
+	// source's bytes, so zero the source's fields (its own teardown, when it
+	// still runs, reclaims nothing).
+	emit_transfer_owning_fields(status, "x21", transfer_fields);
 
 	emit_asm(status, `ldr x22, [sp], #16\n`);
 	emit_asm(status, `ldp x20, x21, [sp], #16\n`);
@@ -690,9 +832,37 @@ function emit_owning_shift_T(elem: StructNode, status: BuildStatus, self_reg: st
 	emit_asm(status, `ldp x20, x21, [sp], #16\n`);
 }
 
+/**
+ * Specialized owning-value-struct load_T (inline context: x0 = self, x1 = i,
+ * x8 = sret). The caller's scope-exit destroy ALWAYS reclaims a struct
+ * local's container fields, so the returned copy must own independent
+ * containers — a shallow return would double-free the slot's buffer at the
+ * caller's teardown. String fields stay borrowed (struct-local teardown only
+ * frees RECORDED heap strings, so a strdup here would leak).
+ */
+function emit_owning_load_T(elem: StructNode, status: BuildStatus, self_reg: string) {
+	const T_SIZE = get_struct_size(elem.name, status);
+	emit_asm(status, `stp x20, x21, [sp, #-16]!\n`);
+	emit_asm(status, `stp x22, x23, [sp, #-16]!\n`);
+	emit_asm(status, `ldr x20, [${self_reg}, #8]\n`); // data base
+	emit_asm(status, `mov x9, #${T_SIZE}\n`);
+	emit_asm(status, `madd x21, x1, x9, x20\n`); // x21 = &slot[i]
+	emit_asm(status, `mov x22, x8\n`); // x22 = sret (x8 is caller-saved)
+	emit_asm(status, `mov x0, x22\n`);
+	emit_asm(status, `mov x1, x21\n`);
+	emit_asm(status, `mov x2, x9\n`);
+	emit_asm(status, `bl _memcpy\n`);
+	// Deep-copy the List fields into the sret buffer (reads the slot).
+	emit_load_deep_copy_fields(elem, status, "x22", "x21");
+	emit_asm(status, `mov x0, x22\n`);
+	emit_asm(status, `ldp x22, x23, [sp], #16\n`);
+	emit_asm(status, `ldp x20, x21, [sp], #16\n`);
+}
+
 function emit_owning_store_T(elem: StructNode, status: BuildStatus) {
 	const T_SIZE = get_struct_size(elem.name, status);
 	const string_fields = collect_string_fields(elem, status);
+	const transfer_fields = collect_transfer_fields(elem, status);
 
 	// x0 = self, x1 = i, x2 = val (address)
 	// Save callee-saved registers
@@ -739,6 +909,10 @@ function emit_owning_store_T(elem: StructNode, status: BuildStatus) {
 		const tmp = Math.ceil((string_fields.length * 8) / 16) * 16;
 		emit_asm(status, `add sp, sp, #${tmp}\n`);
 	}
+	// Transfer the owned container/class/enum fields: the slot took the
+	// source's bytes, so zero the source's fields (its own teardown, when it
+	// still runs, reclaims nothing).
+	emit_transfer_owning_fields(status, "x21", transfer_fields);
 	// Restore
 	emit_asm(status, `ldr x22, [sp], #16\n`);
 	emit_asm(status, `ldp x20, x21, [sp], #16\n`);
@@ -747,6 +921,7 @@ function emit_owning_store_T(elem: StructNode, status: BuildStatus) {
 function emit_owning_replace_T(elem: StructNode, status: BuildStatus) {
 	const T_SIZE = get_struct_size(elem.name, status);
 	const string_fields = collect_string_fields(elem, status);
+	const transfer_fields = collect_transfer_fields(elem, status);
 
 	// x0 = self, x1 = i, x2 = val (address)
 	emit_asm(status, `stp x20, x21, [sp, #-16]!\n`);
@@ -775,6 +950,8 @@ function emit_owning_replace_T(elem: StructNode, status: BuildStatus) {
 			(status.label_counter = (status.label_counter ?? 0) + 1),
 		);
 	}
+	// Transfer the owned container/class/enum fields (zeroed at the source).
+	emit_transfer_owning_fields(status, "x21", transfer_fields);
 	// Restore
 	emit_asm(status, `ldr x22, [sp], #16\n`);
 	emit_asm(status, `ldp x20, x21, [sp], #16\n`);

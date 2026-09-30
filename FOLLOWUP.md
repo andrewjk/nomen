@@ -640,3 +640,62 @@ double/invalid free — same posture as the cross-scope entry above):
   final stored copy from such a store leaks).
 - Stores through a `ref` param reached via trait dispatch (vtable) or an
   inlined method are not scanned — see the trait-dispatch entry below.
+
+## Owning container fields in container elements (transfer + load deep-copy)
+
+FIXED (2026-09-30), both backends: a value struct with a heap-owning
+container field (`var protocols = List<string>()`) pushed into a
+`List<that-struct>` aborted at teardown (`free of object 0x4`, exit 134).
+Root cause: the owning `Buffer_<T>` specialization deep-copied only STRING
+fields, so the slot and the source SHARED the `List<T>` member's buffer,
+while every struct-local teardown destroys container fields unconditionally
+(and the aliasing `at()`/`load_T` result did too). Fix:
+
+- `store_T`/`replace_T` now TRANSFER the element's owned container fields:
+  the slot's bytes were memcpy'd, so the SOURCE's container leaves are zeroed
+  (`emit_transfer_owning_fields` C / `collect_transfer_fields` aarch64,
+  recursing through nested value structs). The source's own teardown then
+  reclaims nothing; a spliced `move` donor needs no teardown at all.
+- `load_T` IS now specialized: the returned copy deep-copies `List<T>` fields
+  (`<List_T>_copy`) — the caller's scope-exit destroy would otherwise free the
+  slot's buffer. String fields stay borrowed (struct-local teardown only frees
+  RECORDED heap strings, so strdup'ing on load would leak).
+- The auto-derived `copy` now synthesizes a DEEP copy for `List<T>` members
+  (`c.protocols = self.protocols.copy()`) instead of the old shallow share,
+  and its eligibility gate is order-consistent (`struct_is_copyable`
+  re-evaluates a shape-based predicate instead of resolving monos at derive
+  time).
+
+Covered by `test/list_struct_heap_members.test.ts` (teardown + copy
+independence, audit ON, both backends).
+
+Remaining gaps (all bounded to non-`List` container fields / class/enum
+element fields; none hit by the allmark port, which uses `List` fields and
+class-based rule types):
+
+- **`load_T` deep-copies only `List<T>` fields** (and, on C, payload-copyable
+  enums). A `Buffer<T>`/`Map`/`Set` field, a nested owning user struct field,
+  or a class-typed field of a container element is still returned SHALLOW: the
+  caller's scope-exit destroy frees the slot's shared state (double-free).
+  Closing it needs a per-container deep-copy story (Buffer/Map/Set have no
+  public `copy`; nested/class fields need a designed copy). Same for
+  enum-with-data element fields on aarch64 (C handles them).
+- **`store_T`/`replace_T` transfer only container leaves** (recursing nested
+  structs). Class-typed and enum-with-data fields of the element stay shared;
+  for a stamped `move` donor this is sound (spliced → the slot is sole owner),
+  but an UNSTAMPED generic-body donor (the library `List.copy` body's `v`)
+  whose teardown destroys a class field can still double-free. Adding
+  class/enum payloads to the transfer set would close it.
+- **A value-struct assignment** (`b = a` for a struct owning a `List`) is
+  rejected by the checker (`use .copy() or move`); `.copy()` is the deep path.
+
+### Synthesized ASTs must omit the assignment `operator` for plain `=`
+
+Found while fixing the above: the aarch64 assignment builder branches on
+`!node.operator` for its struct/enum/view/string field-store paths. The
+parser passes `undefined` for plain `=`, but `auto_derive`'s synthesized
+`copy` passed the string `"="` — so its `c.<field> = …` stores silently took
+the compound/scalar path (single-word store) and corrupted a `List` field
+(the C backend tolerates either). Fixed by omitting the operator in
+`build_copy` (matching the parser). Any future programmatic AssignmentNode
+must do the same; alternatively the builder could treat `"="` as plain.

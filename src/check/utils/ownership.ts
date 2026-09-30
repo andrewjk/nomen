@@ -84,7 +84,7 @@ export function register_extern_for_ownership(func: FunctionNode): void {
 	if (func.is_extern) externs_by_name.set(func.name, func);
 }
 
-function destroy_releases(func: FunctionNode): boolean {
+export function destroy_releases(func: FunctionNode): boolean {
 	const visited = new WeakSet<BaseNode>();
 	return func.statements.some((s) => contains_release(s, visited));
 }

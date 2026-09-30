@@ -16,7 +16,7 @@ import StructNode from "../../nodes/StructNode.ts";
 import Type from "../../nodes/Type.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
 import type CheckStatus from "../CheckStatus.ts";
-import { struct_owns_non_string_heap } from "./ownership.ts";
+import { destroy_releases } from "./ownership.ts";
 
 function struct_has_function(struct: StructNode, name: string): boolean {
 	return struct.functions.some((f) => f.name === name);
@@ -261,19 +261,62 @@ function build_hash(struct: StructNode, fields: { name: string; type: Type }[]):
 
 /**
  * Whether `struct` is eligible for a synthesized `copy` method: a value
- * struct whose only ownership is its DIRECT string fields — the same set
- * the pass-by-value argument convention covers. A struct that additionally
- * owns non-string heap (a resource-releasing `#destroy`, a class field, a
- * nested requiring-move struct) cannot be deep-copied by "byte copy +
- * strdup the strings" — its copy stays unwritten (move/swap remains the
- * escape hatch) — and a struct with no string fields is already soundly
- * byte-copyable, so it needs no method.
+ * struct whose every field is independently deep-copyable — direct string
+ * fields (strdup'd), scalars/arrays (byte copies), `List<T>` fields whose
+ * element is itself deep-copyable (the library `List.copy` deep-copies slots
+ * via the owning store contract), and nested copyable structs (recursing
+ * through their own `copy`). Class fields, enum-with-data fields (their
+ * stores transfer payload ownership), class/trait-carrying `List` elements,
+ * and resource-releasing `#destroy`s cannot be deep-copied by synthesis —
+ * the copy stays unwritten (move/swap remains the escape hatch) — and a
+ * struct with nothing to deep-copy (no string, `List`, or nested-copyable
+ * field) is already soundly byte-copyable, so it needs no method.
  */
 export function struct_is_copyable(struct: StructNode, status: CheckStatus): boolean {
 	if (struct.is_class || struct.is_generic || struct.is_simple_type) return false;
-	if (direct_string_fields(struct).length === 0) return false;
-	if (struct_owns_non_string_heap(struct, status, new Set())) return false;
+	if (struct_owns_resource(struct, status, new Set())) return false;
+	if (!struct_needs_copy(struct, status)) return false;
 	return struct_copy_ctor_args(struct) !== null;
+}
+
+/** Whether any field of `struct` actually needs the synthesized deep copy:
+ *  a direct string field, a deep-copyable `List<T>` field, or a nested
+ *  copyable struct field. A struct of flat values byte-copies soundly
+ *  without a method. */
+function struct_needs_copy(struct: StructNode, status: CheckStatus): boolean {
+	if (direct_string_fields(struct).length > 0) return true;
+	for (const field of struct.fields) {
+		if (field.type.is_ref || field.type.is_view || field.type.is_array) continue;
+		if (field_copy_call(field.type, status)) return true;
+	}
+	return false;
+}
+
+/**
+ * Whether `struct` owns a resource a synthesized copy CANNOT duplicate: a
+ * `#destroy` that releases something (a raw block / extern free), or a field
+ * whose type has no deep-copy story (a class instance, a `List` of
+ * class/trait elements, a nested struct with such a field). Fields that DO
+ * have a deep-copy story (strings, nested copyables, copyable `List`s,
+ * payload-copyable enums) don't block synthesis. Mirrors the old
+ * `struct_owns_non_string_heap` gate but understands container deep copies.
+ */
+function struct_owns_resource(
+	struct: StructNode,
+	status: CheckStatus,
+	visited: Set<string>,
+): boolean {
+	if (visited.has(struct.name)) return false;
+	visited.add(struct.name);
+	const destroy = struct.functions.find((f) => f.name === "#destroy");
+	if (destroy && destroy_releases(destroy)) return true;
+	for (const field of struct.fields) {
+		if (field.type.is_ref || field.type.is_view) continue;
+		if (field.type.name === "string" && !field.type.is_array) continue;
+		if (field.type.is_nullable) return true;
+		if (!field_copyable(field.type, status)) return true;
+	}
+	return false;
 }
 
 /**
@@ -294,14 +337,66 @@ function struct_copy_ctor_args(struct: StructNode): string[] | null {
 	return auto.params.filter((p) => !p.is_self_param).map((p) => p.name);
 }
 
-/** Whether `type` names a struct that has (or will get) a `copy` method.
- *  Order-independent: it re-evaluates the eligibility predicate instead of
- *  looking for an already-synthesized method, so an outer struct nested in
- *  the same pre-pass resolves a later-declared field struct. */
-function field_type_is_copyable(type: Type, status: CheckStatus): boolean {
+/** Whether `type` has (or will get) a deep-copy story: a struct with a
+ *  synthesized `copy`, a `List<T>` whose element is deep-copyable (the
+ *  library `List.copy` deep-copies slots via the owning store contract), or
+ *  a primitive / plain (payload-free) enum. Order-independent: it
+ *  re-evaluates the eligibility predicate instead of looking for an
+ *  already-synthesized method, so an outer struct nested in the same
+ *  pre-pass resolves a later-declared field struct. */
+function field_copyable(type: Type, status: CheckStatus): boolean {
 	if (!type.name || type.is_array || type.is_ref || type.is_view || type.is_nullable) return false;
+	// `List<T>`: deep-copyable iff the element is (the library copy rejects
+	// class/trait elements — their stored instances would be shared).
+	if (type.name === "List" && type.type_args?.length === 1) {
+		return element_copyable(type.type_args[0], status);
+	}
+	const nested_struct = status.structs.find((s) => s.name === type.name);
+	if (nested_struct) {
+		// A simple type (int/float/bool/char-sized) is a flat value.
+		if (nested_struct.is_simple_type) return true;
+		return struct_is_copyable(nested_struct, status);
+	}
+	// Enum-with-data fields BLOCK synthesis: the enum-field store path
+	// transfers payload ownership (`c.e = self.e` moves the payloads out),
+	// and there is no Nomen-level `.copy()` on enums to deep-copy them.
+	const en = status.enums.find((e) => e.name === type.name);
+	if (en) return !en.has_associated_data;
+	// Traits have no copy story; primitives do.
+	return !status.traits.some((t) => t.name === type.name);
+}
+
+/** Whether a `List<T>` element type is deep-copyable (see
+ *  `field_copyable`). */
+function element_copyable(type: Type, status: CheckStatus): boolean {
+	if (!type.name || type.is_array || type.is_ref || type.is_view || type.is_nullable) return false;
+	if (type.name === "string") return true;
+	if (type.name === "List" && type.type_args?.length === 1) {
+		return element_copyable(type.type_args[0], status);
+	}
 	const nested = status.structs.find((s) => s.name === type.name);
-	return !!nested && struct_is_copyable(nested, status);
+	if (nested) {
+		if (nested.is_simple_type) return true;
+		return !nested.is_class && struct_is_copyable(nested, status);
+	}
+	const en = status.enums.find((e) => e.name === type.name);
+	if (en) return !en.has_associated_data;
+	return !status.traits.some((t) => t.name === type.name);
+}
+
+/** Whether `build_copy` must route the field through a `.copy()` call (a
+ *  nested copyable struct, or a `List<T>` field): everything else byte
+ *  copies through plain field assignment (strings strdup via the field-write
+ *  path, primitives/plain enums are flat values). */
+function field_copy_call(type: Type, status: CheckStatus): boolean {
+	if (!type.name || type.is_array || type.is_ref || type.is_view || type.is_nullable) return false;
+	if (type.name === "List" && type.type_args?.length === 1) {
+		return element_copyable(type.type_args[0], status);
+	}
+	const nested_struct = status.structs.find((s) => s.name === type.name);
+	return (
+		!!nested_struct && !nested_struct.is_simple_type && struct_is_copyable(nested_struct, status)
+	);
 }
 
 /**
@@ -325,10 +420,10 @@ function build_copy(struct: StructNode, status: CheckStatus): FunctionNode {
 		new DeclarationNode(-1, "private", "var", "c", new Type(struct.name), ctor),
 	];
 	for (const field of struct.fields) {
-		const right = field_type_is_copyable(field.type, status)
+		const right = field_copy_call(field.type, status)
 			? method_call(field_access("self", field.name), "copy")
 			: field_access("self", field.name);
-		statements.push(new AssignmentNode(-1, field_access("c", field.name), right, "="));
+		statements.push(new AssignmentNode(-1, field_access("c", field.name), right));
 	}
 	statements.push(new ReturnNode(-1, new ValueNode(-1, "c")));
 	return new FunctionNode(
