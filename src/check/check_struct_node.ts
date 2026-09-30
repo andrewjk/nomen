@@ -1,4 +1,5 @@
 import add_error from "../add_error.ts";
+import { mono_type_name } from "../build_common/mono_name.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import StructNode from "../nodes/StructNode.ts";
@@ -195,6 +196,37 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 	// move machinery then releases the caller's cleanup obligation — while a
 	// fresh constructor arg (`Struct(List<int>())`) transfers implicitly.
 	mark_owning_auto_init_params(struct, status);
+
+	// `move` on a VALUE-struct field declaration is dead weight: ownership of
+	// owning value-struct fields is derived from the TYPE (the auto-init
+	// stamp above keys on is_owning_struct_type_requiring_move, and the
+	// destroy / displaced-reclaim paths analyse the same type), not the
+	// keyword — warn so the redundant form doesn't re-accumulate. On
+	// CLASS-typed (and trait-typed) fields `move` IS the ownership
+	// declaration (container owns + destroys the instance, displaced stores
+	// reclaimed, borrow stores rejected) — never warned. Library structs are
+	// exempt like the rest of the lint surface. Classification resolves the
+	// MONOMORPHIZED name: the field's default initializer has been checked
+	// above, so the mono struct is registered (the bare generic template
+	// classifies as non-owning — its destroy/fields are still generic).
+	if (!struct.is_library) {
+		for (const field of struct.fields) {
+			if (field.declaration !== "move") continue;
+			if (!field.type.name || field.type.is_ref || field.type.is_view) continue;
+			if (field.type.is_nullable) continue;
+			if (is_class_type(field.type.name, status)) continue;
+			if (status.traits.find((t) => t.name === field.type.name)) continue;
+			const mono = new Type(mono_type_name(field.type));
+			if (!is_owning_struct_type_requiring_move(mono, status)) continue;
+			if (!status.warnings) status.warnings = [];
+			status.warnings.push({
+				message: `'move' on field '${field.name}' is redundant: '${type_display(field.type)}' is a value struct — its ownership is derived from the type, so plain 'var' behaves identically`,
+				start: field.start,
+				line: 0,
+				column: 0,
+			});
+		}
+	}
 
 	status.types.push(struct.name);
 	status.structs.push(struct);
@@ -464,4 +496,10 @@ function types_match(a: Type, b: Type): boolean {
 		!!a.is_view === !!b.is_view &&
 		!!a.is_array === !!b.is_array
 	);
+}
+
+/** The user-visible spelling of a type (`List<int>`, `Map<string, int>`). */
+function type_display(t: Type): string {
+	if (!t.type_args?.length) return t.name ?? "?";
+	return `${t.name}<${t.type_args.map(type_display).join(", ")}>`;
 }

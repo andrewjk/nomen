@@ -274,3 +274,66 @@ main()
 		);
 	});
 });
+
+describe("warnings — move on value-struct fields", () => {
+	const owning_struct = `
+import System
+
+struct Items {
+	var List<int> values = List<int>()
+}
+
+struct Pair {
+	var string a = "x"
+}
+`;
+
+	test("move on an owning value-struct field warns", () => {
+		const input = `
+${owning_struct}
+struct Holder {
+	pub move List<int> items = List<int>()
+}
+`;
+		expect(warning_messages(input)).toContain(
+			"'move' on field 'items' is redundant: 'List<int>' is a value struct — its ownership is derived from the type, so plain 'var' behaves identically",
+		);
+	});
+
+	test("var on an owning value-struct field does not warn", () => {
+		const input = `
+${owning_struct}
+struct Holder {
+	pub var List<int> items = List<int>()
+}
+`;
+		expect(warning_messages(input)).not.toContain(
+			"'move' on field 'items' is redundant: 'List<int>' is a value struct — its ownership is derived from the type, so plain 'var' behaves identically",
+		);
+	});
+
+	test("move on a class-typed field does not warn", () => {
+		const input = `
+import System
+
+class Node {
+	var int value
+}
+
+struct Holder {
+	move Node node = Node(1)
+}
+`;
+		expect(warning_messages(input).filter((m) => m.includes("is redundant"))).toEqual([]);
+	});
+
+	test("move on a plain (non-owning) value-struct field does not warn", () => {
+		const input = `
+${owning_struct}
+struct Holder {
+	move Pair pair = Pair()
+}
+`;
+		expect(warning_messages(input).filter((m) => m.includes("is redundant"))).toEqual([]);
+	});
+});
