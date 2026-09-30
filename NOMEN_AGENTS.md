@@ -219,9 +219,9 @@ Special function names: `#init` (constructor), `#destroy` (auto-raii destructor)
 
 ```nomen
 if cond { ... }
-switch x {
-	0 { ... }
-	1 { ... }
+switch {
+	case x == 0 { ... }
+	case x == 1 { ... }
 	else { ... }
 }
 for i of 0 .. 10 { ... }       // exclusive range

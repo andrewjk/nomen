@@ -2,25 +2,6 @@
 
 Skipped or out-of-scope items recorded for later.
 
-## NOMEN_AGENTS.md documents a value-matching switch form that doesn't parse
-
-The "Control flow" quick reference (`NOMEN_AGENTS.md`, copied into new
-projects as `AGENTS.md`) shows
-
-```nomen
-switch x {
-	0 { ... }
-	1 { ... }
-	else { ... }
-}
-```
-
-but `parse_switch` only accepts the conditionless form
-(`switch { case <cond> { … } else { … } }`) — `switch x { 0 { … } }` fails
-with "Expected { / Expected }" on the `x`. Either implement value matching
-or fix the doc (allmark's AGENTS.md carries the same text). Found
-2026-09-30 while writing a switch-arm regression test.
-
 ## aarch64: value-struct elements in a heap `Array<T>` read garbage / SIGSEGV
 
 Found 2026-09-30 while unblocking the allmark port's protocol lists
