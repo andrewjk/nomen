@@ -17,16 +17,20 @@ export default function build_switch_node(
 
 	// heap_string_fields records are per-path "may be heap" facts, and the
 	// cases are mutually exclusive: each case (and the else branch) must
-	// start from the PRE-switch records, or an earlier case's store made a
-	// later case free the still-constructed literal as heap. The join keeps
-	// the union across all cases (see build_if_else_node).
+	// start from a COPY of the PRE-switch records, or an earlier case's store
+	// made a later case free the still-constructed literal as heap. The
+	// copies matter — field stores RECORD via in-place `.add()` on
+	// `status.heap_string_fields` (value-struct targets), so handing a case
+	// the pre set BY REFERENCE let its adds bleed into every later case's
+	// "pre" set (mirrors build_if_else_node). The join keeps the union across
+	// all cases.
 	const pre_heap_string_fields = status.heap_string_fields;
 	const case_field_sets: (Set<string> | undefined)[] = [];
 
 	for (let i = 0; i < node.cases.length; i++) {
 		const c = node.cases[i];
 		status.scoped_declarations = enter_c_scope(status);
-		status.heap_string_fields = pre_heap_string_fields;
+		status.heap_string_fields = new Set(pre_heap_string_fields ?? []);
 
 		// The condition builds into a scratch buffer (code_scratch.ts) — the
 		// historical substring-and-truncate capture flattened the accumulated
@@ -99,7 +103,7 @@ export default function build_switch_node(
 	if (node.else_branch) {
 		status.code += "} else ";
 		status.scoped_declarations = enter_c_scope(status);
-		status.heap_string_fields = pre_heap_string_fields;
+		status.heap_string_fields = new Set(pre_heap_string_fields ?? []);
 		status.code += `{\n`;
 		build_block_with_cursor(node.else_branch, nir?.otherwise ?? undefined, status);
 		build_auto_free(status);

@@ -18,14 +18,20 @@ export default function build_if_else_node(
 	status.deferred_frees = [];
 
 	// heap_string_fields records are per-path "may be heap" facts. The
-	// branches are mutually exclusive, so the else branch must start from the
-	// PRE-branch records: the then branch's records describe a path that did
-	// not run, and letting them stand made the else branch's store free the
-	// displaced value as heap when it was still the freshly constructed
-	// literal ("pointer being freed was not allocated"). The join keeps the
-	// union — a field recorded by EITHER branch holds heap on that path, so
-	// the scope-exit reclaim must cover both (records only ever merge
-	// forward; branch scopes never delete outer records).
+	// branches are mutually exclusive, so each branch must start from a COPY
+	// of the PRE-branch records: the then branch's records describe a path
+	// that did not run, and letting them stand made the else branch's store
+	// free the displaced value as heap when it was still the freshly
+	// constructed literal ("pointer being freed was not allocated"). The
+	// copies matter — field stores RECORD via in-place `.add()` on
+	// `status.heap_string_fields` (value-struct targets; class targets are
+	// unconditionally heap and never record), so handing a branch the pre
+	// set BY REFERENCE let the then branch's adds bleed into the "pre" set
+	// and the else branch then freed the struct's still-unassigned `""`
+	// default. The join keeps the union — a field recorded by EITHER branch
+	// holds heap on that path, so the scope-exit reclaim must cover both
+	// (records only ever merge forward; branch scopes never delete outer
+	// records).
 	const pre_heap_string_fields = status.heap_string_fields;
 
 	// Hoist allocation declarations from the condition (e.g. function-call
@@ -39,6 +45,7 @@ export default function build_if_else_node(
 
 	let then_fields: Set<string> | undefined;
 	if (node.if_branch) {
+		status.heap_string_fields = new Set(pre_heap_string_fields ?? []);
 		build_block_with_cursor(node.if_branch, nir?.then_branch, status);
 		build_auto_free(status);
 	}
@@ -47,7 +54,7 @@ export default function build_if_else_node(
 	if (node.else_branch) {
 		status.scoped_declarations = enter_c_scope(status);
 		status.deferred_frees = [];
-		status.heap_string_fields = pre_heap_string_fields;
+		status.heap_string_fields = new Set(pre_heap_string_fields ?? []);
 		status.code += `} else {\n`;
 		build_block_with_cursor(node.else_branch, nir?.else_branch, status);
 		build_auto_free(status);
