@@ -24,6 +24,11 @@ export default class AssignmentNode extends BaseNode {
 		super("assign", start);
 		this.left_value = left_value;
 		this.right_value = right_value;
-		this.operator = operator;
+		// A plain `=` is represented as `undefined` (the parser strips it). A
+		// programmatically-built AST (a synthesized method body) may pass the
+		// literal `"="` — normalize it here so the backends' `!operator`
+		// compound-vs-plain branches treat such a node as a plain assignment
+		// instead of falling through to their compound/scalar stores.
+		this.operator = operator === "=" ? undefined : operator;
 	}
 }

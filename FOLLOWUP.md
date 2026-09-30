@@ -688,14 +688,3 @@ class-based rule types):
   class/enum payloads to the transfer set would close it.
 - **A value-struct assignment** (`b = a` for a struct owning a `List`) is
   rejected by the checker (`use .copy() or move`); `.copy()` is the deep path.
-
-### Synthesized ASTs must omit the assignment `operator` for plain `=`
-
-Found while fixing the above: the aarch64 assignment builder branches on
-`!node.operator` for its struct/enum/view/string field-store paths. The
-parser passes `undefined` for plain `=`, but `auto_derive`'s synthesized
-`copy` passed the string `"="` — so its `c.<field> = …` stores silently took
-the compound/scalar path (single-word store) and corrupted a `List` field
-(the C backend tolerates either). Fixed by omitting the operator in
-`build_copy` (matching the parser). Any future programmatic AssignmentNode
-must do the same; alternatively the builder could treat `"="` as plain.
