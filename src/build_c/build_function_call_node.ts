@@ -4,6 +4,7 @@ import mark_tuple_literal_move_owners from "../build_common/mark_tuple_literal_m
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
+import { transfer_ref_param_field_records } from "../build_common/transfer_ref_param_records.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
@@ -521,6 +522,24 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		// the `_ret_has` argument), so the statement-expression wrapper is
 		// self-contained and yields the call's value.
 		status.code += `({ unsigned char _nsd_${wrap_tmp} = 0; ${call_text}; })`;
+	}
+
+	// `ref` value-struct params: the callee's string-field stores write
+	// through to the caller's argument — transfer the callee's
+	// definitely-executed stores onto the caller's records so its scope exit
+	// frees them (the callee's own records die at return).
+	{
+		const callee = (node as unknown as { resolved_function?: FunctionNode }).resolved_function;
+		if (callee && !callee.params?.some((p) => p.is_self_param)) {
+			transfer_ref_param_field_records(callee, node.params, status, (name) => {
+				return (
+					!!find_decl_in_c_scopes(status, name) &&
+					!status.function_ref_params?.has(name) &&
+					!status.ref_class_params?.has(name) &&
+					!status.class_vars?.has(name)
+				);
+			});
+		}
 	}
 
 	if (node.name.startsWith("_string_interpolate_")) {

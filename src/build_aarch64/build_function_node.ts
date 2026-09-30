@@ -211,6 +211,14 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.heap_class_arrays = undefined;
 	const old_heap_array_vars = status.heap_array_vars;
 	status.heap_array_vars = undefined;
+	// heap_string_fields ("var.field" records) is name-keyed like the sets
+	// above: a record a callee added for its `ref` param would leak into a
+	// LATER function's build — a same-named local of an unrelated struct
+	// would free a field holding rodata at its scope exit (invalid free).
+	// Records cross the call boundary only deliberately, via the call-site
+	// ref-param write transfer (scan_ref_param_string_field_writes).
+	const old_heap_string_fields = status.heap_string_fields;
+	status.heap_string_fields = undefined;
 
 	// heap_cleanup_stack holds the per-scope heap anchor slots (class
 	// instances, owning temporaries). Like heap_strings, it must be isolated
@@ -1388,6 +1396,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 
 	status.scoped_declarations = old_scoped_declarations;
 	status.moved = old_moved;
+	status.heap_string_fields = old_heap_string_fields;
 	status.heap_strings = old_heap_strings;
 	status.heap_string_arrays = old_heap_string_arrays;
 	status.heap_owned_string_arrays = old_heap_owned_string_arrays;

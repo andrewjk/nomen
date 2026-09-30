@@ -5,6 +5,7 @@ import {
 	drop_self_written_string_field_records,
 	scan_self_string_field_writes,
 } from "../build_common/scan_self_string_writes.ts";
+import { transfer_ref_param_field_records } from "../build_common/transfer_ref_param_records.ts";
 import { is_view_value } from "../build_common/view_value.ts";
 import { is_built_in_type } from "../built_in_types.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
@@ -1118,6 +1119,25 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 								}
 							}
 						}
+					}
+				}
+				// Extra `ref` value-struct params: the method's stores through
+				// them write caller-owned storage — transfer the records so the
+				// ARGUMENT's owner frees the stored copies (the callee's own
+				// records die at return).
+				{
+					const ref_method = target_method ?? trait_default_func;
+					if (ref_method) {
+						transfer_ref_param_field_records(
+							ref_method,
+							(access_func.params ?? []) as BaseNode[],
+							status,
+							(name) =>
+								!!find_decl_in_c_scopes(status, name) &&
+								!status.function_ref_params?.has(name) &&
+								!status.ref_class_params?.has(name) &&
+								!status.class_vars?.has(name),
+						);
 					}
 				}
 				// An INLINE capturing lambda argument to the func-typed

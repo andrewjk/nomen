@@ -1312,6 +1312,11 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 	status.init_assigned_fields = new Set();
 	const old_init_default_reclaimed = status.init_default_reclaimed_fields;
 	status.init_default_reclaimed_fields = new Set();
+	// The init body builds outside build_function_node — isolate its
+	// name-keyed field records the same way (a store to a body local must
+	// not leak into a later function's build).
+	const old_init_heap_string_fields = status.heap_string_fields;
+	status.heap_string_fields = undefined;
 
 	// Zero the struct memory
 	emit_asm(status, `str xzr, [x19]\n`);
@@ -1474,6 +1479,7 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 		status.current_function = old_current_function;
 		status.init_assigned_fields = old_init_assigned_fields;
 		status.init_default_reclaimed_fields = old_init_default_reclaimed;
+		status.heap_string_fields = old_init_heap_string_fields;
 	}
 
 	// The init body's own loop-promotion claims (the enclosing's set was

@@ -106,6 +106,14 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.heap_strings = new Set();
 	const old_owned_string_vars = status.owned_string_vars;
 	status.owned_string_vars = new Set();
+	// heap_string_fields is name-keyed too ("var.field"): a record a callee
+	// added for its `ref` param would leak into a LATER function's build — a
+	// same-named local of an unrelated struct would free a field holding
+	// rodata at its scope exit (invalid free). Records cross the call
+	// boundary only deliberately, via the call-site ref-param write transfer
+	// (scan_ref_param_string_field_writes).
+	const old_heap_string_fields = status.heap_string_fields;
+	status.heap_string_fields = undefined;
 	// Array-ownership sets are name-keyed function-local marks like the
 	// string sets above: an `arr` registered as a heap array (or with a
 	// stack length) in one function must not leak into a later function
@@ -633,6 +641,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.aliased_class_sources = old_aliased_class_sources;
 	status.string_borrow_vars = old_string_borrow_vars;
 	status.moved_string_vars = old_moved_string_vars;
+	status.heap_string_fields = old_heap_string_fields;
 	status.heap_strings = old_heap_strings;
 	status.owned_string_vars = old_owned_string_vars;
 	status.heap_array_vars = old_heap_array_vars;

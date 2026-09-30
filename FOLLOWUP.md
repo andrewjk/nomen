@@ -625,17 +625,43 @@ checker warning for `move` on value-struct fields so it does not
 re-accumulate, and a line in docs/MEMORY.md stating that field `move` is
 meaningful only for class-typed fields.
 
-## Owned string stored into a ref-param struct field leaks (caller never records it)
+## Owned string stored into a ref-param struct field (fixed; bounded remainders)
 
-`func set = (ref Pair p, string raw) { p.a = raw }` — the callee strdups the
-borrow and records `p.a` in its own `heap_string_fields`, but the record never
-crosses the call boundary, so the CALLER never frees the field: every call
-leaks one allocation (audited builds report `LEAK: 1 allocation(s)`; found
-while fixing the exclusive-branch field-store SIGABRT — see
-`test/branch_string_field_store.test.ts`, whose value-struct repro was
-abandoned for this). CLASS targets are unaffected (their destroy reclaims
-string fields unconditionally), which is why the allmark port's
-class-per-rule shapes don't see it. Fix direction: at a call site whose
-callee takes a `ref` struct param, transfer the callee's recorded string-field
-writes onto the caller's records (mirror of
-`drop_self_written_string_field_records`, in the add direction).
+FIXED (2026-09-30), both backends. The store itself was never the problem —
+the record was: the callee's `heap_string_fields` records are scope-local and
+died at return, so the caller never freed the stored copy (LEAK: 1 per
+call). Worse, the record SET was shared across function builds: a callee's
+`p.a` record leaked into a LATER function's build, and a same-named local of
+an UNRELATED struct matched it — its scope exit freed a rodata literal
+(invalid free, SIGABRT), not just a leak.
+
+Two halves close it:
+
+- **Per-function record isolation.** `heap_string_fields` joins the other
+  name-keyed sets saved/restored around each function body build (both
+  backends; the struct custom-`#init` body paths too). Records now cross a
+  call boundary only deliberately.
+- **Call-site transfer (the add-direction mirror of
+  `drop_self_written_string_field_records`).**
+  `transfer_ref_param_field_records` (build_common) consults
+  `scan_ref_param_string_field_writes` — the callee's DIRECT top-level
+  stores through `ref` value-struct params, transitively through top-level
+  calls that forward the same param (resolved via the checker's
+  `resolved_function` stamps) — and records the fields for the ARGUMENT
+  variable at the call site, so the argument's owner frees them at its
+  scope exit. Wired into all four call builders (free function + method,
+  both backends). Covered by test/ref_param_field_transfer.test.ts.
+
+Soundness rule: only definitely-executed (direct) stores transfer; a
+conditional store could leave the pre-call value in place, and a record over
+it would free rodata at the caller's exit. Bounded remainders (leak, never a
+double/invalid free — same posture as the cross-scope entry above):
+
+- A displaced copy from an EARLIER call leaks per extra call
+  (`set(ref p, "one"); set(ref p, "two")` leaks "one"): the callee's store
+  cannot know the displaced value's ownership, and pre-freeing at the call
+  site would be a use-after-free when the callee reads the field first.
+- Conditional/nested stores inside the callee are not transferred (the
+  final stored copy from such a store leaks).
+- Stores through a `ref` param reached via trait dispatch (vtable) or an
+  inlined method are not scanned — see the trait-dispatch entry below.

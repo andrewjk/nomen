@@ -8,6 +8,7 @@ import mark_tuple_literal_move_owners from "../build_common/mark_tuple_literal_m
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
+import { transfer_ref_param_field_records } from "../build_common/transfer_ref_param_records.ts";
 import { is_float_type } from "../built_in_types.ts";
 import { is_int_literal, to_decimal_string } from "../int_literal.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
@@ -1172,6 +1173,22 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		}
 
 		emit_asm(status, `bl ${func_name}\n`);
+
+		// `ref` value-struct params: the callee's string-field stores write
+		// through to the caller's argument — transfer the callee's
+		// definitely-executed stores onto the caller's records so its scope
+		// exit frees them (the callee's own records die at return).
+		{
+			const callee = (node as unknown as { resolved_function?: FunctionNode }).resolved_function;
+			if (callee && !callee.params?.some((p) => p.is_self_param)) {
+				transfer_ref_param_field_records(callee, node.params, status, (name) => {
+					return (
+						!!status.scoped_declarations?.some((d) => d.name === name) &&
+						!is_local_ref_var(name, status)
+					);
+				});
+			}
+		}
 
 		// A float-returning callee hands its result back in d0 (the d0
 		// return convention). Bit-cast to x0 so every existing consumer

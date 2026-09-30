@@ -8,6 +8,7 @@ import {
 	drop_self_written_string_field_records,
 	scan_self_string_field_writes,
 } from "../build_common/scan_self_string_writes.ts";
+import { transfer_ref_param_field_records } from "../build_common/transfer_ref_param_records.ts";
 import { is_float_type } from "../built_in_types.ts";
 import {
 	is_built_in_type,
@@ -3400,6 +3401,18 @@ function build_access_method(
 				status,
 				(node.target as ValueNode).value,
 				scan_self_string_field_writes(target_struct, target_method),
+			);
+			// Extra `ref` value-struct params: the method's stores through
+			// them write caller-owned storage — transfer the records so the
+			// ARGUMENT's owner frees the stored copies (the callee's own
+			// records die at return).
+			transfer_ref_param_field_records(
+				target_method,
+				(access_func.params ?? []) as BaseNode[],
+				status,
+				(name) =>
+					!!status.scoped_declarations?.some((d) => d.name === name) &&
+					!is_local_ref_var(name, status),
 			);
 		}
 	}
