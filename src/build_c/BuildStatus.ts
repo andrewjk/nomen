@@ -492,6 +492,16 @@ export default interface BuildStatus {
 	 * memory). Later writes displace a real value and reclaim normally.
 	 */
 	init_assigned_fields?: Set<string>;
+	/**
+	 * `self.<field>` keys whose DEFAULT seed was already reclaimed inside the
+	 * current custom `#init` body (both backends). Defaulted fields are seeded
+	 * before the body runs; the body's first write to the field displaces that
+	 * seed — when the default is a heap-owning expression it must be freed
+	 * ahead of the store (a raw pair store would orphan it). Later writes
+	 * displace values whose ownership the init cannot know and keep the
+	 * status quo. Reset per constructor overload next to init_assigned_fields.
+	 */
+	init_default_reclaimed_fields?: Set<string>;
 	function_data?: string;
 	nested_functions?: string;
 	stack_size?: number;

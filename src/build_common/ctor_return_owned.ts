@@ -2,6 +2,7 @@ import type BaseNode from "../nodes/BaseNode.ts";
 import type FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import type StructNode from "../nodes/StructNode.ts";
 import { direct_string_fields } from "./has_string_fields.ts";
+import { init_computed_heap_string_fields } from "./init_computed_seeds.ts";
 import { is_string_borrow } from "./string_return_analysis.ts";
 import tuple_return_owned_element from "./tuple_return_owned_element.ts";
 
@@ -79,19 +80,26 @@ export function override_return_string_fields(
  * buffer unless it is reclaimed ahead of the store. Literal defaults are
  * rodata (never freed) and value-node defaults are consts/borrows (not
  * owned); a custom `#init`'s `self.<field> = <param>` seeds alias the
- * caller's argument temps in the common case and are deliberately not
- * analyzed here.
+ * caller's argument temps in the common case, but a COMPUTED seed
+ * (`self.a = s + "!"`, classified by `is_init_seed_heap`) owns heap — those
+ * fields are displaced too.
  */
 export function override_displaced_string_fields(
 	struct_node: StructNode,
 	overrides: { name: string; value: BaseNode }[] | undefined,
+	is_init_seed_heap: (expr: BaseNode) => boolean,
 ): string[] {
 	if (!overrides?.length) return [];
+	const computed = init_computed_heap_string_fields(struct_node, is_init_seed_heap);
 	const displaced: string[] = [];
 	for (const override of overrides) {
 		const field = struct_node.fields.find((f) => f.name === override.name);
 		if (!field) continue;
 		if (field.type.name !== "string" || field.type.is_array || field.type.is_view) continue;
+		if (computed.has(override.name)) {
+			displaced.push(override.name);
+			continue;
+		}
 		const seed = field.value;
 		if (!seed || seed.node_type === "value") continue;
 		if (is_string_borrow(seed)) continue;
@@ -102,8 +110,10 @@ export function override_displaced_string_fields(
 
 /**
  * The aarch64 counterpart of override_displaced_string_fields: the
- * overridden string fields whose ctor-seeded default is a non-literal
- * expression that produced a HEAP value. The extra `is_owned_heap` check
+ * overridden string fields whose ctor-seeded value is a non-literal
+ * expression that produced a HEAP value — a non-literal DEFAULT, or a
+ * custom `#init`'s computed seed (`init_computed_heap_string_fields` under
+ * the same `is_owned_heap` classifier). The extra `is_owned_heap` check
  * (the aarch64 is_owned_heap_temp) matters because the aarch64 backend does
  * NOT strdup every string return: a literal-returning user function leaves
  * RODATA in the seeded field, which must never be freed. Used at the
@@ -116,11 +126,16 @@ export function ctor_heap_displaced_string_fields(
 	is_owned_heap: (seed: BaseNode) => boolean,
 ): string[] {
 	if (!overrides?.length) return [];
+	const computed = init_computed_heap_string_fields(struct_node, is_owned_heap);
 	const displaced: string[] = [];
 	for (const override of overrides) {
 		const field = struct_node.fields.find((f) => f.name === override.name);
 		if (!field) continue;
 		if (field.type.name !== "string" || field.type.is_array || field.type.is_view) continue;
+		if (computed.has(override.name)) {
+			displaced.push(override.name);
+			continue;
+		}
 		const seed = field.value;
 		if (!seed || seed.node_type === "value") continue;
 		if (is_string_borrow(seed)) continue;

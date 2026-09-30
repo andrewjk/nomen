@@ -29,6 +29,7 @@ import ValueNode from "../nodes/ValueNode.ts";
 import build_array_values_node from "./build_array_values_node.ts";
 import { emit_nursery_joins_on_return_c } from "./build_async_block_node.ts";
 import build_node from "./build_node.ts";
+import { is_owned_heap_temp } from "./build_operation_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import { emit_expr_from_nir, nir_array_elements } from "./emit_nir.ts";
 import { reclaim_all_c_scopes } from "./utils/c_scope.ts";
@@ -641,7 +642,8 @@ export default function build_return_node(
 		// overridden field with the field's DEFAULT expression — a
 		// non-literal default (e.g. `var string a = "de" + "fault"`) was
 		// evaluated fresh at construction and is owned by the struct alone,
-		// so the raw override store below would orphan it. Reclaim it first.
+		// so the raw override store below would orphan it. A custom `#init`'s
+		// computed seed owns heap the same way. Reclaim it first.
 		if (
 			is_struct &&
 			!return_is_class &&
@@ -652,6 +654,7 @@ export default function build_return_node(
 			for (const name of override_displaced_string_fields(
 				return_struct,
 				(node.value as FunctionCallNode).field_overrides,
+				(expr) => is_owned_heap_temp(expr, status),
 			)) {
 				status.code += `free(_return_val.${name}.ptr);\n`;
 			}

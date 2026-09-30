@@ -21,49 +21,29 @@ Two ownership corners remain, both deliberately left:
   a trait-declared class field inside a nested/array element is not
   recursively destroyed.
 
-## Override-constructor returns: residual displaced-copy corners
+## Custom `#init` computed seeds: residual bounded corners
 
-FIXED (2026-09-30): the ANONYMOUS override constructor return
-(`return [ .. R(), field = local ]`) is now normalized like the plain
-constructor return — the classification registers the function (ctor bases
-with `field_overrides`, and forwarded bases — a rewritten call or a
-base-bearing anon literal — whose callee is itself registered), the return
-boundary strdups the overridden string fields unless the override value owns
-heap (and reclaims the forwarded base's displaced deep copy before the raw
-override store), and caller bindings record/free every field
-(`record_call_init_string_fields` now also looks through an anon-struct
-base). Covered by test/override_ctor_return.test.ts.
+FIXED (2026-09-30), both backends: the custom-`#init` computed seeds
+(`self.a = s + "!"`) the override-displacement analysis used to skip are now
+classified by an `#init`-body scan (`init_computed_heap_string_fields`):
+qualifying fields are recorded at the ctor-binding sites (scope exit frees the
+computed seed — including no-default fields, which cannot be overridden), the
+override sites reclaim the displaced computed seed
+(`override_displaced_string_fields` / `ctor_heap_displaced_string_fields`),
+and the `#init` write itself reclaims a displaced HEAP default (first write;
+`claim_init_default_seed_reclaim`). Param-alias seeds (`self.a = s`) stay
+un-analyzed (they borrow the caller's argument temp). Covered by
+test/override_ctor_displaced.test.ts.
 
-The DISPLACED-COPY corners are fixed too (test/override_ctor_displaced.test.ts):
-an overridden field whose ctor-seeded value owns heap — a non-literal default
-expression (`var string a = "de" + "fault"` is evaluated fresh at
-construction and owned by the struct alone) — is now reclaimed ahead of the
-raw override store on the C backend (return, declaration, and assignment
-sites; `override_displaced_string_fields`). The hoisted `_param_N`
-constructor-argument allocation attached to the anon literal's BASE is also
-surfaced now (`collect_allocations` walks the rewritten func_call's
-`.base`) — the return-override shape used to reference an undeclared temp
-(C: use of undeclared identifier; aarch64: undefined symbol at link).
+Deliberately left (bounded leak, never an invalid free — same posture as the
+method-write record drops):
 
-Remaining corner, deliberately left:
-
-- **Custom `#init` computed seeds** (`self.a = s + "!"` in an init body):
-  the seed owns heap but is not analyzed (the helper reads field DEFAULT
-  expressions only), so an override displaces it un-freed (1 allocation).
-  Detecting it needs a self-write scan of the `#init` body (the
-  `scan_self_string_field_writes` machinery could be reused).
-
-The NON-LITERAL ctor-seeded DEFAULT family is fixed (2026-09-30): the
-heap-default fields are now recorded at the ctor-binding sites on both
-backends (`record_ctor_heap_default_fields`), gated on the backend's
-`is_owned_heap_temp` so a literal-returning call's rodata seed is never
-recorded (never freed) — closing the plain `var Pair p = Pair("x")` hold
-and the fresh `p = Pair("y")` reassignment shapes; overridden fields are
-skipped where a seed is reclaimed out-of-band (the C backend's explicit
-displaced free, the aarch64 expression-temp override reclaim). The same
-fix landed the aarch64 evaluation of non-literal field DEFAULTS (the ctor
-used to leave the field as stack garbage — SEGFAULT on first read) — see
-`test/nonliteral_field_defaults.test.ts`.
+- A conditional computed write over a RODATA default: the no-write path leaves
+  the literal in the field, so the field stays unrecorded and the write path's
+  seed leaks (≤1). A heap default closes it (both paths hold heap → recorded).
+- Later `#init` writes to the same field displace the previous write's value
+  un-freed when it was heap (the init cannot know the displaced value's
+  ownership; the first write's default reclaim is the only static fact).
 
 ## Nullable scalars: remaining in-band corners
 

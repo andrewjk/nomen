@@ -1070,6 +1070,7 @@ export default function build_declaration_node(
 					for (const name of override_displaced_string_fields(
 						override_struct,
 						override_ctor_call.field_overrides,
+						(expr) => is_owned_heap_temp(expr, status),
 					)) {
 						status.code += `free(${safe_name}.${name}.ptr);\n`;
 					}

@@ -6,6 +6,7 @@ import { is_normalized_struct_call } from "../build_common/call_init_string_fiel
 import record_ctor_heap_default_fields from "../build_common/ctor_heap_default_fields.ts";
 import { override_displaced_string_fields } from "../build_common/ctor_return_owned.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
+import { claim_init_default_seed_reclaim } from "../build_common/init_computed_seeds.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { call_result_type, is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
@@ -1212,6 +1213,30 @@ export default function build_assignment_node(
 		}
 	}
 
+	// A custom `#init`'s write to a DEFAULTED `self.<field>` displaces the
+	// seeded default; a heap-owning default must be reclaimed ahead of the
+	// raw pair store (value-struct self writes skip the ownership-normalized
+	// lowering, so nothing else frees it). The first write only — later
+	// writes displace values whose ownership the init cannot know.
+	if (
+		!node.operator &&
+		node.left_value.node_type === "access" &&
+		(node.left_value as AccessNode).access.node_type === "access_field" &&
+		(node.left_value as AccessNode).target.node_type === "value" &&
+		((node.left_value as AccessNode).target as ValueNode).value === "self" &&
+		status.current_function?.name === "#init" &&
+		claim_init_default_seed_reclaim(
+			status,
+			((node.left_value as AccessNode).access as AccessFieldNode).name,
+			(expr) => is_owned_heap_temp(expr, status),
+		)
+	) {
+		const saved_seed_len = begin_code_scratch(status);
+		build_node(node.left_value, status);
+		const seed_access = end_code_scratch(status, saved_seed_len);
+		status.code += `free(${seed_access}.ptr);\n`;
+	}
+
 	build_node(node.left_value, status);
 	if (node.operator) {
 		status.code += ` ${node.operator.slice(0, -1)}= `;
@@ -1268,6 +1293,7 @@ export default function build_assignment_node(
 				for (const name of override_displaced_string_fields(
 					override_struct,
 					rhs_call.field_overrides,
+					(expr) => is_owned_heap_temp(expr, status),
 				)) {
 					status.code += `free(${lname}.${name}.ptr);\n`;
 				}

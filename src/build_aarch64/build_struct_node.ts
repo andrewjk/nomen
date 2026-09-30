@@ -1310,6 +1310,8 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 	status.current_function = func;
 	const old_init_assigned_fields = status.init_assigned_fields;
 	status.init_assigned_fields = new Set();
+	const old_init_default_reclaimed = status.init_default_reclaimed_fields;
+	status.init_default_reclaimed_fields = new Set();
 
 	// Zero the struct memory
 	emit_asm(status, `str xzr, [x19]\n`);
@@ -1471,6 +1473,7 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 		status.raw_param_reloads = old_raw_param_reloads;
 		status.current_function = old_current_function;
 		status.init_assigned_fields = old_init_assigned_fields;
+		status.init_default_reclaimed_fields = old_init_default_reclaimed;
 	}
 
 	// The init body's own loop-promotion claims (the enclosing's set was

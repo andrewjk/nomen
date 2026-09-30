@@ -163,6 +163,8 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 			// the body, so their first write reclaims the default normally.
 			const old_init_assigned_fields = status.init_assigned_fields;
 			status.init_assigned_fields = new Set();
+			const old_init_default_reclaimed = status.init_default_reclaimed_fields;
+			status.init_default_reclaimed_fields = new Set();
 
 			// Apply default field values BEFORE the custom init body runs, so any
 			// field the init doesn't explicitly assign still gets its default.
@@ -302,6 +304,7 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 			status.current_struct = old_current_struct;
 			status.current_function = old_current_function;
 			status.init_assigned_fields = old_init_assigned_fields;
+			status.init_default_reclaimed_fields = old_init_default_reclaimed;
 			status.function_return_type = old_return_type;
 		}
 

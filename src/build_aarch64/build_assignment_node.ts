@@ -7,6 +7,7 @@ import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import { is_normalized_struct_call } from "../build_common/call_init_string_fields.ts";
 import record_ctor_heap_default_fields from "../build_common/ctor_heap_default_fields.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
+import { claim_init_default_seed_reclaim } from "../build_common/init_computed_seeds.ts";
 import { call_result_type, is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import { is_string_borrow } from "../build_common/string_return_analysis.ts";
@@ -2252,6 +2253,31 @@ export default function build_assignment_node(
 					if (base_reg === undefined) {
 						get_base_address(access, status, "x0");
 						emit_asm(status, `str x0, [sp, #-16]!\n`);
+					}
+
+					// A custom `#init`'s write to a DEFAULTED `self.<field>`
+					// displaces the seeded default; a heap-owning default must
+					// be reclaimed ahead of the raw pair store (value-struct
+					// self writes skip the ownership-normalized lowering, so
+					// nothing else frees it). The first write only — later
+					// writes displace values whose ownership the init cannot
+					// know. The base (pushed or pinned) is stable here.
+					if (
+						!node.operator &&
+						access.target.node_type === "value" &&
+						(access.target as ValueNode).value === "self" &&
+						status.current_function?.name === "#init" &&
+						claim_init_default_seed_reclaim(status, field_name, (expr) =>
+							is_owned_heap_temp(expr, status),
+						)
+					) {
+						if (base_reg !== undefined) {
+							emit_asm(status, `ldr x0, [${base_reg}, #${offset}]\n`);
+						} else {
+							emit_asm(status, `ldr x0, [sp]\n`);
+							emit_asm(status, `ldr x0, [x0, #${offset}]\n`);
+						}
+						emit_free(status);
 					}
 
 					emit_rhs_value(node.right_value, nir_rhs, status);
