@@ -3,6 +3,7 @@ import emit_field_overrides, {
 	hoist_field_overrides,
 } from "../build/emit_field_overrides.ts";
 import { is_normalized_struct_call } from "../build_common/call_init_string_fields.ts";
+import { override_displaced_string_fields } from "../build_common/ctor_return_owned.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { call_result_type, is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
@@ -16,6 +17,7 @@ import AccessNode from "../nodes/AccessNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
+import type FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import { build_vtable_target } from "./build_access_node.ts";
@@ -1221,7 +1223,42 @@ export default function build_assignment_node(
 	// field-target overrides in assignment are an edge case.
 	if (node.left_value.node_type === "value" && has_field_overrides(node.right_value)) {
 		const lname = (node.left_value as ValueNode).value;
-		emit_field_overrides(lname, node.right_value, build_node, status, ";\n", ";\n");
+		// An OVERRIDE-CONSTRUCTOR base (the checker rewrote
+		// `[ .. T(x), f = v ]` onto the ctor call) seeded each overridden
+		// field with the field's DEFAULT expression — a non-literal default
+		// was evaluated fresh at construction and is owned by the struct
+		// alone (the base-literal branch above dropped any stale records),
+		// so the override store would orphan it. Reclaim it first. A
+		// FORWARDED base keeps the status quo (borrow semantics).
+		const rhs_call =
+			node.right_value.node_type === "func_call"
+				? (node.right_value as FunctionCallNode)
+				: undefined;
+		if (rhs_call?.field_overrides?.length && rhs_call.name === rhs_call.type?.name) {
+			const override_struct = status.structs.find(
+				(s) => s.name === rhs_call.name && !s.is_simple_type && !s.is_class,
+			);
+			if (override_struct) {
+				// The base-copy statement is still unclosed (the override
+				// emitter's terminator closes it) — close it here so the frees
+				// land as statements, and skip the duplicate terminator below.
+				status.code += `;\n`;
+				for (const name of override_displaced_string_fields(
+					override_struct,
+					rhs_call.field_overrides,
+				)) {
+					status.code += `free(${lname}.${name}.ptr);\n`;
+				}
+			}
+		}
+		emit_field_overrides(
+			lname,
+			node.right_value,
+			build_node,
+			status,
+			rhs_call?.field_overrides?.length && rhs_call.name === rhs_call.type?.name ? "" : ";\n",
+			";\n",
+		);
 	}
 
 	if (node.swap) {

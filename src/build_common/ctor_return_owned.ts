@@ -2,6 +2,7 @@ import type BaseNode from "../nodes/BaseNode.ts";
 import type FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import type StructNode from "../nodes/StructNode.ts";
 import { direct_string_fields } from "./has_string_fields.ts";
+import { is_string_borrow } from "./string_return_analysis.ts";
 import tuple_return_owned_element from "./tuple_return_owned_element.ts";
 
 /**
@@ -67,4 +68,34 @@ export function override_return_string_fields(
 		}
 	}
 	return skip;
+}
+
+/**
+ * The overridden string fields whose CONSTRUCTOR-SEEDED value owns heap and
+ * is therefore displaced un-freed by a raw override store: a non-literal
+ * default expression (the auto-constructor evaluates it fresh per
+ * construction — `var string a = "de" + "fault"` allocates) is owned by the
+ * constructed struct alone, so an override replacing the field orphans the
+ * buffer unless it is reclaimed ahead of the store. Literal defaults are
+ * rodata (never freed) and value-node defaults are consts/borrows (not
+ * owned); a custom `#init`'s `self.<field> = <param>` seeds alias the
+ * caller's argument temps in the common case and are deliberately not
+ * analyzed here.
+ */
+export function override_displaced_string_fields(
+	struct_node: StructNode,
+	overrides: { name: string; value: BaseNode }[] | undefined,
+): string[] {
+	if (!overrides?.length) return [];
+	const displaced: string[] = [];
+	for (const override of overrides) {
+		const field = struct_node.fields.find((f) => f.name === override.name);
+		if (!field) continue;
+		if (field.type.name !== "string" || field.type.is_array || field.type.is_view) continue;
+		const seed = field.value;
+		if (!seed || seed.node_type === "value") continue;
+		if (is_string_borrow(seed)) continue;
+		displaced.push(override.name);
+	}
+	return displaced;
 }

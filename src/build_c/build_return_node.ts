@@ -4,6 +4,7 @@ import emit_field_overrides, {
 } from "../build/emit_field_overrides.ts";
 import { is_normalized_struct_call } from "../build_common/call_init_string_fields.ts";
 import { override_return_string_fields } from "../build_common/ctor_return_owned.ts";
+import { override_displaced_string_fields } from "../build_common/ctor_return_owned.ts";
 import ctor_return_owned_string_fields from "../build_common/ctor_return_owned.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
@@ -634,6 +635,25 @@ export default function build_return_node(
 			for (const field of direct_string_fields(return_struct)) {
 				if (!overrides?.some((o) => o.name === field.name)) continue;
 				status.code += `free(_return_val.${field.name}.ptr);\n`;
+			}
+		}
+		// An OVERRIDE-CONSTRUCTOR base (`[ .. R(x), f = v ]`) seeded each
+		// overridden field with the field's DEFAULT expression — a
+		// non-literal default (e.g. `var string a = "de" + "fault"`) was
+		// evaluated fresh at construction and is owned by the struct alone,
+		// so the raw override store below would orphan it. Reclaim it first.
+		if (
+			is_struct &&
+			!return_is_class &&
+			return_struct &&
+			node.value?.node_type === "func_call" &&
+			(node.value as FunctionCallNode).name === return_struct.name
+		) {
+			for (const name of override_displaced_string_fields(
+				return_struct,
+				(node.value as FunctionCallNode).field_overrides,
+			)) {
+				status.code += `free(_return_val.${name}.ptr);\n`;
 			}
 		}
 		if (has_field_overrides(node.value)) {

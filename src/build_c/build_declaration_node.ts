@@ -4,6 +4,7 @@ import emit_field_overrides, {
 } from "../build/emit_field_overrides.ts";
 import call_in_set from "../build_common/call_in_set.ts";
 import { record_call_init_string_fields } from "../build_common/call_init_string_fields.ts";
+import { override_displaced_string_fields } from "../build_common/ctor_return_owned.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { call_result_type, is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
@@ -1035,6 +1036,40 @@ export default function build_declaration_node(
 			// assignment path frees the displaced buffer only when the record
 			// already exists — recording after would leak it.
 			record_call_init_string_fields(node, status);
+			// An OVERRIDE-CONSTRUCTOR base (`[ .. R(x), f = v ]` — the checker
+			// rewrote the literal onto the ctor call) seeded each overridden
+			// field with the field's DEFAULT expression: a non-literal default
+			// was evaluated fresh at construction and is owned by the struct
+			// alone (unrecorded — ctor inits never record), so the override
+			// store's displaced-free (keyed on the record) cannot see it.
+			// Reclaim it before the raw store. A FORWARDED normalizing base is
+			// excluded: its fields were recorded above and the assignment
+			// path's old_was_heap free already reclaims the displaced copy.
+			const override_ctor_call =
+				node.value?.node_type === "func_call" &&
+				(node.value as FunctionCallNode).field_overrides?.length &&
+				node.type?.name &&
+				(node.value as FunctionCallNode).name === node.type.name
+					? (node.value as FunctionCallNode)
+					: undefined;
+			if (override_ctor_call) {
+				const override_struct = status.structs.find(
+					(s) => s.name === node.type!.name && !s.is_simple_type && !s.is_class,
+				);
+				if (override_struct) {
+					// The ctor-init declaration is still unclosed (the override
+					// emitter's terminator closes it) — close it here so the
+					// frees land as statements, and skip the duplicate
+					// terminator below.
+					status.code += `;\n`;
+					for (const name of override_displaced_string_fields(
+						override_struct,
+						override_ctor_call.field_overrides,
+					)) {
+						status.code += `free(${safe_name}.${name}.ptr);\n`;
+					}
+				}
+			}
 			// Named-field struct literal overrides (e.g. `[ grow = 2 ]` on a
 			// struct whose `grow` field has a declared default) are applied as
 			// post-construction field assignments after the constructor call
@@ -1042,7 +1077,14 @@ export default function build_declaration_node(
 			// structs, classes, struct-typed fields, and strings all reuse
 			// the existing assignment path.
 			if (has_field_overrides(node.value)) {
-				emit_field_overrides(safe_name, node.value, build_node, status, ";\n", ";\n");
+				emit_field_overrides(
+					safe_name,
+					node.value,
+					build_node,
+					status,
+					override_ctor_call ? "" : ";\n",
+					";\n",
+				);
 			}
 		}
 	}

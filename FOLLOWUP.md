@@ -34,23 +34,49 @@ override store), and caller bindings record/free every field
 (`record_call_init_string_fields` now also looks through an anon-struct
 base). Covered by test/override_ctor_return.test.ts.
 
-Two deliberately-unfixed displaced-copy corners remain, both requiring a
-transferred-heap value that an override then displaces raw:
+The DISPLACED-COPY corners are fixed too (test/override_ctor_displaced.test.ts):
+an overridden field whose ctor-seeded value owns heap — a non-literal default
+expression (`var string a = "de" + "fault"` is evaluated fresh at
+construction and owned by the struct alone) — is now reclaimed ahead of the
+raw override store on the C backend (return, declaration, and assignment
+sites; `override_displaced_string_fields`). The hoisted `_param_N`
+constructor-argument allocation attached to the anon literal's BASE is also
+surfaced now (`collect_allocations` walks the rewritten func_call's
+`.base`) — the return-override shape used to reference an undeclared temp
+(C: use of undeclared identifier; aarch64: undefined symbol at link).
 
-- `return [ .. R(s), f = v ]` where the ctor argument `s` already owns heap
-  (a moved local or a fresh call result): the ctor seeds the field with
-  s's buffer (transferred raw), the override displaces it raw, and nobody
-  frees it (1 allocation). The override store happens in
-  `emit_field_overrides` before the boundary knows the displaced value was
-  owned; fixing needs the skip-set analysis (`ctor_return_owned_string_fields`
-  ∩ overrides) to emit displaced frees ahead of the stores.
-- The same displacement inside a non-return override chain (a statement-
-  position `[ .. R(move s), f = v ]` assigned to a binding) — the assignment
-  paths' override stores have no displaced-value ownership model either.
+Remaining corners, both deliberately left:
 
-Both leak (never dangle), bounded at one allocation per overridden
-transferred-heap field, and strictly no worse than before normalization
-(those functions' fields were never freed at all).
+- **Custom `#init` computed seeds** (`self.a = s + "!"` in an init body):
+  the seed owns heap but is not analyzed (the helper reads field DEFAULT
+  expressions only), so an override displaces it un-freed (1 allocation).
+  Detecting it needs a self-write scan of the `#init` body (the
+  `scan_self_string_field_writes` machinery could be reused).
+- **Non-literal ctor-seeded defaults are unrecorded generally** (the
+  pre-existing family around these corners): the checker's
+  "construction leaves rodata borrows" premise behind never recording ctor
+  inits broke when non-literal defaults landed — on C, plain
+  `var Pair p = Pair("x")` (holding, no override) leaks the default's
+  allocation, and a ctor REASSIGNMENT (`p = Pair("y")`) displaces the old
+  one un-freed. Recording only the heap-default fields at ctor-binding
+  sites (declaration + fresh-constructor reassignment) would close the
+  family; recording everything would break rodata-seeded shapes.
+
+## aarch64: non-literal struct field defaults are never evaluated
+
+The aarch64 backend never evaluates a non-literal string field DEFAULT
+(`var string a = "de" + "fault"`): the auto-constructor leaves the field
+uninitialized (stack garbage), so `var Pair p = Pair("x");
+Console.write(p.a)` SEGFAULTS (the C backend evaluates the default per
+construction and works — it just doesn't reclaim it, see the override
+entry above). Literal defaults are seeded fine (rodata stores in the
+ctor). The ctor/call-site prefill that the C backend's `#init` lowering
+performs (`_self.a = <default expr>`) has no aarch64 counterpart for
+non-literal expressions. Fixing needs the aarch64 ctor body to evaluate
+the default expression into the field slot (or the caller to prefill the
+sret buffer before `bl <T>_init`), plus the displaced-reclaim treatment
+from the override entry. Found while probing the displaced-copy corners;
+repro: any value struct with an expression default, auto-ctor, field read.
 
 ## Nullable scalars: remaining in-band corners
 

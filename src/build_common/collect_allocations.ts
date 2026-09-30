@@ -1,5 +1,6 @@
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
+import AnonStructNode from "../nodes/AnonStructNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
@@ -79,6 +80,13 @@ export default function collect_allocations(
 			for (const param of call.params) {
 				result.push(...collect_allocations(param, options));
 			}
+			// A checker-rewritten `[ .. <base>, f = v ]` literal: the anon node
+			// masquerades as the base ctor call (node_type/name/params copied
+			// onto it), and hoisted allocations attached to the ORIGINAL base
+			// object survive only under its `.base` property — recurse there
+			// too, or the emitted body references the undeclared `_param_N`.
+			const base = (node as unknown as { base?: BaseNode }).base;
+			if (base) result.push(...collect_allocations(base, options));
 			break;
 		}
 		case "access": {
@@ -138,6 +146,20 @@ export default function collect_allocations(
 			const range = node as RangeNode;
 			result.push(...collect_allocations(range.left_value, options));
 			result.push(...collect_allocations(range.right_value, options));
+			break;
+		}
+		case "anon_struct": {
+			// A base-bearing struct literal (`[ .. <base>, f = v ]`) builds its
+			// base expression — argument temporaries hoisted onto the base call
+			// (`const _param_N = ...`) must surface before the base builds, or
+			// the emitted body references an undeclared temp (the return
+			// boundary's emit_allocations is the only collector that sees this
+			// node in expression position).
+			const anon = node as unknown as AnonStructNode;
+			if (anon.base) result.push(...collect_allocations(anon.base, options));
+			for (const field of anon.fields) {
+				result.push(...collect_allocations(field.value, options));
+			}
 			break;
 		}
 		case "array": {
