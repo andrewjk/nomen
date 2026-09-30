@@ -710,54 +710,62 @@ export default function build_declaration_node(
 		// stored normally (above), and a companion `<name>_has` flag tracks
 		// nullness. Handle initialization here and skip the generic
 		// `= value` path below.
-		if (is_nullable_struct_type(node.type, status) || is_nullable_scalar_type(node.type)) {
+		if (is_nullable_struct_type(node.type, status) || is_nullable_scalar_type(node.type, status)) {
 			const flag = has_flag_name(safe_name);
 			const is_null =
 				!node.value ||
 				(node.value.node_type === "value" && (node.value as ValueNode).value === "null");
 			// FILE SCOPE: statics are zero-initialized, so `= 0` / no
 			// initializer is already null. A non-null literal initializer
-			// keeps the generic `= value` static path below and the flag is
-			// statically 1. (A top-level nullable scalar is therefore null
-			// unless its initializer is a compile-time constant.)
-			if (!status.current_function && is_nullable_scalar_type(node.type)) {
-				status.code += `;\nunsigned char ${flag} = ${is_null ? 0 : 1}`;
-				if (is_null) return;
-			} else {
-				status.code += `;\nunsigned char ${flag} = 0`;
-				if (node.value && !is_null) {
-					// A nullable function-call initializer
-					// (`var T? x = f(...)`, T a struct or scalar) writes both
-					// the value AND the null/non-null flag through the hidden
-					// `_ret_has` out-param — set
-					// status.current_nullable_call_flag so
-					// build_function_call_node forwards `&<flag>` and the
-					// callee writes the real null/non-null bit into it. Skip
-					// the unconditional `<flag> = 1` otherwise.
-					const call_ret = call_result_type(node.value);
-					const value_is_nullable_call =
-						!!call_ret &&
-						(is_nullable_struct_type(call_ret, status) || is_nullable_scalar_type(call_ret));
-					status.code += `;\n${safe_name} = `;
-					if (value_is_nullable_call) {
-						const old = status.current_nullable_call_flag;
-						status.current_nullable_call_flag = flag;
-						emit_init_value(node.value, nir_init, status);
-						status.current_nullable_call_flag = old;
-						// The callee's return-boundary normalization made the
-						// returned struct's string fields uniformly heap-owned —
-						// record them so scope exit frees them (flag-guarded in
-						// auto_free: the null path leaves the value bytes
-						// uninitialized). Mirrors the aarch64 sret branch.
-						record_call_init_string_fields(node, status);
-					} else {
-						const rhs_flag = nullable_value_flag_expr(node.value!, status);
-						emit_init_value(node.value, nir_init, status);
-						status.code += `;\n${flag} = ${rhs_flag ?? "1"}`;
-					}
+			// (the root pre-pass keeps only literal-initialized declarations
+			// at file scope) lands on the VALUE slot declaration above — the
+			// generic `= value` path would otherwise append onto the flag
+			// declaration — and the flag is statically 1.
+			if (!status.current_function && is_nullable_scalar_type(node.type, status)) {
+				if (is_null) {
+					status.code += `;\nunsigned char ${flag} = 0`;
+					return;
 				}
+				status.code += ` = `;
+				emit_init_value(node.value!, nir_init, status);
+				status.code += `;\nunsigned char ${flag} = 1`;
 				return;
 			}
+			// IN FUNCTION: the flag starts 0 and the value (when present) is
+			// written with its companion flag below.
+			status.code += `;\nunsigned char ${flag} = 0`;
+			if (node.value && !is_null) {
+				// A nullable function-call initializer
+				// (`var T? x = f(...)`, T a struct or scalar) writes both
+				// the value AND the null/non-null flag through the hidden
+				// `_ret_has` out-param — set
+				// status.current_nullable_call_flag so
+				// build_function_call_node forwards `&<flag>` and the
+				// callee writes the real null/non-null bit into it. Skip
+				// the unconditional `<flag> = 1` otherwise.
+				const call_ret = call_result_type(node.value);
+				const value_is_nullable_call =
+					!!call_ret &&
+					(is_nullable_struct_type(call_ret, status) || is_nullable_scalar_type(call_ret, status));
+				status.code += `;\n${safe_name} = `;
+				if (value_is_nullable_call) {
+					const old = status.current_nullable_call_flag;
+					status.current_nullable_call_flag = flag;
+					emit_init_value(node.value, nir_init, status);
+					status.current_nullable_call_flag = old;
+					// The callee's return-boundary normalization made the
+					// returned struct's string fields uniformly heap-owned —
+					// record them so scope exit frees them (flag-guarded in
+					// auto_free: the null path leaves the value bytes
+					// uninitialized). Mirrors the aarch64 sret branch.
+					record_call_init_string_fields(node, status);
+				} else {
+					const rhs_flag = nullable_value_flag_expr(node.value!, status);
+					emit_init_value(node.value, nir_init, status);
+					status.code += `;\n${flag} = ${rhs_flag ?? "1"}`;
+				}
+			}
+			return;
 		}
 		if (node.value) {
 			// A hoisted array-literal/range temp bound to a heap `Array<T>`

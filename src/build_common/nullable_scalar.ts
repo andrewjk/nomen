@@ -1,6 +1,17 @@
 import { get_built_in_type } from "../built_in_types.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
+import type EnumNode from "../nodes/EnumNode.ts";
 import type Type from "../nodes/Type.ts";
+
+/**
+ * The declaration tables a nullable-scalar classification consults for
+ * NON-built-in type names. Both CheckStatus and BuildStatus carry `enums`
+ * and `bitsets`, so every call site passes its status straight through.
+ */
+export interface NullableTypeTables {
+	enums: EnumNode[];
+	bitsets: { name: string; source_name?: string }[];
+}
 
 /**
  * The result `Type` of a call-like node (`func_call`, or a method `access`
@@ -31,15 +42,42 @@ export function call_result_type(node: BaseNode | undefined | null): Type | unde
  * so `null == 0` conflates them. Nullable `string` (in-band fat zero) and
  * nullable `func`/class values (null pointer) keep their in-band null and
  * are NOT nullable scalars.
+ *
+ * The same holds for a nullable SIMPLE enum (`Color?`) or bitset
+ * (`Permissions?`): the in-band zero (the first case's tag 0 / an empty
+ * bitset) is a real value, so `null` needs the companion flag. Enum-with-data
+ * and generic template enums are NOT nullable scalars — the checker rejects
+ * `?` on enums with associated data, so every nullable enum that reaches the
+ * backends is simple.
  */
 
-/** True if `type` is a nullable built-in scalar (`bool?`, `int?`, `float?`, …). */
-export function is_nullable_scalar_type(type: Type | undefined | null): boolean {
+/** True if the TYPE NAME is a built-in scalar, simple enum, or bitset — the
+ *  shapes that get the `<slot>_has` flag when nullable. */
+export function is_nullable_scalar_name(
+	name: string | undefined,
+	tables: NullableTypeTables,
+): boolean {
+	if (!name) return false;
+	const info = get_built_in_type(name);
+	if (info) return info.kind !== "string" && info.kind !== "func";
+	// Non-built-in name: a registered simple enum or bitset gets the same
+	// flag treatment (`?` on enums with associated data is a checker error).
+	const enum_node = tables.enums.findLast(
+		(e) => (e.name === name || e.source_name === name) && !e.is_generic,
+	);
+	if (enum_node) return !enum_node.has_associated_data;
+	return tables.bitsets.some((b) => b.name === name || b.source_name === name);
+}
+
+/** True if `type` is a nullable built-in scalar, simple enum, or bitset. */
+export function is_nullable_scalar_type(
+	type: Type | undefined | null,
+	tables: NullableTypeTables,
+): boolean {
 	if (!type?.is_nullable) return false;
 	if (type.is_array || type.is_ref || type.storage_kind === "view") return false;
 	if (type.is_pointer) return false;
-	const info = type.name ? get_built_in_type(type.name) : undefined;
-	return !!info && info.kind !== "string" && info.kind !== "func";
+	return is_nullable_scalar_name(type.name, tables);
 }
 
 /** Storage width in bytes of the scalar half of a nullable scalar slot. */
@@ -50,13 +88,15 @@ export function nullable_scalar_bytes(type: Type): number {
 /** True if `type` is a nullable struct (see nullable_struct.ts) or nullable scalar. */
 export function is_nullable_flagged_type(
 	type: Type | undefined | null,
-	status: { structs: { name: string; is_class: boolean; is_simple_type: boolean }[] },
+	status: NullableTypeTables & {
+		structs: { name: string; is_class?: boolean; is_simple_type?: boolean }[];
+	},
 ): boolean {
 	if (!type?.is_nullable) return false;
 	if (type.name === "string") return false;
 	if (type.name === "func") return false;
 	return (
-		is_nullable_scalar_type(type) ||
+		is_nullable_scalar_type(type, status) ||
 		!!status.structs.find((s) => s.name === type.name && !s.is_class && !s.is_simple_type)
 	);
 }

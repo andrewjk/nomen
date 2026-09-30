@@ -64,7 +64,10 @@ export default function build_struct_body(node: StructNode, status: BuildStatus)
 			status.code += `${field_c_type(field.type, status)} ${field.name};\n`;
 			// A nullable struct value field or nullable scalar field gets a
 			// companion `<field>_has` flag.
-			if (is_nullable_struct_type(field.type, status) || is_nullable_scalar_type(field.type)) {
+			if (
+				is_nullable_struct_type(field.type, status) ||
+				is_nullable_scalar_type(field.type, status)
+			) {
 				status.code += `unsigned char ${has_flag_name(field.name)};\n`;
 			}
 		}

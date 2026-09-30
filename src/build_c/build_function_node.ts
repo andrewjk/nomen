@@ -267,7 +267,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			// (build_nullable_has emits `<name>_has`).
 			if (
 				(is_nullable_struct_type(node.params[i].type, status) ||
-					is_nullable_scalar_type(node.params[i].type)) &&
+					is_nullable_scalar_type(node.params[i].type, status)) &&
 				!node.params[i].is_self_param
 			) {
 				status.code += `, unsigned char ${has_flag_name(c_function_name(node.params[i].name))}`;
@@ -280,7 +280,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		// can't return both as a single by-value result).
 		if (
 			is_nullable_struct_type(node.return_type, status) ||
-			is_nullable_scalar_type(node.return_type)
+			is_nullable_scalar_type(node.return_type, status)
 		) {
 			if (!first_param) status.code += ", ";
 			status.code += `unsigned char *_ret_has`;
@@ -365,7 +365,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	const old_nullable_ret_has = status.nullable_ret_has_param;
 	if (
 		is_nullable_struct_type(node.return_type, status) ||
-		is_nullable_scalar_type(node.return_type)
+		is_nullable_scalar_type(node.return_type, status)
 	) {
 		status.nullable_ret_has_param = "_ret_has";
 	} else {

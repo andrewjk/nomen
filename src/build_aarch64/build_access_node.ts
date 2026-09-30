@@ -2564,7 +2564,8 @@ function build_access_method(
 	// Use the declared method return type (the inner `access_func.type` may
 	// drop `is_nullable`).
 	const method_ret_type = access_callee_method?.return_type ?? access_func.type;
-	const nullable_scalar_ret = is_nullable_scalar_type(method_ret_type) && !method_ret_type.is_ref;
+	const nullable_scalar_ret =
+		is_nullable_scalar_type(method_ret_type, status) && !method_ret_type.is_ref;
 
 	let temp_addr = "";
 	let temp_offset = 0;
@@ -2892,8 +2893,8 @@ function build_access_method(
 		if ((access_func.ref_param_indices ?? []).includes(i)) continue;
 		const cp = access_callee_params?.[i];
 		if (
-			(cp && is_nullable_scalar_type(cp.type)) ||
-			is_nullable_scalar_type((access_func.params[i] as any).type)
+			(cp && is_nullable_scalar_type(cp.type, status)) ||
+			is_nullable_scalar_type((access_func.params[i] as any).type, status)
 		) {
 			nullable_scalar_arg_set.add(i);
 		}
@@ -2991,7 +2992,10 @@ function build_access_method(
 			if (arg.node_type === "value" && (arg as ValueNode).value === "null") {
 				emit_asm(status, `mov x0, #0\n`);
 				emit_asm(status, `mov x1, #0\n`);
-			} else if (arg.node_type === "value" && is_nullable_scalar_type((arg as ValueNode).type)) {
+			} else if (
+				arg.node_type === "value" &&
+				is_nullable_scalar_type((arg as ValueNode).type, status)
+			) {
 				const vname = (arg as ValueNode).value;
 				emit_var_load(status, "x0", vname, aarch64_size((arg as ValueNode).type!.name));
 				emit_var_load(status, "x1", has_flag_name(vname), 8);

@@ -179,7 +179,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		status.code += `${lambda_ret_c} ${lambda_ret_tmp} = `;
 	}
 	const wrap_nullable_call =
-		(is_nullable_struct_type(node.type, status) || is_nullable_scalar_type(node.type)) &&
+		(is_nullable_struct_type(node.type, status) || is_nullable_scalar_type(node.type, status)) &&
 		!status.current_nullable_call_flag;
 	const saved_call = wrap_nullable_call ? begin_code_scratch(status) : undefined;
 	let wrap_tmp: number | undefined;
@@ -267,7 +267,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			// type for struct/string params; scalar params keep the bare
 			// "null" type — consult the CALLEE param type for the shape.
 			const callee_null_param_type = callee_params?.[i]?.type ?? param_type;
-			if (is_nullable_scalar_type(callee_null_param_type)) {
+			if (is_nullable_scalar_type(callee_null_param_type, status)) {
 				status.code += `0, 0`;
 			} else {
 				// Use the MONOMORPHIZED struct tag (a generic nullable field
@@ -495,7 +495,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 	// pre-allocated storage (e.g. a `var T? x = f()` declaration uses its own
 	// `_has` flag); otherwise the call is wrapped in a GCC statement-expression
 	// that synthesises a throwaway flag temp.
-	if (is_nullable_struct_type(node.type, status) || is_nullable_scalar_type(node.type)) {
+	if (is_nullable_struct_type(node.type, status) || is_nullable_scalar_type(node.type, status)) {
 		const flag_name = status.current_nullable_call_flag;
 		// A zero-argument call has no comma to extend — append the flag
 		// directly inside the parens.
@@ -710,7 +710,7 @@ export function emit_nullable_arg_flag(arg: BaseNode, status: BuildStatus) {
 	// emit `1`.
 	if (arg.node_type === "value") {
 		const vn = arg as ValueNode;
-		if (is_nullable_struct_type(vn.type, status) || is_nullable_scalar_type(vn.type)) {
+		if (is_nullable_struct_type(vn.type, status) || is_nullable_scalar_type(vn.type, status)) {
 			status.code += `${has_flag_name(vn.value)}`;
 		} else {
 			status.code += `1`;
@@ -722,7 +722,7 @@ export function emit_nullable_arg_flag(arg: BaseNode, status: BuildStatus) {
 	// Otherwise (a non-nullable struct field being lifted), emit `1`.
 	if (arg.node_type === "access" && (arg as AccessNode).access.node_type === "access_field") {
 		const t = type_from_value_node(arg);
-		if (is_nullable_struct_type(t, status) || is_nullable_scalar_type(t)) {
+		if (is_nullable_struct_type(t, status) || is_nullable_scalar_type(t, status)) {
 			const saved = begin_code_scratch(status);
 			build_node(arg, status);
 			const expr = end_code_scratch(status, saved);

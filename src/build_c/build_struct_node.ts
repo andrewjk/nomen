@@ -91,7 +91,7 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 		.filter((f) => f.value == null)
 		.map((f) => {
 			let decl = c_param_decl(f.type, f.name, status);
-			if (is_nullable_struct_type(f.type, status) || is_nullable_scalar_type(f.type)) {
+			if (is_nullable_struct_type(f.type, status) || is_nullable_scalar_type(f.type, status)) {
 				decl += `, unsigned char ${has_flag_name(f.name)}`;
 			}
 			return decl;
@@ -119,7 +119,7 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 				// body reads the flag through the param name directly.
 				if (
 					!p.is_variadic &&
-					(is_nullable_struct_type(p.type, status) || is_nullable_scalar_type(p.type))
+					(is_nullable_struct_type(p.type, status) || is_nullable_scalar_type(p.type, status))
 				) {
 					decl += `, unsigned char ${has_flag_name(p.name)}`;
 				}
@@ -196,7 +196,7 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 						}
 					} else if (
 						is_nullable_struct_type(field.type, status) ||
-						is_nullable_scalar_type(field.type)
+						is_nullable_scalar_type(field.type, status)
 					) {
 						// Default is either `null` (flag 0, value untouched) or a
 						// struct/scalar value (copy it in, flag 1).
@@ -357,7 +357,8 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 				// Fixed-size stack array fields — use memcpy instead of assignment
 				status.code += `memcpy(${object_name}${accessor}${field.name}, ${field.name}, sizeof(${object_name}${accessor}${field.name}));\n`;
 			} else if (
-				(is_nullable_struct_type(field.type, status) || is_nullable_scalar_type(field.type)) &&
+				(is_nullable_struct_type(field.type, status) ||
+					is_nullable_scalar_type(field.type, status)) &&
 				field.value
 			) {
 				// Nullable struct/scalar field with a default (typically `= null`).
@@ -375,7 +376,7 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 				// passed `<field>_has` as a sibling C parameter).
 				status.code += `${object_name}${accessor}${field.name} = *${field.name};\n`;
 				status.code += `${object_name}${accessor}${has_flag_name(field.name)} = ${has_flag_name(field.name)};\n`;
-			} else if (is_nullable_scalar_type(field.type)) {
+			} else if (is_nullable_scalar_type(field.type, status)) {
 				// Nullable scalar field WITHOUT a default: copy the value from
 				// the (by-value) param and forward the companion flag.
 				status.code += `${object_name}${accessor}${field.name} = ${field.name};\n`;
@@ -700,7 +701,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		const old_nullable_ret_has = status.nullable_ret_has_param;
 		if (
 			is_nullable_struct_type(func.return_type, status) ||
-			is_nullable_scalar_type(func.return_type)
+			is_nullable_scalar_type(func.return_type, status)
 		) {
 			status.nullable_ret_has_param = "_ret_has";
 		} else {
@@ -877,7 +878,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 			if (
 				!func.params[i].is_self_param &&
 				(is_nullable_struct_type(func.params[i].type, status) ||
-					is_nullable_scalar_type(func.params[i].type))
+					is_nullable_scalar_type(func.params[i].type, status))
 			) {
 				status.code += `, unsigned char ${has_flag_name(c_function_name(func.params[i].name))}`;
 			}
@@ -886,7 +887,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		// `unsigned char *_ret_has` out-parameter, mirroring free functions.
 		if (
 			is_nullable_struct_type(func.return_type, status) ||
-			is_nullable_scalar_type(func.return_type)
+			is_nullable_scalar_type(func.return_type, status)
 		) {
 			if (func.params.length > 0) status.code += `, `;
 			status.code += `unsigned char *_ret_has`;

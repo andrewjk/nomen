@@ -174,7 +174,7 @@ export default function build_return_node(
 	// laid out the same way, so the sret writes land directly on the local's
 	// value+flag (no extra copy or hardcoded flag at the call site).
 	const returns_nullable_struct = is_nullable_struct_type(status.function_return_type, status);
-	const returns_nullable_scalar = is_nullable_scalar_type(status.function_return_type);
+	const returns_nullable_scalar = is_nullable_scalar_type(status.function_return_type, status);
 	const nullable_ret_is_null =
 		(returns_nullable_struct || returns_nullable_scalar) &&
 		(!node.value ||
@@ -701,7 +701,7 @@ export default function build_return_node(
 		const scalar_size = aarch64_size(status.function_return_type!.name);
 		emit_typed_store(status, "x0", "x8", 0, scalar_size);
 		const value_type = node.value ? type_from_value_node(node.value) : undefined;
-		if (node.value && value_type?.is_nullable && is_nullable_scalar_type(value_type)) {
+		if (node.value && value_type?.is_nullable && is_nullable_scalar_type(value_type, status)) {
 			load_nullable_has(node.value, "x9", status);
 			ensure_newline(status);
 			emit_asm(status, `str x9, [x8, #8]\n`);

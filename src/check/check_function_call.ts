@@ -375,7 +375,7 @@ export default function check_function_call(
 			const s = status.structs.find(
 				(st) => st.name === func_param.type.name && !st.is_class && !st.is_simple_type,
 			);
-			if (s || is_nullable_scalar_type(func_param.type)) {
+			if (s || is_nullable_scalar_type(func_param.type, status)) {
 				if (!node.nullable_param_indices) node.nullable_param_indices = [];
 				if (!node.nullable_param_indices.includes(i)) {
 					node.nullable_param_indices.push(i);

@@ -657,8 +657,8 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				const arg_type = (node.params[i] as any).type;
 				const callee_param = node.resolved_function?.params?.[i];
 				if (
-					is_nullable_scalar_type(arg_type) ||
-					(callee_param && is_nullable_scalar_type(callee_param.type))
+					is_nullable_scalar_type(arg_type, status) ||
+					(callee_param && is_nullable_scalar_type(callee_param.type, status))
 				) {
 					nullable_scalar_arg_set.add(i);
 				}
@@ -851,7 +851,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 						emit_asm(status, `mov x1, #0\n`);
 					} else if (
 						arg.node_type === "value" &&
-						is_nullable_scalar_type((arg as ValueNode).type)
+						is_nullable_scalar_type((arg as ValueNode).type, status)
 					) {
 						const vname = (arg as ValueNode).value;
 						emit_var_load(status, "x0", vname, aarch64_size(param_type.name));
@@ -1120,12 +1120,14 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			// A nullable SCALAR return (`out int?`) also rides sret: the
 			// buffer holds the value (padded to a word) + the `_has` flag
 			// word, so the callee can write the null/non-null bit.
-			const nullable_scalar_ret = is_nullable_scalar_type(node.type);
+			const nullable_scalar_ret = is_nullable_scalar_type(node.type, status);
 			if (return_struct || return_enum_size !== undefined || nullable_scalar_ret) {
 				// A nullable struct return's temp must hold both the struct value
 				// AND its companion `_has` flag (struct_size + 8 bytes), so the
 				// callee can write the null/non-null bit at [temp + struct_size].
-				// Enums are never nullable.
+				// (Nullable enums are always simple — `?` on enums with
+				// associated data is a checker error — so they take the
+				// nullable_scalar_ret arm, not this one.)
 				const nullable_ret = is_nullable_struct_type(node.type, status);
 				const struct_size = return_struct
 					? get_struct_size(node.type!.name, status)
@@ -1279,7 +1281,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			// A nullable SCALAR return rides the same `_call_ret_` temp; leave
 			// x0 = the temp address so consumers (load_nullable_has, `??`)
 			// can read the value at +0 and the flag word at +8.
-			const nullable_scalar_ret = is_nullable_scalar_type(node.type);
+			const nullable_scalar_ret = is_nullable_scalar_type(node.type, status);
 			if (return_struct || return_enum_size !== undefined || nullable_scalar_ret) {
 				const temp_name = `_call_ret_${temp_counter - 1}`;
 				const offset = status.stack_offsets!.get(temp_name)!;

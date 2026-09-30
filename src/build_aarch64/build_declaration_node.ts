@@ -42,6 +42,7 @@ import { emit_address_of } from "./build_access_node.ts";
 import build_array_values_node, { resolve_static_value } from "./build_array_values_node.ts";
 import { emit_swap_value, get_source_address } from "./build_assignment_node.ts";
 import build_node from "./build_node.ts";
+import { load_nullable_has } from "./build_operation_node.ts";
 import {
 	build_float_tree,
 	float_tree_ok,
@@ -582,9 +583,9 @@ function build_constructor_params(
 		let nullable_scalar = false;
 		if (fc.nullable_param_indices?.includes(i)) {
 			const cp = ctor_callee_params?.[i];
-			if (cp && is_nullable_scalar_type(cp.type)) {
+			if (cp && is_nullable_scalar_type(cp.type, status)) {
 				nullable_scalar = true;
-			} else if (is_nullable_scalar_type((p as any).type)) {
+			} else if (is_nullable_scalar_type((p as any).type, status)) {
 				nullable_scalar = true;
 			} else if (!cp) {
 				// Auto-ctor: the i-th arg maps to the i-th required (no-default)
@@ -592,7 +593,7 @@ function build_constructor_params(
 				const ctor_struct = status.structs.find((s) => s.name === fc.name && !s.is_simple_type);
 				const required = ctor_struct?.fields.filter((f) => f.value == null);
 				const field = required?.[i];
-				if (field && is_nullable_scalar_type(field.type)) nullable_scalar = true;
+				if (field && is_nullable_scalar_type(field.type, status)) nullable_scalar = true;
 			}
 		}
 		const is_pair = pt === "string" || lit || is_view || nullable_scalar;
@@ -624,7 +625,10 @@ function build_constructor_params(
 			if (arg.node_type === "value" && (arg as ValueNode).value === "null") {
 				emit_asm(status, `mov x0, #0\n`);
 				emit_asm(status, `mov x1, #0\n`);
-			} else if (arg.node_type === "value" && is_nullable_scalar_type((arg as ValueNode).type)) {
+			} else if (
+				arg.node_type === "value" &&
+				is_nullable_scalar_type((arg as ValueNode).type, status)
+			) {
 				const vname = (arg as ValueNode).value;
 				emit_var_load(status, "x0", vname, aarch64_size((arg as ValueNode).type!.name));
 				emit_var_load(status, "x1", has_flag_name(vname), 8);
@@ -1309,7 +1313,7 @@ export default function build_declaration_node(
 	// null; a non-null initializer is not applied (mirrors the C backend's
 	// top-level posture — record_call_init-style static flag init would need
 	// data-section support).
-	if (is_nullable_scalar_type(node.type)) {
+	if (is_nullable_scalar_type(node.type, status)) {
 		if (status.function_return_label) {
 			const offset = allocate_stack_space(status, 16, 16);
 			status.stack_offsets!.set(node.name, offset);
@@ -1324,18 +1328,33 @@ export default function build_declaration_node(
 			const init_value = node.value!;
 			const init_type = call_result_type(init_value) ?? type_from_value_node(init_value);
 			const value_is_nullable_call =
-				init_value.node_type === "func_call" && is_nullable_scalar_type(init_type);
+				init_value.node_type === "func_call" && is_nullable_scalar_type(init_type, status);
 			// A nullable-scalar-returning METHOD call (`obj.find()`) leaves the
 			// value + flag in the access node's temp (x0 = temp address): copy
-			// both into the local's combined storage.
-			const value_is_nullable_access =
-				init_value.node_type === "access" && is_nullable_scalar_type(init_type);
-			if (value_is_nullable_access) {
+			// both into the local's combined storage. A nullable-scalar FIELD
+			// read (`var also = cell.ink`) instead leaves the VALUE in x0 — the
+			// flag is re-loaded from the field's `_has` slot separately.
+			const value_is_nullable_method =
+				init_value.node_type === "access" &&
+				(init_value as AccessNode).access.node_type === "access_func" &&
+				is_nullable_scalar_type(init_type, status);
+			const value_is_nullable_field =
+				init_value.node_type === "access" &&
+				(init_value as AccessNode).access.node_type === "access_field" &&
+				is_nullable_scalar_type(init_type, status);
+			if (value_is_nullable_method) {
 				emit_init_value(init_value, nir_init, status);
 				ensure_newline(status);
 				emit_asm(status, `ldr x9, [x0]\n`);
 				emit_asm(status, `str x9, [x29, #${offset}]\n`);
 				emit_asm(status, `ldr x9, [x0, #8]\n`);
+				emit_asm(status, `str x9, [x29, #${offset + 8}]\n`);
+			} else if (value_is_nullable_field) {
+				emit_init_value(init_value, nir_init, status);
+				ensure_newline(status);
+				emit_var_store(status, "x0", node.name, 8);
+				load_nullable_has(init_value, "x9", status);
+				ensure_newline(status);
 				emit_asm(status, `str x9, [x29, #${offset + 8}]\n`);
 			} else if (value_is_nullable_call) {
 				// Preset x8 to the local's combined storage; the callee writes
@@ -1360,8 +1379,29 @@ export default function build_declaration_node(
 			}
 			return;
 		}
-		emit_data(status, `${node.name}: .space 16\n`);
-		status.stack_offsets!.set(has_flag_name(node.name), -1);
+		// FILE SCOPE: the global's data label holds the value word, and a
+		// sibling `<name>_has:` data label right after it holds the flag word
+		// — the same (value @0, flag @+8) layout the in-function combined
+		// slot uses, with the flag independently addressable by label
+		// (emit_var_load/store fall back to the global `adr` path for names
+		// absent from stack_offsets). `.space` zero-fills, so `= 0` / no
+		// initializer is already null; a non-null literal initializer (the
+		// root pre-pass keeps only literal-initialized declarations at file
+		// scope) lands in the data section with the flag statically 1.
+		const global_is_null =
+			!node.value ||
+			(node.value.node_type === "value" && (node.value as ValueNode).value === "null");
+		if (global_is_null) {
+			emit_data(status, `${node.name}: .space 8\n`);
+		} else {
+			emit_data(
+				status,
+				`${node.name}: ${aarch64_type(node.type.name)} ${get_raw_value(node.value as ValueNode, status)}\n`,
+			);
+			// Pad the value to the 8-byte flag-word boundary.
+			if (aarch64_size(node.type.name) < 8) emit_data(status, `.p2align 3\n`);
+		}
+		emit_data(status, `${has_flag_name(node.name)}: .quad ${global_is_null ? 0 : 1}\n`);
 		return;
 	}
 

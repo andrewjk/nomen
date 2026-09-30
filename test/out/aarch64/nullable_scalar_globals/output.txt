@@ -1,0 +1,9 @@
+g set
+g=5
+b set
+b true
+s8=-3
+n null
+g=7
+g cleared
+b false

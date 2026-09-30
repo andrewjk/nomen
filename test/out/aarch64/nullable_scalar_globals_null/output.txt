@@ -1,0 +1,3 @@
+a null
+z null
+a=1

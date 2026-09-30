@@ -1,0 +1,5 @@
+g write
+g is write
+g cleared
+checked null
+checked read

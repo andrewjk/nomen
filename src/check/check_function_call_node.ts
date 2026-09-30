@@ -2,6 +2,7 @@ import add_error from "../add_error.ts";
 import { fold_asm_constants } from "../build_common/fold_asm_constants.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
+import type { NullableTypeTables } from "../build_common/nullable_scalar.ts";
 import { get_built_in_type } from "../built_in_types.ts";
 import type AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
@@ -510,7 +511,7 @@ export function monomorphize(
 				status.structs,
 				undefined,
 				status.traits,
-				status.enums,
+				{ enums: status.enums, bitsets: status.bitsets },
 			);
 		}
 		mono_field.is_library = field.is_library;
@@ -579,7 +580,10 @@ export function monomorphize(
 	for (const func of generic_struct.functions) {
 		if (func.name === "#init") continue;
 		const cloned = clone_node(func) as FunctionNode;
-		substitute_raw_types(cloned, substitution, status.structs, status.traits, status.enums);
+		substitute_raw_types(cloned, substitution, status.structs, status.traits, {
+			enums: status.enums,
+			bitsets: status.bitsets,
+		});
 		fold_substituted_constant_ifs(cloned.statements);
 		rename_local_labels(cloned, mono_name);
 		// Checker-hoisted call-argument temps (`const _param_N = <arg>` in
@@ -624,7 +628,7 @@ export function monomorphize(
 					status.structs,
 					undefined,
 					status.traits,
-					status.enums,
+					{ enums: status.enums, bitsets: status.bitsets },
 				);
 			}
 		}
@@ -717,7 +721,10 @@ export function monomorphize(
 		// variadic tuple param materializes against the concrete type args and
 		// its body resolves self.method() against the monomorphized struct.
 		const cloned = clone_node(generic_init) as FunctionNode;
-		substitute_raw_types(cloned, substitution, status.structs, status.traits, status.enums);
+		substitute_raw_types(cloned, substitution, status.structs, status.traits, {
+			enums: status.enums,
+			bitsets: status.bitsets,
+		});
 		fold_substituted_constant_ifs(cloned.statements);
 		rename_local_labels(cloned, mono_name);
 		cloned.return_type = new Type(mono_name);
@@ -732,7 +739,7 @@ export function monomorphize(
 					status.structs,
 					undefined,
 					status.traits,
-					status.enums,
+					{ enums: status.enums, bitsets: status.bitsets },
 				);
 			}
 		}
@@ -1506,7 +1513,7 @@ function derive_annotations_for_access_func(
 		if (!p.type?.is_nullable) continue;
 		if (
 			status.structs.find((s) => s.name === p.type.name && !s.is_class) ||
-			is_nullable_scalar_type(p.type)
+			is_nullable_scalar_type(p.type, status)
 		) {
 			// Map callee param index to call arg index (skip self).
 			nullable_indices.push(i - (self_offset >= 0 ? self_offset + 1 : 0));
@@ -2103,12 +2110,7 @@ function substitute_raw_types(
 	substitution: Map<string, string>,
 	structs: StructNode[],
 	traits: { name: string }[],
-	enums: {
-		name: string;
-		has_associated_data?: boolean;
-		is_generic?: boolean;
-		cases: { params: { type: { name: string } }[] }[];
-	}[],
+	tables: NullableTypeTables,
 ) {
 	// Compute params whose type resolves to a non-simple struct: in the C
 	// backend those are passed by pointer (`struct T *value`), but raw C
@@ -2129,7 +2131,7 @@ function substitute_raw_types(
 		}
 	}
 	for (const stmt of func.statements) {
-		substitute_raw_in_node(stmt, substitution, structs, deref_params, traits, enums);
+		substitute_raw_in_node(stmt, substitution, structs, deref_params, traits, tables);
 	}
 }
 
@@ -2182,16 +2184,7 @@ function raw_align_to(offset: number, alignment: number): number {
 	return Math.ceil(offset / alignment) * alignment;
 }
 
-function raw_type_size(
-	name: string,
-	structs: StructNode[],
-	enums?: {
-		name: string;
-		has_associated_data?: boolean;
-		is_generic?: boolean;
-		cases: { params: { type: { name: string } }[] }[];
-	}[],
-): number {
+function raw_type_size(name: string, structs: StructNode[], tables: NullableTypeTables): number {
 	switch (name) {
 		case "bool":
 		case "int8":
@@ -2210,13 +2203,13 @@ function raw_type_size(
 	// A raw T-generic slab stride (`mov x3, #T_SIZE`) must agree with the real
 	// element layout, or every slot past the first is misaligned. Simple enums
 	// (no associated data) are a single tag word (8).
-	const enum_node = enums?.find((e) => e.name === name && !e.is_generic);
+	const enum_node = tables.enums.find((e) => e.name === name && !e.is_generic);
 	if (enum_node) {
 		if (!enum_node.has_associated_data) return 8;
 		let max_payload = 0;
 		for (const c of enum_node.cases) {
 			let case_size = 0;
-			for (const p of c.params) case_size += raw_type_size(p.type.name, structs, enums);
+			for (const p of c.params) case_size += raw_type_size(p.type.name, structs, tables);
 			max_payload = Math.max(max_payload, case_size);
 		}
 		return 8 + Math.ceil(max_payload / 8) * 8;
@@ -2243,14 +2236,14 @@ function raw_type_size(
 			size += 16;
 			continue;
 		}
-		size += raw_type_size(field.type.name, structs, enums);
+		size += raw_type_size(field.type.name, structs, tables);
 		if (
 			field.type.is_nullable &&
 			structs.find((s) => s.name === field.type.name && !s.is_simple_type && !s.is_class)
 		) {
 			// Nullable struct field: 8-byte `_has` flag word right after.
 			size += 8;
-		} else if (is_nullable_scalar_type(field.type)) {
+		} else if (is_nullable_scalar_type(field.type, tables)) {
 			// Nullable scalar field: 1-byte `_has` flag right after the
 			// scalar (matches C's `unsigned char <f>_has;` member).
 			size += 1;
@@ -2320,12 +2313,7 @@ function substitute_raw_in_node(
 	structs: StructNode[],
 	deref_params: Set<string> = new Set(),
 	traits: { name: string }[] = [],
-	enums: {
-		name: string;
-		has_associated_data?: boolean;
-		is_generic?: boolean;
-		cases: { params: { type: { name: string } }[] }[];
-	}[] = [],
+	tables: NullableTypeTables = { enums: [], bitsets: [] },
 ) {
 	// `unsafe` Nomen bodies use the same per-instantiation constants the raw
 	// blocks do — `T_SIZE` (element byte size), `T_NEEDS_STRDUP`/`T_FAT`
@@ -2338,7 +2326,7 @@ function substitute_raw_in_node(
 		const vn = node as ValueNode;
 		for (const [param, type] of substitution) {
 			if (vn.value === `${param}_SIZE`) {
-				vn.value = String(raw_type_size(type, structs, enums));
+				vn.value = String(raw_type_size(type, structs, tables));
 				vn.type = new Type("int", true);
 				return;
 			}
@@ -2375,7 +2363,7 @@ function substitute_raw_in_node(
 			// Also substitute T_SIZE placeholder with element byte size.
 			// Numeric only for pure-asm blocks; C blocks get sizeof(T) so
 			// slab sizing agrees with C struct layout (tail padding).
-			const size = raw_type_size(type, structs, enums);
+			const size = raw_type_size(type, structs, tables);
 			const size_expr = raw_block_is_pure_asm(value) ? String(size) : `sizeof(${c_type_name})`;
 			value = value.replace(new RegExp(`\\b${param}_SIZE\\b`, "g"), size_expr);
 			// Substitute T_destroy placeholder with the monomorphized element's
@@ -2503,29 +2491,36 @@ function substitute_raw_in_node(
 	if (any_node.allocations && Array.isArray(any_node.allocations)) {
 		for (const child of any_node.allocations) {
 			if (child && typeof child === "object" && "node_type" in child) {
-				substitute_raw_in_node(child, substitution, structs, deref_params, traits, enums);
+				substitute_raw_in_node(child, substitution, structs, deref_params, traits, tables);
 			}
 		}
 	}
 	if (any_node.statements && Array.isArray(any_node.statements)) {
 		for (const child of any_node.statements) {
 			if (child && typeof child === "object" && "node_type" in child) {
-				substitute_raw_in_node(child, substitution, structs, deref_params, traits, enums);
+				substitute_raw_in_node(child, substitution, structs, deref_params, traits, tables);
 			}
 		}
 	}
 	if (any_node.params && Array.isArray(any_node.params)) {
 		for (const child of any_node.params) {
 			if (child && typeof child === "object" && "node_type" in child) {
-				substitute_raw_in_node(child, substitution, structs, deref_params, traits, enums);
+				substitute_raw_in_node(child, substitution, structs, deref_params, traits, tables);
 			}
 		}
 	}
 	if (any_node.value && any_node.value.node_type) {
-		substitute_raw_in_node(any_node.value, substitution, structs, deref_params, traits, enums);
+		substitute_raw_in_node(any_node.value, substitution, structs, deref_params, traits, tables);
 	}
 	if (any_node.left_value?.node_type) {
-		substitute_raw_in_node(any_node.left_value, substitution, structs, deref_params, traits, enums);
+		substitute_raw_in_node(
+			any_node.left_value,
+			substitution,
+			structs,
+			deref_params,
+			traits,
+			tables,
+		);
 	}
 	if (any_node.right_value?.node_type) {
 		substitute_raw_in_node(
@@ -2534,23 +2529,23 @@ function substitute_raw_in_node(
 			structs,
 			deref_params,
 			traits,
-			enums,
+			tables,
 		);
 	}
 	if (any_node.target?.node_type) {
-		substitute_raw_in_node(any_node.target, substitution, structs, deref_params, traits, enums);
+		substitute_raw_in_node(any_node.target, substitution, structs, deref_params, traits, tables);
 	}
 	if (any_node.access?.node_type) {
-		substitute_raw_in_node(any_node.access, substitution, structs, deref_params, traits, enums);
+		substitute_raw_in_node(any_node.access, substitution, structs, deref_params, traits, tables);
 	}
 	if (any_node.swap?.node_type) {
-		substitute_raw_in_node(any_node.swap, substitution, structs, deref_params, traits, enums);
+		substitute_raw_in_node(any_node.swap, substitution, structs, deref_params, traits, tables);
 	}
 	if (any_node.condition?.node_type) {
-		substitute_raw_in_node(any_node.condition, substitution, structs, deref_params, traits, enums);
+		substitute_raw_in_node(any_node.condition, substitution, structs, deref_params, traits, tables);
 	}
 	if (any_node.index?.node_type) {
-		substitute_raw_in_node(any_node.index, substitution, structs, deref_params, traits, enums);
+		substitute_raw_in_node(any_node.index, substitution, structs, deref_params, traits, tables);
 	}
 }
 

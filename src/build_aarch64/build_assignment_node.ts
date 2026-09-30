@@ -309,14 +309,16 @@ function is_nullable_struct_assignment(node: AssignmentNode, status: BuildStatus
 		const name = (node.left_value as ValueNode).value;
 		const decl = status.scoped_declarations.find((d) => d.name === name);
 		const t = decl?.type || status.variable_types?.get(name);
-		return is_nullable_struct_type(t, status) || is_nullable_scalar_type(t);
+		return is_nullable_struct_type(t, status) || is_nullable_scalar_type(t, status);
 	}
 	if (
 		node.left_value.node_type === "access" &&
 		(node.left_value as AccessNode).access.node_type === "access_field"
 	) {
 		const field_type = (node.left_value as AccessNode).access.type;
-		return is_nullable_struct_type(field_type, status) || is_nullable_scalar_type(field_type);
+		return (
+			is_nullable_struct_type(field_type, status) || is_nullable_scalar_type(field_type, status)
+		);
 	}
 	return false;
 }
@@ -391,7 +393,7 @@ function build_nullable_struct_assignment(
 		const type_name = decl_type?.name || "";
 		// A nullable SCALAR slot stores a width-sized value + a word flag;
 		// its null/call shapes are identical to the struct's.
-		const is_scalar = is_nullable_scalar_type(decl_type);
+		const is_scalar = is_nullable_scalar_type(decl_type, status);
 		const scalar_size = is_scalar ? aarch64_size(type_name) : 0;
 		const rhs_is_same_var =
 			node.right_value.node_type === "value" && (node.right_value as ValueNode).value === name;
@@ -445,17 +447,24 @@ function build_nullable_struct_assignment(
 		const value_is_nullable_call =
 			node.right_value.node_type === "func_call" &&
 			(is_nullable_struct_type((node.right_value as FunctionCallNode).type, status) ||
-				is_nullable_scalar_type((node.right_value as FunctionCallNode).type));
+				is_nullable_scalar_type((node.right_value as FunctionCallNode).type, status));
 		// A nullable-returning METHOD call (`x = obj.find()`) leaves the value
 		// + flag in the access node's temp (x0 = temp address): copy both into
-		// the slot instead of the preset-sret shape.
+		// the slot instead of the preset-sret shape. A nullable-scalar FIELD
+		// read (`x = cell.ink`) instead leaves the VALUE in x0 — the flag is
+		// re-loaded from the field's `_has` slot separately.
 		const rhs_value_type =
 			call_result_type(node.right_value) ?? type_from_value_node(node.right_value);
 		const value_is_nullable_access =
 			node.right_value.node_type === "access" &&
 			rhs_value_type?.is_nullable &&
-			(is_nullable_struct_type(rhs_value_type, status) || is_nullable_scalar_type(rhs_value_type));
-		if (value_is_nullable_access) {
+			(is_nullable_struct_type(rhs_value_type, status) ||
+				is_nullable_scalar_type(rhs_value_type, status));
+		const rhs_is_field_read =
+			value_is_nullable_access &&
+			is_nullable_scalar_type(rhs_value_type, status) &&
+			(node.right_value as AccessNode).access.node_type === "access_field";
+		if (value_is_nullable_access && !rhs_is_field_read) {
 			if (reclaimable) {
 				emit_recorded_field_reclaim_for_slot(status, name, type_name);
 			}
@@ -471,6 +480,22 @@ function build_nullable_struct_assignment(
 				emit_struct_copy("x0", "x29", dst_offset ?? 0, struct_size, status);
 			}
 			emit_asm(status, `ldr x9, [x0, #${is_scalar ? 8 : get_struct_size(type_name, status)}]\n`);
+			emit_var_store(status, "x9", flag_name, 8);
+			return;
+		}
+		if (rhs_is_field_read) {
+			// A nullable-scalar FIELD read: the RHS build leaves the VALUE in
+			// x0 (not a temp address) — store it, then re-load the flag from
+			// the field's `_has` slot.
+			if (reclaimable) {
+				emit_recorded_field_reclaim_for_slot(status, name, type_name);
+			}
+			retarget_records();
+			emit_rhs_value(node.right_value, nir_rhs, status);
+			ensure_newline(status);
+			emit_var_store(status, "x0", name, scalar_size);
+			load_nullable_has(node.right_value, "x9", status);
+			ensure_newline(status);
 			emit_var_store(status, "x9", flag_name, 8);
 			return;
 		}
@@ -499,7 +524,8 @@ function build_nullable_struct_assignment(
 		// A nullable RHS local/param/field forwards its own flag.
 		const rhs_is_nullable_value =
 			!!rhs_value_type?.is_nullable &&
-			(is_nullable_struct_type(rhs_value_type, status) || is_nullable_scalar_type(rhs_value_type));
+			(is_nullable_struct_type(rhs_value_type, status) ||
+				is_nullable_scalar_type(rhs_value_type, status));
 		let rhs_flag_slot: number | undefined;
 		if (rhs_is_nullable_value) {
 			load_nullable_has(node.right_value, "x9", status);
@@ -555,7 +581,7 @@ function build_nullable_struct_assignment(
 	// A nullable SCALAR field stores the value at its natural width and a
 	// 1-BYTE flag (matching C's `unsigned char <f>_has;` member layout);
 	// nullable struct fields keep the 8-byte flag word.
-	const field_is_scalar = is_nullable_scalar_type(field_access.type);
+	const field_is_scalar = is_nullable_scalar_type(field_access.type, status);
 
 	// Resolve the target object's address into x9 (preserved across RHS build).
 	get_source_address(access.target, status);
@@ -577,7 +603,7 @@ function build_nullable_struct_assignment(
 	const rhs_t = call_result_type(node.right_value) ?? type_from_value_node(node.right_value);
 	const rhs_is_nullable_value =
 		!!rhs_t?.is_nullable &&
-		(is_nullable_struct_type(rhs_t, status) || is_nullable_scalar_type(rhs_t));
+		(is_nullable_struct_type(rhs_t, status) || is_nullable_scalar_type(rhs_t, status));
 	let rhs_flag_slot: number | undefined;
 	if (rhs_is_nullable_value) {
 		load_nullable_has(node.right_value, "x10", status);

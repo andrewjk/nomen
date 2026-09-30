@@ -1,0 +1,9 @@
+c red
+c is red
+c cleared
+p null
+ink null
+ink green
+borrowed green
+paint(.blue)=true paint(null)=false
+fallback blue

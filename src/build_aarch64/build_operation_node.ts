@@ -1237,7 +1237,7 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		// survive across the flag load and be the result when non-null.
 		const left_t = type_from_value_node(node.left_value);
 		const left_is_nullable_struct = is_nullable_struct_type(left_t, status);
-		const left_is_nullable_scalar = is_nullable_scalar_type(left_t);
+		const left_is_nullable_scalar = is_nullable_scalar_type(left_t, status);
 		if (left_is_nullable_scalar && node.left_value.node_type === "func_call") {
 			// A nullable scalar CALL result lives in a `_call_ret_` temp
 			// (x0 = temp address): read the value at +0 and the flag word at
@@ -1299,13 +1299,13 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 	) {
 		const nullable_flagged_side = (n: BaseNode) => {
 			const t = type_from_value_node(n);
-			return is_nullable_struct_type(t, status) || is_nullable_scalar_type(t);
+			return is_nullable_struct_type(t, status) || is_nullable_scalar_type(t, status);
 		};
 		const nullable_side = nullable_flagged_side(node.left_value)
 			? node.left_value
 			: node.right_value;
 		const side_type = type_from_value_node(nullable_side);
-		if (is_nullable_struct_type(side_type, status) || is_nullable_scalar_type(side_type)) {
+		if (is_nullable_struct_type(side_type, status) || is_nullable_scalar_type(side_type, status)) {
 			load_nullable_has(nullable_side, "x1", status);
 			ensure_newline(status);
 			// has==1 means non-null. `== null` → !has (eq 0); `!= null` → has (ne 0).
@@ -2139,7 +2139,7 @@ export function load_nullable_has(node: BaseNode, target_reg: string, status: Bu
 			// A nullable SCALAR field's flag is a single byte (matching C's
 			// `unsigned char <f>_has;` member); a nullable struct field's is
 			// an 8-byte word.
-			const scalar_field = is_nullable_scalar_type(access.access.type);
+			const scalar_field = is_nullable_scalar_type(access.access.type, status);
 			const wreg = target_reg.replace("x", "w");
 			const load_op = scalar_field ? `ldrb ${wreg}` : `ldr ${target_reg}`;
 			if (has_off === 0) {

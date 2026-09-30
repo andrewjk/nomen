@@ -102,7 +102,10 @@ export default function build_return_node(
 			emit_nursery_joins_on_return_c(status);
 			reclaim_all_c_scopes(status);
 			status.code += `*${ret_has} = 0;\n`;
-			if (status.function_return_type && is_nullable_scalar_type(status.function_return_type)) {
+			if (
+				status.function_return_type &&
+				is_nullable_scalar_type(status.function_return_type, status)
+			) {
 				status.code += `return (${c_type(status.function_return_type.name)})0;\n`;
 			} else {
 				status.code += `return (struct ${status.function_return_type!.name}){0};\n`;
@@ -828,7 +831,7 @@ function nullable_flag_expr_of_value(
 	if (!value) return undefined;
 	const t = type_from_value_node(value);
 	if (!t?.is_nullable) return undefined;
-	const flagged = is_nullable_struct_type(t, status) || is_nullable_scalar_type(t);
+	const flagged = is_nullable_struct_type(t, status) || is_nullable_scalar_type(t, status);
 	if (!flagged) return undefined;
 	if (value.node_type === "value") {
 		return has_flag_name((value as ValueNode).value);

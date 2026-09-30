@@ -287,7 +287,8 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	// A nullable SCALAR return (`out int?`) also rides the x8 sret buffer:
 	// the callee must hand back BOTH the value and its companion `_has` flag,
 	// which a single x0 return cannot carry.
-	const nullable_scalar_ret = is_nullable_scalar_type(node.return_type) && !node.return_type.is_ref;
+	const nullable_scalar_ret =
+		is_nullable_scalar_type(node.return_type, status) && !node.return_type.is_ref;
 	const uses_sret = return_struct || nullable_scalar_ret;
 	if (uses_sret) {
 		status.struct_return_buffer = "x8";
@@ -419,7 +420,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				first_pass_slot += 2;
 				continue;
 			}
-			if (is_nullable_scalar_type(param.type)) {
+			if (is_nullable_scalar_type(param.type, status)) {
 				first_pass_slot += 2;
 				continue;
 			}
@@ -749,7 +750,11 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			// The flag slot registers in stack_offsets exactly like a local's
 			// companion flag, so reads (load_nullable_has) and writes work
 			// unchanged. Consumes two param register slots.
-			if (is_nullable_scalar_type(param.type) && !param.type.is_ref && !param.type.is_array) {
+			if (
+				is_nullable_scalar_type(param.type, status) &&
+				!param.type.is_ref &&
+				!param.type.is_array
+			) {
 				const size = aarch64_size(param.type.name);
 				const offset = allocate_stack_space(status, size, size);
 				status.stack_offsets!.set(param.name, offset);

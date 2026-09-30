@@ -1456,7 +1456,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 						target_param &&
 						!target_param.is_self_param &&
 						(is_nullable_struct_type(target_param.type, status) ||
-							is_nullable_scalar_type(target_param.type))
+							is_nullable_scalar_type(target_param.type, status))
 					) {
 						status.code += `, `;
 						emit_nullable_arg_flag(access_func.params[i], status);
@@ -1471,7 +1471,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					(target_method ?? trait_default_func)?.return_type ?? access_func.type;
 				if (
 					is_nullable_struct_type(method_ret_type, status) ||
-					is_nullable_scalar_type(method_ret_type)
+					is_nullable_scalar_type(method_ret_type, status)
 				) {
 					const flag_name = status.current_nullable_call_flag;
 					status.code += `, `;

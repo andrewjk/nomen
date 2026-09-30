@@ -148,7 +148,7 @@ export default function build_assignment_node(
 			const call_ret = call_result_type(node.right_value);
 			const value_is_nullable_call =
 				!!call_ret &&
-				(is_nullable_struct_type(call_ret, status) || is_nullable_scalar_type(call_ret));
+				(is_nullable_struct_type(call_ret, status) || is_nullable_scalar_type(call_ret, status));
 			if (value_is_nullable_call) {
 				const old = status.current_nullable_call_flag;
 				status.current_nullable_call_flag = flag;
@@ -1332,14 +1332,16 @@ function lhs_nullable_struct_type(node: AssignmentNode, status: BuildStatus): bo
 		const name = (node.left_value as ValueNode).value;
 		const decl = status.scoped_declarations.find((d) => d.name === name);
 		const t = decl?.type || status.variable_types?.get(name);
-		return is_nullable_struct_type(t, status) || is_nullable_scalar_type(t);
+		return is_nullable_struct_type(t, status) || is_nullable_scalar_type(t, status);
 	}
 	if (
 		node.left_value.node_type === "access" &&
 		(node.left_value as AccessNode).access.node_type === "access_field"
 	) {
 		const field_type = (node.left_value as AccessNode).access.type;
-		return is_nullable_struct_type(field_type, status) || is_nullable_scalar_type(field_type);
+		return (
+			is_nullable_struct_type(field_type, status) || is_nullable_scalar_type(field_type, status)
+		);
 	}
 	return false;
 }
@@ -1353,7 +1355,7 @@ function lhs_nullable_struct_type(node: AssignmentNode, status: BuildStatus): bo
 export function nullable_value_flag_expr(value: BaseNode, status: BuildStatus): string | undefined {
 	const t = type_from_value_node(value);
 	if (!t?.is_nullable) return undefined;
-	if (!is_nullable_struct_type(t, status) && !is_nullable_scalar_type(t)) return undefined;
+	if (!is_nullable_struct_type(t, status) && !is_nullable_scalar_type(t, status)) return undefined;
 	if (value.node_type === "value") {
 		return has_flag_name((value as ValueNode).value);
 	}

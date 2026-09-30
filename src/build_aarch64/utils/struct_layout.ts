@@ -58,7 +58,7 @@ export function get_struct_size(name: string, status: BuildStatus): number {
 		// nullable scalar field a 1-byte `_has` flag right after the scalar
 		// (both match C's `unsigned char <f>_has;` member layout).
 		if (is_nullable_struct_type(field.type, status)) size += 8;
-		else if (is_nullable_scalar_type(field.type)) size += 1;
+		else if (is_nullable_scalar_type(field.type, status)) size += 1;
 	}
 	// Tail padding to the strictest member alignment so arrays of the struct
 	// keep every element aligned (matches C's sizeof).
@@ -146,7 +146,7 @@ export function get_field_offset_of_fields(
 		// Skip the companion `_has` flag following a nullable struct field
 		// (8-byte word) or nullable scalar field (1 byte).
 		if (is_nullable_struct_type(field.type, status)) offset += 8;
-		else if (is_nullable_scalar_type(field.type)) offset += 1;
+		else if (is_nullable_scalar_type(field.type, status)) offset += 1;
 	}
 	return offset;
 }

@@ -147,7 +147,7 @@ function init_nullable_field_default(
 	base_reg: string,
 	status: BuildStatus,
 ): boolean {
-	const scalar_nullable = is_nullable_scalar_type(field.type);
+	const scalar_nullable = is_nullable_scalar_type(field.type, status);
 	if (!is_nullable_struct_type(field.type, status) && !scalar_nullable) return false;
 	if (!field.value) return false;
 	const offset = get_field_offset(node.name, field.name, status);
@@ -672,7 +672,7 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 			!field.type.is_view &&
 			!field.type.is_ref &&
 			!field.type.is_array;
-		const field_is_nullable_scalar = is_nullable_scalar_type(field.type);
+		const field_is_nullable_scalar = is_nullable_scalar_type(field.type, status);
 		if (field_is_view || field_is_fat_string || field_is_nullable_scalar) ctor_slot += 2;
 		else ctor_slot += 1;
 		let src_reg: string;
@@ -1008,10 +1008,10 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 			// flag (scalar: 1 byte; struct: 8-byte word); the value is unused.
 			if (
 				val === "null" &&
-				(is_nullable_scalar_type(field.type) || is_nullable_struct_type(field.type, status))
+				(is_nullable_scalar_type(field.type, status) || is_nullable_struct_type(field.type, status))
 			) {
 				const has_off = get_field_has_offset(node.name, field.name, status);
-				if (is_nullable_scalar_type(field.type)) {
+				if (is_nullable_scalar_type(field.type, status)) {
 					emit_asm(status, `strb wzr, [x19, #${has_off}]\n`);
 				} else {
 					emit_asm(status, `str xzr, [x19, #${has_off}]\n`);
@@ -1214,7 +1214,7 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 		// A nullable SCALAR param (`int? x`) is a (value, flag) pair: spill
 		// the value at its natural width and the flag as a word into a sibling
 		// `<name>_has` slot. Consumes two param register slots.
-		if (is_nullable_scalar_type(param.type) && !param.type.is_ref && !param.type.is_array) {
+		if (is_nullable_scalar_type(param.type, status) && !param.type.is_ref && !param.type.is_array) {
 			const size = aarch64_size(param.type.name);
 			const offset = allocate_stack_space(status, size, size);
 			status.stack_offsets!.set(param.name, offset);
@@ -1701,7 +1701,9 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		// A nullable SCALAR return (`out int?`) also rides the x8 sret buffer
 		// (value + flag word) — a single x0 return cannot carry the flag.
 		const nullable_scalar_ret =
-			!!func.return_type && is_nullable_scalar_type(func.return_type) && !func.return_type.is_ref;
+			!!func.return_type &&
+			is_nullable_scalar_type(func.return_type, status) &&
+			!func.return_type.is_ref;
 		const uses_sret = return_struct || nullable_scalar_ret;
 		let return_buffer_stack_offset: number | undefined;
 		// Record the function name so build_return_node can register the
@@ -1764,7 +1766,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			}
 			// A nullable SCALAR param (`int? x`) is a (value, flag) pair — two
 			// AAPCS64 slots (spilled in the second pass).
-			if (is_nullable_scalar_type(param.type) && !param.type.is_ref) {
+			if (is_nullable_scalar_type(param.type, status) && !param.type.is_ref) {
 				if (param.declaration === "var") {
 					status.function_param_vars.add(param.name);
 				}
@@ -1908,7 +1910,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			// A nullable SCALAR param (`int? x`) is a (value, flag) pair:
 			// spill the value at its natural width and the flag as a word into
 			// a sibling `<name>_has` slot. Consumes two register slots.
-			if (is_nullable_scalar_type(param.type) && !param.type.is_ref) {
+			if (is_nullable_scalar_type(param.type, status) && !param.type.is_ref) {
 				const size = aarch64_size(param.type.name);
 				const offset = allocate_stack_space(status, size, size);
 				status.stack_offsets!.set(param.name, offset);
