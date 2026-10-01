@@ -29,7 +29,7 @@ import { ensure_concurrency_runtime_a64 } from "./build_aarch64/build_spawn_node
 import { reset_label_counter as reset_switch_label_counter } from "./build_aarch64/build_switch_node.ts";
 import { reset_string_counter as reset_value_string_counter } from "./build_aarch64/build_value_node.ts";
 import { reset_label_counter as reset_while_label_counter } from "./build_aarch64/build_while_loop_node.ts";
-import { validate_asm, validate_stack_balance } from "./build_aarch64/lift_asm.ts";
+import { lift_functions, stack_balance_errors_from_lift } from "./build_aarch64/lift_asm.ts";
 import { reset_neon_counter } from "./build_aarch64/neon_emit.ts";
 import { emit_malloc } from "./build_aarch64/utils/audit.ts";
 import { generate_companion } from "./build_aarch64/utils/c_companion.ts";
@@ -425,7 +425,11 @@ export default function build(
 		// mnemonic shapes, branch targets, flag discipline, stack balance).
 		// A backend emission bug fails the build here with the offending line
 		// instead of surfacing as an assembler error or silent miscompile.
-		const lift_errors = validate_asm(status.code);
+		// The lift runs ONCE: lift_functions performs the full validate_asm
+		// pass internally, and the balance check below consumes the same
+		// structured functions (re-lifting per check doubled the cost).
+		const { result: lifted } = lift_functions(status.code);
+		const lift_errors = lifted.errors;
 		if (lift_errors.length > 0) {
 			if (!status.build_errors) status.build_errors = [];
 			for (const e of lift_errors.slice(0, 20)) {
@@ -439,7 +443,7 @@ export default function build(
 		// sp must return to its entry value at each `ret`. Joins with unequal
 		// path deltas become unknown (never error) — the classic epilogue-diamond
 		// pattern stays clean while straight-line imbalance fails loudly.
-		const balance_errors = validate_stack_balance(status.code);
+		const balance_errors = stack_balance_errors_from_lift(lifted);
 		if (balance_errors.length > 0) {
 			if (!status.build_errors) status.build_errors = [];
 			for (const e of balance_errors.slice(0, 20)) {

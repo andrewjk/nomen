@@ -14,6 +14,7 @@
  */
 
 import {
+	type AsmInstruction,
 	type AsmLine,
 	type LiftedFunction,
 	type LiftError,
@@ -81,11 +82,43 @@ export function try_parse_operands(parts: string[]): Operand[] | null {
  * is not an instruction — label, directive, comment, blank, OR an
  * instruction outside the contract table). Shared by the validator and the
  * phase-2 optimizer so both see identical shapes.
+ *
+ * Memoized by raw text: the post-processing pipeline (frame slots, coalesce,
+ * loop promote, if-convert, float forwarding, widen masks, …) plus the
+ * validators each re-parse the SAME instruction texts — prologue/epilogue
+ * lines repeat across every function, so the hit rate is very high. Every
+ * call returns a PRIVATE deep copy (the passes treat parsed instructions as
+ * mutable IR — coalesce renames operands in place — so sharing a parsed
+ * object would corrupt the memo and cross-pass state).
  */
-export function parse_asm_instruction(
-	text: string,
-	line: number,
-): import("./asm_ir.ts").AsmInstruction | null {
+const parse_memo = new Map<string, AsmInstruction | null>();
+const PARSE_MEMO_CAP = 200_000;
+
+function clone_parsed(c: AsmInstruction, line: number): AsmInstruction {
+	return {
+		text: c.text,
+		op: c.op,
+		setsFlags: c.setsFlags,
+		readsFlags: c.readsFlags,
+		operands: c.operands.map((o): Operand => {
+			const copy = { ...o };
+			if (copy.kind === "mem" && copy.offset) copy.offset = { ...copy.offset };
+			return copy;
+		}),
+		line,
+	};
+}
+
+export function parse_asm_instruction(text: string, line: number): AsmInstruction | null {
+	const cached = parse_memo.get(text);
+	if (cached !== undefined) return cached === null ? null : clone_parsed(cached, line);
+	const parsed = parse_asm_instruction_uncached(text, line);
+	if (parse_memo.size >= PARSE_MEMO_CAP) parse_memo.clear();
+	parse_memo.set(text, parsed ? clone_parsed(parsed, 0) : null);
+	return parsed;
+}
+
+function parse_asm_instruction_uncached(text: string, line: number): AsmInstruction | null {
 	const t = strip_comment(text).trim();
 	const m = /^([a-z][a-z0-9.]*)\s*(.*)$/.exec(t);
 	if (!m) return null;
@@ -476,8 +509,16 @@ export function validate_asm(code: string): LiftError[] {
  */
 export function validate_stack_balance(code: string): LiftError[] {
 	const { result } = lift_functions(code);
-	if (!result.ok) return []; // structural errors already reported — don't cascade
+	return stack_balance_errors_from_lift(result);
+}
+
+/** Stack-balance check over an ALREADY-lifted result — lets the build
+ *  pipeline lift+validate once and share the structured functions between
+ *  the shape/branch validation and the balance pass (lift_functions runs
+ *  validate_asm internally, so re-lifting per check doubled the cost). */
+export function stack_balance_errors_from_lift(result: LiftResult): LiftError[] {
 	const errors: LiftError[] = [];
+	if (!result.ok) return []; // structural errors already reported — don't cascade
 	for (const fn of result.functions) {
 		check_function_balance(fn, errors);
 	}
@@ -605,44 +646,67 @@ interface BalanceBlock {
 }
 
 /** Resolve a branch target token to a body line index, or null when the
- *  target is outside this function / unresolved (numeric f/b forms scan
- *  linearly, matching the assembler's semantics). */
-function resolve_target(token: string, from: number, body: LiftedFunction["body"]): number | null {
+ *  target is outside this function. Backed by the per-function label maps
+ *  built once in check_function_balance — a linear rescan of the body per
+ *  pending branch used to be the single hottest spot in large builds
+ *  (branches × body-length re-stripping + regex). Numeric `Nf`/`Nb` forms
+ *  resolve directionally against the (possibly redefined) definitions,
+ *  matching the assembler's semantics; a named label resolves to its FIRST
+ *  definition (the old body scan returned the first match too). */
+function resolve_target(
+	token: string,
+	from: number,
+	named_labels: Map<string, number>,
+	numeric_labels: Map<string, number[]>,
+): number | null {
 	const numeric = /^(\d+)([fb])$/.exec(token);
 	if (numeric) {
-		const n = numeric[1];
+		const defs = numeric_labels.get(numeric[1]);
+		if (!defs) return null;
 		if (numeric[2] === "f") {
-			for (let i = from + 1; i < body.length; i++) {
-				const lm = /^(\d+):/.exec(strip_comment(body[i].text).trim());
-				if (lm && lm[1] === n) return i;
+			for (let k = 0; k < defs.length; k++) {
+				if (defs[k] > from) return defs[k];
 			}
 			return null;
 		}
-		for (let i = from - 1; i >= 0; i--) {
-			const lm = /^(\d+):/.exec(strip_comment(body[i].text).trim());
-			if (lm && lm[1] === n) return i;
+		for (let k = defs.length - 1; k >= 0; k--) {
+			if (defs[k] < from) return defs[k];
 		}
 		return null;
 	}
-	for (let i = 0; i < body.length; i++) {
-		const lm = LABEL_RE.exec(strip_comment(body[i].text).trim());
-		if (lm && lm[1] === token) return i;
-	}
-	return null;
+	return named_labels.get(token) ?? null;
 }
 
 function check_function_balance(fn: LiftedFunction, errors: LiftError[]): void {
 	const body = fn.body;
 
-	// Pass 1: per-line decomposition — label prefix, sp effect, code flag.
+	// Pass 1: per-line decomposition — stripped text, label prefix, sp
+	// effect, code flag — computed ONCE and reused by every later pass
+	// (pass 2's block sweep, and branch-target resolution via the label
+	// maps below). Re-strip + re-regex per pass was a measured hotspot.
+	const stripped_text: string[] = [];
 	const effects: LineEffect[] = [];
 	const is_code: boolean[] = [];
+	// Branch-target maps: named label → FIRST definition line; numeric
+	// label → every definition line in order (Nf/Nb resolve directionally).
+	const named_labels = new Map<string, number>();
+	const numeric_labels = new Map<string, number[]>();
 	for (let i = 0; i < body.length; i++) {
 		const t = strip_comment(body[i].text).trim();
+		stripped_text.push(t);
 		effects.push({ delta: null, branch: null, cond: false, ret: false, unknown_jump: false });
 		is_code.push(false);
-		if (!t) continue;
 		const lm = LABEL_RE.exec(t);
+		if (lm) {
+			if (/^\d+$/.test(lm[1])) {
+				const defs = numeric_labels.get(lm[1]);
+				if (defs) defs.push(i);
+				else numeric_labels.set(lm[1], [i]);
+			} else if (!named_labels.has(lm[1])) {
+				named_labels.set(lm[1], i);
+			}
+		}
+		if (!t) continue;
 		const rest = lm ? lm[2].trim() : t;
 		if (rest.startsWith(".") || /^[\w.$]+\s*=\s*[\w.$]+$/.test(rest) || !rest) continue;
 		is_code[i] = true;
@@ -657,7 +721,7 @@ function check_function_balance(fn: LiftedFunction, errors: LiftError[]): void {
 	let cur = -1;
 	let terminated = true; // the body starts a fresh block
 	for (let i = 0; i < body.length; i++) {
-		const t = strip_comment(body[i].text).trim();
+		const t = stripped_text[i];
 		if (!t) continue;
 		if (LABEL_RE.test(t)) {
 			cur++;
@@ -691,9 +755,10 @@ function check_function_balance(fn: LiftedFunction, errors: LiftError[]): void {
 		}
 	}
 
-	// Pass 3: resolve branch targets against the COMPLETE block map.
+	// Pass 3: resolve branch targets against the label maps (O(1) named,
+	// directional over the short numeric def lists).
 	for (const p of pending) {
-		const line = resolve_target(p.token, p.from, body);
+		const line = resolve_target(p.token, p.from, named_labels, numeric_labels);
 		blocks[p.block].targets.push(line === null ? null : (line_block.get(line) ?? null));
 	}
 

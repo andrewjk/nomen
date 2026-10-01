@@ -159,10 +159,31 @@ asm via the raw API), the build phase is now ~18.8 s of which roughly
 CPU profile self-time: `resolve_target` 5.3 s, the
 `^([A-Za-z_.$][\w.$]*|\d+):(.*)$` label regex 4.7 s, `strip_comment`
 3.2 s. Parse+check is ~1.3 s. The emitter itself is now ~3 s (was ~29 s
-quadratic before the fix). If large-program aarch64 builds need more
-headroom, the post passes want the same treatment: single-pass line
-scans, cached label/classification lookups, and skipping the lift when a
-pass makes no edits.
+quadratic before the fix).
+
+CHEAPENED (2026-10-01) — the three profiled hotspots, byte-identical
+outputs (per-pass sha256 over the allmark bench .s, 131,599 lines):
+
+- `resolve_target` linear body rescans → per-function named/numeric label
+  maps built once in `check_function_balance` pass 1 (the balance pass now
+  strips each body line once and shares the decomposition).
+- `validate_asm` ran twice per build: directly, and again inside
+  `validate_stack_balance` → `lift_functions`. build.ts now lifts ONCE and
+  feeds the structured functions to the balance check
+  (`stack_balance_errors_from_lift`).
+- `parse_asm_instruction` is memoized by raw text (deep-cloned per call —
+  the passes treat parsed instructions as mutable IR, coalesce renames
+  operands in place), cutting the regex/tokenizer work in EVERY pass.
+  Measured on the bench .s: balance 549→261 ms, promote_loop_slots
+  589→375 ms, widen masks 107→64 ms, float forwarding 281→201 ms,
+  coalesce 408→323 ms, if-convert 329→243 ms, frame slots 243→209 ms —
+  the pipeline drops ~30% with identical outputs.
+
+If large-program aarch64 builds need more headroom, the remaining cost is
+each pass's own per-line analysis (no shared line classification between
+passes yet — a `label/directive/alias/code` memo keyed on the trimmed line
+is the next candidate), plus single-pass line scans where a pass still
+sweeps the text more than once.
 
 ## Cold-run parallel test flakiness (pre-existing)
 
