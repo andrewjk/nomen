@@ -17,7 +17,8 @@
 		"dist",
 		"src",
 		"core",
-		"NOMEN_AGENTS.md"
+		"NOMEN_AGENTS.md",
+		"audit_runtime.c"
 	],
 	"type": "module",
 	"scripts": {

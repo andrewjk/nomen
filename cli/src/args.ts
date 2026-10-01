@@ -178,7 +178,7 @@ export function print_help(): void {
 			"  --platform, -p <name>   Target platform: macos, ios, linux, android, windows, web",
 			"  --lib, -l <path>        Path to System library directory (containing package.jsonc)",
 			"  --audit                 Audit the generated program for memory issues",
-			"  --audit-runtime <path>  Path to audit_runtime.c, linked in when --audit is set",
+			"  --audit-runtime <path>  Path to audit_runtime.c (default: auto-discovered — walk-up or the CLI-bundled copy)",
 			"  --jobs, -j <n>          For `nomen test`: max test files run in parallel (default: CPU count)",
 			"  --release, -r           Build with optimizations (clang -O2; asm passes on aarch64)",
 			"  --fast-math             Allow FP reassociation (float loop reductions vectorize on aarch64)",

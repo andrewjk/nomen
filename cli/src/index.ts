@@ -13,7 +13,7 @@ import parse from "../../src/parse.ts";
 import { parse_args, print_help, type Args } from "./args.ts";
 import { run_docs } from "./docs.ts";
 import render_errors, { render_warnings } from "./format_errors.ts";
-import { find_bundled, run_init } from "./init.ts";
+import { find_bundled, find_bundled_audit_runtime, run_init } from "./init.ts";
 import { build_dir_for, outfile_for } from "./paths.ts";
 import { runTests } from "./test.ts";
 import type Config from "./types/Config.ts";
@@ -284,7 +284,10 @@ function resolve_audit_runtime(config: Config, input_path: string): string | und
 		if (parent === dir) break;
 		dir = parent;
 	}
-	return undefined;
+	// Neither the config nor the walk-up found it: fall back to the runtime
+	// bundled with the CLI (live repo copy in the dev tree, shipped copy when
+	// published) so `--audit` works outside the nomen checkout with no flag.
+	return find_bundled_audit_runtime();
 }
 
 function compile_audit_runtime(config: Config, input_path: string, buildDir: string): string {

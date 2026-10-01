@@ -85,6 +85,16 @@ export function find_bundled(filename: string): string | undefined {
 	return undefined;
 }
 
+// The audit runtime for `--audit` builds: the dev tree's LIVE copy
+// (repo_root/src/audit_runtime.c — a stale bundled snapshot must not shadow
+// it, same posture as the cli/core rule above), else the copy shipped at the
+// package root by `scripts/bundle-assets.mjs` in a published install. Lets
+// `nomen test/run --audit` work outside the nomen checkout with no
+// --audit-runtime flag.
+export function find_bundled_audit_runtime(): string | undefined {
+	return find_bundled("src/audit_runtime.c") ?? find_bundled("audit_runtime.c");
+}
+
 /**
  * `nomen init <name>`: scaffold a new project under `./<name>` with a sensible
  * starting layout (package.jsonc, src/main.nm, a starter test, README and an

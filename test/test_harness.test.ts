@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 import { expect, test, vi } from "vite-plus/test";
@@ -274,6 +276,41 @@ test("run_test_file links aarch64 with System::Stream::File and honors the CWD c
 		expect(result.ok).toBe(true);
 		expect(result.fails).toEqual([]);
 		expect(result.leaks).toEqual([]);
+	}
+}, 90_000);
+
+// ---------------------------------------------------------------------------
+// audit runtime auto-discovery
+// ---------------------------------------------------------------------------
+
+test("run_test_file --audit auto-discovers the bundled audit runtime", async () => {
+	// A test file in a temp dir has no src/audit_runtime.c to walk up to —
+	// before the bundled fallback this failed in setup ("Audit enabled but
+	// audit_runtime.c was not found") and forced an explicit --audit-runtime.
+	// The audit build must find the CLI-bundled runtime and stay balanced.
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "nomen-audit-"));
+	const file = path.join(dir, "audit_lookup.test.nm");
+	fs.writeFileSync(
+		file,
+		`import System
+import System::Test
+
+pub func test_ok = (ref Tester t) {
+	t.expect(1 + 1 == 2, "math should math")
+}
+`,
+	);
+	try {
+		for (const arch of ["aarch64", "c"] as const) {
+			const result = await run_test_file(file, "core", arch, true, undefined, false);
+			expect(result.phase).toBeUndefined();
+			expect(result.crashed).toBeUndefined();
+			expect(result.ok).toBe(true);
+			expect(result.tests.map((t) => t.name)).toEqual(["test_ok"]);
+			expect(result.leaks).toEqual([]);
+		}
+	} finally {
+		fs.rmSync(dir, { recursive: true, force: true });
 	}
 }, 90_000);
 

@@ -1,8 +1,11 @@
 // Copies repo-level assets into the cli/ package so they ship with the
 // published `nomen-lang` npm package:
 //
-//   ../core           -> ./core           (the System standard library)
-//   ../NOMEN_AGENTS.md -> ./NOMEN_AGENTS.md (project template -> AGENTS.md)
+//   ../core              -> ./core              (the System standard library)
+//   ../NOMEN_AGENTS.md   -> ./NOMEN_AGENTS.md   (project template -> AGENTS.md)
+//   ../src/audit_runtime.c -> ./audit_runtime.c (malloc/free audit runtime for
+//                                                 `--audit`, auto-discovered by
+//                                                 find_bundled_audit_runtime)
 //
 // `nomen init <name>` reads these at runtime to populate a new project.
 // In dev (`npm run go`), init.ts also falls back to the repo layout directly,
@@ -18,6 +21,7 @@ const repo = path.resolve(cli, "..");
 const pairs = [
 	[path.join(repo, "core"), path.join(cli, "core")],
 	[path.join(repo, "NOMEN_AGENTS.md"), path.join(cli, "NOMEN_AGENTS.md")],
+	[path.join(repo, "src", "audit_runtime.c"), path.join(cli, "audit_runtime.c")],
 ];
 
 for (const [src, dest] of pairs) {

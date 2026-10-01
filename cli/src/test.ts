@@ -9,7 +9,7 @@ import build, { default_platform } from "../../src/build.ts";
 import join from "../../src/join.ts";
 import { get_library } from "../../src/lib.ts";
 import parse from "../../src/parse.ts";
-import { find_bundled } from "./init.ts";
+import { find_bundled, find_bundled_audit_runtime } from "./init.ts";
 import { build_dir_for } from "./paths.ts";
 
 const RECORD_PREFIX = "\\nomen|";
@@ -348,9 +348,13 @@ export async function run_test_file(
 	// "LEAK: N allocation(s)" when the balance is nonzero.
 	let audit_obj: string | undefined;
 	if (audit) {
+		// Explicit flag wins; else walk up from the test file (a nomen
+		// checkout's src/audit_runtime.c); else the runtime bundled with the
+		// CLI (live repo copy in the dev tree, shipped copy when published)
+		// so `--audit` works outside the nomen checkout with no flag.
 		const runtime_src = audit_runtime
 			? path.resolve(audit_runtime)
-			: find_audit_runtime(path.dirname(resolved));
+			: (find_audit_runtime(path.dirname(resolved)) ?? find_bundled_audit_runtime());
 		if (!runtime_src || !fs.existsSync(runtime_src)) {
 			result.ok = false;
 			result.phase = "setup";
@@ -570,7 +574,8 @@ export function default_jobs(): number {
 /**
  * Locate audit_runtime.c for an audited test build: an explicit path wins,
  * otherwise walk up from `dir` looking for a `src/audit_runtime.c` (the same
- * convention the run/build commands use).
+ * convention the run/build commands use). When both miss, the caller falls
+ * back to the CLI-bundled runtime (`find_bundled_audit_runtime`).
  */
 function find_audit_runtime(dir: string): string | undefined {
 	let cur = dir;
