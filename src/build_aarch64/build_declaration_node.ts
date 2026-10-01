@@ -1790,6 +1790,20 @@ export default function build_declaration_node(
 						} else {
 							emit_asm(status, `str x0, [x9, #${slot}]\n`);
 						}
+					} else if (element_size > 8 && struct_element && !struct_element.is_class) {
+						// Value-struct element: a bare local's value load yields
+						// only the struct's FIRST word (the vtable pointer), so
+						// evaluate the value's ADDRESS and memcpy the full slot
+						// bytes (structs are VT-prefixed, ≥16 bytes — a
+						// width-matched store would truncate and store the
+						// wrong word).
+						emit_struct_address_param(value as BaseNode, status);
+						ensure_newline(status);
+						emit_asm(status, `ldr x9, [x29, #${offset}]\n`);
+						emit_asm(status, `mov x1, x0\n`);
+						emit_asm(status, `add x0, x9, #${slot}\n`);
+						emit_asm(status, `mov x2, #${element_size}\n`);
+						emit_asm(status, `bl _memcpy\n`);
 					} else {
 						emit_init_value(
 							value as BaseNode,
@@ -1845,6 +1859,17 @@ export default function build_declaration_node(
 						} else {
 							emit_asm(status, `str x0, [x9, #${slot}]\n`);
 						}
+					} else if (element_size > 8 && struct_element && !struct_element.is_class) {
+						// Value-struct element: evaluate the value's ADDRESS
+						// (a bare local's value load yields only the first
+						// word) and memcpy the full slot bytes.
+						emit_struct_address_param(value as BaseNode, status);
+						ensure_newline(status);
+						emit_asm(status, `ldr x9, [${node.name}]\n`);
+						emit_asm(status, `mov x1, x0\n`);
+						emit_asm(status, `add x0, x9, #${slot}\n`);
+						emit_asm(status, `mov x2, #${element_size}\n`);
+						emit_asm(status, `bl _memcpy\n`);
 					} else {
 						emit_init_value(
 							value as BaseNode,
@@ -2010,6 +2035,18 @@ export default function build_declaration_node(
 								} else {
 									emit_asm(status, `str x0, [x29, #${slot_offset}]\n`);
 								}
+							} else if (element_size > 8 && struct_element && !struct_element.is_class) {
+								// Value-struct element: a bare local's value
+								// load yields only the struct's FIRST word
+								// (the vtable pointer) — evaluate the value's
+								// ADDRESS and memcpy the full slot bytes (a
+								// width-matched store would truncate).
+								emit_struct_address_param(value, status);
+								ensure_newline(status);
+								emit_asm(status, `mov x1, x0\n`);
+								emit_asm(status, `add x0, x29, #${slot_offset}\n`);
+								emit_asm(status, `mov x2, #${element_size}\n`);
+								emit_asm(status, `bl _memcpy\n`);
 							} else {
 								emit_init_value(value, nir_array_element(nir_init, array_values, i), status);
 								ensure_newline(status);
@@ -2048,6 +2085,17 @@ export default function build_declaration_node(
 								} else {
 									emit_asm(status, `str x0, [${node.name} + ${i * element_size}]\n`);
 								}
+							} else if (element_size > 8 && struct_element && !struct_element.is_class) {
+								// Value-struct element: evaluate the value's
+								// ADDRESS (a bare local's value load yields
+								// only the first word) and memcpy the full
+								// slot bytes.
+								emit_struct_address_param(value, status);
+								ensure_newline(status);
+								emit_asm(status, `mov x1, x0\n`);
+								emit_global_slot_addr(status, node.name, i * element_size);
+								emit_asm(status, `mov x2, #${element_size}\n`);
+								emit_asm(status, `bl _memcpy\n`);
 							} else {
 								emit_init_value(value, nir_array_element(nir_init, array_values, i), status);
 								ensure_newline(status);

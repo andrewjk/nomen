@@ -650,6 +650,61 @@ Console.write("\\{v.at(0).x}\\{f.y} \\{v.at(1).y}")
 		await build_and_check_output(input, "array_heap_struct_decl", "99 4");
 	});
 
+	// Bare value-struct VARIABLE elements (FOLLOWUP "value-struct elements in
+	// a heap Array<T>"): the aarch64 element stores used a width-matched
+	// `str` of the value's FIRST word — for a value struct that word is the
+	// vtable pointer, so `Array<Pt>(pt)`'s stack materialization read garbage
+	// and the heap-literal materialization (`[pt]` to an `Array<Pt>` param)
+	// memcpy'd through it (SIGSEGV). Both now evaluate the value's ADDRESS
+	// and copy the full slot bytes.
+	test("value-struct variable element in Array<T>(x) ctor literal reads back", async () => {
+		const input = `
+struct Pt {
+  var int x
+  var int y
+}
+var pt = Pt(3, 4)
+var pairs = Array<Pt>(pt)
+Console.write("\\{pairs.length} \\{pairs.at_or_panic(0).x} \\{pairs.at_or_panic(0).y}")
+`;
+		await build_and_check_output(input, "array_struct_var_element_ctor", "1 3 4");
+	});
+
+	test("value-struct variable element to Array<T> param materializes", async () => {
+		const input = `
+struct Pt {
+  var int x
+  var int y
+}
+func sum_x = (Array<Pt> xs, out int) {
+  var total = 0
+  for p of xs {
+    total = total + p.x
+  }
+  return total
+}
+var a = Pt(3, 0)
+var b = Pt(4, 0)
+Console.write("\\{sum_x([a, b])}")
+`;
+		await build_and_check_output(input, "array_struct_var_element_param", "7");
+	});
+
+	test("moved value-struct element to Array<T> param materializes", async () => {
+		const input = `
+struct Pt {
+  var int x
+  var int y
+}
+func first_xy = (Array<Pt> xs, out int) {
+  return xs.at_or_panic(0).x + xs.at_or_panic(0).y
+}
+var pt = Pt(3, 4)
+Console.write("\\{first_xy([move pt])}")
+`;
+		await build_and_check_output(input, "array_struct_moved_element_param", "7");
+	});
+
 	// Class-element arrays: a heap copy of a stack-array VARIABLE would share
 	// the instances with the caller's array (double free) — rejected at check
 	// time (see the errors block). Literals construct FRESH instances owned
