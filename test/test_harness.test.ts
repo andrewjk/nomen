@@ -1,6 +1,6 @@
 import path from "node:path";
 
-import { expect, test } from "vite-plus/test";
+import { expect, test, vi } from "vite-plus/test";
 
 import {
 	collect_test_files,
@@ -10,6 +10,7 @@ import {
 	generate_harness,
 	parse_records,
 	run_test_file,
+	runTests,
 } from "../cli/src/test.ts";
 
 // ---------------------------------------------------------------------------
@@ -200,11 +201,11 @@ test("extract_leaks returns [] for a clean run", () => {
 // run_test_file (end-to-end: parse + build + link + run the calc fixture)
 // ---------------------------------------------------------------------------
 
-test("run_test_file compiles, runs and reports the calc fixture in both modes", () => {
+test("run_test_file compiles, runs and reports the calc fixture in both modes", async () => {
 	// The fixture intentionally fails two asserts; both the default (debug)
 	// and --release builds must agree on that and report the bench record.
 	for (const release of [false, true]) {
-		const result = run_test_file(
+		const result = await run_test_file(
 			"cli/test/fixtures/calc.test.nm",
 			"core",
 			"aarch64",
@@ -227,12 +228,12 @@ test("run_test_file compiles, runs and reports the calc fixture in both modes", 
 	}
 }, 60_000);
 
-test("run_test_file links the companion C file (spawn fixture)", () => {
+test("run_test_file links the companion C file (spawn fixture)", async () => {
 	// The spawn fixture's aarch64 .s calls into the pool/fiber runtime that
 	// lives in the companion C file — a regression here shows up as a link
 	// failure, not a silent pass.
 	for (const release of [false, true]) {
-		const result = run_test_file(
+		const result = await run_test_file(
 			"cli/test/fixtures/spawn.test.nm",
 			"core",
 			"aarch64",
@@ -247,7 +248,7 @@ test("run_test_file links the companion C file (spawn fixture)", () => {
 	}
 }, 60_000);
 
-test("run_test_file links aarch64 with System::Stream::File and honors the CWD contract", () => {
+test("run_test_file links aarch64 with System::Stream::File and honors the CWD contract", async () => {
 	// Two contracts in one fixture:
 	// 1. aarch64 link: `import System::Stream::File` pulls Tcp's
 	//    `aarch64_use_c` companions into the object — the generated main
@@ -259,7 +260,7 @@ test("run_test_file links aarch64 with System::Stream::File and honors the CWD c
 	//    this test process's CWD is the repo root and the fixture lives in
 	//    cli/test/fixtures.
 	for (const arch of ["aarch64", "c"] as const) {
-		const result = run_test_file(
+		const result = await run_test_file(
 			"cli/test/fixtures/fileio.test.nm",
 			"core",
 			arch,
@@ -275,3 +276,31 @@ test("run_test_file links aarch64 with System::Stream::File and honors the CWD c
 		expect(result.leaks).toEqual([]);
 	}
 }, 90_000);
+
+// ---------------------------------------------------------------------------
+// runTests (parallel test-file execution + ordered reporting)
+// ---------------------------------------------------------------------------
+
+test("runTests runs files concurrently but reports them in discovery order", async () => {
+	// Three fixtures (one intentionally failing). With jobs > 1 the
+	// latency-bound clang/link/run steps overlap across files, yet the
+	// per-file report must stay in the discovery (sorted) order and the
+	// aggregate result must be identical to the sequential run.
+	const logs: string[] = [];
+	const spy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+		logs.push(args.map(String).join(" "));
+	});
+	let parallel_ok: boolean;
+	try {
+		parallel_ok = await runTests("cli/test/fixtures", { jobs: 3 });
+	} finally {
+		spy.mockRestore();
+	}
+	// calc.test.nm intentionally fails two asserts.
+	expect(parallel_ok).toBe(false);
+
+	const order = logs
+		.filter((l) => l.includes("cli/test/fixtures/") && l.includes(".test.nm"))
+		.map((l) => l.replace(/.*fixtures\//, "").replace(/ .*/, ""));
+	expect(order).toEqual(["calc.test.nm", "fileio.test.nm", "spawn.test.nm"]);
+}, 120_000);

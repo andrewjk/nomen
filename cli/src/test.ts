@@ -1,7 +1,9 @@
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 
 import build, { default_platform } from "../../src/build.ts";
 import join from "../../src/join.ts";
@@ -11,6 +13,13 @@ import { find_bundled } from "./init.ts";
 import { build_dir_for } from "./paths.ts";
 
 const RECORD_PREFIX = "\\nomen|";
+
+// Promise-returning `execFile`: `nomen test` builds and runs each `*.test.nm`
+// file in its own build folder and its own process, so the (latency-bound)
+// clang/link/run subprocesses overlap across files instead of serializing.
+// A rejected error carries the same `.stdout` / `.stderr` / `.signal` /
+// `.code` fields the previous synchronous `execFileSync` catch sites read.
+const execFile_async = promisify(execFile);
 
 // A discovered test function: `pub func <name> = (ref Tester t)`.
 export interface TestFunction {
@@ -272,7 +281,7 @@ export function extract_leaks(stdout: string): string[] {
  * Compile one `*.test.nm` file (with the generated harness) and run it,
  * returning its parsed records and any crash info.
  */
-export function run_test_file(
+export async function run_test_file(
 	entry_path: string,
 	lib_path: string | undefined,
 	arch: string,
@@ -280,7 +289,7 @@ export function run_test_file(
 	audit_runtime?: string,
 	release = false,
 	cwd?: string,
-): TestFileResult {
+): Promise<TestFileResult> {
 	const start = performance.now();
 	const source_text = fs.readFileSync(entry_path, "utf8");
 	const tests = extract_test_functions(source_text);
@@ -351,7 +360,7 @@ export function run_test_file(
 			return result;
 		}
 		audit_obj = path.join(buildDir, "audit_runtime.o");
-		execFileSync("clang", ["-c", runtime_src, "-o", audit_obj]);
+		await execFile_async("clang", ["-c", runtime_src, "-o", audit_obj]);
 	}
 	const platform = default_platform();
 	// Match the run/build command's emission: ObjC-bearing sources (GUI code
@@ -401,10 +410,7 @@ export function run_test_file(
 		);
 	}
 	try {
-		execFileSync("clang", link_args, {
-			encoding: "utf8",
-			stdio: ["ignore", "pipe", "pipe"],
-		});
+		await execFile_async("clang", link_args, { encoding: "utf8" });
 	} catch (err: any) {
 		const stderr = err.stderr ? err.stderr.toString() : (err.message ?? "");
 		result.ok = false;
@@ -424,13 +430,13 @@ export function run_test_file(
 	let runStdout = "";
 	let crashed: string | undefined;
 	try {
-		runStdout = execFileSync(outfile, [], {
+		const run = await execFile_async(outfile, [], {
 			encoding: "utf8",
-			stdio: ["ignore", "pipe", "pipe"],
 			timeout: 30_000,
 			maxBuffer: 16 * 1024 * 1024,
 			cwd: cwd ?? process.cwd(),
 		});
+		runStdout = run.stdout;
 	} catch (err: any) {
 		runStdout = err.stdout ? err.stdout.toString() : "";
 		if (err.signal === "SIGTERM") {
@@ -545,6 +551,20 @@ export interface RunTestsOptions {
 	audit?: boolean;
 	audit_runtime?: string;
 	release?: boolean;
+	/**
+	 * Maximum test files built and run concurrently. Each file compiles into
+	 * its own build folder and runs in its own process, so the latency-bound
+	 * clang/link/run steps overlap across files. Defaults to the machine's
+	 * available parallelism; 1 forces the historical sequential order.
+	 */
+	jobs?: number;
+}
+
+/** The default concurrency for `runTests` when no `jobs` is given. */
+export function default_jobs(): number {
+	const n =
+		typeof os.availableParallelism === "function" ? os.availableParallelism() : os.cpus().length;
+	return Math.max(1, n);
 }
 
 /**
@@ -565,7 +585,7 @@ function find_audit_runtime(dir: string): string | undefined {
 }
 
 /** Discover, run, and report every `*.test.nm` under `root`. */
-export function runTests(root: string, options: RunTestsOptions = {}): boolean {
+export async function runTests(root: string, options: RunTestsOptions = {}): Promise<boolean> {
 	const arch = options.arch ?? "aarch64";
 	const lib = resolve_lib_for(root);
 	const files = collect_test_files(root).filter((f) => !options.filter || options.filter.test(f));
@@ -577,20 +597,33 @@ export function runTests(root: string, options: RunTestsOptions = {}): boolean {
 	// fixture paths resolve there no matter where the CLI was invoked from.
 	const binary_cwd = path.resolve(root);
 
-	const results: TestFileResult[] = [];
-	for (const file of files) {
-		const result = run_test_file(
-			file,
-			lib,
-			arch,
-			options.audit,
-			options.audit_runtime,
-			options.release,
-			binary_cwd,
-		);
-		report_file(result);
-		results.push(result);
-	}
+	// Bounded-concurrency pool: at most `jobs` files are in flight. The
+	// parse/build halves are synchronous (no internal awaits), so they run
+	// atomically on the main thread between the subprocess awaits — the
+	// compiler's in-process state never interleaves. Results are collected by
+	// file INDEX and reported after the pool drains, so the report stays in
+	// discovery order regardless of completion order (and stdout isn't
+	// interleaved).
+	const jobs = Math.max(1, Math.min(options.jobs ?? default_jobs(), files.length));
+	const results: TestFileResult[] = new Array(files.length);
+	let next = 0;
+	const worker = async (): Promise<void> => {
+		for (;;) {
+			const i = next++;
+			if (i >= files.length) return;
+			results[i] = await run_test_file(
+				files[i],
+				lib,
+				arch,
+				options.audit,
+				options.audit_runtime,
+				options.release,
+				binary_cwd,
+			);
+		}
+	};
+	await Promise.all(Array.from({ length: jobs }, worker));
+	for (const result of results) report_file(result);
 
 	const elapsed = performance.now() - startTime;
 	const totalFiles = results.length;

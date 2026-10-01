@@ -13,6 +13,8 @@ export interface Args {
 	audit_runtime?: string;
 	check: boolean;
 	release: boolean;
+	/** `nomen test` concurrency (max test files in flight); default = CPU count. */
+	jobs?: string;
 	/** Opt in to FP reassociation: float reductions vectorize under NEON
 	 *  (results may differ in the last ulp vs the scalar loop). */
 	fast_math: boolean;
@@ -39,6 +41,8 @@ const STRING_OPTIONS: Map<string, string> = new Map([
 	["lib", "lib"],
 	["l", "lib"],
 	["audit-runtime", "audit_runtime"],
+	["jobs", "jobs"],
+	["j", "jobs"],
 ]);
 
 const BOOLEAN_OPTIONS: Map<string, string> = new Map([
@@ -175,6 +179,7 @@ export function print_help(): void {
 			"  --lib, -l <path>        Path to System library directory (containing package.jsonc)",
 			"  --audit                 Audit the generated program for memory issues",
 			"  --audit-runtime <path>  Path to audit_runtime.c, linked in when --audit is set",
+			"  --jobs, -j <n>          For `nomen test`: max test files run in parallel (default: CPU count)",
 			"  --release, -r           Build with optimizations (clang -O2; asm passes on aarch64)",
 			"  --fast-math             Allow FP reassociation (float loop reductions vectorize on aarch64)",
 			"  --check                 For `nomen format`: report files that would change",
