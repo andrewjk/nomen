@@ -665,18 +665,6 @@ class-based rule types):
 - **A value-struct assignment** (`b = a` for a struct owning a `List`) is
   rejected by the checker (`use .copy() or move`); `.copy()` is the deep path.
 
-## `nomen test` drops the build result's companion C file
-
-`run_test_file` (cli/src/test.ts) writes `main.h` + the generated code file
-and links only those (plus the audit object). `build()`'s `result.companion`
-— the companion C/ObjC file that `run`/`build` compile and link on Apple
-platforms (async pool / UI code reached through the library graph) — is
-discarded, so a `*.test.nm` whose joined source pulls in companion-bearing
-code fails to link with undefined symbols instead of building. Not hit by
-the current suites (no test file exercises companion code). The fix is
-small: write `companion` next to the code file (same `.m`/`.c` extension
-rule the run/build command uses) and append it to `link_args`.
-
 ## `nomen test` bench numbers were debug-build timings (FIXED 2026-10-01)
 
 `t.bench`/`bench_loop` harnesses compiled by `nomen test` always built

@@ -365,6 +365,18 @@ export function run_test_file(
 	fs.writeFileSync(path.join(buildDir, "main.h"), buildResult.headers ?? "");
 	fs.writeFileSync(codefile, buildResult.code);
 
+	// Companion C (raw-block functions + the pool/fiber/file-scope C infra):
+	// `run`/`build` compile and link it next to the main TU. The aarch64 .s
+	// references its symbols via `bl` (spawn machinery), so dropping it makes
+	// companion-bearing test files fail to link. Same .m/.c rule as the
+	// run/build command's companion emission.
+	let companionfile: string | undefined;
+	if (buildResult.companion) {
+		const comp_ext = platform === "macos" || platform === "ios" ? ".m" : ".c";
+		companionfile = path.join(buildDir, path.basename(entry_path, ".nm") + "_companion" + comp_ext);
+		fs.writeFileSync(companionfile, buildResult.companion);
+	}
+
 	// Link the harness binary. Frameworks are passed on Apple platforms for
 	// the same reason as the run/build command: the joined source may reference
 	// ObjC runtime symbols even when the test body doesn't, and unused
@@ -373,6 +385,7 @@ export function run_test_file(
 	// assembled verbatim — its optimizations are the passes enabled via
 	// `optimize` above.
 	const link_args = ["-o", outfile, codefile];
+	if (companionfile) link_args.push(companionfile);
 	if (release) link_args.unshift("-O2");
 	if (audit_obj) link_args.push(audit_obj);
 	if (platform === "macos" || platform === "ios") {

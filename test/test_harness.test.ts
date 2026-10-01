@@ -16,8 +16,9 @@ import {
 
 test("collect_test_files discovers *.test.nm recursively and sorts", () => {
 	const files = collect_test_files("cli/test/fixtures");
-	expect(files.length).toBe(1);
+	expect(files.length).toBe(2);
 	expect(files[0].replace(/\\/g, "/")).toMatch(/calc\.test\.nm$/);
+	expect(files[1].replace(/\\/g, "/")).toMatch(/spawn\.test\.nm$/);
 });
 
 test("collect_test_files returns [] for a missing folder", () => {
@@ -220,5 +221,25 @@ test("run_test_file compiles, runs and reports the calc fixture in both modes", 
 		expect(result.benches).toHaveLength(1);
 		expect(result.benches[0].label).toBe("add");
 		expect(result.leaks).toEqual([]);
+	}
+}, 60_000);
+
+test("run_test_file links the companion C file (spawn fixture)", () => {
+	// The spawn fixture's aarch64 .s calls into the pool/fiber runtime that
+	// lives in the companion C file — a regression here shows up as a link
+	// failure, not a silent pass.
+	for (const release of [false, true]) {
+		const result = run_test_file(
+			"cli/test/fixtures/spawn.test.nm",
+			"core",
+			"aarch64",
+			false,
+			undefined,
+			release,
+		);
+		expect(result.crashed).toBeUndefined();
+		expect(result.ok).toBe(true);
+		expect(result.tests.map((t) => t.name)).toEqual(["test_fiber_result", "test_thread_string"]);
+		expect(result.fails).toEqual([]);
 	}
 }, 60_000);

@@ -1,0 +1,25 @@
+import System
+import System::Test
+
+// Regression fixture for companion linking: `Fiber(...)` pulls the pool/fiber
+// runtime into the companion C file, and the aarch64 .s calls into it via
+// `bl` — the harness must compile and link the companion or this file fails
+// to link with undefined symbols.
+
+func tick = (out uint64) {
+	return 7
+}
+
+func greet = (out string) {
+	return "hi"
+}
+
+pub func test_fiber_result = (ref Tester t) {
+	var f = Fiber(tick()).start()
+	t.expect(f.result_uint64() == 7, "fiber should return 7")
+}
+
+pub func test_thread_string = (ref Tester t) {
+	var th = Thread(greet()).start()
+	t.expect(th.result() == "hi", "thread should return hi")
+}
