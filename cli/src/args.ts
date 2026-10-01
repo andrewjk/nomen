@@ -180,7 +180,7 @@ export function print_help(): void {
 			"  --audit                 Audit the generated program for memory issues",
 			"  --audit-runtime <path>  Path to audit_runtime.c (default: auto-discovered — walk-up or the CLI-bundled copy)",
 			"  --jobs, -j <n>          For `nomen test`: max test files run in parallel (default: CPU count)",
-			"  --release, -r           Build with optimizations (clang -O2; asm passes on aarch64)",
+			"  --release, -r           Build with optimizations (clang -O2; aarch64 asm cleanup passes)",
 			"  --fast-math             Allow FP reassociation (float loop reductions vectorize on aarch64)",
 			"  --check                 For `nomen format`: report files that would change",
 			"  -h, --help              Show this help",

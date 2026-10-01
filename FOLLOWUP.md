@@ -2,6 +2,35 @@
 
 Skipped or out-of-scope items recorded for later.
 
+## aarch64 `--release` is a near-no-op by construction (investigated 2026-10-01)
+
+The allmark port measured `nomen test --release` as unchanged on aarch64
+(2.2 → 2.3 ms) while C gets 3.5× from clang `-O2`. Verified: the flag DOES
+thread through (`build({ optimize })`), and on the 131k-line bench .s the
+release pipeline's entire diff is **3,449 lines — every one a
+`b .return_X` branch-to-next deletion**. The release-gated pipeline
+(`optimize_asm`) is four conservative text passes (constant folding,
+unreachable-code, branch-to-next, identity moves); the emitters' one
+per-function `b .return_X` before the (always adjacent) return label is the
+only shape they ever fire on in this codebase — everything real (frame-slot
+forwarding, widen-mask elimination, float forwarding, dead copy-moves,
+loop-slot promotion, copy coalescing, if-conversion) runs UNCONDITIONALLY in
+every build. Help text now says "aarch64 asm cleanup passes".
+
+Two consequences worth acting on someday:
+
+- **Emitter cleanup**: stop emitting `b .return_X` when the return label
+  immediately follows (per-function tail emission). Deletes the branches in
+  debug builds too, makes `--release` a true no-op on aarch64, and lets the
+  branch-to-next pass converge instantly. Touches every emitter's return
+  tail (or a single post-pass in build_function_node).
+- **Docs/expectations**: the aarch64 backend has no equivalent of clang's
+  heavy lifting (inlining, regalloc, scheduling) — that is the architectural
+  posture (the unconditional ASM_PLAN passes ARE the optimizer). Any
+  "release mode" expectations for aarch64 should target specific
+  optimization tranches (e.g. inline small monomorphized accessors), not
+  the flag.
+
 ## Sanitize-leak investigation receipts (2026-10-01, allmark port)
 
 Chasing the allmark sanitize suite's `--audit` leak (44,630 allocations) down
