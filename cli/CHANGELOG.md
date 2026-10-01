@@ -16,6 +16,15 @@
 
 
 
+
+## 0.6.9
+<sub>2026-10-01</sub>
+
+-  *(patch)* - parallel nomen test files
+-  *(patch)* - StringBuilder.to_string resets len/cap so the builder is reusable
+-  *(patch)* - Auto-discover audit_runtime.c for --audit (bundled fallback)
+-  *(patch)* - Fix chained receiver temps, C container move-assign mono lookup, aarch64 anchor-walk array cleanup
+
 ## 0.6.8
 <sub>2026-10-01</sub>
 
