@@ -18,6 +18,7 @@ import { set_resolved_function } from "../nodes/set_resolved_function.ts";
 import StructNode from "../nodes/StructNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
+import { substitute_type } from "./check_function_call_node.ts";
 import { instantiate_generic_type } from "./check_function_call_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
@@ -38,6 +39,7 @@ import {
 	numeric_interval,
 	path_to_node,
 	record_buffer_cap,
+	lookup_buffer_cap,
 	substitute_constraint,
 } from "./utils/flow_bounds.ts";
 import is_visible from "./utils/is_visible.ts";
@@ -242,6 +244,27 @@ export default function check_function_call(
 
 	node.type = func.return_type;
 	node.is_static = func.is_static;
+
+	// A method on a GENERIC receiver: rebind the callee's return-type params
+	// (`Buffer<T>.copy -> out Buffer<T>`) through the receiver's concrete
+	// type args (`keys: Buffer<TK>` -> `Buffer<TK>`). Without this the
+	// callee's OWN param name (`T`) leaks into the caller's context — the
+	// generic-instantiation flow below then fails to recognize it as an
+	// unresolved param of THIS body (a `T` inside a `TK`-param body) and
+	// materializes a phantom `Buffer_T` mono.
+	if (target_type?.type_args?.length && node.type?.type_args?.length) {
+		const owner = func.scope as import("../nodes/StructNode.ts").default | undefined;
+		if (
+			owner &&
+			owner.node_type === "struct" &&
+			owner.is_generic &&
+			owner.type_params.length === target_type.type_args.length
+		) {
+			const rebind = new Map<string, string>();
+			owner.type_params.forEach((tp, i) => rebind.set(tp, target_type.type_args![i].name));
+			node.type = substitute_type(node.type, rebind);
+		}
+	}
 
 	// Flow a generic return type's monomorphized instantiation at
 	// call-resolution time. A cross-file callee checked later in the merge
@@ -1506,6 +1529,19 @@ export default function check_function_call(
 			if (typeof size_val === "number" && size_val > 0) {
 				record_buffer_cap(self_path, size_val, status);
 			}
+		}
+	}
+
+	// `c = buf.copy()`: the copy's capacity EQUALS the source's known minimum
+	// (Buffer.copy's contract), so the copy inherits the source's cap fact and
+	// subsequent indexed accesses verify exactly like the original's —
+	// otherwise a `.copy()`-initialized buffer could not be indexed at all
+	// (no alloc/grow call ever seeded a fact for it).
+	if (self_path && self_path !== "?" && is_bufferish && func.name === "copy") {
+		const source_cap = lookup_buffer_cap(self_path, status);
+		if (source_cap !== undefined) {
+			const lhs_name = find_lhs_var_name(status);
+			if (lhs_name) record_buffer_cap(lhs_name, source_cap, status);
 		}
 	}
 

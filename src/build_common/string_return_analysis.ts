@@ -42,7 +42,13 @@ export function is_container_borrow_accessor_name(name: string): boolean {
  * site (see build_return_node), so it counts as owned for classification.
  */
 export function is_call_site_borrow_accessor(fn_name: string | undefined): boolean {
-	return fn_name === "at" || fn_name === "first";
+	// `load` is the backing Buffer slot-load primitive (the low-level `at`):
+	// its string result is a BORROW of the slot, exactly like `at`/`first` —
+	// the aarch64 backend already classifies it through
+	// `is_container_borrow_accessor_name` (which includes it), so the C
+	// call-site rule must match or a `var v = buf.load(i)` local is freed
+	// (freeing the slot's buffer the container still owns).
+	return fn_name === "at" || fn_name === "first" || fn_name === "load";
 }
 
 /**

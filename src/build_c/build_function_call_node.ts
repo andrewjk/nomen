@@ -190,6 +190,34 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		? node.params.findIndex((p) => p.node_type === "array")
 		: -1;
 
+	// A DEFERRED generic-body constructor (`Map<TK, TV>()` inside Map.copy)
+	// resolves at monomorphization against the VARIADIC custom #init without
+	// the checker's variadic stamping (check_function_call never re-ran on
+	// the mono clone). Two shapes: the bundled array literal with no
+	// variadic_param_name (stamp it so the arg loop marshals (len, bundle)),
+	// and the bare zero-arg form (emit the empty bundle here).
+	if (!node.variadic_param_name) {
+		const resolved =
+			node.resolved_function ??
+			(is_struct
+				? status.structs
+						.find((s) => s.name === node.name)
+						?.functions.find((f) => f.name === "#init")
+				: undefined);
+		const variadic_param = resolved?.params?.find((p) => p.is_variadic);
+		if (resolved && variadic_param) {
+			if (node.params.length === 1 && node.params[0].node_type === "array") {
+				node.variadic_param_name = variadic_param.name;
+			} else if (
+				node.params.length === 0 &&
+				resolved.params.filter((p) => !p.is_self_param && !p.is_variadic).length === 0
+			) {
+				const elem_c = c_type(variadic_param.type.name);
+				status.code += `0, (${elem_c}[]){ }`;
+			}
+		}
+	}
+
 	for (let i = 0; i < node.params.length; i++) {
 		if (i > 0) {
 			status.code += ", ";

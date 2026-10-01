@@ -1,7 +1,7 @@
 import type BuildStatus from "../../build_c/BuildStatus.ts";
 import { has_destroy, struct_needs_destroy } from "../../build_common/destroy_analysis.ts";
 import { has_string_fields } from "../../build_common/has_string_fields.ts";
-import { resolve_struct_type } from "../../build_common/mono_name.ts";
+import { is_load_deep_copy_container, resolve_struct_type } from "../../build_common/mono_name.ts";
 import type EnumNode from "../../nodes/EnumNode.ts";
 import StructNode from "../../nodes/StructNode.ts";
 import aarch64_size from "./aarch64_size.ts";
@@ -287,7 +287,7 @@ function emit_load_deep_copy_fields(
 			if (
 				field_struct &&
 				!field_struct.is_class &&
-				field_struct.name.startsWith("List_") &&
+				is_load_deep_copy_container(field_struct.name) &&
 				struct_needs_destroy(field_struct, status) &&
 				field_struct.functions.find((f) => f.name === "copy")
 			) {

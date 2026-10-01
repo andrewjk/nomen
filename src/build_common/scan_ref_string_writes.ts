@@ -224,7 +224,7 @@ function merge_forwarded(
  *  the same walk scan_reassigned_vars uses. */
 function nested_statement_lists(stmt: BaseNode): BaseNode[][] {
 	const branch_of = (b: unknown): BaseNode[] =>
-		((b as { statements?: BaseNode[] })?.statements ?? []);
+		(b as { statements?: BaseNode[] })?.statements ?? [];
 	const lists: BaseNode[][] = [];
 	if (stmt.node_type === "while" || stmt.node_type === "for") {
 		const nested = (stmt as unknown as { statements: BaseNode[] }).statements;

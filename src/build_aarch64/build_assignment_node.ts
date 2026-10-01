@@ -1810,7 +1810,20 @@ export default function build_assignment_node(
 				}
 			}
 
-			const field_type = (access.access as AccessFieldNode).type;
+			// A field assignment inside a GENERIC body (e.g. `dst.keys = …`
+			// in Map<TK,TV>.copy) reaches the monomorphized build with an
+			// unsubstituted (or missing) access-node `.type`, so the struct
+			// test below fails and the store degrades to a single word
+			// (storing the sret buffer's ADDRESS instead of copying the
+			// struct bytes). Fall back to the field's declared type resolved
+			// through the target struct — the same structural lookup the
+			// offset/`get_source_address` paths already use.
+			let field_type = (access.access as AccessFieldNode).type;
+			if (!field_type?.name && target_type?.name) {
+				const tstruct = status.structs.find((s) => s.name === target_type.name);
+				const tf = tstruct?.fields.find((f) => f.name === field_name);
+				if (tf) field_type = tf.type;
+			}
 			const field_is_struct = is_struct_type(field_type, status);
 
 			if (access.target.node_type === "value") {

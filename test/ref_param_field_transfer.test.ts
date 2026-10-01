@@ -32,7 +32,6 @@ func set = (ref Pair p, string raw) {
 }
 `;
 
-
 	test("borrow-RHS store is recorded for the caller", async () => {
 		await build_and_check_output(
 			`${SET_SRC}

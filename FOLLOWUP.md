@@ -668,17 +668,63 @@ while every struct-local teardown destroys container fields unconditionally
 Covered by `test/list_struct_heap_members.test.ts` (teardown + copy
 independence, audit ON, both backends).
 
-Remaining gaps (all bounded to non-`List` container fields / class/enum
-element fields; none hit by the allmark port, which uses `List` fields and
-class-based rule types):
+**EXTENDED to `Buffer<T>` fields (2026-10-01).** `Buffer<T>` gained a public
+`copy` method (fresh slab; each slot round-trips `load`→`set`/`replace`, so
+owning elements get independent copies) and a move-taking `set` write
+(mirroring `List.set`; `replace`'s by-value param can't accept `move`, so a
+borrow being transferred — a loaded element — would otherwise be bound to a
+local the backend reclaims). `load_T`'s deep-copy half now runs for
+`List`/`Buffer` element fields (was `List`-only), so a value struct with a
+`Buffer<T>` member stored in a `List` no longer double-frees its member slab
+at teardown. Verified audit-ON on both backends
+(`test/container_field_deep_copy.test.ts`).
 
-- **`load_T` deep-copies only `List<T>` fields** (and, on C, payload-copyable
-  enums). A `Buffer<T>`/`Map`/`Set` field, a nested owning user struct field,
-  or a class-typed field of a container element is still returned SHALLOW: the
-  caller's scope-exit destroy frees the slot's shared state (double-free).
-  Closing it needs a per-container deep-copy story (Buffer/Map/Set have no
-  public `copy`; nested/class fields need a designed copy). Same for
-  enum-with-data element fields on aarch64 (C handles them).
+Supporting compiler fixes found en route (all standalone bugs):
+
+- **A method on a generic receiver leaked the callee's type-param name.**
+  `self.keys.copy()` inside `Map.copy` (receiver `Buffer<TK>`, callee
+  `Buffer<T>.copy`) stamped the call's return type as `Buffer<T>` with the
+  CALLEE's own param `T` — unknown in the caller's `[TK, TV]` context — so the
+  generic-instantiation flow materialized a phantom `Buffer_T` mono (raw `T`
+  in the header → link errors). `check_function_call` now rebinds the callee's
+  return-type params through the receiver's concrete type args
+  (`src/check/check_function_call.ts`).
+- **C: a deferred generic-body constructor against a variadic custom
+  `#init`** (`Map<TK,TV>()` inside a generic method, resolved at
+  monomorphization) emitted `init()` with none of the `(len, pairs)`
+  marshalling the checker normally stamps, and then lost the leading comma
+  when synthesizing an empty bundle. Fixed in
+  `build_c/build_function_call_node.ts`.
+- **C: `Buffer.load` string results weren't classified as borrows.**
+  `is_call_site_borrow_accessor` recognized only `.at`/`.first`, so
+  `var v = buf.load(i)` (a borrow of the slot) was treated as owned and freed
+  at scope exit — freeing the SOURCE slot's buffer → double-free.
+  `src/build_common/string_return_analysis.ts` now includes `load` (the
+  aarch64 backend already classified it as a borrow via
+  `is_container_borrow_accessor_name`, which includes it — the two are now
+  consistent).
+- **aarch64: a struct-field assignment inside a generic body stored a
+  pointer.** `dst.keys = self.keys.copy()` reached the monomorphized build
+  with an unresolved `access.type`, failed the struct test, and degraded to a
+  single-word store (writing the sret buffer's ADDRESS into the field instead
+  of copying the struct bytes). `build_aarch64/build_assignment_node.ts` now
+  falls back to resolving the field's declared type through the target struct.
+
+Remaining gaps (bounded; none hit by the allmark port, which uses `List`
+fields and class-based rule types):
+
+- **`load_T` deep-copies `List`/`Buffer` fields only** (and, on C,
+  payload-copyable enums). A `Map`/`Set` field, a nested owning user struct
+  field, or a class-typed field of a container element is still returned
+  SHALLOW: the caller's scope-exit destroy frees the slot's shared state
+  (double-free). `Map`/`Set` have a hand-written `copy` that is verified
+  STANDALONE on both backends, but composing it from the `load`
+  specialization corrupts the returned struct on aarch64 (still open); it is
+  excluded from the automatic deep copy via `is_load_deep_copy_container`.
+  Adding `Map`/`Set` back needs the aarch64 load+copy composition fixed.
+  Nested owning user structs need a synthesized `copy` story (the auto-derive
+  gate `field_copyable` does not yet accept `Buffer`/`Map`/`Set` fields).
+  Same for enum-with-data element fields on aarch64 (C handles them).
 - **`store_T`/`replace_T` transfer only container leaves** (recursing nested
   structs). Class-typed and enum-with-data fields of the element stay shared;
   for a stamped `move` donor this is sound (spliced → the slot is sole owner),
@@ -687,6 +733,12 @@ class-based rule types):
   class/enum payloads to the transfer set would close it.
 - **A value-struct assignment** (`b = a` for a struct owning a `List`) is
   rejected by the checker (`use .copy() or move`); `.copy()` is the deep path.
+- **`Map`/`Set.copy` for class/trait values is unsupported.** A generic
+  `Map.copy` body calls `self.values.copy()`, but a class-valued Map's member
+  is a `ClassBuffer` with no `copy`; instantiating it emits a call to a
+  nonexistent `ClassBuffer_<C>_copy` (link error). A class/trait deep copy
+  needs a designed clone story (same posture as `List.copy`, which the checker
+  rejects for class elements). Map/Set `.copy` was therefore not shipped.
 
 ## `nomen test` bench numbers were debug-build timings (FIXED 2026-10-01)
 

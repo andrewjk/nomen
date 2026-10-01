@@ -12,6 +12,30 @@ export interface StructTable {
 }
 
 /**
+ * Whether `name` is a monomorphized owning-container struct whose
+ * `<Mono>_copy` is safe to call from the owning-`Buffer.load_T`
+ * specialization — `List_<T>` / `Buffer_<T>` (and their bare generics).
+ * These own a heap slab their `#destroy` frees unconditionally, and `copy`
+ * yields an independent slab, so a returned element's field must be
+ * deep-copied or the caller's unconditional container-field teardown
+ * double-frees the slot's slab.
+ *
+ * `Map`/`Set` are deliberately EXCLUDED from the automatic deep copy: their
+ * monomorphized `copy` (which composes several `Buffer.copy` calls) is
+ * verified standalone on both backends, but invoking it from the load
+ * specialization corrupts the returned struct on aarch64 (a codegen
+ * interaction still open — see FOLLOWUP.md). A `Map`/`Set` FIELD reached
+ * through a container element's `load` therefore stays shallow (the
+ * pre-existing bounded gap); an EXPLICIT `.copy()` on the owning struct or
+ * the Map/Set itself works on both backends.
+ */
+export function is_load_deep_copy_container(name: string): boolean {
+	return (
+		name === "List" || name === "Buffer" || name.startsWith("List_") || name.startsWith("Buffer_")
+	);
+}
+
+/**
  * Flatten a possibly-generic type to its monomorphized name
  * (`List` + `<int>` → `List_int`); a type without type args is returned
  * unchanged. Accepts a full `Type`, or a `(type_name, type_args?)` pair for

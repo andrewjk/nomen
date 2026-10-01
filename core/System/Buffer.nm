@@ -510,6 +510,17 @@ pub struct Buffer<T> {
 		```
 	}
 
+	// Move-taking write, mirroring `List.set`: the caller's value is
+	// consumed and an independent copy is installed in the slot (replace
+	// deep-copies owning elements). The owning entry point a caller uses
+	// when it wants to hand over a value — `replace`'s by-value parameter
+	// cannot accept the `move` keyword, so a borrow being transferred
+	// (e.g. a loaded element) must go through here rather than be bound to
+	// a freed local.
+	pub func set = (ref self, int i: i >= 0 && i < self.cap, move T value) {
+		self.replace(i, value)
+	}
+
 	// Move slot src into slot dst: overwrite dst with src's bytes and zero
 	// src, so exactly ONE slot owns the value afterwards. The
 	// ownership-transferring primitive behind backward-shift deletion
@@ -618,6 +629,33 @@ pub struct Buffer<T> {
 	// Internal: zeroes slots without reclaiming owning elements.
 	internal inline func zero = (ref self, int len) {
 		memset(self.data, 0, len * T_SIZE)
+	}
+
+	// An independent copy: fresh slab, per-element deep copies. Each slot
+	// round-trips load→replace through a local, so owning element types get
+	// the same treatment a List<T>.copy slot does (the load materializes an
+	// owned copy, replace gives the destination its own). Class elements
+	// never reach this body (a `Buffer<T>` with T a class monomorphizes to
+	// `ClassBuffer<T>`, which has no copy).
+	pub func copy = (self, out Buffer<T>: out.cap == self.cap) {
+		var dst = Buffer<T>()
+		if self.cap > 0 {
+			dst.alloc(self.cap)
+			var i = 0
+			while i < self.cap {
+				// Bind the loaded element and hand it to `set` (move): for a
+				// string element load returns a BORROW of the source slot, and
+				// the move transfers it into the write without a scope-exit
+				// reclaim (which would free the source's buffer); for an owning
+				// struct element load returns an owned copy that transfers the
+				// same way. Mirrors List.copy's `var T v = self.at(i)` +
+				// `dst.push(v)`.
+				var T v = self.load(i)
+				dst.set(i, v)
+				i += 1
+			}
+		}
+		return dst
 	}
 
 	internal inline func store_or_int = (ref self, int i: i >= 0 && i < self.cap, int val) {

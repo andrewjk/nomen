@@ -1,6 +1,6 @@
 import { has_destroy, struct_needs_destroy } from "../../build_common/destroy_analysis.ts";
 import { has_string_fields } from "../../build_common/has_string_fields.ts";
-import { resolve_struct_type } from "../../build_common/mono_name.ts";
+import { is_load_deep_copy_container, resolve_struct_type } from "../../build_common/mono_name.ts";
 import type EnumNode from "../../nodes/EnumNode.ts";
 import StructNode from "../../nodes/StructNode.ts";
 import type BuildStatus from "../BuildStatus.ts";
@@ -123,24 +123,27 @@ function emit_transfer_owning_fields(
 /**
  * Emit the deep-copy half of owning load_T: for each field whose type has a
  * monomorphized `copy` helper that yields an independent value (a `List<T>`
- * field — `<List_T>_copy` deep-copies slots per the owning store contract —
- * or an enum-with-data field whose string payloads `<E>_copy` duplicates),
- * overwrite the shallow-copied bytes with an owned copy. Fields without a
- * copyable shape (nested owning user structs, class fields) stay shallow —
- * recorded in FOLLOWUP.md ("remaining shallow container-field shapes").
+ * /`Buffer<T>`/`Map`/`Set` field — `<Mono>_copy` deep-copies the slots or
+ * member buffers — or an enum-with-data field whose string payloads
+ * `<E>_copy` duplicates), overwrite the shallow-copied bytes with an owned
+ * copy. A struct local's CONTAINER fields are reclaimed unconditionally at
+ * scope exit, so a shallow return would double-free the slot's slab. Fields
+ * without a copyable shape (class fields, nested owning user structs without
+ * a synthesized copy) stay shallow — recorded in FOLLOWUP.md.
  */
 function emit_load_deep_copy_fields(elem: StructNode, dst: string, status: BuildStatus): void {
 	for (const field of elem.fields) {
 		if (field.type.is_ref || field.type.is_view || field.type.is_array) continue;
 		if (field.type.is_nullable) continue;
 		if (field.type.name === "string") continue;
-		// List<T> field: the mono's `copy` method deep-copies slots (the
-		// owning store contract makes each slot's copy independent).
+		// A container field (List/Buffer/Map/Set mono): its `copy` method
+		// yields an independent slab, so the caller's unconditional
+		// container-field teardown frees its own, never the slot's.
 		const field_struct = resolve_struct_type(field.type, status);
 		if (
 			field_struct &&
 			!field_struct.is_class &&
-			field_struct.name.startsWith("List_") &&
+			is_load_deep_copy_container(field_struct.name) &&
 			struct_needs_destroy(field_struct, status) &&
 			field_struct.functions.find((f) => f.name === "copy")
 		) {

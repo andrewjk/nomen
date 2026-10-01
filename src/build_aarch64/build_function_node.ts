@@ -41,11 +41,7 @@ import {
 	patch_overflow_placeholders,
 } from "./utils/stack_args.ts";
 import { allocate_stack_space, emit_promoted_load } from "./utils/stack_var.ts";
-import {
-	emit_deref_var_address,
-	emit_var_address,
-	is_local_ref_var,
-} from "./utils/stack_var.ts";
+import { emit_deref_var_address, emit_var_address, is_local_ref_var } from "./utils/stack_var.ts";
 import { get_enum_sret_size, get_field_offset, get_struct_size } from "./utils/struct_layout.ts";
 import { value_number_loops, type VnPlan } from "./value_number.ts";
 
