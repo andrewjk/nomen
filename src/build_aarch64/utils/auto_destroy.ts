@@ -1261,13 +1261,44 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 				emit_asm(status, `sub x20, x20, #1\n`);
 				emit_asm(status, `cbnz x20, ${label}\n`);
 				emit_asm(status, `.Lskip_cls_${decl.name}:\n`);
-				// The elements are freed above; free the malloc'd buffer
-				// itself too (x19 may have advanced past the data area, so
-				// reload the pointer from the variable).
+				// Free the malloc'd buffer itself (see the heap_slots branch).
 				emit_var_load(status, "x0", decl.name, 8);
 				emit_free(status);
 				emit_asm(status, `ldr x20, [sp], #16\n`);
 				emit_asm(status, `ldr x19, [sp], #16\n`);
+				continue;
+			}
+			// Heap-allocated arrays (call results, hoisted literals): free the
+			// malloc'd buffer — with owned fat-string elements, every slot's
+			// ptr half first. This mirrors the no-slots walk below; a scope
+			// with ANY class anchor slot takes THIS walk, and a heap array
+			// temp in the same scope used to leak here (the arm only existed
+			// in the no-slots walk).
+			if (status.heap_array_vars?.has(decl.name)) {
+				if (status.heap_owned_string_arrays?.has(decl.name)) {
+					emit_asm(status, `str x19, [sp, #-16]!\n`);
+					emit_asm(status, `str x20, [sp, #-16]!\n`);
+					emit_var_load(status, "x0", decl.name, 8);
+					emit_asm(status, `mov x19, x0\n`);
+					emit_asm(status, `ldr x20, [x19]\n`);
+					emit_asm(status, `add x19, x19, #8\n`);
+					const loop = `.Lhosa_${decl.name}`;
+					emit_asm(status, `${loop}:\n`);
+					emit_asm(status, `cbz x20, .Lhosa_done_${decl.name}\n`);
+					emit_asm(status, `ldr x0, [x19]\n`);
+					emit_free(status);
+					emit_asm(status, `add x19, x19, #16\n`);
+					emit_asm(status, `sub x20, x20, #1\n`);
+					emit_asm(status, `b ${loop}\n`);
+					emit_asm(status, `.Lhosa_done_${decl.name}:\n`);
+					emit_var_load(status, "x0", decl.name, 8);
+					emit_free(status);
+					emit_asm(status, `ldr x20, [sp], #16\n`);
+					emit_asm(status, `ldr x19, [sp], #16\n`);
+					continue;
+				}
+				emit_var_load(status, "x0", decl.name, 8);
+				emit_free(status);
 				continue;
 			}
 			if (status.heap_strings?.has(decl.name)) {

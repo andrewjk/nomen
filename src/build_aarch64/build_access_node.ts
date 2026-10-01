@@ -2623,12 +2623,16 @@ function build_access_method(
 		status.last_result_is_heap = false;
 		build_node(node.target, status);
 		ensure_newline(status);
-		// A consuming `move out string` call (`string_to_string`, the identity
-		// until the signature flipped to a real strdup) copies the receiver's
-		// storage — when that receiver is itself an owning temp, the original
-		// must be freed once the copy exists (mirroring the C backend's
-		// statement-expression). Borrows/literals/vars leave the flag false.
-		frees_string_receiver = method_name === "string_to_string" && status.last_result_is_heap;
+		// An OWNED receiver temp must be freed once the call has consumed it —
+		// no string method frees or consumes its by-value self pair, and the
+		// caller owns the temp (a heap-returning call result, a concat, a
+		// materialized view copy), so the free belongs at the call site for
+		// EVERY string method, not just the consuming string_to_string (the
+		// old narrow gate left `f().to_lowercase()` /
+		// `list.at_or_panic(0).to_lowercase()` temps leaking). Bare
+		// vars/fields/literals and borrow-returning receiver calls leave the
+		// flag false and are never freed.
+		frees_string_receiver = status.last_result_is_heap;
 		status.last_result_is_heap = false;
 		// Pair now in x0/x1. Save both halves across argument evaluation.
 		emit_asm(status, `stp x0, x1, [sp, #-16]!\n`);

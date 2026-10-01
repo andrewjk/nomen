@@ -5,6 +5,7 @@ import {
 	drop_self_written_string_field_records,
 	scan_self_string_field_writes,
 } from "../build_common/scan_self_string_writes.ts";
+import { is_string_borrow } from "../build_common/string_return_analysis.ts";
 import { transfer_ref_param_field_records } from "../build_common/transfer_ref_param_records.ts";
 import { is_view_value } from "../build_common/view_value.ts";
 import { is_built_in_type } from "../built_in_types.ts";
@@ -1243,6 +1244,50 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 						status.code += `${ret_c} ${ctor_temp_val} = `;
 					}
 				}
+				// A string-yielding rvalue receiver (`make_string().to_lowercase()`,
+				// `list.at_or_panic(0).to_lowercase()`): EVERY string return hands
+				// the caller a fresh heap copy (the return boundary strdups
+				// literals and container borrows alike — build_return_node), so an
+				// inline receiver expression is an OWNED temp the call site must
+				// free. Wrap the call in a statement expression that materializes
+				// the receiver once and frees it after the call consumes it.
+				// Call-site borrow accessors (`at`/`first`/`load` without
+				// owned_return) and view-typed results are not owned — pass them
+				// through as before. (The spawn-ctor receiver above has its own
+				// free; a string receiver can never be one of those.)
+				const owned_string_recv =
+					!ctor_temp_receiver &&
+					(node.target.node_type === "func_call" ||
+						(node.target.node_type === "access" &&
+							(node.target as AccessNode).access.node_type === "access_func")) &&
+					method_type?.name === "string" &&
+					!method_type.is_view &&
+					!is_string_borrow(node.target);
+				let owned_recv_temp: string | undefined;
+				let owned_recv_val: string | undefined;
+				if (owned_string_recv) {
+					const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+					owned_recv_temp = `_osrecv_${id}`;
+					status.code += `({ nomen_string ${owned_recv_temp} = `;
+					{
+						const saved_suppress = status.suppress_dereference;
+						status.suppress_dereference = true;
+						build_node(node.target, status);
+						status.suppress_dereference = saved_suppress;
+					}
+					status.code += `; `;
+					// A non-void method yields its result: capture it so the free
+					// can follow the call and the statement expression still
+					// yields the value (same shape as the launch capture above).
+					const recv_ret_c = c_return_type(
+						(target_method ?? trait_default_func)?.return_type ?? access_func.type,
+						status,
+					);
+					if (recv_ret_c !== "void") {
+						owned_recv_val = `_osrecvv_${id}`;
+						status.code += `${recv_ret_c} ${owned_recv_val} = `;
+					}
+				}
 				if (lambda_ret_tmp) {
 					status.code += `${lambda_ret_c} ${lambda_ret_tmp} = `;
 				}
@@ -1251,6 +1296,9 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					if (ctor_temp_free) {
 						// The wrapped temp is already the instance pointer.
 						status.code += ctor_temp_free;
+					} else if (owned_recv_temp) {
+						// The materialized owned-string receiver (see the wrap open).
+						status.code += owned_recv_temp;
 					} else if (array_wrap) {
 						status.code += array_wrap.self_expr;
 					} else {
@@ -1484,6 +1532,14 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					// captured result is yielded as the final expression.
 					status.code += `; free(${ctor_temp_free});`;
 					if (ctor_temp_val) status.code += ` ${ctor_temp_val};`;
+					status.code += ` })`;
+				}
+				if (owned_recv_temp) {
+					// Close the owned-string-receiver wrapper: the callee has
+					// consumed the receiver's bytes, so reclaim the copy; the
+					// captured result (if any) is the yielded value.
+					status.code += `; ${status.audit ? "nomen_free_wrap" : "free"}(${owned_recv_temp}.ptr);`;
+					if (owned_recv_val) status.code += ` ${owned_recv_val};`;
 					status.code += ` })`;
 				}
 				if (lambda_arg_temps.size > 0) {

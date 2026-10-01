@@ -7,7 +7,7 @@ import record_ctor_heap_default_fields from "../build_common/ctor_heap_default_f
 import { override_displaced_string_fields } from "../build_common/ctor_return_owned.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import { claim_init_default_seed_reclaim } from "../build_common/init_computed_seeds.ts";
-import { mono_type_name } from "../build_common/mono_name.ts";
+import { mono_type_name, resolve_struct_type } from "../build_common/mono_name.ts";
 import { call_result_type, is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import { is_string_borrow } from "../build_common/string_return_analysis.ts";
@@ -290,10 +290,16 @@ export default function build_assignment_node(
 	) {
 		const access_lhs = node.left_value as AccessNode;
 		const field_type = (access_lhs.access as AccessFieldNode).type;
-		const field_struct =
+		// The mono-resolved value-struct shape (List<string> → List_string —
+		// the raw name is the bare generic `List`, which is not in the struct
+		// table, so a name-only find silently skipped the reclaim AND the
+		// source splice for every container field). Class-typed fields stay
+		// excluded — the owned-class block above already reclaimed them.
+		const field_resolved =
 			field_type?.name && !field_type.is_view && !field_type.is_array
-				? status.structs.find((s) => s.name === field_type.name && !s.is_simple_type && !s.is_class)
+				? resolve_struct_type(field_type, status)
 				: undefined;
+		const field_struct = field_resolved && !field_resolved.is_class ? field_resolved : undefined;
 		if (field_struct) {
 			// Transfer: the source local (possibly declared in an OUTER scope
 			// when the assignment sits inside an if/loop branch) must not be

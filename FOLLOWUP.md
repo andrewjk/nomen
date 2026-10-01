@@ -2,6 +2,71 @@
 
 Skipped or out-of-scope items recorded for later.
 
+## Sanitize-leak investigation receipts (2026-10-01, allmark port)
+
+Chasing the allmark sanitize suite's `--audit` leak (44,630 allocations) down
+to its roots fixed four ownership bugs and surfaced two open ones. The suite
+went from 44,630 leaks to **39 on C**; aarch64 to **16,269** (see the open
+items below for the aarch64 remainder).
+
+FIXED (covered by test/leak_hygiene.test.ts unless noted):
+
+- **Chained receiver temps (both backends).** A string-returning call used as
+  a method receiver (`make_string().to_lowercase()`,
+  `list.at_or_panic(0).to_lowercase()`) is an owned temp — the C backend
+  strdup's EVERY string return (build_return_node), and the aarch64
+  heap-returning classification marks the pair owned — but the inline
+  receiver expression was never freed. C now wraps the call in a
+  free-after-use statement expression (`build_c/build_access_node.ts`, the
+  `owned_string_recv` arm); aarch64 frees the spilled receiver pair after the
+  call by widening `frees_string_receiver` from the `string_to_string`-only
+  gate to ANY owned receiver temp (no string method frees or consumes its
+  by-value self pair, so the free always belongs at the call site).
+- **C container-field move-assign never fired for generic fields.** The
+  `field = move local` block (`build_c/build_assignment_node.ts`) looked the
+  field type up by RAW name (`List`), which never matches the registered
+  monomorphized struct (`List_string`) — the displaced-value reclaim AND the
+  source splice were silently skipped for every `List<T>`/`Buffer<T>`/
+  `Map<K,V>` field. Fixed with `resolve_struct_type`.
+- **aarch64 scope-exit cleanup: the anchor-slot walk was missing the
+  heap_array_vars arm.** `emit_destroy_for_scope` has TWO parallel walks: the
+  heap_slots (class-anchor) walk and the no-slots walk. The no-slots walk
+  frees hoisted heap `Array<T>` temps (`.Lhosa_` per-element loop + buffer);
+  the anchor walk did NOT — so a heap array literal in any scope that also
+  held a class-typed local leaked (4 allocations for a 3-element string
+  literal). The arm was added; note the two walks are now one arm
+  out-of-sync-prone — future cleanup arms must land in BOTH.
+
+OPEN (recorded, not fixed):
+
+- **aarch64: container-field move-assign displaces the old value without
+  reclaiming it.** `box.items = move list` on aarch64 leaks the displaced
+  List (slab + owning elements; 2 allocations for a 1-element
+  `List<string>` field). The C fix above does not transfer: re-applying the
+  analogous displaced-destroy to the aarch64 field-assign path crashes the
+  allmark sanitize suite (`pointer being freed was not allocated` inside
+  `HtmlAttribute_destroy` ← `Buffer_HtmlAttribute_destroy`, test 2) because
+  of the NEXT item — the displaced list's element strings are aliased by
+  shallow `at_or_panic` copies whose frees are what previously "absorbed"
+  the leak (leak + unsound free canceled out into silence; fixing either
+  half alone exposes the other). The aarch64 fix needs BOTH halves: the
+  displaced-destroy AND sound struct-borrow copies.
+- **aarch64: `at_or_panic` (and friends) return SHALLOW copies of owning
+  struct elements, but `<T>_destroy` frees string fields unconditionally.**
+  `var attr = list.at_or_panic(i)` raw-memcpys the slot (the mono/inline
+  splice bypasses the C-style return-boundary normalization), so `attr`'s
+  string fields alias the slot's heap copies — yet the struct's destroy
+  (`HtmlAttribute_destroy` frees `[x+8]`/`[x+24]` with no record guard)
+  would free them out from under the list when the local's scope exits.
+  Today nothing frees such locals (the borrow stays "absorbed" by leaked
+  displaced lists), so it is a latent use-after-free, not a live crash —
+  but any path that frees the list BEFORE the alias dies (e.g. the
+  displaced-destroy above) turns it into a double free. Sound fix shape:
+  make the aarch64 struct-return boundary strdup unrecorded string fields
+  for bare-local returns (mirroring C), including through the inline-splice
+  path; or classify such copies as borrows at the call site (must stay in
+  lockstep with the C call-site rule).
+
 ## Trait-declared field ownership corners
 
 The aarch64 layout/size model now includes trait-declared fields
