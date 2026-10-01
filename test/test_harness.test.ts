@@ -7,6 +7,7 @@ import {
 	extract_test_functions,
 	generate_harness,
 	parse_records,
+	run_test_file,
 } from "../cli/src/test.ts";
 
 // ---------------------------------------------------------------------------
@@ -190,3 +191,34 @@ test("extract_leaks pulls exit-time audit leak lines out of stdout", () => {
 test("extract_leaks returns [] for a clean run", () => {
 	expect(extract_leaks("\\nomen|done|t|1|0|5\n")).toEqual([]);
 });
+
+// ---------------------------------------------------------------------------
+// run_test_file (end-to-end: parse + build + link + run the calc fixture)
+// ---------------------------------------------------------------------------
+
+test("run_test_file compiles, runs and reports the calc fixture in both modes", () => {
+	// The fixture intentionally fails two asserts; both the default (debug)
+	// and --release builds must agree on that and report the bench record.
+	for (const release of [false, true]) {
+		const result = run_test_file(
+			"cli/test/fixtures/calc.test.nm",
+			"core",
+			"aarch64",
+			false,
+			undefined,
+			release,
+		);
+		expect(result.phase).toBeUndefined();
+		expect(result.crashed).toBeUndefined();
+		expect(result.ok).toBe(false);
+		expect(result.tests.map((t) => t.name)).toEqual([
+			"test_add",
+			"test_mul",
+			"test_assert_not_null",
+		]);
+		expect(result.fails.map((f) => f.test)).toEqual(["test_mul", "test_assert_not_null"]);
+		expect(result.benches).toHaveLength(1);
+		expect(result.benches[0].label).toBe("add");
+		expect(result.leaks).toEqual([]);
+	}
+}, 60_000);

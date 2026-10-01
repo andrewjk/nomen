@@ -114,6 +114,7 @@ nomen test                         # run every *.test.nm under the cwd
 nomen test --in src                # run every *.test.nm under src/
 nomen test --filter list           # only files whose path matches /list/
 nomen test --arch c                # use the C backend instead of AArch64
+nomen test --release               # optimized builds — meaningful t.bench numbers
 ```
 
 Discovers every `*.test.nm` file under `--in` (or the cwd), and for each one generates a `main` + per-benchmark timing harness, compiles and links it with `clang`, runs it, and renders vitest-style output from the records the binary streams back. See [TESTING.md](TESTING.md) for the full design.
@@ -202,8 +203,9 @@ All options are global and accepted by every command (though only a subset are m
 ### `--release`, `-r`
 
 - **Type:** boolean
-- **Applies to:** `run`, `build`
+- **Applies to:** `run`, `build`, `test`
 - **Description:** Build with optimizations, matching the release builds other toolchains produce (`cargo --release`, `zig -O ReleaseFast`, `go build`):
+  - For `test`, this applies to the compiled test/bench harness — without it, `t.bench` timings reflect unoptimized builds.
   - The generated C (and the aarch64 companion C file) is compiled with `clang -O2` instead of unoptimized.
   - The AArch64 assembly (assembled verbatim — clang's optimizer never sees it) is run through the compiler's own optimization passes: constant folding/propagation, dead-branch folding, strength reduction (`mul` by power-of-two → `lsl`), unreachable-code elimination, and branch/peephole cleanups. See [PERF.md](PERF.md) for the pass list and measured impact.
 

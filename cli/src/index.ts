@@ -109,6 +109,7 @@ try {
 			filter,
 			audit: args.audit,
 			audit_runtime: args.audit_runtime,
+			release: args.release,
 		});
 		process.exit(ok ? 0 : 1);
 	}

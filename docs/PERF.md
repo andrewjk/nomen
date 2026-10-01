@@ -1,7 +1,7 @@
 # PERF.md — Release Optimizations
 
-What `--release` (`nomen run|build --release`, `-r`, or `"release": true` in
-the config file) does, which optimizations exist, whether they're
+What `--release` (`nomen run|build|test --release`, `-r`, or `"release": true`
+in the config file) does, which optimizations exist, whether they're
 implemented, and what improvement (if any) they make. Measured numbers are
 best-of-3 on Apple Silicon (AArch64), small benchmark workloads
 (`bench/benchmark.sh` sizes), Aug 2026 — treat them as indicative, not exact.

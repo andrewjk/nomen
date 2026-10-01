@@ -136,14 +136,16 @@ nomen test                  # run every *.test.nm under the cwd
 nomen test --in src         # run every *.test.nm under src/
 nomen test --filter list    # only files whose path matches /list/
 nomen test --arch c         # use the C backend instead of AArch64
+nomen test --release        # optimized builds — meaningful t.bench numbers
 ```
 
-| Option     | Description                                                                     |
-| ---------- | ------------------------------------------------------------------------------- |
-| `--in`     | Folder to search for `*.test.nm`. Defaults to the cwd.                          |
-| `--filter` | Regex; only files whose path matches are run.                                   |
-| `--arch`   | `aarch64` (default) or `c`.                                                     |
-| `--lib`    | Path to the `System` library folder (auto-resolved from the target by default). |
+| Option      | Description                                                                     |
+| ----------- | ------------------------------------------------------------------------------- |
+| `--in`      | Folder to search for `*.test.nm`. Defaults to the cwd.                          |
+| `--filter`  | Regex; only files whose path matches are run.                                   |
+| `--arch`    | `aarch64` (default) or `c`.                                                     |
+| `--lib`     | Path to the `System` library folder (auto-resolved from the target by default). |
+| `--release` | Optimized builds (see [`--release`](CLI.md)); default is unoptimized.           |
 
 Files are compiled and run **serially**, one at a time. Each file is an
 independent program: parse + check + build + link with `clang` + execute, then

@@ -278,6 +278,7 @@ export function run_test_file(
 	arch: string,
 	audit = false,
 	audit_runtime?: string,
+	release = false,
 ): TestFileResult {
 	const start = performance.now();
 	const source_text = fs.readFileSync(entry_path, "utf8");
@@ -318,6 +319,7 @@ export function run_test_file(
 	const buildResult = build(parsed.root, {
 		arch: arch as "aarch64" | "c",
 		audit,
+		optimize: release,
 	});
 	if (buildResult.errors && buildResult.errors.length) {
 		result.ok = false;
@@ -366,8 +368,12 @@ export function run_test_file(
 	// Link the harness binary. Frameworks are passed on Apple platforms for
 	// the same reason as the run/build command: the joined source may reference
 	// ObjC runtime symbols even when the test body doesn't, and unused
-	// frameworks cost nothing at link time.
+	// frameworks cost nothing at link time. Release mode compiles the C (and
+	// companion C) with -O2, matching the run/build command; the aarch64 .s is
+	// assembled verbatim — its optimizations are the passes enabled via
+	// `optimize` above.
 	const link_args = ["-o", outfile, codefile];
+	if (release) link_args.unshift("-O2");
 	if (audit_obj) link_args.push(audit_obj);
 	if (platform === "macos" || platform === "ios") {
 		link_args.push(
@@ -519,6 +525,7 @@ export interface RunTestsOptions {
 	filter?: RegExp;
 	audit?: boolean;
 	audit_runtime?: string;
+	release?: boolean;
 }
 
 /**
@@ -550,7 +557,14 @@ export function runTests(root: string, options: RunTestsOptions = {}): boolean {
 
 	const results: TestFileResult[] = [];
 	for (const file of files) {
-		const result = run_test_file(file, lib, arch, options.audit, options.audit_runtime);
+		const result = run_test_file(
+			file,
+			lib,
+			arch,
+			options.audit,
+			options.audit_runtime,
+			options.release,
+		);
 		report_file(result);
 		results.push(result);
 	}
