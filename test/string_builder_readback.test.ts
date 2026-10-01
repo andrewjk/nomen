@@ -35,7 +35,7 @@ Console.write_line("done")
 		await build_and_check_output(
 			input,
 			"string_builder_readback_trim",
-			"13\new:yes\new2:no\n12\n<p>\n3\ndone\n",
+			"13\new:yes\new2:no\n12\n<p>\n0\ndone\n",
 		);
 	});
 
@@ -49,6 +49,29 @@ Console.write_line(sb.to_string())
 Console.write_line(sb.length().to_string())
 Console.write_line("done")
 `;
-		await build_and_check_output(input, "string_builder_take_since", "XYZ\nabc\n3\ndone\n");
+		await build_and_check_output(input, "string_builder_take_since", "XYZ\nabc\n0\ndone\n");
+	});
+
+	test("to_string resets the builder for reuse", async () => {
+		// to_string transfers the buffer; before the fix len/cap stayed stale,
+		// so a later append skipped the grow (stale cap) and memcpy'd into the
+		// null buffer (SIGSEGV). Reuse must yield a valid empty builder.
+		const input = `
+var sb = StringBuilder()
+sb.append_string_view("hello")
+var string first = sb.to_string()
+Console.write_line("first: " + first)
+sb.append_string_view("world")
+var string second = sb.to_string()
+Console.write_line("second: " + second)
+Console.write_line(sb.length().to_string())
+sb.append_char('!')
+Console.write_line("[" + sb.to_string() + "]")
+`;
+		await build_and_check_output(
+			input,
+			"string_builder_reuse_after_to_string",
+			"first: hello\nsecond: world\n0\n[!]\n",
+		);
 	});
 });
