@@ -32,6 +32,7 @@ func set = (ref Pair p, string raw) {
 }
 `;
 
+
 	test("borrow-RHS store is recorded for the caller", async () => {
 		await build_and_check_output(
 			`${SET_SRC}
@@ -213,6 +214,171 @@ pub func main = (Init init) {
 `,
 			"ref_transfer_repeat",
 			"a=two\n",
+			true,
+			{ audit: false },
+		);
+	});
+
+	test("branch store transfers too (allmark repro D)", async () => {
+		// The store sits inside an if/else — a CONDITIONAL store, which the
+		// plain transfer correctly ignored (a record over the not-taken
+		// path's pre-call value would be unsound). The callee now ENTRY
+		// DUPS such fields (field = strdup(field) at entry, recorded), so
+		// the field is heap-owned on every path out of the call and the
+		// call-site record is sound: the taken store frees the displaced
+		// dup, the not-taken path keeps it, and the caller frees the final
+		// copy. Audit ON — this used to report LEAK: 1 per call.
+		await build_and_check_output(
+			`
+import System
+
+struct Pair {
+	var a = ""
+}
+
+func decorated = (string v, move out string) {
+	return "[" + v + "]"
+}
+
+func commit = (ref Pair pair, string raw) {
+	if raw.length > 2 {
+		pair.a = decorated(raw)
+	} else {
+		pair.a = raw
+	}
+}
+
+pub func main = (Init init) {
+	var short = Pair()
+	commit(ref short, "x")
+	Console.write("D short a=\\{short.a} (expected x)\\n")
+	var long = Pair()
+	commit(ref long, "hello")
+	Console.write("D long a=\\{long.a} (expected [hello])\\n")
+}
+`,
+			"ref_transfer_branch_store",
+			"D short a=x (expected x)\nD long a=[hello] (expected [hello])\n",
+			true,
+		);
+	});
+
+	test("switch-case store transfers", async () => {
+		await build_and_check_output(
+			`
+import System
+
+struct Pair {
+	var a = ""
+}
+
+func decorated = (string v, move out string) {
+	return v + "!"
+}
+
+func commit = (ref Pair pair, string raw, int mode) {
+	switch {
+		case mode == 0 {
+			pair.a = decorated(raw)
+		}
+		else {
+			pair.a = raw
+		}
+	}
+}
+
+pub func main = (Init init) {
+	var p = Pair()
+	commit(ref p, "zero", 0)
+	Console.write("[0]\\{p.a}\\n")
+	var q = Pair()
+	commit(ref q, "one", 1)
+	Console.write("[1]\\{q.a}\\n")
+}
+`,
+			"ref_transfer_switch_store",
+			"[0]zero!\n[1]one\n",
+			true,
+		);
+	});
+
+	test("loop store transfers", async () => {
+		// Each iteration's store frees the previous copy (the dup'd record
+		// makes the field tracked from entry), and the caller frees the
+		// final one — balanced under audit.
+		await build_and_check_output(
+			`
+import System
+
+struct Pair {
+	var a = ""
+}
+
+func decorated = (string v, int n, move out string) {
+	var acc = ""
+	var i = 0
+	while i < n; i += 1 {
+		acc = acc + v
+	}
+	return acc
+}
+
+func repeat_into = (ref Pair pair, string raw, int n) {
+	var i = 0
+	while i < n; i += 1 {
+		pair.a = decorated(raw, i)
+		i += 1
+	}
+}
+
+pub func main = (Init init) {
+	var p = Pair()
+	repeat_into(ref p, "ab", 3)
+	Console.write("a=\\{p.a}\\n")
+}
+`,
+			"ref_transfer_loop_store",
+			"a=abab\n",
+			true,
+		);
+	});
+
+	test("forwarded call nested in a branch keeps the bounded-leak posture", async () => {
+		// fill's nested helper(ref p) call is conditional; the callee's
+		// must-store is a may-store from fill's caller's perspective — but a
+		// FORWARDED one, so fill does NOT entry-dup the field: the helper
+		// builds with its own fresh record set and could not reclaim the
+		// displaced dup. The stored copy therefore stays a bounded leak
+		// (audit off; sound — never an invalid free).
+		await build_and_check_output(
+			`
+import System
+
+struct Pair {
+	var string a = "default"
+}
+
+func set = (ref Pair p, string raw) {
+	p.a = raw + "-set"
+}
+
+func fill = (ref Pair p, bool do_fill) {
+	if do_fill {
+		set(ref p, "x")
+	}
+}
+
+pub func main = (Init init) {
+	var p = Pair()
+	fill(ref p, true)
+	Console.write("a=\\{p.a}\\n")
+	var q = Pair()
+	fill(ref q, false)
+	Console.write("b=\\{q.a}\\n")
+}
+`,
+			"ref_transfer_nested_forward",
+			"a=x-set\nb=default\n",
 			true,
 			{ audit: false },
 		);

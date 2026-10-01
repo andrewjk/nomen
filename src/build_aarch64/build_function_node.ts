@@ -9,6 +9,7 @@ import { has_flag_name } from "../build_common/nullable_struct.ts";
 import scan_force_heap_strings from "../build_common/scan_force_heap_strings.ts";
 import { moved_param_is_consumed } from "../build_common/scan_moved_param_consumed.ts";
 import scan_reassigned_vars from "../build_common/scan_reassigned_vars.ts";
+import { ref_param_entry_dup_fields } from "../build_common/scan_ref_string_writes.ts";
 import { ALL_FLOAT_TYPES } from "../built_in_types.ts";
 import { lower_function } from "../nir/from_ast.ts";
 import type { NirFunction, NirStmt } from "../nir/nir.ts";
@@ -23,6 +24,7 @@ import { prepare_nir_forwarding } from "./forward.ts";
 import { publish_slp_pairs } from "./slp_pair.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free } from "./utils/audit.ts";
+import { emit_strdup } from "./utils/audit.ts";
 import { emit_destroy_for_anchor_slot, set_trait_class_local } from "./utils/auto_destroy.ts";
 import { closure_env_layout_a64 } from "./utils/closure_a64.ts";
 import { emit_asm } from "./utils/code_buffer.ts";
@@ -39,6 +41,11 @@ import {
 	patch_overflow_placeholders,
 } from "./utils/stack_args.ts";
 import { allocate_stack_space, emit_promoted_load } from "./utils/stack_var.ts";
+import {
+	emit_deref_var_address,
+	emit_var_address,
+	is_local_ref_var,
+} from "./utils/stack_var.ts";
 import { get_enum_sret_size, get_field_offset, get_struct_size } from "./utils/struct_layout.ts";
 import { value_number_loops, type VnPlan } from "./value_number.ts";
 
@@ -1196,6 +1203,14 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	// finally below restores ours).
 	const old_raw_param_reloads = status.raw_param_reloads;
 	install_raw_reload_plan(status, raw_reload_plan_lines);
+
+	// Entry-dup the ref-param string fields the body stores through
+	// CONDITIONALLY (ref_param_entry_dup_fields) — mirrors the C backend:
+	// `field = strdup(field)` at entry, recorded, makes the field heap-owned
+	// on every path out of this function so the call-site record transfer is
+	// sound (the allmark port's branch-store repro D leak).
+	emit_ref_param_entry_dups(node, status);
+
 	try {
 		build_block_node(node, status);
 	} finally {
@@ -1430,4 +1445,58 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.struct_return_buffer = undefined;
 	status.return_buffer_stack_offset = undefined;
 	status.function_return_type = undefined;
+}
+
+/**
+ * Entry-dup the ref-param string fields the body stores through
+ * CONDITIONALLY (see ref_param_entry_dup_fields): load the field pair's
+ * ptr half, strdup it, store the fresh pointer back — with the field
+ * recorded in heap_string_fields — so the field is heap-owned on every
+ * path out of the function and the call-site record transfer is sound.
+ * Mirrors the C backend's emit_ref_param_entry_dups; the len half is
+ * unchanged by a dup, so only the ptr half is rewritten. A nullable
+ * string field guards the dup (strdup(NULL) traps; a null pair stores as
+ * null and every reclaim path no-ops on free(NULL)).
+ */
+function emit_ref_param_entry_dups(node: FunctionNode, status: BuildStatus) {
+	const dups = ref_param_entry_dup_fields(node, status.structs);
+	if (!dups.size) return;
+	for (const param of node.params ?? []) {
+		if (param.is_self_param) continue;
+		if (!(param.is_ref || param.type.is_ref)) continue;
+		const fields = dups.get(param.name);
+		if (!fields?.size) continue;
+		const struct = status.structs.find(
+			(s) => s.name === param.type.name && !s.is_simple_type && !s.is_class,
+		);
+		for (const field of fields) {
+			const offset = get_field_offset(param.type.name!, field, status);
+			// The base address of the ref param's storage — the same
+			// resolution the field-store path uses for a value target.
+			const paramReg = status.function_param_regs?.get(param.name);
+			if (paramReg) {
+				emit_asm(status, `mov x0, ${paramReg}\n`);
+			} else if (is_local_ref_var(param.name, status)) {
+				emit_deref_var_address(status, "x0", param.name);
+			} else {
+				emit_var_address(status, "x0", param.name);
+			}
+			emit_asm(status, `str x0, [sp, #-16]!\n`);
+			emit_asm(status, `ldr x0, [x0, #${offset}]\n`);
+			const nullable = !!struct?.fields.find((f) => f.name === field)?.type.is_nullable;
+			let skip_label: string | undefined;
+			if (nullable) {
+				skip_label = `.Lentry_dup_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+				emit_asm(status, `cbz x0, ${skip_label}\n`);
+			}
+			emit_strdup(status);
+			if (skip_label) {
+				emit_asm(status, `${skip_label}:\n`);
+			}
+			emit_asm(status, `ldr x1, [sp], #16\n`);
+			emit_asm(status, `str x0, [x1, #${offset}]\n`);
+			if (!status.heap_string_fields) status.heap_string_fields = new Set<string>();
+			status.heap_string_fields.add(`${param.name}.${field}`);
+		}
+	}
 }

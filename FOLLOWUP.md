@@ -276,11 +276,12 @@ ON (test/ref_param_string_field.test.ts).
 Residual (bounded leak, never an invalid free — the same posture
 `drop_self_written_string_field_records` takes):
 
-- Stores nested in branches/loops are NOT transferred: a conditional store
-  can leave the pre-call value in the field, and a record over it would free
-  rodata at the caller's exit. Closing it needs the must-executed
-  (dominator) analysis the original fix direction anticipated. The final
-  stored copy from a conditional store leaks.
+- ~~Stores nested in branches/loops are NOT transferred~~ FIXED (2026-10-01):
+  direct nested stores now entry-dup the field at callee entry
+  (`ref_param_entry_dup_fields`), making the conditional record sound — see
+  the "Owned string stored into a ref-param struct field" entry below.
+  Forwarded chains (a helper called from a nested position) keep the
+  bounded leak.
 - Stores reached through trait dispatch (vtable) are not scanned — see the
   trait-dispatch entry below.
 - Direction 2 remains the systemic alternative: always-heap value-struct
@@ -602,18 +603,40 @@ Two halves close it:
   variable at the call site, so the argument's owner frees them at its
   scope exit. Wired into all four call builders (free function + method,
   both backends). Covered by test/ref_param_field_transfer.test.ts.
+- **CONDITIONAL stores transfer too (2026-10-01).** A store nested in an
+  if/else, switch case, or loop body used to leave the stored copy leaked
+  (the record could not cross the call: the not-taken path holds the
+  pre-call value, possibly rodata, and a record over it would be an
+  invalid free). Both backends now ENTRY DUP such fields at callee entry
+  (`ref_param_entry_dup_fields` → `field = strdup(field)`, recorded), so
+  the field is heap-owned on EVERY path out of the call — the taken store
+  frees the displaced dup (the record makes it tracked), the not-taken
+  path keeps the dup — and the call-site record is sound. The dup runs
+  before the body on both backends (`emit_ref_param_entry_dups` in
+  build_function_node of each; the aarch64 emitter rewrites only the ptr
+  half — a dup does not change the len — and guards nullable string
+  fields). Forwarded calls from a NESTED position are deliberately
+  excluded from the dup set: the helper builds with its own fresh record
+  set and could not reclaim the displaced dup, so those chains keep the
+  bounded-leak posture below. Covered by test/ref_param_field_transfer.ts
+  (branch/switch/loop forms, audit ON, both backends).
 
 Soundness rule: only definitely-executed (direct) stores transfer; a
 conditional store could leave the pre-call value in place, and a record over
-it would free rodata at the caller's exit. Bounded remainders (leak, never a
-double/invalid free — same posture as the cross-scope entry above):
+it would free rodata at the caller's exit — the entry-dup is what makes the
+conditional record sound. Bounded remainders (leak, never a double/invalid
+free — same posture as the cross-scope entry above):
 
 - A displaced copy from an EARLIER call leaks per extra call
   (`set(ref p, "one"); set(ref p, "two")` leaks "one"): the callee's store
   cannot know the displaced value's ownership, and pre-freeing at the call
   site would be a use-after-free when the callee reads the field first.
-- Conditional/nested stores inside the callee are not transferred (the
-  final stored copy from such a store leaks).
+  (With a dup'd field the dup IS freed by a taken store — the remainder is
+  the pre-call value the entry-dup displaces, ≤1 per call.)
+- Stores reached through a helper CALLED FROM a nested position are not
+  dup'd and not transferred (the final stored copy from such a chain
+  leaks): the helper's store cannot see the caller's dup record, so
+  dup'ing for them would leak the dup itself.
 - Stores through a `ref` param reached via trait dispatch (vtable) or an
   inlined method are not scanned — see the trait-dispatch entry below.
 

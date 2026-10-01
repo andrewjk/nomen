@@ -1,0 +1,2 @@
+D short a=x (expected x)
+D long a=[hello] (expected [hello])

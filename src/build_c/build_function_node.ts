@@ -8,6 +8,7 @@ import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import scan_force_heap_strings from "../build_common/scan_force_heap_strings.ts";
 import { moved_param_is_consumed } from "../build_common/scan_moved_param_consumed.ts";
+import { ref_param_entry_dup_fields } from "../build_common/scan_ref_string_writes.ts";
 import { lower_function } from "../nir/from_ast.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import BitsetNode from "../nodes/BitsetNode.ts";
@@ -558,6 +559,17 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.nir_emit_ctx =
 		nir && c_nir_emission_enabled() ? { stmts: nir.body, ast: node.statements } : undefined;
 
+	// Entry-dup the ref-param string fields the body stores through
+	// CONDITIONALLY (ref_param_entry_dup_fields): `p.f = strdup(p.f)` at
+	// function entry, recorded, makes the field heap-owned on EVERY path out
+	// of this function — the store paths then reclaim the displaced dup at
+	// each taken store, and the call-site transfer
+	// (transfer_ref_param_field_records) may record the field for the caller
+	// soundly. Without the dup, a not-taken branch would leave the pre-call
+	// value (possibly rodata) behind an un-soundable record (the leak the
+	// allmark port's branch-store repro D reported).
+	emit_ref_param_entry_dups(node, status);
+
 	build_block_node(node, status, false);
 
 	status.nir_emit_ctx = old_nir_ctx;
@@ -647,6 +659,44 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.heap_array_vars = old_heap_array_vars;
 	status.stack_array_lengths = old_stack_array_lengths;
 	status.moved = old_moved;
+}
+
+/**
+ * Emit the entry-dup for every `ref` value-struct param string field the
+ * body stores through CONDITIONALLY (see ref_param_entry_dup_fields):
+ * `{ field = nomen_str_dup(field) }` at function entry, recorded in
+ * heap_string_fields, so the field is heap-owned on every path out of the
+ * function and the call-site record transfer is sound. Nullable string
+ * fields guard the dup (a null pair stores as null — free(NULL) is a
+ * no-op on every reclaim path).
+ */
+function emit_ref_param_entry_dups(node: FunctionNode, status: BuildStatus) {
+	const dups = ref_param_entry_dup_fields(node, status.structs);
+	if (!dups.size) return;
+	for (const param of node.params ?? []) {
+		if (param.is_self_param) continue;
+		if (!(param.is_ref || param.type.is_ref)) continue;
+		const fields = dups.get(param.name);
+		if (!fields?.size) continue;
+		const struct = status.structs.find(
+			(s) => s.name === param.type.name && !s.is_simple_type && !s.is_class,
+		);
+		const base = c_function_name(param.name);
+		for (const field of fields) {
+			const nullable = !!struct?.fields.find((f) => f.name === field)?.type.is_nullable;
+			if (nullable) {
+				status.code += `if (${base}->${field}.ptr) {\n`;
+			}
+			const temp = `_dup_t_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+			status.code += `nomen_string ${temp} = nomen_str_dup(${base}->${field});\n`;
+			status.code += `${base}->${field} = ${temp};\n`;
+			if (nullable) {
+				status.code += `}\n`;
+			}
+			if (!status.heap_string_fields) status.heap_string_fields = new Set<string>();
+			status.heap_string_fields.add(`${param.name}.${field}`);
+		}
+	}
 }
 
 function emit_nested_declarations(node: FunctionNode, status: BuildStatus) {
