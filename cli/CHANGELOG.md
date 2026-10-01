@@ -15,6 +15,22 @@
 
 
 
+
+## 0.6.8
+<sub>2026-10-01</sub>
+
+-  *(patch)*
+  Array<T> params accept varying-length literals (stamp dropped on conflict instead of erroring); raw T[] params keep the conflict check
+-  *(patch)*
+  C branch builders copy heap_string_fields per branch (in-place record adds leaked into siblings, freeing zero-init field defaults)
+-  *(patch)* - Fix: value-struct elements in aarch64 Array<T> literals
+-  *(patch)*
+  nomen test accepts --release: optimized test/bench builds (optimize passes + clang -O2), so t.bench numbers are meaningful
+-  *(patch)* - nomen test links the build result's companion C file (spawn/UI test files no longer fail to link)
+-  *(patch)* - #embed_file + test binary CWD contract
+-  *(patch)* - conditional ref-param string field transfer
+-  *(patch)* - Buffer field deep-copy in container elements
+
 ## 0.6.7
 <sub>2026-09-30</sub>
 
