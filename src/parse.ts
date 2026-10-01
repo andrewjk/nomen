@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 
 import add_error from "./add_error.ts";
@@ -45,6 +46,7 @@ export default function parse(
 		library,
 		errors: [],
 		allow_user_raw: options?.allow_user_raw,
+		embed_root: embed_root_for(file_path),
 	};
 	// `unsafe` lockdown: only the appended System library source (tokens at
 	// or past the user source's end) may declare unsafe functions/blocks.
@@ -155,6 +157,24 @@ function mark_library_nodes(root: RootNode, boundary: number): void {
 		if (node.allocations) walk(node.allocations);
 	}
 	walk(root);
+}
+
+/**
+ * The base directory for `#embed_file` paths: the package root (the nearest
+ * enclosing directory with a package.jsonc), falling back to the entry
+ * file's folder. No file path — undefined, so `#embed_file` resolves
+ * against the process CWD.
+ */
+function embed_root_for(file_path?: string): string | undefined {
+	if (!file_path) return undefined;
+	let dir = path.dirname(path.resolve(file_path));
+	for (let i = 0; i < 32; i++) {
+		if (fs.existsSync(path.join(dir, "package.jsonc"))) return dir;
+		const parent = path.dirname(dir);
+		if (parent === dir) break;
+		dir = parent;
+	}
+	return path.dirname(path.resolve(file_path));
 }
 
 /**

@@ -1,0 +1,16 @@
+import System
+import System::Test
+import System::Stream::File
+
+// Reads `fileio_corpus.txt` via a path RELATIVE to the --in root: `nomen
+// test` binaries run with their working directory set to the folder the CLI
+// scanned (see the CWD contract in cli/src/test.ts), so the fixture
+// resolves no matter where the CLI was invoked from.
+pub func test_file_read = (ref Tester t) {
+	var read = File.read_all("fileio_corpus.txt")
+	var len = match read {
+		case .ok(text) -> text.length
+		case .error(_) -> -1
+	}
+	t.expect(len == 22, "fixture corpus length")
+}

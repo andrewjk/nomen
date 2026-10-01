@@ -28,6 +28,7 @@ import consume_name from "./utils/consume_name.ts";
 import expect from "./utils/expect.ts";
 import expect_close_angle from "./utils/expect_close_angle.ts";
 import get_index from "./utils/get_index.ts";
+import parse_embed_file from "./utils/parse_embed_file.ts";
 import parse_qualified_name from "./utils/parse_qualified_name.ts";
 import peek_current from "./utils/peek_current.ts";
 
@@ -237,6 +238,11 @@ function parse_primary(status: ParseStatus, value: string): BaseNode {
 			const node = new GroupedNode(start, parse_expression(status));
 			expect(")", status);
 			return node;
+		}
+		case "#": {
+			// `#embed_file("path")` — a compile-time string literal of the
+			// file's contents (see parse_embed_file).
+			return parse_embed_file(status);
 		}
 		case "if": {
 			return parse_if_else(status);

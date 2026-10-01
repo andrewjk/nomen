@@ -280,6 +280,15 @@ const typed = Array<int>(1, 2, 3)
 for n of nums { Console.write("\{n}\n") }
 ```
 
+### Compile-time embedding
+
+```nomen
+const corpus = #embed_file("bench/full-markdown.md")   // string literal of the
+                                                        // file's contents; path
+                                                        // resolves from the
+                                                        // package root
+```
+
 ## Reference
 
 - Full language spec: [SPEC.md](https://github.com/andrewjk/nomen/blob/main/SPEC.md)

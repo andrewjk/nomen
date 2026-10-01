@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import { expect, test } from "vite-plus/test";
 
 import {
@@ -16,9 +18,10 @@ import {
 
 test("collect_test_files discovers *.test.nm recursively and sorts", () => {
 	const files = collect_test_files("cli/test/fixtures");
-	expect(files.length).toBe(2);
+	expect(files.length).toBe(3);
 	expect(files[0].replace(/\\/g, "/")).toMatch(/calc\.test\.nm$/);
-	expect(files[1].replace(/\\/g, "/")).toMatch(/spawn\.test\.nm$/);
+	expect(files[1].replace(/\\/g, "/")).toMatch(/fileio\.test\.nm$/);
+	expect(files[2].replace(/\\/g, "/")).toMatch(/spawn\.test\.nm$/);
 });
 
 test("collect_test_files returns [] for a missing folder", () => {
@@ -243,3 +246,32 @@ test("run_test_file links the companion C file (spawn fixture)", () => {
 		expect(result.fails).toEqual([]);
 	}
 }, 60_000);
+
+test("run_test_file links aarch64 with System::Stream::File and honors the CWD contract", () => {
+	// Two contracts in one fixture:
+	// 1. aarch64 link: `import System::Stream::File` pulls Tcp's
+	//    `aarch64_use_c` companions into the object — the generated main
+	//    references the Tcp_* thunks even though the test never calls Tcp,
+	//    and the link must provide the companion C (the sibling-module
+	//    extern leak used to break the test link line).
+	// 2. CWD: the fixture reads `fileio_corpus.txt` RELATIVELY; the binary
+	//    runs in the --in root, so the relative path resolves even though
+	//    this test process's CWD is the repo root and the fixture lives in
+	//    cli/test/fixtures.
+	for (const arch of ["aarch64", "c"] as const) {
+		const result = run_test_file(
+			"cli/test/fixtures/fileio.test.nm",
+			"core",
+			arch,
+			false,
+			undefined,
+			false,
+			path.resolve("cli/test/fixtures"),
+		);
+		expect(result.phase).toBeUndefined();
+		expect(result.crashed).toBeUndefined();
+		expect(result.ok).toBe(true);
+		expect(result.fails).toEqual([]);
+		expect(result.leaks).toEqual([]);
+	}
+}, 90_000);

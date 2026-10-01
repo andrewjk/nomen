@@ -279,6 +279,7 @@ export function run_test_file(
 	audit = false,
 	audit_runtime?: string,
 	release = false,
+	cwd?: string,
 ): TestFileResult {
 	const start = performance.now();
 	const source_text = fs.readFileSync(entry_path, "utf8");
@@ -415,7 +416,11 @@ export function run_test_file(
 
 	// Run the binary and collect the records it streams over stdout. A
 	// non-zero exit (crash, abort) still surfaces whatever records were
-	// emitted before the crash; a timeout is treated as a crash.
+	// emitted before the crash; a timeout is treated as a crash. The
+	// documented CWD contract: the binary runs in the `--in` root (the
+	// folder `nomen test` scanned for *.test.nm files), so fixture paths in
+	// tests resolve against that folder regardless of where the CLI was
+	// invoked from.
 	let runStdout = "";
 	let crashed: string | undefined;
 	try {
@@ -424,6 +429,7 @@ export function run_test_file(
 			stdio: ["ignore", "pipe", "pipe"],
 			timeout: 30_000,
 			maxBuffer: 16 * 1024 * 1024,
+			cwd: cwd ?? process.cwd(),
 		});
 	} catch (err: any) {
 		runStdout = err.stdout ? err.stdout.toString() : "";
@@ -567,6 +573,9 @@ export function runTests(root: string, options: RunTestsOptions = {}): boolean {
 	console.log(`Found ${files.length} test file(s)\n`);
 
 	const startTime = performance.now();
+	// The CWD contract: test binaries run in the --in root, so relative
+	// fixture paths resolve there no matter where the CLI was invoked from.
+	const binary_cwd = path.resolve(root);
 
 	const results: TestFileResult[] = [];
 	for (const file of files) {
@@ -577,6 +586,7 @@ export function runTests(root: string, options: RunTestsOptions = {}): boolean {
 			options.audit,
 			options.audit_runtime,
 			options.release,
+			binary_cwd,
 		);
 		report_file(result);
 		results.push(result);

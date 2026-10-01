@@ -1,0 +1,2 @@
+NOMEN
+compile-time embedded text

@@ -160,7 +160,7 @@ export function print_help(): void {
 			"  nomen check --in [file/folder]    Parse and check only",
 			"  nomen format [--in folder]        Reformat every .nm file",
 			"  nomen docs [--in file]            Generate markdown documentation",
-			"  nomen test [--in folder]          Discover and run *.test.nm files",
+			"  nomen test [--in folder]          Discover and run *.test.nm files (binary CWD = --in folder)",
 			"  nomen init <name>                 Scaffold a new project in ./<name>",
 			"  nomen lib-path                    Print the bundled System library path",
 			"",

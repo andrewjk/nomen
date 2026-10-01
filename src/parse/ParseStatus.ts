@@ -47,6 +47,13 @@ export default interface ParseStatus {
 	 */
 	allow_user_raw?: boolean;
 	/**
+	 * Base directory for `#embed_file("relative/path")` — the package root
+	 * (the directory containing package.jsonc), or the entry file's folder
+	 * when no package root exists. Undefined when no file path was supplied
+	 * to parse: `#embed_file` then resolves against the process CWD.
+	 */
+	embed_root?: string;
+	/**
 	 * Errors that have been encountered
 	 */
 	errors: CompileError[];

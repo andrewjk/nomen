@@ -1943,6 +1943,24 @@ const uint8 byte = 0xFF         // Valid: 255 fits in uint8
 const uint8 overflow = 0x100    // Error: 256 out of range
 ```
 
+### Compile-time Embedding
+
+`#embed_file("path")` is a string literal whose value is the contents of the
+file at `path`, read once when the program is compiled — no runtime file
+access, no path dependence in the built binary. The path resolves against the
+package root (the directory containing `package.jsonc`), or the compiled
+file's folder when no package root exists:
+
+```
+const string banner = #embed_file("assets/banner.txt")
+Console.write(banner)
+```
+
+The literal participates in the type system exactly like a written string
+literal (`.length`, slicing, concatenation all work), so it is checked and
+built on both backends with no special casing. A path that cannot be read is
+a compile error.
+
 ### Arrays
 
 ```
