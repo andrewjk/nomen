@@ -3024,6 +3024,42 @@ export default function build_declaration_node(
 				check_heap();
 				return;
 			}
+			// A `string` declaration initialized from a FIELD read
+			// (`var value = attr.value`): the raw pair aliases the field's
+			// storage. Whether the binding ends up heap-owned here depends on
+			// the STALE `last_result_is_heap` flag — whatever the PREVIOUS
+			// statement left behind (a call, a concat). A stale-true mark
+			// frees the field's pointer at this scope's exit while the
+			// field's owner also reclaims it (the displaced container-field
+			// destroy, `replace_T`, arena teardown) — a double free (the
+			// allmark sanitize crash). A field read is a BORROW, never
+			// heap-owned: clear the stale flag so check_heap marks nothing
+			// (the contract the C backend encodes — its field-read locals are
+			// never recorded — and field_borrow_local.test.ts pins:
+			// borrow-only, string returns of it are dup'd at the return
+			// boundary).
+			const decl_string_field_read =
+				node.type.name === "string" &&
+				!node.type.is_view &&
+				!node.type.is_array &&
+				size === 16 &&
+				node.value.node_type === "access" &&
+				(node.value as AccessNode).access.node_type === "access_field";
+			if (decl_string_field_read && !!status.force_heap_strings?.has(node.name)) {
+				// A force-heap receptacle must own heap on EVERY path (its
+				// reassign/scope-exit frees are emitted unconditionally) — take
+				// an owned copy of the field's pair instead of the borrow.
+				emit_init_value(node.value, nir_init, status);
+				ensure_newline(status);
+				emit_strdup_string(status);
+				emit_var_store(status, "x0", node.name, size);
+				mark_heap_string(status, node.name);
+				status.last_result_is_heap = false;
+				return;
+			}
+			if (decl_string_field_read) {
+				status.last_result_is_heap = false;
+			}
 			emit_init_value(node.value, nir_init, status);
 			emit_var_store(status, "x0", node.name, size);
 			check_heap();

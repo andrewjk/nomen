@@ -6,8 +6,10 @@ import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import { is_normalized_struct_call } from "../build_common/call_init_string_fields.ts";
 import record_ctor_heap_default_fields from "../build_common/ctor_heap_default_fields.ts";
+import { struct_needs_auto_destroy } from "../build_common/destroy_analysis.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import { claim_init_default_seed_reclaim } from "../build_common/init_computed_seeds.ts";
+import { resolve_struct_type } from "../build_common/mono_name.ts";
 import { call_result_type, is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import { is_string_borrow } from "../build_common/string_return_analysis.ts";
@@ -1756,7 +1758,22 @@ export default function build_assignment_node(
 			// leave in the slot for the exit free to reclaim).
 			const rhs_is_borrow_reception =
 				!node.swap && size === 16 && is_string_borrow(node.right_value);
-			const borrow_needs_dup = rhs_is_borrow_reception && !!status.force_heap_strings?.has(name);
+			// A FIELD-read RHS (`s = obj.field`) is a BORROW — the pair
+			// aliases the field's storage. Whether the target ends up
+			// heap-owned must not depend on the STALE `last_result_is_heap`
+			// flag (whatever the PREVIOUS statement built): a stale-true mark
+			// frees the field's pointer at this scope's exit while the
+			// field's owner reclaims it too (the displaced container-field
+			// destroy, `replace_T`, teardown) — the assignment-path twin of
+			// the declaration path's stale-flag fix (the allmark sanitize
+			// crash). A force-heap receptacle takes an owned copy instead.
+			const rhs_is_field_read =
+				!node.swap &&
+				size === 16 &&
+				node.right_value.node_type === "access" &&
+				(node.right_value as AccessNode).access.node_type === "access_field";
+			const borrow_needs_dup =
+				(rhs_is_borrow_reception || rhs_is_field_read) && !!status.force_heap_strings?.has(name);
 			// The move transfer is sound only when the source ACTUALLY owns
 			// heap: a source holding non-heap data (a folded string-literal
 			// concat lands in rodata; a borrow holds container memory) owns
@@ -1782,6 +1799,10 @@ export default function build_assignment_node(
 				}
 				if (!status.heap_strings) status.heap_strings = new Set();
 				status.heap_strings.add(name);
+			} else if (rhs_is_field_read) {
+				// A field-read borrow is never heap-owned (see above) — the
+				// stale flag must not mark the target here.
+				status.last_result_is_heap = false;
 			} else if (status.last_result_is_heap) {
 				if (!status.heap_strings) status.heap_strings = new Set();
 				status.heap_strings.add(name);
@@ -2133,6 +2154,60 @@ export default function build_assignment_node(
 					if (base_reg === undefined) {
 						get_base_address(access, status, "x0");
 						emit_asm(status, `str x0, [sp, #-16]!\n`);
+					}
+
+					// A `field = move local` store into a VALUE-struct field
+					// (List/Buffer/owning struct): the plain struct copy below
+					// overwrites the field's bytes, so the displaced value's
+					// owned resources (a container's slab, nested owning fields,
+					// slot strings) must be reclaimed first — the store orphans
+					// them (2 leaked allocations for a displaced 1-element
+					// List<string>). Mirrors the C backend's field move-assign
+					// reclaim. A custom `#init`'s FIRST write to a `self.<field>`
+					// overwrites garbage — nothing valid to destroy. The
+					// mono-resolved shape is required: a generic body's access
+					// node can still carry the template type (`List<TK>`), which
+					// is not in the struct table, so a raw-name find would
+					// silently skip the reclaim for every container field.
+					if (
+						!node.operator &&
+						node.right_value.node_type === "value" &&
+						(node.right_value as ValueNode).is_moved
+					) {
+						const field_resolved = resolve_struct_type(field_type!, status);
+						const field_target_var =
+							access.target.node_type === "value" ? (access.target as ValueNode).value : "";
+						const first_init_write = is_first_init_field_write(
+							field_target_var,
+							field_name,
+							status,
+						);
+						mark_init_field_write(field_target_var, field_name, status);
+						if (
+							field_resolved &&
+							!field_resolved.is_class &&
+							!first_init_write &&
+							struct_needs_auto_destroy(field_resolved, status)
+						) {
+							// The `<T>_destroy` function exists whenever
+							// struct_needs_auto_destroy holds (build_struct_node
+							// auto-generates it; `has_destroy` implies it). Call it
+							// with x0 = the field's address — it reclaims the
+							// container slab / nested owning fields / slot strings.
+							if (base_reg !== undefined) {
+								if (offset !== 0) {
+									emit_asm(status, `add x0, ${base_reg}, #${offset}\n`);
+								} else {
+									emit_asm(status, `mov x0, ${base_reg}\n`);
+								}
+							} else {
+								emit_asm(status, `ldr x0, [sp]\n`);
+								if (offset !== 0) {
+									emit_asm(status, `add x0, x0, #${offset}\n`);
+								}
+							}
+							emit_asm(status, `bl ${field_resolved.name}_destroy\n`);
+						}
 					}
 
 					get_source_address(node.right_value, status, nir_rhs);

@@ -66,35 +66,78 @@ FIXED (covered by test/leak_hygiene.test.ts unless noted):
   literal). The arm was added; note the two walks are now one arm
   out-of-sync-prone — future cleanup arms must land in BOTH.
 
-OPEN (recorded, not fixed):
+FIXED (2026-10-02, both halves — see the sanitize-residual note below):
 
 - **aarch64: container-field move-assign displaces the old value without
-  reclaiming it.** `box.items = move list` on aarch64 leaks the displaced
+  reclaiming it.** `box.items = move list` on aarch64 leaked the displaced
   List (slab + owning elements; 2 allocations for a 1-element
-  `List<string>` field). The C fix above does not transfer: re-applying the
-  analogous displaced-destroy to the aarch64 field-assign path crashes the
-  allmark sanitize suite (`pointer being freed was not allocated` inside
-  `HtmlAttribute_destroy` ← `Buffer_HtmlAttribute_destroy`, test 2) because
-  of the NEXT item — the displaced list's element strings are aliased by
-  shallow `at_or_panic` copies whose frees are what previously "absorbed"
-  the leak (leak + unsound free canceled out into silence; fixing either
-  half alone exposes the other). The aarch64 fix needs BOTH halves: the
-  displaced-destroy AND sound struct-borrow copies.
-- **aarch64: `at_or_panic` (and friends) return SHALLOW copies of owning
-  struct elements, but `<T>_destroy` frees string fields unconditionally.**
-  `var attr = list.at_or_panic(i)` raw-memcpys the slot (the mono/inline
-  splice bypasses the C-style return-boundary normalization), so `attr`'s
-  string fields alias the slot's heap copies — yet the struct's destroy
-  (`HtmlAttribute_destroy` frees `[x+8]`/`[x+24]` with no record guard)
-  would free them out from under the list when the local's scope exits.
-  Today nothing frees such locals (the borrow stays "absorbed" by leaked
-  displaced lists), so it is a latent use-after-free, not a live crash —
-  but any path that frees the list BEFORE the alias dies (e.g. the
-  displaced-destroy above) turns it into a double free. Sound fix shape:
-  make the aarch64 struct-return boundary strdup unrecorded string fields
-  for bare-local returns (mirroring C), including through the inline-splice
-  path; or classify such copies as borrows at the call site (must stay in
-  lockstep with the C call-site rule).
+  `List<string>` field). The aarch64 field-assign path (build_aarch64/
+  build_assignment_node.ts, the value-struct `field_is_struct` else branch)
+  now mono-resolves the field type (`resolve_struct_type` — the raw-name
+  find silently skipped generic fields, the C twin of the mono-name bug
+  fixed above) and emits `bl <T>_destroy` on the field's address before the
+  struct copy, skipping a custom `#init`'s first `self.<field>` write
+  (fresh-malloc garbage). The auto-generated `<T>_destroy` reclaims the
+  slab, nested owning fields, and slot strings. Covered by
+  test/displaced_field_move.test.ts (audit ON, both backends).
+- **Stale `last_result_is_heap` marks FIELD-READ string bindings heap.**
+  The real "shallow `at_or_panic` copies" hazard — found while landing the
+  displaced-destroy. A `string` binding whose RHS is a FIELD read (`var
+  value = attr.value`, `s = state.attribute_name`) stores the raw pair; the
+  binding was heap-marked whenever the PREVIOUS statement left
+  `last_result_is_heap` true — so its scope-exit free raced the field's
+  owner (the displaced destroy, `replace_T`, arena teardown). Baseline
+  masked it: the displaced list leaked, so the "second free" hit memory
+  nobody else would free. Both flavors now clear the flag (declaration +
+  assignment paths, aarch64), making field-read bindings borrows — the
+  contract field_borrow_local.test.ts pins and the C backend's record model
+  already encoded. The force-heap receptacle shapes keep their strdup.
+  The allmark aarch64 sanitize residual (below) is the remaining exposure.
+
+## aarch64 auto-destroy string frees are enabled by a default-param accident
+
+`build_auto_destroy_function` (aarch64 build_struct_node.ts) calls
+`emit_field_destroys(..., free_strings = node.is_class)` intending
+free_strings=false for value structs ("their locals may hold rodata
+literals"). Plain parsed structs never set the `is_class` FIELD, so the
+argument is `undefined` and the DEFAULT (`true`) applies — the generated
+`<T>_destroy` frees plain string fields unconditionally, accidentally
+mirroring C's build_auto_destroy. This is load-bearing: Buffer per-element
+teardown and the new displaced-field reclaim rely on it freeing the
+store_T-strdup'd slot strings. If `is_class` ever becomes explicitly false
+on parsed structs, value-struct slot strings silently stop being reclaimed
+(large leak-count regressions). Worth replacing the implicit default with
+an explicit boolean and a comment.
+
+## Sanitize-residual (allmark aarch64 audit) — recorded, not fixed
+
+With the displaced-destroy landed, the allmark aarch64 sanitize suite fails
+in a NEW mode: `free()` of a non-heap address (libmalloc "main_address
+failed" — e.g. 0x1007a0470, inside the `___nomen_pool_*` BSS) during the
+sanitize run, before/instead of the historic leak report. Receipts from the
+investigation (malloc_error_break / instrumented audit-runtime bisects):
+
+- The double-free pair first identified (`nomen_free_wrap` ←
+  `HtmlAttribute_destroy` ← `Buffer_HtmlAttribute_destroy`, test 2) is the
+  displaced-destroy racing stale-marked field-read bindings — fixed by the
+  flag clears above (that exact shape now passes).
+- A second path remains: parse_html's displaced `state.attribute_name`
+  store frees the old pair (record-driven, correct), and a LATER scope-exit
+  free of a heap-marked local in `sanitize_html_set_tag` (slot [x29+48],
+  the `substring` result) hits the same address. Whether that is malloc
+  address-reuse observed through a detector with a realloc-marking gap
+  (the instrumented audit runtime did not re-mark `_nomen_realloc_wrap`
+  results live in one iteration — its DOUBLE-FREE reports are not fully
+  trustworthy) or a genuine stale free is unresolved.
+- The audit LEAK counter itself drifts: wrapped-allocated blocks freed via
+  raw `#arch` paths (e.g. StringBuilder's `bl _realloc` grow / `extern
+  free` teardown) move the counter without libmalloc seeing a leak —
+  `MallocStackLogging=1 leaks -atExit` reported **0 real leaks** on a
+  sanitize run whose counter read 28,311. The counter is still the test
+  contract, so drift reads as failures.
+- C is unaffected: the sanitize suite passes with `LEAK: 39` (the
+  documented bounded classes), and the port's non-sanitize aarch64 tests
+  match baseline exactly (core-list: 616/848 pre-existing).
 
 ## Trait-declared field ownership corners
 
