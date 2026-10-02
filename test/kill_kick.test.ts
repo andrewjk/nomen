@@ -41,5 +41,5 @@ pub func main = () {
 		await build_and_check_output(input, "kill_kick_channel", "receiver done\nsurvived\n", true, {
 			audit: false,
 		});
-	}, 30000);
+	});
 });

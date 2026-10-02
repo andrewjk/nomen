@@ -187,6 +187,44 @@ test("parse_records treats an empty stdout as nothing", () => {
 });
 
 // ---------------------------------------------------------------------------
+// per-test timeout policy
+// ---------------------------------------------------------------------------
+
+// A per-test timeout BELOW the global is the cold-run flake generator: the
+// slowest legitimate test (an ObjC/GUI build, which cannot use the precompiled
+// system object and so recompiles all of System per test, on both backends)
+// costs ~1.4s warm and ~2.7s solo-cold, and 4-8x that under worker contention.
+// `layout_container.test.ts` shipped a 10-second override on all 35 of its
+// tests and failed 9 ways on a fully cold run while being green warm — so the
+// budget is policed here rather than left to each file.
+test("no test sets a per-test timeout below the global 60s", () => {
+	const global_timeout = 60_000;
+	const offenders: string[] = [];
+	const walk = (dir: string): void => {
+		for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+			const full = path.join(dir, entry.name);
+			if (entry.isDirectory()) {
+				if (entry.name === "out") continue;
+				walk(full);
+				continue;
+			}
+			if (!entry.name.endsWith(".test.ts")) continue;
+			const source = fs.readFileSync(full, "utf8");
+			// vitest's per-test override is the trailing argument of a
+			// test()/it() call — a trailing `}, <ms>);`.
+			for (const m of source.matchAll(/\},?\s*([0-9][0-9_]*)\s*\);/g)) {
+				const ms = Number(m[1].replaceAll("_", ""));
+				if (ms < global_timeout) {
+					offenders.push(`${path.relative(".", full)}: ${m[0].trim()}`);
+				}
+			}
+		}
+	};
+	walk(path.resolve(".", "test"));
+	expect(offenders).toEqual([]);
+});
+
+// ---------------------------------------------------------------------------
 // extract_leaks
 // ---------------------------------------------------------------------------
 

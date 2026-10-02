@@ -120,20 +120,69 @@ passes yet — a `label/directive/alias/code` memo keyed on the trimmed line
 is the next candidate), plus single-pass line scans where a pass still
 sweeps the text more than once.
 
-## Cold-run parallel test flakiness (pre-existing)
+## aarch64: a lambda capture of a CLASS passes the closure env as the value
 
-A fully cold `npm test` (after `rm -rf test/out`) with default file
-parallelism shows ~25-35 spurious failures (empty `output.txt` files written
-for tests whose binaries run fine standalone — e.g. `file.test.ts`,
-`ziglings/107_files2.test.ts`, plus a broad scatter). Reproduced on the
-unmodified baseline (changes stashed), so it is not a codegen regression.
-A second (warm) run is fully green, and a cold run with
-`--no-file-parallelism` is fully green — it looks like a
-concurrency/caching artifact in `check_output`'s cache write under load.
-Worth investigating `test/check_output.ts`'s `outputfile`/`cachefile` writes
-if it keeps biting.
+Found 2026-10-02 while investigating the cold-run flakiness: an intermittent
+`SIGSEGV` in `test/fn_value_spawn.test.ts`'s "a lambda daemon detaches" (the
+detached daemon's window makes it look racy) turned out to be a deterministic
+codegen bug. The joined form is 100% reproducible, with only the pool worker
+involved:
 
-If it's green on the second run DO NOT re-run the tests again.
+```
+import System
+
+func use_channel = (Channel c) {
+	c.send(1)
+}
+
+pub func main = () {
+	var Channel c = Channel()
+	var t = Thread(func () { use_channel(c) })
+	var h = t.start()
+	h.result()
+	Console.write_line("joined")     // never printed: exit 139
+}
+```
+
+The emitted lambda body stores the closure env into the capture's slot instead
+of loading the captured pointer out of it (`main.s`):
+
+```
+_lambda_0:                       ; capture is a `Channel` (8-byte pointer)
+	str x0, [x29, #0]            ; park the env
+	str x0, [x29, #16]           ; ← the ENV, not env->c
+	bl use_channel
+```
+
+A `string` capture of the same shape is correct — it loads both halves
+(`ldr x0, [x0, #0]` / `ldr x1, [x9, #8]` then stores them) — so the gap is
+the single-word class/pointer capture. The C backend is correct
+(`bump(_env->report)`). lldb on the detach variant:
+
+```
+frame #0 libsystem_pthread.dylib`pthread_mutex_lock   ; x0 = 0
+frame #1 Channel_send + 68                            ; mu = [self+8] == NULL
+frame #2 bump + 28
+frame #3 _lambda_0 + 24
+frame #4 __nomen_spawn_0_trampoline + 80
+frame #5 __nomen_detached_run + 68
+```
+
+Where to look: the capture's body-side binding. `build_function_node.ts` parks
+the hidden env parameter and records `closure_env_offsets` from
+`closure_env_layout_a64(node, status)` (offsets keyed by capture name, sized by
+`capture_size_a64`), and `stack_var.ts`'s `emit_var_load`/`emit_var_store`/
+`emit_var_address` all branch on `closure_env_offsets.has(name)` before the
+stack-slot path — so either the offsets map lacks the name at body-build time
+(the construction site DOES build an 8-byte env holding the pointer, so
+`fn.captures` is populated there) or the capture is bound through a
+declaration-shaped path that writes x0 straight into the slot. Note the failing
+body has no `closure_env_offsets`-shaped load at all, which is the tell.
+
+Scope note: every existing capture test uses a `string` (or scalar) capture, so
+the suite is green — a class-typed capture needs a test of its own once fixed.
+Note also that a `class` capture is rejected unless the type is `Sendable`, so
+`Channel` is the cheapest carrier.
 
 ## Residual ownership-tracking gaps (accepted, narrow)
 

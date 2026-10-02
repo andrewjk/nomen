@@ -35,7 +35,7 @@ pub func main = () {
 `,
 			"42 7 42",
 		);
-	}, 10000);
+	});
 
 	test("Frame struct (also a MacTypes-colliding name) builds with GUI controls", async () => {
 		await run(
@@ -58,7 +58,7 @@ pub func main = () {
 `,
 			"5 9 100 20 1 2",
 		);
-	}, 10000);
+	});
 
 	test("LayoutLength enum-with-data dispatches with GUI controls in the unit", async () => {
 		await run(
@@ -87,5 +87,5 @@ pub func main = () {
 `,
 			"50 25",
 		);
-	}, 10000);
+	});
 });
