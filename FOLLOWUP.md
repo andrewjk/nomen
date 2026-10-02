@@ -791,3 +791,60 @@ different story. Fixed: `RunTestsOptions.release` threads through to
 `build({ optimize })` + a `-O2` link line; `nomen test --release` opts in
 (default stays debug, matching `run`/`build`). Covered end-to-end by
 `test/test_harness.test.ts` running the calc fixture in both modes.
+
+## Moved class param whose owning field is reassigned leaks (2026-10-02)
+
+Found while writing the force-heap borrow-init regression test. A `move`
+CLASS parameter whose owning container field is reassigned inside the callee
+does not get the displaced/current field reclaimed. Minimal shape (aarch64,
+audit on):
+
+```
+struct Attr { var string value = "" }
+struct Box  { move List<Attr> items }
+
+func keep = (move Box box, move out string) {
+    box.items = move List<Attr>()   // displaced original list
+    return "done"
+}
+
+var box = Box(List<Attr>())
+var a = Attr()
+a.value = "hello"
+box.items.push(move a)
+var s = keep(move box)              // LEAK: 2 allocation(s)
+```
+
+The test asserts a plain string; a moved class-param whose field is replaced
+loses 2 allocations (the displaced original list's slab + its slot string).
+The same shape with a GLOBAL box (the `test/displaced_field_move.test.ts`
+pattern) is audit-clean, so the gap is in the moved-param teardown/reclaim
+path, not the displaced store itself. Not exercised by the allmark port (its
+class config fields are not reassigned through moved params in this way), so
+it was left unfixed.
+
+## `last_result_is_heap` is still a stale function-global (residual)
+
+The aarch64 assignment/declaration paths decide string ownership partly from
+`status.last_result_is_heap`, a mutable flag left behind by whatever the
+previous statement emitted. It is set by genuine heap producers (calls,
+concats, view materialization) but NOT by bare variable loads, field reads,
+or literals — so an assignment whose RHS emits nothing flag-setting reads the
+PREVIOUS statement's value. The 2026-10-02 fixes clear the flag for the
+field-read and unrecorded-variable-read shapes (the allmark sanitize double
+free), and `build_aarch64/build_declaration_node.ts`'s force-heap init now
+strdups borrow sources. But the design remains fragile: any future RHS shape
+whose emit does not establish the flag can resurrect the "borrow marked heap
+→ scope-exit free of borrowed bytes" class. A structural fix would replace
+the flag with an explicit ownership value returned by each RHS emitter
+(`{ heap: boolean }`), rather than side-channel state.
+
+## `test/out/aarch64/task_two_both_run/output.txt` is nondeterministic
+
+`test/task.test.ts`'s "two tasks both run" spawns two threads that each print
+a line; the assertion is only that the run succeeds (expected output `""`),
+but the harness writes the ACTUAL interleaved output to the tracked artifact
+`test/out/aarch64/task_two_both_run/output.txt`, so the file flip-flops
+between `a\nb` and `b\na` across runs and shows up as an unrelated dirty file
+after any full-suite run. Either drop the tracked artifact for this test or
+make the test's output order deterministic (join/two-phase).
