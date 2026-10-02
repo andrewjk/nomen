@@ -1,0 +1,17 @@
+import System
+import System::Test
+
+// An unbounded recursion: the binary dies with a stack-overflow SIGSEGV
+// mid-suite, after `test_first` has already reported.
+func dive = (int n) {
+	dive(n + 1)
+}
+
+pub func test_first = (ref Tester t) {
+	t.expect(1 + 1 == 2, "math should math")
+	t.expect(2 + 2 == 4, "more math should math")
+}
+
+pub func test_crashes = (ref Tester t) {
+	dive(0)
+}

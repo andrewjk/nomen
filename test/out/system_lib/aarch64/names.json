@@ -55,6 +55,7 @@
 	"Console_init",
 	"Console_write",
 	"Console_write_line",
+	"Console_unbuffered",
 	"Console_read_line",
 	"Console_read_char",
 	"Console_platform",

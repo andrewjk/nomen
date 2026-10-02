@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -220,6 +220,11 @@ export function generate_harness(tests: TestFunction[], benches: BenchFunction[]
 	// reports as a leaking test instead of leaving the file's exit-time
 	// total unattributed.
 	main += "\npub func main = () {\n";
+	// Unbuffered stdout: a binary that crashes mid-suite still leaves every
+	// record it printed (the CLI reads them from the run's .out file), and a
+	// crash is diagnosed with the tests that PASSED before it instead of
+	// "(crashed before records)".
+	main += `\tConsole.unbuffered()\n`;
 	main += "\tvar Tester t = Tester()\n";
 	main += "\tvar int64 audit_mark = 0\n";
 	main += "\tvar int64 audit_leaked = 0\n";
@@ -398,7 +403,11 @@ export async function run_test_file(
 		result.ms = performance.now() - start;
 		return result;
 	}
-	const audit_obj = path.join(buildDir, "audit_runtime.o");
+	// Per-file audit object: two concurrent workers compiling to the SHARED
+	// `audit_runtime.o` raced — a link could read the object mid-rewrite
+	// (concurrent `clang -c` open the output with O_TRUNC) and fail, or link
+	// a stale slab. The runtime is tiny; recompiling per file costs ~0.1s.
+	const audit_obj = path.join(buildDir, path.basename(entry_path, ".nm") + "_audit.o");
 	await execFile_async("clang", ["-c", runtime_src, "-o", audit_obj]);
 	const platform = default_platform();
 	// Match the run/build command's emission: ObjC-bearing sources (GUI code
@@ -408,10 +417,19 @@ export async function run_test_file(
 	const ext = arch === "aarch64" ? ".s" : platform === "macos" || platform === "ios" ? ".m" : ".c";
 	const codefile = path.join(buildDir, path.basename(entry_path, ".nm") + ext);
 	const outfile = path.join(buildDir, path.basename(entry_path, ".nm"));
-	// The C backend's generated source does `#include "main.h"`, so write the
-	// header next to the code. (aarch64 inlines everything into the .s file.)
-	fs.writeFileSync(path.join(buildDir, "main.h"), buildResult.headers ?? "");
-	fs.writeFileSync(codefile, buildResult.code);
+	// The C backend's generated source does `#include "main.h"`, so the
+	// header lands next to the code. (aarch64 inlines everything into the
+	// .s file and ignores it.) Per-file header name: every test file shares
+	// one build folder, and two concurrent C builds writing the SAME
+	// `main.h` raced — a compile could read another file's header between
+	// the write and the clang read and fail (or mis-declare) spuriously.
+	const header_name = path.basename(entry_path, ".nm") + ".main.h";
+	fs.writeFileSync(path.join(buildDir, header_name), buildResult.headers ?? "");
+	let code_text: string = buildResult.code;
+	if (arch !== "aarch64") {
+		code_text = code_text.replace('#include "main.h"', `#include "${header_name}"`);
+	}
+	fs.writeFileSync(codefile, code_text);
 
 	// Companion C (raw-block functions + the pool/fiber/file-scope C infra):
 	// `run`/`build` compile and link it next to the main TU. The aarch64 .s
@@ -458,30 +476,63 @@ export async function run_test_file(
 		return result;
 	}
 
-	// Run the binary and collect the records it streams over stdout. A
+	// Run the binary with its stdout/stderr redirected to per-file FILES
+	// (next to the binary, doubling as debugging artifacts) instead of node
+	// pipes, then read them. (Why not pipes: this runner's parse/build
+	// phases block the event loop for tens of seconds at a time. A binary
+	// that finished inside such a block exited 0 long before its records
+	// were read, but the 30s execFile timeout that became due during the
+	// block still fired at loop-resume — and the kill path destroyed the
+	// child's unread pipe, silently dropping EVERY record: the file
+	// reported "(0 tests)" and passed. Records on disk are immune to
+	// anything the parent does after the fact.) The documented CWD
+	// contract: the binary runs in the `--in` root (the folder `nomen test`
+	// scanned for *.test.nm files), so fixture paths in tests resolve
+	// against that folder regardless of where the CLI was invoked from. A
 	// non-zero exit (crash, abort) still surfaces whatever records were
-	// emitted before the crash; a timeout is treated as a crash. The
-	// documented CWD contract: the binary runs in the `--in` root (the
-	// folder `nomen test` scanned for *.test.nm files), so fixture paths in
-	// tests resolve against that folder regardless of where the CLI was
-	// invoked from.
+	// emitted before the crash (the harness runs its stdout unbuffered, so
+	// a crashing binary keeps the records it printed); a timeout is treated
+	// as a crash.
+	const run_out = outfile + ".out";
+	const run_err = outfile + ".err";
 	let runStdout = "";
+	let runStderr = "";
 	let crashed: string | undefined;
+	const out_fd = fs.openSync(run_out, "w");
+	const err_fd = fs.openSync(run_err, "w");
 	try {
-		const run = await execFile_async(outfile, [], {
-			encoding: "utf8",
+		const child = spawn(outfile, [], {
 			timeout: 30_000,
-			maxBuffer: 16 * 1024 * 1024,
+			stdio: ["ignore", out_fd, err_fd],
 			cwd: cwd ?? process.cwd(),
 		});
-		runStdout = run.stdout;
-	} catch (err: any) {
-		runStdout = err.stdout ? err.stdout.toString() : "";
-		if (err.signal === "SIGTERM") {
+		const run = await new Promise<{ code: number | null; signal: string | null }>((resolve) => {
+			child.on("error", () => resolve({ code: null, signal: null }));
+			child.on("close", (code, signal) => resolve({ code, signal }));
+		});
+		if (run.signal === "SIGTERM") {
 			crashed = "test binary timed out after 30s";
-		} else {
-			crashed = `test binary exited abnormally (signal ${err.signal ?? err.code})`;
+		} else if (run.signal !== null) {
+			crashed = `test binary exited abnormally (signal ${run.signal})`;
+		} else if (run.code === null) {
+			crashed = "test binary could not be run";
+		} else if (run.code !== 0) {
+			crashed = `test binary exited abnormally (signal ${run.code})`;
 		}
+	} finally {
+		fs.closeSync(out_fd);
+		fs.closeSync(err_fd);
+	}
+	runStdout = fs.readFileSync(run_out, "utf8");
+	try {
+		runStderr = fs.readFileSync(run_err, "utf8");
+	} catch {
+		runStderr = "";
+	}
+	if (crashed && runStderr.trim()) {
+		// A crashed binary's own diagnosis (a libmalloc abort message, a
+		// panic dump) goes to stderr — surface it with the crash record.
+		crashed += `\n${runStderr.trim()}`;
 	}
 
 	const records = parse_records(runStdout);

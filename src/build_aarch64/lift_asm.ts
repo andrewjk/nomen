@@ -287,6 +287,18 @@ function parse_mem_inner(inner: string): Omit<ParsedMem, "writeback" | "postOffs
 			if (tail_shift) mem.scale = 1 << parseInt(tail_shift[1], 10);
 			continue;
 		}
+		// A symbol offset carrying a Mach-O relocation suffix — the GOT load
+		// form external data symbols need on Mach-O:
+		//   adrp x0, _sym@GOTPAGE
+		//   ldr  x0, [x0, _sym@GOTPAGEOFF]
+		// The suffix'd name rides the reg-offset slot verbatim; it is an
+		// opaque ANALYSIS token (no pass may treat it as a register — it
+		// matches no register pattern, so renames/slot-tracking skip it),
+		// and re-emission echoes the original line text anyway.
+		if (/^[A-Za-z_.$][\w.$]*@[A-Za-z0-9_]+$/.test(comp)) {
+			mem.offset = { kind: "reg", name: comp };
+			continue;
+		}
 		return null;
 	}
 	return mem;

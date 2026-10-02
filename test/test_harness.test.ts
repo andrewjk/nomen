@@ -21,10 +21,11 @@ import {
 
 test("collect_test_files discovers *.test.nm recursively and sorts", () => {
 	const files = collect_test_files("cli/test/fixtures");
-	expect(files.length).toBe(3);
+	expect(files.length).toBe(4);
 	expect(files[0].replace(/\\/g, "/")).toMatch(/calc\.test\.nm$/);
-	expect(files[1].replace(/\\/g, "/")).toMatch(/fileio\.test\.nm$/);
-	expect(files[2].replace(/\\/g, "/")).toMatch(/spawn\.test\.nm$/);
+	expect(files[1].replace(/\\/g, "/")).toMatch(/crash\.test\.nm$/);
+	expect(files[2].replace(/\\/g, "/")).toMatch(/fileio\.test\.nm$/);
+	expect(files[3].replace(/\\/g, "/")).toMatch(/spawn\.test\.nm$/);
 });
 
 test("collect_test_files returns [] for a missing folder", () => {
@@ -129,6 +130,14 @@ test("generate_harness resets has_failed/bench_pending before each bench", () =>
 	);
 	expect(harness).toContain("t.has_failed = false");
 	expect(harness).toContain("t.bench_pending = false");
+});
+
+test("generate_harness runs stdout unbuffered so crash-time records survive", () => {
+	// A buffered stdout loses its pending bytes when the binary dies
+	// abnormally — a mid-suite abort then reported "(crashed before
+	// records)". The harness un-buffers before the first record.
+	const harness = generate_harness([{ name: "test_a" } as any], []);
+	expect(harness.indexOf("Console.unbuffered()")).toBeLessThan(harness.indexOf("begin_test"));
 });
 
 test("generate_harness clamps the sample count to 4096", () => {
@@ -333,6 +342,34 @@ test("run_test_file links aarch64 with System::Stream::File and honors the CWD c
 }, 90_000);
 
 // ---------------------------------------------------------------------------
+// run_test_file: records survive a mid-suite crash (unbuffered + file stdio)
+// ---------------------------------------------------------------------------
+
+// The crash fixture's second test recurses until the stack guard kills the
+// binary (SIGSEGV). The first test's records must still arrive — the run
+// reads them from the on-disk .out file, and the harness's unbuffered
+// stdout had flushed them before the crash. (Before the file-stdio runner
+// this shape reported zero records: a buffered stdout lost everything the
+// moment the process died abnormally.)
+test("run_test_file reports the records a crashing binary emitted", async () => {
+	for (const arch of ["aarch64", "c"] as const) {
+		const result = await run_test_file(
+			"cli/test/fixtures/crash.test.nm",
+			"core",
+			arch,
+			false,
+			undefined,
+			false,
+		);
+		expect(result.phase).toBe("run");
+		expect(result.crashed).toContain("SIGSEGV");
+		expect(result.tests.map((t) => t.name)).toEqual(["test_first"]);
+		expect(result.tests[0].passed).toBe(2);
+		expect(result.ok).toBe(false);
+	}
+}, 120_000);
+
+// ---------------------------------------------------------------------------
 // audit runtime auto-discovery
 // ---------------------------------------------------------------------------
 
@@ -392,5 +429,5 @@ test("runTests runs files concurrently but reports them in discovery order", asy
 	const order = logs
 		.filter((l) => l.includes("cli/test/fixtures/") && l.includes(".test.nm"))
 		.map((l) => l.replace(/.*fixtures\//, "").replace(/ .*/, ""));
-	expect(order).toEqual(["calc.test.nm", "fileio.test.nm", "spawn.test.nm"]);
+	expect(order).toEqual(["calc.test.nm", "crash.test.nm", "fileio.test.nm", "spawn.test.nm"]);
 }, 120_000);

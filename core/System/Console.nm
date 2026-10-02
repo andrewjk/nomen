@@ -43,6 +43,32 @@ pub struct Console {
 		```
 	}
 
+	// Disable stdout buffering: every write goes straight to the file
+	// descriptor. The `nomen test` harness calls this at startup so a
+	// crashing binary still leaves every record it printed before the
+	// crash — a buffered stdout loses its pending bytes on an abnormal
+	// exit, which used to turn a mid-suite abort into "no records at all".
+	pub func unbuffered = () {
+		```
+		#arch: c
+		setbuf(stdout, NULL);
+		```
+		```
+		#arch: aarch64
+		// setbuf(stdout, NULL): Apple's stdio names the FILE* global
+		// __stdoutp (stdout itself is a macro), so the Mach-O symbol is
+		// ___stdoutp — and it must load through the GOT (@GOTPAGE), the
+		// only relocation the linker accepts for it. The aarch64 backend
+		// always emits Mach-O symbol names (see `bl _printf` above), so
+		// this is unconditional like every other core raw body.
+		adrp x0, ___stdoutp@GOTPAGE
+		ldr x0, [x0, ___stdoutp@GOTPAGEOFF]
+		ldr x0, [x0]
+		mov x1, #0
+		bl _setbuf
+		```
+	}
+
 	// Read one line from stdin (newline stripped). The raw body mallocs the
 	// buffer — `move out string` transfers ownership to the caller.
 	pub func read_line = (move out string) {
