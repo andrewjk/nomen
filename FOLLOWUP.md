@@ -792,37 +792,6 @@ different story. Fixed: `RunTestsOptions.release` threads through to
 (default stays debug, matching `run`/`build`). Covered end-to-end by
 `test/test_harness.test.ts` running the calc fixture in both modes.
 
-## Moved class param whose owning field is reassigned leaks (2026-10-02)
-
-Found while writing the force-heap borrow-init regression test. A `move`
-CLASS parameter whose owning container field is reassigned inside the callee
-does not get the displaced/current field reclaimed. Minimal shape (aarch64,
-audit on):
-
-```
-struct Attr { var string value = "" }
-struct Box  { move List<Attr> items }
-
-func keep = (move Box box, move out string) {
-    box.items = move List<Attr>()   // displaced original list
-    return "done"
-}
-
-var box = Box(List<Attr>())
-var a = Attr()
-a.value = "hello"
-box.items.push(move a)
-var s = keep(move box)              // LEAK: 2 allocation(s)
-```
-
-The test asserts a plain string; a moved class-param whose field is replaced
-loses 2 allocations (the displaced original list's slab + its slot string).
-The same shape with a GLOBAL box (the `test/displaced_field_move.test.ts`
-pattern) is audit-clean, so the gap is in the moved-param teardown/reclaim
-path, not the displaced store itself. Not exercised by the allmark port (its
-class config fields are not reassigned through moved params in this way), so
-it was left unfixed.
-
 ## `last_result_is_heap` is still a stale function-global (residual)
 
 The aarch64 assignment/declaration paths decide string ownership partly from

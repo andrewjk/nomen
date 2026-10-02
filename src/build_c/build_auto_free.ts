@@ -107,8 +107,17 @@ export function free_scoped_declarations(
 	// persist_string_field_records is set (a return-site reclaim keeps them:
 	// sibling return paths each need their own emission, and the records are
 	// finally dropped by the fall-through path's scope-exit auto_free).
+	// A `move` param of an owning value struct with a USER `#destroy` skips
+	// this loop: the destroy below reclaims every field (strings included) —
+	// freeing the recorded ones here first would double-free them.
 	if (status.heap_string_fields?.size) {
 		for (const dec of decls) {
+			if (dec.moved_value_struct_param) {
+				const dec_struct = status.structs.find(
+					(s) => s.name === mono_type_name(dec.type) && !s.is_simple_type && !s.is_generic,
+				);
+				if (dec_struct && has_destroy(dec_struct)) continue;
+			}
 			const prefix = `${dec.name}.`;
 			const keys = Array.from(status.heap_string_fields).filter((key) => key.startsWith(prefix));
 			if (!keys.length) continue;
@@ -172,6 +181,28 @@ export function free_scoped_declarations(
 		// freeing here would double-free. Capture envs record the donor in the
 		// same per-function set the `move` paths use (CLOSURE.md Phase 2c).
 		if (status.moved?.has(dec.name)) continue;
+		// A `move` param of an owning VALUE-struct type (see
+		// build_function_node / build_struct_node registration): the param is
+		// a POINTER to the caller's storage, so destroy the fields' owned
+		// resources at `(*param)` — the storage itself is never freed here.
+		// The RECORDED heap string fields were released by the loop above
+		// (string_fields_via_pointer emits `->`); this walk skips string
+		// fields (they may be rodata literals) unless a user `#destroy`
+		// exists — then `<T>_destroy` reclaims everything, records included.
+		if (dec.moved_value_struct_param) {
+			const mono_name = mono_type_name(dec.type);
+			const param_struct = status.structs.find(
+				(s) => s.name === mono_name && !s.is_simple_type && !s.is_generic,
+			);
+			if (param_struct && struct_needs_destroy(param_struct, status)) {
+				if (!commented) {
+					status.code += "\n// Auto-free\n";
+					commented = true;
+				}
+				emit_struct_destroys(status, param_struct, `(*${c_function_name(dec.name)})`);
+			}
+			continue;
+		}
 		// Emitted C identifier: raw Nomen names may collide with C/ObjC
 		// keywords (`id`), so every generated reference goes through the
 		// same mangling the declaration site used.

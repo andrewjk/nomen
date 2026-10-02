@@ -103,6 +103,13 @@ export default class DeclarationNode extends BaseNode {
 	 *  a heap shell for the argument (pass-by-value): the callee frees the
 	 *  shell itself at scope exit (`free(p)`) after freeing the fields. */
 	owned_heap_shell?: boolean;
+	/** True for a `move` param of an owning VALUE-struct type: the caller
+	 *  passed its storage by address, so the callee owns the CONTENTS but not
+	 *  the storage. free_scoped_declarations destroys the fields' owned
+	 *  resources at `(*param)` at scope exit — never a free. Set at build
+	 *  time by the C function/method builders; consumed by
+	 *  free_scoped_declarations. */
+	moved_value_struct_param?: boolean;
 	constructor(
 		start: number,
 		visibility: "pub" | "private" | "internal",

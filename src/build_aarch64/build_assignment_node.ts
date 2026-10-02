@@ -2190,11 +2190,16 @@ export default function build_assignment_node(
 					// node can still carry the template type (`List<TK>`), which
 					// is not in the struct table, so a raw-name find would
 					// silently skip the reclaim for every container field.
-					if (
-						!node.operator &&
-						node.right_value.node_type === "value" &&
-						(node.right_value as ValueNode).is_moved
-					) {
+					// A FRESH-CALL RHS (`field = move List<Attr>()`, or an
+					// un-annotated constructor/function return — the checker
+					// treats fresh allocations as moves) gets the same reclaim:
+					// the store overwrites the field's bytes, so the displaced
+					// value's resources must be destroyed first (no source
+					// splice — nothing is transferred out of a variable).
+					const field_rhs_is_moved_value =
+						node.right_value.node_type === "value" && (node.right_value as ValueNode).is_moved;
+					const field_rhs_is_fresh_call = !node.swap && node.right_value.node_type === "func_call";
+					if (!node.operator && (field_rhs_is_moved_value || field_rhs_is_fresh_call)) {
 						const field_resolved = resolve_struct_type(field_type!, status);
 						const field_target_var =
 							access.target.node_type === "value" ? (access.target as ValueNode).value : "";

@@ -281,12 +281,19 @@ export default function build_assignment_node(
 	// field — UAF at first use). Splice the source from its scope frame and
 	// reclaim the displaced field value before the store. (`field = move c
 	// swap T()` was the sound workaround; this makes the plain form work.)
+	// A FRESH-CALL RHS (`field = move List<Attr>()`, or an un-annotated
+	// constructor/function return — the checker treats fresh allocations as
+	// moves) gets the same displaced reclaim: the store overwrites the field's
+	// bytes, so the displaced value's owned resources must be destroyed first
+	// (there is no source splice — nothing is transferred out of a variable).
+	const assign_rhs_is_moved_value =
+		node.right_value.node_type === "value" && (node.right_value as ValueNode).is_moved;
+	const assign_rhs_is_fresh_call = !node.swap && node.right_value.node_type === "func_call";
 	if (
 		!node.operator &&
 		node.left_value.node_type === "access" &&
 		(node.left_value as AccessNode).access.node_type === "access_field" &&
-		node.right_value.node_type === "value" &&
-		(node.right_value as ValueNode).is_moved
+		(assign_rhs_is_moved_value || assign_rhs_is_fresh_call)
 	) {
 		const access_lhs = node.left_value as AccessNode;
 		const field_type = (access_lhs.access as AccessFieldNode).type;
@@ -304,7 +311,9 @@ export default function build_assignment_node(
 			// Transfer: the source local (possibly declared in an OUTER scope
 			// when the assignment sits inside an if/loop branch) must not be
 			// destroyed at its scope exit.
-			splice_decl_from_c_scopes(status, (node.right_value as ValueNode).value);
+			if (assign_rhs_is_moved_value) {
+				splice_decl_from_c_scopes(status, (node.right_value as ValueNode).value);
+			}
 			const saved_len = begin_code_scratch(status);
 			build_node(node.left_value, status);
 			const field_access = end_code_scratch(status, saved_len);

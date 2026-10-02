@@ -1,9 +1,9 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import array_struct_name from "../build_c/utils/array_struct.ts";
-import { struct_needs_destroy } from "../build_common/destroy_analysis.ts";
+import { has_destroy, struct_needs_destroy } from "../build_common/destroy_analysis.ts";
 import emission_label from "../build_common/emission_label.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
-import { resolve_mono_type } from "../build_common/mono_name.ts";
+import { resolve_mono_type, resolve_struct_type } from "../build_common/mono_name.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name } from "../build_common/nullable_struct.ts";
 import scan_force_heap_strings from "../build_common/scan_force_heap_strings.ts";
@@ -25,7 +25,12 @@ import { publish_slp_pairs } from "./slp_pair.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free } from "./utils/audit.ts";
 import { emit_strdup } from "./utils/audit.ts";
-import { emit_destroy_for_anchor_slot, set_trait_class_local } from "./utils/auto_destroy.ts";
+import {
+	emit_destroy_for_anchor_slot,
+	emit_field_destroys,
+	release_heap_string_fields,
+	set_trait_class_local,
+} from "./utils/auto_destroy.ts";
 import { closure_env_layout_a64 } from "./utils/closure_a64.ts";
 import { emit_asm } from "./utils/code_buffer.ts";
 import { plan_function_promotions } from "./utils/func_regalloc.ts";
@@ -546,6 +551,11 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			type_name: string;
 			type_args?: Type[];
 			is_nullable?: boolean;
+			/** Set for a `move` param of an owning VALUE-struct type: the slot
+			 *  holds the ADDRESS of the caller's storage, so the return path
+			 *  runs `<T>_destroy` on it (the fields' owned resources) and never
+			 *  frees the storage itself. */
+			value_struct_destroy_name?: string;
 		}
 	> = new Map();
 
@@ -1130,9 +1140,26 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			// traits polymorphically). Registering it in moved_class_params
 			// also lets a forwarded `move`/`return` recognize it.
 			const is_trait = !!status.traits.find((t) => t.name === param.type.name);
-			if (is_class || is_trait) {
+			// An owning VALUE-struct param (`move Box box`, Box a container
+			// struct) rides by address — the caller's storage — so the callee
+			// owns the CONTENTS. The return path runs the field destroys on
+			// the saved address (reclaiming the fields' owned resources: a
+			// container slab, nested owning fields — mirroring the C
+			// backend's moved_value_struct_param scoped declaration).
+			// `struct_needs_destroy` (NOT the auto form): string-only structs
+			// are handled by the param record seeding/release above — the
+			// narrow gate keeps the two regimes disjoint. Mono-resolved
+			// lookup: a generic body's param can still carry the template
+			// type, which is not in the struct table.
+			const vstruct = !is_class && !is_trait ? resolve_struct_type(param.type, status) : undefined;
+			const is_owning_value_struct =
+				!!vstruct &&
+				!vstruct.is_class &&
+				!param.type.is_nullable &&
+				struct_needs_destroy(vstruct, status);
+			if (is_class || is_trait || is_owning_value_struct) {
 				const reg = callee_map.get(param.name) ?? param_regs[pidx];
-				status.moved_class_params!.set(param.name, reg);
+				if (is_class || is_trait) status.moved_class_params!.set(param.name, reg);
 				const save_offset = allocate_stack_space(status, 8);
 				emit_asm(status, `str ${reg}, [x29, #${save_offset}]\n`);
 				moved_param_save_slots.set(param.name, {
@@ -1140,6 +1167,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 					type_name: param.type.name,
 					type_args: param.type.type_args,
 					is_nullable: param.type.is_nullable,
+					value_struct_destroy_name: is_owning_value_struct ? vstruct!.name : undefined,
 				});
 			}
 		}
@@ -1320,6 +1348,26 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				emit_asm(status, `ldr x1, [x29, #${return_save!}]\n`);
 				emit_asm(status, `cmp x0, x1\n`);
 				emit_asm(status, `beq ${keep_prefix}_${name}\n`);
+			}
+			if (info.value_struct_destroy_name) {
+				// Owning value-struct param: the storage is the caller's (never
+				// freed). Mirror emit_destroy_for_decl's LOCAL semantics: release
+				// the recorded heap string fields first (the field walk skips
+				// strings — they may be rodata literals), then destroy the
+				// owning fields. A user `#destroy` owns the whole sequence —
+				// `<T>_destroy` is the only call (it frees fields+strings).
+				const vstruct = status.structs.find((s) => s.name === info.value_struct_destroy_name);
+				release_heap_string_fields(status, name, info.value_struct_destroy_name);
+				if (vstruct && has_destroy(vstruct)) {
+					emit_asm(status, `ldr x0, [x29, #${info.offset}]\n`);
+					emit_asm(status, `bl ${info.value_struct_destroy_name}_destroy\n`);
+				} else if (vstruct) {
+					emit_field_destroys(status, vstruct, name, undefined, undefined, false);
+				}
+				if (need_guard) {
+					emit_asm(status, `${keep_prefix}_${name}:\n`);
+				}
+				continue;
 			}
 			emit_destroy_for_anchor_slot(
 				status,

@@ -768,12 +768,15 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		// as a scoped declaration so build_auto_free destroys+frees it at the
 		// method's exit, mirroring build_function_node (and skipping params
 		// whose ownership escapes into an outliving value — the same
-		// consumed-scan the top-level path uses).
+		// consumed-scan the top-level path uses). A `move` param of an
+		// owning VALUE-struct type rides by address: the callee owns the
+		// CONTENTS, so the scoped destroy reclaims the fields' resources at
+		// `(*param)` (never a free — the storage is the caller's).
 		for (const param of func.params) {
 			if (param.is_self_param) continue;
 			const param_struct = status.structs.find((s) => s.name === param.type.name);
+			if (!param.is_moved) continue;
 			if (
-				param.is_moved &&
 				param_struct?.is_class &&
 				!moved_param_is_consumed(func, param.name, param_struct.name, status.structs)
 			) {
@@ -781,6 +784,22 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 				status.scoped_declarations.push(
 					new DeclarationNode(param.start, "private", "move", pname, param.type),
 				);
+			} else if (
+				param_struct &&
+				!param_struct.is_class &&
+				!param_struct.is_simple_type &&
+				!param_struct.is_generic &&
+				!param.type.is_nullable &&
+				struct_needs_destroy(param_struct, status) &&
+				!moved_param_is_consumed(func, param.name, param_struct.name, status.structs)
+			) {
+				const pname = c_function_name(param.name);
+				const decl = new DeclarationNode(param.start, "private", "move", pname, param.type);
+				decl.moved_value_struct_param = true;
+				// The record-free loop emits the recorded heap string fields
+				// through the param POINTER (`->`).
+				decl.string_fields_via_pointer = true;
+				status.scoped_declarations.push(decl);
 			}
 		}
 

@@ -473,6 +473,32 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				if (param_trait && !param_struct?.is_class) decl.trait_class_trait = param.type.name;
 				status.scoped_declarations.push(decl);
 			}
+			// A `move` param of an owning VALUE-struct type (a container struct
+			// like `Box`): the caller passed its storage BY ADDRESS and marked
+			// it moved, so the callee owns the CONTENTS but not the storage.
+			// Register a scoped destroy: at exit the fields' owned resources
+			// (a displaced container slab, slot strings, nested owning fields)
+			// are reclaimed at `(*param)` — the storage itself is never freed
+			// here. Skipped when the body forwards the param (the shared
+			// consumed-scan) — mirrors the aarch64 moved-param teardown.
+			if (
+				param.is_moved &&
+				!moved_owning_param &&
+				param_struct &&
+				!param_struct.is_class &&
+				!param_struct.is_generic &&
+				!param.type.is_nullable &&
+				node.name !== "main" &&
+				struct_needs_destroy(param_struct, status) &&
+				!moved_param_is_consumed(node, param.name, param_struct.name, status.structs)
+			) {
+				const decl = new DeclarationNode(param.start, "private", "move", pname, param.type);
+				decl.moved_value_struct_param = true;
+				// The record-free loop emits the recorded heap string fields
+				// through the param POINTER (`->`).
+				decl.string_fields_via_pointer = true;
+				status.scoped_declarations.push(decl);
+			}
 			// OWNED value-struct parameter (pass-by-value): the caller
 			// materialized a uniformly heap-owned copy (string fields
 			// strdup'd at the call boundary — see the owned_value_param

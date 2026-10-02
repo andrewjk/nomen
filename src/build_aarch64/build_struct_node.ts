@@ -1,6 +1,11 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
-import { struct_needs_auto_destroy } from "../build_common/destroy_analysis.ts";
+import {
+	has_destroy,
+	struct_needs_auto_destroy,
+	struct_needs_destroy,
+} from "../build_common/destroy_analysis.ts";
 import emission_label from "../build_common/emission_label.ts";
+import { resolve_struct_type } from "../build_common/mono_name.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import scan_force_heap_strings from "../build_common/scan_force_heap_strings.ts";
@@ -27,6 +32,7 @@ import {
 	emit_destroy_for_anchor_slot,
 	emit_enum_payload_strdups_at,
 	emit_field_destroys,
+	release_heap_string_fields,
 } from "./utils/auto_destroy.ts";
 import {
 	emit_descriptor_address,
@@ -2088,11 +2094,29 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 				type_name: string;
 				type_args?: Type[];
 				is_nullable?: boolean;
+				/** Set for a `move` param of an owning VALUE-struct type: the
+				 *  slot holds the ADDRESS of the caller's storage, so the return
+				 *  path runs `<T>_destroy` on it (the fields' owned resources)
+				 *  and never frees the storage itself. */
+				value_struct_destroy_name?: string;
 			}
 		>();
 		for (const param of func.params) {
 			if (!param.is_moved || param.is_self_param) continue;
-			if (!status.structs.find((s) => s.name === param.type.name && s.is_class)) continue;
+			const is_class = !!status.structs.find((s) => s.name === param.type.name && s.is_class);
+			// An owning VALUE-struct param rides by address (the caller's
+			// storage): the callee owns the CONTENTS, so the return path runs
+			// the field destroys on the saved address and never frees it.
+			// `struct_needs_destroy` (NOT the auto form): string-only structs
+			// have their own record machinery. Mirrors build_function_node's
+			// moved-param registration.
+			const vstruct = !is_class ? resolve_struct_type(param.type, status) : undefined;
+			const is_owning_value_struct =
+				!!vstruct &&
+				!vstruct.is_class &&
+				!param.type.is_nullable &&
+				struct_needs_destroy(vstruct, status);
+			if (!is_class && !is_owning_value_struct) continue;
 			const reg = status.function_param_regs.get(param.name);
 			if (reg) {
 				const save_offset = allocate_stack_space(status, 8);
@@ -2102,6 +2126,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 					type_name: param.type.name,
 					type_args: param.type.type_args,
 					is_nullable: param.type.is_nullable,
+					value_struct_destroy_name: is_owning_value_struct ? vstruct!.name : undefined,
 				});
 			} else {
 				const offset = status.stack_offsets!.get(param.name);
@@ -2111,6 +2136,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 						type_name: param.type.name,
 						type_args: param.type.type_args,
 						is_nullable: param.type.is_nullable,
+						value_struct_destroy_name: is_owning_value_struct ? vstruct!.name : undefined,
 					});
 				}
 			}
@@ -2221,6 +2247,26 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 					emit_asm(status, `ldr x1, [x29, #${return_save!}]\n`);
 					emit_asm(status, `cmp x0, x1\n`);
 					emit_asm(status, `beq ${keep_prefix}_${name}\n`);
+				}
+				if (info.value_struct_destroy_name) {
+					// Owning value-struct param: the storage is the caller's
+					// (never freed). Mirror emit_destroy_for_decl's LOCAL
+					// semantics: release the recorded heap string fields first,
+					// then the field destroys (strings skipped — they may be
+					// rodata literals); a user `#destroy` owns the whole
+					// sequence (`<T>_destroy` frees fields+strings).
+					const vstruct = status.structs.find((s) => s.name === info.value_struct_destroy_name);
+					release_heap_string_fields(status, name, info.value_struct_destroy_name);
+					if (vstruct && has_destroy(vstruct)) {
+						emit_asm(status, `ldr x0, [x29, #${info.offset}]\n`);
+						emit_asm(status, `bl ${info.value_struct_destroy_name}_destroy\n`);
+					} else if (vstruct) {
+						emit_field_destroys(status, vstruct, name, undefined, undefined, false);
+					}
+					if (ret_is_class) {
+						emit_asm(status, `${keep_prefix}_${name}:\n`);
+					}
+					continue;
 				}
 				emit_destroy_for_anchor_slot(
 					status,
