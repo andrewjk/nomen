@@ -2731,8 +2731,30 @@ export default function build_declaration_node(
 					status.int_dest_hint = undefined;
 					if (size === 16 && node.type.name === "string") {
 						// Fat string: the value build leaves the (ptr, len)
-						// pair in x0/x1 — store both words.
+						// pair in x0/x1 — store both words. A FORCE-HEAP
+						// receptacle must own heap on EVERY path (its
+						// reassign/scope-exit frees are emitted
+						// unconditionally — the force-heap scan saw a heap
+						// assignment on some branch), so an init from a
+						// source that is NOT itself recorded heap (a borrow:
+						// a field read kept in a local, a param, a
+						// view-derived pair) takes an owned copy here — the
+						// same contract the literal branch below enforces.
+						// Storing the raw alias left the scope-exit free
+						// reclaiming the source's bytes (the allmark sanitize
+						// `var stored = value` double free).
+						// `null` is the one non-heap pair a force-heap slot may
+						// legitimately hold (the scope-exit free(NULL) is a
+						// no-op) — never strdup it.
+						const force_heap_init =
+							(status.force_heap_strings?.has(node.name) ?? false) && raw !== "null";
+						if (force_heap_init) {
+							emit_strdup_string(status);
+						}
 						emit_pair_store_x29(status, offset);
+						if (force_heap_init) {
+							mark_heap_string(status, node.name);
+						}
 					} else {
 						// Whole-function-promoted scalars live in a
 						// callee-saved register — the declaration must

@@ -1772,8 +1772,28 @@ export default function build_assignment_node(
 				size === 16 &&
 				node.right_value.node_type === "access" &&
 				(node.right_value as AccessNode).access.node_type === "access_field";
+			// A BARE-VARIABLE RHS (`s = value`) whose source is NOT recorded
+			// heap-owned is a borrow reception too: the pair aliases whatever
+			// the source borrows (a field read kept in a local, a param, a
+			// view-derived pair). The stale `last_result_is_heap` flag must
+			// not mark the target here for the same reason as the field-read
+			// case above — a stale-true mark frees the borrowed bytes at this
+			// scope's exit while the owner frees them too (the allmark
+			// sanitize double free: `attr.value = value` after
+			// `var value = it.value`). Ownership travels from the SOURCE's
+			// record, never from the stale flag.
+			const rhs_var_name =
+				!node.swap &&
+				size === 16 &&
+				node.right_value.node_type === "value" &&
+				!(node.right_value as ValueNode).type?.is_view
+					? (node.right_value as ValueNode).value
+					: undefined;
+			const rhs_is_unrecorded_var_read =
+				rhs_var_name !== undefined && !status.heap_strings?.has(rhs_var_name);
 			const borrow_needs_dup =
-				(rhs_is_borrow_reception || rhs_is_field_read) && !!status.force_heap_strings?.has(name);
+				(rhs_is_borrow_reception || rhs_is_field_read || rhs_is_unrecorded_var_read) &&
+				!!status.force_heap_strings?.has(name);
 			// The move transfer is sound only when the source ACTUALLY owns
 			// heap: a source holding non-heap data (a folded string-literal
 			// concat lands in rodata; a borrow holds container memory) owns
@@ -1799,9 +1819,10 @@ export default function build_assignment_node(
 				}
 				if (!status.heap_strings) status.heap_strings = new Set();
 				status.heap_strings.add(name);
-			} else if (rhs_is_field_read) {
-				// A field-read borrow is never heap-owned (see above) — the
-				// stale flag must not mark the target here.
+			} else if (rhs_is_field_read || rhs_is_unrecorded_var_read) {
+				// A field-read borrow is never heap-owned (see above), and a
+				// variable read of an UNRECORDED source is the same borrow —
+				// the stale flag must not mark the target here.
 				status.last_result_is_heap = false;
 			} else if (status.last_result_is_heap) {
 				if (!status.heap_strings) status.heap_strings = new Set();
