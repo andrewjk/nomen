@@ -37,6 +37,9 @@ t.wait()
 	});
 
 	test("two tasks both run", async () => {
+		// Two-phase: t2 starts only after t1's join, so the print order is
+		// deterministic. (Starting both up front raced the two write_lines —
+		// the interleaving flapped the tracked output.txt artifact.)
 		const input = `
 func work_a = (uint64 arg) {
 	Console.write_line("a")
@@ -47,11 +50,11 @@ func work_b = (uint64 arg) {
 }
 
 var t1 = Thread(work_a(0)).start()
-var t2 = Thread(work_b(0)).start()
 t1.wait()
+var t2 = Thread(work_b(0)).start()
 t2.wait()
 `;
-		await build_and_check_output(input, "task_two_both_run", "");
+		await build_and_check_output(input, "task_two_both_run", "a\nb\n");
 	});
 
 	test("nursery.spawn inside a generic method (mono re-derivation)", async () => {

@@ -807,13 +807,3 @@ whose emit does not establish the flag can resurrect the "borrow marked heap
 → scope-exit free of borrowed bytes" class. A structural fix would replace
 the flag with an explicit ownership value returned by each RHS emitter
 (`{ heap: boolean }`), rather than side-channel state.
-
-## `test/out/aarch64/task_two_both_run/output.txt` is nondeterministic
-
-`test/task.test.ts`'s "two tasks both run" spawns two threads that each print
-a line; the assertion is only that the run succeeds (expected output `""`),
-but the harness writes the ACTUAL interleaved output to the tracked artifact
-`test/out/aarch64/task_two_both_run/output.txt`, so the file flip-flops
-between `a\nb` and `b\na` across runs and shows up as an unrelated dirty file
-after any full-suite run. Either drop the tracked artifact for this test or
-make the test's output order deterministic (join/two-phase).
