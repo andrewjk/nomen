@@ -1331,10 +1331,21 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	if (moved_param_save_slots.size > 0 && node.name !== "main") {
 		const need_guard = return_is_class;
 		const need_save = !!node.return_type?.name;
+		// A string return rides the (x0, x1) fat pair — save BOTH halves
+		// around the reclaim calls. Any `bl` may clobber x1 (the allmark
+		// port's Arena-chain destroy zeroed the caller's length half,
+		// handing back a (ptr, 0) pair that printed fine via strlen but
+		// failed every `.length`/`==` read).
+		const returns_fat_pair =
+			node.return_type?.name === "string" && !node.return_type.is_array;
 		let return_save: number | undefined;
 		if (need_guard || need_save) {
-			return_save = allocate_stack_space(status, 8);
-			emit_asm(status, `str x0, [x29, #${return_save}]\n`);
+			return_save = allocate_stack_space(status, returns_fat_pair ? 16 : 8);
+			if (returns_fat_pair) {
+				emit_asm(status, `stp x0, x1, [x29, #${return_save}]\n`);
+			} else {
+				emit_asm(status, `str x0, [x29, #${return_save}]\n`);
+			}
 		}
 		for (const [name, info] of moved_param_save_slots) {
 			if (moved_set?.has(name)) continue;
@@ -1383,7 +1394,11 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			}
 		}
 		if (need_guard || need_save) {
-			emit_asm(status, `ldr x0, [x29, #${return_save!}]\n`);
+			if (returns_fat_pair) {
+				emit_asm(status, `ldp x0, x1, [x29, #${return_save!}]\n`);
+			} else {
+				emit_asm(status, `ldr x0, [x29, #${return_save!}]\n`);
+			}
 		}
 	}
 

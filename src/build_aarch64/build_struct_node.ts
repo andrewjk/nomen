@@ -2239,11 +2239,20 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 				!!func.return_type?.name &&
 				!!status.structs.find((s) => s.name === func.return_type!.name && s.is_class);
 			const need_save = !!func.return_type?.name;
+			// A string return rides the (x0, x1) fat pair — save BOTH halves
+			// around the reclaim calls (any `bl` may clobber x1; mirrors
+			// build_function_node's epilogue spill).
+			const returns_fat_pair =
+				func.return_type?.name === "string" && !func.return_type.is_array;
 			const keep_prefix = `.Lkeep_mparam_${func_label.replace(/[^\w]/g, "_")}`;
 			let return_save: number | undefined;
 			if (ret_is_class || need_save) {
-				return_save = allocate_stack_space(status, 8);
-				emit_asm(status, `str x0, [x29, #${return_save}]\n`);
+				return_save = allocate_stack_space(status, returns_fat_pair ? 16 : 8);
+				if (returns_fat_pair) {
+					emit_asm(status, `stp x0, x1, [x29, #${return_save}]\n`);
+				} else {
+					emit_asm(status, `str x0, [x29, #${return_save}]\n`);
+				}
 			}
 			for (const [name, info] of moved_param_save_slots) {
 				if (status.moved?.has(name) && !moved_before.has(name)) continue;
@@ -2288,7 +2297,11 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 				}
 			}
 			if (ret_is_class || need_save) {
-				emit_asm(status, `ldr x0, [x29, #${return_save!}]\n`);
+				if (returns_fat_pair) {
+					emit_asm(status, `ldp x0, x1, [x29, #${return_save!}]\n`);
+				} else {
+					emit_asm(status, `ldr x0, [x29, #${return_save!}]\n`);
+				}
 			}
 		}
 
