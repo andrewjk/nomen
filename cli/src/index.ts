@@ -409,7 +409,14 @@ function processFile(filename: string, config: Config, mode: Mode, program_args:
 	// `build` links the executable but does not run it; `run` links and runs.
 	startTime = performance.now();
 
-	const audit_obj = config.audit ? compile_audit_runtime(config, resolved, buildDir) : undefined;
+	// The audit runtime is linked under --audit, and also whenever the
+	// program references it: `Tester.audit_count` (System::Test) has a raw
+	// body calling `nomen_audit_count`, so a Tester-using program run without
+	// --audit still needs the (inert) counter object at link time.
+	const needs_audit_runtime = config.audit || result.code.includes("nomen_audit_count");
+	const audit_obj = needs_audit_runtime
+		? compile_audit_runtime(config, resolved, buildDir)
+		: undefined;
 	let link_inputs = codefile;
 	if (companionfile) link_inputs += ` ${companionfile}`;
 	if (audit_obj) link_inputs += ` ${audit_obj}`;

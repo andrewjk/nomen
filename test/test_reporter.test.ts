@@ -16,6 +16,7 @@ function base(overrides: Partial<TestFileResult>): TestFileResult {
 		benches: [],
 		other: [],
 		leaks: [],
+		leaking_tests: [],
 		ms: 1,
 		...overrides,
 	};
@@ -82,5 +83,36 @@ describe("nomen test failure report labels", () => {
 		);
 		expect(lines[0]).toContain("✗");
 		expect(lines.join("\n")).toContain("LEAK: 256 allocation(s)");
+	});
+
+	test("leaking tests are named under their file's leak line", () => {
+		report_file(
+			base({
+				ok: false,
+				tests: [
+					{ name: "a", passed: 1, failed: 0, ns: 100 },
+					{ name: "b", passed: 1, failed: 0, ns: 100 },
+				],
+				leaks: ["LEAK: 256 allocation(s)"],
+				leaking_tests: [
+					{ test: "b", count: 255 },
+					{ test: "a", count: 1 },
+				],
+			}),
+		);
+		const plain = lines.join("\n").replace(/\x1b\[[0-9;]*m/g, "");
+		expect(plain).toContain("b leaked 255 allocation(s)");
+		expect(plain).toContain("a leaked 1 allocation(s)");
+	});
+
+	test("a leak total with no per-test attribution says so", () => {
+		report_file(
+			base({
+				ok: false,
+				tests: [{ name: "a", passed: 1, failed: 0, ns: 100 }],
+				leaks: ["LEAK: 9 allocation(s)"],
+			}),
+		);
+		expect(lines.join("\n")).toContain("no per-test attribution");
 	});
 });

@@ -155,6 +155,7 @@
 	"Random_range",
 	"Random_destroy",
 	"Tester_init",
+	"Tester_audit_count",
 	"Tester_begin_test",
 	"Tester_end_test",
 	"Tester_any_failed",

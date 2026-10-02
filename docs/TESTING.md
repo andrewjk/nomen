@@ -211,6 +211,7 @@ lines as ordinary `Console.write_line` output). Fields are `|`-separated:
 ```
 \nomen|start|<test>
 \nomen|fail|<test>|<message>
+\nomen|leaks|<test>|<n>
 \nomen|done|<test>|<passed>|<failed>|<ns>
 \nomen|bench|<label>|<n>|<min>|<median>|<max>|<mean>|<stddev>
 ```
@@ -219,6 +220,13 @@ lines as ordinary `Console.write_line` output). Fields are `|`-separated:
 fixed arity of each record kind, so the remainder is taken verbatim. Anything a
 test prints that does not start with `\nomen|` is forwarded verbatim and shown
 beneath the file when it fails.
+
+The `leaks` record is emitted by the generated harness when a test's
+malloc/free balance grew while it ran (`--audit` runs): the harness snapshots
+`Tester.audit_count()` before the test and diffs it after, so a leak is
+attributed to the test that leaked instead of one file-level exit-time count.
+Allocations leaked outside any test (harness/setup/teardown) still show in the
+file's exit-time `LEAK:` total with no `leaks` record to blame.
 
 ## Output format
 

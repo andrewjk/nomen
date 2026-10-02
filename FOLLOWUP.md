@@ -83,7 +83,7 @@ FIXED (2026-10-02, both halves — see the sanitize-residual note below):
 - **Stale `last_result_is_heap` marks FIELD-READ string bindings heap.**
   The real "shallow `at_or_panic` copies" hazard — found while landing the
   displaced-destroy. A `string` binding whose RHS is a FIELD read (`var
-  value = attr.value`, `s = state.attribute_name`) stores the raw pair; the
+value = attr.value`, `s = state.attribute_name`) stores the raw pair; the
   binding was heap-marked whenever the PREVIOUS statement left
   `last_result_is_heap` true — so its scope-exit free raced the field's
   owner (the displaced destroy, `replace_T`, arena teardown). Baseline
@@ -131,13 +131,24 @@ investigation (malloc_error_break / instrumented audit-runtime bisects):
   trustworthy) or a genuine stale free is unresolved.
 - The audit LEAK counter itself drifts: wrapped-allocated blocks freed via
   raw `#arch` paths (e.g. StringBuilder's `bl _realloc` grow / `extern
-  free` teardown) move the counter without libmalloc seeing a leak —
+free` teardown) move the counter without libmalloc seeing a leak —
   `MallocStackLogging=1 leaks -atExit` reported **0 real leaks** on a
   sanitize run whose counter read 28,311. The counter is still the test
   contract, so drift reads as failures.
 - C is unaffected: the sanitize suite passes with `LEAK: 39` (the
   documented bounded classes), and the port's non-sanitize aarch64 tests
   match baseline exactly (core-list: 616/848 pre-existing).
+
+Per-test leak attribution (2026-10-02, `nomen test --audit`): the harness
+snapshots `Tester.audit_count()` (a raw-body method over a new
+`nomen_audit_count` in audit_runtime.c) around every test and emits a
+`\nomen|leaks|<test>|<n>` record when the balance grew, so a file's exit-time
+`LEAK:` total names its culprits; the summary counts leaking TESTS. On the
+C backend the sanitize suite's 39 leaks attribute to exactly two tests:
+`test_sanitize_never_throws_and_stays_stable_on_fuzzed_input` (38 — the
+seeded fuzz) and `test_sanitize_drops_obfuscated_javascript_urls` (1). The
+audit runtime is now linked into every test build (the harness polls the
+counter), and run/build link it when the program references the symbol.
 
 ## Trait-declared field ownership corners
 

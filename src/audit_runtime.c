@@ -48,3 +48,10 @@ void nomen_audit_check(void) {
 		printf("LEAK: %ld allocation(s)\n", count);
 	}
 }
+
+// Per-test leak attribution (`nomen test`): the generated harness snapshots
+// the counter before every test and diffs it after, so a leaking test is
+// named instead of a whole file aggregating into one exit-time count.
+long nomen_audit_count(void) {
+	return __atomic_load_n(&nomen_malloc_count, __ATOMIC_SEQ_CST);
+}

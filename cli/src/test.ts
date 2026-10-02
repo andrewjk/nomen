@@ -49,6 +49,10 @@ export interface TestFileResult {
 	// "LEAK: N allocation(s)" lines the audits runtime printed at exit. Empty
 	// unless the file was run with --audit; a non-empty list fails the file.
 	leaks: string[];
+	// Per-test leak attribution (from the harness's `\nomen|leaks` records):
+	// the tests whose allocation balance grew while they ran. Collected in
+	// every run; only --audit fails the file on them.
+	leaking_tests: LeakRecord[];
 	// Set when the compiled binary crashed before finishing (e.g. a segfault
 	// in a test). We still surface whatever records it managed to emit.
 	crashed?: string;
@@ -81,6 +85,13 @@ interface BenchRecord {
 	max: number;
 	mean: number;
 	stddev: number;
+}
+
+// A `\nomen|leaks|<test>|<n>` record: the test's allocation balance grew by
+// `n` between the harness's counter snapshot and the test's end.
+interface LeakRecord {
+	test: string;
+	count: number;
 }
 
 /** Recursively collect `*.test.nm` files under `root`, skipping build output. */
@@ -201,11 +212,25 @@ export function generate_harness(tests: TestFunction[], benches: BenchFunction[]
 		})
 		.join("\n");
 
-	let main = "\nimport System\nimport System::Test\n\npub func main = () {\n";
+	let main = "\nimport System\nimport System::Test\n";
+	// Per-test leak attribution: the harness snapshots the audit counter
+	// (Tester.audit_count — the audit runtime is linked into every test
+	// build, see run_test_file) before every test and diffs it after. A
+	// positive delta emits a `\nomen|leaks|<test>|<n>` record, which the CLI
+	// reports as a leaking test instead of leaving the file's exit-time
+	// total unattributed.
+	main += "\npub func main = () {\n";
 	main += "\tvar Tester t = Tester()\n";
+	main += "\tvar int64 audit_mark = 0\n";
+	main += "\tvar int64 audit_leaked = 0\n";
 	for (const test of tests) {
+		main += `\taudit_mark = Tester.audit_count()\n`;
 		main += `\tt.begin_test("${escape_nm_string(test.name)}")\n`;
 		main += `\t${test.name}(ref t)\n`;
+		main += `\taudit_leaked = Tester.audit_count() - audit_mark\n`;
+		main += `\tif audit_leaked > 0 {\n`;
+		main += `\t\tConsole.write_line("\\\\nomen|leaks|" + "${escape_nm_string(test.name)}" + "|\\{audit_leaked}")\n`;
+		main += `\t}\n`;
 		main += `\tt.end_test()\n`;
 	}
 	for (const bench of benches) {
@@ -227,6 +252,7 @@ interface RunRecord {
 	tests: TestRecord[];
 	fails: FailRecord[];
 	benches: BenchRecord[];
+	leaks: LeakRecord[];
 	other: string[];
 }
 
@@ -235,6 +261,7 @@ export function parse_records(stdout: string): RunRecord {
 	const tests: TestRecord[] = [];
 	const fails: FailRecord[] = [];
 	const benches: BenchRecord[] = [];
+	const leaks: LeakRecord[] = [];
 	const other: string[] = [];
 	for (const line of stdout.split("\n")) {
 		if (!line.startsWith(RECORD_PREFIX)) {
@@ -254,6 +281,8 @@ export function parse_records(stdout: string): RunRecord {
 			});
 		} else if (kind === "fail") {
 			fails.push({ test: parts[1], message: parts.slice(2).join("|") });
+		} else if (kind === "leaks") {
+			leaks.push({ test: parts[1], count: parseInt(parts[2] || "0", 10) });
 		} else if (kind === "bench") {
 			benches.push({
 				label: parts[1],
@@ -266,7 +295,7 @@ export function parse_records(stdout: string): RunRecord {
 			});
 		}
 	}
-	return { tests, fails, benches, other };
+	return { tests, fails, benches, leaks, other };
 }
 
 /** Pull the exit-time audit "LEAK: N allocation(s)" lines out of stdout. */
@@ -302,8 +331,9 @@ export async function run_test_file(
 		tests: [],
 		fails: [],
 		benches: [],
-		other: [],
 		leaks: [],
+		leaking_tests: [],
+		other: [],
 		ms: 0,
 	};
 
@@ -343,29 +373,27 @@ export async function run_test_file(
 
 	const buildDir = build_dir_for(resolved, true);
 	if (!fs.existsSync(buildDir)) fs.mkdirSync(buildDir, { recursive: true });
-	// With --audit, compile the audit runtime (malloc/free counting) and link
-	// it in; the generated main calls nomen_audit_check() at exit, printing
-	// "LEAK: N allocation(s)" when the balance is nonzero.
-	let audit_obj: string | undefined;
-	if (audit) {
-		// Explicit flag wins; else walk up from the test file (a nomen
-		// checkout's src/audit_runtime.c); else the runtime bundled with the
-		// CLI (live repo copy in the dev tree, shipped copy when published)
-		// so `--audit` works outside the nomen checkout with no flag.
-		const runtime_src = audit_runtime
-			? path.resolve(audit_runtime)
-			: (find_audit_runtime(path.dirname(resolved)) ?? find_bundled_audit_runtime());
-		if (!runtime_src || !fs.existsSync(runtime_src)) {
-			result.ok = false;
-			result.phase = "setup";
-			result.crashed =
-				"Audit enabled but audit_runtime.c was not found. Pass --audit-runtime <path>.";
-			result.ms = performance.now() - start;
-			return result;
-		}
-		audit_obj = path.join(buildDir, "audit_runtime.o");
-		await execFile_async("clang", ["-c", runtime_src, "-o", audit_obj]);
+	// The audit runtime is linked into EVERY test build: the generated
+	// harness polls nomen_audit_count() around every test for per-test leak
+	// attribution, and under --audit the generated main additionally calls
+	// nomen_audit_check() at exit, printing "LEAK: N allocation(s)" when the
+	// balance is nonzero.
+	// Runtime discovery: explicit flag wins; else walk up from the test file
+	// (a nomen checkout's src/audit_runtime.c); else the runtime bundled with
+	// the CLI (live repo copy in the dev tree, shipped copy when published)
+	// so it works outside the nomen checkout with no flag.
+	const runtime_src = audit_runtime
+		? path.resolve(audit_runtime)
+		: (find_audit_runtime(path.dirname(resolved)) ?? find_bundled_audit_runtime());
+	if (!runtime_src || !fs.existsSync(runtime_src)) {
+		result.ok = false;
+		result.phase = "setup";
+		result.crashed = "audit_runtime.c was not found. Pass --audit-runtime <path>.";
+		result.ms = performance.now() - start;
+		return result;
 	}
+	const audit_obj = path.join(buildDir, "audit_runtime.o");
+	await execFile_async("clang", ["-c", runtime_src, "-o", audit_obj]);
 	const platform = default_platform();
 	// Match the run/build command's emission: ObjC-bearing sources (GUI code
 	// pulled in through the library graph) must land in a `.m` TU on Apple
@@ -454,10 +482,13 @@ export async function run_test_file(
 	result.tests = records.tests;
 	result.fails = records.fails;
 	result.benches = records.benches;
+	result.leaking_tests = records.leaks;
 	result.other = records.other;
 	// Under --audit the exit-time audit check prints "LEAK: N allocation(s)"
 	// to stdout when the malloc/free balance is nonzero. Treat any such line
-	// as a failure so a leaked test file cannot stay green.
+	// as a failure so a leaked test file cannot stay green. (The per-test
+	// `leaks` records are collected always — they name the leaking tests —
+	// but only --audit makes them fail the file.)
 	result.leaks = audit ? extract_leaks(runStdout) : [];
 	// Leak lines are surfaced explicitly above; drop them from the generic
 	// stdout dump so they are not printed twice.
@@ -534,6 +565,20 @@ export function report_file(result: TestFileResult): void {
 	}
 	for (const leak of result.leaks) {
 		console.log(`   ${C.yellow("⚠")} ${C.yellow(leak)}`);
+	}
+	// Per-test attribution: which tests leaked (the exit-time LEAK line above
+	// is the file total; these name the culprits). Shown under --audit only —
+	// without it the file cannot fail on leaks, so the warning would be noise
+	// on every run.
+	if (result.leaks.length) {
+		for (const lt of result.leaking_tests) {
+			console.log(`   ${C.yellow("⚠")} ${lt.test} ${C.dim(`leaked ${lt.count} allocation(s)`)}`);
+		}
+		if (!result.leaking_tests.length) {
+			console.log(
+				`   ${C.yellow("⚠")} ${C.yellow("LEAK: no per-test attribution — leaked outside a test (harness/setup/teardown) or crashed mid-test")}`,
+			);
+		}
 	}
 	for (const b of result.benches) {
 		console.log(
@@ -641,6 +686,12 @@ export async function runTests(root: string, options: RunTestsOptions = {}): Pro
 	const totalFailed = results.reduce((a, r) => a + r.tests.reduce((x, t) => x + t.failed, 0), 0);
 	const totalPassed = totalTests - totalFailed;
 	const totalLeaks = results.reduce((a, r) => a + r.leaks.length, 0);
+	// Leak attribution: the count of TESTS that leaked (the old summary
+	// counted FILES — one aggregate LEAK line per file told you nothing about
+	// which test to blame). The per-file report lists the leaking tests; the
+	// files' exit-time totals can exceed the per-test sum when allocations
+	// leak outside any test (harness/setup/teardown).
+	const totalLeakingTests = results.reduce((a, r) => a + r.leaking_tests.length, 0);
 	const anyFailed = results.some((r) => !r.ok);
 
 	console.log("");
@@ -659,8 +710,9 @@ export async function runTests(root: string, options: RunTestsOptions = {}): Pro
 	);
 	if (totalLeaks) {
 		console.log(
-			` ${C.dim("Leaks ")} ${C.yellow(`${totalLeaks} reported`)}` +
-				C.dim(" (--audit; leaked files count as failures)"),
+			` ${C.dim("Leaks ")} ${C.yellow(`${totalLeakingTests} leaking test(s)`)}` +
+				(totalLeakingTests !== totalLeaks ? C.dim(` (${totalLeaks} leaked file(s))`) : "") +
+				C.dim(" (--audit; leaking tests fail their file)"),
 		);
 	}
 	console.log(` ${C.dim(" Time ")} ${format_duration(elapsed)}`);

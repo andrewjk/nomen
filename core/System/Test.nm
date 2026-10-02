@@ -11,6 +11,7 @@
 //
 //	\nomen|start|<test>
 //	\nomen|fail|<test>|<message>
+//	\nomen|leaks|<test>|<n>
 //	\nomen|done|<test>|<passed>|<failed>|<ns>
 //	\nomen|bench|<label>|<n>|<min>|<median>|<max>|<mean>|<stddev>
 //
@@ -69,6 +70,23 @@ pub class Tester {
 	var bench_pending = false
 	var bench_label = ""
 	var bench_samples = 1000
+
+	// (audit) The process's current malloc/free balance — allocations made
+	// but not yet freed. `nomen test --audit` snapshots this around every
+	// test so a leak is attributed to the test that leaked instead of one
+	// file-level exit-time count. The audit runtime is linked into every
+	// test build; in other binaries the counter simply never moves.
+	pub func audit_count = (out int64) {
+		```
+		#arch: c
+		extern long nomen_audit_count(void);
+		return (long long)nomen_audit_count();
+		```
+		```
+		#arch: aarch64
+		bl _nomen_audit_count
+		```
+	}
 
 	// (harness) Start timing `name` and clear the per-test state. Called by
 	// the `main` that `nomen test` generates — not by test code.
