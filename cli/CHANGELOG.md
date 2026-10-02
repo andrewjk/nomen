@@ -19,6 +19,12 @@
 
 
 
+
+## 0.6.12
+<sub>2026-10-02</sub>
+
+-  *(patch)* - Fix: moved-param teardown clobbered fat-string returns
+
 ## 0.6.11
 <sub>2026-10-02</sub>
 
