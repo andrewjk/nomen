@@ -463,7 +463,10 @@ function build_destroy_function(node: StructNode, func: FunctionNode, status: Bu
 	// This ensures that grandchildren (and deeper) are freed, not just
 	// direct children.
 	if (node.is_class) {
-		emit_field_destroys(status, node, "self", undefined, false);
+		// A class's plain string fields are always heap-owned (`_init` strdup's
+		// defaults, assignments strdup a non-heap RHS), so the trailing walk in
+		// a user `#destroy` frees them.
+		emit_field_destroys(status, node, "self", undefined, false, true);
 	}
 
 	emit_asm(status, `${return_label}:\n`);
@@ -545,12 +548,19 @@ function build_auto_destroy_function(node: StructNode, status: BuildStatus) {
 	emit_asm(status, `sub sp, sp, #${stack_placeholder}\n`);
 	emit_asm(status, `mov x29, sp\n`);
 
-	// No user body — just destroy class-typed fields. free_strings for
-	// classes: a class's plain string fields are always heap-owned (`_init`
-	// strdup's defaults, assignments strdup non-heap RHS), so the destroy
-	// frees them. Value structs keep free_strings=false (their locals may
-	// hold rodata literals; only the strdup'ing Buffer store path owns).
-	emit_field_destroys(status, node, "self", undefined, false, node.is_class);
+	// No user body — just reclaim the owning fields. `free_strings=true`, NOT
+	// `node.is_class`: a `<T>_destroy` only ever runs on heap-owned storage, so
+	// for BOTH shapes the plain string fields here are owned copies — a class's
+	// are always heap-owned (`_init` strdup's defaults, assignments strdup a
+	// non-heap RHS), and a VALUE struct's are the per-slot copies `store_T` /
+	// `_copy` strdup'd (Buffer per-element teardown, the displaced-field
+	// reclaim, the anchor-slot walk). This mirrors C's build_auto_destroy, which
+	// frees string fields unconditionally. Plain parsed structs leave
+	// `is_class` undefined, so gating on it would read as "don't free" and would
+	// silently stop reclaiming those slots. Contrast struct-LOCAL scope exit
+	// (emit_destroy_for_decl), which passes false because a local's string
+	// field may still be a rodata literal.
+	emit_field_destroys(status, node, "self", undefined, false, true);
 
 	emit_asm(status, `${return_label}:\n`);
 

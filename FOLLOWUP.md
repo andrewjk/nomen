@@ -94,21 +94,6 @@ value = attr.value`, `s = state.attribute_name`) stores the raw pair; the
   already encoded. The force-heap receptacle shapes keep their strdup.
   The allmark aarch64 sanitize residual (below) is the remaining exposure.
 
-## aarch64 auto-destroy string frees are enabled by a default-param accident
-
-`build_auto_destroy_function` (aarch64 build_struct_node.ts) calls
-`emit_field_destroys(..., free_strings = node.is_class)` intending
-free_strings=false for value structs ("their locals may hold rodata
-literals"). Plain parsed structs never set the `is_class` FIELD, so the
-argument is `undefined` and the DEFAULT (`true`) applies — the generated
-`<T>_destroy` frees plain string fields unconditionally, accidentally
-mirroring C's build_auto_destroy. This is load-bearing: Buffer per-element
-teardown and the new displaced-field reclaim rely on it freeing the
-store_T-strdup'd slot strings. If `is_class` ever becomes explicitly false
-on parsed structs, value-struct slot strings silently stop being reclaimed
-(large leak-count regressions). Worth replacing the implicit default with
-an explicit boolean and a comment.
-
 ## Sanitize-residual (allmark aarch64 audit) — recorded, not fixed
 
 With the displaced-destroy landed, the allmark aarch64 sanitize suite fails

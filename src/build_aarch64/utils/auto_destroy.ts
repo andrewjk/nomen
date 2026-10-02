@@ -871,13 +871,39 @@ function emit_base_ptr(status: BuildStatus, decl_name: string, is_class_parent?:
 	}
 }
 
+/**
+ * Reclaim a struct's owning fields in place (base + every nested owning field).
+ *
+ * `base_offset` (added to each field offset) and `is_class_parent` (a class's
+ * base is a pointer LOADED from the slot; a value struct is inline AT it)
+ * locate `decl_name`'s storage.
+ *
+ * `free_strings` is REQUIRED — it is a per-call-site OWNOWNITY fact, not a
+ * per-type one, so it deliberately has no default:
+ * - `true` from a DESTROY function (`<T>_destroy`), which only ever runs on
+ *   heap-owned storage: a class's plain string fields are always heap-owned
+ *   (`_init` strdup's defaults, assignments strdup a non-heap RHS), and a
+ *   VALUE struct arrives with the per-slot copies `store_T`/`_copy` strdup'd
+ *   (Buffer per-element teardown, the displaced-field reclaim, the
+ *   anchor-slot walk). Matches C's build_auto_destroy, which frees string
+ *   fields unconditionally.
+ * - `false` from struct-LOCAL scope exit, where a string field may still hold
+ *   a rodata literal (aarch64 constructors don't strdup) and freeing it would
+ *   `free` rodata (SIGABRT).
+ *
+ * A default (`= true`) previously stood in for the `true` arm while
+ * `node.is_class` (undefined on plain parsed structs) was passed as if it
+ * selected between the arms — so the day `is_class` becomes explicitly false,
+ * value-struct slot strings would silently stop being reclaimed. Passing the
+ * boolean at every call site makes both arms visible.
+ */
 export function emit_field_destroys(
 	status: BuildStatus,
 	struct_type: StructNode,
 	decl_name: string,
-	base_offset?: number,
-	is_class_parent?: boolean,
-	free_strings = true,
+	base_offset: number | undefined,
+	is_class_parent: boolean | undefined,
+	free_strings: boolean,
 ) {
 	// A CLASS's trait-declared fields are owned (the ctor strdup's their
 	// string defaults), so include them. Value-struct trait fields stay out:
