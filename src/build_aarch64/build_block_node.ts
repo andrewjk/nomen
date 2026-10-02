@@ -167,6 +167,7 @@ export default function build_block_node(node: BlockNode, status: BuildStatus) {
 		const prologue = status.module_init_statements;
 		status.module_init_statements = undefined;
 		for (const stmt of prologue) {
+			status.last_result_is_heap = false;
 			emit_allocations(stmt, status);
 			emit_stmt_from_nir(stmt, prologue.indexOf(stmt), prologue, status);
 		}
@@ -189,6 +190,15 @@ export default function build_block_node(node: BlockNode, status: BuildStatus) {
 			if (child.node_type !== "while") {
 				emit_allocations(child, status);
 			}
+			// Statement-boundary flag reset (defense in depth for the
+			// `last_result_is_heap` contract): the flag is only meaningful
+			// WITHIN one statement — an RHS emitter establishes it, the
+			// assignment/declaration consumer reads it. Without this, a
+			// consumer that forgot its own reset-first clear would read the
+			// previous statement's value (the "borrow marked heap → scope-exit
+			// free of borrowed bytes" class). Reset-first consumers are
+			// unaffected.
+			status.last_result_is_heap = false;
 			// NIR-driven dispatch (phase 4 stage 2): consumes the index-aligned
 			// NIR entry when the emission ctx owns this statement list; falls
 			// back to the plain AST walk otherwise. Returns the number of

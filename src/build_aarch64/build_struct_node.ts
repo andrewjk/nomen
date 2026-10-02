@@ -211,6 +211,12 @@ function init_expr_field_default(
 	base_reg: string,
 	status: BuildStatus,
 ) {
+	// Reset-first (the consumer contract for `last_result_is_heap`): the flag
+	// must reflect exactly THIS default expression — a prior field's
+	// heap-setting default (a call result) must not make a later
+	// non-flag-setting default (a grouped literal) skip its strdup, or the
+	// class field stores rodata its destroy frees (an invalid free).
+	status.last_result_is_heap = false;
 	build_node(field.value, status);
 	ensure_newline(status);
 	const t = field.type;

@@ -627,6 +627,18 @@ export default interface BuildStatus {
 	 *  must free every slot's ptr half before freeing the buffer. Unlike
 	 *  heap_string_arrays (rodata rows), these own their bytes. */
 	heap_owned_string_arrays?: Set<string>;
+	/** aarch64 only: whether the expression JUST emitted produced a fresh
+	 *  heap-owned value (a call result, a concat, a materialized view copy)
+	 *  the consumer may transfer instead of copying. Side-channel state, so
+	 *  the contract is strict: every CONSUMER must clear it BEFORE emitting
+	 *  its RHS ("reset-first" — emit_string_length and the assignment /
+	 *  declaration / return paths are the reference shapes) and read it only
+	 *  immediately after; build_block_node additionally clears it at every
+	 *  statement boundary so a missed reset-first degrades to the safe
+	 *  default (false → the consumer copies/strdups, a bounded leak) instead
+	 *  of reading the previous statement's value (which could free borrowed
+	 *  bytes at scope exit). Producers set it only when their result really
+	 *  owns heap bytes. */
 	last_result_is_heap?: boolean;
 	current_struct?: StructNode;
 	current_function_name?: string;

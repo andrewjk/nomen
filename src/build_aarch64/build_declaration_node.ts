@@ -1134,8 +1134,10 @@ export default function build_declaration_node(
 	}
 
 	hoist_field_overrides(node.value, build_node, status, "", node.name);
+	// Reset-first (the `last_result_is_heap` consumer contract): the flag must
+	// reflect exactly THIS declaration's initializer — whatever the previous
+	// statement emitted must not mark this binding heap-owned.
 	status.last_result_is_heap = false;
-	const prev_heap = status.last_result_is_heap;
 
 	// Substitute a top-level non-primitive `const` reference (e.g.
 	// `var LayoutParams p = DEFAULT_PARAMS`) with the const's initializer.
@@ -1192,7 +1194,6 @@ export default function build_declaration_node(
 				}
 			}
 		}
-		status.last_result_is_heap = prev_heap;
 	}
 
 	// Function type declaration

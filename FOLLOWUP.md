@@ -792,18 +792,22 @@ different story. Fixed: `RunTestsOptions.release` threads through to
 (default stays debug, matching `run`/`build`). Covered end-to-end by
 `test/test_harness.test.ts` running the calc fixture in both modes.
 
-## `last_result_is_heap` is still a stale function-global (residual)
+## `last_result_is_heap` is side-channel state (discipline enforced; structural rewrite optional)
 
-The aarch64 assignment/declaration paths decide string ownership partly from
-`status.last_result_is_heap`, a mutable flag left behind by whatever the
-previous statement emitted. It is set by genuine heap producers (calls,
-concats, view materialization) but NOT by bare variable loads, field reads,
-or literals — so an assignment whose RHS emits nothing flag-setting reads the
-PREVIOUS statement's value. The 2026-10-02 fixes clear the flag for the
-field-read and unrecorded-variable-read shapes (the allmark sanitize double
-free), and `build_aarch64/build_declaration_node.ts`'s force-heap init now
-strdups borrow sources. But the design remains fragile: any future RHS shape
-whose emit does not establish the flag can resurrect the "borrow marked heap
-→ scope-exit free of borrowed bytes" class. A structural fix would replace
-the flag with an explicit ownership value returned by each RHS emitter
-(`{ heap: boolean }`), rather than side-channel state.
+CLOSED as a bug class (2026-10-03): an audit of every consumer found exactly
+one without the reset-first discipline — the aarch64 ctor's
+`init_expr_field_default` read whatever the previous field's emission had
+left, so a heap-setting default (a call) before a non-flag-setting default (a
+grouped literal) skipped the strdup and stored rodata in an always-heap class
+field (`test/ctor_default_stale_flag.test.ts` repro: AUDIT-STALE-FREE). It
+now resets first. build_block_node additionally clears the flag at every
+statement boundary (main's module-init prologue included), so even a future
+consumer that forgets reset-first reads the safe default (false → copy →
+bounded leak) instead of the previous statement's value (→ free of borrowed
+bytes). The reset-first contract is documented on the BuildStatus field.
+
+Remaining (deliberate): the flag itself is still side-channel state rather
+than an ownership value threaded through the RHS emitters (`{ heap: boolean }`
+returns). That rewrite touches every emitter and the NIR seam for no
+correctness gain under the enforced contract — worth it only if the flag
+grows more consumers or the bounded-leak default becomes a measured problem.
