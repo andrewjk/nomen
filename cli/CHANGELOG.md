@@ -18,6 +18,15 @@
 
 
 
+
+## 0.6.11
+<sub>2026-10-02</sub>
+
+-  *(patch)* - Fix: nomen test loses records in parallel runs
+-  *(patch)* - Fix: aarch64 force-heap borrow-init double free
+-  *(patch)* - Fix: moved value-struct param teardown leak
+-  *(patch)* - Fix: stale ownership flag in ctor field defaults
+
 ## 0.6.10
 <sub>2026-10-02</sub>
 
