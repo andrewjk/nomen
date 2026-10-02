@@ -70,22 +70,27 @@ Console.write_line(count.to_string())
 	});
 });
 
-describe("ownership: container field move-assign (C backend)", () => {
+describe("ownership: container field move-assign", () => {
 	// `box.items = move list` must splice the source local from its scope
-	// frame AND reclaim the displaced field value. The C backend's container
-	// move-assign block looked the field type up by RAW name (`List`), which
-	// never matches the monomorphized struct (`List_string`) — the block was
-	// silently skipped for every generic container field. Fixed with
-	// resolve_struct_type; this test would leak 2 on C before it.
-	// The aarch64 backend's displaced-value reclaim for this shape is still
-	// open (FOLLOWUP.md, "Container field move-assign displaces the old value
-	// on aarch64"), so this test deliberately runs the C backend only.
-	test("C: displaced list is reclaimed and the source is spliced", async () => {
-		const dir = fs.mkdtempSync(path.join(os.tmpdir(), "nomen-moveassign-"));
-		const file = path.join(dir, "container_move_assign.test.nm");
-		fs.writeFileSync(
-			file,
-			`import System
+	// frame AND reclaim the displaced field value. Both backends were wrong
+	// here, each in its own way:
+	//  - C's container move-assign block looked the field type up by RAW name
+	//    (`List`), which never matches the monomorphized struct
+	//    (`List_string`) — the block was silently skipped for every generic
+	//    container field. Fixed with resolve_struct_type.
+	//  - aarch64 never reclaimed the displaced container at all (slab + owning
+	//    elements leaked). It now mono-resolves the field type and emits
+	//    `bl <T>_destroy` on the field's address before the struct copy
+	//    (test/displaced_field_move.test.ts covers that path directly).
+	// Either backend leaked 2 allocations here before its fix.
+	test.each(["aarch64", "c"] as const)(
+		"%s: displaced list is reclaimed and the source is spliced",
+		async (arch) => {
+			const dir = fs.mkdtempSync(path.join(os.tmpdir(), "nomen-moveassign-"));
+			const file = path.join(dir, "container_move_assign.test.nm");
+			fs.writeFileSync(
+				file,
+				`import System
 import System::Test
 
 class Box {
@@ -101,15 +106,17 @@ pub func test_move_assign = (ref Tester t) {
 	t.expect(b.items.at_or_panic(0) == "two", "moved in")
 }
 `,
-		);
-		try {
-			const result = await run_test_file(file, "core", "c", true, undefined, false);
-			expect(result.phase).toBeUndefined();
-			expect(result.crashed).toBeUndefined();
-			expect(result.ok).toBe(true);
-			expect(result.leaks).toEqual([]);
-		} finally {
-			fs.rmSync(dir, { recursive: true, force: true });
-		}
-	}, 90_000);
+			);
+			try {
+				const result = await run_test_file(file, "core", arch, true, undefined, false);
+				expect(result.phase).toBeUndefined();
+				expect(result.crashed).toBeUndefined();
+				expect(result.ok).toBe(true);
+				expect(result.leaks).toEqual([]);
+			} finally {
+				fs.rmSync(dir, { recursive: true, force: true });
+			}
+		},
+		90_000,
+	);
 });
