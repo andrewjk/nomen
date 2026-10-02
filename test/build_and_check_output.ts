@@ -8,12 +8,7 @@ import { get_library } from "../src/lib";
 import BaseNode from "../src/nodes/BaseNode";
 import check_output from "./check_output";
 import parse_with_imports, { parse_raw } from "./parse_with_imports";
-import {
-	SYSTEM_OBJ,
-	SYSTEM_OBJ_A64,
-	load_system_fn_names,
-	load_system_struct_names,
-} from "./system_lib";
+import { load_system_fn_names, load_system_struct_names, system_paths } from "./system_lib";
 
 const system_lib = get_library(path.resolve("core"));
 
@@ -65,9 +60,6 @@ export default async function build_and_check_output(
 	// structs to emit itself (anything not here) vs reference from system.o.
 	const system_names = load_system_struct_names();
 	const system_fn_names = load_system_fn_names();
-	// aarch64 uses the prebuilt-object split (link the precompiled system.o).
-	const a64_split = fs.existsSync(SYSTEM_OBJ_A64);
-	const c_split = fs.existsSync(SYSTEM_OBJ);
 	for (let arch of architectures) {
 		const parsed = raw ? parse_raw(input) : parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
@@ -78,10 +70,16 @@ export default async function build_and_check_output(
 		// the per-test System recompile was the cold-run timeout. The user TU
 		// is built with emit_mode "user". GUI (ObjC) builds and programs that
 		// shadow a System type keep a single TU.
+		// The object is the variant built with THIS TU's audit mode: the mode
+		// decides whether the generated code calls the audit runtime's wrappers
+		// or libc directly, and the two halves allocate and free each other's
+		// blocks — mixing them makes the audit counter meaningless (see
+		// system_paths). Missing variant ⇒ single TU (System compiled inline,
+		// so both halves always agree).
 		const split =
 			!build_needs_objc(parsed.root, default_platform()) &&
 			!shadows_system(parsed.root) &&
-			(arch === "aarch64" ? a64_split : c_split);
+			fs.existsSync(system_paths(arch, options.audit).obj);
 		const result = split
 			? build(parsed.root, { ...options, emit_mode: "user", system_struct_names: system_names })
 			: build(parsed.root, options);

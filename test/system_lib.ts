@@ -26,7 +26,35 @@ const execPromise = util.promisify(exec);
  * outside every per-test timeout.
  */
 export const SYSTEM_LIB_DIR = path.resolve("test/out/system_lib");
-// C backend
+
+/**
+ * One system object per AUDIT MODE. A build's two halves must agree: the
+ * audit mode decides whether the generated code calls the audit runtime's
+ * wrappers or libc's malloc/free directly, and the object is linked into user
+ * TUs built either way. Mixing them means the same allocation is allocated by
+ * one allocator and freed by the other — the audit counter counts blocks the
+ * program never reclaims (and vice versa), so the LEAK number drifts away
+ * from the allocator's real state, and the runtime cannot tell a correct free
+ * from an invalid one. So `system.o` is the audited variant and
+ * `system_plain.o` the plain one; tests pick by their own audit flag.
+ */
+export function system_paths(arch: "c" | "aarch64", audit: boolean) {
+	const dir = path.join(SYSTEM_LIB_DIR, arch === "c" ? "c" : "aarch64");
+	const suffix = audit ? "" : "_plain";
+	return {
+		obj: path.join(dir, `system${suffix}.o`),
+		hash: path.join(dir, `.hash${suffix}`),
+		src:
+			arch === "c"
+				? path.join(dir, `system${suffix}${process.platform === "darwin" ? ".m" : ".c"}`)
+				: path.join(dir, `system${suffix}.s`),
+		h: path.join(dir, `system${suffix}.h`),
+		// aarch64-only (the C system TU has no companion); unused for "c".
+		companion: path.join(dir, `system${suffix}_companion.o`),
+	};
+}
+
+// C backend (audited — the default variant)
 export const SYSTEM_OBJ = path.join(SYSTEM_LIB_DIR, "c", "system.o");
 export const SYSTEM_H = path.join(SYSTEM_LIB_DIR, "c", "system.h");
 const SYSTEM_SRC = path.join(
@@ -152,12 +180,14 @@ function parse_canonical(source: string): RootNode {
  * Build system.o for both backends if stale (or missing). Returns true if
  * anything (re)built. Idempotent and parallel-safe (atomic temp-then-rename).
  */
-export async function ensure_system_lib(): Promise<boolean> {
+export async function ensure_system_lib(audit = true): Promise<boolean> {
 	const { source, lib_source_hash } = canonical_program();
 	let rebuilt = false;
+	const c_paths = system_paths("c", audit);
+	const a64_paths = system_paths("aarch64", audit);
 
 	// ---------- C backend ----------
-	const built_c = build(parse_canonical(source), { arch: "c", audit: true, emit_mode: "system" });
+	const built_c = build(parse_canonical(source), { arch: "c", audit, emit_mode: "system" });
 	const c_struct_names = new Set<string>(
 		(Array.from((built_c.headers ?? "").matchAll(/^typedef struct (\w+)/gm)) as RegExpMatchArray[])
 			.map((m) => m[1])
@@ -171,23 +201,23 @@ export async function ensure_system_lib(): Promise<boolean> {
 	// ARE in system.o — include them so the user TU doesn't re-emit e.g.
 	// int_to_string and clash.
 	for (const t of built_in_types) c_struct_names.add(t);
-	fs.mkdirSync(path.dirname(SYSTEM_OBJ), { recursive: true });
+	fs.mkdirSync(path.dirname(c_paths.obj), { recursive: true });
 	fs.writeFileSync(SYSTEM_NAMES, JSON.stringify([...c_struct_names], null, "\t") + "\n");
 
 	const c_hash = hash_of(lib_source_hash, built_c.code, built_c.headers ?? "", "c");
 	const c_warm =
-		c_hash === (fs.existsSync(SYSTEM_HASH) ? fs.readFileSync(SYSTEM_HASH, "utf8") : "") &&
-		fs.existsSync(SYSTEM_OBJ) &&
-		fs.existsSync(SYSTEM_H);
+		c_hash === (fs.existsSync(c_paths.hash) ? fs.readFileSync(c_paths.hash, "utf8") : "") &&
+		fs.existsSync(c_paths.obj) &&
+		fs.existsSync(c_paths.h);
 	if (!c_warm) {
 		// The system TU's code does `#include "main.h"`, so stage its headers there.
-		fs.writeFileSync(path.join(path.dirname(SYSTEM_OBJ), "main.h"), built_c.headers ?? "");
-		fs.writeFileSync(SYSTEM_SRC, built_c.code);
-		fs.writeFileSync(SYSTEM_H, built_c.headers ?? "");
-		const tmp = `${SYSTEM_OBJ}.tmp.${process.pid}.${crypto.randomBytes(6).toString("hex")}`;
-		await execPromise(`clang -c ${SYSTEM_SRC} -o ${tmp}`, { maxBuffer: 10 * 1024 * 1024 });
-		fs.renameSync(tmp, SYSTEM_OBJ);
-		fs.writeFileSync(SYSTEM_HASH, c_hash);
+		fs.writeFileSync(path.join(path.dirname(c_paths.obj), "main.h"), built_c.headers ?? "");
+		fs.writeFileSync(c_paths.src, built_c.code);
+		fs.writeFileSync(c_paths.h, built_c.headers ?? "");
+		const tmp = `${c_paths.obj}.tmp.${process.pid}.${crypto.randomBytes(6).toString("hex")}`;
+		await execPromise(`clang -c ${c_paths.src} -o ${tmp}`, { maxBuffer: 10 * 1024 * 1024 });
+		fs.renameSync(tmp, c_paths.obj);
+		fs.writeFileSync(c_paths.hash, c_hash);
 		rebuilt = true;
 	}
 
@@ -195,7 +225,7 @@ export async function ensure_system_lib(): Promise<boolean> {
 	// Fresh AST — see parse_canonical (defensive isolation per backend).
 	const built_a64 = build(parse_canonical(source), {
 		arch: "aarch64",
-		audit: true,
+		audit,
 		emit_mode: "system",
 	});
 	// Function names exported by the system object: build_function_node,
@@ -204,33 +234,33 @@ export async function ensure_system_lib(): Promise<boolean> {
 	const a64_fn_names = Array.from(built_a64.code.matchAll(/^\.globl _([A-Za-z_]\w*)$/gm)).map(
 		(m) => m[1],
 	);
-	const a64_asm = postprocess_macos(built_a64.code, true, "aarch64");
-	fs.mkdirSync(path.dirname(SYSTEM_OBJ_A64), { recursive: true });
+	const a64_asm = postprocess_macos(built_a64.code, audit, "aarch64");
+	fs.mkdirSync(path.dirname(a64_paths.obj), { recursive: true });
 	fs.writeFileSync(SYSTEM_NAMES_A64, JSON.stringify(a64_fn_names, null, "\t") + "\n");
 
 	const a64_companion = built_a64.companion ?? "";
 	const a64_hash = hash_of(lib_source_hash, a64_asm, a64_companion, "aarch64");
 	const a64_warm =
-		a64_hash === (fs.existsSync(SYSTEM_HASH_A64) ? fs.readFileSync(SYSTEM_HASH_A64, "utf8") : "") &&
-		fs.existsSync(SYSTEM_OBJ_A64);
+		a64_hash === (fs.existsSync(a64_paths.hash) ? fs.readFileSync(a64_paths.hash, "utf8") : "") &&
+		fs.existsSync(a64_paths.obj);
 	if (!a64_warm) {
-		fs.writeFileSync(SYSTEM_SRC_A64, a64_asm);
-		const tmp = `${SYSTEM_OBJ_A64}.tmp.${process.pid}.${crypto.randomBytes(6).toString("hex")}`;
+		fs.writeFileSync(a64_paths.src, a64_asm);
+		const tmp = `${a64_paths.obj}.tmp.${process.pid}.${crypto.randomBytes(6).toString("hex")}`;
 		try {
-			await execPromise(`clang -c -x assembler ${SYSTEM_SRC_A64} -o ${tmp}`, {
+			await execPromise(`clang -c -x assembler ${a64_paths.src} -o ${tmp}`, {
 				maxBuffer: 10 * 1024 * 1024,
 			});
 			if (a64_companion.trim().length > 0) {
-				const comp_src = path.join(SYSTEM_LIB_DIR, "aarch64", "system_companion.m");
-				const comp_tmp = `${SYSTEM_COMPANION_A64}.tmp.${process.pid}`;
+				const comp_src = path.join(path.dirname(a64_paths.src), "system_companion.m");
+				const comp_tmp = `${a64_paths.companion}.tmp.${process.pid}`;
 				fs.writeFileSync(comp_src, a64_companion);
 				await execPromise(`clang -c ${comp_src} -o ${comp_tmp}`, {
 					maxBuffer: 10 * 1024 * 1024,
 				});
-				fs.renameSync(comp_tmp, SYSTEM_COMPANION_A64);
+				fs.renameSync(comp_tmp, a64_paths.companion!);
 			}
-			fs.renameSync(tmp, SYSTEM_OBJ_A64);
-			fs.writeFileSync(SYSTEM_HASH_A64, a64_hash);
+			fs.renameSync(tmp, a64_paths.obj);
+			fs.writeFileSync(a64_paths.hash, a64_hash);
 			rebuilt = true;
 		} catch (e) {
 			// A pre-existing aarch64 codegen bug (emit_mode "system" loses
@@ -242,7 +272,7 @@ export async function ensure_system_lib(): Promise<boolean> {
 			);
 			try {
 				fs.rmSync(tmp, { force: true });
-				fs.rmSync(SYSTEM_OBJ_A64, { force: true });
+				fs.rmSync(a64_paths.obj, { force: true });
 			} catch {}
 		}
 	}

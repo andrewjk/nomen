@@ -199,6 +199,21 @@ test("extract_leaks returns [] for a clean run", () => {
 	expect(extract_leaks("\\nomen|done|t|1|0|5\n")).toEqual([]);
 });
 
+// A free that matched no live audit allocation (a foreign pointer, a double
+// free). Like a leak line it fails the file — and unlike the previous
+// behaviour it is reported at all: the runtime no longer passes such a pointer
+// to libc free, which aborted inside the allocator.
+test("extract_leaks pulls unmatched-free lines out of stdout", () => {
+	const stdout = [
+		"\\nomen|done|t|1|0|5",
+		"AUDIT-STALE-FREE: 2 pointer(s) freed that were not live audit allocations",
+		"trailing noise",
+	].join("\n");
+	expect(extract_leaks(stdout)).toEqual([
+		"AUDIT-STALE-FREE: 2 pointer(s) freed that were not live audit allocations",
+	]);
+});
+
 // ---------------------------------------------------------------------------
 // run_test_file (end-to-end: parse + build + link + run the calc fixture)
 // ---------------------------------------------------------------------------

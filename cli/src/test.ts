@@ -298,12 +298,18 @@ export function parse_records(stdout: string): RunRecord {
 	return { tests, fails, benches, leaks, other };
 }
 
-/** Pull the exit-time audit "LEAK: N allocation(s)" lines out of stdout. */
+/**
+ * Pull the exit-time audit lines out of stdout: "LEAK: N allocation(s)" (a
+ * nonzero malloc/free balance) and "AUDIT-STALE-FREE: N pointer(s) freed that
+ * were not live audit allocations" (a free that matched no live block — a
+ * foreign pointer or a double free; the runtime no longer passes those to
+ * libc free, so this is the only record they leave). Both fail the file.
+ */
 export function extract_leaks(stdout: string): string[] {
 	return stdout
 		.split("\n")
 		.map((l) => l.trim())
-		.filter((l) => l.startsWith("LEAK:"));
+		.filter((l) => l.startsWith("LEAK:") || l.startsWith("AUDIT-STALE-FREE:"));
 }
 
 /**
@@ -485,15 +491,19 @@ export async function run_test_file(
 	result.leaking_tests = records.leaks;
 	result.other = records.other;
 	// Under --audit the exit-time audit check prints "LEAK: N allocation(s)"
-	// to stdout when the malloc/free balance is nonzero. Treat any such line
-	// as a failure so a leaked test file cannot stay green. (The per-test
-	// `leaks` records are collected always — they name the leaking tests —
-	// but only --audit makes them fail the file.)
+	// to stdout when the malloc/free balance is nonzero, and
+	// "AUDIT-STALE-FREE: N ..." for frees that matched no live block. Treat
+	// any such line as a failure so a leaked (or double-freeing) test file
+	// cannot stay green. (The per-test `leaks` records are collected always —
+	// they name the leaking tests — but only --audit makes them fail the
+	// file.)
 	result.leaks = audit ? extract_leaks(runStdout) : [];
-	// Leak lines are surfaced explicitly above; drop them from the generic
+	// Audit lines are surfaced explicitly above; drop them from the generic
 	// stdout dump so they are not printed twice.
 	if (result.leaks.length) {
-		result.other = result.other.filter((l) => !l.trim().startsWith("LEAK:"));
+		result.other = result.other.filter(
+			(l) => !l.trim().startsWith("LEAK:") && !l.trim().startsWith("AUDIT-STALE-FREE:"),
+		);
 	}
 	result.crashed = crashed;
 	if (crashed) result.phase = "run";

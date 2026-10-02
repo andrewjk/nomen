@@ -228,6 +228,29 @@ attributed to the test that leaked instead of one file-level exit-time count.
 Allocations leaked outside any test (harness/setup/teardown) still show in the
 file's exit-time `LEAK:` total with no `leaks` record to blame.
 
+## Audit findings
+
+`--audit` builds route every allocation through `audit_runtime.c`
+(`src/audit_runtime.c`), which prints one line per finding at exit; either line
+fails the file.
+
+- `LEAK: N allocation(s)` — N wrapped blocks were never reclaimed.
+- `AUDIT-STALE-FREE: N pointer(s) freed that were not live audit allocations` —
+  N frees matched no live block: a foreign address (a libc allocation, a
+  pool/BSS/rodata pointer) or one that had already been freed. Each wrapped
+  block carries a header, so these are detected rather than passed to `free`,
+  which used to abort inside the allocator (`malloc assertion "main_address"
+failed`) with nothing to say which pointer was at fault. A stale free also
+  leaves the allocation count alone — an unmatched free is not evidence that a
+  live block was reclaimed.
+
+Because the audit mode decides whether generated code calls the wrappers or
+libc directly, a build's halves must agree on it: the precompiled System object
+is prebuilt per mode and a user TU links the matching one. Mixing them made the
+same allocation allocated by one allocator and freed by the other, so the count
+drifted from the allocator's real state and an invalid free looked like ordinary
+teardown.
+
 ## Output format
 
 The runner mimics vitest's summary style. Per file:

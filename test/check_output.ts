@@ -8,14 +8,7 @@ import { expect } from "vite-plus/test";
 
 import type BuildResult from "../src/types/BuildResult";
 import { postprocess_macos, postprocess_macos_for_user } from "./postprocess";
-import {
-	SYSTEM_COMPANION_A64,
-	SYSTEM_H,
-	SYSTEM_HASH,
-	SYSTEM_HASH_A64,
-	SYSTEM_OBJ,
-	SYSTEM_OBJ_A64,
-} from "./system_lib";
+import { system_paths } from "./system_lib";
 
 const execPromise = util.promisify(exec);
 
@@ -80,6 +73,15 @@ export default async function check_output(
 	const arch = options.arch ?? "c";
 	const audit = options.audit ?? true;
 	const system_lib = !!options.system_lib;
+	// The precompiled system object must be the variant built with the SAME
+	// audit mode as this user TU: the mode decides whether the generated code
+	// calls the audit runtime's wrappers or libc directly, and the two halves
+	// allocate and free each other's blocks (the System library allocates the
+	// strings the program frees, and vice versa). Mixing them silently
+	// corrupted the audit counter — a wrapped allocation freed through libc
+	// read as a leak, a libc allocation freed through the wrapper as a
+	// reclaimed block — and made an invalid free look like ordinary teardown.
+	const system = system_paths(arch, audit);
 	const folder = path.resolve(".", "test", "out", arch, name);
 	if (!fs.existsSync(folder)) {
 		fs.mkdirSync(folder, { recursive: true });
@@ -118,8 +120,10 @@ export default async function check_output(
 	// invalidates cached stdout.
 	let system_hash = "";
 	if (system_lib) {
-		const hash_file = arch === "aarch64" ? SYSTEM_HASH_A64 : SYSTEM_HASH;
-		if (arch === "c") fs.copyFileSync(SYSTEM_H, path.join(folder, "system.h"));
+		const hash_file = system.hash;
+		if (arch === "c" && fs.existsSync(system.h)) {
+			fs.copyFileSync(system.h, path.join(folder, "system.h"));
+		}
 		system_hash = fs.existsSync(hash_file) ? fs.readFileSync(hash_file, "utf8") : "";
 	}
 
@@ -128,9 +132,10 @@ export default async function check_output(
 		arch,
 	});
 
-	// The system object references the audit wrappers (nomen_malloc_wrap), so
-	// whenever we link it we must also link audit_runtime.o — regardless of the
-	// individual test's audit flag.
+	// The System library's `Tester.audit_count` body calls `nomen_audit_count`
+	// unconditionally (it is the harness's per-test leak poll), so the runtime
+	// must be linked whenever a system object is — the test's own audit flag
+	// only decides whether the generated code routes allocations THROUGH it.
 	const audit_obj = system_lib || audit ? await ensure_audit_obj() : null;
 	const uses_objc =
 		OBJC_RE.test(code) ||
@@ -143,10 +148,8 @@ export default async function check_output(
 	// aarch64 system builds also link the system companion object (the C
 	// bodies of library `aarch64_use_c` functions); it carries no runtime.
 	const system_companion =
-		system_lib && arch === "aarch64" && fs.existsSync(SYSTEM_COMPANION_A64)
-			? SYSTEM_COMPANION_A64
-			: null;
-	const system_obj = system_lib ? (arch === "aarch64" ? SYSTEM_OBJ_A64 : SYSTEM_OBJ) : null;
+		system_lib && arch === "aarch64" && fs.existsSync(system.companion) ? system.companion : null;
+	const system_obj = system_lib && fs.existsSync(system.obj) ? system.obj : null;
 
 	const cached_key = fs.existsSync(cachefile) ? fs.readFileSync(cachefile, "utf-8") : null;
 
@@ -158,6 +161,13 @@ export default async function check_output(
 		}
 		if (audit && got && got.includes("LEAK:")) {
 			expect(got).not.toContain("LEAK:");
+		}
+		// A free that matched no live audit allocation (foreign pointer,
+		// double free, realloc of a stale pointer). The audit runtime reports
+		// these instead of passing them to libc free — which aborted inside
+		// the allocator with no context — so the run fails here instead.
+		if (audit && got && got.includes("AUDIT-STALE-FREE:")) {
+			expect(got).not.toContain("AUDIT-STALE-FREE:");
 		}
 		expect(got.substring(0, expected_output.length)).toBe(expected_output);
 	};

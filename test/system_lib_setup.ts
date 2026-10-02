@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import util from "node:util";
 
-import { SYSTEM_OBJ, SYSTEM_OBJ_A64 } from "./system_lib";
+import { system_paths } from "./system_lib";
 
 const execPromise = util.promisify(exec);
 
@@ -41,8 +41,16 @@ export default async function setup(): Promise<void> {
 			`[system_lib] prebuild worker failed:\n${(e as Error).message?.split("\n").slice(0, 6).join("\n")}`,
 		);
 	}
+	// Both audit variants are prebuilt; a test links the one matching its own
+	// audit flag (mixing the halves makes the audit counter meaningless).
+	const c = system_paths("c", true);
+	const a64 = system_paths("aarch64", true);
+	const c_plain = system_paths("c", false);
+	const a64_plain = system_paths("aarch64", false);
 	console.log(
-		`[system_lib] C object: ${fs.existsSync(SYSTEM_OBJ) ? "built" : "missing"}; ` +
-			`aarch64 object: ${fs.existsSync(SYSTEM_OBJ_A64) ? "built" : "missing (single-TU fallback)"}`,
+		`[system_lib] C object: ${fs.existsSync(c.obj) ? "built" : "missing"}` +
+			`${fs.existsSync(c_plain.obj) ? "" : " (plain missing)"}; ` +
+			`aarch64 object: ${fs.existsSync(a64.obj) ? "built" : "missing (single-TU fallback)"}` +
+			`${fs.existsSync(a64_plain.obj) ? "" : " (plain missing)"}`,
 	);
 }

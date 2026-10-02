@@ -66,7 +66,7 @@ FIXED (covered by test/leak_hygiene.test.ts unless noted):
   literal). The arm was added; note the two walks are now one arm
   out-of-sync-prone — future cleanup arms must land in BOTH.
 
-FIXED (2026-10-02, both halves — see the sanitize-residual note below):
+FIXED (2026-10-02, both halves):
 
 - **aarch64: container-field move-assign displaces the old value without
   reclaiming it.** `box.items = move list` on aarch64 leaked the displaced
@@ -92,48 +92,9 @@ value = attr.value`, `s = state.attribute_name`) stores the raw pair; the
   assignment paths, aarch64), making field-read bindings borrows — the
   contract field_borrow_local.test.ts pins and the C backend's record model
   already encoded. The force-heap receptacle shapes keep their strdup.
-  The allmark aarch64 sanitize residual (below) is the remaining exposure.
-
-## Sanitize-residual (allmark aarch64 audit) — recorded, not fixed
-
-With the displaced-destroy landed, the allmark aarch64 sanitize suite fails
-in a NEW mode: `free()` of a non-heap address (libmalloc "main_address
-failed" — e.g. 0x1007a0470, inside the `___nomen_pool_*` BSS) during the
-sanitize run, before/instead of the historic leak report. Receipts from the
-investigation (malloc_error_break / instrumented audit-runtime bisects):
-
-- The double-free pair first identified (`nomen_free_wrap` ←
-  `HtmlAttribute_destroy` ← `Buffer_HtmlAttribute_destroy`, test 2) is the
-  displaced-destroy racing stale-marked field-read bindings — fixed by the
-  flag clears above (that exact shape now passes).
-- A second path remains: parse_html's displaced `state.attribute_name`
-  store frees the old pair (record-driven, correct), and a LATER scope-exit
-  free of a heap-marked local in `sanitize_html_set_tag` (slot [x29+48],
-  the `substring` result) hits the same address. Whether that is malloc
-  address-reuse observed through a detector with a realloc-marking gap
-  (the instrumented audit runtime did not re-mark `_nomen_realloc_wrap`
-  results live in one iteration — its DOUBLE-FREE reports are not fully
-  trustworthy) or a genuine stale free is unresolved.
-- The audit LEAK counter itself drifts: wrapped-allocated blocks freed via
-  raw `#arch` paths (e.g. StringBuilder's `bl _realloc` grow / `extern
-free` teardown) move the counter without libmalloc seeing a leak —
-  `MallocStackLogging=1 leaks -atExit` reported **0 real leaks** on a
-  sanitize run whose counter read 28,311. The counter is still the test
-  contract, so drift reads as failures.
-- C is unaffected: the sanitize suite passes with `LEAK: 39` (the
-  documented bounded classes), and the port's non-sanitize aarch64 tests
-  match baseline exactly (core-list: 616/848 pre-existing).
-
-Per-test leak attribution (2026-10-02, `nomen test --audit`): the harness
-snapshots `Tester.audit_count()` (a raw-body method over a new
-`nomen_audit_count` in audit_runtime.c) around every test and emits a
-`\nomen|leaks|<test>|<n>` record when the balance grew, so a file's exit-time
-`LEAK:` total names its culprits; the summary counts leaking TESTS. On the
-C backend the sanitize suite's 39 leaks attribute to exactly two tests:
-`test_sanitize_never_throws_and_stays_stable_on_fuzzed_input` (38 — the
-seeded fuzz) and `test_sanitize_drops_obfuscated_javascript_urls` (1). The
-audit runtime is now linked into every test build (the harness polls the
-counter), and run/build link it when the program references the symbol.
+  The allmark aarch64 sanitize suite's unmatched frees now surface as an
+  `AUDIT-STALE-FREE:` finding naming the kind instead of a libmalloc abort
+  (docs/TESTING.md, "Audit findings").
 
 ## Trait-declared field ownership corners
 
@@ -236,6 +197,8 @@ A second (warm) run is fully green, and a cold run with
 concurrency/caching artifact in `check_output`'s cache write under load.
 Worth investigating `test/check_output.ts`'s `outputfile`/`cachefile` writes
 if it keeps biting.
+
+If it's green on the second run DO NOT re-run the tests again.
 
 ## Residual ownership-tracking gaps (accepted, narrow)
 
