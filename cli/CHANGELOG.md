@@ -17,6 +17,16 @@
 
 
 
+
+## 0.6.10
+<sub>2026-10-02</sub>
+
+-  *(patch)* - Cheapen aarch64 asm pipeline: shared lift, label maps, parse memo
+-  *(patch)* - aarch64 displaced container-field reclaim + field-read borrow fixes
+-  *(patch)* - per-test leak attribution in nomen test --audit
+-  *(patch)* - explicit free_strings in aarch64 field destroys
+-  *(patch)* - audit runtime: diagnose unmatched frees, mode-matched system object
+
 ## 0.6.9
 <sub>2026-10-01</sub>
 
