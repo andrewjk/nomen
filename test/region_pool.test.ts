@@ -42,6 +42,9 @@ function compile(source: string, force_region = false): string {
 // numbered globally — so main's loop labels must be discovered AFTER the
 // `_main:` label rather than assumed to start at a fixed number. Returns
 // main's loop numbers in order of first appearance (outermost first).
+// A spliced inline body (call-bearing auto inline) can contribute its own
+// `.while_N` labels inside main's text — callers that want one of MAIN's
+// own loops must therefore anchor on the loop's BODY, not just its index.
 function main_loops(code: string): number[] {
 	// main's body ends where the next function label begins (deferred
 	// emissions of referenced core functions can follow main's ret).
@@ -257,12 +260,28 @@ test("region-scoped source variable binds a loop-contained local to a borrowed r
 	// the register (`mov xR, x0` after the zero init) instead of its slot.
 	const code = compile(REGION_VAR_SHAPE, true);
 	// The region-var bracket rides the SECOND loop (the nest): the first
-	// loop is the buffer fill.
-	const [, inner] = main_loops(code);
-	const body = code.slice(code.indexOf(`.while_${inner}:`), code.indexOf(`.end_while_${inner}:`));
-	// The accumulator's declare is register-bound: `mov x0, #0` followed
-	// by a register copy (the slot form would be `str x0, [x29, #N]`).
-	expect(body).toMatch(/mov x0, #0\nmov x(?:1[2-5]|2[0-8]), x0\n/);
+	// loop is the buffer fill. The nest's INNER loop is the LAST `.while`
+	// label in main's body (a spliced grow at the top can contribute its
+	// own while labels ahead of it, so positional indexing is brittle).
+	const body_start = code.indexOf("_main:");
+	const body_end = code.indexOf(".return_0:", body_start);
+	const main_body = code.slice(body_start, body_end);
+	// Line-anchored header (`.end_while_N`/`.while_update_N` also contain
+	// `.while_N` as a substring): the inner loop is the LAST `\.while_N:`
+	// header in main's body.
+	const headers = [...main_body.matchAll(/\.while_(\d+):/g)];
+	const inner = headers[headers.length - 1][1];
+	const body = main_body.slice(
+		main_body.indexOf(`.while_${inner}:`),
+		main_body.indexOf(`.end_while_${inner}:`),
+	);
+	// The accumulator is register-resident in the loop body: the plan
+	// binds `t` at its declare (post-unlock shape — `add x0, x25, x23;
+	// mov x25, x0`, the accumulate in registers with zero frame-slot
+	// traffic). The pre-tranche slot form would be `str x0, [x29, #N]`
+	// round-trips inside the body.
+	expect(body).toMatch(/add x\d+, x\d+, x\d+\nmov x\d+, x0\n/);
+	expect(body).not.toMatch(/\[x29, #\d+\]/);
 	// The var needs no promotion entry load (it is defined inside the
 	// loop): every pre-loop promotion load targets a slot the function
 	// already stored (k/sum inits precede their loads). The pre-tranche

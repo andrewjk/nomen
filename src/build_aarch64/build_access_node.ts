@@ -41,6 +41,7 @@ import build_inline_method, {
 	begin_inline_splice,
 	end_inline_splice,
 	inline_splice_active,
+	inline_splice_depth,
 	naked_inline_skips_self,
 } from "./build_inline_method.ts";
 import build_node from "./build_node.ts";
@@ -3170,7 +3171,7 @@ function build_access_method(
 	const target_struct = status.structs.find((s) => s.name === mono_struct_name);
 	const inline_func = target_struct?.functions.find(
 		(f) =>
-			(f.is_inline || is_auto_inline_method(f)) &&
+			(f.is_inline || is_auto_inline_method(f, inline_splice_depth())) &&
 			f.name === access_func.name &&
 			(access_func.mangled_name
 				? mangled_label(f, mono_struct_name) === access_func.mangled_name

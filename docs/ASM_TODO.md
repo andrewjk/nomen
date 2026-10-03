@@ -21,15 +21,18 @@ remains to be done from each:
 
 ## ASM_PLAN_7.md — remaining aarch64 gap
 
-All eight tranches landed, but the plan's target is not fully met:
+All eight tranches landed, and the tranche-7 follow-up landed 2026-10-03:
+call-bearing auto-inline is UNLOCKED (the +52–62% receipt was two
+`build_inline_method` state leaks — `nir_site_allocs` never restored, and
+`int_dest_hint`/`float_dest_hint` leaking into spliced bodies; see the
+follow-up section at the end of ASM_PLAN_7.md). The ensure→grow_int chain
+splices with zero hot-path bls.
 
-- **Cause 6 — real calls + ABI marshaling (the main residual).** Auto-inline
-  of small methods (tranche 7) shipped **leaf-only**; call-bearing splices
-  (`ensure`/`grow`) measured +52–62% regression and are gated off. Unlocking
-  them needs a properly nested frame context plus an inline cost model. (The
-  doc cites FOLLOWUP.md, but that entry was never written — add it there.)
 - **pidigits still ~1.5× vs C `-O2`** (spectral-norm closed by tranche 8).
-  Causes 2–5 and 7 are addressed; cause 6 is the remaining named lever.
+  Cause 6's call overhead is now spliced away but measures NEUTRAL — the
+  residual decomposes into the loop-planning gates' treatment of functions
+  whose spliced bodies write the heap (heap-freedom proofs refuse pins),
+  not into call overhead.
 - **Tranche list re-check:** tranches 1–8 all landed (tranche 1 =
   `asm_if_convert.ts` / `test/if_convert.test.ts`; the doc has no write-up
   for it).

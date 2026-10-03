@@ -6,8 +6,8 @@ import FunctionNode from "../../nodes/FunctionNode.ts";
 const MAX_STATEMENTS = 15;
 
 /** Auto method inlining (ASM_PLAN_7 tranche 7), default ON: LEAF bodies
- *  only (no calls), no T-generic callees, struct receivers, ≤3 statements
- *  and params. Measured (n=4000/1500-scale benches, interleaved best-of):
+ *  (no calls), no T-generic callees, struct receivers, ≤3 statements and
+ *  params. Measured (n=4000/1500-scale benches, interleaved best-of):
  *  spectral-norm −53%, knucleotide −26%, json-serde/fannkuch ~−1%,
  *  neutral elsewhere. OFF restores exactly the explicit-`inline`-only
  *  dispatch. */
@@ -21,8 +21,31 @@ export function set_auto_method_inline_enabled(enabled: boolean): void {
 	auto_method_inline_on = enabled;
 }
 
+/** Call-bearing auto inlining (the ASM_PLAN_7 follow-up), default ON:
+ *  admits auto candidates whose bodies CALL, when every call splices
+ *  through (the callee is itself inline-spliceable under the same rules,
+ *  transitively, depth-capped) or is an `extern` (a `bl` either way —
+ *  the grow_int receipt: `ensure`→`grow_int` leaves only realloc/memset
+ *  bls on the cold path, so the hot path's call disappears entirely).
+ *  The original +52–62% regression receipt for call-bearing splices was
+ *  the leaked `nir_site_allocs` clear in build_inline_method (fixed:
+ *  the splice stripped the rest of the host function of its planned
+ *  registers — slot-resident loops, pidigits +40% at n=20000), not an
+ *  intrinsic cost. OFF restores exactly the leaf-only admission. */
+let auto_calling_inline_on = true;
+
+export function auto_calling_inline_enabled(): boolean {
+	return auto_calling_inline_on;
+}
+
+export function set_auto_calling_inline_enabled(enabled: boolean): void {
+	auto_calling_inline_on = enabled;
+}
+
 const MAX_AUTO_METHOD_STATEMENTS = 3;
 const MAX_AUTO_METHOD_PARAMS = 3;
+const MAX_AUTO_CALLING_STATEMENTS = 10;
+const MAX_AUTO_SPLICE_DEPTH = 2;
 
 /**
  * ensure/grow/clear-shaped methods (ASM_PLAN_7 tranche 7): small real
@@ -35,12 +58,26 @@ const MAX_AUTO_METHOD_PARAMS = 3;
  * scalar-or-void return. The standalone body is still emitted — trait
  * dispatch, method values, and overflow-arg call sites keep taking the
  * `bl`, so nothing here may skip emission.
+ *
+ * `depth` is the number of inline splices already open at the dispatch
+ * site (build_access_node passes `active_splices.size`); the admission
+ * recursion for a candidate's callees runs at `depth + 1`, so a chain
+ * deeper than MAX_AUTO_SPLICE_DEPTH is refused everywhere — the plan-time
+ * and emit-time verdicts then agree.
  */
-export function is_auto_inline_method(func: FunctionNode): boolean {
+export function is_auto_inline_method(func: FunctionNode, depth = 0): boolean {
 	if (!auto_method_inline_on) return false;
 	if (!func.has_body) return false;
 	if (func.is_inline) return false; // explicit — the call sites already select it
-	if (func.statements.length === 0 || func.statements.length > MAX_AUTO_METHOD_STATEMENTS) {
+	const calls = body_calls(func.statements);
+	// The tight 3-statement leaf budget is the depth-0 dispatch shape
+	// (tranche 7's receipts). A CHAIN LINK (depth > 0 — admitted only as
+	// the callee of an admitted call-bearing candidate) rides the wider
+	// budget whether or not its own body calls: a call-free grow_to-shaped
+	// body is exactly as spliceable as a call-bearing one.
+	const max_statements =
+		calls || depth > 0 ? MAX_AUTO_CALLING_STATEMENTS : MAX_AUTO_METHOD_STATEMENTS;
+	if (func.statements.length === 0 || func.statements.length > max_statements) {
 		return false;
 	}
 	if (func.returns_move) return false;
@@ -84,25 +121,33 @@ export function is_auto_inline_method(func: FunctionNode): boolean {
 	if (func.return_type?.is_nullable) return false;
 	if (func.return_type?.name && !SIMPLE_TYPES.includes(func.return_type.name)) return false;
 
-	// LEAF-ONLY: the body may not call anything. Measured receipt:
-	// call-BEARING splices (ensure→grow_int chains expanded into hot loops)
-	// ran pidigits n=4000 +52–62% — the expanded frame traffic and defeated
-	// loop planning cost far more than the saved call. Call-bearing methods
-	// keep the real call; the ensure-shaped win needs the frame-context
-	// work first. (The nested generic-splice miscompile that also motivated
-	// this gate — the JsonTree crash — is fixed; user-marked `inline`
-	// methods with call-bearing bodies now splice.)
-	if (body_has_call(func.statements)) return false;
-
-	return true;
+	// LEAF: the body may not call anything — admitted unconditionally
+	// (the original tranche-7 shape). A body that calls admits only under
+	// the call-bearing cost model: every call splices through (the callee
+	// is itself admitted at the next depth, or a user-`inline` method the
+	// splice path already handles) or is an `extern` (a `bl` either way).
+	// The ensure→grow_int chain then expands with ZERO bls on the hot
+	// path — grow_int's `if self.cap >= needed return` fast path inlines
+	// into the caller's loop and only realloc/memset stay, on the cold
+	// path. The original +52–62% regression for this shape was the leaked
+	// nir_site_allocs clear in build_inline_method (see there), not an
+	// intrinsic cost.
+	if (!calls) return true;
+	if (!auto_calling_inline_on) return false;
+	if (depth >= MAX_AUTO_SPLICE_DEPTH) return false;
+	return body_calls_splice_through(func.statements, depth);
 }
 
 /** Whether the subtree contains any call (method or function). */
 function body_has_call(node: BaseNode | BaseNode[] | null | undefined): boolean {
+	return body_calls(node);
+}
+
+function body_calls(node: BaseNode | BaseNode[] | null | undefined): boolean {
 	if (!node) return false;
 	if (Array.isArray(node)) {
 		for (const item of node) {
-			if (body_has_call(item)) return true;
+			if (body_calls(item)) return true;
 		}
 		return false;
 	}
@@ -110,9 +155,50 @@ function body_has_call(node: BaseNode | BaseNode[] | null | undefined): boolean 
 	const nt = (node as any).node_type;
 	if (nt === "access_func" || nt === "func_call") return true;
 	for (const child of child_nodes(node)) {
-		if (body_has_call(child as BaseNode)) return true;
+		if (body_calls(child as BaseNode)) return true;
 	}
 	return false;
+}
+
+/**
+ * The call-bearing cost model: every call in the subtree must either be
+ * an `extern` (a `bl` whether the host splices or not — the expansion
+ * changes nothing about the call count) or splice through — the callee is
+ * a user-`inline` method (the splice path already handles call-bearing
+ * user bodies) or itself admitted as an auto candidate at `depth + 1`.
+ * Anything else keeps the host on the real `bl` path: expanding a call
+ * whose callee cannot splice replaces one `bl` with the same `bl` plus
+ * parking, which is the shape the tranche-7 receipts measured as a loss.
+ *
+ * `resolved_function` is the checker's stamp — present on every call the
+ * checker accepted, and clone_node preserves it. A call without one is
+ * refused (conservative).
+ */
+function body_calls_splice_through(
+	node: BaseNode | BaseNode[] | null | undefined,
+	depth: number,
+): boolean {
+	if (!node) return true;
+	if (Array.isArray(node)) {
+		for (const item of node) {
+			if (!body_calls_splice_through(item, depth)) return false;
+		}
+		return true;
+	}
+	if (typeof node !== "object") return true;
+	const any_node = node as any;
+	const nt = any_node.node_type as string;
+	if (nt === "access_func" || nt === "func_call") {
+		const callee = any_node.resolved_function as FunctionNode | undefined;
+		if (!callee) return false;
+		if (callee.is_extern) return true;
+		if (callee.is_inline) return true;
+		return is_auto_inline_method(callee, depth + 1);
+	}
+	for (const child of child_nodes(node)) {
+		if (!body_calls_splice_through(child as BaseNode, depth)) return false;
+	}
+	return true;
 }
 
 export function scan_inline_candidates(root: BaseNode): Map<string, BaseNode> {

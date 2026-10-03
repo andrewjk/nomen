@@ -487,3 +487,82 @@ the emit_nir benchmark-corpus byte-identity test has grown marginal
 against its 30 s budget on this machine after hours of continuous
 runs — it times out identically at the pre-tranche-8 HEAD (verified
 via stash), so the flakiness is environmental, not this diff.
+
+### Follow-up (2026-10-03): call-bearing auto-inline unlocked — the regression receipts were state leaks
+
+The leaf-only gate's "+52–62%" receipt is overturned. Re-running the
+experiment at HEAD (leaf gate dropped; ensure spliced at all 21 pidigits
+sites) showed the expanded shape cost nothing at n=4000 but +40%+ at
+n=20000/40000 with byte-identical output — and a transitive experiment
+(core `ensure`/`grow_int` hand-marked `inline`, so the user-inline path
+expanded the chain) regressed to 90 s vs 63 s at n=40000. Chasing that
+delta found TWO state leaks in `build_inline_method`/`build_inline_function`,
+both fixes landed in this diff:
+
+1. **`nir_site_allocs` was cleared and never restored.** Every other
+   state-resetting site (build_function_node, build_struct_node ×5)
+   saves/restores the site-allocation table; the inline splice set it
+   `undefined` and left it that way for the REST of the enclosing
+   function's body build. Every statement after the first spliced call
+   emitted slot-resident: mul_to's small-b loop lost its `adds`/`cset`
+   flag-form carry and register residency (census: 16 → 28 instructions,
+   carry through `[x29,#N]` slots). This is also the mechanism behind
+   the long-standing BigInt.nm receipt ("the inline splice perturbs the
+   whole-function asm plan" — data_ptr-as-Nomen cost pidigits ~30%):
+   user-inline splices leaked the same clear. The raw-only path never
+   leaked (it returns before the state swap).
+2. **`int_dest_hint`/`float_dest_hint` were not isolated.** The hints are
+   consume-once state owned by the CALL SITE's assignment/declaration
+   (callee-saved x23–x28 targets). A spliced body ran under the caller's
+   live hint: its interior ops consumed it and emitted into the caller's
+   planned register — clobbering the enclosing loop's induction AND
+   skipping the call's own x0→target writeback (the hint looked
+   consumed). Receipt: `Container_mark_dirty`'s child-walk loop
+   (`test/layout_container.test.ts`) hung at 100% CPU — the spliced
+   body's `add x23, x24, x2` destroyed the loop's induction register.
+   Leaf splices never hit this because their root op IS the call's
+   result (the hint flowing to them was accidentally correct).
+
+With both fixed, the transitive experiment went 90 s → neutral, and the
+call-bearing unlock landed:
+
+- **The unlock** (`is_auto_inline_method` + kill-switch
+  `set_auto_calling_inline_enabled`, default ON): a body that CALLS
+  admits when every call splices through — the callee is user-`inline`
+  or itself admitted at the next depth (transitively, capped at
+  MAX_AUTO_SPLICE_DEPTH = 2, with the emit dispatch passing
+  `active_splices.size` so plan-time and emit-time verdicts agree) — or
+  is an `extern` (a `bl` either way). Chain links ride the 10-statement
+  budget whether or not their own bodies call (a call-free `grow_to` at
+  depth 1 is exactly as spliceable as a call-bearing one). The
+  ensure→grow_int chain then expands with ZERO bls on the hot path —
+  grow's `cap >= needed` fast path inlines into the caller's loop and
+  only realloc/memset remain, on the cold path. pidigits: 0
+  `bl BigInt_ensure` remain (was 21 sites × 1 call per D-iteration).
+- **Tests**: `test/auto_calling_inline.test.ts` (8: splice-through
+  shape, both kill switches, non-spliceable-callee refusal, depth-cap
+  refusal, behavioral capacity ramp + the mark_dirty declaration-RHS
+  shape, both backends; 7 of 8 fail on pre-tranche code). The splice
+  hygiene property (a spliced call leaves the rest of the host
+  function's register plan untouched) is pinned in the same file. Two
+  shape tests updated for the new canonical forms: perf_codegen's
+  `List_Op_push` now splices `Buffer_Op_grow` (fast path inline, cold
+  `bl extern_realloc` stays); region_pool's loop-label indexing anchors
+  on main's last `.while_N:` header (a splice's own while labels shift
+  the global counter).
+
+**Honest accounting (interleaved medians, n=4000/20000/40000, outputs
+byte-identical across backends on the 8-bench matrix): the unlock is
+perf-NEUTRAL on pidigits** — 15.20 s vs 15.20 s at n=20000 (5-round
+interleaved, spread <0.3%), 63.4 vs 63.4 s at n=40000. The per-iteration
+call overhead the plan chased (12% of samples in the ensure region) is
+real but the splice trades it for parking traffic and a +25% text
+growth (each site carries the cold grow body); the loop passes' gates
+(heap-freedom proofs, call-free scratch scans) still refuse the loops
+of functions whose spliced bodies write the heap, so no pin improvement
+materializes. What the tranche BUYS: the call-bearing splice class is
+sound and default-ON (clang's ensure/grow shape is now expressible),
+the two leaks no longer tax every existing user-inline splice site,
+and the residual pidigits gap (~1.5×) now decomposes cleanly into the
+loop-planning gates' treatment of spliced calls — the next lever, not
+this one.

@@ -149,11 +149,15 @@ sink += ops.length
 		const code = build_aarch64(IDIOM);
 		const push = asm_function_body(code, "List_Op_push:");
 		// The only allocation is amortized slab growth (grow reallocs), and
-		// the element store is the naked-inlined memcpy path.
+		// the element store is the naked-inlined memcpy path. The growth
+		// call itself now SPLICES (call-bearing auto inline — the unlock):
+		// grow's `cap >= needed` fast path inlines into push and only the
+		// cold-path realloc stays a call.
 		expect(push).not.toContain("bl _malloc");
 		expect(push).not.toContain("bl _calloc");
 		expect(push).not.toContain("bl _free");
-		expect(push).toContain("bl Buffer_Op_grow");
+		expect(push).not.toContain("bl Buffer_Op_grow");
+		expect(push).toContain("bl extern_realloc");
 		expect(push).toContain("bl _memcpy");
 		// The construct/mutate/push loop in main must not allocate either.
 		const main = asm_function_body(code, "_main:");

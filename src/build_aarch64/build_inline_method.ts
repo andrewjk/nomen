@@ -29,6 +29,13 @@ export function inline_splice_active(struct_name: string, func_name: string): bo
 	return active_splices.has(`${struct_name}.${func_name}`);
 }
 
+/** How many inline splices are currently open (build_access_node passes
+ *  this to is_auto_inline_method as the admission depth, so the emit-time
+ *  chain cap agrees with the plan-time recursion). */
+export function inline_splice_depth(): number {
+	return active_splices.size;
+}
+
 export function begin_inline_splice(struct_name: string, func_name: string): void {
 	active_splices.add(`${struct_name}.${func_name}`);
 }
@@ -218,6 +225,27 @@ export default function build_inline_method(
 	const old_return_buffer_offset = status.return_buffer_stack_offset;
 	const old_function_return_type = status.function_return_type;
 	const old_register_allocations = status.register_allocations;
+	// The site-allocation table joins the save/restore set: the splice
+	// clears it (the body must not read the caller's per-site register
+	// bindings), and a LEAKED clear would strip every later statement in
+	// the enclosing function of its planned registers — slot-resident
+	// emission for the rest of the body (pidigits receipt: mul_to/div_to
+	// loops lost register residency after the first spliced call, +40%
+	// at n=20000).
+	const old_nir_site_allocs = status.nir_site_allocs;
+	// Destination hints are consume-once state owned by the CALL SITE's
+	// assignment/declaration (the target's planned register). The spliced
+	// body must not see them: its root ops would consume the hint and
+	// emit interior temps into the caller's callee-saved target (x23-x28)
+	// — clobbering whatever the enclosing loop planned there AND skipping
+	// the call's own x0->target writeback (the container-grid hang: the
+	// child-walk induction lived in x23; the spliced get's `i + 1`
+	// consumed the hint and destroyed it mid-loop). Clear inside; the
+	// caller's writeback mov runs after the splice as designed.
+	const old_int_dest_hint = status.int_dest_hint;
+	const old_float_dest_hint = status.float_dest_hint;
+	status.int_dest_hint = undefined;
+	status.float_dest_hint = undefined;
 	const old_buffer_data_cache = status.buffer_data_cache;
 	const old_buffer_fold_cache = status.buffer_fold_cache;
 	const old_array_ptr_cache = status.array_ptr_cache;
@@ -479,6 +507,9 @@ export default function build_inline_method(
 	status.return_buffer_stack_offset = old_return_buffer_offset;
 	status.function_return_type = old_function_return_type;
 	status.register_allocations = old_register_allocations;
+	status.nir_site_allocs = old_nir_site_allocs;
+	status.int_dest_hint = old_int_dest_hint;
+	status.float_dest_hint = old_float_dest_hint;
 	status.buffer_data_cache = old_buffer_data_cache;
 	status.buffer_fold_cache = old_buffer_fold_cache;
 	status.array_ptr_cache = old_array_ptr_cache;
@@ -521,6 +552,23 @@ export function build_inline_function(func: FunctionNode, status: BuildStatus) {
 	const old_return_buffer_offset = status.return_buffer_stack_offset;
 	const old_function_return_type = status.function_return_type;
 	const old_register_allocations = status.register_allocations;
+	// See build_inline_method: the site-allocation table joins the
+	// save/restore set (a leaked clear strips the rest of the enclosing
+	// function of its planned registers).
+	const old_nir_site_allocs = status.nir_site_allocs;
+	// Destination hints are consume-once state owned by the CALL SITE's
+	// assignment/declaration (the target's planned register). The spliced
+	// body must not see them: its root ops would consume the hint and
+	// emit interior temps into the caller's callee-saved target (x23-x28)
+	// — clobbering whatever the enclosing loop planned there AND skipping
+	// the call's own x0->target writeback (the container-grid hang: the
+	// child-walk induction lived in x23; the spliced get's `i + 1`
+	// consumed the hint and destroyed it mid-loop). Clear inside; the
+	// caller's writeback mov runs after the splice as designed.
+	const old_int_dest_hint = status.int_dest_hint;
+	const old_float_dest_hint = status.float_dest_hint;
+	status.int_dest_hint = undefined;
+	status.float_dest_hint = undefined;
 	const old_buffer_data_cache = status.buffer_data_cache;
 	const old_buffer_fold_cache = status.buffer_fold_cache;
 	const old_array_ptr_cache = status.array_ptr_cache;
@@ -714,6 +762,9 @@ export function build_inline_function(func: FunctionNode, status: BuildStatus) {
 	status.return_buffer_stack_offset = old_return_buffer_offset;
 	status.function_return_type = old_function_return_type;
 	status.register_allocations = old_register_allocations;
+	status.nir_site_allocs = old_nir_site_allocs;
+	status.int_dest_hint = old_int_dest_hint;
+	status.float_dest_hint = old_float_dest_hint;
 	status.buffer_data_cache = old_buffer_data_cache;
 	status.buffer_fold_cache = old_buffer_fold_cache;
 	status.array_ptr_cache = old_array_ptr_cache;
