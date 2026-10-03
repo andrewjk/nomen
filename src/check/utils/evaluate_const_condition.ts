@@ -196,8 +196,26 @@ function evaluate_operation(
 					// (n < arr.length) ⇒ i < arr.length.
 					for (const u of left_decl.upper_bound_exprs) {
 						const v = parse_offset_expr(u);
-						if (v && v.offset === 0 && u !== target_str) {
+						// offset < 0 (a TIGHTER intermediate, `i < base - c`)
+						// proves everything the bare base proves: relax to
+						// `i < base` and continue the chain from it. This is
+						// what lets `while i < a.cap - 1` chain through a
+						// mirrored `b.cap >= a.cap` guard to `i < b.cap`.
+						if (v && v.offset <= 0 && u !== target_str) {
 							const vdecl = status.values.findLast((vv) => vv.name === v.base);
+							// A dotted intermediate (`i < a.cap`) consults the base
+							// variable's PATH entry: the mirrored guard recording
+							// (`b.cap >= a.cap`) put `b.cap` on a.cap's inclusive
+							// upper, so the chain i < a.cap <= b.cap closes here.
+							const vpath = v.base.includes(".")
+								? status.values
+										.findLast((vv) => vv.name === v.base.split(".")[0])
+										?.path_bounds?.get(v.base)
+								: undefined;
+							if (vpath) {
+								if (vpath.upper?.includes(target_str!)) return true;
+								if (vpath.upper_inclusive?.includes(target_str!)) return true;
+							}
 							if (vdecl?.upper_bound_exprs?.includes(target_str!)) return true;
 							if (vdecl?.upper_bound_inclusive_exprs?.includes(target_str!) && op.op === "<=") {
 								return true;
@@ -227,8 +245,19 @@ function evaluate_operation(
 					}
 					for (const u of left_decl.upper_bound_inclusive_exprs) {
 						const v = parse_offset_expr(u);
-						if (v && v.offset === 0 && u !== target_str) {
+						// Same relaxation: `i <= base - c` (c >= 1) implies
+						// `i < base`, which implies any inclusive upper on base.
+						if (v && v.offset <= 0 && u !== target_str) {
 							const vdecl = status.values.findLast((vv) => vv.name === v.base);
+							const vpath = v.base.includes(".")
+								? status.values
+										.findLast((vv) => vv.name === v.base.split(".")[0])
+										?.path_bounds?.get(v.base)
+								: undefined;
+							if (vpath) {
+								if (vpath.upper?.includes(target_str!)) return true;
+								if (vpath.upper_inclusive?.includes(target_str!)) return true;
+							}
 							if (vdecl?.upper_bound_exprs?.includes(target_str!)) return true;
 							if (vdecl?.upper_bound_inclusive_exprs?.includes(target_str!)) return true;
 						}

@@ -647,3 +647,36 @@ group_elems: 16, shift: 4 }`, `ElemClass "e1"`, and the
   loop — `alloc_temps_of` now exempts `induction + c` index temps from
   the element-class check (address materialization, not lane data; the
   lanes walk consumes them into `induction_alias`).
+
+### Addendum 3 (2026-10-03): shifted-read checker discharge (ref-param/path guards)
+
+Writing the byte/shifted tests exposed a pre-existing checker gap that made
+the natural shift-kernel shape unrepresentable: a helper taking `ref Buffer`
+args could not prove `load(i + 1)` even under a sound guard — and the root
+cause was NOT the shift at all. Three layers, all fixed:
+
+1. **`expr_to_string` renders `path ± int`** (`a.cap - 1`). It previously
+   returned undefined for ANY binary expression, so a loop bound like
+   `while i < a.cap - 1` recorded NO fact on the induction — every shifted
+   (and unshifted!) access in such a loop refused. The offset form is
+   exactly what the machinery already parses (`shift_offset_expr` /
+   `parse_offset_expr`); deeper arithmetic stays unrenderable.
+2. **Path-vs-path guards mirror** (`apply_bounds`): `if b.cap >= a.cap`
+   recorded only on b's path entry (a.cap as a LOWER bound of b.cap); the
+   mirrored fact (a.cap's inclusive upper = b.cap) is now recorded too, so
+   chains can pass THROUGH a.cap.
+3. **The transitive chain relaxes and reads paths**
+   (evaluate_const_condition): an intermediate with a negative offset
+   (`i < a.cap - 1`) proves everything the bare base proves (integer
+   tighter-bound relaxation), and dotted intermediates consult the base
+   variable's `path_bounds` entry.
+
+Receipt: the two-ref-param shift kernel (`twobuf` shape — `func shift(ref
+Buffer<float> a, ref Buffer<float> b)` with `while i < a.cap - 1` +
+`b.store_float(i, a.load_float(i + 1))` under `if b.cap >= a.cap`) now
+compiles and vectorizes; the 8-program checker matrix (single/multi-param,
+local/param receivers, shifted/unshifted, byte/int) is green, and the full
+suite (3926 tests — including every bounds-REFUSAL test pinning the
+verifier's strictness) passes unchanged. Still open (ASM_TODO): VARIABLE
+shift discharge (`load_int(j + d)`), which needs same-token symbolic
+offset cancellation rather than literal folding.

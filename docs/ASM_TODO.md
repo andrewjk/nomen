@@ -16,10 +16,16 @@ remains to be done from each:
 - **Byte (`.16b`) element kinds — LANDED 2026-10-03.** `Buffer<uint8>` loops
   ride the new `load_u8`/`store_u8` width-matched raw inlines (the scalar
   path is the naked-inline splice, same as load_int) and a `.16b` descriptor
-  (16 lanes per group); reductions and `*` stay unplanned for e1. The two
-  checker gaps found en route remain open: variable-shift discharge
-  (`load_int(j + d)` against `j < n - d`) and shifted-read discharge through
-  a `ref`-param receiver path (`self.cap` vs the caller's fact name).
+  (16 lanes per group); reductions and `*` stay unplanned for e1.
+- **Shifted-read checker discharge — the ref-param/path gap FIXED 2026-10-03.**
+  A helper taking `ref Buffer` args can now prove `load(i + 1)` against
+  `while i < a.cap - 1` + `if b.cap >= a.cap`: `expr_to_string` renders
+  `path ± int` bounds (the loop fact now records), `apply_bounds` mirrors
+  path-vs-path guards onto the other side's path entry (`a.cap <= b.cap`),
+  and the transitive chain relaxes tighter intermediates and consults
+  `path_bounds` for dotted hops. Still open: VARIABLE-shift discharge
+  (`load_int(j + d)` against `j < n - d`) — needs symbolic (same-token)
+  offset cancellation, not just literals.
 - (The rest of ASM_PLAN_4 is closed: item 1 SLP landed; item 2's
   allocator-level pass was carried out by ASM_PLAN_5/6; item 3 accounting
   written; item 4's other bullets are decided/superseded; item 5 done.)

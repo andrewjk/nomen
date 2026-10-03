@@ -131,6 +131,22 @@ export function expr_to_string(node: BaseNode, status?: CheckStatus): string | u
 			}
 		}
 	}
+	if (node.node_type === "op") {
+		// `path ± int-literal` (`a.cap - 1`, `n + 2`): the offset form the
+		// bound machinery already parses (shift_offset_expr /
+		// parse_offset_expr), so a loop bound like `while i < a.cap - 1`
+		// records the fact `i < a.cap - 1` and a shifted argument
+		// (`load(i + 1)`) folds its stored bound back to `a.cap`. Deeper
+		// arithmetic (both sides non-literal) stays unrenderable.
+		const op = node as OperationNode;
+		if (op.op === "+" || op.op === "-") {
+			const l = op.left_value ? expr_to_string(op.left_value, status) : undefined;
+			const r = op.right_value ? expr_to_string(op.right_value, status) : undefined;
+			if (l && r && /^[+-]?\d+$/.test(r) && !/^[+-]?\d+$/.test(l)) {
+				return `${l} ${op.op} ${r}`;
+			}
+		}
+	}
 	return undefined;
 }
 
@@ -432,6 +448,26 @@ export function apply_bounds(condition: BaseNode, status: CheckStatus, is_loop =
 			var_decl.path_bounds.set(bound.var_name, path_entry);
 		}
 	}
+	// Path-vs-path guard (`b.cap >= a.cap`): record the MIRRORED fact on the
+	// expr side's path entry too (`a.cap <= b.cap`). Without the mirror the
+	// chain `i < a.cap` + `b.cap >= a.cap` cannot prove `i < b.cap` — the
+	// transitive walk from `a.cap` finds no entry (the guard only touched
+	// b's path). Both sides are loop-invariant addresses, so the fact is
+	// symmetric; the operator flips accordingly.
+	const expr_is_path = /^\w+(\.\w+)+$/.test(bound.expr);
+	const expr_mirror_target = expr_is_path ? bound.expr.split(".")[0] : undefined;
+	let mirror_entry: import("../StackValue.ts").PathBounds | undefined;
+	if (expr_mirror_target && bound.expr !== bound.var_name) {
+		const expr_decl = status.values.findLast((v) => v.name === expr_mirror_target);
+		if (expr_decl) {
+			if (!expr_decl.path_bounds) expr_decl.path_bounds = new Map();
+			mirror_entry = expr_decl.path_bounds.get(bound.expr);
+			if (!mirror_entry) {
+				mirror_entry = {};
+				expr_decl.path_bounds.set(bound.expr, mirror_entry);
+			}
+		}
+	}
 	const push_unique = (arr: string[] | undefined, expr: string): string[] => {
 		const out = arr ?? [];
 		if (!out.includes(expr)) out.push(expr);
@@ -450,10 +486,16 @@ export function apply_bounds(condition: BaseNode, status: CheckStatus, is_loop =
 			if (path_entry) {
 				path_entry.upper_inclusive = push_unique(path_entry.upper_inclusive, bound.expr);
 			}
+			if (mirror_entry && bound.var_name) {
+				mirror_entry.lower_inclusive = push_unique(mirror_entry.lower_inclusive, bound.var_name);
+			}
 		} else {
 			var_decl.upper_bound_exprs = push_unique(var_decl.upper_bound_exprs, bound.expr);
 			if (path_entry) {
 				path_entry.upper = push_unique(path_entry.upper, bound.expr);
+			}
+			if (mirror_entry && bound.var_name) {
+				mirror_entry.lower = push_unique(mirror_entry.lower, bound.var_name);
 			}
 		}
 		// Backwards compat
@@ -494,10 +536,16 @@ export function apply_bounds(condition: BaseNode, status: CheckStatus, is_loop =
 			if (path_entry) {
 				path_entry.lower_inclusive = push_unique(path_entry.lower_inclusive, bound.expr);
 			}
+			if (mirror_entry && bound.var_name) {
+				mirror_entry.upper_inclusive = push_unique(mirror_entry.upper_inclusive, bound.var_name);
+			}
 		} else {
 			var_decl.lower_bound_exprs = push_unique(var_decl.lower_bound_exprs, bound.expr);
 			if (path_entry) {
 				path_entry.lower = push_unique(path_entry.lower, bound.expr);
+			}
+			if (mirror_entry && bound.var_name) {
+				mirror_entry.upper = push_unique(mirror_entry.upper, bound.var_name);
 			}
 		}
 		var_decl.lower_bound_expr = bound.expr;
@@ -508,8 +556,13 @@ export function apply_bounds(condition: BaseNode, status: CheckStatus, is_loop =
 			const lo = bound.op === ">=" ? num.lower : num.upper;
 			if (var_decl.range_lower === undefined || lo > var_decl.range_lower)
 				var_decl.range_lower = lo;
-			if (path_entry && (path_entry.range_lower === undefined || lo > path_entry.range_lower))
-				path_entry.range_lower = lo;
+			if (path_entry) {
+				if (is_loop) {
+					path_entry.range_lower = lo;
+				} else if (path_entry.range_lower === undefined || lo > path_entry.range_lower) {
+					path_entry.range_lower = lo;
+				}
+			}
 		}
 	}
 
