@@ -6,15 +6,16 @@ remains to be done from each:
 
 ## ASM_PLAN_4.md — remaining steps
 
-- **Shifted-index vectorization (`load(i + 1)`) — BLOCKED UPSTREAM.** The
-  soundness design exists (per-element event-order rule), but the checker's
-  bound verifier cannot prove `i >= 0 && i + 1 < cap` under any guard shape.
-  No shifted program reaches the NEON planner today; unblocking means
-  extending the verifier (memory-safety-critical).
+- **Shifted-index vectorization (`load(i + 1)`) — LANDED 2026-10-03.** The
+  checker's bound verifier accepts the shifted guard shapes (the ASM_PLAN_4-era
+  verifier gap is gone); the remaining blocker was in the NEON planner, and
+  the per-element event-order rule landed: `load_T(i + c)` with a literal
+  c >= 1 plans through an adjusted read pointer, stores stay exact-induction,
+  the trip limit shrinks by the max shift, c <= 0 refuses. Differential
+  on/off + oracle receipt in `test/neon_vector.test.ts`.
 - **Byte (`.16b`) element kinds.** `load_T`/`store_T` are not in the scalar
   inline fast path (they emit real calls), so there is nothing to vectorize —
-  needs scalar-path inlining first. Byte loads also hit the same checker
-  bound-verifier gap as shifted indices.
+  needs scalar-path inlining first. (The verifier gap part is resolved.)
 - (The rest of ASM_PLAN_4 is closed: item 1 SLP landed; item 2's
   allocator-level pass was carried out by ASM_PLAN_5/6; item 3 accounting
   written; item 4's other bullets are decided/superseded; item 5 done.)

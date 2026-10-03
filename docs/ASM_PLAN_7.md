@@ -566,3 +566,48 @@ the two leaks no longer tax every existing user-inline splice site,
 and the residual pidigits gap (~1.5×) now decomposes cleanly into the
 loop-planning gates' treatment of spliced calls — the next lever, not
 this one.
+
+### Addendum (2026-10-03): shifted-read NEON vectorization (`load_T(i + c)`, c >= 1)
+
+ASM_PLAN_4's "shifted-index vectorization" item recorded the lever as
+BLOCKED UPSTREAM: "the checker's bound verifier cannot prove
+`i >= 0 && i + 1 < cap` under any guard shape." At HEAD the verifier
+accepts both guard shapes (conjunction and cap-relative bounds) — the
+blocker had moved into the NEON planner, whose soundness model rejected
+shifted indices outright ("every Buffer access uses EXACTLY the
+induction index"). This addendum lands the designed per-element
+event-order rule:
+
+- **The rule** (`neon_plan.ts` header, updated): scalar iteration k
+  reads base+k+c, which (c > 0) is written — if at all — at iteration
+  k+c, AFTER the read; the vector group loads every lane before any
+  lane stores, so the group sees exactly the scalar pre-group values.
+  c <= 0 reads elements an earlier same-group lane wrote (fresh values
+  in scalar order, stale in vector lanes) — refused. STORES stay
+  exact-induction.
+- **Mechanics**: the load lane carries `shift`; the emitter materializes
+  one adjusted data pointer per distinct (buffer, shift > 0) pair in the
+  preheader (`add x15/x16/x17, buf, #shift*elem_size` — zero
+  per-iteration cost; the group-indexed `[reg, idx, lsl #4]` form is
+  reused verbatim), and the trip limit subtracts the max shift before
+  the floor divide (`sub x0, x0, #max_shift` then asr/bic — negative
+  bounds go more negative and the vector loop exits immediately, scalar
+  tail covers everything). Arg hoisting parks the shifted index in a
+  call-arg temp (`_param_N = i + c`); the planner resolves those
+  symbolically (`induction_alias`) — the temp never becomes a lane, so
+  any OTHER consumer of it refuses the plan.
+- **Bound forms**: `extract_bound` now accepts `base ± const` for path
+  bases (`while i < a.cap - 1`) AND scalar-leaf bases (`while i < n - 1`);
+  the preheader evaluates the whole expression once.
+- **Receipts** (`test/neon_vector.test.ts`, 46 tests): +1 shift plans
+  with the adjusted-pointer form and `sub x0, x0, #1` limit; the +1/+3
+  multi-shift loop materializes two adjusted pointers and agrees with
+  the scalar reference on both backends (1008977, cap=1024 via
+  grow_int's power-of-2 rounding — the first hand-oracle was wrong, the
+  compilers were right); negative shift and shifted store refuse; a
+  7-size × 3-shift stress program (61..67, shifts 1/3/4) agrees with an
+  independent Python oracle across the NEON on/off kill-switch arms
+  (633290 all three ways). Checker note: the shifted guard discharge
+  composes through LITERAL shifts (`j + 3` against `j < buf.cap - 3`);
+  a VARIABLE shift (`load_int(j + d)`) does not discharge — that
+  checker-side extension remains open (the planner side is ready).

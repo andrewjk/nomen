@@ -105,13 +105,20 @@ function emit_lane_expr(
 	status: BuildStatus,
 	plan: NeonPlan,
 	buffer_regs: Map<string, string>,
+	shifted_regs: Map<string, string>,
 	idx: string,
 	depth: number,
 ): void {
 	switch (e.k) {
 		case "load": {
-			const reg = buffer_regs.get(e.buffer) ?? "x11";
-			emit_asm(status, `ldr q0, [${reg}, ${idx}, lsl #4]\n`);
+			const key = `${e.buffer} ${e.shift}`;
+			const shifted = shifted_regs.get(key);
+			if (shifted) {
+				emit_asm(status, `ldr q0, [${shifted}, ${idx}, lsl #4]\n`);
+			} else {
+				const reg = buffer_regs.get(e.buffer) ?? "x11";
+				emit_asm(status, `ldr q0, [${reg}, ${idx}, lsl #4]\n`);
+			}
 			return;
 		}
 		case "lit":
@@ -149,11 +156,19 @@ function emit_lane_expr(
 				const right_mul = left_mul ? null : mul_of(e.right);
 				const mul = left_mul ?? right_mul;
 				if (mul && (e.op === "+" || !left_mul)) {
-					emit_lane_expr(left_mul ? e.right : e.left, status, plan, buffer_regs, idx, depth + 1);
+					emit_lane_expr(
+						left_mul ? e.right : e.left,
+						status,
+						plan,
+						buffer_regs,
+						shifted_regs,
+						idx,
+						depth + 1,
+					);
 					emit_asm(status, `mov v8.16b, v0.16b\n`);
-					emit_lane_expr(mul.left, status, plan, buffer_regs, idx, depth + 1);
+					emit_lane_expr(mul.left, status, plan, buffer_regs, shifted_regs, idx, depth + 1);
 					emit_asm(status, `mov ${spill_reg(depth + 1)}.16b, v0.16b\n`);
-					emit_lane_expr(mul.right, status, plan, buffer_regs, idx, depth + 1);
+					emit_lane_expr(mul.right, status, plan, buffer_regs, shifted_regs, idx, depth + 1);
 					emit_asm(status, `mov v1.16b, v0.16b\n`);
 					emit_asm(status, `mov v0.16b, ${spill_reg(depth + 1)}.16b\n`);
 					emit_asm(status, `${e.op === "+" ? "fmla" : "fmls"} v8.2d, v0.2d, v1.2d\n`);
@@ -161,9 +176,9 @@ function emit_lane_expr(
 					return;
 				}
 			}
-			emit_lane_expr(e.left, status, plan, buffer_regs, idx, depth + 1);
+			emit_lane_expr(e.left, status, plan, buffer_regs, shifted_regs, idx, depth + 1);
 			emit_asm(status, `mov ${spill_reg(depth)}.16b, v0.16b\n`);
-			emit_lane_expr(e.right, status, plan, buffer_regs, idx, depth + 1);
+			emit_lane_expr(e.right, status, plan, buffer_regs, shifted_regs, idx, depth + 1);
 			emit_asm(status, `mov v1.16b, v0.16b\n`);
 			emit_asm(status, `mov v0.16b, ${spill_reg(depth)}.16b\n`);
 			const { mnemonic, arr } = lane_op(e.op, plan.elem);
@@ -209,11 +224,12 @@ function emit_lane_stmt(
 	status: BuildStatus,
 	plan: NeonPlan,
 	buffer_regs: Map<string, string>,
+	shifted_regs: Map<string, string>,
 	idx: string,
 	acc_regs: Map<string, string>,
 ): void {
 	if (lane.kind === "temp_def") {
-		emit_lane_expr(lane.value, status, plan, buffer_regs, idx, 0);
+		emit_lane_expr(lane.value, status, plan, buffer_regs, shifted_regs, idx, 0);
 		emit_asm(status, `mov ${lane_reg_of(lane.name, plan)}.16b, v0.16b\n`);
 		return;
 	}
@@ -221,7 +237,7 @@ function emit_lane_stmt(
 		// Vector-accumulate: vACC ∘= operand (the accumulator never enters
 		// lane_expr — its self-read is the carried dependency). Floats use
 		// fadd/fmul; integer `+` rides `add` (wrap-exact).
-		emit_lane_expr(lane.operand, status, plan, buffer_regs, idx, 0);
+		emit_lane_expr(lane.operand, status, plan, buffer_regs, shifted_regs, idx, 0);
 		const acc = acc_regs.get(lane.name) ?? "v2";
 		const mn = lane.op === "+" ? (plan.elem.float ? "fadd" : "add") : "fmul";
 		emit_asm(
@@ -230,7 +246,7 @@ function emit_lane_stmt(
 		);
 		return;
 	}
-	emit_lane_expr(lane.value, status, plan, buffer_regs, idx, 0);
+	emit_lane_expr(lane.value, status, plan, buffer_regs, shifted_regs, idx, 0);
 	const reg = buffer_regs.get(lane.buffer) ?? "x11";
 	emit_asm(status, `str q0, [${reg}, ${idx}, lsl #4]\n`);
 }
@@ -270,6 +286,41 @@ export function emit_neon_vector_loop(plan: NeonPlan, status: BuildStatus): bool
 		buffer_regs.set(b.name, reg);
 	});
 
+	// Preheader: materialize one ADJUSTED data pointer per distinct
+	// (buffer, shift > 0) read group — `buf + shift * elem_size` — so a
+	// shifted load reuses the group-indexed `[reg, idx, lsl #4]` form with
+	// zero per-iteration cost. x15–x17 are caller-saved scratch; the loop
+	// bodies are call-free by construction (plan_common refuses calls).
+	const SHIFT_PTR_REGS = ["x15", "x16", "x17"];
+	const shifted_regs = new Map<string, string>();
+	{
+		const elem_size = plan.elem.group_elems === 4 ? 4 : 8;
+		let spi = 0;
+		const seen = new Set<string>();
+		const visit = (e: NeonLaneExpr | undefined): void => {
+			if (!e) return;
+			if (e.k === "load" && e.shift > 0) {
+				const key = `${e.buffer} ${e.shift}`;
+				if (!seen.has(key)) {
+					seen.add(key);
+					if (spi >= SHIFT_PTR_REGS.length) return;
+					const base = buffer_regs.get(e.buffer) ?? "x11";
+					const reg = SHIFT_PTR_REGS[spi++];
+					emit_asm(status, `add ${reg}, ${base}, #${e.shift * elem_size}\n`);
+					shifted_regs.set(key, reg);
+				}
+			} else if (e.k === "op") {
+				visit(e.left);
+				visit(e.right);
+			}
+		};
+		for (const lane of plan.lanes) {
+			if (lane.kind === "store") visit(lane.value);
+			else if (lane.kind === "temp_def") visit(lane.value);
+			else if (lane.kind === "reduction") visit(lane.operand);
+		}
+	}
+
 	// Preheader: splat each accumulator's loop-entry value into v2/v3.
 	const acc_regs = new Map<string, string>();
 	plan.reductions.forEach((r, i) => {
@@ -285,9 +336,13 @@ export function emit_neon_vector_loop(plan: NeonPlan, status: BuildStatus): bool
 		acc_regs.set(r.name, reg);
 	});
 
-	// lim = floor(bound / group_elems) double-groups.
+	// lim = floor((bound - max_shift) / group_elems) double-groups. The
+	// subtraction keeps every shifted read (last lane reads element
+	// base + group - 1 + max_shift) inside the bound; negative bounds go
+	// more negative (floor via asr) and the vector loop exits immediately.
 	build_node(plan.bound_node, status);
 	ensure_newline(status);
+	if (plan.max_shift > 0) emit_asm(status, `sub x0, x0, #${plan.max_shift}\n`);
 	emit_asm(status, `mov x9, x0\n`);
 	emit_asm(status, `asr x9, x9, #${shift}\n`);
 	emit_asm(status, `bic x9, x9, #1\n`);
@@ -297,9 +352,11 @@ export function emit_neon_vector_loop(plan: NeonPlan, status: BuildStatus): bool
 	emit_asm(status, `${label}:\n`);
 	emit_asm(status, `cmp x10, x9\n`);
 	emit_asm(status, `b.hs ${label}_end\n`);
-	for (const lane of plan.lanes) emit_lane_stmt(lane, status, plan, buffer_regs, "x10", acc_regs);
+	for (const lane of plan.lanes)
+		emit_lane_stmt(lane, status, plan, buffer_regs, shifted_regs, "x10", acc_regs);
 	emit_asm(status, `add x14, x10, #1\n`);
-	for (const lane of plan.lanes) emit_lane_stmt(lane, status, plan, buffer_regs, "x14", acc_regs);
+	for (const lane of plan.lanes)
+		emit_lane_stmt(lane, status, plan, buffer_regs, shifted_regs, "x14", acc_regs);
 	emit_asm(status, `add x10, x10, #2\n`);
 	emit_asm(status, `b ${label}\n`);
 	emit_asm(status, `${label}_end:\n`);

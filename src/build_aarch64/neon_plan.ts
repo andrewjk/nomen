@@ -43,12 +43,24 @@ import aarch64_size from "./utils/aarch64_size.ts";
  *   a vector iteration touches the same element set the scalar iterations
  *   it replaces would. Lane k reads element base+k before lane k writes
  *   element base+k; no lane reads an element another lane writes, whatever
- *   buffers alias. This is why shifted indices (`load_float(i + 1)`) are
- *   rejected outright.
+ *   buffers alias.
+ * - SHIFTED READS (per-element event-order rule): `load_T(i + c)` with a
+ *   LITERAL c >= 1 is admitted. Scalar iteration k reads base+k+c, which
+ *   (c > 0) is written — if at all — at iteration k+c, AFTER the read; the
+ *   vector group loads every lane before any lane stores, so the group
+ *   sees exactly the scalar pre-group values (reads of elements the group
+ *   itself writes land on their pre-group contents, matching scalar
+ *   order). c <= 0 reads elements an EARLIER same-group lane wrote — the
+ *   scalar loop would see the fresh value, the vector lanes would not —
+ *   refused. STORES stay exact-induction. The trip limit shrinks by the
+ *   max shift (max lane read = base+group-1+max_shift stays < bound);
+ *   the scalar tail runs the original loop verbatim, so its own guard
+ *   still covers the remainder.
  * - TRIP SEMANTICS: the vector loop runs whole 16-byte groups (unrolled to
- *   two groups per iteration); the limit is floor(N / group) rounded down
- *   to a multiple of the unroll — floor semantics keep every lane index
- *   < N for ANY signed bound (negative → loop skipped). The ORIGINAL
+ *   two groups per iteration); the limit is floor((N - max_shift) / group)
+ *   rounded down to a multiple of the unroll — floor semantics keep every
+ *   lane index (+ its read shift) < N for ANY signed bound (negative →
+ *   loop skipped). The ORIGINAL
  *   scalar loop is emitted unchanged afterwards as the tail (the induction
  *   is synced to the vector loop's exit counter first), covering the
  *   remainder — including the sub-unroll and negative-N cases where the
@@ -83,6 +95,9 @@ import aarch64_size from "./utils/aarch64_size.ts";
 /** Max distinct Buffers per plan — the preheader pins each data pointer in
  *  a dedicated scratch register (x11..x13). */
 const MAX_BUFFERS = 3;
+/** Adjusted read-pointer registers the emitter can materialize (one per
+ *  distinct (buffer, shift > 0) pair -- x15/x16/x17, call-free bodies). */
+const MAX_SHIFTED_PTRS = 3;
 /** Max per-lane temps (v4..v7). */
 const MAX_TEMPS = 4;
 /** Max binary-op nesting depth in lane expressions (spill regs v14→v11). */
@@ -147,8 +162,18 @@ function op_allowed(op: string, elem: ElemDesc): boolean {
 }
 
 export type NeonLaneExpr =
-	/** `buf.load_float(i)` — `node` is the receiver (Buffer value) node. */
-	| { readonly k: "load"; readonly buffer: string; readonly node: BaseNode }
+	/** `buf.load_float(i)` — `node` is the receiver (Buffer value) node.
+	 *  `shift` is the read offset in ELEMENTS (`load_T(i + c)` -> c): 0 for
+	 *  the exact-induction form, >= 1 for shifted reads (event-order rule:
+	 *  scalar iteration k reads base+k+c BEFORE iteration k+c writes it,
+	 *  and the vector group's loads-all-then-stores sees the same
+	 *  pre-group values; c <= 0 would read same-group fresh writes). */
+	| {
+			readonly k: "load";
+			readonly buffer: string;
+			readonly node: BaseNode;
+			readonly shift: number;
+	  }
 	/** Float/int literal — emitted via the scalar float-operand path + dup. */
 	| { readonly k: "lit"; readonly node: BaseNode }
 	/** Loop-invariant float scalar (local/param never defined in the loop). */
@@ -211,6 +236,11 @@ export interface NeonPlan {
 	/** FMA contraction in lane bodies (fast_math opt-in): `+` with a mul
 	 *  operand emits `fmla`, `-` with a right mul emits `fmls`. */
 	readonly fma_contract: boolean;
+	/** Largest read shift (ELEMENTS) across the load lanes -- 0 when every
+	 *  access uses the exact induction. The vector trip limit shrinks by
+	 *  this many elements so every shifted read stays inside the bound;
+	 *  the scalar tail covers the rest. */
+	readonly max_shift: number;
 }
 
 // Literal shapes — mirrored exactly from build_float_operand's accepted
@@ -344,6 +374,13 @@ interface PlanWalk {
 	lanes: NeonLaneStmt[];
 	buffers: { name: string; node: BaseNode }[];
 	buffer_index: Map<string, number>;
+	/** Distinct (buffer, shift > 0) read groups, insertion-ordered. */
+	shifted: Map<string, { buffer: string; node: BaseNode; shift: number }>;
+	/** Hoisted call-arg temps whose value is `induction + c` (c >= 1) --
+	 *  the shifted load's index rides a temp after arg hoisting; the vector
+	 *  form consumes it symbolically (group counter + adjusted pointer),
+	 *  never as a lane value. */
+	induction_alias: Map<string, number>;
 	temps: string[];
 	/** Names defined anywhere in the loop (temps + induction). */
 	defs: Set<string>;
@@ -484,6 +521,25 @@ function alloc_temps_of(s: NirStmt, walk: PlanWalk): AllocTemp[] | null {
 	return out;
 }
 
+/** `i + c` with i the induction and c an int literal >= 1 -- the shifted
+ *  read index (event-order rule: scalar iteration k reads base+k+c before
+ *  iteration k+c writes it; the vector group loads all lanes before any
+ *  stores, so the group sees exactly the scalar pre-group values). */
+function shifted_index_of(e: NirExpr, induction: string): number | null {
+	if (e.kind !== "binary") return null;
+	if ((e.node as OperationNode).op !== "+") return null;
+	const lit_of = (x: NirExpr): number | null => {
+		if (x.kind !== "leaf" || x.name) return null;
+		const v = node_value(x);
+		if (v === null || !/^\d+$/.test(v)) return null;
+		return Number(v);
+	};
+	const base_of = (x: NirExpr): boolean => x.kind === "leaf" && x.name === induction;
+	const c = base_of(e.left) ? lit_of(e.right) : base_of(e.right) ? lit_of(e.left) : null;
+	if (c === null || c < 1) return null;
+	return c;
+}
+
 function lane_expr(
 	e: NirExpr,
 	walk: PlanWalk,
@@ -502,12 +558,34 @@ function lane_expr(
 			if (e.receiver.kind !== "leaf" || !e.receiver.name) return null;
 			if (e.facts.args.length !== 1) return null;
 			const idx = e.facts.args[0];
-			if (idx.kind !== "leaf" || idx.name !== induction) return null;
+			let shift = 0;
+			if (idx.kind === "leaf") {
+				if (idx.name !== induction) {
+					// Arg hoisting may have parked a shifted index in a
+					// call-arg temp (`_param_N = i + c`): resolve it.
+					const aliased = walk.induction_alias.get(idx.name);
+					if (aliased === undefined) return null;
+					shift = aliased;
+				}
+			} else if (idx.kind === "binary") {
+				const c = shifted_index_of(idx, induction);
+				if (c === null) return null;
+				shift = c;
+			} else {
+				return null;
+			}
 			const tname = type_from_value_node(e.receiver.node)?.name ?? "";
 			if (!is_buffer_type_name(tname)) return null;
 			const bi = buffer_index_of(walk, e.receiver.name, e.receiver.node);
 			if (bi === null) return null;
-			return { k: "load", buffer: e.receiver.name, node: e.receiver.node };
+			if (shift > 0) {
+				const key = `${e.receiver.name} ${shift}`;
+				if (!walk.shifted.has(key)) {
+					walk.shifted.set(key, { buffer: e.receiver.name, node: e.receiver.node, shift });
+				}
+				if (walk.shifted.size > MAX_SHIFTED_PTRS) return null;
+			}
+			return { k: "load", buffer: e.receiver.name, node: e.receiver.node, shift };
 		}
 		case "leaf": {
 			if (!e.name) {
@@ -721,6 +799,35 @@ function extract_bound(
 	// the preheader evaluates it once via the ordinary access path. This is
 	// what lets elementwise loops drop their `n <= a.cap` guard dances:
 	// `while i < a.cap` verifies the access constraints directly.
+	if (bound.kind === "binary") {
+		// Shifted bound (`while i < a.cap - 1` or `while i < n - 1`): the
+		// preheader evaluates the WHOLE expression once via the AST node;
+		// the defs check keys on the base name (path root or scalar leaf).
+		// `base + const` (either association) and `base - const`.
+		const op_node = bound.node as OperationNode;
+		if (op_node.op !== "+" && op_node.op !== "-") return null;
+		const lit_of = (x: NirExpr): boolean =>
+			x.kind === "leaf" &&
+			!x.name &&
+			node_value(x) !== null &&
+			INT_LIT_RE.test(node_value(x) as string);
+		const base_name_of = (x: NirExpr): string | null => {
+			if (x.kind === "path") {
+				return x.receiver.kind === "leaf" && x.receiver.name
+					? (x.receiver as { name: string }).name
+					: null;
+			}
+			if (x.kind === "leaf") return x.name ?? null;
+			return null;
+		};
+		let base: string | null = null;
+		if (op_node.op === "+") {
+			if (lit_of(bound.left)) base = base_name_of(bound.right);
+			else if (lit_of(bound.right)) base = base_name_of(bound.left);
+		} else if (lit_of(bound.right)) base = base_name_of(bound.left);
+		if (base === null || base === induction) return null;
+		return { node: bound.node, name: base };
+	}
 	if (bound.kind !== "path") return null;
 	const root = bound.receiver;
 	if (root.kind !== "leaf" || !root.name || root.name === induction) return null;
@@ -792,11 +899,15 @@ function plan_common(
 		}
 		if (s.kind === "eval") {
 			const e = s.expr;
-			if (e.kind !== "method_call") return null;
+			if (e.kind !== "method_call") {
+				return null;
+			}
 			const probe: PlanWalk = {
 				lanes: [],
 				buffers: [],
 				buffer_index: new Map(),
+				shifted: new Map(),
+				induction_alias: new Map(),
 				temps: [],
 				defs,
 				defed_so_far: new Set(),
@@ -806,16 +917,29 @@ function plan_common(
 				reductions: new Set(),
 			};
 			const temps = alloc_temps_of(s, probe);
-			if (!temps) return null;
+			if (!temps) {
+				return null;
+			}
 			for (const t of temps) {
 				if (defs.has(t.name)) return null;
 				defs.add(t.name);
 			}
 			continue;
 		}
+		if (process.env.NOMEN_DBG_NEON) {
+			console.error(
+				`NEON: [${status.current_function_name}] refuse: stmt kind ${(s as { kind: string }).kind}`,
+			);
+		}
 		return null; // any other statement kind: no vectorization
 	}
-	if (bound_name !== null && defs.has(bound_name)) return null;
+	if (bound_name !== null && defs.has(bound_name)) {
+		if (process.env.NOMEN_DBG_NEON)
+			console.error(
+				`NEON: [${status.current_function_name}] refuse: bound ${bound_name} defined in loop`,
+			);
+		return null;
+	}
 	// Accumulators must be stable from their nearest def to loop entry; keep
 	// the init expression (splat at vector entry).
 	const reduction_inits = new Map<string, BaseNode>();
@@ -829,6 +953,8 @@ function plan_common(
 		lanes: [],
 		buffers: [],
 		buffer_index: new Map(),
+		shifted: new Map(),
+		induction_alias: new Map(),
 		temps: [],
 		defs,
 		defed_so_far: new Set(),
@@ -890,7 +1016,9 @@ function plan_common(
 		// eval: store_T only. Hoisted arg temps become per-lane temp_defs
 		// first (the NIR value arg references the temp name).
 		const e = (s as { kind: "eval"; expr: NirExpr }).expr;
-		if (e.kind !== "method_call" || !discover_store_desc(e.name, walk)) return null;
+		if (e.kind !== "method_call" || !discover_store_desc(e.name, walk)) {
+			return null;
+		}
 		if (e.facts.ref_arg_indices.length > 0 || e.facts.swap_exprs.length > 0) return null;
 		if (e.receiver.kind !== "leaf" || !e.receiver.name) return null;
 		if (e.facts.args.length !== 2) return null;
@@ -900,18 +1028,51 @@ function plan_common(
 		if (!is_buffer_type_name(tname)) return null;
 		if (buffer_index_of(walk, e.receiver.name, e.receiver.node) === null) return null;
 		const temps = alloc_temps_of(s, walk);
-		if (!temps) return null;
+		if (!temps) {
+			return null;
+		}
 		for (const t of temps) {
 			const nir = ast_to_nir_shallow(t.value);
 			if (!nir) return null;
+			// An `i + c` temp is the shifted load's index -- consumed
+			// symbolically, never as a lane. Any OTHER consumer of the
+			// temp then refuses the plan (it was never defined as a lane).
+			const add = shifted_index_of(nir, induction);
+			if (add !== null) {
+				walk.induction_alias.set(t.name, add);
+				continue;
+			}
 			const tvalue = lane_expr(nir, walk, induction, status, 0);
-			if (!tvalue) return null;
+			if (!tvalue) {
+				if (process.env.NOMEN_DBG_NEON) {
+					const dump = (x: any, d: number): string => {
+						if (!x || d > 3) return "?";
+						const nt = x.node?.node_type ?? "?";
+						const op = x.node?.op ?? (x.node as any)?.operator ?? "";
+						const val = x.node?.node_type === "value" ? `=${(x.node as any).value}` : "";
+						const name = x.name ? `@${x.name}` : "";
+						const kids =
+							x.left || x.right
+								? `(${dump(x.left, d + 1)} ${dump(x.right, d + 1)})`
+								: x.inner !== undefined
+									? `(${dump(x.inner, d + 1)})`
+									: x.facts
+										? `(${x.args?.map((a: any) => dump(a, d + 1)).join(",")})`
+										: "";
+						return `<${x.kind} ${nt}${op ? ":" + op : ""}${val}${name}${kids}>`;
+					};
+					console.error(`NEON: temp refused t=${t.name} ${dump(nir, 0)}`);
+				}
+				return null;
+			}
 			walk.defed_so_far.add(t.name);
 			walk.temps.push(t.name);
 			walk.lanes.push({ kind: "temp_def", name: t.name, value: tvalue });
 		}
 		const value = lane_expr(e.facts.args[1], walk, induction, status, 0);
-		if (!value) return null;
+		if (!value) {
+			return null;
+		}
 		walk.lanes.push({
 			kind: "store",
 			buffer: e.receiver.name,
@@ -919,14 +1080,28 @@ function plan_common(
 			value,
 		});
 	}
-	if (walk.temps.length > MAX_TEMPS) return null;
-	if (!walk.lanes.some((l) => l.kind === "store") && reductions.length === 0) return null;
+	if (walk.temps.length > MAX_TEMPS) {
+		if (process.env.NOMEN_DBG_NEON)
+			console.error(`NEON: [${status.current_function_name}] refuse: too many temps`);
+		return null;
+	}
+	if (!walk.lanes.some((l) => l.kind === "store") && reductions.length === 0) {
+		if (process.env.NOMEN_DBG_NEON)
+			console.error(`NEON: [${status.current_function_name}] refuse: no store lane`);
+		return null;
+	}
 	if (!walk.elem) return null; // no Buffer access — nothing to vectorize
 	// Every temp's element class must agree with the discovered descriptor
 	// (accumulators register as float, so this also pins elem to f64).
 	const want = class_of_elem(walk.elem);
 	for (const cls of walk.temp_classes.values()) {
-		if (cls !== want) return null;
+		if (cls !== want) {
+			if (process.env.NOMEN_DBG_NEON)
+				console.error(
+					`NEON: [${status.current_function_name}] refuse: temp class ${cls} != ${want}`,
+				);
+			return null;
+		}
 	}
 	if (reductions.length > MAX_REDUCTIONS) return null;
 
@@ -936,10 +1111,30 @@ function plan_common(
 		const after = new Set<string>();
 		for (let k = index + 1; k < list.length; k++) stmt_reads(list[k], after);
 		for (const t of walk.temps) {
-			if (after.has(t)) return null;
+			if (after.has(t)) {
+				if (process.env.NOMEN_DBG_NEON)
+					console.error(
+						`NEON: [${status.current_function_name}] refuse: temp ${t} read after loop`,
+					);
+				return null;
+			}
 		}
 	}
 
+	let max_shift = 0;
+	const scan_shift = (e: NeonLaneExpr | undefined): void => {
+		if (!e) return;
+		if (e.k === "load" && e.shift > max_shift) max_shift = e.shift;
+		if (e.k === "op") {
+			scan_shift(e.left);
+			scan_shift(e.right);
+		}
+	};
+	for (const lane of walk.lanes) {
+		if (lane.kind === "store") scan_shift(lane.value);
+		else if (lane.kind === "temp_def") scan_shift(lane.value);
+		else if (lane.kind === "reduction") scan_shift(lane.operand);
+	}
 	return {
 		induction,
 		bound_node,
@@ -948,6 +1143,7 @@ function plan_common(
 		elem: walk.elem,
 		reductions,
 		fma_contract: allow_reductions,
+		max_shift,
 	};
 }
 
@@ -988,6 +1184,9 @@ export function plan_vector_loop(
 	// abort.
 	const init = scan_init(list, index, induction);
 	if (!init.ok || !init.init_node || !is_zero_ast_node(init.init_node)) return null;
+	if (process.env.NOMEN_DBG_NEON) {
+		console.error(`NEON: [${status.current_function_name}] loop@${index} reaching plan_common`);
+	}
 
 	return plan_common(
 		lanes_raw,

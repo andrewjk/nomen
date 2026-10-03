@@ -1057,3 +1057,127 @@ pub func main = () {
 		true,
 	);
 });
+
+// ── Shifted reads (`load_T(i + c)`, c >= 1 literal) ────────────────────────
+// The per-element event-order rule: scalar iteration k reads base+k+c before
+// iteration k+c writes it, and the vector group loads all lanes before any
+// stores — the group sees exactly the scalar pre-group values. c <= 0 reads
+// same-group fresh writes and refuses. The trip limit shrinks by the max
+// shift; the scalar tail runs verbatim.
+
+const SHIFT1 = `
+import System
+
+pub func main = (Init init) {
+	var Buffer<int> buf = Buffer<int>()
+	buf.grow_int(64)
+	var int i = 0
+	while i < 64; i += 1 {
+		buf.store_int(i, i * 3 + 1)
+	}
+	if buf.cap >= 2 {
+		var int j = 0
+		while j < buf.cap - 1; j += 1 {
+			buf.store_int(j, buf.load_int(j + 1))
+		}
+	}
+	var int sum = 0
+	var int k = 0
+	while k < buf.cap; k += 1 {
+		if k >= 0 && k < buf.cap {
+			sum += buf.load_int(k)
+		}
+	}
+	Console.write_line(sum.to_string())
+}
+`;
+
+test("shifted read (+1 literal) plans a vector loop", () => {
+	const code = compile_aarch64(SHIFT1);
+	expect(code).toContain(".Lneon_");
+	// The shifted group load rides the adjusted pointer register
+	// (buf + 1 * 8 bytes) and the trip limit subtracts the max shift.
+	expect(code).toMatch(/add x1[567], x\d+, #8\n/);
+	expect(code).toMatch(/ldr q0, \[x1[567], x\d+, lsl #4\]/);
+	expect(code).toContain("sub x0, x0, #1");
+});
+
+test("shifted copy behavior matches the scalar reference on both backends", async () => {
+	const { default: build_and_check_output } = await import("./build_and_check_output");
+	// Oracle: buf = [1,4,...,190] (64 elems); shift-left by 1 -> [4,...,190,190];
+	// sum = sum(3k+1, k=1..63) + 190 = 6301.
+	await build_and_check_output(SHIFT1, "neon_shift1", "6301\n", true);
+});
+
+test("max shift shrinks the trip limit (multi-shift loop, both backends)", async () => {
+	const { default: build_and_check_output } = await import("./build_and_check_output");
+	const src = `
+import System
+
+pub func main = (Init init) {
+	var Buffer<int> buf = Buffer<int>()
+	buf.grow_int(1000)
+	var int i = 0
+	while i < 1000; i += 1 {
+		buf.store_int(i, i + 5)
+	}
+	if buf.cap >= 4 {
+		var int j = 0
+		while j < buf.cap - 3; j += 1 {
+			buf.store_int(j, buf.load_int(j + 3) + buf.load_int(j + 1))
+		}
+	}
+	var int sum = 0
+	var int k = 0
+	while k < buf.cap; k += 1 {
+		if k >= 0 && k < buf.cap {
+			sum += buf.load_int(k)
+		}
+	}
+	Console.write_line(sum.to_string())
+}
+`;
+	const code = compile_aarch64(src);
+	expect(code).toContain(".Lneon_");
+	// Two distinct shifted pointers (shifts 1 and 3 -> +8 and +24 bytes),
+	// materialized onto x15-x17 in first-appearance order.
+	expect(code).toMatch(/add x1[567], x\d+, #8\n/);
+	expect(code).toMatch(/add x1[567], x\d+, #24\n/);
+	// Oracle (grow_int rounds cap to 1024): buf[k]=k+5; buf[j]=buf[j+3]+buf[j+1]
+	// for j in 0..1020; sum = 1008977 (scalar reference verified identically).
+	await build_and_check_output(src, "neon_shift_multi", "1008977\n", true);
+});
+
+test("negative shift refuses (same-group fresh write)", () => {
+	const src = `
+import System
+
+pub func main = (Init init) {
+	var Buffer<int> buf = Buffer<int>()
+	buf.grow_int(16)
+	var int i = 0
+	while i < buf.cap; i += 1 {
+		buf.store_int(i, buf.load_int(i - 1))
+	}
+	Console.write_line("done")
+}
+`;
+	compiles_lenient_without_vector(src);
+});
+
+test("shifted store refuses (stores stay exact-induction)", () => {
+	const src = `
+import System
+
+pub func main = (Init init) {
+	var Buffer<int> buf = Buffer<int>()
+	buf.grow_int(16)
+	var int i = 0
+	while i < buf.cap - 1; i += 1 {
+		buf.store_int(i + 1, buf.load_int(i))
+	}
+	Console.write_line("done")
+}
+`;
+	compiles_lenient_without_vector(src);
+});
