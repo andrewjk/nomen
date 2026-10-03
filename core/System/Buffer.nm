@@ -93,6 +93,35 @@ pub struct Buffer<T> {
 		```
 	}
 
+	// Byte-width primitives (uint8 elements): the width-matched family the
+	// NEON planner's `.16b` descriptor keys on — one 16-byte group carries
+	// 16 lanes. `ldrb`/`strb` zero-extend/clobber exactly one byte.
+	internal inline func load_u8 = (self, int i: i >= 0 && i < self.cap, out uint8) {
+		```
+		#arch: c
+		return ((unsigned char*)(unsigned long long)self->data)[i];
+		```
+		```
+		#arch: aarch64
+		ldr x0, [x19, #8]
+		add x0, x0, x1
+		ldrb w0, [x0]
+		```
+	}
+
+	internal inline func store_u8 = (ref self, int i: i >= 0 && i < self.cap, uint8 val) {
+		```
+		#arch: c
+		((unsigned char*)(unsigned long long)self->data)[i] = val;
+		```
+		```
+		#arch: aarch64
+		ldr x0, [x19, #8]
+		add x0, x0, x1
+		strb w2, [x0]
+		```
+	}
+
 	internal func alloc_int = (ref self, int size, out int: out >= size) {
 		self.cap = size
 		self.data = calloc(size, 8)

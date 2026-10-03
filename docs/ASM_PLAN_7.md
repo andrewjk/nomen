@@ -611,3 +611,39 @@ event-order rule:
   composes through LITERAL shifts (`j + 3` against `j < buf.cap - 3`);
   a VARIABLE shift (`load_int(j + d)`) does not discharge — that
   checker-side extension remains open (the planner side is ready).
+
+### Addendum 2 (2026-10-03): byte (`.16b`) element kinds
+
+The last NEON element class: `Buffer<uint8>` loops vectorize.
+
+- **Core**: `load_u8`/`store_u8` width-matched raw inlines (Buffer.nm) —
+  `ldrb`/`strb` with the same self/i/val register contract as
+  load_u32/store_u32. The scalar fast path is the existing naked-inline
+  splice (raw inlines need nothing new — the ASM_TODO note's
+  "needs scalar-path inlining first" was already satisfied by the raw
+  path; the generic `load`/`store` keep their multi-width arms).
+- **Planner**: a fourth descriptor `{ load_u8, store_u8, .16b,
+group_elems: 16, shift: 4 }`, `ElemClass "e1"`, and the
+  `class_of_type_name` size-1 mapping. `op_allowed` already admits
+  `+`/`-`/`&`/`|`/`^` on `.16b` (mul stays `.4s`-only); reductions stay
+  unplanned for e1 (no 16-lane horizontal combine) — the existing
+  e8/e4-only gate covers it.
+- **Emitter**: the adjusted-pointer element size derives as
+  `16 / group_elems` (1 byte for e1); the int splat dups from `w0` for
+  the sub-8 arrangements.
+- **Receipts** (`test/neon_vector.test.ts`, 49 tests): a byte +1 shifted
+  copy plans the `.16b` vector loop (adjusted pointer `add x15, …, #1`);
+  behavior 125753 on both backends = the independent oracle (cap 1024,
+  buf[k] = k%251+1, shift-left, sum of the first 1000); byte reduction
+  refuses; the on/off kill-switch arms agree. Three supersedings surfaced
+  en route: (1) the old "shifted element index is NOT vectorized" test
+  flips to the event-order rule (its original source was genuinely
+  unsound — `while i < n` with `load(i + 1)` reads index n; the
+  replaced shape uses the sound `n - 1`/cap-relative bound);
+  (2) shifted reads through a `ref`-param receiver refuse at the CHECKER
+  (`self.cap` vs the caller's fact name after the shift-fold) — locals
+  work, the param-path composition is the open ASM_TODO item;
+  (3) the byte loop's hoisted INDEX temp is int-typed (e8) inside an e1
+  loop — `alloc_temps_of` now exempts `induction + c` index temps from
+  the element-class check (address materialization, not lane data; the
+  lanes walk consumes them into `induction_alias`).

@@ -153,20 +153,28 @@ pub func main = () {}
 `);
 });
 
-test("shifted element index is NOT vectorized (lane aliasing rule)", () => {
-	compiles_lenient_without_vector(`
+test("shifted element index (+1, two buffers) IS vectorized (event-order rule)", () => {
+	// The ASM_PLAN_4-era lane-aliasing rejection is superseded: reads may
+	// shift by a literal c >= 1 (scalar iteration k reads base+k+c before
+	// iteration k+c writes it; the group loads all lanes before any store).
+	const code = compile_aarch64(`
 import System
 
-func shift = (ref Buffer<float> a, ref Buffer<float> b, int n) {
-	if n < a.cap && n < b.cap {
+pub func main = () {
+	var a = Buffer<float>()
+	a.alloc_float(9)
+	var b = Buffer<float>()
+	b.alloc_float(9)
+	if b.cap >= a.cap {
 		var i = 0
-		while i < n; i += 1 {
+		while i < a.cap - 1; i += 1 {
 			b.store_float(i, a.load_float(i + 1))
 		}
 	}
+	Console.write("done")
 }
-pub func main = () {}
 `);
+	expect(code).toContain(".Lneon_");
 });
 
 test("non-zero induction init is NOT vectorized", () => {
@@ -1177,6 +1185,73 @@ pub func main = (Init init) {
 		buf.store_int(i + 1, buf.load_int(i))
 	}
 	Console.write_line("done")
+}
+`;
+	compiles_lenient_without_vector(src);
+});
+
+// ── Byte (`.16b`) element kinds ────────────────────────────────────────────
+// Buffer<uint8> loops ride the load_u8/store_u8 width-matched primitives
+// (raw inlines — the scalar path is the naked-inline splice). One 16-byte
+// group carries 16 lanes; shifts compose with the event-order rule like any
+// other width. Reductions and `*` stay scalar/unplanned for e1 (no 16-lane
+// horizontal combine; mul is 4s-only).
+
+const BYTE_SHIFT = `
+import System
+
+pub func main = (Init init) {
+	var Buffer<uint8> buf = Buffer<uint8>()
+	buf.grow_int(1000)
+	var int i = 0
+	while i < buf.cap; i += 1 {
+		buf.store_u8(i, (i % 251 + 1) as uint8)
+	}
+	if buf.cap >= 1 {
+		var int j = 0
+		while j < buf.cap - 1; j += 1 {
+			buf.store_u8(j, buf.load_u8(j + 1))
+		}
+	}
+	var int total = 0
+	var int k = 0
+	while k < 1000; k += 1 {
+		if k >= 0 && k < buf.cap {
+			total += buf.load_u8(k)
+		}
+	}
+	Console.write_line(total.to_string())
+}
+`;
+
+test("byte (+1 shifted read) plans a .16b vector loop", () => {
+	const code = compile_aarch64(BYTE_SHIFT);
+	expect(code).toContain(".Lneon_");
+	// The shifted byte group load rides the adjusted pointer (1 byte/elem).
+	expect(code).toMatch(/add x1[567], x\d+, #1\n/);
+	expect(code).toMatch(/ldr q0, \[x1[567], x\d+, lsl #4\]/);
+});
+
+test("byte copy behavior matches the scalar reference on both backends", async () => {
+	const { default: build_and_check_output } = await import("./build_and_check_output");
+	// Oracle (cap = 1024): buf[k] = k%251+1 everywhere; shift-left 1; the
+	// sum over the first 1000 slots = 125753 (scalar reference identical).
+	await build_and_check_output(BYTE_SHIFT, "neon_byte_shift", "125753", true);
+});
+
+test("byte reduction refuses (no 16-lane horizontal combine)", () => {
+	const src = `
+import System
+
+pub func main = (Init init) {
+	var Buffer<uint8> buf = Buffer<uint8>()
+	buf.grow_int(64)
+	var int total = 0
+	var int i = 0
+	while i < buf.cap; i += 1 {
+		total += buf.load_u8(i)
+	}
+	Console.write_line(total.to_string())
 }
 `;
 	compiles_lenient_without_vector(src);

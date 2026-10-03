@@ -13,9 +13,13 @@ remains to be done from each:
   c >= 1 plans through an adjusted read pointer, stores stay exact-induction,
   the trip limit shrinks by the max shift, c <= 0 refuses. Differential
   on/off + oracle receipt in `test/neon_vector.test.ts`.
-- **Byte (`.16b`) element kinds.** `load_T`/`store_T` are not in the scalar
-  inline fast path (they emit real calls), so there is nothing to vectorize —
-  needs scalar-path inlining first. (The verifier gap part is resolved.)
+- **Byte (`.16b`) element kinds — LANDED 2026-10-03.** `Buffer<uint8>` loops
+  ride the new `load_u8`/`store_u8` width-matched raw inlines (the scalar
+  path is the naked-inline splice, same as load_int) and a `.16b` descriptor
+  (16 lanes per group); reductions and `*` stay unplanned for e1. The two
+  checker gaps found en route remain open: variable-shift discharge
+  (`load_int(j + d)` against `j < n - d`) and shifted-read discharge through
+  a `ref`-param receiver path (`self.cap` vs the caller's fact name).
 - (The rest of ASM_PLAN_4 is closed: item 1 SLP landed; item 2's
   allocator-level pass was carried out by ASM_PLAN_5/6; item 3 accounting
   written; item 4's other bullets are decided/superseded; item 5 done.)

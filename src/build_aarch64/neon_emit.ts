@@ -133,7 +133,7 @@ function emit_lane_expr(
 			} else {
 				build_node(e.node, status);
 				ensure_newline(status);
-				emit_asm(status, `dup v0.${plan.elem.arr}, ${plan.elem.arr === "4s" ? "w0" : "x0"}\n`);
+				emit_asm(status, `dup v0.${plan.elem.arr}, ${plan.elem.arr === "2d" ? "x0" : "w0"}\n`);
 			}
 			return;
 		}
@@ -294,7 +294,7 @@ export function emit_neon_vector_loop(plan: NeonPlan, status: BuildStatus): bool
 	const SHIFT_PTR_REGS = ["x15", "x16", "x17"];
 	const shifted_regs = new Map<string, string>();
 	{
-		const elem_size = plan.elem.group_elems === 4 ? 4 : 8;
+		const elem_size = 16 / plan.elem.group_elems;
 		let spi = 0;
 		const seen = new Set<string>();
 		const visit = (e: NeonLaneExpr | undefined): void => {
@@ -331,7 +331,7 @@ export function emit_neon_vector_loop(plan: NeonPlan, status: BuildStatus): bool
 		} else {
 			build_node(r.init_node, status);
 			ensure_newline(status);
-			emit_asm(status, `dup ${reg}.${plan.elem.arr}, ${plan.elem.arr === "4s" ? "w0" : "x0"}\n`);
+			emit_asm(status, `dup ${reg}.${plan.elem.arr}, ${plan.elem.arr === "2d" ? "x0" : "w0"}\n`);
 		}
 		acc_regs.set(r.name, reg);
 	});

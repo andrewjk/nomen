@@ -33,8 +33,9 @@ import aarch64_size from "./utils/aarch64_size.ts";
  *
  * Element kinds (tranche 2): the method pair determines the descriptor —
  * `load_float`/`store_float` (f64, `.2d`), `load_int`/`store_int` (8-byte
- * int, `.2d`), `load`/`store` (4-byte int, `.4s`). All accesses in one
- * loop must agree on the descriptor; lanes per group follow the width.
+ * int, `.2d`), `load_u32`/`store_u32` (4-byte int, `.4s`),
+ * `load_u8`/`store_u8` (byte, `.16b` — 16 lanes per group). All accesses in
+ * one loop must agree on the descriptor; lanes per group follow the width.
  *
  * Soundness model (why this is legal):
  *
@@ -118,25 +119,32 @@ export interface ElemDesc {
 	readonly store: "store_float" | "store_int" | "store_u32";
 	readonly float: boolean;
 	/** Arrangement for add/sub/mul lanes. */
-	readonly arr: "2d" | "4s";
+	readonly arr: "2d" | "4s" | "16b";
 	/** Elements per 16-byte group. */
-	readonly group_elems: 2 | 4;
+	readonly group_elems: 2 | 4 | 16;
 	/** log2(group_elems). */
-	readonly shift: 1 | 2;
+	readonly shift: 1 | 2 | 4;
 }
 
 const ELEM_DESCS: readonly ElemDesc[] = [
 	{ load: "load_float", store: "store_float", float: true, arr: "2d", group_elems: 2, shift: 1 },
 	{ load: "load_int", store: "store_int", float: false, arr: "2d", group_elems: 2, shift: 1 },
 	{ load: "load_u32", store: "store_u32", float: false, arr: "4s", group_elems: 4, shift: 2 },
+	{ load: "load_u8", store: "store_u8", float: false, arr: "16b", group_elems: 16, shift: 4 },
 ];
 
 /** Name-derived element class of a scalar temp/invariant, for consistency
  *  with the plan's descriptor (float vs 8-byte int vs 4-byte int). */
-type ElemClass = "float" | "e8" | "e4";
+type ElemClass = "float" | "e8" | "e4" | "e1";
 
 function class_of_elem(elem: ElemDesc): ElemClass {
-	return elem.float ? "float" : elem.group_elems === 2 ? "e8" : "e4";
+	return elem.float
+		? "float"
+		: elem.group_elems === 2
+			? "e8"
+			: elem.group_elems === 4
+				? "e4"
+				: "e1";
 }
 
 function class_of_type_name(name: string | null | undefined): ElemClass | null {
@@ -146,6 +154,7 @@ function class_of_type_name(name: string | null | undefined): ElemClass | null {
 		const size = aarch64_size(name);
 		if (size === 8) return "e8";
 		if (size === 4) return "e4";
+		if (size === 1) return "e1";
 	} catch {
 		// unknown type name — fall through
 	}
@@ -381,6 +390,8 @@ interface PlanWalk {
 	 *  form consumes it symbolically (group counter + adjusted pointer),
 	 *  never as a lane value. */
 	induction_alias: Map<string, number>;
+	/** The loop induction (for the alloc_temps_of index-temp exemption). */
+	induction: string;
 	temps: string[];
 	/** Names defined anywhere in the loop (temps + induction). */
 	defs: Set<string>;
@@ -514,7 +525,17 @@ function alloc_temps_of(s: NirStmt, walk: PlanWalk): AllocTemp[] | null {
 		if (has_allocations(d.value)) return null; // nested hoists: too complex
 		const cls = class_of_type_name(d.type?.name);
 		if (!cls) return null;
-		if (walk.elem && cls !== class_of_elem(walk.elem)) return null;
+		if (walk.elem && cls !== class_of_elem(walk.elem)) {
+			// An `i + c` index temp is ADDRESS MATERIALIZATION for the
+			// shifted-load resolution, not lane data: its width need not
+			// match the element class (a byte loop's shifted index rides an
+			// int temp). The lanes walk consumes it into `induction_alias`
+			// -- never as a lane -- so any other use still refuses there.
+			const nir = ast_to_nir_shallow(d.value);
+			if (!nir || shifted_index_of(nir, walk.induction) === null) return null;
+			out.push({ name: d.name, value: d.value });
+			continue;
+		}
 		walk.temp_classes.set(d.name, cls);
 		out.push({ name: d.name, value: d.value });
 	}
@@ -908,6 +929,7 @@ function plan_common(
 				buffer_index: new Map(),
 				shifted: new Map(),
 				induction_alias: new Map(),
+				induction,
 				temps: [],
 				defs,
 				defed_so_far: new Set(),
@@ -955,6 +977,7 @@ function plan_common(
 		buffer_index: new Map(),
 		shifted: new Map(),
 		induction_alias: new Map(),
+		induction,
 		temps: [],
 		defs,
 		defed_so_far: new Set(),
