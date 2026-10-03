@@ -23,9 +23,18 @@ remains to be done from each:
   `path ± int` bounds (the loop fact now records), `apply_bounds` mirrors
   path-vs-path guards onto the other side's path entry (`a.cap <= b.cap`),
   and the transitive chain relaxes tighter intermediates and consults
-  `path_bounds` for dotted hops. Still open: VARIABLE-shift discharge
-  (`load_int(j + d)` against `j < n - d`) — needs symbolic (same-token)
-  offset cancellation, not just literals.
+  `path_bounds` for dotted hops.
+- **VARIABLE-shift discharge — LANDED 2026-10-03.** `load_int(j + d)`
+  verifies against `while j < n - d` (+ a `d <= n`-style guard): the arg's
+  stored fact cancels token-for-token (`j < n - d` + `d` => `j + d < n`),
+  `expr_to_string` renders `path ± var` bounds, numeric ranges do NOT
+  transfer (the shift is a runtime value — transferring them understated
+  the arg's reach), the arg's provable `>= 0` lower rides the token's own
+  `range_lower >= 0`, and `invalidate_token_facts` sweeps every stored
+  fact referencing an offset variable on reassignment/shadow/ref-binding.
+  The soundness receipts: shadow-before-use and pre-use mutation refuse;
+  post-use mutation composes (the condition re-establishes per
+  iteration). `test/flow_bounds.test.ts` pins all four shapes.
 - (The rest of ASM_PLAN_4 is closed: item 1 SLP landed; item 2's
   allocator-level pass was carried out by ASM_PLAN_5/6; item 3 accounting
   written; item 4's other bullets are decided/superseded; item 5 done.)

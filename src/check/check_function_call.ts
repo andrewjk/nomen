@@ -41,6 +41,7 @@ import {
 	record_buffer_cap,
 	lookup_buffer_cap,
 	substitute_constraint,
+	invalidate_token_facts,
 } from "./utils/flow_bounds.ts";
 import is_visible from "./utils/is_visible.ts";
 import {
@@ -527,6 +528,13 @@ export default function check_function_call(
 		const param_type = type_from_value_node(param, status);
 		const param_value = value_from_value_node(param);
 		const has_ref_keyword = node.ref_param_indices?.includes(i) ?? false;
+		// A `ref` argument hands the callee a mutable alias: any offset fact
+		// referencing this variable (e.g. `j < n - d` from an enclosing loop
+		// condition) is stale the moment the callee writes through the
+		// reference — sweep it conservatively.
+		if (has_ref_keyword && param.node_type === "value") {
+			invalidate_token_facts((param as ValueNode).value, status);
+		}
 		// OWNED value-struct parameter: the callee fully owns a normalized
 		// copy of the argument (pass-by-value — see the build-side
 		// materialization + param record seeding). Stamped when the callee
@@ -1088,22 +1096,93 @@ export default function check_function_call(
 						if (base_path) base_name = base_path.split(".")[0];
 					}
 				}
+				// VARIABLE offset (`j + d`): the offset form of the base's own
+				// stored facts cancels token-for-token (`j < n - d` + `d` =>
+				// `j + d < n`); facts that don't cancel are dropped, and the
+				// numeric ranges don't transfer (the shift is a runtime
+				// value). Soundness rests on invalidate_token_facts: any
+				// reassignment/shadow/ref-binding of the offset variable
+				// sweeps every stored fact referencing it.
+				let offset_token: string | undefined;
+				let offset_token_sign = 1;
+				if (!base_name && !base_path) {
+					const tok = (n: BaseNode): string | undefined =>
+						n.node_type === "value" && /^[A-Za-z_]\w*$/.test((n as ValueNode).value)
+							? (n as ValueNode).value
+							: undefined;
+					if (pop.left_value.node_type === "value" && tok(pop.right_value)) {
+						base_name = (pop.left_value as ValueNode).value;
+						offset_token = tok(pop.right_value);
+						offset_token_sign = pop.op === "-" ? -1 : 1;
+					} else if (pop.right_value.node_type === "value" && tok(pop.left_value)) {
+						base_name = (pop.right_value as ValueNode).value;
+						offset_token = tok(pop.left_value);
+						offset_token_sign = pop.op === "-" ? -1 : 1;
+					}
+				}
 				if (base_name) {
 					const decl = status.values.findLast((v) => v.name === base_name);
 					if (decl) {
 						const shift = (exprs?: string[]) => exprs?.map((e) => shift_offset_expr(e, c));
 						range_lower = decl.range_lower !== undefined ? decl.range_lower + c : undefined;
 						range_upper = decl.range_upper !== undefined ? decl.range_upper + c : undefined;
-						upper_bound_exprs = shift(decl.upper_bound_exprs);
-						lower_bound_exprs = shift(decl.lower_bound_exprs);
-						upper_bound_inclusive_exprs = shift(decl.upper_bound_inclusive_exprs);
-						lower_bound_inclusive_exprs = shift(decl.lower_bound_inclusive_exprs);
-						upper_bound_expr = decl.upper_bound_expr
-							? shift_offset_expr(decl.upper_bound_expr, c)
-							: undefined;
-						lower_bound_expr = decl.lower_bound_expr
-							? shift_offset_expr(decl.lower_bound_expr, c)
-							: undefined;
+						if (offset_token) {
+							// The NUMERIC ranges computed above describe the BARE
+							// base variable; the arg is `base + d` — transferring
+							// them without adding d would UNDERSTATE the arg's
+							// reach (the exact unsoundness this branch exists to
+							// avoid: `i < buf.cap` verifying against j's range
+							// while the real index runs to buf.cap - d + d).
+							// Drop the upper; keep a PROVABLE lower only — for a
+							// `+` token whose own range_lower is >= 0 the arg's
+							// lower is the base's lower (the `i >= 0` half of
+							// every Buffer contract). For `-` tokens the lower
+							// needs d's MAXIMUM — unprovable here — dropped.
+							range_upper = undefined;
+							range_lower = undefined;
+							if (offset_token_sign > 0 && decl.range_lower !== undefined) {
+								const tok_decl = status.values.findLast((v) => v.name === offset_token);
+								if (tok_decl?.range_lower !== undefined && tok_decl.range_lower >= 0) {
+									range_lower = decl.range_lower;
+								}
+							}
+							// Token cancellation: keep only facts whose trailing
+							// offset token matches (opposite sign cancels to the
+							// bare base). Literal-tailed and token-tailed facts
+							// with a mismatching token drop; bare facts would
+							// GROW an offset (`x` => `x + d`) — true but useless
+							// for matching `x`-shaped targets, so dropped too.
+							const cancel = (exprs?: string[]): string[] | undefined => {
+								if (!exprs) return undefined;
+								const out: string[] = [];
+								for (const e of exprs) {
+									const m = e.match(
+										new RegExp(`^(\\w+(?:\\.\\w+)*)\\s*([+-])\\s*${offset_token}$`),
+									);
+									if (m && m[2] === (offset_token_sign > 0 ? "-" : "+")) {
+										out.push(m[1]);
+									}
+								}
+								return out.length > 0 ? out : undefined;
+							};
+							upper_bound_exprs = cancel(decl.upper_bound_exprs);
+							lower_bound_exprs = cancel(decl.lower_bound_exprs);
+							upper_bound_inclusive_exprs = cancel(decl.upper_bound_inclusive_exprs);
+							lower_bound_inclusive_exprs = cancel(decl.lower_bound_inclusive_exprs);
+							upper_bound_expr = undefined;
+							lower_bound_expr = undefined;
+						} else {
+							upper_bound_exprs = shift(decl.upper_bound_exprs);
+							lower_bound_exprs = shift(decl.lower_bound_exprs);
+							upper_bound_inclusive_exprs = shift(decl.upper_bound_inclusive_exprs);
+							lower_bound_inclusive_exprs = shift(decl.lower_bound_inclusive_exprs);
+							upper_bound_expr = decl.upper_bound_expr
+								? shift_offset_expr(decl.upper_bound_expr, c)
+								: undefined;
+							lower_bound_expr = decl.lower_bound_expr
+								? shift_offset_expr(decl.lower_bound_expr, c)
+								: undefined;
+						}
 						alias_of = decl.alias_of
 							? shift_offset_expr(decl.alias_of, c)
 							: base_path !== undefined

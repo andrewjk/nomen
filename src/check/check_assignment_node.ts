@@ -22,6 +22,7 @@ import {
 	track_assignment_bounds,
 	apply_return_bounds_to_var,
 	call_return_bounds,
+	invalidate_token_facts,
 } from "./utils/flow_bounds.ts";
 import {
 	is_class_type,
@@ -283,6 +284,10 @@ export default function check_assignment_node(
 		// Clear range bounds: assignment invalidates for-loop range knowledge
 		left_value.range_lower = undefined;
 		left_value.range_upper = undefined;
+		// Offset-token invalidation: any stored fact on OTHER variables
+		// referencing this name as an offset operand (`j < n - d`) is stale
+		// once `d` is reassigned — sweep it before re-tracking.
+		invalidate_token_facts(left_value.name, status);
 		// Clear flow-sensitive bounds: assignment invalidates bounds from if/while
 		left_value.upper_bound_expr = undefined;
 		left_value.lower_bound_expr = undefined;

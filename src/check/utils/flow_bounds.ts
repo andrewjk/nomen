@@ -132,18 +132,20 @@ export function expr_to_string(node: BaseNode, status?: CheckStatus): string | u
 		}
 	}
 	if (node.node_type === "op") {
-		// `path ± int-literal` (`a.cap - 1`, `n + 2`): the offset form the
-		// bound machinery already parses (shift_offset_expr /
-		// parse_offset_expr), so a loop bound like `while i < a.cap - 1`
-		// records the fact `i < a.cap - 1` and a shifted argument
-		// (`load(i + 1)`) folds its stored bound back to `a.cap`. Deeper
-		// arithmetic (both sides non-literal) stays unrenderable.
+		// `path ± int-literal` (`a.cap - 1`, `n + 2`) and `path ± var`
+		// (`n - d`): offset forms the bound machinery already parses
+		// (shift_offset_expr / parse_offset_expr), so a loop bound like
+		// `while i < a.cap - 1` records the fact `i < a.cap - 1` and a
+		// shifted argument (`load(i + 1)`) folds its stored bound back to
+		// `a.cap`. Deeper arithmetic (both sides non-leaf) stays
+		// unrenderable.
 		const op = node as OperationNode;
 		if (op.op === "+" || op.op === "-") {
 			const l = op.left_value ? expr_to_string(op.left_value, status) : undefined;
 			const r = op.right_value ? expr_to_string(op.right_value, status) : undefined;
-			if (l && r && /^[+-]?\d+$/.test(r) && !/^[+-]?\d+$/.test(l)) {
-				return `${l} ${op.op} ${r}`;
+			if (l && r && !/^[+-]?\d+$/.test(l)) {
+				if (/^[+-]?\d+$/.test(r)) return `${l} ${op.op} ${r}`;
+				if (/^[A-Za-z_]\w*(\.\w+)*$/.test(r)) return `${l} ${op.op} ${r}`;
 			}
 		}
 	}
@@ -740,6 +742,47 @@ export function apply_shifted_bound(condition: BaseNode, status: CheckStatus, is
 			if (!var_decl.lower_bound_exprs) var_decl.lower_bound_exprs = [];
 			if (!var_decl.lower_bound_exprs.includes(shifted)) var_decl.lower_bound_exprs.push(shifted);
 			var_decl.lower_bound_expr = shifted;
+		}
+	}
+}
+
+/**
+ * Sweep every stored fact that REFERENCES `token` (any variable reassigned
+ * or shadowed, or bound through a `ref` argument): offset facts are only as
+ * fresh as their offset operand, and facts live on the BOUNDED variable's
+ * entry — a mutation of the offset variable would otherwise leave a stale
+ * `j < n - d` in place after `d` changed. Entries whose OWN name matches
+ * are skipped (their facts die by entry shadowing on the reassignment
+ * itself).
+ */
+export function invalidate_token_facts(token: string, status: CheckStatus) {
+	const re = new RegExp(`\\b${token}\\b`);
+	const scrub = (arr?: string[]): string[] | undefined => {
+		if (!arr) return arr;
+		const out = arr.filter((e) => !re.test(e));
+		return out.length === arr.length ? arr : out.length > 0 ? out : undefined;
+	};
+	for (const v of status.values) {
+		if (v.name === token) continue;
+		const hit =
+			(v.upper_bound_exprs && v.upper_bound_exprs.some((e) => re.test(e))) ||
+			(v.lower_bound_exprs && v.lower_bound_exprs.some((e) => re.test(e))) ||
+			(v.upper_bound_inclusive_exprs && v.upper_bound_inclusive_exprs.some((e) => re.test(e))) ||
+			(v.lower_bound_inclusive_exprs && v.lower_bound_inclusive_exprs.some((e) => re.test(e)));
+		if (!hit) continue;
+		v.upper_bound_exprs = scrub(v.upper_bound_exprs);
+		v.lower_bound_exprs = scrub(v.lower_bound_exprs);
+		v.upper_bound_inclusive_exprs = scrub(v.upper_bound_inclusive_exprs);
+		v.lower_bound_inclusive_exprs = scrub(v.lower_bound_inclusive_exprs);
+		if (v.upper_bound_expr && re.test(v.upper_bound_expr)) v.upper_bound_expr = undefined;
+		if (v.lower_bound_expr && re.test(v.lower_bound_expr)) v.lower_bound_expr = undefined;
+		if (v.path_bounds) {
+			for (const pb of v.path_bounds.values()) {
+				pb.upper = scrub(pb.upper);
+				pb.upper_inclusive = scrub(pb.upper_inclusive);
+				pb.lower = scrub(pb.lower);
+				pb.lower_inclusive = scrub(pb.lower_inclusive);
+			}
 		}
 	}
 }

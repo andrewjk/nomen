@@ -21,6 +21,7 @@ import {
 	apply_return_bounds_to_var,
 	call_return_bounds,
 	track_assignment_bounds,
+	invalidate_token_facts,
 } from "./utils/flow_bounds.ts";
 import in_function from "./utils/in_function.ts";
 import materialize_type from "./utils/materialize_type.ts";
@@ -275,6 +276,10 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 		});
 		if (decl.value) {
 			move_closure_source(decl.value, status);
+			// Shadowing a name that offset facts reference (`j < n - d`, now
+			// a NEW `d`): the outer facts read the wrong variable from here
+			// on — sweep them.
+			invalidate_token_facts(decl.name, status);
 			track_assignment_bounds(decl.name, decl.value, status);
 		}
 	} else {
@@ -638,6 +643,7 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			),
 		});
 		if (decl.value) {
+			invalidate_token_facts(decl.name, status);
 			track_assignment_bounds(decl.name, decl.value, status);
 		}
 		// Apply any return-contract bounds stashed while checking the initializer

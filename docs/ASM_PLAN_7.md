@@ -680,3 +680,35 @@ suite (3926 tests — including every bounds-REFUSAL test pinning the
 verifier's strictness) passes unchanged. Still open (ASM_TODO): VARIABLE
 shift discharge (`load_int(j + d)`), which needs same-token symbolic
 offset cancellation rather than literal folding.
+
+### Addendum 4 (2026-10-03): variable-shift index discharge (`load_T(j + d)`)
+
+The literal-shift rule generalized to RUNTIME offsets: `load_int(j + d)`
+verifies against `while j < n - d` under a `d <= n`-class guard.
+
+- **Token cancellation** (check_function_call's offset arm): the arg's
+  stored facts cancel token-for-token — `j < n - d` + `d` => `j + d < n` —
+  algebra that is exact for ANY runtime d (no sign assumption). Facts that
+  don't cancel drop; the numeric ranges drop too: they describe the BARE
+  base, and transferring them without adding d UNDERSTATES the shifted
+  index's reach — the exact unsoundness this branch guards. The arg's
+  provable `>= 0` lower survives when the token's own `range_lower >= 0`
+  (what every Buffer contract's first half needs).
+- **Referenced-token invalidation** (`invalidate_token_facts`): offset
+  facts live on the BOUNDED variable's entry, so a mutation of the offset
+  variable would leave a stale `j < n - d` behind. Any reassignment,
+  shadowing declaration, or `ref`-binding of the name sweeps every stored
+  fact referencing it (flow_bounds). The soundness envelope, pinned by
+  tests: shadow-before-use and pre-use mutation REFUSE; post-use mutation
+  composes soundly (the loop condition re-establishes the fact with the
+  current offset at every body entry).
+- **Receipts** (`test/flow_bounds.test.ts`, 24 tests): the variable-shift
+  copy verifies and runs identically on both backends (2519, cap 64); the
+  two unsound shapes refuse; the post-use-mutation shape compiles and
+  runs; full suite green (482 files / 3930 tests). The investigation also
+  surfaced (and fixed) a REAL unsound discharge in the numeric path: the
+  token-arg's synthetic entry inherited the base's numeric range, which
+  let `i < buf.cap` verify against the bare base's reach while the actual
+  index ran to `buf.cap - d + d` — the range transfer is now dropped, and
+  the previously-passing (unsound) discharge is covered by the refusal
+  tests.

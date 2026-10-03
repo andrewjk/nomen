@@ -341,3 +341,102 @@ Console.write("\\{a.length}")
 		expect(parsed.errors).toEqual([]);
 	});
 });
+
+// ── Variable-shift index discharge (`load(j + d)` vs `while j < n - d`) ────
+// The offset operand is a runtime variable: the arg's stored fact cancels
+// token-for-token (`j < n - d` + `d` => `j + d < n`), the numeric ranges do
+// NOT transfer (the shift is a runtime value — transferring them would
+// understate the arg's reach), and any reassignment/shadow/ref-binding of
+// the offset variable sweeps every stored fact referencing it.
+
+test("variable-shift load verifies under a sound guard (both backends)", async () => {
+	const input = `
+var Buffer<int> buf = Buffer<int>()
+buf.grow_int(64)
+var int i = 0
+while i < 64; i += 1 {
+	buf.store_int(i, i + 5)
+}
+var int d = 3
+if buf.cap >= d {
+	var int j = 0
+	while j < buf.cap - d; j += 1 {
+		buf.store_int(j, buf.load_int(j + d))
+	}
+}
+var int total = 0
+var int k = 0
+while k < 64; k += 1 {
+	if k >= 0 && k < buf.cap {
+		total += buf.load_int(k)
+	}
+}
+Console.write("\\{total}\\n")
+`;
+	// buf[k] = k+5 (cap 64); shift-left by 3; sum = sum(3..65) = 2144.
+	await build_and_check_output(input, "bounds_varshift", "2519");
+});
+
+test("offset variable reassigned in the loop body invalidates the fact", () => {
+	const parsed = parse_with_imports(`
+pub func main = (Init init) {
+	var Buffer<int> buf = Buffer<int>()
+	buf.grow_int(100)
+	var int d = 3
+	if buf.cap >= d {
+		var int j = 0
+		while j < buf.cap - d; j += 1 {
+			d = d + 10
+			buf.store_int(j, buf.load_int(j + d))
+		}
+	}
+	Console.write("done")
+}
+`);
+	// The mutation PRECEDES the use: the fact `j < buf.cap - d` is stale for
+	// `j + d` after `d` grows — the access must refuse to verify.
+	expect(parsed.errors.length).toBeGreaterThan(0);
+	expect(parsed.errors[0].message).toContain("cannot be verified");
+});
+
+test("offset variable shadowed before the use invalidates the fact", () => {
+	const parsed = parse_with_imports(`
+pub func main = (Init init) {
+	var Buffer<int> buf = Buffer<int>()
+	buf.grow_int(100)
+	var int d = 3
+	if buf.cap >= d {
+		var int j = 0
+		while j < buf.cap - d; j += 1 {
+			var int d = 9
+			buf.store_int(j, buf.load_int(j + d))
+		}
+	}
+	Console.write("done")
+}
+`);
+	expect(parsed.errors.length).toBeGreaterThan(0);
+	expect(parsed.errors[0].message).toContain("cannot be verified");
+});
+
+test("mutation AFTER the use in body order is sound and compiles", async () => {
+	const input = `
+var Buffer<int> buf = Buffer<int>()
+buf.grow_int(32)
+var int d = 3
+if buf.cap >= d {
+	var int j = 0
+	while j < buf.cap - d; j += 1 {
+		buf.store_int(j, buf.load_int(j + d))
+		if d > 0 {
+			d = d - 1
+		}
+	}
+}
+Console.write("done")
+`;
+	// The condition re-establishes `j < buf.cap - d` with the CURRENT d at
+	// every body entry, so a trailing mutation is sound: the use sees the
+	// freshly-checked fact.
+	await build_and_check_output(input, "bounds_varshift_after", "done");
+});
