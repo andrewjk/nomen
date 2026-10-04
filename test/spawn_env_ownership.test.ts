@@ -1,6 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
 
-import build from "../src/build";
 import build_and_check_output from "./build_and_check_output";
 import check_output from "./check_output";
 import { parse_raw } from "./parse_with_imports";
@@ -33,7 +32,16 @@ pub func main = () {
 		await build_and_check_output(input, "spawn_env_string", "original\n", true);
 	});
 
-	test("an owning value-struct argument stays valid after the donor's scope (c)", async () => {
+	test("an owning value-struct argument outside a nursery is rejected (R1)", () => {
+		// STRUCT_PLAN_3 N1a R1: an owning value struct passed bare to a spawn
+		// is a region-checked BORROW inside `async { }` (the join bounds it).
+		// OUTSIDE a nursery there is no join to bound a borrow, and the env
+		// deep-copy is unsound for owning structs (only string fields are
+		// deep-copied — a container field would share its buffer), so the
+		// bare-owning shape is rejected outright. (The pre-tranche shape —
+		// a string-only Payload env-copied past its donor's scope — was the
+		// one case the old copy path handled; the compile error now names
+		// the two sound spellings.)
 		const input = `import System
 
 struct Payload {
@@ -41,7 +49,7 @@ struct Payload {
 }
 
 func work = (Payload p) {
-	Time.sleep_ms(50) // let the donor's scope exit run first
+	Time.sleep_ms(50)
 	Console.write_line(p.name)
 }
 
@@ -51,20 +59,10 @@ pub func main = () {
 		Thread(work(p)).start()
 	}
 	Console.write_line("done")
-	// process exit drains the pool: the task wakes after its sleep, reads
-	// the env's OWN copy, and prints
 }
 `;
-		// The aarch64 arg staging passes one word per non-string arg, so a
-		// by-value struct argument is a pre-existing limitation there —
-		// run the C backend only.
 		const parsed = parse_raw(input);
-		expect(parsed.errors).toEqual([]);
-		const built = build(parsed.root, { arch: "c", audit: true });
-		await check_output("spawn_env_owning_struct", built, "done\nowned\n", {
-			arch: "c",
-			audit: true,
-		});
+		expect(parsed.errors.some((e) => e.message.includes("owns heap memory"))).toBe(true);
 	});
 
 	test("a non-Sendable class MOVED in (a move parameter) is exempt", () => {

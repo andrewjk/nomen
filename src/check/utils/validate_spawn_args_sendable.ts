@@ -4,29 +4,35 @@ import type FunctionNode from "../../nodes/FunctionNode.ts";
 import type Type from "../../nodes/Type.ts";
 import type CheckStatus from "../CheckStatus.ts";
 import is_sendable_type from "./is_sendable_type.ts";
-import { enforce_spawn_arg_region } from "./spawn_region.ts";
+import {
+	enforce_spawn_arg_region,
+	is_owning_spawn_arg,
+	spawn_arg_root_name,
+} from "./spawn_region.ts";
 import type_from_value_node from "./type_from_value_node.ts";
 
 /**
  * Validate a spawn's packed arguments (CLOSURE.md Phase 3d; the shrunk
- * `Sendable` — docs/ASYNC.md, "Design decisions").
+ * `Sendable` — docs/ASYNC.md, "Design decisions"; STRUCT_PLAN_3 N1a R1 for
+ * the region classification).
  *
- * `Sendable` gates exactly the case that can race: a SHARED class/trait
- * reference crossing the task boundary (a plain argument — the packed env
- * aliases the instance). Everything else is exempt:
+ * Argument classes at the task boundary:
  *
- * - MOVED arguments: the callee's `move T` parameter takes exclusive
- *   ownership, so no one else can touch the instance concurrently;
- * - scalars, strings, and everything `is_sendable_type` accepts (copied or
- *   safe by value — strings are deep-copied at pack);
- * - owning VALUE structs whose fields are all safe (the pack deep-copies
- *   them; `is_sendable_type`'s field recursion rejects a struct with an
- *   unsafe class field).
- *
- * The nursery-borrow exception (a non-Sendable class aliased into a task
- * inside `async { }`) is RETIRED: mark the class `Sendable`, move it in
- * (a `move` parameter), or share it through a `Sendable` primitive
- * (`Mutex`/`Channel`).
+ * - MOVED (`move T` param): the callee takes exclusive ownership — no
+ *   sharing, no race, no region to prove.
+ * - OWNING VALUE STRUCT, bare, INSIDE an `async` block: a region-checked
+ *   BORROW (R1) — the env takes a pointer (no deep copy), the donor must
+ *   join-bound (the root rule), and the freeze makes it const until the
+ *   block exits (R3). Stamped `region_borrowed_args` for the backends'
+ *   packers. OUTSIDE a nursery there is no join to bound a borrow, so the
+ *   pack keeps today's env deep-copy.
+ * - `view`-typed: a borrow of its source — region-checked + frozen inside a
+ *   nursery (the env's (ptr, len) pair aliases the source either way).
+ * - Class/trait references: shared pointers — `Sendable` gates aliasability
+ *   (the shipped transition-era rule), and the root rule bounds the alias
+ *   inside a nursery.
+ * - Scalars/strings and Copyable structs: copied at the boundary (strings
+ *   deep-copied at pack) — no checks.
  */
 export default function validate_spawn_args_sendable(
 	call: FunctionCallNode,
@@ -49,6 +55,40 @@ export default function validate_spawn_args_sendable(
 		// MOVED: the callee's `move T` parameter takes exclusive ownership
 		// of the argument — no sharing, no race, no region to prove.
 		if (callee_params?.[i]?.is_moved) {
+			continue;
+		}
+		const inside_nursery = (status.nursery_depth ?? 0) > 0;
+		// R1: an OWNING value struct passed bare inside a nursery is a
+		// region-checked borrow. `Sendable` does not apply to it — the env
+		// aliases the donor's storage and the root rule + freeze bound it.
+		if (is_owning_spawn_arg(arg_type, status)) {
+			if (!inside_nursery) {
+				// Outside a nursery there is no join to bound a borrow, and an
+				// env deep-copy is unsound for owning structs (the pack copies
+				// string fields only — a container field would share its
+				// buffer and double-free at teardown). The borrow needs the
+				// nursery's region proof. The donor's name (when the argument
+				// is a bare variable) names the fix.
+				const donor = spawn_arg_root_name(param);
+				add_error(
+					status,
+					`spawn argument of type ${arg_type.name} owns heap memory — spawn it inside an 'async' block as a borrowed read (the join bounds the borrow)${
+						donor ? `, or move it in ('move ${donor}')` : ""
+					}`,
+					param.start,
+				);
+				continue;
+			}
+			if (!call.region_borrowed_args) call.region_borrowed_args = [];
+			if (!call.region_borrowed_args.includes(i)) call.region_borrowed_args.push(i);
+			enforce_spawn_arg_region(param, arg_type, status);
+			continue;
+		}
+		// R1: a `view`-typed argument is a borrow of its source — region-
+		// checked + frozen inside a nursery (outside one, the env's pair
+		// copy has no join to bound it; the shipped posture applies).
+		if (inside_nursery && arg_type.is_view && !arg_type.is_array) {
+			enforce_spawn_arg_region(param, arg_type, status);
 			continue;
 		}
 		if (is_sendable_type(arg_type.name, status)) {

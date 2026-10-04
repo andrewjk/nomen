@@ -4,6 +4,7 @@ import { describe, expect, test } from "vite-plus/test";
 
 import { get_library } from "../src/lib";
 import parse from "../src/parse";
+import build_and_check_output from "./build_and_check_output";
 import test_error from "./test_error";
 
 // STRUCT_PLAN_3 Phase N tranche 1 — checked region borrows at the task
@@ -315,5 +316,174 @@ pub func main = (Init init) {
 }
 `;
 		expect(check(input)).toEqual([]);
+	});
+});
+
+describe("spawn region: owning-struct borrows + the freeze (R1/R3, tranche 2)", () => {
+	const owning_case = `
+import System
+
+pub func main = (Init init) {
+	var List<int> xs = List<int>()
+	xs.push(4)
+	async {
+		%s
+	}
+}
+
+func len = (List<int> items, out int) {
+	return items.length
+}
+`;
+
+	test("an owning struct bare inside async is a region-checked borrow (accepted)", () => {
+		const input = owning_case.replace(
+			"%s",
+			'var t = Thread(len(xs)).start()\n\t\tConsole.write_line("\\{t.result()}")',
+		);
+		expect(check(input)).toEqual([]);
+	});
+
+	test("an owning struct bare outside async is rejected (no join, no sound copy)", () => {
+		const input = `
+import System
+
+pub func main = (Init init) {
+	var List<int> xs = List<int>()
+	xs.push(4)
+	var t = Thread(len(xs)).start()
+	Console.write_line("\\{t.result()}")
+}
+
+func len = (List<int> items, out int) {
+	return items.length
+}
+`;
+		const messages = check(input).map((e) => e.message);
+		expect(messages.some((m) => m.includes("owns heap memory"))).toBe(true);
+	});
+
+	test("an owning donor in a loop body inside async is rejected (root rule)", () => {
+		const input = `
+import System
+
+pub func main = (Init init) {
+	async {
+		var int i = 0
+		while i < 2 {
+			var List<int> xs = List<int>()
+			var t = Thread(len(xs)).start()
+			t.wait()
+			i = i + 1
+		}
+	}
+}
+
+func len = (List<int> items, out int) {
+	return items.length
+}
+`;
+		const messages = check(input).map((e) => e.message);
+		expect(messages.some((m) => m.includes("does not outlive the task"))).toBe(true);
+	});
+
+	test("the freeze: a mutating call on the donor after the construction errors", () => {
+		const input = owning_case.replace(
+			"%s",
+			'var t = Thread(len(xs)).start()\n\t\txs.push(5)\n\t\tConsole.write_line("\\{t.result()}")',
+		);
+		const messages = check(input).map((e) => e.message);
+		expect(messages.some((m) => m.includes("'xs' is borrowed by a task"))).toBe(true);
+	});
+
+	test("the freeze: mutating BEFORE the construction is fine", () => {
+		const input = owning_case.replace(
+			"%s",
+			'xs.push(5)\n\t\tvar t = Thread(len(xs)).start()\n\t\tConsole.write_line("\\{t.result()}")',
+		);
+		expect(check(input)).toEqual([]);
+	});
+
+	test("the freeze: moving the donor out errors", () => {
+		const input = owning_case.replace(
+			"%s",
+			"var t = Thread(len(xs)).start()\n\t\tmove List<int> stolen = xs",
+		);
+		const messages = check(input).map((e) => e.message);
+		expect(messages.some((m) => m.includes("'xs' is borrowed by a task"))).toBe(true);
+	});
+
+	test("the freeze: mutable-passing the donor errors", () => {
+		const input = `
+import System
+
+pub func main = (Init init) {
+	var List<int> xs = List<int>()
+	async {
+		var t = Thread(len(xs)).start()
+		consume(move xs)
+		t.wait()
+	}
+}
+
+func len = (List<int> items, out int) {
+	return items.length
+}
+
+func consume = (move List<int> items) {
+	Console.write_line("\\{items.length}")
+}
+`;
+		const messages = check(input).map((e) => e.message);
+		expect(messages.some((m) => m.includes("'xs' is borrowed by a task"))).toBe(true);
+	});
+
+	test("a Task handle shared into a task can still be cancelled (protocol exemption)", () => {
+		const input = `
+import System
+
+func work = (uint64 n, out uint64) {
+	return n
+}
+
+pub func main = (Init init) {
+	async {
+		var t = Thread(work(1)).start()
+		var f = Fiber(waiter(t)).start()
+		t.cancel()
+		f.wait()
+	}
+}
+
+func waiter = (Task<uint64> handle) {
+	ref f = handle
+	f.cancel()
+}
+`;
+		expect(check(input)).toEqual([]);
+	});
+});
+
+describe("spawn region: borrowed owning args at runtime (R1, both backends)", () => {
+	test("a task reads the donor's List through the env borrow", async () => {
+		const input = `
+func sum = (List<int> items, out int) {
+	var int total = 0
+	for x of items {
+		total = total + x
+	}
+	return total
+}
+
+var List<int> xs = List<int>()
+
+xs.push(4)
+xs.push(5)
+async {
+	var t = Thread(sum(xs)).start()
+	Console.write_line("\\{t.result()}")
+}
+`;
+		await build_and_check_output(input, "spawn_region_borrow_list", "9\n");
 	});
 });

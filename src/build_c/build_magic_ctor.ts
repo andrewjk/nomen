@@ -5,6 +5,7 @@ import { is_built_in_type } from "../built_in_types.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import type StructNode from "../nodes/StructNode.ts";
+import type Type from "../nodes/Type.ts";
 import build_node from "./build_node.ts";
 import {
 	ensure_concurrency_runtime,
@@ -125,32 +126,43 @@ export function emit_spawn_task_body(
 	const arg_types = spawn_arg_types(call, status);
 	const { returns_value, c_ret_type, slot_c_type } = task_c;
 
-	// Ownership classification (Phase 3d): the env is an OWNING struct. A
-	// fat `string` arg is duplicated at pack time (a raw pair copy would
-	// alias and dangle the moment the caller's scope exit ran) and freed by
-	// the env destructor. An owning value-struct arg (a `#destroy`, owning
-	// fields, or heap string fields) is copied and `<T>_destroy`ed — the
-	// env owns its copy. Class and trait args stay shared pointers (the
+	// Ownership classification (Phase 3d; STRUCT_PLAN_3 N1a R1): the env is
+	// an OWNING struct. A fat `string` arg is duplicated at pack time (a raw
+	// pair copy would alias and dangle the moment the caller's scope exit
+	// ran) and freed by the env destructor. An owning value-struct arg is
+	// COPIED (malloc + string-field strdups, `<T>_destroy` + free at
+	// teardown) — EXCEPT when the checker stamped it a region-checked
+	// BORROW (`region_borrowed_args`: an owning struct passed bare inside an
+	// `async { }` block): the env then holds the donor's pointer itself, the
+	// destructor leaves it alone, and the R3 freeze keeps the donor const
+	// until the join. Class and trait args stay shared pointers (the
 	// Sendable contract).
+	const region_borrowed = new Set(call.region_borrowed_args ?? []);
+	// The env's struct storage is typed by the MONO name (`List_int`, not the
+	// generic template `List` — the template is never emitted as a C struct,
+	// so `struct List` is an incomplete type and the trampoline's forward
+	// declaration of the wrapped function would conflict with its real
+	// mono signature). Mirrors the aarch64 packer.
+	const arg_mono_struct = (t: Type | undefined): ReturnType<typeof status.structs.at> => {
+		if (!t?.name) return undefined;
+		const mono = mono_type_name(t);
+		return status.structs.find((s) => s.name === mono && !s.is_simple_type);
+	};
 	const arg_c_types_with_owned = arg_c_types.map((ct, i) => {
-		const st = arg_types[i]?.name
-			? status.structs.find(
-					(s) =>
-						s.name === arg_types[i].name &&
-						!s.is_class &&
-						!s.is_simple_type &&
-						!is_built_in_type(arg_types[i].name),
-				)
-			: undefined;
-		return st ? `struct ${st.name} *` : ct;
+		const st = arg_mono_struct(arg_types[i]);
+		return st && !st.is_class && !is_built_in_type(st.name) ? `struct ${st.name} *` : ct;
 	});
 	const owned_args: OwnedArg[] = arg_types.map((t, i) => {
+		if (region_borrowed.has(i)) {
+			const st = arg_mono_struct(t);
+			return { index: i, kind: "borrowed" as const, struct_name: st?.name };
+		}
 		if (t.name === "string" && !t.is_view && !t.is_array) {
 			return { index: i, kind: "string" as const };
 		}
 		if (!t.is_view && !t.is_array && t.name) {
-			const st = status.structs.find((s) => s.name === t.name && !s.is_class && !s.is_simple_type);
-			if (st) {
+			const st = arg_mono_struct(t);
+			if (st && !st.is_class) {
 				// The callee ABI passes value structs by POINTER, and an
 				// inline struct field would be incomplete at the env's
 				// definition point — the same shape the capture machinery
@@ -198,10 +210,13 @@ export function emit_spawn_task_body(
 	header += `};\n`;
 
 	// The env destructor (Phase 3d): frees each duplicated string and runs
-	// `<T>_destroy` on the env's owning-struct copies. Wired through the
-	// descriptor's destroy_env slot, so every release path (future release,
-	// daemon teardown) reclaims the env's owned state uniformly.
-	if (owned_args.some((o) => o.kind !== "plain")) {
+	// `<T>_destroy` on the env's owning-struct copies. Region-BORROWED args
+	// (N1a R1) are skipped — the env aliases the donor's storage and owns
+	// nothing. Wired through the descriptor's destroy_env slot, so every
+	// release path (future release, daemon teardown) reclaims the env's
+	// owned state uniformly.
+	const env_owns = owned_args.some((o) => o.kind !== "plain" && o.kind !== "borrowed");
+	if (env_owns) {
 		header += `static void ${destroy_name}(void *_p) {\n`;
 		header += `\tstruct ${struct_name} *a = (struct ${struct_name} *)_p;\n`;
 		for (const o of owned_args) {
@@ -246,7 +261,7 @@ export function emit_spawn_task_body(
 	// Static descriptor template for this site: every construction copies it
 	// into a heap descriptor (owned = 1) carrying the per-construction env —
 	// and the env destructor when the env owns anything.
-	const has_env_destroy = owned_args.some((o) => o.kind !== "plain");
+	const has_env_destroy = env_owns;
 	header += `static struct nomen_closure ${desc_name} = { (void *)${tramp_name}, NULL, 0, ${
 		has_env_destroy ? `(void (*)(void *))${destroy_name}` : "NULL"
 	} };\n`;
@@ -258,7 +273,7 @@ export function emit_spawn_task_body(
 /** One spawn argument's env-ownership classification (Phase 3d). */
 export interface OwnedArg {
 	index: number;
-	kind: "string" | "struct" | "plain";
+	kind: "string" | "struct" | "borrowed" | "plain";
 	struct_name?: string;
 	owns?: boolean;
 	string_fields?: string[];
@@ -314,6 +329,17 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 				status.code += ` { nomen_string _t = nomen_str_dup(_v->${f}); _v->${f} = _t; }`;
 			}
 			status.code += ` _v; });\n`;
+		} else if (owned?.kind === "borrowed") {
+			// N1a R1: a region-checked borrow — the env stores the donor's
+			// own address (no copy, no env-side destroy). `build_node` yields
+			// the donor's VALUE expression (locals by name, pointer params
+			// dereferenced), so the address is `&(...)`: `&xs` for a local,
+			// `&(*items)` (= items) for a param — valid C per the value
+			// emitter's contract. The R3 freeze keeps the donor const until
+			// the join.
+			status.code += `\t_args->arg${i} = &(`;
+			build_node(call.params[i], status);
+			status.code += ");\n";
 		} else {
 			status.code += `\t_args->arg${i} = `;
 			build_node(call.params[i], status);

@@ -931,7 +931,11 @@ pub func main = () {
 }
 `;
 		const parsed = parse_raw(input);
-		expect(parsed.errors.some((e) => e.message.includes("not Sendable"))).toBe(true);
+		// STRUCT_PLAN_3 N1a R1: a struct with a CLASS field is OWNING, so
+		// outside a nursery the bare-owning shape is rejected outright (the
+		// env deep-copy cannot own a class field soundly) — a sharper error
+		// than the old generic "not Sendable".
+		expect(parsed.errors.some((e) => e.message.includes("owns heap memory"))).toBe(true);
 	});
 
 	test("Sendable struct arg passes", () => {

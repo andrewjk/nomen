@@ -29,6 +29,7 @@ import {
 	is_owning_struct_type,
 	is_owning_struct_type_requiring_move,
 } from "./utils/ownership.ts";
+import { enforce_root_not_frozen } from "./utils/spawn_region.ts";
 import synthesize_lambda_name from "./utils/synthesize_lambda_name.ts";
 import {
 	is_trait_type,
@@ -192,6 +193,12 @@ export default function check_assignment_node(
 		assign.left_value!.node_type === "access" &&
 		left_value.is_ref_binding
 	) {
+		if (left_value.ref_source) {
+			// R3: mutating through an alias whose SOURCE is frozen (borrowed
+			// by a spawned task until the `async` block exits) writes the
+			// task's shared instance — block it at the alias too.
+			enforce_root_not_frozen(left_value.ref_source, status, assign.left_value!.start);
+		}
 		if (!(left_value.ref_source && is_var_binding(left_value.ref_source, status))) {
 			add_error(
 				status,
@@ -200,6 +207,13 @@ export default function check_assignment_node(
 			);
 			return false;
 		}
+	} else if (
+		// R3: any direct write through the LHS root (`m = ...`, `m.field = ...`)
+		// mutates a variable a spawned task may still be reading — the freeze
+		// (N1a R3) keeps borrowed roots const until the `async` block exits.
+		enforce_root_not_frozen(left_value_name, status, assign.left_value!.start)
+	) {
+		return false;
 	} else if (
 		left_value.declaration !== "var" &&
 		!left_value.type.is_ref &&
@@ -533,6 +547,13 @@ export default function check_assignment_node(
 				assign.right_value.start,
 			);
 		} else {
+			// R3: a frozen root (borrowed by a spawned task until the `async`
+			// block exits) cannot be moved out — the task's alias would dangle.
+			enforce_root_not_frozen(
+				(assign.right_value as ValueNode).value,
+				status,
+				assign.right_value.start,
+			);
 			if (!status.moved_variables) status.moved_variables = new Set();
 			status.moved_variables.add((assign.right_value as ValueNode).value);
 		}

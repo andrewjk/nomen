@@ -497,21 +497,31 @@ the graph, so timed waits are exempt by design.
 
 ## Sharing data between tasks
 
-Three tiers, in increasing pain:
+Argument classes at the task boundary (STRUCT_PLAN_3 N1a R1):
 
-1. **Move in.** A `move T` parameter takes exclusive ownership, so any
-   value can cross moved — including a non-Sendable class (the caller gives
-   up its access). Ownership leaves the caller; the task owns it. Already
-   solved by the move model.
-2. **`Channel`.** One-way queue; ownership transfers per message. The channel
-   lives in the nursery's scope, so its lifetime is bounded.
-3. **`Mutex` / `Atomic`.** Explicit shared mutable state, gated by `Sendable`
-   on the guarded type. Opt-in, never the default. Low-level escape hatch —
-   prefer an actor (see "Shared mutable state: actors vs. Mutex" below).
+- **Move in** (`move T` parameter): exclusive ownership — any value can
+  cross moved, including a non-Sendable class (the caller gives up its
+  access).
+- **Borrow** (inside `async { }` only): a shared `Sendable` class/trait
+  reference, an OWNING value struct passed bare, or a `view`-typed argument
+  — the env aliases the donor. Two checked rules make the alias sound: the
+  ROOT must outlive the join (declared in the block's own scope or outside
+  it), and the freeze keeps the donor const until the block exits. Outside
+  a nursery there is no join — owning structs cannot cross bare at all
+  (compile error), and class/trait references keep the `Sendable` gate as
+  the shipped posture.
+- **Copy** (everything else): scalars, strings (deep-copied at pack), and
+  plain-data value structs (byte-copied) — the task holds independent
+  values.
+- **`Channel`**: one-way queue; ownership transfers per message.
+- **`Mutex` / `Atomic`**: explicit shared mutable state, gated by
+  `Sendable` on the guarded type. Opt-in, never the default. Low-level
+  escape hatch — prefer an actor (see "Shared mutable state: actors vs.
+  Mutex" below).
 
 Default stance: **no shared mutable state.** Tasks communicate by moving
-values (directly or through channels); anything actually shared — a
-class/trait reference crossing as a plain argument — must be `Sendable`.
+values (directly or through channels); anything actually shared is a
+checked borrow (inside a nursery) or a `Sendable` shared reference.
 
 ## Roadmap (remaining)
 

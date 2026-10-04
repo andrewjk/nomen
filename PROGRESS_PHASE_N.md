@@ -1,9 +1,9 @@
-# PROGRESS — STRUCT_PLAN_3 Phase N (tranche 1: the dangle fixes)
+# PROGRESS — STRUCT_PLAN_3 Phase N (tranches 1–2: checked region borrows)
 
-Status snapshot for Phase N tranche 1. Per the plan's sequencing, the E3
-call-form root check and the R4/N2 detach rule "land early — they fix live
-dangles"; the fuller R1–R3 region machinery, WeakHandle (N3), and the
-protected slots (N4) remain.
+Status snapshot for Phase N. Tranche 1 landed the early dangle fixes (the E3
+call-form root check and the R4/N2 detach rule); tranche 2 completed N1a —
+the full R1 capture classification and the R3 freeze. Remaining: N3
+(WeakHandle), N4 (protected slots).
 
 ## What is implemented
 
@@ -60,7 +60,63 @@ Known gap (recorded, deliberate): a construction stored in a variable and
 detached later (`var t = Thread(f(x)) ... t.detach()`) is not flow-tracked;
 the chained form is the enforced (and documented daemon) spelling.
 
-**BUGS.md #5 — root-scope class globals (both backends, pre-existing)**
+**N1a R1 (tranche 2) — the full capture classification**
+
+Argument classes at the task boundary (checker: `spawn_arg_region_class`,
+`enforce_spawn_arg_region`; build: both packers share the matrix):
+
+- OWNING value struct, bare, INSIDE an `async` block → a region-checked
+  BORROW: the env stores the donor's pointer (no deep copy), the root rule
+  bounds the donor's scope, and the freeze (below) keeps it const. Stamped
+  `region_borrowed_args` on the deferred call; monomorphized-body clones
+  never re-validate and keep the copy packing (safe fallback).
+- OWNING value struct, bare, OUTSIDE a nursery → compile ERROR: no join to
+  bound a borrow, and the old env deep-copy was unsound for owning structs
+  (only string fields were duplicated — a container field shared its buffer
+  and the env destructor freed the donor's live buffer). `move` params still
+  transfer.
+- `view`-typed args → a borrow of the source: region-checked + frozen inside
+  a nursery; the env pair is stored as-is.
+- Class/trait args stay shared pointers (`Sendable` gate, transition era).
+- Scalars/strings/plain-data structs: copied (strings duplicated at pack).
+
+C backend: `OwnedArg.kind "borrowed"` — env field is the donor pointer, the
+destructor skips it, the pack is `&(donor)` (valid C per the value emitter's
+`&*x` contract). aarch64: value-struct args stage the donor's ADDRESS
+(`emit_struct_address_param` — a plain value read yields the first word),
+classes/traits stage the instance pointer, and the helper copies/borrows per
+class. Env field types are the MONO names (`struct List_int *`) on both
+backends — the generic template name made `struct List` an incomplete type
+and conflicted with the callee's real mono signature.
+
+**N1a R3 (tranche 2) — the freeze**
+
+A borrowed root is const from the construction until the `async` block
+exits. `CheckStatus.nursery_frozen_roots` is one Set per enclosing async
+block; block clones share the innermost set BY REFERENCE (the freeze outlives
+the construction's branch) and the frame dies with the block's cloned
+status. Gated at every mutation path: assignments through the LHS root
+(`check_assignment_node`), move-out declarations/assignments, mutable-passing
+(`move x` params), mutation through a `ref` alias of a frozen source (§A3.1
+arm), and `ref self` method calls on the root or a field path
+(`check_access_node`). Error: `'xs' is borrowed by a task until this 'async'
+block exits — it is read-only here (move a copy in, or move it in at the
+spawn)`.
+
+Exemption: `Task`-typed roots are NOT frozen — sharing a task's handle and
+then cancelling it is the coordination protocol (`t.cancel()` after a spawn
+is the sanctioned shape).
+
+**BUGS.md #7 (tranche 2) — spawning with value-struct args never compiled**
+
+`Thread(work(some_struct))` was broken on both backends on `main`: aarch64's
+companion used by-value typedef names against one-word staging (never
+compiled), and C used the generic template name (`struct List *` — an
+incomplete type conflicting with the callee's mono signature); where the
+types existed, the env deep-copy was shallow (container fields shared their
+buffer → stale-free at teardown). Fixed by the shared R1 matrix above.
+
+**BUGS.md #5 (tranche 1) — root-scope class globals (both backends, pre-existing)**
 
 The daemon migration (global app-lifetime channel) exposed that a
 root-scope CLASS variable was compiled as a main-local on BOTH backends —
@@ -100,16 +156,17 @@ out-of-range line expectation. Hardened.
 - Full suite green (3955 tests) before the test-file additions;
   spawn_region + daemon + spec files green after.
 
-## Not yet done (Phase N tranches 2+)
+## Not yet done (Phase N tranches 3+)
 
-- **R1's full capture-classification table** at the `#spawn` construction
-  (owning-type bare args → const borrow + region check; `view`-typed args).
-  Today's tranche covers the shared-pointer case only.
-- **R3 — the freeze**: borrowed roots const from construction until the
-  async block exits (checker-side borrow_depth at region scale).
 - **N3 — `WeakHandle<T>`** (registry, `.weak()`, `.get()`).
 - **N4 — protected slots** (`Atomic<T>`, `Shared<T>`, the `with(m)` critical
-  section form, shareability derivation).
+  section form, shareability derivation). The freeze's `with(m)` exemption
+  hooks into this.
+- **R1 completion note**: the A1-style at-vs-pop classification for
+  container-element spawn args (`list.at(i)` as a donor) — the root rule
+  currently keys on the base variable, which bounds container elements
+  correctly via the container's scope; the at-vs-pop transfer distinction
+  lands with R1's container work if ever needed.
 - **E2** capture kinds + **the string-captures-move flip** — deferred to R
   (they ride D3).
 - R1 completion note: the A1-style at-vs-pop classification for

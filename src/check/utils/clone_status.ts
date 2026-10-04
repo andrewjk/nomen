@@ -86,8 +86,12 @@ export default function clone_status(status: CheckStatus): CheckStatus {
 		// Nursery context: block clones (if/else/while inside `async { }`)
 		// stay inside the same nursery, so both the depth and the stack of
 		// body scope depths carry into every clone (spawn_region.ts reads
-		// them at spawn constructions nested in branch/loop bodies).
+		// them at spawn constructions nested in branch/loop bodies). The
+		// frozen-root sets are shared BY REFERENCE (only the array is
+		// copied): a freeze made inside a branch lasts until the block
+		// exits, and the frame dies with this clone's discard.
 		nursery_depth: status.nursery_depth,
 		nursery_scope_depths: status.nursery_scope_depths?.slice(),
+		nursery_frozen_roots: status.nursery_frozen_roots?.slice(),
 	};
 }

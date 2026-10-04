@@ -4,12 +4,15 @@ import type BuildStatus from "../build_c/BuildStatus.ts";
 import c_function_name from "../build_c/utils/c_function_name.ts";
 import c_type from "../build_c/utils/c_type.ts";
 import { c_env_field_type, emit_closure_env_type } from "../build_c/utils/closure_env.ts";
+import { has_destroy } from "../build_common/destroy_analysis.ts";
+import { struct_needs_auto_destroy } from "../build_common/destroy_analysis.ts";
 import emission_label from "../build_common/emission_label.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import type FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import type FunctionNode from "../nodes/FunctionNode.ts";
+import { emit_struct_address_param } from "./build_declaration_node.ts";
 import build_node from "./build_node.ts";
-import { ensure_concurrency_runtime_a64, spawn_arg_is_string } from "./build_spawn_node.ts";
+import { ensure_concurrency_runtime_a64 } from "./build_spawn_node.ts";
 import { emit_descriptor_address, materialize_func_value_a64 } from "./utils/closure_a64.ts";
 import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
@@ -52,29 +55,103 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 		nursery_id !== undefined ? status.nursery_offsets?.get(nursery_id) : undefined;
 	const capture = nursery_capture_a64(status, kind);
 
-	// Arg C types (fat strings ride the 16-byte nomen_string pair). The type
-	// comes from the CALLEE's declared parameter whenever it resolves
-	// (spawn_arg_types — the same source the C backend reads): an argument's
-	// own node type can differ (an int literal `21` for a `uint64` param
-	// lowers to `long`), which made two construction sites of one callee in
-	// the same TU emit conflicting forward declarations of it and clang
-	// rejected the companion.
+	// Arg C types (fat strings ride the 16-byte nomen_string pair; views the
+	// 16-byte nomen_view pair — both stage as two words; struct/class/trait
+	// args are POINTERS to the env's storage). The type comes from the
+	// CALLEE's declared parameter whenever it resolves (spawn_arg_types —
+	// the same source the C backend reads): an argument's own node type can
+	// differ (an int literal `21` for a `uint64` param lowers to `long`),
+	// which made two construction sites of one callee in the same TU emit
+	// conflicting forward declarations of it and clang rejected the
+	// companion.
+	//
+	// N1a R1 env-ownership classification per arg (mirrors the C backend's
+	// OwnedArg kinds):
+	//   - "string": duplicated at pack (`nomen_str_dup`), freed by the env
+	//     destructor — a raw pair copy would alias the caller's buffer.
+	//   - "view": the (ptr, len) pair is the borrow — stored as-is (the R3
+	//     freeze bounds the source inside a nursery).
+	//   - "struct-copy": a value struct the env OWNS — the helper mallocs a
+	//     copy (string fields strdup'd) and the destructor destroys + frees
+	//     it. This is the transfer shape (`move T` params), the non-nursery
+	//     shape (no join to bound a borrow), and the mono-clone fallback
+	//     (clones never re-run the checker's region stamping).
+	//   - "struct-borrow": a region-checked borrow (the checker stamped
+	//     `region_borrowed_args` — an owning struct passed bare inside an
+	//     `async { }` block) — the helper stores the donor's pointer; the
+	//     env owns nothing and the R3 freeze keeps the donor const.
+	//   - "plain": a scalar word.
 	const arg_types = spawn_arg_types(call, status);
+	const region_borrowed = new Set(call.region_borrowed_args ?? []);
+	type ArgClass = "string" | "view" | "struct-copy" | "struct-borrow" | "plain";
+	const arg_classes: ArgClass[] = [];
 	const arg_c_types: string[] = [];
-	const fat_string_args: boolean[] = [];
+	const struct_mono_names: string[] = [];
+	const struct_owns: boolean[] = [];
+	const struct_string_fieldss: string[][] = [];
+	const is_value_struct_arg: boolean[] = [];
 	for (let i = 0; i < call.params.length; i++) {
-		const mono_name = mono_type_name(arg_types[i]);
+		const t = arg_types[i];
+		const mono_name = mono_type_name(t);
 		const is_class = !!status.structs.find((s) => s.name === mono_name && s.is_class);
-		const is_trait = !!status.traits.find((t) => t.name === mono_name);
-		arg_c_types.push(is_class || is_trait ? `struct ${mono_name} *` : `${c_type(mono_name)}`);
-		fat_string_args.push(spawn_arg_is_string(call.params[i]));
+		const is_trait = !!status.traits.find((tr) => tr.name === mono_name);
+		const is_struct = !!status.structs.find((s) => s.name === mono_name && !s.is_simple_type);
+		if (t.name === "string" && !t.is_view && !t.is_array) {
+			arg_classes.push("string");
+			arg_c_types.push("nomen_string");
+			struct_mono_names.push("");
+			struct_owns.push(false);
+			struct_string_fieldss.push([]);
+			is_value_struct_arg.push(false);
+		} else if (t.is_view && !t.is_array) {
+			arg_classes.push("view");
+			arg_c_types.push("nomen_view");
+			struct_mono_names.push("");
+			struct_owns.push(false);
+			struct_string_fieldss.push([]);
+			is_value_struct_arg.push(false);
+		} else if (is_class || is_trait) {
+			// A CLASS/TRAIT arg is a SHARED POINTER (the Sendable contract):
+			// the env stores the instance pointer as-is and owns nothing —
+			// malloc-copying (let alone freeing) a shared instance would
+			// corrupt every other holder.
+			arg_classes.push("plain");
+			arg_c_types.push(`struct ${mono_name} *`);
+			struct_mono_names.push("");
+			struct_owns.push(false);
+			struct_string_fieldss.push([]);
+			is_value_struct_arg.push(false);
+		} else if (is_struct) {
+			const borrow = region_borrowed.has(i);
+			arg_classes.push(borrow ? "struct-borrow" : "struct-copy");
+			arg_c_types.push(`struct ${mono_name} *`);
+			is_value_struct_arg.push(true);
+			struct_mono_names.push(mono_name);
+			const st = status.structs.find((s) => s.name === mono_name && !s.is_simple_type);
+			if (st) {
+				struct_owns.push(has_destroy(st) || struct_needs_auto_destroy(st, status));
+				struct_string_fieldss.push(
+					st.fields
+						.filter(
+							(f) =>
+								f.type.name === "string" && !f.type.is_view && !f.type.is_array && !f.type.is_ref,
+						)
+						.map((f) => f.name),
+				);
+			} else {
+				struct_owns.push(false);
+				struct_string_fieldss.push([]);
+			}
+		} else {
+			arg_classes.push("plain");
+			arg_c_types.push(c_type(mono_name));
+			struct_mono_names.push("");
+			struct_owns.push(false);
+			struct_string_fieldss.push([]);
+			is_value_struct_arg.push(false);
+		}
 	}
-	// Phase 3d: the env OWNS its fat-string args — duplicated at pack, freed
-	// by the env destructor (a raw pair copy would alias the caller's
-	// buffer). Owning value-struct args are not covered here: the aarch64
-	// arg staging passes one word per non-string arg, so a by-value struct
-	// arg never reaches the env intact (pre-existing limitation).
-	const has_env_destroy = fat_string_args.some(Boolean);
+	const has_env_destroy = arg_classes.some((c) => c === "string" || c === "struct-copy");
 
 	const return_type_name = node.function_return_type?.name;
 	const returns_value = !!(
@@ -123,12 +200,25 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 	c += `\tunsigned long long *cancel_flag;\n`;
 	c += `\tstruct nomen_future *future;\n`;
 	c += `};\n`;
-	// The env destructor (Phase 3d): frees each duplicated string.
+	// The env destructor (Phase 3d; N1a R1): frees each duplicated string,
+	// destroys + frees each env-owned struct copy. Borrowed/view args are
+	// skipped — the env aliases the donor and owns nothing.
 	if (has_env_destroy) {
 		c += `static void __nomen_spawn_${id}_env_destroy(void *_p) {\n`;
 		c += `\tstruct ${struct_name} *a = (struct ${struct_name} *)_p;\n`;
 		for (let i = 0; i < arg_c_types.length; i++) {
-			if (fat_string_args[i]) c += `\tfree(a->arg${i}.ptr);\n`;
+			if (arg_classes[i] === "string") c += `\tfree(a->arg${i}.ptr);\n`;
+			else if (arg_classes[i] === "struct-copy") {
+				// A struct-copy whose struct OWNS heap data: the mono destroy
+				// may not exist (auto destroys are emitted on demand — e.g.
+				// List_int_destroy is generated only when something asked for
+				// it), so the shell is freed WITHOUT the destroy call. The
+				// copy's string-field strdups then leak — bounded, never
+				// unsound. (The checker routes owning structs to the
+				// region-checked borrow inside `async` and rejects them
+				// outside, so this arm only serves `move`-param transfers.)
+				c += `\tfree(a->arg${i});\n`;
+			}
 		}
 		c += `}\n`;
 	}
@@ -174,8 +264,31 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 	c += `) {\n`;
 	c += `\tstruct ${struct_name} *a = (struct ${struct_name} *)malloc(sizeof(struct ${struct_name}));\n`;
 	for (let i = 0; i < arg_c_types.length; i++) {
-		// The env owns a deep copy of each string arg (Phase 3d).
-		c += `\ta->arg${i} = ${fat_string_args[i] ? "nomen_str_dup(arg" + i + ")" : `arg${i}`};\n`;
+		switch (arg_classes[i]) {
+			case "string":
+				// The env owns a deep copy of each string arg (Phase 3d).
+				c += `\ta->arg${i} = nomen_str_dup(arg${i});\n`;
+				break;
+			case "struct-copy": {
+				// The env owns a malloc'd copy of the struct's bytes with its
+				// top-level string fields deep-copied (the transfer shape for
+				// `move` params; the safe shape without a join). The donor
+				// arrives as a pointer (struct values travel by reference on
+				// this backend), so the copy is a pointee deref.
+				const st_name = struct_mono_names[i];
+				c += `\ta->arg${i} = (struct ${st_name} *)malloc(sizeof(struct ${st_name}));\n`;
+				c += `\t*a->arg${i} = *arg${i};\n`;
+				for (const f of struct_string_fieldss[i]) {
+					c += `\t{ nomen_string _t = nomen_str_dup(a->arg${i}->${f}); a->arg${i}->${f} = _t; }\n`;
+				}
+				break;
+			}
+			default:
+				// plain scalars, views (the pair IS the borrow), and
+				// region-checked borrows: store the word(s) as-is.
+				c += `\ta->arg${i} = arg${i};\n`;
+				break;
+		}
 	}
 	c += `\ta->result_slot = (${slot_c_type} *)${returns_value ? `malloc(sizeof(${slot_c_type}))` : "malloc(16)"};\n`;
 	c += `\tmemset(a->result_slot, 0, ${returns_value ? `sizeof(${slot_c_type})` : "16"});\n`;
@@ -220,7 +333,7 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 	let total_arg_slots = 0;
 	for (let i = 0; i < call.params.length; i++) {
 		arg_slot.push(total_arg_slots);
-		total_arg_slots += fat_string_args[i] ? 2 : 1;
+		total_arg_slots += arg_classes[i] === "string" || arg_classes[i] === "view" ? 2 : 1;
 	}
 	// The capture addresses ride as trailing helper arguments: the wrapped
 	// call's args fill the leading slots, the three frame addresses the last
@@ -234,10 +347,22 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 		const args_base = allocate_stack_space(status, total_arg_slots * 8, 16);
 		for (let i = 0; i < call.params.length; i++) {
 			emit_asm(status, `// Build arg${i}\n`);
-			build_node(call.params[i], status);
+			if (
+				(arg_classes[i] === "struct-copy" || arg_classes[i] === "struct-borrow") &&
+				is_value_struct_arg[i]
+			) {
+				// VALUE-struct args travel by REFERENCE on this backend: stage
+				// the donor's ADDRESS (a plain value read would yield the
+				// first word), for both the copy and the borrow shapes.
+				// Class/trait args keep the plain staging — build_node yields
+				// the instance POINTER, which is the value the env stores.
+				emit_struct_address_param(call.params[i], status);
+			} else {
+				build_node(call.params[i], status);
+			}
 			ensure_newline(status);
 			emit_asm(status, `str x0, [x29, #${args_base + arg_slot[i] * 8}]\n`);
-			if (fat_string_args[i]) {
+			if (arg_classes[i] === "string" || arg_classes[i] === "view") {
 				emit_asm(status, `str x1, [x29, #${args_base + (arg_slot[i] + 1) * 8}]\n`);
 			}
 		}

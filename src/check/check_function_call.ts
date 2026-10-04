@@ -52,6 +52,7 @@ import {
 	is_pass_by_value_owning_struct,
 } from "./utils/ownership.ts";
 import lint_regex_pattern from "./utils/regex_pattern_lint.ts";
+import { enforce_root_not_frozen } from "./utils/spawn_region.ts";
 import { maybe_mark_borrow_to_string_arg } from "./utils/string_mutation_scan.ts";
 import synthesize_lambda_name from "./utils/synthesize_lambda_name.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
@@ -791,6 +792,10 @@ export default function check_function_call(
 				(is_class_type(func_param.type.name, status) ||
 					(func_param.is_moved && is_owning_struct_type(func_param.type, status)))
 			) {
+				// R3: a frozen root (borrowed by a spawned task until the
+				// `async` block exits) cannot be mutable-passed — the callee
+				// could write through it mid-task.
+				enforce_root_not_frozen(param_value, status, param.start);
 				if (!status.moved_variables) status.moved_variables = new Set();
 				status.moved_variables.add(param_value);
 			}

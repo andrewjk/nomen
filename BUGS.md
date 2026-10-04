@@ -170,3 +170,34 @@ operand, so the loop ran on `l < line` alone. A test expecting an error at a
 line beyond the source's line count never satisfied it: the worker spun at
 100% CPU forever with no output (a wrong expectation looked like a hung
 suite). Fix: `i < source.length && l < line`.
+
+## 7. Spawning with a value-struct argument never compiled (aarch64) / never worked (both backends)
+
+**Seen on `main` (commit 11a7090b).** `Thread(work(some_struct))` — any
+value-struct argument — was broken on both backends, differently:
+
+- **aarch64**: the companion's env/forward-declaration types came from
+  `c_type(mono_name)` — the by-value TYPEDEF name (`P`), while the assembly
+  staging passes ONE WORD (struct values travel by reference), so the
+  companion failed to compile (`must use 'struct' tag to refer to type 'P'`,
+  `a parameter list without types is only allowed in a function definition`).
+  The code comment called it a "pre-existing limitation" — no struct arg
+  could ever reach the env intact.
+- **C**: the env field types and the trampoline's forward declaration used
+  the GENERIC template name (`struct List *`) for a `List<int>` argument —
+  the template is never emitted as a C struct (`sizeof(struct List)` =
+  incomplete type), and the declaration conflicted with the callee's real
+  mono signature (`long sum(struct List_int *)`). When the types happened to
+  exist (a concrete struct like `P`), the env deep-copy was SHALLOW: only
+  string fields are duplicated, so a container field shared its buffer and
+  the env destructor freed the donor's live buffer (AUDIT-STALE-FREE).
+
+**Fix (as part of N1a R1):** both packers classify every argument and share
+one matrix — scalars by value; strings duplicated (+ env-destroyed);
+class/trait args shared pointers (env owns nothing); value structs staged by
+the donor's ADDRESS with env ownership chosen per context: a region-checked
+BORROW inside `async { }` (the checker stamps `region_borrowed_args`), an
+env-owned copy otherwise (malloc + pointee copy + string-field strdups,
+env-free at teardown — sound for plain-data structs, which is all that can
+reach it now, see the R1 checker rule). The C packer resolves struct types
+through `mono_type_name` (`List_int`, not `List`).

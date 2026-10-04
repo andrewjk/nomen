@@ -23,6 +23,17 @@ export default class FunctionCallNode extends BaseNode {
 	 * check_function_call alongside owned_value_param_indices.
 	 */
 	move_owned_param_indices?: number[];
+	/**
+	 * Indices of a `#spawn` construction's packed arguments that are
+	 * region-checked BORROWS (STRUCT_PLAN_3 N1a R1): an owning value struct
+	 * passed bare inside an `async { }` block. The env stores the donor's
+	 * pointer (no deep copy, no env-side destroy) and the donor is frozen
+	 * (R3) until the block exits. Stamped by validate_spawn_args_sendable;
+	 * read by both backends' spawn packers. Monomorphized-body clones never
+	 * re-run this validation, so they keep the deep-copy packing (safe
+	 * fallback).
+	 */
+	region_borrowed_args?: number[];
 	// Indices of parameters that are OWNED value structs with string fields —
 	// the call site materializes a normalized (uniformly heap-owned) copy and
 	// the callee owns it (see check_function_call / build_function_call_node).

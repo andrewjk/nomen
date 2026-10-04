@@ -2625,28 +2625,45 @@ must be marked `: Sendable`. Everything else crossing the boundary is exempt:
   ownership, so a non-Sendable class can cross as a `move` (the caller gives
   up its access).
 - **Copied** arguments — primitives and strings are copied at the boundary,
-  and owning value structs are deep-copied (their string fields duplicated),
-  so the task and the caller hold independent values.
+  and plain-data (non-owning) value structs are byte-copied, so the task and
+  the caller hold independent values.
+- **Borrowed** arguments — an owning value struct passed bare inside an
+  `async` block, a `view`-typed argument, and a `Sendable` class/trait
+  reference: the env aliases the donor (see the lifetime rules below).
 
-There is no borrow exception: a non-Sendable class/trait cannot cross into a
-task even inside a nursery — mark it `Sendable`, move it in, or share it
-through a `Sendable` primitive (`Mutex`, `Channel`). The same rules gate a
+There is no borrow exception for a NON-Sendable class/trait: it cannot cross
+into a task even inside a nursery — mark it `Sendable`, move it in, or share
+it through a `Sendable` primitive (`Mutex`, `Channel`). The same rules gate a
 lambda's captures (every capture is an eager argument).
 
 Two lifetime rules apply on top of `Sendable` (which gates aliasability, not
 how long the alias stays valid):
 
-- **Inside an `async` block, a shared argument must outlive the join.** The
-  root variable of a shared class/trait argument must be declared in the
-  block's own scope or outside it — a local declared in a nested block (an
-  `if` body, a loop iteration) dies before the join and dangles the task's
-  alias. A fresh temporary (a call result) must be constructed in the
-  block's own scope. Moved and copied arguments are exempt — ownership has
-  no region.
+- **Inside an `async` block, a borrowed argument must outlive the join.**
+  Three argument shapes BORROW: a shared class/trait reference, an owning
+  value struct passed bare (the env takes the donor's pointer — no deep
+  copy), and a `view`-typed argument. Their ROOT variable must be declared
+  in the block's own scope or outside it — a local declared in a nested
+  block (an `if` body, a loop iteration) dies before the join and dangles
+  the task's alias. A fresh temporary (a call result) must be constructed
+  in the block's own scope. Moved and copied arguments are exempt —
+  ownership has no region.
+- **Outside a nursery, an owning value struct cannot cross bare.** There is
+  no join to bound a borrow, and the env cannot deep-copy owning state
+  soundly, so the bare-owning shape is a compile error — spawn inside an
+  `async` block (a borrowed read), or move it in.
+- **The freeze: a borrowed root is const until the block exits.** From the
+  construction to the `async` block's closing brace, the donor cannot be
+  written, moved out, mutable-passed, or mutated through a `ref self`
+  method — the task is reading it. `Task` handles are exempt: sharing a
+  handle and then cancelling it is the coordination protocol.
 - **Detach owns its captures.** A detached daemon has no join anywhere, so
   `.detach()` rejects every shared (non-`move`) class/trait argument —
   Sendable or not. App-lifetime state is shared by declaring it at the root
   scope (globals are exempt: process lifetime).
+
+Moved and copied arguments (scalars, strings, `move T`) are exempt from the
+freeze — ownership has no region.
 
 ### Thread
 

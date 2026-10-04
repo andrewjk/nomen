@@ -3,10 +3,11 @@ import AccessNode from "../../nodes/AccessNode.ts";
 import type BaseNode from "../../nodes/BaseNode.ts";
 import type FunctionCallNode from "../../nodes/FunctionCallNode.ts";
 import type FunctionNode from "../../nodes/FunctionNode.ts";
-import type Type from "../../nodes/Type.ts";
+import Type from "../../nodes/Type.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
 import type CheckStatus from "../CheckStatus.ts";
 import is_sendable_type from "./is_sendable_type.ts";
+import { is_owning_struct_type } from "./ownership.ts";
 import type_from_value_node from "./type_from_value_node.ts";
 
 /**
@@ -45,6 +46,10 @@ function is_shared_reference_type(type_name: string | undefined, status: CheckSt
  * `holder` in `holder.field`), or undefined when the argument is a fresh
  * value (a call/constructor result — no lexical donor).
  */
+export function spawn_arg_root_name(param: BaseNode): string | undefined {
+	return spawn_arg_root(param);
+}
+
 function spawn_arg_root(param: BaseNode): string | undefined {
 	let node = param;
 	while (node.node_type === "access") {
@@ -67,10 +72,82 @@ function innermost_nursery_depth(status: CheckStatus): number | undefined {
 }
 
 /**
- * N1a R2 / N1b E3 — the root rule for a SHARED class/trait argument spawned
- * inside an `async { }` block. Called from the Sendable validation site for
- * arguments that passed every other gate (so this fires only for the
- * Sendable-class case the Sendable gate waves through).
+ * Whether `type_name` is an OWNING VALUE STRUCT (owns heap resources — a
+ * `List`/`Buffer` field, a `#destroy`, heap string fields). Borrowing one
+ * into a task env (R1) needs the region proof; outside a nursery the pack
+ * keeps the env deep-copy (no join exists to bound a borrow).
+ */
+function is_owning_struct_name(type_name: string | undefined, status: CheckStatus): boolean {
+	if (!type_name) return false;
+	const st = status.structs.find((s) => s.name === type_name && !s.is_class && !s.is_simple_type);
+	if (!st) return false;
+	return is_owning_struct_type(new Type(type_name), status);
+}
+
+/**
+ * Whether `arg_type` is a non-view, non-array OWNING VALUE STRUCT — the R1
+ * borrow-eligible shape inside a nursery.
+ */
+export function is_owning_spawn_arg(arg_type: Type, status: CheckStatus): boolean {
+	if (arg_type.is_view || arg_type.is_array || !arg_type.name) return false;
+	return is_owning_struct_name(arg_type.name, status);
+}
+
+/**
+ * The region classification of one spawn argument (STRUCT_PLAN_3 N1a R1):
+ * which arguments BORROW from the caller (and so need the root rule and the
+ * R3 freeze) versus pack by copy/transfer. Only meaningful inside an
+ * `async` block; `moved` is the callee parameter's `move T` flag.
+ */
+export function spawn_arg_region_class(
+	arg_type: Type,
+	moved: boolean | undefined,
+	status: CheckStatus,
+): "borrow" | "copy" | "transfer" {
+	if (moved) return "transfer";
+	if (arg_type.is_view && !arg_type.is_array) return "borrow";
+	if (is_shared_reference_type(arg_type.name, status)) return "borrow";
+	if (is_owning_struct_name(arg_type.name, status)) return "borrow";
+	return "copy";
+}
+
+/**
+ * N1a R3 — the freeze: from the construction until the enclosing `async`
+ * block exits, a BORROWED root is const. Reads are fine; writes, moves, and
+ * mutable-passing error. The frozen sets are per-async-block frames
+ * (`nursery_frozen_roots`): `check_async_block_node` pushes one, block
+ * clones SHARE the innermost set (the freeze lasts to the block exit, not
+ * to the construction's branch exit), and the set dies with the block's
+ * cloned status — the enclosing scope never sees it.
+ */
+function freeze_root(root: string, status: CheckStatus): void {
+	if (!status.nursery_frozen_roots?.length) return;
+	status.nursery_frozen_roots[status.nursery_frozen_roots.length - 1].add(root);
+}
+
+/**
+ * The R3 write gate: `'m' is borrowed by a task until this 'async' block
+ * exits`. Called from every mutation path with the ROOT variable's name.
+ * Returns true when the name is frozen (the error has been added).
+ */
+export function enforce_root_not_frozen(name: string, status: CheckStatus, start: number): boolean {
+	const frames = status.nursery_frozen_roots;
+	if (!frames?.length) return false;
+	if (frames[frames.length - 1].has(name)) {
+		add_error(
+			status,
+			`'${name}' is borrowed by a task until this 'async' block exits — it is read-only here (move a copy in, or move it in at the spawn)`,
+			start,
+		);
+		return true;
+	}
+	return false;
+}
+
+/**
+ * N1a R2 / N1b E3 — the root rule for a spawn argument borrowed into a task
+ * (shared class/trait since tranche 1; owning value structs and views since
+ * R1). Called from the Sendable validation site.
  */
 export function enforce_spawn_arg_region(
 	param: BaseNode,
@@ -78,7 +155,8 @@ export function enforce_spawn_arg_region(
 	status: CheckStatus,
 ): void {
 	if ((status.nursery_depth ?? 0) === 0) return;
-	if (!is_shared_reference_type(arg_type.name, status)) return;
+	const klass = spawn_arg_region_class(arg_type, false, status);
+	if (klass !== "borrow") return;
 	const join_depth = innermost_nursery_depth(status);
 	if (join_depth === undefined) return;
 
@@ -98,20 +176,28 @@ export function enforce_spawn_arg_region(
 		// scope is the anchor's scope — it must reach the join.
 		bound = status.scope_depth <= join_depth;
 	}
-	if (bound) return;
-	if (named_donor && root) {
-		add_error(
-			status,
-			`'${root}' does not outlive the task — the join at 'async' happens after '${root}'s scope ends; declare '${root}' in the 'async' block's scope or outside it, or move it in ('move ${root}')`,
-			param.start,
-		);
-	} else {
-		add_error(
-			status,
-			`this task shares a temporary ${arg_type.name ?? ""} that dies before the 'async' join — bind it to a local in the 'async' block's scope and pass the local`,
-			param.start,
-		);
+	if (!bound) {
+		if (named_donor && root) {
+			add_error(
+				status,
+				`'${root}' does not outlive the task — the join at 'async' happens after '${root}'s scope ends; declare '${root}' in the 'async' block's scope or outside it, or move it in ('move ${root}')`,
+				param.start,
+			);
+		} else {
+			add_error(
+				status,
+				`this task shares a temporary ${arg_type.name ?? ""} that dies before the 'async' join — bind it to a local in the 'async' block's scope and pass the local`,
+				param.start,
+			);
+		}
+		return;
 	}
+	// R3: the bound donor is const from here to the block exit — EXCEPT
+	// `Task` handles: sharing a task's handle and then cancelling/waiting on
+	// it IS the coordination protocol (`t.cancel()` after a spawn is the
+	// sanctioned shape, N1's "with(m) stays legal for shareable types"
+	// position). The region rule above still bounds the handle's scope.
+	if (root !== undefined && arg_type.name !== "Task") freeze_root(root, status);
 }
 
 /**

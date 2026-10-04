@@ -32,6 +32,7 @@ import {
 	is_owning_struct_type_requiring_move,
 } from "./utils/ownership.ts";
 import reject_pointer_type from "./utils/reject_pointer_type.ts";
+import { enforce_root_not_frozen } from "./utils/spawn_region.ts";
 import { is_trait_type, trait_slot_conformer_of_decl } from "./utils/trait_slot.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
@@ -612,6 +613,10 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 					decl.value.start,
 				);
 			} else {
+				// R3: a frozen root (borrowed by a spawned task until the
+				// `async` block exits) cannot be moved out — the task's alias
+				// would dangle.
+				enforce_root_not_frozen((decl.value as ValueNode).value, status, decl.value.start);
 				if (!status.moved_variables) status.moved_variables = new Set();
 				status.moved_variables.add((decl.value as ValueNode).value);
 			}

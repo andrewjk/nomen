@@ -115,7 +115,7 @@ function emit_int_immediate(status: BuildStatus, raw: string) {
 	}
 }
 
-function emit_struct_address_param(node: BaseNode, status: BuildStatus) {
+export function emit_struct_address_param(node: BaseNode, status: BuildStatus) {
 	if (node.node_type === "value") {
 		const name = (node as ValueNode).value;
 		const paramReg = status.function_param_regs?.get(name);

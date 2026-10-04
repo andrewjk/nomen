@@ -36,7 +36,7 @@ import {
 	is_owning_ref_type,
 	is_owning_struct_type_requiring_move,
 } from "./utils/ownership.ts";
-import { enforce_detach_owns_captures } from "./utils/spawn_region.ts";
+import { enforce_detach_owns_captures, enforce_root_not_frozen } from "./utils/spawn_region.ts";
 import synthesize_lambda_name from "./utils/synthesize_lambda_name.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
@@ -786,6 +786,10 @@ function check_access_function_node(
 			const target_name = (target as ValueNode).value;
 			// Skip 'self' — ref self methods can be called on self within other ref self methods
 			if (target_name !== "self") {
+				// R3: a frozen root (borrowed by a spawned task until the
+				// `async` block exits) cannot be mutated — a `ref self` call
+				// writes the storage the task is reading.
+				enforce_root_not_frozen(target_name, status, node.start);
 				// Record that this local is mutated through a ref-self call,
 				// so the warning pass doesn't recommend `const` for it.
 				status.mutated_local_names?.add(target_name);
@@ -795,6 +799,10 @@ function check_access_function_node(
 					return false;
 				}
 			}
+		} else if (owner) {
+			// R3: a field-path receiver (`z.animals.push(...)`) mutates the
+			// ROOT variable's storage — frozen roots stay const.
+			enforce_root_not_frozen(owner, status, node.start);
 		}
 		// Deep-const: a mutating (`ref self`) method cannot be dispatched on a
 		// const_ref receiver — one obtained by extracting a class element from

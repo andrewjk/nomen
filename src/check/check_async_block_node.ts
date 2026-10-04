@@ -27,6 +27,10 @@ export default function check_async_block_node(node: AsyncBlockNode, status: Che
 		...(status.nursery_scope_depths ?? []),
 		status.scope_depth + 1,
 	];
+	// The R3 freeze frame: borrowed roots are const from their construction
+	// until this block exits. The frame rides the block's cloned status, so
+	// it is discarded at the brace — the enclosing scope never sees it.
+	block_status.nursery_frozen_roots = [...(status.nursery_frozen_roots ?? []), new Set()];
 	if (node.nursery_name) {
 		block_status.values.push({
 			// The nursery is a mutable capability: tasks are spawned into it
