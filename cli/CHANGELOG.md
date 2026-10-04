@@ -20,6 +20,22 @@
 
 
 
+
+## 0.6.13
+<sub>2026-10-04</sub>
+
+-  *(patch)*
+  aarch64: call-bearing auto-inline unlocked (splice state-leak fixes: nir_site_allocs restore, dest-hint isolation); transitive splice cost model
+-  *(patch)* - aarch64: NEON shifted-read vectorization (load_T(i+c), c>=1) with per-element event-order soundness rule
+-  *(patch)*
+  aarch64: NEON byte (.16b) element kinds — load_u8/store_u8 primitives + planner descriptor; index-temp class exemption for shifted reads
+-  *(patch)*
+  checker: shifted-bound discharge — path±int bound rendering, path-vs-path guard mirroring, transitive relaxation + path_bounds consultation
+-  *(patch)*
+  checker: variable-shift index discharge (load(j + d) vs j < n - d) with referenced-token invalidation; fix numeric-range transfer for shifted args
+-  *(patch)*
+  aarch64: frame-slot store-store kill (orphaned pending store drops when the slot's next block access is another store); pidigits -1-2.4%
+
 ## 0.6.12
 <sub>2026-10-02</sub>
 
