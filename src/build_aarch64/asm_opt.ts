@@ -31,6 +31,9 @@ interface SlotState {
 	pendKey?: string;
 	pendText?: string;
 	pendReg?: string;
+	/** The pending store's line index (for the store-store kill's
+	 *  no-read-between scan). */
+	pendIdx?: number;
 	/** Register currently holding this slot's value, if known. */
 	availReg?: string;
 	/** Access family+width the availability was established with —
@@ -107,6 +110,18 @@ function instr_defs(instr: AsmInstruction): string[] {
 	return defs;
 }
 
+/// Bench/ABI-driver override: `NOMEN_SS_KILL=0` builds with the eager
+/// materialization (the off arm) without recompiling the driver.
+let store_store_kill_on = process.env.NOMEN_SS_KILL !== "0";
+
+export function frame_slot_store_store_kill_enabled(): boolean {
+	return store_store_kill_on;
+}
+
+export function set_frame_slot_store_store_kill_enabled(enabled: boolean): void {
+	store_store_kill_on = enabled;
+}
+
 export function optimize_frame_slots(code: string): string {
 	const lines = code.split("\n");
 	const out: string[] = [];
@@ -134,8 +149,16 @@ export function optimize_frame_slots(code: string): string {
 
 	/** A register is REDEFINED: pends sourced from it must reach memory now
 	 *  (deferring would store the new value); availability held in it dies.
-	 *  Width siblings share fate (w/x and s/d views of one register). */
-	const clobber = (reg: string) => {
+	 *  Width siblings share fate (w/x and s/d views of one register).
+	 *  EXCEPTION (the store-store kill): when the block's NEXT access to
+	 *  the pending slot is another STORE of the same family (no read, no
+	 *  label/branch/call between), the orphaned store is unobservable —
+	 *  the later store overwrites it before anything could read — and
+	 *  drops instead of materializing. mul_to's carry-flag residue
+	 *  (`str x0, [x29, #144]` twice per iteration of the hottest pidigits
+	 *  loop, the value living in registers between) is exactly this
+	 *  shape. */
+	const clobber = (reg: string, at_idx = -1) => {
 		if (!reg) return;
 		const sib = sibling_reg(reg);
 		zextW.delete(reg.startsWith("w") ? `x${reg.slice(1)}` : reg);
@@ -146,6 +169,19 @@ export function optimize_frame_slots(code: string): string {
 				s.pendReg &&
 				(s.pendReg === reg || (sib !== null && s.pendReg === sib))
 			) {
+				if (
+					store_store_kill_on &&
+					at_idx >= 0 &&
+					s.pendIdx !== undefined &&
+					no_slot_read_between(off, s.pendIdx + 1, at_idx) &&
+					next_slot_access_is_store(off, at_idx + 1)
+				) {
+					// Superseded before any read could observe it: no read
+					// between the store and this clobber, and the slot's next
+					// access after the clobber is another store.
+					slots.delete(off);
+					continue;
+				}
 				out.push(s.pendText);
 				slots.delete(off);
 				continue;
@@ -157,7 +193,56 @@ export function optimize_frame_slots(code: string): string {
 		}
 	};
 
-	function process_frame_access(instr: AsmInstruction, off: number): void {
+	/** Whether any instruction in [from, to) READS slot `off` (or touches
+	 *  it in a way the store-store reasoning cannot see through). */
+	const no_slot_read_between = (off: number, from: number, to: number): boolean => {
+		for (let j = from; j < to && j < lines.length; j++) {
+			const t = (lines[j] ?? "").replace(/\/\/.*$/, "").trim();
+			if (!t) continue;
+			const m = t.match(/^(str|stur|ldr|ldur|strb|ldrb|strh|ldrh)\s+\S+,\s*\[x29,\s*#(\d+)\]$/);
+			if (m && parseInt(m[2], 10) === off && m[1].startsWith("ld")) return false;
+			if (/^(ldp|stp)\b/.test(t) && t.includes(`#${off}`)) return false;
+			if (/^add\b[^,]*,\s*x29\b/.test(t)) return false;
+			if (/^(bl|blr|br|svc|ret)\b/.test(t)) return false;
+			if (/^[A-Za-z_.$][\w.$]*:/.test(t)) return false;
+		}
+		return true;
+	};
+
+	// Unanchored slot access (pair forms span registers before the address).
+	const X29_SLOT_ANY = /\[x29,\s*#(\d+)\]/;
+
+	/** Whether the next access to `off` in the current block (from
+	 *  `from` to the next label/branch/call boundary) is a STORE. Loads,
+	 *  block boundaries, escape-prone address builds, and anything
+	 *  unparseable answer false (the conservative materialize). */
+	const next_slot_access_is_store = (off: number, from: number): boolean => {
+		for (let j = from; j < lines.length; j++) {
+			const t = (lines[j] ?? "").replace(/\/\/.*$/, "").trim();
+			if (!t) continue;
+			if (/^[A-Za-z_.$][\w.$]*:/.test(t)) return false;
+			// Any `b`-mnemonic is a block boundary: the corpus emits BOTH the
+			// dot forms (`b.eq`) and the ARM32-style aliases (`beq`, `bne`,
+			// `bge`, …) — `^b\b` missed the aliases and the scan walked
+			// through branches (the flow_nested drop). `bic` also lands here
+			// — a conservative false boundary (materialize) is safe.
+			if (/^b/.test(t)) return false;
+			if (/^(blr|br|svc|ret)\b/.test(t)) return false;
+			if (/^add\b[^,]*,\s*x29\b/.test(t)) return false;
+			if (/^(ldp|stp)\b/.test(t)) {
+				// Pair accesses touch the slot (conservatively as a read).
+				const pm = t.match(X29_SLOT_ANY);
+				return pm ? parseInt(pm[1], 10) === off && t.startsWith("stp") : false;
+			}
+			const m = t.match(/^(str|stur|ldr|ldur|strb|ldrb|strh|ldrh)\s+\S+,\s*\[x29,\s*#(\d+)\]$/);
+			if (m) {
+				return parseInt(m[2], 10) === off && m[1].startsWith("str");
+			}
+		}
+		return false;
+	};
+
+	function process_frame_access(instr: AsmInstruction, off: number, i: number): void {
 		const data_reg = instr.operands[0];
 		if (data_reg.kind !== "reg") {
 			out.push(instr.text);
@@ -207,7 +292,7 @@ export function optimize_frame_slots(code: string): string {
 				slots.set(off, fresh);
 				return;
 			}
-			clobber(data_reg.name);
+			clobber(data_reg.name, i);
 		}
 
 		// Attach (don't detach!) the slot state so mutations persist.
@@ -220,7 +305,12 @@ export function optimize_frame_slots(code: string): string {
 		if (is_store) {
 			// Same-key pending store overwritten before any read: dropped.
 			if (s.pendText !== undefined && s.pendKey !== key) out.push(s.pendText);
-			slots.set(off, { pendKey: key, pendText: instr.text, pendReg: data_reg.name });
+			slots.set(off, {
+				pendKey: key,
+				pendText: instr.text,
+				pendReg: data_reg.name,
+				pendIdx: i,
+			});
 			return;
 		}
 
@@ -316,7 +406,7 @@ export function optimize_frame_slots(code: string): string {
 				// `ldr x0, [x0, #8]` payload reads after a tag check). The add
 				// also REDEFINES the scratch — pending stores sourced from it
 				// must materialize first.
-				clobber(scratch);
+				clobber(scratch, i);
 				out.push(text);
 				const new_text = next.text.replace(/\[[^\]]*\]/, `[x29, #${off}]`);
 				const rewritten: AsmInstruction = {
@@ -331,12 +421,12 @@ export function optimize_frame_slots(code: string): string {
 						},
 					],
 				};
-				process_frame_access(rewritten, off);
+				process_frame_access(rewritten, off, i);
 				i++;
 				continue;
 			}
 			// Any other x29-derived address escapes.
-			clobber(scratch);
+			clobber(scratch, i);
 			flush_all();
 			clear_all();
 			out.push(text);
@@ -374,7 +464,7 @@ export function optimize_frame_slots(code: string): string {
 			mem.offset?.kind === "imm" &&
 			!mem.writeback
 		) {
-			process_frame_access(instr, Number(mem.offset.value));
+			process_frame_access(instr, Number(mem.offset.value), i);
 			continue;
 		}
 		if (
@@ -392,7 +482,7 @@ export function optimize_frame_slots(code: string): string {
 
 		// Calls/opaque transfers define the caller-saved set.
 		if (op === "bl" || op === "blr" || op === "br" || op === "svc") {
-			for (const r of CALLER_SAVED) clobber(r);
+			for (const r of CALLER_SAVED) clobber(r, i);
 			out.push(text);
 			continue;
 		}
@@ -412,7 +502,7 @@ export function optimize_frame_slots(code: string): string {
 		}
 
 		// Everything else: uniform defs handling.
-		for (const d of instr_defs(instr)) clobber(d);
+		for (const d of instr_defs(instr)) clobber(d, i);
 		// A zero-extending byte/half load (re)establishes the zext fact
 		// for its destination — including NON-frame loads (`ldrb w0,
 		// [x0, x1]`), which never reach process_frame_access.

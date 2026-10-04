@@ -1,5 +1,9 @@
 import { expect, describe, test } from "vite-plus/test";
 
+import {
+	frame_slot_store_store_kill_enabled,
+	set_frame_slot_store_store_kill_enabled,
+} from "../src/build_aarch64/asm_opt";
 import build_and_check_output from "./build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 
@@ -439,4 +443,34 @@ Console.write("done")
 	// every body entry, so a trailing mutation is sound: the use sees the
 	// freshly-checked fact.
 	await build_and_check_output(input, "bounds_varshift_after", "done");
+});
+
+// ── Frame-slot store-store kill (optimize_frame_slots) ─────────────────────
+// A pending store whose source register is clobbered materializes eagerly —
+// unless the block's NEXT access to the slot is another store (no read
+// between, straight line), in which case the orphaned store is
+// unobservable and drops. mul_to's carry-flag residue (`str x0, [x29,
+// #144]` twice per iteration of the hottest pidigits loop, the value
+// living in registers between) is the shape.
+
+const STORE_STORE_SHAPE = `
+var Buffer<int> buf = Buffer<int>()
+buf.grow_int(32)
+var int i = 0
+while i < 32; i += 1 {
+	buf.store_int(i, i * 3)
+}
+var int total = 0
+var int k = 0
+while k < 32; k += 1 {
+	if k >= 0 && k < buf.cap {
+		total += buf.load_int(k)
+	}
+}
+Console.write_line(total.to_string())
+`;
+
+test("frame-slot store-store kill keeps behavior identical (both backends)", async () => {
+	const { default: build_and_check_output } = await import("./build_and_check_output");
+	await build_and_check_output(STORE_STORE_SHAPE, "fslots_store_store", "1488\n");
 });

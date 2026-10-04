@@ -48,11 +48,16 @@ call-bearing auto-inline is UNLOCKED (the +52–62% receipt was two
 follow-up section at the end of ASM_PLAN_7.md). The ensure→grow_int chain
 splices with zero hot-path bls.
 
-- **pidigits still ~1.5× vs C `-O2`** (spectral-norm closed by tranche 8).
-  Cause 6's call overhead is now spliced away but measures NEUTRAL — the
-  residual decomposes into the loop-planning gates' treatment of functions
-  whose spliced bodies write the heap (heap-freedom proofs refuse pins),
-  not into call overhead.
+- **pidigits ~1.5× vs C `-O2`** (spectral-norm closed by tranche 8). The
+  store-store kill (optimize_frame_slots) took ~1-2.4% back (the carry-flag
+  slot residue in mul_to's hottest loop); the write-only-slot class beyond
+  the block boundary has INVISIBLE CONSUMERS (extern adapters and helper
+  frame conventions read caller frames at fixed low offsets — deleting
+  `Console_write`'s never-loaded parks corrupts the output; see the
+  ASM_PLAN_7 addendum 5 receipts) and is closed unless a convention
+  registry lands. The residual decomposes into accessor staging movs that
+  are LIVE (register-pressure artifacts) and the if-converted diamond the
+  planner cannot merge.
 - **Tranche list re-check:** tranches 1–8 all landed (tranche 1 =
   `asm_if_convert.ts` / `test/if_convert.test.ts`; the doc has no write-up
   for it).

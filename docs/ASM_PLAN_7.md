@@ -712,3 +712,46 @@ verifies against `while j < n - d` under a `d <= n`-class guard.
   index ran to `buf.cap - d + d` — the range transfer is now dropped, and
   the previously-passing (unsound) discharge is covered by the refusal
   tests.
+
+### Addendum 5 (2026-10-03): frame-slot store-store kill (+ the write-only-slot dead end)
+
+The hottest pidigits loop (mul_to's small-b carry loop, ~29% of samples)
+carried `str x0, [x29, #144]` TWICE per iteration with no load of slot 144
+anywhere in the function — the carry-flag declare-init + if-set pair whose
+value the codegen kept in registers. optimize_frame_slots' block-local DSE
+couldn't kill them: the FIRST store materializes eagerly when its source
+register (x0) is clobbered by the `cset`, because a read could still occur
+before the second store.
+
+- **The kill** (optimize_frame_slots, kill-switch
+  `set_frame_slot_store_store_kill_enabled`, default ON): when a pending
+  store's source register is clobbered, look ahead in the current block —
+  if the slot's next access is another STORE (no read, no label, no
+  branch, no call, no x29-address build between), the orphaned store is
+  unobservable and drops. TWO soundness windows are checked: no read
+  between the store and the clobber, and the next-access-is-store after
+  the clobber. The branch test must accept BOTH spellings — the corpus
+  emits `b.eq` AND the ARM32-style aliases (`beq`/`bne`/`bge`) — `^b\b`
+  missed the aliases and the scan walked through branches (the
+  flow_nested receipt); `^b` now bounds the scan conservatively.
+- **The dead end, with receipts**: the generalization to function-scoped
+  "never-loaded slot" elimination is UNSOUND at text level. Deleting
+  `Console_write`'s never-loaded parks (`str x0/x1, [x29, #0/#8]`) —
+  dead by every textual reading, x1 = x2 = x0 feeds printf directly —
+  corrupts pidigits' output (the buffer prints `@\\xde\\xad`); the parks
+  are consumed by an ABI convention invisible to text scanning (extern
+  adapters and helper frame contracts read caller frames at fixed low
+  offsets — the `_string_interpolate_N` convention documented in
+  FOLLOWUP.md is the same class). Three chunking/soundness iterations
+  (ret-bounded chunks, function-label chunks, whole-function liveness)
+  all failed the same way. The function-wide form is closed unless a
+  convention registry lands.
+- **Receipts**: mul_to's loop loses the first store (+ its feeding
+  `mov x0, #0` via the chained dead-move pass); the ceiling (hand-patched
+  .s, all three instructions removed) measured −3.1% (514 → 498); the
+  landed kill measures **−1.0…−2.4% on pidigits** (interleaved A/B,
+  `NOMEN_SS_KILL=0` builds the off arm), neutral on spectral-norm /
+  fannkuch / nbody / binarytrees / knucleotide; outputs byte-identical;
+  full suite green (482 files / 3931 tests) with the shape pinned in
+  `test/flow_bounds.test.ts` (behavioral both backends + the kill-switch
+  off arm).
