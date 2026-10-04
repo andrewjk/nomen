@@ -1,10 +1,13 @@
 # PERF.md — Release Optimizations
 
 What `--release` (`nomen run|build|test --release`, `-r`, or `"release": true`
-in the config file) does, which optimizations exist, whether they're
-implemented, and what improvement (if any) they make. Measured numbers are
-best-of-3 on Apple Silicon (AArch64), small benchmark workloads
-(`bench/benchmark.sh` sizes), Aug 2026 — treat them as indicative, not exact.
+in the config file) does, which optimizations exist, and where the aarch64
+backend's performance actually comes from. Measured numbers are best-of-3+
+interleaved medians on Apple Silicon (AArch64) at `bench/benchmark.sh` sizes
+(Oct 2026) — treat them as indicative, not exact. The living performance
+record is [`docs/scratch/ASM_PLAN_7.md`](scratch/ASM_PLAN_7.md) (+ addenda) and
+[`docs/ASM_TODO.md`](ASM_TODO.md); the per-item history is
+[`bench/IMPROVEMENTS.md`](bench/IMPROVEMENTS.md).
 
 The two backends need opposite treatment:
 
@@ -12,76 +15,86 @@ The two backends need opposite treatment:
   from clang itself: `--release` compiles with `-O2` (debug builds are
   clang's default `-O0`).
 - **AArch64 backend** — the emitted `.s` is _assembled verbatim_; clang's
-  optimizer never sees it. `--release` instead runs the compiler's own
-  optimization pipeline over the assembly text
-  (`src/build_common/optimize_asm.ts`). The companion C file (UI interop /
-  async pool) is still real C and also gets `-O2`.
+  optimizer never sees it. The backend's optimizer is the **always-on
+  pipeline** that runs in every build (see below); `--release` only adds a
+  small cleanup pass set (`src/build_common/optimize_asm.ts`) and `-O2` for
+  the companion C file (UI interop / async pool).
 
-For the always-on codegen optimizations (buffer accessor inlining, float
-round-trip elimination, register allocation, …) see
-[`bench/IMPROVEMENTS.md`](bench/IMPROVEMENTS.md) — those apply to debug
-builds too.
+## `--release` on aarch64 is a near-no-op by construction
 
-## Implemented
+The four release-gated text passes (constant folding + propagation, dead-
+branch folding, strength reduction, unreachable-code / branch-to-next /
+identity-move elimination — iterated to a fixpoint, numeric local labels and
+label+data lines respected) produce a runtime-neutral, slightly smaller
+text: on a 131k-line bench `.s` their entire diff is ~3.4k branch-to-next
+deletions. Re-measured Oct 2026 (best-of-3, large sizes):
 
-| Optimization                                                         | Backend | Status | Improvement                                                                                                                                               |
-| -------------------------------------------------------------------- | ------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `clang -O2` on generated C (`--release`)                             | C       | ✅     | **2.1–12×** on the benchmark suite (table below); inlines the per-char accessors and string adapters that stay call chains at `-O0`                       |
-| `clang -O2` on the companion C file (`--release`)                    | aarch64 | ✅     | Only affects programs whose hot path is companion C (async pool / UI); neutral on the current suite                                                       |
-| Constant folding + propagation over whole-program asm                | aarch64 | ✅     | Neutral runtime; −0.3–3% code size. Folds monomorphized raw-asm width dispatches (`cmp #T_SIZE` + branch runs) the text backend can't otherwise see       |
-| Dead-branch folding (never/always-taken `b.cond` on known constants) | aarch64 | ✅     | Neutral runtime; part of the size win above                                                                                                               |
-| Strength reduction (`mul` by known power-of-two → `lsl`)             | aarch64 | ✅     | Neutral on the suite (hot-loop strides are already `lsl` from the always-on passes); removes the remaining strided `mul`s in library load_T/store_T tails |
-| Unreachable-code elimination (after unconditional `b`/`ret`)         | aarch64 | ✅     | Size only; enables branch-to-next folds                                                                                                                   |
-| Branch-to-next elimination (`b .Lx` directly before `.Lx:`)          | aarch64 | ✅     | Size only; cleans up the branches the folding passes create                                                                                               |
-| Identity-move elimination (`mov xN, xN`, `fmov dN, dN`)              | aarch64 | ✅     | Size only                                                                                                                                                 |
-| Constant folding of literal binops (`2 * 8`, `1 << 3`, …)            | both    | ✅     | Always-on (not release-gated) — see IMPROVEMENTS.md item 10                                                                                               |
+| Benchmark          | aarch64 debug | aarch64 release |
+| ------------------ | ------------: | --------------: |
+| pidigits 4000      |           504 |             510 |
+| spectral-norm 1500 |            81 |              82 |
+| nbody 5M           |           215 |             215 |
 
-The four aarch64 release passes iterate to a fixpoint; each is a
-conservative text pass (no CFG) that also has to respect numeric local
-labels (`1:` / `b.hs 1f` in raw `#arch: aarch64` blocks) and label+data
-lines (`_str_1: .asciz "…"`).
+This is the documented posture, not an oversight: the heavy lifting
+(inlining, register allocation, vectorization, loop transforms) lives in
+the **always-on** passes below, which is also why debug builds are
+representative for benchmarking.
 
-### Why the aarch64 passes are perf-neutral (measured)
+## Where aarch64 performance comes from (always-on, debug == release)
 
-| Benchmark      | aarch64 debug | aarch64 release | C `-O0` | C `-O2` |
-| -------------- | ------------: | --------------: | ------: | ------: |
-| pidigits       |        116 ms |          116 ms |  219 ms |   18 ms |
-| fannkuch-redux |        339 ms |          341 ms |  276 ms |  103 ms |
-| binarytrees    |        163 ms |          163 ms |  146 ms |  121 ms |
-| nsieve         |         65 ms |           66 ms |   74 ms |   35 ms |
-| lru            |          9 ms |            9 ms |    9 ms |    6 ms |
-| nbody          |        145 ms |          142 ms |   83 ms |   22 ms |
-| spectral-norm  |         43 ms |           42 ms |   55 ms |   12 ms |
-| mandelbrot     |        150 ms |          151 ms |  191 ms |   48 ms |
-| edigits        |          5 ms |            5 ms |    6 ms |    4 ms |
+The ASM_PLAN_2–7 arc landed an optimizer over the NIR and the final
+assembly text, all default-on with kill-switches and byte-identical off
+arms. Headlines (interleaved A/B vs the pre-tranche builds):
 
-The AArch64 codegen's _hot loops_ are already as tight as the always-on
-passes make them — the release pipeline mostly cleans cold/library dispatch
-code, so runtime is unchanged (within noise) and text shrinks slightly.
-`-O2` on the C backend, by contrast, now beats the AArch64 backend on
-float-heavy benchmarks (nbody 22 vs 142 ms, spectral-norm 12 vs 42 ms,
-mandelbrot 48 vs 150 ms) for the same reason Rust/Zig beat it: clang
-auto-vectorizes the float loops into NEON, which a text pass over scalar asm
-cannot replicate. That SIMD/vectorization gap — not these cleanups — is the
-remaining performance frontier for the aarch64 backend.
+- **Method inlining** — user-`inline` splices, naked-inline raw bodies, and
+  auto-inlining of small methods (leaf bodies, and since the frame-context
+  fixes also call-bearing chains whose calls splice through or are
+  `extern` — `ensure`→`grow_int` expands with zero hot-path `bl`s).
+- **NEON auto-vectorization** — elementwise `.2d`/`.4s`/`.16b` groups over
+  NIR (f64, 8-byte int, uint32, byte), shifted reads (`load(i + c)`, c ≥ 1,
+  per-element event-order rule), range-fors, MIN_TRIP threshold,
+  guard-free `while i < a.cap` bounds; float reductions under the explicit
+  `--fast-math` opt-in, wrap-exact integer reductions always on.
+  saxpy −65%, dot products 2× faster than C `-O2` (IMPROVEMENTS.md 33–37).
+- **Register/slot machinery** — NIR site allocation with statement-level
+  liveness, loop-carried slot promotion (read+write and read-only slots,
+  carry-increment collapse to `cinc`), region-scoped pool pins, scratch/
+  induction hoists for pool-exhausted loops, frame-slot forwarding +
+  the store-store kill (an orphaned pending store whose slot's next block
+  access is another store drops — the mul_to carry-flag residue,
+  pidigits −1–2.4%).
+- **Loop transforms** — if-conversion of loop-invariant diamonds, ×2
+  unrolling of validated cycles, pointer-walk strength reduction,
+  constant rematerialization, stack-staging elision.
+- **Checker-verified bounds** — the flow-bounds machinery (shifted bounds,
+  path-vs-path guard mirroring, transitive relaxation) is what lets the
+  guard-free vector shapes discharge `i: i >= 0 && i < self.cap` at
+  compile time.
+
+Headline outcomes vs the arc's start: the spectral-norm gap to C `-O2`
+(2.25×) is **closed** (−53%); knucleotide −26%, fannkuch −28% (loop-slot
+era); nbody at parity (0.99×). The remaining named gaps: pidigits ~1.5×
+(live accessor staging movs — register-pressure artifacts — and the
+merge-resistant result-tracking diamond) and binarytrees/merkletrees
+(allocation-dominated; see the runtime row below).
 
 ## Rejected (tried, unsound or no win)
 
-| Optimization                                         | Backend | Why rejected                                                                                                                                                                                                                                                         |
-| ---------------------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Adjacent `str xN,[addr]`/`ldr xN,[addr]` elimination | aarch64 | **Unsound.** Preserves register state but deletes the only _write_ to the slot; a later non-adjacent `ldr` of the same address (the spill/reload idiom in raw library asm, e.g. `int_to_string`) reads garbage. Needs stack-slot liveness, impossible in a text pass |
-| `Buffer.data` pointer LICM                           | aarch64 | Sound when implemented, but A/B measured **no win** (L1-hit loads hidden by the OoO engine) and small regressions from per-loop bookkeeping — reverted. See IMPROVEMENTS.md "Known issues"                                                                           |
-| Loop unrolling of small fixed-trip loops             | aarch64 | Not attempted as a text pass (needs trip-count analysis); done manually in benchmark sources where it matters (`mandelbrot` unroll-by-5)                                                                                                                             |
+| Optimization                                         | Backend | Why rejected                                                                                                                                                                                                                                                                                                       |
+| ---------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Adjacent `str xN,[addr]`/`ldr xN,[addr]` elimination | aarch64 | **Unsound.** Preserves register state but deletes the only _write_ to the slot; a later non-adjacent `ldr` of the same address (the spill/reload idiom in raw library asm, e.g. `int_to_string`) reads garbage. Needs stack-slot liveness, impossible in a text pass                                               |
+| Function-scoped write-only-slot elimination          | aarch64 | **Unsound at text level.** "Never-loaded" slots have invisible consumers: extern adapters and helper frame conventions read caller frames at fixed low offsets — deleting `Console_write`'s never-loaded parks corrupts the output (ASM_PLAN_7 addendum 5). Only the block-local store-store form (above) is sound |
+| `Buffer.data` pointer LICM                           | aarch64 | Sound when implemented, but A/B measured **no win** (L1-hit loads hidden by the OoO engine) and small regressions from per-loop bookkeeping — reverted. See IMPROVEMENTS.md "Known issues"                                                                                                                         |
 
 ## Not implemented (future work)
 
-| Optimization                                       | Backend | Expected win                                                                                          | Notes                                                                                                                                                                                                                                                                            |
-| -------------------------------------------------- | ------- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| NEON auto-vectorization — elementwise + reductions | aarch64 | **Landed** (2026-08, IMPROVEMENTS.md items 33–37): −65% saxpy, −91% dot products                      | Unrolled `.2d`/`.4s` groups over NIR: f64, 8-byte int, uint32, range fors, MIN_TRIP threshold, guard-free `while i < a.cap` bounds; float reductions under the explicit `--fast-math` opt-in, bit-exact integer reductions always on. Remaining candidates closed (see ASM_PLAN) |
-| d0–d7 float _params_                               | aarch64 | ~0 on the current suite (measured: no hot non-inlined float-param calls; `Math.sqrt` is naked-inline) | The d0 convention's other halves **landed** (2026-08: `fcmp` comparisons + d0 returns — see IMPROVEMENTS.md items 26–27). Params remain x-register raw bits; deferred because `function_param_regs` has broad blast radius for no measured win                                   |
-| General LICM of loop-invariant array bases/bounds  | aarch64 | Small (OoO hides most of it — same finding as `Buffer.data` LICM)                                     | Needs dominance/alias info the text backend lacks                                                                                                                                                                                                                                |
-| Tighter `bl` cache invalidation (per-receiver)     | aarch64 | Small; re-enables within-loop field-cache hits                                                        | Currently any non-inlined call drops every field data-pointer cache entry                                                                                                                                                                                                        |
-| Faster allocator                                   | runtime | Large for binarytrees/merkletrees (allocation-dominated)                                              | Per-node malloc/free churn vs a slab/bump path                                                                                                                                                                                                                                   |
+| Optimization                                       | Backend | Status / expected win                                                                                                                                     | Notes                                                                                                                                                                                                                                                                                   |
+| -------------------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| NEON auto-vectorization — elementwise + reductions | aarch64 | **Landed** (2026-08, IMPROVEMENTS.md 33–37; kinds completed 2026-10: shifted reads + byte `.16b`)                                                         | Unrolled `.2d`/`.4s`/`.16b` groups over NIR: f64, 8-byte int, uint32, byte, range fors, MIN_TRIP threshold, guard-free bounds; float reductions under `--fast-math`, integer reductions wrap-exact. Remaining: variable-shift reads need the checker's symbolic cancellation (ASM_TODO) |
+| d0–d7 float _params_                               | aarch64 | ~0 on the current suite (measured: no hot non-inlined float-param calls; `Math.sqrt` is naked-inline)                                                     | The d0 convention's other halves **landed** (2026-08: `fcmp` comparisons + d0 returns). Params remain x-register raw bits; deferred because `function_param_regs` has broad blast radius for no measured win                                                                            |
+| General LICM of loop-invariant array bases/bounds  | aarch64 | Effectively **superseded** — the NIR CFG/region machinery (region pins, scratch/induction hoists, derivation memoization) covers the shapes that mattered | Dominance/alias info beyond that stays out of the text passes                                                                                                                                                                                                                           |
+| Tighter `bl` cache invalidation (per-receiver)     | aarch64 | Small; re-enables within-loop field-cache hits                                                                                                            | Currently any non-inlined call drops every field data-pointer cache entry                                                                                                                                                                                                               |
+| Faster allocator                                   | runtime | Large for binarytrees/merkletrees (allocation-dominated)                                                                                                  | Per-node malloc/free churn vs a slab/bump path                                                                                                                                                                                                                                          |
 
 ## Reproducing
 

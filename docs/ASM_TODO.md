@@ -1,92 +1,85 @@
-# ASM TODO — outstanding work from the ASM_PLAN_* / PERF docs
+# ASM TODO — outstanding aarch64 performance work
 
-The discharged plans were moved to `docs/scratch/`. Two plans still carry
-open items and stay in place: `ASM_PLAN_4.md` and `ASM_PLAN_7.md`. What
-remains to be done from each:
+The ASM_PLAN arc is **closed**: `ASM_PLAN.md` through `ASM_PLAN_7.md` are all
+discharged and live in `docs/scratch/`. PLAN_4's remaining items (shifted
+reads, byte kinds, the checker discharges) and PLAN_7's tranches 1–8 (incl.
+the tranche-7 auto-inline unlock and the frame-slot store-store kill) all
+landed; PLAN_7's pidigits target is met-or-structurally-accounted
+(~1.5× vs C `-O2`, with the residual decomposition written up in
+`ASM_PLAN_7.md` addendum 5). What follows is the genuinely open work.
 
-## ASM_PLAN_4.md — remaining steps
+## aarch64 codegen
 
-- **Shifted-index vectorization (`load(i + 1)`) — LANDED 2026-10-03.** The
-  checker's bound verifier accepts the shifted guard shapes (the ASM_PLAN_4-era
-  verifier gap is gone); the remaining blocker was in the NEON planner, and
-  the per-element event-order rule landed: `load_T(i + c)` with a literal
-  c >= 1 plans through an adjusted read pointer, stores stay exact-induction,
-  the trip limit shrinks by the max shift, c <= 0 refuses. Differential
-  on/off + oracle receipt in `test/neon_vector.test.ts`.
-- **Byte (`.16b`) element kinds — LANDED 2026-10-03.** `Buffer<uint8>` loops
-  ride the new `load_u8`/`store_u8` width-matched raw inlines (the scalar
-  path is the naked-inline splice, same as load_int) and a `.16b` descriptor
-  (16 lanes per group); reductions and `*` stay unplanned for e1.
-- **Shifted-read checker discharge — the ref-param/path gap FIXED 2026-10-03.**
-  A helper taking `ref Buffer` args can now prove `load(i + 1)` against
-  `while i < a.cap - 1` + `if b.cap >= a.cap`: `expr_to_string` renders
-  `path ± int` bounds (the loop fact now records), `apply_bounds` mirrors
-  path-vs-path guards onto the other side's path entry (`a.cap <= b.cap`),
-  and the transitive chain relaxes tighter intermediates and consults
-  `path_bounds` for dotted hops.
-- **VARIABLE-shift discharge — LANDED 2026-10-03.** `load_int(j + d)`
-  verifies against `while j < n - d` (+ a `d <= n`-style guard): the arg's
-  stored fact cancels token-for-token (`j < n - d` + `d` => `j + d < n`),
-  `expr_to_string` renders `path ± var` bounds, numeric ranges do NOT
-  transfer (the shift is a runtime value — transferring them understated
-  the arg's reach), the arg's provable `>= 0` lower rides the token's own
-  `range_lower >= 0`, and `invalidate_token_facts` sweeps every stored
-  fact referencing an offset variable on reassignment/shadow/ref-binding.
-  The soundness receipts: shadow-before-use and pre-use mutation refuse;
-  post-use mutation composes (the condition re-establishes per
-  iteration). `test/flow_bounds.test.ts` pins all four shapes.
-- (The rest of ASM_PLAN_4 is closed: item 1 SLP landed; item 2's
-  allocator-level pass was carried out by ASM_PLAN_5/6; item 3 accounting
-  written; item 4's other bullets are decided/superseded; item 5 done.)
+- **pidigits +1.2% net regression from the call-bearing auto-inline**
+  (measured 2026-10-04, pre-session `7b36feac` vs HEAD, 10 interleaved
+  pairs, distributions cleanly separated). The spliced `ensure`→`grow_int`
+  chains grow the hot functions' text (~+96 lines in mul_to alone) at an
+  I-cache/layout cost; the store-store kill clawed back ~0.7% of it. The
+  candidate fix is a splice **cost model**: skip expansion when the callee's
+  text growth lands in a function whose hot loops would be displaced
+  (a size-vs-call-frequency heuristic). Small tranche, clear receipt
+  (pidigits back to ~500 ms, lru keeps its win).
+- **NEON variable-shift reads — planner support.** The checker now
+  discharges `load_int(j + d)` against `while j < n - d` (variable-shift
+  discharge, 2026-10-03), but the NEON planner's `shifted_index_of` still
+  requires a LITERAL `c >= 1` (the adjusted-pointer materialization and the
+  trip-limit `sub` are compile-time-constant forms). Planner support needs
+  a register-held shift: `add xK, buf, d_reg` for the adjusted pointer and
+  `sub`/`asr` with a register operand for the trip limit — both encodable;
+  the soundness model (per-element event-order, c >= 0 at runtime — note
+  a NEGATIVE runtime d with a literal-shaped discharge would break the
+  event-order rule, so the discharge must also prove `d >= 0`, which
+  `range_lower >= 0` already covers) carries over.
+- **mul_to's residual** (the pidigits hot loop): accessor staging movs that
+  are LIVE (register-pressure artifacts — `mov x13, x0` holds the lo product
+  across the `umulh` clobber) and the result-tracking diamond
+  (`if result != 0 { last_nonzero = i + 1 }` — 6 instructions the
+  if-conversion pass cannot merge: the arms are empty-vs-computed, not
+  one-operand-different). Both need allocator-level insight (live ranges
+  for the staging temporaries), not text passes.
 
-## ASM_PLAN_7.md — remaining aarch64 gap
+## Runtime / library
 
-All eight tranches landed, and the tranche-7 follow-up landed 2026-10-03:
-call-bearing auto-inline is UNLOCKED (the +52–62% receipt was two
-`build_inline_method` state leaks — `nir_site_allocs` never restored, and
-`int_dest_hint`/`float_dest_hint` leaking into spliced bodies; see the
-follow-up section at the end of ASM_PLAN_7.md). The ensure→grow_int chain
-splices with zero hot-path bls.
-
-- **pidigits ~1.5× vs C `-O2`** (spectral-norm closed by tranche 8). The
-  store-store kill (optimize_frame_slots) took ~1-2.4% back (the carry-flag
-  slot residue in mul_to's hottest loop); the write-only-slot class beyond
-  the block boundary has INVISIBLE CONSUMERS (extern adapters and helper
-  frame conventions read caller frames at fixed low offsets — deleting
-  `Console_write`'s never-loaded parks corrupts the output; see the
-  ASM_PLAN_7 addendum 5 receipts) and is closed unless a convention
-  registry lands. The residual decomposes into accessor staging movs that
-  are LIVE (register-pressure artifacts) and the if-converted diamond the
-  planner cannot merge.
-- **Tranche list re-check:** tranches 1–8 all landed (tranche 1 =
-  `asm_if_convert.ts` / `test/if_convert.test.ts`; the doc has no write-up
-  for it).
-
-## PERF.md — "Not implemented (future work)"
-
-- **d0–d7 float params.** Params still arrive as raw bits in x-registers;
+- **Faster allocator** — per-node `malloc`/`free` churn dominates
+  binarytrees/merkletrees (allocation-dominated benches); a slab/bump path
+  for class allocation is the largest unclaimed perf lever (an `Arena<T>`
+  container exists in the library but the class-allocation path isn't on
+  it).
+- **Tighter `bl` cache invalidation (per-receiver)** — any non-inlined call
+  drops every field data-pointer cache entry
+  (`build_function_call_node.ts:1221` deletes all `"."` keys);
+  per-receiver invalidation would re-enable within-loop cache hits across
+  calls. **Scoped 2026-10-04 — paused, may be affected by planned ownership
+  work.** The shape: replace the blanket drop with a ROOT-SET drop — a call
+  invalidates entries whose root segment is the receiver's root or the root
+  of a `ref`/`var`/`move` argument (by-value struct args can't reach the
+  caller's buffers; extern calls stay fully opaque). The core change is
+  small (~30–50 lines in the two call builders); the risk is the soundness
+  surface: (1) the ownership/borrow rules must guarantee a cached
+  one-level-field entry can't alias a surviving entry's slab (ref-param
+  record-transfer machinery is a good sign); (2) module-level `var buf`
+  keys as a bare name — under the CURRENT rule such entries wrongly survive
+  calls (a potential live stale-pointer bug independent of this change —
+  investigate first); (3) `func`-typed params can invoke escaped closures
+  (`address_escaped` flag reusable). Receipt-gated: the win needs a bench
+  with hot field-buffer access loops containing calls to unrelated
+  receivers — none of the current benches has that shape (lru is Map-based,
+  knucleotide is raw asm), so step 0 is building one; without it this lands
+  as neutral infrastructure. Revisit after the planned ownership changes
+  settle.
+- **d0–d7 float params** — params still arrive as raw bits in x-registers;
   only the `fcmp` + d0-return halves of the convention landed. Deferred
-  because the measured win on the suite is ~0 and `function_param_regs` has
-  a broad blast radius — do it only with a receipt.
-- **Tighter `bl` cache invalidation (per-receiver).** Any non-inlined call
-  currently drops every field data-pointer cache entry
-  (`build_function_call_node.ts:889` deletes all `"."` keys); per-receiver
-  invalidation would re-enable within-loop cache hits across calls.
-- **Faster allocator.** Per-node `malloc`/`free` churn dominates
-  binarytrees/merkletrees; no slab/bump path in the runtime (an `Arena<T>`
-  container exists in the library but the class-allocation path isn't on it).
-- **General LICM of loop-invariant array bases/bounds — effectively
-  SUPERSEDED.** The NIR CFG/dominance substrate + region brackets and
-  scratch/induction hoists (ASM_PLAN_5/6/7) now cover this.
-- **Doc refresh.** PERF.md's narrative sections are stale: the "aarch64
-  release passes are perf-neutral" table and the SIMD-gap framing predate the
-  ASM_PLAN_2–7 arc (NEON landed, spectral-norm closed, etc.), and the
-  "Rejected" loop-unrolling row is outdated (implemented, default-off).
-  Settled rows: NEON row is landed; the `str/ldr` and `Buffer.data` LICM
-  rejections stand.
+  because the measured win on the suite is ~0 and `function_param_regs`
+  has a broad blast radius — do it only with a receipt.
 
-## Parked / measured-not-shipped (already recorded in FOLLOWUP.md)
+## Parked / closed-unless (already recorded in FOLLOWUP.md / ASM_PLAN_7)
 
-- ASM_PLAN_5 tranche-3 shelved pieces: x15 reservation, nested-loop pin
+- **Function-scoped write-only-slot elimination** — closed: "never-loaded"
+  slots have invisible consumers (extern adapters and helper frame
+  conventions read caller frames at fixed low offsets — the
+  `Console_write` parks receipt, ASM_PLAN_7 addendum 5). Reopen only with
+  a convention registry.
+- **ASM_PLAN_5 tranche-3 shelved pieces**: x15 reservation, nested-loop pin
   refusal, `collect_var_refs` coverage, promotion site-sharing.
-- ASM_PLAN_6 tranche 3 base-fold: completed by tranche 6 (not open).
+- **PERF.md** is current as of 2026-10-03 (rewritten for the post-arc
+  reality; the release-vs-debug table re-measured).
