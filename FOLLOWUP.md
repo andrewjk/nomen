@@ -2,6 +2,33 @@
 
 Skipped or out-of-scope items recorded for later.
 
+## `Shared<T>` + the `with(m)` critical-section form + typed `Mutex<T>` (N4 remainder)
+
+STRUCT_PLAN_3 Phase N's N4 is otherwise complete (`Atomic<T>`, the
+protected-slot freeze derivation, ref-arg spawn borrows); this is the
+deliberately deferred remainder, recorded 2026-10-05 in
+`PROGRESS_PHASE_N.md`:
+
+- **`Shared<T>`** — the lock-guarded slot type, reachable only through the
+  owning lock's critical-section form.
+- **`with(m) (T g) { ... }`** — the critical-section form (new syntax:
+  parser + checker + both backends).
+- **Typed `Mutex<T>`** — the existing hand-locked `Mutex` primitive is
+  non-generic; the plan's shape is `Mutex<T> { handle + Shared<T> value }`.
+
+Designed, not built: a checker-level desugar — `m.lock()`; copy-in to the
+binding `g`; a synthesized scope-guard whose `#destroy` copies `g` back to
+the slot and unlocks, so early returns/breaks release deterministically;
+the binding non-escapable (no storing/returning/re-capturing — the rule
+family that rejects `ref` fields). Copy-in/out is sound for Copyable `T`;
+non-Copyable guard slots are future design. The freeze's protected-slot
+exemption hook (check_access_node's `Atomic` arm) is in place for
+`Shared<T>` to join.
+
+Until it lands: lock-mediated sharing goes through the existing hand-locked
+`Mutex` primitive, and `Atomic<T>` covers the lock-free protected-slot
+cases.
+
 ## `vp check` lint findings hidden behind the formatting stage (pre-existing)
 
 Found 2026-10-04. On `main`, `vp check` always aborts at the FORMATTING stage
