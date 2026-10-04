@@ -42,6 +42,21 @@ export default function parse_visibility(
 			parse_declaration(visibility, "var", status, true);
 			break;
 		}
+		case "owning": {
+			// `pub owning struct/enum` (STRUCT_PLAN_3 B1/B1a).
+			const kind = status.tokens[status.i + 2]?.value;
+			if (kind === "struct") {
+				consume(status); // owning
+				parse_struct(visibility, status, false, true);
+			} else if (kind === "enum") {
+				consume(status); // owning
+				parse_enum(visibility, status, true);
+			} else {
+				add_error(status, `Expected struct or enum after owning`, get_index(status));
+				consume(status);
+			}
+			break;
+		}
 		case "struct": {
 			parse_struct(visibility, status);
 			break;

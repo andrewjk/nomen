@@ -102,6 +102,10 @@ export function destroy_releases(func: FunctionNode): boolean {
 export function is_owning_struct_type(type: Type, status: CheckStatus): boolean {
 	const s = resolve_struct(type, status);
 	if (!s || s.is_class) return false;
+	// STRUCT_PLAN_3 B1: the DECLARED flag wins — `owning struct` is move-only
+	// by declaration, regardless of what the field walk would infer. (The
+	// inferred walk remains for undeclared structs during the transition.)
+	if (s.is_owning) return true;
 	return struct_owns_heap(s, status, new Set());
 }
 
@@ -119,6 +123,10 @@ export function is_owning_struct_type(type: Type, status: CheckStatus): boolean 
 export function is_owning_struct_type_requiring_move(type: Type, status: CheckStatus): boolean {
 	const s = resolve_struct(type, status);
 	if (!s || s.is_class) return false;
+	// B1: a declared `owning struct` is ALWAYS move-only — a string-only
+	// field no longer makes it a borrow-copy (the declaration says the type
+	// owns; the compiler no longer second-guesses it).
+	if (s.is_owning) return true;
 	return struct_owns_non_string_heap(s, status, new Set());
 }
 

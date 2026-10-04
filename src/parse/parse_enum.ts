@@ -14,9 +14,11 @@ import peek_current from "./utils/peek_current.ts";
 export default function parse_enum(
 	visibility: "pub" | "private" | "internal",
 	status: ParseStatus,
+	is_owning = false,
 ) {
 	const start = get_index(status);
 	accept(visibility, status);
+	if (is_owning) accept("owning", status);
 	// Optional `must_use` modifier between visibility and `enum`
 	// (`pub must_use enum Result<T, E> { ... }`). Contextual: only consumed when
 	// it appears in this position, so `must_use` remains usable as a name.
@@ -25,6 +27,7 @@ export default function parse_enum(
 	const name = consume_name(status);
 	const node = new EnumNode(start, visibility, name);
 	node.must_use = must_use;
+	if (is_owning) node.is_owning = true;
 
 	// Generic type parameters: `enum Result<T, E> { ... }`
 	if (accept("<", status)) {

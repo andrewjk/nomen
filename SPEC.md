@@ -1598,6 +1598,35 @@ p.translate(1, 1)
 const d = p.distance_from_origin()   // 3*3 + 4*4 = 25
 ```
 
+#### Owning structs
+
+`owning struct` declares the type MOVE-ONLY (STRUCT_PLAN_3 B1): bindings move
+instead of copy, and the declaration — not a field walk — is the ownership
+contract. A bare `struct` is Copyable; the checker verifies that claim: a bare
+struct with a declared-`owning` field is rejected, naming the fix.
+
+```
+owning struct Config {
+    var string name
+}
+
+var Config c = Config("x")
+move Config c2 = c        // transfer: c is invalid afterwards
+var Config c3 = c.copy()  // explicit deep copy, c stays valid
+var Config c4 = c         // Error: cannot copy 'Config' by value — use .copy() or move
+```
+
+```
+owning struct Config { ... }
+struct Wrapper {          // Error: 'Wrapper' cannot be Copyable — field 'c'
+    var Config c          //   owns heap memory --> mark the struct
+}                         //   `owning struct Wrapper`, or remove the field
+```
+
+The same verifier applies to enums: a bare `enum` with a case payload typed a
+declared-`owning` struct must be declared `owning enum` (B1a), and bindings of
+a declared-`owning` enum move instead of copy.
+
 Fields without default values that have constraints propagate those
 constraints to the generated `#init` parameters (see
 [Field Constraints](#field-constraints)). You can also define a custom `#init`

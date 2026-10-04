@@ -510,10 +510,21 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 		// #destroy only resets fields (no raw block) is NOT owning and may copy.
 		if (decl.value?.node_type === "value" && !decl.value.is_moved) {
 			const val_type = type_from_value_node(decl.value, status);
+			// B1: a declared `owning struct` binding moves (the flag wins over
+			// the inferred walk — a string-only `owning struct` is still
+			// move-only). B1a: a declared `owning enum` binding likewise.
+			const owning_enum =
+				val_type.name && status.enums.findLast((e) => e.name === val_type.name && e.is_owning);
 			if (val_type.name && is_owning_struct_type(val_type, status)) {
 				add_error(
 					status,
 					`cannot copy '${val_type.name}' by value — it owns heap resources; use .copy() or move`,
+					decl.value.start,
+				);
+			} else if (owning_enum) {
+				add_error(
+					status,
+					`cannot copy '${val_type.name}' by value — it is an \`owning enum\`; use move`,
 					decl.value.start,
 				);
 			}

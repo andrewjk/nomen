@@ -162,6 +162,42 @@ their branches (still keyed on `function_return_label`); they were left
 as-is — no current code shape needs them, and their symbol access paths
 (`emit_var_address`) are frame-only.
 
+## 9. aarch64: an enum-with-data payload of a value struct crashes at the match binding
+
+**Seen on `main` (commit 11a7090b), aarch64 only — C is correct.** An enum
+with a value-struct case payload crashes at the `match` binding (EXC_BAD_ACCESS
+in `_platform_memmove`) — the payload's byte-copy runs with a wrong size or
+source:
+
+```nomen
+import System
+
+struct Config {
+	var string name
+}
+
+enum Holder {
+	case some(Config c)
+	case none
+}
+
+pub func main = () {
+	var Holder h = Holder.some(Config("owned"))
+	match h {
+		case .some(c) -> Console.write_line("got \{c.name}")
+		case .none -> Console.write_line("none")
+	}
+}
+```
+
+Found while implementing STRUCT_PLAN_3 B1 (the declared-owning verifier
+surfaces enum-payload ownership), but the repro carries NO owning markers —
+the payload is a plain string-only struct. Same family as the FOLLOWUP
+"aarch64 enum-with-data element fields" gap (payloads inside containers);
+this one is the plain match-binding path. Not fixed in this tranche — the
+B1 declared-owning enum semantics are proven on C; on aarch64 use a class
+payload (reference payloads transfer by pointer and are unaffected).
+
 ## 6. `test_error` test helper spins forever on an out-of-range line
 
 `test/test_error.ts`'s line-scan loop condition was

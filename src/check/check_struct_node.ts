@@ -161,6 +161,24 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 		}
 		if (!struct.is_class && is_class_type(decl.type.name, status)) {
 			add_error(status, `struct fields cannot be class types, use a class instead`, decl.start);
+		} else if (
+			// STRUCT_PLAN_3 B1 — the Copyable verifier (declared-flag subset):
+			// a bare `struct` with a DECLARED-owning field cannot be Copyable
+			// (byte-copying would alias the field's owned state). Name the
+			// fix, exactly as the plan words it. (Inferred ownership is NOT
+			// verified here during the transition — existing code keeps its
+			// semantics; declared `owning` is the opted-in contract.)
+			!struct.is_class &&
+			!struct.is_owning &&
+			decl.type.name &&
+			!decl.type.is_ref &&
+			status.structs.find((st) => st.name === decl.type.name && st.is_owning)
+		) {
+			add_error(
+				status,
+				`'${struct.name}' cannot be Copyable — field '${decl.name}' owns heap memory --> mark the struct \`owning struct ${struct.name}\`, or remove the field`,
+				decl.start,
+			);
 		} else if (!struct.is_class && status.traits.find((t) => t.name === decl.type.name)) {
 			// A trait is a reference type (a pointer to a vtable-bearing heap
 			// instance), exactly like a class field: it can't be cloned, so a

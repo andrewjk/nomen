@@ -32,6 +32,9 @@ export default class StructNode extends BaseNode {
 	is_simple_type: boolean;
 	is_generic?: boolean;
 	is_class?: boolean;
+	/** Declared `owning struct` (STRUCT_PLAN_3 B1): bindings move instead of
+	 *  copy, and the declared flag WINS over the inferred ownership walk. */
+	is_owning?: boolean;
 	scope?: BaseNode;
 	source_type_args?: Type[];
 	/** True when this struct is defined in the appended System library source. */
