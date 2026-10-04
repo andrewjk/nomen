@@ -123,20 +123,44 @@ pub func main = () {
 
 describe("spec: concurrency - daemon tasks", () => {
 	test("Thread(fn(args)).detach() runs a process-lifetime service", () => {
+		// A daemon owns its captures (STRUCT_PLAN_3 N2): a shared class
+		// argument has no join to bound it, so the app-lifetime channel lives
+		// at the root scope (globals are exempt — process lifetime).
 		const input = `
-func flusher = (Channel sink) {
-	sink.send(1)
+var Channel sink = Channel()
+
+func flusher = (Channel ch) {
+	ch.send(1)
 	while true { Time.sleep_ms(1000) }
 }
 
 pub func main = () {
-	var Channel sink = Channel()
 	Thread(flusher(sink)).detach()
 	var uint64 v = sink.receive()
 	Console.write_line("daemon alive")
 }
 `;
 		expect(compile_module(input)).toEqual([]);
+	});
+
+	test("detach rejects a shared class capture", () => {
+		const input = `
+pub class Job : Sendable {
+	var int n = 0
+}
+
+func work = (Job j) {
+}
+
+pub func main = () {
+	var Job j = Job()
+	Thread(work(j)).detach()
+}
+`;
+		const errors = compile_module(input);
+		expect(errors.some((e) => e.message.includes("detached task captures 'j' by reference"))).toBe(
+			true,
+		);
 	});
 });
 

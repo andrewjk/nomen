@@ -100,6 +100,11 @@ export default function build_block_node(node: BlockNode, status: BuildStatus) {
 				}
 				if (inlined_const_names.has(decl.name)) continue;
 				if (is_literal_init(decl.value)) continue;
+				// The initializer runs as main's prologue, but the declaration
+				// keeps MODULE-scope storage (a data symbol) — other functions
+				// load it by symbol, and a main frame slot leaves those
+				// references undefined at link time (BUGS.md #5).
+				decl.is_module_init = true;
 				module_init_statements.push(child);
 			} else {
 				module_init_statements.push(child);

@@ -36,6 +36,7 @@ import {
 	is_owning_ref_type,
 	is_owning_struct_type_requiring_move,
 } from "./utils/ownership.ts";
+import { enforce_detach_owns_captures } from "./utils/spawn_region.ts";
 import synthesize_lambda_name from "./utils/synthesize_lambda_name.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
@@ -509,6 +510,22 @@ function check_access_function_node(
 
 	// Thread.start / Thread.detach / Fiber.start resolve as ordinary methods
 	// on the library classes below.
+
+	// `Thread(fn(x)).detach()` — the daemon form owns its captures
+	// (STRUCT_PLAN_3 N2/R4): a shared class/trait argument to a detached task
+	// has no join to bound it (the daemon outlives every scope), so the
+	// chained construction's non-`move` shared-reference arguments are
+	// rejected here, at the detach boundary. A construction stored in a
+	// variable and detached later is not flow-tracked (recorded gap).
+	if (
+		node.name === "detach" &&
+		target.node_type === "func_call" &&
+		((target as FunctionCallNode).is_thread_ctor ||
+			(target as FunctionCallNode).is_fiber_ctor ||
+			(target as FunctionCallNode).is_awaitable_ctor)
+	) {
+		enforce_detach_owns_captures(target as FunctionCallNode, status);
+	}
 
 	// `view T` builtins: .at is a compiler intrinsic that operates on the
 	// (ptr, len) slice directly. It must NOT resolve to the underlying struct's

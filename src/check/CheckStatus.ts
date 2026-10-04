@@ -23,12 +23,22 @@ export default interface CheckStatus {
 	scope_depth: number;
 	/**
 	 * Nesting depth of enclosing `async { }` nursery blocks (0 = none). A
-	 * spawn construction inside a nursery may take BORROW captures of
-	 * non-Sendable class arguments: the nursery joins its tasks at block
-	 * exit, before any block-scoped donor is destroyed, so an aliased
-	 * argument is provably sound there (CLOSURE.md Phase 3d).
+	 * spawn construction inside a nursery shares class/trait arguments as
+	 * pointers: the nursery joins its tasks at block exit, before any
+	 * block-scoped donor is destroyed, so an aliased argument whose ROOT is
+	 * declared in the block's own scope (or outside it) is provably sound —
+	 * the root rule (STRUCT_PLAN_3 N1a R2 / N1b E3) enforces exactly that
+	 * via spawn_region.ts. (CLOSURE.md Phase 3d's blanket borrow exception
+	 * is retired; this is the checked form.)
 	 */
 	nursery_depth?: number;
+	/**
+	 * The scope depth of each enclosing `async` block's BODY (the depth its
+	 * locals are declared at, and where the join runs). Pushed by
+	 * check_async_block_node; the innermost entry bounds which donors a
+	 * shared spawn argument may take (spawn_region.ts).
+	 */
+	nursery_scope_depths?: number[];
 	/**
 	 * Types (values, structs and traits) in scope
 	 */

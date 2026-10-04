@@ -234,11 +234,17 @@ Thread(flusher(out)).detach()
   exit kills it mid-execution, by design. A daemon that must stop cleanly
   owns its own shutdown (a stop channel or flag), not process exit.
 - **No handle, no future, no cancellation** — statement form only;
-  `Task.current_cancelled()` is always false inside. Args must be
-  `Sendable`, exactly like `.start()` — and there is no borrow escape
-  hatch anywhere (a daemon outlives every scope, so a shared reference has
-  nothing bounding it): a non-Sendable class/trait must be moved in (a
-  `move` parameter) or not cross at all.
+  `Task.current_cancelled()` is always false inside.
+- **Detach owns its captures** (STRUCT_PLAN_3 N2/R4): a daemon has no join to
+  bound a shared reference, so `.detach()` rejects every non-`move`
+  class/trait argument at the construction — Sendable or not (Sendable gates
+  aliasability, not lifetime). Copyable/scalar/string/owning-struct arguments
+  are packed by copy and fine; a `move T` parameter takes ownership. The
+  app-lifetime share — a daemon draining a channel main also holds — is
+  spelled with the channel at the ROOT scope (globals are exempt:
+  process lifetime). A construction stored in a variable and detached later
+  is not flow-tracked (the chained form `Thread(fn(x)).detach()` is the
+  enforced spelling).
 
 This is the deliberate exception to structured concurrency, kept honest by
 being explicit: `.start()` creates a bounded, joined task; `.detach()`

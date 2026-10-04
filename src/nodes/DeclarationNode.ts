@@ -70,6 +70,13 @@ export default class DeclarationNode extends BaseNode {
 	 *  label addresses at runtime. Set by the aarch64 build_block_node root
 	 *  scan; consumed by build_declaration_node's rebuild inside main. */
 	global_runtime_init?: boolean;
+	/** True for a root-scope `var` declaration collected into main's prologue
+	 *  (module-init statement): its INITIALIZER runs inside main, but its
+	 *  STORAGE is a module-scope data symbol — other functions reference it
+	 *  by symbol, so a main frame slot would leave them undefined at link
+	 *  time. Set by the aarch64 build_block_node root scan; consumed by
+	 *  build_declaration_node's storage decision. */
+	is_module_init?: boolean;
 	/** True for a hoisted call-argument temp (`_param_N`) that is a heap COPY
 	 *  of a stack-array local, bound to a heap `Array<T>` param (non-`ref`).
 	 *  `value` is the source ValueNode; the temp is materialised as a heap

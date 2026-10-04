@@ -619,7 +619,19 @@ export default function build_declaration_node(
 			if (!status.heap_array_vars) status.heap_array_vars = new Set();
 			status.heap_array_vars.add(safe_name);
 		} else if (is_class_type) {
-			status.code += `struct ${mono_name} *${safe_name}`;
+			if (node.is_module_init) {
+				// A root-scope class global: the DEFINITION lives at file scope
+				// (build_block_node's root scan put it in the header preamble),
+				// so other functions' reads resolve. The spliced prologue
+				// emission is the initializer ASSIGNMENT — a main-local
+				// `struct X *g = ...` copy would shadow the global and leave
+				// every other function's read undeclared (BUGS.md #5). A
+				// no-initializer global is explicitly nulled (the reassign
+				// paths free the displaced pointer, which must see NULL).
+				status.code += node.value ? `${safe_name}` : `${safe_name} = (void *)0`;
+			} else {
+				status.code += `struct ${mono_name} *${safe_name}`;
+			}
 		} else if (concrete_struct_name) {
 			// Carry the concrete backing on the declaration so COPIES of this
 			// slot (`var Rule r3 = r2`) resolve the same struct.

@@ -83,5 +83,11 @@ export default function clone_status(status: CheckStatus): CheckStatus {
 		// Trusted-internal opt-in: a build-wide flag, inherited by every clone.
 		allow_internal: status.allow_internal,
 		library_boundary: status.library_boundary,
+		// Nursery context: block clones (if/else/while inside `async { }`)
+		// stay inside the same nursery, so both the depth and the stack of
+		// body scope depths carry into every clone (spawn_region.ts reads
+		// them at spawn constructions nested in branch/loop bodies).
+		nursery_depth: status.nursery_depth,
+		nursery_scope_depths: status.nursery_scope_depths?.slice(),
 	};
 }

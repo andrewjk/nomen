@@ -2349,9 +2349,24 @@ export default function build_declaration_node(
 			if (!status.function_ref_params) status.function_ref_params = new Set();
 			status.function_ref_params.add(node.name);
 		} else if (struct_type.is_class) {
-			if (status.function_return_label) {
+			// A root-scope class global's initializer runs as main's prologue
+			// (module_init_statements), but its STORAGE is a module-scope data
+			// symbol: every other function loads it via emit_var_load's `adr`
+			// symbol fallback, and a main frame slot left those references
+			// undefined at link time (BUGS.md #5). Storage follows the
+			// declaration's scope, not the prologue's build context.
+			if (status.function_return_label && !node.is_module_init) {
 				const offset = allocate_stack_space(status, 8);
 				status.stack_offsets!.set(node.name, offset);
+			} else if (node.is_module_init) {
+				// Writable storage: the prologue STORES the fresh instance's
+				// pointer into the symbol (and reassignments may too), and the
+				// aarch64 output is one __TEXT stream where stores fault. Switch
+				// to __DATA for the symbol and back — the same pattern the
+				// vtable emission in build.ts uses.
+				emit_data(status, ".data\n");
+				emit_data(status, `${node.name}: .space 8\n.p2align 3\n`);
+				emit_data(status, ".text\n");
 			} else {
 				emit_data(status, `${node.name}: .space 8\n`);
 			}
@@ -2372,7 +2387,11 @@ export default function build_declaration_node(
 					// them to status.moved — the cleanup paths (both decl
 					// and heap_slots) skip moved vars, so no double-free.
 					anchor_heap_pointer(status, node.name, undefined, node.type.is_nullable);
-					emit_asm(status, `str x0, [x29, #${status.stack_offsets!.get(node.name)}]\n`);
+					if (node.is_module_init) {
+						emit_var_store(status, "x0", node.name, 8);
+					} else {
+						emit_asm(status, `str x0, [x29, #${status.stack_offsets!.get(node.name)}]\n`);
+					}
 					const param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
 					const outgoing = build_constructor_params(func_call, param_regs, status);
 					emit_var_load(status, "x0", node.name, 8);

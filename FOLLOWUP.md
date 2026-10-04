@@ -30,10 +30,12 @@ did surface three REAL pre-existing bugs, fixed and documented in `BUGS.md`:
 prefix-`move` declarations never transferred (checker), the resulting
 wrong-message move-through-ref error, and the aarch64 class TRANSFER
 double-destroy (`move Box r = move p` ran `#destroy` twice — the likely real
-bug behind the SIGBUS reports). Working shapes to not regress: local alias
-read/mutation in a function, root-scope alias with root/function reads, alias
-in nested scopes and loops — now covered by `test/ref_binding.test.ts` on
-both backends.
+bug behind the SIGBUS reports). Repro (3)'s mechanism was found later during
+Phase N: a root-scope CLASS global read from any non-main function failed to
+link/compile on both backends — see `BUGS.md` #5. Working shapes to not
+regress: local alias read/mutation in a function, root-scope alias with
+root/function reads, alias in nested scopes and loops — now covered by
+`test/ref_binding.test.ts` on both backends.
 
 Original report (2026-10-04, during STRUCT_PLAN_3 Phase A), kept for context:
 

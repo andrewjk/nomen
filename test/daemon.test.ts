@@ -19,13 +19,14 @@ describe("daemon tasks (Thread.detach)", () => {
 		const input = `
 import System
 
-func flusher = (Channel sink) {
-	sink.send(1)                       // report startup
+func flusher = (Channel ch) {
+	ch.send(1)                         // report startup
 	while true { Time.sleep_ms(1000) } // process-lifetime service loop
 }
 
+var Channel sink = Channel()         // app-lifetime: the daemon shares it
+
 pub func main = () {
-	var Channel sink = Channel()
 	Thread(flusher(sink)).detach()
 	var uint64 v = sink.receive()      // the daemon is up
 	if v == 1 {
@@ -47,16 +48,17 @@ pub func main = () {
 		const input = `
 import System
 
-func spinner = (Channel sink) {
-	sink.send(1)
+func spinner = (Channel ch) {
+	ch.send(1)
 	var uint64 spins = 0
 	while true {
 		spins += 1
 	}
 }
 
+var Channel sink = Channel()         // app-lifetime: the daemon shares it
+
 pub func main = () {
-	var Channel sink = Channel()
 	Thread(spinner(sink)).detach()
 	var uint64 v = sink.receive()
 	if v == 1 {
@@ -74,12 +76,14 @@ pub func main = () {
 		const input = `
 import System
 
-func heartbeat = (Channel sink) {
-	sink.send(1)
+func heartbeat = (Channel ch) {
+	ch.send(1)
 	while true { Time.sleep_ms(1000) }
 }
 
-func session = (Channel sink, out uint64) {
+var Channel sink = Channel()         // app-lifetime: the daemon shares it
+
+func session = (out uint64) {
 	async {
 		Thread(heartbeat(sink)).detach()
 	}
@@ -87,8 +91,7 @@ func session = (Channel sink, out uint64) {
 }
 
 pub func main = () {
-	var Channel sink = Channel()
-	var f = Fiber(session(sink)).start()
+	var f = Fiber(session()).start()
 	var uint64 r = f.result()
 	if r == 7 {
 		Console.write_line("session done, daemon outlives it")
@@ -104,7 +107,7 @@ pub func main = () {
 		);
 	});
 
-	test("detach arguments must be Sendable", () => {
+	test("detach rejects shared captures and demands Sendable", () => {
 		// Thread.start is a library method and the construction resolves
 		// through Thread's declared #spawn member, so the source imports
 		// System explicitly (no parse_raw auto-import here: the input is a
@@ -128,5 +131,8 @@ pub func main = () {
 		const parsed = parse(input, get_library("core"));
 		const messages = parsed.errors.map((e) => e.message);
 		expect(messages.some((m) => m.includes("not Sendable"))).toBe(true);
+		// STRUCT_PLAN_3 N2/R4: a daemon owns its captures — the shared
+		// (non-move) class argument is rejected at the detach boundary too.
+		expect(messages.some((m) => m.includes("detached task captures 'u' by reference"))).toBe(true);
 	});
 });

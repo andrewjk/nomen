@@ -4,6 +4,7 @@ import type FunctionNode from "../../nodes/FunctionNode.ts";
 import type Type from "../../nodes/Type.ts";
 import type CheckStatus from "../CheckStatus.ts";
 import is_sendable_type from "./is_sendable_type.ts";
+import { enforce_spawn_arg_region } from "./spawn_region.ts";
 import type_from_value_node from "./type_from_value_node.ts";
 
 /**
@@ -46,11 +47,15 @@ export default function validate_spawn_args_sendable(
 			arg_type = stamped;
 		}
 		// MOVED: the callee's `move T` parameter takes exclusive ownership
-		// of the argument — no sharing, no race.
+		// of the argument — no sharing, no race, no region to prove.
 		if (callee_params?.[i]?.is_moved) {
 			continue;
 		}
 		if (is_sendable_type(arg_type.name, status)) {
+			// The Sendable gate waves SHARED class/trait references through —
+			// inside an `async { }` block their donor must still join-bound
+			// (STRUCT_PLAN_3 N1a R2 / N1b E3, in spawn_region.ts).
+			enforce_spawn_arg_region(param, arg_type, status);
 			continue;
 		}
 		add_error(

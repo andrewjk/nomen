@@ -95,6 +95,22 @@ export default function build_block_node(
 				if (decl.declaration === "const") continue;
 				if (inlined_const_names.has(decl.name)) continue;
 				if (is_literal_init(decl.value)) continue;
+				// A root-scope CLASS var must be a FILE-scope definition: other
+				// functions reference it, and a main-local copy shadows the
+				// global and leaves every other function's read undeclared
+				// (BUGS.md #5). The definition goes into the header preamble
+				// (ahead of every function; `struct X *g;` forward-declares the
+				// tag, completed by the typedef below); the spliced prologue
+				// emission becomes the initializer assignment
+				// (build_declaration_node's is_module_init arm).
+				const cls =
+					decl.type?.name && !decl.type.is_array && !decl.type.is_view
+						? status.structs.find((s) => s.name === decl.type.name && s.is_class)
+						: undefined;
+				if (cls && !decl.type.type_args?.length) {
+					status.headers += `struct ${cls.name} *${decl.name} = (void *)0;\n`;
+					decl.is_module_init = true;
+				}
 				module_init_statements.push(child);
 			} else {
 				module_init_statements.push(child);

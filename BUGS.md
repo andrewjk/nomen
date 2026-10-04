@@ -113,3 +113,60 @@ and then built as owned storage: `ref` spelled, `var` semantics. Fix: fire the
 error for ANY initializer that `ref_alias_source_name` cannot classify as an
 existing binding/field/borrow-returning call (§A1). `ref q = move p` also
 errors now (an alias never takes ownership).
+
+## 5. A root-scope class global is unreadable from any other function (both backends)
+
+**Seen on `main` (commit 11a7090b), both backends.** A class-typed global
+(`var Box g = Box(5)` at root scope) was compiled as a MAIN-LOCAL, not a
+module-scope global — any other function referencing it failed to compile:
+
+- **aarch64**: the root scan collects non-literal root `var`s into
+  `module_init_statements` and splices them into main's prologue ("a
+  class-typed root declaration cannot even be BUILT — its storage anchor
+  assumes a stack frame", build_block_node). The declaration therefore took
+  the in-function storage branch (`function_return_label` set) and got a MAIN
+  FRAME SLOT, while every other function's `emit_var_load` fell back to the
+  `adr <reg>, g` SYMBOL form → `Undefined symbols for architecture arm64: g`
+  at link time. Repro:
+  ```nomen
+  import System
+  class Box { var int v }
+  var Box g = Box(5)
+  func readg = (out int) {
+      return g.v
+  }
+  pub func main = () {
+      Console.write_line("\{readg()}")
+  }
+  ```
+- **C**: the root declaration was emitted as a main-local
+  `struct Box *g = Box_init(5L);` and NEVER at file scope, so other
+  functions' references were `use of undeclared identifier 'g'`.
+
+This mechanism is almost certainly what the (never-reproduced) FOLLOWUP
+report "root-scope `ref` — Undefined symbols for architecture arm64: q"
+described: a root-scope alias read from a non-main function hits exactly this
+(aarch64 and C both now handle it — verified `ref Box q = p` at root + read
+from a function).
+
+**Fix:** the declaration keeps MODULE-scope storage regardless of the
+prologue's build context. aarch64: the root scan stamps collected declares
+`is_module_init`; build_declaration_node's class branch emits a `.data`-section
+symbol (`g: .space 8` wrapped in `.data`/`.text` switches — the output is one
+`__TEXT` stream where stores fault, the same pattern as the vtable emission)
+and the prologue stores through `emit_var_store`'s symbol path. C: the root
+scan emits `struct Box *g = (void *)0;` into the header preamble (ahead of
+every function) and the spliced prologue emission becomes the initializer
+assignment. Value-struct and trait-typed globals have the same shaped gap in
+their branches (still keyed on `function_return_label`); they were left
+as-is — no current code shape needs them, and their symbol access paths
+(`emit_var_address`) are frame-only.
+
+## 6. `test_error` test helper spins forever on an out-of-range line
+
+`test/test_error.ts`'s line-scan loop condition was
+`i < source.length, l < line` — the comma operator discards the first
+operand, so the loop ran on `l < line` alone. A test expecting an error at a
+line beyond the source's line count never satisfied it: the worker spun at
+100% CPU forever with no output (a wrong expectation looked like a hung
+suite). Fix: `i < source.length && l < line`.

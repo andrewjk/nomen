@@ -2633,6 +2633,21 @@ task even inside a nursery — mark it `Sendable`, move it in, or share it
 through a `Sendable` primitive (`Mutex`, `Channel`). The same rules gate a
 lambda's captures (every capture is an eager argument).
 
+Two lifetime rules apply on top of `Sendable` (which gates aliasability, not
+how long the alias stays valid):
+
+- **Inside an `async` block, a shared argument must outlive the join.** The
+  root variable of a shared class/trait argument must be declared in the
+  block's own scope or outside it — a local declared in a nested block (an
+  `if` body, a loop iteration) dies before the join and dangles the task's
+  alias. A fresh temporary (a call result) must be constructed in the
+  block's own scope. Moved and copied arguments are exempt — ownership has
+  no region.
+- **Detach owns its captures.** A detached daemon has no join anywhere, so
+  `.detach()` rejects every shared (non-`move`) class/trait argument —
+  Sendable or not. App-lifetime state is shared by declaring it at the root
+  scope (globals are exempt: process lifetime).
+
 ### Thread
 
 `Thread(fn(args))` constructs a deferred call: the arguments are evaluated
