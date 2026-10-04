@@ -2,6 +2,31 @@
 
 Skipped or out-of-scope items recorded for later.
 
+## STRUCT_PLAN_3 Phase B — remaining tranches
+
+Tranche 1 (declared ownership: `owning struct`/`owning enum` spellings, the
+flag-wins semantics, the declared-subset Copyable verifier) is landed. The
+rest of Phase B, in dependency order:
+
+- **B1 full cutover**: the Copyable verifier over INFERRED ownership (a bare
+  struct with a string field → error), migrating every existing owning
+  struct to the declared spelling. Sequenced after the built-in rewrite
+  (post-B4/R) — the string-only-struct borrow-copy semantics are
+  load-bearing in the memory model until then.
+- **B2 — `Box<T>`**: cycles + identity (the owning-struct-with-one-pointer-
+  field magic type; cycle detection naming the field; `Box<T>?` = the null
+  pointer).
+- **B4 — trait objects** (the gate for class removal): boxed
+  `(vtable, instance)` handles at every trait position on both backends;
+  tier-1 demotion; boxing takes ownership (T1–T4).
+- **B5/B6**: field-restriction collapse; nullable lowerings (`Box<T>?` = the
+  null pointer; inline structs keep the companion flag).
+
+Known pre-existing gap surfaced by tranche 1: BUGS.md #9 (aarch64
+enum-with-data value-struct payload crashes at the match binding) — B1a's
+owning-enum semantics are proven on C; on aarch64 use a class payload until
+#9 is fixed.
+
 ## `Shared<T>` + the `with(m)` critical-section form + typed `Mutex<T>` (N4 remainder)
 
 STRUCT_PLAN_3 Phase N's N4 is otherwise complete (`Atomic<T>`, the
