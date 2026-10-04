@@ -1,5 +1,6 @@
 import { spawn_ctor_class_name, spawn_instance_info } from "../build_c/build_magic_ctor.ts";
 import { spawn_arg_types } from "../build_c/build_spawn_node.ts";
+import { WEAK_PROTOTYPES } from "../build_c/build_spawn_node.ts";
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import c_function_name from "../build_c/utils/c_function_name.ts";
 import c_type from "../build_c/utils/c_type.ts";
@@ -12,9 +13,10 @@ import type FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import type FunctionNode from "../nodes/FunctionNode.ts";
 import { emit_struct_address_param } from "./build_declaration_node.ts";
 import build_node from "./build_node.ts";
-import { ensure_concurrency_runtime_a64 } from "./build_spawn_node.ts";
+import { ensure_concurrency_runtime_a64, ensure_weak_runtime_a64 } from "./build_spawn_node.ts";
 import { emit_descriptor_address, materialize_func_value_a64 } from "./utils/closure_a64.ts";
 import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
+import { emit_var_address } from "./utils/stack_var.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
 
 /**
@@ -28,6 +30,13 @@ import { allocate_stack_space } from "./utils/stack_var.ts";
  * task closure, constructs the mono instance, and returns it.
  */
 export default function build_magic_ctor_node(node: FunctionCallNode, status: BuildStatus) {
+	// `WeakHandle<T>(obj)` (STRUCT_PLAN_3 N3): a companion-C helper with the
+	// sret convention (x8 = &out, x0 = obj) writes the 16-byte handle VALUE;
+	// the declaration's struct-return machinery presets x8.
+	if (node.is_weak_ctor) {
+		build_weak_ctor_a64(node, status);
+		return;
+	}
 	const kind = spawn_ctor_class_name(node);
 	const info = spawn_instance_info(node, status);
 	const call = node.params[0] as FunctionCallNode;
@@ -624,4 +633,47 @@ function nursery_capture_a64(
 		],
 		arg_count: 3,
 	};
+}
+
+/**
+ * `WeakHandle<T>(obj)` (STRUCT_PLAN_3 N3), aarch64 backend: a companion-C
+ * helper with the PLAIN C ABI — x0 = &out (the handle value the
+ * declaration's struct-return machinery points at), x1 = the tracked
+ * object — writes the 16-byte handle value.
+ */
+function build_weak_ctor_a64(node: FunctionCallNode, status: BuildStatus) {
+	ensure_weak_runtime_a64(status);
+	const obj = node.params[0];
+	const mono = mono_type_name(node.type);
+	const tracked = node.function_return_type?.name ?? "void";
+	const helper_name = `nomen_weak_${status.spawn_counter ?? 0}_ctor`;
+	status.spawn_counter = (status.spawn_counter ?? 0) + 1;
+
+	if (!status.file_scope_c) status.file_scope_c = "";
+	// The companion cannot see main.h — declare the registry entry points
+	// (the same reason nomen_str_dup carries a guarded local def). The
+	// prototypes only: WEAK_HEADER (emitted above) already carries the
+	// typedef and the allocator macros.
+	status.file_scope_c += WEAK_PROTOTYPES;
+	status.file_scope_c += `// --- WeakHandle construction (${mono}) ---\n`;
+	status.file_scope_c += `void ${helper_name}(struct ${mono} *out, struct ${tracked} *obj) {\n`;
+	status.file_scope_c += `\tout->id = __nomen_weak_register(obj);\n`;
+	status.file_scope_c += `\tout->gen = __nomen_weak_gen(out->id);\n`;
+	// The 16-byte value ALSO returns in x0/x1: an assignment-context RHS
+	// reads the registers (the declaration context reads through out).
+	status.file_scope_c += `\t*out;\n`;
+	status.file_scope_c += `}\n`;
+
+	emit_asm(status, `// WeakHandle<${mono}> construction\n`);
+	build_node(obj, status);
+	ensure_newline(status);
+	// Plain C ABI: x0 = &out (the declaration's struct-return preset — the
+	// assignment form is rejected at check time: a handle binds once), x1 =
+	// obj. Re-derive x0: staging the argument may have clobbered it.
+	const dest = status.struct_return_buffer_var;
+	if (dest) {
+		emit_asm(status, `mov x1, x0\n`);
+		emit_var_address(status, "x0", dest);
+	}
+	emit_asm(status, `bl _${helper_name}\n`);
 }

@@ -21,6 +21,7 @@ import build_extern from "./build_extern.ts";
 import build_node from "./build_node.ts";
 import { is_owned_heap_temp } from "./build_operation_node.ts";
 import build_parameter_node from "./build_parameter_node.ts";
+import { ensure_weak_runtime } from "./build_spawn_node.ts";
 import { ensure_runtime_for_method } from "./build_spawn_node.ts";
 import build_struct_body from "./build_struct_body.ts";
 import type BuildStatus from "./BuildStatus.ts";
@@ -927,6 +928,14 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 
 		status.code += `\n{\n`;
 
+		// STRUCT_PLAN_3 N3: a class instance's destroy invalidates every
+		// WeakHandle slot holding it (generation bump) — before anything
+		// else, so the body's own teardown cannot resurrect a stale handle.
+		if (func.name === "#destroy" && node.is_class) {
+			ensure_weak_runtime(status);
+			status.code += `__nomen_weak_invalidate(self);\n`;
+		}
+
 		// HACK: Dereference the `self` pointer arg to a local variable with a random name
 		// (`_self` for now, but we could automate it)
 		// Skip for `ref self` and `ref self` — mutations should propagate through the pointer directly
@@ -1056,6 +1065,12 @@ function build_auto_destroy(node: StructNode, status: BuildStatus) {
 	const sig = `void ${func_label}(struct ${node.name} *self)`;
 	status.headers += `${sig};\n`;
 	status.code += `${sig}\n{\n`;
+	// STRUCT_PLAN_3 N3: a class instance's destroy invalidates every
+	// WeakHandle slot holding it (generation bump).
+	if (node.is_class) {
+		ensure_weak_runtime(status);
+		status.code += `__nomen_weak_invalidate(self);\n`;
+	}
 	for (const field of class_destroy_fields(node, status)) {
 		if (field.type.is_ref) continue;
 		// A `view T` field is a non-owning borrow: freeing its pointer half

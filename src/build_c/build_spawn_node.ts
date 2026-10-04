@@ -10,6 +10,139 @@ import c_type from "./utils/c_type.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 
 /**
+ * WeakHandle registry (STRUCT_PLAN_3 N3): ONE process-wide (pointer,
+ * generation) slot table with a free list, mutex-guarded — handles are
+ * consulted from workers, so it sits in the same family as the async
+ * runtime's registries. `weak(obj)` registers a slot and hands back
+ * (id, gen); the owning type's `#destroy` invalidates every slot holding
+ * the pointer (generation bump — stale handles miss); `get(id, gen)`
+ * compares and returns NULL on mismatch. Generations are never reset, so a
+ * recycled slot cannot alias an old handle. Emitted whenever a class
+ * destroy or a `WeakHandle` construction is built (the destroy hook calls
+ * `__nomen_weak_invalidate` unconditionally; on a table that was never
+ * allocated it returns immediately).
+ */
+export const WEAK_HEADER = `
+#include <pthread.h>
+#include <stdint.h>
+#include <stdlib.h>
+// The registry is process infrastructure (like libpthread's internals), not
+// program data: its tables allocate through these aliases so audit builds
+// do not count them (the audit rewrites bare realloc(/free( calls in
+// generated C; the paren-less macro definitions here are invisible to it).
+#define WEAK_REALLOC realloc
+#define WEAK_FREE free
+static pthread_mutex_t __nomen_weak_mu = PTHREAD_MUTEX_INITIALIZER;
+typedef struct { unsigned long long gen; void *ptr; } nomen_weak_slot;
+static nomen_weak_slot *__nomen_weak_slots = NULL;
+static unsigned long long *__nomen_weak_free = NULL;
+static unsigned long long __nomen_weak_cap = 0;
+static unsigned long long __nomen_weak_free_n = 0;
+static unsigned long long __nomen_weak_next_id = 0;
+static void __nomen_weak_teardown(void) {
+	WEAK_FREE(__nomen_weak_slots);
+	WEAK_FREE(__nomen_weak_free);
+	__nomen_weak_slots = NULL;
+	__nomen_weak_free = NULL;
+}
+unsigned long long __nomen_weak_register(void *obj) {
+	static int teardown_installed = 0;
+	if (!teardown_installed) {
+		atexit(__nomen_weak_teardown);
+		teardown_installed = 1;
+	}
+	pthread_mutex_lock(&__nomen_weak_mu);
+	unsigned long long id;
+	if (__nomen_weak_free_n > 0) {
+		id = __nomen_weak_free[--__nomen_weak_free_n];
+	} else {
+		if (__nomen_weak_next_id == __nomen_weak_cap) {
+			unsigned long long ncap = __nomen_weak_cap ? __nomen_weak_cap * 2 : 64;
+			__nomen_weak_slots = (nomen_weak_slot *)WEAK_REALLOC(__nomen_weak_slots, ncap * sizeof(nomen_weak_slot));
+			__nomen_weak_free = (unsigned long long *)WEAK_REALLOC(__nomen_weak_free, ncap * sizeof(unsigned long long));
+			__nomen_weak_cap = ncap;
+		}
+		id = __nomen_weak_next_id++;
+	}
+	__nomen_weak_slots[id].ptr = obj;
+	pthread_mutex_unlock(&__nomen_weak_mu);
+	return id;
+}
+unsigned long long __nomen_weak_gen(unsigned long long id) {
+	pthread_mutex_lock(&__nomen_weak_mu);
+	unsigned long long g = __nomen_weak_slots[id].gen;
+	pthread_mutex_unlock(&__nomen_weak_mu);
+	return g;
+}
+void __nomen_weak_invalidate(void *obj) {
+	if (!__nomen_weak_slots) return;
+	pthread_mutex_lock(&__nomen_weak_mu);
+	for (unsigned long long i = 0; i < __nomen_weak_next_id; i++) {
+		if (__nomen_weak_slots[i].ptr == obj) {
+			__nomen_weak_slots[i].ptr = NULL;
+			__nomen_weak_slots[i].gen++;
+			__nomen_weak_free[__nomen_weak_free_n++] = i;
+		}
+	}
+	pthread_mutex_unlock(&__nomen_weak_mu);
+}
+void *__nomen_weak_get(unsigned long long id, unsigned long long gen) {
+	if (!__nomen_weak_slots || id >= __nomen_weak_next_id) return NULL;
+	pthread_mutex_lock(&__nomen_weak_mu);
+	void *p = __nomen_weak_slots[id].gen == gen ? __nomen_weak_slots[id].ptr : NULL;
+	pthread_mutex_unlock(&__nomen_weak_mu);
+	return p;
+}
+`;
+
+/**
+ * Pull the WeakHandle registry in (idempotent). Called from the
+ * `WeakHandle<T>(obj)` construction build and from every class `#destroy`
+ * emission (the invalidate hook). Split builds follow the pool pattern:
+ * the system TU defines the runtime with external linkage and declares it
+ * in system.h; user TUs reference it.
+ */
+export function ensure_weak_runtime(status: BuildStatus): void {
+	if (status.weak_runtime_emitted) return;
+	status.weak_runtime_emitted = true;
+	const mode = status.emit_mode ?? "all";
+	if (mode !== "all") {
+		if (mode === "system") {
+			status.headers += WEAK_DECLARATIONS;
+			status.c_runtime_defs = (status.c_runtime_defs ?? "") + globalize_runtime(WEAK_HEADER);
+		}
+		return;
+	}
+	status.headers += WEAK_HEADER;
+}
+
+// The split-build declarations (system.h): the type shape and the
+// allocator macros ride HERE (globalize_runtime drops #defines and type
+// shapes from the globalized definition text, and the globalized bodies
+// reference both).
+export const WEAK_DECLARATIONS = `
+#include <pthread.h>
+#include <stdint.h>
+#include <stdlib.h>
+typedef struct { unsigned long long gen; void *ptr; } nomen_weak_slot;
+#define WEAK_REALLOC realloc
+#define WEAK_FREE free
+unsigned long long __nomen_weak_register(void *obj);
+unsigned long long __nomen_weak_gen(unsigned long long id);
+void __nomen_weak_invalidate(void *obj);
+void *__nomen_weak_get(unsigned long long id, unsigned long long gen);
+`;
+
+/** Function prototypes only (no typedef/macros — WEAK_HEADER already
+ *  carries them when both land in the same companion file). */
+export const WEAK_PROTOTYPES = `
+unsigned long long __nomen_weak_register(void *obj);
+unsigned long long __nomen_weak_gen(unsigned long long id);
+void __nomen_weak_invalidate(void *obj);
+void *__nomen_weak_get(unsigned long long id, unsigned long long gen);
+`;
+
+/**
  * Pool infrastructure emitted as file-scope C on the first spawn.
  * Extracted from Task.#init so Task can be generic without duplicating
  * the pool per instantiation. Deduplicated by build_raw_node's

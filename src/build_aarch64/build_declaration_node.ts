@@ -297,7 +297,10 @@ function emit_data(status: BuildStatus, data: string) {
 function is_magic_spawn_ctor(node: BaseNode): boolean {
 	if (node.node_type !== "func_call") return false;
 	const fc = node as FunctionCallNode;
-	return !!(fc.is_thread_ctor || fc.is_fiber_ctor || fc.is_awaitable_ctor);
+	// The WeakHandle construction is a magic ctor too: it yields the
+	// 16-byte handle VALUE through the struct-return machinery (x8 sret),
+	// never as a struct-init call.
+	return !!(fc.is_thread_ctor || fc.is_fiber_ctor || fc.is_awaitable_ctor || fc.is_weak_ctor);
 }
 
 function is_struct_constructor(node: BaseNode, status: BuildStatus): boolean {

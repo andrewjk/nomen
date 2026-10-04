@@ -68,6 +68,20 @@ Destroy functions run at:
 
 Nested struct fields with destroy functions are also cleaned up recursively.
 
+### WeakHandle (checked back-pointers)
+
+`WeakHandle<T>` (STRUCT_PLAN_3 N3) is the sanctioned back-pointer / OS-retained
+shape: a handle into one process-wide (pointer, generation) slot table with a
+free list, mutex-guarded (handles are consulted from workers). `WeakHandle<T>
+(obj)` registers the instance (T must be a class, owned elsewhere — a fresh
+temporary is rejected); the tracked type's `#destroy` invalidates every slot
+holding the pointer (generation bump — a recycled slot never resets its
+generation, so a stale handle can never alias a new object); `.get()` returns
+the live pointer or `null`. A handle owns nothing — move-safe by construction
+— and binds once, at its declaration. Runtime emission is one shared blob
+(the C backend's system TU defines it with external linkage in split builds;
+the aarch64 user companion always carries its copy).
+
 ### Classes (Reference Types)
 
 Classes are always heap-allocated and passed by pointer. Binding a class variable to another creates a shared reference — both variables point to the same instance — and the alias must be spelled with `ref` (a plain `var Box q = p` copy is a compile error: "use 'ref' to share it, 'move' to transfer it, or '.copy()' for a deep copy").

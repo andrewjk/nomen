@@ -39,6 +39,7 @@ import {
 import is_sendable_type from "./utils/is_sendable_type.ts";
 import { is_class_type, is_owning_struct_type_requiring_move } from "./utils/ownership.ts";
 import { resolve_declared_struct } from "./utils/resolve_declared_type.ts";
+import { spawn_arg_root_name } from "./utils/spawn_region.ts";
 import synthesize_lambda_name from "./utils/synthesize_lambda_name.ts";
 import type_from_value from "./utils/type_from_value.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
@@ -134,6 +135,16 @@ export default function check_function_call_node(
 	// to classes that declare the `#spawn` hook, resolved above.
 	if (magic_ctor && spawn_ctor_shape) {
 		return check_magic_ctor(node, status, magic_ctor);
+	}
+
+	// `WeakHandle<T>(obj)` (STRUCT_PLAN_3 N3) — the construction is keyed on
+	// the `#weak` MEMBER (the same library-tier marker rule as `#spawn`):
+	// register `obj` in the process-wide (pointer, generation) registry and
+	// yield the handle value. The tracked type must be a class — a weak
+	// handle to a value-struct local would outlive the stack storage it
+	// names.
+	if (spawn_hook_struct?.functions.some((f) => f.name === "#weak")) {
+		return check_weak_ctor(node, status);
 	}
 
 	// A func-typed VARIABLE holding a signature (`var func (out int) f`,
@@ -1640,6 +1651,65 @@ function stamp_spawn_ctor(node: FunctionCallNode, name: string) {
 	if (name === "Thread") node.is_thread_ctor = true;
 	else if (name === "Fiber") node.is_fiber_ctor = true;
 	else node.is_awaitable_ctor = true;
+}
+
+/**
+ * `WeakHandle<T>(obj)` (STRUCT_PLAN_3 N3): register `obj` (a CLASS
+ * instance) in the process-wide weak registry and type the construction as
+ * the monomorphized `WeakHandle<T>` value. The tracked type must be a
+ * class — a handle to a value-struct local would outlive the stack storage
+ * it names.
+ */
+function check_weak_ctor(node: FunctionCallNode, status: CheckStatus): boolean {
+	if (node.params.length !== 1) {
+		add_error(
+			status,
+			"`WeakHandle<T>(obj)` expects exactly one argument — the object to track",
+			node.start,
+		);
+		return false;
+	}
+	const obj = node.params[0];
+	if (!check_node(obj, status)) return false;
+	const obj_type = type_from_value_node(obj, status);
+	if (!obj_type.name || !is_class_type(obj_type.name, status)) {
+		add_error(
+			status,
+			`WeakHandle<T> tracks a class instance — '${obj_type.name || "<unknown>"}' is not a class`,
+			obj.start,
+		);
+		return false;
+	}
+	// The handle owns NOTHING (no refcounts — N3): the tracked instance must
+	// be owned ELSEWHERE. A fresh temporary (a call/constructor result)
+	// has no other owner and would leak — require an existing binding,
+	// the same shape the `ref` alias rule spells.
+	if (!spawn_arg_root_name(obj)) {
+		add_error(
+			status,
+			`WeakHandle<T> tracks an object owned elsewhere — bind it to a variable first (a fresh temporary has no owner)`,
+			obj.start,
+		);
+		return false;
+	}
+	// An explicit type argument must match the tracked object (`WeakHandle<
+	// Window>(window)`); without one, T is the object's class.
+	const explicit_t = node.type?.type_args?.[0] ?? node.type_args?.[0];
+	if (explicit_t?.name && explicit_t.name !== obj_type.name) {
+		add_error(
+			status,
+			`WeakHandle<${explicit_t.name}> cannot track a '${obj_type.name}' — use WeakHandle<${obj_type.name}>`,
+			node.start,
+		);
+		return false;
+	}
+	const weak_struct = resolve_declared_struct(node.name, status) as StructNode | undefined;
+	if (weak_struct) monomorphize(weak_struct, [new Type(obj_type.name)], status);
+	node.is_weak_ctor = true;
+	node.function_return_type = new Type(obj_type.name);
+	node.type = new Type(node.name);
+	node.type.type_args = [new Type(obj_type.name)];
+	return true;
 }
 
 /** Monomorphize the spawn class for T and stamp the type args. A declared

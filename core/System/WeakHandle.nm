@@ -1,0 +1,56 @@
+// WeakHandle<T> (STRUCT_PLAN_3 N3) — a checked back-pointer / OS-retained
+// handle. The residue of OS/AppKit retention and child→parent edges: a
+// handle to a registry slot, not a reference — no refcounts, no cycles.
+//
+//   var WeakHandle<Window> w = WeakHandle<Window>(window)
+//   ...
+//   var Window? live = w.get()   // nil check at the use site
+//
+// The CREATION is the marker (nothing aliases without one). The race is
+// inherently dynamic — the OS may have torn the object down — so the
+// runtime check in `get` is the only truthful one. The registry is ONE
+// process-wide (pointer, generation) slot table with a free list,
+// internally synchronized (handles are consulted from workers); the
+// tracked type's `#destroy` invalidates every slot holding the pointer
+// (generation bump), and a recycled slot never resets its generation, so a
+// stale handle can never alias a new object. Move-safe by construction: a
+// handle owns nothing.
+//
+// `T` must be a class (enforced at the construction site) — a weak handle
+// to a value-struct local would outlive the stack storage it names.
+//
+// `get` returns the instance pointer, NULL once the instance is gone —
+// bind it to a `T?` and nil-check at the use site.
+
+/**
+ * A checked, generation-validated handle to a possibly-gone object
+ **/
+pub struct WeakHandle<T> {
+	// The construction hook (the library-tier marker, beside #init and
+	// #destroy): `WeakHandle<T>(obj)` registers `obj` in the process-wide
+	// registry. The construction itself is compiler-generated (register the
+	// object, capture the slot's generation), so the body is a declaration.
+	#weak = () {
+	}
+
+	// The registry slot id and the generation captured at creation.
+	var uint64 id = 0
+	var uint64 gen = 0
+
+	// The checked read: the slot's live pointer, NULL when the instance was
+	// destroyed (or the slot was recycled). Bind to `T?` and nil-check.
+	// Offsets skip the leading `_vt` slot the auto-derived `to_string`
+	// (Stringable conformance) puts on every struct: id at +8, gen at +16.
+	pub func get = (self, out T) {
+		```
+		#arch: c
+		return __nomen_weak_get(self->id, self->gen);
+		```
+		```
+		#arch: aarch64
+		ldr x1, [x0, #16]
+		ldr x0, [x0, #8]
+		bl ___nomen_weak_get
+		```
+	}
+}

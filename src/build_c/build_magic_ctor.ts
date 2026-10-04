@@ -7,6 +7,7 @@ import FunctionNode from "../nodes/FunctionNode.ts";
 import type StructNode from "../nodes/StructNode.ts";
 import type Type from "../nodes/Type.ts";
 import build_node from "./build_node.ts";
+import { ensure_weak_runtime } from "./build_spawn_node.ts";
 import {
 	ensure_concurrency_runtime,
 	spawn_arg_c_types,
@@ -280,12 +281,33 @@ export interface OwnedArg {
 }
 
 /**
+ * `WeakHandle<T>(obj)` (STRUCT_PLAN_3 N3), C backend: register the tracked
+ * object and yield the 16-byte handle VALUE (a GCC statement expression —
+ * two u64 fields return by value inside any initializer).
+ */
+function build_weak_ctor(node: FunctionCallNode, status: BuildStatus) {
+	ensure_weak_runtime(status);
+	const obj = node.params[0];
+	const mono = mono_type_name(node.type);
+	status.code += `({ unsigned long long _wid = __nomen_weak_register((void *)`;
+	build_node(obj, status);
+	status.code += `); (struct ${mono}){ .id = _wid, .gen = __nomen_weak_gen(_wid) }; })\n`;
+}
+
+/**
  * Build a spawn-sugar construction expression (`Thread(fn(args))` /
  * `Fiber(fn(args))`, or a user Awaitable class's `MyThing(fn(args))`):
  * a GCC statement expression that packs the args, allocates the machinery,
  * constructs the task closure, and yields the heap instance.
  */
 export default function build_magic_ctor_node(node: FunctionCallNode, status: BuildStatus) {
+	// `WeakHandle<T>(obj)` (STRUCT_PLAN_3 N3): register the object and yield
+	// the 16-byte handle VALUE — a statement expression, not a heap
+	// instance.
+	if (node.is_weak_ctor) {
+		build_weak_ctor(node, status);
+		return;
+	}
 	const kind = spawn_ctor_class_name(node);
 	const info = spawn_instance_info(node, status);
 	const call = node.params[0] as FunctionCallNode;

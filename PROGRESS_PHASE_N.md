@@ -156,9 +156,38 @@ out-of-range line expectation. Hardened.
 - Full suite green (3955 tests) before the test-file additions;
   spawn_region + daemon + spec files green after.
 
-## Not yet done (Phase N tranches 3+)
+**N3 (tranche 3) — `WeakHandle<T>`**
 
-- **N3 — `WeakHandle<T>`** (registry, `.weak()`, `.get()`).
+A checked handle to a possibly-gone object: one process-wide (pointer,
+generation) slot table with a free list, mutex-guarded (WEAK_HEADER, both
+backends). `WeakHandle<T>(obj)` registers the instance — the construction is
+keyed on the `#weak` MEMBER (the library-tier marker rule, beside `#init`/
+`#destroy`/`#spawn`; parse_statement + parse_visibility gained the `#weak`
+arm). Checker: `check_weak_ctor` — T must be a CLASS, the object must be
+owned ELSEWHERE (a fresh temporary has no owner and is rejected), exactly one
+argument, an explicit type argument must match. The handle owns nothing and
+BINDS ONCE at its declaration — the assignment form is rejected ("a handle is
+not re-pointed", the §A3.2 discipline). The tracked type's `#destroy`
+(user + auto, both backends) calls `__nomen_weak_invalidate(self)` first —
+generation bump, so a recycled slot never aliases a stale handle. `get()`
+raw bodies (C + aarch64) compare generations and return the live pointer or
+NULL; bind to `T?` and nil-check.
+
+Runtime plumbing: WEAK_DECLARATIONS (system.h: typedef + allocator macros +
+prototypes — globalize_runtime drops typedefs/defines, so they ride the
+declaration text), ensure_weak_runtime (C: "all" emits the header; "system"
+defines with external linkage via c_runtime_defs; "user" references
+system.o) and ensure_weak_runtime_a64 (the user companion always carries its
+copy; the system object skips — same pattern as the pool). The registry's
+own tables allocate through WEAK_REALLOC/WEAK_FREE aliases so audit builds
+do not count process infrastructure, and an atexit teardown frees them.
+
+Known shape: the aarch64 free-timing is eager, C defers a displaced class
+instance's free past live borrows — an invalidation test asserts each
+backend's truthful reading (the divergence is pre-existing and documented).
+
+## Not yet done (Phase N tranche 4)
+
 - **N4 — protected slots** (`Atomic<T>`, `Shared<T>`, the `with(m)` critical
   section form, shareability derivation). The freeze's `with(m)` exemption
   hooks into this.

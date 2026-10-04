@@ -2665,6 +2665,37 @@ how long the alias stays valid):
 Moved and copied arguments (scalars, strings, `move T`) are exempt from the
 freeze — ownership has no region.
 
+### WeakHandle
+
+`WeakHandle<T>` is a checked handle to a possibly-gone object — the sanctioned
+child→parent / OS-retained / delegate shape (back-pointers that would
+otherwise be owning cycles). No refcounts: one process-wide
+(pointer, generation) slot table; the tracked type's `#destroy` invalidates
+every slot holding the pointer; `get` compares generations and returns the
+live pointer or `null`.
+
+```
+var Widget child = Widget(2)
+var WeakHandle<Widget> h = WeakHandle<Widget>(child)
+
+var Widget? live = h.get()
+if live != null {
+    Console.write_line("still here")
+}
+```
+
+- **The creation is the marker**: `WeakHandle<T>(obj)` registers `obj` in the
+  registry — nothing aliases without one. The tracked type must be a CLASS,
+  and the object must be owned ELSEWHERE (a fresh temporary is rejected — a
+  handle owns nothing, so the instance needs a real owner).
+- **A handle binds once, at its declaration** — it is not re-pointed (the
+  same const-pointer discipline as `ref`).
+- **`.get()` forces the nil check at the use site**: the race is inherently
+  dynamic (the owner may have torn the object down), so the runtime check is
+  the only truthful one. Bind to `T?` and nil-check.
+- Handles are move-safe by construction: they own nothing, so moves never
+  invalidate them.
+
 ### Thread
 
 `Thread(fn(args))` constructs a deferred call: the arguments are evaluated

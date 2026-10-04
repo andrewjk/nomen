@@ -163,8 +163,13 @@ export default function parse_visibility(
 				consume(status); // consume #
 				consume(status); // consume spawn
 				parse_function(visibility, status, "#spawn");
+			} else if (next2 === "weak") {
+				consume(status); // consume pub
+				consume(status); // consume #
+				consume(status); // consume weak
+				parse_function(visibility, status, "#weak");
 			} else {
-				add_error(status, `Expected #init, #destroy or #spawn after pub`, get_index(status));
+				add_error(status, `Expected #init, #destroy, #spawn or #weak after pub`, get_index(status));
 				consume(status);
 			}
 			break;

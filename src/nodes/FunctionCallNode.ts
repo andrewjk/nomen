@@ -117,6 +117,10 @@ export default class FunctionCallNode extends BaseNode {
 	 * struct named `Thread` shadows the special form.
 	 */
 	is_thread_ctor?: boolean;
+	/** WeakHandle construction flavor (`WeakHandle<T>(obj)` — STRUCT_PLAN_3
+	 *  N3): registers the object in the process-wide (pointer, generation)
+	 *  registry and yields the 16-byte handle VALUE (not a heap instance). */
+	is_weak_ctor?: boolean;
 	/** Fiber flavor of the magic spawn constructor (see is_thread_ctor). */
 	is_fiber_ctor?: boolean;
 	/**

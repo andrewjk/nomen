@@ -203,8 +203,17 @@ export default function parse_statement(status: ParseStatus) {
 					consume(status); // consume #
 					consume(status); // consume spawn
 					parse_destroy(default_visibility(status), status, "#spawn");
+				} else if (next === "weak") {
+					// The WeakHandle construction hook (STRUCT_PLAN_3 N3):
+					// declares the struct's construction as the weak-register
+					// special form (`WeakHandle<T>(obj)`). Like #init/#destroy,
+					// a lifecycle marker — the compiler generates the
+					// construction; the body is a declaration, not user code.
+					consume(status); // consume #
+					consume(status); // consume weak
+					parse_destroy(default_visibility(status), status, "#weak");
 				} else {
-					add_error(status, `Expected #init, #destroy or #spawn`, get_index(status));
+					add_error(status, `Expected #init, #destroy, #spawn or #weak`, get_index(status));
 					consume(status);
 				}
 				break;

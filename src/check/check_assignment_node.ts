@@ -157,6 +157,25 @@ export default function check_assignment_node(
 		return false;
 	}
 
+	// STRUCT_PLAN_3 N3: a WeakHandle binds ONCE, at its declaration (the
+	// creation is the marker — the same const-pointer discipline as §A3.2).
+	// The aarch64 packer only implements the declaration context; rather
+	// than emit a half-supported re-point, the assignment form is rejected
+	// outright. (Get a fresh handle instead — handles are cheap.) Runs AFTER
+	// the RHS check: the gate reads the is_weak_ctor stamp the check sets.
+	if (
+		assign.right_value.node_type === "func_call" &&
+		(assign.right_value as unknown as { is_weak_ctor?: boolean }).is_weak_ctor
+	) {
+		add_error(
+			status,
+			`'${value_from_value_node(assign.left_value)}' is a WeakHandle — bind it at the declaration; a handle is not re-pointed`,
+			assign.right_value.start,
+		);
+		status.is_assignment_target = false;
+		return false;
+	}
+
 	// Make sure the left value exists and can be assigned to
 	// * If this is a variable, it's the variable itself e.g. for `x = 5` we would
 	//   check that `x` exists and can be assigned to

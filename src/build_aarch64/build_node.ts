@@ -213,7 +213,7 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 			// packs its task eagerly and yields the instance (docs/ASYNC.md,
 			// "The construction special form") — it never resolves as a call.
 			const fc = node as FunctionCallNode;
-			if (fc.is_thread_ctor || fc.is_fiber_ctor || fc.is_awaitable_ctor) {
+			if (fc.is_thread_ctor || fc.is_fiber_ctor || fc.is_awaitable_ctor || fc.is_weak_ctor) {
 				build_magic_ctor_node(fc, status);
 				break;
 			}

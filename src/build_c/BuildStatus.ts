@@ -1047,6 +1047,10 @@ export default interface BuildStatus {
 	pool_runtime_emitted?: boolean;
 	/** True once the fiber runtime text (FIBER_HEADER / FIBER_HEADER_C) has been appended. */
 	fiber_runtime_emitted?: boolean;
+	/** True once the WeakHandle registry (WEAK_HEADER) has been emitted —
+	 *  pulled in by every class `#destroy` (the invalidate hook) and by the
+	 *  `WeakHandle<T>(obj)` construction build (STRUCT_PLAN_3 N3). */
+	weak_runtime_emitted?: boolean;
 	/**
 	 * C split builds ("system" emit mode): the concurrency runtime text
 	 * globalized to external linkage, accumulated by

@@ -1,0 +1,4 @@
+alive
+destroying
+gone
+destroying

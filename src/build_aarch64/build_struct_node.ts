@@ -24,7 +24,7 @@ import build_extern from "./build_extern.ts";
 import build_function_node from "./build_function_node.ts";
 import build_node from "./build_node.ts";
 import { check_c_fallback } from "./build_raw_node.ts";
-import { ensure_runtime_for_method_a64 } from "./build_spawn_node.ts";
+import { ensure_runtime_for_method_a64, ensure_weak_runtime_a64 } from "./build_spawn_node.ts";
 import { build_body_with_cursor } from "./emit_nir.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free, emit_strdup } from "./utils/audit.ts";
@@ -427,6 +427,14 @@ function build_destroy_function(node: StructNode, func: FunctionNode, status: Bu
 	emit_asm(status, `stp x29, x30, [sp, #-16]!\n`);
 	emit_asm(status, `str x19, [sp, #-16]!\n`);
 	emit_asm(status, `mov x19, x0\n`);
+	// STRUCT_PLAN_3 N3: a class instance's destroy invalidates every
+	// WeakHandle slot holding it (generation bump). x0 still holds self
+	// here; x19 is the body's parked self.
+	if (node.is_class) {
+		ensure_weak_runtime_a64(status);
+		emit_asm(status, `mov x0, x19\n`);
+		emit_asm(status, `bl ___nomen_weak_invalidate\n`);
+	}
 
 	status.function_param_regs = new Map();
 	status.function_param_vars = new Set();
@@ -552,6 +560,14 @@ function build_auto_destroy_function(node: StructNode, status: BuildStatus) {
 	emit_asm(status, `stp x29, x30, [sp, #-16]!\n`);
 	emit_asm(status, `str x19, [sp, #-16]!\n`);
 	emit_asm(status, `mov x19, x0\n`);
+	// STRUCT_PLAN_3 N3: a class instance's destroy invalidates every
+	// WeakHandle slot holding it (generation bump). x0 still holds self
+	// here; x19 is the body's parked self.
+	if (node.is_class) {
+		ensure_weak_runtime_a64(status);
+		emit_asm(status, `mov x0, x19\n`);
+		emit_asm(status, `bl ___nomen_weak_invalidate\n`);
+	}
 
 	status.function_param_regs = new Map();
 	status.function_param_vars = new Set();

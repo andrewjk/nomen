@@ -1,0 +1,4 @@
+alive
+deferred
+destroying
+destroying

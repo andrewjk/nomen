@@ -26,6 +26,7 @@ import { reset_label_counter as reset_match_label_counter } from "./build_aarch6
 import build_aarch64_node from "./build_aarch64/build_node.ts";
 import { reset_string_counter as reset_op_string_counter } from "./build_aarch64/build_operation_node.ts";
 import { ensure_concurrency_runtime_a64 } from "./build_aarch64/build_spawn_node.ts";
+import { ensure_weak_runtime_a64 } from "./build_aarch64/build_spawn_node.ts";
 import { reset_label_counter as reset_switch_label_counter } from "./build_aarch64/build_switch_node.ts";
 import { reset_string_counter as reset_value_string_counter } from "./build_aarch64/build_value_node.ts";
 import { reset_label_counter as reset_while_label_counter } from "./build_aarch64/build_while_loop_node.ts";
@@ -547,6 +548,11 @@ export default function build(
 	// C symbols itself — so every user companion must carry the pool + fiber
 	// runtime, whether or not this program uses concurrency.
 	if (options.arch === "aarch64") ensure_concurrency_runtime_a64(status);
+	// Same contract for the WeakHandle registry (STRUCT_PLAN_3 N3): the
+	// system object's class destroys call __nomen_weak_invalidate, so every
+	// user companion must carry the registry, whether or not this program
+	// constructs handles.
+	if (options.arch === "aarch64") ensure_weak_runtime_a64(status);
 
 	let companion: string | undefined;
 	// Generate the companion file when there's anything to put in it:

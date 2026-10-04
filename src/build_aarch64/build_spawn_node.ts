@@ -1,3 +1,4 @@
+import { WEAK_HEADER } from "../build_c/build_spawn_node.ts";
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
@@ -413,6 +414,20 @@ void __nomen_task_detach(struct nomen_closure *task) {
  * the precompiled system object references the fiber symbols, so every
  * linked program must define them.
  */
+/**
+ * WeakHandle registry (STRUCT_PLAN_3 N3), aarch64: the runtime is C, so it
+ * lives in the companion's file scope (compiled separately from main.h —
+ * the same reason the spawn helper carries a guarded nomen_str_dup).
+ * Guarded by the same status flag as the C backend; one copy per build.
+ */
+export function ensure_weak_runtime_a64(status: BuildStatus): void {
+	if (status.weak_runtime_emitted) return;
+	status.weak_runtime_emitted = true;
+	if (status.emit_mode === "system") return;
+	if (!status.file_scope_c) status.file_scope_c = "";
+	status.file_scope_c += WEAK_HEADER;
+}
+
 export function ensure_concurrency_runtime_a64(status: BuildStatus): void {
 	// Every caller that pulls the runtime in also makes fiber/pool exit
 	// hooks (main's drain_all / io_shutdown / pool_shutdown) meaningful —
