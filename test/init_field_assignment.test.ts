@@ -198,7 +198,7 @@ class Person {
   }
 }
 func fill = (Person p) {
-  var Person t = p
+  ref Person t = p
   t.set_name()
 }
 `;
@@ -218,7 +218,7 @@ class Person {
   }
 }
 func fill = (ref Person p) {
-  var Person t = p
+  ref Person t = p
   t.set_name()
 }
 `;

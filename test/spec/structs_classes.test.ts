@@ -111,7 +111,7 @@ class Point {
     var int y
 }
 var p = Point(10, 20)
-var q = p
+ref q = p
 q.x = 99
 `;
 		expect(compile_main(input)).toEqual([]);

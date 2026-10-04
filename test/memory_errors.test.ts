@@ -84,7 +84,23 @@ Console.write("\\{v}")
 	});
 
 	describe("class field ownership (compile errors)", () => {
-		test("class aliasing is allowed (reference type)", () => {
+		test("class aliasing is allowed when spelled with ref", () => {
+			const input = `
+class Box {
+	var int value
+}
+class Holder {
+	move Box content
+}
+var Holder h1 = Holder(move Box(42))
+ref Holder h2 = h1
+Console.write("\\{h1.content.value}")
+`;
+			const parsed = parse_with_imports(input);
+			expect(parsed.errors).toEqual([]);
+		});
+
+		test("unspelled class aliasing is an error (must say ref/move/copy)", () => {
 			const input = `
 class Box {
 	var int value
@@ -97,7 +113,9 @@ var Holder h2 = h1
 Console.write("\\{h1.content.value}")
 `;
 			const parsed = parse_with_imports(input);
-			expect(parsed.errors).toEqual([]);
+			expect(parsed.errors.map((e) => e.message)).toContainEqual(
+				expect.stringContaining("'h1' is aliased"),
+			);
 		});
 
 		test("cannot assign class field from another owner", () => {

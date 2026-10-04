@@ -54,7 +54,7 @@ import System
 func compute = (uint64 n) => n + 1
 
 func waiter = (Channel ch, Task<uint64> handle) {
-	var Task<uint64> t = handle
+	ref Task<uint64> t = handle
 	var uint64 r = t.result_uint64()
 	ch.send(r)
 }

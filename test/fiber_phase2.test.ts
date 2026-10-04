@@ -221,7 +221,7 @@ func long_task = (uint64 n, out uint64) {
 }
 
 func waiter = (Task<uint64> handle, Channel ch) {
-	var Task<uint64> t = handle
+	ref Task<uint64> t = handle
 	var uint64 r = t.result_uint64()   // parks until t completes or is cancelled
 	ch.send(r)
 }

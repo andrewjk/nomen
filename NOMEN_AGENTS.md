@@ -104,6 +104,11 @@ func safe = (string[] s, int i: i >= 0 && i < s.length, out string) {
 | `out T`  | output parameter, assigned inside the function |
 
 `const` values cannot be passed to `ref` — rebind the caller as `var` first.
+At local bindings the same keywords spell the binding's relationship to its
+initializer: `ref Box q = p` is a class object ALIAS (a plain `var Box q = p`
+copy of a class value is an error — say `ref`, `move`, or `.copy()`), `move`
+transfers, `view` is a slice. A `ref` alias is not reassignable, mutation
+through it needs a `var` source, and nothing moves through it.
 
 ### Return types are `out` at the end
 
@@ -196,7 +201,7 @@ var int y = 10                       // mutable, explicit type
 const int[] nums = [1, 2, 3]
 const int[10] buf = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]  // fixed-length
 var int? maybe = null                // nullable
-ref int ptr                          // reference to an int
+ref Box q = p                        // class alias — must be spelled (no plain class copies)
 ```
 
 Keywords (`out`, `in`, `match`, `if`, `of`, `as`, `swap`, …) are reserved and

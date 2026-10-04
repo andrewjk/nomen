@@ -41,7 +41,12 @@ pub func main = () {
 	Console.write("s=\\{s} len=\\{s.length}\\n")
 }
 `);
-		await build_and_check_output(input, "moved_param_pair_value", "slots=onetwo\ns=done len=4\n", true);
+		await build_and_check_output(
+			input,
+			"moved_param_pair_value",
+			"slots=onetwo\ns=done len=4\n",
+			true,
+		);
 	});
 
 	test("class param owning an Arena (audit clean)", async () => {
@@ -63,6 +68,11 @@ pub func main = () {
 	Console.write("s=\\{s} len=\\{s.length}\\n")
 }
 `);
-		await build_and_check_output(input, "moved_param_pair_class", "slots=onetwo\ns=done len=4\n", true);
+		await build_and_check_output(
+			input,
+			"moved_param_pair_class",
+			"slots=onetwo\ns=done len=4\n",
+			true,
+		);
 	});
 });

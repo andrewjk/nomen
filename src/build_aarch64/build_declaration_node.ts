@@ -1584,19 +1584,24 @@ export default function build_declaration_node(
 	// Don't track class variables that hold a borrowed reference (not an owned
 	// instance) as owned — they must not be destroyed/freed at scope exit.
 	// Borrows arise from a field access (`var Box b = h.c`), a plain
-	// class-variable copy (`var Box q = p`), or a NON-owning method call
-	// (`const Diff d = diffs.at(di)` — the container owns the element);
-	// borrowed decls would otherwise be destroyed alongside their owner,
-	// double-freeing / corrupting shared state. `move p` (ownership transfer),
-	// `null`, and an `owned_return` method (`move out T`, e.g. `list.pop()`)
-	// stay owned. Mirrors the C backend's val_is_class_alias rule.
+	// class-variable copy (`var Box q = p`, spelled `ref` in Phase A), or a
+	// NON-owning method call (`const Diff d = diffs.at(di)` — the container
+	// owns the element); borrowed decls would otherwise be destroyed alongside
+	// their owner, double-freeing / corrupting shared state. A `move`d bare
+	// class source (`var Box b = move a`) is classified the same way ON
+	// PURPOSE: the source's anchor slot stays the instance's single owner, so
+	// scope exit destroys/frees it exactly once through that slot. Treating
+	// the new binding as an OWNER here made BOTH slots destroy the shared
+	// instance (destructor side effects ran twice; `DD` instead of `D`) — the
+	// anchor cannot follow the new binding, so ownership must stay with the
+	// source's slot. `null` and an `owned_return` method (`move out T`, e.g.
+	// `list.pop()`) stay owned. Mirrors the C backend's val_is_class_alias,
+	// which likewise ignores `is_moved` for bare class sources.
 	const value_is_field_borrow =
 		node.value?.node_type === "access" &&
 		(node.value as AccessNode).access.node_type === "access_field";
 	const value_is_var_borrow =
-		node.value?.node_type === "value" &&
-		!(node.value as ValueNode).is_moved &&
-		(node.value as ValueNode).value !== "null";
+		node.value?.node_type === "value" && (node.value as ValueNode).value !== "null";
 	const value_is_method_borrow =
 		node.value?.node_type === "access" &&
 		(node.value as AccessNode).access.node_type === "access_func" &&

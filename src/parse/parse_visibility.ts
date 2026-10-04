@@ -28,7 +28,8 @@ export default function parse_visibility(
 		case "const":
 		case "var":
 		case "move":
-		case "view": {
+		case "view":
+		case "ref": {
 			if (visibility !== "pub" && status.stack.at(-1)?.node_type === "trait") {
 				add_error(status, `Trait fields cannot be ${visibility}`, get_index(status));
 				consume(status);

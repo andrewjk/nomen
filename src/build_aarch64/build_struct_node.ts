@@ -2242,8 +2242,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			// A string return rides the (x0, x1) fat pair — save BOTH halves
 			// around the reclaim calls (any `bl` may clobber x1; mirrors
 			// build_function_node's epilogue spill).
-			const returns_fat_pair =
-				func.return_type?.name === "string" && !func.return_type.is_array;
+			const returns_fat_pair = func.return_type?.name === "string" && !func.return_type.is_array;
 			const keep_prefix = `.Lkeep_mparam_${func_label.replace(/[^\w]/g, "_")}`;
 			let return_save: number | undefined;
 			if (ret_is_class || need_save) {

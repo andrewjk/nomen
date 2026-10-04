@@ -1,28 +1,25 @@
-import { describe, test } from "vite-plus/test";
+import { describe, expect, test } from "vite-plus/test";
 
+import parse from "../src/parse";
 import build_and_check_output from "./build_and_check_output";
+import test_error from "./test_error";
 
-// Classes are reference types: `var Box q = p` is documented to create a shared
-// reference (MEMORY.md §Classes). Such an object-level alias must NOT be
-// destroyed/freed at scope exit — the original declaration is the sole owner —
-// but it must also stay valid across mutations of the owner (p and q are the
-// same object). The build classifies a plain class-variable copy as a non-owning
-// alias (like a field borrow) so #destroy/free runs exactly once, without
-// tripping the child-group borrow-invalidation machinery; and reassigning an
-// alias to a fresh instance transfers ownership to it (the shared old value is
-// left untouched, the new instance is destroyed once at exit). These are
-// regression tests for that behaviour. Reassignment of a class instance is now
-// reclaimed eagerly when no live reference (field/method borrow or object alias)
-// keeps the old value alive — which is what makes constructor reassignment sound
+// Classes are reference types: an object-level alias (`ref Box q = p`,
+// STRUCT_PLAN_3 Phase A) must NOT be destroyed/freed at scope exit — the
+// original declaration is the sole owner — but it must also stay valid across
+// mutations of the owner (p and q are the same object). The build classifies a
+// spelled class-variable alias as a non-owning alias (like a field borrow) so
+// #destroy/free runs exactly once, without tripping the child-group
+// borrow-invalidation machinery. Reassignment of a class instance is reclaimed
+// eagerly when no live reference (field/method borrow or object alias) keeps
+// the old value alive — which is what makes constructor reassignment sound
 // inside a loop (the emitted code frees the current instance each iteration
 // instead of deferring to a single scope-exit slot that gets overwritten). When
-// a reference does exist, the old value is deferred as before. Remaining loop
-// gaps: reassignment via a factory call or a ref param, and an *alias*
-// reassigned in a loop (its ownership is gained at runtime, which the build
-// can't see statically) — see the final describe block.
+// a reference does exist, the old value is deferred as before. Rebinding an
+// ALIAS is rejected at check time (§A3.2) — see the describes below.
 
 describe("class aliasing: double destroy / double free", () => {
-	// #1 — `var R q = p` aliases the same instance. At scope exit the compiler
+	// #1 — `ref R q = p` aliases the same instance. At scope exit the compiler
 	// emits a `R_destroy` call for *both* p and q, so a user `#destroy`'s side
 	// effects run twice (here "DD" instead of "D"). The underlying `free()`
 	// runs only once, so the audit count stays balanced — the bug is purely the
@@ -37,7 +34,7 @@ class R {
 }
 if true {
 	var R p = R(1)
-	var R q = p
+	ref R q = p
 }
 Console.write("done\\n")
 `;
@@ -57,7 +54,7 @@ class Outer {
 	move Inner c
 }
 var Outer p = Outer(move Inner(7))
-var Outer q = p
+ref Outer q = p
 Console.write("\\{p.c.v}\\n")
 `;
 		await build_and_check_output(input, "alias_double_free_inner", "7\n");
@@ -78,7 +75,7 @@ class R {
 var int i = 0
 while i < 2 {
 	var R p = R(i)
-	var R q = p
+	ref R q = p
 	i = i + 1
 }
 Console.write("done\\n")
@@ -87,57 +84,48 @@ Console.write("done\\n")
 	});
 });
 
-// Reassigning an object-level alias to a fresh instance transfers ownership to
-// the alias: the shared old value is left for its original owner to reclaim, and
-// the new instance is anchored in the alias's declaration frame and flagged to
-// run #destroy at scope exit (the alias is not in scoped_declarations, so its
-// destroy can't go through that path). Regression tests for that behaviour.
-describe("class aliasing: reassigning an alias to a fresh instance", () => {
-	test("reassigning an alias does not destroy the shared old instance", async () => {
+// Reassigning an object-level alias to a fresh instance used to transfer
+// ownership to the alias (the runtime `alias_owns` flag machinery). STRUCT_PLAN_3
+// Phase A §A3.2 rejects alias rebinds outright — a `ref` is "another name for it,
+// for this scope", a const pointer; re-pointing an alias under deferred-free
+// semantics is where the model becomes incoherent. These tests pin the error.
+describe("class aliasing: reassigning an alias is an error (§A3.2)", () => {
+	test("reassigning a ref alias is rejected", () => {
 		const input = `
 class R {
 	var int v
-	func #destroy = () {
-		Console.write("[D\\{self.v}]")
-	}
 }
 var R p = R(1)
-var R q = p
+ref R q = p
 q = R(3)
-Console.write("done\\n")
 `;
-		// No destroy fires on the reassignment; R(1) and R(3) each destroy once
-		// at scope exit (p owns R(1), q owns R(3)).
-		await build_and_check_output(input, "alias_reassign_leak", "done\n");
+		const expected = [test_error(input, "'q' is a ref — reassign the owner, not the alias", 7, 1)];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
 	});
 
-	test("repeated reassignment destroys each former instance once", async () => {
+	test("every alias reassignment is rejected", () => {
 		const input = `
 class R {
 	var int v
-	func #destroy = () {
-		self.v = 0
-	}
 }
 var R p = R(1)
-var R q = p
+ref R q = p
 q = R(3)
 q = R(4)
-Console.write("done\\n")
 `;
-		// R(1) (p), R(3) (q's first), R(4) (q's second) each reclaimed exactly
-		// once — no leak, no double free (audit balanced).
-		await build_and_check_output(input, "alias_reassign_twice", "done\n");
+		const expected = [
+			test_error(input, "'q' is a ref — reassign the owner, not the alias", 7, 1),
+			test_error(input, "'q' is a ref — reassign the owner, not the alias", 8, 1),
+		];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
 	});
 });
 
-// Loop reclamation. Constructor reassignment with no live reference now reclaims
-// the old instance eagerly each iteration (the owner test below PASSES). An
-// *alias* reassigned in a loop still leaks: an alias only becomes the owner of
-// its value at runtime (after its first reassignment), which the build can't see
-// statically, so it never takes the eager path. (Factory-call and ref-param
-// reassignment in a loop are separate paths with the same shape — tracked in
-// reassignment-loop.test.ts.)
+// Loop reclamation. Constructor reassignment with no live reference reclaims
+// the old instance eagerly each iteration (the owner test below PASSES).
+// An *alias* reassigned in a loop is rejected by §A3.2 like any other rebind.
 describe("class reassignment in a loop", () => {
 	test("owner reassigned in a loop reclaims every former instance", async () => {
 		const input = `
@@ -158,24 +146,22 @@ Console.write("\\{p.v}\\n")
 		await build_and_check_output(input, "loop_reassign_owner", "2\n");
 	});
 
-	test("alias reassigned in a loop reclaims every former instance", async () => {
+	test("alias reassignment in a loop is rejected (§A3.2)", () => {
 		const input = `
 class R {
 	var int v
-	func #destroy = () {
-		self.v = 0
-	}
 }
 var R p = R(0)
-var R q = p
+ref R q = p
 var int i = 0
 while i < 3 {
 	q = R(i)
 	i = i + 1
 }
-Console.write("\\{q.v}\\n")
 `;
-		await build_and_check_output(input, "loop_reassign_alias", "2\n");
+		const expected = [test_error(input, "'q' is a ref — reassign the owner, not the alias", 9, 2)];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
 	});
 });
 

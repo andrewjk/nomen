@@ -172,6 +172,34 @@ export default function check_assignment_node(
 	if (!left_value) {
 		add_error(status, `Unknown variable: ${left_value_name}`, assign.left_value!.start);
 		return false;
+	} else if (left_value.is_ref_binding && assign.left_value!.node_type === "value") {
+		// A `ref` binding is not reassignable (STRUCT_PLAN_3 §A3.2): it is
+		// "another name for it, for this scope" — a const pointer. Re-pointing
+		// an alias under deferred-free semantics is where the model becomes
+		// incoherent, so reassign the owner instead. (A field write THROUGH the
+		// alias — `q.v = 5` — is a mutation, handled by the A3.1 rule below.)
+		add_error(
+			status,
+			`'${left_value_name}' is a ref — reassign the owner, not the alias`,
+			assign.left_value!.start,
+		);
+		return false;
+	} else if (
+		// A field write through a `ref` alias mutates the owner through the
+		// alias (STRUCT_PLAN_3 §A3.1): it requires the source binding to be
+		// `var` — a mutable borrow needs a mutable value. Runs BEFORE the
+		// const branch because a ref binding is normalized to `const`.
+		assign.left_value!.node_type === "access" &&
+		left_value.is_ref_binding
+	) {
+		if (!(left_value.ref_source && is_var_binding(left_value.ref_source, status))) {
+			add_error(
+				status,
+				`cannot mutate through '${left_value_name}' — source '${left_value.ref_source ?? "?"}' is not var`,
+				assign.left_value!.start,
+			);
+			return false;
+		}
 	} else if (
 		left_value.declaration !== "var" &&
 		!left_value.type.is_ref &&
@@ -493,8 +521,21 @@ export default function check_assignment_node(
 	// not be used again until it is reassigned. (A swap revalidates the source,
 	// so it is not marked; func-call `move` params are marked in check_function_call.)
 	if (assign.right_value.node_type === "value" && assign.right_value.is_moved && !assign.swap) {
-		if (!status.moved_variables) status.moved_variables = new Set();
-		status.moved_variables.add((assign.right_value as ValueNode).value);
+		// A `ref` alias is not the owner (STRUCT_PLAN_3 §A3.3): `move` cannot
+		// transfer through it — move the owner instead.
+		const moved_src = status.values.findLast(
+			(v) => v.name === (assign.right_value as ValueNode).value,
+		);
+		if (moved_src?.is_ref_binding) {
+			add_error(
+				status,
+				`'${(assign.right_value as ValueNode).value}' is a ref — move the owner instead`,
+				assign.right_value.start,
+			);
+		} else {
+			if (!status.moved_variables) status.moved_variables = new Set();
+			status.moved_variables.add((assign.right_value as ValueNode).value);
+		}
 	}
 
 	// A capturing closure is MOVE-ONLY (CLOSURE.md Phase 2c): assigning it
@@ -804,4 +845,14 @@ function is_self_shifted(value: AssignmentNode["right_value"], name: string): bo
 		(is_int_literal(op.left_value) && is_name(op.right_value)) ||
 		(is_name(op.left_value) && is_int_literal(op.right_value))
 	);
+}
+
+/**
+ * Whether the binding named `name` is a `var` (mutable) local or field. Used to
+ * enforce STRUCT_PLAN_3 §A3.1: mutation through a `ref` alias requires the
+ * aliased source to be `var`. Unknown names are treated as non-var.
+ */
+function is_var_binding(name: string, status: CheckStatus): boolean {
+	const sv = status.values.findLast((v) => v.name === name);
+	return sv?.declaration === "var";
 }

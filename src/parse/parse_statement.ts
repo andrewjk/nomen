@@ -63,7 +63,8 @@ export default function parse_statement(status: ParseStatus) {
 			case "const":
 			case "var":
 			case "move":
-			case "view": {
+			case "view":
+			case "ref": {
 				parse_declaration(default_visibility(status), value, status);
 				break;
 			}

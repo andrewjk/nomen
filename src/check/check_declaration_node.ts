@@ -1,5 +1,6 @@
 import add_error from "../add_error.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
+import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
@@ -65,11 +66,18 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 	// the var-never-changed warning) treats it as an immutable binding. View
 	// semantics are driven entirely by `type.is_view`, which is unaffected.
 	const is_view_keyword = decl.declaration === "view";
+	// `ref Box q = p` (STRUCT_PLAN_3 Phase A) is an object alias, spelled. The
+	// keyword is preserved on the node; `declaration` is normalized to `const`
+	// below (a ref binding is not reassignable) and the alias semantics ride on
+	// `class_alias_of`, exactly like the historical silent `var Box q = p`.
+	const is_ref_keyword = decl.declaration === "ref" || !!decl.is_ref_binding;
 	// Narrowed, view-free declaration kind for the StackValue and backends.
-	// The ternary narrows `decl.declaration` in the false branch to exclude
-	// "view", so this local is exactly `"const" | "var" | "move"`.
+	// A `view` binding is normalized to `const` (immutable slice). A `ref`
+	// binding keeps `var` storage (the tested object-alias codegen path) but
+	// carries `is_ref_binding`, which blocks reassignment/move and gates
+	// mutation through the alias.
 	const declaration: "const" | "var" | "move" =
-		decl.declaration === "view" ? "const" : decl.declaration;
+		decl.declaration === "view" ? "const" : decl.declaration === "ref" ? "var" : decl.declaration;
 	decl.declaration = declaration;
 	// Whether the user wrote a `view` type modifier (`var view T v = ...`).
 	// Captured before inference overwrites decl.type.
@@ -89,6 +97,9 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 	if (decl.func_params) {
 		if (is_view_keyword) {
 			add_error(status, `'view' cannot declare a function-typed binding`, decl.start);
+		}
+		if (is_ref_keyword) {
+			add_error(status, `'ref' cannot declare a function-typed binding`, decl.start);
 		}
 		// A func-typed BINDING takes the initializer's address: the lambda (or
 		// named function) is invoked through the variable's func value with a
@@ -406,6 +417,69 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			);
 		}
 
+		// `ref`-binding enforcement (STRUCT_PLAN_3 Phase A). A ref binding is a
+		// spelled CLASS object alias (`ref Box q = p`):
+		//   - reference types only — an interior borrow of a value struct is not
+		//     in A (use `view` for slices);
+		//   - requires a source (a binding/alias/field/call result), which is what
+		//     makes it an alias and not a fresh owned value.
+		const ref_src = is_ref_keyword ? ref_alias_source_name(decl.value) : undefined;
+		if (is_ref_keyword) {
+			if (decl.type.name && !is_class_type(decl.type.name, status)) {
+				add_error(
+					status,
+					`'ref' binds an alias to a reference type (class); use 'view' for a slice of '${decl.type.name}'`,
+					decl.start,
+				);
+			}
+			if (decl.value && !ref_src && decl.value.node_type === "value") {
+				add_error(
+					status,
+					`'ref' requires an existing binding to alias, got an owned value`,
+					decl.value.start,
+				);
+			}
+			// A bare-call / constructor initializer produces a FRESH owned value —
+			// there is nothing to alias (§A1: calls trigger only when classified
+			// borrow-returning, which ref_alias_source_name already filters). The
+			// value-node arm above catches bare variables that are not sources;
+			// this arm catches `ref Box q = make()` / `= Box(0)` / `= null`.
+			if (decl.value && !ref_src && decl.value.node_type !== "value") {
+				add_error(
+					status,
+					`'ref' requires an existing binding to alias, got an owned value`,
+					decl.value.start,
+				);
+			}
+			// `ref q = move p` is contradictory — an alias never takes ownership
+			// (§A3.3: ref can mutate, never transfer).
+			if (decl.value && (decl.value as ValueNode).is_moved) {
+				add_error(
+					status,
+					`'ref' binds an alias — 'move' cannot transfer through it`,
+					decl.value.start,
+				);
+			}
+		}
+
+		// A prefix-`move` declaration (`move T r = src`) is an ownership TRANSFER
+		// (STRUCT_PLAN_3 Phase A binding table) — but the parser only stamps
+		// `is_moved` for the expression form (`move T r = move src`). Without the
+		// stamp every downstream transfer rule misfires: an owning-struct source
+		// hits the "cannot copy" error below (the prescribed `move` was written!),
+		// and a class source silently ALIASES (class_alias_of) instead of
+		// transferring. Stamp the bare-variable initializer here so the whole
+		// existing transfer pipeline (moved_variables, both backends' alias
+		// classification) sees the transfer. The swap form keeps its own path.
+		if (
+			declaration === "move" &&
+			!decl.swap &&
+			decl.value?.node_type === "value" &&
+			!(decl.value as ValueNode).is_moved
+		) {
+			(decl.value as ValueNode).is_moved = true;
+		}
+
 		// A string literal bound to a const has a known, invariant length.
 		// Record it on the type so the bounds verifier can prove
 		// `i < str.length` for `str.at(i)` (mirrors array-literal length).
@@ -528,14 +602,25 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 		// `var X b = move a` (no swap) transfers ownership: the source `a` is moved
 		// and may not be used again until reassigned. (A swap revalidates it.)
 		if (decl.value?.node_type === "value" && decl.value.is_moved && !decl.swap) {
-			if (!status.moved_variables) status.moved_variables = new Set();
-			status.moved_variables.add((decl.value as ValueNode).value);
+			// A `ref` alias is not the owner (STRUCT_PLAN_3 §A3.3): `move`
+			// cannot transfer through it — move the owner instead.
+			const moved_src = status.values.findLast((v) => v.name === (decl.value as ValueNode).value);
+			if (moved_src?.is_ref_binding) {
+				add_error(
+					status,
+					`'${(decl.value as ValueNode).value}' is a ref — move the owner instead`,
+					decl.value.start,
+				);
+			} else {
+				if (!status.moved_variables) status.moved_variables = new Set();
+				status.moved_variables.add((decl.value as ValueNode).value);
+			}
 		}
 
 		check_constraint(decl, status);
 
-		// A plain class-variable copy (`var Box q = p`) is an object-level alias:
-		// it shares p's instance, so it must NOT be destroyed at scope exit (the
+		// A class-variable copy (`ref Box q = p`) is an object-level alias: it
+		// shares p's instance, so it must NOT be destroyed at scope exit (the
 		// build side skips it), but unlike a child-group borrow (field/container
 		// access) it is intentionally not invalidated by mutating the owner — p
 		// and q are the same object, so a mutation through one is visible through
@@ -544,14 +629,25 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 		// and let the build classify the alias syntactically. We do record
 		// class_alias_of so reassignment of the owner defers (not eager-frees)
 		// its old instance — otherwise the alias would dangle.
+		//
+		// Phase A: the alias must be SPELLED with `ref`. An unspelled class copy
+		// (`var Box q = p`) is a silent alias and is now a compile error.
 		const class_alias_src =
 			decl.value?.node_type === "value" &&
 			!(decl.value as any).is_moved &&
 			(decl.value as any).value !== "null" &&
 			decl.type.name &&
-			is_class_type(decl.type.name, status)
+			is_class_type(decl.type.name, status) &&
+			ref_alias_source_name(decl.value) !== undefined
 				? (decl.value as ValueNode).value
 				: undefined;
+		if (!is_ref_keyword && class_alias_src !== undefined && !decl.value?.is_moved) {
+			add_error(
+				status,
+				`'${class_alias_src}' is aliased — use 'ref' to share it, 'move' to transfer it, or '.copy()' for a deep copy`,
+				decl.value!.start,
+			);
+		}
 		// Deep-const: if the initializer produces a const_ref class reference
 		// (extracted from a const source), the declared type inherits the flag
 		// even when the user wrote an explicit type annotation — you can't
@@ -634,6 +730,8 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			view_field_owners:
 				view_borrows && view_borrows.size ? new Set(view_borrows.keys()) : undefined,
 			class_alias_of: class_alias_src,
+			is_ref_binding: is_ref_keyword || undefined,
+			ref_source: is_ref_keyword ? ref_src : undefined,
 			is_global: !in_function(status),
 			trait_slot_conformer: trait_slot_conformer_of_decl(
 				declaration,
@@ -797,4 +895,31 @@ function synthesized_swap_value(
  */
 function af_is_destructure_temp(target_name: string): boolean {
 	return !!target_name && target_name.startsWith("_tuple_dst_");
+}
+
+/**
+ * The source binding a `ref` alias names, or undefined when the initializer is
+ * not an existing binding/alias/borrow. Mirrors the syntactic shape the
+ * `class_alias_of` path has always recognized (STRUCT_PLAN_3 §A1): a bare
+ * variable, a field/container-element access, or a method call that returns a
+ * borrow (not a `move out T` owned result). Constructors, fresh factory calls,
+ * literals, and `null` produce owned/fresh values and are not aliases.
+ */
+function ref_alias_source_name(
+	value: import("../nodes/BaseNode.ts").default | undefined,
+): string | undefined {
+	if (!value) return undefined;
+	if (value.node_type === "value") {
+		const name = (value as ValueNode).value;
+		return name === "null" ? undefined : name;
+	}
+	if (value.node_type === "access") {
+		const access = value as AccessNode;
+		if (access.access.node_type === "access_func") {
+			// A `move out T` method returns a fresh owned value — not an alias.
+			if ((access.access as AccessFunctionCallNode).owned_return) return undefined;
+		}
+		return value_from_value_node(value) || undefined;
+	}
+	return undefined;
 }

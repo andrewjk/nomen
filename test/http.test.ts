@@ -1,9 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
 
-import build from "../src/build";
 import build_and_check_output from "./build_and_check_output";
-import check_output from "./check_output";
-import parse_with_imports, { parse_raw } from "./parse_with_imports";
+import parse_with_imports from "./parse_with_imports";
 
 // Http (System/Stream/Http.nm) reports failures through
 // `Result<..., HttpError>` like File/Directory. The run tests use a
@@ -81,7 +79,7 @@ Console.write("\\{h.status}")
 import System
 
 func serve_one = (Tcp listener) {
-	var Tcp server = listener         // params are read-only; accept() mutates
+	ref Tcp server = listener        // params are read-only; accept() mutates
 	var Tcp conn = server.accept()    // parks until the client connects
 	if conn.fd < 0 {
 		return
@@ -127,7 +125,7 @@ pub func main = () {
 import System
 
 func serve_post = (Tcp listener) {
-	var Tcp server = listener
+	ref Tcp server = listener
 	var Tcp conn = server.accept()
 	if conn.fd < 0 {
 		return

@@ -70,7 +70,7 @@ Nested struct fields with destroy functions are also cleaned up recursively.
 
 ### Classes (Reference Types)
 
-Classes are always heap-allocated and passed by pointer. Assigning a class variable to another creates a shared reference — both variables point to the same instance.
+Classes are always heap-allocated and passed by pointer. Binding a class variable to another creates a shared reference — both variables point to the same instance — and the alias must be spelled with `ref` (a plain `var Box q = p` copy is a compile error: "use 'ref' to share it, 'move' to transfer it, or '.copy()' for a deep copy").
 
 ```
 class Box {
@@ -78,10 +78,17 @@ class Box {
 }
 
 var Box p = Box(10)
-var Box q = p          // shared reference — p and q point to the same instance
+ref Box q = p          // shared reference — p and q point to the same instance
 q.value = 99
 // p.value is now also 99
 ```
+
+`ref` binding rules (STRUCT_PLAN_3 Phase A):
+
+- A `ref` alias is not reassignable (`q = Box(3)` is an error — reassign the owner).
+- Mutation through a `ref` (`q.value = 99`) requires the source to be `var`.
+- Ownership never transfers through a `ref` (`move r = move q` is an error — move the owner); `move Box r = p` is the spelled transfer and invalidates `p`.
+- `ref` requires a reference type (class) and an existing binding to alias — `ref Box q = Box(1)` (a fresh instance) is an error.
 
 #### Automatic Deallocation
 
@@ -91,6 +98,7 @@ Each class instance is freed exactly once, when the owning reference goes out of
 - **Scope exit**: the instance is freed when the scope where it was anchored ends
 - **Reassignment**: `b = Box(99)` frees the old instance before storing the new pointer
 - **Return**: returning a class transfers ownership to the caller — the function does not free it
+- **Aliases**: a `ref` alias owns nothing — scope exit never frees or destroys through it (the owner's slot reclaims the instance once)
 
 #### Destroy Functions
 

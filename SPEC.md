@@ -377,7 +377,7 @@ pub struct Transaction {
 
 ### Class Types
 
-Classes are reference types — they are always allocated on the heap and passed by pointer. Assigning a class variable to another creates a shared reference to the same instance, not a copy.
+Classes are reference types — they are always allocated on the heap and passed by pointer. Binding a class variable to another creates a shared reference to the same instance, not a copy — and must be spelled with `ref` (see [Assignment Semantics](#assignment-semantics)).
 
 ```
 class Point {
@@ -394,14 +394,25 @@ var p = Point(1, 2)
 
 #### Assignment Semantics
 
-Unlike structs, which are value types copied on assignment, classes share the underlying instance:
+Unlike structs, which are value types copied on assignment, classes share the underlying instance — but the alias must be spelled with `ref` (a plain `var` copy of a class value is a compile error):
 
 ```
 var p = Point(10, 20)
-var q = p
+ref q = p
 q.x = 99
 // p.x is now also 99 — p and q point to the same instance
 ```
+
+`ref q = p` binds another name to the same instance for the enclosing scope. Other ways to bind a class value, each spelled:
+
+```
+var p = Point(10, 20)
+move q = p            // transfer: q owns the instance, p is invalid afterwards
+var r = p.copy()      // deep copy: r is an independent instance
+var s = Point(0, 0)   // fresh instance: plain var, no alias
+```
+
+A `ref` binding is an alias, not an owner: it is not reassignable (`q = Point(1, 1)` is an error — reassign `p`), mutation through it requires the source to be `var`, and ownership cannot be transferred through it (`move x = move q` is an error — move the owner).
 
 #### Methods
 

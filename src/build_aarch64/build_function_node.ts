@@ -1336,8 +1336,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		// port's Arena-chain destroy zeroed the caller's length half,
 		// handing back a (ptr, 0) pair that printed fine via strlen but
 		// failed every `.length`/`==` read).
-		const returns_fat_pair =
-			node.return_type?.name === "string" && !node.return_type.is_array;
+		const returns_fat_pair = node.return_type?.name === "string" && !node.return_type.is_array;
 		let return_save: number | undefined;
 		if (need_guard || need_save) {
 			return_save = allocate_stack_space(status, returns_fat_pair ? 16 : 8);

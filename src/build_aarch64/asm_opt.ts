@@ -226,7 +226,7 @@ export function optimize_frame_slots(code: string): string {
 			// `bge`, …) — `^b\b` missed the aliases and the scan walked
 			// through branches (the flow_nested drop). `bic` also lands here
 			// — a conservative false boundary (materialize) is safe.
-			if (/^b/.test(t)) return false;
+			if (t.startsWith("b")) return false;
 			if (/^(blr|br|svc|ret)\b/.test(t)) return false;
 			if (/^add\b[^,]*,\s*x29\b/.test(t)) return false;
 			if (/^(ldp|stp)\b/.test(t)) {

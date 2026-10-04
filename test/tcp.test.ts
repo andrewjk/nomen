@@ -15,7 +15,7 @@ describe("Tcp", () => {
 import System
 
 func serve_one = (Tcp listener) {
-	var Tcp server = listener         // params are read-only; accept() mutates
+	ref Tcp server = listener        // params are read-only; accept() mutates
 	var Tcp conn = server.accept()     // parks until the client connects
 	if conn.fd < 0 {
 		return
@@ -83,7 +83,7 @@ func echo_one = (int handle) {
 }
 
 func server_loop = (Tcp server, int n) {
-	var Tcp listener = server
+	ref Tcp listener = server
 	var int i = 0
 	while i < n {
 		var Tcp conn = listener.accept()

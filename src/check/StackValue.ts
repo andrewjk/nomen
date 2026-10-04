@@ -84,6 +84,19 @@ export default interface StackValue {
 	 */
 	class_alias_of?: string;
 	/**
+	 * True for an object-alias binding declared with the `ref` keyword
+	 * (`ref Box q = p`, STRUCT_PLAN_3 Phase A). A ref binding is not
+	 * reassignable and cannot be moved; mutation through it requires the
+	 * source binding to be `var`.
+	 */
+	is_ref_binding?: boolean;
+	/**
+	 * For a `ref` binding, the name of the source variable it aliases
+	 * (`p` in `ref Box q = p`). Used to enforce the A3 mutation rule: a
+	 * mutation through the alias requires the source to be `var`.
+	 */
+	ref_source?: string;
+	/**
 	 * Block scope depth at which this variable was declared (status.scope_depth
 	 * when pushed). Used by borrow-lifetime checking.
 	 */

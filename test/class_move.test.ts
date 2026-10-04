@@ -161,7 +161,7 @@ class Box {
 }
 
 var Box a = Box(1)
-var Box b = a
+ref Box b = a
 b.value = 42
 Console.write("\\{a.value}")
 `;
@@ -314,7 +314,7 @@ class Box {
 }
 
 var Box a = Box(10)
-var Box b = a
+ref Box b = a
 Console.write("\\{a.value}\\{b.value}")
 `;
 		await build_and_check_output(input, "class_shared_ref", "1010");

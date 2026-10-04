@@ -4,7 +4,7 @@ import Type from "./Type.ts";
 
 export default class DeclarationNode extends BaseNode {
 	visibility: "pub" | "private" | "internal";
-	declaration: "const" | "var" | "move" | "view";
+	declaration: "const" | "var" | "move" | "view" | "ref";
 	/**
 	 * True for a `readonly` field: readable per its visibility, but assignable
 	 * only from within the declaring struct/class's own methods (including its
@@ -20,6 +20,14 @@ export default class DeclarationNode extends BaseNode {
 	 * view, not an immutable `const` field.
 	 */
 	is_view_keyword?: boolean;
+	/**
+	 * True for an object-alias binding written with the `ref` keyword
+	 * (`ref T x = y`, STRUCT_PLAN_3 Phase A). The checker normalizes
+	 * `declaration` to `"const"` (a ref binding is not reassignable), so this
+	 * preserves the original keyword while the alias semantics ride on
+	 * `class_alias_of`. Reference types only (classes).
+	 */
+	is_ref_binding?: boolean;
 	name: string;
 	type: Type;
 	value?: BaseNode;
@@ -113,7 +121,7 @@ export default class DeclarationNode extends BaseNode {
 	constructor(
 		start: number,
 		visibility: "pub" | "private" | "internal",
-		declaration: "const" | "var" | "move" | "view",
+		declaration: "const" | "var" | "move" | "view" | "ref",
 		name: string,
 		type?: Type,
 		value?: BaseNode,

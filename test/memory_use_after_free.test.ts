@@ -72,7 +72,7 @@ class Token {
 }
 
 var Token a = Token(1)
-var Token b = a
+ref Token b = a
 Console.write("\\{a.id}")
 Console.write("\\{b.id}")
 `;

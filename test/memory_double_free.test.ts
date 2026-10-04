@@ -358,7 +358,7 @@ class Box {
 }
 
 var Box a = Box(42)
-var Box b = a
+ref Box b = a
 a = Box(99)
 Console.write("\\{b.value}")
 `;
@@ -372,7 +372,7 @@ class Box {
 }
 
 var Box s = Box(42)
-var Box t = s
+ref Box t = s
 Console.write("\\{t.value}")
 `;
 		await build_and_check_output(input, "leak_class_alias_declaration", "42");

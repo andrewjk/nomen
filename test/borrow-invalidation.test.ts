@@ -59,7 +59,7 @@ class Counter {
 	}
 }
 var Counter p = Counter(1)
-var Counter q = p
+ref Counter q = p
 p.bump()
 Console.write("\\{q.count}")
 `;

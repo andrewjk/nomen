@@ -36,7 +36,7 @@ import peek_current from "./utils/peek_current.ts";
 
 export default function parse_declaration(
 	visibility: "pub" | "private" | "internal",
-	declaration: "const" | "var" | "move" | "view",
+	declaration: "const" | "var" | "move" | "view" | "ref",
 	status: ParseStatus,
 	is_readonly = false,
 ) {
@@ -61,6 +61,7 @@ export default function parse_declaration(
 	const decl = new DeclarationNode(start, visibility, declaration, "");
 	decl.is_readonly = is_readonly;
 	decl.is_view_keyword = declaration === "view";
+	decl.is_ref_binding = declaration === "ref";
 	status.stack.push(decl);
 
 	accept(keyword, status);
@@ -500,7 +501,7 @@ function looks_like_destructuring(status: ParseStatus, start_idx: number): boole
  */
 function parse_destructuring(
 	visibility: "pub" | "private" | "internal",
-	declaration: "const" | "var" | "move" | "view",
+	declaration: "const" | "var" | "move" | "view" | "ref",
 	start: number,
 	status: ParseStatus,
 ) {

@@ -164,7 +164,7 @@ interface LiteralRecord {
 
 interface DeclareRecord {
 	name: string;
-	declaration: "const" | "var" | "move" | "view";
+	declaration: "const" | "var" | "move" | "view" | "ref";
 	enter: number;
 	exit: number;
 	/** Enclosing loops at the declare site (back-edge coverage). */
