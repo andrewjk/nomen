@@ -1,0 +1,81 @@
+// Atomic<T> (STRUCT_PLAN_3 N4) — a lock-free protected slot for 64-bit
+// integer state shared across tasks.
+//
+// A type may be mutated through a cross-worker borrowed capture iff the
+// mutated slot is protected: an `Atomic<T>` field (lock-free), a `Shared<T>`
+// field (lock-guarded), or a handle. The Atomic's METHODS are the sanctioned
+// mutation path — the R3 freeze (checked region borrows) deliberately
+// exempts them, so a spawned worker can bump a borrowed counter:
+//
+//   var Atomic<int> counter = Atomic<int>()
+//   async {
+//       var t = Thread(work(counter)).start()   // counter borrowed
+//       ...
+//   }
+//   func work = (ref Atomic<int> counter) {
+//       counter.fetch_add(1)
+//   }
+//
+// T must be a 64-bit integer type — the slot is one machine word and the
+// operations are single-word atomics.
+
+/**
+ * A lock-free 64-bit integer slot for cross-task shared state
+ **/
+pub struct Atomic<T> {
+	// The machine word. Private by discipline: mutate through the methods
+	// (direct assignment replaces the atomic — the checker's freeze blocks
+	// that through borrowed captures).
+	var uint64 word = 0
+
+	pub func load = (self, out T) {
+		```
+		#arch: c
+		return __atomic_load_n(&self->word, __ATOMIC_SEQ_CST);
+		```
+		```
+		#arch: aarch64
+		// Load-acquire takes no offset — compute the word's address first.
+		add x0, x0, #8
+		ldar x0, [x0]
+		```
+	}
+
+	pub func store = (ref self, T v) {
+	```
+		#arch: c
+		__atomic_store_n(&self->word, v, __ATOMIC_SEQ_CST);
+		```
+		```
+		#arch: aarch64
+		add x8, x0, #8
+		stlr x1, [x8]
+		```
+	}
+
+	// Adds v and returns the PREVIOUS value (fetch-and-add).
+	pub func fetch_add = (ref self, T v, out T) {
+		```
+		#arch: c
+		return __atomic_fetch_add(&self->word, v, __ATOMIC_SEQ_CST);
+		```
+		```
+		#arch: aarch64
+		add x8, x0, #8
+		ldaddal x1, x0, [x8]
+		```
+	}
+
+	// Replaces the value and returns the PREVIOUS one.
+	pub func swap = (ref self, T v, out T) {
+		```
+		#arch: c
+		return __atomic_exchange_n(&self->word, v, __ATOMIC_SEQ_CST);
+		```
+		```
+		#arch: aarch64
+		add x8, x0, #8
+		swpal x1, x0, [x8]
+		```
+	}
+}

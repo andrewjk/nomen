@@ -358,6 +358,14 @@ export const MNEMONICS: Record<string, MnemonicSig> = {
 			["f", "f", "m"],
 		],
 	},
+	// Load/store acquire-release (Atomic.nm's single-word protected slots).
+	// `ldar x0, [x19]` / `stlr x1, [x19]` — one address operand.
+	ldar: { shapes: [["r", "m"]] },
+	stlr: { shapes: [["r", "m"]] },
+	// LSE atomic add / swap: `ldaddal x1, x0, [x19]` / `swpal x1, x0, [x19]`
+	// — x1 = the operand, x0 = the OLD value out, then the address.
+	ldaddal: { shapes: [["r", "r", "m"]] },
+	swpal: { shapes: [["r", "r", "m"]] },
 	adr: { shapes: [["r", "l"]] },
 	// adrp: page-relative symbol address (Mach-O `adrp x9, _sym@PAGE`). The
 	// vtable install in every trait-conforming struct's init uses adrp+add

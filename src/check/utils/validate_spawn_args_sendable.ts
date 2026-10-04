@@ -58,6 +58,29 @@ export default function validate_spawn_args_sendable(
 			continue;
 		}
 		const inside_nursery = (status.nursery_depth ?? 0) > 0;
+		// R1: a `ref T` parameter (T a VALUE struct) inside a nursery is a
+		// mutable borrow — the env passes the donor's address (no copy), the
+		// root rule bounds the donor, and the freeze keeps the donor itself
+		// const while the callee mutates through the ref. Outside a nursery
+		// the pack keeps the env copy (no join to bound the borrow).
+		const callee_param = callee_params?.[i];
+		if (
+			inside_nursery &&
+			callee_param?.type?.is_ref &&
+			arg_type.name &&
+			!arg_type.is_view &&
+			!arg_type.is_array
+		) {
+			const st = status.structs.find(
+				(st_) => st_.name === arg_type.name && !st_.is_class && !st_.is_simple_type,
+			);
+			if (st) {
+				if (!call.region_borrowed_args) call.region_borrowed_args = [];
+				if (!call.region_borrowed_args.includes(i)) call.region_borrowed_args.push(i);
+				enforce_spawn_arg_region(param, arg_type, status, true);
+				continue;
+			}
+		}
 		// R1: an OWNING value struct passed bare inside a nursery is a
 		// region-checked borrow. `Sendable` does not apply to it — the env
 		// aliases the donor's storage and the root rule + freeze bound it.

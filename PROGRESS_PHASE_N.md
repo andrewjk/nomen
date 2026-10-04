@@ -186,11 +186,34 @@ Known shape: the aarch64 free-timing is eager, C defers a displaced class
 instance's free past live borrows — an invalidation test asserts each
 backend's truthful reading (the divergence is pre-existing and documented).
 
-## Not yet done (Phase N tranche 4)
+**N4 (tranche 4) — Atomic<T> + the protected-slot derivation**
 
-- **N4 — protected slots** (`Atomic<T>`, `Shared<T>`, the `with(m)` critical
-  section form, shareability derivation). The freeze's `with(m)` exemption
-  hooks into this.
+`core/System/Atomic.nm`: a lock-free 64-bit integer slot — `load`/`store`/
+`fetch_add`/`swap`, raw bodies on both backends (clang `__atomic` builtins
+on C; `ldar`/`stlr`/`ldaddal`/`swpal` on aarch64 — added to the asm
+mnemonic table, which is the lift's contract). The protected-slot
+derivation lands in the freeze: a `ref self` call on a frozen root is
+exempt when the receiver is an `Atomic` (its methods are the sanctioned
+lock-free mutation path), while replacing the Atomic itself stays frozen.
+
+Alongside, the R1 ref-borrow arm: a `ref T` (T a value struct) spawn
+argument inside an `async` block is a region-checked mutable BORROW — the
+env passes the donor's address, the root rule bounds the donor, and the
+freeze keeps the donor itself const while the callee mutates through the
+ref (BUGS.md #8 — the pack used to silently deep-copy, losing every callee
+mutation).
+
+## Not yet done (the remainder of N4)
+
+- **`Shared<T>` + the `with(m)` critical-section form + typed `Mutex<T>`**:
+  designed (a checker-level desugar — lock; copy-in to a binding; a
+  scope-guard whose `#destroy` copies out and unlocks, so early
+  returns/breaks release deterministically; the binding non-escapable) but
+  NOT built — new syntax plus a typed-Mutex core rewrite is its own effort.
+  Until it lands, lock-mediated sharing goes through the existing
+  hand-locked `Mutex` primitive, and `Atomic<T>` covers the lock-free
+  protected-slot cases. The freeze's exemption hook (protected-slot types)
+  is in place for `Shared<T>` to join.
 - **R1 completion note**: the A1-style at-vs-pop classification for
   container-element spawn args (`list.at(i)` as a donor) — the root rule
   currently keys on the base variable, which bounds container elements

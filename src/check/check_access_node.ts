@@ -788,8 +788,13 @@ function check_access_function_node(
 			if (target_name !== "self") {
 				// R3: a frozen root (borrowed by a spawned task until the
 				// `async` block exits) cannot be mutated — a `ref self` call
-				// writes the storage the task is reading.
-				enforce_root_not_frozen(target_name, status, node.start);
+				// writes the storage the task is reading. EXCEPT a protected
+				// slot (STRUCT_PLAN_3 N4): Atomic's methods are the
+				// sanctioned lock-free mutation path through a borrowed
+				// capture.
+				if (!target_type.name?.startsWith("Atomic")) {
+					enforce_root_not_frozen(target_name, status, node.start);
+				}
 				// Record that this local is mutated through a ref-self call,
 				// so the warning pass doesn't recommend `const` for it.
 				status.mutated_local_names?.add(target_name);

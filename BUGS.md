@@ -201,3 +201,19 @@ env-owned copy otherwise (malloc + pointee copy + string-field strdups,
 env-free at teardown — sound for plain-data structs, which is all that can
 reach it now, see the R1 checker rule). The C packer resolves struct types
 through `mono_type_name` (`List_int`, not `List`).
+
+## 8. A `ref` value-struct argument to a spawn was silently deep-copied
+
+**Seen on `main` (commit 11a7090b), both backends.** `Thread(work(ref
+counter))` where `counter` is a value struct: the env packed a COPY of the
+struct, so the callee's `ref` parameter pointed at the copy — every mutation
+through the ref was lost, and the donor never observed the callee's writes.
+A `ref` parameter is a MUTABLE BORROW (the parameter table's contract); the
+spawn boundary silently violated it.
+
+**Fix (as part of N1a R1):** a `ref T` (T a value struct) argument inside an
+`async { }` block is stamped a region-checked BORROW — the env passes the
+donor's address, the root rule bounds the donor's scope, and the freeze keeps
+the donor itself const while the callee mutates through the ref. Outside a
+nursery the pack keeps the env copy (no join to bound a borrow — the same
+posture as bare owning args).

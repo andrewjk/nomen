@@ -153,9 +153,10 @@ export function enforce_spawn_arg_region(
 	param: BaseNode,
 	arg_type: Type,
 	status: CheckStatus,
+	is_ref_borrow = false,
 ): void {
 	if ((status.nursery_depth ?? 0) === 0) return;
-	const klass = spawn_arg_region_class(arg_type, false, status);
+	const klass = is_ref_borrow ? "borrow" : spawn_arg_region_class(arg_type, false, status);
 	if (klass !== "borrow") return;
 	const join_depth = innermost_nursery_depth(status);
 	if (join_depth === undefined) return;

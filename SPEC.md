@@ -2696,6 +2696,35 @@ if live != null {
 - Handles are move-safe by construction: they own nothing, so moves never
   invalidate them.
 
+### Atomic
+
+`Atomic<T>` is a lock-free protected slot for 64-bit integer state shared
+across tasks. A type may be mutated through a cross-worker borrowed capture
+iff the mutated slot is protected — an `Atomic<T>` field is the lock-free
+protected slot, and the Atomic's methods are the sanctioned mutation path
+(the freeze on borrowed roots deliberately exempts them).
+
+```
+var Atomic<int> counter = Atomic<int>()
+
+func work = (ref Atomic<int> c) {
+    c.fetch_add(1)
+}
+
+async {
+    var t = Thread(work(ref counter)).start()
+    t.wait()
+}
+Console.write_line("\{counter.load()}")
+```
+
+- `load()`, `store(v)`, `fetch_add(v)` (returns the previous value),
+  `swap(v)` — all sequentially consistent.
+- `T` must be a 64-bit integer type — the slot is one machine word.
+- A `ref Atomic<T>` argument inside an `async` block is a region-checked
+  mutable borrow: the task's mutations reach the donor, and the donor cannot
+  REPLACE the atomic while it is borrowed (the freeze).
+
 ### Thread
 
 `Thread(fn(args))` constructs a deferred call: the arguments are evaluated
