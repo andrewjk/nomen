@@ -80,7 +80,13 @@ import {
 } from "./utils/string_pair.ts";
 import { get_enum_size } from "./utils/struct_layout.ts";
 import { get_enum_sret_size } from "./utils/struct_layout.ts";
-import { get_field_offset, get_struct_size } from "./utils/struct_layout.ts";
+import {
+	emit_struct_copy,
+	get_enum_payload_offset,
+	get_field_offset,
+	get_struct_size,
+	get_type_size,
+} from "./utils/struct_layout.ts";
 import {
 	emit_view_materialize_owned,
 	emit_view_string_arg,
@@ -547,6 +553,60 @@ function is_struct_type(type_name: string, status: BuildStatus): boolean {
 	// struct passed by address — exclude it so class args/fields take the
 	// scalar pointer path instead of being emitted by address + dereferenced.
 	return !!status.structs.find((s) => s.name === type_name && !s.is_simple_type && !s.is_class);
+}
+
+/**
+ * Store one enum-with-data case argument into the enum temp at
+ * `[x29 + abs_offset]`. A payload can be multi-word (a value struct, or a
+ * nested enum-with-data blob): those are COPIED byte-for-byte from the
+ * argument's address — storing the single `x0` word would put a pointer to the
+ * argument's temporary (or a struct's first field) into the payload instead of
+ * the value. A `string` payload is an owned copy (strdup'd pair); a
+ * class/trait reference and a scalar store their width.
+ *
+ * Mirrors the load side (`emit_enum_payload_binding_load`): the enum layout
+ * sizes/offsets come from `get_type_size`, so construction and binding agree.
+ */
+export function emit_enum_payload_arg_store(
+	status: BuildStatus,
+	arg: BaseNode,
+	type: Type,
+	abs_offset: number,
+) {
+	const type_name = type.name;
+	if (type_name === "string" && !type.is_view) {
+		// A string payload is an OWNED copy: strdup the (ptr, len) pair the
+		// arg built, then store both halves — the enum value outlives the
+		// producer's local, and the scope-exit payload free needs a heap ptr.
+		build_node(arg, status);
+		ensure_newline(status);
+		emit_strdup_string(status);
+		emit_asm(status, `str x0, [x29, #${abs_offset}]\n`);
+		emit_asm(status, `str x1, [x29, #${abs_offset + 8}]\n`);
+		return;
+	}
+	const size = get_type_size(type, status);
+	const is_class = !!status.structs.find((s) => s.name === type_name && s.is_class);
+	const is_trait = !!status.traits.find((t) => t.name === type_name);
+	const is_multiworld_value =
+		!is_class && !is_trait && !type.is_ref && !type.is_view && !type.is_array && size > 8;
+	if (is_multiworld_value) {
+		emit_address_of(arg, status);
+		ensure_newline(status);
+		emit_struct_copy("x0", "x29", abs_offset, size, status);
+		return;
+	}
+	build_node(arg, status);
+	ensure_newline(status);
+	if (size === 1) {
+		emit_asm(status, `strb w0, [x29, #${abs_offset}]\n`);
+	} else if (size === 2) {
+		emit_asm(status, `strh w0, [x29, #${abs_offset}]\n`);
+	} else if (size === 4) {
+		emit_asm(status, `str w0, [x29, #${abs_offset}]\n`);
+	} else {
+		emit_asm(status, `str x0, [x29, #${abs_offset}]\n`);
+	}
 }
 
 function is_enum_with_data_type(type_name: string, status: BuildStatus): boolean {
@@ -1262,11 +1322,12 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		for (const c of enum_with_data.cases) {
 			const param = c.params.find((p) => p.name === access_field.name);
 			if (param) {
-				let payload_offset = 8;
-				for (const p of c.params) {
-					if (p.name === access_field.name) break;
-					payload_offset += aarch64_size(p.type.name);
-				}
+				const payload_offset = get_enum_payload_offset(
+					enum_with_data.name,
+					c.name,
+					access_field.name,
+					status,
+				);
 				if (node.target.node_type === "value") {
 					const name = (node.target as ValueNode).value;
 					const paramReg = get_param_reg(name, status);
@@ -1285,6 +1346,22 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 				} else {
 					build_node(node.target, status);
 					ensure_newline(status);
+				}
+				// A multi-word value payload (a value struct, or a nested
+				// enum-with-data blob) yields its ADDRESS — a single word load
+				// would return a partial value. Consumers struct-copy from it.
+				const is_class_payload =
+					!!param.type.name &&
+					!!status.structs.find((s) => s.name === param.type.name && s.is_class);
+				const payload_size = get_type_size(param.type, status);
+				if (
+					payload_size > 8 &&
+					param.type.name !== "string" &&
+					!is_class_payload &&
+					!param.type.is_view
+				) {
+					if (payload_offset) emit_asm(status, `add x0, x0, #${payload_offset}\n`);
+					return;
 				}
 				const field_type = access_field.type?.name || "int";
 				const field_size = aarch64_size(field_type);
@@ -1885,29 +1962,24 @@ function build_access_method(
 				emit_asm(status, `add x0, x29, #${temp_offset}\n`);
 				emit_asm(status, `mov x1, #${case_index}\n`);
 				emit_asm(status, `str x1, [x0]\n`);
-				let payload_offset = 8;
+				// Each payload arg's slot offset is a forward prefix sum over
+				// the case params (matching get_enum_payload_offset, which the
+				// match binding and payload destroys use). Args are still
+				// EVALUATED last-to-first, so the offsets are precomputed rather
+				// than accumulated in loop order.
+				const payload_offsets: number[] = [];
+				let running = 8;
+				for (const p of enum_case.params) {
+					payload_offsets.push(running);
+					running += get_type_size(p.type, status);
+				}
 				for (let i = access_func.params.length - 1; i >= 0; i--) {
-					build_node(access_func.params[i], status);
-					ensure_newline(status);
-					const param_type_name = enum_case.params[i].type.name;
-					const param_size = aarch64_size(param_type_name);
-					const abs_offset = temp_offset + payload_offset;
-					if (param_type_name === "string") {
-						// A string payload is an OWNED copy: strdup the (ptr,
-						// len) pair the arg built, then store both halves —
-						// the enum value outlives the producer's local, and
-						// the scope-exit payload free needs a heap ptr.
-						emit_strdup_string(status);
-						emit_asm(status, `str x0, [x29, #${abs_offset}]\n`);
-						emit_asm(status, `str x1, [x29, #${abs_offset + 8}]\n`);
-					} else if (param_size === 1) {
-						emit_asm(status, `strb w0, [x29, #${abs_offset}]\n`);
-					} else if (param_size === 4) {
-						emit_asm(status, `str w0, [x29, #${abs_offset}]\n`);
-					} else {
-						emit_asm(status, `str x0, [x29, #${abs_offset}]\n`);
-					}
-					payload_offset += param_size;
+					emit_enum_payload_arg_store(
+						status,
+						access_func.params[i],
+						enum_case.params[i].type,
+						temp_offset + payload_offsets[i],
+					);
 				}
 				emit_asm(status, `add x0, x29, #${temp_offset}\n`);
 			} else {

@@ -10,7 +10,6 @@ import ValueNode from "../nodes/ValueNode.ts";
 import { emit_address_of } from "./build_access_node.ts";
 import build_node from "./build_node.ts";
 import { build_block_with_cursor } from "./emit_nir.ts";
-import aarch64_size from "./utils/aarch64_size.ts";
 import {
 	enter_scope_frame,
 	exit_scope_frame,
@@ -19,11 +18,12 @@ import {
 } from "./utils/auto_destroy.ts";
 import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
-import { emit_pair_store_x29 } from "./utils/string_pair.ts";
 import {
+	emit_enum_payload_binding_load,
 	get_enum_case_index,
 	get_enum_payload_offset,
 	get_enum_size,
+	get_type_size,
 } from "./utils/struct_layout.ts";
 
 let label_counter = 0;
@@ -176,33 +176,16 @@ export default function build_match_node(
 						field.name,
 						status,
 					);
-					const size = aarch64_size(field.type.name);
+					const size = get_type_size(field.type, status);
 					const slot = allocate_stack_space(status, Math.max(size, 8));
 					status.stack_offsets!.set(param_name, slot);
-					// Load the field value from the matched enum (base address
-					// reloaded from its slot + payload offset) and store it
-					// into the binding's slot.
+					// Copy the payload value out of the matched enum into the
+					// binding's slot. The base address is reloaded from its
+					// slot first (calls in an earlier binding may have clobbered
+					// x10); a string payload copies BOTH halves, a multi-word
+					// value payload (struct / nested enum) copies every word.
 					emit_asm(status, `ldr x10, [x29, #${addr_slot}]\n`);
-					if (field.type.name === "string") {
-						// A fat-string payload rides as a (ptr, len) pair —
-						// copy BOTH halves or the binding's length is stale.
-						// The binding slot can sit beyond the ldp/stp ±504
-						// range in large frames, so use the guarded helper.
-						emit_asm(status, `ldp x9, x11, [x10, #${payload_off}]\n`);
-						emit_pair_store_x29(status, slot, "x9", "x11");
-					} else if (size === 1) {
-						emit_asm(status, `ldrb w9, [x10, #${payload_off}]\n`);
-						emit_asm(status, `strb w9, [x29, #${slot}]\n`);
-					} else if (size === 2) {
-						emit_asm(status, `ldrh w9, [x10, #${payload_off}]\n`);
-						emit_asm(status, `strh w9, [x29, #${slot}]\n`);
-					} else if (size === 4) {
-						emit_asm(status, `ldr w9, [x10, #${payload_off}]\n`);
-						emit_asm(status, `str w9, [x29, #${slot}]\n`);
-					} else {
-						emit_asm(status, `ldr x9, [x10, #${payload_off}]\n`);
-						emit_asm(status, `str x9, [x29, #${slot}]\n`);
-					}
+					emit_enum_payload_binding_load(status, "x10", payload_off, slot, field.type);
 					// Register the binding as a scoped declaration so the branch
 					// can resolve its type (e.g. for follow-up to_string).
 					status.scoped_declarations.push(

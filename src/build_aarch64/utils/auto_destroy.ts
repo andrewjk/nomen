@@ -13,7 +13,6 @@ import AccessNode from "../../nodes/AccessNode.ts";
 import type DeclarationNode from "../../nodes/DeclarationNode.ts";
 import StructNode from "../../nodes/StructNode.ts";
 import Type from "../../nodes/Type.ts";
-import aarch64_size from "./aarch64_size.ts";
 import { emit_free, emit_strdup } from "./audit.ts";
 import { emit_asm } from "./code_buffer.ts";
 import { allocate_stack_space } from "./stack_var.ts";
@@ -1143,7 +1142,7 @@ function emit_destroy_for_array_elem(
 			);
 			offset += field_size;
 		} else {
-			offset += aarch64_size(field.type.name);
+			offset += get_type_size(field.type, status);
 		}
 	}
 }

@@ -17,7 +17,7 @@ import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import type Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
-import { emit_address_of } from "./build_access_node.ts";
+import { emit_address_of, emit_enum_payload_arg_store } from "./build_access_node.ts";
 import { build_inline_function } from "./build_inline_method.ts";
 import build_node from "./build_node.ts";
 import { build_operand, is_owned_heap_temp, tree_is_call_free } from "./build_operation_node.ts";
@@ -43,12 +43,12 @@ import {
 	emit_var_load,
 	is_local_ref_var,
 } from "./utils/stack_var.ts";
-import { emit_strdup_string } from "./utils/string_pair.ts";
 import {
 	get_enum_sret_size,
 	get_enum_size,
 	get_field_offset,
 	get_struct_size,
+	get_type_size,
 } from "./utils/struct_layout.ts";
 import { emit_view_string_arg } from "./utils/view_value.ts";
 
@@ -189,29 +189,22 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				emit_asm(status, `add x0, x29, #${temp_offset}\n`);
 				emit_asm(status, `mov x1, #${case_index}\n`);
 				emit_asm(status, `str x1, [x0]\n`);
-				let payload_offset = 8;
+				// Forward prefix-sum offsets (matching get_enum_payload_offset);
+				// args are evaluated last-to-first, so precompute rather than
+				// accumulate in loop order.
+				const payload_offsets: number[] = [];
+				let running = 8;
+				for (const p of enum_case.params) {
+					payload_offsets.push(running);
+					running += get_type_size(p.type, status);
+				}
 				for (let i = node.params.length - 1; i >= 0; i--) {
-					build_node(node.params[i], status);
-					ensure_newline(status);
-					const param_type_name = enum_case.params[i].type.name;
-					const param_size = aarch64_size(param_type_name);
-					const abs_offset = temp_offset + payload_offset;
-					if (param_type_name === "string") {
-						// A string payload is an OWNED copy: strdup the (ptr,
-						// len) pair the arg built, then store both halves —
-						// the enum value outlives the producer's local, and
-						// the scope-exit payload free needs a heap ptr.
-						emit_strdup_string(status);
-						emit_asm(status, `str x0, [x29, #${abs_offset}]\n`);
-						emit_asm(status, `str x1, [x29, #${abs_offset + 8}]\n`);
-					} else if (param_size === 1) {
-						emit_asm(status, `strb w0, [x29, #${abs_offset}]\n`);
-					} else if (param_size === 4) {
-						emit_asm(status, `str w0, [x29, #${abs_offset}]\n`);
-					} else {
-						emit_asm(status, `str x0, [x29, #${abs_offset}]\n`);
-					}
-					payload_offset += param_size;
+					emit_enum_payload_arg_store(
+						status,
+						node.params[i],
+						enum_case.params[i].type,
+						temp_offset + payload_offsets[i],
+					);
 				}
 				emit_asm(status, `add x0, x29, #${temp_offset}\n`);
 				build_swap_params(node, status);

@@ -164,10 +164,9 @@ as-is — no current code shape needs them, and their symbol access paths
 
 ## 9. aarch64: an enum-with-data payload of a value struct crashes at the match binding
 
-**Seen on `main` (commit 11a7090b), aarch64 only — C is correct.** An enum
-with a value-struct case payload crashes at the `match` binding (EXC_BAD_ACCESS
-in `_platform_memmove`) — the payload's byte-copy runs with a wrong size or
-source:
+**FIXED 2026-10-05.** Seen on `main` (commit 11a7090b), aarch64 only — C was
+correct. An enum with a value-struct case payload crashed at the `match`
+binding (EXC_BAD_ACCESS in `_platform_memmove`):
 
 ```nomen
 import System
@@ -190,13 +189,48 @@ pub func main = () {
 }
 ```
 
-Found while implementing STRUCT_PLAN_3 B1 (the declared-owning verifier
-surfaces enum-payload ownership), but the repro carries NO owning markers —
-the payload is a plain string-only struct. Same family as the FOLLOWUP
-"aarch64 enum-with-data element fields" gap (payloads inside containers);
-this one is the plain match-binding path. Not fixed in this tranche — the
-B1 declared-owning enum semantics are proven on C; on aarch64 use a class
-payload (reference payloads transfer by pointer and are unaffected).
+Root cause: the aarch64 enum-with-data machinery sized a case payload with
+`aarch64_size(type.name)`, which knows only the built-in scalar widths and
+returns **8** for any struct/enum name. A multi-word value-struct payload (or a
+nested enum-with-data blob) was therefore:
+
+- under-sized in the enum temp (`get_enum_size` summed 8 per payload), so the
+  payload area was truncated;
+- mis-offset for every payload after it (`get_enum_payload_offset` walked 8 per
+  payload) and for inline payload-field access;
+- STORED as a single `str x0` word by both case-constructor paths — a pointer
+  to the argument's temporary (a struct's own bytes were never copied), and
+  LOADED as a single `ldr` at the match binding — a partial value that crashed
+  on the first field read.
+
+Fix, sharing the layout authority:
+
+- `get_enum_size` / `get_enum_payload_offset` size each payload with
+  `get_type_size` (which resolves structs/enums/strings), so temp sizing and
+  offsets are correct and consistent across construction, binding, field
+  access, and destroy.
+- New `emit_enum_payload_binding_load` (struct_layout.ts) copies a payload out
+  of the blob: width-matched scalar/string-pair loads, and a word-by-word
+  `emit_struct_copy` for multi-word value payloads.
+- New `emit_enum_payload_arg_store` (build_access_node.ts) stores a payload
+  arg: strdup for strings, `emit_address_of` + `emit_struct_copy` for
+  multi-word value payloads (the bytes are copied, never a pointer), scalar
+  stores otherwise. Both case-constructor paths (shorthand function call and
+  access-function call) use it.
+- Both constructor paths now compute per-arg payload offsets as a forward
+  prefix sum (`get_type_size` per param) instead of a running accumulator over
+  a reverse-order loop — the old accumulator put a differently-sized later
+  payload at the wrong offset.
+- The inline payload-field access path resolves its offset via
+  `get_enum_payload_offset` and returns the ADDRESS of a multi-word value
+  payload (a single word load returned a partial value). The nested-destroy
+  offset walk now sizes non-struct fields with `get_type_size` too (an
+  enum-with-data field had been counted as 8).
+
+Regression coverage: `test/enum_byval_param.test.ts` —
+`enum_struct_payload_match` (the repro), `enum_struct_payload_local`,
+`enum_struct_then_scalar`, all on both backends. C was already correct and is
+unchanged.
 
 ## 10. aarch64: a generic CLASS with an inline value-struct `T` field sizes `T` as one word
 

@@ -176,4 +176,61 @@ Console.write("\\{m.describe(State.running(5))} \\{m.describe(State.idle)}")
 `;
 		await build_and_check_output(input, "enum_data_match_self_field", "12 7");
 	});
+
+	test("struct payload binds at the match (BUGS #9)", async () => {
+		const input = `
+struct Config {
+  var string name
+}
+enum Holder {
+  case some(Config c)
+  case none
+}
+var Holder h = Holder.some(Config("owned"))
+match h {
+  case .some(c) -> Console.write("got \\{c.name}")
+  case .none -> Console.write("none")
+}
+`;
+		await build_and_check_output(input, "enum_struct_payload_match", "got owned");
+	});
+
+	test("struct payload from a local variable", async () => {
+		const input = `
+struct Config {
+  var string name
+  var int n
+}
+enum Wrap {
+  case pair(Config c)
+  case none
+}
+var Config cfg = Config("local", 9)
+var Wrap w = Wrap.pair(cfg)
+match w {
+  case .pair(c) -> Console.write("\\{c.name} \\{c.n}")
+  case .none -> Console.write("none")
+}
+`;
+		await build_and_check_output(input, "enum_struct_payload_local", "local 9");
+	});
+
+	test("scalar payload after a struct payload keeps its offset", async () => {
+		const input = `
+struct Config {
+  var string name
+}
+enum Wrap {
+  case pair(Config c, int n)
+  case none
+}
+var Config cfg = Config("x")
+var Wrap w = Wrap.pair(cfg, 42)
+match w {
+  case .pair(c, n) -> Console.write("\\{c.name} \\{n}")
+  case .none -> Console.write("none")
+}
+`;
+		await build_and_check_output(input, "enum_struct_then_scalar", "x 42");
+	});
 });

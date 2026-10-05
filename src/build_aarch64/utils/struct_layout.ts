@@ -6,6 +6,7 @@ import DeclarationNode from "../../nodes/DeclarationNode.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
 import aarch64_size from "./aarch64_size.ts";
 import { emit_asm } from "./code_buffer.ts";
+import { emit_pair_store_x29 } from "./string_pair.ts";
 
 const VT_SIZE = 8;
 
@@ -195,7 +196,10 @@ export function get_enum_size(enum_name: string, status: BuildStatus): number {
 	for (const c of enum_node.cases) {
 		let case_size = 0;
 		for (const p of c.params) {
-			case_size += aarch64_size(p.type.name);
+			// Use get_type_size, not aarch64_size: a struct payload (e.g. a
+			// string-bearing value struct) is multi-word, and sizing it as one
+			// word truncated the enum blob and mis-offset every later payload.
+			case_size += get_type_size(p.type, status);
 		}
 		max_payload = Math.max(max_payload, case_size);
 	}
@@ -233,7 +237,7 @@ export function get_enum_payload_offset(
 	let offset = 8;
 	for (const p of case_.params) {
 		if (p.name === field_name) return offset;
-		offset += aarch64_size(p.type.name);
+		offset += get_type_size(p.type, status);
 	}
 	return 8;
 }
@@ -263,5 +267,50 @@ export function emit_struct_copy(
 		} else {
 			emit_asm(status, `str x3, [${dst_base_reg}, #${dst_offset + i * 8}]\n`);
 		}
+	}
+}
+
+/**
+ * Copy an enum-with-data payload of `type` out of the enum blob at
+ * `[base_reg + payload_off]` into the frame slot `[x29 + slot]`.
+ *
+ * A payload can be wider than one word (a value struct, or a nested
+ * enum-with-data blob), so a single 8-byte load is wrong — it truncates the
+ * value and leaves a struct binding holding a partial/pointless pointer, which
+ * crashes on the first field read. Multi-word payloads are copied word-by-word
+ * (the same copy `emit_struct_copy` emits elsewhere); scalars and the fat
+ * string pair use their width-matched load.
+ */
+export function emit_enum_payload_binding_load(
+	status: BuildStatus,
+	base_reg: string,
+	payload_off: number,
+	slot: number,
+	type: import("../../nodes/Type.ts").default,
+) {
+	if (type.name === "string") {
+		emit_asm(status, `ldp x9, x11, [${base_reg}, #${payload_off}]\n`);
+		emit_pair_store_x29(status, slot, "x9", "x11");
+		return;
+	}
+	const size = get_type_size(type, status);
+	if (size === 1) {
+		emit_asm(status, `ldrb w9, [${base_reg}, #${payload_off}]\n`);
+		emit_asm(status, `strb w9, [x29, #${slot}]\n`);
+	} else if (size === 2) {
+		emit_asm(status, `ldrh w9, [${base_reg}, #${payload_off}]\n`);
+		emit_asm(status, `strh w9, [x29, #${slot}]\n`);
+	} else if (size === 4) {
+		emit_asm(status, `ldr w9, [${base_reg}, #${payload_off}]\n`);
+		emit_asm(status, `str w9, [x29, #${slot}]\n`);
+	} else if (size === 8) {
+		emit_asm(status, `ldr x9, [${base_reg}, #${payload_off}]\n`);
+		emit_asm(status, `str x9, [x29, #${slot}]\n`);
+	} else {
+		// Multi-word value payload (struct / enum-with-data): copy every word.
+		if (payload_off !== 0) {
+			emit_asm(status, `add x9, ${base_reg}, #${payload_off}\n`);
+		}
+		emit_struct_copy(payload_off !== 0 ? "x9" : base_reg, "x29", slot, size, status);
 	}
 }
