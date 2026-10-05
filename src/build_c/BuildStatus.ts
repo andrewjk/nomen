@@ -1104,6 +1104,27 @@ export default interface BuildStatus {
 	 */
 	emitted_struct_bodies?: Set<string>;
 	/**
+	 * Header-side dedupe for struct typedefs, keyed on the STRUCT node identity
+	 * (not its name). A struct and its embedded value-struct dependencies may be
+	 * emitted to the code body and ALSO be needed in the header (a method
+	 * returns the struct by value); this set lets the header get its own full
+	 * copy without fighting the name-keyed `emitted_struct_bodies` guard.
+	 */
+	emitted_struct_header_bodies?: Set<StructNode>;
+	/**
+	 * True while `build_struct_body` is emitting into `status.headers` (set by
+	 * `build_struct_body_to_header`); selects the header dedupe set and makes
+	 * the embedded-dependency recursion target the header too.
+	 */
+	struct_body_to_header?: boolean;
+	/**
+	 * When emitting a struct body to the header, also record it in
+	 * `emitted_struct_bodies` so the later `.m` pass skips its own copy. Used by
+	 * the system-TU split and enum-payload hoisting, where the struct must live
+	 * in the header only.
+	 */
+	struct_body_header_mark_code_emitted?: boolean;
+	/**
 	 * Tracks which enum typedefs have already been emitted, so an enum pulled
 	 * to root scope as a dependency of a monomorphized enum (see
 	 * `emit_enum_in_order`) is not emitted a second time by

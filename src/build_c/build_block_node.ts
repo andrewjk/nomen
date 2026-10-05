@@ -14,6 +14,10 @@ import TraitNode from "../nodes/TraitNode.ts";
 import build_bitset_node from "./build_bitset_node.ts";
 import build_function_node from "./build_function_node.ts";
 import build_struct_body from "./build_struct_body.ts";
+import {
+	build_struct_body_to_header,
+	emit_by_value_return_type_headers,
+} from "./build_struct_body.ts";
 import build_struct_node from "./build_struct_node.ts";
 import build_trait_node from "./build_trait_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
@@ -149,6 +153,15 @@ export default function build_block_node(
 			}
 		};
 		forward_declare(node);
+
+		// Emit to the HEADER the full typedef of every value struct returned
+		// by value from a prototyped function/method (plus its embedded
+		// value-struct deps). Must run before any code body is emitted: the
+		// lazy signature-time emission in build_struct_node races the nested
+		// struct pass, which has already written a code-body copy of the
+		// returned struct — the header copy then collides with it. This
+		// pre-pass owns the typedef in the header and suppresses the code copy.
+		emit_by_value_return_type_headers(node, status);
 
 		// Pass 1: Emit enum typedefs FIRST. Enum typedefs land in the header,
 		// and struct bodies/trait signatures reference them (a struct field of
@@ -488,11 +501,7 @@ function emit_struct_in_order(struct: StructNode, status: BuildStatus, emitted: 
 	// use (e.g. `struct File r = File_init()`) without those definitions
 	// leaking user-type references into the system TU.
 	if (status.emit_mode === "system") {
-		const swap = status.code;
-		status.code = status.headers;
-		build_struct_body(struct, status);
-		status.headers = status.code;
-		status.code = swap;
+		build_struct_body_to_header(struct, status, true);
 	} else {
 		build_struct_body(struct, status);
 	}

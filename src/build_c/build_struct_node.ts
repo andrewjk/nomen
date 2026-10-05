@@ -23,7 +23,7 @@ import { is_owned_heap_temp } from "./build_operation_node.ts";
 import build_parameter_node from "./build_parameter_node.ts";
 import { ensure_weak_runtime } from "./build_spawn_node.ts";
 import { ensure_runtime_for_method } from "./build_spawn_node.ts";
-import build_struct_body from "./build_struct_body.ts";
+import { build_struct_body_to_header } from "./build_struct_body.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import { emit_method_body_from_nir } from "./emit_nir.ts";
 import c_function_name from "./utils/c_function_name.ts";
@@ -862,11 +862,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 			// no-ops), avoiding a redefinition. Buffer-swap so build_struct_body
 			// (which writes status.code) appends to the header instead.
 			if (return_struct && !return_struct.is_class) {
-				const swap = status.code;
-				status.code = status.headers;
-				build_struct_body(return_struct, status);
-				status.headers = status.code;
-				status.code = swap;
+				build_struct_body_to_header(return_struct, status);
 			}
 			// A struct/trait return uses the `struct Tag` form (tag never
 			// mangled); otherwise emit the typedef/primitive via c_type.

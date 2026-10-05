@@ -98,6 +98,7 @@ export default function build(
 		fast_math: options.fast_math,
 		platform: options.platform ?? default_platform(),
 		emitted_struct_bodies: new Set(),
+		emitted_struct_header_bodies: new Set(),
 		vtable_data: "",
 	};
 

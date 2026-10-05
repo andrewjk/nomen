@@ -2,34 +2,6 @@
 
 Skipped or out-of-scope items recorded for later.
 
-## C header typedef completeness for a by-value-returned struct (pre-existing)
-
-`test/nullable_struct_members.test.ts` "nullable container member through a
-List of structs" fails identically on unmodified `main` (verified by stash):
-the C header holds `struct List_int items;` inside `Box`'s typedef with only
-a forward declaration of `List_int`, so clang rejects the incomplete field.
-
-**Diagnosis (2026-10-05).** A struct returned BY VALUE by one of its methods
-(`struct Box Buffer_Box_load(...)`) needs its full typedef in the HEADER, so
-`build_struct_node` buffer-swaps `status.code` to `status.headers` and calls
-`build_struct_body` on demand. `build_struct_body` recurses into embedded
-value-struct deps — but only while `emitted_struct_bodies` does not already
-contain them; here the deps (`List_int`, `Buffer_int`) were emitted to the
-CODE buffer by an earlier pass, so the recursion skips and the header copy
-of `Box` is left referencing incomplete types.
-
-Attempted fixes and why they failed (so the next attempt does not repeat
-them): (a) re-emitting released deps into the header requires POST-ORDER
-(deps-of-deps first) and a per-header dedupe, or `Buffer_int` lands after
-`List_int`; (b) recovering the exact touched slot state across passes is
-fragile — a naive `new Set(saved)` with an undefined saved set releases
-everything and duplicates bodies; (c) routing ALL struct bodies into the
-header unconditionally collides with the system/user TU split (mono typedefs
-also feed `system_struct_names`, and identical-vs-differing redefinitions
-between header and code copies surface). The right fix is likely to make
-`system_struct_names` and the user-TU emit decision read typedefs from
-headers AND code uniformly, then route every body to the header once.
-
 ## STRUCT_PLAN_3 Phase B — remaining tranches
 
 Tranche 1 (declared ownership: `owning struct`/`owning enum` spellings, the

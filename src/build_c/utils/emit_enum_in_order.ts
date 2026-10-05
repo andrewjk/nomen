@@ -7,6 +7,7 @@ import build_bitset_node from "../build_bitset_node.ts";
 import build_enum_node from "../build_enum_node.ts";
 import build_struct_body from "../build_struct_body.ts";
 import type BuildStatus from "../BuildStatus.ts";
+import { should_emit_definition } from "./is_system_definition.ts";
 
 /**
  * Emit an enum's typedef, but first emit every type it embeds BY VALUE, in
@@ -31,6 +32,14 @@ import type BuildStatus from "../BuildStatus.ts";
  */
 export default function emit_enum_in_order(node: EnumNode, status: BuildStatus) {
 	if (node.is_generic) return;
+	// Respect the system/user TU split: a system enum belongs in system.h and
+	// must not be pulled into the user TU (which reaches it via the include),
+	// and vice versa. Callers that already gate with should_emit_definition
+	// are unaffected; dependency pulls (emit_enum_deps_for_struct) now inherit
+	// the same gate automatically.
+	if (!should_emit_definition(node, status.emit_mode, status.structs, status.system_struct_names)) {
+		return;
+	}
 	if (status.emitted_enums?.has(node.name)) return;
 	for (const c of node.cases) {
 		for (const p of c.params) {
@@ -121,10 +130,19 @@ function emit_struct_typedef_to_header(struct: StructNode, status: BuildStatus):
 		}
 	}
 	const swap = status.code;
+	const saved_flag = status.struct_body_to_header;
+	const saved_mark = status.struct_body_header_mark_code_emitted;
 	status.code = status.headers;
-	build_struct_body(struct, status);
-	status.headers = status.code;
-	status.code = swap;
+	status.struct_body_to_header = true;
+	status.struct_body_header_mark_code_emitted = true;
+	try {
+		build_struct_body(struct, status);
+	} finally {
+		status.headers = status.code;
+		status.code = swap;
+		status.struct_body_to_header = saved_flag;
+		status.struct_body_header_mark_code_emitted = saved_mark;
+	}
 }
 
 /** Pull a struct field's enum-type dependency (header-internal ordering). */

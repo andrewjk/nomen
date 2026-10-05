@@ -1,18 +1,34 @@
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
+import type BaseNode from "../nodes/BaseNode.ts";
+import type BlockNode from "../nodes/BlockNode.ts";
+import type FunctionNode from "../nodes/FunctionNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import TraitNode from "../nodes/TraitNode.ts";
 import Type from "../nodes/Type.ts";
 import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_type, { c_typedef_name } from "./utils/c_type.ts";
+import { emit_enum_deps_for_struct } from "./utils/emit_enum_in_order.ts";
 import is_system_definition from "./utils/is_system_definition.ts";
 
 export default function build_struct_body(node: StructNode, status: BuildStatus) {
 	if (node.is_generic) return;
 	if (node.is_simple_type) return;
-	if (status.emitted_struct_bodies?.has(node.name)) return;
+
+	// A typedef can be needed in two different output streams — the `.m` code
+	// body and the `.h` header. `status.code` is a plain string with no stable
+	// identity, so the destination is threaded explicitly rather than inferred.
+	// When emitting to the HEADER (a method returns the struct by value →
+	// build_struct_node buffer-swaps status.code to status.headers), dedupe is
+	// tracked in a separate, node-identity-keyed set so the header gets its own
+	// full copy of this struct AND its embedded value-struct dependencies, even
+	// when the same structs were already emitted to the code body.
+	const to_header = status.struct_body_to_header === true;
+	const code_emitted = status.emitted_struct_bodies;
+	const header_emitted = (status.emitted_struct_header_bodies ??= new Set());
+
 	// Central origin guard for the TU split. Every emission path into a struct
 	// typedef — the pass-1 loop, the embedded-dependency recursion, and the
 	// by-value-return buffer-swap in build_struct_node — funnels through here,
@@ -29,17 +45,31 @@ export default function build_struct_body(node: StructNode, status: BuildStatus)
 		!is_system_definition(node, status.structs, status.system_struct_names)
 	)
 		return;
-	status.emitted_struct_bodies?.add(node.name);
+
+	if (to_header && header_emitted.has(node)) return;
+	// The code path is name-keyed (it historically ran before monomorphized
+	// node objects existed in `status.structs`).
+	if (!to_header && code_emitted?.has(node.name)) return;
+
+	if (to_header) {
+		header_emitted.add(node);
+	} else {
+		code_emitted?.add(node.name);
+	}
+	// A header emission also records the code guard when requested, so the
+	// later `.m` pass skips its own (would-be duplicate) copy.
+	if (to_header && status.struct_body_header_mark_code_emitted) {
+		code_emitted?.add(node.name);
+	}
 
 	// A struct that embeds another value struct by value (e.g. `Outer { Inner
 	// inner }`) needs the embedded struct's full typedef to appear BEFORE its
 	// own, wherever this body is emitted. When this body is emitted to the
-	// HEADER on demand (a method returns it by value → build_struct_node
-	// buffer-swaps status.code to status.headers), the embedded struct must be
-	// pulled into the HEADER too — otherwise the header holds `struct Outer {
-	// struct Inner inner; }` with `Inner` only forward-declared, which is an
-	// incomplete type. Recursing BEFORE opening this typedef (idempotent via
-	// emitted_struct_bodies) emits the dependency to the current buffer first.
+	// HEADER on demand, the embedded struct must be pulled into the HEADER too —
+	// otherwise the header holds `struct Outer { struct Inner inner; }` with
+	// `Inner` only forward-declared, which is an incomplete type. Recursing
+	// BEFORE opening this typedef emits the dependency to the current buffer
+	// first (the destination flag stays set for the nested call).
 	for (let field of node.fields) {
 		const dep = embedded_value_struct(field.type, status);
 		if (dep) build_struct_body(dep, status);
@@ -82,6 +112,88 @@ export default function build_struct_body(node: StructNode, status: BuildStatus)
 		}
 	}
 	status.code += `} ${c_typedef_name(node.name)};\n`;
+}
+
+/**
+ * Run `build_struct_body` for `node`, forcing emission into the HEADER
+ * (`status.headers`) and deduping against the header body set. Restores the
+ * previous code buffer and destination state even if the build throws.
+ * `mark_code_emitted` additionally records the code-body guard so a later
+ * `.m` pass skips its own copy (used by the system-TU split and enum payload
+ * hoisting, where the struct lives in the header only).
+ */
+export function build_struct_body_to_header(
+	node: StructNode,
+	status: BuildStatus,
+	mark_code_emitted = true,
+) {
+	const swap = status.code;
+	const saved_flag = status.struct_body_to_header;
+	const saved_mark = status.struct_body_header_mark_code_emitted;
+	status.code = status.headers;
+	status.struct_body_to_header = true;
+	status.struct_body_header_mark_code_emitted = mark_code_emitted;
+	try {
+		build_struct_body(node, status);
+	} finally {
+		status.headers = status.code;
+		status.code = swap;
+		status.struct_body_to_header = saved_flag;
+		status.struct_body_header_mark_code_emitted = saved_mark;
+	}
+}
+
+/**
+ * A prototyped function that RETURNS a value struct by value forces that
+ * struct's full typedef into the HEADER: the header holds the prototype
+ * (`struct Box f(void);`), the `.m` includes the header, and a by-value
+ * return/param needs the COMPLETE type wherever the declaration is visible.
+ *
+ * Emit those typedefs (and their embedded value-struct dependencies, in
+ * dependency order) to the header BEFORE any code body is emitted, and record
+ * them in the code-body guard so the later `.m` pass does not emit a second,
+ * conflicting typedef. A whole-program pre-pass is required because the struct
+ * may live nested inside a function body that is built after the by-value
+ * method's own struct is built; emitting lazily at signature time races the
+ * nested pass that has already written the code copy.
+ *
+ * Recurses into function bodies and struct methods (a nested struct's method
+ * can be the by-value returner).
+ */
+export function emit_by_value_return_type_headers(root: BlockNode, status: BuildStatus) {
+	const seen_fns = new Set<FunctionNode>();
+	const visit_function = (fn: FunctionNode) => {
+		if (seen_fns.has(fn)) return;
+		seen_fns.add(fn);
+		if (fn.is_generic || !fn.return_type) return;
+		const mono = mono_type_name(fn.return_type);
+		const return_struct = status.structs.find(
+			(s) => s.name === mono && !s.is_simple_type && !s.is_generic,
+		);
+		if (return_struct && !return_struct.is_class) {
+			emit_enum_deps_for_struct(return_struct, status);
+			build_struct_body_to_header(return_struct, status, true);
+		}
+	};
+
+	const visit_block = (block: BlockNode) => {
+		for (const child of (block as unknown as { statements?: BaseNode[] }).statements ?? []) {
+			const kind = (child as { node_type?: string }).node_type;
+			if (kind === "func") {
+				const fn = child as FunctionNode;
+				visit_function(fn);
+				if (fn.statements?.length) visit_block(fn as unknown as BlockNode);
+			} else if (kind === "struct") {
+				const struct = child as StructNode;
+				for (const fn of struct.functions ?? []) visit_function(fn as FunctionNode);
+				for (const fn of struct.functions ?? []) {
+					const f = fn as FunctionNode;
+					if (f.statements?.length) visit_block(f as unknown as BlockNode);
+				}
+			}
+		}
+	};
+	visit_block(root);
 }
 
 function field_c_type(type: Type, status: BuildStatus): string {
