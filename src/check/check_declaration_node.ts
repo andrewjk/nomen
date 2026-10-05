@@ -11,6 +11,7 @@ import { instantiate_generic_type } from "./check_function_call_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { borrow_depth_of, borrow_owner_of } from "./utils/borrow.ts";
+import { is_box_type } from "./utils/box.ts";
 import { move_closure_source, value_owns_closure } from "./utils/captures.ts";
 import check_func_argument_signature from "./utils/check_func_argument_signature.ts";
 import check_merged_missing_return from "./utils/check_merged_missing_return.ts";
@@ -306,11 +307,14 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 		// materialized so build/codegen resolves it.
 		instantiate_generic_type(decl.type, status);
 
-		// Check for var on class-type fields in classes/traits (must use move)
+		// Check for var on class-type fields in classes/traits (must use move).
+		// STRUCT_PLAN_3 B2: a `Box<T>` field is the sanctioned pointer — `var`
+		// is correct there (the box moves with the struct).
 		if (
 			decl.declaration === "var" &&
 			decl.type.name &&
 			is_class_type(decl.type.name, status) &&
+			!is_box_type(decl.type.name, status) &&
 			(decl.scope?.node_type === "struct" || decl.scope?.node_type === "trait")
 		) {
 			add_error(status, `class-type fields must use 'move', not 'var'`, decl.start);

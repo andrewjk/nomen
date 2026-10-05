@@ -2,6 +2,15 @@
 
 Skipped or out-of-scope items recorded for later.
 
+Known flake observed during Phase B tranche 2 (fails identically on unmodified
+`main`): `test/nullable_struct_members.test.ts` "nullable container member
+through a List of structs" — the C user TU's header forward-declares
+`struct List_int;` but the field definition `struct List_int items;` lands
+before the mono typedef, so clang rejects it ("field has incomplete type").
+An emit-order bug in the split-build C header for a nullable `List<T>` field
+of a struct nested in main; not caused by Phase B work — recorded for the
+header-ordering fix.
+
 ## STRUCT_PLAN_3 Phase B — remaining tranches
 
 Tranche 1 (declared ownership: `owning struct`/`owning enum` spellings, the
@@ -13,9 +22,10 @@ rest of Phase B, in dependency order:
   struct to the declared spelling. Sequenced after the built-in rewrite
   (post-B4/R) — the string-only-struct borrow-copy semantics are
   load-bearing in the memory model until then.
-- **B2 — `Box<T>`**: cycles + identity (the owning-struct-with-one-pointer-
-  field magic type; cycle detection naming the field; `Box<T>?` = the null
-  pointer).
+- **B2 — `Box<T>`**: LANDED (tranche 2). Remaining aarch64 gap: a generic
+  CLASS with an inline value-struct `T` field sizes `T` as one word
+  (BUGS.md #10) — the Box runtime shape is gated to C until the mono layout
+  substitutes the field type before sizing.
 - **B4 — trait objects** (the gate for class removal): boxed
   `(vtable, instance)` handles at every trait position on both backends;
   tier-1 demotion; boxing takes ownership (T1–T4).

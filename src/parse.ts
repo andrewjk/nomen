@@ -214,7 +214,10 @@ export function resolve_linked_types(source: string, library: Library, file_path
 	// version must not be pulled in (otherwise duplicate symbols at build time).
 	const user_defined = new Set<string>();
 	for (let i = 0; i < tokens.length; i++) {
-		if (["struct", "trait", "enum", "bitset"].includes(tokens[i].value)) {
+		// `class` too: a user class shadowing a library CLASS (e.g. a sizing
+		// example `class Box` against System's `Box<T>` — STRUCT_PLAN_3 B2)
+		// must not pull the library declaration in alongside it.
+		if (["struct", "class", "trait", "enum", "bitset"].includes(tokens[i].value)) {
 			if (i + 1 < tokens.length) {
 				user_defined.add(tokens[i + 1].value);
 			}

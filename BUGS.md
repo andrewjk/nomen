@@ -198,6 +198,22 @@ this one is the plain match-binding path. Not fixed in this tranche — the
 B1 declared-owning enum semantics are proven on C; on aarch64 use a class
 payload (reference payloads transfer by pointer and are unaffected).
 
+## 10. aarch64: a generic CLASS with an inline value-struct `T` field sizes `T` as one word
+
+**Seen on `main`+Phase-B tranche 2, aarch64 only — C is correct.** A generic
+class whose field is the type parameter INLINE (`class Box<T> { move T value }`)
+computes its mono layout with `T` = 8 bytes: `Box<Node>` (Node = 24 bytes
+inline) mallocs 16 (`_vt` + 8) and the auto-destroy's field walk then reads
+past the block (EXC_BAD_ACCESS in `Node_destroy`, x0 = a size constant).
+C's mono typedef is correct (`{void* _vt; nm_Node value;}`).
+
+Nothing before `Box` had an inline generic value-struct field in a CLASS —
+List/Map/Set hold elements through `Buffer_<T>`/`ClassBuffer<T>` pointer
+slots — so the aarch64 mono layout path was never exercised with one.
+Found while implementing STRUCT_PLAN_3 B2 (`Box<T>`); the Box checker
+semantics are proven on C, and the aarch64 runtime shape is gated to C
+until the mono layout substitutes the field type before sizing.
+
 ## 6. `test_error` test helper spins forever on an out-of-range line
 
 `test/test_error.ts`'s line-scan loop condition was

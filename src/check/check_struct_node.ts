@@ -13,6 +13,7 @@ import {
 } from "./check_function_call_node.ts";
 import check_function_node from "./check_function_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
+import { is_box_type } from "./utils/box.ts";
 import check_init_assigns_all_fields from "./utils/check_init_fields.ts";
 import { is_class_type, is_owning_struct_type_requiring_move } from "./utils/ownership.ts";
 import type_from_value from "./utils/type_from_value.ts";
@@ -28,6 +29,11 @@ function params_differ(a: FunctionNode, b: FunctionNode): boolean {
 }
 
 export default function check_struct_node(struct: StructNode, status: CheckStatus) {
+	// STRUCT_PLAN_3 B2 — the inline-containment cycle detector: a value
+	// struct whose fields reach themselves through NON-Box value-struct
+	// fields has no finite layout. The error prescribes the fix: declare the
+	// closing field `Box<T>` (the box is a pointer — the cycle breaks).
+	detect_inline_containment_cycle(struct, status);
 	for (let i = 0; i < struct.traits.length; i++) {
 		const trait_name = struct.traits[i];
 		const trait = status.traits.find((t) => t.name === trait_name);
@@ -159,11 +165,19 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 			check_declaration_node(decl, status);
 			continue;
 		}
-		if (!struct.is_class && is_class_type(decl.type.name, status)) {
+		if (
+			!struct.is_class &&
+			is_class_type(decl.type.name, status) &&
+			// STRUCT_PLAN_3 B2: a `Box<T>` field is the sanctioned pointer —
+			// the box owns its pointee, so the struct's byte-copy story stays
+			// sound (the box moves with the struct).
+			!is_box_type(decl.type.name, status)
+		) {
 			add_error(status, `struct fields cannot be class types, use a class instead`, decl.start);
 		} else if (
-			// STRUCT_PLAN_3 B1 — the Copyable verifier (declared-flag subset):
-			// a bare `struct` with a DECLARED-owning field cannot be Copyable
+			// STRUCT_PLAN_3 B1/B2 — the Copyable verifier (declared subset):
+			// a bare `struct` with a DECLARED-owning field — or a `Box<T>`
+			// field (the box owns its pointee) — cannot be Copyable
 			// (byte-copying would alias the field's owned state). Name the
 			// fix, exactly as the plan words it. (Inferred ownership is NOT
 			// verified here during the transition — existing code keeps its
@@ -172,7 +186,8 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 			!struct.is_owning &&
 			decl.type.name &&
 			!decl.type.is_ref &&
-			status.structs.find((st) => st.name === decl.type.name && st.is_owning)
+			(status.structs.find((st) => st.name === decl.type.name && st.is_owning) ||
+				is_box_type(decl.type.name, status))
 		) {
 			add_error(
 				status,
@@ -520,4 +535,37 @@ function types_match(a: Type, b: Type): boolean {
 function type_display(t: Type): string {
 	if (!t.type_args?.length) return t.name ?? "?";
 	return `${t.name}<${t.type_args.map(type_display).join(", ")}>`;
+}
+
+/**
+ * B2 — walk `struct`'s inline value-struct fields (Box fields are pointers
+ * and stop the walk; class/trait fields are rejected elsewhere) for a path
+ * back to `struct`. Reports the FIRST closing field.
+ */
+function detect_inline_containment_cycle(struct: StructNode, status: CheckStatus): void {
+	const path: string[] = [struct.name];
+	const walk = (current: StructNode): boolean => {
+		for (const field of current.fields) {
+			if (!field.type.name || field.type.is_ref || field.type.is_array) continue;
+			if (is_box_type(field.type.name, status)) continue;
+			const next = status.structs.find(
+				(st) => st.name === field.type.name && !st.is_class && !st.is_simple_type,
+			);
+			if (!next) continue;
+			if (next.name === struct.name) {
+				add_error(
+					status,
+					`field '${path[path.length - 1]}.${field.name}' closes an inline containment cycle — declare it \`Box<${struct.name}>\``,
+					field.start || struct.start,
+				);
+				return true;
+			}
+			if (path.includes(next.name)) continue; // a different cycle — reported at its own struct
+			path.push(next.name);
+			if (walk(next)) return true;
+			path.pop();
+		}
+		return false;
+	};
+	walk(struct);
 }

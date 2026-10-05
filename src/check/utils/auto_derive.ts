@@ -16,6 +16,7 @@ import StructNode from "../../nodes/StructNode.ts";
 import Type from "../../nodes/Type.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
 import type CheckStatus from "../CheckStatus.ts";
+import { is_box_type } from "./box.ts";
 import { destroy_releases } from "./ownership.ts";
 
 function struct_has_function(struct: StructNode, name: string): boolean {
@@ -272,9 +273,17 @@ function build_hash(struct: StructNode, fields: { name: string; type: Type }[]):
  * struct with nothing to deep-copy (no string, `List`, or nested-copyable
  * field) is already soundly byte-copyable, so it needs no method.
  */
-export function struct_is_copyable(struct: StructNode, status: CheckStatus): boolean {
+export function struct_is_copyable(
+	struct: StructNode,
+	status: CheckStatus,
+	visited?: Set<string>,
+): boolean {
 	if (struct.is_class || struct.is_generic || struct.is_simple_type) return false;
-	if (struct_owns_resource(struct, status, new Set())) return false;
+	// The visited set threads through the whole walk: a self-referential
+	// inline field (illegal per B2's cycle detector, but the synthesis
+	// pre-pass runs BEFORE that detector) would otherwise recurse forever.
+	const seen = visited ?? new Set<string>();
+	if (struct_owns_resource(struct, status, seen)) return false;
 	if (!struct_needs_copy(struct, status)) return false;
 	return struct_copy_ctor_args(struct) !== null;
 }
@@ -314,7 +323,13 @@ function struct_owns_resource(
 		if (field.type.is_ref || field.type.is_view) continue;
 		if (field.type.name === "string" && !field.type.is_array) continue;
 		if (field.type.is_nullable) return true;
-		if (!field_copyable(field.type, status)) return true;
+		// STRUCT_PLAN_3 B2: a `Box<T>` field OWNS its pointee — the wrapper
+		// destroy reclaims it — so the struct owns a resource and is never
+		// auto-copyable. The Box_* mono is a CLASS: recursing into it would
+		// walk the pointee type and (for a self-referential Box field, the
+		// whole reason Box exists) never terminate.
+		if (is_box_type(field.type.name, status)) return true;
+		if (!field_copyable(field.type, status, new Set([...visited, struct.name]))) return true;
 	}
 	return false;
 }
@@ -344,8 +359,17 @@ function struct_copy_ctor_args(struct: StructNode): string[] | null {
  *  re-evaluates the eligibility predicate instead of looking for an
  *  already-synthesized method, so an outer struct nested in the same
  *  pre-pass resolves a later-declared field struct. */
-function field_copyable(type: Type, status: CheckStatus): boolean {
+function field_copyable(type: Type, status: CheckStatus, visited?: Set<string>): boolean {
 	if (!type.name || type.is_array || type.is_ref || type.is_view || type.is_nullable) return false;
+	// A self-referential inline field: the B2 cycle detector rejects it, but
+	// this walk runs first — cut the recursion here.
+	if (visited?.has(type.name)) return false;
+	// STRUCT_PLAN_3 B2: a `Box<T>` (a CLASS mono) has no deep-copy story —
+	// treat it like the class instance it is. Checked BEFORE the struct
+	// lookup: recursing into the wrapper would walk the pointee type and
+	// (for a self-referential Box field — the whole reason Box exists) never
+	// terminate.
+	if (is_box_type(type.name, status)) return false;
 	// `List<T>`: deep-copyable iff the element is (the library copy rejects
 	// class/trait elements — their stored instances would be shared).
 	if (type.name === "List" && type.type_args?.length === 1) {
@@ -355,7 +379,10 @@ function field_copyable(type: Type, status: CheckStatus): boolean {
 	if (nested_struct) {
 		// A simple type (int/float/bool/char-sized) is a flat value.
 		if (nested_struct.is_simple_type) return true;
-		return struct_is_copyable(nested_struct, status);
+		const seen = visited ?? new Set<string>();
+		if (seen.has(type.name)) return false;
+		seen.add(type.name);
+		return struct_is_copyable(nested_struct, status, seen);
 	}
 	// Enum-with-data fields BLOCK synthesis: the enum-field store path
 	// transfers payload ownership (`c.e = self.e` moves the payloads out),

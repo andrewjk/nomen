@@ -1627,6 +1627,36 @@ The same verifier applies to enums: a bare `enum` with a case payload typed a
 declared-`owning` struct must be declared `owning enum` (B1a), and bindings of
 a declared-`owning` enum move instead of copy.
 
+#### Box
+
+`Box<T>` is an owning pointer to a heap-allocated value — the cycle-breaking
+and stable-address shape. A Box is ONE POINTER at runtime: `Box<T>?` is the
+natural null slot, construction moves the value in (boxing takes ownership),
+destroy reclaims the pointee, and field/method access THROUGH the box is
+transparent — the checker rewrites `box.f` to the pointee's `f`.
+
+```
+owning struct Node {
+    var int value
+    var Box<Node>? next      // the sanctioned pointer field: breaks the cycle
+}
+
+var Node n = Node(1, null)
+var Box<Node> b = Box<Node>(move n)   // boxing moves: n is invalid after
+Console.write_line("\{b.value}")      // 1 — access through the box
+Console.write_line("\{b.next}")       // null (the pointee's next slot)
+```
+
+An inline containment cycle is a compile error naming the fix:
+
+```
+owning struct Node {
+    var int value
+    var Node next     // Error: field 'next' closes an inline containment
+                      //   cycle — declare it `Box<Node>`
+}
+```
+
 Fields without default values that have constraints propagate those
 constraints to the generated `#init` parameters (see
 [Field Constraints](#field-constraints)). You can also define a custom `#init`

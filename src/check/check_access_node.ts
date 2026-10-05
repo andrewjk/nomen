@@ -18,6 +18,7 @@ import check_function_call_node, {
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { invalidate_borrows_of, receiver_owner_of } from "./utils/borrow.ts";
+import { is_box_type } from "./utils/box.ts";
 import check_func_argument_signature from "./utils/check_func_argument_signature.ts";
 import {
 	enforce_case_payload_ownership,
@@ -213,15 +214,33 @@ export default function check_access_node(node: AccessNode, status: CheckStatus)
 	}
 
 	switch (node.access.node_type) {
-		case "access_field": {
-			return check_access_field_node(
-				target_type,
-				node.target,
-				node.access as AccessFieldNode,
-				status,
-			);
-		}
+		case "access_field":
 		case "access_func": {
+			// STRUCT_PLAN_3 B2 — transparent access through a Box: `box.f`
+			// resolves against the POINTEE's fields; rewrite the chain in
+			// place to `box.value.f` (`box.g(...)` to `box.value.g(...)`)
+			// and re-dispatch. `value` itself is not reachable (it IS the
+			// box). The rewrite covers assignment targets for free: the
+			// assignment checks its left_value through this same path.
+			if (
+				is_box_type(target_type.name, status) &&
+				(node.access as AccessFieldNode).name !== "__value"
+			) {
+				node.target = new AccessNode(
+					node.target.start,
+					node.target,
+					new AccessFieldNode(node.target.start, "__value"),
+				);
+				return check_access_node(node, status);
+			}
+			if (node.access.node_type === "access_field") {
+				return check_access_field_node(
+					target_type,
+					node.target,
+					node.access as AccessFieldNode,
+					status,
+				);
+			}
 			return check_access_function_node(
 				target_type,
 				node.target,
