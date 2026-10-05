@@ -2381,7 +2381,12 @@ export default function build_declaration_node(
 					!is_magic_spawn_ctor(func_call) &&
 					status.structs.find((s) => s.name === func_call.name && !s.is_simple_type);
 				if (is_constructor) {
-					const struct_size = get_struct_size(node.type.name, status);
+					// BUGS.md #10: resolve the MONO name (`Box<Node>` →
+					// `Box_Node`) before sizing — the bare generic's layout
+					// sizes a `T` field as one word, under-allocating the
+					// wrapper and corrupting the heap on the field destroy.
+					const mono_ctor_name = mono_type_name(node.type);
+					const struct_size = get_struct_size(mono_ctor_name, status);
 					emit_asm(status, `mov x0, #${struct_size}\n`);
 					emit_malloc(status);
 					// Anchor the instance so it's freed at scope exit. For

@@ -4,6 +4,7 @@ import ParameterNode from "../nodes/ParameterNode.ts";
 import { instantiate_generic_type } from "./check_function_call_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
+import { is_box_type } from "./utils/box.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import check_type_exists from "./utils/check_type_exists.ts";
 import { apply_bounds, strip_length_equalities } from "./utils/flow_bounds.ts";
@@ -22,6 +23,21 @@ export default function check_function_parameter_node(
 	status: CheckStatus,
 	is_library_scope = false,
 ) {
+	// STRUCT_PLAN_3 B2/T2: `Box<T>` is OWNING — a bare Box parameter would
+	// alias the pointee across the boundary. It must be declared `move`
+	// (transfer) or `ref` (a mutable borrow of the handle itself).
+	if (
+		param.type.name &&
+		!param.type.is_ref &&
+		is_box_type(param.type.name, status.structs) &&
+		!param.is_moved
+	) {
+		add_error(
+			status,
+			`Box parameter '${param.name ?? param.type.name}' must be declared \`move\` (boxing owns its pointee) or \`ref\``,
+			param.type_start ?? param.start,
+		);
+	}
 	if (param.is_variadic) {
 		if (!param.type.name) {
 			add_error(status, `Variadic parameter requires a type`, param.start);

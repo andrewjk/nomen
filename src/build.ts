@@ -572,6 +572,16 @@ export default function build(
 		companion = wrap_c_allocators(companion);
 	}
 
+	if (
+		status.headers.includes("struct Point") &&
+		!status.headers.includes("typedef struct Point") &&
+		process.env.NOMEN_DBG
+	) {
+		console.error(
+			"DBG build.ts: headers has forward Point but no typedef. len=",
+			status.headers.length,
+		);
+	}
 	return {
 		headers: status.headers,
 		code: status.code,

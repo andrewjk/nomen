@@ -328,7 +328,7 @@ function struct_owns_resource(
 		// auto-copyable. The Box_* mono is a CLASS: recursing into it would
 		// walk the pointee type and (for a self-referential Box field, the
 		// whole reason Box exists) never terminate.
-		if (is_box_type(field.type.name, status)) return true;
+		if (is_box_type(field.type.name, status.structs)) return true;
 		if (!field_copyable(field.type, status, new Set([...visited, struct.name]))) return true;
 	}
 	return false;
@@ -369,7 +369,7 @@ function field_copyable(type: Type, status: CheckStatus, visited?: Set<string>):
 	// lookup: recursing into the wrapper would walk the pointee type and
 	// (for a self-referential Box field — the whole reason Box exists) never
 	// terminate.
-	if (is_box_type(type.name, status)) return false;
+	if (is_box_type(type.name, status.structs)) return false;
 	// `List<T>`: deep-copyable iff the element is (the library copy rejects
 	// class/trait elements — their stored instances would be shared).
 	if (type.name === "List" && type.type_args?.length === 1) {

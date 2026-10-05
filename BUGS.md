@@ -200,19 +200,27 @@ payload (reference payloads transfer by pointer and are unaffected).
 
 ## 10. aarch64: a generic CLASS with an inline value-struct `T` field sizes `T` as one word
 
-**Seen on `main`+Phase-B tranche 2, aarch64 only — C is correct.** A generic
-class whose field is the type parameter INLINE (`class Box<T> { move T value }`)
-computes its mono layout with `T` = 8 bytes: `Box<Node>` (Node = 24 bytes
-inline) mallocs 16 (`_vt` + 8) and the auto-destroy's field walk then reads
-past the block (EXC_BAD_ACCESS in `Node_destroy`, x0 = a size constant).
-C's mono typedef is correct (`{void* _vt; nm_Node value;}`).
+**FIXED 2026-10-05 (Phase B tranche 2 gap-fix).** A generic class whose
+field is the type parameter INLINE (`class Box<T> { move T __value }`)
+computed its mono construction size from the BARE generic name: the aarch64
+declaration path called `get_struct_size(node.type.name)` where
+`node.type.name === "Box"` (type args carry the mono), so the layout sized
+`T` as one word — `Box<Node>` (Node = 24 bytes inline) malloc'd 16 and the
+auto-destroy walk read past the block (EXC_BAD_ACCESS in `Node_destroy`).
+C was immune (its `sizeof(struct Box_Node)` comes from the mono typedef).
+
+Fix: resolve the MONO name before sizing in the aarch64 class-construction
+path (`mono_type_name(node.type)` → `Box_Node`), matching the C backend's
+resolution. Two companion bugs in the same area were fixed for the
+transparent `box.field` access: the field-chain builder must treat a chain
+rooted at a `Box<T>` binding as a POINTER dereference (not inline-storage
+offsets), and it must resolve the containing struct by the mono name (the
+bare generic's field is still typed `T`).
 
 Nothing before `Box` had an inline generic value-struct field in a CLASS —
 List/Map/Set hold elements through `Buffer_<T>`/`ClassBuffer<T>` pointer
-slots — so the aarch64 mono layout path was never exercised with one.
-Found while implementing STRUCT_PLAN_3 B2 (`Box<T>`); the Box checker
-semantics are proven on C, and the aarch64 runtime shape is gated to C
-until the mono layout substitutes the field type before sizing.
+slots — so the aarch64 mono layout path was never exercised with one. The
+Box runtime tests now run on BOTH backends.
 
 ## 6. `test_error` test helper spins forever on an out-of-range line
 

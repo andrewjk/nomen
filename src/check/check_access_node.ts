@@ -223,7 +223,7 @@ export default function check_access_node(node: AccessNode, status: CheckStatus)
 			// box). The rewrite covers assignment targets for free: the
 			// assignment checks its left_value through this same path.
 			if (
-				is_box_type(target_type.name, status) &&
+				is_box_type(target_type.name, status.structs) &&
 				(node.access as AccessFieldNode).name !== "__value"
 			) {
 				node.target = new AccessNode(

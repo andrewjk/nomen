@@ -12,6 +12,7 @@ import ValueNode from "../nodes/ValueNode.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { borrow_depth_of, borrow_owner_of, invalidate_view_borrows_of } from "./utils/borrow.ts";
+import { is_box_type } from "./utils/box.ts";
 import { value_owns_closure } from "./utils/captures.ts";
 import check_func_argument_signature from "./utils/check_func_argument_signature.ts";
 import check_merged_missing_return from "./utils/check_merged_missing_return.ts";
@@ -748,6 +749,22 @@ export default function check_assignment_node(
 	}
 
 	const rhs_type = type_from_value_node(assign.right_value, status);
+	// STRUCT_PLAN_3 B2/T2: `Box<T>` is owning — a bare binding copy shares
+	// the pointee across two owners (double-free). Require `move`.
+	if (
+		assign.right_value.node_type === "value" &&
+		!assign.right_value.is_moved &&
+		!assign.swap &&
+		is_box_type(rhs_type.name, status.structs)
+	) {
+		add_error(
+			status,
+			`cannot copy '\${rhs_type.name}' by value — a Box owns its pointee; use move`,
+			assign.right_value.start,
+		);
+		status.is_assignment_target = false;
+		return false;
+	}
 	const rhs_is_field_access =
 		assign.right_value.node_type === "access" &&
 		(assign.right_value as AccessNode).access.node_type === "access_field";

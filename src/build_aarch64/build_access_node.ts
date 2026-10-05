@@ -16,6 +16,7 @@ import {
 	is_signed_type,
 	type_bits,
 } from "../built_in_types.ts";
+import { is_box_type } from "../check/utils/box.ts";
 import { mangled_label } from "../check/utils/function_overload.ts";
 import { is_int_literal } from "../int_literal.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
@@ -770,6 +771,24 @@ function chain_is_pure_fields(node: BaseNode): boolean {
 	return chain_is_pure_fields(acc.target);
 }
 
+/**
+ * STRUCT_PLAN_3 B2: whether the chain's BASE names a `Box<T>` binding. A Box
+ * is a POINTER at runtime (the wrapper instance), so a field chain rooted at
+ * one is not inline-storage arithmetic — the first hop must dereference the
+ * wrapper (the class-crossing branch does exactly that: build the pointer,
+ * take `__value`'s inline address), and only the hops AFTER `__value` are
+ * plain offsets in the pointee.
+ */
+function chain_base_is_box(node: BaseNode, status: BuildStatus): boolean {
+	let cursor: BaseNode = node;
+	while (cursor.node_type === "access") {
+		cursor = (cursor as AccessNode).target;
+	}
+	if (cursor.node_type !== "value") return false;
+	const base_type = resolve_access_target_type(cursor, status);
+	return is_box_type(base_type?.name, status.structs);
+}
+
 export function access_chain_crosses_class(node: AccessNode, status: BuildStatus): boolean {
 	const base = get_base_target(node);
 	const base_type = resolve_access_target_type(base, status);
@@ -1514,10 +1533,25 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 	// the ROOT's frame slot instead of the call result's field. Build the
 	// object and load THIS field at its own offset, exactly like the
 	// class-crossing case.
-	if (target_is_class_access || !chain_is_pure_fields(node.target)) {
+	if (
+		target_is_class_access ||
+		!chain_is_pure_fields(node.target) ||
+		// STRUCT_PLAN_3 B2: a chain rooted at a `Box<T>` binding dereferences
+		// the wrapper first (the base is a pointer, not inline storage).
+		chain_base_is_box(node.target, status)
+	) {
 		build_node(node.target, status);
 		ensure_newline(status);
-		const final_offset = get_field_offset(target_type?.name || "", access_field.name, status);
+		// STRUCT_PLAN_3 B2: resolve the MONO for a generic-with-args target
+		// (`Box<Node>` → `Box_Node`) — the bare generic's layout sizes a `T`
+		// field as one word (BUGS.md #10), and its field list is
+		// unsubstituted, which would send a `__value` hop down the scalar
+		// path (reading the pointee's `_vt` as a pointer).
+		let resolved_target_name = target_type?.name || "";
+		if (target_type?.type_args?.length) {
+			resolved_target_name = mono_type_name(target_type);
+		}
+		const final_offset = get_field_offset(resolved_target_name, access_field.name, status);
 		// A STRUCT-typed field of a class instance is embedded inline; its
 		// "value" is its address (instance + offset). Prefer the struct's FIELD
 		// DECLARATION type and monomorphize it (`List<BlockRule>` →
@@ -1525,13 +1559,13 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		// generic, and a missed struct check would emit a scalar load that
 		// dereferences the value's `_vt` as a pointer.
 		const containing_struct = status.structs.find(
-			(s) => s.name === (target_type?.name || "") && !s.is_simple_type,
+			(s) => s.name === resolved_target_name && !s.is_simple_type,
 		);
 		const field_decl_type = containing_struct?.fields.find(
 			(f) => f.name === access_field.name,
 		)?.type;
 		const class_access_field_type =
-			field_decl_type ?? resolve_field_type(access_field, target_type?.name, status);
+			field_decl_type ?? resolve_field_type(access_field, resolved_target_name, status);
 		const field_type = class_access_field_type?.type_args?.length
 			? mono_type_name(class_access_field_type)
 			: class_access_field_type?.name || access_field.type?.name || "";

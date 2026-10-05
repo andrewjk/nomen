@@ -171,7 +171,7 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 			// STRUCT_PLAN_3 B2: a `Box<T>` field is the sanctioned pointer —
 			// the box owns its pointee, so the struct's byte-copy story stays
 			// sound (the box moves with the struct).
-			!is_box_type(decl.type.name, status)
+			!is_box_type(decl.type.name, status.structs)
 		) {
 			add_error(status, `struct fields cannot be class types, use a class instead`, decl.start);
 		} else if (
@@ -187,7 +187,7 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 			decl.type.name &&
 			!decl.type.is_ref &&
 			(status.structs.find((st) => st.name === decl.type.name && st.is_owning) ||
-				is_box_type(decl.type.name, status))
+				is_box_type(decl.type.name, status.structs))
 		) {
 			add_error(
 				status,
@@ -547,7 +547,7 @@ function detect_inline_containment_cycle(struct: StructNode, status: CheckStatus
 	const walk = (current: StructNode): boolean => {
 		for (const field of current.fields) {
 			if (!field.type.name || field.type.is_ref || field.type.is_array) continue;
-			if (is_box_type(field.type.name, status)) continue;
+			if (is_box_type(field.type.name, status.structs)) continue;
 			const next = status.structs.find(
 				(st) => st.name === field.type.name && !st.is_class && !st.is_simple_type,
 			);
