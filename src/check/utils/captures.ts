@@ -97,13 +97,11 @@ export function capture_rejection(value: StackValue, status: CheckStatus): strin
 		return undefined;
 	}
 	if (status.traits.find((t) => t.name === type.name)) {
-		// A class-backed trait reference is an owned heap pointer (a vtable
-		// prefix + instance) and can be move-captured; its env destructor
-		// dispatches through the trait's `<Trait>_destroy` shim. A
-		// value-struct trait slot stores INLINE conformer bytes — deferred.
-		if (value.trait_slot_conformer) {
-			return "value-struct trait slots cannot be captured";
-		}
+		// A trait handle is an owned heap pointer (a boxed (vtable, instance)
+		// — STRUCT_PLAN_3 B4) and can be move-captured; its env destructor
+		// dispatches through the trait's `<Trait>_destroy` shim. B4 retired
+		// the inline value-struct representation, so every trait local has
+		// the same pointer shape here.
 		if (value.is_param && !value.is_moved) {
 			return "capturing a borrowed trait parameter comes later";
 		}

@@ -2,6 +2,7 @@ import emit_field_overrides, { hoist_field_overrides } from "../build/emit_field
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import { ctor_heap_displaced_string_fields } from "../build_common/ctor_return_owned.ts";
+import { struct_needs_auto_destroy } from "../build_common/destroy_analysis.ts";
 import emission_label from "../build_common/emission_label.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import mark_tuple_literal_move_owners from "../build_common/mark_tuple_literal_move_owners.ts";
@@ -111,7 +112,7 @@ function get_raw_value(node: ValueNode, status?: BuildStatus): string {
 
 let array_param_counter = 0;
 
-function emit_struct_address(node: BaseNode, status: BuildStatus) {
+export function emit_struct_address(node: BaseNode, status: BuildStatus) {
 	if (node.node_type === "value") {
 		const name = (node as any).value;
 		// A bare enum-shorthand case value (`.none`, rewritten to
@@ -830,6 +831,78 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 						ref_class_sync_names.push(arg_name);
 					} else {
 						emit_address_of(arg, status);
+					}
+				} else if (
+					// STRUCT_PLAN_3 B4/T2 — a value-struct conformer argument to
+					// a `move Trait` parameter is boxed at the call site: the
+					// callee owns (and frees) a heap instance whose first word
+					// is the conformer's vtable. Unrecorded (rodata/borrow)
+					// string fields are strdup'd in place — the box's destroy
+					// frees every string field — and the checker stamped the
+					// arg move-owned (move_owned_param_indices), so the donor's
+					// records drop and its teardown is suppressed post-call. A
+					// BARE trait param skips this branch: the T3 stack-copy
+					// convention passes the caller value's address directly.
+					node.params[i].node_type === "value" &&
+					!!status.traits.find(
+						(t) =>
+							t.name ===
+							node.resolved_function?.params?.filter((p) => !p.is_self_param)[i]?.type.name,
+					) &&
+					node.resolved_function?.params?.filter((p) => !p.is_self_param)[i]?.is_moved &&
+					(() => {
+						// A bare variable's ValueNode.type can be unset after
+						// monomorphization — resolve the donor's type from its
+						// declaration (the same fallback the string/enum gates
+						// in the post-call move loop use).
+						const donor = (node.params[i] as ValueNode).value;
+						const decl = all_scope_frames(status)
+							.flat()
+							.find((d) => d.name === donor);
+						const tname = decl?.type?.name ?? param_type;
+						return !!status.structs.find(
+							(st) => st.name === tname && !st.is_simple_type && !st.is_class && !st.is_generic,
+						);
+					})()
+				) {
+					const arg_val = node.params[i] as ValueNode;
+					const donor_decl = all_scope_frames(status)
+						.flat()
+						.find((d) => d.name === arg_val.value);
+					const donor_tname = donor_decl?.type?.name ?? param_type;
+					const arg_struct = status.structs.find(
+						(st) => st.name === donor_tname && !st.is_simple_type && !st.is_class && !st.is_generic,
+					)!;
+					{
+						const strdup_string_fields =
+							!arg_struct.functions.some((f) => f.name === "#destroy") &&
+							struct_needs_auto_destroy(arg_struct, status);
+						const box_size = get_struct_size(arg_struct.name, status);
+						const donor_name = arg_val.value;
+						const recorded = new Set<string>();
+						for (const key of status.heap_string_fields ?? []) {
+							if (key.startsWith(`${donor_name}.`)) {
+								recorded.add(key.slice(donor_name.length + 1));
+							}
+						}
+						emit_asm(status, `mov x0, #${box_size}\n`);
+						emit_malloc(status);
+						// Park the box in the arg slot while copying the donor.
+						emit_asm(status, `str x0, [x29, #${args_base + arg_slot[i] * 8}]\n`);
+						emit_asm(status, `mov x1, x0\n`);
+						emit_struct_address(node.params[i], status);
+						ensure_newline(status);
+						emit_asm(status, `mov x2, x0\n`);
+						emit_asm(status, `ldr x1, [x29, #${args_base + arg_slot[i] * 8}]\n`);
+						const words = Math.ceil(box_size / 8);
+						for (let w = 0; w < words; w++) {
+							emit_asm(status, `ldr x3, [x2, #${w * 8}]\n`);
+							emit_asm(status, `str x3, [x1, #${w * 8}]\n`);
+						}
+						if (strdup_string_fields) {
+							emit_string_field_strdups_at(status, arg_struct.name, "x1", 0, recorded);
+						}
+						continue;
 					}
 				} else if (nullable_scalar_arg_set.has(i)) {
 					// A nullable SCALAR parameter arrives as a (value, flag) pair:

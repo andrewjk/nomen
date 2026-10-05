@@ -679,19 +679,16 @@ UI infrastructure):
   vtable-shim symbols synthesized in `src/build.ts:75-103` (aarch64) and
   `src/build_c/build_root_node.ts:97-121` (C). Verified end-to-end on both
   backends by `test/trait_collection_destroy.test.ts`.
-- **Value structs are not boxed into trait-typed slots — use a class.**
-  Trait-typed parameters and `ClassBuffer<Trait>` slots hold heap-allocated,
-  vtable-bearing pointers. A value `struct : Trait` can't meet that without
-  an implicit heap allocation ("boxing") at the call site — the one place the
-  language hid an allocation — so boxing has been **removed**. Passing a value
-  struct to a trait-typed parameter now errors (`value struct 'X' cannot be
-used as trait 'T'; declare 'X' as a class`). The native controls are
-  `class`es, so they slot straight into `ClassBuffer<Control>` with no boxing.
-  (Trait-typed _locals_ with concrete struct storage — `var Speaker s = Dog()`
-  — still work; they keep the struct on the stack and dispatch through its
-  vtable, so there's no hidden allocation.) The `is_boxed` declaration flag,
-  the `build_boxed_declaration` helpers, and the boxed-var branch in
-  `build_auto_free` are all gone.
+- **Value structs box into trait-typed slots (STRUCT_PLAN_3 B4).** Every
+  trait-typed position — local, parameter, container element, return — holds a
+  boxed handle: a heap instance whose first word is the conformer's vtable. A
+  value `struct : Trait` boxes implicitly; the trait annotation is the marker.
+  Boxing takes ownership: boxing a bare local is a move (the donor is
+  invalidated), boxing a fresh temporary is free, and borrows/views cannot be
+  boxed. A bare `Trait` parameter takes a pointer to the caller value for the
+  call (no allocation); a `move Trait` parameter takes ownership of the box.
+  The native controls are `class`es, so they slot straight into
+  `ClassBuffer<Control>` unchanged.
 - ~~**Parse trait conformance with type arguments** (`core/System/Viewable.nm:8-11`,
   not `Controls/Viewable.nm`), so `Container<T: Control>`-style generics
   become possible. `TraitNode` has no `type_params` field, `parse_trait.ts`
@@ -1291,8 +1288,8 @@ out T` method (`owned_return`, e.g. `list.pop()`) transfers ownership
   `self` field returned garbage (masked until now because every existing
   class-trait test used literal-returning methods); `build_access_node`
   now dereferences `&local` into `x0` for `trait_class_locals` so the
-  callee receives the instance (value-struct trait locals are unaffected
-  — `&local` is already their inline instance). Runtime-tested on both
+  callee receives the instance (STRUCT_PLAN_3 B4: every trait local is a
+  boxed handle, so the deref is universal). Runtime-tested on both
   backends in `test/trait_collection_retrieve.test.ts` (`.at` borrow,
   `pop` owned, and heterogeneous `Dog`/`Cat` round-trip through
   `ClassBuffer<Speaker>`).

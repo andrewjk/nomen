@@ -7,6 +7,7 @@ import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import { is_normalized_struct_call } from "../build_common/call_init_string_fields.ts";
 import { override_return_string_fields } from "../build_common/ctor_return_owned.ts";
 import ctor_return_owned_string_fields from "../build_common/ctor_return_owned.ts";
+import { struct_needs_auto_destroy } from "../build_common/destroy_analysis.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { is_nullable_struct_type } from "../build_common/nullable_struct.ts";
@@ -32,6 +33,8 @@ import { resolve_static_value } from "./build_array_values_node.ts";
 import { get_source_address } from "./build_assignment_node.ts";
 import { emit_nursery_joins_on_return_a64 } from "./build_async_block_node.ts";
 import { emit_string_array_labels, resolve_array_element } from "./build_declaration_node.ts";
+import { build_constructor_params, is_magic_spawn_ctor } from "./build_declaration_node.ts";
+import { emit_struct_address } from "./build_function_call_node.ts";
 import build_node from "./build_node.ts";
 import { load_nullable_has } from "./build_operation_node.ts";
 import { emit_typed_store } from "./build_struct_node.ts";
@@ -49,6 +52,7 @@ import {
 	mark_moved_if_struct,
 	release_heap_string_fields,
 } from "./utils/auto_destroy.ts";
+import { build_swap_params } from "./utils/build_swap.ts";
 import { emit_descriptor_address, materialize_func_value_a64 } from "./utils/closure_a64.ts";
 import { allocate_stack_space, emit_var_address, emit_var_store } from "./utils/stack_var.ts";
 
@@ -315,6 +319,119 @@ export default function build_return_node(
 				emit_asm(status, `str x0, [x29, #${slot}]\n`);
 			}
 		});
+	}
+
+	// STRUCT_PLAN_3 B4 — a value-struct conformer returned from a
+	// trait-typed function boxes at the return boundary (T4: handles at
+	// every trait position): the handle in x0 is a heap instance whose
+	// first word is the conformer's vtable. A bare local's bytes MOVE into
+	// the box (its teardown is suppressed — the transfer marks below); any
+	// other concrete expression builds into a stack scratch and is copied,
+	// with every direct string field strdup'd (the box's destroy frees
+	// every string field it holds).
+	if (
+		status.function_return_label &&
+		!status.return_assign &&
+		status.function_return_type &&
+		!!status.traits.find((t) => t.name === status.function_return_type!.name) &&
+		!status.function_return_type.is_view &&
+		!status.function_return_type.is_array
+	) {
+		const val_t = type_from_value_node(node.value);
+		const val_struct = val_t?.name
+			? status.structs.find(
+					(st) => st.name === val_t.name && !st.is_simple_type && !st.is_class && !st.is_generic,
+				)
+			: undefined;
+		if (val_struct) {
+			const box_size = get_struct_size(val_struct.name, status);
+			// Park the box pointer in a frame slot: the constructor call (and
+			// the strdup `bl`s) clobber x0, and the function must RETURN the
+			// box handle in x0.
+			const strdup_string_fields =
+				!val_struct.functions.some((f) => f.name === "#destroy") &&
+				struct_needs_auto_destroy(val_struct, status);
+			const box_slot = allocate_stack_space(status, 8, 8);
+			if (
+				node.value.node_type === "func_call" &&
+				(node.value as FunctionCallNode).name === val_struct.name &&
+				!is_magic_spawn_ctor(node.value as FunctionCallNode)
+			) {
+				const func_call = node.value as FunctionCallNode;
+				emit_asm(status, `mov x0, #${box_size}\n`);
+				emit_malloc(status);
+				emit_asm(status, `str x0, [x29, #${box_slot}]\n`);
+				const param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
+				const outgoing = build_constructor_params(func_call, param_regs, status);
+				emit_asm(status, `ldr x0, [x29, #${box_slot}]\n`);
+				emit_asm(status, `bl ${func_call.mangled_name ?? `${func_call.name}_init`}\n`);
+				if (outgoing > 0) emit_asm(status, `add sp, sp, #${outgoing}\n`);
+				if (func_call.move_param_indices?.length) {
+					for (const idx of func_call.move_param_indices) {
+						mark_moved_if_struct(func_call.params[idx], status);
+					}
+				}
+				build_swap_params(func_call, status);
+				emit_asm(status, `ldr x0, [x29, #${box_slot}]\n`);
+				if (strdup_string_fields) {
+					emit_string_field_strdups_at(status, val_struct.name, "x0");
+				}
+			} else {
+				emit_struct_address(node.value, status);
+				ensure_newline(status);
+				emit_asm(status, `mov x2, x0\n`);
+				emit_asm(status, `mov x0, #${box_size}\n`);
+				emit_malloc(status);
+				emit_asm(status, `str x0, [x29, #${box_slot}]\n`);
+				emit_asm(status, `mov x1, x0\n`);
+				const words = Math.ceil(box_size / 8);
+				for (let w = 0; w < words; w++) {
+					emit_asm(status, `ldr x3, [x2, #${w * 8}]\n`);
+					emit_asm(status, `str x3, [x1, #${w * 8}]\n`);
+				}
+				let skip_fields: Set<string> | undefined;
+				if (node.value.node_type === "value") {
+					const donor = (node.value as ValueNode).value;
+					const prefix = `${donor}.`;
+					for (const key of status.heap_string_fields ?? []) {
+						if (key.startsWith(prefix)) {
+							skip_fields ??= new Set<string>();
+							skip_fields.add(key.slice(prefix.length));
+						}
+					}
+				}
+				emit_string_field_strdups_at(status, val_struct.name, "x1", 0, skip_fields);
+				emit_asm(status, `ldr x0, [x29, #${box_slot}]\n`);
+			}
+			// Transfer marks: the donor's bytes live in the box now — the
+			// return cleanup must not free them or their recorded strings.
+			mark_moved_if_struct(node.value, status, { for_return: true });
+			if (node.value.node_type === "value") {
+				clear_heap_string_fields(status, (node.value as ValueNode).value);
+			}
+			const finalized = status.moved ?? new Set<string>();
+			emit_asm(status, `str x0, [sp, #-16]!\n`);
+			emit_nursery_joins_on_return_a64(status);
+			for (const decl of all_scope_frames(status).flat()) {
+				if (finalized.has(decl.name)) {
+					release_heap_string_fields(status, decl.name, decl.type.name, decl.type.is_nullable);
+					continue;
+				}
+				if (is_field_struct_borrow(decl)) continue;
+				emit_destroy_for_decl(
+					status,
+					decl.name,
+					decl.type.name,
+					undefined,
+					decl.type.type_args,
+					decl.type.is_nullable,
+				);
+			}
+			emit_heap_slots_cleanup_for_return(status);
+			emit_asm(status, `ldr x0, [sp], #16\n`);
+			emit_asm(status, `b ${status.function_return_label}\n`);
+			return;
+		}
 	}
 
 	let return_join_owned_string = false;

@@ -4,24 +4,43 @@ Skipped or out-of-scope items recorded for later.
 
 ## STRUCT_PLAN_3 Phase B — remaining tranches
 
-Tranche 1 (declared ownership: `owning struct`/`owning enum` spellings, the
-flag-wins semantics, the declared-subset Copyable verifier) is landed. The
-rest of Phase B, in dependency order:
+Tranches landed: 1 (declared ownership: `owning struct`/`owning enum`
+spellings, the flag-wins semantics, the declared-subset Copyable verifier),
+2 (`Box<T>` — remaining aarch64 gap: a generic CLASS with an inline
+value-struct `T` field sizes `T` as one word, BUGS.md #10), and 3 (B4 —
+trait objects: boxed handles at every trait position on both backends,
+tier-1 demotion, boxing takes ownership, the T3 stack-copy convention at
+bare `Trait` params). The rest of Phase B, in dependency order:
 
 - **B1 full cutover**: the Copyable verifier over INFERRED ownership (a bare
   struct with a string field → error), migrating every existing owning
   struct to the declared spelling. Sequenced after the built-in rewrite
   (post-B4/R) — the string-only-struct borrow-copy semantics are
   load-bearing in the memory model until then.
-- **B2 — `Box<T>`**: LANDED (tranche 2). Remaining aarch64 gap: a generic
-  CLASS with an inline value-struct `T` field sizes `T` as one word
-  (BUGS.md #10) — the Box runtime shape is gated to C until the mono layout
-  substitutes the field type before sizing.
-- **B4 — trait objects** (the gate for class removal): boxed
-  `(vtable, instance)` handles at every trait position on both backends;
-  tier-1 demotion; boxing takes ownership (T1–T4).
-- **B5/B6**: field-restriction collapse; nullable lowerings (`Box<T>?` = the
-  null pointer; inline structs keep the companion flag).
+- **B5/B6**: field-restriction collapse ("struct fields cannot be
+  class/trait types" becomes the owning-verification error); nullable
+  lowerings spelled out (`Box<T>?` = the null pointer; inline structs keep
+  the companion flag).
+- **R** (after N): retire `class`.
+
+B4 residual corners (deliberate, recorded for later):
+
+- **Root-scope trait consts** (`const Named n = Alice()`) are still
+  inlined at use sites via `top_level_consts` — each use re-derives the
+  box (and a use as a bare value re-runs the constructor). Fine for
+  constants; revisit if root-scope trait bindings need identity.
+- **`return <computed concrete>` from a trait-returning function inside a
+  switch/match/if join** falls through the generic join path (the box
+  branch handles the direct-expression shapes only).
+- **User `#destroy` bodies that don't free string fields**: the box keeps
+  the raw (rodata) bytes for such structs — the strdup normalization gates
+  on "no user `#destroy` && auto-destroy" so the audit stays clean, at the
+  cost of those fields never being heap. D3 (string is owning) resolves
+  this at B1 cutover.
+- The aarch64 `moved_param_is_consumed` trait-receiver resolution scans
+  conformers' overrides; a conformer defined AFTER the scan's caller in the
+  same build resolves via the whole-program struct table (no ordering
+  hazard observed, but worth knowing).
 
 Known pre-existing gap surfaced by tranche 1: BUGS.md #9 (aarch64
 enum-with-data value-struct payload crashes at the match binding) — B1a's

@@ -1,5 +1,6 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
+import { struct_needs_auto_destroy } from "../build_common/destroy_analysis.ts";
 import find_enum from "../build_common/find_enum.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
@@ -38,6 +39,7 @@ import {
 } from "./access_staging.ts";
 import { array_licm_enabled } from "./array_licm.ts";
 import build_function_call_node from "./build_function_call_node.ts";
+import { emit_struct_address } from "./build_function_call_node.ts";
 import build_inline_method, {
 	begin_inline_splice,
 	end_inline_splice,
@@ -50,6 +52,7 @@ import build_nursery_spawn from "./build_nursery_spawn.ts";
 import { build_operand, tree_is_call_free } from "./build_operation_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free, emit_malloc, emit_strdup } from "./utils/audit.ts";
+import { emit_string_field_strdups_at } from "./utils/auto_destroy.ts";
 import {
 	all_scope_frames,
 	find_anchor_slot,
@@ -504,6 +507,16 @@ export function emit_address_of(node: BaseNode, status: BuildStatus) {
 			emit_var_load(status, "x0", name, 8);
 		} else {
 			emit_var_address(status, "x0", name);
+			// STRUCT_PLAN_3 B4: a trait-typed local is a boxed handle — the
+			// address of its INSTANCE, not of the pointer slot.
+			const tn = (node as ValueNode).type?.name;
+			if (
+				tn &&
+				status.traits.find((t) => t.name === tn) &&
+				trait_class_for(status, name) !== undefined
+			) {
+				emit_asm(status, `ldr x0, [x0]\n`);
+			}
 		}
 	} else if (node.node_type === "access") {
 		const access = node as AccessNode;
@@ -522,6 +535,14 @@ export function emit_address_of(node: BaseNode, status: BuildStatus) {
 					emit_deref_var_address(status, "x0", name);
 				} else {
 					emit_var_address(status, "x0", name);
+					// B4: a boxed trait local's field lives in the heap instance.
+					if (
+						target_type?.name &&
+						status.traits.find((t) => t.name === target_type.name) &&
+						trait_class_for(status, name) !== undefined
+					) {
+						emit_asm(status, `ldr x0, [x0]\n`);
+					}
 				}
 			} else if (access_chain_crosses_class(access, status)) {
 				// The target chain crosses a class-typed hop: it evaluates to a
@@ -1805,6 +1826,14 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 				emit_deref_var_address(status, "x0", name);
 			} else {
 				emit_var_address(status, "x0", name);
+				// STRUCT_PLAN_3 B4: a trait-typed local holds a boxed handle
+				// (a pointer slot) — deref once so x0 is the heap instance
+				// whose fields sit at the conformer's layout offsets. The
+				// slot's scope-keyed trait binding decides (a stale inline
+				// binding would corrupt the dispatch).
+				if (target_type?.name && trait_class_for(status, name) !== undefined) {
+					emit_asm(status, `ldr x0, [x0]\n`);
+				}
 			}
 		} else {
 			build_node(base, status);
@@ -3148,6 +3177,55 @@ function build_access_method(
 		// call path in build_function_call_node.
 		const is_struct =
 			is_struct_type(param_type, status) || is_enum_with_data_type(param_type, status);
+		// STRUCT_PLAN_3 B4/T2 — a value-struct conformer argument to a
+		// `move Trait` method parameter is boxed at the call site (the
+		// callee owns and frees the heap handle). A BARE trait param skips
+		// this branch: the struct path below already passes the caller
+		// value's address (the T3 stack-copy convention).
+		const box_for_move_trait_param =
+			!is_ref_param &&
+			param.node_type === "value" &&
+			!!access_callee_params?.[i] &&
+			!!access_callee_params[i].is_moved &&
+			!!status.traits.find((t) => t.name === access_callee_params[i].type.name) &&
+			!!status.structs.find(
+				(st) => st.name === param_type && !st.is_simple_type && !st.is_class && !st.is_generic,
+			);
+		if (box_for_move_trait_param) {
+			const arg_struct = status.structs.find(
+				(st) => st.name === param_type && !st.is_simple_type && !st.is_class && !st.is_generic,
+			)!;
+			const strdup_string_fields =
+				!arg_struct.functions.some((f) => f.name === "#destroy") &&
+				struct_needs_auto_destroy(arg_struct, status);
+			const box_size = get_struct_size(arg_struct.name, status);
+			const donor_name = (param as ValueNode).value;
+			const recorded = new Set<string>();
+			for (const key of status.heap_string_fields ?? []) {
+				if (key.startsWith(`${donor_name}.`)) {
+					recorded.add(key.slice(donor_name.length + 1));
+				}
+			}
+			emit_asm(status, `mov x0, #${box_size}\n`);
+			emit_malloc(status);
+			emit_asm(status, `str x0, [x29, #${arg_spill_base + arg_slot[i] * 8}]\n`);
+			emit_asm(status, `mov x1, x0\n`);
+			emit_struct_address(param, status);
+			ensure_newline(status);
+			emit_asm(status, `mov x2, x0\n`);
+			emit_asm(status, `ldr x1, [x29, #${arg_spill_base + arg_slot[i] * 8}]\n`);
+			const words = Math.ceil(box_size / 8);
+			for (let w = 0; w < words; w++) {
+				emit_asm(status, `ldr x3, [x2, #${w * 8}]\n`);
+				emit_asm(status, `str x3, [x1, #${w * 8}]\n`);
+			}
+			if (strdup_string_fields) {
+				emit_string_field_strdups_at(status, arg_struct.name, "x1", 0, recorded);
+			}
+			ensure_newline(status);
+			emit_asm(status, `str x1, [x29, #${arg_spill_base + arg_slot[i] * 8}]\n`);
+			continue;
+		}
 		if (is_ref_param) {
 			const rp_name = param.node_type === "value" ? (param as ValueNode).value : undefined;
 			const rp_slot = rp_name !== undefined ? status.ref_class_slots?.get(rp_name) : undefined;

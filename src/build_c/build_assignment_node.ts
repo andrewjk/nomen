@@ -5,6 +5,7 @@ import emit_field_overrides, {
 import { is_normalized_struct_call } from "../build_common/call_init_string_fields.ts";
 import record_ctor_heap_default_fields from "../build_common/ctor_heap_default_fields.ts";
 import { override_displaced_string_fields } from "../build_common/ctor_return_owned.ts";
+import { struct_needs_auto_destroy } from "../build_common/destroy_analysis.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import { claim_init_default_seed_reclaim } from "../build_common/init_computed_seeds.ts";
 import { mono_type_name, resolve_struct_type } from "../build_common/mono_name.ts";
@@ -635,15 +636,104 @@ export default function build_assignment_node(
 		if (lhs_trait_class !== undefined && !node.operator) {
 			const rhs = node.right_value;
 			const rhs_is_bare_value = rhs.node_type === "value";
-			// Alias safety (two-tier trait copies): a slot that is itself an
-			// ALIAS of a class-backed trait local (`var Rule b = a`) owns
-			// nothing — reassignment overwrites the pointer without
-			// reclaiming (the source still owns the instance). And when THIS
-			// slot has live aliases, the displaced instance is still shared —
-			// skip the destroy (bounded leak) rather than dangle them.
+			// Alias safety (B4 trait handles): a slot that is itself an
+			// ALIAS of another trait local owns nothing — reassignment
+			// overwrites the pointer without reclaiming (the source still
+			// owns the instance). And when THIS slot has live aliases, the
+			// displaced instance is still shared — skip the destroy (bounded
+			// leak) rather than dangle them.
 			const lhs_is_alias_copy = !!status.class_alias_vars?.has(lhs_name);
 			const lhs_has_alias = !!status.aliased_class_sources?.has(lhs_name);
 			const reclaim = !lhs_is_alias_copy && !lhs_has_alias;
+			// STRUCT_PLAN_3 B4 — a value-struct conformer RHS boxes into the
+			// trait slot (T1: the annotation is the marker; T2: boxing takes
+			// ownership). A bare concrete local MOVED in: strdup its
+			// unrecorded string fields in place, copy the bytes into a fresh
+			// box, and drop the donor's teardown and records. A fresh
+			// temporary (constructor / struct-returning call) constructs into
+			// a stack temp, strdups, and moves into the box.
+			const rhs_type = type_from_value_node(rhs);
+			const rhs_concrete_struct =
+				rhs_type?.name && !status.traits.find((t) => t.name === rhs_type.name)
+					? status.structs.find(
+							(st) => st.name === rhs_type.name && !st.is_simple_type && !st.is_class,
+						)
+					: undefined;
+			if (rhs_concrete_struct) {
+				const strdup_string_fields =
+					!rhs_concrete_struct.functions.some((f) => f.name === "#destroy") &&
+					struct_needs_auto_destroy(rhs_concrete_struct, status);
+				const string_fields = strdup_string_fields ? direct_string_fields(rhs_concrete_struct) : [];
+				const donor_name = rhs.node_type === "value" ? (rhs as ValueNode).value : undefined;
+				// Reclaim the displaced box first (the RHS may reference the
+				// LHS — compute the new box before freeing).
+				const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+				const temp = `_treassign_${id}`;
+				if (donor_name !== undefined && /^[A-Za-z_][A-Za-z0-9_]*$/.test(donor_name)) {
+					const recorded = new Set<string>();
+					for (const key of status.heap_string_fields ?? []) {
+						if (key.startsWith(`${donor_name}.`)) {
+							recorded.add(key.slice(donor_name.length + 1));
+						}
+					}
+					const unrecorded = string_fields.filter((f) => !recorded.has(f.name));
+					if (unrecorded.length > 0) {
+						status.code += `{ struct ${rhs_concrete_struct.name} *_src = (struct ${rhs_concrete_struct.name} *)&`;
+						status.suppress_dereference = true;
+						build_node(rhs, status);
+						status.suppress_dereference = false;
+						status.code += `; `;
+						for (const f of unrecorded) {
+							status.code += `_src->${f.name} = nomen_str_dup(_src->${f.name}); `;
+						}
+						status.code += `};\n`;
+					}
+					for (const key of Array.from(status.heap_string_fields ?? [])) {
+						if (key.startsWith(`${donor_name}.`)) status.heap_string_fields!.delete(key);
+					}
+					splice_decl_from_c_scopes(status, donor_name);
+					if (!status.moved) status.moved = new Set();
+					status.moved.add(donor_name);
+					status.code += `void *${temp} = (void *)malloc(sizeof(struct ${rhs_concrete_struct.name}));\n`;
+					status.code += `*(struct ${rhs_concrete_struct.name} *)${temp} = `;
+					status.suppress_dereference = true;
+					build_node(rhs, status);
+					status.suppress_dereference = false;
+					status.code += `;\n`;
+				} else {
+					const box_temp = `_tbox_${id}`;
+					status.code += `struct ${rhs_concrete_struct.name} ${box_temp} = `;
+					emit_rhs_value(rhs, nir_rhs, status);
+					status.code += `;\n`;
+					for (const f of string_fields) {
+						status.code += `${box_temp}.${f.name} = nomen_str_dup(${box_temp}.${f.name});\n`;
+					}
+					status.code += `void *${temp} = (void *)malloc(sizeof(struct ${rhs_concrete_struct.name}));\n`;
+					status.code += `*(struct ${rhs_concrete_struct.name} *)${temp} = ${box_temp};\n`;
+				}
+				if (reclaim) {
+					if (lhs_type?.is_nullable) {
+						status.code += `if (${lhs_name}) { ${lhs_trait_class}_destroy(${lhs_name}); free(${lhs_name}); }\n`;
+					} else {
+						status.code += `${lhs_trait_class}_destroy(${lhs_name}); free(${lhs_name});\n`;
+					}
+				}
+				status.code += `${lhs_name} = ${temp};\n`;
+				return;
+			}
+			// A bare TRAIT-typed RHS assigns the handle — an alias (the
+			// source keeps owning). Record the alias so neither side reclaims
+			// the shared instance (the same deferred-free posture classes use).
+			if (
+				rhs_is_bare_value &&
+				!!status.traits.find((t) => t.name === (rhs as ValueNode).type?.name)
+			) {
+				const src_name = (rhs as ValueNode).value;
+				if (!status.class_alias_vars) status.class_alias_vars = new Set();
+				status.class_alias_vars.add(lhs_name);
+				if (!status.aliased_class_sources) status.aliased_class_sources = new Set();
+				status.aliased_class_sources.add(src_name);
+			}
 			// Compute a non-bare RHS into a temp first to avoid use-after-free
 			// when it references the LHS.
 			if (!rhs_is_bare_value) {

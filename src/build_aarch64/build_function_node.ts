@@ -1352,7 +1352,8 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			// into a container, forwarded, returned) is not the callee's to
 			// free — mirrors the C backend's registration gate. A method call
 			// on the param only counts when the callee may retain its receiver.
-			if (moved_param_is_consumed(node, name, info.type_name, status.structs)) continue;
+			if (moved_param_is_consumed(node, name, info.type_name, status.structs, status.traits))
+				continue;
 			if (need_guard) {
 				emit_asm(status, `ldr x0, [x29, #${info.offset}]\n`);
 				emit_asm(status, `ldr x1, [x29, #${return_save!}]\n`);

@@ -453,7 +453,11 @@ export function free_scoped_declarations(
 		// `#destroy` (user side effects) and its owned fields (recursively via
 		// emit_struct_destroys). Without this, a trait-typed local's #destroy
 		// side effects were silently dropped and owned fields leaked.
-		const is_trait_typed = !!status.traits.find((t) => t.name === dec.type.name);
+		// STRUCT_PLAN_3 B4: a boxed trait local carries `trait_class_trait`
+		// and reclaims through the pointer arm above (destroy shim + free of
+		// the box) — this by-value arm must not also fire (double destroy).
+		const is_trait_typed =
+			dec.trait_class_trait === undefined && !!status.traits.find((t) => t.name === dec.type.name);
 		if (is_trait_typed && !is_destructured_field_access && !dec.type.is_array && dec.value) {
 			const val_type = type_from_value_node(dec.value);
 			const concrete = val_type?.name

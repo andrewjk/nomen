@@ -31,6 +31,7 @@ import {
 	emit_address_of,
 	resolve_at_element_addr,
 } from "./build_access_node.ts";
+import { build_constructor_params, is_magic_spawn_ctor } from "./build_declaration_node.ts";
 import build_node from "./build_node.ts";
 import { is_owned_heap_temp, load_nullable_has } from "./build_operation_node.ts";
 import {
@@ -45,9 +46,11 @@ import {
 import { emit_typed_store } from "./build_struct_node.ts";
 import { emit_expr_from_nir } from "./emit_nir.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
+import { emit_malloc } from "./utils/audit.ts";
 import { emit_free, emit_strdup } from "./utils/audit.ts";
 import {
 	anchor_heap_pointer,
+	clear_heap_string_fields,
 	consume_anchor_slot,
 	defer_anchor_destroy,
 	drop_heap_string_field_records,
@@ -57,12 +60,14 @@ import {
 	emit_enum_payload_frees_at,
 	emit_enum_payload_strdups_at,
 	emit_recorded_field_reclaim_for_slot,
+	emit_string_field_strdups_at,
 	find_anchor_slot,
 	mark_anchor_destroy,
 	mark_moved_if_struct,
 	record_heap_string_field,
 	trait_class_for,
 } from "./utils/auto_destroy.ts";
+import { build_swap_params } from "./utils/build_swap.ts";
 import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
 import { emit_index_address, emit_index_store, pointer_element_size } from "./utils/ptr_access.ts";
 import {
@@ -205,6 +210,13 @@ function get_base_address(access: AccessNode, status: BuildStatus, reg: string) 
 			emit_deref_var_address(status, reg, name);
 		} else {
 			emit_var_address(status, reg, name);
+			// STRUCT_PLAN_3 B4: a trait-typed local holds a boxed handle (a
+			// pointer slot) — deref once so the field store lands inside the
+			// heap instance at the conformer's layout offset.
+			const target_type = type_from_value_node(access.target);
+			if (target_type?.name && trait_class_for(status, name) !== undefined) {
+				emit_asm(status, `ldr ${reg}, [${reg}]\n`);
+			}
 		}
 	} else if (access_chain_crosses_class(access, status)) {
 		// A chain crossing a class-typed hop (`a.x.s = …` where `x` is a
@@ -967,15 +979,44 @@ export default function build_assignment_node(
 		const name = (node.left_value as ValueNode).value;
 		const paramReg = status.function_param_regs?.get(name);
 
-		if (rhs_is_struct && !node.operator) {
+		// STRUCT_PLAN_3 B4 — a trait-typed local's reassignment runs through
+		// the trait branch for every RHS shape (a class/conformer constructor,
+		// a trait-returning call, a boxed conformer) so the displaced box is
+		// reclaimed via the `<Trait>_destroy` shim before the new handle
+		// lands. (`rhs_is_struct` alone misses a trait-typed RHS — `r = pick()`.)
+		const rhs_trait_rated_early = !!status.traits.find((t) => t.name === rhs_type.name);
+		if ((rhs_is_struct || rhs_trait_rated_early) && !node.operator) {
 			const struct_size = get_struct_size(rhs_type.name, status);
 			const rhs_struct = status.structs.find((s) => s.name === rhs_type.name && s.is_class);
-			if (rhs_struct && node.right_value.node_type === "func_call") {
+			// STRUCT_PLAN_3 B4 — a value-struct conformer RHS boxes into the
+			// trait slot (T1/T2); the box is a heap instance with the
+			// conformer's vtable at offset 0, so the displaced value's
+			// trait-shim destroy + free and the anchored replacement work
+			// exactly like the class-backed shape.
+			const rhs_trait_rated = rhs_trait_rated_early;
+			const rhs_value_struct =
+				!rhs_struct && !rhs_trait_rated
+					? status.structs.find(
+							(s) => s.name === rhs_type.name && !s.is_simple_type && !s.is_generic && !s.is_class,
+						)
+					: undefined;
+			if (node.right_value.node_type === "func_call" || rhs_value_struct || rhs_trait_rated) {
 				const func_call = node.right_value as import("../nodes/FunctionCallNode.ts").default;
 				const is_constructor = status.structs.find(
 					(s) => s.name === func_call.name && !s.is_simple_type,
 				);
-				if (is_constructor) {
+				// Only enter the pointer-slot machinery when the LHS is a
+				// trait/class SLOT (a binding) or the RHS is a class
+				// constructor — a plain value-struct reassignment (`m = [ ..
+				// Mixed(2) ]`, no trait binding) must stay on the byte-copy
+				// path below (anchoring its stack temp would free a stack
+				// address at scope exit).
+				const lhs_is_trait_slot = trait_class_for(status, name) !== undefined;
+				if (
+					lhs_is_trait_slot ||
+					(is_constructor && rhs_struct) ||
+					(rhs_trait_rated && !rhs_value_struct)
+				) {
 					const is_alias = !!status.class_alias_vars?.has(name);
 					// A trait-typed class local (`var Speaker s = Dog(); s = Cat()`)
 					// reclaims its old instance via the trait's `<Trait>_destroy`
@@ -1008,8 +1049,107 @@ export default function build_assignment_node(
 							emit_free(status);
 							emit_asm(status, `${no_free_label}:\n`);
 						}
-						mark_moved_if_struct(node.right_value, status);
 						status.moved?.delete(name);
+						if (rhs_value_struct) {
+							// BOX the conformer. Fresh constructor → run the ctor
+							// into the malloc'd box; bare local donor → move the
+							// bytes (unrecorded string fields strdup in place, the
+							// donor's teardown suppressed); any other concrete
+							// expression → sret scratch + copy. A user `#destroy`
+							// governs the fields itself — skip the strdup
+							// normalization (the auto destroy is what frees).
+							const strdup_string_fields =
+								!rhs_value_struct.functions.some((f) => f.name === "#destroy") &&
+								struct_needs_auto_destroy(rhs_value_struct, status);
+							const box_size = get_struct_size(rhs_value_struct.name, status);
+							const direct_ctor =
+								node.right_value.node_type === "func_call" &&
+								func_call.name === rhs_value_struct.name &&
+								!is_magic_spawn_ctor(func_call);
+							if (direct_ctor) {
+								emit_asm(status, `mov x0, #${box_size}\n`);
+								emit_malloc(status);
+								emit_var_store(status, "x0", name, 8);
+								anchor_heap_pointer(status, name, decl_frame);
+								mark_anchor_destroy(status, name, trait_class_trait);
+								const param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
+								const outgoing = build_constructor_params(func_call, param_regs, status);
+								emit_var_load(status, "x0", name, 8);
+								emit_asm(status, `bl ${func_call.mangled_name ?? `${func_call.name}_init`}\n`);
+								if (outgoing > 0) emit_asm(status, `add sp, sp, #${outgoing}\n`);
+								if (func_call.move_param_indices?.length) {
+									for (const idx of func_call.move_param_indices) {
+										mark_moved_if_struct(func_call.params[idx], status);
+									}
+								}
+								build_swap_params(func_call, status);
+								emit_var_load(status, "x0", name, 8);
+								if (strdup_string_fields) {
+									emit_string_field_strdups_at(status, rhs_value_struct.name, "x0");
+								}
+							} else if (node.right_value.node_type === "value") {
+								const donor_name = (node.right_value as ValueNode).value;
+								const recorded = new Set<string>();
+								for (const key of status.heap_string_fields ?? []) {
+									if (key.startsWith(`${donor_name}.`)) {
+										recorded.add(key.slice(donor_name.length + 1));
+									}
+								}
+								emit_asm(status, `mov x0, #${box_size}\n`);
+								emit_malloc(status);
+								emit_var_store(status, "x0", name, 8);
+								anchor_heap_pointer(status, name, decl_frame);
+								mark_anchor_destroy(status, name, trait_class_trait);
+								emit_asm(status, `mov x1, x0\n`);
+								get_source_address(node.right_value, status, nir_rhs);
+								ensure_newline(status);
+								emit_asm(status, `mov x2, x0\n`);
+								emit_var_load(status, "x1", name, 8);
+								const words = Math.ceil(box_size / 8);
+								for (let w = 0; w < words; w++) {
+									emit_asm(status, `ldr x3, [x2, #${w * 8}]\n`);
+									emit_asm(status, `str x3, [x1, #${w * 8}]\n`);
+								}
+								emit_var_load(status, "x0", name, 8);
+								if (strdup_string_fields) {
+									emit_string_field_strdups_at(status, rhs_value_struct.name, "x0", 0, recorded);
+								}
+								mark_moved_if_struct(node.right_value, status);
+								clear_heap_string_fields(status, donor_name);
+							} else {
+								const scratch = allocate_stack_space(status, box_size, 8);
+								const old_buffer = status.struct_return_buffer;
+								const old_buffer_var = status.struct_return_buffer_var;
+								const old_preset = status.call_x8_preset;
+								emit_asm(status, `add x8, x29, #${scratch}\n`);
+								status.struct_return_buffer_var = name;
+								status.struct_return_buffer = "x8";
+								status.call_x8_preset = true;
+								emit_rhs_value(node.right_value, nir_rhs, status);
+								status.struct_return_buffer = old_buffer;
+								status.struct_return_buffer_var = old_buffer_var;
+								status.call_x8_preset = old_preset;
+								emit_asm(status, `mov x0, #${box_size}\n`);
+								emit_malloc(status);
+								emit_var_store(status, "x0", name, 8);
+								anchor_heap_pointer(status, name, decl_frame);
+								mark_anchor_destroy(status, name, trait_class_trait);
+								emit_asm(status, `mov x1, x0\n`);
+								emit_asm(status, `add x2, x29, #${scratch}\n`);
+								const words = Math.ceil(box_size / 8);
+								for (let w = 0; w < words; w++) {
+									emit_asm(status, `ldr x3, [x2, #${w * 8}]\n`);
+									emit_asm(status, `str x3, [x1, #${w * 8}]\n`);
+								}
+								emit_var_load(status, "x0", name, 8);
+								if (strdup_string_fields) {
+									emit_string_field_strdups_at(status, rhs_value_struct.name, "x0");
+								}
+							}
+							build_swap(node, status, nir_swap);
+							return;
+						}
+						mark_moved_if_struct(node.right_value, status);
 						emit_rhs_value(node.right_value, nir_rhs, status);
 						ensure_newline(status);
 						anchor_heap_pointer(status, name, decl_frame);

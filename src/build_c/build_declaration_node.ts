@@ -9,6 +9,7 @@ import {
 } from "../build_common/call_init_string_fields.ts";
 import record_ctor_heap_default_fields from "../build_common/ctor_heap_default_fields.ts";
 import { override_displaced_string_fields } from "../build_common/ctor_return_owned.ts";
+import { struct_needs_auto_destroy } from "../build_common/destroy_analysis.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { call_result_type, is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
@@ -126,6 +127,34 @@ export default function build_declaration_node(
 		for (let value of array_values.values) {
 			const var_type = type_from_value_node(value);
 			const var_name = `_${node.name}_${i}`;
+			// STRUCT_PLAN_3 B4: a value-struct conformer element BOXES — the
+			// element temps become trait-typed declarations, so the B4
+			// declaration path emits the heap handle (vtable at offset 0)
+			// and registers it for `<Trait>_destroy` + free at scope exit.
+			const elem_struct = var_type?.name
+				? status.structs.find(
+						(st) => st.name === var_type.name && !st.is_simple_type && !st.is_class,
+					)
+				: undefined;
+			if (elem_struct && status.traits.find((t) => t.name === node.type.name)) {
+				const trait_type = new Type(node.type.name);
+				build_declaration_node(
+					new DeclarationNode(
+						node.start,
+						node.visibility,
+						node.declaration,
+						var_name,
+						trait_type,
+						value,
+					),
+					status,
+					nir_elems?.[i - 1],
+				);
+				// The box IS the pointer: it enters the array without `&`.
+				variables.push(var_name);
+				i += 1;
+				continue;
+			}
 			status.scoped_declarations.push(
 				new DeclarationNode(node.start, node.visibility, node.declaration, var_name, var_type),
 			);
@@ -134,7 +163,7 @@ export default function build_declaration_node(
 			emit_init_value(value, nir_elems?.[i - 1], status);
 			status.code += ";\n";
 			i += 1;
-			variables.push(var_name);
+			variables.push(`&${var_name}`);
 		}
 
 		// Then build the array
@@ -142,7 +171,7 @@ export default function build_declaration_node(
 		if (node.type.length) {
 			build_node(node.type.length, status);
 		}
-		status.code += `] = {${variables.map((v) => `&${v}`).join(", ")}}`;
+		status.code += `] = {${variables.join(", ")}}`;
 	} else {
 		const safe_name = c_function_name(node.name);
 		// A TUPLE variable (`var pair = make()` / `var pair = [move s, 42]`)
@@ -330,6 +359,126 @@ export default function build_declaration_node(
 			status.code += `;\n`;
 			return;
 		}
+		// STRUCT_PLAN_3 B4 — trait handles are boxed, owning values. A trait
+		// handle MOVED from another trait local transfers the pointer: the
+		// donor's anchor slot is spliced (it loses its scope-exit destroy)
+		// and this binding becomes the instance's single owner.
+		if (
+			storage_is_trait_concrete &&
+			node.value &&
+			!concrete_struct_name &&
+			node.value.node_type === "value" &&
+			!!status.traits.find((t) => t.name === type_from_value_node(node.value!)?.name)
+		) {
+			if (!status.class_vars) status.class_vars = new Set();
+			status.class_vars.add(safe_name);
+			node.trait_class_trait = node.type.name;
+			if (node.type?.name) {
+				if (!status.variable_types) status.variable_types = new Map();
+				status.variable_types.set(safe_name, node.type);
+			}
+			const donor = (node.value as ValueNode).value;
+			splice_decl_from_c_scopes(status, donor);
+			if (!status.moved) status.moved = new Set();
+			status.moved.add(donor);
+			status.scoped_declarations.push(node);
+			status.code += `void *${safe_name} = (void *)`;
+			emit_init_value(node.value, nir_init, status);
+			status.code += `;\n`;
+			return;
+		}
+		// STRUCT_PLAN_3 B4 — a trait-typed local whose concrete storage is a
+		// VALUE struct boxes it (T1/T4: the annotation is the marker; the
+		// inline tier-1 representation is retired). The handle is a heap
+		// instance whose first word is the conformer's vtable — exactly the
+		// representation a class-backed slot holds — so vtable dispatch,
+		// trait-field accessors, and `<Trait>_destroy` teardown work
+		// verbatim, and the slot can be reassigned across conformers.
+		// Boxing takes ownership (T2):
+		//   - a fresh temporary (constructor / struct-returning call) is
+		//     built into a stack temp, its direct string fields are strdup'd
+		//     (the box's destroy frees every string field it holds), and the
+		//     bytes move into the malloc'd box;
+		//   - a bare value-struct local is MOVED into the box: unrecorded
+		//     (rodata/borrow) string fields are strdup'd IN PLACE first, the
+		//     bytes are copied, and the donor loses its teardown and records
+		//     (the box owns the transferred state now).
+		if (storage_is_trait_concrete && node.value && concrete_struct_name) {
+			const concrete_struct = status.structs.find((s) => s.name === concrete_struct_name);
+			if (concrete_struct && !concrete_struct.is_class) {
+				if (!status.class_vars) status.class_vars = new Set();
+				status.class_vars.add(safe_name);
+				node.trait_class_trait = node.type.name;
+				if (node.type?.name) {
+					if (!status.variable_types) status.variable_types = new Map();
+					status.variable_types.set(safe_name, node.type);
+				}
+				// The box's destroy dispatches through the vtable's destroy
+				// slot — populated when the struct has a user `#destroy` or
+				// owns fields the auto destroy reclaims. Only then does
+				// strdup'ing the fields pay off; otherwise the box keeps the
+				// raw (rodata/borrow) bytes and a strdup would leak (the
+				// shim's NULL destroy slot frees nothing).
+				const strdup_string_fields =
+					!concrete_struct.functions.some((f) => f.name === "#destroy") &&
+					struct_needs_auto_destroy(concrete_struct, status);
+				const string_fields = strdup_string_fields ? direct_string_fields(concrete_struct) : [];
+				const donor_name =
+					node.value.node_type === "value" ? (node.value as ValueNode).value : undefined;
+				if (donor_name !== undefined && /^[A-Za-z_][A-Za-z0-9_]*$/.test(donor_name)) {
+					// Boxing move from a bare local: strdup the UNRECORDED
+					// (rodata/borrow) string fields in place — the box's
+					// destroy frees every string field — then transfer the
+					// recorded ones silently (the box owns them now).
+					const recorded = new Set<string>();
+					for (const key of status.heap_string_fields ?? []) {
+						if (key.startsWith(`${donor_name}.`)) {
+							recorded.add(key.slice(donor_name.length + 1));
+						}
+					}
+					const unrecorded = string_fields.filter((f) => !recorded.has(f.name));
+					if (unrecorded.length > 0) {
+						status.code += `{ struct ${concrete_struct.name} *_src = (struct ${concrete_struct.name} *)&`;
+						status.suppress_dereference = true;
+						build_node(node.value, status);
+						status.suppress_dereference = false;
+						status.code += `; `;
+						for (const f of unrecorded) {
+							status.code += `_src->${f.name} = nomen_str_dup(_src->${f.name}); `;
+						}
+						status.code += `};\n`;
+					}
+					for (const key of Array.from(status.heap_string_fields ?? [])) {
+						if (key.startsWith(`${donor_name}.`)) status.heap_string_fields!.delete(key);
+					}
+					// The donor's bytes were moved into the box: no teardown.
+					splice_decl_from_c_scopes(status, donor_name);
+					if (!status.moved) status.moved = new Set();
+					status.moved.add(donor_name);
+					status.code += `void *${safe_name} = (void *)malloc(sizeof(struct ${concrete_struct.name}));\n`;
+					status.code += `*(struct ${concrete_struct.name} *)${safe_name} = `;
+					status.suppress_dereference = true;
+					build_node(node.value, status);
+					status.suppress_dereference = false;
+					status.code += `;\n`;
+				} else {
+					// Fresh temporary (constructor / struct-returning call):
+					// construct into a stack temp, strdup its string fields,
+					// move the bytes into the box.
+					const temp = `_box_${safe_name}`;
+					status.code += `struct ${concrete_struct.name} ${temp} = `;
+					emit_init_value(node.value, nir_init, status);
+					status.code += `;\n`;
+					for (const f of string_fields) {
+						status.code += `${temp}.${f.name} = nomen_str_dup(${temp}.${f.name});\n`;
+					}
+					status.code += `void *${safe_name} = (void *)malloc(sizeof(struct ${concrete_struct.name}));\n`;
+					status.code += `*(struct ${concrete_struct.name} *)${safe_name} = ${temp};\n`;
+				}
+				status.scoped_declarations.push(node);
+				return;
+			}
+		}
 		// A trait-typed local initialized from a method-call return (e.g.
 		// `var Speaker p = pets.at(i)` or `var Speaker p = pets.pop()`)
 		// holds a vtable-bearing class pointer the callee already
@@ -349,10 +498,20 @@ export default function build_declaration_node(
 		const val_is_trait_method_return =
 			storage_is_trait_concrete &&
 			!concrete_struct_name &&
-			node.value?.node_type === "access" &&
-			(node.value as AccessNode).access.node_type === "access_func";
-		if (val_is_trait_method_return) {
-			const inner = (node.value as AccessNode).access as AccessFunctionCallNode;
+			((node.value?.node_type === "access" &&
+				(node.value as AccessNode).access.node_type === "access_func") ||
+				// STRUCT_PLAN_3 B4: a free function returning the trait
+				// (`var Rule r = pick()`) yields the same owned-or-borrowed
+				// handle — owned unless the function is a registered
+				// borrow-returner (bounded leak posture, as for classes).
+				(node.value !== undefined &&
+					node.value.node_type === "func_call" &&
+					!!status.traits.find((t) => t.name === type_from_value_node(node.value!)?.name)));
+		if (val_is_trait_method_return && node.value) {
+			const inner =
+				node.value.node_type === "access"
+					? ((node.value as AccessNode).access as AccessFunctionCallNode)
+					: undefined;
 			if (!status.class_vars) status.class_vars = new Set();
 			status.class_vars.add(safe_name);
 			// Same declaration-carried trait record as above: ownership (destroy
@@ -362,7 +521,11 @@ export default function build_declaration_node(
 				if (!status.variable_types) status.variable_types = new Map();
 				status.variable_types.set(safe_name, node.type);
 			}
-			if (inner.owned_return) {
+			const owned =
+				inner !== undefined || node.value.node_type !== "func_call"
+					? !!inner?.owned_return
+					: !call_in_set(status.borrow_returning_functions, node.value as FunctionCallNode);
+			if (owned) {
 				status.scoped_declarations.push(node);
 			} else {
 				if (!status.class_alias_vars) status.class_alias_vars = new Set();

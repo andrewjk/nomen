@@ -1,6 +1,7 @@
 import BaseNode from "../nodes/BaseNode.ts";
 import type FunctionNode from "../nodes/FunctionNode.ts";
 import type StructNode from "../nodes/StructNode.ts";
+import type TraitNode from "../nodes/TraitNode.ts";
 
 /**
  * Whether a `move` class parameter's ownership escapes the function body —
@@ -16,8 +17,9 @@ import type StructNode from "../nodes/StructNode.ts";
  * (self passed as an argument, stored, returned, or dispatched into an
  * unresolvable/raw/spawning context). When the method provably does not
  * retain its receiver — or no receiver type / struct table is supplied — the
- * conservative "consumed" answer is kept. Trait-typed receivers have no
- * single resolvable body and stay conservative.
+ * conservative "consumed" answer is kept. A TRAIT-typed receiver (STRUCT_PLAN_3
+ * B4) resolves through every conformer's override (plus the trait's default
+ * body): the receiver escapes only if ANY implementation may retain it.
  *
  * Shared by the C backend's function epilogue and the aarch64 function /
  * method move-param reclaims so both agree on when a moved param is reclaimed.
@@ -27,6 +29,7 @@ export function moved_param_is_consumed(
 	name: string,
 	receiver_type?: string,
 	structs?: StructNode[],
+	traits?: TraitNode[],
 ): boolean {
 	// A raw `#arch` body is opaque to this scan — it may store the param into
 	// an owning container (ClassBuffer.store_T/replace_T do exactly that), so
@@ -37,12 +40,13 @@ export function moved_param_is_consumed(
 	for (const stmt of statements) {
 		if ((stmt as { node_type?: string })?.node_type === "raw") return true;
 	}
-	const state = { structs, in_progress: new WeakSet<FunctionNode>() };
+	const state = { structs, traits, in_progress: new WeakSet<FunctionNode>() };
 	return scan_body(statements, name, receiver_type, state);
 }
 
 type ScanState = {
 	structs?: StructNode[];
+	traits?: TraitNode[];
 	in_progress: WeakSet<FunctionNode>;
 };
 
@@ -157,6 +161,29 @@ function receiver_escapes_through(
 	state: ScanState,
 ): boolean {
 	if (!receiver_type || !state.structs) return true;
+	// STRUCT_PLAN_3 B4: a trait-typed receiver resolves through every
+	// conformer's override (plus the trait's default body where a conformer
+	// doesn't override). The receiver escapes only if ANY implementation may
+	// retain it — so a read-only dispatch (`rule.test(line)`) reclaims at the
+	// epilogue instead of leaking.
+	const trait = state.traits?.find((t) => t.name === receiver_type);
+	if (trait) {
+		const conformers = state.structs.filter((s) => s.traits.includes(receiver_type));
+		if (conformers.length === 0) return true;
+		for (const conformer of conformers) {
+			const overloads = conformer.functions.filter((f) => f.name === method_name);
+			if (overloads.length === 0) {
+				const trait_default = trait.functions.find((f) => f.name === method_name);
+				if (!trait_default) return true;
+				if (receiver_escapes(trait_default, conformer.name, state)) return true;
+				continue;
+			}
+			for (const func of overloads) {
+				if (receiver_escapes(func, conformer.name, state)) return true;
+			}
+		}
+		return false;
+	}
 	const struct = state.structs.find((s) => s.name === receiver_type);
 	if (!struct) return true;
 	const overloads = struct.functions.filter((f) => f.name === method_name);

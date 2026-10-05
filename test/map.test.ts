@@ -422,7 +422,7 @@ pub class Holder {
 	pub var List<Render> renders = List<Render>()
 
 	pub func add = (self, move Render r) {
-		self.renders.push(r)
+		self.renders.push(move r)
 	}
 }
 

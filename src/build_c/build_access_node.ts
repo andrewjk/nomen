@@ -1,3 +1,5 @@
+import { struct_needs_auto_destroy } from "../build_common/destroy_analysis.ts";
+import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { is_nullable_struct_type } from "../build_common/nullable_struct.ts";
@@ -1426,6 +1428,67 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 						!!status.structs.find((s) => s.name === param_type.name && !s.is_simple_type) ||
 						!!status.traits.find((t) => t.name === param_type.name) ||
 						!!status.class_vars?.has(param_value);
+					// STRUCT_PLAN_3 B4/T2 — a value-struct conformer argument to a
+					// `move Trait` method parameter is boxed at the call site: the
+					// callee owns (and frees) a heap instance whose first word is
+					// the conformer's vtable. Unrecorded (rodata/borrow) string
+					// fields are strdup'd in place first (the box's destroy frees
+					// every string field), and the checker stamped the arg
+					// move-owned, so the post-call splice below drops the donor's
+					// records without freeing (the box owns the transferred state).
+					// A BARE trait param skips this branch: the struct path below
+					// passes the caller value's address (the T3 stack-copy
+					// convention). A trait-TYPED donor (a handle transfer) also
+					// skips it — the existing pointer path is correct.
+					{
+						const callee_tp = target_method?.params[i + self_offset];
+						const callee_move_trait =
+							!!callee_tp?.is_moved && !!status.traits.find((t) => t.name === callee_tp.type.name);
+						const box_arg_struct =
+							callee_move_trait && access_func.params[i].node_type === "value"
+								? status.structs.find(
+										(st) =>
+											st.name === param_type.name &&
+											!st.is_simple_type &&
+											!st.is_class &&
+											!st.is_generic,
+									)
+								: undefined;
+						if (callee_move_trait && box_arg_struct) {
+							const donor_name = (access_func.params[i] as ValueNode).value;
+							// strdup only when the box's destroy slot will free
+							// the fields (user `#destroy` or the auto destroy).
+							const strdup_string_fields =
+								!box_arg_struct.functions.some((f) => f.name === "#destroy") &&
+								struct_needs_auto_destroy(box_arg_struct, status);
+							const string_fields = strdup_string_fields
+								? direct_string_fields(box_arg_struct)
+								: [];
+							if (donor_name && /^[A-Za-z_][A-Za-z0-9_]*$/.test(donor_name)) {
+								const recorded = new Set<string>();
+								for (const key of status.heap_string_fields ?? []) {
+									if (key.startsWith(`${donor_name}.`)) {
+										recorded.add(key.slice(donor_name.length + 1));
+									}
+								}
+								const unrecorded = string_fields.filter((f) => !recorded.has(f.name));
+								const saved_arg = begin_code_scratch(status);
+								status.code += `(void *)&`;
+								status.suppress_dereference = true;
+								build_node(access_func.params[i], status);
+								status.suppress_dereference = false;
+								const addr_text = end_code_scratch(status, saved_arg);
+								status.code += `(void *)({ struct ${box_arg_struct.name} *_src = (struct ${box_arg_struct.name} *)${addr_text}; `;
+								for (const f of unrecorded) {
+									status.code += `_src->${f.name} = nomen_str_dup(_src->${f.name}); `;
+								}
+								status.code += `struct ${box_arg_struct.name} *_box = (struct ${box_arg_struct.name} *)nomen_malloc_wrap(sizeof(struct ${box_arg_struct.name})); `;
+								status.code += `*_box = *_src; `;
+								status.code += `(void *)_box; })`;
+								continue;
+							}
+						}
+					}
 					// Type erasure: when a class pointer is passed to a
 					// type-erased long parameter (e.g. ClassBuffer.store_int
 					// takes `long val` but receives a `struct Animal *`),
@@ -1589,13 +1652,19 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 						// See build_function_call_node: a moved VALUE struct's
 						// recorded heap string fields are released here — the
 						// callee's store_T deep-copied them, and the splice
-						// removes the decl from auto_free's iteration.
+						// removes the decl from auto_free's iteration. A
+						// TRANSFER arg (move_owned_param_indices — the callee
+						// byte-copied the value into a box) keeps its strings:
+						// drop the records WITHOUT freeing (the box owns them).
 						if (is_value_struct) {
 							const prefix = `${vname}.`;
+							const transfer = access_func.move_owned_param_indices?.includes(idx) ?? false;
 							for (const key of Array.from(status.heap_string_fields ?? [])) {
 								if (key.startsWith(prefix)) {
-									if (!status.pending_string_releases) status.pending_string_releases = [];
-									status.pending_string_releases.push(`free(${key}.ptr);`);
+									if (!transfer) {
+										if (!status.pending_string_releases) status.pending_string_releases = [];
+										status.pending_string_releases.push(`free(${key}.ptr);`);
+									}
 									status.heap_string_fields!.delete(key);
 								}
 							}

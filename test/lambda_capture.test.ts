@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
 
 import build_and_check_output from "./build_and_check_output";
-import parse_with_imports, { parse_raw } from "./parse_with_imports";
+import parse_with_imports from "./parse_with_imports";
 
 // Closure captures (CLOSURE.md Phase 2a): a lambda may capture outer
 // SCALARS by copy. The value site heap-allocates an env struct (one 8-byte
@@ -371,8 +371,12 @@ pub func main = () {
 		);
 	});
 
-	test("capturing a value-struct trait slot is rejected", () => {
-		const parsed = parse_raw(`
+	test("capturing a value-struct trait slot moves the box into the env", async () => {
+		// STRUCT_PLAN_3 B4: a trait-typed local is a boxed handle regardless of
+		// the conformer's kind — capturing it transfers the handle (the env
+		// destructor dispatches `<Trait>_destroy`), exactly like the
+		// class-backed capture above.
+		const input = `
 import System
 
 trait Show {
@@ -390,8 +394,8 @@ pub func main = () {
 	var func (out string) get = (out string) => n.show()
 	Console.write("\\{get()}")
 }
-`);
-		expect(parsed.errors.some((e) => e.message.includes("value-struct trait slots"))).toBe(true);
+`;
+		await build_and_check_output(input, "lambda_capture_trait_box", "hi", true);
 	});
 });
 

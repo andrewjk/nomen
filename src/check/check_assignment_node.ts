@@ -32,11 +32,7 @@ import {
 } from "./utils/ownership.ts";
 import { enforce_root_not_frozen } from "./utils/spawn_region.ts";
 import synthesize_lambda_name from "./utils/synthesize_lambda_name.ts";
-import {
-	is_trait_type,
-	trait_conformer_of_value,
-	value_struct_trait_error,
-} from "./utils/trait_slot.ts";
+import { boxing_owns_error, is_trait_type, is_value_struct_conformer } from "./utils/trait_slot.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 import {
@@ -275,58 +271,48 @@ export default function check_assignment_node(
 		);
 		return false;
 	} else if (left_value.declaration === "var") {
-		// Two-tier trait rule: a trait-typed local bound to a value-struct
-		// conformer (inline concrete storage, sized by that conformer) cannot
-		// change shape. Only a value of the SAME conformer may be stored; a
-		// different conformer — or anything whose concrete conformer isn't
-		// statically known (a call result, a class instance) — is rejected.
-		// declare-a-class is the escape hatch for polymorphic slots.
+		// STRUCT_PLAN_3 B4 — a trait-typed local holds a boxed handle. The
+		// former shape-lock rules collapse into ownership rules:
+		//   - a fresh temporary (constructor / call) boxes freely;
+		//   - a bare value-struct local BOXES it — an implicit move (the
+		//     donor is invalidated here);
+		//   - another trait local assigns the handle (alias semantics —
+		//     the build's reassignment reclaim guards cover sharing);
+		//   - a computed/field value of concrete type cannot box (the box
+		//     would share its owned state with the owner that stays behind);
+		//   - borrows and views cannot be boxed (T2).
 		if (
 			!is_compound &&
-			left_value.trait_slot_conformer &&
-			assign.left_value.node_type === "value"
-		) {
-			const bound = left_value.trait_slot_conformer;
-			const trait_name = left_value.type.name;
-			const rhs_conformer =
-				trait_name !== undefined
-					? trait_conformer_of_value(assign.right_value, trait_name, status)
-					: undefined;
-			if (rhs_conformer !== bound) {
-				const rhs_desc = rhs_conformer
-					? `value struct '${rhs_conformer}'`
-					: "a value whose conformer is not statically known";
-				add_error(
-					status,
-					`value-struct trait slot '${left_value_name}' is bound to '${bound}' and cannot hold ${rhs_desc}; declare a class`,
-					assign.right_value.start,
-				);
-				return false;
-			}
-		} else if (
-			!is_compound &&
-			!left_value.trait_slot_conformer &&
 			assign.left_value.node_type === "value" &&
 			is_trait_type(left_value.type.name, status) &&
 			!left_value.type.is_array &&
 			!left_value.type.is_ref
 		) {
-			// A trait-typed local WITHOUT a value-struct binding holds the
-			// pointer representation (a class instance). Storing a
-			// value-struct conformer into it would save a pointer to a
-			// dying stack temporary — reject.
-			const rhs_conformer = trait_conformer_of_value(
-				assign.right_value,
-				left_value.type.name!,
-				status,
-			);
-			if (rhs_conformer) {
-				add_error(
-					status,
-					value_struct_trait_error(rhs_conformer, left_value.type.name!),
-					assign.right_value.start,
-				);
-				return false;
+			const trait_name = left_value.type.name!;
+			if (assign.right_value.node_type === "value") {
+				const src_name = value_from_value_node(assign.right_value);
+				const src_sv = /^[A-Za-z_][A-Za-z0-9_]*$/.test(src_name ?? "")
+					? status.values.findLast((v) => v.name === src_name)
+					: undefined;
+				if (src_sv && (src_sv.type.is_ref || src_sv.type.is_view)) {
+					add_error(status, boxing_owns_error(), assign.right_value.start);
+					return false;
+				}
+				if (src_sv && is_value_struct_conformer(src_sv.type.name, trait_name, status)) {
+					// Boxing a bare value-struct local is an implicit move.
+					if (!(assign.right_value as ValueNode).is_moved) {
+						(assign.right_value as ValueNode).is_moved = true;
+					}
+					if (!status.moved_variables) status.moved_variables = new Set();
+					status.moved_variables.add(src_name!);
+				}
+				// A trait-typed source falls through: the handle aliases.
+			} else if (assign.right_value.node_type !== "func_call") {
+				const init_type = type_from_value_node(assign.right_value, status);
+				if (is_value_struct_conformer(init_type.name, trait_name, status)) {
+					add_error(status, boxing_owns_error(), assign.right_value.start);
+					return false;
+				}
 			}
 		}
 		left_value.is_set = true;

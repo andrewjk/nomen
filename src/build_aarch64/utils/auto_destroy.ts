@@ -1599,11 +1599,15 @@ export function mark_moved_if_struct(
 	const is_struct = is_struct_type(var_type.name, status);
 	// An enum-with-data value is multi-word and owning (its payloads transfer
 	// with the blob): a moved-out enum local must be skipped by the cleanup
-	// exactly like a moved struct.
+	// exactly like a moved struct. A trait handle is a boxed, owning pointer
+	// (STRUCT_PLAN_3 B4): a moved trait local/anchor (the hoisted `_param_N`
+	// box consumed by a `move Trait` parameter, a donor handle) must be
+	// skipped the same way, or its anchor slot frees the container's element.
+	const is_trait = !!status.traits.find((t) => t.name === var_type.name);
 	const is_enum_with_data = !!status.enums.find(
 		(e) => e.name === var_type.name && e.has_associated_data,
 	);
-	if (is_struct || is_enum_with_data) {
+	if (is_struct || is_enum_with_data || is_trait) {
 		if (!status.moved) status.moved = new Set<string>();
 		status.moved.add(var_name);
 	}

@@ -6,6 +6,7 @@ import { is_normalized_struct_call } from "../build_common/call_init_string_fiel
 import { override_return_string_fields } from "../build_common/ctor_return_owned.ts";
 import { override_displaced_string_fields } from "../build_common/ctor_return_owned.ts";
 import ctor_return_owned_string_fields from "../build_common/ctor_return_owned.ts";
+import { struct_needs_auto_destroy } from "../build_common/destroy_analysis.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
@@ -210,6 +211,62 @@ export default function build_return_node(
 					status.heap_string_fields.delete(key);
 				}
 			}
+		}
+	}
+
+	// STRUCT_PLAN_3 B4 — a value-struct conformer returned from a
+	// trait-typed function boxes at the return boundary (T4: handles at
+	// every trait position). The bare-local splice above already
+	// transferred the donor's ownership to the return value; strdup its
+	// UNRECORDED string fields in place (recorded ones transfer raw — the
+	// box's destroy frees every string field it holds), move the bytes into
+	// a malloc'd box, and return the handle. A fresh call result builds
+	// into a stack temp and is strdup'd wholesale.
+	{
+		const ret_type_here = status.function_return_type || node.type;
+		const ret_trait_here = status.traits.find((t) => t.name === ret_type_here?.name);
+		const val_t = type_from_value_node(node.value);
+		const val_struct =
+			ret_trait_here && val_t?.name
+				? status.structs.find(
+						(st) => st.name === val_t.name && !st.is_simple_type && !st.is_class && !st.is_generic,
+					)
+				: undefined;
+		if (ret_trait_here && !ret_type_here.is_view && !ret_type_here.is_array && val_struct) {
+			const strdup_string_fields =
+				!val_struct.functions.some((f) => f.name === "#destroy") &&
+				struct_needs_auto_destroy(val_struct, status);
+			const string_fields = strdup_string_fields ? direct_string_fields(val_struct) : [];
+			if (node.value.node_type === "value") {
+				const donor = (node.value as ValueNode).value;
+				const unrecorded = string_fields.filter(
+					(f) => !returned_recorded_string_fields?.has(f.name),
+				);
+				if (unrecorded.length > 0) {
+					status.code += `{ struct ${val_struct.name} *_src = (struct ${val_struct.name} *)&${donor}; `;
+					for (const f of unrecorded) {
+						status.code += `_src->${f.name} = nomen_str_dup(_src->${f.name}); `;
+					}
+					status.code += `};\n`;
+				}
+				status.code += `struct ${val_struct.name} *_ret_box = (struct ${val_struct.name} *)malloc(sizeof(struct ${val_struct.name}));\n`;
+				status.code += `*_ret_box = ${donor};\n`;
+				status.code += `struct ${ret_trait_here.name} *_return_val = (struct ${ret_trait_here.name} *)_ret_box;\n`;
+			} else {
+				status.code += `struct ${val_struct.name} _ret_box_val = `;
+				emit_return_value(node.value, nir_value, status);
+				status.code += `;\n`;
+				for (const f of string_fields) {
+					status.code += `_ret_box_val.${f.name} = nomen_str_dup(_ret_box_val.${f.name});\n`;
+				}
+				status.code += `struct ${val_struct.name} *_ret_box = (struct ${val_struct.name} *)malloc(sizeof(struct ${val_struct.name}));\n`;
+				status.code += `*_ret_box = _ret_box_val;\n`;
+				status.code += `struct ${ret_trait_here.name} *_return_val = (struct ${ret_trait_here.name} *)_ret_box;\n`;
+			}
+			emit_nursery_joins_on_return_c(status);
+			reclaim_all_c_scopes(status);
+			status.code += `return _return_val;\n`;
+			return;
 		}
 	}
 

@@ -467,7 +467,13 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				param.is_moved &&
 				moved_owning_param &&
 				node.name !== "main" &&
-				!moved_param_is_consumed(node, param.name, param_struct?.name, status.structs)
+				!moved_param_is_consumed(
+					node,
+					param.name,
+					param_struct?.name ?? (param_trait ? param.type.name : undefined),
+					status.structs,
+					status.traits,
+				)
 			) {
 				const decl = new DeclarationNode(param.start, "private", "move", pname, param.type);
 				if (param_trait && !param_struct?.is_class) decl.trait_class_trait = param.type.name;
@@ -490,7 +496,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				!param.type.is_nullable &&
 				node.name !== "main" &&
 				struct_needs_destroy(param_struct, status) &&
-				!moved_param_is_consumed(node, param.name, param_struct.name, status.structs)
+				!moved_param_is_consumed(node, param.name, param_struct.name, status.structs, status.traits)
 			) {
 				const decl = new DeclarationNode(param.start, "private", "move", pname, param.type);
 				decl.moved_value_struct_param = true;

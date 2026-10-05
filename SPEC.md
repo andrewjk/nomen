@@ -1457,13 +1457,13 @@ capture is taken once, when the lambda value is created:
 - Scalars and non-owning value structs are **copied** (a later write to the
   source is not seen by the lambda).
 - Strings are **deep-copied**.
-- Owning value structs, class instances, class-backed trait references, and
-  other func-valued closures are **moved** into the closure; the donating local
-  is invalidated (using it again is a use-after-move error). A capturing
-  closure is move-only: initializing or assigning a func-typed binding from one
-  transfers it.
-- `ref`/`var` borrows, views, arrays, raw pointers, value-struct trait slots,
-  and borrowed or aliased class references cannot be captured.
+- Owning value structs, class instances, trait-typed values (boxed handles,
+  regardless of the conformer's kind), and other func-valued closures are
+  **moved** into the closure; the donating local is invalidated (using it again
+  is a use-after-move error). A capturing closure is move-only: initializing or
+  assigning a func-typed binding from one transfers it.
+- `ref`/`var` borrows, views, arrays, raw pointers, and borrowed or aliased
+  class references cannot be captured.
 
 ```
 pub func main = () {

@@ -2271,7 +2271,8 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			}
 			for (const [name, info] of moved_param_save_slots) {
 				if (status.moved?.has(name) && !moved_before.has(name)) continue;
-				if (moved_param_is_consumed(func, name, info.type_name, status.structs)) continue;
+				if (moved_param_is_consumed(func, name, info.type_name, status.structs, status.traits))
+					continue;
 				if (ret_is_class) {
 					emit_asm(status, `ldr x0, [x29, #${info.offset}]\n`);
 					emit_asm(status, `ldr x1, [x29, #${return_save!}]\n`);

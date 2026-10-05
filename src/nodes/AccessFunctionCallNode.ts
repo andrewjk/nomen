@@ -18,6 +18,14 @@ export default class AccessFunctionCallNode extends BaseNode {
 	ref_param_indices?: number[];
 	move_param_indices?: number[];
 	/**
+	 * Indices of `move` arguments whose callee parameter takes ownership of a
+	 * byte-copied (boxed) value — STRUCT_PLAN_3 B4: a value-struct conformer
+	 * argument to a `move Trait` parameter. The box owns the transferred
+	 * string records, so the build drops the donor's records WITHOUT freeing
+	 * (mirrors FunctionCallNode.move_owned_param_indices).
+	 */
+	move_owned_param_indices?: number[];
+	/**
 	 * Indices of arguments whose corresponding callee parameter is a nullable
 	 * struct value type (`T?` where T is a non-class struct). See
 	 * FunctionCallNode.nullable_param_indices.

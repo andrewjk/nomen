@@ -34,7 +34,7 @@ import {
 } from "./utils/ownership.ts";
 import reject_pointer_type from "./utils/reject_pointer_type.ts";
 import { enforce_root_not_frozen } from "./utils/spawn_region.ts";
-import { is_trait_type, trait_slot_conformer_of_decl } from "./utils/trait_slot.ts";
+import { boxing_owns_error, is_trait_type, is_value_struct_conformer } from "./utils/trait_slot.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 import {
@@ -339,15 +339,18 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 				);
 			}
 
-			// Two-tier trait rule: a trait-typed local initialized from
-			// ANOTHER trait-typed local whose slot is CLASS-backed (no
-			// value-struct binding) is rejected. The copy would need
-			// non-owning alias semantics over the shared heap instance,
-			// which the backends don't provide for trait slots — the original
-			// binding IS the shareable reference. Value-struct slot copies
-			// are fine (inline bytes; the copy re-binds the same conformer).
+			// STRUCT_PLAN_3 B4 — trait handles are boxed, owning values. The
+			// former two-tier copy rules collapse into ownership rules:
+			//   - `var Rule b = a` (trait from trait, no keyword) would alias
+			//     the handle — rejected, exactly like a class alias (Phase A):
+			//     spell `move` to transfer it.
+			//   - `var Rule r = heading` (a bare value-struct local) BOXES it —
+			//     an implicit move: the donor is invalidated here.
+			//   - `var Rule r = HeadingV()` (a fresh temporary) boxes freely.
+			//   - Borrows and views cannot be boxed (T2), and neither can a
+			//     computed/field value whose owner stays behind (`holder.field`
+			//     — the box would share the field's owned state).
 			if (
-				declaration === "var" &&
 				is_trait_type(decl.type.name, status) &&
 				!decl.type.is_array &&
 				!decl.type.is_ref &&
@@ -358,12 +361,53 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 				const src_sv = /^[A-Za-z_][A-Za-z0-9_]*$/.test(src_name ?? "")
 					? status.values.findLast((v) => v.name === src_name)
 					: undefined;
-				if (src_sv && !src_sv.trait_slot_conformer && src_sv.type.name === decl.type.name) {
-					add_error(
-						status,
-						`a class-backed trait local cannot be copied — reassign through the original binding or declare a new class instance`,
-						decl.value.start,
-					);
+				if (
+					src_sv &&
+					is_trait_type(src_sv.type.name, status) &&
+					src_sv.type.name === decl.type.name
+				) {
+					if (declaration === "move" || (decl.value as ValueNode).is_moved) {
+						// A handle move (`var Rule b = move a`, either spelling):
+						// the donor is invalidated (the generic move machinery
+						// below stamps it too); the new binding aliases the same
+						// box — the donor's anchor slot stays the instance's
+						// single owner, the same shape a moved class local takes.
+						(decl.value as ValueNode).is_moved = true;
+						if (!status.moved_variables) status.moved_variables = new Set();
+						status.moved_variables.add(src_name!);
+					} else {
+						add_error(
+							status,
+							`cannot copy a trait handle — use 'move ${src_name}' to transfer it, or box a fresh instance`,
+							decl.value.start,
+						);
+					}
+				} else if (src_sv && (src_sv.type.is_ref || src_sv.type.is_view)) {
+					add_error(status, boxing_owns_error(), decl.value.start);
+				} else if (src_sv && is_value_struct_conformer(src_sv.type.name, decl.type.name!, status)) {
+					// Boxing a bare value-struct local is an implicit move (T2):
+					// invalidate the donor exactly like a `move` declaration.
+					if (!(decl.value as ValueNode).is_moved) {
+						(decl.value as ValueNode).is_moved = true;
+					}
+					if (!status.moved_variables) status.moved_variables = new Set();
+					status.moved_variables.add(src_name!);
+				}
+			} else if (
+				is_trait_type(decl.type.name, status) &&
+				!decl.type.is_array &&
+				!decl.type.is_ref &&
+				!decl.type.is_view &&
+				decl.value.node_type !== "func_call" &&
+				decl.value.node_type !== "value"
+			) {
+				// A computed or field initializer of CONCRETE struct type — the
+				// box would share its owned state with the owner that stays
+				// behind. (A trait-typed initializer here is a pointer the
+				// callee already owns — the method-return path, unchanged.)
+				const init_type = type_from_value_node(decl.value, status);
+				if (is_value_struct_conformer(init_type.name, decl.type.name!, status)) {
+					add_error(status, boxing_owns_error(), decl.value.start);
 				}
 			}
 
@@ -761,12 +805,6 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			is_ref_binding: is_ref_keyword || undefined,
 			ref_source: is_ref_keyword ? ref_src : undefined,
 			is_global: !in_function(status),
-			trait_slot_conformer: trait_slot_conformer_of_decl(
-				declaration,
-				decl.type,
-				decl.value,
-				status,
-			),
 		});
 		if (decl.value) {
 			invalidate_token_facts(decl.name, status);

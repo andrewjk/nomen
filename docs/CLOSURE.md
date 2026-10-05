@@ -75,16 +75,16 @@ structs applies unchanged:
 - **Non-owning value structs**: copied (C holds a pointer to a malloc'd
   copy — the struct's full definition lands after the env typedef —
   aarch64 stores the bytes inline).
-- **Owning value structs, class instances, class-backed trait references,
-  and other func-valued closures: MOVED** — the donating local is
-  invalidated (using it again is a use-after-move error) and the env owns
-  and destroys (env destructors run `<T>_destroy` / the class destroy).
-- **Not capturable**: `ref`/`var` borrows, views, arrays, raw pointers,
-  value-struct trait slots (inline conformer storage), a borrowed (non-
-  `move`) class/trait/owning-struct parameter, and a func-typed PARAMETER
-  (a borrow — the caller still owns the descriptor). Borrow-captures exist
-  only in the spawn sugar's nursery form (ASYNC.md, "Nursery borrows"),
-  where the join at block exit bounds them.
+- **Owning value structs, class instances, trait-typed values (boxed
+  handles — STRUCT_PLAN_3 B4 — regardless of the conformer's kind), and
+  other func-valued closures: MOVED** — the donating local is invalidated
+  (using it again is a use-after-move error) and the env owns and destroys
+  (env destructors run `<T>_destroy` / the class destroy).
+- **Not capturable**: `ref`/`var` borrows, views, arrays, raw pointers, a
+  borrowed (non-`move`) class/trait/owning-struct parameter, and a
+  func-typed PARAMETER (a borrow — the caller still owns the descriptor).
+  Borrow-captures exist only in the spawn sugar's nursery form (ASYNC.md,
+  "Nursery borrows"), where the join at block exit bounds them.
 
 Capture stamps live on the lambda's `FunctionNode.captures`; the checker
 funnels every reference form through `type_from_value` (reads, method

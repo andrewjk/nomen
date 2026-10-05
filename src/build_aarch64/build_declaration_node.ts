@@ -7,7 +7,10 @@ import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import call_in_set from "../build_common/call_in_set.ts";
 import { record_call_init_string_fields } from "../build_common/call_init_string_fields.ts";
 import record_ctor_heap_default_fields from "../build_common/ctor_heap_default_fields.ts";
-import { struct_needs_destroy } from "../build_common/destroy_analysis.ts";
+import {
+	struct_needs_destroy,
+	struct_needs_auto_destroy,
+} from "../build_common/destroy_analysis.ts";
 import fold_string_const from "../build_common/fold_string_const.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import mark_tuple_literal_move_owners from "../build_common/mark_tuple_literal_move_owners.ts";
@@ -57,7 +60,9 @@ import aarch64_type from "./utils/aarch64_type.ts";
 import { emit_strdup, emit_malloc } from "./utils/audit.ts";
 import {
 	anchor_heap_pointer,
+	clear_heap_string_fields,
 	consolidate_temp_anchors,
+	emit_string_field_strdups_at,
 	mark_anchor_destroy,
 	mark_heap_string,
 	mark_moved_if_struct,
@@ -294,7 +299,7 @@ function emit_data(status: BuildStatus, data: string) {
  *  build_node's func_call intercept packs the task eagerly and yields the
  *  instance (CLOSURE.md Phase 3b, ASYNC.md "User-defined async
  *  primitives"). */
-function is_magic_spawn_ctor(node: BaseNode): boolean {
+export function is_magic_spawn_ctor(node: BaseNode): boolean {
 	if (node.node_type !== "func_call") return false;
 	const fc = node as FunctionCallNode;
 	// The WeakHandle construction is a magic ctor too: it yields the
@@ -377,7 +382,7 @@ function emit_struct_constructor_to_slot(
  * after the `bl`. Constructor calls reserve x0 for the destination pointer,
  * so register slots start at x1 — overflow begins at the 8th arg (slot 8).
  */
-function build_constructor_params(
+export function build_constructor_params(
 	fc: FunctionCallNode,
 	param_regs: string[],
 	status: BuildStatus,
@@ -1424,6 +1429,28 @@ export default function build_declaration_node(
 		(s) => s.name === resolved_struct_name && !s.is_simple_type,
 	);
 
+	// STRUCT_PLAN_3 B4 — a trait handle MOVED from another trait local
+	// transfers the pointer: the donor's anchor slot stays the instance's
+	// single owner (the same shape a moved class local takes) and this
+	// binding is a non-owning alias for dispatch purposes.
+	if (
+		!struct_type &&
+		!!status.traits.find((t) => t.name === node.type.name) &&
+		node.value?.node_type === "value" &&
+		!!status.traits.find((t) => t.name === (node.value as ValueNode).type?.name)
+	) {
+		set_trait_class_local(status, node.name, node.type.name);
+		if (status.function_return_label) {
+			const offset = allocate_stack_space(status, 8);
+			status.stack_offsets!.set(node.name, offset);
+		} else {
+			emit_data(status, `${node.name}: .space 8\n`);
+		}
+		emit_init_value(node.value, nir_init, status);
+		ensure_newline(status);
+		emit_var_store(status, "x0", node.name, 8);
+		return;
+	}
 	// A trait-typed local stores the concrete struct value (the initializer's
 	// actual type) so its vtable (offset 0) and field layout are correct for
 	// trait-typed dispatch and the generated field accessors. Allocate the
@@ -1434,7 +1461,7 @@ export default function build_declaration_node(
 		!struct_type &&
 		!!status.traits.find((t) => t.name === node.type.name) &&
 		node.value &&
-		node.value.node_type === "func_call"
+		(node.value.node_type === "func_call" || node.value.node_type === "value")
 	) {
 		const val_type = type_from_value_node(node.value);
 		const concrete = status.structs.find(
@@ -1490,54 +1517,124 @@ export default function build_declaration_node(
 				}
 				return;
 			}
-			// Track the trait-typed local for scope-exit destroy: push to
-			// scoped_declarations (emit_destroy_for_scope recovers the
-			// concrete struct from the initializer — node.type.name stays the
-			// trait so method/field accesses still dispatch through the
-			// vtable) and record it with the concrete type name so
-			// break/continue cleanup (emit_cleanup_to_loop_depth) destroys it
-			// correctly too. The storage is INLINE (a value struct, not a
-			// class pointer), so record a null binding: it must BLOCK any
-			// enclosing class-backed binding for this name, or dispatch would
-			// dereference the inline struct's first field as a vtable pointer.
-			status.scoped_declarations.push(node);
-			set_trait_class_local(status, node.name, null);
-			if (struct_needs_destroy(concrete, status)) {
-				track_struct_decl(status, node.name, concrete.name, undefined, node.type.is_nullable);
-			}
-			const func_call = node.value as FunctionCallNode;
-			const struct_size = get_struct_size(concrete.name, status);
+			// STRUCT_PLAN_3 B4 — a value-struct conformer boxes (T1: the
+			// annotation is the marker; the inline tier-1 representation is
+			// retired). The handle is pointer storage — a heap instance whose
+			// first word is the conformer's vtable, exactly the class-backed
+			// shape — so dispatch, trait-field access, and `<Trait>_destroy`
+			// teardown work verbatim, and the slot can be reassigned across
+			// conformers. Boxing takes ownership (T2): a fresh temporary's
+			// constructor runs INTO the box; a bare value-struct local is
+			// MOVED (its unrecorded string fields strdup in place; its
+			// teardown is suppressed — the box owns the transferred state).
+			set_trait_class_local(status, node.name, node.type.name);
 			if (status.function_return_label) {
-				const offset = allocate_stack_space(status, struct_size);
+				const offset = allocate_stack_space(status, 8);
 				status.stack_offsets!.set(node.name, offset);
 			} else {
-				emit_data(status, `${node.name}: .space ${struct_size}\n`);
+				emit_data(status, `${node.name}: .space 8\n`);
 			}
-			if (func_call.name === concrete.name && !is_magic_spawn_ctor(func_call)) {
-				const param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
-				const outgoing = build_constructor_params(func_call, param_regs, status);
-				emit_var_address(status, "x0", node.name);
-				emit_asm(status, `bl ${func_call.mangled_name ?? `${func_call.name}_init`}\n`);
-				if (outgoing > 0) emit_asm(status, `add sp, sp, #${outgoing}\n`);
-				if (func_call.move_param_indices?.length) {
-					for (const idx of func_call.move_param_indices) {
-						mark_moved_if_struct(func_call.params[idx], status);
+			const struct_size = get_struct_size(concrete.name, status);
+			// The box's destroy dispatches through the vtable's destroy slot —
+			// populated when the struct has a user `#destroy` or owns fields
+			// the auto destroy reclaims. Only then does strdup'ing the fields
+			// pay off; otherwise the box keeps the raw (rodata/borrow) bytes
+			// and a strdup would leak (the shim's NULL slot frees nothing).
+			const strdup_string_fields =
+				!concrete.functions.some((f) => f.name === "#destroy") &&
+				struct_needs_auto_destroy(concrete, status);
+			if (node.value.node_type === "func_call") {
+				const func_call = node.value as FunctionCallNode;
+				if (func_call.name === concrete.name && !is_magic_spawn_ctor(func_call)) {
+					// Fresh temporary: malloc the box, run the constructor into
+					// it, then strdup the box's direct string fields (the
+					// box's destroy frees every string field it holds).
+					emit_asm(status, `mov x0, #${struct_size}\n`);
+					emit_malloc(status);
+					emit_var_store(status, "x0", node.name, 8);
+					anchor_heap_pointer(status, node.name, undefined, node.type.is_nullable);
+					mark_anchor_destroy(status, node.name, node.type.name);
+					const param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
+					const outgoing = build_constructor_params(func_call, param_regs, status);
+					emit_var_load(status, "x0", node.name, 8);
+					emit_asm(status, `bl ${func_call.mangled_name ?? `${func_call.name}_init`}\n`);
+					if (outgoing > 0) emit_asm(status, `add sp, sp, #${outgoing}\n`);
+					if (func_call.move_param_indices?.length) {
+						for (const idx of func_call.move_param_indices) {
+							mark_moved_if_struct(func_call.params[idx], status);
+						}
+					}
+					build_swap_params(func_call, status);
+					emit_var_load(status, "x0", node.name, 8);
+					if (strdup_string_fields) {
+						emit_string_field_strdups_at(status, concrete.name, "x0");
+					}
+				} else {
+					// Struct-returning call: sret into a stack scratch buffer,
+					// move the bytes into a malloc'd box, strdup its fields.
+					const scratch = allocate_stack_space(status, struct_size, 8);
+					const old_buffer = status.struct_return_buffer;
+					const old_buffer_var = status.struct_return_buffer_var;
+					const old_preset = status.call_x8_preset;
+					emit_asm(status, `add x8, x29, #${scratch}\n`);
+					status.struct_return_buffer_var = node.name;
+					status.struct_return_buffer = "x8";
+					status.call_x8_preset = true;
+					emit_init_value(node.value, nir_init, status);
+					status.struct_return_buffer = old_buffer;
+					status.struct_return_buffer_var = old_buffer_var;
+					status.call_x8_preset = old_preset;
+					emit_asm(status, `mov x0, #${struct_size}\n`);
+					emit_malloc(status);
+					emit_var_store(status, "x0", node.name, 8);
+					anchor_heap_pointer(status, node.name, undefined, node.type.is_nullable);
+					mark_anchor_destroy(status, node.name, node.type.name);
+					emit_asm(status, `mov x1, x0\n`);
+					emit_asm(status, `add x2, x29, #${scratch}\n`);
+					const words = Math.ceil(struct_size / 8);
+					for (let w = 0; w < words; w++) {
+						emit_asm(status, `ldr x3, [x2, #${w * 8}]\n`);
+						emit_asm(status, `str x3, [x1, #${w * 8}]\n`);
+					}
+					emit_var_load(status, "x0", node.name, 8);
+					if (strdup_string_fields) {
+						emit_string_field_strdups_at(status, concrete.name, "x0");
 					}
 				}
-				build_swap_params(func_call, status);
 			} else {
-				// Struct-returning function: pass the destination address via x8.
-				const old_buffer = status.struct_return_buffer;
-				const old_buffer_var = status.struct_return_buffer_var;
-				const old_preset = status.call_x8_preset;
-				emit_var_address(status, "x8", node.name);
-				status.struct_return_buffer_var = node.name;
-				status.struct_return_buffer = "x8";
-				status.call_x8_preset = true;
-				emit_init_value(node.value, nir_init, status);
-				status.struct_return_buffer = old_buffer;
-				status.struct_return_buffer_var = old_buffer_var;
-				status.call_x8_preset = old_preset;
+				// Boxing move from a bare value-struct local: malloc the box,
+				// copy the donor's bytes, strdup its UNRECORDED string fields
+				// in place (the box's destroy frees every string field), and
+				// suppress the donor's teardown + drop its records (the box
+				// owns the transferred state now).
+				const donor_name = (node.value as ValueNode).value;
+				const recorded = new Set<string>();
+				for (const key of status.heap_string_fields ?? []) {
+					if (key.startsWith(`${donor_name}.`)) {
+						recorded.add(key.slice(donor_name.length + 1));
+					}
+				}
+				emit_asm(status, `mov x0, #${struct_size}\n`);
+				emit_malloc(status);
+				emit_var_store(status, "x0", node.name, 8);
+				anchor_heap_pointer(status, node.name, undefined, node.type.is_nullable);
+				mark_anchor_destroy(status, node.name, node.type.name);
+				emit_asm(status, `mov x1, x0\n`);
+				get_source_address(node.value, status, nir_init);
+				ensure_newline(status);
+				emit_asm(status, `mov x2, x0\n`);
+				emit_var_load(status, "x1", node.name, 8);
+				const words = Math.ceil(struct_size / 8);
+				for (let w = 0; w < words; w++) {
+					emit_asm(status, `ldr x3, [x2, #${w * 8}]\n`);
+					emit_asm(status, `str x3, [x1, #${w * 8}]\n`);
+				}
+				emit_var_load(status, "x0", node.name, 8);
+				if (strdup_string_fields) {
+					emit_string_field_strdups_at(status, concrete.name, "x0", 0, recorded);
+				}
+				mark_moved_if_struct(node.value, status);
+				clear_heap_string_fields(status, donor_name);
 			}
 			return;
 		}
@@ -1560,10 +1657,19 @@ export default function build_declaration_node(
 	if (
 		!struct_type &&
 		!!status.traits.find((t) => t.name === node.type.name) &&
-		node.value?.node_type === "access" &&
-		(node.value as AccessNode).access.node_type === "access_func"
+		((node.value?.node_type === "access" &&
+			(node.value as AccessNode).access.node_type === "access_func") ||
+			// STRUCT_PLAN_3 B4: a free function returning the trait
+			// (`var Rule r = pick()`) yields the same owned-or-borrowed
+			// handle — owned unless the function is a registered
+			// borrow-returner (bounded leak posture, as for classes).
+			(node.value?.node_type === "func_call" &&
+				!!status.traits.find((t) => t.name === type_from_value_node(node.value!)?.name)))
 	) {
-		const inner = (node.value as AccessNode).access as AccessFunctionCallNode;
+		const inner =
+			node.value.node_type === "access"
+				? ((node.value as AccessNode).access as AccessFunctionCallNode)
+				: undefined;
 		// Scope-keyed trait record: the callee's vtable-bearing class pointer
 		// is pointer storage, so dispatch must dereference (see
 		// set_trait_class_local).
@@ -1577,7 +1683,11 @@ export default function build_declaration_node(
 		emit_init_value(node.value, nir_init, status);
 		ensure_newline(status);
 		emit_var_store(status, "x0", node.name, 8);
-		if (inner.owned_return) {
+		const owned =
+			inner !== undefined || node.value.node_type !== "func_call"
+				? !!inner?.owned_return
+				: !call_in_set(status.borrow_returning_functions, node.value as FunctionCallNode);
+		if (owned) {
 			anchor_heap_pointer(status, node.name, undefined, node.type.is_nullable);
 			mark_anchor_destroy(status, node.name, node.type.name);
 		}
@@ -2020,7 +2130,20 @@ export default function build_declaration_node(
 					status.stack_offsets!.set(node.name, offset);
 					array_values.values.forEach((value, i) => {
 						const slot_offset = offset + i * element_size;
+						// STRUCT_PLAN_3 B4: a value-struct conformer element in a
+						// TRAIT-typed array boxes — the slot holds the heap
+						// handle (vtable at offset 0), not inline bytes.
+						const element_trait_boxed =
+							!!status.traits.find((t) => t.name === node.type.name) &&
+							is_struct_constructor(value, status);
 						if (is_class_constructor(value, status)) {
+							emit_class_constructor_to_slot(
+								value as FunctionCallNode,
+								slot_offset,
+								status,
+								node.name,
+							);
+						} else if (element_trait_boxed) {
 							emit_class_constructor_to_slot(
 								value as FunctionCallNode,
 								slot_offset,
@@ -2080,7 +2203,26 @@ export default function build_declaration_node(
 					emit_data(status, `.quad ${array_values.values.length}\n`);
 					emit_data(status, `${node.name}: .space ${total_size}\n.p2align 2\n`);
 					array_values.values.forEach((value, i) => {
-						if (is_struct_constructor(value, status)) {
+						const element_trait_boxed =
+							!!status.traits.find((t) => t.name === node.type.name) &&
+							is_struct_constructor(value, status);
+						if (element_trait_boxed) {
+							// B4: box the conformer element — malloc, run the
+							// constructor into the box, store the handle at the
+							// global slot.
+							const fc = value as FunctionCallNode;
+							const box_size = get_struct_size(fc.name, status);
+							const param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
+							emit_asm(status, `mov x0, #${box_size}\n`);
+							emit_malloc(status);
+							emit_asm(status, `ldr x1, =${node.name}\n`);
+							emit_asm(status, `str x0, [x1, #${i * element_size}]\n`);
+							const outgoing = build_constructor_params(fc, param_regs, status);
+							emit_asm(status, `ldr x1, =${node.name}\n`);
+							emit_asm(status, `ldr x0, [x1, #${i * element_size}]\n`);
+							emit_asm(status, `bl ${fc.mangled_name ?? `${fc.name}_init`}\n`);
+							if (outgoing > 0) emit_asm(status, `add sp, sp, #${outgoing}\n`);
+						} else if (is_struct_constructor(value, status)) {
 							emit_global_slot_addr(status, node.name, i * element_size);
 							emit_struct_constructor_to_slot(value as FunctionCallNode, "", status);
 						} else {

@@ -55,6 +55,7 @@ import lint_regex_pattern from "./utils/regex_pattern_lint.ts";
 import { enforce_root_not_frozen } from "./utils/spawn_region.ts";
 import { maybe_mark_borrow_to_string_arg } from "./utils/string_mutation_scan.ts";
 import synthesize_lambda_name from "./utils/synthesize_lambda_name.ts";
+import { is_value_struct_conformer } from "./utils/trait_slot.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 
@@ -750,7 +751,13 @@ export default function check_function_call(
 		// non-owning types, and BORROW variables (which cannot be moved
 		// soundly — see the shared-ownership check below), move is implicit, a
 		// no-op, or the borrow check below fires first.
-		const param_is_class = func_param.type.name && is_class_type(func_param.type.name, status);
+		const param_is_class =
+			!!func_param.type.name &&
+			(is_class_type(func_param.type.name, status) ||
+				// B4: a trait-typed move param owns the box — same ownership
+				// vocabulary as a class param (missing keyword is an error, the
+				// donor is invalidated).
+				!!status.traits.find((t) => t.name === func_param.type.name));
 		// TRANSFER applies only where the callee actually seeds (a registered
 		// free function — the move_owned stamp): for methods and mono
 		// container clones the plain move convention (callee deep-copies)
@@ -790,6 +797,10 @@ export default function check_function_call(
 			if (
 				func_param.type.name &&
 				(is_class_type(func_param.type.name, status) ||
+					// B4: a trait-typed move param takes the box — the donor is
+					// invalidated (a concrete donor's bytes were boxed; a trait
+					// donor's handle was transferred).
+					!!status.traits.find((t) => t.name === func_param.type.name) ||
 					(func_param.is_moved && is_owning_struct_type(func_param.type, status)))
 			) {
 				// R3: a frozen root (borrowed by a spawned task until the
@@ -834,6 +845,19 @@ export default function check_function_call(
 				add_error(
 					status,
 					`cannot move '${field_name}' out of struct by value — it owns heap resources; use 'move ... swap <replacement>' to revalidate the field`,
+					param.start,
+				);
+			} else if (
+				// B4/T2: boxing a FIELD into a `move Trait` param would share
+				// the field's owned state between the box and its owner.
+				!!func_param &&
+				!!status.traits.find((t) => t.name === func_param.type.name) &&
+				func_param.is_moved &&
+				is_value_struct_conformer(field_type.name, func_param.type.name!, status)
+			) {
+				add_error(
+					status,
+					`boxing owns its instance — move the value, or copy it ('.copy()')`,
 					param.start,
 				);
 			}
@@ -1404,51 +1428,41 @@ export default function check_function_call(
 			continue;
 		}
 
-		// Two-tier trait rule: a value-struct-backed trait LOCAL (inline
-		// concrete storage) cannot cross a call boundary as a trait argument
-		// — the callee's slot expects the pointer representation. Reject the
-		// by-value pass; declare a class to send a conformer across.
-		if (param.node_type === "value" && func_param.type.name) {
-			const arg_name = value_from_value_node(param);
-			const arg_sv = /^[A-Za-z_][A-Za-z0-9_]*$/.test(arg_name ?? "")
-				? status.values.findLast((v) => v.name === arg_name)
-				: undefined;
-			if (
-				arg_sv?.trait_slot_conformer &&
-				status.traits.some((t) => t.name === func_param.type.name) &&
-				!func_param.type.is_array
-			) {
+		// STRUCT_PLAN_3 B4 — trait objects box at the boundary. A value-struct
+		// conformer argument is accepted at every trait position:
+		//   - a BARE `Trait` param (a read-only borrow, B3) takes a pointer to
+		//     a caller-side stack copy for the call (T3: zero malloc) — the
+		//     hoisted temp below keeps the CONCRETE type so it lowers as a
+		//     stack struct;
+		//   - a `move Trait` param takes ownership of a HEAP box (T2) — the
+		//     hoisted temp keeps the trait type so it lowers as a box, and the
+		//     arg is stamped move-owned below (the box owns the transferred
+		//     string records).
+		// A `ref Trait` param would let the callee reassign the caller's slot
+		// to a new box — impossible over a value-struct lvalue (T2: borrows
+		// cannot be boxed). Reject with the boxing-owns error.
+		const callee_param_is_trait =
+			!!func_param && !!status.traits.find((t) => t.name === func_param.type.name);
+		if (
+			callee_param_is_trait &&
+			!func_param.type.is_array &&
+			is_value_struct_conformer(param_type.name, func_param.type.name!, status)
+		) {
+			if (func_param.type.is_ref) {
 				add_error(
 					status,
-					`value-struct trait slot '${arg_sv.name}' is bound to '${arg_sv.trait_slot_conformer}' and cannot cross a call boundary; declare a class`,
+					`a 'ref ${func_param.type.name}' parameter cannot take value struct '${param_type.name}' — boxing owns its instance — move the value, or copy it ('.copy()')`,
 					param.start,
 				);
+			} else if (func_param.is_moved) {
+				// A `move Trait` param owns the box: transfer semantics. Stamp
+				// move-owned so the builds drop the donor's string records
+				// (the box owns them now) and invalidate the donor.
+				if (!(node as FunctionCallNode).move_owned_param_indices)
+					(node as FunctionCallNode).move_owned_param_indices = [];
+				if (!(node as FunctionCallNode).move_owned_param_indices!.includes(i))
+					(node as FunctionCallNode).move_owned_param_indices!.push(i);
 			}
-		}
-
-		// Tier 2 of the two-tier value-struct rule: a value struct cannot be
-		// used through a TRAIT type — trait-typed parameters (and
-		// ClassBuffer<Trait> slots) hold heap-allocated, vtable-bearing
-		// pointers, and the only way a value struct could meet that is an
-		// implicit heap allocation ("boxing") at the call site. Boxing is
-		// gone: declare the type as a `class` to use it polymorphically.
-		// (Trait-typed *locals* with concrete struct storage still work —
-		// they don't heap-allocate, so `var Speaker s = Dog()` is fine.)
-		// This runs for EVERY argument — including a bare `move local`, which
-		// skips the hoist block below and so used to slip past the check
-		// entirely (boxing the value struct and aborting at exit through the
-		// wrong destroy).
-		const param_is_trait =
-			!!func_param && !!status.traits.find((t) => t.name === func_param.type.name);
-		const arg_is_value_struct = !!status.structs.find(
-			(s) => s.name === param_type.name && !s.is_class && !s.is_simple_type,
-		);
-		if (param_is_trait && arg_is_value_struct) {
-			add_error(
-				status,
-				`value struct '${param_type.name}' cannot be used as trait '${func_param.type.name}'; declare '${param_type.name}' as a class`,
-				param.start,
-			);
 		}
 
 		if (
@@ -1493,6 +1507,20 @@ export default function check_function_call(
 				return t;
 			};
 			let hoisted_type = param_type;
+			// STRUCT_PLAN_3 B4/T2: a value-struct conformer temp bound to a
+			// `move Trait` param must lower as a HEAP BOX (the callee frees
+			// the pointer), not a stack struct — retype the temp to the trait.
+			// A BARE trait param keeps the concrete type: the T3 stack-copy
+			// convention passes its address, zero malloc.
+			if (
+				callee_param_is_trait &&
+				func_param?.is_moved &&
+				!func_param.type.is_array &&
+				is_value_struct_conformer(param_type.name, func_param.type.name!, status)
+			) {
+				hoisted_type = clone_type(func_param.type);
+				hoisted.type = hoisted_type;
+			}
 			// Static literal/range args (compile-time `length`) bound to a heap
 			// `Array<T>` param are marked for heap materialisation. Dynamic
 			// (runtime-bound) ranges carry no compile-time length and stay on

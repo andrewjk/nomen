@@ -565,10 +565,14 @@ function build_struct_traits(node: StructNode, status: BuildStatus) {
 	// dispatcher's NULL check short-circuits. (Non-trait owning value
 	// structs also get a standalone destroy fn from build_auto_destroy, but
 	// don't need the vtable — Buffer calls it directly.)
+	// STRUCT_PLAN_3 B4: a trait-conforming struct's slot must agree with the
+	// aarch64 backend — `struct_needs_auto_destroy` (string fields included),
+	// because boxed conformers normalize their string fields to heap and the
+	// dispatched destroy is what frees them.
 	const has_destroy_fn =
 		!!node.functions.find((f) => f.name === "#destroy") ||
 		!!node.is_class ||
-		(node.traits.length > 0 && struct_needs_destroy(node, status));
+		(node.traits.length > 0 && struct_needs_auto_destroy(node, status));
 	if (has_destroy_fn) {
 		const destroy_label = `${node.name}_destroy`;
 		status.headers += `void ${destroy_label}(struct ${node.name} *);\n`;
@@ -779,7 +783,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 			if (!param.is_moved) continue;
 			if (
 				param_struct?.is_class &&
-				!moved_param_is_consumed(func, param.name, param_struct.name, status.structs)
+				!moved_param_is_consumed(func, param.name, param_struct.name, status.structs, status.traits)
 			) {
 				const pname = c_function_name(param.name);
 				status.scoped_declarations.push(
@@ -792,7 +796,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 				!param_struct.is_generic &&
 				!param.type.is_nullable &&
 				struct_needs_destroy(param_struct, status) &&
-				!moved_param_is_consumed(func, param.name, param_struct.name, status.structs)
+				!moved_param_is_consumed(func, param.name, param_struct.name, status.structs, status.traits)
 			) {
 				const pname = c_function_name(param.name);
 				const decl = new DeclarationNode(param.start, "private", "move", pname, param.type);

@@ -29,7 +29,7 @@ function expect_error(source: string, fragment: string) {
 	expect(parsed.errors.some((e) => e.message.includes(fragment))).toBe(true);
 }
 
-describe("two-tier value-struct trait conformers — accepted (tier 1)", () => {
+describe("boxed trait conformers — accepted (STRUCT_PLAN_3 B4)", () => {
 	test("trait local initialized from a value-struct conformer runs", async () => {
 		const input =
 			PRELUDE +
@@ -63,229 +63,224 @@ test()
 		await build_and_check_output(input, "two_tier_same_conformer", "heading");
 	});
 
-	test("value-struct trait slot copies and re-binds the same conformer", async () => {
+	test("cross-conformer reassignment re-boxes", async () => {
 		const input =
 			PRELUDE +
 			`
 func test = () {
 	var Rule r = HeadingV()
-	var Rule r2 = r
-	r2 = HeadingV()
-	if r2.test("# h") {
+	if r.test("# h") {
 		Console.write_line("heading")
 	}
-}
-test()
-`;
-		await build_and_check_output(input, "two_tier_value_copy", "heading");
-	});
-
-	test("conformer propagates through a trait-typed copy for rejection", () => {
-		// r2 inherits r's bound conformer, so storing a different conformer
-		// through r2 must be rejected exactly like through r.
-		expect_error(
-			PRELUDE +
-				`
-func test = () {
-	var Rule r = HeadingV()
-	var Rule r2 = r
-	r2 = QuoteV()
-}
-test()
-`,
-			"bound to 'HeadingV'",
-		);
-	});
-
-	test("class conformer into a trait-typed array is untouched", () => {
-		// Check-level assertion only: acceptance is the contract here (the
-		// trait-array element cleanup has a pre-existing, unrelated leak, so
-		// this shape isn't run through the audited runtime harness).
-		const input =
-			PRELUDE +
-			`
-func test = () {
-	var Array<Rule> rules = [HeadingC()]
-	if rules.at(0).test("# h") {
-		Console.write_line("heading")
-	}
-}
-test()
-`;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-	});
-});
-
-describe("two-tier value-struct trait conformers — rejected (tier 2)", () => {
-	test("cross-conformer reassignment is rejected", () => {
-		expect_error(
-			PRELUDE +
-				`
-func test = () {
-	var Rule r = HeadingV()
 	r = QuoteV()
-}
-test()
-`,
-			"bound to 'HeadingV'",
-		);
-	});
-
-	test("cross-conformer reassignment to a struct with fields is rejected", () => {
-		expect_error(
-			PRELUDE +
-				`
-struct BigV : Rule {
-	var int a
-	var int b
-	var int c
-	pub func test = (self, string line, out bool) {
-		return false
+	if r.test("> q") {
+		Console.write_line("quote")
 	}
 }
-func test = () {
-	var Rule r = HeadingV()
-	r = BigV(1, 2, 3)
-}
 test()
-`,
-			"bound to 'HeadingV'",
-		);
+`;
+		await build_and_check_output(input, "b4_cross_conformer", "heading\nquote");
 	});
 
-	test("reassignment from an unknown-conformer value is rejected", () => {
-		expect_error(
+	test("reassignment from an unknown-conformer value stores the handle", async () => {
+		const input =
 			PRELUDE +
-				`
+			`
 func pick = (out Rule) {
 	return HeadingC()
 }
 func test = () {
 	var Rule r = HeadingV()
 	r = pick()
+	if r.test("# h") {
+		Console.write_line("heading")
+	}
 }
 test()
-`,
-			"bound to 'HeadingV'",
-		);
+`;
+		await build_and_check_output(input, "b4_unknown_conformer", "heading");
 	});
 
-	test("a class instance cannot be stored into a value-struct trait slot", () => {
-		expect_error(
+	test("a class instance stores into a formerly value-struct slot", async () => {
+		const input =
 			PRELUDE +
-				`
+			`
 func test = () {
 	var Rule r = HeadingV()
 	r = HeadingC()
+	if r.test("# h") {
+		Console.write_line("heading")
+	}
 }
 test()
-`,
-			"bound to 'HeadingV'",
-		);
+`;
+		await build_and_check_output(input, "b4_class_into_box_slot", "heading");
 	});
 
-	test("value-struct conformer into a trait-typed array literal is rejected", () => {
-		expect_error(
+	test("a value-struct conformer crosses a call boundary as a bare parameter", async () => {
+		const input =
 			PRELUDE +
-				`
-func test = () {
-	var Array<Rule> rules = [HeadingV()]
-}
-test()
-`,
-			"value struct 'HeadingV' cannot be used as trait 'Rule'",
-		);
-	});
-
-	test("value-struct-backed trait local cannot cross a call boundary", () => {
-		expect_error(
-			PRELUDE +
-				`
+			`
 func try_rule = (Rule rule, string line, out bool) => rule.test(line)
 func test = () {
 	var Rule r = HeadingV()
 	const bool b = try_rule(r, "# h")
+	if b {
+		Console.write_line("heading")
+	}
+	const bool c = try_rule(HeadingV(), "# h")
+	if c {
+		Console.write_line("direct")
+	}
 }
 test()
-`,
-			"cannot cross a call boundary",
-		);
+`;
+		await build_and_check_output(input, "b4_bare_param", "heading\ndirect");
 	});
 
-	test("value-struct conformer still rejected as a direct trait argument", () => {
-		expect_error(
+	test("a moved value-struct local boxes into a trait-typed List", async () => {
+		const input =
 			PRELUDE +
-				`
-func try_rule = (Rule rule, string line, out bool) => rule.test(line)
-func test = () {
-	const bool b = try_rule(HeadingV(), "# h")
-}
-test()
-`,
-			"value struct 'HeadingV' cannot be used as trait 'Rule'",
-		);
-	});
-
-	test("a moved value-struct local into a trait-typed List is rejected", () => {
-		// Regression: a bare `move <local>` argument skipped the hoist block
-		// that carried the tier-2 check, so a concrete value-struct local
-		// slipped into a `List<Trait>` (mis-boxed: `-Wincompatible-pointer-
-		// types`, aborting at exit through the wrong destroy).
-		expect_error(
-			PRELUDE +
-				`
+			`
 func test = () {
 	var List<Rule> rules = List<Rule>()
 	var HeadingV h = HeadingV()
 	rules.push(move h)
+	rules.push(QuoteV())
+	var int i = 0
+	while i < rules.length {
+		if rules.at(i).test("# h") {
+			Console.write_line("heading")
+		}
+		if rules.at(i).test("> q") {
+			Console.write_line("quote")
+		}
+		i = i + 1
+	}
 }
 test()
-`,
-			"value struct 'HeadingV' cannot be used as trait 'Rule'",
-		);
+`;
+		await build_and_check_output(input, "b4_list_push", "heading\nquote");
 	});
 
-	test("a moved value-struct local into a `move Trait` parameter is rejected", () => {
-		expect_error(
+	test("a moved value-struct local boxes into a `move Trait` parameter", async () => {
+		const input =
 			PRELUDE +
-				`
-func take = (move Rule rule) { }
+			`
+func take = (move Rule rule) {
+	if rule.test("# h") {
+		Console.write_line("heading")
+	}
+}
 func test = () {
 	var HeadingV h = HeadingV()
 	take(move h)
 }
 test()
-`,
-			"value struct 'HeadingV' cannot be used as trait 'Rule'",
-		);
+`;
+		await build_and_check_output(input, "b4_move_param", "heading");
 	});
 
-	test("class-backed trait slot copy is rejected", () => {
+	test("a value-struct conformer returned from a trait-typed function boxes", async () => {
+		const input =
+			PRELUDE +
+			`
+func pick = (out Rule) {
+	return HeadingV()
+}
+func test = () {
+	var Rule r = pick()
+	if r.test("# h") {
+		Console.write_line("heading")
+	}
+}
+test()
+`;
+		await build_and_check_output(input, "b4_trait_return", "heading");
+	});
+});
+
+describe("boxed trait conformers — ownership rules (B4/T2)", () => {
+	test("boxing a bare local is an implicit move — the donor is invalid after", () => {
 		expect_error(
 			PRELUDE +
 				`
 func test = () {
-	var Rule a = HeadingC()
+	var HeadingV h = HeadingV()
+	var Rule r = h
+	if h.test("# h") {
+		Console.write_line("heading")
+	}
+}
+test()
+`,
+			"used after move",
+		);
+	});
+
+	test("boxing a field read is rejected — the box would share its owned state", () => {
+		expect_error(
+			PRELUDE +
+				`
+struct Holder {
+	var HeadingV rule
+}
+func test = () {
+	var Holder h = Holder(HeadingV())
+	var Rule r = h.rule
+}
+test()
+`,
+			"boxing owns its instance",
+		);
+	});
+
+	test("a trait handle cannot be copied — spell the move", () => {
+		expect_error(
+			PRELUDE +
+				`
+func test = () {
+	var Rule a = HeadingV()
 	var Rule b = a
 }
 test()
 `,
-			"class-backed trait local cannot be copied",
+			"cannot copy a trait handle",
 		);
 	});
 
-	test("storing a value struct into a class-backed trait slot is rejected", () => {
+	test("a moved handle is invalid in the donor afterwards", () => {
 		expect_error(
 			PRELUDE +
 				`
 func test = () {
-	var Rule b = HeadingC()
-	b = HeadingV()
+	var Rule a = HeadingV()
+	var Rule b = move a
+	if a.test("# h") {
+		Console.write_line("heading")
+	}
 }
 test()
 `,
-			"value struct 'HeadingV' cannot be used as trait 'Rule'",
+			"used after move",
+		);
+	});
+
+	test("a value-struct field cannot box into a `move Trait` parameter", () => {
+		expect_error(
+			PRELUDE +
+				`
+struct Holder {
+	var HeadingV rule
+}
+func take = (move Rule rule) { }
+func test = () {
+	var Holder h = Holder(HeadingV())
+	take(move h.rule)
+}
+test()
+`,
+			"boxing owns its instance",
 		);
 	});
 });
