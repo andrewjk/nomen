@@ -1,12 +1,16 @@
 import type BuildStatus from "../../build_c/BuildStatus.ts";
 import { runtime_declarations } from "../../build_c/runtime_split.ts";
 import c_type from "../../build_c/utils/c_type.ts";
+import { escape_asciz } from "../../build_common/string_escapes.ts";
+import string_literal_length from "../../build_common/string_literal_length.ts";
 import { is_overloaded, mangled_label } from "../../check/utils/function_overload.ts";
+import DeclarationNode from "../../nodes/DeclarationNode.ts";
 import EnumNode from "../../nodes/EnumNode.ts";
 import FunctionNode from "../../nodes/FunctionNode.ts";
 import ParameterNode from "../../nodes/ParameterNode.ts";
 import StructNode from "../../nodes/StructNode.ts";
 import TraitNode from "../../nodes/TraitNode.ts";
+import ValueNode from "../../nodes/ValueNode.ts";
 import { FIBER_HEADER_C, POOL_HEADER_C } from "../build_spawn_node.ts";
 import { get_enum_sret_size, get_struct_size } from "./struct_layout.ts";
 
@@ -286,14 +290,16 @@ function generate_c_function(
 		func_label = func.name === "main" ? "_nomen_main" : func.name;
 	}
 
-	// A class `#init` follows the aarch64 constructor convention: the caller
-	// mallocs the instance and passes it as `self` in x0; the init function is
-	// void and mutates `self` in place (the body writes `self->field = ...`).
-	// So it must NOT be treated as a struct-returning function (no `_c` suffix,
-	// no thunk) — it emits under the bare `X_init` name that the asm `bl` targets.
+	// A `#init` follows the aarch64 constructor convention — class OR struct
+	// (STRUCT_PLAN_3 R tranche 4): the caller provides the instance address in
+	// x0 (a malloc'd instance for a class, the value slot for a struct) and
+	// the init function is void, mutating `self` in place (the body writes
+	// `self->field = ...`). It must NOT be treated as a struct-returning
+	// function (no `_c` suffix, no thunk) — it emits under the bare `X_init`
+	// name that the asm `bl` targets, with the C params shifted by the
+	// leading `self` exactly as the asm caller's x0 sret slot shifts them.
 	const is_class_init =
-		func.name === "#init" &&
-		!!(struct_name && status.structs.find((s) => s.name === struct_name)?.is_class);
+		func.name === "#init" && !!(struct_name && status.structs.find((s) => s.name === struct_name));
 
 	// --- Build return type prefix ---
 	const return_type = is_class_init ? "void" : func.return_type?.name || "void";
@@ -347,6 +353,41 @@ function generate_c_function(
 	// --- Function definition ---
 	out += `${return_prefix}${symbol_label}(${param_list})\n{\n`;
 
+	// --- Constructor prologue: _vt install + literal-default seeding ---
+	// The ASM-side struct ctor installs the trait-vtable pointer at offset 0
+	// and seeds every defaulted field (build_struct_node). A `use_c` ctor has
+	// no asm side, so the companion body must do both or the instance
+	// dispatches through a garbage `_vt` and reads uninitialized defaults.
+	// Default seeding supports the LITERAL shapes (string/scalar/bool/null) —
+	// the only shapes the UI controls carry; anything else is a build error
+	// naming the field (arbitrary default expressions would need the whole
+	// asm default-emitter family in C).
+	if (func.name === "#init" && struct_name) {
+		const ctor_struct = status.structs.find((s) => s.name === struct_name);
+		if (ctor_struct && !ctor_struct.is_simple_type) {
+			if (ctor_struct.traits.length > 0) {
+				// The asm symbol is `_<Struct>_traits` (.globl in vtable_data);
+				// C identifiers get one leading underscore on Mach-O, so the
+				// C-side identifier drops the prefix.
+				out += `extern void *${struct_name}_traits;\n`;
+				out += `self->_vt = (void *)&${struct_name}_traits;\n`;
+			}
+			for (const field of ctor_struct.fields) {
+				if (!field.value) continue;
+				const seeded = emit_ctor_field_default(ctor_struct, field);
+				if (!seeded) {
+					if (!status.build_errors) status.build_errors = [];
+					status.build_errors.push({
+						message: `owning struct '${struct_name}' has a use_c constructor and field '${field.name}' has a non-literal default — assign it in the #init body`,
+						start: func.start,
+					});
+					continue;
+				}
+				out += seeded;
+			}
+		}
+	}
+
 	// --- _self copy for struct methods (non-ref, non-destroy, non-init) ---
 	const self_param = params[0];
 	if (
@@ -367,6 +408,39 @@ function generate_c_function(
 	out += `\n}\n\n`;
 
 	return out;
+}
+
+/**
+ * The C statement seeding a defaulted field in a companion constructor, or
+ * `undefined` when the default is not a literal shape. Mirrors the ASM-side
+ * ctor's default seeding for the shapes a `use_c` constructor can express:
+ * string literals borrow static storage (a function-static C literal — never
+ * strdup'd, matching the ASM literal-pair store), scalar/bool literals store
+ * directly. Nullable and computed defaults are rejected — the caller turns
+ * that into a build error naming the field.
+ */
+function emit_ctor_field_default(
+	struct_node: StructNode,
+	field: DeclarationNode,
+): string | undefined {
+	const value = field.value?.node_type === "value" ? (field.value as ValueNode).value : undefined;
+	if (value === undefined || typeof value !== "string") return undefined;
+	if (field.type.is_nullable) return undefined;
+	if (field.type.name === "string" && !field.type.is_view) {
+		const length = string_literal_length(value);
+		const label = `_${struct_node.name}_${field.name}_default`;
+		return (
+			`static const char ${label}[] = ${escape_asciz(value)};\n` +
+			`self->${field.name} = (nomen_string){ (char *)${label}, ${length} };\n`
+		);
+	}
+	if (value === "true" || value === "false") {
+		return `self->${field.name} = ${value === "true" ? 1 : 0};\n`;
+	}
+	if (/^-?\d+$/.test(value)) {
+		return `self->${field.name} = ${value};\n`;
+	}
+	return undefined;
 }
 
 function generate_c_param(param: ParameterNode, status: BuildStatus): string {

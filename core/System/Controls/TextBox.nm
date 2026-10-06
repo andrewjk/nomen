@@ -1,7 +1,12 @@
 /**
  * An editable single-line text input control
+ *
+ * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
+ * single field is an AppKit handle, so the value is movable and its
+ * `#destroy` releases what the handle names. The constructor's `self` is
+ * the inline instance (the `.` accessor); methods keep the pointer form.
  **/
-pub class TextBox: Control {
+pub owning struct TextBox : Control {
 	var uint64 handle = 0
 
 	pub func #init = (self, Window window) {
@@ -30,7 +35,7 @@ pub class TextBox: Control {
 			(id)window->handle, sel_registerName("contentView"));
 		((void(*)(id, SEL, id))objc_msgSend)(
 			contentView, sel_registerName("addSubview:"), field);
-		self->handle = (uint64_t)field;
+		self.handle = (uint64_t)field;
 		```
 		```
 		#arch: aarch64_use_c
@@ -74,7 +79,7 @@ pub class TextBox: Control {
 			sel_registerName("view"));
 		((void(*)(id, SEL, id))objc_msgSend)(
 			parentView, sel_registerName("addSubview:"), field);
-		self->handle = (uint64_t)field;
+		self.handle = (uint64_t)field;
 		```
 		```
 		#arch: aarch64_use_c

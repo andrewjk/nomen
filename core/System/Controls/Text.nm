@@ -1,7 +1,12 @@
 /**
  * A read-only text label control
+ *
+ * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
+ * AppKit handle plus the cached label text move with the value, and the
+ * `#destroy` releases what the handle names. The constructor's `self` is
+ * the inline instance (the `.` accessor); methods keep the pointer form.
  **/
-pub class Text: Control {
+pub owning struct Text : Control {
 	var uint64 handle = 0
 	var text = ""
 
@@ -25,7 +30,7 @@ pub class Text: Control {
 			(id)window->handle, sel_registerName("contentView"));
 		((void(*)(id, SEL, id))objc_msgSend)(
 			contentView, sel_registerName("addSubview:"), label);
-		self->handle = (uint64_t)label;
+		self.handle = (uint64_t)label;
 		```
 		```
 		#arch: aarch64_use_c
@@ -67,7 +72,7 @@ pub class Text: Control {
 			sel_registerName("view"));
 		((void(*)(id, SEL, id))objc_msgSend)(
 			parentView, sel_registerName("addSubview:"), label);
-		self->handle = (uint64_t)label;
+		self.handle = (uint64_t)label;
 		```
 		```
 		#arch: aarch64_use_c

@@ -1,7 +1,14 @@
 /**
  * A top-level native window that hosts controls and dispatches events
+ *
+ * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
+ * single field is an AppKit handle, so the value is movable and its
+ * `#destroy` releases what the handle names. The methods take the receiver
+ * bare (struct receivers travel by address — the raw bodies keep the
+ * pointer form); the constructor's `self` is the inline instance (the `.`
+ * accessor).
  **/
-pub class Window: Control {
+pub owning struct Window : Control {
 	var uint64 handle = 0
 
 	pub func #init = (self, string title, int width, int height) {
@@ -32,7 +39,7 @@ pub class Window: Control {
 		id cv = ((id(*)(id, SEL))objc_msgSend)(win, sel_registerName("contentView"));
 		((void(*)(id, SEL, unsigned long))objc_msgSend)(cv, sel_registerName("setAutoresizingMask:"), 18UL);
 		((void(*)(id, SEL, BOOL))objc_msgSend)(cv, sel_registerName("setAutoresizesSubviews:"), 1);
-		self->handle = (uint64_t)win;
+		self.handle = (uint64_t)win;
 		```
 		```
 		#arch: aarch64_use_c
@@ -71,7 +78,7 @@ pub class Window: Control {
 			sel_registerName("initWithFrame:"),
 			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, (double)width, (double)height));
 		((void(*)(id, SEL))objc_msgSend)(win, sel_registerName("makeKeyAndVisible"));
-		self->handle = (uint64_t)win;
+		self.handle = (uint64_t)win;
 		```
 		```
 		#arch: aarch64_use_c

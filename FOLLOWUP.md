@@ -131,11 +131,28 @@ owning struct Thread<T> : Spawnable<T>` / `Fiber<T> : Spawnable<T>` /
   DECLARES as `owning struct`** (representation unchanged — the checker
   stamps the wrapper's storage class at gather time,
   `stamp_box_wrapper_representation`; `monomorphize` propagates `is_owning`
-  into monos). Remaining before the keyword removal: the six `Controls`
-  classes (Window/Container/Button/TextBox/Text/CheckBox — the handle +
-  `WeakHandle` shape menu), then the parse/check/backend sweep.
-  B1 full cutover (the Copyable verifier over inferred ownership) follows,
-  per its own sequencing note in the Phase B section below.
+  into monos), and **all seven `Controls` classes are now `owning struct`**
+  (Window/Container/Button/TextBox/Text/CheckBox — `pub owning struct X :
+Control`, the shape menu's handle form; the raw `#init` bodies use the
+  `.handle` value form in `#arch: c` blocks and the `->handle` pointer form
+  in `#arch: aarch64_use_c` blocks; `Container`'s resize delegate takes the
+  owning-struct `ref` lowering, `struct Container *`, with the documented
+  app-lifetime address-stability contract). **`core/` has zero `class`
+  declarations.** En-route backend fixes, both required by the first
+  struct-with-a-`use_c` constructor (no owning struct had one before):
+  - the aarch64 companion ctor for a struct is now void-and-mutate-self
+    under the BARE label (the class-ctor convention) instead of emitting a
+    by-value return + x8 thunk that struct ctors (x0 = &instance) never
+    stage (`generate_c_function`, `build_raw_node.ts`);
+  - the companion ctor installs `_vt` (extern-C alias of the `.globl`
+    `_<Struct>_traits` table) and seeds LITERAL field defaults (string
+    statics, scalar/bool) — the asm ctor's jobs; non-literal defaults in a
+    `use_c` ctor are a build error naming the field.
+    Remaining before the keyword removal: SPEC.md/README.md/GUI.md rewrites
+    (`class` → the owning-struct vocabulary, ~31 SPEC mentions), then the
+    parse/check/backend keyword sweep.
+    B1 full cutover (the Copyable verifier over inferred ownership) follows,
+    per its own sequencing note in the Phase B section below.
 
 ## STRUCT_PLAN_3 Phase B — remaining tranches
 

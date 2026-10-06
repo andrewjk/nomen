@@ -1,7 +1,12 @@
 /**
  * A push-button control that triggers an action when clicked
+ *
+ * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
+ * single field is an AppKit handle, so the value is movable and its
+ * `#destroy` releases what the handle names. The constructor's `self` is
+ * the inline instance (the `.` accessor); methods keep the pointer form.
  **/
-pub class Button: Control {
+pub owning struct Button : Control {
 	var uint64 handle = 0
 
 	pub func #init = (self, Window window, string title) {
@@ -22,7 +27,7 @@ pub class Button: Control {
 			(id)window->handle, sel_registerName("contentView"));
 		((void(*)(id, SEL, id))objc_msgSend)(
 			contentView, sel_registerName("addSubview:"), btn);
-		self->handle = (uint64_t)btn;
+		self.handle = (uint64_t)btn;
 		```
 		```
 		#arch: aarch64_use_c
@@ -61,7 +66,7 @@ pub class Button: Control {
 			sel_registerName("view"));
 		((void(*)(id, SEL, id))objc_msgSend)(
 			parentView, sel_registerName("addSubview:"), btn);
-		self->handle = (uint64_t)btn;
+		self.handle = (uint64_t)btn;
 		```
 		```
 		#arch: aarch64_use_c

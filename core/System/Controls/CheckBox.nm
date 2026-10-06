@@ -1,7 +1,12 @@
 /**
  * A toggle control with a title and checked/hidden state
+ *
+ * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
+ * single field is an AppKit handle, so the value is movable and its
+ * `#destroy` releases what the handle names. The constructor's `self` is
+ * the inline instance (the `.` accessor); methods keep the pointer form.
  **/
-pub class CheckBox: Control {
+pub owning struct CheckBox : Control {
 	var uint64 handle = 0
 
 	pub func #init = (self, Window window) {
@@ -20,7 +25,7 @@ pub class CheckBox: Control {
 			(id)window->handle, sel_registerName("contentView"));
 		((void(*)(id, SEL, id))objc_msgSend)(
 			contentView, sel_registerName("addSubview:"), cb);
-		self->handle = (uint64_t)cb;
+		self.handle = (uint64_t)cb;
 		```
 		```
 		#arch: aarch64_use_c
@@ -52,7 +57,7 @@ pub class CheckBox: Control {
 			sel_registerName("view"));
 		((void(*)(id, SEL, id))objc_msgSend)(
 			parentView, sel_registerName("addSubview:"), cb);
-		self->handle = (uint64_t)cb;
+		self.handle = (uint64_t)cb;
 		```
 		```
 		#arch: aarch64_use_c

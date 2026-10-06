@@ -122,7 +122,12 @@ export function check_c_fallback(
 		// the standard ARM64 ABI used by the C companion returns small structs
 		// in registers x0/x1. The thunk bridges the gap. (> 16-byte returns
 		// already ride C's hidden-pointer sret, which matches x8 naturally.)
-		const return_type = func.return_type?.name || "";
+		// A `#init` is exempt: class OR struct, the ctor convention is
+		// x0 = &instance + in-place mutation, which the companion satisfies
+		// directly under the bare label (see generate_c_function) — a thunk
+		// here would collide with it and store through the never-staged x8.
+		const is_ctor = func.name === "#init" && !!struct_name;
+		const return_type = is_ctor ? "" : func.return_type?.name || "";
 		const return_struct = status.structs.find(
 			(s) => s.name === return_type && !s.is_simple_type && !s.is_class,
 		);
