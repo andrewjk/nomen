@@ -442,9 +442,9 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 /**
  * LEXICAL NURSERY CAPTURE (ASYNC.md): a construction lexically
  * inside an `async` block stores the block's tracking-slot pointers in the
- * instance, so `.start()` — an ordinary method on the spawn class —
+ * instance, so `.start()` — an ordinary method on the spawnable —
  * registers the future with the scope that CREATED the deferred call rather
- * than wherever the launch happens. Library spawn classes only: Thread/Fiber
+ * than wherever the launch happens. Library spawnables only: Thread/Fiber
  * carry the three capture fields (the generalized Awaitable flavor's field
  * contract predates them and keeps its historical emission).
  */

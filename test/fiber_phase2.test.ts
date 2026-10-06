@@ -220,9 +220,8 @@ func long_task = (uint64 n, out uint64) {
 	return 9
 }
 
-func waiter = (Task<uint64> handle, Channel ch) {
-	ref Task<uint64> t = handle
-	var uint64 r = t.result_uint64()   // parks until t completes or is cancelled
+func waiter = (ref Task<uint64> handle, Channel ch) {
+	var uint64 r = handle.result_uint64()   // parks until t completes or is cancelled
 	ch.send(r)
 }
 
@@ -230,7 +229,7 @@ pub func main = () {
 	var Channel ch = Channel()
 	async {
 		var t = Thread(long_task(0)).start()
-		var f = Fiber(waiter(t, ch)).start()
+		var f = Fiber(waiter(ref t, ch)).start()
 		t.cancel()
 		var uint64 r = ch.receive()
 		f.wait()

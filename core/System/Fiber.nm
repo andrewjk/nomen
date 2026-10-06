@@ -29,6 +29,10 @@
 // reads the packed handles from the instance's fields and drives the
 // scheduler. The runtime (scheduler, context switch) lives in the build's
 // emitted companion C — see build_fiber_spawn.
+//
+// Fiber is an OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 2 — the shape
+// menu), exactly like Thread: handle fields only, movable, `#destroy`
+// enforces must-start.
 
 // The launch surface's return type (ASYNC.md: the dependency is
 // declared by the library file, not inferred from user-source tokens).
@@ -37,7 +41,7 @@ import Task
 /**
  * A stackful coroutine: lightweight, cooperatively scheduled, parks instead of blocking
  **/
-pub class Fiber<T> : Sendable, Spawnable<T> {
+pub owning struct Fiber<T> : Spawnable<T> {
 	// The construction hook (see Thread.nm): the deferred-call special form.
 	#spawn = () {
 	}

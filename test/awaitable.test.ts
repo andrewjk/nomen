@@ -8,6 +8,15 @@ import { compile_module } from "./spec/_helpers.ts";
 // is trait-able. `Task<T>` conforms — `wait` may park the current context —
 // so a generic helper taking `Awaitable` waits on any task, whatever started
 // it (a Thread, a Fiber, or a nursery spawn).
+//
+// STRUCT_PLAN_3 Phase R tranche 2: Task is an OWNING STRUCT, and the trait
+// vocabulary follows B4. `wait` takes its receiver by VALUE (it never
+// mutates the handle — it parks on the future the handle names), so the
+// BARE `Awaitable` parameter is the dispatch form: the T3 stack-copy box
+// (zero malloc, the box lives on the caller's stack for the call, and the
+// caller's handle keeps owning the future reference). A `move Awaitable`
+// would transfer the handle into a heap box; a `ref Awaitable` cannot take
+// a value-struct conformer at all (borrows cannot be boxed).
 
 describe("Awaitable (Task<T> conforms)", () => {
 	test("a Task-typed value dispatches wait through the trait", async () => {
@@ -17,13 +26,13 @@ func work = (uint64 n, out uint64) {
 	return n * 2
 }
 
-func join_it = (ref Awaitable a) {
+func join_it = (Awaitable a) {
 	a.wait()
 }
 
 pub func main = () {
 	var t = Thread(work(21)).start()
-	join_it(ref t)
+	join_it(t)
 	Console.write_line(t.result_uint64().to_string())
 }
 `;
@@ -37,14 +46,14 @@ func work = (uint64 n, out uint64) {
 	return n + 1
 }
 
-func join_it = (ref Awaitable a) {
+func join_it = (Awaitable a) {
 	a.wait()
 }
 
 pub func main = () {
 	var f = Fiber(work(41))
 	var h = f.start()
-	join_it(ref h)
+	join_it(h)
 	Console.write_line(h.result_uint64().to_string())
 }
 `;
@@ -58,13 +67,13 @@ pub class NotATask {
 	var int x = 0
 }
 
-func join_it = (ref Awaitable a) {
+func join_it = (Awaitable a) {
 	a.wait()
 }
 
 pub func main = () {
 	var NotATask n = NotATask()
-	join_it(ref n)
+	join_it(n)
 }
 `;
 		const parsed = parse_raw(input);
@@ -78,13 +87,13 @@ func work = (uint64 n, out uint64) {
 	return n * 2
 }
 
-func join_it = (ref Awaitable a) {
+func join_it = (Awaitable a) {
 	a.wait()
 }
 
 pub func main = () {
 	var t = Thread(work(21)).start()
-	join_it(ref t)
+	join_it(t)
 	Console.write_line(t.result_uint64().to_string())
 }
 `;

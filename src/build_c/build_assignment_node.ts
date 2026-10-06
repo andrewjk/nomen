@@ -1194,10 +1194,26 @@ export default function build_assignment_node(
 					// variable so its new value is freed at scope exit.
 					const rhs_is_free_factory =
 						node.right_value.node_type === "func_call" && !rhs_references_var(node, lhs_name);
-					if (is_fresh_constructor(node, status) || rhs_is_free_factory) {
-						// Fresh constructor / factory: eagerly reclaim the
-						// discarded old value, then keep the variable for a
-						// scope-exit free of the new value.
+					// A `move out T` METHOD (`t = t2.start()`, `l = l2.pop()`) —
+					// STRUCT_PLAN_3 Phase R tranche 2: an owned method return is
+					// an ownership TRANSFER of a value the callee owns, never an
+					// alias of any variable's buffer — the same fresh-value
+					// classification, and it takes precedence over the
+					// self-method arm (the receiver's storage was consumed or
+					// left untouched; the returned value is the caller's to
+					// destroy).
+					const rhs_is_owned_method_return =
+						node.right_value.node_type === "access" &&
+						(node.right_value as AccessNode).access.node_type === "access_func" &&
+						!!((node.right_value as AccessNode).access as AccessFunctionCallNode).owned_return;
+					if (
+						is_fresh_constructor(node, status) ||
+						rhs_is_free_factory ||
+						rhs_is_owned_method_return
+					) {
+						// Fresh constructor / factory / owned method return:
+						// eagerly reclaim the discarded old value, then keep the
+						// variable for a scope-exit free of the new value.
 						if (struct_type) {
 							release_recorded_string_fields(status, struct_type, lhs_name);
 							// A fresh CONSTRUCTOR (`p = Pair("y")`) seeds the string

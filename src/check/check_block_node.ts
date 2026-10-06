@@ -22,6 +22,7 @@ import { synthesize_auto_derived_methods } from "./utils/auto_derive.ts";
 import { extract_length_equalities_at_registration } from "./utils/flow_bounds.ts";
 import materialize_type from "./utils/materialize_type.ts";
 import { register_extern_for_ownership } from "./utils/ownership.ts";
+import { is_owning_struct_type_requiring_move } from "./utils/ownership.ts";
 import type_name from "./utils/type_name.ts";
 
 export default function check_block_node(node: BlockNode, status: CheckStatus) {
@@ -288,6 +289,11 @@ function infer_const_expr_type(
  * `var T _disc_N = <call>` so the existing scope-exit reclamation frees it
  * (running its `#destroy` and field destroys first).
  *
+ * STRUCT_PLAN_3 Phase R: the same logic covers OWNING STRUCTS whose
+ * ownership a scope-exit destroy actually reclaims (a resource-releasing
+ * `#destroy`, or owning fields — e.g. a discarded `Thread(...).start()`
+ * Task handle leaks its future reference unless destroyed).
+ *
  * Free functions and constructors returning a class always yield an owned
  * value. Method calls are hoisted only when they have an owned (`move out T`)
  * return — a borrowed return (e.g. `list.at(0)`) is owned by its receiver and
@@ -334,7 +340,11 @@ function discarded_class_result_type(
 			? ((child as AccessNode).access as { type?: Type })?.type
 			: (child as { type?: Type }).type;
 	if (!t?.name) return undefined;
-	if (!status.structs.find((s) => s.name === t.name && s.is_class)) return undefined;
+	const struct = status.structs.find((s) => s.name === t.name);
+	const is_class = !!struct?.is_class;
+	const is_owning =
+		!is_class && !!struct && is_owning_struct_type_requiring_move(new Type(struct.name), status);
+	if (!is_class && !is_owning) return undefined;
 	if (child.node_type === "func_call") return t;
 	if (
 		child.node_type === "access" &&

@@ -48,12 +48,53 @@ deliberately skipped (decision 2026-10-06: go straight at the substance).
   `test/spawn_ctor_struct.test.ts` on both backends (both construction
   forms, generic mono, string result, unstarted-construction `#destroy`
   reclaim, fresh-construction-as-receiver/arg).
-- **Tranche 2: `Thread`/`Fiber`/`Task` → owning struct + handle fields**
-  (the shape menu). Depends on tranche 1. Test-infra note: the harness
-  links a precompiled `system.o` (test/globalSetup), so converting core
-  types requires the system objects to be rebuilt in the same effort —
-  programs that shadow a System type already force single-TU, but a
-  stale-object split build would silently hold the old class form.
+- **Tranche 2 (landed): `Thread`/`Fiber`/`Task` → owning struct + handle
+  fields** (the shape menu). The three types were already handle-shaped
+  (uint64/bool fields), so the conversion is mostly the declaration: `pub
+owning struct Thread<T> : Spawnable<T>` / `Fiber<T> : Spawnable<T>` /
+  `Task<T> : Awaitable` — `Sendable` dropped (structs auto-derive; the
+  fields are all scalars). Both layouts already reserve the `_vt` word at
+  offset 0 for every struct, so the raw asm bodies' field offsets are
+  unchanged. What moved with them:
+  - `build_nursery_spawn` (both backends) reworked for inline instances:
+    the C statement expression copies the Thread value, transfers the
+    handles, and yields an inline Task (no heap instance, no `_vt`, no temp
+    free); the aarch64 companion helper takes the Thread by address and
+    writes the Task through a leading sret parameter (x0), leaving the
+    buffer address in x0 (the value-struct convention).
+  - The aarch64 fn-value construction now stages nursery-capture frame
+    addresses in x2–x4 when sret is in effect (tranche 1's "captures never
+    co-occur with sret" held only while Thread/Fiber were classes).
+  - Checker: the owning-struct receiver hoist
+    (`check_access_node`) hid the `Thread(...)` ctor from the detach
+    capture rule — the rule moved above the hoists; the discarded-result
+    hoist (`check_block_node`) extends to owning structs whose ownership a
+    scope-exit destroy reclaims (a discarded `Thread(...).start()` Task
+    leaked its future reference); struct reassignment of an OWNED method
+    return (`t = t2.start()`) keeps the variable registered (the C
+    assignment path classified every method result as an aliasing borrow —
+    a `move out T` return is a fresh value); the moved-trait-arg boxing at
+    a call site resolves the MONO struct name (`Task` + type args →
+    `Task_uint64`, so the box is actually built instead of aliasing the
+    donor).
+  - `Awaitable.wait` takes the receiver by VALUE (`func wait = (self)`) —
+    waiting parks on the future the handle names and never mutates the
+    handle, so the bare `Awaitable` parameter (T3 stack-copy box, caller
+    keeps ownership) is the sanctioned dispatch form; `wait`'s legacy
+    `pthread_join` fallback (dead since the pool migration — `handle` was
+    permanently zero) is gone. `Thread`/`Fiber`/`Task` doc comments and
+    SPEC/ASYNC.md updated.
+  - Test-infra note resolved: the system objects rebuild automatically —
+    the stale check hashes the GENERATED output, so the core edits
+    invalidate it. One real gap surfaced: `lib.ts`'s type-name extractor
+    didn't recognize `pub owning struct` (the first owning structs in the
+    library), so the affected files silently dropped out of the joined
+    source — fixed with an `(?:owning )?` in the regex.
+  - Covered by the existing concurrency corpus (task/thread_struct/
+    fiber/fiber_phase2/daemon/awaitable/spawn_region/... all green on both
+    backends); `test/awaitable.test.ts` retyped to the bare-trait-param
+    dispatch form, and the fiber park/cancel shapes use `move` /
+    `ref Task` spellings where the class era relied on aliasing.
 - **Tranche 3: `Channel`/`Mutex`/`Tcp`/`Tester`/`Random` conversions.**
   Mutex stays the hand-locked primitive (the N4 typed `Mutex<T>` +
   `Shared<T>` remainder is separately deferred — see below).

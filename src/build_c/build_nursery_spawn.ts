@@ -1,6 +1,5 @@
 import { mono_type_name } from "../build_common/mono_name.ts";
 import type AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
-import type FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import Type from "../nodes/Type.ts";
 import build_node from "./build_node.ts";
 import { ensure_concurrency_runtime } from "./build_spawn_node.ts";
@@ -10,15 +9,22 @@ import type BuildStatus from "./BuildStatus.ts";
  * Build a `name.start(Thread(fn(args)))` escape-hatch call (C backend,
  * CLOSURE.md Phase 3b).
  *
- * The single parameter is the `Thread(fn(args))` construction (or a
- * Thread-typed expression) — its fields carry the task closure packed
- * eagerly at the construction site, plus the result slot, cancel flag, and
- * future. This submits the packed closure, registers the future with the
- * nursery referenced by the receiver (`nursery_ptr`, a `struct Nursery *`)
- * — reading `futures_ptr` / `count_ptr` — transfers the handles out of the
- * instance, and yields Task<T>. The enclosing async block's join loop reads
- * the same array and count slots, so futures spawned through a passed
- * Nursery are joined at the block's scope exit exactly like direct spawns.
+ * The single parameter is the `Thread(fn(args))` construction — its fields
+ * carry the task closure packed eagerly at the construction site, plus the
+ * result slot, cancel flag, and future. This submits the packed closure,
+ * registers the future with the nursery referenced by the receiver
+ * (`nursery_ptr`, a `struct Nursery *`) — reading `futures_ptr` /
+ * `count_ptr` — transfers the handles out of the instance, and yields
+ * Task<T>. The enclosing async block's join loop reads the same array and
+ * count slots, so futures spawned through a passed Nursery are joined at
+ * the block's scope exit exactly like direct spawns.
+ *
+ * Thread and Task are OWNING STRUCTS (STRUCT_PLAN_3 Phase R, tranche 2):
+ * the construction yields the inline value (copied into this expression's
+ * own local), and the launch yields an inline Task value. The instance
+ * storage dies with the expression — there is no heap instance to free
+ * (the class form's temp free is gone); the transferred-out handles leave
+ * the copy's `#destroy` a no-op by construction.
  *
  * See ASYNC.md, "Escape hatch: passing the nursery".
  */
@@ -37,21 +43,14 @@ export default function build_nursery_spawn(
 	const mono_thread = mono_type_name("Thread", [t_arg]);
 	const mono_task_name = mono_type_name("Task", [t_arg]);
 
-	// A `pool.start(Thread(fn(args)))` argument is a TEMPORARY instance —
-	// free it after transferring the handles; a stored binding is freed by
-	// its owner.
-	const arg = node.params[0];
-	const arg_is_temp =
-		arg.node_type === "func_call" &&
-		!!((arg as FunctionCallNode).is_thread_ctor || (arg as FunctionCallNode).is_fiber_ctor);
 	status.code += `({\n`;
-	status.code += `\tstruct ${mono_thread} *_self = `;
-	build_node(arg, status);
+	status.code += `\tstruct ${mono_thread} _self = `;
+	build_node(node.params[0], status);
 	status.code += `;\n`;
-	status.code += `\tstruct nomen_future *_future = (struct nomen_future *)_self->future;\n`;
-	status.code += `\tvoid *_result_ptr = (void *)_self->result_slot;\n`;
-	status.code += `\tunsigned long long *_cancel_ptr = (unsigned long long *)_self->cancel_flag;\n`;
-	status.code += `\tstruct nomen_closure *_closure = (struct nomen_closure *)_self->task;\n`;
+	status.code += `\tstruct nomen_future *_future = (struct nomen_future *)_self.future;\n`;
+	status.code += `\tvoid *_result_ptr = (void *)_self.result_slot;\n`;
+	status.code += `\tunsigned long long *_cancel_ptr = (unsigned long long *)_self.cancel_flag;\n`;
+	status.code += `\tstruct nomen_closure *_closure = (struct nomen_closure *)_self.task;\n`;
 	// The construction's own reference is consumed by the launch (this is a
 	// nursery-registered spawn: trampoline + Task [+ the instance's slot
 	// handed to the nursery side]).
@@ -64,22 +63,24 @@ export default function build_nursery_spawn(
 	// magic-identifier case) binds correctly against the trailing `->`.
 	status.code += `\t__nomen_nursery_track((void **)(${nursery_ptr})->futures_ptr, (int *)(${nursery_ptr})->count_ptr, (int *)(${nursery_ptr})->cap_ptr, _future);\n`;
 	// Transfer the handles out of the instance (started; #destroy no-ops).
-	status.code += `\t_self->task = 0;\n`;
-	status.code += `\t_self->future = 0;\n`;
-	status.code += `\t_self->result_slot = 0;\n`;
-	status.code += `\t_self->cancel_flag = 0;\n`;
-	status.code += `\t_self->started = 1;\n`;
-	if (arg_is_temp) status.code += `\tfree(_self);\n`;
+	status.code += `\t_self.task = 0;\n`;
+	status.code += `\t_self.future = 0;\n`;
+	status.code += `\t_self.result_slot = 0;\n`;
+	status.code += `\t_self.cancel_flag = 0;\n`;
+	status.code += `\t_self.started = 1;\n`;
 	if (fire_and_forget) {
 		status.code += `\t(void)0;\n`;
 	} else {
-		status.code += `\tstruct ${mono_task_name} *_task = (struct ${mono_task_name} *)malloc(sizeof(struct ${mono_task_name}));\n`;
-		status.code += `\t_task->_vt = &_${mono_task_name}_traits;\n`;
-		status.code += `\t_task->handle = 0;\n`;
-		status.code += `\t_task->done = 0;\n`;
-		status.code += `\t_task->result_slot = (unsigned long long)_result_ptr;\n`;
-		status.code += `\t_task->cancel_flag = (unsigned long long)_cancel_ptr;\n`;
-		status.code += `\t_task->future = (unsigned long long)_future;\n`;
+		// The Task handle: an inline owning struct VALUE (Phase R tranche 2)
+		// — no heap instance, no `_vt` (a value struct has no embedded
+		// vtable; trait dispatch rides boxed handles).
+		status.code += `\tstruct ${mono_task_name} _task;\n`;
+		status.code += `\tmemset(&_task, 0, sizeof(struct ${mono_task_name}));\n`;
+		status.code += `\t_task.handle = 0;\n`;
+		status.code += `\t_task.done = 0;\n`;
+		status.code += `\t_task.result_slot = (unsigned long long)_result_ptr;\n`;
+		status.code += `\t_task.cancel_flag = (unsigned long long)_cancel_ptr;\n`;
+		status.code += `\t_task.future = (unsigned long long)_future;\n`;
 		status.code += `\t_task;\n`;
 	}
 	status.code += `})\n`;

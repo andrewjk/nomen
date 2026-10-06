@@ -257,7 +257,10 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				callee_param_is_moved_trait && node.params[i].node_type === "value"
 					? status.structs.find(
 							(st) =>
-								st.name === param_type.name && !st.is_simple_type && !st.is_class && !st.is_generic,
+								st.name === mono_type_name(param_type) &&
+								!st.is_simple_type &&
+								!st.is_class &&
+								!st.is_generic,
 						)
 					: undefined;
 			if (callee_param_is_moved_trait && arg_struct) {

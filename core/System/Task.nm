@@ -11,13 +11,18 @@
 // on the first spawn — not in Task's own methods — so that Task can be
 // generic without duplicating the pool per instantiation.
 //
+// Task is an OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 2 — the shape
+// menu): every field is an opaque handle (uint64/bool), so the handle value
+// is movable and its `#destroy` releases the future reference it holds.
+// Moving a Task transfers that reference; there is no aliasing copy.
+//
 // See ASYNC.md for the design.
 
 /**
  * A handle to an asynchronously-running computation, backed by a shared thread pool.
  * Conforms to `Awaitable`: `.wait()` may park the current execution context.
  **/
-pub class Task<T> : Sendable, Awaitable {
+pub owning struct Task<T> : Awaitable {
 	pub var uint64 handle = 0
 	pub var done = false
 	pub var uint64 result_slot = 0
@@ -35,40 +40,27 @@ pub class Task<T> : Sendable, Awaitable {
 	// Block until the task finishes. Idempotent — calling twice is safe, and
 	// a Task captured from a nursery spawn can be waited on here AND joined
 	// by the nursery at block exit (both wait on the same shared future).
-	pub func wait = (ref self) {
+	//
+	// The receiver is a bare VALUE self (matching the Awaitable trait):
+	// waiting never mutates the handle — it parks on the future the handle
+	// names. Struct receivers travel by address regardless (the raw body
+	// reads `self->future`), so the ABI is unchanged; the bare spelling is
+	// what lets the read-only `Awaitable` dispatch form typecheck.
+	// The legacy `pthread_join` fallback is gone — `handle` has been
+	// permanently zero since the pool migration.
+	pub func wait = (self) {
 		```
 		#arch: c
 		if (self->future) {
 			__nomen_future_wait((struct nomen_future *)self->future);
-		} else if (self->handle && !self->done) {
-			void *ret;
-			pthread_join((pthread_t)self->handle, &ret);
-			self->handle = 0;
-			self->done = 1;
 		}
 		```
 		```
 		#arch: aarch64
-		// if (self->future) goto wait_future
+		// if (self->future) __nomen_future_wait(self->future)
 		ldr x0, [x19, #40]
-		cbz x0, .Lwait_handle
-		bl ___nomen_future_wait
-		b .Lwait_done
-		.Lwait_handle:
-		// else if (self->handle && !self->done)
-		ldr x0, [x19, #8]
 		cbz x0, .Lwait_done
-		ldrb w1, [x19, #16]
-		cbnz w1, .Lwait_done
-		// pthread_join((pthread_t)self->handle, &ret)
-		sub sp, sp, #16
-		mov x1, sp
-		bl _pthread_join
-		add sp, sp, #16
-		// self->handle = 0; self->done = 1
-		str xzr, [x19, #8]
-		mov w0, #1
-		strb w0, [x19, #16]
+		bl ___nomen_future_wait
 		.Lwait_done:
 		```
 	}
@@ -284,7 +276,7 @@ pub class Task<T> : Sendable, Awaitable {
 	// ---- User-defined async primitive seam (ASYNC.md, "User-defined async
 	// primitives") ----
 	// The construction sugar stores the packed-task machinery in a user
-	// class's plain uint64 fields (task / result_slot / cancel_flag /
+	// spawnable's plain uint64 fields (task / result_slot / cancel_flag /
 	// future); these statics are the library boundary its own launch
 	// methods drive the runtime through — the same calls the generated
 	// Thread/Fiber launch code makes, so a user primitive parks fibers,
@@ -294,7 +286,7 @@ pub class Task<T> : Sendable, Awaitable {
 
 	// Submit a packed task closure (the `task` field's value) to the shared
 	// worker pool. The closure must come from a construction of an
-	// Awaitable-conforming class — it is not callable.
+	// Awaitable-conforming spawnable — it is not callable.
 	pub func pool_submit = (uint64 closure) {
 		```
 		#arch: c

@@ -30,6 +30,11 @@
 // (and nursery.start) transfer ownership of the packed task out of the
 // value, so a started Thread destroys as a no-op.
 //
+// Thread is an OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 2 — the shape
+// menu): every field is an opaque handle (uint64/bool), so the value is
+// movable and its `#destroy` closes what the handles name. Moving a Thread
+// transfers the handles; there is no aliasing copy to misuse.
+//
 // See ASYNC.md for the design.
 
 // The launch surface's return type (ASYNC.md: the dependency is
@@ -39,11 +44,11 @@ import Task
 /**
  * A deferred function call, startable on the shared worker pool
  **/
-pub class Thread<T> : Sendable, Spawnable<T> {
-	// The construction hook (ASYNC.md): declares this class's
+pub owning struct Thread<T> : Spawnable<T> {
+	// The construction hook (ASYNC.md): declares this type's
 	// construction as the deferred-call special form — the single argument
 	// is a call (args packed eagerly, call deferred) or a zero-arg function
-	// value. The compiler matches this member, never the class name; the
+	// value. The compiler matches this member, never the type name; the
 	// construction itself is compiler-generated (pack the args, allocate the
 	// future machinery, build the instance), so the body is a declaration.
 	#spawn = () {

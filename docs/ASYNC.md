@@ -36,8 +36,10 @@ targets.
   receivers; other contexts still block on the condvar. A cancelled fiber
   waiting on an empty channel resumes and returns the zero value rather than
   waiting forever.
-- **`Thread`** — the thread class (`core/System/Thread.nm`), a plain library
-  class whose launch surface is real methods, not compiler dispatch.
+- **`Thread`** — the thread spawnable (`core/System/Thread.nm`), a plain
+  library owning struct (STRUCT_PLAN_3 Phase R tranche 2 — the shape menu:
+  handle fields only) whose launch surface is real methods, not compiler
+  dispatch.
   `Thread(fn(args)).start()` is a statement (fire-and-forget) or expression
   yielding `Task<T>`; the arguments are evaluated EAGERLY, at the
   construction. The construction is a real, storable value:
@@ -126,16 +128,20 @@ targets.
   string result (leak-never-dangle, bounded at one per run); class/trait/
   value-struct results skip the dispose (they may alias the env).
 - **`Awaitable`** — the consumption-side trait (`core/System/Awaitable.nm`):
-  park-flavored `func wait = (ref self)`. `Task<T>` conforms, so a generic
+  park-flavored `func wait = (self)` — the receiver is a bare VALUE self
+  (waiting parks on the future the handle names; it never mutates the
+  handle), which makes the bare `Awaitable` parameter — the T3 stack-copy
+  box, caller keeps ownership — the sanctioned dispatch form (Phase R
+  tranche 2). `Task<T>` conforms, so a generic
   helper over `Awaitable` waits on any task — thread, fiber, or
   nursery-spawned. Must-start is deliberately not a trait rule; it is each
-  spawn class's own `#destroy` contract.
+  spawnable's own `#destroy` contract.
 - **`Spawnable<T>`** — the production-side trait
   (`core/System/Spawnable.nm`): `func start = (ref self, move out Task<T>)`
   and `func detach = (ref self)`, both required. `Thread<T>` and `Fiber<T>`
   conform (Fiber's `detach` launches and drops the handle), and `Task<T>`
   conforms to `Awaitable` — so each type carries exactly one role: the
-  spawn classes are spawnable, the handle is awaitable. The split is
+  spawnables are spawnable, the handle is awaitable. The split is
   deliberate: `Spawnable` produces an awaitable, `Awaitable` consumes one;
   merging them would force both roles onto every type (the self-handle
   mistake at the trait level). `Spawnable` is generic because `start`'s
@@ -307,11 +313,13 @@ The concurrency surface was reworked once, from compiler magic keyed on
 library type names to the library-owned shape described above. The
 decisions, with the paths not taken:
 
-- **`Task<T>` stays the returned handle; `start` yields it.** A spawn class
+- **`Task<T>` stays the returned handle; `start` yields it.** A spawnable
   implements only `Spawnable<T>`; the handle supplies `Awaitable`, so the
   consumption half cannot be forgotten and each type carries one role.
   `Task<T>`'s `#init` is internal: `start` builds the handle through it,
   users cannot construct a bare handle that references no task.
+  (`Task<T>` is an owning struct since Phase R tranche 2 — it moves, and
+  its `#destroy` releases the future reference.)
   _Rejected:_ the self-handle shape (`Thread<T>` implementing both traits,
   `.start()` returning `self`) — one type, but it forces both roles onto
   every type and loses the guaranteed await surface.

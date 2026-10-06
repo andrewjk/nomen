@@ -54,6 +54,26 @@ export default function check_access_node(node: AccessNode, status: CheckStatus)
 		return false;
 	}
 
+	// `Thread(fn(x)).detach()` — the daemon form owns its captures
+	// (STRUCT_PLAN_3 N2/R4): a shared class/trait argument to a detached task
+	// has no join to bound it (the daemon outlives every scope), so the
+	// chained construction's non-`move` shared-reference arguments are
+	// rejected here, at the detach boundary. A construction stored in a
+	// variable and detached later is not flow-tracked (recorded gap).
+	// MUST run before the owning-struct receiver hoist below — that hoist
+	// replaces the construction with a temp value, hiding the ctor node this
+	// rule inspects.
+	if (
+		node.access.node_type === "access_func" &&
+		(node.access as AccessFunctionCallNode).name === "detach" &&
+		node.target.node_type === "func_call" &&
+		((node.target as FunctionCallNode).is_thread_ctor ||
+			(node.target as FunctionCallNode).is_fiber_ctor ||
+			(node.target as FunctionCallNode).is_awaitable_ctor)
+	) {
+		enforce_detach_owns_captures(node.target as FunctionCallNode, status);
+	}
+
 	// A call whose result is an owning struct (e.g. `build_norm(units).length`)
 	// must not stay inline as the receiver: the returned struct's heap
 	// resources (container buffers, class fields) are reclaimed by a
@@ -528,23 +548,8 @@ function check_access_function_node(
 	}
 
 	// Thread.start / Thread.detach / Fiber.start resolve as ordinary methods
-	// on the library classes below.
-
-	// `Thread(fn(x)).detach()` — the daemon form owns its captures
-	// (STRUCT_PLAN_3 N2/R4): a shared class/trait argument to a detached task
-	// has no join to bound it (the daemon outlives every scope), so the
-	// chained construction's non-`move` shared-reference arguments are
-	// rejected here, at the detach boundary. A construction stored in a
-	// variable and detached later is not flow-tracked (recorded gap).
-	if (
-		node.name === "detach" &&
-		target.node_type === "func_call" &&
-		((target as FunctionCallNode).is_thread_ctor ||
-			(target as FunctionCallNode).is_fiber_ctor ||
-			(target as FunctionCallNode).is_awaitable_ctor)
-	) {
-		enforce_detach_owns_captures(target as FunctionCallNode, status);
-	}
+	// on the library spawnables below. The detach capture rule ran at the top
+	// (before the receiver hoists hide the ctor node).
 
 	// `view T` builtins: .at is a compiler intrinsic that operates on the
 	// (ptr, len) slice directly. It must NOT resolve to the underlying struct's

@@ -2,7 +2,6 @@ import type BuildStatus from "../build_c/BuildStatus.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
-import type FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
@@ -13,20 +12,27 @@ import {
 	emit_deref_var_address,
 	emit_var_address,
 } from "./utils/stack_var.ts";
+import { get_struct_size } from "./utils/struct_layout.ts";
 
 /**
  * Build a `name.start(Thread(fn(args)))` escape-hatch call for aarch64
  * (CLOSURE.md Phase 3b).
  *
- * A companion-C helper reads the packed handles from the Thread-typed
- * parameter's fields, submits the task closure, and registers the future
- * with the nursery's futures/count pointers; the assembly builds the
- * parameter (the Thread construction, whose eager packing happens right
- * there), loads the receiver Nursery struct's tracking pointers, and calls
- * the helper. The nursery's pointers are loaded at runtime from the
+ * A companion-C helper reads the packed handles from the Thread instance,
+ * submits the task closure, registers the future with the nursery's
+ * futures/count pointers, and fills the sret Task handle; the assembly
+ * builds the Thread argument (the construction, whose eager packing happens
+ * right there), loads the receiver Nursery struct's tracking pointers, and
+ * calls the helper. The nursery's pointers are loaded at runtime from the
  * receiver struct (rather than compile-time-known stack offsets), since the
  * spawn may happen inside a function that received the nursery as a
  * `ref Nursery` parameter.
+ *
+ * Thread and Task are OWNING STRUCTS (STRUCT_PLAN_3 Phase R, tranche 2):
+ * the construction leaves the instance's ADDRESS in x0 (the value-struct
+ * sret convention), and the launch writes the Task handle through the
+ * helper's leading `out` parameter, leaving its buffer address in x0 —
+ * no heap instance, no `_vt`, no temp frees.
  *
  * See ASYNC.md, "Escape hatch: passing the nursery".
  */
@@ -45,11 +51,6 @@ export default function build_nursery_spawn(
 	const helper_name = `nomen_spawn_${id}_nstart`;
 
 	const fire_and_forget = !!access_func.is_statement;
-	// The `pool.start(Thread(...))` argument is a TEMPORARY instance when it
-	// is the construction expression itself.
-	const arg_is_temp =
-		arg.node_type === "func_call" &&
-		!!((arg as FunctionCallNode).is_thread_ctor || (arg as FunctionCallNode).is_fiber_ctor);
 	const refs = fire_and_forget ? 2 : 3;
 	const t_arg = spawn_result_type_arg(access_func.function_return_type);
 	const mono_thread = mono_type_name("Thread", [t_arg]);
@@ -57,8 +58,7 @@ export default function build_nursery_spawn(
 
 	// --- Companion C: the launch helper ---
 	let c = `// --- nursery spawn site ${id} ---\n`;
-	c += `void *${helper_name}(void *self, void **__nomen_nursery_futures, int *__nomen_nursery_count, int *__nomen_nursery_cap) {\n`;
-	c += `\textern void *${mono_task_name}_traits[];\n\textern void *${mono_task_name}_traits[];\n\tstruct ${mono_thread} *t = (struct ${mono_thread} *)self;\n`;
+	c += `void ${helper_name}(struct ${mono_task_name} *out, struct ${mono_thread} *t, void **__nomen_nursery_futures, int *__nomen_nursery_count, int *__nomen_nursery_cap) {\n`;
 	c += `\tstruct nomen_future *f = (struct nomen_future *)t->future;\n`;
 	c += `\tvoid *result_ptr = (void *)t->result_slot;\n`;
 	c += `\tunsigned long long *cancel_ptr = (unsigned long long *)t->cancel_flag;\n`;
@@ -72,48 +72,59 @@ export default function build_nursery_spawn(
 	c += `\tt->result_slot = 0;\n`;
 	c += `\tt->cancel_flag = 0;\n`;
 	c += `\tt->started = 1;\n`;
-	if (arg_is_temp) c += `\tfree(t);\n`;
-	if (fire_and_forget) {
-		c += `\treturn (void *)0;\n`;
-	} else {
-		c += `\tstruct ${mono_task_name} *task = (struct ${mono_task_name} *)malloc(sizeof(struct ${mono_task_name}));\n`;
-		c += `\ttask->_vt = (void **)${mono_task_name}_traits;\n`;
-		c += `\ttask->handle = 0;\n`;
-		c += `\ttask->done = 0;\n`;
-		c += `\ttask->result_slot = (unsigned long long)result_ptr;\n`;
-		c += `\ttask->cancel_flag = (unsigned long long)cancel_ptr;\n`;
-		c += `\ttask->future = (unsigned long long)f;\n`;
-		c += `\treturn task;\n`;
-	}
+	// The Task handle: an inline owning struct VALUE (Phase R tranche 2) —
+	// no heap instance, no `_vt` (a value struct has no embedded vtable;
+	// trait dispatch rides boxed handles). Fire-and-forget discards it.
+	c += `\tout->handle = 0;\n`;
+	c += `\tout->done = 0;\n`;
+	c += `\tout->result_slot = (unsigned long long)result_ptr;\n`;
+	c += `\tout->cancel_flag = (unsigned long long)cancel_ptr;\n`;
+	c += `\tout->future = (unsigned long long)f;\n`;
 	c += `}\n`;
 	if (!status.file_scope_c) status.file_scope_c = "";
 	status.file_scope_c += c;
 
-	// --- Assembly: Thread arg in x0, nursery tracking pointers in x1..x3 ---
+	// --- Assembly: helper(out=x0, t=x1, futures=x2, count=x3, cap=x4) ---
 	emit_asm(status, `// nursery spawn site ${id}\n`);
-	const nursery_park = allocate_stack_space(status, 8, 16);
+	const futures_park = allocate_stack_space(status, 8, 8);
+	const count_park = allocate_stack_space(status, 8, 8);
+	const cap_park = allocate_stack_space(status, 8, 8);
 	const self_park = allocate_stack_space(status, 8, 8);
+	const task_buf = allocate_stack_space(status, get_struct_size(mono_task_name, status), 8);
 
 	// Load the Nursery struct address into x0, then park it. Its tracking
 	// pointers — futures storage (offset 0, the ADDRESS of the async block's
 	// list slot so the helper can realloc in place), count (offset 8), and
-	// capacity (offset 16) — are loaded into x1..x3 after the Thread argument
-	// is built (emitting it can clobber x0..x3).
+	// capacity (offset 16) — are parked in their own slots after the Thread
+	// argument is built (emitting it can clobber x0..x4).
 	load_nursery_struct_address(node.target, status);
 	ensure_newline(status);
-	emit_asm(status, `str x0, [x29, #${nursery_park}]\n`);
-	// Build the Thread argument (the construction packs eagerly); park the
-	// instance pointer, load the nursery pointers, then restore the arg.
+	emit_asm(status, `str x0, [x29, #${futures_park}]\n`);
+	// Build the Thread argument (the construction packs eagerly; the
+	// value-struct convention leaves the instance's ADDRESS in x0), park it,
+	// load the nursery pointers, then stage the helper's arguments.
 	build_node(arg, status);
 	ensure_newline(status);
 	emit_asm(status, `str x0, [x29, #${self_park}]\n`);
-	emit_asm(status, `ldr x0, [x29, #${nursery_park}]\n`);
-	emit_asm(status, `ldr x1, [x0, #0]\n`); // futures_ptr (→ &list slot)
-	emit_asm(status, `ldr x2, [x0, #8]\n`); // count_ptr
-	emit_asm(status, `ldr x3, [x0, #16]\n`); // cap_ptr
-	emit_asm(status, `ldr x0, [x29, #${self_park}]\n`);
+	emit_asm(status, `ldr x0, [x29, #${futures_park}]\n`);
+	emit_asm(status, `ldr x9, [x0, #0]\n`); // futures_ptr (→ &list slot)
+	emit_asm(status, `str x9, [x29, #${futures_park}]\n`);
+	emit_asm(status, `ldr x9, [x0, #8]\n`); // count_ptr
+	emit_asm(status, `str x9, [x29, #${count_park}]\n`);
+	emit_asm(status, `ldr x9, [x0, #16]\n`); // cap_ptr
+	emit_asm(status, `str x9, [x29, #${cap_park}]\n`);
+	// x0 = the Task sret buffer, x1 = the Thread instance's address,
+	// x2..x4 = the nursery tracking pointers.
+	emit_asm(status, `add x0, x29, #${task_buf}\n`);
+	emit_asm(status, `ldr x1, [x29, #${self_park}]\n`);
+	emit_asm(status, `ldr x2, [x29, #${futures_park}]\n`);
+	emit_asm(status, `ldr x3, [x29, #${count_park}]\n`);
+	emit_asm(status, `ldr x4, [x29, #${cap_park}]\n`);
 	emit_asm(status, `bl _${helper_name}\n`);
-	// x0 = Task pointer (or NULL for fire-and-forget).
+	// x0 = the Task handle's address (the value-struct convention: the
+	// consuming context — a declaration's word copy or a discarded
+	// statement — reads the buffer through it).
+	emit_asm(status, `add x0, x29, #${task_buf}\n`);
 }
 
 /** The launch's T as a Type: the stamped wrapped-call return type, with

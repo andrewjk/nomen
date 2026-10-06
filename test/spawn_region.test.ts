@@ -439,6 +439,10 @@ func consume = (move List<int> items) {
 	});
 
 	test("a Task handle shared into a task can still be cancelled (protocol exemption)", () => {
+		// Phase R tranche 2: Task is an owning struct, so the worker takes the
+		// handle by the spelled mutable borrow (`ref Task` — a bare param is
+		// const and could not `cancel()` through it; the class-era
+		// `ref f = handle` alias form is gone).
 		const input = `
 import System
 
@@ -449,15 +453,14 @@ func work = (uint64 n, out uint64) {
 pub func main = (Init init) {
 	async {
 		var t = Thread(work(1)).start()
-		var f = Fiber(waiter(t)).start()
+		var f = Fiber(waiter(ref t)).start()
 		t.cancel()
 		f.wait()
 	}
 }
 
-func waiter = (Task<uint64> handle) {
-	ref f = handle
-	f.cancel()
+func waiter = (ref Task<uint64> handle) {
+	handle.cancel()
 }
 `;
 		expect(check(input)).toEqual([]);

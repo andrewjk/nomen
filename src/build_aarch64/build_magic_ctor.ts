@@ -455,7 +455,12 @@ function build_fn_value_ctor_a64(
 	status: BuildStatus,
 	id: number,
 	kind: string,
-	info: { mono_name: string; has_started: boolean; traits: boolean; is_class: boolean },
+	info: {
+		mono_name: string;
+		has_started: boolean;
+		traits: boolean;
+		is_class: boolean;
+	},
 ) {
 	const fn_value = node.params[0];
 	const helper_name = `nomen_fnval_${id}_ctor`;
@@ -559,9 +564,10 @@ function build_fn_value_ctor_a64(
 	c += `static struct nomen_closure ${desc_name} = { (void *)${tramp_name}, NULL, 0, NULL };\n`;
 	const fnval_capture = nursery_capture_a64(status, kind);
 	// Value-struct spawnables take the sret convention (see the call form):
-	// the instance is written through the leading `out` parameter. Capture
-	// args are Thread/Fiber-only (both classes), so they never co-occur
-	// with sret.
+	// the instance is written through the leading `out` parameter. Phase R
+	// tranche 2: Thread/Fiber are value structs, so captures and sret DO
+	// co-occur (the call form's slot staging already handled both; the
+	// fn-value form stages captures in x2-x4 below).
 	const fnval_sret = !info.is_class;
 	if (fnval_sret) {
 		c += `void ${helper_name}(struct ${mono_name} *out, struct nomen_closure *fn${
@@ -658,6 +664,19 @@ function build_fn_value_ctor_a64(
 		emit_asm(status, `str x0, [x29, #${fnval_park}]\n`);
 		emit_fnval_sret_dest("x0");
 		emit_asm(status, `ldr x1, [x29, #${fnval_park}]\n`);
+		if (fnval_capture) {
+			// Phase R tranche 2: Thread/Fiber are value structs, so sret and
+			// the nursery capture now co-occur — the capture frame addresses
+			// ride as trailing helper args (x2-x4).
+			const fnval_nursery_id = status.nursery_stack?.at(-1);
+			const fnval_off =
+				fnval_nursery_id !== undefined ? status.nursery_offsets?.get(fnval_nursery_id) : undefined;
+			if (fnval_off) {
+				emit_asm(status, `add x2, x29, #${fnval_off.futures_off}\n`);
+				emit_asm(status, `add x3, x29, #${fnval_off.count_off}\n`);
+				emit_asm(status, `add x4, x29, #${fnval_off.cap_off}\n`);
+			}
+		}
 	} else if (fnval_capture) {
 		// Nursery capture addresses ride as trailing helper args (x1-x3; the
 		// user closure occupies x0).

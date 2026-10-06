@@ -48,21 +48,24 @@ pub func main = () {
 		// The fiber calls result_uint64() on a Thread task: instead of
 		// blocking its worker, the fiber parks on the future; when the thread
 		// task completes, the fiber is scheduled again and finishes.
+		// Phase R tranche 2: Task is an owning struct, and this spawn is
+		// outside any `async` block — the handle MOVES into the fiber (the
+		// join-less borrow the nursery would bound doesn't exist here; the
+		// fiber owns the handle and destroys it when done).
 		const input = `
 import System
 
 func compute = (uint64 n) => n + 1
 
-func waiter = (Channel ch, Task<uint64> handle) {
-	ref Task<uint64> t = handle
-	var uint64 r = t.result_uint64()
+func waiter = (Channel ch, move Task<uint64> handle) {
+	var uint64 r = handle.result_uint64()
 	ch.send(r)
 }
 
 pub func main = () {
 	var Channel ch = Channel()
-	const t = Thread(compute(41)).start()
-	var f = Fiber(waiter(ch, t)).start()
+	var t = Thread(compute(41)).start()
+	var f = Fiber(waiter(ch, move t)).start()
 	// The fiber parks on the Thread task's result, wakes when it completes,
 	// and sends it through the channel.
 	var uint64 got = ch.receive()

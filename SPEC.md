@@ -2829,12 +2829,15 @@ The construction is a **special form keyed on the type's `#spawn` member** —
 a lifecycle marker, like `#init`/`#destroy`, that declares the type's
 construction hook. `Thread` and `Fiber` declare `#spawn`; the compiler treats
 `X(...)` on a `#spawn`-bearing type as the deferred-call construction, and a
-type that merely shares the name does not gain it. The declaring type is
-ordinarily a class (the construction builds a heap instance), and an owning
-struct may declare `#spawn` too — its construction yields the inline value,
-with the same handle fields written directly. A `#spawn` constructor's
-single argument is either a deferred call or a zero-arg function value;
-anything else is an error anchored at the argument.
+type that merely shares the name does not gain it. `Thread` and `Fiber` are
+**owning structs** (STRUCT_PLAN_3 Phase R — the shape menu): every field is
+an opaque handle (uint64/bool), so the construction yields an inline value
+that moves, and `#destroy` enforces must-start. A class may declare `#spawn`
+too (its construction builds a heap instance); an owning struct's
+construction yields the inline value, with the same handle fields written
+directly. A `#spawn` constructor's single argument is either a deferred call
+or a zero-arg function value; anything else is an error anchored at the
+argument.
 
 Because the construction is a real value, it can be stored and started later —
 the arguments are bound at construction, the call happens at `start()`:
@@ -3097,11 +3100,13 @@ An unnamed `async { }` block supports only lexical `Thread(...).start()`
 
 The handle returned by `Thread(...).start()`. Generic — `T` is inferred from
 the spawned function's return type (`Task<uint64>` for uint64-returning
-functions, `Task<uint64>` for void functions):
+functions, `Task<uint64>` for void functions). An **owning struct** whose
+fields are opaque handles — it moves, and its `#destroy` releases the future
+reference it holds (STRUCT_PLAN_3 Phase R):
 
 ```
-pub class Task<T> : Sendable {
-    func wait = (ref self)
+pub owning struct Task<T> : Awaitable {
+    func wait = (self)
     func result = (ref self, move out T)
     func result_uint64 = (ref self, out uint64)
     func cancel = (ref self)
