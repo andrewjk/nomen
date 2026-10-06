@@ -1627,6 +1627,29 @@ The same verifier applies to enums: a bare `enum` with a case payload typed a
 declared-`owning` struct must be declared `owning enum` (B1a), and bindings of
 a declared-`owning` enum move instead of copy.
 
+**Fields: the spelling follows the type.** An `owning struct`'s class-typed
+field is an owned slot — construction and stores transfer (the synthesized
+`#init` parameter is a `move` param), the field's instance is destroyed with
+the struct, and a re-assignment reclaims the displaced instance. The spelling
+is plain `var` — ownership follows the field's TYPE, so no `move` field
+keyword exists (classes keep their `move T` field form). A bare `struct`
+cannot hold these fields: the verifier above rejects it, naming the fix.
+
+```
+owning struct Holder {
+    var Dog d        // owned slot: Holder(move d) transfers, `var` is the spelling
+}
+```
+
+A trait-typed field is not supported yet (the concrete type or `Box<Concrete>`
+is the fix while the boxed-handle field lowering is pending).
+
+**Nullable lowerings.** `T?` keeps one language-level semantic with two
+mechanical lowerings, chosen by shape: `Box<T>?` (and any pointer-shaped
+handle) is the null pointer — the natural null slot; an inline struct `T?`
+(owning or Copyable) keeps the companion `<slot>_has` flag. Nothing boxes
+silently and no presence byte is spent on types with a natural null slot.
+
 #### Box
 
 `Box<T>` is an owning pointer to a heap-allocated value — the cycle-breaking

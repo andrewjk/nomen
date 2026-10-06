@@ -165,48 +165,51 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 			check_declaration_node(decl, status);
 			continue;
 		}
-		if (
-			!struct.is_class &&
-			is_class_type(decl.type.name, status) &&
-			// STRUCT_PLAN_3 B2: a `Box<T>` field is the sanctioned pointer —
-			// the box owns its pointee, so the struct's byte-copy story stays
-			// sound (the box moves with the struct).
-			!is_box_type(decl.type.name, status.structs)
-		) {
-			add_error(status, `struct fields cannot be class types, use a class instead`, decl.start);
-		} else if (
-			// STRUCT_PLAN_3 B1/B2 — the Copyable verifier (declared subset):
-			// a bare `struct` with a DECLARED-owning field — or a `Box<T>`
-			// field (the box owns its pointee) — cannot be Copyable
-			// (byte-copying would alias the field's owned state). Name the
-			// fix, exactly as the plan words it. (Inferred ownership is NOT
-			// verified here during the transition — existing code keeps its
-			// semantics; declared `owning` is the opted-in contract.)
-			!struct.is_class &&
-			!struct.is_owning &&
-			decl.type.name &&
+		// STRUCT_PLAN_3 B5 — the field restrictions collapse into the
+		// Copyable verifier: a class-typed field (the field slot owns the
+		// instance pointer), a declared-`owning` struct field, or a `Box<T>`
+		// field (the box owns its pointee) all own heap state a byte-copy
+		// would alias. On a bare `struct` that claim is false — the verifier
+		// error names the fix. On an `owning struct` the declaration IS the
+		// contract: the field is an owning slot (transfer-on-store), so the
+		// field is accepted.
+		const field_is_class_type =
+			!!decl.type.name &&
 			!decl.type.is_ref &&
-			(status.structs.find((st) => st.name === decl.type.name && st.is_owning) ||
-				is_box_type(decl.type.name, status.structs))
-		) {
+			is_class_type(decl.type.name, status) &&
+			!is_box_type(decl.type.name, status.structs);
+		const field_is_declared_owning =
+			!!decl.type.name &&
+			!decl.type.is_ref &&
+			(!!status.structs.find((st) => st.name === decl.type.name && st.is_owning) ||
+				is_box_type(decl.type.name, status.structs));
+		// A trait-typed field is an owning handle too, but its FIELD lowering
+		// (boxed handle storage + vtable dispatch through the field) is not
+		// built yet — reject with the concrete-type fix until it lands (B5
+		// remainder; the R shape menu holds fields by concrete type, Box, or
+		// WeakHandle).
+		const field_is_trait_type =
+			!!decl.type.name &&
+			!decl.type.is_ref &&
+			!!status.traits.find((t) => t.name === decl.type.name);
+		if (!struct.is_class && field_is_trait_type) {
 			add_error(
 				status,
-				`'${struct.name}' cannot be Copyable — field '${decl.name}' owns heap memory --> mark the struct \`owning struct ${struct.name}\`, or remove the field`,
+				`a trait-typed field is not supported yet — declare '${decl.name}' with the concrete type, or \`Box<${decl.type.name}>\` once boxed`,
 				decl.start,
 			);
-		} else if (!struct.is_class && status.traits.find((t) => t.name === decl.type.name)) {
-			// A trait is a reference type (a pointer to a vtable-bearing heap
-			// instance), exactly like a class field: it can't be cloned, so a
-			// byte-copy of the struct (container store, declaration copy) would
-			// share the trait pointer between the source and the copy — a
-			// double-free on destroy. Block it for the same reason class fields
-			// are blocked; store the concrete type or use a `class` (which
-			// routes to ClassBuffer's sound per-pointer destroy).
-			add_error(
-				status,
-				`struct fields cannot be trait types, use a class (or the concrete type) instead`,
-				decl.start,
-			);
+			continue;
+		}
+		if (!struct.is_class && (field_is_class_type || field_is_declared_owning)) {
+			if (!struct.is_owning) {
+				add_error(
+					status,
+					`'${struct.name}' cannot be Copyable — field '${decl.name}' owns heap memory --> mark the struct \`owning struct ${struct.name}\`, or remove the field`,
+					decl.start,
+				);
+			} else {
+				check_declaration_node(decl, status);
+			}
 		} else {
 			check_declaration_node(decl, status);
 		}
@@ -319,8 +322,24 @@ function mark_owning_auto_init_params(struct: StructNode, status: CheckStatus) {
 		const field = struct.fields.find((f) => f.name === param.name);
 		if (!field || field.value) continue;
 		if (param.is_moved) continue;
-		if (field.type.is_ref || field.type.is_view || field.type.is_nullable) continue;
+		if (field.type.is_ref || field.type.is_view) continue;
 		if (!field.type.name) continue;
+		// STRUCT_PLAN_3 B5 — an owning struct's class-typed field is an
+		// OWNED slot (ownership follows the field's type): construction
+		// transfers, so the synthesized param must be `move`. A plain
+		// by-value pass would alias the caller's instance — the call temp is
+		// destroyed at the caller's scope exit while the field keeps the
+		// pointer (use-after-free). `Box<T>` fields are owning too (the box
+		// owns its pointee) — a bare box donor would alias the caller's box
+		// (double-destroy at teardown). Nullable fields take the transfer as
+		// well (`null` aliases nothing; a fresh instance must not alias).
+		if (struct.is_owning) {
+			if (is_class_type(field.type.name, status)) {
+				param.is_moved = true;
+				continue;
+			}
+		}
+		if (field.type.is_nullable) continue;
 		if (is_owning_struct_type_requiring_move(field.type, status)) {
 			param.is_moved = true;
 		}

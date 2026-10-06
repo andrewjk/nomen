@@ -911,7 +911,12 @@ export default function build_return_node(
 			// freed by the recorded caller without an extra copy. The set of
 			// normalizing functions comes from the whole-program pre-pass
 			// (struct_return_classification.ts).
-			if (ret_struct && !returns_nullable_struct) {
+			// STRUCT_PLAN_3 B6: a NULLABLE struct return normalizes too — the
+			// caller's binding of a registered normalizer records the string
+			// fields as heap (flag-guarded free), so the boundary must strdup
+			// the same shapes as the non-nullable path. The `_has` flag write
+			// above is unaffected (the strdups retarget the field bytes only).
+			if (ret_struct) {
 				// A LOCAL only: `return <param>` aliases the caller's argument
 				// (params pass by address) — normalizing it would hand the
 				// caller fresh copies nobody frees. The spliced declaration

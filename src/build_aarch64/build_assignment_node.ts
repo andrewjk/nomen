@@ -65,6 +65,7 @@ import {
 	mark_anchor_destroy,
 	mark_moved_if_struct,
 	record_heap_string_field,
+	resolve_struct_name,
 	trait_class_for,
 } from "./utils/auto_destroy.ts";
 import { build_swap_params } from "./utils/build_swap.ts";
@@ -2232,6 +2233,14 @@ export default function build_assignment_node(
 			} else if (field_is_struct && !node.operator) {
 				const field_struct = status.structs.find((s) => s.name === field_type!.name);
 				if (field_struct?.is_class) {
+					// STRUCT_PLAN_3 B5: mono-resolve the destroy name (`Box<Node>`
+					// → `Box_Node_destroy`) — the bare generic's `<Box>_destroy`
+					// does not exist.
+					const field_destroy_name = resolve_struct_name(
+						field_type!.name,
+						field_type!.type_args,
+						status,
+					);
 					const offset = get_field_offset(target_type.name, field_name, status);
 					mark_moved_if_struct(node.right_value, status);
 
@@ -2256,25 +2265,24 @@ export default function build_assignment_node(
 					// pointer, and #destroy on null would dereference it.
 					// A custom `#init`'s FIRST write to a `self.<field>` skips the
 					// reclaim entirely — the pre-write bytes are garbage.
-					const field_has_destroy = !!field_struct.functions.find((f) => f.name === "#destroy");
+					// STRUCT_PLAN_3 B5: a class-typed field ALWAYS has a destroy
+					// (user `#destroy` or the auto-generated one) — skipping the
+					// call for auto-generated cases leaked the displaced
+					// instance's owned fields (e.g. its strings).
 					if (!first_init_write) {
 						if (field_type?.is_nullable) {
 							const label_id = (status.label_counter = (status.label_counter ?? 0) + 1);
 							const skip = `.Lskip_fd_${label_id}`;
 							emit_asm(status, `cbz x0, ${skip}\n`);
-							if (field_has_destroy) {
-								emit_asm(status, `str x0, [sp, #-16]!\n`);
-								emit_asm(status, `bl ${field_type!.name}_destroy\n`);
-								emit_asm(status, `ldr x0, [sp], #16\n`);
-							}
-							emit_free(status);
-							emit_asm(status, `${skip}:\n`);
-						} else if (field_has_destroy) {
 							emit_asm(status, `str x0, [sp, #-16]!\n`);
-							emit_asm(status, `bl ${field_type!.name}_destroy\n`);
+							emit_asm(status, `bl ${field_destroy_name}_destroy\n`);
 							emit_asm(status, `ldr x0, [sp], #16\n`);
 							emit_free(status);
+							emit_asm(status, `${skip}:\n`);
 						} else {
+							emit_asm(status, `str x0, [sp, #-16]!\n`);
+							emit_asm(status, `bl ${field_destroy_name}_destroy\n`);
+							emit_asm(status, `ldr x0, [sp], #16\n`);
 							emit_free(status);
 						}
 					}

@@ -8,7 +8,11 @@ import { override_displaced_string_fields } from "../build_common/ctor_return_ow
 import { struct_needs_auto_destroy } from "../build_common/destroy_analysis.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import { claim_init_default_seed_reclaim } from "../build_common/init_computed_seeds.ts";
-import { mono_type_name, resolve_struct_type } from "../build_common/mono_name.ts";
+import {
+	mono_struct_name,
+	mono_type_name,
+	resolve_struct_type,
+} from "../build_common/mono_name.ts";
 import { call_result_type, is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import { is_string_borrow } from "../build_common/string_return_analysis.ts";
@@ -219,8 +223,11 @@ export default function build_assignment_node(
 		const access_lhs = node.left_value as AccessNode;
 		const field_access_node = access_lhs.access as AccessFieldNode;
 		const field_type = field_access_node.type;
+		// Monomorphized name first (`Box<Node>` → `Box_Node`): a generic
+		// class-typed field's destroy is the mono's (`Box_Node_destroy`), and
+		// a name-only find would resolve the bare generic template.
 		const field_struct = field_type?.name
-			? status.structs.find((s) => s.name === field_type.name && s.is_class)
+			? status.structs.find((s) => s.name === mono_struct_name(field_type, status) && s.is_class)
 			: null;
 		if (field_struct) {
 			// Look up the field definition to check if it's `move` (owned).
@@ -230,7 +237,11 @@ export default function build_assignment_node(
 				? status.structs.find((s) => s.name === target_type.name && !s.is_simple_type)
 				: null;
 			const field_def = target_struct?.fields.find((f) => f.name === field_access_node.name);
-			const field_is_owned = field_def?.declaration === "move";
+			// STRUCT_PLAN_3 B5: on an `owning struct`, a class-typed field is
+			// an OWNED slot by TYPE (transfer-on-store) — the `move` spelling
+			// is not required. On a class the declaration still gates.
+			const field_is_owned =
+				field_def?.declaration === "move" || (!!field_def && target_struct?.is_owning === true);
 			if (field_is_owned) {
 				// A custom `#init`'s first write to a `self.<field>` overwrites
 				// garbage (fresh malloc — no displaced value to reclaim). Later

@@ -771,11 +771,17 @@ export default function check_function_call(
 			(is_owning_struct_type_requiring_move(func_param.type, status) || param_transfers);
 		const arg_is_variable = param.node_type === "value";
 		const arg_is_owned_value = arg_is_variable && borrow_depth_of(param, status) === undefined;
+		// A literal `null` aliases nothing — moving it is vacuous, so the
+		// missing-move demand does not apply (STRUCT_PLAN_3 B5/B6: an owning
+		// struct's nullable class/Box field param is a `move` param, and
+		// `Node(1, null)` stays the sanctioned construction form).
+		const arg_is_null_literal = arg_is_variable && (param as ValueNode).value === "null";
 		if (
 			func_param.is_moved &&
 			!has_mov_keyword &&
 			(param_is_class || param_is_owning_struct) &&
-			arg_is_owned_value
+			arg_is_owned_value &&
+			!arg_is_null_literal
 		) {
 			add_error(
 				status,

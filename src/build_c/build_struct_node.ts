@@ -1126,22 +1126,25 @@ function build_auto_destroy(node: StructNode, status: BuildStatus) {
 			// `#destroy` frequently alias another owned variable and are left
 			// to leak rather than risk a double-free.
 			const field_has_destroy = !!field_struct.functions.find((f) => f.name === "#destroy");
-			const field_is_owned = field.declaration === "move";
+			// STRUCT_PLAN_3 B5: on an `owning struct`, a class-typed field is
+			// an OWNED slot by TYPE (transfer-on-store) — the `move` spelling
+			// is not required (and is in fact spelled `var`). On a class the
+			// declaration still gates: only `move` fields are owned.
+			const field_is_owned = field.declaration === "move" || node.is_owning === true;
 			if (field_has_destroy) {
 				status.code += `if (self->${field.name}) {\n`;
 				status.code += `${field_struct.name}_destroy(self->${field.name});\n`;
 				status.code += `free(self->${field.name});\n`;
 				status.code += `}\n`;
 			} else if (field_is_owned) {
-				if (field.type.is_nullable) {
-					status.code += `if (self->${field.name}) {\n`;
-					status.code += `${field_struct.name}_destroy(self->${field.name});\n`;
-					status.code += `free(self->${field.name});\n`;
-					status.code += `}\n`;
-				} else {
-					status.code += `${field_struct.name}_destroy(self->${field.name});\n`;
-					status.code += `free(self->${field.name});\n`;
-				}
+				// Always null-guard: a Buffer slot's zeroed bytes (grow/move_T
+				// memset) reach the per-element destroy, and a stale (transferred)
+				// slot must not be re-reclaimed either. free(NULL) is a no-op; the
+				// guard keeps Dog_destroy(0) from dereferencing.
+				status.code += `if (self->${field.name}) {\n`;
+				status.code += `${field_struct.name}_destroy(self->${field.name});\n`;
+				status.code += `free(self->${field.name});\n`;
+				status.code += `}\n`;
 			}
 		} else if (field_struct.functions.find((f) => f.name === "#destroy")) {
 			if (is_nullable_struct_type(field.type, status)) {

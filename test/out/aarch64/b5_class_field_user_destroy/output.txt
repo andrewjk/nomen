@@ -1,0 +1,3 @@
+alive
+destroyed a dog
+done

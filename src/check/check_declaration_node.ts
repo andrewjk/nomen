@@ -310,12 +310,18 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 		// Check for var on class-type fields in classes/traits (must use move).
 		// STRUCT_PLAN_3 B2: a `Box<T>` field is the sanctioned pointer — `var`
 		// is correct there (the box moves with the struct).
+		// STRUCT_PLAN_3 B5: an `owning struct`'s class-typed field is spelled
+		// `var` too — ownership follows the FIELD'S TYPE (transfer-on-store),
+		// so the `move` spelling is for classes/traits only. (A bare `struct`
+		// never reaches here with a class field: the Copyable verifier
+		// rejects it in check_struct_node first.)
 		if (
 			decl.declaration === "var" &&
 			decl.type.name &&
 			is_class_type(decl.type.name, status) &&
 			!is_box_type(decl.type.name, status.structs) &&
-			(decl.scope?.node_type === "struct" || decl.scope?.node_type === "trait")
+			(decl.scope?.node_type === "trait" ||
+				(decl.scope?.node_type === "struct" && !(decl.scope as { is_owning?: boolean }).is_owning))
 		) {
 			add_error(status, `class-type fields must use 'move', not 'var'`, decl.start);
 		}

@@ -3,8 +3,13 @@ import { expect, describe, test } from "vite-plus/test";
 import parse from "../src/parse";
 import test_error from "./test_error";
 
+// STRUCT_PLAN_3 B5 — the field restrictions collapsed into the Copyable
+// verifier: a class/trait-typed field (like a declared-owning or Box field)
+// owns heap state, so a bare `struct` claiming Copyable is rejected, naming
+// the fix. An `owning struct` is the contract — the field is an owned slot.
+
 describe("move ownership errors", () => {
-	describe("struct fields cannot be class types", () => {
+	describe("owning-typed fields force `owning`", () => {
 		test("struct with class field using var", () => {
 			const input = `
 class Box {
@@ -16,7 +21,12 @@ struct Holder {
 `;
 			const parsed = parse(input);
 			expect(parsed.errors).toEqual([
-				test_error(input, "struct fields cannot be class types, use a class instead", 6, 3),
+				test_error(
+					input,
+					"'Holder' cannot be Copyable — field 'content' owns heap memory --> mark the struct `owning struct Holder`, or remove the field",
+					6,
+					3,
+				),
 			]);
 		});
 
@@ -31,7 +41,12 @@ struct Holder {
 `;
 			const parsed = parse(input);
 			expect(parsed.errors).toEqual([
-				test_error(input, "struct fields cannot be class types, use a class instead", 6, 3),
+				test_error(
+					input,
+					"'Holder' cannot be Copyable — field 'content' owns heap memory --> mark the struct `owning struct Holder`, or remove the field",
+					6,
+					3,
+				),
 			]);
 		});
 
@@ -47,14 +62,11 @@ struct Point {
 		});
 	});
 
-	describe("struct fields cannot be trait types", () => {
-		// A trait is a reference type (a pointer to a vtable-bearing heap
-		// instance), exactly like a class field: it can't be cloned, so a
-		// byte-copy of the struct (container store, declaration copy) would
-		// share the trait pointer between source and copy — a double-free on
-		// destroy. Blocked for the same reason class fields are blocked; use a
-		// `class` (routes to ClassBuffer's sound per-pointer destroy) or store
-		// the concrete type.
+	describe("trait-typed fields are not supported yet", () => {
+		// STRUCT_PLAN_3 B5: a trait handle is a boxed, owning value (B4), but
+		// the FIELD lowering (boxed handle storage + vtable dispatch through
+		// the field) is not built yet — the error names the fix. A class with
+		// a trait field keeps working (ClassBuffer routing).
 		test("struct with trait field using move", () => {
 			const input = `
 trait Speaker {
@@ -68,7 +80,7 @@ struct Holder {
 			expect(parsed.errors).toEqual([
 				test_error(
 					input,
-					"struct fields cannot be trait types, use a class (or the concrete type) instead",
+					"a trait-typed field is not supported yet — declare 's' with the concrete type, or `Box<Speaker>` once boxed",
 					6,
 					3,
 				),

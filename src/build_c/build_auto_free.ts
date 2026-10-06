@@ -600,9 +600,11 @@ export function emit_struct_destroys(
 		if (!field_struct) continue;
 		const field_expr = `${var_expr}.${field.name}`;
 		if (field_struct.is_class) {
-			if (has_destroy(field_struct)) {
-				status.code += `if (${field_expr}) { ${field_struct.name}_destroy(${field_expr}); free(${field_expr}); }\n`;
-			}
+			// Every class has a `<Class>_destroy` (user `#destroy` or the
+			// auto-generated one) — STRUCT_PLAN_3 B5 made class-typed fields
+			// legal on owning structs, so this walk now runs for them: reclaim
+			// the field's instance unconditionally (null-guarded).
+			status.code += `if (${field_expr}) { ${field_struct.name}_destroy(${field_expr}); free(${field_expr}); }\n`;
 		} else if (is_nullable_struct_type(field.type, status)) {
 			// Nullable struct field: guard on the companion `<field>_has` flag.
 			if (struct_needs_destroy(field_struct, status)) {
@@ -662,9 +664,9 @@ function capture_destroys(
 		if (!field_struct) continue;
 		const field_expr = `${var_expr}${accessor}${field.name}`;
 		if (field_struct.is_class) {
-			if (has_destroy(field_struct)) {
-				status.code += `if (${field_expr}) { ${field_struct.name}_destroy(${field_expr}); free(${field_expr}); } `;
-			}
+			// B5: class-typed fields are legal on owning structs — every class
+			// has a destroy (user or auto-generated); reclaim unconditionally.
+			status.code += `if (${field_expr}) { ${field_struct.name}_destroy(${field_expr}); free(${field_expr}); } `;
 		} else if (is_nullable_struct_type(field.type, status)) {
 			if (struct_needs_destroy(field_struct, status)) {
 				// Recurse into the nullable field's value, guarded by its flag.

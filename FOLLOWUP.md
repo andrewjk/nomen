@@ -7,20 +7,30 @@ Skipped or out-of-scope items recorded for later.
 Tranches landed: 1 (declared ownership: `owning struct`/`owning enum`
 spellings, the flag-wins semantics, the declared-subset Copyable verifier),
 2 (`Box<T>` — remaining aarch64 gap: a generic CLASS with an inline
-value-struct `T` field sizes `T` as one word, BUGS.md #10), and 3 (B4 —
+value-struct `T` field sizes `T` as one word, BUGS.md #10), 3 (B4 —
 trait objects: boxed handles at every trait position on both backends,
 tier-1 demotion, boxing takes ownership, the T3 stack-copy convention at
-bare `Trait` params). The rest of Phase B, in dependency order:
+bare `Trait` params), and 4 (B5/B6 — the field-restriction collapse: a
+class-typed field on a bare `struct` is the Copyable-verifier error, an
+`owning struct`'s class fields are owned slots (`var` spelling, move
+auto-init params, displaced-store reclaim, destroy on both backends);
+nullable lowerings pinned: `Box<T>?`/trait-handle `?` = null pointer,
+inline structs keep the companion flag, nullable owning-struct RETURNS
+normalize their string fields on both backends). The rest of Phase B:
 
 - **B1 full cutover**: the Copyable verifier over INFERRED ownership (a bare
   struct with a string field → error), migrating every existing owning
   struct to the declared spelling. Sequenced after the built-in rewrite
   (post-B4/R) — the string-only-struct borrow-copy semantics are
   load-bearing in the memory model until then.
-- **B5/B6**: field-restriction collapse ("struct fields cannot be
-  class/trait types" becomes the owning-verification error); nullable
-  lowerings spelled out (`Box<T>?` = the null pointer; inline structs keep
-  the companion flag).
+- **Trait-typed FIELDS on owning structs** (the B5 remainder): rejected
+  with a named fix ("declare it with the concrete type, or
+  `Box<Concrete>`") until the boxed-handle field lowering exists — field
+  storage as a `void*`-shaped handle plus vtable dispatch THROUGH a field
+  (both backends; the aarch64 field-shaped dispatch path still carries the
+  pre-B4 inline shape and the C field member type needs `void *`). Not in
+  the R shape menu (fields hold concrete types / `Box` / `WeakHandle`), so
+  this may stay rejected permanently if R doesn't need it.
 - **R** (after N): retire `class`.
 
 B4 residual corners (deliberate, recorded for later):
@@ -46,6 +56,31 @@ Known pre-existing gap surfaced by tranche 1: BUGS.md #9 (aarch64
 enum-with-data value-struct payload crashes at the match binding) — B1a's
 owning-enum semantics are proven on C; on aarch64 use a class payload until
 #9 is fixed.
+
+## Pre-existing gaps surfaced by the B5/B6 tranche (all repro on main)
+
+Recorded 2026-10-06 while writing the tranche tests; each predates this
+work and is out of its scope:
+
+- **aarch64: string interpolation is not lowered inside a class `#destroy`
+  body** — `Console.write_line("destroy \{self.name}")` emits the raw
+  literal `destroy {self.name}` (the interpolation machinery never runs in
+  the destroy body build). The C backend lowers the same body correctly.
+- **aarch64: string interpolation of a nullable-box member** —
+  `Console.write_line("\{b.value}")` where `b` is `Box<T>?` emits the raw
+  literal `{b.value}` (B2-era; the C backend lowers it). Works after an
+  `!= null` narrowing on some paths; the failing shape is a direct
+  nullable-receiver member interpolate. `.to_string()` avoids it.
+- **`List<OwningStruct>.at(i)` fails constraint verification** —
+  "Parameter constraint cannot be verified: i / i >= 0 && i < self.length"
+  (the at-vs-pop classification area A1 called out; owning element types
+  trip the constraint check). `pop()` works; this is also the container-
+  element trigger A.1 must solve.
+- **Nullable bases are not null-tracked** — `opt_field.inner` (and through
+  boxes, `box.next.value`) compiles even when the base is nullable; the
+  may-be-null check (`Variable 'x' may be null`) fires for plain variables
+  only. Flow-sensitive base tracking is a feature of its own; until then,
+  bind + `== null`-check before reading through a nullable.
 
 ## `Shared<T>` + the `with(m)` critical-section form + typed `Mutex<T>` (N4 remainder)
 
