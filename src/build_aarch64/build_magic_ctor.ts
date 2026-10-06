@@ -18,6 +18,7 @@ import { emit_descriptor_address, materialize_func_value_a64 } from "./utils/clo
 import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
 import { emit_var_address } from "./utils/stack_var.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
+import { get_struct_size } from "./utils/struct_layout.ts";
 
 /**
  * The `#spawn` construction (the deferred-call special form — the library
@@ -256,18 +257,24 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 	c += `static struct nomen_closure ${desc_name} = { (void *)${tramp_name}, NULL, 0, ${
 		has_env_destroy ? `(void (*)(void *))__nomen_spawn_${id}_env_destroy` : "NULL"
 	} };\n`;
-	// Constructor helper: packs env + machinery + closure into a heap
-	// instance of the mono spawn class. Returns the instance pointer.
-	c += `void *${helper_name}(`;
+	// Constructor helper: packs env + machinery + closure into an instance
+	// of the mono spawn class. A CLASS instance is heap-allocated and
+	// returned by pointer; a value-struct spawnable (owning struct with
+	// `#spawn` — STRUCT_PLAN_3 Phase R) is written through the sret `out`
+	// parameter (x0) — the same convention the WeakHandle construction
+	// uses, with the consuming context's struct-return machinery pointing
+	// the destination register.
+	const sret = !info.is_class;
+	c += sret ? `void ${helper_name}(struct ${mono_name} *out` : `void *${helper_name}(`;
 	for (let i = 0; i < arg_c_types.length; i++) {
-		if (i > 0) c += ", ";
+		if (i > 0 || sret) c += ", ";
 		c += `${arg_c_types[i]} arg${i}`;
 	}
 	// capture.helper_params carries NO leading comma (a zero-argument
 	// wrapped call has an empty leading list — emitting it verbatim after
 	// `(` produced `ctor(, unsigned long long …)` and clang rejected it).
 	if (capture) {
-		if (arg_c_types.length > 0) c += ", ";
+		if (arg_c_types.length > 0 || sret) c += ", ";
 		c += capture.helper_params;
 	}
 	c += `) {\n`;
@@ -321,7 +328,12 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 	c += `\tcl->env = a;\n`;
 	c += `\tcl->owned = 1;\n`;
 	c += `\tf->owner_args = cl;\n`;
-	c += `\tstruct ${mono_name} *self = (struct ${mono_name} *)malloc(sizeof(struct ${mono_name}));\n`;
+	if (sret) {
+		// The sret destination IS the instance storage — no allocation.
+		c += `\tstruct ${mono_name} *self = out;\n`;
+	} else {
+		c += `\tstruct ${mono_name} *self = (struct ${mono_name} *)malloc(sizeof(struct ${mono_name}));\n`;
+	}
 	c += `\tmemset(self, 0, sizeof(struct ${mono_name}));\n`;
 	if (info.traits) c += `\tself->_vt = (void **)${mono_name}_traits;\n`;
 	c += `\tself->task = (unsigned long long)cl;\n`;
@@ -330,7 +342,7 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 	c += `\tself->future = (unsigned long long)f;\n`;
 	if (info.has_started) c += `\tself->started = 0;\n`;
 	if (capture) c += capture.field_stores.join("");
-	c += `\treturn self;\n`;
+	if (!sret) c += `\treturn self;\n`;
 	c += `}\n`;
 
 	if (!status.file_scope_c) status.file_scope_c = "";
@@ -338,6 +350,20 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 
 	// --- Assembly: build arg registers and call the constructor helper ---
 	emit_asm(status, `// spawn construction site ${id} (${kind})\n`);
+	// A value-struct spawnable takes the sret convention: x0 carries the
+	// destination address and the packed args shift to x1+. The destination
+	// is the consuming context's struct-return preset (a declaration or
+	// assignment names its own slot); an expression context gets a fresh
+	// temp whose address the value-struct convention leaves in x0. Capture
+	// args are Thread/Fiber-only (both classes), so sret never shifts them.
+	const sret_dest = sret ? status.struct_return_buffer_var : undefined;
+	const sret_temp =
+		sret && !sret_dest ? allocate_stack_space(status, get_struct_size(mono_name, status), 8) : -1;
+	const emit_sret_dest = (reg: string): void => {
+		if (!sret) return;
+		if (sret_dest) emit_var_address(status, reg, sret_dest);
+		else emit_asm(status, `add ${reg}, x29, #${sret_temp}\n`);
+	};
 	const arg_slot: number[] = [];
 	let total_arg_slots = 0;
 	for (let i = 0; i < call.params.length; i++) {
@@ -351,6 +377,7 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 	if (capture) total_arg_slots += capture.arg_count;
 
 	if (total_arg_slots === 0) {
+		emit_sret_dest("x0");
 		emit_asm(status, `bl _${helper_name}\n`);
 	} else {
 		const args_base = allocate_stack_space(status, total_arg_slots * 8, 16);
@@ -385,7 +412,9 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 				emit_asm(status, `str x9, [x29, #${args_base + (capture_base_slot + k) * 8}]\n`);
 			}
 		}
-		const NUM_REG_ARGS = 8;
+		// x0 is the sret destination under the value-struct convention, so
+		// seven register slots remain for the packed args.
+		const NUM_REG_ARGS = sret ? 7 : 8;
 		const overflow_count = Math.max(0, total_arg_slots - NUM_REG_ARGS);
 		if (overflow_count > 0) {
 			const outgoing_size = Math.ceil((overflow_count * 8) / 16) * 16;
@@ -395,8 +424,9 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 				emit_asm(status, `str x9, [sp, #${k * 8}]\n`);
 			}
 		}
+		emit_sret_dest("x0");
 		for (let s = 0; s < Math.min(total_arg_slots, NUM_REG_ARGS); s++) {
-			emit_asm(status, `ldr x${s}, [x29, #${args_base + s * 8}]\n`);
+			emit_asm(status, `ldr x${s + (sret ? 1 : 0)}, [x29, #${args_base + s * 8}]\n`);
 		}
 		emit_asm(status, `bl _${helper_name}\n`);
 		if (overflow_count > 0) {
@@ -404,7 +434,12 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 			emit_asm(status, `add sp, sp, #${outgoing_size}\n`);
 		}
 	}
-	// x0 = the Thread/Fiber instance pointer.
+	// The helper may clobber x0's sret address in its body's view — the
+	// value-struct convention leaves the instance's ADDRESS in x0 for the
+	// consuming context (the declaration slot or the fresh temp).
+	emit_sret_dest("x0");
+	// x0 = the Thread/Fiber instance pointer (classes) or the instance's
+	// address (value-struct spawnables).
 }
 
 /**
@@ -420,7 +455,7 @@ function build_fn_value_ctor_a64(
 	status: BuildStatus,
 	id: number,
 	kind: string,
-	info: { mono_name: string; has_started: boolean; traits: boolean },
+	info: { mono_name: string; has_started: boolean; traits: boolean; is_class: boolean },
 ) {
 	const fn_value = node.params[0];
 	const helper_name = `nomen_fnval_${id}_ctor`;
@@ -523,7 +558,20 @@ function build_fn_value_ctor_a64(
 	c += `}\n`;
 	c += `static struct nomen_closure ${desc_name} = { (void *)${tramp_name}, NULL, 0, NULL };\n`;
 	const fnval_capture = nursery_capture_a64(status, kind);
-	c += `void *${helper_name}(struct nomen_closure *fn${fnval_capture ? `, ${fnval_capture.helper_params}` : ""}) {\n`;
+	// Value-struct spawnables take the sret convention (see the call form):
+	// the instance is written through the leading `out` parameter. Capture
+	// args are Thread/Fiber-only (both classes), so they never co-occur
+	// with sret.
+	const fnval_sret = !info.is_class;
+	if (fnval_sret) {
+		c += `void ${helper_name}(struct ${mono_name} *out, struct nomen_closure *fn${
+			fnval_capture ? `, ${fnval_capture.helper_params}` : ""
+		}) {\n`;
+	} else {
+		c += `void *${helper_name}(struct nomen_closure *fn${
+			fnval_capture ? `, ${fnval_capture.helper_params}` : ""
+		}) {\n`;
+	}
 	c += `\tstruct ${struct_name} *a = (struct ${struct_name} *)malloc(sizeof(struct ${struct_name}));\n`;
 	c += `\ta->fn = fn;\n`;
 	c += `\ta->result_slot = (${slot_c_type} *)${returns_value ? `malloc(sizeof(${slot_c_type}))` : "malloc(16)"};\n`;
@@ -548,7 +596,12 @@ function build_fn_value_ctor_a64(
 	c += `\tcl->env = a;\n`;
 	c += `\tcl->owned = 1;\n`;
 	c += `\tf->owner_args = cl;\n`;
-	c += `\tstruct ${mono_name} *self = (struct ${mono_name} *)malloc(sizeof(struct ${mono_name}));\n`;
+	if (fnval_sret) {
+		// The sret destination IS the instance storage — no allocation.
+		c += `\tstruct ${mono_name} *self = out;\n`;
+	} else {
+		c += `\tstruct ${mono_name} *self = (struct ${mono_name} *)malloc(sizeof(struct ${mono_name}));\n`;
+	}
 	c += `\tmemset(self, 0, sizeof(struct ${mono_name}));\n`;
 	if (info.traits) c += `\tself->_vt = (void **)${mono_name}_traits;\n`;
 	c += `\tself->task = (unsigned long long)cl;\n`;
@@ -557,7 +610,7 @@ function build_fn_value_ctor_a64(
 	c += `\tself->future = (unsigned long long)f;\n`;
 	if (info.has_started) c += `\tself->started = 0;\n`;
 	if (fnval_capture) c += fnval_capture.field_stores.join("");
-	c += `\treturn self;\n`;
+	if (!fnval_sret) c += `\treturn self;\n`;
 	c += `}\n`;
 
 	if (!status.file_scope_c) status.file_scope_c = "";
@@ -587,9 +640,27 @@ function build_fn_value_ctor_a64(
 		if (!status.moved) status.moved = new Set();
 		status.moved.add(name);
 	}
-	// Nursery capture addresses ride as trailing helper args (x1-x3; the
-	// user closure occupies x0).
-	if (fnval_capture) {
+	// The sret destination (declaration/assignment preset, or a fresh temp
+	// for expression contexts) occupies x0 at the call; the function value
+	// shifts to x1.
+	const fnval_sret_dest = fnval_sret ? status.struct_return_buffer_var : undefined;
+	const fnval_sret_temp =
+		fnval_sret && !fnval_sret_dest
+			? allocate_stack_space(status, get_struct_size(mono_name, status), 8)
+			: -1;
+	const emit_fnval_sret_dest = (reg: string): void => {
+		if (!fnval_sret) return;
+		if (fnval_sret_dest) emit_var_address(status, reg, fnval_sret_dest);
+		else emit_asm(status, `add ${reg}, x29, #${fnval_sret_temp}\n`);
+	};
+	if (fnval_sret) {
+		const fnval_park = allocate_stack_space(status, 8, 8);
+		emit_asm(status, `str x0, [x29, #${fnval_park}]\n`);
+		emit_fnval_sret_dest("x0");
+		emit_asm(status, `ldr x1, [x29, #${fnval_park}]\n`);
+	} else if (fnval_capture) {
+		// Nursery capture addresses ride as trailing helper args (x1-x3; the
+		// user closure occupies x0).
 		const fnval_nursery_id = status.nursery_stack?.at(-1);
 		const fnval_off =
 			fnval_nursery_id !== undefined ? status.nursery_offsets?.get(fnval_nursery_id) : undefined;
@@ -603,7 +674,9 @@ function build_fn_value_ctor_a64(
 		}
 	}
 	emit_asm(status, `bl _${helper_name}\n`);
-	// x0 = the Thread/Fiber instance pointer.
+	// Value-struct convention: the instance's ADDRESS is left in x0 for the
+	// consuming context.
+	emit_fnval_sret_dest("x0");
 }
 
 /**

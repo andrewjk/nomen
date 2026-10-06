@@ -49,18 +49,24 @@ export function spawn_ctor_class_name(node: FunctionCallNode): string {
  *  constructed bare), `has_started` gates the optional must-start flag
  *  write, `traits` gates the vtable install (a user Awaitable instance is
  *  trait-dispatchable — its `_vt` must point at the class's traits table;
- *  Thread/Fiber keep their exact historical emission, vtable-less). */
+ *  Thread/Fiber keep their exact historical emission, vtable-less), and
+ *  `is_class` picks the instance representation: classes yield a heap
+ *  pointer, value-struct spawnables (STRUCT_PLAN_3 Phase R — the
+ *  construction hook survives on owning structs) yield the inline value.
+ *  Only a class carries an embedded `_vt`, so `traits` implies `is_class`. */
 export function spawn_instance_info(
 	node: FunctionCallNode,
 	status: BuildStatus,
-): { mono_name: string; has_started: boolean; traits: boolean } {
+): { mono_name: string; has_started: boolean; traits: boolean; is_class: boolean } {
 	const class_name = spawn_ctor_class_name(node);
 	const struct: StructNode | undefined = status.structs.find((s) => s.name === class_name);
 	const generic = !!struct && struct.type_params.length > 0;
+	const is_class = !!struct?.is_class;
 	return {
 		mono_name: generic ? mono_type_name(class_name, node.type?.type_args) : class_name,
 		has_started: !!struct?.fields.some((f) => f.name === "started"),
-		traits: !!node.is_awaitable_ctor && !!struct?.traits.length,
+		traits: is_class && !!node.is_awaitable_ctor && !!struct?.traits.length,
+		is_class,
 	};
 }
 
@@ -403,18 +409,33 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 	// The instance: zeroed first, the handles, then — for the generalized
 	// Awaitable flavor — the trait vtable (the instance is
 	// trait-dispatchable; Thread/Fiber keep their vtable-less emission).
-	status.code += `\tstruct ${mono_name} *_self = (struct ${mono_name} *)malloc(sizeof(struct ${mono_name}));\n`;
-	status.code += `\tmemset(_self, 0, sizeof(struct ${mono_name}));\n`;
-	if (info.traits) status.code += `\t_self->_vt = &_${mono_name}_traits;\n`;
-	status.code += `\t_self->task = (unsigned long long)_closure;\n`;
-	status.code += `\t_self->result_slot = (unsigned long long)_result_ptr;\n`;
-	status.code += `\t_self->cancel_flag = (unsigned long long)_cancel_ptr;\n`;
-	status.code += `\t_self->future = (unsigned long long)_future;\n`;
-	if (info.has_started) status.code += `\t_self->started = 0;\n`;
-	emit_nursery_capture_c(status, kind, (field, expr) => {
-		status.code += `\t_self->${field} = ${expr};\n`;
-	});
-	status.code += `\t_self;\n`;
+	// A CLASS spawns a heap instance and yields the pointer; a value-struct
+	// spawnable (owning struct with `#spawn` — STRUCT_PLAN_3 Phase R) builds
+	// the inline value: the declaration side types the initializer as the
+	// struct itself, so the statement expression must yield the struct, not
+	// a pointer to it. Only a class carries an embedded `_vt`.
+	const emit_instance_fields = (access: string): void => {
+		status.code += `\t${access}task = (unsigned long long)_closure;\n`;
+		status.code += `\t${access}result_slot = (unsigned long long)_result_ptr;\n`;
+		status.code += `\t${access}cancel_flag = (unsigned long long)_cancel_ptr;\n`;
+		status.code += `\t${access}future = (unsigned long long)_future;\n`;
+		if (info.has_started) status.code += `\t${access}started = 0;\n`;
+		emit_nursery_capture_c(status, kind, (field, expr) => {
+			status.code += `\t${access}${field} = ${expr};\n`;
+		});
+	};
+	if (info.is_class) {
+		status.code += `\tstruct ${mono_name} *_self = (struct ${mono_name} *)malloc(sizeof(struct ${mono_name}));\n`;
+		status.code += `\tmemset(_self, 0, sizeof(struct ${mono_name}));\n`;
+		if (info.traits) status.code += `\t_self->_vt = &_${mono_name}_traits;\n`;
+		emit_instance_fields("_self->");
+		status.code += `\t_self;\n`;
+	} else {
+		status.code += `\tstruct ${mono_name} _inst;\n`;
+		status.code += `\tmemset(&_inst, 0, sizeof(struct ${mono_name}));\n`;
+		emit_instance_fields("_inst.");
+		status.code += `\t_inst;\n`;
+	}
 	status.code += `})\n`;
 }
 
@@ -459,7 +480,7 @@ function build_fn_value_ctor(
 	status: BuildStatus,
 	id: number,
 	kind: string,
-	info: { mono_name: string; has_started: boolean; traits: boolean },
+	info: { mono_name: string; has_started: boolean; traits: boolean; is_class: boolean },
 ) {
 	const fn_value = node.params[0];
 	const task_c = spawn_task_c_types(node.function_return_type, status);
@@ -588,18 +609,30 @@ function build_fn_value_ctor(
 	status.code += `\t_closure->env = _args;\n`;
 	status.code += `\t_closure->owned = 1;\n`;
 	status.code += `\t_future->owner_args = _closure;\n`;
-	status.code += `\tstruct ${mono_name} *_self = (struct ${mono_name} *)malloc(sizeof(struct ${mono_name}));\n`;
-	status.code += `\tmemset(_self, 0, sizeof(struct ${mono_name}));\n`;
-	if (info.traits) status.code += `\t_self->_vt = &_${mono_name}_traits;\n`;
-	status.code += `\t_self->task = (unsigned long long)_closure;\n`;
-	status.code += `\t_self->result_slot = (unsigned long long)_result_ptr;\n`;
-	status.code += `\t_self->cancel_flag = (unsigned long long)_cancel_ptr;\n`;
-	status.code += `\t_self->future = (unsigned long long)_future;\n`;
-	if (info.has_started) status.code += `\t_self->started = 0;\n`;
-	emit_nursery_capture_c(status, kind, (field, expr) => {
-		status.code += `\t_self->${field} = ${expr};\n`;
-	});
-	status.code += `\t_self;\n`;
+	// The instance: classes yield a heap pointer, value-struct spawnables
+	// (owning struct with `#spawn`) the inline value — see the call form.
+	const emit_instance_fields = (access: string): void => {
+		status.code += `\t${access}task = (unsigned long long)_closure;\n`;
+		status.code += `\t${access}result_slot = (unsigned long long)_result_ptr;\n`;
+		status.code += `\t${access}cancel_flag = (unsigned long long)_cancel_ptr;\n`;
+		status.code += `\t${access}future = (unsigned long long)_future;\n`;
+		if (info.has_started) status.code += `\t${access}started = 0;\n`;
+		emit_nursery_capture_c(status, kind, (field, expr) => {
+			status.code += `\t${access}${field} = ${expr};\n`;
+		});
+	};
+	if (info.is_class) {
+		status.code += `\tstruct ${mono_name} *_self = (struct ${mono_name} *)malloc(sizeof(struct ${mono_name}));\n`;
+		status.code += `\tmemset(_self, 0, sizeof(struct ${mono_name}));\n`;
+		if (info.traits) status.code += `\t_self->_vt = &_${mono_name}_traits;\n`;
+		emit_instance_fields("_self->");
+		status.code += `\t_self;\n`;
+	} else {
+		status.code += `\tstruct ${mono_name} _inst;\n`;
+		status.code += `\tmemset(&_inst, 0, sizeof(struct ${mono_name}));\n`;
+		emit_instance_fields("_inst.");
+		status.code += `\t_inst;\n`;
+	}
 	status.code += `})\n`;
 }
 

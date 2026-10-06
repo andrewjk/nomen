@@ -2,6 +2,67 @@
 
 Skipped or out-of-scope items recorded for later.
 
+## Bare nested blocks are not statement syntax (feature gap)
+
+Found 2026-10-06 while writing `test/spawn_ctor_struct.test.ts` (Phase R
+tranche 1): a bare `{ … }` block statement inside a function body is not
+supported — the parser produces a value node for `{`, so the check fails
+with `Unknown value: {` (and everything after it cascades: the block's
+statements fall out of scope, so `Console` itself reports "Unknown value").
+A control program with the same shape minus the struct plumbing reproduces
+it on `main`; nested blocks under a construct (`if`/`while`/`async` bodies)
+are fine.
+
+Why it's worth building rather than leaving: deterministic destruction is
+the language's core model, and a bare block is the one-zero-cost way to
+release an owning value before the enclosing function ends (my test wanted
+exactly that — scoping an unstarted spawn construction so its `#destroy`
+could reclaim the task machinery mid-function). The current workaround,
+`if true { … }`, is semantically a lie and reads like one. C/C++/Rust all
+have the bare form; Swift calls it `do`.
+
+Implementation surface: a `{` case in `parse_statement` (or the block
+statement reader) that parses a nested statement list into the existing
+block node; the checker needs only a passthrough (it already handles block
+nodes under every construct); both backends lower nested blocks for
+if/loop bodies already, so a bare block should ride the same path — verify
+scope-exit destroys fire at the block's end on both backends.
+
+## STRUCT_PLAN_3 Phase R — retire `class` (in progress)
+
+Sequenced after A → N → B4 (all landed). The B4-era deprecation warning was
+deliberately skipped (decision 2026-10-06: go straight at the substance).
+
+- **Tranche 1 (landed): `#spawn` on owning structs.** The construction hook
+  survives the value tier — an `owning struct` declaring `#spawn` constructs
+  through the same special form as a class. The C statement expression now
+  yields the inline instance (the declaration side always typed the
+  initializer as the struct itself); the aarch64 companion helper writes the
+  instance through an sret parameter (x0, the WeakHandle convention), with
+  the packed args shifted to x1+ (seven register slots, overflow unchanged)
+  and expression contexts materializing a fresh temp whose address the
+  value-struct convention leaves in x0. `spawn_instance_info` gained
+  `is_class`; the Awaitable `_vt` install is class-only (a value struct has
+  no embedded vtable — trait dispatch rides boxed handles). Thread/Fiber
+  (class) emission is byte-identical; covered by
+  `test/spawn_ctor_struct.test.ts` on both backends (both construction
+  forms, generic mono, string result, unstarted-construction `#destroy`
+  reclaim, fresh-construction-as-receiver/arg).
+- **Tranche 2: `Thread`/`Fiber`/`Task` → owning struct + handle fields**
+  (the shape menu). Depends on tranche 1. Test-infra note: the harness
+  links a precompiled `system.o` (test/globalSetup), so converting core
+  types requires the system objects to be rebuilt in the same effort —
+  programs that shadow a System type already force single-TU, but a
+  stale-object split build would silently hold the old class form.
+- **Tranche 3: `Channel`/`Mutex`/`Tcp`/`Tester`/`Random` conversions.**
+  Mutex stays the hand-locked primitive (the N4 typed `Mutex<T>` +
+  `Shared<T>` remainder is separately deferred — see below).
+- **Tranche 4: remove the keyword.** Parse/check/both backends; migrate the
+  ~900 class uses across the test corpus to `owning struct` + `ref`/`Box`/
+  `WeakHandle` shapes; `ClassBuffer` retires to its trait-handle remainder.
+  B1 full cutover (the Copyable verifier over inferred ownership) follows,
+  per its own sequencing note in the Phase B section below.
+
 ## STRUCT_PLAN_3 Phase B — remaining tranches
 
 Tranches landed: 1 (declared ownership: `owning struct`/`owning enum`

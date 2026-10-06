@@ -2825,11 +2825,14 @@ var t = Thread(bg(0)).start()         // expression form
 t.wait()
 ```
 
-The construction is a **special form keyed on the class's `#spawn` member** —
-a lifecycle marker, like `#init`/`#destroy`, that declares the class's
+The construction is a **special form keyed on the type's `#spawn` member** —
+a lifecycle marker, like `#init`/`#destroy`, that declares the type's
 construction hook. `Thread` and `Fiber` declare `#spawn`; the compiler treats
-`X(...)` on a `#spawn`-bearing class as the deferred-call construction, and a
-class that merely shares the name does not gain it. A `#spawn` constructor's
+`X(...)` on a `#spawn`-bearing type as the deferred-call construction, and a
+type that merely shares the name does not gain it. The declaring type is
+ordinarily a class (the construction builds a heap instance), and an owning
+struct may declare `#spawn` too — its construction yields the inline value,
+with the same handle fields written directly. A `#spawn` constructor's
 single argument is either a deferred call or a zero-arg function value;
 anything else is an error anchored at the argument.
 

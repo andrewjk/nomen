@@ -142,18 +142,20 @@ targets.
   return type mentions `T`; `Awaitable` stays non-generic (`wait` does not).
   A generic helper over `Spawnable<T>` can `start` any spawn class; the
   await half is guaranteed by the return type, so an author cannot forget it.
-- **Extension: a class with its own `#spawn`** — the construction special
-  form belongs to any class that declares the `#spawn` hook, not to the
+- **Extension: a type with its own `#spawn`** — the construction special
+  form belongs to any type that declares the `#spawn` hook, not to the
   names `Thread`/`Fiber` (see "The construction special form" below). A user
-  class declaring `#spawn` gains the `X(fn(args))` construction and packs
+  type declaring `#spawn` gains the `X(fn(args))` construction and packs
   the wrapped call's machinery into its own uint64 fields (`task` /
   `result_slot` / `cancel_flag` / `future` — the handles the `Task.*` seam's
   statics drive); its own launch methods consume them exactly like the
   library's, so it parks fibers, participates in deadlock detection, and
-  frees like a library spawn. No `#init` runs (declaring `#spawn`
+  frees like a library spawn. A class construction builds a heap instance;
+  an owning struct's yields the inline value (same fields, written
+  directly). No `#init` runs (declaring `#spawn`
   suppresses the default): the construction is compiler-generated and the
   handles written directly, so field defaults stay zero-valid. Must-start is
-  the class's own `#destroy` contract.
+  the type's own `#destroy` contract.
 - **Runtime dependency is the library's own** — the concurrency runtime
   (pool, futures, fiber scheduler, netpoller, nursery tracking) is emitted
   into a build when any library method's raw `#arch` body references its
@@ -257,13 +259,15 @@ call_. The compiler resolves the function, evaluates and packs its arguments
 eagerly, and defers the call into a per-site trampoline. A closure form also
 exists — `Thread(() => work(n))`, whose captures become the eager arguments.
 
-The form is spelled with an explicit marker. A spawn class declares its
+The form is spelled with an explicit marker. A spawn type declares its
 construction hook as `#spawn` — a lifecycle marker beside `#init` and
-`#destroy` — and the compiler treats `X(...)` on a `#spawn`-bearing class as
+`#destroy` — and the compiler treats `X(...)` on a `#spawn`-bearing type as
 the special form. Declaring `#spawn` suppresses the default `#init`, so the
-class is not ordinarily constructible, and the compiler matches the MEMBER,
+type is not ordinarily constructible, and the compiler matches the MEMBER,
 never a type's name: a user struct that happens to be named `Thread` does
 not gain the sugar, and a user struct that declares its own `#spawn` does.
+(Class constructions build a heap instance; owning-struct constructions
+yield the inline value.)
 
 The design property this upholds:
 
