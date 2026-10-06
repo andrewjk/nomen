@@ -84,6 +84,39 @@ var Tag copy = t
 	});
 });
 
+describe("generic owning struct monos (R tranche 4)", () => {
+	test("a mono of a declared-owning generic keeps the move-only flag", () => {
+		const input = `
+owning struct Holder<T> {
+	var int count
+}
+var Holder<int> h = Holder(1)
+var Holder<int> h2 = h
+`;
+		const parsed = parse(input);
+		expect(parsed.errors.some((e) => e.message.includes("cannot copy 'Holder' by value"))).toBe(
+			true,
+		);
+	});
+
+	test("moving a mono binding builds and runs (runtime)", async () => {
+		const input = `
+import System
+
+owning struct Holder<T> {
+	var int count
+}
+
+	pub func main = () {
+		var Holder<int> h = Holder<int>(7)
+		move Holder<int> h2 = h
+		Console.write_line(h2.count.to_string())
+	}
+`;
+		await build_and_check_output(input, "owning_mono_move", "7\n", true);
+	});
+});
+
 describe("owning enum (B1a)", () => {
 	test("the Copyable verifier rejects a bare enum with a declared-owning payload", () => {
 		const input = `

@@ -572,6 +572,11 @@ export function monomorphize(
 	// substitution — see concrete, resolvable type names.
 	mono_struct.source_type_args = flat_args;
 	mono_struct.is_class = generic_struct.is_class;
+	// The declared `owning struct` flag rides along (R tranche 4): a mono of
+	// a declared-owning generic (`Box_Node`, `Thread_uint64`) is the same
+	// move-only type — without this the mono loses the flag and the
+	// Copyable verifier treats it as a bare struct with owning fields.
+	mono_struct.is_owning = generic_struct.is_owning;
 	mono_struct.is_library = generic_struct.is_library;
 	// Trait conformance args ride along, substituted (`class Thread<T> :
 	// Spawnable<T>` monomorphizes to `Thread_uint64 : Spawnable_uint64`).

@@ -126,7 +126,14 @@ owning struct Thread<T> : Spawnable<T>` / `Fiber<T> : Spawnable<T>` /
     tcp_scale hang above (repros on main).
 - **Tranche 4: remove the keyword.** Parse/check/both backends; migrate the
   ~900 class uses across the test corpus to `owning struct` + `ref`/`Box`/
-  `WeakHandle` shapes; `ClassBuffer` retires to its trait-handle remainder.
+  `WeakHandle` shapes (done — zero `class` uses remain in `test/`);
+  `ClassBuffer` retires to its trait-handle remainder. Progress: **`Box` now
+  DECLARES as `owning struct`** (representation unchanged — the checker
+  stamps the wrapper's storage class at gather time,
+  `stamp_box_wrapper_representation`; `monomorphize` propagates `is_owning`
+  into monos). Remaining before the keyword removal: the six `Controls`
+  classes (Window/Container/Button/TextBox/Text/CheckBox — the handle +
+  `WeakHandle` shape menu), then the parse/check/backend sweep.
   B1 full cutover (the Copyable verifier over inferred ownership) follows,
   per its own sequencing note in the Phase B section below.
 
@@ -184,6 +191,29 @@ Known pre-existing gap surfaced by tranche 1: BUGS.md #9 (aarch64
 enum-with-data value-struct payload crashes at the match binding) — B1a's
 owning-enum semantics are proven on C; on aarch64 use a class payload until
 #9 is fixed.
+
+## Generic construction without call-site type args links against the generic's init (pre-existing)
+
+Found 2026-10-06 while writing the owning-mono runtime test (Phase R tranche
+4): a user generic struct whose only constructor is the auto (bodyless)
+field-based `#init`, constructed WITHOUT call-site type args — `var
+Holder<int> h = Holder(7)`, T inferred from the annotation — emits a call to
+`<Generic>_init` (`Holder_init`), a symbol no backend ever emits (only the
+`<Generic_<T>>_init` monos exist). Link fails on BOTH backends (aarch64:
+"Undefined symbols … Holder_init, referenced from: main.o"; C: the same
+undefined reference in the generated code). Verified on clean `main` at
+5e32d3e4 via `git stash` — predates the tranche.
+
+The corpus never hits it: every generic construction either spells the type
+args at the call site (`List<int>(…)`, `Holder<int>(7)`) — that branch
+renames the call node to the mono name — or has a custom `#init` (the
+infer-init-type-args branch renames too). Only the "no call-site args +
+bodyless auto-init" shape falls through the final `else` in
+`check_function_call_node`'s constructor resolution (~line 222), which finds
+no `#init` on the generic, leaves `node.name` as the generic name, and never
+renames. Fix surface: that branch (or the declaration-side path that
+materializes the mono from the annotation) must point the call at the mono
+init the same way the explicit-args branch does.
 
 ## Pre-existing gaps surfaced by the B5/B6 tranche (all repro on main)
 

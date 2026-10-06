@@ -392,6 +392,24 @@ function strip_param_length_equalities(func: FunctionNode) {
 	}
 }
 
+/**
+ * STRUCT_PLAN_3 R tranche 4 — `Box<T>` is DECLARED as `owning struct` (the
+ * `class` keyword is retiring), but its runtime representation is unchanged:
+ * one pointer to a heap wrapper holding the value inline (B6's null-pointer
+ * lowering for `Box<T>?` rides it). Stamp the wrapper's `is_class` here at
+ * gather time — user code is checked before the appended library, and
+ * `monomorphize` copies the flag into the `Box_<T>` monos — so every
+ * downstream consumer (`is_box_type`, layout, destroy, move rules) sees the
+ * same representation truth the `class` spelling used to declare. The
+ * declared `is_owning` flag coexists: it is the move-only marker; `is_class`
+ * is the storage shape.
+ */
+function stamp_box_wrapper_representation(struct: StructNode): void {
+	if (struct.name !== "Box" || !struct.is_generic) return;
+	if (struct.fields.length !== 1 || struct.fields[0].name !== "__value") return;
+	struct.is_class = true;
+}
+
 function gather_structs(block: BlockNode, status: CheckStatus) {
 	const names_in_block = {
 		structs: new Set<string>(),
@@ -412,6 +430,7 @@ function gather_structs(block: BlockNode, status: CheckStatus) {
 					assign_type_label(struct, block, status);
 					struct.scope = status.stack.at(-1) || block;
 					struct.is_generic = struct.type_params.length > 0;
+					stamp_box_wrapper_representation(struct);
 					// Strip parallel-length clauses from every method's params
 					// at gather time — same reason as free functions below: a
 					// caller declared before this struct must see the stripped
