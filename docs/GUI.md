@@ -26,11 +26,11 @@ Window (800×600)
 **today**. The full `Control`-trait object-tree design below is blocked by
 Nomen's ownership model (see [Why handle-based, not trait-based (for
 now)](#why-handle-based-not-trait-based-for-now)), so v1 is **handle-based**
-rather than trait-based. `Container` is, however, now a `class : Control` whose
-`measure(BoxConstraints)` / `set_frame` / `intrinsic_size` delegate to the SoA
-engine — see [Container as a Control](#container-as-a-control) — and every
-native leaf (`Window`/`Text`/`Button`/`CheckBox`/`TextBox`) conforms to
-`Control` too.
+rather than trait-based. `Container` is, however, now an `owning struct :
+Control` whose `measure(BoxConstraints)` / `set_frame` / `intrinsic_size`
+delegate to the SoA engine — see [Container as a Control](#container-as-a-control)
+— and every native leaf (`Window`/`Text`/`Button`/`CheckBox`/`TextBox`) is an
+`owning struct` conforming to `Control` too (STRUCT_PLAN_3 Phase R, tranche 4).
 
 ```
 import System

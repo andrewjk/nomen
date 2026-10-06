@@ -148,9 +148,40 @@ Control`, the shape menu's handle form; the raw `#init` bodies use the
     `_<Struct>_traits` table) and seeds LITERAL field defaults (string
     statics, scalar/bool) — the asm ctor's jobs; non-literal defaults in a
     `use_c` ctor are a build error naming the field.
-    Remaining before the keyword removal: SPEC.md/README.md/GUI.md rewrites
-    (`class` → the owning-struct vocabulary, ~31 SPEC mentions), then the
-    parse/check/backend keyword sweep.
+    Remaining before the keyword removal (scoped 2026-10-07):
+  - **The embedded test corpus still uses `class`**: 266 `test/*.test.ts`
+    files carry ~1,950 `class` uses in their embedded Nomen sources (the
+    earlier "~900 uses, migrated" count covered only the `*.nm` corpus —
+    the `.ts`-embedded sources were never counted). Dominant shapes:
+    `class X { var int v }` declarations + constructions (mechanical →
+    `owning struct`), alias-mutation tests (`class_move`, `ref_class_param`,
+    `memory_*` — semantic, map to `ref Box<T>` aliases), `move T` field
+    forms (drop the keyword — ownership follows the type), and Sendable
+    opt-ins (drop — structs auto-derive). The `ref_binding.test.ts` shapes
+    map to `ref Box<int>` aliases (verified end-to-end: `ref Box<Node> q =
+p` alias + mutate works on both backends).
+  - **Docs consolidation** (the plan's docs step): MEMORY.md's class memory
+    model (aliasing/borrowed-references/containers sections) and
+    NOMEN_AGENTS.md's class rows fold into the owning-struct + `Box`
+    vocabulary. Accurate-but-windowed today (the keyword still parses), so
+    they travel with the corpus migration.
+  - **The flip itself**: `parse_statement`/`parse_visibility` `case
+"class"` and `parse_extend`'s `class` branch each emit the retirement
+    error ("'class' has retired — declare `owning struct` … spell sharing
+    where it happens (`ref`, `Box<T>`, `Mutex<T>`, `WeakHandle<T>`)") and
+    continue parsing as a struct (one clear error per declaration, no
+    cascade); the visibility-default error message drops `class` from its
+    list. Drafted this session, reverted to keep the suite green until the
+    corpus migration lands.
+  - Landed en route: SPEC.md is class-free (the Class Types section became
+    "Owning Structs" with the `ref Box` alias vocabulary; destructuring,
+    extend, lambdas, auto-free, Sendable/concurrency rewritten to the
+    shipped struct-world rules — trait handles cannot cross a task
+    boundary; README rewritten likewise; GUI.md's Container note), with
+    all 289 `test/spec/` + `test/readme/` mirrors updated and green; and
+    the checker's copy-rule now exempts `ref` bindings so the spelled
+    alias works for `Box<T>` (`check_declaration_node`, covered by the
+    spec mirror "a ref Box binding aliases the instance").
     B1 full cutover (the Copyable verifier over inferred ownership) follows,
     per its own sequencing note in the Phase B section below.
 

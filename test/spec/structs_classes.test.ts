@@ -92,67 +92,91 @@ pub struct Transaction {
 	});
 });
 
-describe("spec: class types", () => {
-	test("class declaration and construction", () => {
+describe("spec: owning structs (types section)", () => {
+	test("owning struct declaration and construction", () => {
 		const input = `
-class Point {
-    var int x
-    var int y
+owning struct Config {
+	var string name
 }
-var p = Point(1, 2)
+var Config c = Config("x")
 `;
 		expect(compile_main(input)).toEqual([]);
 	});
 
-	test("assignment shares instance", () => {
+	test("move / .copy() / ref-Box aliasing, each spelled", () => {
 		const input = `
-class Point {
-    var int x
-    var int y
+owning struct Config {
+	var string name
 }
-var p = Point(10, 20)
-ref q = p
-q.x = 99
+var Config c = Config("x")
+move Config c2 = c
+var Config c3 = c2.copy()
 `;
 		expect(compile_main(input)).toEqual([]);
 	});
 
-	test("class methods with ref self", () => {
+	test("a plain copy of an owning binding is an error", () => {
 		const input = `
-class Counter {
-    var int count
-
-    func increment = (ref self) {
-        self.count = self.count + 1
-    }
+owning struct Config {
+	var string name
 }
-var c = Counter(0)
+var Config c = Config("x")
+var Config c4 = c
+`;
+		const errors = compile_main(input);
+		expect(errors.some((e) => e.message.includes("cannot copy 'Config' by value"))).toBe(true);
+	});
+
+	test("a ref Box binding aliases the instance", () => {
+		const input = `
+owning struct Node {
+	var int value
+}
+pub func main = () {
+	var Box<Node> p = Box<Node>(Node(10))
+	ref Box<Node> q = p
+	q.value = 99
+	Console.write("\\{p.value} \\{q.value}")
+}
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("owning struct methods with ref self", () => {
+		const input = `
+owning struct Counter {
+	var int count
+
+	func increment = (ref self) {
+		self.count = self.count + 1
+	}
+}
+var Counter c = Counter(0)
 c.increment()
 `;
 		expect(compile_main(input)).toEqual([]);
 	});
 
-	test("class #destroy", () => {
+	test("owning struct #destroy", () => {
 		const input = `
-class Resource {
-    var int handle
+owning struct Resource {
+	var int handle
 
-    func #destroy = (ref self) {
-        self.handle = -1
-    }
+	func #destroy = (ref self) {
+		self.handle = -1
+	}
 }
 `;
 		expect(compile_module(input)).toEqual([]);
 	});
 
-	test("passing class to function", () => {
+	test("passing an owning struct to a function", () => {
 		const input = `
-class Point {
-    var int x
-    var int y
+owning struct Config {
+	var string name
 }
-func getX = (Point p, out int) {
-    return p.x
+func get_name = (Config c, out string) {
+	return c.name
 }
 `;
 		expect(compile_module(input)).toEqual([]);
@@ -161,9 +185,9 @@ func getX = (Point p, out int) {
 	test("read-only param with local var copy", () => {
 		const input = `
 func add_five = (int x, out int) {
-    var int y = x
-    y = y + 5
-    return y
+	var int y = x
+	y = y + 5
+	return y
 }
 `;
 		expect(compile_main(input)).toEqual([]);

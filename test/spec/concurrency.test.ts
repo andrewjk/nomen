@@ -25,9 +25,9 @@ pub func main = () {
 		expect(compile_module(input)).toEqual([]);
 	});
 
-	test("class must explicitly declare Sendable", () => {
+	test("structs auto-derive Sendable; the explicit marker is accepted", () => {
 		const input = `
-pub class SafeCounter : Sendable {
+pub struct SafeCounter : Sendable {
 	var int count = 0
 }
 
@@ -103,18 +103,18 @@ pub func main = () {
 		expect(compile_module(input)).toEqual([]);
 	});
 
-	test("spawn with class arg", () => {
+	test("spawn with struct arg", () => {
 		const input = `
-pub class Box : Sendable {
+pub struct Packet : Sendable {
 	var int value = 0
 }
 
-func work = (Box b) {
+func work = (Packet p) {
 }
 
 pub func main = () {
-	var Box b = Box()
-	Thread(work(b)).start()
+	var Packet p = Packet()
+	Thread(work(p)).start()
 }
 `;
 		expect(compile_module(input)).toEqual([]);
@@ -143,24 +143,24 @@ pub func main = () {
 		expect(compile_module(input)).toEqual([]);
 	});
 
-	test("detach rejects a shared class capture", () => {
+	test("a bare owning capture is rejected outside a nursery", () => {
+		// SPEC.md, "Sendable": outside a nursery there is no join to bound a
+		// borrow, so a bare owning argument cannot cross — move it in or
+		// spawn inside an `async` block. (Detach owns its captures: the
+		// lambda form moves them; the call form is the bare-owning shape
+		// rejected here.)
 		const input = `
-pub class Job : Sendable {
-	var int n = 0
-}
-
-func work = (Job j) {
+func producer = (Channel ch) {
+	ch.send(1)
 }
 
 pub func main = () {
-	var Job j = Job()
-	Thread(work(j)).detach()
+	var Channel c = Channel()
+	Thread(producer(c)).detach()
 }
 `;
 		const errors = compile_module(input);
-		expect(errors.some((e) => e.message.includes("detached task captures 'j' by reference"))).toBe(
-			true,
-		);
+		expect(errors.some((e) => e.message.includes("owns heap memory"))).toBe(true);
 	});
 });
 
@@ -253,49 +253,35 @@ pub func main = () {
 		expect(compile_module(input)).toEqual([]);
 	});
 
-	test("a non-Sendable class argument is rejected inside a nursery and outside", () => {
-		// SPEC.md, "Sendable" (ASYNC.md): the nursery-borrow
-		// exception is retired — a non-Sendable CLASS reference is a shared
-		// crossing and is rejected everywhere. Mark it Sendable, move it in
-		// (a `move` parameter), or share it through a Sendable primitive.
+	test("a trait handle cannot cross a task boundary", () => {
+		// SPEC.md, "Sendable": a trait-typed value is not Sendable — move the
+		// concrete struct instead, or mediate through Mutex/Channel/Atomic.
 		const input = `
-pub class Counter {
-	var int count = 0
+trait Job {
+	func run = (self)
 }
 
-func work = (Counter c) {
+owning struct Impl : Job {
+	var int n = 0
+	pub func run = (self) {}
 }
 
-pub func main = () {
-	var Counter c = Counter()
-	async pool {
-		pool.start(Thread(work(c)))
-	}
-}
-`;
-		const inside = compile_module(input);
-		expect(inside.some((e) => e.message.includes("not Sendable"))).toBe(true);
-
-		const outside = `
-pub class Counter {
-	var int count = 0
-}
-
-func work = (Counter c) {
+func work = (Job j) {
 }
 
 pub func main = () {
-	var Counter c = Counter()
-	Thread(work(c)).start()
+	var Impl i = Impl()
+	var Job j = i
+	Thread(work(j)).start()
 }
 `;
-		const errors = compile_module(outside);
+		const errors = compile_module(input);
 		expect(errors.some((e) => e.message.includes("not Sendable"))).toBe(true);
 	});
 
-	test("a moved non-Sendable class argument is exempt from Sendable", () => {
+	test("a moved owning struct crosses outside a nursery", () => {
 		const input = `
-pub class Counter {
+owning struct Counter {
 	var int count = 0
 }
 

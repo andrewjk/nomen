@@ -183,7 +183,7 @@ above_zero(threshold)   // OK, 10 > 0
 
 #### Field Constraints
 
-Struct and class fields can have constraints. Fields without default values that have constraints will have those constraints propagated to the auto-generated `#init` parameters:
+Struct fields can have constraints. Fields without default values that have constraints will have those constraints propagated to the auto-generated `#init` parameters:
 
 ```
 struct Bounded {
@@ -307,7 +307,7 @@ const point = Point(5, 10)
 #### Readonly Fields
 
 A `readonly` field is readable wherever the field is visible, but assignable
-only from within the declaring struct or class's own methods (including its
+only from within the declaring struct's own methods (including its
 `extend` blocks):
 
 ```
@@ -375,108 +375,49 @@ pub struct Transaction {
 }
 ```
 
-### Class Types
+### Owning Structs
 
-Classes are reference types — they are always allocated on the heap and passed by pointer. Binding a class variable to another creates a shared reference to the same instance, not a copy — and must be spelled with `ref` (see [Assignment Semantics](#assignment-semantics)).
+An `owning struct` is the single-owner escape hatch from Copyable structs: its
+bindings MOVE instead of copy, and the declaration — not a field walk — is the
+ownership contract. Heap resources (a `Box<T>`, a `List<T>`, an OS handle)
+live exactly as long as the binding that owns them, and `#destroy` runs at
+scope exit.
 
 ```
-class Point {
-    var int x
-    var int y
+owning struct Config {
+    var string name
 }
+
+var Config c = Config("x")
+move Config c2 = c        // transfer: c is invalid afterwards
+var Config c3 = c.copy()  // deep copy: c stays valid
+var Config c4 = c         // Error: cannot copy 'Config' by value — use .copy() or move
 ```
 
-Classes are constructed the same way as structs, by calling the name as a function:
+Construction, methods (`ref self` for mutation), and `#destroy` follow the
+struct rules. Function parameters are **read-only by default** for every
+type; `ref` is a spelled mutable borrow the caller acknowledges at the call
+site; `move` transfers ownership. Sharing within a scope is spelled at the
+binding — for a heap value that means aliasing its `Box`:
 
 ```
-var p = Point(1, 2)
-```
-
-#### Assignment Semantics
-
-Unlike structs, which are value types copied on assignment, classes share the underlying instance — but the alias must be spelled with `ref` (a plain `var` copy of a class value is a compile error):
-
-```
-var p = Point(10, 20)
-ref q = p
-q.x = 99
-// p.x is now also 99 — p and q point to the same instance
-```
-
-`ref q = p` binds another name to the same instance for the enclosing scope. Other ways to bind a class value, each spelled:
-
-```
-var p = Point(10, 20)
-move q = p            // transfer: q owns the instance, p is invalid afterwards
-var r = p.copy()      // deep copy: r is an independent instance
-var s = Point(0, 0)   // fresh instance: plain var, no alias
-```
-
-A `ref` binding is an alias, not an owner: it is not reassignable (`q = Point(1, 1)` is an error — reassign `p`), mutation through it requires the source to be `var`, and ownership cannot be transferred through it (`move x = move q` is an error — move the owner).
-
-#### Methods
-
-Class methods use `ref self` to declare mutable access to the instance:
-
-```
-class Counter {
-    var int count
-
-    func increment = (ref self) {
-        self.count = self.count + 1
-    }
+owning struct Node {
+    var int value
 }
+
+var Box<Node> p = Box<Node>(Node(10))
+ref Box<Node> q = p    // alias: owner defers its free; both names see writes
+q.value = 99           // p.value is now also 99 — one instance, two names
 ```
 
-Methods are called with dot syntax on the instance:
+A `ref` binding is an alias, not an owner: it is not reassignable (reassign
+the owner `p`), mutation through it requires the source to be `var`, and
+ownership cannot be transferred through it (move the owner instead). A plain
+`var` copy of an alias source is a compile error — spell what you mean:
+`ref` to share, `move` to transfer, `.copy()` for an independent copy.
 
-```
-var c = Counter(0)
-c.increment()
-```
-
-#### Destroy Functions
-
-Like structs, classes support `#destroy` functions that run automatically when the class instance goes out of scope:
-
-```
-class Resource {
-    var int handle
-
-    func #destroy = (ref self) {
-        self.handle = -1
-    }
-}
-```
-
-#### Passing to Functions
-
-Function parameters are **read-only by default**: a plain `(Point p)` parameter
-cannot be mutated inside the body. This holds for both structs (an immutable
-copy) and classes (a shared instance you may read but not write):
-
-```
-func getX = (Point p) {
-    return p.x
-}
-```
-
-To mutate a parameter's value, declare it with `ref` (a mutable borrow the
-caller must acknowledge at the call site). See [Reference Parameters](#reference-parameters).
-
-For a mutable scratch value that the caller never observes, take the parameter
-read-only and make a local `var` copy inside the body:
-
-```
-func add_five = (int x, out int) {
-    var int y = x      // mutable local copy
-    y = y + 5
-    return y
-}
-```
-
-`var`/`cp` parameters are not supported — mutation that the caller observes must
-go through `ref`, and mutation that only the callee needs uses a local `var`.
+See [Owning structs](#owning-structs-1) for the field rules, the Copyable
+verifier, `Box<T>`, and the nullable lowerings.
 
 ### Generic Structs
 
@@ -590,7 +531,7 @@ Console.write("\\{things._0} \\{things._1}")  // "42 answer"
 #### Destructuring
 
 Tuples can be destructured into individual variables. See [Destructuring](#destructuring)
-for the full set of forms (arrays, structs, and classes are also supported):
+for the full set of forms (arrays and structs are also supported):
 
 ```
 func get_person = (int id, out [string, int]) {
@@ -727,7 +668,7 @@ to distinguish them:
 
 - **Tuple** — bind positionally via `_0`, `_1`, ... (see [Tuple Types](#tuple-types))
 - **Array** — bind positionally by index (`.at(i)`)
-- **Struct / class** — bind by field name
+- **Struct** — bind by field name
 
 A binding name of `_` discards that position for arrays and tuples (no
 variable is introduced):
@@ -781,9 +722,9 @@ Binding more names than the tuple has elements is a compile error:
 var [a, b, c] = [1, "two"]  // error: cannot destructure index 2 of a tuple with 2 elements
 ```
 
-#### Struct and Class Destructuring
+#### Struct Destructuring
 
-A struct or class on the right-hand side is destructured **by field name**. A
+A struct on the right-hand side is destructured **by field name**. A
 bare name binds a field of the same name:
 
 ```
@@ -820,23 +761,25 @@ var [width = w, depth = d] = b
 Console.write("\\{w} \\{d}")  // "2 6"
 ```
 
-Classes work identically (the right-hand side is a class instance):
+An owning struct destructures identically — use `move` to take ownership of a
+field instead of binding a view (see
+[Move Destructuring](#move-destructuring-and-literal-transfers)):
 
 ```
-class Counter {
+owning struct Counter {
     var int count
     var int total
 }
 
 var c = Counter(5, 50)
-var [count = n, total = t] = c
+var [count = move n, total = move t] = c
 Console.write("\\{n} \\{t}")  // "5 50"
 ```
 
-Referencing a field that does not exist on the struct or class is a compile
-error. The destructured bindings are non-owning views into the right-hand
-side value, so they are not freed at scope exit (the right-hand side retains
-ownership).
+Referencing a field that does not exist on the struct is a compile
+error. Without `move`, the destructured bindings are non-owning views into
+the right-hand side value, so they are not freed at scope exit (the
+right-hand side retains ownership).
 
 #### Move Destructuring and Literal Transfers
 
@@ -912,7 +855,7 @@ pub trait Printable {
 
 ### Extension Methods
 
-Methods may be added to an existing struct or class outside its body with an `extend` block. `extend struct Name` adds to a struct, `extend class Name` to a class (the keyword must match the type). Only methods may be added — fields would change the type's layout, which a value-type language cannot do out of line. Once merged, the methods are indistinguishable from ones declared in the original body: same dispatch, same visibility, same name-overloading rules.
+Methods may be added to an existing struct outside its body with an `extend` block. Only methods may be added — fields would change the type's layout, which a value-type language cannot do out of line. Once merged, the methods are indistinguishable from ones declared in the original body: same dispatch, same visibility, same name-overloading rules.
 
 ```
 struct Point {
@@ -1350,7 +1293,7 @@ if f != null {
 
 Nullability applies at every func-type position: parameters (including
 nested ones), `out` return slots (`out func? (...)`), locals, and
-struct/class fields (`var func? (int) close_node = null`).
+struct fields (`var func? (int) close_node = null`).
 
 #### Extern Functions
 
@@ -1457,13 +1400,12 @@ capture is taken once, when the lambda value is created:
 - Scalars and non-owning value structs are **copied** (a later write to the
   source is not seen by the lambda).
 - Strings are **deep-copied**.
-- Owning value structs, class instances, trait-typed values (boxed handles,
-  regardless of the conformer's kind), and other func-valued closures are
-  **moved** into the closure; the donating local is invalidated (using it again
-  is a use-after-move error). A capturing closure is move-only: initializing or
+- Owning value structs, trait-typed values (boxed handles, regardless of
+  the conformer's kind), and other func-valued closures are **moved** into the
+  closure; the donating local is invalidated (using it again is a
+  use-after-move error). A capturing closure is move-only: initializing or
   assigning a func-typed binding from one transfers it.
-- `ref`/`var` borrows, views, arrays, raw pointers, and borrowed or aliased
-  class references cannot be captured.
+- `ref`/`var` borrows, views, arrays, and raw pointers cannot be captured.
 
 ```
 pub func main = () {
@@ -1627,13 +1569,13 @@ The same verifier applies to enums: a bare `enum` with a case payload typed a
 declared-`owning` struct must be declared `owning enum` (B1a), and bindings of
 a declared-`owning` enum move instead of copy.
 
-**Fields: the spelling follows the type.** An `owning struct`'s class-typed
-field is an owned slot — construction and stores transfer (the synthesized
-`#init` parameter is a `move` param), the field's instance is destroyed with
-the struct, and a re-assignment reclaims the displaced instance. The spelling
-is plain `var` — ownership follows the field's TYPE, so no `move` field
-keyword exists (classes keep their `move T` field form). A bare `struct`
-cannot hold these fields: the verifier above rejects it, naming the fix.
+**Fields: the spelling follows the type.** An `owning struct`'s owning-typed
+field (`Box<T>`, another owning struct, an owning enum) is an owned slot —
+construction and stores transfer (the synthesized `#init` parameter is a
+`move` param), the field is destroyed with the struct, and a re-assignment
+reclaims the displaced value. The spelling is plain `var` — ownership follows
+the field's TYPE, so no `move` field keyword exists. A bare `struct` cannot
+hold these fields: the verifier above rejects it, naming the fix.
 
 ```
 owning struct Holder {
@@ -1684,8 +1626,9 @@ Fields without default values that have constraints propagate those
 constraints to the generated `#init` parameters (see
 [Field Constraints](#field-constraints)). You can also define a custom `#init`
 to take full control of construction (see [Initializers](#initializers)). A
-struct is a value type: assigning it copies the fields. For shared-reference
-semantics, use a [Class](#class-types).
+bare struct is a value type: assigning it copies the fields. For heap
+ownership and shared-in-scope aliasing, use `owning struct` plus `Box<T>` /
+`ref` — see [Owning Structs](#owning-structs).
 
 ### Traits
 
@@ -2455,8 +2398,8 @@ Rules:
 
 At the end of each scope, the compiler automatically:
 
-- Calls `#destroy` functions on structs and classes going out of scope
-- Frees heap-allocated strings and class instances
+- Calls `#destroy` functions on owning values going out of scope
+- Frees heap-allocated strings and owned values
 - Cleans up all intermediate scopes on `break`, `continue`, and `return`
 
 Auto-free applies only to types that own heap resources:
@@ -2692,10 +2635,8 @@ pub trait Sendable {
 
 - Primitives (`int`, `uint`, `float`, `bool`, `char`, `string`, etc.) are
   always Sendable.
-- Structs are Sendable if explicitly marked `: Sendable` OR all their fields
-  are Sendable (auto-derive).
-- Classes must explicitly declare `: Sendable` (they're mutable shared
-  references — auto-derive would be unsafe by default).
+- Structs are Sendable if all their fields are Sendable (auto-derive,
+  recursive), or if explicitly marked `: Sendable`.
 
 ```
 pub struct Point {          // auto-Sendable: two int fields
@@ -2703,63 +2644,54 @@ pub struct Point {          // auto-Sendable: two int fields
     var int y
 }
 
-pub class Counter {        // NOT Sendable: classes must opt in
-    var int count = 0
-}
-
-pub class SafeCounter : Sendable {   // Sendable: explicitly marked
-    var int count = 0
+pub struct Stamp : Sendable {   // explicit marker
+    var int x
 }
 ```
 
-What must be Sendable is exactly what is **shared**: a class or trait
-reference passed as a plain argument aliases the instance for the task, so it
-must be marked `: Sendable`. Everything else crossing the boundary is exempt:
+What crosses a task boundary, each spelled at the call site:
 
-- **Moved** arguments — a callee parameter declared `move T` takes exclusive
-  ownership, so a non-Sendable class can cross as a `move` (the caller gives
-  up its access).
+- **Moved** arguments — a `move T` capture or argument takes exclusive
+  ownership; an owning struct moves and the donor is invalidated (the caller
+  gives up its access).
 - **Copied** arguments — primitives and strings are copied at the boundary,
-  and plain-data (non-owning) value structs are byte-copied, so the task and
-  the caller hold independent values.
-- **Borrowed** arguments — an owning value struct passed bare inside an
-  `async` block, a `view`-typed argument, and a `Sendable` class/trait
-  reference: the env aliases the donor (see the lifetime rules below).
+  and plain-data (non-owning) structs are byte-copied, so the task and the
+  caller hold independent values.
+- **Borrowed** arguments — an owning struct passed bare inside an `async`
+  block, or a `view`-typed argument: the env aliases the donor, and the
+  lifetime rules below bound the alias.
+- **Trait handles cannot cross.** A trait-typed value is not Sendable — move
+  the concrete struct instead, or mediate the share through `Mutex` /
+  `Channel` / `Atomic<T>`.
 
-There is no borrow exception for a NON-Sendable class/trait: it cannot cross
-into a task even inside a nursery — mark it `Sendable`, move it in, or
-mediate the share through `Mutex` / `Channel` (owning structs whose
-handle-based operations are the sanctioned cross-task shape) or `Atomic<T>`.
 The same rules gate a lambda's captures (every capture is an eager argument).
 
-Two lifetime rules apply on top of `Sendable` (which gates aliasability, not
-how long the alias stays valid):
+Four lifetime rules apply on top of Sendable (which gates what may cross, not
+how long an alias stays valid):
 
 - **Inside an `async` block, a borrowed argument must outlive the join.**
-  Three argument shapes BORROW: a shared class/trait reference, an owning
-  value struct passed bare (the env takes the donor's pointer — no deep
-  copy), and a `view`-typed argument. Their ROOT variable must be declared
-  in the block's own scope or outside it — a local declared in a nested
-  block (an `if` body, a loop iteration) dies before the join and dangles
-  the task's alias. A fresh temporary (a call result) must be constructed
-  in the block's own scope. Moved and copied arguments are exempt —
-  ownership has no region.
-- **Outside a nursery, an owning value struct cannot cross bare.** There is
-  no join to bound a borrow, and the env cannot deep-copy owning state
-  soundly, so the bare-owning shape is a compile error — spawn inside an
-  `async` block (a borrowed read), or move it in. Exemption: a
-  process-lifetime GLOBAL donor is its own region proof (nothing can dangle
-  because nothing ever ends) — the app-lifetime `Channel`/`Mutex` share
-  rides it.
+  Two argument shapes BORROW: an owning struct passed bare (the env takes
+  the donor's pointer — no deep copy), and a `view`-typed argument. Their
+  ROOT variable must be declared in the block's own scope or outside it — a
+  local declared in a nested block (an `if` body, a loop iteration) dies
+  before the join and dangles the task's alias. A fresh temporary (a call
+  result) must be constructed in the block's own scope. Moved and copied
+  arguments are exempt — ownership has no region.
+- **Outside a nursery, an owning struct cannot cross bare.** There is no
+  join to bound a borrow, and the env cannot deep-copy owning state soundly,
+  so the bare-owning shape is a compile error — spawn inside an `async`
+  block (a borrowed read), or move it in. Exemption: a process-lifetime
+  GLOBAL donor is its own region proof (nothing can dangle because nothing
+  ever ends) — the app-lifetime `Channel`/`Mutex` share rides it.
 - **The freeze: a borrowed root is const until the block exits.** From the
   construction to the `async` block's closing brace, the donor cannot be
   written, moved out, mutable-passed, or mutated through a `ref self`
   method — the task is reading it. `Task` handles are exempt: sharing a
   handle and then cancelling it is the coordination protocol.
 - **Detach owns its captures.** A detached daemon has no join anywhere, so
-  `.detach()` rejects every shared (non-`move`) class/trait argument —
-  Sendable or not. App-lifetime state is shared by declaring it at the root
-  scope (globals are exempt: process lifetime).
+  `.detach()` rejects every shared (non-`move`) capture. App-lifetime state
+  is shared by declaring it at the root scope (globals are exempt: process
+  lifetime).
 
 Moved and copied arguments (scalars, strings, `move T`) are exempt from the
 freeze — ownership has no region.
@@ -2849,10 +2781,10 @@ construction hook. `Thread` and `Fiber` declare `#spawn`; the compiler treats
 type that merely shares the name does not gain it. `Thread` and `Fiber` are
 **owning structs** (STRUCT_PLAN_3 Phase R — the shape menu): every field is
 an opaque handle (uint64/bool), so the construction yields an inline value
-that moves, and `#destroy` enforces must-start. A class may declare `#spawn`
-too (its construction builds a heap instance); an owning struct's
-construction yields the inline value, with the same handle fields written
-directly. A `#spawn` constructor's single argument is either a deferred call
+that moves, and `#destroy` enforces must-start. An owning struct declaring
+`#spawn` constructs through the same special form: the construction yields
+the inline value, with the handle fields written directly. A `#spawn`
+constructor's single argument is either a deferred call
 or a zero-arg function value; anything else is an error anchored at the
 argument.
 
@@ -2903,7 +2835,7 @@ running task can safely hold pointers to values declared in the nursery
 
 Arguments to a spawned call must be `Sendable`. The spawned function's
 arguments are type-erased to `uint64` for the thread boundary, then cast back
-at the call site — primitives by value, classes/traits by pointer.
+at the call site — primitives by value, pointers by pointer.
 
 ### Fiber
 

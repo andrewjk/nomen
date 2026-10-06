@@ -276,13 +276,15 @@ p.translate(1, 1)
 const d = p.distance_from_origin()
 ```
 
-### Classes
+### Owning Structs
 
-Classes are reference types — always heap-allocated and shared on assignment.
-Methods use `ref self` for mutable access:
+A bare `struct` is Copyable — assigning it copies the fields. `owning struct`
+is the single-owner form: bindings move instead of copy, and the type owns
+its heap resources until scope exit. Methods use `ref self` for mutable
+access:
 
 ```nomen
-class Counter {
+owning struct Counter {
     var int count = 0
 
     func increment = (ref self) {
@@ -291,7 +293,8 @@ class Counter {
 }
 
 var c = Counter()
-c.increment()
+move c2 = c
+c2.increment()
 ```
 
 ### Enums
@@ -371,9 +374,8 @@ const s = p.to_string()
 
 ### Extension Methods
 
-Add methods to an existing struct or class with an `extend` block. The keyword
-must match the type (`extend struct` for a struct, `extend class` for a class),
-and only methods may be added:
+Add methods to an existing struct with an `extend` block; only methods may be
+added:
 
 ```nomen
 struct Point {
@@ -726,28 +728,29 @@ struct Transaction {
 ```
 
 - `#init` customizes construction (an auto-generated one exists otherwise)
-- `#destroy` runs at scope exit for structs and classes that own resources
-- Heap strings and class instances are freed automatically
+- `#destroy` runs at scope exit for values that own resources
+- Heap strings and owned values are freed automatically
 
 See [MEMORY.md](docs/MEMORY.md) for the full model.
 
 ## Ownership & Borrows
 
-Class instances are heap-allocated and, by default, shared on assignment. To
-express single ownership, Nomen borrows a few ideas from move semantics:
+A bare `struct` is Copyable — assigning it copies the fields. `owning struct`
+is the single-owner form: its bindings move instead of copy, and the type
+owns its heap resources until scope exit.
 
 ```nomen
-class Box {
+owning struct Box {
     var int value
 }
 
-// an owning field — only classes can hold classes, and only via move
-class Holder {
-    move Box content
+// an owning field — the field's type decides: stores transfer
+owning struct Holder {
+    var Box content
 }
 
 // an owning parameter — the caller gives up access with `move`
-func take = (move Box b) {
+func take = (move Box b, out int) {
     Console.write("\{b.value}")
 }
 
@@ -756,7 +759,7 @@ var b = Box(42)
 take(move b)   // b is invalid after this
 ```
 
-- `move` marks a class-typed field or parameter as owned (moved in).
+- `move` transfers ownership — the source is invalid afterwards.
 - `ref` passes a value by reference so the callee can mutate it; the caller must
   write `ref` at the call site, and a `const` value can't be borrowed mutably.
 - Plain parameters are read-only — take them by value and make a local `var`

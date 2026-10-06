@@ -47,21 +47,29 @@ print_circle(Circle("C", 25, 70, 15))
 	});
 });
 
-describe("readme: classes", () => {
-	test("class with ref self method", () => {
+describe("readme: ownership", () => {
+	test("owning struct with ref self method and move field", () => {
 		const input = `
-class Counter {
-    var int count = 0
-
-    func increment = (ref self) {
-        self.count = self.count + 1
-    }
+owning struct Box {
+	var int value
 }
 
-var c = Counter()
-c.increment()
+owning struct Holder {
+	var Box content
+}
+
+func take = (move Box b, out int) {
+	return b.value
+}
+
+pub func main = () {
+	var h = Holder(move Box(7))
+	var b = Box(42)
+	var int v = take(move b)
+	Console.write("\\{v} \\{h.content.value}")
+}
 `;
-		expect(compile_module(input)).toEqual([]);
+		expect(compile_main(input)).toEqual([]);
 	});
 });
 

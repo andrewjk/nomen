@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
 
-import { compile_module } from "./_helpers.ts";
+import { compile_main, compile_module } from "./_helpers.ts";
 
 describe("spec: destructuring", () => {
 	test("array destructuring", () => {
@@ -83,19 +83,19 @@ pub func main = () {
 		expect(compile_module(input)).toEqual([]);
 	});
 
-	test("class destructuring", () => {
+	test("owning-struct move destructuring", () => {
 		const input = `
-class Counter {
+owning struct Counter {
 	var int count
 	var int total
 }
 pub func main = () {
 	var c = Counter(5, 50)
-	var [count = n, total = t] = c
+	var [count = move n, total = move t] = c
 	Console.write("\\{n} \\{t}")
 }
 `;
-		expect(compile_module(input)).toEqual([]);
+		expect(compile_main(input)).toEqual([]);
 	});
 
 	test("tuple literal transfers at last use; bindings own the temp", () => {

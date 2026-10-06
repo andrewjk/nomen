@@ -562,7 +562,9 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 		// `var Buffer old = self.field`) are left to the field machinery. Use
 		// .copy() for a deep copy or `move` to transfer ownership. A struct whose
 		// #destroy only resets fields (no raw block) is NOT owning and may copy.
-		if (decl.value?.node_type === "value" && !decl.value.is_moved) {
+		// A `ref` binding is an alias, spelled (Phase A) — never a copy; the
+		// alias classification below owns it.
+		if (decl.value?.node_type === "value" && !decl.value.is_moved && !is_ref_keyword) {
 			const val_type = type_from_value_node(decl.value, status);
 			// B1: a declared `owning struct` binding moves (the flag wins over
 			// the inferred walk — a string-only `owning struct` is still
