@@ -23,10 +23,15 @@
 // linked companion on aarch64) — OS socket/DNS interop, where hand-written
 // per-target assembly is not practical.
 
+// Tcp is an OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 3 — the shape
+// menu): the fields are the fd and an error code — the fd is the handle, so
+// the value is movable and `#destroy` closes it. A moved Tcp transfers the
+// socket; there is no aliasing copy to double-close.
+
 /**
  * A non-blocking TCP socket whose waits park the calling fiber
  **/
-pub class Tcp: Sendable {
+pub owning struct Tcp {
 	// The underlying file descriptor, -1 when closed/failed.
 	pub var int fd = -1
 	// 0 = ok; 1 = DNS, 2 = socket, 3 = connect, 4 = listen, 5 = closed.

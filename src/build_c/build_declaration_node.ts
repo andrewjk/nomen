@@ -801,7 +801,17 @@ export default function build_declaration_node(
 			node.trait_concrete_struct = concrete_struct_name;
 			status.code += `struct ${concrete_struct_name} ${safe_name}`;
 		} else if (mono_struct) {
-			status.code += `struct ${mono_name} ${safe_name}`;
+			// STRUCT_PLAN_3 Phase R tranche 3: an owning-struct GLOBAL's
+			// definition lives at file scope (build_block_node's root scan put
+			// the inline value in the header preamble), so other functions'
+			// reads resolve — the same BUGS.md #5 shape as the class arm, with
+			// the value-struct storage. The spliced prologue emission is the
+			// initializer ASSIGNMENT (the constructor runs through `&name`).
+			if (node.is_module_init && !node.type.is_nullable) {
+				status.code += `${safe_name}`;
+			} else {
+				status.code += `struct ${mono_name} ${safe_name}`;
+			}
 		} else if (node.type.is_view) {
 			// A `view T` local is a non-owning (ptr, len) slice on the stack.
 			// It borrows from its source and is never auto-freed.

@@ -95,9 +95,35 @@ owning struct Thread<T> : Spawnable<T>` / `Fiber<T> : Spawnable<T>` /
     backends); `test/awaitable.test.ts` retyped to the bare-trait-param
     dispatch form, and the fiber park/cancel shapes use `move` /
     `ref Task` spellings where the class era relied on aliasing.
-- **Tranche 3: `Channel`/`Mutex`/`Tcp`/`Tester`/`Random` conversions.**
-  Mutex stays the hand-locked primitive (the N4 typed `Mutex<T>` +
-  `Shared<T>` remainder is separately deferred — see below).
+- **Tranche 3 (landed): `Channel`/`Mutex`/`Tcp`/`Tester`/`Random` → owning
+  struct.** All five are `pub owning struct` (the shape menu); `Sendable`
+  dropped — structs auto-derive (all fields are handles/scalars, except
+  Tester's two string fields, which the struct string machinery
+  normalizes). What moved with them:
+  - `#init` raw bodies in Mutex/Channel use the `self.field` spelling (the
+    C ctor's `self` is the INLINE instance — a local value; methods keep the
+    pointer form). The aarch64 bodies are unchanged (x19 = &instance).
+  - Split-build WeakHandle fix: the user TU previously relied on the system
+    TU's class destroys pulling the registry declaration into system.h —
+    with no classes left in the System library, a user class's `#destroy`
+    failed to compile (and link). `build_split` now threads
+    `system_defines_weak_runtime` from the system build; the user TU defines
+    the registry itself when the system object doesn't.
+  - Root-scope owning-struct globals: file-scope storage in both backends
+    (the BUGS.md #5 shape — see the section above).
+  - Spawn-arg validator: a PROCESS-LIFETIME GLOBAL donor of an owning type
+    is exempt from the outside-a-nursery error (process lifetime is its own
+    region proof — the same exemption the detach rule takes); the env packs
+    the pointer (a borrow, no copy, no destroy).
+  - Corpus migration: spawns sharing a Channel/Mutex moved into `async { }`
+    blocks (the join bounds the borrow; send/receive/lock/unlock take the
+    receiver bare = const, so the freeze doesn't block them); daemon
+    handshakes moved the shared channel to a global; the Tcp listener
+    helpers take `ref Tcp` (a mutable region borrow, `ref` spelled at the
+    call site). SPEC.md's yield/is_fiber example updated with its
+    `test/spec/concurrency` twin.
+  - Known pre-existing fallout surfaced while testing: the aarch64
+    tcp_scale hang above (repros on main).
 - **Tranche 4: remove the keyword.** Parse/check/both backends; migrate the
   ~900 class uses across the test corpus to `owning struct` + `ref`/`Box`/
   `WeakHandle` shapes; `ClassBuffer` retires to its trait-handle remainder.
@@ -183,6 +209,39 @@ work and is out of its scope:
   may-be-null check (`Variable 'x' may be null`) fires for plain variables
   only. Flow-sensitive base tracking is a feature of its own; until then,
   bind + `== null`-check before reading through a nullable.
+
+## aarch64: tcp_scale (64 fiber connections) hangs in a parked receive (pre-existing)
+
+Found 2026-10-06 during Phase R tranche 3; **reproduces on clean `main` at
+64afe02b** (verified in a separate worktree — same 60 s vitest timeout), so it
+predates the tranche. The C backend runs the same program green
+(`echoed 64/64`). The hung binary's main thread sits in
+`__nomen_fiber_waitq_park` under `Channel.receive`
+(`.Lchannel_receive_wait` → `pthread_cond_wait`): main waits for the 64
+clients' `done.send(n)` results and at least one wake never arrives — a lost
+fiber-wake rendezvous in the many-senders shape (each client fiber sends once
+from a pool worker; the send side signals the parked receiver's wait list
+under `mu`).
+
+Two operational consequences worth knowing while it reproduces:
+
+- The hung binary outlives the killed test and keeps port 18100 bound, so
+  every later tcp_scale run fails fast with `listen failed` until the stray
+  `test/out/aarch64/tcp_scale/main.out` is killed (`pkill -f
+tcp_scale/main.out`). Kill it before diagnosing anything else in the file.
+- `build_and_check_output` runs aarch64 first, so the hang masks the C
+  variant's result in the same test invocation; run with the order flipped
+  (or the aarch64 artifact removed) to see the C side.
+
+## Root-scope owning-struct globals (Phase R tranche 3 note)
+
+The tranche extended the BUGS.md #5 shape to owning structs: `var Channel
+sink = Channel()` at root scope now emits file-scope storage in both
+backends (C: `struct Channel sink;` in the header preamble + prologue
+assignment + value-destroy teardown; aarch64: an `is_module_init` arm in the
+value-struct declaration path emitting writable `.data` storage). Trait-typed
+root globals still have the original shaped gap (their BUGS.md #5 pun stands
+— no current code shape needs them).
 
 ## `Shared<T>` + the `with(m)` critical-section form + typed `Mutex<T>` (N4 remainder)
 

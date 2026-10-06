@@ -78,9 +78,11 @@ Console.write("\\{h.status}")
 		const input = `
 import System
 
-func serve_one = (Tcp listener) {
-	ref Tcp server = listener        // params are read-only; accept() mutates
-	var Tcp conn = server.accept()    // parks until the client connects
+func serve_one = (ref Tcp listener) {
+	// Phase R tranche 3: Tcp is an owning struct — the listener crosses as a
+	// ref region borrow (the fiber mutates it through the address; the
+	// join bounds the borrow).
+	var Tcp conn = listener.accept()    // parks until the client connects
 	if conn.fd < 0 {
 		return
 	}
@@ -98,7 +100,7 @@ pub func main = () {
 		return
 	}
 	async {
-		var handler = Fiber(serve_one(listener)).start()
+		var handler = Fiber(serve_one(ref listener)).start()
 		var Http h = Http()
 		var Result<string, HttpError> r = h.get("http://127.0.0.1:18091/hello")
 		match r {
@@ -124,9 +126,8 @@ pub func main = () {
 		const input = `
 import System
 
-func serve_post = (Tcp listener) {
-	ref Tcp server = listener
-	var Tcp conn = server.accept()
+func serve_post = (ref Tcp listener) {
+	var Tcp conn = listener.accept()
 	if conn.fd < 0 {
 		return
 	}
@@ -160,7 +161,7 @@ pub func main = () {
 		return
 	}
 	async {
-		var handler = Fiber(serve_post(listener)).start()
+		var handler = Fiber(serve_post(ref listener)).start()
 		var Http h = Http()
 		var Result<string, HttpError> r = h.post("http://127.0.0.1:18092/submit", "hello=world")
 		match r {

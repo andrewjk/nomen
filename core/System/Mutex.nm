@@ -10,16 +10,28 @@
 // observes the cancel flag at its next checkpoint after acquiring — so a
 // matching unlock is always sound.
 
+// Mutex is an OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 3 — the shape
+// menu): the single field is an opaque handle, so the value is movable and
+// its `#destroy` closes what the handle names. Moving a Mutex transfers the
+// handle; there is no aliasing copy to misuse. Sharing one across tasks
+// rides the checked region borrows (`async { }`) — the lock/unlock methods
+// take the receiver bare (struct receivers travel by address), so a locked
+// section mutates the kernel object the handle names, never the binding.
+
 /**
  * A pthread-backed mutual-exclusion lock for protecting shared mutable state
  **/
-pub class Mutex: Sendable {
+pub owning struct Mutex {
 	pub var uint64 handle = 0
 
 	pub func #init = (self) {
+	// The constructor's `self` is the INLINE instance (a local value in the
+	// C lowering — methods take the pointer form, the ctor does not), so the
+	// C body uses the `.` accessor; the aarch64 body writes through x19 =
+	// &instance as always.
 	```
 	#arch: c
-	self->handle = (unsigned long long)__nomen_mutex_create();
+	self.handle = (unsigned long long)__nomen_mutex_create();
 	```
 	```
 	#arch: aarch64

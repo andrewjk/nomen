@@ -23,14 +23,18 @@ targets.
   notice a finished task without parking the UI thread; see `demos/async`),
   `cancel()`, `current_cancelled()` (static, thread-local).
   Monomorphized per instantiation (e.g. `Task_uint64`).
-- **`Mutex`** — pthread-backed lock; `#destroy` releases the resource. In
+- **`Mutex`** — pthread-backed lock; `#destroy` releases the resource. An
+  **owning struct** (STRUCT_PLAN_3 Phase R tranche 3 — the shape menu: the
+  handle field makes it movable, `#destroy` closes what the handle names). In
   cooperative mode a fiber try-locks and yields (the holder runs on the same
   thread); in the threaded model a fiber parks on the mutex's wait list
   instead of blocking its worker — unlock wakes the waiters. A cancelled
   waiter keeps waiting (returning without the lock would be unsound) and
   observes the cancel flag at its next checkpoint after acquiring.
 - **`Channel`** — blocking FIFO queue (`send` / `receive` for uint64 words,
-  `send_string` / `receive_string` for fat strings). Fibers do not block on
+  `send_string` / `receive_string` for fat strings). An **owning struct**
+  (Phase R tranche 3 — handle/counter fields, movable, `#destroy` drains).
+  Fibers do not block on
   it: an empty `receive` parks the fiber on the channel's wait list
   (park-before-signal under the channel's mutex) and `send` wakes the parked
   receivers; other contexts still block on the condvar. A cancelled fiber
@@ -112,8 +116,8 @@ targets.
   as a plain argument aliases the instance. Moved arguments (a `move T`
   parameter) and copied values are exempt; a non-Sendable class/trait
   cannot cross into a task inside a nursery or out — mark it `Sendable`,
-  move it in, or share it through a `Sendable` primitive (`Mutex`,
-  `Channel`).
+  move it in, or mediate the share through `Mutex` / `Channel` (owning
+  structs; Phase R tranche 3) or `Atomic<T>`.
 - **Function-value constructions** — `Thread(() => work(base))` takes a
   zero-argument function value in place of the unevaluated call: the
   lambda's CAPTURES are the eager arguments (Sendable-validated; owning

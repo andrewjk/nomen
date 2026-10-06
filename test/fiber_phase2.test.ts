@@ -83,12 +83,18 @@ func relay = (Channel ca, Channel cb) {
 pub func main = () {
 	var Channel ca = Channel()
 	var Channel cb = Channel()
-	var f = Fiber(relay(ca, cb)).start()
-	ca.send(41)
-	var uint64 r = cb.receive()
-	f.wait()
-	if r == 42 {
-		Console.write_line("parked receive ok")
+	async {
+		var f = Fiber(relay(ca, cb)).start()
+		// Both channels cross as checked region borrows; the main thread's
+		// send happens inside the block (the freeze keeps a borrowed root
+		// const, but send/receive take the receiver bare — const at the
+		// type level, so lock/queue mediation stays sanctioned).
+		ca.send(41)
+		var uint64 r = cb.receive()
+		f.wait()
+		if r == 42 {
+			Console.write_line("parked receive ok")
+		}
 	}
 }
 `;
@@ -144,18 +150,20 @@ pub func main = () {
 	Fiber.set_cooperative(true)
 	var Mutex m = Mutex()
 	var Channel ch = Channel()
-	var a = Fiber(worker(m, ch, 1)).start()
-	var b = Fiber(worker(m, ch, 2)).start()
-	a.wait()
-	b.wait()
-	var string order = ""
-	var int i = 0
-	while i < 4 {
-		var uint64 v = ch.receive()
-		order = order + v.to_string() + ","
-		i = i + 1
+	async {
+		var a = Fiber(worker(m, ch, 1)).start()
+		var b = Fiber(worker(m, ch, 2)).start()
+		a.wait()
+		b.wait()
+		var string order = ""
+		var int i = 0
+		while i < 4 {
+			var uint64 v = ch.receive()
+			order = order + v.to_string() + ","
+			i = i + 1
+		}
+		Console.write_line(order)
 	}
-	Console.write_line(order)
 }
 `;
 		await build_and_check_output(input, "fiber_p2_mutex", "1,11,2,12,\n", true);

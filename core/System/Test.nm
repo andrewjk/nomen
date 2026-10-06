@@ -32,6 +32,12 @@
 //
 // See TESTING.md for the full design.
 
+// Tester is an OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 3 — the shape
+// menu): the harness builds exactly one per run, so the single-owner rule
+// costs nothing and the record state moves with the value. The string
+// fields (current/bench_label) are normalized heap-owned by the compiler's
+// struct string machinery, so `#destroy` reclaims them cleanly.
+
 /**
  * Records assertions and benchmarks for one test file.
  *
@@ -47,7 +53,7 @@
  * skipped, so a single root cause reports as a single failure. Check
  * `t.has_failed` to bail out of expensive follow-up work yourself.
  **/
-pub class Tester {
+pub owning struct Tester {
 	// Has the *current* test recorded a failure? Reset by `begin_test`.
 	pub var has_failed = false
 

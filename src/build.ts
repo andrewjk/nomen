@@ -73,6 +73,9 @@ export default function build(
 		 *  differ in the last ulp vs the scalar loop. Everything else
 		 *  (elementwise vectorization) is bit-exact and unaffected. */
 		fast_math?: boolean;
+		/** User-TU builds only (set by build_split): whether the system TU
+		 *  emitted the WeakHandle registry definition. */
+		system_defines_weak_runtime?: boolean;
 	} = {},
 ): BuildResult {
 	let status: BuildStatus = {
@@ -84,6 +87,7 @@ export default function build(
 		headers: "",
 		code: "",
 		emit_mode: options.emit_mode ?? "all",
+		system_defines_weak_runtime: options.system_defines_weak_runtime,
 		system_struct_names: options.system_struct_names,
 		scoped_declarations: [],
 		interpolate_string_counts: new Set(),
@@ -588,6 +592,7 @@ export default function build(
 		code: status.code,
 		companion,
 		errors: status.build_errors?.map((e) => ({ ...e, line: 0, column: 0 })),
+		weak_runtime_defined: status.weak_runtime_emitted,
 	};
 }
 
@@ -620,7 +625,14 @@ export function build_split(
 		return build(root, options);
 	}
 	const sys = build(root, { ...options, emit_mode: "system" });
-	const usr = build(root, { ...options, emit_mode: "user" });
+	const usr = build(root, {
+		...options,
+		emit_mode: "user",
+		// The registry must be defined exactly once across the linked TUs.
+		// Phase R: the System library may hold no classes, so the user TU can
+		// no longer assume the system object carries the definition.
+		system_defines_weak_runtime: !!sys.weak_runtime_defined,
+	});
 	// Companions (aarch64_use_c raw C / pool infra) may originate on either
 	// side; concatenate so the linked binary sees both.
 	const companions = [sys.companion, usr.companion].filter(Boolean) as string[];

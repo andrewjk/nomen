@@ -25,4 +25,12 @@ export default interface BuildResult {
 	 * none matching the target architecture).
 	 */
 	errors?: { message: string; start: number; line: number; column: number }[];
+	/**
+	 * Whether this build's TU emitted the WeakHandle registry definition
+	 * (external linkage). `build_split` reads it off the system TU and hands
+	 * it to the user TU, whose class destroys must not define the registry a
+	 * second time — and, Phase R: the System library may hold no classes at
+	 * all, so the user TU cannot assume the system object carries it.
+	 */
+	weak_runtime_defined?: boolean;
 }

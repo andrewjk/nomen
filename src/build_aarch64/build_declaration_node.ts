@@ -2608,11 +2608,25 @@ export default function build_declaration_node(
 			const nullable_struct = is_nullable_struct_type(node.type, status);
 			const struct_size = get_struct_size(resolved_struct_name, status);
 			const total_size = nullable_struct ? struct_size + 8 : struct_size;
-			if (status.function_return_label) {
+			if (status.function_return_label && !node.is_module_init) {
 				const offset = allocate_stack_space(status, total_size);
 				status.stack_offsets!.set(node.name, offset);
 				if (nullable_struct) {
 					status.stack_offsets!.set(has_flag_name(node.name), offset + struct_size);
+				}
+			} else if (node.is_module_init) {
+				// STRUCT_PLAN_3 Phase R tranche 3: an owning-struct GLOBAL's
+				// prologue runs in main, but its storage is a module-scope
+				// data symbol — the same shape as the class arm above
+				// (BUGS.md #5): every other function loads it via the `adr`
+				// symbol fallback, and a main frame slot left those
+				// references undefined at link time. Storage follows the
+				// declaration's scope, not the prologue's build context.
+				emit_data(status, ".data\n");
+				emit_data(status, `.p2align 3\n${node.name}: .space ${total_size}\n`);
+				emit_data(status, ".text\n");
+				if (nullable_struct) {
+					status.stack_offsets!.set(has_flag_name(node.name), -1);
 				}
 			} else {
 				emit_data(status, `${node.name}: .space ${total_size}\n`);

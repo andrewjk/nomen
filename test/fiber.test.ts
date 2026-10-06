@@ -25,12 +25,17 @@ func step = (Channel ch, uint64 id) {
 pub func main = () {
 	Fiber.set_cooperative(true)
 	var Channel ch = Channel()
-	var f1 = Fiber(step(ch, 1)).start()
-	var f2 = Fiber(step(ch, 2)).start()
-	// Cooperative mode defers execution to a would-block wait: joining f1
-	// drains the shared queue, interleaving both fibers deterministically.
-	var uint64 r1 = f1.result_uint64()
-	var uint64 r2 = f2.result_uint64()
+	async {
+		var f1 = Fiber(step(ch, 1)).start()
+		var f2 = Fiber(step(ch, 2)).start()
+		// Cooperative mode defers execution to a would-block wait: joining
+		// f1 drains the shared queue, interleaving both fibers
+		// deterministically. The block joins both fibers; ch crosses as a
+		// checked region borrow (Phase R tranche 3: Channel is an owning
+		// struct — the join bounds the borrow).
+		var uint64 r1 = f1.result_uint64()
+		var uint64 r2 = f2.result_uint64()
+	}
 	var string order = ""
 	var uint64 i = 0
 	while i < 4 {
@@ -48,10 +53,11 @@ pub func main = () {
 		// The fiber calls result_uint64() on a Thread task: instead of
 		// blocking its worker, the fiber parks on the future; when the thread
 		// task completes, the fiber is scheduled again and finishes.
-		// Phase R tranche 2: Task is an owning struct, and this spawn is
-		// outside any `async` block — the handle MOVES into the fiber (the
-		// join-less borrow the nursery would bound doesn't exist here; the
-		// fiber owns the handle and destroys it when done).
+		// Phase R tranche 2: Task is an owning struct — the handle MOVES into
+		// the fiber (the fiber owns the handle and destroys it when done).
+		// Phase R tranche 3: Channel is an owning struct too, and this spawn
+		// shares it — the nursery is the region proof: the block borrows ch
+		// (the join bounds it) and does the receive inside.
 		const input = `
 import System
 
@@ -64,14 +70,16 @@ func waiter = (Channel ch, move Task<uint64> handle) {
 
 pub func main = () {
 	var Channel ch = Channel()
-	var t = Thread(compute(41)).start()
-	var f = Fiber(waiter(ch, move t)).start()
-	// The fiber parks on the Thread task's result, wakes when it completes,
-	// and sends it through the channel.
-	var uint64 got = ch.receive()
-	f.wait()
-	if got == 42 {
-		Console.write_line("park ok")
+	async {
+		var t = Thread(compute(41)).start()
+		var f = Fiber(waiter(ch, move t)).start()
+		// The fiber parks on the Thread task's result, wakes when it
+		// completes, and sends it through the channel.
+		var uint64 got = ch.receive()
+		f.wait()
+		if got == 42 {
+			Console.write_line("park ok")
+		}
 	}
 }
 `;
@@ -89,15 +97,17 @@ func probe = (Channel ch) {
 pub func main = () {
 	Fiber.set_cooperative(true)
 	var Channel ch = Channel()
-	var f = Fiber(probe(ch)).start()
-	var uint64 r = f.result_uint64()
-	if Fiber.is_fiber() {
-		Console.write_line("main is fiber")
-	} else {
-		Console.write_line("main not fiber")
-	}
-	if ch.receive() == 1 {
-		Console.write_line("fiber is fiber")
+	async {
+		var f = Fiber(probe(ch)).start()
+		var uint64 r = f.result_uint64()
+		if Fiber.is_fiber() {
+			Console.write_line("main is fiber")
+		} else {
+			Console.write_line("main not fiber")
+		}
+		if ch.receive() == 1 {
+			Console.write_line("fiber is fiber")
+		}
 	}
 }
 `;
@@ -120,11 +130,13 @@ pub func main = () {
 	Fiber.set_cooperative(true)
 	var Channel ch = Channel()
 	var uint64[2048] stack_buf
-	var f = Fiber(work(ch, 21)).start_on(stack_buf)
-	var uint64 r = f.result_uint64()
-	var uint64 v = ch.receive()
-	if v == 42 {
-		Console.write_line("static stack ok")
+	async {
+		var f = Fiber(work(ch, 21)).start_on(stack_buf)
+		var uint64 r = f.result_uint64()
+		var uint64 v = ch.receive()
+		if v == 42 {
+			Console.write_line("static stack ok")
+		}
 	}
 }
 `;
@@ -184,24 +196,34 @@ func leaf = (Channel ch, uint64 n, out uint64) {
 }
 
 func branch = (Channel ch) {
-	var c1 = Fiber(leaf(ch, 1)).start()
-	var c2 = Fiber(leaf(ch, 2)).start()
-	Fiber.yield()
-	const uint64 a = c1.result_uint64()
-	const uint64 b = c2.result_uint64()
-	ch.send(a + b)
+	// The nested spawns borrow ch — itself a region borrow from main's
+	// nursery — so branch's body gets its own block: the join bounds the
+	// nested fibers before branch's frame (and ch's region) ends.
+	async {
+		var c1 = Fiber(leaf(ch, 1)).start()
+		var c2 = Fiber(leaf(ch, 2)).start()
+		Fiber.yield()
+		const uint64 a = c1.result_uint64()
+		const uint64 b = c2.result_uint64()
+		ch.send(a + b)
+	}
 }
 
 pub func main = () {
 	Fiber.set_cooperative(true)
 	var Channel ch = Channel()
-	var f = Fiber(branch(ch)).start()
-	var uint64 r = f.result_uint64()
-	var uint64 v1 = ch.receive()
-	var uint64 v2 = ch.receive()
-	var uint64 sum = ch.receive()
-	if v1 == 1 && v2 == 2 && sum == 3 {
-		Console.write_line("nested ok")
+	async {
+		// ch crosses both spawns as a checked region borrow; the nested
+		// fibers' region is bounded by this block's join (a borrowed capture
+		// inside a spawned call is join-bounded through the same root rule).
+		var f = Fiber(branch(ch)).start()
+		var uint64 r = f.result_uint64()
+		var uint64 v1 = ch.receive()
+		var uint64 v2 = ch.receive()
+		var uint64 sum = ch.receive()
+		if v1 == 1 && v2 == 2 && sum == 3 {
+			Console.write_line("nested ok")
+		}
 	}
 }
 `;

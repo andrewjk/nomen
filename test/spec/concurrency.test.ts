@@ -511,10 +511,12 @@ func step = (Channel ch, uint64 id) {
 
 pub func main = () {
 	var Channel ch = Channel()
-	var a = Fiber(step(ch, 1)).start()
-	var b = Fiber(step(ch, 2)).start()
-	a.wait()
-	b.wait()
+	async {
+		var a = Fiber(step(ch, 1)).start()
+		var b = Fiber(step(ch, 2)).start()
+		a.wait()
+		b.wait()
+	}
 	Fiber.yield()
 	if Fiber.is_fiber() {
 		Console.write_line("in a fiber")

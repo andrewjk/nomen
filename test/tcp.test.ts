@@ -14,9 +14,11 @@ describe("Tcp", () => {
 		const input = `
 import System
 
-func serve_one = (Tcp listener) {
-	ref Tcp server = listener        // params are read-only; accept() mutates
-	var Tcp conn = server.accept()     // parks until the client connects
+func serve_one = (ref Tcp listener) {
+	// Phase R tranche 3: Tcp is an owning struct — the listener crosses as a
+	// ref region borrow (the fiber mutates it through the address; the
+	// join bounds the borrow).
+	var Tcp conn = listener.accept()     // parks until the client connects
 	if conn.fd < 0 {
 		return
 	}
@@ -32,7 +34,7 @@ pub func main = () {
 		return
 	}
 	async {
-		var handler = Fiber(serve_one(server)).start()
+		var handler = Fiber(serve_one(ref server)).start()
 		var Tcp client = Tcp.connect("127.0.0.1", 18081)
 		if client.fd < 0 {
 			Console.write_line("connect failed")
@@ -82,11 +84,13 @@ func echo_one = (int handle) {
 	conn.close()
 }
 
-func server_loop = (Tcp server, int n) {
-	ref Tcp listener = server
+func server_loop = (ref Tcp server, int n) {
+	// Phase R tranche 3: the listener crosses as a ref region borrow (the
+	// class-era alias binding is gone — an owning struct's alias is spelled
+	// ref at the boundary, and the join bounds it).
 	var int i = 0
 	while i < n {
-		var Tcp conn = listener.accept()
+		var Tcp conn = server.accept()
 		if conn.fd < 0 {
 			return
 		}
@@ -124,7 +128,7 @@ pub func main = () {
 		return
 	}
 	async {
-		Fiber(server_loop(listener, n)).start()
+		Fiber(server_loop(ref listener, n)).start()
 		var int i = 0
 		while i < n {
 			Fiber(client(i, done)).start()

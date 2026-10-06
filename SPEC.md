@@ -2616,8 +2616,13 @@ async {
 }
 ```
 
-`Mutex` is a class with `#destroy` that releases the pthread resource
-automatically at scope exit.
+`Mutex` is an **owning struct** (STRUCT_PLAN_3 Phase R — the shape menu):
+its single field is an opaque handle, the value moves, and `#destroy`
+releases the pthread resource automatically at scope exit. Sharing one
+across tasks rides the checked region borrows — the example above passes
+`mu` bare inside the `async` block (the join bounds the borrow), and
+`lock`/`unlock` mutate the kernel object the handle names, never the
+binding.
 
 ### Channel
 
@@ -2641,6 +2646,14 @@ async {
 
 var v = ch.receive()   // blocks until ready
 ```
+
+`Channel` is an **owning struct** (STRUCT_PLAN_3 Phase R — the shape menu):
+every field is an opaque handle/counter word, the value moves, and
+`#destroy` drains the queue and releases the mutex/condvar. Sharing one
+across tasks rides the checked region borrows — the example passes `ch` bare
+inside the `async` block (the join bounds the borrow; an app-lifetime
+channel is a global). A transfer (`move ch`) hands the whole queue to the
+receiver.
 
 `Channel` stores `uint64` values (Nomen values are pointer-sized on every
 target we care about). Fat strings ride through `send_string` /
@@ -2714,9 +2727,10 @@ must be marked `: Sendable`. Everything else crossing the boundary is exempt:
   reference: the env aliases the donor (see the lifetime rules below).
 
 There is no borrow exception for a NON-Sendable class/trait: it cannot cross
-into a task even inside a nursery — mark it `Sendable`, move it in, or share
-it through a `Sendable` primitive (`Mutex`, `Channel`). The same rules gate a
-lambda's captures (every capture is an eager argument).
+into a task even inside a nursery — mark it `Sendable`, move it in, or
+mediate the share through `Mutex` / `Channel` (owning structs whose
+handle-based operations are the sanctioned cross-task shape) or `Atomic<T>`.
+The same rules gate a lambda's captures (every capture is an eager argument).
 
 Two lifetime rules apply on top of `Sendable` (which gates aliasability, not
 how long the alias stays valid):
@@ -2733,7 +2747,10 @@ how long the alias stays valid):
 - **Outside a nursery, an owning value struct cannot cross bare.** There is
   no join to bound a borrow, and the env cannot deep-copy owning state
   soundly, so the bare-owning shape is a compile error — spawn inside an
-  `async` block (a borrowed read), or move it in.
+  `async` block (a borrowed read), or move it in. Exemption: a
+  process-lifetime GLOBAL donor is its own region proof (nothing can dangle
+  because nothing ever ends) — the app-lifetime `Channel`/`Mutex` share
+  rides it.
 - **The freeze: a borrowed root is const until the block exits.** From the
   construction to the `async` block's closing brace, the donor cannot be
   written, moved out, mutable-passed, or mutated through a `ref self`
@@ -2927,16 +2944,22 @@ func step = (Channel ch, uint64 id) {
 
 pub func main = () {
     var Channel ch = Channel()
-    var a = Fiber(step(ch, 1)).start()
-    var b = Fiber(step(ch, 2)).start()
-    a.wait()
-    b.wait()
+    async {
+        var a = Fiber(step(ch, 1)).start()
+        var b = Fiber(step(ch, 2)).start()
+        a.wait()
+        b.wait()
+    }
     Fiber.yield()                       // no-op on the main thread
     if Fiber.is_fiber() {
         Console.write_line("in a fiber")
     }
 }
 ```
+
+The spawns ride the `async` nursery: `ch` crosses as a checked region
+borrow (the join at the closing brace bounds it), and the block joins
+both fibers before `main` continues.
 
 `start_on(buf)` takes a caller-provided fixed-size array stack (at least
 16 KB — the size/fixed-array shape is validated at compile time) intended for

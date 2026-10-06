@@ -19,10 +19,22 @@
 // Default stance in Nomen is "no shared mutable state" — channels are the
 // preferred way for tasks to communicate. See ASYNC.md.
 
+// Channel is an OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 3 — the shape
+// menu): every field is an opaque handle/counter word, so the value is
+// movable and its `#destroy` closes what the handles name. Sharing one
+// across tasks rides the checked region borrows (`async { }` — the join
+// bounds the borrow) or a transfer (`move ch` — the receiver owns the
+// queue). The send/receive methods take the receiver bare (struct receivers
+// travel by address), so queue mutations land in the one shared instance,
+// never in a copy.
+//
+// Default stance in Nomen is "no shared mutable state" — channels are the
+// preferred way for tasks to communicate. See ASYNC.md.
+
 /**
  * A thread-safe, blocking FIFO queue for passing values between tasks
  **/
-pub class Channel: Sendable {
+pub owning struct Channel {
 	pub var uint64 mu = 0
 	pub var uint64 not_empty_cv = 0
 	pub var uint64 head = 0
@@ -44,13 +56,17 @@ pub class Channel: Sendable {
 		```
 		```
 		#arch: c
-		self->mu = (unsigned long long)malloc(sizeof(pthread_mutex_t));
-		self->not_empty_cv = (unsigned long long)malloc(sizeof(pthread_cond_t));
-		pthread_mutex_init((pthread_mutex_t *)self->mu, NULL);
-		pthread_cond_init((pthread_cond_t *)self->not_empty_cv, NULL);
-		self->head = 0;
-		self->tail = 0;
-		self->waiters = 0;
+		// The constructor's `self` is the INLINE instance (a local value in
+		// the C lowering — methods take the pointer form, the ctor does not),
+		// so this body uses the `.` accessor; the aarch64 body writes through
+		// x19 = &instance as always.
+		self.mu = (unsigned long long)malloc(sizeof(pthread_mutex_t));
+		self.not_empty_cv = (unsigned long long)malloc(sizeof(pthread_cond_t));
+		pthread_mutex_init((pthread_mutex_t *)self.mu, NULL);
+		pthread_cond_init((pthread_cond_t *)self.not_empty_cv, NULL);
+		self.head = 0;
+		self.tail = 0;
+		self.waiters = 0;
 		```
 		```
 		#arch: aarch64

@@ -110,6 +110,17 @@ export function ensure_weak_runtime(status: BuildStatus): void {
 		if (mode === "system") {
 			status.headers += WEAK_DECLARATIONS;
 			status.c_runtime_defs = (status.c_runtime_defs ?? "") + globalize_runtime(WEAK_HEADER);
+			return;
+		}
+		// User TU. The prototypes must exist (a user class's destroy calls
+		// `__nomen_weak_invalidate`), and the DEFINITION must exist exactly
+		// once across the linked TUs. The system TU used to be the only
+		// definer (its own class destroys pulled the registry in), but Phase
+		// R removes the System library's classes — `build_split` threads
+		// `system_defines_weak_runtime` from the system build, and the user
+		// TU defines the registry itself when the system object doesn't.
+		if (!status.system_defines_weak_runtime) {
+			status.headers += WEAK_HEADER;
 		}
 		return;
 	}

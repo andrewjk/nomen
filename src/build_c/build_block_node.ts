@@ -107,12 +107,32 @@ export default function build_block_node(
 				// tag, completed by the typedef below); the spliced prologue
 				// emission becomes the initializer assignment
 				// (build_declaration_node's is_module_init arm).
+				//
+				// STRUCT_PLAN_3 Phase R tranche 3: an OWNING-STRUCT global takes
+				// the same shape as an inline VALUE — `struct Channel sink;` at
+				// file scope (a tentative definition, zeroed), the prologue
+				// assignment runs the constructor through `&sink`, and teardown
+				// rides the value-struct destroy arm (no free).
 				const cls =
 					decl.type?.name && !decl.type.is_array && !decl.type.is_view
 						? status.structs.find((s) => s.name === decl.type.name && s.is_class)
 						: undefined;
+				const owning_global =
+					!cls &&
+					decl.type?.name &&
+					!decl.type.is_array &&
+					!decl.type.is_view &&
+					!decl.type.is_nullable &&
+					!decl.type.type_args?.length
+						? status.structs.find(
+								(s) => s.name === decl.type.name && !s.is_class && !s.is_simple_type,
+							)
+						: undefined;
 				if (cls && !decl.type.type_args?.length) {
 					status.headers += `struct ${cls.name} *${decl.name} = (void *)0;\n`;
+					decl.is_module_init = true;
+				} else if (owning_global) {
+					status.headers += `struct ${owning_global.name} ${decl.name};\n`;
 					decl.is_module_init = true;
 				}
 				module_init_statements.push(child);

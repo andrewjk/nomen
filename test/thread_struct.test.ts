@@ -67,8 +67,9 @@ func bump = (Channel report) {
 	report.send(1)
 }
 
+var Channel report = Channel() // app-lifetime: the daemon reports on it
+
 pub func main = () {
-	var Channel report = Channel()
 	var d = Thread(bump(report))
 	d.detach()
 	var uint64 up = report.receive() // the daemon is up
@@ -77,6 +78,11 @@ pub func main = () {
 	}
 }
 `;
+		// Phase R tranche 3: Channel is an owning struct — a daemon has no
+		// join to bound a borrow, so the app-lifetime channel is a GLOBAL
+		// (process lifetime is its own region proof; the same exemption the
+		// detach rule takes). The construction is stored, then detached —
+		// the daemon capture rule does not flow-track stored constructions.
 		// Audit off, mirroring daemon.test.ts: a daemon killed or still
 		// running at process exit leaks its task closure by construction —
 		// the detached runner disposes it, but the audit check at main exit

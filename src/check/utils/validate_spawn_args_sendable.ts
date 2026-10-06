@@ -85,7 +85,17 @@ export default function validate_spawn_args_sendable(
 		// region-checked borrow. `Sendable` does not apply to it — the env
 		// aliases the donor's storage and the root rule + freeze bound it.
 		if (is_owning_spawn_arg(arg_type, status)) {
-			if (!inside_nursery) {
+			// A PROCESS-LIFETIME GLOBAL donor is its own region proof — the
+			// same exemption the detach rule takes (enforce_detach_owns_
+			// captures): nothing can dangle because nothing ever ends. The
+			// app-lifetime Channel/Mutex share (the daemon handshake, a
+			// worker pool's lock) rides this — the env packs the pointer
+			// (a borrow, no copy, no destroy) and the global stays live.
+			const bare_root = spawn_arg_root_name(param);
+			const bare_decl =
+				bare_root !== undefined ? status.values.findLast((v) => v.name === bare_root) : undefined;
+			const global_donor = !!bare_decl?.is_global;
+			if (!inside_nursery && !global_donor) {
 				// Outside a nursery there is no join to bound a borrow, and an
 				// env deep-copy is unsound for owning structs (the pack copies
 				// string fields only — a container field would share its
@@ -104,7 +114,7 @@ export default function validate_spawn_args_sendable(
 			}
 			if (!call.region_borrowed_args) call.region_borrowed_args = [];
 			if (!call.region_borrowed_args.includes(i)) call.region_borrowed_args.push(i);
-			enforce_spawn_arg_region(param, arg_type, status);
+			if (inside_nursery) enforce_spawn_arg_region(param, arg_type, status);
 			continue;
 		}
 		// R1: a `view`-typed argument is a borrow of its source — region-
@@ -125,7 +135,7 @@ export default function validate_spawn_args_sendable(
 			status,
 			`Spawn argument of type ${arg_type.name || "<unknown>"} is not Sendable${
 				reason ??
-				" — a shared class/trait reference crossing a task boundary must be marked Sendable; move it in (a `move` parameter) or share it through a Sendable primitive (Mutex/Channel)"
+				" — a shared class/trait reference crossing a task boundary must be marked Sendable; move it in (a `move` parameter), share it as a checked region borrow inside an 'async' block, or mediate it through Mutex/Channel/Atomic<T>"
 			}`,
 			param.start,
 		);

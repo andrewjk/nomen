@@ -48,6 +48,14 @@ export default interface BuildStatus {
 	 */
 	emit_mode?: "all" | "system" | "user";
 	/**
+	 * User-TU builds only (set by build_split): whether the system TU emitted
+	 * the WeakHandle registry definition. When false, the user TU's class
+	 * destroys must define the registry themselves — the System library may
+	 * hold no classes at all (STRUCT_PLAN_3 Phase R), so the declaration can
+	 * no longer rely on a system-side class destroy pulling it in.
+	 */
+	system_defines_weak_runtime?: boolean;
+	/**
 	 * When set (user-TU builds), struct names that are defined in the
 	 * precompiled system.o. `is_system_definition` uses this to decide which
 	 * structs the user TU must emit itself (anything NOT in this set) vs.
