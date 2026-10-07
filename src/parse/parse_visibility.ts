@@ -7,6 +7,7 @@ import parse_function from "./parse_function.ts";
 import parse_struct from "./parse_struct.ts";
 import parse_trait from "./parse_trait.ts";
 import type ParseStatus from "./ParseStatus.ts";
+import class_retired_error from "./utils/class_retired_error.ts";
 import consume from "./utils/consume.ts";
 import get_index from "./utils/get_index.ts";
 import peek_current from "./utils/peek_current.ts";
@@ -62,7 +63,12 @@ export default function parse_visibility(
 			break;
 		}
 		case "class": {
-			parse_struct(visibility, status, true);
+			// STRUCT_PLAN_3 Phase R: `class` has retired — one clear
+			// error, then the declaration continues as an `owning
+			// struct` (no cascade).
+			consume(status); // the visibility — parse_struct takes it as a param
+			class_retired_error(status);
+			parse_struct(visibility, status, false, true);
 			break;
 		}
 		case "extend": {
@@ -193,7 +199,7 @@ export default function parse_visibility(
 		default: {
 			add_error(
 				status,
-				`Visibility can only be set for const, var, move, readonly, class, struct, trait or func`,
+				`Visibility can only be set for const, var, move, readonly, struct, trait or func`,
 				get_index(status),
 			);
 			consume(status);

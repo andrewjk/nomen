@@ -118,7 +118,7 @@ Console.write("\\{h1.content.value}")
 			);
 		});
 
-		test("cannot assign class field from another owner", () => {
+		test("cannot assign owning field from another owner", () => {
 			const input = `
 owning struct Box {
 	var int value

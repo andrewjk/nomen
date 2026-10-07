@@ -4,16 +4,20 @@ import { parse_optional_trait_args } from "./parse_struct.ts";
 import type ParseStatus from "./ParseStatus.ts";
 import accept from "./utils/accept.ts";
 import add_to_parent from "./utils/add_to_parent.ts";
+import class_retired_error from "./utils/class_retired_error.ts";
 import consume from "./utils/consume.ts";
 import expect from "./utils/expect.ts";
 import get_index from "./utils/get_index.ts";
+import peek_current from "./utils/peek_current.ts";
 
 /**
- * Parse `extend struct Name { ... }` or `extend class Name { ... }`.
+ * Parse `extend struct Name { ... }`.
  *
  * The body holds method declarations only (parsed by `parse_statement`); the
- * check phase merges them into the named struct/class. `extend class` is
- * required for classes, `extend struct` for structs — the two cannot mix.
+ * check phase merges them into the named struct. `extend class` is retired
+ * (STRUCT_PLAN_3 Phase R): it emits the one retirement error and continues
+ * as a struct extend, since the declaration it names parses as an owning
+ * struct too.
  *
  * An optional `: Trait1, Trait2` list after the name makes the target
  * conform to the listed traits out of line (Rust-style `impl Trait for
@@ -30,13 +34,18 @@ export default function parse_extend(
 	accept(visibility, status);
 	accept("extend", status);
 
-	const is_class = accept("class", status);
-	if (!is_class) {
+	if (peek_current(status) === "class") {
+		// STRUCT_PLAN_3 Phase R: `class` has retired — one clear error,
+		// then the extend continues as a struct extend (the declaration
+		// it names parses as an owning struct, so the check's target
+		// match holds).
+		class_retired_error(status);
+	} else {
 		expect("struct", status);
 	}
 
 	const name = consume(status);
-	const node = new ExtendNode(start, visibility, name, is_class);
+	const node = new ExtendNode(start, visibility, name);
 
 	if (accept(":", status)) {
 		// Mirror parse_struct's conformance list: each entry is a trait name

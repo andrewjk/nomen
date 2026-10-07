@@ -1,6 +1,6 @@
 import System
 
-class Thing {
+owning struct Thing {
 	var int value
 }
 

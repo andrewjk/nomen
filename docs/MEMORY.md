@@ -73,53 +73,102 @@ Nested struct fields with destroy functions are also cleaned up recursively.
 `WeakHandle<T>` (STRUCT_PLAN_3 N3) is the sanctioned back-pointer / OS-retained
 shape: a handle into one process-wide (pointer, generation) slot table with a
 free list, mutex-guarded (handles are consulted from workers). `WeakHandle<T>
-(obj)` registers the instance (T must be a class, owned elsewhere — a fresh
-temporary is rejected); the tracked type's `#destroy` invalidates every slot
-holding the pointer (generation bump — a recycled slot never resets its
-generation, so a stale handle can never alias a new object); `.get()` returns
-the live pointer or `null`. A handle owns nothing — move-safe by construction
-— and binds once, at its declaration. Runtime emission is one shared blob
-(the C backend's system TU defines it with external linkage in split builds;
-the aarch64 user companion always carries its copy).
+(obj)` registers the instance (T must be a heap-resident instance — a `Box<T>`
+— owned elsewhere; a fresh temporary or an inline local is rejected); the
+tracked type's `#destroy` invalidates every slot holding the pointer
+(generation bump — a recycled slot never resets its generation, so a stale
+handle can never alias a new object); `.get()` returns the live pointer or
+`null`. A handle owns nothing — move-safe by construction — and binds once, at
+its declaration. Runtime emission is one shared blob (the C backend's system TU
+defines it with external linkage in split builds; the aarch64 user companion
+always carries its copy).
 
-### Classes (Reference Types)
+### Owning Structs (Move-Only Instances)
 
-Classes are always heap-allocated and passed by pointer. Binding a class variable to another creates a shared reference — both variables point to the same instance — and the alias must be spelled with `ref` (a plain `var Box q = p` copy is a compile error: "use 'ref' to share it, 'move' to transfer it, or '.copy()' for a deep copy").
+An `owning struct` is single-owner and move-only: it owns its heap resources
+(strings, containers, `Box<T>` slots), bindings move instead of copy, and
+storage stays inline. The declaration is the ownership contract — the checker
+verifies it (a bare `struct` with an owning field is rejected: "mark the
+struct `owning struct`, or remove the field").
 
 ```
-class Box {
+owning struct Token {
     var int value
 }
 
-var Box p = Box(10)
-ref Box q = p          // shared reference — p and q point to the same instance
+var Token p = Token(10)
+move Token q = p       // transfer — p is invalidated
+// p.value             // error: 'p' used after move
+```
+
+A plain binding copy of an owning value is a compile error: "use 'ref' to
+share it, 'move' to transfer it, or '.copy()' for a deep copy".
+
+#### `Box<T>` — the owned heap slot
+
+`Box<T>` is an owning struct with one pointer field: a heap-allocated `T` the
+box owns. Boxing is forced where a value must outlive a move or break an
+inline containment cycle — the compiler names the field that closes the
+cycle. `Box<T>?` is a null pointer — the natural null slot.
+
+```
+owning struct Node {
+    var int value
+    var Box<Node>? next     // the cycle breaker
+}
+```
+
+#### Spelled aliases with `ref`
+
+Binding a variable to an existing heap-resident instance must say what it is
+doing. `ref` is the spelled alias — both bindings name the same instance,
+and mutation through the alias is visible (it is spelled now):
+
+```
+owning struct Token {
+    var int value
+}
+
+var Token p = Token(10)
+var Box<Token> b = Box<Token>(move p)
+ref Box<Token> q = b     // alias — b and q point at the same instance
 q.value = 99
-// p.value is now also 99
+// b.value is now also 99
 ```
 
 `ref` binding rules (STRUCT_PLAN_3 Phase A):
 
-- A `ref` alias is not reassignable (`q = Box(3)` is an error — reassign the owner).
-- Mutation through a `ref` (`q.value = 99`) requires the source to be `var`.
-- Ownership never transfers through a `ref` (`move r = move q` is an error — move the owner); `move Box r = p` is the spelled transfer and invalidates `p`.
-- `ref` requires a reference type (class) and an existing binding to alias — `ref Box q = Box(1)` (a fresh instance) is an error.
+- A `ref` alias is not reassignable (`q = ...` is an error — reassign the owner).
+- Mutation through a `ref` requires the source to be `var`.
+- Ownership never transfers through a `ref` (`move r = move q` is an error —
+  move the owner); `move Box<Token> r = b` is the spelled transfer and
+  invalidates `b`.
+- `ref` requires a reference-shaped (pointer-backed) value and an existing
+  binding to alias — `ref Box<Token> q = Box<Token>(...)` (a fresh instance)
+  is an error, and a bare inline owning local takes `view`, not `ref`.
 
 #### Automatic Deallocation
 
-Each class instance is freed exactly once, when the owning reference goes out of scope:
+Each owning instance is destroyed exactly once, when its owner goes out of
+scope:
 
-- **Declaration**: `var Box b = Box(42)` allocates and tracks the instance
-- **Scope exit**: the instance is freed when the scope where it was anchored ends
-- **Reassignment**: `b = Box(99)` frees the old instance before storing the new pointer
-- **Return**: returning a class transfers ownership to the caller — the function does not free it
-- **Aliases**: a `ref` alias owns nothing — scope exit never frees or destroys through it (the owner's slot reclaims the instance once)
+- **Declaration**: `var Token t = Token(42)` stores the instance inline; a
+  `Box<Token>` allocates the pointee and tracks the box
+- **Scope exit**: `#destroy` runs and heap resources are freed when the
+  owner's scope ends (a box destroys its pointee, then frees it)
+- **Reassignment**: the displaced value is destroyed/freed before the new one
+  is stored
+- **Return**: returning an owning value transfers ownership to the caller
+- **Aliases**: a `ref` alias owns nothing — scope exit never frees or
+  destroys through it (the owner reclaims the instance once)
 
 #### Destroy Functions
 
-Classes can define `#destroy` functions, which run before the instance memory is freed:
+Owning structs can define `#destroy` functions, which run before the
+instance's storage is reclaimed:
 
 ```
-class Counter {
+owning struct Counter {
     var int count
 
     func #destroy = () {
@@ -128,17 +177,23 @@ class Counter {
 }
 
 var Counter c = Counter(5)
-// at scope exit: c.count is set to 0, then the heap allocation is freed
+// at scope exit: c.count is set to 0, then heap resources are freed
 ```
 
 #### Borrowed References
 
-Class values obtained from field access or accessor methods are **borrowed references** — they point to an instance owned elsewhere. The compiler does not free borrowed references at scope exit. This prevents double-frees when retrieving class pointers from containers:
+Owning instances obtained from field access or accessor methods are
+**borrowed references** — they point at an instance owned elsewhere. The
+compiler does not free borrowed references at scope exit. This prevents
+double-frees when retrieving instances from containers:
 
 ```
-var Elephant a = Elephant('A')     // a owns this instance
-list.push(move a)                   // ownership moves into the list; a is invalidated
-var Elephant cur = list.at(0)      // cur is a borrowed reference — NOT freed at scope exit
+owning struct Elephant {
+    var int tag
+}
+var Elephant a = Elephant(65)        // a owns this instance
+list.push(move a)                     // ownership moves into the list; a is invalidated
+var Elephant cur = list.at(0)        // cur is a borrowed reference — NOT freed at scope exit
 // the list owns the instance; it is freed when the list is destroyed
 ```
 
@@ -153,35 +208,32 @@ var Elephant cur = list.at(0)      // cur is a borrowed reference — NOT freed 
 
 The `move` keyword explicitly transfers ownership. It works in three positions:
 
-- **struct field / parameter**: `Holder(move b)` / `func take = (move Box b)` — ownership moves into the field/param; the source is invalidated.
+- **struct field / parameter**: `Holder(move b)` / `func take = (move Box<Token> t)` — ownership moves into the field/param; the source is invalidated.
 - **assignment**: `b = move a` — `a`'s value moves into `b`; `a` is invalidated (and `b`'s old value freed first).
-- **declaration**: `var Box b = move a` — same, on initialization.
+- **declaration**: `move Box<Token> b = move a` — same, on initialization.
 
-On FIELD declarations `move` is meaningful only for CLASS-typed fields: there
-it is the ownership declaration (the container owns and destroys the instance,
-eagerly reclaims displaced assignments, and borrow stores are rejected —
-own-vs-borrow is observable behavior). For VALUE-struct fields the keyword is
-dead weight: ownership of container/owning-typed value-struct fields is
-derived from the TYPE (`mark_owning_auto_init_params` in
-src/check/check_struct_node.ts auto-stamps the synthesized `#init` param), so
-`pub move items = List<string>()` and `pub var items = List<string>()`
-behave identically — prefer plain `var`.
+On FIELD declarations `move` is dead weight: ownership follows the field's
+TYPE. An owning-typed field is a move-only slot — transfer-on-store, no
+copy-out, swap extraction, displaced stores reclaimed, borrow stores rejected
+— and `mark_owning_auto_init_params` in src/check/check_struct_node.ts
+auto-stamps the synthesized `#init` param, so `move items = List<string>()`
+and `var items = List<string>()` behave identically — prefer plain `var`.
 
 A moved variable may not be used again until it is reassigned (which revalidates it):
 
 ```
-class Box { var int value }
-var Box a = Box(42)
-var Box b = move a      // ownership moves from a to b; a is invalidated
-// a.value             // error: 'a' used after move
-a = Box(7)             // reassignment revalidates a
-a.value = 9            // ok again
+owning struct Token { var int value }
+var Token a = Token(42)
+move Token b = move a    // ownership moves from a to b; a is invalidated
+// a.value              // error: 'a' used after move
+a = Token(7)            // reassignment revalidates a
+a.value = 9             // ok again
 ```
 
-Because structs that own heap resources (containers, `Buffer`/`File`/`ClassBuffer`,
-or any struct with a class field) cannot be byte-copied without a double-free,
-moving is the only way to transfer one between variables — a plain `var List b = a`
-or `b = a` is rejected (`use .copy() or move`).
+Because structs that own heap resources (containers, `Buffer`/`File`, or any
+struct with an owning field) cannot be byte-copied without a double-free,
+moving is the only way to transfer one between variables — a plain
+`var List b = a` or `b = a` is rejected (`use .copy() or move`).
 
 **Moving a field out requires a swap.** A field cannot be left moved-out, so
 extracting an owning field revalidates it with a replacement:
@@ -195,7 +247,7 @@ This is the idiom `Map`/`Set` `rehash` use to retire their old backing buffers.
 
 ### Generic Containers
 
-Generic containers (`List<T>`, `Set<T>`, `Map<K,V>`, `LinkedList<T>`, `Tree<T>`, `Graph<T>`) use **type-erased storage**: all values are stored as 8-byte slots via `Buffer.store_int` / `Buffer.load_int`, regardless of `T`. This works because on aarch64, ints, pointers, and class references are all 8 bytes.
+Generic containers (`List<T>`, `Set<T>`, `Map<K,V>`, `LinkedList<T>`, `Tree<T>`, `Graph<T>`) use **type-erased storage**: all values are stored as 8-byte slots via `Buffer.store_int` / `Buffer.load_int`, regardless of `T`. This works because on aarch64, ints, pointers, and instance references are all 8 bytes.
 
 ```
 pub struct List<T> {
@@ -216,9 +268,9 @@ pub struct List<T> {
 }
 ```
 
-Mutators (`push`/`add`/`add_node`/`set`) take **`move T value`**: ownership of a class instance transfers into the container and the caller's variable is invalidated. This prevents a class from being freed by its original owner while the container still holds the pointer.
+Mutators (`push`/`add`/`add_node`/`set`) take **`move T value`**: ownership of an owning-struct instance transfers into the container and the caller's variable is invalidated. This prevents an instance from being freed by its original owner while the container still holds the pointer.
 
-When `T` is a class type, the stored value is a pointer. Retrieving it (`.at(i)`, `.pop()`, `.first()`) returns a **borrowed reference** — the container holds the pointer, not the caller's variable.
+When `T` is an owning struct, each slot stores a pointer to the instance. Retrieving it (`.at(i)`, `.pop()`, `.first()`) returns a **borrowed reference** — the container holds the pointer, not the caller's variable.
 
 The arena containers (`LinkedList`, `Tree`, `Graph`) store values and child/edge indices in flat `Buffer`s with a single owner, so cleanup is a flat `free` of each buffer — no recursive pointer chasing. Node identifiers are stable `int` indices (`-1` means "none"/"end"); read `count`/`node_count` before `add` to obtain a node's index.
 
@@ -232,30 +284,30 @@ Variables declared inside loop bodies are cleaned up at each iteration. `break` 
 
 ### Summary of Cleanup Timing
 
-| Event                | What happens                                                              |
-| -------------------- | ------------------------------------------------------------------------- |
-| Scope exit           | Strings freed, struct/class destroys called, class instances freed        |
-| Reassignment         | Old value freed (strings and classes) or destroyed (structs with destroy) |
-| `return`             | All locals cleaned up; returned values are "moved" (not freed)            |
-| `break` / `continue` | All intermediate scopes cleaned up before jump                            |
+| Event                | What happens                                                          |
+| -------------------- | --------------------------------------------------------------------- |
+| Scope exit           | Strings freed, struct destroys called, owning instances freed         |
+| Reassignment         | Old value freed (strings and owning instances) or destroyed (structs) |
+| `return`             | All locals cleaned up; returned values are "moved" (not freed)        |
+| `break` / `continue` | All intermediate scopes cleaned up before jump                        |
 
 ---
 
 ## Borrow Lifetimes
 
-Borrowed class references — obtained from a field access (`h.c`), an accessor
-return, or an intermediate variable — are **lifetime-checked at compile
-time**. The default for extracting a class reference is a borrow tied to a
-scope; the compiler tracks a `scope_depth` per variable and rejects any borrow
-that would escape to a shallower (outer) scope:
+Borrowed instance references — obtained from a field access (`h.c`), an
+accessor return, or an intermediate variable — are **lifetime-checked at
+compile time**. The default for extracting a reference to an owning instance
+is a borrow tied to a scope; the compiler tracks a `scope_depth` per variable
+and rejects any borrow that would escape to a shallower (outer) scope:
 
 - `b = h.c` (direct field-access assignment) is rejected — use `move` (with
   swap) to take ownership.
-- `var Box tmp = p.a; stolen = tmp` (smuggling a borrow through an intermediate
-  variable to an outer scope) is rejected.
-- `cur = list.pop()` / `arr.first()` (an instance method returning a class) is
-  a borrow of the receiver, rooted at the receiver's lifetime — it can't be
-  assigned to a variable that outlives the receiver.
+- `var Box<Token> tmp = p.a; stolen = tmp` (smuggling a borrow through an
+  intermediate variable to an outer scope) is rejected.
+- `cur = list.pop()` / `arr.first()` (an instance method returning an owning
+  instance) is a borrow of the receiver, rooted at the receiver's lifetime —
+  it can't be assigned to a variable that outlives the receiver.
 - `return h.c` (returning a borrow rooted at a LOCAL from a function) is
   rejected. A borrow rooted at `self`, however, IS returnable — `return
 self.c` / `return self.items.at_or_panic(i)` re-root the result at the
@@ -263,10 +315,11 @@ self.c` / `return self.items.at_or_panic(i)` re-root the result at the
   returns), which is what makes `state.node(idx)` accessors sound
   (test/borrowed_accessor_return.test.ts).
 
-Constructors and static factories (`Box(1)`, `Array.with(...)`, free functions
-returning fresh allocations) produce owned values and may escape freely. (The
-container accessors sidestep this via type-erased `load_int`, whose result is
-an `int` coerced to `T` at the call site — not a class borrow.)
+Constructors and static factories (`Box<Token>(...)`, `Array.with(...)`, free
+functions returning fresh allocations) produce owned values and may escape
+freely. (The container accessors sidestep this via type-erased `load_int`,
+whose result is an `int` coerced to `T` at the call site — not an instance
+borrow.)
 
 To extract a field/element out of its owner, the user must use `move` (with
 `swap` of a replacement in). In-scope borrows (used within the same scope) are
@@ -282,20 +335,21 @@ valid after the loop.
 
 The borrow-lifetime check is a scope-depth comparison, not full alias/lifetime
 tracking — it doesn't model borrows flowing _through_ data structures. It
-doesn't need to: every route that stores a class reference INTO a longer-lived
-structure hits an ownership boundary with its own rejection, verified by probe
-(all rejected at compile time):
+doesn't need to: every route that stores an instance reference INTO a
+longer-lived structure hits an ownership boundary with its own rejection,
+verified by probe (all rejected at compile time):
 
 - pushing a borrow into a container (`keep.push(temp.at_or_panic(0))`, the
   element rooted at a callee's local) — "Cannot move a borrowed value into
   owning parameter … it would create shared ownership";
 - the same via a field-access borrow (`keep.push(o.inner)`) or into a
   file-scope global container — same rejection;
-- storing a borrow into a class's `move` field (`dst.inner = src.inner`) —
-  "cannot assign class field from another owner, use move with swap";
-- struct fields of class type cannot be declared at all ("struct fields
-  cannot be class types, use a class instead"), so no struct can carry a
-  borrowed pointer.
+- storing a borrow into an owning field (`dst.inner = src.inner`) — "cannot
+  assign owning field 'X' from another owner, use move with swap";
+- an owning-typed field on a bare `struct` is the Copyable-verifier error
+  ("'S' cannot be Copyable — field 'f' owns heap memory --> mark the struct
+  `owning struct S`, or remove the field"), so no struct can carry owned state
+  silently.
 
 The sanctioned escapes transfer ownership and are sound: `move` (with swap)
 out of a field, `move_T`/`pop` out of a container, and `field = owned_local`,
@@ -306,7 +360,7 @@ scope with balanced frees).
 
 These are memory-safety holes that are **not** currently caught at compile time.
 Resolved gaps (borrowed references outliving their owner, owning-struct
-copies, use-after-move, container-stored class leaks) are listed at the end of
+copies, use-after-move, container-stored instance leaks) are listed at the end of
 the section; borrow lifetimes are documented in their own section above.
 
 ### Tagged-union type confusion (not reachable)
@@ -327,11 +381,12 @@ an enum's payload:
 - Direct payload field access outside `match` (`e.code`) also loads by value.
 
 The compiler's borrow machinery (`src/check/utils/borrow.ts`) does not model
-enum payloads — it only tracks class field/method borrows. Nomen is safe here
+enum payloads — it only tracks instance field/method borrows (the class-era
+naming in the implementation). Nomen is safe here
 solely because the front end never lets an interior reference into an enum
 payload come into existence. **If `ref` bindings in `match`, an address-of
 operator, or `ref` enum payload fields are ever added, an enum-aware
-invalidation pass (analogous to `invalidate_borrows_of` for class field
+invalidation pass (analogous to `invalidate_borrows_of` for instance field
 borrows) will be required.**
 
 ### Resolved
@@ -347,9 +402,10 @@ These were previously open gaps and are now enforced at compile time:
   `.copy()`.
 - **Use-after-move** is rejected: a variable moved with `move` may not be read
   again until it is reassigned (which revalidates it) or revalidated by a swap.
-- **Container-stored classes are freed.** When `T` is a class, a container's
-  backing storage is a `ClassBuffer`, whose `#destroy` frees each stored
-  instance — so `move`-into-container no longer leaks.
+- **Container-stored instances are freed.** When `T` is an owning struct, a
+  container's backing storage reclaims each stored instance in its `#destroy`
+  (the `ClassBuffer` routing — the class-era name persists for the
+  pointer-slot tier) — so `move`-into-container no longer leaks.
 
 ---
 
@@ -359,7 +415,7 @@ This section describes how the aarch64 backend implements the memory model. All 
 
 ### Struct Layout
 
-Every struct/class instance has an 8-byte prefix (`VT_SIZE = 8`) reserved for a vtable/type-id slot. Fields are laid out sequentially after this prefix:
+Every struct instance has an 8-byte prefix (`VT_SIZE = 8`) reserved for a vtable/type-id slot. Fields are laid out sequentially after this prefix:
 
 ```
 offset 0:  vtable slot (8 bytes, zeroed by _init)
@@ -368,7 +424,14 @@ offset 8+sizeof(first): second field
 ...
 ```
 
-`get_struct_size` returns `VT_SIZE + sum(field_sizes)`. Classes are always stored as 8-byte pointers (the instance is heap-allocated; the variable holds a pointer to it). `move T` fields holding a class store the 8-byte pointer (and transfer ownership — see Move Semantics). Note: `ref T` struct/class fields are rejected at compile time (`fields cannot be 'ref'`) because a non-owning borrow field could outlive its target — use a value field (copied), a `move` field, or a `view T` field.
+`get_struct_size` returns `VT_SIZE + sum(field_sizes)`. Instances are stored
+inline — an owning-struct local's storage is the stack slot itself. The
+heap-resident forms hold 8-byte pointers instead: a `Box<T>` binding is a
+pointer to the heap pointee, and container slots of owning structs store
+pointers (the class-era runtime tier — the implementation's internal "class"
+naming persists for it). `ref T` struct fields are rejected at compile time
+(`fields cannot be 'ref'`) because a non-owning borrow field could outlive
+its target — use an owning field, `Box<T>`, or a `view T` field.
 
 **`view T` fields** are allowed: a view is a self-contained 16-byte (ptr, len) pair (`nomen_view` in C; two slots on aarch64), so storing one in a struct is a plain value copy — sound to byte-copy (it aliases nothing owned) and nothing is freed at destroy (non-owning). This enables the borrow-into-parent pattern: many small records referencing slices of one long-lived buffer, e.g. `Line { var view string text }` collected into a `List<Line>` over the source document. The checker tracks where an instance's view fields were borrowed from:
 
@@ -377,7 +440,7 @@ offset 8+sizeof(first): second field
 - Copying such a struct (`var Line b = a`) transfers the dependencies — the copy aliases the same sources.
 - Known limitation: a container of view-carrying structs is NOT lifetime-checked against the borrow sources (`lines.push(l)` does not prove `lines` dies before every source). Keep sources alive as long as the container.
 
-Auto-generated `_init` functions use correctly-sized store instructions (`strb` for 1-byte fields like `char`/`bool`, `strh` for 2-byte, `str` for 4-byte, `str` with `x` register for 8-byte) to avoid heap buffer overflows on class instances malloc'd to exact size.
+Auto-generated `_init` functions use correctly-sized store instructions (`strb` for 1-byte fields like `char`/`bool`, `strh` for 2-byte, `str` for 4-byte, `str` with `x` register for 8-byte) to avoid heap buffer overflows on heap instances malloc'd to exact size.
 
 ### Heap Tracking Data Structures
 
@@ -427,20 +490,23 @@ bl _nomen_free_wrap                // free it
 
 **Reassignment**: The old string is freed before storing the new one. The new value is preserved across the free call via push/pop because `_nomen_free_wrap` clobbers caller-saved registers.
 
-### Classes
+### Heap Instances (the class-tier runtime)
 
-Classes use an **anchor slot** system to manage heap deallocation across variable aliasing.
+Heap-resident instances — `Box<T>` pointees, container-stored owning structs —
+use an **anchor slot** system to manage heap deallocation across variable
+aliasing. (The implementation's internal naming for this tier is still
+"class"; the language-level shapes are `Box<T>` and owning-struct slots.)
 
 #### Anchor Slots
 
-Every `malloc` for a class instance stores the pointer in a dedicated 8-byte **anchor slot** on the stack, separate from the variable that references the instance. The anchor slot holds the allocation address and is freed at scope exit.
+Every `malloc` for a heap instance stores the pointer in a dedicated 8-byte **anchor slot** on the stack, separate from the variable that references the instance. The anchor slot holds the allocation address and is freed at scope exit.
 
 ```asm
-mov x0, #<struct_size>          // class size (VT_SIZE + fields)
+mov x0, #<struct_size>          // instance size (VT_SIZE + fields)
 bl _nomen_malloc_wrap             // malloc → x0 = heap pointer
 str x0, [x29, #<anchor>]        // anchor: save pointer for cleanup
 str x0, [x29, #<var>]           // variable: also store for access
-// ... call ClassName_init ...
+// ... call <Struct>_init ...
 ```
 
 Each anchor slot records:
@@ -452,42 +518,42 @@ Each anchor slot records:
 
 At scope exit, anchor slots are freed after all destroy bodies have run:
 
-1. Call `ClassName_destroy` on class instances that have destroy functions (passing the heap pointer)
+1. Call `<Struct>_destroy` on instances that have destroy functions (passing the heap pointer)
 2. Free string arrays and heap strings
 3. Free all anchor slots (skipping those marked as "moved")
 
-#### Class Variable Reassignment
+#### Heap-Instance Variable Reassignment
 
-When reassigning a class variable, the compiler distinguishes between:
+When reassigning a variable that holds a heap instance, the compiler distinguishes between:
 
-- **Constructor calls** (`cur = Box(42)`): always anchor the new allocation
+- **Constructor calls** (`cur = Box<Token>(...)`): always anchor the new allocation
 - **Heap-returning function calls** (`cur = make_box()`): anchor only if `last_result_is_heap` is true
 - **Borrowed references** (`cur = list.value(0)`): never anchor — the reference is owned elsewhere
 
-This distinction prevents double-frees when retrieving class pointers from generic containers. The `last_result_is_heap` flag is set by `heap_returning_functions` membership at the call site.
+This distinction prevents double-frees when retrieving instance pointers from generic containers. The `last_result_is_heap` flag is set by `heap_returning_functions` membership at the call site.
 
-For **constructor reassignment** (`cur = Box(42)`), the old instance's cleanup is **deferred to scope exit** rather than run eagerly: the old anchor slot is disowned (its `var_name` cleared) and tagged with a `destroy_type`, and `defer_anchor_destroy` returns the declaration-frame index it lived in. The replacement is anchored in that same declaration frame (`anchor_heap_pointer` takes the frame index), so it survives nested scopes like loop bodies instead of being freed each iteration. At scope/return/break exit, `free_anchor_slot` runs the type's `#destroy` and field destroys before freeing the instance. This keeps borrows of the old instance's fields valid for the rest of the scope (e.g. `b = cur.field; cur = Box(...)` no longer dangles `b`). Cross-scope borrows are rejected by the borrow-lifetime check (see above).
+For **constructor reassignment** (`cur = Box<Token>(...)`), the old instance's cleanup is **deferred to scope exit** rather than run eagerly: the old anchor slot is disowned (its `var_name` cleared) and tagged with a `destroy_type`, and `defer_anchor_destroy` returns the declaration-frame index it lived in. The replacement is anchored in that same declaration frame (`anchor_heap_pointer` takes the frame index), so it survives nested scopes like loop bodies instead of being freed each iteration. At scope/return/break exit, `free_anchor_slot` runs the type's `#destroy` and field destroys before freeing the instance. This keeps borrows of the old instance's fields valid for the rest of the scope (e.g. `b = cur.field; cur = Box<Token>(...)` no longer dangles `b`). Cross-scope borrows are rejected by the borrow-lifetime check (see above).
 
 Other reassignment paths do not create a fresh anchor and so are unaffected: a heap-returning factory (`cur = mk()`) or a variable copy stores the new pointer into the variable's **existing** anchor slot (freeing the old eagerly), and string reassignment uses `heap_strings` rather than anchor slots. These are covered by `test/reassignment-loop.test.ts`.
 
 #### Borrowed Reference Detection
 
-Class-typed declarations initialized from field accesses (`is_borrowed_class_ref` in `build_declaration_node.ts`) are excluded from `scoped_declarations` and destroy tracking — they are treated as borrowed references, not owned instances.
+Instance-typed declarations initialized from field accesses (`is_borrowed_class_ref` in `build_declaration_node.ts` — the class-era function name persists) are excluded from `scoped_declarations` and destroy tracking — they are treated as borrowed references, not owned instances.
 
 #### Ownership Transfer with `move`
 
-When a class is passed with `move`, the source variable is added to the `moved` set. The `mark_moved_if_struct` function handles this by checking whether the value is a local variable, has an anchor slot, or is a class parameter. Moved variables are skipped at every cleanup point.
+When a heap instance is passed with `move`, the source variable is added to the `moved` set. The `mark_moved_if_struct` function handles this by checking whether the value is a local variable, has an anchor slot, or is a moved parameter. Moved variables are skipped at every cleanup point.
 
-For `move` class parameters, the original pointer value is saved to a stack slot at function entry. At return, each saved slot is compared to the return value — if they differ, the parameter's instance is freed (it was moved in but not returned). If they match, it is kept (ownership transferred to caller via return).
+For `move` instance parameters, the original pointer value is saved to a stack slot at function entry. At return, each saved slot is compared to the return value — if they differ, the parameter's instance is freed (it was moved in but not returned). If they match, it is kept (ownership transferred to caller via return).
 
-#### Returning Classes
+#### Returning Heap Instances
 
-When a class is returned from a function, the return variable is marked as "moved". The return cleanup (`emit_heap_slots_cleanup_for_return`) skips anchor slots for moved variables. The caller detects that the function returns a class type (via `heap_returning_functions`) and anchors the returned pointer in its own scope.
+When a heap instance is returned from a function, the return variable is marked as "moved". The return cleanup (`emit_heap_slots_cleanup_for_return`) skips anchor slots for moved variables. The caller detects that the function returns an instance type (via `heap_returning_functions`) and anchors the returned pointer in its own scope.
 
 A function is added to `heap_returning_functions` when:
 
 - It returns a `string` from a heap-producing expression (interpolation, `to_string`, etc.)
-- It returns a class type (detected in `build_function_node`)
+- It returns an instance type — a `Box<T>` pointee or container-tier owning struct (detected in `build_function_node`)
 
 ### Heap-Returning Function Detection
 
@@ -501,9 +567,9 @@ The `scan_heap_returning_functions` pass pre-scans all function return statement
 
 Variables can be marked as "moved" to exclude them from cleanup. This happens when:
 
-- A class or struct is returned from a function
-- A class is assigned from an inner scope to an outer-scope variable
-- A class is passed with the `move` keyword
+- An owning struct is returned from a function
+- An instance is assigned from an inner scope to an outer-scope variable
+- A value is passed with the `move` keyword
 
 The `moved` set is checked at every cleanup point (scope exit, return, break, continue). Anchor slots with a matching `var_name` are skipped.
 
@@ -532,12 +598,12 @@ At program exit, `nomen_audit_check()` reports any remaining allocations as `LEA
 | `src/build_aarch64/utils/struct_layout.ts`       | `get_struct_size`, `get_type_size`, `get_field_offset`, `emit_struct_copy` — VT_SIZE prefix, typed sizes per field                                                                                          |
 | `src/build_aarch64/utils/audit.ts`               | `emit_malloc`, `emit_free`, `emit_strdup` wrappers                                                                                                                                                          |
 | `src/build_aarch64/utils/scan_heap_returns.ts`   | Pre-scans function returns to detect heap-returning functions                                                                                                                                               |
-| `src/build_aarch64/build_struct_node.ts`         | Struct/class codegen: auto `_init` with typed stores (`emit_typed_store`), `_destroy`, custom `#init`, struct method building                                                                               |
+| `src/build_aarch64/build_struct_node.ts`         | Struct codegen: auto `_init` with typed stores (`emit_typed_store`), `_destroy`, custom `#init`, struct method building                                                                                     |
 | `src/build_aarch64/build_block_node.ts`          | Pushes/pops cleanup frames                                                                                                                                                                                  |
-| `src/build_aarch64/build_declaration_node.ts`    | Class constructor malloc + anchor, string tracking via `check_heap()`, borrowed reference detection (`is_borrowed_class_ref`)                                                                               |
-| `src/build_aarch64/build_assignment_node.ts`     | Class reassignment with conditional anchoring (`last_result_is_heap`), string free-before-store, swap support                                                                                               |
+| `src/build_aarch64/build_declaration_node.ts`    | Heap-instance constructor malloc + anchor, string tracking via `check_heap()`, borrowed reference detection (`is_borrowed_class_ref`)                                                                       |
+| `src/build_aarch64/build_assignment_node.ts`     | Instance reassignment with conditional anchoring (`last_result_is_heap`), string free-before-store, swap support                                                                                            |
 | `src/build_aarch64/build_return_node.ts`         | Return cleanup with move semantics, heap-returning detection                                                                                                                                                |
-| `src/build_aarch64/build_function_node.ts`       | Function prologue/epilogue, callee-saved register allocation, `move` param save slots, class-return detection                                                                                               |
+| `src/build_aarch64/build_function_node.ts`       | Function prologue/epilogue, callee-saved register allocation, `move` param save slots, instance-return detection                                                                                            |
 | `src/build_aarch64/build_break_node.ts`          | Break with scope cleanup                                                                                                                                                                                    |
 | `src/build_aarch64/build_continue_node.ts`       | Continue with scope cleanup                                                                                                                                                                                 |
 | `src/build_aarch64/build_while_loop_node.ts`     | Records `cleanup_depth` for loop                                                                                                                                                                            |
@@ -547,8 +613,8 @@ At program exit, `nomen_audit_check()` reports any remaining allocations as `LEA
 | `test/memory-double-free.test.ts`                | Double-free prevention tests (29 tests)                                                                                                                                                                     |
 | `test/memory-use-after-free.test.ts`             | Use-after-free prevention tests                                                                                                                                                                             |
 | `test/memory-errors.test.ts`                     | Memory error detection tests                                                                                                                                                                                |
-| `test/class.test.ts` / `test/class-move.test.ts` | Class allocation, move semantics, destroy, cross-scope assignment (35 tests combined)                                                                                                                       |
-| `test/containers.test.ts`                        | Generic containers with class pointers (LinkedList, Tree, Graph)                                                                                                                                            |
-| `test/uaf-via-container.test.ts`                 | `move`-into-container ownership transfer; container-stored-class leak limitation                                                                                                                            |
-| `test/reassignment-loop.test.ts`                 | Class/string reassignment inside loops across each codegen path (constructor, factory, ref-param, nested-if)                                                                                                |
+| `test/class.test.ts` / `test/class_move.test.ts` | Instance allocation, move semantics, destroy, cross-scope assignment                                                                                                                                        |
+| `test/containers.test.ts`                        | Generic containers with instance pointers (LinkedList, Tree, Graph)                                                                                                                                         |
+| `test/uaf-via-container.test.ts`                 | `move`-into-container ownership transfer; container-stored-instance leak limitation                                                                                                                         |
+| `test/reassignment-loop.test.ts`                 | Instance/string reassignment inside loops across each codegen path (constructor, factory, ref-param, nested-if)                                                                                             |
 | `test/memory-soundness-gaps.test.ts`             | Borrow-lifetime rejection (field/method/function escapes) + deferred-reclamation regression tests                                                                                                           |

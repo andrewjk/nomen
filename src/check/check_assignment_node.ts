@@ -795,12 +795,14 @@ export default function check_assignment_node(
 		(assign.right_value as AccessNode).access.node_type === "access_field";
 	if (rhs_is_field_access && rhs_type.name) {
 		if (is_class_type(rhs_type.name, status)) {
-			// A class field is a borrowed reference owned by its parent; extracting
-			// it requires move+swap so the parent's slot is revalidated.
+			// An instance-typed field (the class-tier naming persists for the
+			// heap-instance tier — Box pointees) is a borrowed reference owned
+			// by its parent; extracting it requires move+swap so the parent's
+			// slot is revalidated.
 			if (!assign.swap) {
 				add_error(
 					status,
-					`cannot assign class field '${rhs_type.name}' from another owner, use move with swap`,
+					`cannot assign owning field '${rhs_type.name}' from another owner, use move with swap`,
 					assign.right_value.start,
 				);
 			}

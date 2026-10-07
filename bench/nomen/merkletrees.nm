@@ -1,12 +1,12 @@
 import System
 
-class MerkleNode {
+owning struct MerkleNode {
 	var hash = 0
 	var value = 0
 	var has_hash = false
 	var has_value = false
-	move MerkleNode? left = null
-	move MerkleNode? right = null
+	var Box<MerkleNode>? left = null
+	var Box<MerkleNode>? right = null
 }
 
 func make_merkle = (int depth, out MerkleNode) {
@@ -19,12 +19,15 @@ func make_merkle = (int depth, out MerkleNode) {
 	const MerkleNode left = make_merkle(depth - 1)
 	const MerkleNode right = make_merkle(depth - 1)
 	var node = MerkleNode()
-	node.left = left
-	node.right = right
+	node.left = Box<MerkleNode>(move left)
+	node.right = Box<MerkleNode>(move right)
 	return node
 }
 
-func cal_hash = (ref MerkleNode node) {
+func cal_hash = (ref Box<MerkleNode>? node) {
+	if node == null {
+		return
+	}
 	if node.has_hash {
 		return
 	}
@@ -51,7 +54,10 @@ func cal_hash = (ref MerkleNode node) {
 	node.has_hash = true
 }
 
-func check_merkle = (MerkleNode node, out int) {
+func check_merkle = (ref Box<MerkleNode>? node, out int) {
+	if node == null {
+		return 0
+	}
 	if !node.has_hash {
 		return 0
 	}
@@ -61,10 +67,10 @@ func check_merkle = (MerkleNode node, out int) {
 	var left_ok = 1
 	var right_ok = 1
 	if node.left != null {
-		left_ok = check_merkle(node.left)
+		left_ok = check_merkle(ref node.left)
 	}
 	if node.right != null {
-		right_ok = check_merkle(node.right)
+		right_ok = check_merkle(ref node.right)
 	}
 	if left_ok == 1 && right_ok == 1 {
 		return 1
@@ -84,11 +90,13 @@ pub func main = (Init init) {
 	}
 
 	const int stretch_depth = max_depth + 1
-	var MerkleNode stretch_tree = make_merkle(stretch_depth)
+	const MerkleNode stretch_node = make_merkle(stretch_depth)
+	var Box<MerkleNode> stretch_tree = Box<MerkleNode>(move stretch_node)
 	cal_hash(ref stretch_tree)
-	Console.write("stretch tree of depth \{stretch_depth}\t root hash: \{stretch_tree.hash} check: \{check_merkle(stretch_tree)}\n")
+	Console.write("stretch tree of depth \{stretch_depth}\t root hash: \{stretch_tree.hash} check: \{check_merkle(ref stretch_tree)}\n")
 
-	var MerkleNode long_lived_tree = make_merkle(max_depth)
+	const MerkleNode long_lived_node = make_merkle(max_depth)
+	var Box<MerkleNode> long_lived_tree = Box<MerkleNode>(move long_lived_node)
 
 	var int depth = min_depth
 	while depth <= max_depth {
@@ -96,7 +104,8 @@ pub func main = (Init init) {
 		var sum = 0
 		var i = 1
 		while i <= iterations; i += 1 {
-			var MerkleNode tree = make_merkle(depth)
+			const MerkleNode node = make_merkle(depth)
+			var Box<MerkleNode> tree = Box<MerkleNode>(move node)
 			cal_hash(ref tree)
 			sum = sum + tree.hash
 		}
@@ -105,5 +114,5 @@ pub func main = (Init init) {
 	}
 
 	cal_hash(ref long_lived_tree)
-	Console.write("long lived tree of depth \{max_depth}\t root hash: \{long_lived_tree.hash} check: \{check_merkle(long_lived_tree)}\n")
+	Console.write("long lived tree of depth \{max_depth}\t root hash: \{long_lived_tree.hash} check: \{check_merkle(ref long_lived_tree)}\n")
 }

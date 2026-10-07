@@ -149,6 +149,58 @@ Control`, the shape menu's handle form; the raw `#init` bodies use the
     statics, scalar/bool) — the asm ctor's jobs; non-literal defaults in a
     `use_c` ctor are a build error naming the field.
     Remaining before the keyword removal (scoped 2026-10-07):
+  - **The flip itself: LANDED (2026-10-07).** `parse_statement`'s and
+    `parse_visibility`'s `case "class"` and `parse_extend`'s class branch each
+    emit the retirement error — "'class' has retired — declare `owning
+struct` (single-owner, move-only) and spell sharing where it happens
+    (`ref`, `Box<T>`, `Mutex<T>`, `WeakHandle<T>`)" — via the shared
+    `class_retired_error` helper, then continue parsing as an OWNING struct
+    (`parse_struct(..., is_owning=true)`), so the declaration gets class-era
+    object semantics and the Copyable verifier never cascades (one clear
+    error per declaration; the owning continuation also keeps owning/Box
+    fields legal, which a bare-struct continuation would reject).
+    `parse_extend`'s class branch continues as a struct extend (the
+    `extend`-target `is_class` match in `apply_extensions` holds — both
+    sides parse as structs now). The visibility-default error drops `class`
+    from its keyword list. `class` REMAINS a keyword in `keywords.ts` — the
+    lexer still produces it so the retirement error can fire; ripping the
+    token out is post-R cleanup. En route: the checker's "cannot assign
+    class field" error now reads "cannot assign owning field" (one test
+    name updated), and `extend`'s `is_class` plumbing stays for the
+    transition era. Covered by `test/class_retired.test.ts` (bare,
+    visibility-prefixed, `extend class`, and the no-cascade owning-field
+    continuation).
+  - **The bench corpus migration: LANDED (2026-10-07).** The three Nomen
+    sources under `bench/` (`test.nm`, `nomen/binarytrees.nm`,
+    `nomen/merkletrees.nm`) were the last `class` declarations in the repo;
+    all three are migrated to `owning struct` + `Box` shapes and check clean
+    on the CLI. The recursive-tree programs document the post-R idioms:
+    recursive fields become `var Box<Node>? left/right`; a boxing store is
+    spelled (`node.left = Box<Node>(move left)`); recursion that used to
+    pass a class field as a bare alias param now recurses over the BOX with
+    a `ref Box<Node>? node` param (`check_node(ref node.left)` — proven
+    shape) with a thin value-struct wrapper that boxes and delegates
+    (`check_tree(move tree)`); `ref`-through-a-box-field mutation
+    (`cal_hash(ref node.left)`) and transparent reads
+    (`node.left.hash`) work through the null-narrowed box. Outputs verified
+    arithmetically identical on BOTH backends (binarytrees check sums =
+    2^(d+1)-1 per tree; merkletrees root hashes = 2^depth).
+  - **Docs consolidation: LANDED (2026-10-07) for the scoped pair.**
+    MEMORY.md's class memory model (the "Classes (Reference Types)",
+    borrowed-references, containers, borrow-lifetime, and codegen sections)
+    is rewritten to the owning-struct + `Box` vocabulary — heap-instance
+    internals keep their class-era NAMES with one note saying so (anchor
+    slots, `is_borrowed_class_ref`, `ClassBuffer` routing, `BuildStatus`
+    fields are real identifiers). NOMEN_AGENTS.md's class rows (memory
+    modifiers, declarations, "Structs and classes") are rewritten, and the
+    `cli/` copy refreshed. Remaining docs debt (NOT in the scoped pair,
+    recorded here so it isn't lost): **`docs/BORROW.md` still teaches the
+    retired `mov` keyword and the pre-B5 "structs cannot hold class-typed
+    fields" rule — it needs a full rewrite to the `move`/owning-field
+    world**, and **`docs/ASYNC.md` still teaches `Sendable`-gated class
+    spawning** (SPEC.md/README.md were already rewritten in tranche 4's
+    en-route work). Both post-date the scoped docs step and are user-facing;
+    they should not be cited as current syntax until rewritten.
   - **The embedded test corpus migration: LANDED (2026-10-07).** All embedded
     Nomen `class` declarations across `test/*.test.ts` are migrated to
     `owning struct` + `Box`/`ref`/`WeakHandle` shapes — no `class`
@@ -187,19 +239,6 @@ Control`, the shape menu's handle form; the raw `#init` bodies use the
       (move-only, never shared); enum case payloads take ownership of
       owning-struct args; `List<owning>.copy()` is rejected; generated enum
       monos derive `is_owning` from substituted payloads.
-  - **Docs consolidation** (the plan's docs step): MEMORY.md's class memory
-    model (aliasing/borrowed-references/containers sections) and
-    NOMEN_AGENTS.md's class rows fold into the owning-struct + `Box`
-    vocabulary. Accurate-but-windowed today (the keyword still parses), so
-    they travel with the flip.
-  - **The flip itself**: `parse_statement`/`parse_visibility` `case
-"class"` and `parse_extend`'s `class` branch each emit the retirement
-    error ("'class' has retired — declare `owning struct` … spell sharing
-    where it happens (`ref`, `Box<T>`, `Mutex<T>`, `WeakHandle<T>`") and
-    continue parsing as a struct (one clear error per declaration, no
-    cascade); the visibility-default error message drops `class` from its
-    list. Drafted in an earlier session, reverted to keep the suite green;
-    the corpus is now ready for it.
   - Landed en route: SPEC.md is class-free (the Class Types section became
     "Owning Structs" with the `ref Box` alias vocabulary; destructuring,
     extend, lambdas, auto-free, Sendable/concurrency rewritten to the

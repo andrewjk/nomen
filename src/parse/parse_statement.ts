@@ -34,6 +34,7 @@ import parse_while_loop from "./parse_while_loop.ts";
 import type ParseStatus from "./ParseStatus.ts";
 import accept from "./utils/accept.ts";
 import add_to_parent from "./utils/add_to_parent.ts";
+import class_retired_error from "./utils/class_retired_error.ts";
 import consume from "./utils/consume.ts";
 import default_visibility from "./utils/default_visibility.ts";
 import expect from "./utils/expect.ts";
@@ -110,7 +111,11 @@ export default function parse_statement(status: ParseStatus) {
 				break;
 			}
 			case "class": {
-				parse_struct(default_visibility(status), status, true);
+				// STRUCT_PLAN_3 Phase R: `class` has retired — one clear
+				// error, then the declaration continues as an `owning
+				// struct` (no cascade).
+				class_retired_error(status);
+				parse_struct(default_visibility(status), status, false, true);
 				break;
 			}
 			case "extend": {

@@ -105,8 +105,8 @@ func safe = (string[] s, int i: i >= 0 && i < s.length, out string) {
 
 `const` values cannot be passed to `ref` — rebind the caller as `var` first.
 At local bindings the same keywords spell the binding's relationship to its
-initializer: `ref Box q = p` is a class object ALIAS (a plain `var Box q = p`
-copy of a class value is an error — say `ref`, `move`, or `.copy()`), `move`
+initializer: `ref Box q = p` is an owning-struct ALIAS (a plain `var Box q = p`
+copy of an owning value is an error — say `ref`, `move`, or `.copy()`), `move`
 transfers, `view` is a slice. A `ref` alias is not reassignable, mutation
 through it needs a `var` source, and nothing moves through it.
 
@@ -138,8 +138,8 @@ const y = x + 1     // Error: 'x' is null
 private to its declaring scope.
 
 `readonly` is a field-write modifier, not a visibility: the field reads at its
-declared visibility but can only be assigned inside its declaring struct/class
-(and its `extend`s). `const` fields are immutable everywhere.
+declared visibility but can only be assigned inside its declaring struct (and
+its `extend`s). `const` fields are immutable everywhere.
 
 ### Imports
 
@@ -201,7 +201,7 @@ var int y = 10                       // mutable, explicit type
 const int[] nums = [1, 2, 3]
 const int[10] buf = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]  // fixed-length
 var int? maybe = null                // nullable
-ref Box q = p                        // class alias — must be spelled (no plain class copies)
+ref Box q = p                        // owning-struct alias — must be spelled (no plain copies)
 ```
 
 Keywords (`out`, `in`, `match`, `if`, `of`, `as`, `swap`, …) are reserved and
@@ -235,10 +235,10 @@ while cond { ... }
 while cond; update { ... }     // post-statement (e.g. while i < n; i += 1)
 ```
 
-### Structs and classes
+### Structs
 
 ```nomen
-pub struct Point {
+pub struct Point {              // Copyable value type
 	pub var int x
 	pub var int y
 	pub func add = (self, Point other, out Point) {
@@ -246,12 +246,15 @@ pub struct Point {
 	}
 }
 
-class Node {                   // class = heap-allocated, reference semantics
+owning struct Node {            // single-owner, move-only (bindings move)
 	var int value
 }
 ```
 
-Construct by calling the type name as a function: `Point(1, 2)`.
+Construct by calling the type name as a function: `Point(1, 2)`. A `struct`
+whose fields are not all Copyable is a compile error — mark it
+`owning struct`. Sharing an owning instance is spelled: `ref` (alias),
+`Box<T>` (owned heap slot), `WeakHandle<T>` (checked back-pointer).
 
 ### Strings
 
