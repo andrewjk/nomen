@@ -307,17 +307,6 @@ enum-with-data value-struct payload crashes at the match binding) — B1a's
 owning-enum semantics are proven on C; on aarch64 use a class payload until
 #9 is fixed.
 
-## Pre-existing gaps surfaced by the B5/B6 tranche (all repro on main)
-
-Recorded 2026-10-06 while writing the tranche tests; each predates this
-work and is out of its scope:
-
-- **Nullable bases are not null-tracked** — `opt_field.inner` (and through
-  boxes, `box.next.value`) compiles even when the base is nullable; the
-  may-be-null check (`Variable 'x' may be null`) fires for plain variables
-  only. Flow-sensitive base tracking is a feature of its own; until then,
-  bind + `== null`-check before reading through a nullable.
-
 ## aarch64: tcp_scale (64 fiber connections) hangs in a parked receive (pre-existing)
 
 Found 2026-10-06 during Phase R tranche 3; **reproduces on clean `main` at

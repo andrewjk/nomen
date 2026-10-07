@@ -1,5 +1,6 @@
 import add_error from "../add_error.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
+import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
@@ -52,6 +53,27 @@ export default function check_access_node(node: AccessNode, status: CheckStatus)
 	if (!target_type.name) {
 		add_error(status, `Unknown target: ${value_from_value_node(node.target)}`, node.target.start);
 		return false;
+	}
+
+	// Nullable base tracking (FOLLOWUP "Nullable bases are not null-tracked"):
+	// a member access through a nullable base that MAY BE NULL is rejected.
+	// Plain variable bases go through check_value_node's `is_null` (already
+	// handled above by check_node(node.target)); this covers dotted bases —
+	// `o.inner.value` (an `Inner?` field) or `box.next.value` (a
+	// `Box<Node>?` field) — whose null state is tracked in `null_paths` (a
+	// null literal assignment / construction arg, or an `== null` guard) and
+	// cleared by `!= null` narrowing. Nullable SCALARS are excluded: reading
+	// one (even `.to_string()`) is not a pointer dereference.
+	if (
+		target_type.is_nullable &&
+		!is_nullable_scalar_type(target_type, status) &&
+		node.target.node_type !== "value"
+	) {
+		const base_path = expr_to_string(node.target);
+		if (base_path && status.null_paths?.has(base_path)) {
+			add_error(status, `Variable '${base_path}' may be null`, node.target.start);
+			return false;
+		}
 	}
 
 	// `Thread(fn(x)).detach()` — the daemon form owns its captures
@@ -496,9 +518,7 @@ function check_access_field_node(
 			// this field read), so the mutating-dispatch and field-write
 			// const checks see it downstream.
 			if (!node.type.is_const_ref && target.node_type === "value") {
-				const base = status.values.findLast(
-					(v) => v.name === (target as ValueNode).value,
-				);
+				const base = status.values.findLast((v) => v.name === (target as ValueNode).value);
 				if (base?.type?.is_const_ref) {
 					node.type.is_const_ref = true;
 				}
@@ -790,8 +810,7 @@ function check_access_function_node(
 	// An OWNING-STRUCT element is the same hazard post-R: the byte-copy
 	// shares the instance's heap resources (its Box/List/string fields).
 	if (node.name === "copy" && node.params.length === 0) {
-		const elem_arg =
-			target_type.name === "List" ? target_type.type_args?.[0] : undefined;
+		const elem_arg = target_type.name === "List" ? target_type.type_args?.[0] : undefined;
 		const elem_name =
 			elem_arg?.name ??
 			(struct?.name.startsWith("List_") ? struct.source_type_args?.[0]?.name : undefined);

@@ -53,14 +53,21 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 		if (!check_node(op.left_value, status)) return false;
 
 		// Short-circuit: narrow is_null when left side is thing != null
-		const left_check = get_null_check_var(op.left_value);
+		const left_check = get_null_check_var(op.left_value, status);
 		let saved_null: boolean | undefined;
+		let saved_null_paths: Set<string> | undefined;
 		if (left_check && !left_check.is_null_check) {
 			const var_obj = status.values.findLast((v) => v.name === left_check.name);
 			if (var_obj && var_obj.is_null) {
 				saved_null = var_obj.is_null;
 				var_obj.is_null = false;
 			}
+			// Dotted bases (`o.inner != null && o.inner.value …`): the left
+			// guard proves the path non-null for the right operand; the
+			// narrowing is transient.
+			saved_null_paths = status.null_paths;
+			status.null_paths = new Set(status.null_paths ?? []);
+			status.null_paths.delete(left_check.name);
 		}
 
 		// Short-circuit bounds: when the right operand is evaluated, the left
@@ -80,6 +87,9 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 		if (saved_null !== undefined && left_check) {
 			const var_obj = status.values.findLast((v) => v.name === left_check.name);
 			if (var_obj) var_obj.is_null = saved_null;
+		}
+		if (saved_null_paths !== undefined) {
+			status.null_paths = saved_null_paths;
 		}
 
 		op.type = new Type("bool");

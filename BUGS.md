@@ -416,3 +416,33 @@ all compile and run on both backends with owning element types. No compiler
 change was required. Regression coverage:
 `test/constraints.test.ts` (`owning element type at verifies under a
 return-guard`). The entry was removed from FOLLOWUP.md.
+
+## 15. Nullable bases were not null-tracked (member access through a nullable field/box)
+
+**Seen on `main` (recorded 2026-10-06, B5/B6 tranche).** A member access
+through a nullable base compiled with no diagnostic: `o.inner.value` (where
+`o.inner` is `Inner?`) and `box.next.value` (where `next` is `Box<Node>?`)
+both read straight through a possibly-null pointer. The may-be-null check
+(`Variable 'x' may be null`) only ran for plain variables (check_value_node's
+`is_null`), never for a dotted base.
+
+**Fix:** flow-sensitive nullable-base tracking, mirroring the per-variable
+`is_null` semantics so it does not reject non-null values.
+
+- `CheckStatus.null_paths` — dotted paths that MAY BE NULL; deep-copied per
+  branch.
+- `check_access_node` rejects a member access whose base is a nullable
+  non-scalar dotted path in `null_paths` (`Variable 'o.inner' may be null`).
+  Nullable scalars are excluded — reading one (even `.to_string()`) is not a
+  pointer dereference.
+- `get_null_check_var` now recognizes dotted bases (`o.inner != null`) and
+  returns the canonical path; the `if != null`, `== null` guard-clause,
+  `while != null`, and `&&` short-circuit forms narrow the set, and
+  `check_if_else_node` reconciles it (conservative union) across fall-through
+  branches.
+- Paths are populated by `o.inner = null` / a null constructor argument
+  (`Outer(null)`) and cleared by a non-null assignment/construction, so
+  `var o = Outer(Inner(5)); o.inner.value` and
+  `var w = Wrapper(Config("a")); w.c.name` stay legal. Covered by
+  `test/nullable.test.ts` ("nullable base member access (null tracking)"), both
+  backends.

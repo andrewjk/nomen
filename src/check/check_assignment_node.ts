@@ -25,6 +25,7 @@ import {
 	apply_return_bounds_to_var,
 	call_return_bounds,
 	invalidate_token_facts,
+	expr_to_string,
 } from "./utils/flow_bounds.ts";
 import {
 	is_class_type,
@@ -72,6 +73,21 @@ export default function check_assignment_node(
 		return false;
 	}
 	status.is_assignment_target = false;
+
+	// May-be-null path tracking for a dotted field assignment (`o.inner = null`
+	// marks the path may-be-null; `o.inner = Inner(…)` clears it), mirroring
+	// the per-variable `is_null` update below.
+	if (assign.left_value.node_type === "access") {
+		const lhs_path = expr_to_string(assign.left_value);
+		if (lhs_path) {
+			const rhs_is_null =
+				assign.right_value.node_type === "value" &&
+				(assign.right_value as ValueNode).value === "null";
+			if (!status.null_paths) status.null_paths = new Set();
+			if (rhs_is_null) status.null_paths.add(lhs_path);
+			else status.null_paths.delete(lhs_path);
+		}
+	}
 
 	// If the RHS is a lambda and the LHS is a function-typed variable, infer the
 	// lambda's parameter and return types from the declared function signature.
@@ -646,8 +662,7 @@ export default function check_assignment_node(
 				(field.declaration === "move" || is_owning_struct_type(field.type, status)) &&
 				!!field.type.name &&
 				!field.type.is_array &&
-				(is_class_type(field.type.name, status) ||
-					is_owning_struct_type(field.type, status));
+				(is_class_type(field.type.name, status) || is_owning_struct_type(field.type, status));
 			if (
 				field_is_owning_class &&
 				assign.right_value.node_type === "value" &&

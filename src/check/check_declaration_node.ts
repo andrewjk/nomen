@@ -1,4 +1,5 @@
 import add_error from "../add_error.ts";
+import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
@@ -43,6 +44,37 @@ import {
 	type BorrowInfo,
 	type_can_carry_view_borrow,
 } from "./utils/view_fields.ts";
+
+/**
+ * Record the may-be-null state of a freshly-declared struct's nullable
+ * (non-scalar) fields, from a constructor initializer. `var o = Outer(null)`
+ * marks `o.inner` may-be-null; `var w = Wrapper(Config("a"))` clears it. The
+ * path keys match `expr_to_string`'s (`o.inner`), which is what the
+ * nullable-base member-access check consults. Only fires for a real ctor call
+ * (name matches the struct), not a function returning the struct.
+ */
+function track_ctor_null_paths(decl: DeclarationNode, status: CheckStatus) {
+	if (decl.value?.node_type !== "func_call") return;
+	const call = decl.value as FunctionCallNode;
+	const struct = status.structs.findLast(
+		(s) => s.name === decl.type.name || s.source_name === decl.type.name,
+	);
+	if (!struct || struct.is_class || struct.is_simple_type) return;
+	if (call.name !== struct.name && call.name !== struct.source_name) return;
+	const init = struct.functions.find((f) => f.name === "#init");
+	if (!init) return;
+	for (const field of struct.fields) {
+		if (!field.type.is_nullable || is_nullable_scalar_type(field.type, status)) continue;
+		const param_idx = init.params.findIndex((p) => p.name === field.name);
+		const value_node =
+			param_idx >= 0 && call.params[param_idx] ? call.params[param_idx] : field.value;
+		const is_null = value_node?.node_type === "value" && (value_node as ValueNode).value === "null";
+		const path = `${decl.name}.${field.name}`;
+		if (!status.null_paths) status.null_paths = new Set();
+		if (is_null) status.null_paths.add(path);
+		else status.null_paths.delete(path);
+	}
+}
 
 export default function check_declaration_node(decl: DeclarationNode, status: CheckStatus) {
 	// A bare `_` binding is the deliberate-discard convention (`var _ = f()`,
@@ -444,6 +476,8 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 					decl.type.length = value_type.length;
 				}
 			}
+
+			track_ctor_null_paths(decl, status);
 
 			status.stack.pop();
 		}

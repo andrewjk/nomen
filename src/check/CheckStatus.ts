@@ -131,6 +131,17 @@ export default interface CheckStatus {
 	moved_variables?: Set<string>;
 
 	/**
+	 * Dotted access paths (`o.inner`, `box.next`) that MAY BE NULL in the
+	 * current flow — assigned/initialized to the `null` literal, or narrowed
+	 * to null by an `== null` guard. Mirrors the per-variable `is_null` flag
+	 * (a nullable-typed path is not "may be null" until a null value flows
+	 * into it). Member access through such a base is rejected. Branch clones
+	 * deep-copy the set; check_if_else_node reconciles it across fall-through
+	 * branches (union — may-be-null in ANY branch).
+	 */
+	null_paths?: Set<string>;
+
+	/**
 	 * Errors that have been encountered
 	 */
 	errors: CompileError[];

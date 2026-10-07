@@ -46,7 +46,7 @@ export default function check_if_else_node(if_else: IfElseNode, status: CheckSta
 		);
 	}
 
-	const null_check = get_null_check_var(if_else.condition);
+	const null_check = get_null_check_var(if_else.condition, status);
 
 	status.stack.push(if_else);
 	let if_status = clone_status(status);
@@ -56,11 +56,20 @@ export default function check_if_else_node(if_else: IfElseNode, status: CheckSta
 		// findLast: the innermost declaration wins (mirrors the read path);
 		// first-match would narrow a same-named outer value instead.
 		if (!null_check.is_null_check) {
+			// `x != null` — the if body sees the path non-null (clear it);
+			// the else body sees it null.
 			const if_var = if_status.values.findLast((v) => v.name === null_check.name);
 			if (if_var) if_var.is_null = false;
+			if_status.null_paths?.delete(null_check.name);
+			else_status.null_paths = new Set(else_status.null_paths ?? []);
+			else_status.null_paths.add(null_check.name);
 		} else {
+			// `x == null` — the if body sees it null; the else body non-null.
 			const else_var = else_status.values.findLast((v) => v.name === null_check.name);
 			if (else_var) else_var.is_null = false;
+			if_status.null_paths = new Set(if_status.null_paths ?? []);
+			if_status.null_paths.add(null_check.name);
+			else_status.null_paths?.delete(null_check.name);
 		}
 	}
 
@@ -69,10 +78,11 @@ export default function check_if_else_node(if_else: IfElseNode, status: CheckSta
 	if (if_else.condition.node_type === "op") {
 		const cond_op = if_else.condition as OperationNode;
 		if (cond_op.op === "&&") {
-			const left_check = get_null_check_var(cond_op.left_value);
+			const left_check = get_null_check_var(cond_op.left_value, status);
 			if (left_check && !left_check.is_null_check) {
 				const if_var = if_status.values.findLast((v) => v.name === left_check.name);
 				if (if_var) if_var.is_null = false;
+				if_status.null_paths?.delete(left_check.name);
 			}
 		}
 	}
@@ -222,6 +232,30 @@ export default function check_if_else_node(if_else: IfElseNode, status: CheckSta
 				value.alias_of = else_v?.alias_of;
 			}
 		}
+	}
+
+	// May-be-null path reconciliation: a path stays "may be null" after the if
+	// if ANY reachable fall-through branch has it (the branch clones start
+	// from the parent's set, so untouched paths survive; this is the
+	// conservative union). Guard clauses fall out naturally: for
+	// `if x == null { return }`, only the else path reaches the code after,
+	// and its set has `x` cleared.
+	{
+		const if_nn = if_status.null_paths;
+		const else_nn = else_status.null_paths;
+		let merged: Set<string> | undefined;
+		if (if_falls_through && else_falls_through) {
+			merged = new Set<string>();
+			for (const p of if_nn ?? []) merged.add(p);
+			for (const p of else_nn ?? []) merged.add(p);
+		} else if (if_falls_through) {
+			merged = if_nn ? new Set(if_nn) : undefined;
+		} else if (else_falls_through) {
+			merged = else_nn ? new Set(else_nn) : undefined;
+		} else {
+			merged = status.null_paths;
+		}
+		status.null_paths = merged;
 	}
 
 	// Guard-clause: an `if cond { ...always exits... }` with no else

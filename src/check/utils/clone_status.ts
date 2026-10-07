@@ -74,6 +74,10 @@ export default function clone_status(status: CheckStatus): CheckStatus {
 		// inside a branch (which may fall through) stays visible afterwards —
 		// a conservative union, mirroring mutated_local_names.
 		invalidated_view_structs: status.invalidated_view_structs,
+		// May-be-null paths: deep-copy so a branch's `== null` narrowing (or a
+		// null assignment) doesn't leak into the parent (or a sibling branch).
+		// check_if_else_node reconciles the survivors explicitly.
+		null_paths: status.null_paths ? new Set(status.null_paths) : undefined,
 		// Nested-function label uniquification must see every emission name
 		// in the program — share the same set across all clones.
 		function_emission_names: status.function_emission_names,

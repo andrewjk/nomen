@@ -1099,3 +1099,82 @@ Console.write("done")
 		await build_and_check_output(input, "nullable_field_val_to_null", "5\ndone");
 	});
 });
+
+describe("nullable base member access (null tracking)", () => {
+	test("member access through a null-initialized nullable field errors", () => {
+		const input = `
+owning struct Inner { var int value }
+owning struct Outer { var Inner? inner }
+var Outer o = Outer(null)
+Console.write_line(o.inner.value.to_string())
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.some((e) => e.message.includes("'o.inner' may be null"))).toBe(true);
+	});
+
+	test("member access through a non-null-initialized nullable field is allowed", async () => {
+		const input = `
+owning struct Inner { var int value }
+owning struct Outer { var Inner? inner }
+var Outer o = Outer(Inner(5))
+Console.write_line(o.inner.value.to_string())
+`;
+		await build_and_check_output(input, "nullable_base_nonnull_init", "5\n");
+	});
+
+	test("a != null guard narrows a nullable field base", async () => {
+		const input = `
+owning struct Inner { var int value }
+owning struct Outer { var Inner? inner }
+var Outer o = Outer(null)
+if o.inner != null {
+	Console.write_line(o.inner.value.to_string())
+}
+Console.write_line("done")
+`;
+		await build_and_check_output(input, "nullable_base_guard", "done\n");
+	});
+
+	test("an == null guard clause narrows a nullable field base", async () => {
+		const input = `
+owning struct Inner { var int value }
+owning struct Outer { var Inner? inner }
+func probe = () {
+	var Outer o = Outer(null)
+	if o.inner == null { return }
+	Console.write_line(o.inner.value.to_string())
+}
+probe()
+Console.write_line("done")
+`;
+		await build_and_check_output(input, "nullable_base_guard_clause", "done\n");
+	});
+
+	test("member access through a null box field errors", () => {
+		const input = `
+owning struct Node {
+	var int value
+	var Box<Node>? next
+}
+var Node n = Node(1, null)
+Console.write_line(n.next.value.to_string())
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.some((e) => e.message.includes("'n.next' may be null"))).toBe(true);
+	});
+
+	test("a != null guard narrows a nullable box field base", async () => {
+		const input = `
+owning struct Node {
+	var int value
+	var Box<Node>? next
+}
+var Node n = Node(1, null)
+if n.next != null {
+	Console.write_line(n.next.value.to_string())
+}
+Console.write_line("done")
+`;
+		await build_and_check_output(input, "nullable_base_box_guard", "done\n");
+	});
+});
