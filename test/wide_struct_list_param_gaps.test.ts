@@ -47,7 +47,7 @@ func normalize2 = (string text, out string) {
 	return text
 }
 
-pub struct NS {
+pub owning struct NS {
 	var side = 0
 	var text = ""
 	var index = 0

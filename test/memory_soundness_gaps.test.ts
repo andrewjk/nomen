@@ -188,7 +188,7 @@ func take = (ref Pair p) {
 
 	test("member-access copy of an owning struct (Buffer) is rejected", () => {
 		const input = `
-struct Holder {
+owning struct Holder {
 	var Buffer<int> buf = Buffer<int>()
 }
 func take = (ref Holder h) {
@@ -204,7 +204,7 @@ func take = (ref Holder h) {
 	test("move out of a field without a swap is rejected", () => {
 		// `move` alone would leave the field holding a moved-out (invalid) value.
 		const input = `
-struct Holder {
+owning struct Holder {
 	var Buffer<int> buf = Buffer<int>()
 }
 func take = (ref Holder h) {
@@ -219,7 +219,7 @@ func take = (ref Holder h) {
 
 	test("move out of a field with a swap is allowed", () => {
 		const input = `
-struct Holder {
+owning struct Holder {
 	var Buffer<int> buf = Buffer<int>()
 }
 func take = (ref Holder h) {

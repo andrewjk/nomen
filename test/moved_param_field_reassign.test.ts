@@ -26,8 +26,8 @@ function src(body: string): string {
 	return `
 import System
 
-struct Attr { var string value = "" }
-struct Box  { move List<Attr> items }
+owning struct Attr { var string value = "" }
+owning struct Box  { move List<Attr> items }
 
 ${body}
 `;
@@ -102,7 +102,7 @@ pub func main = () {
 
 	test("mixed param (container + string field) is fully reclaimed", async () => {
 		const input = src(`
-struct Tagged {
+owning struct Tagged {
 	var List<Attr> items
 	var string label = ""
 }

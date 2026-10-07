@@ -12,18 +12,17 @@ async function run_c(input: string, name: string, expected: string) {
 	await check_output(name, result, expected, { audit: true, arch: "c" });
 }
 
-// Pass-by-value for owning value structs: a function parameter of a struct
-// with string fields is an OWNED copy — the call boundary materializes a
-// uniformly heap-owned shell (string fields strdup\'d) and the callee frees
-// its fields at scope exit. Writes through the param stay LOCAL; the
-// caller\'s variable is never aliased or mutated. Mutation of the caller\'s
-// variable requires `ref` (explicit at declaration + call site); transfer
-// requires `move`.
+// B1 full cutover: a bare parameter of an OWNING struct is a read-only const
+// borrow (B3 — no implicit copy; the pbv shell convention retired with the
+// declared-ownership flip). Reads go through to the caller's value; writes
+// through the param are a compile error ("Assignment to const"); mutation of
+// the caller's variable requires `ref` (explicit at declaration + call site);
+// transfer requires `move` (the callee becomes the field owner).
 describe("pass-by-value struct args", () => {
-	test("callee reads its own copy; caller unaffected, no leak", async () => {
+	test("callee reads through the const borrow; caller unaffected, no leak", async () => {
 		await run_c(
 			`
-struct Info { var markup = "" }
+owning struct Info { var markup = "" }
 
 func fill = (Info p) {
 	Console.write_line("callee sees: " + p.markup)
@@ -46,13 +45,13 @@ if a.markup == pre {
 	});
 
 	test("callee moves the param into a local var and writes it", async () => {
-		// The move-local-write shape stores the write copy RAW on aarch64
-		// (value-struct fields keep borrow semantics for non-heap RHS), and
-		// the record dies with the callee scope — the documented leak.
+		// The transfer row: `move Info p` makes the callee the field owner.
+		// The move-local-write shape re-homes the struct into a local; the
+		// write stays callee-local and the teardown frees the field at exit.
 		const input = `
-struct Info { var markup = "" }
+owning struct Info { var markup = "" }
 
-func fill = (Info p) {
+func fill = (move Info p) {
 	var local = move p
 	var string w = "written"
 	local.markup = w
@@ -60,7 +59,7 @@ func fill = (Info p) {
 }
 
 var Info a = Info()
-fill(a)
+fill(move a)
 Console.write_line("caller done")
 `;
 		const parsed = parse_with_imports(input);
@@ -79,16 +78,20 @@ Console.write_line("caller done")
 		// the function-tail auto-free must be suppressed — otherwise the C
 		// epilogue re-emits the return-site frees as unreachable text after
 		// the `return` (the param's field would be freed twice in the source,
-		// though only the first block runs).
+		// though only the first block runs). The transfer row (`move Pair p`)
+		// owns the donor's fields: exactly one reclaim, at the return site.
 		const parsed = parse_with_imports(`
-struct Pair { var int n = 0  var string tag = "" }
-func next = (Pair p, out Pair) {
+owning struct Pair { var int n = 0  var string tag = "" }
+func next = (move Pair p, out Pair) {
 	var q = Pair()
 	q.n = p.n + 1
 	q.tag = p.tag
 	return q
 }
-var p = next(Pair())
+var donor = Pair()
+donor.n = 5
+donor.tag = "t"
+var p = next(move donor)
 Console.write_line(p.tag)
 `);
 		expect(parsed.errors).toEqual([]);
@@ -103,7 +106,7 @@ Console.write_line(p.tag)
 		// the callee scope, whose exit drops the record — the documented
 		// ref-param leak (bounded per write), so audit is off here.
 		const input = `
-struct Info { var markup = "" }
+owning struct Info { var markup = "" }
 
 func fill = (ref Info p) {
 	var string w = "via-ref"
@@ -126,7 +129,7 @@ Console.write_line(a.markup)
 describe("pass-by-value checker rules", () => {
 	test("read-only callees no longer error", () => {
 		const parsed = parse_with_imports(`
-struct Info { var markup = "" }
+owning struct Info { var markup = "" }
 func use = (Info p) {
 	Console.write_line(p.markup)
 }
@@ -134,5 +137,19 @@ var Info a = Info()
 use(a)
 `);
 		expect(parsed.errors).toEqual([]);
+	});
+
+	test("write through a bare owning param is rejected (const borrow)", () => {
+		// B1 full cutover / B3: a bare owning-struct parameter is read-only —
+		// mutation of the caller's storage must be spelled `ref`.
+		const parsed = parse_with_imports(`
+owning struct Info { var markup = "" }
+func fill = (Info p) {
+	p.markup = "changed"
+}
+var Info a = Info()
+fill(a)
+`);
+		expect(parsed.errors.some((e) => e.message.includes("Assignment to const: p"))).toBe(true);
 	});
 });

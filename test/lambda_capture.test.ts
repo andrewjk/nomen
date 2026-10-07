@@ -180,7 +180,7 @@ describe("closure captures (owning structs & classes, move)", () => {
 			`
 import System
 
-struct Owned {
+owning struct Owned {
 	var List<int> data
 }
 
@@ -222,7 +222,7 @@ pub func main = () {
 	test("move-capturing an owning struct invalidates the donor", () => {
 		expect(
 			parse_with_imports(`
-struct Owned {
+owning struct Owned {
 	var List<int> data
 }
 
@@ -263,7 +263,7 @@ pub func main = () {
 			`
 import System
 
-struct Owned {
+owning struct Owned {
 	var List<int> data
 }
 
@@ -388,7 +388,7 @@ trait Show {
 	func show = (self, out string)
 }
 
-struct Note : Show {
+owning struct Note : Show {
 	var string text
 
 	func show = (self, out string) => self.text

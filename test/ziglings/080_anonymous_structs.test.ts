@@ -13,7 +13,7 @@ test("ziglings 080 anonymous structs -- errors", () => {
 	const input = `
 import System
 
-struct Circle<T> {
+owning struct Circle<T> {
     var name = "Circle"
     var T center_x
     var T center_y
@@ -37,7 +37,7 @@ test("ziglings 080 anonymous structs -- fixed", () => {
 	const input = `
 import System
 
-struct Circle<T> {
+owning struct Circle<T> {
     var name = "Circle"
     var T center_x
     var T center_y
@@ -62,7 +62,7 @@ test("ziglings 080 anonymous structs -- build", async () => {
 	const input = `
 import System
 
-struct Circle<T> {
+owning struct Circle<T> {
     var name = "Circle"
     var T center_x
     var T center_y

@@ -63,7 +63,7 @@ describe("array/list slice (runtime, both backends)", () => {
 			// pure Nomen (no #arch). Its slice returns a view over its elements,
 			// fully borrow-checked. (alloc_int records cap so the literal-index
 			// stores verify; push/grow flow-bounds are a separate concern.)
-			pub struct Store: Viewable {
+			pub owning struct Store: Viewable {
 				var Buffer<int> items = Buffer<int>()
 				pub func fill = (ref self) {
 					self.items.alloc_int(4)

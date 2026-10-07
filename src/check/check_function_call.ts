@@ -891,12 +891,29 @@ export default function check_function_call(
 			param.node_type === "access" &&
 			(param as AccessNode).access.node_type === "access_field"
 		) {
-			const field_name = ((param as AccessNode).access as AccessFieldNode).name;
-			add_error(
-				status,
-				`cannot copy field '${field_name}' into parameter '${func_param.name}' by value — it owns heap resources; use 'move ... swap <replacement>' or .copy()`,
-				param.start,
-			);
+			// A temp-rooted read (`pairs.at(i)._1`) keeps the pre-cutover
+			// convention: the temp tuple dies at statement end, and an
+			// owning container's store deep-copies the element (store_T
+			// strdups string fields), so nothing outlives the read. Only a
+			// read rooted at a NAMED binding (the field's owner stays
+			// behind) is the co-ownership hazard the error exists for.
+			// Temp shapes: a call result (possibly receiver-hoisted into a
+			// `_recv_N` compiler temp) or a destructure temp.
+			const read_root = (param as AccessNode).target;
+			const root_name =
+				read_root.node_type === "value" ? (read_root as ValueNode).value : undefined;
+			const root_is_temp =
+				(read_root.node_type === "access" &&
+					(read_root as AccessNode).access.node_type === "access_func") ||
+				(!!root_name && (root_name.startsWith("_recv_") || root_name.startsWith("_tuple_dst_")));
+			if (!root_is_temp) {
+				const field_name = ((param as AccessNode).access as AccessFieldNode).name;
+				add_error(
+					status,
+					`cannot copy field '${field_name}' into parameter '${func_param.name}' by value — it owns heap resources; use 'move ... swap <replacement>' or .copy()`,
+					param.start,
+				);
+			}
 		}
 		// Storing a BORROWED class/trait value into a `move T` slot would
 		// create shared ownership: the destination container's `#destroy`

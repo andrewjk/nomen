@@ -14,7 +14,7 @@ import build_and_check_output from "./build_and_check_output";
 describe("struct-returning functions and string params/locals", () => {
 	test("constructor return with a heap local string", async () => {
 		const input = `
-struct R {
+owning struct R {
 	var int a
 	var string b
 }

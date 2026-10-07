@@ -11,7 +11,7 @@ import build_and_check_output from "./build_and_check_output";
 describe("borrowed string param stored into a field", () => {
 	test("value struct and class fields from borrowed params", async () => {
 		const input = `
-struct Attr {
+owning struct Attr {
 	var string name = ""
 	var string value = ""
 }
@@ -49,7 +49,7 @@ owning struct C {
 	pub var string v = ""
 }
 
-struct S {
+owning struct S {
 	var string v = ""
 }
 

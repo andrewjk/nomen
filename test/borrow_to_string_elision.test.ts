@@ -185,7 +185,7 @@ func consume = (string s, out int) {
 	return s.length
 }
 
-struct Box {
+owning struct Box {
 	var string name
 	pub func show = (self) {
 		Console.write_line(consume(self.name.to_string()).to_string())

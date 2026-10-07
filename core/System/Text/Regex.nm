@@ -1925,7 +1925,7 @@ func last_capture_index = (List<int> caps, int group, out int) {
 /**
  * A Regex.find result: whether the pattern matched, where, and what
  **/
-pub struct RegexMatch {
+pub owning struct RegexMatch {
 	var found = false
 	var start = 0
 	var end = 0

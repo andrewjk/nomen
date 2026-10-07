@@ -14,7 +14,7 @@ import build_and_check_output from "./build_and_check_output";
 describe("nullable / owning struct members", () => {
 	test("nullable container member round-trips null and non-null", async () => {
 		const input = `
-struct MaybeList {
+owning struct MaybeList {
 	var List<int>? items = null
 }
 
@@ -33,7 +33,7 @@ if m.items == null { Console.write("M NULL\\n") } else { Console.write("direct=\
 
 	test("nullable container member through a List of structs", async () => {
 		const input = `
-struct Box {
+owning struct Box {
 	var List<int>? items = null
 }
 

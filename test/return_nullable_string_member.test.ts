@@ -10,7 +10,7 @@ import build_and_check_output from "./build_and_check_output";
 describe("returning a struct with a nullable string member", () => {
 	test("null and non-null nullable string members round-trip", async () => {
 		const input = `
-struct Rule {
+owning struct Rule {
 	var name = ""
 	var string? pattern = null
 }

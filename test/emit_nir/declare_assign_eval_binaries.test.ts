@@ -13,7 +13,7 @@ test("NIR-native declare/assign/eval binaries run correctly", async () => {
 		`
 import System
 
-struct Counter {
+owning struct Counter {
     var int count
     var string label
 }

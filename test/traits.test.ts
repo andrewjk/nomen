@@ -12,7 +12,7 @@ trait Person {
   var string name
 }
 
-struct Frank: Person {
+owning struct Frank: Person {
   var string name = "Frank"
 }
 
@@ -30,7 +30,7 @@ trait Person {
   }
 }
 
-struct Frank: Person {
+owning struct Frank: Person {
   func greet = (out string) {
     return "hello from Frank"
   }
@@ -51,7 +51,7 @@ trait Person {
   }
 }
 
-struct Frank: Person {
+owning struct Frank: Person {
   var string name = "Frank"
 }
 
@@ -91,7 +91,7 @@ trait Dancer {
   }
 }
 
-struct Frank: Greeter, Dancer {
+owning struct Frank: Greeter, Dancer {
   func greet = (out string) {
     return "hello"
   }
@@ -112,7 +112,7 @@ trait Person {
   }
 }
 
-struct Frank: Person {
+owning struct Frank: Person {
   var string name = "Frank"
 }
 
@@ -147,11 +147,11 @@ trait Person {
   var string name
 }
 
-struct Alice: Person {
+owning struct Alice: Person {
   var string name = "Alice"
 }
 
-struct Bob: Person {
+owning struct Bob: Person {
   var string name = "Bob"
 }
 
@@ -169,7 +169,7 @@ trait Person {
   var int age
 }
 
-struct Frank: Person {
+owning struct Frank: Person {
   var string name = "Frank"
   var int age = 30
 }
@@ -196,7 +196,7 @@ trait Named {
   var string name
 }
 
-struct Alice: Named {
+owning struct Alice: Named {
   var string name = "Alice"
 }
 
@@ -216,7 +216,7 @@ trait Person {
   }
 }
 
-struct Frank: Person {
+owning struct Frank: Person {
   func hello = (out string) {
     return "hello from Frank"
   }
@@ -268,7 +268,7 @@ trait Person {
   var int age
 }
 
-struct Frank: Person {
+owning struct Frank: Person {
   var string name = "Frank"
   var int age = 30
   func describe = (out string) {
@@ -318,10 +318,10 @@ trait Person {
 
 	test("unknown trait", () => {
 		const input = `
-struct Frank: Person {
+owning struct Frank: Person {
 }
 `;
-		const expected = [test_error(input, "Unknown trait: Person", 2, 1)];
+		const expected = [test_error(input, "Unknown trait: Person", 2, 8)];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});

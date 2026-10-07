@@ -733,8 +733,20 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					// the design). The callee-copies release would free the
 					// very strings the box now owns — treat it as a transfer.
 					const box_ctor_transfer = is_box_type(node.name, status.structs);
+					// B1 full cutover: a `move T` PARAMETER of a declared-
+					// owning value struct makes the callee the field owner
+					// (the moved-param teardown frees the fields at its exit —
+					// build_function_node), so the caller drops its records
+					// without freeing even when the check-side
+					// move_owned_param_indices stamp is absent (its pbv gate
+					// excludes owning types).
+					const callee_move_param = !!node.resolved_function?.params?.filter(
+						(p) => !p.is_self_param,
+					)[idx]?.is_moved;
 					const transfer =
-						box_ctor_transfer || (node.move_owned_param_indices?.includes(idx) ?? false);
+						box_ctor_transfer ||
+						(node.move_owned_param_indices?.includes(idx) ?? false) ||
+						callee_move_param;
 					for (const key of Array.from(status.heap_string_fields ?? [])) {
 						if (key.startsWith(prefix)) {
 							if (!transfer) {

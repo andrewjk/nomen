@@ -11,7 +11,7 @@ import build_and_check_output from "./build_and_check_output";
 describe("struct with heap-owning members in a List", () => {
 	test("push, read back, scope exit", async () => {
 		const input = `
-struct Rule {
+owning struct Rule {
 	var name = ""
 	var string? pattern = null
 	var protocols = List<string>()
@@ -48,7 +48,7 @@ Console.write("loaded3 name=\\{loaded3.name} pattern-null=\\{pn}\\n")
 
 	test("copy() is deep — the copy's List member is independent", async () => {
 		const input = `
-struct Rule {
+owning struct Rule {
 	var name = ""
 	var string? pattern = null
 	var protocols = List<string>()

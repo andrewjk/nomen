@@ -163,7 +163,7 @@ if doc.length == 3 {
 	test("view field alongside an owned string field", async () => {
 		await build_and_check_output(
 			`
-struct Mixed {
+owning struct Mixed {
 	var view string borrowed
 	var string owned
 }

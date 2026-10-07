@@ -436,7 +436,7 @@ test()
 owning struct Holder {
 	var string? tag = null
 }
-struct S {
+owning struct S {
 	var string? tag = null
 }
 func test = () {
@@ -523,7 +523,7 @@ use(3, null, 4)
 
 	test("null into value struct string? ctor param", async () => {
 		const input = `
-struct S {
+owning struct S {
 	var string? tag
 }
 func test = () {
@@ -558,7 +558,7 @@ Console.write_line("done")
 owning struct Holder {
 	var string? tag = null
 }
-struct S {
+owning struct S {
 	var string? tag = null
 }
 func test = () {

@@ -32,7 +32,7 @@ pub struct ArenaRef<T> {
  * A generational arena: one owner of a set of `T` values, addressed by
  * copyable `ArenaRef<T>` handles.
  **/
-pub struct Arena<T> {
+pub owning struct Arena<T> {
 	// Slot payloads. T = value struct/primitive routes to Buffer<T>; T =
 	// class/trait routes to ClassBuffer<T> (monomorphize rewrites the field),
 	// so slot ownership follows the usual element rules.

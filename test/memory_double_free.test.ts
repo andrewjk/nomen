@@ -68,7 +68,7 @@ Console.write(result)
 
 	test("struct with string field does not leak on destroy", async () => {
 		const input = `
-struct Named {
+owning struct Named {
   var int id
   var string name
 }
@@ -743,7 +743,7 @@ if i >= 0 && i < names.length {
 		// branch must copy its borrow instead of handing over storage that
 		// belongs to the struct (a rodata literal here, which free rejects).
 		const input = `
-struct Named {
+owning struct Named {
 	var string name
 }
 func maybe_render = (Named n, int c, out string) {

@@ -28,11 +28,11 @@ import build_and_check_output from "./build_and_check_output";
 describe("force-heap string declarations own their storage", () => {
 	test("borrow-initialized force-heap local is not freed as a borrow", async () => {
 		const input = `
-struct Attr {
+owning struct Attr {
 	var string value = ""
 }
 
-struct Box {
+owning struct Box {
 	move List<Attr> items
 }
 
@@ -67,11 +67,11 @@ Console.write("count=\\{box.items.length} kept=\\{box.items.at_or_panic(0).value
 
 	test("the assignment-path twin: an unrecorded source never marks the target", async () => {
 		const input = `
-struct Attr {
+owning struct Attr {
 	var string value = ""
 }
 
-struct Box {
+owning struct Box {
 	move List<Attr> items
 }
 

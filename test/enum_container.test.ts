@@ -10,7 +10,7 @@ import build_and_check_output from "./build_and_check_output";
 
 test("List<enum> reads an element back twice", async () => {
 	const input = `
-enum Maybe {
+owning enum Maybe {
   case some(string value)
   case none
 }
@@ -36,7 +36,7 @@ match xs.at_or(0, Maybe.none) {
 
 test("List<enum> element bound to a local then matched", async () => {
 	const input = `
-enum Maybe {
+owning enum Maybe {
   case some(string value)
   case none
 }
@@ -54,7 +54,7 @@ match m {
 
 test("List<enum> set replaces the displaced payload", async () => {
 	const input = `
-enum Maybe {
+owning enum Maybe {
   case some(string value)
   case none
 }
@@ -76,7 +76,7 @@ match xs.at_or(0, Maybe.none) {
 
 test("List<enum> pop transfers the payload out", async () => {
 	const input = `
-enum Maybe {
+owning enum Maybe {
   case some(string value)
   case none
 }
@@ -94,7 +94,7 @@ match m {
 
 test("Buffer<enum> direct store / load / destroy", async () => {
 	const input = `
-enum Maybe {
+owning enum Maybe {
   case some(string value)
   case none
 }
@@ -117,7 +117,7 @@ match b.load(1) {
 
 test("a match binding escapes its branch through a return", async () => {
 	const input = `
-enum Maybe {
+owning enum Maybe {
   case some(string value)
   case none
 }

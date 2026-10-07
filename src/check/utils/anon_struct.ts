@@ -5,6 +5,7 @@ import RootNode from "../../nodes/RootNode.ts";
 import StructNode from "../../nodes/StructNode.ts";
 import Type from "../../nodes/Type.ts";
 import type CheckStatus from "../CheckStatus.ts";
+import { type_owns_heap } from "./ownership.ts";
 import { clone_type, sanitize_type_name } from "./tuple_struct.ts";
 
 /**
@@ -40,6 +41,10 @@ export function get_or_create_anon_struct(
 	);
 
 	const struct = new StructNode(0, "private", name, [], struct_fields, []);
+	// STRUCT_PLAN_3 B1 full cutover — an anonymous struct is Copyable iff
+	// every field is: any owning field makes the generated struct owning
+	// (same derive as tuples; a generated struct cannot be spelled `owning`).
+	struct.is_owning = struct_fields.some((f) => type_owns_heap(f.type, status));
 
 	// Build #init params: self + one param per field, in field order.
 	const self_param = new ParameterNode(0, "self", new Type(name));

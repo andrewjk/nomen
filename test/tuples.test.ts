@@ -329,7 +329,9 @@ Console.write("\\{r._0._0} \\{r._0._1} \\{r._1}")
 	test("nested tuple two-step access", async () => {
 		const input = `
 var [[int, string], bool] x = [[1, "a"], true]
-var inner = x._0
+// B1 cutover: the inner tuple is owning (string element) — the field read
+// transfers with a revalidating swap replacement.
+var inner = move x._0 swap [0, ""]
 Console.write("\\{inner._0} \\{inner._1} \\{x._1}")
 `;
 		await build_and_check_output(input, "nested_tuple_two_step", "1 a true");

@@ -11,7 +11,7 @@ import build_and_check_output from "./build_and_check_output";
 
 test("enum returned from a call survives return-path cleanup bls", async () => {
 	const input = `
-enum Load {
+owning enum Load {
   case found(string text)
   case missing
 }
@@ -35,7 +35,7 @@ match forward() {
 
 test("enum forwarding chain through nested calls", async () => {
 	const input = `
-enum Load {
+owning enum Load {
   case found(string text)
   case missing
 }
@@ -64,7 +64,7 @@ match forward2() {
 
 test("method-call enum return with payload, matched at the call site", async () => {
 	const input = `
-enum Load {
+owning enum Load {
   case found(string text)
   case missing
 }

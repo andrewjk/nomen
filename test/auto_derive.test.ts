@@ -25,7 +25,7 @@ Console.write(p.to_string())
 
 	test("struct with string field", async () => {
 		const input = `
-struct Dog: Stringable {
+owning struct Dog: Stringable {
     var string name
     var int age
 }
@@ -106,7 +106,7 @@ if !(a != b) {
 
 	test("equality with string fields", async () => {
 		const input = `
-struct Name: Equatable {
+owning struct Name: Equatable {
     var string first
     var int id
 }

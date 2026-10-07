@@ -7,7 +7,7 @@ test("[ .. ctor, overrides ] declaration and factory chaining", async () => {
 	const input = `
 import System
 
-struct Node {
+owning struct Node {
     var string node_type = ""
     var int index = 0
     var bool is_block = false
@@ -65,7 +65,7 @@ test("[ .. move var, overrides ] transfers ownership", async () => {
 	const input = `
 import System
 
-struct Node {
+owning struct Node {
     var string node_type = ""
     var int index = 0
 }
@@ -83,7 +83,7 @@ test("base literal error cases", () => {
 	const base = `
 import System
 
-struct Node {
+owning struct Node {
     var string node_type = ""
     var int index = 0
 }
@@ -153,7 +153,7 @@ Console.write_line(m.flags.to_string())
 // the old field, so a borrow alias would dangle).
 test("[ .. move base, override reading destination ]", async () => {
 	const input = `
-struct Rec {
+owning struct Rec {
 	var string kind
 	var string label = "none"
 	var int flags = 0
@@ -176,7 +176,7 @@ struct Inner {
 	var int v = 0
 }
 
-struct Rec {
+owning struct Rec {
 	var Inner inner = Inner()
 	var int flags = 0
 }
@@ -197,7 +197,7 @@ Console.write_line("\\{m.inner.v}:\\{m.flags}")
 // (and their records dropped) before the move copy lands.
 test("move reassignment releases displaced heap string fields", async () => {
 	const input = `
-struct Rec {
+owning struct Rec {
 	var string kind
 	var string label = "none"
 	var int flags = 0
@@ -216,7 +216,7 @@ Console.write_line("\\{m.kind}:\\{m.label}")
 // reclaims it in the auto-destroy (both backends).
 test("List-typed field default", async () => {
 	const input = `
-struct TreeNode {
+owning struct TreeNode {
 	var int value = 0
 	var List<int> children = List<int>()
 }

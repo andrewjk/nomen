@@ -6,7 +6,7 @@
 /**
  * A doubly-linked list of values
  **/
-pub struct LinkedList<T>: Enumerable {
+pub owning struct LinkedList<T>: Enumerable {
 	var values = Buffer<T>()
 	var nexts = Buffer<int>()
 	var prevs = Buffer<int>()

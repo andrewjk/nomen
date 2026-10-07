@@ -252,7 +252,7 @@ describe("Map with struct values", () => {
 		const input = `
 import System
 
-pub struct LinkReference {
+pub owning struct LinkReference {
 	pub var string url = ""
 	pub var string title = ""
 }
@@ -262,7 +262,9 @@ pub func main = (Init init) {
 	var LinkReference r = LinkReference()
 	r.url = "http://example"
 	r.title = "Example"
-	refs.set("l1", r)
+	// B1 cutover: LinkReference is owning — Map.set takes a move TV; the
+	// donor transfers (and is not read again).
+	refs.set("l1", move r)
 	if refs.has("l1") {
 		var LinkReference got = refs.get_or("l1", LinkReference())
 		Console.write("\\{got.url} \\{got.title}\\n")

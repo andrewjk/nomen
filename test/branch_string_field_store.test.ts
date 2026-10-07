@@ -52,7 +52,7 @@ pub func main = (Init init) {
 		const input = `
 import System
 
-struct Pair {
+owning struct Pair {
 	var a = ""
 }
 

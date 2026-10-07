@@ -495,7 +495,13 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				!param_struct.is_generic &&
 				!param.type.is_nullable &&
 				node.name !== "main" &&
-				struct_needs_destroy(param_struct, status) &&
+				// B1 full cutover: a string-only DECLARED-owning struct has no
+				// `struct_needs_destroy` footprint (the gate excludes strings)
+				// — but the transfer row makes the callee the field owner, so
+				// the teardown must fire for it too (seeded records free the
+				// string fields through the param pointer at exit).
+				(struct_needs_destroy(param_struct, status) ||
+					(param_struct.is_owning && direct_string_fields(param_struct).length > 0)) &&
 				!moved_param_is_consumed(node, param.name, param_struct.name, status.structs, status.traits)
 			) {
 				const decl = new DeclarationNode(param.start, "private", "move", pname, param.type);
@@ -504,6 +510,18 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				// through the param POINTER (`->`).
 				decl.string_fields_via_pointer = true;
 				status.scoped_declarations.push(decl);
+				// Seed the transferred fields' records so (a) body writes see
+				// old_was_heap and reclaim displaced buffers, and (b) the
+				// record-free loop releases the surviving fields at exit.
+				// Mirrors the pbv block's gate: a struct whose destroy walk
+				// fires (user `#destroy`, owning fields) reclaims everything
+				// itself — seeding here would double-free the strings.
+				if (!struct_needs_destroy(param_struct, status)) {
+					if (!status.heap_string_fields) status.heap_string_fields = new Set();
+					for (const field of direct_string_fields(param_struct)) {
+						status.heap_string_fields.add(`${pname}.${field.name}`);
+					}
+				}
 			}
 			// OWNED value-struct parameter (pass-by-value): the caller
 			// materialized a uniformly heap-owned copy (string fields
@@ -550,6 +568,11 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				!(owned_value_struct.traits ?? []).length &&
 				direct_string_fields(owned_value_struct).length > 0 &&
 				!struct_needs_destroy(owned_value_struct, status) &&
+				// B1 full cutover: a DECLARED `owning struct` is never pbv —
+				// bare params are read-only const borrows (the check side's
+				// stamp requires !is_owning_struct_type_requiring_move; the
+				// callee gate must agree or it frees the caller's storage).
+				!owned_value_struct.is_owning &&
 				(status.normalized_struct_returners?.has(fn_name) ||
 					status.normalized_struct_returners?.has(fn_label)) &&
 				!status.func_address_taken?.has(fn_name) &&

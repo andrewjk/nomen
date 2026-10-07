@@ -806,7 +806,7 @@ test("nullable struct local frees guarded on _has flag", async () => {
 	const input = `
 import System
 
-pub struct Pair {
+pub owning struct Pair {
 	pub var name = ""
 	pub var title = ""
 }
@@ -848,7 +848,7 @@ test("nullable struct reassignment reclaims old value", async () => {
 	const input = `
 import System
 
-pub struct Pair {
+pub owning struct Pair {
 	pub var name = ""
 	pub var title = ""
 }

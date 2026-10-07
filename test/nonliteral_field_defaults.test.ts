@@ -18,7 +18,7 @@ describe("non-literal struct field defaults", () => {
 			`
 import System
 
-struct Pair {
+owning struct Pair {
 	var string a = "de" + "fault"
 	var string b
 }
@@ -43,7 +43,7 @@ pub func main = (Init init) {
 			`
 import System
 
-struct Pair {
+owning struct Pair {
 	var string a = "de" + "fault"
 	var string b
 
@@ -69,7 +69,7 @@ pub func main = (Init init) {
 			`
 import System
 
-struct Pair {
+owning struct Pair {
 	var string a = "de" + "fault"
 	var string b
 }
@@ -96,7 +96,7 @@ pub func main = (Init init) {
 			`
 import System
 
-struct Pair {
+owning struct Pair {
 	var string a = "de" + "fault"
 	var string b
 }
@@ -173,11 +173,11 @@ func fresh = (out string) {
 	return "fr" + "esh"
 }
 
-struct Lit {
+owning struct Lit {
 	var string s = ro()
 }
 
-struct Owned {
+owning struct Owned {
 	var string s = fresh()
 }
 

@@ -2,10 +2,12 @@ import { direct_string_fields } from "../../build_common/has_string_fields.ts";
 import { mono_type_name } from "../../build_common/mono_name.ts";
 import type BaseNode from "../../nodes/BaseNode.ts";
 import { child_nodes } from "../../nodes/child_nodes.ts";
+import type EnumNode from "../../nodes/EnumNode.ts";
 import FunctionNode from "../../nodes/FunctionNode.ts";
 import StructNode from "../../nodes/StructNode.ts";
 import Type from "../../nodes/Type.ts";
 import type CheckStatus from "../CheckStatus.ts";
+import { is_box_type } from "./box.ts";
 
 export function is_class_type(type_name: string, status: CheckStatus): boolean {
 	return !!status.structs.find((s) => s.name === type_name && s.is_class);
@@ -137,11 +139,15 @@ export function is_owning_struct_type_requiring_move(type: Type, status: CheckSt
  * materializes a uniformly heap-owned copy), so `var` field writes inside
  * the body stay local and no call-site acknowledgment is needed. Excludes
  * structs that own non-string heap (those keep `move ... swap` / `ref`
- * semantics) and structs conforming to traits (trait dispatch aliases).
+ * semantics), structs conforming to traits (trait dispatch aliases), and —
+ * B1 full cutover — DECLARED `owning struct`s: the declaration is the
+ * move-only contract, so a bare parameter is a read-only const borrow (B3),
+ * never an implicit copy.
  */
 export function is_pass_by_value_owning_struct(type: Type, status: CheckStatus): boolean {
 	const s = resolve_struct(type, status);
 	if (!s || s.is_class || s.is_generic || s.is_simple_type) return false;
+	if (s.is_owning) return false;
 	if ((s.traits ?? []).length > 0) return false;
 	if (direct_string_fields(s).length === 0) return false;
 	if (struct_owns_non_string_heap(s, status, new Set())) return false;
@@ -190,6 +196,47 @@ function struct_owns_heap(s: StructNode, status: CheckStatus, visited: Set<strin
 		if (!field_struct) continue;
 		if (field_struct.is_class) return true;
 		if (struct_owns_heap(field_struct, status, visited)) return true;
+	}
+	return false;
+}
+
+/**
+ * STRUCT_PLAN_3 B1 full cutover — the OWNING side of the Copyable predicate,
+ * as it applies to a struct field's (or enum case payload's) type. Owning:
+ * `string` (D3 — the fat pair owns its bytes; covers `string[N]` arrays
+ * too, whose elements are owning), class types (the compiler-stamped `Box<T>`
+ * wrapper is one), declared-`owning` structs, structs the inferred walk flags
+ * (string fields, a resource-releasing `#destroy`, transitively), declared-
+ * `owning` enums, and enums whose payloads are owning (the inferred half of
+ * B1a). NOT owning: `view T` (a (ptr, len) borrow is Copyable, region-bound),
+ * `ref` (rejected at fields/payloads elsewhere), scalars, `func` types,
+ * bitsets.
+ *
+ * This is the predicate the Copyable verifier
+ * (check_struct_node / check_enum_node) runs over every field of a bare
+ * `struct` / `enum`: one `true` means the declaration cannot be Copyable and
+ * must be spelled `owning`.
+ */
+export function type_owns_heap(t: Type, status: CheckStatus): boolean {
+	if (!t.name || t.is_ref || t.is_view) return false;
+	if (t.name === "string") return true;
+	if (is_class_type(t.name, status) || is_box_type(t.name, status.structs)) return true;
+	const en = status.enums.find((e) => e.name === t.name);
+	if (en) {
+		if (en.is_owning) return true;
+		return enum_owns_payloads(en, status, new Set());
+	}
+	return is_owning_struct_type(t, status);
+}
+
+/** Whether any case payload of `en` owns heap (see `type_owns_heap`). */
+function enum_owns_payloads(en: EnumNode, status: CheckStatus, visited: Set<string>): boolean {
+	if (visited.has(en.name)) return false;
+	visited.add(en.name);
+	for (const c of en.cases) {
+		for (const p of c.params) {
+			if (type_owns_heap(p.type, status)) return true;
+		}
 	}
 	return false;
 }

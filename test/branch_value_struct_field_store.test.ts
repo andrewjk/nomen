@@ -16,7 +16,7 @@ import build_and_check_output from "./build_and_check_output";
 // param) and the struct then pushed into a List.
 
 const Defs = `
-struct Attr {
+owning struct Attr {
 	var name = ""
 	var value = ""
 }
@@ -80,7 +80,7 @@ test("switch: direct store into a local value-struct field across cases", async 
 	const input = `
 import System
 
-struct Pair {
+owning struct Pair {
 	var a = ""
 }
 

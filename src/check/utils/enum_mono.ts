@@ -9,6 +9,7 @@ import { flatten_nested_generic_arg } from "../check_function_call_node.ts";
 import type CheckStatus from "../CheckStatus.ts";
 import { materialize_anon_enum_type } from "./anon_enum.ts";
 import { borrow_depth_of } from "./borrow.ts";
+import { type_owns_heap } from "./ownership.ts";
 import { clone_type, materialize_tuple_type } from "./tuple_struct.ts";
 
 /**
@@ -87,22 +88,15 @@ export function monomorphize_enum(
 
 	const mono = new EnumNode(generic_enum.start, generic_enum.visibility, mono_name, cases);
 	mono.is_generic = false;
-	// STRUCT_PLAN_3 B1a: a mono's ownership is DERIVED from its substituted
-	// payloads — an instantiation with an owning payload (`Option<Box>`) is
+	// STRUCT_PLAN_3 B1a + B1 full cutover: a mono's ownership is DERIVED from
+	// its substituted payloads — an instantiation with an owning payload
+	// (`Option<Box>`, `Result<int, string>` — string is owning per D3) is
 	// move-only like a spelled `owning enum`. The generated mono cannot be
 	// spelled `owning`, so the derivation IS the declaration (and the
 	// Copyable verifier skips generated monos).
 	mono.is_owning =
 		generic_enum.is_owning ||
-		cases.some((c) =>
-			c.params.some(
-				(p) =>
-					!!p.type.name &&
-					!p.type.is_ref &&
-					(!!status.structs.find((st) => st.name === p.type.name && st.is_owning) ||
-						!!status.enums.find((e) => e.name === p.type.name && e.is_owning)),
-			),
-		);
+		cases.some((c) => c.params.some((p) => type_owns_heap(p.type, status)));
 	// A must_use generic enum's instantiations stay must_use — the discard check
 	// looks the concrete type up by its mono name. The template name/args are
 	// kept so diagnostics can render `Result<int, string>` instead of the

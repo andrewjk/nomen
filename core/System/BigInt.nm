@@ -1,7 +1,7 @@
 /**
  * An arbitrary-precision integer
  **/
-pub struct BigInt {
+pub owning struct BigInt {
 	var sign = 0
 	var len = 0
 	var digits = Buffer<int>()

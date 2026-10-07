@@ -6,7 +6,7 @@
 /**
  * A tree of values connected by parent/child links
  **/
-pub struct Tree<T>: Enumerable {
+pub owning struct Tree<T>: Enumerable {
 	var values = Buffer<T>()
 	var lefts = Buffer<int>()
 	var rights = Buffer<int>()

@@ -21,7 +21,7 @@ Console.write_line(c.value)
 	test("struct with a required (non-defaulted) string field gets copy()", async () => {
 		await build_and_check_output(
 			`
-struct Info { var string name }
+owning struct Info { var string name }
 var Info a = Info("n")
 var Info b = a.copy()
 b.name = "m"

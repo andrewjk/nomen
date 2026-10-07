@@ -154,7 +154,7 @@ owning struct Cell {
 
 	test("move transfer of an owning value struct (prefix form)", async () => {
 		const input = `
-struct H {
+owning struct H {
 	var List<int> items
 }
 	var H p = H(List<int>())

@@ -291,7 +291,7 @@ Console.write("\\{add_base(1)} \\{add_base(2)}")
 
 	test("lambda moves an owning struct capture", () => {
 		const input = `
-struct Owned {
+owning struct Owned {
 	var List<int> data
 }
 var Owned o = Owned(List<int>())

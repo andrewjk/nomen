@@ -179,10 +179,10 @@ Console.write("\\{m.describe(State.running(5))} \\{m.describe(State.idle)}")
 
 	test("struct payload binds at the match (BUGS #9)", async () => {
 		const input = `
-struct Config {
+owning struct Config {
   var string name
 }
-enum Holder {
+owning enum Holder {
   case some(Config c)
   case none
 }
@@ -197,11 +197,11 @@ match h {
 
 	test("struct payload from a local variable", async () => {
 		const input = `
-struct Config {
+owning struct Config {
   var string name
   var int n
 }
-enum Wrap {
+owning enum Wrap {
   case pair(Config c)
   case none
 }
@@ -217,10 +217,10 @@ match w {
 
 	test("scalar payload after a struct payload keeps its offset", async () => {
 		const input = `
-struct Config {
+owning struct Config {
   var string name
 }
-enum Wrap {
+owning enum Wrap {
   case pair(Config c, int n)
   case none
 }

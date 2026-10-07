@@ -1051,6 +1051,11 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				direct_string_fields(owned_value_param).length > 0 &&
 				!(owned_value_param.traits ?? []).length &&
 				!struct_needs_destroy(owned_value_param, status) &&
+				// B1 full cutover: a DECLARED `owning struct` is never pbv —
+				// bare params are read-only const borrows; the callee gate must
+				// agree with the check side's stamp or it frees the caller's
+				// storage.
+				!owned_value_param.is_owning &&
 				(status.normalized_struct_returners?.has(node.name) ||
 					status.normalized_struct_returners?.has(label_name)) &&
 				!status.func_address_taken?.has(node.name) &&
@@ -1156,7 +1161,13 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				!!vstruct &&
 				!vstruct.is_class &&
 				!param.type.is_nullable &&
-				struct_needs_destroy(vstruct, status);
+				// B1 full cutover: a string-only DECLARED-owning struct has no
+				// `struct_needs_destroy` footprint (that gate excludes strings)
+				// — but the transfer row makes the callee the field owner, so
+				// the teardown fires for it too (the seeded records release
+				// the string fields through the saved address at exit).
+				(struct_needs_destroy(vstruct, status) ||
+					(vstruct.is_owning && direct_string_fields(vstruct).length > 0));
 			if (is_class || is_trait || is_owning_value_struct) {
 				const reg = callee_map.get(param.name) ?? param_regs[pidx];
 				if (is_class || is_trait) status.moved_class_params!.set(param.name, reg);
@@ -1169,6 +1180,18 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 					is_nullable: param.type.is_nullable,
 					value_struct_destroy_name: is_owning_value_struct ? vstruct!.name : undefined,
 				});
+				// Seed the transferred string fields' records so the teardown's
+				// release_heap_string_fields sees them. Safe even when the
+				// destroy walk fires: emit_field_destroys SKIPS string fields
+				// (they may be rodata literals), so the records are the only
+				// reclaimer — a user `#destroy` owns the whole sequence and
+				// records stay unseeded there.
+				if (vstruct && !has_destroy(vstruct)) {
+					if (!status.heap_string_fields) status.heap_string_fields = new Set();
+					for (const field of direct_string_fields(vstruct)) {
+						status.heap_string_fields.add(`${param.name}.${field.name}`);
+					}
+				}
 			}
 		}
 		pidx++;

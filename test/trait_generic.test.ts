@@ -23,7 +23,7 @@ owning struct Users: Greetable<User> {
 	}
 }
 
-struct User {
+owning struct User {
 	var string name = ""
 }
 
@@ -48,7 +48,7 @@ owning struct Users: Greetable<User> {
 	}
 }
 
-struct User {
+owning struct User {
 	var string name = ""
 }
 
@@ -73,7 +73,7 @@ owning struct M: Mapper<User, int> {
 	}
 }
 
-struct User {
+owning struct User {
 	var string name = ""
 }
 
@@ -169,7 +169,7 @@ trait Box<T> {
 	}
 }
 
-struct StrBox: Box<string> {
+owning struct StrBox: Box<string> {
 	var string item = ""
 }
 
@@ -228,7 +228,7 @@ struct IB: Box<int> {
 	var int item = 0
 }
 
-struct SB: Box<string> {
+owning struct SB: Box<string> {
 	var string item = ""
 }
 
@@ -444,7 +444,7 @@ trait Greetable<T> {
 owning struct Users: Greetable<User, int> {
 }
 
-struct User {
+owning struct User {
 	var string name = ""
 }
 `;

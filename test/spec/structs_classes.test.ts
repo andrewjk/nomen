@@ -238,7 +238,7 @@ const int top = numbers.pop()
 describe("spec: construction overrides", () => {
 	test("struct constructed and passed to function", () => {
 		const input = `
-struct Circle {
+owning struct Circle {
     var string name
     var int center_x
     var int center_y
@@ -304,7 +304,7 @@ trait Stringable {
     func to_string = (out string)
 }
 
-struct Circle {
+owning struct Circle {
     var int radius
 }
 

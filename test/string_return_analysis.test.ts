@@ -37,7 +37,7 @@ pub func pick = (int c, out string) {
 	return "no"
 }
 
-struct Named {
+owning struct Named {
 	var string name
 	pub func get = (self, out string) { return self.name }
 	pub func render = (self, out string) { return "<" + self.name + ">" }

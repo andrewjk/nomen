@@ -38,7 +38,7 @@ pub func main = (Init init) {
 		const input = `
 import System
 
-pub struct S2 {
+pub owning struct S2 {
 	pub var string url
 	pub var string title
 
@@ -62,7 +62,7 @@ pub func main = (Init init) {
 		const input = `
 import System
 
-pub struct P2 {
+pub owning struct P2 {
 	pub var string a
 	pub var int b
 	pub var string c

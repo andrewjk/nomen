@@ -37,7 +37,7 @@ Console.write("\\{b.load(0)}")
 
 test("Buffer.modify owning struct element", async () => {
 	const input = `
-struct Named {
+owning struct Named {
 	var string name
 	var int hits
 }

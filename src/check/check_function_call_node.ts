@@ -37,7 +37,11 @@ import {
 	mangled_label,
 } from "./utils/function_overload.ts";
 import is_sendable_type from "./utils/is_sendable_type.ts";
-import { is_class_type, is_owning_struct_type_requiring_move } from "./utils/ownership.ts";
+import {
+	is_class_type,
+	is_owning_struct_type_requiring_move,
+	type_owns_heap,
+} from "./utils/ownership.ts";
 import { resolve_declared_struct } from "./utils/resolve_declared_type.ts";
 import { spawn_arg_root_name } from "./utils/spawn_region.ts";
 import synthesize_lambda_name from "./utils/synthesize_lambda_name.ts";
@@ -613,11 +617,13 @@ export function monomorphize(
 	// substitution — see concrete, resolvable type names.
 	mono_struct.source_type_args = flat_args;
 	mono_struct.is_class = generic_struct.is_class;
-	// The declared `owning struct` flag rides along (R tranche 4): a mono of
-	// a declared-owning generic (`Box_Node`, `Thread_uint64`) is the same
-	// move-only type — without this the mono loses the flag and the
-	// Copyable verifier treats it as a bare struct with owning fields.
-	mono_struct.is_owning = generic_struct.is_owning;
+	// STRUCT_PLAN_3 B1 full cutover: a mono's ownership is DERIVED from its
+	// substituted fields, mirroring enum_mono — a generic whose type param
+	// lands on an owning field (`Wrapper<List<int>>`) is move-only like a
+	// spelled `owning struct` (the Copyable verifier would otherwise reject
+	// the generated mono, which cannot be spelled `owning`).
+	mono_struct.is_owning =
+		generic_struct.is_owning || mono_fields.some((f) => type_owns_heap(f.type, status));
 	mono_struct.is_library = generic_struct.is_library;
 	// Trait conformance args ride along, substituted (`class Thread<T> :
 	// Spawnable<T>` monomorphizes to `Thread_uint64 : Spawnable_uint64`).

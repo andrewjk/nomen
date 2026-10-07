@@ -29,7 +29,7 @@ struct Vec {
 	}
 }
 
-struct Named {
+owning struct Named {
 	var string name = ""
 	var int num = 0
 	pub func #init = (ref self, string name, int num) {
@@ -114,7 +114,7 @@ pub func main = (Init init) {
 		const input = `
 import System
 
-pub struct LinkReference {
+pub owning struct LinkReference {
 	pub var string url = ""
 	pub var string title = ""
 }

@@ -141,7 +141,7 @@ Console.write("done\\n")
 	test("List<Animal> as a struct field default is reclaimed", async () => {
 		const input = `
 owning struct Animal { var char letter }
-struct Zoo {
+owning struct Zoo {
 	var List<Animal> animals = List<Animal>()
 }
 if true {
@@ -159,7 +159,7 @@ Console.write("done\\n")
 	test("List<Animal> field populated in a custom #init is reclaimed", async () => {
 		const input = `
 owning struct Animal { var char letter }
-struct Zoo {
+owning struct Zoo {
 	var List<Animal> animals = List<Animal>()
 
 	func #init = (self) {

@@ -15,7 +15,11 @@ import check_function_node from "./check_function_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { is_box_type } from "./utils/box.ts";
 import check_init_assigns_all_fields from "./utils/check_init_fields.ts";
-import { is_class_type, is_owning_struct_type_requiring_move } from "./utils/ownership.ts";
+import {
+	is_class_type,
+	is_owning_struct_type_requiring_move,
+	type_owns_heap,
+} from "./utils/ownership.ts";
 import type_from_value from "./utils/type_from_value.ts";
 
 function params_differ(a: FunctionNode, b: FunctionNode): boolean {
@@ -29,6 +33,14 @@ function params_differ(a: FunctionNode, b: FunctionNode): boolean {
 }
 
 export default function check_struct_node(struct: StructNode, status: CheckStatus) {
+	// STRUCT_PLAN_3 B1 full cutover — compiler-generated tuple / anonymous
+	// struct declarations cannot be spelled `owning`, so their ownership is
+	// re-derived here, at statement-check time: every referenced mono is
+	// registered by now (the creation-time derive can run before a generic
+	// element monomorphizes and so under-derives).
+	if (struct.name.startsWith("_Tuple_") || struct.name.startsWith("_Anon_")) {
+		struct.is_owning = struct.fields.some((f) => type_owns_heap(f.type, status));
+	}
 	// STRUCT_PLAN_3 B2 — the inline-containment cycle detector: a value
 	// struct whose fields reach themselves through NON-Box value-struct
 	// fields has no finite layout. The error prescribes the fix: declare the
@@ -161,24 +173,6 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 			check_declaration_node(decl, status);
 			continue;
 		}
-		// STRUCT_PLAN_3 B5 — the field restrictions collapse into the
-		// Copyable verifier: a class-typed field (the field slot owns the
-		// instance pointer), a declared-`owning` struct field, or a `Box<T>`
-		// field (the box owns its pointee) all own heap state a byte-copy
-		// would alias. On a bare `struct` that claim is false — the verifier
-		// error names the fix. On an `owning struct` the declaration IS the
-		// contract: the field is an owning slot (transfer-on-store), so the
-		// field is accepted.
-		const field_is_class_type =
-			!!decl.type.name &&
-			!decl.type.is_ref &&
-			is_class_type(decl.type.name, status) &&
-			!is_box_type(decl.type.name, status.structs);
-		const field_is_declared_owning =
-			!!decl.type.name &&
-			!decl.type.is_ref &&
-			(!!status.structs.find((st) => st.name === decl.type.name && st.is_owning) ||
-				is_box_type(decl.type.name, status.structs));
 		// A trait-typed field is an owning handle too, but its FIELD lowering
 		// (boxed handle storage + vtable dispatch through the field) is not
 		// built yet — reject with the concrete-type fix until it lands (B5
@@ -196,7 +190,18 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 			);
 			continue;
 		}
-		if (!struct.is_class && (field_is_class_type || field_is_declared_owning)) {
+		// STRUCT_PLAN_3 B5 + B1 full cutover — the field restrictions collapse
+		// into the Copyable verifier, verified over the CLOSED owning
+		// predicate (`type_owns_heap`): a class-typed field (the field slot
+		// owns the instance pointer), a `Box<T>` field, a `string` field or
+		// string array (D3 — the fat pair owns its bytes), a declared-
+		// `owning` struct/enum field, or a field whose type the inferred walk
+		// flags (string fields, a resource-releasing `#destroy`, transitively)
+		// all own heap state a byte-copy would alias. On a bare `struct` that
+		// claim is false — the verifier error names the fix. On an
+		// `owning struct` the declaration IS the contract: the field is an
+		// owning slot (transfer-on-store), so the field is accepted.
+		if (!struct.is_class && type_owns_heap(decl.type, status)) {
 			if (!struct.is_owning) {
 				add_error(
 					status,

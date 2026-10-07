@@ -17,7 +17,7 @@ test("declare/assign/eval statements emit through the NIR seam byte-identically"
 		`
 import System
 
-struct Counter {
+owning struct Counter {
     var int count
     var string label
 }

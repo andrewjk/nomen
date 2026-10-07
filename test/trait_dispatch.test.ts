@@ -85,7 +85,7 @@ trait Named {
   var string name
 }
 
-struct Alice: Named {
+owning struct Alice: Named {
   var string name = "Alice"
 }
 

@@ -1,25 +1,31 @@
 import add_error from "../add_error.ts";
 import EnumNode from "../nodes/EnumNode.ts";
 import type CheckStatus from "./CheckStatus.ts";
+import { type_owns_heap } from "./utils/ownership.ts";
 
 export default function check_enum_node(node: EnumNode, status: CheckStatus) {
 	node.is_generic = node.type_params.length > 0;
 
-	// STRUCT_PLAN_3 B1a — the Copyable verifier (declared-flag subset): a
-	// bare `enum` with a case payload typed a DECLARED-owning struct (or a
-	// declared-owning enum) cannot be Copyable — case construction transfers
-	// the payload, and a value copy of the enum would alias it. Name the fix.
-	// GENERATED monos (`template_name` set) are exempt: their ownership is
-	// derived from the substituted payloads at materialization (enum_mono
-	// stamps is_owning), and a generated enum cannot be spelled `owning`.
+	// STRUCT_PLAN_3 B1 full cutover — a generated anonymous enum cannot be
+	// spelled `owning`; re-derive its ownership at statement-check time
+	// (mirrors the tuple/anon-struct re-derive in check_struct_node).
+	if (node.name.startsWith("_AnonEnum_")) {
+		node.is_owning = node.cases.some((c) => c.params.some((p) => type_owns_heap(p.type, status)));
+	}
+
+	// STRUCT_PLAN_3 B1a + B1 full cutover — the Copyable verifier: a bare
+	// `enum` with a case payload typed an OWNING type (`type_owns_heap` —
+	// `string` (D3), a declared-`owning` struct/enum, a struct the inferred
+	// walk flags, or an enum whose payloads are owning) cannot be Copyable —
+	// case construction transfers the payload, and a value copy of the enum
+	// would alias it. Name the fix. GENERATED monos (`template_name` set) are
+	// exempt: their ownership is derived from the substituted payloads at
+	// materialization (enum_mono stamps is_owning), and a generated enum
+	// cannot be spelled `owning`.
 	if (!node.is_owning && !node.template_name) {
 		for (const c of node.cases) {
 			for (const p of c.params) {
-				if (!p.type.name || p.type.is_ref) continue;
-				const owns =
-					status.structs.find((st) => st.name === p.type.name && st.is_owning) ||
-					status.enums.find((e) => e.name === p.type.name && e.is_owning);
-				if (owns) {
+				if (type_owns_heap(p.type, status)) {
 					add_error(
 						status,
 						`'${node.name}' cannot be Copyable — case '.${c.name}' owns heap memory (its '${p.name}' payload is \`owning\`) --> mark it \`owning enum ${node.name}\``,

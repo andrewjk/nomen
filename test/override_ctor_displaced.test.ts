@@ -17,7 +17,7 @@ describe("override-constructor displaced-copy reclamation", () => {
 			`
 import System
 
-struct Pair {
+owning struct Pair {
 	var string a = "de" + "fault"
 	var string b
 }
@@ -43,7 +43,7 @@ pub func main = (Init init) {
 			`
 import System
 
-struct Pair {
+owning struct Pair {
 	var string a = "de" + "fault"
 	var string b
 }
@@ -65,7 +65,7 @@ pub func main = (Init init) {
 			`
 import System
 
-struct Lit {
+owning struct Lit {
 	var string a = "default"
 	var string b
 }
@@ -91,7 +91,7 @@ pub func main = (Init init) {
 			`
 import System
 
-struct Pair {
+owning struct Pair {
 	var string a = "default"
 	var string b = "bee"
 
@@ -133,7 +133,7 @@ describe("#init computed-seed ownership", () => {
 	const SEED_STRUCT = `
 import System
 
-struct Pair {
+owning struct Pair {
 	var string a = "default"
 	var string b = "bee"
 
@@ -213,7 +213,7 @@ pub func main = (Init init) {
 			`
 import System
 
-struct Pair {
+owning struct Pair {
 	var string a = "de" + "fault"
 	var string b = "bee"
 
@@ -241,7 +241,7 @@ pub func main = (Init init) {
 			`
 import System
 
-struct Pair {
+owning struct Pair {
 	var string a
 	var string b = "bee"
 
@@ -270,7 +270,7 @@ pub func main = (Init init) {
 			`
 import System
 
-struct Pair {
+owning struct Pair {
 	var string a = "default"
 	var string b = "bee"
 
@@ -307,7 +307,7 @@ pub func main = (Init init) {
 			`
 import System
 
-struct Pair {
+owning struct Pair {
 	var string a = "de" + "fault"
 	var string b = "bee"
 

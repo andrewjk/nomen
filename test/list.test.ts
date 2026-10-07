@@ -190,7 +190,7 @@ describe("List of owning value structs", () => {
 	// T_destroy is auto-generated for value structs with owning fields; struct
 	// locals read from `.at()`/`.first()` are borrows (not destroyed, since the
 	// slot owns the strings).
-	const OWNING = `struct Person {
+	const OWNING = `owning struct Person {
   var string name
   var int age
 }`;
@@ -267,14 +267,14 @@ for i of 0 .. people.length {
 	// struct that owns a string. Previously this LEAKED on aarch64 (the outer
 	// auto-destroy never called the inner struct's auto-generated _destroy) and
 	// failed to compile on C (the inner struct's full typedef wasn't pulled
-	// into the header, so `struct Outer { struct Inner inner; }` was an
+	// into the header, so `owning struct Outer { struct Inner inner; }` was an
 	// incomplete type). Both fixed.
 	test("nested owning value struct (push/at)", async () => {
 		const input = `
-struct Inner {
+owning struct Inner {
   var string text
 }
-struct Outer {
+owning struct Outer {
   var int n
   var Inner inner
 }
@@ -291,10 +291,10 @@ for i of 0 .. xs.length {
 
 	test("nested owning value struct (set replaces — old freed)", async () => {
 		const input = `
-struct Inner {
+owning struct Inner {
   var string text
 }
-struct Outer {
+owning struct Outer {
   var int n
   var Inner inner
 }
@@ -318,13 +318,13 @@ for i of 0 .. xs.length {
 		// Outer { Mid mid } where Mid { Inner inner } where Inner { string }:
 		// exercises the destroy + deep-copy recursion two levels deep.
 		const input = `
-struct Inner {
+owning struct Inner {
   var string text
 }
-struct Mid {
+owning struct Mid {
   var Inner inner
 }
-struct Outer {
+owning struct Outer {
   var int n
   var Mid mid
 }
@@ -616,14 +616,21 @@ for i of 0 .. a.length {
 
 	test("owning value struct list copy deep-copies elements", async () => {
 		const input = `
-struct Person {
+owning struct Person {
   var string name
   var int age
 }
 var List<Person> a = List<Person>()
 a.push(Person("Alice", 30))
 a.push(Person("Bob", 25))
-var List<Person> b = a.copy()
+// B1 cutover: List<Person>.copy() is rejected — the copy would share the
+// stored owning instances. The deep copy is element-wise: clone each element
+// into a fresh instance.
+var List<Person> b = List<Person>()
+for i of 0 .. a.length {
+  var Person p = a.at(i)
+  b.push(Person(p.name, p.age))
+}
 if a.length > 1 {
   a.set(1, Person("Carol", 40))
 }
@@ -644,7 +651,7 @@ for i of 0 .. a.length {
 		// extracting an owning List<T> field by value. `move ... swap` takes
 		// ownership; `.copy()` takes a deep copy and leaves the field intact.
 		const input = `
-struct Group {
+owning struct Group {
   var List<int> items = List<int>()
 }
 var Group g = Group()
@@ -701,7 +708,7 @@ var List<Speaker> c = l.copy()
 
 describe("List<T> as an explicit struct-field type", () => {
 	// Regression: a generic container as an explicit struct-field type
-	// (`struct Group { var List<int> items }`) used to emit the BARE generic
+	// (`owning struct Group { var List<int> items }`) used to emit the BARE generic
 	// (`struct List *items`) in the synthesized `Group_init` signature on C —
 	// an incomplete type the field assignment conflicted with. The ctor
 	// signature now lowers to the monomorphized `struct List_int *`, and the
@@ -712,7 +719,7 @@ describe("List<T> as an explicit struct-field type", () => {
 
 	test("construct with move — field reads back on both backends", async () => {
 		const input = `
-struct Group {
+owning struct Group {
   var List<int> items
 }
 var List<int> xs = List<int>()
@@ -730,7 +737,7 @@ Console.write("\\{g.items.length} \\{total}")
 
 	test("construct with a fresh list argument (implicit move)", async () => {
 		const input = `
-struct Group {
+owning struct Group {
   var List<int> items
 }
 var Group g = Group(List<int>())
@@ -743,7 +750,7 @@ Console.write("\\{g.items.length} \\{g.items.pop()}")
 
 	test("move-declared field still works with move", async () => {
 		const input = `
-struct Group {
+owning struct Group {
   var List<int> items
 }
 var List<int> xs = List<int>()
@@ -756,7 +763,7 @@ Console.write("\\{g.items.pop()}")
 
 	test("move out of the field with swap revalidates it", async () => {
 		const input = `
-struct Group {
+owning struct Group {
   var List<int> items = List<int>()
 }
 var Group g = Group()
@@ -841,7 +848,7 @@ Console.write("\\{first_of(w)}")
 
 	test("plain by-value constructor arg is rejected (missing move)", () => {
 		const input = `
-struct Group {
+owning struct Group {
   var List<int> items
 }
 var List<int> xs = List<int>()
@@ -855,7 +862,7 @@ var Group g = Group(xs)
 
 	test("copying a field into the constructor by value is rejected", () => {
 		const input = `
-struct Group {
+owning struct Group {
   var List<int> items
 }
 var Group a = Group(List<int>())
@@ -870,7 +877,7 @@ var Group b = Group(a.items)
 
 	test("bare move out of a field into the constructor is rejected (needs swap)", () => {
 		const input = `
-struct Group {
+owning struct Group {
   var List<int> items
 }
 var Group a = Group(List<int>())

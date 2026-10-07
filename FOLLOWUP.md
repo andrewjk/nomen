@@ -309,12 +309,14 @@ fields must use 'move'` check in `check_declaration_node` is deleted
   Fixed as three record-dropping transfer sites (C call path, aarch64 call
   path, aarch64 declaration ctor path) plus the destroy-gate broadening.
   Remaining skips:
-  - **`owning-struct string-field ownership` (D3/B1 cutover).** An owning
+  - **`owning-struct string-field ownership` (D3/B1 backend half).** An owning
     struct's string field takes the value-struct lowering (raw store, no
     displaced free), not the class-era always-heap one — so a heap string
     stored through a nested owning-struct field hop is not reclaimed at
     scope exit. Skips: `field_marshal` (2), `nested_class_field_write` (1),
-    `map` (1), `b5_struct_fields` (2). Resolved by B1's "string is owning".
+    `map` (1), `b5_struct_fields` (2). The checker half of B1 (the declared
+    verifier + migration) has landed; this is the uniform-heap lowering
+    tranche (see the Phase B section).
   - **aarch64 trait-handle re-boxing in a loop** crashes (pre-B4
     field-shaped dispatch residual). Skip: `trait_container_dispatch` (1).
   - **aarch64 container-of-owning-struct destroy** over-destroys empty cap
@@ -351,19 +353,82 @@ spellings, the flag-wins semantics, the declared-subset Copyable verifier),
 value-struct `T` field sizes `T` as one word, BUGS.md #10), 3 (B4 —
 trait objects: boxed handles at every trait position on both backends,
 tier-1 demotion, boxing takes ownership, the T3 stack-copy convention at
-bare `Trait` params), and 4 (B5/B6 — the field-restriction collapse: a
+bare `Trait` params), 4 (B5/B6 — the field-restriction collapse: a
 class-typed field on a bare `struct` is the Copyable-verifier error, an
 `owning struct`'s class fields are owned slots (`var` spelling, move
 auto-init params, displaced-store reclaim, destroy on both backends);
 nullable lowerings pinned: `Box<T>?`/trait-handle `?` = null pointer,
 inline structs keep the companion flag, nullable owning-struct RETURNS
-normalize their string fields on both backends). The rest of Phase B:
+normalize their string fields on both backends), and **5 (B1 full cutover
+— the checker half, 2026-10-08)**:
 
-- **B1 full cutover**: the Copyable verifier over INFERRED ownership (a bare
-  struct with a string field → error), migrating every existing owning
-  struct to the declared spelling. Sequenced after the built-in rewrite
-  (post-B4/R) — the string-only-struct borrow-copy semantics are
-  load-bearing in the memory model until then.
+- **The Copyable verifier now runs over the CLOSED owning predicate**
+  (`type_owns_heap`, `src/check/utils/ownership.ts`): a bare `struct` with a
+  `string` field or `string[N]` array field (D3 — the fat pair owns its
+  bytes), a class/`Box` field, a declared-`owning` struct/enum field, or a
+  field whose type the inferred walk flags (string fields, a
+  resource-releasing `#destroy`, transitively) is the verifier error. The
+  enum verifier (B1a) extends the same way: any owning payload (`string`
+  included) on a bare `enum` is the error. Generated types cannot be
+  spelled `owning`, so they DERIVE it: tuple structs and anonymous structs
+  from element/field types (re-derived at statement-check time, since the
+  creation-time derive can run before element monos register), anonymous
+  enums likewise, struct monos from the substituted fields
+  (`monomorphize`, mirroring enum_mono's payload derive).
+- **`is_pass_by_value_owning_struct` excludes declared-owning structs**:
+  the pbv shell convention (call-boundary heap copy, callee frees the
+  shell) is dead for user types — every string-field struct is `owning`
+  now, and a bare owning param is a READ-ONLY CONST BORROW (B3). The
+  backend gates agree (both build_function_node seeding sites require
+  `!struct.is_owning`); writing through a bare owning param is the
+  "Assignment to const" check error.
+- **The `move T` transfer row works for declared-owning structs on both
+  backends**: the callee registers the moved param (broadened
+  moved-value-struct gate: `struct_needs_destroy` OR owning-with-direct-
+  string-fields), seeds the string-field records (C: only when the destroy
+  walk does NOT fire — `struct_needs_destroy`; aarch64: when there is no
+  user `#destroy` — its field walk skips strings, so records are the only
+  reclaimer), and the CALLER drops its records without freeing (the
+  `callee_param_moved` row in both build_function_call sites). The transfer
+  row keys on a NAMED donor (`is_compiler_temp_name` guard): a fresh
+  construction temp owns nothing — strdup-in-place on it handed the copy to
+  a corpse (the b5 return-shape LEAK).
+- **Migration**: `core/` (Map/List/Set/Tree/Graph/LinkedList/Arena/BigInt/
+  Layout/JsonNode/JsonTree/CharIndex/RegexMatch/Init — 14 declarations),
+  `bench/nomen/lru.nm`, and the test corpus (~110 files, script-driven
+  declaration flips) — every bare struct/enum the verifier flagged is
+  spelled `owning`. Use-site fallout fixed: field reads of owning structs
+  take `move ... swap` or `.copy()`; Map's `set("k", r)` on a local takes
+  `move r`; the pbv-era tests (copy_semantics, param_by_value_gate) retyped
+  to the const-borrow contract. Suite green on both backends (4041 passed /
+  16 skipped, the pre-existing skip set).
+
+The rest of Phase B:
+
+- **B1 cutover — the backend half (the uniform-heap lowerings)**, aka
+  "owning-struct string-field ownership" / D3's "the field-default path
+  should stop raw-storing": owning-struct string fields are still the
+  value-struct lowering (ctor params raw-store on C; the aarch64 ctor does
+  not strdup value-struct string params; the local-teardown gate
+  `struct_needs_destroy` still excludes strings) — so a heap string stored
+  through a nested owning-struct field hop is not reclaimed at scope exit,
+  and the ctor/return normalization strdups can leak through abandoned
+  construction temps. Skips: `field_marshal` (2), `nested_class_field_write`
+  (1), `map` (1), `b5_struct_fields` (2). Order matters: uniform-heap
+  STORES first (ctor strdup on both backends, defaults stop raw-storing),
+  then the destroy-gate flip (`struct_needs_destroy` includes string fields
+  of owning structs) — flipping the gate first frees rodata ctor params.
+- **B1 residual (checker)**: a generic struct mono with a bare-`T` field
+  derives `is_owning` (the mono verifier then passes), but the generic
+  TEMPLATE itself is never flagged — `owning struct Wrapper<T>` must be
+  spelled when every instantiation should be owning. Variadic-pair
+  extraction of owning elements (`Map`'s pairs init) rides the temp-rooted
+  read exemption in `check_function_call` (the temp dies, set's store
+  deep-copies) until a generic move-out accessor exists on Array.
+- **`string` itself is still Copyable at bindings** (the D3 endgame):
+  `pub struct string` stays bare, string assignment keeps the strdup'd
+  assign copy + move-on-last-use. Making bindings move-only is a separate,
+  much larger break (E2's "string captures move" lands with it).
 - **Trait-typed FIELDS on owning structs** (the B5 remainder): rejected
   with a named fix ("declare it with the concrete type, or
   `Box<Concrete>`") until the boxed-handle field lowering exists — field
@@ -372,7 +437,6 @@ normalize their string fields on both backends). The rest of Phase B:
   pre-B4 inline shape and the C field member type needs `void *`). Not in
   the R shape menu (fields hold concrete types / `Box` / `WeakHandle`), so
   this may stay rejected permanently if R doesn't need it.
-- **R** (after N): retire `class`.
 
 B4 residual corners (deliberate, recorded for later):
 

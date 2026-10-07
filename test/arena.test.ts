@@ -50,7 +50,7 @@ pub func main = (Init init) {
 	test("value-struct payloads (alloc / get / set)", async () => {
 		const input = `import System
 
-pub struct Node {
+pub owning struct Node {
 	pub var int v
 	pub var string label
 }

@@ -9,12 +9,12 @@ import build_and_check_output from "./build_and_check_output";
 
 test("enum field constructed inline and matched through the field", async () => {
 	const input = `
-enum Maybe {
+owning enum Maybe {
   case some(string value)
   case none
 }
 
-struct Holder {
+owning struct Holder {
   var Maybe m
 }
 
@@ -29,12 +29,12 @@ match h.m {
 
 test("enum field reassignment frees the displaced payload", async () => {
 	const input = `
-enum Maybe {
+owning enum Maybe {
   case some(string value)
   case none
 }
 
-struct Holder {
+owning struct Holder {
   var Maybe m
 }
 
@@ -55,12 +55,12 @@ match h.m {
 
 test("enum field survives a factory return boundary", async () => {
 	const input = `
-enum Maybe {
+owning enum Maybe {
   case some(string value)
   case none
 }
 
-struct Holder {
+owning struct Holder {
   var Maybe m
 }
 
@@ -80,12 +80,12 @@ match h.m {
 
 test("enum field read returned through the sret boundary", async () => {
 	const input = `
-enum Maybe {
+owning enum Maybe {
   case some(string value)
   case none
 }
 
-struct Holder {
+owning struct Holder {
   var Maybe m
   pub func get = (self, out Maybe) {
     return self.m

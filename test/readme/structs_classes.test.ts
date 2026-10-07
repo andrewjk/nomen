@@ -30,7 +30,7 @@ const d = p.distance_from_origin()
 describe("readme: construction overrides", () => {
 	test("struct constructed and passed to a function", () => {
 		const input = `
-struct Circle {
+owning struct Circle {
     var string name
     var int center_x
     var int center_y
@@ -99,7 +99,7 @@ trait Stringable {
     func to_string = (out string)
 }
 
-struct Circle {
+owning struct Circle {
     var int radius
 }
 

@@ -8,7 +8,7 @@ import test_error from "./test_error";
 describe("access build", () => {
 	test("getting int field", async () => {
 		const input = `
-struct Person {
+owning struct Person {
   var int age = 0
 }
 var Person p = Person()
@@ -20,7 +20,7 @@ Console.write("\\{p.age}")
 
 	test("getting string field", async () => {
 		const input = `
-struct Person {
+owning struct Person {
   var string name
 }
 var Person p = Person("Alice")
@@ -31,7 +31,7 @@ Console.write("\\{p.name}")
 
 	test("setting int field", async () => {
 		const input = `
-struct Person {
+owning struct Person {
   var int age = 0
 }
 var Person p = Person()
@@ -43,7 +43,7 @@ Console.write("\\{p.age}")
 
 	test("getting and setting field", async () => {
 		const input = `
-struct Person {
+owning struct Person {
   var int age = 0
 }
 var Person p = Person()
@@ -83,7 +83,7 @@ Console.write("\\{a.x} \\{a.y} \\{b.x}")
 
 	test("method returning value", async () => {
 		const input = `
-struct Person {
+owning struct Person {
   var int age = 0
   func get_age = (self, out int) {
     return self.age
@@ -172,7 +172,7 @@ Console.write("\\{c.count}")
 describe("access errors", () => {
 	test("type mismatch getting field", () => {
 		const input = `
-struct Person {
+owning struct Person {
   var string name
 }
 var Person p = Person("")
@@ -187,7 +187,7 @@ var int x = p.name
 
 	test("type mismatch setting field", () => {
 		const input = `
-struct Person {
+owning struct Person {
   var int age
 }
 var Person p
@@ -202,7 +202,7 @@ p.age = "hi"
 
 	test("type mismatch setting field -- array", () => {
 		const input = `
-struct Person {
+owning struct Person {
   var int age
 }
 var Person p
@@ -217,7 +217,7 @@ p.age = Array(1, 2)
 
 	test("type mismatch setting field -- array 2", () => {
 		const input = `
-struct Person {
+owning struct Person {
   var Array<int> ages
 }
 var Person p
@@ -241,7 +241,7 @@ var age = person.age
 
 	test("field not found", () => {
 		const input = `
-struct Person {
+owning struct Person {
   var int age
 }
 var Person p = Person(0)
@@ -254,7 +254,7 @@ const x = p.name
 
 	test("unknown method", () => {
 		const input = `
-struct Person {
+owning struct Person {
   var int age
 }
 var Person p = Person(0)

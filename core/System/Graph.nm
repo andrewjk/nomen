@@ -6,7 +6,7 @@
 /**
  * A graph of values connected by edges
  **/
-pub struct Graph<T>: Enumerable {
+pub owning struct Graph<T>: Enumerable {
 	var values = Buffer<T>()
 	var head_edge = Buffer<int>()
 	var edge_target = Buffer<int>()

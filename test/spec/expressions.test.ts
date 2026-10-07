@@ -294,7 +294,7 @@ var v = str.slice(0, 5)
 
 	test("user-defined Viewable container delegates slice to its Buffer", () => {
 		const input = `
-pub struct UserList: Viewable {
+pub owning struct UserList: Viewable {
 	var int length = 0
 	var Buffer<int> items = Buffer<int>()
 	pub func slice = (

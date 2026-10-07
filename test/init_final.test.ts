@@ -60,7 +60,7 @@ Console.write("\\{cfg.timeout}")
 
 	test("pub struct with pub init", async () => {
 		const input = `
-pub struct Widget {
+pub owning struct Widget {
     var string name
 
     pub func #init = (self, string name) {

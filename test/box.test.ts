@@ -114,7 +114,7 @@ import System
 owning struct Node {
 	var int value
 }
-struct Store {
+owning struct Store {
 	var List<Box<Node>> items = List<Box<Node>>()
 	func add = (ref self, move Box<Node> n) {
 		self.items.push(move n)

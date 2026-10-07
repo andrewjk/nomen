@@ -22,7 +22,7 @@ describe("string field store through a ref struct param", () => {
 	const SET_SRC = `
 import System
 
-struct Pair {
+owning struct Pair {
 	var string a = "default"
 	var string b = "bee"
 }
@@ -52,7 +52,7 @@ pub func main = (Init init) {
 			`
 import System
 
-struct Pair {
+owning struct Pair {
 	var string a = "default"
 	var string b = "bee"
 }
@@ -82,12 +82,12 @@ pub func main = (Init init) {
 			`
 import System
 
-struct Pair {
+owning struct Pair {
 	var string a = "default"
 	var string b = "bee"
 }
 
-struct Other {
+owning struct Other {
 	var string a = "lit"
 }
 
@@ -114,7 +114,7 @@ pub func main = (Init init) {
 			`
 import System
 
-struct Pair {
+owning struct Pair {
 	var string a = "default"
 	var string b = "bee"
 }
@@ -140,7 +140,7 @@ pub func main = (Init init) {
 			`
 import System
 
-struct Pair {
+owning struct Pair {
 	var string a = "default"
 	var string b = "bee"
 
@@ -170,7 +170,7 @@ pub func main = (Init init) {
 			`
 import System
 
-struct Pair {
+owning struct Pair {
 	var string a = "default"
 	var string b = "bee"
 }
@@ -231,7 +231,7 @@ pub func main = (Init init) {
 			`
 import System
 
-struct Pair {
+owning struct Pair {
 	var a = ""
 }
 
@@ -267,7 +267,7 @@ pub func main = (Init init) {
 			`
 import System
 
-struct Pair {
+owning struct Pair {
 	var a = ""
 }
 
@@ -309,7 +309,7 @@ pub func main = (Init init) {
 			`
 import System
 
-struct Pair {
+owning struct Pair {
 	var a = ""
 }
 
@@ -353,7 +353,7 @@ pub func main = (Init init) {
 			`
 import System
 
-struct Pair {
+owning struct Pair {
 	var string a = "default"
 }
 

@@ -5,6 +5,7 @@ import RootNode from "../../nodes/RootNode.ts";
 import StructNode from "../../nodes/StructNode.ts";
 import Type from "../../nodes/Type.ts";
 import type CheckStatus from "../CheckStatus.ts";
+import { type_owns_heap } from "./ownership.ts";
 
 /**
  * Returns the canonical name used for an auto-generated tuple struct
@@ -80,6 +81,12 @@ export function get_or_create_tuple_struct(tuple_types: Type[], status: CheckSta
 	});
 
 	const struct = new StructNode(0, "private", name, [], fields, []);
+	// STRUCT_PLAN_3 B1 full cutover — a tuple is Copyable iff every element
+	// is: any owning element (`string`, a `List`, …) makes the generated
+	// struct owning, mirroring the enum-mono derive. The verifier would
+	// otherwise reject the generated struct outright (a generated struct
+	// cannot be spelled `owning`).
+	struct.is_owning = tuple_types.some((t) => type_owns_heap(t, status));
 
 	// Build #init params: self + one param per field, matching positions
 	const self_param = new ParameterNode(0, "self", new Type(name));

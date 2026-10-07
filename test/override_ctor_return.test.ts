@@ -17,7 +17,7 @@ describe("override-constructor return normalization", () => {
 		const input = `
 import System
 
-struct Pair {
+owning struct Pair {
 	var string a = "default"
 	var string b
 }
@@ -40,7 +40,7 @@ pub func main = (Init init) {
 		const input = `
 import System
 
-struct Pair {
+owning struct Pair {
 	var string a = "default"
 	var string b
 }
@@ -66,7 +66,7 @@ pub func main = (Init init) {
 		const input = `
 import System
 
-struct Pair {
+owning struct Pair {
 	var string a = "default"
 	var string b
 }
@@ -89,7 +89,7 @@ pub func main = (Init init) {
 		const input = `
 import System
 
-struct Pair {
+owning struct Pair {
 	var string a = "default"
 	var string b
 }
@@ -117,7 +117,7 @@ pub func main = (Init init) {
 		const input = `
 import System
 
-struct Pair {
+owning struct Pair {
 	var string a = "default"
 	var string b
 }
@@ -145,7 +145,7 @@ pub func main = (Init init) {
 		const input = `
 import System
 
-struct Pair {
+owning struct Pair {
 	var string a = "default"
 	var string b
 }
@@ -167,7 +167,7 @@ pub func main = (Init init) {
 		const input = `
 import System
 
-struct Pair {
+owning struct Pair {
 	var string a = "default"
 	var string b
 }

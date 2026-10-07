@@ -9,7 +9,7 @@ describe("owning value struct copy()", () => {
 	test("copy is independent — writes to the copy don't escape", async () => {
 		await build_and_check_output(
 			`
-struct Info { var string name = ""  var int n = 0 }
+owning struct Info { var string name = ""  var int n = 0 }
 var Info a = Info()
 a.name = "x"
 var Info b = a.copy()
@@ -25,10 +25,13 @@ Console.write_line(b.n.to_string())
 		);
 	});
 
-	test("pbv argument: callee writes don't escape, no leak", async () => {
-		await build_and_check_output(
-			`
-struct Info { var string name = "" }
+	test("write through a bare owning param is rejected (const borrow)", () => {
+		// B1 full cutover: a bare owning-struct parameter is a read-only const
+		// borrow — the pbv shell convention is retired, so a callee write
+		// cannot stay silently local; mutation must be spelled `ref` (the
+		// next test pins its write-through visibility).
+		const input = `
+owning struct Info { var string name = "" }
 func mutate = (Info p) {
 	p.name = "changed"
 	Console.write_line(p.name)
@@ -37,10 +40,9 @@ var Info a = Info()
 a.name = "original"
 mutate(a)
 Console.write_line(a.name)
-`,
-			"pbv_write_locality",
-			"changed\noriginal\n",
-		);
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.some((e) => e.message.includes("Assignment to const: p"))).toBe(true);
 	});
 
 	test("ref argument: callee writes DO escape", async () => {
@@ -50,7 +52,7 @@ Console.write_line(a.name)
 		// is about WRITE-THROUGH visibility, which pass-by-value must not
 		// have.
 		const input = `
-struct Info { var string name = "" }
+owning struct Info { var string name = "" }
 func mutate = (ref Info p) {
 	p.name = "changed"
 }
@@ -71,7 +73,7 @@ Console.write_line(a.name)
 	test("passthrough chain stays copy-free and leak-free", async () => {
 		await build_and_check_output(
 			`
-struct Pair { var int n = 0  var string tag = "" }
+owning struct Pair { var int n = 0  var string tag = "" }
 func build = (int n, string t, out Pair) {
 	var p = Pair()
 	p.n = n
@@ -98,7 +100,7 @@ Console.write_line(p.tag)
 	test("copy argument is legal and equals the plain by-value form", async () => {
 		await build_and_check_output(
 			`
-struct Info { var string name = "" }
+owning struct Info { var string name = "" }
 func show = (Info p) {
 	Console.write_line(p.name)
 }
@@ -120,7 +122,7 @@ describe("pass-by-value ownership table", () => {
 		// copy is sound, so transfer semantics are unnecessary), and the
 		// stray keyword still invalidates the source.
 		const input = `
-struct Info { var string name = "" }
+owning struct Info { var string name = "" }
 func take = (Info p) {
 	Console.write_line(p.name)
 }
@@ -138,7 +140,7 @@ Console.write_line(a.name)
 	test("fresh values (construction, call results) pass copy-free", async () => {
 		await build_and_check_output(
 			`
-struct Info { var string name = "" }
+owning struct Info { var string name = "" }
 func make = (string s, out Info) {
 	var i = Info()
 	i.name = s + "!"
@@ -160,7 +162,7 @@ describe("move transfer of owning value structs", () => {
 	test("transfer: callee owns and frees the strings, no copy at the boundary", async () => {
 		await build_and_check_output(
 			`
-struct Info { var string name = "" }
+owning struct Info { var string name = "" }
 func consume = (move Info p) {
 	p.name = "consumed"
 	Console.write_line(p.name)
@@ -177,7 +179,7 @@ Console.write_line("done")
 
 	test("transfer param requires the move keyword for owned variables", () => {
 		const input = `
-struct Info { var string name = "" }
+owning struct Info { var string name = "" }
 func consume = (move Info p) {
 	Console.write_line(p.name)
 }
@@ -195,7 +197,7 @@ consume(a)
 
 	test("transferred source is invalidated", () => {
 		const input = `
-struct Info { var string name = "" }
+owning struct Info { var string name = "" }
 func consume = (move Info p) {
 	Console.write_line(p.name)
 }
@@ -210,7 +212,7 @@ Console.write_line(a.name)
 
 	test("moving a pbv struct out of a field requires swap", () => {
 		const input = `
-struct Info { var string name = "" }
+owning struct Info { var string name = "" }
 struct Holder { var Info info = Info() }
 func consume = (move Info p) {
 	Console.write_line(p.name)

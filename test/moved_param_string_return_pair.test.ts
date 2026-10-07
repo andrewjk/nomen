@@ -24,7 +24,7 @@ ${body}
 describe("moved-param teardown preserves a fat-string return", () => {
 	test("value-struct param owning an Arena (audit clean)", async () => {
 		const input = src(`
-struct Store {
+owning struct Store {
 	var Arena<string> slots
 }
 

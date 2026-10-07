@@ -4,6 +4,7 @@ import RootNode from "../../nodes/RootNode.ts";
 import Type from "../../nodes/Type.ts";
 import { flatten_nested_generic_arg } from "../check_function_call_node.ts";
 import type CheckStatus from "../CheckStatus.ts";
+import { type_owns_heap } from "./ownership.ts";
 import { clone_type, materialize_tuple_type, sanitize_type_name } from "./tuple_struct.ts";
 
 export interface AnonEnumCase {
@@ -104,6 +105,11 @@ export function get_or_create_anon_enum(
 			params: c.types.map((t, i) => new ParameterNode(0, `value${i}`, clone_type(payload_type(t)))),
 		})),
 	);
+	// STRUCT_PLAN_3 B1 full cutover — an anonymous enum is Copyable iff every
+	// payload is: any owning payload (`string`, a mono'd generic, …) makes
+	// the generated enum owning (a generated enum cannot be spelled
+	// `owning`). Payloads are concrete here (payload_type above).
+	node.is_owning = sorted.some((c) => c.types.some((t) => type_owns_heap(payload_type(t), status)));
 
 	status.enums.push(node);
 	if (!status.types.includes(name)) {

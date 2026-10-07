@@ -73,7 +73,7 @@ if j >= 0 && j < xs.length {
 		// by a call, consumed by a method chain). The audit run catches a
 		// missing/leaked per-site copy.
 		const input = `
-struct Box {
+owning struct Box {
 	var List<int> items = List<int>()
 }
 

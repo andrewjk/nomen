@@ -26,7 +26,7 @@ describe("func-typed struct fields", () => {
 			"42\ndone\n",
 			`
 func dbl = (int x, out int) { return x * 2 }
-struct Rule {
+owning struct Rule {
 	var func (int, out int) f
 }
 pub func main = (Init init) {
@@ -45,7 +45,7 @@ pub func main = (Init init) {
 			`
 func is_hash = (string s, out bool) { return s.at_or(0, ' ') == '#' }
 func is_quote = (string s, out bool) { return s.at_or(0, ' ') == '>' }
-struct Rule {
+owning struct Rule {
 	var func (string, out bool) test
 }
 pub func main = (Init init) {
@@ -58,18 +58,20 @@ pub func main = (Init init) {
 		);
 	});
 
-	test("struct copy shares the code pointer (non-owning)", async () => {
+	test("struct transfer shares the code pointer", async () => {
 		await run(
 			"ff_copy",
 			"6\n",
 			`
 func dbl = (int x, out int) { return x * 2 }
-struct Rule {
+owning struct Rule {
 	var func (int, out int) f
 }
 pub func main = (Init init) {
 	var Rule a = Rule(dbl)
-	var Rule b = a
+	// B1 cutover: Rule is owning — bindings move; the transferred struct
+	// shares the code pointer (a func field is a plain 8-byte value).
+	move Rule b = a
 	Console.write_line("\\{b.f(3)}")
 }
 `,
@@ -82,7 +84,7 @@ pub func main = (Init init) {
 			"10\n",
 			`
 func plus_ten = (int x, out int) { return x + 10 }
-struct Rule {
+owning struct Rule {
 	var func (int, out int) f = plus_ten
 }
 pub func main = (Init init) {
@@ -99,7 +101,7 @@ pub func main = (Init init) {
 			"7\n",
 			`
 func id = (int x, out int) { return x }
-struct Rule {
+owning struct Rule {
 	var func (int, out int) f
 	pub func run = (self, int x, out int) { return self.f(x) }
 }
@@ -173,7 +175,7 @@ pub func main = (Init init) {
 			"256\n10\ndone\n",
 			`
 func dbl = (int n, out int) { return n * 2 }
-struct Rule {
+owning struct Rule {
 	var string name
 	var func (int, out int) f
 }
@@ -205,7 +207,7 @@ pub func main = (Init init) {
 			"ff_void_lambda",
 			"lambda b\ndone\n",
 			`
-struct Rule {
+owning struct Rule {
 	var func () f
 }
 pub func main = (Init init) {

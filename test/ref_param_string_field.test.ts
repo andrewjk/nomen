@@ -27,7 +27,7 @@ describe("string field store through a ref struct param", () => {
 			`
 import System
 
-struct Box {
+owning struct Box {
 	var string s = ""
 }
 
@@ -54,7 +54,7 @@ pub func main = (Init init) {
 			`
 import System
 
-struct Box {
+owning struct Box {
 	var string s = ""
 }
 
@@ -82,7 +82,7 @@ pub func main = (Init init) {
 			`
 import System
 
-struct Box {
+owning struct Box {
 	var string s = ""
 }
 
@@ -107,7 +107,7 @@ pub func main = (Init init) {
 			`
 import System
 
-struct Box {
+owning struct Box {
 	var string s = ""
 }
 

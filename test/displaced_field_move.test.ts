@@ -17,11 +17,11 @@ import build_and_check_output from "./build_and_check_output";
 describe("container-field move-assign displaced reclaim", () => {
 	test("two displaced stores: the first list is reclaimed (audit clean)", async () => {
 		const input = `
-struct Item {
+owning struct Item {
 	var string name
 }
 
-struct Box {
+owning struct Box {
 	move List<Item> items
 }
 
@@ -41,7 +41,7 @@ Console.write("len=\\{box.items.length} name=\\{box.items.at_or_panic(0).name}\\
 
 	test("a plain List<Item> scope exit stays balanced", async () => {
 		const input = `
-struct Item {
+owning struct Item {
 	var string name
 }
 
@@ -59,11 +59,11 @@ Console.write("len=\\{l.length} a=\\{l.at_or_panic(0).name} b=\\{l.at_or_panic(1
 describe("field-read string bindings are borrows", () => {
 	test("the binding aliases the field, and the field stays valid", async () => {
 		const input = `
-struct Attr {
+owning struct Attr {
 	var string value = ""
 }
 
-struct Box {
+owning struct Box {
 	move List<Attr> items
 }
 

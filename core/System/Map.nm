@@ -8,7 +8,7 @@
  * it is correct for negative hashes too: two's-complement `&` already lands
  * in `[0, cap)`, which is why no negative adjustment is needed.
  **/
-pub struct Map<TK: Hashable + Equatable, TV> {
+pub owning struct Map<TK: Hashable + Equatable, TV> {
 	var length = 0
 	var keys = Buffer<TK>()
 	var values = Buffer<TV>()
@@ -17,6 +17,9 @@ pub struct Map<TK: Hashable + Equatable, TV> {
 	// Variadic-tuple constructor: Map<string, int>(["a", 1], ["b", 2]) or
 	// Map(["a", 1], ["b", 2]) (type args inferred from the first pair).
 	// Zero pairs yields an empty Map, so this also covers Map<K, V>().
+	// The pair reads are temp-rooted (`pairs.at(i)` is a statement temp):
+	// the element transfer is absorbed by set's owning store (store_T
+	// deep-copies string-field elements), so no explicit move is spelled.
 	pub func #init = (self, ...[TK, TV] pairs) {
 		var i = 0
 		while i < pairs.length; i += 1 {

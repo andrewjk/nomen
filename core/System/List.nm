@@ -1,7 +1,7 @@
 /**
  * A growable, ordered list of values (`push`/`pop`/`at`)
  **/
-pub struct List<T>: Viewable {
+pub owning struct List<T>: Viewable {
 	var length = 0
 	var items = Buffer<T>()
 

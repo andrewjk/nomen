@@ -29,7 +29,7 @@ describe("plain assignment operator normalization", () => {
 
 	test("a derived copy still round-trips a List field", async () => {
 		const input = `
-struct Rule {
+owning struct Rule {
 	var name = ""
 	var protocols = List<string>()
 }

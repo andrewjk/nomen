@@ -4,7 +4,7 @@
 /**
  * A flat, buffer-backed layout tree — nodes stored in parallel arrays for the layout engine
  **/
-pub struct Layout {
+pub owning struct Layout {
 	var kinds = Buffer<int>() // 0=leaf, 1=vstack, 2=hstack
 	var ws = Buffer<int>() // intrinsic width (leaf) or 0
 	var hs = Buffer<int>() // intrinsic height (leaf) or 0

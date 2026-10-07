@@ -161,6 +161,17 @@ function arg_is_string(node: BaseNode): boolean {
 	return t?.name === "string" && !t.is_array;
 }
 
+/**
+ * Compiler-synthesized binding names (receiver-hoist `_recv_N`, discard
+ * `_disc_N`, destructure `_tuple_dst_N`, call-temp `_param_N`). A "donor"
+ * with one of these names is a fresh compiler temp — no user owner, no
+ * records to transfer; ownership rows must not fire on it.
+ */
+const COMPILER_TEMP_PREFIXES = ["_recv_", "_disc_", "_tuple_dst_", "_param_"];
+function is_compiler_temp_name(name: string | undefined): boolean {
+	return !!name && COMPILER_TEMP_PREFIXES.some((p) => name.startsWith(p));
+}
+
 export default function build_function_call_node(node: FunctionCallNode, status: BuildStatus) {
 	// Evaluate override values into temporaries before the base constructor
 	// runs into the temp slot (see hoist_field_overrides).
@@ -986,7 +997,29 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					// literal is a crash. Recorded fields are already heap and
 					// transfer raw. Must run before the bl: the callee's exit
 					// frees run during the call.
-					if (node.move_owned_param_indices?.includes(i) && node.params[i].node_type === "value") {
+					// B1 full cutover: a `move T` PARAMETER of a declared-
+					// owning struct takes the same row even when the check-side
+					// stamp is absent (its pbv gate excludes owning types).
+					const callee_param_moved = !!node.resolved_function?.params?.filter(
+						(p) => !p.is_self_param,
+					)[i]?.is_moved;
+					// A NAMED donor only: a fresh construction temp (rewritten
+					// to a `_recv_N`-style value) has no owner and no records —
+					// the callee byte-copies it and the temp dies. Strdup'ing
+					// its fields in place would hand the copy to a corpse.
+					const transfer_var_name =
+						node.params[i].node_type === "value" ? (node.params[i] as ValueNode).value : undefined;
+					const donor_is_named =
+						!!transfer_var_name &&
+						!is_compiler_temp_name(transfer_var_name) &&
+						all_scope_frames(status)
+							.flat()
+							.some((d) => d.name === transfer_var_name);
+					if (
+						(node.move_owned_param_indices?.includes(i) ||
+							(callee_param_moved && donor_is_named)) &&
+						node.params[i].node_type === "value"
+					) {
 						const transfer_struct = status.structs.find(
 							(st) =>
 								st.name ===
@@ -1467,7 +1500,20 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				if (
 					vname !== undefined &&
 					((node.move_owned_param_indices?.includes(idx) ?? false) ||
-						is_box_type(node.name, status.structs))
+						is_box_type(node.name, status.structs) ||
+						// B1 full cutover: a `move T` PARAMETER of a declared-
+						// owning value struct makes the callee the field owner
+						// (the moved-param teardown frees the fields at its exit
+						// — build_function_node), so the donor's records drop
+						// even when the check-side move_owned_param_indices
+						// stamp is absent (its pbv gate excludes owning types).
+						(!!node.resolved_function?.params?.filter((p) => !p.is_self_param)[idx]?.is_moved &&
+							// A named donor only (a fresh construction temp owns
+							// nothing — its records, if any, die with it).
+							!is_compiler_temp_name(vname) &&
+							all_scope_frames(status)
+								.flat()
+								.some((d) => d.name === vname)))
 				) {
 					clear_heap_string_fields(status, vname);
 				}

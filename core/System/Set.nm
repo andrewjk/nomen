@@ -7,7 +7,7 @@
  * slot indexing is a mask (`hash & (cap - 1)`) — correct for negative hashes
  * too (two's-complement `&` already lands in `[0, cap)`).
  **/
-pub struct Set<T: Hashable + Equatable> {
+pub owning struct Set<T: Hashable + Equatable> {
 	var length = 0
 	var slots = Buffer<T>()
 	var used = Buffer<int>()

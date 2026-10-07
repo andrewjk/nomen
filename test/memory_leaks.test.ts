@@ -34,7 +34,7 @@ Console.write("\\{c}")
 
 	test("struct destroy frees string fields", async () => {
 		const input = `
-struct Named {
+owning struct Named {
   var int id
   var string name
 }
@@ -297,7 +297,7 @@ Console.write("done")
 
 	test("struct field array of strings frees elements", async () => {
 		const input = `
-struct Container {
+owning struct Container {
   var Array<string> items
 }
 

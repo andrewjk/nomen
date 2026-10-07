@@ -442,7 +442,7 @@ test("declare/assign/eval statements emit through the C NIR seam byte-identicall
 		`
 import System
 
-struct Counter {
+owning struct Counter {
     var int count
     var string label
 }
@@ -691,7 +691,7 @@ test("C binaries built through the expression seam run correctly", async () => {
 		`
 import System
 
-struct Counter {
+owning struct Counter {
     var int count
     var string label
 }

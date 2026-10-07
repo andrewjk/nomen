@@ -18,7 +18,7 @@ async function build_and_run(input: string, name: string, expected: string, audi
 // audit.
 test("value-struct method overwriting tracked string field", async () => {
 	const input = `
-struct Person {
+owning struct Person {
   var string name
 
   func rename = (ref self, string new_name) {
@@ -38,7 +38,7 @@ Console.write("\\{p.name}")
 // record would eagerly free the method's literal at that assignment.
 test("caller reassignment after self-write uses fresh ownership state", async () => {
 	const input = `
-struct Person {
+owning struct Person {
   var string name
 
   func rename = (ref self, string new_name) {
@@ -59,7 +59,7 @@ Console.write("\\{p.name}")
 // scanner must follow same-struct self-calls.
 test("self-write through a delegated self-call", async () => {
 	const input = `
-struct Person {
+owning struct Person {
   var string name
 
   func rename = (ref self, string new_name) {

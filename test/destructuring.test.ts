@@ -222,7 +222,7 @@ Console.write("\\{w} \\{d}")
 
 	test("destructure struct with string field", async () => {
 		const input = `
-struct Person {
+owning struct Person {
 	var string name
 	var int age
 }

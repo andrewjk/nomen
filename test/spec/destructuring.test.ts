@@ -115,7 +115,7 @@ pub func main = () {
 
 	test("move struct destructuring with rename", () => {
 		const input = `
-struct Slot {
+owning struct Slot {
 	var List<string> items = List<string>()
 }
 pub func main = () {

@@ -44,7 +44,7 @@ Console.write("\\{h.content.value}")
 		// `cap` kept the swapped-out buffer's value and the two buffers aliased
 		// their slab (double free).
 		const input = `
-struct Holder<T> {
+owning struct Holder<T> {
 	var Buffer<T> buf = Buffer<T>()
 	pub func take = (ref self, out Buffer<T>) {
 		var Buffer<T> old = move self.buf swap Buffer<T>()
