@@ -6,6 +6,7 @@ import { mono_type_name } from "../build_common/mono_name.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import { transfer_ref_param_field_records } from "../build_common/transfer_ref_param_records.ts";
+import { is_box_type } from "../check/utils/box.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
@@ -726,7 +727,14 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					// free with the callee's exit. The plain move convention
 					// (owning containers strdup their own copies) still
 					// releases the caller's originals.
-					const transfer = node.move_owned_param_indices?.includes(idx) ?? false;
+					// STRUCT_PLAN_3 B2: a `Box<T>(move x)` construction
+					// SHALLOW-copies x — ownership of the pointee's state
+					// moves with the bytes (the wrapper's `move T __value` is
+					// the design). The callee-copies release would free the
+					// very strings the box now owns — treat it as a transfer.
+					const box_ctor_transfer = is_box_type(node.name, status.structs);
+					const transfer =
+						box_ctor_transfer || (node.move_owned_param_indices?.includes(idx) ?? false);
 					for (const key of Array.from(status.heap_string_fields ?? [])) {
 						if (key.startsWith(prefix)) {
 							if (!transfer) {

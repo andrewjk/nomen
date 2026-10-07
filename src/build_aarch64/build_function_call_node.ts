@@ -11,6 +11,7 @@ import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable
 import string_literal_length from "../build_common/string_literal_length.ts";
 import { transfer_ref_param_field_records } from "../build_common/transfer_ref_param_records.ts";
 import { is_float_type } from "../built_in_types.ts";
+import { is_box_type } from "../check/utils/box.ts";
 import { is_int_literal, to_decimal_string } from "../int_literal.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
@@ -1458,7 +1459,16 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				// seeded records own the strings now, so the donor's records
 				// are DROPPED here — the scope-exit release-before-moved-check
 				// must not free what the callee now owns.
-				if (vname !== undefined && (node.move_owned_param_indices?.includes(idx) ?? false)) {
+				// STRUCT_PLAN_3 B2: a `Box<T>(move x)` construction
+				// SHALLOW-copies x — ownership of the pointee's state moves
+				// with the bytes — so its donor's records are dropped the
+				// same way (the callee-copies release would free the strings
+				// the box owns).
+				if (
+					vname !== undefined &&
+					((node.move_owned_param_indices?.includes(idx) ?? false) ||
+						is_box_type(node.name, status.structs))
+				) {
 					clear_heap_string_fields(status, vname);
 				}
 			}

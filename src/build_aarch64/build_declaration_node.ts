@@ -26,6 +26,7 @@ import {
 } from "../build_common/string_return_analysis.ts";
 import tuple_return_owned_element from "../build_common/tuple_return_owned_element.ts";
 import { is_float_type } from "../built_in_types.ts";
+import { is_box_type } from "../check/utils/box.ts";
 import { move_on_last_use_enabled } from "../check/utils/last_use.ts";
 import { is_int_literal, parse_int_literal_bigint, to_decimal_string } from "../int_literal.ts";
 import type { NirExpr } from "../nir/nir.ts";
@@ -1505,6 +1506,18 @@ export default function build_declaration_node(
 					if (func_call.move_param_indices?.length) {
 						for (const idx of func_call.move_param_indices) {
 							mark_moved_if_struct(func_call.params[idx], status);
+							// STRUCT_PLAN_3 B2: a `Box<T>(move x)` construction
+							// SHALLOW-copies x — ownership of the pointee's
+							// state moves with the bytes. The donor's string
+							// records must drop here: the scope-exit
+							// release-before-moved-check would free what the
+							// box now owns.
+							if (is_box_type(func_call.name, status.structs)) {
+								const donor = func_call.params[idx];
+								if (donor.node_type === "value") {
+									clear_heap_string_fields(status, (donor as ValueNode).value);
+								}
+							}
 						}
 					}
 					build_swap_params(func_call, status);
@@ -1562,6 +1575,18 @@ export default function build_declaration_node(
 					if (func_call.move_param_indices?.length) {
 						for (const idx of func_call.move_param_indices) {
 							mark_moved_if_struct(func_call.params[idx], status);
+							// STRUCT_PLAN_3 B2: a `Box<T>(move x)` construction
+							// SHALLOW-copies x — ownership of the pointee's
+							// state moves with the bytes. The donor's string
+							// records must drop here: the scope-exit
+							// release-before-moved-check would free what the
+							// box now owns.
+							if (is_box_type(func_call.name, status.structs)) {
+								const donor = func_call.params[idx];
+								if (donor.node_type === "value") {
+									clear_heap_string_fields(status, (donor as ValueNode).value);
+								}
+							}
 						}
 					}
 					build_swap_params(func_call, status);
@@ -2550,6 +2575,18 @@ export default function build_declaration_node(
 					if (func_call.move_param_indices?.length) {
 						for (const idx of func_call.move_param_indices) {
 							mark_moved_if_struct(func_call.params[idx], status);
+							// STRUCT_PLAN_3 B2: a `Box<T>(move x)` construction
+							// SHALLOW-copies x — ownership of the pointee's
+							// state moves with the bytes. The donor's string
+							// records must drop here: the scope-exit
+							// release-before-moved-check would free what the
+							// box now owns.
+							if (is_box_type(func_call.name, status.structs)) {
+								const donor = func_call.params[idx];
+								if (donor.node_type === "value") {
+									clear_heap_string_fields(status, (donor as ValueNode).value);
+								}
+							}
 						}
 					}
 					build_swap_params(func_call, status);
@@ -2681,6 +2718,18 @@ export default function build_declaration_node(
 					if (func_call.move_param_indices?.length) {
 						for (const idx of func_call.move_param_indices) {
 							mark_moved_if_struct(func_call.params[idx], status);
+							// STRUCT_PLAN_3 B2: a `Box<T>(move x)` construction
+							// SHALLOW-copies x — ownership of the pointee's
+							// state moves with the bytes. The donor's string
+							// records must drop here: the scope-exit
+							// release-before-moved-check would free what the
+							// box now owns.
+							if (is_box_type(func_call.name, status.structs)) {
+								const donor = func_call.params[idx];
+								if (donor.node_type === "value") {
+									clear_heap_string_fields(status, (donor as ValueNode).value);
+								}
+							}
 						}
 					}
 					build_swap_params(func_call, status);

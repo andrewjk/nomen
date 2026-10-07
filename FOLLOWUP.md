@@ -277,10 +277,10 @@ fields must use 'move'` check in `check_declaration_node` is deleted
     per its own sequencing note in the Phase B section below.
 
   **Corpus-migration residual: skipped tests and the gaps behind them.**
-  The full suite is green (4039 passed / 17 skipped, 0 failed) on both
+  The full suite is green (4040 passed / 16 skipped, 0 failed) on both
   backends. Each skip names a real post-R gap (pre-existing or D3/B1-cutover
   work); they are grouped here so the flip is not blocked on any of them.
-  LANDED since the flip (2026-10-07, backend-fixes tranche): the two
+  LANDED since the flip (2026-10-07, backend-fixes tranches): the two
   `mov_swap` skips (aarch64 `build_swap_params` now struct-copies the
   replacement into inline slots — field shape resolved mono-aware through
   the receiver's field list — instead of the class-era pointer store), the
@@ -289,7 +289,7 @@ fields must use 'move'` check in `check_declaration_node` is deleted
   element, since bare `Box<T>` params are rejected and `ref` mismatches the
   raw-call ABI — so the move-param callee's reclaim is the ONLY free; plus
   the closure-thunk emitter mono-folds its return type, `struct Box*` →
-  `struct Box_Counter*`), and the three `nullable` skips (three mechanisms:
+  `struct Box_Counter*`), the three `nullable` skips (three mechanisms:
   `mark_owning_auto_init_params` stamps nullable OWNING fields as `move`
   params — the nullable skip now only masks non-owning fields — killing the
   construction-temp double-fire; the aarch64 nullable-slot assignment and
@@ -297,7 +297,18 @@ fields must use 'move'` check in `check_declaration_node` is deleted
   C including the moved-donor suppression the aliasing made observable; and
   C's `capture_destroys` captures its non-nullable-field recursion instead
   of discarding it — the guarded-container shape that once punished a naive
-  append needed the C moved-donor fix, not a revert). Remaining skips:
+  append needed the C moved-donor fix, not a revert), and the
+  `short_circuit` skip — whose root cause was NOT the cond-branch lowering
+  but the `Box<T>(move x)` construction's shallow copy: both backends
+  released the donor's recorded string fields AFTER the copy (the
+  callee-copies convention — wrong for the box, whose `move T __value` IS
+  the transfer), and the generated Box destroy never reclaimed a
+  string-only pointee (the destroy walk's `struct_needs_destroy` gate
+  excludes strings by local-scope design; the heap-instance tier owns
+  uniformly, so the broadened `struct_needs_auto_destroy` gate applies).
+  Fixed as three record-dropping transfer sites (C call path, aarch64 call
+  path, aarch64 declaration ctor path) plus the destroy-gate broadening.
+  Remaining skips:
   - **`owning-struct string-field ownership` (D3/B1 cutover).** An owning
     struct's string field takes the value-struct lowering (raw store, no
     displaced free), not the class-era always-heap one — so a heap string
@@ -309,19 +320,28 @@ fields must use 'move'` check in `check_declaration_node` is deleted
   - **aarch64 container-of-owning-struct destroy** over-destroys empty cap
     slots (C, routing such elements as pointer-slot ClassBuffer entries,
     is correct). Skip: `container_class_leak_gaps` (1).
-  - **`.at()` in a short-circuit `&&` condition** — narrowed post-R:
-    `emit_cond_branch`'s short-circuit STRUCTURE is correct; its comparison
-    path mis-stages a call-borne borrowed string operand
-    (`xs.at_or_panic(y).text == "one"` → count 0 + two stale frees on
-    aarch64; C short-circuits via C semantics and passes). Skip:
-    `short_circuit–contracts` (1).
+  - **`borrowed_accessor_return` — two gaps (both verified pre-existing on
+    clean main).** C: the two `ns.node(i)` box results inside the final
+    interpolation are discarded and never reclaimed (+2 leaked wrappers and
+    their strings — the discarded-owning-call-result hoist does not cover
+    this shape). aarch64: the accessor return crashes before output. Skip:
+    `borrowed_accessor_return` (1).
   - **aarch64 mono enum with a trait payload** crashes at the match binding
     (BUGS.md #9 family). Skip: `generic_enum_class_payload` (1).
   - **aarch64 tcp_scale hang** — pre-existing, reproduces on clean `main`.
     Skip: `tcp` (1).
-  - **aarch64 container-handle accessor return** (`List<Box<T>>` element
-    returned from a method) crashes (pre-B4 dispatch residual). Skip:
-    `borrowed_accessor_return` (1).
+  - **aarch64 ctor lowering for a capturing-closure func field on an
+    owning struct** emits `#undefined` frame offsets (the shape was
+    class-only before R; the checker side allows it). Skip:
+    `lambda_capture` (1).
+  - **aarch64 func-value string returns through a struct func field** (the
+    two `closure_func_value_string_return` skips): the return-boundary
+    normalization for indirect calls through field-borne descriptors needs
+    its own pass; the direct-call and local-descriptor shapes are covered
+    and green. Skips: `closure_func_value_string_return` (2).
+  - **`operations` (2) + `interpolate_string` (1)**: compile-time
+    division/modulo-by-zero detection — a language-feature ask ("TODO: This
+    needs runtime protection"), not a backend bug; out of scope here.
 
 ## STRUCT_PLAN_3 Phase B — remaining tranches
 

@@ -19,7 +19,7 @@ async function build_and_run(input: string, name: string, expected: string, raw 
 // SKIP: `.at()` in a short-circuit `&&` condition mis-lowers the borrowed
 // element receiver (stale frees, wrong count) for post-R element
 // representations. See FOLLOWUP.md.
-test.skip("&& short-circuits: guarded .at in a while condition", async () => {
+test("&& short-circuits: guarded .at in a while condition", async () => {
 	const input = `
 import System
 

@@ -1090,6 +1090,15 @@ function build_auto_destroy(node: StructNode, status: BuildStatus) {
 		status.code += `__nomen_weak_invalidate(self);\n`;
 	}
 	for (const field of class_destroy_fields(node, status)) {
+		if (process.env.NOMEN_DEBUG_DESTROY)
+			console.error(
+				"AUTODESTROY-FIELD:",
+				node.name,
+				field.name,
+				field.type.name,
+				"ref:",
+				field.type.is_ref,
+			);
 		if (field.type.is_ref) continue;
 		// A `view T` field is a non-owning borrow: freeing its pointer half
 		// would be an invalid free (the storage is owned elsewhere).
@@ -1129,6 +1138,17 @@ function build_auto_destroy(node: StructNode, status: BuildStatus) {
 		// actual field type — `Map_destroy` doesn't exist.
 		const mono_name = mono_type_name(field.type);
 		const field_struct = status.structs.find((s) => s.name === mono_name && !s.is_simple_type);
+		if (process.env.NOMEN_DEBUG_DESTROY)
+			console.error(
+				"AUTODESTROY-LOOKUP:",
+				node.name,
+				field.name,
+				mono_name,
+				"found:",
+				!!field_struct,
+				"nstructs:",
+				status.structs.length,
+			);
 		if (!field_struct) continue;
 		if (field_struct.is_class) {
 			// Reclaim an owned class-typed field when either (a) its type has
@@ -1170,7 +1190,16 @@ function build_auto_destroy(node: StructNode, status: BuildStatus) {
 			} else {
 				status.code += `${field_struct.name}_destroy(&self->${field.name});\n`;
 			}
-		} else if (struct_needs_destroy(field_struct, status)) {
+		} else if (
+			struct_needs_destroy(field_struct, status) ||
+			// A heap-instance tier's field is an OWNED slot (boxing transfers
+			// the pointee's whole state — D2: destroy = destroy-pointee +
+			// free), so the broader auto-destroy gate applies: a string-only
+			// pointee (`Box<Item>` with `var string text`) must be reclaimed
+			// even though a LOCAL of that type would not be (its strings may
+			// be rodata borrows — the transferred bytes are not).
+			(node.is_class && struct_needs_auto_destroy(field_struct, status))
+		) {
 			// A nested value struct whose owning fields (string, class, ...)
 			// trigger an auto-generated destroy. Call it to recursively free
 			// owned resources. A nullable struct field destroys only when its
