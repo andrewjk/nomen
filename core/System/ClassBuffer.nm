@@ -145,11 +145,17 @@ pub struct ClassBuffer<T> {
 
 	// Apply `f` to slot `i` in place — the owning-counterpart of Buffer's
 	// modify for class elements. `f` receives the current instance pointer
-	// as a borrow and returns the replacement instance (fresh, or the same
-	// pointer); the primitive frees the displaced instance (destroy + free)
-	// unless `f` returned it. Storing the returned instance raw is sound:
-	// the slot takes sole ownership and `f`'s return is not retained
-	// elsewhere. NOT `inline`: the body calls through the fn pointer.
+	// as a MOVE argument — the only expressible parameter mode for a
+	// class-tier element (a bare `Box<T>` param is rejected — B2/T2 — and a
+	// `ref` param's &binding lowering mismatches this raw call) — so the
+	// displaced instance's reclamation is the CALLEE's move-param contract:
+	// a function whose parameter is not returned frees it at its own exit
+	// (the C auto-free registration / the aarch64 return-compare arm). The
+	// body frees nothing — freeing here too was a double free (the
+	// aarch64 callee already reclaimed it; the audit caught the stale
+	// free). Storing the returned instance raw is sound: the slot takes
+	// sole ownership and `f`'s return is not retained elsewhere. NOT
+	// `inline`: the body calls through the fn pointer.
 	func modify = (ref self, int i: i >= 0 && i < self.cap, func(T, out T) f) {
 		```
 		#arch: c
@@ -157,15 +163,13 @@ pub struct ClassBuffer<T> {
 		void *old = (void*)slots[i];
 		void *new_value = (void*)((void *(*)(void *, void *))f->code)(f->env, old);
 		slots[i] = (long)new_value;
-		if (old != new_value) {
-			T_destroy(old);
-			free(old);
-		}
 		```
 		```
 		#arch: aarch64
 		// x19 = self, x1 = i, x2 = f (a closure descriptor — env goes in x0,
 		// the old slot value shifts to x1). Class slots are one pointer wide.
+		// `old` is MOVED into f — the callee's move-param contract reclaims
+		// it; this body frees nothing.
 		stp x20, x21, [sp, #-16]!
 		stp x22, x23, [sp, #-16]!
 		stp x24, x25, [sp, #-16]!
@@ -178,15 +182,7 @@ pub struct ClassBuffer<T> {
 		ldr x1, [x20]
 		blr x24
 		mov x23, x0
-		ldr x9, [x20]
 		str x23, [x20]
-		cmp x9, x23
-		b.eq .Lcb_modify_T_done
-		mov x0, x9
-		bl T_destroy
-		mov x0, x9
-		bl _free
-		.Lcb_modify_T_done:
 		ldp x24, x25, [sp], #16
 		ldp x22, x23, [sp], #16
 		ldp x20, x21, [sp], #16

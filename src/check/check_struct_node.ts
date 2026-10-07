@@ -335,10 +335,18 @@ function mark_owning_auto_init_params(struct: StructNode, status: CheckStatus) {
 				continue;
 			}
 		}
-		if (field.type.is_nullable) continue;
+		// A nullable OWNING field takes the transfer too (`null` aliases
+		// nothing; a fresh instance must not alias) — this check must precede
+		// the nullable skip below, which exists for nullable NON-owning
+		// fields (a plain struct copy param). Without it, the construction
+		// argument temp stayed caller-owned: the temp's scope-exit destroy
+		// AND the field's flag-guarded destroy both ran (the aarch64
+		// nullable-field double-fire).
 		if (is_owning_struct_type_requiring_move(field.type, status)) {
 			param.is_moved = true;
+			continue;
 		}
+		if (field.type.is_nullable) continue;
 	}
 }
 

@@ -680,7 +680,13 @@ function capture_destroys(
 				status.code += `if (${field_expr}_has) { ${inner_body} } `;
 			}
 		} else {
-			capture_destroys(status, field_struct, field_expr, accessor);
+			// A plain value-struct field: its destroys were CAPTURED by the
+			// recursion (we are inside a scratch region) — dropping the
+			// return silently discarded every nested destroy (the nullable
+			// local whose holder owns a non-nullable destroyable field
+			// emitted `if (h_has) { }`).
+			const inner = capture_destroys(status, field_struct, field_expr, accessor);
+			if (inner) status.code += `${inner} `;
 		}
 	}
 	return end_code_scratch(status, saved).replace(/\s+/g, " ").trim();

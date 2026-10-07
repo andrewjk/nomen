@@ -4,10 +4,7 @@ import build_and_check_output from "./build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 
 describe("move-swap in function call args", () => {
-	// SKIP: a field-source swap used as a ctor/call ARGUMENT does not write
-	// the replacement back into the source field post-R (the swap write-back
-	// is wired for direct variable assignments only). See FOLLOWUP.md.
-	test.skip("move field with swap into struct constructor", async () => {
+	test("move field with swap into struct constructor", async () => {
 		const input = `
 owning struct Box {
 	var int value
@@ -22,7 +19,7 @@ Console.write("\\{h1.content.value} \\{h2.content.value}")
 		await build_and_check_output(input, "mov_swap_constructor", "0 42");
 	});
 
-	test.skip("move field with swap into function call", async () => {
+	test("move field with swap into function call", async () => {
 		const input = `
 owning struct Box {
 	var int value

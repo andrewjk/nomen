@@ -277,36 +277,43 @@ fields must use 'move'` check in `check_declaration_node` is deleted
     per its own sequencing note in the Phase B section below.
 
   **Corpus-migration residual: skipped tests and the gaps behind them.**
-  The full suite is green (4018 passed / 25 skipped, 0 failed) on both
-  backends. Each skip names a real post-R gap that the migration surfaced
-  (all pre-existing or D3/B1-cutover work); they are grouped here so the
-  flip is not blocked on any of them:
+  The full suite is green (4039 passed / 17 skipped, 0 failed) on both
+  backends. Each skip names a real post-R gap (pre-existing or D3/B1-cutover
+  work); they are grouped here so the flip is not blocked on any of them.
+  LANDED since the flip (2026-10-07, backend-fixes tranche): the two
+  `mov_swap` skips (aarch64 `build_swap_params` now struct-copies the
+  replacement into inline slots — field shape resolved mono-aware through
+  the receiver's field list — instead of the class-era pointer store), the
+  two `buffer_modify` skips (`ClassBuffer.modify` moves the displaced
+  element into `f` — the only expressible param mode for a class-tier
+  element, since bare `Box<T>` params are rejected and `ref` mismatches the
+  raw-call ABI — so the move-param callee's reclaim is the ONLY free; plus
+  the closure-thunk emitter mono-folds its return type, `struct Box*` →
+  `struct Box_Counter*`), and the three `nullable` skips (three mechanisms:
+  `mark_owning_auto_init_params` stamps nullable OWNING fields as `move`
+  params — the nullable skip now only masks non-owning fields — killing the
+  construction-temp double-fire; the aarch64 nullable-slot assignment and
+  `field = null` paths emit the flag-guarded displaced destroy, mirrored on
+  C including the moved-donor suppression the aliasing made observable; and
+  C's `capture_destroys` captures its non-nullable-field recursion instead
+  of discarding it — the guarded-container shape that once punished a naive
+  append needed the C moved-donor fix, not a revert). Remaining skips:
   - **`owning-struct string-field ownership` (D3/B1 cutover).** An owning
     struct's string field takes the value-struct lowering (raw store, no
     displaced free), not the class-era always-heap one — so a heap string
     stored through a nested owning-struct field hop is not reclaimed at
     scope exit. Skips: `field_marshal` (2), `nested_class_field_write` (1),
     `map` (1), `b5_struct_fields` (2). Resolved by B1's "string is owning".
-  - **aarch64 nullable-field owning-struct destroy double-fire.** The
-    scope-exit cleanup for an owning struct with a nullable owning field
-    fires the field's destroy twice (an unguarded call against the
-    construction temp plus the flag-guarded one). Skips: `nullable` (2).
-  - **`capture_destroys` nested recursion.** The nullable-fn capture path
-    drops a nested value-struct destroy (the recursion's return is
-    discarded); a naive append fix double-frees the nullable-container
-    case, so it is left for a targeted pass. Skip: `nullable` (1).
   - **aarch64 trait-handle re-boxing in a loop** crashes (pre-B4
     field-shaped dispatch residual). Skip: `trait_container_dispatch` (1).
   - **aarch64 container-of-owning-struct destroy** over-destroys empty cap
     slots (C, routing such elements as pointer-slot ClassBuffer entries,
     is correct). Skip: `container_class_leak_gaps` (1).
-  - **`ClassBuffer<T>.modify` for `Box` elements** needs Box-aware
-    displaced reclaim (stale free). Skips: `buffer_modify` (2).
-  - **field-source swap as a ctor/call argument** does not write the
-    replacement back into the source field (swap write-back is wired for
-    direct variable assignments only). Skips: `mov_swap` (2).
-  - **`.at()` in a short-circuit `&&` condition** mis-lowers the borrowed
-    element receiver (stale frees, wrong result). Skip:
+  - **`.at()` in a short-circuit `&&` condition** — narrowed post-R:
+    `emit_cond_branch`'s short-circuit STRUCTURE is correct; its comparison
+    path mis-stages a call-borne borrowed string operand
+    (`xs.at_or_panic(y).text == "one"` → count 0 + two stale frees on
+    aarch64; C short-circuits via C semantics and passes). Skip:
     `short_circuit–contracts` (1).
   - **aarch64 mono enum with a trait payload** crashes at the match binding
     (BUGS.md #9 family). Skip: `generic_enum_class_payload` (1).

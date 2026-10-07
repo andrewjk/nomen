@@ -6,7 +6,11 @@ import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import { is_normalized_struct_call } from "../build_common/call_init_string_fields.ts";
 import record_ctor_heap_default_fields from "../build_common/ctor_heap_default_fields.ts";
-import { has_destroy, struct_needs_auto_destroy } from "../build_common/destroy_analysis.ts";
+import {
+	has_destroy,
+	struct_needs_auto_destroy,
+	struct_needs_destroy,
+} from "../build_common/destroy_analysis.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import { claim_init_default_seed_reclaim } from "../build_common/init_computed_seeds.ts";
 import { resolve_struct_type } from "../build_common/mono_name.ts";
@@ -427,6 +431,34 @@ function build_nullable_struct_assignment(
 			!rhs_is_same_var &&
 			!!status.heap_string_fields?.size &&
 			Array.from(status.heap_string_fields).some((k) => k.startsWith(`${name}.`));
+		// A displaced OWNING value (the slot's struct has a destroy) must be
+		// destroyed before the new value overwrites it — the flag-guarded
+		// scope-exit destroy only ever sees the LAST value, so an
+		// assignment in a loop (`a = Box(i)`) leaked every displaced one.
+		// Scalar slots have nothing to destroy.
+		const displaced_needs_destroy =
+			!rhs_is_same_var &&
+			!is_scalar &&
+			(() => {
+				const st = status.structs.find((s) => s.name === type_name && !s.is_simple_type);
+				return !!st && struct_needs_destroy(st, status);
+			})();
+		const emit_displaced_destroy = () => {
+			if (!displaced_needs_destroy) return;
+			const dst_offset = status.stack_offsets?.get(name);
+			const flag_off = status.stack_offsets?.get(flag_name);
+			if (dst_offset === undefined || flag_off === undefined || flag_off < 0) return;
+			const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+			const skip = `.Lskip_displaced_${id}`;
+			emit_asm(status, `ldr x9, [x29, #${flag_off}]\n`);
+			emit_asm(status, `cbz x9, ${skip}\n`);
+			emit_asm(status, `add x0, x29, #${dst_offset}\n`);
+			emit_asm(
+				status,
+				`bl ${resolve_struct_name(type_name, decl_type?.type_args, status)}_destroy\n`,
+			);
+			emit_asm(status, `${skip}:\n`);
+		};
 		if (rhs_is_null) {
 			if (reclaimable) {
 				emit_recorded_field_reclaim_for_slot(status, name, type_name);
@@ -483,6 +515,7 @@ function build_nullable_struct_assignment(
 			if (reclaimable) {
 				emit_recorded_field_reclaim_for_slot(status, name, type_name);
 			}
+			emit_displaced_destroy();
 			retarget_records();
 			emit_rhs_value(node.right_value, nir_rhs, status);
 			ensure_newline(status);
@@ -520,6 +553,7 @@ function build_nullable_struct_assignment(
 				// value BEFORE it lands.
 				emit_recorded_field_reclaim_for_slot(status, name, type_name);
 			}
+			emit_displaced_destroy();
 			retarget_records();
 			const old_buffer = status.struct_return_buffer;
 			const old_buffer_var = status.struct_return_buffer_var;
@@ -556,11 +590,14 @@ function build_nullable_struct_assignment(
 			get_source_address(node.right_value, status, nir_rhs);
 		}
 		ensure_newline(status);
-		if (reclaimable) {
+		if (reclaimable || displaced_needs_destroy) {
 			// The RHS build left the new value's address in x0 — park it
 			// around the frees.
 			emit_asm(status, `str x0, [sp, #-16]!\n`);
-			emit_recorded_field_reclaim_for_slot(status, name, type_name);
+			if (reclaimable) {
+				emit_recorded_field_reclaim_for_slot(status, name, type_name);
+			}
+			emit_displaced_destroy();
 			emit_asm(status, `ldr x0, [sp], #16\n`);
 		}
 		retarget_records();
@@ -604,6 +641,25 @@ function build_nullable_struct_assignment(
 	emit_asm(status, `str x0, [sp, #-16]!\n`);
 
 	if (rhs_is_null) {
+		if (!field_is_scalar) {
+			// A null store ends the displaced instance's life: destroy it
+			// (flag-guarded — a null field's bytes are stale) before the flag
+			// drops. The scope-exit destroy only sees the field's FINAL
+			// state, so without this the old value leaks.
+			const fst = status.structs.find((s) => s.name === type_name && !s.is_simple_type);
+			if (fst && struct_needs_destroy(fst, status)) {
+				const destroy_name = resolve_struct_name(type_name, field_access.type?.type_args, status);
+				const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+				const skip = `.Lskip_null_displaced_${id}`;
+				emit_asm(status, `ldr x9, [sp]\n`);
+				emit_asm(status, `ldr x9, [x9, #${has_offset}]\n`);
+				emit_asm(status, `cbz x9, ${skip}\n`);
+				emit_asm(status, `ldr x9, [sp]\n`);
+				emit_asm(status, `add x0, x9, #${field_offset}\n`);
+				emit_asm(status, `bl ${destroy_name}_destroy\n`);
+				emit_asm(status, `${skip}:\n`);
+			}
+		}
 		emit_asm(status, `ldr x9, [sp], #16\n`);
 		if (field_is_scalar) {
 			emit_asm(status, `strb wzr, [x9, #${has_offset}]\n`);

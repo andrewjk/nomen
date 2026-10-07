@@ -1,4 +1,5 @@
 import emission_label from "../../build_common/emission_label.ts";
+import { mono_type_name } from "../../build_common/mono_name.ts";
 import FunctionNode from "../../nodes/FunctionNode.ts";
 import type Type from "../../nodes/Type.ts";
 import build_function_node from "../build_function_node.ts";
@@ -57,7 +58,12 @@ interface ParameterLike {
 
 /** The C return type for a signature (a `func` return is a `void*` carrier). */
 export function c_return_type(type: Type | undefined, status: BuildStatus): string {
-	const name = type?.name;
+	// Fold generic type args into the mono name (`Box<Counter>` →
+	// `Box_Counter`) — the thunk must agree with the target's own signature,
+	// which emits `struct Box_Counter*`; the raw name here emitted
+	// `struct Box*` (the generic template tag) and clang rejected the
+	// conflicting declaration.
+	const name = type ? mono_type_name(type) : undefined;
 	if (!name || name === "void") return "void";
 	if (type?.is_pointer) return `${name}*`;
 	if (type?.is_array) return `struct Array_${name}*`;

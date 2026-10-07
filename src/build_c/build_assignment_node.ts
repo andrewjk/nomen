@@ -5,7 +5,11 @@ import emit_field_overrides, {
 import { is_normalized_struct_call } from "../build_common/call_init_string_fields.ts";
 import record_ctor_heap_default_fields from "../build_common/ctor_heap_default_fields.ts";
 import { override_displaced_string_fields } from "../build_common/ctor_return_owned.ts";
-import { has_destroy, struct_needs_auto_destroy } from "../build_common/destroy_analysis.ts";
+import {
+	has_destroy,
+	struct_needs_auto_destroy,
+	struct_needs_destroy,
+} from "../build_common/destroy_analysis.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import { claim_init_default_seed_reclaim } from "../build_common/init_computed_seeds.ts";
 import {
@@ -114,6 +118,31 @@ export default function build_assignment_node(
 			? status.scoped_declarations.find((d) => d.name === lhs_name)
 			: undefined;
 		const type_name = decl?.type?.name || "";
+		// A displaced OWNING value (the slot's struct has a destroy) ends its
+		// life at this assignment — destroy it (flag-guarded) before the new
+		// value/null lands. The scope-exit destroy only sees the slot's FINAL
+		// state, so without this every displaced value in a loop
+		// (`a = Box(i)`) or a `f = null` store leaked. (The aarch64 backend's
+		// emit_displaced_destroy is the mirror.)
+		if (
+			!rhs_is_same_var &&
+			!is_nullable_scalar_type(decl?.type ?? (node.left_value as ValueNode).type, status)
+		) {
+			const slot_type = lhs_is_local
+				? (decl?.type ?? status.variable_types?.get(lhs_name))
+				: (node.left_value as AccessNode).access.type;
+			const slot_struct_name = slot_type?.name
+				? slot_type.type_args?.length
+					? mono_type_name(slot_type)
+					: slot_type.name
+				: "";
+			const slot_struct = slot_struct_name
+				? status.structs.find((s) => s.name === slot_struct_name && !s.is_simple_type)
+				: undefined;
+			if (slot_struct && struct_needs_destroy(slot_struct, status)) {
+				status.code += `if (${flag}) { ${slot_struct_name}_destroy(&${lhs_expr}); }\n`;
+			}
+		}
 		if (lhs_is_local && !rhs_is_same_var && type_name) {
 			const prefix = `${lhs_name}.`;
 			const recorded = status.heap_string_fields
@@ -141,6 +170,19 @@ export default function build_assignment_node(
 					}
 				}
 			}
+		}
+		// A `move` RHS transfers ownership to the slot: the donor's bytes were
+		// shallow-copied, so its scope-exit destroy must be suppressed — it
+		// would free the state the slot now owns (the capture walker's
+		// displaced destroy made the aliasing observable). Mirrors aarch64's
+		// mark_moved_if_struct in the nullable fall-through.
+		if (
+			!rhs_is_null &&
+			node.right_value.node_type === "value" &&
+			(node.right_value as ValueNode).is_moved
+		) {
+			if (!status.moved) status.moved = new Set();
+			status.moved.add((node.right_value as ValueNode).value);
 		}
 		if (rhs_is_null) {
 			status.code += `${flag} = 0`;

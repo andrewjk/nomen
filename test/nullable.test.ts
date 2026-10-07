@@ -894,7 +894,7 @@ Console.write("done")
 	// (capture_destroys discards its recursion's return); fixing it broadly
 	// double-frees the nullable-container case (nullable_struct_members).
 	// See FOLLOWUP.md "capture_destroys nested recursion".
-	test.skip("nullable class with destroy owning class field, freed when non-null", async () => {
+	test("nullable class with destroy owning class field, freed when non-null", async () => {
 		const input = `
 owning struct Box {
     var int v
@@ -996,7 +996,7 @@ Console.write("done")
 	// call against the construction temp plus the flag-guarded one). Latent
 	// pre-existing gap — the old `move`-keyword check error masked it. See
 	// FOLLOWUP.md "aarch64 nullable-field owning-struct destroy double-fire".
-	test.skip("nullable class field (move) freed at scope exit when non-null", async () => {
+	test("nullable class field (move) freed at scope exit when non-null", async () => {
 		const input = `
 owning struct Box {
     var int v
@@ -1016,7 +1016,7 @@ Console.write("done")
 		await build_and_check_output(input, "nullable_field_val", "box 7\ndone");
 	});
 
-	test.skip("nullable class with destroy in a loop — destroy runs each iteration", async () => {
+	test("nullable class with destroy in a loop — destroy runs each iteration", async () => {
 		const input = `
 owning struct Box {
     var int v
