@@ -9,7 +9,10 @@ export default function check_enum_node(node: EnumNode, status: CheckStatus) {
 	// bare `enum` with a case payload typed a DECLARED-owning struct (or a
 	// declared-owning enum) cannot be Copyable — case construction transfers
 	// the payload, and a value copy of the enum would alias it. Name the fix.
-	if (!node.is_owning) {
+	// GENERATED monos (`template_name` set) are exempt: their ownership is
+	// derived from the substituted payloads at materialization (enum_mono
+	// stamps is_owning), and a generated enum cannot be spelled `owning`.
+	if (!node.is_owning && !node.template_name) {
 		for (const c of node.cases) {
 			for (const p of c.params) {
 				if (!p.type.name || p.type.is_ref) continue;

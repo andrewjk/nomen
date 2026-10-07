@@ -74,7 +74,7 @@ func hash_it = (view string text, out int) {
 	return h
 }
 
-pub class Item {
+pub owning struct Item {
 	var text = ""
 }
 
@@ -240,7 +240,7 @@ pub func main = (Init init) {
 			`
 import System
 
-pub class Item {
+pub owning struct Item {
 	var text = ""
 }
 
@@ -272,7 +272,7 @@ pub func main = (Init init) {
 			`
 import System
 
-pub class Item {
+pub owning struct Item {
 	var text = "hello world"
 }
 
@@ -341,7 +341,7 @@ pub func main = (Init init) {
 			`
 import System
 
-pub class Scanner {
+pub owning struct Scanner {
 	var seed = 0
 
 	pub func fold = (self, view string text, out int) {

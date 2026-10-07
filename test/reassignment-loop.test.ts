@@ -10,8 +10,8 @@ import build_and_check_output from "./build_and_check_output";
 describe("reassignment paths inside a loop", () => {
 	test("heap-returning factory function", async () => {
 		const input = `
-class Box { var int v }
-class Holder { move Box c }
+owning struct Box { var int v }
+owning struct Holder { move Box c }
 func mk = (int n, out Holder) {
     return Holder(move Box(n))
 }
@@ -28,8 +28,8 @@ Console.write("\\{h.c.v}\\n")
 
 	test("ref param reassigned by a function called in a loop", async () => {
 		const input = `
-class Box { var int v }
-class Holder { move Box c }
+owning struct Box { var int v }
+owning struct Holder { move Box c }
 func replace = (ref Holder h, int n) {
     h = Holder(move Box(n))
 }
@@ -46,8 +46,8 @@ Console.write("\\{h.c.v}\\n")
 
 	test("ref param reassignment outside a loop reclaims the old instance", async () => {
 		const input = `
-class Box { var int v }
-class Holder { move Box c }
+owning struct Box { var int v }
+owning struct Holder { move Box c }
 func replace = (ref Holder h, int n) {
     h = Holder(move Box(n))
 }
@@ -73,8 +73,8 @@ Console.write("\\{s}\\n")
 
 	test("constructor reassignment in a nested if inside a loop", async () => {
 		const input = `
-class Box { var int v }
-class Holder { move Box c }
+owning struct Box { var int v }
+owning struct Holder { move Box c }
 var Holder h = Holder(move Box(0))
 var int i = 1
 while i <= 5 {

@@ -31,7 +31,7 @@ Console.write("\\{a.x} \\{a.y} \\{b.x} \\{b.y} \\{c.x} \\{c.y}")
 
 	test("overloaded #init on a class", async () => {
 		const input = `
-class Box {
+owning struct Box {
   pub var int v
   pub var string tag
   pub func #init = (ref self, int v) {

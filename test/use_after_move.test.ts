@@ -6,7 +6,7 @@ import parse_with_imports from "./parse_with_imports";
 describe("use-after-move", () => {
 	test("passing class to two move functions", () => {
 		const input = `
-class Box {
+owning struct Box {
 	var int value
 }
 func take = (move Box b) {
@@ -24,7 +24,7 @@ take(move a)
 
 	test("class field mutation after move", () => {
 		const input = `
-class Box {
+owning struct Box {
 	var int value
 }
 func take = (move Box b) {
@@ -42,11 +42,11 @@ a.value = 10
 
 	test("class used as struct init after move", () => {
 		const input = `
-class Box {
+owning struct Box {
 	var int value
 }
-class Holder {
-	move Box content
+owning struct Holder {
+	var Box content
 }
 func take = (move Box b) {
 }
@@ -63,11 +63,11 @@ var Holder h = Holder(move a)
 
 	test("reading class after move into struct", () => {
 		const input = `
-class Box {
+owning struct Box {
 	var int value
 }
-class Holder {
-	move Box content
+owning struct Holder {
+	var Box content
 }
 var Box a = Box(42)
 var Holder h = Holder(move a)
@@ -82,7 +82,7 @@ Console.write("\\{a.value}")
 
 	test("reading class field after move to function", () => {
 		const input = `
-class Box {
+owning struct Box {
 	var int value
 }
 func take = (move Box b) {
@@ -100,7 +100,7 @@ Console.write("\\{a.value}")
 
 	test("move then use different variable still works", async () => {
 		const input = `
-class Box {
+owning struct Box {
 	var int value
 }
 var Box a = Box(1)
@@ -115,12 +115,12 @@ Console.write("\\{b.value}")
 
 	test("move into struct then use other fields still works", async () => {
 		const input = `
-class Box {
+owning struct Box {
 	var int value
 }
-class Holder {
+owning struct Holder {
 	var int id
-	move Box content
+	var Box content
 }
 var Box b = Box(99)
 var Holder h = Holder(1, move b)
@@ -131,11 +131,11 @@ Console.write("\\{h.id}")
 
 	test("unused move class param with owned field is reclaimed", async () => {
 		const input = `
-class Box {
+owning struct Box {
 	var int value
 }
-class Holder {
-	move Box c
+owning struct Holder {
+	var Box c
 }
 var Box a = Box(1)
 var Holder h = Holder(move Box(2))
@@ -150,7 +150,7 @@ Console.write("\\{a.value}")
 
 	test("unused move class param with empty body is reclaimed", async () => {
 		const input = `
-class Box {
+owning struct Box {
 	var int value
 }
 var Box a = Box(1)

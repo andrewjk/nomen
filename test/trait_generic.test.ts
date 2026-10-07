@@ -17,7 +17,7 @@ describe("generic trait conformance", () => {
 trait Greetable<T> {
 }
 
-class Users: Greetable<User> {
+owning struct Users: Greetable<User> {
 	func speak = (out string) {
 		return "ok"
 	}
@@ -42,7 +42,7 @@ trait Greetable<T> {
 	func code = (self, out int)
 }
 
-class Users: Greetable<User> {
+owning struct Users: Greetable<User> {
 	func code = (self, out int) {
 		return 7
 	}
@@ -67,7 +67,7 @@ trait Mapper<K, V> {
 	func key = (self, out int)
 }
 
-class M: Mapper<User, int> {
+owning struct M: Mapper<User, int> {
 	func key = (self, out int) {
 		return 42
 	}
@@ -96,14 +96,14 @@ trait Greetable<T> {
 	func code = (self, out int)
 }
 
-class Dog: Greetable<Bone> {
+owning struct Dog: Greetable<Bone> {
 	func code = (self, out int) { return 1 }
 	func #destroy = (ref self) {
 		Console.write("dog")
 	}
 }
 
-class Cat: Greetable<Mouse> {
+owning struct Cat: Greetable<Mouse> {
 	func code = (self, out int) { return 2 }
 	func #destroy = (ref self) {
 		Console.write("cat")
@@ -256,7 +256,7 @@ trait Box<T> {
 	}
 }
 
-class IB: Box<int> {
+owning struct IB: Box<int> {
 	var int item = 0
 }
 
@@ -349,7 +349,7 @@ struct Wrap {
 	var int inner = 0
 }
 
-class W: Greetable<Wrap<int>> {
+owning struct W: Greetable<Wrap<int>> {
 	func code = (self, out int) {
 		return 9
 	}
@@ -394,7 +394,7 @@ struct A {}
 struct B {}
 struct C {}
 
-class Triple: Greetable<List<List<int>>> {
+owning struct Triple: Greetable<List<List<int>>> {
 	func code = (self, out int) {
 		return 3
 	}
@@ -426,11 +426,11 @@ describe("generic trait conformance errors", () => {
 trait Greetable<T> {
 }
 
-class Users: Greetable {
+owning struct Users: Greetable {
 }
 `;
 		const expected = [
-			test_error(input, "Trait 'Greetable' expects 1 type argument(s) <T>, got none", 5, 1),
+			test_error(input, "Trait 'Greetable' expects 1 type argument(s) <T>, got none", 5, 8),
 		];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
@@ -441,7 +441,7 @@ class Users: Greetable {
 trait Greetable<T> {
 }
 
-class Users: Greetable<User, int> {
+owning struct Users: Greetable<User, int> {
 }
 
 struct User {
@@ -449,7 +449,7 @@ struct User {
 }
 `;
 		const expected = [
-			test_error(input, "Trait 'Greetable' expects 1 type argument(s), got 2", 5, 1),
+			test_error(input, "Trait 'Greetable' expects 1 type argument(s), got 2", 5, 8),
 		];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
@@ -460,10 +460,10 @@ struct User {
 trait Speaker {
 }
 
-class Dog: Speaker<int> {
+owning struct Dog: Speaker<int> {
 }
 `;
-		const expected = [test_error(input, "Trait 'Speaker' expects 0 type argument(s), got 1", 5, 1)];
+		const expected = [test_error(input, "Trait 'Speaker' expects 0 type argument(s), got 1", 5, 8)];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});
@@ -474,7 +474,7 @@ trait Greetable<T> {
 	func code = (self, out T)
 }
 
-class G: Greetable<int> {
+owning struct G: Greetable<int> {
 }
 `;
 		const expected = [
@@ -482,7 +482,7 @@ class G: Greetable<int> {
 				input,
 				"Type 'G' does not conform to trait 'Greetable': missing required method 'code'",
 				6,
-				1,
+				8,
 			),
 		];
 		const parsed = parse(input);

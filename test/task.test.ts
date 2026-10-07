@@ -913,7 +913,7 @@ describe("Sendable enforcement", () => {
 		const input = `
 import System
 
-pub class Counter {
+pub owning struct Counter {
 	var int count = 0
 }
 
@@ -979,11 +979,11 @@ pub func main = () {
 		expect(parsed.errors).toEqual([]);
 	});
 
-	test("class without explicit Sendable fails (no auto-derive for classes)", () => {
+	test("a bare owning Thread arg outside a nursery is rejected (R1)", () => {
 		const input = `
 import System
 
-pub class Counter {
+pub owning struct Counter {
 	var int count = 0
 }
 
@@ -996,7 +996,9 @@ pub func main = () {
 }
 `;
 		const parsed = parse_raw(input);
-		expect(parsed.errors.some((e) => e.message.includes("not Sendable"))).toBe(true);
+		// The Sendable marker retired with the class tier — owning args are
+		// governed by the R1 region rules (async block or move).
+		expect(parsed.errors.some((e) => e.message.includes("owns heap memory"))).toBe(true);
 	});
 });
 

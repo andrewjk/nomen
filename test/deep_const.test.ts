@@ -2,13 +2,13 @@ import { expect, describe, test } from "vite-plus/test";
 
 import { parse_raw } from "./parse_with_imports";
 
-// Deep-const for collections: extracting a class element from a const source
+// Deep-const for collections: extracting a `Box<T>` element from a const source
 // yields a read-only (`is_const_ref`) reference — field writes, ref/move
 // forwarding, and mutating (`ref self`) dispatch through it are rejected.
 // See FOLLOWUP.md "Deep-const for collections".
 
 const WIDGET = `
-pub class Widget {
+pub owning struct Widget {
 	var string title = "default"
 	pub func set_title = (ref self, string t) {
 		self.title = t
@@ -26,7 +26,7 @@ describe("deep-const — extraction from const source", () => {
 		const input = `
 import System
 ${WIDGET}
-func leak = (List<Widget> list) {
+func leak = (List<Box<Widget>> list) {
 	var w = list.at(0)
 	w.title = "mutated"
 }
@@ -40,10 +40,10 @@ func leak = (List<Widget> list) {
 		const input = `
 import System
 ${WIDGET}
-func take_ref = (ref Widget w) {
+func take_ref = (ref Box<Widget> w) {
 	w.title = "changed"
 }
-func leak = (List<Widget> list) {
+func leak = (List<Box<Widget>> list) {
 	take_ref(ref list.at(0))
 }
 `;
@@ -58,10 +58,10 @@ func leak = (List<Widget> list) {
 		const input = `
 import System
 ${WIDGET}
-func take_mov = (move Widget w) {
+func take_mov = (move Box<Widget> w) {
 	w.title = "changed"
 }
-func leak = (List<Widget> list) {
+func leak = (List<Box<Widget>> list) {
 	take_mov(move list.at(0))
 }
 `;
@@ -76,8 +76,9 @@ func leak = (List<Widget> list) {
 		const input = `
 import System
 ${WIDGET}
-func leak = (List<Widget> list) {
-	list.at(0).set_title("x")
+func leak = (List<Box<Widget>> list) {
+	var w = list.at(0)
+	w.set_title("x")
 }
 `;
 		const parsed = parse_raw(input);
@@ -89,8 +90,8 @@ func leak = (List<Widget> list) {
 		const input = `
 import System
 ${WIDGET}
-func leak = (List<Widget> list) {
-	var Widget w = list.at(0)
+func leak = (List<Box<Widget>> list) {
+	var Box<Widget> w = list.at(0)
 	w.title = "mutated"
 }
 `;
@@ -117,8 +118,8 @@ func ok = (List<int> list) {
 		const input = `
 import System
 ${WIDGET}
-func ok = (ref List<Widget> list) {
-	var w = list.at(0)
+func ok = (ref List<Box<Widget>> list) {
+	var Box<Widget> w = list.at(0)
 	w.title = "ok"
 }
 `;
@@ -130,7 +131,7 @@ func ok = (ref List<Widget> list) {
 		const input = `
 import System
 ${WIDGET}
-func read = (List<Widget> list) {
+func read = (List<Box<Widget>> list) {
 	var t = list.at(0).title
 	Console.write(t)
 }

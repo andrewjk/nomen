@@ -3,6 +3,7 @@ import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
+import { mono_type_name } from "../build_common/mono_name.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
@@ -388,10 +389,15 @@ function check_as_array_or_inferred_tuple(
 			array.type.length = old_expected.length;
 		}
 	} else if (!array.type.name) {
-		// Infer element type from first value
+		// Infer element type from first value. A generic element flattens to
+		// its mono name (same as the parse-time `Array<T>`/`T[]` spellings)
+		// so the container sites key one mono (`Box_Cell`, not bare `Box`
+		// whose type args would be lost on this `new Type(name)`).
 		const first_type = value_types[0];
 		if (first_type) {
-			array.type = new Type(first_type.name);
+			const elem_name =
+				first_type.type_args?.length ? mono_type_name(first_type) : first_type.name;
+			array.type = new Type(elem_name);
 			array.type.is_array = true;
 		}
 		array_item_type = new Type(array.type.name);

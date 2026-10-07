@@ -21,7 +21,7 @@ describe("ClassBuffer<Trait> polymorphic destroy (Milestone 1)", () => {
 	test("Buffer<Speaker> field type routes to ClassBuffer_Speaker", async () => {
 		const input = `
 trait Speaker { func speak = (self, out string) }
-class Dog : Speaker { func speak = (self, out string) { return "woof" } }
+owning struct Dog : Speaker { func speak = (self, out string) { return "woof" } }
 
 if true {
 	var List<Speaker> list = List<Speaker>()
@@ -47,7 +47,7 @@ if true {
 	test("List<Speaker> destroys class elements via vtable dispatch", async () => {
 		const input = `
 trait Speaker { func speak = (self, out string) }
-class Dog : Speaker {
+owning struct Dog : Speaker {
 	var string name
 	func speak = (self, out string) { return self.name }
 	func #destroy = (ref self) {
@@ -82,7 +82,7 @@ Console.write("\\ndone")
 		// leak without proper destroy dispatch through the vtable.
 		const input = `
 trait Speaker { func speak = (self, out string) }
-class Dog : Speaker {
+owning struct Dog : Speaker {
 	var string name
 	func speak = (self, out string) { return self.name }
 }
@@ -99,14 +99,14 @@ Console.write("done")
 	test("List<Speaker> with multiple conforming classes dispatches each", async () => {
 		const input = `
 trait Speaker { func speak = (self, out string) }
-class Dog : Speaker {
+owning struct Dog : Speaker {
 	var string name
 	func speak = (self, out string) { return self.name }
 	func #destroy = (ref self) {
 		Console.write("dog " + self.name)
 	}
 }
-class Cat : Speaker {
+owning struct Cat : Speaker {
 	var string name
 	func speak = (self, out string) { return self.name }
 	func #destroy = (ref self) {

@@ -63,7 +63,7 @@ pub func main = () {
 	test("non-conforming types are rejected as Awaitable", () => {
 		const input = `import System
 
-pub class NotATask {
+pub owning struct NotATask {
 	var int x = 0
 }
 

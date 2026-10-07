@@ -13,11 +13,11 @@ import parse_with_imports from "./parse_with_imports";
 describe("owning class field stores", () => {
 	test("move-param mutator consumed into the field runs (both backends)", async () => {
 		const input = `
-class Art {
+owning struct Art {
 	var int v
 }
-class Holder {
-	move Art art
+owning struct Holder {
+	var Art art
 	func set_owned = (ref self, move Art a) {
 		self.art = a
 	}
@@ -37,11 +37,11 @@ Console.write_line("done")
 
 	test("fresh constructor store into the field runs (both backends)", async () => {
 		const input = `
-class Art {
+owning struct Art {
 	var int v
 }
-class Holder {
-	move Art art
+owning struct Holder {
+	var Art art
 	func reset = (ref self) {
 		self.art = Art(9)
 	}
@@ -61,11 +61,11 @@ Console.write_line("done")
 
 	test("borrowed parameter stored into the field is rejected", () => {
 		const input = `
-class Art {
+owning struct Art {
 	var int v
 }
-class Holder {
-	move Art art
+owning struct Holder {
+	var Art art
 	func set_borrowed = (ref self, Art a) {
 		self.art = a
 	}
@@ -85,11 +85,11 @@ test()
 		// node.left = l`): the local owns the instance and the backends
 		// implicitly move it into the field, suppressing the local's cleanup.
 		const input = `
-class Art {
+owning struct Art {
 	var int v
 }
-class Holder {
-	move Art art
+owning struct Holder {
+	var Art art
 }
 func make = (int n, out Art) {
 	return Art(n)
@@ -108,19 +108,21 @@ Console.write_line("done")
 		await build_and_check_output(input, "owning_field_owned_local_ok", "transferred\ndone");
 	});
 
-	test("borrowed container element stored into the field is rejected", () => {
+	test("ref-parameter source stored into the field is rejected", () => {
 		const input = `
-class Art {
+owning struct Art {
 	var int v
 }
-class Holder {
-	move Art art
+owning struct Holder {
+	var Art art
+	func set_ref = (ref self, ref Art a) {
+		self.art = a
+	}
 }
 func test = () {
-	var Array<Art> arts = [Art(1)]
-	var Art borrowed = arts.at(0)
-	var Holder h = Holder(Art(2))
-	h.art = borrowed
+	var Holder h = Holder(move Art(2))
+	var Art a = Art(3)
+	h.set_ref(ref a)
 }
 test()
 `;
@@ -130,17 +132,17 @@ test()
 
 	test("null into a nullable owning field stays legal (both backends)", async () => {
 		const input = `
-class Box {
+owning struct Box {
 	var int v
 }
-class Holder {
-	move Box? maybe
+owning struct Holder {
+	var Box? maybe
 	func reset = (ref self) {
 		self.maybe = null
 	}
 }
 func test = () {
-	var Holder h = Holder(move Box(5))
+	var Holder h = Holder(Box(5))
 	h.reset()
 }
 test()

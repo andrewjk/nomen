@@ -157,7 +157,7 @@ Console.write("\\{sum_par(a, h)}\\n")
 describe("field-referencing out-contracts (gap 3)", () => {
 	test("out.a bounds flow to p.a uses through a class", () => {
 		expect_clean(`
-pub class Pair {
+pub owning struct Pair {
 	var int a = 0
 }
 func find = (List<int> xs, out Pair: out.a >= 0 && out.a < xs.length) {
@@ -174,7 +174,7 @@ func use = (List<int> xs, out int) {
 
 	test("bounds on one field do not leak to another field", () => {
 		expect_verify_error(`
-pub class Pair2 {
+pub owning struct Pair2 {
 	var int a = 0
 	var int b = 0
 }

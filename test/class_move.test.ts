@@ -8,7 +8,7 @@ import test_error from "./test_error";
 describe("class ownership transfer (move keyword)", () => {
 	test("returning move class param transfers ownership", async () => {
 		const input = `
-class Box {
+owning struct Box {
   var int value
 }
 
@@ -25,7 +25,7 @@ Console.write("\\{b.value}")
 
 	test("returning one of two class params only moves the returned one", async () => {
 		const input = `
-class Box {
+owning struct Box {
   var int value
 }
 
@@ -44,7 +44,7 @@ Console.write("\\{z.value}")
 
 	test("class param returned through nested function with move", async () => {
 		const input = `
-class Box {
+owning struct Box {
   var int value
 }
 
@@ -65,17 +65,17 @@ Console.write("\\{result.value}")
 
 	test("class param stored in returned array with move", async () => {
 		const input = `
-class Box {
+owning struct Cell {
   var int value
 }
 
-func store = (move Box b, out Box[]) {
+func store = (move Box<Cell> b, out Box<Cell>[]) {
   var arr = Array(b)
   return arr
 }
 
-var Box a = Box(42)
-var Box[] result = store(move a)
+var Box<Cell> a = Box<Cell>(Cell(42))
+var Box<Cell>[] result = store(move a)
 if result.length > 0 {
   Console.write("\\{result.first().value}")
 }
@@ -85,12 +85,12 @@ if result.length > 0 {
 
 	test("class in struct field returned from function with move", async () => {
 		const input = `
-class Box {
+owning struct Box {
   var int value
 }
 
-class Holder {
-  move Box content
+owning struct Holder {
+  var Box content
 }
 
 func wrap = (move Box b, out Holder) {
@@ -106,16 +106,16 @@ Console.write("\\{h.content.value}")
 
 	test("class elements in heap-allocated returned arrays (make_arr)", async () => {
 		const input = `
-class Box {
+owning struct Cell {
   var int value
 }
 
-func make_arr = (out Box[]) {
-  var arr = Array(Box(42))
+func make_arr = (out Box<Cell>[]) {
+  var arr = Array(Box<Cell>(Cell(42)))
   return arr
 }
 
-var Box[] result = make_arr()
+var Box<Cell>[] result = make_arr()
 Console.write("\\{result.first().value}")
 `;
 		await build_and_check_output(input, "own_stack_array_return", "42");
@@ -123,7 +123,7 @@ Console.write("\\{result.first().value}")
 
 	test("move at call site requires move in definition", async () => {
 		const input = `
-class Box {
+owning struct Box {
   var int value
 }
 
@@ -135,7 +135,7 @@ var Box a = Box(42)
 var Box b = identity(move a)
 `;
 		const parsed = parse_with_imports(input);
-		expect(parsed.errors.length).toBeGreaterThanOrEqual(2);
+		expect(parsed.errors.length).toBe(1);
 		expect(parsed.errors.map((e) => e.message)).toContain(
 			"Unexpected 'move' keyword for non-move parameter 'b'",
 		);
@@ -143,7 +143,7 @@ var Box b = identity(move a)
 
 	test("class reassigned to new instance frees old instance", async () => {
 		const input = `
-class Box {
+owning struct Box {
   var int value
 }
 
@@ -156,12 +156,12 @@ Console.write("\\{a.value}")
 
 	test("class field mutation through shared reference", async () => {
 		const input = `
-class Box {
+owning struct Cell {
   var int value
 }
 
-var Box a = Box(1)
-ref Box b = a
+var Box<Cell> a = Box<Cell>(Cell(1))
+ref Box<Cell> b = a
 b.value = 42
 Console.write("\\{a.value}")
 `;
@@ -170,7 +170,7 @@ Console.write("\\{a.value}")
 
 	test("class in if-scope freed on scope exit", async () => {
 		const input = `
-class Box {
+owning struct Box {
   var int value
 }
 
@@ -185,7 +185,7 @@ Console.write("done")
 
 	test("destroy block runs on class going out of scope", async () => {
 		const input = `
-class Resource {
+owning struct Resource {
   var int handle
 
   func #destroy = () {
@@ -205,7 +205,7 @@ Console.write("done")
 
 	test("class returned from function and reassigned", async () => {
 		const input = `
-class Box {
+owning struct Box {
   var int value
 }
 
@@ -223,7 +223,7 @@ Console.write("\\{a.value}")
 
 	test("class element in array freed when array goes out of scope", async () => {
 		const input = `
-class Box {
+owning struct Box {
   var int value
 }
 
@@ -238,14 +238,14 @@ Console.write("done")
 
 	test("class assigned in inner scope freed after scope", async () => {
 		const input = `
-class Box {
+owning struct Box {
   var int value
 }
 
 var Box a = Box(1)
 if 1 == 1 {
   var Box inner = Box(2)
-  a = inner
+  a = move inner
 }
 Console.write("\\{a.value}")
 `;
@@ -254,12 +254,12 @@ Console.write("\\{a.value}")
 
 	test("class stored in struct field freed with struct", async () => {
 		const input = `
-class Box {
+owning struct Box {
   var int value
 }
 
-class Holder {
-  move Box content
+owning struct Holder {
+  var Box content
 }
 
 var Holder h = Holder(move Box(42))
@@ -270,7 +270,7 @@ Console.write("\\{h.content.value}")
 
 	test("move prevents double-free when class passed to function that returns it", async () => {
 		const input = `
-class Box {
+owning struct Box {
   var int value
 }
 
@@ -287,17 +287,17 @@ Console.write("\\{b.value}")
 
 	test("heap-returned array of classes freed at scope exit", async () => {
 		const input = `
-class Box {
+owning struct Cell {
   var int value
 }
 
-func make_arr = (out Box[]) {
-  var arr = Array(Box(1), Box(2), Box(3))
+func make_arr = (out Box<Cell>[]) {
+  var arr = Array(Box<Cell>(Cell(1)), Box<Cell>(Cell(2)), Box<Cell>(Cell(3)))
   return arr
 }
 
 if 1 == 1 {
-  var Box[] result = make_arr()
+  var Box<Cell>[] result = make_arr()
   for i of 0 .. result.length {
     Console.write("\\{result.at(i).value}")
   }
@@ -309,12 +309,12 @@ Console.write("done")
 
 	test("class used after assignment to another variable shares reference", async () => {
 		const input = `
-class Box {
+owning struct Cell {
   var int value
 }
 
-var Box a = Box(10)
-ref Box b = a
+var Box<Cell> a = Box<Cell>(Cell(10))
+ref Box<Cell> b = a
 Console.write("\\{a.value}\\{b.value}")
 `;
 		await build_and_check_output(input, "class_shared_ref", "1010");
@@ -322,7 +322,7 @@ Console.write("\\{a.value}\\{b.value}")
 
 	test("for-each over class array frees elements after loop", async () => {
 		const input = `
-class Box {
+owning struct Box {
   var int value
 }
 
@@ -336,7 +336,7 @@ for b of items {
 
 	test("break in while loop frees class elements in array", async () => {
 		const input = `
-class Box {
+owning struct Box {
   var int value
 }
 
@@ -357,7 +357,7 @@ Console.write("done")
 
 	test("continue in while loop frees class elements in array", async () => {
 		const input = `
-class Box {
+owning struct Box {
   var int value
 }
 
@@ -402,7 +402,7 @@ var Point b = identity(move a)
 
 	test("multiple move parameters", async () => {
 		const input = `
-class Box {
+owning struct Box {
   var int value
 }
 
@@ -418,9 +418,9 @@ Console.write("\\{z.value}")
 		await build_and_check_output(input, "mov_multiple", "2");
 	});
 
-	test("returning class from function without move does not transfer ownership", async () => {
+	test("returning an owning-struct param by value is sound (pass-by-value boundary)", async () => {
 		const input = `
-class Box {
+owning struct Box {
   var int value
 }
 
@@ -432,14 +432,12 @@ var Box a = Box(42)
 var Box b = share(a)
 Console.write("\\{a.value},\\{b.value}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors.length).toBeGreaterThan(0);
-		expect(parsed.errors[0].message).toContain("Cannot return class parameter 'b' without 'move'");
+		await build_and_check_output(input, "return_owning_param_by_value", "42,42");
 	});
 
 	test("returning class param with move is allowed", async () => {
 		const input = `
-class Box {
+owning struct Box {
   var int value
 }
 
@@ -456,7 +454,7 @@ Console.write("\\{b.value}")
 
 	test("returning class local var is allowed", async () => {
 		const input = `
-class Box {
+owning struct Box {
   var int value
 }
 
@@ -471,19 +469,21 @@ Console.write("\\{b.value}")
 		await build_and_check_output(input, "return_class_local", "42");
 	});
 
-	test("returning class param accessed through grouped expression", async () => {
+	test("returning an owning-struct param through a grouped expression", async () => {
 		const input = `
-class Box {
+owning struct Box {
   var int value
 }
 
 func share = (Box b, out Box) {
   return (b)
 }
+
+var Box a = Box(42)
+var Box b = share(a)
+Console.write("\\{b.value}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors.length).toBeGreaterThan(0);
-		expect(parsed.errors[0].message).toContain("Cannot return class parameter 'b' without 'move'");
+		await build_and_check_output(input, "return_owning_param_grouped", "42");
 	});
 
 	test("returning non-class struct param without move is allowed", async () => {
@@ -506,7 +506,7 @@ Console.write("\\{b.x}")
 
 	test("returning class param via function call is allowed", async () => {
 		const input = `
-class Box {
+owning struct Box {
   var int value
 }
 
@@ -527,11 +527,11 @@ Console.write("\\{b.value}")
 
 	test("returning a move class param that owns a class field", async () => {
 		const input = `
-class Box {
+owning struct Box {
   var int v
 }
-class Holder {
-  move Box c
+owning struct Holder {
+  var Box c
 }
 
 func id = (move Holder h, out Holder) {
@@ -547,7 +547,7 @@ Console.write("\\{b.c.v}")
 
 	test("moved param is reclaimed when a called method only reads the receiver", async () => {
 		const input = `
-class Box {
+owning struct Box {
   var int v
   pub func #init = (ref self, int v) {
     self.v = v

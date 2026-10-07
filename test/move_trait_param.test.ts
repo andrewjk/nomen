@@ -16,13 +16,13 @@ trait Animal {
 	pub func speak = (self, out string)
 }
 
-class Dog : Animal {
+owning struct Dog : Animal {
 	pub func speak = (self, out string) {
 		return "woof"
 	}
 }
 
-class Cat : Animal {
+owning struct Cat : Animal {
 	pub func speak = (self, out string) {
 		return "meow"
 	}
@@ -60,7 +60,7 @@ pub func main = (Init init) {
 			"mv_trait_add_list",
 			"woof meow\ndone\n",
 			`
-pub class Registry {
+pub owning struct Registry {
 	pub var List<Animal> items = List<Animal>()
 
 	pub func add = (ref self, move Animal r) {
@@ -84,7 +84,7 @@ pub func main = (Init init) {
 			"mv_trait_add_map",
 			"meow\ndone\n",
 			`
-pub class Registry {
+pub owning struct Registry {
 	pub var Map<string, Animal> by_name = Map<string, Animal>()
 
 	pub func add = (ref self, string name, move Animal r) {

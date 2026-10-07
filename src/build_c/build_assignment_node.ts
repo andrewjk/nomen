@@ -5,7 +5,7 @@ import emit_field_overrides, {
 import { is_normalized_struct_call } from "../build_common/call_init_string_fields.ts";
 import record_ctor_heap_default_fields from "../build_common/ctor_heap_default_fields.ts";
 import { override_displaced_string_fields } from "../build_common/ctor_return_owned.ts";
-import { struct_needs_auto_destroy } from "../build_common/destroy_analysis.ts";
+import { has_destroy, struct_needs_auto_destroy } from "../build_common/destroy_analysis.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import { claim_init_default_seed_reclaim } from "../build_common/init_computed_seeds.ts";
 import {
@@ -1301,6 +1301,31 @@ export default function build_assignment_node(
 			}
 			status.code += `;\n`;
 			return;
+		}
+	}
+
+	// `ref` OWNING-STRUCT param reassignment (`h = Holder(...)` where h is
+	// `struct T *` — a pointer to the caller's INLINE storage): the store
+	// lands in the caller's value slot, so the displaced instance's owned
+	// resources (its Box/List/string fields) must be reclaimed before the
+	// overwrite — destroy only, no free (the storage is the caller's frame,
+	// never freed here). Mirrors the class double-pointer path above, which
+	// destroys AND frees because a class instance is its own malloc.
+	if (!node.operator && !node.swap && node.left_value.node_type === "value") {
+		const lhs_name = (node.left_value as ValueNode).value;
+		if (
+			status.function_ref_params?.has(lhs_name) &&
+			!status.ref_class_params?.has(lhs_name) &&
+			!status.heap_array_vars?.has(lhs_name)
+		) {
+			const lhs_type = type_from_value_node(node.left_value);
+			if (lhs_type?.name && !lhs_type.is_array && lhs_type.name !== "string") {
+				const mono = mono_type_name(lhs_type);
+				const destroy_struct = status.structs.find((s) => s.name === mono && !s.is_generic);
+				if (destroy_struct && (has_destroy(destroy_struct) || struct_needs_auto_destroy(destroy_struct, status))) {
+					status.code += `${mono}_destroy(*${lhs_name});\n`;
+				}
+			}
 		}
 	}
 

@@ -181,7 +181,7 @@ Console.write("\\{a.at_or(1, 0)}\\{a.at_or_panic(1)}\\n")
 		// (save x19, mov x19, x0) around the splice — without it the loads
 		// read a garbage register ("837" instead of "123").
 		const input = `
-class Box {
+owning struct Box {
 	var int value
 }
 var items = Array(Box(1), Box(2), Box(3))

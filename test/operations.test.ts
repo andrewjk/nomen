@@ -226,7 +226,7 @@ Console.write("\\{r}")
 
 	test("negate a field access", async () => {
 		const input = `
-class Pt {
+owning struct Pt {
 	var int x
 }
 const Pt p = Pt(7)
@@ -238,7 +238,7 @@ Console.write("\\{r}")
 
 	test("negating a non-numeric type is an error", () => {
 		const input = `
-class Pt {
+owning struct Pt {
 	var int x
 }
 const Pt p = Pt(1)

@@ -2,24 +2,27 @@ import { describe, expect, test } from "vite-plus/test";
 
 import parse_with_imports from "./parse_with_imports";
 
-// Child-group borrow invalidation: a borrowed class reference taken from a
-// class field or container element (a "child-group borrow") is invalidated
-// when its owner is mutated via a `ref self` / `var self` method call — because
-// the mutation may free or displace the contents the borrow points into.
-// Object-level aliases (`var q = p`) are NOT child-group borrows, so mutating a
-// sibling does not invalidate them. This is the mutable-aliasing benefit over
-// Rust's aliasing-xor-mutability, made sound by invalidating on mutation.
-//
-// The borrow source here is a `move` class field (`h.content`), which is a
-// child-group borrow rooted at the owner `h`, and avoids the container index
-// bounds checks that `.at(i)` would require.
+// Borrow semantics in the struct world (STRUCT_PLAN_3 R). The class-era
+// "child-group borrow" invalidation is gone with the class tier: a field or
+// container read of an OWNING element is a deep COPY (Buffer's
+// deep-copy-on-store), so the reader owns its value and owner mutation cannot
+// dangle it — invalidation is replaced by copy semantics. What survives:
+//   - owning-typed field reads by value are rejected (use `move ... swap`);
+//   - `ref Box<T>` object-level aliases are LENIENT — mutating the owner is
+//     visible through the alias and never invalidates it (§A5, status-quo);
+//   - container element reads re-fetched after mutation are fine (copies).
+// This file pins those shapes.
 
-describe("child-group borrow invalidation on owner mutation", () => {
-	test("field borrow invalidated by a later mutating call", () => {
+function errors(input: string): string[] {
+	return parse_with_imports(input).errors.map((e) => e.message);
+}
+
+describe("owning field reads are copies (rejected without a swap)", () => {
+	test("reading an owning field by value is rejected", () => {
 		const input = `
-class Box { var int value }
-class Holder {
-	move Box content
+owning struct Box { var int value }
+owning struct Holder {
+	var Box content
 	var int scratch
 	func poke = (ref self) {
 		self.scratch = self.scratch + 1
@@ -27,153 +30,152 @@ class Holder {
 }
 var Holder h = Holder(move Box(1), 0)
 var Box b = h.content
+Console.write("\\{b.value}")
+`;
+		expect(errors(input).some((m) => m.includes("cannot copy 'Box' out of field"))).toBe(true);
+	});
+
+	test("a swap transfer revalidates the field", () => {
+		const input = `
+owning struct Box { var int value }
+owning struct Holder {
+	var Box content
+	var int scratch
+	func poke = (ref self) {
+		self.scratch = self.scratch + 1
+	}
+}
+var Holder h = Holder(move Box(1), 0)
+var Box b = move h.content swap Box(0)
 h.poke()
 Console.write("\\{b.value}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors.some((e) => e.message.includes("invalidated"))).toBe(true);
+		expect(errors(input)).toEqual([]);
 	});
+});
 
-	test("re-fetching the borrow after mutation is allowed", () => {
+describe("container element reads are copies (owner mutation is irrelevant)", () => {
+	test("re-fetching an element after a push is allowed", () => {
 		const input = `
-class Animal { var char letter }
+owning struct Animal { var char letter }
 var List<Animal> list = List<Animal>()
 list.push(move Animal('A'))
 if list.length > 0 {
-	var Animal a = list.at(0)
+	var Animal a = list.at_or_panic(0)
 	list.push(move Animal('B'))
-	a = list.at(0)
+	a = list.at_or_panic(0)
 	Console.write("\\{a.letter}")
 }
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
+		expect(errors(input)).toEqual([]);
 	});
 
-	test("object-level alias is not invalidated by mutating a sibling", () => {
+	test("an element copy survives a sibling push", () => {
 		const input = `
-class Counter {
-	var int count
+owning struct Cell { var int value }
+var List<Cell> items = List<Cell>()
+items.push(move Cell(1))
+var Cell b = items.at_or_panic(0)
+items.push(move Cell(2))
+Console.write("\\{b.value}")
+`;
+		expect(errors(input)).toEqual([]);
+	});
+});
+
+describe("object-level aliases are lenient (never invalidated by owner mutation)", () => {
+	test("a Box alias sees mutations through the owner", () => {
+		const input = `
+owning struct Counter {
+	var int count = 0
 	func bump = (ref self) {
 		self.count = self.count + 1
 	}
 }
-var Counter p = Counter(1)
-ref Counter q = p
+var Box<Counter> p = Box<Counter>(Counter())
+ref Box<Counter> q = p
 p.bump()
 Console.write("\\{q.count}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
+		expect(errors(input)).toEqual([]);
 	});
 
-	test("two sibling borrows survive mutating one of them", () => {
+	test("two aliases: mutating one owner leaves the other alone", () => {
 		const input = `
-class Box {
-	var int value
+owning struct Cell {
+	var int value = 0
 	func bump = (ref self) {
 		self.value = self.value + 1
 	}
 }
-class Pair {
-	move Box a
-	move Box b
-}
-var Pair p = Pair(move Box(1), move Box(2))
-var Box x = p.a
-var Box y = p.b
+var Box<Cell> x = Box<Cell>(Cell())
+var Box<Cell> y = Box<Cell>(Cell())
 x.bump()
 Console.write("\\{y.value}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
+		expect(errors(input)).toEqual([]);
 	});
 
-	test("mutation through a field-path receiver invalidates the owner's borrows", () => {
+	test("an alias survives a mutation inside an if-body", () => {
 		const input = `
-class Box { var int value }
-class Zoo {
-	move Box badge
-	var List<int> animals = List<int>()
-}
-var Zoo z = Zoo(move Box(1))
-var Box b = z.badge
-z.animals.push(5)
-Console.write("\\{b.value}")
-`;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors.some((e) => e.message.includes("invalidated"))).toBe(true);
-	});
-
-	test("invalidation inside an if-body persists after the block", () => {
-		const input = `
-class Box { var int value }
-class Holder {
-	move Box content
-	var int scratch
-	func poke = (ref self) {
-		self.scratch = self.scratch + 1
+owning struct Counter {
+	var int count = 0
+	func bump = (ref self) {
+		self.count = self.count + 1
 	}
 }
-var Holder h = Holder(move Box(1), 0)
-var Box b = h.content
+var Box<Counter> p = Box<Counter>(Counter())
+ref Box<Counter> q = p
 if true {
-	h.poke()
+	p.bump()
 }
-Console.write("\\{b.value}")
+Console.write("\\{q.count}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors.some((e) => e.message.includes("invalidated"))).toBe(true);
+		expect(errors(input)).toEqual([]);
 	});
 
-	test("invalidation inside a switch case persists after the switch", () => {
+	test("an alias survives a mutation inside a switch case", () => {
 		const input = `
-class Box { var int value }
-class Holder {
-	move Box content
-	var int scratch
-	func poke = (ref self) {
-		self.scratch = self.scratch + 1
+owning struct Counter {
+	var int count = 0
+	func bump = (ref self) {
+		self.count = self.count + 1
 	}
 }
-var Holder h = Holder(move Box(1), 0)
-var Box b = h.content
+var Box<Counter> p = Box<Counter>(Counter())
+ref Box<Counter> q = p
 var int x = 1
 switch {
 	case x > 0 {
-		h.poke()
+		p.bump()
 	}
 }
-Console.write("\\{b.value}")
+Console.write("\\{q.count}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors.some((e) => e.message.includes("invalidated"))).toBe(true);
+		expect(errors(input)).toEqual([]);
 	});
 
-	test("invalidation inside a match case persists after the match", () => {
+	test("an alias survives a mutation inside a match case", () => {
 		const input = `
-class Box { var int value }
-class Holder {
-	move Box content
-	var int scratch
-	func poke = (ref self) {
-		self.scratch = self.scratch + 1
+owning struct Counter {
+	var int count = 0
+	func bump = (ref self) {
+		self.count = self.count + 1
 	}
 }
-var Holder h = Holder(move Box(1), 0)
-var Box b = h.content
+var Box<Counter> p = Box<Counter>(Counter())
+ref Box<Counter> q = p
 var int x = 1
 match x {
 	case 1 {
-		h.poke()
+		p.bump()
 	}
 	else {
 		Console.write("else")
 	}
 }
-Console.write("\\{b.value}")
+Console.write("\\{q.count}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors.some((e) => e.message.includes("invalidated"))).toBe(true);
+		expect(errors(input)).toEqual([]);
 	});
 });

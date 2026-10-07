@@ -16,12 +16,12 @@ describe("custom #init field assignment ownership (runtime, both backends)", () 
 			`
 import System
 
-pub class Inner {
+pub owning struct Inner {
 	pub var int v = 0
 }
 
-pub class Outer {
-	pub move Inner inner
+pub owning struct Outer {
+	pub var Inner inner
 	pub var string name
 
 	pub func #init = (self) {
@@ -46,7 +46,7 @@ pub func main = (Init init) {
 			`
 import System
 
-pub class Twice {
+pub owning struct Twice {
 	pub var string name = "start"
 
 	pub func #init = (self) {

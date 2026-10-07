@@ -1,4 +1,5 @@
 import add_error from "../add_error.ts";
+import { mono_type_name } from "../build_common/mono_name.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
@@ -521,9 +522,17 @@ export default function check_assignment_node(
 	// replaced), so it is allowed; fresh allocations (constructors / function
 	// returns) arrive as non-value nodes and are moves, not copies. This mirrors
 	// the declaration-side check so the two copy sites are consistent.
+	// EXCEPTION: a store into an OWNING-TYPED field (`self.art = owned`) is a
+	// TRANSFER — ownership follows the field's type (B5) — so the copy rule
+	// does not apply; the borrow rejection below governs instead.
+	const lhs_is_owning_field_store =
+		assign.left_value.node_type === "access" &&
+		(assign.left_value as AccessNode).access.node_type === "access_field" &&
+		lhs_field_access_owning(assign.left_value as AccessNode, status);
 	if (
 		!is_compound &&
 		!assign.swap &&
+		!lhs_is_owning_field_store &&
 		assign.right_value.node_type === "value" &&
 		!assign.right_value.is_moved
 	) {
@@ -621,20 +630,24 @@ export default function check_assignment_node(
 					return false;
 				}
 			}
-			// Owning (`move`) class fields take ownership of their instance.
-			// Storing a BORROWED reference (a non-`move` parameter, a field /
-			// container borrow, or an object alias) would let the field's
-			// destroy free an instance its real owner frees too — double free
-			// on both backends. Owner-carrying values stay legal and are the
+			// Owning fields take ownership of their instance — a CLASS field
+			// (`move T f`) or an OWNING-STRUCT-typed field (`var T f`, B5:
+			// ownership follows the field's type). Storing a BORROWED
+			// reference (a non-`move` parameter, a field / container borrow,
+			// or an object alias) would let the field's destroy free an
+			// instance its real owner frees too — double free on both
+			// backends. Owner-carrying values stay legal and are the
 			// established idiom: a fresh constructor/call (non-value RHS), an
 			// explicit `move`, a `move` parameter, or an owned local
 			// (`var TreeNode l = create_tree(...); node.left = l` — the
 			// backends implicitly move the local into the field).
 			const field_is_owning_class =
-				field?.declaration === "move" &&
+				!!field &&
+				(field.declaration === "move" || is_owning_struct_type(field.type, status)) &&
 				!!field.type.name &&
 				!field.type.is_array &&
-				is_class_type(field.type.name, status);
+				(is_class_type(field.type.name, status) ||
+					is_owning_struct_type(field.type, status));
 			if (
 				field_is_owning_class &&
 				assign.right_value.node_type === "value" &&
@@ -663,14 +676,25 @@ export default function check_assignment_node(
 							`cannot store '${src_name}' into owning field '${field_access.name}' — the field takes ownership of a borrowed value; take a fresh instance, declare the parameter 'move', or pass it with 'move'`,
 							assign.right_value.start,
 						);
+					} else {
+						// An owned local transferred into the field: the store is
+						// a MOVE (the backends suppress the local's cleanup), so
+						// later reads are use-after-move — mark it here.
+						(assign.right_value as ValueNode).is_moved = true;
+						if (!status.moved_variables) status.moved_variables = new Set();
+						status.moved_variables.add(src_name);
 					}
 				}
 			}
 			if (field?.type?.name === "func") {
 				const target_struct_node = status.structs.findLast((s) => s.name === target_type.name);
+				// An OWNING struct is move-only — the descriptor moves with the
+				// struct and is never shared — so a capturing closure in its
+				// func field is sound. Only a COPYABLE value struct shares.
 				if (
 					target_struct_node &&
 					!target_struct_node.is_class &&
+					!target_struct_node.is_owning &&
 					value_owns_closure(assign.right_value, status)
 				) {
 					add_error(
@@ -769,7 +793,9 @@ export default function check_assignment_node(
 			// An owning struct field cannot be byte-copied out (double-free); move
 			// it out with a swap that revalidates the field. A string-only owning
 			// struct (e.g. a tuple with a string field) is a sound borrow instead.
-			if (!assign.right_value.is_moved) {
+			// The swap form (`f1.f = f2.f swap <replacement>`) revalidates the
+			// SOURCE field — the read is the transfer's half, not a copy.
+			if (!assign.right_value.is_moved && !assign.swap) {
 				const field_name = (assign.right_value as AccessNode).access.name;
 				add_error(
 					status,
@@ -877,6 +903,21 @@ export default function check_assignment_node(
  * flow-sensitive bounds can be derived by shifting `name`'s existing bounds.
  * Used to decide whether to snapshot the LHS's bounds before clearing them.
  */
+/** Is this `a.b = ...` assignment's target an OWNING-typed field (a class
+ *  field or an owning-struct-typed field, B5)? Such stores TRANSFER — the
+ *  copy rule does not apply; the borrow rejection governs instead. */
+function lhs_field_access_owning(access: AccessNode, status: CheckStatus): boolean {
+	const af = access.access as AccessFieldNode;
+	const target_type = type_from_value_node(access.target, status);
+	if (!target_type.name) return false;
+	const struct = status.structs.findLast(
+		(s) => s.name === mono_type_name(target_type) && !s.is_generic,
+	);
+	const field = struct?.fields.find((f) => f.name === af.name);
+	if (!field || !field.type.name || field.type.is_array || field.type.is_view) return false;
+	return is_class_type(field.type.name, status) || is_owning_struct_type(field.type, status);
+}
+
 function is_self_shifted(value: AssignmentNode["right_value"], name: string): boolean {
 	if (value.node_type !== "op") return false;
 	const op = value as OperationNode;

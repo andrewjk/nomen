@@ -1,11 +1,20 @@
+import path from "node:path";
+
 import { describe, expect, test } from "vite-plus/test";
 
+import { get_library } from "../src/lib";
 import parse from "../src/parse";
 import build_and_check_output from "./build_and_check_output";
 import test_error from "./test_error";
 
-// STRUCT_PLAN_3 Phase A — spelled `ref` bindings. `ref Box q = p` is the ONLY
-// way to alias a class instance: `var Box q = p` is a compile error. The rules
+const system = get_library(path.resolve("core"));
+
+function check(source: string) {
+	return parse(source, system, undefined, { allow_internal: true }).errors;
+}
+
+// STRUCT_PLAN_3 Phase A — spelled `ref` bindings. `ref Box<Cell> q = p` is the ONLY
+// way to alias a class instance: `var Box<Cell> q = p` is a compile error. The rules
 // (§A3): mutation through a ref requires a `var` source; a ref is not
 // reassignable; nothing moves through a ref. Positive tests run BOTH backends
 // (the aarch64 alias-classification asymmetry this exposes was fixed — see
@@ -14,9 +23,9 @@ import test_error from "./test_error";
 describe("ref binding: runtime", () => {
 	test("read a field through a ref alias", async () => {
 		const input = `
-class Box { var int v }
-	var Box p = Box(1)
-	ref Box q = p
+owning struct Cell { var int v }
+	var Box<Cell> p = Box<Cell>(Cell(1))
+	ref Box<Cell> q = p
 	Console.write("\\{q.v}")
 `;
 		await build_and_check_output(input, "ref_binding_read", "1");
@@ -24,9 +33,9 @@ class Box { var int v }
 
 	test("mutate through a ref alias is visible through the owner", async () => {
 		const input = `
-class Box { var int v }
-	var Box p = Box(1)
-	ref Box q = p
+owning struct Cell { var int v }
+	var Box<Cell> p = Box<Cell>(Cell(1))
+	ref Box<Cell> q = p
 	q.v = 5
 	Console.write("\\{q.v} \\{p.v}")
 `;
@@ -35,14 +44,14 @@ class Box { var int v }
 
 	test("mutate through a ref alias via a method call", async () => {
 		const input = `
-class Box {
+owning struct Cell {
 	var int v
 	func bump = (ref self) {
 		self.v = self.v + 1
 	}
 }
-	var Box p = Box(1)
-	ref Box q = p
+	var Box<Cell> p = Box<Cell>(Cell(1))
+	ref Box<Cell> q = p
 	q.bump()
 	q.bump()
 	Console.write("\\{p.v}")
@@ -52,10 +61,10 @@ class Box {
 
 	test("a ref alias declared in a nested scope mutates the owner", async () => {
 		const input = `
-class Box { var int v }
-	var Box p = Box(1)
+owning struct Cell { var int v }
+	var Box<Cell> p = Box<Cell>(Cell(1))
 	if true {
-		ref Box q = p
+		ref Box<Cell> q = p
 		q.v = 7
 	}
 	Console.write("\\{p.v}")
@@ -65,10 +74,10 @@ class Box { var int v }
 
 	test("a ref alias declared in a loop body mutates the owner each iteration", async () => {
 		const input = `
-class Box { var int v }
-	var Box p = Box(0)
+owning struct Cell { var int v }
+	var Box<Cell> p = Box<Cell>(Cell(0))
 	for i of 0..5 {
-		ref Box q = p
+		ref Box<Cell> q = p
 		q.v = q.v + 1
 	}
 	Console.write("\\{p.v}")
@@ -78,10 +87,10 @@ class Box { var int v }
 
 	test("two aliases share one instance", async () => {
 		const input = `
-class Box { var int v }
-	var Box p = Box(1)
-	ref Box q = p
-	ref Box r = p
+owning struct Cell { var int v }
+	var Box<Cell> p = Box<Cell>(Cell(1))
+	ref Box<Cell> q = p
+	ref Box<Cell> r = p
 	q.v = 4
 	r.v = r.v + 1
 	Console.write("\\{p.v}")
@@ -91,10 +100,10 @@ class Box { var int v }
 
 	test("reassigning the OWNER leaves the alias on the old instance", async () => {
 		const input = `
-class Box { var int v }
-	var Box p = Box(1)
-	ref Box q = p
-	p = Box(2)
+owning struct Cell { var int v }
+	var Box<Cell> p = Box<Cell>(Cell(1))
+	ref Box<Cell> q = p
+	p = Box<Cell>(Cell(2))
 	Console.write("\\{q.v} \\{p.v}")
 `;
 		await build_and_check_output(input, "ref_binding_owner_reassign", "1 2");
@@ -102,12 +111,12 @@ class Box { var int v }
 
 	test("a ref alias may alias a field borrow", async () => {
 		const input = `
-class Box { var int v }
-class Holder {
-	move Box c
+owning struct Cell { var int v }
+owning struct Holder {
+	var Box<Cell> c
 }
-	var Holder h = Holder(move Box(6))
-	ref Box q = h.c
+	var Holder h = Holder(move Box<Cell>(Cell(6)))
+	ref Box<Cell> q = h.c
 	q.v = q.v + 1
 	Console.write("\\{h.c.v}")
 `;
@@ -117,9 +126,9 @@ class Holder {
 	test("a root-scope ref alias is readable in main and at the root", async () => {
 		const input = `
 import System
-class Box { var int v }
-var Box p = Box(1)
-ref Box q = p
+owning struct Cell { var int v }
+var Box<Cell> p = Box<Cell>(Cell(1))
+ref Box<Cell> q = p
 Console.write("\\{q.v} \\{p.v}\\n")
 pub func main = () {
 	Console.write("\\{q.v}")
@@ -130,14 +139,14 @@ pub func main = () {
 
 	test("move transfer (prefix form) invalidates the source and destroys once", async () => {
 		const input = `
-class Box {
+owning struct Cell {
 	var int v
 	func #destroy = () {
 		Console.write("D")
 	}
 }
-	var Box p = Box(1)
-	move Box r = p
+	var Box<Cell> p = Box<Cell>(Cell(1))
+	move Box<Cell> r = p
 	Console.write("\\{r.v}\\n")
 `;
 		await build_and_check_output(input, "ref_binding_prefix_move_transfer", "1\nD");
@@ -146,7 +155,7 @@ class Box {
 	test("move transfer of an owning value struct (prefix form)", async () => {
 		const input = `
 struct H {
-	move List<int> items
+	var List<int> items
 }
 	var H p = H(List<int>())
 	p.items.push(42)
@@ -159,14 +168,14 @@ struct H {
 
 	test("a ref binding is destroyed exactly once with its owner", async () => {
 		const input = `
-class Box {
+owning struct Cell {
 	var int v
 	func #destroy = () {
 		Console.write("D")
 	}
 }
-	var Box p = Box(1)
-	ref Box q = p
+	var Box<Cell> p = Box<Cell>(Cell(1))
+	ref Box<Cell> q = p
 	Console.write("x\\n")
 `;
 		await build_and_check_output(input, "ref_binding_single_destroy", "x\nD");
@@ -177,68 +186,68 @@ class Box {
 describe("ref binding: errors", () => {
 	test("an unspelled class alias is an error", () => {
 		const input = `
-class Box { var int v }
-var Box p = Box(1)
-var Box q = p
+import System
+owning struct Cell { var int v }
+var Box<Cell> p = Box<Cell>(Cell(1))
+var Box<Cell> q = p
 `;
 		const expected = [
 			test_error(
 				input,
 				"'p' is aliased — use 'ref' to share it, 'move' to transfer it, or '.copy()' for a deep copy",
-				4,
-				13,
+				5,
+				19,
 			),
 		];
-		const parsed = parse(input);
-		expect(parsed.errors).toEqual(expected);
+		expect(check(input)).toEqual(expected);
 	});
 
 	test("mutation through a ref requires a var source (§A3.1)", () => {
 		const input = `
-class Box { var int v }
-const Box p = Box(1)
-ref Box q = p
+import System
+owning struct Cell { var int v }
+const Box<Cell> p = Box<Cell>(Cell(1))
+ref Box<Cell> q = p
 q.v = 5
 `;
-		const expected = [test_error(input, "cannot mutate through 'q' — source 'p' is not var", 5, 1)];
-		const parsed = parse(input);
-		expect(parsed.errors).toEqual(expected);
+		const expected = [test_error(input, "cannot mutate through 'q' — source 'p' is not var", 6, 1)];
+		expect(check(input)).toEqual(expected);
 	});
 
 	test("a ref binding is not reassignable (§A3.2)", () => {
 		const input = `
-class Box { var int v }
-var Box p = Box(1)
-ref Box q = p
-q = Box(3)
+import System
+owning struct Cell { var int v }
+var Box<Cell> p = Box<Cell>(Cell(1))
+ref Box<Cell> q = p
+q = Box<Cell>(Cell(3))
 `;
-		const expected = [test_error(input, "'q' is a ref — reassign the owner, not the alias", 5, 1)];
-		const parsed = parse(input);
-		expect(parsed.errors).toEqual(expected);
+		const expected = [test_error(input, "'q' is a ref — reassign the owner, not the alias", 6, 1)];
+		expect(check(input)).toEqual(expected);
 	});
 
 	test("move through a ref is rejected (§A3.3, expression form)", () => {
 		const input = `
-class Box { var int v }
-var Box p = Box(1)
-ref Box q = p
-move Box r = move q
+import System
+owning struct Cell { var int v }
+var Box<Cell> p = Box<Cell>(Cell(1))
+ref Box<Cell> q = p
+move Box<Cell> r = move q
 `;
-		const expected = [test_error(input, "'q' is a ref — move the owner instead", 5, 19)];
-		const parsed = parse(input);
-		expect(parsed.errors).toEqual(expected);
+		const expected = [test_error(input, "'q' is a ref — move the owner instead", 6, 25)];
+		expect(check(input)).toEqual(expected);
 	});
 
 	test("move through a ref is rejected (§A3.3, prefix form)", () => {
 		const input = `
-class Box { var int v }
-var Box p = Box(1)
-ref Box q = p
-move Box r = q
+import System
+owning struct Cell { var int v }
+var Box<Cell> p = Box<Cell>(Cell(1))
+ref Box<Cell> q = p
+move Box<Cell> r = q
 `;
-		const expected = [test_error(input, "'q' is a ref — move the owner instead", 5, 14)];
-		const parsed = parse(input);
-		expect(parsed.errors).toEqual(expected);
+		const expected = [test_error(input, "'q' is a ref — move the owner instead", 6, 20)];
+		expect(check(input)).toEqual(expected);
 	});
 
 	test("'ref' cannot declare a function-typed binding", () => {
@@ -248,8 +257,7 @@ func f = (out int) {
 }
 ref func (out int) g = f
 `;
-		const parsed = parse(input);
-		expect(parsed.errors.map((e) => e.message)).toContainEqual(
+		expect(check(input).map((e) => e.message)).toContainEqual(
 			"'ref' cannot declare a function-typed binding",
 		);
 	});
@@ -270,45 +278,44 @@ ref P r = origin
 				1,
 			),
 		];
-		const parsed = parse(input);
-		expect(parsed.errors).toEqual(expected);
+		expect(check(input)).toEqual(expected);
 	});
 
 	test("'ref' requires an existing binding (fresh constructor)", () => {
 		const input = `
-class Box { var int v }
-ref Box q = Box(1)
+import System
+owning struct Cell { var int v }
+ref Box<Cell> q = Box<Cell>(Cell(1))
 `;
 		const expected = [
-			test_error(input, "'ref' requires an existing binding to alias, got an owned value", 3, 13),
+			test_error(input, "'ref' requires an existing binding to alias, got an owned value", 4, 19),
 		];
-		const parsed = parse(input);
-		expect(parsed.errors).toEqual(expected);
+		expect(check(input)).toEqual(expected);
 	});
 
 	test("'ref' requires an existing binding (owned call result)", () => {
 		const input = `
-class Box { var int v }
-func make = (out Box) {
-	return Box(1)
+import System
+owning struct Cell { var int v }
+func make = (out Box<Cell>) {
+	return Box<Cell>(Cell(1))
 }
-ref Box q = make()
+ref Box<Cell> q = make()
 `;
 		const expected = [
-			test_error(input, "'ref' requires an existing binding to alias, got an owned value", 6, 13),
+			test_error(input, "'ref' requires an existing binding to alias, got an owned value", 7, 19),
 		];
-		const parsed = parse(input);
-		expect(parsed.errors).toEqual(expected);
+		expect(check(input)).toEqual(expected);
 	});
 
 	test("'ref' never takes ownership (move initializer)", () => {
 		const input = `
-class Box { var int v }
-var Box p = Box(1)
-ref Box q = move p
+import System
+owning struct Cell { var int v }
+var Box<Cell> p = Box<Cell>(Cell(1))
+ref Box<Cell> q = move p
 `;
-		const parsed = parse(input);
-		expect(parsed.errors.map((e) => e.message)).toContainEqual(
+		expect(check(input).map((e) => e.message)).toContainEqual(
 			"'ref' binds an alias — 'move' cannot transfer through it",
 		);
 	});

@@ -674,7 +674,7 @@ Console.write("\\{a.length} \\{b.length}")
 
 	test("List<class>.copy is rejected (would share instances)", () => {
 		const input = `
-class Animal { var char letter }
+owning struct Animal { var char letter }
 var List<Animal> l = List<Animal>()
 l.push(move Animal('X'))
 var List<Animal> c = l.copy()
@@ -688,7 +688,7 @@ var List<Animal> c = l.copy()
 	test("List<trait>.copy is rejected", () => {
 		const input = `
 trait Speaker { func speak = (self, out string) }
-class Dog : Speaker { func speak = (self, out string) { return "woof" } }
+owning struct Dog : Speaker { func speak = (self, out string) { return "woof" } }
 var List<Speaker> l = List<Speaker>()
 l.push(move Dog())
 var List<Speaker> c = l.copy()
@@ -744,7 +744,7 @@ Console.write("\\{g.items.length} \\{g.items.pop()}")
 	test("move-declared field still works with move", async () => {
 		const input = `
 struct Group {
-  move List<int> items
+  var List<int> items
 }
 var List<int> xs = List<int>()
 xs.push(5)
@@ -777,7 +777,7 @@ Console.write("\\{run.length} \\{g.items.length}")
 		// rejection; before that, a checker hang).
 		const input = `
 struct Wrapper<T> {
-	move T item
+	var T item
 }
 var List<int> xs = List<int>()
 xs.push(9)
@@ -807,7 +807,7 @@ Console.write("\\{w.item.pop()}")
 		// (Wrapper_Wrapper_List_int).
 		const input = `
 struct Wrapper<T> {
-	move T item
+	var T item
 }
 var List<int> xs = List<int>()
 xs.push(3)
@@ -823,7 +823,7 @@ Console.write("\\{outer.item.item.pop()}")
 		// (check) + signature lowering (build) must flatten recursively.
 		const input = `
 struct Wrapper<T> {
-	move T item
+	var T item
 }
 func fill = (out Wrapper<List<int>>) {
 	var List<int> xs = List<int>()

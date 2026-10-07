@@ -255,11 +255,11 @@ pub func main = () {
 });
 
 describe("Fiber checking", () => {
-	test("non-Sendable fiber arg is rejected", () => {
+	test("a bare owning fiber arg outside a nursery is rejected (R1)", () => {
 		const input = `
 import System
 
-pub class Counter {
+pub owning struct Counter {
 	var int count = 0
 }
 
@@ -272,7 +272,9 @@ pub func main = () {
 }
 `;
 		const parsed = parse_raw(input);
-		expect(parsed.errors.some((e) => e.message.includes("not Sendable"))).toBe(true);
+		// The Sendable gate is class-era scaffolding; owning args take the
+		// R1 region rules (wrap in `async { }` or move).
+		expect(parsed.errors.some((e) => e.message.includes("owns heap memory"))).toBe(true);
 	});
 
 	test("start_on rejects a stack below the minimum", () => {

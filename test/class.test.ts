@@ -5,7 +5,7 @@ import build_and_check_output from "./build_and_check_output";
 describe("class build", () => {
 	test("class basic construction and field access", async () => {
 		const input = `
-class Point {
+owning struct Point {
     var int x
     var int y
 }
@@ -18,7 +18,7 @@ Console.write("\\{p.x},\\{p.y}")
 
 	test("class method call", async () => {
 		const input = `
-class Counter {
+owning struct Counter {
     var int count
 
     func increment = (ref self) {
@@ -37,12 +37,12 @@ Console.write("\\{c.count}")
 
 	test("class assignment shares reference", async () => {
 		const input = `
-class Point {
+owning struct Cell {
     var int x
     var int y
 }
 
-var p = Point(10, 20)
+var p = Box<Cell>(Cell(10, 20))
 ref q = p
 q.x = 99
 Console.write("\\{p.x}")
@@ -52,7 +52,7 @@ Console.write("\\{p.x}")
 
 	test("class as function parameter", async () => {
 		const input = `
-class Point {
+owning struct Point {
     var int x
     var int y
 }
@@ -70,7 +70,7 @@ Console.write("\\{result}")
 
 	test("class with destroy", async () => {
 		const input = `
-class Resource {
+owning struct Resource {
     var int value
 
     func #destroy = () {
@@ -91,7 +91,7 @@ Console.write("\\{v}")
 
 	test("class field assignment", async () => {
 		const input = `
-class Point {
+owning struct Point {
     var int x
     var int y
 }

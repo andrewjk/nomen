@@ -43,7 +43,7 @@ Console.write("\\{b.id}")
 
 	test("class: inner scope assigned to outer var", async () => {
 		const input = `
-class Counter {
+owning struct Counter {
   var int count
 
   func #destroy = (ref self) {
@@ -54,16 +54,16 @@ class Counter {
 var Counter c = Counter(0)
 if 1 == 1 {
   var Counter inner = Counter(5)
-  c = inner
+  c = move inner
 }
 Console.write("\\{c.count}")
 `;
 		await build_and_check_output(input, "uaf_class_scope", "5");
 	});
 
-	test("class alias with destroy copies fields correctly", async () => {
+	test("boxed alias with destroy reads through both names", async () => {
 		const input = `
-class Token {
+owning struct Token {
   var int id
 
   func #destroy = (ref self) {
@@ -71,8 +71,8 @@ class Token {
   }
 }
 
-var Token a = Token(1)
-ref Token b = a
+var Box<Token> a = Box<Token>(Token(1))
+ref Box<Token> b = a
 Console.write("\\{a.id}")
 Console.write("\\{b.id}")
 `;

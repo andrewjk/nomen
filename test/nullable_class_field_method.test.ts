@@ -25,14 +25,14 @@ import build_and_check_output from "./build_and_check_output";
 const SRC = `
 import System
 
-class Box {
+owning struct Box {
 	var int v
 	func to_string = (self, out string) {
 		return "\\{self.v}"
 	}
 }
 
-class Wall {
+owning struct Wall {
 	move Box? art = null
 	func set_art = (ref self, move Box b) {
 		self.art = b

@@ -25,7 +25,7 @@ function check(source: string) {
 }
 
 const widget = `
-class Widget {
+owning struct Cell {
 	var int id
 	func #destroy = (ref self) {
 		Console.write_line("destroying")
@@ -33,15 +33,21 @@ class Widget {
 }
 `;
 
+// WeakHandle tracks a BOXED instance (`WeakHandle<Box<Cell>>`): the box is
+// the stable-address heap handle, so the registry's (pointer, generation)
+// slot has a sound subject. Tracking an inline owning struct's storage (the
+// N3 value-T lowering) is future work — see FOLLOWUP.md.
+type W = "Box<Cell>";
+
 describe("WeakHandle: runtime", () => {
 	test("a live handle reads the instance (both backends)", async () => {
 		const input = `
 import System
 ${widget}
 pub func main = () {
-	var Widget a = Widget(5)
-	var WeakHandle<Widget> h = WeakHandle<Widget>(a)
-	var Widget? live = h.get()
+	var Box<Cell> a = Box<Cell>(Cell(5))
+	var WeakHandle<Box<Cell>> h = WeakHandle<Box<Cell>>(a)
+	var Box<Cell>? live = h.get()
 	if live != null {
 		Console.write_line("alive")
 	} else {
@@ -57,14 +63,14 @@ pub func main = () {
 import System
 ${widget}
 pub func main = () {
-	var Widget a = Widget(5)
-	var WeakHandle<Widget> h = WeakHandle<Widget>(a)
-	var Widget? now = h.get()
+	var Box<Cell> a = Box<Cell>(Cell(5))
+	var WeakHandle<Box<Cell>> h = WeakHandle<Box<Cell>>(a)
+	var Box<Cell>? now = h.get()
 	if now != null {
 		Console.write_line("alive")
 	}
-	a = Widget(9)
-	var Widget? after = h.get()
+	a = Box<Cell>(Cell(9))
+	var Box<Cell>? after = h.get()
 	if after != null {
 		Console.write_line("stale")
 	} else {
@@ -91,14 +97,14 @@ pub func main = () {
 import System
 ${widget}
 pub func main = () {
-	var Widget a = Widget(5)
-	var WeakHandle<Widget> h = WeakHandle<Widget>(a)
-	var Widget? now = h.get()
+	var Box<Cell> a = Box<Cell>(Cell(5))
+	var WeakHandle<Box<Cell>> h = WeakHandle<Box<Cell>>(a)
+	var Box<Cell>? now = h.get()
 	if now != null {
 		Console.write_line("alive")
 	}
-	a = Widget(9)
-	var Widget? after = h.get()
+	a = Box<Cell>(Cell(9))
+	var Box<Cell>? after = h.get()
 	if after != null {
 		Console.write_line("deferred")
 	} else {
@@ -119,14 +125,14 @@ pub func main = () {
 		const input = `
 import System
 ${widget}
-class Parent {
+owning struct Parent {
 	var int marker
 }
 pub func main = () {
-	var Widget child = Widget(2)
+	var Box<Cell> child = Box<Cell>(Cell(2))
 	var Parent p = Parent(7)
-	var WeakHandle<Widget> h = WeakHandle<Widget>(child)
-	var Widget? live = h.get()
+	var WeakHandle<Box<Cell>> h = WeakHandle<Box<Cell>>(child)
+	var Box<Cell>? live = h.get()
 	if live != null {
 		Console.write_line("\\{p.marker}")
 	}
@@ -141,7 +147,7 @@ describe("WeakHandle: errors", () => {
 		const input = `
 import System
 ${widget}
-var WeakHandle<Widget> h = WeakHandle<Widget>(Widget(5))
+var WeakHandle<Box<Cell>> h = WeakHandle<Box<Cell>>(Box<Cell>(Cell(5)))
 `;
 		const messages = check(input).map((e) => e.message);
 		expect(messages.some((m) => m.includes("bind it to a variable first"))).toBe(true);
@@ -164,9 +170,9 @@ var WeakHandle<P> h = WeakHandle<P>(p)
 		const input = `
 import System
 ${widget}
-var Widget a = Widget(5)
-var WeakHandle<Widget> h = WeakHandle<Widget>(a)
-h = WeakHandle<Widget>(a)
+var Box<Cell> a = Box<Cell>(Cell(5))
+var WeakHandle<Box<Cell>> h = WeakHandle<Box<Cell>>(a)
+h = WeakHandle<Box<Cell>>(a)
 `;
 		const messages = check(input).map((e) => e.message);
 		expect(messages.some((m) => m.includes("a handle is not re-pointed"))).toBe(true);
@@ -176,8 +182,8 @@ h = WeakHandle<Widget>(a)
 		const input = `
 import System
 ${widget}
-var Widget a = Widget(5)
-var WeakHandle<Widget> h = WeakHandle<Widget>(a, a)
+var Box<Cell> a = Box<Cell>(Cell(5))
+var WeakHandle<Box<Cell>> h = WeakHandle<Box<Cell>>(a, a)
 `;
 		const messages = check(input).map((e) => e.message);
 		expect(messages.some((m) => m.includes("exactly one argument"))).toBe(true);

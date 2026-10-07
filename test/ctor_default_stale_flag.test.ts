@@ -19,7 +19,7 @@ func generate = (move out string) {
 	return "heap-one"
 }
 
-class C {
+owning struct C {
 	var string a = generate()
 	var string b = ("literal")
 }

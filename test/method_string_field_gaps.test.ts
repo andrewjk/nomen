@@ -35,7 +35,7 @@ describe("struct-method string-field assignment: remaining gaps", () => {
 	test("method assigning a string parameter to a self field must not free the borrow on destroy", async () => {
 		const input = `import System
 
-pub class Holder {
+pub owning struct Holder {
 	var string current = ""
 
 	pub func set_it = (ref self, string name) {
@@ -57,7 +57,7 @@ pub func main = () {
 	test("method assigning a heap string parameter to a self field must not double-free", async () => {
 		const input = `import System
 
-pub class Holder {
+pub owning struct Holder {
 	var string current = ""
 
 	pub func set_it = (ref self, string name) {

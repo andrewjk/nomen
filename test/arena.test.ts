@@ -73,7 +73,7 @@ pub func main = (Init init) {
 	test("class payloads (owned instance reclaimed on free)", async () => {
 		const input = `import System
 
-pub class Box {
+pub owning struct Box {
 	pub var int v
 }
 
@@ -122,7 +122,7 @@ pub func main = (Init init) {
 		// pushes into both lists without `move` and stays usable.
 		const input = `import System
 
-pub class Node {
+pub owning struct Node {
 	pub var int v
 }
 

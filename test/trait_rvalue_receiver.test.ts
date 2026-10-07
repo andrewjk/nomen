@@ -19,7 +19,7 @@ trait Rule {
 	pub func name = (self, out string)
 }
 
-class TextRule : Rule {
+owning struct TextRule : Rule {
 	pub func name = (self, out string) {
 		return "text"
 	}
@@ -46,7 +46,7 @@ trait Greeter {
 	pub func tag_len = (self, out int)
 }
 
-class Hello : Greeter {
+owning struct Hello : Greeter {
 	pub func tag = (self, out string) {
 		return "H"
 	}
@@ -80,7 +80,7 @@ trait Greeter {
 	pub func greet = (self, string suffix, out string)
 }
 
-class Hello : Greeter {
+owning struct Hello : Greeter {
 	pub func greet = (self, string suffix, out string) {
 		return "hello" + suffix
 	}

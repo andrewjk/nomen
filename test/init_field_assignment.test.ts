@@ -7,7 +7,7 @@ import test_error from "./test_error";
 describe("#init field completeness", () => {
 	test("class field with no default and no assignment errors", () => {
 		const input = `
-class Person {
+owning struct Person {
   var string name
   var int age
   pub func #init = (ref self) {
@@ -23,7 +23,7 @@ class Person {
 
 	test("all fields assigned is fine", () => {
 		const input = `
-class Person {
+owning struct Person {
   var string name
   var int age
   pub func #init = (ref self, string n, int a) {
@@ -38,7 +38,7 @@ class Person {
 
 	test("defaulted field need not be assigned", () => {
 		const input = `
-class Counter {
+owning struct Counter {
   var int count = 0
   var string label
   pub func #init = (ref self, string l) {
@@ -68,7 +68,7 @@ struct Pair {
 
 	test("assignment inside a conditional branch counts", () => {
 		const input = `
-class Person {
+owning struct Person {
   var string name
   pub func #init = (ref self, int v) {
     if v > 0 {
@@ -85,7 +85,7 @@ class Person {
 
 	test("every overload must assign the field", () => {
 		const input = `
-class Person {
+owning struct Person {
   var string name
   pub func #init = (ref self) {
     self.name = "anon"
@@ -102,7 +102,7 @@ class Person {
 
 	test("a method dispatched on self is followed", () => {
 		const input = `
-class Person {
+owning struct Person {
   var string name
   pub func #init = (ref self) {
     self.setup()
@@ -118,7 +118,7 @@ class Person {
 
 	test("a method dispatched on self that skips the field is diagnosed", () => {
 		const input = `
-class Person {
+owning struct Person {
   var string name
   pub func #init = (ref self) {
     self.setup()
@@ -186,29 +186,9 @@ func look = (Pair p) {
 		]);
 	});
 
-	test("a class self re-bound to a local aliases the instance", () => {
+	test("a mutable borrow of an owning struct drives ref-self methods", () => {
 		const input = `
-class Person {
-  var string name
-  func set_name = (ref self) {
-    self.name = "x"
-  }
-  pub func #init = (ref self) {
-    fill(self)
-  }
-}
-func fill = (Person p) {
-  ref Person t = p
-  t.set_name()
-}
-`;
-		const parsed = parse(input);
-		expect(parsed.errors).toEqual([]);
-	});
-
-	test("a ref class param re-bound to a local is followed", () => {
-		const input = `
-class Person {
+owning struct Person {
   var string name
   func set_name = (ref self) {
     self.name = "x"
@@ -218,8 +198,26 @@ class Person {
   }
 }
 func fill = (ref Person p) {
-  ref Person t = p
-  t.set_name()
+  p.set_name()
+}
+`;
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual([]);
+	});
+
+	test("a ref param forwards to ref-self methods", () => {
+		const input = `
+owning struct Person {
+  var string name
+  func set_name = (ref self) {
+    self.name = "x"
+  }
+  pub func #init = (ref self) {
+    fill(ref self)
+  }
+}
+func fill = (ref Person p) {
+  p.set_name()
 }
 `;
 		const parsed = parse(input);
@@ -250,7 +248,7 @@ func fill = (ref Pair p) {
 
 	test("raw in a followed callee keeps the init exempt", () => {
 		const input = `
-class Handle {
+owning struct Handle {
   var uint64 id
   func touch = (ref self) {
   \`\`\`
@@ -269,7 +267,7 @@ class Handle {
 
 	test("mutually recursive helpers terminate and are diagnosed", () => {
 		const input = `
-class Person {
+owning struct Person {
   var string name
   func a = (ref self) {
     self.b()
@@ -290,7 +288,7 @@ class Person {
 
 	test("dispatch through a func-typed field is rejected", () => {
 		const input = `
-class Handler {
+owning struct Handler {
   var func () cb
   var string tag
   pub func #init = (ref self) {
@@ -311,7 +309,7 @@ class Handler {
 
 	test("an unverifiable init with every field defaulted is fine", () => {
 		const input = `
-class Handler {
+owning struct Handler {
   var func () cb = () => 0
   pub func #init = (ref self) {
     self.cb()
@@ -324,7 +322,7 @@ class Handler {
 
 	test("trusted (allow_internal) raw constructors stay exempt", () => {
 		const input = `
-class Handle {
+owning struct Handle {
   var uint64 id
   pub func #init = (self) {
   \`\`\`
@@ -340,7 +338,7 @@ class Handle {
 
 	test("compound assignment does not count as initialization", () => {
 		const input = `
-class Counter {
+owning struct Counter {
   var int count
   pub func #init = (ref self) {
     self.count += 1

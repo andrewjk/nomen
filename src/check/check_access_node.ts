@@ -243,6 +243,7 @@ export default function check_access_node(node: AccessNode, status: CheckStatus)
 			// box). The rewrite covers assignment targets for free: the
 			// assignment checks its left_value through this same path.
 			if (
+				!target_type.is_array &&
 				is_box_type(target_type.name, status.structs) &&
 				(node.access as AccessFieldNode).name !== "__value"
 			) {
@@ -489,6 +490,19 @@ function check_access_field_node(
 			return false;
 		} else {
 			node.type = field.type;
+			// Reading through a const-ref base keeps the const: `w.__value`
+			// on a `Box<T>` binding extracted from a const source is itself a
+			// const reference (the box-transparent rewrite routes through
+			// this field read), so the mutating-dispatch and field-write
+			// const checks see it downstream.
+			if (!node.type.is_const_ref && target.node_type === "value") {
+				const base = status.values.findLast(
+					(v) => v.name === (target as ValueNode).value,
+				);
+				if (base?.type?.is_const_ref) {
+					node.type.is_const_ref = true;
+				}
+			}
 			// A `view T` field read whose struct's source was mutated since the
 			// field was stored (`doc = …` after `line.text = doc.slice(…)`) is
 			// a dangling borrow — reject the read. Writing over the field (the
@@ -577,9 +591,12 @@ function check_access_function_node(
 	if (target_type.is_array) {
 		const array_struct = status.structs.find((s) => s.name === "Array");
 		if (array_struct) {
-			// Monomorphize for the element type if generic
+			// Monomorphize for the element type if generic. The element keeps
+			// its own type args — `Box<Cell>[]` monomorphizes Array for
+			// `Box_Cell`, not bare `Box`.
 			if (array_struct.type_params.length > 0) {
 				const elem_type = new Type(target_type.name);
+				elem_type.type_args = target_type.type_args;
 				const mono = monomorphize(array_struct, [elem_type], status);
 				if (mono) {
 					effective_type = new Type(mono.name);
@@ -770,11 +787,21 @@ function check_access_function_node(
 	// #destroy frees the stored instances, a runtime double-free. That is
 	// exactly the shared-ownership pattern `dst.push(src.at(i))` rejects;
 	// Nomen has no auto-clone (single ownership), so reject the call too.
+	// An OWNING-STRUCT element is the same hazard post-R: the byte-copy
+	// shares the instance's heap resources (its Box/List/string fields).
 	if (node.name === "copy" && node.params.length === 0) {
+		const elem_arg =
+			target_type.name === "List" ? target_type.type_args?.[0] : undefined;
 		const elem_name =
-			(target_type.name === "List" ? target_type.type_args?.[0]?.name : undefined) ??
+			elem_arg?.name ??
 			(struct?.name.startsWith("List_") ? struct.source_type_args?.[0]?.name : undefined);
-		if (elem_name && is_owning_ref_type(elem_name, status)) {
+		const elem_is_owning_value = elem_name
+			? is_owning_struct_type_requiring_move(
+					new Type(mono_type_name(elem_arg ?? new Type(elem_name))),
+					status,
+				)
+			: false;
+		if (elem_name && (is_owning_ref_type(elem_name, status) || elem_is_owning_value)) {
 			add_error(
 				status,
 				`List<${elem_name}>.copy() would share the stored ${elem_name} instances between ` +
@@ -906,15 +933,24 @@ function check_access_function_node(
 		if (return_is_array_struct || return_is_array_type) {
 			if (return_is_array_struct) {
 				// Determine element type: from target array, from explicit type_args, from mono name, or from return type_args
-				const elem_name = target_type.is_array
-					? target_type.name
+				const elem_type = target_type.is_array
+					? target_type
 					: target.node_type === "value" && (target as ValueNode).type_args?.length
-						? (target as ValueNode).type_args![0].name
+						? (target as ValueNode).type_args![0]
 						: node.type.name.startsWith("Array_")
-							? node.type.name.slice(6)
+							? new Type(node.type.name.slice(6))
 							: node.type.type_args?.length
-								? node.type.type_args[0].name
-								: "";
+								? node.type.type_args[0]
+								: undefined;
+				// Flatten a generic element to its mono name (the parse-time
+				// `Array<T>`/`T[]` spellings do the same): every
+				// `"Array_" + elem` site then keys one mono (`Box_Cell`, not
+				// bare `Box` whose args would be lost here).
+				const elem_name = elem_type
+					? elem_type.type_args?.length
+						? mono_type_name(elem_type)
+						: elem_type.name
+					: "";
 				if (elem_name) {
 					node.type = new Type(elem_name);
 					node.type.is_array = true;

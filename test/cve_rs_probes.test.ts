@@ -49,7 +49,7 @@ describe("transmute: `as` cannot reinterpret memory between types", () => {
 		// cve-rs: `null_mut::<u8>() = transmute(0usize)`. Forging a class
 		// reference from an integer must be impossible.
 		const errs = rejected(`
-			class Box { var int v }
+			owning struct Box { var int v }
 			var int zero = 0
 			var Box b = zero as Box
 		`);
@@ -77,7 +77,7 @@ describe("transmute: `as` cannot reinterpret memory between types", () => {
 		// The reverse direction is also blocked, so a pointer can't be
 		// round-tripped through an int and back.
 		rejected(`
-			class Box { var int v }
+			owning struct Box { var int v }
 			var Box b = Box(1)
 			var int p = b as int
 		`);
@@ -229,10 +229,10 @@ describe("buffer overflow: out-of-bounds access is rejected", () => {
 // ---------------------------------------------------------------------------
 
 describe("use-after-free: borrows cannot outlive their owner", () => {
-	test("borrowed field cannot escape to an outer scope", () => {
+	test("a field read by value across scopes is rejected (copy of an owning field)", () => {
 		const errs = rejected(`
-			class Box { var int v }
-			class Holder { move Box c }
+			owning struct Box { var int v }
+			owning struct Holder { move Box c }
 			var Box stolen = Box(0)
 			if true {
 				var Holder h = Holder(move Box(1))
@@ -240,23 +240,27 @@ describe("use-after-free: borrows cannot outlive their owner", () => {
 			}
 			Console.write("\\{stolen.v}")
 		`);
-		expect(errs.join(" ").toLowerCase()).toContain("borrow");
+		// The class-era borrow-escape rejection is replaced by the owning-
+		// field copy rule: `stolen = h.c` would share the field's box.
+		expect(errs.join(" ").toLowerCase()).toContain("cannot copy");
 	});
 
-	test("returning a borrowed field is rejected", () => {
+	test("returning a field read by value is rejected (copy of an owning field)", () => {
 		const errs = rejected(`
-			class Box { var int v }
-			class Holder { move Box c }
+			owning struct Box { var int v }
+			owning struct Holder { move Box c }
 			func getc = (ref Holder h, out Box) {
 				return h.c
 			}
 		`);
-		expect(errs.join(" ").toLowerCase()).toContain("borrow");
+		// Same rule at the return boundary: `return h.c` copies the field's
+		// owned state.
+		expect(errs.join(" ").toLowerCase()).toContain("cannot copy");
 	});
 
 	test("container element borrow cannot escape the container's scope", () => {
 		rejected(`
-			class Animal { var char letter }
+			owning struct Animal { var char letter }
 			var Animal cur
 			if true {
 				var List<Animal> list = List<Animal>()
@@ -269,7 +273,7 @@ describe("use-after-free: borrows cannot outlive their owner", () => {
 
 	test("using a value after it is moved is rejected", () => {
 		const errs = rejected(`
-			class Box { var int v }
+			owning struct Box { var int v }
 			var Box a = Box(1)
 			var Box b = move a
 			Console.write("\\{a.v}")
@@ -328,7 +332,7 @@ describe("enum type confusion: no interior references into payloads", () => {
 describe("generic type-erasure cannot be abused for type confusion", () => {
 	test("a List<int> cannot yield a class reference", () => {
 		rejected(`
-			class Box { var int v }
+			owning struct Box { var int v }
 			var List<int> nums = List<int>()
 			nums.push(1)
 			var Box b = nums.at(0)

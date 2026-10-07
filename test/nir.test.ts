@@ -265,7 +265,7 @@ test("identifier classification mirrors historical scan rules", () => {
 
 test("assignment and declaration swaps ride the IR; traffic keeps historical parity", () => {
 	const input = `
-class Box {
+owning struct Box {
     var int value
 }
 pub func swapper = (int q, out int) {

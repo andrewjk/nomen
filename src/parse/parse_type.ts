@@ -114,7 +114,10 @@ export default function parse_type(status: ParseStatus): Type {
 		type.is_array = true;
 		type.is_nullable = elem.is_nullable;
 		type.is_array_heap = true;
-		type.type_args = undefined;
+		// Keep a GENERIC element's own args (`Array<Box<Cell>>` → name Box,
+		// args [Cell]): materialize_type flattens the element to its mono
+		// name once the mono can be materialized (check time).
+		type.type_args = elem.type_args;
 	}
 	// `Func<T1, ..., Tn>` — the alias spelling of a func type (SPEC,
 	// "Function-Typed Parameters"): every type argument but the LAST is a

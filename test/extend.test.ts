@@ -25,10 +25,10 @@ Console.write("\\{p.doubled()}")
 
 	test("extend class with method", async () => {
 		const input = `
-class Counter {
+owning struct Counter {
 	var int count
 }
-extend class Counter {
+extend struct Counter {
 	func read = (self, out int) {
 		return self.count
 	}
@@ -152,10 +152,10 @@ Console.write(a.speak())
 trait Adder {
 	func add = (self, int n, out int)
 }
-class Count {
+owning struct Count {
 	var int value = 10
 }
-extend class Count : Adder {
+extend struct Count : Adder {
 	func add = (self, int n, out int) {
 		return self.value + n
 	}
@@ -176,10 +176,10 @@ trait Named {
 trait Priced {
 	func price = (out int)
 }
-class Product {
+owning struct Product {
 	var int unused = 0
 }
-extend class Product : Named, Priced {
+extend struct Product : Named, Priced {
 	func name = (out string) {
 		return "w"
 	}
@@ -233,9 +233,9 @@ extend struct Missing {
 		);
 	});
 
-	test("mismatched: extend struct on a class is an error", () => {
+	test("extend struct on an owning struct merges (the class/struct mismatch era is gone)", () => {
 		const source = `
-class Klass {
+owning struct Klass {
 	var int x = 0
 }
 extend struct Klass {
@@ -244,25 +244,7 @@ extend struct Klass {
 }
 `;
 		const parsed = parse_raw(source);
-		expect(
-			parsed.errors.some((e) => e.message === "Cannot extend class 'Klass' with extend struct"),
-		).toBe(true);
-	});
-
-	test("mismatched: extend class on a struct is an error", () => {
-		const source = `
-struct Plain {
-	var int x = 0
-}
-extend class Plain {
-	func foo = (self) {
-	}
-}
-`;
-		const parsed = parse_raw(source);
-		expect(
-			parsed.errors.some((e) => e.message === "Cannot extend struct 'Plain' with extend class"),
-		).toBe(true);
+		expect(parsed.errors).toEqual([]);
 	});
 
 	test("redefining an existing method is a duplicate error", () => {

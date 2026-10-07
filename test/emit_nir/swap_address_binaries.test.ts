@@ -18,11 +18,11 @@ struct Pt {
 struct Wrap {
   var Pt pt
 }
-class Box {
+owning struct Box {
   var int value
 }
-class Holder {
-  move Box content
+owning struct Holder {
+  var Box content
 }
 func mk = (int a, out Pt) {
   return Pt(a, a + 1)

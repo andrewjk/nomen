@@ -487,7 +487,10 @@ export default function check_function_call(
 		// `<Class>_destroy`.
 		if (func_param && func.name === "#init" && value_owns_closure(param, status)) {
 			const ctor_struct = status.structs.find((s) => s.name === node.name);
-			if (ctor_struct && !ctor_struct.is_class) {
+			// An OWNING struct is move-only — the descriptor moves with the
+			// struct and is never shared — so a capturing closure in its func
+			// field is sound. Only a COPYABLE value struct shares descriptors.
+			if (ctor_struct && !ctor_struct.is_class && !ctor_struct.is_owning) {
 				add_error(
 					status,
 					`cannot store a capturing closure in a func field of value struct '${ctor_struct.name}' — value structs are copyable and would share the descriptor; use a class instead`,
@@ -718,15 +721,20 @@ export default function check_function_call(
 						`Use a 'ref ${param_type.name}[]' parameter, or pass a heap 'Array<${param_type.name}>' variable`,
 					param.start,
 				);
-			} else if (!func_param.type.is_ref && arg_is_stack_array_var && elem_struct?.is_class) {
-				add_error(
-					status,
-					`Cannot pass a stack array of class '${param_type.name}' instances to 'Array<${param_type.name}>' parameter '${func_param.name}' — ` +
-						`the materialised heap copy would share the instances with the caller's array (double free). ` +
-						`Build the heap array from fresh instances: pass an array literal, or use 'var Array<${param_type.name}>'`,
-					param.start,
-				);
-			} else if (
+		} else if (
+			!func_param.type.is_ref &&
+			arg_is_stack_array_var &&
+			elem_struct &&
+			(elem_struct.is_class || !!(elem_struct as { is_owning?: boolean }).is_owning)
+		) {
+			add_error(
+				status,
+				`Cannot pass a stack array of owning '${param_type.name}' instances to 'Array<${param_type.name}>' parameter '${func_param.name}' — ` +
+					`the materialised heap copy would share the instances with the caller's array (double free). ` +
+					`Build the heap array from fresh instances: pass an array literal, or use 'var Array<${param_type.name}>'`,
+				param.start,
+			);
+		} else if (
 				!func_param.type.is_ref &&
 				(arg_is_stack_array_var || arg_is_literal) &&
 				elem_struct &&

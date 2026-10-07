@@ -54,7 +54,7 @@ Console.write("\\{spill(la, lb, lc, ld, le)}")
 // a double-free abort once the diff list was destroyed).
 test("field struct borrow not destroyed", async () => {
 	const input = `
-pub class Holder {
+pub owning struct Holder {
   move List<int> items = List<int>()
 }
 
@@ -79,7 +79,7 @@ Console.write("\\{n} \\{h.items.length}")
 // abs_int aborted with POINTER_BEING_FREED_WAS_NOT_ALLOCATED).
 test("inline body does not free outer anchors", async () => {
 	const input = `
-pub class Thing {
+pub owning struct Thing {
   var v = 0
 }
 
@@ -109,7 +109,7 @@ test("class borrow from at() not destroyed", async () => {
 	const input = `
 import System
 
-pub class Box {
+pub owning struct Box {
   var List<int> items = List<int>()
 }
 
@@ -643,12 +643,12 @@ test("ref deref as later arg keeps hoisted arg 0", async () => {
 	const input = `
 import System
 
-pub class Token {
+pub owning struct Token {
   var text = ""
   var index = 0
 }
 
-pub class Change {
+pub owning struct Change {
   var a = 0
   var b = 0
 }
@@ -700,12 +700,12 @@ test("ref deref as later static-call arg keeps x0 arg", async () => {
 	const input = `
 import System
 
-pub class Token {
+pub owning struct Token {
   var text = ""
   var index = 0
 }
 
-pub class Tokens {
+pub owning struct Tokens {
   func index_of = (List<Token> toks, int i, out int) {
     var int j = i
     if j >= 0 && j < toks.length {
@@ -889,22 +889,19 @@ test("mutating a field through a call-chained receiver", async () => {
 	const input = `
 import System
 
-pub class Box {
+pub owning struct Box {
 	pub var children = List<int>()
 }
 
-pub class Store {
-	pub move box = Box()
-	pub func get = (self, out Box) {
-		return self.box
-	}
+pub owning struct Store {
+	pub var box = Box()
 }
 
 pub func main = (Init init) {
 	var s = Store()
-	s.get().children.push(7)
-	s.get().children.push(8)
-	Console.write_line("\\{s.get().children.length} \\{s.get().children.at_or_panic(1)}")
+	s.box.children.push(7)
+	s.box.children.push(8)
+	Console.write_line("\\{s.box.children.length} \\{s.box.children.at_or_panic(1)}")
 }
 `;
 	await build_and_check_output(input, "chained_field_receiver_mutation", "2 8\n", true);

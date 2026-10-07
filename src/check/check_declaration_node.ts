@@ -579,7 +579,11 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 					`cannot copy '${val_type.name}' by value — it owns heap resources; use .copy() or move`,
 					decl.value.start,
 				);
-			} else if (box_binding) {
+			} else if (box_binding && !is_class_type(val_type.name, status)) {
+				// A class-stamped Box source is ALIASABLE — the spelled-alias
+				// error below is the precise one ("use 'ref' to share it"), so
+				// the generic box-copy error only speaks for sources that can
+				// never alias.
 				add_error(
 					status,
 					`cannot copy a Box binding by value — it owns its pointee; use move`,

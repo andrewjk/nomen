@@ -12,7 +12,7 @@ describe("move ownership errors", () => {
 	describe("owning-typed fields force `owning`", () => {
 		test("struct with class field using var", () => {
 			const input = `
-class Box {
+owning struct Box {
   var int value
 }
 struct Holder {
@@ -32,11 +32,11 @@ struct Holder {
 
 		test("struct with class field using move", () => {
 			const input = `
-class Box {
+owning struct Box {
   var int value
 }
 struct Holder {
-  move Box content
+  var Box content
 }
 `;
 			const parsed = parse(input);
@@ -73,7 +73,7 @@ trait Speaker {
   func say = (out string)
 }
 struct Holder {
-  move Speaker s
+  var Speaker s
 }
 `;
 			const parsed = parse(input);
@@ -87,52 +87,54 @@ struct Holder {
 			]);
 		});
 
-		test("class with trait field is allowed (ClassBuffer routing)", () => {
+		test("trait-typed field is rejected (B5: boxed-handle field lowering is future work)", () => {
 			const input = `
 trait Speaker {
   func say = (out string)
 }
-class Holder {
-  move Speaker s
+owning struct Holder {
+  var Speaker s
 }
 `;
 			const parsed = parse(input);
-			expect(parsed.errors).toEqual([]);
+			expect(
+				parsed.errors.some((e) =>
+					e.message.includes("a trait-typed field is not supported yet"),
+				),
+			).toBe(true);
 		});
 	});
 
 	describe("class-type fields must use move", () => {
-		test("class with var class field", () => {
+		test("owning struct with var owning field is fine (B5: ownership follows the type)", () => {
 			const input = `
-class Box {
+owning struct Box {
   var int value
 }
-class Holder {
+owning struct Holder {
   var Box content
-}
-`;
-			const parsed = parse(input);
-			expect(parsed.errors).toEqual([
-				test_error(input, "class-type fields must use 'move', not 'var'", 6, 3),
-			]);
-		});
-
-		test("class with move class field is fine", () => {
-			const input = `
-class Box {
-  var int value
-}
-class Holder {
-  move Box content
 }
 `;
 			const parsed = parse(input);
 			expect(parsed.errors).toEqual([]);
 		});
 
-		test("trait with var class field", () => {
+		test("class with move class field is fine", () => {
 			const input = `
-class Box {
+owning struct Box {
+  var int value
+}
+owning struct Holder {
+  var Box content
+}
+`;
+			const parsed = parse(input);
+			expect(parsed.errors).toEqual([]);
+		});
+
+		test("trait with var owning field is fine (B5)", () => {
+			const input = `
+owning struct Box {
   var int value
 }
 trait HasBox {
@@ -140,18 +142,16 @@ trait HasBox {
 }
 `;
 			const parsed = parse(input);
-			expect(parsed.errors).toEqual([
-				test_error(input, "class-type fields must use 'move', not 'var'", 6, 3),
-			]);
+			expect(parsed.errors).toEqual([]);
 		});
 
 		test("trait with move class field is fine", () => {
 			const input = `
-class Box {
+owning struct Box {
   var int value
 }
 trait HasBox {
-  move Box content
+  var Box content
 }
 `;
 			const parsed = parse(input);
@@ -160,7 +160,7 @@ trait HasBox {
 
 		test("class with value type var field is fine", () => {
 			const input = `
-class Counter {
+owning struct Counter {
   var int count = 0
 }
 `;
@@ -210,7 +210,7 @@ func identity = (move Point p, out Point) {
 
 		test("move class parameter is fine", () => {
 			const input = `
-class Box {
+owning struct Box {
   var int value
 }
 func identity = (move Box b, out Box) {

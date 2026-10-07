@@ -44,7 +44,7 @@ trait Adder {
   func add = (self, int n, out int)
 }
 
-class Count: Adder {
+owning struct Count: Adder {
   var int value = 10
   func add = (self, int n, out int) {
     return self.value + n
@@ -101,11 +101,11 @@ trait Speaker {
   func speak = (out int)
 }
 
-class Dog: Speaker {
+owning struct Dog: Speaker {
   func speak = (out int) { return 1 }
 }
 
-class Cat: Speaker {
+owning struct Cat: Speaker {
   func speak = (out int) { return 2 }
 }
 
@@ -129,7 +129,7 @@ trait Speaker {
   func speak = (self, out string)
 }
 
-class Dog: Speaker {
+owning struct Dog: Speaker {
   var string name
   func speak = (self, out string) {
     return self.name
@@ -157,7 +157,7 @@ Console.write("\\ndone")
 		// that returns a string field. Same borrow-vs-own classification issue
 		// — the wrapper's caller must not free the borrowed field pointer.
 		const input = `
-class Dog {
+owning struct Dog {
   var string name
   func speak = (self, out string) {
     return self.name

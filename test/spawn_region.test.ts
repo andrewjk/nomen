@@ -23,7 +23,7 @@ function check(source: string) {
 }
 
 const sendable_class = `
-pub class Job : Sendable {
+pub owning struct Job : Sendable {
 	var int n
 }
 
@@ -130,7 +130,7 @@ pub func main = (Init init) {
 	test("a moved argument is exempt (ownership has no region)", () => {
 		const input = `
 import System
-pub class Job {
+pub owning struct Job {
 	var int n
 }
 func consume = (move Job j) {
@@ -172,10 +172,10 @@ pub func main = (Init init) {
 		expect(check(input)).toEqual([]);
 	});
 
-	test("a non-Sendable class still reports the Sendable error (not the region error)", () => {
+	test("a loop-local root does not join-bound (R2 ✗); the outer root does (R2 ✓)", () => {
 		const input = `
 import System
-pub class Job {
+pub owning struct Job {
 	var int n
 }
 func work = (Job j) {
@@ -193,12 +193,16 @@ pub func main = (Init init) {
 	}
 }
 `;
+		// STRUCT_PLAN_3 R2: a loop-local whose ITERATION ends first does not
+		// join-bound — declare the root outside the loop, or move it in.
 		const messages = check(input).map((e) => e.message);
-		expect(messages.some((m) => m.includes("is not Sendable"))).toBe(true);
-		expect(messages.some((m) => m.includes("does not outlive the task"))).toBe(false);
+		expect(messages.some((m) => m.includes("does not outlive the task"))).toBe(true);
+		// The Sendable gate is class-era scaffolding — owning args take the
+		// region rules, not the marker.
+		expect(messages.some((m) => m.includes("is not Sendable"))).toBe(false);
 	});
 
-	test("a spawn outside any async block is not region-checked", () => {
+	test("a bare owning spawn outside any async block is rejected (R1)", () => {
 		const input = `
 import System
 ${sendable_class}
@@ -212,12 +216,15 @@ pub func main = (Init init) {
 	}
 }
 `;
-		expect(check(input)).toEqual([]);
+		// Outside a nursery there is no join to bound the borrow — the only
+		// sound spellings are an `async` block or `move`.
+		const messages = check(input).map((e) => e.message);
+		expect(messages.some((m) => m.includes("owns heap memory"))).toBe(true);
 	});
 });
 
 describe("spawn region: detach owns its captures (N2/R4)", () => {
-	test("a shared class argument to a daemon is rejected", () => {
+	test("a bare owning argument to a daemon is rejected (R1 outside a nursery)", () => {
 		const input = `
 import System
 ${sendable_class}
@@ -226,20 +233,17 @@ pub func main = (Init init) {
 	Thread(work(g)).detach()
 }
 `;
-		expect(check(input)).toEqual([
-			test_error(
-				input,
-				"detached task captures 'g' by reference — detach owns its captures; move it in ('move g'), or spawn it into a nursery that outlives the use",
-				14,
-				14,
-			),
-		]);
+		// A daemon has no join to bound a borrow — the bare-owning argument
+		// hits the R1 rejection (the detach capture rule's subject is the
+		// region-eraked class era; owning args are caught here first).
+		const messages = check(input).map((e) => e.message);
+		expect(messages.some((m) => m.includes("owns heap memory"))).toBe(true);
 	});
 
 	test("a moved class argument to a daemon is accepted", () => {
 		const input = `
 import System
-pub class Job {
+pub owning struct Job {
 	var int n
 }
 func consume = (move Job j) {
@@ -279,7 +283,7 @@ pub func main = (Init init) {
 		expect(check(input)).toEqual([]);
 	});
 
-	test("a closure-form class capture is rejected", () => {
+	test("a closure-form capture moves its owning donor (E1) — sound", () => {
 		const input = `
 import System
 ${sendable_class}
@@ -288,8 +292,11 @@ pub func main = (Init init) {
 	Thread(() => work(g)).detach()
 }
 `;
+		// The lambda env OWNS its captures (E1): an owning capture is a
+		// MOVE — the env destroys it when the daemon ends. `g` has no later
+		// use, so the transfer is sound and nothing is shared.
 		const messages = check(input).map((e) => e.message);
-		expect(messages.some((m) => m.includes("detached task captures 'g' by reference"))).toBe(true);
+		expect(messages).toEqual([]);
 	});
 
 	test("a Fiber daemon is held to the same rule", () => {
@@ -301,8 +308,10 @@ pub func main = (Init init) {
 	Fiber(work(g)).detach()
 }
 `;
+		// Same R1 shape as the Thread daemon: a bare owning arg outside a
+		// nursery has no join to bound the borrow.
 		const messages = check(input).map((e) => e.message);
-		expect(messages.some((m) => m.includes("detached task captures 'g' by reference"))).toBe(true);
+		expect(messages.some((m) => m.includes("owns heap memory"))).toBe(true);
 	});
 
 	test("a detached task with no shared arguments is accepted", () => {

@@ -1,4 +1,7 @@
 import add_error from "../add_error.ts";
+import { mono_type_name } from "../build_common/mono_name.ts";
+import AccessFieldNode from "../nodes/AccessFieldNode.ts";
+import AccessNode from "../nodes/AccessNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import type FunctionNode from "../nodes/FunctionNode.ts";
 import type ReturningNode from "../nodes/ReturningNode.ts";
@@ -11,6 +14,7 @@ import { borrow_depth_of, borrow_owner_of } from "./utils/borrow.ts";
 import { move_closure_source } from "./utils/captures.ts";
 import check_func_argument_signature from "./utils/check_func_argument_signature.ts";
 import check_merged_missing_return from "./utils/check_merged_missing_return.ts";
+import { is_owning_struct_type_requiring_move } from "./utils/ownership.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import synthesize_lambda_name from "./utils/synthesize_lambda_name.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
@@ -72,6 +76,36 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 
 	ret.type = type_from_value_node(ret.value, status);
 
+	// A bare field read of an OWNING-typed field (`return h.c`) is a COPY of
+	// the field's value — the returned instance would share the field's owned
+	// state (double destroy). Same rule as the declaration side: transfer it
+	// with `move ... swap <replacement>` instead.
+	if (
+		ret.value.node_type === "access" &&
+		(ret.value as AccessNode).access.node_type === "access_field"
+	) {
+		const af = (ret.value as AccessNode).access as AccessFieldNode;
+		const base_type = type_from_value_node((ret.value as AccessNode).target, status);
+		if (base_type.name) {
+			const owner_struct = status.structs.findLast(
+				(s) => s.name === mono_type_name(base_type) && !s.is_generic,
+			);
+			const field = owner_struct?.fields.find((f) => f.name === af.name);
+			if (
+				field?.type.name &&
+				!field.type.is_array &&
+				(is_class_type(field.type.name, status) ||
+					is_owning_struct_type_requiring_move(new Type(mono_type_name(field.type)), status))
+			) {
+				add_error(
+					status,
+					`cannot copy '${field.type.name}' out of field '${af.name}' by value — it owns heap resources; use 'move ... swap <replacement>'`,
+					ret.value.start,
+				);
+			}
+		}
+	}
+
 	if (func && ret.type && is_class_type(ret.type.name, status)) {
 		const value_node = get_inner_value_node(ret.value);
 		if (value_node) {
@@ -82,6 +116,31 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 				add_error(
 					status,
 					`Cannot return class parameter '${param.name}' without 'move' — would create shared reference`,
+					ret.value.start,
+				);
+			}
+		}
+	}
+	// A `ref` STRUCT param returned by value is an implicit borrow escape: the
+	// callee received the caller's storage by address, and a by-value return
+	// would copy the instance's owned state out from under it. Transfer with
+	// `move` (the value-struct param form) or return a field's VALUE instead.
+	if (func && ret.type.name) {
+		const value_node = get_inner_value_node(ret.value);
+		if (value_node?.node_type === "value" && !value_node.is_moved) {
+			const param = (func as import("../nodes/FunctionNode.ts").default).params.find(
+				(p) => p.name === value_node.value,
+			);
+			const param_struct =
+				param && !param.is_self_param
+					? status.structs.find(
+							(s) => s.name === param.type.name && !s.is_simple_type && !s.is_class,
+						)
+					: undefined;
+			if (param && !param.is_self_param && (param.is_ref || param.type.is_ref) && param_struct) {
+				add_error(
+					status,
+					`cannot return '${param.name}' — a 'ref' borrow escapes implicitly; declare the parameter 'move' to transfer it`,
 					ret.value.start,
 				);
 			}

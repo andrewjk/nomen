@@ -17,13 +17,13 @@ trait Rule {
 	pub func name = (self, out string)
 }
 
-class TextRule : Rule {
+owning struct TextRule : Rule {
 	pub func name = (self, out string) {
 		return "text"
 	}
 }
 
-class Holder {
+owning struct Holder {
 	pub var List<Rule> rules = List<Rule>()
 	pub var List<string> names = List<string>()
 
@@ -52,7 +52,7 @@ trait Rule {
 	pub func name = (self, out string)
 }
 
-class TextRule : Rule {
+owning struct TextRule : Rule {
 	pub func name = (self, out string) {
 		return "text"
 	}
@@ -90,7 +90,7 @@ trait Rule {
 	pub func name = (self, out string)
 }
 
-class TextRule : Rule {
+owning struct TextRule : Rule {
 	pub func name = (self, out string) {
 		return "text"
 	}
@@ -125,13 +125,13 @@ trait Rule {
 	pub func name = (self, out string)
 }
 
-class TextRule : Rule {
+owning struct TextRule : Rule {
 	pub func name = (self, out string) {
 		return "text"
 	}
 }
 
-class BoldRule : Rule {
+owning struct BoldRule : Rule {
 	pub func name = (self, out string) {
 		return "bold"
 	}
@@ -170,7 +170,7 @@ trait Speak {
 	pub func speak = (self, out string)
 }
 
-class Dog : Speak {
+owning struct Dog : Speak {
 	pub func speak = (self, out string) {
 		return "woof"
 	}
@@ -220,7 +220,7 @@ trait Rule {
 	pub func name = (self, out string)
 }
 
-class TextRule : Rule {
+owning struct TextRule : Rule {
 	pub func name = (self, out string) {
 		return "text"
 	}

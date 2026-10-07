@@ -25,7 +25,7 @@ describe("moved-param teardown preserves a fat-string return", () => {
 	test("value-struct param owning an Arena (audit clean)", async () => {
 		const input = src(`
 struct Store {
-	move Arena<string> slots
+	var Arena<string> slots
 }
 
 func keep = (move Store store, move out string) {
@@ -51,8 +51,8 @@ pub func main = () {
 
 	test("class param owning an Arena (audit clean)", async () => {
 		const input = src(`
-class Holder {
-	move Arena<string> slots
+owning struct Holder {
+	var Arena<string> slots
 }
 
 func keep = (move Holder holder, move out string) {

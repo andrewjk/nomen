@@ -9,7 +9,7 @@ import build_and_check_output from "./build_and_check_output";
 describe("pre-existing memory gaps", () => {
 	test("class temporary passed to non-move param leaks", async () => {
 		const input = `
-class Box {
+owning struct Box {
 	var int v
 }
 func take = (Box x) {
@@ -22,7 +22,7 @@ take(Box(5))
 
 	test("class temporary passed to nullable non-move param leaks", async () => {
 		const input = `
-class Box {
+owning struct Box {
 	var int v
 }
 func take = (Box? x) {
@@ -37,7 +37,7 @@ take(Box(5))
 
 	test("forwarding a non-move param to another non-move param leaks the temporary", async () => {
 		const input = `
-class Box {
+owning struct Box {
 	var int v
 }
 func inner = (Box x) {
@@ -53,7 +53,7 @@ outer(Box(5))
 
 	test("class temporary in a loop compounds leak", async () => {
 		const input = `
-class Box {
+owning struct Box {
 	var int v
 }
 func take = (Box x) {
@@ -73,7 +73,7 @@ Console.write("done")
 
 	test("?? eagerly evaluates fallback, leaking it when unused", async () => {
 		const input = `
-class Box {
+owning struct Box {
 	var int v
 }
 func make = (Box? x, out Box) {
@@ -90,7 +90,7 @@ test()
 
 	test("class temporary field access leaks the instance", async () => {
 		const input = `
-class Box {
+owning struct Box {
 	var int v
 }
 func getV = (Box b, out int) {
@@ -103,7 +103,7 @@ Console.write_line("\\{getV(Box(5))}")
 
 	test("multiple class temporaries in one call all leak", async () => {
 		const input = `
-class Box {
+owning struct Box {
 	var int v
 }
 func take2 = (Box a, Box b) {
@@ -120,14 +120,14 @@ Console.write("done")
 
 	test("class temporary stored via field then owner leaks old", async () => {
 		const input = `
-class Box {
+owning struct Box {
 	var int v
 	func #destroy = () {
 		Console.write_line("d\\{self.v}")
 	}
 }
-class Holder {
-	move Box c
+owning struct Holder {
+	var Box c
 }
 func make = (int n, out Box) {
 	return Box(n)

@@ -13,7 +13,7 @@ import test_error from "./test_error";
 describe("nullable scalar values", () => {
 	test("bool?/int? fields distinguish false/0 from null", async () => {
 		const input = `
-class Config {
+owning struct Config {
 	pub var bool? flag = null
 	pub var int? count = null
 }
@@ -83,7 +83,7 @@ Console.write("or_default(null)=\\{or_default(null)}\\n")
 
 	test("nullable scalar method params and returns", async () => {
 		const input = `
-class Store {
+owning struct Store {
 	pub var int? cached = null
 
 	pub func set = (ref self, int? v) {

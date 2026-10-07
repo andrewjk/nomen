@@ -169,7 +169,7 @@ trait Maker {
 	func make = (self, int n, out func (out int))
 }
 
-class Adder : Maker {
+owning struct Adder : Maker {
 	func make = (self, int n, out func (out int)) { return () => n }
 }
 

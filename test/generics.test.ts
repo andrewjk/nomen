@@ -462,7 +462,7 @@ struct Box<T> {
     var T value
 }
 
-class Holder {
+owning struct Holder {
     var Box field
 }
 `;

@@ -1,3 +1,4 @@
+import { mono_type_name } from "../../build_common/mono_name.ts";
 import add_error from "../../add_error.ts";
 import type BaseNode from "../../nodes/BaseNode.ts";
 import type FunctionNode from "../../nodes/FunctionNode.ts";
@@ -56,7 +57,10 @@ function comparable_name(type: Type | undefined, status: CheckStatus): string | 
 	const name = type?.name;
 	if (!name || name === "void") return undefined;
 	if (status.type_params.includes(name)) return undefined;
-	return name;
+	// A generic instantiation compares by its MONO name (`Box<Counter>` and
+	// the substituted `Box_Counter` are the same type); a bare-name compare
+	// would mismatch every generic parameter spelling.
+	return type.type_args?.length ? mono_type_name(type) : name;
 }
 
 /**

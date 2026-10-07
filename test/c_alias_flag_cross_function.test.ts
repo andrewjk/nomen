@@ -18,7 +18,7 @@ describe("C backend: alias-own flags are per-function", () => {
 		const input = `
 import System
 
-class R {
+owning struct R {
 	var int v
 }
 func first = (List<R> xs, out int) {

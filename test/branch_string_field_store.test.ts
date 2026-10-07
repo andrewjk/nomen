@@ -15,7 +15,7 @@ describe("exclusive-branch string field stores", () => {
 		const input = `
 import System
 
-class Pair {
+owning struct Pair {
 	var a = ""
 }
 
@@ -81,7 +81,7 @@ pub func main = (Init init) {
 		const input = `
 import System
 
-class Pair {
+owning struct Pair {
 	var a = ""
 }
 

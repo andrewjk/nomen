@@ -6,7 +6,7 @@ import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import { is_normalized_struct_call } from "../build_common/call_init_string_fields.ts";
 import record_ctor_heap_default_fields from "../build_common/ctor_heap_default_fields.ts";
-import { struct_needs_auto_destroy } from "../build_common/destroy_analysis.ts";
+import { has_destroy, struct_needs_auto_destroy } from "../build_common/destroy_analysis.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import { claim_init_default_seed_reclaim } from "../build_common/init_computed_seeds.ts";
 import { resolve_struct_type } from "../build_common/mono_name.ts";
@@ -1346,7 +1346,34 @@ export default function build_assignment_node(
 			ensure_newline(status);
 			if (paramReg && is_mutable_param(name, status)) {
 				if (status.function_ref_params?.has(name)) {
-					emit_asm(status, `mov ${paramReg}, x0\n`);
+					// A `ref` param's register holds the CALLER's storage address.
+					// For a class referent the storage is a pointer slot — the
+					// reassignment swaps the pointer (`mov paramReg, x0`). For an
+					// OWNING-STRUCT referent the storage is the instance itself:
+					// copy the new value in through the register (destroying the
+					// displaced instance's owned resources first — a loop would
+					// otherwise leak one instance per iteration; the audit
+					// counts them).
+					// The ref param's referent type: params are not in
+					// scoped_declarations — read the body's param-type map.
+					const ref_param_type =
+						status.function_param_types?.get(name) ?? new Type(lhs_type_name);
+					const referent_struct = status.structs.find(
+						(s) =>
+							s.name === ref_param_type.name && !s.is_simple_type && !s.is_class,
+					);
+					if (referent_struct) {
+						if (has_destroy(referent_struct) || struct_needs_auto_destroy(referent_struct, status)) {
+							emit_asm(status, `str x0, [sp, #-16]!\n`);
+							emit_asm(status, `mov x0, ${paramReg}\n`);
+							emit_asm(status, `bl ${referent_struct.name}_destroy\n`);
+							emit_asm(status, `ldr x0, [sp], #16\n`);
+						}
+						emit_asm(status, `mov x1, ${paramReg}\n`);
+						emit_struct_copy("x0", "x1", 0, struct_size, status);
+					} else {
+						emit_asm(status, `mov ${paramReg}, x0\n`);
+					}
 				} else {
 					emit_asm(status, `mov x1, ${paramReg}\n`);
 					emit_struct_copy("x0", "x1", 0, struct_size, status);

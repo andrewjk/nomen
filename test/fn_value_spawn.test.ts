@@ -125,21 +125,23 @@ pub func main = () {
 		expect(parsed.errors[0].message).toContain("zero-argument");
 	});
 
-	test("a non-Sendable capture is rejected", () => {
+	test("an owning capture moves into the lambda env (E1) — later reads are use-after-move", () => {
 		const input = `import System
 
-pub class Counter {
+pub owning struct Counter {
 	var int count = 0
 }
 
 pub func main = () {
 	var Counter c = Counter()
 	var t = Thread(() => c.count).start()
+	Console.write_line("\\{c.count}")
 }
 `;
 		const parsed = parse_raw(input);
-		expect(parsed.errors.length).toBeGreaterThan(0);
-		expect(parsed.errors[0].message).toContain("not Sendable");
+		// The lambda env OWNS its owning captures (E1 — a move), so reading
+		// the donor afterwards is the ordinary use-after-move error.
+		expect(parsed.errors.some((e) => e.message.includes("used after move"))).toBe(true);
 	});
 
 	test("a lambda daemon detaches", async () => {

@@ -21,7 +21,7 @@ struct Attr {
 	var value = ""
 }
 
-class Node {
+owning struct Node {
 	var attributes = List<Attr>()
 }
 

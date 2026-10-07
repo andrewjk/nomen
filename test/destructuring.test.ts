@@ -44,7 +44,7 @@ var [x = px, y = py] = p
 
 	test("parse class destructuring", () => {
 		const input = `
-class Point {
+owning struct Point {
 	var int x
 	var int y
 }
@@ -238,7 +238,7 @@ Console.write("\\{name} \\{age}")
 describe("class destructuring", () => {
 	test("destructure class by field name", async () => {
 		const input = `
-class Point {
+owning struct Point {
 	var int x
 	var int y
 }
@@ -251,7 +251,7 @@ Console.write("\\{x} \\{y}")
 
 	test("destructure class with rename", async () => {
 		const input = `
-class Counter {
+owning struct Counter {
 	var int count
 	var int total
 }

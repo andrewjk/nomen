@@ -294,6 +294,24 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 						status.function_ref_params!.add(pname);
 					}
 				}
+				// A STRUCT-typed non-ref param (e.g. a `move Engine e` field
+				// initializer) is ALSO passed by pointer (classify_param's
+				// is_struct rule) — register it so body uses dereference
+				// (`*e`), matching the signature. Without this a custom-init
+				// field store emitted the pointer itself (`self.engine = e`).
+				else if (
+					!p.is_self_param &&
+					!p.is_variadic &&
+					p.type.name &&
+					!p.type.is_array &&
+					!p.type.is_view
+				) {
+					const pname = c_function_name(p.name);
+					const p_struct = status.structs.find((s) => s.name === p.type.name);
+					if (p_struct && !p_struct.is_simple_type && !p_struct.is_class) {
+						status.function_ref_params!.add(pname);
+					}
+				}
 			}
 			// Raw blocks inside a custom init see the same fat ABI as everywhere
 			// else (see docs/MEMORY.md) — no thin aliases, no text rewriting.

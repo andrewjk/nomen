@@ -14,7 +14,7 @@ describe("custom init param ABI", () => {
 		const input = `
 import System
 
-class N1 {
+owning struct N1 {
 	var string kind
 	var int idx
 

@@ -306,7 +306,7 @@ describe("field = move local (value-struct field ownership transfer)", () => {
 		const input = `
 import System
 
-pub class Node {
+pub owning struct Node {
 	pub var List<int> children = List<int>()
 }
 

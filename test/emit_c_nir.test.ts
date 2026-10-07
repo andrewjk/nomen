@@ -538,11 +538,11 @@ test("assignment swaps marshal through the C NIR seam byte-identically", () => {
 		`
 import System
 
-class Box {
+owning struct Box {
     var int value
 }
-class Holder {
-    move Box content
+owning struct Holder {
+    var Box content
 }
 func run_swap_var = (out int) {
     var Box a = Box(1)
@@ -702,7 +702,7 @@ struct Pt {
 struct Wrap {
     var Pt pt
 }
-class Box {
+owning struct Box {
     var int value
 }
 

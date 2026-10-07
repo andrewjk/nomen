@@ -382,7 +382,7 @@ test("swap assignments count the replacement's reads and the rhs source as a def
 	// `c` joins the reads — so `c` (a param) is live into the block.
 	const cfg = compile_cfg(
 		`
-class Box {
+owning struct Box {
     var int value
 }
 pub func swapper = (int c, out int) {

@@ -209,22 +209,22 @@ Console.write("done")
 
 	test("assigning class to another does not double-free", async () => {
 		const input = `
-class Box {
+owning struct Box {
   var int value
 }
 
 var Box s = Box(1)
 var Box t = Box(2)
-t = s
+t = move s swap Box(0)
 Console.write("\\{s.value}")
 Console.write("\\{t.value}")
 `;
-		await build_and_check_output(input, "dfree_assign_class", "11");
+		await build_and_check_output(input, "dfree_assign_class", "01");
 	});
 
 	test("returning class is not use-after-free", async () => {
 		const input = `
-class Box {
+owning struct Box {
   var int value
 }
 
@@ -240,7 +240,7 @@ Console.write("\\{result.value}")
 
 	test("returning class from nested scope does not leak", async () => {
 		const input = `
-class Box {
+owning struct Box {
   var int value
 }
 
@@ -259,7 +259,7 @@ Console.write("\\{result.value}")
 
 	test("reassigning class frees old value", async () => {
 		const input = `
-class Box {
+owning struct Box {
   var int value
 }
 
@@ -272,7 +272,7 @@ Console.write("\\{s.value}")
 
 	test("returning class from nested scope frees old instance", async () => {
 		const input = `
-class Box {
+owning struct Box {
   var int value
 }
 
@@ -297,7 +297,7 @@ Console.write("\\{result.value}")
 
 	test("class with string field does not leak on destroy", async () => {
 		const input = `
-class Named {
+owning struct Named {
   var int id
   var string name
 }
@@ -312,7 +312,7 @@ Console.write("\\{n.id}")
 
 	test("break does not leak class in loop body", async () => {
 		const input = `
-class Box {
+owning struct Box {
   var int value
 }
 
@@ -333,7 +333,7 @@ Console.write("done")
 
 	test("continue does not leak class in loop body", async () => {
 		const input = `
-class Box {
+owning struct Box {
   var int value
 }
 
@@ -353,13 +353,13 @@ Console.write("done")
 
 	test("aliasing class via declaration then reassigning original is not UAF", async () => {
 		const input = `
-class Box {
+owning struct Cell {
   var int value
 }
 
-var Box a = Box(42)
-ref Box b = a
-a = Box(99)
+var Box<Cell> a = Box<Cell>(Cell(42))
+ref Box<Cell> b = a
+a = Box<Cell>(Cell(99))
 Console.write("\\{b.value}")
 `;
 		await build_and_check_output(input, "uaf_class_alias_then_reassign", "42");
@@ -367,12 +367,12 @@ Console.write("\\{b.value}")
 
 	test("assigning class to another variable does not leak old value", async () => {
 		const input = `
-class Box {
+owning struct Cell {
   var int value
 }
 
-var Box s = Box(42)
-ref Box t = s
+var Box<Cell> s = Box<Cell>(Cell(42))
+ref Box<Cell> t = s
 Console.write("\\{t.value}")
 `;
 		await build_and_check_output(input, "leak_class_alias_declaration", "42");
@@ -380,7 +380,7 @@ Console.write("\\{t.value}")
 
 	test("while loop break does not leak class", async () => {
 		const input = `
-class Box {
+owning struct Box {
   var int value
 }
 
@@ -411,7 +411,7 @@ Console.write("done")
 
 	test("break runs class destroy in loop", async () => {
 		const input = `
-class Resource {
+owning struct Resource {
   var int handle
 
   func #destroy = (ref self) {
@@ -434,15 +434,16 @@ Console.write("done")
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		const main_code = main_region(result.code);
-		expect(main_code).toContain("bl _nomen_free_wrap");
-		expect(main_code.match(/bl _nomen_free_wrap/g)?.length).toBe(2);
+		// The loop's break-exit cleanup dispatches the struct's destroy (the
+		// inline instance owns no malloc — the free-call proxy is gone).
+		expect(main_code).toContain("bl Resource_destroy");
 
 		await build_and_check_output(input, "leak_break_class_destroy", "done");
 	});
 
 	test("continue runs class destroy in loop", async () => {
 		const input = `
-class Resource {
+owning struct Resource {
   var int handle
 
   func #destroy = (ref self) {
@@ -464,8 +465,7 @@ Console.write("done")
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		const main_code = main_region(result.code);
-		expect(main_code).toContain("bl _nomen_free_wrap");
-		expect(main_code.match(/bl _nomen_free_wrap/g)?.length).toBe(2);
+		expect(main_code).toContain("bl Resource_destroy");
 
 		await build_and_check_output(input, "leak_continue_class_destroy", "done");
 	});
@@ -499,16 +499,16 @@ while i < 3 {
 
 	test("class field access borrow is not destroyed", async () => {
 		const input = `
-class Box {
+owning struct Box {
   var int value
 }
 
-class Holder {
-  move Box box
+owning struct Holder {
+  var Box box
 }
 
 func get_value = (Holder h, out int) {
-  var Box b = h.box
+  var Box b = move h.box swap Box(0)
   return b.value
 }
 
@@ -771,7 +771,7 @@ describe("container ownership across function boundaries", () => {
 
 	test("pop transfers ownership across a function boundary (no double-free)", async () => {
 		const input = `
-class Item { var int value = 0 }
+owning struct Item { var int value = 0 }
 func fill = (ref List<Item> items, int n) {
   var int i = 0
   while i < n {

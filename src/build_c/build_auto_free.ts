@@ -432,7 +432,11 @@ export function free_scoped_declarations(
 			!is_destructured_field_access &&
 			!is_class_var &&
 			!dec.type.is_array &&
-			dec.type.name !== "string"
+			dec.type.name !== "string" &&
+			// A NULLABLE struct local is owned by the flag-guarded branch
+			// below — an unguarded destroy here would run the struct's
+			// `#destroy` on null's garbage bytes (and double it).
+			!is_nullable_struct_type(dec.type, status)
 		) {
 			const mono_name = mono_type_name(dec.type);
 			const struct_type = status.structs.find(

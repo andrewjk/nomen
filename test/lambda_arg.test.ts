@@ -522,7 +522,7 @@ trait Runner {
 	func run = (self, func (out int) f, out int)
 }
 
-class Host : Runner {
+owning struct Host : Runner {
 	func run = (self, func (out int) f, out int) { return f() + 1 }
 }
 

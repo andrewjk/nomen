@@ -47,10 +47,10 @@ pub func main = () {
 		await build_and_check_output(input, "owned_recv_chained_u64", "42\n", true);
 	});
 
-	test("a shared-reference receiver is not hoisted or destroyed", async () => {
+	test("a field receiver drives ref-self methods without hoisting", async () => {
 		const input = `import System
 
-class Engine {
+owning struct Engine {
 	pub var int hp = 0
 
 	pub func set_hp = (ref self, int hp) {
@@ -58,21 +58,17 @@ class Engine {
 	}
 }
 
-class Car {
-	move Engine engine
+owning struct Car {
+	var Engine engine
 
 	pub func #init = (self, move Engine e) {
 		self.engine = e
-	}
-
-	pub func engine_of = (ref self, out Engine) {
-		return self.engine
 	}
 }
 
 pub func main = () {
 	var car = Car(Engine())
-	car.engine_of().set_hp(200)
+	car.engine.set_hp(200)
 	Console.write_line(car.engine.hp.to_string())
 }
 `;

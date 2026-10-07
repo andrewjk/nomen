@@ -3,39 +3,42 @@ import { describe, test } from "vite-plus/test";
 import build_and_check_output from "./build_and_check_output";
 
 describe("memory ref class param", () => {
-	test("passing class field to ref class param should not double-free", async () => {
+	test("passing a boxed child to a ref param does not double-free", async () => {
 		const input = `
-class Node {
+import System
+owning struct Node {
 	var int value = 0
-	move Node? child = null
+	var Box<Node>? child = null
 }
 
-func set_value = (ref Node n) {
+func set_value = (ref Box<Node> n) {
 	if n.child != null {
 		set_value(ref n.child)
 	}
 	n.value = 42
 }
 
-var Node root = Node()
-var Node child = Node()
-root.child = child
-set_value(ref root)
-Console.write("\\{root.value}")
-Console.write("\\{child.value}")
+pub func main = () {
+	var Box<Node> root = Box<Node>(Node())
+	root.child = Box<Node>(Node())
+	set_value(ref root)
+	Console.write("\\{root.value}")
+	Console.write("\\{root.child.value}")
+}
 `;
-		await build_and_check_output(input, "var_class_param_borrowed_field", "4242");
+		await build_and_check_output(input, "var_class_param_borrowed_field", "4242", true);
 	});
 
-	test("recursive ref class param with field access does not corrupt tree", async () => {
+	test("recursive ref param over a boxed tree does not corrupt it", async () => {
 		const input = `
-class TreeNode {
+import System
+owning struct TreeNode {
 	var int data = 0
-	move TreeNode? left = null
-	move TreeNode? right = null
+	var Box<TreeNode>? left = null
+	var Box<TreeNode>? right = null
 }
 
-func fill = (ref TreeNode node) {
+func fill = (ref Box<TreeNode> node) {
 	if node.left != null {
 		fill(ref node.left)
 	}
@@ -45,16 +48,16 @@ func fill = (ref TreeNode node) {
 	node.data = node.data + 1
 }
 
-var TreeNode a = TreeNode()
-var TreeNode b = TreeNode()
-var TreeNode c = TreeNode()
-a.left = b
-a.right = c
-fill(ref a)
-Console.write("\\{a.data}")
-Console.write("\\{b.data}")
-Console.write("\\{c.data}")
+pub func main = () {
+	var Box<TreeNode> a = Box<TreeNode>(TreeNode())
+	a.left = Box<TreeNode>(TreeNode())
+	a.right = Box<TreeNode>(TreeNode())
+	fill(ref a)
+	Console.write("\\{a.data}")
+	Console.write("\\{a.left.data}")
+	Console.write("\\{a.right.data}")
+}
 `;
-		await build_and_check_output(input, "var_class_param_recursive_tree", "111");
+		await build_and_check_output(input, "var_class_param_recursive_tree", "111", true);
 	});
 });

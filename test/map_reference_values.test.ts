@@ -72,13 +72,13 @@ trait Animal {
 	pub func speak = (self, out string)
 }
 
-class Dog : Animal {
+owning struct Dog : Animal {
 	pub func speak = (self, out string) {
 		return "woof"
 	}
 }
 
-class Cat : Animal {
+owning struct Cat : Animal {
 	pub func speak = (self, out string) {
 		return "meow"
 	}

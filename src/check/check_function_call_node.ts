@@ -1708,12 +1708,16 @@ function check_weak_ctor(node: FunctionCallNode, status: CheckStatus): boolean {
 		);
 		return false;
 	}
+	// The tracked type keeps its OWN type args (`WeakHandle<Box<Cell>>` →
+	// T = Box<Cell> → mono `WeakHandle_Box_Cell`); a bare `new Type(name)`
+	// would drop them and key the wrong mono.
+	const tracked_t = obj_type.type_args?.length ? mono_type_name(obj_type) : obj_type.name;
 	const weak_struct = resolve_declared_struct(node.name, status) as StructNode | undefined;
-	if (weak_struct) monomorphize(weak_struct, [new Type(obj_type.name)], status);
+	if (weak_struct) monomorphize(weak_struct, [new Type(tracked_t)], status);
 	node.is_weak_ctor = true;
-	node.function_return_type = new Type(obj_type.name);
+	node.function_return_type = new Type(tracked_t);
 	node.type = new Type(node.name);
-	node.type.type_args = [new Type(obj_type.name)];
+	node.type.type_args = [new Type(tracked_t)];
 	return true;
 }
 

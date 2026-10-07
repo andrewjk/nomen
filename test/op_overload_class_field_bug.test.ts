@@ -21,7 +21,7 @@ struct Money {
 		return "\\{self.cents}"
 	}
 }
-class Wallet {
+owning struct Wallet {
 	var Money funds
 }
 var Wallet w = Wallet(Money(777))
@@ -38,7 +38,7 @@ struct Money {
 		return "\\{self.cents}"
 	}
 }
-class Wallet {
+owning struct Wallet {
 	var Money funds = Money(0)
 	func peek = (self) {
 		var Money cur = self.funds
@@ -62,7 +62,7 @@ struct Money {
 		return "\\{self.cents}"
 	}
 }
-class Wallet {
+owning struct Wallet {
 	var Money funds = Money(0)
 	func add = (ref self, Money amount) {
 		self.funds = self.funds + amount
@@ -77,7 +77,7 @@ Console.write("\\{w.funds}")
 
 	test("class with only int field works (control)", async () => {
 		const input = `
-class Wallet {
+owning struct Wallet {
 	var int funds
 }
 var Wallet w = Wallet(777)

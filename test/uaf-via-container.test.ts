@@ -11,7 +11,7 @@ import parse_with_imports from "./parse_with_imports";
 describe("container ownership via move", () => {
 	test("class stored in list survives owner scope exit", async () => {
 		const input = `
-class Animal { var char letter }
+owning struct Animal { var char letter }
 var List<Animal> list = List<Animal>()
 if true {
 	var Animal a = Animal('Z')
@@ -29,7 +29,7 @@ Console.write("got: \\{dead.letter}\\n")
 
 	test("same class in two lists requires explicit ownership", async () => {
 		const input = `
-class Animal { var char letter }
+owning struct Animal { var char letter }
 var List<Animal> l1 = List<Animal>()
 var List<Animal> l2 = List<Animal>()
 if true {
@@ -47,48 +47,40 @@ Console.write("\\{x.letter} \\{y.letter}\\n")
 		expect(parsed.errors[0].message).toContain("used after move");
 	});
 
-	test("storing a borrowed class in an owning container is rejected", async () => {
-		// `l2.push(l1.at(0))` would copy the same Animal pointer into l2's
-		// ClassBuffer slot — both lists would free the same instance on
-		// destroy (SIGABRT). The compiler rejects this at check time and
-		// points at the borrowed argument. The fix is to use a `move out T`
-		// accessor (.pop / items.move) so the source slot is relinquished,
-		// or to restructure to not share the instance across owners.
+	test("cross-container element pushes are sound copies (R)", async () => {
+		// Class-era, `l2.push(l1.at(0))` shared the instance pointer — both
+		// lists freed it (SIGABRT). Post-R an `.at()` read of an owning
+		// element is a DEEP COPY, so each list owns independent elements and
+		// the shared-ownership hazard cannot arise.
 		const input = `
-class Animal { var char letter }
+owning struct Animal { var char letter }
 var List<Animal> l1 = List<Animal>()
 var List<Animal> l2 = List<Animal>()
 l1.push(move Animal('X'))
-l2.push(l1.at(0))
+l2.push(l1.at_or_panic(0))
 var Animal x = l2.pop()
 Console.write("\\{x.letter}\\n")
 `;
 		const parsed = parse_with_imports(input);
-		expect(parsed.errors.length).toBeGreaterThan(0);
-		const msg = parsed.errors[0].message;
-		expect(msg).toContain("Cannot move a borrowed value");
-		expect(msg).toContain("shared ownership");
+		expect(parsed.errors).toEqual([]);
+		await build_and_check_output(input + "\n", "uaf_cross_container_copy", "X\n");
 	});
 
-	test("storing a borrowed class via a local is rejected", async () => {
-		// Same family: a borrow assigned to a local keeps its borrow_depth,
-		// so passing that local to a `move T` param still creates shared
-		// ownership. (Previously: this compiled and crashed at runtime.)
+	test("an element copy moved into another container is sound", async () => {
+		// Same family, via a local: the `.at()` copy is OWNED, so moving it
+		// into `l2` is an ordinary transfer (no shared ownership).
 		const input = `
-class Animal { var char letter }
+owning struct Animal { var char letter }
 var List<Animal> l1 = List<Animal>()
 var List<Animal> l2 = List<Animal>()
 l1.push(move Animal('X'))
-var Animal borrowed = l1.at(0)
+var Animal borrowed = l1.at_or_panic(0)
 l2.push(move borrowed)
 var Animal x = l2.pop()
 Console.write("\\{x.letter}\\n")
 `;
 		const parsed = parse_with_imports(input);
-		const borrow_err = parsed.errors.find((e) =>
-			e.message.includes("Cannot move a borrowed value"),
-		);
-		expect(borrow_err).toBeDefined();
+		expect(parsed.errors).toEqual([]);
 	});
 
 	test("storing a borrowed trait value is rejected", async () => {
@@ -97,7 +89,7 @@ Console.write("\\{x.letter}\\n")
 		// hazard applies.
 		const input = `
 trait Speaker { func speak = (self, out string) }
-class Dog : Speaker { func speak = (self, out string) { return "woof" } }
+owning struct Dog : Speaker { func speak = (self, out string) { return "woof" } }
 var List<Speaker> l1 = List<Speaker>()
 var List<Speaker> l2 = List<Speaker>()
 l1.push(move Dog())
@@ -119,7 +111,7 @@ l2.push(l1.at(0))
 		// level; the same shape inside the same module as the List — e.g.
 		// a `pop_at` extension — would compile and run.)
 		const input = `
-class Animal { var char letter }
+owning struct Animal { var char letter }
 var List<Animal> src = List<Animal>()
 src.push(move Animal('Z'))
 // list.pop() is the public owning-extract primitive (move out T). After

@@ -1717,12 +1717,14 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		const old_ref_params = status.function_ref_params;
 		const old_ref_class_slots = status.ref_class_slots;
 		const old_view_params = status.function_view_params;
+		const old_function_param_types = status.function_param_types;
 
 		status.function_param_regs = new Map();
 		status.function_param_vars = new Set();
 		status.function_ref_params = new Set();
 		status.ref_class_slots = new Map();
 		status.function_view_params = new Set();
+		status.function_param_types = new Map();
 		status.struct_return_buffer = undefined;
 
 		// An ARRAY-typed return (`out Array<T>`) is a heap buffer POINTER in
@@ -1774,6 +1776,10 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		const callee_param_slots = new Map<string, number>();
 		for (let i = 0; i < func.params.length; i++) {
 			const param = func.params[i];
+			// Record every param's type up front (mirrors build_function_node):
+			// the assignment path resolves a `ref` param's referent type from
+			// this map — params are not in scoped_declarations.
+			status.function_param_types!.set(param.name, param.type);
 			if (param.is_self_param && !self_is_var) {
 				// A fat-string BY-VALUE self is a (ptr, len) pair — two AAPCS
 				// slots. (`ref self` on a simple type passes &slot — one.)
@@ -1884,6 +1890,10 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		const raw_reloads: RawParamReloadLine[] = [];
 		for (let i = 0; i < func.params.length; i++) {
 			const param = func.params[i];
+			// Record every param's type up front (mirrors build_function_node):
+			// the assignment path resolves a `ref` param's referent type from
+			// this map — params are not in scoped_declarations.
+			status.function_param_types!.set(param.name, param.type);
 			if (param.is_self_param && !self_is_var) {
 				second_slot_idx += self_is_string ? 2 : 1;
 				continue;
@@ -2370,6 +2380,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		status.function_ref_params = old_ref_params;
 		status.ref_class_slots = old_ref_class_slots;
 		status.function_view_params = old_view_params;
+		status.function_param_types = old_function_param_types;
 		status.function_return_label = old_return_label;
 		status.force_heap_strings = old_force_heap;
 		status.reassigned_vars = old_reassigned_vars;

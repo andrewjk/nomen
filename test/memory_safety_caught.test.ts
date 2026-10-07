@@ -8,8 +8,8 @@ import parse_with_imports from "./parse_with_imports";
 describe("compiler-caught memory safety", () => {
 	test("class-type fields must use move", () => {
 		const input = `
-class Inner { var int x }
-class Outer { var Inner child }
+owning struct Inner { var int x }
+owning struct Outer { var Inner child }
 var Inner i = Inner(5)
 var Outer o = Outer(i)
 `;
@@ -18,22 +18,25 @@ var Outer o = Outer(i)
 		expect(parsed.errors[0].message).toContain("move");
 	});
 
-	test("returning class param without move is rejected", () => {
+	test("returning an owning-struct param through a ref borrow is rejected", () => {
 		const input = `
-class Box { var int v }
+owning struct Box { var int v }
 func borrow = (ref Box b, out Box) {
 	return b
 }
 `;
 		const parsed = parse_with_imports(input);
+		// B3: a bare owning-struct param is a by-VALUE copy (returning it is
+		// sound), but a `ref` borrow must not escape implicitly — the return
+		// names the transfer spelling.
 		expect(parsed.errors.length).toBeGreaterThan(0);
 		expect(parsed.errors[0].message).toContain("move");
 	});
 
 	test("using variable after move is rejected", () => {
 		const input = `
-class Box { var int v }
-class Holder { move Box held }
+owning struct Box { var int v }
+owning struct Holder { move Box held }
 var Box b = Box(42)
 var Holder h = Holder(move b)
 Console.write("\\{b.v}\\n")

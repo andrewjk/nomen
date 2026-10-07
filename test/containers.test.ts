@@ -75,7 +75,7 @@ Console.write("nodes=\\{g.node_length()} edges_from_a=\\{total}\\n")
 
 	test("LinkedList<Elephant> store and retrieve class pointers", async () => {
 		const input = `
-class Elephant {
+owning struct Elephant {
   var char letter
   var bool visited = false
 }
@@ -112,28 +112,28 @@ Console.write("\\n")
 		await build_and_check_output(input, "linkedlist_class", "A B C\n");
 	});
 
-	test("Tree<Elephant> store and traverse class pointers", async () => {
+	test("Tree<Box<Elephant>> store and traverse boxed elements", async () => {
 		const input = `
-class Elephant {
+owning struct Elephant {
   var char letter
   var bool visited = false
 }
 
-var Tree<Elephant> t = Tree<Elephant>()
+var Tree<Box<Elephant>> t = Tree<Box<Elephant>>()
 var int root = t.count
-t.add(Elephant('R'))
+t.add(Box<Elephant>(Elephant('R')))
 var int left = t.count
-t.add(Elephant('L'))
+t.add(Box<Elephant>(Elephant('L')))
 var int right = t.count
-t.add(Elephant('R'))
+t.add(Box<Elephant>(Elephant('R')))
 t.set_left(root, left)
 t.set_right(root, right)
 for i of 0 .. t.count {
-  var Elephant e = t.at(i)
+  var Box<Elephant> e = t.at(i)
   e.visited = true
 }
 for i of 0 .. t.count {
-  var Elephant e = t.at(i)
+  var Box<Elephant> e = t.at(i)
   if i > 0 {
     Console.write(" ")
   }
@@ -146,7 +146,7 @@ Console.write("\\n")
 
 	test("Graph<Elephant> store and traverse class pointers", async () => {
 		const input = `
-class Elephant {
+owning struct Elephant {
   var char letter
   var bool visited = false
 }

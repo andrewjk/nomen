@@ -86,14 +86,14 @@ Console.write("\\{v}")
 	describe("class field ownership (compile errors)", () => {
 		test("class aliasing is allowed when spelled with ref", () => {
 			const input = `
-class Box {
+owning struct Cell {
 	var int value
 }
-class Holder {
-	move Box content
+owning struct Holder {
+	var Box<Cell> content
 }
-var Holder h1 = Holder(move Box(42))
-ref Holder h2 = h1
+var Box<Holder> h1 = Box<Holder>(Holder(move Box<Cell>(Cell(42))))
+ref Box<Holder> h2 = h1
 Console.write("\\{h1.content.value}")
 `;
 			const parsed = parse_with_imports(input);
@@ -102,14 +102,14 @@ Console.write("\\{h1.content.value}")
 
 		test("unspelled class aliasing is an error (must say ref/move/copy)", () => {
 			const input = `
-class Box {
+owning struct Cell {
 	var int value
 }
-class Holder {
-	move Box content
+owning struct Holder {
+	var Box<Cell> content
 }
-var Holder h1 = Holder(move Box(42))
-var Holder h2 = h1
+var Box<Holder> h1 = Box<Holder>(Holder(move Box<Cell>(Cell(42))))
+var Box<Holder> h2 = h1
 Console.write("\\{h1.content.value}")
 `;
 			const parsed = parse_with_imports(input);
@@ -120,11 +120,11 @@ Console.write("\\{h1.content.value}")
 
 		test("cannot assign class field from another owner", () => {
 			const input = `
-class Box {
+owning struct Box {
 	var int value
 }
-class Holder {
-	move Box content
+owning struct Holder {
+	var Box content
 }
 var Holder h1 = Holder(move Box(1))
 var Holder h2 = Holder(move Box(2))
@@ -137,11 +137,11 @@ h1.content = h2.content
 
 		test("cannot move out of class field", () => {
 			const input = `
-class Box {
+owning struct Box {
 	var int value
 }
-class Holder {
-	move Box content
+owning struct Holder {
+	var Box content
 }
 var Holder h1 = Holder(move Box(42))
 var Holder h2 = Holder(move h1.content)
@@ -153,11 +153,11 @@ var Holder h2 = Holder(move h1.content)
 
 		test("reading class field from class is allowed", async () => {
 			const input = `
-class Box {
+owning struct Box {
 	var int value
 }
-class Holder {
-	move Box content
+owning struct Holder {
+	var Box content
 }
 var Holder h = Holder(move Box(42))
 Console.write("\\{h.content.value}")
@@ -165,21 +165,21 @@ Console.write("\\{h.content.value}")
 			await build_and_check_output(input, "ok_read_field", "42");
 		});
 
-		test("cannot copy a struct that owns a class field by value", () => {
+		test("cannot copy a struct that owns an owning field by value", () => {
 			const input = `
-class Box {
+owning struct Cell {
 	var int value
 }
-struct Holder {
-	move Box content
+owning struct Holder {
+	var Box<Cell> content
 }
-var Holder h1 = Holder(move Box(1))
-var Holder h2 = h1
+var Box<Holder> h1 = Box<Holder>(Holder(move Box<Cell>(Cell(1))))
+var Box<Holder> h2 = h1
 `;
 			const parsed = parse_with_imports(input);
 			expect(parsed.errors.length).toBeGreaterThan(0);
 			expect(parsed.errors.map((e) => e.message)).toContainEqual(
-				expect.stringContaining("cannot copy 'Holder'"),
+				expect.stringContaining("'h1' is aliased"),
 			);
 		});
 	});

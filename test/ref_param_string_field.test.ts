@@ -130,7 +130,7 @@ pub func main = (Init init) {
 			`
 import System
 
-class Box2 {
+owning struct Box2 {
 	var string s
 
 	func #init = (ref self, string v) {

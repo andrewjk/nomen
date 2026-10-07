@@ -86,7 +86,7 @@ Console.write("\\{p.name}")
 // (double-free).
 test("move of outer-scope variable inside if branch", async () => {
 	const input = `
-class Box {
+owning struct Box {
   var int v = 0
 }
 
@@ -108,7 +108,7 @@ Console.write("done")
 // Same hole on the method-call move path (build_access_node).
 test("method-call move of outer-scope variable inside if branch", async () => {
 	const input = `
-class Box {
+owning struct Box {
   var int v = 0
 }
 

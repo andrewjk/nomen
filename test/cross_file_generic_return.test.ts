@@ -24,7 +24,7 @@ const system = get_library(path.resolve(import.meta.dirname, "../core"));
 
 const callee_file = `
 // file://src/combined.nm
-pub class Diff {
+pub owning struct Diff {
 	var moved = false
 }
 

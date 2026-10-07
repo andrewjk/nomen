@@ -103,7 +103,7 @@ pub func main = () {
 	test("mixed param (container + string field) is fully reclaimed", async () => {
 		const input = src(`
 struct Tagged {
-	move List<Attr> items
+	var List<Attr> items
 	var string label = ""
 }
 

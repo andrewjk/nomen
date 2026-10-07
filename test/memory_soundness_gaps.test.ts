@@ -12,8 +12,8 @@ import parse_with_imports from "./parse_with_imports";
 describe("borrow-escape rejection (caught at compile time)", () => {
 	test("direct field-access assignment requires move/swap", () => {
 		const input = `
-class Box { var int v }
-class Holder { move Box c }
+owning struct Box { var int v }
+owning struct Holder { move Box c }
 var Holder h = Holder(move Box(1))
 var Box b = Box(0)
 b = h.c
@@ -22,33 +22,36 @@ b = h.c
 		expect(parsed.errors.some((e) => e.message.includes("use move with swap"))).toBe(true);
 	});
 
-	test("borrowed field via intermediate variable cannot escape its scope", () => {
-		// `tmp` borrows p.a inside the if-block; assigning it to the outer
-		// `stolen` would let it outlive p. Rejected.
+	test("field extraction is a swap transfer; moving it onward composes", () => {
+		// `tmp` is extracted from p.a with a revalidating swap — it OWNS the
+		// instance, so assigning it to the outer `stolen` is a plain transfer
+		// (no aliasing, no escape hazard). The class-era borrow-escape
+		// rejection is replaced by copy/transfer semantics.
 		const input = `
-class Box { var int v }
-class Pair {
-    move Box a
-    move Box b
+owning struct Box { var int v }
+owning struct Pair {
+    var Box a
+    var Box b
 }
 var Box stolen = Box(0)
 if true {
     var Pair p = Pair(move Box(1), move Box(2))
-    var Box tmp = p.a
-    stolen = tmp
+    var Box tmp = move p.a swap Box(0)
+    stolen = move tmp
 }
 Console.write("\\{stolen.v}\\n")
 `;
 		const parsed = parse_with_imports(input);
-		expect(parsed.errors.some((e) => e.message.includes("borrow escapes"))).toBe(true);
+		expect(parsed.errors).toEqual([]);
 	});
 
-	test("returning a borrowed field is rejected", () => {
-		// getc returns h.c (a borrow); the caller could keep it past h's
-		// lifetime. Rejected — use move to transfer ownership.
+	test("returning a field read by value is rejected (copy of an owning field)", () => {
+		// `return h.c` reads the owning field by value — a copy that would
+		// share the field's owned state. Rejected; transfer it with
+		// `move ... swap` instead.
 		const input = `
-class Box { var int v }
-class Holder { move Box c }
+owning struct Box { var int v }
+owning struct Holder { move Box c }
 func getc = (ref Holder h, out Box) {
     return h.c
 }
@@ -62,48 +65,50 @@ pub func main = () {
 }
 `;
 		const parsed = parse_with_imports(input);
-		expect(parsed.errors.some((e) => e.message.includes("borrowed reference"))).toBe(true);
+		expect(parsed.errors.some((e) => e.message.includes("cannot copy 'Box' out of field"))).toBe(
+			true,
+		);
 	});
 
-	test("in-scope borrow is allowed (no escape)", () => {
-		// `b` borrows h.c and is used within the same scope — fine.
+	test("in-scope extraction with a swap is allowed", () => {
+		// `b` takes the field's instance with a revalidating swap — the
+		// field never holds a moved-out value — and reads it in scope.
 		const input = `
-class Box { var int v }
-class Holder { move Box c }
+owning struct Box { var int v }
+owning struct Holder { move Box c }
 var Holder h = Holder(move Box(1))
-var Box b = h.c
+var Box b = move h.c swap Box(0)
 Console.write("\\{b.v}\\n")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
 	});
 
-	test("container element borrow cannot escape the container's scope", () => {
-		// `cur` borrows a pointer the list exposes via .at(); assigning it to the
-		// outer `cur` would outlive the list. Rejected (instance method return
-		// is treated as a borrow of the receiver). (`.pop()` is now `move out T` —
-		// an owned return — so it can escape freely; `.at()` is the borrow case.)
+	test("container element reads are owned copies (escape is impossible)", () => {
+		// `.at()` of an owning element deep-copies, so `cur` owns its value
+		// and using it after the container's scope is sound — no borrow to
+		// escape. (`.pop()` is an owned return, as before.)
 		const input = `
-class Animal { var char letter }
-var Animal cur
+owning struct Animal { var char letter }
+var Animal cur = Animal(' ')
 if true {
     var List<Animal> list = List<Animal>()
     list.push(move Animal('Z'))
     if list.length > 0 {
-        cur = list.at(0)
+        cur = list.at_or_panic(0)
     }
 }
 Console.write("\\{cur.letter}\\n")
 `;
 		const parsed = parse_with_imports(input);
-		expect(parsed.errors.some((e) => e.message.includes("borrow escapes"))).toBe(true);
+		expect(parsed.errors).toEqual([]);
 	});
 
 	test("constructor and static factory returns are owned (escapable)", () => {
 		// Fresh allocations from constructors / static factories are owned, not
 		// borrows, so assigning them across scopes is fine.
 		const input = `
-class Box { var int v }
+owning struct Box { var int v }
 func mk = (out Box) {
     return Box(7)
 }
@@ -125,12 +130,12 @@ Console.write("\\{b.v}\\n")
 // does not free the live instance each iteration.
 
 describe("deferred reclamation across owner reassignment", () => {
-	test("borrowed reference kept valid across owner reassignment", async () => {
+	test("extracted instance stays valid across owner reassignment", async () => {
 		const input = `
-class Box { var int v }
-class Holder { move Box c }
+owning struct Box { var int v }
+owning struct Holder { move Box c }
 var Holder h = Holder(move Box(1))
-var Box b = h.c
+var Box b = move h.c swap Box(0)
 h = Holder(move Box(2))
 Console.write("\\{b.v}\\n")
 `;
@@ -139,8 +144,8 @@ Console.write("\\{b.v}\\n")
 
 	test("class reassignment inside a loop keeps the live instance", async () => {
 		const input = `
-class Box { var int v }
-class Holder { move Box c }
+owning struct Box { var int v }
+owning struct Holder { move Box c }
 var Holder h = Holder(move Box(0))
 var int i = 1
 while i <= 5 {

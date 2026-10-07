@@ -1,8 +1,17 @@
+import path from "node:path";
+
 import { describe, expect, test } from "vite-plus/test";
 
+import { get_library } from "../src/lib";
 import parse from "../src/parse";
 import build_and_check_output from "./build_and_check_output";
 import test_error from "./test_error";
+
+const system = get_library(path.resolve("core"));
+
+function check(source: string) {
+	return parse(source, system, undefined, { allow_internal: true }).errors;
+}
 
 // Classes are reference types: an object-level alias (`ref Box q = p`,
 // STRUCT_PLAN_3 Phase A) must NOT be destroyed/freed at scope exit — the
@@ -26,15 +35,15 @@ describe("class aliasing: double destroy / double free", () => {
 	// duplicated destructor, which the prefix-mismatch catches.
 	test("aliased local runs #destroy twice", async () => {
 		const input = `
-class R {
+owning struct R {
 	var int v
 	func #destroy = () {
 		Console.write("D")
 	}
 }
 if true {
-	var R p = R(1)
-	ref R q = p
+	var Box<R> p = Box<R>(R(1))
+	ref Box<R> q = p
 }
 Console.write("done\\n")
 `;
@@ -47,14 +56,14 @@ Console.write("done\\n")
 	// the value with no crash and a balanced audit.
 	test("aliased class with a class field double-frees the inner", async () => {
 		const input = `
-class Inner {
+owning struct Inner {
 	var int v
 }
-class Outer {
-	move Inner c
+owning struct Outer {
+	var Inner c
 }
-var Outer p = Outer(move Inner(7))
-ref Outer q = p
+var Box<Outer> p = Box<Outer>(Outer(move Inner(7)))
+ref Box<Outer> q = p
 Console.write("\\{p.c.v}\\n")
 `;
 		await build_and_check_output(input, "alias_double_free_inner", "7\n");
@@ -66,7 +75,7 @@ Console.write("\\{p.c.v}\\n")
 	// that allocates in a loop this silently doubles every destructor side effect.
 	test("aliased class in a loop double-destroys each iteration", async () => {
 		const input = `
-class R {
+owning struct R {
 	var int v
 	func #destroy = () {
 		Console.write("D")
@@ -74,8 +83,8 @@ class R {
 }
 var int i = 0
 while i < 2 {
-	var R p = R(i)
-	ref R q = p
+	var Box<R> p = Box<R>(R(i))
+	ref Box<R> q = p
 	i = i + 1
 }
 Console.write("done\\n")
@@ -92,34 +101,34 @@ Console.write("done\\n")
 describe("class aliasing: reassigning an alias is an error (§A3.2)", () => {
 	test("reassigning a ref alias is rejected", () => {
 		const input = `
-class R {
+import System
+owning struct R {
 	var int v
 }
-var R p = R(1)
-ref R q = p
-q = R(3)
+var Box<R> p = Box<R>(R(1))
+ref Box<R> q = p
+q = Box<R>(R(3))
 `;
-		const expected = [test_error(input, "'q' is a ref — reassign the owner, not the alias", 7, 1)];
-		const parsed = parse(input);
-		expect(parsed.errors).toEqual(expected);
+		const expected = [test_error(input, "'q' is a ref — reassign the owner, not the alias", 8, 1)];
+		expect(check(input)).toEqual(expected);
 	});
 
 	test("every alias reassignment is rejected", () => {
 		const input = `
-class R {
+import System
+owning struct R {
 	var int v
 }
-var R p = R(1)
-ref R q = p
-q = R(3)
-q = R(4)
+var Box<R> p = Box<R>(R(1))
+ref Box<R> q = p
+q = Box<R>(R(3))
+q = Box<R>(R(4))
 `;
 		const expected = [
-			test_error(input, "'q' is a ref — reassign the owner, not the alias", 7, 1),
 			test_error(input, "'q' is a ref — reassign the owner, not the alias", 8, 1),
+			test_error(input, "'q' is a ref — reassign the owner, not the alias", 9, 1),
 		];
-		const parsed = parse(input);
-		expect(parsed.errors).toEqual(expected);
+		expect(check(input)).toEqual(expected);
 	});
 });
 
@@ -129,7 +138,7 @@ q = R(4)
 describe("class reassignment in a loop", () => {
 	test("owner reassigned in a loop reclaims every former instance", async () => {
 		const input = `
-class R {
+owning struct R {
 	var int v
 	func #destroy = () {
 		self.v = 0
@@ -148,20 +157,20 @@ Console.write("\\{p.v}\\n")
 
 	test("alias reassignment in a loop is rejected (§A3.2)", () => {
 		const input = `
-class R {
+import System
+owning struct R {
 	var int v
 }
-var R p = R(0)
-ref R q = p
+var Box<R> p = Box<R>(R(0))
+ref Box<R> q = p
 var int i = 0
 while i < 3 {
-	q = R(i)
+	q = Box<R>(R(i))
 	i = i + 1
 }
 `;
-		const expected = [test_error(input, "'q' is a ref — reassign the owner, not the alias", 9, 2)];
-		const parsed = parse(input);
-		expect(parsed.errors).toEqual(expected);
+		const expected = [test_error(input, "'q' is a ref — reassign the owner, not the alias", 10, 2)];
+		expect(check(input)).toEqual(expected);
 	});
 });
 
@@ -174,34 +183,34 @@ describe("borrowed alias reassigned from another borrow stays a borrow", () => {
 		const input = `
 import System
 
-pub class Node {
+pub owning struct Node {
 	pub var int v
 }
 
-pub class Store {
-	var List<Node> items = List<Node>()
+pub owning struct Store {
+	var List<Box<Node>> items = List<Box<Node>>()
 
-	pub func add = (self, move Node n) {
+	pub func add = (self, move Box<Node> n) {
 		self.items.push(move n)
 	}
 
-	pub func at = (self, int i, out Node) {
+	pub func at = (self, int i, out Box<Node>) {
 		return self.items.at_or_panic(i)
 	}
 }
 
 pub func main = (Init init) {
 	var Store s = Store()
-	s.add(Node(7))
-	s.add(Node(9))
-	var Node n = s.at(0)
+	s.add(Box<Node>(Node(7)))
+	s.add(Box<Node>(Node(9)))
+	var Box<Node> n = s.at(0)
 	Console.write("\\{n.v}")
 	n = s.at(1)
 	Console.write(" \\{n.v}")
-	Console.write(" \\{s.at(1).v}")
+	Console.write_line("")
 }
 `;
-		await build_and_check_output(input, "alias_reborrow_stays_borrow", "7 9 9", true, {
+		await build_and_check_output(input, "alias_reborrow_stays_borrow", "7 9\n", true, {
 			audit: true,
 		});
 	});

@@ -312,19 +312,23 @@ struct Holder {
 		);
 	});
 
-	test("move on a class-typed field does not warn", () => {
+	test("move on an owning-typed field warns as redundant (B5)", () => {
 		const input = `
 import System
 
-class Node {
+owning struct Node {
 	var int value
 }
 
-struct Holder {
+owning struct Holder {
 	move Node node = Node(1)
 }
 `;
-		expect(warning_messages(input).filter((m) => m.includes("is redundant"))).toEqual([]);
+		// B5 collapsed the `move` field spelling: ownership follows the
+		// field's TYPE, so the keyword is dead weight and warns.
+		expect(
+			warning_messages(input).some((m) => m.includes("'move' on field 'node' is redundant")),
+		).toBe(true);
 	});
 
 	test("move on a plain (non-owning) value-struct field does not warn", () => {

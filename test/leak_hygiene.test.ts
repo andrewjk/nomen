@@ -54,7 +54,7 @@ describe("ownership: scope-exit cleanup with class anchors", () => {
 	// shared the scope with an array literal.
 	test("array literal temp frees in a scope with a class anchor", async () => {
 		const input = `
-class Holder {
+owning struct Holder {
 	var items = List<string>()
 }
 
@@ -93,7 +93,7 @@ describe("ownership: container field move-assign", () => {
 				`import System
 import System::Test
 
-class Box {
+owning struct Box {
 	var items = List<string>()
 }
 

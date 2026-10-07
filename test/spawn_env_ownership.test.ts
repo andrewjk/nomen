@@ -68,7 +68,7 @@ pub func main = () {
 	test("a non-Sendable class MOVED in (a move parameter) is exempt", () => {
 		const input = `import System
 
-pub class Conn {
+pub owning struct Conn {
 	var int id = 0
 }
 
@@ -88,10 +88,10 @@ pub func main = () {
 		expect(messages.filter((m) => m.includes("not Sendable"))).toEqual([]);
 	});
 
-	test("a non-Sendable class reference inside a nursery is still rejected", () => {
+	test("a bare owning reference inside a nursery is a legal region borrow (R1)", () => {
 		const input = `import System
 
-pub class Conn {
+pub owning struct Conn {
 	var int id = 0
 }
 
@@ -107,15 +107,17 @@ pub func main = () {
 	}
 }
 `;
+		// STRUCT_PLAN_3 R1: a bare owning arg is a region-checked const
+		// borrow inside `async { }` — the join bounds it. The class-era
+		// Sendable gate is retired with the class tier.
 		const parsed = parse_raw(input);
-		expect(parsed.errors.length).toBeGreaterThan(0);
-		expect(parsed.errors[0].message).toContain("not Sendable");
+		expect(parsed.errors).toEqual([]);
 	});
 
-	test("a temporary non-Sendable class argument is rejected", () => {
+	test("a temporary owning argument packs into the task env", () => {
 		const input = `import System
 
-pub class Conn {
+pub owning struct Conn {
 	var int id = 0
 }
 
@@ -129,15 +131,15 @@ pub func main = () {
 	}
 }
 `;
+		// A fresh value has no donor to borrow from — the env owns it.
 		const parsed = parse_raw(input);
-		expect(parsed.errors.length).toBeGreaterThan(0);
-		expect(parsed.errors[0].message).toContain("not Sendable");
+		expect(parsed.errors).toEqual([]);
 	});
 
 	test("a non-Sendable class argument outside a nursery is rejected", () => {
 		const input = `import System
 
-pub class Conn {
+pub owning struct Conn {
 	var int id = 0
 }
 
@@ -151,31 +153,34 @@ pub func main = () {
 }
 `;
 		const parsed = parse_raw(input);
+		// R1: outside a nursery there is no join to bound the borrow — the
+		// error names the two sound spellings.
 		expect(parsed.errors.length).toBeGreaterThan(0);
-		expect(parsed.errors[0].message).toContain("not Sendable");
-		expect(parsed.errors[0].message).toContain("marked Sendable");
+		expect(parsed.errors[0].message).toContain("owns heap memory");
 	});
 
-	test("a detached task's shared arguments are rejected like any spawn", () => {
+	test("a moved argument to a daemon is the sanctioned spelling", () => {
 		const input = `import System
 
-pub class Conn {
+pub owning struct Conn {
 	var int id = 0
 }
 
-func work = (Conn c) {
+func work = (move Conn c) {
 	Console.write_line(c.id.to_string())
 }
 
 pub func main = () {
 	var Conn c = Conn()
+	c.id = 7
 	async {
-		Thread(work(c)).detach()
+		Thread(work(move c)).detach()
 	}
 }
 `;
+		// N2/R4: a daemon owns its captures — `move` transfers the instance;
+		// the env destroys it when the daemon ends.
 		const parsed = parse_raw(input);
-		expect(parsed.errors.length).toBeGreaterThan(0);
-		expect(parsed.errors[0].message).toContain("not Sendable");
+		expect(parsed.errors).toEqual([]);
 	});
 });

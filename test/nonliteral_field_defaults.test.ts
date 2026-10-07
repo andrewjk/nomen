@@ -119,7 +119,7 @@ pub func main = (Init init) {
 			`
 import System
 
-class Box {
+owning struct Box {
 	var string tag = "de" + "fault"
 }
 

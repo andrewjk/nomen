@@ -14,7 +14,7 @@ import parse_with_imports from "./parse_with_imports";
 describe("ref class param field access", () => {
 	test("read a field through a ref class param", async () => {
 		const input = `
-class Box { var int v }
+owning struct Box { var int v }
 func readv = (ref Box b, out int) {
     return b.v
 }
@@ -27,7 +27,7 @@ Console.write("\\{r}")
 
 	test("write a field through a ref class param", async () => {
 		const input = `
-class Box { var int v }
+owning struct Box { var int v }
 func setv = (ref Box b, int n) {
     b.v = n
 }
@@ -40,8 +40,8 @@ Console.write("\\{a.v}")
 
 	test("reassign a ref class param then read a field of the new instance", async () => {
 		const input = `
-class Box { var int v }
-class Holder { move Box c }
+owning struct Box { var int v }
+owning struct Holder { move Box c }
 func replace = (ref Holder h, int n) {
     h = Holder(move Box(n))
 }
@@ -55,8 +55,8 @@ Console.write("\\{h.c.v}\\n")
 
 	test("ref class param with owned field reassigned in a loop", async () => {
 		const input = `
-class Box { var int v }
-class Holder { move Box c }
+owning struct Box { var int v }
+owning struct Holder { move Box c }
 func replace = (ref Holder h, int n) {
     h = Holder(move Box(n))
 }
@@ -83,7 +83,7 @@ Console.write("\\{h.c.v}\\n")
 describe("ref class param method calls", () => {
 	test("method call on a ref class param persists mutation", async () => {
 		const input = `
-class Counter {
+owning struct Counter {
     var int count = 0
     pub func bump = (ref self) {
         self.count = self.count + 1
@@ -113,7 +113,7 @@ Console.write("\\{counter.count}\\n")
 describe("ref class param forwarded to another ref param", () => {
 	test("field mutation through a forwarded ref class param", async () => {
 		const input = `
-class Box { var int v }
+owning struct Box { var int v }
 func inner = (ref Box b) {
     b.v = 9
 }
@@ -129,7 +129,7 @@ Console.write("\\{a.v}\\n")
 
 	test("reassignment through a forwarded ref class param propagates", async () => {
 		const input = `
-class Box { var int v }
+owning struct Box { var int v }
 func inner = (ref Box b) {
     b = Box(9)
 }
@@ -145,7 +145,7 @@ Console.write("\\{a.v}\\n")
 
 	test("read forwarded ref param after the callee reassigned it", async () => {
 		const input = `
-class Box { var int v }
+owning struct Box { var int v }
 func inner = (ref Box b) {
     b = Box(42)
 }
@@ -172,8 +172,8 @@ Console.write("\\{a.v}\\n")
 describe("ref class param forwarded to a method ref param", () => {
 	test("field mutation through a forwarded ref class param to a method", async () => {
 		const input = `
-class Box { var int v }
-class Mutator {
+owning struct Box { var int v }
+owning struct Mutator {
     func bump = (ref Box b) {
         b.v = b.v + 1
     }
@@ -191,8 +191,8 @@ Console.write("\\{a.v}\\n")
 
 	test("reassignment through a forwarded ref class param to a method propagates", async () => {
 		const input = `
-class Box { var int v }
-class Mutator {
+owning struct Box { var int v }
+owning struct Mutator {
     func replace = (ref Box b) {
         b = Box(9)
     }
@@ -210,8 +210,8 @@ Console.write("\\{a.v}\\n")
 
 	test("read forwarded ref param after the method reassigned it", async () => {
 		const input = `
-class Box { var int v }
-class Mutator {
+owning struct Box { var int v }
+owning struct Mutator {
     func replace = (ref Box b) {
         b = Box(42)
     }
@@ -236,7 +236,7 @@ describe("trait dispatch with a ref arg rooted at a class local (C backend)", ()
 	// garbage read/write (SIGSEGV).
 	test("mutation through the dispatched ref param lands in the caller's local", async () => {
 		const input = `
-class State {
+owning struct State {
 	var int v = 0
 }
 trait Visitor {
@@ -267,7 +267,7 @@ Console.write("\\{s.v}")
 // anchor re-sync after the call for callee reassignment.
 describe("trait dispatch with a ref arg rooted at a class local (both backends)", () => {
 	const trait_input = `
-class State {
+owning struct State {
 	var int v = 0
 }
 trait Visitor {
@@ -289,7 +289,7 @@ Console.write("\\{s.v}")
 
 	test("reassignment through the dispatched ref param propagates", async () => {
 		const input = `
-class State {
+owning struct State {
 	var int v
 }
 trait Visitor {

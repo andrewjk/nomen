@@ -18,7 +18,7 @@ describe("Trait-typed retrieval from ClassBuffer<Trait>", () => {
 	test("retrieve via .at and dispatch (borrow — not freed)", async () => {
 		const input = `
 trait Speaker { func speak = (self, out string) }
-class Dog : Speaker {
+owning struct Dog : Speaker {
 	var string name
 	func speak = (self, out string) { return self.name }
 	func #destroy = (ref self) {
@@ -46,7 +46,7 @@ Console.write("\\ndone")
 	test("retrieve via pop (move out — owned, freed at scope exit)", async () => {
 		const input = `
 trait Speaker { func speak = (self, out string) }
-class Dog : Speaker {
+owning struct Dog : Speaker {
 	var string name
 	func speak = (self, out string) { return self.name }
 	func #destroy = (ref self) {
@@ -72,11 +72,11 @@ Console.write("\\ndone")
 	test("heterogeneous retrieval dispatches each concrete type", async () => {
 		const input = `
 trait Speaker { func speak = (self, out string) }
-class Dog : Speaker {
+owning struct Dog : Speaker {
 	var string name
 	func speak = (self, out string) { return self.name }
 }
-class Cat : Speaker {
+owning struct Cat : Speaker {
 	var string name
 	func speak = (self, out string) { return self.name }
 }

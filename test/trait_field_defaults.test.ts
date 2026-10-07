@@ -16,7 +16,7 @@ trait Tagged {
 	var int count = 7
 }
 
-class G : Tagged {
+owning struct G : Tagged {
 	pub var string own = "own-default"
 }
 

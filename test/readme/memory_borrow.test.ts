@@ -23,12 +23,12 @@ struct Transaction {
 describe("readme: ownership and borrows", () => {
 	test("move owning field and move owning parameter", () => {
 		const input = `
-class Box {
+owning struct Box {
     var int value
 }
 
-class Holder {
-    move Box content
+owning struct Holder {
+    var Box content
 }
 
 func take = (move Box b) {

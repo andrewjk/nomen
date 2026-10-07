@@ -117,7 +117,7 @@ pub func main = (Init init) {
 			"42\n",
 			`
 func dbl = (int x, out int) { return x * 2 }
-class Rule {
+owning struct Rule {
 	var func (int, out int) f
 }
 pub func main = (Init init) {

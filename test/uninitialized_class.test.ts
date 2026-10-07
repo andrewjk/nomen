@@ -5,7 +5,7 @@ import parse_with_imports from "./parse_with_imports";
 describe("uninitialized class variable errors", () => {
 	test("access field on uninitialized var", () => {
 		const input = `
-class Foo {
+owning struct Foo {
     var int x
 }
 
@@ -19,7 +19,7 @@ Console.write("\\{f.x}")
 
 	test("use uninitialized var in expression", () => {
 		const input = `
-class Foo {
+owning struct Foo {
     var int x
 }
 
@@ -34,7 +34,7 @@ Console.write("\\{y}")
 
 	test("access field on uninitialized var after partial if", () => {
 		const input = `
-class Foo {
+owning struct Foo {
     var int x
 }
 
@@ -52,7 +52,7 @@ Console.write("\\{f.x}")
 
 	test("access field on var initialized in all if branches", () => {
 		const input = `
-class Foo {
+owning struct Foo {
     var int x
 }
 
@@ -70,7 +70,7 @@ Console.write("\\{f.x}")
 
 	test("access field on var initialized only in one if branch", () => {
 		const input = `
-class Foo {
+owning struct Foo {
     var int x
 }
 
@@ -88,7 +88,7 @@ Console.write("\\{f.x}")
 
 	test("access field on var initialized in all match branches", () => {
 		const input = `
-class Foo {
+owning struct Foo {
     var int x
 }
 
@@ -115,7 +115,7 @@ Console.write("\\{f.x}")
 
 	test("access field on var initialized only in some match branches", () => {
 		const input = `
-class Foo {
+owning struct Foo {
     var int x
 }
 
@@ -143,7 +143,7 @@ Console.write("\\{f.x}")
 
 	test("access field on var initialized in all switch branches", () => {
 		const input = `
-class Foo {
+owning struct Foo {
     var int x
 }
 
@@ -165,7 +165,7 @@ Console.write("\\{f.x}")
 
 	test("var initialized after while loop still marked as possibly uninitialized", () => {
 		const input = `
-class Foo {
+owning struct Foo {
     var int x
 }
 
@@ -186,7 +186,7 @@ Console.write("\\{f.x}")
 describe("uninitialized class variable valid usage", () => {
 	test("var initialized before use is fine", () => {
 		const input = `
-class Foo {
+owning struct Foo {
     var int x
 }
 
@@ -200,7 +200,7 @@ Console.write("\\{f.x}")
 
 	test("var initialized in all if branches is fine", () => {
 		const input = `
-class Foo {
+owning struct Foo {
     var int x
 }
 
@@ -218,7 +218,7 @@ Console.write("\\{f.x}")
 
 	test("var initialized with value at declaration is fine", () => {
 		const input = `
-class Foo {
+owning struct Foo {
     var int x
 }
 
@@ -347,7 +347,7 @@ Console.write("\\{y}")
 
 	test("if true without else sets class var", () => {
 		const input = `
-class Foo {
+owning struct Foo {
     var int x
 }
 
@@ -363,7 +363,7 @@ Console.write("\\{f.x}")
 
 	test("if false without else does not set class var", () => {
 		const input = `
-class Foo {
+owning struct Foo {
     var int x
 }
 
@@ -380,7 +380,7 @@ Console.write("\\{f.x}")
 
 	test("const comparison true sets class var in if without else", () => {
 		const input = `
-class Foo {
+owning struct Foo {
     var int x
 }
 

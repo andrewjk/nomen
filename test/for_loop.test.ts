@@ -275,7 +275,7 @@ Console.write(acc)
 
 	test("for loop element type supports member access", async () => {
 		const input = `
-pub class Item {
+pub owning struct Item {
   var text = ""
 }
 func build = (out List<Item>) {
@@ -568,7 +568,7 @@ for ref x of xs {
 		const input = `
 import System
 
-pub class Holder {
+pub owning struct Holder {
 	pub var children = List<int>()
 }
 

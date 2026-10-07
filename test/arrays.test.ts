@@ -712,7 +712,7 @@ Console.write("\\{first_xy([move pt])}")
 	// then the buffer itself (the buffer free used to leak on aarch64).
 	test("class array literal to Array<Box> param materializes without leak", async () => {
 		const input = `
-class Box {
+owning struct Box {
 	var int value
 }
 func sum_vals = (Array<Box> xs, out int) {
@@ -730,7 +730,7 @@ Console.write("\\{n}")
 
 	test("heap Array<Box> declared with literal freed without leak", async () => {
 		const input = `
-class Box {
+owning struct Box {
 	var int value
 }
 var Array<Box> v = [Box(7), Box(8)]
@@ -838,7 +838,7 @@ fill(ref v)
 
 	test("class-element stack array to Array param is rejected", () => {
 		const input = `
-class Box {
+owning struct Box {
 	var int value
 }
 func sum_vals = (Array<Box> xs, out int) {
@@ -853,7 +853,7 @@ const n = sum_vals(v)
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors.map((e) => e.message)).toContain(
-			"Cannot pass a stack array of class 'Box' instances to 'Array<Box>' parameter 'xs' — the materialised heap copy would share the instances with the caller's array (double free). Build the heap array from fresh instances: pass an array literal, or use 'var Array<Box>'",
+			"Cannot pass a stack array of owning 'Box' instances to 'Array<Box>' parameter 'xs' — the materialised heap copy would share the instances with the caller's array (double free). Build the heap array from fresh instances: pass an array literal, or use 'var Array<Box>'",
 		);
 	});
 

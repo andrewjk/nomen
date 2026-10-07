@@ -13,7 +13,7 @@ describe("class string field literal defaults", () => {
 		const input = `
 import System
 
-class Buffer2 {
+owning struct Buffer2 {
 	pub var string content = ""
 	pub var bool ready = false
 
@@ -47,7 +47,7 @@ pub func main = (Init init) {
 		const input = `
 import System
 
-class LitOnly {
+owning struct LitOnly {
 	pub var string tag = "static-default"
 
 	pub func #init = (ref self) {

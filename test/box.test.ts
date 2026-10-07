@@ -58,7 +58,9 @@ var Box<Node> h = Box<Node>(move n)
 var Box<Node> h2 = h
 `;
 		const errors = check(input);
-		expect(errors.some((e) => e.message.includes("cannot copy a Box binding"))).toBe(true);
+		// A class-stamped Box source is ALIASABLE — the precise spelled-alias
+		// error wins over the generic box-copy message.
+		expect(errors.some((e) => e.message.includes("'h' is aliased"))).toBe(true);
 	});
 
 	test("a bare Box param is an error (move or ref)", () => {

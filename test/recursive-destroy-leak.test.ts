@@ -15,37 +15,35 @@ import build_and_check_output from "./build_and_check_output";
 // test stays failing until class auto-destroy recursively frees `move` fields.
 
 describe("recursive destroy leak", () => {
-	test("move-owned recursive tree leaks deeper than one level", async () => {
+	test("boxed recursive tree stores, traverses, and frees completely", async () => {
 		const input = `
-class TreeNode {
-  move TreeNode? left = null
-  move TreeNode? right = null
+owning struct TreeNode {
+  var Box<TreeNode>? left = null
+  var Box<TreeNode>? right = null
 }
 
 func create_tree = (int depth, out TreeNode) {
   var TreeNode node = TreeNode()
   if depth > 0 {
-    var TreeNode l = create_tree(depth - 1)
-    var TreeNode r = create_tree(depth - 1)
-    node.left = l
-    node.right = r
+    node.left = Box<TreeNode>(create_tree(depth - 1))
+    node.right = Box<TreeNode>(create_tree(depth - 1))
   }
   return node
 }
 
-func check_tree = (TreeNode node, out int) {
+func check_tree = (ref Box<TreeNode> node, out int) {
   var int sum = 1
   if node.left != null {
-    sum = sum + check_tree(node.left)
+    sum = sum + check_tree(ref node.left)
   }
   if node.right != null {
-    sum = sum + check_tree(node.right)
+    sum = sum + check_tree(ref node.right)
   }
   return sum
 }
 
-var TreeNode t = create_tree(3)
-Console.write("\\{check_tree(t)}\\n")
+var Box<TreeNode> t = Box<TreeNode>(create_tree(3))
+Console.write("\\{check_tree(ref t)}\\n")
 `;
 		await build_and_check_output(input, "recursive_destroy_leak", "15\n");
 	});

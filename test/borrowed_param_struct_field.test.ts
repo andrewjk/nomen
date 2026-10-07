@@ -16,7 +16,7 @@ struct Attr {
 	var string value = ""
 }
 
-class CAttr {
+owning struct CAttr {
 	pub var string name = ""
 	pub var string value = ""
 }
@@ -45,7 +45,7 @@ Console.write("c=\\{c.name}:\\{c.value}\\n")
 
 	test("ref class and ref value struct fields from borrowed params", async () => {
 		const input = `
-class C {
+owning struct C {
 	pub var string v = ""
 }
 

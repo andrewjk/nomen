@@ -17,7 +17,7 @@ struct QuoteV : Rule {
 		return line.at_or(0, ' ') == '>'
 	}
 }
-class HeadingC : Rule {
+owning struct HeadingC : Rule {
 	pub func test = (self, string line, out bool) {
 		return line.at_or(0, ' ') == '#'
 	}
