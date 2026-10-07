@@ -312,15 +312,6 @@ owning-enum semantics are proven on C; on aarch64 use a class payload until
 Recorded 2026-10-06 while writing the tranche tests; each predates this
 work and is out of its scope:
 
-- **aarch64: string interpolation is not lowered inside a class `#destroy`
-  body** — `Console.write_line("destroy \{self.name}")` emits the raw
-  literal `destroy {self.name}` (the interpolation machinery never runs in
-  the destroy body build). The C backend lowers the same body correctly.
-- **`List<OwningStruct>.at(i)` fails constraint verification** —
-  "Parameter constraint cannot be verified: i / i >= 0 && i < self.length"
-  (the at-vs-pop classification area A1 called out; owning element types
-  trip the constraint check). `pop()` works; this is also the container-
-  element trigger A.1 must solve.
 - **Nullable bases are not null-tracked** — `opt_field.inner` (and through
   boxes, `box.next.value`) compiles even when the base is nullable; the
   may-be-null check (`Variable 'x' may be null`) fires for plain variables

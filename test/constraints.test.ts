@@ -650,6 +650,24 @@ func probe = (List<int> list, int i, out int) {
 			expect(parsed.errors).toEqual([]);
 		});
 
+		// The guard-discharge path is element-type agnostic: an OWNING struct
+		// element type discharges `List.at`'s `i < self.length` constraint
+		// exactly like a primitive (the bound is on the INDEX, not the
+		// element). See BUGS.md #14.
+		test("owning element type at verifies under a return-guard", () => {
+			const input = `
+import System
+owning struct Item { var string name }
+func probe = (List<Item> list, int i, out Item) {
+    if i < 0 { return Item("neg") }
+    if i < list.length { return list.at(i) }
+    return Item("oob")
+}
+`;
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
+			expect(parsed.errors).toEqual([]);
+		});
+
 		// A guard clause must (re-)establish its negated bounds on a `var`
 		// local that was REASSIGNED before the guard — even by an earlier
 		// clamp. The if/else reconciliation copies the pre-if (cleared)

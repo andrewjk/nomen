@@ -367,3 +367,52 @@ before looking up the field declaration — mirroring the class-crossing branch.
 A struct-typed `__value` then takes the inline-address path
 (`add x0, x0, #off`) instead of a scalar load. Covered by
 `test/box.test.ts` (`box_call_result_{c,aarch64}`), both backends.
+
+## 13. aarch64: string interpolation in a class `#destroy` body (verified fixed)
+
+**Reported on `main` (recorded 2026-10-06, B5/B6 tranche).** FOLLOWUP.md
+claimed that `Console.write_line("destroy \{self.name}")` inside a class
+`#destroy` body emitted the raw literal `destroy {self.name}` on aarch64
+(the interpolation machinery never running in the destroy body build), while
+C lowered it correctly.
+
+**Verified fixed 2026-10-07 — not reproducible; no code change required.** The
+symptom does not reproduce on current `main` or at the commit that recorded it
+(`7ae8aaae`), on either backend. Exercised the stated shape plus the
+surrounding variants: `class` vs `owning struct`, explicit `ref self` vs the
+implicit destroy self, `move string` / `var string` / defaulted / custom-`#init`
+fields, generic monos (explicit and inferred call-site type args), nested and
+class-field receivers, split-TU vs single-TU, and raw vs wrapped parses. Every
+one lowers through the shared `_string_interpolate_N` helper and prints the
+interpolated value (`destroy bob`); no generated `.s`/`.h` contains a raw
+`{self.name}` literal. The destroy body rides the same checked-NIR body build
+as every other function (`build_destroy_function` → `build_body_with_cursor`),
+so the interpolation call lowers identically to a plain method. The entry was
+removed from FOLLOWUP.md.
+
+## 14. `List<OwningStruct>.at(i)` constraint verification (verified — intended bounds requirement)
+
+**Reported on `main` (recorded 2026-10-06, B5/B6 tranche).** FOLLOWUP.md
+claimed `List<OwningStruct>.at(i)` fails constraint verification
+(`Parameter constraint cannot be verified: i / i >= 0 && i < self.length`)
+while `List<int>.at(i)` works, attributing it to owning element types.
+
+**Verified 2026-10-07 — not owning-specific; the error is the intended bounds
+requirement.** `List.at`'s `i >= 0 && i < self.length` constraint is checked at
+the call site for EVERY element type (it is not a runtime-checked accessor —
+the backends emit an unchecked strided load). An index that is not provably in
+range errors identically for `List<int>`, `List<Box<T>>`, `List<OwningStruct>`,
+and nested-owning elements: `xs.at(0)`/`xs.at(i)` at root, in `main`, in a
+helper, and in a user accessor all fail the same way. The accessor shapes
+already exist (`at_or`, `at_or_panic`) and the guard/loop shapes discharge the
+constraint for owning elements exactly as for primitives:
+
+- `for x of list` (the desugar emits `list.at(__idx)` bounded by `list.length`),
+- `for i of 0..list.length { list.at(i) }`,
+- `while i < list.length { list.at(i) }`,
+- `if i >= 0 && i < list.length { list.at(i) }` and the return-guard variants,
+
+all compile and run on both backends with owning element types. No compiler
+change was required. Regression coverage:
+`test/constraints.test.ts` (`owning element type at verifies under a
+return-guard`). The entry was removed from FOLLOWUP.md.
