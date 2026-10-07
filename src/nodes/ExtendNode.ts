@@ -3,13 +3,18 @@ import FunctionNode from "./FunctionNode.ts";
 import Type from "./Type.ts";
 
 /**
- * An `extend struct Name { ... }` / `extend class Name { ... }` declaration.
+ * An `extend struct Name { ... }` declaration.
  *
- * Adds methods (the `functions` below) to an already-declared struct/class
- * named `name`. The check phase merges `functions` into the target struct's
- * own `functions` array, after which they behave identically to methods
- * declared inside the original body — same dispatch, same visibility, same
- * codegen (`<Struct>_<method>`).
+ * Adds methods (the `functions` below) to an already-declared struct named
+ * `name`. The check phase merges `functions` into the target struct's own
+ * `functions` array, after which they behave identically to methods declared
+ * inside the original body — same dispatch, same visibility, same codegen
+ * (`<Struct>_<method>`).
+ *
+ * `is_class` is transition-era plumbing (STRUCT_PLAN_3 Phase R): `extend
+ * class` retired, so parsing never sets it — it only matters when the
+ * target is a compiler-stamped heap wrapper (`Box<T>`), which cannot be
+ * extended as a struct.
  *
  * Only methods may be added. Fields would change the type's layout, which a
  * value-type language cannot do out of line.

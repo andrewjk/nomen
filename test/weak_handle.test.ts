@@ -161,7 +161,7 @@ var P p = P(1)
 var WeakHandle<P> h = WeakHandle<P>(p)
 `;
 		const messages = check(input).map((e) => e.message);
-		expect(messages.some((m) => m.includes("tracks a class instance"))).toBe(true);
+		expect(messages.some((m) => m.includes("tracks a heap-resident instance"))).toBe(true);
 	});
 
 	test("a handle is not re-pointed (binds once at the declaration)", () => {

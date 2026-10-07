@@ -48,7 +48,7 @@ export default function parse_visibility(
 			const kind = status.tokens[status.i + 2]?.value;
 			if (kind === "struct") {
 				consume(status); // owning
-				parse_struct(visibility, status, false, true);
+				parse_struct(visibility, status, true);
 			} else if (kind === "enum") {
 				consume(status); // owning
 				parse_enum(visibility, status, true);
@@ -68,7 +68,7 @@ export default function parse_visibility(
 			// struct` (no cascade).
 			consume(status); // the visibility — parse_struct takes it as a param
 			class_retired_error(status);
-			parse_struct(visibility, status, false, true);
+			parse_struct(visibility, status, true);
 			break;
 		}
 		case "extend": {

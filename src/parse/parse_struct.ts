@@ -16,16 +16,14 @@ import get_index from "./utils/get_index.ts";
 export default function parse_struct(
 	visibility: "pub" | "private" | "internal",
 	status: ParseStatus,
-	is_class = false,
 	is_owning = false,
 ) {
 	const start = get_index(status);
 	accept(visibility, status);
 	if (is_owning) accept("owning", status);
-	accept(is_class ? "class" : "struct", status);
+	accept("struct", status);
 	const name = consume_name(status);
 	const struct = new StructNode(start, visibility, name);
-	if (is_class) struct.is_class = true;
 	if (is_owning) struct.is_owning = true;
 
 	if (accept("<", status)) {

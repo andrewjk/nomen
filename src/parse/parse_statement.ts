@@ -82,7 +82,7 @@ export default function parse_statement(status: ParseStatus) {
 				const kind = status.tokens[status.i + 1]?.value;
 				if (kind === "struct") {
 					consume(status);
-					parse_struct(default_visibility(status), status, false, true);
+					parse_struct(default_visibility(status), status, true);
 					break;
 				}
 				if (kind === "enum") {
@@ -96,7 +96,7 @@ export default function parse_statement(status: ParseStatus) {
 						consume(status); // owning
 						consume(status); // visibility
 						if (kind2 === "struct") {
-							parse_struct(kind as "pub" | "private" | "internal", status, false, true);
+							parse_struct(kind as "pub" | "private" | "internal", status, true);
 						} else {
 							parse_enum(kind as "pub" | "private" | "internal", status, true);
 						}
@@ -115,7 +115,7 @@ export default function parse_statement(status: ParseStatus) {
 				// error, then the declaration continues as an `owning
 				// struct` (no cascade).
 				class_retired_error(status);
-				parse_struct(default_visibility(status), status, false, true);
+				parse_struct(default_visibility(status), status, true);
 				break;
 			}
 			case "extend": {

@@ -162,14 +162,39 @@ struct` (single-owner, move-only) and spell sharing where it happens
     `parse_extend`'s class branch continues as a struct extend (the
     `extend`-target `is_class` match in `apply_extensions` holds — both
     sides parse as structs now). The visibility-default error drops `class`
-    from its keyword list. `class` REMAINS a keyword in `keywords.ts` — the
-    lexer still produces it so the retirement error can fire; ripping the
-    token out is post-R cleanup. En route: the checker's "cannot assign
+    from its keyword list. `class` REMAINS a keyword in `keywords.ts` —
+    decided in the post-R cleanup (2026-10-07): it stays so `class X { … }`
+    lexes for the parser's dedicated retirement error instead of cascading
+    through the expression path (removing the token would trade one clear
+    error for garbage). En route: the checker's "cannot assign
     class field" error now reads "cannot assign owning field" (one test
     name updated), and `extend`'s `is_class` plumbing stays for the
     transition era. Covered by `test/class_retired.test.ts` (bare,
     visibility-prefixed, `extend class`, and the no-cascade owning-field
     continuation).
+  - **Post-R cleanup: LANDED (2026-10-07).** The dead transition-era
+    plumbing the flip orphaned: `parse_struct`'s `is_class` parameter is
+    gone (no declaration spelling sets `StructNode.is_class` anymore — its
+    doc now states the Box-stamp contract), the unreachable `class-type
+fields must use 'move'` check in `check_declaration_node` is deleted
+    (`is_class_type` minus `is_box_type` is the empty set post-flip), and
+    `default_visibility` drops the never-constructed `node_type "class"`
+    arm. `ExtendNode.is_class`/`apply_extensions` keep their guard (it now
+    only rejects extending the compiler-stamped `Box<T>` wrapper as a
+    struct; the message's dead `ext.is_class` interpolation is gone).
+    Stale "class" wording in user-facing diagnostics rewritten to the
+    owning-struct/heap-instance vocabulary: the ref-alias error ("binds an
+    alias to a heap-resident instance (a Box<T>)"), the WeakHandle ctor
+    error ("tracks a heap-resident instance (a Box<T>)"), the return-param
+    error ("heap-instance parameter … shared ownership"), the capturing-
+    closure-in-value-struct advice ("declare the struct `owning` instead"
+    — classes retired, and owning structs CAN hold capturing func fields),
+    and the struct ref-field error (plain "struct fields cannot be 'ref'";
+    the class branch was Box-only and unreachable from user declarations).
+    Test assertions updated (ref_binding, weak_handle). `parse.ts`'s
+    user-defined-type scanner and the formatter's keyword lists keep
+    `class` (token-level: a legacy declaration still declares the type and
+    must shadow the library's).
   - **The bench corpus migration: LANDED (2026-10-07).** The three Nomen
     sources under `bench/` (`test.nm`, `nomen/binarytrees.nm`,
     `nomen/merkletrees.nm`) were the last `class` declarations in the repo;

@@ -273,7 +273,7 @@ ref P r = origin
 		const expected = [
 			test_error(
 				input,
-				"'ref' binds an alias to a reference type (class); use 'view' for a slice of 'P'",
+				"'ref' binds an alias to a heap-resident instance (a Box<T>); use 'view' for a slice of 'P'",
 				6,
 				1,
 			),

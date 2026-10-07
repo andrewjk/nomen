@@ -599,17 +599,18 @@ function register_emission_name(func: FunctionNode, taken: Set<string>) {
 }
 
 /**
- * Merge each top-level `extend struct Name { ... }` / `extend class Name`
- * block's methods — and any `: Trait1, Trait2` out-of-line conformances —
- * into the named target struct.
+ * Merge each top-level `extend struct Name { ... }` block's methods — and
+ * any `: Trait1, Trait2` out-of-line conformances — into the named target
+ * struct.
  *
  * The target must already be registered (gather_structs ran first), and the
- * extend's `is_class` flag must match the target's — `extend class` is only
- * valid on a class, `extend struct` only on a struct. After merging, the
- * methods are indistinguishable from methods declared in the original body:
- * check_struct_node checks them (including its duplicate-name guard, so an
- * extend that redeclares an existing method errors), and the build emits them
- * as `<Struct>_<method>`.
+ * extend's `is_class` flag must match the target's — `extend class` retired
+ * (STRUCT_PLAN_3 Phase R), so parsing never sets it; the match now only
+ * rejects extending a compiler-stamped heap wrapper (`Box<T>`) as a struct.
+ * After merging, the methods are indistinguishable from methods declared in
+ * the original body: check_struct_node checks them (including its
+ * duplicate-name guard, so an extend that redeclares an existing method
+ * errors), and the build emits them as `<Struct>_<method>`.
  *
  * Methods added here are also reachable through trait dispatch when the
  * struct conforms — nothing else needs to know they came from an extend.
@@ -634,7 +635,10 @@ function apply_extensions(block: BlockNode, status: CheckStatus) {
 		if (!!target.is_class !== !!ext.is_class) {
 			add_error(
 				status,
-				`Cannot extend ${target.is_class ? "class" : "struct"} '${ext.name}' with extend ${ext.is_class ? "class" : "struct"}`,
+				// `extend class` retired (STRUCT_PLAN_3 Phase R) — parsing never
+				// sets `ext.is_class`, so this only fires when the target is a
+				// compiler-stamped heap wrapper (`Box<T>`).
+				`Cannot extend ${target.is_class ? "class" : "struct"} '${ext.name}' with extend struct`,
 				ext.start,
 			);
 			continue;

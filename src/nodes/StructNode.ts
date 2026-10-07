@@ -31,6 +31,10 @@ export default class StructNode extends BaseNode {
 	type_param_bounds: string[][];
 	is_simple_type: boolean;
 	is_generic?: boolean;
+	/** Heap-instance storage stamp (STRUCT_PLAN_3 Phase R): no declaration
+	 *  spelling sets it anymore (`class` retired) — only the compiler does,
+	 *  for the `Box<T>` wrapper, whose runtime representation is one pointer
+	 *  to a heap instance. `monomorphize` copies it into the `Box_<T>` monos. */
 	is_class?: boolean;
 	/** Declared `owning struct` (STRUCT_PLAN_3 B1): bindings move instead of
 	 *  copy, and the declared flag WINS over the inferred ownership walk. */

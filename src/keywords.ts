@@ -9,6 +9,9 @@ export const KEYWORDS = new Set([
 	"internal",
 	"readonly",
 	"struct",
+	// Retired (STRUCT_PLAN_3 Phase R) but kept a keyword so `class X { … }`
+	// lexes for the parser's dedicated retirement error instead of cascading
+	// through the expression path.
 	"class",
 	"trait",
 	"enum",

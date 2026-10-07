@@ -142,11 +142,7 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 		// form (`view v = ...`) is accepted too; its type only becomes a view
 		// after inference.
 		if (decl.type.is_ref) {
-			add_error(
-				status,
-				`${struct.is_class ? "class" : "struct"} fields cannot be 'ref'`,
-				decl.start,
-			);
+			add_error(status, `struct fields cannot be 'ref'`, decl.start);
 			continue;
 		}
 		// A func-typed field (e.g. `pub var func (int, out bool) test`) stores

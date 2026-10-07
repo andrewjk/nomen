@@ -1721,7 +1721,7 @@ function check_weak_ctor(node: FunctionCallNode, status: CheckStatus): boolean {
 	if (!obj_type.name || !is_class_type(obj_type.name, status)) {
 		add_error(
 			status,
-			`WeakHandle<T> tracks a class instance — '${obj_type.name || "<unknown>"}' is not a class`,
+			`WeakHandle<T> tracks a heap-resident instance (a Box<T>) — '${obj_type.name || "<unknown>"}' is not one`,
 			obj.start,
 		);
 		return false;

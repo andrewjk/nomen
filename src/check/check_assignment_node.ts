@@ -714,7 +714,7 @@ export default function check_assignment_node(
 				) {
 					add_error(
 						status,
-						`cannot store a capturing closure in func field '${field_access.name}' of value struct '${target_type.name}' — value structs are copyable and would share the descriptor; use a class instead`,
+						`cannot store a capturing closure in func field '${field_access.name}' of value struct '${target_type.name}' — value structs are copyable and would share the descriptor; declare the struct \`owning\` instead`,
 						assign.right_value.start,
 					);
 					return false;

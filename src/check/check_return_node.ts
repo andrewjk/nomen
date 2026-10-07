@@ -115,7 +115,7 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 			if (param && is_class_type(param.type.name, status) && !param.is_moved) {
 				add_error(
 					status,
-					`Cannot return class parameter '${param.name}' without 'move' — would create shared reference`,
+					`Cannot return heap-instance parameter '${param.name}' without 'move' — would create shared ownership`,
 					ret.value.start,
 				);
 			}
