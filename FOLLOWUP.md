@@ -316,11 +316,6 @@ work and is out of its scope:
   body** — `Console.write_line("destroy \{self.name}")` emits the raw
   literal `destroy {self.name}` (the interpolation machinery never runs in
   the destroy body build). The C backend lowers the same body correctly.
-- **aarch64: string interpolation of a nullable-box member** —
-  `Console.write_line("\{b.value}")` where `b` is `Box<T>?` emits the raw
-  literal `{b.value}` (B2-era; the C backend lowers it). Works after an
-  `!= null` narrowing on some paths; the failing shape is a direct
-  nullable-receiver member interpolate. `.to_string()` avoids it.
 - **`List<OwningStruct>.at(i)` fails constraint verification** —
   "Parameter constraint cannot be verified: i / i >= 0 && i < self.length"
   (the at-vs-pop classification area A1 called out; owning element types

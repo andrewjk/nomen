@@ -108,6 +108,41 @@ pub func main = () {
 		}
 	});
 
+	test("a nullable box returned from an accessor reads through transparently", async () => {
+		const input = `
+import System
+owning struct Node {
+	var int value
+}
+struct Store {
+	var List<Box<Node>> items = List<Box<Node>>()
+	func add = (ref self, move Box<Node> n) {
+		self.items.push(move n)
+	}
+	func get = (ref self, int i, out Box<Node>?) {
+		if i < self.items.length {
+			return self.items.at_or_panic(i)
+		}
+		return null
+	}
+}
+pub func main = () {
+	var Store s = Store()
+	var Node a = Node(7)
+	s.add(Box<Node>(move a))
+	var Node b = Node(9)
+	s.add(Box<Node>(move b))
+	Console.write_line("\\{s.get(1).value}")
+}
+`;
+		const parsed = parse_raw(input);
+		expect(parsed.errors).toEqual([]);
+		for (const arch of ["c", "aarch64"] as const) {
+			const built = build(parsed.root, { arch, audit: true });
+			await check_output("box_call_result_" + arch, built, "9\n", { arch, audit: true });
+		}
+	});
+
 	test("a boxed chain reads through two levels of transparency", async () => {
 		const input = `
 import System

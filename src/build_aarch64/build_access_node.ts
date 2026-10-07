@@ -1563,8 +1563,17 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		// would read the struct's first word and treat it as a pointer — the
 		// arena `.children.length` read. Same rule as the class-crossing
 		// branch below.
+		// Resolve the MONO for a generic call-result target (`Box<Node>` →
+		// `Box_Node`): the bare generic's field list is unsubstituted, so a
+		// `__value` hop would resolve to the type parameter `T` and fall down
+		// the scalar path — reading the pointee's `_vt` as a pointer (a crash
+		// for a box returned from a call, e.g. `list.at(i).v`). Mirrors the
+		// class-crossing branch's mono resolution below.
+		const method_target_name = target_type?.type_args?.length
+			? mono_type_name(target_type)
+			: target_type?.name || "";
 		const method_field_decl_type = status.structs
-			.find((s) => s.name === (target_type?.name || "") && !s.is_simple_type)
+			.find((s) => s.name === method_target_name && !s.is_simple_type)
 			?.fields.find((f) => f.name === access_field.name)?.type;
 		const method_field_type = method_field_decl_type ?? access_field.type;
 		const method_field_name = method_field_type?.type_args?.length

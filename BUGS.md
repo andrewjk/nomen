@@ -341,3 +341,29 @@ body, which defers), it reports
 `Cannot infer type arguments for <Generic> — spell them` instead of emitting the
 unresolvable generic init call. Covered by
 `test/owning_decl.test.ts` (`generic_inferred_ctor`), both backends.
+
+## 12. aarch64: transparent `Box<T>` member access on a call result mis-lowers
+
+**Seen on `main` (recorded 2026-10-06, B5/B6 tranche; aarch64 only — C was
+correct).** A `Box<T>` value returned from a call — e.g. `list.at(i).v` or
+`store.find(i).v` — read through transparent box access (`b.v` →
+`b.__value.v`) crashed the aarch64 binary (SIGSEGV). It surfaced while
+interpolating the member (`Console.write_line("\{s.get(1).value}")`), which is
+why it was filed as "string interpolation of a nullable-box member"; the
+interpolation itself lowered fine and the crash was in the member read.
+
+Root cause: `build_access_node`'s method-call-result branch (`points.at(0).x`)
+looked up the accessed field's declaration by the **bare** target type name
+(`target_type.name`). For a generic target (`Box<Node>?`) that is `Box`, whose
+field list is unsubstituted — the `__value` hop resolved to the type parameter
+`T`, not the concrete `Node`, so it fell down the scalar path and loaded the
+pointee's `_vt` as a pointer (the second load then dereferenced it). The
+class-crossing branch already resolved the mono (`Box` → `Box_Node`); the
+method-access branch did not.
+
+**Fix:** in the method-access branch, resolve the monomorphized target name
+(`target_type.type_args?.length ? mono_type_name(target_type) : target_type.name`)
+before looking up the field declaration — mirroring the class-crossing branch.
+A struct-typed `__value` then takes the inline-address path
+(`add x0, x0, #off`) instead of a scalar load. Covered by
+`test/box.test.ts` (`box_call_result_{c,aarch64}`), both backends.
