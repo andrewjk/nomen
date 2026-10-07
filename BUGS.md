@@ -446,3 +446,26 @@ both read straight through a possibly-null pointer. The may-be-null check
   `var w = Wrapper(Config("a")); w.c.name` stay legal. Covered by
   `test/nullable.test.ts` ("nullable base member access (null tracking)"), both
   backends.
+
+## 16. aarch64: the nursery join clobbers whole-function-promoted registers
+
+**Seen on `main` (recorded 2026-10-06, Phase R tranche 3; aarch64 only — C was
+correct).** The 64-fiber `tcp_scale` program (`test/tcp.test.ts`, was
+`test.skip`) hung forever in the main thread's `Channel.receive`
+(`__nomen_fiber_waitq_park` → `pthread_cond_wait`): the async block joined, all
+64 client fibers ran to completion and sent their `done.send(1)`, yet main
+waited for one more message. The channel queue was empty, no fibers were live,
+and the netpoller had no registered fd.
+
+Root cause: whole-function register promotion (`plan_function_promotions`,
+X_POOL `x23-x28`) promoted the loop bound `n` (= 64) into **x23**, and the
+nursery join (`emit_nursery_join_a64`) uses x20/x22/x23 as scratch across its
+`bl`s. The join's counter overwrote `n` with the nursery's FUTURE COUNT (65 =
+server_loop + 64 clients), so the receive loop `while i < n` ran 65 times —
+waiting for a 65th message that never arrives. The join's old contract
+("nothing live across a join") predated whole-function promotion.
+
+**Fix:** `emit_nursery_join_a64` now saves x20/x22/x23 around the join
+(`stp x20, x22` + `str x23` on entry, restored after the futures-list free), so
+a promoted local survives. The 64-fiber test is un-skipped and green on both
+backends (`test/out/{aarch64,c}/tcp_scale/output.txt`).

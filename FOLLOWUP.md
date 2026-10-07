@@ -307,29 +307,6 @@ enum-with-data value-struct payload crashes at the match binding) — B1a's
 owning-enum semantics are proven on C; on aarch64 use a class payload until
 #9 is fixed.
 
-## aarch64: tcp_scale (64 fiber connections) hangs in a parked receive (pre-existing)
-
-Found 2026-10-06 during Phase R tranche 3; **reproduces on clean `main` at
-64afe02b** (verified in a separate worktree — same 60 s vitest timeout), so it
-predates the tranche. The C backend runs the same program green
-(`echoed 64/64`). The hung binary's main thread sits in
-`__nomen_fiber_waitq_park` under `Channel.receive`
-(`.Lchannel_receive_wait` → `pthread_cond_wait`): main waits for the 64
-clients' `done.send(n)` results and at least one wake never arrives — a lost
-fiber-wake rendezvous in the many-senders shape (each client fiber sends once
-from a pool worker; the send side signals the parked receiver's wait list
-under `mu`).
-
-Two operational consequences worth knowing while it reproduces:
-
-- The hung binary outlives the killed test and keeps port 18100 bound, so
-  every later tcp_scale run fails fast with `listen failed` until the stray
-  `test/out/aarch64/tcp_scale/main.out` is killed (`pkill -f
-tcp_scale/main.out`). Kill it before diagnosing anything else in the file.
-- `build_and_check_output` runs aarch64 first, so the hang masks the C
-  variant's result in the same test invocation; run with the order flipped
-  (or the aarch64 artifact removed) to see the C side.
-
 ## Root-scope owning-struct globals (Phase R tranche 3 note)
 
 The tranche extended the BUGS.md #5 shape to owning structs: `var Channel

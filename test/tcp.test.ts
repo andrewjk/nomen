@@ -66,10 +66,12 @@ pub func main = () {
 		await build_and_check_output(input, "tcp_refused", "connect error 3\n", true);
 	});
 
-	// SKIP (aarch64, PRE-EXISTING): the 64-fiber tcp_scale hangs in a parked
-	// receive — reproduces on clean main (FOLLOWUP "aarch64: tcp_scale
-	// (64 fiber connections) hangs"). The C backend runs it green.
-	test.skip("many concurrent fiber connections echo on few workers", async () => {
+	// The Phase 3 acceptance shape: N sockets in flight, handled by fibers that
+	// park on the netpoller (not by N blocked threads). The 64-fiber aarch64
+	// shape used to hang: the nursery join's scratch registers (x20/x22/x23)
+	// clobbered a whole-function-promoted local (`n`, reused as the receive
+	// loop bound), so the join waited one message too many (BUGS.md #16).
+	test("many concurrent fiber connections echo on few workers", async () => {
 		// The Phase 3 acceptance shape: N sockets in flight, handled by
 		// fibers that park on the netpoller (not by N blocked threads).
 		const input = `

@@ -159,6 +159,16 @@ export function emit_nursery_join_a64(status: BuildStatus, id: number, label_pre
 	const loop_release = `${label_prefix}_release`;
 	const no_list = `${label_prefix}_no_list`;
 
+	// The join uses x20/x22/x23 as scratch ACROSS `bl`s (callee-saved), but
+	// those registers may hold live WHOLE-FUNCTION-PROMOTED locals (x23-x28
+	// pool) or struct-param registers (x19-x22 pool) — the old "nothing live
+	// across a join" assumption held only before whole-function promotion.
+	// Save/restore them so a promoted local (e.g. `n` reused as the loop
+	// bound after the join) survives. x0-x3 are caller-saved and by
+	// convention dead across the join.
+	emit_asm(status, `stp x20, x22, [sp, #-16]!\n`);
+	emit_asm(status, `str x23, [sp, #-16]!\n`);
+
 	emit_asm(status, `ldr x20, [x29, #${futures_off}]\n`); // x20 = futures (heap)
 	emit_asm(status, `ldr w22, [x29, #${count_off}]\n`); // w22 = count
 
@@ -220,6 +230,8 @@ export function emit_nursery_join_a64(status: BuildStatus, id: number, label_pre
 	emit_asm(status, `cbz x0, ${no_list}\n`);
 	emit_asm(status, `bl _free\n`);
 	emit_asm(status, `${no_list}:\n`);
+	emit_asm(status, `ldr x23, [sp], #16\n`);
+	emit_asm(status, `ldp x20, x22, [sp], #16\n`);
 }
 
 let retjoin_counter = 0;
