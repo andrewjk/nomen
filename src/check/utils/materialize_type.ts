@@ -1,7 +1,7 @@
 import { mono_type_name } from "../../build_common/mono_name.ts";
 import Type from "../../nodes/Type.ts";
-import type CheckStatus from "../CheckStatus.ts";
 import { instantiate_generic_type } from "../check_function_call_node.ts";
+import type CheckStatus from "../CheckStatus.ts";
 import { materialize_anon_enum_type } from "./anon_enum.ts";
 import { materialize_tuple_type } from "./tuple_struct.ts";
 

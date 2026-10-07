@@ -1,7 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
 
 import build_and_check_output from "./build_and_check_output";
-import check_output from "./check_output";
 import { parse_raw } from "./parse_with_imports";
 
 // CLOSURE.md Phase 3d, ASYNC.md: the spawn sugar's packed env is

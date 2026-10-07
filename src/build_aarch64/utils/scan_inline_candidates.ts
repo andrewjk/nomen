@@ -138,11 +138,6 @@ export function is_auto_inline_method(func: FunctionNode, depth = 0): boolean {
 	return body_calls_splice_through(func.statements, depth);
 }
 
-/** Whether the subtree contains any call (method or function). */
-function body_has_call(node: BaseNode | BaseNode[] | null | undefined): boolean {
-	return body_calls(node);
-}
-
 function body_calls(node: BaseNode | BaseNode[] | null | undefined): boolean {
 	if (!node) return false;
 	if (Array.isArray(node)) {

@@ -1,5 +1,5 @@
-import { mono_type_name } from "../../build_common/mono_name.ts";
 import add_error from "../../add_error.ts";
+import { mono_type_name } from "../../build_common/mono_name.ts";
 import type BaseNode from "../../nodes/BaseNode.ts";
 import type FunctionNode from "../../nodes/FunctionNode.ts";
 import type Type from "../../nodes/Type.ts";

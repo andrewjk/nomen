@@ -5,7 +5,6 @@ import { describe, expect, test } from "vite-plus/test";
 import { get_library } from "../src/lib";
 import parse from "../src/parse";
 import build_and_check_output from "./build_and_check_output";
-import test_error from "./test_error";
 
 // STRUCT_PLAN_3 Phase N N4 — Atomic<T>: a lock-free protected slot for
 // 64-bit integer state shared across tasks. A type may be mutated through a

@@ -1322,7 +1322,10 @@ export default function build_assignment_node(
 			if (lhs_type?.name && !lhs_type.is_array && lhs_type.name !== "string") {
 				const mono = mono_type_name(lhs_type);
 				const destroy_struct = status.structs.find((s) => s.name === mono && !s.is_generic);
-				if (destroy_struct && (has_destroy(destroy_struct) || struct_needs_auto_destroy(destroy_struct, status))) {
+				if (
+					destroy_struct &&
+					(has_destroy(destroy_struct) || struct_needs_auto_destroy(destroy_struct, status))
+				) {
 					status.code += `${mono}_destroy(*${lhs_name});\n`;
 				}
 			}

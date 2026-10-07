@@ -469,3 +469,38 @@ waiting for a 65th message that never arrives. The join's old contract
 (`stp x20, x22` + `str x23` on entry, restored after the futures-list free), so
 a promoted local survives. The 64-fiber test is un-skipped and green on both
 backends (`test/out/{aarch64,c}/tcp_scale/output.txt`).
+
+## 17. Lint/type findings hidden behind `vp check`'s formatting gate
+
+**Seen on `main` (recorded 2026-10-04, swept 2026-10-07).** `vp check` aborts
+at the FORMATTING stage whenever any file has drifted, so the lint/type stage
+behind it never ran and findings accumulated unnoticed. The sweep (all files
+reformatted, then the stage's findings fixed) surfaced 4 type errors and ~25
+lint warnings. The ones that were more than hygiene:
+
+- **`ElemDesc`'s `load`/`store` unions lagged tranche 2** (`src/build_aarch64/
+neon_plan.ts`): the element-descriptor table includes the byte lane
+  (`load_u8`/`store_u8`, `.16b`), but the interface's string-literal unions
+  were never widened — both TS2322/TS2820. The emitters drive off
+  `arr`/`group_elems`/`float` (all correct for the `16b` entry), so this was
+  a stale type, not a codegen bug; the unions now name `load_u8`/`store_u8`.
+- **A null-named leaf index in a vectorizable loop lane** took the
+  `.get(null)` path in `neon_plan.ts`'s method-call walk (TS2345): it
+  happened to reject (map miss → `return null`), but only by accident of the
+  type error being ignored at runtime. Now explicitly `return null` on a null
+  leaf name before the induction comparison — same behavior, stated intent.
+- **Dead `body_has_call` wrapper** in `src/build_aarch64/utils/
+scan_inline_candidates.ts` (a thin alias of `body_calls`, unreferenced) —
+  removed.
+- **`new Array(files.length)`** in `cli/src/test.ts`'s test-runner pool
+  (results collected by index) → `Array.from<TestFileResult>({ length })`,
+  removing the length-vs-single-element ambiguity.
+- Test hygiene: unused imports/vars across ~12 test files (including two dead
+  `SYSTEM_SRC`/`SYSTEM_SRC_A64` consts in `test/system_lib.ts` — duplicates of
+  `system_paths()`, which already handles the `.m`/`.c` platform split), a
+  dead `check` helper and type alias, and the ANSI-strip regex in
+  `test/test_reporter.test.ts` built via `String.fromCharCode(27)` instead of
+  a literal control-character escape (`no-control-regex`).
+
+`vp check` now passes with zero findings (format + lint + type). No runtime
+behavior change — the full suite is green on both backends.

@@ -1356,14 +1356,15 @@ export default function build_assignment_node(
 					// counts them).
 					// The ref param's referent type: params are not in
 					// scoped_declarations — read the body's param-type map.
-					const ref_param_type =
-						status.function_param_types?.get(name) ?? new Type(lhs_type_name);
+					const ref_param_type = status.function_param_types?.get(name) ?? new Type(lhs_type_name);
 					const referent_struct = status.structs.find(
-						(s) =>
-							s.name === ref_param_type.name && !s.is_simple_type && !s.is_class,
+						(s) => s.name === ref_param_type.name && !s.is_simple_type && !s.is_class,
 					);
 					if (referent_struct) {
-						if (has_destroy(referent_struct) || struct_needs_auto_destroy(referent_struct, status)) {
+						if (
+							has_destroy(referent_struct) ||
+							struct_needs_auto_destroy(referent_struct, status)
+						) {
 							emit_asm(status, `str x0, [sp, #-16]!\n`);
 							emit_asm(status, `mov x0, ${paramReg}\n`);
 							emit_asm(status, `bl ${referent_struct.name}_destroy\n`);

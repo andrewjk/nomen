@@ -716,7 +716,7 @@ export async function runTests(root: string, options: RunTestsOptions = {}): Pro
 	// discovery order regardless of completion order (and stdout isn't
 	// interleaved).
 	const jobs = Math.max(1, Math.min(options.jobs ?? default_jobs(), files.length));
-	const results: TestFileResult[] = new Array(files.length);
+	const results: TestFileResult[] = Array.from<TestFileResult>({ length: files.length });
 	let next = 0;
 	const worker = async (): Promise<void> => {
 		for (;;) {

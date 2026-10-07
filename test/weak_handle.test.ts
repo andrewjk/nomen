@@ -8,7 +8,6 @@ import parse from "../src/parse";
 import build_and_check_output from "./build_and_check_output";
 import check_output from "./check_output";
 import { parse_raw } from "./parse_with_imports";
-import test_error from "./test_error";
 
 // STRUCT_PLAN_3 Phase N N3 — WeakHandle<T>: a checked, generation-validated
 // handle to a possibly-gone object. The registry is one process-wide
@@ -37,7 +36,6 @@ owning struct Cell {
 // the stable-address heap handle, so the registry's (pointer, generation)
 // slot has a sound subject. Tracking an inline owning struct's storage (the
 // N3 value-T lowering) is future work — see FOLLOWUP.md.
-type W = "Box<Cell>";
 
 describe("WeakHandle: runtime", () => {
 	test("a live handle reads the instance (both backends)", async () => {

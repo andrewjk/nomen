@@ -721,20 +721,20 @@ export default function check_function_call(
 						`Use a 'ref ${param_type.name}[]' parameter, or pass a heap 'Array<${param_type.name}>' variable`,
 					param.start,
 				);
-		} else if (
-			!func_param.type.is_ref &&
-			arg_is_stack_array_var &&
-			elem_struct &&
-			(elem_struct.is_class || !!(elem_struct as { is_owning?: boolean }).is_owning)
-		) {
-			add_error(
-				status,
-				`Cannot pass a stack array of owning '${param_type.name}' instances to 'Array<${param_type.name}>' parameter '${func_param.name}' — ` +
-					`the materialised heap copy would share the instances with the caller's array (double free). ` +
-					`Build the heap array from fresh instances: pass an array literal, or use 'var Array<${param_type.name}>'`,
-				param.start,
-			);
-		} else if (
+			} else if (
+				!func_param.type.is_ref &&
+				arg_is_stack_array_var &&
+				elem_struct &&
+				(elem_struct.is_class || !!(elem_struct as { is_owning?: boolean }).is_owning)
+			) {
+				add_error(
+					status,
+					`Cannot pass a stack array of owning '${param_type.name}' instances to 'Array<${param_type.name}>' parameter '${func_param.name}' — ` +
+						`the materialised heap copy would share the instances with the caller's array (double free). ` +
+						`Build the heap array from fresh instances: pass an array literal, or use 'var Array<${param_type.name}>'`,
+					param.start,
+				);
+			} else if (
 				!func_param.type.is_ref &&
 				(arg_is_stack_array_var || arg_is_literal) &&
 				elem_struct &&

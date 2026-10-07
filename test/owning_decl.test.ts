@@ -4,10 +4,6 @@ import parse from "../src/parse";
 import build_and_check_output from "./build_and_check_output";
 import test_error from "./test_error";
 
-function check(source: string) {
-	return parse(source).errors;
-}
-
 // STRUCT_PLAN_3 Phase B B1/B1a — declared ownership. `owning struct X` /
 // `owning enum X` declare the type move-only: bindings move instead of copy,
 // and the declared flag WINS over the inferred ownership walk (a string-only

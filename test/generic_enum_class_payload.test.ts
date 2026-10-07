@@ -124,10 +124,8 @@ pub func main = (Init init) {
 		// Post-R the payload is an owning STRUCT — a bare field read is a
 		// copy of the field's owned state, rejected like the declaration
 		// side's copy rule.
-		expect(
-			parsed.errors.some((e) =>
-				e.message.includes("cannot pass a field read to case"),
-			),
-		).toBe(true);
+		expect(parsed.errors.some((e) => e.message.includes("cannot pass a field read to case"))).toBe(
+			true,
+		);
 	});
 });

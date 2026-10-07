@@ -77,9 +77,9 @@ Console.write("\\{p.a}:\\{p.b}")
 	await build_and_check_output(input, "buffer_modify_trivial_struct", "11:2");
 });
 
-	// SKIP: ClassBuffer<T>.modify's class-element specialization needs
-	// Box-aware displaced reclaim (the stale free fires for Box elements).
-	// See FOLLOWUP.md.
+// SKIP: ClassBuffer<T>.modify's class-element specialization needs
+// Box-aware displaced reclaim (the stale free fires for Box elements).
+// See FOLLOWUP.md.
 test.skip("ClassBuffer.modify class element", async () => {
 	// ClassBuffer<T> stores pointer elements — the R shape is a Box<T>
 	// element (owning struct elements are inline and retire with the class

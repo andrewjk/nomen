@@ -117,8 +117,8 @@ pub func main = (Init init) {
 		// `return self.first` reads an OWNING field by value — the box copy
 		// shares the pointee with the field (both destroy it). Rejected like
 		// the declaration side's copy rule.
-		expect(
-			parsed.errors.some((e) => e.message.includes("cannot copy 'Box' out of field")),
-		).toBe(true);
+		expect(parsed.errors.some((e) => e.message.includes("cannot copy 'Box' out of field"))).toBe(
+			true,
+		);
 	});
 });

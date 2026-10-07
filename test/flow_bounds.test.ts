@@ -1,9 +1,5 @@
 import { expect, describe, test } from "vite-plus/test";
 
-import {
-	frame_slot_store_store_kill_enabled,
-	set_frame_slot_store_store_kill_enabled,
-} from "../src/build_aarch64/asm_opt";
 import build_and_check_output from "./build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 

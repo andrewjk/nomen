@@ -115,8 +115,8 @@ const MIN_TRIP = 8;
  * both the limit computation and the induction sync.
  */
 export interface ElemDesc {
-	readonly load: "load_float" | "load_int" | "load_u32";
-	readonly store: "store_float" | "store_int" | "store_u32";
+	readonly load: "load_float" | "load_int" | "load_u32" | "load_u8";
+	readonly store: "store_float" | "store_int" | "store_u32" | "store_u8";
 	readonly float: boolean;
 	/** Arrangement for add/sub/mul lanes. */
 	readonly arr: "2d" | "4s" | "16b";
@@ -581,6 +581,7 @@ function lane_expr(
 			const idx = e.facts.args[0];
 			let shift = 0;
 			if (idx.kind === "leaf") {
+				if (idx.name === null) return null;
 				if (idx.name !== induction) {
 					// Arg hoisting may have parked a shifted index in a
 					// call-arg temp (`_param_N = i + c`): resolve it.

@@ -98,9 +98,7 @@ owning struct Holder {
 `;
 			const parsed = parse(input);
 			expect(
-				parsed.errors.some((e) =>
-					e.message.includes("a trait-typed field is not supported yet"),
-				),
+				parsed.errors.some((e) => e.message.includes("a trait-typed field is not supported yet")),
 			).toBe(true);
 		});
 	});

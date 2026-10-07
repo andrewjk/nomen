@@ -100,7 +100,8 @@ describe("nomen test failure report labels", () => {
 				],
 			}),
 		);
-		const plain = lines.join("\n").replace(/\x1b\[[0-9;]*m/g, "");
+		const ansi = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
+		const plain = lines.join("\n").replace(ansi, "");
 		expect(plain).toContain("b leaked 255 allocation(s)");
 		expect(plain).toContain("a leaked 1 allocation(s)");
 	});

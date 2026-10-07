@@ -57,11 +57,6 @@ export function system_paths(arch: "c" | "aarch64", audit: boolean) {
 // C backend (audited — the default variant)
 export const SYSTEM_OBJ = path.join(SYSTEM_LIB_DIR, "c", "system.o");
 export const SYSTEM_H = path.join(SYSTEM_LIB_DIR, "c", "system.h");
-const SYSTEM_SRC = path.join(
-	SYSTEM_LIB_DIR,
-	"c",
-	`system${process.platform === "darwin" ? ".m" : ".c"}`,
-);
 export const SYSTEM_HASH = path.join(SYSTEM_LIB_DIR, "c", ".hash");
 /** Struct names defined in system.o (C). Test builds emit any struct NOT in
  *  this set into the user TU, so a generic/tuple the canonical didn't
@@ -74,7 +69,6 @@ export const SYSTEM_OBJ_A64 = path.join(SYSTEM_LIB_DIR, "aarch64", "system.o");
  *  functions, e.g. Stream/Tcp's socket helpers). Linked next to system.o —
  *  the runtime is NOT here, so the user companion stays the single copy. */
 export const SYSTEM_COMPANION_A64 = path.join(SYSTEM_LIB_DIR, "aarch64", "system_companion.o");
-const SYSTEM_SRC_A64 = path.join(SYSTEM_LIB_DIR, "aarch64", "system.s");
 export const SYSTEM_HASH_A64 = path.join(SYSTEM_LIB_DIR, "aarch64", ".hash");
 /** Function names exported by the aarch64 system object. The user TU's
  *  references to these are rewritten to the `_name` alias (Mach-O convention). */
