@@ -311,3 +311,33 @@ donor's address, the root rule bounds the donor's scope, and the freeze keeps
 the donor itself const while the callee mutates through the ref. Outside a
 nursery the pack keeps the env copy (no join to bound a borrow — the same
 posture as bare owning args).
+
+## 11. Generic construction without call-site type args links against the generic's init
+
+**Seen on `main` (commit 5e32d3e4), both backends.** A user generic struct
+whose only constructor is the bodyless auto (field-based) `#init`, constructed
+WITHOUT call-site type args — `var Holder<int> h = Holder(7)`, T recovered from
+the annotation — emitted a call to `<Generic>_init` (`Holder_init`), a symbol
+no backend ever emits (only the `<Generic_<T>>_init` monos exist). Link failed
+on both backends (aarch64: `Undefined symbols … Holder_init, referenced from:
+main.o`; C: the same undefined reference).
+
+Root cause: `check_function_call_node`'s constructor resolution had three arms —
+explicit call-site type args (renames the call to the mono), a generic struct
+with a custom `#init` (infer-init-type-args, also renames), and a final `else`.
+The final `else` found the generic struct's synthesized bodyless `#init` and
+stamped `node.name = struct.name` (the bare generic), so the build emitted
+`Holder_init`. Only the "no call-site args + bodyless auto-init" shape reached
+it; the corpus always spelled the args or used a custom `#init`, so it never
+hit the gap.
+
+**Fix:** the generic case gets its own arm. When the struct is generic, the
+call has no explicit type args, and the expected type (annotation, return type,
+or parameter type) is the generic with a full set of concrete type args, the
+call is monomorphized from those args and pointed at the mono's `#init` exactly
+like the explicit-args arm (`node.name = target.name`, `node.type_args = …`).
+If no concrete expected type is available (and the call is not inside a generic
+body, which defers), it reports
+`Cannot infer type arguments for <Generic> — spell them` instead of emitting the
+unresolvable generic init call. Covered by
+`test/owning_decl.test.ts` (`generic_inferred_ctor`), both backends.

@@ -219,6 +219,47 @@ export default function check_function_call_node(
 						node.name = struct.name;
 					}
 				}
+			} else if (struct.type_params.length > 0) {
+				// A generic struct whose only constructor is the bodyless auto
+				// (field-based) `#init`, constructed WITHOUT call-site type args
+				// (`var Holder<int> h = Holder(7)`): recover the type args from
+				// the expected (annotation / return / parameter) type so the call
+				// points at the monomorphized init, exactly like the explicit-args
+				// branch above. Without this the call keeps the generic name and
+				// links against a `<Generic>_init` symbol no backend emits.
+				const expected = status.expected_type;
+				const expected_args =
+					!node.type_args?.length &&
+					expected?.name === struct.name &&
+					expected.type_args?.length === struct.type_params.length
+						? expected.type_args
+						: undefined;
+				const target = expected_args ? monomorphize(struct, expected_args, status) : null;
+				if (target) {
+					func = find_function_by_params(target.functions, "#init", arg_types);
+					if (func) {
+						const type = new Type(struct.name);
+						type.type_args = expected_args;
+						node.type = type;
+						node.type_args = expected_args;
+						// Point the call at the mono's emission name so the build
+						// emits `<Generic_<T>>_init`, not the never-emitted generic.
+						node.name = target.name;
+						if (is_overloaded(target, "#init")) {
+							node.mangled_name = mangled_label(func, target.name);
+						}
+					}
+				} else if (status.type_params.length === 0) {
+					// No concrete expected type to recover args from (and not
+					// inside a generic body, which defers): report the gap
+					// instead of emitting the unresolvable generic init call.
+					add_error(
+						status,
+						`Cannot infer type arguments for ${struct.name} — spell them, e.g. '${struct.name}<...>(...)'`,
+						node.start,
+					);
+					return false;
+				}
 			} else {
 				func = find_function_by_params(struct.functions, "#init", arg_types);
 				if (func) {

@@ -115,6 +115,22 @@ owning struct Holder<T> {
 `;
 		await build_and_check_output(input, "owning_mono_move", "7\n", true);
 	});
+
+	test("constructing a generic mono without call-site type args links the mono init", async () => {
+		const input = `
+import System
+
+owning struct Holder<T> {
+	var int count
+}
+
+pub func main = () {
+	var Holder<int> h = Holder(7)
+	Console.write_line(h.count.to_string())
+}
+`;
+		await build_and_check_output(input, "generic_inferred_ctor", "7\n", true);
+	});
 });
 
 describe("owning enum (B1a)", () => {
