@@ -1,5 +1,5 @@
 import { has_destroy, struct_needs_destroy } from "../../build_common/destroy_analysis.ts";
-import { has_string_fields } from "../../build_common/has_string_fields.ts";
+import { has_string_fields, owns_strings_uniformly } from "../../build_common/has_string_fields.ts";
 import { is_load_deep_copy_container, resolve_struct_type } from "../../build_common/mono_name.ts";
 import type EnumNode from "../../nodes/EnumNode.ts";
 import StructNode from "../../nodes/StructNode.ts";
@@ -127,7 +127,10 @@ function emit_transfer_owning_fields(
  * member buffers — or an enum-with-data field whose string payloads
  * `<E>_copy` duplicates), overwrite the shallow-copied bytes with an owned
  * copy. A struct local's CONTAINER fields are reclaimed unconditionally at
- * scope exit, so a shallow return would double-free the slot's slab. Fields
+ * scope exit, so a shallow return would double-free the slot's slab. B1
+ * cutover: an OWNING struct's plain string fields are freed unconditionally
+ * too (the same unconditional teardown), so they are strdup'd here as well —
+ * the loaded copy owns independent bytes and the slot keeps its own. Fields
  * without a copyable shape (class fields, nested owning user structs without
  * a synthesized copy) stay shallow — recorded in FOLLOWUP.md.
  */
@@ -135,6 +138,11 @@ function emit_load_deep_copy_fields(elem: StructNode, dst: string, status: Build
 	for (const field of elem.fields) {
 		if (field.type.is_ref || field.type.is_view || field.type.is_array) continue;
 		if (field.type.is_nullable) continue;
+		// Plain string fields stay BORROWED on load: expression-temp consumers
+		// (`a.get(r).label`) never reclaim the loaded temp, so a strdup here
+		// would leak per expression use (the pre-B1 convention, still sound —
+		// the slot keeps ownership; a BINDING of a borrow-accessor result is
+		// the residual hazard recorded in FOLLOWUP.md).
 		if (field.type.name === "string") continue;
 		// A container field (List/Buffer/Map/Set mono): its `copy` method
 		// yields an independent slab, so the caller's unconditional
@@ -404,11 +412,16 @@ export function emit_owning_buffer_body(
 		// Then transfer every owned container/class/enum field: the slot
 		// took the source's bytes, so the source's field is zeroed (its own
 		// teardown — when it still runs — reclaims nothing).
+		// B1 cutover: the donor's plain string fields owned heap copies
+		// (uniform-heap contract), and the slot took FRESH strdups — free
+		// the donor's originals and zero the fields (the donor is a moved
+		// arg: spliced from teardown, or a temp that never had one).
 		status.code += `${Tptr}_slots = ${Tcast}(unsigned long long)self->data;\n`;
 		status.code += `struct ${elem.name} _old = _slots[i];\n`;
 		status.code += `_slots[i] = (*val);\n`;
 		emit_deep_copy_fields(elem, "_slots[i]", "val", status, "_old");
 		emit_transfer_owning_fields(elem, "val", status);
+		emit_reclaim_donor_strings(elem, "val", status, "_old");
 		return true;
 	}
 
@@ -416,9 +429,10 @@ export function emit_owning_buffer_body(
 		// load_T(self, i): the caller's scope-exit destroy ALWAYS reclaims a
 		// struct local's container fields, so the returned copy must own
 		// independent containers — a shallow return would double-free the
-		// slot's buffer at the caller's teardown. String fields stay borrowed
-		// (struct-local teardown only frees RECORDED heap strings, so a
-		// strdup here would leak).
+		// slot's buffer at the caller's teardown. B1 cutover: an OWNING
+		// element's string fields are freed unconditionally at that teardown
+		// too, so they are strdup'd as well (emit_load_deep_copy_fields) —
+		// the loaded copy owns independent bytes, the slot keeps its own.
 		status.code += `struct ${elem.name} _loaded = ((struct ${elem.name} *)(unsigned long long)self->data)[i];\n`;
 		emit_load_deep_copy_fields(elem, "_loaded", status);
 		status.code += `return _loaded;\n`;
@@ -445,12 +459,14 @@ export function emit_owning_buffer_body(
 		// replace_T(self, i, val): destroy the old slot value (it owned
 		// heap memory), then shallow-copy + strdup the new value, and
 		// transfer the new value's owned container fields (zeroed at the
-		// source — the slot took its bytes).
+		// source — the slot took its bytes). B1 cutover: the donor's string
+		// originals are reclaimed too (see store_T).
 		status.code += `${Tptr}_slots = ${Tcast}(unsigned long long)self->data;\n`;
 		status.code += `${elem.name}_destroy(&_slots[i]);\n`;
 		status.code += `_slots[i] = (*val);\n`;
 		emit_deep_copy_fields(elem, "_slots[i]", "val", status);
 		emit_transfer_owning_fields(elem, "val", status);
+		emit_reclaim_donor_strings(elem, "val", status);
 		return true;
 	}
 
@@ -518,6 +534,17 @@ function emit_deep_copy_fields(
 			const src_field = `${src}${arrow(src)}${field.name}`;
 			if (old_expr) {
 				status.code += `${dst}.${field.name} = (${src_field}.ptr && ${src_field}.ptr != ${old_expr}.${field.name}.ptr) ? nomen_str_dup(${src_field}) : ${src_field};\n`;
+				// STRUCT_PLAN_3 B1 cutover: when the pointers differ, the
+				// slot's displaced old value is orphaned — free it. Every
+				// writer of a slot text is heap-tracked now (the ctor seed
+				// strdup, a previous store's strdup, and unsafe writes through
+				// extern_malloc), so the free is always valid; pre-B1 slots
+				// could hold raw rodata borrows, which is why the old pointer
+				// was left alone. Mirrors the aarch64 store_T's displaced-old
+				// reclaim. The free follows the audit-routing convention (the
+				// audit wrapper only exists when the runtime is linked).
+				const free_fn = status.audit ? "nomen_free_wrap" : "free";
+				status.code += `if (${src_field}.ptr && ${src_field}.ptr != ${old_expr}.${field.name}.ptr && ${old_expr}.${field.name}.ptr) { ${free_fn}(${old_expr}.${field.name}.ptr); }\n`;
 			} else {
 				status.code += `${dst}.${field.name} = ${src_field}.ptr ? nomen_str_dup(${src_field}) : ${src_field};\n`;
 			}
@@ -528,6 +555,39 @@ function emit_deep_copy_fields(
 /** A struct value uses `.`; a struct pointer uses `->`. `val` is a pointer. */
 function arrow(src: string): string {
 	return src === "val" ? "->" : ".";
+}
+
+/**
+ * B1 cutover: reclaim the DONOR's plain string fields after an owning
+ * store_T/replace_T. The slot took fresh strdups of `val`'s fields, and the
+ * donor is a moved argument (spliced from teardown, or a construction temp
+ * that never had one) — its uniformly-heap originals would otherwise be
+ * abandoned. `view`/`ref`/array fields are borrows and stay untouched.
+ * `old_expr` (store_T) guards the round-trip identity: a donor field that
+ * IS the slot's own copy stays owned by the slot — freeing it would kill
+ * the slot's bytes.
+ */
+function emit_reclaim_donor_strings(
+	elem: StructNode,
+	val: string,
+	status: BuildStatus,
+	old_expr?: string,
+): void {
+	if (!owns_strings_uniformly(elem)) return;
+	for (const field of elem.fields) {
+		if (field.type.is_ref || field.type.is_view || field.type.is_array) continue;
+		if (field.type.name !== "string") continue;
+		const f = `${val}${arrow(val)}${field.name}`;
+		if (old_expr) {
+			status.code += `if (${f}.ptr != ${old_expr}.${field.name}.ptr) {\n`;
+			status.code += `free(${f}.ptr);\n`;
+			status.code += `${f} = (nomen_string){0, 0};\n`;
+			status.code += `}\n`;
+		} else {
+			status.code += `free(${f}.ptr);\n`;
+			status.code += `${f} = (nomen_string){0, 0};\n`;
+		}
+	}
 }
 
 /**

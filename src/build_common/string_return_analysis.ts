@@ -25,12 +25,23 @@ const EMPTY_SET: Set<string> = new Set();
 /**
  * The container/buffer BORROW accessor family — method calls that return a
  * view into the receiver's existing storage rather than a fresh value:
- * `.at(i)`, `.first()`, `.slice(...)`, and the backing Buffer slot-load
- * primitive `load_T`. A `move out T` accessor (`owned_return`, e.g. `pop` /
- * `move_T`) relinquishes the slot and is NOT in this family.
+ * `.at(i)`, `.at_or_panic(i)` (the trapping `at` — it returns `self.at(i)`),
+ * `.first()`, `.slice(...)`, `.get_or(...)` / `.get_or_panic(...)` (they
+ * return `self.values.load(idx)` — or the caller's own fallback temp), and
+ * the backing Buffer slot-load primitive `load_T`. A `move out T` accessor
+ * (`owned_return`, e.g. `pop` / `move_T`) relinquishes the slot and is NOT
+ * in this family.
  */
 export function is_container_borrow_accessor_name(name: string): boolean {
-	return name === "at" || name === "first" || name === "slice" || name === "load";
+	return (
+		name === "at" ||
+		name === "at_or_panic" ||
+		name === "first" ||
+		name === "slice" ||
+		name === "get_or" ||
+		name === "get_or_panic" ||
+		name === "load"
+	);
 }
 
 /**
@@ -49,6 +60,32 @@ export function is_call_site_borrow_accessor(fn_name: string | undefined): boole
 	// call-site rule must match or a `var v = buf.load(i)` local is freed
 	// (freeing the slot's buffer the container still owns).
 	return fn_name === "at" || fn_name === "first" || fn_name === "load";
+}
+
+/**
+ * STRUCT_PLAN_3 B1 cutover: whether `decl` is the checker-hoisted `_recv_N`
+ * RECEIVER CARRIER of a container borrow accessor (`xs.at(i).text` hoists
+ * `var _recv_N = xs.at(i)` so the loaded element's heap resources get a
+ * scope-exit destroy). The carrier is an EXPRESSION-TEMP consumer, not a
+ * binding: it keeps the slot's alias, so it must NOT take the owning
+ * binding's strdup and its scope-exit destroy must not free the aliased
+ * string fields — a `return _recv_N.field` (a view) hands the caller a pair
+ * the carrier's own cleanup would free. Both backends' declaration strdup
+ * and destroy walks skip it (the pre-B1 "expression temps reclaim nothing"
+ * convention; a load_T's deep-copied CONTAINER fields leak per expression
+ * use — the documented bounded posture).
+ */
+export function is_borrow_accessor_carrier(decl: { name?: string; value?: unknown }): boolean {
+	if (!decl.name?.startsWith("_recv_")) return false;
+	const value = decl.value as
+		| { node_type?: string; access?: { node_type?: string; name?: string; owned_return?: boolean } }
+		| undefined;
+	return (
+		value?.node_type === "access" &&
+		value.access?.node_type === "access_func" &&
+		!value.access.owned_return &&
+		is_container_borrow_accessor_name(value.access.name ?? "")
+	);
 }
 
 /**

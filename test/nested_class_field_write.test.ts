@@ -20,10 +20,9 @@ Console.write_line(a.x.s)
 		await build_and_check_output(input, "nested_class_field_string_literal", "value one\n");
 	});
 
-	// SKIP: a heap string stored through an owning-struct field hop is not
-	// reclaimed at scope exit (the nested record path is the D3/B1
-	// string-ownership work). See FOLLOWUP.md.
-	test.skip("heap string assigned into a move-class field", async () => {
+	// Landed with the B1 backend cutover: the nested-hop store strdups and
+	// the scope-exit destroy frees it.
+	test("heap string assigned into a move-class field", async () => {
 		const input = `
 owning struct Inner { var s = "" }
 owning struct A { move x = Inner() }

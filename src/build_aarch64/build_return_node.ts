@@ -8,7 +8,7 @@ import { is_normalized_struct_call } from "../build_common/call_init_string_fiel
 import { override_return_string_fields } from "../build_common/ctor_return_owned.ts";
 import ctor_return_owned_string_fields from "../build_common/ctor_return_owned.ts";
 import { struct_needs_auto_destroy } from "../build_common/destroy_analysis.ts";
-import { direct_string_fields } from "../build_common/has_string_fields.ts";
+import { direct_string_fields, owns_strings_uniformly } from "../build_common/has_string_fields.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
@@ -601,7 +601,11 @@ export default function build_return_node(
 		if (
 			fn_name && // A LAMBDA's literal return must be heap-owned too (its callers are
 			// indirect and free every string result — see normalizes_borrow_returns).
+			// A STRUCT METHOD's literal return joins it: methods are the only
+			// vtable-dispatchees, so a dispatched call site frees every string
+			// result — a rodata literal would be freed.
 			(status.current_function_is_closure ||
+				!!status.current_struct ||
 				(!!status.heap_returning_functions &&
 					(status.heap_returning_functions.has(fn_name) ||
 						(mangled !== undefined && status.heap_returning_functions.has(mangled)))) ||
@@ -648,13 +652,18 @@ export default function build_return_node(
 		current_return_is_string(status) &&
 		// Either the function is classified heap-returning (its callers free
 		// every result), it declares `move out string` (the caller owns the
-		// result by signature), or it is a LAMBDA — closures are only ever
+		// result by signature), it is a LAMBDA — closures are only ever
 		// called through a descriptor (indirect), where the call site cannot
 		// know the callee's return classification, so every closure string
 		// return must be uniformly heap-owned (CLOSURE.md fix (a); mirrors the
-		// C backend, which strdups every string return). In all cases every
-		// return path must hand over a heap pointer.
+		// C backend, which strdups every string return) — or it is a STRUCT
+		// METHOD. Methods are the only vtable-dispatchees (trait objects):
+		// like a closure, a dispatched call site cannot classify the callee
+		// statically, so the B1 uniform-heap contract applies to every method
+		// string return the same way. In all cases every return path must
+		// hand over a heap pointer.
 		(!!status.current_function_is_closure ||
+			!!status.current_struct ||
 			(!!status.heap_returning_functions &&
 				(status.heap_returning_functions.has(borrow_fn_name) ||
 					(borrow_mangled !== undefined && status.heap_returning_functions.has(borrow_mangled)))) ||
@@ -762,8 +771,44 @@ export default function build_return_node(
 		(node.value.node_type === "func_call" ||
 			(node.value.node_type === "access" &&
 				(node.value as AccessNode).access.node_type === "access_func")) &&
-		!status.last_result_is_heap &&
-		status.heap_string_fields?.size
+		!status.last_result_is_heap
+	) {
+		// STRUCT_PLAN_3 B1 cutover: the old `heap_string_fields?.size` gate is
+		// dead — OWNING structs (every string-field struct, post-cutover)
+		// never record; their scope-exit destroy frees the fields
+		// unconditionally. A non-heap call result may alias such a local's
+		// field (the StrBox receipt: `return b.get()` printed garbage after
+		// go freed b.item), so the copy is unconditional now — the same
+		// blanket boundary strdup the C backend has always applied. The
+		// container-borrow accessors above stay excluded (their call sites
+		// treat the result as a borrow and never free it).
+		emit_strdup_string(status);
+		ensure_newline(status);
+		status.last_result_is_heap = true;
+		if (borrow_fn_name) {
+			status.heap_returning_functions?.add(borrow_fn_name);
+			if (borrow_mangled !== undefined) {
+				status.heap_returning_functions?.add(borrow_mangled);
+			}
+		}
+	}
+
+	// STRUCT_PLAN_3 B1 cutover: `return <local>.<string field>` — the local's
+	// string fields are uniformly heap-owned post-cutover (the ctor strdup'd
+	// the seed, stores strdup non-heap RHS, load-accessor bindings strdup),
+	// so the read is a heap value the local's own scope-exit destroy frees
+	// BEFORE the branch. Pre-B1 the field could be a rodata/borrow alias and
+	// an unclassified function passed the raw pair through (the caller
+	// borrows it) — that pair now dangles. Dup it for the caller and stamp
+	// the function heap-returning so call sites free the copy — the same
+	// blanket normalization the call-result arm above applies and the C
+	// backend has always applied to every string return.
+	if (
+		!needs_borrow_strdup &&
+		current_return_is_string(status) &&
+		node.value.node_type === "access" &&
+		(node.value as AccessNode).access.node_type === "access_field" &&
+		!status.last_result_is_heap
 	) {
 		emit_strdup_string(status);
 		ensure_newline(status);
@@ -931,7 +976,12 @@ export default function build_return_node(
 						.flat()
 						.some((d) => d.name === returned_var);
 				const bare_local_return = returned_is_local;
-				if (bare_local_return) {
+				// STRUCT_PLAN_3 B1 cutover: an OWNING struct's string fields
+				// are uniformly heap (the ctor strdup'd the seed, stores
+				// strdup non-heap RHS, load_T strdups slot copies) — the bare
+				// local's bytes transfer raw and the caller's destroy frees
+				// them; a strdup here would orphan the donor's heap copy.
+				if (bare_local_return && !owns_strings_uniformly(ret_struct)) {
 					let skip_fields: Set<string> | undefined;
 					const prefix = `${(node.value as ValueNode).value}.`;
 					for (const key of status.heap_string_fields ?? []) {
@@ -956,11 +1006,30 @@ export default function build_return_node(
 					!ret_struct.name.startsWith("_")
 				) {
 					const call = node.value as FunctionCallNode;
-					const skip_fields = call.field_overrides?.length
-						? override_return_string_fields(ret_struct, call.field_overrides, status.heap_strings, {
-								base_skip: ctor_return_owned_string_fields(ret_struct, call, status.heap_strings),
-							})
-						: ctor_return_owned_string_fields(ret_struct, call, status.heap_strings);
+					// STRUCT_PLAN_3 B1 cutover: an OWNING struct's ctor strdup'd
+					// every string seed AND the construction-temp override store
+					// takes the typed lowering (owning_temp_carrier — the
+					// override value is strdup'd at the temp), so EVERY string
+					// field is uniformly heap here and transfers raw. (C's
+					// `_return_val` override stores stay RAW — its return arm
+					// keeps the per-field ownership analysis.)
+					const owning = owns_strings_uniformly(ret_struct);
+					const skip_fields = owning
+						? new Set(direct_string_fields(ret_struct).map((f) => f.name))
+						: call.field_overrides?.length
+							? override_return_string_fields(
+									ret_struct,
+									call.field_overrides,
+									status.heap_strings,
+									{
+										base_skip: ctor_return_owned_string_fields(
+											ret_struct,
+											call,
+											status.heap_strings,
+										),
+									},
+								)
+							: ctor_return_owned_string_fields(ret_struct, call, status.heap_strings);
 					emit_string_field_strdups_at(status, ret_struct.name, "x8", 0, skip_fields);
 				}
 				// FORWARDED normalizing base with overrides, in both checked

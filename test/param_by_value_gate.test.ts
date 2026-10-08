@@ -80,6 +80,9 @@ Console.write_line("caller done")
 		// the `return` (the param's field would be freed twice in the source,
 		// though only the first block runs). The transfer row (`move Pair p`)
 		// owns the donor's fields: exactly one reclaim, at the return site.
+		// (B1 cutover: owning structs never record, so the moved-param
+		// reclaim rides the `(*p)` destroy walk instead of the `p->` record
+		// frees the pre-B1 shape emitted.)
 		const parsed = parse_with_imports(`
 owning struct Pair { var int n = 0  var string tag = "" }
 func next = (move Pair p, out Pair) {
@@ -98,7 +101,12 @@ Console.write_line(p.tag)
 		const result = build(parsed.root, { arch: "c", audit: true });
 		const code = result.code as string;
 		const fn = code.slice(code.indexOf("// Func next"), code.indexOf("// Func main"));
-		expect(fn.split("nomen_free_wrap(p->tag.ptr);").length - 1).toEqual(1);
+		const reclaims =
+			fn.split("nomen_free_wrap((*p).tag.ptr);").length -
+			1 +
+			fn.split("nomen_free_wrap(p->tag.ptr);").length -
+			1;
+		expect(reclaims).toEqual(1);
 	});
 
 	test("ref arg mutates the caller's struct in place", async () => {

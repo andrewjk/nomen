@@ -50,13 +50,44 @@ export function has_destroy(struct: StructNode): boolean {
 }
 
 /**
+ * STRUCT_PLAN_3 B1 backend cutover — whether the struct has DIRECT owned
+ * `string` fields (a `ref` alias, a `view` borrow, and a `string[N]` array
+ * whose element-wise ctor copy borrows the caller's row are excluded, the
+ * same convention `struct_needs_auto_destroy` and `has_string_fields` use).
+ */
+function struct_has_direct_string_fields(struct: StructNode): boolean {
+	return struct.fields.some(
+		(f) => !f.type.is_ref && !f.type.is_view && !f.type.is_array && f.type.name === "string",
+	);
+}
+
+/**
+ * STRUCT_PLAN_3 B1 cutover — whether this struct's plain `string` fields
+ * participate in the uniform-heap destroy contract. Compiler-generated
+ * tuple / anonymous structs are excluded: their element lifecycle stays
+ * record/binding-based (destructured bindings and tuple-var records take
+ * the string fields over; the temp is a carrier), so the blanket destroy
+ * would free bytes the bindings own (or rodata literals).
+ */
+function owns_strings_via_destroy(struct: StructNode): boolean {
+	return (
+		struct.is_owning === true &&
+		!struct.name.startsWith("_Tuple_") &&
+		!struct.name.startsWith("_Anon_")
+	);
+}
+
+/**
  * Whether any field (recursively) requires destroy handling — a class
- * field (heap instance to reclaim) or a nested struct with its own
- * `#destroy` (or nested fields that do). Deliberately excludes `string`
- * fields: a struct local whose only owning fields are strings is NOT
- * auto-destroyed at scope exit (the strings may be raw rodata arg
- * pointers, not heap) — see `struct_needs_auto_destroy` for the broader
- * form used to decide whether a `<Struct>_destroy` function is generated.
+ * field (heap instance to reclaim), a nested struct with its own
+ * `#destroy` (or nested fields that do), or — B1 cutover — a nested
+ * DECLARED-owning struct with direct string fields (its strings are
+ * uniformly heap: the ctor strdup'd them, so the enclosing scope exit
+ * must reclaim them through the nested field). Plain `string` fields of
+ * a NON-owning struct are still excluded: such a local's strings may be
+ * raw rodata arg pointers, not heap (the transition-era posture
+ * `struct_needs_auto_destroy` extends). Tuple / anon struct fields stay
+ * out (their element lifecycle is the bindings'/records').
  */
 export function has_struct_fields_with_destroy(struct: StructNode, table: StructTable): boolean {
 	for (const field of struct.fields) {
@@ -65,6 +96,8 @@ export function has_struct_fields_with_destroy(struct: StructNode, table: Struct
 		if (!field_struct) continue;
 		if (field_struct.is_class) return true;
 		if (has_destroy(field_struct)) return true;
+		if (owns_strings_via_destroy(field_struct) && struct_has_direct_string_fields(field_struct))
+			return true;
 		if (has_struct_fields_with_destroy(field_struct, table)) return true;
 	}
 	return false;
@@ -73,14 +106,19 @@ export function has_struct_fields_with_destroy(struct: StructNode, table: Struct
 /**
  * Whether a struct (or any embedded struct field, recursively) needs a
  * destroy call at scope exit — it has a `#destroy`, a class-typed field,
- * or a nested struct field that itself needs destroying. This does NOT
- * count `string` fields (see `has_struct_fields_with_destroy`).
+ * or a nested struct field that itself needs destroying. B1 cutover: a
+ * DECLARED-owning struct with direct string fields also needs one — its
+ * string fields are uniformly heap-owned (ctor strdup, stores strdup), so
+ * the scope-exit destroy frees them (the destroy walkers pass
+ * free_strings/emit the frees for owning structs). Non-owning structs'
+ * string fields are still NOT counted (they may hold rodata borrows).
  */
 export function struct_needs_destroy(struct: StructNode, table: StructTable): boolean {
 	return (
 		has_destroy(struct) ||
 		has_struct_fields_with_destroy(struct, table) ||
-		struct_has_owning_enum_field(struct, table)
+		struct_has_owning_enum_field(struct, table) ||
+		(owns_strings_via_destroy(struct) && struct_has_direct_string_fields(struct))
 	);
 }
 

@@ -57,6 +57,7 @@ static void *audit_alloc(unsigned long size) {
 	header->magic = NOMEN_AUDIT_MAGIC;
 	header->size = size;
 	header->state = NOMEN_AUDIT_LIVE;
+	if (getenv("NOMEN_AUDIT_TRACE")) fprintf(stderr, "ALLOC %lu\n", (unsigned long)size);
 	__atomic_add_fetch(&nomen_malloc_count, 1, __ATOMIC_SEQ_CST);
 	return (void *)(header + 1);
 }
@@ -73,6 +74,7 @@ static nomen_audit_header *audit_header(void *ptr) {
 // Retire a block: poison the header first so a second free of the same pointer
 // is recognized as stale, then hand the memory back and drop the count.
 static void audit_release(nomen_audit_header *header) {
+	if (getenv("NOMEN_AUDIT_TRACE")) fprintf(stderr, "FREE %lu\n", (unsigned long)header->size);
 	header->magic = 0;
 	header->state = NOMEN_AUDIT_DEAD;
 	__atomic_sub_fetch(&nomen_malloc_count, 1, __ATOMIC_SEQ_CST);

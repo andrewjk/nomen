@@ -4,7 +4,7 @@ import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import { ctor_heap_displaced_string_fields } from "../build_common/ctor_return_owned.ts";
 import { struct_needs_auto_destroy } from "../build_common/destroy_analysis.ts";
 import emission_label from "../build_common/emission_label.ts";
-import { direct_string_fields } from "../build_common/has_string_fields.ts";
+import { direct_string_fields, owns_strings_uniformly } from "../build_common/has_string_fields.ts";
 import mark_tuple_literal_move_owners from "../build_common/mark_tuple_literal_move_owners.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
@@ -24,7 +24,7 @@ import { build_inline_function } from "./build_inline_method.ts";
 import build_node from "./build_node.ts";
 import { build_operand, is_owned_heap_temp, tree_is_call_free } from "./build_operation_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
-import { emit_free, emit_malloc } from "./utils/audit.ts";
+import { emit_free, emit_malloc, emit_strdup } from "./utils/audit.ts";
 import {
 	emit_string_field_strdups_at,
 	all_scope_frames,
@@ -423,6 +423,10 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			}
 		}
 		const lambda_arg_slots: number[] = [];
+		// STRUCT_PLAN_3 B1 cutover: HEAP string-result args (a method's
+		// uniformly-heap string return spilled as an argument) are owned by
+		// this call site — freed once the callee has returned.
+		const heap_string_arg_slots: number[] = [];
 
 		// Outgoing stack-arg area size (0 unless this call passes more args
 		// than fit in x0..x7). Set below for both the non-variadic and the
@@ -517,8 +521,25 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					}
 				} else if (elem_is_string) {
 					// Fat string element: store both (ptr, len) halves.
+					// STRUCT_PLAN_3 B1 cutover: a CONSTRUCTOR's packed buffer IS
+					// the object's storage (the slots are heap-registered and
+					// freed at scope exit), so each slot takes a strdup'd copy —
+					// the arg temps are heap-owned and their owners free them; a
+					// raw pair store would alias them and double-free. A plain
+					// variadic FUNCTION's pack is transient call scratch (borrow
+					// semantics — the callee copies what it keeps), so the raw
+					// store stands there.
+					const pack_is_ctor =
+						!!status.structs.find((s) => s.name === node.name && !s.is_simple_type) ||
+						(node.mangled_name ?? node.name).endsWith("_init");
 					build_node(arr.values[j], status);
 					ensure_newline(status);
+					if (pack_is_ctor) {
+						const skip = `.Lskip_var_str_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+						emit_asm(status, `cbz x0, ${skip}\n`);
+						emit_strdup(status);
+						emit_asm(status, `${skip}:\n`);
+					}
 					emit_asm(status, `str x0, [x29, #${slot_offset}]\n`);
 					emit_asm(status, `str x1, [x29, #${slot_offset + 8}]\n`);
 				} else {
@@ -730,6 +751,11 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				// its build leaves only x0 = 0, and x1 would carry garbage
 				// into the callee.
 				if (string_arg_set.has(i)) {
+					// Reset-first: the flag reflects exactly THIS argument's
+					// build (a literal/borrow arg leaves a stale true from an
+					// earlier sibling's heap-result build, and recording it
+					// would free rodata).
+					status.last_result_is_heap = false;
 					if (param.node_type === "value" && (param as ValueNode).value === "null") {
 						emit_asm(status, `mov x0, #0\n`);
 						emit_asm(status, `mov x1, #0\n`);
@@ -739,6 +765,18 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					}
 					emit_asm(status, `str x0, [x29, #${args_base + arg_slot[i] * 8}]\n`);
 					emit_asm(status, `str x1, [x29, #${args_base + (arg_slot[i] + 1) * 8}]\n`);
+					// STRUCT_PLAN_3 B1 cutover: a HEAP string result arg (a
+					// method's uniformly-heap string return) is owned by this
+					// call site — record the spill slot, free after the call.
+					// EXCEPT a _Tuple_ ctor: its string params transfer RAW
+					// into the tuple's fields (the element follows the arg's
+					// ownership — the tuple-return normalization / the
+					// destructured bindings' records take it over), so freeing
+					// the arg after the ctor would orphan the element.
+					if (status.last_result_is_heap && !String(node.name ?? "").startsWith("_Tuple_")) {
+						heap_string_arg_slots.push(args_base + arg_slot[i] * 8);
+					}
+					status.last_result_is_heap = false;
 					continue;
 				}
 				// An `Array<T>` argument that is itself a heap-array value (a
@@ -1036,7 +1074,16 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 						if (
 							transfer_struct &&
 							direct_string_fields(transfer_struct).length > 0 &&
-							transfer_var
+							transfer_var &&
+							// STRUCT_PLAN_3 B1 cutover: an OWNING donor's string
+							// fields are uniformly heap (the ctor strdup'd the
+							// seed, every store strdups) — the bytes transfer
+							// raw and the callee's unconditional teardown frees
+							// them; a strdup here would orphan the donor's copy.
+							// A NON-owning donor keeps the normalization: its
+							// unrecorded fields may hold rodata the B1
+							// unconditional teardown would free.
+							!owns_strings_uniformly(transfer_struct)
 						) {
 							const recorded = new Set<string>();
 							for (const key of status.heap_string_fields ?? []) {
@@ -1373,6 +1420,18 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		// their one-shot heap descriptors from the spill slots (x0 preserved).
 		emit_dispose_lambda_args_a64(status, lambda_arg_slots);
 
+		// STRUCT_PLAN_3 B1 cutover: free the HEAP string-result arg copies
+		// this call site owns (their (ptr,len) pairs still sit in the spill
+		// slots; x0 holds the call's result — park it across each free).
+		if (heap_string_arg_slots.length > 0) {
+			emit_asm(status, `str x0, [sp, #-16]!\n`);
+			for (const slot of heap_string_arg_slots) {
+				emit_asm(status, `ldr x0, [x29, #${slot}]\n`);
+				emit_free(status);
+			}
+			emit_asm(status, `ldr x0, [sp], #16\n`);
+		}
+
 		if (!is_struct && node.type?.name && !status.call_x8_preset) {
 			const return_struct = status.structs.find(
 				(s) => s.name === node.type!.name && !s.is_simple_type && !s.is_class,
@@ -1421,12 +1480,21 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		if (node.field_overrides?.length) {
 			// The constructor seeded each overridden field with its DEFAULT;
 			// a non-literal default was evaluated fresh into the temp and is
-			// owned by the temp alone — reclaim it before the raw override
-			// store (a compiler-temp destination keeps raw stores, so no
+			// owned by the temp alone — reclaim it before the override store
+			// (a compiler-temp destination keeps raw stores, so no
 			// heap_string_fields record exists to key the reclaim on).
+			// STRUCT_PLAN_3 B1 cutover: an OWNING struct's seed is ALWAYS
+			// heap (every string seed is strdup'd), so every overridden
+			// field's seed is displaced here — and the override store takes
+			// the TYPED lowering (owning_temp_carrier): it strdup's the
+			// override value (the first-write skips the displaced free the
+			// pre-reclaim just handled), so the bytes that land in the
+			// destination are heap-owned and its destroy never frees a raw
+			// borrow.
 			const ctor_struct = status.structs.find(
 				(s) => s.name === node.name && !s.is_simple_type && !s.is_class,
 			);
+			const owning_carrier = !!ctor_struct && owns_strings_uniformly(ctor_struct);
 			if (ctor_struct) {
 				for (const fname of ctor_heap_displaced_string_fields(
 					ctor_struct,
@@ -1438,7 +1506,9 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					emit_free(status);
 				}
 			}
-			emit_field_overrides(temp_addr, node, build_node, status);
+			emit_field_overrides(temp_addr, node, build_node, status, "", "", {
+				owning_temp_carrier: owning_carrier,
+			});
 			emit_asm(status, `add x0, x29, #${offset}\n`);
 		}
 	}

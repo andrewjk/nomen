@@ -10,11 +10,15 @@ import {
 import record_ctor_heap_default_fields from "../build_common/ctor_heap_default_fields.ts";
 import { override_displaced_string_fields } from "../build_common/ctor_return_owned.ts";
 import { struct_needs_auto_destroy } from "../build_common/destroy_analysis.ts";
-import { direct_string_fields } from "../build_common/has_string_fields.ts";
-import { mono_type_name } from "../build_common/mono_name.ts";
+import { direct_string_fields, owns_strings_uniformly } from "../build_common/has_string_fields.ts";
+import { mono_type_name, resolve_struct_type } from "../build_common/mono_name.ts";
 import { call_result_type, is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
-import { is_string_borrow } from "../build_common/string_return_analysis.ts";
+import {
+	is_borrow_accessor_carrier,
+	is_container_borrow_accessor_name,
+	is_string_borrow,
+} from "../build_common/string_return_analysis.ts";
 import {
 	collect_expression_branch_values,
 	is_owned_string_branch_value,
@@ -26,6 +30,7 @@ import type { NirExpr } from "../nir/nir.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
+import AnonStructNode from "../nodes/AnonStructNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
@@ -33,6 +38,7 @@ import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import RangeNode from "../nodes/RangeNode.ts";
+import StructNode from "../nodes/StructNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_array_values_node from "./build_array_values_node.ts";
@@ -422,7 +428,14 @@ export default function build_declaration_node(
 				const strdup_string_fields =
 					!concrete_struct.functions.some((f) => f.name === "#destroy") &&
 					struct_needs_auto_destroy(concrete_struct, status);
-				const string_fields = strdup_string_fields ? direct_string_fields(concrete_struct) : [];
+				// B1 cutover: an OWNING struct's string fields are uniformly
+				// heap at the temp (the ctor strdup'd, stores strdup) — the
+				// bytes transfer to the box as-is and its destroy frees them;
+				// a strdup here would orphan the temp's copy.
+				const string_fields =
+					strdup_string_fields && !owns_strings_uniformly(concrete_struct)
+						? direct_string_fields(concrete_struct)
+						: [];
 				const donor_name =
 					node.value.node_type === "value" ? (node.value as ValueNode).value : undefined;
 				if (donor_name !== undefined && /^[A-Za-z_][A-Za-z0-9_]*$/.test(donor_name)) {
@@ -436,7 +449,9 @@ export default function build_declaration_node(
 							recorded.add(key.slice(donor_name.length + 1));
 						}
 					}
-					const unrecorded = string_fields.filter((f) => !recorded.has(f.name));
+					const unrecorded = owns_strings_uniformly(concrete_struct)
+						? []
+						: string_fields.filter((f) => !recorded.has(f.name));
 					if (unrecorded.length > 0) {
 						status.code += `{ struct ${concrete_struct.name} *_src = (struct ${concrete_struct.name} *)&`;
 						status.suppress_dereference = true;
@@ -706,9 +721,16 @@ export default function build_declaration_node(
 		// Remove the source `a` from whichever scope frame holds it (it may be
 		// declared in an OUTER scope when the declaration sits inside an
 		// if/loop branch) so it won't be destroyed at scope exit (b owns the
-		// data now).
+		// data now). A base-bearing anon literal with a `move` base (`var x =
+		// [ .. move y, f = v ]`) transfers the same way — the base's bytes
+		// landed in the destination, so the donor must not be destroyed.
 		if (node.value?.node_type === "value" && (node.value as ValueNode).is_moved && !is_class_type) {
 			splice_decl_from_c_scopes(status, (node.value as ValueNode).value);
+		} else if (node.value?.node_type === "anon_struct") {
+			const lit_base = (node.value as AnonStructNode).base;
+			if (lit_base?.node_type === "value" && (lit_base as ValueNode).is_moved && !is_class_type) {
+				splice_decl_from_c_scopes(status, (lit_base as ValueNode).value);
+			}
 		}
 		if (node.type?.name) {
 			if (!status.variable_types) status.variable_types = new Map();
@@ -1234,6 +1256,76 @@ export default function build_declaration_node(
 			// assignment path frees the displaced buffer only when the record
 			// already exists — recording after would leak it.
 			record_call_init_string_fields(node, status);
+			// STRUCT_PLAN_3 B1 cutover: an OWNING-struct binding whose
+			// initializer is a container BORROW accessor (`var p =
+			// people.at(i)` — at/first/slice/load) aliases the slot's bytes;
+			// the binding's scope-exit destroy frees its string fields
+			// UNCONDITIONALLY now, so strdup them here — the binding owns
+			// independent copies and the slot keeps its own. (Expression-temp
+			// consumers — `people.at(i).name` — are not bindings: they keep
+			// the alias and reclaim nothing, the pre-B1 convention. The
+			// checker-hoisted `_recv_N` receiver carrier is exactly that —
+			// strdup'ing it would hand a `return _recv.field` view a pair the
+			// carrier's own cleanup frees.) Mirrors the aarch64 declaration
+			// path.
+			{
+				const binding_struct = status.structs.find(
+					(s) => s.name === node.type?.name && !s.is_simple_type && !s.is_class,
+				);
+				const init_access =
+					node.value?.node_type === "access"
+						? ((node.value as AccessNode).access as { node_type?: string; name?: string })
+						: undefined;
+				const is_borrow_accessor_init =
+					init_access?.node_type === "access_func" &&
+					is_container_borrow_accessor_name(init_access.name ?? "");
+				if (
+					binding_struct &&
+					owns_strings_uniformly(binding_struct) &&
+					is_borrow_accessor_init &&
+					!is_borrow_accessor_carrier(node)
+				) {
+					// The declaration statement is still open (its terminator
+					// normally rides the override emitters, which cannot fire for
+					// an access init) — close it so the strdups land as
+					// statements.
+					if (!status.code.endsWith(";\n")) status.code += `;\n`;
+					// Mirror emit_struct_destroys' free set: direct plain strings,
+					// plus — recursively — the strings of nested OWNING struct
+					// fields (their destroy walk frees them; a non-owning nested
+					// struct's destroy frees nothing here). A nested nullable
+					// owning field is flag-guarded like its destroy — the guard
+					// WRAPS the nested strings (it is not a dup target itself).
+					const emit_strdups = (s: StructNode, prefix: string, guard?: string) => {
+						const lines: string[] = [];
+						for (const field of s.fields) {
+							if (field.type.is_ref || field.type.is_view || field.type.is_array) continue;
+							const path = prefix ? `${prefix}.${field.name}` : field.name;
+							const lhs = `${safe_name}.${path}`;
+							if (field.type.name === "string") {
+								lines.push(
+									field.type.is_nullable
+										? `${lhs} = ${lhs}.ptr ? nomen_str_dup(${lhs}) : ${lhs};\n`
+										: `${lhs} = nomen_str_dup(${lhs});\n`,
+								);
+								continue;
+							}
+							const field_struct = resolve_struct_type(field.type, status);
+							if (!field_struct || field_struct.is_class) continue;
+							if (!owns_strings_uniformly(field_struct)) continue;
+							const nested_guard = is_nullable_struct_type(field.type, status)
+								? `${lhs}_has`
+								: undefined;
+							lines.push(...emit_strdups(field_struct, path, nested_guard));
+						}
+						if (!lines.length) return [];
+						return guard ? [`if (${guard}) {\n`, ...lines, `}\n`] : lines;
+					};
+					for (const line of emit_strdups(binding_struct, "")) {
+						status.code += line;
+					}
+				}
+			}
 			// An OVERRIDE-CONSTRUCTOR base (`[ .. R(x), f = v ]` — the checker
 			// rewrote the literal onto the ctor call) seeded each overridden
 			// field with the field's DEFAULT expression: a non-literal default
@@ -1260,12 +1352,19 @@ export default function build_declaration_node(
 					// frees land as statements, and skip the duplicate
 					// terminator below.
 					status.code += `;\n`;
-					for (const name of override_displaced_string_fields(
-						override_struct,
-						override_ctor_call.field_overrides,
-						(expr) => is_owned_heap_temp(expr, status),
-					)) {
-						status.code += `free(${safe_name}.${name}.ptr);\n`;
+					// B1 cutover: an OWNING struct's override store takes the
+					// ownership-normalized lowering (strdup + unconditional
+					// displaced free), so the explicit seed reclaim here would
+					// double-free — only non-owning structs (raw-ish stores
+					// keyed on records) need it.
+					if (!owns_strings_uniformly(override_struct)) {
+						for (const name of override_displaced_string_fields(
+							override_struct,
+							override_ctor_call.field_overrides,
+							(expr) => is_owned_heap_temp(expr, status),
+						)) {
+							status.code += `free(${safe_name}.${name}.ptr);\n`;
+						}
 					}
 				}
 			}

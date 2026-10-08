@@ -7,7 +7,7 @@ import { override_return_string_fields } from "../build_common/ctor_return_owned
 import { override_displaced_string_fields } from "../build_common/ctor_return_owned.ts";
 import ctor_return_owned_string_fields from "../build_common/ctor_return_owned.ts";
 import { struct_needs_auto_destroy } from "../build_common/destroy_analysis.ts";
-import { direct_string_fields } from "../build_common/has_string_fields.ts";
+import { direct_string_fields, owns_strings_uniformly } from "../build_common/has_string_fields.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
@@ -752,7 +752,13 @@ export default function build_return_node(
 			!ret_type.is_array &&
 			return_struct &&
 			!returns_struct_zero &&
-			bare_local_return
+			bare_local_return &&
+			// STRUCT_PLAN_3 B1 cutover: an OWNING struct's string fields are
+			// uniformly heap (the ctor strdup'd the seed, stores strdup
+			// non-heap RHS, load_T strdups slot copies) — the bare local's
+			// bytes transfer raw and the caller's destroy frees them; a
+			// strdup here would orphan the donor's heap copy.
+			!owns_strings_uniformly(return_struct)
 		) {
 			for (const field of direct_string_fields(return_struct)) {
 				if (returned_recorded_string_fields?.has(field.name)) continue;
@@ -781,11 +787,19 @@ export default function build_return_node(
 			!return_struct.name.startsWith("_")
 		) {
 			const call = node.value as FunctionCallNode;
+			// STRUCT_PLAN_3 B1 cutover: an OWNING struct's ctor strdup'd every
+			// string seed (param, default, and computed alike), so every
+			// NON-overridden field is uniformly heap and transfers raw — only
+			// the overridden fields follow the override value's ownership.
+			const owning = owns_strings_uniformly(return_struct);
 			const skip = call.field_overrides?.length
 				? override_return_string_fields(return_struct, call.field_overrides, status.heap_strings, {
 						base_skip: ctor_return_owned_string_fields(return_struct, call, status.heap_strings),
+						base_uniformly_owned: owning || undefined,
 					})
-				: ctor_return_owned_string_fields(return_struct, call, status.heap_strings);
+				: owning
+					? new Set(direct_string_fields(return_struct).map((f) => f.name))
+					: ctor_return_owned_string_fields(return_struct, call, status.heap_strings);
 			for (const field of direct_string_fields(return_struct)) {
 				if (skip.has(field.name)) continue;
 				status.code += `_return_val.${field.name} = nomen_str_dup(_return_val.${field.name});\n`;

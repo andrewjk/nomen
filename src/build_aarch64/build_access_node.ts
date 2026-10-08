@@ -9,6 +9,7 @@ import {
 	drop_self_written_string_field_records,
 	scan_self_string_field_writes,
 } from "../build_common/scan_self_string_writes.ts";
+import { is_container_borrow_accessor_name } from "../build_common/string_return_analysis.ts";
 import { transfer_ref_param_field_records } from "../build_common/transfer_ref_param_records.ts";
 import { is_float_type } from "../built_in_types.ts";
 import {
@@ -65,6 +66,7 @@ import {
 	materialize_func_value_a64,
 } from "./utils/closure_a64.ts";
 import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
+import { owns_specialized_primitive } from "./utils/owning_buffer_specialize.ts";
 import { emit_index_address, pointer_element_size } from "./utils/ptr_access.ts";
 import { is_auto_inline_method } from "./utils/scan_inline_candidates.ts";
 import { NUM_REG_ARGS } from "./utils/stack_args.ts";
@@ -3092,6 +3094,10 @@ function build_access_method(
 		lambda_arg_indices.add(i);
 	}
 	const lambda_arg_slots: number[] = [];
+	// STRUCT_PLAN_3 B1 cutover: HEAP string-result args (a method's
+	// uniformly-heap string return spilled as an argument) are owned by this
+	// call site — their spill slots are freed once the callee has returned.
+	const heap_string_arg_slots: number[] = [];
 	// EVERY argument spills to a dedicated frame slot while the remaining
 	// (right-to-left) arguments evaluate, and the slots reload into their
 	// registers only after ALL evaluations: caller-saved registers cannot
@@ -3169,7 +3175,14 @@ function build_access_method(
 		// spill both halves like a view. A `null` literal (type rewritten to
 		// the param's `string?` by the checker) zeroes BOTH halves: its build
 		// leaves only x0 = 0, and x1 would carry garbage into the callee.
+		// STRUCT_PLAN_3 B1 cutover: a HEAP string result arg (a method's
+		// uniformly-heap return — see the bl/blr arms) is owned by this call
+		// site: record the spill slot and free it after the callee returns.
 		if (string_arg_set.has(i)) {
+			// Reset-first: the flag reflects exactly THIS argument's build (a
+			// literal/borrow arg leaves a stale true from an earlier sibling's
+			// heap-result build, and recording it would free rodata).
+			status.last_result_is_heap = false;
 			if (param.node_type === "value" && (param as ValueNode).value === "null") {
 				emit_asm(status, `mov x0, #0\n`);
 				emit_asm(status, `mov x1, #0\n`);
@@ -3179,6 +3192,10 @@ function build_access_method(
 			}
 			emit_asm(status, `str x0, [x29, #${view_half_store(i, 0)}]\n`);
 			emit_asm(status, `str x1, [x29, #${view_half_store(i, 1)}]\n`);
+			if (status.last_result_is_heap) {
+				heap_string_arg_slots.push(view_half_store(i, 0));
+				status.last_result_is_heap = false;
+			}
 			continue;
 		}
 		// Enum-with-data values (tag + payload, 16 bytes) use the same
@@ -3432,10 +3449,22 @@ function build_access_method(
 		emit_asm(status, `ldr x10, [x10, #${(trait_index + 1) * 8}]\n`);
 		emit_asm(status, `ldr x10, [x10, #${func_index * 8}]\n`);
 		emit_asm(status, `blr x10\n`);
-		// A float-returning trait method hands its result back in d0 —
-		// bit-cast to x0 for the generic consumers.
+		// A float-returning trait method hands its result back in d0 (the d0
+		// return convention) — bit-cast to x0 for the generic consumers.
 		if (is_float_type(access_func.type.name)) {
 			emit_asm(status, `fmov x0, d0\n`);
+		}
+		// STRUCT_PLAN_3 B1 cutover: a dispatched method's plain-string return
+		// is uniformly heap (the return site normalizes every method string
+		// return — the dispatch site cannot classify the callee statically),
+		// EXCEPT the container borrow accessors. Consumers that honor the
+		// flag reclaim the copy.
+		if (
+			access_func.type.name === "string" &&
+			!access_func.type.is_view &&
+			!is_container_borrow_accessor_name(access_func.name)
+		) {
+			status.last_result_is_heap = true;
 		}
 		// An owned receiver (a `move out T` call like pop() spilled to the
 		// trait_recv_slot above): the slot owns the instance, so destroy it
@@ -3460,13 +3489,19 @@ function build_access_method(
 		inline_func &&
 		overflow_count === 0 &&
 		!receiver_is_string &&
-		!inline_splice_active(mono_struct_name, access_func.name)
+		!inline_splice_active(mono_struct_name, access_func.name) &&
+		!owns_specialized_primitive(target_struct!, access_func.name, status)
 	) {
 		// Inline candidates are small functions; the inline path can't accept
 		// a pre-lowered outgoing-arg area, so skip inlining when this call
 		// has overflow args and fall through to the regular bl. The splice-
 		// active guard makes a nested call to the method currently being
 		// spliced (recursion) take the bl instead of re-splicing forever.
+		// STRUCT_PLAN_3 B1 cutover: an OWNING-element Buffer primitive is
+		// never spliced — the raw inline body assumes trivially-destructible
+		// elements, while the emitted specialized method (owning_buffer_
+		// specialize) runs the strdup/transfer/reclaim dance the uniform-heap
+		// contract needs. The bl lands in the specialization.
 		begin_inline_splice(mono_struct_name, access_func.name);
 		build_inline_method(target_struct!, inline_func, status);
 		end_inline_splice(mono_struct_name, access_func.name);
@@ -3476,6 +3511,19 @@ function build_access_method(
 		// return convention) — bit-cast to x0 for the generic consumers.
 		if (is_float_type(access_func.type.name)) {
 			emit_asm(status, `fmov x0, d0\n`);
+		}
+		// STRUCT_PLAN_3 B1 cutover: a method's plain-string return is
+		// uniformly heap (the return site normalizes every method string
+		// return — methods are vtable-dispatchees), EXCEPT the container
+		// borrow accessors whose call sites treat the result as a borrow.
+		// Consumers that honor the flag (arg-spill disposal, string
+		// receivers, length reads) reclaim the copy.
+		if (
+			access_func.type.name === "string" &&
+			!access_func.type.is_view &&
+			!is_container_borrow_accessor_name(access_func.name)
+		) {
+			status.last_result_is_heap = true;
 		}
 	}
 
@@ -3487,6 +3535,18 @@ function build_access_method(
 	// Inline capturing lambda args were borrowed by the call — reclaim their
 	// one-shot heap descriptors from the parked slots (x0/x1 preserved).
 	emit_dispose_lambda_args_a64(status, lambda_arg_slots);
+
+	// STRUCT_PLAN_3 B1 cutover: free the HEAP string-result arg copies this
+	// call site owns (their (ptr,len) pairs still sit in the spill slots;
+	// x0/x1 hold the call's result — park it across each free).
+	if (heap_string_arg_slots.length > 0) {
+		emit_asm(status, `stp x0, x1, [sp, #-16]!\n`);
+		for (const slot of heap_string_arg_slots) {
+			emit_asm(status, `ldr x0, [x29, #${slot}]\n`);
+			emit_free(status);
+		}
+		emit_asm(status, `ldp x0, x1, [sp], #16\n`);
+	}
 
 	// Free the temporary construction receiver now that the launch has
 	// transferred its handles out of the instance (#destroy would no-op) —

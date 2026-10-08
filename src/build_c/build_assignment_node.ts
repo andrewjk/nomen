@@ -10,7 +10,7 @@ import {
 	struct_needs_auto_destroy,
 	struct_needs_destroy,
 } from "../build_common/destroy_analysis.ts";
-import { direct_string_fields } from "../build_common/has_string_fields.ts";
+import { direct_string_fields, owns_strings_uniformly } from "../build_common/has_string_fields.ts";
 import { claim_init_default_seed_reclaim } from "../build_common/init_computed_seeds.ts";
 import {
 	mono_struct_name,
@@ -25,6 +25,7 @@ import type { NirExpr } from "../nir/nir.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
+import AnonStructNode from "../nodes/AnonStructNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
@@ -118,6 +119,17 @@ export default function build_assignment_node(
 			? status.scoped_declarations.find((d) => d.name === lhs_name)
 			: undefined;
 		const type_name = decl?.type?.name || "";
+		const slot_type = lhs_is_local
+			? (decl?.type ?? status.variable_types?.get(lhs_name))
+			: (node.left_value as AccessNode).access.type;
+		const slot_struct_name = slot_type?.name
+			? slot_type.type_args?.length
+				? mono_type_name(slot_type)
+				: slot_type.name
+			: "";
+		const slot_struct = slot_struct_name
+			? status.structs.find((s) => s.name === slot_struct_name && !s.is_simple_type)
+			: undefined;
 		// A displaced OWNING value (the slot's struct has a destroy) ends its
 		// life at this assignment — destroy it (flag-guarded) before the new
 		// value/null lands. The scope-exit destroy only sees the slot's FINAL
@@ -128,22 +140,21 @@ export default function build_assignment_node(
 			!rhs_is_same_var &&
 			!is_nullable_scalar_type(decl?.type ?? (node.left_value as ValueNode).type, status)
 		) {
-			const slot_type = lhs_is_local
-				? (decl?.type ?? status.variable_types?.get(lhs_name))
-				: (node.left_value as AccessNode).access.type;
-			const slot_struct_name = slot_type?.name
-				? slot_type.type_args?.length
-					? mono_type_name(slot_type)
-					: slot_type.name
-				: "";
-			const slot_struct = slot_struct_name
-				? status.structs.find((s) => s.name === slot_struct_name && !s.is_simple_type)
-				: undefined;
 			if (slot_struct && struct_needs_destroy(slot_struct, status)) {
 				status.code += `if (${flag}) { ${slot_struct_name}_destroy(&${lhs_expr}); }\n`;
 			}
 		}
-		if (lhs_is_local && !rhs_is_same_var && type_name) {
+		// STRUCT_PLAN_3 B1 cutover: an OWNING slot's records are obsolete —
+		// the displaced `<T>_destroy` above reclaims the old value and the
+		// scope-exit destroy reclaims the final one unconditionally; record
+		// frees here would double-fire with the displaced destroy, and
+		// re-recording after a normalized call would hand the scope-exit
+		// B1 drop a stale set (harmless) — but the frees would not be. The
+		// record path stays for NON-owning slots (their strings may be rodata
+		// borrows tracked per-assignment).
+		const slot_owns_strings_uniformly =
+			!!slot_struct && !slot_struct.is_class && owns_strings_uniformly(slot_struct);
+		if (lhs_is_local && !rhs_is_same_var && type_name && !slot_owns_strings_uniformly) {
 			const prefix = `${lhs_name}.`;
 			const recorded = status.heap_string_fields
 				? Array.from(status.heap_string_fields).filter((k) => k.startsWith(prefix))
@@ -454,8 +465,17 @@ export default function build_assignment_node(
 		) {
 			target_type = new Type(status.current_struct.name);
 		}
-		const target_struct = target_type?.name
-			? status.structs.find((s) => s.name === target_type.name && !s.is_simple_type)
+		// Resolve the MONO for a generic target (`Box<string>` → `Box_string`):
+		// the bare template's `is_owning` flag is unset (ownership is derived
+		// per mono at check time), so classifying through the template would
+		// route an owning mono's field store down the raw/record path and leak
+		// its displaced heap value. Mirrors the aarch64 backend's
+		// field_is_struct_string.
+		const mono_target_name = target_type?.type_args?.length
+			? mono_type_name(target_type)
+			: target_type?.name;
+		const target_struct = mono_target_name
+			? status.structs.find((s) => s.name === mono_target_name && !s.is_simple_type)
 			: null;
 		const target_var =
 			access_lhs.target.node_type === "value" ? (access_lhs.target as ValueNode).value : "";
@@ -473,6 +493,15 @@ export default function build_assignment_node(
 		}
 		const old_was_heap =
 			(!!target_struct?.is_class && !first_init_write) ||
+			// B1 cutover: an OWNING struct's string fields are uniformly heap
+			// (the ctor strdup'd the seed, every store strdups), so any
+			// displaced value is heap and is freed unconditionally — unless
+			// the caller already reclaimed the displaced seed (the
+			// construction-temp override path's explicit pre-reclaim).
+			(!!target_struct &&
+				owns_strings_uniformly(target_struct) &&
+				!first_init_write &&
+				(node as unknown as { displace_reclaimed?: boolean }).displace_reclaimed !== true) ||
 			!!status.heap_string_fields?.has(tracked_key);
 		// A `self.field = …` write inside a VALUE-struct method writes through
 		// to the caller's storage (ownership is tracked by the CALLER via
@@ -485,12 +514,25 @@ export default function build_assignment_node(
 		// otherwise the field ends up holding a borrow (a rodata literal or a
 		// caller-owned heap string) that destroy invalidly frees. Mirrors the
 		// aarch64 backend's `target_is_class ||` gate.
+		// B1 cutover: an OWNING struct target joins the class — its fields
+		// are uniformly heap (the caller's scope-exit destroy frees them
+		// unconditionally), so a method's `self.field = …` MUST strdup
+		// (a raw rodata store would be freed by that destroy) and the
+		// displaced value is always heap. A nested owning target
+		// (`a.x.s = …`) likewise: the field lives inside an owning struct,
+		// so the ownership-normalized lowering applies even without a
+		// tracked `target_var`.
 		// A nested class target (`a.x.s` where `x` is a class) has no direct
 		// `target_var`, but it is still an always-heap class field, so it must
 		// take this ownership-normalized lowering too (otherwise the field
 		// holds a rodata literal/<Class>_destroy frees it).
 		const is_class_target = !!target_struct?.is_class;
-		if (target_struct && (target_var || is_class_target) && (!self_target || is_class_target)) {
+		const is_owning_target = !!target_struct && owns_strings_uniformly(target_struct);
+		if (
+			target_struct &&
+			(target_var || is_class_target || is_owning_target) &&
+			(!self_target || is_class_target || is_owning_target)
+		) {
 			const fresh_heap = is_owned_heap_temp(node.right_value, status);
 			// A literal `null` RHS zero-initializes the nullable field's pair
 			// (a bare `0` inside nomen_str_dup(...) would be a C type error;
@@ -520,7 +562,12 @@ export default function build_assignment_node(
 				status.code += `free(${field_access}.ptr);\n`;
 			}
 			status.code += `${field_access} = ${temp};\n}\n`;
-			if (!target_struct.is_class) {
+			// B1 cutover: OWNING structs never record — their string fields are
+			// uniformly heap and the scope-exit destroy frees them
+			// unconditionally; a record would double-free with that destroy.
+			// Non-owning value structs keep the per-assignment records (the
+			// displaced value may still be a rodata borrow there).
+			if (!target_struct.is_class && !target_struct.is_owning) {
 				if (!status.heap_string_fields) status.heap_string_fields = new Set<string>();
 				status.heap_string_fields.add(tracked_key);
 			}
@@ -1199,9 +1246,35 @@ export default function build_assignment_node(
 					// base's, and a stale record would free rodata at the next
 					// displaced-free or at scope exit). `m` stays registered so
 					// the NEW value's fields are reclaimed at scope exit.
+					// STRUCT_PLAN_3 B1 cutover: an OWNING struct's string fields
+					// are uniformly heap and never recorded — the record
+					// release frees nothing, so the displaced value's fields
+					// must be destroyed EAGERLY here, before the base copy (or
+					// the override store's displaced free, which hits the NEW
+					// value's seed) overwrites the only pointers to them. The
+					// check-time-rewritten ctor-call base (`[ .. R(x), f = v ]`
+					// → a func_call with field_overrides) is a FRESH value, and
+					// an anon-literal base's field stores took the owning
+					// lowering (strdup) — neither aliases the displaced value.
 					const struct_type = lhs_mono_struct ?? lhs_struct;
 					if (struct_type) {
 						release_recorded_string_fields(status, struct_type, lhs_name);
+						if (
+							owns_strings_uniformly(struct_type) &&
+							!rhs_references_var(node, lhs_name) &&
+							struct_needs_destroy_by_name(struct_type.name, status)
+						) {
+							emit_struct_destroys(status, struct_type, lhs_name);
+						}
+					}
+					// A `move` base (`m = [ .. move x, f = v ]`) transfers the
+					// base's bytes to the destination — remove the donor from its
+					// scope frame so its scope-exit destroy doesn't free them too
+					// (mirrors the `b = move a` arm above).
+					const lit_base =
+						rhs.node_type === "anon_struct" ? (rhs as AnonStructNode).base : undefined;
+					if (lit_base?.node_type === "value" && (lit_base as ValueNode).is_moved) {
+						splice_decl_from_c_scopes(status, (lit_base as ValueNode).value);
 					}
 				} else {
 					// Non-move struct reassignment.
@@ -1492,12 +1565,18 @@ export default function build_assignment_node(
 				// emitter's terminator closes it) — close it here so the frees
 				// land as statements, and skip the duplicate terminator below.
 				status.code += `;\n`;
-				for (const name of override_displaced_string_fields(
-					override_struct,
-					rhs_call.field_overrides,
-					(expr) => is_owned_heap_temp(expr, status),
-				)) {
-					status.code += `free(${lname}.${name}.ptr);\n`;
+				// B1 cutover: an OWNING struct's override store takes the
+				// ownership-normalized lowering (strdup + unconditional
+				// displaced free), so the explicit seed reclaim here would
+				// double-free — only non-owning structs need it.
+				if (!owns_strings_uniformly(override_struct)) {
+					for (const name of override_displaced_string_fields(
+						override_struct,
+						rhs_call.field_overrides,
+						(expr) => is_owned_heap_temp(expr, status),
+					)) {
+						status.code += `free(${lname}.${name}.ptr);\n`;
+					}
 				}
 			}
 		}

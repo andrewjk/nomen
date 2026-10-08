@@ -5,7 +5,10 @@ import {
 	struct_needs_auto_destroy,
 	struct_needs_destroy,
 } from "../../build_common/destroy_analysis.ts";
-import { direct_string_fields } from "../../build_common/has_string_fields.ts";
+import {
+	direct_string_fields,
+	owns_strings_uniformly,
+} from "../../build_common/has_string_fields.ts";
 import { mono_type_name } from "../../build_common/mono_name.ts";
 import { has_flag_name, is_nullable_struct_type } from "../../build_common/nullable_struct.ts";
 import { superseded_param_temp_names } from "../../build_common/temp_anchor_consolidation.ts";
@@ -34,8 +37,16 @@ import {
  * struct call arg). The struct bytes are copied but any embedded buffer data
  * belongs to the owner, so the declaration must NOT be destroyed at scope
  * exit / return (mirrors the C backend's is_destructured_field_access).
+ *
+ * A stamped `_recv_N` BORROW-ACCESSOR carrier (the checker's receiver hoist
+ * for `xs.at(i).text`, stamped at declaration build) joins it: the carrier
+ * keeps the slot's alias and reclaims nothing — its scope-exit destroy would
+ * free the aliased strings (or, worse, the copies a strdup'd carrier's view
+ * return still points at) while the slot's owner reclaims them itself.
  */
 export function is_field_struct_borrow(decl: { value?: unknown }): boolean {
+	if ((decl as unknown as { borrow_accessor_carrier?: boolean }).borrow_accessor_carrier)
+		return true;
 	if (!decl.value || typeof decl.value !== "object") return false;
 	const value = decl.value as AccessNode & { is_moved?: boolean };
 	return (
@@ -419,7 +430,10 @@ function emit_field_destroys_at(
 	// A CLASS's trait-declared fields are owned (the ctor strdup's their string
 	// defaults), so include them in the destroy. Value-struct trait fields stay
 	// out: their defaults are borrowed rodata (mirroring the C backend).
-	const fields = struct_type.is_class ? layout_fields(struct_type, status) : struct_type.fields;
+	const fields =
+		struct_type.is_class || owns_strings_uniformly(struct_type)
+			? layout_fields(struct_type, status)
+			: struct_type.fields;
 	for (const field of fields) {
 		const offset = get_field_offset_of_fields(fields, field.name, status);
 		const field_struct =
@@ -477,6 +491,7 @@ function free_anchor_slot(
 		destroy_type?: string;
 		destroy_type_args?: Type[];
 		is_nullable?: boolean;
+		var_name?: string;
 	},
 ) {
 	if (slot.destroy_type) {
@@ -487,6 +502,22 @@ function free_anchor_slot(
 			slot.destroy_type_args,
 			slot.is_nullable,
 		);
+	}
+	// STRUCT_PLAN_3 B1 cutover: an Array<string> anchor's buffer carries
+	// heap-owned fat-string slots — free them THROUGH the live base before
+	// releasing the buffer (a buffer-first free leaves the slot walk reading
+	// a freed block).
+	if (slot.var_name !== undefined && status.heap_string_arrays?.has(slot.var_name)) {
+		const len = Math.abs(status.heap_string_arrays.get(slot.var_name)!);
+		for (let j = 0; j < len; j++) {
+			emit_asm(status, `ldr x0, [x29, #${slot.offset}]\n`);
+			emit_asm(status, `ldr x0, [x0, #${8 + j * 16}]\n`);
+			const skip = `.Lskip_anchor_hsa_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+			emit_asm(status, `cbz x0, ${skip}\n`);
+			emit_free(status);
+			emit_asm(status, `${skip}:\n`);
+		}
+		status.heap_string_arrays.delete(slot.var_name);
 	}
 	emit_asm(status, `ldr x0, [x29, #${slot.offset}]\n`);
 	emit_free(status);
@@ -658,6 +689,37 @@ export function is_struct_type(type_name: string, status: BuildStatus): StructNo
 	return status.structs.find((s) => s.name === type_name && !s.is_simple_type);
 }
 
+/**
+ * B1 cutover: scope-exit heap-string-field record handling for one
+ * declaration. An OWNING struct's records are DROPPED, not freed — the
+ * destroy walk below frees ALL its string fields unconditionally (they are
+ * uniformly heap: the ctor strdup'd the seed, stores strdup non-heap RHS),
+ * so freeing the records first would double-free. A MOVED-out owning struct
+ * keeps the release: the container's store_T deep-copied the strings, so the
+ * donor's own heap copies must be reclaimed even though the destroy walk is
+ * skipped. Non-owning decls keep the per-assignment record release.
+ */
+function release_records_for_scope_exit(
+	status: BuildStatus,
+	decl: {
+		name: string;
+		type: { name: string; type_args?: Type[]; is_nullable?: boolean };
+		value?: any;
+	},
+	moved: Set<string>,
+) {
+	const struct_type = resolve_decl_struct(decl, status)?.struct_type;
+	const owning =
+		struct_type?.is_owning === true &&
+		!struct_type.name.startsWith("_Tuple_") &&
+		!struct_type.name.startsWith("_Anon_");
+	if (owning && !moved.has(decl.name)) {
+		drop_heap_string_field_records(status, decl.name);
+		return;
+	}
+	release_heap_string_fields(status, decl.name, decl.type.name, decl.type.is_nullable);
+}
+
 export function emit_destroy_for_decl(
 	status: BuildStatus,
 	decl_name: string,
@@ -672,7 +734,13 @@ export function emit_destroy_for_decl(
 	// strings, so the source's own heap copies would otherwise be abandoned.
 	// (A RETURN clears the records instead — the sret byte-copy transfers the
 	// string pointers to the caller.)
-	release_heap_string_fields(status, decl_name, decl_type_name, is_nullable);
+	// B1 cutover: an OWNING struct's records are dropped, not released — the
+	// destroy walk frees all string fields unconditionally (see the helper).
+	release_records_for_scope_exit(
+		status,
+		{ name: decl_name, type: { name: decl_type_name, type_args, is_nullable } },
+		moved,
+	);
 	if (moved.has(decl_name)) return;
 
 	// A func-typed local holding a closure descriptor (CLOSURE.md Phase 2):
@@ -846,15 +914,30 @@ export function emit_destroy_for_decl(
 		// recursion would double-free them.
 	} else if (struct_needs_destroy(struct_type, status)) {
 		// Only emit field destroys for value structs that have a user #destroy
-		// or class/nested-owning-struct fields. A struct whose only owning
-		// fields are strings is NOT destroyed here — its strings may be raw
-		// args (static literals), not heap. The Buffer per-element destroy
-		// path calls <Struct>_destroy directly (which handles strings).
-		// `free_strings=false`: this is struct LOCAL scope exit, where string
-		// fields may be rodata literals (aarch64 constructors don't strdup);
-		// the auto-generated <Struct>_destroy (Buffer path) is the one that
-		// frees them.
-		emit_field_destroys(status, struct_type, decl_name, addr_offset, undefined, false);
+		// or class/nested-owning-struct fields. B1 cutover: DECLARED-owning
+		// structs with string fields now fire too (the gate includes them) —
+		// their string fields are uniformly heap (the ctor strdup'd the seed,
+		// stores strdup non-heap RHS), so `free_strings` follows the owning
+		// flag; non-owning locals' string fields may still be rodata
+		// (transition-era posture) and stay excluded.
+		// B1 cutover: an OWNING struct whose `<T>_destroy` was JUST called
+		// skips this walk — the user destroy carries the trailing field walk
+		// (build_destroy_function's owning arm), so it already reclaimed
+		// every owning field; repeating the recursion would double-free
+		// (the same contract as the class arm above). Non-owning structs
+		// with a user destroy keep the walk (their destroy frees nothing).
+		const destroy_handled_fields =
+			struct_type.is_owning === true && (has_destroy(struct_type) || struct_type.is_class);
+		if (!destroy_handled_fields) {
+			emit_field_destroys(
+				status,
+				struct_type,
+				decl_name,
+				addr_offset,
+				undefined,
+				owns_strings_uniformly(struct_type),
+			);
+		}
 	}
 
 	if (skip_label) {
@@ -904,12 +987,14 @@ export function emit_field_destroys(
 	is_class_parent: boolean | undefined,
 	free_strings: boolean,
 ) {
-	// A CLASS's trait-declared fields are owned (the ctor strdup's their
-	// string defaults), so include them. Value-struct trait fields stay out:
-	// their defaults are borrowed rodata (mirroring the C backend).
-	const destroy_fields = struct_type.is_class
-		? layout_fields(struct_type, status)
-		: struct_type.fields;
+	// A CLASS's — or, B1 cutover, an OWNING struct's — trait-declared fields
+	// are owned (the ctor strdup's their string defaults), so include them.
+	// Non-owning value-struct trait fields stay out: their defaults are
+	// borrowed rodata.
+	const destroy_fields =
+		struct_type.is_class || owns_strings_uniformly(struct_type)
+			? layout_fields(struct_type, status)
+			: struct_type.fields;
 	for (const field of destroy_fields) {
 		const offset = get_field_offset_of_fields(destroy_fields, field.name, status);
 		// An enum-with-data field owns its ACTIVE case's payloads (case
@@ -1246,7 +1331,9 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 			// the gates below: a string-only value struct is skipped by the
 			// struct_needs_destroy gate, and a moved-out struct's records were
 			// already dropped by the release (store_T deep-copied them).
-			release_heap_string_fields(status, decl.name, decl.type.name, decl.type.is_nullable);
+			// B1 cutover: an OWNING struct's records are dropped, not freed —
+			// the destroy walk frees all string fields unconditionally.
+			release_records_for_scope_exit(status, decl, moved);
 			if (moved.has(decl.name)) {
 				continue;
 			}
@@ -1380,7 +1467,8 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 		const decl = status.scoped_declarations[i];
 		// See the heap_slots branch above: recorded heap string fields are
 		// released before the moved / struct_needs_destroy gates.
-		release_heap_string_fields(status, decl.name, decl.type.name, decl.type.is_nullable);
+		// B1 cutover: an OWNING struct's records are dropped, not freed.
+		release_records_for_scope_exit(status, decl, moved);
 		if (moved.has(decl.name)) {
 			continue;
 		}
@@ -1392,11 +1480,41 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 			continue;
 		}
 		if (status.heap_string_arrays?.has(decl.name)) {
-			const len = status.heap_string_arrays.get(decl.name)!;
-			for (let j = 0; j < len; j++) {
-				emit_var_address(status, "x0", decl.name);
-				emit_asm(status, `ldr x0, [x0, #${j * 16}]\n`);
+			// Two layouts share this registry: a HEAP array (the var holds a
+			// malloc'd base pointer — length prefix at [base], fat-string
+			// slots at [base + 8 + j*16]) and an INLINE stack array (the
+			// elements sit directly at the var's frame offset). NULL-guard
+			// every free — the audited free wrapper traps on a null pointer.
+			const registered = status.heap_string_arrays.get(decl.name)!;
+			const len = Math.abs(registered);
+			// Negative len = INLINE storage (the elements sit at the var's
+			// frame offset — literal inits); positive = a heap base pointer
+			// (call inits). The heap-slots fast-path variant of this walk
+			// sees name/type-only decl entries, so the shape must ride the
+			// registry, not the declaration node.
+			const heap_based = registered > 0;
+			if (heap_based) {
+				for (let j = 0; j < len; j++) {
+					emit_var_load(status, "x0", decl.name, 8);
+					emit_asm(status, `ldr x0, [x0, #${8 + j * 16}]\n`);
+					const skip = `.Lskip_hsa_${decl.name}_${j}`;
+					emit_asm(status, `cbz x0, ${skip}\n`);
+					emit_free(status);
+					emit_asm(status, `${skip}:\n`);
+				}
+				// The buffer itself is freed LAST (freeing it first would
+				// leave the slot walk reading a freed block).
+				emit_var_load(status, "x0", decl.name, 8);
 				emit_free(status);
+			} else {
+				for (let j = 0; j < len; j++) {
+					emit_var_address(status, "x0", decl.name);
+					emit_asm(status, `ldr x0, [x0, #${j * 16}]\n`);
+					const skip = `.Lskip_hsa_${decl.name}_${j}`;
+					emit_asm(status, `cbz x0, ${skip}\n`);
+					emit_free(status);
+					emit_asm(status, `${skip}:\n`);
+				}
 			}
 			continue;
 		}
@@ -1528,10 +1646,14 @@ export function emit_cleanup_to_loop_depth(status: BuildStatus) {
 		for (const name of scope.heap_strings) {
 			if (moved.has(name)) continue;
 			if (status.heap_string_arrays?.has(name)) {
-				const len = status.heap_string_arrays.get(name)!;
+				const registered = status.heap_string_arrays.get(name)!;
+				const len = Math.abs(registered);
+				// Fat-string slots: INLINE arrays stride 16 from the var's
+				// frame offset; heap arrays stride 16 from base+8 (the length
+				// prefix occupies [base]).
 				for (let j = 0; j < len; j++) {
 					emit_var_address(status, "x0", name);
-					emit_asm(status, `ldr x0, [x0, #${j * 8}]\n`);
+					emit_asm(status, `ldr x0, [x0, #${registered < 0 ? j * 16 : 8 + j * 16}]\n`);
 					emit_free(status);
 				}
 				continue;
@@ -1626,6 +1748,60 @@ export function mark_moved_if_struct(
 }
 
 /**
+ * STRUCT_PLAN_3 B1 cutover: strdup the string fields an OWNING binding's
+ * scope-exit destroy will free UNCONDITIONALLY — the direct plain strings,
+ * plus (recursively) the strings of nested struct fields whose
+ * `<Inner>_destroy` the destroy walk invokes and whose body frees strings:
+ * an auto-generated destroy (free_strings=true) or an owning struct's user
+ * destroy (the trailing owning walk). A NON-owning nested struct with a USER
+ * destroy frees no strings — descending there would leak the strdups. Used
+ * when an owning binding is initialized from a container borrow accessor
+ * (`var p = people.at(i)`): the copy aliases the slot's bytes, so the
+ * binding must own independent copies before its destroy runs.
+ */
+export function emit_owning_field_strdups_at(
+	status: BuildStatus,
+	struct_name: string,
+	base_reg: string,
+	base_offset = 0,
+) {
+	const struct = status.structs.find(
+		(s) => s.name === struct_name && !s.is_simple_type && !s.is_class,
+	);
+	if (!struct) return;
+	emit_string_field_strdups_at(status, struct_name, base_reg, base_offset);
+	for (const field of struct.fields) {
+		if (field.type.is_ref || field.type.is_view || field.type.is_array) continue;
+		const field_struct = status.structs.find(
+			(s) => s.name === field.type.name && !s.is_simple_type && !s.is_class,
+		);
+		if (!field_struct) continue;
+		const nested_frees_strings = has_destroy(field_struct)
+			? owns_strings_uniformly(field_struct)
+			: struct_needs_auto_destroy(field_struct, status);
+		if (!nested_frees_strings) continue;
+		// A nullable nested field's bytes are stale garbage when the
+		// companion `_has` flag is 0 (the destroy is flag-guarded the same
+		// way) — strdup'ing garbage would crash. Guard the recursion on the
+		// flag. The strdup calls below re-derive base_reg themselves, so the
+		// branch only wraps them.
+		const nested_off = base_offset + get_field_offset(struct_name, field.name, status);
+		if (is_nullable_struct_type(field.type, status)) {
+			const has_off = get_field_has_offset(struct_name, field.name, status);
+			const skip = `.Lskip_nested_hsa_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+			emit_asm(status, `str ${base_reg}, [sp, #-16]!\n`);
+			emit_asm(status, `ldrb w9, [${base_reg}, #${has_off}]\n`);
+			emit_asm(status, `cbz w9, ${skip}\n`);
+			emit_owning_field_strdups_at(status, field_struct.name, base_reg, nested_off);
+			emit_asm(status, `ldr ${base_reg}, [sp], #16\n`);
+			emit_asm(status, `${skip}:\n`);
+			continue;
+		}
+		emit_owning_field_strdups_at(status, field_struct.name, base_reg, nested_off);
+	}
+}
+
+/**
  * strdup the UNRECORDED direct string fields of a value struct whose base is
  * in `base_reg` (+ base_offset) — the return-boundary normalization: the
  * sret byte-copy transfers the RECORDED (heap) fields raw, but unrecorded
@@ -1651,20 +1827,18 @@ export function emit_string_field_strdups_at(
 		// restore and store the owned pair.
 		emit_asm(status, `str ${base_reg}, [sp, #-16]!\n`);
 		emit_string_pair_load_at(status, base_reg, off);
-		// A NULL nullable string field (`{NULL, 0}`) stays null: strdup on a
-		// null ptr would crash / fabricate a non-null empty string.
-		if (field.type.is_nullable) {
+		// A NULL pair (`{NULL, 0}`) stays null: strdup on a null ptr would
+		// crash / fabricate a non-null empty string. The guard is
+		// UNCONDITIONAL — a non-nullable-typed field can still hold NULL at
+		// runtime (JsonNode.text's `unsafe` NULL sentinel: "NULL means no
+		// text"), matching the C backend's `nomen_str_dup` null check.
+		{
 			const skip_label = `.Lskip_nullable_strdup_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
 			emit_asm(status, `mov x13, x0\n`);
 			emit_asm(status, `cbz x0, ${skip_label}\n`);
 			emit_strdup_string(status);
 			emit_asm(status, `mov x13, x0\n`);
 			emit_asm(status, `${skip_label}:\n`);
-			emit_asm(status, `ldr ${base_reg}, [sp], #16\n`);
-			emit_pair_store_to(status, base_reg, off, "x13", "x1");
-		} else {
-			emit_strdup_string(status);
-			emit_asm(status, `mov x13, x0\n`);
 			emit_asm(status, `ldr ${base_reg}, [sp], #16\n`);
 			emit_pair_store_to(status, base_reg, off, "x13", "x1");
 		}

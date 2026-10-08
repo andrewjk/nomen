@@ -13,7 +13,7 @@ import {
 } from "../build_common/destroy_analysis.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import { claim_init_default_seed_reclaim } from "../build_common/init_computed_seeds.ts";
-import { resolve_struct_type } from "../build_common/mono_name.ts";
+import { mono_type_name, resolve_struct_type } from "../build_common/mono_name.ts";
 import { call_result_type, is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import { is_string_borrow } from "../build_common/string_return_analysis.ts";
@@ -23,6 +23,7 @@ import { is_int_literal, parse_int_literal_bigint } from "../int_literal.ts";
 import type { NirExpr } from "../nir/nir.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
+import AnonStructNode from "../nodes/AnonStructNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
@@ -99,30 +100,43 @@ function is_mutable_param(name: string, status: BuildStatus): boolean {
 
 /**
  * Whether `obj.field = rhs` writes a plain `string` field of a struct or
- * class instance. CLASS string fields follow an always-heap-owned convention
- * (see the assignment branch that uses this): `_init` strdup's defaults and
+ * class instance. CLASS string fields — and, B1 cutover, OWNING-struct
+ * string fields — follow an always-heap-owned convention (see the
+ * assignment branch that uses this): `_init` strdup's defaults and
  * assignments strdup non-heap RHS, so destroys can free them unconditionally.
- * VALUE-struct string fields keep per-assignment ownership tracking instead
- * (construction may leave rodata in them): non-heap RHS is strdup'd and the
- * field is recorded in heap_string_fields for release at scope exit.
- * `ref` string fields (borrows) are excluded either way.
+ * Non-owning value-struct string fields keep per-assignment ownership
+ * tracking instead (construction may leave rodata in them): non-heap RHS is
+ * strdup'd and the field is recorded in heap_string_fields for release at
+ * scope exit. `ref` string fields (borrows) are excluded either way.
  */
 function field_is_struct_string(
 	target_type: Type | undefined,
 	field_type: Type | undefined,
 	status: BuildStatus,
-): { name: string; target_is_class: boolean } | undefined {
+): { name: string; target_is_class: boolean; target_is_owning: boolean } | undefined {
 	if (!target_type?.name || !field_type) return undefined;
 	// A `view T` field is a non-owning pair — never heap-owned, so it must
 	// not enter the strdup/free ownership machinery below.
 	if (field_type.is_view) return undefined;
 	if (field_type.name !== "string" || field_type.is_ref || field_type.is_array) return undefined;
-	const target_struct = status.structs.find(
-		(s) => s.name === target_type.name && !s.is_simple_type,
-	);
+	// Resolve the MONO for a generic target (`Box<string>` → `Box_string`):
+	// the bare template's `is_owning` flag is unset (ownership is derived per
+	// mono at check time — `Box<string>`'s `T value` is owning, `Box<int>`'s
+	// is not), so classifying through the template would route an owning
+	// mono's field store down the raw/record path and leak its displaced
+	// heap value.
+	const target_name = target_type.type_args?.length
+		? mono_type_name(target_type)
+		: target_type.name;
+	const target_struct = status.structs.find((s) => s.name === target_name && !s.is_simple_type);
 	if (!target_struct) return undefined;
-	if (target_struct.is_class) return { name: field_type.name, target_is_class: true };
-	return { name: field_type.name, target_is_class: false };
+	if (target_struct.is_class)
+		return { name: field_type.name, target_is_class: true, target_is_owning: true };
+	return {
+		name: field_type.name,
+		target_is_class: false,
+		target_is_owning: !!target_struct.is_owning,
+	};
 }
 
 /**
@@ -691,6 +705,40 @@ function build_nullable_struct_assignment(
 	}
 	ensure_newline(status);
 	emit_asm(status, `ldr x9, [sp], #16\n`);
+	// A displaced OWNING value ends its life at this store: destroy it
+	// (flag-guarded — a null field's bytes are stale; a custom `#init`'s
+	// FIRST write skips — the pre-write bytes are garbage) before the copy
+	// overwrites it. B1 cutover: the displaced value's string fields are
+	// uniformly heap, so without this every overwrite leaked the old
+	// instance's strings. Mirrors the C backend's nullable-slot displaced
+	// destroy and the null-RHS arm above.
+	if (!field_is_scalar) {
+		const fst = status.structs.find((s) => s.name === type_name && !s.is_simple_type);
+		const first_init_write = is_first_init_field_write(
+			access.target.node_type === "value" ? (access.target as ValueNode).value : "",
+			field_name,
+			status,
+		);
+		mark_init_field_write(
+			access.target.node_type === "value" ? (access.target as ValueNode).value : "",
+			field_name,
+			status,
+		);
+		if (fst && struct_needs_destroy(fst, status) && !first_init_write) {
+			const destroy_name = resolve_struct_name(type_name, field_access.type?.type_args, status);
+			const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+			const skip = `.Lskip_field_displaced_${id}`;
+			emit_asm(status, `ldrb w10, [x9, #${has_offset}]\n`);
+			emit_asm(status, `cbz w10, ${skip}\n`);
+			// The destroy call clobbers every caller-saved register — park the
+			// RHS address (x0) and the object base (x9) as a pair.
+			emit_asm(status, `stp x0, x9, [sp, #-16]!\n`);
+			emit_asm(status, `add x0, x9, #${field_offset}\n`);
+			emit_asm(status, `bl ${destroy_name}_destroy\n`);
+			emit_asm(status, `ldp x0, x9, [sp], #16\n`);
+			emit_asm(status, `${skip}:\n`);
+		}
+	}
 	// A `move`/last-use struct RHS transfers ownership to the field.
 	mark_moved_if_struct(node.right_value, status);
 	// x0 = source address/value, x9 = object base. Copy value in, set flag.
@@ -1367,6 +1415,19 @@ export default function build_assignment_node(
 				}
 			}
 			mark_moved_if_struct(node.right_value, status);
+			// A base-bearing ANON literal with a `move` base (`m = [ .. move x,
+			// f = v ]`) transfers the base's bytes to the destination — mark the
+			// DONOR moved (the literal node itself has no name, so the call
+			// above is a no-op for it) or its scope-exit destroy frees the
+			// bytes the destination now owns.
+			if (node.right_value.node_type === "anon_struct") {
+				const lit_base = (node.right_value as AnonStructNode).base;
+				if (lit_base && (lit_base as ValueNode).is_moved) {
+					mark_moved_if_struct(lit_base, status);
+					const lit_donor = (lit_base as ValueNode).value;
+					if (lit_donor) clear_heap_string_fields(status, lit_donor);
+				}
+			}
 			if (rhs_is_struct && !rhs_struct) {
 				const self_param = get_self_param(node.right_value);
 				if (self_param && self_param.node_type === "value") {
@@ -1541,8 +1602,22 @@ export default function build_assignment_node(
 			}
 			// `x = [ .. <base>, f = v ]`: the copy above landed the base's
 			// bytes; apply the override field stores to the destination now.
+			// A CTOR-call base is the exception: the construction path already
+			// applied the overrides to the expression temp (the pre-reclaim +
+			// raw stores above the copy — see the overridden-fields note on
+			// record_ctor_heap_default_fields), so re-applying here would run
+			// the ownership-normalized store's displaced free over the RAW
+			// override pair the temp-level store left (B1 cutover stale-free).
 			if (has_field_overrides(node.right_value)) {
-				emit_field_overrides(name, node.right_value, build_node, status);
+				const rhs_call =
+					node.right_value.node_type === "func_call"
+						? (node.right_value as FunctionCallNode)
+						: undefined;
+				const ctor_base_applied_at_temp =
+					!!rhs_call?.field_overrides?.length && rhs_call.name === rhs_call.type?.name;
+				if (!ctor_base_applied_at_temp) {
+					emit_field_overrides(name, node.right_value, build_node, status);
+				}
 			}
 			build_swap(node, status, nir_swap);
 			return;
@@ -2171,18 +2246,22 @@ export default function build_assignment_node(
 				// must stay a RAW pair store: the strdup+record lowering would
 				// orphan the heap-field record at the struct-return boundary.
 				!(node as unknown as { raw_field_store?: boolean }).raw_field_store &&
-				// Only for CLASS targets (always-heap fields) or a named
-				// local/param target whose ownership can be tracked in
-				// heap_string_fields. A `self.field = …` write inside a
-				// VALUE-struct method (custom #init, trait default) writes
-				// through to the caller's storage — strdup'ing here would
-				// leave an untracked heap copy (the caller can't know), so it
-				// falls through to the plain raw store. Mirrors the C backend
-				// (which gates the whole branch on `target_var !== "self"`).
+				// Only for CLASS/OWNING targets (always-heap fields — the
+				// caller's scope-exit destroy frees them unconditionally, so
+				// a raw rodata store would be freed) or a named local/param
+				// target whose ownership can be tracked in heap_string_fields.
+				// The OWNING arm also covers nested hops (`a.x.s = …`): the
+				// field lives inside an owning struct.
+				// A `self.field = …` write inside a non-owning VALUE-struct
+				// method (custom #init, trait default) writes through to the
+				// caller's storage — strdup'ing here would leave an untracked
+				// heap copy (the caller can't know), so it falls through to
+				// the plain raw store. Mirrors the C backend (which gates the
+				// whole branch on `target_var !== "self"`).
 				(() => {
 					const st = field_is_struct_string(target_type, field_type, status)!;
 					const tv = access.target.node_type === "value" ? (access.target as ValueNode).value : "";
-					return st.target_is_class || (tv !== "" && tv !== "self");
+					return st.target_is_class || st.target_is_owning || (tv !== "" && tv !== "self");
 				})()
 			) {
 				// A struct instance's plain `string` field assignment. For
@@ -2207,10 +2286,19 @@ export default function build_assignment_node(
 					access.target.node_type === "value" ? (access.target as ValueNode).value : "";
 				const tracked_key = `${target_var}.${field_name}`;
 				const is_class_target = string_target.target_is_class;
+				// B1 cutover: an OWNING struct's string fields are uniformly
+				// heap (the ctor strdup'd the seed, every store strdups), so
+				// any displaced value is heap and is freed unconditionally —
+				// unless the caller already reclaimed the displaced seed (the
+				// construction-temp override path's explicit pre-reclaim).
+				const is_owning_target = string_target.target_is_owning;
+				const displace_reclaimed =
+					(node as unknown as { displace_reclaimed?: boolean }).displace_reclaimed === true;
 				const first_init_write = is_first_init_field_write(target_var, field_name, status);
 				mark_init_field_write(target_var, field_name, status);
 				const old_was_heap =
-					(is_class_target && !first_init_write) || !!status.heap_string_fields?.has(tracked_key);
+					((is_class_target || is_owning_target) && !first_init_write && !displace_reclaimed) ||
+					!!status.heap_string_fields?.has(tracked_key);
 				const offset = get_field_offset(target_type.name, field_name, status);
 
 				const base_reg = deferred_field_base_reg(access, status);
@@ -2304,10 +2392,13 @@ export default function build_assignment_node(
 						emit_asm(status, `str x2, [x0, #${offset}]\n`);
 					}
 				}
-				// `self.field = …` inside a value-struct method writes through
-				// to the caller's storage (the caller tracks ownership);
-				// recording it here would double-free at this scope's exit.
-				if (!is_class_target && target_var && target_var !== "self") {
+				// `self.field = …` inside a non-owning value-struct method
+				// writes through to the caller's storage (the caller tracks
+				// ownership); recording it here would double-free at this
+				// scope's exit. B1 cutover: OWNING/class targets never record
+				// — their string fields are uniformly heap and the
+				// scope-exit destroy frees them unconditionally.
+				if (!is_class_target && !is_owning_target && target_var && target_var !== "self") {
 					if (rhs_is_heap) {
 						record_heap_string_field(status, target_var, field_name);
 					} else {

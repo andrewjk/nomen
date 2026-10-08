@@ -204,6 +204,29 @@ function is_heap_string_expr(node: BaseNode | undefined): boolean {
 		);
 	}
 
+	// STRUCT_PLAN_3 B1 cutover: `return <owner>.<field>` — an owning
+	// struct's string fields are uniformly heap-owned (ctor strdup, stores
+	// strdup, load-binding strdup), so the field read the return site hands
+	// the caller is a heap value the owner's scope-exit destroy would free.
+	// The return site dups it and stamps the function heap-returning — but
+	// call sites built BEFORE the stamp never see it and leak the copy. The
+	// pre-pass classification closes that window: every caller frees a
+	// function whose return is a direct string field read. (Non-owning
+	// owners are safe under the same rule: the dup is freed by the caller,
+	// the rodata/borrow original untouched.)
+	if (node.node_type === "access") {
+		const access = (node as any).access;
+		if (
+			access?.node_type === "access_field" &&
+			access.type?.name === "string" &&
+			!access.type?.is_view &&
+			!access.type?.is_array
+		) {
+			return true;
+		}
+		return false;
+	}
+
 	return false;
 }
 

@@ -2,6 +2,7 @@ import {
 	struct_needs_auto_destroy,
 	struct_needs_destroy,
 } from "../build_common/destroy_analysis.ts";
+import { owns_strings_uniformly } from "../build_common/has_string_fields.ts";
 import { mono_struct_name, mono_type_name } from "../build_common/mono_name.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
@@ -211,15 +212,16 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 							status.code += `;\nself${accessor}${has_flag_name(field.name)} = 1;\n`;
 						}
 					} else {
-						// A class's plain string field is always heap-owned (the
-						// init body's reassignment `free(self->field.ptr)` and
-						// <Class>_destroy free it unconditionally), so a default
-						// must be duplicated — a raw literal here would be freed
-						// as static rodata. A heap-producing default is stored
-						// directly. Value structs keep the raw store (their
+						// A class's — or, B1 cutover, an OWNING struct's — plain
+						// string field is always heap-owned (the init body's
+						// reassignment `free(self->field.ptr)` and <Struct>_destroy
+						// free it unconditionally), so a default must be
+						// duplicated — a raw literal here would be freed as static
+						// rodata. A heap-producing default is stored directly.
+						// Non-owning value structs keep the raw store (their
 						// field ownership is tracked per assignment).
 						const field_is_class_string =
-							is_class &&
+							(is_class || owns_strings_uniformly(node)) &&
 							field.type.name === "string" &&
 							!field.type.is_array &&
 							!field.type.is_ref &&
@@ -420,16 +422,16 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 					status.code += `);\n`;
 				}
 			} else {
-				// A class's plain string field is always heap-owned (freed
-				// unconditionally by <Class>_destroy): strdup the default /
-				// param value — it may be a static literal or a borrow. A
-				// heap-producing default (is_owned_heap_temp) is stored
-				// directly. Value structs keep the raw store (their field
-				// ownership is tracked per assignment / by Buffer stores).
-				// A `view T` field is a non-owning pair — stored raw, never
-				// duplicated.
+				// A class's — or, B1 cutover, an OWNING struct's — plain string
+				// field is always heap-owned (freed unconditionally by
+				// <Struct>_destroy): strdup the default / param value — it may
+				// be a static literal or a borrow. A heap-producing default
+				// (is_owned_heap_temp) is stored directly. Non-owning value
+				// structs keep the raw store (their field ownership is tracked
+				// per assignment / by Buffer stores). A `view T` field is a
+				// non-owning pair — stored raw, never duplicated.
 				const field_is_class_string =
-					is_class &&
+					(is_class || owns_strings_uniformly(node)) &&
 					field.type.name === "string" &&
 					!field.type.is_array &&
 					!field.type.is_ref &&
@@ -499,10 +501,11 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 					status.code += `${object_name}${accessor}${field.name}`;
 					if (field.value) {
 						status.code += " = ";
-						// A class's trait-default string field is heap-owned
-						// (see the field loop above).
+						// A class's — or, B1 cutover, an OWNING struct's —
+						// trait-default string field is heap-owned (see the field
+						// loop above).
 						const wrap =
-							is_class &&
+							(is_class || owns_strings_uniformly(node)) &&
 							field.type.name === "string" &&
 							!field.type.is_array &&
 							!field.type.is_ref &&
@@ -592,7 +595,38 @@ function build_struct_traits(node: StructNode, status: BuildStatus) {
 		!!node.is_class ||
 		(node.traits.length > 0 && struct_needs_auto_destroy(node, status));
 	if (has_destroy_fn) {
-		const destroy_label = `${node.name}_destroy`;
+		let destroy_label = `${node.name}_destroy`;
+		// STRUCT_PLAN_3 B1 cutover: an OWNING struct with a USER `#destroy`
+		// — the dispatched destroy (vtable slot / trait shim) must also free
+		// the uniformly-heap string fields, which the user body does not.
+		// Wrap it: `<T>_owning_destroy` calls the user destroy, then frees
+		// the plain string fields and recurses into nested owning value
+		// structs (their auto/user destroy frees their own). The LOCAL
+		// scope-exit walker (emit_struct_destroys) keeps calling
+		// `<T>_destroy` + its own field walk — it never dispatches through
+		// the slot, so the wrapper cannot double-fire there.
+		if (owns_strings_uniformly(node) && !!node.functions.find((f) => f.name === "#destroy")) {
+			const wrapper = `${node.name}_owning_destroy`;
+			status.headers += `void ${wrapper}(struct ${node.name} *self);\n`;
+			status.code += `void ${wrapper}(struct ${node.name} *self)\n{\n`;
+			status.code += `${node.name}_destroy(self);\n`;
+			for (const field of class_destroy_fields(node, status)) {
+				if (field.type.is_ref || field.type.is_view || field.type.is_array) continue;
+				if (field.type.name === "string") {
+					status.code += `free(self->${field.name}.ptr);\n`;
+					continue;
+				}
+				const mono_name = mono_type_name(field.type);
+				const field_struct = status.structs.find(
+					(s) => s.name === mono_name && !s.is_simple_type && !s.is_class,
+				);
+				if (field_struct && struct_needs_auto_destroy(field_struct, status)) {
+					status.code += `${field_struct.name}_destroy(&self->${field.name});\n`;
+				}
+			}
+			status.code += `}\n`;
+			destroy_label = wrapper;
+		}
 		status.headers += `void ${destroy_label}(struct ${node.name} *);\n`;
 		status.code += `void *_${node.name}_destroy_funcs[] = {${destroy_label}};\n`;
 	}
@@ -1066,7 +1100,9 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
  * string defaults are borrowed rodata and must NOT be freed.
  */
 function class_destroy_fields(node: StructNode, status: BuildStatus): DeclarationNode[] {
-	if (!node.is_class || !node.traits.length) return node.fields;
+	// B1 cutover: an OWNING struct's trait-declared string defaults are
+	// uniformly heap too (the ctor strdup'd them) — include them.
+	if ((!node.is_class && !owns_strings_uniformly(node)) || !node.traits.length) return node.fields;
 	const extra: DeclarationNode[] = [];
 	for (const trait_name of node.traits) {
 		const trait = status.traits.find((t) => t.name === trait_name);

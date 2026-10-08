@@ -31,6 +31,12 @@ export default function record_ctor_heap_default_fields(
 	skip?: ReadonlySet<string>,
 ): void {
 	const computed = init_computed_heap_string_fields(struct_node, is_owned_heap);
+	// STRUCT_PLAN_3 B1 cutover: an OWNING struct never records — its string
+	// fields are uniformly heap (the ctor strdup'd every seed, stores strdup
+	// non-heap RHS), the scope-exit destroy frees them unconditionally, and a
+	// displaced store frees through the unconditional old_was_heap arm.
+	// Recording here would double-free with the destroy.
+	if (struct_node.is_owning === true) return;
 	for (const field of struct_node.fields) {
 		if (field.type.name !== "string" || field.type.is_array) continue;
 		if (field.type.is_ref || field.type.is_view) continue;

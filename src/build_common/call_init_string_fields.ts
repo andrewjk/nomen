@@ -116,6 +116,10 @@ export function record_call_init_string_fields(
 	if (mono_name.startsWith("_Tuple_")) return;
 	const struct = status.structs.find((s) => s.name === mono_name && !s.is_simple_type);
 	if (!struct || struct.is_class) return;
+	// STRUCT_PLAN_3 B1 cutover: an OWNING struct never records — its string
+	// fields are uniformly heap and the scope-exit destroy frees them
+	// unconditionally (a record would double-free).
+	if ((struct as { is_owning?: boolean }).is_owning === true) return;
 	const fields = direct_string_fields(struct as never);
 	if (!fields.length) return;
 	if (!status.heap_string_fields) status.heap_string_fields = new Set<string>();

@@ -1,7 +1,11 @@
 import { has_destroy, struct_needs_destroy } from "../build_common/destroy_analysis.ts";
+import { owns_strings_uniformly } from "../build_common/has_string_fields.ts";
 import { mono_type_name, resolve_struct_type } from "../build_common/mono_name.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
-import { is_string_borrow } from "../build_common/string_return_analysis.ts";
+import {
+	is_borrow_accessor_carrier,
+	is_string_borrow,
+} from "../build_common/string_return_analysis.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import type EnumNode from "../nodes/EnumNode.ts";
@@ -44,6 +48,56 @@ function emit_enum_payload_reclaim(
 	} else if (p.type.name === "string") {
 		status.code += `${guard} { free(${cname}._data._${c.name}.${p.name}.ptr); }\n`;
 	}
+}
+
+/**
+ * The field list an owning-struct destroy must walk: the struct's own fields
+ * plus trait-declared defaults it inherits (their string defaults are
+ * uniformly heap — the ctor strdup'd them). Mirrors build_c/build_struct_node's
+ * class_destroy_fields for the owning tier.
+ */
+function struct_destroy_fields(struct: StructNode, status: BuildStatus): DeclarationNode[] {
+	if (!struct.traits.length) return struct.fields;
+	const extra: DeclarationNode[] = [];
+	for (const trait_name of struct.traits) {
+		const trait = status.traits.find((t) => t.name === trait_name);
+		if (!trait) continue;
+		for (const f of trait.fields) {
+			if (!struct.fields.find((nf) => nf.name === f.name)) extra.push(f);
+		}
+	}
+	return extra.length ? [...struct.fields, ...extra] : struct.fields;
+}
+
+/**
+ * STRUCT_PLAN_3 B1 cutover: resolve the DECLARED-owning struct with direct
+ * string fields behind a scoped declaration, if any. Plain locals resolve
+ * through their (mono) type name; a trait-typed local with concrete storage
+ * resolves through the initializer's concrete struct — the same resolution
+ * the destroy arms below use. Used by the heap-string record loop: owning
+ * structs never consume records (their string fields are freed
+ * unconditionally by the destroy walk), so records for them must be dropped
+ * silently.
+ */
+function owning_string_struct_of_decl(
+	status: BuildStatus,
+	dec: DeclarationNode,
+): StructNode | undefined {
+	const type_name = mono_type_name(dec.type);
+	let struct =
+		status.structs.find(
+			(s) => s.name === type_name && !s.is_simple_type && !s.is_generic && !s.is_class,
+		) ?? undefined;
+	if (!struct && status.traits.find((t) => t.name === dec.type.name) && dec.value) {
+		const val_type = type_from_value_node(dec.value);
+		if (val_type?.name) {
+			struct = status.structs.find(
+				(s) => s.name === val_type.name && !s.is_simple_type && !s.is_generic && !s.is_class,
+			);
+		}
+	}
+	if (struct && owns_strings_uniformly(struct)) return struct;
+	return undefined;
 }
 
 /**
@@ -117,6 +171,23 @@ export function free_scoped_declarations(
 					(s) => s.name === mono_type_name(dec.type) && !s.is_simple_type && !s.is_generic,
 				);
 				if (dec_struct && has_destroy(dec_struct)) continue;
+			}
+			// STRUCT_PLAN_3 B1 cutover: an OWNING struct's string fields are
+			// uniformly heap and the destroy path below frees them
+			// unconditionally — drop this decl's records WITHOUT emitting the
+			// frees, or the recorded fields would be freed twice. Covers
+			// plain locals, moved owning params (the walk at `(*param)`
+			// reclaims everything), and trait-typed locals whose concrete
+			// storage is owning (its destroy arm walks the concrete).
+			{
+				const owned = owning_string_struct_of_decl(status, dec);
+				if (owned) {
+					const prefix = `${dec.name}.`;
+					for (const key of Array.from(status.heap_string_fields)) {
+						if (key.startsWith(prefix)) status.heap_string_fields.delete(key);
+					}
+					continue;
+				}
 			}
 			const prefix = `${dec.name}.`;
 			const keys = Array.from(status.heap_string_fields).filter((key) => key.startsWith(prefix));
@@ -248,14 +319,19 @@ export function free_scoped_declarations(
 		// transfers OWNERSHIP of the field's data to `b`, so `b` must be
 		// destroyed at scope exit — it is NOT a non-owning view.
 		const is_destructured_field_access =
-			dec.value?.node_type === "access" &&
-			(dec.value as AccessNode).access.node_type === "access_field" &&
-			!dec.value.is_moved &&
-			// A hoisted field-override temp with `force_owned_string` strdups
-			// the field's bytes into an OWNED copy (the source field may be
-			// displaced/freed by the base copy before the override runs) — it
-			// is not a view and must be freed.
-			dec.force_owned_string !== true;
+			(dec.value?.node_type === "access" &&
+				(dec.value as AccessNode).access.node_type === "access_field" &&
+				!dec.value.is_moved &&
+				// A hoisted field-override temp with `force_owned_string` strdups
+				// the field's bytes into an OWNED copy (the source field may be
+				// displaced/freed by the base copy before the override runs) — it
+				// is not a view and must be freed.
+				dec.force_owned_string !== true) ||
+			// STRUCT_PLAN_3 B1 cutover: the checker-hoisted `_recv_N` carrier of
+			// a container borrow accessor keeps the slot's alias — no strdup, no
+			// destroy (the aliased strings belong to the slot's owner; a `return
+			// _recv.field` view would point at bytes this cleanup frees).
+			is_borrow_accessor_carrier(dec);
 		// A string declaration initialized from an array element access
 		// (`args.at(n)`, `list.first()`) is a BORROW into the container's
 		// storage — including the hoisted `_param_N` temp for a call like
@@ -587,6 +663,23 @@ export function emit_struct_destroys(
 	if (has_destroy(struct)) {
 		status.code += `${struct.name}_destroy(&${var_expr});\n`;
 	}
+	// STRUCT_PLAN_3 B1 cutover: an OWNING struct's plain string fields are
+	// uniformly heap-owned (the ctor strdup'd the seed, every store strdups a
+	// non-heap RHS), so the destroy frees them unconditionally — `free(NULL)`
+	// on a `null`-seeded pair is a no-op. Non-owning structs' string fields
+	// may hold rodata borrows and stay out (they are handled per-assignment
+	// via heap_string_fields records). `view`/`ref`/`string[N]` fields are
+	// borrows (the same exclusion the ctor seeding uses).
+	if (owns_strings_uniformly(struct)) {
+		// Trait-declared string defaults are uniformly heap too (the ctor
+		// strdup'd them) — walk the merged field list (struct + trait).
+		for (const field of struct_destroy_fields(struct, status)) {
+			if (field.type.is_ref || field.type.is_view || field.type.is_array) continue;
+			if (field.type.name === "string") {
+				status.code += `free(${var_expr}.${field.name}.ptr);\n`;
+			}
+		}
+	}
 	for (const field of struct.fields) {
 		if (field.type.is_ref) continue;
 		// An enum-with-data field owns its ACTIVE case's payloads (case
@@ -661,6 +754,16 @@ function capture_destroys(
 	const saved = begin_code_scratch(status);
 	if (has_destroy(struct)) {
 		status.code += `${struct.name}_destroy(&${var_expr}); `;
+	}
+	// B1 cutover: an OWNING struct's plain string fields are uniformly heap —
+	// free them (same exclusion set as emit_struct_destroys).
+	if (owns_strings_uniformly(struct)) {
+		for (const field of struct_destroy_fields(struct, status)) {
+			if (field.type.is_ref || field.type.is_view || field.type.is_array) continue;
+			if (field.type.name === "string") {
+				status.code += `free(${var_expr}${accessor}${field.name}.ptr); `;
+			}
+		}
 	}
 	for (const field of struct.fields) {
 		if (field.type.is_ref) continue;

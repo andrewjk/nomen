@@ -1,6 +1,6 @@
 import { struct_needs_auto_destroy } from "../build_common/destroy_analysis.ts";
 import emission_label from "../build_common/emission_label.ts";
-import { direct_string_fields } from "../build_common/has_string_fields.ts";
+import { direct_string_fields, owns_strings_uniformly } from "../build_common/has_string_fields.ts";
 import mark_tuple_literal_move_owners from "../build_common/mark_tuple_literal_move_owners.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
@@ -35,6 +35,16 @@ import { c_view_string_arg } from "./utils/view_value.ts";
 
 function vn_resolved(v: ValueNode): FunctionNode | undefined {
 	return (v as unknown as { resolved_function?: FunctionNode }).resolved_function;
+}
+
+/**
+ * Compiler-synthesized binding names (receiver-hoist `_recv_N`, destructure
+ * `_tuple_dst_N`, call-temp `_param_N`). A "donor" with one of these names is
+ * a fresh compiler temp — no user owner, no records to transfer; ownership
+ * rows must not fire on it. (Mirrors the aarch64 backend's helper.)
+ */
+function is_compiler_temp_name(name: string | undefined): boolean {
+	return !!name && ["_recv_", "_disc_", "_tuple_dst_", "_param_"].some((p) => name.startsWith(p));
 }
 
 export default function build_function_call_node(node: FunctionCallNode, status: BuildStatus) {
@@ -303,7 +313,26 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		// a freed static literal is a crash. The statement-expression
 		// normalizes the donor and yields its address; recorded (heap)
 		// fields transfer raw.
-		if (node.move_owned_param_indices?.includes(i) && node.params[i].node_type === "value") {
+		// B1 full cutover: a `move T` PARAMETER of a declared-owning struct
+		// takes the same row even when the check-side stamp is absent (its
+		// pbv gate excludes owning types) — and post-B1-flip the callee's
+		// teardown frees the fields UNCONDITIONALLY, so the normalization is
+		// load-bearing for owning donors. A NAMED donor only: a fresh
+		// construction temp has no owner and no records — the callee
+		// byte-copies it and the temp dies; strdup'ing its fields in place
+		// would hand the copy to a corpse.
+		const callee_param_moved = !!callee_params?.filter((p) => !p.is_self_param)[i]?.is_moved;
+		const donor_name =
+			node.params[i].node_type === "value" ? (node.params[i] as ValueNode).value : "";
+		const donor_is_named =
+			!!donor_name &&
+			!is_compiler_temp_name(donor_name) &&
+			[status.scoped_declarations, ...(status.c_scope_stack ?? [])].some((frame) =>
+				frame.some((d) => d.name === donor_name),
+			);
+		const transfer_row =
+			node.move_owned_param_indices?.includes(i) || (callee_param_moved && donor_is_named);
+		if (transfer_row && node.params[i].node_type === "value") {
 			const transfer_struct = status.structs.find(
 				(st) =>
 					st.name === mono_type_name(param_type) &&
@@ -312,7 +341,19 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					!st.is_generic,
 			);
 			const transfer_var = (node.params[i] as ValueNode).value;
-			if (transfer_struct && direct_string_fields(transfer_struct).length > 0 && transfer_var) {
+			if (
+				transfer_struct &&
+				direct_string_fields(transfer_struct).length > 0 &&
+				transfer_var &&
+				// STRUCT_PLAN_3 B1 cutover: an OWNING donor's string fields
+				// are uniformly heap (the ctor strdup'd the seed, every store
+				// strdups) — the bytes transfer raw and the callee's
+				// unconditional teardown frees them; a strdup here would
+				// orphan the donor's copy. A NON-owning donor keeps the
+				// normalization: its unrecorded fields may hold rodata the
+				// B1 unconditional teardown would free.
+				!owns_strings_uniformly(transfer_struct)
+			) {
 				const recorded = new Set<string>();
 				for (const key of status.heap_string_fields ?? []) {
 					if (key.startsWith(`${transfer_var}.`)) {

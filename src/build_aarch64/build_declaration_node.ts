@@ -12,7 +12,8 @@ import {
 	struct_needs_auto_destroy,
 } from "../build_common/destroy_analysis.ts";
 import fold_string_const from "../build_common/fold_string_const.ts";
-import { direct_string_fields } from "../build_common/has_string_fields.ts";
+import { direct_string_fields, owns_strings_uniformly } from "../build_common/has_string_fields.ts";
+import is_compiler_temp_name from "../build_common/is_compiler_temp_name.ts";
 import mark_tuple_literal_move_owners from "../build_common/mark_tuple_literal_move_owners.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { call_result_type, is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
@@ -21,6 +22,7 @@ import { escape_asciz } from "../build_common/string_escapes.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
 import {
 	collect_expression_branch_values,
+	is_container_borrow_accessor_name,
 	is_owned_string_branch_value,
 	is_string_borrow,
 } from "../build_common/string_return_analysis.ts";
@@ -33,6 +35,7 @@ import type { NirExpr } from "../nir/nir.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
+import AnonStructNode from "../nodes/AnonStructNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
@@ -63,6 +66,7 @@ import {
 	anchor_heap_pointer,
 	clear_heap_string_fields,
 	consolidate_temp_anchors,
+	emit_owning_field_strdups_at,
 	emit_string_field_strdups_at,
 	mark_anchor_destroy,
 	mark_heap_string,
@@ -1555,7 +1559,11 @@ export default function build_declaration_node(
 			// and a strdup would leak (the shim's NULL slot frees nothing).
 			const strdup_string_fields =
 				!concrete.functions.some((f) => f.name === "#destroy") &&
-				struct_needs_auto_destroy(concrete, status);
+				struct_needs_auto_destroy(concrete, status) &&
+				// B1 cutover: an OWNING struct's string fields are uniformly
+				// heap at the temp — the bytes transfer to the box as-is; a
+				// strdup here would orphan the temp's copy.
+				!owns_strings_uniformly(concrete);
 			if (node.value.node_type === "func_call") {
 				const func_call = node.value as FunctionCallNode;
 				if (func_call.name === concrete.name && !is_magic_spawn_ctor(func_call)) {
@@ -2294,7 +2302,10 @@ export default function build_declaration_node(
 				}
 				if (node.type.name === "string" && node.type.is_array) {
 					if (!status.heap_string_arrays) status.heap_string_arrays = new Map();
-					status.heap_string_arrays.set(node.name, array_values.values.length);
+					// Negative len = INLINE storage (the elements sit at the
+					// var's frame offset); the destroy walk keys the shape on
+					// the sign. Heap base-pointer arrays register positive.
+					status.heap_string_arrays.set(node.name, -array_values.values.length);
 					if (status.heap_cleanup_stack?.length) {
 						status.heap_cleanup_stack[status.heap_cleanup_stack.length - 1].heap_strings.add(
 							node.name,
@@ -2805,11 +2816,61 @@ export default function build_declaration_node(
 					emit_asm(status, `ldr x3, [x1, #${i * 8}]\n`);
 					emit_asm(status, `str x3, [x2, #${i * 8}]\n`);
 				}
+				// STRUCT_PLAN_3 B1 cutover: an OWNING-struct binding whose
+				// initializer is a container BORROW accessor (`var p =
+				// people.at(i)` — at/first/slice/load) aliases the slot's
+				// bytes; the binding's scope-exit destroy frees its string
+				// fields UNCONDITIONALLY now, so strdup them here — the
+				// binding owns independent copies and the slot keeps its own.
+				// (Expression-temp consumers — `people.at(i).name` — are not
+				// bindings: they keep the alias and reclaim nothing, the
+				// pre-B1 convention.) Mirrors the C backend's declaration
+				// path.
+				{
+					const binding_struct = status.structs.find(
+						(s) => s.name === resolved_struct_name && !s.is_simple_type && !s.is_class,
+					);
+					const init_access =
+						node.value?.node_type === "access"
+							? ((node.value as AccessNode).access as { node_type?: string; name?: string })
+							: undefined;
+					const is_borrow_accessor_init =
+						init_access?.node_type === "access_func" &&
+						is_container_borrow_accessor_name(init_access.name ?? "");
+					// A compiler-hoisted `_recv_N` carrier (the checker's
+					// receiver hoist for `xs.at(i).text`) is an EXPRESSION-TEMP
+					// consumer, not a binding: it keeps the alias and reclaims
+					// nothing (the pre-B1 convention) — strdup'ing here would
+					// hand the carrier copies whose scope-exit destroy frees
+					// them while a view-return of the field is still in flight.
+					// Stamp the carrier so the destroy walks skip it (see
+					// is_field_struct_borrow).
+					const is_compiler_carrier = is_compiler_temp_name(node.name);
+					if (binding_struct && owns_strings_uniformly(binding_struct) && is_borrow_accessor_init) {
+						if (is_compiler_carrier) {
+							(node as unknown as { borrow_accessor_carrier?: boolean }).borrow_accessor_carrier =
+								true;
+						} else {
+							emit_var_address(status, "x2", node.name);
+							emit_owning_field_strdups_at(status, binding_struct.name, "x2");
+						}
+					}
+				}
 				// `var X b = move a`: the bytes are copied into b, then the source is
 				// marked moved so it is not destroyed at scope exit (b is now the sole
 				// owner). Without this, both a and b would free the same backing data.
+				// A base-bearing ANON literal with a `move` base (`[ .. move y, f = v
+				// ]`) transfers the same way: the base's bytes landed in the
+				// destination, so the donor's scope-exit destroy must not free them.
 				if (node.value.is_moved) {
 					mark_moved_if_struct(node.value, status);
+				} else if (node.value.node_type === "anon_struct") {
+					const lit_base = (node.value as AnonStructNode).base;
+					if (lit_base && (lit_base as ValueNode).is_moved) {
+						mark_moved_if_struct(lit_base, status);
+						const lit_donor = (lit_base as ValueNode).value;
+						if (lit_donor) clear_heap_string_fields(status, lit_donor);
+					}
 				}
 				// `var X b = move obj.field swap <rep>`: the field's bytes were copied
 				// into b above; now struct-copy the replacement back into the moved-out
@@ -3114,7 +3175,10 @@ export default function build_declaration_node(
 				}
 				if (node.type.name === "string" && node.type.is_array) {
 					if (!status.heap_string_arrays) status.heap_string_arrays = new Map();
-					status.heap_string_arrays.set(node.name, array_values.values.length);
+					// Negative len = INLINE storage (the elements sit at the
+					// var's frame offset); the destroy walk keys the shape on
+					// the sign. Heap base-pointer arrays register positive.
+					status.heap_string_arrays.set(node.name, -array_values.values.length);
 					if (status.heap_cleanup_stack?.length) {
 						status.heap_cleanup_stack[status.heap_cleanup_stack.length - 1].heap_strings.add(
 							node.name,

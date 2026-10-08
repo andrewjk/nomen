@@ -30,12 +30,9 @@ Console.write_line("done")
 		await build_and_check_output(input, "b5_class_field_basic", "Rex\ndone\n");
 	});
 
-	// SKIP (aarch64): the displaced-store reclaim frees a value-struct's
-	// string field that the ctor seeded as rodata (the aarch64 ctor does not
-	// strdup value-struct string params) — the stale-free the audit catches.
-	// This is the documented value-struct string-ownership murk that D3/B1
-	// cutover resolves; C runs the same program green.
-	test.skip("field store reclaims the displaced instance", async () => {
+	// Landed with the B1 backend cutover: the ctor strdups string params on
+	// both backends and the displaced-store reclaim frees the instance.
+	test("field store reclaims the displaced instance", async () => {
 		const input = `
 owning struct Dog {
 	var string name
@@ -161,7 +158,7 @@ Console.write_line("done")
 		await build_and_check_output(input, "b5_class_field_nested", "Rex\ndone\n");
 	});
 
-	test.skip("List push(move)/pop of owning structs with class fields", async () => {
+	test("List push(move)/pop of owning structs with class fields", async () => {
 		const input = `
 owning struct Dog {
 	var string name

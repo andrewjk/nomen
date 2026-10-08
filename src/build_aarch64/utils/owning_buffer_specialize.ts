@@ -1,6 +1,6 @@
 import type BuildStatus from "../../build_c/BuildStatus.ts";
 import { has_destroy, struct_needs_destroy } from "../../build_common/destroy_analysis.ts";
-import { has_string_fields } from "../../build_common/has_string_fields.ts";
+import { has_string_fields, owns_strings_uniformly } from "../../build_common/has_string_fields.ts";
 import { is_load_deep_copy_container, resolve_struct_type } from "../../build_common/mono_name.ts";
 import type EnumNode from "../../nodes/EnumNode.ts";
 import StructNode from "../../nodes/StructNode.ts";
@@ -32,6 +32,50 @@ export function owning_buffer_element_aarch64(
 	// double-free at teardown).
 	if (!has_string_fields(elem, status) && !struct_needs_destroy(elem, status)) return undefined;
 	return elem;
+}
+
+/**
+ * STRUCT_PLAN_3 B1 cutover: whether this call targets a Buffer_<T> primitive
+ * whose mono method was emitted from the OWNING specialization — the raw
+ * `inline` body must not be spliced at the call site (it assumes trivially
+ * destructible elements); the specialized method runs the strdup/transfer/
+ * reclaim dance the uniform-heap contract needs.
+ */
+const OWNING_SPECIALIZED_PRIMITIVES = new Set([
+	"store",
+	"replace",
+	"shift",
+	"load",
+	"modify",
+	"move",
+]);
+export function owns_specialized_primitive(
+	target_struct: StructNode,
+	func_name: string,
+	status: BuildStatus,
+): boolean {
+	if (!OWNING_SPECIALIZED_PRIMITIVES.has(func_name)) return false;
+	const elem = owning_buffer_element_aarch64(target_struct, status);
+	return !!elem;
+}
+
+/**
+ * The emission-side twin: a mono Buffer_<T> whose element has owning fields
+ * must emit standalone bodies for the specialized primitives even when they
+ * are user-marked `inline` (the splice barrier routes call sites here).
+ * Tolerates a not-yet-registered element (system-TU gather order): the NAME
+ * check alone would over-emit primitives for trivial elements — harmless
+ * (a standalone body nobody splices) — so prefer precision when the element
+ * resolves, fall back to the has_string_fields-free structural test.
+ */
+export function owns_specialized_primitive_for(
+	target_struct: StructNode,
+	func_name: string,
+	status: BuildStatus,
+): boolean {
+	if (!OWNING_SPECIALIZED_PRIMITIVES.has(func_name)) return false;
+	const elem = owning_buffer_element_aarch64(target_struct, status);
+	return !!elem;
 }
 
 /**
@@ -276,6 +320,15 @@ function emit_load_deep_copy_fields(
 	let offset = 8; // VT_SIZE prefix
 	for (const field of elem.fields) {
 		const size = get_type_size(field.type, status);
+		// Plain string fields stay BORROWED on load: expression-temp consumers
+		// (`a.get(r).label`) never reclaim the loaded temp, so a strdup here
+		// would leak per expression use (the pre-B1 convention, still sound —
+		// the slot keeps ownership; a BINDING of a borrow-accessor result is
+		// the residual hazard recorded in FOLLOWUP.md).
+		if (!field.type.is_ref && !field.type.is_view && field.type.name === "string") {
+			offset += size;
+			continue;
+		}
 		if (
 			!field.type.is_ref &&
 			!field.type.is_view &&
@@ -513,8 +566,9 @@ function emit_owning_standalone_struct(elem: StructNode, func_name: string, stat
 		// scope-exit destroy ALWAYS reclaims a struct local's container
 		// fields, so the returned copy must own independent containers — a
 		// shallow return would double-free the slot's buffer at the caller's
-		// teardown. String fields stay borrowed (struct-local teardown only
-		// frees RECORDED heap strings, so a strdup here would leak).
+		// teardown. B1 cutover: an OWNING element's string fields are freed
+		// unconditionally at that teardown too, so they are strdup'd as well
+		// (emit_load_deep_copy_fields).
 		emit_asm(status, `stp x20, x21, [sp, #-16]!\n`);
 		emit_asm(status, `stp x22, x23, [sp, #-16]!\n`);
 		emit_asm(status, `ldr x20, [x19, #8]\n`); // data base
@@ -571,6 +625,13 @@ function emit_owning_standalone_struct(elem: StructNode, func_name: string, stat
 	if (func_name === "store") {
 		// strdup each string field, skipping NULL source fields and
 		// round-trips (source pointer identical to the slot's pre-copy pointer).
+		// STRUCT_PLAN_3 B1 cutover: when the pointers DIFFER, the slot's
+		// displaced old value is orphaned — free it. Every writer of a slot
+		// text is wrapper-tracked now (the ctor seed strdup, a previous
+		// store's strdup, and set_text-style unsafe writes go through
+		// extern_malloc → the audit wrapper in audit builds), so the free is
+		// always valid; pre-B1 slots could hold raw rodata borrows, which is
+		// why the old pointer was left alone.
 		for (const [i, { offset: foff }] of string_fields.entries()) {
 			const lbl = `.Lskip_st_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
 			emit_asm(status, `ldr x1, [x21, #${foff}]\n`);
@@ -581,11 +642,14 @@ function emit_owning_standalone_struct(elem: StructNode, func_name: string, stat
 			emit_asm(status, `mov x0, x1\n`);
 			emit_strdup(status);
 			emit_asm(status, `str x0, [x20, #${foff}]\n`);
+			// Displaced-old reclaim: x2 still holds the slot's pre-copy
+			// pointer (x0/x1 were reloaded after the strdup).
+			emit_asm(status, `ldr x0, [sp, #${i * 8}]\n`);
+			emit_asm(status, `cbz x0, ${lbl}\n`);
+			emit_asm(status, `stp x0, x1, [sp, #-16]!\n`);
+			emit_free(status);
+			emit_asm(status, `ldp x0, x1, [sp], #16\n`);
 			emit_asm(status, `${lbl}:\n`);
-		}
-		if (string_fields.length) {
-			const tmp = Math.ceil((string_fields.length * 8) / 16) * 16;
-			emit_asm(status, `add sp, sp, #${tmp}\n`);
 		}
 	} else {
 		// replace_T: the old value was destroyed, so every non-NULL source
@@ -605,6 +669,36 @@ function emit_owning_standalone_struct(elem: StructNode, func_name: string, stat
 	// source's bytes, so zero the source's fields (its own teardown, when it
 	// still runs, reclaims nothing).
 	emit_transfer_owning_fields(status, "x21", transfer_fields);
+	// B1 cutover: reclaim the donor's plain string fields — the slot took
+	// fresh strdups and the donor is a moved argument (spliced from
+	// teardown, or a temp that never had one), so its uniformly-heap
+	// originals would be abandoned. The store round-trip identity (donor
+	// field == the slot's pre-copy pointer, still parked at [sp, #i*8])
+	// keeps the slot's copy — skip the free there. Runs BEFORE the parked
+	// old-pointer temp area is popped (below).
+	if (owns_strings_uniformly(elem)) {
+		for (const { offset: foff } of string_fields) {
+			const lbl = `.Ldonor_free_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+			emit_asm(status, `ldr x0, [x21, #${foff}]\n`);
+			emit_asm(status, `cbz x0, ${lbl}\n`);
+			if (func_name === "store") {
+				const idx = string_fields.findIndex((f) => f.offset === foff);
+				emit_asm(status, `ldr x9, [sp, #${idx * 8}]\n`);
+				emit_asm(status, `cmp x0, x9\n`);
+				emit_asm(status, `b.eq ${lbl}\n`);
+			}
+			emit_asm(status, `stp x0, x1, [sp, #-16]!\n`);
+			emit_free(status);
+			emit_asm(status, `ldp x0, x1, [sp], #16\n`);
+			emit_asm(status, `stp xzr, xzr, [x21, #${foff}]\n`);
+			emit_asm(status, `${lbl}:\n`);
+		}
+	}
+
+	if (func_name === "store" && string_fields.length) {
+		const tmp = Math.ceil((string_fields.length * 8) / 16) * 16;
+		emit_asm(status, `add sp, sp, #${tmp}\n`);
+	}
 
 	emit_asm(status, `ldr x22, [sp], #16\n`);
 	emit_asm(status, `ldp x20, x21, [sp], #16\n`);
@@ -905,14 +999,36 @@ function emit_owning_store_T(elem: StructNode, status: BuildStatus) {
 		emit_asm(status, `str x0, [x20, #${foff}]\n`);
 		emit_asm(status, `${lbl}:\n`);
 	}
-	if (string_fields.length) {
-		const tmp = Math.ceil((string_fields.length * 8) / 16) * 16;
-		emit_asm(status, `add sp, sp, #${tmp}\n`);
-	}
 	// Transfer the owned container/class/enum fields: the slot took the
 	// source's bytes, so zero the source's fields (its own teardown, when it
 	// still runs, reclaims nothing).
 	emit_transfer_owning_fields(status, "x21", transfer_fields);
+	// B1 cutover: reclaim the donor's plain string fields — the slot took
+	// fresh strdups and the donor is a moved argument (spliced from
+	// teardown, or a temp that never had one), so its uniformly-heap
+	// originals would be abandoned. The store round-trip identity (donor
+	// field == the slot's pre-copy pointer, still parked at [sp, #i*8])
+	// keeps the slot's copy — skip the free there. Runs BEFORE the parked
+	// old-pointer temp area is popped (below).
+	if (owns_strings_uniformly(elem)) {
+		for (const [i, { offset: foff }] of string_fields.entries()) {
+			const lbl = `.Ldonor_free_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+			emit_asm(status, `ldr x0, [x21, #${foff}]\n`);
+			emit_asm(status, `cbz x0, ${lbl}\n`);
+			emit_asm(status, `ldr x9, [sp, #${i * 8}]\n`);
+			emit_asm(status, `cmp x0, x9\n`);
+			emit_asm(status, `b.eq ${lbl}\n`);
+			emit_asm(status, `stp x0, x1, [sp, #-16]!\n`);
+			emit_free(status);
+			emit_asm(status, `ldp x0, x1, [sp], #16\n`);
+			emit_asm(status, `stp xzr, xzr, [x21, #${foff}]\n`);
+			emit_asm(status, `${lbl}:\n`);
+		}
+	}
+	if (string_fields.length) {
+		const tmp = Math.ceil((string_fields.length * 8) / 16) * 16;
+		emit_asm(status, `add sp, sp, #${tmp}\n`);
+	}
 	// Restore
 	emit_asm(status, `ldr x22, [sp], #16\n`);
 	emit_asm(status, `ldp x20, x21, [sp], #16\n`);

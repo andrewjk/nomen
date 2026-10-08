@@ -35,6 +35,7 @@ export default function emit_field_overrides(
 	status: any,
 	declaration_terminator = "",
 	statement_terminator = "",
+	opts?: { owning_temp_carrier?: boolean },
 ) {
 	const overrides = overrides_of(value);
 	if (!overrides.length) return;
@@ -53,8 +54,17 @@ export default function emit_field_overrides(
 	// `[ .. Node(), node_type = t ]` return). Override stores at those
 	// destinations stay raw borrows — the documented override-constructor
 	// return gap.
+	// STRUCT_PLAN_3 B1 cutover: `owning_temp_carrier` opts an expression-
+	// position `_temp_N` construction (the aarch64 assignment-RHS path) back
+	// INTO the typed lowering when the struct's string fields are uniformly
+	// heap — the temp-level store strdup's (first-write skips the displaced
+	// free; the construction's explicit pre-reclaim reclaimed the seed), so
+	// the bytes that land in the destination are heap-owned and its destroy
+	// never frees a raw borrow. `_return_val*` stays raw: the return-boundary
+	// normalization owns that shape.
 	const carrier_type =
-		var_name.startsWith("_return_val") || var_name.startsWith("_temp_")
+		var_name.startsWith("_return_val") ||
+		(var_name.startsWith("_temp_") && !opts?.owning_temp_carrier)
 			? undefined
 			: (value as unknown as { type?: unknown }).type;
 	for (const override of overrides) {
@@ -65,6 +75,12 @@ export default function emit_field_overrides(
 		const access_field = new AccessFieldNode(override.value.start, override.name, override.type as any);
 		const access = new AccessNode(override.value.start, target, access_field);
 		const assign = new AssignmentNode(override.value.start, access, override.value);
+		if (opts?.owning_temp_carrier) {
+			// The construction's explicit pre-reclaim already freed the seed
+			// this store displaces — the backends' owning-store lowered
+			// displaced free must not fire again (double-free of the seed).
+			(assign as unknown as { displace_reclaimed?: boolean }).displace_reclaimed = true;
+		}
 		if (!carrier_type) {
 			// A compiler-temp destination: force the RAW pair store even when
 			// the backend resolves the temp's struct type on its own (the

@@ -4,7 +4,7 @@ import AccessNode from "../nodes/AccessNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import type FunctionNode from "../nodes/FunctionNode.ts";
 import type StructNode from "../nodes/StructNode.ts";
-import { direct_string_fields } from "./has_string_fields.ts";
+import { direct_string_fields, owns_strings_uniformly } from "./has_string_fields.ts";
 
 /**
  * The plain `string` fields of `func`'s `ref` value-struct parameters that the
@@ -84,6 +84,14 @@ export function scan_ref_param_string_field_may_writes(
  * every path — dup'ing it too would just add a pointless strdup per call).
  * The dup runs at callee entry on both backends and records the field, so a
  * call site may transfer these as heap records soundly.
+ *
+ * STRUCT_PLAN_3 B1 cutover: an OWNING struct is excluded — its string
+ * fields are uniformly heap from construction (the ctor strdup'd the seed,
+ * every store strdups), so the dup's "make it heap" job is already done and
+ * the dup would only ORPHAN the current heap value (a leak per call). The
+ * owning store path reclaims the displaced value itself and the owner's
+ * scope-exit destroy frees the final copy unconditionally — no records, no
+ * dup.
  */
 export function ref_param_entry_dup_fields(
 	func: FunctionNode,
@@ -93,6 +101,11 @@ export function ref_param_entry_dup_fields(
 	const may = scan_ref_param_string_field_may_writes(func, structs);
 	const result = new Map<string, Set<string>>();
 	for (const [param, fields] of may) {
+		const param_node = (func.params ?? []).find((p) => p.name === param);
+		const struct = structs.find(
+			(s) => s.name === param_node?.type.name && !s.is_simple_type && !s.is_class,
+		);
+		if (struct && owns_strings_uniformly(struct)) continue;
 		const dup = new Set<string>();
 		for (const field of fields) {
 			if (!must.get(param)?.has(field)) dup.add(field);

@@ -401,9 +401,9 @@ describe("Map<string, int> rehash beside trait-typed lists (class fields)", () =
 	// several rehashes while the neighbours keep growing. A mis-compiled
 	// rehash smashed the adjacent heap (the string field's buffer); both
 	// backends must keep every value readable and the audit clean.
-	// SKIP: rehash with owning-struct-class fields hits the same
-	// owning-struct field-reclaim murk (D3/B1). See FOLLOWUP.md.
-	test.skip("rehashing map leaves neighbouring class fields intact", async () => {
+	// Landed with the B1 backend cutover (uniform-heap owning-struct string
+	// fields).
+	test("rehashing map leaves neighbouring class fields intact", async () => {
 		const input = `
 import System
 

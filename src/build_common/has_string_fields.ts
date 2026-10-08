@@ -26,6 +26,21 @@ export function has_string_fields(node: StructNode, status: BuildStatus): boolea
 }
 
 /**
+ * STRUCT_PLAN_3 B1 cutover: whether this struct's plain `string` fields are
+ * uniformly heap-owned under the declared-owning contract (ctor strdup's the
+ * seed, stores strdup non-heap RHS, scope-exit destroy frees them
+ * unconditionally). Compiler-generated tuple / anonymous structs are
+ * excluded: their element lifecycle stays record/binding-based (destructured
+ * bindings and tuple-var records take the string fields over; the temp is a
+ * carrier), so the blanket strdup/destroy would leak or double-free.
+ */
+export function owns_strings_uniformly(node: StructNode): boolean {
+	return (
+		node.is_owning === true && !node.name.startsWith("_Tuple_") && !node.name.startsWith("_Anon_")
+	);
+}
+
+/**
  * The DIRECT `string` fields of a value struct (nested struct fields are not
  * descended into — nested string fields are outside the per-field ownership
  * tracking everywhere else too). Used by the return-boundary normalization:

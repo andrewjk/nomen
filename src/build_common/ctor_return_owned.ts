@@ -1,7 +1,7 @@
 import type BaseNode from "../nodes/BaseNode.ts";
 import type FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import type StructNode from "../nodes/StructNode.ts";
-import { direct_string_fields } from "./has_string_fields.ts";
+import { direct_string_fields, owns_strings_uniformly } from "./has_string_fields.ts";
 import { init_computed_heap_string_fields } from "./init_computed_seeds.ts";
 import { is_string_borrow } from "./string_return_analysis.ts";
 import tuple_return_owned_element from "./tuple_return_owned_element.ts";
@@ -96,6 +96,13 @@ export function override_displaced_string_fields(
 		const field = struct_node.fields.find((f) => f.name === override.name);
 		if (!field) continue;
 		if (field.type.name !== "string" || field.type.is_array || field.type.is_view) continue;
+		// STRUCT_PLAN_3 B1 cutover: an OWNING struct's ctor seed is ALWAYS
+		// heap (the ctor strdup'd every string seed — literal or not), so
+		// every overridden field's seed is displaced heap.
+		if (owns_strings_uniformly(struct_node)) {
+			displaced.push(override.name);
+			continue;
+		}
 		if (computed.has(override.name)) {
 			displaced.push(override.name);
 			continue;
@@ -132,6 +139,13 @@ export function ctor_heap_displaced_string_fields(
 		const field = struct_node.fields.find((f) => f.name === override.name);
 		if (!field) continue;
 		if (field.type.name !== "string" || field.type.is_array || field.type.is_view) continue;
+		// STRUCT_PLAN_3 B1 cutover: an OWNING struct's ctor seed is ALWAYS
+		// heap (the ctor strdup'd every string seed — literal or not), so
+		// every overridden field's seed is displaced heap.
+		if (owns_strings_uniformly(struct_node)) {
+			displaced.push(override.name);
+			continue;
+		}
 		if (computed.has(override.name)) {
 			displaced.push(override.name);
 			continue;

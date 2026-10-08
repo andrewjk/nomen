@@ -205,11 +205,9 @@ Console.write("\\{c.len}")
 	);
 });
 
-// SKIP: the class-era string-field write (always-heap + displaced free through
-// the receiver register) does not survive R — an owning struct's string field
-// takes the value-struct lowering until the D3/B1 string-ownership cutover.
-// See FOLLOWUP.md "owning-struct string-field ownership".
-test.skip("string-field write defers its base past the strdup/free dance", () => {
+// Landed with the B1 backend cutover (uniform-heap owning-struct string
+// fields): the write strdups through the receiver register.
+test("string-field write defers its base past the strdup/free dance", () => {
 	const code = compile(`
 import System
 

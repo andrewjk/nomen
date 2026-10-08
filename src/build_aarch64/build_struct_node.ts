@@ -5,6 +5,7 @@ import {
 	struct_needs_destroy,
 } from "../build_common/destroy_analysis.ts";
 import emission_label from "../build_common/emission_label.ts";
+import { owns_strings_uniformly } from "../build_common/has_string_fields.ts";
 import { resolve_struct_type } from "../build_common/mono_name.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
@@ -42,6 +43,7 @@ import {
 import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
 import { find_enum_for_case } from "./utils/enum_case.ts";
 import { nir_regalloc_enabled, seed_function_allocations } from "./utils/nir_regalloc.ts";
+import { owns_specialized_primitive_for } from "./utils/owning_buffer_specialize.ts";
 import {
 	emit_owning_buffer_destroy_aarch64,
 	emit_owning_buffer_standalone_aarch64,
@@ -71,8 +73,6 @@ import {
 	get_struct_size,
 	get_type_size,
 } from "./utils/struct_layout.ts";
-
-let field_strdup_guard_counter = 0;
 
 export function emit_typed_store(
 	status: BuildStatus,
@@ -222,7 +222,10 @@ function init_expr_field_default(
 	const t = field.type;
 	const is_fat_string = t.name === "string" && !t.is_ref && !t.is_view && !t.is_array;
 	if (is_fat_string) {
-		if (node.is_class && !status.last_result_is_heap) {
+		// B1 cutover: an OWNING struct's plain string field is always
+		// heap-owned — strdup a non-heap expression default so destroy can
+		// free it unconditionally (the class-era rule).
+		if ((node.is_class || owns_strings_uniformly(node)) && !status.last_result_is_heap) {
 			// dup the (x0=ptr, x1=len) pair — the len half is preserved
 			// across the call and the owned copy's pair lands in (x0, x1).
 			emit_strdup_string(status);
@@ -482,7 +485,10 @@ function build_destroy_function(node: StructNode, func: FunctionNode, status: Bu
 	// After the user body, recursively destroy all class-typed fields.
 	// This ensures that grandchildren (and deeper) are freed, not just
 	// direct children.
-	if (node.is_class) {
+	// B1 cutover: OWNING structs join the class — their plain string fields
+	// are uniformly heap (`_init` strdup's the seed, assignments strdup a
+	// non-heap RHS), so the trailing walk in a user `#destroy` frees them.
+	if (node.is_class || node.is_owning === true) {
 		// A class's plain string fields are always heap-owned (`_init` strdup's
 		// defaults, assignments strdup a non-heap RHS), so the trailing walk in
 		// a user `#destroy` frees them.
@@ -753,13 +759,13 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 			continue;
 		}
 		// A fat-string field stores both halves: ptr from its slot, len from
-		// the next slot. A CLASS's plain string field is always heap-owned —
-		// strdup the caller's (possibly rodata) ptr half so destroy can free
-		// it unconditionally.
+		// the next slot. A CLASS's — or, B1 cutover, an OWNING struct's —
+		// plain string field is always heap-owned — strdup the caller's
+		// (possibly rodata) ptr half so destroy can free it unconditionally.
 		if (field_is_fat_string) {
 			const len_src = slot + 1 < NUM_REG_ARGS ? param_regs[slot] : undefined;
-			if (node.is_class && !field.type.is_ref) {
-				// Class string fields are always heap-owned: strdup the ptr
+			if ((node.is_class || owns_strings_uniformly(node)) && !field.type.is_ref) {
+				// Always-heap string fields strdup the ptr
 				// half. A NULL ptr half (a `null` argument) must NOT be
 				// strdup'd (the wrapper strlens it) — skip the copy and store
 				// the raw pair; the destroy's free(NULL) is a no-op. The
@@ -767,7 +773,12 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 				// so EVERY still-live incoming arg register (this field's
 				// pair plus all later fields' registers) must be spilled
 				// across it.
-				const skip_label = `.field_strdup_skip_${field_strdup_guard_counter++}`;
+				// Keyed on the per-build status counter — a module-level counter
+				// would drift across builds in one process (the emit_nir
+				// byte-identity harness compiles twice and diffing labels would
+				// fail it).
+				const skip_label = `.field_strdup_skip_${(status.label_counter =
+					(status.label_counter ?? 0) + 1)}`;
 				emit_asm(status, `cbz ${src_reg}, ${skip_label}\n`);
 				with_live_arg_regs_spilled(status, param_regs.slice(slot - 1), () => {
 					emit_asm(status, `mov x0, ${src_reg}\n`);
@@ -852,14 +863,16 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 			}
 		} else {
 			const field_size = get_type_size(field.type, status);
-			// A class's plain string field is always heap-owned: strdup the
-			// caller's (possibly static/borrowed) argument so the field can
-			// be freed unconditionally at destroy. Value structs keep the raw
-			// store (their fields' ownership is handled by the Buffer store
-			// path).
+			// A class's — or, B1 cutover, an OWNING struct's — plain string
+			// field is always heap-owned: strdup the caller's (possibly
+			// static/borrowed) argument so the field can be freed
+			// unconditionally at destroy. Non-owning value structs keep the
+			// raw store (their fields' ownership is handled by the Buffer
+			// store path).
 			if (
-				node.is_class &&
+				(node.is_class || owns_strings_uniformly(node)) &&
 				field.type.name === "string" &&
+				!field.type.is_array &&
 				!field.type.is_ref &&
 				!field.type.is_view
 			) {
@@ -923,13 +936,14 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 					const label = `_str_${func_name}_${field.name}`;
 					status.strings!.set(label, val);
 					emit_asm(status, `adr x1, ${label}\n`);
-					// A class's default string literal must be heap-owned —
-					// the field is freed unconditionally at destroy. (The
-					// literal `bl _strdup` is rewritten to the audit wrapper
-					// by build.ts's final sweep.)
+					// A class's — or, B1 cutover, an OWNING struct's — default
+					// string literal must be heap-owned — the field is freed
+					// unconditionally at destroy. (The literal `bl _strdup` is
+					// rewritten to the audit wrapper by build.ts's final sweep.)
 					if (
-						node.is_class &&
+						(node.is_class || owns_strings_uniformly(node)) &&
 						field.type.name === "string" &&
+						!field.type.is_array &&
 						!field.type.is_ref &&
 						!field.type.is_view
 					) {
@@ -1071,9 +1085,10 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 				const label = `_str_${func_name}_${field.name}`;
 				status.strings!.set(label, val);
 				emit_asm(status, `adr x1, ${label}\n`);
-				// A class's default string literal must be heap-owned (the
-				// field is freed unconditionally at destroy).
-				if (node.is_class) {
+				// A class's — or, B1 cutover, an OWNING struct's — default
+				// string literal must be heap-owned (the field is freed
+				// unconditionally at destroy).
+				if (node.is_class || owns_strings_uniformly(node)) {
 					emit_asm(status, `mov x0, x1\n`);
 					emit_asm(status, `bl _strdup\n`);
 					emit_asm(status, `mov x1, x0\n`);
@@ -1417,13 +1432,14 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 					const label = `_str_${func_name}_${field.name}`;
 					status.strings!.set(label, val);
 					emit_asm(status, `adr x1, ${label}\n`);
-					// A class's default string literal must be heap-owned —
-					// the field is freed unconditionally at destroy. (The
-					// literal `bl _strdup` is rewritten to the audit wrapper
-					// by build.ts's final sweep.)
+					// A class's — or, B1 cutover, an OWNING struct's — default
+					// string literal must be heap-owned — the field is freed
+					// unconditionally at destroy. (The literal `bl _strdup` is
+					// rewritten to the audit wrapper by build.ts's final sweep.)
 					if (
-						node.is_class &&
+						(node.is_class || owns_strings_uniformly(node)) &&
 						field.type.name === "string" &&
+						!field.type.is_array &&
 						!field.type.is_ref &&
 						!field.type.is_view
 					) {
@@ -1604,8 +1620,11 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		}
 		if (func.name === "#destroy") continue;
 		// User-marked inline methods skip standalone emission — every call
-		// site splices.
-		if (func.is_inline) continue;
+		// site splices. EXCEPTION (STRUCT_PLAN_3 B1 cutover): an OWNING-
+		// element Buffer primitive whose call sites now take the bl (the
+		// splice barrier in build_access_node) needs the specialized
+		// standalone body to exist.
+		if (func.is_inline && !owns_specialized_primitive_for(node, func.name, status)) continue;
 		if (check_c_fallback(func, node.name, status)) continue;
 		if (func.is_extern) {
 			build_extern(func, status, node);
@@ -1752,10 +1771,19 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		// function_return_type is set only for struct (sret) returns below —
 		// setting it unconditionally changes the string-ownership analysis
 		// (literal-return strdup) for methods that were previously fine.
+		// STRUCT_PLAN_3 B1 cutover: CLEAR it for non-sret bodies (save around
+		// it). A nested struct's methods previously inherited the enclosing
+		// function's type (the synthetic wrapper main's void), so
+		// current_return_is_string's `if (rt)` short-circuited FALSE and the
+		// method string-return normalization silently missed them; the
+		// current_struct fallback below resolves the real type instead.
 		status.current_function_name = func.name;
+		const old_function_return_type = status.function_return_type;
 		if (uses_sret) {
 			status.function_return_type = func.return_type;
 			status.struct_return_buffer = "x8";
+		} else {
+			status.function_return_type = undefined;
 		}
 
 		// Register self→x19 only for the by-address convention (read-only
@@ -2372,6 +2400,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		status.heap_strings = old_heap_strings;
 		status.trait_class_frames = old_trait_class_frames;
 		status.moved = old_moved;
+		status.function_return_type = old_function_return_type;
 		status.heap_string_arrays = old_heap_string_arrays;
 		status.heap_class_arrays = old_heap_class_arrays;
 		status.heap_array_vars = old_heap_array_vars;
@@ -2453,6 +2482,16 @@ function build_trait_functions(node: StructNode, status: BuildStatus) {
 
 			const return_label = `.return_${trait_name}_${func.name}`;
 			status.function_return_label = return_label;
+			// STRUCT_PLAN_3 B1 cutover: key the body's string-ownership
+			// analysis to THIS default method — the enclosing context's
+			// function name/return type (the conformer struct's build) would
+			// otherwise resolve current_return_is_string against an unrelated
+			// method and skip the method string-return normalization, handing
+			// the call site a rodata literal it frees.
+			const old_function_name = status.current_function_name;
+			const old_function_return_type = status.function_return_type;
+			status.current_function_name = func.name;
+			status.function_return_type = func.return_type;
 
 			const stack_placeholder = `STACK_SIZE_${trait_func_label}`;
 
@@ -2553,6 +2592,8 @@ function build_trait_functions(node: StructNode, status: BuildStatus) {
 			status.function_param_regs = old_param_regs;
 			status.function_param_vars = old_param_vars;
 			status.function_return_label = old_return_label;
+			status.current_function_name = old_function_name;
+			status.function_return_type = old_function_return_type;
 			status.stack_size = old_stack_size;
 			status.stack_offsets = old_stack_offsets;
 		}
