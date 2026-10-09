@@ -20,13 +20,13 @@ owning struct R {
 }
 
 func no_loop = (string s, out R) {
-	var out_s = s
-	return R(1, out_s)
+	var out_s = s.copy()
+	return R(1, move out_s)
 }
 
 func with_call = (string s, out R) {
 	var out_s = s.to_string()
-	return R(1, out_s)
+	return R(1, move out_s)
 }
 
 var a = no_loop("xy")
@@ -44,8 +44,8 @@ Console.write("with_call a=\\{b.a} b=\\{b.b}\\n")
 	test("string local initialized from a parameter survives scope exit", async () => {
 		const input = `
 func f = (string s, out int) {
-	var t = s
-	var u = t
+	var t = s.copy()
+	var u = t.copy()
 	Console.write("t=\\{t} u=\\{u}\\n")
 	return t.length
 }

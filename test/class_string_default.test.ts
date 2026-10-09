@@ -22,7 +22,7 @@ owning struct Buffer2 {
 	}
 
 	pub func set = (ref self, string s) {
-		self.content = s
+		self.content = s.copy()
 	}
 }
 

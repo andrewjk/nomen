@@ -167,9 +167,13 @@ function capturing_closure_value(node: FunctionNode, status: BuildStatus): strin
 		// the plain mangled C name. A name shadowed by a nearer local can't
 		// reach here — the checker records a capture only when the reference
 		// resolves to the outer value.
-		const expr = status.closure_env?.get(cap.name) ?? c_function_name(cap.name);
-		// An OWNED string capture is deep-copied into the env (the env's
-		// destructor frees the copy); scalars copy by value.
+		const nested_expr = status.closure_env?.get(cap.name);
+		const expr = nested_expr ?? c_function_name(cap.name);
+		// D3/E2: a string capture is a SNAPSHOT — the env strdups its own
+		// copy and the donor keeps its scope-exit free. (Transferring the
+		// pair interacted badly with donor reassignment's displaced-free and
+		// with rodata-backed donors; the checker's read-invalidation already
+		// gives the move its marker semantics.)
 		const elem = status.structs.find(
 			(s) => s.name === cap.type.name && !s.is_simple_type && !s.is_class,
 		);
@@ -191,7 +195,9 @@ function capturing_closure_value(node: FunctionNode, status: BuildStatus): strin
 		// it so its scope-exit auto-free is skipped (the env destructor owns
 		// it now), and drop any heap-string-field records for it (the env's
 		// <T>_destroy reclaims the fields). Mirrors the `move`-arg path.
-		if (cap.is_move) {
+		// D3/E2: STRING captures are excluded — they snapshot (above), so the
+		// donor still owns and frees its own buffer.
+		if (cap.is_move && !(cap.type.name === "string" && !cap.type.is_view && !cap.type.is_array)) {
 			if (!status.moved) status.moved = new Set();
 			status.moved.add(cap.name);
 			const prefix = `${cap.name}.`;

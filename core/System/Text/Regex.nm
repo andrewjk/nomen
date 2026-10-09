@@ -89,7 +89,7 @@ pub struct Regex {
 			var int end = match_here(pattern, 0, pat_len, input, i, len, ref caps)
 			if end >= 0 {
 				var string whole = input.substring(i, end)
-				dst.push(whole)
+				dst.push(move whole)
 				var g = 1
 				while g <= groups; g += 1 {
 					var int at = last_capture_index(caps, g)
@@ -97,7 +97,7 @@ pub struct Regex {
 						var int s = caps.at(at + 1)
 						if s >= 0 {
 							var string cap = input.substring(s, caps.at(at + 2))
-							dst.push(cap)
+							dst.push(move cap)
 						} else {
 							dst.push("")
 						}

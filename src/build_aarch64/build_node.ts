@@ -102,8 +102,11 @@ function emit_capturing_closure_value_a64(fn: FunctionNode, status: BuildStatus)
 			build_node(new ValueNode(fn.start, cap.name, cap.type), status);
 			ensure_newline(status);
 			if (is_string) {
-				// Deep-copy the captured string into the env (the env destructor
-				// frees the copy); emit_strdup preserves the len half in x1.
+				// D3/E2: a string capture is a SNAPSHOT — strdup into the env
+				// (the env destructor frees the copy; emit_strdup preserves the
+				// len half in x1) and the donor keeps its scope-exit free.
+				// (Transferring the pair interacted badly with donor
+				// reassignment's displaced-free and with rodata donors.)
 				emit_strdup(status);
 				emit_asm(status, `ldr x9, [sp]\n`);
 				emit_asm(status, `str x0, [x9, #${off}]\n`);
@@ -117,7 +120,9 @@ function emit_capturing_closure_value_a64(fn: FunctionNode, status: BuildStatus)
 		// so scope exit skips destroying it (the env destructor owns it now),
 		// and drop its heap-string-field records (the env's <T>_destroy frees
 		// them). Mirrors the `move`-arg path.
-		if (cap.is_move) {
+		// D3/E2: STRING captures are excluded — they snapshot (above), so the
+		// donor still owns and frees its own buffer.
+		if (cap.is_move && !(cap.type.name === "string" && !cap.type.is_view && !cap.type.is_array)) {
 			if (!status.moved) status.moved = new Set();
 			status.moved.add(cap.name);
 			const prefix = `${cap.name}.`;

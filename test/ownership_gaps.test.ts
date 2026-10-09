@@ -22,7 +22,7 @@ owning struct Person {
   var string name
 
   func rename = (ref self, string new_name) {
-    self.name = new_name
+    self.name = new_name.copy()
   }
 }
 
@@ -42,7 +42,7 @@ owning struct Person {
   var string name
 
   func rename = (ref self, string new_name) {
-    self.name = new_name
+    self.name = new_name.copy()
   }
 }
 
@@ -63,7 +63,7 @@ owning struct Person {
   var string name
 
   func rename = (ref self, string new_name) {
-    self.name = new_name
+    self.name = new_name.copy()
   }
 
   func reset = (ref self) {

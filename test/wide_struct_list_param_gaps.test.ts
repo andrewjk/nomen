@@ -62,7 +62,7 @@ func build_norm = (List<NS> units, out List<string>) {
 	var k = 0
 	while k < units.length {
 		var NS u0 = units.at(k)
-		var string t0 = u0.text
+		var string t0 = u0.text.copy()
 		norm.push(normalize2(t0))
 		k += 1
 	}

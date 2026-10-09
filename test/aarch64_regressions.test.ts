@@ -674,7 +674,7 @@ func flush_delete = (ref int del_start, ref List<Change> changes, List<Token> ta
 
 func make = (string s, int idx, out Token) {
   var t = Token()
-  t.text = s
+  t.text = s.copy()
   t.index = idx
   return t
 }
@@ -718,7 +718,7 @@ pub owning struct Tokens {
 
 func make = (string s, int idx, out Token) {
   var t = Token()
-  t.text = s
+  t.text = s.copy()
   t.index = idx
   return t
 }

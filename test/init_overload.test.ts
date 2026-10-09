@@ -40,7 +40,7 @@ owning struct Box {
   }
   pub func #init = (ref self, string tag) {
     self.v = -1
-    self.tag = tag
+    self.tag = tag.copy()
   }
 }
 var Box a = Box(7)

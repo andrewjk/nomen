@@ -136,7 +136,7 @@ pub owning struct JsonTree {
 
 	func get_text = (self, int idx, out string) {
 		var JsonNode n = self.nodes.load(idx)
-		return n.text
+		return n.text.copy()
 	}
 
 	func get_child = (self, int idx, out int) {

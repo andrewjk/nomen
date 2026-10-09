@@ -88,7 +88,7 @@ pub owning struct Registry {
 	pub var Map<string, Animal> by_name = Map<string, Animal>()
 
 	pub func add = (ref self, string name, move Animal r) {
-		self.by_name.set(name, move r)
+		self.by_name.set(move name, move r)
 	}
 }
 

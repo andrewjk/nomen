@@ -94,12 +94,14 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 			if (
 				field?.type.name &&
 				!field.type.is_array &&
+				!field.type.is_view &&
+				!field.type.is_ref &&
 				(is_class_type(field.type.name, status) ||
 					is_owning_struct_type_requiring_move(new Type(mono_type_name(field.type)), status))
 			) {
 				add_error(
 					status,
-					`cannot copy '${field.type.name}' out of field '${af.name}' by value — it owns heap resources; use 'move ... swap <replacement>'`,
+					`cannot copy '${field.type.name}' out of field '${af.name}' by value — it owns heap resources; use 'move ... swap <replacement>'${field.type.name === "string" ? ", or .copy() for a deep copy" : ""}`,
 					ret.value.start,
 				);
 			}

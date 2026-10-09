@@ -17,9 +17,12 @@ extern func memcpy = (uint64 dst, uint64 src, int bytes, out uint64)
 extern func memset = (uint64 dst, int value, int bytes, out uint64)
 
 /**
- * A UTF-8 text string — a heap-owned, length-tracked sequence of bytes
+ * A UTF-8 text string — a heap-owned, length-tracked sequence of bytes.
+ * STRUCT_PLAN_3 D3: `string` is OWNING — the fat (ptr, len) pair owns its
+ * bytes, so bindings move unless a copy is spelled (`.copy()`); `view string`
+ * is the cheap read-only passing form.
  **/
-pub struct string: Stringable, Hashable, Equatable {
+pub owning struct string: Stringable, Hashable, Equatable {
 	pub func hash = (self, out uint) {
 		// djb2 over exactly self.length bytes — matches the byte count of
 		// owned strings and literals (views hash the viewed bytes only).
@@ -29,6 +32,13 @@ pub struct string: Stringable, Hashable, Equatable {
 			h = h * 33 + (self.at(i) as uint)
 		}
 		return h
+	}
+
+	// The uniform owning-type verb: a fresh, owned byte-exact copy of self.
+	// The deep-copy spelling the binding/assignment copy errors name — same
+	// allocation contract as to_string (fresh buffer, never an alias).
+	pub func copy = (self, move out string) {
+		return self.to_string()
 	}
 
 	// Returns an OWNED byte-exact copy of self (`move out string`). Fresh

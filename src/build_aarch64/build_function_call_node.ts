@@ -196,6 +196,22 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				// destroy doesn't free the instance the payload now owns.
 				if (node.move_param_indices?.length) {
 					for (const idx of node.move_param_indices) {
+						// A `string` donor keeps caller ownership: the payload
+						// store STRDUPS a string payload (an OWNED copy — see
+						// emit_enum_payload_arg_store), so the original must
+						// still be freed at scope exit. mark_moved_if_struct
+						// happens not to mark plain strings today; skip them
+						// explicitly so the donor-keeps-ownership contract for
+						// case payloads doesn't depend on that accident.
+						const m_arg = node.params[idx];
+						if (m_arg?.node_type === "value") {
+							const vname = (m_arg as { value?: string }).value;
+							const decl = all_scope_frames(status)
+								.flat()
+								.find((d) => d.name === vname);
+							const tname = decl?.type?.name ?? (m_arg as { type?: { name?: string } }).type?.name;
+							if (tname === "string") continue;
+						}
 						mark_moved_if_struct(node.params[idx], status);
 					}
 				}

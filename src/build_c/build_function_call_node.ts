@@ -60,7 +60,16 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			for (const idx of node.move_param_indices) {
 				const param = node.params[idx];
 				if (param?.node_type !== "value") continue;
+				// A `string` donor keeps caller ownership: the case ctor
+				// STRDUPS a string payload (a string payload is an OWNED copy
+				// — build_enum_node), so the original must still be freed at
+				// scope exit. Resolve the type from the declaration (a bare
+				// variable reference's ValueNode.type is unset
+				// post-monomorphization) — mirrors the move_param gate below.
 				const decl_hit = find_decl_in_c_scopes(status, (param as ValueNode).value);
+				const donor_tname =
+					decl_hit?.frame[decl_hit.index].type?.name ?? (param as ValueNode).type?.name;
+				if (donor_tname === "string") continue;
 				if (decl_hit) decl_hit.frame.splice(decl_hit.index, 1);
 			}
 		}

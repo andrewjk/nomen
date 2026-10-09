@@ -42,7 +42,7 @@ import System
 func collect = (string[] protocols, out List<string>) {
 	var list = List<string>()
 	for p of protocols {
-		list.push(p)
+		list.push(move p)
 	}
 	return list
 }

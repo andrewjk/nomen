@@ -705,7 +705,18 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 						for (const idx of access_func.move_param_indices) {
 							const arg = access_func.params[idx];
 							if (arg?.node_type !== "value") continue;
+							// A `string` donor keeps caller ownership: the case
+							// ctor STRDUPS a string payload (a string payload is
+							// an OWNED copy — build_enum_node), so the original
+							// must still be freed here at scope exit. Resolve the
+							// type from the declaration (a bare variable
+							// reference's ValueNode.type is unset
+							// post-monomorphization) — mirrors the method-call
+							// move_param gate below.
 							const decl_hit = find_decl_in_c_scopes(status, (arg as ValueNode).value);
+							const donor_tname =
+								decl_hit?.frame[decl_hit.index].type?.name ?? (arg as ValueNode).type?.name;
+							if (donor_tname === "string") continue;
 							if (decl_hit) decl_hit.frame.splice(decl_hit.index, 1);
 						}
 					}

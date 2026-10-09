@@ -12,7 +12,7 @@ owning struct Printer {
     self.last_int = value
   }
   pub func print = (ref self, string value) {
-    self.last_str = value
+    self.last_str = value.copy()
   }
 }
 var Printer p = Printer(0, "")

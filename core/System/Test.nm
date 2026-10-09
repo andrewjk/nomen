@@ -100,7 +100,7 @@ pub owning struct Tester {
 		self.has_failed = false
 		self.passed = 0
 		self.failed = 0
-		self.current = name
+		self.current = name.copy()
 		Console.write_line("\\nomen|start|" + name)
 		self.started = Time.now_ns()
 	}
@@ -217,7 +217,7 @@ pub owning struct Tester {
 			return
 		}
 		self.bench_pending = true
-		self.bench_label = label
+		self.bench_label = label.copy()
 		self.bench_samples = 1000
 	}
 
@@ -231,7 +231,7 @@ pub owning struct Tester {
 			return
 		}
 		self.bench_pending = true
-		self.bench_label = label
+		self.bench_label = label.copy()
 		self.bench_samples = samples
 	}
 

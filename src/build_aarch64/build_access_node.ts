@@ -2,7 +2,7 @@ import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import { struct_needs_auto_destroy } from "../build_common/destroy_analysis.ts";
 import find_enum from "../build_common/find_enum.ts";
-import { mono_type_name } from "../build_common/mono_name.ts";
+import { mono_type_name, resolve_mono_type } from "../build_common/mono_name.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name } from "../build_common/nullable_struct.ts";
 import {
@@ -1996,6 +1996,22 @@ function build_access_method(
 				// destroy doesn't free the instance the payload now owns.
 				if (access_func.move_param_indices?.length) {
 					for (const idx of access_func.move_param_indices) {
+						// A `string` donor keeps caller ownership: the case
+						// store STRDUPS a string payload (an OWNED copy — see
+						// emit_enum_payload_arg_store), so the original must
+						// still be freed at scope exit. mark_moved_if_struct
+						// happens not to mark plain strings today; skip them
+						// explicitly so the donor-keeps-ownership contract for
+						// case payloads doesn't depend on that accident.
+						const m_arg = access_func.params[idx];
+						if (m_arg?.node_type === "value") {
+							const vname = (m_arg as { value?: string }).value;
+							const decl = all_scope_frames(status)
+								.flat()
+								.find((d) => d.name === vname);
+							const tname = decl?.type?.name ?? (m_arg as { type?: { name?: string } }).type?.name;
+							if (tname === "string") continue;
+						}
 						mark_moved_if_struct(access_func.params[idx], status);
 					}
 				}
@@ -2699,33 +2715,43 @@ function build_access_method(
 	// heap buffer POINTER in x0, never an sret struct — even when the element
 	// T is itself a struct (the element name would otherwise match below).
 	// An enum-with-data return uses sret like a struct (see build_function_node).
+	// The declared callee return type is the authoritative shape: a
+	// monomorphized generic call's `access_func.type` is often UNSET (the
+	// checker doesn't re-stamp the access node after mono), so keying on it
+	// alone missed e.g. `List<string>.copy()` — the callee still used the x8
+	// sret ABI (build_function_node mono-resolves its return type), but the
+	// caller never pointed x8 at a live buffer, so the callee's sret store hit
+	// a wild address (EXC_BAD_ACCESS in a compiler-generated loop epilogue).
+	// Mono-resolve the callee's return type exactly like build_function_node.
+	const method_ret_type = access_callee_method?.return_type ?? access_func.type;
+	const resolved_ret_type = resolve_mono_type(method_ret_type, status);
+	const ret_type_name = resolved_ret_type.name || access_func.type.name;
 	const return_struct =
 		!access_func.type.is_view &&
 		!access_func.type.is_array &&
-		(!!status.structs.find(
-			(s) => s.name === access_func.type.name && !s.is_simple_type && !s.is_class,
-		) ||
-			get_enum_sret_size(access_func.type.name, status) !== undefined);
+		!resolved_ret_type.is_view &&
+		!resolved_ret_type.is_array &&
+		(!!status.structs.find((s) => s.name === ret_type_name && !s.is_simple_type && !s.is_class) ||
+			get_enum_sret_size(ret_type_name, status) !== undefined);
+	if (process.env.NOMEN_DBG_SRET)
+		require("node:fs").appendFileSync(
+			"/var/folders/j7/hblq8b2n0t5258cz04tslkg80000gp/T/opencode/nom_asm/dbg.log",
+			`access method=${method_name} ret=${access_func.type.name} mono=${mono_struct_name} return_struct=${return_struct}\n`,
+		);
 	// A nullable SCALAR method return (`out int?`) also rides the x8 sret
 	// buffer (value + flag word) — a single x0 return cannot carry the flag.
 	// Use the declared method return type (the inner `access_func.type` may
 	// drop `is_nullable`).
-	const method_ret_type = access_callee_method?.return_type ?? access_func.type;
 	const nullable_scalar_ret =
 		is_nullable_scalar_type(method_ret_type, status) && !method_ret_type.is_ref;
 
 	let temp_addr = "";
 	let temp_offset = 0;
 	if (return_struct || nullable_scalar_ret) {
-		const return_enum_size = get_enum_sret_size(access_func.type.name, status);
 		temp_addr = `_access_temp_${access_temp_counter++}`;
 		temp_offset = allocate_stack_space(
 			status,
-			(return_enum_size ?? nullable_scalar_ret)
-				? nullable_scalar_ret
-					? 16
-					: get_struct_size(access_func.type.name, status)
-				: get_struct_size(access_func.type.name, status),
+			nullable_scalar_ret ? 16 : get_struct_size(ret_type_name, status),
 		);
 		status.stack_offsets!.set(temp_addr, temp_offset);
 		if (nullable_scalar_ret) {

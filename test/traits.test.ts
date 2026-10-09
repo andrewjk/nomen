@@ -201,7 +201,7 @@ owning struct Alice: Named {
 }
 
 func get_name = (Alice a, out string) {
-  return a.name
+  return a.name.copy()
 }
 Console.write(get_name(Alice()))
 `;

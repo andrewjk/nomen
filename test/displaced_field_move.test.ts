@@ -72,7 +72,7 @@ var a = Attr()
 a.value = "hello"
 box.items.push(move a)
 var attr = box.items.at_or_panic(0)
-var copy = attr.value
+var copy = attr.value.copy()
 Console.write("copy=\\{copy}\\n")
 Console.write("field=\\{box.items.at_or_panic(0).value}\\n")
 var box2 = box.items.at_or_panic(0)

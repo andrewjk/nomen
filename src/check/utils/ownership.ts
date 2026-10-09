@@ -31,14 +31,21 @@ export function is_owning_ref_type(type_name: string, status: CheckStatus): bool
  * Resolve a Type to its StructNode definition. Tries the exact (monomorphized)
  * name first, then a synthesized monomorphization name from type args
  * (e.g. List + [Animal] -> List_Animal).
+ *
+ * STRUCT_PLAN_3 D3: `string` keeps its built-in `is_simple_type` stamp — the
+ * backends lower it as a primitive fat (ptr, len) pair, not a field-bearing
+ * struct — but it IS an owning struct (`pub owning struct string`), so the
+ * ownership predicates must see through that stamp.
  */
 function resolve_struct(type: Type, status: CheckStatus): StructNode | undefined {
 	if (!type.name) return undefined;
-	const direct = status.structs.find((s) => s.name === type.name && !s.is_simple_type);
+	const matches = (s: StructNode): boolean =>
+		s.name === type.name && (!s.is_simple_type || type.name === "string");
+	const direct = status.structs.find(matches);
 	if (direct) return direct;
 	if (type.type_args?.length) {
 		const mono = mono_type_name(type);
-		return status.structs.find((s) => s.name === mono && !s.is_simple_type);
+		return status.structs.find((s) => s.name === mono && matches(s));
 	}
 	return undefined;
 }
@@ -102,6 +109,9 @@ export function destroy_releases(func: FunctionNode): boolean {
  * types (assigning aliases the pointer, one owner), so they are not owning.
  */
 export function is_owning_struct_type(type: Type, status: CheckStatus): boolean {
+	// A `view T` / `ref` spelling is a BORROW, never an owner — even when the
+	// underlying type is owning (`view string`, D3).
+	if (type.is_view || type.is_ref) return false;
 	const s = resolve_struct(type, status);
 	if (!s || s.is_class) return false;
 	// STRUCT_PLAN_3 B1: the DECLARED flag wins — `owning struct` is move-only
@@ -123,6 +133,7 @@ export function is_owning_struct_type(type: Type, status: CheckStatus): boolean 
  * by value would double-free — that's the case that must stay a `move ... swap`.
  */
 export function is_owning_struct_type_requiring_move(type: Type, status: CheckStatus): boolean {
+	if (type.is_view || type.is_ref) return false;
 	const s = resolve_struct(type, status);
 	if (!s || s.is_class) return false;
 	// B1: a declared `owning struct` is ALWAYS move-only — a string-only

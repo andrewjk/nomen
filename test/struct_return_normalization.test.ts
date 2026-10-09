@@ -133,7 +133,7 @@ func build = (int n, string t, out Pair) {
 func next = (Pair p, out Pair) {
 	var q = Pair()
 	q.n = p.n + 1
-	q.tag = p.tag
+	q.tag = p.tag.copy()
 	return q
 }
 

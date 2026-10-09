@@ -251,7 +251,7 @@ import System
 owning struct Pair {
 	var string name
 	pub func #init = (self, string n) {
-		self.name = n
+		self.name = n.copy()
 	}
 }
 

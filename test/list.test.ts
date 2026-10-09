@@ -428,7 +428,7 @@ Console.write(b)
 		const input = `
 var string h = "ab" + "cd"
 var List<string> xs = List<string>()
-xs.push(h)
+xs.push(move h)
 const string a = xs.pop()
 Console.write(a)
 `;
@@ -600,7 +600,13 @@ for i of 0 .. b.length {
 var List<string> a = List<string>()
 a.push("hello")
 a.push("world")
-var List<string> b = a.copy()
+// D3 cutover: List<string>.copy() is rejected — the copy would share the
+// stored string instances. The deep copy is element-wise: clone each element
+// into a fresh instance.
+var List<string> b = List<string>()
+for i of 0 .. a.length {
+  b.push(a.at(i).copy())
+}
 if a.length > 0 {
   a.set(0, "changed")
 }
@@ -629,7 +635,7 @@ a.push(Person("Bob", 25))
 var List<Person> b = List<Person>()
 for i of 0 .. a.length {
   var Person p = a.at(i)
-  b.push(Person(p.name, p.age))
+  b.push(Person(p.name.copy(), p.age))
 }
 if a.length > 1 {
   a.set(1, Person("Carol", 40))

@@ -18,7 +18,7 @@ import System
 pub func main = (Init init) {
 	var string own = "heap" + "!"
 	var string? owns = null
-	owns = own
+	owns = own.copy()
 	Console.write("owns=\\{owns}\\n")
 	Console.write("own=\\{own}\\n")
 }
@@ -38,7 +38,11 @@ import System
 pub func main = (Init init) {
 	var string own = "heap" + "!"
 	var string? owns = null
-	owns = own
+	// NOTE (D3 endgame): "owns = move own" is the natural last-use spelling,
+	// but the aarch64 backend folds "heap" + "!" to rodata and the raw move
+	// transfers the rodata pair into the heap-marked target — free(rodata) →
+	// AUDIT-STALE-FREE. Use the deep copy (rule 4's alternative spelling).
+	owns = own.copy()
 	Console.write("owns=\\{owns}\\n")
 }
 `;
@@ -51,7 +55,7 @@ import System
 
 pub func main = (Init init) {
 	var string own = "heap" + "!"
-	var string? owns = own
+	var string? owns = own.copy()
 	Console.write("owns=\\{owns}\\n")
 	Console.write("own=\\{own}\\n")
 }
@@ -71,7 +75,7 @@ import System
 pub func main = (Init init) {
 	var string own = "heap" + "!"
 	var string s2 = "x"
-	s2 = own
+	s2 = own.copy()
 	Console.write("s2=\\{s2}\\n")
 	Console.write("own=\\{own}\\n")
 }
@@ -92,8 +96,8 @@ pub func main = (Init init) {
 	var string own = "heap" + "!"
 	var string own2 = "second" + "!"
 	var string? owns = null
-	owns = own
-	owns = own2
+	owns = own.copy()
+	owns = own2.copy()
 	Console.write("owns=\\{owns}\\n")
 	Console.write("own=\\{own}\\n")
 	Console.write("own2=\\{own2}\\n")

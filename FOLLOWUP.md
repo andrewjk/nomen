@@ -2,6 +2,39 @@
 
 Skipped or out-of-scope items recorded for later.
 
+## `move ... swap ""` on a string leaks at runtime (D3 migration finding)
+
+Found 2026-10-09 while migrating the test corpus to the D3 endgame
+(`string` move-only at bindings): every RUNTIME path that moves a string
+out with a swap replacement leaks exactly one allocation on both backends
+(output is correct; the audit reports `LEAK: 1`). Isolated shapes:
+
+- `var string a = 42.to_string()` / `var string b = move a swap ""` →
+  `LEAK: 1` (plain variable move+swap).
+- `var s = move p.name swap ""` (owning-struct string field) →
+  `LEAK: 1` + `AUDIT-STALE-FREE: 1` (the struct's scope-exit destroy then
+  frees a pointer that is no longer live — the swap apparently does not
+  revalidate the field before the destroy walks it, or frees the pre-swap
+  pointer).
+
+The move-DESTRUCTURING path (`var [move name] = p`) synthesizes exactly
+this swap (`synthesized_swap_value` in `check_declaration_node.ts`), so
+move-destructuring a string field out of a struct has the same runtime
+leak; `test/destructuring.test.ts`'s "destructure struct with string
+field" was migrated to the `.copy()` field-read spelling for that reason
+(the `.copy()` form is clean, as are plain `move` bindings
+(`move string b = a`) and `.copy()` everywhere probed). Only
+anon-struct-literal move-destructuring (`var [move name, age] = p` where
+`p` came from a `[ ... ]` literal, `test/structs.test.ts`) audits clean —
+worth understanding why the literal path differs from the ctor path when
+fixing.
+
+Fix surface: the move+swap pipeline in both backends (C declaration
+move/swap emission and the aarch64 `build_swap_params` / declaration
+move path) — the replacement store is not reclaiming/freeing the right
+half of the pair. Fixing it should let the destructuring test go back to
+the pattern spelling.
+
 ## Bare nested blocks are not statement syntax (feature gap)
 
 Found 2026-10-06 while writing `test/spawn_ctor_struct.test.ts` (Phase R
@@ -425,10 +458,39 @@ The rest of Phase B:
   extraction of owning elements (`Map`'s pairs init) rides the temp-rooted
   read exemption in `check_function_call` (the temp dies, set's store
   deep-copies) until a generic move-out accessor exists on Array.
-- **`string` itself is still Copyable at bindings** (the D3 endgame):
-  `pub struct string` stays bare, string assignment keeps the strdup'd
-  assign copy + move-on-last-use. Making bindings move-only is a separate,
-  much larger break (E2's "string captures move" lands with it).
+- **D3 endgame — LANDED (2026-10-09).** `string` is now a declared owning
+  type: `pub owning struct string` in `core/System/String.nm` (keeps its
+  `is_simple_type` backends stamp; the ownership predicates see through it
+  via `resolve_struct` in `src/check/utils/ownership.ts`). `.copy()` is a
+  real method (delegates to `to_string`). Bindings/assignments of a string
+  from another string variable demand `move`/`.copy()`; string field reads
+  and `return self.field` demand `.copy()` (or `move ... swap`); owning
+  fields reject borrowed stores; `move string` params demand `move`;
+  container stores demand `move`/`.copy()`; literals and `null` are
+  exempt. The silent last-use move inference for string bindings is
+  retired (explicit spelling required). String captures in lambdas remain
+  backend SNAPSHOTS (strdup) while the checker invalidates the donor for
+  reads (the marker semantics without the transfer — transferring the pair
+  broke donor reassignment's displaced-free and rodata donors).
+  Residuals from the migration:
+  - **`enum`-case `.copy()` argument leaks** (`Option<string>.some(s.copy())`):
+    the arg elides to `s` (the case ctor strdups anyway) but `s`'s
+    scope-exit free is then dropped → `LEAK: 1`. The `move`-spelled shape
+    (`.some(move s)`) is leak-free. `test/enum_payload_string.test.ts`'s
+    "local enum payload…" is skipped with a pointer to this.
+  - **aarch64 declaration `move` parity**: `move string b = a` is lowered
+    as a strdup copy + two frees on aarch64 (C transfers the pair). Sound,
+    not a real move — see `test/move_on_last_use.test.ts`.
+  - **`string?` `.copy()` on a null** yields a non-null empty string
+    instead of preserving null (found by a migration probe).
+  - **`move x swap ""` on a string leaks** — see the dedicated section at
+    the top of this file.
+  - **aarch64 rodata-fold + move**: `owns = move own` where `"heap" + "!"`
+    folded to rodata trips `AUDIT-STALE-FREE` (the aarch64 constant-fold
+    produced a rodata pair that the move marked heap).
+  - **`string` captures are read-invalidated but memory-snapshotted**: the
+    E2 endgame (a real transfer) is deferred; the current model is sound
+    and matches the pre-D3 output for capture-then-reassign shapes.
 - **Trait-typed FIELDS on owning structs** (the B5 remainder): rejected
   with a named fix ("declare it with the concrete type, or
   `Box<Concrete>`") until the boxed-handle field lowering exists — field

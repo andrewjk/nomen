@@ -230,7 +230,7 @@ Console.write("\\{p.name} \\{p.age}")
 		const input = `
 var p = [ name = "a", age = 1 ]
 p = [ age = 2, name = "b" ]
-var [name, age] = p
+var [move name, age] = p
 Console.write("\\{name} \\{age}")
 `;
 		await build_and_check_output(input, "anon_struct_reassign_destructure", "b 2");

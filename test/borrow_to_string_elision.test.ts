@@ -129,7 +129,9 @@ pub func main = () {
 }
 `;
 	const a64 = build_code(input, "aarch64");
-	expect(count(a64, "bl string_to_string")).toBe(2);
+	// +1 whole-TU `string_to_string` from the D3 `string_copy` helper body;
+	// the raw-mutating argument itself is still not elided.
+	expect(count(a64, "bl string_to_string")).toBe(3);
 	const c = build_code(input, "c");
 	expect(c).toContain("string_to_string(s)");
 });
@@ -206,8 +208,10 @@ pub func main = () {
 // ---------------------------------------------------------------------------
 // Code shape: the strdup + temp + free actually disappear, per consumer
 // class. `var s = "hello".to_string()` is an OWNED declaration — its
-// string_to_string is semantically necessary and stays; these pins count
-// exactly one.
+// string_to_string is semantically necessary and stays. Under D3 the emitted
+// String type also pulls in the `string_copy` helper, whose body carries one
+// whole-TU `bl string_to_string`; these pins therefore count that base plus
+// whatever the user code's non-elided sites add.
 // ---------------------------------------------------------------------------
 
 const SHAPE_PROLOG = `
@@ -228,7 +232,9 @@ test("elided call arg: one strdup total (the owned declaration)", () => {
 }
 `;
 	const a64 = build_code(input, "aarch64");
-	expect(count(a64, "bl string_to_string")).toBe(1);
+	// The owned declaration (1) + the D3 `string_copy` helper body (1); the
+	// call argument itself is elided.
+	expect(count(a64, "bl string_to_string")).toBe(2);
 	const c = build_code(input, "c");
 	expect(c).toContain("consume(s);");
 	expect(c).not.toContain("string_to_string(s)");
@@ -243,7 +249,9 @@ test("concat operand: the copy and its post-concat free disappear", () => {
 }
 `;
 	const a64 = build_code(input, "aarch64");
-	expect(count(a64, "bl string_to_string")).toBe(1);
+	// The owned declaration + the D3 `string_copy` helper body; the concat
+	// operand copy is elided (one `string_add` only).
+	expect(count(a64, "bl string_to_string")).toBe(2);
 	expect(count(a64, "bl string_add")).toBe(1);
 	const c = build_code(input, "c");
 	expect(c).toContain('string_add(nomen_str_lit("x", 1), s);');
@@ -272,7 +280,8 @@ pub func main = () {
 }
 `;
 	const a64 = build_code(input, "aarch64");
-	expect(count(a64, "bl string_to_string")).toBe(2);
+	// +1 whole-TU `string_to_string` from the D3 `string_copy` helper body.
+	expect(count(a64, "bl string_to_string")).toBe(3);
 	const c = build_code(input, "c");
 	expect(c).toContain("string_to_string(s)");
 });
@@ -303,7 +312,8 @@ pub func main = () {
 }
 `;
 	const a64 = build_code(input, "aarch64");
-	expect(count(a64, "bl string_to_string")).toBe(2);
+	// +1 whole-TU `string_to_string` from the D3 `string_copy` helper body.
+	expect(count(a64, "bl string_to_string")).toBe(3);
 	const c = build_code(input, "c");
 	expect(c).toContain("string_to_string(s)");
 });
@@ -322,9 +332,10 @@ pub func main = () {
 	Console.write(a.to_string())
 }
 `;
-	// The owned declaration plus the view position's copy.
+	// The owned declaration plus the view position's copy, plus the D3
+	// `string_copy` helper body.
 	const a64 = build_code(input, "aarch64");
-	expect(count(a64, "bl string_to_string")).toBe(2);
+	expect(count(a64, "bl string_to_string")).toBe(3);
 	const c = build_code(input, "c");
 	expect(count(c, "string_to_string(s)")).toBe(1);
 });
@@ -386,9 +397,9 @@ pub func main = () {
 	// raw_print is provably non-mutating (no stores; printf reads only) —
 	// its argument elides. raw_peek indexes the param in its C body — the
 	// conservative textual rule rejects the elision and the copy stays.
-	// Total strdups: the declaration + raw_peek's copy = 2.
+	// Count: the declaration + raw_peek's copy + the D3 `string_copy` helper.
 	const a64 = build_code(input, "aarch64");
-	expect(count(a64, "bl string_to_string")).toBe(2);
+	expect(count(a64, "bl string_to_string")).toBe(3);
 	const c = build_code(input, "c");
 	expect(count(c, "string_to_string(s)")).toBe(1);
 });
@@ -405,7 +416,8 @@ test("kill-switch off restores the pre-tranche output", () => {
 }
 `;
 	const on_a64 = build_code(input, "aarch64");
-	expect(count(on_a64, "bl string_to_string")).toBe(1);
+	// declaration + the D3 `string_copy` helper body; the argument elides.
+	expect(count(on_a64, "bl string_to_string")).toBe(2);
 
 	let off_a64 = "";
 	let off_c = "";
@@ -416,7 +428,9 @@ test("kill-switch off restores the pre-tranche output", () => {
 	} finally {
 		set_borrow_to_string_elision_enabled(true);
 	}
-	expect(count(off_a64, "bl string_to_string")).toBe(2);
+	// OFF adds back the argument's own copy: declaration + argument + the
+	// `string_copy` helper body.
+	expect(count(off_a64, "bl string_to_string")).toBe(3);
 	expect(off_c).toContain("string_to_string(s)");
 	expect(off_c).toContain("consume(_param_0);");
 });

@@ -123,7 +123,7 @@ owning struct Dog {
 owning struct Holder {
 	var Dog d
 	func rename = (ref self, string n) {
-		self.d.name = n
+		self.d.name = n.copy()
 	}
 }
 func probe = () {
@@ -188,7 +188,7 @@ owning struct Holder {
 	var Dog d
 }
 func make = (string n, out Holder) {
-	return Holder(Dog(n))
+	return Holder(Dog(n.copy()))
 }
 func probe = () {
 	var Holder h = make("Rex")

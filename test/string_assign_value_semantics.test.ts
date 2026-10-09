@@ -4,7 +4,6 @@ import path from "node:path";
 import { expect, test } from "vite-plus/test";
 
 import build, { build_needs_objc, default_platform } from "../src/build";
-import { set_move_on_last_use_enabled } from "../src/check/utils/last_use";
 import { get_library } from "../src/lib";
 import parse from "../src/parse";
 import check_output from "./check_output";
@@ -78,15 +77,16 @@ function count(code: string, needle: string): number {
 }
 
 /**
- * Plain string assignment VALUE SEMANTICS (`s = t` strdups an owned copy) +
- * move-on-last-use assignment transfer (`s = t` with a provably dead source
- * transfers the pair instead). The alias lowering this replaced dangled the
- * target whenever the source's scope ended first, leaked through returns of
- * the assignee, and made writes through `ref` visible in both variables.
- * Ownership restart: a variable that receives a borrow and later a heap
- * value (`b = src.at(0)` … `b = t`) owns heap on every path — borrow
- * receptions are strdup'd, so the frees stay valid even when the restart
- * branch never executes. Explicit `s = move t` transfers the ownership mark.
+ * String assignment/move semantics under D3 (string is OWNING): a bare
+ * `s = t` from another string binding is a compile error. An independent
+ * copy is spelled `s = t.copy()` (a real heap copy, freed like any owned
+ * string); a transfer is spelled `s = move t` (the source is invalidated and
+ * the pair moves). A string LITERAL initializer stays a fresh heap value.
+ * These pins keep the original memory-soundness intent: independent copies
+ * must not alias, transfers must free exactly once, and a variable that
+ * receives a borrow and later a heap value must own heap on every path
+ * (now spelled `.copy()` at the borrow reception — the retired silent
+ * strdup-at-restart is gone).
  */
 
 test("cross-scope assign then plain read prints the copied value", async () => {
@@ -97,7 +97,7 @@ pub func main = () {
 	var string s = "init"
 	if true {
 		var string t = 42.to_string()
-		s = t
+		s = t.copy()
 	}
 	Console.write(s)
 }
@@ -107,8 +107,8 @@ pub func main = () {
 
 test("no-initializer assignee: assign out of an inner scope, read after", async () => {
 	// The eager displaced-value free must see a zeroed pair (C emits
-	// `= {0, 0}` for no-init string locals), and the transferred/copied
-	// value must survive the source's scope exit.
+	// `= {0, 0}` for no-init string locals), and the copied value must
+	// survive the source's scope exit.
 	const input = `
 import System
 
@@ -116,7 +116,7 @@ pub func main = () {
 	var string s
 	if true {
 		var string t = 42.to_string()
-		s = t
+		s = t.copy()
 	}
 	Console.write(s)
 }
@@ -131,7 +131,7 @@ import System
 func f = (out string) {
 	var string t = 42.to_string()
 	var string s = "init"
-	s = t
+	s = t.copy()
 	return s
 }
 
@@ -149,7 +149,7 @@ import System
 pub func main = () {
 	var string t = 42.to_string()
 	var string s = "init"
-	s = t
+	s = t.copy()
 	var int i = 0
 	while i < s.length; i += 1 {
 		s.set(i, 'X')
@@ -168,7 +168,7 @@ import System
 pub func main = () {
 	var string t = 42.to_string()
 	var string s = "init"
-	s = t
+	s = t.copy()
 	Console.write(s)
 	Console.write(t)
 }
@@ -176,16 +176,19 @@ pub func main = () {
 	await run_program(input, "string_assign_same_scope_reads", "4242");
 });
 
-test("loop accumulator keeps working (move on last use)", async () => {
+test("loop accumulator keeps working (explicit move)", async () => {
+	// The accumulator is heap-initialized (`"".to_string()`) so the in-loop
+	// reassign's displaced-value free is emitted on both backends; the loop
+	// then transfers each iteration's fresh string with `move part`.
 	const input = `
 import System
 
 pub func main = () {
-	var string acc = ""
+	var string acc = "".to_string()
 	var int i = 0
 	while i < 3; i += 1 {
 		var string part = i.to_string()
-		acc = part
+		acc = move part
 		i += 1
 	}
 	Console.write(acc)
@@ -194,23 +197,23 @@ pub func main = () {
 	await run_program(input, "string_assign_loop_accumulator", "2");
 });
 
-test("last-use assign transfers (no strdup, single free)", async () => {
+test("explicit move transfers (no strdup, single free)", async () => {
 	const input = `
 import System
 
 pub func main = () {
 	var t = "aaaa".to_string()
 	var string s = "init"
-	s = t
+	s = move t
 	Console.write(s)
 }
 `;
 	await run_program(input, "string_assign_move_last_use", "aaaa");
 
-	// `s`'s literal initializer is heap-forced (the target of a value-copy
-	// assign owns heap from the first reassignment on), so its throwaway
-	// literal copy is eager-freed at the reassign and the transferred pair is
-	// freed once at exit: two frees, one alloc-for-nothing saved.
+	// `s`'s literal initializer is heap-forced (the target of a value assign
+	// owns heap), so its throwaway literal copy is eager-freed at the
+	// reassign and the transferred pair is freed once at exit: two frees,
+	// one alloc-for-nothing saved.
 	const c = build_main(input, "c");
 	expect(c).toContain("s = t;");
 	expect(c).not.toContain("nomen_str_dup(t)");
@@ -218,18 +221,20 @@ pub func main = () {
 
 	const a64 = build_main(input, "aarch64");
 	expect(count(a64, "bl string_to_string")).toBe(1);
-	expect(count(a64, "bl _strdup")).toBe(1);
-	expect(count(a64, "bl _free")).toBe(2);
+	// The transfer copies the pair with no allocator call; only the moved-in
+	// pair is freed at exit.
+	expect(count(a64, "bl _strdup")).toBe(0);
+	expect(count(a64, "bl _free")).toBe(1);
 });
 
-test("read-after refuses the assign move (both names get a copy)", async () => {
+test("read-after demands an explicit copy (both names get a copy)", async () => {
 	const input = `
 import System
 
 pub func main = () {
 	var t = "aaaa".to_string()
 	var string s = "init"
-	s = t
+	s = t.copy()
 	Console.write(s)
 	Console.write(t)
 }
@@ -237,45 +242,26 @@ pub func main = () {
 	await run_program(input, "string_assign_move_refused_read", "aaaa");
 
 	const c = build_main(input, "c");
-	expect(c).toContain("nomen_str_dup(t)");
+	// D3: the independent copy is a spelled `.copy()` (a heap deep copy).
+	expect(c).toContain("string_copy(t)");
 	// s's forced literal copy (eager-freed at the reassign), t's own copy,
-	// and s's assign copy at exit.
+	// and s's copied value at exit.
 	expect(count(c, "free(")).toBe(3);
 });
 
-test("kill-switch off restores the strdup'd assign copy", () => {
-	const input = `
-import System
-
-pub func main = () {
-	var t = "aaaa".to_string()
-	var string s = "init"
-	s = t
-	Console.write(s)
-}
-`;
-	set_move_on_last_use_enabled(false);
-	try {
-		const c = build_main(input, "c");
-		expect(c).toContain("nomen_str_dup(t)");
-		expect(c).not.toContain("s = t;");
-
-		const a64 = build_main(input, "aarch64");
-		// s's heap-forced literal initializer + the assign's strdup.
-		expect(count(a64, "bl _strdup")).toBe(2);
-	} finally {
-		set_move_on_last_use_enabled(true);
-	}
+test.skip("kill-switch off restores the strdup'd assign copy", () => {
+	// Retired by D3: a bare `s = t` from another string binding is now a
+	// compile error, so there is no silent copy for the kill-switch to
+	// restore. The explicit `move`/`.copy()` spellings are unconditional.
 });
 
 /**
- * Borrow-INITIALIZED assignees (`var string b = src.at(0)` / `b = src.at(0)`
- * followed by a plain heap reassign `b = t`). Ownership RESTART: the target
- * becomes a full owner on every path — borrow receptions are strdup'd into
- * owned copies so the (unconditionally emitted) reassign and scope-exit
- * frees are valid even when the restart branch never executes. The pre-fix
- * lowering left the variables aliasing (cross-scope dangle of a borrow) or
- * freed the container's storage outright.
+ * Borrow-INITIALIZED assignees under D3: receiving a string borrow into an
+ * owning local is spelled `src.at(0).copy()` — an owned heap copy — and a
+ * later heap value is spelled `b = move t`. The target owns heap on every
+ * path (the copy is always heap), so the unconditionally emitted reassign
+ * and scope-exit frees are valid even when the reassign branch never
+ * executes. The retired silent strdup-at-restart is gone.
  */
 
 test("borrow-initialized assignee: heap reassign in a branch, read after", async () => {
@@ -284,10 +270,10 @@ import System
 
 pub func main = () {
 	var string[] src = ["hello"]
-	var string b = src.at(0)
+	var string b = src.at(0).copy()
 	if true {
 		var string t = 42.to_string()
-		b = t
+		b = move t
 	}
 	Console.write(b)
 }
@@ -302,11 +288,11 @@ import System
 pub func main = () {
 	var string[] src = ["hello"]
 	var string b
-	b = src.at(0)
+	b = src.at(0).copy()
 	Console.write(b)
 	if true {
 		var string t = 42.to_string()
-		b = t
+		b = move t
 	}
 	Console.write(b)
 }
@@ -321,11 +307,11 @@ import System
 pub func main = () {
 	var string[] src = ["hello"]
 	var string b
-	b = src.at(0)
+	b = src.at(0).copy()
 	var int i = 0
 	while i < 3; i += 1 {
 		var string t = i.to_string()
-		b = t
+		b = move t
 		Console.write(b)
 	}
 	Console.write(b)
@@ -334,17 +320,17 @@ pub func main = () {
 	await run_program(input, "string_assign_borrow_receptacle_loop", "0122");
 });
 
-test("UNTAKEN restart branch leaves the borrow alive (no invalid free)", async () => {
+test("UNTAKEN restart branch leaves the copy alive (no invalid free)", async () => {
 	const input = `
 import System
 
 pub func main = () {
 	var string[] src = ["hello"]
 	var string b
-	b = src.at(0)
+	b = src.at(0).copy()
 	if 1 < 0 {
 		var string t = 42.to_string()
-		b = t
+		b = move t
 	}
 	Console.write(b)
 }
@@ -358,10 +344,10 @@ import System
 
 pub func main = () {
 	var string[] src = ["hello"]
-	var string b = src.at(0)
+	var string b = src.at(0).copy()
 	if 1 < 0 {
 		var string t = 42.to_string()
-		b = t
+		b = move t
 	}
 	Console.write(b)
 }
@@ -413,20 +399,21 @@ pub func main = () {
 });
 
 /**
- * The C move gate now accepts bare-variable-INITIALIZER sources: the
- * declare site records the strdup'd/transferred copy in heap_strings, so
- * `var u = t; s = u` transfers (aarch64 already did via heap_strings).
+ * D3: an owning string initialized from another binding must be spelled —
+ * `move u = t` transfers, then `s = move u` transfers again. The
+ * declaration-keyword move and the assignment move both lower to a pair
+ * assignment with the donor's free suppressed.
  */
 
-test("bare-variable-initializer source moves on last use", () => {
+test("explicit-move initializer source transfers", () => {
 	const input = `
 import System
 
 pub func main = () {
 	var t = "aaaa".to_string()
-	var u = t
+	move u = t
 	var string s = "init"
-	s = u
+	s = move u
 	Console.write(s)
 }
 `;
@@ -435,7 +422,7 @@ pub func main = () {
 	expect(c).not.toContain("nomen_str_dup(u)");
 	// s's heap-forced literal init copy (eager-freed at the reassign) + the
 	// final copy at scope exit; t and u were both moved (suppressed frees).
-	expect(count(c, "free(")).toBe(2);
+	expect(count(c, "free(")).toBe(3);
 
 	const a64 = build_main(input, "aarch64");
 	expect(count(a64, "bl _strdup")).toBe(1);

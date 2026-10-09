@@ -45,10 +45,11 @@ owning struct Named {
 var Buffer<Named> b = Buffer<Named>()
 b.alloc(2)
 b.store(0, Named("x", 1))
-// Rebuilds the struct: 'name' aliases the slot's own copy (round-trip
-// identity — kept), 'hits' is a plain copy. No leak, no double free.
+// Rebuilds the struct: 'name' is deep-copied into the fresh instance (D3:
+// strings are owning — a bare field read can't move through a move param),
+// 'hits' is a plain copy. No leak, no double free.
 var func (Named, out Named) touch = func (n, out Named) {
-	return Named(n.name, n.hits + 1)
+	return Named(n.name.copy(), n.hits + 1)
 }
 b.modify(0, touch)
 b.modify(0, touch)

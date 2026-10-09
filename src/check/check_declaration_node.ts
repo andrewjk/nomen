@@ -581,17 +581,26 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 		// alias classification below owns it.
 		if (decl.value?.node_type === "value" && !decl.value.is_moved && !is_ref_keyword) {
 			const val_type = type_from_value_node(decl.value, status);
+			// D3: a string LITERAL (or null) is a fresh value, not a copy of an
+			// existing binding — the owning-type copy rule below must not fire
+			// on it. (For structs this shape is unreachable: a constructor is a
+			// func_call, never a bare value.)
+			const raw = (decl.value as ValueNode).value;
+			const fresh_value =
+				typeof raw === "string" && ((raw.startsWith('"') && raw.endsWith('"')) || raw === "null");
+			const owning_enum =
+				val_type.name && status.enums.findLast((e) => e.name === val_type.name && e.is_owning);
+			const box_binding = val_type.name && is_box_type(val_type.name, status.structs);
 			// B1: a declared `owning struct` binding moves (the flag wins over
 			// the inferred walk — a string-only `owning struct` is still
 			// move-only). B1a: a declared `owning enum` binding likewise.
 			// B2: a `Box<T>` binding owns its pointee — a bare copy shares it.
-			const owning_enum =
-				val_type.name && status.enums.findLast((e) => e.name === val_type.name && e.is_owning);
-			const box_binding = val_type.name && is_box_type(val_type.name, status.structs);
-			if (val_type.name && is_owning_struct_type(val_type, status)) {
+			if (!fresh_value && val_type.name && is_owning_struct_type(val_type, status)) {
 				add_error(
 					status,
-					`cannot copy '${val_type.name}' by value — it owns heap resources; use .copy() or move`,
+					val_type.name === "string"
+						? `cannot copy a string by value — it owns its bytes; use 'move' to transfer it, or .copy() for a deep copy`
+						: `cannot copy '${val_type.name}' by value — it owns heap resources; use .copy() or move`,
 					decl.value.start,
 				);
 			} else if (box_binding && !is_class_type(val_type.name, status)) {
@@ -642,7 +651,7 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 				if (!decl.value.is_moved && !temp_rhs) {
 					add_error(
 						status,
-						`cannot copy '${field_type.name}' out of field '${field_name}' by value — it owns heap resources; use 'move ... swap <replacement>'`,
+						`cannot copy '${field_type.name}' out of field '${field_name}' by value — it owns heap resources; use 'move ... swap <replacement>'${field_type.name === "string" ? ", or .copy() for a deep copy" : ""}`,
 						decl.value.start,
 					);
 				} else if (!decl.swap) {

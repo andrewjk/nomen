@@ -11,7 +11,7 @@ var int x = 1
 var int y = 2
 var string s = x.to_string()
 var string t = y.to_string()
-t = s
+t = s.copy()
 Console.write(s)
 Console.write(t)
 `;
@@ -75,7 +75,7 @@ owning struct Named {
 
 var int id = 1
 var string name = 42.to_string()
-var Named n = Named(id, name)
+var Named n = Named(id, move name)
 Console.write("\\{n.id}")
 `;
 		await build_and_check_output(input, "dfree_struct_string_field", "1");
@@ -117,7 +117,7 @@ Console.write("done")
 	test("aliasing heap string via declaration then reassigning original is not UAF", async () => {
 		const input = `
 var string a = 42.to_string()
-var string b = a
+var string b = a.copy()
 a = "literal"
 Console.write(b)
 `;
@@ -127,7 +127,7 @@ Console.write(b)
 	test("assigning heap string to another variable does not leak old value", async () => {
 		const input = `
 var string s = 42.to_string()
-var string t = s
+move string t = s
 Console.write(t)
 `;
 		await build_and_check_output(input, "leak_alias_declaration", "42");
@@ -304,7 +304,7 @@ owning struct Named {
 
 var int id = 1
 var string name = 42.to_string()
-var Named n = Named(id, name)
+var Named n = Named(id, move name)
 Console.write("\\{n.id}")
 `;
 		await build_and_check_output(input, "dfree_class_string_field", "1");
@@ -748,7 +748,7 @@ owning struct Named {
 }
 func maybe_render = (Named n, int c, out string) {
 	if c > 0 {
-		return n.name
+		return n.name.copy()
 	}
 	return c.to_string()
 }

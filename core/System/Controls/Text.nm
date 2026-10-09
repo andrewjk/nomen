@@ -98,7 +98,7 @@ pub owning struct Text : Control {
 	}
 
 	pub func set_text = (ref self, string text) {
-		self.text = text
+		self.text = text.copy()
 		```
 		#arch: c
 		#platform: macos

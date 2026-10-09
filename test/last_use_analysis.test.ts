@@ -28,27 +28,29 @@ function scan_checked(src: string): LastUseSite[] {
 }
 
 /**
- * Move-on-last-use analysis (STRING_PLAN tranche 4's gate). The tranche
- * itself is gated on this receipt: the analysis must positively identify
- * the real pattern — `s = t` where t is a dead-after `var` string local —
- * including the loop-accumulator shape, and must refuse every unsound
- * variant. These pins are the gate's regression suite.
+ * Move-on-last-use inference is RETIRED by D3: a bare `s = t` from another
+ * string binding is now a compile error, so `scan_last_use_string_moves` can
+ * only ever observe explicitly-spelled transfers (`move`) or copies
+ * (`.copy()`), and it reports NEITHER (an explicit move already carries
+ * `is_moved`; a copy is a fresh value). These pins encode that new reality:
+ * explicit transfers are not re-inferred as last-use sites, and no D3-valid
+ * shape makes the scanner invent a transfer. The old "detects the pattern"
+ * assertions are gone with the inference they measured.
  */
 
-test("detects the straight-line staged-rebinding pattern", () => {
+test("an explicit string move is not re-inferred as a last-use site", () => {
 	const sites = scan(`
 import System
 pub func main = () {
 	var t = "a".to_string()
 	var s = "b".to_string()
-	s = t
+	s = move t
 }
 `);
-	expect(sites).toHaveLength(1);
-	expect(sites[0]).toMatchObject({ target: "s", source: "t", desc: "s = t" });
+	expect(sites).toHaveLength(0);
 });
 
-test("detects the loop accumulator (loop-local source, back-edge safe)", () => {
+test("an explicit declare move is not re-inferred (loop accumulator shape)", () => {
 	const sites = scan(`
 import System
 func render = (string[] lines, out string) {
@@ -56,7 +58,7 @@ func render = (string[] lines, out string) {
 	var i = 0
 	while i < lines.length; i += 1 {
 		var next = acc + lines.at(i)
-		acc = next
+		acc = move next
 		i += 1
 	}
 	return acc
@@ -66,11 +68,10 @@ pub func main = () {
 	Console.write_line(render(lines))
 }
 `);
-	expect(sites).toHaveLength(1);
-	expect(sites[0]).toMatchObject({ func: "render", target: "acc", source: "next" });
+	expect(sites).toHaveLength(0);
 });
 
-test("detects the staged-rebinding pattern inside a switch case", () => {
+test("an explicit move inside a switch case is not re-inferred", () => {
 	const sites = scan(`
 import System
 pub func main = () {
@@ -78,25 +79,21 @@ pub func main = () {
 	var s = "b".to_string()
 	switch {
 		case true {
-			s = t
+			s = move t
 		}
 	}
 }
 `);
-	expect(sites).toHaveLength(1);
-	expect(sites[0]).toMatchObject({ target: "s", source: "t" });
+	expect(sites).toHaveLength(0);
 });
 
-test("refuses when a later read sits inside a switch expression", () => {
-	// The read of `t` is a case arm of a switch EXPRESSION — reachable only
-	// through the generic child walk (walk_stmt's explicit case list doesn't
-	// apply to expression position). Missing it would stamp an unsound move.
+test("a copy source is never inferred (switch-expression read)", () => {
 	const sites = scan(`
 import System
 pub func main = () {
 	var t = "a".to_string()
 	var s = "b".to_string()
-	s = t
+	s = t.copy()
 	var label = switch {
 		case true -> t
 		else -> "z"
@@ -107,20 +104,20 @@ pub func main = () {
 	expect(sites).toHaveLength(0);
 });
 
-test("refuses a read after the assignment", () => {
+test("a copy source is never inferred (read after the assignment)", () => {
 	const sites = scan(`
 import System
 pub func main = () {
 	var t = "a".to_string()
 	var s = "b".to_string()
-	s = t
+	s = t.copy()
 	Console.write_line(t)
 }
 `);
 	expect(sites).toHaveLength(0);
 });
 
-test("refuses a back-edge re-read of an outer-loop binding", () => {
+test("a copy source is never inferred (back-edge re-read of an outer-loop binding)", () => {
 	const sites = scan(`
 import System
 pub func main = () {
@@ -128,7 +125,7 @@ pub func main = () {
 	var s = "b".to_string()
 	var i = 0
 	while i < 3; i += 1 {
-		s = t
+		s = t.copy()
 		Console.write_line(t)
 	}
 }
@@ -136,13 +133,13 @@ pub func main = () {
 	expect(sites).toHaveLength(0);
 });
 
-test("refuses a const source and a read in a sibling branch", () => {
+test("a copy source is never inferred (const source and a sibling branch)", () => {
 	const const_source = scan(`
 import System
 pub func main = () {
 	const t = "a".to_string()
 	var s = "b".to_string()
-	s = t
+	s = t.copy()
 }
 `);
 	expect(const_source).toHaveLength(0);
@@ -153,7 +150,7 @@ pub func main = (bool c) {
 	var t = "a".to_string()
 	var s = "b".to_string()
 	if c {
-		s = t
+		s = t.copy()
 	} else {
 		Console.write(t)
 	}
@@ -162,12 +159,15 @@ pub func main = (bool c) {
 	expect(sibling_branch).toHaveLength(0);
 });
 
-test("refuses a write of the source after the declare", () => {
+test("an explicit move followed by a source write is not re-inferred", () => {
+	// The retired scan refused this because the source is written after the
+	// declare; under D3 the write simply re-binds the (already moved) local
+	// and the transfer is spelled, so the scan has nothing to report.
 	const sites = scan(`
 import System
 pub func main = () {
 	var t = "a".to_string()
-	var u = t
+	move u = t
 	t = "b".to_string()
 	Console.write(u)
 }
@@ -175,7 +175,7 @@ pub func main = () {
 	expect(sites).toHaveLength(0);
 });
 
-test("refuses any function containing a raw body", () => {
+test("a function containing a raw body contributes no sites", () => {
 	const sites = scan(`
 import System
 func probe = (string s, out int) {
@@ -186,7 +186,7 @@ func probe = (string s, out int) {
 }
 pub func main = () {
 	var t = "a".to_string()
-	var u = t
+	var u = t.copy()
 	Console.write(u)
 	var n = probe(t)
 	Console.write(n.to_string())
@@ -217,29 +217,28 @@ pub func main = () {
 	expect(compound).toHaveLength(0);
 });
 
-test("refuses when the only later read is a checker-hoisted interpolation arg", () => {
+test("a checker-hoisted interpolation read of a copy source is not inferred", () => {
 	// Post-check, `"\{t}"` becomes `const _param_N = t.to_string()` attached
-	// as the Console.write statement's `allocations` with the call argument
-	// rewritten to the bare temp — the read of `t` is invisible unless the
-	// walk descends into the hoisted declares.
+	// as the Console.write statement's `allocations`. The source here is an
+	// explicit `.copy()` of `t`, so no transfer is available to infer.
 	const sites = scan_checked(`
 import System
 pub func main = () {
 	var t = "a".to_string()
 	var s = "b".to_string()
-	s = t
+	s = t.copy()
 	Console.write_line("v=\\{t}")
 }
 `);
 	expect(sites).toHaveLength(0);
 });
 
-test("refuses the declare form against a hoisted interpolation read too", () => {
+test("an explicit move declare against a hoisted interpolation read reports nothing", () => {
 	const sites = scan_checked(`
 import System
 pub func main = () {
 	var t = "a".to_string()
-	var u = t
+	var u = t.copy()
 	Console.write_line("v=\\{t}")
 	Console.write_line(u)
 }
@@ -247,16 +246,18 @@ pub func main = () {
 	expect(sites).toHaveLength(0);
 });
 
-test("still detects a last use when a hoisted interpolation reads another variable", () => {
+test("a hoisted interpolation reading another variable still reports no inference", () => {
+	// The retired analysis detected the last use here because the only later
+	// reference was to `s`, not `t`. Under D3 the transfer is explicit, so
+	// the scanner reports nothing regardless of what the interpolation reads.
 	const sites = scan_checked(`
 import System
 pub func main = () {
 	var t = "a".to_string()
 	var s = "b".to_string()
-	s = t
+	s = move t
 	Console.write_line("v=\\{s}")
 }
 `);
-	expect(sites).toHaveLength(1);
-	expect(sites[0]).toMatchObject({ target: "s", source: "t" });
+	expect(sites).toHaveLength(0);
 });

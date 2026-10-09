@@ -17,7 +17,7 @@ trait Speaker { func speak = (self, out string) }
 
 owning struct Dog : Speaker {
 	var string name
-	func speak = (self, out string) { return self.name }
+	func speak = (self, out string) { return self.name.copy() }
 	func #destroy = (ref self) {
 		Console.write("destroying " + self.name)
 	}
@@ -45,7 +45,7 @@ trait Speaker { func speak = (self, out string) }
 
 owning struct Dog : Speaker {
 	var string name
-	func speak = (self, out string) { return self.name }
+	func speak = (self, out string) { return self.name.copy() }
 }
 
 if true {
@@ -66,7 +66,7 @@ trait Speaker { func speak = (self, out string) }
 owning struct Dog : Speaker {
 	var string name
 	var string title
-	func speak = (self, out string) { return self.title }
+	func speak = (self, out string) { return self.title.copy() }
 }
 
 if true {

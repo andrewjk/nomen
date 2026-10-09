@@ -39,7 +39,7 @@ pub owning struct Holder {
 	var string current = ""
 
 	pub func set_it = (ref self, string name) {
-		self.current = name
+		self.current = name.copy()
 	}
 }
 
@@ -61,7 +61,7 @@ pub owning struct Holder {
 	var string current = ""
 
 	pub func set_it = (ref self, string name) {
-		self.current = name
+		self.current = name.copy()
 	}
 }
 

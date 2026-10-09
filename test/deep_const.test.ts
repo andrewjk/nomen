@@ -11,7 +11,7 @@ const WIDGET = `
 pub owning struct Widget {
 	var string title = "default"
 	pub func set_title = (ref self, string t) {
-		self.title = t
+		self.title = t.copy()
 	}
 }
 `;
@@ -132,7 +132,7 @@ func ok = (ref List<Box<Widget>> list) {
 import System
 ${WIDGET}
 func read = (List<Box<Widget>> list) {
-	var t = list.at(0).title
+	var t = list.at(0).title.copy()
 	Console.write(t)
 }
 `;

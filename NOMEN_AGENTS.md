@@ -106,9 +106,10 @@ func safe = (string[] s, int i: i >= 0 && i < s.length, out string) {
 `const` values cannot be passed to `ref` — rebind the caller as `var` first.
 At local bindings the same keywords spell the binding's relationship to its
 initializer: `ref Box q = p` is an owning-struct ALIAS (a plain `var Box q = p`
-copy of an owning value is an error — say `ref`, `move`, or `.copy()`), `move`
-transfers, `view` is a slice. A `ref` alias is not reassignable, mutation
-through it needs a `var` source, and nothing moves through it.
+copy of an owning value — including a `string` — is an error: say `ref`, `move`,
+or `.copy()`), `move` transfers, `view` is a slice. A `ref` alias is not
+reassignable, mutation through it needs a `var` source, and nothing moves
+through it.
 
 ### Return types are `out` at the end
 
@@ -263,6 +264,12 @@ const name = "world"
 Console.write("hello \{name}\n")   // interpolation with \{...}
 Console.write_line("with newline")
 ```
+
+`string` is **owning**: `var b = a` (two string variables) needs `move b = a`
+or `a.copy()`; `return self.field` and `var s = obj.field` need `.copy()`;
+storing a bare `string` parameter into a string field needs `.copy()`;
+`xs.push(s)` / `m.set(k, v)` need `move`/`.copy()`. Literals are fresh values.
+`view string` is the cheap read-only borrow.
 
 ### Traits
 

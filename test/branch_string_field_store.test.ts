@@ -27,7 +27,7 @@ func commit = (ref Pair pair, string raw) {
 	if raw.length > 2 {
 		pair.a = decorated(raw)
 	} else {
-		pair.a = raw
+		pair.a = raw.copy()
 	}
 }
 
@@ -63,7 +63,7 @@ func decorated = (string v, move out string) {
 func commit = (string raw, out int) {
 	var p = Pair()
 	if raw.length > 2 {
-		p.a = raw
+		p.a = raw.copy()
 	} else {
 		p.a = decorated(raw)
 	}
@@ -92,7 +92,7 @@ func decorated = (string v, move out string) {
 func pick = (ref Pair pair, int which, string raw) {
 	switch {
 		case which == 1 {
-			pair.a = raw
+			pair.a = raw.copy()
 		}
 		case which == 2 {
 			pair.a = decorated(raw)

@@ -48,7 +48,7 @@ owning struct Pair {
 	var string b
 
 	func #init = (self, string s) {
-		self.b = s
+		self.b = s.copy()
 	}
 }
 

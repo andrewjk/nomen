@@ -33,7 +33,7 @@ owning struct Box {
 
 func fill = (ref Box dst) {
 	var string s = "abc123".substring(0, 3)
-	dst.s = s
+	dst.s = s.copy()
 	Console.write("callee sees [" + s + "]\\n")
 }
 
@@ -134,7 +134,7 @@ owning struct Box2 {
 	var string s
 
 	func #init = (ref self, string v) {
-		self.s = v
+		self.s = v.copy()
 	}
 }
 

@@ -107,7 +107,13 @@ export default function check_access_node(node: AccessNode, status: CheckStatus)
 		(node.target.node_type === "func_call" ||
 			(node.target.node_type === "access" &&
 				(node.target as AccessNode).access.node_type === "access_func")) &&
-		is_owning_struct_type_requiring_move(target_type, status)
+		is_owning_struct_type_requiring_move(target_type, status) &&
+		// D3: a STRING call result stays inline — the call-site borrow/owned
+		// normalization (string_return_analysis) already emits a balanced
+		// statement expression for it (strdup + free of the temp), while a
+		// hoisted carrier would take the borrow-carrier convention and leak
+		// the accessor's fresh copy.
+		!(target_type.name === "string" && !target_type.is_view)
 	) {
 		const decl = new DeclarationNode(
 			node.target.start,

@@ -112,7 +112,7 @@ func keep = (move Tagged t, move out string) {
 	b.value = "world"
 	t.items.push(move b)
 	t.label = "kept"
-	return t.label
+	return t.label.copy()
 }
 
 pub func main = () {

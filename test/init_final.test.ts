@@ -64,7 +64,7 @@ pub owning struct Widget {
     var string name
 
     pub func #init = (self, string name) {
-        self.name = name
+        self.name = name.copy()
     }
 }
 

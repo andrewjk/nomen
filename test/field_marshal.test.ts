@@ -214,7 +214,7 @@ import System
 pub owning struct Panel {
   var string title = ""
   pub func set_title = (ref self, string t) {
-    self.title = t
+    self.title = t.copy()
   }
   pub func #init = (self) {}
 }

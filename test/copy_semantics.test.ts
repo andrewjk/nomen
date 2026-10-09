@@ -70,7 +70,7 @@ Console.write_line(a.name)
 		});
 	});
 
-	test("passthrough chain stays copy-free and leak-free", async () => {
+	test("passthrough chain copies only the field read, and stays leak-free", async () => {
 		await build_and_check_output(
 			`
 owning struct Pair { var int n = 0  var string tag = "" }
@@ -83,7 +83,7 @@ func build = (int n, string t, out Pair) {
 func next = (Pair p, out Pair) {
 	var q = Pair()
 	q.n = p.n + 1
-	q.tag = p.tag
+	q.tag = p.tag.copy()
 	return q
 }
 var p = next(build(1, "one"))

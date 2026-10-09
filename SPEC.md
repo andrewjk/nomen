@@ -1399,7 +1399,10 @@ capture is taken once, when the lambda value is created:
 
 - Scalars and non-owning value structs are **copied** (a later write to the
   source is not seen by the lambda).
-- Strings are **deep-copied**.
+- Strings are **moved** into the closure: the lambda holds the value at
+  capture time, and the donating local is invalidated (using it again is a
+  use-after-move error). Capture a copy (`tag.copy()`) to keep using the
+  local.
 - Owning value structs, trait-typed values (boxed handles, regardless of
   the conformer's kind), and other func-valued closures are **moved** into the
   closure; the donating local is invalidated (using it again is a
@@ -2654,9 +2657,10 @@ What crosses a task boundary, each spelled at the call site:
 - **Moved** arguments — a `move T` capture or argument takes exclusive
   ownership; an owning struct moves and the donor is invalidated (the caller
   gives up its access).
-- **Copied** arguments — primitives and strings are copied at the boundary,
-  and plain-data (non-owning) structs are byte-copied, so the task and the
-  caller hold independent values.
+- **Copied** arguments — primitives, strings, and plain-data (non-owning)
+  structs are copied at the boundary, so the task and the caller hold
+  independent values. (A `move s` argument to a `move string` parameter
+  transfers instead.)
 - **Borrowed** arguments — an owning struct passed bare inside an `async`
   block, or a `view`-typed argument: the env aliases the donor, and the
   lifetime rules below bound the alias.

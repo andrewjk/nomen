@@ -176,7 +176,7 @@ owning struct Config {
 	var string name
 }
 func get_name = (Config c, out string) {
-	return c.name
+	return c.name.copy()
 }
 `;
 		expect(compile_module(input)).toEqual([]);

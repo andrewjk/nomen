@@ -132,7 +132,7 @@ trait Speaker {
 owning struct Dog: Speaker {
   var string name
   func speak = (self, out string) {
-    return self.name
+    return self.name.copy()
   }
   func #destroy = (ref self) {
     Console.write("destroying " + self.name)
@@ -160,7 +160,7 @@ Console.write("\\ndone")
 owning struct Dog {
   var string name
   func speak = (self, out string) {
-    return self.name
+    return self.name.copy()
   }
   func #destroy = (ref self) {
     Console.write("destroying " + self.name)

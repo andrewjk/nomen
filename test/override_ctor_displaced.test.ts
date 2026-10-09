@@ -96,7 +96,7 @@ owning struct Pair {
 	var string b = "bee"
 
 	func #init = (self, string s) {
-		self.a = s
+		self.a = s.copy()
 	}
 }
 
@@ -263,8 +263,9 @@ pub func main = (Init init) {
 	});
 
 	test("param-alias seed stays un-analyzed across an override", async () => {
-		// `self.a = s` borrows the caller's argument temp — recording or
-		// freeing it would double-free (Pair(fresh()) hoists a fresh
+		// D3: `self.a = s` (a borrow into an owning field) is an error — the
+		// seed must be an owned copy (`s.copy()`). The ctor-seeded copy is
+		// displaced by the return override (Pair(fresh()) hoists a fresh
 		// _param_0 the return-override shape references).
 		await build_and_check_output(
 			`
@@ -275,7 +276,7 @@ owning struct Pair {
 	var string b = "bee"
 
 	func #init = (self, string s) {
-		self.a = s
+		self.a = s.copy()
 	}
 }
 

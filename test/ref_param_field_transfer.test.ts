@@ -28,7 +28,7 @@ owning struct Pair {
 }
 
 func set = (ref Pair p, string raw) {
-	p.a = raw
+	p.a = raw.copy()
 }
 `;
 
@@ -92,7 +92,7 @@ owning struct Other {
 }
 
 func set = (ref Pair p, string raw) {
-	p.a = raw
+	p.a = raw.copy()
 }
 
 pub func main = (Init init) {
@@ -120,7 +120,7 @@ owning struct Pair {
 }
 
 func set = (ref Pair dst, string raw) {
-	dst.a = raw
+	dst.a = raw.copy()
 }
 
 pub func main = (Init init) {
@@ -176,7 +176,7 @@ owning struct Pair {
 }
 
 func set = (ref Pair p, string raw) {
-	p.a = raw
+	p.a = raw.copy()
 }
 
 func fill = (ref Pair p) {
@@ -243,7 +243,7 @@ func commit = (ref Pair pair, string raw) {
 	if raw.length > 2 {
 		pair.a = decorated(raw)
 	} else {
-		pair.a = raw
+		pair.a = raw.copy()
 	}
 }
 
@@ -281,7 +281,7 @@ func commit = (ref Pair pair, string raw, int mode) {
 			pair.a = decorated(raw)
 		}
 		else {
-			pair.a = raw
+			pair.a = raw.copy()
 		}
 	}
 }

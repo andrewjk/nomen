@@ -19,7 +19,9 @@ var Box b = Box(0)
 b = h.c
 `;
 		const parsed = parse_with_imports(input);
-		expect(parsed.errors.some((e) => e.message.includes("use move with swap"))).toBe(true);
+		expect(parsed.errors.some((e) => e.message.includes("cannot copy 'Box' out of field"))).toBe(
+			true,
+		);
 	});
 
 	test("field extraction is a swap transfer; moving it onward composes", () => {

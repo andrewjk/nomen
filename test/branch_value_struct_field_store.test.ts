@@ -43,11 +43,11 @@ func has_attribute = (Node node, string name, out bool) {
 func commit = (ref Node holder, string attr_name, string raw_value, bool needs_decode) {
 	if !has_attribute(holder, attr_name) {
 		var attr = Attr()
-		attr.name = attr_name
+		attr.name = attr_name.copy()
 		if needs_decode {
 			attr.value = owned_of(raw_value)
 		} else {
-			attr.value = raw_value
+			attr.value = raw_value.copy()
 		}
 		holder.attributes.push(move attr)
 	}
@@ -95,7 +95,7 @@ func commit = (ref List<Pair> sink, string raw, int mode) {
 			p.a = owned_of(raw)
 		}
 		case mode == 1 {
-			p.a = raw
+			p.a = raw.copy()
 		}
 		else {
 			p.a = "other"

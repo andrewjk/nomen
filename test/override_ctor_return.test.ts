@@ -24,7 +24,7 @@ owning struct Pair {
 
 func make_pair = (string seed, out Pair) {
 	var string mine = "heap" + "!"
-	return [ .. Pair(seed), a = mine ]
+	return [ .. Pair(move seed), a = mine ]
 }
 
 pub func main = (Init init) {
@@ -50,7 +50,7 @@ func fresh = (out string) {
 }
 
 func make_pair = (string seed, out Pair) {
-	return [ .. Pair(seed), a = fresh() ]
+	return [ .. Pair(move seed), a = fresh() ]
 }
 
 pub func main = (Init init) {
@@ -73,7 +73,7 @@ owning struct Pair {
 
 func make_pair = (string seed, out Pair) {
 	var string mine = "heap" + "!"
-	return [ .. Pair(seed), a = move mine ]
+	return [ .. Pair(move seed), a = move mine ]
 }
 
 pub func main = (Init init) {
@@ -96,7 +96,7 @@ owning struct Pair {
 
 func make_base = (string seed, out Pair) {
 	var string s = seed + "-base"
-	return Pair(s)
+	return Pair(move s)
 }
 
 func make_override = (string seed, out Pair) {
@@ -124,7 +124,7 @@ owning struct Pair {
 
 func make_base = (string seed, out Pair) {
 	var string s = seed + "-base"
-	return Pair(s)
+	return Pair(move s)
 }
 
 pub func main = (Init init) {
@@ -152,7 +152,7 @@ owning struct Pair {
 
 func make_pair = (string seed, out Pair) {
 	var string s = seed + "-s"
-	return Pair(s)
+	return Pair(move s)
 }
 
 pub func main = (Init init) {
@@ -174,7 +174,7 @@ owning struct Pair {
 
 func make_pair = (string seed, out Pair) {
 	var string mine = "heap" + "!"
-	return [ .. Pair(seed), a = mine ]
+	return [ .. Pair(move seed), a = mine ]
 }
 
 pub func main = (Init init) {

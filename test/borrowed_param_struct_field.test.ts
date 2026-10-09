@@ -23,15 +23,15 @@ owning struct CAttr {
 
 func make_attr = (string name, string value, out Attr) {
 	var a = Attr()
-	a.name = name
-	a.value = value
+	a.name = name.copy()
+	a.value = value.copy()
 	return a
 }
 
 func make_cattr = (string name, string value, out CAttr) {
 	var a = CAttr()
-	a.name = name
-	a.value = value
+	a.name = name.copy()
+	a.value = value.copy()
 	return a
 }
 
@@ -54,11 +54,11 @@ owning struct S {
 }
 
 func set_c = (ref C c, string v) {
-	c.v = v
+	c.v = v.copy()
 }
 
 func set_s = (ref S s, string v) {
-	s.v = v
+	s.v = v.copy()
 }
 
 var c = C()

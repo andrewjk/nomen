@@ -19,7 +19,7 @@ owning struct N1 {
 	var int idx
 
 	pub func #init = (ref self, string k, int i) {
-		self.kind = k
+		self.kind = k.copy()
 		self.idx = i
 	}
 }
@@ -43,8 +43,8 @@ pub owning struct S2 {
 	pub var string title
 
 	pub func #init = (ref self, string u, string t) {
-		self.url = u
-		self.title = t
+		self.url = u.copy()
+		self.title = t.copy()
 	}
 }
 
@@ -68,9 +68,9 @@ pub owning struct P2 {
 	pub var string c
 
 	pub func #init = (ref self, string x, int k, string y) {
-		self.a = x
+		self.a = x.copy()
 		self.b = k
-		self.c = y
+		self.c = y.copy()
 	}
 }
 

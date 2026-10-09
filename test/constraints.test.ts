@@ -103,7 +103,7 @@ func restricted = (Array<string> source, int i: i >= 0 && i < source.length) {
     Console.write("ok")
 }
 func caller = () {
-    var things = Array("a", "b", "c")
+    var Array<string> things = Array("a", "b", "c")
     restricted(things, 4)
 }
 `;
@@ -119,7 +119,7 @@ func restricted = (Array<string> source, int i: i >= 0 && i < source.length) {
     Console.write("ok")
 }
 func caller = () {
-    var things = Array("a", "b", "c")
+    var Array<string> things = Array("a", "b", "c")
     for i of 0 .. things.length {
         restricted(things, i)
     }
@@ -136,7 +136,7 @@ func restricted = (Array<string> source, int i: i >= 0 && i < source.length) {
     Console.write("ok")
 }
 func caller = () {
-    var things = Array("a", "b", "c")
+    var Array<string> things = Array("a", "b", "c")
     for i of 0 .. things.length {
         i += 1
         restricted(things, i)
@@ -157,7 +157,7 @@ func restricted = (Array<string> source, int i: i >= 0 && i < source.length) {
     Console.write("ok")
 }
 func caller = () {
-    var things = Array("a", "b", "c")
+    var Array<string> things = Array("a", "b", "c")
     var start = 0
     for i of start .. things.length {
         restricted(things, i)
@@ -260,7 +260,7 @@ func restricted = (Array<string> source, int i: i >= 0 && i < source.length) {
     Console.write("ok")
 }
 func caller = () {
-    var things = Array("a", "b", "c")
+    var Array<string> things = Array("a", "b", "c")
     var k = 0
     while k < things.length; k += 1 {
         restricted(things, k)

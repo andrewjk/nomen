@@ -30,7 +30,7 @@ func fill = (Info p) {
 
 var Info a = Info()
 var string pre = "pre"
-a.markup = pre
+a.markup = pre.copy()
 fill(a)
 Console.write_line("caller sees: " + a.markup)
 if a.markup == pre {
@@ -88,7 +88,7 @@ owning struct Pair { var int n = 0  var string tag = "" }
 func next = (move Pair p, out Pair) {
 	var q = Pair()
 	q.n = p.n + 1
-	q.tag = p.tag
+	q.tag = p.tag.copy()
 	return q
 }
 var donor = Pair()

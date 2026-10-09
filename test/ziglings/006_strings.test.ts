@@ -25,6 +25,12 @@ pub func main = () {
 	const expected = [
 		test_error(input, "Unknown value: ???", 7, 24),
 		test_error(input, "Unknown value: ???", 9, 25),
+		test_error(
+			input,
+			"cannot copy a string by value — it owns its bytes; use 'move' to transfer it, or .copy() for a deep copy",
+			13,
+			23,
+		),
 		test_error(input, "Unknown value: ???", 13, 29),
 	];
 	const parsed = parse_with_imports(input);

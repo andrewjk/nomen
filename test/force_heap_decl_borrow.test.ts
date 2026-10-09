@@ -46,8 +46,8 @@ filtered.push(move kept)
 var i = 0
 while i < box.items.length; i += 1 {
 	var it = box.items.at_or_panic(i)
-	var string value = it.value
-	var string stored = value
+	var string value = it.value.copy()
+	var string stored = value.copy()
 	if !stored.starts_with("keep-") {
 		stored = "keep-" + value
 	}
@@ -80,8 +80,8 @@ var a = Attr()
 a.value = "hello"
 box.items.push(move a)
 var it = box.items.at_or_panic(0)
-var string borrow = it.value
-var target = borrow
+var string borrow = it.value.copy()
+move target = borrow
 Console.write("target=\\{target} field=\\{box.items.at_or_panic(0).value}\\n")
 `;
 		await build_and_check_output(

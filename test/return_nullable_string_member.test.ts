@@ -15,7 +15,7 @@ owning struct Rule {
 	var string? pattern = null
 }
 
-func make_rule = (string name, string? pattern, out Rule) {
+func make_rule = (move string name, move string? pattern, out Rule) {
 	var r = Rule()
 	r.name = name
 	r.pattern = pattern

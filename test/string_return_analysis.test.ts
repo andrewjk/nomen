@@ -39,7 +39,7 @@ pub func pick = (int c, out string) {
 
 owning struct Named {
 	var string name
-	pub func get = (self, out string) { return self.name }
+	pub func get = (self, out string) { return self.name.copy() }
 	pub func render = (self, out string) { return "<" + self.name + ">" }
 }
 
@@ -61,8 +61,10 @@ pub func main = () {
 	// Literal-only returns are static storage (borrow), including through
 	// if branches.
 	expect(by_name.get("pick")!.returns_string_borrow).toBe(true);
-	// A field access return is a borrow; building via concatenation is owned.
-	expect(struct_method(parsed.root, "Named", "get").returns_string_borrow).toBe(true);
+	// A field access return is a borrow, so D3 requires `.copy()` — the
+	// returned value is a fresh heap string (owned). Building via
+	// concatenation is likewise owned.
+	expect(struct_method(parsed.root, "Named", "get").returns_string_borrow).toBe(false);
 	expect(struct_method(parsed.root, "Named", "render").returns_string_borrow).toBe(false);
 	// A non-string-returning function carries no stamp.
 	expect(by_name.get("main")!.returns_string_borrow).toBeUndefined();

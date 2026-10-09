@@ -737,7 +737,10 @@ See [MEMORY.md](docs/MEMORY.md) for the full model.
 
 A bare `struct` is Copyable — assigning it copies the fields. `owning struct`
 is the single-owner form: its bindings move instead of copy, and the type
-owns its heap resources until scope exit.
+owns its heap resources until scope exit. `string` is owning too: copying one
+binding to another requires `move` (transfer) or `.copy()` (deep copy), and
+`.copy()` on a struct field or `return self.name` is the spelled deep copy.
+`view string` remains the cheap non-owning borrow.
 
 ```nomen
 owning struct Box {

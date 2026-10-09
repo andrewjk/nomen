@@ -16,7 +16,7 @@ owning struct Attr {
 }
 
 func read_kept = (ref Attr a, out string) {
-	var kept = a.value
+	var kept = a.value.copy()
 	var i = 0
 	while i < 3 {
 		i = i + 1
@@ -29,7 +29,7 @@ func read_kept = (ref Attr a, out string) {
 }
 
 func read_only = (ref Attr a, out int) {
-	var t = a.value
+	var t = a.value.copy()
 	return t.length
 }
 

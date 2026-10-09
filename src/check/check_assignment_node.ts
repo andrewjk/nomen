@@ -553,10 +553,17 @@ export default function check_assignment_node(
 		!assign.right_value.is_moved
 	) {
 		const rhs_type = type_from_value_node(assign.right_value, status);
-		if (rhs_type.name && is_owning_struct_type(rhs_type, status)) {
+		// D3: a string LITERAL (or null) RHS is a fresh value, not a copy of
+		// an existing binding — the owning-type copy rule must not fire on it.
+		const raw = (assign.right_value as ValueNode).value;
+		const fresh_value =
+			typeof raw === "string" && ((raw.startsWith('"') && raw.endsWith('"')) || raw === "null");
+		if (!fresh_value && rhs_type.name && is_owning_struct_type(rhs_type, status)) {
 			add_error(
 				status,
-				`cannot copy '${rhs_type.name}' by value — it owns heap resources; use .copy() or move`,
+				rhs_type.name === "string"
+					? `cannot copy a string by value — it owns its bytes; use 'move' to transfer it, or .copy() for a deep copy`
+					: `cannot copy '${rhs_type.name}' by value — it owns heap resources; use .copy() or move`,
 				assign.right_value.start,
 			);
 		}
@@ -816,7 +823,7 @@ export default function check_assignment_node(
 				const field_name = (assign.right_value as AccessNode).access.name;
 				add_error(
 					status,
-					`cannot copy '${rhs_type.name}' out of field '${field_name}' by value — it owns heap resources; use move with swap`,
+					`cannot copy '${rhs_type.name}' out of field '${field_name}' by value — it owns heap resources; use 'move ... swap <replacement>'${rhs_type.name === "string" ? ", or .copy() for a deep copy" : ""}`,
 					assign.right_value.start,
 				);
 			} else if (!assign.swap) {
