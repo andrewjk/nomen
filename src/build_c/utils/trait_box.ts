@@ -1,6 +1,7 @@
 import { struct_needs_auto_destroy } from "../../build_common/destroy_analysis.ts";
 import { direct_string_fields } from "../../build_common/has_string_fields.ts";
 import type BaseNode from "../../nodes/BaseNode.ts";
+import FunctionCallNode from "../../nodes/FunctionCallNode.ts";
 import StructNode from "../../nodes/StructNode.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
 import build_node from "../build_node.ts";
@@ -59,6 +60,19 @@ export function emit_boxed_value_struct_c(
 		}
 	}
 	const unrecorded = string_fields.filter((f) => !recorded.has(f.name));
+	// A fresh direct constructor builds straight into the box (`*_box =
+	// T_init(args)`): the call result has no address to take, and the box
+	// would otherwise alias the constructor's temporary.
+	if (arg.node_type === "func_call" && (arg as FunctionCallNode).name === box_struct.name) {
+		status.code += `(void *)({ struct ${box_struct.name} *_box = (struct ${box_struct.name} *)nomen_malloc_wrap(sizeof(struct ${box_struct.name})); *_box = `;
+		build_node(arg, status);
+		status.code += `; `;
+		for (const f of unrecorded) {
+			status.code += `_box->${f.name} = nomen_str_dup(_box->${f.name}); `;
+		}
+		status.code += `(void *)_box; })`;
+		return;
+	}
 	const saved_arg = begin_code_scratch(status);
 	status.code += `(void *)&`;
 	status.suppress_dereference = true;

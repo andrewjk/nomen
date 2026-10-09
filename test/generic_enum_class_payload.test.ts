@@ -73,6 +73,46 @@ pub func main = (Init init) {
 		await build_and_check_output(input, "generic_enum_trait_payload", "4\n0", true);
 	});
 
+	// A fresh-constructor argument (not a moved local) must also be boxed into
+	// the trait payload — the constructor result is materialized directly in
+	// the heap box, so the enum's scope-exit free reclaims a heap instance
+	// (not the constructor's stack temporary).
+	test("Option<Trait> fresh-constructor payload (both backends)", async () => {
+		const input = `
+import System
+
+trait Animal {
+	pub func legs = (self, out int)
+}
+
+owning struct Dog : Animal {
+	pub var int n = 0
+	pub func #init = (ref self, int n) {
+		self.n = n
+	}
+	pub func legs = (self, out int) {
+		return self.n
+	}
+}
+
+pub func main = (Init init) {
+	var Option<Animal> o = Option.some(Dog(4))
+	var int n = match o {
+		case .some(a) -> a.legs()
+		else -> 0
+	}
+	Console.write_line(n.to_string())
+	var Option<Animal> p = Option<Animal>.some(Dog(9))
+	var int m = match p {
+		case .some(a) -> a.legs()
+		else -> 0
+	}
+	Console.write_line(m.to_string())
+}
+`;
+		await build_and_check_output(input, "generic_enum_trait_ctor_payload", "4\n9", true);
+	});
+
 	test("owned local transfers implicitly and stays sound (both backends)", async () => {
 		const input = `
 import System

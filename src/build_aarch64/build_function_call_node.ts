@@ -21,6 +21,7 @@ import type StructNode from "../nodes/StructNode.ts";
 import type Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import { emit_address_of, emit_enum_payload_arg_store } from "./build_access_node.ts";
+import { build_constructor_params, is_magic_spawn_ctor } from "./build_declaration_node.ts";
 import { build_inline_function } from "./build_inline_method.ts";
 import build_node from "./build_node.ts";
 import { build_operand, is_owned_heap_temp, tree_is_call_free } from "./build_operation_node.ts";
@@ -155,15 +156,21 @@ export function boxable_value_struct_arg(
 	status: BuildStatus,
 	arg: BaseNode,
 ): StructNode | undefined {
-	if (arg.node_type !== "value") return undefined;
-	const donor_name = (arg as ValueNode).value;
-	const donor_decl = all_scope_frames(status)
-		.flat()
-		.find((d) => d.name === donor_name);
-	const donor_tname = donor_decl?.type?.name ?? (arg as ValueNode).type?.name;
-	if (!donor_tname) return undefined;
+	let type_name: string | undefined;
+	if (arg.node_type === "value") {
+		const donor_name = (arg as ValueNode).value;
+		const donor_decl = all_scope_frames(status)
+			.flat()
+			.find((d) => d.name === donor_name);
+		type_name = donor_decl?.type?.name ?? (arg as ValueNode).type?.name;
+	} else {
+		// A fresh constructor (`Dog()`) or other value-producing expression:
+		// its static type names the concrete conformer to box.
+		type_name = type_from_value_node(arg)?.name;
+	}
+	if (!type_name) return undefined;
 	return status.structs.find(
-		(s) => s.name === donor_tname && !s.is_simple_type && !s.is_class && !s.is_generic,
+		(s) => s.name === type_name && !s.is_simple_type && !s.is_class && !s.is_generic,
 	);
 }
 
@@ -190,10 +197,40 @@ export function emit_box_value_struct_arg(
 		!struct.functions.some((f) => f.name === "#destroy") &&
 		struct_needs_auto_destroy(struct, status);
 	const box_size = get_struct_size(struct.name, status);
-	const donor_name = (arg as ValueNode).value;
+	// A fresh constructor runs DIRECTLY into the box (no intermediate stack
+	// temp to copy) — mirrors the trait-return / trait-local ctor-into-box
+	// paths. Without this, the payload would hold a pointer to the ctor's
+	// stack temp and the enum's scope-exit free would reclaim stack memory.
+	if (
+		arg.node_type === "func_call" &&
+		(arg as FunctionCallNode).name === struct.name &&
+		!is_magic_spawn_ctor(arg)
+	) {
+		const fc = arg as FunctionCallNode;
+		emit_asm(status, `mov x0, #${box_size}\n`);
+		emit_malloc(status);
+		emit_asm(status, `str x0, [x29, #${dest_offset}]\n`);
+		const param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
+		const outgoing = build_constructor_params(fc, param_regs, status);
+		emit_asm(status, `ldr x0, [x29, #${dest_offset}]\n`);
+		emit_asm(status, `bl ${fc.mangled_name ?? `${fc.name}_init`}\n`);
+		if (outgoing > 0) emit_asm(status, `add sp, sp, #${outgoing}\n`);
+		if (fc.move_param_indices?.length) {
+			for (const idx of fc.move_param_indices) mark_moved_if_struct(fc.params[idx], status);
+		}
+		build_swap_params(fc, status);
+		emit_asm(status, `ldr x0, [x29, #${dest_offset}]\n`);
+		if (strdup_string_fields) {
+			emit_string_field_strdups_at(status, struct.name, "x0");
+		}
+		return;
+	}
+	const donor_name = arg.node_type === "value" ? (arg as ValueNode).value : undefined;
 	const recorded = new Set<string>();
-	for (const key of status.heap_string_fields ?? []) {
-		if (key.startsWith(`${donor_name}.`)) recorded.add(key.slice(donor_name.length + 1));
+	if (donor_name !== undefined) {
+		for (const key of status.heap_string_fields ?? []) {
+			if (key.startsWith(`${donor_name}.`)) recorded.add(key.slice(donor_name.length + 1));
+		}
 	}
 	emit_asm(status, `mov x0, #${box_size}\n`);
 	emit_malloc(status);
