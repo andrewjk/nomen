@@ -170,6 +170,46 @@ function emit_load_deep_copy_fields(elem: StructNode, dst: string, status: Build
 	}
 }
 
+/**
+ * Reclaim the DEEP-COPIED owned fields an expression-temp borrow-accessor
+ * carrier holds. `load_T` deep-copies an element's container / deep-copyable
+ * enum fields (`emit_load_deep_copy_fields`) so a BINDING's scope-exit destroy
+ * reclaims them; the checker-hoisted `_recv_N` carrier must not run the full
+ * struct destroy (that would free the ALIASED string fields), so each
+ * expression use leaked the copied containers. Free exactly the fields the
+ * load deep-copied — the same predicate — and only those: plain strings and
+ * nested structs stay aliased/untouched (freeing them would be an invalid
+ * free). Mirrors the aarch64 backend's `emit_borrow_carrier_owned_free`.
+ */
+export function emit_load_owned_copies_destroy(
+	status: BuildStatus,
+	elem: StructNode,
+	var_expr: string,
+): void {
+	for (const field of elem.fields) {
+		if (field.type.is_ref || field.type.is_view || field.type.is_array) continue;
+		if (field.type.is_nullable) continue;
+		if (field.type.name === "string") continue;
+		const field_struct = resolve_struct_type(field.type, status);
+		if (
+			field_struct &&
+			!field_struct.is_class &&
+			is_load_deep_copy_container(field_struct.name) &&
+			struct_needs_destroy(field_struct, status) &&
+			field_struct.functions.find((f) => f.name === "copy")
+		) {
+			status.code += `${field_struct.name}_destroy(&${var_expr}.${field.name});\n`;
+			continue;
+		}
+		const field_enum = status.enums.find(
+			(e) => e.name === field.type.name && e.has_associated_data,
+		);
+		if (field_enum && enum_copy_is_deep(field_enum, status)) {
+			status.code += `${field_enum.name}_free_payloads(&${var_expr}.${field.name});\n`;
+		}
+	}
+}
+
 /** Whether `<E>_copy` yields a fully independent value: no case payload is a
  *  class/trait reference (those are shared pointers the copy cannot
  *  duplicate — mirroring owning_buffer_enum_element's gate). */

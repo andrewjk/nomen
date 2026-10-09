@@ -15,6 +15,7 @@ import ValueNode from "../nodes/ValueNode.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import { begin_code_scratch, end_code_scratch } from "./utils/code_scratch.ts";
+import { emit_load_owned_copies_destroy } from "./utils/owning_buffer_specialize.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import { is_view_value } from "./utils/view_value.ts";
 
@@ -278,6 +279,25 @@ export function free_scoped_declarations(
 		// keywords (`id`), so every generated reference goes through the
 		// same mangling the declaration site used.
 		const cname = c_function_name(dec.name);
+		// An expression-temp borrow-accessor carrier keeps the slot's ALIAS
+		// (its destroy must not free the aliased strings), but `load_T`
+		// deep-copied the element's container fields into it — reclaim exactly
+		// those (the bounded per-expression-use leak). The full struct destroy
+		// below stays skipped (is_destructured_field_access).
+		if (is_borrow_accessor_carrier(dec)) {
+			const carrier_mono = mono_type_name(dec.type);
+			const carrier_struct = status.structs.find(
+				(s) => s.name === carrier_mono && !s.is_simple_type && !s.is_generic,
+			);
+			if (carrier_struct) {
+				if (!commented) {
+					status.code += "\n// Auto-free\n";
+					commented = true;
+				}
+				emit_load_owned_copies_destroy(status, carrier_struct, cname);
+			}
+			continue;
+		}
 		// A func-typed local holding a closure descriptor (CLOSURE.md
 		// Phase 2): a capturing closure owns a heap env + heap descriptor
 		// (`owned = 1`); a capture-free one points at a static descriptor

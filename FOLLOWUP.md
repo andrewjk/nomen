@@ -1327,23 +1327,3 @@ than an ownership value threaded through the RHS emitters (`{ heap: boolean }`
 returns). That rewrite touches every emitter and the NIR seam for no
 correctness gain under the enforced contract — worth it only if the flag
 grows more consumers or the bounded-leak default becomes a measured problem.
-
-## Expression-temp borrow-accessor carriers leak deep-copied container fields (bounded)
-
-STRUCT_PLAN_3 phase B1 backend cutover (2026-10-09): an owning-struct
-BINDING of a container borrow accessor (`var p = people.at(i)`) now strdups
-the string fields its scope-exit destroy frees unconditionally, and the
-checker-hoisted `_recv_N` receiver carrier (`xs.at(i).text`) is treated as a
-borrow carrier — it keeps the slot's alias and reclaims nothing (the
-pre-B1 "expression temps reclaim nothing" convention).
-
-The residual: the specialized `load_T` deep-copies the element's CONTAINER
-fields (`List<T>` members with a `copy`) into the loaded copy — for a
-binding those copies are reclaimed by the binding's destroy (balanced), but
-for an expression-temp consumer (`xs.at(i).tags.length`, `rules.at(k).name`)
-the `_recv_N` carrier reclaims nothing, so each expression use leaks the
-element's container copies. Bounded at one per expression use, never
-dangles — the same documented posture as the string fields pre-B1. Closing
-it needs the carrier destroy to free containers while skipping the aliased
-strings (a per-decl free_strings=false walk keyed on the carrier stamp the
-aarch64 declaration builder already stamps).

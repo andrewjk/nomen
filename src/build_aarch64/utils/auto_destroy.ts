@@ -9,7 +9,11 @@ import {
 	direct_string_fields,
 	owns_strings_uniformly,
 } from "../../build_common/has_string_fields.ts";
-import { mono_type_name } from "../../build_common/mono_name.ts";
+import {
+	is_load_deep_copy_container,
+	mono_type_name,
+	resolve_struct_type,
+} from "../../build_common/mono_name.ts";
 import { has_flag_name, is_nullable_struct_type } from "../../build_common/nullable_struct.ts";
 import { superseded_param_temp_names } from "../../build_common/temp_anchor_consolidation.ts";
 import AccessNode from "../../nodes/AccessNode.ts";
@@ -52,6 +56,61 @@ export function is_field_struct_borrow(decl: { value?: unknown }): boolean {
 	return (
 		value.node_type === "access" && value.access.node_type === "access_field" && !value.is_moved
 	);
+}
+
+/**
+ * Whether `decl` is the checker-hoisted `_recv_N` borrow-accessor carrier
+ * (stamped at declaration build). Unlike `is_field_struct_borrow`, this is
+ * true ONLY for the carrier — not for the `_param_N` shallow field-access
+ * borrows — so the container-reclaim below runs exactly once per carrier.
+ */
+export function is_borrow_accessor_carrier_stamp(decl: { value?: unknown }): boolean {
+	return (
+		(decl as unknown as { borrow_accessor_carrier?: boolean }).borrow_accessor_carrier === true
+	);
+}
+
+/**
+ * Reclaim the DEEP-COPIED container fields an expression-temp borrow-accessor
+ * carrier owns. `load_T` deep-copies an element's `List`/`Buffer` fields
+ * (`emit_load_deep_copy_fields`) so a BINDING's scope-exit destroy reclaims
+ * them; the `_recv_N` carrier skips its destroy entirely (it must not free the
+ * ALIASED string fields), so each expression use leaked the copied containers.
+ * Free exactly the fields the load deep-copied — the same predicate — and only
+ * those: plain strings, nested structs and enum fields stay aliased/untouched
+ * (they were not deep-copied, so freeing them would be an invalid free).
+ * Mirrors the C backend's `emit_load_owned_copies_destroy`.
+ */
+export function emit_borrow_carrier_owned_free(
+	status: BuildStatus,
+	elem: StructNode,
+	decl_name: string,
+): void {
+	let offset = 8; // VT prefix
+	for (const field of elem.fields) {
+		const size = get_type_size(field.type, status);
+		if (
+			!field.type.is_ref &&
+			!field.type.is_view &&
+			!field.type.is_array &&
+			!field.type.is_nullable &&
+			field.type.name !== "string"
+		) {
+			const field_struct = resolve_struct_type(field.type, status);
+			if (
+				field_struct &&
+				!field_struct.is_class &&
+				is_load_deep_copy_container(field_struct.name) &&
+				struct_needs_destroy(field_struct, status) &&
+				field_struct.functions.find((f) => f.name === "copy")
+			) {
+				emit_var_address(status, "x0", decl_name);
+				emit_asm(status, `add x0, x0, #${offset}\n`);
+				emit_asm(status, `bl ${field_struct.name}_destroy\n`);
+			}
+		}
+		offset += size;
+	}
 }
 
 /**
@@ -1446,6 +1505,17 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 				emit_destroy_for_decl(status, decl.name, "func");
 				continue;
 			}
+			// An expression-temp borrow-accessor carrier keeps the slot's
+			// ALIAS (its destroy must not free the aliased strings), but
+			// `load_T` deep-copied the element's container fields into it —
+			// reclaim exactly those (the bounded per-expression-use leak).
+			if (is_borrow_accessor_carrier_stamp(decl)) {
+				const carrier_struct = resolve_decl_struct(decl, status);
+				if (carrier_struct) {
+					emit_borrow_carrier_owned_free(status, carrier_struct.struct_type, decl.name);
+				}
+				continue;
+			}
 			// A shallow field-struct borrow (e.g. the hoisted `_param_N` copy
 			// of `diff.changes`) is not destroyed — the owner frees it.
 			if (is_field_struct_borrow(decl)) continue;
@@ -1605,6 +1675,16 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 				}
 				continue;
 			}
+		}
+		// An expression-temp borrow-accessor carrier: reclaim the deep-copied
+		// container fields but leave the aliased strings alone — see the
+		// heap_slots branch above.
+		if (is_borrow_accessor_carrier_stamp(decl)) {
+			const carrier_struct = resolve_decl_struct(decl, status);
+			if (carrier_struct) {
+				emit_borrow_carrier_owned_free(status, carrier_struct.struct_type, decl.name);
+			}
+			continue;
 		}
 		// A shallow field-struct borrow is not destroyed — see the
 		// heap_slots branch above.
