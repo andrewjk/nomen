@@ -1,10 +1,12 @@
 import add_error from "../../add_error.ts";
 import { mono_type_name } from "../../build_common/mono_name.ts";
 import type BaseNode from "../../nodes/BaseNode.ts";
+import DeclarationNode from "../../nodes/DeclarationNode.ts";
 import EnumNode from "../../nodes/EnumNode.ts";
 import ParameterNode from "../../nodes/ParameterNode.ts";
 import RootNode from "../../nodes/RootNode.ts";
 import Type from "../../nodes/Type.ts";
+import ValueNode from "../../nodes/ValueNode.ts";
 import { flatten_nested_generic_arg } from "../check_function_call_node.ts";
 import type CheckStatus from "../CheckStatus.ts";
 import { materialize_anon_enum_type } from "./anon_enum.ts";
@@ -248,5 +250,37 @@ export function enforce_case_payload_ownership(
 			if (!node.move_param_indices) node.move_param_indices = [];
 			if (!node.move_param_indices.includes(i)) node.move_param_indices.push(i);
 		}
+	}
+}
+
+/**
+ * Hoist a COMPUTED string argument (`s.copy()`, a call, a concat) at an enum
+ * case construction into a scoped `_param_N` temp — the same mechanism
+ * `check_function_call` applies to ordinary call arguments.
+ *
+ * A string payload is an OWNED copy: the case ctor strdups the (ptr, len)
+ * pair the argument builds (build_enum_node / emit_enum_payload_arg_store),
+ * so the argument's own storage stays caller-owned. A bare local/param/field
+ * rides that contract directly (its scope-exit free fires); a COMPUTED
+ * expression has no owner — inline it leaks. The hoisted const is freed at
+ * scope exit, balancing the ctor's strdup. `mv`-spelled args arrive as value
+ * nodes with move records and skip this entirely.
+ */
+export function hoist_case_string_arg_temp(
+	case_params: ParameterNode[],
+	args: BaseNode[],
+	status: CheckStatus,
+): void {
+	for (let i = 0; i < args.length; i++) {
+		const case_param = case_params[i];
+		const t = case_param?.type;
+		if (!t || t.name !== "string" || t.is_view || t.is_array) continue;
+		const arg = args[i];
+		if (arg.node_type === "value") continue;
+		const declaration_name = `_param_${status.var_name_counter.value++}`;
+		status.allocations.push(
+			new DeclarationNode(arg.start, "private", "const", declaration_name, t, arg),
+		);
+		args.splice(i, 1, new ValueNode(arg.start, declaration_name, t));
 	}
 }

@@ -210,8 +210,7 @@ and residual list (full detail in `FOLLOWUP.md`, which is the tracker).
 - Variadic-pair extraction of mv elements (`Map` pairs init) rides
   a temp-rooted read exemption until a generic move-out accessor exists
   on `Array`.
-- Enum-case `.copy()` argument leaks (`Option<string>.some(s.copy())`
-  — use `.some(mv s)`); `string?` `.copy()` on null returns `""`
+- `string?` `.copy()` on null returns `""`
   instead of null; aarch64 rodata-fold + `mv` trips the stale-free
   audit on one shape.
 

@@ -25,7 +25,11 @@ import type CheckStatus from "./CheckStatus.ts";
 import { synthesize_copy_method } from "./utils/auto_derive.ts";
 import { maybe_record_capture } from "./utils/captures.ts";
 import check_init_assigns_all_fields from "./utils/check_init_fields.ts";
-import { monomorphize_enum, enforce_case_payload_ownership } from "./utils/enum_mono.ts";
+import {
+	monomorphize_enum,
+	enforce_case_payload_ownership,
+	hoist_case_string_arg_temp,
+} from "./utils/enum_mono.ts";
 import {
 	collect_return_bounds,
 	collect_return_length,
@@ -441,6 +445,10 @@ export default function check_function_call_node(
 			// A CLASS/TRAIT case payload is an OWNING slot — enforce the
 			// ownership contract (see enforce_case_payload_ownership).
 			enforce_case_payload_ownership(case_name, enum_case.params, node.params, node, status);
+			// A computed string argument (`s.copy()`, a call) needs an owning
+			// temp — the case ctor strdups the payload, so the argument's own
+			// storage must survive to a scope exit (see hoist_case_string_arg_temp).
+			hoist_case_string_arg_temp(enum_case.params, node.params, status);
 			node.type = new Type(enum_node.name);
 			node.is_static = true;
 			node.name = `${enum_node.name}_${case_name}`;

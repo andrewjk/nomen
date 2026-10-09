@@ -25,12 +25,7 @@ match r {
 	await build_and_check_output(input, "enum_payload_return", "got:abc");
 });
 
-test.skip("local enum payload freed at scope exit, producer local unaffected", async () => {
-	// SKIPPED (D3 endgame residual): the `.some(s.copy())` argument elides to
-	// `.some(s)` (the case ctor strdups anyway) but `s`'s scope-exit free is
-	// then dropped — LEAK 1. The `mv`-spelled shape (`.some(mv s)`) is
-	// covered and leak-free above. Tracked in FOLLOWUP.md "enum-case copy
-	// argument".
+test("local enum payload freed at scope exit, producer local unaffected", async () => {
 	const input = `
 const string s = "xyz".to_string()
 var Option<string> r = Option<string>.some(s.copy())

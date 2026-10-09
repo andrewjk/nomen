@@ -24,6 +24,7 @@ import check_func_argument_signature from "./utils/check_func_argument_signature
 import {
 	enforce_case_payload_ownership,
 	find_mono_enum,
+	hoist_case_string_arg_temp,
 	monomorphize_enum,
 } from "./utils/enum_mono.ts";
 import { expr_to_string } from "./utils/flow_bounds.ts";
@@ -752,6 +753,10 @@ function check_access_function_node(
 				// A CLASS/TRAIT case payload is an OWNING slot — enforce the
 				// ownership contract (see enforce_case_payload_ownership).
 				enforce_case_payload_ownership(enum_case.name, enum_case.params, node.params, node, status);
+				// A computed string argument (`s.copy()`, a call) needs an owning
+				// temp — the case ctor strdups the payload, so the argument's own
+				// storage must survive to a scope exit (see hoist_case_string_arg_temp).
+				hoist_case_string_arg_temp(enum_case.params, node.params, status);
 
 				return true;
 			}

@@ -75,11 +75,6 @@ Each skip masks a real post-R/B1/D3 gap (verified still failing
 
 ### D3 residuals (`string` is mv)
 
-- **`enum`-case `.copy()` argument leaks** (`Option<string>.some(s.copy())`):
-  the arg elides to `s` (the case ctor strdups anyway) but `s`'s
-  scope-exit free is then dropped → `LEAK: 1`. The `mv`-spelled shape
-  (`.some(mv s)`) is leak-free. `test/enum_payload_string.test.ts`'s
-  "local enum payload…" is skipped with a pointer to this.
 - **`string?` `.copy()` on a null** yields a non-null empty string
   instead of preserving null (found by a migration probe).
 - **aarch64 rodata-fold + move**: `owns = mv own` where `"heap" + "!"`
