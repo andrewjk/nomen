@@ -198,9 +198,7 @@ and residual list (full detail in `FOLLOWUP.md`, which is the tracker).
 - **B5 remainder**: trait-typed fields on mv structs stay rejected
   ("concrete type, or `Box<Concrete>`") until a boxed-handle field
   lowering exists — may stay rejected permanently.
-- **B4 corners**: root-scope trait consts re-derive their box per use;
-  `return <computed concrete>` from a trait-returning function inside a
-  switch/match/if join falls through the generic join path.
+- **B4 corners**: root-scope trait consts re-derive their box per use.
 
 ### B1/D3 residuals (checker)
 

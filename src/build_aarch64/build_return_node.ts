@@ -383,11 +383,15 @@ export default function build_return_node(
 			} else {
 				emit_struct_address(node.value, status);
 				ensure_newline(status);
-				emit_asm(status, `mov x2, x0\n`);
+				// Park the source address in a frame slot: the malloc `bl`
+				// clobbers x0-x18 (x2 would not survive it).
+				const src_slot = allocate_stack_space(status, 8, 8);
+				emit_asm(status, `str x0, [x29, #${src_slot}]\n`);
 				emit_asm(status, `mov x0, #${box_size}\n`);
 				emit_malloc(status);
 				emit_asm(status, `str x0, [x29, #${box_slot}]\n`);
 				emit_asm(status, `mov x1, x0\n`);
+				emit_asm(status, `ldr x2, [x29, #${src_slot}]\n`);
 				const words = Math.ceil(box_size / 8);
 				for (let w = 0; w < words; w++) {
 					emit_asm(status, `ldr x3, [x2, #${w * 8}]\n`);
@@ -490,6 +494,63 @@ export default function build_return_node(
 		// the branch scope-exit cleanup) and hand the owned result to the
 		// caller as-is.
 		emit_asm(status, `ldr x0, [x29, #${slot}]\n`);
+		// Trait-boxing join (FOLLOWUP "return <computed concrete> from a
+		// trait-returning function inside a switch/match/if join"): the slot
+		// holds the ADDRESS of the winning branch's stack temp — returning it
+		// as the trait handle hands the caller a pointer into this (dying)
+		// frame. Box the winner at the join point: the temp is still live in
+		// this frame, so copy its bytes into a malloc'd box (same malloc +
+		// strdup contract as the direct-expression box branch above) and
+		// return the handle. The conformer comes from the BRANCH VALUES (the
+		// checker leaves the join expression's own type unstamped in return
+		// position).
+		{
+			const join_branch_values = collect_expression_branch_values(node.value);
+			const first_branch_type = join_branch_values.length
+				? type_from_value_node(join_branch_values[0])?.name
+				: undefined;
+			const uniform_branch_type =
+				first_branch_type &&
+				join_branch_values.every((v) => type_from_value_node(v)?.name === first_branch_type);
+			const join_val_struct =
+				status.function_return_type &&
+				!!status.traits.find((t) => t.name === status.function_return_type!.name) &&
+				!status.function_return_type.is_view &&
+				!status.function_return_type.is_array &&
+				uniform_branch_type
+					? status.structs.find(
+							(st) =>
+								st.name === first_branch_type &&
+								!st.is_simple_type &&
+								!st.is_class &&
+								!st.is_generic,
+						)
+					: undefined;
+			if (join_val_struct) {
+				const box_size = get_struct_size(join_val_struct.name, status);
+				const strdup_string_fields =
+					!owns_strings_uniformly(join_val_struct) &&
+					!join_val_struct.functions.some((f) => f.name === "#destroy") &&
+					struct_needs_auto_destroy(join_val_struct, status);
+				// Park the source address in a frame slot: the malloc `bl`
+				// clobbers x0-x18 (x2 would not survive it).
+				const src_slot = allocate_stack_space(status, 8, 8);
+				emit_asm(status, `str x0, [x29, #${src_slot}]\n`);
+				emit_asm(status, `mov x0, #${box_size}\n`);
+				emit_malloc(status);
+				emit_asm(status, `mov x1, x0\n`);
+				emit_asm(status, `ldr x2, [x29, #${src_slot}]\n`);
+				const words = Math.ceil(box_size / 8);
+				for (let w = 0; w < words; w++) {
+					emit_asm(status, `ldr x3, [x2, #${w * 8}]\n`);
+					emit_asm(status, `str x3, [x1, #${w * 8}]\n`);
+				}
+				if (strdup_string_fields) {
+					emit_string_field_strdups_at(status, join_val_struct.name, "x1");
+				}
+				emit_asm(status, `mov x0, x1\n`);
+			}
+		}
 		if (current_return_is_float(status)) {
 			emit_asm(status, `fmov d0, x0\n`);
 		}

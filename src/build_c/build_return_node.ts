@@ -371,6 +371,55 @@ export default function build_return_node(
 			node.value.node_type === "switch" ||
 			node.value.node_type === "if"
 		) {
+			// Trait-boxing join (FOLLOWUP "return <computed concrete> from a
+			// trait-returning function inside a switch/match/if join"): the
+			// join's branches produce a CONCRETE value struct, but the slot
+			// the direct-expression box branch declares is the TRAIT pointer —
+			// assigning a struct value to it is a C type error, and the raw
+			// bytes are not a handle anyway. Declare the slot with the CONCRETE
+			// struct type, let the branches assign it by value, then box the
+			// winner at the join point (same malloc + strdup contract as the
+			// direct-expression box branch above). The conformer comes from the
+			// BRANCH VALUES (the checker leaves the join expression's own type
+			// unstamped in return position).
+			const join_branch_values = collect_expression_branch_values(node.value);
+			const first_branch_type = join_branch_values.length
+				? type_from_value_node(join_branch_values[0])?.name
+				: undefined;
+			const uniform_branch_type =
+				first_branch_type &&
+				join_branch_values.every((v) => type_from_value_node(v)?.name === first_branch_type);
+			const join_val_struct =
+				return_trait && !ret_type.is_view && !ret_type.is_array && uniform_branch_type
+					? status.structs.find(
+							(st) =>
+								st.name === first_branch_type &&
+								!st.is_simple_type &&
+								!st.is_class &&
+								!st.is_generic,
+						)
+					: undefined;
+			if (join_val_struct) {
+				const strdup_string_fields =
+					!owns_strings_uniformly(join_val_struct) &&
+					!join_val_struct.functions.some((f) => f.name === "#destroy") &&
+					struct_needs_auto_destroy(join_val_struct, status);
+				status.code += `struct ${join_val_struct.name} _return_val;\n`;
+				status.return_assign = "_return_val";
+				build_node(node.value, status);
+				status.return_assign = old_return_assign;
+				emit_nursery_joins_on_return_c(status);
+				reclaim_all_c_scopes(status);
+				status.code += `struct ${join_val_struct.name} *_ret_box = (struct ${join_val_struct.name} *)malloc(sizeof(struct ${join_val_struct.name}));\n`;
+				status.code += `*_ret_box = _return_val;\n`;
+				if (strdup_string_fields) {
+					for (const f of direct_string_fields(join_val_struct)) {
+						status.code += `_ret_box->${f.name} = nomen_str_dup(_ret_box->${f.name});\n`;
+					}
+				}
+				status.code += `return (struct ${ret_type.name} *)_ret_box;\n`;
+				return;
+			}
 			status.code += `${type_prefix} _return_val;\n`;
 			status.return_assign = "_return_val";
 			// Mixed string-join normalization: when ANY branch produces a

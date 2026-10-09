@@ -95,9 +95,6 @@ this may stay rejected permanently if R doesn't need it.
   inlined at use sites via `top_level_consts` — each use re-derives the
   box (and a use as a bare value re-runs the constructor). Fine for
   constants; revisit if root-scope trait bindings need identity.
-- **`return <computed concrete>` from a trait-returning function inside a
-  switch/match/if join** falls through the generic join path (the box
-  branch handles the direct-expression shapes only).
 
 ## `Shared<T>` + the `with(m)` critical-section form + typed `Mutex<T>` (N4 remainder)
 
