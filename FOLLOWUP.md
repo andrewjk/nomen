@@ -75,8 +75,6 @@ Each skip masks a real post-R/B1/D3 gap (verified still failing
 
 ### D3 residuals (`string` is mv)
 
-- **`string?` `.copy()` on a null** yields a non-null empty string
-  instead of preserving null (found by a migration probe).
 - **aarch64 rodata-fold + move**: `owns = mv own` where `"heap" + "!"`
   folded to rodata trips `AUDIT-STALE-FREE` (the aarch64 constant-fold
   produced a rodata pair that the move marked heap).

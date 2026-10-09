@@ -210,8 +210,7 @@ and residual list (full detail in `FOLLOWUP.md`, which is the tracker).
 - Variadic-pair extraction of mv elements (`Map` pairs init) rides
   a temp-rooted read exemption until a generic move-out accessor exists
   on `Array`.
-- `string?` `.copy()` on null returns `""`
-  instead of null; aarch64 rodata-fold + `mv` trips the stale-free
+- aarch64 rodata-fold + `mv` trips the stale-free
   audit on one shape.
 
 ### Test-corpus skips naming live gaps

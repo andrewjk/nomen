@@ -300,6 +300,25 @@ export default function check_function_call(
 		node.type.is_const_ref = true;
 	}
 
+	// A null-preserving `.copy()` on a `string?` receiver yields `string?`
+	// (null in → null out — both backends lower the call with a null guard
+	// that produces a zero pair for a null receiver). The signature's return
+	// type is cloned so the shared `string.copy` return type is never
+	// mutated for subsequent non-nullable call sites.
+	if (
+		func.name === "copy" &&
+		func.params.some((p) => p.is_self_param) &&
+		target_type?.name === "string" &&
+		target_type.is_nullable &&
+		!target_type.is_view &&
+		!target_type.is_array &&
+		node.type?.name === "string" &&
+		!node.type.is_nullable
+	) {
+		node.type = clone_type(node.type);
+		node.type.is_nullable = true;
+	}
+
 	const variadic_param_index = func.params.findIndex((p) => p.is_variadic);
 	const self_offset = func.params[0]?.is_self_param ? 1 : 0;
 

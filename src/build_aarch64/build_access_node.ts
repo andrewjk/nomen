@@ -2817,6 +2817,46 @@ function build_access_method(
 		// Pair now in x0/x1. Save both halves across argument evaluation.
 		emit_asm(status, `stp x0, x1, [sp, #-16]!\n`);
 	}
+	// Null-preserving `.copy()` on a `string?` receiver (the checker stamps
+	// the result `string?`): null in → null out. The ordinary call would
+	// strdup/malloc a null receiver into a non-null empty string — guard the
+	// call on the ptr half and yield a zero pair for null. `copy` takes no
+	// args, so the whole call lowers here; the receiver pair is on the stack
+	// (pushed above).
+	if (
+		receiver_is_string &&
+		target_type?.is_nullable &&
+		access_func.name === "copy" &&
+		access_func.params.length === 0
+	) {
+		emit_asm(status, `ldp x0, x1, [sp], #16\n`);
+		// When the receiver was an owned temp, park its ptr half for the
+		// post-call free (same contract as the generic string-receiver path).
+		if (frees_string_receiver) {
+			emit_asm(status, `str x0, [sp, #-16]!\n`);
+		}
+		const ncp_id = (status.label_counter = (status.label_counter ?? 0) + 1);
+		emit_asm(status, `cbz x0, .Lncp_${ncp_id}_null\n`);
+		emit_asm(status, `bl ${method_name}\n`);
+		emit_asm(status, `b .Lncp_${ncp_id}_done\n`);
+		emit_asm(status, `.Lncp_${ncp_id}_null:\n`);
+		emit_asm(status, `mov x0, #0\n`);
+		emit_asm(status, `mov x1, #0\n`);
+		emit_asm(status, `.Lncp_${ncp_id}_done:\n`);
+		if (frees_string_receiver) {
+			// Free the parked receiver temp's ptr, preserving the result pair.
+			emit_asm(status, `str x0, [sp, #-16]!\n`);
+			emit_asm(status, `str x1, [sp, #-16]!\n`);
+			emit_asm(status, `ldr x0, [sp, #16]\n`);
+			emit_free(status);
+			emit_asm(status, `ldr x1, [sp], #16\n`);
+			emit_asm(status, `ldr x0, [sp], #16\n`);
+			emit_asm(status, `add sp, sp, #16\n`);
+		}
+		status.last_result_is_heap = true;
+		ensure_newline(status);
+		return;
+	}
 
 	// Deferred self (ASM_PLAN_2 tranche H — call-site operand-home
 	// marshalling): a receiver whose value already lives in a CALLEE-SAVED

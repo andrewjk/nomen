@@ -1321,6 +1321,37 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				if (lambda_ret_tmp) {
 					status.code += `${lambda_ret_c} ${lambda_ret_tmp} = `;
 				}
+				// Null-preserving `.copy()` on a `string?` receiver (the checker
+				// stamps the result `string?`): null in → null out. A plain call
+				// would strdup/malloc a null receiver into a non-null empty
+				// string — guard the call on the ptr half and yield a zero pair
+				// for null. An owned-rvalue receiver already materialized its
+				// pair into a wrapper temp (`owned_recv_temp`): reuse that pair
+				// for the guard, and the wrapper's post-call free stays correct
+				// (free(0) is a no-op).
+				let ncp_tmp: string | undefined;
+				if (
+					!access_func.is_static &&
+					access_func.name === "copy" &&
+					access_func.params.length === 0 &&
+					method_type?.name === "string" &&
+					method_type.is_nullable &&
+					!method_type.is_view &&
+					!method_type.is_array &&
+					!ctor_temp_free &&
+					!array_wrap
+				) {
+					if (owned_recv_temp) {
+						ncp_tmp = owned_recv_temp;
+						status.code += `(${owned_recv_temp}.ptr != 0 ? `;
+					} else {
+						const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+						ncp_tmp = `_ncp_${id}`;
+						status.code += `({ nomen_string ${ncp_tmp} = `;
+						build_node(node.target, status);
+						status.code += `; (${ncp_tmp}.ptr != 0 ? `;
+					}
+				}
 				status.code += `${label}(`;
 				if (!access_func.is_static) {
 					if (ctor_temp_free) {
@@ -1329,6 +1360,9 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					} else if (owned_recv_temp) {
 						// The materialized owned-string receiver (see the wrap open).
 						status.code += owned_recv_temp;
+					} else if (ncp_tmp) {
+						// The null-guard temp (see the wrap open).
+						status.code += ncp_tmp;
 					} else if (array_wrap) {
 						status.code += array_wrap.self_expr;
 					} else {
@@ -1593,6 +1627,16 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					status.code += flag_name ? `&${flag_name}` : `(unsigned char *)&(unsigned char){0}`;
 				}
 				status.code += ")";
+				if (ncp_tmp) {
+					// Close the null-guard ternary (see the wrap open): a null
+					// receiver yields the zero pair. The standalone form also
+					// closes its own statement expression; the owned-rvalue form
+					// leaves that to the wrapper's own close below.
+					status.code +=
+						ncp_tmp === owned_recv_temp
+							? ` : (nomen_string){0, 0})`
+							: ` : (nomen_string){0, 0}); })`;
+				}
 				if (ctor_temp_free) {
 					// Close the temp-receiver statement expression: the
 					// launch consumed the handles, the instance is dead. A
