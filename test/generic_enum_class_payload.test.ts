@@ -149,6 +149,35 @@ pub func main = (Init init) {
 		await build_and_check_output(input, "generic_enum_trait_str_payload", "3\n3", true);
 	});
 
+	// A trait-dispatched `string` method bound in a match case returns an OWNED
+	// heap copy (the conformer's return boundary strdups the literal). The
+	// binding's owning wrapper must free it — it previously leaked on C.
+	test("Option<Trait> string-returning dispatch in a match binding (both backends)", async () => {
+		const input = `
+import System
+
+trait Speaker {
+	pub func speak = (self, out string)
+}
+
+owning struct Named : Speaker {
+	pub func speak = (self, out string) {
+		return "spoke"
+	}
+}
+
+pub func main = (Init init) {
+	var Named n = Named()
+	var Option<Speaker> o = Option.some(move n)
+	Console.write_line(match o {
+		case .some(a) -> a.speak()
+		else -> "?"
+	})
+}
+`;
+		await build_and_check_output(input, "generic_enum_trait_str_return_match", "spoke", true);
+	});
+
 	test("owned local transfers implicitly and stays sound (both backends)", async () => {
 		const input = `
 import System

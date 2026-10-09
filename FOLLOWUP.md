@@ -189,15 +189,6 @@ transfer, return-boundary normalization). These bounded remainders remain
 - **A conditional field's entry-dup displaces whatever pre-call value the
   field held, un-freed (≤1 per call)**: the callee can't know whether
   that value was heap or a rodata/borrow.
-- **A string RETURN from a trait-dispatched method bound in a `match`
-  case leaks on C** (verified 2026-10-09): `match o { case .some(a) ->
-a.speak() }` where `speak` returns `string` allocates the returned
-  string and never frees it (`LEAK: 1` per call). A direct call on a
-  trait local is clean, and aarch64 is clean — the leak is specific to
-  the C dispatch-through-`_get_trait_func` return path bound in a
-  `match`. A fieldless conformer leaks identically, so it is unrelated
-  to payload boxing. Fix surface: the C trait-dispatch string-return
-  path (free the owned return, or mirror aarch64's borrow convention).
 
 ## Owning container fields in container elements (remaining gaps)
 

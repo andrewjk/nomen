@@ -398,22 +398,25 @@ function method_call_returns_owned(
 	// field. This matches the call-site behaviour in build_access_node, which
 	// never marks a trait-dispatched result as heap.
 	if (table.traits.find((t) => t.name === recv_name)) {
+		// A trait-dispatched `string` method returns an OWNED heap string: the
+		// conformer's return boundary normalizes every path (a literal or a
+		// field/param borrow is strdup'd into a fresh copy), exactly like a
+		// direct call — so the caller owns and frees the result. Classifying
+		// from the conformers' bodies would mis-read a literal return as a
+		// borrow and skip the owning wrapper's free (the enum/match-binding
+		// leak). A container-borrow accessor (`at`/`first`/…) is the
+		// exception: its result is a view into the receiver's storage.
+		if (is_container_borrow_accessor_name(method_name)) return false;
 		const conformers = table.structs.filter((s) => s.traits.includes(recv_name));
 		let found = false;
-		let all_owned = true;
 		for (const conf of conformers) {
 			const m = (conf.functions ?? []).find((f) => f.name === method_name);
 			if (!m || !(m as FunctionNode).has_body) continue;
 			found = true;
-			if (
-				!function_returns_owned(m as FunctionNode, table, visiting, `${conf.name}_${method_name}`)
-			) {
-				all_owned = false;
-				break;
-			}
+			if ((m as FunctionNode).return_type?.name !== "string") return false;
 		}
 		if (!found) return undefined;
-		return all_owned;
+		return true;
 	}
 
 	// Concrete receiver: resolve the struct's method, accounting for
