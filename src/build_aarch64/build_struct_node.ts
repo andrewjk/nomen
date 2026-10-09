@@ -2488,11 +2488,20 @@ function build_trait_functions(node: StructNode, status: BuildStatus) {
 			const old_param_regs = status.function_param_regs;
 			const old_param_vars = status.function_param_vars;
 			const old_return_label = status.function_return_label;
+			const old_ref_params = status.function_ref_params;
+			const old_ref_class_slots = status.ref_class_slots;
+			const old_view_params = status.function_view_params;
+			const old_function_param_types = status.function_param_types;
+			const old_struct_param_slots = status.function_struct_param_slots;
+			const old_class_vars = status.class_vars;
 
 			status.scoped_declarations = [];
 			status.heap_strings = new Set<string>();
 			status.stack_size = 0;
 			status.stack_offsets = new Map();
+			status.function_param_types = new Map();
+			status.function_struct_param_slots = new Set();
+			status.class_vars = new Set(status.class_vars ?? []);
 
 			const return_label = `.return_${trait_name}_${func.name}`;
 			status.function_return_label = return_label;
@@ -2506,6 +2515,13 @@ function build_trait_functions(node: StructNode, status: BuildStatus) {
 			const old_function_return_type = status.function_return_type;
 			status.current_function_name = func.name;
 			status.function_return_type = func.return_type;
+			// Bind the body's function NODE too: `current_function` gates
+			// per-function state (the `#init` field-write marker, among others)
+			// by NAME — a stale node from the conformer's constructor made every
+			// write in the default body look like a first init write, so a
+			// displaced heap field value was never reclaimed (LEAK).
+			const old_current_function = status.current_function;
+			status.current_function = func;
 
 			const stack_placeholder = `STACK_SIZE_${trait_func_label}`;
 
@@ -2514,9 +2530,10 @@ function build_trait_functions(node: StructNode, status: BuildStatus) {
 			emit_method_export(trait_func_label, status);
 			emit_asm(status, `stp x29, x30, [sp, #-16]!\n`);
 
-			const is_self_param = func.params[0]?.is_self_param;
-			const self_is_var = is_self_param && func.params[0]?.declaration === "var";
-			const needs_x19 = is_self_param && !self_is_var;
+			const self_param = func.params[0]?.is_self_param ? func.params[0] : undefined;
+			const self_is_var = self_param?.declaration === "var";
+			const self_is_ref = !!self_param?.is_ref || !!self_param?.type?.is_ref;
+			const needs_x19 = !!self_param && !self_is_var && !self_is_ref;
 			if (needs_x19) {
 				emit_asm(status, `str x19, [sp, #-16]!\n`);
 				emit_asm(status, `mov x19, x0\n`);
@@ -2524,6 +2541,9 @@ function build_trait_functions(node: StructNode, status: BuildStatus) {
 
 			status.function_param_regs = new Map();
 			status.function_param_vars = new Set();
+			status.function_ref_params = new Set();
+			status.ref_class_slots = new Map();
+			status.function_view_params = new Set();
 
 			if (needs_x19) {
 				status.function_param_regs.set("self", "x19");
@@ -2531,6 +2551,154 @@ function build_trait_functions(node: StructNode, status: BuildStatus) {
 
 			emit_asm(status, `sub sp, sp, #${stack_placeholder}\n`);
 			emit_asm(status, `mov x29, sp\n`);
+
+			// Bind the default body's parameters to their ABI homes (FOLLOWUP
+			// "a trait-DEFAULT method that accesses a trait field emits adrp x0,
+			// self@PAGE"): without this, every non-x19 param — and a `ref`/`var`
+			// self — resolved to a GLOBAL SYMBOL (`adr x0, n`) and the emitted
+			// assembly failed to link. Slot accounting mirrors the struct-method
+			// prologue (a trait-dispatch receiver is ONE pointer slot; fat
+			// string/view/nullable-scalar params take two); every param spills
+			// to a stack home (struct-ish slots hold the POINTER — the
+			// by-address convention emit_var_address resolves), so no
+			// callee-saved parking is needed here.
+			{
+				const param_regs = ["x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"];
+				let slot_idx = 0;
+				for (const param of func.params) {
+					status.function_param_types!.set(param.name, param.type);
+					if (param.is_self_param) {
+						if (needs_x19) {
+							slot_idx += 1;
+							continue;
+						}
+						// A `ref`/`var` self parks the instance pointer in a
+						// slot; field reads AND writes resolve through it
+						// (struct_param_slots → `ldr` the pointer, then the
+						// field offset).
+						const offset = allocate_stack_space(status, 8, 8);
+						status.stack_offsets!.set(param.name, offset);
+						emit_asm(status, `str x0, [x29, #${offset}]\n`);
+						status.function_struct_param_slots!.add(param.name);
+						slot_idx += 1;
+						continue;
+					}
+					if (param.is_variadic) {
+						slot_idx += 2;
+						if (param.declaration === "var") {
+							status.function_param_vars.add(param.name);
+						}
+						if (param.type.is_ref) {
+							status.function_ref_params!.add(param.name);
+						}
+						continue;
+					}
+					if (
+						param.type.is_view ||
+						(param.type.name === "string" && !param.type.is_ref && !param.type.is_array)
+					) {
+						// Fat (ptr, len) pair: spill both halves into a 16-byte
+						// local (two register slots).
+						const offset = allocate_stack_space(status, 16, 16);
+						status.stack_offsets!.set(param.name, offset);
+						for (const half of [0, 1] as const) {
+							const p_slot = slot_idx + half;
+							if (p_slot < param_regs.length) {
+								emit_asm(status, `str ${param_regs[p_slot]}, [x29, #${offset + half * 8}]\n`);
+							} else {
+								const k = p_slot - param_regs.length;
+								emit_asm(status, `ldr x9, [x29, #${overflow_placeholder(trait_func_label, k)}]\n`);
+								emit_asm(status, `str x9, [x29, #${offset + half * 8}]\n`);
+							}
+						}
+						if (param.type.is_view) {
+							status.function_view_params!.add(param.name);
+						}
+						slot_idx += 2;
+						continue;
+					}
+					if (is_nullable_scalar_type(param.type, status) && !param.type.is_ref) {
+						const size = aarch64_size(param.type.name);
+						const offset = allocate_stack_space(status, size, size);
+						status.stack_offsets!.set(param.name, offset);
+						const flag_offset = allocate_stack_space(status, 8, 8);
+						status.stack_offsets!.set(has_flag_name(param.name), flag_offset);
+						for (const half of [0, 1] as const) {
+							const p_slot = slot_idx + half;
+							if (p_slot < param_regs.length) {
+								const reg = param_regs[p_slot];
+								if (half === 0) {
+									if (size === 1) {
+										emit_asm(status, `strb ${reg.replace("x", "w")}, [x29, #${offset}]\n`);
+									} else if (size === 2) {
+										emit_asm(status, `strh ${reg.replace("x", "w")}, [x29, #${offset}]\n`);
+									} else if (size === 4) {
+										emit_asm(status, `str ${reg.replace("x", "w")}, [x29, #${offset}]\n`);
+									} else {
+										emit_asm(status, `str ${reg}, [x29, #${offset}]\n`);
+									}
+								} else {
+									emit_asm(status, `str ${reg}, [x29, #${flag_offset}]\n`);
+								}
+							} else {
+								const k = p_slot - param_regs.length;
+								emit_asm(status, `ldr x9, [x29, #${overflow_placeholder(trait_func_label, k)}]\n`);
+								if (half === 0) {
+									if (size === 1) {
+										emit_asm(status, `strb w9, [x29, #${offset}]\n`);
+									} else if (size === 2) {
+										emit_asm(status, `strh w9, [x29, #${offset}]\n`);
+									} else if (size === 4) {
+										emit_asm(status, `str w9, [x29, #${offset}]\n`);
+									} else {
+										emit_asm(status, `str x9, [x29, #${offset}]\n`);
+									}
+								} else {
+									emit_asm(status, `str x9, [x29, #${flag_offset}]\n`);
+								}
+							}
+						}
+						if (param.declaration === "var") {
+							status.function_param_vars.add(param.name);
+						}
+						slot_idx += 2;
+						continue;
+					}
+					// Every remaining param is ONE slot. A `ref T` param arrives
+					// as an 8-byte pointer regardless of T's width; a
+					// struct/trait/enum/class param arrives as the instance
+					// POINTER (by-address convention — the slot holds it and
+					// emit_var_address loads it via struct_param_slots).
+					const is_ref = param.type.is_ref;
+					const offset = allocate_stack_space(status, 8, 8);
+					status.stack_offsets!.set(param.name, offset);
+					if (slot_idx < param_regs.length) {
+						emit_asm(status, `str ${param_regs[slot_idx]}, [x29, #${offset}]\n`);
+					} else {
+						const k = slot_idx - param_regs.length;
+						emit_asm(status, `ldr x9, [x29, #${overflow_placeholder(trait_func_label, k)}]\n`);
+						emit_asm(status, `str x9, [x29, #${offset}]\n`);
+					}
+					const is_structish =
+						!!status.structs.find((s) => s.name === param.type.name && !s.is_simple_type) ||
+						!!status.enums.find((e) => e.name === param.type.name && e.has_associated_data) ||
+						!!status.traits.find((t) => t.name === param.type.name);
+					if (is_structish || is_ref) {
+						status.function_struct_param_slots!.add(param.name);
+					}
+					if (is_ref) {
+						status.function_ref_params!.add(param.name);
+					}
+					if (status.structs.find((s) => s.name === param.type.name && s.is_class)) {
+						status.function_ref_params!.add(param.name);
+						status.class_vars!.add(param.name);
+					}
+					if (param.declaration === "var") {
+						status.function_param_vars.add(param.name);
+					}
+					slot_idx += 1;
+				}
+			}
 
 			// See build_struct_functions: clear the enclosing function's
 			// promotion maps while the shared default body builds.
@@ -2584,6 +2752,15 @@ function build_trait_functions(node: StructNode, status: BuildStatus) {
 				`sub sp, sp, #${stack_placeholder}`,
 				total_stack > 0 ? `sub sp, sp, #${total_stack}` : `// no stack needed`,
 			);
+			// Resolve this body's overflow-arg placeholders. The pushes between
+			// `stp x29, x30` and `sub sp, sp` are the x19 park + the loop-claim
+			// saves the post-pass inserted above.
+			status.code = patch_overflow_placeholders(
+				status.code,
+				trait_func_label,
+				(needs_x19 ? 1 : 0) + trait_loop_regs.length,
+				total_stack,
+			);
 			if (total_stack > 0) {
 				emit_asm(status, `add sp, sp, #${total_stack}\n`);
 			}
@@ -2606,6 +2783,13 @@ function build_trait_functions(node: StructNode, status: BuildStatus) {
 			status.function_param_regs = old_param_regs;
 			status.function_param_vars = old_param_vars;
 			status.function_return_label = old_return_label;
+			status.function_ref_params = old_ref_params;
+			status.ref_class_slots = old_ref_class_slots;
+			status.function_view_params = old_view_params;
+			status.function_param_types = old_function_param_types;
+			status.function_struct_param_slots = old_struct_param_slots;
+			status.class_vars = old_class_vars;
+			status.current_function = old_current_function;
 			status.current_function_name = old_function_name;
 			status.function_return_type = old_function_return_type;
 			status.stack_size = old_stack_size;

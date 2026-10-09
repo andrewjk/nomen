@@ -3,6 +3,7 @@ import Type from "../nodes/Type.ts";
 import build_node from "./build_node.ts";
 import build_parameter_node from "./build_parameter_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
+import { enter_c_scope, leave_c_scope } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
 import { begin_code_scratch, end_code_scratch } from "./utils/code_scratch.ts";
 
@@ -46,6 +47,25 @@ export default function build_trait_node(node: TraitNode, status: BuildStatus) {
 		const self_param = func.params[0]?.is_self_param ? func.params[0] : null;
 		status.self_is_ref = !!self_param?.is_ref;
 
+		// Per-body state, exactly like every other function builder: without
+		// this, the body's hoisted `_param_N` temps (an interpolation arg, a
+		// call argument) stay in the ENCLOSING scope's declaration frames and
+		// a later function's scope-exit auto-free emits frees for identifiers
+		// it never declared (undeclared-identifier compile errors). The
+		// string-ownership sets are name-keyed for the same reason.
+		const old_scoped_declarations = status.scoped_declarations;
+		status.scoped_declarations = enter_c_scope(status);
+		const old_deferred_frees = status.deferred_frees;
+		status.deferred_frees = [];
+		const old_string_borrow_vars = status.string_borrow_vars;
+		status.string_borrow_vars = new Set();
+		const old_moved_string_vars = status.moved_string_vars;
+		status.moved_string_vars = new Set();
+		const old_heap_strings = status.heap_strings;
+		status.heap_strings = new Set();
+		const old_owned_string_vars = status.owned_string_vars;
+		status.owned_string_vars = new Set();
+
 		// Define the function
 		// HACK: Need to map names to types
 		// The signature builds into a scratch buffer so its text can be
@@ -80,6 +100,15 @@ export default function build_trait_node(node: TraitNode, status: BuildStatus) {
 			build_node(child, status, true);
 		}
 		status.code += `}\n`;
+		// The body's hoisted temps were freed by the body's own tail; drop the
+		// (now empty) frame so nothing leaks into the enclosing scope.
+		leave_c_scope(status);
+		status.deferred_frees = old_deferred_frees;
+		status.string_borrow_vars = old_string_borrow_vars;
+		status.moved_string_vars = old_moved_string_vars;
+		status.heap_strings = old_heap_strings;
+		status.owned_string_vars = old_owned_string_vars;
+		status.scoped_declarations = old_scoped_declarations;
 		status.self_is_ref = old_self_is_ref;
 	}
 

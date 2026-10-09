@@ -230,14 +230,6 @@ both deliberately left:
   `emit_destroy_for_array_elem` (aarch64) still walk `struct.fields` only,
   so a trait-declared class field inside a nested/array element is not
   recursively destroyed.
-- **aarch64: a trait-DEFAULT method that accesses a trait field emits
-  `adrp x0, self@PAGE`** (verified 2026-10-09): a body in the trait (not a
-  struct override) that reads or writes `self.<trait-field>` references
-  `self` as a global SYMBOL instead of the method's `self` parameter, so
-  the generated assembly fails to link (undefined `self`). A trait-default
-  method that touches no field (e.g. only calls `Console`) compiles fine,
-  and C is correct. `test/trait_field_defaults.test.ts` covers only direct
-  trait-typed field access, which is unaffected.
 
 ## Custom `#init` computed seeds: residual bounded corners
 

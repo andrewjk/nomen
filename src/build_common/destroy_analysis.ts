@@ -1,4 +1,5 @@
 import type StructNode from "../nodes/StructNode.ts";
+import type Type from "../nodes/Type.ts";
 import type { StructTable } from "./mono_name.ts";
 import { resolve_struct_type } from "./mono_name.ts";
 
@@ -15,7 +16,10 @@ interface EnumFieldView {
 
 interface EnumAwareTable extends StructTable {
 	enums?: EnumFieldView[];
-	traits?: { name: string }[];
+	traits?: {
+		name: string;
+		fields?: { type: Type }[];
+	}[];
 }
 
 /**
@@ -104,6 +108,39 @@ export function has_struct_fields_with_destroy(struct: StructNode, table: Struct
 }
 
 /**
+ * Whether any TRAIT-DECLARED field of the struct requires destroy handling.
+ * A class/mv conformer's trait string defaults are strdup'd at construction
+ * (uniform-heap), so a conformer whose OWN field list is empty (all its
+ * state is trait-declared) still needs the scope-exit reclamation — the
+ * destroy walkers include trait-declared fields for owning/class structs
+ * (layout_fields). Non-mv conformers are excluded: their trait string
+ * defaults are borrowed rodata and their destroy must stay out.
+ */
+function struct_has_trait_declared_destroy_fields(
+	struct: StructNode,
+	table: EnumAwareTable,
+): boolean {
+	if (!(struct.is_class === true || struct.is_owning === true)) return false;
+	for (const trait_name of struct.traits ?? []) {
+		const trait = table.traits?.find((t) => t.name === trait_name);
+		if (!trait?.fields) continue;
+		for (const field of trait.fields) {
+			if (field.type.is_ref || field.type.is_view || field.type.is_array) continue;
+			if (field.type.name === "string") return true;
+			const field_struct = resolve_struct_type(field.type, table);
+			if (field_struct) {
+				if (field_struct.is_class) return true;
+				if (struct_needs_destroy(field_struct, table)) return true;
+			}
+			if (table.enums?.some((e) => e.name === field.type.name && e.has_associated_data))
+				return true;
+			if (field.type.name === "func") return true;
+		}
+	}
+	return false;
+}
+
+/**
  * Whether a struct (or any embedded struct field, recursively) needs a
  * destroy call at scope exit — it has a `#destroy`, a class-typed field,
  * or a nested struct field that itself needs destroying. B1 cutover: a
@@ -112,6 +149,8 @@ export function has_struct_fields_with_destroy(struct: StructNode, table: Struct
  * the scope-exit destroy frees them (the destroy walkers pass
  * free_strings/emit the frees for mv structs). Non-mv structs'
  * string fields are still NOT counted (they may hold rodata borrows).
+ * A class/mv struct with trait-declared destroy-worthy fields counts too
+ * (see struct_has_trait_declared_destroy_fields).
  */
 export function struct_needs_destroy(struct: StructNode, table: StructTable): boolean {
 	return (
@@ -119,7 +158,8 @@ export function struct_needs_destroy(struct: StructNode, table: StructTable): bo
 		has_struct_fields_with_destroy(struct, table) ||
 		struct_has_owning_enum_field(struct, table) ||
 		struct_has_owned_func_field(struct) ||
-		(owns_strings_via_destroy(struct) && struct_has_direct_string_fields(struct))
+		(owns_strings_via_destroy(struct) && struct_has_direct_string_fields(struct)) ||
+		struct_has_trait_declared_destroy_fields(struct, table)
 	);
 }
 

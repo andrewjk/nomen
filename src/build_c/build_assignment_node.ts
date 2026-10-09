@@ -244,10 +244,55 @@ export default function build_assignment_node(
 					? `struct ${traitField.type.name}`
 					: c_type(traitField.type.name);
 				const cast = `(void (*)(void *, ${type}))`;
+				// A trait-declared `string` field whose EVERY known conformer is
+				// class/owning has dup-and-reclaim setters (see
+				// build_struct_functions' accessor generation): the setter takes
+				// a BORROW and strdups internally, so a FRESH heap RHS is left
+				// unowned after the call — capture it in a temp and free it
+				// once the setter has copied it. (A mixed conformer set keeps
+				// the plain call: a non-owning conformer's setter raw-stores,
+				// and freeing the RHS would hand its field a dangling pair —
+				// the documented value-struct trait-field corner.)
+				const free_after_set =
+					traitField.type.name === "string" &&
+					!traitField.type.is_view &&
+					!traitField.type.is_array &&
+					status.structs.some((s) => s.traits.includes(traitName)) &&
+					status.structs
+						.filter((s) => s.traits.includes(traitName))
+						.every((s) => s.is_class || owns_strings_uniformly(s));
 				// The vtable lives at offset 0 of the struct, so _get_trait_func
 				// and the accessor both need a POINTER to the receiver. Use
 				// build_vtable_target so a value-struct trait-typed local is
 				// passed as `&p` (a ref/class/trait param is already a pointer).
+				let set_rhs_free_temp: string | undefined;
+				let set_rhs_text: string | undefined;
+				if (free_after_set) {
+					// Build the RHS into a scratch buffer first; only a FRESH
+					// owned result is left unowned by the dup'ing setter and
+					// needs the post-call free. The freshness signal is the
+					// checker's `owned_return` stamp (a `mv out string` method
+					// like `string.copy`/`to_string`) or a registered
+					// heap-returning call — a literal/borrow rides the plain
+					// call. (The C build does not maintain
+					// last_result_is_heap for method calls.)
+					const rhs = node.right_value;
+					const rhs_is_fresh_owned =
+						(rhs.node_type === "access" &&
+							(rhs.access as AccessFunctionCallNode).owned_return === true) ||
+						(rhs.node_type === "func_call" &&
+							!!status.heap_returning_functions?.has(
+								(rhs as FunctionCallNode).mangled_name ?? (rhs as FunctionCallNode).name,
+							));
+					if (rhs_is_fresh_owned) {
+						const saved_scratch = begin_code_scratch(status);
+						emit_rhs_value(node.right_value, nir_rhs, status);
+						set_rhs_text = end_code_scratch(status, saved_scratch);
+						const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+						set_rhs_free_temp = `_tfs_${id}`;
+						status.code += `({ nomen_string ${set_rhs_free_temp} = ${set_rhs_text}; `;
+					}
+				}
 				status.code += `(${cast}_get_trait_func((void *)`;
 				build_vtable_target(accessNode.target, status);
 				const traitIndex = status.traits.indexOf(trait);
@@ -255,8 +300,17 @@ export default function build_assignment_node(
 				status.code += `, ${traitIndex}, ${fieldIndex}))(`;
 				build_vtable_target(accessNode.target, status);
 				status.code += `, `;
-				emit_rhs_value(node.right_value, nir_rhs, status);
+				if (set_rhs_free_temp) {
+					status.code += set_rhs_free_temp;
+				} else if (set_rhs_text !== undefined) {
+					status.code += set_rhs_text;
+				} else {
+					emit_rhs_value(node.right_value, nir_rhs, status);
+				}
 				status.code += `)`;
+				if (set_rhs_free_temp) {
+					status.code += `; ${status.audit ? "nomen_free_wrap" : "free"}(${set_rhs_free_temp}.ptr); })`;
+				}
 
 				return;
 			}
