@@ -113,6 +113,42 @@ pub func main = (Init init) {
 		await build_and_check_output(input, "generic_enum_trait_ctor_payload", "4\n9", true);
 	});
 
+	// A string-field conformer: the move transfers its (uniformly heap) string
+	// to the box, so the box owns it and no copy is orphaned (LEAK). The case
+	// method returns an int (a string-returning dispatch inside a match has a
+	// separate pre-existing C leak — see FOLLOWUP.md).
+	test("Option<Trait> string-field conformer payload (both backends)", async () => {
+		const input = `
+import System
+
+trait Counter {
+	pub func count = (self, out int)
+}
+
+owning struct Tally : Counter {
+	pub var string label
+	pub func count = (self, out int) {
+		return 3
+	}
+}
+
+pub func main = (Init init) {
+	var Tally t = Tally("hi")
+	var Option<Counter> o = Option.some(move t)
+	Console.write_line(match o {
+		case .some(a) -> a.count().to_string()
+		else -> "0"
+	})
+	var Option<Counter> p = Option.some(Tally("yo"))
+	Console.write_line(match p {
+		case .some(a) -> a.count().to_string()
+		else -> "0"
+	})
+}
+`;
+		await build_and_check_output(input, "generic_enum_trait_str_payload", "3\n3", true);
+	});
+
 	test("owned local transfers implicitly and stays sound (both backends)", async () => {
 		const input = `
 import System

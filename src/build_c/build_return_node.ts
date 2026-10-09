@@ -233,7 +233,11 @@ export default function build_return_node(
 					)
 				: undefined;
 		if (ret_trait_here && !ret_type_here.is_view && !ret_type_here.is_array && val_struct) {
+			// An owning struct's direct string fields are uniformly heap; the
+			// move transfers them to the box (strdup'ing would orphan the
+			// donor's copy — LEAK). Mirrors the C declaration boxing.
 			const strdup_string_fields =
+				!owns_strings_uniformly(val_struct) &&
 				!val_struct.functions.some((f) => f.name === "#destroy") &&
 				struct_needs_auto_destroy(val_struct, status);
 			const string_fields = strdup_string_fields ? direct_string_fields(val_struct) : [];

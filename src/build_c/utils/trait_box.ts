@@ -1,5 +1,8 @@
 import { struct_needs_auto_destroy } from "../../build_common/destroy_analysis.ts";
-import { direct_string_fields } from "../../build_common/has_string_fields.ts";
+import {
+	direct_string_fields,
+	owns_strings_uniformly,
+} from "../../build_common/has_string_fields.ts";
 import type BaseNode from "../../nodes/BaseNode.ts";
 import FunctionCallNode from "../../nodes/FunctionCallNode.ts";
 import StructNode from "../../nodes/StructNode.ts";
@@ -48,8 +51,12 @@ export function emit_boxed_value_struct_c(
 ): void {
 	const donor_name = arg.node_type === "value" ? (arg as ValueNode).value : undefined;
 	// strdup only when the box's destroy slot will free the fields (user
-	// `#destroy` or the auto destroy).
+	// `#destroy` or the auto destroy) AND the source is not uniformly heap.
+	// An OWNING struct's direct string fields are uniformly heap, and the
+	// move transfers them to the box — strdup'ing would orphan the donor's
+	// copy (LEAK). Mirrors the C declaration boxing (build_declaration_node).
 	const strdup_string_fields =
+		!owns_strings_uniformly(box_struct) &&
 		!box_struct.functions.some((f) => f.name === "#destroy") &&
 		struct_needs_auto_destroy(box_struct, status);
 	const string_fields = strdup_string_fields ? direct_string_fields(box_struct) : [];

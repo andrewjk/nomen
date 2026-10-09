@@ -284,3 +284,84 @@ test()
 		);
 	});
 });
+
+describe("string-field conformers box without leaking", () => {
+	const STR_PRELUDE = `
+trait Speaker {
+	func speak = (self, out string)
+}
+owning struct Named : Speaker {
+	pub var string name
+	pub func speak = (self, out string) {
+		return "spoke"
+	}
+}
+`;
+
+	test("trait local declaration (the box owns the transferred string)", async () => {
+		const input =
+			STR_PRELUDE +
+			`
+func test = () {
+	var Named n = Named("hi")
+	var Speaker s = move n
+	if s.speak() == "spoke" {
+		Console.write_line("ok")
+	}
+}
+test()
+`;
+		await build_and_check_output(input, "two_tier_box_str_local", "ok");
+	});
+
+	test("`move Trait` parameter", async () => {
+		const input =
+			STR_PRELUDE +
+			`
+func take = (move Speaker s) {
+	if s.speak() == "spoke" {
+		Console.write_line("ok")
+	}
+}
+func test = () {
+	var Named n = Named("hi")
+	take(move n)
+}
+test()
+`;
+		await build_and_check_output(input, "two_tier_box_str_param", "ok");
+	});
+
+	test("trait-typed List push", async () => {
+		const input =
+			STR_PRELUDE +
+			`
+func test = () {
+	var List<Speaker> l = List<Speaker>()
+	var Named n = Named("hi")
+	l.push(move n)
+	Console.write_line("ok")
+}
+test()
+`;
+		await build_and_check_output(input, "two_tier_box_str_list", "ok");
+	});
+
+	test("trait-typed return", async () => {
+		const input =
+			STR_PRELUDE +
+			`
+func pick = (out Speaker) {
+	return Named("hi")
+}
+func test = () {
+	var Speaker s = pick()
+	if s.speak() == "spoke" {
+		Console.write_line("ok")
+	}
+}
+test()
+`;
+		await build_and_check_output(input, "two_tier_box_str_return", "ok");
+	});
+});

@@ -189,17 +189,15 @@ transfer, return-boundary normalization). These bounded remainders remain
 - **A conditional field's entry-dup displaces whatever pre-call value the
   field held, un-freed (≤1 per call)**: the callee can't know whether
   that value was heap or a rodata/borrow.
-- **Boxing a value-struct trait conformer that has a `string` field leaks
-  the donor's copy** (verified 2026-10-09, both backends): the boxing
-  paths (`move Trait` param, trait-typed `List` element, and now a
-  trait-typed enum case payload) strdup every unrecorded `string` field
-  into the box while the moved donor's own reclaim is suppressed, so the
-  donor's original heap copy is abandoned (`LEAK: 1`). The `strdup`
-  guard exists for rodata/borrow sources, but an owning struct's
-  uniformly-heap field is neither recorded (owning records are dropped)
-  nor freed after a move — taking the donor's pointer would be sound.
-  Untested shapes: the fieldless conformers used by the boxing tests
-  never exercise this.
+- **A string RETURN from a trait-dispatched method bound in a `match`
+  case leaks on C** (verified 2026-10-09): `match o { case .some(a) ->
+a.speak() }` where `speak` returns `string` allocates the returned
+  string and never frees it (`LEAK: 1` per call). A direct call on a
+  trait local is clean, and aarch64 is clean — the leak is specific to
+  the C dispatch-through-`_get_trait_func` return path bound in a
+  `match`. A fieldless conformer leaks identically, so it is unrelated
+  to payload boxing. Fix surface: the C trait-dispatch string-return
+  path (free the owned return, or mirror aarch64's borrow convention).
 
 ## Owning container fields in container elements (remaining gaps)
 

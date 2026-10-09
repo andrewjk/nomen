@@ -295,7 +295,11 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					: undefined;
 			if (callee_param_is_moved_trait && arg_struct) {
 				const arg_name = (node.params[i] as ValueNode).value;
+				// An owning struct's direct string fields are uniformly heap;
+				// the move transfers them to the box (strdup'ing would orphan
+				// the donor's copy — LEAK). Mirrors the C declaration boxing.
 				const strdup_string_fields =
+					!owns_strings_uniformly(arg_struct) &&
 					!arg_struct.functions.some((f) => f.name === "#destroy") &&
 					struct_needs_auto_destroy(arg_struct, status);
 				const string_fields = strdup_string_fields ? direct_string_fields(arg_struct) : [];

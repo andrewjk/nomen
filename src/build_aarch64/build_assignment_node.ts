@@ -11,7 +11,7 @@ import {
 	struct_needs_auto_destroy,
 	struct_needs_destroy,
 } from "../build_common/destroy_analysis.ts";
-import { direct_string_fields } from "../build_common/has_string_fields.ts";
+import { direct_string_fields, owns_strings_uniformly } from "../build_common/has_string_fields.ts";
 import { claim_init_default_seed_reclaim } from "../build_common/init_computed_seeds.ts";
 import { mono_type_name, resolve_struct_type } from "../build_common/mono_name.ts";
 import { call_result_type, is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
@@ -1163,7 +1163,11 @@ export default function build_assignment_node(
 							// expression → sret scratch + copy. A user `#destroy`
 							// governs the fields itself — skip the strdup
 							// normalization (the auto destroy is what frees).
+							// An owning struct's direct string fields are
+							// uniformly heap; the move transfers them to the box
+							// (strdup'ing would orphan the donor's copy — LEAK).
 							const strdup_string_fields =
+								!owns_strings_uniformly(rhs_value_struct) &&
 								!rhs_value_struct.functions.some((f) => f.name === "#destroy") &&
 								struct_needs_auto_destroy(rhs_value_struct, status);
 							const box_size = get_struct_size(rhs_value_struct.name, status);

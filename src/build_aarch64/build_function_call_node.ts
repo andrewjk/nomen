@@ -193,7 +193,13 @@ export function emit_box_value_struct_arg(
 	struct: StructNode,
 	dest_offset: number,
 ): void {
+	// An OWNING struct's direct string fields are uniformly heap (the ctor
+	// strdup'd the seed, stores strdup a non-heap RHS); the MOVE transfers
+	// them to the box as-is, so strdup'ing again would orphan the donor's
+	// copy (LEAK). Only a non-owning struct's fields (transition-era
+	// rodata/borrow sources) need the defensive strdup.
 	const strdup_string_fields =
+		!owns_strings_uniformly(struct) &&
 		!struct.functions.some((f) => f.name === "#destroy") &&
 		struct_needs_auto_destroy(struct, status);
 	const box_size = get_struct_size(struct.name, status);

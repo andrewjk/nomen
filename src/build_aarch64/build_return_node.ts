@@ -348,7 +348,11 @@ export default function build_return_node(
 			// Park the box pointer in a frame slot: the constructor call (and
 			// the strdup `bl`s) clobber x0, and the function must RETURN the
 			// box handle in x0.
+			// An owning struct's direct string fields are uniformly heap; the
+			// move transfers them to the box (strdup'ing would orphan the
+			// donor's copy — LEAK). See build_function_call_node's box helper.
 			const strdup_string_fields =
+				!owns_strings_uniformly(val_struct) &&
 				!val_struct.functions.some((f) => f.name === "#destroy") &&
 				struct_needs_auto_destroy(val_struct, status);
 			const box_slot = allocate_stack_space(status, 8, 8);
@@ -400,7 +404,9 @@ export default function build_return_node(
 						}
 					}
 				}
-				emit_string_field_strdups_at(status, val_struct.name, "x1", 0, skip_fields);
+				if (strdup_string_fields) {
+					emit_string_field_strdups_at(status, val_struct.name, "x1", 0, skip_fields);
+				}
 				emit_asm(status, `ldr x0, [x29, #${box_slot}]\n`);
 			}
 			// Transfer marks: the donor's bytes live in the box now — the

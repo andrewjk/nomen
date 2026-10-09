@@ -760,7 +760,11 @@ export default function build_assignment_node(
 						)
 					: undefined;
 			if (rhs_concrete_struct) {
+				// An owning struct's direct string fields are uniformly heap;
+				// the move transfers them to the box (strdup'ing would orphan
+				// the donor's copy — LEAK). Mirrors the C declaration boxing.
 				const strdup_string_fields =
+					!owns_strings_uniformly(rhs_concrete_struct) &&
 					!rhs_concrete_struct.functions.some((f) => f.name === "#destroy") &&
 					struct_needs_auto_destroy(rhs_concrete_struct, status);
 				const string_fields = strdup_string_fields ? direct_string_fields(rhs_concrete_struct) : [];
