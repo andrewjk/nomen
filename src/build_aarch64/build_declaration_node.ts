@@ -2990,13 +2990,23 @@ export default function build_declaration_node(
 					// strdup an independent copy of the ptr half, then carry
 					// the source's len word.
 					const src_off0 = status.stack_offsets?.get(raw);
-					// Move-on-last-use (STRING_PLAN tranche 4): when the pass
-					// proved the source is never read or written again, transfer
-					// the pair and the ownership mark instead of strdup'ing —
-					// the source's scope-exit free is suppressed by dropping it
-					// from heap_strings (the frame's entry is gated on the
-					// global set).
-					if (node.last_use_move && move_on_last_use_enabled() && src_off0 !== undefined) {
+					// An EXPLICIT `var string b = move a swap <repl>` is a
+					// transfer with revalidation: the pair moves to `b` (no
+					// strdup) and `a` is overwritten with the replacement.
+					// Ownership follows: `b` owns the moved pair; `a` owns the
+					// replacement only when it is itself a heap value.
+					const explicit_move_swap =
+						!!node.swap && (node.value as ValueNode).is_moved === true && src_off0 !== undefined;
+					if (explicit_move_swap) {
+						emit_pair_load_x29(status, src_off0!);
+						emit_pair_store_x29(status, offset);
+						status.heap_strings?.delete(raw);
+						mark_heap_string(status, node.name);
+						status.last_result_is_heap = false;
+						emit_swap_value(node.swap!, nir_swap, status);
+						emit_pair_store_x29(status, src_off0!);
+						if (status.last_result_is_heap) mark_heap_string(status, raw);
+					} else if (node.last_use_move && move_on_last_use_enabled() && src_off0 !== undefined) {
 						emit_pair_load_x29(status, src_off0);
 						emit_pair_store_x29(status, offset);
 						status.heap_strings?.delete(raw);
@@ -3369,6 +3379,56 @@ export default function build_declaration_node(
 				size === 16 &&
 				node.value.node_type === "access" &&
 				(node.value as AccessNode).access.node_type === "access_field";
+			// An EXPLICIT `var s = move p.name swap <repl>` (D3 move-out):
+			// the binding takes the field's pair and OWNS it (scope exit
+			// frees it), and the field is revalidated by writing a heap-owned
+			// replacement — the owning struct's destroy frees its string
+			// fields unconditionally, so a raw rodata replacement would be a
+			// stale free while the moved pair leaks. Mirrors the C backend's
+			// declaration swap.
+			// Only an `owning` struct's string fields are uniformly heap and
+			// freed by its destroy. A tuple/anon temp's fields stay
+			// record/binding-based (the dedicated paths above own them), so
+			// the swap handling must not fire for them.
+			const decl_string_move_swap_owner =
+				node.value.node_type === "access"
+					? type_from_value_node((node.value as AccessNode).target)
+					: undefined;
+			const decl_string_move_swap_owner_struct = decl_string_move_swap_owner?.name
+				? status.structs.find(
+						(s) => s.name === decl_string_move_swap_owner.name && !s.is_simple_type,
+					)
+				: undefined;
+			const decl_string_move_swap =
+				decl_string_field_read &&
+				!!node.swap &&
+				(node.value as ValueNode).is_moved === true &&
+				!!decl_string_move_swap_owner_struct &&
+				owns_strings_uniformly(decl_string_move_swap_owner_struct);
+			if (decl_string_move_swap) {
+				emit_init_value(node.value, nir_init, status);
+				emit_var_store(status, "x0", node.name, size);
+				mark_heap_string(status, node.name);
+				const swap_access = node.value as AccessNode;
+				const swap_target = swap_access.target;
+				const swap_field = (swap_access.access as AccessFieldNode).name;
+				const swap_target_type = type_from_value_node(swap_target);
+				const swap_offset = get_field_offset(swap_target_type.name, swap_field, status);
+				status.last_result_is_heap = false;
+				emit_swap_value(node.swap!, nir_swap, status);
+				ensure_newline(status);
+				if (!status.last_result_is_heap) {
+					emit_strdup_string(status);
+				}
+				emit_asm(status, `stp x0, x1, [sp, #-16]!\n`);
+				emit_address_of(swap_target, status);
+				ensure_newline(status);
+				emit_asm(status, `ldp x2, x3, [sp], #16\n`);
+				emit_asm(status, `str x2, [x0, #${swap_offset}]\n`);
+				emit_asm(status, `str x3, [x0, #${swap_offset + 8}]\n`);
+				status.last_result_is_heap = false;
+				return;
+			}
 			if (decl_string_field_read && !!status.force_heap_strings?.has(node.name)) {
 				// A force-heap receptacle must own heap on EVERY path (its
 				// reassign/scope-exit frees are emitted unconditionally) — take

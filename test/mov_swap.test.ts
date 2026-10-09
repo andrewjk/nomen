@@ -112,3 +112,44 @@ Console.write("done")
 		await build_and_check_output(input, "mov_swap_no_leak", "done");
 	});
 });
+
+// D3: `move ... swap ""` on a `string` — the source's owned pair transfers to
+// the binding and the source is revalidated with the empty replacement. Both
+// backends audited clean (previously the C declaration leaked the moved pair
+// and the owning struct's destroy freed the rodata replacement).
+describe("move-swap on strings", () => {
+	test("plain variable move+swap transfers and revalidates", async () => {
+		const input = `
+var string a = 42.to_string()
+var string b = move a swap ""
+Console.write("\\{b}|\\{a}|end")
+`;
+		await build_and_check_output(input, "mov_swap_string_plain", "42||end");
+	});
+
+	test("owning struct string field move+swap revalidates the field", async () => {
+		const input = `
+owning struct Person {
+	var string name
+	var int age
+}
+var p = Person("Ada", 30)
+var s = move p.name swap ""
+Console.write("\\{s}|\\{p.name}|\\{p.age}")
+`;
+		await build_and_check_output(input, "mov_swap_string_field", "Ada||30");
+	});
+
+	test("move-destructuring a string field revalidates the source", async () => {
+		const input = `
+owning struct Person {
+	var string name
+	var int age
+}
+var p = Person("Ada", 30)
+var [move name, age] = p
+Console.write("\\{name}|\\{p.name}|\\{age}")
+`;
+		await build_and_check_output(input, "mov_swap_string_destructure", "Ada||30");
+	});
+});

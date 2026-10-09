@@ -2,39 +2,6 @@
 
 Skipped or out-of-scope items recorded for later.
 
-## `move ... swap ""` on a string leaks at runtime (D3 migration finding)
-
-Found 2026-10-09 while migrating the test corpus to the D3 endgame
-(`string` move-only at bindings): every RUNTIME path that moves a string
-out with a swap replacement leaks exactly one allocation on both backends
-(output is correct; the audit reports `LEAK: 1`). Isolated shapes:
-
-- `var string a = 42.to_string()` / `var string b = move a swap ""` →
-  `LEAK: 1` (plain variable move+swap).
-- `var s = move p.name swap ""` (owning-struct string field) →
-  `LEAK: 1` + `AUDIT-STALE-FREE: 1` (the struct's scope-exit destroy then
-  frees a pointer that is no longer live — the swap apparently does not
-  revalidate the field before the destroy walks it, or frees the pre-swap
-  pointer).
-
-The move-DESTRUCTURING path (`var [move name] = p`) synthesizes exactly
-this swap (`synthesized_swap_value` in `check_declaration_node.ts`), so
-move-destructuring a string field out of a struct has the same runtime
-leak; `test/destructuring.test.ts`'s "destructure struct with string
-field" was migrated to the `.copy()` field-read spelling for that reason
-(the `.copy()` form is clean, as are plain `move` bindings
-(`move string b = a`) and `.copy()` everywhere probed). Only
-anon-struct-literal move-destructuring (`var [move name, age] = p` where
-`p` came from a `[ ... ]` literal, `test/structs.test.ts`) audits clean —
-worth understanding why the literal path differs from the ctor path when
-fixing.
-
-Fix surface: the move+swap pipeline in both backends (C declaration
-move/swap emission and the aarch64 `build_swap_params` / declaration
-move path) — the replacement store is not reclaiming/freeing the right
-half of the pair. Fixing it should let the destructuring test go back to
-the pattern spelling.
-
 ## Bare nested blocks are not statement syntax (feature gap)
 
 Found 2026-10-06 while writing `test/spawn_ctor_struct.test.ts` (Phase R

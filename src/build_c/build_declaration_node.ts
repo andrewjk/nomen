@@ -653,8 +653,31 @@ export default function build_declaration_node(
 			val_is_string_literal &&
 			(node.declaration === "const" ||
 				(node.declaration === "var" && !!status.c_borrow_only_strings?.has(safe_name)));
+		// A `move`-out field read with a swap (`var s = move p.name swap ""`)
+		// TRANSFERS an `owning` struct's uniformly-heap field to the binding —
+		// the binding owns it and the swap revalidates the field. Only a plain
+		// (non-move) field read is a borrow, and a tuple/anon temp's field
+		// stays record/binding-based (the dedicated paths own it).
+		const move_swap_owner_type =
+			node.value?.node_type === "access"
+				? type_from_value_node((node.value as AccessNode).target)
+				: undefined;
+		const move_swap_owner_struct = move_swap_owner_type?.name
+			? status.structs.find((s) => s.name === move_swap_owner_type.name && !s.is_simple_type)
+			: undefined;
+		const is_move_swap_field_string =
+			node.type.name === "string" &&
+			!node.type.is_array &&
+			!!node.swap &&
+			node.value?.node_type === "access" &&
+			!!(node.value as ValueNode).is_moved &&
+			!!move_swap_owner_struct &&
+			owns_strings_uniformly(move_swap_owner_struct);
 		const is_borrow_field_string =
-			node.type.name === "string" && node.declaration === "var" && val_is_field_access;
+			node.type.name === "string" &&
+			node.declaration === "var" &&
+			val_is_field_access &&
+			!is_move_swap_field_string;
 		if (is_borrow_only_string || is_borrow_field_string) {
 			if (!status.string_borrow_vars) status.string_borrow_vars = new Set();
 			status.string_borrow_vars.add(safe_name);
@@ -724,7 +747,18 @@ export default function build_declaration_node(
 		// data now). A base-bearing anon literal with a `move` base (`var x =
 		// [ .. move y, f = v ]`) transfers the same way — the base's bytes
 		// landed in the destination, so the donor must not be destroyed.
-		if (node.value?.node_type === "value" && (node.value as ValueNode).is_moved && !is_class_type) {
+		// A swap revalidates the source (`var string b = move a swap ""`): the
+		// source stays registered (it now holds the replacement) instead of
+		// being spliced as a moved-out donor. Its auto-free is suppressed via
+		// `moved_string_vars` in the string branch below.
+		const move_swap_string_value =
+			!!node.swap && node.type.name === "string" && !node.type.is_array;
+		if (
+			node.value?.node_type === "value" &&
+			(node.value as ValueNode).is_moved &&
+			!is_class_type &&
+			!move_swap_string_value
+		) {
 			splice_decl_from_c_scopes(status, (node.value as ValueNode).value);
 		} else if (node.value?.node_type === "anon_struct") {
 			const lit_base = (node.value as AnonStructNode).base;
@@ -1180,9 +1214,15 @@ export default function build_declaration_node(
 						!!source_dec &&
 						!is_string_borrow(source_dec.value) &&
 						!status.string_borrow_vars?.has(source_dec.name);
+					// An EXPLICIT `var string b = move a swap <repl>` is a
+					// transfer with revalidation: the pair moves to `b` (no
+					// strdup) and `a` is revalidated with the replacement (the
+					// generic swap write-back below). Suppress `a`'s auto-free
+					// via moved_string_vars — it no longer owns the moved pair.
+					const explicit_move_swap =
+						node.value.node_type === "value" && !!(node.value as ValueNode).is_moved && !!node.swap;
 					if (
-						node.last_use_move &&
-						move_on_last_use_enabled() &&
+						((node.last_use_move && move_on_last_use_enabled()) || explicit_move_swap) &&
 						val_is_heap_string_var &&
 						source_is_owned
 					) {
@@ -1234,15 +1274,61 @@ export default function build_declaration_node(
 			// revalidated — otherwise the field still aliases `b`'s data and
 			// the owner would double-free / corrupt it. Mirrors the aarch64
 			// backend's decl-swap handling.
-			if (node.swap && node.value.node_type === "access") {
+			if (
+				node.swap &&
+				(node.value.node_type === "access" ||
+					(node.value.node_type === "value" && node.type.name === "string"))
+			) {
 				status.code += `;\n`;
-				// Re-emit the field-access expression (e.g. `self->slots`) by
-				// building the access node into a scratch buffer.
+				// Re-emit the source expression (e.g. `self->slots`, or the
+				// variable name) by building the node into a scratch buffer.
 				const saved = begin_code_scratch(status);
 				build_node(node.value, status);
 				const field_access = end_code_scratch(status, saved);
 				status.code += `${field_access} = `;
-				emit_swap_value(node.swap, nir_swap, status);
+				// A string moved out of an owning struct's FIELD: the field is
+				// uniformly heap (its destroy frees it unconditionally), so a
+				// non-owned replacement (`""`) must be strdup'd into an owned
+				// copy — storing the raw rodata pair leaves the owner's destroy
+				// freeing a foreign pointer (the D3 stale-free) while the moved
+				// pair leaks. An already-owned replacement is stored directly.
+				let field_owns_string = false;
+				if (
+					node.type.name === "string" &&
+					!node.type.is_array &&
+					node.value.node_type === "access"
+				) {
+					const acc = node.value as AccessNode;
+					if (acc.access.node_type === "access_field" && acc.target.node_type === "value") {
+						const field_owner = (acc.target as ValueNode).value;
+						const field_name = (acc.access as AccessFieldNode).name;
+						// Only an `owning` struct's string fields are uniformly
+						// heap and freed by its destroy. A tuple/anon temp's
+						// fields stay record/binding-based (the dedicated paths
+						// own them), so the swap handling must not fire for them.
+						const owner_type = type_from_value_node(acc.target);
+						const owner_struct = owner_type.name
+							? status.structs.find((s) => s.name === owner_type.name && !s.is_simple_type)
+							: undefined;
+						if (owner_struct && owns_strings_uniformly(owner_struct)) {
+							const field_type =
+								owner_struct.fields.find((f) => f.name === field_name)?.type ??
+								type_from_value_node(acc.access);
+							field_owns_string =
+								field_type?.name === "string" && !field_type.is_array && !field_type.is_view;
+							status.heap_string_fields?.delete(`${field_owner}.${field_name}`);
+							if (!status.heap_strings) status.heap_strings = new Set();
+							status.heap_strings.add(safe_name);
+						}
+					}
+				}
+				if (field_owns_string && !is_owned_heap_temp(node.swap, status)) {
+					status.code += `nomen_str_dup(`;
+					emit_swap_value(node.swap, nir_swap, status);
+					status.code += `)`;
+				} else {
+					emit_swap_value(node.swap, nir_swap, status);
+				}
 			}
 			// A value struct with string fields, initialized from a CALL: the
 			// callee's return-boundary normalization made the struct
