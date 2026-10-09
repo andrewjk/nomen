@@ -48,7 +48,7 @@ test("carry slot renames into x16 with entry load and exit sync", () => {
 	const out = promote(CARRY_LOOP);
 	// Entry load before the header (fall-through only).
 	expect(out).toContain("ldr x16, [x29, #288]");
-	// Every cycle access is a register move now.
+	// Every cycle access is a register mv now.
 	expect(
 		out.filter(
 			(l) => l.includes("[x29, #288]") && !l.startsWith("ldr x16") && !l.startsWith("str x16"),

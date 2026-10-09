@@ -18,9 +18,9 @@ export default class AccessFunctionCallNode extends BaseNode {
 	ref_param_indices?: number[];
 	move_param_indices?: number[];
 	/**
-	 * Indices of `move` arguments whose callee parameter takes ownership of a
+	 * Indices of `mv` arguments whose callee parameter takes ownership of a
 	 * byte-copied (boxed) value — STRUCT_PLAN_3 B4: a value-struct conformer
-	 * argument to a `move Trait` parameter. The box owns the transferred
+	 * argument to a `mv Trait` parameter. The box owns the transferred
 	 * string records, so the build drops the donor's records WITHOUT freeing
 	 * (mirrors FunctionCallNode.move_owned_param_indices).
 	 */
@@ -41,7 +41,7 @@ export default class AccessFunctionCallNode extends BaseNode {
 	variadic_param_index?: number;
 	mangled_name?: string;
 	/**
-	 * Set during checking when the called method has a `move out T` return — the
+	 * Set during checking when the called method has a `mv out T` return — the
 	 * call produces an owned value (not a borrow), so the caller must anchor and
 	 * free it. Read by the borrow checker (treats the result as non-borrowed)
 	 * and the build (anchors the result).

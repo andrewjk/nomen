@@ -6,7 +6,7 @@
 /**
  * A graph of values connected by edges
  **/
-pub owning struct Graph<T>: Enumerable {
+pub mv struct Graph<T>: Enumerable {
 	var values = Buffer<T>()
 	var head_edge = Buffer<int>()
 	var edge_target = Buffer<int>()
@@ -14,7 +14,7 @@ pub owning struct Graph<T>: Enumerable {
 	var node_count = 0
 	var edge_count = 0
 
-	pub func add_node = (ref self, move T value) {
+	pub func add_node = (ref self, mv T value) {
 		var int idx = self.node_count
 		self.values.grow(idx + 1)
 		self.values.store(idx, value)

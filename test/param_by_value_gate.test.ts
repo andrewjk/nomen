@@ -17,12 +17,12 @@ async function run_c(input: string, name: string, expected: string) {
 // declared-ownership flip). Reads go through to the caller's value; writes
 // through the param are a compile error ("Assignment to const"); mutation of
 // the caller's variable requires `ref` (explicit at declaration + call site);
-// transfer requires `move` (the callee becomes the field owner).
+// transfer requires `mv` (the callee becomes the field owner).
 describe("pass-by-value struct args", () => {
 	test("callee reads through the const borrow; caller unaffected, no leak", async () => {
 		await run_c(
 			`
-owning struct Info { var markup = "" }
+mv struct Info { var markup = "" }
 
 func fill = (Info p) {
 	Console.write_line("callee sees: " + p.markup)
@@ -45,21 +45,21 @@ if a.markup == pre {
 	});
 
 	test("callee moves the param into a local var and writes it", async () => {
-		// The transfer row: `move Info p` makes the callee the field owner.
-		// The move-local-write shape re-homes the struct into a local; the
+		// The transfer row: `mv Info p` makes the callee the field owner.
+		// The mv-local-write shape re-homes the struct into a local; the
 		// write stays callee-local and the teardown frees the field at exit.
 		const input = `
-owning struct Info { var markup = "" }
+mv struct Info { var markup = "" }
 
-func fill = (move Info p) {
-	var local = move p
+func fill = (mv Info p) {
+	var local = mv p
 	var string w = "written"
 	local.markup = w
 	Console.write_line("callee sees: " + local.markup)
 }
 
 var Info a = Info()
-fill(move a)
+fill(mv a)
 Console.write_line("caller done")
 `;
 		const parsed = parse_with_imports(input);
@@ -78,14 +78,14 @@ Console.write_line("caller done")
 		// the function-tail auto-free must be suppressed — otherwise the C
 		// epilogue re-emits the return-site frees as unreachable text after
 		// the `return` (the param's field would be freed twice in the source,
-		// though only the first block runs). The transfer row (`move Pair p`)
+		// though only the first block runs). The transfer row (`mv Pair p`)
 		// owns the donor's fields: exactly one reclaim, at the return site.
-		// (B1 cutover: owning structs never record, so the moved-param
+		// (B1 cutover: mv structs never record, so the moved-param
 		// reclaim rides the `(*p)` destroy walk instead of the `p->` record
 		// frees the pre-B1 shape emitted.)
 		const parsed = parse_with_imports(`
-owning struct Pair { var int n = 0  var string tag = "" }
-func next = (move Pair p, out Pair) {
+mv struct Pair { var int n = 0  var string tag = "" }
+func next = (mv Pair p, out Pair) {
 	var q = Pair()
 	q.n = p.n + 1
 	q.tag = p.tag.copy()
@@ -94,7 +94,7 @@ func next = (move Pair p, out Pair) {
 var donor = Pair()
 donor.n = 5
 donor.tag = "t"
-var p = next(move donor)
+var p = next(mv donor)
 Console.write_line(p.tag)
 `);
 		expect(parsed.errors).toEqual([]);
@@ -114,7 +114,7 @@ Console.write_line(p.tag)
 		// the callee scope, whose exit drops the record — the documented
 		// ref-param leak (bounded per write), so audit is off here.
 		const input = `
-owning struct Info { var markup = "" }
+mv struct Info { var markup = "" }
 
 func fill = (ref Info p) {
 	var string w = "via-ref"
@@ -137,7 +137,7 @@ Console.write_line(a.markup)
 describe("pass-by-value checker rules", () => {
 	test("read-only callees no longer error", () => {
 		const parsed = parse_with_imports(`
-owning struct Info { var markup = "" }
+mv struct Info { var markup = "" }
 func use = (Info p) {
 	Console.write_line(p.markup)
 }
@@ -147,11 +147,11 @@ use(a)
 		expect(parsed.errors).toEqual([]);
 	});
 
-	test("write through a bare owning param is rejected (const borrow)", () => {
-		// B1 full cutover / B3: a bare owning-struct parameter is read-only —
+	test("write through a bare mv param is rejected (const borrow)", () => {
+		// B1 full cutover / B3: a bare mv-struct parameter is read-only —
 		// mutation of the caller's storage must be spelled `ref`.
 		const parsed = parse_with_imports(`
-owning struct Info { var markup = "" }
+mv struct Info { var markup = "" }
 func fill = (Info p) {
 	p.markup = "changed"
 }

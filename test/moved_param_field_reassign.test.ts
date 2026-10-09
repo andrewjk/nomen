@@ -2,32 +2,32 @@ import { describe, test } from "vite-plus/test";
 
 import build_and_check_output from "./build_and_check_output";
 
-// A `move` value-struct param (`move Box box`, Box owning a container field)
+// A `mv` value-struct param (`mv Box box`, Box mv a container field)
 // used to leak BOTH ways (audit on):
 //
 // 1. The callee had NO teardown for it at all — the param rides by address
 //    (the caller's storage), so whatever its fields still held at return
 //    (a List's slab + slot strings) was orphaned. Both backends now register
-//    owning value-struct moved params for a scope-exit `<T>_destroy` at the
+//    mv value-struct moved params for a scope-exit `<T>_destroy` at the
 //    saved address (contents reclaimed; the caller's storage never freed) —
 //    mirroring the moved class-param teardown.
-// 2. `box.items = move List<Attr>()` (a fresh-call RHS — the checker treats
+// 2. `box.items = mv List<Attr>()` (a fresh-call RHS — the checker treats
 //    fresh constructor/function returns as moves) skipped the displaced-field
 //    reclaim, which only fired for a bare moved-variable RHS. The displaced
 //    value's resources (2 allocations for a 1-element List<Attr>) leaked —
 //    on a GLOBAL box too, not just through a param. Both backends now reclaim
 //    the displaced value for any fresh-call field store.
 //
-// The `move`-onward shapes (forwarding the param, returning it) stay excluded
-// via the shared consumed-scan; a `field = move local` swap-assign keeps its
+// The `mv`-onward shapes (forwarding the param, returning it) stay excluded
+// via the shared consumed-scan; a `field = mv local` swap-assign keeps its
 // existing path.
 
 function src(body: string): string {
 	return `
 import System
 
-owning struct Attr { var string value = "" }
-owning struct Box  { move List<Attr> items }
+mv struct Attr { var string value = "" }
+mv struct Box  { mv List<Attr> items }
 
 ${body}
 `;
@@ -36,7 +36,7 @@ ${body}
 describe("moved value-struct param teardown", () => {
 	test("param whose field is untouched is reclaimed at exit (audit clean)", async () => {
 		const input = src(`
-func keep = (move Box box, move out string) {
+func keep = (mv Box box, mv out string) {
 	return "done"
 }
 
@@ -44,8 +44,8 @@ pub func main = () {
 	var box = Box(List<Attr>())
 	var a = Attr()
 	a.value = "hello"
-	box.items.push(move a)
-	var s = keep(move box)
+	box.items.push(mv a)
+	var s = keep(mv box)
 	Console.write("s=\\{s}\\n")
 }
 `);
@@ -54,11 +54,11 @@ pub func main = () {
 
 	test("param field replaced then repopulated is fully reclaimed", async () => {
 		const input = src(`
-func keep = (move Box box, move out string) {
-	box.items = move List<Attr>()
+func keep = (mv Box box, mv out string) {
+	box.items = mv List<Attr>()
 	var b = Attr()
 	b.value = "world"
-	box.items.push(move b)
+	box.items.push(mv b)
 	return "done"
 }
 
@@ -66,8 +66,8 @@ pub func main = () {
 	var box = Box(List<Attr>())
 	var a = Attr()
 	a.value = "hello"
-	box.items.push(move a)
-	var s = keep(move box)
+	box.items.push(mv a)
+	var s = keep(mv box)
 	Console.write("s=\\{s}\\n")
 }
 `);
@@ -78,11 +78,11 @@ pub func main = () {
 		const input = src(`
 struct Wiper {
 	var int tag = 0
-	func wipe = (ref self, move Box box, move out string) {
-		box.items = move List<Attr>()
+	func wipe = (ref self, mv Box box, mv out string) {
+		box.items = mv List<Attr>()
 		var b = Attr()
 		b.value = "world"
-		box.items.push(move b)
+		box.items.push(mv b)
 		return "done"
 	}
 }
@@ -91,9 +91,9 @@ pub func main = () {
 	var box = Box(List<Attr>())
 	var a = Attr()
 	a.value = "hello"
-	box.items.push(move a)
+	box.items.push(mv a)
 	var w = Wiper()
-	var s = w.wipe(move box)
+	var s = w.wipe(mv box)
 	Console.write("s=\\{s}\\n")
 }
 `);
@@ -102,15 +102,15 @@ pub func main = () {
 
 	test("mixed param (container + string field) is fully reclaimed", async () => {
 		const input = src(`
-owning struct Tagged {
+mv struct Tagged {
 	var List<Attr> items
 	var string label = ""
 }
 
-func keep = (move Tagged t, move out string) {
+func keep = (mv Tagged t, mv out string) {
 	var b = Attr()
 	b.value = "world"
-	t.items.push(move b)
+	t.items.push(mv b)
 	t.label = "kept"
 	return t.label.copy()
 }
@@ -119,8 +119,8 @@ pub func main = () {
 	var t = Tagged(List<Attr>())
 	var a = Attr()
 	a.value = "hello"
-	t.items.push(move a)
-	var s = keep(move t)
+	t.items.push(mv a)
+	var s = keep(mv t)
 	Console.write("s=\\{s}\\n")
 }
 `);
@@ -135,8 +135,8 @@ pub func main = () {
 	var box = Box(List<Attr>())
 	var a = Attr()
 	a.value = "hello"
-	box.items.push(move a)
-	box.items = move List<Attr>()
+	box.items.push(mv a)
+	box.items = mv List<Attr>()
 	Console.write("len=\\{box.items.length}\\n")
 }
 `);
@@ -153,7 +153,7 @@ pub func main = () {
 	var box = Box(List<Attr>())
 	var a = Attr()
 	a.value = "hello"
-	box.items.push(move a)
+	box.items.push(mv a)
 	box.items = fresh()
 	Console.write("len=\\{box.items.length}\\n")
 }

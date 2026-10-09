@@ -41,7 +41,7 @@ import Task
 /**
  * A stackful coroutine: lightweight, cooperatively scheduled, parks instead of blocking
  **/
-pub owning struct Fiber<T> : Spawnable<T> {
+pub mv struct Fiber<T> : Spawnable<T> {
 	// The construction hook (see Thread.nm): the deferred-call special form.
 	#spawn = () {
 	}
@@ -71,7 +71,7 @@ pub owning struct Fiber<T> : Spawnable<T> {
 	// out of the instance (started; #destroy no-ops), return the handle.
 	// While the fiber waits, it parks and frees its worker instead of
 	// blocking it.
-	pub func start = (ref self, move out Task<T>) {
+	pub func start = (ref self, mv out Task<T>) {
 		```
 		#arch: c
 		struct nomen_future *_f = (struct nomen_future *)self->future;

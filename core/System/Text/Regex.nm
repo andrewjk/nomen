@@ -33,9 +33,9 @@ pub struct Regex {
 	}
 
 	// Return the first substring of input matching pattern, or "" if none.
-	// `move out string`: the built match (or the copied empty literal) is
+	// `mv out string`: the built match (or the copied empty literal) is
 	// handed to the caller as an owned value.
-	pub func match = (string pattern, string input, move out string) {
+	pub func match = (string pattern, string input, mv out string) {
 		var match_result = ""
 		var int pat_len = pattern.length
 		var int len = input.length
@@ -89,7 +89,7 @@ pub struct Regex {
 			var int end = match_here(pattern, 0, pat_len, input, i, len, ref caps)
 			if end >= 0 {
 				var string whole = input.substring(i, end)
-				dst.push(move whole)
+				dst.push(mv whole)
 				var g = 1
 				while g <= groups; g += 1 {
 					var int at = last_capture_index(caps, g)
@@ -97,7 +97,7 @@ pub struct Regex {
 						var int s = caps.at(at + 1)
 						if s >= 0 {
 							var string cap = input.substring(s, caps.at(at + 2))
-							dst.push(move cap)
+							dst.push(mv cap)
 						} else {
 							dst.push("")
 						}
@@ -221,7 +221,7 @@ pub struct Regex {
 	}
 
 	// First match of pattern in input, ignoring ASCII case ("" if none).
-	pub func match_ci = (string pattern, string input, move out string) {
+	pub func match_ci = (string pattern, string input, mv out string) {
 		var string folded = fold_pattern(pattern)
 		return Regex.match(folded, input)
 	}
@@ -250,7 +250,7 @@ pub struct Regex {
 // their case counterparts ([a-z] -> [a-zA-Z]). Structural syntax — groups,
 // alternation, quantifiers, anchors, escaped punctuation — is copied
 // through unchanged.
-func fold_pattern = (string pattern, move out string) {
+func fold_pattern = (string pattern, mv out string) {
 	var int n = pattern.length
 	var sb = StringBuilder()
 	var i = 0
@@ -1925,7 +1925,7 @@ func last_capture_index = (List<int> caps, int group, out int) {
 /**
  * A Regex.find result: whether the pattern matched, where, and what
  **/
-pub owning struct RegexMatch {
+pub mv struct RegexMatch {
 	var found = false
 	var start = 0
 	var end = 0

@@ -62,7 +62,7 @@ export function reset_string_field_counter() {
  * rides in and descends through `emit_expr_from_nir` (the expression seam);
  * without one — or if the lowered expr doesn't carry this exact AST node
  * (from_ast is 1:1, so that can't happen) — it is exactly the historical
- * `build_node(rhs)`. Every semantic decision (reclamation, aliasing, move
+ * `build_node(rhs)`. Every semantic decision (reclamation, aliasing, mv
  * marks, strdup rules, swap marshalling) stays on the AST node in the
  * builder.
  */
@@ -150,7 +150,7 @@ export default function build_assignment_node(
 		// frees here would double-fire with the displaced destroy, and
 		// re-recording after a normalized call would hand the scope-exit
 		// B1 drop a stale set (harmless) — but the frees would not be. The
-		// record path stays for NON-owning slots (their strings may be rodata
+		// record path stays for NON-mv slots (their strings may be rodata
 		// borrows tracked per-assignment).
 		const slot_owns_strings_uniformly =
 			!!slot_struct && !slot_struct.is_class && owns_strings_uniformly(slot_struct);
@@ -182,7 +182,7 @@ export default function build_assignment_node(
 				}
 			}
 		}
-		// A `move` RHS transfers ownership to the slot: the donor's bytes were
+		// A `mv` RHS transfers ownership to the slot: the donor's bytes were
 		// shallow-copied, so its scope-exit destroy must be suppressed — it
 		// would free the state the slot now owns (the capture walker's
 		// displaced destroy made the aliasing observable). Mirrors aarch64's
@@ -264,7 +264,7 @@ export default function build_assignment_node(
 	}
 
 	// Class field reassignment (`obj.field = rhs`) where the field is an
-	// owned (move) class slot: eagerly reclaim the field's old value before
+	// owned (mv) class slot: eagerly reclaim the field's old value before
 	// overwriting it. At scope exit only the container's `<Container>_destroy`
 	// runs, which frees the field's *current* value — any value displaced by
 	// this assignment would otherwise leak (and its #destroy would never run).
@@ -283,18 +283,18 @@ export default function build_assignment_node(
 			? status.structs.find((s) => s.name === mono_struct_name(field_type, status) && s.is_class)
 			: null;
 		if (field_struct) {
-			// Look up the field definition to check if it's `move` (owned).
+			// Look up the field definition to check if it's `mv` (owned).
 			// Only owned fields should be eagerly freed on reassignment.
 			const target_type = type_from_value_node(access_lhs.target);
 			const target_struct = target_type?.name
 				? status.structs.find((s) => s.name === target_type.name && !s.is_simple_type)
 				: null;
 			const field_def = target_struct?.fields.find((f) => f.name === field_access_node.name);
-			// STRUCT_PLAN_3 B5: on an `owning struct`, a class-typed field is
-			// an OWNED slot by TYPE (transfer-on-store) — the `move` spelling
+			// STRUCT_PLAN_3 B5: on a `mv struct`, a class-typed field is
+			// an OWNED slot by TYPE (transfer-on-store) — the `mv` spelling
 			// is not required. On a class the declaration still gates.
 			const field_is_owned =
-				field_def?.declaration === "move" || (!!field_def && target_struct?.is_owning === true);
+				field_def?.declaration === "mv" || (!!field_def && target_struct?.is_owning === true);
 			if (field_is_owned) {
 				// A custom `#init`'s first write to a `self.<field>` overwrites
 				// garbage (fresh malloc — no displaced value to reclaim). Later
@@ -324,7 +324,7 @@ export default function build_assignment_node(
 					}
 				}
 				// Ownership transfer: assigning a bare variable to an owned
-				// (`move`) class field moves ownership from the source variable
+				// (`mv`) class field moves ownership from the source variable
 				// to the field. Remove the source from whichever scope frame
 				// holds it (the source may be declared in an OUTER scope when
 				// the assignment sits inside an if/loop branch) so it is NOT
@@ -339,14 +339,14 @@ export default function build_assignment_node(
 		}
 	}
 
-	// A `field = move local` store into a VALUE-struct field (List/Map/Buffer
+	// A `field = mv local` store into a VALUE-struct field (List/Map/Buffer
 	// …): ownership transfers from the local to the field. The plain store
 	// shallow-copies the struct, so WITHOUT the splice the source local's
 	// scope-exit destroy frees the buffer the field now points at (dangling
 	// field — UAF at first use). Splice the source from its scope frame and
-	// reclaim the displaced field value before the store. (`field = move c
+	// reclaim the displaced field value before the store. (`field = mv c
 	// swap T()` was the sound workaround; this makes the plain form work.)
-	// A FRESH-CALL RHS (`field = move List<Attr>()`, or an un-annotated
+	// A FRESH-CALL RHS (`field = mv List<Attr>()`, or an un-annotated
 	// constructor/function return — the checker treats fresh allocations as
 	// moves) gets the same displaced reclaim: the store overwrites the field's
 	// bytes, so the displaced value's owned resources must be destroyed first
@@ -410,7 +410,7 @@ export default function build_assignment_node(
 	}
 
 	// A `view T` field assignment (`obj.field = rhs`): the field is a
-	// non-owning (ptr, len) pair — store it raw. Nothing is duplicated and
+	// non-mv (ptr, len) pair — store it raw. Nothing is duplicated and
 	// the displaced pair owns nothing, so there is no free / strdup /
 	// ownership bookkeeping (unlike an owned string field). The RHS goes
 	// through c_view_string_arg: a view value passes through; an owned fat
@@ -436,7 +436,7 @@ export default function build_assignment_node(
 	// value is freed eagerly here. For VALUE-struct targets construction may
 	// leave a static literal in the field — free the old value only when a
 	// previous assignment recorded it, and record the field so auto_free (or
-	// the move-site release) reclaims the final value. A fresh-heap RHS
+	// the mv-site release) reclaims the final value. A fresh-heap RHS
 	// (is_owned_heap_temp — the C backend strdup's every string return) is
 	// stored directly; anything else is strdup'd so the field owns a copy.
 	if (
@@ -468,7 +468,7 @@ export default function build_assignment_node(
 		// Resolve the MONO for a generic target (`Box<string>` → `Box_string`):
 		// the bare template's `is_owning` flag is unset (ownership is derived
 		// per mono at check time), so classifying through the template would
-		// route an owning mono's field store down the raw/record path and leak
+		// route a mv mono's field store down the raw/record path and leak
 		// its displaced heap value. Mirrors the aarch64 backend's
 		// field_is_struct_string.
 		const mono_target_name = target_type?.type_args?.length
@@ -518,8 +518,8 @@ export default function build_assignment_node(
 		// are uniformly heap (the caller's scope-exit destroy frees them
 		// unconditionally), so a method's `self.field = …` MUST strdup
 		// (a raw rodata store would be freed by that destroy) and the
-		// displaced value is always heap. A nested owning target
-		// (`a.x.s = …`) likewise: the field lives inside an owning struct,
+		// displaced value is always heap. A nested mv target
+		// (`a.x.s = …`) likewise: the field lives inside a mv struct,
 		// so the ownership-normalized lowering applies even without a
 		// tracked `target_var`.
 		// A nested class target (`a.x.s` where `x` is a class) has no direct
@@ -565,7 +565,7 @@ export default function build_assignment_node(
 			// B1 cutover: OWNING structs never record — their string fields are
 			// uniformly heap and the scope-exit destroy frees them
 			// unconditionally; a record would double-free with that destroy.
-			// Non-owning value structs keep the per-assignment records (the
+			// Non-mv value structs keep the per-assignment records (the
 			// displaced value may still be a rodata borrow there).
 			if (!target_struct.is_class && !target_struct.is_owning) {
 				if (!status.heap_string_fields) status.heap_string_fields = new Set<string>();
@@ -760,8 +760,8 @@ export default function build_assignment_node(
 						)
 					: undefined;
 			if (rhs_concrete_struct) {
-				// An owning struct's direct string fields are uniformly heap;
-				// the move transfers them to the box (strdup'ing would orphan
+				// A mv struct's direct string fields are uniformly heap;
+				// the mv transfers them to the box (strdup'ing would orphan
 				// the donor's copy — LEAK). Mirrors the C declaration boxing.
 				const strdup_string_fields =
 					!owns_strings_uniformly(rhs_concrete_struct) &&
@@ -826,7 +826,7 @@ export default function build_assignment_node(
 				return;
 			}
 			// A bare TRAIT-typed RHS assigns the handle — an alias (the
-			// source keeps owning). Record the alias so neither side reclaims
+			// source keeps mv). Record the alias so neither side reclaims
 			// the shared instance (the same deferred-free posture classes use).
 			if (
 				rhs_is_bare_value &&
@@ -904,7 +904,7 @@ export default function build_assignment_node(
 			status.code += `;\n`;
 			return;
 		}
-		// If the LHS was previously moved out (`take(move a)`), its old value is
+		// If the LHS was previously moved out (`take(mv a)`), its old value is
 		// owned by the callee and must NOT be reclaimed here. Just overwrite —
 		// the fall-through path emits `a = <rhs>` — and clear the moved flag so
 		// the new value is tracked normally again.
@@ -999,7 +999,7 @@ export default function build_assignment_node(
 				// reassignment, so free the old instance only when the runtime
 				// owns-flag is set (a loop reassigning the alias reclaims every
 				// former instance from iteration 2 on; iteration 1 leaves the
-				// shared original for its owner). Then flag the alias as owning
+				// shared original for its owner). Then flag the alias as mv
 				// and register its scope-exit destroy in the frame that DECLARED
 				// it (not the current one — the reassignment may sit in a loop
 				// body). Mirrors aarch64's alias_owns_flag + mark_anchor_destroy.
@@ -1048,10 +1048,10 @@ export default function build_assignment_node(
 					// cannot ride as an initializer expression. Lower it the
 					// way the declaration path does: declare the temp, let the
 					// branches assign it through the return_assign join, then
-					// free the displaced value and move the temp in. Every
+					// free the displaced value and mv the temp in. Every
 					// branch is forced to produce an owned copy (the temp may
 					// receive a literal/borrow branch value, and the LHS stays
-					// registered as an owning string for auto_free).
+					// registered as a mv string for auto_free).
 					const rhs_is_branching =
 						node.right_value.node_type === "match" ||
 						node.right_value.node_type === "switch" ||
@@ -1087,7 +1087,7 @@ export default function build_assignment_node(
 			}
 
 			// A bare string LITERAL reassignment (`s = "abc"`): the variable keeps
-			// owning a heap value — strdup the literal (mirroring the declaration
+			// mv a heap value — strdup the literal (mirroring the declaration
 			// path's `var string s = "abc"` lowering) so the scope-exit auto_free
 			// stays valid. The displaced old owned value was already freed above.
 			// Without this, the raw rodata pointer is stored while auto_free still
@@ -1116,7 +1116,7 @@ export default function build_assignment_node(
 				// source's scope-exit free dangled the LHS, and writes through
 				// either name showed up in the other). The displaced old value
 				// was already freed above; the LHS's declaration stays
-				// registered and `heap_strings` marks it as owning so
+				// registered and `heap_strings` marks it as mv so
 				// auto_free frees the copy at scope exit.
 				// Move-on-last-use: when the checker proved the source is
 				// never read or written again, transfer the pair instead and
@@ -1127,7 +1127,7 @@ export default function build_assignment_node(
 					// but `b` is revalidated with a fresh instance (the swap
 					// expr), so it KEEPS ownership of that new value and must
 					// stay registered for reclamation. Only remove the source
-					// when there is no swap (a plain alias-move `a = b`).
+					// when there is no swap (a plain alias-mv `a = b`).
 					if (!node.swap) {
 						splice_decl_from_c_scopes(status, (rhs as ValueNode).value);
 					}
@@ -1148,7 +1148,7 @@ export default function build_assignment_node(
 					status.heap_strings.add(lhs_name);
 					return;
 				} else if (!node.swap && (rhs as ValueNode).is_moved) {
-					// `s = move t` (string): EXPLICIT ownership transfer. Splice
+					// `s = mv t` (string): EXPLICIT ownership transfer. Splice
 					// the source's decl from whichever scope frame holds it so
 					// its scope-exit free is suppressed — the assignee owns the
 					// bytes now (its own displaced value was already freed
@@ -1189,10 +1189,10 @@ export default function build_assignment_node(
 	}
 
 	// Struct (non-class, non-string) variable reassignment. Two cases:
-	// 1. `b = move a` — ownership transfers from a to b. Remove the source `a`
+	// 1. `b = mv a` — ownership transfers from a to b. Remove the source `a`
 	//    from scoped_declarations so it won't be destroyed at scope exit (b
 	//    owns the data now and is destroyed instead).
-	// 2. `k = k.new(1)` (no move) — the result may alias the source's buffer
+	// 2. `k = k.new(1)` (no mv) — the result may alias the source's buffer
 	//    due to the self-vs-_self struct-by-value bug (methods modify through
 	//    the pointer, not the local copy). Remove the LHS from
 	//    scoped_declarations to avoid destroying a potentially-corrupted
@@ -1217,7 +1217,7 @@ export default function build_assignment_node(
 				: null;
 			if (lhs_struct || lhs_mono_struct) {
 				const rhs = node.right_value;
-				// A base-seeded struct literal (`m = [ .. move x, f = v ]`) is a
+				// A base-seeded struct literal (`m = [ .. mv x, f = v ]`) is a
 				// FRESH value (a copy of the base + overrides) — it discards the
 				// old `m` exactly like a fresh constructor, and its synthesized
 				// override assignments run through the field-write paths below
@@ -1227,13 +1227,13 @@ export default function build_assignment_node(
 					(rhs.node_type === "func_call" &&
 						!!(rhs as import("../nodes/FunctionCallNode.ts").default).field_overrides?.length);
 				if (rhs.node_type === "value" && (rhs as ValueNode).is_moved) {
-					// `b = move a` — ownership transfers from `a` to `b`. The OLD
+					// `b = mv a` — ownership transfers from `a` to `b`. The OLD
 					// `b` value is being discarded, so eagerly reclaim its
 					// resources (e.g. `b`'s old Buffer) first. Then remove the
 					// SOURCE `a` from whichever scope frame holds it (it may be
 					// declared in an OUTER scope) so it won't be freed at its
 					// own scope exit (b owns the data now and is freed instead).
-					// Mirrors aarch64's move-ownership transfer.
+					// Mirrors aarch64's mv-ownership transfer.
 					const move_struct_type = lhs_mono_struct ?? lhs_struct;
 					if (move_struct_type) {
 						release_recorded_string_fields(status, move_struct_type, lhs_name);
@@ -1258,7 +1258,7 @@ export default function build_assignment_node(
 					// value's seed) overwrites the only pointers to them. The
 					// check-time-rewritten ctor-call base (`[ .. R(x), f = v ]`
 					// → a func_call with field_overrides) is a FRESH value, and
-					// an anon-literal base's field stores took the owning
+					// an anon-literal base's field stores took the mv
 					// lowering (strdup) — neither aliases the displaced value.
 					const struct_type = lhs_mono_struct ?? lhs_struct;
 					if (struct_type) {
@@ -1271,17 +1271,17 @@ export default function build_assignment_node(
 							emit_struct_destroys(status, struct_type, lhs_name);
 						}
 					}
-					// A `move` base (`m = [ .. move x, f = v ]`) transfers the
+					// A `mv` base (`m = [ .. mv x, f = v ]`) transfers the
 					// base's bytes to the destination — remove the donor from its
 					// scope frame so its scope-exit destroy doesn't free them too
-					// (mirrors the `b = move a` arm above).
+					// (mirrors the `b = mv a` arm above).
 					const lit_base =
 						rhs.node_type === "anon_struct" ? (rhs as AnonStructNode).base : undefined;
 					if (lit_base?.node_type === "value" && (lit_base as ValueNode).is_moved) {
 						splice_decl_from_c_scopes(status, (lit_base as ValueNode).value);
 					}
 				} else {
-					// Non-move struct reassignment.
+					// Non-mv struct reassignment.
 					//
 					// When the RHS is a FRESH constructor (`a = List<int>()`,
 					// `Box(5)`) — a call that allocates a brand-new instance and
@@ -1313,7 +1313,7 @@ export default function build_assignment_node(
 					// variable so its new value is freed at scope exit.
 					const rhs_is_free_factory =
 						node.right_value.node_type === "func_call" && !rhs_references_var(node, lhs_name);
-					// A `move out T` METHOD (`t = t2.start()`, `l = l2.pop()`) —
+					// A `mv out T` METHOD (`t = t2.start()`, `l = l2.pop()`) —
 					// STRUCT_PLAN_3 Phase R tranche 2: an owned method return is
 					// an ownership TRANSFER of a value the callee owns, never an
 					// alias of any variable's buffer — the same fresh-value
@@ -1391,11 +1391,11 @@ export default function build_assignment_node(
 	// A `ref string` param reassignment (`s = …` inside `func f = (ref string
 	// s)`) writes through to the CALLER's storage, whose ownership tracking
 	// (scoped_declarations / auto_free) assumes the slot may own a heap value
-	// and frees it at scope exit. Storing a non-owning value (a rodata literal
+	// and frees it at scope exit. Storing a non-mv value (a rodata literal
 	// or another variable's string) would make that free invalid. Mirror the
 	// struct-string-field lowering: a fresh-heap RHS (every string-returning
 	// call on this backend) is stored directly; anything else is strdup'd so
-	// the slot keeps owning a heap copy. The displaced old value leaks — the
+	// the slot keeps mv a heap copy. The displaced old value leaks — the
 	// callee can't know whether the caller's slot was owned (conditional
 	// writes make an eager free unsound), mirroring
 	// drop_self_written_string_field_records' convention.
@@ -1493,7 +1493,7 @@ export default function build_assignment_node(
 	}
 
 	// A custom `#init`'s write to a DEFAULTED `self.<field>` displaces the
-	// seeded default; a heap-owning default must be reclaimed ahead of the
+	// seeded default; a heap-mv default must be reclaimed ahead of the
 	// raw pair store (value-struct self writes skip the ownership-normalized
 	// lowering, so nothing else frees it). The first write only — later
 	// writes displace values whose ownership the init cannot know.
@@ -1572,7 +1572,7 @@ export default function build_assignment_node(
 				// B1 cutover: an OWNING struct's override store takes the
 				// ownership-normalized lowering (strdup + unconditional
 				// displaced free), so the explicit seed reclaim here would
-				// double-free — only non-owning structs need it.
+				// double-free — only non-mv structs need it.
 				if (!owns_strings_uniformly(override_struct)) {
 					for (const name of override_displaced_string_fields(
 						override_struct,
@@ -1734,10 +1734,10 @@ function is_self_method_call(node: AssignmentNode, lhs_name: string): boolean {
 
 /**
  * Whether this plain assignment is a bare owned-string variable RHS
- * (`s = t`, no explicit move, no swap): assignment value semantics apply —
+ * (`s = t`, no explicit mv, no swap): assignment value semantics apply —
  * the target receives its own copy of the source's bytes. Literals (raw
- * rodata stores), explicitly moved sources (`s = move t`, owned by the move
- * transfer path), and view-typed sources (non-owning pair stores) are
+ * rodata stores), explicitly moved sources (`s = mv t`, owned by the mv
+ * transfer path), and view-typed sources (non-mv pair stores) are
  * excluded.
  */
 function should_value_copy_string_assign(node: AssignmentNode): boolean {
@@ -1753,7 +1753,7 @@ function should_value_copy_string_assign(node: AssignmentNode): boolean {
 
 /**
  * Whether the named string variable currently OWNS its heap bytes (and would
- * free them at scope exit). The move-on-last-use transfer may only suppress
+ * free them at scope exit). The mv-on-last-use transfer may only suppress
  * the source's free when the source actually owns: a literal-only, borrow-
  * holding, or already-moved source owns nothing, and suppressing its
  * (nonexistent) free would hand the target rodata/container memory that the

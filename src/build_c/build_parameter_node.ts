@@ -52,7 +52,7 @@ export default function build_parameter_node(node: ParameterNode, status: BuildS
 		return;
 	}
 
-	// A `view T` parameter is the universal non-owning (ptr, len) slice
+	// A `view T` parameter is the universal non-mv (ptr, len) slice
 	// struct, passed by value (matching the aarch64 register pair). Inside
 	// the body, `.length` lowers to `.len` and the view builtins (.at /
 	// .to_string) operate on it directly.

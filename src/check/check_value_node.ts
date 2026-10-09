@@ -43,7 +43,7 @@ export default function check_value_node(node: ValueNode, status: CheckStatus): 
 	}
 
 	if (status.moved_variables?.has(node.value)) {
-		add_error(status, `Variable '${node.value}' used after move`, node.start);
+		add_error(status, `Variable '${node.value}' used after mv`, node.start);
 		return false;
 	}
 

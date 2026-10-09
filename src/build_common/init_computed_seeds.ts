@@ -90,7 +90,7 @@ function collect_init_string_writes(struct_node: StructNode, init: FunctionNode)
 
 /**
  * The plain string fields of `struct_node` that its custom `#init` COMPUTES as
- * a definitely-heap-owning value: for EVERY `#init` overload, the field is
+ * a definitely-heap-mv value: for EVERY `#init` overload, the field is
  * either written at least once as a DIRECT body statement with every write
  * (direct or nested) passing `is_owned_heap` — or never written and its
  * DEFAULT also passes `is_owned_heap` (the overload leaves the default in
@@ -149,7 +149,7 @@ export function init_computed_heap_string_fields(
 
 /**
  * The write-site half: does THIS custom-`#init` write to `self.<field>`
- * displace a heap-owning DEFAULT seed that must be reclaimed ahead of the
+ * displace a heap-mv DEFAULT seed that must be reclaimed ahead of the
  * store? True only for the field's first write in the body (the displaced
  * value is then statically the default — later writes displace values whose
  * ownership the init cannot know, and keep the status quo). Marks the field

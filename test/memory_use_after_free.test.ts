@@ -43,7 +43,7 @@ Console.write("\\{b.id}")
 
 	test("class: inner scope assigned to outer var", async () => {
 		const input = `
-owning struct Counter {
+mv struct Counter {
   var int count
 
   func #destroy = (ref self) {
@@ -54,7 +54,7 @@ owning struct Counter {
 var Counter c = Counter(0)
 if 1 == 1 {
   var Counter inner = Counter(5)
-  c = move inner
+  c = mv inner
 }
 Console.write("\\{c.count}")
 `;
@@ -63,7 +63,7 @@ Console.write("\\{c.count}")
 
 	test("boxed alias with destroy reads through both names", async () => {
 		const input = `
-owning struct Token {
+mv struct Token {
   var int id
 
   func #destroy = (ref self) {

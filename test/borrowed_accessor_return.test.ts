@@ -16,7 +16,7 @@ describe("self-rooted borrowed returns", () => {
 		const input = `
 import System
 
-owning struct Node {
+mv struct Node {
 	pub var string name
 
 	pub func #init = (ref self) {
@@ -24,7 +24,7 @@ owning struct Node {
 	}
 }
 
-owning struct Nodes {
+mv struct Nodes {
 	pub var List<Box<Node>> items = List<Box<Node>>()
 
 	pub func #init = (ref self) {
@@ -59,11 +59,11 @@ pub func main = (Init init) {
 		const input = `
 import System
 
-owning struct Cell {
+mv struct Cell {
 	pub var int v
 }
 
-owning struct Holder {
+mv struct Holder {
 	pub var Box<Cell> b
 
 	pub func get = (self, out int) {
@@ -72,7 +72,7 @@ owning struct Holder {
 }
 
 pub func main = (Init init) {
-	var h = Holder(move Box<Cell>(Cell(9)))
+	var h = Holder(mv Box<Cell>(Cell(9)))
 	var int got = h.get()
 	Console.write("v=\\{got}\\n")
 	Console.write("done\\n")
@@ -83,11 +83,11 @@ pub func main = (Init init) {
 		await build_and_check_output(input, "borrowed_field_return", "v=9\ndone\n", true);
 	});
 
-	test("an owning-field read is still rejected as a return", async () => {
+	test("a mv-field read is still rejected as a return", async () => {
 		const input = `
 import System
 
-owning struct Node {
+mv struct Node {
 	pub var string name
 
 	pub func #init = (ref self) {
@@ -95,7 +95,7 @@ owning struct Node {
 	}
 }
 
-owning struct Host {
+mv struct Host {
 	pub var Box<Node> first
 
 	pub func leak = (self, out Box<Node>) {

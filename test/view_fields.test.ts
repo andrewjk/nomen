@@ -8,7 +8,7 @@ import build_and_check_output from "./build_and_check_output";
 
 const lib = get_library(path.resolve(import.meta.dirname, "../core"));
 
-// `view T` struct fields — non-owning (ptr, len) slices stored inside struct
+// `view T` struct fields — non-mv (ptr, len) slices stored inside struct
 // instances ("borrow-into-parent": many small records referencing slices of
 // one long-lived buffer). The field is a plain 16-byte pair: byte-copying a
 // struct copies the borrow (sound), and nothing is freed on destroy (the
@@ -163,7 +163,7 @@ if doc.length == 3 {
 	test("view field alongside an owned string field", async () => {
 		await build_and_check_output(
 			`
-owning struct Mixed {
+mv struct Mixed {
 	var view string borrowed
 	var string owned
 }

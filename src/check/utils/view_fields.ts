@@ -11,7 +11,7 @@ import { borrow_depth_of, borrow_owner_of } from "./borrow.ts";
 /**
  * Whether the named struct (or any value struct embedded in its fields,
  * recursively) declares a `view T` field. A struct with view fields carries
- * non-owning borrows inside its bytes, which drives the borrow rules:
+ * non-mv borrows inside its bytes, which drives the borrow rules:
  * copies are sound (a pair copy aliases nothing owned), but escapes
  * (returning, outer-scope assignment) are checked against where those
  * borrows were taken.
@@ -217,7 +217,7 @@ export function view_borrows_root_at_self(sv: { view_field_owners?: Set<string> 
 }
 
 /**
- * Whether a value of this type can carry a non-owning view borrow: the type
+ * Whether a value of this type can carry a non-mv view borrow: the type
  * itself is a `view`, a `ref` (a borrow by definition — keep the existing
  * taint), a struct declaring (transitively) `view T` fields, or a generic
  * instantiation with such an argument. Anything else (primitives, owned

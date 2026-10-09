@@ -14,7 +14,7 @@ import test_error from "./test_error";
 //     own scope or outside it); fresh temporaries must be constructed in the
 //     block's own scope.
 //   - N2 / R4: detach owns its captures — `.detach()` rejects every
-//     non-`move` class/trait argument (globals exempt; process lifetime).
+//     non-`mv` class/trait argument (globals exempt; process lifetime).
 
 const system = get_library(path.resolve("core"));
 
@@ -23,7 +23,7 @@ function check(source: string) {
 }
 
 const sendable_class = `
-pub owning struct Job : Sendable {
+pub mv struct Job : Sendable {
 	var int n
 }
 
@@ -53,7 +53,7 @@ pub func main = (Init init) {
 		expect(errors).toEqual([
 			test_error(
 				input,
-				"'inner' does not outlive the task — the join at 'async' happens after 'inner's scope ends; declare 'inner' in the 'async' block's scope or outside it, or move it in ('move inner')",
+				"'inner' does not outlive the task — the join at 'async' happens after 'inner's scope ends; declare 'inner' in the 'async' block's scope or outside it, or mv it in ('mv inner')",
 				17,
 				24,
 			),
@@ -130,10 +130,10 @@ pub func main = (Init init) {
 	test("a moved argument is exempt (ownership has no region)", () => {
 		const input = `
 import System
-pub owning struct Job {
+pub mv struct Job {
 	var int n
 }
-func consume = (move Job j) {
+func consume = (mv Job j) {
 	Console.write_line("\\{j.n}")
 }
 pub func main = (Init init) {
@@ -141,7 +141,7 @@ pub func main = (Init init) {
 		var int i = 0
 		while i < 2 {
 			var Job inner = Job(i)
-			var t = Thread(consume(move inner)).start()
+			var t = Thread(consume(mv inner)).start()
 			t.wait()
 			i = i + 1
 		}
@@ -175,7 +175,7 @@ pub func main = (Init init) {
 	test("a loop-local root does not join-bound (R2 ✗); the outer root does (R2 ✓)", () => {
 		const input = `
 import System
-pub owning struct Job {
+pub mv struct Job {
 	var int n
 }
 func work = (Job j) {
@@ -194,15 +194,15 @@ pub func main = (Init init) {
 }
 `;
 		// STRUCT_PLAN_3 R2: a loop-local whose ITERATION ends first does not
-		// join-bound — declare the root outside the loop, or move it in.
+		// join-bound — declare the root outside the loop, or mv it in.
 		const messages = check(input).map((e) => e.message);
 		expect(messages.some((m) => m.includes("does not outlive the task"))).toBe(true);
-		// The Sendable gate is class-era scaffolding — owning args take the
+		// The Sendable gate is class-era scaffolding — mv args take the
 		// region rules, not the marker.
 		expect(messages.some((m) => m.includes("is not Sendable"))).toBe(false);
 	});
 
-	test("a bare owning spawn outside any async block is rejected (R1)", () => {
+	test("a bare mv spawn outside any async block is rejected (R1)", () => {
 		const input = `
 import System
 ${sendable_class}
@@ -217,14 +217,14 @@ pub func main = (Init init) {
 }
 `;
 		// Outside a nursery there is no join to bound the borrow — the only
-		// sound spellings are an `async` block or `move`.
+		// sound spellings are an `async` block or `mv`.
 		const messages = check(input).map((e) => e.message);
 		expect(messages.some((m) => m.includes("owns heap memory"))).toBe(true);
 	});
 });
 
 describe("spawn region: detach owns its captures (N2/R4)", () => {
-	test("a bare owning argument to a daemon is rejected (R1 outside a nursery)", () => {
+	test("a bare mv argument to a daemon is rejected (R1 outside a nursery)", () => {
 		const input = `
 import System
 ${sendable_class}
@@ -233,9 +233,9 @@ pub func main = (Init init) {
 	Thread(work(g)).detach()
 }
 `;
-		// A daemon has no join to bound a borrow — the bare-owning argument
+		// A daemon has no join to bound a borrow — the bare-mv argument
 		// hits the R1 rejection (the detach capture rule's subject is the
-		// region-eraked class era; owning args are caught here first).
+		// region-eraked class era; mv args are caught here first).
 		const messages = check(input).map((e) => e.message);
 		expect(messages.some((m) => m.includes("owns heap memory"))).toBe(true);
 	});
@@ -243,15 +243,15 @@ pub func main = (Init init) {
 	test("a moved class argument to a daemon is accepted", () => {
 		const input = `
 import System
-pub owning struct Job {
+pub mv struct Job {
 	var int n
 }
-func consume = (move Job j) {
+func consume = (mv Job j) {
 	Console.write_line("\\{j.n}")
 }
 pub func main = (Init init) {
 	var Job g = Job(1)
-	Thread(consume(move g)).detach()
+	Thread(consume(mv g)).detach()
 }
 `;
 		expect(check(input)).toEqual([]);
@@ -283,7 +283,7 @@ pub func main = (Init init) {
 		expect(check(input)).toEqual([]);
 	});
 
-	test("a closure-form capture moves its owning donor (E1) — sound", () => {
+	test("a closure-form capture moves its mv donor (E1) — sound", () => {
 		const input = `
 import System
 ${sendable_class}
@@ -292,7 +292,7 @@ pub func main = (Init init) {
 	Thread(() => work(g)).detach()
 }
 `;
-		// The lambda env OWNS its captures (E1): an owning capture is a
+		// The lambda env OWNS its captures (E1): a mv capture is a
 		// MOVE — the env destroys it when the daemon ends. `g` has no later
 		// use, so the transfer is sound and nothing is shared.
 		const messages = check(input).map((e) => e.message);
@@ -308,7 +308,7 @@ pub func main = (Init init) {
 	Fiber(work(g)).detach()
 }
 `;
-		// Same R1 shape as the Thread daemon: a bare owning arg outside a
+		// Same R1 shape as the Thread daemon: a bare mv arg outside a
 		// nursery has no join to bound the borrow.
 		const messages = check(input).map((e) => e.message);
 		expect(messages.some((m) => m.includes("owns heap memory"))).toBe(true);
@@ -328,7 +328,7 @@ pub func main = (Init init) {
 	});
 });
 
-describe("spawn region: owning-struct borrows + the freeze (R1/R3, tranche 2)", () => {
+describe("spawn region: mv-struct borrows + the freeze (R1/R3, tranche 2)", () => {
 	const owning_case = `
 import System
 
@@ -345,7 +345,7 @@ func len = (List<int> items, out int) {
 }
 `;
 
-	test("an owning struct bare inside async is a region-checked borrow (accepted)", () => {
+	test("a mv struct bare inside async is a region-checked borrow (accepted)", () => {
 		const input = owning_case.replace(
 			"%s",
 			'var t = Thread(len(xs)).start()\n\t\tConsole.write_line("\\{t.result()}")',
@@ -353,7 +353,7 @@ func len = (List<int> items, out int) {
 		expect(check(input)).toEqual([]);
 	});
 
-	test("an owning struct bare outside async is rejected (no join, no sound copy)", () => {
+	test("a mv struct bare outside async is rejected (no join, no sound copy)", () => {
 		const input = `
 import System
 
@@ -372,7 +372,7 @@ func len = (List<int> items, out int) {
 		expect(messages.some((m) => m.includes("owns heap memory"))).toBe(true);
 	});
 
-	test("an owning donor in a loop body inside async is rejected (root rule)", () => {
+	test("a mv donor in a loop body inside async is rejected (root rule)", () => {
 		const input = `
 import System
 
@@ -416,7 +416,7 @@ func len = (List<int> items, out int) {
 	test("the freeze: moving the donor out errors", () => {
 		const input = owning_case.replace(
 			"%s",
-			"var t = Thread(len(xs)).start()\n\t\tmove List<int> stolen = xs",
+			"var t = Thread(len(xs)).start()\n\t\tmv List<int> stolen = xs",
 		);
 		const messages = check(input).map((e) => e.message);
 		expect(messages.some((m) => m.includes("'xs' is borrowed by a task"))).toBe(true);
@@ -430,7 +430,7 @@ pub func main = (Init init) {
 	var List<int> xs = List<int>()
 	async {
 		var t = Thread(len(xs)).start()
-		consume(move xs)
+		consume(mv xs)
 		t.wait()
 	}
 }
@@ -439,7 +439,7 @@ func len = (List<int> items, out int) {
 	return items.length
 }
 
-func consume = (move List<int> items) {
+func consume = (mv List<int> items) {
 	Console.write_line("\\{items.length}")
 }
 `;
@@ -448,7 +448,7 @@ func consume = (move List<int> items) {
 	});
 
 	test("a Task handle shared into a task can still be cancelled (protocol exemption)", () => {
-		// Phase R tranche 2: Task is an owning struct, so the worker takes the
+		// Phase R tranche 2: Task is a mv struct, so the worker takes the
 		// handle by the spelled mutable borrow (`ref Task` — a bare param is
 		// const and could not `cancel()` through it; the class-era
 		// `ref f = handle` alias form is gone).
@@ -476,7 +476,7 @@ func waiter = (ref Task<uint64> handle) {
 	});
 });
 
-describe("spawn region: borrowed owning args at runtime (R1, both backends)", () => {
+describe("spawn region: borrowed mv args at runtime (R1, both backends)", () => {
 	test("a task reads the donor's List through the env borrow", async () => {
 		const input = `
 func sum = (List<int> items, out int) {

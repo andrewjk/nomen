@@ -6,14 +6,14 @@ import parse_with_imports from "./parse_with_imports";
 describe("swap", () => {
 	test("swap class field between two structs", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
 	var int value
 }
-owning struct Holder {
+mv struct Holder {
 	var Box content
 }
-var Holder h1 = Holder(move Box(1))
-var Holder h2 = Holder(move Box(2))
+var Holder h1 = Holder(mv Box(1))
+var Holder h2 = Holder(mv Box(2))
 h1.content = h2.content swap Box(0)
 Console.write("\\{h1.content.value} \\{h2.content.value}")
 `;
@@ -22,14 +22,14 @@ Console.write("\\{h1.content.value} \\{h2.content.value}")
 
 	test("swap with no leak in audit mode", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
 	var int value
 }
-owning struct Holder {
+mv struct Holder {
 	var Box content
 }
-var Holder h1 = Holder(move Box(1))
-var Holder h2 = Holder(move Box(2))
+var Holder h1 = Holder(mv Box(1))
+var Holder h2 = Holder(mv Box(2))
 h1.content = h2.content swap Box(0)
 Console.write("done")
 `;
@@ -38,14 +38,14 @@ Console.write("done")
 
 	test("swap with fresh replacement value", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
 	var int value
 }
-owning struct Holder {
+mv struct Holder {
 	var Box content
 }
-var Holder h1 = Holder(move Box(10))
-var Holder h2 = Holder(move Box(20))
+var Holder h1 = Holder(mv Box(10))
+var Holder h2 = Holder(mv Box(20))
 h1.content = h2.content swap Box(99)
 Console.write("\\{h1.content.value} \\{h2.content.value}")
 `;
@@ -54,14 +54,14 @@ Console.write("\\{h1.content.value} \\{h2.content.value}")
 
 	test("swap frees old h1.content", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
 	var int value
 }
-owning struct Holder {
+mv struct Holder {
 	var Box content
 }
-var Holder h1 = Holder(move Box(1))
-var Holder h2 = Holder(move Box(2))
+var Holder h1 = Holder(mv Box(1))
+var Holder h2 = Holder(mv Box(2))
 h1.content = h2.content swap Box(3)
 Console.write("done")
 `;
@@ -70,14 +70,14 @@ Console.write("done")
 
 	test("swap on non-matching type errors", () => {
 		const input = `
-owning struct Box {
+mv struct Box {
 	var int value
 }
-owning struct Holder {
+mv struct Holder {
 	var Box content
 }
-var Holder h1 = Holder(move Box(1))
-var Holder h2 = Holder(move Box(2))
+var Holder h1 = Holder(mv Box(1))
+var Holder h2 = Holder(mv Box(2))
 h1.content = h2.content swap 42
 `;
 		const parsed = parse_with_imports(input);
@@ -86,7 +86,7 @@ h1.content = h2.content swap 42
 
 	test("swap on top-level variable", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
 	var int value
 }
 var Box a = Box(1)

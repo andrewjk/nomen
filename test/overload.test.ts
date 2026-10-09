@@ -5,7 +5,7 @@ import build_and_check_output from "./build_and_check_output";
 describe("function overloading", () => {
 	test("overloaded method by param type", async () => {
 		const input = `
-owning struct Printer {
+mv struct Printer {
   var int last_int
   var string last_str
   pub func print = (ref self, int value) {

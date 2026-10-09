@@ -19,7 +19,7 @@ interface EnumAwareTable extends StructTable {
 }
 
 /**
- * Whether any field of the struct is an enum-with-data value owning heap
+ * Whether any field of the struct is an enum-with-data value mv heap
  * payloads (a string payload — always heap, case construction strdups it —
  * or a class/trait reference payload — construction transfers ownership).
  * Such a field must be reclaimed when the struct dies.
@@ -81,10 +81,10 @@ function owns_strings_via_destroy(struct: StructNode): boolean {
  * Whether any field (recursively) requires destroy handling — a class
  * field (heap instance to reclaim), a nested struct with its own
  * `#destroy` (or nested fields that do), or — B1 cutover — a nested
- * DECLARED-owning struct with direct string fields (its strings are
+ * DECLARED-mv struct with direct string fields (its strings are
  * uniformly heap: the ctor strdup'd them, so the enclosing scope exit
  * must reclaim them through the nested field). Plain `string` fields of
- * a NON-owning struct are still excluded: such a local's strings may be
+ * a NON-mv struct are still excluded: such a local's strings may be
  * raw rodata arg pointers, not heap (the transition-era posture
  * `struct_needs_auto_destroy` extends). Tuple / anon struct fields stay
  * out (their element lifecycle is the bindings'/records').
@@ -107,10 +107,10 @@ export function has_struct_fields_with_destroy(struct: StructNode, table: Struct
  * Whether a struct (or any embedded struct field, recursively) needs a
  * destroy call at scope exit — it has a `#destroy`, a class-typed field,
  * or a nested struct field that itself needs destroying. B1 cutover: a
- * DECLARED-owning struct with direct string fields also needs one — its
+ * DECLARED-mv struct with direct string fields also needs one — its
  * string fields are uniformly heap-owned (ctor strdup, stores strdup), so
  * the scope-exit destroy frees them (the destroy walkers pass
- * free_strings/emit the frees for owning structs). Non-owning structs'
+ * free_strings/emit the frees for mv structs). Non-mv structs'
  * string fields are still NOT counted (they may hold rodata borrows).
  */
 export function struct_needs_destroy(struct: StructNode, table: StructTable): boolean {
@@ -126,8 +126,8 @@ export function struct_needs_destroy(struct: StructNode, table: StructTable): bo
 /**
  * Whether a class or OWNING struct has a `func`-typed field. Such a field may
  * hold a capturing-closure descriptor (`owned = 1`, a heap env + descriptor),
- * which the scope-exit / generated destroy must reclaim. A non-owning value
- * struct shares its descriptor (copies are non-owning) and frees nothing, so
+ * which the scope-exit / generated destroy must reclaim. A non-mv value
+ * struct shares its descriptor (copies are non-mv) and frees nothing, so
  * it is excluded (CLOSURE.md Phase 2c).
  */
 function struct_has_owned_func_field(struct: StructNode): boolean {
@@ -151,7 +151,7 @@ export function struct_needs_auto_destroy(struct: StructNode, table: StructTable
 	if (struct_has_owned_func_field(struct)) return true;
 	for (const field of struct.fields) {
 		if (field.type.is_ref) continue;
-		// A `view T` field is a non-owning borrow — nothing to free, so it
+		// A `view T` field is a non-mv borrow — nothing to free, so it
 		// never triggers an auto-generated destroy.
 		if (field.type.is_view) continue;
 		if (field.type.name === "string" && !field.type.is_array) return true;

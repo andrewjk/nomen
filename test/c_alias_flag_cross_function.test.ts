@@ -18,7 +18,7 @@ describe("C backend: alias-own flags are per-function", () => {
 		const input = `
 import System
 
-owning struct R {
+mv struct R {
 	var int v
 }
 func first = (List<R> xs, out int) {
@@ -31,7 +31,7 @@ func first = (List<R> xs, out int) {
 pub func main = (Init init) {
 	var List<R> xs = List<R>()
 	var a = R(7)
-	xs.push(move a)
+	xs.push(mv a)
 	var t = R(41)
 	Console.write("\\{first(xs)} \\{t.v}\\n")
 }

@@ -11,8 +11,8 @@ Most types of memory corruption (use before initialization, use after free, doub
 - **Typed Values** - bools, ints, strings and so forth
 - **Structs & Classes** — value-type structs and reference-type classes
 - **Automatic Memory Management** — `#init` functions to allocate resources, `#destroy` functions to clear them at scope exit
-- **Ownership** — `move` instances to a new owner, or share instances by `ref`
-- **Borrowed Slices** — `view` instances are non-owning, zero-copy slices that can't outlive their source
+- **Ownership** — `mv` instances to a new owner, or share instances by `ref`
+- **Borrowed Slices** — `view` instances are non-mv, zero-copy slices that can't outlive their source
 - **Traits** — interface-based polymorphism
 - **Enums & Bitsets** — sum types with associated data, plus composable bit flags
 - **Operator Overloading** — custom behavior for arithmetic operators
@@ -131,7 +131,7 @@ const multiline =
     "with a double quote
     "on each line
 
-// slice(start, end) returns a non-owning view string over [start, end)
+// slice(start, end) returns a non-mv view string over [start, end)
 if greeting.length >= 5 {
     view hi = greeting.slice(0, 5)
     Console.write(hi.to_string())   // "Hello"
@@ -278,13 +278,13 @@ const d = p.distance_from_origin()
 
 ### Owning Structs
 
-A bare `struct` is Copyable — assigning it copies the fields. `owning struct`
+A bare `struct` is Copyable — assigning it copies the fields. `mv struct`
 is the single-owner form: bindings move instead of copy, and the type owns
 its heap resources until scope exit. Methods use `ref self` for mutable
 access:
 
 ```nomen
-owning struct Counter {
+mv struct Counter {
     var int count = 0
 
     func increment = (ref self) {
@@ -293,7 +293,7 @@ owning struct Counter {
 }
 
 var c = Counter()
-move c2 = c
+mv c2 = c
 c2.increment()
 ```
 
@@ -735,41 +735,41 @@ See [MEMORY.md](docs/MEMORY.md) for the full model.
 
 ## Ownership & Borrows
 
-A bare `struct` is Copyable — assigning it copies the fields. `owning struct`
+A bare `struct` is Copyable — assigning it copies the fields. `mv struct`
 is the single-owner form: its bindings move instead of copy, and the type
-owns its heap resources until scope exit. `string` is owning too: copying one
-binding to another requires `move` (transfer) or `.copy()` (deep copy), and
+owns its heap resources until scope exit. `string` is mv too: copying one
+binding to another requires `mv` (transfer) or `.copy()` (deep copy), and
 `.copy()` on a struct field or `return self.name` is the spelled deep copy.
-`view string` remains the cheap non-owning borrow.
+`view string` remains the cheap non-mv borrow.
 
 ```nomen
-owning struct Box {
+mv struct Box {
     var int value
 }
 
-// an owning field — the field's type decides: stores transfer
-owning struct Holder {
+// a mv field — the field's type decides: stores transfer
+mv struct Holder {
     var Box content
 }
 
-// an owning parameter — the caller gives up access with `move`
-func take = (move Box b, out int) {
+// a mv parameter — the caller gives up access with `mv`
+func take = (mv Box b, out int) {
     Console.write("\{b.value}")
 }
 
-var h = Holder(move Box(7))
+var h = Holder(mv Box(7))
 var b = Box(42)
-take(move b)   // b is invalid after this
+take(mv b)   // b is invalid after this
 ```
 
-- `move` transfers ownership — the source is invalid afterwards.
+- `mv` transfers ownership — the source is invalid afterwards.
 - `ref` passes a value by reference so the callee can mutate it; the caller must
   write `ref` at the call site, and a `const` value can't be borrowed mutably.
 - Plain parameters are read-only — take them by value and make a local `var`
   copy if you need a mutable scratch value the caller never sees.
 - `swap` atomically moves a value out and replaces it with a fresh one
 
-The same borrow machinery backs **non-owning slices**. `string.slice(start, end)`
+The same borrow machinery backs **non-mv slices**. `string.slice(start, end)`
 returns a `view string` — an O(1) `(ptr, len)` borrow of the source's buffer.
 The checker guarantees a view can't outlive its source and is invalidated once
 the source is reassigned (which frees the buffer it points into):

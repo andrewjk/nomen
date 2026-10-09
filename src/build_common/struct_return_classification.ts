@@ -257,7 +257,7 @@ export function gather_normalized_struct_returners(root: BaseNode, status: Build
 		// A struct METHOD (self param) — including monomorphized method
 		// clones, whose `scope` back-pointer may be unset — receives its
 		// receiver by address for in-place access: never pass-by-value, and
-		// its `move T` params keep the plain callee-copies convention.
+		// its `mv T` params keep the plain callee-copies convention.
 		if (fn.params.some((p) => p.is_self_param)) continue;
 		// The checker's node-level escape flag is authoritative: a function
 		// whose address escapes (a func-typed binding, a spawn-wrapped call)
@@ -272,7 +272,7 @@ export function gather_normalized_struct_returners(root: BaseNode, status: Build
 		// by-address convention, so callers must not materialize for it.
 		if (!fn.has_body) continue;
 		for (const param of fn.params ?? []) {
-			// A `move`-declared pass-by-value owning-struct param registers
+			// A `mv`-declared pass-by-value mv-struct param registers
 			// too: the TRANSFER row — the callee seeds (and frees) the
 			// argument's string records, callers drop instead of materialize.
 			// The struct-shape conjunction below still excludes structs with
@@ -308,7 +308,7 @@ export function gather_normalized_struct_returners(root: BaseNode, status: Build
 		}
 	}
 
-	// Struct `copy` methods (synthesized for owning value structs, or
+	// Struct `copy` methods (synthesized for mv value structs, or
 	// user-written): their bare-local `return c` is normalized at the return
 	// boundary like any function, so a binding of the result records the
 	// struct's string fields. Method calls register under their EMISSION

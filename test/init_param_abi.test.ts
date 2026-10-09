@@ -14,7 +14,7 @@ describe("custom init param ABI", () => {
 		const input = `
 import System
 
-owning struct N1 {
+mv struct N1 {
 	var string kind
 	var int idx
 
@@ -38,7 +38,7 @@ pub func main = (Init init) {
 		const input = `
 import System
 
-pub owning struct S2 {
+pub mv struct S2 {
 	pub var string url
 	pub var string title
 
@@ -62,7 +62,7 @@ pub func main = (Init init) {
 		const input = `
 import System
 
-pub owning struct P2 {
+pub mv struct P2 {
 	pub var string a
 	pub var int b
 	pub var string c

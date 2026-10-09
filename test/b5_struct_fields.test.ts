@@ -6,18 +6,18 @@ import test_error from "./test_error";
 
 // STRUCT_PLAN_3 Phase B tranche 4 — B5 field-restriction collapse. A bare
 // `struct` claiming Copyable is verified: a class-typed field (like a
-// declared-`owning` or Box field) owns heap state, so the verifier error
-// names the fix. An `owning struct` is the contract — its class-typed fields
+// declared-`mv` or Box field) owns heap state, so the verifier error
+// names the fix. A `mv struct` is the contract — its class-typed fields
 // are OWNED SLOTS (transfer-on-store; ownership follows the field's type, so
-// `var` is the spelling, not `move`).
+// `var` is the spelling, not `mv`).
 
-describe("B5: owning struct class fields", () => {
+describe("B5: mv struct class fields", () => {
 	test("construct, read, and scope-exit destroy (runtime, both backends)", async () => {
 		const input = `
-owning struct Dog {
+mv struct Dog {
 	var string name
 }
-owning struct Holder {
+mv struct Holder {
 	var Dog d
 }
 func probe = () {
@@ -34,10 +34,10 @@ Console.write_line("done")
 	// both backends and the displaced-store reclaim frees the instance.
 	test("field store reclaims the displaced instance", async () => {
 		const input = `
-owning struct Dog {
+mv struct Dog {
 	var string name
 }
-owning struct Holder {
+mv struct Holder {
 	var Dog d
 }
 func probe = () {
@@ -51,17 +51,17 @@ Console.write_line("done")
 		await build_and_check_output(input, "b5_class_field_store", "Fido\ndone\n");
 	});
 
-	test("move binding transfers the field (donor not destroyed)", async () => {
+	test("mv binding transfers the field (donor not destroyed)", async () => {
 		const input = `
-owning struct Dog {
+mv struct Dog {
 	var string name
 }
-owning struct Holder {
+mv struct Holder {
 	var Dog d
 }
 func probe = () {
 	var Holder h = Holder(Dog("Rex"))
-	move Holder h2 = h
+	mv Holder h2 = h
 	Console.write_line(h2.d.name)
 }
 probe()
@@ -72,10 +72,10 @@ Console.write_line("done")
 
 	test("nullable class field", async () => {
 		const input = `
-owning struct Dog {
+mv struct Dog {
 	var string name
 }
-owning struct Holder {
+mv struct Holder {
 	var Dog? d
 }
 func probe = () {
@@ -92,13 +92,13 @@ Console.write_line("done")
 
 	test("class field with a user #destroy runs it", async () => {
 		const input = `
-owning struct Dog {
+mv struct Dog {
 	var string name
 	func #destroy = (ref self) {
 		Console.write_line("destroyed a dog")
 	}
 }
-owning struct Holder {
+mv struct Holder {
 	var Dog d
 }
 func probe = () {
@@ -115,12 +115,12 @@ Console.write_line("done")
 		);
 	});
 
-	test("a method on the owning struct mutates the class field", async () => {
+	test("a method on the mv struct mutates the class field", async () => {
 		const input = `
-owning struct Dog {
+mv struct Dog {
 	var string name
 }
-owning struct Holder {
+mv struct Holder {
 	var Dog d
 	func rename = (ref self, string n) {
 		self.d.name = n.copy()
@@ -137,15 +137,15 @@ Console.write_line("done")
 		await build_and_check_output(input, "b5_class_field_method", "Fido\ndone\n");
 	});
 
-	test("nested owning structs with class fields", async () => {
+	test("nested mv structs with class fields", async () => {
 		const input = `
-owning struct Dog {
+mv struct Dog {
 	var string name
 }
-owning struct Inner {
+mv struct Inner {
 	var Dog d
 }
-owning struct Outer {
+mv struct Outer {
 	var Inner inner
 }
 func probe = () {
@@ -158,18 +158,18 @@ Console.write_line("done")
 		await build_and_check_output(input, "b5_class_field_nested", "Rex\ndone\n");
 	});
 
-	test("List push(move)/pop of owning structs with class fields", async () => {
+	test("List push(mv)/pop of mv structs with class fields", async () => {
 		const input = `
-owning struct Dog {
+mv struct Dog {
 	var string name
 }
-owning struct Holder {
+mv struct Holder {
 	var Dog d
 }
 func probe = () {
 	var List<Holder> ls = List<Holder>()
 	var Holder h = Holder(Dog("Rex"))
-	ls.push(move h)
+	ls.push(mv h)
 	var Holder h2 = ls.pop()
 	Console.write_line(h2.d.name)
 }
@@ -179,12 +179,12 @@ Console.write_line("done")
 		await build_and_check_output(input, "b5_class_field_list", "Rex\ndone\n");
 	});
 
-	test("return an owning struct with a class field", async () => {
+	test("return a mv struct with a class field", async () => {
 		const input = `
-owning struct Dog {
+mv struct Dog {
 	var string name
 }
-owning struct Holder {
+mv struct Holder {
 	var Dog d
 }
 func make = (string n, out Holder) {
@@ -200,20 +200,20 @@ Console.write_line("done")
 		await build_and_check_output(input, "b5_class_field_return", "Rex\ndone\n");
 	});
 
-	test("move param of an owning struct with a class field", async () => {
+	test("mv param of a mv struct with a class field", async () => {
 		const input = `
-owning struct Dog {
+mv struct Dog {
 	var string name
 }
-owning struct Holder {
+mv struct Holder {
 	var Dog d
 }
-func use = (move Holder h) {
+func use = (mv Holder h) {
 	Console.write_line(h.d.name)
 }
 func probe = () {
 	var Holder h = Holder(Dog("Rex"))
-	use(move h)
+	use(mv h)
 	Console.write_line("moved")
 }
 probe()
@@ -226,7 +226,7 @@ Console.write_line("done")
 describe("B5: verifier errors", () => {
 	test("bare struct + class field is the Copyable verifier error", () => {
 		const input = `
-owning struct Dog {
+mv struct Dog {
 	var int age
 }
 struct Holder {
@@ -237,7 +237,7 @@ struct Holder {
 		expect(parsed.errors).toEqual([
 			test_error(
 				input,
-				"'Holder' cannot be Copyable — field 'd' owns heap memory --> mark the struct `owning struct Holder`, or remove the field",
+				"'Holder' cannot be Copyable — field 'd' owns heap memory --> mark the struct `mv struct Holder`, or remove the field",
 				6,
 				2,
 			),
@@ -249,7 +249,7 @@ struct Holder {
 trait Speaker {
 	func say = (out string)
 }
-owning struct Holder {
+mv struct Holder {
 	var Speaker s
 }
 `;
@@ -264,12 +264,12 @@ owning struct Holder {
 		]);
 	});
 
-	test("owning struct + class field declared `var` is accepted (no `move` spelling)", () => {
+	test("mv struct + class field declared `var` is accepted (no `mv` spelling)", () => {
 		const input = `
-owning struct Dog {
+mv struct Dog {
 	var int age
 }
-owning struct Holder {
+mv struct Holder {
 	var Dog d
 }
 `;
@@ -277,12 +277,12 @@ owning struct Holder {
 		expect(parsed.errors).toEqual([]);
 	});
 
-	test("owning-typed fields take the `var` spelling (B5: no move field form)", () => {
+	test("mv-typed fields take the `var` spelling (B5: no mv field form)", () => {
 		const input = `
-owning struct Dog {
+mv struct Dog {
 	var int age
 }
-owning struct Holder {
+mv struct Holder {
 	var Dog d
 }
 `;

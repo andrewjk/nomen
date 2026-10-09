@@ -22,7 +22,7 @@ lowering.
 
 The `Array<T>` vs `view T` distinction is the array analog of `string` vs
 `view string` (see MEMORY.md §Strings): own (heap, first-class, freed at
-scope exit) versus borrow (a `(ptr, len)` slice, non-owning, non-escaping).
+scope exit) versus borrow (a `(ptr, len)` slice, non-mv, non-escaping).
 A `String`/`string` heap/stack split — mirroring `Array<T>`/`T[]` — is
 deliberately **not** adopted: `string` already plays the `Array<T>` role
 (heap-owned), and capital-`String`-for-the-heap-one would invert the
@@ -68,8 +68,8 @@ heap-backed).
 Keeping them separate matters for performance: `T[]`/`T[N]`/literals stay
 zero-allocation stack arrays with compile-time `.length` (used for bounds
 discharge and constant folding), while `Array<T>` pays for an allocation only
-where escaping/owning semantics are actually needed. A `(ptr, len)` slice —
-cheap, non-owning — is already covered by `view T`.
+where escaping/mv semantics are actually needed. A `(ptr, len)` slice —
+cheap, non-mv — is already covered by `view T`.
 
 ## The `is_array_heap` flag
 
@@ -172,9 +172,9 @@ buffer when bound to an `Array<T>` param:
    - class-element stack-array VARIABLES — the copy would share the instances
      with the caller's array (double free). Literals of fresh constructor
      calls are fine (the buffer owns the fresh instances).
-   - owning value-struct elements (string fields) — the copy is shallow, so it
-     would share the element strings. `List<T>` deep-copies owning elements
-     soundly (its Buffer specialises store/destroy); use it for owning
+   - mv value-struct elements (string fields) — the copy is shallow, so it
+     would share the element strings. `List<T>` deep-copies mv elements
+     soundly (its Buffer specialises store/destroy); use it for mv
      structs.
 
 Both marked temps carry `is_array_heap` on their type, so the build recognises

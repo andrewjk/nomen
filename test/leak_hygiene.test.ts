@@ -54,7 +54,7 @@ describe("ownership: scope-exit cleanup with class anchors", () => {
 	// shared the scope with an array literal.
 	test("array literal temp frees in a scope with a class anchor", async () => {
 		const input = `
-owning struct Holder {
+mv struct Holder {
 	var items = List<string>()
 }
 
@@ -70,15 +70,15 @@ Console.write_line(count.to_string())
 	});
 });
 
-describe("ownership: container field move-assign", () => {
-	// `box.items = move list` must splice the source local from its scope
+describe("ownership: container field mv-assign", () => {
+	// `box.items = mv list` must splice the source local from its scope
 	// frame AND reclaim the displaced field value. Both backends were wrong
 	// here, each in its own way:
-	//  - C's container move-assign block looked the field type up by RAW name
+	//  - C's container mv-assign block looked the field type up by RAW name
 	//    (`List`), which never matches the monomorphized struct
 	//    (`List_string`) — the block was silently skipped for every generic
 	//    container field. Fixed with resolve_struct_type.
-	//  - aarch64 never reclaimed the displaced container at all (slab + owning
+	//  - aarch64 never reclaimed the displaced container at all (slab + mv
 	//    elements leaked). It now mono-resolves the field type and emits
 	//    `bl <T>_destroy` on the field's address before the struct copy
 	//    (test/displaced_field_move.test.ts covers that path directly).
@@ -93,7 +93,7 @@ describe("ownership: container field move-assign", () => {
 				`import System
 import System::Test
 
-owning struct Box {
+mv struct Box {
 	var items = List<string>()
 }
 
@@ -102,7 +102,7 @@ pub func test_move_assign = (ref Tester t) {
 	b.items.push("one")
 	var next = List<string>()
 	next.push("two")
-	b.items = move next
+	b.items = mv next
 	t.expect(b.items.at_or_panic(0) == "two", "moved in")
 }
 `,

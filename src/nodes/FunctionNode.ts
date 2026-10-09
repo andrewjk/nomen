@@ -73,10 +73,10 @@ export default class FunctionNode extends BaseNode implements BlockNode, Returni
 	 */
 	captures?: { name: string; type: Type; is_move?: boolean; by_address?: boolean }[];
 	/**
-	 * True for a `move out T` return: the method transfers ownership of the
+	 * True for a `mv out T` return: the method transfers ownership of the
 	 * returned value to the caller (which must then free it), rather than
 	 * lending a borrow. The canonical example is `List.pop`. Symmetric to a
-	 * `move T` parameter (ownership in), this is ownership out.
+	 * `mv T` parameter (ownership in), this is ownership out.
 	 */
 	returns_move?: boolean;
 	/**

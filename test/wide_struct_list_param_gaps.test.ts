@@ -16,7 +16,7 @@ import build_and_check_output from "./build_and_check_output";
 // A ONE-field struct (`struct { var string text }`) does NOT reproduce —
 // the multi-field (T_SIZE > 8, memcpy'd element) shape is required.
 //
-// Found by the differator port: `combined`'s move detection builds a
+// Found by the differator port: `combined`'s mv detection builds a
 // `List<LineUnit>` (7 fields incl. a string), passes it by ref, and its
 // first phase copies each unit out and normalizes `u.text` — every
 // real-world-sized input crashed on the C backend while the tiny unit tests
@@ -47,7 +47,7 @@ func normalize2 = (string text, out string) {
 	return text
 }
 
-pub owning struct NS {
+pub mv struct NS {
 	var side = 0
 	var text = ""
 	var index = 0
@@ -84,7 +84,7 @@ pub func main = () {
 		var u = NS()
 		u.text = part_of(src, i, next)
 		u.side = i
-		units.push(move u)
+		units.push(mv u)
 		i = next
 	}
 	Console.write_line("units \\{units.length} norm \\{build_norm(units).length}")

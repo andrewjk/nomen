@@ -79,7 +79,7 @@ function can_share_claimed_register(status: BuildStatus, name: string, reg: stri
 	// source key — a body-declared local the plan never tracked, or a
 	// prior loop promotion's bracket binding) must never share: the
 	// adjacency lookup below is then VACUOUS (no keys → no edges → "no
-	// interference"), yet the bracketing entry load / exit store-back move
+	// interference"), yet the bracketing entry load / exit store-back mv
 	// a different variable through this register across the whole loop. An
 	// occupant whose only live supply crosses the bracket boundary without
 	// a textual overlap (loop-carried, read once per iteration at the

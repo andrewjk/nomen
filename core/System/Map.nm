@@ -8,7 +8,7 @@
  * it is correct for negative hashes too: two's-complement `&` already lands
  * in `[0, cap)`, which is why no negative adjustment is needed.
  **/
-pub owning struct Map<TK: Hashable + Equatable, TV> {
+pub mv struct Map<TK: Hashable + Equatable, TV> {
 	var length = 0
 	var keys = Buffer<TK>()
 	var values = Buffer<TV>()
@@ -18,8 +18,8 @@ pub owning struct Map<TK: Hashable + Equatable, TV> {
 	// Map(["a", 1], ["b", 2]) (type args inferred from the first pair).
 	// Zero pairs yields an empty Map, so this also covers Map<K, V>().
 	// The pair reads are temp-rooted (`pairs.at(i)` is a statement temp):
-	// the element transfer is absorbed by set's owning store (store_T
-	// deep-copies string-field elements), so no explicit move is spelled.
+	// the element transfer is absorbed by set's mv store (store_T
+	// deep-copies string-field elements), so no explicit mv is spelled.
 	pub func #init = (self, ...[TK, TV] pairs) {
 		var i = 0
 		while i < pairs.length; i += 1 {
@@ -27,7 +27,7 @@ pub owning struct Map<TK: Hashable + Equatable, TV> {
 		}
 	}
 
-	pub func set = (ref self, move TK key, move TV value) {
+	pub func set = (ref self, mv TK key, mv TV value) {
 		var int cap = self.keys.cap
 		if cap == 0 {
 			// alloc_T: for Buffer<TK> it is T_SIZE-aware (string keys are
@@ -172,9 +172,9 @@ pub owning struct Map<TK: Hashable + Equatable, TV> {
 	}
 
 	func rehash = (ref self, int new_cap) {
-		var Buffer<TK> old_keys = move self.keys swap Buffer<TK>()
-		var Buffer<TV> old_values = move self.values swap Buffer<TV>()
-		var Buffer<int> old_used = move self.used swap Buffer<int>()
+		var Buffer<TK> old_keys = mv self.keys swap Buffer<TK>()
+		var Buffer<TV> old_values = mv self.values swap Buffer<TV>()
+		var Buffer<int> old_used = mv self.used swap Buffer<int>()
 		var int old_cap = old_keys.cap
 
 		self.keys.alloc(new_cap)
@@ -190,13 +190,13 @@ pub owning struct Map<TK: Hashable + Equatable, TV> {
 				// afterwards. load_T would leave the old slot referencing
 				// the same class pointer — a double-free when old_keys is
 				// destroyed. The results are bound to locals so an
-				// owning-element copy (e.g. a `Buffer<string>` slot, which
+				// mv-element copy (e.g. a `Buffer<string>` slot, which
 				// store_T strdup's) is freed here once the new buffer has
 				// made its own copy — passing them inline would orphan the
 				// move_T results.
 				var TK k = old_keys.move(i)
 				var TV v = old_values.move(i)
-				self.set(move k, move v)
+				self.set(mv k, mv v)
 			}
 		}
 	}

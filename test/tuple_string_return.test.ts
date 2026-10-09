@@ -77,7 +77,7 @@ describe("tuple string return normalization", () => {
 		const input = `
 import System
 
-func make = (move out [string, int]) {
+func make = (mv out [string, int]) {
 	var s = "hello world, a string long enough to be heap"
 	return [s, 42]
 }
@@ -99,7 +99,7 @@ pub func main = (Init init) {
 		const input = `
 import System
 
-func make = (int x, move out [string, int]) {
+func make = (int x, mv out [string, int]) {
 	return [x.to_string(), 42]
 }
 
@@ -115,7 +115,7 @@ pub func main = (Init init) {
 		const input = `
 import System
 
-func make = (List<string> src, move out [string, int]) {
+func make = (List<string> src, mv out [string, int]) {
 	return [src.at_or_panic(0), 42]
 }
 
@@ -133,7 +133,7 @@ pub func main = (Init init) {
 		const input = `
 import System
 
-func make = (move out [string, int]) {
+func make = (mv out [string, int]) {
 	return ["literal title", 42]
 }
 
@@ -149,7 +149,7 @@ pub func main = (Init init) {
 		const input = `
 import System
 
-func make = (move out [string, int]) {
+func make = (mv out [string, int]) {
 	var s = "hello world, a string long enough to be heap"
 	return [s, 42]
 }
@@ -173,7 +173,7 @@ import System
 
 pub func main = (Init init) {
 	var s = "hello world, a string long enough to be heap"
-	var pair = [move s, 5]
+	var pair = [mv s, 5]
 	Console.write_line("\\{pair._0} \\{pair._1}")
 	var lit = ["literal element", 5]
 	Console.write_line("\\{lit._0} \\{lit._1}")

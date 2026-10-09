@@ -24,7 +24,7 @@ targets.
   `cancel()`, `current_cancelled()` (static, thread-local).
   Monomorphized per instantiation (e.g. `Task_uint64`).
 - **`Mutex`** — pthread-backed lock; `#destroy` releases the resource. An
-  **owning struct** (STRUCT_PLAN_3 Phase R tranche 3 — the shape menu: the
+  **mv struct** (STRUCT_PLAN_3 Phase R tranche 3 — the shape menu: the
   handle field makes it movable, `#destroy` closes what the handle names). In
   cooperative mode a fiber try-locks and yields (the holder runs on the same
   thread); in the threaded model a fiber parks on the mutex's wait list
@@ -32,7 +32,7 @@ targets.
   waiter keeps waiting (returning without the lock would be unsound) and
   observes the cancel flag at its next checkpoint after acquiring.
 - **`Channel`** — blocking FIFO queue (`send` / `receive` for uint64 words,
-  `send_string` / `receive_string` for fat strings). An **owning struct**
+  `send_string` / `receive_string` for fat strings). An **mv struct**
   (Phase R tranche 3 — handle/counter fields, movable, `#destroy` drains).
   Fibers do not block on
   it: an empty `receive` parks the fiber on the channel's wait list
@@ -41,7 +41,7 @@ targets.
   waiting on an empty channel resumes and returns the zero value rather than
   waiting forever.
 - **`Thread`** — the thread spawnable (`core/System/Thread.nm`), a plain
-  library owning struct (STRUCT_PLAN_3 Phase R tranche 2 — the shape menu:
+  library mv struct (STRUCT_PLAN_3 Phase R tranche 2 — the shape menu:
   handle fields only) whose launch surface is real methods, not compiler
   dispatch.
   `Thread(fn(args)).start()` is a statement (fire-and-forget) or expression
@@ -90,7 +90,7 @@ targets.
   in an `async` block is joined at block exit — the `Thread`/`Fiber` forms
   share one future, Task, and nursery.
   Cancellation reaches parked fibers: `Task.cancel` (and the nursery
-  timeout/race paths) set the flag and schedule the owning fiber, which
+  timeout/race paths) set the flag and schedule the mv fiber, which
   resumes from whatever wait queue it was parked on and observes
   `Task.current_cancelled()` at its next checkpoint. Every time a worker
   resumes a fiber it restores that fiber's task-local cancel flag — a worker
@@ -99,10 +99,10 @@ targets.
   slices, so a cancelled thread task's `receive` also returns the zero
   value.
 - **Spawn arguments are owned by the task env** — string arguments are
-  deep-copied at pack (the env destructor frees its copy), and owning
+  deep-copied at pack (the env destructor frees its copy), and mv
   value-struct arguments are copied and destroyed — a raw copy would alias
   the donor's heap fields and dangle at the donor's scope exit. On the C
-  backend an owning value-struct arg is a malloc'd copy whose top-level
+  backend a mv value-struct arg is a malloc'd copy whose top-level
   string fields are strdup'd, then `<T>_destroy`ed and freed by the env
   destructor. Donors are copied, not moved (visibility unchanged);
   migrating the packing onto the capture machinery proper is the recorded
@@ -113,14 +113,14 @@ targets.
   machinery.
 - **No nursery borrows** (the exception was retired — see "Design decisions"):
   `Sendable` gates exactly the shared case — a class/trait reference passed
-  as a plain argument aliases the instance. Moved arguments (a `move T`
+  as a plain argument aliases the instance. Moved arguments (a `mv T`
   parameter) and copied values are exempt; a non-Sendable class/trait
   cannot cross into a task inside a nursery or out — mark it `Sendable`,
-  move it in, or mediate the share through `Mutex` / `Channel` (owning
+  move it in, or mediate the share through `Mutex` / `Channel` (mv
   structs; Phase R tranche 3) or `Atomic<T>`.
 - **Function-value constructions** — `Thread(() => work(base))` takes a
   zero-argument function value in place of the unevaluated call: the
-  lambda's CAPTURES are the eager arguments (Sendable-validated; owning
+  lambda's CAPTURES are the eager arguments (Sendable-validated; mv
   captures move into the task, which owns and disposes the closure). A
   func-typed binding handed to a construction is moved (use-after-move
   afterwards). Also accepted by a nursery's `.start(...)`. The task closure
@@ -141,7 +141,7 @@ targets.
   nursery-spawned. Must-start is deliberately not a trait rule; it is each
   spawnable's own `#destroy` contract.
 - **`Spawnable<T>`** — the production-side trait
-  (`core/System/Spawnable.nm`): `func start = (ref self, move out Task<T>)`
+  (`core/System/Spawnable.nm`): `func start = (ref self, mv out Task<T>)`
   and `func detach = (ref self)`, both required. `Thread<T>` and `Fiber<T>`
   conform (Fiber's `detach` launches and drops the handle), and `Task<T>`
   conforms to `Awaitable` — so each type carries exactly one role: the
@@ -161,7 +161,7 @@ targets.
   statics drive); its own launch methods consume them exactly like the
   library's, so it parks fibers, participates in deadlock detection, and
   frees like a library spawn. A class construction builds a heap instance;
-  an owning struct's yields the inline value (same fields, written
+  a mv struct's yields the inline value (same fields, written
   directly). No `#init` runs (declaring `#spawn`
   suppresses the default): the construction is compiler-generated and the
   handles written directly, so field defaults stay zero-valid. Must-start is
@@ -248,10 +248,10 @@ Thread(flusher(out)).detach()
 - **No handle, no future, no cancellation** — statement form only;
   `Task.current_cancelled()` is always false inside.
 - **Detach owns its captures** (STRUCT_PLAN_3 N2/R4): a daemon has no join to
-  bound a shared reference, so `.detach()` rejects every non-`move`
+  bound a shared reference, so `.detach()` rejects every non-`mv`
   class/trait argument at the construction — Sendable or not (Sendable gates
-  aliasability, not lifetime). Copyable/scalar/string/owning-struct arguments
-  are packed by copy and fine; a `move T` parameter takes ownership. The
+  aliasability, not lifetime). Copyable/scalar/string/mv-struct arguments
+  are packed by copy and fine; a `mv T` parameter takes ownership. The
   app-lifetime share — a daemon draining a channel main also holds — is
   spelled with the channel at the ROOT scope (globals are exempt:
   process lifetime). A construction stored in a variable and detached later
@@ -276,7 +276,7 @@ the special form. Declaring `#spawn` suppresses the default `#init`, so the
 type is not ordinarily constructible, and the compiler matches the MEMBER,
 never a type's name: a user struct that happens to be named `Thread` does
 not gain the sugar, and a user struct that declares its own `#spawn` does.
-(Class constructions build a heap instance; owning-struct constructions
+(Class constructions build a heap instance; mv-struct constructions
 yield the inline value.)
 
 The design property this upholds:
@@ -322,7 +322,7 @@ decisions, with the paths not taken:
   consumption half cannot be forgotten and each type carries one role.
   `Task<T>`'s `#init` is internal: `start` builds the handle through it,
   users cannot construct a bare handle that references no task.
-  (`Task<T>` is an owning struct since Phase R tranche 2 — it moves, and
+  (`Task<T>` is a mv struct since Phase R tranche 2 — it moves, and
   its `#destroy` releases the future reference.)
   _Rejected:_ the self-handle shape (`Thread<T>` implementing both traits,
   `.start()` returning `self`) — one type, but it forces both roles onto
@@ -342,8 +342,8 @@ decisions, with the paths not taken:
   helper's internal spawns and can turn a detached task into a joined one.
 - **`Sendable` gates exactly the shared case.** A class/trait reference
   passed as a plain argument aliases the instance, so it must be marked;
-  moved arguments (a `move T` parameter takes exclusive ownership) and
-  copied values (strings deep-copy at pack; owning value structs are
+  moved arguments (a `mv T` parameter takes exclusive ownership) and
+  copied values (strings deep-copy at pack; mv value structs are
   env-copied) are exempt. The nursery-borrow exception — a non-Sendable
   class crossing as a join-bounded borrow inside `async { }` — was retired:
   mark the class `Sendable`, move it in, or share it through a `Sendable`
@@ -515,7 +515,7 @@ the graph, so timed waits are exempt by design.
 
 Argument classes at the task boundary (STRUCT_PLAN_3 N1a R1):
 
-- **Move in** (`move T` parameter): exclusive ownership — any value can
+- **Move in** (`mv T` parameter): exclusive ownership — any value can
   cross moved, including a non-Sendable class (the caller gives up its
   access).
 - **Borrow** (inside `async { }` only): a shared `Sendable` class/trait
@@ -523,7 +523,7 @@ Argument classes at the task boundary (STRUCT_PLAN_3 N1a R1):
   — the env aliases the donor. Two checked rules make the alias sound: the
   ROOT must outlive the join (declared in the block's own scope or outside
   it), and the freeze keeps the donor const until the block exits. Outside
-  a nursery there is no join — owning structs cannot cross bare at all
+  a nursery there is no join — mv structs cannot cross bare at all
   (compile error), and class/trait references keep the `Sendable` gate as
   the shipped posture.
 - **Copy** (everything else): scalars, strings (deep-copied at pack), and

@@ -4,7 +4,7 @@ import Type from "./Type.ts";
 
 export default class DeclarationNode extends BaseNode {
 	visibility: "pub" | "private" | "internal";
-	declaration: "const" | "var" | "move" | "view" | "ref";
+	declaration: "const" | "var" | "mv" | "view" | "ref";
 	/**
 	 * True for a `readonly` field: readable per its visibility, but assignable
 	 * only from within the declaring struct/class's own methods (including its
@@ -41,7 +41,7 @@ export default class DeclarationNode extends BaseNode {
 	func_params?: ParameterNode[];
 	func_return_type?: Type;
 	scope?: BaseNode;
-	/** Optional swap replacement for `var X b = move obj.field swap <expr>`: the
+	/** Optional swap replacement for `var X b = mv obj.field swap <expr>`: the
 	 *  expression stored back into the moved-out field to revalidate it. */
 	swap?: BaseNode;
 	/** True for the synthesized loop-iterator binding (`var <item> = arr.at(i)`)
@@ -49,7 +49,7 @@ export default class DeclarationNode extends BaseNode {
 	 *  iteration by the loop, not by user code, so the `var`-never-changed
 	 *  warning must not fire for it. */
 	is_loop_iterator?: boolean;
-	/** Set by the build's move-on-last-use pass (STRING_PLAN tranche 4, see
+	/** Set by the build's mv-on-last-use pass (STRING_PLAN tranche 4, see
 	 *  check/utils/last_use.ts) when this declare is `var u = t` with t an
 	 *  owned string local proven never read or written again: the backends
 	 *  transfer the pair and the ownership mark instead of strdup'ing a copy.
@@ -118,7 +118,7 @@ export default class DeclarationNode extends BaseNode {
 	 *  a heap shell for the argument (pass-by-value): the callee frees the
 	 *  shell itself at scope exit (`free(p)`) after freeing the fields. */
 	owned_heap_shell?: boolean;
-	/** True for a `move` param of an owning VALUE-struct type: the caller
+	/** True for a `mv` param of a mv VALUE-struct type: the caller
 	 *  passed its storage by address, so the callee owns the CONTENTS but not
 	 *  the storage. free_scoped_declarations destroys the fields' owned
 	 *  resources at `(*param)` at scope exit — never a free. Set at build
@@ -128,7 +128,7 @@ export default class DeclarationNode extends BaseNode {
 	constructor(
 		start: number,
 		visibility: "pub" | "private" | "internal",
-		declaration: "const" | "var" | "move" | "view" | "ref",
+		declaration: "const" | "var" | "mv" | "view" | "ref",
 		name: string,
 		type?: Type,
 		value?: BaseNode,

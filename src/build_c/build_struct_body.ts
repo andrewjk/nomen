@@ -197,7 +197,7 @@ export function emit_by_value_return_type_headers(root: BlockNode, status: Build
 }
 
 function field_c_type(type: Type, status: BuildStatus): string {
-	// A `view T` field is the universal non-owning (ptr, len) slice struct —
+	// A `view T` field is the universal non-mv (ptr, len) slice struct —
 	// every view lowers to the same 16-byte nomen_view value regardless of
 	// its element type (mirrors the param/local emission sites).
 	if (type.is_view) {

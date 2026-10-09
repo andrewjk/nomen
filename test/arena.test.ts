@@ -48,14 +48,14 @@ pub func main = (Init init) {
 	});
 
 	// SKIP (B1 backend-cutover residual): the Arena mono's inlined Buffer
-	// primitives + the owning-struct load/binding interplay still stale-free
-	// and leak under audit on aarch64 — the "owning elements through inlined
+	// primitives + the mv-struct load/binding interplay still stale-free
+	// and leak under audit on aarch64 — the "mv elements through inlined
 	// raw container bodies" tranche (see FOLLOWUP.md). The Buffer-based
 	// containers (List) are covered by the specialization barrier.
 	test.skip("value-struct payloads (alloc / get / set)", async () => {
 		const input = `import System
 
-pub owning struct Node {
+pub mv struct Node {
 	pub var int v
 	pub var string label
 }
@@ -63,10 +63,10 @@ pub owning struct Node {
 pub func main = (Init init) {
 	var Arena<Node> a = Arena<Node>()
 	var Node n = Node(7, "seven")
-	var ArenaRef<Node> r = a.alloc(move n)
+	var ArenaRef<Node> r = a.alloc(mv n)
 	Console.write("\\{a.get(r).v} \\{a.get(r).label}\\n")
 	var Node m = Node(8, "eight")
-	a.set(r, move m)
+	a.set(r, mv m)
 	Console.write("\\{a.get(r).v} \\{a.get(r).label}\\n")
 }
 `;
@@ -78,7 +78,7 @@ pub func main = (Init init) {
 	test("class payloads (owned instance reclaimed on free)", async () => {
 		const input = `import System
 
-pub owning struct Box {
+pub mv struct Box {
 	pub var int v
 }
 
@@ -122,12 +122,12 @@ pub func main = (Init init) {
 	test("an ArenaRef handle copies freely — the same node in two lists", async () => {
 		// The allmark PORT blocker: `parent.children.push(node); open =
 		// open.push(node)` was impossible with direct references (`List.push`
-		// takes `move T`, and a second store of the same instance is a
+		// takes `mv T`, and a second store of the same instance is a
 		// double-own / borrow invalidation). A handle owns nothing, so it
-		// pushes into both lists without `move` and stays usable.
+		// pushes into both lists without `mv` and stays usable.
 		const input = `import System
 
-pub owning struct Node {
+pub mv struct Node {
 	pub var int v
 }
 

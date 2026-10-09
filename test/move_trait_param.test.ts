@@ -4,10 +4,10 @@ import build_and_check_output from "./build_and_check_output";
 import { parse_raw } from "./parse_with_imports";
 
 // A trait-typed value is a reference to a heap instance (a pointer with a
-// vtable), so `move Trait` transfers ownership exactly like `move Class` — the
+// vtable), so `mv Trait` transfers ownership exactly like `mv Class` — the
 // callee reclaims it through the trait's `<Trait>_destroy` shim. This unblocks
-// the allmark port's `RendererSet.add(move Renderer r)` shape (the old
-// workaround repeated push + map.set at every call site because `move Trait`
+// the allmark port's `RendererSet.add(mv Renderer r)` shape (the old
+// workaround repeated push + map.set at every call site because `mv Trait`
 // was rejected by the checker).
 
 const PRELUDE = `import System
@@ -16,13 +16,13 @@ trait Animal {
 	pub func speak = (self, out string)
 }
 
-owning struct Dog : Animal {
+mv struct Dog : Animal {
 	pub func speak = (self, out string) {
 		return "woof"
 	}
 }
 
-owning struct Cat : Animal {
+mv struct Cat : Animal {
 	pub func speak = (self, out string) {
 		return "meow"
 	}
@@ -38,13 +38,13 @@ function run(name: string, expected: string, body: string) {
 	return build_and_check_output(input, name, expected, true);
 }
 
-describe("move trait parameters", () => {
-	test("move Trait param is accepted and freed by the callee (audit)", async () => {
+describe("mv trait parameters", () => {
+	test("mv Trait param is accepted and freed by the callee (audit)", async () => {
 		await run(
 			"mv_trait_param_empty",
 			"done\n",
 			`
-pub func take = (move Animal a) {
+pub func take = (mv Animal a) {
 }
 
 pub func main = (Init init) {
@@ -55,16 +55,16 @@ pub func main = (Init init) {
 		);
 	});
 
-	test("move Trait param stored into a List<Trait> (the RendererSet.add shape)", async () => {
+	test("mv Trait param stored into a List<Trait> (the RendererSet.add shape)", async () => {
 		await run(
 			"mv_trait_add_list",
 			"woof meow\ndone\n",
 			`
-pub owning struct Registry {
+pub mv struct Registry {
 	pub var List<Animal> items = List<Animal>()
 
-	pub func add = (ref self, move Animal r) {
-		self.items.push(move r)
+	pub func add = (ref self, mv Animal r) {
+		self.items.push(mv r)
 	}
 }
 
@@ -79,16 +79,16 @@ pub func main = (Init init) {
 		);
 	});
 
-	test("move Trait param stored into a Map<string, Trait>", async () => {
+	test("mv Trait param stored into a Map<string, Trait>", async () => {
 		await run(
 			"mv_trait_add_map",
 			"meow\ndone\n",
 			`
-pub owning struct Registry {
+pub mv struct Registry {
 	pub var Map<string, Animal> by_name = Map<string, Animal>()
 
-	pub func add = (ref self, string name, move Animal r) {
-		self.by_name.set(move name, move r)
+	pub func add = (ref self, string name, mv Animal r) {
+		self.by_name.set(mv name, mv r)
 	}
 }
 
@@ -102,7 +102,7 @@ pub func main = (Init init) {
 		);
 	});
 
-	test("read-only (non-move) trait params still work unchanged", async () => {
+	test("read-only (non-mv) trait params still work unchanged", async () => {
 		await run(
 			"mv_trait_readonly",
 			"woof\ndone\n",

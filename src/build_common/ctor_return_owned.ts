@@ -16,7 +16,7 @@ import tuple_return_owned_element from "./tuple_return_owned_element.ts";
  * The auto-constructor's parameters are the struct's non-defaulted fields in
  * declaration order. A field with a default has no argument (its default was
  * seeded by the constructor and must be copied). An argument that is a
- * transferred owning value (`tuple_return_owned_element`) transfers raw.
+ * transferred mv value (`tuple_return_owned_element`) transfers raw.
  */
 export default function ctor_return_owned_string_fields(
 	return_struct: StructNode,

@@ -89,10 +89,10 @@ export function monomorphize_enum(
 	const mono = new EnumNode(generic_enum.start, generic_enum.visibility, mono_name, cases);
 	mono.is_generic = false;
 	// STRUCT_PLAN_3 B1a + B1 full cutover: a mono's ownership is DERIVED from
-	// its substituted payloads — an instantiation with an owning payload
-	// (`Option<Box>`, `Result<int, string>` — string is owning per D3) is
-	// move-only like a spelled `owning enum`. The generated mono cannot be
-	// spelled `owning`, so the derivation IS the declaration (and the
+	// its substituted payloads — an instantiation with a mv payload
+	// (`Option<Box>`, `Result<int, string>` — string is mv per D3) is
+	// move-only like a spelled `mv enum`. The generated mono cannot be
+	// spelled `mv`, so the derivation IS the declaration (and the
 	// Copyable verifier skips generated monos).
 	mono.is_owning =
 		generic_enum.is_owning ||
@@ -192,10 +192,10 @@ function substitute_payload(t: Type, substitution: Map<string, Type>): Type {
  * instance pointer raw and the enum value's scope exit destroys + frees it —
  * the same single-ownership contract ClassBuffer<T> slots follow. A borrowed
  * argument would leave two owners (the payload and the borrow's source) — a
- * double free — so it is rejected here, mirroring owning-field stores. Fresh
+ * double free — so it is rejected here, mirroring mv-field stores. Fresh
  * constructions transfer soundly; an owned LOCAL is moved implicitly
  * (recorded in the node's move_param_indices so the build suppresses its own
- * scope-exit reclaim); an explicit `move` arrives already recorded.
+ * scope-exit reclaim); an explicit `mv` arrives already recorded.
  */
 export function enforce_case_payload_ownership(
 	case_name: string,
@@ -208,9 +208,9 @@ export function enforce_case_payload_ownership(
 		const case_param = case_params[i];
 		if (!case_param?.type.name || case_param.type.is_array) continue;
 		// An OWNING payload slot: a class/trait reference (the tagged union
-		// stores the pointer) or an owning-STRUCT value (the payload owns its
+		// stores the pointer) or a mv-STRUCT value (the payload owns its
 		// heap state). A borrowed argument would leave two owners — a double
-		// free — so it is rejected here, mirroring owning-field stores.
+		// free — so it is rejected here, mirroring mv-field stores.
 		const payload_struct = status.structs.find((s) => s.name === case_param.type.name);
 		const is_ref_payload =
 			!!payload_struct?.is_class ||
@@ -221,17 +221,17 @@ export function enforce_case_payload_ownership(
 		if (arg.node_type === "value" && (arg as import("../../nodes/ValueNode.ts").default).is_moved) {
 			continue;
 		}
-		// A bare FIELD READ of an owning payload (`Option.some(self.item)`)
+		// A bare FIELD READ of a mv payload (`Option.some(self.item)`)
 		// is a copy of the field's value — the payload would share the
 		// field's owned state. Same rule as the declaration side: transfer
-		// with `move ... swap`, or construct fresh.
+		// with `mv ... swap`, or construct fresh.
 		if (
 			arg.node_type === "access" &&
 			(arg as import("../../nodes/AccessNode.ts").default).access.node_type === "access_field"
 		) {
 			add_error(
 				status,
-				`cannot pass a field read to case '.${case_name}' — the case payload takes ownership; construct a fresh instance or move the field out with a swap`,
+				`cannot pass a field read to case '.${case_name}' — the case payload takes ownership; construct a fresh instance or mv the field out with a swap`,
 				arg.start,
 			);
 			continue;
@@ -239,7 +239,7 @@ export function enforce_case_payload_ownership(
 		if (borrow_depth_of(arg, status) !== undefined) {
 			add_error(
 				status,
-				`cannot pass a borrowed value to case '.${case_name}' — the case payload takes ownership; construct a fresh instance or pass an owned local with 'move'`,
+				`cannot pass a borrowed value to case '.${case_name}' — the case payload takes ownership; construct a fresh instance or pass an owned local with 'mv'`,
 				arg.start,
 			);
 			continue;

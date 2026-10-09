@@ -50,7 +50,7 @@ test()
 
 	test("method parameter is rejected", () => {
 		const input = `
-owning struct Echo {
+mv struct Echo {
 	func echo = (self, string s, out string) {
 		return s
 	}
@@ -68,7 +68,7 @@ test()
 
 	test("constructor field argument is rejected", () => {
 		const input = `
-owning struct Holder {
+mv struct Holder {
 	var string text
 }
 func test = () {

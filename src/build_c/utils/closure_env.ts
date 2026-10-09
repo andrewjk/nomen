@@ -29,7 +29,7 @@ function capture_kind(type: Type, status: BuildStatus): CaptureKind {
 }
 
 /**
- * The C declaration type for one capture's env field. Value structs (owning or
+ * The C declaration type for one capture's env field. Value structs (mv or
  * not) and classes are held by POINTER — a struct's full C definition lands in
  * the CODE (after the headers this typedef is emitted into), so an inline field
  * would be an incomplete type; a class value already IS a pointer.
@@ -61,7 +61,7 @@ export function lambda_has_owned_captures(func: FunctionNode, status: BuildStatu
 /**
  * Emit (once per lambda per TU) the env destructor for a capturing lambda
  * whose env owns heap values. Phase 2b: captured strings are strdup'd into the
- * env. Phase 2c part 2: owning value structs, classes and func descriptors are
+ * env. Phase 2c part 2: mv value structs, classes and func descriptors are
  * MOVED in, so the destructor destroys/frees them. A capture-free or
  * scalar-only lambda needs none (the descriptor's `destroy_env` is NULL).
  * Returns the destructor's C name, or undefined.
@@ -101,9 +101,9 @@ export function emit_closure_env_free(func: FunctionNode, status: BuildStatus): 
 		}
 		if (kind === "struct") {
 			const elem = status.structs.find((s) => s.name === cap.type.name && !s.is_simple_type);
-			// A MOVE-captured owning struct owns its heap fields: run the
+			// A MOVE-captured mv struct owns its heap fields: run the
 			// struct's destroy before freeing the env copy. A copied
-			// (non-owning) struct owns only the malloc'd copy.
+			// (non-mv) struct owns only the malloc'd copy.
 			if (cap.is_move && elem && struct_needs_destroy(elem, status)) {
 				body += `\tif (_e->${field}) { ${cap.type.name}_destroy(_e->${field}); free(_e->${field}); }\n`;
 			} else {

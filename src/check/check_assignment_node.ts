@@ -291,7 +291,7 @@ export default function check_assignment_node(
 		// STRUCT_PLAN_3 B4 — a trait-typed local holds a boxed handle. The
 		// former shape-lock rules collapse into ownership rules:
 		//   - a fresh temporary (constructor / call) boxes freely;
-		//   - a bare value-struct local BOXES it — an implicit move (the
+		//   - a bare value-struct local BOXES it — an implicit mv (the
 		//     donor is invalidated here);
 		//   - another trait local assigns the handle (alias semantics —
 		//     the build's reassignment reclaim guards cover sharing);
@@ -316,7 +316,7 @@ export default function check_assignment_node(
 					return false;
 				}
 				if (src_sv && is_value_struct_conformer(src_sv.type.name, trait_name, status)) {
-					// Boxing a bare value-struct local is an implicit move.
+					// Boxing a bare value-struct local is an implicit mv.
 					if (!(assign.right_value as ValueNode).is_moved) {
 						(assign.right_value as ValueNode).is_moved = true;
 					}
@@ -498,7 +498,7 @@ export default function check_assignment_node(
 		);
 
 	// A view-typed field store (`line.text = doc.slice(0, 5)`): the instance
-	// now carries a non-owning borrow rooted at the RHS's owner. Record it on
+	// now carries a non-mv borrow rooted at the RHS's owner. Record it on
 	// the ROOT variable of the access chain so escape checks (return /
 	// outer-scope assignment) and source-mutation invalidation see the whole
 	// instance's dependencies. Also rejects reading a view field whose source
@@ -533,7 +533,7 @@ export default function check_assignment_node(
 
 	// Reject byte-copying a struct that transitively owns heap resources from
 	// another variable — both variables would free the same backing data
-	// (double-free). Use `move` (`b = move a`) to transfer ownership or `.copy()`
+	// (double-free). Use `mv` (`b = mv a`) to transfer ownership or `.copy()`
 	// for a deep copy. A `swap` assignment transfers ownership (the source is
 	// replaced), so it is allowed; fresh allocations (constructors / function
 	// returns) arrive as non-value nodes and are moves, not copies. This mirrors
@@ -554,7 +554,7 @@ export default function check_assignment_node(
 	) {
 		const rhs_type = type_from_value_node(assign.right_value, status);
 		// D3: a string LITERAL (or null) RHS is a fresh value, not a copy of
-		// an existing binding — the owning-type copy rule must not fire on it.
+		// an existing binding — the mv-type copy rule must not fire on it.
 		const raw = (assign.right_value as ValueNode).value;
 		const fresh_value =
 			typeof raw === "string" && ((raw.startsWith('"') && raw.endsWith('"')) || raw === "null");
@@ -562,26 +562,26 @@ export default function check_assignment_node(
 			add_error(
 				status,
 				rhs_type.name === "string"
-					? `cannot copy a string by value — it owns its bytes; use 'move' to transfer it, or .copy() for a deep copy`
-					: `cannot copy '${rhs_type.name}' by value — it owns heap resources; use .copy() or move`,
+					? `cannot copy a string by value — it owns its bytes; use 'mv' to transfer it, or .copy() for a deep copy`
+					: `cannot copy '${rhs_type.name}' by value — it owns heap resources; use .copy() or mv`,
 				assign.right_value.start,
 			);
 		}
 	}
 
-	// `b = move a` (no swap) transfers ownership: the source `a` is moved and may
+	// `b = mv a` (no swap) transfers ownership: the source `a` is moved and may
 	// not be used again until it is reassigned. (A swap revalidates the source,
-	// so it is not marked; func-call `move` params are marked in check_function_call.)
+	// so it is not marked; func-call `mv` params are marked in check_function_call.)
 	if (assign.right_value.node_type === "value" && assign.right_value.is_moved && !assign.swap) {
-		// A `ref` alias is not the owner (STRUCT_PLAN_3 §A3.3): `move` cannot
-		// transfer through it — move the owner instead.
+		// A `ref` alias is not the owner (STRUCT_PLAN_3 §A3.3): `mv` cannot
+		// transfer through it — mv the owner instead.
 		const moved_src = status.values.findLast(
 			(v) => v.name === (assign.right_value as ValueNode).value,
 		);
 		if (moved_src?.is_ref_binding) {
 			add_error(
 				status,
-				`'${(assign.right_value as ValueNode).value}' is a ref — move the owner instead`,
+				`'${(assign.right_value as ValueNode).value}' is a ref — mv the owner instead`,
 				assign.right_value.start,
 			);
 		} else {
@@ -654,19 +654,19 @@ export default function check_assignment_node(
 				}
 			}
 			// Owning fields take ownership of their instance — a CLASS field
-			// (`move T f`) or an OWNING-STRUCT-typed field (`var T f`, B5:
+			// (`mv T f`) or an OWNING-STRUCT-typed field (`var T f`, B5:
 			// ownership follows the field's type). Storing a BORROWED
-			// reference (a non-`move` parameter, a field / container borrow,
+			// reference (a non-`mv` parameter, a field / container borrow,
 			// or an object alias) would let the field's destroy free an
 			// instance its real owner frees too — double free on both
 			// backends. Owner-carrying values stay legal and are the
 			// established idiom: a fresh constructor/call (non-value RHS), an
-			// explicit `move`, a `move` parameter, or an owned local
+			// explicit `mv`, a `mv` parameter, or an owned local
 			// (`var TreeNode l = create_tree(...); node.left = l` — the
-			// backends implicitly move the local into the field).
+			// backends implicitly mv the local into the field).
 			const field_is_owning_class =
 				!!field &&
-				(field.declaration === "move" || is_owning_struct_type(field.type, status)) &&
+				(field.declaration === "mv" || is_owning_struct_type(field.type, status)) &&
 				!!field.type.name &&
 				!field.type.is_array &&
 				(is_class_type(field.type.name, status) || is_owning_struct_type(field.type, status));
@@ -680,8 +680,8 @@ export default function check_assignment_node(
 					? status.values.findLast((v) => v.name === src_name)
 					: undefined;
 				if (src_sv) {
-					// A parameter is a borrow unless declared `move`; resolve it
-					// off the enclosing FunctionNode (a `move T p` parses with
+					// A parameter is a borrow unless declared `mv`; resolve it
+					// off the enclosing FunctionNode (a `mv T p` parses with
 					// declaration "var" + ParameterNode.is_moved). Locals carry
 					// their borrow/alias status on the scope value.
 					const enclosing_func = status.stack.findLast((n) => n.node_type === "func") as
@@ -695,13 +695,13 @@ export default function check_assignment_node(
 					if (src_is_borrow) {
 						add_error(
 							status,
-							`cannot store '${src_name}' into owning field '${field_access.name}' — the field takes ownership of a borrowed value; take a fresh instance, declare the parameter 'move', or pass it with 'move'`,
+							`cannot store '${src_name}' into mv field '${field_access.name}' — the field takes ownership of a borrowed value; take a fresh instance, declare the parameter 'mv', or pass it with 'mv'`,
 							assign.right_value.start,
 						);
 					} else {
 						// An owned local transferred into the field: the store is
 						// a MOVE (the backends suppress the local's cleanup), so
-						// later reads are use-after-move — mark it here.
+						// later reads are use-after-mv — mark it here.
 						(assign.right_value as ValueNode).is_moved = true;
 						if (!status.moved_variables) status.moved_variables = new Set();
 						status.moved_variables.add(src_name);
@@ -721,7 +721,7 @@ export default function check_assignment_node(
 				) {
 					add_error(
 						status,
-						`cannot store a capturing closure in func field '${field_access.name}' of value struct '${target_type.name}' — value structs are copyable and would share the descriptor; declare the struct \`owning\` instead`,
+						`cannot store a capturing closure in func field '${field_access.name}' of value struct '${target_type.name}' — value structs are copyable and would share the descriptor; declare the struct \`mv\` instead`,
 						assign.right_value.start,
 					);
 					return false;
@@ -781,8 +781,8 @@ export default function check_assignment_node(
 	}
 
 	const rhs_type = type_from_value_node(assign.right_value, status);
-	// STRUCT_PLAN_3 B2/T2: `Box<T>` is owning — a bare binding copy shares
-	// the pointee across two owners (double-free). Require `move`.
+	// STRUCT_PLAN_3 B2/T2: `Box<T>` is mv — a bare binding copy shares
+	// the pointee across two owners (double-free). Require `mv`.
 	if (
 		assign.right_value.node_type === "value" &&
 		!assign.right_value.is_moved &&
@@ -791,7 +791,7 @@ export default function check_assignment_node(
 	) {
 		add_error(
 			status,
-			`cannot copy '\${rhs_type.name}' by value — a Box owns its pointee; use move`,
+			`cannot copy '\${rhs_type.name}' by value — a Box owns its pointee; use mv`,
 			assign.right_value.start,
 		);
 		status.is_assignment_target = false;
@@ -804,18 +804,18 @@ export default function check_assignment_node(
 		if (is_class_type(rhs_type.name, status)) {
 			// An instance-typed field (the class-tier naming persists for the
 			// heap-instance tier — Box pointees) is a borrowed reference owned
-			// by its parent; extracting it requires move+swap so the parent's
+			// by its parent; extracting it requires mv+swap so the parent's
 			// slot is revalidated.
 			if (!assign.swap) {
 				add_error(
 					status,
-					`cannot assign owning field '${rhs_type.name}' from another owner, use move with swap`,
+					`cannot assign mv field '${rhs_type.name}' from another owner, use mv with swap`,
 					assign.right_value.start,
 				);
 			}
 		} else if (is_owning_struct_type_requiring_move(rhs_type, status)) {
-			// An owning struct field cannot be byte-copied out (double-free); move
-			// it out with a swap that revalidates the field. A string-only owning
+			// A mv struct field cannot be byte-copied out (double-free); mv
+			// it out with a swap that revalidates the field. A string-only mv
 			// struct (e.g. a tuple with a string field) is a sound borrow instead.
 			// The swap form (`f1.f = f2.f swap <replacement>`) revalidates the
 			// SOURCE field — the read is the transfer's half, not a copy.
@@ -823,13 +823,13 @@ export default function check_assignment_node(
 				const field_name = (assign.right_value as AccessNode).access.name;
 				add_error(
 					status,
-					`cannot copy '${rhs_type.name}' out of field '${field_name}' by value — it owns heap resources; use 'move ... swap <replacement>'${rhs_type.name === "string" ? ", or .copy() for a deep copy" : ""}`,
+					`cannot copy '${rhs_type.name}' out of field '${field_name}' by value — it owns heap resources; use 'mv ... swap <replacement>'${rhs_type.name === "string" ? ", or .copy() for a deep copy" : ""}`,
 					assign.right_value.start,
 				);
 			} else if (!assign.swap) {
 				add_error(
 					status,
-					`move out of a field requires a swap to revalidate it`,
+					`mv out of a field requires a swap to revalidate it`,
 					assign.right_value.start,
 				);
 			}
@@ -838,8 +838,8 @@ export default function check_assignment_node(
 
 	// Borrow-lifetime check: a borrowed class reference (a variable that holds
 	// a borrow) may not be assigned to a variable declared in an outer scope —
-	// that would let the borrow outlive the instance it points into. To move
-	// ownership out, use `move` (with swap). Within the same/inner scope the
+	// that would let the borrow outlive the instance it points into. To mv
+	// ownership out, use `mv` (with swap). Within the same/inner scope the
 	// target simply becomes a borrow too.
 	if (!assign.swap && left_value.declaration === "var") {
 		const rhs_borrow_depth = borrow_depth_of(assign.right_value, status);
@@ -847,7 +847,7 @@ export default function check_assignment_node(
 			if (left_value.decl_depth !== undefined && left_value.decl_depth < rhs_borrow_depth) {
 				add_error(
 					status,
-					`borrow escapes its scope — use 'move' (with swap) to transfer ownership`,
+					`borrow escapes its scope — use 'mv' (with swap) to transfer ownership`,
 					assign.right_value.start,
 				);
 			} else {
@@ -928,7 +928,7 @@ export default function check_assignment_node(
  * Used to decide whether to snapshot the LHS's bounds before clearing them.
  */
 /** Is this `a.b = ...` assignment's target an OWNING-typed field (a class
- *  field or an owning-struct-typed field, B5)? Such stores TRANSFER — the
+ *  field or a mv-struct-typed field, B5)? Such stores TRANSFER — the
  *  copy rule does not apply; the borrow rejection governs instead. */
 function lhs_field_access_owning(access: AccessNode, status: CheckStatus): boolean {
 	const af = access.access as AccessFieldNode;

@@ -11,7 +11,7 @@ pub struct VLine {
 	var start = 0
 }
 
-pub owning struct Doc {
+pub mv struct Doc {
 	var text = ""
 	pub func lines = (ref self, out List<VLine>) {
 		var List<VLine> result = List<VLine>()
@@ -20,7 +20,7 @@ pub owning struct Doc {
 			view first = txt.slice(0, 2)
 			var l = VLine(first)
 			l.start = 0
-			result.push(move l)
+			result.push(mv l)
 		}
 		return result
 	}
@@ -47,7 +47,7 @@ pub struct VSingle {
 	var view string text
 }
 
-pub owning struct Doc {
+pub mv struct Doc {
 	var text = ""
 	pub func singles = (ref self, out List<VSingle>) {
 		var List<VSingle> result = List<VSingle>()
@@ -55,7 +55,7 @@ pub owning struct Doc {
 		if txt.length >= 2 {
 			view first = txt.slice(0, 2)
 			var l = VSingle(first)
-			result.push(move l)
+			result.push(mv l)
 		}
 		return result
 	}
@@ -78,7 +78,7 @@ if ss.length == 1 {
 // must propagate through the `self.` field path.
 test("guarded slice of self field verifies", async () => {
 	const input = `
-pub owning struct Doc {
+pub mv struct Doc {
 	var text = ""
 	pub func first_two = (ref self, out string) {
 		if self.text.length >= 2 {

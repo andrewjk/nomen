@@ -74,7 +74,7 @@ func hash_it = (view string text, out int) {
 	return h
 }
 
-pub owning struct Item {
+pub mv struct Item {
 	var text = ""
 }
 
@@ -82,7 +82,7 @@ pub func main = (Init init) {
 	var List<Item> xs = List<Item>()
 	var i0 = Item()
 	i0.text = "one"
-	xs.push(move i0)
+	xs.push(mv i0)
 	var total = 0
 	var i = 0
 	while i < xs.length {
@@ -240,7 +240,7 @@ pub func main = (Init init) {
 			`
 import System
 
-pub owning struct Item {
+pub mv struct Item {
 	var text = ""
 }
 
@@ -255,7 +255,7 @@ pub func main = (Init init) {
 	var List<Item> xs = List<Item>()
 	var i0 = Item()
 	i0.text = "hello"
-	xs.push(move i0)
+	xs.push(mv i0)
 	if xs.length == 1 {
 		Console.write("r \\{text_at(xs, 0)}")
 	}
@@ -272,7 +272,7 @@ pub func main = (Init init) {
 			`
 import System
 
-pub owning struct Item {
+pub mv struct Item {
 	var text = "hello world"
 }
 
@@ -286,7 +286,7 @@ func text_at = (List<Item> xs, int i, out view string) {
 pub func main = (Init init) {
 	var List<Item> xs = List<Item>()
 	var i0 = Item()
-	xs.push(move i0)
+	xs.push(mv i0)
 	const view string v = text_at(xs, 0)
 	Console.write("l\\{v.length} \\{v.to_string()}")
 }
@@ -341,7 +341,7 @@ pub func main = (Init init) {
 			`
 import System
 
-pub owning struct Scanner {
+pub mv struct Scanner {
 	var seed = 0
 
 	pub func fold = (self, view string text, out int) {

@@ -7,12 +7,12 @@
  * slot indexing is a mask (`hash & (cap - 1)`) — correct for negative hashes
  * too (two's-complement `&` already lands in `[0, cap)`).
  **/
-pub owning struct Set<T: Hashable + Equatable> {
+pub mv struct Set<T: Hashable + Equatable> {
 	var length = 0
 	var slots = Buffer<T>()
 	var used = Buffer<int>()
 
-	pub func add = (ref self, move T value) {
+	pub func add = (ref self, mv T value) {
 		var int cap = self.slots.cap
 		if cap == 0 {
 			cap = self.slots.alloc(8)
@@ -148,8 +148,8 @@ pub owning struct Set<T: Hashable + Equatable> {
 	}
 
 	func rehash = (ref self, int new_cap) {
-		var Buffer<T> old_slots = move self.slots swap Buffer<T>()
-		var Buffer<int> old_used = move self.used swap Buffer<int>()
+		var Buffer<T> old_slots = mv self.slots swap Buffer<T>()
+		var Buffer<int> old_used = mv self.used swap Buffer<int>()
 		var int old_cap = old_slots.cap
 
 		self.slots.alloc(new_cap)
@@ -163,12 +163,12 @@ pub owning struct Set<T: Hashable + Equatable> {
 				// is owned by exactly one buffer (the new self) afterwards.
 				// load_T would leave the old slot referencing the same class
 				// pointer — a double-free when old_slots is destroyed. The
-				// result is bound to a local so an owning-element copy (e.g. a
+				// result is bound to a local so a mv-element copy (e.g. a
 				// `Buffer<string>` slot, which store_T strdup's) is freed here
 				// once the new buffer has made its own copy — passing it inline
 				// would orphan the move_T result.
 				var T v = old_slots.move(i)
-				self.add(move v)
+				self.add(mv v)
 			}
 		}
 	}

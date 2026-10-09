@@ -1,7 +1,7 @@
 // FFI: the C library's heap-copy entry point (string.h). The adapter
 // marshals the fat string to the thin char* the C ABI expects; the string
 // result is re-wrapped with its length.
-extern func strdup = (string s, move out string)
+extern func strdup = (string s, mv out string)
 
 // Raw memory externs — the allocation primitives every `unsafe` Nomen body
 // across core (Buffer, StringBuilder, Array, ...) is built on. This file is
@@ -19,10 +19,10 @@ extern func memset = (uint64 dst, int value, int bytes, out uint64)
 /**
  * A UTF-8 text string — a heap-owned, length-tracked sequence of bytes.
  * STRUCT_PLAN_3 D3: `string` is OWNING — the fat (ptr, len) pair owns its
- * bytes, so bindings move unless a copy is spelled (`.copy()`); `view string`
+ * bytes, so bindings mv unless a copy is spelled (`.copy()`); `view string`
  * is the cheap read-only passing form.
  **/
-pub owning struct string: Stringable, Hashable, Equatable {
+pub mv struct string: Stringable, Hashable, Equatable {
 	pub func hash = (self, out uint) {
 		// djb2 over exactly self.length bytes — matches the byte count of
 		// owned strings and literals (views hash the viewed bytes only).
@@ -34,19 +34,19 @@ pub owning struct string: Stringable, Hashable, Equatable {
 		return h
 	}
 
-	// The uniform owning-type verb: a fresh, owned byte-exact copy of self.
+	// The uniform mv-type verb: a fresh, owned byte-exact copy of self.
 	// The deep-copy spelling the binding/assignment copy errors name — same
 	// allocation contract as to_string (fresh buffer, never an alias).
-	pub func copy = (self, move out string) {
+	pub func copy = (self, mv out string) {
 		return self.to_string()
 	}
 
-	// Returns an OWNED byte-exact copy of self (`move out string`). Fresh
+	// Returns an OWNED byte-exact copy of self (`mv out string`). Fresh
 	// allocation, never an alias of self's storage — the result can outlive
 	// the receiver (e.g. escape a match branch that reclaims the scrutinee
 	// temp). Copies by tracked length, so embedded NULs survive (an extern
 	// strdup boundary would re-synthesize length via strlen and truncate).
-	pub func to_string = (self, move out string) {
+	pub func to_string = (self, mv out string) {
 		```
 		#arch: c
 		// Fat-string ABI: copy self.len bytes; no strlen anywhere.
@@ -100,7 +100,7 @@ pub owning struct string: Stringable, Hashable, Equatable {
 		panic("index out of range")
 	}
 
-	// A non-owning slice [start, end) into self's buffer. Returns a `view
+	// A non-mv slice [start, end) into self's buffer. Returns a `view
 	// string` (ptr, len) that borrows from self: it may not outlive self's
 	// scope and is invalidated if self is reassigned. Use .to_string() to
 	// materialize an owned copy.

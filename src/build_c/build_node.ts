@@ -253,7 +253,7 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 			const anon = node as AnonStructNode;
 			// A base-bearing literal (`[ .. <base>, ... ]`) emits its base
 			// expression — the destination slot gets a copy of the base (the
-			// owning-struct copy/move rule was enforced at check time); the
+			// mv-struct copy/mv rule was enforced at check time); the
 			// destination sites apply the field overrides afterwards.
 			if (anon.base) {
 				build_node(anon.base, status);
@@ -293,7 +293,7 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 		if (!statement_ends_with_block(node, status)) {
 			status.code += ";\n";
 		}
-		// Flush frees deferred from move call sites inside this statement
+		// Flush frees deferred from mv call sites inside this statement
 		// (VALUE-struct string fields — see build_access_node /
 		// build_function_call_node). Appending them at the call itself would
 		// break the surrounding expression.

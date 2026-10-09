@@ -265,14 +265,14 @@ test("identifier classification mirrors historical scan rules", () => {
 
 test("assignment and declaration swaps ride the IR; traffic keeps historical parity", () => {
 	const input = `
-owning struct Box {
+mv struct Box {
     var int value
 }
 pub func swapper = (int q, out int) {
     var Box a = Box(0)
     var Box b = Box(1)
     a = b swap Box(q)
-    var Box d = move a swap Box(q + 1)
+    var Box d = mv a swap Box(q + 1)
     return d.value
 }
 `;
@@ -292,7 +292,7 @@ pub func swapper = (int q, out int) {
 	expect(assign!.swap).not.toBeNull();
 	expect(assign!.swap!.node.node_type).toBe("func_call");
 
-	// `var Box d = move a swap Box(q + 1)` — the replacement rides the declare.
+	// `var Box d = mv a swap Box(q + 1)` — the replacement rides the declare.
 	const decl = lowered.body.find((s) => s.kind === "declare" && s.decl.swap !== null);
 	expect(decl && decl.kind === "declare").toBe(true);
 

@@ -44,7 +44,7 @@ import Task
 /**
  * A deferred function call, startable on the shared worker pool
  **/
-pub owning struct Thread<T> : Spawnable<T> {
+pub mv struct Thread<T> : Spawnable<T> {
 	// The construction hook (ASYNC.md): declares this type's
 	// construction as the deferred-call special form — the single argument
 	// is a call (args packed eagerly, call deferred) or a zero-arg function
@@ -82,7 +82,7 @@ pub owning struct Thread<T> : Spawnable<T> {
 	// fields, so #destroy becomes a no-op afterwards. The future's refs
 	// account for the trampoline, the returned handle, and the nursery (when
 	// captured).
-	pub func start = (ref self, move out Task<T>) {
+	pub func start = (ref self, mv out Task<T>) {
 		```
 		#arch: c
 		struct nomen_future *_f = (struct nomen_future *)self->future;

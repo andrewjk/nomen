@@ -5,56 +5,56 @@ plan's Phase A (see [`docs/STRUCTS.md`](./docs/STRUCTS.md)). Recorded so the
 fixes survive a plan rollback: if Phase A is reverted, these are real bugs on
 `main` independent of the plan, with their fixes described here.
 
-## 1. Prefix-`move` declarations never transfer (checker gap)
+## 1. Prefix-`mv` declarations never transfer (checker gap)
 
 **Seen on `main` (commit 11a7090b), both backends' checker.**
 
-The `move T r = src` **declaration prefix** never stamps the initializer as an
+The `mv T r = src` **declaration prefix** never stamps the initializer as an
 ownership transfer — `decl.value.is_moved` is only set by the _expression_
-`move` prefix (`move T r = move src`, parsed in `src/parse/parse_expression.ts`),
+`mv` prefix (`mv T r = mv src`, parsed in `src/parse/parse_expression.ts`),
 never by the declaration keyword (`src/parse/parse_declaration.ts`). Every
 downstream transfer rule keys on `decl.value.is_moved`
 (`src/check/check_declaration_node.ts`), so the prefix form misbehaves in two
 ways:
 
 - **Class source — silently aliases instead of transferring.**
-  `move Box r = p` sets `class_alias_of` on `r` (the historical lenient-alias
+  `mv Box r = p` sets `class_alias_of` on `r` (the historical lenient-alias
   path): `p` stays usable, both names share the instance, and the instance is
-  destroyed once via `p`'s slot. The documented transfer semantics ("`move Box
+  destroyed once via `p`'s slot. The documented transfer semantics ("`mv Box
 q = p` — transfer; p is invalid afterwards") never happen; only
-  `move Box r = move p` actually transfers.
+  `mv Box r = mv p` actually transfers.
 - **Owning value-struct source — false "cannot copy" error.**
-  `move H q = p` (H owning, e.g. a `List` field) hits the
-  `cannot copy 'H' by value — it owns heap resources; use .copy() or move`
-  error _even though `move` was written_ — the prescribed fix is
+  `mv H q = p` (H mv, e.g. a `List` field) hits the
+  `cannot copy 'H' by value — it owns heap resources; use .copy() or mv`
+  error _even though `mv` was written_ — the prescribed fix is
   unsatisfiable in the prefix form. Repro (errors on `main`):
   ```nomen
   import System
-  struct H { move List<int> items }
+  struct H { mv List<int> items }
   pub func main = () {
       var H p = H(List<int>())
-      move H q = p
+      mv H q = p
       Console.write("\{q.items.length}\n")
   }
   ```
 
-**Fix:** in `check_declaration_node`, when `declaration === "move"` and the
+**Fix:** in `check_declaration_node`, when `declaration === "mv"` and the
 initializer is a bare variable (`decl.value?.node_type === "value"`) without a
 swap and not already `is_moved`, stamp `decl.value.is_moved = true` before the
-ownership checks. Everything downstream then behaves: the owning-struct
+ownership checks. Everything downstream then behaves: the mv-struct
 "cannot copy" gate is satisfied, the source lands in `moved_variables`
 ("used after move" on later uses), both backends' alias classification
 (C `val_is_class_alias`, aarch64 `value_is_var_borrow` — both require
 `!is_moved`) treat the binding as owned, and the transfer destroy/frees
-exactly once. The swap form (`move x = a swap b`) is deliberately left on its
+exactly once. The swap form (`mv x = a swap b`) is deliberately left on its
 pre-existing path (the transfer arm at the `!decl.swap` gate never owned that
 shape).
 
 ## 2. Move-through-a-`ref` reported with the wrong message (Phase A arm starved by bug 1)
 
-STRUCT_PLAN_3 §A3.3 (new checker code, but starved by bug 1): `move Box r = q`
+STRUCT_PLAN_3 §A3.3 (new checker code, but starved by bug 1): `mv Box r = q`
 where `q` is a `ref` binding must error
-`'q' is a ref — move the owner instead`. Because the prefix `move` never set
+`'q' is a ref — mv the owner instead`. Because the prefix `mv` never set
 `decl.value.is_moved`, the §A3.3 arm (gated on `decl.value.is_moved`) never
 ran, and the _unspelled-alias_ error fired instead. Fixing bug 1 routes the
 prefix form into the §A3.3 arm and the right message comes out. Only visible
@@ -64,8 +64,8 @@ with Phase A's `ref` bindings; listed because the fix is the same stamp.
 
 **Seen on `main` (commit 11a7090b), aarch64 backend only — C is correct.**
 
-`var Box r = move p` (and, after bug 1's fix, the prefix form
-`move Box r = p`) ran the instance's `#destroy` **twice** at scope exit on
+`var Box r = mv p` (and, after bug 1's fix, the prefix form
+`mv Box r = p`) ran the instance's `#destroy` **twice** at scope exit on
 aarch64. Repro (prints `DD` on aarch64, `D` on C):
 
 ```nomen
@@ -78,7 +78,7 @@ class Box {
 }
 pub func main = () {
 	var Box p = Box(1)
-	move Box r = move p
+	mv Box r = mv p
 	Console.write("\{r.v}\n")
 }
 ```
@@ -93,7 +93,7 @@ both declarations against the same pointer: `Box_destroy(p); Box_destroy(r)`
 (the free itself still fired once, via p's anchor slot, so this corrupted
 destructor state rather than the heap — worse in its own way). The C backend
 classifies the same shape with `val_is_class_alias`, which deliberately does
-NOT consult `is_moved` for a bare class source: `r` stays a non-owning alias,
+NOT consult `is_moved` for a bare class source: `r` stays a non-mv alias,
 `p`'s slot is the single owner, and teardown runs exactly once.
 
 **Fix:** drop the `!is_moved` condition from `value_is_var_borrow`
@@ -111,7 +111,7 @@ fired for bare `value`-node initializers, so `ref Box q = make()` and
 `ref Box q = Box(1)` (fresh owned values — nothing to alias) passed the check
 and then built as owned storage: `ref` spelled, `var` semantics. Fix: fire the
 error for ANY initializer that `ref_alias_source_name` cannot classify as an
-existing binding/field/borrow-returning call (§A1). `ref q = move p` also
+existing binding/field/borrow-returning call (§A1). `ref q = mv p` also
 errors now (an alias never takes ownership).
 
 ## 5. A root-scope class global is unreadable from any other function (both backends)
@@ -158,7 +158,7 @@ and the prologue stores through `emit_var_store`'s symbol path. C: the root
 scan emits `struct Box *g = (void *)0;` into the header preamble (ahead of
 every function) and the spliced prologue emission becomes the initializer
 assignment. Value-struct globals took the same shape in Phase R tranche 3
-(the owning-struct declaration arm emits file-scope storage; the prologue
+(the mv-struct declaration arm emits file-scope storage; the prologue
 assignment runs the constructor through `&name`). Trait-typed globals were
 closed later: the root scan emits `void *g = (void *)0;` at file scope, the
 prologue emission assigns the boxed handle, and the handle's trait binding
@@ -240,7 +240,7 @@ unchanged.
 ## 10. aarch64: a generic CLASS with an inline value-struct `T` field sizes `T` as one word
 
 **FIXED 2026-10-05 (Phase B tranche 2 gap-fix).** A generic class whose
-field is the type parameter INLINE (`class Box<T> { move T __value }`)
+field is the type parameter INLINE (`class Box<T> { mv T __value }`)
 computed its mono construction size from the BARE generic name: the aarch64
 declaration path called `get_struct_size(node.type.name)` where
 `node.type.name === "Box"` (type args carry the mono), so the layout sized
@@ -315,7 +315,7 @@ spawn boundary silently violated it.
 donor's address, the root rule bounds the donor's scope, and the freeze keeps
 the donor itself const while the callee mutates through the ref. Outside a
 nursery the pack keeps the env copy (no join to bound a borrow — the same
-posture as bare owning args).
+posture as bare mv args).
 
 ## 11. Generic construction without call-site type args links against the generic's init
 
@@ -384,8 +384,8 @@ C lowered it correctly.
 **Verified fixed 2026-10-07 — not reproducible; no code change required.** The
 symptom does not reproduce on current `main` or at the commit that recorded it
 (`7ae8aaae`), on either backend. Exercised the stated shape plus the
-surrounding variants: `class` vs `owning struct`, explicit `ref self` vs the
-implicit destroy self, `move string` / `var string` / defaulted / custom-`#init`
+surrounding variants: `class` vs `mv struct`, explicit `ref self` vs the
+implicit destroy self, `mv string` / `var string` / defaulted / custom-`#init`
 fields, generic monos (explicit and inferred call-site type args), nested and
 class-field receivers, split-TU vs single-TU, and raw vs wrapped parses. Every
 one lowers through the shared `_string_interpolate_N` helper and prints the
@@ -400,26 +400,26 @@ removed from FOLLOWUP.md.
 **Reported on `main` (recorded 2026-10-06, B5/B6 tranche).** FOLLOWUP.md
 claimed `List<OwningStruct>.at(i)` fails constraint verification
 (`Parameter constraint cannot be verified: i / i >= 0 && i < self.length`)
-while `List<int>.at(i)` works, attributing it to owning element types.
+while `List<int>.at(i)` works, attributing it to mv element types.
 
-**Verified 2026-10-07 — not owning-specific; the error is the intended bounds
+**Verified 2026-10-07 — not mv-specific; the error is the intended bounds
 requirement.** `List.at`'s `i >= 0 && i < self.length` constraint is checked at
 the call site for EVERY element type (it is not a runtime-checked accessor —
 the backends emit an unchecked strided load). An index that is not provably in
 range errors identically for `List<int>`, `List<Box<T>>`, `List<OwningStruct>`,
-and nested-owning elements: `xs.at(0)`/`xs.at(i)` at root, in `main`, in a
+and nested-mv elements: `xs.at(0)`/`xs.at(i)` at root, in `main`, in a
 helper, and in a user accessor all fail the same way. The accessor shapes
 already exist (`at_or`, `at_or_panic`) and the guard/loop shapes discharge the
-constraint for owning elements exactly as for primitives:
+constraint for mv elements exactly as for primitives:
 
 - `for x of list` (the desugar emits `list.at(__idx)` bounded by `list.length`),
 - `for i of 0..list.length { list.at(i) }`,
 - `while i < list.length { list.at(i) }`,
 - `if i >= 0 && i < list.length { list.at(i) }` and the return-guard variants,
 
-all compile and run on both backends with owning element types. No compiler
+all compile and run on both backends with mv element types. No compiler
 change was required. Regression coverage:
-`test/constraints.test.ts` (`owning element type at verifies under a
+`test/constraints.test.ts` (`mv element type at verifies under a
 return-guard`). The entry was removed from FOLLOWUP.md.
 
 ## 15. Nullable bases were not null-tracked (member access through a nullable field/box)

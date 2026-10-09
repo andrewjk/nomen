@@ -113,7 +113,7 @@ function current_return_is_float(status: BuildStatus): boolean {
 }
 
 /**
- * Whether the function currently being built declares `move out string` (the
+ * Whether the function currently being built declares `mv out string` (the
  * signature-level ownership contract). Mirrors current_return_is_string's
  * resolution: `function_return_type` is unset for primitive-returning struct
  * methods, so resolve the FunctionNode from `current_struct`.
@@ -348,8 +348,8 @@ export default function build_return_node(
 			// Park the box pointer in a frame slot: the constructor call (and
 			// the strdup `bl`s) clobber x0, and the function must RETURN the
 			// box handle in x0.
-			// An owning struct's direct string fields are uniformly heap; the
-			// move transfers them to the box (strdup'ing would orphan the
+			// A mv struct's direct string fields are uniformly heap; the
+			// mv transfers them to the box (strdup'ing would orphan the
 			// donor's copy — LEAK). See build_function_call_node's box helper.
 			const strdup_string_fields =
 				!owns_strings_uniformly(val_struct) &&
@@ -615,7 +615,7 @@ export default function build_return_node(
 				(!!status.heap_returning_functions &&
 					(status.heap_returning_functions.has(fn_name) ||
 						(mangled !== undefined && status.heap_returning_functions.has(mangled)))) ||
-				// A `move out string` function hands the caller an OWNED value by
+				// A `mv out string` function hands the caller an OWNED value by
 				// signature — a literal return path must be copied into heap
 				// storage or the caller frees rodata.
 				current_function_returns_move_string(status))
@@ -657,7 +657,7 @@ export default function build_return_node(
 		!is_call_site_borrow_accessor(borrow_fn_name) &&
 		current_return_is_string(status) &&
 		// Either the function is classified heap-returning (its callers free
-		// every result), it declares `move out string` (the caller owns the
+		// every result), it declares `mv out string` (the caller owns the
 		// result by signature), it is a LAMBDA — closures are only ever
 		// called through a descriptor (indirect), where the call site cannot
 		// know the callee's return classification, so every closure string
@@ -833,7 +833,7 @@ export default function build_return_node(
 	// strdup's), so the returned `char*` is already a heap pointer — it is
 	// handed to the caller as-is, NO strdup. Mark the function heap-returning
 	// so the caller frees the result. (When slots held shallow borrows, the
-	// slot could be rodata and a return-site strdup was required; owning slots
+	// slot could be rodata and a return-site strdup was required; mv slots
 	// make it redundant and a leak.)
 	//
 	// `function_return_type` is only populated for struct (sret) returns, so
@@ -1019,8 +1019,8 @@ export default function build_return_node(
 					// field is uniformly heap here and transfers raw. (C's
 					// `_return_val` override stores stay RAW — its return arm
 					// keeps the per-field ownership analysis.)
-					const owning = owns_strings_uniformly(ret_struct);
-					const skip_fields = owning
+					const mv = owns_strings_uniformly(ret_struct);
+					const skip_fields = mv
 						? new Set(direct_string_fields(ret_struct).map((f) => f.name))
 						: call.field_overrides?.length
 							? override_return_string_fields(

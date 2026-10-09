@@ -7,7 +7,7 @@ import type CheckStatus from "../CheckStatus.ts";
  * return — holds a boxed handle: a heap instance whose first word is the
  * conformer's vtable. A value-struct conformer boxes implicitly; the trait
  * annotation is the marker (T1). Boxing takes ownership (T2): boxing a bare
- * local is a move (the donor is invalidated), boxing a fresh temporary is
+ * local is a mv (the donor is invalidated), boxing a fresh temporary is
  * free, and borrows/views cannot be boxed. Class conformers box by pointer —
  * the instance is already heap (T4, transition era until Phase R).
  *
@@ -55,5 +55,5 @@ export function is_value_struct_conformer(
 
 /** The one error wording for boxing a value that has no owner to give (T2). */
 export function boxing_owns_error(): string {
-	return `boxing owns its instance — move the value, or copy it ('.copy()')`;
+	return `boxing owns its instance — mv the value, or copy it ('.copy()')`;
 }

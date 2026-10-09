@@ -81,7 +81,7 @@ function count(code: string, needle: string): number {
  * Count occurrences inside MAIN's body only. Core unsafe bodies now emit
  * `extern_free(...)` calls (and the extern adapter itself contains
  * `free(`), so whole-TU free counts include legitimate library noise the
- * move-on-last-use pins were never about.
+ * mv-on-last-use pins were never about.
  */
 function count_in_main(code: string, needle: string): number {
 	const start = code.indexOf("// Func main");
@@ -93,21 +93,21 @@ function count_in_main(code: string, needle: string): number {
 }
 
 /**
- * Explicit string move (D3): `move u = t` transfers the owned pair — the
+ * Explicit string mv (D3): `mv u = t` transfers the owned pair — the
  * donor's scope-exit free is suppressed and the assignee frees once. The
  * retired last-use inference (which silently turned a `var u = t` copy into
- * a transfer) is gone: the move is now spelled. The independent alternative
+ * a transfer) is gone: the mv is now spelled. The independent alternative
  * is `var u = t.copy()`. Kill-switch tests that only exercised the retired
  * inference are skipped below.
  */
 
-test("declare move is sound on both backends (C transfers, aarch64 copies)", async () => {
+test("declare mv is sound on both backends (C transfers, aarch64 copies)", async () => {
 	const input = `
 import System
 
 pub func main = () {
 	var t = "aaaa".to_string()
-	move u = t
+	mv u = t
 	Console.write(u)
 }
 `;
@@ -120,9 +120,9 @@ pub func main = () {
 
 	const a64 = build_main(input, "aarch64");
 	// t's declaration strdup's via string_to_string. The aarch64 declaration
-	// path does not yet lower an explicit `move u = t` to a pair transfer: it
+	// path does not yet lower an explicit `mv u = t` to a pair transfer: it
 	// takes the heap-alias copy path (strdup + free both), which is sound but
-	// not a move — the C backend transfers (`u = t`, one free). Both shapes
+	// not a mv — the C backend transfers (`u = t`, one free). Both shapes
 	// are audit-clean; the counts pin the real emission per backend.
 	expect(count(a64, "bl string_to_string")).toBe(1);
 	expect(count(a64, "bl _strdup")).toBe(1);
@@ -167,7 +167,7 @@ pub func main = () {
 });
 
 test.skip("kill-switch off restores the strdup'd copy", () => {
-	// Retired by D3 (explicit move required): the kill switch controlled the
+	// Retired by D3 (explicit mv required): the kill switch controlled the
 	// last-use inference that silently rewrote `var u = t`. Bindings now
-	// require an explicit `move`/`.copy()`, so there is nothing to toggle.
+	// require an explicit `mv`/`.copy()`, so there is nothing to toggle.
 });

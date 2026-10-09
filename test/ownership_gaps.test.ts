@@ -3,7 +3,7 @@ import { test } from "vite-plus/test";
 import build_and_check_output from "./build_and_check_output";
 
 // Regression tests for the FOLLOWUP.md "Latent ownership-tracking holes":
-// value-struct methods overwriting caller-tracked string fields, and move
+// value-struct methods overwriting caller-tracked string fields, and mv
 // sites only splicing the current scope frame.
 
 async function build_and_run(input: string, name: string, expected: string, audit = false) {
@@ -18,7 +18,7 @@ async function build_and_run(input: string, name: string, expected: string, audi
 // audit.
 test("value-struct method overwriting tracked string field", async () => {
 	const input = `
-owning struct Person {
+mv struct Person {
   var string name
 
   func rename = (ref self, string new_name) {
@@ -38,7 +38,7 @@ Console.write("\\{p.name}")
 // record would eagerly free the method's literal at that assignment.
 test("caller reassignment after self-write uses fresh ownership state", async () => {
 	const input = `
-owning struct Person {
+mv struct Person {
   var string name
 
   func rename = (ref self, string new_name) {
@@ -59,7 +59,7 @@ Console.write("\\{p.name}")
 // scanner must follow same-struct self-calls.
 test("self-write through a delegated self-call", async () => {
 	const input = `
-owning struct Person {
+mv struct Person {
   var string name
 
   func rename = (ref self, string new_name) {
@@ -80,24 +80,24 @@ Console.write("\\{p.name}")
 	await build_and_run(input, "self_write_delegated", "Cat");
 });
 
-// A `move` call inside an if branch with the variable declared in the outer
-// scope: the C backend's move-site splice only searched the current frame, so
+// A `mv` call inside an if branch with the variable declared in the outer
+// scope: the C backend's mv-site splice only searched the current frame, so
 // the outer scope-exit cleanup freed the instance the callee already owned
 // (double-free).
-test("move of outer-scope variable inside if branch", async () => {
+test("mv of outer-scope variable inside if branch", async () => {
 	const input = `
-owning struct Box {
+mv struct Box {
   var int v = 0
 }
 
-func consume = (move Box b, out int) {
+func consume = (mv Box b, out int) {
   return b.v
 }
 
 var Box b = Box()
 b.v = 7
 if b.v > 0 {
-  var int got = consume(move b)
+  var int got = consume(mv b)
   Console.write("\\{got}")
 }
 Console.write("done")
@@ -105,17 +105,17 @@ Console.write("done")
 	await build_and_run(input, "mov_outer_scope_if_branch", "7done", true);
 });
 
-// Same hole on the method-call move path (build_access_node).
-test("method-call move of outer-scope variable inside if branch", async () => {
+// Same hole on the method-call mv path (build_access_node).
+test("method-call mv of outer-scope variable inside if branch", async () => {
 	const input = `
-owning struct Box {
+mv struct Box {
   var int v = 0
 }
 
 struct Collector {
   var int total = 0
 
-  func take = (ref self, move Box b) {
+  func take = (ref self, mv Box b) {
     self.total = self.total + b.v
   }
 }
@@ -124,7 +124,7 @@ var Box b = Box()
 b.v = 7
 var Collector c = Collector()
 if b.v > 0 {
-  c.take(move b)
+  c.take(mv b)
 }
 Console.write("\\{c.total}")
 `;

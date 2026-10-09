@@ -78,7 +78,7 @@ pub func main = () {
 	}
 }
 `;
-		// Phase R tranche 3: Channel is an owning struct — a daemon has no
+		// Phase R tranche 3: Channel is a mv struct — a daemon has no
 		// join to bound a borrow, so the app-lifetime channel is a GLOBAL
 		// (process lifetime is its own region proof; the same exemption the
 		// detach rule takes). The construction is stored, then detached —

@@ -4,7 +4,7 @@ import type StructNode from "../nodes/StructNode.ts";
  * Shared OWNERSHIP decision for hoisted call-temporary consolidation.
  *
  * When a class-typed variable captures the result of a call that also
- * received a same-type class temporary as a non-move arg (the hoisted
+ * received a same-type class temporary as a non-mv arg (the hoisted
  * `_param_N` for e.g. `Box(5)`), the callee may return that very instance
  * (e.g. `return x ?? fallback`). The result variable supersedes the
  * temporary: both backends must consolidate to a single owner or auto-free

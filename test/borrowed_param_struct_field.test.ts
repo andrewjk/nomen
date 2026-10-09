@@ -11,12 +11,12 @@ import build_and_check_output from "./build_and_check_output";
 describe("borrowed string param stored into a field", () => {
 	test("value struct and class fields from borrowed params", async () => {
 		const input = `
-owning struct Attr {
+mv struct Attr {
 	var string name = ""
 	var string value = ""
 }
 
-owning struct CAttr {
+mv struct CAttr {
 	pub var string name = ""
 	pub var string value = ""
 }
@@ -45,11 +45,11 @@ Console.write("c=\\{c.name}:\\{c.value}\\n")
 
 	test("ref class and ref value struct fields from borrowed params", async () => {
 		const input = `
-owning struct C {
+mv struct C {
 	pub var string v = ""
 }
 
-owning struct S {
+mv struct S {
 	var string v = ""
 }
 

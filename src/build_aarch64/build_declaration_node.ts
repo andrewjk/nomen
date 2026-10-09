@@ -199,7 +199,7 @@ function declare_slot_offset(status: BuildStatus, name: string, size: number): n
  * prologue, but every other function resolves the symbol via
  * `emit_var_load`'s `adr` fallback, and a main frame slot left those
  * references undefined at link time (BUGS.md #5). Mirrors the class and
- * owning-struct global arms.
+ * mv-struct global arms.
  */
 function declare_trait_handle_storage(status: BuildStatus, node: DeclarationNode): void {
 	// Record the declaration frame so a later reassignment anchors the
@@ -425,8 +425,8 @@ export function build_constructor_params(
 	param_regs: string[],
 	status: BuildStatus,
 ): number {
-	// A tuple-literal constructor (`[move t, move c]`): register every bare
-	// `move <local>` argument so the source's scope-exit cleanup is
+	// A tuple-literal constructor (`[mv t, mv c]`): register every bare
+	// `mv <local>` argument so the source's scope-exit cleanup is
 	// suppressed (the tuple's fields own the transferred buffers now).
 	mark_tuple_literal_move_owners(fc, status);
 	const variadic_idx = fc.variadic_param_index;
@@ -1100,13 +1100,13 @@ export default function build_declaration_node(
 	//     return-boundary normalization makes every string field heap-owned,
 	//     so the binding takes ownership uniformly (no per-element info
 	//     crosses the call);
-	//   - a tuple LITERAL (`var [a] = [move s, 42]`): only an element that
-	//     was actually transferred AND is heap (`move`/last-use inference on
+	//   - a tuple LITERAL (`var [a] = [mv s, 42]`): only an element that
+	//     was actually transferred AND is heap (`mv`/last-use inference on
 	//     a heap local) hands the field a buffer the binding owns — a rodata
 	//     source (`var s = "lit"`) binds as a static alias and must not be
 	//     freed.
 	// Without the ownership mark the raw pair read strands the buffer.
-	// A TUPLE variable (`var pair = make()` / `var pair = [move s, 42]`)
+	// A TUPLE variable (`var pair = make()` / `var pair = [mv s, 42]`)
 	// owns the heap string fields of the returned/built tuple: record each
 	// field's offset so scope exit frees `pair._N`. The destructuring temp
 	// (`_tuple_dst_N`) is excluded — its bindings take the fields over and
@@ -1285,10 +1285,10 @@ export default function build_declaration_node(
 			ensure_newline(status);
 			emit_var_store(status, "x0", node.name, 8);
 			// A func local initialized from a capturing lambda, from another
-			// owning closure, or from a CALL/access expression (`var func
+			// mv closure, or from a CALL/access expression (`var func
 			// (out int) f = make()` — a closure factory, direct or
 			// method/trait-dispatched) holds a heap descriptor it frees at
-			// scope exit; a move-transfer marks the source moved (CLOSURE.md
+			// scope exit; a mv-transfer marks the source moved (CLOSURE.md
 			// Phase 2c). An expression result is conservatively owned: the
 			// free-if-owned arm passes static descriptors through untouched.
 			const val_is_capturing =
@@ -1319,7 +1319,7 @@ export default function build_declaration_node(
 		status.variable_types.set(node.name, node.type);
 	}
 
-	// `view T` local: a non-owning (ptr, len) value occupying two stack slots.
+	// `view T` local: a non-mv (ptr, len) value occupying two stack slots.
 	// It is produced by a slice() call in the x0/x1 register pair and is never
 	// auto-freed (it owns no heap). Handle it up front, before the
 	// struct/primitive routing below.
@@ -1470,7 +1470,7 @@ export default function build_declaration_node(
 	// STRUCT_PLAN_3 B4 — a trait handle MOVED from another trait local
 	// transfers the pointer: the donor's anchor slot stays the instance's
 	// single owner (the same shape a moved class local takes) and this
-	// binding is a non-owning alias for dispatch purposes.
+	// binding is a non-mv alias for dispatch purposes.
 	if (
 		!struct_type &&
 		!!status.traits.find((t) => t.name === node.type.name) &&
@@ -1533,7 +1533,7 @@ export default function build_declaration_node(
 					if (func_call.move_param_indices?.length) {
 						for (const idx of func_call.move_param_indices) {
 							mark_moved_if_struct(func_call.params[idx], status);
-							// STRUCT_PLAN_3 B2: a `Box<T>(move x)` construction
+							// STRUCT_PLAN_3 B2: a `Box<T>(mv x)` construction
 							// SHALLOW-copies x — ownership of the pointee's
 							// state moves with the bytes. The donor's string
 							// records must drop here: the scope-exit
@@ -1601,7 +1601,7 @@ export default function build_declaration_node(
 					if (func_call.move_param_indices?.length) {
 						for (const idx of func_call.move_param_indices) {
 							mark_moved_if_struct(func_call.params[idx], status);
-							// STRUCT_PLAN_3 B2: a `Box<T>(move x)` construction
+							// STRUCT_PLAN_3 B2: a `Box<T>(mv x)` construction
 							// SHALLOW-copies x — ownership of the pointee's
 							// state moves with the bytes. The donor's string
 							// records must drop here: the scope-exit
@@ -1622,7 +1622,7 @@ export default function build_declaration_node(
 					}
 				} else {
 					// Struct-returning call: sret into a stack scratch buffer,
-					// move the bytes into a malloc'd box, strdup its fields.
+					// mv the bytes into a malloc'd box, strdup its fields.
 					const scratch = allocate_stack_space(status, struct_size, 8);
 					const old_buffer = status.struct_return_buffer;
 					const old_buffer_var = status.struct_return_buffer_var;
@@ -1653,7 +1653,7 @@ export default function build_declaration_node(
 					}
 				}
 			} else {
-				// Boxing move from a bare value-struct local: malloc the box,
+				// Boxing mv from a bare value-struct local: malloc the box,
 				// copy the donor's bytes, strdup its UNRECORDED string fields
 				// in place (the box's destroy frees every string field), and
 				// suppress the donor's teardown + drop its records (the box
@@ -1700,7 +1700,7 @@ export default function build_declaration_node(
 	// class pointer, so dispatch works once the local is tracked in
 	// trait_class_frames (build_access_node dereferences [&local] to
 	// reach the instance whose vtable lives at offset 0). Ownership
-	// follows the callee's return convention: a `move out T` method
+	// follows the callee's return convention: a `mv out T` method
 	// (`owned_return`, e.g. `list.pop()`) transfers ownership (anchor
 	// for destroy + free at scope exit via the trait's `<Trait>_destroy`
 	// shim); a plain borrow (e.g. `.at(i)`) does not (the container
@@ -1744,16 +1744,16 @@ export default function build_declaration_node(
 	// instance) as owned — they must not be destroyed/freed at scope exit.
 	// Borrows arise from a field access (`var Box b = h.c`), a plain
 	// class-variable copy (`var Box q = p`, spelled `ref` in Phase A), or a
-	// NON-owning method call (`const Diff d = diffs.at(di)` — the container
+	// NON-mv method call (`const Diff d = diffs.at(di)` — the container
 	// owns the element); borrowed decls would otherwise be destroyed alongside
-	// their owner, double-freeing / corrupting shared state. A `move`d bare
-	// class source (`var Box b = move a`) is classified the same way ON
+	// their owner, double-freeing / corrupting shared state. A `mv`d bare
+	// class source (`var Box b = mv a`) is classified the same way ON
 	// PURPOSE: the source's anchor slot stays the instance's single owner, so
 	// scope exit destroys/frees it exactly once through that slot. Treating
 	// the new binding as an OWNER here made BOTH slots destroy the shared
 	// instance (destructor side effects ran twice; `DD` instead of `D`) — the
 	// anchor cannot follow the new binding, so ownership must stay with the
-	// source's slot. `null` and an `owned_return` method (`move out T`, e.g.
+	// source's slot. `null` and an `owned_return` method (`mv out T`, e.g.
 	// `list.pop()`) stay owned. Mirrors the C backend's val_is_class_alias,
 	// which likewise ignores `is_moved` for bare class sources.
 	const value_is_field_borrow =
@@ -1767,7 +1767,7 @@ export default function build_declaration_node(
 		!((node.value as AccessNode).access as AccessFunctionCallNode).owned_return;
 	// A plain FUNCTION call returning a class may also hand back a borrowed
 	// reference (`func box_at = (... out Box) { var Box got = xs.at(j);
-	// return move got }` — the container owns the element). Scan-determined
+	// return mv got }` — the container owns the element). Scan-determined
 	// per callee (scan_borrow_returns); such decls are not destroy-tracked.
 	const value_is_borrowing_call =
 		node.value?.node_type === "func_call" &&
@@ -1809,13 +1809,13 @@ export default function build_declaration_node(
 			status.alias_owns_flag?.set(node.name, flag_offset);
 		}
 	}
-	// A value-struct declaration initialized from a non-`move` FIELD ACCESS
+	// A value-struct declaration initialized from a non-`mv` FIELD ACCESS
 	// (`diff.changes`, `obj.span` — including the checker-hoisted `_param_N`
 	// temp for a struct call argument) is a shallow borrow: the struct bytes
 	// are copied but the embedded buffer's data belongs to the owner. It must
 	// NOT be destroy-tracked — destroying it would free the owner's buffer
 	// (double-free once the owner is destroyed). Mirrors the C backend's
-	// is_destructured_field_access rule in build_auto_free. A `move` field
+	// is_destructured_field_access rule in build_auto_free. A `mv` field
 	// access transfers ownership and stays tracked.
 	if (
 		!is_borrowed_class_ref &&
@@ -2581,7 +2581,7 @@ export default function build_declaration_node(
 					emit_asm(status, `mov x0, #${struct_size}\n`);
 					emit_malloc(status);
 					// Anchor the instance so it's freed at scope exit. For
-					// argument temporaries (_param_N) passed via `move`, the
+					// argument temporaries (_param_N) passed via `mv`, the
 					// callee takes ownership and mark_moved_if_struct adds
 					// them to status.moved — the cleanup paths (both decl
 					// and heap_slots) skip moved vars, so no double-free.
@@ -2599,7 +2599,7 @@ export default function build_declaration_node(
 					if (func_call.move_param_indices?.length) {
 						for (const idx of func_call.move_param_indices) {
 							mark_moved_if_struct(func_call.params[idx], status);
-							// STRUCT_PLAN_3 B2: a `Box<T>(move x)` construction
+							// STRUCT_PLAN_3 B2: a `Box<T>(mv x)` construction
 							// SHALLOW-copies x — ownership of the pointee's
 							// state moves with the bytes. The donor's string
 							// records must drop here: the scope-exit
@@ -2646,7 +2646,7 @@ export default function build_declaration_node(
 					emit_init_value(node.value, nir_init, status);
 					ensure_newline(status);
 				}
-				// A `move out` method (e.g. List.pop) transfers ownership of its
+				// A `mv out` method (e.g. List.pop) transfers ownership of its
 				// result to this variable — anchor it so it's freed at scope
 				// exit, otherwise the relinquished instance leaks.
 				if (
@@ -2676,7 +2676,7 @@ export default function build_declaration_node(
 					status.stack_offsets!.set(has_flag_name(node.name), offset + struct_size);
 				}
 			} else if (node.is_module_init) {
-				// STRUCT_PLAN_3 Phase R tranche 3: an owning-struct GLOBAL's
+				// STRUCT_PLAN_3 Phase R tranche 3: a mv-struct GLOBAL's
 				// prologue runs in main, but its storage is a module-scope
 				// data symbol — the same shape as the class arm above
 				// (BUGS.md #5): every other function loads it via the `adr`
@@ -2742,7 +2742,7 @@ export default function build_declaration_node(
 					if (func_call.move_param_indices?.length) {
 						for (const idx of func_call.move_param_indices) {
 							mark_moved_if_struct(func_call.params[idx], status);
-							// STRUCT_PLAN_3 B2: a `Box<T>(move x)` construction
+							// STRUCT_PLAN_3 B2: a `Box<T>(mv x)` construction
 							// SHALLOW-copies x — ownership of the pointee's
 							// state moves with the bytes. The donor's string
 							// records must drop here: the scope-exit
@@ -2758,7 +2758,7 @@ export default function build_declaration_node(
 					}
 					build_swap_params(func_call, status);
 					// Record the string fields whose DEFAULT the constructor
-					// evaluated fresh as a heap-owning expression: the struct
+					// evaluated fresh as a heap-mv expression: the struct
 					// alone owns the buffer, so scope exit frees it and a
 					// displaced store (the field overrides below, a later
 					// reassignment) reclaims it via the record's old_was_heap.
@@ -2869,10 +2869,10 @@ export default function build_declaration_node(
 						}
 					}
 				}
-				// `var X b = move a`: the bytes are copied into b, then the source is
+				// `var X b = mv a`: the bytes are copied into b, then the source is
 				// marked moved so it is not destroyed at scope exit (b is now the sole
 				// owner). Without this, both a and b would free the same backing data.
-				// A base-bearing ANON literal with a `move` base (`[ .. move y, f = v
+				// A base-bearing ANON literal with a `mv` base (`[ .. mv y, f = v
 				// ]`) transfers the same way: the base's bytes landed in the
 				// destination, so the donor's scope-exit destroy must not free them.
 				if (node.value.is_moved) {
@@ -2885,7 +2885,7 @@ export default function build_declaration_node(
 						if (lit_donor) clear_heap_string_fields(status, lit_donor);
 					}
 				}
-				// `var X b = move obj.field swap <rep>`: the field's bytes were copied
+				// `var X b = mv obj.field swap <rep>`: the field's bytes were copied
 				// into b above; now struct-copy the replacement back into the moved-out
 				// field to revalidate it (so the owner never destroys a moved field).
 				if (node.swap && node.value.node_type === "access") {
@@ -2917,7 +2917,7 @@ export default function build_declaration_node(
 				// UNIFORMLY heap-owned, so record every string field —
 				// release_heap_string_fields frees them at scope exit, and a
 				// later `b.field = …` write sees old_was_heap and reclaims the
-				// displaced buffer. (Constructor and move inits are NOT
+				// displaced buffer. (Constructor and mv inits are NOT
 				// recorded.)
 				record_call_init_string_fields(node, status);
 			}
@@ -3003,7 +3003,7 @@ export default function build_declaration_node(
 					// strdup an independent copy of the ptr half, then carry
 					// the source's len word.
 					const src_off0 = status.stack_offsets?.get(raw);
-					// An EXPLICIT `var string b = move a swap <repl>` is a
+					// An EXPLICIT `var string b = mv a swap <repl>` is a
 					// transfer with revalidation: the pair moves to `b` (no
 					// strdup) and `a` is overwritten with the replacement.
 					// Ownership follows: `b` owns the moved pair; `a` owns the
@@ -3250,12 +3250,12 @@ export default function build_declaration_node(
 			status.return_assign_size = size;
 			// Mixed string-join ownership normalization: when any branch
 			// produces a fresh owned heap string (interpolation/concat/call),
-			// mark the variable as an owning heap string so scope-exit
+			// mark the variable as a mv heap string so scope-exit
 			// reclamation frees it, and flag the branch builds so every
 			// non-owned branch value (a literal's rodata pointer, a borrow) is
 			// strdup'd into an owned copy (build_let_node) — freeing a raw
 			// rodata/borrow pointer at exit aborts. All-literal joins (no owned
-			// branch) stay non-owning and are not freed, as before.
+			// branch) stay non-mv and are not freed, as before.
 			const join_is_string =
 				node.type.name === "string" && !node.type.is_view && !node.type.is_array;
 			const any_branch_owned =
@@ -3392,14 +3392,14 @@ export default function build_declaration_node(
 				size === 16 &&
 				node.value.node_type === "access" &&
 				(node.value as AccessNode).access.node_type === "access_field";
-			// An EXPLICIT `var s = move p.name swap <repl>` (D3 move-out):
+			// An EXPLICIT `var s = mv p.name swap <repl>` (D3 mv-out):
 			// the binding takes the field's pair and OWNS it (scope exit
 			// frees it), and the field is revalidated by writing a heap-owned
-			// replacement — the owning struct's destroy frees its string
+			// replacement — the mv struct's destroy frees its string
 			// fields unconditionally, so a raw rodata replacement would be a
 			// stale free while the moved pair leaks. Mirrors the C backend's
 			// declaration swap.
-			// Only an `owning` struct's string fields are uniformly heap and
+			// Only a `mv` struct's string fields are uniformly heap and
 			// freed by its destroy. A tuple/anon temp's fields stay
 			// record/binding-based (the dedicated paths above own them), so
 			// the swap handling must not fire for them.

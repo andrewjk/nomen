@@ -17,7 +17,7 @@ describe("override-constructor displaced-copy reclamation", () => {
 			`
 import System
 
-owning struct Pair {
+mv struct Pair {
 	var string a = "de" + "fault"
 	var string b
 }
@@ -43,7 +43,7 @@ pub func main = (Init init) {
 			`
 import System
 
-owning struct Pair {
+mv struct Pair {
 	var string a = "de" + "fault"
 	var string b
 }
@@ -65,7 +65,7 @@ pub func main = (Init init) {
 			`
 import System
 
-owning struct Lit {
+mv struct Lit {
 	var string a = "default"
 	var string b
 }
@@ -91,7 +91,7 @@ pub func main = (Init init) {
 			`
 import System
 
-owning struct Pair {
+mv struct Pair {
 	var string a = "default"
 	var string b = "bee"
 
@@ -133,7 +133,7 @@ describe("#init computed-seed ownership", () => {
 	const SEED_STRUCT = `
 import System
 
-owning struct Pair {
+mv struct Pair {
 	var string a = "default"
 	var string b = "bee"
 
@@ -213,7 +213,7 @@ pub func main = (Init init) {
 			`
 import System
 
-owning struct Pair {
+mv struct Pair {
 	var string a = "de" + "fault"
 	var string b = "bee"
 
@@ -241,7 +241,7 @@ pub func main = (Init init) {
 			`
 import System
 
-owning struct Pair {
+mv struct Pair {
 	var string a
 	var string b = "bee"
 
@@ -263,7 +263,7 @@ pub func main = (Init init) {
 	});
 
 	test("param-alias seed stays un-analyzed across an override", async () => {
-		// D3: `self.a = s` (a borrow into an owning field) is an error — the
+		// D3: `self.a = s` (a borrow into a mv field) is an error — the
 		// seed must be an owned copy (`s.copy()`). The ctor-seeded copy is
 		// displaced by the return override (Pair(fresh()) hoists a fresh
 		// _param_0 the return-override shape references).
@@ -271,7 +271,7 @@ pub func main = (Init init) {
 			`
 import System
 
-owning struct Pair {
+mv struct Pair {
 	var string a = "default"
 	var string b = "bee"
 
@@ -308,7 +308,7 @@ pub func main = (Init init) {
 			`
 import System
 
-owning struct Pair {
+mv struct Pair {
 	var string a = "de" + "fault"
 	var string b = "bee"
 

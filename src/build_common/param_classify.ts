@@ -74,7 +74,7 @@ export function classify_param(
 	const is_simple = !!struct?.is_simple_type;
 	const is_class = !!struct?.is_class;
 	// A concrete enum-with-data is a BY-VALUE tagged-union struct in C: a
-	// `move`/`var` param must not take the value-struct pointer convention
+	// `mv`/`var` param must not take the value-struct pointer convention
 	// (`T *value`), or the emitted body's `store_T(..., value)` and the
 	// caller's by-value argument disagree. Enums are never `is_struct` (the
 	// bare typedef name is the C type, not `struct Tag`).
@@ -84,7 +84,7 @@ export function classify_param(
 	// Pointer rules:
 	//   - struct / trait params: by reference
 	//   - `ref` / array params: by pointer (modifications propagate)
-	//   - `move` on a SIMPLE type is by-value (the parser normalizes move to
+	//   - `mv` on a SIMPLE type is by-value (the parser normalizes mv to
 	//     var+is_moved; for simple types that pointer is meaningless)
 	//   - `var` on a SIMPLE type is by-value too: the callee gets a mutable
 	//     local copy. Modifying it does not propagate to the caller (the

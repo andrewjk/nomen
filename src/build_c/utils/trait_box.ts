@@ -16,7 +16,7 @@ import type_from_value_node from "./type_from_value_node.ts";
 /**
  * Resolve the concrete value-struct type of a call/case argument, if it is
  * one. Bare variables' `ValueNode.type` can be unset after monomorphization,
- * so the declaration is consulted first (mirroring the method-call move gates).
+ * so the declaration is consulted first (mirroring the method-call mv gates).
  * Returns undefined for class/trait handles, scalars, and unresolved types.
  */
 export function value_struct_arg_type(status: BuildStatus, arg: BaseNode): StructNode | undefined {
@@ -36,11 +36,11 @@ export function value_struct_arg_type(status: BuildStatus, arg: BaseNode): Struc
 
 /**
  * Emit a boxed heap handle for a concrete value-struct argument moved into a
- * trait-typed slot (an enum case payload or a `move Trait` parameter). The
+ * trait-typed slot (an enum case payload or a `mv Trait` parameter). The
  * trait slot owns a heap instance whose first word is the conformer's vtable,
  * so an inline value struct is materialized as a malloc'd copy; unrecorded
  * (rodata/borrow) string fields are strdup'd in place first (the box's destroy
- * frees every string field), and the checker stamped the argument move-owned
+ * frees every string field), and the checker stamped the argument mv-owned
  * so the donor's own reclaim is suppressed. Emits a GNU statement expression
  * of type `void *`.
  */
@@ -53,7 +53,7 @@ export function emit_boxed_value_struct_c(
 	// strdup only when the box's destroy slot will free the fields (user
 	// `#destroy` or the auto destroy) AND the source is not uniformly heap.
 	// An OWNING struct's direct string fields are uniformly heap, and the
-	// move transfers them to the box — strdup'ing would orphan the donor's
+	// mv transfers them to the box — strdup'ing would orphan the donor's
 	// copy (LEAK). Mirrors the C declaration boxing (build_declaration_node).
 	const strdup_string_fields =
 		!owns_strings_uniformly(box_struct) &&

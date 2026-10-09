@@ -373,7 +373,7 @@ function generate_c_function(
 				out += `self->_vt = (void *)&${struct_name}_traits;\n`;
 			} else if (!ctor_struct.is_class) {
 				// Constructed stamp (mirrors build_init_function): word 0
-				// non-zero marks a constructed instance so an owning Buffer's
+				// non-zero marks a constructed instance so a mv Buffer's
 				// per-slot destroy can skip zeroed empty slots.
 				out += `self->_vt = (void *)1;\n`;
 			}
@@ -383,7 +383,7 @@ function generate_c_function(
 				if (!seeded) {
 					if (!status.build_errors) status.build_errors = [];
 					status.build_errors.push({
-						message: `owning struct '${struct_name}' has a use_c constructor and field '${field.name}' has a non-literal default — assign it in the #init body`,
+						message: `mv struct '${struct_name}' has a use_c constructor and field '${field.name}' has a non-literal default — assign it in the #init body`,
 						start: func.start,
 					});
 					continue;

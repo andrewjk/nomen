@@ -151,7 +151,7 @@ function extract_type_names(source: string): string[] {
 	for (let line of source.split("\n")) {
 		const trimmed = line.trim();
 		const m = trimmed.match(
-			/^(?:pub|internal) (?:must_use )?(?:owning )?(?:struct|class|trait|enum|bitset) (\w+)/,
+			/^(?:pub|internal) (?:must_use )?(?:mv )?(?:struct|class|trait|enum|bitset) (\w+)/,
 		);
 		if (m) names.push(m[1]);
 	}

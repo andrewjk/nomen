@@ -60,7 +60,7 @@ Console.write("\\{cfg.timeout}")
 
 	test("pub struct with pub init", async () => {
 		const input = `
-pub owning struct Widget {
+pub mv struct Widget {
     var string name
 
     pub func #init = (self, string name) {
@@ -157,8 +157,8 @@ Console.write("\\{c.count}")
 	});
 });
 
-describe("move on return", () => {
-	test("returning struct field does not move the struct", async () => {
+describe("mv on return", () => {
+	test("returning struct field does not mv the struct", async () => {
 		const input = `
 struct Resource {
     var int handle

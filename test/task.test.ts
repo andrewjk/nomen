@@ -913,7 +913,7 @@ describe("Sendable enforcement", () => {
 		const input = `
 import System
 
-pub owning struct Counter {
+pub mv struct Counter {
 	var int count = 0
 }
 
@@ -932,7 +932,7 @@ pub func main = () {
 `;
 		const parsed = parse_raw(input);
 		// STRUCT_PLAN_3 N1a R1: a struct with a CLASS field is OWNING, so
-		// outside a nursery the bare-owning shape is rejected outright (the
+		// outside a nursery the bare-mv shape is rejected outright (the
 		// env deep-copy cannot own a class field soundly) — a sharper error
 		// than the old generic "not Sendable".
 		expect(parsed.errors.some((e) => e.message.includes("owns heap memory"))).toBe(true);
@@ -979,11 +979,11 @@ pub func main = () {
 		expect(parsed.errors).toEqual([]);
 	});
 
-	test("a bare owning Thread arg outside a nursery is rejected (R1)", () => {
+	test("a bare mv Thread arg outside a nursery is rejected (R1)", () => {
 		const input = `
 import System
 
-pub owning struct Counter {
+pub mv struct Counter {
 	var int count = 0
 }
 
@@ -996,8 +996,8 @@ pub func main = () {
 }
 `;
 		const parsed = parse_raw(input);
-		// The Sendable marker retired with the class tier — owning args are
-		// governed by the R1 region rules (async block or move).
+		// The Sendable marker retired with the class tier — mv args are
+		// governed by the R1 region rules (async block or mv).
 		expect(parsed.errors.some((e) => e.message.includes("owns heap memory"))).toBe(true);
 	});
 });

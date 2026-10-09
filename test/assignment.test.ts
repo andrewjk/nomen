@@ -297,8 +297,8 @@ x = true
 	});
 });
 
-describe("field = move local (value-struct field ownership transfer)", () => {
-	// `n.children = move buf` transfers the local's buffer into the field.
+describe("field = mv local (value-struct field ownership transfer)", () => {
+	// `n.children = mv buf` transfers the local's buffer into the field.
 	// The plain store shallow-copies the struct, so the source local's
 	// scope-exit destroy used to free the buffer the field points at
 	// (dangling field, use-after-free at first read).
@@ -306,7 +306,7 @@ describe("field = move local (value-struct field ownership transfer)", () => {
 		const input = `
 import System
 
-pub owning struct Node {
+pub mv struct Node {
 	pub var List<int> children = List<int>()
 }
 
@@ -315,7 +315,7 @@ pub func main = (Init init) {
 	var List<int> buf = List<int>()
 	buf.push(7)
 	buf.push(8)
-	n.children = move buf
+	n.children = mv buf
 	Console.write("\\{n.children.length} \\{n.children.at_or_panic(1)}")
 }
 `;

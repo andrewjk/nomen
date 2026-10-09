@@ -8,7 +8,7 @@ import test_error from "./test_error";
 describe("struct build", () => {
 	test("struct with int field", async () => {
 		const input = `
-owning struct Person {
+mv struct Person {
   var int age = 0
 }
 var Person p
@@ -20,7 +20,7 @@ Console.write("\\{p.age}")
 
 	test("struct with string field", async () => {
 		const input = `
-owning struct Person {
+mv struct Person {
   var string name
   var int age = 0
 }
@@ -32,7 +32,7 @@ Console.write("\\{p.name}")
 
 	test("struct with string array field", async () => {
 		const input = `
-owning struct Container {
+mv struct Container {
   var string[] items
 }
 var c = Container(["hello", "world"])
@@ -43,7 +43,7 @@ Console.write("\\{c.items.at(0)}\\{c.items.at(1)}")
 
 	test("struct with string array field and explicit type", async () => {
 		const input = `
-owning struct Container {
+mv struct Container {
   var string[] items
 }
 var Container c = Container(["hello", "world"])
@@ -55,7 +55,7 @@ Console.write("\\{c.items.at(0)}\\{c.items.at(1)}")
 	// BROKEN: constructor stores a pointer instead of copying elements inline
 	test("struct with fixed-size string array field", async () => {
 		const input = `
-owning struct Holder {
+mv struct Holder {
   var int argc
   var string[2] args
 }
@@ -230,7 +230,7 @@ Console.write("\\{p.name} \\{p.age}")
 		const input = `
 var p = [ name = "a", age = 1 ]
 p = [ age = 2, name = "b" ]
-var [move name, age] = p
+var [mv name, age] = p
 Console.write("\\{name} \\{age}")
 `;
 		await build_and_check_output(input, "anon_struct_reassign_destructure", "b 2");
@@ -268,7 +268,7 @@ Console.write("\\{p.x} \\{p.y}")
 
 	test("struct method returning value", async () => {
 		const input = `
-owning struct Person {
+mv struct Person {
   var int age = 0
   func get_age = (self, out int) {
     return self.age
@@ -505,16 +505,16 @@ Console.write("\\{p.x} \\{p.y}")
 describe("struct errors", () => {
 	test("invalid syntax", () => {
 		const input = `
-owning struct Person People {}
+mv struct Person People {}
 `;
-		const expected = [test_error(input, "Expected {", 2, 22)];
+		const expected = [test_error(input, "Expected {", 2, 18)];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});
 
 	test("child struct", () => {
 		const input = `
-owning struct Person {
+mv struct Person {
   struct People {}
 }
 `;
@@ -525,7 +525,7 @@ owning struct Person {
 
 	test("child assignment", () => {
 		const input = `
-owning struct Person {
+mv struct Person {
   var int x
   x = 5
 }
@@ -537,7 +537,7 @@ owning struct Person {
 
 	test("field type mismatch on construction", () => {
 		const input = `
-owning struct Dog {
+mv struct Dog {
   var string name
 }
 const dog = Dog(5)
@@ -549,7 +549,7 @@ const dog = Dog(5)
 
 	test("unknown field access", () => {
 		const input = `
-owning struct Person {
+mv struct Person {
   var int age
 }
 var Person p = Person(0)

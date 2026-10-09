@@ -18,7 +18,7 @@ export function is_class_type(type_name: string, status: CheckStatus): boolean {
  * 8-byte heap pointer that the container's `#destroy` will reclaim
  * per-element. That covers both classes (ClassBuffer<T> routing) and
  * traits (ClassBuffer<Trait> routing, dispatching destroy via the
- * vtable). Storing a BORROW of such a type into a `move T` slot would
+ * vtable). Storing a BORROW of such a type into a `mv T` slot would
  * create shared ownership: the destination's destroy frees the pointer
  * while the source still references it (a runtime double-free, SIGABRT).
  */
@@ -34,7 +34,7 @@ export function is_owning_ref_type(type_name: string, status: CheckStatus): bool
  *
  * STRUCT_PLAN_3 D3: `string` keeps its built-in `is_simple_type` stamp — the
  * backends lower it as a primitive fat (ptr, len) pair, not a field-bearing
- * struct — but it IS an owning struct (`pub owning struct string`), so the
+ * struct — but it IS a mv struct (`pub mv struct string`), so the
  * ownership predicates must see through that stamp.
  */
 function resolve_struct(type: Type, status: CheckStatus): StructNode | undefined {
@@ -102,19 +102,19 @@ export function destroy_releases(func: FunctionNode): boolean {
  * True if `type` is a struct (not a class, not a primitive) that transitively
  * owns a resource that would be double-freed by a byte copy. That is:
  *   - its `#destroy` actually releases something (contains a raw block), or
- *   - it has a field that is a class, or another owning struct.
+ *   - it has a field that is a class, or another mv struct.
  *
  * A benign `#destroy` that only resets fields (no raw block) does NOT make a
- * struct owning — copying such a value type is safe. Classes are reference
- * types (assigning aliases the pointer, one owner), so they are not owning.
+ * struct mv — copying such a value type is safe. Classes are reference
+ * types (assigning aliases the pointer, one owner), so they are not mv.
  */
 export function is_owning_struct_type(type: Type, status: CheckStatus): boolean {
 	// A `view T` / `ref` spelling is a BORROW, never an owner — even when the
-	// underlying type is owning (`view string`, D3).
+	// underlying type is mv (`view string`, D3).
 	if (type.is_view || type.is_ref) return false;
 	const s = resolve_struct(type, status);
 	if (!s || s.is_class) return false;
-	// STRUCT_PLAN_3 B1: the DECLARED flag wins — `owning struct` is move-only
+	// STRUCT_PLAN_3 B1: the DECLARED flag wins — `mv struct` is move-only
 	// by declaration, regardless of what the field walk would infer. (The
 	// inferred walk remains for undeclared structs during the transition.)
 	if (s.is_owning) return true;
@@ -130,13 +130,13 @@ export function is_owning_struct_type(type: Type, status: CheckStatus): boolean 
  * be rodata literals), so byte-copying such a struct out of a field is a sound
  * BORROW (the copy aliases the source's strings; neither side frees them).
  * A struct that owns a List/Buffer/class/… WOULD be destroyed, so copying it
- * by value would double-free — that's the case that must stay a `move ... swap`.
+ * by value would double-free — that's the case that must stay a `mv ... swap`.
  */
 export function is_owning_struct_type_requiring_move(type: Type, status: CheckStatus): boolean {
 	if (type.is_view || type.is_ref) return false;
 	const s = resolve_struct(type, status);
 	if (!s || s.is_class) return false;
-	// B1: a declared `owning struct` is ALWAYS move-only — a string-only
+	// B1: a declared `mv struct` is ALWAYS move-only — a string-only
 	// field no longer makes it a borrow-copy (the declaration says the type
 	// owns; the compiler no longer second-guesses it).
 	if (s.is_owning) return true;
@@ -149,9 +149,9 @@ export function is_owning_struct_type_requiring_move(type: Type, status: CheckSt
  * parameter of this type is fully owned by the callee (the call boundary
  * materializes a uniformly heap-owned copy), so `var` field writes inside
  * the body stay local and no call-site acknowledgment is needed. Excludes
- * structs that own non-string heap (those keep `move ... swap` / `ref`
+ * structs that own non-string heap (those keep `mv ... swap` / `ref`
  * semantics), structs conforming to traits (trait dispatch aliases), and —
- * B1 full cutover — DECLARED `owning struct`s: the declaration is the
+ * B1 full cutover — DECLARED `mv struct`s: the declaration is the
  * move-only contract, so a bare parameter is a read-only const borrow (B3),
  * never an implicit copy.
  */
@@ -176,8 +176,8 @@ export function struct_owns_non_string_heap(
 	if (destroy && destroy_releases(destroy)) return true;
 	for (const field of s.fields) {
 		if (field.type.is_ref) continue;
-		// A `view T` field is a non-owning (ptr, len) pair — byte-copying it
-		// aliases nothing owned, so it never makes a struct owning.
+		// A `view T` field is a non-mv (ptr, len) pair — byte-copying it
+		// aliases nothing owned, so it never makes a struct mv.
 		if (field.type.is_view) continue;
 		// A string field is owned by a container slot / constructor strdup,
 		// but a struct LOCAL is not auto-destroyed for it — copying is a borrow.
@@ -200,7 +200,7 @@ function struct_owns_heap(s: StructNode, status: CheckStatus, visited: Set<strin
 		// A `view T` field owns nothing (a borrowed pair) — copying it is sound.
 		if (field.type.is_view) continue;
 		// A `string` field owns heap memory (a strdup'd char*). The field
-		// may hold a static literal pointer at runtime, but the owning copy
+		// may hold a static literal pointer at runtime, but the mv copy
 		// (constructor strdup, deep-copy on container store) is always heap.
 		if (field.type.name === "string") return true;
 		const field_struct = resolve_struct(field.type, status);
@@ -215,18 +215,18 @@ function struct_owns_heap(s: StructNode, status: CheckStatus, visited: Set<strin
  * STRUCT_PLAN_3 B1 full cutover — the OWNING side of the Copyable predicate,
  * as it applies to a struct field's (or enum case payload's) type. Owning:
  * `string` (D3 — the fat pair owns its bytes; covers `string[N]` arrays
- * too, whose elements are owning), class types (the compiler-stamped `Box<T>`
- * wrapper is one), declared-`owning` structs, structs the inferred walk flags
+ * too, whose elements are mv), class types (the compiler-stamped `Box<T>`
+ * wrapper is one), declared-`mv` structs, structs the inferred walk flags
  * (string fields, a resource-releasing `#destroy`, transitively), declared-
- * `owning` enums, and enums whose payloads are owning (the inferred half of
- * B1a). NOT owning: `view T` (a (ptr, len) borrow is Copyable, region-bound),
+ * `mv` enums, and enums whose payloads are mv (the inferred half of
+ * B1a). NOT mv: `view T` (a (ptr, len) borrow is Copyable, region-bound),
  * `ref` (rejected at fields/payloads elsewhere), scalars, `func` types,
  * bitsets.
  *
  * This is the predicate the Copyable verifier
  * (check_struct_node / check_enum_node) runs over every field of a bare
  * `struct` / `enum`: one `true` means the declaration cannot be Copyable and
- * must be spelled `owning`.
+ * must be spelled `mv`.
  */
 export function type_owns_heap(t: Type, status: CheckStatus): boolean {
 	if (!t.name || t.is_ref || t.is_view) return false;

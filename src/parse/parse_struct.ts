@@ -20,7 +20,7 @@ export default function parse_struct(
 ) {
 	const start = get_index(status);
 	accept(visibility, status);
-	if (is_owning) accept("owning", status);
+	if (is_owning) accept("mv", status);
 	accept("struct", status);
 	const name = consume_name(status);
 	const struct = new StructNode(start, visibility, name);
@@ -75,7 +75,7 @@ export default function parse_struct(
 						param.func_params = f.func_params;
 						param.func_return_type = f.func_return_type;
 					}
-					if (f.declaration === "move") {
+					if (f.declaration === "mv") {
 						param.is_moved = true;
 					}
 					param.constraint = f.constraint;

@@ -29,7 +29,7 @@ import type_from_value_node from "./type_from_value_node.ts";
  * - **Detach owns its captures (N2/R4)** — `.detach()` has no join anywhere:
  *   a daemon outlives every scope, so a shared class/trait argument has
  *   nothing bounding it. The chained form `Thread(fn(x)).detach()` rejects
- *   every non-`move` class/trait argument unconditionally (globals exempt —
+ *   every non-`mv` class/trait argument unconditionally (globals exempt —
  *   process lifetime).
  */
 
@@ -97,7 +97,7 @@ export function is_owning_spawn_arg(arg_type: Type, status: CheckStatus): boolea
  * The region classification of one spawn argument (STRUCT_PLAN_3 N1a R1):
  * which arguments BORROW from the caller (and so need the root rule and the
  * R3 freeze) versus pack by copy/transfer. Only meaningful inside an
- * `async` block; `moved` is the callee parameter's `move T` flag.
+ * `async` block; `moved` is the callee parameter's `mv T` flag.
  */
 export function spawn_arg_region_class(
 	arg_type: Type,
@@ -136,7 +136,7 @@ export function enforce_root_not_frozen(name: string, status: CheckStatus, start
 	if (frames[frames.length - 1].has(name)) {
 		add_error(
 			status,
-			`'${name}' is borrowed by a task until this 'async' block exits — it is read-only here (move a copy in, or move it in at the spawn)`,
+			`'${name}' is borrowed by a task until this 'async' block exits — it is read-only here (mv a copy in, or mv it in at the spawn)`,
 			start,
 		);
 		return true;
@@ -146,7 +146,7 @@ export function enforce_root_not_frozen(name: string, status: CheckStatus, start
 
 /**
  * N1a R2 / N1b E3 — the root rule for a spawn argument borrowed into a task
- * (shared class/trait since tranche 1; owning value structs and views since
+ * (shared class/trait since tranche 1; mv value structs and views since
  * R1). Called from the Sendable validation site.
  */
 export function enforce_spawn_arg_region(
@@ -181,7 +181,7 @@ export function enforce_spawn_arg_region(
 		if (named_donor && root) {
 			add_error(
 				status,
-				`'${root}' does not outlive the task — the join at 'async' happens after '${root}'s scope ends; declare '${root}' in the 'async' block's scope or outside it, or move it in ('move ${root}')`,
+				`'${root}' does not outlive the task — the join at 'async' happens after '${root}'s scope ends; declare '${root}' in the 'async' block's scope or outside it, or mv it in ('mv ${root}')`,
 				param.start,
 			);
 		} else {
@@ -207,16 +207,16 @@ export function enforce_spawn_arg_region(
  * `Fiber(fn(args)).detach()` (a construction stored in a variable and
  * detached later is not flow-tracked — recorded as a gap). A class/trait
  * argument crosses as a shared pointer and a daemon has no join to bound it,
- * so every non-`move` shared-reference argument is rejected. Globals are
+ * so every non-`mv` shared-reference argument is rejected. Globals are
  * exempt (process lifetime). The closure form is checked through its
- * captures: a class/trait capture cannot be move-spelled, so it is rejected
+ * captures: a class/trait capture cannot be mv-spelled, so it is rejected
  * outright.
  */
 export function enforce_detach_owns_captures(ctor: FunctionCallNode, status: CheckStatus): void {
 	const first = ctor.params[0];
 	if (!first) return;
 
-	// The closure form: the env owns scalar/owning captures, but a CLASS or
+	// The closure form: the env owns scalar/mv captures, but a CLASS or
 	// TRAIT capture is a shared pointer (the Sendable gate) with no join to
 	// bound it — reject.
 	if (first.node_type === "func") {
@@ -262,13 +262,13 @@ export function enforce_detach_owns_captures(ctor: FunctionCallNode, status: Che
 		if (named && root) {
 			add_error(
 				status,
-				`detached task captures '${root}' by reference — detach owns its captures; move it in ('move ${root}'), or spawn it into a nursery that outlives the use`,
+				`detached task captures '${root}' by reference — detach owns its captures; mv it in ('mv ${root}'), or spawn it into a nursery that outlives the use`,
 				param.start,
 			);
 		} else {
 			add_error(
 				status,
-				`detached task captures a temporary ${arg_type.name ?? ""} by reference — detach owns its captures; bind it to a local and move it in, or spawn it into a nursery that outlives the use`,
+				`detached task captures a temporary ${arg_type.name ?? ""} by reference — detach owns its captures; bind it to a local and mv it in, or spawn it into a nursery that outlives the use`,
 				param.start,
 			);
 		}

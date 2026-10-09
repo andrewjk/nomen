@@ -17,13 +17,13 @@ trait Rule {
 	pub func name = (self, out string)
 }
 
-owning struct TextRule : Rule {
+mv struct TextRule : Rule {
 	pub func name = (self, out string) {
 		return "text"
 	}
 }
 
-owning struct Holder {
+mv struct Holder {
 	pub var List<Rule> rules = List<Rule>()
 	pub var List<string> names = List<string>()
 
@@ -52,7 +52,7 @@ trait Rule {
 	pub func name = (self, out string)
 }
 
-owning struct TextRule : Rule {
+mv struct TextRule : Rule {
 	pub func name = (self, out string) {
 		return "text"
 	}
@@ -90,7 +90,7 @@ trait Rule {
 	pub func name = (self, out string)
 }
 
-owning struct TextRule : Rule {
+mv struct TextRule : Rule {
 	pub func name = (self, out string) {
 		return "text"
 	}
@@ -125,13 +125,13 @@ trait Rule {
 	pub func name = (self, out string)
 }
 
-owning struct TextRule : Rule {
+mv struct TextRule : Rule {
 	pub func name = (self, out string) {
 		return "text"
 	}
 }
 
-owning struct BoldRule : Rule {
+mv struct BoldRule : Rule {
 	pub func name = (self, out string) {
 		return "bold"
 	}
@@ -170,7 +170,7 @@ trait Speak {
 	pub func speak = (self, out string)
 }
 
-owning struct Dog : Speak {
+mv struct Dog : Speak {
 	pub func speak = (self, out string) {
 		return "woof"
 	}
@@ -220,7 +220,7 @@ trait Rule {
 	pub func name = (self, out string)
 }
 
-owning struct TextRule : Rule {
+mv struct TextRule : Rule {
 	pub func name = (self, out string) {
 		return "text"
 	}
@@ -252,7 +252,7 @@ describe("Map with struct values", () => {
 		const input = `
 import System
 
-pub owning struct LinkReference {
+pub mv struct LinkReference {
 	pub var string url = ""
 	pub var string title = ""
 }
@@ -262,9 +262,9 @@ pub func main = (Init init) {
 	var LinkReference r = LinkReference()
 	r.url = "http://example"
 	r.title = "Example"
-	// B1 cutover: LinkReference is owning — Map.set takes a move TV; the
+	// B1 cutover: LinkReference is mv — Map.set takes a mv TV; the
 	// donor transfers (and is not read again).
-	refs.set("l1", move r)
+	refs.set("l1", mv r)
 	if refs.has("l1") {
 		var LinkReference got = refs.get_or("l1", LinkReference())
 		Console.write("\\{got.url} \\{got.title}\\n")

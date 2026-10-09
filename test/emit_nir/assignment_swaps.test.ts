@@ -10,10 +10,10 @@ test("assignment swaps marshal through the NIR seam byte-identically", () => {
 	// emission inside the swap marshalling, for both variable-RHS and
 	// field-RHS swap shapes.
 	expect_byte_identical(`
-owning struct Box {
+mv struct Box {
   var int value
 }
-owning struct Holder {
+mv struct Holder {
   var Box content
 }
 func run_swap_var = (out int) {
@@ -23,8 +23,8 @@ func run_swap_var = (out int) {
   return a.value * 10 + b.value
 }
 func run_swap_field = (out int) {
-  var Holder h1 = Holder(move Box(1))
-  var Holder h2 = Holder(move Box(2))
+  var Holder h1 = Holder(mv Box(1))
+  var Holder h2 = Holder(mv Box(2))
   h1.content = h2.content swap Box(99)
   return h1.content.value * 100 + h2.content.value
 }

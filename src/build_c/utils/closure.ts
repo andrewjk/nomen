@@ -173,7 +173,7 @@ function capturing_closure_value(node: FunctionNode, status: BuildStatus): strin
 		// copy and the donor keeps its scope-exit free. (Transferring the
 		// pair interacted badly with donor reassignment's displaced-free and
 		// with rodata-backed donors; the checker's read-invalidation already
-		// gives the move its marker semantics.)
+		// gives the mv its marker semantics.)
 		const elem = status.structs.find(
 			(s) => s.name === cap.type.name && !s.is_simple_type && !s.is_class,
 		);
@@ -194,7 +194,7 @@ function capturing_closure_value(node: FunctionNode, status: BuildStatus): strin
 		// A MOVE capture transfers ownership out of the donating local: mark
 		// it so its scope-exit auto-free is skipped (the env destructor owns
 		// it now), and drop any heap-string-field records for it (the env's
-		// <T>_destroy reclaims the fields). Mirrors the `move`-arg path.
+		// <T>_destroy reclaims the fields). Mirrors the `mv`-arg path.
 		// D3/E2: STRING captures are excluded — they snapshot (above), so the
 		// donor still owns and frees its own buffer.
 		if (cap.is_move && !(cap.type.name === "string" && !cap.type.is_view && !cap.type.is_array)) {
@@ -217,7 +217,7 @@ function capturing_closure_value(node: FunctionNode, status: BuildStatus): strin
 /**
  * Emit the C definition of a lambda in VALUE position and return the
  * descriptor expression for it (the value a func-typed slot receives). A
- * capturing lambda yields a heap descriptor owning its env; a capture-free one
+ * capturing lambda yields a heap descriptor mv its env; a capture-free one
  * yields a static descriptor.
  */
 export function build_lambda_closure_value(

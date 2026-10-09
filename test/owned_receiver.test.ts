@@ -3,7 +3,7 @@ import { describe, test } from "vite-plus/test";
 import build_and_check_output from "./build_and_check_output";
 
 // An OWNED class result used inline as a method receiver
-// (`Thread(fn()).start().result()`) must be anchored: the `move out T`
+// (`Thread(fn()).start().result()`) must be anchored: the `mv out T`
 // method handed the caller a fresh instance, and an unanchored receiver
 // never reaches `#destroy` — for a `Task<T>` handle that destroy IS the
 // future release. The checker hoists the receiver into a scoped `var`
@@ -50,7 +50,7 @@ pub func main = () {
 	test("a field receiver drives ref-self methods without hoisting", async () => {
 		const input = `import System
 
-owning struct Engine {
+mv struct Engine {
 	pub var int hp = 0
 
 	pub func set_hp = (ref self, int hp) {
@@ -58,10 +58,10 @@ owning struct Engine {
 	}
 }
 
-owning struct Car {
+mv struct Car {
 	var Engine engine
 
-	pub func #init = (self, move Engine e) {
+	pub func #init = (self, mv Engine e) {
 		self.engine = e
 	}
 }

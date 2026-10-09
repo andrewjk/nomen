@@ -8,7 +8,7 @@ import build_and_check_output from "./build_and_check_output";
 
 const lib = get_library(path.resolve(import.meta.dirname, "../core"));
 
-// `view string` — a non-owning (ptr, len) slice returned by string.slice().
+// `view string` — a non-mv (ptr, len) slice returned by string.slice().
 // It borrows from its source: it may not outlive the source's scope and is
 // invalidated when the source is reassigned. These runtime tests run on both
 // backends (C and aarch64).

@@ -6,7 +6,7 @@ import parse_with_imports from "./parse_with_imports";
 // Closure captures (CLOSURE.md Phase 2a): a lambda may capture outer
 // SCALARS by copy. The value site heap-allocates an env struct (one 8-byte
 // field per capture) and a heap descriptor; the holder (a func-typed local)
-// frees both at scope exit (audit-balanced). Strings/owning values/classes and
+// frees both at scope exit (audit-balanced). Strings/mv values/classes and
 // non-scalar captures are follow-ups.
 
 describe("closure captures (scalars)", () => {
@@ -134,7 +134,7 @@ pub func main = () {
 });
 
 describe("closure captures (value structs)", () => {
-	test("a non-owning struct captures by copy (snapshot)", async () => {
+	test("a non-mv struct captures by copy (snapshot)", async () => {
 		await build_and_check_output(
 			`
 import System
@@ -182,13 +182,13 @@ pub func main = () {
 	});
 });
 
-describe("closure captures (owning structs & classes, move)", () => {
-	test("a lambda moves an owning struct into its env", async () => {
+describe("closure captures (mv structs & classes, mv)", () => {
+	test("a lambda moves a mv struct into its env", async () => {
 		await build_and_check_output(
 			`
 import System
 
-owning struct Owned {
+mv struct Owned {
 	var List<int> data
 }
 
@@ -210,7 +210,7 @@ pub func main = () {
 			`
 import System
 
-owning struct Box {
+mv struct Box {
 	var int v = 0
 }
 
@@ -227,32 +227,32 @@ pub func main = () {
 		);
 	});
 
-	test("move-capturing an owning struct invalidates the donor", () => {
+	test("mv-capturing a mv struct invalidates the donor", () => {
 		expect(
 			parse_with_imports(`
-owning struct Owned {
+mv struct Owned {
 	var List<int> data
 }
 
 var Owned o = Owned(List<int>())
 var func (out int) first = (out int) => o.data.at(0)
 Console.write("\\{o.data.length} \\{first()}")
-`).errors.some((m) => m.message.includes("used after move")),
+`).errors.some((m) => m.message.includes("used after mv")),
 		).toBe(true);
 	});
 });
 
-describe("closure captures (move parameters)", () => {
-	test("a lambda moves a `move` class parameter into its env", async () => {
+describe("closure captures (mv parameters)", () => {
+	test("a lambda moves a `mv` class parameter into its env", async () => {
 		await build_and_check_output(
 			`
 import System
 
-owning struct Box {
+mv struct Box {
 	var int v
 }
 
-func use_box = (move Box b, out int) {
+func use_box = (mv Box b, out int) {
 	var func (out int) get = (out int) => b.v
 	return get()
 }
@@ -266,16 +266,16 @@ pub func main = () {
 		);
 	});
 
-	test("a lambda moves a `move` owning-struct parameter into its env", async () => {
+	test("a lambda moves a `mv` mv-struct parameter into its env", async () => {
 		await build_and_check_output(
 			`
 import System
 
-owning struct Owned {
+mv struct Owned {
 	var List<int> data
 }
 
-func use_owned = (move Owned o, out int) {
+func use_owned = (mv Owned o, out int) {
 	var func (out int) first = (out int) => o.data.at_or(0, -1)
 	return first()
 }
@@ -283,7 +283,7 @@ func use_owned = (move Owned o, out int) {
 pub func main = () {
 	var Owned o = Owned(List<int>())
 	o.data.push(9)
-	Console.write("\\{use_owned(move o)}")
+	Console.write("\\{use_owned(mv o)}")
 }
 `,
 			"lambda_capture_move_param_struct",
@@ -299,7 +299,7 @@ describe("closure captures (ownership transfer)", () => {
 			`
 import System
 
-owning struct Rule {
+mv struct Rule {
 	var func (out int) f
 }
 
@@ -318,7 +318,7 @@ pub func main = () {
 		);
 	});
 
-	test("initializing a func local from an owning closure moves it", async () => {
+	test("initializing a func local from a mv closure moves it", async () => {
 		await build_and_check_output(
 			`
 import System
@@ -361,7 +361,7 @@ trait Show {
 	func show = (self, out string)
 }
 
-	owning struct Dog : Show {
+	mv struct Dog : Show {
 	var string name
 
 	func show = (self, out string) => self.name.copy()
@@ -391,7 +391,7 @@ trait Show {
 	func show = (self, out string)
 }
 
-owning struct Note : Show {
+mv struct Note : Show {
 	var string text
 
 	func show = (self, out string) => self.text.copy()
@@ -408,7 +408,7 @@ pub func main = () {
 });
 
 describe("closure captures (nested closures)", () => {
-	test("a lambda captures another capturing lambda by move", async () => {
+	test("a lambda captures another capturing lambda by mv", async () => {
 		await build_and_check_output(
 			`
 import System

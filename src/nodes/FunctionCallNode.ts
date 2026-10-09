@@ -13,8 +13,8 @@ export default class FunctionCallNode extends BaseNode {
 	ref_param_indices?: number[];
 	move_param_indices?: number[];
 	/**
-	 * Indices of arguments bound to a `move T` parameter where T is a
-	 * pass-by-value owning struct on a registered free function: ownership
+	 * Indices of arguments bound to a `mv T` parameter where T is a
+	 * pass-by-value mv struct on a registered free function: ownership
 	 * TRANSFERS at the boundary (the callee seeds the param's string-field
 	 * records and frees them at its exit), so the caller drops its records
 	 * instead of freeing them. The plain `move_param_indices` convention
@@ -25,7 +25,7 @@ export default class FunctionCallNode extends BaseNode {
 	move_owned_param_indices?: number[];
 	/**
 	 * Indices of a `#spawn` construction's packed arguments that are
-	 * region-checked BORROWS (STRUCT_PLAN_3 N1a R1): an owning value struct
+	 * region-checked BORROWS (STRUCT_PLAN_3 N1a R1): a mv value struct
 	 * passed bare inside an `async { }` block. The env stores the donor's
 	 * pointer (no deep copy, no env-side destroy) and the donor is frozen
 	 * (R3) until the block exits. Stamped by validate_spawn_args_sendable;

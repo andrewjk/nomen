@@ -17,7 +17,7 @@ describe("generic enum with class/trait payloads", () => {
 		const input = `
 import System
 
-owning struct Box {
+mv struct Box {
 	pub var int v = 0
 	pub func #init = (ref self, int v) {
 		self.v = v
@@ -40,7 +40,7 @@ pub func main = (Init init) {
 		await build_and_check_output(input, "generic_enum_class_payload", "42\nmissing", true);
 	});
 
-	test("Option<Trait> move construction, match, vtable dispatch (both backends)", async () => {
+	test("Option<Trait> mv construction, match, vtable dispatch (both backends)", async () => {
 		const input = `
 import System
 
@@ -48,7 +48,7 @@ trait Animal {
 	pub func legs = (self, out int)
 }
 
-owning struct Dog : Animal {
+mv struct Dog : Animal {
 	pub func legs = (self, out int) {
 		return 4
 	}
@@ -56,7 +56,7 @@ owning struct Dog : Animal {
 
 pub func main = (Init init) {
 	var Dog d = Dog()
-	var Option<Animal> o = Option.some(move d)
+	var Option<Animal> o = Option.some(mv d)
 	var int n = match o {
 		case .some(a) -> a.legs()
 		else -> 0
@@ -85,7 +85,7 @@ trait Animal {
 	pub func legs = (self, out int)
 }
 
-owning struct Dog : Animal {
+mv struct Dog : Animal {
 	pub var int n = 0
 	pub func #init = (ref self, int n) {
 		self.n = n
@@ -113,7 +113,7 @@ pub func main = (Init init) {
 		await build_and_check_output(input, "generic_enum_trait_ctor_payload", "4\n9", true);
 	});
 
-	// A string-field conformer: the move transfers its (uniformly heap) string
+	// A string-field conformer: the mv transfers its (uniformly heap) string
 	// to the box, so the box owns it and no copy is orphaned (LEAK). The case
 	// method returns an int (a string-returning dispatch inside a match has a
 	// separate pre-existing C leak — see FOLLOWUP.md).
@@ -125,7 +125,7 @@ trait Counter {
 	pub func count = (self, out int)
 }
 
-owning struct Tally : Counter {
+mv struct Tally : Counter {
 	pub var string label
 	pub func count = (self, out int) {
 		return 3
@@ -134,7 +134,7 @@ owning struct Tally : Counter {
 
 pub func main = (Init init) {
 	var Tally t = Tally("hi")
-	var Option<Counter> o = Option.some(move t)
+	var Option<Counter> o = Option.some(mv t)
 	Console.write_line(match o {
 		case .some(a) -> a.count().to_string()
 		else -> "0"
@@ -151,7 +151,7 @@ pub func main = (Init init) {
 
 	// A trait-dispatched `string` method bound in a match case returns an OWNED
 	// heap copy (the conformer's return boundary strdups the literal). The
-	// binding's owning wrapper must free it — it previously leaked on C.
+	// binding's mv wrapper must free it — it previously leaked on C.
 	test("Option<Trait> string-returning dispatch in a match binding (both backends)", async () => {
 		const input = `
 import System
@@ -160,7 +160,7 @@ trait Speaker {
 	pub func speak = (self, out string)
 }
 
-owning struct Named : Speaker {
+mv struct Named : Speaker {
 	pub func speak = (self, out string) {
 		return "spoke"
 	}
@@ -168,7 +168,7 @@ owning struct Named : Speaker {
 
 pub func main = (Init init) {
 	var Named n = Named()
-	var Option<Speaker> o = Option.some(move n)
+	var Option<Speaker> o = Option.some(mv n)
 	Console.write_line(match o {
 		case .some(a) -> a.speak()
 		else -> "?"
@@ -182,7 +182,7 @@ pub func main = (Init init) {
 		const input = `
 import System
 
-owning struct Box {
+mv struct Box {
 	pub var int v = 0
 	pub func #init = (ref self, int v) {
 		self.v = v
@@ -202,7 +202,7 @@ pub func main = (Init init) {
 		const input = `
 import System
 
-owning struct Box {
+mv struct Box {
 	pub var int v = 0
 }
 
@@ -223,7 +223,7 @@ pub func main = (Init init) {
 }
 `;
 		const parsed = parse_raw(input);
-		// Post-R the payload is an owning STRUCT — a bare field read is a
+		// Post-R the payload is a mv STRUCT — a bare field read is a
 		// copy of the field's owned state, rejected like the declaration
 		// side's copy rule.
 		expect(parsed.errors.some((e) => e.message.includes("cannot pass a field read to case"))).toBe(

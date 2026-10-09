@@ -17,7 +17,7 @@ import build_and_check_output from "./build_and_check_output";
 const SRC = `
 import System
 
-owning struct Counter {
+mv struct Counter {
 	var int n
 	func take = (ref self, ref int r, out int) {
 		r = r + 1

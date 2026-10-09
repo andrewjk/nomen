@@ -20,7 +20,7 @@ variable, parameter, field, type, or enum case names:
 
 `as` `async` `bitset` `break` `case` `class` `const` `continue` `cp` `else`
 `enum` `extern` `extend` `for` `func` `if` `import` `in` `internal` `let`
-`match` `move` `of` `out` `panic` `private` `pub` `raw` `readonly` `ref`
+`match` `mv` `of` `out` `panic` `private` `pub` `raw` `readonly` `ref`
 `return` `struct` `switch` `swap` `todo` `trait` `unsafe` `var` `view`
 `while`
 
@@ -377,31 +377,31 @@ pub struct Transaction {
 
 ### Owning Structs
 
-An `owning struct` is the single-owner escape hatch from Copyable structs: its
+An `mv struct` is the single-owner escape hatch from Copyable structs: its
 bindings MOVE instead of copy, and the declaration — not a field walk — is the
 ownership contract. Heap resources (a `Box<T>`, a `List<T>`, an OS handle)
 live exactly as long as the binding that owns them, and `#destroy` runs at
 scope exit.
 
 ```
-owning struct Config {
+mv struct Config {
     var string name
 }
 
 var Config c = Config("x")
-move Config c2 = c        // transfer: c is invalid afterwards
+mv Config c2 = c        // transfer: c is invalid afterwards
 var Config c3 = c.copy()  // deep copy: c stays valid
-var Config c4 = c         // Error: cannot copy 'Config' by value — use .copy() or move
+var Config c4 = c         // Error: cannot copy 'Config' by value — use .copy() or mv
 ```
 
 Construction, methods (`ref self` for mutation), and `#destroy` follow the
 struct rules. Function parameters are **read-only by default** for every
 type; `ref` is a spelled mutable borrow the caller acknowledges at the call
-site; `move` transfers ownership. Sharing within a scope is spelled at the
+site; `mv` transfers ownership. Sharing within a scope is spelled at the
 binding — for a heap value that means aliasing its `Box`:
 
 ```
-owning struct Node {
+mv struct Node {
     var int value
 }
 
@@ -414,9 +414,9 @@ A `ref` binding is an alias, not an owner: it is not reassignable (reassign
 the owner `p`), mutation through it requires the source to be `var`, and
 ownership cannot be transferred through it (move the owner instead). A plain
 `var` copy of an alias source is a compile error — spell what you mean:
-`ref` to share, `move` to transfer, `.copy()` for an independent copy.
+`ref` to share, `mv` to transfer, `.copy()` for an independent copy.
 
-See [Owning structs](#owning-structs-1) for the field rules, the Copyable
+See [Owning structs](#mv-structs-1) for the field rules, the Copyable
 verifier, `Box<T>`, and the nullable lowerings.
 
 ### Generic Structs
@@ -481,7 +481,7 @@ const LayoutParams DEF = [ .. LayoutParams(), grow = 2, shrink = 3 ]
 const LayoutParams ONE = [ .. LayoutParams(), grow = 7 ]
 ```
 
-The base may be any value-struct expression — a constructor call, a factory function's result, or a plain variable (a copy; an owning struct requires `move` or `.copy()`):
+The base may be any value-struct expression — a constructor call, a factory function's result, or a plain variable (a copy; a mv struct requires `mv` or `.copy()`):
 
 ```
 func layout = (int grow, out LayoutParams) {
@@ -761,29 +761,29 @@ var [width = w, depth = d] = b
 Console.write("\\{w} \\{d}")  // "2 6"
 ```
 
-An owning struct destructures identically — use `move` to take ownership of a
+A mv struct destructures identically — use `mv` to take ownership of a
 field instead of binding a view (see
 [Move Destructuring](#move-destructuring-and-literal-transfers)):
 
 ```
-owning struct Counter {
+mv struct Counter {
     var int count
     var int total
 }
 
 var c = Counter(5, 50)
-var [count = move n, total = move t] = c
+var [count = mv n, total = mv t] = c
 Console.write("\\{n} \\{t}")  // "5 50"
 ```
 
 Referencing a field that does not exist on the struct is a compile
-error. Without `move`, the destructured bindings are non-owning views into
+error. Without `mv`, the destructured bindings are non-mv views into
 the right-hand side value, so they are not freed at scope exit (the
 right-hand side retains ownership).
 
 #### Move Destructuring and Literal Transfers
 
-A binding prefixed with `move` takes OWNERSHIP of the destructured field
+A binding prefixed with `mv` takes OWNERSHIP of the destructured field
 instead of binding a view. The field's storage is revalidated (replaced with
 a fresh default of its type), so the right-hand side's cleanup stays sound:
 
@@ -791,23 +791,23 @@ a fresh default of its type), so the right-hand side's cleanup stays sound:
 func make = (out [List<string>, List<int>]) {
     var t = List<string>()
     var c = List<int>()
-    return [move t, move c]
+    return [mv t, mv c]
 }
 
-var [move a, move b] = make()
+var [mv a, mv b] = make()
 Console.write("\{a.length} \{b.length}")   // 0 0 — a and b own their lists
 ```
 
-The explicit `move` is only needed when the source outlives the binding.
+The explicit `mv` is only needed when the source outlives the binding.
 Because a temporary right-hand side (a call or a literal) exists only to
-feed the bindings, its fields are transferred WITHOUT `move`:
+feed the bindings, its fields are transferred WITHOUT `mv`:
 
 ```
 func make = (out [List<string>, List<int>]) {
     var t = List<string>()
     var c = List<int>()
     return [t, c]        // t and c are at their last use: the literal
-}                        // transfers them — no `move` required
+}                        // transfers them — no `mv` required
 
 var [a, b] = make()      // the temp dies after the bindings: a and b own
 ```
@@ -815,8 +815,8 @@ var [a, b] = make()      // the temp dies after the bindings: a and b own
 The same last-use inference applies to the literal's own elements: `[t, c]`
 transfers `t` and `c` when neither is read again afterward; if one is read
 later, that element is rejected exactly like the declaration-path copy rule
-(`use 'move t' or 't.copy()'`). Both binding forms accept the prefix —
-positional (`[move a]`) and renamed (`[field = move name]`). Moved bindings
+(`use 'mv t' or 't.copy()'`). Both binding forms accept the prefix —
+positional (`[mv a]`) and renamed (`[field = mv name]`). Moved bindings
 are ordinary owned values: they are freed at scope exit, and the moved-out
 source may not be used again. Arrays cannot be move-destructured (an element
 has no field storage to revalidate).
@@ -1078,7 +1078,7 @@ Types are inferred from initializers when omitted:
 - floats → `float`
 - `null` → `null` (requires explicit nullable type annotation)
 
-`view` declares a non-owning borrow binding (a `(ptr, len)` slice). A bare
+`view` declares a non-mv borrow binding (a `(ptr, len)` slice). A bare
 `view` is an immutable (const) view; `var view` is a mutable view you can
 re-point. The element type is inferred. See [Slicing](#slicing).
 
@@ -1397,7 +1397,7 @@ block are syntax errors).
 A lambda may capture locals and parameters of the enclosing function. The
 capture is taken once, when the lambda value is created:
 
-- Scalars and non-owning value structs are **copied** (a later write to the
+- Scalars and non-mv value structs are **copied** (a later write to the
   source is not seen by the lambda).
 - Strings are **moved** into the closure: the lambda holds the value at
   capture time, and the donating local is invalidated (using it again is a
@@ -1545,44 +1545,44 @@ const d = p.distance_from_origin()   // 3*3 + 4*4 = 25
 
 #### Owning structs
 
-`owning struct` declares the type MOVE-ONLY (STRUCT_PLAN_3 B1): bindings move
+`mv struct` declares the type MOVE-ONLY (STRUCT_PLAN_3 B1): bindings move
 instead of copy, and the declaration — not a field walk — is the ownership
 contract. A bare `struct` is Copyable; the checker verifies that claim: a bare
-struct with a declared-`owning` field is rejected, naming the fix.
+struct with a declared-`mv` field is rejected, naming the fix.
 
 ```
-owning struct Config {
+mv struct Config {
     var string name
 }
 
 var Config c = Config("x")
-move Config c2 = c        // transfer: c is invalid afterwards
+mv Config c2 = c        // transfer: c is invalid afterwards
 var Config c3 = c.copy()  // explicit deep copy, c stays valid
-var Config c4 = c         // Error: cannot copy 'Config' by value — use .copy() or move
+var Config c4 = c         // Error: cannot copy 'Config' by value — use .copy() or mv
 ```
 
 ```
-owning struct Config { ... }
+mv struct Config { ... }
 struct Wrapper {          // Error: 'Wrapper' cannot be Copyable — field 'c'
     var Config c          //   owns heap memory --> mark the struct
-}                         //   `owning struct Wrapper`, or remove the field
+}                         //   `mv struct Wrapper`, or remove the field
 ```
 
 The same verifier applies to enums: a bare `enum` with a case payload typed a
-declared-`owning` struct must be declared `owning enum` (B1a), and bindings of
-a declared-`owning` enum move instead of copy.
+declared-`mv` struct must be declared `mv enum` (B1a), and bindings of
+a declared-`mv` enum move instead of copy.
 
-**Fields: the spelling follows the type.** An `owning struct`'s owning-typed
-field (`Box<T>`, another owning struct, an owning enum) is an owned slot —
+**Fields: the spelling follows the type.** An `mv struct`'s mv-typed
+field (`Box<T>`, another mv struct, a mv enum) is an owned slot —
 construction and stores transfer (the synthesized `#init` parameter is a
-`move` param), the field is destroyed with the struct, and a re-assignment
+`mv` param), the field is destroyed with the struct, and a re-assignment
 reclaims the displaced value. The spelling is plain `var` — ownership follows
-the field's TYPE, so no `move` field keyword exists. A bare `struct` cannot
+the field's TYPE, so no `mv` field keyword exists. A bare `struct` cannot
 hold these fields: the verifier above rejects it, naming the fix.
 
 ```
-owning struct Holder {
-    var Dog d        // owned slot: Holder(move d) transfers, `var` is the spelling
+mv struct Holder {
+    var Dog d        // owned slot: Holder(mv d) transfers, `var` is the spelling
 }
 ```
 
@@ -1592,25 +1592,25 @@ is the fix while the boxed-handle field lowering is pending).
 **Nullable lowerings.** `T?` keeps one language-level semantic with two
 mechanical lowerings, chosen by shape: `Box<T>?` (and any pointer-shaped
 handle) is the null pointer — the natural null slot; an inline struct `T?`
-(owning or Copyable) keeps the companion `<slot>_has` flag. Nothing boxes
+(mv or Copyable) keeps the companion `<slot>_has` flag. Nothing boxes
 silently and no presence byte is spent on types with a natural null slot.
 
 #### Box
 
-`Box<T>` is an owning pointer to a heap-allocated value — the cycle-breaking
+`Box<T>` is a mv pointer to a heap-allocated value — the cycle-breaking
 and stable-address shape. A Box is ONE POINTER at runtime: `Box<T>?` is the
 natural null slot, construction moves the value in (boxing takes ownership),
 destroy reclaims the pointee, and field/method access THROUGH the box is
 transparent — the checker rewrites `box.f` to the pointee's `f`.
 
 ```
-owning struct Node {
+mv struct Node {
     var int value
     var Box<Node>? next      // the sanctioned pointer field: breaks the cycle
 }
 
 var Node n = Node(1, null)
-var Box<Node> b = Box<Node>(move n)   // boxing moves: n is invalid after
+var Box<Node> b = Box<Node>(mv n)   // boxing moves: n is invalid after
 Console.write_line("\{b.value}")      // 1 — access through the box
 Console.write_line("\{b.next}")       // null (the pointee's next slot)
 ```
@@ -1618,7 +1618,7 @@ Console.write_line("\{b.next}")       // null (the pointee's next slot)
 An inline containment cycle is a compile error naming the fix:
 
 ```
-owning struct Node {
+mv struct Node {
     var int value
     var Node next     // Error: field 'next' closes an inline containment
                       //   cycle — declare it `Box<Node>`
@@ -1630,8 +1630,8 @@ constraints to the generated `#init` parameters (see
 [Field Constraints](#field-constraints)). You can also define a custom `#init`
 to take full control of construction (see [Initializers](#initializers)). A
 bare struct is a value type: assigning it copies the fields. For heap
-ownership and shared-in-scope aliasing, use `owning struct` plus `Box<T>` /
-`ref` — see [Owning Structs](#owning-structs).
+ownership and shared-in-scope aliasing, use `mv struct` plus `Box<T>` /
+`ref` — see [Owning Structs](#mv-structs).
 
 ### Traits
 
@@ -2215,7 +2215,7 @@ const x = arr.at(5)  // Error: Parameter constraint not satisfied
 
 ### Slicing
 
-`slice(start, end)` returns a non-owning `view T` — a `(ptr, len)` borrow of
+`slice(start, end)` returns a non-mv `view T` — a `(ptr, len)` borrow of
 the half-open range `[start, end)` into the source's buffer. It is O(1): no
 elements are copied. The element type `T` is the container's element (`char`
 for `string`, `T` for `Array<T>` / `List<T>`). Use `.at(i)` / `.length` to read
@@ -2314,7 +2314,7 @@ Console.write("\\{v.length}")  // Error: borrow invalidated by source reassignme
 
 #### Views in structs
 
-Structs may declare `view T` fields — a non-owning `(ptr, len)` pair stored by
+Structs may declare `view T` fields — a non-mv `(ptr, len)` pair stored by
 value, so copying the struct copies the borrow and nothing is freed on destroy.
 This is the zero-copy way to keep many small records over one long-lived buffer:
 
@@ -2401,7 +2401,7 @@ Rules:
 
 At the end of each scope, the compiler automatically:
 
-- Calls `#destroy` functions on owning values going out of scope
+- Calls `#destroy` functions on mv values going out of scope
 - Frees heap-allocated strings and owned values
 - Cleans up all intermediate scopes on `break`, `continue`, and `return`
 
@@ -2562,7 +2562,7 @@ async {
 }
 ```
 
-`Mutex` is an **owning struct** (STRUCT_PLAN_3 Phase R — the shape menu):
+`Mutex` is an **mv struct** (STRUCT_PLAN_3 Phase R — the shape menu):
 its single field is an opaque handle, the value moves, and `#destroy`
 releases the pthread resource automatically at scope exit. Sharing one
 across tasks rides the checked region borrows — the example above passes
@@ -2593,12 +2593,12 @@ async {
 var v = ch.receive()   // blocks until ready
 ```
 
-`Channel` is an **owning struct** (STRUCT_PLAN_3 Phase R — the shape menu):
+`Channel` is an **mv struct** (STRUCT_PLAN_3 Phase R — the shape menu):
 every field is an opaque handle/counter word, the value moves, and
 `#destroy` drains the queue and releases the mutex/condvar. Sharing one
 across tasks rides the checked region borrows — the example passes `ch` bare
 inside the `async` block (the join bounds the borrow; an app-lifetime
-channel is a global). A transfer (`move ch`) hands the whole queue to the
+channel is a global). A transfer (`mv ch`) hands the whole queue to the
 receiver.
 
 `Channel` stores `uint64` values (Nomen values are pointer-sized on every
@@ -2654,14 +2654,14 @@ pub struct Stamp : Sendable {   // explicit marker
 
 What crosses a task boundary, each spelled at the call site:
 
-- **Moved** arguments — a `move T` capture or argument takes exclusive
-  ownership; an owning struct moves and the donor is invalidated (the caller
+- **Moved** arguments — a `mv T` capture or argument takes exclusive
+  ownership; a mv struct moves and the donor is invalidated (the caller
   gives up its access).
-- **Copied** arguments — primitives, strings, and plain-data (non-owning)
+- **Copied** arguments — primitives, strings, and plain-data (non-mv)
   structs are copied at the boundary, so the task and the caller hold
-  independent values. (A `move s` argument to a `move string` parameter
+  independent values. (A `mv s` argument to a `mv string` parameter
   transfers instead.)
-- **Borrowed** arguments — an owning struct passed bare inside an `async`
+- **Borrowed** arguments — a mv struct passed bare inside an `async`
   block, or a `view`-typed argument: the env aliases the donor, and the
   lifetime rules below bound the alias.
 - **Trait handles cannot cross.** A trait-typed value is not Sendable — move
@@ -2674,16 +2674,16 @@ Four lifetime rules apply on top of Sendable (which gates what may cross, not
 how long an alias stays valid):
 
 - **Inside an `async` block, a borrowed argument must outlive the join.**
-  Two argument shapes BORROW: an owning struct passed bare (the env takes
+  Two argument shapes BORROW: a mv struct passed bare (the env takes
   the donor's pointer — no deep copy), and a `view`-typed argument. Their
   ROOT variable must be declared in the block's own scope or outside it — a
   local declared in a nested block (an `if` body, a loop iteration) dies
   before the join and dangles the task's alias. A fresh temporary (a call
   result) must be constructed in the block's own scope. Moved and copied
   arguments are exempt — ownership has no region.
-- **Outside a nursery, an owning struct cannot cross bare.** There is no
-  join to bound a borrow, and the env cannot deep-copy owning state soundly,
-  so the bare-owning shape is a compile error — spawn inside an `async`
+- **Outside a nursery, a mv struct cannot cross bare.** There is no
+  join to bound a borrow, and the env cannot deep-copy mv state soundly,
+  so the bare-mv shape is a compile error — spawn inside an `async`
   block (a borrowed read), or move it in. Exemption: a process-lifetime
   GLOBAL donor is its own region proof (nothing can dangle because nothing
   ever ends) — the app-lifetime `Channel`/`Mutex` share rides it.
@@ -2693,18 +2693,18 @@ how long an alias stays valid):
   method — the task is reading it. `Task` handles are exempt: sharing a
   handle and then cancelling it is the coordination protocol.
 - **Detach owns its captures.** A detached daemon has no join anywhere, so
-  `.detach()` rejects every shared (non-`move`) capture. App-lifetime state
+  `.detach()` rejects every shared (non-`mv`) capture. App-lifetime state
   is shared by declaring it at the root scope (globals are exempt: process
   lifetime).
 
-Moved and copied arguments (scalars, strings, `move T`) are exempt from the
+Moved and copied arguments (scalars, strings, `mv T`) are exempt from the
 freeze — ownership has no region.
 
 ### WeakHandle
 
 `WeakHandle<T>` is a checked handle to a possibly-gone object — the sanctioned
 child→parent / OS-retained / delegate shape (back-pointers that would
-otherwise be owning cycles). No refcounts: one process-wide
+otherwise be mv cycles). No refcounts: one process-wide
 (pointer, generation) slot table; the tracked type's `#destroy` invalidates
 every slot holding the pointer; `get` compares generations and returns the
 live pointer or `null`.
@@ -2783,9 +2783,9 @@ a lifecycle marker, like `#init`/`#destroy`, that declares the type's
 construction hook. `Thread` and `Fiber` declare `#spawn`; the compiler treats
 `X(...)` on a `#spawn`-bearing type as the deferred-call construction, and a
 type that merely shares the name does not gain it. `Thread` and `Fiber` are
-**owning structs** (STRUCT_PLAN_3 Phase R — the shape menu): every field is
+**mv structs** (STRUCT_PLAN_3 Phase R — the shape menu): every field is
 an opaque handle (uint64/bool), so the construction yields an inline value
-that moves, and `#destroy` enforces must-start. An owning struct declaring
+that moves, and `#destroy` enforces must-start. A mv struct declaring
 `#spawn` constructs through the same special form: the construction yields
 the inline value, with the handle fields written directly. A `#spawn`
 constructor's single argument is either a deferred call
@@ -2802,7 +2802,7 @@ job.start()
 ```
 
 A construction can also take a zero-argument FUNCTION VALUE — a lambda whose
-CAPTURES are the eager arguments (every capture must be Sendable, and owning
+CAPTURES are the eager arguments (every capture must be Sendable, and mv
 captures move into the task). A func-typed binding handed to a construction
 is moved: the task owns and frees the closure, and using the binding
 afterwards is a use-after-move error. `.detach()` and a nursery's
@@ -3059,14 +3059,14 @@ An unnamed `async { }` block supports only lexical `Thread(...).start()`
 
 The handle returned by `Thread(...).start()`. Generic — `T` is inferred from
 the spawned function's return type (`Task<uint64>` for uint64-returning
-functions, `Task<uint64>` for void functions). An **owning struct** whose
+functions, `Task<uint64>` for void functions). An **mv struct** whose
 fields are opaque handles — it moves, and its `#destroy` releases the future
 reference it holds (STRUCT_PLAN_3 Phase R):
 
 ```
-pub owning struct Task<T> : Awaitable {
+pub mv struct Task<T> : Awaitable {
     func wait = (self)
-    func result = (ref self, move out T)
+    func result = (ref self, mv out T)
     func result_uint64 = (ref self, out uint64)
     func cancel = (ref self)
     func current_cancelled = (out bool)   // static
@@ -3075,7 +3075,7 @@ pub owning struct Task<T> : Awaitable {
 
 - `wait()` blocks until the task finishes. Idempotent.
 - `result()` blocks, then moves the spawned function's return value out as
-  `T`. The value transfers to the caller (`move out`) — call it once; a
+  `T`. The value transfers to the caller (`mv out`) — call it once; a
   second call observes the zero value. The result slot is sized to the full
   type, so a fat `string` result arrives intact, and an unconsumed result
   is freed when the handle's `#destroy` runs.

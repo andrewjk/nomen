@@ -148,7 +148,7 @@ export interface NirDeclareInfo {
 	readonly modifiers: NirDeclModifiers;
 	readonly init: NirExpr | null;
 	/** Replacement value written back into a moved-out source (`var X b =
-	 *  move obj.field swap <rep>`); null when the declaration has no swap. */
+	 *  mv obj.field swap <rep>`); null when the declaration has no swap. */
 	readonly swap: NirExpr | null;
 	readonly node: BaseNode;
 }

@@ -16,7 +16,7 @@
 // the arena's own #destroy reclaims every still-live slot at scope exit.
 
 /**
- * A copyable, non-owning handle to an `Arena<T>` slot. The generation makes a
+ * A copyable, non-mv handle to an `Arena<T>` slot. The generation makes a
  * reused slot distinguishable from the one this handle was issued for.
  **/
 pub struct ArenaRef<T> {
@@ -32,7 +32,7 @@ pub struct ArenaRef<T> {
  * A generational arena: one owner of a set of `T` values, addressed by
  * copyable `ArenaRef<T>` handles.
  **/
-pub owning struct Arena<T> {
+pub mv struct Arena<T> {
 	// Slot payloads. T = value struct/primitive routes to Buffer<T>; T =
 	// class/trait routes to ClassBuffer<T> (monomorphize rewrites the field),
 	// so slot ownership follows the usual element rules.
@@ -63,7 +63,7 @@ pub owning struct Arena<T> {
 	 * Store `value` in a slot (reusing a freed slot when one is available) and
 	 * return a handle to it.
 	 **/
-	pub func alloc = (ref self, move T value, out ArenaRef<T>) {
+	pub func alloc = (ref self, mv T value, out ArenaRef<T>) {
 		var int index = -1
 		if self.free_count > 0 {
 			// Reuse a freed slot. Its generation was already bumped by `free`,
@@ -140,7 +140,7 @@ pub owning struct Arena<T> {
 	/**
 	 * Replace the value `handle` names (same slot, same handle).
 	 **/
-	pub func set = (ref self, ArenaRef<T> handle, move T value) {
+	pub func set = (ref self, ArenaRef<T> handle, mv T value) {
 		if !self.is_valid(handle) {
 			panic("arena: set through a stale handle")
 		}

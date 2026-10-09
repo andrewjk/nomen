@@ -13,14 +13,14 @@ import build_and_check_output from "./build_and_check_output";
 describe("borrow-accessor expression-temp carriers", () => {
 	test("reclaims a deep-copied container field of the loaded element", async () => {
 		const input = `
-owning struct Group {
+mv struct Group {
   var List<int> items = List<int>()
 }
 var groups = List<Group>()
 var g = Group()
 g.items.push(1)
 g.items.push(2)
-groups.push(move g)
+groups.push(mv g)
 for i of 0 .. groups.length {
   Console.write("\\{groups.at(i).items.length}")
 }
@@ -30,7 +30,7 @@ for i of 0 .. groups.length {
 
 	test("reclaims the container while leaving the aliased string field alone", async () => {
 		const input = `
-owning struct Person {
+mv struct Person {
   var string name
   var List<int> items = List<int>()
 }
@@ -38,7 +38,7 @@ var people = List<Person>()
 var p = Person("Ada")
 p.items.push(1)
 p.items.push(2)
-people.push(move p)
+people.push(mv p)
 for i of 0 .. people.length {
   Console.write("\\{people.at(i).name}:\\{people.at(i).items.length} ")
 }
@@ -48,16 +48,16 @@ for i of 0 .. people.length {
 
 	test("a bound borrow-accessor result still owns (and frees) its containers", async () => {
 		// Counterpoint: a real BINDING (`var g = groups.at(i)`) keeps the
-		// owning path — its destroy reclaims the containers recursively.
+		// mv path — its destroy reclaims the containers recursively.
 		const input = `
-owning struct Group {
+mv struct Group {
   var List<int> items = List<int>()
 }
 var groups = List<Group>()
 var g = Group()
 g.items.push(1)
 g.items.push(2)
-groups.push(move g)
+groups.push(mv g)
 var int total = 0
 for i of 0 .. groups.length {
   var Group copy = groups.at(i)

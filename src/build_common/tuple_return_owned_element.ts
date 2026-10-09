@@ -7,7 +7,7 @@ import { is_string_borrow } from "./string_return_analysis.ts";
  * buffer of its own, so the return boundary can leave it raw (normalization
  * skips it). Two shapes qualify:
  *
- *  - a bare local that was TRANSFERRED into the tuple (`move`, or the
+ *  - a bare local that was TRANSFERRED into the tuple (`mv`, or the
  *    last-use inference) whose buffer is genuinely heap — the callee's
  *    cleanup skips it, so the field owns the original allocation. A
  *    transferred RODATA local (a string literal on aarch64) does NOT

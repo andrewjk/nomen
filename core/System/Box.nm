@@ -1,12 +1,12 @@
-// Box<T> (STRUCT_PLAN_3 B2) — an owning pointer to a heap-allocated T: the
-// cycle-breaking and stable-address shape for owning structs.
+// Box<T> (STRUCT_PLAN_3 B2) — a mv pointer to a heap-allocated T: the
+// cycle-breaking and stable-address shape for mv structs.
 //
-//   owning struct Node {
+//   mv struct Node {
 //       var int value
 //       var Box<Node>? next
 //   }
 //
-// DECLARED as `owning struct` (R tranche 4 — the `class` keyword is
+// DECLARED as `mv struct` (R tranche 4 — the `class` keyword is
 // retiring), but the runtime representation is unchanged: ONE POINTER at
 // runtime (the checker stamps the wrapper's storage class at gather time —
 // a compiler-generated wrapper holding the value inline). `Box<T>?` is the
@@ -14,19 +14,19 @@
 // wrapper and moves the value in, and destroy reclaims the pointee. Field
 // and method access THROUGH a box is transparent — the checker rewrites
 // `box.field` to `box.value.field` — so the wrapper never leaks into user
-// code. The declared `owning` is the move-only marker (boxing TAKES
+// code. The declared `mv` is the move-only marker (boxing TAKES
 // OWNERSHIP of the pointee); the stamped storage class is the shape.
 //
 // `T` is a value struct. (Boxing a reference is pointless — trait handles
 // are already boxed.)
 
 /**
- * An owning pointer to a heap-allocated value — the cycle-breaking shape
+ * A mv pointer to a heap-allocated value — the cycle-breaking shape
  **/
-pub owning struct Box<T> {
+pub mv struct Box<T> {
 	// The wrapped value. Access through the box is transparent: the checker
 	// rewrites `box.f` to `box.__value.f`, so this field never appears in
 	// user code (the `__` prefix keeps it out of every legal field name).
-	// `move` spelling: boxing TAKES OWNERSHIP of the pointee.
-	move T __value
+	// `mv` spelling: boxing TAKES OWNERSHIP of the pointee.
+	mv T __value
 }

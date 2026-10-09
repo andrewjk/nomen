@@ -89,9 +89,9 @@ test("binds panic and todo tightly to their parens", () => {
 });
 
 test("binds a call to a keyword member name after a dot", () => {
-	// `move` is a keyword, but after a `.` it is a member name, so the call
+	// `mv` is a keyword, but after a `.` it is a member name, so the call
 	// binds tight.
-	expect(format("var int k = old_keys . move ( 0 )\n")).toBe("var int k = old_keys.move(0)\n");
+	expect(format("var int k = old_keys . mv ( 0 )\n")).toBe("var int k = old_keys.mv(0)\n");
 	expect(format("var Buffer<int> b = b . swap ( other )\n")).toBe(
 		"var Buffer<int> b = b.swap(other)\n",
 	);

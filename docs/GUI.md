@@ -26,11 +26,11 @@ Window (800×600)
 **today**. The full `Control`-trait object-tree design below is blocked by
 Nomen's ownership model (see [Why handle-based, not trait-based (for
 now)](#why-handle-based-not-trait-based-for-now)), so v1 is **handle-based**
-rather than trait-based. `Container` is, however, now an `owning struct :
+rather than trait-based. `Container` is, however, now a `mv struct :
 Control` whose `measure(BoxConstraints)` / `set_frame` / `intrinsic_size`
 delegate to the SoA engine — see [Container as a Control](#container-as-a-control)
 — and every native leaf (`Window`/`Text`/`Button`/`CheckBox`/`TextBox`) is an
-`owning struct` conforming to `Control` too (STRUCT_PLAN_3 Phase R, tranche 4).
+`mv struct` conforming to `Control` too (STRUCT_PLAN_3 Phase R, tranche 4).
 
 ```
 import System
@@ -155,15 +155,15 @@ compounding, verified obstacles:
    only happens _inside_ generic containers (`List<T>`/`ClassBuffer<T>`) via
    return position. So trait-typed child storage can't be hand-rolled — it must
    go through a generic container.
-2. **Generic trait collections are owning.** `List<Control>` / `Buffer<Control>`
+2. **Generic trait collections are mv.** `List<Control>` / `Buffer<Control>`
    monomorphize to `ClassBuffer<Control>`, which frees every element on
-   destroy. There is **no non-owning (borrowed) heterogeneous collection**, so
+   destroy. There is **no non-mv (borrowed) heterogeneous collection**, so
    the spec's `add(Control child)` borrowed model is inexpressible.
 3. **`mov Trait` params are rejected** ("mov is only allowed for class types")
    in non-generic code; it only works as `mov T` inside a generic.
 4. **No generic methods.** `type_params` exist on structs, free functions, and
    traits — not on class/struct methods. So `add<T: Control>(mov T child)`,
-   the only signature that could feed an owning heterogeneous container from a
+   the only signature that could feed a mv heterogeneous container from a
    concrete control, can't be written.
 5. **No downcasting.** Retrieving `var Control c = container.at(i)` yields the
    trait type; you can't call `Text.set_text` / `CheckBox.set_hidden` on it. So
@@ -171,10 +171,10 @@ compounding, verified obstacles:
    todo app toggles `cb3`/`input` _after_ layout) is unreachable.
 
 (1)–(4) together mean there's no way to get a heterogeneous set of native
-controls into an owning trait container from application code; (5) means even
+controls into a mv trait container from application code; (5) means even
 if you could, the app couldn't use them afterward. This is ownership-model
 territory, not library work — it needs a language change (generic methods,
-and/or a non-owning trait collection, and/or downcast).
+and/or a non-mv trait collection, and/or downcast).
 
 So v1 stores child handles in flat `Buffer<int>` arrays (structure-of-arrays,
 mirroring the legacy `Layout.nm`) and applies frames via a native
@@ -686,7 +686,7 @@ UI infrastructure):
   Boxing takes ownership: boxing a bare local is a move (the donor is
   invalidated), boxing a fresh temporary is free, and borrows/views cannot be
   boxed. A bare `Trait` parameter takes a pointer to the caller value for the
-  call (no allocation); a `move Trait` parameter takes ownership of the box.
+  call (no allocation); a `mv Trait` parameter takes ownership of the box.
   The native controls are `class`es, so they slot straight into
   `ClassBuffer<Control>` unchanged.
 - ~~**Parse trait conformance with type arguments** (`core/System/Viewable.nm:8-11`,
@@ -796,7 +796,7 @@ T) { return self.item } }`) inherited unmodified by a conformer. It is now
   `build_aarch64/utils/auto_destroy.ts` (`resolve_decl_struct` helper in
   `emit_destroy_for_scope`) for aarch64. Runtime-tested on both backends in
   `test/trait_local_destroy.test.ts` (user `#destroy` side effects, auto
-  destroy of owning fields, multiple owning fields).
+  destroy of mv fields, multiple mv fields).
 
 ## Trait dispatch (polymorphic calls)
 
@@ -1190,7 +1190,7 @@ With the native controls now `class`es, `ClassBuffer<Trait>` polymorphic
 storage in place, and the enum geometry-type blockers fixed, `Container` itself
 now conforms to `Control` (see [Container as a Control](#container-as-a-control))
 — but the full trait-based `Array<Control>` **object-tree** is _not_ reachable
-as library work: it's blocked by the ownership model (no non-owning trait
+as library work: it's blocked by the ownership model (no non-mv trait
 collection, no generic methods, no downcast — see [Why handle-based, not
 trait-based (for now)](#why-handle-based-not-trait-based-for-now)). The features
 below ship on the existing handle-based v1 (no object-tree needed).

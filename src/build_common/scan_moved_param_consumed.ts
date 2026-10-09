@@ -4,7 +4,7 @@ import type StructNode from "../nodes/StructNode.ts";
 import type TraitNode from "../nodes/TraitNode.ts";
 
 /**
- * Whether a `move` class parameter's ownership escapes the function body —
+ * Whether a `mv` class parameter's ownership escapes the function body —
  * i.e. it is passed (as an argument or receiver) into some call/constructor
  * whose result may outlive the function (stored into a returned
  * container/struct), or it is a bare value used as an argument. In those cases
@@ -22,7 +22,7 @@ import type TraitNode from "../nodes/TraitNode.ts";
  * body): the receiver escapes only if ANY implementation may retain it.
  *
  * Shared by the C backend's function epilogue and the aarch64 function /
- * method move-param reclaims so both agree on when a moved param is reclaimed.
+ * method mv-param reclaims so both agree on when a moved param is reclaimed.
  */
 export function moved_param_is_consumed(
 	root: FunctionNode,
@@ -32,7 +32,7 @@ export function moved_param_is_consumed(
 	traits?: TraitNode[],
 ): boolean {
 	// A raw `#arch` body is opaque to this scan — it may store the param into
-	// an owning container (ClassBuffer.store_T/replace_T do exactly that), so
+	// a mv container (ClassBuffer.store_T/replace_T do exactly that), so
 	// assume ownership escaped and let the body/callee manage the value.
 	// Emitting the epilogue reclaim would free a pointer the raw body just
 	// handed to its owner (a double free at the container's destroy).
@@ -79,7 +79,7 @@ function scan_body(
 		}
 		if (node.node_type === "func") {
 			// A lambda captures values from this body into its closure env
-			// (CLOSURE.md). A move param captured by a closure transfers
+			// (CLOSURE.md). A mv param captured by a closure transfers
 			// ownership beyond the epilogue; a plain nested function cannot
 			// reference it, so this only fires for closures.
 			if ((n as { is_closure?: boolean }).is_closure && subtree_references(n, name)) {

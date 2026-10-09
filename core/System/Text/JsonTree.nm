@@ -11,7 +11,7 @@
 // A node in a parsed JSON tree, stored by value in the pool.
 //   kind: 0=null, 1=true, 2=number, 3=string, 4=array, 5=object, 6=false
 //   child/next/val are node indices, -1 = none.
-owning struct JsonNode {
+mv struct JsonNode {
 	var kind = 0
 	var text = ""
 	var int child = -1
@@ -22,7 +22,7 @@ owning struct JsonNode {
 /**
  * A flat, buffer-backed pool of JSON tree nodes — the parsed representation `Json.parse` produces
  **/
-pub owning struct JsonTree {
+pub mv struct JsonTree {
 	var nodes = Buffer<JsonNode>()
 	var count = 0
 
@@ -32,7 +32,7 @@ pub owning struct JsonTree {
 		self.count = idx + 1
 		var default = JsonNode()
 		self.nodes.store(idx, default)
-		// store_T deep-copies the owning `text` field (strdup of the shared
+		// store_T deep-copies the mv `text` field (strdup of the shared
 		// empty-string literal) into the slot. JsonTree manages node texts
 		// manually (set_text strdup's into the slab; free_text/release frees
 		// them; NULL means "no text"), so the slot must start NULL — free the

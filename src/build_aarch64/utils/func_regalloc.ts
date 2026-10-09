@@ -22,7 +22,7 @@ import type Type from "../../nodes/Type.ts";
  *   claim registers from the same pool minus these.
  * - The binding is seeded into `status.register_allocations` BEFORE the body
  *   builds, so the variable's declaration initializer (emit_var_store),
- *   assignments, and reads all move through the register-aware paths. The
+ *   assignments, and reads all mv through the register-aware paths. The
  *   stack slot still allocated by the declaration stays as a dead home slot
  *   (emit_var_address flushes the register to it before any address-take).
  * - Promoted PARAMS initialize their register in the prologue instead of

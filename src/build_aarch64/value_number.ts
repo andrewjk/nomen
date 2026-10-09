@@ -133,7 +133,7 @@ interface Occurrence {
 	host: BaseNode;
 	/** Descent path from the host statement's value root to the chain root. */
 	path: PathStep[];
-	/** The host statement's owning field (null for eval positions). */
+	/** The host statement's mv field (null for eval positions). */
 	field: "value" | "right_value" | null;
 	root: NirExpr;
 	terms: ChainTerm[];
@@ -373,7 +373,7 @@ function find_leaf_expr(e: NirExpr | null, name: string): NirExpr | null {
 	return null;
 }
 
-/** Hosted value positions of one statement: the expr plus the owning field
+/** Hosted value positions of one statement: the expr plus the mv field
  *  (null for eval positions — see collect_expr_occurrences). */ function hosted_value_expr(
 	s: NirStmt,
 ): { expr: NirExpr | null; field: "value" | "right_value" | null } | null {

@@ -16,7 +16,7 @@ import c_type from "./utils/c_type.ts";
 /**
  * Whether a case payload of this type is a class/trait REFERENCE (rides as
  * `struct Tag *` in the tagged union — see build_enum_node). The match
- * binding for such a payload must declare the pointer form, and the owning
+ * binding for such a payload must declare the pointer form, and the mv
  * payload must be reclaimed when the enum value dies.
  */
 function payload_is_reference(type: Type, status: BuildStatus): boolean {

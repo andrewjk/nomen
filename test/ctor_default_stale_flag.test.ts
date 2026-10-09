@@ -15,11 +15,11 @@ describe("ctor field defaults establish a fresh ownership signal", () => {
 		const input = `
 import System
 
-func generate = (move out string) {
+func generate = (mv out string) {
 	return "heap-one"
 }
 
-owning struct C {
+mv struct C {
 	var string a = generate()
 	var string b = ("literal")
 }

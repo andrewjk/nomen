@@ -4,15 +4,15 @@ import parse from "../src/parse";
 import test_error from "./test_error";
 
 // STRUCT_PLAN_3 B5 — the field restrictions collapsed into the Copyable
-// verifier: a class/trait-typed field (like a declared-owning or Box field)
+// verifier: a class/trait-typed field (like a declared-mv or Box field)
 // owns heap state, so a bare `struct` claiming Copyable is rejected, naming
-// the fix. An `owning struct` is the contract — the field is an owned slot.
+// the fix. A `mv struct` is the contract — the field is an owned slot.
 
-describe("move ownership errors", () => {
-	describe("owning-typed fields force `owning`", () => {
+describe("mv ownership errors", () => {
+	describe("mv-typed fields force `mv`", () => {
 		test("struct with class field using var", () => {
 			const input = `
-owning struct Box {
+mv struct Box {
   var int value
 }
 struct Holder {
@@ -23,16 +23,16 @@ struct Holder {
 			expect(parsed.errors).toEqual([
 				test_error(
 					input,
-					"'Holder' cannot be Copyable — field 'content' owns heap memory --> mark the struct `owning struct Holder`, or remove the field",
+					"'Holder' cannot be Copyable — field 'content' owns heap memory --> mark the struct `mv struct Holder`, or remove the field",
 					6,
 					3,
 				),
 			]);
 		});
 
-		test("struct with class field using move", () => {
+		test("struct with class field using mv", () => {
 			const input = `
-owning struct Box {
+mv struct Box {
   var int value
 }
 struct Holder {
@@ -43,7 +43,7 @@ struct Holder {
 			expect(parsed.errors).toEqual([
 				test_error(
 					input,
-					"'Holder' cannot be Copyable — field 'content' owns heap memory --> mark the struct `owning struct Holder`, or remove the field",
+					"'Holder' cannot be Copyable — field 'content' owns heap memory --> mark the struct `mv struct Holder`, or remove the field",
 					6,
 					3,
 				),
@@ -63,11 +63,11 @@ struct Point {
 	});
 
 	describe("trait-typed fields are not supported yet", () => {
-		// STRUCT_PLAN_3 B5: a trait handle is a boxed, owning value (B4), but
+		// STRUCT_PLAN_3 B5: a trait handle is a boxed, mv value (B4), but
 		// the FIELD lowering (boxed handle storage + vtable dispatch through
 		// the field) is not built yet — the error names the fix. A class with
 		// a trait field keeps working (ClassBuffer routing).
-		test("struct with trait field using move", () => {
+		test("struct with trait field using mv", () => {
 			const input = `
 trait Speaker {
   func say = (out string)
@@ -92,7 +92,7 @@ struct Holder {
 trait Speaker {
   func say = (out string)
 }
-owning struct Holder {
+mv struct Holder {
   var Speaker s
 }
 `;
@@ -103,13 +103,13 @@ owning struct Holder {
 		});
 	});
 
-	describe("class-type fields must use move", () => {
-		test("owning struct with var owning field is fine (B5: ownership follows the type)", () => {
+	describe("class-type fields must use mv", () => {
+		test("mv struct with var mv field is fine (B5: ownership follows the type)", () => {
 			const input = `
-owning struct Box {
+mv struct Box {
   var int value
 }
-owning struct Holder {
+mv struct Holder {
   var Box content
 }
 `;
@@ -117,12 +117,12 @@ owning struct Holder {
 			expect(parsed.errors).toEqual([]);
 		});
 
-		test("class with move class field is fine", () => {
+		test("class with mv class field is fine", () => {
 			const input = `
-owning struct Box {
+mv struct Box {
   var int value
 }
-owning struct Holder {
+mv struct Holder {
   var Box content
 }
 `;
@@ -130,9 +130,9 @@ owning struct Holder {
 			expect(parsed.errors).toEqual([]);
 		});
 
-		test("trait with var owning field is fine (B5)", () => {
+		test("trait with var mv field is fine (B5)", () => {
 			const input = `
-owning struct Box {
+mv struct Box {
   var int value
 }
 trait HasBox {
@@ -143,9 +143,9 @@ trait HasBox {
 			expect(parsed.errors).toEqual([]);
 		});
 
-		test("trait with move class field is fine", () => {
+		test("trait with mv class field is fine", () => {
 			const input = `
-owning struct Box {
+mv struct Box {
   var int value
 }
 trait HasBox {
@@ -158,7 +158,7 @@ trait HasBox {
 
 		test("class with value type var field is fine", () => {
 			const input = `
-owning struct Counter {
+mv struct Counter {
   var int count = 0
 }
 `;
@@ -167,10 +167,10 @@ owning struct Counter {
 		});
 	});
 
-	describe("move only allowed for class types (or type params)", () => {
-		test("move int parameter", () => {
+	describe("mv only allowed for class types (or type params)", () => {
+		test("mv int parameter", () => {
 			const input = `
-func identity = (move int x, out int) {
+func identity = (mv int x, out int) {
   return x
 }
 `;
@@ -178,20 +178,20 @@ func identity = (move int x, out int) {
 			expect(parsed.errors).toEqual([
 				test_error(
 					input,
-					"move is only allowed for class, trait, or owning struct types, not 'int'",
+					"mv is only allowed for class, trait, or mv struct types, not 'int'",
 					2,
 					18,
 				),
 			]);
 		});
 
-		test("move struct parameter", () => {
+		test("mv struct parameter", () => {
 			const input = `
 struct Point {
   var int x
   var int y
 }
-func identity = (move Point p, out Point) {
+func identity = (mv Point p, out Point) {
   return p
 }
 `;
@@ -199,19 +199,19 @@ func identity = (move Point p, out Point) {
 			expect(parsed.errors).toEqual([
 				test_error(
 					input,
-					"move is only allowed for class, trait, or owning struct types, not 'Point'",
+					"mv is only allowed for class, trait, or mv struct types, not 'Point'",
 					6,
 					18,
 				),
 			]);
 		});
 
-		test("move class parameter is fine", () => {
+		test("mv class parameter is fine", () => {
 			const input = `
-owning struct Box {
+mv struct Box {
   var int value
 }
-func identity = (move Box b, out Box) {
+func identity = (mv Box b, out Box) {
   return b
 }
 `;
@@ -219,9 +219,9 @@ func identity = (move Box b, out Box) {
 			expect(parsed.errors).toEqual([]);
 		});
 
-		test("move string parameter", () => {
+		test("mv string parameter", () => {
 			const input = `
-func identity = (move string s, out string) {
+func identity = (mv string s, out string) {
   return s
 }
 `;
@@ -229,18 +229,18 @@ func identity = (move string s, out string) {
 			expect(parsed.errors).toEqual([
 				test_error(
 					input,
-					"move is only allowed for class, trait, or owning struct types, not 'string'",
+					"mv is only allowed for class, trait, or mv struct types, not 'string'",
 					2,
 					18,
 				),
 			]);
 		});
 
-		test("move on generic type parameter is allowed", () => {
+		test("mv on generic type parameter is allowed", () => {
 			const input = `
 struct Container<T> {
   var int dummy
-  func add = (ref self, move T value) {
+  func add = (ref self, mv T value) {
     return
   }
 }
@@ -250,18 +250,18 @@ struct Container<T> {
 		});
 	});
 
-	describe("move at call site", () => {
-		test("move with value type at call site to non-move param", () => {
+	describe("mv at call site", () => {
+		test("mv with value type at call site to non-mv param", () => {
 			const input = `
 func identity = (int x, out int) {
   return x
 }
 var int x = 5
-identity(move x)
+identity(mv x)
 `;
 			const parsed = parse(input);
 			expect(parsed.errors.length).toBeGreaterThan(0);
-			expect(parsed.errors[0].message).toContain("move");
+			expect(parsed.errors[0].message).toContain("mv");
 		});
 	});
 });

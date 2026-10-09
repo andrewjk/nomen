@@ -18,7 +18,7 @@ export default function parse_enum(
 ) {
 	const start = get_index(status);
 	accept(visibility, status);
-	if (is_owning) accept("owning", status);
+	if (is_owning) accept("mv", status);
 	// Optional `must_use` modifier between visibility and `enum`
 	// (`pub must_use enum Result<T, E> { ... }`). Contextual: only consumed when
 	// it appears in this position, so `must_use` remains usable as a name.

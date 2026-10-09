@@ -10,7 +10,7 @@ import build_and_check_output from "./build_and_check_output";
 describe("`raw` as an identifier", () => {
 	test("variable, field and parameter named raw", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
 	var raw = ""
 }
 

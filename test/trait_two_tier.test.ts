@@ -17,7 +17,7 @@ struct QuoteV : Rule {
 		return line.at_or(0, ' ') == '>'
 	}
 }
-owning struct HeadingC : Rule {
+mv struct HeadingC : Rule {
 	pub func test = (self, string line, out bool) {
 		return line.at_or(0, ' ') == '#'
 	}
@@ -145,7 +145,7 @@ test()
 func test = () {
 	var List<Rule> rules = List<Rule>()
 	var HeadingV h = HeadingV()
-	rules.push(move h)
+	rules.push(mv h)
 	rules.push(QuoteV())
 	var int i = 0
 	while i < rules.length {
@@ -163,18 +163,18 @@ test()
 		await build_and_check_output(input, "b4_list_push", "heading\nquote");
 	});
 
-	test("a moved value-struct local boxes into a `move Trait` parameter", async () => {
+	test("a moved value-struct local boxes into a `mv Trait` parameter", async () => {
 		const input =
 			PRELUDE +
 			`
-func take = (move Rule rule) {
+func take = (mv Rule rule) {
 	if rule.test("# h") {
 		Console.write_line("heading")
 	}
 }
 func test = () {
 	var HeadingV h = HeadingV()
-	take(move h)
+	take(mv h)
 }
 test()
 `;
@@ -201,7 +201,7 @@ test()
 });
 
 describe("boxed trait conformers — ownership rules (B4/T2)", () => {
-	test("boxing a bare local is an implicit move — the donor is invalid after", () => {
+	test("boxing a bare local is an implicit mv — the donor is invalid after", () => {
 		expect_error(
 			PRELUDE +
 				`
@@ -214,7 +214,7 @@ func test = () {
 }
 test()
 `,
-			"used after move",
+			"used after mv",
 		);
 	});
 
@@ -235,7 +235,7 @@ test()
 		);
 	});
 
-	test("a trait handle cannot be copied — spell the move", () => {
+	test("a trait handle cannot be copied — spell the mv", () => {
 		expect_error(
 			PRELUDE +
 				`
@@ -255,28 +255,28 @@ test()
 				`
 func test = () {
 	var Rule a = HeadingV()
-	var Rule b = move a
+	var Rule b = mv a
 	if a.test("# h") {
 		Console.write_line("heading")
 	}
 }
 test()
 `,
-			"used after move",
+			"used after mv",
 		);
 	});
 
-	test("a value-struct field cannot box into a `move Trait` parameter", () => {
+	test("a value-struct field cannot box into a `mv Trait` parameter", () => {
 		expect_error(
 			PRELUDE +
 				`
 struct Holder {
 	var HeadingV rule
 }
-func take = (move Rule rule) { }
+func take = (mv Rule rule) { }
 func test = () {
 	var Holder h = Holder(HeadingV())
-	take(move h.rule)
+	take(mv h.rule)
 }
 test()
 `,
@@ -290,7 +290,7 @@ describe("string-field conformers box without leaking", () => {
 trait Speaker {
 	func speak = (self, out string)
 }
-owning struct Named : Speaker {
+mv struct Named : Speaker {
 	pub var string name
 	pub func speak = (self, out string) {
 		return "spoke"
@@ -304,7 +304,7 @@ owning struct Named : Speaker {
 			`
 func test = () {
 	var Named n = Named("hi")
-	var Speaker s = move n
+	var Speaker s = mv n
 	if s.speak() == "spoke" {
 		Console.write_line("ok")
 	}
@@ -314,18 +314,18 @@ test()
 		await build_and_check_output(input, "two_tier_box_str_local", "ok");
 	});
 
-	test("`move Trait` parameter", async () => {
+	test("`mv Trait` parameter", async () => {
 		const input =
 			STR_PRELUDE +
 			`
-func take = (move Speaker s) {
+func take = (mv Speaker s) {
 	if s.speak() == "spoke" {
 		Console.write_line("ok")
 	}
 }
 func test = () {
 	var Named n = Named("hi")
-	take(move n)
+	take(mv n)
 }
 test()
 `;
@@ -339,7 +339,7 @@ test()
 func test = () {
 	var List<Speaker> l = List<Speaker>()
 	var Named n = Named("hi")
-	l.push(move n)
+	l.push(mv n)
 	Console.write_line("ok")
 }
 test()

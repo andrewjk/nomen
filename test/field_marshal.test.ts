@@ -133,7 +133,7 @@ test("multi-hop chain operand loads direct from the receiver home", () => {
 	// The 3-hop chain is ONE summed-offset load from the callee-saved param
 	// register — no per-hop x0 builds and no `mov x1, x0` shuffle.
 	// Copy coalescing may read the receiver from its arrival register
-	// (the park move folded away) — the summed-offset one-load shape is
+	// (the park mv folded away) — the summed-offset one-load shape is
 	// the property under test.
 	expect(body).toMatch(/ldr x1, \[x\d+, #\d+\]\n/);
 	expect(body).not.toMatch(/mov x1, x0\n/);
@@ -205,13 +205,13 @@ Console.write("\\{c.len}")
 	);
 });
 
-// Landed with the B1 backend cutover (uniform-heap owning-struct string
+// Landed with the B1 backend cutover (uniform-heap mv-struct string
 // fields): the write strdups through the receiver register.
 test("string-field write defers its base past the strdup/free dance", () => {
 	const code = compile(`
 import System
 
-pub owning struct Panel {
+pub mv struct Panel {
   var string title = ""
   pub func set_title = (ref self, string t) {
     self.title = t.copy()
@@ -237,7 +237,7 @@ test("view-field write stores the pair through the receiver register", () => {
 	const code = compile(`
 import System
 
-pub owning struct Panel {
+pub mv struct Panel {
   view string text
   pub func set_text = (ref self, string doc) {
     if doc.length == 8 {
@@ -269,7 +269,7 @@ test.skip("string-field ownership behavioral: literal, heap, literal overwrites"
 	const { default: parse_with_imports } = await import("./parse_with_imports");
 	const { load_system_fn_names, load_system_struct_names } = await import("./system_lib");
 	const parsed = parse_with_imports(`
-pub owning struct Panel {
+pub mv struct Panel {
   var string title = ""
   pub func set_title = (ref self, string t) {
     self.title = t

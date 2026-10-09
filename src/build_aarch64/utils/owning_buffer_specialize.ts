@@ -14,7 +14,7 @@ import { get_enum_size, get_struct_size, get_type_size } from "./struct_layout.t
  * Detect whether a monomorphized struct is a `Buffer_<T>` whose element type
  * `T` is a value struct that owns heap data (string fields). Mirrors the C
  * backend's owning_buffer_element — see that file for the full rationale.
- * `string` elements use a separate owning path (see below).
+ * `string` elements use a separate mv path (see below).
  */
 export function owning_buffer_element_aarch64(
 	node: StructNode,
@@ -27,7 +27,7 @@ export function owning_buffer_element_aarch64(
 	);
 	if (!elem || elem.is_class) return undefined;
 	// Mirror the C backend's `has_owning_fields`: string fields need the
-	// deep-copy store/destroy, and so do owning container fields (`List<T>`
+	// deep-copy store/destroy, and so do mv container fields (`List<T>`
 	// members — the shallow primitives would alias the source's buffer and
 	// double-free at teardown).
 	if (!has_string_fields(elem, status) && !struct_needs_destroy(elem, status)) return undefined;
@@ -60,7 +60,7 @@ export function owns_specialized_primitive(
 }
 
 /**
- * The emission-side twin: a mono Buffer_<T> whose element has owning fields
+ * The emission-side twin: a mono Buffer_<T> whose element has mv fields
  * must emit standalone bodies for the specialized primitives even when they
  * are user-marked `inline` (the splice barrier routes call sites here).
  * Tolerates a not-yet-registered element (system-TU gather order): the NAME
@@ -205,7 +205,7 @@ function emit_enum_shift_T(enum_node: EnumNode, status: BuildStatus, self_reg: s
 
 /**
  * Collect the (name, offset) pairs for every string field in the element
- * struct, including those nested inside owning sub-structs. Used by the
+ * struct, including those nested inside mv sub-structs. Used by the
  * specialized Buffer methods to strdup/free per field. `view T` fields are
  * excluded: they own nothing and their byte-copy in the slot IS the value.
  */
@@ -222,7 +222,7 @@ function collect_string_fields(
 			continue;
 		}
 		if (field.type.is_view) {
-			// 16-byte non-owning pair — advance the layout cursor, no record.
+			// 16-byte non-mv pair — advance the layout cursor, no record.
 			offset += get_type_size(field.type, status);
 			continue;
 		}
@@ -245,7 +245,7 @@ function collect_string_fields(
 /**
  * Collect the (offset, size) pairs of every owned CONTAINER field (`List<T>`/
  * `Buffer<T>`/… mono with a `#destroy`) the element's teardown would reclaim.
- * The owning store_T/replace_T memcpy the source's bytes into the slot, so
+ * The mv store_T/replace_T memcpy the source's bytes into the slot, so
  * zeroing these fields of the SOURCE completes the ownership transfer: the
  * slot is the sole owner and the source's own teardown (when it still runs)
  * finds zeroed fields. Nested value struct fields recurse so their container
@@ -303,7 +303,7 @@ function emit_transfer_owning_fields(
 }
 
 /**
- * Emit the deep-copy half of owning load_T into the sret buffer (x8): for
+ * Emit the deep-copy half of mv load_T into the sret buffer (x8): for
  * each `List<T>` field whose mono has a `copy` method, replace the
  * shallow-copied field with `<List_T>_copy(&slot.field)` (sret → the sret
  * buffer's field; self == x8 is safe — the copy reads its input before the
@@ -375,7 +375,7 @@ function emit_strdup_field(
 
 /**
  * Emit a specialized inline expansion for a Buffer method whose element type
- * is an owning value struct. Called from build_inline_method BEFORE the raw
+ * is a mv value struct. Called from build_inline_method BEFORE the raw
  * block is emitted. Returns true if the body was emitted.
  *
  * In the inline context, the parameters are in the AAPCS64 registers:
@@ -466,7 +466,7 @@ export function emit_owning_buffer_inline_aarch64(
 
 /**
  * Emit a specialized body for a STANDALONE (non-inline) Buffer method for
- * owning value struct elements. In the standalone context, x19 = self
+ * mv value struct elements. In the standalone context, x19 = self
  * (set up by the function prologue), and x1/x2 still hold the original arg
  * values (the prologue copies them to safe locations but does not clobber
  * the registers). Returns true if the body was emitted.
@@ -598,7 +598,7 @@ function emit_owning_standalone_struct(elem: StructNode, func_name: string, stat
 
 	// replace_T destroys the OLD slot value (its documented overwrite
 	// semantic) — guarded on the constructed stamp, since the slot may be
-	// empty (grown-but-unwritten, or emptied by move/pop).
+	// empty (grown-but-unwritten, or emptied by mv/pop).
 	// store_T does NOT destroy — the round-trip guard below keeps the
 	// slot's own copy instead of orphaning it.
 	if (func_name === "replace") {
@@ -783,7 +783,7 @@ function emit_string_replace_T(status: BuildStatus, self_reg: string) {
  */
 function emit_string_shift_T(status: BuildStatus, self_reg: string) {
 	const done = `.Lstr_sh_done_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
-	// Fat slots (16 bytes): free dst's ptr half, move the (ptr, len) pair
+	// Fat slots (16 bytes): free dst's ptr half, mv the (ptr, len) pair
 	// wholesale from src, zero src's pair.
 	emit_asm(status, `stp x20, x21, [sp, #-16]!\n`);
 	emit_asm(status, `ldr x9, [${self_reg}, #8]\n`); // data base
@@ -836,13 +836,13 @@ function emit_string_modify_T(status: BuildStatus) {
 }
 
 /**
- * Specialized owning-value-struct modify_T (standalone: x19 = self, x1 = i,
+ * Specialized mv-value-struct modify_T (standalone: x19 = self, x1 = i,
  * x2 = f). The fn receives a stack-stage copy of the slot (borrow, passed by
  * address) and returns the replacement through the sret pointer (x8). Per
  * string field, the slot's displaced copy is freed when the returned pointer
  * differs (round-trip identity keeps it); then the returned struct is copied
  * over the slot wholesale — identical fields are unchanged by the copy, and
- * the freed ones are already overwritten. Requires the fn's returned owning
+ * the freed ones are already overwritten. Requires the fn's returned mv
  * fields to be fresh, null, or identical to the corresponding input fields.
  */
 function emit_owning_modify_T(
@@ -872,7 +872,7 @@ function emit_owning_modify_T(
 	emit_asm(status, `mov x1, sp\n`); // arg = &copy
 	emit_asm(status, `mov x8, x21\n`); // sret (passes through unchanged)
 	emit_asm(status, `blr x24\n`);
-	// Free displaced string fields (flat offsets, includes nested owning
+	// Free displaced string fields (flat offsets, includes nested mv
 	// struct fields — mirrors collect_string_fields).
 	for (const [i, { offset: foff }] of string_fields.entries()) {
 		const skip = `.Lskip_md_${(status.label_counter = (status.label_counter ?? 0) + 1)}_${i}`;
@@ -896,7 +896,7 @@ function emit_owning_modify_T(
 }
 
 /**
- * Specialized owning-value-struct shift_T. `self_reg` holds the Buffer
+ * Specialized mv-value-struct shift_T. `self_reg` holds the Buffer
  * pointer ("x0" inline, "x19" standalone); x1 = dst, x2 = src (slot indices).
  * Destroy dst's old value, copy src's bytes over it wholesale (the moved
  * struct's owned pointers transfer — no deep copy), zero src.
@@ -929,7 +929,7 @@ function emit_owning_shift_T(elem: StructNode, status: BuildStatus, self_reg: st
 }
 
 /**
- * Specialized owning-value-struct load_T (inline context: x0 = self, x1 = i,
+ * Specialized mv-value-struct load_T (inline context: x0 = self, x1 = i,
  * x8 = sret). The caller's scope-exit destroy ALWAYS reclaims a struct
  * local's container fields, so the returned copy must own independent
  * containers — a shallow return would double-free the slot's buffer at the
@@ -1076,10 +1076,10 @@ function emit_owning_replace_T(elem: StructNode, status: BuildStatus) {
 }
 
 /**
- * Emit a guarded `<T>_destroy` for the owning value-struct slot at `slot_reg`:
+ * Emit a guarded `<T>_destroy` for the mv value-struct slot at `slot_reg`:
  * the call fires only when the slot's word 0 is non-zero — the constructed
  * stamp every `_init` writes (the traits table for conformers, constant 1
- * otherwise). Zeroed slots (calloc'd/realloc-grown tail, or a slot `move`
+ * otherwise). Zeroed slots (calloc'd/realloc-grown tail, or a slot `mv`
  * emptied) are unconstructed and must not run the element destroy — a user
  * `#destroy` body would fire on empty cap slots. `slot_reg` must hold the
  * slot ADDRESS and is clobbered only by the destroy call itself.
@@ -1094,7 +1094,7 @@ function emit_guarded_slot_destroy(status: BuildStatus, elem: StructNode, slot_r
 }
 
 /**
- * Emit a specialized #destroy for a Buffer whose element type is an owning
+ * Emit a specialized #destroy for a Buffer whose element type is a mv
  * value struct. Per-element T_destroy, then free the slab. Called from
  * build_struct_node instead of build_destroy_function when the element owns.
  * Returns true if the destroy was emitted.

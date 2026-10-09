@@ -107,14 +107,14 @@ pub func main = () {
 		);
 	});
 
-	test("a bare owning argument to a daemon is rejected outside a nursery (R1)", () => {
+	test("a bare mv argument to a daemon is rejected outside a nursery (R1)", () => {
 		// Thread.start is a library method and the construction resolves
 		// through Thread's declared #spawn member, so the source imports
 		// System explicitly (no parse_raw auto-import here: the input is a
 		// full program with its own main).
 		const input = `
 import System
-pub owning struct Unsafe {
+pub mv struct Unsafe {
 	var uint64 code = 0
 }
 
@@ -130,7 +130,7 @@ pub func main = () {
 		// with the System library — parse_raw would wrap it in a second main.
 		const parsed = parse(input, get_library("core"));
 		const messages = parsed.errors.map((e) => e.message);
-		// R1: a daemon has no join to bound a borrow — the bare owning arg
+		// R1: a daemon has no join to bound a borrow — the bare mv arg
 		// is rejected with the two sound spellings named.
 		expect(messages.some((m) => m.includes("owns heap memory"))).toBe(true);
 	});

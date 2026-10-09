@@ -8,7 +8,7 @@ import OperationNode from "../../nodes/OperationNode.ts";
 import type ValueNode from "../../nodes/ValueNode.ts";
 
 /**
- * Checker-level LAST-USE analysis for move-on-last-use string assignment
+ * Checker-level LAST-USE analysis for mv-on-last-use string assignment
  * (STRING_PLAN tranche 4's gate receipt).
  *
  * `s = t` where `t` is a plain owned `string` local strdups t's bytes only
@@ -38,7 +38,7 @@ import type ValueNode from "../../nodes/ValueNode.ts";
 
 let move_enabled = true;
 
-/** Kill-switch for the move-on-last-use emission (default ON). OFF = the
+/** Kill-switch for the mv-on-last-use emission (default ON). OFF = the
  *  stamping pass clears its marks and the backends keep the strdup'd copy —
  *  output byte-identical to the pre-tranche compiler. */
 export function set_move_on_last_use_enabled(enabled: boolean): void {
@@ -153,7 +153,7 @@ interface AssignmentRecord {
 }
 
 /** A bracket literal (`[a, b]`) whose bare-var element names were recorded
- *  for last-use move inference. */
+ *  for last-use mv inference. */
 interface LiteralRecord {
 	node: BaseNode;
 	enter: number;
@@ -164,7 +164,7 @@ interface LiteralRecord {
 
 interface DeclareRecord {
 	name: string;
-	declaration: "const" | "var" | "move" | "view" | "ref";
+	declaration: "const" | "var" | "mv" | "view" | "ref";
 	enter: number;
 	exit: number;
 	/** Enclosing loops at the declare site (back-edge coverage). */
@@ -255,7 +255,7 @@ class Walk {
 /**
  * Scans every function in the tree (free functions, struct/trait methods;
  * a nested `func` is scanned as its own unit — Nomen has no closures) and
- * reports the move-on-last-use sites. Run AFTER checking, when expression
+ * reports the mv-on-last-use sites. Run AFTER checking, when expression
  * types are stamped.
  */
 export function scan_last_use_string_moves(root: BaseNode): LastUseSite[] {
@@ -277,7 +277,7 @@ function scan_function(func: FunctionNode): LastUseSite[] {
 	for (const stmt of func.statements) walk_stmt(walk, stmt);
 
 	// A raw `#arch` body may read or write ANY local by name (C bodies use
-	// source names; asm reaches slots) — every move candidate in a function
+	// source names; asm reaches slots) — every mv candidate in a function
 	// containing one is refused.
 	if (walk.has_raw) return [];
 	const func_label = func.label_name ?? func.name;
@@ -309,12 +309,12 @@ function classify(
 	if (node.left_value.node_type !== "value") return undefined;
 	const target = (node.left_value as ValueNode).value;
 	if (target === source) return undefined;
-	if (source_node.is_moved) return undefined; // already an explicit move
+	if (source_node.is_moved) return undefined; // already an explicit mv
 	if (param_names.has(source)) return undefined; // params are not movable here
 	const decl = walk.declares.findLast((d) => d.name === source);
 	if (!decl || decl.declaration !== "var") return undefined; // consts are not movable
 	// A re-assignment (write) of the source beyond its own binding declare
-	// refuses the move: the backends' reassign paths free the displaced value,
+	// refuses the mv: the backends' reassign paths free the displaced value,
 	// which would free the already-transferred block (C's moved_string_vars
 	// suppression is not consulted by the eager reassign free). Mirrors
 	// classify_declare's write_count check. (Every declare records one write —
@@ -366,7 +366,7 @@ function classify(
 /**
  * Declare-site classification: `var u = t` where t is an owned string local
  * never touched (read OR written) after the declare. Together with the
- * assignment classification above this covers both move-on-last-use shapes:
+ * assignment classification above this covers both mv-on-last-use shapes:
  * plain `s = t` reassignment (value semantics would strdup) and the declare
  * alias (`var u = t`).
  */
@@ -381,7 +381,7 @@ function classify_declare(
 	if (node.declaration !== "var") return undefined; // consts are not movable
 	const source_node = node.value as ValueNode;
 	const source = source_node.value;
-	if (source_node.is_moved) return undefined; // already an explicit move
+	if (source_node.is_moved) return undefined; // already an explicit mv
 	if (param_names.has(source)) return undefined; // params are not movable here
 	const binding = walk.declares.findLast((d) => d.name === source && d.exit < decl.enter);
 	if (!binding || binding.declaration !== "var") return undefined;
@@ -422,15 +422,15 @@ function classify_declare(
  * Stamps `literal_last_use_move` on bracket-literal elements (`[a, b]`) that
  * are bare `var` locals at their LAST USE: the literal then TRANSFERS
  * ownership of those locals instead of aliasing them (the checker's
- * tuple-element ownership rule consumes the stamp as an inferred `move`).
+ * tuple-element ownership rule consumes the stamp as an inferred `mv`).
  *
  * Same conservative posture as the string pass: it may MISS a last use (the
- * element then needs an explicit `move`), never invent one — reads after the
+ * element then needs an explicit `mv`), never invent one — reads after the
  * literal, reads under an enclosing loop whose binding outlives the loop,
  * reads in spawn/async subtrees, any re-assignment of the source, and any
  * raw `#arch` body in the function all refuse the inference. Types are NOT
  * consulted here (this runs before checking) — the checker applies the
- * owning-type filter when consuming the stamp.
+ * mv-type filter when consuming the stamp.
  *
  * Only the FIRST occurrence of a name per literal is stamped: two elements
  * moving the same local would alias each other inside the tuple.
@@ -514,7 +514,7 @@ function walk_stmt(walk: Walk, node: BaseNode): void {
 	// emits BEFORE this statement. Their bodies READ the sources they wrap —
 	// an interpolation of `own` after an `owns = own` assignment is a real
 	// later read, so the hoisted declares must be walked here (at the
-	// carrying statement's position) or the move candidates' last-use test
+	// carrying statement's position) or the mv candidates' last-use test
 	// never sees those reads.
 	if (node.allocations?.length) {
 		for (const alloc of node.allocations) walk_stmt(walk, alloc);
@@ -534,7 +534,7 @@ function walk_stmt(walk: Walk, node: BaseNode): void {
 				if (decl.swap) walk_expr(walk, decl.swap!);
 			});
 			// A redeclaration of the same name is a write of the outer
-			// binding's slot model — record it so move sites refuse.
+			// binding's slot model — record it so mv sites refuse.
 			walk.write(decl.name);
 			return;
 		}

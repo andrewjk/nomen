@@ -22,13 +22,13 @@ trait Speaker {
 	func speak = (self, out string)
 }
 
-owning struct Dog: Speaker {
+mv struct Dog: Speaker {
 	func speak = (self, out string) {
 		return "woof"
 	}
 }
 
-owning struct Cat: Speaker {
+mv struct Cat: Speaker {
 	func speak = (self, out string) {
 		return "meow"
 	}
@@ -52,11 +52,11 @@ trait Speaker {
 	func speak = (self, out string)
 }
 
-owning struct Dog: Speaker {
+mv struct Dog: Speaker {
 	func speak = (self, out string) { return "woof" }
 }
 
-owning struct Cat: Speaker {
+mv struct Cat: Speaker {
 	func speak = (self, out string) { return "meow" }
 }
 

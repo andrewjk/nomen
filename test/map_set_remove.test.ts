@@ -3,7 +3,7 @@ import { test } from "vite-plus/test";
 import build_and_check_output from "./build_and_check_output";
 
 // Regression tests for the FOLLOWUP.md Map/Set `remove` item: backward-shift
-// deletion moved entries with store (which strdups owning elements and
+// deletion moved entries with store (which strdups mv elements and
 // leaves the source slot intact), leaking every displaced allocation.
 
 test("Map<string, int> remove does not leak shifted keys", async () => {

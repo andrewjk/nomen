@@ -72,7 +72,7 @@ export default function build_nursery_spawn(
 	c += `\tt->result_slot = 0;\n`;
 	c += `\tt->cancel_flag = 0;\n`;
 	c += `\tt->started = 1;\n`;
-	// The Task handle: an inline owning struct VALUE (Phase R tranche 2) —
+	// The Task handle: an inline mv struct VALUE (Phase R tranche 2) —
 	// no heap instance, no `_vt` (a value struct has no embedded vtable;
 	// trait dispatch rides boxed handles). Fire-and-forget discards it.
 	c += `\tout->handle = 0;\n`;

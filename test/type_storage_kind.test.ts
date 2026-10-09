@@ -51,7 +51,7 @@ describe("Type storage_kind discriminant", () => {
 		t.is_view = true;
 		expect(t.storage_kind).toBe("view");
 		// Promoting to an array overrides the view (an array can't also be a
-		// non-owning view under the consolidated discriminant).
+		// non-mv view under the consolidated discriminant).
 		t.is_array = true;
 		expect(t.is_array).toBe(true);
 		expect(t.is_view).toBe(undefined);

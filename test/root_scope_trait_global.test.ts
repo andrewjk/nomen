@@ -13,7 +13,7 @@ describe("root-scope trait-typed globals", () => {
 		const input = `
 import System
 trait Greeter { func greet = (self, out string) }
-owning struct Dog : Greeter {
+mv struct Dog : Greeter {
 	func greet = (self, out string) { return "woof" }
 }
 var Greeter g = Dog()
@@ -31,7 +31,7 @@ pub func main = () {
 		const input = `
 import System
 trait Speaker { func speak = (self, out string) }
-owning struct Dog : Speaker {
+mv struct Dog : Speaker {
 	var string name
 	func speak = (self, out string) { return self.name.copy() }
 	func #destroy = (ref self) {
@@ -53,7 +53,7 @@ pub func main = () {
 		const input = `
 import System
 trait Greeter { func greet = (self, int n, out string) }
-owning struct Dog : Greeter {
+mv struct Dog : Greeter {
 	func greet = (self, int n, out string) { return "woof" + n.to_string() }
 }
 var Greeter g = Dog()
@@ -74,7 +74,7 @@ pub func main = () {
 		const input = `
 import System
 trait Greeter { func greet = (self, int n, out string) }
-owning struct Dog : Greeter {
+mv struct Dog : Greeter {
 	func greet = (self, int n, out string) { return "woof" + n.to_string() }
 }
 var Greeter g = Dog()
@@ -95,14 +95,14 @@ pub func main = () {
 		const input = `
 import System
 trait Greeter { func greet = (self, out string) }
-owning struct Dog : Greeter {
+mv struct Dog : Greeter {
 	func greet = (self, out string) { return "woof" }
 }
 func make = (out Greeter) {
 	return Dog()
 }
 var Greeter g = make()
-var Greeter h = move g
+var Greeter h = mv g
 func readg = (out string) {
 	return h.greet()
 }

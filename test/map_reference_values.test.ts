@@ -4,14 +4,14 @@ import build_and_check_output from "./build_and_check_output";
 import { parse_raw } from "./parse_with_imports";
 
 // `Map` with reference-typed values: the variadic-tuple #init is gated off
-// for class/trait instantiations (the pair tuple can't satisfy the `move TV`
+// for class/trait instantiations (the pair tuple can't satisfy the `mv TV`
 // chain across the variadic boundary), so construction is `Map()` + `set()`.
 // Storage routes to ClassBuffer<TV>; the rehash body's `swap Buffer<TV>()`
 // and Map's alloc forwards route names to ClassBuffer.
 
 describe("Map with reference-typed values", () => {
 	// SKIP (B1 backend-cutover residual): same inlined-raw-primitive /
-	// owning-binding tranche as arena (see FOLLOWUP.md).
+	// mv-binding tranche as arena (see FOLLOWUP.md).
 	test.skip("variadic pairs constructor with value-struct values", async () => {
 		// Map<string, TV>(["k", TV(...)]) materializes each pair as a
 		// _Tuple_string_TV whose TV field is copied through a POINTER —
@@ -31,7 +31,7 @@ struct Vec {
 	}
 }
 
-owning struct Named {
+mv struct Named {
 	var string name = ""
 	var int num = 0
 	pub func #init = (ref self, string name, int num) {
@@ -74,13 +74,13 @@ trait Animal {
 	pub func speak = (self, out string)
 }
 
-owning struct Dog : Animal {
+mv struct Dog : Animal {
 	pub func speak = (self, out string) {
 		return "woof"
 	}
 }
 
-owning struct Cat : Animal {
+mv struct Cat : Animal {
 	pub func speak = (self, out string) {
 		return "meow"
 	}
@@ -109,7 +109,7 @@ pub func main = (Init init) {
 	});
 
 	// SKIP (B1 backend-cutover residual): same inlined-raw-primitive /
-	// owning-binding tranche as arena (see FOLLOWUP.md).
+	// mv-binding tranche as arena (see FOLLOWUP.md).
 	test.skip("value-struct values (allmark's LinkReference shape) set/get/overwrite", async () => {
 		// The allmark port's `Map<string, int>` + parallel `List<LinkReference>`
 		// pattern collapses back to `Map<string, LinkReference>` — a value
@@ -118,7 +118,7 @@ pub func main = (Init init) {
 		const input = `
 import System
 
-pub owning struct LinkReference {
+pub mv struct LinkReference {
 	pub var string url = ""
 	pub var string title = ""
 }
@@ -128,11 +128,11 @@ pub func main = (Init init) {
 	var LinkReference a = LinkReference()
 	a.url = "https://one"
 	a.title = "One"
-	refs.set("a", move a)
+	refs.set("a", mv a)
 	var LinkReference b = LinkReference()
 	b.url = "https://two"
 	b.title = "Two"
-	refs.set("b", move b)
+	refs.set("b", mv b)
 	// Overwrite an existing key: the displaced value must be reclaimed.
 	refs.set("a", LinkReference())
 	Console.write("has=\\{refs.has("b")} len=\\{refs.length}\\n")

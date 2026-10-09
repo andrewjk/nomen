@@ -79,7 +79,7 @@ Console.write("\\{h.status}")
 import System
 
 func serve_one = (ref Tcp listener) {
-	// Phase R tranche 3: Tcp is an owning struct — the listener crosses as a
+	// Phase R tranche 3: Tcp is a mv struct — the listener crosses as a
 	// ref region borrow (the fiber mutates it through the address; the
 	// join bounds the borrow).
 	var Tcp conn = listener.accept()    // parks until the client connects

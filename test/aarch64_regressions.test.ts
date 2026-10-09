@@ -47,15 +47,15 @@ Console.write("\\{spill(la, lb, lc, ld, le)}")
 	await build_and_check_output(input, "spilled_struct_param_forward", "15");
 });
 
-// A value-struct declaration initialized from a non-`move` field access —
+// A value-struct declaration initialized from a non-`mv` field access —
 // including the checker-hoisted `_param_N` temp for a struct call argument —
 // is a shallow borrow whose buffer belongs to the owner. Destroying it at
 // scope exit freed the owner's data (render_text's `diff.changes` arg led to
 // a double-free abort once the diff list was destroyed).
 test("field struct borrow not destroyed", async () => {
 	const input = `
-pub owning struct Holder {
-  move List<int> items = List<int>()
+pub mv struct Holder {
+  mv List<int> items = List<int>()
 }
 
 func count = (List<int> xs, out int) {
@@ -79,7 +79,7 @@ Console.write("\\{n} \\{h.items.length}")
 // abs_int aborted with POINTER_BEING_FREED_WAS_NOT_ALLOCATED).
 test("inline body does not free outer anchors", async () => {
 	const input = `
-pub owning struct Thing {
+pub mv struct Thing {
   var v = 0
 }
 
@@ -101,7 +101,7 @@ Console.write("\\{a.v} \\{b.v} \\{r2}")
 	await build_and_check_output(input, "inline_outer_anchors_kept", "7 8 9");
 });
 
-// A class-typed declaration initialized from a NON-owning method call
+// A class-typed declaration initialized from a NON-mv method call
 // (`diffs.at(i)`) is a borrow — the container owns the element. The scope-exit
 // auto-destroy wrongly destroyed (and zeroed) the borrowed instance's fields,
 // so a later `.at` on the same element crashed on a nulled buffer.
@@ -109,7 +109,7 @@ test("class borrow from at() not destroyed", async () => {
 	const input = `
 import System
 
-pub owning struct Box {
+pub mv struct Box {
   var List<int> items = List<int>()
 }
 
@@ -124,10 +124,10 @@ func box_at = (List<Box> xs, int i, out Box) {
   var int j = i
   if j >= 0 && j < xs.length {
     var Box got = xs.at(j)
-    return move got
+    return mv got
   }
   var empty = Box()
-  return move empty
+  return mv empty
 }
 
 pub func main = () {
@@ -136,8 +136,8 @@ pub func main = () {
   first.items.push(10)
   var Box second = Box()
   second.items.push(20)
-  boxes.push(move first)
-  boxes.push(move second)
+  boxes.push(mv first)
+  boxes.push(mv second)
 
   var int total = 0
   const Box taken = box_at(boxes, 1)
@@ -643,12 +643,12 @@ test("ref deref as later arg keeps hoisted arg 0", async () => {
 	const input = `
 import System
 
-pub owning struct Token {
+pub mv struct Token {
   var text = ""
   var index = 0
 }
 
-pub owning struct Change {
+pub mv struct Change {
   var a = 0
   var b = 0
 }
@@ -668,7 +668,7 @@ func flush_delete = (ref int del_start, ref List<Change> changes, List<Token> ta
   }
   var c = Change()
   c.a = token_index(ta, del_start)
-  changes.push(move c)
+  changes.push(mv c)
   del_start = -1
 }
 
@@ -681,7 +681,7 @@ func make = (string s, int idx, out Token) {
 
 pub func main = (Init init) {
   var List<Token> ta = List<Token>()
-  ta.push(move make("x", 5))
+  ta.push(mv make("x", 5))
   var List<Change> cs = List<Change>()
   var int d = 0
   flush_delete(ref d, ref cs, ta)
@@ -700,12 +700,12 @@ test("ref deref as later static-call arg keeps x0 arg", async () => {
 	const input = `
 import System
 
-pub owning struct Token {
+pub mv struct Token {
   var text = ""
   var index = 0
 }
 
-pub owning struct Tokens {
+pub mv struct Tokens {
   func index_of = (List<Token> toks, int i, out int) {
     var int j = i
     if j >= 0 && j < toks.length {
@@ -734,7 +734,7 @@ func flush = (ref int del_start, List<Token> ta, out int) {
 
 pub func main = (Init init) {
   var List<Token> ta = List<Token>()
-  ta.push(move make("x", 5))
+  ta.push(mv make("x", 5))
   var int d = 0
   Console.write_line("a=\\{flush(ref d, ta)}")
 }
@@ -762,7 +762,7 @@ pub func main = (Init init) {
 	await build_and_check_output(input, "interp_lambda_second_slot", "5 9\n", true);
 });
 
-// An owned-temp receiver of a consuming `move out string` call
+// An owned-temp receiver of a consuming `mv out string` call
 // (`mk(3).to_string()`, the string_to_string path) frees the temp after the
 // callee copies it. The free emission hardcoded the audit wrapper
 // (`bl _nomen_free_wrap`), so every NON-audit aarch64 link failed with
@@ -806,12 +806,12 @@ test("nullable struct local frees guarded on _has flag", async () => {
 	const input = `
 import System
 
-pub owning struct Pair {
+pub mv struct Pair {
 	pub var name = ""
 	pub var title = ""
 }
 
-func make = (int n, move out Pair?) {
+func make = (int n, mv out Pair?) {
 	if n == 0 {
 		return null
 	}
@@ -848,12 +848,12 @@ test("nullable struct reassignment reclaims old value", async () => {
 	const input = `
 import System
 
-pub owning struct Pair {
+pub mv struct Pair {
 	pub var name = ""
 	pub var title = ""
 }
 
-func make = (int n, move out Pair?) {
+func make = (int n, mv out Pair?) {
 	if n == 0 {
 		return null
 	}
@@ -889,11 +889,11 @@ test("mutating a field through a call-chained receiver", async () => {
 	const input = `
 import System
 
-pub owning struct Box {
+pub mv struct Box {
 	pub var children = List<int>()
 }
 
-pub owning struct Store {
+pub mv struct Store {
 	pub var box = Box()
 }
 

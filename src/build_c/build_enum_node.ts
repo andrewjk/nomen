@@ -93,7 +93,7 @@ function build_tagged_union_enum(node: EnumNode, status: BuildStatus) {
 				status.code += `r._data._${c.name}.${p.name}.len = ${p.name}.len;\n`;
 			} else {
 				// Scalars and value structs copy by value; a class/trait
-				// payload copies the owning pointer (construction transfers
+				// payload copies the mv pointer (construction transfers
 				// ownership — see the check-time borrow rejection).
 				status.code += `r._data._${c.name}.${p.name} = ${p.name};\n`;
 			}
@@ -105,10 +105,10 @@ function build_tagged_union_enum(node: EnumNode, status: BuildStatus) {
 	// Ownership helpers, emitted for EVERY data-carrying enum (struct fields
 	// of this enum type call them at the store sites and in
 	// `<Struct>_destroy`, so they must exist regardless of whether the
-	// payloads happen to be owning — the mono call sites don't re-derive
+	// payloads happen to be mv — the mono call sites don't re-derive
 	// that).
-	const owning = true;
-	if (owning) {
+	const mv = true;
+	if (mv) {
 		status.headers += `void ${node.name}_free_payloads(${c_typedef_name(node.name)}* v);\n`;
 		status.code += `void ${node.name}_free_payloads(${c_typedef_name(node.name)}* v)\n{\n`;
 		let first = true;

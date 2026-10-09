@@ -17,7 +17,7 @@ import value_from_value_node from "./value_from_value_node.ts";
  *  - an instance method call returning a class (`list.pop()`, `arr.first()`)
  *    — borrow of the receiver, rooted at the receiver's lifetime;
  *  - an instance method call returning a `view T` (e.g. `s.slice(0, 3)`)
- *    — a non-owning slice that borrows from the receiver;
+ *    — a non-mv slice that borrows from the receiver;
  *  - a variable that already holds one of the above.
  *
  * Constructors and static factories (`Box(1)`, `Array.with(...)`) produce owned
@@ -32,7 +32,7 @@ export function borrow_depth_of(node: BaseNode, status: CheckStatus): number | u
 			if (t?.name && is_owning_ref_type(t.name, status)) {
 				return status.scope_depth;
 			}
-			// Reading a `view T` FIELD yields a non-owning slice whose validity
+			// Reading a `view T` FIELD yields a non-mv slice whose validity
 			// is rooted at the struct instance it was read from (the instance's
 			// own borrow depth covers its fields' sources).
 			if (t?.is_view && access.target.node_type === "value") {
@@ -42,7 +42,7 @@ export function borrow_depth_of(node: BaseNode, status: CheckStatus): number | u
 		} else if (access.access.node_type === "access_func") {
 			const t = type_from_value_node(access, status);
 			if (is_borrowed_return(t, status)) {
-				// A `move out T` method transfers ownership — the result is an
+				// A `mv out T` method transfers ownership — the result is an
 				// owned value, not a borrow.
 				if ((access.access as AccessFunctionCallNode).owned_return) return undefined;
 				// Instance method returning a class/view borrows from its
@@ -94,7 +94,7 @@ export function borrow_owner_of(node: BaseNode, status: CheckStatus): string | u
 		} else if (access.access.node_type === "access_func") {
 			const t = type_from_value_node(access, status);
 			if (is_borrowed_return(t, status)) {
-				// A `move out T` method returns an owned value — no owner to root
+				// A `mv out T` method returns an owned value — no owner to root
 				// a borrow at (and it must not be invalidated by receiver mutation).
 				if ((access.access as AccessFunctionCallNode).owned_return) return undefined;
 				if (access.target.node_type === "value") {
@@ -107,7 +107,7 @@ export function borrow_owner_of(node: BaseNode, status: CheckStatus): string | u
 					return undefined;
 				}
 				// Access-path receiver (e.g. z.animals.pop()): an instance method
-				// on a field path — root the borrow at the ultimate owning var.
+				// on a field path — root the borrow at the ultimate mv var.
 				return ultimate_owner(access.target, status);
 			}
 		}
@@ -122,7 +122,7 @@ export function borrow_owner_of(node: BaseNode, status: CheckStatus): string | u
 /**
  * Whether a method-call result type is a borrow of its receiver (rather than an
  * owned value). True for class-/trait-typed returns and for `view T` returns;
- * false for primitives, constructors, and `move out T` (owned) returns. Traits
+ * false for primitives, constructors, and `mv out T` (owned) returns. Traits
  * are reference types just like classes (a trait-typed value is a heap pointer
  * into someone else's ClassBuffer<Trait> slot), so an instance method returning
  * a trait borrows from its receiver the same way a class-typed return does.
@@ -134,7 +134,7 @@ function is_borrowed_return(t: Type | undefined, status: CheckStatus): boolean {
 }
 
 /**
- * Resolve an access target down to its ultimate owning variable name. Recurses
+ * Resolve an access target down to its ultimate mv variable name. Recurses
  * through field paths so `z.animals` → `z` (and `a.b.c` → `a`).
  */
 function ultimate_owner(target: BaseNode, status: CheckStatus): string | undefined {
@@ -202,7 +202,7 @@ export function invalidate_view_borrows_of(status: CheckStatus, owner: string) {
 
 /**
  * Mark every live child-group borrow rooted at `owner` as invalidated, because
- * a `ref self` / `var self` call on (or owning-field assignment to) `owner` may
+ * a `ref self` / `var self` call on (or mv-field assignment to) `owner` may
  * free or displace the contents those borrows point into. Reading an
  * invalidated borrow is rejected later in check_value_node. View-field borrows
  * (struct values with view_field_owners) are handled by the view-specific

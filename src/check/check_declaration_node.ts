@@ -108,9 +108,9 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 	// Narrowed, view-free declaration kind for the StackValue and backends.
 	// A `view` binding is normalized to `const` (immutable slice). A `ref`
 	// binding keeps `var` storage (the tested object-alias codegen path) but
-	// carries `is_ref_binding`, which blocks reassignment/move and gates
+	// carries `is_ref_binding`, which blocks reassignment/mv and gates
 	// mutation through the alias.
-	const declaration: "const" | "var" | "move" =
+	const declaration: "const" | "var" | "mv" =
 		decl.declaration === "view" ? "const" : decl.declaration === "ref" ? "var" : decl.declaration;
 	decl.declaration = declaration;
 	// Whether the user wrote a `view` type modifier (`var view T v = ...`).
@@ -231,7 +231,7 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 				const fn = status.functions.findLast((f) => f.name === (decl.value as ValueNode).value);
 				// A func-typed LOCAL (a capturing closure) is not a named
 				// function to materialize: the build must read the local's
-				// descriptor (and move it), not synthesize a static one.
+				// descriptor (and mv it), not synthesize a static one.
 				const is_value_local = status.values.some(
 					(v) => v.name === (decl.value as ValueNode).value,
 				);
@@ -305,11 +305,11 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			// A func-typed binding initialized from a capturing closure (or
 			// from a local that already owns one) owns a heap descriptor and
 			// is move-only (CLOSURE.md Phase 2c). Initializing from another
-			// owning local transfers ownership, invalidating it. A CALL or
+			// mv local transfers ownership, invalidating it. A CALL or
 			// access initializer (`var func (out int) f = make()` — a closure
 			// factory, direct or method/trait-dispatched) may return a
 			// capturing closure too — the caller owns whatever the callee
-			// produced — so the binding is conservatively owning (and
+			// produced — so the binding is conservatively mv (and
 			// move-only) as well.
 			owns_closure:
 				value_owns_closure(decl.value, status) ||
@@ -358,13 +358,13 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 				);
 			}
 
-			// STRUCT_PLAN_3 B4 — trait handles are boxed, owning values. The
+			// STRUCT_PLAN_3 B4 — trait handles are boxed, mv values. The
 			// former two-tier copy rules collapse into ownership rules:
 			//   - `var Rule b = a` (trait from trait, no keyword) would alias
 			//     the handle — rejected, exactly like a class alias (Phase A):
-			//     spell `move` to transfer it.
+			//     spell `mv` to transfer it.
 			//   - `var Rule r = heading` (a bare value-struct local) BOXES it —
-			//     an implicit move: the donor is invalidated here.
+			//     an implicit mv: the donor is invalidated here.
 			//   - `var Rule r = HeadingV()` (a fresh temporary) boxes freely.
 			//   - Borrows and views cannot be boxed (T2), and neither can a
 			//     computed/field value whose owner stays behind (`holder.field`
@@ -385,9 +385,9 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 					is_trait_type(src_sv.type.name, status) &&
 					src_sv.type.name === decl.type.name
 				) {
-					if (declaration === "move" || (decl.value as ValueNode).is_moved) {
-						// A handle move (`var Rule b = move a`, either spelling):
-						// the donor is invalidated (the generic move machinery
+					if (declaration === "mv" || (decl.value as ValueNode).is_moved) {
+						// A handle mv (`var Rule b = mv a`, either spelling):
+						// the donor is invalidated (the generic mv machinery
 						// below stamps it too); the new binding aliases the same
 						// box — the donor's anchor slot stays the instance's
 						// single owner, the same shape a moved class local takes.
@@ -397,15 +397,15 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 					} else {
 						add_error(
 							status,
-							`cannot copy a trait handle — use 'move ${src_name}' to transfer it, or box a fresh instance`,
+							`cannot copy a trait handle — use 'mv ${src_name}' to transfer it, or box a fresh instance`,
 							decl.value.start,
 						);
 					}
 				} else if (src_sv && (src_sv.type.is_ref || src_sv.type.is_view)) {
 					add_error(status, boxing_owns_error(), decl.value.start);
 				} else if (src_sv && is_value_struct_conformer(src_sv.type.name, decl.type.name!, status)) {
-					// Boxing a bare value-struct local is an implicit move (T2):
-					// invalidate the donor exactly like a `move` declaration.
+					// Boxing a bare value-struct local is an implicit mv (T2):
+					// invalidate the donor exactly like a `mv` declaration.
 					if (!(decl.value as ValueNode).is_moved) {
 						(decl.value as ValueNode).is_moved = true;
 					}
@@ -468,7 +468,7 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 		//   - Rule 1: `view hi = expr` requires the value to actually be a view
 		//     (e.g. a .slice() result). Binding an owned value with `view` is a
 		//     mistake — the user probably meant `const`.
-		//   - Rule 3: a `var`/`const`/`move` declaration whose *inferred* type is a
+		//   - Rule 3: a `var`/`const`/`mv` declaration whose *inferred* type is a
 		//     view must opt in explicitly — either with the `view` keyword
 		//     (`view hi = ...`) or a `view` type modifier (`var view T v = ...`).
 		//     This keeps the borrow semantics visible at the declaration site.
@@ -521,28 +521,28 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 					decl.value.start,
 				);
 			}
-			// `ref q = move p` is contradictory — an alias never takes ownership
+			// `ref q = mv p` is contradictory — an alias never takes ownership
 			// (§A3.3: ref can mutate, never transfer).
 			if (decl.value && (decl.value as ValueNode).is_moved) {
 				add_error(
 					status,
-					`'ref' binds an alias — 'move' cannot transfer through it`,
+					`'ref' binds an alias — 'mv' cannot transfer through it`,
 					decl.value.start,
 				);
 			}
 		}
 
-		// A prefix-`move` declaration (`move T r = src`) is an ownership TRANSFER
+		// A prefix-`mv` declaration (`mv T r = src`) is an ownership TRANSFER
 		// (STRUCT_PLAN_3 Phase A binding table) — but the parser only stamps
-		// `is_moved` for the expression form (`move T r = move src`). Without the
-		// stamp every downstream transfer rule misfires: an owning-struct source
-		// hits the "cannot copy" error below (the prescribed `move` was written!),
+		// `is_moved` for the expression form (`mv T r = mv src`). Without the
+		// stamp every downstream transfer rule misfires: a mv-struct source
+		// hits the "cannot copy" error below (the prescribed `mv` was written!),
 		// and a class source silently ALIASES (class_alias_of) instead of
 		// transferring. Stamp the bare-variable initializer here so the whole
 		// existing transfer pipeline (moved_variables, both backends' alias
 		// classification) sees the transfer. The swap form keeps its own path.
 		if (
-			declaration === "move" &&
+			declaration === "mv" &&
 			!decl.swap &&
 			decl.value?.node_type === "value" &&
 			!(decl.value as ValueNode).is_moved
@@ -573,16 +573,16 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 		// struct with a class field) cannot be byte-copied from another variable —
 		// both copies would free the same backing data (double-free). Only a
 		// bare-variable copy is rejected here; a fresh allocation (constructor /
-		// function return) is a move, not a copy, and member-access copies (e.g.
+		// function return) is a mv, not a copy, and member-access copies (e.g.
 		// `var Buffer old = self.field`) are left to the field machinery. Use
-		// .copy() for a deep copy or `move` to transfer ownership. A struct whose
-		// #destroy only resets fields (no raw block) is NOT owning and may copy.
+		// .copy() for a deep copy or `mv` to transfer ownership. A struct whose
+		// #destroy only resets fields (no raw block) is NOT mv and may copy.
 		// A `ref` binding is an alias, spelled (Phase A) — never a copy; the
 		// alias classification below owns it.
 		if (decl.value?.node_type === "value" && !decl.value.is_moved && !is_ref_keyword) {
 			const val_type = type_from_value_node(decl.value, status);
 			// D3: a string LITERAL (or null) is a fresh value, not a copy of an
-			// existing binding — the owning-type copy rule below must not fire
+			// existing binding — the mv-type copy rule below must not fire
 			// on it. (For structs this shape is unreachable: a constructor is a
 			// func_call, never a bare value.)
 			const raw = (decl.value as ValueNode).value;
@@ -591,16 +591,16 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			const owning_enum =
 				val_type.name && status.enums.findLast((e) => e.name === val_type.name && e.is_owning);
 			const box_binding = val_type.name && is_box_type(val_type.name, status.structs);
-			// B1: a declared `owning struct` binding moves (the flag wins over
-			// the inferred walk — a string-only `owning struct` is still
-			// move-only). B1a: a declared `owning enum` binding likewise.
+			// B1: a declared `mv struct` binding moves (the flag wins over
+			// the inferred walk — a string-only `mv struct` is still
+			// move-only). B1a: a declared `mv enum` binding likewise.
 			// B2: a `Box<T>` binding owns its pointee — a bare copy shares it.
 			if (!fresh_value && val_type.name && is_owning_struct_type(val_type, status)) {
 				add_error(
 					status,
 					val_type.name === "string"
-						? `cannot copy a string by value — it owns its bytes; use 'move' to transfer it, or .copy() for a deep copy`
-						: `cannot copy '${val_type.name}' by value — it owns heap resources; use .copy() or move`,
+						? `cannot copy a string by value — it owns its bytes; use 'mv' to transfer it, or .copy() for a deep copy`
+						: `cannot copy '${val_type.name}' by value — it owns heap resources; use .copy() or mv`,
 					decl.value.start,
 				);
 			} else if (box_binding && !is_class_type(val_type.name, status)) {
@@ -610,21 +610,21 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 				// never alias.
 				add_error(
 					status,
-					`cannot copy a Box binding by value — it owns its pointee; use move`,
+					`cannot copy a Box binding by value — it owns its pointee; use mv`,
 					decl.value.start,
 				);
 			} else if (owning_enum) {
 				add_error(
 					status,
-					`cannot copy '${val_type.name}' by value — it is an \`owning enum\`; use move`,
+					`cannot copy '${val_type.name}' by value — it is a \`mv enum\`; use mv`,
 					decl.value.start,
 				);
 			}
 		}
-		// Copying an owning struct out of a field (`var X b = obj.field`)
+		// Copying a mv struct out of a field (`var X b = obj.field`)
 		// duplicates the backing pointer; the field must be moved out with a swap
-		// that revalidates it (`var X b = move obj.field swap <replacement>`).
-		// `move` without a swap would leave the field holding a moved-out value.
+		// that revalidates it (`var X b = mv obj.field swap <replacement>`).
+		// `mv` without a swap would leave the field holding a moved-out value.
 		// A struct whose ONLY ownership is `string` fields is a BORROW when
 		// copied (string-only struct locals aren't auto-destroyed), so it may be
 		// read out of a field by value.
@@ -639,10 +639,10 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 				// A destructuring binding off a compiler TEMP (`var [a, b] =
 				// make()`): the temp exists only to feed these bindings and is
 				// never read again — the transfer is unambiguous, so it is
-				// INFERRED without an explicit `move` (a view binding would
+				// INFERRED without an explicit `mv` (a view binding would
 				// dangle: the temp's cleanup frees its fields). A named-source
 				// binding (`= pair`) keeps the explicit forms: view (plain),
-				// transfer (`move`).
+				// transfer (`mv`).
 				const target_name =
 					(decl.value as AccessNode).target.node_type === "value"
 						? ((decl.value as AccessNode).target as ValueNode).value
@@ -651,25 +651,25 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 				if (!decl.value.is_moved && !temp_rhs) {
 					add_error(
 						status,
-						`cannot copy '${field_type.name}' out of field '${field_name}' by value — it owns heap resources; use 'move ... swap <replacement>'${field_type.name === "string" ? ", or .copy() for a deep copy" : ""}`,
+						`cannot copy '${field_type.name}' out of field '${field_name}' by value — it owns heap resources; use 'mv ... swap <replacement>'${field_type.name === "string" ? ", or .copy() for a deep copy" : ""}`,
 						decl.value.start,
 					);
 				} else if (!decl.swap) {
 					if (!access_field.destructure_move && !temp_rhs) {
 						add_error(
 							status,
-							`move out of a field requires a swap to revalidate it`,
+							`mv out of a field requires a swap to revalidate it`,
 							decl.value.start,
 						);
 					} else {
-						// A move-DESTRUCTURING binding (`var [move a] = t`, or a
+						// A mv-DESTRUCTURING binding (`var [mv a] = t`, or a
 						// plain binding off a dead temp — inferred): the field
 						// only resolves to its position/type at check time
 						// (after the destructure rewrite), so the revalidating
 						// swap is synthesized here — a fresh default of the
 						// field's type, exactly the replacement a hand-written
-						// `move t._0 swap <replacement>` would carry. The build
-						// then runs the proven move+swap pipeline unchanged.
+						// `mv t._0 swap <replacement>` would carry. The build
+						// then runs the proven mv+swap pipeline unchanged.
 						decl.value.is_moved = true;
 						decl.swap = synthesized_swap_value(field_type, decl.value.start);
 						const swap_ok = check_node(decl.swap, status);
@@ -703,16 +703,16 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			}
 		}
 
-		// `var X b = move a` (no swap) transfers ownership: the source `a` is moved
+		// `var X b = mv a` (no swap) transfers ownership: the source `a` is moved
 		// and may not be used again until reassigned. (A swap revalidates it.)
 		if (decl.value?.node_type === "value" && decl.value.is_moved && !decl.swap) {
-			// A `ref` alias is not the owner (STRUCT_PLAN_3 §A3.3): `move`
-			// cannot transfer through it — move the owner instead.
+			// A `ref` alias is not the owner (STRUCT_PLAN_3 §A3.3): `mv`
+			// cannot transfer through it — mv the owner instead.
 			const moved_src = status.values.findLast((v) => v.name === (decl.value as ValueNode).value);
 			if (moved_src?.is_ref_binding) {
 				add_error(
 					status,
-					`'${(decl.value as ValueNode).value}' is a ref — move the owner instead`,
+					`'${(decl.value as ValueNode).value}' is a ref — mv the owner instead`,
 					decl.value.start,
 				);
 			} else {
@@ -752,7 +752,7 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 		if (!is_ref_keyword && class_alias_src !== undefined && !decl.value?.is_moved) {
 			add_error(
 				status,
-				`'${class_alias_src}' is aliased — use 'ref' to share it, 'move' to transfer it, or '.copy()' for a deep copy`,
+				`'${class_alias_src}' is aliased — use 'ref' to share it, 'mv' to transfer it, or '.copy()' for a deep copy`,
 				decl.value!.start,
 			);
 		}
@@ -964,9 +964,9 @@ function extract_const_value(
 }
 
 /**
- * The revalidating swap value synthesized for a move-DESTRUCTURING binding
- * (`var [move a] = t`): a fresh default of the moved field's type. A string
- * swaps in an empty literal; an owning struct (List/Buffer/Map/...) swaps in
+ * The revalidating swap value synthesized for a mv-DESTRUCTURING binding
+ * (`var [mv a] = t`): a fresh default of the moved field's type. A string
+ * swaps in an empty literal; a mv struct (List/Buffer/Map/...) swaps in
  * its no-argument constructor (type_args carried so `List<string>` swaps in
  * `List<string>()`). The zero/empty replacement makes the source field's own
  * cleanup a no-op instead of a double-free of the transferred buffer.
@@ -989,10 +989,10 @@ function synthesized_swap_value(
 /**
  * Whether a destructuring binding's access targets the compiler-created
  * `_tuple_dst_N` temp (a non-simple destructuring RHS): the temp exists only
- * to feed the bindings and is never read again, so an owning field's
+ * to feed the bindings and is never read again, so a mv field's
  * ownership transfer to the binding is INFERRED (a view binding would
  * dangle — the temp's cleanup frees its fields). (`is_destructure` itself
- * is cleared by the time the binding's owning-field check runs — the access
+ * is cleared by the time the binding's mv-field check runs — the access
  * rewrite consumes it — so only the temp-name convention identifies this.)
  */
 function af_is_destructure_temp(target_name: string): boolean {
@@ -1004,7 +1004,7 @@ function af_is_destructure_temp(target_name: string): boolean {
  * not an existing binding/alias/borrow. Mirrors the syntactic shape the
  * `class_alias_of` path has always recognized (STRUCT_PLAN_3 §A1): a bare
  * variable, a field/container-element access, or a method call that returns a
- * borrow (not a `move out T` owned result). Constructors, fresh factory calls,
+ * borrow (not a `mv out T` owned result). Constructors, fresh factory calls,
  * literals, and `null` produce owned/fresh values and are not aliases.
  */
 function ref_alias_source_name(
@@ -1018,7 +1018,7 @@ function ref_alias_source_name(
 	if (value.node_type === "access") {
 		const access = value as AccessNode;
 		if (access.access.node_type === "access_func") {
-			// A `move out T` method returns a fresh owned value — not an alias.
+			// A `mv out T` method returns a fresh owned value — not an alias.
 			if ((access.access as AccessFunctionCallNode).owned_return) return undefined;
 		}
 		return value_from_value_node(value) || undefined;

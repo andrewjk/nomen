@@ -6,7 +6,7 @@ import build_and_check_output from "./build_and_check_output";
 // `var int n = answer()`) are evaluated fresh by the constructor on both
 // backends. The aarch64 backend used to skip them entirely (the field kept
 // stack garbage — SEGFAULT on first read); the ctor now evaluates the
-// expression into the field slot. A heap-owning default (a string op, a
+// expression into the field slot. A heap-mv default (a string op, a
 // heap-returning call) is recorded at the ctor-binding site so scope exit
 // frees it and displaced stores (overrides, reassignments) reclaim it; a
 // literal-returning call leaves rodata in the field and is never recorded
@@ -18,7 +18,7 @@ describe("non-literal struct field defaults", () => {
 			`
 import System
 
-owning struct Pair {
+mv struct Pair {
 	var string a = "de" + "fault"
 	var string b
 }
@@ -43,7 +43,7 @@ pub func main = (Init init) {
 			`
 import System
 
-owning struct Pair {
+mv struct Pair {
 	var string a = "de" + "fault"
 	var string b
 
@@ -69,7 +69,7 @@ pub func main = (Init init) {
 			`
 import System
 
-owning struct Pair {
+mv struct Pair {
 	var string a = "de" + "fault"
 	var string b
 }
@@ -96,7 +96,7 @@ pub func main = (Init init) {
 			`
 import System
 
-owning struct Pair {
+mv struct Pair {
 	var string a = "de" + "fault"
 	var string b
 }
@@ -119,7 +119,7 @@ pub func main = (Init init) {
 			`
 import System
 
-owning struct Box {
+mv struct Box {
 	var string tag = "de" + "fault"
 }
 
@@ -173,11 +173,11 @@ func fresh = (out string) {
 	return "fr" + "esh"
 }
 
-owning struct Lit {
+mv struct Lit {
 	var string s = ro()
 }
 
-owning struct Owned {
+mv struct Owned {
 	var string s = fresh()
 }
 

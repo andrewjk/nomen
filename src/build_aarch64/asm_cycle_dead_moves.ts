@@ -1,13 +1,13 @@
 /**
- * Dead staging-move elimination inside validated loop cycles
+ * Dead staging-mv elimination inside validated loop cycles
  * (ASM_PLAN_6 tranche 4: the D4-multiply staging movs).
  *
  * The per-statement emission model stages operands into fixed protocol
  * registers (`mov x2, x23` before a compare, `mov x1, x27` before a
  * multiply) even when the consumer instruction reads the SOURCE register
  * directly. The copy coalescer substitutes read operands and flags the
- * moves it rewrote, but a move whose consumer never read the destination
- * in the first place is never flagged — and the function-wide dead-move
+ * moves it rewrote, but a mv whose consumer never read the destination
+ * in the first place is never flagged — and the function-wide dead-mv
  * pass ships default-OFF (measured −1.3…−1.5% on nbody: global layout
  * perturbation). Inside a hot loop the leftovers execute every iteration:
  * the D4-multiply cycle alone carried five (`mov x2, x23`, `mov x1, x27`,
@@ -21,7 +21,7 @@
  * approximation: a function-level CFG (blocks, resolved-branch +
  * fall-through edges, ret exits) with a backward fixpoint, so a value
  * that escapes through a loop exit (the si2 base read just after
- * .end_while_22) keeps its defining move while a guard's compare staging
+ * .end_while_22) keeps its defining mv while a guard's compare staging
  * dies.
  *
  * Soundness model:
@@ -40,8 +40,8 @@
  * - Cycles: header provenance from inside, exits are conditional branches
  *   (allowed — the exact CFG prices them), deletions strictly between
  *   the header and the back-edge.
- * - Deletion iterates to a fixpoint (a deleted move's source read can
- *   kill a chained move in the next round).
+ * - Deletion iterates to a fixpoint (a deleted mv's source read can
+ *   kill a chained mv in the next round).
  *
  * Runs AFTER coalesce_copies (the final consumer shapes are what get
  * priced). Kill-switch: `set_cycle_dead_moves_enabled(false)` returns the

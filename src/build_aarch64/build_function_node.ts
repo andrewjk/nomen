@@ -229,7 +229,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.heap_string_fields = undefined;
 
 	// heap_cleanup_stack holds the per-scope heap anchor slots (class
-	// instances, owning temporaries). Like heap_strings, it must be isolated
+	// instances, mv temporaries). Like heap_strings, it must be isolated
 	// per function: a lambda's return-path cleanup iterates the whole stack,
 	// and without a function boundary it would reclaim the ENCLOSING
 	// function's anchors from inside the lambda (double-free). The function's
@@ -446,7 +446,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			// back as a value). Excluding it here would spill it to a stack
 			// slot that the method-receiver load treats as a by-address struct
 			// (address-of instead of load), corrupting class params. See
-			// trait_dispatch / class-move / memory-var-class-param tests.
+			// trait_dispatch / class-mv / memory-var-class-param tests.
 			const is_struct_type = !!status.structs.find(
 				(s) => s.name === param.type.name && !s.is_simple_type,
 			);
@@ -559,7 +559,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			type_name: string;
 			type_args?: Type[];
 			is_nullable?: boolean;
-			/** Set for a `move` param of an owning VALUE-struct type: the slot
+			/** Set for a `mv` param of a mv VALUE-struct type: the slot
 			 *  holds the ADDRESS of the caller's storage, so the return path
 			 *  runs `<T>_destroy` on it (the fields' owned resources) and never
 			 *  frees the storage itself. */
@@ -937,7 +937,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				// Whole-function-promoted param: initialize the callee-saved
 				// register instead of (or in addition to) spilling. 8-byte params
 				// (int64/uint64, every float — floats ride an x param register as
-				// raw bits) move/load straight into the register and SKIP the
+				// raw bits) mv/load straight into the register and SKIP the
 				// spill: the home slot stays dead until an eventual
 				// emit_var_address flush. Sub-word params keep the spill and add a
 				// width-aware load, so the register holds exactly the zero-extended
@@ -1015,7 +1015,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			// (writes see old_was_heap and reclaim displaced buffers), and
 			// push a cleanup decl so scope exit frees the surviving fields
 			// through the shell pointer. String-only structs only: structs
-			// with class/nested-owning fields keep by-address aliasing.
+			// with class/nested-mv fields keep by-address aliasing.
 			//
 			// The gates mirror the C callee seeding exactly — they must stay
 			// in lockstep with the call-site materialization conditions:
@@ -1029,7 +1029,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			//     registered it; in split builds a library callee is not in
 			//     the user-TU registry and keeps by-address aliasing).
 			//
-			// A `move`-declared param of the same shape seeds TOO — the
+			// A `mv`-declared param of the same shape seeds TOO — the
 			// TRANSFER row: the argument's string ownership moved into the
 			// callee (callers stamped move_owned_param_indices drop their
 			// records instead of freeing). The shell is the caller's stack
@@ -1059,7 +1059,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				direct_string_fields(owned_value_param).length > 0 &&
 				!(owned_value_param.traits ?? []).length &&
 				!struct_needs_destroy(owned_value_param, status) &&
-				// B1 full cutover: a DECLARED `owning struct` is never pbv —
+				// B1 full cutover: a DECLARED `mv struct` is never pbv —
 				// bare params are read-only const borrows; the callee gate must
 				// agree with the check side's stamp or it frees the caller's
 				// storage.
@@ -1132,7 +1132,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	const moved_before = new Set(status.moved ?? []);
 
 	// Track moved class params for cleanup at return. This runs regardless of
-	// whether the function has a body: a `move Box x` param is owned by the
+	// whether the function has a body: a `mv Box x` param is owned by the
 	// callee and must be reclaimed (with its #destroy + field destroys) even
 	// when the body is empty. The incoming value is saved from whichever
 	// register holds it at entry — the callee-saved register assigned during
@@ -1147,17 +1147,17 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		if (param.is_moved) {
 			const is_class = !!status.structs.find((s) => s.name === param.type.name && s.is_class);
 			// A trait-typed value is a reference to a heap instance (a pointer
-			// with a vtable), so `move Trait` transfers ownership exactly like
-			// `move Class`: the callee reclaims it at exit through the trait's
+			// with a vtable), so `mv Trait` transfers ownership exactly like
+			// `mv Class`: the callee reclaims it at exit through the trait's
 			// `<Trait>_destroy` shim (emit_destroy_for_anchor_slot dispatches
 			// traits polymorphically). Registering it in moved_class_params
-			// also lets a forwarded `move`/`return` recognize it.
+			// also lets a forwarded `mv`/`return` recognize it.
 			const is_trait = !!status.traits.find((t) => t.name === param.type.name);
-			// An owning VALUE-struct param (`move Box box`, Box a container
+			// A mv VALUE-struct param (`mv Box box`, Box a container
 			// struct) rides by address — the caller's storage — so the callee
 			// owns the CONTENTS. The return path runs the field destroys on
 			// the saved address (reclaiming the fields' owned resources: a
-			// container slab, nested owning fields — mirroring the C
+			// container slab, nested mv fields — mirroring the C
 			// backend's moved_value_struct_param scoped declaration).
 			// `struct_needs_destroy` (NOT the auto form): string-only structs
 			// are handled by the param record seeding/release above — the
@@ -1169,7 +1169,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				!!vstruct &&
 				!vstruct.is_class &&
 				!param.type.is_nullable &&
-				// B1 full cutover: a string-only DECLARED-owning struct has no
+				// B1 full cutover: a string-only DECLARED-mv struct has no
 				// `struct_needs_destroy` footprint (that gate excludes strings)
 				// — but the transfer row makes the callee the field owner, so
 				// the teardown fires for it too (the seeded records release
@@ -1396,7 +1396,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				// freed). Mirror emit_destroy_for_decl's LOCAL semantics: release
 				// the recorded heap string fields first (the field walk skips
 				// strings — they may be rodata literals), then destroy the
-				// owning fields. A user `#destroy` owns the whole sequence —
+				// mv fields. A user `#destroy` owns the whole sequence —
 				// `<T>_destroy` is the only call (it frees fields+strings).
 				const vstruct = status.structs.find((s) => s.name === info.value_struct_destroy_name);
 				release_heap_string_fields(status, name, info.value_struct_destroy_name);

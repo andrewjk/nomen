@@ -83,11 +83,11 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 	//     freeze bounds the source inside a nursery).
 	//   - "struct-copy": a value struct the env OWNS — the helper mallocs a
 	//     copy (string fields strdup'd) and the destructor destroys + frees
-	//     it. This is the transfer shape (`move T` params), the non-nursery
+	//     it. This is the transfer shape (`mv T` params), the non-nursery
 	//     shape (no join to bound a borrow), and the mono-clone fallback
 	//     (clones never re-run the checker's region stamping).
 	//   - "struct-borrow": a region-checked borrow (the checker stamped
-	//     `region_borrowed_args` — an owning struct passed bare inside an
+	//     `region_borrowed_args` — a mv struct passed bare inside an
 	//     `async { }` block) — the helper stores the donor's pointer; the
 	//     env owns nothing and the R3 freeze keeps the donor const.
 	//   - "plain": a scalar word.
@@ -224,9 +224,9 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 				// List_int_destroy is generated only when something asked for
 				// it), so the shell is freed WITHOUT the destroy call. The
 				// copy's string-field strdups then leak — bounded, never
-				// unsound. (The checker routes owning structs to the
+				// unsound. (The checker routes mv structs to the
 				// region-checked borrow inside `async` and rejects them
-				// outside, so this arm only serves `move`-param transfers.)
+				// outside, so this arm only serves `mv`-param transfers.)
 				c += `\tfree(a->arg${i});\n`;
 			}
 		}
@@ -259,7 +259,7 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 	} };\n`;
 	// Constructor helper: packs env + machinery + closure into an instance
 	// of the mono spawn class. A CLASS instance is heap-allocated and
-	// returned by pointer; a value-struct spawnable (owning struct with
+	// returned by pointer; a value-struct spawnable (mv struct with
 	// `#spawn` — STRUCT_PLAN_3 Phase R) is written through the sret `out`
 	// parameter (x0) — the same convention the WeakHandle construction
 	// uses, with the consuming context's struct-return machinery pointing
@@ -288,7 +288,7 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 			case "struct-copy": {
 				// The env owns a malloc'd copy of the struct's bytes with its
 				// top-level string fields deep-copied (the transfer shape for
-				// `move` params; the safe shape without a join). The donor
+				// `mv` params; the safe shape without a join). The donor
 				// arrives as a pointer (struct values travel by reference on
 				// this backend), so the copy is a pointee deref.
 				const st_name = struct_mono_names[i];

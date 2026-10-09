@@ -40,7 +40,7 @@ Console.write(f().to_string())
 
 	test("field target: lambda assigned to a func field", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
 	var func? (out int) cb = null
 }
 var Box b = Box()

@@ -433,7 +433,7 @@ pub func main = (Init init) {
 		// SKIPPED (D3 endgame): the env now OWNS the captured string (strings
 		// move at bindings), but env disposal does not free the owned capture
 		// — every string-capturing lambda leaks 1 allocation (compiler gap,
-		// src/). Sources already migrated to the owning shapes; re-enable when
+		// src/). Sources already migrated to the mv shapes; re-enable when
 		// env string disposal is fixed.
 		// The lambda returns a copy of its captured string (the env now OWNS
 		// the capture — strings move at bindings), so the only heap objects in
@@ -499,7 +499,7 @@ pub func main = (Init init) {
 		// SKIPPED (D3 endgame): the env now OWNS the captured string (strings
 		// move at bindings), but env disposal does not free the owned capture
 		// — every string-capturing lambda leaks 1 allocation (compiler gap,
-		// src/). Sources already migrated to the owning shapes; re-enable when
+		// src/). Sources already migrated to the mv shapes; re-enable when
 		// env string disposal is fixed.
 		// The method returns a fat string pair in (x0, x1) on aarch64 — the
 		// descriptor disposal must preserve both halves. The lambda returns a
@@ -532,7 +532,7 @@ trait Runner {
 	func run = (self, func (out int) f, out int)
 }
 
-owning struct Host : Runner {
+mv struct Host : Runner {
 	func run = (self, func (out int) f, out int) { return f() + 1 }
 }
 

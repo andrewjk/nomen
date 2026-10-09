@@ -112,7 +112,7 @@ export default function build_extern(
 			node.return_type.name.startsWith("float") ||
 			node.return_type.name.startsWith("ufloat")
 		) {
-			// A float-returning extern returns d0 — move the bits back to x0.
+			// A float-returning extern returns d0 — mv the bits back to x0.
 			emit_asm(status, `fmov x0, d0\n`);
 		}
 	}

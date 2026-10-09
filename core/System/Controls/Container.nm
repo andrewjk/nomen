@@ -242,7 +242,7 @@ pub func native_intrinsic = (uint64 handle, out [int, int]) {
  * A flexbox-style container that measures and arranges its child controls.
  *
  * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
- * SoA buffers move with the value and a scope-exit destroy reclaims them.
+ * SoA buffers mv with the value and a scope-exit destroy reclaims them.
  * *
  * Conforms to `Control`: `measure(BoxConstraints)` measures the whole subtree,
  * `set_frame` arranges it into a rectangle, and `intrinsic_size` reports the
@@ -251,7 +251,7 @@ pub func native_intrinsic = (uint64 handle, out [int, int]) {
  * so a `Container` can also be driven polymorphically as a `Control` (passed to
  * a `Control`-taking function, stored in a `ClassBuffer<Control>`, etc.).
  **/
-pub owning struct Container : Control {
+pub mv struct Container : Control {
 	var kinds = Buffer<int>()
 	// Per-leaf requested size, stored as a (kind, value) pair per axis. The
 	// kind is one of LEN_* (auto/fixed/percent/fill); the value is the pixel
@@ -1457,7 +1457,7 @@ pub owning struct Container : Control {
 		// nomen_layout_thunk is a free function (defined in Nomen below) that
 		// forwards to Container.layout — exported for C linkage on both
 		// backends, unlike the layout method itself. It takes the Container by
-		// `ref` (mutable reference): as an owning struct, `ref Container` lowers
+		// `ref` (mutable reference): as a mv struct, `ref Container` lowers
 		// to `struct Container *` (the address of the value), so the callback
 		// passes the stored instance address directly. The address must stay
 		// valid for as long as the delegate is installed — an app-lifetime
@@ -1485,7 +1485,7 @@ pub owning struct Container : Control {
 		// nomen_layout_thunk is a free function (defined in Nomen below) that
 		// forwards to Container.layout — exported for C linkage on both
 		// backends, unlike the layout method itself. It takes the Container by
-		// `ref` (mutable reference): as an owning struct, `ref Container` lowers
+		// `ref` (mutable reference): as a mv struct, `ref Container` lowers
 		// to `struct Container *` (the address of the value), so the callback
 		// passes the stored instance address directly. The address must stay
 		// valid for as long as the delegate is installed — an app-lifetime

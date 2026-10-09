@@ -35,9 +35,9 @@ Console.write("\\{b.load(0)}")
 	await build_and_check_output(input, "buffer_modify_string", "a!a!");
 });
 
-test("Buffer.modify owning struct element", async () => {
+test("Buffer.modify mv struct element", async () => {
 	const input = `
-owning struct Named {
+mv struct Named {
 	var string name
 	var int hits
 }
@@ -46,7 +46,7 @@ var Buffer<Named> b = Buffer<Named>()
 b.alloc(2)
 b.store(0, Named("x", 1))
 // Rebuilds the struct: 'name' is deep-copied into the fresh instance (D3:
-// strings are owning — a bare field read can't move through a move param),
+// strings are mv — a bare field read can't mv through a mv param),
 // 'hits' is a plain copy. No leak, no double free.
 var func (Named, out Named) touch = func (n, out Named) {
 	return Named(n.name.copy(), n.hits + 1)
@@ -80,22 +80,22 @@ Console.write("\\{p.a}:\\{p.b}")
 
 test("ClassBuffer.modify class element", async () => {
 	// ClassBuffer<T> stores pointer elements — the R shape is a Box<T>
-	// element (owning struct elements are inline and retire with the class
+	// element (mv struct elements are inline and retire with the class
 	// tier).
 	const input = `
-owning struct Counter {
+mv struct Counter {
 	var int value
 }
 
-func make_bumped = (move Box<Counter> c, out Box<Counter>) {
+func make_bumped = (mv Box<Counter> c, out Box<Counter>) {
 	return Box<Counter>(Counter(c.value + 1))
 }
 
 struct Buffer_driver {
-	func drive = (ref self, move Box<Counter> seed, out int) {
+	func drive = (ref self, mv Box<Counter> seed, out int) {
 		var ClassBuffer<Box<Counter>> cb = ClassBuffer<Box<Counter>>()
 		cb.alloc_int(2)
-		cb.store(0, move seed)
+		cb.store(0, mv seed)
 		cb.modify(0, make_bumped)
 		cb.modify(0, make_bumped)
 		Console.write("\\{cb.load(0).value}")
@@ -133,13 +133,13 @@ Console.write("\\{bi.value}")
 });
 
 // Regression: a fresh constructor result passed straight into the container
-// transfers ownership at the store — `store`/`replace` take `move T`, so
+// transfers ownership at the store — `store`/`replace` take `mv T`, so
 // the hoisted instance temp is consumed and its scope-exit destroy+free is
 // suppressed (it used to run alongside the container's per-slot destroy —
 // `Counter_destroy` twice on one pointer, SIGABRT).
 test("ctor result straight into ClassBuffer.store", async () => {
 	const input = `
-owning struct Counter {
+mv struct Counter {
 	var int value
 }
 
@@ -154,7 +154,7 @@ struct Buffer_driver {
 	}
 }
 
-func make_bumped = (move Box<Counter> c, out Box<Counter>) {
+func make_bumped = (mv Box<Counter> c, out Box<Counter>) {
 	return Box<Counter>(Counter(c.value + 1))
 }
 
@@ -167,18 +167,18 @@ Console.write_line("")
 
 // A class local loaded from a container aliases the slot (a borrow — the
 // container still owns the element): the local must NOT be destroy-tracked,
-// and storing it back with `move` must not double-free.
-test("ClassBuffer slot borrow kept alive across move", async () => {
+// and storing it back with `mv` must not double-free.
+test("ClassBuffer slot borrow kept alive across mv", async () => {
 	const input = `
-owning struct Counter {
+mv struct Counter {
 	var int value
 }
 
 struct Buffer_driver {
-	func drive = (ref self, move Box<Counter> seed, out int) {
+	func drive = (ref self, mv Box<Counter> seed, out int) {
 		var ClassBuffer<Box<Counter>> cb = ClassBuffer<Box<Counter>>()
 		cb.alloc_int(2)
-		cb.store(0, move seed)
+		cb.store(0, mv seed)
 		var Box<Counter> c = cb.load(0)
 		Console.write("\\{c.value}")
 		var Box<Counter> taken = cb.move(0)
@@ -199,7 +199,7 @@ Console.write_line("")
 // `Named("alice", 1)` stored garbage in the fields AFTER the string.
 test("ctor scalar args survive a preceding string field (aarch64)", async () => {
 	const input = `
-owning struct Named {
+mv struct Named {
 	var string name
 	var int value
 }
@@ -216,7 +216,7 @@ Console.write_line("\\{n.name}")
 // slots, so `Big(name, a..g)` dropped every overflow arg after the first.
 test("ctor overflow args after a string field (aarch64)", async () => {
 	const input = `
-owning struct Big {
+mv struct Big {
 	var string name
 	var int a
 	var int b

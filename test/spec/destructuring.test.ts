@@ -83,15 +83,15 @@ pub func main = () {
 		expect(compile_module(input)).toEqual([]);
 	});
 
-	test("owning-struct move destructuring", () => {
+	test("mv-struct mv destructuring", () => {
 		const input = `
-owning struct Counter {
+mv struct Counter {
 	var int count
 	var int total
 }
 pub func main = () {
 	var c = Counter(5, 50)
-	var [count = move n, total = move t] = c
+	var [count = mv n, total = mv t] = c
 	Console.write("\\{n} \\{t}")
 }
 `;
@@ -113,34 +113,34 @@ pub func main = () {
 		expect(compile_module(input)).toEqual([]);
 	});
 
-	test("move struct destructuring with rename", () => {
+	test("mv struct destructuring with rename", () => {
 		const input = `
-owning struct Slot {
+mv struct Slot {
 	var List<string> items = List<string>()
 }
 pub func main = () {
 	var s = Slot()
-	var [items = move mine] = s
+	var [items = mv mine] = s
 	Console.write(mine.length.to_string())
 }
 `;
 		expect(compile_module(input)).toEqual([]);
 	});
 
-	test("array move destructuring is an error", () => {
+	test("array mv destructuring is an error", () => {
 		const input = `
 pub func main = () {
 	const int[] arr = [1, 2, 3]
-	var [move a] = arr
+	var [mv a] = arr
 }
 `;
 		const errors = compile_module(input);
 		expect(
-			errors.some((e) => e.message.includes("move destructuring requires a tuple or struct")),
+			errors.some((e) => e.message.includes("mv destructuring requires a tuple or struct")),
 		).toBe(true);
 	});
 
-	test("explicit move destructuring from a named source", () => {
+	test("explicit mv destructuring from a named source", () => {
 		const input = `
 func make = (out [List<string>, List<int>]) {
 	var t = List<string>()
@@ -149,7 +149,7 @@ func make = (out [List<string>, List<int>]) {
 }
 pub func main = () {
 	var pair = make()
-	var [move a, move b] = pair
+	var [mv a, mv b] = pair
 	Console.write("done")
 }
 `;

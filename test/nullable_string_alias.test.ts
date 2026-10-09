@@ -5,9 +5,9 @@ import build_and_check_output from "./build_and_check_output";
 // A nullable string local assigned from an owned string local must not
 // ALIAS it: both slots' auto-frees would release the same buffer (the
 // aarch64 backend folded `"heap" + "!"` to rodata and the inferred
-// last-use move transferred the rodata pair into the heap-marked target —
+// last-use mv transferred the rodata pair into the heap-marked target —
 // free(rodata) → SIGABRT). The assignment now dups any non-heap-owned RHS
-// (mirroring the C backend's `string_var_owns_heap` move gate), so the
+// (mirroring the C backend's `string_var_owns_heap` mv gate), so the
 // target always owns an independent copy.
 
 describe("nullable string local ownership", () => {
@@ -38,8 +38,8 @@ import System
 pub func main = (Init init) {
 	var string own = "heap" + "!"
 	var string? owns = null
-	// NOTE (D3 endgame): "owns = move own" is the natural last-use spelling,
-	// but the aarch64 backend folds "heap" + "!" to rodata and the raw move
+	// NOTE (D3 endgame): "owns = mv own" is the natural last-use spelling,
+	// but the aarch64 backend folds "heap" + "!" to rodata and the raw mv
 	// transfers the rodata pair into the heap-marked target — free(rodata) →
 	// AUDIT-STALE-FREE. Use the deep copy (rule 4's alternative spelling).
 	owns = own.copy()

@@ -27,7 +27,7 @@ pub func main = () {
 		test_error(input, "Unknown value: ???", 9, 25),
 		test_error(
 			input,
-			"cannot copy a string by value — it owns its bytes; use 'move' to transfer it, or .copy() for a deep copy",
+			"cannot copy a string by value — it owns its bytes; use 'mv' to transfer it, or .copy() for a deep copy",
 			13,
 			23,
 		),

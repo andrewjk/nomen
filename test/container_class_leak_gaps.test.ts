@@ -15,12 +15,12 @@ describe("container class-ref auto-free: remaining gaps", () => {
 	// destroy → double free.
 	test("List.pop() leaves a stale slot that double-frees when re-inserted", async () => {
 		const input = `
-owning struct Animal { var char letter }
+mv struct Animal { var char letter }
 var List<Animal> l1 = List<Animal>()
 var List<Animal> l2 = List<Animal>()
-l1.push(move Animal('A'))
+l1.push(mv Animal('A'))
 var Animal x = l1.pop()
-l2.push(move x)
+l2.push(mv x)
 Console.write("ok\\n")
 `;
 		await build_and_check_output(input, "gap_pop_double_free", "ok\n");
@@ -30,12 +30,12 @@ Console.write("ok\\n")
 	// the replaced class instance leaks.
 	test("List.set() leaks the overwritten class element", async () => {
 		const input = `
-owning struct Animal { var char letter }
+mv struct Animal { var char letter }
 if true {
 	var List<Animal> list = List<Animal>()
-	list.push(move Animal('A'))
+	list.push(mv Animal('A'))
 	if list.length > 0 {
-		list.set(0, move Animal('B'))
+		list.set(0, mv Animal('B'))
 		Console.write("\\{list.at(0).letter}")
 	}
 }
@@ -45,14 +45,14 @@ Console.write("\\n")
 	});
 
 	// #3 — A value struct's user #destroy must run exactly once per element
-	// that was actually stored. The inline owning-buffer destroy walks the
+	// that was actually stored. The inline mv-buffer destroy walks the
 	// `cap` slots, so it skips empty ones via the constructed stamp every
 	// `_init` writes into word 0 (the traits table for conformers, constant 1
 	// otherwise) — the inline counterpart of ClassBuffer's NULL pointer-slot
 	// guard.
 	test("class #destroy is not invoked for container-stored elements", async () => {
 		const input = `
-owning struct Resource {
+mv struct Resource {
 	var int handle
 	func #destroy = () {
 		Console.write("destroyed\\n")
@@ -60,23 +60,23 @@ owning struct Resource {
 }
 if true {
 	var List<Resource> list = List<Resource>()
-	list.push(move Resource(1))
+	list.push(mv Resource(1))
 }
 Console.write("done\\n")
 `;
 		await build_and_check_output(input, "gap_destroy_not_run", "destroyed\ndone\n");
 	});
 
-	// #4 — A class owning another class (move Box) freed correctly when held as a
+	// #4 — A class mv another class (mv Box) freed correctly when held as a
 	// local, but when stored in a container the raw free() does not recurse, so
 	// the owned inner class leaks.
 	test("container-stored class with owned class field leaks the inner class", async () => {
 		const input = `
-owning struct Box { var int v }
-owning struct Holder { move Box content }
+mv struct Box { var int v }
+mv struct Holder { mv Box content }
 if true {
 	var List<Holder> list = List<Holder>()
-	list.push(move Holder(move Box(7)))
+	list.push(mv Holder(mv Box(7)))
 }
 Console.write("done\\n")
 `;
@@ -88,11 +88,11 @@ Console.write("done\\n")
 	// instance whose buffer carries no destroy callback, so its elements leak.
 	test("reassigned List<Animal> does not reclaim its elements", async () => {
 		const input = `
-owning struct Animal { var char letter }
+mv struct Animal { var char letter }
 if true {
 	var List<Animal> list = List<Animal>()
 	list = List<Animal>()
-	list.push(move Animal('Z'))
+	list.push(mv Animal('Z'))
 }
 Console.write("done\\n")
 `;
@@ -103,10 +103,10 @@ Console.write("done\\n")
 	// returned struct should carry its destroy callback through to the caller.
 	test("List<Animal> returned from a factory is reclaimed (declaration)", async () => {
 		const input = `
-owning struct Animal { var char letter }
+mv struct Animal { var char letter }
 func make_list = (out List<Animal>) {
 	var List<Animal> result = List<Animal>()
-	result.push(move Animal('Z'))
+	result.push(mv Animal('Z'))
 	return result
 }
 if true {
@@ -119,10 +119,10 @@ Console.write("done\\n")
 
 	test("List<Animal> returned from a factory is reclaimed (assignment)", async () => {
 		const input = `
-owning struct Animal { var char letter }
+mv struct Animal { var char letter }
 func make_list = (out List<Animal>) {
 	var List<Animal> result = List<Animal>()
-	result.push(move Animal('Z'))
+	result.push(mv Animal('Z'))
 	return result
 }
 if true {
@@ -139,13 +139,13 @@ Console.write("done\\n")
 	// may carry no destroy callback.
 	test("List<Animal> as a struct field default is reclaimed", async () => {
 		const input = `
-owning struct Animal { var char letter }
-owning struct Zoo {
+mv struct Animal { var char letter }
+mv struct Zoo {
 	var List<Animal> animals = List<Animal>()
 }
 if true {
 	var Zoo z = Zoo()
-	z.animals.push(move Animal('Z'))
+	z.animals.push(mv Animal('Z'))
 }
 Console.write("done\\n")
 `;
@@ -157,12 +157,12 @@ Console.write("done\\n")
 	// destroy callback still must be wired up.
 	test("List<Animal> field populated in a custom #init is reclaimed", async () => {
 		const input = `
-owning struct Animal { var char letter }
-owning struct Zoo {
+mv struct Animal { var char letter }
+mv struct Zoo {
 	var List<Animal> animals = List<Animal>()
 
 	func #init = (self) {
-		self.animals.push(move Animal('Z'))
+		self.animals.push(mv Animal('Z'))
 	}
 }
 if true {

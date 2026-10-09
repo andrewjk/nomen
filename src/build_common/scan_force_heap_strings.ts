@@ -49,7 +49,7 @@ function visit(node: BaseNode | undefined, result: Set<string>, structs?: Struct
 				} else if (!a.operator && is_owned_string_var_rhs(a.right_value)) {
 					// Plain `s = t` string assignment: value semantics strdups
 					// the source into an OWNED copy (or transfers an owned pair
-					// on last-use), so the target ends up heap-owning either
+					// on last-use), so the target ends up heap-mv either
 					// way. Pre-mark it: the declare site heap-allocates the
 					// literal initializer and registers the scope-exit free.
 					result.add((a.left_value as ValueNode).value);
@@ -157,11 +157,11 @@ function is_fresh_heap_string(node: BaseNode | undefined): boolean {
 	return false;
 }
 
-// A bare owned-string VARIABLE right-hand side (`s = t`, no explicit move):
+// A bare owned-string VARIABLE right-hand side (`s = t`, no explicit mv):
 // assignment value semantics strdup t into a copy the target owns. A bare
 // identifier only — literals (rodata stores stay raw), explicit moves
-// (`s = move t`, handled by the move transfer path), and view-typed sources
-// (non-owning pair stores) are excluded.
+// (`s = mv t`, handled by the mv transfer path), and view-typed sources
+// (non-mv pair stores) are excluded.
 function is_owned_string_var_rhs(node: BaseNode | undefined): boolean {
 	if (!node || node.node_type !== "value") return false;
 	const vn = node as ValueNode;

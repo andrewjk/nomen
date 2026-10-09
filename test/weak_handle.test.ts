@@ -24,7 +24,7 @@ function check(source: string) {
 }
 
 const widget = `
-owning struct Cell {
+mv struct Cell {
 	var int id
 	func #destroy = (ref self) {
 		Console.write_line("destroying")
@@ -34,7 +34,7 @@ owning struct Cell {
 
 // WeakHandle tracks a BOXED instance (`WeakHandle<Box<Cell>>`): the box is
 // the stable-address heap handle, so the registry's (pointer, generation)
-// slot has a sound subject. Tracking an inline owning struct's storage (the
+// slot has a sound subject. Tracking an inline mv struct's storage (the
 // N3 value-T lowering) is future work — see FOLLOWUP.md.
 
 describe("WeakHandle: runtime", () => {
@@ -123,7 +123,7 @@ pub func main = () {
 		const input = `
 import System
 ${widget}
-owning struct Parent {
+mv struct Parent {
 	var int marker
 }
 pub func main = () {

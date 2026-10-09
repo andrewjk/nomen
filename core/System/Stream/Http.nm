@@ -59,7 +59,7 @@ pub struct Http {
 	// (sends `body` and the Content-* headers). Sets self->status (0 on
 	// failure) and self->error, and returns the response body (empty string
 	// on failure).
-	func raw_exchange = (ref self, string method, string url, string body, move out string) {
+	func raw_exchange = (ref self, string method, string url, string body, mv out string) {
 		// Parse the URL: [http://]host[:port][/path]
 		var host_start = 0
 		if url.starts_with("http://") {

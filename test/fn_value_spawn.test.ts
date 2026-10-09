@@ -9,7 +9,7 @@ import { parse_raw } from "./parse_with_imports";
 // is a per-site adapter that calls the value through the descriptor ABI
 // and owns (disposes) it afterwards, and `.detach()` / a nursery's
 // `.start(...)` accept the form. A func-typed LOCAL is moved into the
-// task: using it afterwards is a use-after-move error.
+// task: using it afterwards is a use-after-mv error.
 
 describe("Thread from a function value (Phase 3c)", () => {
 	test("capture-free lambda literal, chained start", async () => {
@@ -110,7 +110,7 @@ pub func main = () {
 `;
 		const parsed = parse_raw(input);
 		expect(parsed.errors.length).toBeGreaterThan(0);
-		expect(parsed.errors[0].message).toContain("used after move");
+		expect(parsed.errors[0].message).toContain("used after mv");
 	});
 
 	test("a lambda with a parameter is rejected", () => {
@@ -129,10 +129,10 @@ pub func main = () {
 		expect(parsed.errors[0].message).toContain("zero-argument");
 	});
 
-	test("an owning capture moves into the lambda env (E1) — later reads are use-after-move", () => {
+	test("a mv capture moves into the lambda env (E1) — later reads are use-after-mv", () => {
 		const input = `import System
 
-pub owning struct Counter {
+pub mv struct Counter {
 	var int count = 0
 }
 
@@ -143,9 +143,9 @@ pub func main = () {
 }
 `;
 		const parsed = parse_raw(input);
-		// The lambda env OWNS its owning captures (E1 — a move), so reading
-		// the donor afterwards is the ordinary use-after-move error.
-		expect(parsed.errors.some((e) => e.message.includes("used after move"))).toBe(true);
+		// The lambda env OWNS its mv captures (E1 — a mv), so reading
+		// the donor afterwards is the ordinary use-after-mv error.
+		expect(parsed.errors.some((e) => e.message.includes("used after mv"))).toBe(true);
 	});
 
 	test("a lambda daemon detaches", async () => {

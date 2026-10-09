@@ -103,7 +103,7 @@ pub struct Utf8 {
 
 	// Encode a code point as UTF-8. Out-of-range values and surrogate halves
 	// encode as U+FFFD.
-	pub func encode = (int code_point, move out string) {
+	pub func encode = (int code_point, mv out string) {
 		var int code = code_point
 		if code < 0 || code > 0x10FFFF {
 			code = 0xFFFD

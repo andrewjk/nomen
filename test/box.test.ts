@@ -15,7 +15,7 @@ function check(source: string) {
 }
 
 // STRUCT_PLAN_3 Phase B B2 — Box<T>: the cycle-breaking, stable-address
-// shape for owning structs. A Box is one pointer at runtime (the wrapper is
+// shape for mv structs. A Box is one pointer at runtime (the wrapper is
 // compiler-generated): `Box<T>?` is the natural null slot, construction
 // moves the value in, destroy reclaims the pointee, and access through the
 // box is transparent (`box.f` → the pointee's `f`, rewritten at check time).
@@ -23,7 +23,7 @@ function check(source: string) {
 describe("Box: checker", () => {
 	test("an inline containment cycle is rejected, naming the fix", () => {
 		const input = `
-owning struct Node {
+mv struct Node {
 	var int value
 	var Node next
 }
@@ -40,7 +40,7 @@ owning struct Node {
 
 	test("a Box field breaks the cycle (accepted)", () => {
 		const input = `
-owning struct Node {
+mv struct Node {
 	var int value
 	var Box<Node>? next
 }
@@ -48,13 +48,13 @@ owning struct Node {
 		expect(check(input)).toEqual([]);
 	});
 
-	test("a bare Box binding copy is an error (owning)", () => {
+	test("a bare Box binding copy is an error (mv)", () => {
 		const input = `
-owning struct Node {
+mv struct Node {
 	var int value
 }
 var Node n = Node(1, null)
-var Box<Node> h = Box<Node>(move n)
+var Box<Node> h = Box<Node>(mv n)
 var Box<Node> h2 = h
 `;
 		const errors = check(input);
@@ -63,9 +63,9 @@ var Box<Node> h2 = h
 		expect(errors.some((e) => e.message.includes("'h' is aliased"))).toBe(true);
 	});
 
-	test("a bare Box param is an error (move or ref)", () => {
+	test("a bare Box param is an error (mv or ref)", () => {
 		const input = `
-owning struct Node {
+mv struct Node {
 	var int value
 }
 func take = (Box<Node> h) {
@@ -73,7 +73,7 @@ func take = (Box<Node> h) {
 }
 `;
 		const errors = check(input);
-		expect(errors.some((e) => e.message.includes("must be declared `move`"))).toBe(true);
+		expect(errors.some((e) => e.message.includes("must be declared `mv`"))).toBe(true);
 	});
 
 	test("a Box field in a bare struct triggers the Copyable verifier", () => {
@@ -90,13 +90,13 @@ describe("Box: runtime (both backends)", () => {
 	test("construction, transparent read, and teardown are audit-clean", async () => {
 		const input = `
 import System
-owning struct Node {
+mv struct Node {
 	var int value
 	var Box<Node>? next
 }
 pub func main = () {
 	var Node n = Node(7, null)
-	var Box<Node> b = Box<Node>(move n)
+	var Box<Node> b = Box<Node>(mv n)
 	Console.write_line("\\{b.value}")
 }
 `;
@@ -111,13 +111,13 @@ pub func main = () {
 	test("a nullable box returned from an accessor reads through transparently", async () => {
 		const input = `
 import System
-owning struct Node {
+mv struct Node {
 	var int value
 }
-owning struct Store {
+mv struct Store {
 	var List<Box<Node>> items = List<Box<Node>>()
-	func add = (ref self, move Box<Node> n) {
-		self.items.push(move n)
+	func add = (ref self, mv Box<Node> n) {
+		self.items.push(mv n)
 	}
 	func get = (ref self, int i, out Box<Node>?) {
 		if i < self.items.length {
@@ -129,9 +129,9 @@ owning struct Store {
 pub func main = () {
 	var Store s = Store()
 	var Node a = Node(7)
-	s.add(Box<Node>(move a))
+	s.add(Box<Node>(mv a))
 	var Node b = Node(9)
-	s.add(Box<Node>(move b))
+	s.add(Box<Node>(mv b))
 	Console.write_line("\\{s.get(1).value}")
 }
 `;
@@ -146,16 +146,16 @@ pub func main = () {
 	test("a boxed chain reads through two levels of transparency", async () => {
 		const input = `
 import System
-owning struct Node {
+mv struct Node {
 	var int value
 	var Box<Node>? next
 }
 pub func main = () {
 	var Node inner = Node(20, null)
-	var Box<Node>? outer_next = Box<Node>(move inner)
+	var Box<Node>? outer_next = Box<Node>(mv inner)
 	var Node head_node = Node(10, null)
-	var Box<Node> head = Box<Node>(move head_node)
-	head.__value.next = move outer_next
+	var Box<Node> head = Box<Node>(mv head_node)
+	head.__value.next = mv outer_next
 	Console.write_line("\\{head.value}")
 	Console.write_line("\\{head.next.value}")
 }

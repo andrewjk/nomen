@@ -44,7 +44,7 @@ trait Adder {
   func add = (self, int n, out int)
 }
 
-owning struct Count: Adder {
+mv struct Count: Adder {
   var int value = 10
   func add = (self, int n, out int) {
     return self.value + n
@@ -85,7 +85,7 @@ trait Named {
   var string name
 }
 
-owning struct Alice: Named {
+mv struct Alice: Named {
   var string name = "Alice"
 }
 
@@ -101,11 +101,11 @@ trait Speaker {
   func speak = (out int)
 }
 
-owning struct Dog: Speaker {
+mv struct Dog: Speaker {
   func speak = (out int) { return 1 }
 }
 
-owning struct Cat: Speaker {
+mv struct Cat: Speaker {
   func speak = (out int) { return 2 }
 }
 
@@ -121,7 +121,7 @@ Console.write("\\{code(Dog())}\\{code(Cat())}")
 	test("self method returning string, dispatched through trait type, cleans up", async () => {
 		// A class conforming to a trait whose `self` method returns a string,
 		// routed through a trait-typed parameter, must not abort at cleanup.
-		// The dispatched method returns a borrow of an owning field (self.name),
+		// The dispatched method returns a borrow of a mv field (self.name),
 		// so the caller must NOT free the result — doing so frees the field's
 		// storage (or a static literal) and crashes on aarch64 / leaks on C.
 		const input = `
@@ -129,7 +129,7 @@ trait Speaker {
   func speak = (self, out string)
 }
 
-owning struct Dog: Speaker {
+mv struct Dog: Speaker {
   var string name
   func speak = (self, out string) {
     return self.name.copy()
@@ -157,7 +157,7 @@ Console.write("\\ndone")
 		// that returns a string field. Same borrow-vs-own classification issue
 		// — the wrapper's caller must not free the borrowed field pointer.
 		const input = `
-owning struct Dog {
+mv struct Dog {
   var string name
   func speak = (self, out string) {
     return self.name.copy()

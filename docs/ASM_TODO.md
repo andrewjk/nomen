@@ -52,7 +52,7 @@ landed; PLAN_7's pidigits target is met-or-structurally-accounted
   calls. **Scoped 2026-10-04 — paused, may be affected by planned ownership
   work.** The shape: replace the blanket drop with a ROOT-SET drop — a call
   invalidates entries whose root segment is the receiver's root or the root
-  of a `ref`/`var`/`move` argument (by-value struct args can't reach the
+  of a `ref`/`var`/`mv` argument (by-value struct args can't reach the
   caller's buffers; extern calls stay fully opaque). The core change is
   small (~30–50 lines in the two call builders); the risk is the soundness
   surface: (1) the ownership/borrow rules must guarantee a cached

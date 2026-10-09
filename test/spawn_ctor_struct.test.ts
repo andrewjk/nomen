@@ -7,12 +7,12 @@ import build_and_check_output from "./build_and_check_output";
 const system = get_library("core");
 
 // STRUCT_PLAN_3 Phase R, tranche 1: the `#spawn` construction hook on a
-// VALUE-STRUCT spawnable (an owning struct). The construction was
+// VALUE-STRUCT spawnable (a mv struct). The construction was
 // class-shaped in both backends — the C statement expression yielded a
 // heap pointer and the aarch64 helper returned a malloc'd instance — which
 // crashed against the inline value the declaration side types. The
 // value-struct construction yields the instance itself (C) / writes it
-// through the sret pointer (aarch64), so an owning struct can carry the
+// through the sret pointer (aarch64), so a mv struct can carry the
 // launch surface `class` used to monopolize.
 
 // A minimal user spawnable: the construction packs the machinery, `start`
@@ -24,14 +24,14 @@ const system = get_library("core");
 const SPAWNABLE = `
 import System
 
-owning pub struct Job {
+mv pub struct Job {
 	pub var uint64 task = 0
 	pub var uint64 result_slot = 0
 	pub var uint64 cancel_flag = 0
 	pub var uint64 future = 0
 	#spawn = () {
 	}
-	pub func start = (ref self, move out Task<uint64>) {
+	pub func start = (ref self, mv out Task<uint64>) {
 		Task.future_set_refs(self.future, 2)
 		Task.pool_submit(self.task)
 		var t = Task<uint64>()
@@ -56,7 +56,7 @@ owning pub struct Job {
 }
 `;
 
-describe("spawn construction on an owning struct (Phase R)", () => {
+describe("spawn construction on a mv struct (Phase R)", () => {
 	test("deferred-call form constructs, starts, and joins", async () => {
 		const input = `
 ${SPAWNABLE}
@@ -107,14 +107,14 @@ pub func main = () {
 		const input = `
 import System
 
-owning pub struct Greeter {
+mv pub struct Greeter {
 	pub var uint64 task = 0
 	pub var uint64 result_slot = 0
 	pub var uint64 cancel_flag = 0
 	pub var uint64 future = 0
 	#spawn = () {
 	}
-	pub func start = (ref self, move out Task<string>) {
+	pub func start = (ref self, mv out Task<string>) {
 		Task.future_set_refs(self.future, 2)
 		Task.pool_submit(self.task)
 		var t = Task<string>()
@@ -151,18 +151,18 @@ pub func main = () {
 		await build_and_check_output(input, "spawn_struct_string_result", "hi ada\n", true);
 	});
 
-	test("a generic owning-struct spawnable monomorphizes", async () => {
+	test("a generic mv-struct spawnable monomorphizes", async () => {
 		const input = `
 import System
 
-	owning pub struct Job<T> {
+	mv pub struct Job<T> {
 		pub var uint64 task = 0
 		pub var uint64 result_slot = 0
 		pub var uint64 cancel_flag = 0
 		pub var uint64 future = 0
 		#spawn = () {
 		}
-		pub func start = (ref self, move out Task<T>) {
+		pub func start = (ref self, mv out Task<T>) {
 			Task.future_set_refs(self.future, 2)
 			Task.pool_submit(self.task)
 			var t = Task<T>()
@@ -234,13 +234,13 @@ pub func main = () {
 		await build_and_check_output(input, "spawn_struct_expr_receiver", "9\n", true);
 	});
 
-	test("a fresh construction passes to a move param", async () => {
+	test("a fresh construction passes to a mv param", async () => {
 		const input = `
 ${SPAWNABLE}
 func work = (out uint64) {
 	return 9
 }
-func launch = (move Job j, move out Task<uint64>) {
+func launch = (mv Job j, mv out Task<uint64>) {
 	return j.start()
 }
 pub func main = () {
@@ -255,7 +255,7 @@ pub func main = () {
 		const input = `
 import System
 
-owning pub struct Plain {
+mv pub struct Plain {
 	pub var uint64 v = 0
 	pub func #init = (self, uint64 n) {
 		self.v = n

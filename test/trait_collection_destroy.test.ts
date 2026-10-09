@@ -21,7 +21,7 @@ describe("ClassBuffer<Trait> polymorphic destroy (Milestone 1)", () => {
 	test("Buffer<Speaker> field type routes to ClassBuffer_Speaker", async () => {
 		const input = `
 trait Speaker { func speak = (self, out string) }
-owning struct Dog : Speaker { func speak = (self, out string) { return "woof" } }
+mv struct Dog : Speaker { func speak = (self, out string) { return "woof" } }
 
 if true {
 	var List<Speaker> list = List<Speaker>()
@@ -47,7 +47,7 @@ if true {
 	test("List<Speaker> destroys class elements via vtable dispatch", async () => {
 		const input = `
 trait Speaker { func speak = (self, out string) }
-owning struct Dog : Speaker {
+mv struct Dog : Speaker {
 	var string name
 	func speak = (self, out string) { return self.name.copy() }
 	func #destroy = (ref self) {
@@ -57,7 +57,7 @@ owning struct Dog : Speaker {
 
 if true {
 	var List<Speaker> pets = List<Speaker>()
-	pets.push(move Dog("Rex"))
+	pets.push(mv Dog("Rex"))
 }
 Console.write("\\ndone")
 `;
@@ -82,14 +82,14 @@ Console.write("\\ndone")
 		// leak without proper destroy dispatch through the vtable.
 		const input = `
 trait Speaker { func speak = (self, out string) }
-owning struct Dog : Speaker {
+mv struct Dog : Speaker {
 	var string name
 	func speak = (self, out string) { return self.name.copy() }
 }
 
 if true {
 	var List<Speaker> pets = List<Speaker>()
-	pets.push(move Dog("Rex"))
+	pets.push(mv Dog("Rex"))
 }
 Console.write("done")
 `;
@@ -99,14 +99,14 @@ Console.write("done")
 	test("List<Speaker> with multiple conforming classes dispatches each", async () => {
 		const input = `
 trait Speaker { func speak = (self, out string) }
-owning struct Dog : Speaker {
+mv struct Dog : Speaker {
 	var string name
 	func speak = (self, out string) { return self.name.copy() }
 	func #destroy = (ref self) {
 		Console.write("dog " + self.name)
 	}
 }
-owning struct Cat : Speaker {
+mv struct Cat : Speaker {
 	var string name
 	func speak = (self, out string) { return self.name.copy() }
 	func #destroy = (ref self) {
@@ -116,8 +116,8 @@ owning struct Cat : Speaker {
 
 if true {
 	var List<Speaker> pets = List<Speaker>()
-	pets.push(move Dog("Rex"))
-	pets.push(move Cat("Tom"))
+	pets.push(mv Dog("Rex"))
+	pets.push(mv Cat("Tom"))
 }
 Console.write(" done")
 `;

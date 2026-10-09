@@ -5,10 +5,10 @@ import { parse_raw } from "./parse_with_imports";
 
 // CLOSURE.md Phase 3d, ASYNC.md: the spawn sugar's packed env is
 // an OWNING struct. String arguments are duplicated at pack (the env frees
-// its copy through the descriptor's destroy_env), and an owning value-struct
+// its copy through the descriptor's destroy_env), and a mv value-struct
 // argument is copied and `<T>_destroy`ed. `Sendable` gates exactly the
 // SHARED case — a class/trait reference passed as a plain argument aliases
-// the instance — and everything else is exempt: moved arguments (a `move T`
+// the instance — and everything else is exempt: moved arguments (a `mv T`
 // parameter takes exclusive ownership) and copied values. The nursery-borrow
 // exception is retired: a non-Sendable class/trait cannot cross into a task,
 // inside a nursery or out.
@@ -31,13 +31,13 @@ pub func main = () {
 		await build_and_check_output(input, "spawn_env_string", "original\n", true);
 	});
 
-	test("an owning value-struct argument outside a nursery is rejected (R1)", () => {
-		// STRUCT_PLAN_3 N1a R1: an owning value struct passed bare to a spawn
+	test("a mv value-struct argument outside a nursery is rejected (R1)", () => {
+		// STRUCT_PLAN_3 N1a R1: a mv value struct passed bare to a spawn
 		// is a region-checked BORROW inside `async { }` (the join bounds it).
 		// OUTSIDE a nursery there is no join to bound a borrow, and the env
-		// deep-copy is unsound for owning structs (only string fields are
+		// deep-copy is unsound for mv structs (only string fields are
 		// deep-copied — a container field would share its buffer), so the
-		// bare-owning shape is rejected outright. (The pre-tranche shape —
+		// bare-mv shape is rejected outright. (The pre-tranche shape —
 		// a string-only Payload env-copied past its donor's scope — was the
 		// one case the old copy path handled; the compile error now names
 		// the two sound spellings.)
@@ -64,21 +64,21 @@ pub func main = () {
 		expect(parsed.errors.some((e) => e.message.includes("owns heap memory"))).toBe(true);
 	});
 
-	test("a non-Sendable class MOVED in (a move parameter) is exempt", () => {
+	test("a non-Sendable class MOVED in (a mv parameter) is exempt", () => {
 		const input = `import System
 
-pub owning struct Conn {
+pub mv struct Conn {
 	var int id = 0
 }
 
-func work = (move Conn c) {
+func work = (mv Conn c) {
 	Console.write_line(c.id.to_string())
 }
 
 pub func main = () {
 	var Conn c = Conn()
 	c.id = 7
-	var t = Thread(work(move c)).start()
+	var t = Thread(work(mv c)).start()
 	t.wait()
 }
 `;
@@ -87,10 +87,10 @@ pub func main = () {
 		expect(messages.filter((m) => m.includes("not Sendable"))).toEqual([]);
 	});
 
-	test("a bare owning reference inside a nursery is a legal region borrow (R1)", () => {
+	test("a bare mv reference inside a nursery is a legal region borrow (R1)", () => {
 		const input = `import System
 
-pub owning struct Conn {
+pub mv struct Conn {
 	var int id = 0
 }
 
@@ -106,17 +106,17 @@ pub func main = () {
 	}
 }
 `;
-		// STRUCT_PLAN_3 R1: a bare owning arg is a region-checked const
+		// STRUCT_PLAN_3 R1: a bare mv arg is a region-checked const
 		// borrow inside `async { }` — the join bounds it. The class-era
 		// Sendable gate is retired with the class tier.
 		const parsed = parse_raw(input);
 		expect(parsed.errors).toEqual([]);
 	});
 
-	test("a temporary owning argument packs into the task env", () => {
+	test("a temporary mv argument packs into the task env", () => {
 		const input = `import System
 
-pub owning struct Conn {
+pub mv struct Conn {
 	var int id = 0
 }
 
@@ -138,7 +138,7 @@ pub func main = () {
 	test("a non-Sendable class argument outside a nursery is rejected", () => {
 		const input = `import System
 
-pub owning struct Conn {
+pub mv struct Conn {
 	var int id = 0
 }
 
@@ -161,11 +161,11 @@ pub func main = () {
 	test("a moved argument to a daemon is the sanctioned spelling", () => {
 		const input = `import System
 
-pub owning struct Conn {
+pub mv struct Conn {
 	var int id = 0
 }
 
-func work = (move Conn c) {
+func work = (mv Conn c) {
 	Console.write_line(c.id.to_string())
 }
 
@@ -173,11 +173,11 @@ pub func main = () {
 	var Conn c = Conn()
 	c.id = 7
 	async {
-		Thread(work(move c)).detach()
+		Thread(work(mv c)).detach()
 	}
 }
 `;
-		// N2/R4: a daemon owns its captures — `move` transfers the instance;
+		// N2/R4: a daemon owns its captures — `mv` transfers the instance;
 		// the env destroys it when the daemon ends.
 		const parsed = parse_raw(input);
 		expect(parsed.errors).toEqual([]);

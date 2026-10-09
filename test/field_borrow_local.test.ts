@@ -11,7 +11,7 @@ import build_and_check_output from "./build_and_check_output";
 describe("borrowed field-read string locals", () => {
 	test("kept across continue and returned", async () => {
 		const input = `
-owning struct Attr {
+mv struct Attr {
 	var string value = ""
 }
 

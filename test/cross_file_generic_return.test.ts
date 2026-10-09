@@ -24,7 +24,7 @@ const system = get_library(path.resolve(import.meta.dirname, "../core"));
 
 const callee_file = `
 // file://src/combined.nm
-pub owning struct Diff {
+pub mv struct Diff {
 	var moved = false
 }
 
@@ -33,7 +33,7 @@ pub func combined = (string a, string b, out List<Diff>) {
 	if a == b {
 		var Diff e = Diff()
 		e.moved = true
-		d.push(move e)
+		d.push(mv e)
 	}
 	return d
 }

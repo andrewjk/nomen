@@ -157,9 +157,9 @@ pub struct File {
 	}
 
 	// Read every byte from the current position to EOF and return it. Sets
-	// `eof` and `error`. Declared `move out string`: the raw body mallocs a
+	// `eof` and `error`. Declared `mv out string`: the raw body mallocs a
 	// fresh buffer and hands ownership to the caller.
-	func raw_read_all = (ref self, move out string) {
+	func raw_read_all = (ref self, mv out string) {
 		```
 		#arch: c
 		FILE *f = (FILE*)(unsigned long long)self->handle;
@@ -272,8 +272,8 @@ pub struct File {
 
 	// Read up to the next '\n' (the newline is not included). Sets `eof`
 	// when the end of the file is reached and `error` on failure. The raw
-	// body mallocs a fresh buffer — `move out string` transfers it.
-	func raw_read_line = (ref self, move out string) {
+	// body mallocs a fresh buffer — `mv out string` transfers it.
+	func raw_read_line = (ref self, mv out string) {
 		```
 		#arch: c
 		FILE *f = (FILE*)(unsigned long long)self->handle;
@@ -416,8 +416,8 @@ pub struct File {
 
 	// Read up to `size` bytes from the current position. Sets `eof` if fewer
 	// than `size` bytes remain and `error` on failure. The raw body mallocs a
-	// fresh buffer — `move out string` transfers it.
-	func raw_read_chunk = (ref self, int size, move out string) {
+	// fresh buffer — `mv out string` transfers it.
+	func raw_read_chunk = (ref self, int size, mv out string) {
 		```
 		#arch: c
 		FILE *f = (FILE*)(unsigned long long)self->handle;

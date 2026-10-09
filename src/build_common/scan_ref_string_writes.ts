@@ -89,7 +89,7 @@ export function scan_ref_param_string_field_may_writes(
  * fields are uniformly heap from construction (the ctor strdup'd the seed,
  * every store strdups), so the dup's "make it heap" job is already done and
  * the dup would only ORPHAN the current heap value (a leak per call). The
- * owning store path reclaims the displaced value itself and the owner's
+ * mv store path reclaims the displaced value itself and the owner's
  * scope-exit destroy frees the final copy unconditionally — no records, no
  * dup.
  */

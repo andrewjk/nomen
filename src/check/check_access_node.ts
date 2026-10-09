@@ -79,10 +79,10 @@ export default function check_access_node(node: AccessNode, status: CheckStatus)
 	// `Thread(fn(x)).detach()` — the daemon form owns its captures
 	// (STRUCT_PLAN_3 N2/R4): a shared class/trait argument to a detached task
 	// has no join to bound it (the daemon outlives every scope), so the
-	// chained construction's non-`move` shared-reference arguments are
+	// chained construction's non-`mv` shared-reference arguments are
 	// rejected here, at the detach boundary. A construction stored in a
 	// variable and detached later is not flow-tracked (recorded gap).
-	// MUST run before the owning-struct receiver hoist below — that hoist
+	// MUST run before the mv-struct receiver hoist below — that hoist
 	// replaces the construction with a temp value, hiding the ctor node this
 	// rule inspects.
 	if (
@@ -96,7 +96,7 @@ export default function check_access_node(node: AccessNode, status: CheckStatus)
 		enforce_detach_owns_captures(node.target as FunctionCallNode, status);
 	}
 
-	// A call whose result is an owning struct (e.g. `build_norm(units).length`)
+	// A call whose result is a mv struct (e.g. `build_norm(units).length`)
 	// must not stay inline as the receiver: the returned struct's heap
 	// resources (container buffers, class fields) are reclaimed by a
 	// variable's scope-exit destroy, and an uncaptured temporary has none —
@@ -128,7 +128,7 @@ export default function check_access_node(node: AccessNode, status: CheckStatus)
 	}
 
 	// Same lifetime gap for an OWNED CLASS result used inline as the receiver
-	// (`Thread(fn()).start().result()`): the `move out T` method handed the
+	// (`Thread(fn()).start().result()`): the `mv out T` method handed the
 	// caller a fresh instance, and as a bare receiver it never reaches a
 	// `#destroy` — for a `Task<T>` handle that destroy IS the future release
 	// (result slot, cancel flag, closure, env all leak with it). Hoist the
@@ -173,7 +173,7 @@ export default function check_access_node(node: AccessNode, status: CheckStatus)
 				if (af.destructure_move) {
 					add_error(
 						status,
-						`move destructuring requires a tuple or struct (an array element has no field storage to revalidate)`,
+						`mv destructuring requires a tuple or struct (an array element has no field storage to revalidate)`,
 						node.start,
 					);
 					return false;
@@ -806,7 +806,7 @@ function check_access_function_node(
 		return false;
 	}
 
-	// `List<T>.copy()` deep-copies by copying each element by value (owning
+	// `List<T>.copy()` deep-copies by copying each element by value (mv
 	// element types get independent heap copies via Buffer's deep-copy-on-
 	// store). For a class/trait element type the copy would silently share
 	// every stored instance between the source and the copy — each list's
@@ -831,7 +831,7 @@ function check_access_function_node(
 				status,
 				`List<${elem_name}>.copy() would share the stored ${elem_name} instances between ` +
 					`the source and the copy — each list frees them on destroy (a double free). ` +
-					`Nomen has no auto-clone: keep one owning list and index into it, ` +
+					`Nomen has no auto-clone: keep one mv list and index into it, ` +
 					`or clone the elements into fresh instances.`,
 				node.start,
 			);
@@ -843,7 +843,7 @@ function check_access_function_node(
 		node.mangled_name = mangled_label(func, struct.name);
 	}
 
-	// A `move out T` method transfers ownership of its result to the caller
+	// A `mv out T` method transfers ownership of its result to the caller
 	// (it's an owned value, not a borrow). Record that on the node so the
 	// borrow checker treats it as non-borrowed and the build anchors it.
 	if (func.returns_move) {
@@ -1120,7 +1120,7 @@ function resolve_type_from_expr(
 // Whether a function body contains a `return <value>` statement (i.e. it has
 // an inferred return type to discover). Bare `return` / void functions have no
 // return type to infer, so we leave them alone. A visited set guards against
-// back-references (e.g. a node's `scope` pointing to the owning struct, which
+// back-references (e.g. a node's `scope` pointing to the mv struct, which
 // in turn holds this function).
 function returns_value(node: BaseNode, visited: Set<BaseNode> = new Set()): boolean {
 	if (visited.has(node)) {

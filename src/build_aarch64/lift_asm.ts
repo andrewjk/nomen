@@ -562,7 +562,7 @@ function branch_target_token(op: string, rest: string): string | null {
 }
 
 /** sp effect of one instruction: a numeric delta, "unknown", or null when
- *  the instruction does not move sp. Also reports branches and rets. */
+ *  the instruction does not mv sp. Also reports branches and rets. */
 interface LineEffect {
 	delta: SpDelta | null;
 	branch: string | null; // target token

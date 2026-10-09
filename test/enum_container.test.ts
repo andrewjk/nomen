@@ -2,15 +2,15 @@ import { test } from "vite-plus/test";
 
 import build_and_check_output from "./build_and_check_output";
 
-// Enums with owning (string) payloads as generic-container element types:
+// Enums with mv (string) payloads as generic-container element types:
 // Buffer_<Enum> slots own independent deep copies (store/replace/load/destroy),
 // List<Enum> builds on top, and a match binding that escapes its branch returns
-// an owning copy. Audit is ON in build_and_check_output, so any leak / double
+// a mv copy. Audit is ON in build_and_check_output, so any leak / double
 // free / use-after-free fails the test.
 
 test("List<enum> reads an element back twice", async () => {
 	const input = `
-owning enum Maybe {
+mv enum Maybe {
   case some(string value)
   case none
 }
@@ -36,7 +36,7 @@ match xs.at_or(0, Maybe.none) {
 
 test("List<enum> element bound to a local then matched", async () => {
 	const input = `
-owning enum Maybe {
+mv enum Maybe {
   case some(string value)
   case none
 }
@@ -54,7 +54,7 @@ match m {
 
 test("List<enum> set replaces the displaced payload", async () => {
 	const input = `
-owning enum Maybe {
+mv enum Maybe {
   case some(string value)
   case none
 }
@@ -76,7 +76,7 @@ match xs.at_or(0, Maybe.none) {
 
 test("List<enum> pop transfers the payload out", async () => {
 	const input = `
-owning enum Maybe {
+mv enum Maybe {
   case some(string value)
   case none
 }
@@ -94,7 +94,7 @@ match m {
 
 test("Buffer<enum> direct store / load / destroy", async () => {
 	const input = `
-owning enum Maybe {
+mv enum Maybe {
   case some(string value)
   case none
 }
@@ -117,7 +117,7 @@ match b.load(1) {
 
 test("a match binding escapes its branch through a return", async () => {
 	const input = `
-owning enum Maybe {
+mv enum Maybe {
   case some(string value)
   case none
 }

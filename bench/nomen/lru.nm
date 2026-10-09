@@ -6,7 +6,7 @@ import System
 // HashMap): move_to_end and eviction are O(1) instead of the O(n) shift the
 // order-array version paid on every access.
 
-owning struct LRU {
+mv struct LRU {
 	var size = 0
 	var keys = Map<int, int>()
 	var nkeys = Buffer<int>()

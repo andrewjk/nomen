@@ -16,15 +16,15 @@
 import Time
 
 // Random is an OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 3 — the shape
-// menu): bindings move instead of alias. The state is a bare uint64, so the
-// value is freely movable (and trivially copyable in principle — `owning`
+// menu): bindings mv instead of alias. The state is a bare uint64, so the
+// value is freely movable (and trivially copyable in principle — `mv`
 // is the uniform spelling for the launch/IO primitives; a `ref Random`
 // parameter is the read-only borrow that keeps one stream per binding).
 
 /**
  * A fast splitmix64 pseudo-random number generator
  **/
-pub owning struct Random {
+pub mv struct Random {
 	// The raw 64-bit generator state (seeded from the wall clock by the
 	// no-arg constructor, or an explicit seed for reproducible sequences).
 	pub var uint64 state = 0

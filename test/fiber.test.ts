@@ -31,7 +31,7 @@ pub func main = () {
 		// Cooperative mode defers execution to a would-block wait: joining
 		// f1 drains the shared queue, interleaving both fibers
 		// deterministically. The block joins both fibers; ch crosses as a
-		// checked region borrow (Phase R tranche 3: Channel is an owning
+		// checked region borrow (Phase R tranche 3: Channel is a mv
 		// struct — the join bounds the borrow).
 		var uint64 r1 = f1.result_uint64()
 		var uint64 r2 = f2.result_uint64()
@@ -53,9 +53,9 @@ pub func main = () {
 		// The fiber calls result_uint64() on a Thread task: instead of
 		// blocking its worker, the fiber parks on the future; when the thread
 		// task completes, the fiber is scheduled again and finishes.
-		// Phase R tranche 2: Task is an owning struct — the handle MOVES into
+		// Phase R tranche 2: Task is a mv struct — the handle MOVES into
 		// the fiber (the fiber owns the handle and destroys it when done).
-		// Phase R tranche 3: Channel is an owning struct too, and this spawn
+		// Phase R tranche 3: Channel is a mv struct too, and this spawn
 		// shares it — the nursery is the region proof: the block borrows ch
 		// (the join bounds it) and does the receive inside.
 		const input = `
@@ -63,7 +63,7 @@ import System
 
 func compute = (uint64 n) => n + 1
 
-func waiter = (Channel ch, move Task<uint64> handle) {
+func waiter = (Channel ch, mv Task<uint64> handle) {
 	var uint64 r = handle.result_uint64()
 	ch.send(r)
 }
@@ -72,7 +72,7 @@ pub func main = () {
 	var Channel ch = Channel()
 	async {
 		var t = Thread(compute(41)).start()
-		var f = Fiber(waiter(ch, move t)).start()
+		var f = Fiber(waiter(ch, mv t)).start()
 		// The fiber parks on the Thread task's result, wakes when it
 		// completes, and sends it through the channel.
 		var uint64 got = ch.receive()
@@ -255,11 +255,11 @@ pub func main = () {
 });
 
 describe("Fiber checking", () => {
-	test("a bare owning fiber arg outside a nursery is rejected (R1)", () => {
+	test("a bare mv fiber arg outside a nursery is rejected (R1)", () => {
 		const input = `
 import System
 
-pub owning struct Counter {
+pub mv struct Counter {
 	var int count = 0
 }
 
@@ -272,8 +272,8 @@ pub func main = () {
 }
 `;
 		const parsed = parse_raw(input);
-		// The Sendable gate is class-era scaffolding; owning args take the
-		// R1 region rules (wrap in `async { }` or move).
+		// The Sendable gate is class-era scaffolding; mv args take the
+		// R1 region rules (wrap in `async { }` or mv).
 		expect(parsed.errors.some((e) => e.message.includes("owns heap memory"))).toBe(true);
 	});
 

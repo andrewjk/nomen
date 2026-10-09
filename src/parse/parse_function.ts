@@ -213,11 +213,11 @@ export default function parse_function(
 function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: ParseStatus) {
 	const param_start = get_index(status);
 
-	// `move out TYPE` — an ownership-transferring (owned) return. Distinguished
-	// from a `move TYPE name` parameter by the `out` that follows `move`.
-	const returns_move = peek_current(status) === "move" && peek_next(status) === "out";
+	// `mv out TYPE` — an ownership-transferring (owned) return. Distinguished
+	// from a `mv TYPE name` parameter by the `out` that follows `mv`.
+	const returns_move = peek_current(status) === "mv" && peek_next(status) === "out";
 	if (returns_move) {
-		accept("move", status);
+		accept("mv", status);
 	}
 
 	if (accept("out", status)) {
@@ -254,7 +254,7 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 	} else if (accept("cp", status)) {
 		param.declaration = "var";
 		param.is_copied = true;
-	} else if (accept("move", status)) {
+	} else if (accept("mv", status)) {
 		param.declaration = "var";
 		param.is_moved = true;
 	}
@@ -286,10 +286,10 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 		status.tokens[status.i]?.value === "self" &&
 		(parent.node_type === "struct" || parent.node_type === "trait" || parent.node_type === "extend")
 	) {
-		// `var self` / `cp self` / `move self` are rejected: use `ref self`
+		// `var self` / `cp self` / `mv self` are rejected: use `ref self`
 		// for mutation (visible to the caller) or bare `self` (read-only; in
 		// `#init` it may assign fields). A declaration keyword consumed above
-		// (var/cp/move all set declaration="var") is detectable here because a
+		// (var/cp/mv all set declaration="var") is detectable here because a
 		// bare `self` is still "const" at this point — the `#init` override
 		// below hasn't run yet, so this can't be done later in the check pass.
 		if (param.declaration === "var") {

@@ -10,7 +10,7 @@ export default function parse_function_call_parameter(
 	status: ParseStatus,
 ) {
 	const is_ref = accept("ref", status);
-	const is_move = accept("move", status);
+	const is_move = accept("mv", status);
 	const param = parse_expression(status);
 	node.params.push(param);
 	const param_index = node.params.length - 1;

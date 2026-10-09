@@ -21,24 +21,24 @@ struct Transaction {
 });
 
 describe("readme: ownership and borrows", () => {
-	test("move owning field and move owning parameter", () => {
+	test("mv mv field and mv mv parameter", () => {
 		const input = `
-owning struct Box {
+mv struct Box {
     var int value
 }
 
-owning struct Holder {
+mv struct Holder {
     var Box content
 }
 
-func take = (move Box b) {
+func take = (mv Box b) {
     Console.write("\\{b.value}")
 }
 
 pub func main = () {
-    var h = Holder(move Box(7))
+    var h = Holder(mv Box(7))
     var b = Box(42)
-    take(move b)
+    take(mv b)
 }
 `;
 		expect(compile_module(input)).toEqual([]);

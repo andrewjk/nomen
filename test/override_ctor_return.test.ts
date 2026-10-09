@@ -17,14 +17,14 @@ describe("override-constructor return normalization", () => {
 		const input = `
 import System
 
-owning struct Pair {
+mv struct Pair {
 	var string a = "default"
 	var string b
 }
 
 func make_pair = (string seed, out Pair) {
 	var string mine = "heap" + "!"
-	return [ .. Pair(move seed), a = mine ]
+	return [ .. Pair(mv seed), a = mine ]
 }
 
 pub func main = (Init init) {
@@ -40,7 +40,7 @@ pub func main = (Init init) {
 		const input = `
 import System
 
-owning struct Pair {
+mv struct Pair {
 	var string a = "default"
 	var string b
 }
@@ -50,7 +50,7 @@ func fresh = (out string) {
 }
 
 func make_pair = (string seed, out Pair) {
-	return [ .. Pair(move seed), a = fresh() ]
+	return [ .. Pair(mv seed), a = fresh() ]
 }
 
 pub func main = (Init init) {
@@ -62,18 +62,18 @@ pub func main = (Init init) {
 		await build_and_check_output(input, "override_ctor_fresh_result", "a=fresh!\nb=x\n", true);
 	});
 
-	test("override via move transfers the local's buffer", async () => {
+	test("override via mv transfers the local's buffer", async () => {
 		const input = `
 import System
 
-owning struct Pair {
+mv struct Pair {
 	var string a = "default"
 	var string b
 }
 
 func make_pair = (string seed, out Pair) {
 	var string mine = "heap" + "!"
-	return [ .. Pair(move seed), a = move mine ]
+	return [ .. Pair(mv seed), a = mv mine ]
 }
 
 pub func main = (Init init) {
@@ -89,14 +89,14 @@ pub func main = (Init init) {
 		const input = `
 import System
 
-owning struct Pair {
+mv struct Pair {
 	var string a = "default"
 	var string b
 }
 
 func make_base = (string seed, out Pair) {
 	var string s = seed + "-base"
-	return Pair(move s)
+	return Pair(mv s)
 }
 
 func make_override = (string seed, out Pair) {
@@ -117,14 +117,14 @@ pub func main = (Init init) {
 		const input = `
 import System
 
-owning struct Pair {
+mv struct Pair {
 	var string a = "default"
 	var string b
 }
 
 func make_base = (string seed, out Pair) {
 	var string s = seed + "-base"
-	return Pair(move s)
+	return Pair(mv s)
 }
 
 pub func main = (Init init) {
@@ -145,14 +145,14 @@ pub func main = (Init init) {
 		const input = `
 import System
 
-owning struct Pair {
+mv struct Pair {
 	var string a = "default"
 	var string b
 }
 
 func make_pair = (string seed, out Pair) {
 	var string s = seed + "-s"
-	return Pair(move s)
+	return Pair(mv s)
 }
 
 pub func main = (Init init) {
@@ -167,14 +167,14 @@ pub func main = (Init init) {
 		const input = `
 import System
 
-owning struct Pair {
+mv struct Pair {
 	var string a = "default"
 	var string b
 }
 
 func make_pair = (string seed, out Pair) {
 	var string mine = "heap" + "!"
-	return [ .. Pair(move seed), a = mine ]
+	return [ .. Pair(mv seed), a = mine ]
 }
 
 pub func main = (Init init) {

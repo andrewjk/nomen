@@ -49,7 +49,7 @@ pub func main = () {}
 test("fused flag with a register home takes cset directly, no dead init", () => {
 	const code = compile(CARRY_LOOP);
 	const fn = code.slice(code.indexOf("\ncarries:"), code.indexOf("\n_main:"));
-	// The cset lands in a promoted register (not x0), with no staging move.
+	// The cset lands in a promoted register (not x0), with no staging mv.
 	// Since tranche J the fused carry compare rides the declare's own
 	// `adds` flags: the condition code is `hs` (the add's carry-out), not
 	// `lo` from a cmp.
@@ -121,13 +121,13 @@ pub func main = () {}
 	const fn = code.slice(code.indexOf("\nbumps:"), code.indexOf("\n_main:"));
 	// imm12-range literals fold into the register home; 4096 does not.
 	// The first fold may read the initializer's staging register directly
-	// (copy coalescing substitutes the promoted home's defining move):
+	// (copy coalescing substitutes the promoted home's defining mv):
 	// `add x12, x0, #1` instead of `add x12, x12, #1`.
 	expect(fn).toMatch(/add x(?:1[2-5]|2[0-8]), x(?:\d+), #1\n/);
 	expect(fn).toMatch(/add x(?:1[2-5]|2[0-8]), x(?:1[2-5]|2[0-8]), #4095\n/);
 	expect(fn).toMatch(/sub x(?:1[2-5]|2[0-8]), x(?:1[2-5]|2[0-8]), #2\n/);
 	expect(fn).not.toContain("add x(?:1[2-5]|2[0-8]), x(?:1[2-5]|2[0-8]), #4096");
-	// 4096 keeps the generic compound sequence (a load or move of the
+	// 4096 keeps the generic compound sequence (a load or mv of the
 	// literal, then add, then store back to the home).
 	expect(fn).toMatch(/#4096/);
 });
@@ -220,7 +220,7 @@ pub func main = () {}
 `);
 	const fn = code.slice(code.indexOf("\ndist:"), code.indexOf("\n_main:"));
 	// The 5-instruction crossing (fmov x0, dA; fmov d0, x0; fsqrt; fmov
-	// x0, d0; fmov dB, x0) collapses: the sqrt's arg and result move
+	// x0, d0; fmov dB, x0) collapses: the sqrt's arg and result mv
 	// d↔d directly — no staging through x0, no self-moves.
 	expect(fn).toMatch(/fsqrt d[0-9]+, d[0-9]+\n/);
 	// No d↔d self-moves (the rewritten-from x0 staging degenerate).

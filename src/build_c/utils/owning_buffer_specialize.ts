@@ -7,7 +7,7 @@ import type BuildStatus from "../BuildStatus.ts";
 
 /**
  * Detect whether a monomorphized struct is a `Buffer_<T>` whose element type
- * `T` is a value struct that owns heap data (string fields, owning nested
+ * `T` is a value struct that owns heap data (string fields, mv nested
  * struct fields). Buffer<T> for such elements cannot use the plain
  * shallow-copy primitives (store_T/replace_T/#destroy) — the slot and the
  * source would share owned pointers, so per-element destroy would double-free
@@ -18,7 +18,7 @@ import type BuildStatus from "../BuildStatus.ts";
  *  - #destroy: per-element T_destroy + free slab.
  *
  * Class/trait elements route to ClassBuffer (which handles per-element
- * destroy/frees soundly); trivially-destructible value structs (no owning
+ * destroy/frees soundly); trivially-destructible value structs (no mv
  * fields) use the plain Buffer primitives unchanged.
  *
  *
@@ -30,9 +30,9 @@ import type BuildStatus from "../BuildStatus.ts";
  * `replace_T` frees the old slot then strdup's, and `#destroy` frees each slot
  * then the slab. `move_T`/`pop` then return an already-heap pointer directly
  * (no return-site strdup). The caller retains ownership of the ORIGINAL string
- * it pushed (string move args are not spliced — see check_function_call), so
+ * it pushed (string mv args are not spliced — see check_function_call), so
  * there is a single owner on each side: the buffer owns its strdup'd copies,
- * the caller owns the original. See ROADBLOCKS "List<string> owning
+ * the caller owns the original. See ROADBLOCKS "List<string> mv
  * extraction".
  */
 export function owning_buffer_element(
@@ -47,7 +47,7 @@ export function owning_buffer_element(
 	if (!elem || elem.is_class) return undefined;
 	// Only own-string-field value structs need specialization. A struct with
 	// only class fields would already route to ClassBuffer; a struct with no
-	// owning fields (trivially destructible) uses the plain primitives.
+	// mv fields (trivially destructible) uses the plain primitives.
 	if (!has_owning_fields(elem, status)) return undefined;
 	return elem;
 }
@@ -57,7 +57,7 @@ function has_owning_fields(node: StructNode, status: BuildStatus): boolean {
 	// LOCAL scope-exit (a string-only local's strings are borrowed, not owned).
 	// A Buffer element is different: the slot OWNS strdup'd strings (deep-copy
 	// store_T), so a string-only struct (e.g. JsonNode with its `text` field)
-	// must be recognized as owning too — mirroring the aarch64 backend's
+	// must be recognized as mv too — mirroring the aarch64 backend's
 	// `has_string_fields`. Without this the two backends diverge (aarch64
 	// deep-copies, C stays shallow → `free` of a literal crashes).
 	if (struct_needs_destroy(node, status)) return true;
@@ -65,8 +65,8 @@ function has_owning_fields(node: StructNode, status: BuildStatus): boolean {
 }
 
 /**
- * The names of Buffer methods that get specialized for owning value structs.
- * load_T IS specialized when the element has owning container fields (a
+ * The names of Buffer methods that get specialized for mv value structs.
+ * load_T IS specialized when the element has mv container fields (a
  * `List<T>` member): the returned copy must own independent containers, or
  * the caller's scope-exit destroy would free the slot's buffer (double-free
  * at container teardown). String fields stay BORROWED on load (struct-local
@@ -87,9 +87,9 @@ export const OWNING_BUFFER_METHODS = new Set([
 ]);
 
 /**
- * Emit the transfer half of owning store_T/replace_T: the slot bytes were
+ * Emit the transfer half of mv store_T/replace_T: the slot bytes were
  * already memcpy'd from the source, so zeroing each owned CONTAINER field
- * of the SOURCE completes the move — the slot is the sole owner, and the
+ * of the SOURCE completes the mv — the slot is the sole owner, and the
  * source's own teardown (when it still runs: an unstamped generic-body
  * local) finds zeroed fields and reclaims nothing. Nested value struct
  * fields recurse so their container leaves are zeroed at their own paths;
@@ -121,7 +121,7 @@ function emit_transfer_owning_fields(
 }
 
 /**
- * Emit the deep-copy half of owning load_T: for each field whose type has a
+ * Emit the deep-copy half of mv load_T: for each field whose type has a
  * monomorphized `copy` helper that yields an independent value (a `List<T>`
  * /`Buffer<T>`/`Map`/`Set` field — `<Mono>_copy` deep-copies the slots or
  * member buffers — or an enum-with-data field whose string payloads
@@ -131,7 +131,7 @@ function emit_transfer_owning_fields(
  * cutover: an OWNING struct's plain string fields are freed unconditionally
  * too (the same unconditional teardown), so they are strdup'd here as well —
  * the loaded copy owns independent bytes and the slot keeps its own. Fields
- * without a copyable shape (class fields, nested owning user structs without
+ * without a copyable shape (class fields, nested mv user structs without
  * a synthesized copy) stay shallow — recorded in FOLLOWUP.md.
  */
 function emit_load_deep_copy_fields(elem: StructNode, dst: string, status: BuildStatus): void {
@@ -236,8 +236,8 @@ export function owning_buffer_is_string_elem(node: StructNode): boolean {
 /**
  * Detect a `Buffer_<E>` whose element is an enum-with-data carrying string
  * payloads. Such a slot owns heap strings exactly like a `Buffer<string>` /
- * owning value struct: `<E>_copy` deep-copies the active case's string
- * payloads, `<E>_free_payloads` reclaims them. Enums whose owning payloads
+ * mv value struct: `<E>_copy` deep-copies the active case's string
+ * payloads, `<E>_free_payloads` reclaims them. Enums whose mv payloads
  * include a class/trait reference are NOT specialized — `<E>_copy` shares
  * those pointers (case construction transfers ownership), so a container slot
  * cannot take an independent copy; such programs retain the pre-existing
@@ -267,7 +267,7 @@ export function owning_buffer_enum_element(
 
 /**
  * Emit a specialized C body for a Buffer method whose element is an
- * enum-with-data owning string payloads. Returns true if the body was
+ * enum-with-data mv string payloads. Returns true if the body was
  * emitted. The signature + opening brace have already been emitted by
  * build_struct_functions; `val` is a by-value enum (enums are not classified
  * as value structs, so they are passed by value — see classify_param).
@@ -283,7 +283,7 @@ export function emit_owning_buffer_enum_body(
 
 	if (func_name === "store") {
 		// Fresh-slot deep copy: slot owns its own payload copies. The source
-		// (a by-value arg) is reclaimed by its own scope — a `move` arg is NOT
+		// (a by-value arg) is reclaimed by its own scope — a `mv` arg is NOT
 		// spliced for enums (see build_function_call_node), so the caller's
 		// auto-free releases it.
 		status.code += `${E}* _slots = ${slots};\n`;
@@ -394,7 +394,7 @@ export function emit_owning_buffer_string_body(func_name: string, status: BuildS
 	}
 
 	if (func_name === "shift") {
-		// shift_T(self, dst, src): move slot src into slot dst — free dst's
+		// shift_T(self, dst, src): mv slot src into slot dst — free dst's
 		// heap buffer, take over src's {ptr, len} wholesale, zero src.
 		// Exactly one slot owns the string afterwards (Map/Set.remove's
 		// backward-shift).
@@ -481,11 +481,11 @@ export function emit_owning_buffer_body(
 
 	if (func_name === "modify") {
 		// modify_T(self, i, f): apply the function to the slot in place.
-		// Per owning field, free the slot's displaced copy and take over the
+		// Per mv field, free the slot's displaced copy and take over the
 		// fn's returned pointer — unless the fn handed the slot's own copy
 		// back (round-trip identity → keep, no free, no re-copy). Scalar and
-		// non-owning struct fields are plain-copied from the returned value.
-		// The fn's returned owning fields must be fresh, null, or identical
+		// non-mv struct fields are plain-copied from the returned value.
+		// The fn's returned mv fields must be fresh, null, or identical
 		// to the corresponding input fields (no cross-field aliasing) — the
 		// same contract `store_T`'s round-trip guard assumes for the dance.
 		status.code += `${Tptr}_slots = ${Tcast}(unsigned long long)self->data;\n`;
@@ -499,7 +499,7 @@ export function emit_owning_buffer_body(
 		// replace_T(self, i, val): destroy the old slot value (it owned
 		// heap memory) — guarded on the constructed stamp (`_vt`), since
 		// the slot may be empty (grown-but-unwritten, or emptied by
-		// move/pop) — then shallow-copy + strdup the new value, and
+		// mv/pop) — then shallow-copy + strdup the new value, and
 		// transfer the new value's owned container fields (zeroed at the
 		// source — the slot took its bytes). B1 cutover: the donor's string
 		// originals are reclaimed too (see store_T).
@@ -513,7 +513,7 @@ export function emit_owning_buffer_body(
 	}
 
 	if (func_name === "shift") {
-		// shift_T(self, dst, src): move slot src into slot dst — destroy dst's
+		// shift_T(self, dst, src): mv slot src into slot dst — destroy dst's
 		// old value (constructed-stamp guarded: dst may be an empty slot), take
 		// over src's bytes wholesale (no deep copy: the moved struct's owned
 		// pointers transfer), and zero src. Exactly one slot owns each heap
@@ -554,7 +554,7 @@ export function emit_owning_buffer_body(
  * breaks the pointer aliasing between the source and the slot so each can be
  * destroyed independently. Nested value struct fields are NOT walked: their
  * string fields stay aliased (the pre-existing convention — a spliced
- * `move` donor has no teardown, so the slot is the sole owner), and their
+ * `mv` donor has no teardown, so the slot is the sole owner), and their
  * container leaves are transferred by `emit_transfer_owning_fields`.
  *
  * `old_expr` (optional) is the slot's PRE-copy value expression. When the
@@ -575,7 +575,7 @@ function emit_deep_copy_fields(
 	for (const field of elem.fields) {
 		if (field.type.is_ref) continue;
 		// A `view T` field owns nothing — the memcpy'd byte copy IS the value
-		// (a non-owning pair); no strdup, no destroy.
+		// (a non-mv pair); no strdup, no destroy.
 		if (field.type.is_view) continue;
 		if (field.type.name === "string" && !field.type.is_array) {
 			const src_field = `${src}${arrow(src)}${field.name}`;
@@ -605,7 +605,7 @@ function arrow(src: string): string {
 }
 
 /**
- * B1 cutover: reclaim the DONOR's plain string fields after an owning
+ * B1 cutover: reclaim the DONOR's plain string fields after a mv
  * store_T/replace_T. The slot took fresh strdups of `val`'s fields, and the
  * donor is a moved argument (spliced from teardown, or a construction temp
  * that never had one) — its uniformly-heap originals would otherwise be
@@ -638,7 +638,7 @@ function emit_reclaim_donor_strings(
 }
 
 /**
- * modify_T's field pass: for each field of the element struct, move the
+ * modify_T's field pass: for each field of the element struct, mv the
  * function's returned value into the slot, reclaiming the displaced heap
  * copy. String fields compare pointer identity against the slot's pre-call
  * value (`old`): equal means the fn handed the slot's own copy back (the
@@ -646,7 +646,7 @@ function emit_reclaim_donor_strings(
  * the slot's copy was displaced — free it, take over the returned pointer
  * (no strdup: with no closures, a lambda's return is fresh heap, a
  * boundary-normalized literal, or derived from its input, so the returned
- * pointer is either uniquely owned or the identity case). Nested owning
+ * pointer is either uniquely owned or the identity case). Nested mv
  * struct fields recurse; every other field is a plain copy.
  */
 function emit_take_over_fields(
@@ -690,7 +690,7 @@ function emit_take_over_fields(
 
 /**
  * modify_T for a Buffer whose element is a TRIVIALLY-copyable value struct
- * (no owning fields — the owning case is handled by emit_owning_buffer_body).
+ * (no mv fields — the mv case is handled by emit_owning_buffer_body).
  * The generic raw body assumes a scalar ABI; a struct element passes the slot
  * by pointer and returns the replacement by value, so the build emits this
  * instead. Returns true if the body was emitted.

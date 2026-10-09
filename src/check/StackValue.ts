@@ -19,7 +19,7 @@ export interface PathBounds {
  * A value (declaration, param etc) that is accessible at the current point
  */
 export default interface StackValue {
-	declaration: "const" | "var" | "move";
+	declaration: "const" | "var" | "mv";
 	name: string;
 	type: Type;
 	/**
@@ -132,7 +132,7 @@ export default interface StackValue {
 	 * True when this struct value's `view T` fields hold borrows taken from
 	 * other variables (see `view_field_owners`). Drives escape checking:
 	 * the instance may not be returned (unless every borrow roots at `self`)
-	 * or assigned to an outer scope, since its bytes carry non-owning slices.
+	 * or assigned to an outer scope, since its bytes carry non-mv slices.
 	 */
 	has_view_borrows?: boolean;
 	/**
@@ -166,13 +166,13 @@ export default interface StackValue {
 	path_bounds?: Map<string, PathBounds>;
 	/**
 	 * True for a function parameter (as opposed to a local declaration). A
-	 * move-capture of a parameter is deferred (the callee's own cleanup still
+	 * mv-capture of a parameter is deferred (the callee's own cleanup still
 	 * runs) — see check/utils/captures.ts.
 	 */
 	is_param?: boolean;
 	/**
-	 * True for a `move T` parameter (owned by the callee). A `move` parameter
-	 * may be move-captured into a closure; the callee's param cleanup then
+	 * True for a `mv T` parameter (owned by the callee). A `mv` parameter
+	 * may be mv-captured into a closure; the callee's param cleanup then
 	 * honours the transfer.
 	 */
 	is_moved?: boolean;
@@ -180,7 +180,7 @@ export default interface StackValue {
 	 * For a func-typed value: true when the slot holds a capturing closure
 	 * (a HEAP env + descriptor, `owned = 1`) rather than a static/capture-free
 	 * descriptor. Such a value is MOVE-ONLY (CLOSURE.md Phase 2c): storing,
-	 * returning, assigning, or move-capturing it invalidates the source.
+	 * returning, assigning, or mv-capturing it invalidates the source.
 	 */
 	owns_closure?: boolean;
 	/**

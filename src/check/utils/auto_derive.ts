@@ -197,7 +197,7 @@ function synthesize_for_struct(struct: StructNode, status: CheckStatus): void {
 		struct.functions.push(build_hash(struct, fields));
 	}
 
-	// A `copy` method for owning value structs — no trait opt-in: the
+	// A `copy` method for mv value structs — no trait opt-in: the
 	// declaration/assignment copy-discipline errors direct users to
 	// `.copy()`, so it must exist wherever it is sound (see
 	// struct_is_copyable).
@@ -258,18 +258,18 @@ function build_hash(struct: StructNode, fields: { name: string; type: Type }[]):
 	return new FunctionNode(-1, "pub", "hash", new Type("uint"), [self_param(struct)], [ret]);
 }
 
-// --- `copy` synthesis (owning value structs) ---
+// --- `copy` synthesis (mv value structs) ---
 
 /**
  * Whether `struct` is eligible for a synthesized `copy` method: a value
  * struct whose every field is independently deep-copyable — direct string
  * fields (strdup'd), scalars/arrays (byte copies), `List<T>` fields whose
  * element is itself deep-copyable (the library `List.copy` deep-copies slots
- * via the owning store contract), and nested copyable structs (recursing
+ * via the mv store contract), and nested copyable structs (recursing
  * through their own `copy`). Class fields, enum-with-data fields (their
  * stores transfer payload ownership), class/trait-carrying `List` elements,
  * and resource-releasing `#destroy`s cannot be deep-copied by synthesis —
- * the copy stays unwritten (move/swap remains the escape hatch) — and a
+ * the copy stays unwritten (mv/swap remains the escape hatch) — and a
  * struct with nothing to deep-copy (no string, `List`, or nested-copyable
  * field) is already soundly byte-copyable, so it needs no method.
  */
@@ -354,7 +354,7 @@ function struct_copy_ctor_args(struct: StructNode): string[] | null {
 
 /** Whether `type` has (or will get) a deep-copy story: a struct with a
  *  synthesized `copy`, a `List<T>` whose element is deep-copyable (the
- *  library `List.copy` deep-copies slots via the owning store contract), or
+ *  library `List.copy` deep-copies slots via the mv store contract), or
  *  a primitive / plain (payload-free) enum. Order-independent: it
  *  re-evaluates the eligibility predicate instead of looking for an
  *  already-synthesized method, so an outer struct nested in the same
@@ -427,7 +427,7 @@ function field_copy_call(type: Type, status: CheckStatus): boolean {
 }
 
 /**
- * Synthesize `pub func copy(self) -> Struct` for owning value structs: a
+ * Synthesize `pub func copy(self) -> Struct` for mv value structs: a
  * fresh `Struct()` whose every field is rewritten from `self` — string
  * field writes strdup the source (the backends' field-write path), nested
  * copyable structs recurse through their own `copy`, everything else byte

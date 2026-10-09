@@ -43,7 +43,7 @@ describe("optimize_asm passes", () => {
 	test("keeps a branch when other code sits before the target label", () => {
 		const asm = ["_f:", "b .Lend", "mov x0, #2", ".Lend:", "ret"].join("\n");
 		const out = optimize_asm(asm);
-		// The move is unreachable and goes away, then the branch-to-next folds.
+		// The mv is unreachable and goes away, then the branch-to-next folds.
 		expect(out).toBe(["_f:", ".Lend:", "ret"].join("\n"));
 	});
 
@@ -158,7 +158,7 @@ describe("optimize_asm passes", () => {
 	test("blank lines and comments inside the pipeline are tolerated", () => {
 		const asm = ["_f:", "mov x0, #1", "", "// comment", "mov x0, x0", "ret"].join("\n");
 		const out = optimize_asm(asm);
-		// The identity move goes; surrounding blanks/comments stay put.
+		// The identity mv goes; surrounding blanks/comments stay put.
 		expect(out).toBe(["_f:", "mov x0, #1", "", "// comment", "ret"].join("\n"));
 	});
 });

@@ -2,10 +2,10 @@ import type BuildStatus from "../build_c/BuildStatus.ts";
 import type StructNode from "../nodes/StructNode.ts";
 
 /**
- * Whether any field (recursively, through nested owning value structs)
- * is an owned `string`. Shared by BOTH backends' owning-Buffer element
+ * Whether any field (recursively, through nested mv value structs)
+ * is an owned `string`. Shared by BOTH backends' mv-Buffer element
  * specialization (the slot deep-copies strdup'd strings, so a
- * string-field element is owning even when `struct_needs_destroy`
+ * string-field element is mv even when `struct_needs_destroy`
  * ignores string-only locals) — the C comment in
  * owning_buffer_specialize records the divergence this once caused.
  * `ref` and `view T` fields are skipped: a ref aliases the caller's
@@ -27,7 +27,7 @@ export function has_string_fields(node: StructNode, status: BuildStatus): boolea
 
 /**
  * STRUCT_PLAN_3 B1 cutover: whether this struct's plain `string` fields are
- * uniformly heap-owned under the declared-owning contract (ctor strdup's the
+ * uniformly heap-owned under the declared-mv contract (ctor strdup's the
  * seed, stores strdup non-heap RHS, scope-exit destroy frees them
  * unconditionally). Compiler-generated tuple / anonymous structs are
  * excluded: their element lifecycle stays record/binding-based (destructured

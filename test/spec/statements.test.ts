@@ -188,7 +188,7 @@ const message = match result {
 
 	test("match enum with associated data (string payload)", () => {
 		const input = `
-owning enum Event {
+mv enum Event {
     case click(string label)
     case quit
 }
@@ -277,7 +277,7 @@ const x = match c {
 
 	test("match enum with associated data (calling method on payload)", () => {
 		const input = `
-owning enum Wrapper {
+mv enum Wrapper {
     case text(string s)
 }
 const w = Wrapper.text("hello")
@@ -322,7 +322,7 @@ enum A {
     case x(int v)
     case y
 }
-owning enum B {
+mv enum B {
     case p(string s)
     case q
 }

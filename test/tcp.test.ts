@@ -15,7 +15,7 @@ describe("Tcp", () => {
 import System
 
 func serve_one = (ref Tcp listener) {
-	// Phase R tranche 3: Tcp is an owning struct — the listener crosses as a
+	// Phase R tranche 3: Tcp is a mv struct — the listener crosses as a
 	// ref region borrow (the fiber mutates it through the address; the
 	// join bounds the borrow).
 	var Tcp conn = listener.accept()     // parks until the client connects
@@ -77,7 +77,7 @@ pub func main = () {
 		const input = `
 import System
 
-// The connection is handed to the handler as a bare fd: a owning struct local in the
+// The connection is handed to the handler as a bare fd: a mv struct local in the
 // accept loop would be auto-destroyed (closing the socket) at the end of the
 // iteration, while the handler still needs it.
 func echo_one = (int handle) {
@@ -91,7 +91,7 @@ func echo_one = (int handle) {
 
 func server_loop = (ref Tcp server, int n) {
 	// Phase R tranche 3: the listener crosses as a ref region borrow (the
-	// class-era alias binding is gone — an owning struct's alias is spelled
+	// class-era alias binding is gone — a mv struct's alias is spelled
 	// ref at the boundary, and the join bounds it).
 	var int i = 0
 	while i < n {

@@ -284,18 +284,18 @@ function infer_const_expr_type(
 /**
  * A bare statement that constructs (or obtains) a class instance without
  * binding it to a variable would leak: classes are heap-allocated and freed
- * by the owning variable's scope-exit cleanup, so an unbound instance is
+ * by the mv variable's scope-exit cleanup, so an unbound instance is
  * never reclaimed. Hoist such a statement into an anonymous
  * `var T _disc_N = <call>` so the existing scope-exit reclamation frees it
  * (running its `#destroy` and field destroys first).
  *
  * STRUCT_PLAN_3 Phase R: the same logic covers OWNING STRUCTS whose
  * ownership a scope-exit destroy actually reclaims (a resource-releasing
- * `#destroy`, or owning fields — e.g. a discarded `Thread(...).start()`
+ * `#destroy`, or mv fields — e.g. a discarded `Thread(...).start()`
  * Task handle leaks its future reference unless destroyed).
  *
  * Free functions and constructors returning a class always yield an owned
- * value. Method calls are hoisted only when they have an owned (`move out T`)
+ * value. Method calls are hoisted only when they have an owned (`mv out T`)
  * return — a borrowed return (e.g. `list.at(0)`) is owned by its receiver and
  * must NOT be freed here.
  */
@@ -393,13 +393,13 @@ function strip_param_length_equalities(func: FunctionNode) {
 }
 
 /**
- * STRUCT_PLAN_3 R tranche 4 — `Box<T>` is DECLARED as `owning struct` (the
+ * STRUCT_PLAN_3 R tranche 4 — `Box<T>` is DECLARED as `mv struct` (the
  * `class` keyword is retiring), but its runtime representation is unchanged:
  * one pointer to a heap wrapper holding the value inline (B6's null-pointer
  * lowering for `Box<T>?` rides it). Stamp the wrapper's `is_class` here at
  * gather time — user code is checked before the appended library, and
  * `monomorphize` copies the flag into the `Box_<T>` monos — so every
- * downstream consumer (`is_box_type`, layout, destroy, move rules) sees the
+ * downstream consumer (`is_box_type`, layout, destroy, mv rules) sees the
  * same representation truth the `class` spelling used to declare. The
  * declared `is_owning` flag coexists: it is the move-only marker; `is_class`
  * is the storage shape.

@@ -6,14 +6,14 @@
 /**
  * A tree of values connected by parent/child links
  **/
-pub owning struct Tree<T>: Enumerable {
+pub mv struct Tree<T>: Enumerable {
 	var values = Buffer<T>()
 	var lefts = Buffer<int>()
 	var rights = Buffer<int>()
 	var parents = Buffer<int>()
 	var count = 0
 
-	pub func add = (ref self, move T value) {
+	pub func add = (ref self, mv T value) {
 		const int idx = self.count
 		self.values.grow_int(idx + 1)
 		const int v = value

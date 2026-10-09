@@ -18,7 +18,7 @@ import type_from_value_node from "./type_from_value_node.ts";
  *
  * Argument classes at the task boundary:
  *
- * - MOVED (`move T` param): the callee takes exclusive ownership — no
+ * - MOVED (`mv T` param): the callee takes exclusive ownership — no
  *   sharing, no race, no region to prove.
  * - OWNING VALUE STRUCT, bare, INSIDE an `async` block: a region-checked
  *   BORROW (R1) — the env takes a pointer (no deep copy), the donor must
@@ -52,7 +52,7 @@ export default function validate_spawn_args_sendable(
 		if (!arg_type.name && stamped?.name) {
 			arg_type = stamped;
 		}
-		// MOVED: the callee's `move T` parameter takes exclusive ownership
+		// MOVED: the callee's `mv T` parameter takes exclusive ownership
 		// of the argument — no sharing, no race, no region to prove.
 		if (callee_params?.[i]?.is_moved) {
 			continue;
@@ -97,7 +97,7 @@ export default function validate_spawn_args_sendable(
 			const global_donor = !!bare_decl?.is_global;
 			if (!inside_nursery && !global_donor) {
 				// Outside a nursery there is no join to bound a borrow, and an
-				// env deep-copy is unsound for owning structs (the pack copies
+				// env deep-copy is unsound for mv structs (the pack copies
 				// string fields only — a container field would share its
 				// buffer and double-free at teardown). The borrow needs the
 				// nursery's region proof. The donor's name (when the argument
@@ -106,7 +106,7 @@ export default function validate_spawn_args_sendable(
 				add_error(
 					status,
 					`spawn argument of type ${arg_type.name} owns heap memory — spawn it inside an 'async' block as a borrowed read (the join bounds the borrow)${
-						donor ? `, or move it in ('move ${donor}')` : ""
+						donor ? `, or mv it in ('mv ${donor}')` : ""
 					}`,
 					param.start,
 				);
@@ -135,7 +135,7 @@ export default function validate_spawn_args_sendable(
 			status,
 			`Spawn argument of type ${arg_type.name || "<unknown>"} is not Sendable${
 				reason ??
-				" — a shared class/trait reference crossing a task boundary must be marked Sendable; move it in (a `move` parameter), share it as a checked region borrow inside an 'async' block, or mediate it through Mutex/Channel/Atomic<T>"
+				" — a shared class/trait reference crossing a task boundary must be marked Sendable; mv it in (a `mv` parameter), share it as a checked region borrow inside an 'async' block, or mediate it through Mutex/Channel/Atomic<T>"
 			}`,
 			param.start,
 		);

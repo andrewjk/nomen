@@ -7,7 +7,7 @@ import type StructNode from "../../nodes/StructNode.ts";
  * checker rewrites `box.f` to `box.__value.f` — so user code never names
  * the wrapper field.
  *
- * Shape-checked (a wrapper is declared `owning struct` with exactly one
+ * Shape-checked (a wrapper is declared `mv struct` with exactly one
  * `__value` field; the checker stamps its storage class at gather time —
  * see `stamp_box_wrapper_representation`), so a USER struct named `Box`
  * (SPEC's own sizing example) is not mistaken for one. Takes the structs

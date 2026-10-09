@@ -27,7 +27,7 @@ import type_from_value_node from "./type_from_value_node.ts";
  * plain-string-param calls — has no byte-mutation reach on the parameter:
  *   - dispatching a `ref self` method (`set`) on the parameter,
  *   - passing the parameter to a `ref string` param (mutable borrow),
- *   - passing it to a `move string` param (the callee would own — and free —
+ *   - passing it to a `mv string` param (the callee would own — and free —
  *     the caller's bytes),
  *   - swapping the parameter, spawning/async-capturing it (conservative),
  *   - anything a raw `#arch` body might do that the AST can't show
@@ -83,7 +83,7 @@ export function maybe_mark_borrow_to_string_arg(
 	if (!borrow_to_string_elision_enabled()) return false;
 	if (!func_param || !is_plain_string_param(func_param)) return false;
 	if (!is_plain_string_receiver_to_string(param, status)) return false;
-	// Explicit `move`/swap at this argument position transfers ownership —
+	// Explicit `mv`/swap at this argument position transfers ownership —
 	// never a borrow.
 	if (node.move_param_indices?.includes(arg_index)) return false;
 	if (node.swap_params?.has(arg_index)) return false;
@@ -291,7 +291,7 @@ function call_site_mutates(
 	for (let j = 0; j < call.params.length; j++) {
 		const arg = call.params[j];
 		if (!(arg.node_type === "value" && (arg as ValueNode).value === pname)) continue;
-		// Explicit `move p` / swap involvement: ownership transfer or
+		// Explicit `mv p` / swap involvement: ownership transfer or
 		// exchange — the callee (or the swap partner's cleanup) frees.
 		if (call.move_param_indices?.includes(j)) return true;
 		if (call.swap_params?.has(j)) return true;

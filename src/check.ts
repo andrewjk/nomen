@@ -38,8 +38,8 @@ export default function check(
 
 	// Move-on-last-use stamping for bracket-literal elements (`[t, c]`):
 	// pure syntax/position analysis (no types yet) — the checker's
-	// tuple-element ownership rule consumes the stamp as an inferred `move`
-	// when the element's type turns out to be an owning struct.
+	// tuple-element ownership rule consumes the stamp as an inferred `mv`
+	// when the element's type turns out to be a mv struct.
 	stamp_literal_element_moves(root);
 
 	check_node(root, status);

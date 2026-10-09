@@ -2,7 +2,7 @@ import { is_scalar_type } from "../../built_in_types.ts";
 import type CheckStatus from "../CheckStatus.ts";
 
 /**
- * Is this type safe to move across a task boundary?
+ * Is this type safe to mv across a task boundary?
  *
  * Rules:
  * - Scalar primitives (ints, floats, bool, char) and string are always

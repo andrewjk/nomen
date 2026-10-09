@@ -36,7 +36,7 @@ export default class StructNode extends BaseNode {
 	 *  for the `Box<T>` wrapper, whose runtime representation is one pointer
 	 *  to a heap instance. `monomorphize` copies it into the `Box_<T>` monos. */
 	is_class?: boolean;
-	/** Declared `owning struct` (STRUCT_PLAN_3 B1): bindings move instead of
+	/** Declared `mv struct` (STRUCT_PLAN_3 B1): bindings mv instead of
 	 *  copy, and the declared flag WINS over the inferred ownership walk. */
 	is_owning?: boolean;
 	scope?: BaseNode;

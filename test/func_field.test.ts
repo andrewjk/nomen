@@ -4,7 +4,7 @@ import build_and_check_output from "./build_and_check_output";
 import { parse_raw } from "./parse_with_imports";
 
 // Func-typed struct/class fields (`var func (int, out bool) test`) store an
-// 8-byte code pointer. They are non-owning (nothing to destroy), so struct
+// 8-byte code pointer. They are non-mv (nothing to destroy), so struct
 // copies are sound, and `s.f(args)` lowers to an indirect call through the
 // field (C casts the field to the signature; aarch64 loads it and `blr`s).
 // This enables the allmark port's TS `BlockRule = { test: (line) => bool }`
@@ -26,7 +26,7 @@ describe("func-typed struct fields", () => {
 			"42\ndone\n",
 			`
 func dbl = (int x, out int) { return x * 2 }
-owning struct Rule {
+mv struct Rule {
 	var func (int, out int) f
 }
 pub func main = (Init init) {
@@ -45,7 +45,7 @@ pub func main = (Init init) {
 			`
 func is_hash = (string s, out bool) { return s.at_or(0, ' ') == '#' }
 func is_quote = (string s, out bool) { return s.at_or(0, ' ') == '>' }
-owning struct Rule {
+mv struct Rule {
 	var func (string, out bool) test
 }
 pub func main = (Init init) {
@@ -64,14 +64,14 @@ pub func main = (Init init) {
 			"6\n",
 			`
 func dbl = (int x, out int) { return x * 2 }
-owning struct Rule {
+mv struct Rule {
 	var func (int, out int) f
 }
 pub func main = (Init init) {
 	var Rule a = Rule(dbl)
-	// B1 cutover: Rule is owning — bindings move; the transferred struct
+	// B1 cutover: Rule is mv — bindings mv; the transferred struct
 	// shares the code pointer (a func field is a plain 8-byte value).
-	move Rule b = a
+	mv Rule b = a
 	Console.write_line("\\{b.f(3)}")
 }
 `,
@@ -84,7 +84,7 @@ pub func main = (Init init) {
 			"10\n",
 			`
 func plus_ten = (int x, out int) { return x + 10 }
-owning struct Rule {
+mv struct Rule {
 	var func (int, out int) f = plus_ten
 }
 pub func main = (Init init) {
@@ -101,7 +101,7 @@ pub func main = (Init init) {
 			"7\n",
 			`
 func id = (int x, out int) { return x }
-owning struct Rule {
+mv struct Rule {
 	var func (int, out int) f
 	pub func run = (self, int x, out int) { return self.f(x) }
 }
@@ -119,7 +119,7 @@ pub func main = (Init init) {
 			"42\n",
 			`
 func dbl = (int x, out int) { return x * 2 }
-owning struct Rule {
+mv struct Rule {
 	var func (int, out int) f
 }
 pub func main = (Init init) {
@@ -175,7 +175,7 @@ pub func main = (Init init) {
 			"256\n10\ndone\n",
 			`
 func dbl = (int n, out int) { return n * 2 }
-owning struct Rule {
+mv struct Rule {
 	var string name
 	var func (int, out int) f
 }
@@ -207,7 +207,7 @@ pub func main = (Init init) {
 			"ff_void_lambda",
 			"lambda b\ndone\n",
 			`
-owning struct Rule {
+mv struct Rule {
 	var func () f
 }
 pub func main = (Init init) {

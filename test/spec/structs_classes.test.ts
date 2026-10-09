@@ -92,10 +92,10 @@ pub struct Transaction {
 	});
 });
 
-describe("spec: owning structs (types section)", () => {
-	test("owning struct declaration and construction", () => {
+describe("spec: mv structs (types section)", () => {
+	test("mv struct declaration and construction", () => {
 		const input = `
-owning struct Config {
+mv struct Config {
 	var string name
 }
 var Config c = Config("x")
@@ -103,21 +103,21 @@ var Config c = Config("x")
 		expect(compile_main(input)).toEqual([]);
 	});
 
-	test("move / .copy() / ref-Box aliasing, each spelled", () => {
+	test("mv / .copy() / ref-Box aliasing, each spelled", () => {
 		const input = `
-owning struct Config {
+mv struct Config {
 	var string name
 }
 var Config c = Config("x")
-move Config c2 = c
+mv Config c2 = c
 var Config c3 = c2.copy()
 `;
 		expect(compile_main(input)).toEqual([]);
 	});
 
-	test("a plain copy of an owning binding is an error", () => {
+	test("a plain copy of a mv binding is an error", () => {
 		const input = `
-owning struct Config {
+mv struct Config {
 	var string name
 }
 var Config c = Config("x")
@@ -129,7 +129,7 @@ var Config c4 = c
 
 	test("a ref Box binding aliases the instance", () => {
 		const input = `
-owning struct Node {
+mv struct Node {
 	var int value
 }
 pub func main = () {
@@ -142,9 +142,9 @@ pub func main = () {
 		expect(compile_main(input)).toEqual([]);
 	});
 
-	test("owning struct methods with ref self", () => {
+	test("mv struct methods with ref self", () => {
 		const input = `
-owning struct Counter {
+mv struct Counter {
 	var int count
 
 	func increment = (ref self) {
@@ -157,9 +157,9 @@ c.increment()
 		expect(compile_main(input)).toEqual([]);
 	});
 
-	test("owning struct #destroy", () => {
+	test("mv struct #destroy", () => {
 		const input = `
-owning struct Resource {
+mv struct Resource {
 	var int handle
 
 	func #destroy = (ref self) {
@@ -170,9 +170,9 @@ owning struct Resource {
 		expect(compile_module(input)).toEqual([]);
 	});
 
-	test("passing an owning struct to a function", () => {
+	test("passing a mv struct to a function", () => {
 		const input = `
-owning struct Config {
+mv struct Config {
 	var string name
 }
 func get_name = (Config c, out string) {
@@ -238,7 +238,7 @@ const int top = numbers.pop()
 describe("spec: construction overrides", () => {
 	test("struct constructed and passed to function", () => {
 		const input = `
-owning struct Circle {
+mv struct Circle {
     var string name
     var int center_x
     var int center_y
@@ -258,7 +258,7 @@ printCircle(Circle("c", 25, 70, 15))
 		// SPEC "Overriding fields on construction": the base runs first
 		// (required fields positionally), named fields must have declared
 		// defaults; the base may be a constructor, a factory result, or a
-		// plain variable (owning structs require move/.copy()).
+		// plain variable (mv structs require mv/.copy()).
 		const input = `
 struct LayoutParams {
     var int grow = 0
@@ -304,7 +304,7 @@ trait Stringable {
     func to_string = (out string)
 }
 
-owning struct Circle {
+mv struct Circle {
     var int radius
 }
 

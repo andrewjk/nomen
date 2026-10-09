@@ -282,7 +282,7 @@ export function optimize_frame_slots(code: string): string {
 				(key === "gpr64" || (reload_width > 0 && known !== undefined && known >= reload_width))
 			) {
 				// Commit the store AT ITS ORIGINAL POSITION (a later flush
-				// could land it after epilogue instructions that move
+				// could land it after epilogue instructions that mv
 				// x29/sp — the pick-corruption receipt), drop only the
 				// redundant load, and record the register as holding the
 				// slot's value for future load elision.
@@ -602,7 +602,7 @@ export function optimize_float_forwarding(code: string): string {
 				const dreg = held.get(src.name);
 				if (dreg) {
 					if (dst.name === dreg) {
-						// Self-move: the rewritten form would be d↔d to itself.
+						// Self-mv: the rewritten form would be d↔d to itself.
 						continue;
 					}
 					const indent = text.match(/^\s*/)?.[0] ?? "";
@@ -667,9 +667,9 @@ ALL_TRACKED_REGS.push("sp", "xzr");
 
 /**
  * Backward companion to the float forwarding pass: a `fmov xN, dM` whose
- * xN is never read below (before redefinition) is a dead staging move —
+ * xN is never read below (before redefinition) is a dead staging mv —
  * the d0 protocol's leftover producer after its consumer was rewritten to
- * a direct d↔d move. Pruning is forbidden across labels (the live set
+ * a direct d↔d mv. Pruning is forbidden across labels (the live set
  * resets to the universe there: a jump predecessor may read anything).
  */
 function eliminate_dead_float_stage_moves(code: string): string {
@@ -827,7 +827,7 @@ export function run_float_forwarding(code: string): string {
 
 let dead_moves_on = false;
 
-/** Enable-switch for the dead copy-move elimination (default OFF —
+/** Enable-switch for the dead copy-mv elimination (default OFF —
  *  measured −1.3…−1.5% on nbody 5M: the removed `.at()` contract
  *  markers executed in the OoO shadow and their removal perturbs code
  *  layout more than it saves; the same measured-loss convention as the
@@ -844,7 +844,7 @@ export function set_dead_move_elimination_enabled(enabled: boolean): void {
 const GPR_PRUNE_SKIP_DESTS = new Set(["sp", "x29", "x30"]);
 
 /**
- * Dead copy-move elimination (ASM_PLAN_4 SLP follow-on): the value
+ * Dead copy-mv elimination (ASM_PLAN_4 SLP follow-on): the value
  * protocol parks every result in x0, and several emitters stage
  * addresses through it (`mov x0, xPin` — the fixed-array `.at()`
  * contract marker) only for the consumer to read the pinned register
@@ -863,7 +863,7 @@ const GPR_PRUNE_SKIP_DESTS = new Set(["sp", "x29", "x30"]);
  *   redefinition, or an observed read, re-establishes exact knowledge);
  *   `bl`/`blr` DEFINitively define the caller-saved set (delete from
  *   both — every path from above crosses the call).
- * A move is pruned only when its destination is in NEITHER set.
+ * A mv is pruned only when its destination is in NEITHER set.
  * Frame-pointer, link-register and sp writes are never pruned.
  */
 export function eliminate_dead_copy_moves(code: string): string {
@@ -986,7 +986,7 @@ export function eliminate_dead_copy_moves(code: string): string {
 		}
 		if (op === "bl" || op === "blr") {
 			// Arguments x0-x8 / d0-d7 are READ (their current values are
-			// consumed — a staging move above the call is load-bearing)
+			// consumed — a staging mv above the call is load-bearing)
 			// and their taint resolves; x9-x17 and lr are clobbered
 			// (definitive definitions); callee-saved registers are
 			// preserved and flow through untouched.

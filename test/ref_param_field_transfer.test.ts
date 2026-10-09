@@ -22,7 +22,7 @@ describe("string field store through a ref struct param", () => {
 	const SET_SRC = `
 import System
 
-owning struct Pair {
+mv struct Pair {
 	var string a = "default"
 	var string b = "bee"
 }
@@ -52,7 +52,7 @@ pub func main = (Init init) {
 			`
 import System
 
-owning struct Pair {
+mv struct Pair {
 	var string a = "default"
 	var string b = "bee"
 }
@@ -82,12 +82,12 @@ pub func main = (Init init) {
 			`
 import System
 
-owning struct Pair {
+mv struct Pair {
 	var string a = "default"
 	var string b = "bee"
 }
 
-owning struct Other {
+mv struct Other {
 	var string a = "lit"
 }
 
@@ -114,7 +114,7 @@ pub func main = (Init init) {
 			`
 import System
 
-owning struct Pair {
+mv struct Pair {
 	var string a = "default"
 	var string b = "bee"
 }
@@ -140,7 +140,7 @@ pub func main = (Init init) {
 			`
 import System
 
-owning struct Pair {
+mv struct Pair {
 	var string a = "default"
 	var string b = "bee"
 
@@ -170,7 +170,7 @@ pub func main = (Init init) {
 			`
 import System
 
-owning struct Pair {
+mv struct Pair {
 	var string a = "default"
 	var string b = "bee"
 }
@@ -231,11 +231,11 @@ pub func main = (Init init) {
 			`
 import System
 
-owning struct Pair {
+mv struct Pair {
 	var a = ""
 }
 
-func decorated = (string v, move out string) {
+func decorated = (string v, mv out string) {
 	return "[" + v + "]"
 }
 
@@ -267,11 +267,11 @@ pub func main = (Init init) {
 			`
 import System
 
-owning struct Pair {
+mv struct Pair {
 	var a = ""
 }
 
-func decorated = (string v, move out string) {
+func decorated = (string v, mv out string) {
 	return v + "!"
 }
 
@@ -309,11 +309,11 @@ pub func main = (Init init) {
 			`
 import System
 
-owning struct Pair {
+mv struct Pair {
 	var a = ""
 }
 
-func decorated = (string v, int n, move out string) {
+func decorated = (string v, int n, mv out string) {
 	var acc = ""
 	var i = 0
 	while i < n; i += 1 {
@@ -353,7 +353,7 @@ pub func main = (Init init) {
 			`
 import System
 
-owning struct Pair {
+mv struct Pair {
 	var string a = "default"
 }
 

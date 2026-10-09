@@ -91,7 +91,7 @@ export function format_source(
 	const lines = scan(source);
 
 	// Check the layout on its own: sorting imports and dropping redundant types
-	// move tokens around on purpose, so they can't be part of the comparison.
+	// mv tokens around on purpose, so they can't be part of the comparison.
 	const layout = render(lines, { ...config, strip_redundant_types: false });
 	const difference = token_difference(source, layout);
 	if (difference && !force) return { code: source, changed: false, unsafe: difference };
@@ -394,7 +394,7 @@ function strip_redundant_type(pieces: Piece[]): Piece[] {
 	if (pieces[i]?.text === "pub" || pieces[i]?.text === "private" || pieces[i]?.text === "internal")
 		i++;
 	const declaration = pieces[i]?.text;
-	if (declaration !== "var" && declaration !== "const" && declaration !== "move") return pieces;
+	if (declaration !== "var" && declaration !== "const" && declaration !== "mv") return pieces;
 	i++;
 
 	const type_start = i;

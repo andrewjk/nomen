@@ -289,9 +289,9 @@ Console.write("\\{add_base(1)} \\{add_base(2)}")
 		expect(compile_main(input)).toEqual([]);
 	});
 
-	test("lambda moves an owning struct capture", () => {
+	test("lambda moves a mv struct capture", () => {
 		const input = `
-owning struct Owned {
+mv struct Owned {
 	var List<int> data
 }
 var Owned o = Owned(List<int>())

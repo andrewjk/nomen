@@ -18,10 +18,10 @@ import build_and_check_output from "./build_and_check_output";
 describe("container-stored class leak", () => {
 	test("List<Animal> — stored class not freed on container destroy", async () => {
 		const input = `
-owning struct Animal { var char letter }
+mv struct Animal { var char letter }
 if true {
 	var List<Animal> list = List<Animal>()
-	list.push(move Animal('Z'))
+	list.push(mv Animal('Z'))
 }
 Console.write("done\\n")
 `;
@@ -30,10 +30,10 @@ Console.write("done\\n")
 
 	test("LinkedList<Animal> — stored class not freed on container destroy", async () => {
 		const input = `
-owning struct Animal { var char letter }
+mv struct Animal { var char letter }
 if true {
 	var LinkedList<Animal> list = LinkedList<Animal>()
-	list.add(move Animal('Z'))
+	list.add(mv Animal('Z'))
 }
 Console.write("done\\n")
 `;
@@ -42,7 +42,7 @@ Console.write("done\\n")
 
 	test("Tree<Box<Animal>> — stored element freed on container destroy", async () => {
 		const input = `
-owning struct Animal { var char letter }
+mv struct Animal { var char letter }
 if true {
 	var Tree<Box<Animal>> t = Tree<Box<Animal>>()
 	t.add(Box<Animal>(Animal('Z')))
@@ -54,7 +54,7 @@ Console.write("done\\n")
 
 	test("Graph<Box<Animal>> — stored element freed on container destroy", async () => {
 		const input = `
-owning struct Animal { var char letter }
+mv struct Animal { var char letter }
 if true {
 	var Graph<Box<Animal>> g = Graph<Box<Animal>>()
 	g.add_node(Box<Animal>(Animal('Z')))

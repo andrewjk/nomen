@@ -14,7 +14,7 @@ Console.write("You are \\{age} years old.")
 		expect(compile_main(input)).toEqual([]);
 	});
 
-	test("view string slice returns a non-owning view", () => {
+	test("view string slice returns a non-mv view", () => {
 		const input = `
 const string greeting = "Hello, world"
 if greeting.length >= 5 {

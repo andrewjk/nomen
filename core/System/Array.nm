@@ -92,7 +92,7 @@ pub struct Array<T>: Viewable {
 		}
 	}
 
-	// A non-owning (ptr, len) slice [start, end) over self's inline element
+	// A non-mv (ptr, len) slice [start, end) over self's inline element
 	// storage, returned as a `view T`. Borrows from self (may not outlive it,
 	// invalidated on reassignment). Element access via view.at / view.length.
 	pub func slice = (
@@ -146,7 +146,7 @@ pub struct Array<T>: Viewable {
 	// FAT T (string) arrives as the (ptr, len) pair in x0/x1 with the count
 	// in x2; a thin T arrives as the value in x0 with the count in x1.
 	// STRUCT_PLAN_3 B1 cutover: a FAT seed must be strdup'd per slot — every
-	// slot sharing one pointer would be freed n times by the owning
+	// slot sharing one pointer would be freed n times by the mv
 	// set/destroy paths (pre-B1 the displaced-set free was record-guarded,
 	// so a raw rodata seed was simply never freed).
 	stp x19, x20, [sp, #-16]!

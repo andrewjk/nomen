@@ -12,7 +12,7 @@ import { emit_asm } from "./code_buffer.ts";
  *   - in memory: one 16-byte slot (ptr at +0, len at +8), stack- or
  *     struct-field-resident.
  *
- * Every string move goes through these helpers so no site accidentally
+ * Every string mv goes through these helpers so no site accidentally
  * moves only the pointer half.
  */
 

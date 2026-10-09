@@ -5,11 +5,11 @@ import test_error from "./test_error";
 
 // STRUCT_PLAN_3 Phase R — the flip: `class` has retired. Each declaration
 // site (bare, visibility-prefixed, `extend class`) emits the one retirement
-// error and continues parsing as an `owning struct` — one clear error per
+// error and continues parsing as a `mv struct` — one clear error per
 // declaration, no cascade.
 
 const RETIRED =
-	"'class' has retired — declare `owning struct` (single-owner, move-only) and spell sharing where it happens (`ref`, `Box<T>`, `Mutex<T>`, `WeakHandle<T>`)";
+	"'class' has retired — declare `mv struct` (single-owner, move-only) and spell sharing where it happens (`ref`, `Box<T>`, `Mutex<T>`, `WeakHandle<T>`)";
 
 describe("class retirement", () => {
 	test("bare class declaration: one retirement error, no cascade", () => {
@@ -25,7 +25,7 @@ Console.write_line(p.x)
 		expect(parsed.errors).toEqual([test_error(input, RETIRED, 2, 1)]);
 	});
 
-	test("the declaration continues as an owning struct (owning fields accepted)", () => {
+	test("the declaration continues as a mv struct (mv fields accepted)", () => {
 		const input = `
 class Holder {
 	var List<int> items
@@ -35,7 +35,7 @@ var Holder h = Holder()
 		const parsed = parse(input);
 		// A bare-struct continuation would cascade with the Copyable
 		// verifier ("'Holder' cannot be Copyable — field 'items' owns heap
-		// memory"); the owning continuation yields only the retirement
+		// memory"); the mv continuation yields only the retirement
 		// error.
 		expect(parsed.errors).toEqual([test_error(input, RETIRED, 2, 1)]);
 	});

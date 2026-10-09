@@ -578,7 +578,7 @@ function convert_one(code: string): string | null {
 
 		// Preheader before the header label — fall-through entry runs it
 		// once; the back-edge skips it. (header_idx < test_idx, so the
-		// splices above did not move it.)
+		// splices above did not mv it.)
 		const indent = lines[header.h].match(/^\s*/)?.[0] ?? "";
 		const pre: string[] = [`${indent}${test_text}`];
 		if (is_imm_diff) {

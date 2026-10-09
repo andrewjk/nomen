@@ -20,7 +20,7 @@ export const KEYWORDS = new Set([
 	"func",
 	"var",
 	"const",
-	"move",
+	"mv",
 	"ref",
 	"cp",
 	"out",

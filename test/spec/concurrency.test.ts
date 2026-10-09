@@ -143,11 +143,11 @@ pub func main = () {
 		expect(compile_module(input)).toEqual([]);
 	});
 
-	test("a bare owning capture is rejected outside a nursery", () => {
+	test("a bare mv capture is rejected outside a nursery", () => {
 		// SPEC.md, "Sendable": outside a nursery there is no join to bound a
-		// borrow, so a bare owning argument cannot cross — move it in or
+		// borrow, so a bare mv argument cannot cross — mv it in or
 		// spawn inside an `async` block. (Detach owns its captures: the
-		// lambda form moves them; the call form is the bare-owning shape
+		// lambda form moves them; the call form is the bare-mv shape
 		// rejected here.)
 		const input = `
 func producer = (Channel ch) {
@@ -254,14 +254,14 @@ pub func main = () {
 	});
 
 	test("a trait handle cannot cross a task boundary", () => {
-		// SPEC.md, "Sendable": a trait-typed value is not Sendable — move the
+		// SPEC.md, "Sendable": a trait-typed value is not Sendable — mv the
 		// concrete struct instead, or mediate through Mutex/Channel/Atomic.
 		const input = `
 trait Job {
 	func run = (self)
 }
 
-owning struct Impl : Job {
+mv struct Impl : Job {
 	var int n = 0
 	pub func run = (self) {}
 }
@@ -279,18 +279,18 @@ pub func main = () {
 		expect(errors.some((e) => e.message.includes("not Sendable"))).toBe(true);
 	});
 
-	test("a moved owning struct crosses outside a nursery", () => {
+	test("a moved mv struct crosses outside a nursery", () => {
 		const input = `
-owning struct Counter {
+mv struct Counter {
 	var int count = 0
 }
 
-func work = (move Counter c) {
+func work = (mv Counter c) {
 }
 
 pub func main = () {
 	var Counter c = Counter()
-	Thread(work(move c)).start()
+	Thread(work(mv c)).start()
 }
 `;
 		expect(compile_module(input)).toEqual([]);

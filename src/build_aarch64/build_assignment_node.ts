@@ -104,7 +104,7 @@ function is_mutable_param(name: string, status: BuildStatus): boolean {
  * string fields — follow an always-heap-owned convention (see the
  * assignment branch that uses this): `_init` strdup's defaults and
  * assignments strdup non-heap RHS, so destroys can free them unconditionally.
- * Non-owning value-struct string fields keep per-assignment ownership
+ * Non-mv value-struct string fields keep per-assignment ownership
  * tracking instead (construction may leave rodata in them): non-heap RHS is
  * strdup'd and the field is recorded in heap_string_fields for release at
  * scope exit. `ref` string fields (borrows) are excluded either way.
@@ -115,14 +115,14 @@ function field_is_struct_string(
 	status: BuildStatus,
 ): { name: string; target_is_class: boolean; target_is_owning: boolean } | undefined {
 	if (!target_type?.name || !field_type) return undefined;
-	// A `view T` field is a non-owning pair — never heap-owned, so it must
+	// A `view T` field is a non-mv pair — never heap-owned, so it must
 	// not enter the strdup/free ownership machinery below.
 	if (field_type.is_view) return undefined;
 	if (field_type.name !== "string" || field_type.is_ref || field_type.is_array) return undefined;
 	// Resolve the MONO for a generic target (`Box<string>` → `Box_string`):
 	// the bare template's `is_owning` flag is unset (ownership is derived per
-	// mono at check time — `Box<string>`'s `T value` is owning, `Box<int>`'s
-	// is not), so classifying through the template would route an owning
+	// mono at check time — `Box<string>`'s `T value` is mv, `Box<int>`'s
+	// is not), so classifying through the template would route a mv
 	// mono's field store down the raw/record path and leak its displaced
 	// heap value.
 	const target_name = target_type.type_args?.length
@@ -132,10 +132,10 @@ function field_is_struct_string(
 	if (!target_struct) {
 		// A TRAIT-typed receiver (`t.tag = …`): the field is trait-declared and
 		// its ownership is a per-conformer property. When any conformer is a
-		// class/owning struct, its destroy frees the field unconditionally, so
+		// class/mv struct, its destroy frees the field unconditionally, so
 		// the write must go through the uniform-heap store (dup + reclaim) —
 		// a raw (rodata) store would be freed by the destroy later
-		// (AUDIT-STALE-FREE). A non-owning-only conformer set keeps the
+		// (AUDIT-STALE-FREE). A non-mv-only conformer set keeps the
 		// raw/borrow store (its destroy excludes trait string fields).
 		if (status.traits.find((t) => t.name === target_name)) {
 			const any_owning = status.structs.some(
@@ -295,7 +295,7 @@ function deferred_field_base_reg(access: AccessNode, status: BuildStatus): strin
 	// resolves the element address through the pointer cache into a pinned
 	// callee-saved register. Computed at the same point the historical flow
 	// built get_base_address (pre-RHS) — the storage of a fixed array cannot
-	// move, and the register survives the RHS like any callee-saved base.
+	// mv, and the register survives the RHS like any callee-saved base.
 	const reg = resolve_at_element_addr(access.target, status);
 	if (reg !== undefined) return reg;
 	return undefined;
@@ -382,7 +382,7 @@ function is_nullable_struct_assignment(node: AssignmentNode, status: BuildStatus
  * rides in and descends through `emit_expr_from_nir` (the expression seam);
  * without one — or if the lowered expr doesn't carry this exact AST node
  * (from_ast is 1:1, so that can't happen) — it is exactly the historical
- * `build_node(rhs)`. Every semantic decision (reclamation, aliasing, move
+ * `build_node(rhs)`. Every semantic decision (reclamation, aliasing, mv
  * marks, swap marshalling) stays on the AST node in the builder.
  */
 function emit_compound_op(op: string, status: BuildStatus, target_is_float = false) {
@@ -410,7 +410,7 @@ function emit_rhs_value(rhs: BaseNode, nir: NirExpr | null | undefined, status: 
 
 /**
  * Emit an assignment/declaration SWAP expression (the replacement value
- * `a = b swap <rep>` / `var X b = move f swap <rep>`): the expression-seam
+ * `a = b swap <rep>` / `var X b = mv f swap <rep>`): the expression-seam
  * version of the historical `build_node(swap)`. Both callers normalize the
  * trailing newline immediately after, so the helper does it.
  */
@@ -632,7 +632,7 @@ function build_nullable_struct_assignment(
 			emit_asm(status, `ldr x0, [sp], #16\n`);
 		}
 		retarget_records();
-		// A `move`/last-use struct RHS transfers ownership to the field: mark
+		// A `mv`/last-use struct RHS transfers ownership to the field: mark
 		// the source moved so its scope exit doesn't ALSO destroy it.
 		mark_moved_if_struct(node.right_value, status);
 		// Copy the value into the variable's slot, then set the flag.
@@ -756,7 +756,7 @@ function build_nullable_struct_assignment(
 			emit_asm(status, `${skip}:\n`);
 		}
 	}
-	// A `move`/last-use struct RHS transfers ownership to the field.
+	// A `mv`/last-use struct RHS transfers ownership to the field.
 	mark_moved_if_struct(node.right_value, status);
 	// x0 = source address/value, x9 = object base. Copy value in, set flag.
 	if (field_is_scalar) {
@@ -1043,8 +1043,8 @@ export default function build_assignment_node(
 	// store, so a previously cached data pointer would be stale. The cache key
 	// mirrors buf_cache_key() in build_access_node (simple name or "obj.field").
 	//
-	// This also covers `move self.fld swap X` swaps: the swapped-OUT field is the
-	// assignment's RHS (e.g. `self.keys` in `var old = move self.keys swap ...`),
+	// This also covers `mv self.fld swap X` swaps: the swapped-OUT field is the
+	// assignment's RHS (e.g. `self.keys` in `var old = mv self.keys swap ...`),
 	// and the swap stores the replacement into it — so that field's buffer (and
 	// its cached data pointer) is reassigned. Invalidating the RHS field key is
 	// what keeps field-buffer caching sound across Map.rehash and friends.
@@ -1174,14 +1174,14 @@ export default function build_assignment_node(
 						status.moved?.delete(name);
 						if (rhs_value_struct) {
 							// BOX the conformer. Fresh constructor → run the ctor
-							// into the malloc'd box; bare local donor → move the
+							// into the malloc'd box; bare local donor → mv the
 							// bytes (unrecorded string fields strdup in place, the
 							// donor's teardown suppressed); any other concrete
 							// expression → sret scratch + copy. A user `#destroy`
 							// governs the fields itself — skip the strdup
 							// normalization (the auto destroy is what frees).
-							// An owning struct's direct string fields are
-							// uniformly heap; the move transfers them to the box
+							// A mv struct's direct string fields are
+							// uniformly heap; the mv transfers them to the box
 							// (strdup'ing would orphan the donor's copy — LEAK).
 							const strdup_string_fields =
 								!owns_strings_uniformly(rhs_value_struct) &&
@@ -1372,7 +1372,7 @@ export default function build_assignment_node(
 					const decl_is_nullable = !!status.variable_types?.get(name)?.is_nullable;
 					if (owns_current) {
 						consume_anchor_slot(status, name);
-						// Skip the reclaim when the var was moved (e.g. `take(move a)`
+						// Skip the reclaim when the var was moved (e.g. `take(mv a)`
 						// then `a = Box(...)`) — the callee already freed the old
 						// instance, so freeing again here would double-free.
 						if (!status.moved?.has(name)) {
@@ -1436,7 +1436,7 @@ export default function build_assignment_node(
 				}
 			}
 			mark_moved_if_struct(node.right_value, status);
-			// A base-bearing ANON literal with a `move` base (`m = [ .. move x,
+			// A base-bearing ANON literal with a `mv` base (`m = [ .. mv x,
 			// f = v ]`) transfers the base's bytes to the destination — mark the
 			// DONOR moved (the literal node itself has no name, so the call
 			// above is a no-op for it) or its scope-exit destroy frees the
@@ -1462,7 +1462,7 @@ export default function build_assignment_node(
 			// Inside a loop body the scoped-declaration table is swapped out (see
 			// find_var_size) — fall back to the checker's persistent variable
 			// types so the displaced value is still destroyed (otherwise a value
-			// struct with owning fields leaks its buffer on every reassignment).
+			// struct with mv fields leaks its buffer on every reassignment).
 			const lhs_type_name = lhs_decl?.type?.name ?? status.variable_types?.get(name)?.name ?? "";
 			const needs_pre_destroy =
 				rhs_is_struct &&
@@ -1801,9 +1801,9 @@ export default function build_assignment_node(
 				ensure_newline(status);
 				// A `ref string` pointee: the write goes through to the
 				// CALLER's storage, whose scope-exit ownership tracking
-				// (heap_strings) may free it. Storing a non-owning value (a
+				// (heap_strings) may free it. Storing a non-mv value (a
 				// rodata literal, another variable's string) would make that
-				// free invalid — strdup it so the caller's slot keeps owning a
+				// free invalid — strdup it so the caller's slot keeps mv a
 				// heap copy. The displaced old value leaks (the callee can't
 				// know whether the caller's slot was owned); a fresh-heap RHS
 				// (last_result_is_heap) is stored directly. Mirrors the C
@@ -1889,7 +1889,7 @@ export default function build_assignment_node(
 			// back into the d-register (`fmov dN, x0`) — a d0→x0→dN round-trip
 			// that costs two `fmov` per assignment. By requesting the d0 fast
 			// path (`float_result_in_d0`), nested float operations in the RHS
-			// leave their result in d0 and we move directly d0→dN (one `fmov`).
+			// leave their result in d0 and we mv directly d0→dN (one `fmov`).
 			// Non-float-op RHS (variables, literals, function calls, casts)
 			// don't consume the flag, so we fall back to the x0 path for them.
 			// This is the dominant remaining codegen cost in mandelbrot's
@@ -2057,8 +2057,8 @@ export default function build_assignment_node(
 				rhs_is_string_var && (node as AssignmentNode).last_use_move && move_on_last_use_enabled()
 					? (rhs_value as ValueNode).value
 					: undefined;
-			// EXPLICIT `s = move t`: ownership transfer by contract. When the
-			// source owns heap, move the ownership mark from source to target
+			// EXPLICIT `s = mv t`: ownership transfer by contract. When the
+			// source owns heap, mv the ownership mark from source to target
 			// — exactly one owner frees the bytes. A source that owns nothing
 			// (literal-held/borrow-held var) transfers nothing trackable: the
 			// raw pair store below keeps the historical behavior.
@@ -2115,13 +2115,13 @@ export default function build_assignment_node(
 			const borrow_needs_dup =
 				(rhs_is_borrow_reception || rhs_is_field_read || rhs_is_unrecorded_var_read) &&
 				!!status.force_heap_strings?.has(name);
-			// The move transfer is sound only when the source ACTUALLY owns
+			// The mv transfer is sound only when the source ACTUALLY owns
 			// heap: a source holding non-heap data (a folded string-literal
 			// concat lands in rodata; a borrow holds container memory) owns
 			// nothing, so the raw pair transfer would leave the heap-marked
 			// target freeing rodata/container bytes at scope exit (a nullable
 			// `owns = own` target auto-frees — SIGABRT). strdup an owned copy
-			// instead, mirroring the C backend's `string_var_owns_heap` move
+			// instead, mirroring the C backend's `string_var_owns_heap` mv
 			// gate and the declaration path's `is_heap_alias` test.
 			const move_source_owns_heap =
 				move_source !== undefined && !!status.heap_strings?.has(move_source);
@@ -2220,7 +2220,7 @@ export default function build_assignment_node(
 				}
 			} else if (field_type?.is_view && !node.operator) {
 				// A `view T` field store (`line.text = doc.slice(0, 5)`): the
-				// field is a non-owning (ptr, len) pair — store both halves
+				// field is a non-mv (ptr, len) pair — store both halves
 				// verbatim. Nothing is duplicated and the displaced pair owns
 				// nothing, so there is no strdup / free / ownership record.
 				const offset = get_field_offset(target_type.name, field_name, status);
@@ -2272,8 +2272,8 @@ export default function build_assignment_node(
 				// a raw rodata store would be freed) or a named local/param
 				// target whose ownership can be tracked in heap_string_fields.
 				// The OWNING arm also covers nested hops (`a.x.s = …`): the
-				// field lives inside an owning struct.
-				// A `self.field = …` write inside a non-owning VALUE-struct
+				// field lives inside a mv struct.
+				// A `self.field = …` write inside a non-mv VALUE-struct
 				// method (custom #init, trait default) writes through to the
 				// caller's storage — strdup'ing here would leave an untracked
 				// heap copy (the caller can't know), so it falls through to
@@ -2413,7 +2413,7 @@ export default function build_assignment_node(
 						emit_asm(status, `str x2, [x0, #${offset}]\n`);
 					}
 				}
-				// `self.field = …` inside a non-owning value-struct method
+				// `self.field = …` inside a non-mv value-struct method
 				// writes through to the caller's storage (the caller tracks
 				// ownership); recording it here would double-free at this
 				// scope's exit. B1 cutover: OWNING/class targets never record
@@ -2521,20 +2521,20 @@ export default function build_assignment_node(
 						emit_asm(status, `str x0, [sp, #-16]!\n`);
 					}
 
-					// A `field = move local` store into a VALUE-struct field
-					// (List/Buffer/owning struct): the plain struct copy below
+					// A `field = mv local` store into a VALUE-struct field
+					// (List/Buffer/mv struct): the plain struct copy below
 					// overwrites the field's bytes, so the displaced value's
-					// owned resources (a container's slab, nested owning fields,
+					// owned resources (a container's slab, nested mv fields,
 					// slot strings) must be reclaimed first — the store orphans
 					// them (2 leaked allocations for a displaced 1-element
-					// List<string>). Mirrors the C backend's field move-assign
+					// List<string>). Mirrors the C backend's field mv-assign
 					// reclaim. A custom `#init`'s FIRST write to a `self.<field>`
 					// overwrites garbage — nothing valid to destroy. The
 					// mono-resolved shape is required: a generic body's access
 					// node can still carry the template type (`List<TK>`), which
 					// is not in the struct table, so a raw-name find would
 					// silently skip the reclaim for every container field.
-					// A FRESH-CALL RHS (`field = move List<Attr>()`, or an
+					// A FRESH-CALL RHS (`field = mv List<Attr>()`, or an
 					// un-annotated constructor/function return — the checker
 					// treats fresh allocations as moves) gets the same reclaim:
 					// the store overwrites the field's bytes, so the displaced
@@ -2563,7 +2563,7 @@ export default function build_assignment_node(
 							// struct_needs_auto_destroy holds (build_struct_node
 							// auto-generates it; `has_destroy` implies it). Call it
 							// with x0 = the field's address — it reclaims the
-							// container slab / nested owning fields / slot strings.
+							// container slab / nested mv fields / slot strings.
 							if (base_reg !== undefined) {
 								if (offset !== 0) {
 									emit_asm(status, `add x0, ${base_reg}, #${offset}\n`);
@@ -2598,7 +2598,7 @@ export default function build_assignment_node(
 				// in x0), not just store that address. Mirrors the variable
 				// assignment path above and the struct-field branch beside it.
 				// Ownership: free the DISPLACED payloads (tag-guarded) before
-				// the copy, then take owning copies of the incoming string
+				// the copy, then take mv copies of the incoming string
 				// payloads — the RHS temp frees its own at scope exit, so the
 				// field's copies must be independent.
 				const offset = get_field_offset(target_type.name, field_name, status);
@@ -2620,7 +2620,7 @@ export default function build_assignment_node(
 					emit_asm(status, `ldr x0, [sp], #16\n`);
 				}
 				// x0 = the field's base, x1 = the RHS temp's base. Free the
-				// displaced payloads, copy the blob in, then take owning
+				// displaced payloads, copy the blob in, then take mv
 				// copies of the incoming string payloads and free the RHS
 				// temp's own copies (it is an expression temp with no
 				// scope-exit reclaim of its own). Both registers must be
@@ -2740,7 +2740,7 @@ export default function build_assignment_node(
 					}
 
 					// A custom `#init`'s write to a DEFAULTED `self.<field>`
-					// displaces the seeded default; a heap-owning default must
+					// displaces the seeded default; a heap-mv default must
 					// be reclaimed ahead of the raw pair store (value-struct
 					// self writes skip the ownership-normalized lowering, so
 					// nothing else frees it). The first write only — later

@@ -49,7 +49,7 @@ element storage.
 
 | File                   | Functions                                                                                                                                           | Why raw                                                                                                                                                                                           |
 | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Buffer.nm` (28 funcs) | alloc/grow/zero/load/store/move/replace/modify/shift/slice (size-aware, public) + internal `*_u32`/`*_int`/`*_float` fixed-width variants, #destroy | `data` is a `uint64` slab handle, cast to `int*`/`T*`/`double*` per access; calloc/realloc/memset/memcpy; `modify` is the encoded load→modify→store round-trip (specialized per owning element)   |
+| `Buffer.nm` (28 funcs) | alloc/grow/zero/load/store/move/replace/modify/shift/slice (size-aware, public) + internal `*_u32`/`*_int`/`*_float` fixed-width variants, #destroy | `data` is a `uint64` slab handle, cast to `int*`/`T*`/`double*` per access; calloc/realloc/memset/memcpy; `modify` is the encoded load→modify→store round-trip (specialized per mv element)       |
 | `ClassBuffer.nm` (14)  | alloc/grow/load/store/move/replace/modify/shift/slice (public) + internal alloc_int/grow_int/load_int/store_int/move_int/replace_int, #destroy      | Same pattern plus per-element destroy; monomorphizer rewrites `Buffer<T>` fields to this for classes; `modify` frees the displaced instance (identity-guarded)                                    |
 | `Array.nm` (9)         | #init, at, first, set, at_end, slice, with, add, mul                                                                                                | Elements stored inline after the header (`(T*)((char*)self + sizeof(*self))`); `T_NEEDS_STRDUP` string-slot specialization                                                                        |
 | `BigInt.nm` (7)        | get, set, data_ptr, get_at, set_at, div128, mul_wide_hi                                                                                             | uint64-as-pointer limb access; `div128` needs `unsigned __int128` 128/64 divide (aarch64: `___udivti3`); `mul_wide_hi` needs the high half of a 64×64 product (`umulh`) — no 128-bit ops in Nomen |
@@ -229,7 +229,7 @@ ptr char`, struct-pointer→`uint64`, and the generic constants `T_SIZE` /
     (+2.7%, within the observed noise band; was +124% through the
     general splice), outputs identical. `div128`/`mul_wide_hi` stay raw
     (128-bit ops).
-  - `Buffer.nm` load/store/store_or_u32 family, `move`, `replace`,
+  - `Buffer.nm` load/store/store_or_u32 family, `mv`, `replace`,
     `shift` (inline splice targets — same ABI cost risk), plus
     `slice` (needs a `view` constructor, not expressible yet).
   - `Array.nm` `#init` (variadic packing), `with`/`add`/`mul`
@@ -248,7 +248,7 @@ ptr char`, struct-pointer→`uint64`, and the generic constants `T_SIZE` /
     callee emitted its bare symbol instead of the `extern_<name>` adapter.
     Fixed with `resolve_free_func_calls` in the clone pipeline and extern
     pre-registration at root gather.
-  - `ownership.ts` classified "owning" by the presence of a raw block in
+  - `ownership.ts` classified "mv" by the presence of a raw block in
     `#destroy`; Nomen destroys that call the memory externs now count too
     (`contains_release`), with order-independent extern resolution.
   - The aarch64 string-slot `set` specialization freed the displaced

@@ -446,7 +446,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 				n.type ? clone_type(n.type) : new Type(""),
 				n.default_value ? clone_node(n.default_value) : undefined,
 				n.is_self_param,
-				n.is_copied ? "cp" : n.is_moved ? "move" : n.declaration,
+				n.is_copied ? "cp" : n.is_moved ? "mv" : n.declaration,
 			);
 			c.type_start = n.type_start;
 			c.name_start = n.name_start;

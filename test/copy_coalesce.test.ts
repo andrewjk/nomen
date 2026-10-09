@@ -23,7 +23,7 @@ function coalesce(asm: string[]): string[] {
 	return out.split("\n").filter((l) => l.trim() !== "");
 }
 
-test("copy propagates into a read and the dead move is deleted", () => {
+test("copy propagates into a read and the dead mv is deleted", () => {
 	const out = coalesce(["_f:", "mov x15, x0", "adds x12, x15, x3", "ret"]);
 	expect(out).toContain("adds x12, x0, x3");
 	expect(out).not.toContain("mov x15, x0");
@@ -32,7 +32,7 @@ test("copy propagates into a read and the dead move is deleted", () => {
 test("a source redefinition kills the alias — the physical home still reads", () => {
 	const out = coalesce(["_f:", "mov x15, x0", "mul x0, x25, x12", "adds x12, x15, x0", "ret"]);
 	// x0 was redefined by the mul, so the adds must keep reading the
-	// physical x15 (the move already executed) — no substitution, no delete.
+	// physical x15 (the mv already executed) — no substitution, no delete.
 	expect(out).toContain("mov x15, x0");
 	expect(out).toContain("adds x12, x15, x0");
 });

@@ -227,7 +227,7 @@ export const MNEMONICS: Record<string, MnemonicSig> = {
 	// UMULH: high half of a 64×64 unsigned multiply (BigInt mul_wide_hi's
 	// raw body).
 	umulh: { shapes: [["r", "r", "r"]] },
-	// MOVN: move-wide-NOT immediate (raw library blocks).
+	// MOVN: mv-wide-NOT immediate (raw library blocks).
 	movn: { shapes: [["r", "i"]] },
 	madd: { shapes: [["r", "r", "r", "r"]] },
 	msub: { shapes: [["r", "r", "r", "r"]] },

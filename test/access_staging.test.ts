@@ -26,7 +26,7 @@ function compile(source: string): string {
 	// window composes with is optimize-gated, matching bench builds. The
 	// region-pool receiver pin (ASM_PLAN_5, default ON) is held OFF here:
 	// it hoists the same derivation above the loop header, which would
-	// move the counted fill out of the sliced body — this file asserts
+	// mv the counted fill out of the sliced body — this file asserts
 	// the staging shape, not the region composition (covered behaviorally).
 	set_region_pool_enabled(false);
 	try {

@@ -25,7 +25,7 @@ Console.write("\\{p.doubled()}")
 
 	test("extend class with method", async () => {
 		const input = `
-owning struct Counter {
+mv struct Counter {
 	var int count
 }
 extend struct Counter {
@@ -152,7 +152,7 @@ Console.write(a.speak())
 trait Adder {
 	func add = (self, int n, out int)
 }
-owning struct Count {
+mv struct Count {
 	var int value = 10
 }
 extend struct Count : Adder {
@@ -176,7 +176,7 @@ trait Named {
 trait Priced {
 	func price = (out int)
 }
-owning struct Product {
+mv struct Product {
 	var int unused = 0
 }
 extend struct Product : Named, Priced {
@@ -233,9 +233,9 @@ extend struct Missing {
 		);
 	});
 
-	test("extend struct on an owning struct merges (the class/struct mismatch era is gone)", () => {
+	test("extend struct on a mv struct merges (the class/struct mismatch era is gone)", () => {
 		const source = `
-owning struct Klass {
+mv struct Klass {
 	var int x = 0
 }
 extend struct Klass {

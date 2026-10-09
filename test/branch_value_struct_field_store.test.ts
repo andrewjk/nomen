@@ -16,16 +16,16 @@ import build_and_check_output from "./build_and_check_output";
 // param) and the struct then pushed into a List.
 
 const Defs = `
-owning struct Attr {
+mv struct Attr {
 	var name = ""
 	var value = ""
 }
 
-owning struct Node {
+mv struct Node {
 	var attributes = List<Attr>()
 }
 
-func owned_of = (string text, move out string) {
+func owned_of = (string text, mv out string) {
 	return text.to_string()
 }
 
@@ -49,7 +49,7 @@ func commit = (ref Node holder, string attr_name, string raw_value, bool needs_d
 		} else {
 			attr.value = raw_value.copy()
 		}
-		holder.attributes.push(move attr)
+		holder.attributes.push(mv attr)
 	}
 }
 `;
@@ -80,11 +80,11 @@ test("switch: direct store into a local value-struct field across cases", async 
 	const input = `
 import System
 
-owning struct Pair {
+mv struct Pair {
 	var a = ""
 }
 
-func owned_of = (string text, move out string) {
+func owned_of = (string text, mv out string) {
 	return text.to_string()
 }
 
@@ -101,7 +101,7 @@ func commit = (ref List<Pair> sink, string raw, int mode) {
 			p.a = "other"
 		}
 	}
-	sink.push(move p)
+	sink.push(mv p)
 }
 
 pub func main = (Init init) {

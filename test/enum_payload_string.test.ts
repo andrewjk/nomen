@@ -11,7 +11,7 @@ test("heap string local returned in enum payload from method", async () => {
 struct Maker {
 	func make = (out Option<string>) {
 		const string s = "abc".to_string()
-		return .some(move s)
+		return .some(mv s)
 	}
 }
 
@@ -28,7 +28,7 @@ match r {
 test.skip("local enum payload freed at scope exit, producer local unaffected", async () => {
 	// SKIPPED (D3 endgame residual): the `.some(s.copy())` argument elides to
 	// `.some(s)` (the case ctor strdups anyway) but `s`'s scope-exit free is
-	// then dropped — LEAK 1. The `move`-spelled shape (`.some(move s)`) is
+	// then dropped — LEAK 1. The `mv`-spelled shape (`.some(mv s)`) is
 	// covered and leak-free above. Tracked in FOLLOWUP.md "enum-case copy
 	// argument".
 	const input = `

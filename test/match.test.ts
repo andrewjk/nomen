@@ -413,7 +413,7 @@ Console.write("\\{area}")
 	// temps must hoist before the branch's assignment (both backends).
 	test("match-as-expression with interpolated string branches", async () => {
 		const input = `
-owning enum Result {
+mv enum Result {
   case ok(int value)
   case error(string message)
 }
@@ -439,7 +439,7 @@ Console.write("\\n")
 
 	test("match-as-expression with multiple interpolations per branch", async () => {
 		const input = `
-owning enum Result {
+mv enum Result {
   case ok(int value)
   case error(string message)
 }
@@ -479,7 +479,7 @@ Console.write("\\n")
 	// original (per-branch join normalization, no join-point strdup).
 	test("return match with interpolated string branches", async () => {
 		const input = `
-owning enum Result {
+mv enum Result {
   case ok(int value)
   case error(string message)
 }
@@ -507,7 +507,7 @@ Console.write("\\n")
 	// and the variable owns its result uniformly.
 	test("match-as-expression with mixed literal and interpolated string branches", async () => {
 		const input = `
-owning enum Result {
+mv enum Result {
   case ok(int value)
   case error(string message)
 }
@@ -536,7 +536,7 @@ Console.write("\\n")
 	// orders must produce an owned, freed-once result).
 	test("match-as-expression with mixed literal-first string branches", async () => {
 		const input = `
-owning enum Result {
+mv enum Result {
   case ok(int value)
   case error(string message)
 }
@@ -566,7 +566,7 @@ Console.write("\\n")
 	// backends.
 	test("return match with mixed literal + interpolated string branches", async () => {
 		const input = `
-owning enum Result {
+mv enum Result {
   case ok(int value)
   case error(string message)
 }

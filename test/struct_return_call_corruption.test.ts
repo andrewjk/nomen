@@ -14,19 +14,19 @@ import build_and_check_output from "./build_and_check_output";
 describe("struct-returning functions and string params/locals", () => {
 	test("constructor return with a heap local string", async () => {
 		const input = `
-owning struct R {
+mv struct R {
 	var int a
 	var string b
 }
 
 func no_loop = (string s, out R) {
 	var out_s = s.copy()
-	return R(1, move out_s)
+	return R(1, mv out_s)
 }
 
 func with_call = (string s, out R) {
 	var out_s = s.to_string()
-	return R(1, move out_s)
+	return R(1, mv out_s)
 }
 
 var a = no_loop("xy")

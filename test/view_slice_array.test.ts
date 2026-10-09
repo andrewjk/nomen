@@ -8,7 +8,7 @@ import build_and_check_output from "./build_and_check_output";
 
 const lib = get_library(path.resolve(import.meta.dirname, "../core"));
 
-// `view T` slicing — a non-owning (ptr, len) borrow of a container's [start,
+// `view T` slicing — a non-mv (ptr, len) borrow of a container's [start,
 // end) range. Array<T>.slice and Buffer<T>.slice are #arch primitives in core;
 // List<T>.slice and user containers delegate to their backing Buffer's slice in
 // pure Nomen. Runs on both backends (C and aarch64).
@@ -63,7 +63,7 @@ describe("array/list slice (runtime, both backends)", () => {
 			// pure Nomen (no #arch). Its slice returns a view over its elements,
 			// fully borrow-checked. (alloc_int records cap so the literal-index
 			// stores verify; push/grow flow-bounds are a separate concern.)
-			pub owning struct Store: Viewable {
+			pub mv struct Store: Viewable {
 				var Buffer<int> items = Buffer<int>()
 				pub func fill = (ref self) {
 					self.items.alloc_int(4)

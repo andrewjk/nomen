@@ -10,12 +10,12 @@ import build_and_check_output from "./build_and_check_output";
 describe("reassignment paths inside a loop", () => {
 	test("heap-returning factory function", async () => {
 		const input = `
-owning struct Box { var int v }
-owning struct Holder { move Box c }
+mv struct Box { var int v }
+mv struct Holder { mv Box c }
 func mk = (int n, out Holder) {
-    return Holder(move Box(n))
+    return Holder(mv Box(n))
 }
-var Holder h = Holder(move Box(0))
+var Holder h = Holder(mv Box(0))
 var int i = 1
 while i <= 5 {
     h = mk(i)
@@ -28,12 +28,12 @@ Console.write("\\{h.c.v}\\n")
 
 	test("ref param reassigned by a function called in a loop", async () => {
 		const input = `
-owning struct Box { var int v }
-owning struct Holder { move Box c }
+mv struct Box { var int v }
+mv struct Holder { mv Box c }
 func replace = (ref Holder h, int n) {
-    h = Holder(move Box(n))
+    h = Holder(mv Box(n))
 }
-var Holder h = Holder(move Box(0))
+var Holder h = Holder(mv Box(0))
 var int i = 1
 while i <= 5 {
     replace(ref h, i)
@@ -46,12 +46,12 @@ Console.write("\\{h.c.v}\\n")
 
 	test("ref param reassignment outside a loop reclaims the old instance", async () => {
 		const input = `
-owning struct Box { var int v }
-owning struct Holder { move Box c }
+mv struct Box { var int v }
+mv struct Holder { mv Box c }
 func replace = (ref Holder h, int n) {
-    h = Holder(move Box(n))
+    h = Holder(mv Box(n))
 }
-var Holder h = Holder(move Box(0))
+var Holder h = Holder(mv Box(0))
 replace(ref h, 7)
 Console.write("\\{h.c.v}\\n")
 `;
@@ -73,13 +73,13 @@ Console.write("\\{s}\\n")
 
 	test("constructor reassignment in a nested if inside a loop", async () => {
 		const input = `
-owning struct Box { var int v }
-owning struct Holder { move Box c }
-var Holder h = Holder(move Box(0))
+mv struct Box { var int v }
+mv struct Holder { mv Box c }
+var Holder h = Holder(mv Box(0))
 var int i = 1
 while i <= 5 {
     if i > 2 {
-        h = Holder(move Box(i))
+        h = Holder(mv Box(i))
     }
     i = i + 1
 }

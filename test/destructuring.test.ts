@@ -44,7 +44,7 @@ var [x = px, y = py] = p
 
 	test("parse class destructuring", () => {
 		const input = `
-owning struct Point {
+mv struct Point {
 	var int x
 	var int y
 }
@@ -221,15 +221,15 @@ Console.write("\\{w} \\{d}")
 	});
 
 	test("destructure struct with string field", async () => {
-		// D3: `string` is owning, so destructuring a string field out is a
-		// move (the synthesized `move ... swap ""` revalidates the field).
+		// D3: `string` is mv, so destructuring a string field out is a
+		// mv (the synthesized `mv ... swap ""` revalidates the field).
 		const input = `
-owning struct Person {
+mv struct Person {
 	var string name
 	var int age
 }
 var p = Person("Ada", 30)
-var [move name, age] = p
+var [mv name, age] = p
 Console.write("\\{name} \\{age}")
 `;
 		await build_and_check_output(input, "struct_destructure_str", "Ada 30");
@@ -240,7 +240,7 @@ Console.write("\\{name} \\{age}")
 describe("class destructuring", () => {
 	test("destructure class by field name", async () => {
 		const input = `
-owning struct Point {
+mv struct Point {
 	var int x
 	var int y
 }
@@ -253,7 +253,7 @@ Console.write("\\{x} \\{y}")
 
 	test("destructure class with rename", async () => {
 		const input = `
-owning struct Counter {
+mv struct Counter {
 	var int count
 	var int total
 }

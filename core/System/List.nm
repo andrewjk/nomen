@@ -1,11 +1,11 @@
 /**
  * A growable, ordered list of values (`push`/`pop`/`at`)
  **/
-pub owning struct List<T>: Viewable {
+pub mv struct List<T>: Viewable {
 	var length = 0
 	var items = Buffer<T>()
 
-	pub func push = (ref self, move T value) {
+	pub func push = (ref self, mv T value) {
 		if self.length >= self.items.cap {
 			var new_cap = 4
 			var int old_cap = self.items.cap
@@ -18,7 +18,7 @@ pub owning struct List<T>: Viewable {
 		self.length += 1
 	}
 
-	pub func pop = (ref self, move out T) {
+	pub func pop = (ref self, mv out T) {
 		if self.length <= 0 {
 			return self.items.move(0)
 		}
@@ -51,13 +51,13 @@ pub owning struct List<T>: Viewable {
 		panic("index out of range")
 	}
 
-	// A non-owning `view T` over [start, end). Delegates to the backing Buffer's
+	// A non-mv `view T` over [start, end). Delegates to the backing Buffer's
 	// #arch slice primitive — no #arch code here. Borrows from self.
 	pub func slice = (self, int start: start >= 0, int end: end >= start, out view T) {
 		return self.items.slice(start, end)
 	}
 
-	pub func set = (ref self, int i: i >= 0 && i < self.length, move T value) {
+	pub func set = (ref self, int i: i >= 0 && i < self.length, mv T value) {
 		self.items.replace(i, value)
 	}
 
@@ -65,7 +65,7 @@ pub owning struct List<T>: Viewable {
 	// for indices that can't be proven at compile time (cross-module calls
 	// can never discharge `set`'s parameter constraint) and out-of-range is
 	// a bug, not a case.
-	pub func set_or_panic = (ref self, int i, move T value) {
+	pub func set_or_panic = (ref self, int i, mv T value) {
 		if i >= 0 && i < self.length {
 			self.set(i, value)
 			return
@@ -74,7 +74,7 @@ pub owning struct List<T>: Viewable {
 	}
 
 	// A deep copy: a fresh List<T> with an independent copy of every element.
-	// For owning element types (strings, owning value structs) each slot in the
+	// For mv element types (strings, mv value structs) each slot in the
 	// copy owns its own heap data (Buffer deep-copies on store), so the source
 	// and the copy share nothing. Not available for class/trait element types
 	// (the copy would share the stored instances — the checker rejects it).

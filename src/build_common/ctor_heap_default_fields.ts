@@ -8,7 +8,7 @@ import { init_computed_heap_string_fields } from "./init_computed_seeds.ts";
  * non-literal heap expression the constructor evaluates fresh at every
  * construction, or a custom `#init` COMPUTES the field's value
  * (`init_computed_heap_string_fields` — every direct `self.<field> = <expr>`
- * write stores a heap-owning expression, which also displaces the default).
+ * write stores a heap-mv expression, which also displaces the default).
  * Recording at the ctor-binding site makes scope exit free the seeded value,
  * and a displaced store (an override, a reassignment) reclaim it via the
  * record's old_was_heap check.

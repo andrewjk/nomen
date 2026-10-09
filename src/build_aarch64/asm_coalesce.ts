@@ -16,7 +16,7 @@
  * 1. Copy propagation (forward scan): `mov xD, xS` records D == S. Reads
  *    of D are rewritten to S until (a) S is redefined (the alias
  *    diverges — physical xD still holds the copied value, reads fall
- *    back to it), (b) D is redefined, or (c) a region boundary. A move
+ *    back to it), (b) D is redefined, or (c) a region boundary. A mv
  *    whose use was substituted is flagged; a backward two-set liveness
  *    pass (the eliminate_dead_copy_moves model) deletes exactly the
  *    flagged moves whose destination is dead below.
@@ -455,7 +455,7 @@ export function coalesce_copies(code: string): string {
 			for (const r of reads) {
 				const copy = copies.get(r.reg);
 				if (!copy || !is_xfam(r.reg)) continue;
-				// Never rewrite a move's own source into a self-move
+				// Never rewrite a mv's own source into a self-mv
 				// (`mov x0, x19` with x0==x19 would become the no-op
 				// `mov x0, x0`); the explicit deferral shape stays.
 				if (
@@ -525,7 +525,7 @@ export function coalesce_copies(code: string): string {
 	// exposed reads instead of tainting the whole universe: a label's or
 	// branch's successor block names exactly the registers it may read
 	// before defining, and only those block a deletion above. The
-	// universe-taint version kept every staging move whose register was
+	// universe-taint version kept every staging mv whose register was
 	// never redefined below (the taint from a distant `ret` or `b.cond`
 	// leaked across the whole loop body).
 

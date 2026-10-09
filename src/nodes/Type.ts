@@ -15,7 +15,7 @@ import BaseNode from "./BaseNode.ts";
  *     `Array<T>` to `{name: T, storage_kind: "heap_array"}`). Lowers to a
  *     heap `struct Array_<T>*` (header + inline data). Was
  *     `is_array && is_array_heap && !is_view`.
- *   - `view` — a non-owning, non-escaping borrow view of a container's
+ *   - `view` — a non-mv, non-escaping borrow view of a container's
  *     contents (e.g. `view string` = a (ptr, len) slice into a string's
  *     buffer, `view T` into a `List<T>`/`Buffer<T>`). Was `is_view` with no
  *     array flag.
@@ -52,7 +52,7 @@ export default class Type {
 	 * extracting from a const source (e.g. `const_list.at(i)` where the
 	 * element type is a class). Field writes through a const_ref are
 	 * rejected, as are mutating (`ref self`) method dispatch and forwarding
-	 * to a `ref`/`move` parameter. To regain mutability: don't declare the
+	 * to a `ref`/`mv` parameter. To regain mutability: don't declare the
 	 * source `const`, take a `ref` to the source first, or `.clone()` the
 	 * element.
 	 *
@@ -61,7 +61,7 @@ export default class Type {
 	 * declared type (`check_declaration_node.ts`) so it is infectious —
 	 * you can't strip it by explicit annotation. Propagated through
 	 * `clone_type` and `substitute_type`. Analogous to `is_view` (a
-	 * non-owning borrow), but `is_const_ref` is about *mutability*, not
+	 * non-mv borrow), but `is_const_ref` is about *mutability*, not
 	 * ownership. See FOLLOWUP.md "Deep-const for collections".
 	 */
 	is_const_ref?: boolean;
@@ -126,7 +126,7 @@ export default class Type {
 	}
 
 	/**
-	 * A non-owning, non-escaping borrow view of a container's contents
+	 * A non-mv, non-escaping borrow view of a container's contents
 	 * (e.g. `view string` = a (ptr, len) slice into a string's buffer).
 	 * Views are not auto-freed (they own no heap) and may not escape the
 	 * scope of their source — enforced by the existing borrow machinery.

@@ -13,7 +13,7 @@ Nested blocks under a construct (`if`/`while`/`async` bodies) are fine.
 
 Why it's worth building rather than leaving: deterministic destruction is
 the language's core model, and a bare block is the one-zero-cost way to
-release an owning value before the enclosing function ends. The current
+release a mv value before the enclosing function ends. The current
 workaround, `if true { … }`, is semantically a lie and reads like one.
 C/C++/Rust all have the bare form; Swift calls it `do`.
 
@@ -31,15 +31,15 @@ the "STRUCT_PLAN_3" labels below are its section names.)
 
 The class retirement (Phase R) and the struct/move refactor (Phases B/D)
 have landed: `class` is retired with a dedicated parse error, the Copyable
-verifier runs over declared ownership, `string` is a declared owning type,
-and the owning-struct string-field lowerings are uniform-heap on both
+verifier runs over declared ownership, `string` is a declared mv type,
+and the mv-struct string-field lowerings are uniform-heap on both
 backends. What remains:
 
 ### Docs debt (user-facing, teaching retired syntax)
 
 - **`docs/BORROW.md`** still teaches the retired `mov` keyword and the
   pre-B5 "structs cannot hold class-typed fields" rule — it needs a full
-  rewrite to the `move`/owning-field world.
+  rewrite to the `mv`/mv-field world.
 - **`docs/ASYNC.md`** still teaches `Sendable`-gated class spawning
   (SPEC.md/README.md were rewritten in tranche 4's en-route work; the
   shipped rule is that trait handles cannot cross a task boundary and
@@ -47,6 +47,11 @@ backends. What remains:
   that section below).
 
 Neither should be cited as current syntax until rewritten.
+
+- **`docs/GUI.md`**'s "Why handle-based, not trait-based" rationale section
+  still quotes pre-`mv`-era errors (`mov Trait` params) and pre-R trait
+  constraints — its conclusions mostly still hold, but the cited syntax and
+  error text are two renames stale.
 
 ### Test-corpus skips that name live gaps
 
@@ -71,30 +76,30 @@ Each skip masks a real post-R/B1/D3 gap (verified still failing
 
 - A generic struct mono with a bare-`T` field derives `is_owning` (the
   mono verifier then passes), but the generic TEMPLATE itself is never
-  flagged — `owning struct Wrapper<T>` must be spelled when every
-  instantiation should be owning.
-- Variadic-pair extraction of owning elements (`Map`'s pairs init) rides
+  flagged — `mv struct Wrapper<T>` must be spelled when every
+  instantiation should be mv.
+- Variadic-pair extraction of mv elements (`Map`'s pairs init) rides
   the temp-rooted read exemption in `check_function_call` (the temp dies,
   set's store deep-copies) until a generic move-out accessor exists on
   Array.
 
-### D3 residuals (`string` is owning)
+### D3 residuals (`string` is mv)
 
 - **`enum`-case `.copy()` argument leaks** (`Option<string>.some(s.copy())`):
   the arg elides to `s` (the case ctor strdups anyway) but `s`'s
-  scope-exit free is then dropped → `LEAK: 1`. The `move`-spelled shape
-  (`.some(move s)`) is leak-free. `test/enum_payload_string.test.ts`'s
+  scope-exit free is then dropped → `LEAK: 1`. The `mv`-spelled shape
+  (`.some(mv s)`) is leak-free. `test/enum_payload_string.test.ts`'s
   "local enum payload…" is skipped with a pointer to this.
 - **`string?` `.copy()` on a null** yields a non-null empty string
   instead of preserving null (found by a migration probe).
-- **aarch64 rodata-fold + move**: `owns = move own` where `"heap" + "!"`
+- **aarch64 rodata-fold + move**: `owns = mv own` where `"heap" + "!"`
   folded to rodata trips `AUDIT-STALE-FREE` (the aarch64 constant-fold
   produced a rodata pair that the move marked heap).
 - **`string` captures are read-invalidated but memory-snapshotted**: the
   E2 endgame (a real transfer) is deferred; the current model is sound
   and matches the pre-D3 output for capture-then-reassign shapes.
 
-### Trait-typed FIELDS on owning structs (the B5 remainder)
+### Trait-typed FIELDS on mv structs (the B5 remainder)
 
 Rejected with a named fix ("declare it with the concrete type, or
 `Box<Concrete>`") until the boxed-handle field lowering exists — field
@@ -122,7 +127,7 @@ deliberately deferred remainder, recorded 2026-10-05 in
 `PROGRESS_PHASE_N.md`:
 
 - **`Shared<T>`** — the lock-guarded slot type, reachable only through the
-  owning lock's critical-section form.
+  mv lock's critical-section form.
 - **`with(m) (T g) { ... }`** — the critical-section form (new syntax:
   parser + checker + both backends).
 - **Typed `Mutex<T>`** — the existing hand-locked `Mutex` primitive is
@@ -156,7 +161,7 @@ cases.
 - `Map`/`Set`/`Buffer` have no `.at(i)` element semantics to desugar to.
 
 Also still open from the same area: `for ref x of list` is rejected with
-a dedicated error (List `set` takes `move T`, so the array writeback
+a dedicated error (List `set` takes `mv T`, so the array writeback
 shape doesn't transfer — needs its own design).
 
 ## Ownership-tracking remainders (string fields through calls)
@@ -188,13 +193,13 @@ synthesizes deep copies). Remaining gaps (all bounded to non-`List`
 container fields / class/enum element fields):
 
 - **`load_T` deep-copies `List`/`Buffer` fields only** (and, on C,
-  payload-copyable enums). A `Map`/`Set` field, a nested owning user struct
+  payload-copyable enums). A `Map`/`Set` field, a nested mv user struct
   field, or a class-typed field of a container element is still returned
   SHALLOW: the caller's scope-exit destroy frees the slot's shared state
   (double-free). `Map`/`Set` have a hand-written `copy`, but it is EXCLUDED
   from the automatic deep copy (`is_load_deep_copy_container`) because
   composing it from the `load` specialization corrupts the returned struct
-  on aarch64 (open — the load sret + `<Map>_copy` interaction). Nested owning
+  on aarch64 (open — the load sret + `<Map>_copy` interaction). Nested mv
   user structs need a synthesized `copy` story (the auto-derive gate
   `field_copyable` does not yet accept `Buffer`/`Map`/`Set` fields). Same
   for enum-with-data element fields on aarch64 (C handles them).
@@ -206,7 +211,7 @@ container fields / class/enum element fields):
   rejects for class elements).
 - **`store_T`/`replace_T` transfer only container leaves** (recursing nested
   structs). Class-typed and enum-with-data fields of the element stay shared;
-  for a stamped `move` donor this is sound (spliced → the slot is sole owner),
+  for a stamped `mv` donor this is sound (spliced → the slot is sole owner),
   but an UNSTAMPED generic-body donor (the library `List.copy` body's `v`)
   whose teardown destroys a class field can still double-free. Adding
   class/enum payloads to the transfer set would close it.
@@ -220,14 +225,14 @@ landed), so these are only reachable from System containers — which use
 1. **`store`'s fresh-slot contract is load-bearing.** Removing `store` and
    routing every caller to `replace` broke the load→modify→store
    round-trip uses (`JsonTree.set_kind`/`set_child`/…): `load` returns a
-   shallow (aliasing) copy for owning structs, and `replace` frees the
+   shallow (aliasing) copy for mv structs, and `replace` frees the
    displaced value _before_ copying, so the aliased copy dangles. Closing
    the remaining leak (a `store` on an occupied, non-aliasing slot) needs
-   per-element reclaim in the owning specializations while preserving that
+   per-element reclaim in the mv specializations while preserving that
    guard.
 2. **`alloc` discarding:** `alloc(n)` sets cap exactly `n`; `grow(n)` rounds
    up. Callers rely on the exact cap. Reclaiming the old slab inside
-   `alloc` while keeping the exact cap needs per-element destroy (owning
+   `alloc` while keeping the exact cap needs per-element destroy (mv
    `T`).
 
 ## Trait-declared field ownership corners

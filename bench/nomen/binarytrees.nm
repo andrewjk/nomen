@@ -1,6 +1,6 @@
 import System
 
-owning struct TreeNode {
+mv struct TreeNode {
 	var Box<TreeNode>? left = null
 	var Box<TreeNode>? right = null
 }
@@ -10,8 +10,8 @@ func create_tree = (int depth, out TreeNode) {
 		const TreeNode left = create_tree(depth - 1)
 		const TreeNode right = create_tree(depth - 1)
 		var node = TreeNode()
-		node.left = Box<TreeNode>(move left)
-		node.right = Box<TreeNode>(move right)
+		node.left = Box<TreeNode>(mv left)
+		node.right = Box<TreeNode>(mv right)
 		return node
 	}
 	var node = TreeNode()
@@ -34,8 +34,8 @@ func check_node = (ref Box<TreeNode>? node, out int) {
 	return sum
 }
 
-func check_tree = (move TreeNode node, out int) {
-	var boxed = Box<TreeNode>(move node)
+func check_tree = (mv TreeNode node, out int) {
+	var boxed = Box<TreeNode>(mv node)
 	return check_node(ref boxed)
 }
 
@@ -51,7 +51,7 @@ pub func main = (Init init) {
 	}
 
 	const TreeNode stretch_tree = create_tree(max_depth + 1)
-	Console.write("stretch tree of depth \{max_depth + 1}\t check: \{check_tree(move stretch_tree)}\n")
+	Console.write("stretch tree of depth \{max_depth + 1}\t check: \{check_tree(mv stretch_tree)}\n")
 
 	const TreeNode long_lived_tree = create_tree(max_depth)
 
@@ -67,5 +67,5 @@ pub func main = (Init init) {
 		depth = depth + 2
 	}
 
-	Console.write("long lived tree of depth \{max_depth}\t check: \{check_tree(move long_lived_tree)}\n")
+	Console.write("long lived tree of depth \{max_depth}\t check: \{check_tree(mv long_lived_tree)}\n")
 }

@@ -21,7 +21,7 @@ Console.write("ok")
 
 	test("construct struct with string param", async () => {
 		const input = `
-owning struct Person {
+mv struct Person {
   var string name
 }
 var Person p = Person("Andrew")
@@ -32,7 +32,7 @@ Console.write("\\{p.name}")
 
 	test("construct struct with default field", async () => {
 		const input = `
-owning struct Person {
+mv struct Person {
   var string name
   var int age = 0
 }
@@ -128,7 +128,7 @@ const dog = Dog()
 
 	test("too many parameters", () => {
 		const input = `
-owning struct Dog {}
+mv struct Dog {}
 const dog = Dog("Spot")
 `;
 		const expected = [test_error(input, "Too many parameters for function: Dog", 3, 13)];
@@ -138,7 +138,7 @@ const dog = Dog("Spot")
 
 	test("parameters missing", () => {
 		const input = `
-owning struct Dog {
+mv struct Dog {
   var string name
 }
 const dog = Dog()
@@ -150,7 +150,7 @@ const dog = Dog()
 
 	test("param type mismatch", () => {
 		const input = `
-owning struct Dog {
+mv struct Dog {
   var string name
 }
 const dog = Dog(5)
@@ -164,7 +164,7 @@ const dog = Dog(5)
 
 	test("param type mismatch -- unknown value", () => {
 		const input = `
-owning struct Dog {
+mv struct Dog {
   var string name
 }
 const dog = Dog(z0)

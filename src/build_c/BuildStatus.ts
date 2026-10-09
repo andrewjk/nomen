@@ -122,7 +122,7 @@ export default interface BuildStatus {
 	module_init_statements?: BaseNode[];
 	/**
 	 * Functions whose bodies are compiled as C (via `aarch64_use_c`).
-	 * Each entry records the function node, owning struct (if any), and the
+	 * Each entry records the function node, mv struct (if any), and the
 	 * concatenated raw C code — used to generate the companion file.
 	 */
 	c_companion_functions?: {
@@ -442,7 +442,7 @@ export default interface BuildStatus {
 	function_struct_param_slots?: Set<string>;
 	/**
 	 * Functions/methods (by emitted label) whose CLASS-typed return is a
-	 * borrowed reference (e.g. `return move got` where `got = xs.at(i)`).
+	 * borrowed reference (e.g. `return mv got` where `got = xs.at(i)`).
 	 * A class declaration initialized from such a call is a borrow — it must
 	 * NOT be destroy-tracked at scope exit (the callee's owner frees the
 	 * instance). See build_common/scan_borrow_returns.ts.
@@ -452,7 +452,7 @@ export default interface BuildStatus {
 	 * aarch64 only. The scoped_declarations arrays of ENCLOSING scopes while
 	 * an if/while/for/switch/match body is being built (each swaps in a fresh
 	 * frame — see enter_scope_frame/exit_scope_frame). A `return` inside the
-	 * body must clean up those outer frames' declarations too, and move
+	 * body must clean up those outer frames' declarations too, and mv
 	 * marking must recognize outer-scope locals.
 	 */
 	outer_scope_declarations?: DeclarationNode[][];
@@ -468,7 +468,7 @@ export default interface BuildStatus {
 	stack_offsets_frames?: Map<string, number>[];
 	/**
 	 * C only. Post-statement frees for VALUE-struct string fields released at
-	 * a `move` call site (the callee's store_T deep-copied them and the decl
+	 * a `mv` call site (the callee's store_T deep-copied them and the decl
 	 * was spliced out of scoped_declarations). The call may sit inside a
 	 * larger expression, so the frees are buffered here and appended by
 	 * build_node once the statement is complete.
@@ -496,7 +496,7 @@ export default interface BuildStatus {
 	 * fields are NOT freed by the struct destroy (they may be rodata from
 	 * construction), so ownership is tracked per assignment: the recorded
 	 * fields are released at scope exit — including when the struct was
-	 * `move`-stored into a container (store_T strdups its own copy, so the
+	 * `mv`-stored into a container (store_T strdups its own copy, so the
 	 * source's heap string is otherwise abandoned). Cleared when the struct
 	 * is returned (the sret byte-copy transfers the string pointers).
 	 */
@@ -513,7 +513,7 @@ export default interface BuildStatus {
 	 * `self.<field>` keys whose DEFAULT seed was already reclaimed inside the
 	 * current custom `#init` body (both backends). Defaulted fields are seeded
 	 * before the body runs; the body's first write to the field displaces that
-	 * seed — when the default is a heap-owning expression it must be freed
+	 * seed — when the default is a heap-mv expression it must be freed
 	 * ahead of the store (a raw pair store would orphan it). Later writes
 	 * displace values whose ownership the init cannot know and keep the
 	 * status quo. Reset per constructor overload next to init_assigned_fields.
@@ -541,7 +541,7 @@ export default interface BuildStatus {
 	/** Destination hint, integer side (ASM_PLAN_2 tranche F): when set to a
 	 *  promoted x-register, the ROOT integer operation of an assignment or
 	 *  declaration initializer emits directly into it instead of x0 +
-	 *  writeback move. Consume-once (the root op clears it, so nested
+	 *  writeback mv. Consume-once (the root op clears it, so nested
 	 *  sub-operations keep the scratch discipline; the target's old value
 	 *  stays readable until the final instruction, which reads its sources
 	 *  before writing). Only ever set for callee-saved x23-x28 targets —
@@ -623,7 +623,7 @@ export default interface BuildStatus {
 	 */
 	c_owned_borrow_inits?: Set<DeclarationNode>;
 	/**
-	 * String variables whose ownership was TRANSFERRED by a move-on-last-use
+	 * String variables whose ownership was TRANSFERRED by a mv-on-last-use
 	 * declare (`var u = t` where t is proven dead after — STRING_PLAN tranche
 	 * 4). The transferred-to variable frees the bytes at its own scope exit,
 	 * so auto_free must skip the moved-from variable (freeing both would
@@ -823,7 +823,7 @@ export default interface BuildStatus {
 	 * aarch64-only: registers holding a LOOP-CARRIED name (live into some
 	 * loop header — the plan's `loop_blocked` facts). The loop promotion's
 	 * claim and share scans must refuse these: the bracketing entry load /
-	 * exit store-back move a different variable through the register across
+	 * exit store-back mv a different variable through the register across
 	 * the whole loop, and an occupant whose only live supply crosses the
 	 * bracket boundary without a textual overlap (read once per iteration
 	 * at the header) has no adjacency edge with an in-loop candidate — the
@@ -981,7 +981,7 @@ export default interface BuildStatus {
 	 * checker-hoisted temp's chain had its invariant prefix hoisted to a
 	 * `_vn_N` preheader declare, so the temp's slot must never be written
 	 * (emit_allocations skips it and feeds the rewritten tree to the
-	 * accessor's staging path instead). Keyed by the owning statement's
+	 * accessor's staging path instead). Keyed by the mv statement's
 	 * AST node; set/cleared by the pass around each body build.
 	 */
 	vn_param_inits?: Map<BaseNode, Map<string, BaseNode>>;

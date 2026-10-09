@@ -64,7 +64,7 @@ pub func main = () {
 test("elementwise float loop emits a 2-lane NEON vector loop plus scalar tail", () => {
 	const code = compile_aarch64(INIT_LOOP);
 	expect(code).toContain(".Lneon_0:");
-	// Copy coalescing substitutes n's staging move, so the lane count
+	// Copy coalescing substitutes n's staging mv, so the lane count
 	// reads its arrival register directly.
 	expect(code).toMatch(/asr x9, x\d+, #1/);
 	expect(code).toContain("mov x10, #0");
@@ -326,7 +326,7 @@ test("vector loop is unrolled to two groups per iteration", () => {
 	expect(code).toContain("str q0, [x12, x14, lsl #4]");
 	expect(code).toContain("add x10, x10, #2");
 	// limit = floor(n/2) rounded down to whole double-groups
-	// Copy coalescing substitutes n's staging move, so the lane count
+	// Copy coalescing substitutes n's staging mv, so the lane count
 	// reads its arrival register directly.
 	expect(code).toMatch(/asr x9, x\d+, #1/);
 	expect(code).toContain("bic x9, x9, #1");
@@ -868,7 +868,7 @@ pub func main = () {}
 	);
 	expect(code).toContain(".Lneon_0:");
 	expect(code).toContain("add v2.4s, v2.4s, v0.4s");
-	// .4s horizontal combine: add-across, 32-bit move to x0
+	// .4s horizontal combine: add-across, 32-bit mv to x0
 	expect(code).toContain("addv s0, v2.4s");
 	expect(code).toContain("fmov w0, s0");
 });

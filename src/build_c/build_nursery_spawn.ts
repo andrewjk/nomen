@@ -71,7 +71,7 @@ export default function build_nursery_spawn(
 	if (fire_and_forget) {
 		status.code += `\t(void)0;\n`;
 	} else {
-		// The Task handle: an inline owning struct VALUE (Phase R tranche 2)
+		// The Task handle: an inline mv struct VALUE (Phase R tranche 2)
 		// — no heap instance, no `_vt` (a value struct has no embedded
 		// vtable; trait dispatch rides boxed handles).
 		status.code += `\tstruct ${mono_task_name} _task;\n`;

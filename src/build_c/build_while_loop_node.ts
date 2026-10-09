@@ -69,7 +69,7 @@ export default function build_while_loop_node(
 			if (is_reevaluatable(alloc)) {
 				const decl = alloc as DeclarationNode;
 				reeval_allocs.push(decl);
-				// Bare declaration; owning shapes null-initialize so the
+				// Bare declaration; mv shapes null-initialize so the
 				// per-iteration displaced free below is a no-op on entry.
 				build_parameter_node(new ParameterNode(decl.start, decl.name, decl.type), status);
 				if (decl.type?.name === "string" && !decl.type?.is_view) {
@@ -82,7 +82,7 @@ export default function build_while_loop_node(
 				}
 				status.code += `;\n`;
 				// Register for loop-exit auto_free so the LAST value of an
-				// owning temp is reclaimed (mirrors the declaration path,
+				// mv temp is reclaimed (mirrors the declaration path,
 				// which never registers view-typed declarations — a view's
 				// ptr aliases its source's storage and must not be freed).
 				if (!decl.type?.is_view) {
@@ -98,7 +98,7 @@ export default function build_while_loop_node(
 		if (reeval_allocs.length === 0) return false;
 		status.code += `({ `;
 		for (const decl of reeval_allocs) {
-			// Reclaim the displaced value before the re-store: an owning temp
+			// Reclaim the displaced value before the re-store: a mv temp
 			// (heap string / class / trait instance) would leak every
 			// iteration otherwise.
 			if (decl.type?.name === "string" && !decl.type?.is_view) {

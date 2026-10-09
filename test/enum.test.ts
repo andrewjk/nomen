@@ -172,7 +172,7 @@ Console.write("\\{shape}")
 
 	test("enum with all cases having data", async () => {
 		const input = `
-owning enum Message {
+mv enum Message {
   case quit
   case walk(int x, int y)
   case write(string text)

@@ -83,8 +83,8 @@ function is_heap_array_type(type: Type | undefined): boolean {
 }
 
 /**
- * Whether a value struct has a `string` field (or a nested owning value struct
- * with one) — the "owning element" case for containers. Mirrors the build's
+ * Whether a value struct has a `string` field (or a nested mv value struct
+ * with one) — the "mv element" case for containers. Mirrors the build's
  * `struct_needs_auto_destroy` / `has_string_fields` (owning_buffer_specialize).
  */
 function struct_has_string_fields(node: StructNode, status: CheckStatus): boolean {
@@ -106,11 +106,11 @@ function struct_has_string_fields(node: StructNode, status: CheckStatus): boolea
  * args are copied into a heap `Array_<T>` temp at the call site — the param
  * promotes to `struct Array_<T>*`, so passing the stack array directly would
  * misalign `.length`/`.at`/iteration. Three shapes are excluded (the first two
- * rejected with a dedicated diagnostic, the third — owning value structs —
+ * rejected with a dedicated diagnostic, the third — mv value structs —
  * also rejected; see the heap-array param checks in check_function_call):
  * `ref` params (mutation must propagate to the caller's variable, which a
  * copy can't do), class-element arrays (the copy would share the instances —
- * double-free), and owning value-struct elements (string fields — the copy
+ * double-free), and mv value-struct elements (string fields — the copy
  * would share the strings; List<T> deep-copies those soundly instead).
  */
 function is_heap_array_var_copy(
@@ -285,7 +285,7 @@ export default function check_function_call(
 
 	// Deep-const: a method dispatched on a const receiver yields a read-only
 	// (`is_const_ref`) class reference. The flag propagates through all
-	// downstream uses — field writes, ref/move forwarding, and mutating
+	// downstream uses — field writes, ref/mv forwarding, and mutating
 	// (`ref self`) dispatch are rejected at their respective check sites.
 	// Only applies when the return type is a class (value types are returned
 	// by copy and need no const-ification). See FOLLOWUP.md "Deep-const".
@@ -482,7 +482,7 @@ export default function check_function_call(
 		// A capturing closure is a heap env + descriptor. A func-typed FIELD
 		// of a VALUE struct cannot own it: value structs are copyable, so the
 		// copies would share (and double-free) the descriptor, and the
-		// non-owning func-field contract leaves it un-destroyed. Reject at the
+		// non-mv func-field contract leaves it un-destroyed. Reject at the
 		// constructor (CLOSURE.md Phase 2c). Class func fields own it via
 		// `<Class>_destroy`.
 		if (func_param && func.name === "#init" && value_owns_closure(param, status)) {
@@ -548,7 +548,7 @@ export default function check_function_call(
 		// fields, and it is not the receiver / a ref / nullable / variadic
 		// parameter (those keep their existing conventions).
 		//
-		// A `move T` parameter of that same shape gets the TRANSFER row of
+		// A `mv T` parameter of that same shape gets the TRANSFER row of
 		// the ownership table instead: no boundary copy, the argument's
 		// string ownership moves into the callee (whose seeded records free
 		// it) — stamped as move_owned_param_indices so the builds drop the
@@ -676,13 +676,13 @@ export default function check_function_call(
 		}
 		// Deep-const: a const_ref (read-only class reference extracted from a
 		// const source) cannot be forwarded to a `ref` (mutable borrow) or
-		// `move` (ownership-transferring) parameter — either would let the
+		// `mv` (ownership-transferring) parameter — either would let the
 		// callee mutate the const object. This catches forwarded method-call
 		// results (e.g. `f(const_list.at(0))`) that the bare-name check above
 		// misses (it only fires for `param.node_type === "value"`). See
 		// FOLLOWUP.md "Deep-const".
 		if (param_type.is_const_ref && (func_param.type.is_ref || func_param.is_moved)) {
-			const kind = func_param.type.is_ref ? "ref" : "move";
+			const kind = func_param.type.is_ref ? "ref" : "mv";
 			add_error(
 				status,
 				`Cannot pass a const reference to ${kind} parameter '${func_param.name}' — extract from a non-const source or use a plain (copy) parameter`,
@@ -700,7 +700,7 @@ export default function check_function_call(
 		//   2. class-element stack-array variables — the heap copy would
 		//      share the instances with the caller's array (whose cleanup
 		//      frees each element) — a double-free.
-		//   3. owning value-struct elements (string fields) — the copy would
+		//   3. mv value-struct elements (string fields) — the copy would
 		//      share the strings (List<T>'s Buffer deep-copies them; Array
 		//      materialisation does not own element strings yet).
 		if (
@@ -729,7 +729,7 @@ export default function check_function_call(
 			) {
 				add_error(
 					status,
-					`Cannot pass a stack array of owning '${param_type.name}' instances to 'Array<${param_type.name}>' parameter '${func_param.name}' — ` +
+					`Cannot pass a stack array of mv '${param_type.name}' instances to 'Array<${param_type.name}>' parameter '${func_param.name}' — ` +
 						`the materialised heap copy would share the instances with the caller's array (double free). ` +
 						`Build the heap array from fresh instances: pass an array literal, or use 'var Array<${param_type.name}>'`,
 					param.start,
@@ -744,32 +744,32 @@ export default function check_function_call(
 			) {
 				add_error(
 					status,
-					`Cannot pass an array of owning value struct '${param_type.name}' (string fields) to 'Array<${param_type.name}>' parameter '${func_param.name}' — ` +
+					`Cannot pass an array of mv value struct '${param_type.name}' (string fields) to 'Array<${param_type.name}>' parameter '${func_param.name}' — ` +
 						`the materialised heap copy would share the element strings. ` +
-						`Use 'List<${param_type.name}>' instead: its Buffer deep-copies owning elements soundly`,
+						`Use 'List<${param_type.name}>' instead: its Buffer deep-copies mv elements soundly`,
 					param.start,
 				);
 			}
 		}
-		// Only require explicit 'move' keyword at the call site when the
-		// parameter is a class type OR an owning value struct (List/Map/…,
-		// whose auto-init/owning param semantics byte-copy the argument into a
+		// Only require explicit 'mv' keyword at the call site when the
+		// parameter is a class type OR a mv value struct (List/Map/…,
+		// whose auto-init/mv param semantics byte-copy the argument into a
 		// field) AND the argument is an OWNED variable (has a name to
 		// invalidate). For temporaries (function call results, literals),
-		// non-owning types, and BORROW variables (which cannot be moved
-		// soundly — see the shared-ownership check below), move is implicit, a
+		// non-mv types, and BORROW variables (which cannot be moved
+		// soundly — see the shared-ownership check below), mv is implicit, a
 		// no-op, or the borrow check below fires first.
 		const param_is_class =
 			!!func_param.type.name &&
 			(is_class_type(func_param.type.name, status) ||
-				// B4: a trait-typed move param owns the box — same ownership
+				// B4: a trait-typed mv param owns the box — same ownership
 				// vocabulary as a class param (missing keyword is an error, the
 				// donor is invalidated).
 				!!status.traits.find((t) => t.name === func_param.type.name));
 		// TRANSFER applies only where the callee actually seeds (a registered
 		// free function — the move_owned stamp): for methods and mono
-		// container clones the plain move convention (callee deep-copies)
-		// still governs, so their `move T` params don't demand the keyword
+		// container clones the plain mv convention (callee deep-copies)
+		// still governs, so their `mv T` params don't demand the keyword
 		// for value-struct args.
 		const param_transfers = !!(node as FunctionCallNode).move_owned_param_indices?.includes(i);
 		const param_is_owning_struct =
@@ -780,11 +780,11 @@ export default function check_function_call(
 		const arg_is_variable = param.node_type === "value";
 		const arg_is_owned_value = arg_is_variable && borrow_depth_of(param, status) === undefined;
 		// A literal `null` aliases nothing — moving it is vacuous, so the
-		// missing-move demand does not apply (STRUCT_PLAN_3 B5/B6: an owning
-		// struct's nullable class/Box field param is a `move` param, and
+		// missing-mv demand does not apply (STRUCT_PLAN_3 B5/B6: a mv
+		// struct's nullable class/Box field param is a `mv` param, and
 		// `Node(1, null)` stays the sanctioned construction form). D3: a
 		// string literal is likewise a fresh value with no donor to
-		// invalidate — `Config("x")` must not demand `move "x"`.
+		// invalidate — `Config("x")` must not demand `mv "x"`.
 		const arg_is_fresh_literal =
 			arg_is_variable &&
 			((param as ValueNode).value === "null" ||
@@ -798,27 +798,23 @@ export default function check_function_call(
 			arg_is_owned_value &&
 			!arg_is_fresh_literal
 		) {
-			add_error(
-				status,
-				`Missing 'move' keyword for move parameter '${func_param.name}'`,
-				param.start,
-			);
+			add_error(status, `Missing 'mv' keyword for mv parameter '${func_param.name}'`, param.start);
 		} else if (!func_param.is_moved && has_mov_keyword) {
 			add_error(
 				status,
-				`Unexpected 'move' keyword for non-move parameter '${func_param.name}'`,
+				`Unexpected 'mv' keyword for non-mv parameter '${func_param.name}'`,
 				param.start,
 			);
 		}
-		// move is allowed on any type at the call site. Only invalidate the
-		// caller's variable when the parameter type is a class or an owning
-		// value struct — for the remaining non-owning types (int, plain
-		// struct, etc.), move is a no-op.
+		// mv is allowed on any type at the call site. Only invalidate the
+		// caller's variable when the parameter type is a class or a mv
+		// value struct — for the remaining non-mv types (int, plain
+		// struct, etc.), mv is a no-op.
 		if (has_mov_keyword && param_value && !node.swap_params?.has(i)) {
 			if (
 				func_param.type.name &&
 				(is_class_type(func_param.type.name, status) ||
-					// B4: a trait-typed move param takes the box — the donor is
+					// B4: a trait-typed mv param takes the box — the donor is
 					// invalidated (a concrete donor's bytes were boxed; a trait
 					// donor's handle was transferred).
 					!!status.traits.find((t) => t.name === func_param.type.name) ||
@@ -844,32 +840,32 @@ export default function check_function_call(
 				const field_name = (access.access as AccessFieldNode).name;
 				add_error(
 					status,
-					`cannot move '${field_name}' out of struct — struct owns its class fields`,
+					`cannot mv '${field_name}' out of struct — struct owns its class fields`,
 					param.start,
 				);
 			} else if (
 				field_type.name &&
 				!field_type.is_nullable &&
 				(is_owning_struct_type_requiring_move(field_type, status) ||
-					// A pass-by-value owning struct field transferred with
-					// `move` (to a seeding callee — param_transfers) hands its
+					// A pass-by-value mv struct field transferred with
+					// `mv` (to a seeding callee — param_transfers) hands its
 					// string ownership to the callee while the field's own
 					// records stay live on the struct — the same
 					// dangling-field hazard, so the same swap rule.
 					(param_transfers && is_pass_by_value_owning_struct(field_type, status)))
 			) {
-				// The owning-struct counterpart of the class rule above: a
-				// bare `move obj.field` leaves the field moved-out (its
+				// The mv-struct counterpart of the class rule above: a
+				// bare `mv obj.field` leaves the field moved-out (its
 				// backing storage now owned by the destination) — the field
 				// must be revalidated with a swap.
 				const field_name = (access.access as AccessFieldNode).name;
 				add_error(
 					status,
-					`cannot move '${field_name}' out of struct by value — it owns heap resources; use 'move ... swap <replacement>' to revalidate the field`,
+					`cannot mv '${field_name}' out of struct by value — it owns heap resources; use 'mv ... swap <replacement>' to revalidate the field`,
 					param.start,
 				);
 			} else if (
-				// B4/T2: boxing a FIELD into a `move Trait` param would share
+				// B4/T2: boxing a FIELD into a `mv Trait` param would share
 				// the field's owned state between the box and its owner.
 				!!func_param &&
 				!!status.traits.find((t) => t.name === func_param.type.name) &&
@@ -878,16 +874,16 @@ export default function check_function_call(
 			) {
 				add_error(
 					status,
-					`boxing owns its instance — move the value, or copy it ('.copy()')`,
+					`boxing owns its instance — mv the value, or copy it ('.copy()')`,
 					param.start,
 				);
 			}
 		}
-		// Copying an owning value struct OUT of a field into a byte-copying
-		// (`move`) parameter without the move machinery would leave the field
-		// and the destination co-owning the backing storage — the same
+		// Copying a mv value struct OUT of a field into a byte-copying
+		// (`mv`) parameter without the mv machinery would leave the field
+		// and the destination co-mv the backing storage — the same
 		// double-free the declaration-level field-copy check rejects. The
-		// move keyword alone doesn't help (a bare `move obj.field` leaves the
+		// mv keyword alone doesn't help (a bare `mv obj.field` leaves the
 		// field moved-out — rejected above), so the escape hatches are the
 		// swap form and a deep `.copy()`.
 		if (
@@ -900,7 +896,7 @@ export default function check_function_call(
 		) {
 			// A temp-rooted read (`pairs.at(i)._1`) keeps the pre-cutover
 			// convention: the temp tuple dies at statement end, and an
-			// owning container's store deep-copies the element (store_T
+			// mv container's store deep-copies the element (store_T
 			// strdups string fields), so nothing outlives the read. Only a
 			// read rooted at a NAMED binding (the field's owner stays
 			// behind) is the co-ownership hazard the error exists for.
@@ -917,22 +913,22 @@ export default function check_function_call(
 				const field_name = ((param as AccessNode).access as AccessFieldNode).name;
 				add_error(
 					status,
-					`cannot copy field '${field_name}' into parameter '${func_param.name}' by value — it owns heap resources; use 'move ... swap <replacement>' or .copy()`,
+					`cannot copy field '${field_name}' into parameter '${func_param.name}' by value — it owns heap resources; use 'mv ... swap <replacement>' or .copy()`,
 					param.start,
 				);
 			}
 		}
-		// Storing a BORROWED class/trait value into a `move T` slot would
+		// Storing a BORROWED class/trait value into a `mv T` slot would
 		// create shared ownership: the destination container's `#destroy`
 		// (ClassBuffer-backed for class/trait element types) frees the
 		// pointer per-element, but the borrow's source still references the
 		// same instance — a runtime double-free (SIGABRT) when the source
 		// is later destroyed. Reject at check time. The argument must be
 		// an OWNED value: an owned local, a constructor call, or a
-		// `move out T` accessor result (e.g. `.pop()`, `Buffer.move_T(i)`).
+		// `mv out T` accessor result (e.g. `.pop()`, `Buffer.move_T(i)`).
 		// `swap` is exempt — the swap expression replaces the source in
-		// scope, so the move is sound even when the lvalue reads as a
-		// borrow (e.g. `dst.push(move src.field swap fresh)`).
+		// scope, so the mv is sound even when the lvalue reads as a
+		// borrow (e.g. `dst.push(mv src.field swap fresh)`).
 		if (
 			func_param.is_moved &&
 			!node.swap_params?.has(i) &&
@@ -943,10 +939,10 @@ export default function check_function_call(
 			if (arg_borrow_depth !== undefined) {
 				add_error(
 					status,
-					`Cannot move a borrowed value into owning parameter '${func_param.name}' — ` +
+					`Cannot mv a borrowed value into mv parameter '${func_param.name}' — ` +
 						`it would create shared ownership (the destination frees the pointer on destroy, ` +
 						`leaving the borrow's source dangling). Pass an owned value: a fresh constructor, ` +
-						`an owned local, or a 'move out T' accessor result (e.g. .pop() or items.move_T(i)).`,
+						`an owned local, or a 'mv out T' accessor result (e.g. .pop() or items.move_T(i)).`,
 					param.start,
 				);
 			}
@@ -954,7 +950,7 @@ export default function check_function_call(
 		const swap_expr = node.swap_params?.get(i);
 		if (swap_expr) {
 			if (!has_mov_keyword) {
-				add_error(status, `swap requires move keyword`, swap_expr.start);
+				add_error(status, `swap requires mv keyword`, swap_expr.start);
 			} else {
 				check_node(swap_expr, status);
 				const swap_type = type_from_value_node(swap_expr, status);
@@ -1472,9 +1468,9 @@ export default function check_function_call(
 		//     a caller-side stack copy for the call (T3: zero malloc) — the
 		//     hoisted temp below keeps the CONCRETE type so it lowers as a
 		//     stack struct;
-		//   - a `move Trait` param takes ownership of a HEAP box (T2) — the
+		//   - a `mv Trait` param takes ownership of a HEAP box (T2) — the
 		//     hoisted temp keeps the trait type so it lowers as a box, and the
-		//     arg is stamped move-owned below (the box owns the transferred
+		//     arg is stamped mv-owned below (the box owns the transferred
 		//     string records).
 		// A `ref Trait` param would let the callee reassign the caller's slot
 		// to a new box — impossible over a value-struct lvalue (T2: borrows
@@ -1489,12 +1485,12 @@ export default function check_function_call(
 			if (func_param.type.is_ref) {
 				add_error(
 					status,
-					`a 'ref ${func_param.type.name}' parameter cannot take value struct '${param_type.name}' — boxing owns its instance — move the value, or copy it ('.copy()')`,
+					`a 'ref ${func_param.type.name}' parameter cannot take value struct '${param_type.name}' — boxing owns its instance — mv the value, or copy it ('.copy()')`,
 					param.start,
 				);
 			} else if (func_param.is_moved) {
-				// A `move Trait` param owns the box: transfer semantics. Stamp
-				// move-owned so the builds drop the donor's string records
+				// A `mv Trait` param owns the box: transfer semantics. Stamp
+				// mv-owned so the builds drop the donor's string records
 				// (the box owns them now) and invalidate the donor.
 				if (!(node as FunctionCallNode).move_owned_param_indices)
 					(node as FunctionCallNode).move_owned_param_indices = [];
@@ -1546,7 +1542,7 @@ export default function check_function_call(
 			};
 			let hoisted_type = param_type;
 			// STRUCT_PLAN_3 B4/T2: a value-struct conformer temp bound to a
-			// `move Trait` param must lower as a HEAP BOX (the callee frees
+			// `mv Trait` param must lower as a HEAP BOX (the callee frees
 			// the pointer), not a stack struct — retype the temp to the trait.
 			// A BARE trait param keeps the concrete type: the T3 stack-copy
 			// convention passes its address, zero malloc.
@@ -1583,8 +1579,8 @@ export default function check_function_call(
 			status.allocations.push(hoisted);
 			node.params.splice(i, 1, new ValueNode(param.start, declaration_name, hoisted_type));
 			// A temporary (e.g. a class constructor result) passed to a
-			// signature-level `move` param transfers ownership to the callee,
-			// exactly like an explicit `move var` argument. Record the index so
+			// signature-level `mv` param transfers ownership to the callee,
+			// exactly like an explicit `mv var` argument. Record the index so
 			// the build releases the hoisted temporary's anchor — otherwise the
 			// instance is freed twice (once by the new owner, once by the
 			// temporary's scope-exit cleanup).
@@ -1597,7 +1593,7 @@ export default function check_function_call(
 		}
 	}
 	// Check for parameter aliasing: struct params are passed by pointer.
-	// Track all struct params; when a mutable param (var/move/ref) shares the
+	// Track all struct params; when a mutable param (var/mv/ref) shares the
 	// same variable as any previously-seen struct param (const or mutable),
 	// flag aliasing — mutation can cause use-after-free or corrupted reads.
 	const self_param = func.params[0];
@@ -1754,14 +1750,14 @@ export default function check_function_call(
 
 	status.stack.pop();
 
-	// A `string` argument to a `move T` parameter must NOT transfer ownership
-	// of the caller's original: a `Buffer<string>` (or other owning container)
+	// A `string` argument to a `mv T` parameter must NOT transfer ownership
+	// of the caller's original: a `Buffer<string>` (or other mv container)
 	// strdup's the value into its own slot, so the caller retains and frees the
-	// original. (For class/trait args, move genuinely transfers the pointer and
+	// original. (For class/trait args, mv genuinely transfers the pointer and
 	// the callee frees it — that path is unchanged.) Strip string-typed indices
 	// from move_param_indices so the build does NOT splice the caller's variable
 	// / hoisted temp out of scoped_declarations (which would orphan it). This
-	// covers both the explicit `move` keyword and the implicit hoisted-temp
+	// covers both the explicit `mv` keyword and the implicit hoisted-temp
 	// transfer. `swap` is unaffected (it has its own replacement source).
 	if (node.move_param_indices?.length) {
 		const filtered = node.move_param_indices.filter((idx) => {
@@ -1837,7 +1833,7 @@ function expression_to_source(node: BaseNode | null | undefined): string {
  *
  *  (b) The root binding is a `const` local (incl. the `view`→`const`
  *      normalization) — the direct case like `const_list.at(0)`. A `var`
- *      binding is mutable, and a `move` binding owns mutable storage (move is
+ *      binding is mutable, and a `mv` binding owns mutable storage (mv is
  *      about ownership transfer, not immutability), so neither propagates
  *      const_ref. A `ref`-typed binding is a mutable borrow, exempted by
  *      `!type.is_ref`. `self` is exempt: bare-`self` calls are handled by the

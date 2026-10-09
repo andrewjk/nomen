@@ -12,14 +12,14 @@ import { emit_var_address, emit_var_load } from "./stack_var.ts";
 import { get_field_offset, get_type_size } from "./struct_layout.ts";
 
 /**
- * Write-back for `f(move x swap <repl>)` / `Struct(move x.field swap <repl>)`
+ * Write-back for `f(mv x swap <repl>)` / `Struct(mv x.field swap <repl>)`
  * call arguments: after the call, the replacement must land in the source
  * slot so the donor is revalidated (a moved-out source must never be
  * destroyed in its moved-out state).
  *
  * The write shape follows the SLOT, not the class-era pointer convention:
  * a heap-instance (class-tier) slot stores the replacement's instance
- * pointer; an inline value-struct slot (an owning struct's field, a struct
+ * pointer; an inline value-struct slot (a mv struct's field, a struct
  * local) struct-copies the replacement's bytes — storing a pointer into an
  * inline slot leaves the VT word holding a stack address and the value
  * stale (the mov_swap ctor/call-argument failures). Field types resolve

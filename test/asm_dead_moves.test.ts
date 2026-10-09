@@ -6,7 +6,7 @@ import {
 } from "../src/build_aarch64/asm_opt";
 
 /**
- * Dead copy-move elimination (ASM_PLAN_4 SLP follow-on): `mov xD, xS`
+ * Dead copy-mv elimination (ASM_PLAN_4 SLP follow-on): `mov xD, xS`
  * whose destination is never read below — before redefinition, on every
  * path — is dropped. The soundness model is the two-set backward scan
  * (live + control-flow taint); these tests pin the cases its development
@@ -33,14 +33,14 @@ test("straight-line dead staging marker is pruned", () => {
 	});
 });
 
-test("a read below keeps the move", () => {
+test("a read below keeps the mv", () => {
 	with_pass(() => {
 		const code = "mov x0, x26\nadd x0, x0, x1\nbl _memcpy";
 		expect(eliminate_dead_copy_moves(code)).toBe(code);
 	});
 });
 
-test("def-and-read instruction keeps its own feeding move", () => {
+test("def-and-read instruction keeps its own feeding mv", () => {
 	with_pass(() => {
 		const code = "mov x9, x19\nadd x9, x9, #16";
 		expect(eliminate_dead_copy_moves(code)).toBe(code);
@@ -81,7 +81,7 @@ test("return-value moves survive the ret boundary", () => {
 	with_pass(() => {
 		const code = "mov x0, x19\nret";
 		expect(eliminate_dead_copy_moves(code)).toBe(code);
-		// …and nothing crosses the function boundary: a dead move AFTER
+		// …and nothing crosses the function boundary: a dead mv AFTER
 		// the ret (the next function's body) is pruned even though the
 		// same shape before the ret is kept — the ret's x0 doesn't reach
 		// it.

@@ -178,9 +178,9 @@ pub struct StringBuilder {
 	// measure-and-restart shape: record `length()`, append a section, then
 	// `take_since(mark)` to measure it and re-emit decorated. `mark` clamps
 	// to [0, len]; the returned string is always an independent allocation.
-	// (`move out string` — the raw body mallocs the result, so the caller
+	// (`mv out string` — the raw body mallocs the result, so the caller
 	// owns it by signature, like `Console.read_line`.)
-	pub func take_since = (ref self, int mark, move out string) {
+	pub func take_since = (ref self, int mark, mv out string) {
 		```
 		#arch: c
 		int start = mark;

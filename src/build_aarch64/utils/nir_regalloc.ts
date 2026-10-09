@@ -724,7 +724,7 @@ function raw_only_asm(func: FunctionNode, status: BuildStatus): string | null {
  * rewrite or an x19/x0-only prologue) or the buffer pipeline's indexed
  * form (x0–x3 + x9) — both escape the scan only through the raw text.
  * Refusals: non-raw bodies (arbitrary emission), >4 params (call-site
- * staging reaches x4+), owning-element/string-element Buffers and
+ * staging reaches x4+), mv-element/string-element Buffers and
  * Array_string accessors (their specializations emit x4/x20-pair
  * sequences), and any body text that mentions a scratch register.
  */
@@ -1617,7 +1617,7 @@ export function plan_nir_registers(
 			// invisible to the refuse gate and the scratch scan above:
 			//  - struct operator calls (`s + "ab"` → `bl string_add`): an
 			//    `op` node the NIR models as call-free arithmetic;
-			//  - scope-exit destruction: heap-owning locals declared in the
+			//  - scope-exit destruction: heap-mv locals declared in the
 			//    loop are destroyed per iteration (`bl ..._destroy` + free)
 			//    with no statement modeling it;
 			//  - whole-value assigns to outer heap vars (`s = ...` frees the
@@ -2065,7 +2065,7 @@ export function plan_nir_registers(
 	}
 	// Registers holding a LOOP-CARRIED name (live into some loop header —
 	// the `loop_blocked` facts). The emit-side loop promotion brackets
-	// (entry load before the header, exit store-back) must never move a
+	// (entry load before the header, exit store-back) must never mv a
 	// different variable through one of these: an occupant whose only live
 	// supply crosses the bracket boundary WITHOUT a textual overlap (read
 	// once per iteration at the header) has no adjacency edge with an

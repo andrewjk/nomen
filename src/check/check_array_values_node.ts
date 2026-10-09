@@ -74,21 +74,21 @@ export default function check_array_values_node(
  * the appropriate auto-generated tuple struct.
  */
 /**
- * Tuple-element ownership resolution. A bare owning-struct variable element
+ * Tuple-element ownership resolution. A bare mv-struct variable element
  * (`[t, c]` where t is a `List<string>`) byte-copies the struct — the
  * tuple's field would alias the local's buffer, and both cleanups free it
  * (double-free). Three outcomes per element:
  *
- *   - explicit `move t` — transfer (registered like the move-assignment
+ *   - explicit `mv t` — transfer (registered like the mv-assignment
  *     path; the tuple's field cleanup owns the buffer now);
  *   - plain `t` stamped by the literal last-use pass — INFERRED transfer
- *     (t is provably never read again, so copy-then-drop and move are
- *     observationally identical; the move is free);
+ *     (t is provably never read again, so copy-then-drop and mv are
+ *     observationally identical; the mv is free);
  *   - plain `t` still referenced later — rejected, exactly like the
- *     declaration-path owning-struct copy rule: transfer with `move` or
+ *     declaration-path mv-struct copy rule: transfer with `mv` or
  *     deep-copy with `.copy()`.
  *
- * Strings and non-owning structs are ordinary by-value copies (views).
+ * Strings and non-mv structs are ordinary by-value copies (views).
  */
 function check_tuple_element_ownership(array: ArrayValuesNode, status: CheckStatus): boolean {
 	let rejected = false;
@@ -101,21 +101,21 @@ function check_tuple_element_ownership(array: ArrayValuesNode, status: CheckStat
 		if (is_owning_struct_type(t, status)) {
 			if (vn.is_moved || vn.literal_last_use_move) {
 				// Ownership transfers to the tuple: the source's cleanup must
-				// skip it (use-after-move on later reads is checked separately).
+				// skip it (use-after-mv on later reads is checked separately).
 				vn.is_moved = true;
 				if (!status.moved_variables) status.moved_variables = new Set();
 				status.moved_variables.add(vn.value);
 			} else {
 				add_error(
 					status,
-					`cannot copy '${t.name}' by value — it owns heap resources; use 'move ${vn.value}' or '${vn.value}.copy()'`,
+					`cannot copy '${t.name}' by value — it owns heap resources; use 'mv ${vn.value}' or '${vn.value}.copy()'`,
 					value.start,
 				);
 				rejected = true;
 			}
 			continue;
 		}
-		// A string local is in the same boat as an owning struct: the tuple
+		// A string local is in the same boat as a mv struct: the tuple
 		// field aliases its buffer, and the callee's scope-exit free would
 		// leave the returned tuple reading freed memory (masked — the freed
 		// block usually still holds the bytes). At the variable's last use
@@ -134,7 +134,7 @@ function check_tuple_element_ownership(array: ArrayValuesNode, status: CheckStat
 			} else {
 				add_error(
 					status,
-					`string local '${vn.value}' is read again after the literal — use 'move ${vn.value}' or '${vn.value}.to_string()'`,
+					`string local '${vn.value}' is read again after the literal — use 'mv ${vn.value}' or '${vn.value}.to_string()'`,
 					value.start,
 				);
 				rejected = true;

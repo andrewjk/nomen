@@ -275,7 +275,7 @@ main()
 	});
 });
 
-describe("warnings — move on value-struct fields", () => {
+describe("warnings — mv on value-struct fields", () => {
 	const owning_struct = `
 import System
 
@@ -288,19 +288,19 @@ struct Pair {
 }
 `;
 
-	test("move on an owning value-struct field warns", () => {
+	test("mv on a mv value-struct field warns", () => {
 		const input = `
 ${owning_struct}
 struct Holder {
-	pub move List<int> items = List<int>()
+	pub mv List<int> items = List<int>()
 }
 `;
 		expect(warning_messages(input)).toContain(
-			"'move' on field 'items' is redundant: 'List<int>' is a value struct — its ownership is derived from the type, so plain 'var' behaves identically",
+			"'mv' on field 'items' is redundant: 'List<int>' is a value struct — its ownership is derived from the type, so plain 'var' behaves identically",
 		);
 	});
 
-	test("var on an owning value-struct field does not warn", () => {
+	test("var on a mv value-struct field does not warn", () => {
 		const input = `
 ${owning_struct}
 struct Holder {
@@ -308,34 +308,34 @@ struct Holder {
 }
 `;
 		expect(warning_messages(input)).not.toContain(
-			"'move' on field 'items' is redundant: 'List<int>' is a value struct — its ownership is derived from the type, so plain 'var' behaves identically",
+			"'mv' on field 'items' is redundant: 'List<int>' is a value struct — its ownership is derived from the type, so plain 'var' behaves identically",
 		);
 	});
 
-	test("move on an owning-typed field warns as redundant (B5)", () => {
+	test("mv on a mv-typed field warns as redundant (B5)", () => {
 		const input = `
 import System
 
-owning struct Node {
+mv struct Node {
 	var int value
 }
 
-owning struct Holder {
-	move Node node = Node(1)
+mv struct Holder {
+	mv Node node = Node(1)
 }
 `;
-		// B5 collapsed the `move` field spelling: ownership follows the
+		// B5 collapsed the `mv` field spelling: ownership follows the
 		// field's TYPE, so the keyword is dead weight and warns.
 		expect(
-			warning_messages(input).some((m) => m.includes("'move' on field 'node' is redundant")),
+			warning_messages(input).some((m) => m.includes("'mv' on field 'node' is redundant")),
 		).toBe(true);
 	});
 
-	test("move on a plain (non-owning) value-struct field does not warn", () => {
+	test("mv on a plain (non-mv) value-struct field does not warn", () => {
 		const input = `
 ${owning_struct}
 struct Holder {
-	move Pair pair = Pair()
+	mv Pair pair = Pair()
 }
 `;
 		expect(warning_messages(input).filter((m) => m.includes("is redundant"))).toEqual([]);

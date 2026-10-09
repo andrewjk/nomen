@@ -28,7 +28,6 @@ export default function parse_visibility(
 	switch (next) {
 		case "const":
 		case "var":
-		case "move":
 		case "view":
 		case "ref": {
 			if (visibility !== "pub" && status.stack.at(-1)?.node_type === "trait") {
@@ -39,23 +38,32 @@ export default function parse_visibility(
 			}
 			break;
 		}
-		case "readonly": {
-			parse_declaration(visibility, "var", status, true);
+		case "mv": {
+			// `mv` doubles as the declared-ownership modifier
+			// (`pub mv struct X` / `pub mv enum X`). When the token after
+			// `mv` is a type-declaration keyword, parse the type
+			// declaration; otherwise `mv` is the transfer binding prefix.
+			const kind = status.tokens[status.i + 2]?.value;
+			if (kind === "struct" || kind === "enum") {
+				consume(status); // the visibility — parse_* takes it as a param
+				consume(status); // mv
+				if (kind === "struct") {
+					parse_struct(visibility, status, true);
+				} else {
+					parse_enum(visibility, status, true);
+				}
+				break;
+			}
+			if (visibility !== "pub" && status.stack.at(-1)?.node_type === "trait") {
+				add_error(status, `Trait fields cannot be ${visibility}`, get_index(status));
+				consume(status);
+			} else {
+				parse_declaration(visibility, "mv", status);
+			}
 			break;
 		}
-		case "owning": {
-			// `pub owning struct/enum` (STRUCT_PLAN_3 B1/B1a).
-			const kind = status.tokens[status.i + 2]?.value;
-			if (kind === "struct") {
-				consume(status); // owning
-				parse_struct(visibility, status, true);
-			} else if (kind === "enum") {
-				consume(status); // owning
-				parse_enum(visibility, status, true);
-			} else {
-				add_error(status, `Expected struct or enum after owning`, get_index(status));
-				consume(status);
-			}
+		case "readonly": {
+			parse_declaration(visibility, "var", status, true);
 			break;
 		}
 		case "struct": {
@@ -64,7 +72,7 @@ export default function parse_visibility(
 		}
 		case "class": {
 			// STRUCT_PLAN_3 Phase R: `class` has retired — one clear
-			// error, then the declaration continues as an `owning
+			// error, then the declaration continues as a `mv
 			// struct` (no cascade).
 			consume(status); // the visibility — parse_struct takes it as a param
 			class_retired_error(status);
@@ -199,7 +207,7 @@ export default function parse_visibility(
 		default: {
 			add_error(
 				status,
-				`Visibility can only be set for const, var, move, readonly, struct, trait or func`,
+				`Visibility can only be set for const, var, mv, readonly, struct, trait or func`,
 				get_index(status),
 			);
 			consume(status);

@@ -69,11 +69,11 @@ if j >= 0 && j < xs.length {
 
 	test("multi-site inline with hoisted receiver temps", async () => {
 		// Each inline site must emit and clean up its OWN copy of the
-		// checker-hoisted `_recv_N` receiver temp (owning struct returned
+		// checker-hoisted `_recv_N` receiver temp (mv struct returned
 		// by a call, consumed by a method chain). The audit run catches a
 		// missing/leaked per-site copy.
 		const input = `
-owning struct Box {
+mv struct Box {
 	var List<int> items = List<int>()
 }
 
@@ -181,7 +181,7 @@ Console.write("\\{a.at_or(1, 0)}\\{a.at_or_panic(1)}\\n")
 		// (save x19, mov x19, x0) around the splice — without it the loads
 		// read a garbage register ("837" instead of "123").
 		const input = `
-owning struct Box {
+mv struct Box {
 	var int value
 }
 var items = Array(Box(1), Box(2), Box(3))

@@ -486,7 +486,7 @@ class Builder {
 		const prefix = node.is_ref
 			? "ref "
 			: node.is_moved
-				? "move "
+				? "mv "
 				: node.is_copied
 					? "cp "
 					: node.declaration === "var"

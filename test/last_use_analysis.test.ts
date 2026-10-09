@@ -30,27 +30,27 @@ function scan_checked(src: string): LastUseSite[] {
 /**
  * Move-on-last-use inference is RETIRED by D3: a bare `s = t` from another
  * string binding is now a compile error, so `scan_last_use_string_moves` can
- * only ever observe explicitly-spelled transfers (`move`) or copies
- * (`.copy()`), and it reports NEITHER (an explicit move already carries
+ * only ever observe explicitly-spelled transfers (`mv`) or copies
+ * (`.copy()`), and it reports NEITHER (an explicit mv already carries
  * `is_moved`; a copy is a fresh value). These pins encode that new reality:
  * explicit transfers are not re-inferred as last-use sites, and no D3-valid
  * shape makes the scanner invent a transfer. The old "detects the pattern"
  * assertions are gone with the inference they measured.
  */
 
-test("an explicit string move is not re-inferred as a last-use site", () => {
+test("an explicit string mv is not re-inferred as a last-use site", () => {
 	const sites = scan(`
 import System
 pub func main = () {
 	var t = "a".to_string()
 	var s = "b".to_string()
-	s = move t
+	s = mv t
 }
 `);
 	expect(sites).toHaveLength(0);
 });
 
-test("an explicit declare move is not re-inferred (loop accumulator shape)", () => {
+test("an explicit declare mv is not re-inferred (loop accumulator shape)", () => {
 	const sites = scan(`
 import System
 func render = (string[] lines, out string) {
@@ -58,7 +58,7 @@ func render = (string[] lines, out string) {
 	var i = 0
 	while i < lines.length; i += 1 {
 		var next = acc + lines.at(i)
-		acc = move next
+		acc = mv next
 		i += 1
 	}
 	return acc
@@ -71,7 +71,7 @@ pub func main = () {
 	expect(sites).toHaveLength(0);
 });
 
-test("an explicit move inside a switch case is not re-inferred", () => {
+test("an explicit mv inside a switch case is not re-inferred", () => {
 	const sites = scan(`
 import System
 pub func main = () {
@@ -79,7 +79,7 @@ pub func main = () {
 	var s = "b".to_string()
 	switch {
 		case true {
-			s = move t
+			s = mv t
 		}
 	}
 }
@@ -159,7 +159,7 @@ pub func main = (bool c) {
 	expect(sibling_branch).toHaveLength(0);
 });
 
-test("an explicit move followed by a source write is not re-inferred", () => {
+test("an explicit mv followed by a source write is not re-inferred", () => {
 	// The retired scan refused this because the source is written after the
 	// declare; under D3 the write simply re-binds the (already moved) local
 	// and the transfer is spelled, so the scan has nothing to report.
@@ -167,7 +167,7 @@ test("an explicit move followed by a source write is not re-inferred", () => {
 import System
 pub func main = () {
 	var t = "a".to_string()
-	move u = t
+	mv u = t
 	t = "b".to_string()
 	Console.write(u)
 }
@@ -233,7 +233,7 @@ pub func main = () {
 	expect(sites).toHaveLength(0);
 });
 
-test("an explicit move declare against a hoisted interpolation read reports nothing", () => {
+test("an explicit mv declare against a hoisted interpolation read reports nothing", () => {
 	const sites = scan_checked(`
 import System
 pub func main = () {
@@ -255,7 +255,7 @@ import System
 pub func main = () {
 	var t = "a".to_string()
 	var s = "b".to_string()
-	s = move t
+	s = mv t
 	Console.write_line("v=\\{s}")
 }
 `);

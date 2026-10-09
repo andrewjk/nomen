@@ -130,7 +130,7 @@ run(callit)
 describe("nullable func fields", () => {
 	test("class field with a null default, guarded call", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
 	var func? (out int) cb = null
 }
 
@@ -172,7 +172,7 @@ Console.write(s.cb().to_string())
 
 	test("method-side optional callback (the TS closeNode? shape)", async () => {
 		const input = `
-owning struct Renderer {
+mv struct Renderer {
 	var func? (int) close_node = null
 	var int closed = 0
 

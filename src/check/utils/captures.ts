@@ -54,7 +54,7 @@ export function move_closure_source(node: BaseNode | undefined, status: CheckSta
 	if (!sv?.owns_closure) return;
 	if (!status.moved_variables) status.moved_variables = new Set();
 	status.moved_variables.add(name);
-	// Stamp the node so the backends route it through the existing move
+	// Stamp the node so the backends route it through the existing mv
 	// machinery (splice/mark-moved) rather than copying the descriptor.
 	(node as { is_moved?: boolean }).is_moved = true;
 }
@@ -66,19 +66,19 @@ export function move_closure_source(node: BaseNode | undefined, status: CheckSta
  * targets), not just check_value_node's read path.
  *
  * Supported:
- *   - SCALAR and non-owning value-struct COPY-captures (Phase 2a/2c): the env
+ *   - SCALAR and non-mv value-struct COPY-captures (Phase 2a/2c): the env
  *     holds an independent snapshot (scalars by value, structs by malloc'd
  *     byte copy).
  *   - OWNED string captures (Phase 2b, strdup'd into the env with a per-lambda
  *     env destructor).
  *   - OWNING value structs, classes and func values (Phase 2c part 2): captured
- *     by MOVE — the donating local is invalidated (use-after-move) and the env
+ *     by MOVE — the donating local is invalidated (use-after-mv) and the env
  *     destructor reclaims the transferred value.
  *
  * Everything else is rejected with a specific reason: borrowed parameters
  * (`ref`/`var`), arrays/views/pointers, traits (owned at runtime, dispatched
  * destruction is a follow-up), borrowed/aliased class references, and any
- * move-capture of a parameter (callee-owned; the caller's cleanup still runs).
+ * mv-capture of a parameter (callee-owned; the caller's cleanup still runs).
  */
 export function capture_rejection(value: StackValue, status: CheckStatus): string | undefined {
 	const type = value.type;
@@ -90,15 +90,15 @@ export function capture_rejection(value: StackValue, status: CheckStatus): strin
 		return `a ${type.name} value is not capturable`;
 	}
 	if (is_func_value(value)) {
-		// A func-valued local is move-captured (descriptor ownership). Its
+		// A func-valued local is mv-captured (descriptor ownership). Its
 		// StackValue type may be the RETURN type for an `out` signature, so it
 		// must be classified before the class/trait checks below.
-		if (value.is_param) return "capturing a function parameter by move comes later";
+		if (value.is_param) return "capturing a function parameter by mv comes later";
 		return undefined;
 	}
 	if (status.traits.find((t) => t.name === type.name)) {
 		// A trait handle is an owned heap pointer (a boxed (vtable, instance)
-		// — STRUCT_PLAN_3 B4) and can be move-captured; its env destructor
+		// — STRUCT_PLAN_3 B4) and can be mv-captured; its env destructor
 		// dispatches through the trait's `<Trait>_destroy` shim. B4 retired
 		// the inline value-struct representation, so every trait local has
 		// the same pointer shape here.
@@ -119,15 +119,15 @@ export function capture_rejection(value: StackValue, status: CheckStatus): strin
 		}
 	}
 	if (is_owning_struct_type_requiring_move(type, status) && value.is_param && !value.is_moved) {
-		return "capturing a borrowed owning-struct parameter comes later";
+		return "capturing a borrowed mv-struct parameter comes later";
 	}
 	return undefined;
 }
 
 /**
  * Whether capturing `value` transfers ownership (MOVE) or snapshots it (COPY).
- * Owning value structs, classes and func values move; strings are deep-copied;
- * scalars and non-owning value structs copy. Kept in lockstep with
+ * Owning value structs, classes and func values mv; strings are deep-copied;
+ * scalars and non-mv value structs copy. Kept in lockstep with
  * `capture_rejection` (rejections never reach here).
  */
 function capture_is_move(value: StackValue, status: CheckStatus): boolean {
@@ -135,7 +135,7 @@ function capture_is_move(value: StackValue, status: CheckStatus): boolean {
 	const type = value.type;
 	if (is_class_type(type.name, status)) return true;
 	if (status.traits.find((t) => t.name === type.name)) return true;
-	// String-only owning structs copy (their string fields are non-owning at
+	// String-only mv structs copy (their string fields are non-move at
 	// local scope exit — see ownership.ts), matching a plain local copy.
 	return is_owning_struct_type_requiring_move(type, status);
 }

@@ -8,7 +8,7 @@ export default class EnumNode extends BaseNode {
 	cases: { name: string; params: ParameterNode[] }[];
 	/** True when this enum is defined in the appended System library source. */
 	is_library?: boolean;
-	/** Declared `owning enum` (STRUCT_PLAN_3 B1a): bindings move instead of
+	/** Declared `mv enum` (STRUCT_PLAN_3 B1a): bindings mv instead of
 	 *  copy. */
 	is_owning?: boolean;
 	/** Type parameter names (e.g. ["T", "E"] in `enum Result<T, E>`). */

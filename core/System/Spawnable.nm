@@ -13,6 +13,6 @@
  * A type that can launch a deferred call and hand back its Task<T> handle
  **/
 pub trait Spawnable<T> {
-	func start = (ref self, move out Task<T>)
+	func start = (ref self, mv out Task<T>)
 	func detach = (ref self)
 }

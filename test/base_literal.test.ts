@@ -7,7 +7,7 @@ test("[ .. ctor, overrides ] declaration and factory chaining", async () => {
 	const input = `
 import System
 
-owning struct Node {
+mv struct Node {
     var string node_type = ""
     var int index = 0
     var bool is_block = false
@@ -61,18 +61,18 @@ pub func main = () {
 	await build_and_check_output(input, "base_literal_positions", "0,0\n3,0\n3,4\n5,4\n8,9\n", true);
 });
 
-test("[ .. move var, overrides ] transfers ownership", async () => {
+test("[ .. mv var, overrides ] transfers ownership", async () => {
 	const input = `
 import System
 
-owning struct Node {
+mv struct Node {
     var string node_type = ""
     var int index = 0
 }
 
 pub func main = () {
     var Node y = [ .. Node(), node_type = "moved", index = 5 ]
-    var Node x = [ .. move y, index = 6 ]
+    var Node x = [ .. mv y, index = 6 ]
     Console.write("\\{x.node_type} \\{x.index}")
 }
 `;
@@ -83,7 +83,7 @@ test("base literal error cases", () => {
 	const base = `
 import System
 
-owning struct Node {
+mv struct Node {
     var string node_type = ""
     var int index = 0
 }
@@ -118,7 +118,7 @@ pub func main = () {
 `);
 	expect(parsed.errors.some((e) => e.message.includes("has no default"))).toBe(true);
 
-	// owning-struct var base without move
+	// mv-struct var base without mv
 	parsed = parse_raw(`${base}
 pub func main = () {
     var Node o = [ .. Node() ]
@@ -151,9 +151,9 @@ Console.write_line(m.flags.to_string())
 // ("leaf:none" instead of "leaf:mine"). The value is hoisted into a temp that
 // OWNS a copy of the pre-assignment field (the base copy may displace/free
 // the old field, so a borrow alias would dangle).
-test("[ .. move base, override reading destination ]", async () => {
+test("[ .. mv base, override reading destination ]", async () => {
 	const input = `
-owning struct Rec {
+mv struct Rec {
 	var string kind
 	var string label = "none"
 	var int flags = 0
@@ -162,7 +162,7 @@ owning struct Rec {
 var Rec m = Rec("branch")
 m.label = "mine"
 var Rec x = Rec("leaf")
-m = [ .. move x, label = m.label ]
+m = [ .. mv x, label = m.label ]
 Console.write_line("\\{m.kind}:\\{m.label}")
 `;
 	await build_and_check_output(input, "base_literal_dest_read_string", "leaf:mine\n");
@@ -170,13 +170,13 @@ Console.write_line("\\{m.kind}:\\{m.label}")
 
 // Same clobber hazard for a STRUCT-typed override (a snapshot of the
 // destination's pre-assignment field).
-test("[ .. move base, struct-typed override reading destination ]", async () => {
+test("[ .. mv base, struct-typed override reading destination ]", async () => {
 	const input = `
 struct Inner {
 	var int v = 0
 }
 
-owning struct Rec {
+mv struct Rec {
 	var Inner inner = Inner()
 	var int flags = 0
 }
@@ -184,20 +184,20 @@ owning struct Rec {
 var Rec m = Rec()
 m.inner.v = 7
 var Rec x = Rec()
-m = [ .. move x, inner = m.inner ]
+m = [ .. mv x, inner = m.inner ]
 Console.write_line("\\{m.inner.v}:\\{m.flags}")
 `;
 	await build_and_check_output(input, "base_literal_dest_read_struct", "7:0\n");
 });
 
-// Regression (C): `m = move x` for a value struct owning heap string fields
+// Regression (C): `m = mv x` for a value struct mv heap string fields
 // freed the destination's recorded heap fields at the NEXT field write /
 // scope exit against the POST-COPY (base's) bytes — an invalid free of rodata
 // and a leak of the displaced copy. The recorded fields are now released
-// (and their records dropped) before the move copy lands.
-test("move reassignment releases displaced heap string fields", async () => {
+// (and their records dropped) before the mv copy lands.
+test("mv reassignment releases displaced heap string fields", async () => {
 	const input = `
-owning struct Rec {
+mv struct Rec {
 	var string kind
 	var string label = "none"
 	var int flags = 0
@@ -206,7 +206,7 @@ owning struct Rec {
 var Rec m = Rec("branch")
 m.label = "mine"
 var Rec x = Rec("leaf")
-m = move x
+m = mv x
 Console.write_line("\\{m.kind}:\\{m.label}")
 `;
 	await build_and_check_output(input, "base_literal_move_reassign", "leaf:none\n");
@@ -216,7 +216,7 @@ Console.write_line("\\{m.kind}:\\{m.label}")
 // reclaims it in the auto-destroy (both backends).
 test("List-typed field default", async () => {
 	const input = `
-owning struct TreeNode {
+mv struct TreeNode {
 	var int value = 0
 	var List<int> children = List<int>()
 }

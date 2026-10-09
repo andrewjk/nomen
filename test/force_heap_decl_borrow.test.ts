@@ -7,7 +7,7 @@ import build_and_check_output from "./build_and_check_output";
 // own heap on EVERY path — including its birth. A `var stored = <borrow>`
 // declaration (a field read kept in a local, a param, a view-derived pair)
 // used to store the raw ALIAS: the unconditional scope-exit free then
-// reclaimed the SOURCE's bytes while the owning container still held them,
+// reclaimed the SOURCE's bytes while the mv container still held them,
 // and the container's teardown freed them a second time (the allmark sanitize
 // crash — `sanitize_filter_attributes`'s `var string stored = attr.value`).
 // The variable-init declaration branch now strdups + records when the target
@@ -28,21 +28,21 @@ import build_and_check_output from "./build_and_check_output";
 describe("force-heap string declarations own their storage", () => {
 	test("borrow-initialized force-heap local is not freed as a borrow", async () => {
 		const input = `
-owning struct Attr {
+mv struct Attr {
 	var string value = ""
 }
 
-owning struct Box {
-	move List<Attr> items
+mv struct Box {
+	mv List<Attr> items
 }
 
 var box = Box(List<Attr>())
 var a = Attr()
 a.value = "keep-hello"
-box.items.push(move a)
+box.items.push(mv a)
 var filtered = List<Attr>()
 var kept = Attr()
-filtered.push(move kept)
+filtered.push(mv kept)
 var i = 0
 while i < box.items.length; i += 1 {
 	var it = box.items.at_or_panic(i)
@@ -53,7 +53,7 @@ while i < box.items.length; i += 1 {
 	}
 	Console.write("saw=\\{stored}\\n")
 }
-box.items = move filtered
+box.items = mv filtered
 Console.write("count=\\{box.items.length} kept=\\{box.items.at_or_panic(0).value}\\n")
 `;
 		await build_and_check_output(
@@ -67,21 +67,21 @@ Console.write("count=\\{box.items.length} kept=\\{box.items.at_or_panic(0).value
 
 	test("the assignment-path twin: an unrecorded source never marks the target", async () => {
 		const input = `
-owning struct Attr {
+mv struct Attr {
 	var string value = ""
 }
 
-owning struct Box {
-	move List<Attr> items
+mv struct Box {
+	mv List<Attr> items
 }
 
 var box = Box(List<Attr>())
 var a = Attr()
 a.value = "hello"
-box.items.push(move a)
+box.items.push(mv a)
 var it = box.items.at_or_panic(0)
 var string borrow = it.value.copy()
-move target = borrow
+mv target = borrow
 Console.write("target=\\{target} field=\\{box.items.at_or_panic(0).value}\\n")
 `;
 		await build_and_check_output(

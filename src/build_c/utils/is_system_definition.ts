@@ -58,7 +58,7 @@ function system_origin_cache(structs: StructNode[]): Map<string, boolean> {
  *    excluded from system.o anyway.
  *  - All user code → user TU.
  *
- * Struct methods ride along with their owning struct's classification.
+ * Struct methods ride along with their mv struct's classification.
  */
 export default function is_system_definition(
 	node: BaseNode,

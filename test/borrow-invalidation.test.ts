@@ -7,7 +7,7 @@ import parse_with_imports from "./parse_with_imports";
 // container read of an OWNING element is a deep COPY (Buffer's
 // deep-copy-on-store), so the reader owns its value and owner mutation cannot
 // dangle it — invalidation is replaced by copy semantics. What survives:
-//   - owning-typed field reads by value are rejected (use `move ... swap`);
+//   - mv-typed field reads by value are rejected (use `mv ... swap`);
 //   - `ref Box<T>` object-level aliases are LENIENT — mutating the owner is
 //     visible through the alias and never invalidates it (§A5, status-quo);
 //   - container element reads re-fetched after mutation are fine (copies).
@@ -17,18 +17,18 @@ function errors(input: string): string[] {
 	return parse_with_imports(input).errors.map((e) => e.message);
 }
 
-describe("owning field reads are copies (rejected without a swap)", () => {
-	test("reading an owning field by value is rejected", () => {
+describe("mv field reads are copies (rejected without a swap)", () => {
+	test("reading a mv field by value is rejected", () => {
 		const input = `
-owning struct Box { var int value }
-owning struct Holder {
+mv struct Box { var int value }
+mv struct Holder {
 	var Box content
 	var int scratch
 	func poke = (ref self) {
 		self.scratch = self.scratch + 1
 	}
 }
-var Holder h = Holder(move Box(1), 0)
+var Holder h = Holder(mv Box(1), 0)
 var Box b = h.content
 Console.write("\\{b.value}")
 `;
@@ -37,16 +37,16 @@ Console.write("\\{b.value}")
 
 	test("a swap transfer revalidates the field", () => {
 		const input = `
-owning struct Box { var int value }
-owning struct Holder {
+mv struct Box { var int value }
+mv struct Holder {
 	var Box content
 	var int scratch
 	func poke = (ref self) {
 		self.scratch = self.scratch + 1
 	}
 }
-var Holder h = Holder(move Box(1), 0)
-var Box b = move h.content swap Box(0)
+var Holder h = Holder(mv Box(1), 0)
+var Box b = mv h.content swap Box(0)
 h.poke()
 Console.write("\\{b.value}")
 `;
@@ -57,12 +57,12 @@ Console.write("\\{b.value}")
 describe("container element reads are copies (owner mutation is irrelevant)", () => {
 	test("re-fetching an element after a push is allowed", () => {
 		const input = `
-owning struct Animal { var char letter }
+mv struct Animal { var char letter }
 var List<Animal> list = List<Animal>()
-list.push(move Animal('A'))
+list.push(mv Animal('A'))
 if list.length > 0 {
 	var Animal a = list.at_or_panic(0)
-	list.push(move Animal('B'))
+	list.push(mv Animal('B'))
 	a = list.at_or_panic(0)
 	Console.write("\\{a.letter}")
 }
@@ -72,11 +72,11 @@ if list.length > 0 {
 
 	test("an element copy survives a sibling push", () => {
 		const input = `
-owning struct Cell { var int value }
+mv struct Cell { var int value }
 var List<Cell> items = List<Cell>()
-items.push(move Cell(1))
+items.push(mv Cell(1))
 var Cell b = items.at_or_panic(0)
-items.push(move Cell(2))
+items.push(mv Cell(2))
 Console.write("\\{b.value}")
 `;
 		expect(errors(input)).toEqual([]);
@@ -86,7 +86,7 @@ Console.write("\\{b.value}")
 describe("object-level aliases are lenient (never invalidated by owner mutation)", () => {
 	test("a Box alias sees mutations through the owner", () => {
 		const input = `
-owning struct Counter {
+mv struct Counter {
 	var int count = 0
 	func bump = (ref self) {
 		self.count = self.count + 1
@@ -102,7 +102,7 @@ Console.write("\\{q.count}")
 
 	test("two aliases: mutating one owner leaves the other alone", () => {
 		const input = `
-owning struct Cell {
+mv struct Cell {
 	var int value = 0
 	func bump = (ref self) {
 		self.value = self.value + 1
@@ -118,7 +118,7 @@ Console.write("\\{y.value}")
 
 	test("an alias survives a mutation inside an if-body", () => {
 		const input = `
-owning struct Counter {
+mv struct Counter {
 	var int count = 0
 	func bump = (ref self) {
 		self.count = self.count + 1
@@ -136,7 +136,7 @@ Console.write("\\{q.count}")
 
 	test("an alias survives a mutation inside a switch case", () => {
 		const input = `
-owning struct Counter {
+mv struct Counter {
 	var int count = 0
 	func bump = (ref self) {
 		self.count = self.count + 1
@@ -157,7 +157,7 @@ Console.write("\\{q.count}")
 
 	test("an alias survives a mutation inside a match case", () => {
 		const input = `
-owning struct Counter {
+mv struct Counter {
 	var int count = 0
 	func bump = (ref self) {
 		self.count = self.count + 1

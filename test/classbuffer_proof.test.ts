@@ -14,12 +14,12 @@ import parse_with_imports from "./parse_with_imports";
 describe("ClassBuffer<T> compile-time class freeing", () => {
 	test("monomorphized #destroy calls the element destroy directly (no leak)", async () => {
 		// ClassBuffer<T> stores 8-byte POINTER elements — the surviving shape
-		// is a class-stamped T, i.e. `Box<Animal>` (an owning struct element
+		// is a class-stamped T, i.e. `Box<Animal>` (a mv struct element
 		// is inline and retires with the class tier). The monomorphized
 		// ClassBuffer_Box_Cell.#destroy must call Box_Cell_destroy directly
 		// — the T_destroy substitution — and elements are freed on destroy.
 		const input = `
-owning struct Animal {
+mv struct Animal {
 	var char letter
 	func #destroy = (ref self) {
 		self.letter = ' '
@@ -41,7 +41,7 @@ Console.write("done\\n")
 
 	test("store_int rejects 0 (val != 0 prevents the leak footgun)", () => {
 		const input = `
-owning struct Animal {
+mv struct Animal {
 	var char letter
 	func #destroy = (ref self) {
 		self.letter = ' '

@@ -17,7 +17,7 @@ function check(source: string) {
 // STRUCT_PLAN_3 Phase A) must NOT be destroyed/freed at scope exit — the
 // original declaration is the sole owner — but it must also stay valid across
 // mutations of the owner (p and q are the same object). The build classifies a
-// spelled class-variable alias as a non-owning alias (like a field borrow) so
+// spelled class-variable alias as a non-mv alias (like a field borrow) so
 // #destroy/free runs exactly once, without tripping the child-group
 // borrow-invalidation machinery. Reassignment of a class instance is reclaimed
 // eagerly when no live reference (field/method borrow or object alias) keeps
@@ -35,7 +35,7 @@ describe("class aliasing: double destroy / double free", () => {
 	// duplicated destructor, which the prefix-mismatch catches.
 	test("aliased local runs #destroy twice", async () => {
 		const input = `
-owning struct R {
+mv struct R {
 	var int v
 	func #destroy = () {
 		Console.write("D")
@@ -50,19 +50,19 @@ Console.write("done\\n")
 		await build_and_check_output(input, "alias_double_destroy", "Ddone\n");
 	});
 
-	// #2 — A class that owns another class (`move Inner c`) is aliased. Both
+	// #2 — A class that owns another class (`mv Inner c`) is aliased. Both
 	// aliases' destroy paths `free()` the inner instance, so the inner is freed
 	// twice → double free → the process aborts. Correct behaviour is to print
 	// the value with no crash and a balanced audit.
 	test("aliased class with a class field double-frees the inner", async () => {
 		const input = `
-owning struct Inner {
+mv struct Inner {
 	var int v
 }
-owning struct Outer {
+mv struct Outer {
 	var Inner c
 }
-var Box<Outer> p = Box<Outer>(Outer(move Inner(7)))
+var Box<Outer> p = Box<Outer>(Outer(mv Inner(7)))
 ref Box<Outer> q = p
 Console.write("\\{p.c.v}\\n")
 `;
@@ -75,7 +75,7 @@ Console.write("\\{p.c.v}\\n")
 	// that allocates in a loop this silently doubles every destructor side effect.
 	test("aliased class in a loop double-destroys each iteration", async () => {
 		const input = `
-owning struct R {
+mv struct R {
 	var int v
 	func #destroy = () {
 		Console.write("D")
@@ -102,7 +102,7 @@ describe("class aliasing: reassigning an alias is an error (§A3.2)", () => {
 	test("reassigning a ref alias is rejected", () => {
 		const input = `
 import System
-owning struct R {
+mv struct R {
 	var int v
 }
 var Box<R> p = Box<R>(R(1))
@@ -116,7 +116,7 @@ q = Box<R>(R(3))
 	test("every alias reassignment is rejected", () => {
 		const input = `
 import System
-owning struct R {
+mv struct R {
 	var int v
 }
 var Box<R> p = Box<R>(R(1))
@@ -138,7 +138,7 @@ q = Box<R>(R(4))
 describe("class reassignment in a loop", () => {
 	test("owner reassigned in a loop reclaims every former instance", async () => {
 		const input = `
-owning struct R {
+mv struct R {
 	var int v
 	func #destroy = () {
 		self.v = 0
@@ -158,7 +158,7 @@ Console.write("\\{p.v}\\n")
 	test("alias reassignment in a loop is rejected (§A3.2)", () => {
 		const input = `
 import System
-owning struct R {
+mv struct R {
 	var int v
 }
 var Box<R> p = Box<R>(R(0))
@@ -179,19 +179,19 @@ describe("borrowed alias reassigned from another borrow stays a borrow", () => {
 	// element. Re-assigning from ANOTHER borrow (`n = store.at(j)`) must not
 	// flip the alias to owned — the scope-exit destroy/free would reclaim
 	// the container's live element (use-after-free at the next read).
-	test("re-borrow keeps the alias non-owning (C + aarch64)", async () => {
+	test("re-borrow keeps the alias non-mv (C + aarch64)", async () => {
 		const input = `
 import System
 
-pub owning struct Node {
+pub mv struct Node {
 	pub var int v
 }
 
-pub owning struct Store {
+pub mv struct Store {
 	var List<Box<Node>> items = List<Box<Node>>()
 
-	pub func add = (self, move Box<Node> n) {
-		self.items.push(move n)
+	pub func add = (self, mv Box<Node> n) {
+		self.items.push(mv n)
 	}
 
 	pub func at = (self, int i, out Box<Node>) {

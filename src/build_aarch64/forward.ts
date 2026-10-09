@@ -766,7 +766,7 @@ function collect_hidden_reads(stmts: readonly NirStmt[], into: Set<string>): voi
 }
 
 /** Map the use statement onto the AST node + field that own its value
- *  expression root. Eval positions have no owning field — the host IS the
+ *  expression root. Eval positions have no mv field — the host IS the
  *  root — so they require a non-empty descent path. */
 function record_use_site(
 	use_stmt: NirStmt,

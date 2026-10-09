@@ -815,8 +815,8 @@ function get_base_target(node: AccessNode): ValueNode | AccessNode {
 /**
  * Resolve the concrete type of an access target (a local/param/`self` value or
  * a nested access), consulting the containing struct's field declarations when
- * a cached type is absent — an inferred `move` class field
- * (`pub move rules = RuleSet()`) carries no cached AccessFieldNode.type.
+ * a cached type is absent — an inferred `mv` class field
+ * (`pub mv rules = RuleSet()`) carries no cached AccessFieldNode.type.
  */
 function resolve_access_target_type(target: BaseNode, status: BuildStatus): Type | undefined {
 	if (target.node_type === "value") {
@@ -1154,7 +1154,7 @@ export function fixed_array_cache_key(
 	const target_type = type_from_value_node(node.target);
 	if (!target_type?.is_array) return null;
 	// Fixed-size only: a real source position on the length. Dynamic arrays
-	// (length.start = -1) live on the heap and move on realloc/grow.
+	// (length.start = -1) live on the heap and mv on realloc/grow.
 	if (!target_type.length || (target_type.length.start ?? -1) < 0) return null;
 	// The element must be a non-class struct — the cached register holds the
 	// element ADDRESS (the .at() contract for struct elements).
@@ -1543,7 +1543,7 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 			: undefined;
 	// Resolve the intermediate field's type through the containing struct's
 	// field declarations, not just the cached AccessFieldNode.type — an
-	// inferred `move` class field (`pub move rules = RuleSet()`) has no cached
+	// inferred `mv` class field (`pub mv rules = RuleSet()`) has no cached
 	// type, so the cached-only check missed the pointer hop entirely.
 	const target_class_field_type = target_access_field
 		? resolve_field_type(
@@ -1997,7 +1997,7 @@ function build_access_method(
 				const temp_name = `_enum_${access_temp_counter++}`;
 				const temp_offset = allocate_stack_space(status, enum_size);
 				status.stack_offsets!.set(temp_name, temp_offset);
-				// An owned class/trait LOCAL passed to an owning case payload
+				// An owned class/trait LOCAL passed to a mv case payload
 				// transfers ownership (check records the arg in
 				// move_param_indices): mark it moved so its own scope-exit
 				// destroy doesn't free the instance the payload now owns.
@@ -2526,7 +2526,7 @@ function build_access_method(
 		const method = access_func.name;
 
 		// Invalidate data-pointer cache when a resize/alloc method is called
-		// on a Buffer — realloc may move the data pointer, making any cached
+		// on a Buffer — realloc may mv the data pointer, making any cached
 		// value in a callee-saved register stale.
 		const resize_methods = new Set([
 			"grow_int",
@@ -2788,7 +2788,7 @@ function build_access_method(
 		// the fat pair.
 		!method_self_is_ref;
 	let frees_string_receiver = false;
-	// A consuming `move out string` call (`string_to_string`, the identity
+	// A consuming `mv out string` call (`string_to_string`, the identity
 	// until the signature flipped to a real strdup) receives a COPY of the
 	// receiver's storage. When that receiver is itself a temporary OWNING
 	// allocation (`f().to_string()`, `(a + b).to_string()`), the original
@@ -2798,7 +2798,7 @@ function build_access_method(
 	// excluded too.
 	if (receiver_is_string) {
 		// Build the receiver pair, tracking whether it produced an OWNING
-		// heap temp (`f(...)`, a concat, a move-out call). Reset-first mirrors
+		// heap temp (`f(...)`, a concat, a mv-out call). Reset-first mirrors
 		// emit_string_length: the flag reflects exactly this expression.
 		status.last_result_is_heap = false;
 		build_node(node.target, status);
@@ -3237,7 +3237,7 @@ function build_access_method(
 		const is_struct =
 			is_struct_type(param_type, status) || is_enum_with_data_type(param_type, status);
 		// STRUCT_PLAN_3 B4/T2 — a value-struct conformer argument to a
-		// `move Trait` method parameter is boxed at the call site (the
+		// `mv Trait` method parameter is boxed at the call site (the
 		// callee owns and frees the heap handle). A BARE trait param skips
 		// this branch: the struct path below already passes the caller
 		// value's address (the T3 stack-copy convention).
@@ -3471,7 +3471,7 @@ function build_access_method(
 		) {
 			status.last_result_is_heap = true;
 		}
-		// An owned receiver (a `move out T` call like pop() spilled to the
+		// An owned receiver (a `mv out T` call like pop() spilled to the
 		// trait_recv_slot above): the slot owns the instance, so destroy it
 		// through the trait shim and free it now — mirroring the scope-exit
 		// reclaim an owned trait-typed local gets. The dispatch result (x0,
@@ -3624,7 +3624,7 @@ function build_access_method(
 		for (const idx of access_func.move_param_indices) {
 			const param = access_func.params[idx];
 			if (param?.node_type === "value") {
-				// A `string` move arg keeps caller ownership (owning
+				// A `string` mv arg keeps caller ownership (mv
 				// Buffer<string> strdup's); skip mark_moved so scope-exit
 				// cleanup frees it. Resolve the type from the declaration — a
 				// bare variable reference's ValueNode.type is unset after mono —
@@ -3636,8 +3636,8 @@ function build_access_method(
 					.find((d) => d.name === vname);
 				const tname = decl?.type?.name ?? (param as { type?: { name?: string } }).type?.name;
 				if (tname === "string") continue;
-				// An enum-with-data `move` arg also keeps caller ownership: an
-				// owning Buffer/List store_T deep-copies its string payloads,
+				// An enum-with-data `mv` arg also keeps caller ownership: an
+				// mv Buffer/List store_T deep-copies its string payloads,
 				// so the caller's temp must still be reclaimed at scope exit.
 				if (tname && status.enums.find((e) => e.name === tname && e.has_associated_data)) continue;
 			}
@@ -3716,17 +3716,17 @@ function build_access_method(
 		status.last_result_is_heap = true;
 	}
 
-	// A `Buffer<string>.move_T` (`move out T`) result is the slot's strdup'd
+	// A `Buffer<string>.move_T` (`mv out T`) result is the slot's strdup'd
 	// heap copy — the caller owns and must free it. move_T is inline raw asm,
 	// so it isn't classified heap-returning via the return-node path, and the
 	// monomorphized call's `owned_return`/type annotations are unset (a bare
 	// variable receiver's type isn't substituted after mono). Detect it by the
-	// mangled name (the only owning-string move primitive today).
+	// mangled name (the only mv-string mv primitive today).
 	if (method_name === "Buffer_string_move") {
 		status.last_result_is_heap = true;
 	}
 
-	// General `move out string` move-out accessors (Task<string>.result,
+	// General `mv out string` mv-out accessors (Task<string>.result,
 	// Channel.receive_string, List<string>.pop): the callee relinquishes an
 	// owned heap buffer to the caller (the checker stamps owned_return), so
 	// the receiving declaration must free it at scope exit. Generalizes the

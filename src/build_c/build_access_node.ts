@@ -259,7 +259,7 @@ function array_receiver_wrap(
 	if (node.target.node_type !== "value") return undefined;
 	const target_value = (node.target as ValueNode).value;
 	if (target_type.is_array_heap || status.heap_array_vars?.has(target_value)) return undefined;
-	// Element-count expression: the auto_free registration for owning
+	// Element-count expression: the auto_free registration for mv
 	// stack arrays, the checker's stamped compile-time length, or a
 	// variadic param's hidden `_<name>_len`. Without one there is no sound
 	// wrap (e.g. a `T[]` param's runtime length), so leave the receiver
@@ -702,7 +702,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 			if (enum_node) {
 				const enum_case = enum_node.cases.find((c) => c.name === access_func.name);
 				if (enum_case) {
-					// An owned class/trait LOCAL passed to an owning case
+					// An owned class/trait LOCAL passed to a mv case
 					// payload transfers ownership (check records the arg in
 					// move_param_indices): splice its declaration out of the
 					// scope frames so auto_free won't free the instance the
@@ -935,7 +935,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					const id = (status.label_counter = (status.label_counter ?? 0) + 1);
 					recv_temp = `_trrecv_${id}`;
 					status.code += `({ void *${recv_temp} = (void*)(${recv_expr}); `;
-					// An owned receiver (a `move out T` call like pop()): the
+					// An owned receiver (a `mv out T` call like pop()): the
 					// temp owns the instance, so it must be destroyed after
 					// the dispatch — mirroring the scope-exit reclaim an
 					// owned trait-typed local gets. The dispatch result is
@@ -1457,12 +1457,12 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 						!!status.traits.find((t) => t.name === param_type.name) ||
 						!!status.class_vars?.has(param_value);
 					// STRUCT_PLAN_3 B4/T2 — a value-struct conformer argument to a
-					// `move Trait` method parameter is boxed at the call site: the
+					// `mv Trait` method parameter is boxed at the call site: the
 					// callee owns (and frees) a heap instance whose first word is
 					// the conformer's vtable. Unrecorded (rodata/borrow) string
 					// fields are strdup'd in place first (the box's destroy frees
 					// every string field), and the checker stamped the arg
-					// move-owned, so the post-call splice below drops the donor's
+					// mv-owned, so the post-call splice below drops the donor's
 					// records without freeing (the box owns the transferred state).
 					// A BARE trait param skips this branch: the struct path below
 					// passes the caller value's address (the T3 stack-copy
@@ -1622,7 +1622,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					status.code += `; })`;
 				}
 			}
-			// move parameter handling for method calls: same as
+			// mv parameter handling for method calls: same as
 			// build_function_call_node — remove moved class vars / temporaries
 			// from scoped_declarations so they won't be double-freed.
 			if (access_func.move_param_indices) {
@@ -1630,8 +1630,8 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					const param = access_func.params[idx];
 					if (param?.node_type === "value") {
 						const vname = (param as ValueNode).value;
-						// A `string` arg to a `move T` param keeps caller ownership
-						// (an owning Buffer<string> strdup's its own copy), so do NOT
+						// A `string` arg to a `mv T` param keeps caller ownership
+						// (a mv Buffer<string> strdup's its own copy), so do NOT
 						// splice it — auto_free must reclaim the original. Resolve
 						// the type from the declaration (a bare variable reference's
 						// ValueNode.type is unset post-monomorphization).
@@ -1639,8 +1639,8 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 						const tname =
 							decl_hit?.frame[decl_hit.index].type?.name ?? (param as ValueNode).type?.name;
 						if (tname === "string") continue;
-						// An enum-with-data `move` arg keeps caller ownership:
-						// the owning Buffer/List store_T deep-copies it
+						// An enum-with-data `mv` arg keeps caller ownership:
+						// the mv Buffer/List store_T deep-copies it
 						// (`<Enum>_copy`), so auto_free must reclaim the temp.
 						if (tname && status.enums.find((e) => e.name === tname && e.has_associated_data))
 							continue;
@@ -1649,7 +1649,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 							: undefined;
 						const is_value_struct = !!decl_struct && !decl_struct.is_class;
 						// Splice from whichever scope frame holds the declaration —
-						// a `move` inside an if/loop branch must also remove an
+						// a `mv` inside an if/loop branch must also remove an
 						// OUTER-scope variable, or that scope's exit cleanup reclaims
 						// the value the callee now owns (double-free).
 						if (decl_hit) decl_hit.frame.splice(decl_hit.index, 1);

@@ -63,47 +63,47 @@ export default function parse_statement(status: ParseStatus) {
 			}
 			case "const":
 			case "var":
-			case "move":
 			case "view":
-			case "ref": {
+			case "ref":
+			case "mv": {
+				if (value === "mv") {
+					// `mv` doubles as the declared-ownership modifier
+					// (`mv struct X` / `mv enum X`). When the next token is a
+					// type-declaration keyword, parse the type declaration;
+					// otherwise `mv` is the transfer binding prefix. The bare
+					// form and the modifier-before-visibility form
+					// (`mv pub struct`) land here; `pub mv struct` goes
+					// through parse_visibility's own arm.
+					const kind = status.tokens[status.i + 1]?.value;
+					if (kind === "struct") {
+						consume(status);
+						parse_struct(default_visibility(status), status, true);
+						break;
+					}
+					if (kind === "enum") {
+						consume(status);
+						parse_enum(default_visibility(status), status, true);
+						break;
+					}
+					if (kind === "pub" || kind === "private" || kind === "internal") {
+						const kind2 = status.tokens[status.i + 2]?.value;
+						if (kind2 === "struct" || kind2 === "enum") {
+							consume(status); // mv
+							consume(status); // visibility
+							if (kind2 === "struct") {
+								parse_struct(kind as "pub" | "private" | "internal", status, true);
+							} else {
+								parse_enum(kind as "pub" | "private" | "internal", status, true);
+							}
+							break;
+						}
+					}
+				}
 				parse_declaration(default_visibility(status), value, status);
 				break;
 			}
 			case "readonly": {
 				parse_declaration(default_visibility(status), "var", status, true);
-				break;
-			}
-			case "owning": {
-				// The B1 declared-ownership modifier (`owning struct X` /
-				// `owning enum X` — STRUCT_PLAN_3 B1/B1a). The bare form and
-				// the visibility-prefixed form (`owning pub struct`) both
-				// land here; `pub owning struct` goes through
-				// parse_visibility's own arm.
-				const kind = status.tokens[status.i + 1]?.value;
-				if (kind === "struct") {
-					consume(status);
-					parse_struct(default_visibility(status), status, true);
-					break;
-				}
-				if (kind === "enum") {
-					consume(status);
-					parse_enum(default_visibility(status), status, true);
-					break;
-				}
-				if (kind === "pub" || kind === "private" || kind === "internal") {
-					const kind2 = status.tokens[status.i + 2]?.value;
-					if (kind2 === "struct" || kind2 === "enum") {
-						consume(status); // owning
-						consume(status); // visibility
-						if (kind2 === "struct") {
-							parse_struct(kind as "pub" | "private" | "internal", status, true);
-						} else {
-							parse_enum(kind as "pub" | "private" | "internal", status, true);
-						}
-						break;
-					}
-				}
-				parse_statement_start(status);
 				break;
 			}
 			case "struct": {
@@ -112,7 +112,7 @@ export default function parse_statement(status: ParseStatus) {
 			}
 			case "class": {
 				// STRUCT_PLAN_3 Phase R: `class` has retired — one clear
-				// error, then the declaration continues as an `owning
+				// error, then the declaration continues as a `mv
 				// struct` (no cascade).
 				class_retired_error(status);
 				parse_struct(default_visibility(status), status, true);

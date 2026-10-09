@@ -16,13 +16,13 @@ trait Animal {
 	pub func speak = (self, out string)
 }
 
-owning struct Dog : Animal {
+mv struct Dog : Animal {
 	pub func speak = (self, out string) {
 		return "woof"
 	}
 }
 
-owning struct Cat : Animal {
+mv struct Cat : Animal {
 	pub func speak = (self, out string) {
 		return "meow"
 	}

@@ -2,12 +2,12 @@ import type FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import type ValueNode from "../nodes/ValueNode.ts";
 
 /**
- * A tuple-literal constructor call (`[move t, move c]` lowered to
- * `_Tuple_.._init(&t, &c)`) copies its fields BY POINTER, and a `move`
+ * A tuple-literal constructor call (`[mv t, mv c]` lowered to
+ * `_Tuple_.._init(&t, &c)`) copies its fields BY POINTER, and a `mv`
  * element transfers ownership: the source local's scope-exit cleanup must
  * be suppressed (the tuple's own field cleanup now owns and frees the
- * buffer). Registers every bare `move <local>` argument into the build's
- * moved set — the same suppression the move-assignment path uses. Called
+ * buffer). Registers every bare `mv <local>` argument into the build's
+ * moved set — the same suppression the mv-assignment path uses. Called
  * from every constructor-call build site (declarations, assignments, and
  * the generic call builder), since monomorphized tuple inits route through
  * each of them.

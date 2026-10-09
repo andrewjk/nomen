@@ -95,15 +95,15 @@ pub struct ClassBuffer<T> {
 	}
 
 	// Store the owned class pointer `val` into slot `i`, which MUST be fresh
-	// (calloc'd, or zeroed by move/move_int). Takes OWNERSHIP of `val`
-	// (`move`): the slot's #destroy reclaims the instance, so the caller must
+	// (calloc'd, or zeroed by mv/move_int). Takes OWNERSHIP of `val`
+	// (`mv`): the slot's #destroy reclaims the instance, so the caller must
 	// not free its copy — a fresh constructor result transfers here directly,
 	// and a local must be moved (its own cleanup is suppressed at the call
 	// site). This is a plain pointer store — it does NOT destroy/free the
 	// slot's previous occupant, so a second `store` at an occupied index
 	// leaks that instance. Use replace (or replace_int) to overwrite a live
 	// slot.
-	internal inline func store = (ref self, int i: i >= 0 && i < self.cap, move T val: val != 0) {
+	internal inline func store = (ref self, int i: i >= 0 && i < self.cap, mv T val: val != 0) {
 		```
 		#arch: c
 		((long*)(unsigned long long)self->data)[i] = (long)val;
@@ -118,14 +118,14 @@ pub struct ClassBuffer<T> {
 	}
 
 	// Move a class pointer out of a slot: return it and zero the slot so the
-	// buffer no longer references it. Declared `move out T` so the borrow
+	// buffer no longer references it. Declared `mv out T` so the borrow
 	// checker treats the result as OWNED — the slot is relinquished, so the
-	// caller is the sole remaining owner. This is the owning-extract primitive
+	// caller is the sole remaining owner. This is the mv-extract primitive
 	// (parallel to List.pop); use it (not load) when transferring ownership
-	// out of a ClassBuffer slot, or moving a value into a fresh owning
+	// out of a ClassBuffer slot, or moving a value into a fresh mv
 	// container — load returns a BORROW (the slot is unchanged) and storing
 	// it elsewhere would create shared ownership (double-free at destroy).
-	inline func move = (ref self, int i: i >= 0 && i < self.cap, move out T) {
+	inline func move = (ref self, int i: i >= 0 && i < self.cap, mv out T) {
 		```
 		#arch: c
 		long *slots = (long*)(unsigned long long)self->data;
@@ -143,12 +143,12 @@ pub struct ClassBuffer<T> {
 		```
 	}
 
-	// Apply `f` to slot `i` in place — the owning-counterpart of Buffer's
+	// Apply `f` to slot `i` in place — the mv-counterpart of Buffer's
 	// modify for class elements. `f` receives the current instance pointer
 	// as a MOVE argument — the only expressible parameter mode for a
 	// class-tier element (a bare `Box<T>` param is rejected — B2/T2 — and a
 	// `ref` param's &binding lowering mismatches this raw call) — so the
-	// displaced instance's reclamation is the CALLEE's move-param contract:
+	// displaced instance's reclamation is the CALLEE's mv-param contract:
 	// a function whose parameter is not returned frees it at its own exit
 	// (the C auto-free registration / the aarch64 return-compare arm). The
 	// body frees nothing — freeing here too was a double free (the
@@ -168,7 +168,7 @@ pub struct ClassBuffer<T> {
 		#arch: aarch64
 		// x19 = self, x1 = i, x2 = f (a closure descriptor — env goes in x0,
 		// the old slot value shifts to x1). Class slots are one pointer wide.
-		// `old` is MOVED into f — the callee's move-param contract reclaims
+		// `old` is MOVED into f — the callee's mv-param contract reclaims
 		// it; this body frees nothing.
 		stp x20, x21, [sp, #-16]!
 		stp x22, x23, [sp, #-16]!
@@ -258,8 +258,8 @@ pub struct ClassBuffer<T> {
 	// free) then store the new one. Used by List.set so the uniform API
 	// preserves ownership for class elements.
 	// Overwrite a live slot: destroy + free the displaced instance, then take
-	// OWNERSHIP of `val` (`move`) — same transfer rule as store.
-	func replace = (ref self, int i: i >= 0 && i < self.cap, move T val: val != 0) {
+	// OWNERSHIP of `val` (`mv`) — same transfer rule as store.
+	func replace = (ref self, int i: i >= 0 && i < self.cap, mv T val: val != 0) {
 		```
 		#arch: c
 		long *slots = (long*)(unsigned long long)self->data;
@@ -339,7 +339,7 @@ pub struct ClassBuffer<T> {
 		```
 	}
 
-	// A non-owning (ptr, len) slice [start, end) over this buffer's class
+	// A non-mv (ptr, len) slice [start, end) over this buffer's class
 	// pointers, returned as a `view T` (T is a class, so each element is an
 	// 8-byte pointer). Borrows from self — invalidated on reassignment. Mirrors
 	// Buffer.slice; ClassBuffer stores 8-byte slots, so the element width is 8.

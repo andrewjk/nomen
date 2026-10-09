@@ -6,14 +6,14 @@
 /**
  * A doubly-linked list of values
  **/
-pub owning struct LinkedList<T>: Enumerable {
+pub mv struct LinkedList<T>: Enumerable {
 	var values = Buffer<T>()
 	var nexts = Buffer<int>()
 	var prevs = Buffer<int>()
 	var int head = -1
 	var count = 0
 
-	pub func add = (ref self, move T value) {
+	pub func add = (ref self, mv T value) {
 		var int idx = self.count
 		self.values.grow(idx + 1)
 		self.values.store(idx, value)

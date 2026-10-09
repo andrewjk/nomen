@@ -219,7 +219,7 @@ export default function build_return_node(
 	// every trait position). The bare-local splice above already
 	// transferred the donor's ownership to the return value; strdup its
 	// UNRECORDED string fields in place (recorded ones transfer raw — the
-	// box's destroy frees every string field it holds), move the bytes into
+	// box's destroy frees every string field it holds), mv the bytes into
 	// a malloc'd box, and return the handle. A fresh call result builds
 	// into a stack temp and is strdup'd wholesale.
 	{
@@ -233,8 +233,8 @@ export default function build_return_node(
 					)
 				: undefined;
 		if (ret_trait_here && !ret_type_here.is_view && !ret_type_here.is_array && val_struct) {
-			// An owning struct's direct string fields are uniformly heap; the
-			// move transfers them to the box (strdup'ing would orphan the
+			// A mv struct's direct string fields are uniformly heap; the
+			// mv transfers them to the box (strdup'ing would orphan the
 			// donor's copy — LEAK). Mirrors the C declaration boxing.
 			const strdup_string_fields =
 				!owns_strings_uniformly(val_struct) &&
@@ -540,7 +540,7 @@ export default function build_return_node(
 				// heap copy (store_T strdup's), so the returned pointer is already
 				// heap — it is handed to the caller as-is (owned_return), no
 				// strdup. (When the buffer held shallow borrows, the slot could be
-				// rodata and a return-site strdup was required; owning slots make
+				// rodata and a return-site strdup was required; mv slots make
 				// that redundant and a leak.)
 				// A container/buffer BORROW accessor (`.at`/`.first`/`.slice` or the
 				// backing `load_T`) returns a view into the receiver's storage. This
@@ -553,7 +553,7 @@ export default function build_return_node(
 				// the receiver IS self — the accessor method's own body — keep it a
 				// borrow: the caller invokes it through `.at`/`.first`, whose result
 				// `is_string_borrow` treats as non-owned (not freed), so strdup'ing
-				// would hand the caller a heap copy it never frees (a leak). `move out
+				// would hand the caller a heap copy it never frees (a leak). `mv out
 				// T` accessors (`owned_return`, e.g. `pop`) relinquish the slot and
 				// stay owned.
 				const is_container_borrow_accessor =
@@ -652,7 +652,7 @@ export default function build_return_node(
 		status.code += `;\n`;
 		// An enum-with-data returned from a FIELD read (`return self.m`)
 		// bitwise-copies the blob — sharing the field's payload pointers with
-		// the struct, whose destroy still owns and frees them. Take an owning
+		// the struct, whose destroy still owns and frees them. Take a mv
 		// copy into `_return_val` (the source is left untouched), so the
 		// caller's value is independent of the source's lifetime. Only
 		// FIELD-read returns need the boundary copy: a pure call result
@@ -795,13 +795,13 @@ export default function build_return_node(
 			// string seed (param, default, and computed alike), so every
 			// NON-overridden field is uniformly heap and transfers raw — only
 			// the overridden fields follow the override value's ownership.
-			const owning = owns_strings_uniformly(return_struct);
+			const mv = owns_strings_uniformly(return_struct);
 			const skip = call.field_overrides?.length
 				? override_return_string_fields(return_struct, call.field_overrides, status.heap_strings, {
 						base_skip: ctor_return_owned_string_fields(return_struct, call, status.heap_strings),
-						base_uniformly_owned: owning || undefined,
+						base_uniformly_owned: mv || undefined,
 					})
-				: owning
+				: mv
 					? new Set(direct_string_fields(return_struct).map((f) => f.name))
 					: ctor_return_owned_string_fields(return_struct, call, status.heap_strings);
 			for (const field of direct_string_fields(return_struct)) {

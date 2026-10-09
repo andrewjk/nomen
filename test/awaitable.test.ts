@@ -14,7 +14,7 @@ import { compile_module } from "./spec/_helpers.ts";
 // mutates the handle — it parks on the future the handle names), so the
 // BARE `Awaitable` parameter is the dispatch form: the T3 stack-copy box
 // (zero malloc, the box lives on the caller's stack for the call, and the
-// caller's handle keeps owning the future reference). A `move Awaitable`
+// caller's handle keeps mv the future reference). A `mv Awaitable`
 // would transfer the handle into a heap box; a `ref Awaitable` cannot take
 // a value-struct conformer at all (borrows cannot be boxed).
 
@@ -63,7 +63,7 @@ pub func main = () {
 	test("non-conforming types are rejected as Awaitable", () => {
 		const input = `import System
 
-pub owning struct NotATask {
+pub mv struct NotATask {
 	var int x = 0
 }
 

@@ -23,7 +23,7 @@ test("&& short-circuits: guarded .at in a while condition", async () => {
 	const input = `
 import System
 
-owning struct Item {
+mv struct Item {
 	var text = ""
 }
 
@@ -33,8 +33,8 @@ func build = (out List<Box<Item>>) {
 	a.text = "one"
 	var b = Item()
 	b.text = "one"
-	xs.push(Box<Item>(move a))
-	xs.push(Box<Item>(move b))
+	xs.push(Box<Item>(mv a))
+	xs.push(Box<Item>(mv b))
 	return xs
 }
 

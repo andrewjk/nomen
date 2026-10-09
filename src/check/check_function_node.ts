@@ -186,7 +186,7 @@ export default function check_function_node(func: FunctionNode, status: CheckSta
 
 	// Move-captures transfer ownership of the donating local into the
 	// lambda's env (CLOSURE.md Phase 2c part 2): invalidate it in
-	// the ENCLOSING scope so a later direct use is a use-after-move. The
+	// the ENCLOSING scope so a later direct use is a use-after-mv. The
 	// capture references inside the lambda body see the donor below
 	// `function_value_base`, so they are never flagged. `status` here is the
 	// enclosing status (this function was entered from it).

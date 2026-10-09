@@ -41,7 +41,7 @@ register on aarch64; no arg-slot shifts, no pair ABI, no sret):
 struct nomen_closure {
 	void *code;   // the lowered lambda / function
 	void *env;    // capture environment; NULL for capture-free
-	int owned;    // 1 = heap descriptor owning env; 0 = static, never free
+	int owned;    // 1 = heap descriptor mv env; 0 = static, never free
 	void (*destroy_env)(void *);  // frees the env's owned captures
 };
 ```
@@ -66,13 +66,13 @@ struct nomen_closure {
 
 A lambda body referencing an outer local captures it; the capture is taken
 once, when the lambda value is created. The env is a compiler-generated
-OWNING struct — one field per capture — so every rule that ships for owning
+OWNING struct — one field per capture — so every rule that ships for mv
 structs applies unchanged:
 
 - **Scalars**: copied (snapshot semantics — a later write to the source is
   not seen).
 - **Strings**: deep-copied (`nomen_str_dup`); the local keeps its own.
-- **Non-owning value structs**: copied (C holds a pointer to a malloc'd
+- **Non-mv value structs**: copied (C holds a pointer to a malloc'd
   copy — the struct's full definition lands after the env typedef —
   aarch64 stores the bytes inline).
 - **Owning value structs, class instances, trait-typed values (boxed
@@ -81,7 +81,7 @@ structs applies unchanged:
   (using it again is a use-after-move error) and the env owns and destroys
   (env destructors run `<T>_destroy` / the class destroy).
 - **Not capturable**: `ref`/`var` borrows, views, arrays, raw pointers, a
-  borrowed (non-`move`) class/trait/owning-struct parameter, and a
+  borrowed (non-`mv`) class/trait/mv-struct parameter, and a
   func-typed PARAMETER (a borrow — the caller still owns the descriptor).
   Borrow-captures exist only in the spawn sugar's nursery form (ASYNC.md,
   "Nursery borrows"), where the join at block exit bounds them.
@@ -127,7 +127,7 @@ The async runtime speaks this ABI: a submitted task IS a
 the fiber scheduler, and the daemon launcher all take one. The spawn
 constructions (`Thread(fn(args))` / `Fiber(fn(args))` — or any class
 declaring its own `#spawn` hook — plus the function-value form) pack the
-wrapped call's arguments eagerly into an owning env, or wrap a given
+wrapped call's arguments eagerly into a mv env, or wrap a given
 function value through a per-site adapter. Those mechanics — eager packing
 and its ownership rules, Sendable validation, must-start, the
 `Task.pool_submit` / `Task.future_*` launch seam — are documented in
@@ -139,7 +139,7 @@ constructions", "The construction special form: `#spawn`"), not here.
 Raw `#arch: c` bodies that invoke func-typed parameters (`modify_T` and
 friends) route through the descriptor: call
 `((Ret (*)(void *, Ps))f->code)(f->env, args…)`. The `modify_T`
-return-shape contract is unchanged: the function's returned owning fields
+return-shape contract is unchanged: the function's returned mv fields
 must be fresh, null, or identical to the input's — sound because lambdas'
 returns can only be fresh heap, boundary literals, or input-derived.
 

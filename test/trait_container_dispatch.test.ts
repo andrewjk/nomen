@@ -17,7 +17,7 @@ import build_and_check_output from "./build_and_check_output";
 const PRELUDE = `trait Rule {
 	func test = (self, string line, out bool)
 }
-owning struct HeadingC : Rule {
+mv struct HeadingC : Rule {
 	pub func test = (self, string line, out bool) {
 		return line.at_or(0, ' ') == '#'
 	}

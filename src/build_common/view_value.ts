@@ -55,7 +55,7 @@ export function value_struct_name(node: BaseNode, status: ViewValueStatus): stri
 }
 
 /**
- * Whether an expression is a `view T` VALUE — a non-owning borrow that can
+ * Whether an expression is a `view T` VALUE — a non-mv borrow that can
  * pass through a `view T` parameter unchanged. Recovers `is_view` from the
  * cached node type, the declared variable type, the current function's view
  * params, or (for method calls whose cached type lost the modifier) the

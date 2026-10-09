@@ -34,7 +34,7 @@ function params_differ(a: FunctionNode, b: FunctionNode): boolean {
 
 export default function check_struct_node(struct: StructNode, status: CheckStatus) {
 	// STRUCT_PLAN_3 B1 full cutover — compiler-generated tuple / anonymous
-	// struct declarations cannot be spelled `owning`, so their ownership is
+	// struct declarations cannot be spelled `mv`, so their ownership is
 	// re-derived here, at statement-check time: every referenced mono is
 	// registered by now (the creation-time derive can run before a generic
 	// element monomorphizes and so under-derives).
@@ -136,7 +136,7 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 	const values_length_before_fields = status.values.length;
 	for (let decl of struct.fields) {
 		decl.scope = struct;
-		// A `ref` field would be a non-owning borrow stored in a struct with
+		// A `ref` field would be a non-mv borrow stored in a struct with
 		// no representation of its own (an 8-byte bare pointer), which could
 		// outlive its target (UAF). Reject it at the field level — this
 		// matches `MEMORY.md` and closes the gap where a `ref` field with a
@@ -144,7 +144,7 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 		//
 		// `view T` fields ARE allowed: a view is a self-contained 16-byte
 		// (ptr, len) pair, so storing it in a struct is a plain value copy —
-		// sound to byte-copy, nothing to free (non-owning), and the zero-copy
+		// sound to byte-copy, nothing to free (non-mv), and the zero-copy
 		// slice-in-container pattern it enables is the point. The escape
 		// hazards are handled by borrow tracking instead:
 		// `merge_view_borrows_into_var` records which sources an instance's
@@ -164,7 +164,7 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 		// resolution (`s.f(args)` — an indirect call through the field) all
 		// see a concrete type. A nullable func field (`func? (...) f`) already
 		// carries the nullable `func` marker from the parser — keep it so
-		// `self.f != null` sees is_nullable. The field is non-owning (nothing
+		// `self.f != null` sees is_nullable. The field is non-mv (nothing
 		// to destroy), so byte-copying the struct is sound.
 		if (decl.func_params) {
 			if (decl.type.name !== "func") {
@@ -173,7 +173,7 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 			check_declaration_node(decl, status);
 			continue;
 		}
-		// A trait-typed field is an owning handle too, but its FIELD lowering
+		// A trait-typed field is a mv handle too, but its FIELD lowering
 		// (boxed handle storage + vtable dispatch through the field) is not
 		// built yet — reject with the concrete-type fix until it lands (B5
 		// remainder; the R shape menu holds fields by concrete type, Box, or
@@ -191,21 +191,21 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 			continue;
 		}
 		// STRUCT_PLAN_3 B5 + B1 full cutover — the field restrictions collapse
-		// into the Copyable verifier, verified over the CLOSED owning
+		// into the Copyable verifier, verified over the CLOSED mv
 		// predicate (`type_owns_heap`): a class-typed field (the field slot
 		// owns the instance pointer), a `Box<T>` field, a `string` field or
 		// string array (D3 — the fat pair owns its bytes), a declared-
-		// `owning` struct/enum field, or a field whose type the inferred walk
+		// `mv` struct/enum field, or a field whose type the inferred walk
 		// flags (string fields, a resource-releasing `#destroy`, transitively)
 		// all own heap state a byte-copy would alias. On a bare `struct` that
 		// claim is false — the verifier error names the fix. On an
-		// `owning struct` the declaration IS the contract: the field is an
-		// owning slot (transfer-on-store), so the field is accepted.
+		// `mv struct` the declaration IS the contract: the field is an
+		// mv slot (transfer-on-store), so the field is accepted.
 		if (!struct.is_class && type_owns_heap(decl.type, status)) {
 			if (!struct.is_owning) {
 				add_error(
 					status,
-					`'${struct.name}' cannot be Copyable — field '${decl.name}' owns heap memory --> mark the struct \`owning struct ${struct.name}\`, or remove the field`,
+					`'${struct.name}' cannot be Copyable — field '${decl.name}' owns heap memory --> mark the struct \`mv struct ${struct.name}\`, or remove the field`,
 					decl.start,
 				);
 			} else {
@@ -225,30 +225,30 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 	rewrite_generic_buffer_fields(struct, status);
 
 	// The auto-generated #init's parameter for a non-defaulted field whose
-	// type is an owning value struct (List/Map/Buffer/…) must be a `move`
+	// type is a mv value struct (List/Map/Buffer/…) must be a `mv`
 	// param: the init body byte-copies the param into the field, so a plain
-	// by-value pass would leave the field and the caller's variable co-owning
+	// by-value pass would leave the field and the caller's variable co-mv
 	// the same backing storage (double-free at scope exit). Marking the param
-	// moved makes `Struct(move x)` the required (sound) call form — the build's
-	// move machinery then releases the caller's cleanup obligation — while a
+	// moved makes `Struct(mv x)` the required (sound) call form — the build's
+	// mv machinery then releases the caller's cleanup obligation — while a
 	// fresh constructor arg (`Struct(List<int>())`) transfers implicitly.
 	mark_owning_auto_init_params(struct, status);
 
-	// `move` on a VALUE-struct field declaration is dead weight: ownership of
-	// owning value-struct fields is derived from the TYPE (the auto-init
+	// `mv` on a VALUE-struct field declaration is dead weight: ownership of
+	// mv value-struct fields is derived from the TYPE (the auto-init
 	// stamp above keys on is_owning_struct_type_requiring_move, and the
 	// destroy / displaced-reclaim paths analyse the same type), not the
 	// keyword — warn so the redundant form doesn't re-accumulate. On
-	// CLASS-typed (and trait-typed) fields `move` IS the ownership
+	// CLASS-typed (and trait-typed) fields `mv` IS the ownership
 	// declaration (container owns + destroys the instance, displaced stores
 	// reclaimed, borrow stores rejected) — never warned. Library structs are
 	// exempt like the rest of the lint surface. Classification resolves the
 	// MONOMORPHIZED name: the field's default initializer has been checked
 	// above, so the mono struct is registered (the bare generic template
-	// classifies as non-owning — its destroy/fields are still generic).
+	// classifies as non-mv — its destroy/fields are still generic).
 	if (!struct.is_library) {
 		for (const field of struct.fields) {
-			if (field.declaration !== "move") continue;
+			if (field.declaration !== "mv") continue;
 			if (!field.type.name || field.type.is_ref || field.type.is_view) continue;
 			if (field.type.is_nullable) continue;
 			if (is_class_type(field.type.name, status)) continue;
@@ -257,7 +257,7 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 			if (!is_owning_struct_type_requiring_move(mono, status)) continue;
 			if (!status.warnings) status.warnings = [];
 			status.warnings.push({
-				message: `'move' on field '${field.name}' is redundant: '${type_display(field.type)}' is a value struct — its ownership is derived from the type, so plain 'var' behaves identically`,
+				message: `'mv' on field '${field.name}' is redundant: '${type_display(field.type)}' is a value struct — its ownership is derived from the type, so plain 'var' behaves identically`,
 				start: field.start,
 				line: 0,
 				column: 0,
@@ -300,14 +300,14 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 }
 
 /**
- * Mark the auto-generated (bodyless) `#init`'s parameters as `move` for every
- * non-defaulted field whose type is an owning value struct (e.g.
+ * Mark the auto-generated (bodyless) `#init`'s parameters as `mv` for every
+ * non-defaulted field whose type is a mv value struct (e.g.
  * `var List<int> items`). The synthesized init byte-copies each param into its
  * field, so ownership must transfer with the call — a plain by-value argument
- * would leave the caller's variable and the field co-owning the backing heap
+ * would leave the caller's variable and the field co-mv the backing heap
  * storage (a double-free at scope exit, mirroring the `var List b = a`
- * declaration rejection). Runs for both `var` and `move`-declared fields: a
- * defaulted owning field never takes a param (its default constructs fresh),
+ * declaration rejection). Runs for both `var` and `mv`-declared fields: a
+ * defaulted mv field never takes a param (its default constructs fresh),
  * and a non-defaulted one always needs the transfer. Generic structs are
  * skipped — their init params are rebuilt per-monormorphization in
  * `monomorphize()` with the same rule applied to the substituted field type.
@@ -325,12 +325,12 @@ function mark_owning_auto_init_params(struct: StructNode, status: CheckStatus) {
 		if (param.is_moved) continue;
 		if (field.type.is_ref || field.type.is_view) continue;
 		if (!field.type.name) continue;
-		// STRUCT_PLAN_3 B5 — an owning struct's class-typed field is an
+		// STRUCT_PLAN_3 B5 — a mv struct's class-typed field is an
 		// OWNED slot (ownership follows the field's type): construction
-		// transfers, so the synthesized param must be `move`. A plain
+		// transfers, so the synthesized param must be `mv`. A plain
 		// by-value pass would alias the caller's instance — the call temp is
 		// destroyed at the caller's scope exit while the field keeps the
-		// pointer (use-after-free). `Box<T>` fields are owning too (the box
+		// pointer (use-after-free). `Box<T>` fields are mv too (the box
 		// owns its pointee) — a bare box donor would alias the caller's box
 		// (double-destroy at teardown). Nullable fields take the transfer as
 		// well (`null` aliases nothing; a fresh instance must not alias).
@@ -342,7 +342,7 @@ function mark_owning_auto_init_params(struct: StructNode, status: CheckStatus) {
 		}
 		// A nullable OWNING field takes the transfer too (`null` aliases
 		// nothing; a fresh instance must not alias) — this check must precede
-		// the nullable skip below, which exists for nullable NON-owning
+		// the nullable skip below, which exists for nullable NON-mv
 		// fields (a plain struct copy param). Without it, the construction
 		// argument temp stayed caller-owned: the temp's scope-exit destroy
 		// AND the field's flag-guarded destroy both ran (the aarch64
@@ -433,7 +433,7 @@ function infer_field_type_from_value(
  * type params (`var items = Buffer<T>()` → `Buffer<T>`), which is exactly the
  * annotation it replaces, so recording it upfront is safe and keeps it visible
  * to the ownership classifier and to monomorphization. The buffer rewrite and
- * owning-param marking stay non-generic, mirroring check_struct_node. The
+ * mv-param marking stay non-generic, mirroring check_struct_node. The
  * inference is structural to avoid re-running the full declaration check and
  * its side effects; check_struct_node later skips already-resolved fields, so
  * each field is resolved exactly once.
@@ -448,7 +448,7 @@ export function resolve_struct_field_types(status: CheckStatus) {
 		}
 		if (struct.is_generic) continue;
 		rewrite_generic_buffer_fields(struct, status);
-		// Mark auto-init params of owning-struct fields as `move` upfront for
+		// Mark auto-init params of mv-struct fields as `mv` upfront for
 		// the same reason the type inference above runs here: user functions
 		// are checked BEFORE library structs (appended after user source), so
 		// a statement-order-only marker would miss call sites checked first.

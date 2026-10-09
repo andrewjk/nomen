@@ -6,7 +6,7 @@ describe("memory ref class param", () => {
 	test("passing a boxed child to a ref param does not double-free", async () => {
 		const input = `
 import System
-owning struct Node {
+mv struct Node {
 	var int value = 0
 	var Box<Node>? child = null
 }
@@ -32,7 +32,7 @@ pub func main = () {
 	test("recursive ref param over a boxed tree does not corrupt it", async () => {
 		const input = `
 import System
-owning struct TreeNode {
+mv struct TreeNode {
 	var int data = 0
 	var Box<TreeNode>? left = null
 	var Box<TreeNode>? right = null

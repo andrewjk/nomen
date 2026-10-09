@@ -24,7 +24,7 @@ export default function check_function_parameter_node(
 	is_library_scope = false,
 ) {
 	// STRUCT_PLAN_3 B2/T2: `Box<T>` is OWNING — a bare Box parameter would
-	// alias the pointee across the boundary. It must be declared `move`
+	// alias the pointee across the boundary. It must be declared `mv`
 	// (transfer) or `ref` (a mutable borrow of the handle itself).
 	if (
 		param.type.name &&
@@ -34,7 +34,7 @@ export default function check_function_parameter_node(
 	) {
 		add_error(
 			status,
-			`Box parameter '${param.name ?? param.type.name}' must be declared \`move\` (boxing owns its pointee) or \`ref\``,
+			`Box parameter '${param.name ?? param.type.name}' must be declared \`mv\` (boxing owns its pointee) or \`ref\``,
 			param.type_start ?? param.start,
 		);
 	}
@@ -80,11 +80,11 @@ export default function check_function_parameter_node(
 	// through it. Mutation that the caller observes must go through `ref`,
 	// which forces an explicit `ref` at the call site. For a mutable scratch
 	// copy that the caller never sees, take the param read-only and declare a
-	// local `var` inside the body. (`move`, `ref`, and `self` params set
+	// local `var` inside the body. (`mv`, `ref`, and `self` params set
 	// declaration="var" too but are distinguished by is_moved / type.is_ref /
 	// is_self_param and are excluded here.)
 	//
-	// EXCEPTION — pass-by-value owning structs: a parameter of a concrete
+	// EXCEPTION — pass-by-value mv structs: a parameter of a concrete
 	// value struct whose only ownership is its direct string fields is fully
 	// owned by the callee (the call boundary materializes a private,
 	// uniformly heap-owned copy), so a `var` param of that shape can never
@@ -104,14 +104,14 @@ export default function check_function_parameter_node(
 		);
 	}
 
-	// move is for class types, trait types, and owning value structs
+	// mv is for class types, trait types, and mv value structs
 	// (List/Map/Buffer/… — anything whose byte-copy would double-free, so the
-	// move transfers the backing storage). A trait-typed value is a reference
-	// to a heap instance (a pointer with a vtable), so `move Trait` transfers
-	// ownership exactly like `move Class` — the callee destroys it through
+	// mv transfers the backing storage). A trait-typed value is a reference
+	// to a heap instance (a pointer with a vtable), so `mv Trait` transfers
+	// ownership exactly like `mv Class` — the callee destroys it through
 	// the trait's `<Trait>_destroy` shim. Type parameters (T, U, …) are
 	// allowed since the actual type isn't known until monomorphization; when
-	// a generic is instantiated with a non-owning type, move silently becomes
+	// a generic is instantiated with a non-mv type, mv silently becomes
 	// a no-op.
 	if (
 		param.is_moved &&
@@ -119,7 +119,7 @@ export default function check_function_parameter_node(
 		!is_class_type(param.type.name, status) &&
 		!is_trait_type(param.type.name, status) &&
 		!is_owning_struct_type_requiring_move(param.type, status) &&
-		// A pass-by-value owning struct takes `move` too: the TRANSFER row
+		// A pass-by-value mv struct takes `mv` too: the TRANSFER row
 		// of the ownership table — no boundary copy, the callee's seeded
 		// records own (and free) the argument's string fields.
 		!is_pass_by_value_owning_struct(param.type, status) &&
@@ -128,7 +128,7 @@ export default function check_function_parameter_node(
 	) {
 		add_error(
 			status,
-			`move is only allowed for class, trait, or owning struct types, not '${param.type.name}'`,
+			`mv is only allowed for class, trait, or mv struct types, not '${param.type.name}'`,
 			param.start,
 		);
 	}
@@ -178,7 +178,7 @@ export default function check_function_parameter_node(
 	}
 
 	status.values.push({
-		// A pass-by-value owning-struct parameter is a private, fully owned
+		// A pass-by-value mv-struct parameter is a private, fully owned
 		// value (the call boundary materializes the callee's copy), so it is
 		// mutable like a local: field writes inside the body stay local by
 		// construction. Every other param keeps its declared (const)

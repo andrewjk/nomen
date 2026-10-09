@@ -75,7 +75,7 @@ Console.write("nodes=\\{g.node_length()} edges_from_a=\\{total}\\n")
 
 	test("LinkedList<Elephant> store and retrieve class pointers", async () => {
 		const input = `
-owning struct Elephant {
+mv struct Elephant {
   var char letter
   var bool visited = false
 }
@@ -85,11 +85,11 @@ var Elephant a = Elephant('A')
 var Elephant b = Elephant('B')
 var Elephant c = Elephant('C')
 var int ia = list.count
-list.add(move a)
+list.add(mv a)
 var int ib = list.count
-list.add(move b)
+list.add(mv b)
 var int ic = list.count
-list.add(move c)
+list.add(mv c)
 list.set_next(ia, ib)
 list.set_next(ib, ic)
 for i of 0 .. list.count {
@@ -114,7 +114,7 @@ Console.write("\\n")
 
 	test("Tree<Box<Elephant>> store and traverse boxed elements", async () => {
 		const input = `
-owning struct Elephant {
+mv struct Elephant {
   var char letter
   var bool visited = false
 }
@@ -146,7 +146,7 @@ Console.write("\\n")
 
 	test("Graph<Elephant> store and traverse class pointers", async () => {
 		const input = `
-owning struct Elephant {
+mv struct Elephant {
   var char letter
   var bool visited = false
 }

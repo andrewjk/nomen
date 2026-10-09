@@ -27,7 +27,7 @@ describe("struct return normalization", () => {
 		await run(
 			"rb_basic",
 			`
-owning struct Info { var markup = "" }
+mv struct Info { var markup = "" }
 
 func make = (out Info) {
 	var i = Info()
@@ -50,7 +50,7 @@ Console.write_line(a.markup)
 		await run(
 			"rb_forward",
 			`
-owning struct Info { var markup = "" }
+mv struct Info { var markup = "" }
 
 func make = (out Info) {
 	var i = Info()
@@ -70,14 +70,14 @@ Console.write_line(a.markup)
 		);
 	});
 
-	test("list pop transfers an owning struct", async () => {
+	test("list pop transfers a mv struct", async () => {
 		// `pop`'s generic body (`List<T>`) cannot be classified by the
 		// whole-program pre-pass (its return type is the type parameter), so
 		// the binding is unrecorded and the moved-out slot buffer leaks —
 		// the documented pre-existing status quo. Run with audit off.
 		for (const arch of ["c", "aarch64"] as const) {
 			const input = `
-owning struct Info { var markup = "" }
+mv struct Info { var markup = "" }
 var List<Info> xs = List<Info>()
 xs.push(Info())
 var Info a = xs.pop()
@@ -97,7 +97,7 @@ Console.write_line(a.markup)
 		await run(
 			"rb_independent",
 			`
-owning struct Info { var markup = "" }
+mv struct Info { var markup = "" }
 
 func make = (string m, out Info) {
 	var i = Info()
@@ -118,7 +118,7 @@ Console.write_line(b.markup)
 		await run(
 			"rb_chain",
 			`
-owning struct Pair {
+mv struct Pair {
 	var int n = 0
 	var string tag = ""
 }

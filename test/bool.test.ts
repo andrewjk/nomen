@@ -113,7 +113,7 @@ Console.write("\\{result}")
 
 	test("negated method call result", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
 	var bool on
 
 	func get = (self, out bool) {
@@ -132,7 +132,7 @@ Console.write("\\{result}")
 
 	test("negated field access", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
 	var bool on
 }
 const Box b = Box(false)

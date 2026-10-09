@@ -66,7 +66,7 @@ pub fn main() void {
     // temporarily to debug compile time logic.
     //
     // Try uncommenting this line and playing around with it
-    // (copy it, move it) to see what it does:
+    // (copy it, mv it) to see what it does:
     //@compileLog("Count at compile time: ", count);
 }
 `;

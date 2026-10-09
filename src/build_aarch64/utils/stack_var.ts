@@ -106,7 +106,7 @@ export function emit_var_address(status: BuildStatus, reg: string, name: string)
 	} else {
 		const param_reg = status.function_param_regs?.get(name);
 		if (param_reg) {
-			// Variable is in a callee-saved register — move it to the target reg
+			// Variable is in a callee-saved register — mv it to the target reg
 			emit_asm(status, `mov ${reg}, ${param_reg}\n`);
 		} else {
 			emit_asm(status, `adr ${reg}, ${name}\n`);
@@ -163,7 +163,7 @@ export function emit_var_load(status: BuildStatus, reg: string, name: string, si
 	}
 	const offset = status.stack_offsets?.get(name);
 	if (offset !== undefined) {
-		// Fat string slot (16 bytes): move the (ptr, len) pair. Only the
+		// Fat string slot (16 bytes): mv the (ptr, len) pair. Only the
 		// plain base-register form is supported (x-registers). ldp/stp
 		// simm7-scaled range tops out at +504 — split beyond it.
 		if (size === 16 && reg.startsWith("x")) {

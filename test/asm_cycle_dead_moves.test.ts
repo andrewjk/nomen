@@ -7,7 +7,7 @@ import {
 import { validate_asm } from "../src/build_aarch64/lift_asm";
 
 /**
- * Dead staging-move elimination inside validated cycles (ASM_PLAN_6
+ * Dead staging-mv elimination inside validated cycles (ASM_PLAN_6
  * tranche 4): a `mov xD, xS` whose destination exact-CFG liveness proves
  * dead is deleted — but only inside innermost call-free loop cycles. The
  * D4-multiply cycle's five staging leftovers are the reference shape.
@@ -73,9 +73,9 @@ test("mi-loop staging leftovers are pruned, live staging kept", () => {
 	expect(text).toContain("str x12, [x9, x10, lsl #3]");
 });
 
-test("a value escaping through the loop exit keeps its move", () => {
+test("a value escaping through the loop exit keeps its mv", () => {
 	// x14 is read just after the exit label (the si2 base read): the
-	// exact CFG liveness must keep the defining move while a dead
+	// exact CFG liveness must keep the defining mv while a dead
 	// neighbor dies.
 	const out = prune([
 		"f:",

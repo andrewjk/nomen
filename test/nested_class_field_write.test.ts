@@ -8,10 +8,10 @@ import build_and_check_output from "./build_and_check_output";
 // C stored a rodata literal into the always-heap class string field and then
 // `<Class>_destroy` freed it (invalid free).
 describe("nested write through a class-typed field", () => {
-	test("string literal assigned into a move-class field", async () => {
+	test("string literal assigned into a mv-class field", async () => {
 		const input = `
-owning struct Inner { var s = "" }
-owning struct A { move x = Inner() }
+mv struct Inner { var s = "" }
+mv struct A { mv x = Inner() }
 
 var a = A()
 a.x.s = "value one"
@@ -22,10 +22,10 @@ Console.write_line(a.x.s)
 
 	// Landed with the B1 backend cutover: the nested-hop store strdups and
 	// the scope-exit destroy frees it.
-	test("heap string assigned into a move-class field", async () => {
+	test("heap string assigned into a mv-class field", async () => {
 		const input = `
-owning struct Inner { var s = "" }
-owning struct A { move x = Inner() }
+mv struct Inner { var s = "" }
+mv struct A { mv x = Inner() }
 
 var a = A()
 a.x.s = 42.to_string()
@@ -34,10 +34,10 @@ Console.write_line(a.x.s)
 		await build_and_check_output(input, "nested_class_field_string_heap", "42\n");
 	});
 
-	test("int field through a move-class field", async () => {
+	test("int field through a mv-class field", async () => {
 		const input = `
-owning struct Inner { var n = 0 }
-owning struct A { move x = Inner() }
+mv struct Inner { var n = 0 }
+mv struct A { mv x = Inner() }
 
 var a = A()
 a.x.n = 42
@@ -48,9 +48,9 @@ Console.write_line(a.x.n.to_string())
 
 	test("string field two class hops deep", async () => {
 		const input = `
-owning struct Deep { var s = "" }
-owning struct Mid { move d = Deep() }
-owning struct A { move m = Mid() }
+mv struct Deep { var s = "" }
+mv struct Mid { mv d = Deep() }
+mv struct A { mv m = Mid() }
 
 var a = A()
 a.m.d.s = "hi"
@@ -62,7 +62,7 @@ Console.write_line(a.m.d.s)
 	test("value struct nested inside a class field", async () => {
 		const input = `
 struct Point { var x = 0 }
-owning struct Holder { var p = Point() }
+mv struct Holder { var p = Point() }
 
 var h = Holder()
 h.p.x = 7

@@ -2,8 +2,8 @@
 // tasks. Unbounded, FIFO, blocking receive.
 //
 // The queue node's payload is three words wide: every message carries a
-// (value, len, kind) triple. `send`/`receive` move uint64 values (len and
-// kind stay 0); `send_string`/`receive_string` move fat strings (kind = 1)
+// (value, len, kind) triple. `send`/`receive` mv uint64 values (len and
+// kind stay 0); `send_string`/`receive_string` mv fat strings (kind = 1)
 // without truncating the len half. `#destroy` frees only string payloads —
 // a raw uint64 payload is a value, not a pointer. A typed Channel<T>
 // wrapper can come later — the storage story is identical, only the
@@ -23,7 +23,7 @@
 // menu): every field is an opaque handle/counter word, so the value is
 // movable and its `#destroy` closes what the handles name. Sharing one
 // across tasks rides the checked region borrows (`async { }` — the join
-// bounds the borrow) or a transfer (`move ch` — the receiver owns the
+// bounds the borrow) or a transfer (`mv ch` — the receiver owns the
 // queue). The send/receive methods take the receiver bare (struct receivers
 // travel by address), so queue mutations land in the one shared instance,
 // never in a copy.
@@ -34,7 +34,7 @@
 /**
  * A thread-safe, blocking FIFO queue for passing values between tasks
  **/
-pub owning struct Channel {
+pub mv struct Channel {
 	pub var uint64 mu = 0
 	pub var uint64 not_empty_cv = 0
 	pub var uint64 head = 0
@@ -267,7 +267,7 @@ pub owning struct Channel {
 	// (the node's copy is moved out — the payload leaves the channel, and a
 	// second receive of the same message is not possible). The fat (ptr, len)
 	// pair survives intact. Pair with send_string.
-	pub func receive_string = (self, move out string) {
+	pub func receive_string = (self, mv out string) {
 		```
 		#arch: c
 		pthread_mutex_lock((pthread_mutex_t *)self->mu);

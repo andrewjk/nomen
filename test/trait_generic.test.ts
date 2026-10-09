@@ -17,13 +17,13 @@ describe("generic trait conformance", () => {
 trait Greetable<T> {
 }
 
-owning struct Users: Greetable<User> {
+mv struct Users: Greetable<User> {
 	func speak = (out string) {
 		return "ok"
 	}
 }
 
-owning struct User {
+mv struct User {
 	var string name = ""
 }
 
@@ -42,13 +42,13 @@ trait Greetable<T> {
 	func code = (self, out int)
 }
 
-owning struct Users: Greetable<User> {
+mv struct Users: Greetable<User> {
 	func code = (self, out int) {
 		return 7
 	}
 }
 
-owning struct User {
+mv struct User {
 	var string name = ""
 }
 
@@ -67,13 +67,13 @@ trait Mapper<K, V> {
 	func key = (self, out int)
 }
 
-owning struct M: Mapper<User, int> {
+mv struct M: Mapper<User, int> {
 	func key = (self, out int) {
 		return 42
 	}
 }
 
-owning struct User {
+mv struct User {
 	var string name = ""
 }
 
@@ -96,14 +96,14 @@ trait Greetable<T> {
 	func code = (self, out int)
 }
 
-owning struct Dog: Greetable<Bone> {
+mv struct Dog: Greetable<Bone> {
 	func code = (self, out int) { return 1 }
 	func #destroy = (ref self) {
 		Console.write("dog")
 	}
 }
 
-owning struct Cat: Greetable<Mouse> {
+mv struct Cat: Greetable<Mouse> {
 	func code = (self, out int) { return 2 }
 	func #destroy = (ref self) {
 		Console.write("cat")
@@ -115,8 +115,8 @@ struct Mouse {}
 
 if true {
 	var List<Greetable> list = List<Greetable>()
-	list.push(move Dog())
-	list.push(move Cat())
+	list.push(mv Dog())
+	list.push(mv Cat())
 }
 Console.write(" done")
 `;
@@ -169,7 +169,7 @@ trait Box<T> {
 	}
 }
 
-owning struct StrBox: Box<string> {
+mv struct StrBox: Box<string> {
 	var string item = ""
 }
 
@@ -228,7 +228,7 @@ struct IB: Box<int> {
 	var int item = 0
 }
 
-owning struct SB: Box<string> {
+mv struct SB: Box<string> {
 	var string item = ""
 }
 
@@ -256,7 +256,7 @@ trait Box<T> {
 	}
 }
 
-owning struct IB: Box<int> {
+mv struct IB: Box<int> {
 	var int item = 0
 }
 
@@ -349,7 +349,7 @@ struct Wrap {
 	var int inner = 0
 }
 
-owning struct W: Greetable<Wrap<int>> {
+mv struct W: Greetable<Wrap<int>> {
 	func code = (self, out int) {
 		return 9
 	}
@@ -394,7 +394,7 @@ struct A {}
 struct B {}
 struct C {}
 
-owning struct Triple: Greetable<List<List<int>>> {
+mv struct Triple: Greetable<List<List<int>>> {
 	func code = (self, out int) {
 		return 3
 	}
@@ -426,11 +426,11 @@ describe("generic trait conformance errors", () => {
 trait Greetable<T> {
 }
 
-owning struct Users: Greetable {
+mv struct Users: Greetable {
 }
 `;
 		const expected = [
-			test_error(input, "Trait 'Greetable' expects 1 type argument(s) <T>, got none", 5, 8),
+			test_error(input, "Trait 'Greetable' expects 1 type argument(s) <T>, got none", 5, 4),
 		];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
@@ -441,15 +441,15 @@ owning struct Users: Greetable {
 trait Greetable<T> {
 }
 
-owning struct Users: Greetable<User, int> {
+mv struct Users: Greetable<User, int> {
 }
 
-owning struct User {
+mv struct User {
 	var string name = ""
 }
 `;
 		const expected = [
-			test_error(input, "Trait 'Greetable' expects 1 type argument(s), got 2", 5, 8),
+			test_error(input, "Trait 'Greetable' expects 1 type argument(s), got 2", 5, 4),
 		];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
@@ -460,10 +460,10 @@ owning struct User {
 trait Speaker {
 }
 
-owning struct Dog: Speaker<int> {
+mv struct Dog: Speaker<int> {
 }
 `;
-		const expected = [test_error(input, "Trait 'Speaker' expects 0 type argument(s), got 1", 5, 8)];
+		const expected = [test_error(input, "Trait 'Speaker' expects 0 type argument(s), got 1", 5, 4)];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});
@@ -474,7 +474,7 @@ trait Greetable<T> {
 	func code = (self, out T)
 }
 
-owning struct G: Greetable<int> {
+mv struct G: Greetable<int> {
 }
 `;
 		const expected = [
@@ -482,7 +482,7 @@ owning struct G: Greetable<int> {
 				input,
 				"Type 'G' does not conform to trait 'Greetable': missing required method 'code'",
 				6,
-				8,
+				4,
 			),
 		];
 		const parsed = parse(input);

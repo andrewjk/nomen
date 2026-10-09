@@ -53,7 +53,7 @@ struct Pt {
 	var int y
 }
 
-owning struct Rule {
+mv struct Rule {
 	pub var string name = "r"
 }
 

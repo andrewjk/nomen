@@ -169,7 +169,7 @@ trait Maker {
 	func make = (self, int n, out func (out int))
 }
 
-owning struct Adder : Maker {
+mv struct Adder : Maker {
 	func make = (self, int n, out func (out int)) { return () => n }
 }
 
@@ -198,9 +198,9 @@ pub func main = (Init init) {
 	Console.write_line("\\{a()}")
 }
 `);
-		expect(
-			parsed.errors.some((e) => e.message.includes("moved") || e.message.includes("move")),
-		).toBe(true);
+		expect(parsed.errors.some((e) => e.message.includes("moved") || e.message.includes("mv"))).toBe(
+			true,
+		);
 	});
 });
 

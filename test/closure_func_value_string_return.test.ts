@@ -18,7 +18,7 @@ describe("func-value string returns are owned", () => {
 			`
 import System
 
-owning struct Rule {
+mv struct Rule {
 	var func (string, out string) render
 }
 
@@ -39,7 +39,7 @@ pub func main = () {
 			`
 import System
 
-owning struct Rule {
+mv struct Rule {
 	var func (string, out string) render
 }
 
@@ -89,7 +89,7 @@ trait Show {
 	func show = (self, out string)
 }
 
-	owning struct Dog : Show {
+	mv struct Dog : Show {
 	var string name
 	func show = (self, out string) => self.name.copy()
 }

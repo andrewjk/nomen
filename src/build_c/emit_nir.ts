@@ -51,7 +51,7 @@ import { statement_ends_with_block } from "./utils/statement_tail.ts";
  *   drift).
  * - handles `return`/`declare`/`assign`/`eval` NIR-natively: the builders keep
  *   every semantic decision (type routing, ownership/reclamation, aliasing,
- *   move marks, borrow normalization, swap marshalling) on the AST node, and
+ *   mv marks, borrow normalization, swap marshalling) on the AST node, and
  *   the VALUE positions (return expression, declaration initializer, plain +
  *   string-field + trait-dispatch assignment RHS, swap replacements, bare
  *   expression statements) descend `emit_expr_from_nir` (the expression seam
@@ -254,7 +254,7 @@ function with_semicolon_tail(status: BuildStatus, node?: BaseNode): void {
 	if (!statement_ends_with_block(node, status)) {
 		status.code += ";\n";
 	}
-	// Flush frees deferred from move call sites inside this statement
+	// Flush frees deferred from mv call sites inside this statement
 	// (VALUE-struct string fields — see build_access_node /
 	// build_function_call_node). Appending them at the call itself would
 	// break the surrounding expression.

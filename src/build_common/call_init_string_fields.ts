@@ -30,7 +30,7 @@ interface RecordTable {
  *     (the registry is populated at the callee's return sites — a callee
  *     built later, or one that returns slot borrows, is not registered and
  *     the binding keeps the pre-existing borrow behavior);
- *   - an owned accessor (`pop`/`move_T`/`copy`) — move-out semantics
+ *   - an owned accessor (`pop`/`move_T`/`copy`) — mv-out semantics
  *     transfer slot-owned heap buffers to the binding.
  *
  * NOT normalized (never recorded): struct constructions (`Info(...)` — its

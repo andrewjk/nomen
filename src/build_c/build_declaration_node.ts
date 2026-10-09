@@ -81,7 +81,7 @@ function emit_init_value(
 }
 
 /**
- * The declaration SWAP replacement (`var X b = move obj.field swap <rep>`) —
+ * The declaration SWAP replacement (`var X b = mv obj.field swap <rep>`) —
  * the expression-seam version of the historical `build_node(swap)`. Both
  * backends build it in VALUE position; the surrounding statement tail is
  * handled by the caller, so no newline normalization happens here.
@@ -180,7 +180,7 @@ export default function build_declaration_node(
 		status.code += `] = {${variables.join(", ")}}`;
 	} else {
 		const safe_name = c_function_name(node.name);
-		// A TUPLE variable (`var pair = make()` / `var pair = [move s, 42]`)
+		// A TUPLE variable (`var pair = make()` / `var pair = [mv s, 42]`)
 		// owns the heap string fields of the returned/built tuple: record
 		// them so scope-exit auto_free frees each `pair._N.ptr`. The
 		// destructuring temp (`_tuple_dst_N`) is excluded — its bindings take
@@ -247,7 +247,7 @@ export default function build_declaration_node(
 			// return-boundary normalization makes every string field
 			// heap-owned, so this binding takes ownership uniformly (raw pair,
 			// freed at scope exit) — no per-element information needed across
-			// the call. The literal-shaped temp (`[move s, 42]`, init named
+			// the call. The literal-shaped temp (`[mv s, 42]`, init named
 			// `_Tuple_..._init`) keeps the per-element rule below.
 			const temp_is_tuple_call =
 				temp_init?.node_type === "func_call" &&
@@ -329,9 +329,9 @@ export default function build_declaration_node(
 			}
 			// A BORROW initializer (a non-`owned_return` accessor: `.at(i)` /
 			// `.first()`) yields a concrete-class element the CONTAINER owns —
-			// the local is a non-owning alias, so it must not be reclaimed at
+			// the local is a non-mv alias, so it must not be reclaimed at
 			// scope exit or reassignment (doing so frees the container's
-			// element). A `move out T` accessor (`.pop()`) or a fresh
+			// element). A `mv out T` accessor (`.pop()`) or a fresh
 			// constructor transfers ownership. Mirrors the unknown-concrete
 			// method-return branch below and the aarch64 declaration path.
 			const borrow_initializer =
@@ -365,7 +365,7 @@ export default function build_declaration_node(
 			status.code += `;\n`;
 			return;
 		}
-		// STRUCT_PLAN_3 B4 — trait handles are boxed, owning values. A trait
+		// STRUCT_PLAN_3 B4 — trait handles are boxed, mv values. A trait
 		// handle MOVED from another trait local transfers the pointer: the
 		// donor's anchor slot is spliced (it loses its scope-exit destroy)
 		// and this binding becomes the instance's single owner.
@@ -406,7 +406,7 @@ export default function build_declaration_node(
 		//   - a fresh temporary (constructor / struct-returning call) is
 		//     built into a stack temp, its direct string fields are strdup'd
 		//     (the box's destroy frees every string field it holds), and the
-		//     bytes move into the malloc'd box;
+		//     bytes mv into the malloc'd box;
 		//   - a bare value-struct local is MOVED into the box: unrecorded
 		//     (rodata/borrow) string fields are strdup'd IN PLACE first, the
 		//     bytes are copied, and the donor loses its teardown and records
@@ -441,7 +441,7 @@ export default function build_declaration_node(
 				const donor_name =
 					node.value.node_type === "value" ? (node.value as ValueNode).value : undefined;
 				if (donor_name !== undefined && /^[A-Za-z_][A-Za-z0-9_]*$/.test(donor_name)) {
-					// Boxing move from a bare local: strdup the UNRECORDED
+					// Boxing mv from a bare local: strdup the UNRECORDED
 					// (rodata/borrow) string fields in place — the box's
 					// destroy frees every string field — then transfer the
 					// recorded ones silently (the box owns them now).
@@ -483,7 +483,7 @@ export default function build_declaration_node(
 				} else {
 					// Fresh temporary (constructor / struct-returning call):
 					// construct into a stack temp, strdup its string fields,
-					// move the bytes into the box.
+					// mv the bytes into the box.
 					const temp = `_box_${safe_name}`;
 					status.code += `struct ${concrete_struct.name} ${temp} = `;
 					emit_init_value(node.value, nir_init, status);
@@ -511,7 +511,7 @@ export default function build_declaration_node(
 		// class_vars (build_vtable_target passes it by value, not &name)
 		// and variable_types (so accesses are recognized as trait
 		// dispatch). Ownership follows the callee's return convention: a
-		// `move out T` method (`owned_return`, e.g. `list.pop()`) transfers
+		// `mv out T` method (`owned_return`, e.g. `list.pop()`) transfers
 		// ownership (destroy + free at scope exit via the declaration's
 		// trait record); a plain borrow (e.g. `.at(i)`) does not (the container still
 		// owns the element), so the local is recorded as an alias and
@@ -606,7 +606,7 @@ export default function build_declaration_node(
 		// ownership — EXCEPT scan-detected borrow-returning functions like
 		// `box_at`, whose class return is a container reference the callee's
 		// owner frees.)
-		// An `access` that is an ownership-transferring method (`move out T`,
+		// An `access` that is an ownership-transferring method (`mv out T`,
 		// e.g. `list.pop()`) returns a fresh owned instance — it is NOT a borrow,
 		// so the variable genuinely owns it and must be freed at scope exit.
 		// Only treat a non-`owned_return` access as an alias/borrow.
@@ -659,10 +659,10 @@ export default function build_declaration_node(
 			val_is_string_literal &&
 			(node.declaration === "const" ||
 				(node.declaration === "var" && !!status.c_borrow_only_strings?.has(safe_name)));
-		// A `move`-out field read with a swap (`var s = move p.name swap ""`)
-		// TRANSFERS an `owning` struct's uniformly-heap field to the binding —
+		// A `mv`-out field read with a swap (`var s = mv p.name swap ""`)
+		// TRANSFERS a `mv` struct's uniformly-heap field to the binding —
 		// the binding owns it and the swap revalidates the field. Only a plain
-		// (non-move) field read is a borrow, and a tuple/anon temp's field
+		// (non-mv) field read is a borrow, and a tuple/anon temp's field
 		// stays record/binding-based (the dedicated paths own it).
 		const move_swap_owner_type =
 			node.value?.node_type === "access"
@@ -746,14 +746,14 @@ export default function build_declaration_node(
 				}
 			}
 		}
-		// `var List b = move a` (struct move): ownership transfers from a to b.
+		// `var List b = mv a` (struct mv): ownership transfers from a to b.
 		// Remove the source `a` from whichever scope frame holds it (it may be
 		// declared in an OUTER scope when the declaration sits inside an
 		// if/loop branch) so it won't be destroyed at scope exit (b owns the
-		// data now). A base-bearing anon literal with a `move` base (`var x =
-		// [ .. move y, f = v ]`) transfers the same way — the base's bytes
+		// data now). A base-bearing anon literal with a `mv` base (`var x =
+		// [ .. mv y, f = v ]`) transfers the same way — the base's bytes
 		// landed in the destination, so the donor must not be destroyed.
-		// A swap revalidates the source (`var string b = move a swap ""`): the
+		// A swap revalidates the source (`var string b = mv a swap ""`): the
 		// source stays registered (it now holds the replacement) instead of
 		// being spliced as a moved-out donor. Its auto-free is suppressed via
 		// `moved_string_vars` in the string branch below.
@@ -782,7 +782,7 @@ export default function build_declaration_node(
 			if (!status.class_vars) status.class_vars = new Set();
 			status.class_vars.add(safe_name);
 			// When a class var captures the result of a call that also
-			// received a same-type class temporary as a non-move arg (the
+			// received a same-type class temporary as a non-mv arg (the
 			// hoisted `_param_N` for e.g. `Box(5)`), the callee may return
 			// that very instance (e.g. `return x ?? fallback`). Both the
 			// result var and the temporary would then point at one
@@ -838,7 +838,7 @@ export default function build_declaration_node(
 			// `struct Array_<T>*` buffer so the promoted param's
 			// `.length`/`.at`/`.set`/iteration dispatch through the Array_<T>
 			// methods. Register it in `heap_array_vars` so auto_free frees the
-			// buffer (and its owning elements) at scope exit. The malloc +
+			// buffer (and its mv elements) at scope exit. The malloc +
 			// header + element copies are emitted with the initializer below.
 			status.code += `struct Array_${node.type.name}* ${safe_name}`;
 			if (!status.heap_array_vars) status.heap_array_vars = new Set();
@@ -863,7 +863,7 @@ export default function build_declaration_node(
 			node.trait_concrete_struct = concrete_struct_name;
 			status.code += `struct ${concrete_struct_name} ${safe_name}`;
 		} else if (mono_struct) {
-			// STRUCT_PLAN_3 Phase R tranche 3: an owning-struct GLOBAL's
+			// STRUCT_PLAN_3 Phase R tranche 3: a mv-struct GLOBAL's
 			// definition lives at file scope (build_block_node's root scan put
 			// the inline value in the header preamble), so other functions'
 			// reads resolve — the same BUGS.md #5 shape as the class arm, with
@@ -875,7 +875,7 @@ export default function build_declaration_node(
 				status.code += `struct ${mono_name} ${safe_name}`;
 			}
 		} else if (node.type.is_view) {
-			// A `view T` local is a non-owning (ptr, len) slice on the stack.
+			// A `view T` local is a non-mv (ptr, len) slice on the stack.
 			// It borrows from its source and is never auto-freed.
 			status.code += `nomen_view ${safe_name}`;
 		} else if (node.type.is_array && !is_stack_array) {
@@ -1220,7 +1220,7 @@ export default function build_declaration_node(
 						!!source_dec &&
 						!is_string_borrow(source_dec.value) &&
 						!status.string_borrow_vars?.has(source_dec.name);
-					// An EXPLICIT `var string b = move a swap <repl>` is a
+					// An EXPLICIT `var string b = mv a swap <repl>` is a
 					// transfer with revalidation: the pair moves to `b` (no
 					// strdup) and `a` is revalidated with the replacement (the
 					// generic swap write-back below). Suppress `a`'s auto-free
@@ -1274,7 +1274,7 @@ export default function build_declaration_node(
 					status.static_string_array_inits = false;
 				}
 			}
-			// `var X b = move obj.field swap <rep>`: the field's bytes were
+			// `var X b = mv obj.field swap <rep>`: the field's bytes were
 			// copied into `b` above (transferring ownership). Now write the
 			// replacement value back into the moved-out field so the field is
 			// revalidated — otherwise the field still aliases `b`'s data and
@@ -1292,7 +1292,7 @@ export default function build_declaration_node(
 				build_node(node.value, status);
 				const field_access = end_code_scratch(status, saved);
 				status.code += `${field_access} = `;
-				// A string moved out of an owning struct's FIELD: the field is
+				// A string moved out of a mv struct's FIELD: the field is
 				// uniformly heap (its destroy frees it unconditionally), so a
 				// non-owned replacement (`""`) must be strdup'd into an owned
 				// copy — storing the raw rodata pair leaves the owner's destroy
@@ -1308,7 +1308,7 @@ export default function build_declaration_node(
 					if (acc.access.node_type === "access_field" && acc.target.node_type === "value") {
 						const field_owner = (acc.target as ValueNode).value;
 						const field_name = (acc.access as AccessFieldNode).name;
-						// Only an `owning` struct's string fields are uniformly
+						// Only a `mv` struct's string fields are uniformly
 						// heap and freed by its destroy. A tuple/anon temp's
 						// fields stay record/binding-based (the dedicated paths
 						// own them), so the swap handling must not fire for them.
@@ -1341,8 +1341,8 @@ export default function build_declaration_node(
 			// UNIFORMLY heap-owned, so record every string field — scope-exit
 			// auto_free frees them, and a later `b.field = …` write sees
 			// old_was_heap and reclaims the displaced buffer. (Constructor
-			// and move inits are NOT recorded: construction leaves rodata
-			// borrows in the fields, and a move transfers the source's
+			// and mv inits are NOT recorded: construction leaves rodata
+			// borrows in the fields, and a mv transfers the source's
 			// records.) Recording MUST precede the field overrides below: an
 			// override replaces a normalized (heap) field value, and its
 			// assignment path frees the displaced buffer only when the record
@@ -1384,9 +1384,9 @@ export default function build_declaration_node(
 					if (!status.code.endsWith(";\n")) status.code += `;\n`;
 					// Mirror emit_struct_destroys' free set: direct plain strings,
 					// plus — recursively — the strings of nested OWNING struct
-					// fields (their destroy walk frees them; a non-owning nested
+					// fields (their destroy walk frees them; a non-mv nested
 					// struct's destroy frees nothing here). A nested nullable
-					// owning field is flag-guarded like its destroy — the guard
+					// mv field is flag-guarded like its destroy — the guard
 					// WRAPS the nested strings (it is not a dup target itself).
 					const emit_strdups = (s: StructNode, prefix: string, guard?: string) => {
 						const lines: string[] = [];
@@ -1447,7 +1447,7 @@ export default function build_declaration_node(
 					// B1 cutover: an OWNING struct's override store takes the
 					// ownership-normalized lowering (strdup + unconditional
 					// displaced free), so the explicit seed reclaim here would
-					// double-free — only non-owning structs (raw-ish stores
+					// double-free — only non-mv structs (raw-ish stores
 					// keyed on records) need it.
 					if (!owns_strings_uniformly(override_struct)) {
 						for (const name of override_displaced_string_fields(
@@ -1462,7 +1462,7 @@ export default function build_declaration_node(
 			}
 			// A plain CONSTRUCTOR init (`var Pair p = Pair("x")`): record the
 			// string fields whose DEFAULT the constructor evaluated fresh as a
-			// heap-owning expression — the struct alone owns the buffer, so
+			// heap-mv expression — the struct alone owns the buffer, so
 			// scope-exit auto_free reclaims it and a displaced store sees
 			// old_was_heap. OVERRIDDEN fields are skipped: the explicit
 			// displaced free above reclaims their seed (recording them would
@@ -1511,7 +1511,7 @@ export default function build_declaration_node(
 
 /**
  * When a class-typed variable captures the result of a call that also
- * received a same-type class temporary as a non-move arg (the hoisted
+ * received a same-type class temporary as a non-mv arg (the hoisted
  * `_param_N` for e.g. `Box(5)`), the callee may return that very instance
  * (e.g. `return x ?? fallback`). The result variable supersedes the
  * temporary, so drop it from scoped_declarations to consolidate to a single
@@ -1581,11 +1581,11 @@ function build_function_type_declaration(node: DeclarationNode, status: BuildSta
 			build_node(node.value, status);
 		}
 	}
-	// A func local initialized from a capturing lambda, from another owning
+	// A func local initialized from a capturing lambda, from another mv
 	// closure, or from a CALL/access expression (`var func (out int) f =
 	// make()` — a closure factory, direct or method/trait-dispatched) holds a
 	// heap descriptor it must free at scope exit (CLOSURE.md Phase 2c). The
-	// source of a move-transfer is spliced so the backends don't also free
+	// source of a mv-transfer is spliced so the backends don't also free
 	// it. An expression result is conservatively owned: the free-if-owned
 	// arm passes static descriptors through untouched.
 	const value_is_capturing_lambda =

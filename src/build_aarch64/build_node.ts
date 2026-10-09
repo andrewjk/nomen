@@ -119,7 +119,7 @@ function emit_capturing_closure_value_a64(fn: FunctionNode, status: BuildStatus)
 		// A MOVE capture transfers ownership out of the donating local: mark it
 		// so scope exit skips destroying it (the env destructor owns it now),
 		// and drop its heap-string-field records (the env's <T>_destroy frees
-		// them). Mirrors the `move`-arg path.
+		// them). Mirrors the `mv`-arg path.
 		// D3/E2: STRING captures are excluded — they snapshot (above), so the
 		// donor still owns and frees its own buffer.
 		if (cap.is_move && !(cap.type.name === "string" && !cap.type.is_view && !cap.type.is_array)) {
@@ -321,7 +321,7 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 			const anon = node as AnonStructNode;
 			// A base-bearing literal (`[ .. <base>, ... ]`) emits its base
 			// expression — the destination slot gets a copy of the base (the
-			// owning-struct copy/move rule was enforced at check time); the
+			// mv-struct copy/mv rule was enforced at check time); the
 			// destination sites apply the field overrides afterwards.
 			if (anon.base) {
 				build_node(anon.base, status);

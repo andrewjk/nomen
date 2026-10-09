@@ -106,9 +106,9 @@ export function get_or_create_anon_enum(
 		})),
 	);
 	// STRUCT_PLAN_3 B1 full cutover — an anonymous enum is Copyable iff every
-	// payload is: any owning payload (`string`, a mono'd generic, …) makes
-	// the generated enum owning (a generated enum cannot be spelled
-	// `owning`). Payloads are concrete here (payload_type above).
+	// payload is: any mv payload (`string`, a mono'd generic, …) makes
+	// the generated enum mv (a generated enum cannot be spelled
+	// `mv`). Payloads are concrete here (payload_type above).
 	node.is_owning = sorted.some((c) => c.types.some((t) => type_owns_heap(payload_type(t), status)));
 
 	status.enums.push(node);

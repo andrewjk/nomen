@@ -248,7 +248,7 @@ describe("audit mode is a whole-build property", () => {
 	const PROGRAM = `
 import System
 
-owning struct Pair {
+mv struct Pair {
 	var string name
 	pub func #init = (self, string n) {
 		self.name = n.copy()

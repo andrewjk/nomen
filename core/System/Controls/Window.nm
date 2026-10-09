@@ -8,7 +8,7 @@
  * pointer form); the constructor's `self` is the inline instance (the `.`
  * accessor).
  **/
-pub owning struct Window : Control {
+pub mv struct Window : Control {
 	var uint64 handle = 0
 
 	pub func #init = (self, string title, int width, int height) {

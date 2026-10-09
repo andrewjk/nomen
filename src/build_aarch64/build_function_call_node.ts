@@ -182,9 +182,9 @@ export function boxable_value_struct_arg(
  * slot storage: an arg spill slot or an enum payload slot) and left in x0.
  *
  * THIS is the single implementation of "concrete value struct → trait slot"
- * for call/case arguments — the `move Trait` parameter and enum case payload
+ * for call/case arguments — the `mv Trait` parameter and enum case payload
  * families. Every such site funnels through here so a change to a conformer's
- * representation (the R `class` → `owning struct` rewrite that made a payload
+ * representation (the R `class` → `mv struct` rewrite that made a payload
  * inline instead of a pointer) is handled once, never half-applied.
  */
 export function emit_box_value_struct_arg(
@@ -196,7 +196,7 @@ export function emit_box_value_struct_arg(
 	// An OWNING struct's direct string fields are uniformly heap (the ctor
 	// strdup'd the seed, stores strdup a non-heap RHS); the MOVE transfers
 	// them to the box as-is, so strdup'ing again would orphan the donor's
-	// copy (LEAK). Only a non-owning struct's fields (transition-era
+	// copy (LEAK). Only a non-mv struct's fields (transition-era
 	// rodata/borrow sources) need the defensive strdup.
 	const strdup_string_fields =
 		!owns_strings_uniformly(struct) &&
@@ -305,7 +305,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				const case_index = enum_node.cases.indexOf(enum_case);
 				const enum_size = get_enum_size(enum_node.name, status);
 				const temp_offset = allocate_stack_space(status, enum_size);
-				// An owned class/trait LOCAL passed to an owning case payload
+				// An owned class/trait LOCAL passed to a mv case payload
 				// transfers ownership (check records the arg in
 				// move_param_indices): mark it moved so its own scope-exit
 				// destroy doesn't free the instance the payload now owns.
@@ -492,7 +492,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			// Positional slots (absolute): env at start_reg, param i starts at
 			// (start_reg + 1) + param_slots[i] and consumes 1 or 2.
 			const arg_slot = start_reg + 1 + param_slots[i];
-			// Store the len half FIRST: the ptr move targets x1 for the first
+			// Store the len half FIRST: the ptr mv targets x1 for the first
 			// pair slot and would clobber it.
 			if (is_pair) store_arg_half("x1", arg_slot + 1);
 			store_arg_half("x0", arg_slot);
@@ -1022,12 +1022,12 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					}
 				} else if (
 					// STRUCT_PLAN_3 B4/T2 — a value-struct conformer argument to
-					// a `move Trait` parameter is boxed at the call site: the
+					// a `mv Trait` parameter is boxed at the call site: the
 					// callee owns (and frees) a heap instance whose first word
 					// is the conformer's vtable. Unrecorded (rodata/borrow)
 					// string fields are strdup'd in place — the box's destroy
 					// frees every string field — and the checker stamped the
-					// arg move-owned (move_owned_param_indices), so the donor's
+					// arg mv-owned (move_owned_param_indices), so the donor's
 					// records drop and its teardown is suppressed post-call. A
 					// BARE trait param skips this branch: the T3 stack-copy
 					// convention passes the caller value's address directly.
@@ -1042,7 +1042,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 						// A bare variable's ValueNode.type can be unset after
 						// monomorphization — resolve the donor's type from its
 						// declaration (the same fallback the string/enum gates
-						// in the post-call move loop use).
+						// in the post-call mv loop use).
 						const donor = (node.params[i] as ValueNode).value;
 						const decl = all_scope_frames(status)
 							.flat()
@@ -1134,17 +1134,17 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					is_struct_type(param_type, status) ||
 					is_enum_with_data_type(param_type, status)
 				) {
-					// TRANSFER arg (a `move T` parameter of a pass-by-value
-					// owning struct — move_owned_param_indices): the callee's
+					// TRANSFER arg (a `mv T` parameter of a pass-by-value
+					// mv struct — move_owned_param_indices): the callee's
 					// seeded records free EVERY direct string field at its
 					// exit, so unrecorded (rodata/borrow) fields must be
 					// strdup'd IN PLACE before the call — a freed static
 					// literal is a crash. Recorded fields are already heap and
 					// transfer raw. Must run before the bl: the callee's exit
 					// frees run during the call.
-					// B1 full cutover: a `move T` PARAMETER of a declared-
-					// owning struct takes the same row even when the check-side
-					// stamp is absent (its pbv gate excludes owning types).
+					// B1 full cutover: a `mv T` PARAMETER of a declared-
+					// mv struct takes the same row even when the check-side
+					// stamp is absent (its pbv gate excludes mv types).
 					const callee_param_moved = !!node.resolved_function?.params?.filter(
 						(p) => !p.is_self_param,
 					)[i]?.is_moved;
@@ -1187,7 +1187,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 							// seed, every store strdups) — the bytes transfer
 							// raw and the callee's unconditional teardown frees
 							// them; a strdup here would orphan the donor's copy.
-							// A NON-owning donor keeps the normalization: its
+							// A NON-mv donor keeps the normalization: its
 							// unrecorded fields may hold rodata the B1
 							// unconditional teardown would free.
 							!owns_strings_uniformly(transfer_struct)
@@ -1314,7 +1314,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			}
 			// The arg-0 load waits until AFTER the deferred materializations:
 			// a leaf that parks its value through x0 would otherwise clobber
-			// the loaded arg-0 register (and the dead-move pass would then
+			// the loaded arg-0 register (and the dead-mv pass would then
 			// delete the load as redundant — the value never reached the call).
 			// A deferred slot-0 leaf already materialized last in the loop
 			// above, so only the non-deferred case needs the late load.
@@ -1460,7 +1460,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			emit_asm(status, `add sp, sp, #${outgoing_size}\n`);
 		}
 
-		// A non-inlined call may (transitively, via a `ref`/`var`/`move` receiver
+		// A non-inlined call may (transitively, via a `ref`/`var`/`mv` receiver
 		// or argument) reallocate any Buffer reachable from its parameters,
 		// including a cached field buffer such as `obj.field`. The emitter can't
 		// see through the callee, so conservatively drop every field-buffer
@@ -1475,7 +1475,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		}
 		// Fixed-array pointer cache: a ref arg may write the index (or the
 		// callee may reassign anything reachable), so drop every entry —
-		// the next access re-fills. Fixed-array storage itself cannot move,
+		// the next access re-fills. Fixed-array storage itself cannot mv,
 		// but the pinned address is only valid for the index it was built
 		// with, and the callee may change it.
 		if (status.array_ptr_cache && status.array_ptr_cache.size > 0) {
@@ -1631,7 +1631,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		status.last_result_is_heap = true;
 	}
 
-	// A `move out string` call transfers ownership by signature (the checker
+	// A `mv out string` call transfers ownership by signature (the checker
 	// stamps owned_return) — the caller owns and must free the result, even
 	// when the callee isn't in heap_returning_functions.
 	if (
@@ -1646,7 +1646,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		for (const idx of node.move_param_indices) {
 			const param = node.params[idx];
 			if (param?.node_type === "value") {
-				// A `string` move arg keeps caller ownership (owning
+				// A `string` mv arg keeps caller ownership (mv
 				// Buffer<string> strdup's); skip mark_moved so scope-exit
 				// cleanup frees it. Resolve the type from the declaration — a
 				// bare variable reference's ValueNode.type is unset after mono —
@@ -1658,16 +1658,16 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					.find((d) => d.name === vname);
 				const tname = decl?.type?.name ?? (param as { type?: { name?: string } }).type?.name;
 				if (tname === "string") continue;
-				// An enum-with-data `move` arg also keeps caller ownership: an
-				// owning Buffer/List store_T deep-copies its string payloads,
+				// An enum-with-data `mv` arg also keeps caller ownership: an
+				// mv Buffer/List store_T deep-copies its string payloads,
 				// so the caller's temp must still be reclaimed at scope exit.
 				if (tname && status.enums.find((e) => e.name === tname && e.has_associated_data)) continue;
-				// A TRANSFER param (a `move T` parameter of a pass-by-value
-				// owning struct — see move_owned_param_indices): the callee's
+				// A TRANSFER param (a `mv T` parameter of a pass-by-value
+				// mv struct — see move_owned_param_indices): the callee's
 				// seeded records own the strings now, so the donor's records
 				// are DROPPED here — the scope-exit release-before-moved-check
 				// must not free what the callee now owns.
-				// STRUCT_PLAN_3 B2: a `Box<T>(move x)` construction
+				// STRUCT_PLAN_3 B2: a `Box<T>(mv x)` construction
 				// SHALLOW-copies x — ownership of the pointee's state moves
 				// with the bytes — so its donor's records are dropped the
 				// same way (the callee-copies release would free the strings
@@ -1676,12 +1676,12 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					vname !== undefined &&
 					((node.move_owned_param_indices?.includes(idx) ?? false) ||
 						is_box_type(node.name, status.structs) ||
-						// B1 full cutover: a `move T` PARAMETER of a declared-
-						// owning value struct makes the callee the field owner
+						// B1 full cutover: a `mv T` PARAMETER of a declared-
+						// mv value struct makes the callee the field owner
 						// (the moved-param teardown frees the fields at its exit
 						// — build_function_node), so the donor's records drop
 						// even when the check-side move_owned_param_indices
-						// stamp is absent (its pbv gate excludes owning types).
+						// stamp is absent (its pbv gate excludes mv types).
 						(!!node.resolved_function?.params?.filter((p) => !p.is_self_param)[idx]?.is_moved &&
 							// A named donor only (a fresh construction temp owns
 							// nothing — its records, if any, die with it).

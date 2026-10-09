@@ -79,7 +79,7 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 	// A bare field read of an OWNING-typed field (`return h.c`) is a COPY of
 	// the field's value — the returned instance would share the field's owned
 	// state (double destroy). Same rule as the declaration side: transfer it
-	// with `move ... swap <replacement>` instead.
+	// with `mv ... swap <replacement>` instead.
 	if (
 		ret.value.node_type === "access" &&
 		(ret.value as AccessNode).access.node_type === "access_field"
@@ -101,7 +101,7 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 			) {
 				add_error(
 					status,
-					`cannot copy '${field.type.name}' out of field '${af.name}' by value — it owns heap resources; use 'move ... swap <replacement>'${field.type.name === "string" ? ", or .copy() for a deep copy" : ""}`,
+					`cannot copy '${field.type.name}' out of field '${af.name}' by value — it owns heap resources; use 'mv ... swap <replacement>'${field.type.name === "string" ? ", or .copy() for a deep copy" : ""}`,
 					ret.value.start,
 				);
 			}
@@ -117,7 +117,7 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 			if (param && is_class_type(param.type.name, status) && !param.is_moved) {
 				add_error(
 					status,
-					`Cannot return heap-instance parameter '${param.name}' without 'move' — would create shared ownership`,
+					`Cannot return heap-instance parameter '${param.name}' without 'mv' — would create shared ownership`,
 					ret.value.start,
 				);
 			}
@@ -126,7 +126,7 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 	// A `ref` STRUCT param returned by value is an implicit borrow escape: the
 	// callee received the caller's storage by address, and a by-value return
 	// would copy the instance's owned state out from under it. Transfer with
-	// `move` (the value-struct param form) or return a field's VALUE instead.
+	// `mv` (the value-struct param form) or return a field's VALUE instead.
 	if (func && ret.type.name) {
 		const value_node = get_inner_value_node(ret.value);
 		if (value_node?.node_type === "value" && !value_node.is_moved) {
@@ -142,7 +142,7 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 			if (param && !param.is_self_param && (param.is_ref || param.type.is_ref) && param_struct) {
 				add_error(
 					status,
-					`cannot return '${param.name}' — a 'ref' borrow escapes implicitly; declare the parameter 'move' to transfer it`,
+					`cannot return '${param.name}' — a 'ref' borrow escapes implicitly; declare the parameter 'mv' to transfer it`,
 					ret.value.start,
 				);
 			}
@@ -151,11 +151,11 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 
 	// A borrowed class reference must not be returned IMPLICITLY — it would
 	// escape the function scope and outlive the instance it points into. Use
-	// `move` to make the escape explicit (for a borrow, the caller receives a
-	// non-owning reference — classified at the call site by the method-borrow
-	// rules) or `move … swap …` to transfer a replacement in. The other
+	// `mv` to make the escape explicit (for a borrow, the caller receives a
+	// non-mv reference — classified at the call site by the method-borrow
+	// rules) or `mv … swap …` to transfer a replacement in. The other
 	// exception is a `view T` return that borrows from `self` (the receiver):
-	// a slice method hands back a non-owning borrow that the caller re-roots
+	// a slice method hands back a non-mv borrow that the caller re-roots
 	// at the call-site receiver (see borrow_depth_of), so returning it is
 	// sound. A view borrowing from a non-self param/local still escapes and is
 	// rejected.
@@ -167,7 +167,7 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 				: undefined;
 		if (sv?.has_view_borrows) {
 			// A struct whose `view T` fields hold borrows: its bytes carry
-			// slices of someone else's storage, and `move` cannot transfer that
+			// slices of someone else's storage, and `mv` cannot transfer that
 			// ownership (there is none). Returning is sound only when every
 			// field borrow roots at `self` — the same re-rooting convention as
 			// the direct-view case above (a method handing its receiver's
@@ -194,7 +194,7 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 			if (!safe_view_from_self && !safe_class_borrow_from_self && !explicit_mov) {
 				add_error(
 					status,
-					`cannot return a borrowed reference — use 'move' (with swap) to transfer ownership`,
+					`cannot return a borrowed reference — use 'mv' (with swap) to transfer ownership`,
 					ret.value.start,
 				);
 			}

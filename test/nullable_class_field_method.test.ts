@@ -18,23 +18,23 @@ import build_and_check_output from "./build_and_check_output";
  * `function_return_type`, which is unset for primitive-returning struct
  * methods (current_return_is_string's fallback now covers it).
  *
- * The program uses `move` params per the ownership model (mutators storing
- * into an owning field take `move T`).
+ * The program uses `mv` params per the ownership model (mutators storing
+ * into a mv field take `mv T`).
  */
 
 const SRC = `
 import System
 
-owning struct Box {
+mv struct Box {
 	var int v
 	func to_string = (self, out string) {
 		return "\\{self.v}"
 	}
 }
 
-owning struct Wall {
-	move Box? art = null
-	func set_art = (ref self, move Box b) {
+mv struct Wall {
+	mv Box? art = null
+	func set_art = (ref self, mv Box b) {
 		self.art = b
 	}
 	func show = (self, out string) {
@@ -48,9 +48,9 @@ owning struct Wall {
 pub func main = () {
 	var Wall w = Wall()
 	Console.write("\\{w.show()}\\n")
-	w.set_art(move Box(1))
+	w.set_art(mv Box(1))
 	Console.write("\\{w.show()}\\n")
-	w.set_art(move Box(2))
+	w.set_art(mv Box(2))
 	Console.write("\\{w.show()}\\n")
 }
 `;

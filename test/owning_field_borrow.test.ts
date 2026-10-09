@@ -3,22 +3,22 @@ import { expect, describe, test } from "vite-plus/test";
 import build_and_check_output from "./build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 
-// Owning (`move`) class fields take ownership of their instance. Storing a
-// borrowed reference (a plain variable/param that is not itself a `move`
+// Owning (`mv`) class fields take ownership of their instance. Storing a
+// borrowed reference (a plain variable/param that is not itself a `mv`
 // transfer) lets the field's destroy free an instance its real owner frees
 // too — a double free on both backends (FOLLOWUP "Enum-with-string-payload
 // ownership edges", sub-item 1). The checker rejects the borrow; the sound
-// owning-mutator idiom (`move` param consumed into the field) stays legal.
+// mv-mutator idiom (`mv` param consumed into the field) stays legal.
 
-describe("owning class field stores", () => {
-	test("move-param mutator consumed into the field runs (both backends)", async () => {
+describe("mv class field stores", () => {
+	test("mv-param mutator consumed into the field runs (both backends)", async () => {
 		const input = `
-owning struct Art {
+mv struct Art {
 	var int v
 }
-owning struct Holder {
+mv struct Holder {
 	var Art art
-	func set_owned = (ref self, move Art a) {
+	func set_owned = (ref self, mv Art a) {
 		self.art = a
 	}
 }
@@ -37,10 +37,10 @@ Console.write_line("done")
 
 	test("fresh constructor store into the field runs (both backends)", async () => {
 		const input = `
-owning struct Art {
+mv struct Art {
 	var int v
 }
-owning struct Holder {
+mv struct Holder {
 	var Art art
 	func reset = (ref self) {
 		self.art = Art(9)
@@ -61,10 +61,10 @@ Console.write_line("done")
 
 	test("borrowed parameter stored into the field is rejected", () => {
 		const input = `
-owning struct Art {
+mv struct Art {
 	var int v
 }
-owning struct Holder {
+mv struct Holder {
 	var Art art
 	func set_borrowed = (ref self, Art a) {
 		self.art = a
@@ -77,18 +77,18 @@ func test = () {
 test()
 `;
 		const parsed = parse_with_imports(input);
-		expect(parsed.errors.some((e) => e.message.includes("owning field 'art'"))).toBe(true);
+		expect(parsed.errors.some((e) => e.message.includes("mv field 'art'"))).toBe(true);
 	});
 
 	test("owned local transfers into the field implicitly (both backends)", async () => {
 		// The established corpus idiom (`var TreeNode l = create_tree(...);
 		// node.left = l`): the local owns the instance and the backends
-		// implicitly move it into the field, suppressing the local's cleanup.
+		// implicitly mv it into the field, suppressing the local's cleanup.
 		const input = `
-owning struct Art {
+mv struct Art {
 	var int v
 }
-owning struct Holder {
+mv struct Holder {
 	var Art art
 }
 func make = (int n, out Art) {
@@ -110,32 +110,32 @@ Console.write_line("done")
 
 	test("ref-parameter source stored into the field is rejected", () => {
 		const input = `
-owning struct Art {
+mv struct Art {
 	var int v
 }
-owning struct Holder {
+mv struct Holder {
 	var Art art
 	func set_ref = (ref self, ref Art a) {
 		self.art = a
 	}
 }
 func test = () {
-	var Holder h = Holder(move Art(2))
+	var Holder h = Holder(mv Art(2))
 	var Art a = Art(3)
 	h.set_ref(ref a)
 }
 test()
 `;
 		const parsed = parse_with_imports(input);
-		expect(parsed.errors.some((e) => e.message.includes("owning field 'art'"))).toBe(true);
+		expect(parsed.errors.some((e) => e.message.includes("mv field 'art'"))).toBe(true);
 	});
 
-	test("null into a nullable owning field stays legal (both backends)", async () => {
+	test("null into a nullable mv field stays legal (both backends)", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
 	var int v
 }
-owning struct Holder {
+mv struct Holder {
 	var Box? maybe
 	func reset = (ref self) {
 		self.maybe = null

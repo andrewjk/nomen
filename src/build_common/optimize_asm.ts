@@ -13,7 +13,7 @@
  *      `b`/`ret` (until the next label or directive) can never execute.
  *   3. Branch-to-next elimination: `b .Lx` immediately before `.Lx:` falls
  *      through anyway — the branch is a no-op and is dropped.
- *   4. Identity-move elimination: `mov xN, xN` / `fmov dN, dN` write a
+ *   4. Identity-mv elimination: `mov xN, xN` / `fmov dN, dN` write a
  *      register to itself — dropped.
  *
  * Every rule is deliberately conservative (exact-adjacency for rewrites,

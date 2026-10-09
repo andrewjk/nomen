@@ -4,7 +4,7 @@ import build_and_check_output from "./build_and_check_output";
 
 // KNOWN-FAILING leak test for the recursive-destroy bug.
 //
-// A class with `move` (owning) class-typed fields is freed only one level deep:
+// A class with `mv` (mv) class-typed fields is freed only one level deep:
 // freeing a node releases its direct children, but never runs those children's
 // destroys, so any subtree deeper than one level leaks. create_tree(3) has 15
 // nodes but only 3 are freed (12 leak); create_tree(2) has 7 and leaks 4 --
@@ -12,12 +12,12 @@ import build_and_check_output from "./build_and_check_output";
 //
 // This is why the arena containers (LinkedList/Tree/Graph) keep everything in a
 // single flat Buffer: cleanup is one flat free, which sidesteps this bug. This
-// test stays failing until class auto-destroy recursively frees `move` fields.
+// test stays failing until class auto-destroy recursively frees `mv` fields.
 
 describe("recursive destroy leak", () => {
 	test("boxed recursive tree stores, traverses, and frees completely", async () => {
 		const input = `
-owning struct TreeNode {
+mv struct TreeNode {
   var Box<TreeNode>? left = null
   var Box<TreeNode>? right = null
 }

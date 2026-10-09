@@ -6,7 +6,7 @@ import build_and_check_output from "./build_and_check_output";
 // `ref` param gets the ownership-normalized lowering (`_nomen_strfield`:
 // strdup the incoming value, free the displaced one). The same assignment
 // written as a STRUCT METHOD on `self` does not — the C backend emits a bare
-// `self->current = name;`, so the owning field ends up holding a borrow: a
+// `self->current = name;`, so the mv field ends up holding a borrow: a
 // rodata literal at the call site, or a caller-owned heap string. The
 // auto-generated #destroy then frees it — an invalid free (SIGABRT) for the
 // literal, a double free (SIGTRAP) for the heap string.
@@ -35,7 +35,7 @@ describe("struct-method string-field assignment: remaining gaps", () => {
 	test("method assigning a string parameter to a self field must not free the borrow on destroy", async () => {
 		const input = `import System
 
-pub owning struct Holder {
+pub mv struct Holder {
 	var string current = ""
 
 	pub func set_it = (ref self, string name) {
@@ -57,7 +57,7 @@ pub func main = () {
 	test("method assigning a heap string parameter to a self field must not double-free", async () => {
 		const input = `import System
 
-pub owning struct Holder {
+pub mv struct Holder {
 	var string current = ""
 
 	pub func set_it = (ref self, string name) {

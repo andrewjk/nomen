@@ -320,7 +320,7 @@ export default function build(
 		// protocol's `fmov xN, dM … fmov dK, xN` crossings into direct
 		// d↔d moves (see asm_opt.ts). Same unconditional/validated contract.
 		status.code = run_float_forwarding(status.code);
-		// Dead copy-move elimination — prunes `mov xD, xS` whose
+		// Dead copy-mv elimination — prunes `mov xD, xS` whose
 		// destination is never read (the x0 value protocol's staging
 		// leftovers, e.g. the `.at()` contract marker when the following
 		// field hop reads the pinned register directly).
@@ -353,7 +353,7 @@ export default function build(
 		// once-only mov pair for immediate operands). Kills the
 		// per-iteration compare + branch + arm cost (the spectral-norm
 		// `if transpose` receipt: 100% of samples in the j-loop). The
-		// merge also turns the cycle label-clean, so the dead-cycle-move
+		// merge also turns the cycle label-clean, so the dead-cycle-mv
 		// pass below can price the staging moves the diamond used to
 		// shield.
 		status.code = convert_loop_invariant_branches(status.code);
@@ -391,13 +391,13 @@ export default function build(
 		// increment, for every trip count. Amortizes the guard overhead
 		// across the two copies of the body.
 		status.code = unroll_loops_x2(status.code);
-		// Dead staging-move elimination inside validated loop cycles —
+		// Dead staging-mv elimination inside validated loop cycles —
 		// prunes `mov xD, xS` whose destination exact-CFG liveness proves
 		// dead (the per-statement emission's protocol staging whose
 		// consumer reads the source register directly; the coalescer only
 		// deletes moves it substituted). Cycle-scoped so the rest of each
 		// function keeps its text (the measured-loss convention of the
-		// function-wide dead-move pass).
+		// function-wide dead-mv pass).
 		status.code = eliminate_dead_cycle_moves(status.code);
 		// Large-immediate expansion — `mov xN, #K` with |K| outside the
 		// movz/movn encoding range becomes a movz/movk chunk chain. Runs
@@ -487,7 +487,7 @@ export default function build(
 			status.code = status.code + "\n" + status.c_runtime_defs;
 			status.c_runtime_defs = undefined;
 		}
-		// A `view T` is a non-owning, non-escaping (ptr, len) slice into a
+		// A `view T` is a non-mv, non-escaping (ptr, len) slice into a
 		// container's buffer. Every view — `view string`, `view int`, `view
 		// User`, ... — lowers to the same C struct; the element type lives in
 		// the Nomen `Type` (used to cast `ptr` on `.at`), not in the struct.

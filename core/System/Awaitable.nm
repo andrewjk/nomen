@@ -16,7 +16,7 @@
 // never mutates the handle — it parks on the future the handle NAMES. That
 // makes the bare `Awaitable` parameter (the T3 stack-copy box — zero
 // malloc, caller keeps ownership) the sanctioned dispatch form; a `ref
-// self` wait would be a mutating call, and through a boxed owning struct
+// self` wait would be a mutating call, and through a boxed mv struct
 // the mutation spellings cannot cross a borrow (STRUCT_PLAN_3 B4/T2).
 
 /**

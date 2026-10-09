@@ -2,7 +2,7 @@ import { describe, test } from "vite-plus/test";
 
 import build_and_check_output from "./build_and_check_output";
 
-// Value structs with nullable / heap-owning members:
+// Value structs with nullable / heap-mv members:
 //   - a nullable generic container field (`List<int>?`) was not
 //     monomorphized at the C null-arg call site (`struct List` incomplete);
 //   - a nullable struct field was destroyed unconditionally — a null field's
@@ -11,10 +11,10 @@ import build_and_check_output from "./build_and_check_output";
 //     copied the source's first word instead of its address (data loss).
 // Covered here on both backends with the audit allocator on.
 
-describe("nullable / owning struct members", () => {
+describe("nullable / mv struct members", () => {
 	test("nullable container member round-trips null and non-null", async () => {
 		const input = `
-owning struct MaybeList {
+mv struct MaybeList {
 	var List<int>? items = null
 }
 
@@ -25,7 +25,7 @@ var l = List<int>()
 l.push(5)
 l.push(6)
 var m = MaybeList()
-m.items = move l
+m.items = mv l
 if m.items == null { Console.write("M NULL\\n") } else { Console.write("direct=\\{m.items.length}\\n") }
 `;
 		await build_and_check_output(input, "nullable_container_member", "empty null\ndirect=2\n");
@@ -33,23 +33,23 @@ if m.items == null { Console.write("M NULL\\n") } else { Console.write("direct=\
 
 	test("nullable container member through a List of structs", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
 	var List<int>? items = null
 }
 
 var l = List<int>()
 l.push(7)
 var b = Box()
-b.items = move l
+b.items = mv l
 
 var boxes = List<Box>()
-boxes.push(move b)
+boxes.push(mv b)
 var back = boxes.pop()
 if back.items == null { Console.write("BACK NULL\\n") } else { Console.write("back=\\{back.items.length}\\n") }
 
 var empty_box = Box()
 var boxes2 = List<Box>()
-boxes2.push(move empty_box)
+boxes2.push(mv empty_box)
 var back2 = boxes2.pop()
 if back2.items == null { Console.write("back2 null\\n") } else { Console.write("BACK2 FULL\\n") }
 `;

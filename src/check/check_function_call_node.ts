@@ -335,16 +335,16 @@ export default function check_function_call_node(
 				return false;
 			}
 			// A moved func value (its descriptor was transferred to another
-			// owner) cannot be called — same use-after-move rule as a plain
+			// owner) cannot be called — same use-after-mv rule as a plain
 			// value read (check_value_node).
 			if (status.moved_variables?.has(node.name)) {
-				add_error(status, `Variable '${node.name}' used after move`, node.start);
+				add_error(status, `Variable '${node.name}' used after mv`, node.start);
 				return false;
 			}
 			// Calling a CAPTURED func value from inside a lambda is itself a
 			// capture (CLOSURE.md Phase 2c): resolve it through the funnel
 			// so the enclosing closure records it (a nested capturing closure
-			// is move-captured; a capture-free one needs no env).
+			// is mv-captured; a capture-free one needs no env).
 			maybe_record_capture(node.name, param_value, param_index, status);
 			func = new FunctionNode(
 				0,
@@ -619,9 +619,9 @@ export function monomorphize(
 	mono_struct.is_class = generic_struct.is_class;
 	// STRUCT_PLAN_3 B1 full cutover: a mono's ownership is DERIVED from its
 	// substituted fields, mirroring enum_mono — a generic whose type param
-	// lands on an owning field (`Wrapper<List<int>>`) is move-only like a
-	// spelled `owning struct` (the Copyable verifier would otherwise reject
-	// the generated mono, which cannot be spelled `owning`).
+	// lands on a mv field (`Wrapper<List<int>>`) is move-only like a
+	// spelled `mv struct` (the Copyable verifier would otherwise reject
+	// the generated mono, which cannot be spelled `mv`).
 	mono_struct.is_owning =
 		generic_struct.is_owning || mono_fields.some((f) => type_owns_heap(f.type, status));
 	mono_struct.is_library = generic_struct.is_library;
@@ -752,7 +752,7 @@ export function monomorphize(
 	// CLASS/TRAIT element cannot be cloned for a reference-typed
 	// instantiation: the pair materializes as a value struct with a
 	// trait/class-typed field (rejected — byte-copy shares the reference),
-	// and the body's borrowed pair element can't feed a `move TV` param (the
+	// and the body's borrowed pair element can't feed a `mv TV` param (the
 	// ownership chain breaks at the variadic boundary). Skip that init
 	// (per-overload) so the remaining overloads still clone and
 	// `Map<string, SomeTrait>()` + `set()` works fully; passing pairs is
@@ -853,10 +853,10 @@ export function monomorphize(
 			if (!field.value) {
 				const param = new ParameterNode(field.start, field.name, field.type);
 				// The synthesized init byte-copies each param into its field,
-				// so a field whose (substituted) type is a class OR an owning
-				// value struct (List<...>/Buffer/…/anything owning heap) must
-				// take it by `move` — a plain by-value pass would leave the
-				// field and the caller's variable co-owning the same storage
+				// so a field whose (substituted) type is a class OR a mv
+				// value struct (List<...>/Buffer/…/anything mv heap) must
+				// take it by `mv` — a plain by-value pass would leave the
+				// field and the caller's variable co-mv the same storage
 				// (double-free at scope exit). Mirrors
 				// mark_owning_auto_init_params for non-generic structs.
 				if (
@@ -866,7 +866,7 @@ export function monomorphize(
 						is_owning_struct_type_requiring_move(field.type, status))
 				) {
 					param.is_moved = true;
-				} else if (field.declaration === "move") {
+				} else if (field.declaration === "mv") {
 					param.declaration = "var";
 				}
 				init_params.push(param);
@@ -884,7 +884,7 @@ export function monomorphize(
 
 	// A mono struct materializes mid-check, after the block-level derive
 	// pre-pass ran — synthesize its `copy` method here (same eligibility:
-	// owning value struct with a constructible init) and check the body
+	// mv value struct with a constructible init) and check the body
 	// now, since no later struct check will. Without this,
 	// `Box<string>.copy()` resolves to "Function not found".
 	synthesize_copy_method(mono_struct, status);
@@ -1138,7 +1138,7 @@ function retype_param_references(nodes: BaseNode[], params: ParameterNode[]) {
  * type; both backends read ValueNode.type to decide struct-vs-scalar argument
  * passing and return-ownership transfer, so an untyped local reference
  * mis-lowers (a struct arg passed by value instead of by address, a returned
- * owning struct destroyed after its sret copy). Only names declared as locals
+ * mv struct destroyed after its sret copy). Only names declared as locals
  * in the body are retyped — globals and field names are untouched.
  */
 function retype_local_references(nodes: BaseNode[]) {
@@ -1664,7 +1664,7 @@ function check_magic_ctor(node: FunctionCallNode, status: CheckStatus, name: str
 	// captures become the eager arguments) — or `Thread(job)` where job is
 	// a zero-argument func-typed LOCAL, which the construction MOVES (the
 	// task owns and disposes the closure; a later use of the local is a
-	// use-after-move error). CLOSURE.md Phase 3c.
+	// use-after-mv error). CLOSURE.md Phase 3c.
 	if (first.node_type !== "func_call") {
 		return check_magic_ctor_fn_value(node, status, name, first);
 	}
@@ -1860,7 +1860,7 @@ function check_magic_ctor_fn_value(
 				return false;
 			}
 			if (status.moved_variables?.has(value.value)) {
-				add_error(status, `Variable '${value.value}' used after move`, first.start);
+				add_error(status, `Variable '${value.value}' used after mv`, first.start);
 				return false;
 			}
 			// The construction MOVES the closure out of the local: the task's
@@ -1874,7 +1874,7 @@ function check_magic_ctor_fn_value(
 			// A named function (or a capture-free declaration lambda —
 			// check_declaration_node leaves those resolving as the direct
 			// function). Its static descriptor is borrowed, never owned:
-			// there is nothing to move.
+			// there is nothing to mv.
 			const fn = status.functions.findLast((f) => f.name === value.value);
 			if (!fn) {
 				add_error(
@@ -2496,7 +2496,7 @@ function substitute_raw_in_node(
 			// destroy symbol (e.g. ClassBuffer<Animal>.#destroy calls Animal_destroy).
 			value = value.replace(new RegExp(`\\b${param}_destroy\\b`, "g"), `${type}_destroy`);
 			// T_NEEDS_STRDUP: 1 when T is `string` (a `char*` literal pointer that
-			// must be heap-copied per slot when stored into an owning container,
+			// must be heap-copied per slot when stored into a mv container,
 			// e.g. `Array.with("x", n)` storing the literal in n slots), 0
 			// otherwise. Raw blocks use it to guard a per-element strdup so the
 			// scope-exit auto_free can soundly free each slot.

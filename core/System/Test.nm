@@ -53,7 +53,7 @@
  * skipped, so a single root cause reports as a single failure. Check
  * `t.has_failed` to bail out of expensive follow-up work yourself.
  **/
-pub owning struct Tester {
+pub mv struct Tester {
 	// Has the *current* test recorded a failure? Reset by `begin_test`.
 	pub var has_failed = false
 

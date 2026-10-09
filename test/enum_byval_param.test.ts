@@ -178,13 +178,13 @@ Console.write("\\{m.describe(State.running(5))} \\{m.describe(State.idle)}")
 	});
 
 	// SKIP (B1 backend-cutover residual): enum-with-data struct payloads ride
-	// the same owning-binding cleanup tranche (see FOLLOWUP.md).
+	// the same mv-binding cleanup tranche (see FOLLOWUP.md).
 	test.skip("struct payload binds at the match (BUGS #9)", async () => {
 		const input = `
-owning struct Config {
+mv struct Config {
   var string name
 }
-owning enum Holder {
+mv enum Holder {
   case some(Config c)
   case none
 }
@@ -200,11 +200,11 @@ match h {
 	// SKIP (B1 backend-cutover residual): see FOLLOWUP.md.
 	test.skip("struct payload from a local variable", async () => {
 		const input = `
-owning struct Config {
+mv struct Config {
   var string name
   var int n
 }
-owning enum Wrap {
+mv enum Wrap {
   case pair(Config c)
   case none
 }
@@ -221,10 +221,10 @@ match w {
 	// SKIP (B1 backend-cutover residual): see FOLLOWUP.md.
 	test.skip("scalar payload after a struct payload keeps its offset", async () => {
 		const input = `
-owning struct Config {
+mv struct Config {
   var string name
 }
-owning enum Wrap {
+mv enum Wrap {
   case pair(Config c, int n)
   case none
 }

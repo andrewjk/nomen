@@ -11,16 +11,16 @@ import build_and_check_output from "./build_and_check_output";
 // reclaims the default.
 
 describe("custom #init field assignment ownership (runtime, both backends)", () => {
-	test("first write to a move class field skips the displaced reclaim", async () => {
+	test("first write to a mv class field skips the displaced reclaim", async () => {
 		await build_and_check_output(
 			`
 import System
 
-pub owning struct Inner {
+pub mv struct Inner {
 	pub var int v = 0
 }
 
-pub owning struct Outer {
+pub mv struct Outer {
 	pub var Inner inner
 	pub var string name
 
@@ -46,7 +46,7 @@ pub func main = (Init init) {
 			`
 import System
 
-pub owning struct Twice {
+pub mv struct Twice {
 	pub var string name = "start"
 
 	pub func #init = (self) {

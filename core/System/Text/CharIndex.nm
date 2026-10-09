@@ -20,7 +20,7 @@ pub struct CharRun {
  * A run-length character-width index (construct with `CharIndex(text)`,
  * then `byte_offset_of` / `char_index_of` / `char_at` in O(log runs))
  **/
-pub owning struct CharIndex {
+pub mv struct CharIndex {
 	var view string source
 	var runs = List<CharRun>()
 	var char_count = 0

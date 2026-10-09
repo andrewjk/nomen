@@ -22,7 +22,7 @@
  * - Pair collapse deletes the `adr xR`, so every path that read the
  *   address before a redefinition would now read a stale register. The
  *   verdict is EXACT CFG liveness over the rewritten text (the same
- *   block/edge/fixpoint machinery the dead-cycle-move pass uses): the
+ *   block/edge/fixpoint machinery the dead-cycle-mv pass uses): the
  *   pair is deleted only when xR is dead immediately before the inserted
  *   `fmov` — no path from that point reads xR (either register view)
  *   before a new definition, so no reader can observe the deleted def.

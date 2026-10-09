@@ -13,7 +13,7 @@ pub if true {
 		const expected = [
 			test_error(
 				input,
-				"Visibility can only be set for const, var, move, readonly, struct, trait or func",
+				"Visibility can only be set for const, var, mv, readonly, struct, trait or func",
 				2,
 				1,
 			),
@@ -24,7 +24,7 @@ pub if true {
 
 	test("accessing private fields from outside struct", () => {
 		const input = `
-owning struct Person {
+mv struct Person {
   private var string name
   private func greet = () {}
 }
@@ -232,7 +232,7 @@ func useHelper = () {
 
 	test("mixed visibility - pub and private fields", () => {
 		const input = `
-owning struct User {
+mv struct User {
   pub var string name
   private var int age = 0
   pub func getName = (self, out string) {
@@ -279,7 +279,7 @@ struct Foo {
 
 	test("multiple private items in same struct", () => {
 		const input = `
-owning struct Widget {
+mv struct Widget {
   private var int id = 0
   private var string label = ""
   private func reset = (ref self) {

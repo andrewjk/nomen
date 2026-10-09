@@ -2,7 +2,7 @@ import { describe, test } from "vite-plus/test";
 
 import build_and_check_output from "./build_and_check_output";
 
-// A value struct whose member is a heap-owning CONTAINER other than `List`
+// A value struct whose member is a heap-mv CONTAINER other than `List`
 // (`Buffer`), stored in a `List<that-struct>`: reading it back with `at`
 // returns a struct copy, and a struct local's container fields are reclaimed
 // unconditionally at scope exit — so the returned copy must own an
@@ -22,7 +22,7 @@ var list = List<Holder>()
 var h = Holder()
 var _ = h.buf.alloc(4)
 h.buf.store_int(1, 42)
-list.push(move h)
+list.push(mv h)
 Console.write("len=\\{list.length}\\n")
 var loaded = list.at_or_panic(0)
 Console.write("cap=\\{loaded.buf.cap}\\n")
@@ -43,7 +43,7 @@ var _ = h.buf.alloc(4)
 h.buf.store_int(1, 7)
 h.vals.push(1)
 h.vals.push(2)
-list.push(move h)
+list.push(mv h)
 var loaded = list.at_or_panic(0)
 Console.write("cap=\\{loaded.buf.cap} n=\\{loaded.vals.length}\\n")
 `;
@@ -51,7 +51,7 @@ Console.write("cap=\\{loaded.buf.cap} n=\\{loaded.vals.length}\\n")
 	});
 });
 
-// `Buffer.copy` deep-copies every slot (a fresh slab and, for owning
+// `Buffer.copy` deep-copies every slot (a fresh slab and, for mv
 // elements, an independent copy per element) — the primitive the load
 // deep-copy and `List`/`Map`/`Set` copies compose from.
 describe("Buffer.copy", () => {

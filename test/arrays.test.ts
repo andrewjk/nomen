@@ -700,7 +700,7 @@ func first_xy = (Array<Pt> xs, out int) {
   return xs.at_or_panic(0).x + xs.at_or_panic(0).y
 }
 var pt = Pt(3, 4)
-Console.write("\\{first_xy([move pt])}")
+Console.write("\\{first_xy([mv pt])}")
 `;
 		await build_and_check_output(input, "array_struct_moved_element_param", "7");
 	});
@@ -712,7 +712,7 @@ Console.write("\\{first_xy([move pt])}")
 	// then the buffer itself (the buffer free used to leak on aarch64).
 	test("class array literal to Array<Box> param materializes without leak", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
 	var int value
 }
 func sum_vals = (Array<Box> xs, out int) {
@@ -730,7 +730,7 @@ Console.write("\\{n}")
 
 	test("heap Array<Box> declared with literal freed without leak", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
 	var int value
 }
 var Array<Box> v = [Box(7), Box(8)]
@@ -838,7 +838,7 @@ fill(ref v)
 
 	test("class-element stack array to Array param is rejected", () => {
 		const input = `
-owning struct Box {
+mv struct Box {
 	var int value
 }
 func sum_vals = (Array<Box> xs, out int) {
@@ -853,11 +853,11 @@ const n = sum_vals(v)
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors.map((e) => e.message)).toContain(
-			"Cannot pass a stack array of owning 'Box' instances to 'Array<Box>' parameter 'xs' — the materialised heap copy would share the instances with the caller's array (double free). Build the heap array from fresh instances: pass an array literal, or use 'var Array<Box>'",
+			"Cannot pass a stack array of mv 'Box' instances to 'Array<Box>' parameter 'xs' — the materialised heap copy would share the instances with the caller's array (double free). Build the heap array from fresh instances: pass an array literal, or use 'var Array<Box>'",
 		);
 	});
 
-	test("owning value-struct stack array to Array param is rejected", () => {
+	test("mv value-struct stack array to Array param is rejected", () => {
 		const input = `
 struct Person {
   var string name
@@ -875,11 +875,11 @@ const s = names(v)
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors.map((e) => e.message)).toContain(
-			"Cannot pass an array of owning value struct 'Person' (string fields) to 'Array<Person>' parameter 'xs' — the materialised heap copy would share the element strings. Use 'List<Person>' instead: its Buffer deep-copies owning elements soundly",
+			"Cannot pass an array of mv value struct 'Person' (string fields) to 'Array<Person>' parameter 'xs' — the materialised heap copy would share the element strings. Use 'List<Person>' instead: its Buffer deep-copies mv elements soundly",
 		);
 	});
 
-	test("owning value-struct literal to Array param is rejected", () => {
+	test("mv value-struct literal to Array param is rejected", () => {
 		const input = `
 struct Person {
   var string name
@@ -896,7 +896,7 @@ const s = names([Person("Alice", 30)])
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors.map((e) => e.message)).toContain(
-			"Cannot pass an array of owning value struct 'Person' (string fields) to 'Array<Person>' parameter 'xs' — the materialised heap copy would share the element strings. Use 'List<Person>' instead: its Buffer deep-copies owning elements soundly",
+			"Cannot pass an array of mv value struct 'Person' (string fields) to 'Array<Person>' parameter 'xs' — the materialised heap copy would share the element strings. Use 'List<Person>' instead: its Buffer deep-copies mv elements soundly",
 		);
 	});
 });

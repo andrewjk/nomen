@@ -211,7 +211,7 @@ void __nomen_future_release(struct nomen_future *f) {
 		// An unconsumed fat-string result: free the buffer the trampoline
 		// stored (race-mode and fire-and-forget tasks never hand it to a
 		// consumer). Every consumer path zeroes the cell first — result()
-		// on move-out, Task's #destroy after its own free — so a non-NULL
+		// on mv-out, Task's #destroy after its own free — so a non-NULL
 		// ptr here is unambiguous and the free happens exactly once.
 		if (f->slot_fat && f->result_slot) {
 			unsigned long long *_s = (unsigned long long *)f->result_slot;

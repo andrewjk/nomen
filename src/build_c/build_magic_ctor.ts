@@ -52,7 +52,7 @@ export function spawn_ctor_class_name(node: FunctionCallNode): string {
  *  Thread/Fiber keep their exact historical emission, vtable-less), and
  *  `is_class` picks the instance representation: classes yield a heap
  *  pointer, value-struct spawnables (STRUCT_PLAN_3 Phase R — the
- *  construction hook survives on owning structs) yield the inline value.
+ *  construction hook survives on mv structs) yield the inline value.
  *  Only a class carries an embedded `_vt`, so `traits` implies `is_class`. */
 export function spawn_instance_info(
 	node: FunctionCallNode,
@@ -136,10 +136,10 @@ export function emit_spawn_task_body(
 	// Ownership classification (Phase 3d; STRUCT_PLAN_3 N1a R1): the env is
 	// an OWNING struct. A fat `string` arg is duplicated at pack time (a raw
 	// pair copy would alias and dangle the moment the caller's scope exit
-	// ran) and freed by the env destructor. An owning value-struct arg is
+	// ran) and freed by the env destructor. A mv value-struct arg is
 	// COPIED (malloc + string-field strdups, `<T>_destroy` + free at
 	// teardown) — EXCEPT when the checker stamped it a region-checked
-	// BORROW (`region_borrowed_args`: an owning struct passed bare inside an
+	// BORROW (`region_borrowed_args`: a mv struct passed bare inside an
 	// `async { }` block): the env then holds the donor's pointer itself, the
 	// destructor leaves it alone, and the R3 freeze keeps the donor const
 	// until the join. Class and trait args stay shared pointers (the
@@ -217,7 +217,7 @@ export function emit_spawn_task_body(
 	header += `};\n`;
 
 	// The env destructor (Phase 3d): frees each duplicated string and runs
-	// `<T>_destroy` on the env's owning-struct copies. Region-BORROWED args
+	// `<T>_destroy` on the env's mv-struct copies. Region-BORROWED args
 	// (N1a R1) are skipped — the env aliases the donor's storage and owns
 	// nothing. Wired through the descriptor's destroy_env slot, so every
 	// release path (future release, daemon teardown) reclaims the env's
@@ -410,7 +410,7 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 	// Awaitable flavor — the trait vtable (the instance is
 	// trait-dispatchable; Thread/Fiber keep their vtable-less emission).
 	// A CLASS spawns a heap instance and yields the pointer; a value-struct
-	// spawnable (owning struct with `#spawn` — STRUCT_PLAN_3 Phase R) builds
+	// spawnable (mv struct with `#spawn` — STRUCT_PLAN_3 Phase R) builds
 	// the inline value: the declaration side types the initializer as the
 	// struct itself, so the statement expression must yield the struct, not
 	// a pointer to it. Only a class carries an embedded `_vt`.
@@ -434,7 +434,7 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 		status.code += `\tstruct ${mono_name} _inst;\n`;
 		status.code += `\tmemset(&_inst, 0, sizeof(struct ${mono_name}));\n`;
 		// Constructed stamp (see build_struct_node's init paths): `_vt`
-		// non-zero marks a constructed instance so an owning Buffer's
+		// non-zero marks a constructed instance so a mv Buffer's
 		// per-slot destroy can skip zeroed empty cap slots.
 		if (info.traits) status.code += `\t_inst._vt = &_${mono_name}_traits;\n`;
 		else status.code += `\t_inst._vt = (void *)1;\n`;
@@ -574,7 +574,7 @@ function build_fn_value_ctor(
 		build_node(fn_value, status);
 	} else if (resolved_fn) {
 		// A named function / capture-free declaration lambda: its
-		// thunk-backed static descriptor (nothing to own, nothing to move).
+		// thunk-backed static descriptor (nothing to own, nothing to mv).
 		status.code += materialize_func_value(resolved_fn, status);
 	} else {
 		// A func-typed local: the stored descriptor, MOVED into the task.
@@ -615,7 +615,7 @@ function build_fn_value_ctor(
 	status.code += `\t_closure->owned = 1;\n`;
 	status.code += `\t_future->owner_args = _closure;\n`;
 	// The instance: classes yield a heap pointer, value-struct spawnables
-	// (owning struct with `#spawn`) the inline value — see the call form.
+	// (mv struct with `#spawn`) the inline value — see the call form.
 	const emit_instance_fields = (access: string): void => {
 		status.code += `\t${access}task = (unsigned long long)_closure;\n`;
 		status.code += `\t${access}result_slot = (unsigned long long)_result_ptr;\n`;
@@ -636,7 +636,7 @@ function build_fn_value_ctor(
 		status.code += `\tstruct ${mono_name} _inst;\n`;
 		status.code += `\tmemset(&_inst, 0, sizeof(struct ${mono_name}));\n`;
 		// Constructed stamp (see build_struct_node's init paths): `_vt`
-		// non-zero marks a constructed instance so an owning Buffer's
+		// non-zero marks a constructed instance so a mv Buffer's
 		// per-slot destroy can skip zeroed empty cap slots.
 		if (info.traits) status.code += `\t_inst._vt = &_${mono_name}_traits;\n`;
 		else status.code += `\t_inst._vt = (void *)1;\n`;

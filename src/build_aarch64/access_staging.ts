@@ -419,7 +419,7 @@ function read_is_buffer_accessor_arg(statement: BaseNode, name: string): boolean
 
 /** Whether a hoisted allocation declare may skip its slot and be re-emitted
  *  at its single read: a `_param_N` const with a scalar non-float type and a
- *  pure arithmetic tree, read exactly once in the owning statement — at a
+ *  pure arithmetic tree, read exactly once in the mv statement — at a
  *  direct inline-Buffer-accessor argument. (Flag-agnostic core — the value
  *  numbering pass reuses these gates for its own rewritten inits.) */
 export function hoistable_hoisted_param(alloc: BaseNode, statement: BaseNode): BaseNode | null {

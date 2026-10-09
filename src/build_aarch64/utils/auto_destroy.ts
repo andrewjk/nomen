@@ -36,7 +36,7 @@ import {
 } from "./struct_layout.ts";
 
 /**
- * Whether a declaration's initializer is a non-`move` FIELD ACCESS — a shallow
+ * Whether a declaration's initializer is a non-`mv` FIELD ACCESS — a shallow
  * struct borrow (`diff.changes`, the checker-hoisted `_param_N` temp for a
  * struct call arg). The struct bytes are copied but any embedded buffer data
  * belongs to the owner, so the declaration must NOT be destroyed at scope
@@ -537,7 +537,7 @@ function emit_field_destroys_at(
 			// strdup'd strings (the Buffer store copied them); class anchor slots
 			// hold always-heap fields (`_init` strdup's defaults, assignments
 			// strdup non-heap RHS) — either way the slot owns the string. A
-			// `view T` field is excluded: non-owning borrow, nothing to free.
+			// `view T` field is excluded: non-mv borrow, nothing to free.
 			emit_slot_base(status, root_slot, root_is_class, field_acc);
 			emit_asm(status, `ldr x0, [x0]\n`);
 			emit_free(status);
@@ -693,7 +693,7 @@ export function emit_enum_payload_frees_at(
 }
 
 /**
- * Take owning copies of the string payloads of the enum-with-data blob at
+ * Take mv copies of the string payloads of the enum-with-data blob at
  * `[base_reg + base_offset]` (tag-guarded, in place): each ACTIVE case's
  * string payload ptr half is strdup'd. Used after an enum blob is copied into
  * a struct field — the blob's payload pointers are shared with the source
@@ -758,10 +758,10 @@ export function is_struct_type(type_name: string, status: BuildStatus): StructNo
  * declaration. An OWNING struct's records are DROPPED, not freed — the
  * destroy walk below frees ALL its string fields unconditionally (they are
  * uniformly heap: the ctor strdup'd the seed, stores strdup non-heap RHS),
- * so freeing the records first would double-free. A MOVED-out owning struct
+ * so freeing the records first would double-free. A MOVED-out mv struct
  * keeps the release: the container's store_T deep-copied the strings, so the
  * donor's own heap copies must be reclaimed even though the destroy walk is
- * skipped. Non-owning decls keep the per-assignment record release.
+ * skipped. Non-mv decls keep the per-assignment record release.
  */
 function release_records_for_scope_exit(
 	status: BuildStatus,
@@ -773,11 +773,11 @@ function release_records_for_scope_exit(
 	moved: Set<string>,
 ) {
 	const struct_type = resolve_decl_struct(decl, status)?.struct_type;
-	const owning =
+	const mv =
 		struct_type?.is_owning === true &&
 		!struct_type.name.startsWith("_Tuple_") &&
 		!struct_type.name.startsWith("_Anon_");
-	if (owning && !moved.has(decl.name)) {
+	if (mv && !moved.has(decl.name)) {
 		drop_heap_string_field_records(status, decl.name);
 		return;
 	}
@@ -942,8 +942,8 @@ export function emit_destroy_for_decl(
 	}
 
 	// Every class HAS a `<Class>_destroy` function — a user `#destroy` or the
-	// auto-generated one (build_struct_node) — and it reclaims ALL owning
-	// fields (nested class instances, owning structs, always-heap string
+	// auto-generated one (build_struct_node) — and it reclaims ALL mv
+	// fields (nested class instances, mv structs, always-heap string
 	// fields). Call it for every class; the field-destroy recursion below is
 	// only for value structs (repeating it after a class destroy would
 	// double-free the fields).
@@ -974,21 +974,21 @@ export function emit_destroy_for_decl(
 			emit_free(status);
 		}
 		// No emit_field_destroys here — `<Class>_destroy` above already
-		// reclaimed every owning field (strings included); repeating the
+		// reclaimed every mv field (strings included); repeating the
 		// recursion would double-free them.
 	} else if (struct_needs_destroy(struct_type, status)) {
 		// Only emit field destroys for value structs that have a user #destroy
-		// or class/nested-owning-struct fields. B1 cutover: DECLARED-owning
+		// or class/nested-mv-struct fields. B1 cutover: DECLARED-mv
 		// structs with string fields now fire too (the gate includes them) —
 		// their string fields are uniformly heap (the ctor strdup'd the seed,
-		// stores strdup non-heap RHS), so `free_strings` follows the owning
-		// flag; non-owning locals' string fields may still be rodata
+		// stores strdup non-heap RHS), so `free_strings` follows the mv
+		// flag; non-mv locals' string fields may still be rodata
 		// (transition-era posture) and stay excluded.
 		// B1 cutover: an OWNING struct whose `<T>_destroy` was JUST called
 		// skips this walk — the user destroy carries the trailing field walk
-		// (build_destroy_function's owning arm), so it already reclaimed
-		// every owning field; repeating the recursion would double-free
-		// (the same contract as the class arm above). Non-owning structs
+		// (build_destroy_function's mv arm), so it already reclaimed
+		// every mv field; repeating the recursion would double-free
+		// (the same contract as the class arm above). Non-mv structs
 		// with a user destroy keep the walk (their destroy frees nothing).
 		const destroy_handled_fields =
 			struct_type.is_owning === true && (has_destroy(struct_type) || struct_type.is_class);
@@ -1018,7 +1018,7 @@ function emit_base_ptr(status: BuildStatus, decl_name: string, is_class_parent?:
 }
 
 /**
- * Reclaim a struct's owning fields in place (base + every nested owning field).
+ * Reclaim a struct's mv fields in place (base + every nested mv field).
  *
  * `base_offset` (added to each field offset) and `is_class_parent` (a class's
  * base is a pointer LOADED from the slot; a value struct is inline AT it)
@@ -1053,7 +1053,7 @@ export function emit_field_destroys(
 ) {
 	// A CLASS's — or, B1 cutover, an OWNING struct's — trait-declared fields
 	// are owned (the ctor strdup's their string defaults), so include them.
-	// Non-owning value-struct trait fields stay out: their defaults are
+	// Non-mv value-struct trait fields stay out: their defaults are
 	// borrowed rodata.
 	const destroy_fields =
 		struct_type.is_class || owns_strings_uniformly(struct_type)
@@ -1063,7 +1063,7 @@ export function emit_field_destroys(
 		const offset = get_field_offset_of_fields(destroy_fields, field.name, status);
 		// An enum-with-data field owns its ACTIVE case's payloads (case
 		// construction strdups string args / transfers reference pointers, and
-		// every enum-field store takes owning copies). Free them regardless of
+		// every enum-field store takes mv copies). Free them regardless of
 		// `free_strings` — unlike plain string fields, enum payloads are
 		// always heap.
 		const field_enum = !field.type.is_ref
@@ -1109,11 +1109,11 @@ export function emit_field_destroys(
 				emit_asm(status, `${free_label}:\n`);
 			} else {
 				// Call the nested struct's OWN destroy if it has one (an explicit
-				// `#destroy`) OR needs an auto-generated one (owning fields such as
-				// a string field). Without this, a nested owning value struct (e.g.
+				// `#destroy`) OR needs an auto-generated one (mv fields such as
+				// a string field). Without this, a nested mv value struct (e.g.
 				// `Outer { Inner inner }` where Inner has a string) leaks: the outer
 				// auto-destroy never freed the inner struct's owned strings. The
-				// auto-generated <Struct>_destroy already walks every owning
+				// auto-generated <Struct>_destroy already walks every mv
 				// sub-field, so for the auto case we must NOT also recurse via
 				// emit_nested_field_destroys (that would double-free them).
 				const field_has_explicit_destroy = has_destroy(field_struct);
@@ -1174,7 +1174,7 @@ export function emit_field_destroys(
 			// literal arg, so freeing it would `free` rodata (SIGABRT). For
 			// CLASSES the field is always heap-owned (`_init` strdup's the
 			// default, assignments strdup non-heap RHS), so it is freed here
-			// too. A `view T` field is excluded above: it is a non-owning
+			// too. A `view T` field is excluded above: it is a non-mv
 			// borrow and freeing its pointer half would be an invalid free.
 			const actual_offset = base_offset !== undefined ? base_offset + offset : offset;
 			if (decl_name) {
@@ -1189,8 +1189,8 @@ export function emit_field_destroys(
 		) {
 			// A func-typed CLASS or OWNING-struct field may hold a capturing
 			// closure (heap env + descriptor, `owned = 1`) — reclaim it with
-			// the same free-if-owned arm a func-typed local uses. A non-owning
-			// VALUE-struct func field stays non-owning (copies share the
+			// the same free-if-owned arm a func-typed local uses. A non-mv
+			// VALUE-struct func field stays non-mv (copies share the
 			// descriptor), so it is excluded (CLOSURE.md Phase 2c).
 			const actual_offset = base_offset !== undefined ? base_offset + offset : offset;
 			if (decl_name) {
@@ -1757,7 +1757,7 @@ export function emit_cleanup_to_loop_depth(status: BuildStatus) {
 /**
  * When a heap-returning call's result is captured into an owned variable
  * (e.g. `var Box a = make(Box(5))`), the result is anchored as a fresh owner.
- * But if the call also received a same-type class temporary as a non-move arg
+ * But if the call also received a same-type class temporary as a non-mv arg
  * (the hoisted `_param_N` for `Box(5)`), that temporary is anchored too — and
  * the function may return the very same instance (e.g. `return x ?? fallback`),
  * so both anchors point at one allocation and one gets double-freed. The
@@ -1791,7 +1791,7 @@ export function mark_moved_if_struct(
 	// ValueNode.type can be unset (e.g. `return dst` inside List<T>.copy).
 	// Resolve the type from the declaration so the moved-marking below still
 	// fires — otherwise the return-path scope-exit cleanup destroys the
-	// returned owning struct after its bytes were copied into the sret
+	// returned mv struct after its bytes were copied into the sret
 	// buffer, leaving the caller with freed backing storage.
 	if (!var_type?.name) {
 		var_type = all_scope_frames(status)
@@ -1799,7 +1799,7 @@ export function mark_moved_if_struct(
 			.find((d) => d.name === var_name)?.type;
 	}
 	if (!var_type) return;
-	// Search every scope frame: a `move`/`return` inside an if/loop body must
+	// Search every scope frame: a `mv`/`return` inside an if/loop body must
 	// still recognize (and mark) locals declared in enclosing scopes.
 	const is_local = all_scope_frames(status).some((frame) => frame.some((d) => d.name === var_name));
 	const has_anchor = find_anchor_slot(status, var_name) !== undefined;
@@ -1808,11 +1808,11 @@ export function mark_moved_if_struct(
 		(!!status.function_param_regs?.has(var_name) && is_struct_type(var_type.name, status));
 	if (!is_local && !has_anchor && !is_class_param) return;
 	const is_struct = is_struct_type(var_type.name, status);
-	// An enum-with-data value is multi-word and owning (its payloads transfer
+	// An enum-with-data value is multi-word and mv (its payloads transfer
 	// with the blob): a moved-out enum local must be skipped by the cleanup
-	// exactly like a moved struct. A trait handle is a boxed, owning pointer
+	// exactly like a moved struct. A trait handle is a boxed, mv pointer
 	// (STRUCT_PLAN_3 B4): a moved trait local/anchor (the hoisted `_param_N`
-	// box consumed by a `move Trait` parameter, a donor handle) must be
+	// box consumed by a `mv Trait` parameter, a donor handle) must be
 	// skipped the same way, or its anchor slot frees the container's element.
 	const is_trait = !!status.traits.find((t) => t.name === var_type.name);
 	const is_enum_with_data = !!status.enums.find(
@@ -1824,8 +1824,8 @@ export function mark_moved_if_struct(
 	}
 	// A RETURNED heap string transfers ownership to the caller (the return
 	// cleanup must not free it) — but only in return context (for_return): a
-	// plain `string` arg to a `move T` param does NOT transfer ownership (an
-	// owning `Buffer<string>` strdup's its own copy — the callee-copies
+	// plain `string` arg to a `mv T` param does NOT transfer ownership (an
+	// mv `Buffer<string>` strdup's its own copy — the callee-copies
 	// convention), so the caller retains and frees the original at scope
 	// exit. (Mirrors the C backend's move_param_indices string gate.) A string
 	// field of a moved VALUE struct is likewise released at scope exit via
@@ -1841,10 +1841,10 @@ export function mark_moved_if_struct(
  * scope-exit destroy will free UNCONDITIONALLY — the direct plain strings,
  * plus (recursively) the strings of nested struct fields whose
  * `<Inner>_destroy` the destroy walk invokes and whose body frees strings:
- * an auto-generated destroy (free_strings=true) or an owning struct's user
- * destroy (the trailing owning walk). A NON-owning nested struct with a USER
+ * an auto-generated destroy (free_strings=true) or a mv struct's user
+ * destroy (the trailing mv walk). A NON-mv nested struct with a USER
  * destroy frees no strings — descending there would leak the strdups. Used
- * when an owning binding is initialized from a container borrow accessor
+ * when a mv binding is initialized from a container borrow accessor
  * (`var p = people.at(i)`): the copy aliases the slot's bytes, so the
  * binding must own independent copies before its destroy runs.
  */

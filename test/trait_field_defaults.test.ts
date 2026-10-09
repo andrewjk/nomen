@@ -16,7 +16,7 @@ trait Tagged {
 	var int count = 7
 }
 
-owning struct G : Tagged {
+mv struct G : Tagged {
 	pub var string own = "own-default"
 }
 
@@ -37,7 +37,7 @@ Console.write("\\{v.tag} \\{v.count} \\{v.x}\\n")
 	});
 
 	// A write to a trait-declared string field through a TRAIT-typed receiver
-	// must be uniform-heap for an owning/class conformer: the trait-target
+	// must be uniform-heap for a mv/class conformer: the trait-target
 	// write path must dup the incoming value and reclaim the displaced one, or
 	// the field holds rodata that the conformer's destroy later frees
 	// (AUDIT-STALE-FREE).
@@ -47,13 +47,13 @@ trait Tagged {
 	var string tag = "init"
 }
 
-owning struct G : Tagged {
+mv struct G : Tagged {
 	func #destroy = () {
 	}
 }
 
 var g = G()
-var Tagged t = move g
+var Tagged t = mv g
 t.tag = "reset"
 Console.write("\\{t.tag}\\n")
 `;

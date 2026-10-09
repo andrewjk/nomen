@@ -14,7 +14,7 @@ import type_from_value_node from "./utils/type_from_value_node.ts";
  * generation) slot table with a free list, mutex-guarded — handles are
  * consulted from workers, so it sits in the same family as the async
  * runtime's registries. `weak(obj)` registers a slot and hands back
- * (id, gen); the owning type's `#destroy` invalidates every slot holding
+ * (id, gen); the mv type's `#destroy` invalidates every slot holding
  * the pointer (generation bump — stale handles miss); `get(id, gen)`
  * compares and returns NULL on mismatch. Generations are never reset, so a
  * recycled slot cannot alias an old handle. Emitted whenever a class
@@ -369,7 +369,7 @@ static void __nomen_future_release(struct nomen_future *f) {
 		// An unconsumed fat-string result: free the buffer the trampoline
 		// stored (race-mode and fire-and-forget tasks never hand it to a
 		// consumer). Every consumer path zeroes the cell first — result()
-		// on move-out, Task's #destroy after its own free — so a non-NULL
+		// on mv-out, Task's #destroy after its own free — so a non-NULL
 		// ptr here is unambiguous and the free happens exactly once.
 		if (f->slot_fat && f->result_slot) {
 			unsigned long long *_s = (unsigned long long *)f->result_slot;
@@ -1434,7 +1434,7 @@ export function spawn_arg_c_types(call: FunctionCallNode, status: BuildStatus): 
  * resolvable, else the argument's own) — the ownership classification for
  * the task env reads these (CLOSURE.md Phase 3d: the env is an
  * OWNING struct — string args are duplicated at pack and freed by the env
- * destructor; owning value-struct args get `<T>_destroy` on the env's
+ * destructor; mv value-struct args get `<T>_destroy` on the env's
  * copy).
  */
 export function spawn_arg_types(call: FunctionCallNode, status: BuildStatus): Type[] {

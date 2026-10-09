@@ -82,10 +82,10 @@ export function get_or_create_tuple_struct(tuple_types: Type[], status: CheckSta
 
 	const struct = new StructNode(0, "private", name, [], fields, []);
 	// STRUCT_PLAN_3 B1 full cutover — a tuple is Copyable iff every element
-	// is: any owning element (`string`, a `List`, …) makes the generated
-	// struct owning, mirroring the enum-mono derive. The verifier would
+	// is: any mv element (`string`, a `List`, …) makes the generated
+	// struct mv, mirroring the enum-mono derive. The verifier would
 	// otherwise reject the generated struct outright (a generated struct
-	// cannot be spelled `owning`).
+	// cannot be spelled `mv`).
 	struct.is_owning = tuple_types.some((t) => type_owns_heap(t, status));
 
 	// Build #init params: self + one param per field, matching positions

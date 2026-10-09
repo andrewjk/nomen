@@ -1,4 +1,4 @@
-// Marker trait for containers that can be borrowed as a non-owning `view T`
+// Marker trait for containers that can be borrowed as a non-mv `view T`
 // slice via a `slice(start, end, out view T)` method. Conforming types
 // implement slice — almost always by delegating to an internal Buffer's slice
 // (`return self.items.slice(start, end)`), so no #arch code is needed in user
@@ -21,7 +21,7 @@
 //   }
 
 /**
- * A trait for containers that can be borrowed as a non-owning `view T` slice
+ * A trait for containers that can be borrowed as a non-mv `view T` slice
  **/
 pub trait Viewable {
 }

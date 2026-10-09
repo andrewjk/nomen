@@ -3,7 +3,7 @@
 // class, the monomorphizer rewrites a Buffer<T> field to ClassBuffer<T>.
 //
 // Public API is the size-aware family (`alloc`/`grow`/`load`/`replace`/
-// `move`/`modify`/`shift`/`slice` plus the readonly `cap`). `replace` is the
+// `mv`/`modify`/`shift`/`slice` plus the readonly `cap`). `replace` is the
 // public write — it reclaims the displaced element, so it is correct on both
 // fresh and occupied slots. `store` (which assumes a fresh slot and leaks on
 // overwrite), `zero`, the fixed-width `*_u32`/`*_int`/`*_float` primitives,
@@ -288,7 +288,7 @@ pub struct Buffer<T> {
 	}
 
 	// Store `val` into slot `i`, which MUST be fresh (calloc'd, or zeroed by
-	// move). For an owning T (string, or a struct with string fields) the
+	// mv). For a mv T (string, or a struct with string fields) the
 	// specialised body deep-copies the incoming value but does NOT free the
 	// slot's previous occupant — a second `store` at an occupied index
 	// leaks it. To overwrite a live slot use replace (frees the displaced
@@ -337,11 +337,11 @@ pub struct Buffer<T> {
 	}
 
 	// Move a value out of a T_SIZE-sized slot: return it and zero the slot so the
-	// buffer no longer holds a (possibly owning) copy. Declared `move out T` so
+	// buffer no longer holds a (possibly mv) copy. Declared `mv out T` so
 	// the result is treated as OWNED by the borrow checker — the slot is
 	// relinquished, so the caller is the sole remaining owner. The value
 	// counterpart of ClassBuffer.move_int — used by List.pop for any value T.
-	inline func move = (ref self, int i: i >= 0 && i < self.cap, move out T) {
+	inline func move = (ref self, int i: i >= 0 && i < self.cap, mv out T) {
 		```
 		#arch: c
 		T* _slots = (T*)(unsigned long long)self->data;
@@ -404,8 +404,8 @@ pub struct Buffer<T> {
 	// aliases the slot's own copy (the round-trip case) is kept, not freed or
 	// re-copied. Unlike store this never leaks on overwrite, and unlike
 	// replace it is safe to derive the new value from the old one. The
-	// returned struct's owning fields must be fresh, null, or identical to
-	// the corresponding input fields (no cross-field aliasing). For owning
+	// returned struct's mv fields must be fresh, null, or identical to
+	// the corresponding input fields (no cross-field aliasing). For mv
 	// elements (string / structs with string fields) the build phase replaces
 	// this body with a specialized one (see owning_buffer_specialize.ts);
 	// this raw form is correct for trivially-copyable elements only. NOT
@@ -493,7 +493,7 @@ pub struct Buffer<T> {
 
 	// Store into a T_SIZE-sized slot, overwriting the previous value. For
 	// trivially-destructible value structs this is a plain overwrite. For
-	// owning value structs (with string fields), the build phase replaces this
+	// mv value structs (with string fields), the build phase replaces this
 	// body with a specialised version that calls T_destroy on the old slot
 	// value, then deep-copies (strdup per string field). See
 	// owning_buffer_specialize.ts (both backends). ClassBuffer.replace
@@ -541,12 +541,12 @@ pub struct Buffer<T> {
 
 	// Move-taking write, mirroring `List.set`: the caller's value is
 	// consumed and an independent copy is installed in the slot (replace
-	// deep-copies owning elements). The owning entry point a caller uses
+	// deep-copies mv elements). The mv entry point a caller uses
 	// when it wants to hand over a value — `replace`'s by-value parameter
-	// cannot accept the `move` keyword, so a borrow being transferred
+	// cannot accept the `mv` keyword, so a borrow being transferred
 	// (e.g. a loaded element) must go through here rather than be bound to
 	// a freed local.
-	pub func set = (ref self, int i: i >= 0 && i < self.cap, move T value) {
+	pub func set = (ref self, int i: i >= 0 && i < self.cap, mv T value) {
 		self.replace(i, value)
 	}
 
@@ -555,7 +555,7 @@ pub struct Buffer<T> {
 	// ownership-transferring primitive behind backward-shift deletion
 	// (Map/Set.remove) — unlike store, which gives the slot its own deep
 	// copy and leaves the source slot intact, a shift transfers the source's
-	// heap pointers wholesale. For owning elements (string / value structs
+	// heap pointers wholesale. For mv elements (string / value structs
 	// with string fields) the build replaces this body with a specialized
 	// version that also reclaims dst's previous value first (see
 	// owning_buffer_specialize.ts); this raw form is correct for
@@ -584,7 +584,7 @@ pub struct Buffer<T> {
 		b.eq .Lbuffer_shift_T_end
 		cmp x3, #8
 		b.gt .Lbuffer_shift_T_copy
-		// Width-matched move: an 8-byte access on a sub-8 element would
+		// Width-matched mv: an 8-byte access on a sub-8 element would
 		// clobber the following slot (and run past the slab's end).
 		cmp x3, #1
 		b.eq .Lbuffer_shift_T_1
@@ -626,7 +626,7 @@ pub struct Buffer<T> {
 		```
 	}
 
-	// A non-owning (ptr, len) slice [start, end) over this buffer's element
+	// A non-mv (ptr, len) slice [start, end) over this buffer's element
 	// storage, returned as a `view T`. It borrows from self: it may not outlive
 	// self's scope and is invalidated if self is reassigned. This is the single
 	// primitive every other slice (Array<T>, List<T>, user containers) builds
@@ -655,13 +655,13 @@ pub struct Buffer<T> {
 		```
 	}
 
-	// Internal: zeroes slots without reclaiming owning elements.
+	// Internal: zeroes slots without reclaiming mv elements.
 	internal inline func zero = (ref self, int len) {
 		memset(self.data, 0, len * T_SIZE)
 	}
 
 	// An independent copy: fresh slab, per-element deep copies. Each slot
-	// round-trips load→replace through a local, so owning element types get
+	// round-trips load→replace through a local, so mv element types get
 	// the same treatment a List<T>.copy slot does (the load materializes an
 	// owned copy, replace gives the destination its own). Class elements
 	// never reach this body (a `Buffer<T>` with T a class monomorphizes to
@@ -672,10 +672,10 @@ pub struct Buffer<T> {
 			dst.alloc(self.cap)
 			var i = 0
 			while i < self.cap {
-				// Bind the loaded element and hand it to `set` (move): for a
+				// Bind the loaded element and hand it to `set` (mv): for a
 				// string element load returns a BORROW of the source slot, and
-				// the move transfers it into the write without a scope-exit
-				// reclaim (which would free the source's buffer); for an owning
+				// the mv transfers it into the write without a scope-exit
+				// reclaim (which would free the source's buffer); for a mv
 				// struct element load returns an owned copy that transfers the
 				// same way. Mirrors List.copy's `var T v = self.at(i)` +
 				// `dst.push(v)`.

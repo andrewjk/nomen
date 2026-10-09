@@ -30,7 +30,7 @@ const d = p.distance_from_origin()
 describe("readme: construction overrides", () => {
 	test("struct constructed and passed to a function", () => {
 		const input = `
-owning struct Circle {
+mv struct Circle {
     var string name
     var int center_x
     var int center_y
@@ -48,24 +48,24 @@ print_circle(Circle("C", 25, 70, 15))
 });
 
 describe("readme: ownership", () => {
-	test("owning struct with ref self method and move field", () => {
+	test("mv struct with ref self method and mv field", () => {
 		const input = `
-owning struct Box {
+mv struct Box {
 	var int value
 }
 
-owning struct Holder {
+mv struct Holder {
 	var Box content
 }
 
-func take = (move Box b, out int) {
+func take = (mv Box b, out int) {
 	return b.value
 }
 
 pub func main = () {
-	var h = Holder(move Box(7))
+	var h = Holder(mv Box(7))
 	var b = Box(42)
-	var int v = take(move b)
+	var int v = take(mv b)
 	Console.write("\\{v} \\{h.content.value}")
 }
 `;
@@ -99,7 +99,7 @@ trait Stringable {
     func to_string = (out string)
 }
 
-owning struct Circle {
+mv struct Circle {
     var int radius
 }
 

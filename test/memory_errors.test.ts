@@ -61,7 +61,7 @@ var List<int> a = List<int>()
 a.push(1)
 var List<int> b = List<int>()
 b.push(2)
-b = move a
+b = mv a
 const int v = b.pop()
 Console.write("\\{v}")
 `;
@@ -86,13 +86,13 @@ Console.write("\\{v}")
 	describe("class field ownership (compile errors)", () => {
 		test("class aliasing is allowed when spelled with ref", () => {
 			const input = `
-owning struct Cell {
+mv struct Cell {
 	var int value
 }
-owning struct Holder {
+mv struct Holder {
 	var Box<Cell> content
 }
-var Box<Holder> h1 = Box<Holder>(Holder(move Box<Cell>(Cell(42))))
+var Box<Holder> h1 = Box<Holder>(Holder(mv Box<Cell>(Cell(42))))
 ref Box<Holder> h2 = h1
 Console.write("\\{h1.content.value}")
 `;
@@ -100,15 +100,15 @@ Console.write("\\{h1.content.value}")
 			expect(parsed.errors).toEqual([]);
 		});
 
-		test("unspelled class aliasing is an error (must say ref/move/copy)", () => {
+		test("unspelled class aliasing is an error (must say ref/mv/copy)", () => {
 			const input = `
-owning struct Cell {
+mv struct Cell {
 	var int value
 }
-owning struct Holder {
+mv struct Holder {
 	var Box<Cell> content
 }
-var Box<Holder> h1 = Box<Holder>(Holder(move Box<Cell>(Cell(42))))
+var Box<Holder> h1 = Box<Holder>(Holder(mv Box<Cell>(Cell(42))))
 var Box<Holder> h2 = h1
 Console.write("\\{h1.content.value}")
 `;
@@ -118,16 +118,16 @@ Console.write("\\{h1.content.value}")
 			);
 		});
 
-		test("cannot assign owning field from another owner", () => {
+		test("cannot assign mv field from another owner", () => {
 			const input = `
-owning struct Box {
+mv struct Box {
 	var int value
 }
-owning struct Holder {
+mv struct Holder {
 	var Box content
 }
-var Holder h1 = Holder(move Box(1))
-var Holder h2 = Holder(move Box(2))
+var Holder h1 = Holder(mv Box(1))
+var Holder h2 = Holder(mv Box(2))
 h1.content = h2.content
 `;
 			const parsed = parse_with_imports(input);
@@ -135,16 +135,16 @@ h1.content = h2.content
 			expect(parsed.errors.map((e) => e.message)).toContainEqual(expect.stringContaining("cannot"));
 		});
 
-		test("cannot move out of class field", () => {
+		test("cannot mv out of class field", () => {
 			const input = `
-owning struct Box {
+mv struct Box {
 	var int value
 }
-owning struct Holder {
+mv struct Holder {
 	var Box content
 }
-var Holder h1 = Holder(move Box(42))
-var Holder h2 = Holder(move h1.content)
+var Holder h1 = Holder(mv Box(42))
+var Holder h2 = Holder(mv h1.content)
 `;
 			const parsed = parse_with_imports(input);
 			expect(parsed.errors.length).toBeGreaterThan(0);
@@ -153,27 +153,27 @@ var Holder h2 = Holder(move h1.content)
 
 		test("reading class field from class is allowed", async () => {
 			const input = `
-owning struct Box {
+mv struct Box {
 	var int value
 }
-owning struct Holder {
+mv struct Holder {
 	var Box content
 }
-var Holder h = Holder(move Box(42))
+var Holder h = Holder(mv Box(42))
 Console.write("\\{h.content.value}")
 `;
 			await build_and_check_output(input, "ok_read_field", "42");
 		});
 
-		test("cannot copy a struct that owns an owning field by value", () => {
+		test("cannot copy a struct that owns a mv field by value", () => {
 			const input = `
-owning struct Cell {
+mv struct Cell {
 	var int value
 }
-owning struct Holder {
+mv struct Holder {
 	var Box<Cell> content
 }
-var Box<Holder> h1 = Box<Holder>(Holder(move Box<Cell>(Cell(1))))
+var Box<Holder> h1 = Box<Holder>(Holder(mv Box<Cell>(Cell(1))))
 var Box<Holder> h2 = h1
 `;
 			const parsed = parse_with_imports(input);
@@ -202,10 +202,10 @@ var Box<Holder> h2 = h1
 // them apart by whether the #destroy contains a `raw` node: every real resource
 // release in Nomen is emitted through a raw block (free/fclose/release are C/asm
 // primitives), whereas a benign hook is pure Nomen field assignment. Ownership is
-// also transitive -- a struct with an owning field (e.g. List owns a Buffer) is
-// itself owning even without its own #destroy.
-describe("owning vs copyable #destroy", () => {
-	test("a struct whose #destroy frees via a raw block is owning (copy rejected)", () => {
+// also transitive -- a struct with a mv field (e.g. List owns a Buffer) is
+// itself mv even without its own #destroy.
+describe("mv vs copyable #destroy", () => {
+	test("a struct whose #destroy frees via a raw block is mv (copy rejected)", () => {
 		// Buffer.#destroy calls `free(self->data)` from a raw block.
 		const input = `
 var Buffer<int> a = Buffer<int>()
@@ -218,8 +218,8 @@ var Buffer<int> b = a
 	});
 
 	test("ownership is transitive through a struct field (List owns a Buffer)", () => {
-		// List has no #destroy of its own, but its Buffer field is owning, so a
-		// List is owning too -- copying would share the Buffer's backing data.
+		// List has no #destroy of its own, but its Buffer field is mv, so a
+		// List is mv too -- copying would share the Buffer's backing data.
 		const input = `
 var List<int> a = List<int>()
 var List<int> b = a
@@ -248,7 +248,7 @@ var Token b = a
 		expect(parsed.errors).toEqual([]);
 	});
 
-	test("a #destroy that frees inside a switch case is still owning (copy rejected)", () => {
+	test("a #destroy that frees inside a switch case is still mv (copy rejected)", () => {
 		// The raw free sits under a switch case — the ownership detector's AST
 		// walk must see through the case list to find it, or a byte-copy of
 		// Filey would double-free.
@@ -295,35 +295,35 @@ Console.write("\\{b.id}")
 	});
 });
 
-// An owning struct may not be byte-copied from a variable (the source and the
-// copy would both free the same backing data). The escape hatch is the `move`
-// keyword, which transfers ownership instead of copying: the bytes still move
+// A mv struct may not be byte-copied from a variable (the source and the
+// copy would both free the same backing data). The escape hatch is the `mv`
+// keyword, which transfers ownership instead of copying: the bytes still mv
 // into the destination, but the source is marked moved and skipped at cleanup,
-// so only one owner frees. `move` works in both copy sites:
+// so only one owner frees. `mv` works in both copy sites:
 //
-//   - declaration:   `var List<int> b = move a`
-//   - assignment:    `b = move a`
+//   - declaration:   `var List<int> b = mv a`
+//   - assignment:    `b = mv a`
 //
-// Requiring `move` on both keeps the two sites consistent (previously an
+// Requiring `mv` on both keeps the two sites consistent (previously an
 // assignment silently moved while a declaration was rejected). A struct whose
-// `#destroy` is benign (no raw block) is a value type and needs no `move`.
-describe("owning-struct moves (move keyword)", () => {
-	test("declaration `var X b = move a` transfers ownership (no double-free)", async () => {
+// `#destroy` is benign (no raw block) is a value type and needs no `mv`.
+describe("mv-struct moves (mv keyword)", () => {
+	test("declaration `var X b = mv a` transfers ownership (no double-free)", async () => {
 		// b takes the list; a is moved (not freed). Only b is destroyed, so the
 		// backing Buffer is freed exactly once (audit clean).
 		const input = `
 var List<int> a = List<int>()
 a.push(1)
 a.push(2)
-var List<int> b = move a
+var List<int> b = mv a
 const int v = b.pop()
 Console.write("\\{v}")
 `;
 		await build_and_check_output(input, "owning_decl_mov", "2");
 	});
 
-	test("assignment of an owning struct requires move", () => {
-		// Plain `b = a` is rejected for owning structs -- use `b = move a` (or
+	test("assignment of a mv struct requires mv", () => {
+		// Plain `b = a` is rejected for mv structs -- use `b = mv a` (or
 		// `.copy()` for an independent copy). Mirrors the declaration-side rule.
 		const input = `
 var List<int> a = List<int>()

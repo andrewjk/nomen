@@ -15,11 +15,11 @@ describe("exclusive-branch string field stores", () => {
 		const input = `
 import System
 
-owning struct Pair {
+mv struct Pair {
 	var a = ""
 }
 
-func decorated = (string v, move out string) {
+func decorated = (string v, mv out string) {
 	return "[" + v + "]"
 }
 
@@ -52,11 +52,11 @@ pub func main = (Init init) {
 		const input = `
 import System
 
-owning struct Pair {
+mv struct Pair {
 	var a = ""
 }
 
-func decorated = (string v, move out string) {
+func decorated = (string v, mv out string) {
 	return "[" + v + "]"
 }
 
@@ -81,11 +81,11 @@ pub func main = (Init init) {
 		const input = `
 import System
 
-owning struct Pair {
+mv struct Pair {
 	var a = ""
 }
 
-func decorated = (string v, move out string) {
+func decorated = (string v, mv out string) {
 	return "[" + v + "]"
 }
 

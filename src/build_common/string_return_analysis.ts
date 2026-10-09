@@ -28,7 +28,7 @@ const EMPTY_SET: Set<string> = new Set();
  * `.at(i)`, `.at_or_panic(i)` (the trapping `at` — it returns `self.at(i)`),
  * `.first()`, `.slice(...)`, `.get_or(...)` / `.get_or_panic(...)` (they
  * return `self.values.load(idx)` — or the caller's own fallback temp), and
- * the backing Buffer slot-load primitive `load_T`. A `move out T` accessor
+ * the backing Buffer slot-load primitive `load_T`. A `mv out T` accessor
  * (`owned_return`, e.g. `pop` / `move_T`) relinquishes the slot and is NOT
  * in this family.
  */
@@ -67,7 +67,7 @@ export function is_call_site_borrow_accessor(fn_name: string | undefined): boole
  * RECEIVER CARRIER of a container borrow accessor (`xs.at(i).text` hoists
  * `var _recv_N = xs.at(i)` so the loaded element's heap resources get a
  * scope-exit destroy). The carrier is an EXPRESSION-TEMP consumer, not a
- * binding: it keeps the slot's alias, so it must NOT take the owning
+ * binding: it keeps the slot's alias, so it must NOT take the mv
  * binding's strdup and its scope-exit destroy must not free the aliased
  * string fields — a `return _recv_N.field` (a view) hands the caller a pair
  * the carrier's own cleanup would free. Both backends' declaration strdup
@@ -111,7 +111,7 @@ export function is_container_borrow_access(node: any): boolean {
  * strings must NOT be freed by auto_free or by reassignment: freeing them
  * reclaims memory owned by the container (or argv), crashing with
  * "pointer being freed was not allocated". A method with `owned_return`
- * (`move out T`) produces a fresh allocation, not a borrow, so it remains
+ * (`mv out T`) produces a fresh allocation, not a borrow, so it remains
  * owned. This is the C backend's per-expression borrow test; it is defined
  * here so the accessor-name rule has exactly one source (the aarch64
  * backend's heap-string ownership tracking classifies through the same
@@ -326,7 +326,7 @@ export function value_is_owned_string(
 			// site (strdup'd into an independent copy for the caller — the
 			// same contract as the C backend), so it counts as OWNED here and
 			// the function is classified heap-returning.
-			// A `move out T` accessor (`owned_return`, e.g. `pop`) relinquishes
+			// A `mv out T` accessor (`owned_return`, e.g. `pop`) relinquishes
 			// the slot and IS owned, so it is excluded.
 			if (!v.access.owned_return && is_container_borrow_accessor_name(raw)) {
 				return !is_call_site_borrow_accessor(enclosing_fn);
@@ -335,7 +335,7 @@ export function value_is_owned_string(
 			// they actually return. Without this, a wrapper like
 			// `func f = (Speaker s, out string) { return s.speak() }` is
 			// conservatively marked heap-returning, so its caller frees the
-			// result — but `speak` returns a borrow of an owning field
+			// result — but `speak` returns a borrow of a mv field
 			// (`self.name`), so freeing it double-frees the field / frees a
 			// static literal and crashes at cleanup.
 			const resolved = method_call_returns_owned(v, table, visiting);
@@ -403,7 +403,7 @@ function method_call_returns_owned(
 		// field/param borrow is strdup'd into a fresh copy), exactly like a
 		// direct call — so the caller owns and frees the result. Classifying
 		// from the conformers' bodies would mis-read a literal return as a
-		// borrow and skip the owning wrapper's free (the enum/match-binding
+		// borrow and skip the mv wrapper's free (the enum/match-binding
 		// leak). A container-borrow accessor (`at`/`first`/…) is the
 		// exception: its result is a view into the receiver's storage.
 		if (is_container_borrow_accessor_name(method_name)) return false;
@@ -482,7 +482,7 @@ export function function_returns_owned(
 	// A `view` return (e.g. `List<T>.slice`'s `out view T`) is the universal
 	// (ptr, len) struct, not a heap string — never heap-returning.
 	if (func.return_type?.name !== "string" || func.return_type?.is_view) return false;
-	// A `move out string` declaration IS the ownership contract: the callee
+	// A `mv out string` declaration IS the ownership contract: the callee
 	// hands the caller an owned value by signature. Classify from the
 	// declaration instead of the body — raw `#arch` returns are invisible to
 	// the walk below (only a dead `return ""` fallback is visible), which
@@ -590,7 +590,7 @@ export function is_owned_string_branch_value(node: any, table: StringAnalysisTab
 	if (node.node_type === "func_call") {
 		const name = (node.mangled_name as string) || (node.name as string) || "";
 		if (name.startsWith("_string_interpolate_")) return true;
-		// A `move out` call transfers ownership by signature.
+		// A `mv out` call transfers ownership by signature.
 		if ((node as unknown as { owned_return?: boolean }).owned_return) return true;
 		return !!table.heap_returning_functions?.has(name);
 	}

@@ -16,7 +16,7 @@ import peek_current from "./utils/peek_current.ts";
  * The body holds method declarations only (parsed by `parse_statement`); the
  * check phase merges them into the named struct. `extend class` is retired
  * (STRUCT_PLAN_3 Phase R): it emits the one retirement error and continues
- * as a struct extend, since the declaration it names parses as an owning
+ * as a struct extend, since the declaration it names parses as a mv
  * struct too.
  *
  * An optional `: Trait1, Trait2` list after the name makes the target
@@ -37,7 +37,7 @@ export default function parse_extend(
 	if (peek_current(status) === "class") {
 		// STRUCT_PLAN_3 Phase R: `class` has retired — one clear error,
 		// then the extend continues as a struct extend (the declaration
-		// it names parses as an owning struct, so the check's target
+		// it names parses as a mv struct, so the check's target
 		// match holds).
 		class_retired_error(status);
 	} else {

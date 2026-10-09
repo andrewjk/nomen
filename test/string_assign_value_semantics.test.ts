@@ -77,10 +77,10 @@ function count(code: string, needle: string): number {
 }
 
 /**
- * String assignment/move semantics under D3 (string is OWNING): a bare
+ * String assignment/mv semantics under D3 (string is OWNING): a bare
  * `s = t` from another string binding is a compile error. An independent
  * copy is spelled `s = t.copy()` (a real heap copy, freed like any owned
- * string); a transfer is spelled `s = move t` (the source is invalidated and
+ * string); a transfer is spelled `s = mv t` (the source is invalidated and
  * the pair moves). A string LITERAL initializer stays a fresh heap value.
  * These pins keep the original memory-soundness intent: independent copies
  * must not alias, transfers must free exactly once, and a variable that
@@ -176,10 +176,10 @@ pub func main = () {
 	await run_program(input, "string_assign_same_scope_reads", "4242");
 });
 
-test("loop accumulator keeps working (explicit move)", async () => {
+test("loop accumulator keeps working (explicit mv)", async () => {
 	// The accumulator is heap-initialized (`"".to_string()`) so the in-loop
 	// reassign's displaced-value free is emitted on both backends; the loop
-	// then transfers each iteration's fresh string with `move part`.
+	// then transfers each iteration's fresh string with `mv part`.
 	const input = `
 import System
 
@@ -188,7 +188,7 @@ pub func main = () {
 	var int i = 0
 	while i < 3; i += 1 {
 		var string part = i.to_string()
-		acc = move part
+		acc = mv part
 		i += 1
 	}
 	Console.write(acc)
@@ -197,14 +197,14 @@ pub func main = () {
 	await run_program(input, "string_assign_loop_accumulator", "2");
 });
 
-test("explicit move transfers (no strdup, single free)", async () => {
+test("explicit mv transfers (no strdup, single free)", async () => {
 	const input = `
 import System
 
 pub func main = () {
 	var t = "aaaa".to_string()
 	var string s = "init"
-	s = move t
+	s = mv t
 	Console.write(s)
 }
 `;
@@ -252,13 +252,13 @@ pub func main = () {
 test.skip("kill-switch off restores the strdup'd assign copy", () => {
 	// Retired by D3: a bare `s = t` from another string binding is now a
 	// compile error, so there is no silent copy for the kill-switch to
-	// restore. The explicit `move`/`.copy()` spellings are unconditional.
+	// restore. The explicit `mv`/`.copy()` spellings are unconditional.
 });
 
 /**
  * Borrow-INITIALIZED assignees under D3: receiving a string borrow into an
- * owning local is spelled `src.at(0).copy()` — an owned heap copy — and a
- * later heap value is spelled `b = move t`. The target owns heap on every
+ * mv local is spelled `src.at(0).copy()` — an owned heap copy — and a
+ * later heap value is spelled `b = mv t`. The target owns heap on every
  * path (the copy is always heap), so the unconditionally emitted reassign
  * and scope-exit frees are valid even when the reassign branch never
  * executes. The retired silent strdup-at-restart is gone.
@@ -273,7 +273,7 @@ pub func main = () {
 	var string b = src.at(0).copy()
 	if true {
 		var string t = 42.to_string()
-		b = move t
+		b = mv t
 	}
 	Console.write(b)
 }
@@ -292,7 +292,7 @@ pub func main = () {
 	Console.write(b)
 	if true {
 		var string t = 42.to_string()
-		b = move t
+		b = mv t
 	}
 	Console.write(b)
 }
@@ -311,7 +311,7 @@ pub func main = () {
 	var int i = 0
 	while i < 3; i += 1 {
 		var string t = i.to_string()
-		b = move t
+		b = mv t
 		Console.write(b)
 	}
 	Console.write(b)
@@ -330,7 +330,7 @@ pub func main = () {
 	b = src.at(0).copy()
 	if 1 < 0 {
 		var string t = 42.to_string()
-		b = move t
+		b = mv t
 	}
 	Console.write(b)
 }
@@ -347,7 +347,7 @@ pub func main = () {
 	var string b = src.at(0).copy()
 	if 1 < 0 {
 		var string t = 42.to_string()
-		b = move t
+		b = mv t
 	}
 	Console.write(b)
 }
@@ -372,20 +372,20 @@ pub func main = () {
 });
 
 /**
- * Explicit `s = move t` keeps its transfer path — and it must actually
+ * Explicit `s = mv t` keeps its transfer path — and it must actually
  * TRANSFER: the source's scope-exit free is suppressed and the assignee
  * frees the bytes once. The pre-fix lowering freed BOTH (C) or left the
  * assignee dangling (aarch64).
  */
 
-test("explicit move transfers (single owner, no double free)", async () => {
+test("explicit mv transfers (single owner, no double free)", async () => {
 	const input = `
 import System
 
 pub func main = () {
 	var t = "aaaa".to_string()
 	var string s = "init"
-	s = move t
+	s = mv t
 	Console.write(s)
 }
 `;
@@ -399,21 +399,21 @@ pub func main = () {
 });
 
 /**
- * D3: an owning string initialized from another binding must be spelled —
- * `move u = t` transfers, then `s = move u` transfers again. The
- * declaration-keyword move and the assignment move both lower to a pair
+ * D3: a mv string initialized from another binding must be spelled —
+ * `mv u = t` transfers, then `s = mv u` transfers again. The
+ * declaration-keyword mv and the assignment mv both lower to a pair
  * assignment with the donor's free suppressed.
  */
 
-test("explicit-move initializer source transfers", () => {
+test("explicit-mv initializer source transfers", () => {
 	const input = `
 import System
 
 pub func main = () {
 	var t = "aaaa".to_string()
-	move u = t
+	mv u = t
 	var string s = "init"
-	s = move u
+	s = mv u
 	Console.write(s)
 }
 `;

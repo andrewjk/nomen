@@ -24,7 +24,7 @@ import type_from_value_node from "./utils/type_from_value_node.ts";
  * to that call with validated `field_overrides` (the construction pipeline);
  * any other value-struct base (factory call, plain variable) keeps the
  * AnonStructNode — the destination sites emit a copy of the base through the
- * ordinary assignment path (which enforces the owning-struct copy/move rule)
+ * ordinary assignment path (which enforces the mv-struct copy/mv rule)
  * followed by the override assignments.
  */
 export default function check_anon_struct(node: AnonStructNode, status: CheckStatus): boolean {
@@ -101,8 +101,8 @@ function check_anon_struct_with_base(node: AnonStructNode, status: CheckStatus):
 		return false;
 	}
 	// A bare-variable base is a COPY — the same rule as `var a = b`: an
-	// owning struct cannot be byte-copied (both copies would free the same
-	// backing data). `move` transfers ownership; a constructor/factory base
+	// mv struct cannot be byte-copied (both copies would free the same
+	// backing data). `mv` transfers ownership; a constructor/factory base
 	// is a fresh value, so no gate applies.
 	if (
 		node.base!.node_type === "value" &&
@@ -111,7 +111,7 @@ function check_anon_struct_with_base(node: AnonStructNode, status: CheckStatus):
 	) {
 		add_error(
 			status,
-			`cannot copy '${base_type.name}' by value — it owns heap resources; use .copy() or move`,
+			`cannot copy '${base_type.name}' by value — it owns heap resources; use .copy() or mv`,
 			node.base!.start,
 		);
 		status.expected_type = old_expected;

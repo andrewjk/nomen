@@ -66,7 +66,7 @@ export function closure_env_layout_a64(
 /**
  * Emit (once) the asm env destructor for a capturing lambda whose env owns
  * heap values. Phase 2b: captured strings are strdup'd in. Phase 2c part 2:
- * owning value structs, classes and func descriptors are MOVED in, so the
+ * mv value structs, classes and func descriptors are MOVED in, so the
  * destructor destroys/reclaims them (the moved-in value is owned here).
  * Returns the destructor label, or undefined when the env owns nothing.
  */
@@ -78,7 +78,7 @@ export function emit_env_free_a64(func: FunctionNode, status: BuildStatus): stri
 		const elem = status.structs.find((s) => s.name === c.type.name);
 		if (!elem || elem.is_simple_type) return false;
 		if (elem.is_class) return true;
-		return !!c.is_move; // owning value structs are destroyed; copies just free
+		return !!c.is_move; // mv value structs are destroyed; copies just free
 	});
 	if (!owned) return undefined;
 	const label = `_nomen_env_free_${emission_label(func)}`;

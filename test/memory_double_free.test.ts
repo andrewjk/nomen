@@ -68,14 +68,14 @@ Console.write(result)
 
 	test("struct with string field does not leak on destroy", async () => {
 		const input = `
-owning struct Named {
+mv struct Named {
   var int id
   var string name
 }
 
 var int id = 1
 var string name = 42.to_string()
-var Named n = Named(id, move name)
+var Named n = Named(id, mv name)
 Console.write("\\{n.id}")
 `;
 		await build_and_check_output(input, "dfree_struct_string_field", "1");
@@ -127,7 +127,7 @@ Console.write(b)
 	test("assigning heap string to another variable does not leak old value", async () => {
 		const input = `
 var string s = 42.to_string()
-move string t = s
+mv string t = s
 Console.write(t)
 `;
 		await build_and_check_output(input, "leak_alias_declaration", "42");
@@ -209,13 +209,13 @@ Console.write("done")
 
 	test("assigning class to another does not double-free", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
   var int value
 }
 
 var Box s = Box(1)
 var Box t = Box(2)
-t = move s swap Box(0)
+t = mv s swap Box(0)
 Console.write("\\{s.value}")
 Console.write("\\{t.value}")
 `;
@@ -224,7 +224,7 @@ Console.write("\\{t.value}")
 
 	test("returning class is not use-after-free", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
   var int value
 }
 
@@ -240,7 +240,7 @@ Console.write("\\{result.value}")
 
 	test("returning class from nested scope does not leak", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
   var int value
 }
 
@@ -259,7 +259,7 @@ Console.write("\\{result.value}")
 
 	test("reassigning class frees old value", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
   var int value
 }
 
@@ -272,7 +272,7 @@ Console.write("\\{s.value}")
 
 	test("returning class from nested scope frees old instance", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
   var int value
 }
 
@@ -297,14 +297,14 @@ Console.write("\\{result.value}")
 
 	test("class with string field does not leak on destroy", async () => {
 		const input = `
-owning struct Named {
+mv struct Named {
   var int id
   var string name
 }
 
 var int id = 1
 var string name = 42.to_string()
-var Named n = Named(id, move name)
+var Named n = Named(id, mv name)
 Console.write("\\{n.id}")
 `;
 		await build_and_check_output(input, "dfree_class_string_field", "1");
@@ -312,7 +312,7 @@ Console.write("\\{n.id}")
 
 	test("break does not leak class in loop body", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
   var int value
 }
 
@@ -333,7 +333,7 @@ Console.write("done")
 
 	test("continue does not leak class in loop body", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
   var int value
 }
 
@@ -353,7 +353,7 @@ Console.write("done")
 
 	test("aliasing class via declaration then reassigning original is not UAF", async () => {
 		const input = `
-owning struct Cell {
+mv struct Cell {
   var int value
 }
 
@@ -367,7 +367,7 @@ Console.write("\\{b.value}")
 
 	test("assigning class to another variable does not leak old value", async () => {
 		const input = `
-owning struct Cell {
+mv struct Cell {
   var int value
 }
 
@@ -380,7 +380,7 @@ Console.write("\\{t.value}")
 
 	test("while loop break does not leak class", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
   var int value
 }
 
@@ -411,7 +411,7 @@ Console.write("done")
 
 	test("break runs class destroy in loop", async () => {
 		const input = `
-owning struct Resource {
+mv struct Resource {
   var int handle
 
   func #destroy = (ref self) {
@@ -443,7 +443,7 @@ Console.write("done")
 
 	test("continue runs class destroy in loop", async () => {
 		const input = `
-owning struct Resource {
+mv struct Resource {
   var int handle
 
   func #destroy = (ref self) {
@@ -499,21 +499,21 @@ while i < 3 {
 
 	test("class field access borrow is not destroyed", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
   var int value
 }
 
-owning struct Holder {
+mv struct Holder {
   var Box box
 }
 
 func get_value = (Holder h, out int) {
-  var Box b = move h.box swap Box(0)
+  var Box b = mv h.box swap Box(0)
   return b.value
 }
 
 var Box box = Box(42)
-var Holder h = Holder(move box)
+var Holder h = Holder(mv box)
 var int v = get_value(h)
 Console.write("\\{v}")
 `;
@@ -743,7 +743,7 @@ if i >= 0 && i < names.length {
 		// branch must copy its borrow instead of handing over storage that
 		// belongs to the struct (a rodata literal here, which free rejects).
 		const input = `
-owning struct Named {
+mv struct Named {
 	var string name
 }
 func maybe_render = (Named n, int c, out string) {
@@ -771,13 +771,13 @@ describe("container ownership across function boundaries", () => {
 
 	test("pop transfers ownership across a function boundary (no double-free)", async () => {
 		const input = `
-owning struct Item { var int value = 0 }
+mv struct Item { var int value = 0 }
 func fill = (ref List<Item> items, int n) {
   var int i = 0
   while i < n {
     var Item x = Item()
     x.value = i
-    items.push(move x)
+    items.push(mv x)
     i = i + 1
   }
 }

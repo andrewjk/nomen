@@ -6,7 +6,7 @@
  * `#destroy` releases what the handle names. The constructor's `self` is
  * the inline instance (the `.` accessor); methods keep the pointer form.
  **/
-pub owning struct TextBox : Control {
+pub mv struct TextBox : Control {
 	var uint64 handle = 0
 
 	pub func #init = (self, Window window) {

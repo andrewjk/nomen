@@ -8,7 +8,7 @@ import build_and_check_output from "./build_and_check_output";
 // temporaries run their #destroy BEFORE the join, when the cell is still
 // zero, so their free arm never fired either. A future now records fat
 // string slots at construction (slot_fat) and the LAST release frees an
-// unconsumed result; result() zeroes the cell on move-out and Task's
+// unconsumed result; result() zeroes the cell on mv-out and Task's
 // #destroy zeroes after its own free, so the buffer is freed exactly once
 // no matter which path gets to it first. Both backends, audit on.
 

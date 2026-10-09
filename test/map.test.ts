@@ -401,7 +401,7 @@ describe("Map<string, int> rehash beside trait-typed lists (class fields)", () =
 	// several rehashes while the neighbours keep growing. A mis-compiled
 	// rehash smashed the adjacent heap (the string field's buffer); both
 	// backends must keep every value readable and the audit clean.
-	// Landed with the B1 backend cutover (uniform-heap owning-struct string
+	// Landed with the B1 backend cutover (uniform-heap mv-struct string
 	// fields).
 	test("rehashing map leaves neighbouring class fields intact", async () => {
 		const input = `
@@ -411,20 +411,20 @@ trait Render {
 	func draw = (self, out string)
 }
 
-owning struct Dot: Render {
+mv struct Dot: Render {
 	var int x = 0
 	func draw = (self, out string) {
 		return "dot"
 	}
 }
 
-pub owning struct Holder {
+pub mv struct Holder {
 	pub var string output = ""
 	pub var Map<string, int> refs = Map<string, int>()
 	pub var List<Render> renders = List<Render>()
 
-	pub func add = (self, move Render r) {
-		self.renders.push(move r)
+	pub func add = (self, mv Render r) {
+		self.renders.push(mv r)
 	}
 }
 

@@ -11,7 +11,7 @@ const core = path.resolve(import.meta.dirname, "../core");
 // A `view string` stored into an owned `string` slot materializes a
 // length-bounded owned copy (value semantics) — never an alias of the
 // source buffer, on either backend. Covers bare-variable, call-result,
-// declaration, and `move` return shapes; assertions use length-aware `==`
+// declaration, and `mv` return shapes; assertions use length-aware `==`
 // (Console.write is NUL-terminated and would over-read a mid-buffer view).
 test("view to owned transfers materialize", async () => {
 	const input = `
@@ -19,7 +19,7 @@ pub func moveme = (out string) {
 	var string h = "ab" + "cd"
 	if h.length >= 1 {
 		view v = h.slice(0, 1)
-		return move v
+		return mv v
 	}
 	return ""
 }
@@ -57,7 +57,7 @@ if moveme() == "a" {
 	Console.write("e")
 }
 var string w = "........"
-w = move v
+w = mv v
 if w == "hello" {
 	Console.write("F")
 } else {

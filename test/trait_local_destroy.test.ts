@@ -15,7 +15,7 @@ describe("trait-typed local destroy (scope-exit propagation)", () => {
 		const input = `
 trait Speaker { func speak = (self, out string) }
 
-owning struct Dog : Speaker {
+mv struct Dog : Speaker {
 	var string name
 	func speak = (self, out string) { return self.name.copy() }
 	func #destroy = (ref self) {
@@ -43,7 +43,7 @@ Console.write("\\ndone")
 		const input = `
 trait Speaker { func speak = (self, out string) }
 
-owning struct Dog : Speaker {
+mv struct Dog : Speaker {
 	var string name
 	func speak = (self, out string) { return self.name.copy() }
 }
@@ -57,13 +57,13 @@ Console.write("\\ndone")
 		await build_and_check_output(input, "trait_local_auto_destroy", "Rex\ndone");
 	});
 
-	test("trait-typed local of struct with multiple owning fields", async () => {
+	test("trait-typed local of struct with multiple mv fields", async () => {
 		// Dog owns two string fields. Both must be reclaimed at scope exit
 		// (audit on) — the trait view must walk the concrete struct's fields.
 		const input = `
 trait Speaker { func speak = (self, out string) }
 
-owning struct Dog : Speaker {
+mv struct Dog : Speaker {
 	var string name
 	var string title
 	func speak = (self, out string) { return self.title.copy() }

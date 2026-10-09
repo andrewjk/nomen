@@ -100,14 +100,14 @@ func safe = (string[] s, int i: i >= 0 && i < s.length, out string) {
 | -------- | ---------------------------------------------- |
 | `ref T`  | mutable borrow; caller must also write `ref`   |
 | `view T` | read-only borrow                               |
-| `move T` | transfer ownership; caller writes `move`       |
+| `mv T`   | transfer ownership; caller writes `mv`         |
 | `out T`  | output parameter, assigned inside the function |
 
 `const` values cannot be passed to `ref` — rebind the caller as `var` first.
 At local bindings the same keywords spell the binding's relationship to its
-initializer: `ref Box q = p` is an owning-struct ALIAS (a plain `var Box q = p`
-copy of an owning value — including a `string` — is an error: say `ref`, `move`,
-or `.copy()`), `move` transfers, `view` is a slice. A `ref` alias is not
+initializer: `ref Box q = p` is a mv-struct ALIAS (a plain `var Box q = p`
+copy of a mv value — including a `string` — is an error: say `ref`, `mv`,
+or `.copy()`), `mv` transfers, `view` is a slice. A `ref` alias is not
 reassignable, mutation through it needs a `var` source, and nothing moves
 through it.
 
@@ -202,7 +202,7 @@ var int y = 10                       // mutable, explicit type
 const int[] nums = [1, 2, 3]
 const int[10] buf = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]  // fixed-length
 var int? maybe = null                // nullable
-ref Box q = p                        // owning-struct alias — must be spelled (no plain copies)
+ref Box q = p                        // mv-struct alias — must be spelled (no plain copies)
 ```
 
 Keywords (`out`, `in`, `match`, `if`, `of`, `as`, `swap`, …) are reserved and
@@ -247,14 +247,14 @@ pub struct Point {              // Copyable value type
 	}
 }
 
-owning struct Node {            // single-owner, move-only (bindings move)
+mv struct Node {            // single-owner, move-only (bindings mv)
 	var int value
 }
 ```
 
 Construct by calling the type name as a function: `Point(1, 2)`. A `struct`
 whose fields are not all Copyable is a compile error — mark it
-`owning struct`. Sharing an owning instance is spelled: `ref` (alias),
+`mv struct`. Sharing a mv instance is spelled: `ref` (alias),
 `Box<T>` (owned heap slot), `WeakHandle<T>` (checked back-pointer).
 
 ### Strings
@@ -265,10 +265,10 @@ Console.write("hello \{name}\n")   // interpolation with \{...}
 Console.write_line("with newline")
 ```
 
-`string` is **owning**: `var b = a` (two string variables) needs `move b = a`
+`string` is **mv**: `var b = a` (two string variables) needs `mv b = a`
 or `a.copy()`; `return self.field` and `var s = obj.field` need `.copy()`;
 storing a bare `string` parameter into a string field needs `.copy()`;
-`xs.push(s)` / `m.set(k, v)` need `move`/`.copy()`. Literals are fresh values.
+`xs.push(s)` / `m.set(k, v)` need `mv`/`.copy()`. Literals are fresh values.
 `view string` is the cheap read-only borrow.
 
 ### Traits

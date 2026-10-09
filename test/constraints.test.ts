@@ -654,10 +654,10 @@ func probe = (List<int> list, int i, out int) {
 		// element type discharges `List.at`'s `i < self.length` constraint
 		// exactly like a primitive (the bound is on the INDEX, not the
 		// element). See BUGS.md #14.
-		test("owning element type at verifies under a return-guard", () => {
+		test("mv element type at verifies under a return-guard", () => {
 			const input = `
 import System
-owning struct Item { var string name }
+mv struct Item { var string name }
 func probe = (List<Item> list, int i, out Item) {
     if i < 0 { return Item("neg") }
     if i < list.length { return list.at(i) }

@@ -169,7 +169,7 @@ export default function build_inline_method(
 	) {
 		return;
 	}
-	// Specialize Buffer_<T> store_T / replace_T for owning value struct
+	// Specialize Buffer_<T> store_T / replace_T for mv value struct
 	// elements (deep-copy string fields instead of plain shallow copy).
 	if (emit_owning_buffer_inline_aarch64(struct_node, func.name, status)) return;
 
@@ -182,7 +182,7 @@ export default function build_inline_method(
 	// registers `build_access_node` already loaded the args into. The general
 	// inline path below would needlessly shuffle each param into a callee-saved
 	// register (x19/x20/…) that the raw body never reads, adding a
-	// save/move/restore triple per parameter. `build_naked_inline` just emits
+	// save/mv/restore triple per parameter. `build_naked_inline` just emits
 	// the raw asm verbatim (with an x19→x0 rewrite when the body references
 	// self), so prefer it for every raw-only inline func regardless of whether
 	// it has a self parameter.

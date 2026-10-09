@@ -158,7 +158,7 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 				status.code += `self${accessor}_vt = &_${node.name}_traits;\n`;
 			} else if (!is_class) {
 				// Constructed stamp: a value struct's `_vt` is non-zero for
-				// every constructed instance, so an owning Buffer's per-slot
+				// every constructed instance, so a mv Buffer's per-slot
 				// destroy can skip zeroed (unconstructed) cap slots — the
 				// inline counterpart of ClassBuffer's NULL pointer-slot guard.
 				status.code += `self${accessor}_vt = (void *)1;\n`;
@@ -224,7 +224,7 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 						// free it unconditionally), so a default must be
 						// duplicated — a raw literal here would be freed as static
 						// rodata. A heap-producing default is stored directly.
-						// Non-owning value structs keep the raw store (their
+						// Non-mv value structs keep the raw store (their
 						// field ownership is tracked per assignment).
 						const field_is_class_string =
 							(is_class || owns_strings_uniformly(node)) &&
@@ -304,7 +304,7 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 						status.function_ref_params!.add(pname);
 					}
 				}
-				// A STRUCT-typed non-ref param (e.g. a `move Engine e` field
+				// A STRUCT-typed non-ref param (e.g. a `mv Engine e` field
 				// initializer) is ALSO passed by pointer (classify_param's
 				// is_struct rule) — register it so body uses dereference
 				// (`*e`), matching the signature. Without this a custom-init
@@ -362,7 +362,7 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 			status.code += `${object_name}${accessor}_vt = &_${node.name}_traits;\n`;
 		} else if (!is_class) {
 			// Constructed stamp (see the custom-init path): `_vt` non-zero
-			// marks a constructed instance, so an owning Buffer's per-slot
+			// marks a constructed instance, so a mv Buffer's per-slot
 			// destroy skips zeroed empty cap slots.
 			status.code += `${object_name}${accessor}_vt = (void *)1;\n`;
 		}
@@ -439,10 +439,10 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 				// field is always heap-owned (freed unconditionally by
 				// <Struct>_destroy): strdup the default / param value — it may
 				// be a static literal or a borrow. A heap-producing default
-				// (is_owned_heap_temp) is stored directly. Non-owning value
+				// (is_owned_heap_temp) is stored directly. Non-mv value
 				// structs keep the raw store (their field ownership is tracked
 				// per assignment / by Buffer stores). A `view T` field is a
-				// non-owning pair — stored raw, never duplicated.
+				// non-mv pair — stored raw, never duplicated.
 				const field_is_class_string =
 					(is_class || owns_strings_uniformly(node)) &&
 					field.type.name === "string" &&
@@ -551,10 +551,10 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 		// A value struct that owns heap data through its fields (e.g.
 		// `struct Person { var string name }`) needs an auto-generated
 		// <Struct>_destroy: Buffer<T> calls T_destroy per element when T is
-		// an owning value struct (per-element destroy on replace / scope
-		// exit), and trait-conforming owning value structs dispatch destroy
+		// a mv value struct (per-element destroy on replace / scope
+		// exit), and trait-conforming mv value structs dispatch destroy
 		// through the vtable when boxed into ClassBuffer<Trait>. Without
-		// this, owning value struct elements in containers would leak their
+		// this, mv value struct elements in containers would leak their
 		// string/class fields.
 		build_auto_destroy(node, status);
 	}
@@ -596,7 +596,7 @@ function build_struct_traits(node: StructNode, status: BuildStatus) {
 	// fn exists when the struct has a user #destroy, is a class
 	// (auto-destroy), or owns heap data through its fields (auto-destroy).
 	// For structs without any of these, the slot is NULL and the
-	// dispatcher's NULL check short-circuits. (Non-trait owning value
+	// dispatcher's NULL check short-circuits. (Non-trait mv value
 	// structs also get a standalone destroy fn from build_auto_destroy, but
 	// don't need the vtable — Buffer calls it directly.)
 	// STRUCT_PLAN_3 B4: a trait-conforming struct's slot must agree with the
@@ -613,7 +613,7 @@ function build_struct_traits(node: StructNode, status: BuildStatus) {
 		// — the dispatched destroy (vtable slot / trait shim) must also free
 		// the uniformly-heap string fields, which the user body does not.
 		// Wrap it: `<T>_owning_destroy` calls the user destroy, then frees
-		// the plain string fields and recurses into nested owning value
+		// the plain string fields and recurses into nested mv value
 		// structs (their auto/user destroy frees their own). The LOCAL
 		// scope-exit walker (emit_struct_destroys) keeps calling
 		// `<T>_destroy` + its own field walk — it never dispatches through
@@ -679,7 +679,7 @@ function c_param_decl(
 	status: BuildStatus,
 	flags?: { is_ref?: boolean; declaration?: string },
 ): string {
-	// A `view T` parameter is the universal non-owning (ptr, len) slice
+	// A `view T` parameter is the universal non-mv (ptr, len) slice
 	// struct, passed by value (mirrors build_parameter_node and the aarch64
 	// register-pair convention).
 	if (type.is_view) {
@@ -834,12 +834,12 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 			}
 		}
 
-		// A `move` class param transfers ownership to the callee — register it
+		// A `mv` class param transfers ownership to the callee — register it
 		// as a scoped declaration so build_auto_free destroys+frees it at the
 		// method's exit, mirroring build_function_node (and skipping params
 		// whose ownership escapes into an outliving value — the same
-		// consumed-scan the top-level path uses). A `move` param of an
-		// owning VALUE-struct type rides by address: the callee owns the
+		// consumed-scan the top-level path uses). A `mv` param of an
+		// mv VALUE-struct type rides by address: the callee owns the
 		// CONTENTS, so the scoped destroy reclaims the fields' resources at
 		// `(*param)` (never a free — the storage is the caller's).
 		for (const param of func.params) {
@@ -852,7 +852,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 			) {
 				const pname = c_function_name(param.name);
 				status.scoped_declarations.push(
-					new DeclarationNode(param.start, "private", "move", pname, param.type),
+					new DeclarationNode(param.start, "private", "mv", pname, param.type),
 				);
 			} else if (
 				param_struct &&
@@ -864,7 +864,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 				!moved_param_is_consumed(func, param.name, param_struct.name, status.structs, status.traits)
 			) {
 				const pname = c_function_name(param.name);
-				const decl = new DeclarationNode(param.start, "private", "move", pname, param.type);
+				const decl = new DeclarationNode(param.start, "private", "mv", pname, param.type);
 				decl.moved_value_struct_param = true;
 				// The record-free loop emits the recorded heap string fields
 				// through the param POINTER (`->`).
@@ -910,7 +910,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 			// with header + data layout). The #arch: c block allocates the buffer.
 			status.code += `void* ${emit_label}(`;
 		} else if (func.return_type.is_view) {
-			// A `view T` return is a non-owning (ptr, len) slice returned by
+			// A `view T` return is a non-mv (ptr, len) slice returned by
 			// value. Every view lowers to the universal nomen_view struct.
 			status.code += `nomen_view ${emit_label}(`;
 		} else {
@@ -1015,11 +1015,11 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 			status.variable_types.set("_self", new Type(node.name));
 			status.variable_types.set("self", new Type(node.name));
 		}
-		// If this Buffer_<T> method targets an owning element type — a value
-		// struct with string/nested-owning fields, OR a `string` primitive —
+		// If this Buffer_<T> method targets a mv element type — a value
+		// struct with string/nested-mv fields, OR a `string` primitive —
 		// emit a specialized body (deep-copy on store, per-element destroy)
 		// instead of the raw primitive block. The raw block assumes trivially
-		// destructible elements and would leak/double-free owning fields.
+		// destructible elements and would leak/double-free mv fields.
 		const owning_elem = owning_buffer_element(node, status);
 		const owning_enum = owning_buffer_enum_element(node, status);
 		const specialized =
@@ -1168,12 +1168,12 @@ function build_auto_destroy(node: StructNode, status: BuildStatus) {
 				field.type.is_ref,
 			);
 		if (field.type.is_ref) continue;
-		// A `view T` field is a non-owning borrow: freeing its pointer half
+		// A `view T` field is a non-mv borrow: freeing its pointer half
 		// would be an invalid free (the storage is owned elsewhere).
 		if (field.type.is_view) continue;
 		// An enum-with-data field owns its ACTIVE case's payloads (case
 		// construction strdups string args / transfers reference pointers,
-		// and every enum-field store takes owning copies via <Enum>_copy).
+		// and every enum-field store takes mv copies via <Enum>_copy).
 		const field_enum =
 			!field.type.is_array && !field.type.is_view
 				? status.enums.find((e) => e.name === field.type.name && e.has_associated_data)
@@ -1192,9 +1192,9 @@ function build_auto_destroy(node: StructNode, status: BuildStatus) {
 		}
 		// A func-typed field of a CLASS may hold a capturing closure (a heap
 		// env + descriptor, `owned = 1`) — reclaim it with the same
-		// free-if-owned arm a func-typed local uses. A non-owning VALUE-struct
-		// func field stays non-owning (struct copies share the descriptor; the
-		// existing non-owning copy contract), so class and OWNING structs take
+		// free-if-owned arm a func-typed local uses. A non-mv VALUE-struct
+		// func field stays non-mv (struct copies share the descriptor; the
+		// existing non-mv copy contract), so class and OWNING structs take
 		// this arm (CLOSURE.md Phase 2c).
 		if (field.type.name === "func" && (node.is_class || node.is_owning === true)) {
 			const f = `((struct nomen_closure *)self->${field.name})`;
@@ -1221,22 +1221,22 @@ function build_auto_destroy(node: StructNode, status: BuildStatus) {
 		if (field_struct.is_class) {
 			// Reclaim an owned class-typed field when either (a) its type has
 			// a user-defined `#destroy` (so its observable side effects run, and
-			// the instance is freshly owned, e.g. `Holder(move Box(7))`), or
-			// (b) the field is declared `move` — then the field is the sole
+			// the instance is freshly owned, e.g. `Holder(mv Box(7))`), or
+			// (b) the field is declared `mv` — then the field is the sole
 			// owner of its instance (ownership transferred at assignment time in
 			// build_assignment_node, which removes the source from
 			// scoped_declarations). Recursively destroy + free so subtrees
 			// deeper than one level are reclaimed (mirrors aarch64's
 			// emit_field_destroys). Nullable fields may be null, so guard the
-			// destroy/free with `if`. Non-`move` class fields without a
+			// destroy/free with `if`. Non-`mv` class fields without a
 			// `#destroy` frequently alias another owned variable and are left
 			// to leak rather than risk a double-free.
 			const field_has_destroy = !!field_struct.functions.find((f) => f.name === "#destroy");
-			// STRUCT_PLAN_3 B5: on an `owning struct`, a class-typed field is
-			// an OWNED slot by TYPE (transfer-on-store) — the `move` spelling
+			// STRUCT_PLAN_3 B5: on a `mv struct`, a class-typed field is
+			// an OWNED slot by TYPE (transfer-on-store) — the `mv` spelling
 			// is not required (and is in fact spelled `var`). On a class the
-			// declaration still gates: only `move` fields are owned.
-			const field_is_owned = field.declaration === "move" || node.is_owning === true;
+			// declaration still gates: only `mv` fields are owned.
+			const field_is_owned = field.declaration === "mv" || node.is_owning === true;
 			if (field_has_destroy) {
 				status.code += `if (self->${field.name}) {\n`;
 				status.code += `${field_struct.name}_destroy(self->${field.name});\n`;
@@ -1268,7 +1268,7 @@ function build_auto_destroy(node: StructNode, status: BuildStatus) {
 			// be rodata borrows — the transferred bytes are not).
 			(node.is_class && struct_needs_auto_destroy(field_struct, status))
 		) {
-			// A nested value struct whose owning fields (string, class, ...)
+			// A nested value struct whose mv fields (string, class, ...)
 			// trigger an auto-generated destroy. Call it to recursively free
 			// owned resources. A nullable struct field destroys only when its
 			// companion `_has` flag is set (the null value's bytes are stale).

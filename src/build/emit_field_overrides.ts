@@ -77,7 +77,7 @@ export default function emit_field_overrides(
 		const assign = new AssignmentNode(override.value.start, access, override.value);
 		if (opts?.owning_temp_carrier) {
 			// The construction's explicit pre-reclaim already freed the seed
-			// this store displaces — the backends' owning-store lowered
+			// this store displaces — the backends' mv-store lowered
 			// displaced free must not fire again (double-free of the seed).
 			(assign as unknown as { displace_reclaimed?: boolean }).displace_reclaimed = true;
 		}
@@ -155,7 +155,7 @@ function references_destination(node: BaseNode | undefined | null, dest_name: st
  * the base is constructed/copied into the destination. Both backends lower
  * the base (constructor call or byte copy) first and apply the override
  * assignments after — so an override expression that reads the destination
- * (e.g. `m = [ .. move x, node_type = m.node_type ]`) would observe the
+ * (e.g. `m = [ .. mv x, node_type = m.node_type ]`) would observe the
  * new/clobbered value instead of the pre-assignment one. Hoisting the value
  * into a temporary up front makes it read the pre-assignment state.
  *
@@ -267,7 +267,7 @@ export function hoist_field_overrides(
 			continue;
 		}
 		// Ownership-free scalars hoist as before — they cannot double-free and
-		// cannot leak. Everything else (classes/traits, owning struct values)
+		// cannot leak. Everything else (classes/traits, mv struct values)
 		// keeps the direct post-copy lowering.
 		const is_scalar =
 			!!type?.name &&

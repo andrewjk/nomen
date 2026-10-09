@@ -206,7 +206,7 @@ Console.write("\\{y + 1}")
 describe("nullable function parameters", () => {
 	test("field access on nullable param errors", () => {
 		const input = `
-owning struct Thing {
+mv struct Thing {
     var int value
 }
 func null_check = (Thing? thing) {
@@ -221,7 +221,7 @@ func null_check = (Thing? thing) {
 
 	test("nullable param with null check is fine", () => {
 		const input = `
-owning struct Thing {
+mv struct Thing {
     var int value
 }
 func null_check = (Thing? thing) {
@@ -237,7 +237,7 @@ func null_check = (Thing? thing) {
 
 	test("nullable param with guard clause return is fine", () => {
 		const input = `
-owning struct Thing {
+mv struct Thing {
     var int value
 }
 func null_check = (Thing? thing) {
@@ -254,7 +254,7 @@ func null_check = (Thing? thing) {
 
 	test("non-nullable param field access is fine", () => {
 		const input = `
-owning struct Thing {
+mv struct Thing {
     var int value
 }
 func use_thing = (Thing thing) {
@@ -270,7 +270,7 @@ func use_thing = (Thing thing) {
 describe("flow analysis improvements", () => {
 	test("assignment to nullable var clears is_null", () => {
 		const input = `
-owning struct Thing {
+mv struct Thing {
     var int value
 }
 func test = (Thing? thing) {
@@ -286,7 +286,7 @@ func test = (Thing? thing) {
 
 	test("assignment of null re-sets is_null", () => {
 		const input = `
-owning struct Thing {
+mv struct Thing {
     var int value
 }
 func test = () {
@@ -303,7 +303,7 @@ func test = () {
 
 	test("break as guard clause in while loop", () => {
 		const input = `
-owning struct Thing {
+mv struct Thing {
     var int value
 }
 func test = (Thing? thing) {
@@ -322,7 +322,7 @@ func test = (Thing? thing) {
 
 	test("&& short-circuit null narrowing in if condition", () => {
 		const input = `
-owning struct Thing {
+mv struct Thing {
     var int value
 }
 func test = (Thing? thing) {
@@ -337,7 +337,7 @@ func test = (Thing? thing) {
 
 	test("&& short-circuit null narrowing in if body", () => {
 		const input = `
-owning struct Thing {
+mv struct Thing {
     var int value
 }
 func test = (Thing? thing) {
@@ -353,7 +353,7 @@ func test = (Thing? thing) {
 
 	test("while loop condition narrows null in body", () => {
 		const input = `
-owning struct Thing {
+mv struct Thing {
     var int value
 }
 func test = (Thing? thing) {
@@ -433,10 +433,10 @@ test()
 
 	test("nullable string field default / store emits the zero pair on C", () => {
 		const input = `
-owning struct Holder {
+mv struct Holder {
 	var string? tag = null
 }
-owning struct S {
+mv struct S {
 	var string? tag = null
 }
 func test = () {
@@ -459,7 +459,7 @@ test()
 describe("nullable strings — null as an argument / field default (both backends)", () => {
 	test("null into string? ctor param (required field)", async () => {
 		const input = `
-owning struct Holder {
+mv struct Holder {
 	var string? tag
 }
 func test = () {
@@ -491,7 +491,7 @@ use(null)
 
 	test("null into string? method param", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
 	var int v
 	func touch = (ref self, string? s) {
 		if s == null {
@@ -523,7 +523,7 @@ use(3, null, 4)
 
 	test("null into value struct string? ctor param", async () => {
 		const input = `
-owning struct S {
+mv struct S {
 	var string? tag
 }
 func test = () {
@@ -555,10 +555,10 @@ Console.write_line("done")
 
 	test("defaulted nullable string field zeroes the pair (class + value struct)", async () => {
 		const input = `
-owning struct Holder {
+mv struct Holder {
 	var string? tag = null
 }
-owning struct S {
+mv struct S {
 	var string? tag = null
 }
 func test = () {
@@ -591,7 +591,7 @@ Console.write_line("done")
 describe("nullable classes — declaration and codegen", () => {
 	test("var Box? a = null does not emit adr x0, null", () => {
 		const input = `
-owning struct Box {
+mv struct Box {
     var int v
 }
 var Box? a = null
@@ -605,7 +605,7 @@ Console.write("ok")
 
 	test("var Box? a = null then if a != null / else branch", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
     var int v
 }
 var Box? a = null
@@ -620,7 +620,7 @@ if a != null {
 
 	test("var Box? a = Box(5) then if a != null branch", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
     var int v
 }
 var Box? a = Box(5)
@@ -635,7 +635,7 @@ if a != null {
 
 	test("nullable class with destroy reading self, freed when null", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
     var int v
     func #destroy = () {
         Console.write_line("\\{self.v}")
@@ -653,7 +653,7 @@ Console.write("done")
 
 	test("nullable class with destroy reading self, freed when non-null", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
     var int v
     func #destroy = () {
         Console.write_line("\\{self.v}")
@@ -669,12 +669,12 @@ Console.write("done")
 		await build_and_check_output(input, "nullable_class_destroy_non", "5\ndone");
 	});
 
-	test("nullable class owning a class field, reclaimed at scope exit", async () => {
+	test("nullable class mv a class field, reclaimed at scope exit", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
     var int v
 }
-owning struct Holder {
+mv struct Holder {
     var Box c
 }
 func test = () {
@@ -688,7 +688,7 @@ Console.write("done")
 
 	test("reassign nullable var: h = Box(...) then h = null", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
     var int v
 }
 func test = () {
@@ -703,9 +703,9 @@ Console.write("done")
 });
 
 describe("nullable classes — function parameters", () => {
-	test("pass nullable var to nullable non-move param", () => {
+	test("pass nullable var to nullable non-mv param", () => {
 		const input = `
-owning struct Box {
+mv struct Box {
     var int v
 }
 func take = (Box? x) {
@@ -722,12 +722,12 @@ take(a)
 		expect(parsed.errors).toEqual([]);
 	});
 
-	test("pass nullable var to nullable move param", () => {
+	test("pass nullable var to nullable mv param", () => {
 		const input = `
-owning struct Box {
+mv struct Box {
     var int v
 }
-func take = (move Box? x) {
+func take = (mv Box? x) {
     if x != null {
         Console.write("non")
     } else {
@@ -735,15 +735,15 @@ func take = (move Box? x) {
     }
 }
 var Box? a = null
-take(move a)
+take(mv a)
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
 	});
 
-	test("pass null literal to nullable non-move param", () => {
+	test("pass null literal to nullable non-mv param", () => {
 		const input = `
-owning struct Box {
+mv struct Box {
     var int v
 }
 func take = (Box? x) {
@@ -761,7 +761,7 @@ func take = (Box? x) {
 describe("nullable classes — memory reclamation", () => {
 	test("reassign nullable var with non-null value frees old instance", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
     var int v
 }
 func test = () {
@@ -777,7 +777,7 @@ Console.write("done")
 
 	test("nullable var: null then assign then null then assign", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
     var int v
 }
 func test = () {
@@ -796,7 +796,7 @@ test()
 
 	test("return nullable class from function — caller frees", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
     var int v
 }
 func make = (out Box?) {
@@ -813,7 +813,7 @@ Console.write("done")
 
 	test("nullable class in a loop — each iteration frees", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
     var int v
 }
 func test = () {
@@ -830,18 +830,18 @@ Console.write("done")
 		await build_and_check_output(input, "nullable_loop_reclaim", "done");
 	});
 
-	test("nullable class owning class field, reassigned to null frees field", async () => {
+	test("nullable class mv class field, reassigned to null frees field", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
     var int v
 }
-owning struct Holder {
+mv struct Holder {
     var Box c
 }
 func test = () {
-    var Holder? h = Holder(move Box(7))
+    var Holder? h = Holder(mv Box(7))
     h = null
-    h = Holder(move Box(8))
+    h = Holder(mv Box(8))
     h = null
 }
 test()
@@ -850,19 +850,19 @@ Console.write("done")
 		await build_and_check_output(input, "nullable_field_owner_reassign", "done");
 	});
 
-	test("pass non-null nullable var to move param — freed exactly once", async () => {
+	test("pass non-null nullable var to mv param — freed exactly once", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
     var int v
 }
-func take = (move Box? x) {
+func take = (mv Box? x) {
     if x != null {
         Console.write_line("\\{x.v}")
     }
 }
 func test = () {
     var Box? a = Box(5)
-    take(move a)
+    take(mv a)
 }
 test()
 Console.write("done")
@@ -870,19 +870,19 @@ Console.write("done")
 		await build_and_check_output(input, "nullable_mov_nonnull", "5\ndone");
 	});
 
-	test("pass null nullable var to move param — no free, no crash", async () => {
+	test("pass null nullable var to mv param — no free, no crash", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
     var int v
 }
-func take = (move Box? x) {
+func take = (mv Box? x) {
     if x == null {
         Console.write_line("null")
     }
 }
 func test = () {
     var Box? a = null
-    take(move a)
+    take(mv a)
 }
 test()
 Console.write("done")
@@ -894,19 +894,19 @@ Console.write("done")
 	// (capture_destroys discards its recursion's return); fixing it broadly
 	// double-frees the nullable-container case (nullable_struct_members).
 	// See FOLLOWUP.md "capture_destroys nested recursion".
-	test("nullable class with destroy owning class field, freed when non-null", async () => {
+	test("nullable class with destroy mv class field, freed when non-null", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
     var int v
     func #destroy = () {
         Console.write_line("box \\{self.v}")
     }
 }
-owning struct Holder {
+mv struct Holder {
     var Box c
 }
 func test = () {
-    var Holder? h = Holder(move Box(7))
+    var Holder? h = Holder(mv Box(7))
 }
 test()
 Console.write("done")
@@ -916,7 +916,7 @@ Console.write("done")
 
 	test("nullable class returned from function and reassigned", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
     var int v
 }
 func make = (int n, out Box?) {
@@ -934,17 +934,17 @@ Console.write("done")
 	});
 });
 
-describe("nullable classes — move semantics and fields", () => {
-	test("move nullable var then reassign null — no double free", async () => {
+describe("nullable classes — mv semantics and fields", () => {
+	test("mv nullable var then reassign null — no double free", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
     var int v
 }
-func take = (move Box? x) {
+func take = (mv Box? x) {
 }
 func test = () {
     var Box? a = Box(1)
-    take(move a)
+    take(mv a)
     a = null
 }
 test()
@@ -953,16 +953,16 @@ Console.write("done")
 		await build_and_check_output(input, "nullable_mov_then_null", "done");
 	});
 
-	test("move nullable var then reassign new value — no double free", async () => {
+	test("mv nullable var then reassign new value — no double free", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
     var int v
 }
-func take = (move Box? x) {
+func take = (mv Box? x) {
 }
 func test = () {
     var Box? a = Box(1)
-    take(move a)
+    take(mv a)
     a = Box(2)
 }
 test()
@@ -971,15 +971,15 @@ Console.write("done")
 		await build_and_check_output(input, "nullable_mov_then_new", "done");
 	});
 
-	test("nullable class field (move) freed at scope exit when null", async () => {
+	test("nullable class field (mv) freed at scope exit when null", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
     var int v
     func #destroy = () {
         Console.write_line("box \\{self.v}")
     }
 }
-owning struct Holder {
+mv struct Holder {
     var Box? maybe
 }
 func test = () {
@@ -991,20 +991,20 @@ Console.write("done")
 		await build_and_check_output(input, "nullable_field_null", "done");
 	});
 
-	// SKIP (aarch64): the scope-exit cleanup for an owning struct with a
-	// nullable owning field double-fires the field's destroy (an unguarded
+	// SKIP (aarch64): the scope-exit cleanup for a mv struct with a
+	// nullable mv field double-fires the field's destroy (an unguarded
 	// call against the construction temp plus the flag-guarded one). Latent
-	// pre-existing gap — the old `move`-keyword check error masked it. See
-	// FOLLOWUP.md "aarch64 nullable-field owning-struct destroy double-fire".
-	test("nullable class field (move) freed at scope exit when non-null", async () => {
+	// pre-existing gap — the old `mv`-keyword check error masked it. See
+	// FOLLOWUP.md "aarch64 nullable-field mv-struct destroy double-fire".
+	test("nullable class field (mv) freed at scope exit when non-null", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
     var int v
     func #destroy = () {
         Console.write_line("box \\{self.v}")
     }
 }
-owning struct Holder {
+mv struct Holder {
     var Box? maybe
 }
 func test = () {
@@ -1018,7 +1018,7 @@ Console.write("done")
 
 	test("nullable class with destroy in a loop — destroy runs each iteration", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
     var int v
     func #destroy = () {
         Console.write_line("d\\{self.v}")
@@ -1040,7 +1040,7 @@ Console.write("done")
 
 	test("?? coalescing on nullable class returns fallback when null", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
     var int v
 }
 func make = (Box? x, out Box) {
@@ -1059,13 +1059,13 @@ test()
 describe("nullable class field assignment", () => {
 	test("nullable field assigned null→value — destroy runs at scope exit", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
     var int v
     func #destroy = () {
         Console.write_line("\\{self.v}")
     }
 }
-owning struct Holder {
+mv struct Holder {
     var Box? maybe
 }
 func test = () {
@@ -1080,13 +1080,13 @@ Console.write("done")
 
 	test("nullable field assigned value→null — old instance destroyed", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
     var int v
     func #destroy = () {
         Console.write_line("\\{self.v}")
     }
 }
-owning struct Holder {
+mv struct Holder {
     var Box? maybe
 }
 func test = () {
@@ -1103,8 +1103,8 @@ Console.write("done")
 describe("nullable base member access (null tracking)", () => {
 	test("member access through a null-initialized nullable field errors", () => {
 		const input = `
-owning struct Inner { var int value }
-owning struct Outer { var Inner? inner }
+mv struct Inner { var int value }
+mv struct Outer { var Inner? inner }
 var Outer o = Outer(null)
 Console.write_line(o.inner.value.to_string())
 `;
@@ -1114,8 +1114,8 @@ Console.write_line(o.inner.value.to_string())
 
 	test("member access through a non-null-initialized nullable field is allowed", async () => {
 		const input = `
-owning struct Inner { var int value }
-owning struct Outer { var Inner? inner }
+mv struct Inner { var int value }
+mv struct Outer { var Inner? inner }
 var Outer o = Outer(Inner(5))
 Console.write_line(o.inner.value.to_string())
 `;
@@ -1124,8 +1124,8 @@ Console.write_line(o.inner.value.to_string())
 
 	test("a != null guard narrows a nullable field base", async () => {
 		const input = `
-owning struct Inner { var int value }
-owning struct Outer { var Inner? inner }
+mv struct Inner { var int value }
+mv struct Outer { var Inner? inner }
 var Outer o = Outer(null)
 if o.inner != null {
 	Console.write_line(o.inner.value.to_string())
@@ -1137,8 +1137,8 @@ Console.write_line("done")
 
 	test("an == null guard clause narrows a nullable field base", async () => {
 		const input = `
-owning struct Inner { var int value }
-owning struct Outer { var Inner? inner }
+mv struct Inner { var int value }
+mv struct Outer { var Inner? inner }
 func probe = () {
 	var Outer o = Outer(null)
 	if o.inner == null { return }
@@ -1152,7 +1152,7 @@ Console.write_line("done")
 
 	test("member access through a null box field errors", () => {
 		const input = `
-owning struct Node {
+mv struct Node {
 	var int value
 	var Box<Node>? next
 }
@@ -1165,7 +1165,7 @@ Console.write_line(n.next.value.to_string())
 
 	test("a != null guard narrows a nullable box field base", async () => {
 		const input = `
-owning struct Node {
+mv struct Node {
 	var int value
 	var Box<Node>? next
 }

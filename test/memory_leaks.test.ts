@@ -34,7 +34,7 @@ Console.write("\\{c}")
 
 	test("struct destroy frees string fields", async () => {
 		const input = `
-owning struct Named {
+mv struct Named {
   var int id
   var string name
 }
@@ -67,7 +67,7 @@ Console.write("ok")
 
 	test("class interpolation frees malloc'd buffer", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
   var int value
 }
 
@@ -79,7 +79,7 @@ Console.write("\\{b.value}")
 
 	test("multiple class instances free each allocation", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
   var int value
 }
 
@@ -95,7 +95,7 @@ Console.write("\\{c.value}")
 
 	test("class destroy frees string fields", async () => {
 		const input = `
-owning struct Named {
+mv struct Named {
   var int id
   var string name
 }
@@ -109,7 +109,7 @@ Console.write("\\{n.id}")
 
 	test("inner scope class is freed", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
   var int value
 }
 
@@ -142,7 +142,7 @@ Console.write("\\{parts.at(2)}")
 
 	test("array of classes frees each element", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
   var int value
 }
 
@@ -156,7 +156,7 @@ Console.write("\\{items.at(2).value}")
 
 	test("array of classes with destroy frees each element", async () => {
 		const input = `
-owning struct Resource {
+mv struct Resource {
   var int handle
 
   func #destroy = (ref self) {
@@ -184,7 +184,7 @@ Console.write("done")
 
 	test("inner scope array of classes is freed", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
   var int value
 }
 
@@ -209,7 +209,7 @@ for s of parts {
 
 	test("for-each over class array frees elements", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
   var int value
 }
 
@@ -240,7 +240,7 @@ Console.write("done")
 
 	test("break does not leak array class elements in loop", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
   var int value
 }
 
@@ -277,7 +277,7 @@ Console.write("done")
 
 	test("continue does not leak array class elements in loop", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
   var int value
 }
 
@@ -297,7 +297,7 @@ Console.write("done")
 
 	test("struct field array of strings frees elements", async () => {
 		const input = `
-owning struct Container {
+mv struct Container {
   var Array<string> items
 }
 
@@ -321,10 +321,10 @@ Console.write("\\{nums.at(2)}")
 	// won't free it, and the popped instance is freed by its own scope.
 	test("popped class element is freed", async () => {
 		const input = `
-owning struct Animal { var char letter }
+mv struct Animal { var char letter }
 if true {
 	var List<Animal> list = List<Animal>()
-	list.push(move Animal('A'))
+	list.push(mv Animal('A'))
 	var Animal a = list.pop()
 	Console.write("\\{a.letter}")
 }
@@ -336,13 +336,13 @@ Console.write("done\\n")
 	// A struct that transitively owns heap resources (here List, via its Buffer
 	// field) cannot be byte-copied from another variable — both copies would
 	// free the same backing data (double-free). This is rejected at compile
-	// time; copy with .copy() or transfer ownership with move.
+	// time; copy with .copy() or transfer ownership with mv.
 	test("struct copy of a container shares the buffer (rejected)", () => {
 		const input = `
-owning struct Animal { var char letter }
+mv struct Animal { var char letter }
 if true {
 	var List<Animal> a = List<Animal>()
-	a.push(move Animal('A'))
+	a.push(mv Animal('A'))
 	var List<Animal> b = a
 }
 Console.write("done\\n")
@@ -356,7 +356,7 @@ Console.write("done\\n")
 
 	test("bare class construction (not assigned) is freed", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
   var int value
 }
 
@@ -368,7 +368,7 @@ Console.write("done")
 
 	test("bare class construction with destroy (not assigned) is freed", async () => {
 		const input = `
-owning struct Resource {
+mv struct Resource {
   var int handle
 
   func #destroy = (ref self) {
@@ -384,7 +384,7 @@ Console.write("done")
 
 	test("bare function call returning a class is freed", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
   var int value
 }
 
@@ -400,12 +400,12 @@ Console.write("done")
 
 	test("bare method call with owned return is freed", async () => {
 		const input = `
-owning struct Box {
+mv struct Box {
   var int value
 }
 
 var List<Box> list = List<Box>()
-list.push(move Box(1))
+list.push(mv Box(1))
 list.pop()
 Console.write("done")
 `;
