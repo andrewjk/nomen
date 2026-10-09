@@ -180,12 +180,6 @@ container fields / class/enum element fields):
   user structs need a synthesized `copy` story (the auto-derive gate
   `field_copyable` does not yet accept `Buffer`/`Map`/`Set` fields). Same
   for enum-with-data element fields on aarch64 (C handles them).
-- **`Map`/`Set.copy` for class/trait values is unsupported.** A generic
-  `Map.copy` body calls `self.values.copy()`, but a class-valued Map's member
-  is a `ClassBuffer` with no `copy`; instantiating it emits a call to a
-  nonexistent `ClassBuffer_<C>_copy` (link error). A class/trait deep copy
-  needs a designed clone story (same posture as `List.copy`, which the checker
-  rejects for class elements).
 - **`store_T`/`replace_T` transfer only container leaves** (recursing nested
   structs). Class-typed and enum-with-data fields of the element stay shared;
   for a stamped `mv` donor this is sound (spliced → the slot is sole owner),
