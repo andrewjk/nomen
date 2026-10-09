@@ -713,6 +713,19 @@ export function emit_struct_destroys(
 			status.code += `${field_enum.name}_free_payloads(&${var_expr}.${field.name});\n`;
 			continue;
 		}
+		// An owned func-typed field (a capturing-closure descriptor, `owned =
+		// 1`) on a class or OWNING struct: reclaim the env + descriptor. A
+		// non-owning value struct shares its descriptor and frees nothing.
+		// (Mirrors aarch64's `emit_field_destroys` func arm.)
+		if (
+			(struct.is_class === true || struct.is_owning === true) &&
+			field.type.name === "func" &&
+			!field.type.is_array
+		) {
+			const f = `((struct nomen_closure *)${var_expr}.${field.name})`;
+			status.code += `if (${f} && ${f}->owned) { if (${f}->destroy_env) ${f}->destroy_env(${f}->env); free(${f}->env); free(${f}); }\n`;
+			continue;
+		}
 		const field_struct = resolve_struct_type(field.type, status);
 		if (!field_struct) continue;
 		const field_expr = `${var_expr}.${field.name}`;

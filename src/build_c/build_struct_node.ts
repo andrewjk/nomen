@@ -1192,11 +1192,11 @@ function build_auto_destroy(node: StructNode, status: BuildStatus) {
 		}
 		// A func-typed field of a CLASS may hold a capturing closure (a heap
 		// env + descriptor, `owned = 1`) — reclaim it with the same
-		// free-if-owned arm a func-typed local uses. VALUE-struct func fields
-		// stay non-owning (struct copies share the descriptor; the existing
-		// non-owning copy contract), so this arm is class-only
-		// (CLOSURE.md Phase 2c).
-		if (field.type.name === "func" && node.is_class) {
+		// free-if-owned arm a func-typed local uses. A non-owning VALUE-struct
+		// func field stays non-owning (struct copies share the descriptor; the
+		// existing non-owning copy contract), so class and OWNING structs take
+		// this arm (CLOSURE.md Phase 2c).
+		if (field.type.name === "func" && (node.is_class || node.is_owning === true)) {
 			const f = `((struct nomen_closure *)self->${field.name})`;
 			status.code += `if (${f} && ${f}->owned) { if (${f}->destroy_env) ${f}->destroy_env(${f}->env); free(${f}->env); free(${f}); }\n`;
 			continue;

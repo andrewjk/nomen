@@ -1182,12 +1182,16 @@ export function emit_field_destroys(
 			}
 			emit_asm(status, `ldr x0, [x0, #${actual_offset}]\n`);
 			emit_free(status);
-		} else if (field.type.name === "func" && !field.type.is_array && struct_type.is_class) {
-			// A func-typed CLASS field may hold a capturing closure (heap env
-			// + descriptor, `owned = 1`) — reclaim it with the same
-			// free-if-owned arm a func-typed local uses. VALUE-struct func
-			// fields stay non-owning (copies share the descriptor), so this is
-			// class-only (CLOSURE.md Phase 2c).
+		} else if (
+			field.type.name === "func" &&
+			!field.type.is_array &&
+			(struct_type.is_class || struct_type.is_owning === true)
+		) {
+			// A func-typed CLASS or OWNING-struct field may hold a capturing
+			// closure (heap env + descriptor, `owned = 1`) — reclaim it with
+			// the same free-if-owned arm a func-typed local uses. A non-owning
+			// VALUE-struct func field stays non-owning (copies share the
+			// descriptor), so it is excluded (CLOSURE.md Phase 2c).
 			const actual_offset = base_offset !== undefined ? base_offset + offset : offset;
 			if (decl_name) {
 				emit_base_ptr(status, decl_name, is_class_parent);

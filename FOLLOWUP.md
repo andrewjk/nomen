@@ -50,10 +50,6 @@ Neither should be cited as current syntax until rewritten.
 Each skip masks a real post-R/B1/D3 gap (verified still failing
 2026-10-09):
 
-- **aarch64 ctor lowering for a capturing-closure func field on an
-  owning struct** emits `#undefined` frame offsets (the shape was
-  class-only before R; the checker side allows it). Skip:
-  `lambda_capture` (1).
 - **aarch64 func-value string returns through a struct func field** (the
   two `closure_func_value_string_return` skips): the return-boundary
   normalization for indirect calls through field-borne descriptors needs

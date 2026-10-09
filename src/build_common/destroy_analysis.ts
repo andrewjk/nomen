@@ -118,8 +118,21 @@ export function struct_needs_destroy(struct: StructNode, table: StructTable): bo
 		has_destroy(struct) ||
 		has_struct_fields_with_destroy(struct, table) ||
 		struct_has_owning_enum_field(struct, table) ||
+		struct_has_owned_func_field(struct) ||
 		(owns_strings_via_destroy(struct) && struct_has_direct_string_fields(struct))
 	);
+}
+
+/**
+ * Whether a class or OWNING struct has a `func`-typed field. Such a field may
+ * hold a capturing-closure descriptor (`owned = 1`, a heap env + descriptor),
+ * which the scope-exit / generated destroy must reclaim. A non-owning value
+ * struct shares its descriptor (copies are non-owning) and frees nothing, so
+ * it is excluded (CLOSURE.md Phase 2c).
+ */
+function struct_has_owned_func_field(struct: StructNode): boolean {
+	if (!(struct.is_class === true || struct.is_owning === true)) return false;
+	return struct.fields.some((f) => !f.type.is_ref && f.type.name === "func" && !f.type.is_array);
 }
 
 /**
@@ -135,6 +148,7 @@ export function struct_needs_destroy(struct: StructNode, table: StructTable): bo
 export function struct_needs_auto_destroy(struct: StructNode, table: StructTable): boolean {
 	if (struct_needs_destroy(struct, table)) return true;
 	if (struct_has_owning_enum_field(struct, table)) return true;
+	if (struct_has_owned_func_field(struct)) return true;
 	for (const field of struct.fields) {
 		if (field.type.is_ref) continue;
 		// A `view T` field is a non-owning borrow — nothing to free, so it

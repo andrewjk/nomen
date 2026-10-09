@@ -298,9 +298,17 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	const nullable_scalar_ret =
 		is_nullable_scalar_type(node.return_type, status) && !node.return_type.is_ref;
 	const uses_sret = return_struct || nullable_scalar_ret;
-	if (uses_sret) {
-		status.struct_return_buffer = "x8";
-	}
+	// Save the ENCLOSING function's sret state: a nested function (e.g. a
+	// lambda closure built while evaluating a ctor argument) is built through
+	// here, and its own sret setup must not leak into — nor be discarded in
+	// favour of — the enclosing body. Without the restore a nested build left
+	// `struct_return_buffer` undefined for the caller, so a value-struct ctor
+	// in an `out`-returning function lost its sret destination and emitted
+	// `add x0, x29, #undefined`.
+	const old_struct_return_buffer = status.struct_return_buffer;
+	const old_return_buffer_stack_offset = status.return_buffer_stack_offset;
+	const old_function_return_type = status.function_return_type;
+	status.struct_return_buffer = uses_sret ? "x8" : undefined;
 	status.function_return_type = node.return_type;
 	const old_stack_size = status.stack_size;
 	const old_stack_offsets = status.stack_offsets;
@@ -1524,9 +1532,9 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.function_variadic_params = old_variadic_params_aarch64;
 	status.function_view_params = old_view_params;
 	status.function_return_label = old_return_label;
-	status.struct_return_buffer = undefined;
-	status.return_buffer_stack_offset = undefined;
-	status.function_return_type = undefined;
+	status.struct_return_buffer = old_struct_return_buffer;
+	status.return_buffer_stack_offset = old_return_buffer_stack_offset;
+	status.function_return_type = old_function_return_type;
 }
 
 /**

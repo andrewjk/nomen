@@ -369,6 +369,12 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 	const param_regs = ["x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"];
 
 	let start_reg = 0;
+	// The value-struct ctor's destination temp offset, captured here so the
+	// post-arg destination setup (below) does not have to reconstruct it from
+	// `temp_counter - 1` — a capturing-closure (or other) arg allocates its own
+	// temp, so the ctor's temp is no longer the last one (it emitted
+	// `add x0, x29, #undefined`).
+	let value_struct_dest_offset: number | undefined;
 
 	if (is_struct) {
 		if (is_struct.is_class) {
@@ -388,6 +394,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			const dest_addr = `_temp_${temp_counter++}`;
 			const struct_size = get_struct_size(node.name, status);
 			const offset = allocate_stack_space(status, struct_size);
+			value_struct_dest_offset = offset;
 			status.stack_offsets!.set(dest_addr, offset);
 			// Register the temp's type so field overrides applied to it
 			// (e.g. `f(T() + [ field = v ])`) resolve field offsets correctly.
@@ -1353,9 +1360,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			}
 			emit_asm(status, `mov x0, ${status.struct_return_buffer}\n`);
 		} else if (is_struct && !is_struct.is_class) {
-			const temp_addr = `_temp_${temp_counter - 1}`;
-			const temp_offset = status.stack_offsets!.get(temp_addr)!;
-			emit_asm(status, `add x0, x29, #${temp_offset}\n`);
+			emit_asm(status, `add x0, x29, #${value_struct_dest_offset}\n`);
 		} else if (!is_struct && node.type?.name && !status.call_x8_preset) {
 			const return_struct = status.structs.find(
 				(s) => s.name === node.type!.name && !s.is_simple_type && !s.is_class,
