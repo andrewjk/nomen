@@ -167,15 +167,6 @@ of ref-param field stores (see git history: cross-scope stores, ref-param
 transfer, return-boundary normalization). These bounded remainders remain
 — leaks unless noted, never dangling on the verified shapes:
 
-- **Trait-dispatched method writes on an owning-struct string field are
-  not uniform-heap** (verified 2026-10-09, both backends): `r.reset()`
-  through a trait-typed receiver stores the literal RAW, and the
-  unconditional owning-struct destroy then frees rodata →
-  `AUDIT-STALE-FREE`. The same store through the concrete receiver is
-  clean (the concrete store path strdups/reclaims; the vtable dispatch
-  arm in `build_access_node` does neither). Fix surface: the trait-target
-  write path needs the same uniform-heap treatment as the direct-call
-  path (both backends).
 - **A displaced copy from an EARLIER ref-param call leaks per extra
   call** (`set(ref p, "one"); set(ref p, "two")` leaks "one", verified
   2026-10-09): the callee's store cannot know the displaced value's
@@ -258,6 +249,14 @@ both deliberately left:
   `emit_destroy_for_array_elem` (aarch64) still walk `struct.fields` only,
   so a trait-declared class field inside a nested/array element is not
   recursively destroyed.
+- **aarch64: a trait-DEFAULT method that accesses a trait field emits
+  `adrp x0, self@PAGE`** (verified 2026-10-09): a body in the trait (not a
+  struct override) that reads or writes `self.<trait-field>` references
+  `self` as a global SYMBOL instead of the method's `self` parameter, so
+  the generated assembly fails to link (undefined `self`). A trait-default
+  method that touches no field (e.g. only calls `Console`) compiles fine,
+  and C is correct. `test/trait_field_defaults.test.ts` covers only direct
+  trait-typed field access, which is unaffected.
 
 ## Custom `#init` computed seeds: residual bounded corners
 

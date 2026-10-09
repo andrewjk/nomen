@@ -1100,7 +1100,26 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 			status.code += `${get_signature} { return self->${field.name}; }\n`;
 			const set_signature = `void set_${node.name}_${field.name}(struct ${node.name} *self, ${field_c_type} value)`;
 			status.headers += `${set_signature};\n`;
-			status.code += `${set_signature} { self->${field.name} = value; }\n`;
+			// A trait-declared `string` field on a CLASS or OWNING struct is
+			// always heap-owned (the ctor strdup'd the seed; the destroy frees
+			// it unconditionally), so the vtable setter — the trait-dispatched
+			// write path — must mirror the concrete store: dup the incoming
+			// value and reclaim the displaced one. A raw store would leave
+			// rodata in the field, which the destroy then frees
+			// (AUDIT-STALE-FREE), and leak the displaced heap value.
+			if (
+				field_type.name === "string" &&
+				!field_type.is_view &&
+				!field_type.is_array &&
+				(node.is_class || owns_strings_uniformly(node))
+			) {
+				status.code += `${set_signature} {\n`;
+				status.code += `nomen_string _set = nomen_str_dup(value);\n`;
+				status.code += `free(self->${field.name}.ptr);\n`;
+				status.code += `self->${field.name} = _set;\n}\n`;
+			} else {
+				status.code += `${set_signature} { self->${field.name} = value; }\n`;
+			}
 		}
 	}
 }

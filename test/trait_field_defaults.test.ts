@@ -35,4 +35,28 @@ Console.write("\\{v.tag} \\{v.count} \\{v.x}\\n")
 			"trait-default 7 own-default\ntrait-default 7 1\n",
 		);
 	});
+
+	// A write to a trait-declared string field through a TRAIT-typed receiver
+	// must be uniform-heap for an owning/class conformer: the trait-target
+	// write path must dup the incoming value and reclaim the displaced one, or
+	// the field holds rodata that the conformer's destroy later frees
+	// (AUDIT-STALE-FREE).
+	test("trait-typed receiver string-field write is uniform-heap", async () => {
+		const input = `
+trait Tagged {
+	var string tag = "init"
+}
+
+owning struct G : Tagged {
+	func #destroy = () {
+	}
+}
+
+var g = G()
+var Tagged t = move g
+t.tag = "reset"
+Console.write("\\{t.tag}\\n")
+`;
+		await build_and_check_output(input, "trait_field_write", "reset\n");
+	});
 });

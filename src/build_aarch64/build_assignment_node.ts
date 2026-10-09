@@ -129,7 +129,24 @@ function field_is_struct_string(
 		? mono_type_name(target_type)
 		: target_type.name;
 	const target_struct = status.structs.find((s) => s.name === target_name && !s.is_simple_type);
-	if (!target_struct) return undefined;
+	if (!target_struct) {
+		// A TRAIT-typed receiver (`t.tag = …`): the field is trait-declared and
+		// its ownership is a per-conformer property. When any conformer is a
+		// class/owning struct, its destroy frees the field unconditionally, so
+		// the write must go through the uniform-heap store (dup + reclaim) —
+		// a raw (rodata) store would be freed by the destroy later
+		// (AUDIT-STALE-FREE). A non-owning-only conformer set keeps the
+		// raw/borrow store (its destroy excludes trait string fields).
+		if (status.traits.find((t) => t.name === target_name)) {
+			const any_owning = status.structs.some(
+				(s) => s.traits.includes(target_name) && (s.is_class || s.is_owning),
+			);
+			if (any_owning) {
+				return { name: field_type.name, target_is_class: false, target_is_owning: true };
+			}
+		}
+		return undefined;
+	}
 	if (target_struct.is_class)
 		return { name: field_type.name, target_is_class: true, target_is_owning: true };
 	return {
