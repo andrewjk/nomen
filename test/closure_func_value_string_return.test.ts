@@ -13,7 +13,7 @@ import build_and_check_output from "./build_and_check_output";
 // leaked its result on aarch64.
 
 describe("func-value string returns are owned", () => {
-	test.skip("a heap-string-returning lambda in a class func field is freed", async () => {
+	test("a heap-string-returning lambda in a class func field is freed", async () => {
 		await build_and_check_output(
 			`
 import System
@@ -34,7 +34,7 @@ pub func main = () {
 		);
 	});
 
-	test.skip("a borrowed capture returned from a field lambda is dup'd", async () => {
+	test("a borrowed capture returned from a field lambda is dup'd", async () => {
 		await build_and_check_output(
 			`
 import System

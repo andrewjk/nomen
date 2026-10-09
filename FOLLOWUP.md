@@ -58,11 +58,6 @@ Neither should be cited as current syntax until rewritten.
 Each skip masks a real post-R/B1/D3 gap (verified still failing
 2026-10-09):
 
-- **aarch64 func-value string returns through a struct func field** (the
-  two `closure_func_value_string_return` skips): the return-boundary
-  normalization for indirect calls through field-borne descriptors needs
-  its own pass; the direct-call and local-descriptor shapes are covered
-  and green. Skips: `closure_func_value_string_return` (2).
 - **`operations` (2) + `interpolate_string` (1)**: compile-time
   division/modulo-by-zero detection — a language-feature ask ("TODO: This
   needs runtime protection"), not a backend bug.
