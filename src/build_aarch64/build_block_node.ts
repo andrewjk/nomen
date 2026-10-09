@@ -105,6 +105,14 @@ export default function build_block_node(node: BlockNode, status: BuildStatus) {
 				// load it by symbol, and a main frame slot leaves those
 				// references undefined at link time (BUGS.md #5).
 				decl.is_module_init = true;
+				// A trait-typed root global's handle binding must be visible
+				// from every function (trait_class_frames is reset per body),
+				// so record it now — before any function body is built (a
+				// consuming function can precede main in source order).
+				if (decl.type?.name && status.traits.find((t) => t.name === decl.type.name)) {
+					if (!status.trait_class_globals) status.trait_class_globals = new Map();
+					status.trait_class_globals.set(decl.name, decl.type.name);
+				}
 				module_init_statements.push(child);
 			} else {
 				module_init_statements.push(child);

@@ -270,7 +270,9 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 			const old_variadic_params = status.function_variadic_params;
 			const old_current_function = status.current_function;
 			status.function_ref_params = new Set<string>();
-			status.class_vars = new Set<string>();
+			// Seed with root-scope trait handles (visible from every body;
+			// class_vars is reset per body — BUGS.md #5).
+			status.class_vars = new Set<string>(status.trait_class_globals?.keys() ?? []);
 			status.function_variadic_params = new Set<string>();
 			status.self_is_ref = is_class;
 			status.self_is_local = !is_class;

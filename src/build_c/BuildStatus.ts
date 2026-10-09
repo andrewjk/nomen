@@ -304,6 +304,15 @@ export default interface BuildStatus {
 	 */
 	trait_class_frames?: Map<string, string | null>[];
 	/**
+	 * Trait handles declared at root scope (`is_module_init`), keyed by name →
+	 * trait. Unlike `trait_class_frames` (per-body, reset at each function),
+	 * a global's binding must be visible from EVERY function, so it lives in
+	 * this body-global map. `trait_class_for` falls back to it — without the
+	 * fallback, dispatch from a non-main function reads `&symbol` as the
+	 * instance and dereferences its first word as a vtable (crash).
+	 */
+	trait_class_globals?: Map<string, string>;
+	/**
 	 * `ref` class parameters, emitted as double pointers (`struct T **`). The
 	 * call site passes the address of the caller's pointer slot so the callee
 	 * can reassign the caller's variable and reclaim the old instance. Use

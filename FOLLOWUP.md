@@ -491,16 +491,6 @@ enum-with-data value-struct payload crashes at the match binding) — B1a's
 owning-enum semantics are proven on C; on aarch64 use a class payload until
 #9 is fixed.
 
-## Root-scope owning-struct globals (Phase R tranche 3 note)
-
-The tranche extended the BUGS.md #5 shape to owning structs: `var Channel
-sink = Channel()` at root scope now emits file-scope storage in both
-backends (C: `struct Channel sink;` in the header preamble + prologue
-assignment + value-destroy teardown; aarch64: an `is_module_init` arm in the
-value-struct declaration path emitting writable `.data` storage). Trait-typed
-root globals still have the original shaped gap (their BUGS.md #5 pun stands
-— no current code shape needs them).
-
 ## `Shared<T>` + the `with(m)` critical-section form + typed `Mutex<T>` (N4 remainder)
 
 STRUCT_PLAN_3 Phase N's N4 is otherwise complete (`Atomic<T>`, the

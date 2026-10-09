@@ -357,7 +357,7 @@ export default function build_declaration_node(
 			} else {
 				status.scoped_declarations.push(node);
 			}
-			status.code += `void *${safe_name}`;
+			status.code += node.is_module_init ? safe_name : `void *${safe_name}`;
 			if (node.value) {
 				status.code += ` = (void *)`;
 				emit_init_value(node.value, nir_init, status);
@@ -388,7 +388,9 @@ export default function build_declaration_node(
 			if (!status.moved) status.moved = new Set();
 			status.moved.add(donor);
 			status.scoped_declarations.push(node);
-			status.code += `void *${safe_name} = (void *)`;
+			status.code += node.is_module_init
+				? `${safe_name} = (void *)`
+				: `void *${safe_name} = (void *)`;
 			emit_init_value(node.value, nir_init, status);
 			status.code += `;\n`;
 			return;
@@ -470,7 +472,9 @@ export default function build_declaration_node(
 					splice_decl_from_c_scopes(status, donor_name);
 					if (!status.moved) status.moved = new Set();
 					status.moved.add(donor_name);
-					status.code += `void *${safe_name} = (void *)malloc(sizeof(struct ${concrete_struct.name}));\n`;
+					status.code += node.is_module_init
+						? `${safe_name} = (void *)malloc(sizeof(struct ${concrete_struct.name}));\n`
+						: `void *${safe_name} = (void *)malloc(sizeof(struct ${concrete_struct.name}));\n`;
 					status.code += `*(struct ${concrete_struct.name} *)${safe_name} = `;
 					status.suppress_dereference = true;
 					build_node(node.value, status);
@@ -487,7 +491,9 @@ export default function build_declaration_node(
 					for (const f of string_fields) {
 						status.code += `${temp}.${f.name} = nomen_str_dup(${temp}.${f.name});\n`;
 					}
-					status.code += `void *${safe_name} = (void *)malloc(sizeof(struct ${concrete_struct.name}));\n`;
+					status.code += node.is_module_init
+						? `${safe_name} = (void *)malloc(sizeof(struct ${concrete_struct.name}));\n`
+						: `void *${safe_name} = (void *)malloc(sizeof(struct ${concrete_struct.name}));\n`;
 					status.code += `*(struct ${concrete_struct.name} *)${safe_name} = ${temp};\n`;
 				}
 				status.scoped_declarations.push(node);
@@ -546,7 +552,7 @@ export default function build_declaration_node(
 				if (!status.class_alias_vars) status.class_alias_vars = new Set();
 				status.class_alias_vars.add(safe_name);
 			}
-			status.code += `void *${safe_name}`;
+			status.code += node.is_module_init ? safe_name : `void *${safe_name}`;
 			if (node.value) {
 				status.code += ` = (void *)`;
 				emit_init_value(node.value, nir_init, status);

@@ -195,8 +195,15 @@ export function build_vtable_target(node: BaseNode, status: BuildStatus) {
 			status.code += status.closure_env.get(name)!;
 			return;
 		}
-		// ref/trait/class param — emitted as `struct T *name`, already a pointer.
-		if (status.function_ref_params?.has(name) || status.class_vars?.has(name)) {
+		// ref/trait/class param — emitted as `struct T *name`, already a
+		// pointer. A root-scope trait global is the same pointer storage
+		// (`void *name`), registered in the body-global map because
+		// class_vars is reset at each function body.
+		if (
+			status.function_ref_params?.has(name) ||
+			status.class_vars?.has(name) ||
+			status.trait_class_globals?.has(name)
+		) {
 			status.code += c_function_name(name);
 			return;
 		}

@@ -128,12 +128,33 @@ export default function build_block_node(
 								(s) => s.name === decl.type.name && !s.is_class && !s.is_simple_type,
 							)
 						: undefined;
+				// A trait-typed root global's storage is a `void *` handle to
+				// the boxed concrete instance (the same pointer storage a
+				// trait-typed local uses). The definition goes at file scope
+				// (ahead of every function) and the prologue emission becomes
+				// the initializer ASSIGNMENT — a main-local `void *g = ...`
+				// would shadow the global and leave other functions' reads
+				// undeclared (BUGS.md #5).
+				const trait_global =
+					!cls && !owning_global && decl.type?.name && !decl.type.is_array && !decl.type.is_view
+						? status.traits.find((t) => t.name === decl.type.name)
+						: undefined;
 				if (cls && !decl.type.type_args?.length) {
 					status.headers += `struct ${cls.name} *${decl.name} = (void *)0;\n`;
 					decl.is_module_init = true;
 				} else if (owning_global) {
 					status.headers += `struct ${owning_global.name} ${decl.name};\n`;
 					decl.is_module_init = true;
+				} else if (trait_global) {
+					status.headers += `void *${decl.name} = (void *)0;\n`;
+					decl.is_module_init = true;
+					// A global's trait binding must be visible from every
+					// function (class_vars is reset per body): record it so
+					// `build_vtable_target` passes the handle by value rather
+					// than taking its address (which would dispatch on the
+					// handle slot, not the instance).
+					if (!status.trait_class_globals) status.trait_class_globals = new Map();
+					status.trait_class_globals.set(decl.name, decl.type.name);
 				}
 				module_init_statements.push(child);
 			} else {

@@ -199,7 +199,12 @@ export function set_trait_class_local(status: BuildStatus, name: string, trait: 
 export function trait_class_for(status: BuildStatus, name: string): string | undefined {
 	const frames = status.trait_class_frames;
 	const trait = frames?.[frames.length - 1]?.get(name);
-	return typeof trait === "string" ? trait : undefined;
+	if (typeof trait === "string") return trait;
+	// A root-scope trait handle's binding outlives every body frame
+	// (trait_class_frames is reset per function), so fall back to the
+	// body-global map. Without this, dispatch from a non-main function
+	// treated `&symbol` as the instance (BUGS.md #5).
+	return status.trait_class_globals?.get(name);
 }
 
 export function mark_heap_string(status: BuildStatus, name: string) {

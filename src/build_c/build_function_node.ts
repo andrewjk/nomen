@@ -343,7 +343,9 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	const old_ref_params = status.function_ref_params;
 	status.function_ref_params = new Set<string>();
 	const old_class_vars = status.class_vars;
-	status.class_vars = new Set<string>();
+	// Seed with root-scope trait handles: they are pointer storage visible
+	// from every function, but class_vars is per-body (BUGS.md #5).
+	status.class_vars = new Set<string>(status.trait_class_globals?.keys() ?? []);
 	const old_ref_class_params = status.ref_class_params;
 	status.ref_class_params = new Set<string>();
 	const old_ref_class_param_types = status.ref_class_param_types;

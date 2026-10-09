@@ -157,10 +157,15 @@ symbol (`g: .space 8` wrapped in `.data`/`.text` switches — the output is one
 and the prologue stores through `emit_var_store`'s symbol path. C: the root
 scan emits `struct Box *g = (void *)0;` into the header preamble (ahead of
 every function) and the spliced prologue emission becomes the initializer
-assignment. Value-struct and trait-typed globals have the same shaped gap in
-their branches (still keyed on `function_return_label`); they were left
-as-is — no current code shape needs them, and their symbol access paths
-(`emit_var_address`) are frame-only.
+assignment. Value-struct globals took the same shape in Phase R tranche 3
+(the owning-struct declaration arm emits file-scope storage; the prologue
+assignment runs the constructor through `&name`). Trait-typed globals were
+closed later: the root scan emits `void *g = (void *)0;` at file scope, the
+prologue emission assigns the boxed handle, and the handle's trait binding
+is recorded in a body-global map (`trait_class_globals` — the per-body
+`trait_class_frames` / `class_vars` do not carry across functions) so
+dispatch from any function passes the handle by value instead of taking its
+address. Covered by `test/root_scope_trait_global.test.ts`.
 
 ## 9. aarch64: an enum-with-data payload of a value struct crashes at the match binding
 

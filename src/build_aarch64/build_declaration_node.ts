@@ -192,6 +192,32 @@ function declare_slot_offset(status: BuildStatus, name: string, size: number): n
 	return allocate_stack_space(status, size, size);
 }
 
+/**
+ * Storage for a trait-handle binding — an 8-byte pointer to the boxed
+ * concrete instance. A root-scope global (`is_module_init`) gets
+ * module-scope writable `.data` storage: its initializer runs as main's
+ * prologue, but every other function resolves the symbol via
+ * `emit_var_load`'s `adr` fallback, and a main frame slot left those
+ * references undefined at link time (BUGS.md #5). Mirrors the class and
+ * owning-struct global arms.
+ */
+function declare_trait_handle_storage(status: BuildStatus, node: DeclarationNode): void {
+	if (status.function_return_label && !node.is_module_init) {
+		const offset = allocate_stack_space(status, 8);
+		status.stack_offsets!.set(node.name, offset);
+	} else if (node.is_module_init) {
+		emit_data(status, ".data\n");
+		emit_data(status, `${node.name}: .space 8\n.p2align 3\n`);
+		emit_data(status, ".text\n");
+		// A global's trait binding is visible from every function — record it
+		// in the body-global map (trait_class_frames is per-body).
+		if (!status.trait_class_globals) status.trait_class_globals = new Map();
+		status.trait_class_globals.set(node.name, node.type.name);
+	} else {
+		emit_data(status, `${node.name}: .space 8\n`);
+	}
+}
+
 let string_array_counter = 0;
 let decl_const_counter = 0;
 
@@ -1445,12 +1471,7 @@ export default function build_declaration_node(
 		!!status.traits.find((t) => t.name === (node.value as ValueNode).type?.name)
 	) {
 		set_trait_class_local(status, node.name, node.type.name);
-		if (status.function_return_label) {
-			const offset = allocate_stack_space(status, 8);
-			status.stack_offsets!.set(node.name, offset);
-		} else {
-			emit_data(status, `${node.name}: .space 8\n`);
-		}
+		declare_trait_handle_storage(status, node);
 		emit_init_value(node.value, nir_init, status);
 		ensure_newline(status);
 		emit_var_store(status, "x0", node.name, 8);
@@ -1489,12 +1510,7 @@ export default function build_declaration_node(
 				// set_trait_class_local / trait_class_frames).
 				set_trait_class_local(status, node.name, node.type.name);
 				const struct_size = get_struct_size(concrete.name, status);
-				if (status.function_return_label) {
-					const offset = allocate_stack_space(status, 8);
-					status.stack_offsets!.set(node.name, offset);
-				} else {
-					emit_data(status, `${node.name}: .space 8\n`);
-				}
+				declare_trait_handle_storage(status, node);
 				const func_call = node.value as FunctionCallNode;
 				if (func_call.name === concrete.name && !is_magic_spawn_ctor(func_call)) {
 					emit_asm(status, `mov x0, #${struct_size}\n`);
@@ -1545,12 +1561,7 @@ export default function build_declaration_node(
 			// MOVED (its unrecorded string fields strdup in place; its
 			// teardown is suppressed — the box owns the transferred state).
 			set_trait_class_local(status, node.name, node.type.name);
-			if (status.function_return_label) {
-				const offset = allocate_stack_space(status, 8);
-				status.stack_offsets!.set(node.name, offset);
-			} else {
-				emit_data(status, `${node.name}: .space 8\n`);
-			}
+			declare_trait_handle_storage(status, node);
 			const struct_size = get_struct_size(concrete.name, status);
 			// The box's destroy dispatches through the vtable's destroy slot —
 			// populated when the struct has a user `#destroy` or owns fields
@@ -1707,12 +1718,7 @@ export default function build_declaration_node(
 		// is pointer storage, so dispatch must dereference (see
 		// set_trait_class_local).
 		set_trait_class_local(status, node.name, node.type.name);
-		if (status.function_return_label) {
-			const offset = allocate_stack_space(status, 8);
-			status.stack_offsets!.set(node.name, offset);
-		} else {
-			emit_data(status, `${node.name}: .space 8\n`);
-		}
+		declare_trait_handle_storage(status, node);
 		emit_init_value(node.value, nir_init, status);
 		ensure_newline(status);
 		emit_var_store(status, "x0", node.name, 8);
