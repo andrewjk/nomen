@@ -75,9 +75,6 @@ Each skip masks a real post-R/B1/D3 gap (verified still failing
 
 ### D3 residuals (`string` is mv)
 
-- **aarch64 rodata-fold + move**: `owns = mv own` where `"heap" + "!"`
-  folded to rodata trips `AUDIT-STALE-FREE` (the aarch64 constant-fold
-  produced a rodata pair that the move marked heap).
 - **`string` captures are read-invalidated but memory-snapshotted**: the
   E2 endgame (a real transfer) is deferred; the current model is sound
   and matches the pre-D3 output for capture-then-reassign shapes.

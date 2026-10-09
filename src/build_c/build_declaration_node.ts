@@ -42,7 +42,7 @@ import StructNode from "../nodes/StructNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_array_values_node from "./build_array_values_node.ts";
-import { nullable_value_flag_expr } from "./build_assignment_node.ts";
+import { nullable_value_flag_expr, string_var_owns_heap } from "./build_assignment_node.ts";
 import { struct_needs_destroy_by_name } from "./build_auto_free.ts";
 import { pointer_element_c_type } from "./build_index_node.ts";
 import build_node from "./build_node.ts";
@@ -759,13 +759,42 @@ export default function build_declaration_node(
 		// `moved_string_vars` in the string branch below.
 		const move_swap_string_value =
 			!!node.swap && node.type.name === "string" && !node.type.is_array;
+		// A STRING donor (`var string? b = mv a`) defers the splice to the
+		// string branch below: it decides transfer-vs-dup from the donor's
+		// actual ownership. Splicing here assumed the pair transfers, but the
+		// dup path (a donor whose heap ownership the transfer predicate can't
+		// see — e.g. a concat-initialized local) then strdups from a donor
+		// whose scope-exit free was just suppressed — leaking the donor's
+		// bytes.
+		const moved_string_donor =
+			node.declaration === "var" &&
+			node.type.name === "string" &&
+			!node.type.is_view &&
+			!node.type.is_array &&
+			node.value?.node_type === "value" &&
+			!!(node.value as ValueNode).is_moved;
 		if (
 			node.value?.node_type === "value" &&
 			(node.value as ValueNode).is_moved &&
 			!is_class_type &&
-			!move_swap_string_value
+			!move_swap_string_value &&
+			!moved_string_donor
 		) {
 			splice_decl_from_c_scopes(status, (node.value as ValueNode).value);
+			// An `mv u = t` string declaration owns the transferred pair
+			// exclusively: record it so later `s = mv u` sites see the
+			// ownership the splice-based transfer carries (the bare-value
+			// initializer shape is invisible to the heap_strings-less
+			// predicate, which would then dup instead of transfer).
+			if (
+				node.declaration === "mv" &&
+				node.type.name === "string" &&
+				!node.type.is_view &&
+				!node.type.is_array
+			) {
+				if (!status.heap_strings) status.heap_strings = new Set();
+				status.heap_strings.add(safe_name);
+			}
 		} else if (node.value?.node_type === "anon_struct") {
 			const lit_base = (node.value as AnonStructNode).base;
 			if (lit_base?.node_type === "value" && (lit_base as ValueNode).is_moved && !is_class_type) {
@@ -1227,10 +1256,31 @@ export default function build_declaration_node(
 					// via moved_string_vars — it no longer owns the moved pair.
 					const explicit_move_swap =
 						node.value.node_type === "value" && !!(node.value as ValueNode).is_moved && !!node.swap;
+					// An EXPLICIT `var string? b = mv a` (no swap) transfers the
+					// pair too when the donor actually OWNS heap — the generic
+					// moved-donor splice above deliberately deferred to this
+					// branch. The ownership verdict must run on the UNSPLICED
+					// scopes (the predicate classifies through the donor's decl;
+					// a concat-initialized local like `own = "h" + "!"` owns
+					// fresh heap that neither heap_strings nor the call-only
+					// initializer shapes see). A donor that does NOT own
+					// (a param/global borrow, rodata, an already-moved var)
+					// takes the dup path below and keeps its own free.
+					const explicit_move_donor_owns =
+						node.value.node_type === "value" &&
+						!!(node.value as ValueNode).is_moved &&
+						string_var_owns_heap(status, (node.value as ValueNode).value);
+					if (explicit_move_donor_owns) {
+						// The transfer fires: NOW splice the donor (its free is
+						// suppressed — the pair moved).
+						splice_decl_from_c_scopes(status, (node.value as ValueNode).value);
+					}
 					if (
-						((node.last_use_move && move_on_last_use_enabled()) || explicit_move_swap) &&
+						((node.last_use_move && move_on_last_use_enabled()) ||
+							explicit_move_swap ||
+							explicit_move_donor_owns) &&
 						val_is_heap_string_var &&
-						source_is_owned
+						(source_is_owned || explicit_move_donor_owns)
 					) {
 						if (!status.moved_string_vars) status.moved_string_vars = new Set();
 						status.moved_string_vars.add((node.value as ValueNode).value);

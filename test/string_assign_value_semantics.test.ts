@@ -425,8 +425,11 @@ pub func main = () {
 	expect(c).toContain("s = u;");
 	expect(c).not.toContain("nomen_str_dup(u)");
 	// s's heap-forced literal init copy (eager-freed at the reassign) + the
-	// final copy at scope exit; t and u were both moved (suppressed frees).
-	expect(count(c, "free(")).toBe(3);
+	// final copy at scope exit; t and u were both moved (their frees
+	// suppressed — u's decl is spliced by the transfer, so u's bytes are
+	// freed exactly once, through s).
+	expect(count(c, "free(")).toBe(2);
+	expect(c).not.toContain("free(u.ptr)");
 
 	const a64 = build_main(input, "aarch64");
 	expect(count(a64, "bl _strdup")).toBe(1);

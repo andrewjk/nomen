@@ -31,6 +31,9 @@ pub func main = (Init init) {
 		);
 	});
 
+	// NOTE: the direct mv spelling now works on both backends — see the
+	// "true mv" tests below. This test pins the deep-copy spelling alongside
+	// it (both are leak-free for this shape).
 	test("assign from owned local as a true last use", async () => {
 		const input = `
 import System
@@ -38,10 +41,9 @@ import System
 pub func main = (Init init) {
 	var string own = "heap" + "!"
 	var string? owns = null
-	// NOTE (D3 endgame): "owns = mv own" is the natural last-use spelling,
-	// but the aarch64 backend folds "heap" + "!" to rodata and the raw mv
-	// transfers the rodata pair into the heap-marked target — free(rodata) →
-	// AUDIT-STALE-FREE. Use the deep copy (rule 4's alternative spelling).
+	// NOTE: the direct mv spelling now works on both backends — see the
+	// "true mv" tests below. This test pins the deep-copy spelling alongside
+	// it (both are leak-free for this shape).
 	owns = own.copy()
 	Console.write("owns=\\{owns}\\n")
 }
@@ -109,5 +111,37 @@ pub func main = (Init init) {
 			"owns=second!\nown=heap!\nown2=second!\n",
 			true,
 		);
+	});
+
+	// The NOTE above is stale: the direct mv spellings are leak-free on both
+	// backends now. The C backend's declare path deferred the moved-donor
+	// splice to the string branch, which transfers only when the donor owns
+	// heap (a folded-concat local does NOT trip the transfer predicate — it
+	// dups and the donor keeps its own scope-exit free).
+	test("declare from owned local as a true mv", async () => {
+		const input = `
+import System
+
+pub func main = (Init init) {
+	var string own = "heap" + "!"
+	var string? owns = mv own
+	Console.write("owns=\\{owns}\\n")
+}
+`;
+		await build_and_check_output(input, "nullable_string_alias_mv_decl", "owns=heap!\n", true);
+	});
+
+	test("assign from owned local as a true mv", async () => {
+		const input = `
+import System
+
+pub func main = (Init init) {
+	var string own = "heap" + "!"
+	var string? owns = null
+	owns = mv own
+	Console.write("owns=\\{owns}\\n")
+}
+`;
+		await build_and_check_output(input, "nullable_string_alias_mv_assign", "owns=heap!\n", true);
 	});
 });

@@ -1162,9 +1162,20 @@ export default function build_assignment_node(
 						splice_decl_from_c_scopes(status, src_name);
 						if (!status.heap_strings) status.heap_strings = new Set();
 						status.heap_strings.add(lhs_name);
+						// Fall through: the plain `lhs = rhs` pair store completes
+						// the transfer.
+					} else {
+						// A moved donor whose heap ownership the predicate cannot
+						// see (a concat-initialized local, a rodata-backed global)
+						// must NOT transfer: the plain store would alias the
+						// donor's bytes while BOTH slots' scope-exit frees fire
+						// (the rodata-fold+move stale-free). The LHS takes a dup
+						// and the donor keeps its own free.
+						status.code += `${lhs_name} = nomen_str_dup(${c_function_name(src_name)});\n`;
+						if (!status.heap_strings) status.heap_strings = new Set();
+						status.heap_strings.add(lhs_name);
+						return;
 					}
-					// Fall through: the plain `lhs = rhs` pair store completes
-					// the transfer.
 				} else if (should_value_copy_string_assign(node)) {
 					const src_value = rhs as ValueNode;
 					const src_can_move =
@@ -1759,7 +1770,7 @@ function should_value_copy_string_assign(node: AssignmentNode): boolean {
  * (nonexistent) free would hand the target rodata/container memory that the
  * target's auto_free would then free.
  */
-function string_var_owns_heap(status: BuildStatus, name: string): boolean {
+export function string_var_owns_heap(status: BuildStatus, name: string): boolean {
 	if (status.string_borrow_vars?.has(name)) return false;
 	if (status.moved_string_vars?.has(name)) return false;
 	if (status.heap_strings?.has(name)) return true;
