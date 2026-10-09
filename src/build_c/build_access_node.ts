@@ -1,5 +1,3 @@
-import { struct_needs_auto_destroy } from "../build_common/destroy_analysis.ts";
-import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { is_nullable_struct_type } from "../build_common/nullable_struct.ts";
@@ -35,7 +33,7 @@ import {
 	next_lambda_ret_temp,
 } from "./utils/closure.ts";
 import { begin_code_scratch, end_code_scratch } from "./utils/code_scratch.ts";
-import { try_emit_boxed_trait_arg_c } from "./utils/trait_box.ts";
+import { emit_boxed_value_struct_c, try_emit_boxed_trait_arg_c } from "./utils/trait_box.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import { c_view_string_arg } from "./utils/view_value.ts";
 
@@ -1484,39 +1482,15 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 											!st.is_generic,
 									)
 								: undefined;
-						if (callee_move_trait && box_arg_struct) {
-							const donor_name = (access_func.params[i] as ValueNode).value;
-							// strdup only when the box's destroy slot will free
-							// the fields (user `#destroy` or the auto destroy).
-							const strdup_string_fields =
-								!box_arg_struct.functions.some((f) => f.name === "#destroy") &&
-								struct_needs_auto_destroy(box_arg_struct, status);
-							const string_fields = strdup_string_fields
-								? direct_string_fields(box_arg_struct)
-								: [];
-							if (donor_name && /^[A-Za-z_][A-Za-z0-9_]*$/.test(donor_name)) {
-								const recorded = new Set<string>();
-								for (const key of status.heap_string_fields ?? []) {
-									if (key.startsWith(`${donor_name}.`)) {
-										recorded.add(key.slice(donor_name.length + 1));
-									}
-								}
-								const unrecorded = string_fields.filter((f) => !recorded.has(f.name));
-								const saved_arg = begin_code_scratch(status);
-								status.code += `(void *)&`;
-								status.suppress_dereference = true;
-								build_node(access_func.params[i], status);
-								status.suppress_dereference = false;
-								const addr_text = end_code_scratch(status, saved_arg);
-								status.code += `(void *)({ struct ${box_arg_struct.name} *_src = (struct ${box_arg_struct.name} *)${addr_text}; `;
-								for (const f of unrecorded) {
-									status.code += `_src->${f.name} = nomen_str_dup(_src->${f.name}); `;
-								}
-								status.code += `struct ${box_arg_struct.name} *_box = (struct ${box_arg_struct.name} *)nomen_malloc_wrap(sizeof(struct ${box_arg_struct.name})); `;
-								status.code += `*_box = *_src; `;
-								status.code += `(void *)_box; })`;
-								continue;
-							}
+						const donor_name =
+							access_func.params[i].node_type === "value"
+								? (access_func.params[i] as ValueNode).value
+								: undefined;
+						if (box_arg_struct && donor_name && /^[A-Za-z_][A-Za-z0-9_]*$/.test(donor_name)) {
+							// Single implementation of "concrete value struct → trait
+							// slot" (see trait_box.emit_boxed_value_struct_c).
+							emit_boxed_value_struct_c(status, access_func.params[i], box_arg_struct);
+							continue;
 						}
 					}
 					// Type erasure: when a class pointer is passed to a

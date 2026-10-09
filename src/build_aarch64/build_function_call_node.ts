@@ -17,6 +17,7 @@ import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
+import type StructNode from "../nodes/StructNode.ts";
 import type Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import { emit_address_of, emit_enum_payload_arg_store } from "./build_access_node.ts";
@@ -140,6 +141,77 @@ export function emit_struct_address(node: BaseNode, status: BuildStatus) {
 	} else {
 		build_node(node, status);
 		ensure_newline(status);
+	}
+}
+
+/**
+ * Resolve a call/case argument to the concrete value struct it is a value of,
+ * if any. A bare variable's `ValueNode.type` can be unset after
+ * monomorphization, so the declaration is consulted first. Returns undefined
+ * for class/trait handles, scalars, and unresolved types — i.e. when the
+ * argument ALREADY is (or is not) a boxed handle.
+ */
+export function boxable_value_struct_arg(
+	status: BuildStatus,
+	arg: BaseNode,
+): StructNode | undefined {
+	if (arg.node_type !== "value") return undefined;
+	const donor_name = (arg as ValueNode).value;
+	const donor_decl = all_scope_frames(status)
+		.flat()
+		.find((d) => d.name === donor_name);
+	const donor_tname = donor_decl?.type?.name ?? (arg as ValueNode).type?.name;
+	if (!donor_tname) return undefined;
+	return status.structs.find(
+		(s) => s.name === donor_tname && !s.is_simple_type && !s.is_class && !s.is_generic,
+	);
+}
+
+/**
+ * Box a concrete value-struct argument into a trait-typed slot: malloc a heap
+ * instance, copy the donor's bytes, and strdup its unrecorded direct string
+ * fields (the box's destroy frees them; the moved donor's own reclaim is
+ * suppressed). The box pointer is parked at `[x29 + dest_offset]` (the caller's
+ * slot storage: an arg spill slot or an enum payload slot) and left in x0.
+ *
+ * THIS is the single implementation of "concrete value struct → trait slot"
+ * for call/case arguments — the `move Trait` parameter and enum case payload
+ * families. Every such site funnels through here so a change to a conformer's
+ * representation (the R `class` → `owning struct` rewrite that made a payload
+ * inline instead of a pointer) is handled once, never half-applied.
+ */
+export function emit_box_value_struct_arg(
+	status: BuildStatus,
+	arg: BaseNode,
+	struct: StructNode,
+	dest_offset: number,
+): void {
+	const strdup_string_fields =
+		!struct.functions.some((f) => f.name === "#destroy") &&
+		struct_needs_auto_destroy(struct, status);
+	const box_size = get_struct_size(struct.name, status);
+	const donor_name = (arg as ValueNode).value;
+	const recorded = new Set<string>();
+	for (const key of status.heap_string_fields ?? []) {
+		if (key.startsWith(`${donor_name}.`)) recorded.add(key.slice(donor_name.length + 1));
+	}
+	emit_asm(status, `mov x0, #${box_size}\n`);
+	emit_malloc(status);
+	// Park the box pointer in the slot while the donor is copied —
+	// emit_struct_address / the strdups clobber x0/x1.
+	emit_asm(status, `str x0, [x29, #${dest_offset}]\n`);
+	emit_asm(status, `mov x1, x0\n`);
+	emit_struct_address(arg, status);
+	ensure_newline(status);
+	emit_asm(status, `mov x2, x0\n`);
+	emit_asm(status, `ldr x1, [x29, #${dest_offset}]\n`);
+	const words = Math.ceil(box_size / 8);
+	for (let w = 0; w < words; w++) {
+		emit_asm(status, `ldr x3, [x2, #${w * 8}]\n`);
+		emit_asm(status, `str x3, [x1, #${w * 8}]\n`);
+	}
+	if (strdup_string_fields) {
+		emit_string_field_strdups_at(status, struct.name, "x1", 0, recorded);
 	}
 }
 
@@ -931,45 +1003,14 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 						);
 					})()
 				) {
-					const arg_val = node.params[i] as ValueNode;
-					const donor_decl = all_scope_frames(status)
-						.flat()
-						.find((d) => d.name === arg_val.value);
-					const donor_tname = donor_decl?.type?.name ?? param_type;
-					const arg_struct = status.structs.find(
-						(st) => st.name === donor_tname && !st.is_simple_type && !st.is_class && !st.is_generic,
-					)!;
-					{
-						const strdup_string_fields =
-							!arg_struct.functions.some((f) => f.name === "#destroy") &&
-							struct_needs_auto_destroy(arg_struct, status);
-						const box_size = get_struct_size(arg_struct.name, status);
-						const donor_name = arg_val.value;
-						const recorded = new Set<string>();
-						for (const key of status.heap_string_fields ?? []) {
-							if (key.startsWith(`${donor_name}.`)) {
-								recorded.add(key.slice(donor_name.length + 1));
-							}
-						}
-						emit_asm(status, `mov x0, #${box_size}\n`);
-						emit_malloc(status);
-						// Park the box in the arg slot while copying the donor.
-						emit_asm(status, `str x0, [x29, #${args_base + arg_slot[i] * 8}]\n`);
-						emit_asm(status, `mov x1, x0\n`);
-						emit_struct_address(node.params[i], status);
-						ensure_newline(status);
-						emit_asm(status, `mov x2, x0\n`);
-						emit_asm(status, `ldr x1, [x29, #${args_base + arg_slot[i] * 8}]\n`);
-						const words = Math.ceil(box_size / 8);
-						for (let w = 0; w < words; w++) {
-							emit_asm(status, `ldr x3, [x2, #${w * 8}]\n`);
-							emit_asm(status, `str x3, [x1, #${w * 8}]\n`);
-						}
-						if (strdup_string_fields) {
-							emit_string_field_strdups_at(status, arg_struct.name, "x1", 0, recorded);
-						}
-						continue;
-					}
+					const arg_struct = boxable_value_struct_arg(status, node.params[i])!;
+					emit_box_value_struct_arg(
+						status,
+						node.params[i],
+						arg_struct,
+						args_base + arg_slot[i] * 8,
+					);
+					continue;
 				} else if (nullable_scalar_arg_set.has(i)) {
 					// A nullable SCALAR parameter arrives as a (value, flag) pair:
 					//   - `null` literal → both halves zero.

@@ -1,6 +1,5 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
-import { struct_needs_auto_destroy } from "../build_common/destroy_analysis.ts";
 import find_enum from "../build_common/find_enum.ts";
 import { mono_type_name, resolve_mono_type } from "../build_common/mono_name.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
@@ -40,7 +39,7 @@ import {
 } from "./access_staging.ts";
 import { array_licm_enabled } from "./array_licm.ts";
 import build_function_call_node from "./build_function_call_node.ts";
-import { emit_struct_address } from "./build_function_call_node.ts";
+import { boxable_value_struct_arg, emit_box_value_struct_arg } from "./build_function_call_node.ts";
 import build_inline_method, {
 	begin_inline_splice,
 	end_inline_splice,
@@ -53,7 +52,6 @@ import build_nursery_spawn from "./build_nursery_spawn.ts";
 import { build_operand, tree_is_call_free } from "./build_operation_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free, emit_malloc, emit_strdup } from "./utils/audit.ts";
-import { emit_string_field_strdups_at } from "./utils/auto_destroy.ts";
 import {
 	all_scope_frames,
 	find_anchor_slot,
@@ -579,67 +577,6 @@ function is_struct_type(type_name: string, status: BuildStatus): boolean {
 }
 
 /**
- * Box a concrete value-struct conformer argument into a trait-typed enum
- * payload slot. A trait payload rides as an owned heap handle (the enum's
- * scope-exit reclaim runs `<Trait>_destroy` + `free`), so an INLINE
- * value-struct argument must be materialized as a heap instance (malloc + byte
- * copy) — storing its bytes (or its first word, the vtable pointer) would not
- * be a valid instance pointer and the binding's vtable dispatch would crash.
- * Unrecorded (rodata/borrow) string fields are strdup'd into the box (the box
- * owns them; the moved donor's own reclaim is suppressed). Returns true when
- * the box was emitted; false when the argument already evaluates to a
- * trait/class handle (the caller stores the plain pointer).
- */
-function emit_boxed_trait_payload(status: BuildStatus, arg: BaseNode, abs_offset: number): boolean {
-	const donor_name = arg.node_type === "value" ? (arg as ValueNode).value : undefined;
-	let arg_type_name: string | undefined;
-	if (donor_name !== undefined) {
-		// A bare variable's ValueNode.type can be unset after monomorphization —
-		// resolve the donor's type from its declaration.
-		const decl = all_scope_frames(status)
-			.flat()
-			.find((d) => d.name === donor_name);
-		arg_type_name = decl?.type?.name ?? (arg as ValueNode).type?.name;
-	} else {
-		arg_type_name = type_from_value_node(arg)?.name;
-	}
-	if (!arg_type_name) return false;
-	const arg_struct = status.structs.find(
-		(s) => s.name === arg_type_name && !s.is_simple_type && !s.is_class && !s.is_generic,
-	);
-	if (!arg_struct) return false;
-	const box_size = get_struct_size(arg_struct.name, status);
-	const strdup_string_fields =
-		!arg_struct.functions.some((f) => f.name === "#destroy") &&
-		struct_needs_auto_destroy(arg_struct, status);
-	const recorded = new Set<string>();
-	if (donor_name !== undefined) {
-		for (const key of status.heap_string_fields ?? []) {
-			if (key.startsWith(`${donor_name}.`)) recorded.add(key.slice(donor_name.length + 1));
-		}
-	}
-	emit_asm(status, `mov x0, #${box_size}\n`);
-	emit_malloc(status);
-	// Park the box pointer in the payload slot while the donor is copied —
-	// emit_struct_address / the strdups clobber x0/x1.
-	emit_asm(status, `str x0, [x29, #${abs_offset}]\n`);
-	emit_asm(status, `mov x1, x0\n`);
-	emit_struct_address(arg, status);
-	ensure_newline(status);
-	emit_asm(status, `mov x2, x0\n`);
-	emit_asm(status, `ldr x1, [x29, #${abs_offset}]\n`);
-	const words = Math.ceil(box_size / 8);
-	for (let w = 0; w < words; w++) {
-		emit_asm(status, `ldr x3, [x2, #${w * 8}]\n`);
-		emit_asm(status, `str x3, [x1, #${w * 8}]\n`);
-	}
-	if (strdup_string_fields) {
-		emit_string_field_strdups_at(status, arg_struct.name, "x1", 0, recorded);
-	}
-	return true;
-}
-
-/**
  * Store one enum-with-data case argument into the enum temp at
  * `[x29 + abs_offset]`. A payload can be multi-word (a value struct, or a
  * nested enum-with-data blob): those are COPIED byte-for-byte from the
@@ -674,7 +611,13 @@ export function emit_enum_payload_arg_store(
 	const is_trait = !!status.traits.find((t) => t.name === type_name);
 	// A value-struct conformer argument to a trait-typed payload is boxed into
 	// an owned heap handle (a trait/class-typed argument is already a handle).
-	if (is_trait && emit_boxed_trait_payload(status, arg, abs_offset)) return;
+	if (is_trait) {
+		const conformer = boxable_value_struct_arg(status, arg);
+		if (conformer) {
+			emit_box_value_struct_arg(status, arg, conformer, abs_offset);
+			return;
+		}
+	}
 	const is_multiworld_value =
 		!is_class && !is_trait && !type.is_ref && !type.is_view && !type.is_array && size > 8;
 	if (is_multiworld_value) {
@@ -3311,35 +3254,7 @@ function build_access_method(
 			const arg_struct = status.structs.find(
 				(st) => st.name === param_type && !st.is_simple_type && !st.is_class && !st.is_generic,
 			)!;
-			const strdup_string_fields =
-				!arg_struct.functions.some((f) => f.name === "#destroy") &&
-				struct_needs_auto_destroy(arg_struct, status);
-			const box_size = get_struct_size(arg_struct.name, status);
-			const donor_name = (param as ValueNode).value;
-			const recorded = new Set<string>();
-			for (const key of status.heap_string_fields ?? []) {
-				if (key.startsWith(`${donor_name}.`)) {
-					recorded.add(key.slice(donor_name.length + 1));
-				}
-			}
-			emit_asm(status, `mov x0, #${box_size}\n`);
-			emit_malloc(status);
-			emit_asm(status, `str x0, [x29, #${arg_spill_base + arg_slot[i] * 8}]\n`);
-			emit_asm(status, `mov x1, x0\n`);
-			emit_struct_address(param, status);
-			ensure_newline(status);
-			emit_asm(status, `mov x2, x0\n`);
-			emit_asm(status, `ldr x1, [x29, #${arg_spill_base + arg_slot[i] * 8}]\n`);
-			const words = Math.ceil(box_size / 8);
-			for (let w = 0; w < words; w++) {
-				emit_asm(status, `ldr x3, [x2, #${w * 8}]\n`);
-				emit_asm(status, `str x3, [x1, #${w * 8}]\n`);
-			}
-			if (strdup_string_fields) {
-				emit_string_field_strdups_at(status, arg_struct.name, "x1", 0, recorded);
-			}
-			ensure_newline(status);
-			emit_asm(status, `str x1, [x29, #${arg_spill_base + arg_slot[i] * 8}]\n`);
+			emit_box_value_struct_arg(status, param, arg_struct, arg_spill_base + arg_slot[i] * 8);
 			continue;
 		}
 		if (is_ref_param) {
