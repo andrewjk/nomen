@@ -691,6 +691,14 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 		emit_asm(status, `adrp x9, _${node.name}_traits@PAGE\n`);
 		emit_asm(status, `add x9, x9, _${node.name}_traits@PAGEOFF\n`);
 		emit_asm(status, `str x9, [x19]\n`);
+	} else if (!node.is_class) {
+		// Constructed stamp: a value struct's word 0 is non-zero for every
+		// constructed instance (the traits table for conformers, the constant
+		// 1 here), so an owning Buffer's per-slot destroy can distinguish a
+		// live element from a zeroed (unconstructed / moved-out) cap slot —
+		// the inline counterpart of ClassBuffer's NULL pointer-slot guard.
+		emit_asm(status, `mov x9, #1\n`);
+		emit_asm(status, `str x9, [x19]\n`);
 	}
 	const param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
 	// Fat-string fields consume TWO AAPCS slots (ptr, len pair) — track the
@@ -1378,6 +1386,12 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 	if (node.traits.length > 0) {
 		emit_asm(status, `adrp x9, _${node.name}_traits@PAGE\n`);
 		emit_asm(status, `add x9, x9, _${node.name}_traits@PAGEOFF\n`);
+		emit_asm(status, `str x9, [x19]\n`);
+	} else if (!node.is_class) {
+		// Constructed stamp (see build_init_function): word 0 non-zero marks a
+		// constructed instance, so an owning Buffer's per-slot destroy skips
+		// zeroed empty slots.
+		emit_asm(status, `mov x9, #1\n`);
 		emit_asm(status, `str x9, [x19]\n`);
 	}
 

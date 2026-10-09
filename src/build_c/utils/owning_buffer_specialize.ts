@@ -497,12 +497,14 @@ export function emit_owning_buffer_body(
 
 	if (func_name === "replace") {
 		// replace_T(self, i, val): destroy the old slot value (it owned
-		// heap memory), then shallow-copy + strdup the new value, and
+		// heap memory) — guarded on the constructed stamp (`_vt`), since
+		// the slot may be empty (grown-but-unwritten, or emptied by
+		// move/pop) — then shallow-copy + strdup the new value, and
 		// transfer the new value's owned container fields (zeroed at the
 		// source — the slot took its bytes). B1 cutover: the donor's string
 		// originals are reclaimed too (see store_T).
 		status.code += `${Tptr}_slots = ${Tcast}(unsigned long long)self->data;\n`;
-		status.code += `${elem.name}_destroy(&_slots[i]);\n`;
+		status.code += `if (_slots[i]._vt) { ${elem.name}_destroy(&_slots[i]); }\n`;
 		status.code += `_slots[i] = (*val);\n`;
 		emit_deep_copy_fields(elem, "_slots[i]", "val", status);
 		emit_transfer_owning_fields(elem, "val", status);
@@ -512,12 +514,13 @@ export function emit_owning_buffer_body(
 
 	if (func_name === "shift") {
 		// shift_T(self, dst, src): move slot src into slot dst — destroy dst's
-		// old value (it owned heap memory), take over src's bytes wholesale
-		// (no deep copy: the moved struct's owned pointers transfer), and zero
-		// src. Exactly one slot owns each heap pointer afterwards.
+		// old value (constructed-stamp guarded: dst may be an empty slot), take
+		// over src's bytes wholesale (no deep copy: the moved struct's owned
+		// pointers transfer), and zero src. Exactly one slot owns each heap
+		// pointer afterwards.
 		status.code += `${Tptr}_slots = ${Tcast}(unsigned long long)self->data;\n`;
 		status.code += `if (dst != src) {\n`;
-		status.code += `${elem.name}_destroy(&_slots[dst]);\n`;
+		status.code += `if (_slots[dst]._vt) { ${elem.name}_destroy(&_slots[dst]); }\n`;
 		status.code += `_slots[dst] = _slots[src];\n`;
 		status.code += `memset((void*)&_slots[src], 0, sizeof(struct ${elem.name}));\n`;
 		status.code += `}\n`;
@@ -525,11 +528,15 @@ export function emit_owning_buffer_body(
 	}
 
 	if (func_name === "destroy") {
-		// #destroy(self): per-element T_destroy, then free the slab.
+		// #destroy(self): per-element T_destroy — guarded on the slot's
+		// constructed stamp so a user `#destroy` body never fires on the
+		// zeroed (unconstructed / moved-out) tail slots — then free the slab.
 		status.code += `if (self->data) {\n`;
 		status.code += `${Tptr}_slots = ${Tcast}(unsigned long long)self->data;\n`;
 		status.code += `for (int _i = 0; _i < self->cap; _i++) {\n`;
+		status.code += `if (_slots[_i]._vt) {\n`;
 		status.code += `${elem.name}_destroy(&_slots[_i]);\n`;
+		status.code += `}\n`;
 		status.code += `}\n`;
 		status.code += `free(_slots);\n`;
 		status.code += `}\n`;

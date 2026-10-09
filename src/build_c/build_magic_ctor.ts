@@ -433,6 +433,11 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 	} else {
 		status.code += `\tstruct ${mono_name} _inst;\n`;
 		status.code += `\tmemset(&_inst, 0, sizeof(struct ${mono_name}));\n`;
+		// Constructed stamp (see build_struct_node's init paths): `_vt`
+		// non-zero marks a constructed instance so an owning Buffer's
+		// per-slot destroy can skip zeroed empty cap slots.
+		if (info.traits) status.code += `\t_inst._vt = &_${mono_name}_traits;\n`;
+		else status.code += `\t_inst._vt = (void *)1;\n`;
 		emit_instance_fields("_inst.");
 		status.code += `\t_inst;\n`;
 	}
@@ -630,6 +635,11 @@ function build_fn_value_ctor(
 	} else {
 		status.code += `\tstruct ${mono_name} _inst;\n`;
 		status.code += `\tmemset(&_inst, 0, sizeof(struct ${mono_name}));\n`;
+		// Constructed stamp (see build_struct_node's init paths): `_vt`
+		// non-zero marks a constructed instance so an owning Buffer's
+		// per-slot destroy can skip zeroed empty cap slots.
+		if (info.traits) status.code += `\t_inst._vt = &_${mono_name}_traits;\n`;
+		else status.code += `\t_inst._vt = (void *)1;\n`;
 		emit_instance_fields("_inst.");
 		status.code += `\t_inst;\n`;
 	}

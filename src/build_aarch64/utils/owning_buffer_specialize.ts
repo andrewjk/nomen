@@ -597,11 +597,12 @@ function emit_owning_standalone_struct(elem: StructNode, func_name: string, stat
 	emit_asm(status, `mov x21, x2\n`); // x21 = val
 
 	// replace_T destroys the OLD slot value (its documented overwrite
-	// semantic). store_T does NOT — the round-trip guard below keeps the
+	// semantic) — guarded on the constructed stamp, since the slot may be
+	// empty (grown-but-unwritten, or emptied by move/pop).
+	// store_T does NOT destroy — the round-trip guard below keeps the
 	// slot's own copy instead of orphaning it.
 	if (func_name === "replace") {
-		emit_asm(status, `mov x0, x20\n`);
-		emit_asm(status, `bl ${elem.name}_destroy\n`);
+		emit_guarded_slot_destroy(status, elem, "x20");
 	}
 
 	// store_T: save each string field's OLD slot pointer (before memcpy) so
@@ -911,8 +912,9 @@ function emit_owning_shift_T(elem: StructNode, status: BuildStatus, self_reg: st
 	emit_asm(status, `madd x21, x2, x22, x9\n`); // &slot[src]
 	emit_asm(status, `cmp x20, x21\n`);
 	emit_asm(status, `b.eq ${done}\n`);
-	emit_asm(status, `mov x0, x20\n`);
-	emit_asm(status, `bl ${elem.name}_destroy\n`);
+	// Destroy dst's old value (guarded: dst may be an empty slot — see
+	// emit_guarded_slot_destroy)
+	emit_guarded_slot_destroy(status, elem, "x20");
 	emit_asm(status, `mov x0, x20\n`);
 	emit_asm(status, `mov x1, x21\n`);
 	emit_asm(status, `mov x2, x22\n`);
@@ -1048,9 +1050,9 @@ function emit_owning_replace_T(elem: StructNode, status: BuildStatus) {
 	emit_asm(status, `madd x4, x1, x22, xzr\n`);
 	emit_asm(status, `add x20, x20, x4\n`); // x20 = &slot[i]
 	emit_asm(status, `mov x21, x2\n`); // x21 = val
-	// Destroy old slot value
-	emit_asm(status, `mov x0, x20\n`);
-	emit_asm(status, `bl ${elem.name}_destroy\n`);
+	// Destroy old slot value (guarded: the slot may be empty — see
+	// emit_guarded_slot_destroy)
+	emit_guarded_slot_destroy(status, elem, "x20");
 	// memcpy(slot, val, T_SIZE) — x22 preserved across destroy call
 	emit_asm(status, `mov x0, x20\n`);
 	emit_asm(status, `mov x1, x21\n`);
@@ -1071,6 +1073,24 @@ function emit_owning_replace_T(elem: StructNode, status: BuildStatus) {
 	// Restore
 	emit_asm(status, `ldr x22, [sp], #16\n`);
 	emit_asm(status, `ldp x20, x21, [sp], #16\n`);
+}
+
+/**
+ * Emit a guarded `<T>_destroy` for the owning value-struct slot at `slot_reg`:
+ * the call fires only when the slot's word 0 is non-zero — the constructed
+ * stamp every `_init` writes (the traits table for conformers, constant 1
+ * otherwise). Zeroed slots (calloc'd/realloc-grown tail, or a slot `move`
+ * emptied) are unconstructed and must not run the element destroy — a user
+ * `#destroy` body would fire on empty cap slots. `slot_reg` must hold the
+ * slot ADDRESS and is clobbered only by the destroy call itself.
+ */
+function emit_guarded_slot_destroy(status: BuildStatus, elem: StructNode, slot_reg: string): void {
+	const skip = `.Lown_slot_skip_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+	emit_asm(status, `ldr x9, [${slot_reg}]\n`);
+	emit_asm(status, `cbz x9, ${skip}\n`);
+	if (slot_reg !== "x0") emit_asm(status, `mov x0, ${slot_reg}\n`);
+	emit_asm(status, `bl ${elem.name}_destroy\n`);
+	emit_asm(status, `${skip}:\n`);
 }
 
 /**
@@ -1151,7 +1171,10 @@ export function emit_owning_buffer_destroy_aarch64(node: StructNode, status: Bui
 		// Tag-guarded reclaim of the active case's string payloads.
 		emit_enum_payload_frees_at(status, enum_elem.name, "x0");
 	} else {
-		emit_asm(status, `bl ${elem!.name}_destroy\n`);
+		// Constructed-slot guard (see emit_guarded_slot_destroy): x0 holds
+		// &slot[i], so a zeroed cap slot skips the element destroy instead of
+		// firing the user `#destroy` on unconstructed storage.
+		emit_guarded_slot_destroy(status, elem!, "x0");
 	}
 	emit_asm(status, `add x22, x22, #1\n`);
 	emit_asm(status, `b .Lownbuf_destroy_loop_${func_label}\n`);

@@ -336,6 +336,7 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 	}
 	c += `\tmemset(self, 0, sizeof(struct ${mono_name}));\n`;
 	if (info.traits) c += `\tself->_vt = (void **)${mono_name}_traits;\n`;
+	else if (sret) c += `\tself->_vt = (void *)1;\n`; // constructed stamp (value struct)
 	c += `\tself->task = (unsigned long long)cl;\n`;
 	c += `\tself->result_slot = (unsigned long long)a->result_slot;\n`;
 	c += `\tself->cancel_flag = (unsigned long long)a->cancel_flag;\n`;
@@ -610,6 +611,7 @@ function build_fn_value_ctor_a64(
 	}
 	c += `\tmemset(self, 0, sizeof(struct ${mono_name}));\n`;
 	if (info.traits) c += `\tself->_vt = (void **)${mono_name}_traits;\n`;
+	else if (fnval_sret) c += `\tself->_vt = (void *)1;\n`; // constructed stamp (value struct)
 	c += `\tself->task = (unsigned long long)cl;\n`;
 	c += `\tself->result_slot = (unsigned long long)a->result_slot;\n`;
 	c += `\tself->cancel_flag = (unsigned long long)a->cancel_flag;\n`;

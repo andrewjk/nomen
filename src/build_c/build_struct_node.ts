@@ -156,6 +156,12 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 			}
 			if (node.traits.length) {
 				status.code += `self${accessor}_vt = &_${node.name}_traits;\n`;
+			} else if (!is_class) {
+				// Constructed stamp: a value struct's `_vt` is non-zero for
+				// every constructed instance, so an owning Buffer's per-slot
+				// destroy can skip zeroed (unconstructed) cap slots — the
+				// inline counterpart of ClassBuffer's NULL pointer-slot guard.
+				status.code += `self${accessor}_vt = (void *)1;\n`;
 			}
 
 			// Track which `self.<field>`s hold a real value while the init body
@@ -354,6 +360,11 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 		}
 		if (node.traits.length) {
 			status.code += `${object_name}${accessor}_vt = &_${node.name}_traits;\n`;
+		} else if (!is_class) {
+			// Constructed stamp (see the custom-init path): `_vt` non-zero
+			// marks a constructed instance, so an owning Buffer's per-slot
+			// destroy skips zeroed empty cap slots.
+			status.code += `${object_name}${accessor}_vt = (void *)1;\n`;
 		}
 		// Fields from the struct
 		for (const field of node.fields) {

@@ -44,14 +44,13 @@ Console.write("\\n")
 		await build_and_check_output(input, "gap_set_overwrite", "B\n");
 	});
 
-	// #3 — Buffer#destroy calls bare free() on each slot. A class #destroy that
-	// releases resources never runs for container-stored instances.
-	// SKIP (aarch64): an owning struct WITH a #destroy routes as a
-	// pointer-slot ClassBuffer element on C (null-guarded, correct) but as an
-	// inline owning-buffer element on aarch64, whose destroy walks empty cap
-	// slots and fires the user #destroy on unconstructed elements. See
-	// FOLLOWUP.md. C runs the program green.
-	test.skip("class #destroy is not invoked for container-stored elements", async () => {
+	// #3 — A value struct's user #destroy must run exactly once per element
+	// that was actually stored. The inline owning-buffer destroy walks the
+	// `cap` slots, so it skips empty ones via the constructed stamp every
+	// `_init` writes into word 0 (the traits table for conformers, constant 1
+	// otherwise) — the inline counterpart of ClassBuffer's NULL pointer-slot
+	// guard.
+	test("class #destroy is not invoked for container-stored elements", async () => {
 		const input = `
 owning struct Resource {
 	var int handle

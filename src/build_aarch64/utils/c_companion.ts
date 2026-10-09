@@ -371,6 +371,11 @@ function generate_c_function(
 				// C-side identifier drops the prefix.
 				out += `extern void *${struct_name}_traits;\n`;
 				out += `self->_vt = (void *)&${struct_name}_traits;\n`;
+			} else if (!ctor_struct.is_class) {
+				// Constructed stamp (mirrors build_init_function): word 0
+				// non-zero marks a constructed instance so an owning Buffer's
+				// per-slot destroy can skip zeroed empty slots.
+				out += `self->_vt = (void *)1;\n`;
 			}
 			for (const field of ctor_struct.fields) {
 				if (!field.value) continue;

@@ -50,9 +50,6 @@ Neither should be cited as current syntax until rewritten.
 Each skip masks a real post-R/B1/D3 gap (verified still failing
 2026-10-09):
 
-- **aarch64 container-of-owning-struct destroy** over-destroys empty cap
-  slots (C, routing such elements as pointer-slot ClassBuffer entries,
-  is correct). Skip: `container_class_leak_gaps` (1).
 - **aarch64 mono enum with a trait payload** crashes at the match binding
   (BUGS.md #9 family). Skip: `generic_enum_class_payload` (1).
 - **aarch64 ctor lowering for a capturing-closure func field on an
