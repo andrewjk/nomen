@@ -22,7 +22,7 @@ import TraitNode from "../nodes/TraitNode.ts";
 import build_auto_free, { discard_string_field_records } from "./build_auto_free.ts";
 import build_bitset_node from "./build_bitset_node.ts";
 import build_block_node from "./build_block_node.ts";
-import build_extern from "./build_extern.ts";
+import build_foreign from "./build_foreign.ts";
 import { pointer_element_c_type } from "./build_index_node.ts";
 import build_parameter_node from "./build_parameter_node.ts";
 import build_struct_body from "./build_struct_body.ts";
@@ -66,8 +66,8 @@ function statements_definitely_return(statements?: BaseNode[]): boolean {
 
 export default function build_function_node(node: FunctionNode, status: BuildStatus) {
 	if (node.is_generic) return;
-	if (node.is_extern) {
-		build_extern(node, status);
+	if (node.is_foreign) {
+		build_foreign(node, status);
 		return;
 	}
 

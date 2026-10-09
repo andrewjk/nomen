@@ -86,7 +86,7 @@ function func_key(func: FunctionNode): string {
  * something at stake (at least one non-defaulted field); with every field
  * defaulted, the instance is fully seeded before the body runs and an
  * unanalyzable body is harmless. Trusted code is exempt, matching the
- * language's other lockdowns (raw/extern/ptr are library-only): the System
+ * language's other lockdowns (raw/foreign/ptr are library-only): the System
  * library (`is_library`, e.g. Mutex's raw-C constructor) and
  * `allow_internal` builds. The unverifiable shapes are:
  *   - a raw `#arch` block in the chain (library-only anyway),
@@ -126,7 +126,7 @@ export default function check_init_assigns_all_fields(
 		if (writes.opaque) {
 			// Nothing to verify when every field is defaulted (the backends
 			// seed them all before the body runs); trusted code is exempt the
-			// same way it is for raw/extern/ptr.
+			// same way it is for raw/foreign/ptr.
 			if (!has_unverifiable_fields || trusted) continue;
 			add_error(
 				status,

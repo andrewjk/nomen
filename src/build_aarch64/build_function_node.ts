@@ -17,7 +17,7 @@ import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import type Type from "../nodes/Type.ts";
 import build_block_node from "./build_block_node.ts";
-import build_extern from "./build_extern.ts";
+import build_foreign from "./build_foreign.ts";
 import { check_c_fallback } from "./build_raw_node.ts";
 import { nir_emission_enabled } from "./emit_nir.ts";
 import { prepare_nir_forwarding } from "./forward.ts";
@@ -177,8 +177,8 @@ function peephole_optimize(code: string): string {
 
 export default function build_function_node(node: FunctionNode, status: BuildStatus) {
 	if (node.is_generic) return;
-	if (node.is_extern) {
-		build_extern(node, status);
+	if (node.is_foreign) {
+		build_foreign(node, status);
 		return;
 	}
 	if (check_c_fallback(node, undefined, status)) return;

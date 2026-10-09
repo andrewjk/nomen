@@ -303,7 +303,7 @@ function struct_needs_copy(struct: StructNode, status: CheckStatus): boolean {
 
 /**
  * Whether `struct` owns a resource a synthesized copy CANNOT duplicate: a
- * `#destroy` that releases something (a raw block / extern free), or a field
+ * `#destroy` that releases something (a raw block / foreign free), or a field
  * whose type has no deep-copy story (a class instance, a `List` of
  * class/trait elements, a nested struct with such a field). Fields that DO
  * have a deep-copy story (strings, nested copyables, copyable `List`s,

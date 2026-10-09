@@ -186,7 +186,7 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 	// --- Companion C: trampoline + descriptor + constructor helper ---
 	let c = `// --- spawn construction site ${id} (${kind}) ---\n`;
 	// The generalized Awaitable instance is trait-dispatchable: the helper
-	// installs the class's traits table (extern — the table lives in the
+	// installs the class's traits table (foreign — the table lives in the
 	// emitted data segment; Thread/Fiber keep their vtable-less emission).
 	if (info.traits) {
 		c += `extern void *${mono_name}_traits[];\n`;

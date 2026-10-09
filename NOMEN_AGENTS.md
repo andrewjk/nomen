@@ -162,10 +162,10 @@ declarations, so never import a sibling. Only cross-namespace references
 Failures are signalled via return values — nullable results, status structs,
 or boolean + out-parameter pairs. There is no `throw`/`try`/`catch`.
 
-`Result<T, E>` is declared `must_use`: a call returning it must bind or match
+`Result<T, E>` is declared `checked`: a call returning it must bind or match
 the value (`var _ = f.close()` to discard deliberately; a bare `f.close()`
 statement is a compile error). Any enum or bitset can opt into this with the
-`must_use` modifier.
+`checked` modifier.
 
 ## Tests
 

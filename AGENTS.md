@@ -234,7 +234,7 @@ same fat `string` values Nomen code sees — a C `char*` is the explicit
 `.ptr` half (`.len` carries the byte count), a string RETURN must build the
 `(nomen_string){ ptr, len }` pair itself, and aarch64 asm receives the
 (ptr, len) register pair. Never re-derive length via `strlen` inside a raw
-body. The only thin-`char*` boundary is `extern func` (SPEC, Extern
+body. The only thin-`char*` boundary is `foreign func` (SPEC, Extern
 Functions).
 
 ### When Making Changes

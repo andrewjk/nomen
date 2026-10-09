@@ -52,12 +52,12 @@ function resolve_struct(type: Type, status: CheckStatus): StructNode | undefined
 
 /**
  * Recursively determine whether an AST subtree contains a `raw` node (an inline
- * asm/C block) or a call to an `extern` function. Used to tell apart a
+ * asm/C block) or a call to an `foreign` function. Used to tell apart a
  * `#destroy` that actually releases a resource from a benign cleanup hook that
  * only resets fields (e.g. `self.id = 0`). Releases are written either as raw
  * blocks (`free(...)` inside `#arch:` code — the pre-unsafe form) or as plain
  * Nomen calls to the memory externs (`free`/`realloc`/... declared
- * `extern func`); both are un-analyzable resource releases. The walk skips
+ * `foreign func`); both are un-analyzable resource releases. The walk skips
  * `scope`/`parent` back-edges and is cycle-guarded.
  */
 function contains_release(node: BaseNode, visited: WeakSet<BaseNode>): boolean {
@@ -67,7 +67,7 @@ function contains_release(node: BaseNode, visited: WeakSet<BaseNode>): boolean {
 	const any_node = node as any;
 	if (node.node_type === "func_call" || node.node_type === "access_func") {
 		const resolved = any_node.resolved_function;
-		if (resolved?.is_extern) return true;
+		if (resolved?.is_foreign) return true;
 		// The generic body may be classified before its own statement was
 		// reached (user structs are checked before the appended library), so
 		// the call's stamp may be absent — resolve by name. Externs are
@@ -76,7 +76,7 @@ function contains_release(node: BaseNode, visited: WeakSet<BaseNode>): boolean {
 		const name = any_node.name as string | undefined;
 		if (name && !resolved) {
 			const func = externs_by_name.get(name);
-			if (func?.is_extern) return true;
+			if (func?.is_foreign) return true;
 		}
 	}
 	for (const child of child_nodes(node)) {
@@ -85,12 +85,12 @@ function contains_release(node: BaseNode, visited: WeakSet<BaseNode>): boolean {
 	return false;
 }
 
-/** Root-level extern declarations, populated by check_block_node's gather
+/** Root-level foreign declarations, populated by check_block_node's gather
  *  pass so ownership classification never depends on statement order. */
 const externs_by_name = new Map<string, FunctionNode>();
 
-export function register_extern_for_ownership(func: FunctionNode): void {
-	if (func.is_extern) externs_by_name.set(func.name, func);
+export function register_foreign_for_ownership(func: FunctionNode): void {
+	if (func.is_foreign) externs_by_name.set(func.name, func);
 }
 
 export function destroy_releases(func: FunctionNode): boolean {

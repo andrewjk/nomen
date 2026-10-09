@@ -7,12 +7,12 @@ import c_function_name from "./utils/c_function_name.ts";
 import c_type from "./utils/c_type.ts";
 
 /**
- * Emit an `extern func`: a marshalling adapter under the function's normal
+ * Emit an `foreign func`: a marshalling adapter under the function's normal
  * emission label that forwards to the C symbol (named by the declared Nomen
  * name). Call sites need no special handling — they emit a normal call to
  * the label.
  *
- * Free externs keep the parse-assigned `extern_<name>` label; method
+ * Free externs keep the parse-assigned `foreign_<name>` label; method
  * externs take the normal `Struct_method` label (passed via `struct_node`),
  * so the adapter — not the C symbol — owns the collision-prone bare name
  * (e.g. an adapter literally named `sqrt` would interpose libc and recurse
@@ -31,7 +31,7 @@ import c_type from "./utils/c_type.ts";
  * The C symbol needs no prototype here: the prelude includes
  * stdio/stdlib/string/math, so libc declarations are already visible.
  */
-export default function build_extern(
+export default function build_foreign(
 	node: FunctionNode,
 	status: BuildStatus,
 	struct_node?: StructNode,
@@ -54,7 +54,7 @@ export default function build_extern(
 		} else {
 			param_texts.push(`${c_type(param.type.name)} ${pname}`);
 			if (param.type.name === "uint64") {
-				// A `uint64` extern param is a raw address (the whole point of
+				// A `uint64` foreign param is a raw address (the whole point of
 				// the memory externs): cast through size_t so the libc
 				// pointer-typed parameter accepts it without a diagnostic.
 				arg_texts.push(`(void*)(size_t)${pname}`);
@@ -83,7 +83,7 @@ export default function build_extern(
 		status.code += `char* _r = ${symbol}(${call_args});\n`;
 		status.code += `return (nomen_string){ _r, (long)strlen(_r) };\n`;
 	} else if (returns_address) {
-		// A `uint64` extern return is a raw address (malloc/calloc/realloc):
+		// A `uint64` foreign return is a raw address (malloc/calloc/realloc):
 		// re-interpret the symbol's pointer result as an integer.
 		status.code += `return (unsigned long long)(size_t)${symbol}(${call_args});\n`;
 	} else if (node.return_type.name) {

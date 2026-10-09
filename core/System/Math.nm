@@ -28,5 +28,5 @@ pub struct Math {
 	}
 
 	// libm natural logarithm — extern.
-	extern func log = (float x, out float)
+	foreign func log = (float x, out float)
 }

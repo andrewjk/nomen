@@ -630,7 +630,7 @@ function emit_owning_standalone_struct(elem: StructNode, func_name: string, stat
 		// displaced old value is orphaned — free it. Every writer of a slot
 		// text is wrapper-tracked now (the ctor seed strdup, a previous
 		// store's strdup, and set_text-style unsafe writes go through
-		// extern_malloc → the audit wrapper in audit builds), so the free is
+		// foreign_malloc → the audit wrapper in audit builds), so the free is
 		// always valid; pre-B1 slots could hold raw rodata borrows, which is
 		// why the old pointer was left alone.
 		for (const [i, { offset: foff }] of string_fields.entries()) {

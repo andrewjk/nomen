@@ -301,7 +301,7 @@ Console.write("\\{first()}")
 		expect(compile_main(input)).toEqual([]);
 	});
 
-	test("extern function declaration", () => {
+	test("foreign function declaration", () => {
 		// The SPEC example is library code (externs are library-only); from a
 		// user module the wrapped function is callable as usual.
 		const input = `

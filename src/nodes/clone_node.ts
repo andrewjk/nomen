@@ -473,14 +473,14 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.type_params = n.type_params.slice();
 			c.is_generic = n.is_generic;
 			c.is_library = n.is_library;
-			c.must_use = n.must_use;
+			c.checked = n.checked;
 			c.allocations = n.allocations?.map(clone_node);
 			return c;
 		}
 		case "bitset": {
 			const n = node as BitsetNode;
 			const c = new BitsetNode(n.start, n.visibility, n.name, n.cases.slice());
-			c.must_use = n.must_use;
+			c.checked = n.checked;
 			c.allocations = n.allocations?.map(clone_node);
 			return c;
 		}

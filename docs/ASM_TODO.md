@@ -53,7 +53,7 @@ landed; PLAN_7's pidigits target is met-or-structurally-accounted
   work.** The shape: replace the blanket drop with a ROOT-SET drop — a call
   invalidates entries whose root segment is the receiver's root or the root
   of a `ref`/`var`/`mv` argument (by-value struct args can't reach the
-  caller's buffers; extern calls stay fully opaque). The core change is
+  caller's buffers; foreign calls stay fully opaque). The core change is
   small (~30–50 lines in the two call builders); the risk is the soundness
   surface: (1) the ownership/borrow rules must guarantee a cached
   one-level-field entry can't alias a surviving entry's slab (ref-param
@@ -75,7 +75,7 @@ landed; PLAN_7's pidigits target is met-or-structurally-accounted
 ## Parked / closed-unless (already recorded in FOLLOWUP.md / ASM_PLAN_7)
 
 - **Function-scoped write-only-slot elimination** — closed: "never-loaded"
-  slots have invisible consumers (extern adapters and helper frame
+  slots have invisible consumers (foreign adapters and helper frame
   conventions read caller frames at fixed low offsets — the
   `Console_write` parks receipt, ASM_PLAN_7 addendum 5). Reopen only with
   a convention registry.

@@ -21,26 +21,26 @@ import type CheckStatus from "./CheckStatus.ts";
 import { synthesize_auto_derived_methods } from "./utils/auto_derive.ts";
 import { extract_length_equalities_at_registration } from "./utils/flow_bounds.ts";
 import materialize_type from "./utils/materialize_type.ts";
-import { register_extern_for_ownership } from "./utils/ownership.ts";
+import { register_foreign_for_ownership } from "./utils/ownership.ts";
 import { is_owning_struct_type_requiring_move } from "./utils/ownership.ts";
 import type_name from "./utils/type_name.ts";
 
 export default function check_block_node(node: BlockNode, status: CheckStatus) {
 	gather_structs(node, status);
 
-	// Pre-register root-level `extern func` declarations so ANY earlier code
+	// Pre-register root-level `foreign func` declarations so ANY earlier code
 	// (user structs checked before the appended library) can resolve calls to
-	// them. The extern adapter label (`extern_<name>`) and the ownership
-	// classifier (a `#destroy` that calls an extern releases a resource) both
+	// them. The foreign adapter label (`foreign_<name>`) and the ownership
+	// classifier (a `#destroy` that calls an foreign releases a resource) both
 	// depend on the call's resolved function being findable regardless of
 	// statement order — struct TYPES get the same treatment via
-	// gather_structs. check_function_node still checks each extern in
+	// gather_structs. check_function_node still checks each foreign in
 	// statement order; the duplicate registration is harmless (findLast).
 	if (node.node_type === "root") {
 		for (const child of node.statements) {
-			if (child.node_type === "func" && (child as FunctionNode).is_extern) {
+			if (child.node_type === "func" && (child as FunctionNode).is_foreign) {
 				status.functions.push(child as FunctionNode);
-				register_extern_for_ownership(child as FunctionNode);
+				register_foreign_for_ownership(child as FunctionNode);
 			}
 		}
 	}
@@ -81,7 +81,7 @@ export default function check_block_node(node: BlockNode, status: CheckStatus) {
 	status.stack.push(node);
 	for (let child of node.statements) {
 		check_node(child, status);
-		check_must_use_enum_discard(child, status);
+		check_checked_enum_discard(child, status);
 	}
 	status.stack.pop();
 	status.scope_depth--;
@@ -90,15 +90,15 @@ export default function check_block_node(node: BlockNode, status: CheckStatus) {
 }
 
 /**
- * A `must_use` enum or bitset's values may not be silently discarded: a
+ * A `checked` enum or bitset's values may not be silently discarded: a
  * statement-position call (`f.close()`, `File.write_all(...)`) whose result
- * type is a must_use type is a compile error. Bind the value
+ * type is a checked type is a compile error. Bind the value
  * (`var _ = f.close()`) or match on it — ignoring is fine, it just has to be
  * deliberate. Runs after `check_node` so the call's result `type` is
  * resolved. Declarations, assignments, returns and match scrutinees are all
  * uses and never reach this.
  */
-function check_must_use_enum_discard(child: BaseNode, status: CheckStatus) {
+function check_checked_enum_discard(child: BaseNode, status: CheckStatus) {
 	// Statement-position calls arrive in three shapes: a bare `f(...)` is a
 	// func_call; `a.b(...)` and `File.delete(...)` are an access node wrapping
 	// the call (the "(" tail is folded into parse_access). A `let`-prefixed
@@ -115,24 +115,24 @@ function check_must_use_enum_discard(child: BaseNode, status: CheckStatus) {
 	if (!call) return;
 	const type = (call as AccessFunctionCallNode | FunctionCallNode).type;
 	if (!type?.name) return;
-	const must_use_enum = status.enums.find((e) => e.must_use && e.name === type.name);
-	const must_use_bitset = must_use_enum
+	const checked_enum = status.enums.find((e) => e.checked && e.name === type.name);
+	const checked_bitset = checked_enum
 		? undefined
-		: status.bitsets.find((b) => b.must_use && b.name === type.name);
-	if (!must_use_enum && !must_use_bitset) return;
+		: status.bitsets.find((b) => b.checked && b.name === type.name);
+	if (!checked_enum && !checked_bitset) return;
 	add_error(
 		status,
-		`Value of must_use ${must_use_enum ? "enum" : "bitset"} ${must_use_type_display_name(must_use_enum ?? must_use_bitset!, type)} is discarded; bind it (e.g. \`var _ = …\`) or match on it`,
+		`Value of checked ${checked_enum ? "enum" : "bitset"} ${checked_type_display_name(checked_enum ?? checked_bitset!, type)} is discarded; bind it (e.g. \`var _ = …\`) or match on it`,
 		child.start,
 	);
 }
 
 /**
- * Render a must_use enum/bitset result type for the discard error message,
+ * Render a checked enum/bitset result type for the discard error message,
  * preferring the generic template's spelling (`Result<int, string>`) over the
  * monomorphized name (`Result_int_string`). Bitsets are never generic.
  */
-function must_use_type_display_name(en: EnumNode | BitsetNode, type: Type): string {
+function checked_type_display_name(en: EnumNode | BitsetNode, type: Type): string {
 	if (en.node_type === "enum") {
 		const e = en as EnumNode;
 		if (e.template_name && e.template_args?.length) {
@@ -167,7 +167,7 @@ function must_use_type_display_name(en: EnumNode | BitsetNode, type: Type): stri
  *
  * These are the same declarations the build pass either inlines at every use
  * site (non-primitives; see `top_level_consts` in `BuildStatus`) or
- * forward-declares as `extern` file-scope globals (primitives; see
+ * forward-declares as `foreign` file-scope globals (primitives; see
  * `build_block_node`). Without this pre-registration they would be
  * unreachable from `main`, which is compiled before the library source that
  * declares them — surfacing as "Unknown value: NAME". The full entry (borrow

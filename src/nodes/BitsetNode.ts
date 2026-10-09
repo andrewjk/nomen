@@ -7,12 +7,12 @@ export default class BitsetNode extends BaseNode {
 	/** True when this bitset is defined in the appended System library source. */
 	is_library?: boolean;
 	/**
-	 * True when declared with the `must_use` modifier (`pub must_use bitset Flags`).
-	 * Mirrors EnumNode.must_use: a statement-position call whose result type is
-	 * a must_use bitset is a compile error. Callers must bind the value (e.g.
+	 * True when declared with the `checked` modifier (`pub checked bitset Flags`).
+	 * Mirrors EnumNode.checked: a statement-position call whose result type is
+	 * a checked bitset is a compile error. Callers must bind the value (e.g.
 	 * `var _ = f.flags()`) or use it.
 	 */
-	must_use?: boolean;
+	checked?: boolean;
 	/**
 	 * The source-level name when `name` was rewritten to a scope-unique
 	 * emission label (see `assign_type_label` in check_block_node). Undefined

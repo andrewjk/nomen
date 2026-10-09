@@ -585,7 +585,7 @@ function emit_deep_copy_fields(
 				// slot's displaced old value is orphaned — free it. Every
 				// writer of a slot text is heap-tracked now (the ctor seed
 				// strdup, a previous store's strdup, and unsafe writes through
-				// extern_malloc), so the free is always valid; pre-B1 slots
+				// foreign_malloc), so the free is always valid; pre-B1 slots
 				// could hold raw rodata borrows, which is why the old pointer
 				// was left alone. Mirrors the aarch64 store_T's displaced-old
 				// reclaim. The free follows the audit-routing convention (the

@@ -75,7 +75,7 @@ inexpressible.
 | `Init.nm`                                                                                                             | parse_int                                                                         | atoi                                                                                                                                                                                                                           |
 | `int.nm`                                                                                                              | parse                                                                             | atoi (whitespace/sign/nondigit semantics; not worth re-deriving in Nomen)                                                                                                                                                      |
 | all numeric types (`int8`–`int64`, `uint8`–`uint64`, `int`, `uint`, `float`, `float32`, `float64`, `ufloat*`, `char`) | to_string                                                                         | snprintf                                                                                                                                                                                                                       |
-| `Math.nm`                                                                                                             | sqrt (inline raw fsqrt splice — see below), log (extern)                          | libm (aarch64: `fsqrt` is single-instruction)                                                                                                                                                                                  |
+| `Math.nm`                                                                                                             | sqrt (inline raw fsqrt splice — see below), log (foreign)                         | libm (aarch64: `fsqrt` is single-instruction)                                                                                                                                                                                  |
 | `String.nm`                                                                                                           | to_string (strdup), #op_add (malloc + two memcpy), #op_mul (malloc + memcpy loop) | Needs malloc/memcpy; note the asm versions exploit the tracked length while the C versions strlen — replacing the C with length-based Nomen would require raw memcpy access anyway                                             |
 | `String.nm`                                                                                                           | #op_eq                                                                            | C uses libc `strcmp`/asm uses `memcmp` with the length pre-check — both vectorized. A Nomen byte-loop is 1 byte/iter; LLVM's loop-idiom → `bcmp` transform is not guaranteed once the length guard is in front. Keep (see C.5) |
 
@@ -131,12 +131,12 @@ inexpressible.
 The remaining raw blocks split into two groups, and each group needs its own
 language feature. They are complementary, not alternatives.
 
-### 1. C extern mappings (implemented — retires the libc/OS wrappers)
+### 1. C foreign mappings (implemented — retires the libc/OS wrappers)
 
 A declaration-only function whose body is a C symbol call:
 
 ```
-extern func atoi = (string s, out int)
+foreign func atoi = (string s, out int)
 ```
 
 - **Status: implemented.** First conversions: `Init.parse_int` (→ `atoi`),
@@ -145,7 +145,7 @@ extern func atoi = (string s, out int)
   `src/build_c/build_extern.ts` and `src/build_aarch64/build_extern.ts`.
   Method externs emit the adapter under the normal `Struct_method` label
   (the symbol stays bare) — landed for `Math.log`, the first method
-  extern; free externs keep the `extern_` prefix as before.
+  foreign; free externs keep the `extern_` prefix as before.
 - **Semantics:** string params marshal to the thin `char*` (`.ptr`); a
   string return is re-wrapped as an owned fat string via `strlen`. Free
   externs emit under an `extern_<name>` label so the adapter can never
@@ -154,13 +154,13 @@ extern func atoi = (string s, out int)
   (library-only, same trust line as core constraints).
 - **Not yet supported:** variadic externs (blocks the `snprintf`
   to_strings), float32/64 argument lists beyond the sole-param shape, and
-  symbol renaming (`extern func open = ("fopen" ...)`).
+  symbol renaming (`foreign func open = ("fopen" ...)`).
 - **`Math.sqrt` stays an inline raw body for speed.** The single-`fsqrt`
   splice keeps `advance`'s inner loop call-free so it holds the SLP
   vector shapes; a real `bl` scalarizes the loop. (Correctness no longer
   depends on it: field-pair SLP now only forms in call-free scopes, so a
   scalar loop can no longer zero a live pair lane — see the
-  `slp_pair_nested_call` regression test. An extern `sqrt` is correct,
+  `slp_pair_nested_call` regression test. An foreign `sqrt` is correct,
   just slower.)
 - **Retires when fully rolled out:** Console, Time, Mutex, Task,
   Stream/*, the `snprintf` to_strings. This is the larger half of the
@@ -244,13 +244,13 @@ ptr char`, struct-pointer→`uint64`, and the generic constants `T_SIZE` /
 - **Compiler fixes the rewrites surfaced** (each would miscompile
   independently of unsafe):
   - Monomorphized clones copy plain free-function calls UNRESOLVED (the
-    generic body is checked after the clone is taken), so an `extern`
+    generic body is checked after the clone is taken), so an `foreign`
     callee emitted its bare symbol instead of the `extern_<name>` adapter.
-    Fixed with `resolve_free_func_calls` in the clone pipeline and extern
+    Fixed with `resolve_free_func_calls` in the clone pipeline and foreign
     pre-registration at root gather.
   - `ownership.ts` classified "mv" by the presence of a raw block in
     `#destroy`; Nomen destroys that call the memory externs now count too
-    (`contains_release`), with order-independent extern resolution.
+    (`contains_release`), with order-independent foreign resolution.
   - The aarch64 string-slot `set` specialization freed the displaced
     pointer and then read the value pair from caller-saved registers the
     free had clobbered (pre-existing, exposed by the new tests); fixed by

@@ -6,10 +6,10 @@ import StructNode from "../nodes/StructNode.ts";
 import { emit_asm } from "./utils/code_buffer.ts";
 
 /**
- * Emit an `extern func` for the aarch64 backend: a fixed-shape adapter that
+ * Emit an `foreign func` for the aarch64 backend: a fixed-shape adapter that
  * forwards the Nomen call ABI to the C symbol.
  *
- * Free externs keep the parse-assigned `extern_<name>` label; method
+ * Free externs keep the parse-assigned `foreign_<name>` label; method
  * externs take the normal `Struct_method` label (passed via `struct_node`)
  * — emitting the adapter under the bare C name would interpose the libc
  * symbol it wraps. The wrapped symbol itself is always the bare Nomen name.
@@ -27,7 +27,7 @@ import { emit_asm } from "./utils/code_buffer.ts";
  * sqrt/log shape): float32/64 argument lists would need s/d register
  * assignment per AAPCS64.
  */
-export default function build_extern(
+export default function build_foreign(
 	node: FunctionNode,
 	status: BuildStatus,
 	struct_node?: StructNode,
@@ -112,7 +112,7 @@ export default function build_extern(
 			node.return_type.name.startsWith("float") ||
 			node.return_type.name.startsWith("ufloat")
 		) {
-			// A float-returning extern returns d0 — mv the bits back to x0.
+			// A float-returning foreign returns d0 — mv the bits back to x0.
 			emit_asm(status, `fmov x0, d0\n`);
 		}
 	}

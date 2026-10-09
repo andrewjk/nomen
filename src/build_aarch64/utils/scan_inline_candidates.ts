@@ -24,7 +24,7 @@ export function set_auto_method_inline_enabled(enabled: boolean): void {
 /** Call-bearing auto inlining (the ASM_PLAN_7 follow-up), default ON:
  *  admits auto candidates whose bodies CALL, when every call splices
  *  through (the callee is itself inline-spliceable under the same rules,
- *  transitively, depth-capped) or is an `extern` (a `bl` either way —
+ *  transitively, depth-capped) or is an `foreign` (a `bl` either way —
  *  the grow_int receipt: `ensure`→`grow_int` leaves only realloc/memset
  *  bls on the cold path, so the hot path's call disappears entirely).
  *  The original +52–62% regression receipt for call-bearing splices was
@@ -125,7 +125,7 @@ export function is_auto_inline_method(func: FunctionNode, depth = 0): boolean {
 	// (the original tranche-7 shape). A body that calls admits only under
 	// the call-bearing cost model: every call splices through (the callee
 	// is itself admitted at the next depth, or a user-`inline` method the
-	// splice path already handles) or is an `extern` (a `bl` either way).
+	// splice path already handles) or is an `foreign` (a `bl` either way).
 	// The ensure→grow_int chain then expands with ZERO bls on the hot
 	// path — grow_int's `if self.cap >= needed return` fast path inlines
 	// into the caller's loop and only realloc/memset stay, on the cold
@@ -157,7 +157,7 @@ function body_calls(node: BaseNode | BaseNode[] | null | undefined): boolean {
 
 /**
  * The call-bearing cost model: every call in the subtree must either be
- * an `extern` (a `bl` whether the host splices or not — the expansion
+ * an `foreign` (a `bl` whether the host splices or not — the expansion
  * changes nothing about the call count) or splice through — the callee is
  * a user-`inline` method (the splice path already handles call-bearing
  * user bodies) or itself admitted as an auto candidate at `depth + 1`.
@@ -186,7 +186,7 @@ function body_calls_splice_through(
 	if (nt === "access_func" || nt === "func_call") {
 		const callee = any_node.resolved_function as FunctionNode | undefined;
 		if (!callee) return false;
-		if (callee.is_extern) return true;
+		if (callee.is_foreign) return true;
 		if (callee.is_inline) return true;
 		return is_auto_inline_method(callee, depth + 1);
 	}

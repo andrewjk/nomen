@@ -151,7 +151,7 @@ function extract_type_names(source: string): string[] {
 	for (let line of source.split("\n")) {
 		const trimmed = line.trim();
 		const m = trimmed.match(
-			/^(?:pub|internal) (?:must_use )?(?:mv )?(?:struct|class|trait|enum|bitset) (\w+)/,
+			/^(?:pub|internal) (?:checked )?(?:mv )?(?:struct|class|trait|enum|bitset) (\w+)/,
 		);
 		if (m) names.push(m[1]);
 	}
@@ -165,9 +165,9 @@ function extract_type_names(source: string): string[] {
 function extract_free_func_names(source: string): string[] {
 	const names: string[] = [];
 	for (let line of source.split("\n")) {
-		// `extern func` declarations are indexed too: a body token naming the
+		// `foreign func` declarations are indexed too: a body token naming the
 		// wrapped symbol (e.g. `memcpy`) must pull the declaring file in.
-		const m = line.match(/^(?:(?:pub|internal)\s+|extern\s+|pub\s+extern\s+)func\s+(\w+)/);
+		const m = line.match(/^(?:(?:pub|internal)\s+|foreign\s+|pub\s+foreign\s+)func\s+(\w+)/);
 		if (m) names.push(m[1]);
 	}
 	return names;

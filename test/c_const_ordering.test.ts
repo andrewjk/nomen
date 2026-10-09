@@ -8,7 +8,7 @@ import { parse_raw } from "./parse_with_imports";
  * C output ordering: top-level (program-scope AND library-scope) global
  * definitions must precede every function definition that reads them. C
  * requires the definition to be visible before the use; when the definitions
- * trailed the functions, uses relied on the `extern` header declarations (or
+ * trailed the functions, uses relied on the `foreign` header declarations (or
  * on compiler leniency — the same bytes have been observed flipping between
  * clean compile and hard `use of undeclared identifier` errors across runs of
  * the same clang). The aarch64 backend already gets this ordering via its

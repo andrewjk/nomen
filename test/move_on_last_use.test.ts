@@ -27,10 +27,14 @@ function build_main(input: string, arch: "aarch64" | "c"): string {
 	if (arch === "c") {
 		const start = result.code.indexOf("int main()");
 		// The section ends at the next function comment — or at the first
-		// memory-extern adapter (core unsafe bodies emit extern_free/malloc
+		// memory-foreign adapter (core unsafe bodies emit foreign_free/malloc
 		// calls and their adapters, which would otherwise pollute counts).
 		let end = result.code.indexOf("// Func", start + 8);
-		for (const marker of ["nomen_string extern_", "void extern_", "unsigned long long extern_"]) {
+		for (const marker of [
+			"nomen_string foreign_",
+			"void foreign_",
+			"unsigned long long foreign_",
+		]) {
 			const m = result.code.indexOf(marker, start + 8);
 			if (m !== -1 && (end === -1 || m < end)) end = m;
 		}
@@ -79,7 +83,7 @@ function count(code: string, needle: string): number {
 
 /**
  * Count occurrences inside MAIN's body only. Core unsafe bodies now emit
- * `extern_free(...)` calls (and the extern adapter itself contains
+ * `foreign_free(...)` calls (and the foreign adapter itself contains
  * `free(`), so whole-TU free counts include legitimate library noise the
  * mv-on-last-use pins were never about.
  */
@@ -88,7 +92,7 @@ function count_in_main(code: string, needle: string): number {
 	if (start === -1) return count(code, needle);
 	const rest = code.slice(start);
 	const end = rest.indexOf("\n}\n");
-	const body = (end === -1 ? rest : rest.slice(0, end)).split("extern_free(").join("externFREE(");
+	const body = (end === -1 ? rest : rest.slice(0, end)).split("foreign_free(").join("externFREE(");
 	return body.split(needle).length - 1;
 }
 

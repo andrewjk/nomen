@@ -565,7 +565,7 @@ shipped; what remains, in rough value order:
   that never polls its flag hangs its nursery's join. The full fix — push a
   teardown frame onto the parked stack and let `#destroy` unwinding run —
   needs forced stack unwinding of suspended frames (see FOLLOWUP.md).
-- **FFI reentry.** An `extern` C callback that calls back into Nomen gets
+- **FFI reentry.** An `foreign` C callback that calls back into Nomen gets
   no fiber context (Go's cgo problem).
 - **Windows.** x86-64 `switch_context` plus an IOCP-shaped
   `wait_for_io` (or a wepoll-style shim).

@@ -33,14 +33,14 @@ export default class FunctionNode extends BaseNode implements BlockNode, Returni
 	checked?: boolean;
 	is_inline?: boolean;
 	/**
-	 * True for an `extern func` declaration: a body-less function whose body
+	 * True for an `foreign func` declaration: a body-less function whose body
 	 * is a C-library symbol call. The backends emit a marshalling adapter
 	 * under the function's emission label (free externs are stamped
-	 * `extern_<name>` so the adapter can never collide with the C symbol it
+	 * `foreign_<name>` so the adapter can never collide with the C symbol it
 	 * wraps); the symbol itself defaults to the declared name. Library-only:
-	 * the checker rejects `extern` outside the System library.
+	 * the checker rejects `foreign` outside the System library.
 	 */
-	is_extern?: boolean;
+	is_foreign?: boolean;
 	/**
 	 * True for an `unsafe func`: the whole body is an unsafe context, so
 	 * `ptr T` values, `p[i]` indexing and integer↔pointer casts are legal

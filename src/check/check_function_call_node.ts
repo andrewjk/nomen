@@ -55,7 +55,7 @@ import validate_spawn_args_sendable from "./utils/validate_spawn_args_sendable.t
  * `func_call` name must prefer the non-method match: a method named like a
  * free function would otherwise steal the call and mismatch on its `self` +
  * receiver params (e.g. an `Arena.free(ref self, ArenaRef<T>)` method vs the
- * extern `free(uint64)` that `Buffer`'s `#destroy` calls). Methods are
+ * foreign `free(uint64)` that `Buffer`'s `#destroy` calls). Methods are
  * identified by their leading `self` parameter; the fallback keeps the old
  * resolution for a name that only exists as a method (a call that is already
  * an error either way).
@@ -710,7 +710,7 @@ export function monomorphize(
 		restamp_index_nodes(retype_roots, mono_name);
 		resolve_mono_equality_ops(cloned.statements, status);
 		// Re-resolve plain free-function calls (see resolve_free_func_calls —
-		// extern callees must emit through their `extern_<name>` adapter).
+		// foreign callees must emit through their `foreign_<name>` adapter).
 		resolve_free_func_calls(retype_roots, status);
 		// Re-derive check-phase annotations on AccessFunctionCallNodes.
 		// The mono body is cloned from the unchecked generic body and never
@@ -1397,7 +1397,7 @@ function rederive_access_func_annotations(nodes: BaseNode[], status: CheckStatus
  * made (user code triggers monomorphization before the library struct's own
  * statement is reached), so the cloner copies an unresolved call — and the
  * build then emits the bare name instead of the callee's emission label
- * (fatal for `extern` callees, whose adapter lives under `extern_<name>`).
+ * (fatal for `foreign` callees, whose adapter lives under `foreign_<name>`).
  * Method calls don't need this (rederive_access_func_annotations re-derives
  * them from the receiver type); only bare calls do.
  */

@@ -217,7 +217,7 @@ export default function build(
 		// Generate _string_interpolate_N helpers for aarch64. These are shared
 		// runtime: definitions live in the system TU (covering every arity so a
 		// user TU's interpolation always resolves at link), and the user TU
-		// emits none (its `bl _string_interpolate_N` is an extern reference).
+		// emits none (its `bl _string_interpolate_N` is an foreign reference).
 		const emit_mode = status.emit_mode ?? "all";
 		const interpolate_lengths: number[] =
 			emit_mode === "user"

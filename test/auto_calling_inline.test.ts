@@ -14,9 +14,9 @@ import { parse_raw } from "./parse_with_imports";
  * Call-bearing auto inlining (the ASM_PLAN_7 follow-up). An auto
  * candidate whose body CALLS admits when every call splices through
  * (the callee is itself admitted at the next depth, or user-`inline`)
- * or is an `extern` — the ensure→grow_int chain: the hot path's `bl`
+ * or is an `foreign` — the ensure→grow_int chain: the hot path's `bl`
  * disappears entirely (grow's `cap >= needed` fast path inlines into
- * the caller), and only cold-path extern bls remain. The original
+ * the caller), and only cold-path foreign bls remain. The original
  * +52–62% regression for this shape was the leaked `nir_site_allocs`
  * clear in build_inline_method stripping the host function's loop
  * planning, not an intrinsic splice cost. The tests here pin the ON
@@ -114,7 +114,7 @@ test("the defaults are ON", () => {
 });
 
 test("a call to a non-spliceable method keeps the host on the bl path", () => {
-	// int.to_string() is neither an extern nor a spliceable method
+	// int.to_string() is neither an foreign nor a spliceable method
 	// (scalar receiver — the at_or receipt class), so the candidate
 	// refuses and the call site keeps the real call.
 	const src = `

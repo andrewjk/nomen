@@ -18,7 +18,7 @@ import TraitNode from "../nodes/TraitNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_auto_free from "./build_auto_free.ts";
-import build_extern from "./build_extern.ts";
+import build_foreign from "./build_foreign.ts";
 import build_node from "./build_node.ts";
 import { is_owned_heap_temp } from "./build_operation_node.ts";
 import build_parameter_node from "./build_parameter_node.ts";
@@ -731,8 +731,8 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		if (func.name === "#init" && skip_init) {
 			continue;
 		}
-		if (func.is_extern) {
-			build_extern(func, status, node);
+		if (func.is_foreign) {
+			build_foreign(func, status, node);
 			continue;
 		}
 

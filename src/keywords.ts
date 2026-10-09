@@ -42,7 +42,7 @@ export const KEYWORDS = new Set([
 	"let",
 	"as",
 	"swap",
-	"extern",
+	"foreign",
 	"unsafe",
 ]);
 

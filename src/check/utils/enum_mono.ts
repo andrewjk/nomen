@@ -97,11 +97,11 @@ export function monomorphize_enum(
 	mono.is_owning =
 		generic_enum.is_owning ||
 		cases.some((c) => c.params.some((p) => type_owns_heap(p.type, status)));
-	// A must_use generic enum's instantiations stay must_use — the discard check
+	// A checked generic enum's instantiations stay checked — the discard check
 	// looks the concrete type up by its mono name. The template name/args are
 	// kept so diagnostics can render `Result<int, string>` instead of the
 	// monomorphized spelling.
-	mono.must_use = generic_enum.must_use;
+	mono.checked = generic_enum.checked;
 	mono.template_name = generic_enum.name;
 	mono.template_args = flat_args.map(clone_type);
 	// NOTE: deliberately NOT inheriting is_library. A mono enum is

@@ -21,7 +21,7 @@ import RootNode from "../nodes/RootNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
-import build_extern from "./build_extern.ts";
+import build_foreign from "./build_foreign.ts";
 import build_function_node from "./build_function_node.ts";
 import build_node from "./build_node.ts";
 import { check_c_fallback } from "./build_raw_node.ts";
@@ -1640,8 +1640,8 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		// standalone body to exist.
 		if (func.is_inline && !owns_specialized_primitive_for(node, func.name, status)) continue;
 		if (check_c_fallback(func, node.name, status)) continue;
-		if (func.is_extern) {
-			build_extern(func, status, node);
+		if (func.is_foreign) {
+			build_foreign(func, status, node);
 			continue;
 		}
 

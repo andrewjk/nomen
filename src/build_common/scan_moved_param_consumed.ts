@@ -153,7 +153,7 @@ function subtree_references(root: unknown, name: string): boolean {
  * Whether calling `<receiver>.<method_name>()` may retain the receiver:
  * true unless the method resolves (on the receiver's struct) to Nomen bodies
  * that provably never let `self` escape. Unresolvable receivers (traits,
- * unknown structs), missing methods, and raw/extern bodies are conservative.
+ * unknown structs), missing methods, and raw/foreign bodies are conservative.
  */
 function receiver_escapes_through(
 	method_name: string,

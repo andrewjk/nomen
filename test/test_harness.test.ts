@@ -318,7 +318,7 @@ test("run_test_file links aarch64 with System::Stream::File and honors the CWD c
 	//    `aarch64_use_c` companions into the object — the generated main
 	//    references the Tcp_* thunks even though the test never calls Tcp,
 	//    and the link must provide the companion C (the sibling-module
-	//    extern leak used to break the test link line).
+	//    foreign leak used to break the test link line).
 	// 2. CWD: the fixture reads `fileio_corpus.txt` RELATIVELY; the binary
 	//    runs in the --in root, so the relative path resolves even though
 	//    this test process's CWD is the repo root and the fixture lives in

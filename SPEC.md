@@ -19,7 +19,7 @@ The following words are reserved by the language and cannot be used as
 variable, parameter, field, type, or enum case names:
 
 `as` `async` `bitset` `break` `case` `class` `const` `continue` `else`
-`enum` `extern` `extend` `for` `func` `if` `import` `internal` `let`
+`enum` `foreign` `extend` `for` `func` `if` `import` `internal` `let`
 `match` `mv` `of` `out` `panic` `private` `pub` `raw` `readonly` `ref`
 `return` `struct` `switch` `swap` `todo` `trait` `unsafe` `var` `view`
 `while`
@@ -982,10 +982,10 @@ var Option<int> found = Option.some(4)
 found = .none
 ```
 
-The core library ships two generic enums. `Result` is declared `must_use`:
+The core library ships two generic enums. `Result` is declared `checked`:
 
 ```
-pub must_use enum Result<T, E> {
+pub checked enum Result<T, E> {
     case ok(T value)
     case error(E error)
 }
@@ -996,14 +996,14 @@ pub enum Option<T> {
 }
 ```
 
-Because `Result` is must_use, a fallible call's value may not be silently discarded — see [Strict Enums](#must_use-enums).
+Because `Result` is checked, a fallible call's value may not be silently discarded — see [Strict Enums](#checked-enums).
 
-### must_use Enums
+### checked Enums
 
-An enum declared with the `must_use` modifier may not have its values silently discarded: a statement-position call whose result is a must_use enum value is a compile error. Bind the value or match on it — ignoring is fine, it just has to be deliberate (`_` discards explicitly):
+An enum declared with the `checked` modifier may not have its values silently discarded: a statement-position call whose result is a checked enum value is a compile error. Bind the value or match on it — ignoring is fine, it just has to be deliberate (`_` discards explicitly):
 
 ```
-pub must_use enum Attempt {
+pub checked enum Attempt {
     case ok
     case error(int code)
 }
@@ -1023,10 +1023,10 @@ match try_it() {
 A bare statement call discards the value and is rejected:
 
 ```
-try_it()  // error: value of must_use enum Attempt is discarded
+try_it()  // error: value of checked enum Attempt is discarded
 ```
 
-`must_use` composes with visibility and generics (`pub must_use enum Result<T, E>`), and carries across monomorphized instantiations (`Result<int, string>` stays must_use).
+`checked` composes with visibility and generics (`pub checked enum Result<T, E>`), and carries across monomorphized instantiations (`Result<int, string>` stays checked).
 
 ## Bitsets
 
@@ -1042,7 +1042,7 @@ pub bitset Permissions {
 var perms = Permissions.read | Permissions.write
 ```
 
-Like enums, bitsets can be declared `must_use` (`pub must_use bitset Flags`), with the same discard rules — see [Strict Enums](#must_use-enums).
+Like enums, bitsets can be declared `checked` (`pub checked bitset Flags`), with the same discard rules — see [Strict Enums](#checked-enums).
 
 Bitset values can be combined, checked, and toggled:
 
@@ -1295,9 +1295,9 @@ Nullability applies at every func-type position: parameters (including
 nested ones), `out` return slots (`out func? (...)`), locals, and
 struct fields (`var func? (int) close_node = null`).
 
-#### Extern Functions
+#### Foreign Functions
 
-A body-less `extern func` declaration maps a Nomen function onto a C
+A body-less `foreign func` declaration maps a Nomen function onto a C
 library symbol named by the declared function name. Parameters and return
 types must be scalars or `string`. A `string` parameter marshals to the
 thin C `char*` (the buffer is NUL-terminated), and a `string` return is
@@ -1306,7 +1306,7 @@ declaring one outside the System library is a compile error.
 
 ```
 // In the System library (core/System/Init.nm):
-extern func atoi = (string s, out int)
+foreign func atoi = (string s, out int)
 
 pub func parse_int = (string s, out int) {
     return atoi(s)

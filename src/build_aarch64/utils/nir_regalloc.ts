@@ -1078,7 +1078,7 @@ export function plan_nir_registers(
 	// into (dN, dN+1) with dN+1 blocked (floats never share registers, so
 	// skipping the slot index is the whole block).
 	//
-	// Call-free gate (extern-sqrt nbody receipt — see loop_promotion.ts):
+	// Call-free gate (foreign-sqrt nbody receipt — see loop_promotion.ts):
 	// a non-call-free function forces scalar emission somewhere, and a
 	// scalar dN write zeroes the partner lane. Only plan pairs when the
 	// whole function body is call-free.

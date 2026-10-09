@@ -78,7 +78,7 @@ function track_ctor_null_paths(decl: DeclarationNode, status: CheckStatus) {
 
 export default function check_declaration_node(decl: DeclarationNode, status: CheckStatus) {
 	// A bare `_` binding is the deliberate-discard convention (`var _ = f()`,
-	// notably for must_use enums). Several may appear in one scope, so give each
+	// notably for checked enums). Several may appear in one scope, so give each
 	// a unique internal name: the C backend would otherwise emit duplicate
 	// `_` locals and the aarch64 backend would key both slots under one
 	// stack_offsets entry. The `_` prefix keeps the unused-value warning

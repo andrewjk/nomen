@@ -9,7 +9,7 @@ pub mv struct Init {
 }
 
 // FFI: the C library's decimal-string parser (stdlib.h).
-extern func atoi = (string s, out int)
+foreign func atoi = (string s, out int)
 
 /**
  * Parses a decimal string into an int

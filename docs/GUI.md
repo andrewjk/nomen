@@ -1152,7 +1152,7 @@ Two compiler fixes were needed to ship the geometry types themselves (over
 and above the enum blockers above):
 
 - **`const` name collision with C `math.h` macros.** A Nomen `const int
-INFINITY = 2147483647` lowered to `extern long INFINITY;` and
+INFINITY = 2147483647` lowered to `foreign long INFINITY;` and
   `long INFINITY = …;`, which the C preprocessor expanded to
   `__builtin_huge_valf` (a macro from `<math.h>`) and rejected. The geometry
   module renamed its private sentinel to `MAX_DIM`.
@@ -1169,7 +1169,7 @@ INFINITY = 2147483647` lowered to `extern long INFINITY;` and
   it's visible to `main`, which is compiled before the library source that
   declares it.
 - **Primitive top-level `const`s were invisible to `main` at check time.** The
-  build pass already forward-declared them as `extern` file-scope globals
+  build pass already forward-declared them as `foreign` file-scope globals
   (`build_c/build_block_node`), but the checker's `gather_top_level_consts`
   deliberately skipped primitive-typed consts to avoid tripping the "Parameter
   already declared" guard when a function param shadows a module-level name.

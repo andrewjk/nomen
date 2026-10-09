@@ -267,7 +267,7 @@ export function gather_normalized_struct_returners(root: BaseNode, status: Build
 		// catches the direct `var f = g` shape; this covers lambda and spawn
 		// targets whose source names never appear as func-typed values.)
 		if (fn.address_escaped) continue;
-		// A body-less function (extern / forward declaration) has no callee
+		// A body-less function (foreign / forward declaration) has no callee
 		// side to seed the param's records — its parameter keeps the plain
 		// by-address convention, so callers must not materialize for it.
 		if (!fn.has_body) continue;

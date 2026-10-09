@@ -32,7 +32,7 @@ export default function parse_function(
 	status: ParseStatus,
 	name_override?: string,
 	is_inline?: boolean,
-	is_extern?: boolean,
+	is_foreign?: boolean,
 	is_unsafe?: boolean,
 ) {
 	const start = get_index(status);
@@ -89,14 +89,14 @@ export default function parse_function(
 			);
 		}
 	}
-	if (is_extern) {
-		func.is_extern = true;
+	if (is_foreign) {
+		func.is_foreign = true;
 		// Free externs emit under a prefixed label so the marshalling adapter
 		// can never collide with the C symbol it wraps (e.g. `atoi`). Method
 		// externs keep the `struct_method` label, which can't collide either.
-		const extern_parent = status.stack.at(-1);
-		if (extern_parent?.node_type === "root" || extern_parent?.node_type === "func") {
-			func.label_name = `extern_${name}`;
+		const foreign_parent = status.stack.at(-1);
+		if (foreign_parent?.node_type === "root" || foreign_parent?.node_type === "func") {
+			func.label_name = `foreign_${name}`;
 		}
 	}
 
@@ -143,10 +143,10 @@ export default function parse_function(
 		func.is_static = !func.params[0]?.is_self_param;
 
 		if (expect(")", status)) {
-			if (is_extern) {
-				// `extern func` — declaration only, no body. The backends emit
+			if (is_foreign) {
+				// `foreign func` — declaration only, no body. The backends emit
 				// a marshalling adapter that calls the C symbol.
-				func.is_extern = true;
+				func.is_foreign = true;
 			} else if (accept("=>", status)) {
 				if (peek_current(status) === "{") {
 					// `=>` introduces an implicit-return expression only; a

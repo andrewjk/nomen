@@ -49,7 +49,7 @@ arms. Headlines (interleaved A/B vs the pre-tranche builds):
 - **Method inlining** — user-`inline` splices, naked-inline raw bodies, and
   auto-inlining of small methods (leaf bodies, and since the frame-context
   fixes also call-bearing chains whose calls splice through or are
-  `extern` — `ensure`→`grow_int` expands with zero hot-path `bl`s).
+  `foreign` — `ensure`→`grow_int` expands with zero hot-path `bl`s).
 - **NEON auto-vectorization** — elementwise `.2d`/`.4s`/`.16b` groups over
   NIR (f64, 8-byte int, uint32, byte), shifted reads (`load(i + c)`, c ≥ 1,
   per-element event-order rule), range-fors, MIN_TRIP threshold,
@@ -80,11 +80,11 @@ merge-resistant result-tracking diamond) and binarytrees/merkletrees
 
 ## Rejected (tried, unsound or no win)
 
-| Optimization                                         | Backend | Why rejected                                                                                                                                                                                                                                                                                                       |
-| ---------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Adjacent `str xN,[addr]`/`ldr xN,[addr]` elimination | aarch64 | **Unsound.** Preserves register state but deletes the only _write_ to the slot; a later non-adjacent `ldr` of the same address (the spill/reload idiom in raw library asm, e.g. `int_to_string`) reads garbage. Needs stack-slot liveness, impossible in a text pass                                               |
-| Function-scoped write-only-slot elimination          | aarch64 | **Unsound at text level.** "Never-loaded" slots have invisible consumers: extern adapters and helper frame conventions read caller frames at fixed low offsets — deleting `Console_write`'s never-loaded parks corrupts the output (ASM_PLAN_7 addendum 5). Only the block-local store-store form (above) is sound |
-| `Buffer.data` pointer LICM                           | aarch64 | Sound when implemented, but A/B measured **no win** (L1-hit loads hidden by the OoO engine) and small regressions from per-loop bookkeeping — reverted. See IMPROVEMENTS.md "Known issues"                                                                                                                         |
+| Optimization                                         | Backend | Why rejected                                                                                                                                                                                                                                                                                                        |
+| ---------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Adjacent `str xN,[addr]`/`ldr xN,[addr]` elimination | aarch64 | **Unsound.** Preserves register state but deletes the only _write_ to the slot; a later non-adjacent `ldr` of the same address (the spill/reload idiom in raw library asm, e.g. `int_to_string`) reads garbage. Needs stack-slot liveness, impossible in a text pass                                                |
+| Function-scoped write-only-slot elimination          | aarch64 | **Unsound at text level.** "Never-loaded" slots have invisible consumers: foreign adapters and helper frame conventions read caller frames at fixed low offsets — deleting `Console_write`'s never-loaded parks corrupts the output (ASM_PLAN_7 addendum 5). Only the block-local store-store form (above) is sound |
+| `Buffer.data` pointer LICM                           | aarch64 | Sound when implemented, but A/B measured **no win** (L1-hit loads hidden by the OoO engine) and small regressions from per-loop bookkeeping — reverted. See IMPROVEMENTS.md "Known issues"                                                                                                                          |
 
 ## Not implemented (future work)
 

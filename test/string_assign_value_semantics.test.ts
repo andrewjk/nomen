@@ -26,10 +26,14 @@ function build_main(input: string, arch: "aarch64" | "c"): string {
 	if (arch === "c") {
 		const start = result.code.indexOf("int main()");
 		// The section ends at the next function comment — or at the first
-		// memory-extern adapter (core unsafe bodies emit extern_free/malloc
+		// memory-foreign adapter (core unsafe bodies emit foreign_free/malloc
 		// calls and their adapters, which would otherwise pollute counts).
 		let end = result.code.indexOf("// Func", start + 8);
-		for (const marker of ["nomen_string extern_", "void extern_", "unsigned long long extern_"]) {
+		for (const marker of [
+			"nomen_string foreign_",
+			"void foreign_",
+			"unsigned long long foreign_",
+		]) {
 			const m = result.code.indexOf(marker, start + 8);
 			if (m !== -1 && (end === -1 || m < end)) end = m;
 		}

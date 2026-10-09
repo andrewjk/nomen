@@ -426,7 +426,7 @@ export function promote_loop_locals(
 	// loop's own promotion). Kill switch off → no hints → allocation
 	// identical to the scalar path.
 	//
-	// Call-free gate (extern-sqrt nbody receipt): a scalar write to dN
+	// Call-free gate (foreign-sqrt nbody receipt): a scalar write to dN
 	// zeroes vN's high lane, so a pair is only sound when every in-loop
 	// write to its members fuses into a lane-preserving .2d op. The
 	// shape-level write gate cannot guarantee emission fusion — a nested

@@ -87,17 +87,17 @@ export default function parse_visibility(
 			parse_enum(visibility, status);
 			break;
 		}
-		case "must_use": {
-			// `<visibility> must_use enum/bitset …` — the parse_* functions
-			// consume the visibility, then the `must_use` modifier, then the
-			// kind keyword. Disambiguate on the token after `must_use`.
+		case "checked": {
+			// `<visibility> checked enum/bitset …` — the parse_* functions
+			// consume the visibility, then the `checked` modifier, then the
+			// kind keyword. Disambiguate on the token after `checked`.
 			const next2 = status.tokens[status.i + 2]?.value;
 			if (next2 === "enum") {
 				parse_enum(visibility, status);
 			} else if (next2 === "bitset") {
 				parse_bitset(visibility, status);
 			} else {
-				add_error(status, `Expected enum or bitset after must_use`, get_index(status));
+				add_error(status, `Expected enum or bitset after checked`, get_index(status));
 				consume(status);
 			}
 			break;
@@ -140,14 +140,14 @@ export default function parse_visibility(
 			}
 			break;
 		}
-		case "extern": {
+		case "foreign": {
 			consume(status);
-			// `<visibility> extern func …` — a body-less declaration whose
+			// `<visibility> foreign func …` — a body-less declaration whose
 			// body is a C-library symbol call. Library-only (checker-enforced).
 			if (peek_current(status) === "func") {
 				parse_function(visibility, status, undefined, false, true);
 			} else {
-				add_error(status, "Expected func after extern", get_index(status));
+				add_error(status, "Expected func after foreign", get_index(status));
 			}
 			break;
 		}

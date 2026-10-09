@@ -166,9 +166,9 @@ test("pair-fused binaries still produce correct output on both backends", async 
 	await build_and_check_output(PAIR_PROGRAM, "slp_pair_behavior", "4.750000\n5.750000\n", true);
 });
 
-test("a real call in a nested loop disables pairs (extern-sqrt nbody receipt)", async () => {
+test("a real call in a nested loop disables pairs (foreign-sqrt nbody receipt)", async () => {
 	const { default: build_and_check_output } = await import("./build_and_check_output");
-	// nbody with Math.sqrt swapped for Math.log: log is a real extern
+	// nbody with Math.sqrt swapped for Math.log: log is a real foreign
 	// (`bl`), so both of advance's loops go scalar. Pre-fix, the outer
 	// (vx,vy) lane pair still formed while the inner loop emitted scalar
 	// `fsub d10` updates — zeroing vy's high lane mid-flight — and

@@ -126,11 +126,11 @@ export default function parse_statement(status: ParseStatus) {
 				parse_enum(default_visibility(status), status);
 				break;
 			}
-			case "must_use": {
-				// Contextual modifier: `must_use enum/bitset …` or
-				// `must_use pub enum/bitset …`. Anything else (e.g. `must_use = 5`,
-				// `must_use.foo()`) falls through to the expression path, so
-				// `must_use` stays usable as a name.
+			case "checked": {
+				// Contextual modifier: `checked enum/bitset …` or
+				// `checked pub enum/bitset …`. Anything else (e.g. `checked = 5`,
+				// `checked.foo()`) falls through to the expression path, so
+				// `checked` stays usable as a name.
 				const next = status.tokens[status.i + 1]?.value;
 				if (next === "enum") {
 					parse_enum(default_visibility(status), status);
@@ -172,12 +172,12 @@ export default function parse_statement(status: ParseStatus) {
 				}
 				break;
 			}
-			case "extern": {
+			case "foreign": {
 				consume(status);
 				if (peek_current(status) === "func") {
 					parse_function(default_visibility(status), status, undefined, false, true);
 				} else {
-					add_error(status, "Expected func after extern", get_index(status));
+					add_error(status, "Expected func after foreign", get_index(status));
 				}
 				break;
 			}

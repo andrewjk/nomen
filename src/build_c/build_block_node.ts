@@ -329,7 +329,7 @@ export default function build_block_node(
 		// Hoist top-level (program-scope AND library-scope) global definitions
 		// ahead of ALL function definitions. Function bodies read these globals,
 		// and C requires the definition to be visible before the use: when the
-		// definitions trailed the functions, every use relied on the `extern`
+		// definitions trailed the functions, every use relied on the `foreign`
 		// declarations above (or, before those existed, on compiler leniency —
 		// clang has been observed flipping between accepting and rejecting the
 		// same bytes). The aarch64 backend already gets this ordering for free

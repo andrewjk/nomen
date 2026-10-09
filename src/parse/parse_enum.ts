@@ -19,14 +19,14 @@ export default function parse_enum(
 	const start = get_index(status);
 	accept(visibility, status);
 	if (is_owning) accept("mv", status);
-	// Optional `must_use` modifier between visibility and `enum`
-	// (`pub must_use enum Result<T, E> { ... }`). Contextual: only consumed when
-	// it appears in this position, so `must_use` remains usable as a name.
-	const must_use = accept("must_use", status);
+	// Optional `checked` modifier between visibility and `enum`
+	// (`pub checked enum Result<T, E> { ... }`). Contextual: only consumed when
+	// it appears in this position, so `checked` remains usable as a name.
+	const checked = accept("checked", status);
 	accept("enum", status);
 	const name = consume_name(status);
 	const node = new EnumNode(start, visibility, name);
-	node.must_use = must_use;
+	node.checked = checked;
 	if (is_owning) node.is_owning = true;
 
 	// Generic type parameters: `enum Result<T, E> { ... }`

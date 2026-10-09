@@ -12,14 +12,14 @@ export default function parse_bitset(
 ) {
 	const start = get_index(status);
 	accept(visibility, status);
-	// Optional `must_use` modifier between visibility and `bitset`
-	// (`pub must_use bitset Flags { ... }`) — mirrors parse_enum. Contextual, so
-	// `must_use` remains usable as a name elsewhere.
-	const must_use = accept("must_use", status);
+	// Optional `checked` modifier between visibility and `bitset`
+	// (`pub checked bitset Flags { ... }`) — mirrors parse_enum. Contextual, so
+	// `checked` remains usable as a name elsewhere.
+	const checked = accept("checked", status);
 	accept("bitset", status);
 	const name = consume_name(status);
 	const node = new BitsetNode(start, visibility, name);
-	node.must_use = must_use;
+	node.checked = checked;
 
 	if (expect("{", status)) {
 		while (accept("case", status)) {

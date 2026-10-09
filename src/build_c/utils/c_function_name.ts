@@ -16,7 +16,7 @@ const C_CONFLICTS = new Set([
 	"double",
 	"else",
 	"enum",
-	"extern",
+	"foreign",
 	"float",
 	"for",
 	"goto",

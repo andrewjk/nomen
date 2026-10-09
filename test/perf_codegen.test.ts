@@ -157,7 +157,7 @@ sink += ops.length
 		expect(push).not.toContain("bl _calloc");
 		expect(push).not.toContain("bl _free");
 		expect(push).not.toContain("bl Buffer_Op_grow");
-		expect(push).toContain("bl extern_realloc");
+		expect(push).toContain("bl foreign_realloc");
 		expect(push).toContain("bl _memcpy");
 		// The construct/mutate/push loop in main must not allocate either.
 		const main = asm_function_body(code, "_main:");

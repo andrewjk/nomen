@@ -154,7 +154,7 @@
 				},
 				{
 					"name": "storage.modifier.nm",
-					"match": "\\b(?:pub|private|inline|out|ref|must_use)\\b"
+					"match": "\\b(?:pub|private|inline|out|ref|checked)\\b"
 				},
 				{
 					"name": "keyword.operator.word.nm",

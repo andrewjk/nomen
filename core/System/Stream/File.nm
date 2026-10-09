@@ -590,7 +590,7 @@ pub struct File {
 
 	// (static) Write `data` to `path` (replacing any existing contents) in
 	// one open/write/close. A write failure is reported as `.error`, not
-	// silently swallowed (the `must_use` Result discard check forces this to
+	// silently swallowed (the `checked` Result discard check forces this to
 	// be deliberate).
 	pub func write_all = (string path, string data, out Result<bool, FileError>) {
 		var Result<bool, FileError> result = .error(FileError.other)

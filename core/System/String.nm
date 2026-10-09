@@ -1,7 +1,7 @@
 // FFI: the C library's heap-copy entry point (string.h). The adapter
 // marshals the fat string to the thin char* the C ABI expects; the string
 // result is re-wrapped with its length.
-extern func strdup = (string s, mv out string)
+foreign func strdup = (string s, mv out string)
 
 // Raw memory externs — the allocation primitives every `unsafe` Nomen body
 // across core (Buffer, StringBuilder, Array, ...) is built on. This file is
@@ -9,12 +9,12 @@ extern func strdup = (string s, mv out string)
 // every core file regardless of pull order. Free externs emit under an
 // `extern_<name>` label that wraps the identically-named C symbol, so these
 // can never collide with it (docs/CORE_RAW.md roadmap items 1+2).
-extern func calloc = (int count, int size, out uint64)
-extern func malloc = (int bytes, out uint64)
-extern func realloc = (uint64 address, int bytes, out uint64)
-extern func free = (uint64 address)
-extern func memcpy = (uint64 dst, uint64 src, int bytes, out uint64)
-extern func memset = (uint64 dst, int value, int bytes, out uint64)
+foreign func calloc = (int count, int size, out uint64)
+foreign func malloc = (int bytes, out uint64)
+foreign func realloc = (uint64 address, int bytes, out uint64)
+foreign func free = (uint64 address)
+foreign func memcpy = (uint64 dst, uint64 src, int bytes, out uint64)
+foreign func memset = (uint64 dst, int value, int bytes, out uint64)
 
 /**
  * A UTF-8 text string — a heap-owned, length-tracked sequence of bytes.
