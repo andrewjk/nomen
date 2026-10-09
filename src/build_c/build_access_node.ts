@@ -35,6 +35,7 @@ import {
 	next_lambda_ret_temp,
 } from "./utils/closure.ts";
 import { begin_code_scratch, end_code_scratch } from "./utils/code_scratch.ts";
+import { try_emit_boxed_trait_arg_c } from "./utils/trait_box.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import { c_view_string_arg } from "./utils/view_value.ts";
 
@@ -727,10 +728,21 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 							if (decl_hit) decl_hit.frame.splice(decl_hit.index, 1);
 						}
 					}
+					// A TRAIT-typed case payload rides as an owned heap handle,
+					// so a concrete value-struct conformer argument is boxed.
 					status.code += `${enum_node.name}_${enum_case.name}_init(`;
 					for (let i = 0; i < access_func.params.length; i++) {
 						if (i > 0) {
 							status.code += ", ";
+						}
+						if (
+							try_emit_boxed_trait_arg_c(
+								status,
+								access_func.params[i],
+								enum_case.params[i]?.type.name,
+							)
+						) {
+							continue;
 						}
 						build_node(access_func.params[i], status);
 					}

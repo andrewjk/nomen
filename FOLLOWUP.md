@@ -50,8 +50,6 @@ Neither should be cited as current syntax until rewritten.
 Each skip masks a real post-R/B1/D3 gap (verified still failing
 2026-10-09):
 
-- **aarch64 mono enum with a trait payload** crashes at the match binding
-  (BUGS.md #9 family). Skip: `generic_enum_class_payload` (1).
 - **aarch64 ctor lowering for a capturing-closure func field on an
   owning struct** emits `#undefined` frame offsets (the shape was
   class-only before R; the checker side allows it). Skip:
@@ -191,6 +189,17 @@ transfer, return-boundary normalization). These bounded remainders remain
 - **A conditional field's entry-dup displaces whatever pre-call value the
   field held, un-freed (≤1 per call)**: the callee can't know whether
   that value was heap or a rodata/borrow.
+- **Boxing a value-struct trait conformer that has a `string` field leaks
+  the donor's copy** (verified 2026-10-09, both backends): the boxing
+  paths (`move Trait` param, trait-typed `List` element, and now a
+  trait-typed enum case payload) strdup every unrecorded `string` field
+  into the box while the moved donor's own reclaim is suppressed, so the
+  donor's original heap copy is abandoned (`LEAK: 1`). The `strdup`
+  guard exists for rodata/borrow sources, but an owning struct's
+  uniformly-heap field is neither recorded (owning records are dropped)
+  nor freed after a move — taking the donor's pointer would be sound.
+  Untested shapes: the fieldless conformers used by the boxing tests
+  never exercise this.
 
 ## Owning container fields in container elements (remaining gaps)
 

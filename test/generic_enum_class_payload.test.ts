@@ -40,10 +40,7 @@ pub func main = (Init init) {
 		await build_and_check_output(input, "generic_enum_class_payload", "42\nmissing", true);
 	});
 
-	// SKIP (aarch64): a mono enum with a TRAIT payload crashes at the match
-	// binding — the BUGS.md #9 family (enum-with-data payload on aarch64).
-	// C runs the same program green.
-	test.skip("Option<Trait> move construction, match, vtable dispatch (both backends)", async () => {
+	test("Option<Trait> move construction, match, vtable dispatch (both backends)", async () => {
 		const input = `
 import System
 

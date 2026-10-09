@@ -1,5 +1,6 @@
 import { struct_needs_auto_destroy } from "../build_common/destroy_analysis.ts";
 import emission_label from "../build_common/emission_label.ts";
+import { find_enum_for_case } from "../build_common/find_enum.ts";
 import { direct_string_fields, owns_strings_uniformly } from "../build_common/has_string_fields.ts";
 import mark_tuple_literal_move_owners from "../build_common/mark_tuple_literal_move_owners.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
@@ -30,6 +31,7 @@ import {
 	next_lambda_ret_temp,
 } from "./utils/closure.ts";
 import { begin_code_scratch, end_code_scratch } from "./utils/code_scratch.ts";
+import { try_emit_boxed_trait_arg_c } from "./utils/trait_box.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import { c_view_string_arg } from "./utils/view_value.ts";
 
@@ -73,10 +75,18 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				if (decl_hit) decl_hit.frame.splice(decl_hit.index, 1);
 			}
 		}
+		// A TRAIT-typed case payload rides as an owned heap handle, so a
+		// concrete value-struct conformer argument is boxed at the case ctor.
+		const found_case = find_enum_for_case(node.name, status);
+		const case_param_types =
+			found_case?.enum_node.cases.find((c) => c.name === found_case.case_name)?.params ?? [];
 		status.code += `${node.name}_init(`;
 		for (let i = 0; i < node.params.length; i++) {
 			if (i > 0) {
 				status.code += ", ";
+			}
+			if (try_emit_boxed_trait_arg_c(status, node.params[i], case_param_types[i]?.type.name)) {
+				continue;
 			}
 			build_node(node.params[i], status);
 		}
