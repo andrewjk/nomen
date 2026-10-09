@@ -50,8 +50,6 @@ Neither should be cited as current syntax until rewritten.
 Each skip masks a real post-R/B1/D3 gap (verified still failing
 2026-10-09):
 
-- **aarch64 trait-handle re-boxing in a loop** crashes (pre-B4
-  field-shaped dispatch residual). Skip: `trait_container_dispatch` (1).
 - **aarch64 container-of-owning-struct destroy** over-destroys empty cap
   slots (C, routing such elements as pointer-slot ClassBuffer entries,
   is correct). Skip: `container_class_leak_gaps` (1).

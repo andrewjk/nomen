@@ -202,6 +202,13 @@ function declare_slot_offset(status: BuildStatus, name: string, size: number): n
  * owning-struct global arms.
  */
 function declare_trait_handle_storage(status: BuildStatus, node: DeclarationNode): void {
+	// Record the declaration frame so a later reassignment anchors the
+	// replacement here (not in whatever innermost scope the assignment runs
+	// in — a loop body would free the new instance every iteration while the
+	// variable still owns it). Mirrors the class-typed path's registration.
+	if (status.function_return_label) {
+		status.class_decl_frame?.set(node.name, (status.heap_cleanup_stack?.length ?? 1) - 1);
+	}
 	if (status.function_return_label && !node.is_module_init) {
 		const offset = allocate_stack_space(status, 8);
 		status.stack_offsets!.set(node.name, offset);

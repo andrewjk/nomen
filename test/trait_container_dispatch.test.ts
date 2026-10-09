@@ -92,11 +92,10 @@ Console.write_line("done")
 		await build_and_check_output(input, "trait_borrow_reassign", "elem-ok\np-ok\ndone");
 	});
 
-	// SKIP (aarch64): re-boxing a value-struct conformer into a trait slot
-	// in a LOOP crashes (SIGSEGV) — the pre-B4 aarch64 field-shaped dispatch
-	// residual the FOLLOWUP notes. C runs the same program green and the
-	// audit stays balanced there.
-	test.skip("repeated stores into a trait slot reclaim cleanly (audit)", async () => {
+	// The re-boxing loop: each iteration reclaims the previous instance
+	// eagerly, and the final instance's anchor lives in the declaration
+	// frame so it is destroyed+freed exactly once at function exit.
+	test("repeated stores into a trait slot reclaim cleanly (audit)", async () => {
 		const input =
 			PRELUDE +
 			`
