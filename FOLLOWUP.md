@@ -24,7 +24,10 @@ nodes under every construct); both backends lower nested blocks for
 if/loop bodies already, so a bare block should ride the same path — verify
 scope-exit destroys fire at the block's end on both backends.
 
-## STRUCT_PLAN_3 residuals
+## Struct-plan residuals
+
+(The plan documents are consolidated in [`docs/STRUCTS.md`](./docs/STRUCTS.md);
+the "STRUCT_PLAN_3" labels below are its section names.)
 
 The class retirement (Phase R) and the struct/move refactor (Phases B/D)
 have landed: `class` is retired with a dedicated parse error, the Copyable

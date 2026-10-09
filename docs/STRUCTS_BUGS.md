@@ -1,9 +1,9 @@
 # BUGS.md
 
-Pre-existing compiler bugs found (and fixed) while implementing
-[STRUCT_PLAN_3 Phase A](./docs/STRUCT_PLAN_3.md). Recorded so the fixes survive
-a plan rollback: if Phase A is reverted, these are real bugs on `main`
-independent of the plan, with their fixes described here.
+Pre-existing compiler bugs found (and fixed) while implementing the struct
+plan's Phase A (see [`docs/STRUCTS.md`](./docs/STRUCTS.md)). Recorded so the
+fixes survive a plan rollback: if Phase A is reverted, these are real bugs on
+`main` independent of the plan, with their fixes described here.
 
 ## 1. Prefix-`move` declarations never transfer (checker gap)
 
