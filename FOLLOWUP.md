@@ -61,11 +61,6 @@ Each skip masks a real post-R/B1/D3 gap (verified still failing
 - **`operations` (2) + `interpolate_string` (1)**: compile-time
   division/modulo-by-zero detection — a language-feature ask ("TODO: This
   needs runtime protection"), not a backend bug.
-- **`field_marshal` (1)**: the skip itself is now STALE — its embedded
-  source predates the D3 spellings (fails at check time) and the C-gap
-  file it referenced (`test/method-string-field-gaps.test.ts`) is gone.
-  Rewrite the skip's source to current syntax (or drop it) and re-pin the
-  behavioral assertion it was guarding.
 
 ### B1 residual (checker)
 

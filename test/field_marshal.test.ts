@@ -260,18 +260,16 @@ pub func main = () {
 	expect(body).not.toMatch(/str x0, \[sp, #-16\]![\s\S]*ldr x0, \[sp\], #16\n/);
 });
 
-test.skip("string-field ownership behavioral: literal, heap, literal overwrites", async () => {
-	// Each overwrite frees the displaced heap value exactly once (class
-	// fields are always-heap): a mistake is an abort or an audit LEAK.
-	// aarch64-only: the C backend has the documented method-string-field
-	// assignment bug (test/method-string-field-gaps.test.ts) for this shape.
-	const { default: check_output } = await import("./check_output");
-	const { default: parse_with_imports } = await import("./parse_with_imports");
-	const { load_system_fn_names, load_system_struct_names } = await import("./system_lib");
-	const parsed = parse_with_imports(`
+// Landed with the B1 backend cutover (uniform-heap mv-struct string
+// fields): each overwrite frees the displaced heap value exactly once —
+// a mistake is an abort or an audit LEAK.
+test("string-field ownership behavioral: literal, heap, literal overwrites", async () => {
+	const { default: build_and_check_output } = await import("./build_and_check_output");
+	await build_and_check_output(
+		`
 pub mv struct Panel {
   var string title = ""
-  pub func set_title = (ref self, string t) {
+  pub func set_title = (ref self, mv string t) {
     self.title = t
   }
   pub func set_title_heap = (ref self) {
@@ -280,24 +278,14 @@ pub mv struct Panel {
   pub func #init = (self) {}
 }
 var Panel f = Panel()
-f.set_title("hello")
+f.set_title(mv "hello")
 Console.write("\\{f.title}")
 f.set_title_heap()
 Console.write("\\{f.title}")
-f.set_title("again")
+f.set_title(mv "again")
 Console.write("\\{f.title}")
-`);
-	expect(parsed.errors).toEqual([]);
-	const result = build(parsed.root, {
-		arch: "aarch64",
-		audit: true,
-		emit_mode: "user",
-		system_struct_names: load_system_struct_names(),
-	});
-	await check_output("field_marshal_string_ownership", result, "hello42again", {
-		arch: "aarch64",
-		audit: true,
-		system_lib: true,
-		system_fn_names: load_system_fn_names(),
-	});
+`,
+		"field_marshal_string_ownership",
+		"hello42again",
+	);
 });

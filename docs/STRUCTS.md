@@ -221,7 +221,6 @@ and residual list (full detail in `FOLLOWUP.md`, which is the tracker).
   skips — return-boundary normalization for indirect calls).
 - Compile-time division/modulo-by-zero (`operations`, `interpolate_string`)
   — a language-feature ask, not a backend bug.
-- `field_marshal` skip is stale (pre-D3 source) — rewrite or drop.
 
 ### Pointers
 
