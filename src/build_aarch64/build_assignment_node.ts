@@ -113,7 +113,9 @@ function field_is_struct_string(
 	target_type: Type | undefined,
 	field_type: Type | undefined,
 	status: BuildStatus,
-): { name: string; target_is_class: boolean; target_is_owning: boolean } | undefined {
+):
+	| { name: string; target_is_class: boolean; target_is_owning: boolean; all_owning?: boolean }
+	| undefined {
 	if (!target_type?.name || !field_type) return undefined;
 	// A `view T` field is a non-mv pair — never heap-owned, so it must
 	// not enter the strdup/free ownership machinery below.
@@ -137,12 +139,23 @@ function field_is_struct_string(
 		// a raw (rodata) store would be freed by the destroy later
 		// (AUDIT-STALE-FREE). A non-mv-only conformer set keeps the
 		// raw/borrow store (its destroy excludes trait string fields).
+		// `all_owning` records whether EVERY conformer owns: only then is the
+		// displaced value guaranteed heap and safe to free. A MIXED set (a
+		// non-mv conformer seeds the field with rodata) must NOT free it —
+		// the runtime conformer is unknown statically and free(rodata) is an
+		// invalid free (bounded leak instead).
 		if (status.traits.find((t) => t.name === target_name)) {
-			const any_owning = status.structs.some(
-				(s) => s.traits.includes(target_name) && (s.is_class || s.is_owning),
-			);
+			const conformers = status.structs.filter((s) => s.traits.includes(target_name));
+			const any_owning = conformers.some((s) => s.is_class || s.is_owning);
+			const all_owning =
+				conformers.length > 0 && conformers.every((s) => s.is_class || s.is_owning);
 			if (any_owning) {
-				return { name: field_type.name, target_is_class: false, target_is_owning: true };
+				return {
+					name: field_type.name,
+					target_is_class: false,
+					target_is_owning: true,
+					all_owning,
+				};
 			}
 		}
 		return undefined;
@@ -2317,8 +2330,17 @@ export default function build_assignment_node(
 					(node as unknown as { displace_reclaimed?: boolean }).displace_reclaimed === true;
 				const first_init_write = is_first_init_field_write(target_var, field_name, status);
 				mark_init_field_write(target_var, field_name, status);
+				// A trait-typed target on a MIXED conformer set: the runtime
+				// conformer is unknown, and a non-mv one seeds the field with
+				// rodata — the displaced value must NOT be freed (invalid
+				// free). Bounded leak instead. (A per-conformer target has a
+				// statically-known seed: the owning flags below are exact.)
+				const displaced_may_be_rodata = string_target.all_owning === false;
 				const old_was_heap =
-					((is_class_target || is_owning_target) && !first_init_write && !displace_reclaimed) ||
+					((is_class_target || is_owning_target) &&
+						!first_init_write &&
+						!displace_reclaimed &&
+						!displaced_may_be_rodata) ||
 					!!status.heap_string_fields?.has(tracked_key);
 				const offset = get_field_offset(target_type.name, field_name, status);
 

@@ -224,8 +224,13 @@ both deliberately left:
   seeds a trait string default RAW (no strdup, mirroring the C backend),
   and the destroy excludes value-struct trait fields so it never frees
   rodata. A later heap assignment into such a field is therefore not
-  reclaimed (leak), and a later reassignment frees the previous `.ptr`
-  (rodata).
+  reclaimed (leak). The crash-class half is closed: a trait-typed
+  reassignment frees the displaced value only when EVERY known conformer
+  owns its trait field (a mixed set once freed the non-mv conformer's
+  rodata seed — an invalid free). The remaining refinement is
+  runtime-conformer-aware frees (a vtable compare per owning conformer at
+  the write), which would also let mixed-set writes dup only for owning
+  instances.
 - **Nested trait class-typed fields**: `emit_nested_field_destroys` /
   `emit_destroy_for_array_elem` (aarch64) still walk `struct.fields` only,
   so a trait-declared class field inside a nested/array element is not

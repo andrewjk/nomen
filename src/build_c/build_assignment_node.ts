@@ -279,7 +279,7 @@ export default function build_assignment_node(
 					const rhs = node.right_value;
 					const rhs_is_fresh_owned =
 						(rhs.node_type === "access" &&
-							(rhs.access as AccessFunctionCallNode).owned_return === true) ||
+							!!((rhs as AccessNode).access as AccessFunctionCallNode).owned_return) ||
 						(rhs.node_type === "func_call" &&
 							!!status.heap_returning_functions?.has(
 								(rhs as FunctionCallNode).mangled_name ?? (rhs as FunctionCallNode).name,

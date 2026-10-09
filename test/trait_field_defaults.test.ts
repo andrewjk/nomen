@@ -129,4 +129,35 @@ Console.write(s.report("score:"))
 `;
 		await build_and_check_output(input, "trait_default_params", "score:7");
 	});
+
+	// A MIXED conformer set (an mv/class conformer next to a plain value
+	// struct) used to free the displaced value on EVERY trait-field reassign
+	// — but a non-mv conformer seeds the field with rodata, so the runtime
+	// conformer being the non-mv one meant free(rodata) (AUDIT-STALE-FREE).
+	// The displaced free now fires only when every conformer owns; mixed
+	// sets skip it (bounded: rodata is not an audit allocation, and a
+	// heap-displaced seed on the owning conformer leaks by the documented
+	// non-mv-corner posture). Output-only run: a fresh-RHS write into the
+	// non-owning conformer's field also leaks by that same posture.
+	test("mixed conformer set: trait-field reassign never frees rodata", async () => {
+		const input = `
+trait Tagged {
+	var string tag = "seed"
+}
+
+mv struct G : Tagged {
+}
+
+struct V : Tagged {
+}
+
+var V v = V()
+var Tagged t = mv v
+t.tag = "fresh"
+Console.write(t.tag)
+`;
+		await build_and_check_output(input, "trait_field_mixed_reassign", "fresh", false, {
+			audit: false,
+		});
+	});
 });
