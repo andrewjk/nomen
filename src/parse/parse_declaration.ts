@@ -396,9 +396,6 @@ function parse_anon_function_parameter(func: FunctionNode, status: ParseStatus) 
 	// Optional parameter declaration
 	if (accept("var", status)) {
 		param.declaration = "var";
-	} else if (accept("cp", status)) {
-		param.declaration = "var";
-		param.is_copied = true;
 	} else if (accept("mv", status)) {
 		param.declaration = "var";
 		param.is_moved = true;

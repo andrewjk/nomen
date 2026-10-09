@@ -11,7 +11,6 @@ export default class ParameterNode extends BaseNode {
 	name_start?: number;
 	default_value_start?: number;
 	is_self_param?: boolean;
-	is_copied?: boolean;
 	// `is_moved` is inherited from BaseNode (a mv parameter / mv expression).
 	is_ref?: boolean;
 	is_variadic?: boolean;
@@ -37,7 +36,7 @@ export default class ParameterNode extends BaseNode {
 		type?: Type,
 		default_value?: BaseNode,
 		is_self_param?: boolean,
-		declaration?: "const" | "var" | "cp" | "mv",
+		declaration?: "const" | "var" | "mv",
 	) {
 		super("param", start);
 		this.name = name;
@@ -46,9 +45,6 @@ export default class ParameterNode extends BaseNode {
 		this.is_self_param = is_self_param;
 		if (declaration) {
 			this.declaration = declaration === "const" ? "const" : "var";
-			if (declaration === "cp") {
-				this.is_copied = true;
-			}
 			if (declaration === "mv") {
 				this.is_moved = true;
 			}

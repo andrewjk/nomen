@@ -205,7 +205,7 @@ var int? maybe = null                // nullable
 ref Box q = p                        // mv-struct alias — must be spelled (no plain copies)
 ```
 
-Keywords (`out`, `in`, `match`, `if`, `of`, `as`, `swap`, …) are reserved and
+Keywords (`out`, `match`, `if`, `of`, `as`, `swap`, …) are reserved and
 cannot be used as variable, parameter, field, type, or case names. Function
 names are exempt since calls go through `.name(...)` (e.g. `Regex.match`).
 

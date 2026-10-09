@@ -18,8 +18,8 @@ Nomen is a statically-typed, compiled language that compiles to C or AArch64 ass
 The following words are reserved by the language and cannot be used as
 variable, parameter, field, type, or enum case names:
 
-`as` `async` `bitset` `break` `case` `class` `const` `continue` `cp` `else`
-`enum` `extern` `extend` `for` `func` `if` `import` `in` `internal` `let`
+`as` `async` `bitset` `break` `case` `class` `const` `continue` `else`
+`enum` `extern` `extend` `for` `func` `if` `import` `internal` `let`
 `match` `mv` `of` `out` `panic` `private` `pub` `raw` `readonly` `ref`
 `return` `struct` `switch` `swap` `todo` `trait` `unsafe` `var` `view`
 `while`

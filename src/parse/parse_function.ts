@@ -251,9 +251,6 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 
 	if (accept("var", status)) {
 		param.declaration = "var";
-	} else if (accept("cp", status)) {
-		param.declaration = "var";
-		param.is_copied = true;
 	} else if (accept("mv", status)) {
 		param.declaration = "var";
 		param.is_moved = true;

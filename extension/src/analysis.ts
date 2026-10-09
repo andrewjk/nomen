@@ -487,11 +487,9 @@ class Builder {
 			? "ref "
 			: node.is_moved
 				? "mv "
-				: node.is_copied
-					? "cp "
-					: node.declaration === "var"
-						? "var "
-						: "";
+				: node.declaration === "var"
+					? "var "
+					: "";
 		const spread = node.is_variadic ? "..." : "";
 		return `${prefix}${spread}${this.type_text(node.type)} ${node.name}`.trim();
 	}

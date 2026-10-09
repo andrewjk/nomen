@@ -132,8 +132,7 @@ function warn_unused_param(
 	// `main`'s parameters are mandated by the entry-point signature (e.g. the
 	// runtime `Init init` handle) and can't be removed, so don't flag them.
 	if (func.name === "main") return;
-	if (param.is_self_param || param.is_moved || param.is_ref || param.is_copied || param.is_variadic)
-		return;
+	if (param.is_self_param || param.is_moved || param.is_ref || param.is_variadic) return;
 	if (is_discard(param.name)) return;
 	if (locals.reads.has(param.name)) return;
 	add_warning(status, `Parameter '${param.name}' is never used`, param.name_start ?? param.start);

@@ -89,7 +89,7 @@ function needs_space(pieces: Piece[], i: number): boolean {
 	if (NO_SPACE_AFTER.has(previous.text)) return false;
 	// `out`/`in` are parameter modifiers: `out int x`, `for x in (...)`, but
 	// `out.length` keeps the dot tight.
-	if (previous.text === "out" || previous.text === "in") return current.text !== ".";
+	if (previous.text === "out") return current.text !== ".";
 	if (is_sign(pieces, i - 1)) return false;
 	// `a.b` binds tight, but the enum shorthand `.north` is a value of its own.
 	if (current.text === ".") return !is_value_end(pieces, i - 1);
