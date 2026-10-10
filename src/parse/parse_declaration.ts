@@ -75,12 +75,10 @@ export default function parse_declaration(
 		decl.type = parse_type(status);
 		const is_func_alias = decl.type.name === "func";
 		if (is_func_alias) {
-			// `var Func<...> name` — normalize to the func-declaration shape
-			// (the keyword spelling `var func (...) name`): the signature
+			// The keyword spelling `var func (...) name`: the signature
 			// lives on the declaration, not the Type, so every checker and
-			// build path is shared. A nullable alias (`Func<...>?`) keeps a
-			// nullable `func` marker on the type so null checks/narrowing see
-			// it.
+			// build path is shared. A nullable marker (`var func? (...)`)
+			// keeps a nullable `func` type so null checks/narrowing see it.
 			decl.func_params = decl.type.func_params ?? [];
 			decl.func_return_type = decl.type.func_return_type;
 			if (decl.type.is_nullable) {
@@ -420,8 +418,8 @@ function parse_anon_function_parameter(func: FunctionNode, status: ParseStatus) 
 		param.name = consume_name(status);
 	} else {
 		param.type = parse_type(status);
-		// A `Func<...>`-spelled lambda parameter normalizes to the func-param
-		// shape (signature on the ParameterNode).
+		// A func-typed lambda parameter keeps the func-param shape
+		// (signature on the ParameterNode).
 		adopt_func_param_type(param, param.type);
 
 		// If the next token is '=' or ')' or ',', what we parsed was actually the name

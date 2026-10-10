@@ -135,14 +135,13 @@ pub func main = () {
 		expect(compile_module(input)).toEqual([]);
 	});
 
-	test("Func<> func type spelling", () => {
+	test("func type spelling in every position", () => {
 		// SPEC.md, "Function-Typed Parameters (Higher-Order Functions)":
-		// `Func<T1, ..., Tn>` is the same signature type as
-		// `func (T1, ..., out Tn)` with the result LAST; `void` in the
-		// result slot means no result. It is usable in every type position
-		// and nests at any depth.
+		// `func (T1, ..., out Tn)` spells a signature in every type
+		// position, nesting at any depth. (`void` results omit the `out`
+		// slot; the `Func<..., R>` alias spelling has been retired.)
 		const input = `
-func apply = (Func<int, int> mapper, int value, out int) {
+func apply = (func (int, out int) mapper, int value, out int) {
     return mapper(value)
 }
 
@@ -150,20 +149,20 @@ func run = (func (func (out int), out int) g, func (out int) v, out int) {
     return g(v)
 }
 
-func run_alias = (Func<Func<int, int>, int> h, Func<int, int> f, out int) {
+func run_alias = (func (func (int, out int), out int) h, func (int, out int) f, out int) {
     return h(f)
 }
 
-func make_three = (out Func<int>) {
+func make_three = (out func (out int)) {
     return () => 3
 }
 
-func id = (Func<int, int> f, out int) { return f(0) }
+func id = (func (int, out int) f, out int) { return f(0) }
 
 pub func main = () {
-    var Func<int, int> doubler = (x) => x * 2
-    var Func<int> three = make_three()
-    var Func<int, void> log = func (int x) { Console.write("\\{x}") }
+    var func (int, out int) doubler = (x) => x * 2
+    var func (out int) three = make_three()
+    var func (int) log = func (int x) { Console.write("\\{x}") }
     var int a = apply(doubler, 5)
     var int b = run_alias(id, doubler)
     var int c = three()
@@ -172,6 +171,19 @@ pub func main = () {
 }
 `;
 		expect(compile_module(input)).toEqual([]);
+	});
+
+	test("the Func<...> alias spelling is retired", () => {
+		// SPEC.md, "Function-Typed Parameters": the `Func<T1, ..., Tn>`
+		// alias has been removed — a parse error points at the `func (...)`
+		// spelling.
+		const input = `
+func apply = (Func<int, int> mapper, int value, out int) {
+    return mapper(value)
+}
+`;
+		const errors = compile_module(input);
+		expect(errors.some((e: any) => e.message.includes("Func<...> has been removed"))).toBe(true);
 	});
 
 	test("function overloading", () => {

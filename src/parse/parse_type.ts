@@ -108,7 +108,7 @@ export default function parse_type(status: ParseStatus): Type {
 	if (type.is_array === undefined && type.name === "Array" && type.type_args?.length === 1) {
 		const elem = type.type_args[0];
 		if (elem.name === "func") {
-			add_error(status, `Func<...> cannot be an array or container element type`, start);
+			add_error(status, `a func type cannot be an array or container element type`, start);
 		}
 		type.name = elem.name;
 		type.is_array = true;
@@ -119,13 +119,15 @@ export default function parse_type(status: ParseStatus): Type {
 		// name once the mono can be materialized (check time).
 		type.type_args = elem.type_args;
 	}
-	// `Func<T1, ..., Tn>` — the alias spelling of a func type (SPEC,
-	// "Function-Typed Parameters"): every type argument but the LAST is a
-	// parameter; the last is the result. `void` in the result slot means no
-	// result — the same as omitting `out` in the `func (...)` spelling. The
-	// alias always desugars to the one-word `func` type, so it composes with
-	// signatures at any depth (`Func<Func<int, int>, int>`).
+	// `Func<T1, ..., Tn>` — REMOVED syntax (the alias spelling of a func
+	// type). One clear retirement error; the desugar still runs so nothing
+	// downstream cascades (the `class` retirement pattern).
 	if (type.name === "Func" && type.type_args?.length) {
+		add_error(
+			status,
+			`Func<...> has been removed — spell func types as 'func (params, out result)'`,
+			start,
+		);
 		if (type.is_array || type.is_pointer || type.is_view || type.is_ref) {
 			add_error(status, `Func<...> cannot be combined with '[]'/'ptr'/'view'/'ref'`, start);
 			return type;

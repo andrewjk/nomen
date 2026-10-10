@@ -1205,20 +1205,10 @@ Parameters can be function types:
 func apply = (func (int, out int) mapper, int value, out int) {
     return mapper(value)
 }
-```
 
-A func type can also be spelled `Func<...>` — every type argument but the
-last is a parameter type, and the last is the result. `void` in the result
-slot means the function returns nothing:
-
-```
-func apply = (Func<int, int> mapper, int value, out int) {
-    return mapper(value)
-}
-
-var Func<int, int> doubler = (x) => x * 2
-var Func<int> three = () => 3
-var Func<int, void> log = func (int x) { Console.write("\\{x}") }
+var func (int, out int) doubler = (x) => x * 2
+var func (out int) three = () => 3
+var func (int) log = func (int x) { Console.write("\\{x}") }
 ```
 
 A `func` type may itself appear inside another signature — as a parameter
@@ -1233,20 +1223,16 @@ func make_adder = (int n, out func (out int)) {
     return () => n
 }
 
-func make_three = (out Func<int>) {
+func make_three = (out func (out int)) {
     return () => 3
 }
 ```
 
-Higher-order signatures nest to arbitrary depth, mixing both spellings:
+Higher-order signatures nest to arbitrary depth:
 
 ```
 func run = (func (func (out int), out int) g, func (out int) v, out int) {
     return g(v)
-}
-
-func run_alias = (Func<Func<int, int>, int> h, Func<int, int> f, out int) {
-    return h(f)
 }
 ```
 
@@ -1258,7 +1244,7 @@ included), and the result type.
 
 #### Nullable Function Types
 
-A func type can be made nullable with `?` — `func?` (or `Func<...>?`) — so
+A func type can be made nullable with `?` — `func?` — so
 the binding may hold `null`. This is the spelling for optional callbacks:
 the callee null-checks before calling.
 

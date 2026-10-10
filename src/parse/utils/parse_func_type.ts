@@ -11,11 +11,9 @@ import peek_current from "./peek_current.ts";
 
 /**
  * Func TYPE grammar (CLOSURE.md, SPEC "Function-Typed Parameters"): the
- * keyword form `func (T1, T2, out R)` (return as a trailing `out`) and the
- * generic-looking alias `Func<T1, T2, R>` (result last, `void` for none)
- * both parse to the same signature Type. A func type may appear anywhere a
- * type may — as a parameter type, in a return slot, or nested to any depth
- * (`func (func (out int), out int)`, `Func<Func<int, int>, int>`).
+ * keyword form `func (T1, T2, out R)` (return as a trailing `out`). A func
+ * type may appear anywhere a type may — as a parameter type, in a return
+ * slot, or nested to any depth (`func (func (out int), out int)`).
  * The representation mirrors the one-level convention:
  *   - a func-typed PARAMETER keeps its signature on the ParameterNode
  *     (`param.func_params` / `param.func_return_type`, each inner parameter
@@ -35,22 +33,16 @@ export function at_func_type(status: ParseStatus): boolean {
 }
 
 /**
- * Reject `void` where it has no meaning. Only the last type argument of
- * `Func<...>` is allowed to be `void` (meaning: no result); a func type
- * with no result otherwise omits `out` entirely.
+ * Reject `void` where it has no meaning. A func type with no result omits
+ * `out` entirely.
  */
 export function reject_void_type(type: Type, status: ParseStatus, at: number): void {
 	if (type.name !== "void") return;
-	add_error(
-		status,
-		"`void` has no value — a func type with no result omits `out`, or writes `void` as the last type argument of `Func<...>`",
-		at,
-	);
+	add_error(status, "`void` has no value — a func type with no result omits `out`", at);
 }
 
 /**
- * A func type parsed in a PARAMETER slot (the `Func<...>` alias desugars to a
- * Type) keeps its signature on the ParameterNode — the convention every
+ * A func type parsed in a PARAMETER slot keeps its signature on the ParameterNode — the convention every
  * param consumer reads (`param.func_params` / `param.func_return_type`).
  * Returns true when `type` was a func type (and `param.type` was normalized
  * to the `func` marker).

@@ -339,8 +339,8 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 			param.name = consume_name(status);
 		} else {
 			param.type = parse_type(status);
-			// A `Func<...>`-spelled parameter normalizes to the func-param
-			// shape (signature on the ParameterNode).
+			// A func-typed parameter keeps the func-param shape (signature
+			// on the ParameterNode).
 			adopt_func_param_type(param, param.type);
 
 			const next = peek_current(status);

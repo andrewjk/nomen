@@ -3,7 +3,7 @@ import { expect, describe, test } from "vite-plus/test";
 import build_and_check_output from "./build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 
-// Nullable func types (`func?` / `Func<...>?`): a func binding that may hold
+// Nullable func types (`func?`): a func binding that may hold
 // `null`. A null func is represented by a zero word (C: a NULL closure
 // descriptor pointer), so comparisons and stores need no new runtime; the
 // checker gates USES of a null-tracked binding ("may be null") and `!= null`
@@ -33,12 +33,12 @@ if f != null {
 		await build_and_check_output(input, "nfunc_local_guard", "5");
 	});
 
-	test("Func<...>? alias spelling with a nullable func return", async () => {
+	test("a nullable func return spelling with a nullable func return", async () => {
 		const input = `
-func make = (out Func<int>?) {
+func make = (out func? (out int)) {
 	return null
 }
-var Func<int>? f = make()
+var func? (out int) f = make()
 if f == null {
 	Console.write("null")
 } else {
@@ -88,9 +88,9 @@ run(null)
 		await build_and_check_output(input, "nfunc_param_both", "5none");
 	});
 
-	test("Func<...>? alias parameter with a lambda argument", async () => {
+	test("a nullable void-result func parameter with a lambda argument", async () => {
 		const input = `
-func run = (Func<int, void>? f) {
+func run = (func? (int) f) {
 	if f != null {
 		f(7)
 	} else {
