@@ -692,8 +692,7 @@ func pick_match = (List<string> xs, int c, out string) {
 	if i >= 0 && i < xs.length {
 		return match c {
 			case 1 -> xs.at(i)
-			else -> "none"
-		}
+		} else -> "none"
 	}
 	return "none"
 }

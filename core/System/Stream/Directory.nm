@@ -28,10 +28,9 @@ pub struct Directory {
 			case err == 66 {
 				return DirectoryError.not_empty
 			}
-			else {
+		} else {
 				return DirectoryError.other
 			}
-		}
 	}
 
 	// (static) Create a directory at `path`; returns errno (0 on success).

@@ -12,8 +12,7 @@ func describe = (int x, out string) {
     match x {
         case 1 -> label = "one"
         case 2 -> label = "two"
-        else -> label = "many"
-    }
+    } else -> label = "many"
     return label
 }
 Console.write("\\{describe(1)} \\{describe(5)}")

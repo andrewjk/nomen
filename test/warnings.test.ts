@@ -151,8 +151,7 @@ import System
 func pick = (bool a, out string) =>
 	switch {
 		case a -> "yes"
-		else -> "no"
-	}
+	} else -> "no"
 Console.write("\\{pick(true)}")
 `;
 		expect(warning_messages(input)).not.toContain("Parameter 'a' is never used");
@@ -166,10 +165,9 @@ func pick = (bool a, bool b, out string) {
 		case b {
 			return "b"
 		}
-		else {
+	} else {
 			return "\\{a}"
 		}
-	}
 }
 Console.write("\\{pick(true, false)}")
 `;

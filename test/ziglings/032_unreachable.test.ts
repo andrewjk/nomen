@@ -22,10 +22,9 @@ pub func main = () {
             case 3 {
                 current_value *= current_value
             }
-            else {
+        } else {
                 panic(???)
             }
-        }
 
         Console.write("\\{current_value} ")
     }
@@ -54,10 +53,9 @@ pub func main = () {
             case 3 {
                 current_value *= current_value
             }
-            else {
+        } else {
                 panic("unreachable")
             }
-        }
 
         Console.write("\\{current_value} ")
     }
@@ -86,10 +84,9 @@ pub func main = () {
             case 3 {
                 current_value *= current_value
             }
-            else {
+        } else {
                 Console.write("unreachable")
             }
-        }
 
         Console.write("\\{current_value} ")
     }

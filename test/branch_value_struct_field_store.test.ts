@@ -97,10 +97,9 @@ func commit = (ref List<Pair> sink, string raw, int mode) {
 		case mode == 1 {
 			p.a = raw.copy()
 		}
-		else {
+	} else {
 			p.a = "other"
 		}
-	}
 	sink.push(mv p)
 }
 

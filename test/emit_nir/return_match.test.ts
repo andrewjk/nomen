@@ -12,8 +12,7 @@ test("return match emits NIR-natively through the join-slot path", () => {
 func pick = (int x, out int) {
     return match x {
         case 1 -> 10
-        else -> 20
-    }
+    } else -> 20
 }
 Console.write("\\{pick(1)} \\{pick(2)}")
 `;

@@ -1483,15 +1483,17 @@ types must be compatible:
 const label = match x {
     case 1 -> "one"
     case 2 -> "two"
-    else -> "other"
-}
+} else -> "other"
+```
 
+```
 const size = switch {
     case x > 100 -> "big"
     case x > 10 -> "medium"
-    else -> "small"
-}
+} else -> "small"
+```
 
+```
 const verdict = if ok -> "yes"
                 else -> "no"
 ```
@@ -1726,11 +1728,10 @@ Match compares a value against cases:
 const result = match x {
     case 1 -> "one"
     case 2 -> "two"
-    else -> "other"
-}
+} else -> "other"
 ```
 
-Each `case` value is type-checked against the match expression type. Branches can use `->` for expression return or `{ }` for block body. The `else` branch is required when using `match` as an expression value.
+Each `case` value is type-checked against the match expression type. Branches can use `->` for expression return or `{ }` for block body. The `else` branch is required when using `match` as an expression value. As with `if`/`else`, the `else` arm sits OUTSIDE the case braces — `else` terminates the construct at the top level.
 
 Match with enums (using shorthand syntax):
 
@@ -1786,8 +1787,7 @@ Switch evaluates independent boolean conditions:
 switch {
     case x > 100 -> "big"
     case x > 10 -> "medium"
-    else -> "small"
-}
+} else -> "small"
 ```
 
 Unlike `match`, each `case` has its own boolean condition. The `else` branch is required when using `switch` as an expression value.

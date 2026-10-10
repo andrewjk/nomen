@@ -130,10 +130,9 @@ match c {
     case .Red {
         f = Foo(10)
     }
-    else {
+} else {
         Console.write("other")
     }
-}
 Console.write("\\{f.x}")
 `;
 		const parsed = parse_with_imports(input);

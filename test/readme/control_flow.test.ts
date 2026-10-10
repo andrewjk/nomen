@@ -25,14 +25,12 @@ if x > 0 {
 switch {
     case x > 100 -> Console.write("big")
     case x > 10 -> Console.write("medium")
-    else -> Console.write("small")
-}
+} else -> Console.write("small")
 
 const label = match direction {
     case .north -> "N"
     case .south -> "S"
-    else -> "?"
-}
+} else -> "?"
 
 while x < 10; x += 1 {
     Console.write("\\{x}")

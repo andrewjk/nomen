@@ -29,10 +29,9 @@ func probe = (string content, int from, out Span) {
 			case content.char_code_at_or(lt + 1, -1) != 47 {
 				done = true
 			}
-			else {
+		} else {
 				done = true
 			}
-		}
 	}
 	var result = Span()
 	result.text_end = from
@@ -57,10 +56,9 @@ func classify = (string tag, out int) {
 		case tag.char_code_at_or(0, -1) == 112 {
 			kind = 1
 		}
-		else {
+	} else {
 			kind = 2
 		}
-	}
 	return kind
 }
 

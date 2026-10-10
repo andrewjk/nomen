@@ -213,8 +213,7 @@ match f.open("filetest_no_such_xyz.txt", "r") {
 	case .error(e) {
 		match e {
 			case .not_found -> Console.write("not_found ")
-			else -> Console.write("other ")
-		}
+		} else -> Console.write("other ")
 	}
 }
 match f.readAll() {
@@ -224,8 +223,7 @@ match f.readAll() {
 	case .error(e2) {
 		match e2 {
 			case .not_open -> Console.write("not_open")
-			else -> Console.write("other")
-		}
+		} else -> Console.write("other")
 	}
 }
 `;
@@ -241,8 +239,7 @@ match File.read_all("filetest_no_such_xyz.txt") {
 	case .error(e) {
 		match e {
 			case .not_found -> Console.write("empty")
-			else -> Console.write("other")
-		}
+		} else -> Console.write("other")
 	}
 }
 `;

@@ -170,10 +170,9 @@ match x {
 	case 1 {
 		p.bump()
 	}
-	else {
+} else {
 		Console.write("else")
 	}
-}
 Console.write("\\{q.count}")
 `;
 		expect(errors(input)).toEqual([]);

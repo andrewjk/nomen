@@ -55,14 +55,12 @@ pub func main = () {
   const NumberResult result = check_number(44)
   const int a = match result {
     case .ok -> 64
-    else -> 22
-  }
+  } else -> 22
 
   const NumberResult result2 = check_number(4)
   const int b = match result2 {
     case .ok -> 24
-    else -> 22
-  }
+  } else -> 22
 
   Console.write("a=\\{a}, b=\\{b}")
 }
@@ -89,14 +87,12 @@ pub func main = () {
   const NumberResult result = check_number(44)
   const int a = match result {
     case .ok -> 64
-    else -> 22
-  }
+  } else -> 22
 
   const NumberResult result2 = check_number(4)
   const int b = match result2 {
     case .ok -> 24
-    else -> 22
-  }
+  } else -> 22
 
   Console.write("a=\\{a}, b=\\{b}")
 }

@@ -21,8 +21,7 @@ func char_for = (int c, out string) {
         case 10 -> "J"
         case 25 -> "Y"
         case 26 -> "Z"
-        else -> ???
-    }
+    } else -> ???
 }
 
 pub func main = () {
@@ -55,8 +54,7 @@ func char_for = (int c, out string) {
         case 10 -> "J"
         case 25 -> "Y"
         case 26 -> "Z"
-        else -> "!"
-    }
+    } else -> "!"
 }
 
 pub func main = () {
@@ -89,8 +87,7 @@ func char_for = (int c, out string) {
         case 10 -> "J"
         case 25 -> "Y"
         case 26 -> "Z"
-        else -> "!"
-    }
+    } else -> "!"
 }
 
 pub func main = () {

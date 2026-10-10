@@ -218,10 +218,9 @@ func classify = (ref bool flag, out int) {
     case flag {
       result = 1
     }
-    else {
+  } else {
       result = 0
     }
-  }
   return result
 }
 `;

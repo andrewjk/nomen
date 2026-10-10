@@ -24,8 +24,7 @@ pub func main = () {
             case 10 -> Console.write("J")
             case 25 -> Console.write("Y")
             case 26 -> Console.write("Z")
-            else -> Console.???
-        }
+        } else -> Console.???
     }
 }
 `;
@@ -54,8 +53,7 @@ pub func main = () {
             case 10 -> Console.write("J")
             case 25 -> Console.write("Y")
             case 26 -> Console.write("Z")
-            else -> Console.write("?")
-        }
+        } else -> Console.write("?")
     }
 }
 `;
@@ -84,8 +82,7 @@ pub func main = () {
             case 10 -> Console.write("J")
             case 25 -> Console.write("Y")
             case 26 -> Console.write("Z")
-            else -> Console.write("?")
-        }
+        } else -> Console.write("?")
     }
 }
 `;

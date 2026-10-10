@@ -19,9 +19,8 @@ func nested_flow = (int n, out int) {
                     j = j + 1
                 }
             }
-            else -> acc = acc + 1
+    } else -> acc = acc + 1
         }
-    }
     return acc
 }
 Console.write("\\{nested_flow(6)}")

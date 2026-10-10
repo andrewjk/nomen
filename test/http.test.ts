@@ -25,8 +25,7 @@ match h.get("http://127.0.0.1:1/") {
 			case .dns -> Console.write("dns ")
 			case .socket -> Console.write("socket ")
 			case .connect -> Console.write("connect ")
-			else -> Console.write("other ")
-		}
+		} else -> Console.write("other ")
 	}
 }
 match h.post("http://127.0.0.1:1/", "hello=world") {
@@ -53,8 +52,7 @@ match h.get("http://127.0.0.1:1/") {
 	case .error(e) {
 		match e {
 			case .connect -> Console.write("connect ")
-			else -> Console.write("other ")
-		}
+		} else -> Console.write("other ")
 	}
 }
 match h.post("http://127.0.0.1:1/", "hello=world") {
@@ -64,8 +62,7 @@ match h.post("http://127.0.0.1:1/", "hello=world") {
 	case .error(e) {
 		match e {
 			case .connect -> Console.write("connect")
-			else -> Console.write("other")
-		}
+		} else -> Console.write("other")
 	}
 }
 Console.write(" ")

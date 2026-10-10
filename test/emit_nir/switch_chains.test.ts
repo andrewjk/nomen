@@ -12,8 +12,7 @@ func size_of = (int x, out string) {
     switch {
         case x > 100 -> s = "big"
         case x > 10 -> s = "medium"
-        else -> s = "small"
-    }
+    } else -> s = "small"
     return s
 }
 Console.write("\\{size_of(500)} \\{size_of(3)}")

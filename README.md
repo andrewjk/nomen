@@ -197,9 +197,8 @@ switch {
     case x > 10 {
         Console.write("medium")
     }
-    else {
+} else {
         Console.write("small")
-    }
 }
 ```
 
@@ -245,8 +244,7 @@ const y = if x > 100 -> "big"
 const z = switch {
     case x > 100 -> "big"
     case x > 10 -> "medium"
-    else -> "small"
-}
+} else -> "small"
 ```
 
 There is also a `match` statement that we'll see a bit further down.

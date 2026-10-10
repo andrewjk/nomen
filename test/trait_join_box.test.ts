@@ -31,8 +31,7 @@ func scaled = (int s, out Square) {
 func make_switch = (int k, out Shape) {
 	return switch {
 		case k == 0 -> Square(2)
-		else -> Square(3)
-	}
+	} else -> Square(3)
 }
 func make_if = (int k, out Shape) {
 	return if k == 0 -> Square(4) else -> Square(5)
@@ -40,8 +39,7 @@ func make_if = (int k, out Shape) {
 func make_match = (int k, out Shape) {
 	return match k {
 		case 0 -> scaled(3)
-		else -> scaled(4)
-	}
+	} else -> scaled(4)
 }
 mv struct Label : Shape {
 	var string text = ""
@@ -53,8 +51,7 @@ mv struct Label : Shape {
 func make_label = (int k, out Shape) {
 	return switch {
 		case k == 0 -> Label()
-		else -> Label()
-	}
+	} else -> Label()
 }
 var Shape a = make_switch(0)
 Console.write("\\{a.area()}")

@@ -125,13 +125,12 @@ pub struct Utf8 {
 				sb.append_char(((0x80 | ((code >> 6) & 0x3F)) as char))
 				sb.append_char(((0x80 | (code & 0x3F)) as char))
 			}
-			else {
+		} else {
 				sb.append_char(((0xF0 | (code >> 18)) as char))
 				sb.append_char(((0x80 | ((code >> 12) & 0x3F)) as char))
 				sb.append_char(((0x80 | ((code >> 6) & 0x3F)) as char))
 				sb.append_char(((0x80 | (code & 0x3F)) as char))
 			}
-		}
 		return sb.to_string()
 	}
 

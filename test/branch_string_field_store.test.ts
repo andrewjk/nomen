@@ -97,10 +97,9 @@ func pick = (ref Pair pair, int which, string raw) {
 		case which == 2 {
 			pair.a = decorated(raw)
 		}
-		else {
+	} else {
 			pair.a = "default"
 		}
-	}
 }
 
 pub func main = (Init init) {

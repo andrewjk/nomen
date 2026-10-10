@@ -24,8 +24,7 @@ func area_of = (MyShape s, out int) {
     match s {
         case .circle(r) -> area = 3 * r
         case .unit -> area = 1
-        else -> area = 0
-    }
+    } else -> area = 0
     return area
 }
 
@@ -51,8 +50,7 @@ pub func main = () {
     match s {
         case .circle(r) -> area = 3 * r
         case .unit -> area = 1
-        else -> area = 0
-    }
+    } else -> area = 0
     Console.write("\\{area} \\{area_of(MyShape.unit)}")
 }
 `,

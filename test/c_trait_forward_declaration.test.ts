@@ -31,9 +31,8 @@ pub func main = () {
 		case 1 {
 			trait Speaker { func speak = (self, out string) }
 		}
-		else {}
+} else {}
 	}
-}
 `);
 	expect(parsed.errors).toEqual([]);
 	const result = build(parsed.root, { arch: "c" });

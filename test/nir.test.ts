@@ -181,18 +181,15 @@ pub func nir_demo_ir = (out float) {
     const mid = count / 2
     match 7 {
         case 7 -> Console.write("seven")
-        else -> Console.write("other")
-    }
+    } else -> Console.write("other")
     match mid {
         case 3 {
             Console.write("three")
         }
-        else {}
-    }
+    } else {}
     switch {
         case count > 100 -> Console.write("big")
-        else -> Console.write("small")
-    }
+    } else -> Console.write("small")
     var MyShape s = MyShape.circle(1.5)
     for it of [1, 2, 3] {
         Console.write("\\{it}")
@@ -308,14 +305,12 @@ test("value-position match/if/switch lower to flow with empty unknown kinds", ()
 pub func flow_demo = (int v, out int) {
     var int kind = match v {
         case 0 -> 100
-        else -> 300
-    }
+    } else -> 300
     var int bump = if kind > 150 -> 5
                    else -> 1
     var int wrap = switch {
         case kind == 100 -> 7
-        else -> 9
-    }
+    } else -> 9
     return kind + bump + wrap
 }
 `;
@@ -407,8 +402,7 @@ test("traffic counts flow-arm and spawn-arg reads (flip pin)", () => {
 pub func parity = (int q, out int) {
     var int k = match 1 {
         case 1 -> q
-        else -> 0
-    }
+    } else -> 0
     return k
 }
 pub func parity_spawn = (int q) {

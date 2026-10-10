@@ -333,8 +333,7 @@ w = Len.fixed(50)
 Console.write("\\{w}")
 var int n = match w {
   case .fixed(x) -> x
-  else -> 0
-}
+} else -> 0
 Console.write("\\{n}")
 `;
 		await build_and_check_output(input, "enum_reassign_match_payload", "150");

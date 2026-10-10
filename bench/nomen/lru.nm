@@ -80,7 +80,7 @@ mv struct LRU {
 					self.keys.set(key, id)
 				}
 			}
-			else {
+		} else {
 				const int id = self.count
 				self.count += 1
 				if id >= 0 && id < self.nkeys.cap && id < self.nvals.cap {
@@ -90,7 +90,6 @@ mv struct LRU {
 				self.link_tail(id)
 				self.keys.set(key, id)
 			}
-		}
 	}
 
 	func get = (ref self, int key, out int) {

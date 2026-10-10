@@ -41,16 +41,18 @@ export default function parse_match(status: ParseStatus): MatchNode {
 		}
 	}
 
+	expect("}", status);
+
+	status.stack.pop();
+
+	// The `else` arm sits OUTSIDE the case braces — `else` terminates the
+	// construct at the top level, exactly like if/else.
 	if (accept("else", status)) {
 		const else_branch = parse_match_branch(status);
 		if (else_branch) {
 			match_node.else_branch = else_branch;
 		}
 	}
-
-	expect("}", status);
-
-	status.stack.pop();
 
 	return match_node;
 }

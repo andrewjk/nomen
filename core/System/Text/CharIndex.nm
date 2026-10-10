@@ -50,7 +50,7 @@ pub mv struct CharIndex {
 					pos = pos + w
 					chars = chars + 1
 				}
-				else {
+			} else {
 					if open_at >= 0 {
 						self.runs.push(CharRun(open_at, open_start, open_width, open_count))
 					}
@@ -61,7 +61,6 @@ pub mv struct CharIndex {
 					pos = pos + w
 					chars = chars + 1
 				}
-			}
 		}
 		if open_at >= 0 {
 			self.runs.push(CharRun(open_at, open_start, open_width, open_count))

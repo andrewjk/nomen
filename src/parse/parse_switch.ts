@@ -28,16 +28,18 @@ export default function parse_switch(status: ParseStatus): SwitchNode {
 		}
 	}
 
+	expect("}", status);
+
+	status.stack.pop();
+
+	// The `else` arm sits OUTSIDE the case braces — `else` terminates the
+	// construct at the top level, exactly like if/else.
 	if (accept("else", status)) {
 		const else_branch = parse_case_branch(status);
 		if (else_branch) {
 			switch_node.else_branch = else_branch;
 		}
 	}
-
-	expect("}", status);
-
-	status.stack.pop();
 
 	return switch_node;
 }

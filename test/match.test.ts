@@ -17,10 +17,9 @@ match x {
 	case 5 {
 		Console.write("five")
 	}
-	else {
+} else {
 		Console.write("other")
 	}
-}
 `;
 		await build_and_check_output(input, "match_single", "five");
 	});
@@ -33,10 +32,9 @@ match x {
 	case 5 {
 		result = 1
 	}
-	else {
+} else {
 		result = 0
 	}
-}
 Console.write("\\{result}")
 `;
 		await build_and_check_output(input, "match_not_matched", "0");
@@ -55,10 +53,9 @@ match x {
 	case 15 {
 		Console.write("fifteen")
 	}
-	else {
+} else {
 		Console.write("other")
 	}
-}
 `;
 		await build_and_check_output(input, "match_first", "five");
 	});
@@ -76,10 +73,9 @@ match x {
 	case 15 {
 		Console.write("fifteen")
 	}
-	else {
+} else {
 		Console.write("other")
 	}
-}
 `;
 		await build_and_check_output(input, "match_second", "ten");
 	});
@@ -97,10 +93,9 @@ match x {
 	case 15 {
 		Console.write("fifteen")
 	}
-	else {
+} else {
 		Console.write("other")
 	}
-}
 `;
 		await build_and_check_output(input, "match_third", "fifteen");
 	});
@@ -112,10 +107,9 @@ match x {
 	case 5 {
 		Console.write("five")
 	}
-	else {
+} else {
 		Console.write("other")
 	}
-}
 `;
 		await build_and_check_output(input, "match_else", "other");
 	});
@@ -127,8 +121,7 @@ const y = match x {
 	case 1 -> "one"
 	case 2 -> "two"
 	case 3 -> "three"
-	else -> "other"
-}
+} else -> "other"
 Console.write(y)
 `;
 		await build_and_check_output(input, "match_expression", "two");
@@ -140,8 +133,7 @@ var x = 99
 const y = match x {
 	case 1 -> "one"
 	case 2 -> "two"
-	else -> "other"
-}
+} else -> "other"
 Console.write(y)
 `;
 		await build_and_check_output(input, "match_expression_else", "other");
@@ -161,10 +153,9 @@ match x {
 	case 15 {
 		result = 3
 	}
-	else {
+} else {
 		result = 0
 	}
-}
 Console.write("\\{result}")
 `;
 		await build_and_check_output(input, "match_var_assign", "2");
@@ -181,15 +172,13 @@ match x {
 			case 7 {
 				result = 1
 			}
-			else {
+		} else {
 				result = 2
 			}
-		}
 	}
-	else {
+} else {
 		result = 0
 	}
-}
 Console.write("\\{result}")
 `;
 		await build_and_check_output(input, "match_nested", "1");
@@ -206,10 +195,9 @@ for i of 0..5 {
 		case 3 {
 			result = result + 20
 		}
-		else {
+	} else {
 			result = result + 1
 		}
-	}
 }
 Console.write("\\{result}")
 `;
@@ -223,8 +211,7 @@ const y = match x {
 	case 1 -> 10
 	case 2 -> 20
 	case 3 -> 30
-	else -> 0
-}
+} else -> 0
 Console.write("\\{y}")
 `;
 		await build_and_check_output(input, "match_int_expression", "30");
@@ -241,10 +228,9 @@ match x {
 	case 0 {
 		result = 2
 	}
-	else {
+} else {
 		result = 3
 	}
-}
 Console.write("\\{result}")
 `;
 		await build_and_check_output(input, "match_01", "1");
@@ -261,10 +247,9 @@ match x {
 	case 0 {
 		result = 2
 	}
-	else {
+} else {
 		result = 3
 	}
-}
 Console.write("\\{result}")
 `;
 		await build_and_check_output(input, "match_negative", "1");
@@ -278,10 +263,9 @@ match x {
 	case 2 + 3 {
 		result = 1
 	}
-	else {
+} else {
 		result = 2
 	}
-}
 Console.write("\\{result}")
 `;
 		await build_and_check_output(input, "match_expr_case", "1");
@@ -304,10 +288,9 @@ match direction {
 	case .south {
 		Console.write("south")
 	}
-	else {
+} else {
 		Console.write("other")
 	}
-}
 `;
 		await build_and_check_output(input, "match_enum", "south");
 	});
@@ -323,8 +306,7 @@ var direction = Direction.north
 const label = match direction {
 	case .north -> "N"
 	case .south -> "S"
-	else -> "?"
-}
+} else -> "?"
 Console.write(label)
 `;
 		await build_and_check_output(input, "match_enum_expr", "N");
@@ -382,8 +364,7 @@ enum Len {
 var Len w = Len.fixed(50)
 var int n = match w {
   case .fixed(x) -> x
-  else -> 0
-}
+} else -> 0
 Console.write("\\{n}")
 `;
 		await build_and_check_output(input, "match_associated_data_extract", "50");
@@ -618,9 +599,8 @@ func test = (out int) {
 	match x {
 		case "hello" {
 		}
-		else {
+	} else {
 		}
-	}
 	return 0
 }
 `;
@@ -696,10 +676,9 @@ func main = () {
     case .north {
       Console.write("north")
     }
-    else {
+  } else {
       Console.write("other")
     }
-  }
 }
 `;
 		const parsed = parse_with_imports(input);
