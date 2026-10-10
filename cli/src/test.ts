@@ -591,9 +591,14 @@ const C = {
 	cyan: (s: string) => `\x1b[36m${s}\x1b[0m`,
 };
 
-/** Print a vitest-style report for one file's results. */
-export function report_file(result: TestFileResult): void {
+/**
+ * Print a vitest-style report for one file's results. `progress` (e.g.
+ * "[3/24]") is appended to the header line when given — the streaming
+ * `runTests` passes a done/total counter so long suites show movement.
+ */
+export function report_file(result: TestFileResult, progress?: string): void {
 	const rel = path.relative(process.cwd(), result.file);
+	const counter = progress ? ` ${C.dim(progress)}` : "";
 	if (result.crashed && result.tests.length === 0 && result.fails.length === 0) {
 		// Name the stage that actually failed. A binary that linked fine and
 		// then died before emitting any record (e.g. SIGSEGV) is NOT a build
@@ -606,14 +611,14 @@ export function report_file(result: TestFileResult): void {
 					: result.phase === "setup"
 						? "(setup failed)"
 						: "(failed to build)";
-		console.log(` ${C.red("✗")} ${rel} ${C.red(label)}`);
+		console.log(` ${C.red("✗")} ${rel} ${C.red(label)}${counter}`);
 		console.log(C.red(result.crashed));
 		return;
 	}
 	const totalTests = result.tests.length;
 	const mark = result.ok ? C.green("✓") : C.red("✗");
 	console.log(
-		` ${mark} ${rel} ${C.dim(`(${totalTests} tests)`)} ${C.dim(format_duration(result.ms))}`,
+		` ${mark} ${rel} ${C.dim(`(${totalTests} tests)`)} ${C.dim(format_duration(result.ms))}${counter}`,
 	);
 	if (result.crashed) {
 		console.log(C.red(`   ${result.crashed}`));
@@ -701,7 +706,13 @@ export async function runTests(root: string, options: RunTestsOptions = {}): Pro
 	const lib = resolve_lib_for(root);
 	const files = collect_test_files(root).filter((f) => !options.filter || options.filter.test(f));
 
-	console.log(`Found ${files.length} test file(s)\n`);
+	console.log(`Found ${files.length} test file(s)`);
+	// Announce everything that will run before the first result lands, so a
+	// long suite shows its scope immediately instead of a single counter line.
+	for (const file of files) {
+		console.log(` ${C.dim(path.relative(process.cwd(), file))}`);
+	}
+	console.log("");
 
 	const startTime = performance.now();
 	// The CWD contract: test binaries run in the --in root, so relative
@@ -711,13 +722,16 @@ export async function runTests(root: string, options: RunTestsOptions = {}): Pro
 	// Bounded-concurrency pool: at most `jobs` files are in flight. The
 	// parse/build halves are synchronous (no internal awaits), so they run
 	// atomically on the main thread between the subprocess awaits — the
-	// compiler's in-process state never interleaves. Results are collected by
-	// file INDEX and reported after the pool drains, so the report stays in
-	// discovery order regardless of completion order (and stdout isn't
-	// interleaved).
+	// compiler's in-process state never interleaves. Results are ALSO
+	// collected by file INDEX (for the discovery-order summary below), but
+	// each finished file reports the moment it lands: `report_file` runs
+	// synchronously on the event loop, so its lines can never interleave
+	// with another worker's, and a slow file no longer hides the files that
+	// finished (or failed) before it.
 	const jobs = Math.max(1, Math.min(options.jobs ?? default_jobs(), files.length));
 	const results: TestFileResult[] = Array.from<TestFileResult>({ length: files.length });
 	let next = 0;
+	let done = 0;
 	const worker = async (): Promise<void> => {
 		for (;;) {
 			const i = next++;
@@ -731,10 +745,11 @@ export async function runTests(root: string, options: RunTestsOptions = {}): Pro
 				options.release,
 				binary_cwd,
 			);
+			done += 1;
+			report_file(results[i], `[${done}/${files.length}]`);
 		}
 	};
 	await Promise.all(Array.from({ length: jobs }, worker));
-	for (const result of results) report_file(result);
 
 	const elapsed = performance.now() - startTime;
 	const totalFiles = results.length;

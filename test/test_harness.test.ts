@@ -405,14 +405,14 @@ pub func test_ok = (ref Tester t) {
 }, 90_000);
 
 // ---------------------------------------------------------------------------
-// runTests (parallel test-file execution + ordered reporting)
+// runTests (parallel test-file execution + streamed reporting)
 // ---------------------------------------------------------------------------
 
-test("runTests runs files concurrently but reports them in discovery order", async () => {
+test("runTests lists files up front and streams each result as it lands", async () => {
 	// Three fixtures (one intentionally failing). With jobs > 1 the
-	// latency-bound clang/link/run steps overlap across files, yet the
-	// per-file report must stay in the discovery (sorted) order and the
-	// aggregate result must be identical to the sequential run.
+	// latency-bound clang/link/run steps overlap across files; every file
+	// reports exactly once the moment it finishes (completion order), and
+	// the aggregate result must be identical to the sequential run.
 	const logs: string[] = [];
 	const spy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
 		logs.push(args.map(String).join(" "));
@@ -426,8 +426,40 @@ test("runTests runs files concurrently but reports them in discovery order", asy
 	// calc.test.nm intentionally fails two asserts.
 	expect(parallel_ok).toBe(false);
 
-	const order = logs
-		.filter((l) => l.includes("cli/test/fixtures/") && l.includes(".test.nm"))
-		.map((l) => l.replace(/.*fixtures\//, "").replace(/ .*/, ""));
-	expect(order).toEqual(["calc.test.nm", "crash.test.nm", "fileio.test.nm", "spawn.test.nm"]);
+	// `report_file` wraps marks and paths in ANSI colors; strip the escapes
+	// so the assertions below match plain text. (The pattern is built at
+	// runtime — a literal ESC in the regex trips the control-character lint.)
+	const ansi = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
+	const strip = (l: string) => l.replace(ansi, "");
+
+	// The header announces the file count, then the pre-run listing names
+	// every file BEFORE any result line.
+	const found = logs.findIndex((l) => l.includes("Found 4 test file(s)"));
+	expect(found).toBeGreaterThanOrEqual(0);
+	const listing = logs
+		.slice(found + 1, found + 6)
+		.map(strip)
+		.filter((l) => l.includes(".test.nm"))
+		.map((l) => l.trim().replace(/.*fixtures\//, ""));
+	expect(listing).toEqual(["calc.test.nm", "crash.test.nm", "fileio.test.nm", "spawn.test.nm"]);
+
+	// Every file reports exactly once (completion order), each header line
+	// carrying a done/total progress counter.
+	expect(logs.some((l) => strip(l).includes("[1/4]"))).toBe(true);
+	expect(logs.some((l) => strip(l).includes("[4/4]"))).toBe(true);
+	const reported = logs
+		.filter((l) => strip(l).includes("/4]"))
+		.map(strip)
+		.map((l) =>
+			l
+				.trim()
+				.replace(/.*fixtures\//, "")
+				.replace(/ .*/, ""),
+		);
+	expect(reported.sort()).toEqual([
+		"calc.test.nm",
+		"crash.test.nm",
+		"fileio.test.nm",
+		"spawn.test.nm",
+	]);
 }, 120_000);
