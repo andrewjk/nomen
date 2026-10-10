@@ -142,19 +142,19 @@
 			"patterns": [
 				{
 					"name": "keyword.control.nm",
-					"match": "\\b(?:if|else|while|for|of|in|break|continue|return|switch|case|match|async)\\b"
+					"match": "\\b(?:if|else|while|for|of|break|continue|return|switch|case|match|async)\\b"
 				},
 				{
 					"name": "storage.type.nm",
-					"match": "\\b(?:func|struct|class|trait|enum|bitset)\\b"
+					"match": "\\b(?:func|struct|trait|enum|bitset)\\b"
 				},
 				{
 					"name": "keyword.other.nm",
-					"match": "\\b(?:var|const|let|mv|view|swap|import|panic|todo)\\b"
+					"match": "\\b(?:var|const|let|mv|view|swap|import|panic|todo|extend)\\b"
 				},
 				{
 					"name": "storage.modifier.nm",
-					"match": "\\b(?:pub|private|inline|out|ref|checked)\\b"
+					"match": "\\b(?:pub|private|internal|readonly|inline|out|ref|checked|foreign|unsafe)\\b"
 				},
 				{
 					"name": "keyword.operator.word.nm",

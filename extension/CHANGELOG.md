@@ -17,6 +17,7 @@
 -  *(minor)* - Breaking: rename the `extern func` FFI modifier to `foreign func` (avoids the `extend` collision)
 -  *(minor)*
   Breaking: the `class` keyword retires — `class X { ... }` is now a compile error directing you to `mv struct X` (single-owner, move-only). Share with `ref` aliases and `Box<T>`; guard back-pointers with `WeakHandle<T>`.
+-  *(patch)* - Grammar updated to the 0.7.0 language: retired `class` and `in` no longer highlighted; adds `foreign`, `unsafe`, `extend`, `internal` and `readonly`.
 
 ## 0.2.6
 <sub>2026-09-24</sub>
