@@ -225,10 +225,15 @@ both deliberately left:
   runtime-conformer-aware frees (a vtable compare per owning conformer at
   the write), which would also let mixed-set writes dup only for owning
   instances.
-- **Nested trait class-typed fields**: `emit_nested_field_destroys` /
-  `emit_destroy_for_array_elem` (aarch64) still walk `struct.fields` only,
-  so a trait-declared class field inside a nested/array element is not
-  recursively destroyed.
+- **Fixed-array ELEMENT trait fields**: `emit_destroy_for_array_elem`
+  (aarch64) walks `struct.fields` only and gates on an explicit `#destroy`,
+  so a fixed-size array FIELD whose element struct carries trait-declared
+  owned fields (and no explicit destroy) is not recursively destroyed. The
+  shape is unreachable without `unsafe` (fixed `T[N]` struct fields need
+  pointer indexing), so it stays a recorded corner; the nested-STRUCT
+  variant is closed (a nested conformer's trait-declared fields now make
+  the enclosing destroy walk fire, and custom `#init`s seed trait
+  defaults).
 
 ## Custom `#init` computed seeds: residual bounded corners
 

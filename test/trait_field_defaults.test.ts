@@ -160,4 +160,34 @@ Console.write(t.tag)
 			audit: false,
 		});
 	});
+
+	// A trait-declared field on a conformer NESTED inside another struct:
+	// (1) a custom `#init` left the trait default UNINITIALIZED (stack
+	// garbage — the first write "reclaimed" it, freeing garbage), and (2)
+	// the enclosing struct's destroy walk skipped the nested conformer
+	// entirely (the field predicates missed trait-declared state), so the
+	// written value leaked. The custom-init path now seeds trait defaults
+	// (both backends) and the destroy predicate treats a nested conformer's
+	// trait-declared fields as destroy-worthy.
+	test("trait string field on a nested conformer", async () => {
+		const input = `
+trait Holds {
+	var string label = "inner-seed"
+}
+mv struct Inner : Holds {
+	pub func #init = (self) {
+	}
+}
+mv struct Outer {
+	var Inner a
+	pub func #init = (self) {
+		self.a = Inner()
+	}
+}
+var Outer o = Outer()
+o.a.label = "set".to_string()
+Console.write(o.a.label)
+`;
+		await build_and_check_output(input, "trait_field_nested", "set");
+	});
 });

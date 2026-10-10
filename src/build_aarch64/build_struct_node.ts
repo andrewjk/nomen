@@ -1538,6 +1538,67 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 		}
 	}
 
+	// Default fields from traits (mirrors build_init_function's block): a
+	// custom `#init` left trait-declared defaults UNINITIALIZED — the field
+	// held frame garbage, and the first body write "reclaimed" it (an
+	// invalid free) while reads saw garbage.
+	for (const trait_name of node.traits) {
+		const trait = status.traits.find((t) => t.name === trait_name);
+		if (!trait) continue;
+		for (const field of trait.fields) {
+			if (!field.value) continue;
+			if (node.fields.find((nf) => nf.name === field.name)) continue;
+			// A defaulted field holds a REAL value before the body — record it
+			// so the body's first write reclaims the default (see
+			// init_assigned_fields).
+			status.init_assigned_fields?.add(`self.${field.name}`);
+			const offset = get_field_offset(node.name, field.name, status);
+			const val = field.value.node_type === "value" ? (field.value as any).value : undefined;
+			if (
+				val === "null" &&
+				(is_nullable_scalar_type(field.type, status) || is_nullable_struct_type(field.type, status))
+			) {
+				const has_off = get_field_has_offset(node.name, field.name, status);
+				if (is_nullable_scalar_type(field.type, status)) {
+					emit_asm(status, `strb wzr, [x19, #${has_off}]\n`);
+				} else {
+					emit_asm(status, `str xzr, [x19, #${has_off}]\n`);
+				}
+				continue;
+			}
+			const is_fat_string =
+				field.type.name === "string" &&
+				!field.type.is_ref &&
+				!field.type.is_view &&
+				!field.type.is_array;
+			if (is_fat_string && val === "null") {
+				emit_asm(status, `mov x1, #0\n`);
+				emit_asm(status, `mov x2, #0\n`);
+				emit_pair_store_to(status, "x19", offset, "x1", "x2");
+				continue;
+			}
+			if (is_fat_string && typeof val === "string" && val.startsWith('"')) {
+				const label = `_str_${func_name}_${field.name}`;
+				status.strings!.set(label, val);
+				emit_asm(status, `adr x1, ${label}\n`);
+				// A class's — or, B1 cutover, an OWNING struct's — default
+				// string literal must be heap-owned (the field is freed
+				// unconditionally at destroy).
+				if (node.is_class || owns_strings_uniformly(node)) {
+					emit_asm(status, `mov x0, x1\n`);
+					emit_asm(status, `bl _strdup\n`);
+					emit_asm(status, `mov x1, x0\n`);
+				}
+				emit_asm(status, `mov x2, #${string_literal_length(val)}\n`);
+				emit_pair_store_to(status, "x19", offset, "x1", "x2");
+				continue;
+			}
+			build_node(field.value, status);
+			ensure_newline(status);
+			emit_typed_store(status, "x0", "x19", offset, get_type_size(field.type, status));
+		}
+	}
+
 	status.buffer_data_cache = undefined;
 	status.array_ptr_cache = undefined;
 	try {

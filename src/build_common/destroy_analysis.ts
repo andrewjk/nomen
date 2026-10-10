@@ -99,10 +99,13 @@ export function has_struct_fields_with_destroy(struct: StructNode, table: Struct
 		const field_struct = resolve_struct_type(field.type, table);
 		if (!field_struct) continue;
 		if (field_struct.is_class) return true;
-		if (has_destroy(field_struct)) return true;
-		if (owns_strings_via_destroy(field_struct) && struct_has_direct_string_fields(field_struct))
-			return true;
-		if (has_struct_fields_with_destroy(field_struct, table)) return true;
+		// Full predicate on the FIELD struct: a nested struct needs the outer
+		// destroy walk when IT needs destroying for any reason — an explicit
+		// `#destroy`, mv string fields, and (post-trait-layout) trait-declared
+		// fields on a class/mv conformer. The old inline predicates missed a
+		// nested conformer whose only owned state is trait-declared, so the
+		// enclosing scope exit never reclaimed it.
+		if (struct_needs_destroy(field_struct, table)) return true;
 	}
 	return false;
 }

@@ -263,6 +263,38 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 				}
 			}
 
+			// Default fields from traits (mirrors the auto-init's block): a
+			// custom `#init` left trait-declared defaults UNINITIALIZED — the
+			// field held stack garbage, and the init body's first write
+			// "reclaimed" it (freeing garbage — an AUDIT-STALE-FREE) while
+			// reads saw garbage.
+			for (let traitName of node.traits) {
+				const trait = status.traits.find((n) => n.name === traitName) as TraitNode;
+				if (!trait) continue;
+				for (let field of trait.fields.filter(
+					(f) => !node.fields.find((nf) => nf.name === f.name),
+				)) {
+					status.init_assigned_fields?.add(`self.${field.name}`);
+					status.code += `self${accessor}${field.name}`;
+					if (field.value) {
+						status.code += " = ";
+						// A class's — or, B1 cutover, an OWNING struct's —
+						// trait-default string field is heap-owned (see the
+						// auto-init's trait block).
+						const wrap =
+							(is_class || owns_strings_uniformly(node)) &&
+							field.type.name === "string" &&
+							!field.type.is_array &&
+							!field.type.is_ref &&
+							!is_owned_heap_temp(field.value as BaseNode, status);
+						if (wrap) status.code += "nomen_str_dup(";
+						build_node(field.value, status);
+						if (wrap) status.code += ")";
+					}
+					status.code += ";\n";
+				}
+			}
+
 			// Build the custom init body. For structs, `self` is a local by-value
 			// variable (self_is_local=true, field access uses `.`). For classes,
 			// `self` is a heap pointer (self_is_local=false, self_is_ref=true,
