@@ -21,6 +21,98 @@
 
 
 
+
+## 0.7.0
+<sub>2026-10-10</sub>
+
+**Language changes — migration notes.** The ownership model was rebuilt this release: classes are gone, ownership is declared on the type, and `string` participates. The entry points:
+
+-  *(minor)*
+  Breaking: the `class` keyword retires — `class X { ... }` is now a compile error naming the fix: declare `mv struct X` (single-owner, move-only). Spell sharing where it happens: `ref` aliases (`ref Box<Node> q = p` — both names see one instance, the owner defers its free), `Box<T>` for heap indirection, `Mutex`/`Atomic<T>` for cross-task mutation, `WeakHandle<T>` for back-pointers. `extend class` retires with it (`extend struct` only).
+-  *(minor)*
+  Breaking: ownership is declared, not inferred — a bare `struct` is Copyable and the checker verifies the claim (a `Box<T>`, `mv struct`, or `mv enum` field is rejected, with the fix named: mark the struct `mv struct` or drop the field). `mv struct` bindings MOVE: `var Config c2 = c` is an error — spell `mv Config c2 = c` to transfer (c is invalid afterwards) or `c.copy()` for a deep copy. The same verifier covers enums: a case payload typed a `mv struct` requires `mv enum`. Passing a `mv` value bare to a function is a read-only borrow; `mv` params transfer; `ref` params are mutable borrows the call site must acknowledge.
+-  *(minor)*
+  Breaking: `string` is an owning type — initializing/assigning from another string variable requires `mv` (transfer) or `.copy()` when the source outlives the binding, reading a `string` field (and `return self.field`) requires `.copy()`, and a `mv string` parameter requires `mv` at the call site. Adds `string.copy()` (literals stay exempt).
+-  *(minor)*
+  New: `Box<T>` — a single-owner pointer to a heap-allocated value, the cycle-breaking and stable-address shape. Boxing takes ownership (`Box<Node>(mv n)`), access through the box is transparent (`b.value`), `Box<T>?` is the natural null slot, and an inline containment cycle (`var Node next`) is a compile error naming `Box<Node>` as the fix.
+-  *(minor)*
+  New: trait objects box at every trait position — a trait-typed value (binding, array element, call argument; struct fields are still pending) is a heap-boxed handle on both backends; boxing takes ownership, and bare trait params take the box (T3 stack-copy convention).
+-  *(minor)*
+  New: `WeakHandle<T>` — a generation-validated weak handle for child→parent / delegate back-pointers. The tracked object must be owned elsewhere (fresh temporaries are rejected); `#destroy` invalidates every handle to it; `h.get()` returns the live pointer or `null` (bind to `T?` and nil-check).
+-  *(minor)*
+  New: `Atomic<T>` — lock-free protected 64-bit slots shared across tasks (`load`/`store`/`fetch_add`/`swap`, sequentially consistent). An `Atomic<T>` field is the sanctioned way to mutate a borrowed capture from another worker (the freeze exempts it).
+-  *(minor)*
+  Breaking: the task-boundary sharing model is spelled at the call site — `Sendable` auto-derivation is gone (opt in with `: Sendable`); scalars/strings/`Copyable` structs cross by copy, `mv` structs move (donor invalidated), and a `mv struct` or `view` passed bare inside an `async` block is a checked region borrow: the join at the closing brace bounds it, and the freeze forbids writing, moving out, or `ref self`-mutating the donor while tasks read it. `.detach()` accepts owned (`mv`) captures only; app-lifetime state is a root-scope global (exempt). Thread, Fiber, Task, Channel, Mutex, Tcp, Tester and Random are now `mv struct`s — they move instead of alias.
+-  *(minor)*
+  New: nested nullable lowerings — `Box<T>?` (and pointer-shaped handles) null to the pointer itself; inline `T?` (Copyable or `mv`) keeps the companion `_has` flag. Nothing boxes silently.
+-  *(minor)* - Breaking: keyword renames — `owning struct/enum` → `mv struct/enum`, keyword `move` → `mv`
+-  *(minor)* - Language: remove the unused reserved words `in` and `cp`
+-  *(minor)* - Breaking: rename the `must_use` modifier to `checked` (`pub checked enum Result<T, E>`)
+-  *(minor)* - Breaking: rename the `extern func` FFI modifier to `foreign func` (avoids the `extend` collision)
+-  *(minor)* - Feat: bare nested block statements — a plain lexical scope whose mv values release at the closing brace (both backends)
+-  *(minor)*
+  Breaking: remove the Func<T, R> func-type alias — spell func types as 'func (params, out result)' (a parse error points at the new form)
+-  *(minor)*
+  Breaking: match/switch else arms move outside the case braces — 'match x { cases } else { ... }', consistent with if/else
+-  *(minor)*
+  Phase N tranche 2: R1 checked region borrows (owning structs + views at the task boundary), R3 freeze, sound spawn packing on both backends
+-  *(minor)* - Phase N tranche 3: WeakHandle<T> (generation-validated registry, #weak construction hook, destroy invalidation)
+-  *(minor)* - Phase N tranche 4: Atomic<T> protected slots, ref-arg spawn borrows, protected-slot freeze derivation
+-  *(minor)* - Phase B tranche 1: owning struct/owning enum declared ownership + the Copyable verifier
+-  *(minor)* - Phase B tranche 2: Box<T> (transparent boxed owning pointers, cycle detector, Box fields in structs)
+-  *(minor)*
+  Phase B tranche 3 (B4): trait objects box at every trait position — boxed handles on both backends, tier-1 demotion, boxing-takes-ownership rules (moves donors, rejects ref/view sources and trait-handle copies), the T3 stack-copy convention at bare Trait params, and dispatched destroy through the vtable shim.
+-  *(minor)*
+  Phase R tranche 1: the #spawn construction hook on owning structs (inline-value C construction, sret aarch64 helper) — the launch surface classes monopolize now reaches the value tier
+-  *(minor)*
+  Phase R tranche 2: Thread/Fiber/Task as owning structs (handle fields, inline nursery-spawn emission, value-self Awaitable.wait, owned-return reassignment + boxed moved-trait-arg fixes)
+-  *(minor)*
+  Phase R tranche 3: Channel/Mutex/Tcp/Tester/Random as owning structs (Sendable dropped, spawn region-borrows + global exemption, split-build WeakHandle fix, root-scope owning-struct globals)
+-  *(minor)*
+  Retire the class keyword: it now emits the retirement error and parses as an owning struct (STRUCT_PLAN_3 Phase R, the flip)
+-  *(minor)*
+  B1 full cutover: the Copyable verifier over the closed owning predicate (string fields make a struct owning), declared-ownership migration across core/ and the corpus, bare owning params are read-only const borrows (pbv shell retired), move-transfer rows on both backends
+-  *(minor)*
+  STRUCT_PLAN_3 phase B1 backend cutover: owning structs' string fields are uniformly heap (ctor strdup, owning stores strdup + displaced reclaim, scope-exit destroy frees unconditionally) on both backends; borrow-accessor bindings (.at/.first/.slice/.load/.at_or_panic/.get_or) strdup their copies; method string returns normalize to heap for vtable dispatch; move-base literals and recv carriers follow ownership
+-  *(minor)*
+  STRUCT_PLAN_3 D3 endgame: `string` is a declared owning type — bindings/assignments from another string variable require `move` or `.copy()`, string field reads and `return self.field` require `.copy()`, owning fields reject borrowed stores, `move string` parameters demand `move` at the call site, container stores transfer, and the silent last-use assign copy is retired. Adds the `string.copy()` method; literals remain exempt. String captures in lambdas stay backend snapshots with checker read-invalidation.
+-  *(patch)* - Phase A: spelled ref class aliases; fix prefix-move transfer gap and aarch64 class transfer double-destroy
+-  *(patch)*
+  Phase N tranche 1: checked region borrows at the task boundary (root rule + detach owns its captures); fix root-scope class globals on both backends
+-  *(patch)*
+  Phase B tranche 4: owning structs own class-typed fields (var spelling, transfer-on-store, displaced reclaim, destroy on both backends), the field restrictions collapse into the Copyable verifier, and the nullable lowerings are pinned (Box<T>? null pointer, inline companion flag, nullable owning-struct return normalization)
+-  *(patch)* - Fix generic construction without call-site type args linking the generic's init
+-  *(patch)* - Fix aarch64 box member access on a call result
+-  *(patch)* - Track nullable field/box bases for member access
+-  *(patch)* - Fix aarch64 nursery join clobbering promoted registers
+-  *(patch)* - Sweep vp check lint/type findings hidden behind the formatting gate
+-  *(patch)* - Post-R cleanup: remove dead class-keyword plumbing; reword stale class diagnostics to owning-struct vocabulary
+-  *(patch)*
+  Backend fixes: aarch64 swap write-back struct-copy, ClassBuffer.modify move contract, nullable owning-field construction/displacement destroy fixes on both backends, capture_destroys recursion
+-  *(patch)*
+  Box transfer ownership: Box<T>(move x) drops donor string records (shallow copy takes ownership); generated Box destroy reclaims string-only pointees — fixes guarded .at() short-circuit reads through boxed elements
+-  *(patch)* - Fix: 'move ... swap' on a string leaked at runtime
+-  *(patch)* - Fix: trait-typed root-scope globals
+-  *(patch)* - Fix: borrow-accessor carrier leaked deep-copied containers
+-  *(patch)* - Fix aarch64 trait-handle re-boxing in a loop (SIGSEGV)
+-  *(patch)* - Fix: aarch64 container destroy over-destroying empty cap slots
+-  *(patch)* - Fix: box value-struct conformers into trait enum payloads
+-  *(patch)* - Fix: box fresh-ctor trait enum payloads
+-  *(patch)* - Fix: boxing a string-field conformer no longer leaks
+-  *(patch)* - Fix: free trait-dispatched string returns
+-  *(patch)* - Fix: trait-target string field writes are uniform-heap
+-  *(patch)* - Fix: owning-struct func-field closure lifetime
+-  *(patch)* - Fix: enum-case .copy() string args leak — hoist an owning _param temp (both backends)
+-  *(patch)* - Fix: string? .copy() preserves null (null-guarded lowering, result typed string?)
+-  *(patch)* - Fix: mv-from-untracked string donor leaked/stale-freed (C declare + assign paths)
+-  *(patch)* - Fix: box trait-returning switch/match/if joins (both backends) + park box-copy source across malloc bl
+-  *(patch)*
+  Fix: trait-default bodies link — bind self/params on aarch64; scope C trait-body state; reclaim fieldless mv conformers' trait fields
+-  *(patch)* - Fix: trait-field reassign on mixed conformer sets no longer frees rodata
+-  *(patch)*
+  Fix: nested trait-field conformers — custom-init seeds trait defaults (both backends); destroy predicate sees trait-declared state
+-  *(patch)* - nomen test now lists discovered test files up front and streams each file's result the moment it finishes
+
 ## 0.6.13
 <sub>2026-10-04</sub>
 

@@ -7,6 +7,17 @@
 
 
 
+
+## 0.3.0
+<sub>2026-10-10</sub>
+
+-  *(minor)* - Breaking: keyword renames — `owning struct/enum` → `mv struct/enum`, keyword `move` → `mv`
+-  *(minor)* - Breaking: remove the unused reserved words `in` and `cp`
+-  *(minor)* - Breaking: rename the `must_use` modifier to `checked` (`pub checked enum Result<T, E>`)
+-  *(minor)* - Breaking: rename the `extern func` FFI modifier to `foreign func` (avoids the `extend` collision)
+-  *(minor)*
+  Breaking: the `class` keyword retires — `class X { ... }` is now a compile error directing you to `mv struct X` (single-owner, move-only). Share with `ref` aliases and `Box<T>`; guard back-pointers with `WeakHandle<T>`.
+
 ## 0.2.6
 <sub>2026-09-24</sub>
 
