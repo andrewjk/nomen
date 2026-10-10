@@ -1,3 +1,4 @@
+import add_error from "../add_error.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
@@ -39,6 +40,14 @@ export default function parse_match(status: ParseStatus): MatchNode {
 				params: pattern.params,
 			});
 		}
+	}
+	if (peek_current(status) === "else") {
+		// The old inside-the-braces spelling — point at the new form.
+		add_error(
+			status,
+			`match else arms sit outside the case braces: 'match x { cases } else { ... }'`,
+			get_index(status),
+		);
 	}
 
 	expect("}", status);

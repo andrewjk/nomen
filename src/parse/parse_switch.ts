@@ -1,3 +1,4 @@
+import add_error from "../add_error.ts";
 import BranchNode from "../nodes/BranchNode.ts";
 import { is_returning_node } from "../nodes/check_node_type.ts";
 import LetNode from "../nodes/LetNode.ts";
@@ -10,6 +11,7 @@ import type ParseStatus from "./ParseStatus.ts";
 import accept from "./utils/accept.ts";
 import expect from "./utils/expect.ts";
 import get_index from "./utils/get_index.ts";
+import peek_current from "./utils/peek_current.ts";
 
 export default function parse_switch(status: ParseStatus): SwitchNode {
 	const switch_start = get_index(status);
@@ -26,6 +28,14 @@ export default function parse_switch(status: ParseStatus): SwitchNode {
 		if (branch) {
 			switch_node.cases.push({ condition, branch });
 		}
+	}
+	if (peek_current(status) === "else") {
+		// The old inside-the-braces spelling — point at the new form.
+		add_error(
+			status,
+			`switch else arms sit outside the case braces: 'switch { cases } else { ... }'`,
+			get_index(status),
+		);
 	}
 
 	expect("}", status);
