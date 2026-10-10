@@ -866,6 +866,11 @@ class CfgBuilder {
 			case "async_block":
 				this.emit_stmts(s.body);
 				return;
+			case "block":
+				// A bare nested block is sequential (same conservative model
+				// as async bodies): its statements inline into the flow.
+				this.emit_stmts(s.body);
+				return;
 			case "nested_func": {
 				const sub = new CfgBuilder(this.coverage);
 				this.nested.push(

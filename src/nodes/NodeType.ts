@@ -22,6 +22,7 @@ export type NodeType =
 	| "access_field"
 	| "access_func"
 	| "branch"
+	| "block"
 	| "value"
 	| "array"
 	| "range"

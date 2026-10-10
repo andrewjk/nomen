@@ -164,6 +164,9 @@ class TrafficWalker {
 			case "async_block":
 				this.stmts(s.body, depth);
 				return;
+			case "block":
+				this.stmts(s.body, depth);
+				return;
 			case "anon_struct":
 				for (const field of s.fields) this.expr(field.expr, depth, false);
 				return;

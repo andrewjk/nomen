@@ -6,6 +6,7 @@ import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import GroupedNode from "../nodes/GroupedNode.ts";
 import IndexNode from "../nodes/IndexNode.ts";
 import LetNode from "../nodes/LetNode.ts";
+import NestedBlockNode from "../nodes/NestedBlockNode.ts";
 import UnsafeBlockNode from "../nodes/UnsafeBlockNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import parse_access from "./parse_access.ts";
@@ -322,6 +323,23 @@ export default function parse_statement(status: ParseStatus) {
 			}
 			case "async": {
 				parse_async_block(status);
+				break;
+			}
+			case "{": {
+				// A bare nested block statement: a plain lexical scope whose
+				// declarations die (and whose scope-exit destroys run) at the
+				// closing brace — the honest form of the `if true { … }`
+				// workaround for early mv releases.
+				const block_start = get_index(status);
+				consume(status); // {
+				const block = new NestedBlockNode(block_start);
+				// Register the block in its parent BEFORE pushing it on the
+				// stack, so statements inside attach to the block itself.
+				add_to_parent(block, "Block", status);
+				status.stack.push(block);
+				parse_statement(status);
+				expect("}", status);
+				status.stack.pop();
 				break;
 			}
 			case "}": {

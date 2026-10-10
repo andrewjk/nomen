@@ -172,6 +172,10 @@ function stmt(ctx: LowerCtx, n: BaseNode): NirStmt {
 		}
 		case "async_block":
 			return { kind: "async_block", node: n, body: block(ctx, (n as any).statements) };
+		case "block":
+			// A bare nested block: its statements lower inline (the emitter
+			// wraps them in the language-level scope frame).
+			return { kind: "block", node: n, body: block(ctx, (n as any).statements) };
 		case "raw":
 			return { kind: "raw", node: n, code: String((n as any).value ?? "") };
 		case "func": {

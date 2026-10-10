@@ -186,6 +186,7 @@ export default function parse_declaration(
 		case "for":
 		case "while":
 		case "branch":
+		case "block":
 		case "async_block":
 		case "unsafe": {
 			(parent as BlockNode).statements.push(decl);

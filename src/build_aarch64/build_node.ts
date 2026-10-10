@@ -16,6 +16,7 @@ import IfElseNode from "../nodes/IfElseNode.ts";
 import IndexNode from "../nodes/IndexNode.ts";
 import LetNode from "../nodes/LetNode.ts";
 import MatchNode from "../nodes/MatchNode.ts";
+import NestedBlockNode from "../nodes/NestedBlockNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import PanicNode from "../nodes/PanicNode.ts";
 import RangeNode from "../nodes/RangeNode.ts";
@@ -44,6 +45,7 @@ import build_index_node from "./build_index_node.ts";
 import build_let_node from "./build_let_node.ts";
 import build_magic_ctor_node from "./build_magic_ctor.ts";
 import build_match_node from "./build_match_node.ts";
+import build_nested_block_node from "./build_nested_block_node.ts";
 import build_operation_node from "./build_operation_node.ts";
 import build_panic_node from "./build_panic_node.ts";
 import build_range_node from "./build_range_node.ts";
@@ -314,6 +316,11 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 		}
 		case "async_block": {
 			build_async_block_node(node as any, status);
+			with_semicolon = false;
+			break;
+		}
+		case "block": {
+			build_nested_block_node(node as NestedBlockNode, status);
 			with_semicolon = false;
 			break;
 		}

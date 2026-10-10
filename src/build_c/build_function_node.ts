@@ -49,6 +49,12 @@ function statements_definitely_return(statements?: BaseNode[]): boolean {
 	if (!statements?.length) return false;
 	const last = statements[statements.length - 1];
 	if (last.node_type === "return") return true;
+	if (last.node_type === "block") {
+		// A bare nested block is sequential: its tail statement decides.
+		return statements_definitely_return(
+			(last as import("../nodes/NestedBlockNode.ts").default).statements,
+		);
+	}
 	if (last.node_type === "if") {
 		const branch = last as unknown as {
 			if_branch?: { statements?: BaseNode[] };

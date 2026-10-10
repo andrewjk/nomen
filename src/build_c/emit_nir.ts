@@ -12,6 +12,7 @@ import ForLoopNode from "../nodes/ForLoopNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import IfElseNode from "../nodes/IfElseNode.ts";
 import MatchNode from "../nodes/MatchNode.ts";
+import NestedBlockNode from "../nodes/NestedBlockNode.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
 import SwitchNode from "../nodes/SwitchNode.ts";
 import WhileLoopNode from "../nodes/WhileLoopNode.ts";
@@ -22,6 +23,7 @@ import build_declaration_node from "./build_declaration_node.ts";
 import build_for_loop_node from "./build_for_loop_node.ts";
 import build_if_else_node from "./build_if_else_node.ts";
 import build_match_node from "./build_match_node.ts";
+import build_nested_block_node from "./build_nested_block_node.ts";
 import build_node from "./build_node.ts";
 import build_return_node from "./build_return_node.ts";
 import build_switch_node from "./build_switch_node.ts";
@@ -173,6 +175,12 @@ export function emit_stmt_from_nir(
 				// the lowered list so the body block dispatches NIR-natively
 				// (scope frames and join emission stay in the builder).
 				build_async_block_node(child as AsyncBlockNode, status, nstmt);
+				return;
+			case "block":
+				// A bare nested block is its own C scope: the builder enters a
+				// fresh declaration frame, emits the statements NIR-natively,
+				// and runs the scope-exit auto-free at the closing brace.
+				build_nested_block_node(child as NestedBlockNode, status, nstmt);
 				return;
 			default:
 				// Everything else rides the existing AST emission unchanged;

@@ -213,6 +213,7 @@ export type NirStmt =
 	| (NirStmtBase & { readonly kind: "raw"; readonly code: string })
 	| (NirStmtBase & { readonly kind: "spawn"; readonly call: NirExpr })
 	| (NirStmtBase & { readonly kind: "async_block"; readonly body: NirStmt[] })
+	| (NirStmtBase & { readonly kind: "block"; readonly body: NirStmt[] })
 	| (NirStmtBase & {
 			readonly kind: "nested_func";
 			readonly name: string;

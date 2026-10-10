@@ -1877,6 +1877,24 @@ while true {
 }
 ```
 
+### Nested Blocks
+
+A bare `{ ... }` block statement is a plain lexical scope. Declarations inside
+it die — and their deterministic destruction runs — at the closing brace: the
+one-zero-cost way to release a `mv` value before the enclosing function ends.
+A block-local is invisible after the block, and may shadow an outer binding:
+
+```
+var string shared = "outer"
+{
+    var string temp = "heap value".to_string()
+    Console.write(temp)         // "heap value"
+}                               // temp's storage is released here
+Console.write(shared)           // "outer"
+```
+
+A `return` inside a nested block returns from the enclosing function.
+
 ### Return
 
 ```

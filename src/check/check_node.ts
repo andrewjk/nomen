@@ -201,6 +201,18 @@ export default function check_node(node: BaseNode, status: CheckStatus): boolean
 			result = check_unsafe_block_node(node as UnsafeBlockNode, status);
 			break;
 		}
+		case "block": {
+			// A bare nested block statement: a plain lexical scope. The
+			// statement walk (and the checker scope stack push/pop) is exactly
+			// what if/loop bodies go through. The block's declarations are
+			// popped at the closing brace — unlike a branch (whose clones
+			// isolate it), a block is sequential, so its entries join the
+			// shared `values` table and are truncated here.
+			const values_len = status.values.length;
+			check_block_node(node as import("../nodes/NestedBlockNode.ts").default, status);
+			status.values.length = values_len;
+			break;
+		}
 		default: {
 			add_error(status, `Unknown node type: ${node.node_type}`, node.start);
 			result = false;

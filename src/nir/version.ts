@@ -271,6 +271,12 @@ class Versioner {
 					hoist_scope: this.hoist_scope(s.node),
 					body: this.stmts(s.body, new Scope(this.scope)),
 				};
+			case "block":
+				return {
+					kind: "block",
+					node: s.node,
+					body: this.stmts(s.body, new Scope(this.scope)),
+				};
 			case "nested_func": {
 				// The nested body closes over the enclosing scope (its reads of
 				// outer names must land on the right keys) but its own params

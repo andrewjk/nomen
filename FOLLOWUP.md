@@ -2,28 +2,6 @@
 
 Skipped or out-of-scope items recorded for later.
 
-## Bare nested blocks are not statement syntax (feature gap)
-
-Found 2026-10-06 while writing `test/spawn_ctor_struct.test.ts` (Phase R
-tranche 1): a bare `{ … }` block statement inside a function body is not
-supported — the parser produces a value node for `{`, so the check fails
-with `Unknown value: {` (and everything after it cascades: the block's
-statements fall out of scope, so `Console` itself reports "Unknown value").
-Nested blocks under a construct (`if`/`while`/`async` bodies) are fine.
-
-Why it's worth building rather than leaving: deterministic destruction is
-the language's core model, and a bare block is the one-zero-cost way to
-release a mv value before the enclosing function ends. The current
-workaround, `if true { … }`, is semantically a lie and reads like one.
-C/C++/Rust all have the bare form; Swift calls it `do`.
-
-Implementation surface: a `{` case in `parse_statement` (or the block
-statement reader) that parses a nested statement list into the existing
-block node; the checker needs only a passthrough (it already handles block
-nodes under every construct); both backends lower nested blocks for
-if/loop bodies already, so a bare block should ride the same path — verify
-scope-exit destroys fire at the block's end on both backends.
-
 ## Struct-plan residuals
 
 (The plan documents are consolidated in [`docs/STRUCTS.md`](./docs/STRUCTS.md);

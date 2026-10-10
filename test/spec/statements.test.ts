@@ -533,6 +533,46 @@ while true {
 	});
 });
 
+describe("spec: nested blocks", () => {
+	test("bare block is a lexical scope; declarations die at the closing brace", () => {
+		const input = `
+var string shared = "outer"
+{
+    var string temp = "heap value".to_string()
+    Console.write(temp)
+}
+Console.write(shared)
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("a block-local is invisible after the block", () => {
+		const input = `
+{
+    var int temp = 5
+}
+Console.write(temp)
+`;
+		const errors = compile_main(input);
+		expect(errors.some((e: any) => e.message.includes("Unknown value: temp"))).toBe(true);
+	});
+
+	test("return inside a nested block returns from the function", () => {
+		const input = `
+func pick = (int k, out int) {
+    {
+        if k == 0 {
+            return 7
+        }
+    }
+    return 9
+}
+Console.write("\\{pick(0)}\\{pick(1)}")
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+});
+
 describe("spec: return", () => {
 	test("return value", () => {
 		const input = `
