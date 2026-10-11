@@ -1,6 +1,7 @@
 import emit_field_overrides, { hoist_field_overrides } from "../build/emit_field_overrides.ts";
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
+import { box_ctor_direct_ctor_arg } from "../build_common/box_ctor_in_place.ts";
 import { ctor_heap_displaced_string_fields } from "../build_common/ctor_return_owned.ts";
 import { struct_needs_auto_destroy } from "../build_common/destroy_analysis.ts";
 import emission_label from "../build_common/emission_label.ts";
@@ -366,6 +367,49 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 	const func_name = is_struct
 		? (node.mangled_name ?? `${node.name}_init`)
 		: emission_label(node.resolved_function ?? node);
+
+	// STRUCT_PLAN_3 Box elision: `Box<T>(T(...))` constructs the wrapped
+	// value DIRECTLY into the freshly malloc'd box slot — the box's auto-init
+	// is inlined at the call site (malloc, vt-slot zero, inner `_init` against
+	// `box + __value`) and the intermediate stack temp + `_init` memcpy
+	// disappear. The elided temp never exists, so the destroyed-donor rules
+	// are trivially met; the inner ctor's own string seeds stay uniformly
+	// heap IN the slot (the box's destroy reclaims them).
+	if (is_struct?.is_class) {
+		const inner = box_ctor_direct_ctor_arg(node, status.structs);
+		if (inner) {
+			const box_size = get_struct_size(node.name, status);
+			const value_offset = get_field_offset(node.name, "__value", status);
+			emit_asm(status, `mov x0, #${box_size}\n`);
+			emit_malloc(status);
+			// The skipped `<Box>_init` zeroed the wrapper's vt slot first;
+			// x0 still holds the fresh pointer.
+			emit_asm(status, `str xzr, [x0]\n`);
+			emit_asm(status, `str x0, [sp, #-16]!\n`);
+			const inner_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
+			const outgoing = build_constructor_params(inner, inner_regs, status);
+			emit_asm(status, `ldr x0, [sp]\n`);
+			emit_asm(status, `add x0, x0, #${value_offset}\n`);
+			emit_asm(status, `bl ${inner.mangled_name ?? `${inner.name}_init`}\n`);
+			if (outgoing > 0) emit_asm(status, `add sp, sp, #${outgoing}\n`);
+			if (inner.move_param_indices?.length) {
+				for (const idx of inner.move_param_indices) {
+					mark_moved_if_struct(inner.params[idx], status);
+				}
+			}
+			build_swap_params(inner, status);
+			// The staged pointer is the call's result (the shared class tail).
+			emit_asm(status, `ldr x0, [sp], #16\n`);
+			if (
+				status.heap_returning_functions?.has(node.name) ||
+				(node.resolved_function?.label_name !== undefined &&
+					status.heap_returning_functions?.has(node.resolved_function.label_name))
+			) {
+				status.last_result_is_heap = true;
+			}
+			return;
+		}
+	}
 	const param_regs = ["x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"];
 
 	let start_reg = 0;

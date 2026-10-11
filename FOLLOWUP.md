@@ -433,3 +433,19 @@ byte-identical; pidigits baseline-relative arc 1.89× → ~1.53× vs C `-O2`):
 - Any emitted assembly that must survive a `bl` may only rely on
   callee-saved registers (x19–x28, sp) or stack slots — x0–x18 are
   caller-saved and clobbered by the callee.
+
+## json-serde run-time regression in 0.7.0 (string-ownership copies)
+
+Head-to-head against `nomen-lang@0.6.13` (2026-10-10, identical
+`bench/nomen/json-serde.nm`, byte-for-byte outputs match): best-of-3 run
+time went 59→95ms on aarch64 (+61%) and 30→61ms on the C backend (+103%).
+The generated C is call-count identical for malloc/memcpy/realloc but adds
+~12 `nomen_str_dup(` call sites, 2 `string_copy(`, and 4 extra
+`JsonNode_destroy(` calls — the D3 string-ownership lowerings (field reads
+and returns now `.copy()`, uniform-heap normalization) landing in the Json
+parser's hot paths, with `List`/`Map` now `mv struct`s on top. Everything
+else in the bench suite is flat (±5%); binarytrees/merkletrees +19–36% is
+the class→`mv struct`+`Box` tree idiom (one alloc before, alloc + struct
+memcpy per child now), not codegen. Worth a pass over the Json parse path
+to identify which lowered reads can stay borrows (e.g. view-returning
+field reads where the caller immediately re-copies or hashes).

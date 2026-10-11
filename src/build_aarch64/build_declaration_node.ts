@@ -4,6 +4,7 @@ import emit_field_overrides, {
 } from "../build/emit_field_overrides.ts";
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
+import { box_ctor_direct_ctor_arg } from "../build_common/box_ctor_in_place.ts";
 import call_in_set from "../build_common/call_in_set.ts";
 import { record_call_init_string_fields } from "../build_common/call_init_string_fields.ts";
 import record_ctor_heap_default_fields from "../build_common/ctor_heap_default_fields.ts";
@@ -2580,6 +2581,15 @@ export default function build_declaration_node(
 					const struct_size = get_struct_size(mono_ctor_name, status);
 					emit_asm(status, `mov x0, #${struct_size}\n`);
 					emit_malloc(status);
+					// STRUCT_PLAN_3 Box elision: `Box<T>(T(...))` constructs the
+					// wrapped value DIRECTLY into the box slot (vt-slot zero,
+					// inner `_init` against `box + __value`) — no stack temp, no
+					// `_init` memcpy of the intermediate.
+					const box_inner = box_ctor_direct_ctor_arg(func_call, status.structs);
+					if (box_inner) {
+						// x0 still holds the fresh pointer.
+						emit_asm(status, `str xzr, [x0]\n`);
+					}
 					// Anchor the instance so it's freed at scope exit. For
 					// argument temporaries (_param_N) passed via `mv`, the
 					// callee takes ownership and mark_moved_if_struct adds
@@ -2592,28 +2602,45 @@ export default function build_declaration_node(
 						emit_asm(status, `str x0, [x29, #${status.stack_offsets!.get(node.name)}]\n`);
 					}
 					const param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
-					const outgoing = build_constructor_params(func_call, param_regs, status);
-					emit_var_load(status, "x0", node.name, 8);
-					emit_asm(status, `bl ${func_call.mangled_name ?? `${func_call.name}_init`}\n`);
-					if (outgoing > 0) emit_asm(status, `add sp, sp, #${outgoing}\n`);
-					if (func_call.move_param_indices?.length) {
-						for (const idx of func_call.move_param_indices) {
-							mark_moved_if_struct(func_call.params[idx], status);
-							// STRUCT_PLAN_3 B2: a `Box<T>(mv x)` construction
-							// SHALLOW-copies x — ownership of the pointee's
-							// state moves with the bytes. The donor's string
-							// records must drop here: the scope-exit
-							// release-before-moved-check would free what the
-							// box now owns.
-							if (is_box_type(func_call.name, status.structs)) {
-								const donor = func_call.params[idx];
-								if (donor.node_type === "value") {
-									clear_heap_string_fields(status, (donor as ValueNode).value);
+					if (box_inner) {
+						const outgoing = build_constructor_params(box_inner, param_regs, status);
+						emit_var_load(status, "x0", node.name, 8);
+						emit_asm(
+							status,
+							`add x0, x0, #${get_field_offset(func_call.name, "__value", status)}\n`,
+						);
+						emit_asm(status, `bl ${box_inner.mangled_name ?? `${box_inner.name}_init`}\n`);
+						if (outgoing > 0) emit_asm(status, `add sp, sp, #${outgoing}\n`);
+						if (box_inner.move_param_indices?.length) {
+							for (const idx of box_inner.move_param_indices) {
+								mark_moved_if_struct(box_inner.params[idx], status);
+							}
+						}
+						build_swap_params(box_inner, status);
+					} else {
+						const outgoing = build_constructor_params(func_call, param_regs, status);
+						emit_var_load(status, "x0", node.name, 8);
+						emit_asm(status, `bl ${func_call.mangled_name ?? `${func_call.name}_init`}\n`);
+						if (outgoing > 0) emit_asm(status, `add sp, sp, #${outgoing}\n`);
+						if (func_call.move_param_indices?.length) {
+							for (const idx of func_call.move_param_indices) {
+								mark_moved_if_struct(func_call.params[idx], status);
+								// STRUCT_PLAN_3 B2: a `Box<T>(mv x)` construction
+								// SHALLOW-copies x — ownership of the pointee's
+								// state moves with the bytes. The donor's string
+								// records must drop here: the scope-exit
+								// release-before-moved-check would free what the
+								// box now owns.
+								if (is_box_type(func_call.name, status.structs)) {
+									const donor = func_call.params[idx];
+									if (donor.node_type === "value") {
+										clear_heap_string_fields(status, (donor as ValueNode).value);
+									}
 								}
 							}
 						}
+						build_swap_params(func_call, status);
 					}
-					build_swap_params(func_call, status);
 				} else {
 					emit_init_value(func_call, nir_init, status);
 					ensure_newline(status);

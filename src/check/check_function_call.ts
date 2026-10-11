@@ -23,6 +23,7 @@ import { instantiate_generic_type } from "./check_function_call_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { borrow_depth_of } from "./utils/borrow.ts";
+import { is_box_type } from "./utils/box.ts";
 import { value_owns_closure } from "./utils/captures.ts";
 import check_func_argument_signature from "./utils/check_func_argument_signature.ts";
 import check_merged_missing_return from "./utils/check_merged_missing_return.ts";
@@ -1518,6 +1519,22 @@ export default function check_function_call(
 			}
 		}
 
+		// STRUCT_PLAN_3 Box elision: a `Box<T>(T(...))` argument — a direct
+		// constructor of the wrapped type — is built DIRECTLY into the freshly
+		// malloc'd box slot by both backends, so the argument needs no hoisted
+		// `_param_N` storage to take an address of. Skipping the hoist hands
+		// the raw func_call to the builds' construct-in-place path and elides
+		// the intermediate struct copy (the elided temp never exists, so the
+		// destroyed-donor rules are trivially satisfied).
+		const box_ctor_in_place_arg =
+			is_box_type((node as FunctionCallNode).name, status.structs) &&
+			!!func_param &&
+			!func_param.type.is_ref &&
+			param.node_type === "func_call" &&
+			(param as FunctionCallNode).name === func_param.type.name &&
+			!!status.structs.find(
+				(s) => s.name === (param as FunctionCallNode).name && !s.is_simple_type && !s.is_class,
+			);
 		if (
 			(param.node_type !== "value" ||
 				is_heap_array_var_copy(param, func_param, param_type, status)) &&
@@ -1529,6 +1546,7 @@ export default function check_function_call(
 			param.node_type !== "func" &&
 			!has_ref_keyword &&
 			!node.swap_params?.has(i) &&
+			!box_ctor_in_place_arg &&
 			!(i === (node as FunctionCallNode).variadic_param_index && param.node_type === "array")
 		) {
 			const declaration_name = `_param_${status.var_name_counter.value++}`;

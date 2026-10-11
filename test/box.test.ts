@@ -168,3 +168,109 @@ pub func main = () {
 		}
 	});
 });
+
+// STRUCT_PLAN_3 Box elision: `Box<T>(T(...))` — a direct constructor of the
+// wrapped type — builds the value DIRECTLY into the freshly malloc'd box
+// slot. The intermediate stack temp (`_param_N`) and the `<Box>_init` memcpy
+// of it disappear; the named-donor move (`Box<T>(mv n)`) keeps its byte-wise
+// move. The elided temp never exists, so the destroyed-donor rules are
+// trivially satisfied, and the wrapped struct's string seeds are uniformly
+// heap IN the slot (the box's destroy reclaims them exactly once).
+describe("Box: construct-in-place elision", () => {
+	test("a direct-constructor argument runs audit-clean on both backends", async () => {
+		const input = `
+import System
+mv struct Wrap {
+	var string name
+	var int value
+}
+pub func main = () {
+	var Box<Wrap> b = Box<Wrap>(Wrap("hi", 7))
+	Console.write_line("\\{b.name} \\{b.value}")
+	var Box<Wrap> c = Box<Wrap>(mv Wrap("yo", 9))
+	Console.write_line("\\{c.name} \\{c.value}")
+}
+`;
+		const parsed = parse_raw(input);
+		expect(parsed.errors).toEqual([]);
+		for (const arch of ["c", "aarch64"] as const) {
+			const built = build(parsed.root, { arch, audit: true });
+			await check_output("box_in_place_" + arch, built, "hi 7\nyo 9\n", { arch, audit: true });
+		}
+	});
+
+	test("a direct-constructor tree shape runs audit-clean on both backends", async () => {
+		const input = `
+import System
+mv struct Node {
+	var int value
+	var Box<Node>? next
+}
+pub func main = () {
+	var Node n = Node(1, null)
+	var Box<Node> head = Box<Node>(mv n)
+	head.next = Box<Node>(Node(2, null))
+	Console.write_line("\\{head.next.value}")
+}
+`;
+		const parsed = parse_raw(input);
+		expect(parsed.errors).toEqual([]);
+		for (const arch of ["c", "aarch64"] as const) {
+			const built = build(parsed.root, { arch, audit: true });
+			await check_output("box_in_place_tree_" + arch, built, "2\n", { arch, audit: true });
+		}
+	});
+
+	test("the C backend constructs straight into the box slot", () => {
+		const input = `
+import System
+mv struct Node {
+	var int value
+	var Box<Node>? next
+}
+pub func main = () {
+	var Node n = Node(1, null)
+	var Box<Node> head = Box<Node>(mv n)
+	head.next = Box<Node>(Node(2, null))
+	Console.write_line("\\{head.next.value}")
+}
+`;
+		const parsed = parse_raw(input);
+		expect(parsed.errors).toEqual([]);
+		const built = build(parsed.root, { arch: "c" });
+		// The direct-ctor argument lowers to a statement expression that
+		// constructs the wrapped value INTO the box slot — no hoisted
+		// `_param_N` stack temp, no `<Box>_init` call for that argument.
+		expect(built.code).toContain("_box->__value = Node_init(");
+		expect(built.code).not.toMatch(/struct Node _param_\d+ = Node_init\(/);
+		// The named-donor move keeps its byte-wise `_init` copy.
+		expect(built.code).toContain("Box_Node_init((void *)&n)");
+	});
+
+	test("the aarch64 backend constructs straight into the box slot", () => {
+		const input = `
+import System
+mv struct Node {
+	var int value
+	var Box<Node>? next
+}
+pub func main = () {
+	var Node n = Node(1, null)
+	var Box<Node> head = Box<Node>(mv n)
+	head.next = Box<Node>(Node(2, null))
+	Console.write_line("\\{head.next.value}")
+}
+`;
+		const parsed = parse_raw(input);
+		expect(parsed.errors).toEqual([]);
+		const built = build(parsed.root, { arch: "aarch64" });
+		// Exactly ONE `Box_Node_init` call remains — the named donor's
+		// byte-wise move; the direct-ctor construction no longer routes
+		// through the wrapper's copy constructor.
+		const box_inits = built.code.match(/bl Box_Node_init\b/g) ?? [];
+		expect(box_inits.length).toBe(1);
+		// The elided temp's hoisted declaration is gone (the direct ctor runs
+		// inside the assignment statement, not as a separate allocation).
+		expect(built.code).not.toMatch(/_param_\d+:\n/);
+	});
+});

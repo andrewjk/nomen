@@ -1,3 +1,4 @@
+import { box_ctor_direct_ctor_arg } from "../build_common/box_ctor_in_place.ts";
 import { struct_needs_auto_destroy } from "../build_common/destroy_analysis.ts";
 import emission_label from "../build_common/emission_label.ts";
 import { find_enum_for_case } from "../build_common/find_enum.ts";
@@ -95,6 +96,21 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 	}
 
 	const is_struct = status.structs.find((s) => s.name === node.name && !s.is_simple_type);
+
+	// STRUCT_PLAN_3 Box elision: `Box<T>(T(...))` builds the wrapped value
+	// DIRECTLY into the freshly malloc'd box slot — no hoisted `_param_N`
+	// stack temp, no `_init` memcpy of the intermediate. The box's auto-init
+	// is inlined at the call site (malloc + field construct); the statement
+	// expression yields the box pointer where the `_init` call would have.
+	if (is_struct && is_struct.is_class) {
+		const inner = box_ctor_direct_ctor_arg(node, status.structs);
+		if (inner) {
+			status.code += `({ struct ${node.name} *_box = (struct ${node.name} *)malloc(sizeof(struct ${node.name})); _box->__value = `;
+			build_node(inner, status);
+			status.code += `; _box; })`;
+			return;
+		}
+	}
 
 	// A call through a func-typed VALUE (a local/param whose slot holds a
 	// closure descriptor — CLOSURE.md): load { code, env } and
