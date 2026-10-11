@@ -45,7 +45,7 @@ import {
 	overflow_placeholder,
 	patch_overflow_placeholders,
 } from "./utils/stack_args.ts";
-import { allocate_stack_space, emit_promoted_load } from "./utils/stack_var.ts";
+import { allocate_stack_space, emit_promoted_load, emit_return_pair_restore, emit_return_pair_save } from "./utils/stack_var.ts";
 import { emit_deref_var_address, emit_var_address, is_local_ref_var } from "./utils/stack_var.ts";
 import { get_enum_sret_size, get_field_offset, get_struct_size } from "./utils/struct_layout.ts";
 import { value_number_loops, type VnPlan } from "./value_number.ts";
@@ -1372,7 +1372,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		if (need_guard || need_save) {
 			return_save = allocate_stack_space(status, returns_fat_pair ? 16 : 8);
 			if (returns_fat_pair) {
-				emit_asm(status, `stp x0, x1, [x29, #${return_save}]\n`);
+				emit_return_pair_save(status, return_save);
 			} else {
 				emit_asm(status, `str x0, [x29, #${return_save}]\n`);
 			}
@@ -1426,7 +1426,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		}
 		if (need_guard || need_save) {
 			if (returns_fat_pair) {
-				emit_asm(status, `ldp x0, x1, [x29, #${return_save!}]\n`);
+				emit_return_pair_restore(status, return_save!);
 			} else {
 				emit_asm(status, `ldr x0, [x29, #${return_save!}]\n`);
 			}

@@ -533,3 +533,123 @@ strategies — `: Spawnable` (async) and `: RegistryHandle` (weak) — with a
 deprecation cycle for the user-Awaitable `#spawn` spelling. INTERIM
 guardrail until this lands: freeze the `#`-member namespace (the checker
 rejects unknown `#foo` members as reserved) so the family stops growing.
+
+## Bugs surfaced by the allmark 0.7.0 port (2026-10-11)
+
+The allmark `nomen/` port migrated to 0.7.0 (classes → `mv struct`,
+`move` → `mv`, else-outside-switch, `Arena<Box<MarkdownNode>>`). All 1980
+tests pass and benchmarks are flat-to-faster vs 0.6.13. Three compiler
+bugs were found on the way; one is fixed (`.bumpy/swift-deep-maple.md` —
+return-save `stp`/`ldp` beyond the +504 scaled-offset range crashed the
+assembler on large frames), the other two are open, with verified repros
+below. All were debugged on macOS/arm64 with the audit runtime.
+
+### 1. By-value `mv struct` params silently alias (double free) — checker hole
+
+A parameter typed a declared-`mv` struct without the `mv` keyword is
+accepted, but the emission aliases instead of moving: the callee's slot and
+the caller's local both destroy the same heap fields. The checker should
+either reject (demanding `mv` or `.copy()`, like every other mv-transfer
+site) or move-and-invalidate the donor.
+
+Repro (`nomen run --audit`, both backends — prints `** 2` then
+`AUDIT-STALE-FREE: 1`):
+
+```nomen
+import System
+
+pub mv struct Delimiter {
+	pub var markup = ""
+	pub var start = 0
+	pub var length = 0
+}
+
+func set_at = (ref List<Delimiter> delimiters, int index, Delimiter value) {
+	const Delimiter slot = mv value
+	delimiters.push(mv slot)
+}
+
+pub func main = (Init init) {
+	var delimiters = List<Delimiter>()
+	var d = Delimiter()
+	d.markup = "**".to_string()
+	d.start = 3
+	d.length = 2
+	set_at(ref delimiters, 0, d)      // no `mv` — accepted, aliases
+	Console.write_line("\{delimiters.at_or_panic(0).markup} \{d.markup.length}")
+}
+```
+
+The markup string is owned by the list yet `d.markup` still reads it, and
+both `d`'s scope-exit destroy and the list's destroy free it. Found via the
+port's `inline_delimiter_set_at` (a SIGABRT under the emphasis path); the
+port now spells `mv` at every such param and call site.
+
+### 2. aarch64: rvalue string temps passed to `ref self` methods are never freed — pre-existing
+
+On aarch64 (C backend is clean), a fresh string call-result handed to a
+mutating method through an arena-fetched `Box` leaks its malloc. Present in
+0.6.13 as well (verified with the same repro on both compilers), so not a
+0.7.0 regression — recording it because the port's audit runs surface it on
+every parse: one 2-byte leak per inline text chunk.
+
+Repro (`nomen run --audit`, aarch64: `LEAK: 3`, C backend: clean; 0.6.13
+leaks identically):
+
+```nomen
+import System
+import parse
+import render
+import rulesets
+import transform
+import types
+import utils
+
+pub func main = (Init init) {
+	const result = parse("a b", core())
+	Console.write("done\n")
+}
+```
+
+(3 chunks — `"a"`, `" "`, `"b"` — each a `state.src.substring(...)` rvalue
+fed to `MarkdownNode.append_content` inside `textRule`.) Attempted
+minimizations (fetch-from-arena + `append_content(substring(...))` loops,
+field-of-ref-param receivers, new_text+append+length in a loop) all run
+audit-clean, so the trigger involves more of the real call shape — likely
+the interprocedural temp-free analysis (`string_return_analysis` /
+`scan_borrow_returns`) missing this path. Tracing the aarch64 vs C
+NOMEN_AUDIT_TRACE streams shows exactly three missing `FREE 2` lines.
+
+### 3. aarch64: scope-exit destroy of an sret-returned local mv struct segfaults — 0.7.0 regression
+
+When a function returns an `mv struct` by value and the caller keeps it in
+a local until scope exit, the auto-destroy path crashes (EXC_BAD_ACCESS,
+PC = 0 — a call through a null slot). The C backend runs the identical
+program fine, and 0.6.13 did not crash on the same shape. Consuming the
+value (moving its fields on, as `transform` does with `ParseResult`) is
+fine — only the scope-exit destroy of the returned local crashes.
+
+Repro (`nomen run`, aarch64: SIGSEGV, C: prints `done`):
+
+```nomen
+import System
+import parse
+import rulesets
+import types
+
+func p_once = () {
+	var doc = parse("# Hello\n", gfm())
+}
+
+pub func main = (Init init) {
+	p_once()
+	Console.write_line("done")
+}
+```
+
+(Plain `Arena<Box<Node>>`/`List<string>` mini-repros do NOT crash — the
+trigger needs the real `ParseResult` shape, so possibly sensitive to the
+sret copy or the ClassBuffer destroy chain.) The port's `bench.test.nm`
+now reclaims the arena explicitly — `doc.arena = mv doc.arena swap
+Arena<Box<MarkdownNode>>()` — which destroys the displaced value at the
+store (a path that works) instead of at scope exit.

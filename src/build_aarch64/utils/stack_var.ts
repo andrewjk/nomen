@@ -281,3 +281,27 @@ export function emit_var_store(status: BuildStatus, reg: string, name: string, s
 		}
 	}
 }
+
+/**
+ * Save the fat (x0, x1) return pair at [x29, #offset]. The stp/ldp simm7
+ * scaled range tops out at +504 — split into the 12-bit-scaled str/ldr
+ * halves beyond it.
+ */
+export function emit_return_pair_save(status: BuildStatus, offset: number) {
+	if (offset + 8 > 504) {
+		emit_asm(status, `str x0, [x29, #${offset}]\n`);
+		emit_asm(status, `str x1, [x29, #${offset + 8}]\n`);
+		return;
+	}
+	emit_asm(status, `stp x0, x1, [x29, #${offset}]\n`);
+}
+
+/** Restore the fat (x0, x1) return pair from [x29, #offset]. */
+export function emit_return_pair_restore(status: BuildStatus, offset: number) {
+	if (offset + 8 > 504) {
+		emit_asm(status, `ldr x0, [x29, #${offset}]\n`);
+		emit_asm(status, `ldr x1, [x29, #${offset + 8}]\n`);
+		return;
+	}
+	emit_asm(status, `ldp x0, x1, [x29, #${offset}]\n`);
+}

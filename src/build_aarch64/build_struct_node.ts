@@ -58,7 +58,7 @@ import {
 	overflow_placeholder,
 	patch_overflow_placeholders,
 } from "./utils/stack_args.ts";
-import { allocate_stack_space } from "./utils/stack_var.ts";
+import { allocate_stack_space, emit_return_pair_restore, emit_return_pair_save } from "./utils/stack_var.ts";
 import {
 	emit_owning_array_string_specialize,
 	emit_pair_store_to,
@@ -2377,7 +2377,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			if (ret_is_class || need_save) {
 				return_save = allocate_stack_space(status, returns_fat_pair ? 16 : 8);
 				if (returns_fat_pair) {
-					emit_asm(status, `stp x0, x1, [x29, #${return_save}]\n`);
+					emit_return_pair_save(status, return_save);
 				} else {
 					emit_asm(status, `str x0, [x29, #${return_save}]\n`);
 				}
@@ -2427,7 +2427,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			}
 			if (ret_is_class || need_save) {
 				if (returns_fat_pair) {
-					emit_asm(status, `ldp x0, x1, [x29, #${return_save!}]\n`);
+					emit_return_pair_restore(status, return_save!);
 				} else {
 					emit_asm(status, `ldr x0, [x29, #${return_save!}]\n`);
 				}
