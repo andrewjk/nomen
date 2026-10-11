@@ -449,3 +449,87 @@ the class→`mv struct`+`Box` tree idiom (one alloc before, alloc + struct
 memcpy per child now), not codegen. Worth a pass over the Json parse path
 to identify which lowered reads can stay borrows (e.g. view-returning
 field reads where the caller immediately re-copies or hashes).
+
+## Endgame: compiler magic keyed on marker traits (the `#spawn` retirement)
+
+`#spawn` began as a one-time construction hook (Thread/Fiber) and `#weak`
+followed it; the family is now cited as the extension point, and Box's
+representation magic is NAME-keyed (`stamp_box_wrapper_representation`
+matches `name === "Box"` at src/check/check_block_node.ts — the one place
+`is_class` is stamped — with `is_box_type` gating ~15 call sites). This
+section records the converged endgame (design discussion 2026-10-11) so
+the next "add a hook" request lands here instead of growing `#`-members.
+
+### The design: one mechanism — traits — carrying three axes
+
+- **Functions** → vtable dispatch (operation lowering; the `Enumerable`
+  tier). First candidate to formalize: `for x of y` currently keys on
+  member PRESENCE (`length` + `.at`, see the element-iteration section
+  above) — the C#-GetAwaiter-style duck typing. Making it require declared
+  `Enumerable<T>` conformance converts it into a visible, specable
+  trigger. All future operation magic (hashing, formatting, serde) lands
+  here: a new operation trait with a member contract, a deliberate act.
+- **Fields** → layout participation. Already shipped for conformers
+  (`layout_fields` in src/build_aarch64/utils/struct_layout.ts,
+  test/trait_field_defaults.test.ts): a trait-declared field is inherited
+  into the conformer's layout, ctor-seeded, destroy-reclaimed. This is
+  also the shape-validation story: a marker that declares `mv T __value`
+  makes the trait BE the representation contract — conformance checks the
+  shape AT the declaration site (a compile error where you write
+  `: HeapWrapper<T>`, never silent misbehavior at a use site), and the
+  declared field is the same offset information the B5 field-dispatch
+  design needs (see "Trait-typed FIELDS on mv structs" above).
+- **Nothing** → pure semantic marker that TRIGGERS a compiler contract.
+  Markers trigger, they don't encode — the semantics live in the compiler
+  and conformance is the opt-in (Rust's `Copy`/`Send`/`Sized` are the
+  precedent that this scales to representation).
+
+This supersedes the "representation attributes" idea (which waited on the
+comptime attribute system — docs/COMPTIME_PLAN_2.md D1 punts attribute
+syntax): marker traits use the existing conformance clause, so there is no
+syntax prerequisite. It also absorbs the C# analogy correctly: interface
+magic in C# lowers OPERATIONS to member calls (IEnumerable/foreach),
+while representation (Span) stays compiler-known — triggering markers
+unify both without a second mechanism.
+
+### Naming
+
+Markers are traits: PascalCase. The suffix is a documented signal:
+
+- `-able` = operation/participation magic (member contracts the compiler
+  lowers to): `Enumerable`, `Hashable`, `Equatable` — and `Spawnable<T>`,
+  which already exists with `start`/`detach` and would fold the async
+  construction form into its existing contract.
+- Plain noun/adjective = representation marker, usually memberless:
+  `HeapWrapper` (Box), `RegistryHandle` (WeakHandle).
+
+`-able` predicates capability; representation markers predicate identity
+(a WeakHandle isn't "handleable", it IS a handle) — Rust's markers are
+bare adjectives/nouns for the same reason. Marker names live in the type
+namespace (no collision with the runtime `Task` type) and are reserved in
+core with the same shadow-proofing `Box` gets at parse today.
+
+### Work items (all extensions of existing machinery)
+
+1. Required trait fields: today a trait field means provided-with-default
+   (inherited, ctor-seeded). Markers need required-no-default — "the
+   conformer must declare `__value` itself" — a small checker rule on the
+   existing feature.
+2. Generic markers: field conformance under T-substitution. Generic traits
+   already clone with substitution for functions; ride the same machinery.
+3. Reserved marker set: declared in core; the checker rejects shadowing.
+
+`is_box_type` keeps its exact semantics — the stamp function checks marker
+conformance instead of the name, and every downstream call site is
+unchanged. A core wrapper conforming to `HeapWrapper` then gets the whole
+family for free, including the construct-in-place Box elision (landed
+2026-10-11: `Box<T>(T(...))` builds the wrapped value directly into the
+malloc'd slot, both backends).
+
+### `#spawn`/`#weak` demotion path
+
+The construction special forms become implementation details of declared
+strategies — `: Spawnable` (async) and `: RegistryHandle` (weak) — with a
+deprecation cycle for the user-Awaitable `#spawn` spelling. INTERIM
+guardrail until this lands: freeze the `#`-member namespace (the checker
+rejects unknown `#foo` members as reserved) so the family stops growing.
