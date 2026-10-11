@@ -4,6 +4,7 @@ import type BaseNode from "../../nodes/BaseNode.ts";
 import { child_nodes } from "../../nodes/child_nodes.ts";
 import type EnumNode from "../../nodes/EnumNode.ts";
 import FunctionNode from "../../nodes/FunctionNode.ts";
+import ParameterNode from "../../nodes/ParameterNode.ts";
 import StructNode from "../../nodes/StructNode.ts";
 import Type from "../../nodes/Type.ts";
 import type CheckStatus from "../CheckStatus.ts";
@@ -250,4 +251,66 @@ function enum_owns_payloads(en: EnumNode, status: CheckStatus, visited: Set<stri
 		}
 	}
 	return false;
+}
+
+/**
+ * The parameter of the enclosing function named `name`, if any (a bare-name
+ * donor lookup — mirrors the field-store rule's enclosing-func resolution).
+ */
+export function enclosing_function_param(
+	status: CheckStatus,
+	name: string | undefined,
+): ParameterNode | undefined {
+	if (!name) return undefined;
+	const func = status.stack.findLast((n) => n.node_type === "func") as FunctionNode | undefined;
+	return func?.params.find((p) => p.name === name && !p.is_self_param);
+}
+
+/**
+ * The B3 borrow contract for a BARE (non-`mv`) parameter of an owning mv
+ * struct type: the call boundary does NOT materialize a private deep copy
+ * (that is the pass-by-value convention's row, which declared-`mv` structs
+ * are excluded from), so the parameter's storage aliases the caller's heap
+ * fields and the caller keeps ownership. The callee may READ the parameter
+ * but must never transfer ownership out of it — any transfer (`mv p` into a
+ * declaration/assignment/owning parameter, with or without a swap: the swap
+ * revalidates the callee's copy, not the caller's original; a by-value
+ * `return p`; an implicit-mv boxing) hands the destination ownership the
+ * caller's scope-exit destroy still reclaims (a double free). The fix at the
+ * use site is to declare the parameter `mv` — which forces the call-site
+ * `mv` keyword and invalidates the donor — or to `.copy()` it.
+ *
+ * Flagged only when the aliased bytes actually carry owned heap:
+ *   - a declared-`mv` struct whose fields transitively own heap (a string
+ *     field, a resource-releasing `#destroy`, a class/nested-owning field) —
+ *     a scalar-field `mv struct` aliases harmlessly and keeps the plain
+ *     by-value convention;
+ *   - an undeclared struct owning non-string heap (its locals are
+ *     auto-destroyed, and the boundary is an alias, not a copy).
+ *
+ * Exempt: `mv`/`ref`/`view`/`self` parameters, non-struct types, simple
+ * types (`string` is a declared mv struct, but a string parameter's boundary
+ * materializes a private deep copy, so moving one out never aliases), and
+ * undeclared string-only structs (the pass-by-value deep copy).
+ */
+export function borrowed_param_transfer_error(
+	param: ParameterNode | undefined,
+	status: CheckStatus,
+): string | undefined {
+	if (!param || param.is_moved || param.is_self_param) return undefined;
+	if (param.type.is_ref || param.type.is_view) return undefined;
+	if (!param.type.name) return undefined;
+	const s = status.structs.find(
+		(st) => st.name === param.type.name && !st.is_simple_type && !st.is_class,
+	);
+	if (!s) return undefined;
+	const aliases_heap = s.is_owning
+		? struct_owns_heap(s, status, new Set())
+		: struct_owns_non_string_heap(s, status, new Set());
+	if (!aliases_heap) return undefined;
+	return (
+		`cannot transfer ownership out of parameter '${param.name}' — a bare parameter of ` +
+		`mv struct type '${param.type.name}' is a borrow; declare it 'mv' (and pass it with ` +
+		`'mv' at the call site), or .copy() it`
+	);
 }

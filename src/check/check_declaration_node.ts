@@ -29,6 +29,8 @@ import {
 import in_function from "./utils/in_function.ts";
 import materialize_type from "./utils/materialize_type.ts";
 import {
+	borrowed_param_transfer_error,
+	enclosing_function_param,
 	is_class_type,
 	is_owning_struct_type,
 	is_owning_struct_type_requiring_move,
@@ -244,7 +246,10 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 				// signature (named function, or a func-typed value — whose
 				// own declaration supplies the signature).
 				check_func_argument_signature(
-					{ func_params: decl.func_params, func_return_type: decl.func_return_type },
+					{
+						func_params: decl.func_params,
+						func_return_type: decl.func_return_type,
+					},
 					decl.value,
 					status,
 					decl.value.start,
@@ -404,13 +409,23 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 				} else if (src_sv && (src_sv.type.is_ref || src_sv.type.is_view)) {
 					add_error(status, boxing_owns_error(), decl.value.start);
 				} else if (src_sv && is_value_struct_conformer(src_sv.type.name, decl.type.name!, status)) {
-					// Boxing a bare value-struct local is an implicit mv (T2):
-					// invalidate the donor exactly like a `mv` declaration.
-					if (!(decl.value as ValueNode).is_moved) {
-						(decl.value as ValueNode).is_moved = true;
+					// Boxing a borrowed mv-struct parameter is an implicit mv of a
+					// value with no owner to give (B3).
+					const boxing_param_error = borrowed_param_transfer_error(
+						enclosing_function_param(status, src_name),
+						status,
+					);
+					if (boxing_param_error) {
+						add_error(status, boxing_param_error, decl.value.start);
+					} else {
+						// Boxing a bare value-struct local is an implicit mv (T2):
+						// invalidate the donor exactly like a `mv` declaration.
+						if (!(decl.value as ValueNode).is_moved) {
+							(decl.value as ValueNode).is_moved = true;
+						}
+						if (!status.moved_variables) status.moved_variables = new Set();
+						status.moved_variables.add(src_name!);
 					}
-					if (!status.moved_variables) status.moved_variables = new Set();
-					status.moved_variables.add(src_name!);
 				}
 			} else if (
 				is_trait_type(decl.type.name, status) &&
@@ -705,23 +720,34 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 
 		// `var X b = mv a` (no swap) transfers ownership: the source `a` is moved
 		// and may not be used again until reassigned. (A swap revalidates it.)
-		if (decl.value?.node_type === "value" && decl.value.is_moved && !decl.swap) {
-			// A `ref` alias is not the owner (STRUCT_PLAN_3 §A3.3): `mv`
-			// cannot transfer through it — mv the owner instead.
-			const moved_src = status.values.findLast((v) => v.name === (decl.value as ValueNode).value);
-			if (moved_src?.is_ref_binding) {
-				add_error(
-					status,
-					`'${(decl.value as ValueNode).value}' is a ref — mv the owner instead`,
-					decl.value.start,
-				);
-			} else {
-				// R3: a frozen root (borrowed by a spawned task until the
-				// `async` block exits) cannot be moved out — the task's alias
-				// would dangle.
-				enforce_root_not_frozen((decl.value as ValueNode).value, status, decl.value.start);
-				if (!status.moved_variables) status.moved_variables = new Set();
-				status.moved_variables.add((decl.value as ValueNode).value);
+		if (decl.value?.node_type === "value" && decl.value.is_moved) {
+			// B3: a bare (non-`mv`) parameter of an owning mv struct type is a
+			// borrow — no ownership transfer out of it is sound, swap or not
+			// (the swap revalidates the callee's copy, not the caller's original).
+			const transfer_error = borrowed_param_transfer_error(
+				enclosing_function_param(status, (decl.value as ValueNode).value),
+				status,
+			);
+			if (transfer_error) {
+				add_error(status, transfer_error, decl.value.start);
+			} else if (!decl.swap) {
+				// A `ref` alias is not the owner (STRUCT_PLAN_3 §A3.3): `mv`
+				// cannot transfer through it — mv the owner instead.
+				const moved_src = status.values.findLast((v) => v.name === (decl.value as ValueNode).value);
+				if (moved_src?.is_ref_binding) {
+					add_error(
+						status,
+						`'${(decl.value as ValueNode).value}' is a ref — mv the owner instead`,
+						decl.value.start,
+					);
+				} else {
+					// R3: a frozen root (borrowed by a spawned task until the
+					// `async` block exits) cannot be moved out — the task's alias
+					// would dangle.
+					enforce_root_not_frozen((decl.value as ValueNode).value, status, decl.value.start);
+					if (!status.moved_variables) status.moved_variables = new Set();
+					status.moved_variables.add((decl.value as ValueNode).value);
+				}
 			}
 		}
 

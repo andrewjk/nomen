@@ -46,6 +46,8 @@ import {
 } from "./utils/flow_bounds.ts";
 import is_visible from "./utils/is_visible.ts";
 import {
+	borrowed_param_transfer_error,
+	enclosing_function_param,
 	is_class_type,
 	is_owning_ref_type,
 	is_owning_struct_type,
@@ -840,12 +842,23 @@ export default function check_function_call(
 					!!status.traits.find((t) => t.name === func_param.type.name) ||
 					(func_param.is_moved && is_owning_struct_type(func_param.type, status)))
 			) {
-				// R3: a frozen root (borrowed by a spawned task until the
-				// `async` block exits) cannot be mutable-passed — the callee
-				// could write through it mid-task.
-				enforce_root_not_frozen(param_value, status, param.start);
-				if (!status.moved_variables) status.moved_variables = new Set();
-				status.moved_variables.add(param_value);
+				// B3: a bare (non-`mv`) parameter of an owning mv struct type is
+				// a borrow — moving it into an owning parameter has no ownership
+				// to give.
+				const transfer_error = borrowed_param_transfer_error(
+					enclosing_function_param(status, param_value),
+					status,
+				);
+				if (transfer_error) {
+					add_error(status, transfer_error, param.start);
+				} else {
+					// R3: a frozen root (borrowed by a spawned task until the
+					// `async` block exits) cannot be mutable-passed — the callee
+					// could write through it mid-task.
+					enforce_root_not_frozen(param_value, status, param.start);
+					if (!status.moved_variables) status.moved_variables = new Set();
+					status.moved_variables.add(param_value);
+				}
 			}
 		}
 		if (
@@ -972,6 +985,16 @@ export default function check_function_call(
 			if (!has_mov_keyword) {
 				add_error(status, `swap requires mv keyword`, swap_expr.start);
 			} else {
+				// B3: a bare (non-`mv`) parameter of an owning mv struct type is
+				// a borrow — the swap cannot revalidate the CALLER's original,
+				// so the transfer is unsound whatever it spells.
+				const swap_param_error = borrowed_param_transfer_error(
+					enclosing_function_param(status, param_value),
+					status,
+				);
+				if (swap_param_error) {
+					add_error(status, swap_param_error, param.start);
+				}
 				check_node(swap_expr, status);
 				const swap_type = type_from_value_node(swap_expr, status);
 				check_type_and_value_match(

@@ -28,6 +28,8 @@ import {
 	expr_to_string,
 } from "./utils/flow_bounds.ts";
 import {
+	borrowed_param_transfer_error,
+	enclosing_function_param,
 	is_class_type,
 	is_owning_struct_type,
 	is_owning_struct_type_requiring_move,
@@ -107,10 +109,16 @@ export default function check_assignment_node(
 			const target_type = type_from_value_node((assign.left_value as AccessNode).target, status);
 			const struct = status.structs.find((s) => s.name === target_type.name);
 			const fd = struct?.fields.find((f) => f.name === (field as AccessFieldNode).name);
-			lambda_signature = { params: fd?.func_params, return_type: fd?.func_return_type };
+			lambda_signature = {
+				params: fd?.func_params,
+				return_type: fd?.func_return_type,
+			};
 		}
 	} else if (lhs_value?.func_params !== undefined) {
-		lambda_signature = { params: lhs_value.func_params, return_type: lhs_value.func_return_type };
+		lambda_signature = {
+			params: lhs_value.func_params,
+			return_type: lhs_value.func_return_type,
+		};
 	}
 	// A ZERO-PARAMETER signature (`var func (out int) f`) carries func_params
 	// === []: the gate is "the target declares a func signature", not "it has
@@ -316,12 +324,22 @@ export default function check_assignment_node(
 					return false;
 				}
 				if (src_sv && is_value_struct_conformer(src_sv.type.name, trait_name, status)) {
-					// Boxing a bare value-struct local is an implicit mv.
-					if (!(assign.right_value as ValueNode).is_moved) {
-						(assign.right_value as ValueNode).is_moved = true;
+					// Boxing a borrowed mv-struct parameter is an implicit mv of a
+					// value with no owner to give (B3).
+					const boxing_param_error = borrowed_param_transfer_error(
+						enclosing_function_param(status, src_name),
+						status,
+					);
+					if (boxing_param_error) {
+						add_error(status, boxing_param_error, assign.right_value.start);
+					} else {
+						// Boxing a bare value-struct local is an implicit mv.
+						if (!(assign.right_value as ValueNode).is_moved) {
+							(assign.right_value as ValueNode).is_moved = true;
+						}
+						if (!status.moved_variables) status.moved_variables = new Set();
+						status.moved_variables.add(src_name!);
 					}
-					if (!status.moved_variables) status.moved_variables = new Set();
-					status.moved_variables.add(src_name!);
 				}
 				// A trait-typed source falls through: the handle aliases.
 			} else if (assign.right_value.node_type !== "func_call") {
@@ -468,7 +486,9 @@ export default function check_assignment_node(
 				);
 				if (rhs_fn) {
 					(
-						assign.right_value as unknown as { resolved_function?: FunctionNode }
+						assign.right_value as unknown as {
+							resolved_function?: FunctionNode;
+						}
 					).resolved_function = rhs_fn;
 				}
 			}
@@ -572,28 +592,39 @@ export default function check_assignment_node(
 	// `b = mv a` (no swap) transfers ownership: the source `a` is moved and may
 	// not be used again until it is reassigned. (A swap revalidates the source,
 	// so it is not marked; func-call `mv` params are marked in check_function_call.)
-	if (assign.right_value.node_type === "value" && assign.right_value.is_moved && !assign.swap) {
-		// A `ref` alias is not the owner (STRUCT_PLAN_3 §A3.3): `mv` cannot
-		// transfer through it — mv the owner instead.
-		const moved_src = status.values.findLast(
-			(v) => v.name === (assign.right_value as ValueNode).value,
+	if (assign.right_value.node_type === "value" && assign.right_value.is_moved) {
+		// B3: a bare (non-`mv`) parameter of an owning mv struct type is a
+		// borrow — no ownership transfer out of it is sound, swap or not
+		// (the swap revalidates the callee's copy, not the caller's original).
+		const transfer_error = borrowed_param_transfer_error(
+			enclosing_function_param(status, (assign.right_value as ValueNode).value),
+			status,
 		);
-		if (moved_src?.is_ref_binding) {
-			add_error(
-				status,
-				`'${(assign.right_value as ValueNode).value}' is a ref — mv the owner instead`,
-				assign.right_value.start,
+		if (transfer_error) {
+			add_error(status, transfer_error, assign.right_value.start);
+		} else if (!assign.swap) {
+			// A `ref` alias is not the owner (STRUCT_PLAN_3 §A3.3): `mv` cannot
+			// transfer through it — mv the owner instead.
+			const moved_src = status.values.findLast(
+				(v) => v.name === (assign.right_value as ValueNode).value,
 			);
-		} else {
-			// R3: a frozen root (borrowed by a spawned task until the `async`
-			// block exits) cannot be moved out — the task's alias would dangle.
-			enforce_root_not_frozen(
-				(assign.right_value as ValueNode).value,
-				status,
-				assign.right_value.start,
-			);
-			if (!status.moved_variables) status.moved_variables = new Set();
-			status.moved_variables.add((assign.right_value as ValueNode).value);
+			if (moved_src?.is_ref_binding) {
+				add_error(
+					status,
+					`'${(assign.right_value as ValueNode).value}' is a ref — mv the owner instead`,
+					assign.right_value.start,
+				);
+			} else {
+				// R3: a frozen root (borrowed by a spawned task until the `async`
+				// block exits) cannot be moved out — the task's alias would dangle.
+				enforce_root_not_frozen(
+					(assign.right_value as ValueNode).value,
+					status,
+					assign.right_value.start,
+				);
+				if (!status.moved_variables) status.moved_variables = new Set();
+				status.moved_variables.add((assign.right_value as ValueNode).value);
+			}
 		}
 	}
 

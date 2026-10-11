@@ -161,3 +161,122 @@ fill(a)
 		expect(parsed.errors.some((e) => e.message.includes("Assignment to const: p"))).toBe(true);
 	});
 });
+
+// B3 transfer hole (the by-value `mv struct` param double-free): a bare
+// parameter of a heap-owning mv struct aliases the caller's storage, so ANY
+// ownership transfer out of it hands the destination ownership the caller's
+// scope-exit destroy still reclaims. Each shape is rejected with the same
+// diagnostic demanding `mv` on the parameter (or a `.copy()`).
+describe("borrowed mv-struct param transfer rejection", () => {
+	const ERROR = "cannot transfer ownership out of parameter";
+
+	test("mv into a local const (the container-push staging shape)", () => {
+		const parsed = parse_with_imports(`
+mv struct Delimiter {
+	pub var markup = ""
+	pub var start = 0
+	pub var length = 0
+}
+func set_at = (ref List<Delimiter> delimiters, int index, Delimiter value) {
+	const Delimiter slot = mv value
+	delimiters.push(mv slot)
+}
+var delimiters = List<Delimiter>()
+var d = Delimiter()
+d.markup = "**".to_string()
+set_at(ref delimiters, 0, d)
+`);
+		expect(parsed.errors.some((e) => e.message.includes(ERROR))).toBe(true);
+	});
+
+	test("mv with a swap (the swap revalidates the callee's copy, not the caller's)", () => {
+		const parsed = parse_with_imports(`
+mv struct Info { var markup = "" }
+func steal = (ref List<Info> list, Info p) {
+	const Info slot = mv p swap Info()
+	list.push(mv slot)
+}
+var list = List<Info>()
+var a = Info()
+a.markup = "x".to_string()
+steal(ref list, a)
+`);
+		expect(parsed.errors.some((e) => e.message.includes(ERROR))).toBe(true);
+	});
+
+	test("by-value return of the bare param", () => {
+		const parsed = parse_with_imports(`
+mv struct Info { var markup = "" }
+func passthrough = (Info p, out Info) {
+	return p
+}
+var a = Info()
+a.markup = "x".to_string()
+var e = passthrough(a)
+Console.write_line(e.markup)
+`);
+		expect(parsed.errors.some((e) => e.message.includes(ERROR))).toBe(true);
+	});
+
+	test("mv into an owning container parameter", () => {
+		const parsed = parse_with_imports(`
+mv struct Info { var markup = "" }
+func consume = (ref List<Info> list, Info p) {
+	list.push(mv p)
+}
+var list = List<Info>()
+var a = Info()
+a.markup = "x".to_string()
+consume(ref list, a)
+`);
+		expect(parsed.errors.some((e) => e.message.includes(ERROR))).toBe(true);
+	});
+
+	test("assignment transfer into a local", () => {
+		const parsed = parse_with_imports(`
+mv struct Info { var markup = "" }
+func steal = (Info p) {
+	var local = Info()
+	local = mv p
+	Console.write_line(local.markup)
+}
+var a = Info()
+a.markup = "x".to_string()
+steal(a)
+`);
+		expect(parsed.errors.some((e) => e.message.includes(ERROR))).toBe(true);
+	});
+
+	test("declaring the parameter mv (with mv at the call site) is the sanctioned spelling", async () => {
+		await run_c(
+			`
+mv struct Info { var markup = "" }
+func stage = (ref List<Info> list, mv Info p) {
+	list.push(mv p)
+}
+var list = List<Info>()
+var a = Info()
+a.markup = "kept".to_string()
+stage(ref list, mv a)
+Console.write_line(list.at_or_panic(0).markup)
+`,
+			"borrowed_param_transfer_mv_param",
+			"kept\n",
+		);
+	});
+
+	test("a scalar-field mv struct param keeps the plain by-value convention", () => {
+		// No heap in the aliased bytes — reads AND by-value returns stay sound
+		// without `mv` (the class_move suite's pass-by-value boundary).
+		const parsed = parse_with_imports(`
+mv struct Box { var int value }
+func identity = (Box b, out Box) {
+	return b
+}
+var a = Box(42)
+var b = identity(a)
+Console.write_line("\\{a.value},\\{b.value}")
+`);
+		expect(parsed.errors).toEqual([]);
+	});
+});

@@ -15,7 +15,10 @@ import { move_closure_source } from "./utils/captures.ts";
 import check_func_argument_signature from "./utils/check_func_argument_signature.ts";
 import check_merged_missing_return from "./utils/check_merged_missing_return.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
-import { is_owning_struct_type_requiring_move } from "./utils/ownership.ts";
+import {
+	borrowed_param_transfer_error,
+	is_owning_struct_type_requiring_move,
+} from "./utils/ownership.ts";
 import synthesize_lambda_name from "./utils/synthesize_lambda_name.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
@@ -145,6 +148,27 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 					`cannot return '${param.name}' — a 'ref' borrow escapes implicitly; declare the parameter 'mv' to transfer it`,
 					ret.value.start,
 				);
+			}
+		}
+	}
+
+	// A bare owning-mv-struct parameter returned by value (with `mv` or
+	// without) transfers ownership the caller still holds: the call boundary
+	// aliased the caller's storage, so the returned copy and the caller's
+	// local would both destroy the same heap. Same rule family as the
+	// 'ref'-param return above — declare the parameter `mv` (the call site
+	// then transfers with `mv` and the donor is invalidated) or return a
+	// `.copy()`. A `view`/`ref` return re-roots a borrow instead of
+	// transferring, so it is exempt.
+	if (func && ret.type.name && !func.return_type.is_view && !func.return_type.is_ref) {
+		const value_node = get_inner_value_node(ret.value);
+		if (value_node?.node_type === "value") {
+			const param = (func as import("../nodes/FunctionNode.ts").default).params.find(
+				(p) => p.name === value_node.value,
+			);
+			const transfer_error = borrowed_param_transfer_error(param, status);
+			if (transfer_error) {
+				add_error(status, transfer_error, ret.value.start);
 			}
 		}
 	}

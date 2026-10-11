@@ -8,7 +8,11 @@ import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import hoist_struct_params from "./utils/hoist_struct_params.ts";
-import { is_owning_struct_type } from "./utils/ownership.ts";
+import {
+	borrowed_param_transfer_error,
+	enclosing_function_param,
+	is_owning_struct_type,
+} from "./utils/ownership.ts";
 import { get_or_create_tuple_struct, tuple_struct_name } from "./utils/tuple_struct.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
@@ -99,7 +103,17 @@ function check_tuple_element_ownership(array: ArrayValuesNode, status: CheckStat
 		const t = type_from_value_node(value, status);
 		if (!t.name) continue;
 		if (is_owning_struct_type(t, status)) {
-			if (vn.is_moved || vn.literal_last_use_move) {
+			// B3: a bare (non-`mv`) parameter of an owning mv struct type is a
+			// borrow — transferring it into the tuple (explicitly or via the
+			// last-use inference) hands the tuple ownership the caller keeps.
+			const transfer_error = borrowed_param_transfer_error(
+				enclosing_function_param(status, vn.value),
+				status,
+			);
+			if (transfer_error) {
+				add_error(status, transfer_error, value.start);
+				rejected = true;
+			} else if (vn.is_moved || vn.literal_last_use_move) {
 				// Ownership transfers to the tuple: the source's cleanup must
 				// skip it (use-after-mv on later reads is checked separately).
 				vn.is_moved = true;

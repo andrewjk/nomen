@@ -584,51 +584,13 @@ The allmark `nomen/` port migrated to 0.7.0 (classes → `mv struct`,
 tests pass and benchmarks are flat-to-faster vs 0.6.13. Three compiler
 bugs were found on the way; one is fixed (`.bumpy/swift-deep-maple.md` —
 return-save `stp`/`ldp` beyond the +504 scaled-offset range crashed the
-assembler on large frames), the other two are open, with verified repros
-below. All were debugged on macOS/arm64 with the audit runtime.
+assembler on large frames), and two are open, with verified repros below.
+(The first-found checker hole — by-value `mv struct` params silently
+aliasing into a double free — is fixed; see git history for the
+`borrowed_param_transfer_error` checker rule.) All were debugged on
+macOS/arm64 with the audit runtime.
 
-### 1. By-value `mv struct` params silently alias (double free) — checker hole
-
-A parameter typed a declared-`mv` struct without the `mv` keyword is
-accepted, but the emission aliases instead of moving: the callee's slot and
-the caller's local both destroy the same heap fields. The checker should
-either reject (demanding `mv` or `.copy()`, like every other mv-transfer
-site) or move-and-invalidate the donor.
-
-Repro (`nomen run --audit`, both backends — prints `** 2` then
-`AUDIT-STALE-FREE: 1`):
-
-```nomen
-import System
-
-pub mv struct Delimiter {
-	pub var markup = ""
-	pub var start = 0
-	pub var length = 0
-}
-
-func set_at = (ref List<Delimiter> delimiters, int index, Delimiter value) {
-	const Delimiter slot = mv value
-	delimiters.push(mv slot)
-}
-
-pub func main = (Init init) {
-	var delimiters = List<Delimiter>()
-	var d = Delimiter()
-	d.markup = "**".to_string()
-	d.start = 3
-	d.length = 2
-	set_at(ref delimiters, 0, d)      // no `mv` — accepted, aliases
-	Console.write_line("\{delimiters.at_or_panic(0).markup} \{d.markup.length}")
-}
-```
-
-The markup string is owned by the list yet `d.markup` still reads it, and
-both `d`'s scope-exit destroy and the list's destroy free it. Found via the
-port's `inline_delimiter_set_at` (a SIGABRT under the emphasis path); the
-port now spells `mv` at every such param and call site.
-
-### 2. aarch64: rvalue string temps passed to `ref self` methods are never freed — pre-existing
+### 1. aarch64: rvalue string temps passed to `ref self` methods are never freed — pre-existing
 
 On aarch64 (C backend is clean), a fresh string call-result handed to a
 mutating method through an arena-fetched `Box` leaks its malloc. Present in
@@ -663,7 +625,7 @@ the interprocedural temp-free analysis (`string_return_analysis` /
 `scan_borrow_returns`) missing this path. Tracing the aarch64 vs C
 NOMEN_AUDIT_TRACE streams shows exactly three missing `FREE 2` lines.
 
-### 3. aarch64: scope-exit destroy of an sret-returned local mv struct segfaults — 0.7.0 regression
+### 2. aarch64: scope-exit destroy of an sret-returned local mv struct segfaults — 0.7.0 regression
 
 When a function returns an `mv struct` by value and the caller keeps it in
 a local until scope exit, the auto-destroy path crashes (EXC_BAD_ACCESS,
