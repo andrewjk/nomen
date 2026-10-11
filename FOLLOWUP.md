@@ -165,6 +165,49 @@ container fields / class/enum element fields):
   whose teardown destroys a class field can still double-free. Adding
   class/enum payloads to the transfer set would close it.
 
+## Field-scoped borrow invalidation (Valen-style effect precision)
+
+Recorded 2026-10-12, out of the Valen group-borrowing comparison
+([docs/GROUP_BORROWING.md](./docs/GROUP_BORROWING.md)). Today ANY `ref self`
+method call invalidates ALL live child-group borrows rooted at the receiver's
+owner — `invalidate_borrows_of(status, owner)` at
+src/check/check_access_node.ts:907, where borrows root only at the ultimate
+owner variable name (`borrow_owner_of`, src/check/utils/borrow.ts). A method
+that writes only `self.scratch` (an int) still kills a borrow rooted at
+`self.data`. Sketch:
+
+1. **Record the owner field each borrow came through.** `borrowed_via?: string`
+   on StackValue, stamped alongside `borrowed_from`: field-access borrows get
+   the accessed field name; method-return borrows get the terminal field of the
+   receiver path (`z.animals.at(i)` → `animals`).
+2. **Per-method field effect sets.** A syntactic scan of each method body (no
+   checked status needed — mirrors `scan_heap_return_functions`), collecting
+   fields the method may displace or free: writes `self.X = …`, mv transfers
+   into `self.X`, and MUTATOR CALLS on `self.X` receivers (`self.items.push(…)`
+   threatens `items` even though no direct write names it), plus the union of
+   effect sets of any `ref self` methods it calls (memoized fixpoint,
+   cycle-safe). Value-type fields (ints, fixed arrays) drop out of the set —
+   writing an int can't free anything (the Nomen-shaped version of Valen's
+   "type-stability exception").
+3. **Field-scoped invalidation.** `invalidate_borrows_of(status, owner,
+fields?)`: with a set, poison only borrows whose `borrowed_via` is in the
+   set (unstamped/unknown → invalidate, conservative). Without a set, current
+   behavior. Object-level aliases (no `borrowed_via`) are never touched by
+   field effects — they point at the instance itself, which only owner
+   reassignment/destroy can displace, and that path is deferred.
+4. **Sound fallback keeps it incremental.** Bodies opaque to the scan (calls
+   through func values, recursion, spawn captures) get an "all fields" effect
+   set — identical to today's behavior.
+5. **Wiring.** The effect set is computed per callee at the single call site
+   (check_access_node.ts:907). Audit whether the mv-field-assignment
+   invalidation paths need the same field-scoping; view borrows' eager
+   invalidation on reassignment stays as-is (the buffer actually frees).
+
+Tests: `poke`-writes-`scratch` keeps a `data`-rooted borrow; `push`
+invalidates `items`-rooted element borrows but not sibling-field borrows;
+transitive effects (a `ref self` method calling another); opaque-body
+fallback; all existing invalidation tests unchanged.
+
 ## Residual Buffer holes
 
 The raw slot primitives are now `internal` (library-internal visibility
