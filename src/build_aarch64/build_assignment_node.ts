@@ -2186,6 +2186,22 @@ export default function build_assignment_node(
 				// owns the transferred bytes now.
 				status.heap_strings.add(name);
 			}
+			// A target that OWNED heap before this assignment must still own
+			// heap after it: the assignment may be CONDITIONAL (a branch/loop),
+			// so the old heap value survives on the path that skips it and the
+			// uniform scope-exit free must stay valid there. The new value is a
+			// non-heap one (a literal, a container/field borrow, an unrecorded
+			// variable read, or a non-owning mv source) — every earlier branch
+			// that would own it has already added `name`, so reaching here with
+			// it still absent means the variable would lose its heap mark.
+			// Take an owned copy so both paths are uniformly heap-owned. (The
+			// pre-assignment `lhs_is_heap` is the value read before the old
+			// value's free above deleted the mark.)
+			if (lhs_is_heap && size === 16 && !status.heap_strings?.has(name)) {
+				emit_strdup_string(status);
+				if (!status.heap_strings) status.heap_strings = new Set();
+				status.heap_strings.add(name);
+			}
 			emit_asm(status, `\n`);
 			emit_var_store(status, "x0", name, size);
 		}

@@ -974,3 +974,38 @@ pub func main = (Init init) {
 `;
 	await build_and_check_output(input, "swap_replacement_sret_temp", "x: 3\ndone\n", true);
 });
+
+// A string local initialized from a heap value (`src.substring(...)`, or any
+// owning call) and later reassigned a NON-heap value (a literal) drops its
+// heap mark at the reassignment, so when the reassignment is CONDITIONAL the
+// scope-exit/return free was lost on every path that skipped it — leaking the
+// original heap string (the allmark text rule's `var char = src.substring(...)`
+// then `char = "\n"` in the CRLF branch leaked one 2-byte chunk per parse; 3
+// per `parse("a b")`). The target now takes an owned copy of the new
+// non-heap value so it stays uniformly heap-owned and the scope-exit free is
+// valid on every path.
+test("conditional literal reassignment of a heap string local", async () => {
+	const input = `
+import System
+
+func probe = (string src, out bool) {
+	var char = src.substring(0, 1)
+	if src.length > 100 {
+		char = "x"
+	}
+	if src.length > 0 {
+		return true
+	}
+	Console.write_line(char)
+	return false
+}
+
+pub func main = (Init init) {
+	probe("a")
+	probe("b")
+	probe("c")
+	Console.write_line("done")
+}
+`;
+	await build_and_check_output(input, "heap_string_conditional_reassign", "done\n", true);
+});
