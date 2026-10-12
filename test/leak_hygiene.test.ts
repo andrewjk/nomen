@@ -70,6 +70,75 @@ Console.write_line(count.to_string())
 	});
 });
 
+describe("ownership: heap array temp on the return path", () => {
+	// A hoisted `Array<T>` literal argument temp (registered in
+	// `heap_array_vars` / `heap_owned_string_arrays`) is reclaimed by the
+	// SCOPE-EXIT walk — but a `return` runs its own declaration cleanup
+	// (build_return_node's emit_destroy_for_decl loop) and then jumps
+	// straight to the function's return label, so the scope-exit walk's
+	// reclaim never executed: the malloc'd buffer (and its strdup'd
+	// fat-string rows) leaked on every return that exited the temp's scope.
+	// Two files because that is the shape the leak was found in (the
+	// allmark sanitizer audit) — a helper module returning an `Outer` whose
+	// `List<Inner>` elements were built by moving `Array<string>` elements
+	// into a `List<string>` field.
+	const helper = `
+pub mv struct Inner {
+	pub var protocols = List<string>()
+}
+
+pub mv struct Outer {
+	pub var items = List<Inner>()
+}
+
+func make_inner = (Array<string> protocols, out Inner) {
+	var r = Inner()
+	for p of protocols {
+		r.protocols.push(mv p)
+	}
+	return r
+}
+
+pub func build = (out Outer) {
+	var o = Outer()
+	var l = List<Inner>()
+	l.push(make_inner(["http", "https"]))
+	o.items = mv l
+	return o
+}
+`;
+	const entry = `
+import System
+import System::Test
+import array_move_helper
+
+pub func test_array_move_cross_file = (ref Tester t) {
+	const o = build()
+	t.expect(o.items.length == 1, "one inner entry")
+}
+`;
+
+	test.each(["aarch64", "c"] as const)(
+		"%s: array literal temp is reclaimed across a file boundary",
+		async (arch) => {
+			const dir = fs.mkdtempSync(path.join(os.tmpdir(), "nomen-arraytemp-"));
+			fs.writeFileSync(path.join(dir, "array_move_helper.nm"), helper);
+			const file = path.join(dir, "array_move_leak.test.nm");
+			fs.writeFileSync(file, entry);
+			try {
+				const result = await run_test_file(file, "core", arch, true, undefined, false);
+				expect(result.phase).toBeUndefined();
+				expect(result.crashed).toBeUndefined();
+				expect(result.ok).toBe(true);
+				expect(result.leaks).toEqual([]);
+			} finally {
+				fs.rmSync(dir, { recursive: true, force: true });
+			}
+		},
+		90_000,
+	);
+});
+
 describe("ownership: container field mv-assign", () => {
 	// `box.items = mv list` must splice the source local from its scope
 	// frame AND reclaim the displaced field value. Both backends were wrong

@@ -845,6 +845,111 @@ export function emit_moved_local_cleanup(
 	release_heap_string_fields(status, decl.name, decl.type.name, decl.type.is_nullable);
 }
 
+/**
+ * Emit the reclaim for a heap-registered ARRAY declaration: an owned
+ * fat-string array (`heap_string_arrays` — heap or inline storage), a
+ * class-element array (`heap_class_arrays`), or a heap `Array<T>` buffer
+ * (`heap_array_vars`, with `heap_owned_string_arrays` marking owned
+ * fat-string elements freed slot-by-slot before the buffer). Returns true
+ * when the name was registered and the reclaim was emitted.
+ *
+ * This is the RETURN-path variant of emit_destroy_for_scope's arms: a
+ * `return` runs its own declaration cleanup and then jumps straight to the
+ * function's return label, so the scope-exit walk's copy of the reclaim
+ * never executes on that path — a hoisted `Array<T>` literal temp (or a
+ * call-result buffer) leaked on every return that exits its scope. The
+ * labels are counter-suffixed: the fall-through scope-exit walk (unreachable
+ * after a `return`, but still emitted) may carry the same decl's reclaim,
+ * and duplicating `.Lhosa_${name}` broke the assembler.
+ */
+function emit_heap_array_decl_destroy(status: BuildStatus, decl_name: string): boolean {
+	const label_id = (status.label_counter = (status.label_counter ?? 0) + 1);
+	if (status.heap_string_arrays?.has(decl_name)) {
+		const registered = status.heap_string_arrays.get(decl_name)!;
+		const len = Math.abs(registered);
+		// Negative len = INLINE storage (the elements sit at the var's frame
+		// offset — literal inits); positive = a heap base pointer (length
+		// prefix at [base], slots at [base + 8 + j*16]) — the same registry
+		// contract as emit_destroy_for_scope's walk.
+		if (registered > 0) {
+			for (let j = 0; j < len; j++) {
+				emit_var_load(status, "x0", decl_name, 8);
+				emit_asm(status, `ldr x0, [x0, #${8 + j * 16}]\n`);
+				const skip = `.Lskip_hsa_${decl_name}_${label_id}_${j}`;
+				emit_asm(status, `cbz x0, ${skip}\n`);
+				emit_free(status);
+				emit_asm(status, `${skip}:\n`);
+			}
+			// The buffer itself is freed LAST (freeing it first would leave
+			// the slot walk reading a freed block).
+			emit_var_load(status, "x0", decl_name, 8);
+			emit_free(status);
+		} else {
+			for (let j = 0; j < len; j++) {
+				emit_var_address(status, "x0", decl_name);
+				emit_asm(status, `ldr x0, [x0, #${j * 16}]\n`);
+				const skip = `.Lskip_hsa_${decl_name}_${label_id}_${j}`;
+				emit_asm(status, `cbz x0, ${skip}\n`);
+				emit_free(status);
+				emit_asm(status, `${skip}:\n`);
+			}
+		}
+		return true;
+	}
+	if (status.heap_class_arrays?.has(decl_name)) {
+		emit_asm(status, `str x19, [sp, #-16]!\n`);
+		emit_asm(status, `str x20, [sp, #-16]!\n`);
+		emit_var_load(status, "x0", decl_name, 8);
+		emit_asm(status, `mov x19, x0\n`);
+		emit_asm(status, `ldr x20, [x19]\n`);
+		emit_asm(status, `add x19, x19, #8\n`);
+		const skip = `.Lskip_cls_${decl_name}_${label_id}`;
+		const label = `.Lcls_${decl_name}_${label_id}`;
+		emit_asm(status, `${label}:\n`);
+		emit_asm(status, `cbz x20, ${skip}\n`);
+		emit_asm(status, `ldr x0, [x19]\n`);
+		emit_free(status);
+		emit_asm(status, `add x19, x19, #8\n`);
+		emit_asm(status, `sub x20, x20, #1\n`);
+		emit_asm(status, `cbnz x20, ${label}\n`);
+		emit_asm(status, `${skip}:\n`);
+		// Free the malloc'd buffer itself (see the hosa arm below).
+		emit_var_load(status, "x0", decl_name, 8);
+		emit_free(status);
+		emit_asm(status, `ldr x20, [sp], #16\n`);
+		emit_asm(status, `ldr x19, [sp], #16\n`);
+		return true;
+	}
+	if (status.heap_array_vars?.has(decl_name)) {
+		emit_asm(status, `str x19, [sp, #-16]!\n`);
+		emit_asm(status, `str x20, [sp, #-16]!\n`);
+		if (status.heap_owned_string_arrays?.has(decl_name)) {
+			// Owned fat-string elements: free every slot's ptr half (16-byte
+			// stride, data at buffer+8), then the buffer.
+			emit_var_load(status, "x0", decl_name, 8);
+			emit_asm(status, `mov x19, x0\n`);
+			emit_asm(status, `ldr x20, [x19]\n`);
+			emit_asm(status, `add x19, x19, #8\n`);
+			const loop = `.Lhosa_${decl_name}_${label_id}`;
+			const done = `.Lhosa_done_${decl_name}_${label_id}`;
+			emit_asm(status, `${loop}:\n`);
+			emit_asm(status, `cbz x20, ${done}\n`);
+			emit_asm(status, `ldr x0, [x19]\n`);
+			emit_free(status);
+			emit_asm(status, `add x19, x19, #16\n`);
+			emit_asm(status, `sub x20, x20, #1\n`);
+			emit_asm(status, `b ${loop}\n`);
+			emit_asm(status, `${done}:\n`);
+		}
+		emit_var_load(status, "x0", decl_name, 8);
+		emit_free(status);
+		emit_asm(status, `ldr x20, [sp], #16\n`);
+		emit_asm(status, `ldr x19, [sp], #16\n`);
+		return true;
+	}
+	return false;
+}
+
 export function emit_destroy_for_decl(
 	status: BuildStatus,
 	decl_name: string,
@@ -867,6 +972,17 @@ export function emit_destroy_for_decl(
 		moved,
 	);
 	if (moved.has(decl_name)) return;
+
+	// Heap-registered arrays (hoisted `Array<T>` literals, call-result
+	// buffers, owned string/class element arrays): the return-path cleanup
+	// iterates declarations through THIS helper, so without the arm a heap
+	// array temp leaked on every `return` that exits its scope. A moved-out
+	// array (transferred to the caller) already returned above. Nested field
+	// destroys (addr_offset set) keep the struct walk — the registries key
+	// TOP-LEVEL variable names only.
+	if (addr_offset === undefined && emit_heap_array_decl_destroy(status, decl_name)) {
+		return;
+	}
 
 	// A func-typed local holding a closure descriptor (CLOSURE.md Phase 2):
 	// a capturing closure owns a heap env + descriptor (owned = 1); a
