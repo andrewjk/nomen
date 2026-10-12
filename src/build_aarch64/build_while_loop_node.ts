@@ -1,4 +1,5 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
+import discarded_owned_result_type from "../build_common/discarded_update_result.ts";
 import type { NirStmt } from "../nir/nir.ts";
 import WhileLoopNode from "../nodes/WhileLoopNode.ts";
 import build_node from "./build_node.ts";
@@ -8,7 +9,11 @@ import { build_block_with_cursor } from "./emit_nir.ts";
 import { emit_neon_vector_loop } from "./neon_emit.ts";
 import type { NeonPlan } from "./neon_plan.ts";
 import type { UnrollPlan } from "./unroll.ts";
-import { enter_scope_frame, exit_scope_frame } from "./utils/auto_destroy.ts";
+import {
+	emit_discarded_owned_result_free,
+	enter_scope_frame,
+	exit_scope_frame,
+} from "./utils/auto_destroy.ts";
 import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
 import emit_allocations from "./utils/emit_allocations.ts";
 import { promote_loop_locals, type PromotedVar } from "./utils/loop_promotion.ts";
@@ -279,7 +284,17 @@ export default function build_while_loop_node(
 
 		if (node.update) {
 			emit_asm(status, `${continue_label}:\n`);
+			// An owned (`mv out T`) update result is created and discarded in
+			// the same expression — reclaim it in place, once per iteration
+			// (the bare-statement `_disc_N` hoist cannot run here: the update
+			// must re-evaluate every iteration, and hoisting it before the
+			// loop would run the call before the first condition check).
+			const owned_update = discarded_owned_result_type(node.update, status);
 			build_node(node.update, status);
+			if (owned_update) {
+				ensure_newline(status);
+				emit_discarded_owned_result_free(status, owned_update);
+			}
 			ensure_newline(status);
 		}
 

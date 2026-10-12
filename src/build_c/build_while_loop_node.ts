@@ -1,10 +1,12 @@
 import collect_allocations from "../build_common/collect_allocations.ts";
+import discarded_owned_result_type from "../build_common/discarded_update_result.ts";
+import { mono_type_name } from "../build_common/mono_name.ts";
 import type { NirStmt } from "../nir/nir.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import type DeclarationNode from "../nodes/DeclarationNode.ts";
 import ParameterNode from "../nodes/ParameterNode.ts";
 import WhileLoopNode from "../nodes/WhileLoopNode.ts";
-import build_auto_free from "./build_auto_free.ts";
+import build_auto_free, { emit_struct_destroys } from "./build_auto_free.ts";
 import build_node from "./build_node.ts";
 import build_parameter_node from "./build_parameter_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
@@ -119,13 +121,48 @@ export default function build_while_loop_node(
 	// When there's an update clause (e.g. `while n <= 20; n += 1`), emit a
 	// C `for` loop so that `continue` inside the body still runs the update
 	// before re-checking the condition — matching the language's semantics.
+	// An update whose result is an OWNED value (`mv out T` — a string from
+	// `.pop()`/`to_string()`, a class instance, an owning struct) captures
+	// the fresh result into a statement-expression temp and frees it in
+	// place: the for-update position discards the value, and without the
+	// free it leaked once per iteration (the bare-statement `_disc_N` hoist
+	// cannot run here — the update must re-evaluate every iteration).
+	const build_update_expr = (): void => {
+		if (!node.update) return;
+		const owned = discarded_owned_result_type(node.update, status);
+		if (!owned) {
+			build_node(node.update, status);
+			return;
+		}
+		const mono = mono_type_name(owned);
+		const struct = status.structs.find((s) => s.name === mono && !s.is_generic);
+		const free_fn = status.audit ? "nomen_free_wrap" : "free";
+		const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+		const tmp = `_upd_${id}`;
+		status.code += `({ `;
+		if (struct?.is_class) {
+			status.code += `struct ${mono} *${tmp} = `;
+			build_node(node.update, status);
+			status.code += `; if (${tmp}) { ${mono}_destroy(${tmp}); ${free_fn}(${tmp}); }; `;
+		} else if (mono === "string") {
+			status.code += `nomen_string ${tmp} = `;
+			build_node(node.update, status);
+			status.code += `; ${free_fn}(${tmp}.ptr); `;
+		} else if (struct) {
+			status.code += `struct ${mono} ${tmp} = `;
+			build_node(node.update, status);
+			status.code += `; `;
+			emit_struct_destroys(status, struct, tmp);
+		}
+		status.code += ` })`;
+	};
 	if (node.update) {
 		status.code += `for (; `;
 		const has_reeval = emit_condition_reeval();
 		build_condition(node.condition, status);
 		if (has_reeval) status.code += `; })`;
 		status.code += `; `;
-		build_node(node.update, status);
+		build_update_expr();
 		status.code += `) {\n`;
 	} else {
 		status.code += `while (`;

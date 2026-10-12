@@ -247,6 +247,43 @@ export function exit_scope_frame(status: BuildStatus, old: DeclarationNode[]) {
 	status.register_allocations = saved_allocs;
 }
 
+/**
+ * Reclaim a freshly-built OWNED call result sitting in the result registers —
+ * the `while` POST-STATEMENT (update) position, where the value is created and
+ * discarded in the same expression and nothing else can have moved it:
+ *
+ * - `string` (non-view): the fat pair's ptr half is in x0 — free it.
+ * - class instance: the heap pointer is in x0 — `<T>_destroy`, then free
+ *   (the pointer parks on the stack across the destroy call).
+ * - owning value struct: the call landed the blob in its `_call_ret_N` sret
+ *   temp with the slot ADDRESS in x0 — `<T>_destroy` walks it in place; the
+ *   stack temp itself needs no free.
+ *
+ * Mirrors the C backend's statement-expression capture in
+ * build_while_loop_node and the checker's bare-statement `_disc_N` hoist
+ * (which cannot run in the update position — the update must re-evaluate per
+ * iteration). Clears last_result_is_heap: the value was consumed here.
+ */
+export function emit_discarded_owned_result_free(status: BuildStatus, type: Type) {
+	const resolved_name = resolve_struct_name(type.name, type.type_args, status);
+	const struct_type = is_struct_type(resolved_name, status) || is_struct_type(type.name, status);
+	if (type.name === "string") {
+		emit_free(status);
+	} else if (struct_type?.is_class) {
+		// Null-guard the pointer (a nullable class result may be 0).
+		const skip = `.Lskip_upd_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+		emit_asm(status, `cbz x0, ${skip}\n`);
+		emit_asm(status, `str x0, [sp, #-16]!\n`);
+		emit_asm(status, `bl ${resolved_name}_destroy\n`);
+		emit_asm(status, `ldr x0, [sp], #16\n`);
+		emit_free(status);
+		emit_asm(status, `${skip}:\n`);
+	} else if (struct_type) {
+		emit_asm(status, `bl ${resolved_name}_destroy\n`);
+	}
+	status.last_result_is_heap = false;
+}
+
 /** Every declaration frame a `return` must clean: enclosing scopes first,
  *  the current (innermost) frame last — matching fall-through cleanup order. */
 export function all_scope_frames(status: BuildStatus): DeclarationNode[][] {
