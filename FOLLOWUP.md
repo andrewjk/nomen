@@ -164,6 +164,15 @@ container fields / class/enum element fields):
   but an UNSTAMPED generic-body donor (the library `List.copy` body's `v`)
   whose teardown destroys a class field can still double-free. Adding
   class/enum payloads to the transfer set would close it.
+- **Repro (2026-10-12, from the Valen-comparison examples):** a `List<Ship>`
+  where `Ship` is `mv struct { var Box<Engine> engine; var string name }` —
+  `ships.at_or_panic(0)` then any use crashes (SIGTRAP, both backends).
+  `load_T`'s deep-copy covers `List`/`Buffer` fields only, so the element's
+  `Box` field comes back shallow; the copy's scope-exit destroy frees the
+  slot's shared box. Same family as the class-typed gap above — `Box<T>`
+  (the compiler-generated wrapper) needs to join the deep-copy/transfer set.
+  Discovered writing docs/GROUP_BORROWING.md example 6, which routes around
+  it by keeping the `Ship` on the stack.
 
 ## Field-scoped borrow invalidation (Valen-style effect precision)
 
@@ -577,3 +586,42 @@ deprecation cycle for the user-Awaitable `#spawn` spelling. INTERIM
 guardrail until this lands: freeze the `#`-member namespace (the checker
 rejects unknown `#foo` members as reserved) so the family stops growing.
 
+## Residual: one empty-string allocation leaks per emphasis-path parse (2026-10-12)
+
+Surfaced auditing the allmark 0.7.0 port (the port's suite-wide audit went
+1572 → 603 leaking tests with this cycle's fixes; what remains is this
+shape, ≤8-byte strings only). NOT one of the documented string-through-calls
+shapes — those repros (direct ref-param copy store, mv-transfer store,
+per-parse displaced `state.src`) all run audit-clean on current HEAD, and
+plain parses without inline marks are clean too.
+
+Deterministic, BOTH backends, exactly one 1-byte (empty string) allocation
+per parse that resolves emphasis — `parse("**b**", core())` leaks 1;
+`parse("a", core())` is clean. Suite-side it shows up as the delimiter-run
+strings (sizes 1–3: `""`, `"*"`, `"~~"`) in strikethrough/heading/footnote
+tests. The empty size suggests a displaced `""`-seeded field value (an
+entry-dup cousin of the documented "conditional field entry-dup" item, but
+that documented repro also runs clean now, so this is a distinct path —
+likely in the delimiter replace/pop cycle of the port's
+`inline_delimiter_set_at` or the `take_content_from`/`truncate_content_to`
+flow).
+
+Repro (`nomen run --audit`, aarch64 and C: `LEAK: 1`):
+
+```nomen
+import System
+import parse
+import render
+import rulesets
+import transform
+import types
+import utils
+
+pub func main = (Init init) {
+	const result = parse("**b**", core())
+	Console.write("done\n")
+}
+```
+
+One byte per emphasis-bearing parse — trivial for batch renders, worth
+closing before anything long-lived parses untrusted markdown in a loop.
