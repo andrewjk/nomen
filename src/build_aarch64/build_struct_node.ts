@@ -58,7 +58,11 @@ import {
 	overflow_placeholder,
 	patch_overflow_placeholders,
 } from "./utils/stack_args.ts";
-import { allocate_stack_space, emit_return_pair_restore, emit_return_pair_save } from "./utils/stack_var.ts";
+import {
+	allocate_stack_space,
+	emit_return_pair_restore,
+	emit_return_pair_save,
+} from "./utils/stack_var.ts";
 import {
 	emit_owning_array_string_specialize,
 	emit_pair_store_to,
@@ -394,6 +398,8 @@ function build_destroy_function(node: StructNode, func: FunctionNode, status: Bu
 	// for an unrelated same-named local.
 	const old_moved = status.moved;
 	(status.moved as Set<string> | undefined) = undefined;
+	const old_mv_owns_flag = status.mv_owns_flag;
+	status.mv_owns_flag = undefined;
 	const old_heap_string_arrays = status.heap_string_arrays;
 	status.heap_string_arrays = undefined;
 	const old_heap_class_arrays = status.heap_class_arrays;
@@ -518,6 +524,7 @@ function build_destroy_function(node: StructNode, func: FunctionNode, status: Bu
 	status.heap_strings = old_heap_strings;
 	status.trait_class_frames = old_trait_class_frames;
 	status.moved = old_moved;
+	status.mv_owns_flag = old_mv_owns_flag;
 	status.heap_string_arrays = old_heap_string_arrays;
 	status.heap_class_arrays = old_heap_class_arrays;
 	status.heap_array_vars = old_heap_array_vars;
@@ -1150,6 +1157,8 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 	// an unrelated same-named local.
 	const old_moved = status.moved;
 	(status.moved as Set<string> | undefined) = undefined;
+	const old_mv_owns_flag = status.mv_owns_flag;
+	status.mv_owns_flag = undefined;
 	const old_heap_string_arrays = status.heap_string_arrays;
 	status.heap_string_arrays = undefined;
 	const old_heap_class_arrays = status.heap_class_arrays;
@@ -1670,6 +1679,7 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 	status.heap_strings = old_heap_strings;
 	status.trait_class_frames = old_trait_class_frames;
 	status.moved = old_moved;
+	status.mv_owns_flag = old_mv_owns_flag;
 	status.heap_string_arrays = old_heap_string_arrays;
 	status.heap_class_arrays = old_heap_class_arrays;
 	status.heap_array_vars = old_heap_array_vars;
@@ -1719,6 +1729,8 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		// method then has its return-path free / destroy suppressed (leak).
 		const old_moved = status.moved;
 		(status.moved as Set<string> | undefined) = undefined;
+		const old_mv_owns_flag = status.mv_owns_flag;
+		status.mv_owns_flag = undefined;
 		const old_heap_string_arrays = status.heap_string_arrays;
 		status.heap_string_arrays = undefined;
 		const old_heap_class_arrays = status.heap_class_arrays;
@@ -2475,6 +2487,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		status.heap_strings = old_heap_strings;
 		status.trait_class_frames = old_trait_class_frames;
 		status.moved = old_moved;
+		status.mv_owns_flag = old_mv_owns_flag;
 		status.function_return_type = old_function_return_type;
 		status.heap_string_arrays = old_heap_string_arrays;
 		status.heap_class_arrays = old_heap_class_arrays;

@@ -71,6 +71,7 @@ import {
 	emit_string_field_strdups_at,
 	mark_anchor_destroy,
 	mark_heap_string,
+	mark_local_moved_flag,
 	mark_moved_if_struct,
 	is_field_struct_borrow,
 	set_trait_class_local,
@@ -429,7 +430,7 @@ export function build_constructor_params(
 	// A tuple-literal constructor (`[mv t, mv c]`): register every bare
 	// `mv <local>` argument so the source's scope-exit cleanup is
 	// suppressed (the tuple's fields own the transferred buffers now).
-	mark_tuple_literal_move_owners(fc, status);
+	mark_tuple_literal_move_owners(fc, status, (name) => mark_local_moved_flag(status, name));
 	const variadic_idx = fc.variadic_param_index;
 	if (
 		variadic_idx !== undefined &&
@@ -2701,6 +2702,25 @@ export default function build_declaration_node(
 				status.stack_offsets!.set(node.name, offset);
 				if (nullable_struct) {
 					status.stack_offsets!.set(has_flag_name(node.name), offset + struct_size);
+				}
+				// An owning `mv` value-struct local carries a runtime "moved"
+				// flag (0 = owns, 1 = moved out). A CONDITIONAL move (one
+				// inside a branch/loop) leaves the local owning its value on
+				// the not-taken path, so the scope-exit / return destroy is
+				// guarded on this flag (see mv_owns_flag) — otherwise that
+				// path leaked the struct's string fields (the
+				// `#init`-strdup'd default). Only frame locals get one.
+				if (
+					struct_type?.is_owning === true &&
+					!nullable_struct &&
+					!struct_type.name.startsWith("_Tuple_") &&
+					!struct_type.name.startsWith("_Anon_") &&
+					struct_needs_destroy(struct_type, status)
+				) {
+					const owns_flag_offset = allocate_stack_space(status, 8, 8);
+					emit_asm(status, `str xzr, [x29, #${owns_flag_offset}]\n`);
+					if (!status.mv_owns_flag) status.mv_owns_flag = new Map();
+					status.mv_owns_flag.set(node.name, owns_flag_offset);
 				}
 			} else if (node.is_module_init) {
 				// STRUCT_PLAN_3 Phase R tranche 3: a mv-struct GLOBAL's

@@ -788,45 +788,50 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					? status.structs.find((s) => s.name === tname && !s.is_simple_type)
 					: undefined;
 				const is_value_struct = !!decl_struct && !decl_struct.is_class;
-				if (decl_hit) decl_hit.frame.splice(decl_hit.index, 1);
-				// A moved VALUE struct's plain string fields keep caller
-				// ownership: mv callees (Buffer/List store_T) strdup their
-				// own copies, so the source's heap strings — recorded in
-				// heap_string_fields at assignment — are released here (the
-				// splice above removes the decl from auto_free's iteration).
-				// The call has already been emitted, so the callee's copy is
-				// complete. Classes transfer the whole instance (strings
-				// included) and need no release.
+				const prefix = `${vname}.`;
+				// A TRANSFER param (a `mv T` parameter of a pass-by-value mv
+				// struct — see move_owned_param_indices): the callee's seeded
+				// records own the strings now, so the records are dropped
+				// WITHOUT freeing — freeing here (or at scope exit) would
+				// double free with the callee's exit. The plain mv convention
+				// (mv containers strdup their own copies) still releases the
+				// caller's originals.
+				// STRUCT_PLAN_3 B2: a `Box<T>(mv x)` construction
+				// SHALLOW-copies x — ownership of the pointee's state moves
+				// with the bytes (the wrapper's `mv T __value` is the design).
+				// The callee-copies release would free the very strings the box
+				// now owns — treat it as a transfer.
+				const box_ctor_transfer = is_box_type(node.name, status.structs);
+				// B1 full cutover: a `mv T` PARAMETER of a declared-mv value
+				// struct makes the callee the field owner (the moved-param
+				// teardown frees the fields at its exit — build_function_node),
+				// so the caller drops its records without freeing even when the
+				// check-side move_owned_param_indices stamp is absent (its pbv
+				// gate excludes mv types).
+				const callee_move_param = !!node.resolved_function?.params?.filter((p) => !p.is_self_param)[
+					idx
+				]?.is_moved;
+				const transfer =
+					box_ctor_transfer ||
+					(node.move_owned_param_indices?.includes(idx) ?? false) ||
+					callee_move_param;
+				// An owning `mv` value-struct local carries a runtime moved
+				// flag: a CONDITIONAL transfer-move must keep the local's
+				// scope-exit destroy live on the not-moved path, guarded on the
+				// flag. Keep the decl (don't splice) and set the flag instead of
+				// marking status.moved, so auto_free emits the flag-guarded
+				// destroy (which frees the struct's fields when the move did
+				// not happen).
+				const owns_flag = status.c_mv_owns_flags?.get(vname);
+				const use_flag =
+					!!owns_flag &&
+					is_value_struct &&
+					transfer &&
+					decl_struct?.is_owning === true &&
+					!decl_struct.name.startsWith("_Tuple_") &&
+					!decl_struct.name.startsWith("_Anon_");
+				if (decl_hit && !use_flag) decl_hit.frame.splice(decl_hit.index, 1);
 				if (is_value_struct) {
-					const prefix = `${vname}.`;
-					// A TRANSFER param (a `mv T` parameter of a
-					// pass-by-value mv struct — see
-					// move_owned_param_indices): the callee's seeded records
-					// own the strings now, so the records are dropped WITHOUT
-					// freeing — freeing here (or at scope exit) would double
-					// free with the callee's exit. The plain mv convention
-					// (mv containers strdup their own copies) still
-					// releases the caller's originals.
-					// STRUCT_PLAN_3 B2: a `Box<T>(mv x)` construction
-					// SHALLOW-copies x — ownership of the pointee's state
-					// moves with the bytes (the wrapper's `mv T __value` is
-					// the design). The callee-copies release would free the
-					// very strings the box now owns — treat it as a transfer.
-					const box_ctor_transfer = is_box_type(node.name, status.structs);
-					// B1 full cutover: a `mv T` PARAMETER of a declared-
-					// mv value struct makes the callee the field owner
-					// (the moved-param teardown frees the fields at its exit —
-					// build_function_node), so the caller drops its records
-					// without freeing even when the check-side
-					// move_owned_param_indices stamp is absent (its pbv gate
-					// excludes mv types).
-					const callee_move_param = !!node.resolved_function?.params?.filter(
-						(p) => !p.is_self_param,
-					)[idx]?.is_moved;
-					const transfer =
-						box_ctor_transfer ||
-						(node.move_owned_param_indices?.includes(idx) ?? false) ||
-						callee_move_param;
 					for (const key of Array.from(status.heap_string_fields ?? [])) {
 						if (key.startsWith(prefix)) {
 							if (!transfer) {
@@ -836,6 +841,11 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 							status.heap_string_fields!.delete(key);
 						}
 					}
+				}
+				if (use_flag) {
+					if (!status.pending_mv_owns_sets) status.pending_mv_owns_sets = [];
+					status.pending_mv_owns_sets.push(`${owns_flag} = 1;`);
+					continue;
 				}
 				// Record that this variable's value has been moved out. A later
 				// reassignment (`a = null` / `a = Box(2)`) must NOT reclaim the

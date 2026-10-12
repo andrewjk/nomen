@@ -31,6 +31,7 @@ import { emit_free, emit_malloc, emit_strdup } from "./utils/audit.ts";
 import {
 	emit_string_field_strdups_at,
 	all_scope_frames,
+	mark_local_moved_flag,
 	mark_moved_if_struct,
 	find_anchor_slot,
 	resolve_struct_name,
@@ -359,7 +360,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 	}
 
 	const is_struct = status.structs.find((s) => s.name === node.name && !s.is_simple_type);
-	mark_tuple_literal_move_owners(node, status);
+	mark_tuple_literal_move_owners(node, status, (name) => mark_local_moved_flag(status, name));
 	// A nested-function callee emits under its uniquified label (the checker
 	// stamps resolved_function on every resolved call); struct constructors
 	// and top-level functions keep their names. An overloaded constructor

@@ -56,6 +56,7 @@ import build_todo_node from "./build_todo_node.ts";
 import build_value_node from "./build_value_node.ts";
 import build_while_loop_node from "./build_while_loop_node.ts";
 import { emit_malloc, emit_strdup } from "./utils/audit.ts";
+import { mark_local_moved_flag } from "./utils/auto_destroy.ts";
 import {
 	closure_env_layout_a64,
 	emit_descriptor_address,
@@ -127,6 +128,7 @@ function emit_capturing_closure_value_a64(fn: FunctionNode, status: BuildStatus)
 		if (cap.is_move && !(cap.type.name === "string" && !cap.type.is_view && !cap.type.is_array)) {
 			if (!status.moved) status.moved = new Set();
 			status.moved.add(cap.name);
+			mark_local_moved_flag(status, cap.name);
 			const prefix = `${cap.name}.`;
 			for (const key of Array.from(status.heap_string_fields ?? [])) {
 				if (key.startsWith(prefix)) status.heap_string_fields!.delete(key);

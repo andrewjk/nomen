@@ -47,6 +47,7 @@ import {
 	emit_destroy_for_decl,
 	emit_enum_payload_strdups_at,
 	emit_heap_slots_cleanup_for_return,
+	emit_moved_local_cleanup,
 	emit_string_field_strdups_at,
 	is_field_struct_borrow,
 	mark_moved_if_struct,
@@ -205,8 +206,10 @@ export default function build_return_node(
 				// the skip below bypasses emit_destroy_for_decl. Its
 				// enum-with-data fields transfer with the blob (a variable
 				// return's sret copy is bitwise), so they are deliberately NOT
-				// freed here — the caller now owns them.
-				release_heap_string_fields(status, decl.name, decl.type.name, decl.type.is_nullable);
+				// freed here — the caller now owns them. An owning mv struct
+				// whose move was CONDITIONAL keeps its destroy live on the
+				// not-moved path, guarded on its runtime moved flag.
+				emit_moved_local_cleanup(status, decl);
 				continue;
 			}
 			if (is_field_struct_borrow(decl)) continue;
@@ -236,8 +239,10 @@ export default function build_return_node(
 				if (finalized.has(decl.name)) {
 					// A moved-out value struct still owns its recorded heap string
 					// fields (store_T deep-copied them) — release them here since
-					// the skip below bypasses emit_destroy_for_decl.
-					release_heap_string_fields(status, decl.name, decl.type.name, decl.type.is_nullable);
+					// the skip below bypasses emit_destroy_for_decl. An owning mv
+					// struct whose move was CONDITIONAL keeps its destroy live on
+					// the not-moved path, guarded on its runtime moved flag.
+					emit_moved_local_cleanup(status, decl);
 					continue;
 				}
 				if (is_field_struct_borrow(decl)) continue;
@@ -1289,8 +1294,10 @@ export default function build_return_node(
 				// the skip below bypasses emit_destroy_for_decl. Its
 				// enum-with-data fields transfer with the blob (a variable
 				// return's sret copy is bitwise), so they are deliberately NOT
-				// freed here — the caller now owns them.
-				release_heap_string_fields(status, decl.name, decl.type.name, decl.type.is_nullable);
+				// freed here — the caller now owns them. An owning mv struct
+				// whose move was CONDITIONAL keeps its destroy live on the
+				// not-moved path, guarded on its runtime moved flag.
+				emit_moved_local_cleanup(status, decl);
 				continue;
 			}
 			if (is_field_struct_borrow(decl)) continue;

@@ -703,6 +703,30 @@ export default function build_declaration_node(
 				if (!status.owned_string_vars) status.owned_string_vars = new Set();
 				status.owned_string_vars.add(safe_name);
 			}
+			// An owning `mv` value-struct local carries a runtime "moved" flag
+			// (0 = owns, 1 = moved out). A CONDITIONAL move (inside a
+			// branch/loop) leaves the local owning its value on the not-taken
+			// path, so the scope-exit / return destroy is guarded on this flag
+			// (see c_mv_owns_flags) — otherwise that path leaked the struct's
+			// string fields (the `#init`-strdup'd default). Mirrors the
+			// aarch64 backend's mv_owns_flag.
+			const mv_decl_struct = node.type?.name
+				? status.structs.find(
+						(s) => s.name === mono_type_name(node.type) && !s.is_simple_type && !s.is_generic,
+					)
+				: undefined;
+			if (
+				mv_decl_struct?.is_owning === true &&
+				!mv_decl_struct.name.startsWith("_Tuple_") &&
+				!mv_decl_struct.name.startsWith("_Anon_") &&
+				!node.type.is_nullable &&
+				struct_needs_destroy_by_name(mv_decl_struct.name, status)
+			) {
+				const flag = `_mv_owns_${safe_name}`;
+				status.code += `unsigned char ${flag} = 0;\n`;
+				if (!status.c_mv_owns_flags) status.c_mv_owns_flags = new Map();
+				status.c_mv_owns_flags.set(node.name, flag);
+			}
 		} else {
 			// Record this as an object-level alias (`var R q = p`): it does
 			// not own its current value until reassigned, so a later

@@ -487,6 +487,15 @@ export default interface BuildStatus {
 	 */
 	pending_string_releases?: string[];
 	/**
+	 * C only. Deferred `_mv_owns_X = 1;` statements from `mv` call sites on
+	 * owning `mv` value-struct locals. Like `pending_string_releases`, the
+	 * call may sit inside a larger expression (a `return take(mv d)`), so the
+	 * flag set is buffered and flushed at the statement boundary — and, for a
+	 * `return` (whose emission skips the boundary flush), at the top of
+	 * free_scoped_declarations before the reclaim runs.
+	 */
+	pending_mv_owns_sets?: string[];
+	/**
 	 * C only. Self-report from build_assignment_node's string-FIELD store
 	 * path: its braced lowering (`{ …; field = temp; }`) is the statement's
 	 * final emission, so the statement tail must skip the terminating
@@ -750,6 +759,23 @@ export default interface BuildStatus {
 	 * shared original for its owner.
 	 */
 	c_alias_owns_flags?: Map<string, string>;
+	/**
+	 * aarch64 stack offset of a runtime "moved" flag for an owning `mv` value
+	 * struct local (name → offset). The flag is 0 while the local owns its
+	 * value and 1 once a `mv` (move-out) or `return` transferred it away. A
+	 * CONDITIONAL move (a move inside a branch/loop) leaves the local owning
+	 * its value on the path that skips the move, so the scope-exit / return
+	 * destroy is guarded on this flag — without it the not-moved path leaked
+	 * the struct's string fields (the `#init`-strdup'd default).
+	 */
+	mv_owns_flag?: Map<string, number>;
+	/**
+	 * C backend counterpart of `mv_owns_flag`: maps an owning `mv` value
+	 * struct local to the emitted `unsigned char` flag variable (initialized
+	 * to 0 at declaration). A move-out / return sets it to 1; a reassignment
+	 * clears it; the scope-exit destroy is guarded on it.
+	 */
+	c_mv_owns_flags?: Map<string, string>;
 	/**
 	 * C backend: the scoped-declarations FRAME (by reference) in which a
 	 * class alias was declared. A reassignment registers the alias's exit

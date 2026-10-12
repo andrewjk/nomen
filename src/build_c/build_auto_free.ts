@@ -152,6 +152,14 @@ export function free_scoped_declarations(
 	decls: DeclarationNode[],
 	persist_string_field_records = false,
 ) {
+	// Flush any `_mv_owns_X = 1;` deferred by a `mv` call inside the statement
+	// whose reclaim is about to run (a `return take(mv d)` skips the ordinary
+	// statement-boundary flush — see pending_mv_owns_sets). The flag must be
+	// set before the flag-guarded destroy below decides whether to reclaim.
+	if (status.pending_mv_owns_sets?.length) {
+		status.code += status.pending_mv_owns_sets.join("\n") + "\n";
+		status.pending_mv_owns_sets.length = 0;
+	}
 	// Add dispose calls, if applicable
 	// TODO: free() if it's on the heap
 	let commented = false;
@@ -412,6 +420,11 @@ export function free_scoped_declarations(
 		const is_heap_string_assign = !!status.heap_strings?.has(dec.name);
 		const dec_struct = status.structs.find((s) => s.name === dec.type.name);
 		const is_class_var = !!dec_struct?.is_class;
+		// A runtime "moved" flag for an owning `mv` value-struct local (see
+		// c_mv_owns_flags): a CONDITIONAL transfer move leaves the local owning
+		// its value on the not-moved path, so its scope-exit destroy is
+		// guarded on the flag. 0 = owns (reclaim), 1 = moved out (skip).
+		const mv_owns_flag = status.c_mv_owns_flags?.get(dec.name);
 		// A trait-typed local whose concrete storage is a class holds a
 		// pointer to a heap instance whose concrete type may change across
 		// reassignment. Reclaim it via the trait's `<Trait>_destroy` shim
@@ -513,7 +526,11 @@ export function free_scoped_declarations(
 				// its value only at runtime (after the reassignment executed),
 				// so the scope-exit destroy is guarded by its owns-flag.
 				const alias_flag = status.c_alias_owns_flags?.get(dec.name);
-				if (alias_flag !== undefined) {
+				if (mv_owns_flag !== undefined) {
+					// Conditional-move guard: reclaim only when the move did
+					// not happen (0 = owns).
+					status.code += `if (!${mv_owns_flag}) { ${destroy_call}free(${cname}); }\n`;
+				} else if (alias_flag !== undefined) {
 					status.code += `if (${alias_flag}) { ${destroy_call}free(${cname}); }\n`;
 				} else if (dec.type.is_nullable) {
 					status.code += `if (${cname}) { ${destroy_call}free(${cname}); }\n`;
@@ -543,7 +560,15 @@ export function free_scoped_declarations(
 					status.code += "\n// Auto-free\n";
 					commented = true;
 				}
-				emit_struct_destroys(status, struct_type, cname);
+				if (mv_owns_flag !== undefined) {
+					// Conditional-move guard: reclaim only when the move did
+					// not happen (0 = owns).
+					status.code += `if (!${mv_owns_flag}) { `;
+					emit_struct_destroys(status, struct_type, cname);
+					status.code += `}\n`;
+				} else {
+					emit_struct_destroys(status, struct_type, cname);
+				}
 			}
 		}
 		// Trait-typed local with concrete storage (e.g.

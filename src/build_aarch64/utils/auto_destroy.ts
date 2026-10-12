@@ -802,6 +802,49 @@ function release_records_for_scope_exit(
 	release_heap_string_fields(status, decl.name, decl.type.name, decl.type.is_nullable);
 }
 
+/**
+ * Scope-exit / return cleanup for a declaration that the build-time `moved`
+ * set says was moved out. For an owning `mv` value-struct local the move may
+ * be CONDITIONAL (inside a branch/loop): the local still owns its value on the
+ * path that skips the move, so the destroy is guarded on the local's runtime
+ * "moved" flag (0 = owns, 1 = moved out). On the not-moved path the struct's
+ * string fields (the `#init`-strdup'd default included) are freed; on the
+ * moved path the callee already reclaimed them and the guard skips. Without a
+ * flag (params, temporaries, non-owning structs) the records are released as
+ * before.
+ */
+export function emit_moved_local_cleanup(
+	status: BuildStatus,
+	decl: { name: string; type: { name: string; type_args?: Type[]; is_nullable?: boolean } },
+) {
+	const owns_flag = status.mv_owns_flag?.get(decl.name);
+	const resolved = resolve_decl_struct(decl, status);
+	if (
+		owns_flag !== undefined &&
+		resolved?.struct_type.is_owning === true &&
+		!resolved.struct_type.name.startsWith("_Tuple_") &&
+		!resolved.struct_type.name.startsWith("_Anon_")
+	) {
+		const skip = `.Lskip_mvowns_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+		emit_asm(status, `ldr x9, [x29, #${owns_flag}]\n`);
+		emit_asm(status, `cbnz x9, ${skip}\n`);
+		const had = !!status.moved?.has(decl.name);
+		status.moved?.delete(decl.name);
+		emit_destroy_for_decl(
+			status,
+			decl.name,
+			resolved.type_name,
+			undefined,
+			resolved.type_args,
+			decl.type.is_nullable,
+		);
+		if (had) status.moved?.add(decl.name);
+		emit_asm(status, `${skip}:\n`);
+		return;
+	}
+	release_heap_string_fields(status, decl.name, decl.type.name, decl.type.is_nullable);
+}
+
 export function emit_destroy_for_decl(
 	status: BuildStatus,
 	decl_name: string,
@@ -1421,6 +1464,7 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 			// the destroy walk frees all string fields unconditionally.
 			release_records_for_scope_exit(status, decl, moved);
 			if (moved.has(decl.name)) {
+				emit_moved_local_cleanup(status, decl);
 				continue;
 			}
 			// An enum-with-data local owns its string payloads (case
@@ -1567,6 +1611,7 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 		// B1 cutover: an OWNING struct's records are dropped, not freed.
 		release_records_for_scope_exit(status, decl, moved);
 		if (moved.has(decl.name)) {
+			emit_moved_local_cleanup(status, decl);
 			continue;
 		}
 		// An enum-with-data local owns its string payloads (see the
@@ -1794,6 +1839,25 @@ export function consolidate_temp_anchors(
 		if (find_anchor_slot(status, pname) === undefined) continue;
 		if (!status.moved) status.moved = new Set<string>();
 		status.moved.add(pname);
+		mark_local_moved_flag(status, pname);
+	}
+}
+
+/**
+ * Set an owning `mv` value-struct local's runtime moved flag (1 = moved out)
+ * if it has one. Called from every move-marking path (call args, returns,
+ * closure captures, tuple move owners) so the flag-guarded scope-exit destroy
+ * skips the moved path and still reclaims the not-moved path.
+ */
+export function mark_local_moved_flag(status: BuildStatus, name: string) {
+	const flag = status.mv_owns_flag?.get(name);
+	if (flag !== undefined) {
+		// x9 may be live at the call site (e.g. a `mv` field-store holds the
+		// destination address there), so park it across the flag set.
+		emit_asm(status, `str x9, [sp, #-16]!\n`);
+		emit_asm(status, `mov x9, #1\n`);
+		emit_asm(status, `str x9, [x29, #${flag}]\n`);
+		emit_asm(status, `ldr x9, [sp], #16\n`);
 	}
 }
 
@@ -1839,6 +1903,10 @@ export function mark_moved_if_struct(
 	if (is_struct || is_enum_with_data || is_trait) {
 		if (!status.moved) status.moved = new Set<string>();
 		status.moved.add(var_name);
+		// An owning mv value-struct local carries a runtime "moved" flag
+		// (0 = owns, 1 = moved out) so a CONDITIONAL move leaves the not-moved
+		// path's scope-exit destroy live (see mv_owns_flag). Mark it moved here.
+		mark_local_moved_flag(status, var_name);
 	}
 	// A RETURNED heap string transfers ownership to the caller (the return
 	// cleanup must not free it) — but only in return context (for_return): a

@@ -45,7 +45,12 @@ import {
 	overflow_placeholder,
 	patch_overflow_placeholders,
 } from "./utils/stack_args.ts";
-import { allocate_stack_space, emit_promoted_load, emit_return_pair_restore, emit_return_pair_save } from "./utils/stack_var.ts";
+import {
+	allocate_stack_space,
+	emit_promoted_load,
+	emit_return_pair_restore,
+	emit_return_pair_save,
+} from "./utils/stack_var.ts";
 import { emit_deref_var_address, emit_var_address, is_local_ref_var } from "./utils/stack_var.ts";
 import { get_enum_sret_size, get_field_offset, get_struct_size } from "./utils/struct_layout.ts";
 import { value_number_loops, type VnPlan } from "./value_number.ts";
@@ -247,6 +252,8 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 
 	const old_moved: Set<string> | undefined = status.moved;
 	(status.moved as Set<string> | undefined) = undefined;
+	const old_mv_owns_flag = status.mv_owns_flag;
+	status.mv_owns_flag = undefined;
 
 	// Access-staging pins are per-function (prologue patching shifts code
 	// positions at function exit — ASM_PLAN_3 tranche L).
@@ -1506,6 +1513,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 
 	status.scoped_declarations = old_scoped_declarations;
 	status.moved = old_moved;
+	status.mv_owns_flag = old_mv_owns_flag;
 	status.heap_string_fields = old_heap_string_fields;
 	status.heap_strings = old_heap_strings;
 	status.heap_string_arrays = old_heap_string_arrays;

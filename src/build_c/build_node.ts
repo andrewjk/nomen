@@ -308,5 +308,9 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 			status.code += status.pending_string_releases.join("\n") + "\n";
 			status.pending_string_releases.length = 0;
 		}
+		if (status.pending_mv_owns_sets?.length) {
+			status.code += status.pending_mv_owns_sets.join("\n") + "\n";
+			status.pending_mv_owns_sets.length = 0;
+		}
 	}
 }

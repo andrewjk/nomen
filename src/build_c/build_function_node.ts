@@ -91,6 +91,8 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	// functions, so none of these maps may outlive one.
 	const old_alias_owns_flags = status.c_alias_owns_flags;
 	status.c_alias_owns_flags = new Map();
+	const old_mv_owns_flags = status.c_mv_owns_flags;
+	status.c_mv_owns_flags = new Map();
 	const old_alias_decl_frames = status.alias_decl_frames;
 	status.alias_decl_frames = new Map();
 	const old_class_alias_vars = status.class_alias_vars;
@@ -133,6 +135,8 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.stack_array_lengths = undefined;
 	const old_moved = status.moved;
 	status.moved = new Set();
+	const old_pending_mv_owns = status.pending_mv_owns_sets;
+	status.pending_mv_owns_sets = undefined;
 	const old_borrow_only = status.c_borrow_only_strings;
 	status.c_borrow_only_strings = scan_borrow_only_strings(node);
 	// Shared with the aarch64 backend: string vars that receive a heap value
@@ -710,6 +714,8 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.c_borrow_only_strings = old_borrow_only;
 	status.force_heap_strings = old_force_heap;
 	status.c_alias_owns_flags = old_alias_owns_flags;
+	status.c_mv_owns_flags = old_mv_owns_flags;
+	status.pending_mv_owns_sets = old_pending_mv_owns;
 	status.alias_decl_frames = old_alias_decl_frames;
 	status.class_alias_vars = old_class_alias_vars;
 	status.class_alias_source_map = old_class_alias_source_map;

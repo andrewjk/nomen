@@ -15,12 +15,14 @@ import type ValueNode from "../nodes/ValueNode.ts";
 export default function mark_tuple_literal_move_owners(
 	node: FunctionCallNode,
 	status: { moved?: Set<string> },
+	on_move?: (name: string) => void,
 ): void {
 	if (!node.type?.name?.startsWith("_Tuple_")) return;
 	if (!status.moved) status.moved = new Set();
 	for (const p of node.params) {
 		if (p.node_type === "value" && p.is_moved && typeof (p as ValueNode).value === "string") {
 			status.moved.add((p as ValueNode).value);
+			on_move?.((p as ValueNode).value);
 		}
 	}
 }
