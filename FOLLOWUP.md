@@ -13,24 +13,6 @@ verifier runs over declared ownership, `string` is a declared mv type,
 and the mv-struct string-field lowerings are uniform-heap on both
 backends. What remains:
 
-### Docs debt (user-facing, teaching retired syntax)
-
-- **`docs/BORROW.md`** still teaches the retired `mov` keyword and the
-  pre-B5 "structs cannot hold class-typed fields" rule — it needs a full
-  rewrite to the `mv`/mv-field world.
-- **`docs/ASYNC.md`** still teaches `Sendable`-gated class spawning
-  (SPEC.md/README.md were rewritten in tranche 4's en-route work; the
-  shipped rule is that trait handles cannot cross a task boundary and
-  structs auto-derive). It also cites the opaque-closure spawn leak (see
-  that section below).
-
-Neither should be cited as current syntax until rewritten.
-
-- **`docs/GUI.md`**'s "Why handle-based, not trait-based" rationale section
-  still quotes pre-`mv`-era errors (`mov Trait` params) and pre-R trait
-  constraints — its conclusions mostly still hold, but the cited syntax and
-  error text are two renames stale.
-
 ### Test-corpus skips that name live gaps
 
 Each skip masks a real post-R/B1/D3 gap (verified still failing

@@ -141,9 +141,9 @@ distribution, and `LEN_PERCENT`/explicit `LEN_*` sizing**).
 
 ### Why handle-based, not trait-based (for now)
 
-Every native control is `class { uint64 handle }`, and the y-flip needs the
-window's content height — both are handle-level concerns. The earlier compiler
-blockers (vtable dispatch, `ClassBuffer<Trait>` storage, generic-trait
+Every native control is an `mv struct` carrying a `uint64 handle`, and the
+y-flip needs the window's content height — both are handle-level concerns. The
+earlier compiler blockers (vtable dispatch, `ClassBuffer<Trait>` storage, generic-trait
 conformance) are all closed. But a full `Container : Control` /
 `Array<Control>` **object-tree** rewrite — where leaves are `Control` objects
 slotted into the container — turned out to be blocked by **Nomen's ownership
@@ -159,22 +159,31 @@ compounding, verified obstacles:
    monomorphize to `ClassBuffer<Control>`, which frees every element on
    destroy. There is **no non-mv (borrowed) heterogeneous collection**, so
    the spec's `add(Control child)` borrowed model is inexpressible.
-3. **`mov Trait` params are rejected** ("mov is only allowed for class types")
-   in non-generic code; it only works as `mov T` inside a generic.
+3. ~~**`mov Trait` params are rejected.**~~ **CLOSED** (STRUCT_PLAN_3 B4).
+   In the pre-`mv` era a `mov Trait` parameter was rejected outside
+   generics ("mov is only allowed for class types"); it only worked as
+   `mov T` inside a generic. Trait-typed positions now hold boxed handles,
+   and `mv Control` is an accepted parameter form ("mv is only allowed for
+   class, trait, or mv struct types") — it transfers ownership of the box
+   (boxing owns: the donor binding is invalidated, and a borrowed value
+   cannot be moved in).
 4. **No generic methods.** `type_params` exist on structs, free functions, and
-   traits — not on class/struct methods. So `add<T: Control>(mov T child)`,
+   traits — not on class/struct methods. So `add<T: Control>(mv T child)`,
    the only signature that could feed a mv heterogeneous container from a
    concrete control, can't be written.
 5. **No downcasting.** Retrieving `var Control c = container.at(i)` yields the
-   trait type; you can't call `Text.set_text` / `CheckBox.set_hidden` on it. So
-   once the container owns a leaf, the app's interactive mutation pattern (the
-   todo app toggles `cb3`/`input` _after_ layout) is unreachable.
+   boxed trait handle; you can't call `Text.set_text` / `CheckBox.set_hidden`
+   on it. So once the container owns a leaf, the app's interactive mutation
+   pattern (the todo app toggles `cb3`/`input` _after_ layout) is unreachable.
 
-(1)–(4) together mean there's no way to get a heterogeneous set of native
-controls into a mv trait container from application code; (5) means even
-if you could, the app couldn't use them afterward. This is ownership-model
-territory, not library work — it needs a language change (generic methods,
-and/or a non-mv trait collection, and/or downcast).
+(1), (2) and (4) together still mean there's no way to hand a heterogeneous
+set of native controls to a trait container from application code without
+surrendering ownership — the container's mv storage frees what it holds, and
+`add(mv control)` invalidates the app's binding (with obstacle (3) closed,
+that `mv` signature now parses; it just can't express the borrowed model the
+app needs); (5) means even re-fetching by index couldn't reach the concrete
+type's methods afterward. This is ownership-model territory, not library work —
+it needs a language change (a non-mv trait collection and/or downcast).
 
 So v1 stores child handles in flat `Buffer<int>` arrays (structure-of-arrays,
 mirroring the legacy `Layout.nm`) and applies frames via a native
@@ -185,7 +194,7 @@ storage/dispatch shim, not the math.
 ### Container as a Control
 
 Although the full object-tree is blocked, `Container` **does** conform to
-`Control`: it is now a `class : Control` whose trait entry points delegate to
+`Control`: it is now an `mv struct : Control` whose trait entry points delegate to
 the existing SoA engine (`measure(BoxConstraints)` runs the recursive measure
 and returns the resolved `Size`; `set_frame(x,y,w,h)` arranges the subtree into
 the rectangle; `intrinsic_size` measures against unbounded space). The
@@ -437,7 +446,7 @@ Fixed column count `cols`.
 ## Invalidation & incremental relayout
 
 Each control has a `dirty` flag and a reference to its parent (via `parent_of`
-on the arena tree, or a `parent` field on class-based controls).
+on the arena tree, or a `parent` field on heap-backed controls).
 
 ```
 func mark_dirty = (ref Control node) {
@@ -538,7 +547,8 @@ pub struct Container : Control {
 }
 ```
 
-`Container` should be a `class` (reference type) so children mutate in place
+`Container` should be heap-backed (a `mv struct` behind a stable address —
+`Box<Container>` or a handle into an arena) so children mutate in place
 during arrange without copies. Parent → child references only — no parent
 back-pointers — to avoid reference cycles.
 
@@ -687,8 +697,8 @@ UI infrastructure):
   invalidated), boxing a fresh temporary is free, and borrows/views cannot be
   boxed. A bare `Trait` parameter takes a pointer to the caller value for the
   call (no allocation); a `mv Trait` parameter takes ownership of the box.
-  The native controls are `class`es, so they slot straight into
-  `ClassBuffer<Control>` unchanged.
+  The native controls are `mv struct`s, so they box straight into
+  `ClassBuffer<Control>` slots unchanged.
 - ~~**Parse trait conformance with type arguments** (`core/System/Viewable.nm:8-11`,
   not `Controls/Viewable.nm`), so `Container<T: Control>`-style generics
   become possible. `TraitNode` has no `type_params` field, `parse_trait.ts`
@@ -835,17 +845,16 @@ Both backends now implement this end-to-end and are exercised by
 - ~~**Trait-typed locals use the **concrete** storage of their initializer, so
   a `var Speaker s = Dog(); s = Cat()` reassignment to a _different_ concrete
   type does not yet work (the storage is sized for the first type).~~ ✅
-  **Fixed.** A trait-typed local whose concrete storage is a `class` now holds
-  a pointer to the heap instance (not the inline struct), so it can be
-  reassigned to any other class conforming to the same trait. Dispatch reads
+  **Fixed.** A trait-typed local holds a boxed handle (STRUCT_PLAN_3 B4 —
+  every trait position is a heap instance whose first word is the vtable),
+  so it can be reassigned to any other conformer of the same trait. Dispatch
+  reads
   the vtable through the stored pointer, and both reassignment and scope-exit
   reclaim the instance via the trait's `<Trait>_destroy` shim (the concrete
   type at runtime may differ from the initializer's after a reassignment, so
   destroy dispatches polymorphically). Runtime-tested on both backends in
-  `test/trait_dispatch_gaps.test.ts`. (Value-struct trait-typed locals keep
-  their inline stack storage and still cannot be reassigned across concrete
-  types — that would require boxing, which was removed; declare the type as a
-  `class` to use it polymorphically.)
+  `test/trait_dispatch_gaps.test.ts` (the B4 boxing makes this uniform for
+  value-struct conformers too).
 - ~~**Trait field accessors handle scalar/string (single-word) fields only;
   multi-word struct trait fields are not yet supported through dispatch.~~ ✅
   **Fixed.** The generated get/set accessors now use the full field type
@@ -1186,7 +1195,7 @@ INFINITY = 2147483647` lowered to `foreign long INFINITY;` and
 
 ### Layout features still owed (now unblocked)
 
-With the native controls now `class`es, `ClassBuffer<Trait>` polymorphic
+With the native controls now `mv struct`s, `ClassBuffer<Trait>` polymorphic
 storage in place, and the enum geometry-type blockers fixed, `Container` itself
 now conforms to `Control` (see [Container as a Control](#container-as-a-control))
 — but the full trait-based `Array<Control>` **object-tree** is _not_ reachable

@@ -32,6 +32,16 @@ var out = StringBuilder()
 // Error: 'out' is a reserved word and cannot be used as a name
 ```
 
+`class` is retired: writing it produces a dedicated error directing to its
+replacement —
+
+```
+class Box { var int value }
+// Error: 'class' has retired — declare `mv struct` (single-owner, move-only)
+//   and spell sharing where it happens (`ref`, `Box<T>`, `Mutex<T>`,
+//   `WeakHandle<T>`)
+```
+
 Function and method names are exempt: the name after `func` is unambiguous,
 and calls always go through `.name(...)` access, so library methods may use
 reserved words (e.g. `Text::Regex.match(...)`):
@@ -416,7 +426,7 @@ ownership cannot be transferred through it (move the owner instead). A plain
 `var` copy of an alias source is a compile error — spell what you mean:
 `ref` to share, `mv` to transfer, `.copy()` for an independent copy.
 
-See [Owning structs](#mv-structs-1) for the field rules, the Copyable
+See [Owning structs](#owning-structs-1) for the field rules, the Copyable
 verifier, `Box<T>`, and the nullable lowerings.
 
 ### Generic Structs
@@ -1619,7 +1629,7 @@ constraints to the generated `#init` parameters (see
 to take full control of construction (see [Initializers](#initializers)). A
 bare struct is a value type: assigning it copies the fields. For heap
 ownership and shared-in-scope aliasing, use `mv struct` plus `Box<T>` /
-`ref` — see [Owning Structs](#mv-structs).
+`ref` — see [Owning Structs](#owning-structs-1).
 
 ### Traits
 

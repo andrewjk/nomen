@@ -13,11 +13,14 @@ library code with raw bodies). End-to-end usable for concurrency on both
 targets.
 
 - **`Sendable` trait** — marker, enforced on every spawn arg and every value
-  moved into an `async` block. Auto-derived for structs whose fields are all
-  Sendable; classes must opt in explicitly.
+  moved into an `async` block. Primitives are always Sendable; structs
+  auto-derive it when every field is Sendable (recursive), or opt in with
+  `: Sendable`. A trait-typed value is NOT Sendable — a trait handle cannot
+  cross a task boundary (move the concrete struct instead, or mediate the
+  share through `Mutex` / `Channel` / `Atomic<T>`).
 - **`Task<T>`** — generic, heap-allocated (with `#destroy` cleanup),
   pthread-backed handle parameterised by the spawned function's return type. Methods: `wait()` (idempotent), `result()` (blocks, moves the value out —
-  a `mov out T`, so a fat string result arrives whole and an unconsumed one
+  a `mv out T`, so a fat string result arrives whole and an unconsumed one
   is freed by destroy), `result_uint64()` (blocks, returns the value cast to
   `uint64`), `is_done()` (never blocks — the poll that lets an event loop
   notice a finished task without parking the UI thread; see `demos/async`),
@@ -108,15 +111,18 @@ targets.
   migrating the packing onto the capture machinery proper is the recorded
   "3e" migration (see CLOSURE.md). aarch64 staging passes one word per
   non-string arg: by-value struct args do not reach the env intact there —
-  a pre-existing limitation. Class and trait arguments stay shared pointers
-  (the Sendable contract). See [CLOSURE.md](CLOSURE.md) for the packing
+  a pre-existing limitation. Trait-typed arguments are rejected (a trait
+  handle is not Sendable). See [CLOSURE.md](CLOSURE.md) for the packing
   machinery.
-- **No nursery borrows** (the exception was retired — see "Design decisions"):
-  `Sendable` gates exactly the shared case — a class/trait reference passed
-  as a plain argument aliases the instance. Moved arguments (a `mv T`
-  parameter) and copied values are exempt; a non-Sendable class/trait
-  cannot cross into a task inside a nursery or out — mark it `Sendable`,
-  move it in, or mediate the share through `Mutex` / `Channel` (mv
+- **The boundary moves, copies, or borrows — never shares a reference.**
+  Moved arguments (a `mv T` parameter) take exclusive ownership; copied
+  values (primitives, strings, plain-data structs) arrive independent;
+  inside an `async` block a mv struct passed bare or a `view`-typed
+  argument BORROWS (the join bounds the alias — see the lifetime rules in
+  SPEC.md's "Concurrency"). Outside a nursery a mv struct cannot cross
+  bare (no join to bound the borrow): spawn inside a block as a borrowed
+  read, or move it in. A trait-typed value cannot cross at all — move the
+  concrete struct, or mediate the share through `Mutex` / `Channel` (mv
   structs; Phase R tranche 3) or `Atomic<T>`.
 - **Function-value constructions** — `Thread(() => work(base))` takes a
   zero-argument function value in place of the unevaluated call: the
@@ -129,7 +135,7 @@ targets.
   descriptor ABI and completes the future. String results are alias-checked
   against a literal's captured strings (transfer fresh, strdup an alias —
   balanced); an opaque moved closure duplicates and leaks the original on a
-  string result (leak-never-dangle, bounded at one per run); class/trait/
+  string result (leak-never-dangle, bounded at one per run); boxed/trait/
   value-struct results skip the dispose (they may alias the env).
 - **`Awaitable`** — the consumption-side trait (`core/System/Awaitable.nm`):
   park-flavored `func wait = (self)` — the receiver is a bare VALUE self
@@ -150,7 +156,7 @@ targets.
   merging them would force both roles onto every type (the self-handle
   mistake at the trait level). `Spawnable` is generic because `start`'s
   return type mentions `T`; `Awaitable` stays non-generic (`wait` does not).
-  A generic helper over `Spawnable<T>` can `start` any spawn class; the
+  A generic helper over `Spawnable<T>` can `start` any spawnable type; the
   await half is guaranteed by the return type, so an author cannot forget it.
 - **Extension: a type with its own `#spawn`** — the construction special
   form belongs to any type that declares the `#spawn` hook, not to the
@@ -160,7 +166,8 @@ targets.
   `result_slot` / `cancel_flag` / `future` — the handles the `Task.*` seam's
   statics drive); its own launch methods consume them exactly like the
   library's, so it parks fibers, participates in deadlock detection, and
-  frees like a library spawn. A class construction builds a heap instance;
+  frees like a library spawn. A heap-backed construction builds a heap
+  instance;
   a mv struct's yields the inline value (same fields, written
   directly). No `#init` runs (declaring `#spawn`
   suppresses the default): the construction is compiler-generated and the
@@ -218,7 +225,7 @@ requires are the ones Nomen already enforces:
 - **Scope-bound cleanup.** `#destroy` + auto-free already guarantee "this
   resource is alive for exactly this block, then torn down." A nursery is the
   same idea applied to tasks.
-- **`mov` ownership** (see MEMORY.md). The natural primitive for "transfer this
+- **`mv` ownership** (see MEMORY.md). The natural primitive for "transfer this
   value to a new owner (a task)" — already implemented, already checked.
 
 The one responsibility the nursery keeps on the caller is liveness: the join at
@@ -248,8 +255,8 @@ Thread(flusher(out)).detach()
 - **No handle, no future, no cancellation** — statement form only;
   `Task.current_cancelled()` is always false inside.
 - **Detach owns its captures** (STRUCT_PLAN_3 N2/R4): a daemon has no join to
-  bound a shared reference, so `.detach()` rejects every non-`mv`
-  class/trait argument at the construction — Sendable or not (Sendable gates
+  bound a shared reference, so `.detach()` rejects every shared (non-`mv`)
+  capture at the construction — Sendable or not (Sendable gates
   aliasability, not lifetime). Copyable/scalar/string/mv-struct arguments
   are packed by copy and fine; a `mv T` parameter takes ownership. The
   app-lifetime share — a daemon draining a channel main also holds — is
@@ -276,7 +283,7 @@ the special form. Declaring `#spawn` suppresses the default `#init`, so the
 type is not ordinarily constructible, and the compiler matches the MEMBER,
 never a type's name: a user struct that happens to be named `Thread` does
 not gain the sugar, and a user struct that declares its own `#spawn` does.
-(Class constructions build a heap instance; mv-struct constructions
+(Heap-backed constructions build a heap instance; mv-struct constructions
 yield the inline value.)
 
 The design property this upholds:
@@ -340,14 +347,17 @@ decisions, with the paths not taken:
   the task would silently escape the nursery. **Dynamic** (an ambient
   current-nursery read by `.start()`) — mechanically plain, but captures a
   helper's internal spawns and can turn a detached task into a joined one.
-- **`Sendable` gates exactly the shared case.** A class/trait reference
-  passed as a plain argument aliases the instance, so it must be marked;
-  moved arguments (a `mv T` parameter takes exclusive ownership) and
-  copied values (strings deep-copy at pack; mv value structs are
-  env-copied) are exempt. The nursery-borrow exception — a non-Sendable
-  class crossing as a join-bounded borrow inside `async { }` — was retired:
-  mark the class `Sendable`, move it in, or share it through a `Sendable`
-  primitive. _Rejected:_ keeping the borrow as an explicit unchecked
+- **`Sendable` gates the boundary; trait handles cannot cross.** Structs
+  auto-derive Sendable (every field Sendable, recursive) or opt in with
+  `: Sendable`; primitives are always Sendable. A trait-typed value is not
+  Sendable — a handle would alias an instance the task can neither own nor
+  join-bound — so it is rejected outright; move the concrete struct
+  instead. Two rules retired en route: the nursery-borrow exception (a
+  non-Sendable class crossing as a join-bounded borrow inside
+  `async { }`), and — with Phase R's class retirement — the shared
+  class/trait reference argument itself (the surviving borrows are the
+  mv-struct-bare and `view` shapes, which the join and the freeze bound).
+  _Rejected:_ keeping the class borrow as an explicit unchecked
   convenience (a second marker trait) or keeping it silent — both preserve
   a second, quieter path across the boundary for the one case `Sendable`
   exists to police.
@@ -357,9 +367,9 @@ decisions, with the paths not taken:
   compile-time field layout rather than an interface (invisible coupling —
   exactly what the marker-based design removes), its only example
   re-derived `Thread`, and the plausible use (policy wrappers) is served by
-  a plain class conforming to `Awaitable` over a `Thread`. Extension is now
+  a plain struct conforming to `Awaitable` over a `Thread`. Extension is now
   explicit: declare your own `#spawn`. _Downside accepted:_ a user
-  `Spawnable<T>` class cannot be passed to a nursery's `.start(...)` /
+  `Spawnable<T>` type cannot be passed to a nursery's `.start(...)` /
   `.detach()` escape hatch (those take the `Thread` construction); it is
   `.start()`ed explicitly. _Path not taken:_ keep the sugar and re-motivate
   it with a real wrapper example.
@@ -402,8 +412,8 @@ const users = fetch_users(id)
 async {
     let t1 = Thread(fetch_users(id)).start()
     let t2 = Thread(fetch_orders(id)).start()
-    const users  = t1.result
-    const orders = t2.result
+    const users = t1.result()
+    const orders = t2.result()
 }
 ```
 
@@ -411,7 +421,7 @@ async {
   (tracked by the enclosing nursery, if any), returns `Task<T>`. The runner
   is implicit, the way `return` implicitly targets the enclosing function.
 - No `async` keyword on functions. Any function can be spawned.
-- `Task<T>.result` blocks the current thread until the task finishes. No
+- `Task<T>.result()` blocks the current thread until the task finishes. No
   `await` keyword is required for the thread-pool model (see "Next steps").
 
 This works because Nomen's runtime is **thread-pool based**, not
@@ -513,31 +523,33 @@ the graph, so timed waits are exempt by design.
 
 ## Sharing data between tasks
 
-Argument classes at the task boundary (STRUCT_PLAN_3 N1a R1):
+Argument shapes at the task boundary (STRUCT_PLAN_3 N1a R1), each spelled at
+the call site:
 
-- **Move in** (`mv T` parameter): exclusive ownership — any value can
-  cross moved, including a non-Sendable class (the caller gives up its
-  access).
-- **Borrow** (inside `async { }` only): a shared `Sendable` class/trait
-  reference, an OWNING value struct passed bare, or a `view`-typed argument
-  — the env aliases the donor. Two checked rules make the alias sound: the
-  ROOT must outlive the join (declared in the block's own scope or outside
-  it), and the freeze keeps the donor const until the block exits. Outside
-  a nursery there is no join — mv structs cannot cross bare at all
-  (compile error), and class/trait references keep the `Sendable` gate as
-  the shipped posture.
+- **Move in** (`mv T` parameter): exclusive ownership — the caller gives up
+  its access. This is the shape a mv struct uses to cross outside a
+  nursery.
+- **Borrow** (inside `async { }` only): a mv struct passed bare, or a
+  `view`-typed argument — the env aliases the donor. Two checked rules
+  make the alias sound: the ROOT must outlive the join (declared in the
+  block's own scope or outside it), and the freeze keeps the donor const
+  until the block exits. Outside a nursery there is no join — mv structs
+  cannot cross bare at all (compile error: spawn it inside a block as a
+  borrowed read, or move it in).
 - **Copy** (everything else): scalars, strings (deep-copied at pack), and
   plain-data value structs (byte-copied) — the task holds independent
   values.
+- **Trait handles cannot cross.** A trait-typed value is not Sendable —
+  move the concrete struct instead, or mediate the share through the
+  primitives below.
 - **`Channel`**: one-way queue; ownership transfers per message.
-- **`Mutex` / `Atomic`**: explicit shared mutable state, gated by
-  `Sendable` on the guarded type. Opt-in, never the default. Low-level
-  escape hatch — prefer an actor (see "Shared mutable state: actors vs.
-  Mutex" below).
+- **`Mutex` / `Atomic`**: explicit shared mutable state. Opt-in, never the
+  default. Low-level escape hatch — prefer an actor (see "Shared mutable
+  state: actors vs. Mutex" below).
 
 Default stance: **no shared mutable state.** Tasks communicate by moving
 values (directly or through channels); anything actually shared is a
-checked borrow (inside a nursery) or a `Sendable` shared reference.
+checked borrow (inside a nursery) or a mediated `Mutex`/`Atomic` slot.
 
 ## Roadmap (remaining)
 
@@ -606,14 +618,15 @@ shared mutable state," and **actors fit that stance better than `Mutex` does.**
 An actor serializes access to its state by construction: a task drains a
 mailbox and is the only thing that touches the state. No locks, no discipline
 required from the caller. Nomen already has the building blocks — an actor is
-essentially "a `class` holding state + a `Channel` + a `spawn`ed processor
-loop."
+essentially "an `mv struct` holding state + a `Channel` + a `spawn`ed
+processor loop."
 
 ### Plan
 
 1. **Pattern first, no new keyword.** Codify the actor idiom in stdlib/docs as
-   the recommended way to hold shared mutable state (a `class` + `Channel` +
-   processor task, possibly with a small `Actor` base helper). `Mutex` stays
+   the recommended way to hold shared mutable state (an `mv struct` +
+   `Channel` + processor task, possibly with a small `Actor` base helper).
+   `Mutex` stays
    available for genuinely low-level cases (implementing the actor's own
    queue, lock-free structures, FFI) but is no longer the documented default.
 2. **Promote to a first-class `actor` type only if needed.** A keyword earns
@@ -621,8 +634,8 @@ loop."
    direct field access from outside the actor, guarantee all mutation goes
    through the mailbox. That's the real value of Swift-style actors, and also
    the real cost (a new type kind, isolated vs. nonisolated reasoning). The
-   signal to promote: users keep foot-gunning shared `class` fields under the
-   pure-pattern approach.
+   signal to promote: users keep foot-gunning shared `mv struct` state under
+   the pure-pattern approach.
 
 ### Caveats to resolve before committing to a design
 

@@ -24,4 +24,19 @@ Console.write("\\{m}")
 `;
 		expect(compile_main(input)).toEqual([]);
 	});
+
+	test("class is retired with a dedicated error", () => {
+		const input = `
+class Box { var int value }
+`;
+		const parsed = parse(input, core);
+		expect(parsed.errors).toEqual([
+			test_error(
+				input,
+				"'class' has retired — declare `mv struct` (single-owner, move-only) and spell sharing where it happens (`ref`, `Box<T>`, `Mutex<T>`, `WeakHandle<T>`)",
+				2,
+				1,
+			),
+		]);
+	});
 });

@@ -9,10 +9,6 @@ and [Lobsters](https://lobste.rs/s/gmnqhj/valen_s_memory_safety_new_kind_borrow)
 Written 2026-10-12 to record what each language offers, where they diverge,
 and what is worth taking from the design.
 
-> Note: [`docs/BORROW.md`](./BORROW.md) still teaches retired syntax (`mov`,
-> class-era rules — see FOLLOWUP.md "Docs debt"); the Nomen rules cited here
-> come from [MEMORY.md](./MEMORY.md) and the checker source instead.
-
 ## Valen's model
 
 Valen keeps single ownership (as in Rust, C++) but attaches two ideas to it:
