@@ -22,6 +22,22 @@
 
 
 
+
+## 0.7.1
+<sub>2026-10-12</sub>
+
+-  *(patch)* - Fix: Box<T>(T(...)) builds in place, eliding the struct copy
+-  *(patch)* - Fix: split return-save stp/ldp beyond the +504 scaled-offset range
+-  *(patch)* - Fix: reject ownership transfers out of bare mv-struct params
+-  *(patch)* - Fix: swap replacement builds into a temp, not the sret buffer
+-  *(patch)* - Fix: heap-own string locals reassigned a literal conditionally
+-  *(patch)* - Fix: Box fields on mv-container elements deep-copy on load, transfer on store
+-  *(patch)* - Fix: conditional mv-struct move no longer leaks its string default
+-  *(patch)* - Fix: conditional move no longer leaks on continue
+-  *(patch)* - Fix: heap Array<T> temp reclaim on the return path (aarch64)
+-  *(patch)* - Fix: conditional return of a local owning string leaks its heap (both backends)
+-  *(patch)* - Fix: owned return discarded in a while post-statement leaks (both backends)
+
 ## 0.7.0
 <sub>2026-10-10</sub>
 
