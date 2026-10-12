@@ -426,17 +426,34 @@ function emit_rhs_value(rhs: BaseNode, nir: NirExpr | null | undefined, status: 
  * `a = b swap <rep>` / `var X b = mv f swap <rep>`): the expression-seam
  * version of the historical `build_node(swap)`. Both callers normalize the
  * trailing newline immediately after, so the helper does it.
+ *
+ * The replacement is an ordinary expression COMPOSED INTO the enclosing
+ * statement — never the enclosing function's return value — so a
+ * value-struct-returning call in it (most commonly the fresh `T()` a swap
+ * constructs) must build into a fresh stack temp, not the sret buffer.
+ * `status.struct_return_buffer` is left set for the WHOLE body of an
+ * sret-returning function, so without this it pointed the replacement's
+ * destination at the caller's saved sret pointer and built the value through
+ * it — corrupting the caller's frame (and, in the allmark parser's
+ * `result.arena = mv inline_state.arena swap Arena<...>()`, the returned
+ * structure's node arena, which later crashed in `#destroy`).
  */
 export function emit_swap_value(
 	swap: BaseNode,
 	nir: NirExpr | null | undefined,
 	status: BuildStatus,
 ): void {
+	const old_buffer = status.struct_return_buffer;
+	const old_offset = status.return_buffer_stack_offset;
+	status.struct_return_buffer = undefined;
+	status.return_buffer_stack_offset = undefined;
 	if (nir && nir.node === swap) {
 		emit_expr_from_nir(nir, status);
 	} else {
 		build_node(swap, status);
 	}
+	status.struct_return_buffer = old_buffer;
+	status.return_buffer_stack_offset = old_offset;
 	ensure_newline(status);
 }
 

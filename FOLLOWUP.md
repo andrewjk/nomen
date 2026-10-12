@@ -582,9 +582,11 @@ rejects unknown `#foo` members as reserved) so the family stops growing.
 The allmark `nomen/` port migrated to 0.7.0 (classes → `mv struct`,
 `move` → `mv`, else-outside-switch, `Arena<Box<MarkdownNode>>`). All 1980
 tests pass and benchmarks are flat-to-faster vs 0.6.13. Three compiler
-bugs were found on the way; one is fixed (`.bumpy/swift-deep-maple.md` —
+bugs were found on the way; two are fixed (`.bumpy/swift-deep-maple.md` —
 return-save `stp`/`ldp` beyond the +504 scaled-offset range crashed the
-assembler on large frames), and two are open, with verified repros below.
+assembler on large frames; and the sret-returned local `mv struct`
+scope-exit segfault, see git history), and one is open, with a verified
+repro below.
 (The first-found checker hole — by-value `mv struct` params silently
 aliasing into a double free — is fixed; see git history for the
 `borrowed_param_transfer_error` checker rule.) All were debugged on
@@ -624,37 +626,3 @@ audit-clean, so the trigger involves more of the real call shape — likely
 the interprocedural temp-free analysis (`string_return_analysis` /
 `scan_borrow_returns`) missing this path. Tracing the aarch64 vs C
 NOMEN_AUDIT_TRACE streams shows exactly three missing `FREE 2` lines.
-
-### 2. aarch64: scope-exit destroy of an sret-returned local mv struct segfaults — 0.7.0 regression
-
-When a function returns an `mv struct` by value and the caller keeps it in
-a local until scope exit, the auto-destroy path crashes (EXC_BAD_ACCESS,
-PC = 0 — a call through a null slot). The C backend runs the identical
-program fine, and 0.6.13 did not crash on the same shape. Consuming the
-value (moving its fields on, as `transform` does with `ParseResult`) is
-fine — only the scope-exit destroy of the returned local crashes.
-
-Repro (`nomen run`, aarch64: SIGSEGV, C: prints `done`):
-
-```nomen
-import System
-import parse
-import rulesets
-import types
-
-func p_once = () {
-	var doc = parse("# Hello\n", gfm())
-}
-
-pub func main = (Init init) {
-	p_once()
-	Console.write_line("done")
-}
-```
-
-(Plain `Arena<Box<Node>>`/`List<string>` mini-repros do NOT crash — the
-trigger needs the real `ParseResult` shape, so possibly sensitive to the
-sret copy or the ClassBuffer destroy chain.) The port's `bench.test.nm`
-now reclaims the arena explicitly — `doc.arena = mv doc.arena swap
-Arena<Box<MarkdownNode>>()` — which destroys the displaced value at the
-store (a path that works) instead of at scope exit.

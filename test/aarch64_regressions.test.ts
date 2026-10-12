@@ -897,7 +897,7 @@ pub mv struct Store {
 	pub var box = Box()
 }
 
-pub func main = (Init init) {
+	pub func main = (Init init) {
 	var s = Store()
 	s.box.children.push(7)
 	s.box.children.push(8)
@@ -905,4 +905,72 @@ pub func main = (Init init) {
 }
 `;
 	await build_and_check_output(input, "chained_field_receiver_mutation", "2 8\n", true);
+});
+
+// The replacement value of a `mv ... swap` assignment (`x.f = mv y.f swap
+// T(...)`) inside an sret-returning function used to build its struct-returning
+// value into the ENCLOSING function's sret buffer instead of a fresh temp —
+// `status.struct_return_buffer` is live for a whole `out`-returning body.
+// Writing the replacement through the caller's saved sret pointer corrupts the
+// caller's frame; shape taken from the allmark markdown parser
+// (`result.arena = mv inline_state.arena swap Arena<...>()`). Here the swapped
+// value is larger than the small sret local, so the misdirected build
+// deterministically overruns it (the allmark shape corrupted the returned
+// structure's node arena the same way).
+test("swap replacement in an sret function builds into a temp", async () => {
+	const input = `
+import System
+
+mv struct Big {
+	var int a1 = 0
+	var int a2 = 0
+	var int a3 = 0
+	var int a4 = 0
+	var int a5 = 0
+	var int a6 = 0
+	var int a7 = 0
+	var int a8 = 0
+	var int a9 = 0
+	var int a10 = 0
+	var int a11 = 0
+	var int a12 = 0
+	var int a13 = 0
+	var int a14 = 0
+	var int a15 = 0
+	var int a16 = 0
+	var int a17 = 0
+	var int a18 = 0
+	var int a19 = 0
+	var int a20 = 0
+}
+
+mv struct Holder {
+	var Big big = Big()
+}
+
+mv struct Small {
+	var int x = 0
+}
+
+func build = (out Small) {
+	var h = Holder()
+	var local = Big()
+	local.a1 = 5
+	h.big = mv local swap Big()
+	var r = Small()
+	r.x = 3
+	return r
+}
+
+func caller = () {
+	var s = build()
+	Console.write_line("x: \\{s.x}")
+}
+
+pub func main = (Init init) {
+	caller()
+	Console.write_line("done")
+}
+`;
+	await build_and_check_output(input, "swap_replacement_sret_temp", "x: 3\ndone\n", true);
 });
