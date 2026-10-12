@@ -1785,7 +1785,26 @@ export function emit_cleanup_to_loop_depth(status: BuildStatus) {
 		}
 		const moved = status.moved ?? new Set<string>();
 		for (const entry of scope.struct_decls) {
-			if (moved.has(entry.name)) continue;
+			if (moved.has(entry.name)) {
+				// A CONDITIONAL move (the mv site sits in a branch this
+				// break/continue path skipped) leaves the local owning its
+				// value: the runtime owns-flag (mv_owns_flag) decides, exactly
+				// like the scope-exit destroy's emit_moved_local_cleanup.
+				// Skipping statically here leaked the not-moved path's copy
+				// every iteration. Entries without a flag keep the static
+				// skip (transferred for good — nothing owned to reclaim).
+				if (status.mv_owns_flag?.get(entry.name) !== undefined) {
+					emit_moved_local_cleanup(status, {
+						name: entry.name,
+						type: {
+							name: entry.type_name,
+							type_args: entry.type_args,
+							is_nullable: entry.is_nullable,
+						},
+					});
+				}
+				continue;
+			}
 			emit_destroy_for_decl(
 				status,
 				entry.name,

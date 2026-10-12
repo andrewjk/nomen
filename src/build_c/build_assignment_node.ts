@@ -1306,7 +1306,29 @@ export default function build_assignment_node(
 							emit_struct_destroys(status, move_struct_type, lhs_name);
 						}
 					}
-					splice_decl_from_c_scopes(status, (rhs as ValueNode).value);
+					// An owning value-struct donor with a runtime moved flag
+					// (see c_mv_owns_flags) keeps its declaration in the frame
+					// and sets the flag instead of splicing: a CONDITIONAL
+					// transfer (`if cond { b = mv a; break } continue`) leaves
+					// the not-moved path owning the value, and the splice would
+					// drop its reclaim there (the loop-continue leak). The
+					// flag-guarded free reclaims only when the move did not
+					// happen. Mirrors the `f(mv x)` call-arg path in
+					// build_function_call_node.
+					const mv_donor_name = (rhs as ValueNode).value;
+					const mv_donor_flag = status.c_mv_owns_flags?.get(mv_donor_name);
+					const mv_donor_use_flag =
+						!!mv_donor_flag &&
+						move_struct_type?.is_owning === true &&
+						!move_struct_type.name.startsWith("_Tuple_") &&
+						!move_struct_type.name.startsWith("_Anon_") &&
+						!node.swap;
+					if (mv_donor_use_flag) {
+						if (!status.pending_mv_owns_sets) status.pending_mv_owns_sets = [];
+						status.pending_mv_owns_sets.push(`${mv_donor_flag} = 1;`);
+					} else {
+						splice_decl_from_c_scopes(status, mv_donor_name);
+					}
 				} else if (rhs_is_base_literal) {
 					// The literal's bytes overwrite `m` without ever flowing
 					// through a constructor call, so the displaced value's
