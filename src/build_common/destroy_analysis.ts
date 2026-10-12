@@ -167,6 +167,30 @@ export function struct_needs_destroy(struct: StructNode, table: StructTable): bo
 }
 
 /**
+ * Whether a container-element load may replace this field's shallow bytes
+ * with `<Mono>_copy(&field)` (the deep-copy half of mv load_T): any
+ * monomorphized, non-class struct that owns resources (needs destroy at
+ * scope exit) AND has a `copy` method. The containers (`List`/`Buffer`/
+ * `Map`/`Set`) always qualify (their library `copy` yields an independent
+ * slab), and nested mv user structs qualify once every field passed the
+ * auto-derive copy gate (their synthesized `copy` deep-copies member
+ * containers/strings). A flat value struct byte-copies soundly
+ * (needs_destroy false) and stays untouched; an owning struct WITHOUT a
+ * copy (Box/class/nullable/func fields) stays shallow — the recorded gap
+ * in FOLLOWUP.md. The borrow-carrier reclaim walkers use the SAME
+ * predicate to free exactly the deep-copied fields — keep all call sites
+ * on this one definition.
+ */
+export function field_load_deep_copy(struct: StructNode, table: StructTable): boolean {
+	return (
+		!struct.is_class &&
+		!struct.is_generic &&
+		struct_needs_destroy(struct, table) &&
+		struct.functions.some((f) => f.name === "copy")
+	);
+}
+
+/**
  * Whether a class or OWNING struct has a `func`-typed field. Such a field may
  * hold a capturing-closure descriptor (`owned = 1`, a heap env + descriptor),
  * which the scope-exit / generated destroy must reclaim. A non-mv value

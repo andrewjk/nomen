@@ -1,7 +1,11 @@
 import { box_field_mono } from "../../build_common/box_clone.ts";
-import { has_destroy, struct_needs_destroy } from "../../build_common/destroy_analysis.ts";
+import {
+	field_load_deep_copy,
+	has_destroy,
+	struct_needs_destroy,
+} from "../../build_common/destroy_analysis.ts";
 import { has_string_fields, owns_strings_uniformly } from "../../build_common/has_string_fields.ts";
-import { is_load_deep_copy_container, resolve_struct_type } from "../../build_common/mono_name.ts";
+import { resolve_struct_type } from "../../build_common/mono_name.ts";
 import type EnumNode from "../../nodes/EnumNode.ts";
 import StructNode from "../../nodes/StructNode.ts";
 import type BuildStatus from "../BuildStatus.ts";
@@ -131,18 +135,16 @@ function emit_transfer_owning_fields(
 }
 
 /**
- * Emit the deep-copy half of mv load_T: for each field whose type has a
- * monomorphized `copy` helper that yields an independent value (a `List<T>`
- * /`Buffer<T>`/`Map`/`Set` field — `<Mono>_copy` deep-copies the slots or
- * member buffers — or an enum-with-data field whose string payloads
- * `<E>_copy` duplicates), overwrite the shallow-copied bytes with an owned
- * copy. A struct local's CONTAINER fields are reclaimed unconditionally at
- * scope exit, so a shallow return would double-free the slot's slab. B1
- * cutover: an OWNING struct's plain string fields are freed unconditionally
- * too (the same unconditional teardown), so they are strdup'd here as well —
- * the loaded copy owns independent bytes and the slot keeps its own. Fields
- * without a copyable shape (class fields, nested mv user structs without
- * a synthesized copy) stay shallow — recorded in FOLLOWUP.md.
+ * Emit the deep-copy half of mv load_T: for each field that
+ * `field_load_deep_copy` accepts (a `List<T>`/`Buffer<T>`/`Map`/`Set` field
+ * whose `<Mono>_copy` deep-copies the slots or member buffers, a nested mv
+ * user struct whose auto-derived `copy` is deep, or a `Box<T>` wrapper that
+ * is cloned), overwrite the shallow-copied bytes with an owned copy; enum-
+ * with-data fields whose payloads are all deep-copyable ride `<E>_copy`.
+ * A struct local's CONTAINER fields are reclaimed unconditionally at scope
+ * exit, so a shallow return would double-free the slot's slab. Fields
+ * without a copyable shape (class fields, nested mv structs that need
+ * destroy but have no `copy`) stay shallow — recorded in FOLLOWUP.md.
  */
 function emit_load_deep_copy_fields(elem: StructNode, dst: string, status: BuildStatus): void {
 	for (const field of elem.fields) {
@@ -163,17 +165,13 @@ function emit_load_deep_copy_fields(elem: StructNode, dst: string, status: Build
 			status.code += `${dst}.${field.name} = ${clone_fn}(${dst}.${field.name});\n`;
 			continue;
 		}
-		// A container field (List/Buffer/Map/Set mono): its `copy` method
-		// yields an independent slab, so the caller's unconditional
-		// container-field teardown frees its own, never the slot's.
+		// A field with an independent-copy story (a List/Buffer/Map/Set mono,
+		// or a nested mv user struct whose every field passed the auto-derive
+		// copy gate — see field_load_deep_copy): its `copy` yields an
+		// independent value, so the caller's unconditional teardown frees its
+		// own, never the slot's.
 		const field_struct = resolve_struct_type(field.type, status);
-		if (
-			field_struct &&
-			!field_struct.is_class &&
-			is_load_deep_copy_container(field_struct.name) &&
-			struct_needs_destroy(field_struct, status) &&
-			field_struct.functions.find((f) => f.name === "copy")
-		) {
+		if (field_struct && field_load_deep_copy(field_struct, status)) {
 			status.code += `${dst}.${field.name} = ${field_struct.name}_copy(&${dst}.${field.name});\n`;
 			continue;
 		}
@@ -217,13 +215,7 @@ export function emit_load_owned_copies_destroy(
 			continue;
 		}
 		const field_struct = resolve_struct_type(field.type, status);
-		if (
-			field_struct &&
-			!field_struct.is_class &&
-			is_load_deep_copy_container(field_struct.name) &&
-			struct_needs_destroy(field_struct, status) &&
-			field_struct.functions.find((f) => f.name === "copy")
-		) {
+		if (field_struct && field_load_deep_copy(field_struct, status)) {
 			status.code += `${field_struct.name}_destroy(&${var_expr}.${field.name});\n`;
 			continue;
 		}

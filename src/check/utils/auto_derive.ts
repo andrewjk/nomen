@@ -1,4 +1,5 @@
 import { direct_string_fields } from "../../build_common/has_string_fields.ts";
+import { is_load_deep_copy_container } from "../../build_common/mono_name.ts";
 import { is_hashable_scalar } from "../../built_in_types.ts";
 import AccessFieldNode from "../../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../../nodes/AccessFunctionCallNode.ts";
@@ -352,6 +353,29 @@ function struct_copy_ctor_args(struct: StructNode): string[] | null {
 	return auto.params.filter((p) => !p.is_self_param).map((p) => p.name);
 }
 
+/**
+ * The element type args of a mv-container type (`List<T>` / `Buffer<T>` /
+ * `Set<T>` / `Map<K,V>`), in either spelling: the generic annotation
+ * (`Map<string, int>` — type_args on the type, the shape seen by the derive
+ * pre-pass which runs before per-field mono rewriting) or the monomorphized
+ * name (`Map_string_int` — the registered mono carries the flattened args).
+ * Undefined for non-container types.
+ */
+function container_element_args(type: Type, status: CheckStatus): Type[] | undefined {
+	if (!type.name || type.is_array || type.is_ref || type.is_view || type.is_nullable) {
+		return undefined;
+	}
+	if (type.type_args?.length) {
+		if (["List", "Buffer", "Set", "Map"].includes(type.name)) return type.type_args;
+		return undefined;
+	}
+	const mono = status.structs.find((s) => s.name === type.name && !s.is_generic);
+	if (mono && is_load_deep_copy_container(mono.name) && mono.source_type_args?.length) {
+		return mono.source_type_args;
+	}
+	return undefined;
+}
+
 /** Whether `type` has (or will get) a deep-copy story: a struct with a
  *  synthesized `copy`, a `List<T>` whose element is deep-copyable (the
  *  library `List.copy` deep-copies slots via the mv store contract), or
@@ -375,6 +399,11 @@ function field_copyable(type: Type, status: CheckStatus, visited?: Set<string>):
 	if (type.name === "List" && type.type_args?.length === 1) {
 		return element_copyable(type.type_args[0], status);
 	}
+	// The other mv containers (Buffer/Set/Map, either spelling): the library
+	// `copy` deep-copies via the same per-element contract (Map gates BOTH
+	// its key and value args).
+	const elem_args = container_element_args(type, status);
+	if (elem_args) return elem_args.every((arg) => element_copyable(arg, status));
 	const nested_struct = status.structs.find((s) => s.name === type.name);
 	if (nested_struct) {
 		// A simple type (int/float/bool/char-sized) is a flat value.
@@ -401,6 +430,10 @@ function element_copyable(type: Type, status: CheckStatus): boolean {
 	if (type.name === "List" && type.type_args?.length === 1) {
 		return element_copyable(type.type_args[0], status);
 	}
+	// Buffer/Set/Map elements (either spelling) follow the same per-element
+	// contract as List.
+	const elem_args = container_element_args(type, status);
+	if (elem_args) return elem_args.every((arg) => element_copyable(arg, status));
 	const nested = status.structs.find((s) => s.name === type.name);
 	if (nested) {
 		if (nested.is_simple_type) return true;
@@ -420,6 +453,10 @@ function field_copy_call(type: Type, status: CheckStatus): boolean {
 	if (type.name === "List" && type.type_args?.length === 1) {
 		return element_copyable(type.type_args[0], status);
 	}
+	// Buffer/Set/Map fields route the synthesized body through their library
+	// `copy` (either spelling — see container_element_args).
+	const elem_args = container_element_args(type, status);
+	if (elem_args) return elem_args.every((arg) => element_copyable(arg, status));
 	const nested_struct = status.structs.find((s) => s.name === type.name);
 	return (
 		!!nested_struct && !nested_struct.is_simple_type && struct_is_copyable(nested_struct, status)

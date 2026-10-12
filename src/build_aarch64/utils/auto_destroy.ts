@@ -2,6 +2,7 @@ import type BuildStatus from "../../build_c/BuildStatus.ts";
 import type_from_value_node from "../../build_c/utils/type_from_value_node.ts";
 import { box_field_mono } from "../../build_common/box_clone.ts";
 import {
+	field_load_deep_copy,
 	has_destroy,
 	struct_needs_auto_destroy,
 	struct_needs_destroy,
@@ -10,11 +11,7 @@ import {
 	direct_string_fields,
 	owns_strings_uniformly,
 } from "../../build_common/has_string_fields.ts";
-import {
-	is_load_deep_copy_container,
-	mono_type_name,
-	resolve_struct_type,
-} from "../../build_common/mono_name.ts";
+import { mono_type_name, resolve_struct_type } from "../../build_common/mono_name.ts";
 import { has_flag_name, is_nullable_struct_type } from "../../build_common/nullable_struct.ts";
 import { superseded_param_temp_names } from "../../build_common/temp_anchor_consolidation.ts";
 import AccessNode from "../../nodes/AccessNode.ts";
@@ -115,13 +112,7 @@ export function emit_borrow_carrier_owned_free(
 				continue;
 			}
 			const field_struct = resolve_struct_type(field.type, status);
-			if (
-				field_struct &&
-				!field_struct.is_class &&
-				is_load_deep_copy_container(field_struct.name) &&
-				struct_needs_destroy(field_struct, status) &&
-				field_struct.functions.find((f) => f.name === "copy")
-			) {
+			if (field_struct && field_load_deep_copy(field_struct, status)) {
 				emit_var_address(status, "x0", decl_name);
 				emit_asm(status, `add x0, x0, #${offset}\n`);
 				emit_asm(status, `bl ${field_struct.name}_destroy\n`);
@@ -2178,6 +2169,11 @@ export function emit_owning_field_strdups_at(
 			(s) => s.name === field.type.name && !s.is_simple_type && !s.is_class,
 		);
 		if (!field_struct) continue;
+		// The mv load_T deep-copy (field_load_deep_copy) already replaced this
+		// field with an independent `<Inner>_copy` — its strings are heap
+		// bytes the binding owns outright; strdup'ing again would orphan the
+		// first copy (a per-binding leak).
+		if (field_load_deep_copy(field_struct, status)) continue;
 		const nested_frees_strings = has_destroy(field_struct)
 			? owns_strings_uniformly(field_struct)
 			: struct_needs_auto_destroy(field_struct, status);

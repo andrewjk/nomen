@@ -9,7 +9,10 @@ import {
 } from "../build_common/call_init_string_fields.ts";
 import record_ctor_heap_default_fields from "../build_common/ctor_heap_default_fields.ts";
 import { override_displaced_string_fields } from "../build_common/ctor_return_owned.ts";
-import { struct_needs_auto_destroy } from "../build_common/destroy_analysis.ts";
+import {
+	field_load_deep_copy,
+	struct_needs_auto_destroy,
+} from "../build_common/destroy_analysis.ts";
 import { direct_string_fields, owns_strings_uniformly } from "../build_common/has_string_fields.ts";
 import { mono_type_name, resolve_struct_type } from "../build_common/mono_name.ts";
 import { call_result_type, is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
@@ -1494,6 +1497,12 @@ export default function build_declaration_node(
 							}
 							const field_struct = resolve_struct_type(field.type, status);
 							if (!field_struct || field_struct.is_class) continue;
+							// The mv load_T deep-copy (field_load_deep_copy) already
+							// replaced this field with an independent
+							// `<Inner>_copy` — its strings are heap bytes the
+							// binding owns outright; strdup'ing again would
+							// orphan the first copy (a per-binding leak).
+							if (field_load_deep_copy(field_struct, status)) continue;
 							if (!owns_strings_uniformly(field_struct)) continue;
 							const nested_guard = is_nullable_struct_type(field.type, status)
 								? `${lhs}_has`

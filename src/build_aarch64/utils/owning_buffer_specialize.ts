@@ -1,8 +1,12 @@
 import type BuildStatus from "../../build_c/BuildStatus.ts";
 import { box_field_mono } from "../../build_common/box_clone.ts";
-import { has_destroy, struct_needs_destroy } from "../../build_common/destroy_analysis.ts";
+import {
+	field_load_deep_copy,
+	has_destroy,
+	struct_needs_destroy,
+} from "../../build_common/destroy_analysis.ts";
 import { has_string_fields, owns_strings_uniformly } from "../../build_common/has_string_fields.ts";
-import { is_load_deep_copy_container, resolve_struct_type } from "../../build_common/mono_name.ts";
+import { resolve_struct_type } from "../../build_common/mono_name.ts";
 import type EnumNode from "../../nodes/EnumNode.ts";
 import StructNode from "../../nodes/StructNode.ts";
 import aarch64_size from "./aarch64_size.ts";
@@ -315,8 +319,9 @@ function emit_transfer_owning_fields(
 
 /**
  * Emit the deep-copy half of mv load_T into the sret buffer (x8): for
- * each `List<T>` field whose mono has a `copy` method, replace the
- * shallow-copied field with `<List_T>_copy(&slot.field)` (sret → the sret
+ * each field that `field_load_deep_copy` accepts (the containers, and
+ * nested mv user structs whose auto-derived `copy` is deep), replace the
+ * shallow-copied field with `<Mono>_copy(&slot.field)` (sret → the sret
  * buffer's field; self == x8 is safe — the copy reads its input before the
  * final result write). Mirrors the C backend's `emit_load_deep_copy_fields`.
  * `sret` is the register holding the returned struct's address; `slot` holds
@@ -362,13 +367,7 @@ function emit_load_deep_copy_fields(
 				continue;
 			}
 			const field_struct = resolve_struct_type(field.type, status);
-			if (
-				field_struct &&
-				!field_struct.is_class &&
-				is_load_deep_copy_container(field_struct.name) &&
-				struct_needs_destroy(field_struct, status) &&
-				field_struct.functions.find((f) => f.name === "copy")
-			) {
+			if (field_struct && field_load_deep_copy(field_struct, status)) {
 				emit_asm(status, `add x8, ${sret}, #${offset}\n`);
 				emit_asm(status, `add x0, ${slot}, #${offset}\n`);
 				emit_asm(status, `bl ${field_struct.name}_copy\n`);
