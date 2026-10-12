@@ -576,3 +576,42 @@ strategies — `: Spawnable` (async) and `: RegistryHandle` (weak) — with a
 deprecation cycle for the user-Awaitable `#spawn` spelling. INTERIM
 guardrail until this lands: freeze the `#`-member namespace (the checker
 rejects unknown `#foo` members as reserved) so the family stops growing.
+
+## Residual after 8f2f9039: owned return discarded in a `while` post-statement leaks (both backends) (2026-10-12)
+
+The last allmark leak after the `8f2f9039` round
+(`test_table_with_extra_cells`, 8 allocations) is one leak per table cell
+dropped past the header's column count. Reduced to a generic gap: an
+owned (`mv out T`) call result used as the `while` **post-statement** is
+discarded without being freed. The same call as a body statement, or a bare
+discarded call, frees correctly.
+
+**Minimal repro** (aarch64 and C: `LEAK: 3`, one per iteration):
+
+```nomen
+import System
+
+func step = (ref int i, mv out string) {
+	i += 1
+	return "x".to_string()
+}
+
+pub func main = (Init init) {
+	var i = 0
+	while i < 3; step(ref i) {
+	}
+	Console.write_line("done i=\{i}")
+}
+```
+
+Same with `List<string>`: `while l.length > 1; l.pop() { }` leaks one string
+per popped element (this is exactly the allmark `table_truncate_list` helper,
+which drops extra table cells this way).
+
+Ruled out (clean): the same call as a loop-body statement; a bare discarded
+call outside a loop; a non-owning update (`i += 1`). So it is specifically
+the post-statement position + an owned return.
+
+Fix shape: emit the return-value drop/free for the post-statement expression
+the same way the body path does (or route the post-statement through the same
+statement-drop machinery).

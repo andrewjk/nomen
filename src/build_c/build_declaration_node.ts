@@ -702,6 +702,22 @@ export default function build_declaration_node(
 			if (node.type?.name === "string" && !node.type.is_array) {
 				if (!status.owned_string_vars) status.owned_string_vars = new Set();
 				status.owned_string_vars.add(safe_name);
+				// An owned string local carries a runtime "moved" flag (0 =
+				// owns, 1 = moved out) — the same conditional-move contract
+				// as the mv-struct flag below. A `return <local>` inside a
+				// branch transfers ownership ONLY on that path: the flag lets
+				// every other exit (sibling returns, break/continue, the
+				// fall-through tail) still reclaim the heap copy instead of
+				// the build-time frame splice dropping the free there (a
+				// local owning string conditionally returned leaked its
+				// allocation on the not-moved paths). Globals (module init)
+				// have no return path.
+				if (!node.is_module_init) {
+					const flag = `_mv_owns_${safe_name}`;
+					status.code += `unsigned char ${flag} = 0;\n`;
+					if (!status.c_mv_owns_flags) status.c_mv_owns_flags = new Map();
+					status.c_mv_owns_flags.set(node.name, flag);
+				}
 			}
 			// An owning `mv` value-struct local carries a runtime "moved" flag
 			// (0 = owns, 1 = moved out). A CONDITIONAL move (inside a

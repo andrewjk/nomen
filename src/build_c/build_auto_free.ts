@@ -471,7 +471,16 @@ export function free_scoped_declarations(
 				status.code += "\n// Auto-free\n";
 				commented = true;
 			}
-			status.code += `free(${cname}.ptr);\n`;
+			// Conditional string-return guard: a `return <local>` inside a
+			// branch sets the runtime move-flag (see c_mv_owns_flags) instead
+			// of splicing the declaration from its scope frame — so THIS path
+			// (which executed the return) skips the free (ownership
+			// transferred) while sibling paths (flag still 0) reclaim.
+			if (mv_owns_flag !== undefined) {
+				status.code += `if (!${mv_owns_flag}) { free(${cname}.ptr); }\n`;
+			} else {
+				status.code += `free(${cname}.ptr);\n`;
+			}
 		}
 		// An enum-with-data local owns its payloads (case construction is an
 		// ownership copy: strings are strdup'd, class/trait instances

@@ -178,6 +178,12 @@ export default function build_return_node(
 	// only affects the current frame (an outer-frame decl is left for its own
 	// scope-exit cleanup, which is dead code after a return anyway).
 	let returned_value_decl: DeclarationNode | undefined;
+	// The returned string local's runtime move-flag (see c_mv_owns_flags):
+	// when set, the declaration STAYS in its scope frame and the flag marks
+	// the transfer instead of a build-time splice — the splice is static, but
+	// the move is conditional (the return may sit in a branch), so sibling
+	// return paths / break paths must still see (and free) the local.
+	let moved_string_flag: string | undefined;
 	// The returned variable's RECORDED string fields (snapshot taken before the
 	// transfer-drop below): a recorded field's buffer transfers to the caller
 	// raw (owned), while an UNRECORDED field may hold rodata/borrowed bytes the
@@ -187,16 +193,28 @@ export default function build_return_node(
 	if (node.value.node_type === "value") {
 		const value = (node.value as ValueNode).value;
 		returned_value_decl = find_decl_across_scopes(value, status);
+		moved_string_flag =
+			returned_value_decl &&
+			returned_value_decl.type?.name === "string" &&
+			!returned_value_decl.type?.is_array &&
+			!returned_value_decl.type?.is_view
+				? status.c_mv_owns_flags?.get(value)
+				: undefined;
 		// Splice the returned declaration from whichever scope frame holds it
 		// — a return inside an if/while body references enclosing-frame
 		// locals, and leaving it there would have the return-path reclaim
-		// (reclaim_all_c_scopes) free the value being returned.
-		const frames = [status.scoped_declarations, ...(status.c_scope_stack ?? [])];
-		for (const frame of frames) {
-			const di = frame.indexOf(returned_value_decl as DeclarationNode);
-			if (di !== -1) {
-				frame.splice(di, 1);
-				break;
+		// (reclaim_all_c_scopes) free the value being returned. A flagged
+		// string local keeps its declaration: the flag set (below, before the
+		// reclaim) makes THIS path's cleanup skip the free while paths that
+		// skipped the return still reclaim.
+		if (!moved_string_flag) {
+			const frames = [status.scoped_declarations, ...(status.c_scope_stack ?? [])];
+			for (const frame of frames) {
+				const di = frame.indexOf(returned_value_decl as DeclarationNode);
+				if (di !== -1) {
+					frame.splice(di, 1);
+					break;
+				}
 			}
 		}
 		// The returned struct's bytes — including its string-field pointers —
@@ -301,6 +319,9 @@ export default function build_return_node(
 		status.code += `${old_return_assign} = `;
 		emit_return_value(node.value, nir_value, status);
 		status.code += `;\n`;
+		if (moved_string_flag) {
+			status.code += `${moved_string_flag} = 1;\n`;
+		}
 		reclaim_all_c_scopes(status);
 	} else if (
 		(status.function_return_type?.name ?? node.type?.name) === "void" &&
@@ -915,6 +936,9 @@ export default function build_return_node(
 				if (element && tuple_return_owned_element(element, status.heap_strings)) continue;
 				status.code += `_return_val.${field.name} = nomen_str_dup(_return_val.${field.name});\n`;
 			}
+		}
+		if (moved_string_flag) {
+			status.code += `${moved_string_flag} = 1;\n`;
 		}
 		emit_nursery_joins_on_return_c(status);
 		reclaim_all_c_scopes(status);

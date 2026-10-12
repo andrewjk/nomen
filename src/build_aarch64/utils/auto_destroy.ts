@@ -290,6 +290,20 @@ export function mark_heap_string(status: BuildStatus, name: string) {
 	if (status.heap_cleanup_stack?.length) {
 		status.heap_cleanup_stack[status.heap_cleanup_stack.length - 1].heap_strings.add(name);
 	}
+	// A frame-local owning string carries a runtime "moved" flag (0 = owns,
+	// 1 = moved out) — the same conditional-move contract as an owning mv
+	// value struct's flag. A `return <local>` inside a branch transfers
+	// ownership to the caller ONLY on that path; the flag lets every other
+	// exit (sibling returns, break/continue) still reclaim the heap copy
+	// instead of the static moved-set skipping it forever (the leak: a local
+	// owning string conditionally returned leaked its allocation on the
+	// not-moved paths). Globals (no return label) have no return path.
+	if (status.function_return_label && !status.mv_owns_flag?.has(name)) {
+		const flag_offset = allocate_stack_space(status, 8, 8);
+		emit_asm(status, `str xzr, [x29, #${flag_offset}]\n`);
+		if (!status.mv_owns_flag) status.mv_owns_flag = new Map();
+		status.mv_owns_flag.set(name, flag_offset);
+	}
 }
 
 export function anchor_heap_pointer(
@@ -815,9 +829,31 @@ function release_records_for_scope_exit(
  */
 export function emit_moved_local_cleanup(
 	status: BuildStatus,
-	decl: { name: string; type: { name: string; type_args?: Type[]; is_nullable?: boolean } },
+	decl: {
+		name: string;
+		type: { name: string; type_args?: Type[]; is_nullable?: boolean; is_array?: boolean };
+	},
 ) {
 	const owns_flag = status.mv_owns_flag?.get(decl.name);
+	// A plain owning `string` local: the same conditional-move contract as
+	// the mv-struct arm below. A `return <local>` inside a branch sets the
+	// runtime flag; the guarded free here reclaims the heap copy only on
+	// paths that did NOT execute that return (the moved path transfers
+	// ownership to the caller — flag 1 skips).
+	if (
+		owns_flag !== undefined &&
+		decl.type.name === "string" &&
+		!decl.type.is_array &&
+		status.heap_strings?.has(decl.name)
+	) {
+		const skip = `.Lskip_mvowns_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+		emit_asm(status, `ldr x9, [x29, #${owns_flag}]\n`);
+		emit_asm(status, `cbnz x9, ${skip}\n`);
+		emit_var_load(status, "x0", decl.name, 8);
+		emit_free(status);
+		emit_asm(status, `${skip}:\n`);
+		return;
+	}
 	const resolved = resolve_decl_struct(decl, status);
 	if (
 		owns_flag !== undefined &&
@@ -1931,7 +1967,22 @@ export function emit_cleanup_to_loop_depth(status: BuildStatus) {
 			);
 		}
 		for (const name of scope.heap_strings) {
-			if (moved.has(name)) continue;
+			if (moved.has(name)) {
+				// A CONDITIONAL return-move (the `return <local>` sits in a
+				// branch this break/continue path skipped) leaves the local
+				// owning its heap copy: the runtime flag decides (0 = owns).
+				// The static skip leaked the copy here. Entries without a
+				// flag keep the static skip.
+				const owns_flag = status.mv_owns_flag?.get(name);
+				if (owns_flag === undefined) continue;
+				const skip = `.Lskip_mvowns_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+				emit_asm(status, `ldr x9, [x29, #${owns_flag}]\n`);
+				emit_asm(status, `cbnz x9, ${skip}\n`);
+				emit_var_load(status, "x0", name, 8);
+				emit_free(status);
+				emit_asm(status, `${skip}:\n`);
+				continue;
+			}
 			if (status.heap_string_arrays?.has(name)) {
 				const registered = status.heap_string_arrays.get(name)!;
 				const len = Math.abs(registered);
@@ -2054,6 +2105,10 @@ export function mark_moved_if_struct(
 	if (opts?.for_return && status.heap_strings?.has(var_name)) {
 		if (!status.moved) status.moved = new Set<string>();
 		status.moved.add(var_name);
+		// Set the runtime moved flag: the transfer is conditional (the
+		// return may sit in a branch), so paths that skip it still own the
+		// heap copy and their flag-guarded cleanup reclaims it.
+		mark_local_moved_flag(status, var_name);
 	}
 }
 
