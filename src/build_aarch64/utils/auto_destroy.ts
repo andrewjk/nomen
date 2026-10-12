@@ -1,5 +1,6 @@
 import type BuildStatus from "../../build_c/BuildStatus.ts";
 import type_from_value_node from "../../build_c/utils/type_from_value_node.ts";
+import { box_field_mono } from "../../build_common/box_clone.ts";
 import {
 	has_destroy,
 	struct_needs_auto_destroy,
@@ -96,6 +97,23 @@ export function emit_borrow_carrier_owned_free(
 			!field.type.is_nullable &&
 			field.type.name !== "string"
 		) {
+			// The Box clone the load created: reclaim it exactly as the
+			// binding teardown would (destroy the pointee, free the wrapper) —
+			// the pointer parks on the stack across the destroy call.
+			const box_mono = box_field_mono(field.type, status);
+			if (box_mono) {
+				emit_var_address(status, "x0", decl_name);
+				emit_asm(status, `ldr x0, [x0, #${offset}]\n`);
+				const skip = `.Lskip_bcc_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+				emit_asm(status, `cbz x0, ${skip}\n`);
+				emit_asm(status, `str x0, [sp, #-16]!\n`);
+				emit_asm(status, `bl ${box_mono.name}_destroy\n`);
+				emit_asm(status, `ldr x0, [sp], #16\n`);
+				emit_free(status);
+				emit_asm(status, `${skip}:\n`);
+				offset += size;
+				continue;
+			}
 			const field_struct = resolve_struct_type(field.type, status);
 			if (
 				field_struct &&

@@ -84,6 +84,18 @@ export default interface BuildStatus {
 	 */
 	lambda_definitions?: string;
 	/**
+	 * `<Box_T>_box_clone` helper definitions (the Box-in-container fix: the
+	 * load deep-copy clones a `Box<T>` FIELD's wrapper). C may not nest a
+	 * function definition inside the struct-method body being emitted, so
+	 * build_c/utils/box_clone.ts buffers each definition here; build_root_node
+	 * flushes the buffer at file scope after the statement walk (headers carry
+	 * the prototypes). aarch64 uses the same field for the asm helper's text,
+	 * flushed by build.ts after the statement walk.
+	 */
+	box_clone_definitions?: string;
+	/** Box monos whose `<Box_T>_box_clone` helper this TU already emitted. */
+	emitted_box_clones?: Set<string>;
+	/**
 	 * Closure support (CLOSURE.md). A func-typed VALUE is a
 	 * `struct nomen_closure *` — { code, env, owned }. These flags/buffers
 	 * back the descriptor ABI: the struct definition is emitted once per TU;

@@ -164,15 +164,6 @@ container fields / class/enum element fields):
   but an UNSTAMPED generic-body donor (the library `List.copy` body's `v`)
   whose teardown destroys a class field can still double-free. Adding
   class/enum payloads to the transfer set would close it.
-- **Repro (2026-10-12, from the Valen-comparison examples):** a `List<Ship>`
-  where `Ship` is `mv struct { var Box<Engine> engine; var string name }` —
-  `ships.at_or_panic(0)` then any use crashes (SIGTRAP, both backends).
-  `load_T`'s deep-copy covers `List`/`Buffer` fields only, so the element's
-  `Box` field comes back shallow; the copy's scope-exit destroy frees the
-  slot's shared box. Same family as the class-typed gap above — `Box<T>`
-  (the compiler-generated wrapper) needs to join the deep-copy/transfer set.
-  Discovered writing docs/GROUP_BORROWING.md example 6, which routes around
-  it by keeping the `Ship` on the stack.
 
 ## Field-scoped borrow invalidation (Valen-style effect precision)
 

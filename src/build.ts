@@ -158,6 +158,13 @@ export default function build(
 		status.borrow_returning_functions = scan_borrow_returning_functions(root);
 		status.inline_functions = scan_inline_candidates(root);
 		build_aarch64_node(root, status);
+		// `<Box_T>_box_clone` helpers (the Box-in-container fix) buffer during
+		// the walk (their call sites are mid-function-body: the specialized
+		// load_T emitters) and flush at file scope — the .s has no nesting.
+		if (status.box_clone_definitions) {
+			status.code += status.box_clone_definitions;
+			status.box_clone_definitions = undefined;
+		}
 		// For every trait, emit a `<Trait>_destroy` shim that dispatches
 		// through the destroy slot at index 0 of the struct's vtable. This
 		// makes the T_destroy reference inside ClassBuffer<Trait>'s raw

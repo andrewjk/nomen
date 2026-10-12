@@ -1,9 +1,11 @@
+import { box_field_mono } from "../../build_common/box_clone.ts";
 import { has_destroy, struct_needs_destroy } from "../../build_common/destroy_analysis.ts";
 import { has_string_fields, owns_strings_uniformly } from "../../build_common/has_string_fields.ts";
 import { is_load_deep_copy_container, resolve_struct_type } from "../../build_common/mono_name.ts";
 import type EnumNode from "../../nodes/EnumNode.ts";
 import StructNode from "../../nodes/StructNode.ts";
 import type BuildStatus from "../BuildStatus.ts";
+import { ensure_box_clone } from "./box_clone.ts";
 
 /**
  * Detect whether a monomorphized struct is a `Buffer_<T>` whose element type
@@ -105,10 +107,18 @@ function emit_transfer_owning_fields(
 ): void {
 	for (const field of elem.fields) {
 		if (field.type.is_ref || field.type.is_view) continue;
+		const src_field = `${prefix}${src}${arrow(src)}${field.name}`;
+		// A `Box<T>` field TRANSFERS (nullable included — the donor's teardown
+		// is null-guarded, so zeroing removes it from that reclaim): the slot
+		// took the wrapper pointer's bytes and is the sole owner now.
+		const box_mono = box_field_mono(field.type, status);
+		if (box_mono) {
+			status.code += `memset((void*)&${src_field}, 0, sizeof(${src_field}));\n`;
+			continue;
+		}
 		if (field.type.is_array || field.type.is_nullable) continue;
 		const field_struct = resolve_struct_type(field.type, status);
 		if (!field_struct || field_struct.is_class) continue;
-		const src_field = `${prefix}${src}${arrow(src)}${field.name}`;
 		if (has_destroy(field_struct)) {
 			// A container (List/Buffer/… mono): the slot took the bytes
 			// wholesale — zero the source's field.
@@ -144,6 +154,15 @@ function emit_load_deep_copy_fields(elem: StructNode, dst: string, status: Build
 		// the slot keeps ownership; a BINDING of a borrow-accessor result is
 		// the residual hazard recorded in FOLLOWUP.md).
 		if (field.type.name === "string") continue;
+		// A `Box<T>` field: clone the wrapper (fresh malloc + fresh copies of
+		// the pointee's owned fields) so the loaded copy's scope-exit destroy
+		// frees its own box, never the slot's shared wrapper.
+		const box_mono = box_field_mono(field.type, status);
+		if (box_mono) {
+			const clone_fn = ensure_box_clone(box_mono, status);
+			status.code += `${dst}.${field.name} = ${clone_fn}(${dst}.${field.name});\n`;
+			continue;
+		}
 		// A container field (List/Buffer/Map/Set mono): its `copy` method
 		// yields an independent slab, so the caller's unconditional
 		// container-field teardown frees its own, never the slot's.
@@ -190,6 +209,13 @@ export function emit_load_owned_copies_destroy(
 		if (field.type.is_ref || field.type.is_view || field.type.is_array) continue;
 		if (field.type.is_nullable) continue;
 		if (field.type.name === "string") continue;
+		// The Box clone the load created: reclaim it exactly as the binding
+		// teardown would (destroy the pointee, free the wrapper).
+		const box_mono = box_field_mono(field.type, status);
+		if (box_mono) {
+			status.code += `if (${var_expr}.${field.name}) { ${box_mono.name}_destroy(${var_expr}.${field.name}); free(${var_expr}.${field.name}); }\n`;
+			continue;
+		}
 		const field_struct = resolve_struct_type(field.type, status);
 		if (
 			field_struct &&

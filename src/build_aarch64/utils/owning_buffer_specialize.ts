@@ -1,4 +1,5 @@
 import type BuildStatus from "../../build_c/BuildStatus.ts";
+import { box_field_mono } from "../../build_common/box_clone.ts";
 import { has_destroy, struct_needs_destroy } from "../../build_common/destroy_analysis.ts";
 import { has_string_fields, owns_strings_uniformly } from "../../build_common/has_string_fields.ts";
 import { is_load_deep_copy_container, resolve_struct_type } from "../../build_common/mono_name.ts";
@@ -7,6 +8,7 @@ import StructNode from "../../nodes/StructNode.ts";
 import aarch64_size from "./aarch64_size.ts";
 import { emit_free, emit_strdup } from "./audit.ts";
 import { emit_enum_payload_frees_at, emit_enum_payload_strdups_at } from "./auto_destroy.ts";
+import { ensure_box_clone_aarch64 } from "./box_clone.ts";
 import { emit_asm } from "./code_buffer.ts";
 import { get_enum_size, get_struct_size, get_type_size } from "./struct_layout.ts";
 
@@ -264,6 +266,15 @@ function collect_transfer_fields(
 	let offset = 8; // VT_SIZE prefix
 	for (const field of elem.fields) {
 		const size = get_type_size(field.type, status);
+		// A `Box<T>` field TRANSFERS (nullable included — the donor's teardown
+		// is null-guarded, so zeroing removes it from that reclaim): the slot
+		// took the wrapper pointer's bytes and is the sole owner now.
+		const box_mono = box_field_mono(field.type, status);
+		if (box_mono) {
+			result.push({ offset: base_offset + offset, size });
+			offset += size;
+			continue;
+		}
 		if (
 			!field.type.is_ref &&
 			!field.type.is_view &&
@@ -336,6 +347,20 @@ function emit_load_deep_copy_fields(
 			!field.type.is_nullable &&
 			field.type.name !== "string"
 		) {
+			// A `Box<T>` field: clone the wrapper (fresh malloc + fresh copies
+			// of the pointee's owned fields) so the loaded copy's scope-exit
+			// destroy frees its own box, never the slot's shared wrapper.
+			// `${sret}` is callee-saved (x22 — it survives the bl).
+			const box_mono = box_field_mono(field.type, status);
+			if (box_mono) {
+				const clone_fn = ensure_box_clone_aarch64(box_mono, status);
+				emit_asm(status, `add x0, ${sret}, #${offset}\n`);
+				emit_asm(status, `ldr x0, [x0]\n`);
+				emit_asm(status, `bl ${clone_fn}\n`);
+				emit_asm(status, `str x0, [${sret}, #${offset}]\n`);
+				offset += size;
+				continue;
+			}
 			const field_struct = resolve_struct_type(field.type, status);
 			if (
 				field_struct &&

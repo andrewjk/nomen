@@ -84,6 +84,12 @@ export default function build_root_node(node: RootNode, status: BuildStatus) {
 		status.code += status.closure_definitions;
 		status.closure_definitions = undefined;
 	}
+	// `<Box_T>_box_clone` helpers (the Box-in-container fix) flush at file
+	// scope like closure thunks — headers carry their prototypes.
+	if (status.box_clone_definitions) {
+		status.code += status.box_clone_definitions;
+		status.box_clone_definitions = undefined;
+	}
 
 	// Apple ObjC framework imports (Foundation/Cocoa) pull in MacTypes.h, which
 	// defines `Point`, `Rect`, etc. and would collide with user-defined types
