@@ -807,6 +807,42 @@ function check_access_function_node(
 	}
 
 	if (!func) {
+		// `Map`/`Set` `.copy()` with a class/trait key or value: the copy body
+		// composes member `.copy()` calls, and a class/trait member routes to
+		// `ClassBuffer`, which has no copy. The monomorphizer therefore skips
+		// cloning the body for such an instantiation (the clone would reference
+		// a nonexistent `<...>_copy`), so the call is rejected here with
+		// targeted guidance. Runs BEFORE the not-found fallback so the message
+		// names the hazard, not the missing method. (`List` runs its own
+		// shared-instance gate after resolution below — its copy always
+		// resolves.)
+		if (node.name === "copy" && node.params.length === 0) {
+			const container_is = (prefix: string): boolean =>
+				target_type.name === prefix ||
+				target_type.name.startsWith(`${prefix}_`) ||
+				!!struct?.name.startsWith(`${prefix}_`);
+			const container_args =
+				container_is("Map") || container_is("Set")
+					? (target_type.type_args ?? struct?.source_type_args)
+					: undefined;
+			if (container_args?.some((arg) => arg.name && is_owning_ref_type(arg.name, status))) {
+				const is_map = container_is("Map");
+				add_error(
+					status,
+					is_map
+						? "Map.copy() is not available when the key or value type is a class or trait — " +
+								"its store is a ClassBuffer with no copy, so the copy would share the stored " +
+								"instances (a double free). Keep one mv map and index into it, or rebuild the " +
+								"map with fresh instances."
+						: "Set.copy() is not available when the element type is a class or trait — " +
+								"its store is a ClassBuffer with no copy, so the copy would share the stored " +
+								"instances (a double free). Keep one mv set and index into it, or rebuild the " +
+								"set with fresh instances.",
+					node.start,
+				);
+				return false;
+			}
+		}
 		add_error(status, `Function not found: ${target_type.name}.${node.name}`, node.start);
 		return false;
 	}

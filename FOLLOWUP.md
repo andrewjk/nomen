@@ -144,20 +144,33 @@ transfer, return-boundary normalization). These bounded remainders remain
 
 The transfer + load deep-copy work landed (store_T/replace_T transfer
 container leaves; load_T deep-copies `List` fields; auto-derived `copy`
-synthesizes deep copies). Remaining gaps (all bounded to non-`List`
-container fields / class/enum element fields):
+synthesizes deep copies).
 
-- **`load_T` deep-copies `List`/`Buffer` fields only** (and, on C,
-  payload-copyable enums). A `Map`/`Set` field, a nested mv user struct
-  field, or a class-typed field of a container element is still returned
-  SHALLOW: the caller's scope-exit destroy frees the slot's shared state
-  (double-free). `Map`/`Set` have a hand-written `copy`, but it is EXCLUDED
-  from the automatic deep copy (`is_load_deep_copy_container`) because
-  composing it from the `load` specialization corrupts the returned struct
-  on aarch64 (open — the load sret + `<Map>_copy` interaction). Nested mv
-  user structs need a synthesized `copy` story (the auto-derive gate
-  `field_copyable` does not yet accept `Buffer`/`Map`/`Set` fields). Same
-  for enum-with-data element fields on aarch64 (C handles them).
+**`Map`/`Set` fields CLOSED (2026-10-13).** The library `Map.copy`/`Set.copy`
+are back (composing member `Buffer.copy` calls), the load specialization
+deep-copies `Map`/`Set` fields via the mono `<Map>_copy`/`<Set>_copy`, and
+class/trait instantiations reject `.copy()` at the call site (the member
+routes to `ClassBuffer`, which has no copy — the monomorphizer skips cloning
+the body there; `List`'s copy still always clones so its call-site gate can
+name the shared-instance hazard). The long-open "load sret + `<Map>_copy`
+interaction" was NOT an sret-composition bug: the copy body's zero-pair
+`Map()` ctor reached the aarch64 backend without the deferred
+variadic-init `(count, pointer)` marshalling (the never-applied twin of the
+2026-10-01 C fix), so the cloned init looped over a garbage pairs pointer —
+crashing outright in the standalone shape and masquerading as "corrupts the
+returned struct" from the load path. Fixed in `build_constructor_params`;
+covered by `test/map_set_field_deep_copy.test.ts` (audit ON, both backends).
+
+Remaining gaps (bounded to nested/class/enum element fields):
+
+- **`load_T` deep-copies `List`/`Buffer`/`Map`/`Set` fields only** (and, on
+  C, payload-copyable enums). A nested mv user struct field, or a
+  class-typed field of a container element, is still returned SHALLOW: the
+  caller's scope-exit destroy frees the slot's shared state (double-free).
+  Nested mv user structs need a synthesized `copy` story (the auto-derive
+  gate `field_copyable` does not yet accept `Buffer`/`Map`/`Set` fields —
+  now that the containers themselves copy, the gate can accept them).
+  Same for enum-with-data element fields on aarch64 (C handles them).
 - **`store_T`/`replace_T` transfer only container leaves** (recursing nested
   structs). Class-typed and enum-with-data fields of the element stay shared;
   for a stamped `mv` donor this is sound (spliced → the slot is sole owner),

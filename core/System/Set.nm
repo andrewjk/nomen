@@ -131,6 +131,20 @@ pub mv struct Set<T: Hashable + Equatable> {
 		self.length = self.length - 1
 	}
 
+	// An independent copy: a fresh Set whose both member slabs are fresh
+	// `Buffer.copy` calls (which deep-copy mv elements), with the same length
+	// and entries. Not available for class/trait elements (the member routes
+	// to ClassBuffer, which has no copy — the checker rejects the call; the
+	// shape is also unreachable today since `T: Hashable + Equatable` cannot
+	// be a trait without trait-conformance syntax).
+	pub func copy = (self, out Set<T>) {
+		var dst = Set<T>()
+		dst.slots = self.slots.copy()
+		dst.used = self.used.copy()
+		dst.length = self.length
+		return dst
+	}
+
 	func find_slot = (self, T value, int cap, out int: out >= 0 && out < cap) {
 		// cap is a power of two: `hash mod cap` via a mask, non-negative
 		// for any hash — no adjustment needed.

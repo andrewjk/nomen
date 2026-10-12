@@ -155,6 +155,20 @@ pub mv struct Map<TK: Hashable + Equatable, TV> {
 		self.length = self.length - 1
 	}
 
+	// An independent copy: a fresh Map whose every member slab is a fresh
+	// `Buffer.copy` (which deep-copies mv key/value elements), with the same
+	// length and entries. Not available for class/trait keys or values (the
+	// member routes to ClassBuffer, which has no copy — the checker rejects
+	// the call; see the copy gate in check_access_node).
+	pub func copy = (self, out Map<TK, TV>) {
+		var dst = Map<TK, TV>()
+		dst.keys = self.keys.copy()
+		dst.values = self.values.copy()
+		dst.used = self.used.copy()
+		dst.length = self.length
+		return dst
+	}
+
 	func find_slot = (self, TK key, int cap, out int: out >= 0 && out < cap) {
 		// cap is a power of two, so this is `hash mod cap` via a mask —
 		// non-negative for any hash (two's complement), no adjustment.

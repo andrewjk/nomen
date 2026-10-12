@@ -14,24 +14,27 @@ export interface StructTable {
 /**
  * Whether `name` is a monomorphized mv-container struct whose
  * `<Mono>_copy` is safe to call from the mv-`Buffer.load_T`
- * specialization — `List_<T>` / `Buffer_<T>` (and their bare generics).
- * These own a heap slab their `#destroy` frees unconditionally, and `copy`
- * yields an independent slab, so a returned element's field must be
- * deep-copied or the caller's unconditional container-field teardown
- * double-frees the slot's slab.
+ * specialization — `List_<T>` / `Buffer_<T>` / `Map_<K,V>` / `Set_<T>`
+ * (and their bare generics). These own heap slabs their `#destroy` frees
+ * unconditionally, and `copy` yields an independent slab, so a returned
+ * element's field must be deep-copied or the caller's unconditional
+ * container-field teardown double-frees the slot's slab.
  *
- * `Map`/`Set` are deliberately EXCLUDED from the automatic deep copy: their
- * monomorphized `copy` (which composes several `Buffer.copy` calls) is
- * verified standalone on both backends, but invoking it from the load
- * specialization corrupts the returned struct on aarch64 (a codegen
- * interaction still open — see FOLLOWUP.md). A `Map`/`Set` FIELD reached
- * through a container element's `load` therefore stays shallow (the
- * pre-existing bounded gap); an EXPLICIT `.copy()` on the mv struct or
- * the Map/Set itself works on both backends.
+ * `Map`/`Set` compose their `copy` from member `Buffer.copy` calls (and a
+ * zero-pair `Map()`/`Set()` ctor); the aarch64 deferred-ctor marshalling
+ * that crashed that composition is fixed (see build_constructor_params),
+ * so they ride the same deep copy.
  */
 export function is_load_deep_copy_container(name: string): boolean {
 	return (
-		name === "List" || name === "Buffer" || name.startsWith("List_") || name.startsWith("Buffer_")
+		name === "List" ||
+		name === "Buffer" ||
+		name === "Map" ||
+		name === "Set" ||
+		name.startsWith("List_") ||
+		name.startsWith("Buffer_") ||
+		name.startsWith("Map_") ||
+		name.startsWith("Set_")
 	);
 }
 

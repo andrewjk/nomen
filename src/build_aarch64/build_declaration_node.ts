@@ -432,6 +432,44 @@ export function build_constructor_params(
 	// suppressed (the tuple's fields own the transferred buffers now).
 	mark_tuple_literal_move_owners(fc, status, (name) => mark_local_moved_flag(status, name));
 	const variadic_idx = fc.variadic_param_index;
+	// A DEFERRED generic-body zero-arg constructor against a VARIADIC custom
+	// #init (`Map<TK, TV>()` inside Map.copy): the clone is never re-checked,
+	// so `variadic_param_index` was never stamped and the call would run with
+	// a garbage pairs count in x1 (the callee loops `i < count` over the
+	// pairs pointer — SIGSEGV, or silent corruption). Mirror the C backend's
+	// empty-bundle emission (build_c/build_function_call_node): marshal the
+	// hidden (count, pointer) pair with count = 0 and a valid (never
+	// dereferenced) stack address. Zero non-variadic params means the pair
+	// lands in x1/x2 with no overflow, so nothing else is needed.
+	if (variadic_idx === undefined && fc.params.length === 0) {
+		const resolved =
+			(fc as unknown as { resolved_function?: FunctionNode }).resolved_function ??
+			status.structs.find((s) => s.name === fc.name)?.functions.find((f) => f.name === "#init");
+		const variadic_param = resolved?.params?.find((p) => p.is_variadic);
+		if (
+			resolved &&
+			variadic_param &&
+			resolved.params.filter((p) => !p.is_self_param && !p.is_variadic).length === 0
+		) {
+			const elem_type_name = variadic_param.type.tuple_types?.length
+				? variadic_param.type.tuple_types[0].name
+				: variadic_param.type.name || "int";
+			const elem_struct = status.structs.find(
+				(s) => s.name === elem_type_name && !s.is_simple_type,
+			);
+			// One reserved element keeps the pointer a valid, uniquely-owned
+			// stack address even though count = 0 (never read at 0).
+			const elem_size = elem_struct
+				? get_struct_size(elem_type_name, status)
+				: elem_type_name === "string"
+					? 16
+					: 8;
+			const arr_offset = allocate_stack_space(status, 8 + elem_size, 16);
+			emit_asm(status, `str xzr, [x29, #${arr_offset}]\n`);
+			emit_asm(status, `mov x1, #0\n`);
+			emit_asm(status, `add x2, x29, #${arr_offset + 8}\n`);
+		}
+	}
 	if (
 		variadic_idx !== undefined &&
 		fc.params[variadic_idx] &&

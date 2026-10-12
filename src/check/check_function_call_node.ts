@@ -648,8 +648,26 @@ export function monomorphize(
 	status.types.push(mono_name);
 
 	const cloned_methods: FunctionNode[] = [];
+	// A library `copy` composes member `.copy()` calls (`Map`/`Set` copy their
+	// Buffer members). For a class/trait instantiation the member routes to
+	// `ClassBuffer`, which has no copy — the clone would reference a
+	// nonexistent `<...>_copy`. Skipped per-method (same shape as the
+	// variadic-#init gate below); calling `.copy()` on such an instantiation
+	// is rejected at the call site with targeted guidance (check_access_node).
+	// `List` is NOT covered: its copy body compiles for every instantiation
+	// (`at`/`push` exist on all monos), and the List call-site gate needs the
+	// method to resolve so it can name the shared-instance hazard.
+	const is_map_or_set_generic = generic_struct.name === "Map" || generic_struct.name === "Set";
+	const has_ref_type_arg =
+		is_map_or_set_generic &&
+		flat_args.some(
+			(arg) =>
+				status.traits.some((tr) => tr.name === arg.name) ||
+				status.structs.some((s) => s.name === arg.name && s.is_class),
+		);
 	for (const func of generic_struct.functions) {
 		if (func.name === "#init") continue;
+		if (func.name === "copy" && has_ref_type_arg) continue;
 		const cloned = clone_node(func) as FunctionNode;
 		substitute_raw_types(cloned, substitution, status.structs, status.traits, {
 			enums: status.enums,
