@@ -599,12 +599,36 @@ Deterministic, BOTH backends, exactly one 1-byte (empty string) allocation
 per parse that resolves emphasis — `parse("**b**", core())` leaks 1;
 `parse("a", core())` is clean. Suite-side it shows up as the delimiter-run
 strings (sizes 1–3: `""`, `"*"`, `"~~"`) in strikethrough/heading/footnote
-tests. The empty size suggests a displaced `""`-seeded field value (an
-entry-dup cousin of the documented "conditional field entry-dup" item, but
-that documented repro also runs clean now, so this is a distinct path —
-likely in the delimiter replace/pop cycle of the port's
-`inline_delimiter_set_at` or the `take_content_from`/`truncate_content_to`
-flow).
+tests.
+
+**Birth site pinned by lldb** (break on `audit_alloc -c "$x0 == 1"`, then
+`bt`): the leaked block is the strdup of the `src = ""` FIELD DEFAULT inside
+the synthesized constructor —
+
+```
+audit_alloc(1) ← nomen_strdup_wrap ← BlockParserState_init + 280
+                  (loads str_BlockParserState_init_src) ← parse + 48
+                  (the `var state = BlockParserState()` in parse.nm)
+```
+
+`BlockParserState_init` strdups exactly two `""` defaults (`src` at +276,
+`spaces` at +332); per parse exactly ONE of them (src) is never freed. So
+the mechanism is: the init's strdup'd default is displaced by
+`state.src = mv src` (parse.nm:36) and the displaced-value free is skipped
+under the full parse call graph — by the time the free decision is made,
+some intervening callee has dropped the heap-field record.
+
+Minimization attempts, ALL audit-clean (so the trigger needs the real
+interprocedural parse flow — don't re-tread these): construct + destroy
+alone; init → store (rvalue and moved-param, direct and via a ref-param
+helper); init → opaque-module ref-call → store; two consecutive stores;
+init → store → swap-out field moves; the REAL `BlockParserState` and
+`InlineParserState` types with parse's exact init → ref-call → store
+sequence; `List<mv struct>` / `Map` / `Arena<Box<T>>` field combos; a
+60-field struct (temp-copy init path). Tracing trick that found it: pair
+ALLOC/FREE lines by size in a `NOMEN_AUDIT_TRACE=1` stream — the unmatched
+ALLOC 1 sits two lines after a breadcrumb marker, which led to the lldb
+birth-site capture.
 
 Repro (`nomen run --audit`, aarch64 and C: `LEAK: 1`):
 
