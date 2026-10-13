@@ -9,6 +9,7 @@ import check_type_exists from "./utils/check_type_exists.ts";
 import clone_status from "./utils/clone_status.ts";
 import { extract_length_equalities_at_registration } from "./utils/flow_bounds.ts";
 import materialize_type from "./utils/materialize_type.ts";
+import { struct_has_view_fields } from "./utils/view_fields.ts";
 
 /** Param/return types an `foreign func` may marshal in this first cut. */
 function foreign_supported_type(type: Type): boolean {
@@ -176,6 +177,27 @@ export default function check_function_node(func: FunctionNode, status: CheckSta
 		// never be monomorphized, leaving the signature referencing a bare
 		// incomplete struct. Materialize it here.
 		instantiate_generic_type(func.return_type, function_status);
+		// Views are second-class across calls (SPEC Slicing): no function or
+		// method may DECLARE a return type that carries `view` fields. The
+		// caller's binding cannot be pinned to the bundle's sources across
+		// the boundary, so no body could return one soundly — reject the
+		// signature itself, not just each return statement (a `todo`-only
+		// body has none to reject). `#init` is exempt: it constructs the
+		// bundle. `view T` returns stay allowed — a plain view re-roots at
+		// the call-site receiver.
+		if (
+			func.name !== "#init" &&
+			!func.return_type.is_view &&
+			!func.return_type.is_ref &&
+			struct_has_view_fields(func.return_type.name, function_status)
+		) {
+			add_error(
+				function_status,
+				`cannot return a '${func.return_type.name}' — structs with 'view' fields are scope-local; return the fields (the views) instead`,
+				func.return_type_start ?? func.start,
+			);
+			(func as { view_bundle_return_rejected?: boolean }).view_bundle_return_rejected = true;
+		}
 	}
 
 	// An foreign has no body to check: the backends synthesize the

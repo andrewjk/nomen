@@ -63,11 +63,14 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 	// may return one, self-rooted included (a re-rooted bundle is exactly
 	// what the caller cannot track). `out view T` returns stay allowed: a
 	// plain view is re-rooted at the call-site receiver by convention.
+	// Skipped when the DECLARATION was already rejected
+	// (check_function_node) — the signature error is the one that counts.
 	if (
 		func?.return_type &&
 		!func.return_type.is_view &&
 		func.return_type.name &&
-		struct_has_view_fields(func.return_type.name, status)
+		struct_has_view_fields(func.return_type.name, status) &&
+		!(func as { view_bundle_return_rejected?: boolean }).view_bundle_return_rejected
 	) {
 		add_error(
 			status,

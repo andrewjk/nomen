@@ -557,20 +557,3 @@ strategies — `: Spawnable` (async) and `: RegistryHandle` (weak) — with a
 deprecation cycle for the user-Awaitable `#spawn` spelling. INTERIM
 guardrail until this lands: freeze the `#`-member namespace (the checker
 rejects unknown `#foo` members as reserved) so the family stops growing.
-
-## View-bundle residuals (scope-local bundle rules, 2026-10-13)
-
-The scope-local boundary bans (argument pass / return / enum payload — see
-docs/MEMORY.md "scope-local bundle") leave two small residuals:
-
-- **Declaration-level return types are unchecked.** The return ban fires per
-  return statement, so a signature promising an unreturnable type is accepted
-  when the body never returns normally: `func make = (out Line) { todo "…" }`
-  (verified accepted). No unsoundness — `todo` never returns — but the type
-  system admits unsatisfiable signatures. Closing it is a declaration-level
-  `struct_has_view_fields(func.return_type)` check in check_function_node
-  (exempt `view T` returns, func types, lambdas).
-- **Anonymous-enum payload rejections fire twice** for an inline
-  `.case(...)` value (once from the annotation materialization, once from
-  the value site). Correct but noisy; dedupe by start offset if it bothers
-  anyone.

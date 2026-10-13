@@ -383,6 +383,24 @@ pub func main = () {
 		).toBe(true);
 	});
 
+	test("a declared view-carrying return type is rejected, even with no return statement", () => {
+		// The declaration-level ban: a `todo`-only body has no return
+		// statement to reject, so the signature itself is the error.
+		expect(
+			errors(`
+import System
+struct Line {
+	var view string text
+}
+func make = (out Line) {
+	todo "unimplemented"
+}
+pub func main = () {
+	Console.write("x")
+}`).some((m) => m.includes("scope-local")),
+		).toBe(true);
+	});
+
 	test("'ref' fields are still rejected", () => {
 		expect(
 			errors(`
