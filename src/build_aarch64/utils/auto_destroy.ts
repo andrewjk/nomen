@@ -1,6 +1,6 @@
 import type BuildStatus from "../../build_c/BuildStatus.ts";
 import type_from_value_node from "../../build_c/utils/type_from_value_node.ts";
-import { box_field_mono } from "../../build_common/box_clone.ts";
+import { box_field_mono, enum_copy_is_deep } from "../../build_common/box_clone.ts";
 import {
 	field_load_deep_copy,
 	has_destroy,
@@ -75,9 +75,11 @@ export function is_borrow_accessor_carrier_stamp(decl: { value?: unknown }): boo
  * them; the `_recv_N` carrier skips its destroy entirely (it must not free the
  * ALIASED string fields), so each expression use leaked the copied containers.
  * Free exactly the fields the load deep-copied — the same predicate — and only
- * those: plain strings, nested structs and enum fields stay aliased/untouched
- * (they were not deep-copied, so freeing them would be an invalid free).
- * Mirrors the C backend's `emit_load_owned_copies_destroy`.
+ * those: plain strings and nested structs stay aliased/untouched (they were
+ * not deep-copied, so freeing them would be an invalid free). Enum-with-data
+ * fields ride the same gate the load's strdup arm used (enum_copy_is_deep) —
+ * their copied payloads are freed here. Mirrors the C backend's
+ * `emit_load_owned_copies_destroy`.
  */
 export function emit_borrow_carrier_owned_free(
 	status: BuildStatus,
@@ -116,6 +118,18 @@ export function emit_borrow_carrier_owned_free(
 				emit_var_address(status, "x0", decl_name);
 				emit_asm(status, `add x0, x0, #${offset}\n`);
 				emit_asm(status, `bl ${field_struct.name}_destroy\n`);
+				offset += size;
+				continue;
+			}
+			// The enum payloads the load strdup'd: free them with the same
+			// tag-guarded walk the struct destroy uses for enum fields.
+			const field_enum = status.enums.find(
+				(e) => e.name === field.type.name && e.has_associated_data,
+			);
+			if (field_enum && enum_copy_is_deep(field_enum, status)) {
+				emit_var_address(status, "x0", decl_name);
+				emit_asm(status, `add x0, x0, #${offset}\n`);
+				emit_enum_payload_frees_at(status, field_enum.name, "x0");
 			}
 		}
 		offset += size;

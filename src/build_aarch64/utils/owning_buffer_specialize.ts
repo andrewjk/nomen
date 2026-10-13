@@ -1,5 +1,5 @@
 import type BuildStatus from "../../build_c/BuildStatus.ts";
-import { box_field_mono } from "../../build_common/box_clone.ts";
+import { box_field_mono, enum_copy_is_deep } from "../../build_common/box_clone.ts";
 import {
 	field_load_deep_copy,
 	has_destroy,
@@ -323,7 +323,10 @@ function emit_transfer_owning_fields(
  * nested mv user structs whose auto-derived `copy` is deep), replace the
  * shallow-copied field with `<Mono>_copy(&slot.field)` (sret → the sret
  * buffer's field; self == x8 is safe — the copy reads its input before the
- * final result write). Mirrors the C backend's `emit_load_deep_copy_fields`.
+ * final result write); a `Box<T>` field is cloned, and an enum-with-data
+ * field whose payloads are all deep-copyable gets its string payloads
+ * strdup'd in place (the enum_copy_is_deep gate). Mirrors the C backend's
+ * `emit_load_deep_copy_fields`.
  * `sret` is the register holding the returned struct's address; `slot` holds
  * the source slot's address (the copy reads from the slot, writes to sret).
  */
@@ -371,6 +374,20 @@ function emit_load_deep_copy_fields(
 				emit_asm(status, `add x8, ${sret}, #${offset}\n`);
 				emit_asm(status, `add x0, ${slot}, #${offset}\n`);
 				emit_asm(status, `bl ${field_struct.name}_copy\n`);
+				offset += size;
+				continue;
+			}
+			// Enum-with-data field whose payloads are all deep-copyable (no
+			// class/trait references — the enum_copy_is_deep gate): strdup the
+			// active case's string payloads IN PLACE in the sret buffer, so the
+			// loaded copy owns them and its scope-exit destroy (which frees
+			// enum field payloads) reclaims its own, never the slot's. Mirrors
+			// the C backend's `<E>_copy` arm in emit_load_deep_copy_fields.
+			const field_enum = status.enums.find(
+				(e) => e.name === field.type.name && e.has_associated_data,
+			);
+			if (field_enum && enum_copy_is_deep(field_enum, status)) {
+				emit_enum_payload_strdups_at(status, field_enum.name, sret, offset);
 			}
 		}
 		offset += size;

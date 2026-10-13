@@ -51,6 +51,53 @@ Console.write("cap=\\{loaded.buf.cap} n=\\{loaded.vals.length}\\n")
 	});
 });
 
+// Owned FIELDS of a List element: the mv load_T deep-copies them so the
+// loaded copy's scope-exit destroy frees its own state — never the slot's
+// (a shallow copy made the list's later destroy a stale free). Audit ON:
+// either failure mode fails the run. The enum case was aarch64-only (the
+// C backend always rode `<E>_copy`).
+describe("owned fields of a List element", () => {
+	test("Box field of a container element is cloned on load", async () => {
+		const input = `
+mv struct Payload {
+	var int v
+}
+mv struct Cell {
+	var Box<Payload> payload
+}
+var List<Cell> l = List<Cell>()
+l.push(mv Cell(mv Box<Payload>(Payload(5))))
+var Cell n = l.at_or_panic(0)
+Console.write("\\{n.payload.v}\\n")
+`;
+		await build_and_check_output(input, "container_field_box_elem", "5\n");
+	});
+
+	test("enum-with-data field of a container element is deep-copied", async () => {
+		const input = `
+mv enum Val {
+	case text(string s)
+	case none
+}
+mv struct Cell {
+	var Val v
+}
+var List<Cell> l = List<Cell>()
+l.push(mv Cell(Val.text("abc".to_string())))
+var Cell n = l.at_or_panic(0)
+match n.v {
+	case .text(s) {
+		Console.write("\\{s}\\n")
+	}
+	case .none {
+		Console.write("none\\n")
+	}
+}
+`;
+		await build_and_check_output(input, "container_field_enum_elem", "abc\n");
+	});
+});
+
 // `Buffer.copy` deep-copies every slot (a fresh slab and, for mv
 // elements, an independent copy per element) — the primitive the load
 // deep-copy and `List`/`Map`/`Set` copies compose from.
