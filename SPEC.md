@@ -420,11 +420,14 @@ ref Box<Node> q = p    // alias: owner defers its free; both names see writes
 q.value = 99           // p.value is now also 99 — one instance, two names
 ```
 
-A `ref` binding is an alias, not an owner: it is not reassignable (reassign
-the owner `p`), mutation through it requires the source to be `var`, and
-ownership cannot be transferred through it (move the owner instead). A plain
-`var` copy of an alias source is a compile error — spell what you mean:
-`ref` to share, `mv` to transfer, `.copy()` for an independent copy.
+A `ref` binding is an alias, not an owner: mutation through it requires the
+source to be `var`, and ownership cannot be transferred through it (move the
+owner instead). Assigning to the alias re-points the alias itself — `q =
+Box<Node>(...)` stops the aliasing and adopts the fresh instance into `q` (an
+ordinary owning binding from then on); the previously-aliased instance stays
+owned by `p`. A plain `var` copy of an alias source is a compile error —
+spell what you mean: `ref` to share, `mv` to transfer, `.copy()` for an
+independent copy.
 
 See [Owning structs](#owning-structs-1) for the field rules, the Copyable
 verifier, `Box<T>`, and the nullable lowerings.

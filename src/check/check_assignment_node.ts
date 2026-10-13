@@ -216,17 +216,25 @@ export default function check_assignment_node(
 		add_error(status, `Unknown variable: ${left_value_name}`, assign.left_value!.start);
 		return false;
 	} else if (left_value.is_ref_binding && assign.left_value!.node_type === "value") {
-		// A `ref` binding is not reassignable (STRUCT_PLAN_3 §A3.2): it is
-		// "another name for it, for this scope" — a const pointer. Re-pointing
-		// an alias under deferred-free semantics is where the model becomes
-		// incoherent, so reassign the owner instead. (A field write THROUGH the
-		// alias — `q.v = 5` — is a mutation, handled by the A3.1 rule below.)
-		add_error(
-			status,
-			`'${left_value_name}' is a ref — reassign the owner, not the alias`,
-			assign.left_value!.start,
-		);
-		return false;
+		// Re-pointing a `ref` alias adopts the assignment into the alias's
+		// OWN slot. The alias model is instance-alias, not variable-alias:
+		// the owner reassigning (`bk = I2`) already leaves `q` pointing at
+		// the old instance (the deferred-free semantics), so the divergence
+		// is established in the other direction too. `q = I3` therefore
+		// writes only q's slot — the previously-aliased instance stays owned
+		// by its owner (nothing displaced, nothing to route across frames),
+		// and the fresh RHS is anchored into q's slot as an OWNING value
+		// freed at scope exit. Clear the alias link and re-pointability:
+		// after adoption q is an ordinary var slot (subsequent `q.v = …`
+		// mutates its own instance — no var-source requirement — and a
+		// second re-point is a plain var assignment). Falls through to the
+		// ordinary assignment path, which enforces the class-copy gates
+		// (a bare variable RHS is still "use 'ref' to share, 'mv' to
+		// transfer, or '.copy()'") and does the anchoring.
+		left_value.class_alias_of = undefined;
+		left_value.ref_source = undefined;
+		left_value.is_ref_binding = undefined;
+		left_value.declaration = "var";
 	} else if (
 		// A field write through a `ref` alias mutates the owner through the
 		// alias (STRUCT_PLAN_3 §A3.1): it requires the source binding to be

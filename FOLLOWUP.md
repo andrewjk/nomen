@@ -557,3 +557,28 @@ strategies — `: Spawnable` (async) and `: RegistryHandle` (weak) — with a
 deprecation cycle for the user-Awaitable `#spawn` spelling. INTERIM
 guardrail until this lands: freeze the `#`-member namespace (the checker
 rejects unknown `#foo` members as reserved) so the family stops growing.
+
+## `ref` re-point semantics — asymmetry resolved as alias adoption (2026-10-13)
+
+Investigating the param/alias asymmetry (a `ref Box` param can be reassigned —
+the callee writes the caller's pointer slot, tested + leak-audited on both
+backends, ref_class_param.test.ts — while a `ref Box` alias rejected `q = …`)
+produced two findings, both now landed:
+
+- The param side's cross-frame reclamation is real and deliberate ("so the
+  callee can reassign it"), NOT an unfinished-accounting hole. An attempt to
+  block heap-owning ref-param reassignment was reverted: 11 runtime tests
+  (ref_class_param, reassignment-loop, string-reassignment) encode it as a
+  feature.
+- The alias side is instance-alias, not variable-alias (owner reassignment
+  already leaves the alias on the old instance — deferred reclamation). So
+  alias re-point needs no cross-frame accounting at all: `q = RHS` now ADOPTS
+  the assignment into the alias's own slot (checker clears the alias link;
+  the slot becomes an owning `var`; ordinary anchoring frees the adopted
+  instance at scope exit; the owner keeps its instance). No build changes
+  were needed — the alias slot is an ordinary stack slot to both backends.
+
+Remaining niceties, not done: `mv` still cannot transfer THROUGH a
+non-adopted alias (§A3.3 unchanged); a transferred-adopted instance (`mv x =
+mv q` post-adoption) is expressible now that `q` is an ordinary var but is
+untested — add a test when convenient.

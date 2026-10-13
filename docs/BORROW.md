@@ -184,9 +184,11 @@ heap instance) are **not** child-group borrows, so mutating one does not
 invalidate the other. This is the mutable-aliasing benefit over Rust's
 "aliasing xor mutability": Nomen allows multiple references, and keeps it
 sound by invalidating borrows **on mutation** rather than forbidding the
-alias. A `ref` alias is not reassignable, mutation through it requires the
-source to be `var`, and ownership never transfers through it (mv the owner
-instead) — see MEMORY.md, "Spelled aliases with `ref`".
+alias. A `ref` alias mutates through to the shared instance (source must be
+`var`), while assigning to the alias re-points the alias itself — it adopts
+the assigned instance into its own slot and stops aliasing (the owner keeps
+its instance). Ownership never transfers through it (mv the owner instead) —
+see MEMORY.md, "Spelled aliases with `ref`".
 
 ## `view` — non-mv borrows
 

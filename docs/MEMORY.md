@@ -138,10 +138,16 @@ q.value = 99
 // b.value is now also 99
 ```
 
-`ref` binding rules (STRUCT_PLAN_3 Phase A):
+`ref` binding rules (STRUCT_PLAN_3 Phase A, amended — alias adoption):
 
-- A `ref` alias is not reassignable (`q = ...` is an error — reassign the owner).
-- Mutation through a `ref` requires the source to be `var`.
+- Assigning to a `ref` alias RE-POINTS THE ALIAS ITSELF: `q = Box<Cell>(...)`
+  stops the alias and adopts the fresh instance into q's own slot (anchored,
+  freed at scope exit). The previously-aliased instance stays owned by its
+  owner — nothing is displaced — and after adoption `q` is an ordinary
+  owning `var` (subsequent `q.v = …` mutates its own instance with no
+  var-source requirement). This mirrors the owner-reassignment direction,
+  which already leaves the alias on the old instance.
+- Mutation through a (non-adopted) `ref` requires the source to be `var`.
 - Ownership never transfers through a `ref` (`mv r = mv q` is an error —
   move the owner); `mv Box<Token> r = b` is the spelled transfer and
   invalidates `b`.

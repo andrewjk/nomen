@@ -214,7 +214,11 @@ q.v = 5
 		expect(check(input)).toEqual(expected);
 	});
 
-	test("a ref binding is not reassignable (§A3.2)", () => {
+	test("re-pointing a ref alias adopts the assignment into its own slot", () => {
+		// `q = I2` re-points the ALIAS: q stops aliasing p and owns the fresh
+		// instance (anchored, freed at scope exit). p keeps instance 1 — the
+		// divergence mirrors the owner-reassignment direction, which already
+		// leaves the alias on the old instance.
 		const input = `
 import System
 mv struct Cell { var int v }
@@ -222,8 +226,7 @@ var Box<Cell> p = Box<Cell>(Cell(1))
 ref Box<Cell> q = p
 q = Box<Cell>(Cell(3))
 `;
-		const expected = [test_error(input, "'q' is a ref — reassign the owner, not the alias", 6, 1)];
-		expect(check(input)).toEqual(expected);
+		expect(check(input)).toEqual([]);
 	});
 
 	test("mv through a ref is rejected (§A3.3, expression form)", () => {
@@ -318,5 +321,66 @@ ref Box<Cell> q = mv p
 		expect(check(input).map((e) => e.message)).toContainEqual(
 			"'ref' binds an alias — 'mv' cannot transfer through it",
 		);
+	});
+});
+
+// Re-pointing a ref alias adopts the assignment into the alias's OWN slot
+// (the checker clears the alias link; the slot becomes an owning var). The
+// previously-aliased instance stays owned by its owner — nothing is
+// displaced — and the adopted instance is anchored and freed exactly once
+// at scope exit. Runtime shapes on BOTH backends with the leak auditor on.
+describe("ref alias adoption (runtime)", () => {
+	test("adoption diverges the alias from the owner, no leak", async () => {
+		const input = `
+mv struct Cell { var int v }
+
+var Box<Cell> p = Box<Cell>(Cell(1))
+ref Box<Cell> q = p
+q = Box<Cell>(Cell(3))
+q.v = 30
+Console.write("\\{p.v} \\{q.v}")
+`;
+		await build_and_check_output(input, "ref_alias_adopt_diverge", "1 30");
+	});
+
+	test("mutation after adoption needs no var source (own instance)", async () => {
+		const input = `
+mv struct Cell { var int v }
+
+const Box<Cell> p = Box<Cell>(Cell(1))
+ref Box<Cell> q = p
+q = Box<Cell>(Cell(3))
+q.v = 30
+Console.write("\\{p.v} \\{q.v}")
+`;
+		await build_and_check_output(input, "ref_alias_adopt_after_const", "1 30");
+	});
+
+	test("adopted instances are reclaimed across loop re-points", async () => {
+		const input = `
+mv struct Cell { var int v }
+
+var Box<Cell> p = Box<Cell>(Cell(1))
+ref Box<Cell> q = p
+var int i = 0
+while i < 3; i += 1 {
+	q = Box<Cell>(Cell(10 + i))
+	Console.write("\\{q.v}")
+}
+Console.write("\\{p.v}")
+`;
+		await build_and_check_output(input, "ref_alias_adopt_loop", "1011121");
+	});
+
+	test("owner reassignment still leaves the alias on the old instance", async () => {
+		const input = `
+mv struct Cell { var int v }
+
+var Box<Cell> p = Box<Cell>(Cell(1))
+ref Box<Cell> q = p
+p = Box<Cell>(Cell(2))
+Console.write("\\{q.v} \\{p.v}")
+`;
+		await build_and_check_output(input, "ref_alias_owner_diverge", "1 2");
 	});
 });

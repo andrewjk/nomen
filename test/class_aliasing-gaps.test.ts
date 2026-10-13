@@ -1,17 +1,6 @@
-import path from "node:path";
+import { describe, test } from "vite-plus/test";
 
-import { describe, expect, test } from "vite-plus/test";
-
-import { get_library } from "../src/lib";
-import parse from "../src/parse";
 import build_and_check_output from "./build_and_check_output";
-import test_error from "./test_error";
-
-const system = get_library(path.resolve("core"));
-
-function check(source: string) {
-	return parse(source, system, undefined, { allow_internal: true }).errors;
-}
 
 // Classes are reference types: an object-level alias (`ref Box q = p`,
 // STRUCT_PLAN_3 Phase A) must NOT be destroyed/freed at scope exit — the
@@ -93,29 +82,30 @@ Console.write("done\\n")
 	});
 });
 
-// Reassigning an object-level alias to a fresh instance used to transfer
-// ownership to the alias (the runtime `alias_owns` flag machinery). STRUCT_PLAN_3
-// Phase A §A3.2 rejects alias rebinds outright — a `ref` is "another name for it,
-// for this scope", a const pointer; re-pointing an alias under deferred-free
-// semantics is where the model becomes incoherent. These tests pin the error.
-describe("class aliasing: reassigning an alias is an error (§A3.2)", () => {
-	test("reassigning a ref alias is rejected", () => {
+// Reassigning an object-level alias ADOPTS the assignment into the alias's
+// own slot (the checker clears the alias link; the slot becomes an owning
+// var). The previously-aliased instance stays owned by its owner; the
+// adopted instance is anchored and freed at scope exit. (Pre-Phase-A this
+// shape rode the runtime `alias_owns` flag machinery; Phase A blocked it as
+// "incoherent"; the instance-alias reading — owner reassignment already
+// leaves the alias on the old instance — makes adoption sound without that
+// machinery.)
+describe("class aliasing: alias reassignment adopts (§A3.2, amended)", () => {
+	test("reassigning a ref alias adopts the fresh instance", async () => {
 		const input = `
-import System
 mv struct R {
 	var int v
 }
 var Box<R> p = Box<R>(R(1))
 ref Box<R> q = p
 q = Box<R>(R(3))
+Console.write("\\{p.v} \\{q.v}")
 `;
-		const expected = [test_error(input, "'q' is a ref — reassign the owner, not the alias", 8, 1)];
-		expect(check(input)).toEqual(expected);
+		await build_and_check_output(input, "alias_adopt_single", "1 3");
 	});
 
-	test("every alias reassignment is rejected", () => {
+	test("every alias reassignment re-points; the owner keeps its instance", async () => {
 		const input = `
-import System
 mv struct R {
 	var int v
 }
@@ -123,18 +113,16 @@ var Box<R> p = Box<R>(R(1))
 ref Box<R> q = p
 q = Box<R>(R(3))
 q = Box<R>(R(4))
+Console.write("\\{p.v} \\{q.v}")
 `;
-		const expected = [
-			test_error(input, "'q' is a ref — reassign the owner, not the alias", 8, 1),
-			test_error(input, "'q' is a ref — reassign the owner, not the alias", 9, 1),
-		];
-		expect(check(input)).toEqual(expected);
+		await build_and_check_output(input, "alias_adopt_double", "1 4");
 	});
 });
 
 // Loop reclamation. Constructor reassignment with no live reference reclaims
-// the old instance eagerly each iteration (the owner test below PASSES).
-// An *alias* reassigned in a loop is rejected by §A3.2 like any other rebind.
+// the old instance eagerly each iteration (the owner test above PASSES).
+// An *alias* reassigned in a loop adopts each fresh instance; displaced
+// adoptions are reclaimed (with their `#destroy`) at scope exit.
 describe("class reassignment in a loop", () => {
 	test("owner reassigned in a loop reclaims every former instance", async () => {
 		const input = `
@@ -155,11 +143,13 @@ Console.write("\\{p.v}\\n")
 		await build_and_check_output(input, "loop_reassign_owner", "2\n");
 	});
 
-	test("alias reassignment in a loop is rejected (§A3.2)", () => {
+	test("alias reassignment in a loop adopts and reclaims (§A3.2, amended)", async () => {
 		const input = `
-import System
 mv struct R {
 	var int v
+	func #destroy = () {
+		self.v = 0
+	}
 }
 var Box<R> p = Box<R>(R(0))
 ref Box<R> q = p
@@ -168,9 +158,9 @@ while i < 3 {
 	q = Box<R>(R(i))
 	i = i + 1
 }
+Console.write("\\{q.v}\\n")
 `;
-		const expected = [test_error(input, "'q' is a ref — reassign the owner, not the alias", 10, 2)];
-		expect(check(input)).toEqual(expected);
+		await build_and_check_output(input, "alias_adopt_loop_destroy", "2\n");
 	});
 });
 
