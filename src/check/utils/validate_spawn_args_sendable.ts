@@ -42,6 +42,12 @@ export default function validate_spawn_args_sendable(
 	const callee_params = (call.resolved_function as FunctionNode | undefined)?.params?.filter(
 		(p) => !p.is_self_param,
 	);
+	// The label the freeze carries: when a later write to a borrowed donor
+	// conflicts, the error names THIS spawn ("the 'worker' spawn") — the
+	// lend rides the unspelled read-only default flavor, so the write gate
+	// is where the disclosure happens.
+	const callee_name = (call.resolved_function as FunctionNode | undefined)?.name;
+	const task_label = callee_name ? `the '${callee_name}' spawn` : "a spawn";
 	for (let i = 0; i < call.params.length; i++) {
 		const param = call.params[i];
 		let arg_type: Type = type_from_value_node(param, status);
@@ -77,7 +83,7 @@ export default function validate_spawn_args_sendable(
 			if (st) {
 				if (!call.region_borrowed_args) call.region_borrowed_args = [];
 				if (!call.region_borrowed_args.includes(i)) call.region_borrowed_args.push(i);
-				enforce_spawn_arg_region(param, arg_type, status, true);
+				enforce_spawn_arg_region(param, arg_type, status, true, task_label);
 				continue;
 			}
 		}
@@ -114,21 +120,21 @@ export default function validate_spawn_args_sendable(
 			}
 			if (!call.region_borrowed_args) call.region_borrowed_args = [];
 			if (!call.region_borrowed_args.includes(i)) call.region_borrowed_args.push(i);
-			if (inside_nursery) enforce_spawn_arg_region(param, arg_type, status);
+			if (inside_nursery) enforce_spawn_arg_region(param, arg_type, status, false, task_label);
 			continue;
 		}
 		// R1: a `view`-typed argument is a borrow of its source — region-
 		// checked + frozen inside a nursery (outside one, the env's pair
 		// copy has no join to bound it; the shipped posture applies).
 		if (inside_nursery && arg_type.is_view && !arg_type.is_array) {
-			enforce_spawn_arg_region(param, arg_type, status);
+			enforce_spawn_arg_region(param, arg_type, status, false, task_label);
 			continue;
 		}
 		if (is_sendable_type(arg_type.name, status)) {
 			// The Sendable gate waves SHARED class/trait references through —
 			// inside an `async { }` block their donor must still join-bound
 			// (STRUCT_PLAN_3 N1a R2 / N1b E3, in spawn_region.ts).
-			enforce_spawn_arg_region(param, arg_type, status);
+			enforce_spawn_arg_region(param, arg_type, status, false, task_label);
 			continue;
 		}
 		add_error(

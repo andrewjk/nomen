@@ -402,7 +402,7 @@ func len = (List<int> items, out int) {
 			'var t = Thread(len(xs)).start()\n\t\txs.push(5)\n\t\tConsole.write_line("\\{t.result()}")',
 		);
 		const messages = check(input).map((e) => e.message);
-		expect(messages.some((m) => m.includes("'xs' is borrowed by a task"))).toBe(true);
+		expect(messages.some((m) => m.includes("'xs' is borrowed by the '"))).toBe(true);
 	});
 
 	test("the freeze: mutating BEFORE the construction is fine", () => {
@@ -419,7 +419,7 @@ func len = (List<int> items, out int) {
 			"var t = Thread(len(xs)).start()\n\t\tmv List<int> stolen = xs",
 		);
 		const messages = check(input).map((e) => e.message);
-		expect(messages.some((m) => m.includes("'xs' is borrowed by a task"))).toBe(true);
+		expect(messages.some((m) => m.includes("'xs' is borrowed by the '"))).toBe(true);
 	});
 
 	test("the freeze: mutable-passing the donor errors", () => {
@@ -444,7 +444,7 @@ func consume = (mv List<int> items) {
 }
 `;
 		const messages = check(input).map((e) => e.message);
-		expect(messages.some((m) => m.includes("'xs' is borrowed by a task"))).toBe(true);
+		expect(messages.some((m) => m.includes("'xs' is borrowed by the '"))).toBe(true);
 	});
 
 	test("a Task handle shared into a task can still be cancelled (protocol exemption)", () => {

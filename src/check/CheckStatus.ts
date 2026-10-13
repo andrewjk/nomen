@@ -42,14 +42,16 @@ export default interface CheckStatus {
 	/**
 	 * Per-async-block frames of FROZEN roots (N1a R3): a variable borrowed
 	 * into a spawned task is const from the construction until the block
-	 * exits. One Set per enclosing async block, pushed by
-	 * check_async_block_node. Block clones (if/while bodies inside the
-	 * block) share the innermost Set BY REFERENCE — the freeze lasts to the
-	 * block exit, not to the construction's branch exit — and the whole
-	 * frame dies with the block's cloned status. Enforced by
-	 * enforce_root_not_frozen (spawn_region.ts) from every mutation path.
+	 * exits. One Map per enclosing async block (root name → the spawn that
+	 * lent it, e.g. "the 'worker' spawn" — the disclosure when a write
+	 * conflicts), pushed by check_async_block_node. Block clones (if/while
+	 * bodies inside the block) share the innermost Map BY REFERENCE — the
+	 * freeze lasts to the block exit, not to the construction's branch
+	 * exit — and the whole frame dies with the block's cloned status.
+	 * Enforced by enforce_root_not_frozen (spawn_region.ts) from every
+	 * mutation path.
 	 */
-	nursery_frozen_roots?: Set<string>[];
+	nursery_frozen_roots?: Map<string, string>[];
 	/**
 	 * Types (values, structs and traits) in scope
 	 */

@@ -523,17 +523,21 @@ the graph, so timed waits are exempt by design.
 
 ## Sharing data between tasks
 
-Argument shapes at the task boundary (STRUCT_PLAN_3 N1a R1), each spelled at
-the call site:
+Argument shapes at the task boundary (STRUCT_PLAN_3 N1a R1). Ownership
+crossings are spelled `mv`; borrows and copies ride the ordinary call
+flavors (read-only default for owning types, value copy for the rest) —
+what is task-specific is the region, not the spelling:
 
 - **Move in** (`mv T` parameter): exclusive ownership — the caller gives up
   its access. This is the shape a mv struct uses to cross outside a
   nursery.
 - **Borrow** (inside `async { }` only): a mv struct passed bare, or a
-  `view`-typed argument — the env aliases the donor. Two checked rules
+  `view`-typed argument — the env aliases the donor, exactly like the
+  read-only borrow an ordinary call takes. Two checked rules
   make the alias sound: the ROOT must outlive the join (declared in the
   block's own scope or outside it), and the freeze keeps the donor const
-  until the block exits. Outside a nursery there is no join — mv structs
+  until the block exits (a conflicting write names the spawn that lent
+  it). Outside a nursery there is no join — mv structs
   cannot cross bare at all (compile error: spawn it inside a block as a
   borrowed read, or move it in).
 - **Copy** (everything else): scalars, strings (deep-copied at pack), and

@@ -113,6 +113,6 @@ pub func main = (Init init) {
 }
 `;
 		const messages = check(input).map((e) => e.message);
-		expect(messages.some((m) => m.includes("'counter' is borrowed by a task"))).toBe(true);
+		expect(messages.some((m) => m.includes("'counter' is borrowed by the '"))).toBe(true);
 	});
 });

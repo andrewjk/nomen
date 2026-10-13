@@ -2695,18 +2695,23 @@ pub struct Stamp : Sendable {   // explicit marker
 }
 ```
 
-What crosses a task boundary, each spelled at the call site:
+What crosses a task boundary:
 
 - **Moved** arguments — a `mv T` capture or argument takes exclusive
   ownership; a mv struct moves and the donor is invalidated (the caller
-  gives up its access).
-- **Copied** arguments — primitives, strings, and plain-data (non-mv)
-  structs are copied at the boundary, so the task and the caller hold
-  independent values. (A `mv s` argument to a `mv string` parameter
-  transfers instead.)
-- **Borrowed** arguments — a mv struct passed bare inside an `async`
-  block, or a `view`-typed argument: the env aliases the donor, and the
-  lifetime rules below bound the alias.
+  gives up its access). Ownership crossings are always spelled `mv`, like
+  every transfer.
+- **Copied** arguments — the default flavor for value types: primitives,
+  strings, and plain-data (non-mv) structs passed bare are copied at the
+  boundary, so the task and the caller hold independent values. (A `mv s`
+  argument to a `mv string` parameter transfers instead.)
+- **Borrowed** arguments — the default flavor for owning types, the same
+  read-only borrow an ordinary call takes: a mv struct passed bare inside
+  an `async` block, or a `view`-typed argument, aliases the donor, and
+  the lifetime rules below bound the alias. What is task-specific is not
+  the spelling but the region — the join bounds the alias, and the donor
+  is frozen (read-only) until the block exits; a write that conflicts
+  names the spawn that lent it.
 - **Trait handles cannot cross.** A trait-typed value is not Sendable — move
   the concrete struct instead, or mediate the share through `Mutex` /
   `Channel` / `Atomic<T>`.

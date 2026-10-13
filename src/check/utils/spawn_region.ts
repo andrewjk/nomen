@@ -118,25 +118,30 @@ export function spawn_arg_region_class(
  * (`nursery_frozen_roots`): `check_async_block_node` pushes one, block
  * clones SHARE the innermost set (the freeze lasts to the block exit, not
  * to the construction's branch exit), and the set dies with the block's
- * cloned status — the enclosing scope never sees it.
+ * cloned status — the enclosing scope never sees it. Each entry records the
+ * spawn that lent the root (the task label), so the write gate can name it.
  */
-function freeze_root(root: string, status: CheckStatus): void {
+function freeze_root(root: string, status: CheckStatus, task_label: string): void {
 	if (!status.nursery_frozen_roots?.length) return;
-	status.nursery_frozen_roots[status.nursery_frozen_roots.length - 1].add(root);
+	status.nursery_frozen_roots[status.nursery_frozen_roots.length - 1].set(root, task_label);
 }
 
 /**
- * The R3 write gate: `'m' is borrowed by a task until this 'async' block
- * exits`. Called from every mutation path with the ROOT variable's name.
- * Returns true when the name is frozen (the error has been added).
+ * The R3 write gate: `'m' is borrowed by the 'worker' spawn until this
+ * 'async' block exits`. Called from every mutation path with the ROOT
+ * variable's name. Returns true when the name is frozen (the error has been
+ * added). The message names the spawn that lent the root — the disclosure
+ * is retroactive (the lend itself rides the unspelled read-only default
+ * flavor), so it must at least be precise.
  */
 export function enforce_root_not_frozen(name: string, status: CheckStatus, start: number): boolean {
 	const frames = status.nursery_frozen_roots;
 	if (!frames?.length) return false;
-	if (frames[frames.length - 1].has(name)) {
+	const lender = frames[frames.length - 1].get(name);
+	if (lender !== undefined) {
 		add_error(
 			status,
-			`'${name}' is borrowed by a task until this 'async' block exits — it is read-only here (mv a copy in, or mv it in at the spawn)`,
+			`'${name}' is borrowed by ${lender} until this 'async' block exits — it is read-only here (mv a copy in, or mv it in at the spawn)`,
 			start,
 		);
 		return true;
@@ -154,6 +159,7 @@ export function enforce_spawn_arg_region(
 	arg_type: Type,
 	status: CheckStatus,
 	is_ref_borrow = false,
+	task_label = "a task",
 ): void {
 	if ((status.nursery_depth ?? 0) === 0) return;
 	const klass = is_ref_borrow ? "borrow" : spawn_arg_region_class(arg_type, false, status);
@@ -198,7 +204,7 @@ export function enforce_spawn_arg_region(
 	// it IS the coordination protocol (`t.cancel()` after a spawn is the
 	// sanctioned shape, N1's "with(m) stays legal for shareable types"
 	// position). The region rule above still bounds the handle's scope.
-	if (root !== undefined && arg_type.name !== "Task") freeze_root(root, status);
+	if (root !== undefined && arg_type.name !== "Task") freeze_root(root, status, task_label);
 }
 
 /**
