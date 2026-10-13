@@ -61,3 +61,30 @@ pub func main = () {
 		expect(errors).toEqual([]);
 	});
 });
+
+// The Box transparent-access rewrite (`box.f` → `box.__value.f`) re-dispatches
+// check_access_node, which re-walks the ALREADY-CHECKED target chain. When that
+// chain contains a hoisted receiver temp (`l.at(0)` hoisted into `_recv_N`
+// because its mv-struct result must reach a scope-exit destroy), the re-walk
+// re-visits the temp's ValueNode — whose declaration is attached to the
+// statement for the build pass and never enters status.values. The live lookup
+// missed, surfacing as the internal-shaped "Unknown value: _recv_N". The
+// checker now keeps the type it stamped on the node.
+describe("checker name resolution: hoisted receiver temps under re-dispatch", () => {
+	test("chained Box deref through an accessor result resolves", () => {
+		const source = `
+mv struct Payload {
+	var int v
+}
+mv struct Cell {
+	var Box<Payload> payload
+}
+var List<Cell> l = List<Cell>()
+var int x = l.at_or_panic(0).payload.v
+Console.write_line("\\{l.at_or_panic(0).payload.v} \\{x}")
+`;
+		const parsed = parse_with_imports(source);
+		const errors = parsed.errors.map((e) => e.message);
+		expect(errors).toEqual([]);
+	});
+});

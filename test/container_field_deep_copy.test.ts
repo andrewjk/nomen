@@ -96,6 +96,25 @@ match n.v {
 `;
 		await build_and_check_output(input, "container_field_enum_elem", "abc\n");
 	});
+
+	// The chained Box deref through the accessor result (the shape that used
+	// to fail checking with the internal "Unknown value: _recv_N" — the
+	// Box transparent-access rewrite re-walks the hoisted receiver temp).
+	// Audit ON: the hoisted temp must still reach its scope-exit destroy.
+	test("chained Box deref through an accessor result builds and runs", async () => {
+		const input = `
+mv struct Payload {
+	var int v
+}
+mv struct Cell {
+	var Box<Payload> payload
+}
+var List<Cell> l = List<Cell>()
+l.push(mv Cell(mv Box<Payload>(Payload(5))))
+Console.write("\\{l.at_or_panic(0).payload.v}\\n")
+`;
+		await build_and_check_output(input, "container_field_chained_deref", "5\n");
+	});
 });
 
 // `Buffer.copy` deep-copies every slot (a fresh slab and, for mv

@@ -513,17 +513,3 @@ non-adopted alias (§A3.3 unchanged); a transferred-adopted instance (`mv x =
 mv q` post-adoption) is expressible now that `q` is an ordinary var; the
 regression test landed (class_aliasing-gaps.test.ts, "a transferred
 adopted instance moves with mv", 2026-10-13).
-
-## Checker: `Unknown value: _recv_N` for a chained Box auto-deref temp
-
-Found 2026-10-13 while verifying memory-gap shapes (not a memory bug — a
-check-phase crash-shaped error). An interpolation that chains THROUGH a
-Box field deref on a borrow-accessor result — `"\{l.at_or_panic(0).payload.v}"`
-where `payload` is `Box<Payload>` — fails with `Unknown value: _recv_N`
-(the checker's receiver/expression-temp hoist emits a reference the name
-resolver never registers). Binding the element to a local first
-(`var Cell got = l.at_or_panic(0)`, then `got.payload.v`) compiles fine,
-and the same chain WITHOUT the Box hop (`list.at(0).letter`) works — so
-the trigger is the Box auto-deref riding the hoisted temp. Repro recipe:
-`List<Cell>` whose element has a `Box<Payload>` field, `push`, then read
-`payload.v` through the accessor chain inside an interpolation.

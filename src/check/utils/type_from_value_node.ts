@@ -27,7 +27,16 @@ export default function type_from_value_node(node: BaseNode, status: CheckStatus
 				t.is_nullable = true;
 				return t;
 			}
-			return type_from_value(vn.value, status);
+			const t = type_from_value(vn.value, status);
+			if (t.name) return t;
+			// The checker may have stamped this node itself — a hoisted
+			// compiler temp (`_recv_N` receiver hoist, `_param_N` arg hoist)
+			// re-visited by a re-dispatched check (the Box transparent-access
+			// rewrite re-walks the already-checked target chain). Its
+			// declaration is attached to the statement for the build pass and
+			// never enters status.values, so the live lookup misses; a user
+			// identifier is never pre-stamped with a type.
+			return vn.type?.name ? vn.type : t;
 		}
 		case "access": {
 			return type_from_value_node((node as AccessNode).access, status);

@@ -18,12 +18,21 @@ export default function check_value_node(node: ValueNode, status: CheckStatus): 
 		return check_enum_shorthand(node, status);
 	}
 
-	node.type = type_from_value(node.value, status);
-
-	if (!node.type.name) {
+	const resolved = type_from_value(node.value, status);
+	if (resolved.name) {
+		node.type = resolved;
+	} else if (!node.type?.name) {
 		add_error(status, `Unknown value: ${node.value}`, node.start);
 		return false;
 	}
+	// else: the CHECKER itself stamped this node's type — a hoisted compiler
+	// temp (the `_recv_N` receiver hoist, a `_param_N` call-arg hoist) whose
+	// declaration is attached to the statement for the build pass and is
+	// never entered into status.values. A re-dispatched check (the Box
+	// transparent-access rewrite re-walks the already-checked target chain)
+	// re-visits such a temp here; keep the stamped type. A user identifier
+	// can never arrive pre-stamped (the parser leaves identifiers untyped),
+	// so this cannot mask a genuinely unknown name.
 
 	// Degenerate string-literal escapes are rejected rather than silently
 	// diverging between the length counter's pair-counting and what

@@ -112,8 +112,16 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 		(ret.value as AccessNode).access.node_type === "access_field"
 	) {
 		const af = (ret.value as AccessNode).access as AccessFieldNode;
-		const base_type = type_from_value_node((ret.value as AccessNode).target, status);
-		if (base_type.name) {
+		const base_target = (ret.value as AccessNode).target;
+		const base_type = type_from_value_node(base_target, status);
+		// The rule is about copying out of a NAMED binding's storage. A
+		// hoisted compiler temp (`_recv_N` receiver hoist) is not one: its
+		// lifetime is the statement, and its field reads ride the
+		// accessor/view conventions (e.g. a `view string` return of
+		// `xs.at(i).text`).
+		const base_name = base_target.node_type === "value" ? (base_target as ValueNode).value : "";
+		const base_is_binding = !!base_name && status.values.some((v) => v.name === base_name);
+		if (base_type.name && base_is_binding) {
 			const owner_struct = status.structs.findLast(
 				(s) => s.name === mono_type_name(base_type) && !s.is_generic,
 			);
