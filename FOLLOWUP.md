@@ -24,10 +24,6 @@ Each skip masks a real post-R/B1/D3 gap (verified still failing
 
 ### B1 residual (checker)
 
-- A generic struct mono with a bare-`T` field derives `is_owning` (the
-  mono verifier then passes), but the generic TEMPLATE itself is never
-  flagged — `mv struct Wrapper<T>` must be spelled when every
-  instantiation should be mv.
 - Variadic-pair extraction of mv elements (`Map`'s pairs init) rides
   the temp-rooted read exemption in `check_function_call` (the temp dies,
   set's store deep-copies) until a generic move-out accessor exists on

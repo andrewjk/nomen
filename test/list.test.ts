@@ -789,7 +789,7 @@ Console.write("\\{run.length} \\{g.items.length}")
 		// fields/params reference a real struct (previously a check-time
 		// rejection; before that, a checker hang).
 		const input = `
-struct Wrapper<T> {
+mv struct Wrapper<T> {
 	var T item
 }
 var List<int> xs = List<int>()
@@ -805,7 +805,7 @@ Console.write("\\{w.item.length} \\{w.item.pop()}")
 		// The defaulted-field construction takes no ctor param; the field's
 		// default `List<int>()` is substituted to the flattened mono name.
 		const input = `
-struct Wrapper<T> {
+mv struct Wrapper<T> {
 	var T item = List<int>()
 }
 var Wrapper<List<int>> w = Wrapper<List<int>>()
@@ -819,7 +819,7 @@ Console.write("\\{w.item.pop()}")
 		// Wrapper<Wrapper<List<int>>> flattens all the way down
 		// (Wrapper_Wrapper_List_int).
 		const input = `
-struct Wrapper<T> {
+mv struct Wrapper<T> {
 	var T item
 }
 var List<int> xs = List<int>()
@@ -835,7 +835,7 @@ Console.write("\\{outer.item.item.pop()}")
 		// Wrapper<List<int>> crossing function boundaries — instantiate
 		// (check) + signature lowering (build) must flatten recursively.
 		const input = `
-struct Wrapper<T> {
+mv struct Wrapper<T> {
 	var T item
 }
 func fill = (out Wrapper<List<int>>) {

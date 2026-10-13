@@ -72,7 +72,7 @@ var Circle<int> c = Circle<int>(25, 70, 15)
 
 test("generics -- two instantiations of same generic", () => {
 	const input = `
-struct Pair<T, U> {
+mv struct Pair<T, U> {
     var T first
     var U second
 }
@@ -136,7 +136,7 @@ var int v = unwrap(b)
 
 test("generics -- generic function with anon struct arg", () => {
 	const input = `
-struct Pair<T, U> {
+mv struct Pair<T, U> {
     var T first
     var U second
 }
@@ -154,7 +154,7 @@ usePair(Pair<int, string>(1, "hello"))
 
 test("generics -- generic function two specializations", () => {
 	const input = `
-struct Box<T> {
+mv struct Box<T> {
     var T value
 }
 
@@ -262,7 +262,7 @@ printBox(Box<int>(99))
 
 test("generics -- generic function two types build aarch64", async () => {
 	const input = `
-struct Pair<T, U> {
+mv struct Pair<T, U> {
     var T first
     var U second
 }
@@ -302,7 +302,7 @@ var int v = identity(b)
 
 test("generics -- explicit type params with different names", () => {
 	const input = `
-struct Pair<T, U> {
+mv struct Pair<T, U> {
     var T first
     var U second
 }
@@ -339,7 +339,7 @@ var int v = unwrap(b)
 
 test("generics -- explicit type params two specializations", () => {
 	const input = `
-struct Box<T> {
+mv struct Box<T> {
     var T value
 }
 

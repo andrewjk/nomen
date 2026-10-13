@@ -5,7 +5,7 @@ import build_and_check_output from "./build_and_check_output";
 describe("generic enum return from a generic-struct method", () => {
 	test("Option<T> return monomorphizes and runs", async () => {
 		const input = `
-struct Holder<T> {
+mv struct Holder<T> {
     var T item
     var bool has
 

@@ -630,8 +630,26 @@ export function monomorphize(
 	// lands on a mv field (`Wrapper<List<int>>`) is move-only like a
 	// spelled `mv struct` (the Copyable verifier would otherwise reject
 	// the generated mono, which cannot be spelled `mv`).
-	mono_struct.is_owning =
-		generic_struct.is_owning || mono_fields.some((f) => type_owns_heap(f.type, status));
+	const derived_owning = mono_fields.some((f) => type_owns_heap(f.type, status));
+	mono_struct.is_owning = generic_struct.is_owning || derived_owning;
+	// B1 residual closed — the Copyable verifier extends to generic
+	// TEMPLATES: a bare-T field slips the template-level verifier (the type
+	// param resolves to nothing there), so without this rule the mono above
+	// silently derived what the declaration never spelled. The declaration
+	// is the contract (as for concrete structs): when an instantiation's
+	// substituted fields own heap, the template must be spelled
+	// `mv struct Wrapper<T>` — which also makes the value-T instantiations
+	// move-only, so the spelling is demanded only from templates whose
+	// instantiations should EVERY be mv. Class templates stay out (the
+	// Copyable verifier's domain is value structs).
+	if (derived_owning && !generic_struct.is_owning && !generic_struct.is_class) {
+		const param_list = generic_struct.type_params.join(", ");
+		add_error(
+			status,
+			`'${generic_struct.name}<${param_list}>' instantiates to an owning type — a substituted field owns heap memory --> mark the generic \`mv struct ${generic_struct.name}<${param_list}>\``,
+			generic_struct.start,
+		);
+	}
 	mono_struct.is_library = generic_struct.is_library;
 	// Trait conformance args ride along, substituted (`class Thread<T> :
 	// Spawnable<T>` monomorphizes to `Thread_uint64 : Spawnable_uint64`).

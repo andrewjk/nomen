@@ -610,7 +610,7 @@ Console.write("\\{one(5)} \\{two(5)}")
 // same flat `pick:` label (duplicate symbol); each clone now gets its own.
 test("generic parent's nested func is uniquified per instantiation", async () => {
 	const input = `
-struct Box<T> {
+mv struct Box<T> {
   var T value
 }
 

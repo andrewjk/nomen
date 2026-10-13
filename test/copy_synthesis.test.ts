@@ -6,7 +6,7 @@ describe("copy() synthesis coverage", () => {
 	test("mono struct copy is independent and leak-free", async () => {
 		await build_and_check_output(
 			`
-struct Box<T> { var T value }
+mv struct Box<T> { var T value }
 var Box<string> b = Box<string>("x")
 var Box<string> c = b.copy()
 c.value = "y"

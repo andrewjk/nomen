@@ -20,7 +20,7 @@ import {} from "./system_lib";
 // leak the stored copy"). The printed value is the regression signal.
 
 const INPUT = `
-struct Box<T> {
+mv struct Box<T> {
 	var T value
 
 	func modify = (ref self, func (T, out T) f) {
