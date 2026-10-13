@@ -101,51 +101,6 @@ Also still open from the same area: `for ref x of list` is rejected with
 a dedicated error (List `set` takes `mv T`, so the array writeback
 shape doesn't transfer — needs its own design).
 
-## Ownership-tracking remainders (string fields through calls)
-
-The per-call record/transfer machinery closed the dangling and leak halves
-of ref-param field stores (see git history: cross-scope stores, ref-param
-transfer, return-boundary normalization). These bounded remainders remain
-— leaks unless noted, never dangling on the verified shapes:
-
-- **A displaced copy from an EARLIER ref-param call leaks per extra
-  call** (`set(ref p, "one"); set(ref p, "two")` leaks "one", verified
-  2026-10-09): the callee's store cannot know the displaced value's
-  ownership, and pre-freeing at the call site would be a use-after-free
-  when the callee reads the field first.
-- **Stores reached through a helper called from a nested position are not
-  transferred**: the final stored copy from such a chain leaks (the
-  helper builds its own fresh record set and cannot see the caller's
-  field ownership). Closing it needs cross-function must-executed
-  (dominator) analysis.
-- **A conditional field's entry-dup displaces whatever pre-call value the
-  field held, un-freed (≤1 per call)**: the callee can't know whether
-  that value was heap or a rodata/borrow.
-
-## Owning container fields in container elements (remaining gaps)
-
-The transfer + load deep-copy work landed: store_T/replace_T transfer
-container leaves, and load_T deep-copies `List`/`Buffer`/`Map`/`Set` fields
-plus nested-copyable mv struct fields (the auto-derive copy gate accepts
-`Buffer`/`Map`/`Set` fields; the shared predicate is `field_load_deep_copy`
-in destroy_analysis.ts — the load walks and the borrow-carrier reclaims on
-both backends must stay on it). Covered by `test/container_field_deep_copy.test.ts`,
-`test/map_set_field_deep_copy.test.ts`, `test/nested_field_deep_copy.test.ts`.
-Remaining gaps:
-
-- **`load_T` deep-copies container + nested-copyable fields only** (and, on
-  C, payload-copyable enums). A class-typed field of a container element is
-  still returned SHALLOW: the caller's scope-exit destroy frees the slot's
-  shared state (double-free) — closing it needs a class clone story (Nomen
-  has no auto-clone; same posture as `List.copy`'s call-site rejection).
-  Same for enum-with-data element fields on aarch64 (C handles them).
-- **`store_T`/`replace_T` transfer only container leaves** (recursing nested
-  structs). Class-typed and enum-with-data fields of the element stay shared;
-  for a stamped `mv` donor this is sound (spliced → the slot is sole owner),
-  but an UNSTAMPED generic-body donor (the library `List.copy` body's `v`)
-  whose teardown destroys a class field can still double-free. Adding
-  class/enum payloads to the transfer set would close it.
-
 ## Field-scoped borrow invalidation (Valen-style effect precision)
 
 Recorded 2026-10-12, out of the Valen group-borrowing comparison
@@ -216,42 +171,17 @@ destroy reclamation frees trait-declared `string` fields on both backends
 — see `test/trait_field_defaults.test.ts`. Two ownership corners remain,
 both deliberately left:
 
-- **Value-struct trait `string` fields are borrowed rodata.** The ctor
-  seeds a trait string default RAW (no strdup, mirroring the C backend),
-  and the destroy excludes value-struct trait fields so it never frees
-  rodata. A later heap assignment into such a field is therefore not
-  reclaimed (leak). The crash-class half is closed: a trait-typed
-  reassignment frees the displaced value only when EVERY known conformer
-  owns its trait field (a mixed set once freed the non-mv conformer's
-  rodata seed — an invalid free). The remaining refinement is
-  runtime-conformer-aware frees (a vtable compare per owning conformer at
-  the write), which would also let mixed-set writes dup only for owning
-  instances.
+- **Runtime-conformer-aware frees** (a vtable compare per owning
+  conformer at the write): a trait-typed reassignment today frees the
+  displaced value only when EVERY known conformer owns its trait field;
+  per-conformer knowledge would let mixed-set writes dup/free only for
+  owning instances.
 - **Fixed-array ELEMENT trait fields**: `emit_destroy_for_array_elem`
   (aarch64) walks `struct.fields` only and gates on an explicit `#destroy`,
   so a fixed-size array FIELD whose element struct carries trait-declared
   owned fields (and no explicit destroy) is not recursively destroyed. The
   shape is unreachable without `unsafe` (fixed `T[N]` struct fields need
-  pointer indexing), so it stays a recorded corner; the nested-STRUCT
-  variant is closed (a nested conformer's trait-declared fields now make
-  the enclosing destroy walk fire, and custom `#init`s seed trait
-  defaults).
-
-## Custom `#init` computed seeds: residual bounded corners
-
-The computed-seed override-displacement analysis landed (both backends;
-covered by test/override_ctor_displaced.test.ts). Deliberately left
-(bounded leak, never an invalid free — verified still leaking
-2026-10-09):
-
-- A conditional computed write over a RODATA default: the no-write path
-  leaves the literal in the field, so the field stays unrecorded and the
-  write path's seed leaks (≤1). A heap default closes it (both paths hold
-  heap → recorded).
-- Later `#init` writes to the same field displace the previous write's
-  value un-freed when it was heap (the init cannot know the displaced
-  value's ownership; the first write's default reclaim is the only static
-  fact).
+  pointer indexing), so it stays a recorded corner.
 
 ## Kill-trampoline teardown for parked fibers (deferred)
 
@@ -580,5 +510,20 @@ produced two findings, both now landed:
 
 Remaining niceties, not done: `mv` still cannot transfer THROUGH a
 non-adopted alias (§A3.3 unchanged); a transferred-adopted instance (`mv x =
-mv q` post-adoption) is expressible now that `q` is an ordinary var but is
-untested — add a test when convenient.
+mv q` post-adoption) is expressible now that `q` is an ordinary var; the
+regression test landed (class_aliasing-gaps.test.ts, "a transferred
+adopted instance moves with mv", 2026-10-13).
+
+## Checker: `Unknown value: _recv_N` for a chained Box auto-deref temp
+
+Found 2026-10-13 while verifying memory-gap shapes (not a memory bug — a
+check-phase crash-shaped error). An interpolation that chains THROUGH a
+Box field deref on a borrow-accessor result — `"\{l.at_or_panic(0).payload.v}"`
+where `payload` is `Box<Payload>` — fails with `Unknown value: _recv_N`
+(the checker's receiver/expression-temp hoist emits a reference the name
+resolver never registers). Binding the element to a local first
+(`var Cell got = l.at_or_panic(0)`, then `got.payload.v`) compiles fine,
+and the same chain WITHOUT the Box hop (`list.at(0).letter`) works — so
+the trigger is the Box auto-deref riding the hoisted temp. Repro recipe:
+`List<Cell>` whose element has a `Box<Payload>` field, `push`, then read
+`payload.v` through the accessor chain inside an interpolation.

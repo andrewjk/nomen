@@ -117,6 +117,23 @@ Console.write("\\{p.v} \\{q.v}")
 `;
 		await build_and_check_output(input, "alias_adopt_double", "1 4");
 	});
+
+	// Post-adoption, `q` is an ordinary owning var — a `mv` transfer out of it
+	// is expressible and must move the adopted instance (leaving `q` moved-out,
+	// the owner untouched, and the audit balanced).
+	test("a transferred adopted instance moves with mv (both backends)", async () => {
+		const input = `
+mv struct R {
+	var int v
+}
+var Box<R> p = Box<R>(R(1))
+ref Box<R> q = p
+q = Box<R>(R(3))
+mv Box<R> x = mv q
+Console.write("\\{p.v} \\{x.v}")
+`;
+		await build_and_check_output(input, "alias_adopt_mv_transfer", "1 3");
+	});
 });
 
 // Loop reclamation. Constructor reassignment with no live reference reclaims

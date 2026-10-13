@@ -101,20 +101,13 @@ Console.write("\\nDONE")
 	});
 });
 
-// KNOWN REMAINING GAP (not yet caught): a `for i of 0 .. n` loop whose
+// CLOSED GAP (was "not yet caught"): a `for i of 0 .. n` loop whose
 // upper bound `n` is an unrelated runtime value (not provably <= the
-// indexed container's length) is still accepted, and the inlined access
-// performs an unchecked read/write. The intended fix is to also reject
-// unverifiable index constraints here, requiring the programmer to guard
-// the access with `if i < arr.length` (or `if n < arr.length`) as shown
-// above. That change currently breaks a large amount of existing code
-// (array-literal lengths aren't always tracked for the verifier, and
-// Buffer capacity is often unknown-by-design after a runtime grow), so it
-// is left as a tracked limitation until that groundwork lands.
-//
-// This test is intentionally left FAILING so the gap is visible: the
-// compiler currently accepts the program (no error), but it should reject
-// it until guarded.
+// indexed container's length) is now REJECTED — the constraint verifier
+// refuses unverifiable index bounds ("Parameter constraint cannot be
+// verified") instead of emitting an unchecked access. Guarding the
+// access with `if i < arr.length` (or `if n < arr.length`) as above is
+// the escape hatch that re-establishes the strict bound.
 describe("known gap: runtime-bounded for loops over an unrelated upper bound", () => {
 	test("for i of 0 .. n with n > length should be rejected (requires guard)", () => {
 		const input = `

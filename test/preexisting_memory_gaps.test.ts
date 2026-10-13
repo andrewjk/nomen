@@ -2,10 +2,12 @@ import { describe, test } from "vite-plus/test";
 
 import build_and_check_output from "./build_and_check_output";
 
-// Failing tests documenting pre-existing memory gaps (NOT nullable-specific).
-// These all leak and should be fixed eventually. The root cause for most is
-// that class temporaries (constructor results not bound to a variable) passed
-// to non-mv parameters are never anchored, so nobody frees them.
+// Regression tests for the old pre-existing memory gaps (NOT nullable-specific).
+// These used to leak and were documented as known gaps: class temporaries
+// (constructor results not bound to a variable) passed to non-mv parameters
+// were never anchored, so nobody freed them. The struct/move refactor closed
+// the family (mv temporaries are transferred/reclaimed); these tests pin the
+// fixes — any regression here fails with `LEAK:` from the audit runtime.
 describe("pre-existing memory gaps", () => {
 	test("class temporary passed to non-mv param leaks", async () => {
 		const input = `

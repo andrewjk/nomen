@@ -2,12 +2,15 @@ import { describe, test } from "vite-plus/test";
 
 import build_and_check_output from "./build_and_check_output";
 
-// These tests probe the gaps left by the `has_class_refs` auto-free mechanism
-// added in the "Fix: leaks from collections" commit. Buffer#destroy now walks
-// every slot and `free()`s it when the flag is set, which fixes the single
-// push/add-then-scope-exit case. The tests below assert the *correct* behavior
-// for ownership scenarios that mechanism does not cover; each is expected to
-// FAIL until the gaps are closed.
+// Regression tests for the gaps the `has_class_refs` auto-free mechanism
+// (added in the "Fix: leaks from collections" commit) originally left:
+// Buffer#destroy walked every slot and `free()`d it when the flag was set,
+// which covered only the single push/add-then-scope-exit case. Each test
+// below asserts the *correct* behavior for an ownership scenario that
+// mechanism did not cover; all of these gaps are now CLOSED (the mv-struct
+// container destroy machinery reclaims elements, runs per-element user
+// `#destroy`s, and recurses into owned fields). They pin the fixes — any
+// regression fails with `LEAK:`/`AUDIT-STALE-FREE:` from the audit runtime.
 
 describe("container class-ref auto-free: remaining gaps", () => {
 	// #1 — pop() relinquishes a pointer but does not clear the slot. If that

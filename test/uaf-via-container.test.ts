@@ -22,8 +22,9 @@ Console.write("got: \\{dead.letter}\\n")
 `;
 		// With mv, `a` is invalidated — its anchor is skipped at scope exit.
 		// The Animal survives in the list's buffer. pop() returns a valid pointer.
-		// LEAK: 1 — the container doesn't free stored values on destroy yet.
-		// That's a known limitation; the type-safety guarantee (no UAF) is what matters.
+		// The container's destroy reclaims stored elements (the old
+		// "container-stored values leak" limitation is closed — the audit
+		// runtime would fail this test with `LEAK:` otherwise).
 		await build_and_check_output(input, "uaf_container_scope", "got: Z\n");
 	});
 

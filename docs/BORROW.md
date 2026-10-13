@@ -260,6 +260,7 @@ immutable borrow — assigning to its fields is a compile error ("Cannot mutate
 - View borrows are scope-checked (a borrow may not escape the scope it was
   taken in) and invalidated on source reassignment.
 - `swap` and its `mv` requirement are enforced at compile time.
-- Open work: recursive `#destroy` of mv-owned fields only frees one level deep
-  today (see `test/recursive-destroy-leak.test.ts`); per-field invalidation
+- Recursive `#destroy` of mv-owned fields frees the full subtree (the
+  one-level-deep bug is closed — see `test/recursive-destroy-leak.test.ts`,
+  now a passing regression test). Remaining open work: per-field invalidation
   precision and the trait-typed field lowering are recorded in FOLLOWUP.md.
