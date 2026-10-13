@@ -39,6 +39,7 @@ export function sanitize_type_name(t: Type): string {
 export function clone_type(t: Type): Type {
 	const new_t = new Type(t.name, t.is_static, t.is_array, t.length);
 	new_t.is_ref = t.is_ref;
+	new_t.is_view = t.is_view;
 	new_t.is_nullable = t.is_nullable;
 	new_t.is_return_type = t.is_return_type;
 	new_t.type_args = t.type_args?.map(clone_type);

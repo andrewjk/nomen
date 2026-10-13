@@ -9,12 +9,12 @@ import build_and_check_output from "./build_and_check_output";
 const lib = get_library(path.resolve(import.meta.dirname, "../core"));
 
 // `view T` struct fields — non-mv (ptr, len) slices stored inside struct
-// instances ("borrow-into-parent": many small records referencing slices of
-// one long-lived buffer). The field is a plain 16-byte pair: byte-copying a
-// struct copies the borrow (sound), and nothing is freed on destroy (the
-// field owns nothing). Escape hazards are checked at compile time: an
-// instance whose view fields borrow from this scope may not be returned
-// (unless every borrow roots at `self`), and mutating a borrow source
+// instances. The field is a plain 16-byte pair: byte-copying a struct copies
+// the borrow (sound), and nothing is freed on destroy (the field owns
+// nothing). A struct with `view` fields is a SCOPE-LOCAL bundle: its escape
+// routes are closed structurally — it cannot be passed as an argument
+// (container stores included), cannot be returned (self-rooted included),
+// and cannot be assigned to an outer scope. Mutating a borrow source
 // invalidates the fields until they are re-pointed.
 //
 // Runtime tests build and execute on BOTH backends (C and aarch64), with the
@@ -115,26 +115,38 @@ if doc.length == 5 {
 		);
 	});
 
-	test("borrow-into-parent: many records over one buffer", async () => {
-		await build_and_check_output(
-			`
+	test("pushing a view-carrying struct into a container is rejected", () => {
+		// The container outlives the borrow source; struct stores are call
+		// boundaries, and view-carrying structs cannot cross one.
+		expect(
+			errors(`
+import System
 ${LINE}
-var string doc = "aa bb cc"
-if doc.length == 8 {
+pub func main = () {
+	var string doc = "aa bb"
 	var List<Line> lines = List<Line>()
 	lines.push(Line(doc.slice(0, 2)))
-	lines.push(Line(doc.slice(3, 5)))
-	lines.push(Line(doc.slice(6, 8)))
-	var int i = 0
-	while i < lines.length {
-		var Line l = lines.at(i)
-		Console.write(l.text.to_string())
-		i = i + 1
-	}
+	Console.write("x")
+}`).some((m) => m.includes("scope-local")),
+		).toBe(true);
+	});
+
+	test("view field alongside an owned string field", async () => {
+		await build_and_check_output(
+			`
+mv struct Mixed {
+	var view string borrowed
+	var string owned
+}
+var string doc = "source"
+if doc.length == 6 {
+	var Mixed m = Mixed(doc.slice(0, 3), doc.to_string())
+	Console.write(m.borrowed.to_string())
+	Console.write(m.owned.to_string())
 }
 `,
-			"view_field_list",
-			"aabbcc",
+			"view_field_mixed",
+			"sousource",
 		);
 	});
 
@@ -160,31 +172,6 @@ if doc.length == 3 {
 		);
 	});
 
-	test("view field alongside an owned string field", async () => {
-		await build_and_check_output(
-			`
-mv struct Mixed {
-	var view string borrowed
-	var string owned
-}
-var string doc = "source"
-if doc.length == 6 {
-	var List<Mixed> items = List<Mixed>()
-	items.push(Mixed(doc.slice(0, 3), doc.to_string()))
-	var int i = 0
-	while i < items.length {
-		var Mixed m = items.at(i)
-		Console.write(m.borrowed.to_string())
-		Console.write(m.owned.to_string())
-		i = i + 1
-	}
-}
-`,
-			"view_field_mixed",
-			"sousource",
-		);
-	});
-
 	test("view int field over an int array", async () => {
 		await build_and_check_output(
 			`
@@ -204,10 +191,11 @@ if nums.length == 4 {
 	});
 });
 
-// Check-only tests for the borrow semantics (backend-independent): an
-// instance whose view fields borrow from the enclosing scope may not escape
-// (return / outer-scope assignment), and mutating the source invalidates the
-// fields until they are re-pointed. `ref` fields stay rejected.
+// Check-only tests for the borrow semantics (backend-independent): a struct
+// with `view` fields is a scope-local bundle — it may not escape via return,
+// outer-scope assignment, OR a call argument (container stores included).
+// Mutating the source invalidates the fields until they are re-pointed.
+// `ref` fields stay rejected.
 function errors(src: string) {
 	return parse(src, lib).errors.map((e) => `${e.message}`);
 }
@@ -257,10 +245,11 @@ pub func main = () { Console.write("x") }`).some((m) => m.includes("'view' field
 		).toBe(true);
 	});
 
-	test("returning a struct whose view fields root at self is allowed", () => {
-		// The re-rooting convention: a method may return a struct whose view
-		// fields borrow from `self` — the caller re-roots the borrow at the
-		// call-site receiver (same rule that lets slice methods return views).
+	test("returning a view-carrying struct is rejected, self-rooted included", () => {
+		// The re-rooting convention cannot help a whole struct: the caller's
+		// binding cannot be pinned to the bundle's sources across the call
+		// boundary, so a struct with `view` fields is scope-local — return
+		// the fields (the views) instead, which re-root at the receiver.
 		expect(
 			errors(`
 import System
@@ -280,8 +269,8 @@ pub func main = () {
 		var Token t = Token(doc.slice(1, 3))
 		Console.write(t.holder().s.to_string())
 	}
-}`).filter((m) => m.includes("'view' field")),
-		).toEqual([]);
+}`).some((m) => m.includes("scope-local")),
+		).toBe(true);
 	});
 
 	test("reading a view field after reassigning its source is rejected", () => {
@@ -339,6 +328,59 @@ pub func main = (int n) {
 	Console.write(outer.text.to_string())
 }`).length,
 		).toBeGreaterThan(0);
+	});
+
+	test("passing a view-carrying struct to a function is rejected", () => {
+		expect(
+			errors(`
+import System
+struct Line {
+	var view string text
+}
+func render = (Line l) {
+	Console.write(l.text.to_string())
+}
+pub func main = () {
+	var string doc = "hello"
+	var Line l = Line(doc.slice(0, 2))
+	render(l)
+}`).some((m) => m.includes("scope-local")),
+		).toBe(true);
+	});
+
+	test("enum case payloads cannot carry view borrows", () => {
+		// A payload is stored inside the tagged union — the enum wrapper
+		// would ferry the scope-local bundle past every boundary ban.
+		expect(
+			errors(`
+import System
+struct Line {
+	var view string text
+}
+enum Holder {
+	case line(Line value)
+	case empty
+}
+pub func main = () {
+	var string doc = "hello"
+	var Line l = Line(doc.slice(0, 2))
+	var Holder h = Holder.line(l)
+	Console.write("x")
+}`).some((m) => m.includes("scope-local")),
+		).toBe(true);
+
+		expect(
+			errors(`
+import System
+struct Line {
+	var view string text
+}
+pub func main = () {
+	var string doc = "hello"
+	var [.carries(Line)] h = .carries(Line(doc.slice(0, 2)))
+	Console.write("x")
+}`).some((m) => m.includes("scope-local")),
+		).toBe(true);
 	});
 
 	test("'ref' fields are still rejected", () => {

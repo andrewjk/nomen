@@ -1,3 +1,4 @@
+import add_error from "../../add_error.ts";
 import EnumNode from "../../nodes/EnumNode.ts";
 import ParameterNode from "../../nodes/ParameterNode.ts";
 import RootNode from "../../nodes/RootNode.ts";
@@ -6,6 +7,7 @@ import { flatten_nested_generic_arg } from "../check_function_call_node.ts";
 import type CheckStatus from "../CheckStatus.ts";
 import { type_owns_heap } from "./ownership.ts";
 import { clone_type, materialize_tuple_type, sanitize_type_name } from "./tuple_struct.ts";
+import { struct_has_view_fields } from "./view_fields.ts";
 
 export interface AnonEnumCase {
 	name: string;
@@ -60,6 +62,28 @@ export function get_or_create_anon_enum(
 ): EnumNode | null {
 	if (cases.some((c) => c.types.some((t) => contains_unresolved_param(t, status)))) {
 		return null;
+	}
+
+	// Views are second-class (SPEC Slicing): a payload is stored inside the
+	// generated enum's tagged union — reject both a `view T` payload and a
+	// payload typed a struct carrying `view` fields (the enum wrapper would
+	// ferry the bundle past every scope-local boundary ban).
+	for (const c of cases) {
+		for (const t of c.types) {
+			if (t.is_view) {
+				add_error(
+					status,
+					`enum case payloads cannot be 'view' — materialize the value ('.to_string()') or re-slice from the source on use`,
+					t.start ?? 0,
+				);
+			} else if (t.name && struct_has_view_fields(t.name, status)) {
+				add_error(
+					status,
+					`enum case payloads cannot be '${t.name}' — structs with 'view' fields are scope-local; store the fields (the views) instead`,
+					t.start ?? 0,
+				);
+			}
+		}
 	}
 
 	const sorted = [...cases].sort((a, b) => a.name.localeCompare(b.name));

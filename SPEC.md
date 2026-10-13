@@ -2330,7 +2330,8 @@ Console.write("\\{v.length}")  // Error: borrow invalidated by source reassignme
 
 Structs may declare `view T` fields — a non-mv `(ptr, len)` pair stored by
 value, so copying the struct copies the borrow and nothing is freed on destroy.
-This is the zero-copy way to keep many small records over one long-lived buffer:
+This is the zero-copy way to keep small records over a buffer owned in the
+same scope:
 
 ```
 pub struct Line {
@@ -2344,16 +2345,41 @@ var Line first = Line(doc.slice(0, 4))
 first.text.to_string()   // "name" — no heap copy of the slice was made
 ```
 
-The same two rules apply to the whole instance: a struct whose view fields
-borrow from this scope may not be returned (`its 'view' field(s) borrow from
-this scope`) unless every field borrows from `self`, and mutating a source
-invalidates every instance borrowing from it until the field is re-pointed:
+A struct with `view` fields is a **scope-local bundle**: its bytes borrow from
+storage in the scope that built it, so it cannot cross a call boundary in any
+direction — passing one as an argument (container stores included), returning
+one (even self-rooted from a method), and assigning one to an outer scope are
+all compile errors. Methods may still be _called on_ one (the receiver is
+checked at the call site), and its fields may be read and re-pointed freely
+while it lives. To hand a callee a piece of the bundle, pass the field — a
+plain `view T` argument, which is a call-scoped borrow:
+
+```
+func render = (Line l) { ... }
+
+render(first)
+// Error: cannot pass a 'Line' as an argument — structs with 'view' fields
+//   are scope-local; pass the fields (the views) instead
+```
 
 ```
 func make_line = (out Line) {
     var string doc = "hi"
-    return Line(doc.slice(0, 2))   // Error: 'view' field(s) borrow from this scope
+    return Line(doc.slice(0, 2))   // Error: structs with 'view' fields are scope-local
 }
+```
+
+To keep many records over one long-lived buffer, store `(start, length)`
+integers and re-slice on use — the records cannot outlive the source, so the
+check is the scope itself. Mutating a source invalidates every bundle borrowing
+from it until the field is re-pointed:
+
+```
+var string doc = "name other"
+var Line first = Line(doc.slice(0, 4))
+doc = "other name"
+first.text.to_string()
+// Error: view field 'text' was invalidated by a mutation of its source
 ```
 
 ### Field Access

@@ -61,6 +61,7 @@ import synthesize_lambda_name from "./utils/synthesize_lambda_name.ts";
 import { is_value_struct_conformer } from "./utils/trait_slot.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
+import { struct_has_view_fields } from "./utils/view_fields.ts";
 
 /**
  * Core data structures whose internals maintain length<=cap invariants or use
@@ -553,6 +554,27 @@ export default function check_function_call(
 		}
 
 		const param_type = type_from_value_node(param, status);
+		// Views are second-class across calls (SPEC Slicing): a struct with
+		// `view` fields is a scope-local bundle. Its bytes borrow from this
+		// frame's storage, and the callee's body is checked without those
+		// borrows — anything it did with the value (store it in a container,
+		// return it, pass it on) would escape them unchecked. Plain `view T`
+		// / `ref T` arguments are exempt: they are call-scoped borrows the
+		// callee cannot retain. Pass the fields (the views / scalars)
+		// instead of the whole bundle.
+		if (
+			param_type &&
+			!param_type.is_view &&
+			!param_type.is_ref &&
+			param_type.name &&
+			struct_has_view_fields(param_type.name, status)
+		) {
+			add_error(
+				status,
+				`cannot pass a '${param_type.name}' as an argument — structs with 'view' fields are scope-local; pass the fields (the views) instead`,
+				param.start,
+			);
+		}
 		const param_value = value_from_value_node(param);
 		const has_ref_keyword = node.ref_param_indices?.includes(i) ?? false;
 		// A `ref` argument hands the callee a mutable alias: any offset fact

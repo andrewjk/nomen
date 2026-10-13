@@ -406,8 +406,14 @@ These were previously open gaps and are now enforced at compile time:
   again until it is reassigned (which revalidates it) or revalidated by a swap.
 - **Container-stored instances are freed.** When `T` is a mv struct, a
   container's backing storage reclaims each stored instance in its `#destroy`
-  (the `ClassBuffer` routing — the class-era name persists for the
+  (the `ClassBuffer` routing — the class-era naming persists for the
   pointer-slot tier) — so `mv`-into-container no longer leaks.
+- **View-carrying structs crossing a call boundary** are rejected: as an
+  argument (a container store is an argument), as a return (self-rooted
+  included), and to an outer scope. Previously a container of view-carrying
+  structs was not lifetime-checked against the borrow sources, and a method
+  returning a self-rooted bundle left the caller's variable unpinned. See
+  "scope-local bundle" in the struct-layout section above.
 
 ---
 
@@ -435,12 +441,12 @@ naming persists for it). `ref T` struct fields are rejected at compile time
 (`fields cannot be 'ref'`) because a non-mv borrow field could outlive
 its target — use a mv field, `Box<T>`, or a `view T` field.
 
-**`view T` fields** are allowed: a view is a self-contained 16-byte (ptr, len) pair (`nomen_view` in C; two slots on aarch64), so storing one in a struct is a plain value copy — sound to byte-copy (it aliases nothing owned) and nothing is freed at destroy (non-mv). This enables the borrow-into-parent pattern: many small records referencing slices of one long-lived buffer, e.g. `Line { var view string text }` collected into a `List<Line>` over the source document. The checker tracks where an instance's view fields were borrowed from:
+**`view T` fields** are allowed: a view is a self-contained 16-byte (ptr, len) pair (`nomen_view` in C; two slots on aarch64), so storing one in a struct is a plain value copy — sound to byte-copy (it aliases nothing owned) and nothing is freed at destroy (non-mv). A struct with `view` fields is a **scope-local bundle**: its escape routes are closed structurally, because a callee's frame is checked without the caller's borrow facts and no annotation-free tracker can follow a stored borrow through one. The checker tracks where an instance's view fields were borrowed from:
 
-- Storing a view into a field (`line.text = doc.slice(0, 5)`, or constructing `Line(doc.slice(…))`) records the source on the instance's variable. Returning that instance is rejected ("its 'view' field(s) borrow from this scope") unless every borrow roots at `self` — the same re-rooting convention slice methods use; assigning it to an outer-scope variable is rejected by the borrow-depth check.
-- Reassigning or ref-mutating a source invalidates dependent instances: reading an invalidated view field is a compile error until the field is re-pointed.
+- **No crossing a call boundary.** Passing a view-carrying struct as an argument is rejected (`cannot pass a 'Line' as an argument — structs with 'view' fields are scope-local`) — container stores (`list.push(l)`, `arr.set(i, l)`) are call arguments, so no container can ever hold one. Returning one is rejected too (`cannot return a 'Line' — structs with 'view' fields are scope-local`), including the self-rooted method case; assign-to-outer-scope is rejected by the borrow-depth check. Methods may still be _called on_ a bundle (the receiver is rooted at a tracked caller variable), and plain `view T` arguments/returns are unaffected (call-scoped borrows).
+- Storing a view into a field (`line.text = doc.slice(0, 5)`, or constructing `Line(doc.slice(…))`) records the source on the instance's variable; storing a view-carrying struct into an embedded field (`o.inner = inner`) merges the stored value's owners into the root. Reassigning or ref-mutating a source invalidates dependent instances: reading an invalidated view field is a compile error until the field is re-pointed.
 - Copying such a struct (`var Line b = a`) transfers the dependencies — the copy aliases the same sources.
-- Known limitation: a container of view-carrying structs is NOT lifetime-checked against the borrow sources (`lines.push(l)` does not prove `lines` dies before every source). Keep sources alive as long as the container.
+- The zero-copy record pattern over a long-lived buffer is expressed with `(start, length)` integer records + re-slicing instead of stored views; under the boundary rules the records provably cannot outlive the source, so no runtime identity check is needed.
 
 Auto-generated `_init` functions use correctly-sized store instructions (`strb` for 1-byte fields like `char`/`bool`, `strh` for 2-byte, `str` for 4-byte, `str` with `x` register for 8-byte) to avoid heap buffer overflows on heap instances malloc'd to exact size.
 

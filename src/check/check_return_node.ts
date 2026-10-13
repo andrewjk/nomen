@@ -26,6 +26,7 @@ import {
 	ctor_call_view_borrow,
 	type_can_carry_view_borrow,
 	view_borrows_root_at_self,
+	struct_has_view_fields,
 } from "./utils/view_fields.ts";
 
 function is_class_type(type_name: string, status: CheckStatus): boolean {
@@ -53,6 +54,26 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 		}
 		ret.type = new Type("void");
 		return;
+	}
+
+	// Views are second-class across calls (SPEC Slicing): a struct with
+	// `view` fields is a scope-local bundle — its bytes borrow from this
+	// frame's storage (or the receiver's), and the caller's binding cannot
+	// be pinned to those sources across the boundary. No function or method
+	// may return one, self-rooted included (a re-rooted bundle is exactly
+	// what the caller cannot track). `out view T` returns stay allowed: a
+	// plain view is re-rooted at the call-site receiver by convention.
+	if (
+		func?.return_type &&
+		!func.return_type.is_view &&
+		func.return_type.name &&
+		struct_has_view_fields(func.return_type.name, status)
+	) {
+		add_error(
+			status,
+			`cannot return a '${func.return_type.name}' — structs with 'view' fields are scope-local; return the fields (the views) instead`,
+			ret.value.start,
+		);
 	}
 
 	const old_expected_type = status.expected_type;

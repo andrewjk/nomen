@@ -2,6 +2,7 @@ import add_error from "../add_error.ts";
 import EnumNode from "../nodes/EnumNode.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { type_owns_heap } from "./utils/ownership.ts";
+import { struct_has_view_fields } from "./utils/view_fields.ts";
 
 export default function check_enum_node(node: EnumNode, status: CheckStatus) {
 	node.is_generic = node.type_params.length > 0;
@@ -56,6 +57,25 @@ export default function check_enum_node(node: EnumNode, status: CheckStatus) {
 
 	for (let c of node.cases) {
 		for (let p of c.params) {
+			// Views are second-class (SPEC Slicing): a payload is stored
+			// inside the enum's tagged union — a stored borrow the checker
+			// cannot track through match/copy sites, and not a scope-local
+			// context either. Both a `view T` payload AND a payload typed a
+			// struct carrying `view` fields are rejected: the enum wrapper
+			// would ferry the bundle past every scope-local boundary ban.
+			if (p.type.is_view) {
+				add_error(
+					status,
+					`enum case payloads cannot be 'view' — materialize the value ('.to_string()') or re-slice from the source on use`,
+					p.start || node.start,
+				);
+			} else if (p.type.name && struct_has_view_fields(p.type.name, status)) {
+				add_error(
+					status,
+					`enum case payloads cannot be '${p.type.name}' — structs with 'view' fields are scope-local; store the fields (the views) instead`,
+					p.start || node.start,
+				);
+			}
 			// A generic enum's own type params are valid payload types (e.g.
 			// `T value` in `enum Result<T, E>`); they resolve at
 			// monomorphization.

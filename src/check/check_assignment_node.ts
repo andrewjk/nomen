@@ -44,6 +44,7 @@ import {
 	merge_view_borrows_into_var,
 	propagate_view_borrows,
 	root_var_of,
+	struct_has_view_fields,
 	type_can_carry_view_borrow,
 	view_fields_invalidated,
 	view_source_borrow_info,
@@ -544,6 +545,23 @@ export default function check_assignment_node(
 				// Re-pointing from an unconditional source (a literal / const)
 				// also refreshes the instance.
 				status.invalidated_view_structs?.delete(root);
+			}
+		} else if (lhs_field.type?.name && struct_has_view_fields(lhs_field.type.name, status)) {
+			// An EMBEDDED view-carrying struct store (`o.inner = inner`, where
+			// Inner declares `view` fields): the outer instance now carries
+			// the value's borrows transitively. Merge the stored value's
+			// recorded owners into the root so escape checks and
+			// source-mutation invalidation cover the whole instance.
+			const root = root_var_of(lhs_access.target);
+			const rhs_name = value_from_value_node(assign.right_value);
+			const rhs_sv =
+				rhs_name !== undefined ? status.values.findLast((v) => v.name === rhs_name) : undefined;
+			if (root && rhs_sv?.has_view_borrows) {
+				const infos = new Map<string, import("./utils/view_fields.ts").BorrowInfo>();
+				for (const owner of rhs_sv.view_field_owners ?? []) {
+					infos.set(owner, { owner, depth: rhs_sv.borrow_depth });
+				}
+				merge_view_borrows_into_var(root, infos, status);
 			}
 		}
 	}

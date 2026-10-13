@@ -1,11 +1,27 @@
-import { test } from "vite-plus/test";
+import path from "node:path";
 
+import { expect, test } from "vite-plus/test";
+
+import { get_library } from "../src/lib";
+import parse from "../src/parse";
 import build_and_check_output from "./build_and_check_output";
 
-// A struct with a `view string` field stored in a generic List: the
-// push/at round-trip must preserve the (ptr, len) pair.
-test("view-field struct in List round-trips", async () => {
+const lib = get_library(path.resolve(import.meta.dirname, "../core"));
+
+// A struct with a `view string` field is a scope-local bundle: it cannot be
+// stored into a generic container (a push/set is a call boundary, and the
+// container outlives the borrow source). These encode the rejection; the
+// zero-copy record pattern over a long-lived buffer is expressed with
+// (start, length) integers + re-slicing instead.
+
+function errors(src: string) {
+	return parse(src, lib).errors.map((e) => `${e.message}`);
+}
+
+test("pushing a view-carrying struct into a List is rejected", () => {
 	const input = `
+import System
+
 pub struct VLine {
 	var view string text
 	var start = 0
@@ -27,51 +43,66 @@ pub mv struct Doc {
 }
 
 var d = Doc()
-d.text = "hi\\n"
-const ls = d.lines()
-Console.write("\\{ls.length} ")
-if ls.length == 1 {
-	const line = ls.at(0)
-	Console.write("\\{line.text.length} \\{line.start} ")
-	Console.write(line.text.to_string())
-}
 `;
-	await build_and_check_output(input, "view_struct_list_round_trip", "1 2 0 hi");
+	expect(errors(input).some((m) => m.includes("scope-local"))).toBe(true);
 });
 
-// Single-field view struct in a List — same pair preservation without any
-// other field present.
-test("single-field view struct in List round-trips", async () => {
+// The sanctioned zero-copy record pattern: store (start, length) integers
+// over a long-lived buffer and re-slice on use. Under the boundary rules the
+// records provably cannot outlive the source, so this needs no runtime
+// identity check — the scope is the guarantee.
+test("many records over one buffer via (start, length) pairs", async () => {
 	const input = `
-pub struct VSingle {
-	var view string text
+pub struct Span {
+	var int start
+	var int length
 }
 
 pub mv struct Doc {
 	var text = ""
-	pub func singles = (ref self, out List<VSingle>) {
-		var List<VSingle> result = List<VSingle>()
-		view txt = self.text.slice(0, self.text.length)
-		if txt.length >= 2 {
-			view first = txt.slice(0, 2)
-			var l = VSingle(first)
-			result.push(mv l)
+	pub func words = (ref self, out List<Span>) {
+		var List<Span> result = List<Span>()
+		var int i = 0
+		var int start = -1
+		while i < self.text.length; i += 1 {
+			switch {
+				case self.text.at(i) == ' ' {
+					if start >= 0 {
+						result.push(Span(start, i - start))
+						start = -1
+					}
+				}
+				case start < 0 {
+					start = i
+				}
+			}
+		}
+		if start >= 0 {
+			result.push(Span(start, self.text.length - start))
 		}
 		return result
+	}
+	pub func slice_of = (ref self, Span s, out view string) {
+		var int start = s.start
+		var int end = s.start + s.length
+		if start >= 0 && start <= self.text.length && end >= start && end <= self.text.length {
+			return self.text.slice(start, end)
+		}
+		panic("span out of range")
 	}
 }
 
 var d = Doc()
-d.text = "hi\\n"
-const ss = d.singles()
-Console.write("\\{ss.length} ")
-if ss.length == 1 {
-	const s = ss.at(0)
-	Console.write("\\{s.text.length} ")
-	Console.write(s.text.to_string())
+d.text = "aa bb cc"
+const spans = d.words()
+Console.write("\\{spans.length} ")
+var int i = 0
+while i < spans.length {
+	Console.write(d.slice_of(spans.at(i)).to_string())
+	i += 1
 }
 `;
-	await build_and_check_output(input, "view_single_struct_list_round_trip", "1 2 hi");
+	await build_and_check_output(input, "view_span_records", "3 aabbcc");
 });
 
 // A guarded slice straight off a `self` field — no length local: bounds

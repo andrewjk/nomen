@@ -144,15 +144,14 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 		//
 		// `view T` fields ARE allowed: a view is a self-contained 16-byte
 		// (ptr, len) pair, so storing it in a struct is a plain value copy —
-		// sound to byte-copy, nothing to free (non-mv), and the zero-copy
-		// slice-in-container pattern it enables is the point. The escape
-		// hazards are handled by borrow tracking instead:
-		// `merge_view_borrows_into_var` records which sources an instance's
-		// fields borrow from (check_assignment_node / check_declaration_node),
-		// and returning / outer-scope assignment of such an instance is
-		// rejected unless every borrow roots at `self`. The `view` keyword
-		// form (`view v = ...`) is accepted too; its type only becomes a view
-		// after inference.
+		// sound to byte-copy, nothing to free (non-mv). The escape hazards
+		// are closed structurally: a struct with `view` fields is a
+		// scope-local bundle — it cannot cross a call boundary (see the
+		// argument ban in check_function_call), cannot be returned
+		// (check_return_node), and cannot be assigned to an outer scope
+		// (the borrow-depth check). Enum case payloads and tagged unions
+		// reject views outright (check_enum_node) — payloads have no borrow
+		// tracking.
 		if (decl.type.is_ref) {
 			add_error(status, `struct fields cannot be 'ref'`, decl.start);
 			continue;
