@@ -119,6 +119,15 @@ export default function clone_node(node: BaseNode): BaseNode {
 		case "access_field": {
 			const n = node as AccessFieldNode;
 			const c = new AccessFieldNode(n.start, n.name, n.type ? clone_type(n.type) : undefined);
+			// Destructuring markers: a generic method body is cloned per mono
+			// AFTER the placeholder fields are stamped by the parser, and the
+			// clone is what gets checked — dropping them turned every
+			// destructuring binding inside a generic body into a plain field
+			// access with the binding's name ("Field not found: k").
+			c.is_destructure = n.is_destructure;
+			c.destructure_index = n.destructure_index;
+			c.is_destructure_rename = n.is_destructure_rename;
+			c.destructure_move = n.destructure_move;
 			c.allocations = n.allocations?.map(clone_node);
 			return c;
 		}

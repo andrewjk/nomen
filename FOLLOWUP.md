@@ -27,7 +27,21 @@ Each skip masks a real post-R/B1/D3 gap (verified still failing
 - Variadic-pair extraction of mv elements (`Map`'s pairs init) rides
   the temp-rooted read exemption in `check_function_call` (the temp dies,
   set's store deep-copies) until a generic move-out accessor exists on
-  Array.
+  Array. Closing it needs one more piece of mv-pipeline hardening, mapped
+  2026-10-14: the natural rewrite (`var [mv k, mv v] = pairs.at(i)` — the
+  mv-destructured local pair, swaps synthesized, `set(mv k, mv v)`) is
+  REJECTED by the runtime with AUDIT-STALE-FREE — the synthesized swap
+  replacement (`""`, rodata) lands in the destructure temp's fields and the
+  temp's teardown frees the fields as if heap (the mv-out did not clear the
+  heap-string-field records, and the rodata replacement must not be
+  freed at all). Fixing the record-keeping on mv-out + swap-into-temp would
+  close it; two enabler bugs found on the way are FIXED (clone_node dropped
+  the destructuring markers on per-mono body clones, and variadic params
+  registered const, blocking ref-self calls on them). A raw-asm
+  `Array.move(i)` slot-relinquishing accessor was also explored and shelved:
+  the Array mono ABI (inline storage, first-element receiver, split-TU
+  emission) fights standalone raw-body emission and the inline splice for
+  T_SIZE > 8.
 
 ### D3 residuals (`string` is mv)
 

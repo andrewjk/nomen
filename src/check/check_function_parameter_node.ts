@@ -181,10 +181,15 @@ export default function check_function_parameter_node(
 		// A pass-by-value mv-struct parameter is a private, fully owned
 		// value (the call boundary materializes the callee's copy), so it is
 		// mutable like a local: field writes inside the body stay local by
-		// construction. Every other param keeps its declared (const)
+		// construction. A VARIADIC parameter is the same: the call site packs
+		// a fresh array per call (no caller storage aliases it), so the body
+		// may mutate it freely — move-out accessors (`xs.move(i)`) take
+		// `ref self`. Every other param keeps its declared (const)
 		// discipline — mutation of the caller's storage is spelled `ref`.
 		declaration:
-			param.declaration === "var" || is_pass_by_value_owning_struct(param.type, status)
+			param.declaration === "var" ||
+			param.is_variadic ||
+			is_pass_by_value_owning_struct(param.type, status)
 				? "var"
 				: param.declaration,
 		name: param.name,
