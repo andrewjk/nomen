@@ -152,4 +152,27 @@ Console.write("\\{name}|\\{p.name}|\\{age}")
 `;
 		await build_and_check_output(input, "mov_swap_string_destructure", "Ada||30");
 	});
+
+	// A `mv`-destructured STRING field off a DESTRUCTURE TEMP (a shallow copy
+	// of unknown provenance — a literal-seeded variadic slot) lowers as the
+	// borrow copy: an owning binding would free rodata (AUDIT-STALE-FREE).
+	// The callee materializes its own copy; the slot's owner reclaims heap
+	// bytes. This is the shape Map's variadic pairs init rides.
+	test("mv-destructuring a string field off a temp borrows, audit-clean", async () => {
+		const input = `
+func take = (mv string s) {
+	Console.write("\\{s}\\n")
+}
+func f = (...[string, string] pairs) {
+	var i = 0
+	while i < pairs.length; i += 1 {
+		var [mv k, mv v] = pairs.at(i)
+		take(mv k)
+		take(mv v)
+	}
+}
+f(["a", "b"], ["c", "d"])
+`;
+		await build_and_check_output(input, "mov_swap_string_destructure_temp", "a\nb\nc\nd\n");
+	});
 });

@@ -17,13 +17,16 @@ pub mv struct Map<TK: Hashable + Equatable, TV> {
 	// Variadic-tuple constructor: Map<string, int>(["a", 1], ["b", 2]) or
 	// Map(["a", 1], ["b", 2]) (type args inferred from the first pair).
 	// Zero pairs yields an empty Map, so this also covers Map<K, V>().
-	// The pair reads are temp-rooted (`pairs.at(i)` is a statement temp):
-	// the element transfer is absorbed by set's mv store (store_T
-	// deep-copies string-field elements), so no explicit mv is spelled.
+	// Each pair is read into a local and its fields are MV-DESTRUCTURED into
+	// bindings, so set's mv store receives an explicit transfer chain — no
+	// temp-rooted read exemption involved. (String bindings lower as the
+	// borrow-copy convention: the slot's owner reclaims heap bytes, and the
+	// callee materializes its own copy.)
 	pub func #init = (self, ...[TK, TV] pairs) {
 		var i = 0
 		while i < pairs.length; i += 1 {
-			self.set(pairs.at(i)._0, pairs.at(i)._1)
+			var [mv k, mv v] = pairs.at(i)
+			self.set(mv k, mv v)
 		}
 	}
 

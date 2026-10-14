@@ -676,6 +676,29 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 							`mv out of a field requires a swap to revalidate it`,
 							decl.value.start,
 						);
+					} else if (
+						temp_rhs &&
+						access_field.destructure_move &&
+						field_type.name === "string" &&
+						!field_type.is_array &&
+						!field_type.is_view
+					) {
+						// A `mv`-destructured STRING field off a DESTRUCTURE TEMP
+						// (a shallow copy of unknown provenance — e.g. a
+						// literal-seeded variadic slot, `Map(["a", 1])`) lowers
+						// as the proven BORROW copy instead of the mv+swap
+						// transfer: the temp's bytes may be RODATA, so an owning
+						// binding (its unconditional caller-side free) would
+						// free a static — the audit run shows it as
+						// AUDIT-STALE-FREE. Strings are the borrow-copy
+						// convention anyway: a `mv string` call arg has the
+						// callee materialize its own copy, and heap bytes stay
+						// owned by the slot, whose teardown reclaims them exactly
+						// once. A NAMED owner (`var [mv n] = person`) keeps the
+						// transfer+revalidation semantics — its fields are
+						// uniformly heap (the mv ctor strdup'd them).
+						decl.value.is_moved = undefined;
+						access_field.destructure_move = undefined;
 					} else {
 						// A mv-DESTRUCTURING binding (`var [mv a] = t`, or a
 						// plain binding off a dead temp — inferred): the field
