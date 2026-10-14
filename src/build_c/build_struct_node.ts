@@ -422,6 +422,28 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 			} else if (field.type.storage_kind === "stack_array" && field.type.length) {
 				// Fixed-size stack array fields — use memcpy instead of assignment
 				status.code += `memcpy(${object_name}${accessor}${field.name}, ${field.name}, sizeof(${object_name}${accessor}${field.name}));\n`;
+				// An OWNING element struct's string fields (trait-declared
+				// included — class_destroy_fields merges them) arrive SHARING the
+				// caller's row buffers: the row's per-element destroy frees its
+				// own copies at its scope exit, so the field would hold dangling
+				// pointers. strdup each in place — the same uniform-heap
+				// normalization the single-string-field arms above apply.
+				const elem_struct = status.structs.find(
+					(s) => s.name === field.type.name && !s.is_simple_type && !s.is_class && !s.is_generic,
+				);
+				if (elem_struct && owns_strings_uniformly(elem_struct)) {
+					const arr_len = parseInt(
+						(field.type.length as unknown as { value?: string }).value || "0",
+					);
+					for (const sf of class_destroy_fields(elem_struct, status)) {
+						if (sf.type.is_ref || sf.type.is_view || sf.type.is_array) continue;
+						if (sf.type.name !== "string") continue;
+						for (let e = 0; e < arr_len; e++) {
+							const slot = `${object_name}${accessor}${field.name}[${e}].${sf.name}`;
+							status.code += `${slot}.ptr = ${slot}.ptr ? nomen_str_dup(${slot}).ptr : ${slot}.ptr;\n`;
+						}
+					}
+				}
 			} else if (
 				(is_nullable_struct_type(field.type, status) ||
 					is_nullable_scalar_type(field.type, status)) &&
@@ -1250,6 +1272,25 @@ function build_auto_destroy(node: StructNode, status: BuildStatus) {
 				status.structs.length,
 			);
 		if (!field_struct) continue;
+		if (field.type.is_array && !field_struct.is_class) {
+			// A fixed-size array FIELD of value-struct elements: destroy each
+			// element in place. The scalar arms below would pass the ARRAY's
+			// address (`&self->f`) to `<F>_destroy` — destroying element 0
+			// only (and a C pointer-type mismatch). A `<T>_destroy` exists
+			// whenever the element needs one (user `#destroy` or the
+			// auto-generated B1/D3 reclaim, trait-declared fields included).
+			const arr_len = field.type.length
+				? parseInt((field.type.length as unknown as { value?: string }).value || "0")
+				: 0;
+			if (
+				arr_len > 0 &&
+				(field_struct.functions.find((f) => f.name === "#destroy") ||
+					struct_needs_auto_destroy(field_struct, status))
+			) {
+				status.code += `for (long _i = 0; _i < ${arr_len}; _i++) { ${field_struct.name}_destroy(&self->${field.name}[_i]); }\n`;
+			}
+			continue;
+		}
 		if (field_struct.is_class) {
 			// Reclaim an owned class-typed field when either (a) its type has
 			// a user-defined `#destroy` (so its observable side effects run, and

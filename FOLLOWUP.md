@@ -157,20 +157,14 @@ landed), so these are only reachable from System containers — which use
 The aarch64 layout/size model includes trait-declared fields
 (`layout_fields` in `src/build_aarch64/utils/struct_layout.ts`), and
 destroy reclamation frees trait-declared `string` fields on both backends
-— see `test/trait_field_defaults.test.ts`. Two ownership corners remain,
-both deliberately left:
+— see `test/trait_field_defaults.test.ts`. One ownership corner remains,
+deliberately left:
 
 - **Runtime-conformer-aware frees** (a vtable compare per owning
   conformer at the write): a trait-typed reassignment today frees the
   displaced value only when EVERY known conformer owns its trait field;
   per-conformer knowledge would let mixed-set writes dup/free only for
   owning instances.
-- **Fixed-array ELEMENT trait fields**: `emit_destroy_for_array_elem`
-  (aarch64) walks `struct.fields` only and gates on an explicit `#destroy`,
-  so a fixed-size array FIELD whose element struct carries trait-declared
-  owned fields (and no explicit destroy) is not recursively destroyed. The
-  shape is unreachable without `unsafe` (fixed `T[N]` struct fields need
-  pointer indexing), so it stays a recorded corner.
 
 ## Kill-trampoline teardown for parked fibers (deferred)
 

@@ -1,4 +1,8 @@
-import { has_destroy, struct_needs_destroy } from "../build_common/destroy_analysis.ts";
+import {
+	has_destroy,
+	struct_needs_auto_destroy,
+	struct_needs_destroy,
+} from "../build_common/destroy_analysis.ts";
 import { owns_strings_uniformly } from "../build_common/has_string_fields.ts";
 import { mono_type_name, resolve_struct_type } from "../build_common/mono_name.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
@@ -763,6 +767,25 @@ export function emit_struct_destroys(
 		const field_struct = resolve_struct_type(field.type, status);
 		if (!field_struct) continue;
 		const field_expr = `${var_expr}.${field.name}`;
+		if (field.type.is_array && !field_struct.is_class) {
+			// Fixed-size array FIELD of value-struct elements: destroy each
+			// element in place. The scalar recursion below would treat the
+			// whole array as one element — `o.elems.label` is not valid C.
+			const arr_len = field.type.length
+				? parseInt((field.type.length as unknown as { value?: string }).value || "0")
+				: 0;
+			if (
+				arr_len > 0 &&
+				(has_destroy(field_struct) ||
+					struct_needs_destroy(field_struct, status) ||
+					struct_needs_auto_destroy(field_struct, status))
+			) {
+				status.code += `for (long _i = 0; _i < ${arr_len}; _i++) {\n`;
+				emit_struct_destroys(status, field_struct, `${field_expr}[_i]`);
+				status.code += `}\n`;
+			}
+			continue;
+		}
 		if (field_struct.is_class) {
 			// Every class has a `<Class>_destroy` (user `#destroy` or the
 			// auto-generated one) — STRUCT_PLAN_3 B5 made class-typed fields
@@ -837,6 +860,25 @@ function capture_destroys(
 		const field_struct = resolve_struct_type(field.type, status);
 		if (!field_struct) continue;
 		const field_expr = `${var_expr}${accessor}${field.name}`;
+		if (field.type.is_array && !field_struct.is_class) {
+			// Fixed-size array FIELD of value-struct elements: destroy each
+			// element in place (see emit_struct_destroys' array arm — the
+			// scalar recursion would treat the whole array as one element).
+			const arr_len = field.type.length
+				? parseInt((field.type.length as unknown as { value?: string }).value || "0")
+				: 0;
+			if (
+				arr_len > 0 &&
+				(has_destroy(field_struct) ||
+					struct_needs_destroy(field_struct, status) ||
+					struct_needs_auto_destroy(field_struct, status))
+			) {
+				status.code += `for (long _i = 0; _i < ${arr_len}; _i++) { `;
+				emit_struct_destroys(status, field_struct, `${field_expr}[_i]`);
+				status.code += `} `;
+			}
+			continue;
+		}
 		if (field_struct.is_class) {
 			// B5: class-typed fields are legal on mv structs — every class
 			// has a destroy (user or auto-generated); reclaim unconditionally.

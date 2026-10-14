@@ -15,6 +15,7 @@ import { mono_type_name, resolve_struct_type } from "../../build_common/mono_nam
 import { has_flag_name, is_nullable_struct_type } from "../../build_common/nullable_struct.ts";
 import { superseded_param_temp_names } from "../../build_common/temp_anchor_consolidation.ts";
 import AccessNode from "../../nodes/AccessNode.ts";
+import type BaseNode from "../../nodes/BaseNode.ts";
 import type DeclarationNode from "../../nodes/DeclarationNode.ts";
 import StructNode from "../../nodes/StructNode.ts";
 import Type from "../../nodes/Type.ts";
@@ -578,6 +579,24 @@ function emit_field_destroys_at(
 			is_struct_type(resolve_struct_name(field.type.name, field.type.type_args, status), status) ||
 			is_struct_type(field.type.name, status);
 		const field_acc = acc + offset;
+		if (field.type.is_array && field_struct && !field_struct.is_class) {
+			// A fixed-size array FIELD of value-struct elements: destroy each
+			// element in place — the scalar arms below resolve the ELEMENT
+			// struct by name and would treat the whole array as one element.
+			const elem_size = get_struct_size(field_struct.name, status);
+			const arr_len = field.type.length
+				? parseInt((field.type.length as unknown as { value?: string }).value || "0")
+				: 0;
+			for (let i = 0; i < arr_len; i++) {
+				emit_destroy_for_array_elem(
+					status,
+					field_struct,
+					() => emit_slot_base(status, root_slot, root_is_class, field_acc),
+					i * elem_size,
+				);
+			}
+			continue;
+		}
 		if (field_struct) {
 			if (field_struct.is_class && !field.type.is_ref) {
 				emit_slot_base(status, root_slot, root_is_class, field_acc);
@@ -873,9 +892,26 @@ export function emit_moved_local_cleanup(
 	status: BuildStatus,
 	decl: {
 		name: string;
-		type: { name: string; type_args?: Type[]; is_nullable?: boolean; is_array?: boolean };
+		type: {
+			name: string;
+			type_args?: Type[];
+			is_nullable?: boolean;
+			is_array?: boolean;
+			length?: BaseNode;
+		};
 	},
 ) {
+	// A fixed-size array LOCAL of value-struct elements: its elements' owned
+	// fields stay the ROW's own even when the row was transferred — the
+	// receiving field's ctor copy DETACHES (strdups owning elements' string
+	// fields, the uniform-heap convention), so the transferred bytes are
+	// copies and the row must still reclaim its originals. Same "release even
+	// when moved" contract as a moved mv-struct's heap string fields (the
+	// release_records step below emit_destroy_for_decl).
+	if (decl.type.is_array && decl.type.length) {
+		emit_fixed_array_local_destroys(status, decl as DeclarationNode);
+		return;
+	}
 	const owns_flag = status.mv_owns_flag?.get(decl.name);
 	// A plain owning `string` local: the same conditional-move contract as
 	// the mv-struct arm below. A `return <local>` inside a branch sets the
@@ -1026,6 +1062,51 @@ function emit_heap_array_decl_destroy(status: BuildStatus, decl_name: string): b
 		return true;
 	}
 	return false;
+}
+
+/**
+ * A fixed-size array LOCAL of value-struct elements: destroy each element in
+ * place (elem_size stride from the var's frame slot). `resolve_decl_struct`
+ * resolves the ELEMENT struct by name — array-ness is a Type flag — so the
+ * single-struct walk would reclaim element 0's fields only and leak the rest
+ * (one label per extra element on a conformer row). Returns true when the
+ * declaration was an array (handled or nothing to do); the caller `continue`s
+ * so the single-struct path never mistreats the row.
+ */
+function emit_fixed_array_local_destroys(status: BuildStatus, decl: DeclarationNode): boolean {
+	if (!decl.type.is_array || !decl.type.length) return false;
+	const arr_len = parseInt((decl.type.length as unknown as { value?: string }).value || "0");
+	const elem_struct = is_struct_type(decl.type.name, status);
+	if (
+		arr_len > 0 &&
+		elem_struct &&
+		!elem_struct.is_class &&
+		(has_destroy(elem_struct) || struct_needs_destroy(elem_struct, status))
+	) {
+		const elem_size = get_struct_size(elem_struct.name, status);
+		// The row may be moved-stamped (transferred into a ctor param) — its
+		// elements' owned fields are still the row's own (the receiving field
+		// detached), so bypass emit_destroy_for_decl's moved bail the same way
+		// emit_moved_local_cleanup does for flag-guarded structs.
+		const was_moved = status.moved?.has(decl.name) ?? false;
+		status.moved?.delete(decl.name);
+		for (let i = 0; i < arr_len; i++) {
+			// emit_destroy_for_decl's `has_destroy` branch adds addr_offset to
+			// the base it finds in x0 — re-emit the var address per element
+			// (the previous iteration's frees clobbered x0).
+			emit_var_address(status, "x0", decl.name);
+			emit_destroy_for_decl(
+				status,
+				decl.name,
+				elem_struct.name,
+				i * elem_size,
+				decl.type.type_args,
+				false,
+			);
+		}
+		if (was_moved) status.moved?.add(decl.name);
+	}
+	return true;
 }
 
 export function emit_destroy_for_decl(
@@ -1336,6 +1417,27 @@ export function emit_field_destroys(
 		const resolved = resolve_struct_name(field.type.name, field.type.type_args, status);
 		const field_struct =
 			is_struct_type(resolved, status) || is_struct_type(field.type.name, status);
+		if (field.type.is_array && field_struct && !field_struct.is_class) {
+			// A fixed-size array FIELD of value-struct elements: destroy each
+			// element in place. The scalar arm below resolves the ELEMENT
+			// struct by name (array-ness is a Type flag) and would destroy
+			// the array's first element only — every later element leaked
+			// (the fixed-array corner in FOLLOWUP.md).
+			const elem_size = get_struct_size(field_struct.name, status);
+			const arr_len = field.type.length
+				? parseInt((field.type.length as unknown as { value?: string }).value || "0")
+				: 0;
+			const actual_base = base_offset !== undefined ? base_offset + offset : offset;
+			for (let i = 0; i < arr_len; i++) {
+				emit_destroy_for_array_elem(
+					status,
+					field_struct,
+					() => emit_base_ptr(status, decl_name, is_class_parent),
+					actual_base + i * elem_size,
+				);
+			}
+			continue;
+		}
 		if (field_struct) {
 			if (field_struct.is_class && !field.type.is_ref) {
 				if (decl_name) {
@@ -1409,9 +1511,8 @@ export function emit_field_destroys(
 					emit_nested_field_destroys(
 						status,
 						field_struct,
-						decl_name,
+						() => emit_base_ptr(status, decl_name, is_class_parent),
 						base_offset !== undefined ? base_offset + offset : offset,
-						is_class_parent,
 					);
 				}
 			}
@@ -1480,9 +1581,8 @@ export function emit_field_destroys(
 					emit_destroy_for_array_elem(
 						status,
 						elem_struct,
-						decl_name,
+						() => emit_base_ptr(status, decl_name, is_class_parent),
 						actual_base + i * elem_size,
-						is_class_parent,
 					);
 				}
 			}
@@ -1493,9 +1593,8 @@ export function emit_field_destroys(
 function emit_nested_field_destroys(
 	status: BuildStatus,
 	struct_type: StructNode,
-	decl_name: string,
+	emit_base: () => void,
 	base_offset: number,
-	is_class_parent?: boolean,
 ) {
 	for (const field of struct_type.fields) {
 		const offset = get_field_offset_of_fields(struct_type.fields, field.name, status);
@@ -1504,20 +1603,14 @@ function emit_nested_field_destroys(
 			is_struct_type(field.type.name, status);
 		if (field_struct) {
 			if (has_destroy(field_struct)) {
-				emit_base_ptr(status, decl_name, is_class_parent);
+				emit_base();
 				emit_asm(status, `add x0, x0, #${base_offset + offset}\n`);
 				emit_asm(
 					status,
 					`bl ${resolve_struct_name(field_struct.name, field.type.type_args, status)}_destroy\n`,
 				);
 			}
-			emit_nested_field_destroys(
-				status,
-				field_struct,
-				decl_name,
-				base_offset + offset,
-				is_class_parent,
-			);
+			emit_nested_field_destroys(status, field_struct, emit_base, base_offset + offset);
 		}
 	}
 }
@@ -1525,14 +1618,25 @@ function emit_nested_field_destroys(
 function emit_destroy_for_array_elem(
 	status: BuildStatus,
 	struct_type: StructNode,
-	decl_name: string,
+	emit_base: () => void,
 	elem_offset: number,
-	is_class_parent?: boolean,
 ) {
-	if (has_destroy(struct_type)) {
-		emit_base_ptr(status, decl_name, is_class_parent);
+	// A `<T>_destroy` exists whenever the element needs one: a user `#destroy`,
+	// or the auto-generated reclaim (B1 mv string fields, trait-declared
+	// fields on class/mv conformers — the D3 layout, owned enum/func fields).
+	// Call it and stop there for class/owning structs: the generated body
+	// appends the full field walk (build_destroy_function /
+	// build_auto_destroy_function), so the manual recursion below would
+	// double-free. The old gate fired the destroy only for an explicit
+	// `#destroy` and the manual walk skipped trait-declared fields, so a
+	// conformer element's owned label leaked (the fixed-array corner in
+	// FOLLOWUP.md).
+	const explicit = has_destroy(struct_type);
+	if (explicit || struct_type.is_class || struct_needs_auto_destroy(struct_type, status)) {
+		emit_base();
 		emit_asm(status, `add x0, x0, #${elem_offset}\n`);
 		emit_asm(status, `bl ${struct_type.name}_destroy\n`);
+		if (struct_type.is_class || struct_type.is_owning === true) return;
 	}
 	let offset = 8;
 	for (const field of struct_type.fields) {
@@ -1541,13 +1645,7 @@ function emit_destroy_for_array_elem(
 			is_struct_type(field.type.name, status);
 		if (field_struct) {
 			const field_size = get_type_size(field.type, status);
-			emit_nested_field_destroys(
-				status,
-				field_struct,
-				decl_name,
-				elem_offset + offset,
-				is_class_parent,
-			);
+			emit_nested_field_destroys(status, field_struct, emit_base, elem_offset + offset);
 			offset += field_size;
 		} else {
 			offset += get_type_size(field.type, status);
@@ -1779,6 +1877,7 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 			// A shallow field-struct borrow (e.g. the hoisted `_param_N` copy
 			// of `diff.changes`) is not destroyed — the owner frees it.
 			if (is_field_struct_borrow(decl)) continue;
+			if (emit_fixed_array_local_destroys(status, decl)) continue;
 			const resolved_decl = resolve_decl_struct(decl, status);
 			if (!resolved_decl) continue;
 			const struct_type = resolved_decl.struct_type;
@@ -1950,6 +2049,7 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 		// A shallow field-struct borrow is not destroyed — see the
 		// heap_slots branch above.
 		if (is_field_struct_borrow(decl)) continue;
+		if (emit_fixed_array_local_destroys(status, decl)) continue;
 		const resolved_decl = resolve_decl_struct(decl, status);
 		if (!resolved_decl) continue;
 		const struct_type = resolved_decl.struct_type;

@@ -74,8 +74,10 @@ import {
 	get_enum_size,
 	get_field_has_offset,
 	get_field_offset,
+	get_field_offset_of_fields,
 	get_struct_size,
 	get_type_size,
+	layout_fields,
 } from "./utils/struct_layout.ts";
 
 export function emit_typed_store(
@@ -820,17 +822,76 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 			// 16-byte stride, copied as a pair — an 8-byte word copy would
 			// leave every len half holding garbage.
 			const elem_is_fat_string = field.type.name === "string";
-			const element_size = elem_is_fat_string ? 16 : aarch64_size(field.type.name);
+			// A STRUCT element's stride is its layout size (trait-declared
+			// fields included) — `aarch64_size` would say 8 (a pointer
+			// width), corrupting every element after the first and leaving
+			// the field's tail unwritten.
+			const elem_struct = elem_is_fat_string
+				? undefined
+				: status.structs.find(
+						(s) => s.name === field.type.name && !s.is_simple_type && !s.is_class && !s.is_generic,
+					);
+			const element_size = elem_is_fat_string
+				? 16
+				: elem_struct
+					? get_struct_size(field.type.name, status)
+					: aarch64_size(field.type.name);
 			const length = parseInt((field.type.length as ValueNode).value || "0");
-			for (let e = 0; e < length; e++) {
-				const byte_offset = e * element_size;
-				if (elem_is_fat_string) {
-					emit_asm(status, `ldp x9, x10, [${src_reg}, #${byte_offset}]\n`);
-					emit_asm(status, `stp x9, x10, [x19, #${offset + byte_offset}]\n`);
-				} else {
-					emit_asm(status, load_element(src_reg, byte_offset, element_size));
-					emit_asm(status, store_element("x19", offset + byte_offset, element_size));
+			// An OWNING element struct's string fields (trait-declared
+			// included — layout_fields) arrive SHARING the caller's row
+			// buffers: the row's per-element destroy frees its own copies at
+			// its scope exit, so the field would hold dangling pointers.
+			// strdup each in place after the byte copy — the same uniform-
+			// heap normalization the single-string-field arm above applies.
+			const detach_fields =
+				elem_struct && owns_strings_uniformly(elem_struct)
+					? layout_fields(elem_struct, status).filter(
+							(f) =>
+								!f.type.is_ref && !f.type.is_view && !f.type.is_array && f.type.name === "string",
+						)
+					: [];
+			const elem_field_offsets = detach_fields.map((f) =>
+				get_field_offset_of_fields(layout_fields(elem_struct!, status), f.name, status),
+			);
+			const copy_elements = () => {
+				for (let e = 0; e < length; e++) {
+					const byte_offset = e * element_size;
+					if (elem_is_fat_string) {
+						emit_asm(status, `ldp x9, x10, [${src_reg}, #${byte_offset}]\n`);
+						emit_asm(status, `stp x9, x10, [x19, #${offset + byte_offset}]\n`);
+					} else if (elem_struct) {
+						const words = Math.ceil(element_size / 8);
+						for (let w = 0; w < words; w++) {
+							emit_asm(status, `ldr x9, [${src_reg}, #${byte_offset + w * 8}]\n`);
+							emit_asm(status, `str x9, [x19, #${offset + byte_offset + w * 8}]\n`);
+						}
+						for (const sfo of elem_field_offsets) {
+							// Address every strdup through x19 (callee-saved, the
+							// parked self) — a scratch register would not survive
+							// the strdup wrapper's call.
+							const slot_off = offset + byte_offset + sfo;
+							emit_asm(status, `ldr x0, [x19, #${slot_off}]\n`);
+							const skip = `.arr_elem_strdup_skip_${(status.label_counter =
+								(status.label_counter ?? 0) + 1)}`;
+							emit_asm(status, `cbz x0, ${skip}\n`);
+							emit_strdup(status);
+							emit_asm(status, `str x0, [x19, #${slot_off}]\n`);
+							emit_asm(status, `${skip}:\n`);
+						}
+					} else {
+						emit_asm(status, load_element(src_reg, byte_offset, element_size));
+						emit_asm(status, store_element("x19", offset + byte_offset, element_size));
+					}
 				}
+			};
+			// The in-place strdups call through the wrapper (clobbering every
+			// caller-saved register, src_reg and the still-live later fields'
+			// arg registers included) — spill them across the copy, the same
+			// contract as the single-string-field arm above.
+			if (detach_fields.length > 0) {
+				with_live_arg_regs_spilled(status, param_regs.slice(slot - 1), copy_elements);
+			} else {
+				copy_elements();
 			}
 		} else if (
 			!field.type.is_ref &&

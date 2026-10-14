@@ -190,4 +190,48 @@ Console.write(o.a.label)
 `;
 		await build_and_check_output(input, "trait_field_nested", "set");
 	});
+
+	// A fixed-size array LOCAL of conformer elements: the scope-exit walk
+	// resolved the ELEMENT struct by name (array-ness is a Type flag) and
+	// destroyed element 0 only — every later element's owned trait-declared
+	// label leaked. The walk now iterates elements in place (element field
+	// writes need `unsafe` indexing, so the ctor-seeded labels are the owned
+	// state the audit exercises).
+	test("fixed array local of trait conformers destroys every element", async () => {
+		const input = `
+trait Holds {
+	var string label = "seed"
+}
+mv struct Elem : Holds {
+}
+var Elem[2] elems = [Elem(), Elem()]
+Console.write_line("ok")
+`;
+		await build_and_check_output(input, "trait_array_local", "ok\n");
+	});
+
+	// A fixed-size array FIELD of conformer elements (an array-literal ctor
+	// arg): the aarch64 ctor copied the field at a pointer-width stride
+	// (8 bytes — corrupting element 1 and leaving the tail unwritten), the C
+	// ctor memcpy'd the row SHALLOW (sharing the donor labels its cleanup
+	// frees), and both destroy walks treated the array as one element
+	// (`o.elems.label` is not even valid C). The ctor now word-copies at the
+	// element stride and detaches owning elements' string fields; the destroy
+	// walks iterate elements. The donor row (a moved-stamped hoisted temp)
+	// still reclaims its own originals.
+	test("fixed array field of trait conformers destroys every element", async () => {
+		const input = `
+trait Holds {
+	var string label = "seed"
+}
+mv struct Elem : Holds {
+}
+mv struct Outer {
+	var Elem[2] elems
+}
+var Outer o = Outer([Elem(), Elem()])
+Console.write_line("ok")
+`;
+		await build_and_check_output(input, "trait_array_field", "ok\n");
+	});
 });
