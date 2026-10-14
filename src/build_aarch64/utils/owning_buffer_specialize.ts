@@ -941,12 +941,14 @@ function emit_owning_modify_T(
 	emit_asm(status, `mov x1, sp\n`); // arg = &copy
 	emit_asm(status, `mov x8, x21\n`); // sret (passes through unchanged)
 	emit_asm(status, `blr x24\n`);
-	// Residual Buffer hole (FOLLOWUP.md): the displaced slot state's owned
-	// POINTER leaves (containers, boxes, classes, closures, enum payloads)
-	// are reclaimed when the fn's returned value does not alias them — the
-	// same guarded pass store_T uses, with the sret buffer as the incoming
-	// value. The plain string fields are handled by the identity frees below.
-	emit_displaced_owned_reclaim_a64(status, elem, "x20", "x21");
+	// NOTE: the displaced-owned reclaim pass (store_T's) is deliberately NOT
+	// used here. The fn receives a BYTE COPY of the slot whose container
+	// words alias the slot's slabs; an in-place mutation through the copy
+	// (`h.items.push(x)` → grow → realloc) leaves the slot's data pointer
+	// dangling-but-different from the returned value — indistinguishable
+	// from an intact non-aliased slab, so the identity guard would free an
+	// already-realloc-released block. See FOLLOWUP.md "modify_T displaced
+	// containers".
 	// Free displaced string fields (flat offsets, includes nested mv
 	// struct fields — mirrors collect_string_fields).
 	for (const [i, { offset: foff }] of string_fields.entries()) {

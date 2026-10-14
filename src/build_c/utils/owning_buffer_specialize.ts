@@ -567,11 +567,14 @@ export function emit_owning_buffer_body(
 		status.code += `${Tptr}_slots = ${Tcast}(unsigned long long)self->data;\n`;
 		status.code += `struct ${elem.name} _old = _slots[i];\n`;
 		status.code += `struct ${elem.name} _new = ((struct ${elem.name} (*)(void *, struct ${elem.name} *))f->code)(f->env, &_old);\n`;
-		// Residual Buffer hole (FOLLOWUP.md): reclaim the displaced slot
-		// state's owned POINTER leaves when the fn's returned value does not
-		// alias them — the same guarded pass store_T uses. The plain string
-		// fields are handled by emit_take_over_fields' identity frees.
-		emit_reclaim_displaced_owned(elem, "_slots[i]", "_new", status);
+		// NOTE: the displaced-owned reclaim pass (store_T's) is deliberately
+		// NOT used here. The fn receives a BYTE COPY of the slot whose
+		// container words alias the slot's slabs; an in-place mutation
+		// through the copy (`h.items.push(x)` → grow → realloc) leaves the
+		// slot's data pointer dangling-but-different from the returned value
+		// — indistinguishable from an intact non-aliased slab, so the
+		// identity guard would free an already-realloc-released block. See
+		// FOLLOWUP.md "modify_T displaced containers".
 		emit_take_over_fields(elem, "_slots[i]", "_new", "_old", status);
 		return true;
 	}

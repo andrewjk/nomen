@@ -133,42 +133,26 @@ invalidates `items`-rooted element borrows but not sibling-field borrows;
 transitive effects (a `ref self` method calling another); opaque-body
 fallback; all existing invalidation tests unchanged.
 
-## Residual Buffer holes (closed 2026-10-15)
+## Buffer `modify_T` displaced containers/closures leak
 
-Both holes are fixed; the raw slot primitives remain `internal`
-(library-internal visibility), so only System containers reach them —
-and those were already balanced (`store_T` on fresh slots, `replace_T`
-to overwrite):
-
-1. **`store`'s fresh-slot contract** was load-bearing for the
-   load→modify→store round-trip (`JsonTree.set_kind`/`set_child`/…):
-   `replace` frees the displaced value before copying, so an aliased
-   copy dangles. The mv `store_T` specializations now reclaim the
-   displaced slot's owned POINTER state (containers, `Box`, class
-   fields, closure descriptors, enum payloads) in place BEFORE the
-   overwrite, guarded per leaf on pointer identity against the incoming
-   value — the aliased round-trip keeps the slot's own state, a
-   non-aliasing store reclaims the previous occupant. Plain string
-   fields keep the B1 displaced-old free. The SAME guarded pass now
-   runs in `modify_T` (slot state vs the fn's returned value), which
-   previously leaked the displaced containers entirely.
-2. **`alloc` discarding**: the specialized `alloc` bodies now
-   per-element destroy the old slab (constructed-stamp guarded —
-   grown-but-unwritten and moved-out slots are zeroed) and free it
-   before the exact-cap calloc, on both backends and all three element
-   flavors (mv struct / `string` / enum-with-data); the raw
-   (scalar/trivial) body frees the old slab directly. Exact-cap
-   semantics preserved.
-
-Residual corners in the same family, deliberately left: a
-partially-aliased displaced leaf (one slab pointer shared, another not)
-skips the reclaim conservatively (bounded leak — the guard needs ALL
-identities to differ); `modify_T`'s in-place-mutation contract for
-container fields stays as documented ("returned mv fields must be
-fresh, null, or identical to the corresponding input fields") — a fn
-that mutates its input copy's container in place AND returns a fresh
-value strands the mutated copy's slab (the copy has no teardown).
-Tests: `test/buffer_holes.test.ts`.
+The mv `modify_T` specialization identity-frees displaced STRING leaves
+but nothing else — a modify on an element holding containers, a `Box`,
+a class field, a closure descriptor, or an enum payload leaks the
+displaced state (`store_T` had the same hole; its guarded reclaim
+landed 2026-10-15). The store_T-style pass is NOT sound here: the fn
+receives a BYTE COPY of the slot whose container words alias the slot's
+slabs, and an in-place mutation through the copy (`h.items.push(x)` →
+`grow` → `realloc`) leaves the slot's data pointer dangling-but-
+different from the returned value — indistinguishable from an intact
+non-aliased slab, so the identity guard would free an already-
+realloc-released block. (The string leaves stay safe: a fn mutating the
+copy's string field repairs the copy's own field through its write
+path, so the identity compare sees a consistent state.) A sound fix is
+an ABI change — pass `modify` a deep copy (the `load` treatment) and
+destroy the copy after the call — which changes the primitive's
+in-place economics; only worth it if a System container needs
+mv-container modify. Both backends' modify emitters carry pointers to
+this note.
 
 ## Trait-declared field ownership corners
 

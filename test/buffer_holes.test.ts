@@ -94,7 +94,7 @@ describe("residual Buffer holes", () => {
 		expect(alloc![0]).toContain("return self->cap;");
 	});
 
-	test("modify_T reclaims the displaced slot's containers (C shape)", () => {
+	test("modify_T does NOT reclaim displaced containers (C shape)", () => {
 		const parsed = parse_with_imports(HOLDER_PROGRAM);
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, {
@@ -103,12 +103,16 @@ describe("residual Buffer holes", () => {
 			platform: default_platform(),
 		});
 		const src = String(result.code ?? result);
-		// The modify body reclaims the slot's displaced container when the
-		// fn's returned value does not alias it (the same guarded pass
-		// store_T uses, with the returned value as the incoming side).
-		expect(src).toContain(
-			"if (_slots[i].items.items.data && _slots[i].items.items.data != _new.items.items.data) { List_string_destroy(&_slots[i].items); }",
-		);
+		// The modify body deliberately keeps the pre-existing behavior: the
+		// fn receives a byte copy of the slot whose container words alias
+		// the slot's slabs, and an in-place mutation through the copy
+		// (`h.items.push(x)` → realloc) leaves the slot's data pointer
+		// dangling — an identity-guarded destroy there would free an
+		// already-realloc-released block (FOLLOWUP.md, "modify_T displaced
+		// containers"). Assert the guarded destroy is absent.
+		const modify = src.match(/void Buffer_Holder_modify\([\s\S]{0,600}/);
+		expect(modify).toBeTruthy();
+		expect(modify![0]).not.toContain("List_string_destroy");
 	});
 
 	test("specialized alloc + displaced reclaim emit on aarch64", () => {
