@@ -14,7 +14,13 @@ import { emit_free, emit_strdup } from "./audit.ts";
 import { emit_enum_payload_frees_at, emit_enum_payload_strdups_at } from "./auto_destroy.ts";
 import { ensure_box_clone_aarch64 } from "./box_clone.ts";
 import { emit_asm } from "./code_buffer.ts";
-import { get_enum_size, get_struct_size, get_type_size } from "./struct_layout.ts";
+import {
+	get_enum_case_index,
+	get_enum_payload_offset,
+	get_enum_size,
+	get_struct_size,
+	get_type_size,
+} from "./struct_layout.ts";
 
 /**
  * Detect whether a monomorphized struct is a `Buffer_<T>` whose element type
@@ -524,15 +530,24 @@ export function emit_owning_buffer_standalone_aarch64(
 			func_name !== "replace" &&
 			func_name !== "shift" &&
 			func_name !== "modify" &&
-			func_name !== "load"
+			func_name !== "load" &&
+			func_name !== "alloc"
 		) {
 			return false;
+		}
+		if (func_name === "alloc") {
+			emit_owning_alloc_T(elem, status);
+			return true;
 		}
 		emit_owning_standalone_struct(elem, func_name, status);
 		return true;
 	}
 	const enum_elem = owning_buffer_enum_element_aarch64(node, status);
 	if (enum_elem) {
+		if (func_name === "alloc") {
+			emit_enum_alloc_T(enum_elem, status);
+			return true;
+		}
 		if (func_name === "store") {
 			emit_enum_store_T(enum_elem, status, "x19");
 			return true;
@@ -553,6 +568,10 @@ export function emit_owning_buffer_standalone_aarch64(
 		return false;
 	}
 	if (owning_buffer_is_string_elem_aarch64(node)) {
+		if (func_name === "alloc") {
+			emit_string_alloc_T(status);
+			return true;
+		}
 		if (func_name === "store") {
 			emit_string_store_T(status, "x19");
 			return true;
@@ -636,6 +655,15 @@ function emit_owning_standalone_struct(elem: StructNode, func_name: string, stat
 	emit_asm(status, `madd x4, x1, x22, xzr\n`);
 	emit_asm(status, `add x20, x20, x4\n`); // x20 = &slot[i]
 	emit_asm(status, `mov x21, x2\n`); // x21 = val
+
+	// store_T: reclaim the displaced slot value's owned POINTER state before
+	// the overwrite (the residual Buffer hole in FOLLOWUP.md) — guarded per
+	// leaf on pointer identity against the incoming value, so the aliased
+	// round-trip keeps the slot's own state. Strings are handled by the
+	// parked-old free below.
+	if (func_name === "store") {
+		emit_displaced_owned_reclaim_a64(status, elem, "x20", "x21");
+	}
 
 	// replace_T destroys the OLD slot value (its documented overwrite
 	// semantic) — guarded on the constructed stamp, since the slot may be
@@ -913,6 +941,12 @@ function emit_owning_modify_T(
 	emit_asm(status, `mov x1, sp\n`); // arg = &copy
 	emit_asm(status, `mov x8, x21\n`); // sret (passes through unchanged)
 	emit_asm(status, `blr x24\n`);
+	// Residual Buffer hole (FOLLOWUP.md): the displaced slot state's owned
+	// POINTER leaves (containers, boxes, classes, closures, enum payloads)
+	// are reclaimed when the fn's returned value does not alias them — the
+	// same guarded pass store_T uses, with the sret buffer as the incoming
+	// value. The plain string fields are handled by the identity frees below.
+	emit_displaced_owned_reclaim_a64(status, elem, "x20", "x21");
 	// Free displaced string fields (flat offsets, includes nested mv
 	// struct fields — mirrors collect_string_fields).
 	for (const [i, { offset: foff }] of string_fields.entries()) {
@@ -1011,6 +1045,13 @@ function emit_owning_store_T(elem: StructNode, status: BuildStatus) {
 	emit_asm(status, `madd x4, x1, x22, xzr\n`); // byte offset
 	emit_asm(status, `add x20, x20, x4\n`); // x20 = &slot[i]
 	emit_asm(status, `mov x21, x2\n`); // x21 = val (save across calls)
+	// Residual Buffer hole (FOLLOWUP.md): reclaim the displaced slot value's
+	// owned POINTER state (containers, boxes, classes, closures, enum
+	// payloads) before the overwrite — guarded per leaf on pointer identity
+	// against the incoming value, so the aliased round-trip keeps the slot's
+	// own state. The plain string fields are handled by the parked-old free
+	// below.
+	emit_displaced_owned_reclaim_a64(status, elem, "x20", "x21");
 	// Save each string field's OLD slot pointer (before memcpy) so the
 	// strdup can detect a load-modify-store round-trip (src aliases the slot's
 	// own copy) and keep it instead of orphaning it. The temp area is padded to
@@ -1125,6 +1166,90 @@ function emit_owning_replace_T(elem: StructNode, status: BuildStatus) {
  * `#destroy` body would fire on empty cap slots. `slot_reg` must hold the
  * slot ADDRESS and is clobbered only by the destroy call itself.
  */
+/**
+ * Specialized `alloc` for `Buffer<string>`: free each old slot's ptr half
+ * (zeroed slots free NULL — a no-op), free the slab, calloc the exact fresh
+ * slab. x19 = self, x1 = size; returns cap.
+ */
+function emit_string_alloc_T(status: BuildStatus) {
+	const lbl = (s: string) =>
+		`.Lsalloc_${s}_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+	const fresh = lbl("fresh");
+	const drop = lbl("drop");
+	const loop = lbl("loop");
+	const skip = lbl("skip");
+	emit_asm(status, `stp x20, x21, [sp, #-16]!\n`);
+	emit_asm(status, `str x22, [sp, #-16]!\n`);
+	emit_asm(status, `mov x22, x1\n`); // size
+	emit_asm(status, `ldr x20, [x19, #8]\n`); // old data base
+	emit_asm(status, `cbz x20, ${fresh}\n`);
+	emit_asm(status, `ldr x21, [x19, #16]\n`); // old cap
+	emit_asm(status, `cbz x21, ${drop}\n`);
+	emit_asm(status, `${loop}:\n`);
+	emit_asm(status, `sub x21, x21, #1\n`);
+	emit_asm(status, `lsl x9, x21, #4\n`); // i * 16 (fat slot stride)
+	emit_asm(status, `add x9, x20, x9\n`);
+	emit_asm(status, `ldr x0, [x9]\n`); // ptr half
+	emit_asm(status, `cbz x0, ${skip}\n`);
+	emit_free(status);
+	emit_asm(status, `${skip}:\n`);
+	emit_asm(status, `cbnz x21, ${loop}\n`);
+	emit_asm(status, `${drop}:\n`);
+	emit_asm(status, `mov x0, x20\n`);
+	emit_free(status);
+	emit_asm(status, `${fresh}:\n`);
+	emit_asm(status, `mov x0, x22\n`);
+	emit_asm(status, `mov x1, #16\n`);
+	emit_asm(status, status.audit ? `bl _nomen_calloc_wrap\n` : `bl _calloc\n`);
+	emit_asm(status, `str x0, [x19, #8]\n`);
+	emit_asm(status, `str x22, [x19, #16]\n`);
+	emit_asm(status, `ldr x0, [x19, #16]\n`);
+	emit_asm(status, `ldr x22, [sp], #16\n`);
+	emit_asm(status, `ldp x20, x21, [sp], #16\n`);
+}
+
+/**
+ * Specialized `alloc` for a Buffer whose element is an enum-with-data: free
+ * each old slot's payloads in place, free the slab, calloc the exact fresh
+ * slab. x19 = self, x1 = size; returns cap.
+ */
+function emit_enum_alloc_T(en: EnumNode, status: BuildStatus) {
+	const E_SIZE = get_enum_size(en.name, status);
+	const lbl = (s: string) =>
+		`.Lealloc_${s}_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+	const fresh = lbl("fresh");
+	const drop = lbl("drop");
+	const loop = lbl("loop");
+	emit_asm(status, `stp x20, x21, [sp, #-16]!\n`);
+	emit_asm(status, `str x22, [sp, #-16]!\n`);
+	emit_asm(status, `str x23, [sp, #-16]!\n`);
+	emit_asm(status, `mov x22, x1\n`); // size
+	emit_asm(status, `ldr x20, [x19, #8]\n`); // old data base
+	emit_asm(status, `cbz x20, ${fresh}\n`);
+	emit_asm(status, `ldr x21, [x19, #16]\n`); // old cap
+	emit_asm(status, `cbz x21, ${drop}\n`);
+	emit_asm(status, `mov x23, x21\n`); // countdown index
+	emit_asm(status, `${loop}:\n`);
+	emit_asm(status, `sub x23, x23, #1\n`);
+	emit_asm(status, `mov x9, #${E_SIZE}\n`);
+	emit_asm(status, `madd x10, x23, x9, x20\n`); // &slot[i]
+	emit_enum_payload_frees_at(status, en.name, "x10", 0);
+	emit_asm(status, `cbnz x23, ${loop}\n`);
+	emit_asm(status, `${drop}:\n`);
+	emit_asm(status, `mov x0, x20\n`);
+	emit_free(status);
+	emit_asm(status, `${fresh}:\n`);
+	emit_asm(status, `mov x0, x22\n`);
+	emit_asm(status, `mov x1, #${E_SIZE}\n`);
+	emit_asm(status, status.audit ? `bl _nomen_calloc_wrap\n` : `bl _calloc\n`);
+	emit_asm(status, `str x0, [x19, #8]\n`);
+	emit_asm(status, `str x22, [x19, #16]\n`);
+	emit_asm(status, `ldr x0, [x19, #16]\n`);
+	emit_asm(status, `ldr x23, [sp], #16\n`);
+	emit_asm(status, `ldr x22, [sp], #16\n`);
+	emit_asm(status, `ldp x20, x21, [sp], #16\n`);
+}
+
 function emit_guarded_slot_destroy(status: BuildStatus, elem: StructNode, slot_reg: string): void {
 	const skip = `.Lown_slot_skip_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
 	emit_asm(status, `ldr x9, [${slot_reg}]\n`);
@@ -1132,6 +1257,307 @@ function emit_guarded_slot_destroy(status: BuildStatus, elem: StructNode, slot_r
 	if (slot_reg !== "x0") emit_asm(status, `mov x0, ${slot_reg}\n`);
 	emit_asm(status, `bl ${elem.name}_destroy\n`);
 	emit_asm(status, `${skip}:\n`);
+}
+
+/**
+ * The container monos whose `<T>_destroy` reclaims the whole container
+ * (slab + per-element owned state): the core value-slot containers. A user
+ * mv struct must NOT take this path (its destroy would free its string
+ * fields too — the string machinery owns those) — such fields recurse.
+ */
+const CONTAINER_MONO_PREFIXES_A64 = ["Buffer_", "List_", "Map_", "Set_", "Array_"];
+
+function is_container_mono_name_a64(name: string): boolean {
+	return CONTAINER_MONO_PREFIXES_A64.some((p) => name.startsWith(p));
+}
+
+/** Offsets (relative to the container struct start) of every owned slab
+ *  pointer inside a container mono: the `data` words of the Buffer-shaped
+ *  structs reachable through nested struct fields. The displaced-reclaim
+ *  guard compares ALL of them — a byte-copy round-trip aliases every slab
+ *  pointer; any differing pointer means the displaced container's slabs are
+ *  exclusively owned. */
+function container_data_offsets_a64(fs: StructNode, status: BuildStatus, base = 0): number[] {
+	const out: number[] = [];
+	let offset = 8; // VT/stamp prefix
+	for (const field of fs.fields) {
+		const size = get_type_size(field.type, status);
+		if (field.name === "data") {
+			out.push(base + offset);
+			offset += size;
+			continue;
+		}
+		if (!field.type.is_ref && !field.type.is_view && !field.type.is_array) {
+			if (field.type.name === "string" && !field.type.is_array) {
+				offset += aarch64_size("string");
+				continue;
+			}
+			const sub = resolve_struct_type(field.type, status);
+			if (sub && !sub.is_class && is_container_mono_name_a64(sub.name)) {
+				out.push(...container_data_offsets_a64(sub, status, base + offset));
+				offset += size;
+				continue;
+			}
+		}
+		offset += size;
+	}
+	return out;
+}
+
+interface DisplacedLeafA64 {
+	/** Absolute byte offset of the leaf field within the element. */
+	offset: number;
+	kind: "container" | "box" | "class" | "func" | "enum";
+	/** `<T>_destroy` symbol for container/box/class leaves. */
+	destroy?: string;
+	enum_node?: EnumNode;
+	/** Identity-word offsets relative to `offset` (the aliasing guard). */
+	identities: number[];
+}
+
+/**
+ * Collect the owned POINTER leaves of an element struct whose displaced
+ * copies a store onto an occupied slot must reclaim: containers, Box/class
+ * fields, func descriptors, enum-with-data payloads. Plain string fields are
+ * EXCLUDED (store_T's string machinery owns their displaced-old reclaim, and
+ * a whole-struct destroy here would double-free them); plain nested mv
+ * structs recurse so their pointer leaves are reached.
+ */
+function collect_displaced_leaves_a64(
+	elem: StructNode,
+	status: BuildStatus,
+	base = 0,
+): DisplacedLeafA64[] {
+	const leaves: DisplacedLeafA64[] = [];
+	let offset = 8; // VT/stamp prefix
+	for (const field of elem.fields) {
+		const size = get_type_size(field.type, status);
+		if (!field.type.is_ref && !field.type.is_view && !field.type.is_array) {
+			if (field.type.name === "string" && !field.type.is_array) {
+				offset += aarch64_size("string");
+				continue;
+			}
+			const box_mono = box_field_mono(field.type, status);
+			if (box_mono) {
+				leaves.push({
+					offset: base + offset,
+					kind: "box",
+					destroy: box_mono.name,
+					identities: [0],
+				});
+				offset += size;
+				continue;
+			}
+			const fs = resolve_struct_type(field.type, status);
+			if (fs?.is_class) {
+				leaves.push({ offset: base + offset, kind: "class", destroy: fs.name, identities: [0] });
+				offset += size;
+				continue;
+			}
+			if (field.type.name === "func") {
+				leaves.push({ offset: base + offset, kind: "func", identities: [0] });
+				offset += size;
+				continue;
+			}
+			const field_enum = status.enums.find(
+				(e) => e.name === field.type.name && e.has_associated_data,
+			);
+			if (field_enum) {
+				leaves.push({ offset: base + offset, kind: "enum", enum_node: field_enum, identities: [] });
+				offset += size;
+				continue;
+			}
+			if (fs && !fs.is_class) {
+				if (is_container_mono_name_a64(fs.name)) {
+					leaves.push({
+						offset: base + offset,
+						kind: "container",
+						destroy: fs.name,
+						identities: container_data_offsets_a64(fs, status),
+					});
+					offset += size;
+					continue;
+				}
+				if (struct_needs_destroy(fs, status) || has_string_fields(fs, status)) {
+					leaves.push(...collect_displaced_leaves_a64(fs, status, base + offset));
+					offset += size;
+					continue;
+				}
+			}
+		}
+		offset += size;
+	}
+	return leaves;
+}
+
+/**
+ * Emit the DISPLACED-OWNED reclaim for a store onto an occupied slot (the
+ * residual Buffer hole in FOLLOWUP.md — store's fresh-slot contract leaked
+ * every owned pointer field of the previous occupant except strings, which
+ * the B1 displaced-old free already handles). Runs BEFORE the slot memcpy
+ * (both identity sides are live): per leaf, the slot's field is destroyed IN
+ * PLACE only when the incoming value does not alias it — the load→modify→store
+ * round-trip (a byte-copied alias) keeps the slot's own state, which the
+ * subsequent memcpy then replaces wholesale.
+ *
+ * `slot_reg` holds &slot[i]; `val_reg` holds the incoming value's address.
+ * Both must be callee-saved (the destroys call).
+ */
+function emit_displaced_owned_reclaim_a64(
+	status: BuildStatus,
+	elem: StructNode,
+	slot_reg: string,
+	val_reg: string,
+): void {
+	const leaves = collect_displaced_leaves_a64(elem, status);
+	for (const leaf of leaves) {
+		const next = `.Ldisp_done_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+		if (leaf.kind === "container") {
+			// A fresh (zeroed) slot owns nothing — the first identity word
+			// doubles as the emptiness check, sparing the destroy-call chain
+			// on the fresh-store hot path.
+			if (leaf.identities.length) {
+				emit_asm(status, `ldr x9, [${slot_reg}, #${leaf.offset + leaf.identities[0]}]\n`);
+				emit_asm(status, `cbz x9, ${next}\n`);
+			}
+			for (const id of leaf.identities) {
+				emit_asm(status, `ldr x9, [${slot_reg}, #${leaf.offset + id}]\n`);
+				emit_asm(status, `ldr x10, [${val_reg}, #${leaf.offset + id}]\n`);
+				emit_asm(status, `cmp x9, x10\n`);
+				emit_asm(status, `b.eq ${next}\n`);
+			}
+			if (slot_reg === "x0") {
+				if (leaf.offset !== 0) emit_asm(status, `add x0, x0, #${leaf.offset}\n`);
+			} else {
+				emit_asm(status, `add x0, ${slot_reg}, #${leaf.offset}\n`);
+			}
+			emit_asm(status, `bl ${leaf.destroy}_destroy\n`);
+		} else if (leaf.kind === "box" || leaf.kind === "class") {
+			emit_asm(status, `ldr x9, [${slot_reg}, #${leaf.offset}]\n`);
+			emit_asm(status, `cbz x9, ${next}\n`);
+			emit_asm(status, `ldr x10, [${val_reg}, #${leaf.offset}]\n`);
+			emit_asm(status, `cmp x9, x10\n`);
+			emit_asm(status, `b.eq ${next}\n`);
+			emit_asm(status, `mov x0, x9\n`);
+			emit_asm(status, `bl ${leaf.destroy}_destroy\n`);
+			emit_asm(status, `ldr x0, [${slot_reg}, #${leaf.offset}]\n`);
+			emit_free(status);
+		} else if (leaf.kind === "func") {
+			const no_destroy = `.Ldisp_noown_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+			emit_asm(status, `ldr x9, [${slot_reg}, #${leaf.offset}]\n`);
+			emit_asm(status, `cbz x9, ${next}\n`);
+			emit_asm(status, `ldr x10, [${val_reg}, #${leaf.offset}]\n`);
+			emit_asm(status, `cmp x9, x10\n`);
+			emit_asm(status, `b.eq ${next}\n`);
+			emit_asm(status, `ldr w11, [x9, #16]\n`); // owned flag
+			emit_asm(status, `cbz w11, ${next}\n`);
+			emit_asm(status, `str x9, [sp, #-16]!\n`);
+			emit_asm(status, `ldr x10, [x9, #24]\n`); // destroy_env
+			emit_asm(status, `cbz x10, ${no_destroy}\n`);
+			emit_asm(status, `ldr x0, [x9, #8]\n`); // env
+			emit_asm(status, `blr x10\n`);
+			emit_asm(status, `${no_destroy}:\n`);
+			emit_asm(status, `ldr x0, [sp]\n`);
+			emit_asm(status, `ldr x0, [x0, #8]\n`); // descriptor
+			emit_free(status);
+			emit_asm(status, `ldr x0, [sp], #16\n`);
+			emit_free(status);
+		} else if (leaf.kind === "enum" && leaf.enum_node) {
+			// Tag-scoped guard: payloads of different cases never alias
+			// (distinct allocations), so a differing tag reclaims outright;
+			// the same tag reclaims only when every payload pointer differs.
+			const en = leaf.enum_node;
+			const owning_cases = en.cases.filter((c) =>
+				c.params.some((p) => p.type.name === "string" || enum_payload_is_reference_a64(p, status)),
+			);
+			if (!owning_cases.length) continue;
+			emit_asm(status, `ldr w9, [${slot_reg}, #${leaf.offset}]\n`);
+			for (const c of owning_cases) {
+				const idx = get_enum_case_index(en.name, c.name, status);
+				const case_next = `.Ldisp_case_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+				emit_asm(status, `cmp w9, #${idx}\n`);
+				emit_asm(status, `b.ne ${case_next}\n`);
+				emit_asm(status, `ldr w10, [${val_reg}, #${leaf.offset}]\n`);
+				emit_asm(status, `cmp w10, #${idx}\n`);
+				emit_asm(status, `b.ne ${next}_reclaim\n`);
+				for (const p of c.params) {
+					if (p.type.name !== "string" && !enum_payload_is_reference_a64(p, status)) continue;
+					const poff = get_enum_payload_offset(en.name, c.name, p.name, status);
+					emit_asm(status, `ldr x9, [${slot_reg}, #${leaf.offset + poff}]\n`);
+					emit_asm(status, `ldr x10, [${val_reg}, #${leaf.offset + poff}]\n`);
+					emit_asm(status, `cmp x9, x10\n`);
+					emit_asm(status, `b.eq ${next}\n`);
+				}
+				emit_asm(status, `${case_next}:\n`);
+			}
+			emit_asm(status, `b ${next}_reclaim\n`);
+			emit_asm(status, `${next}_reclaim:\n`);
+			emit_enum_payload_frees_at(status, en.name, slot_reg, leaf.offset);
+		}
+		emit_asm(status, `${next}:\n`);
+	}
+}
+
+/** The aarch64-side payload reference check (mirrors the C reclaim's). */
+function enum_payload_is_reference_a64(
+	p: { type: { name: string } },
+	status: BuildStatus,
+): boolean {
+	return (
+		status.structs.some((s) => s.name === p.type.name && s.is_class) ||
+		status.traits.some((t) => t.name === p.type.name)
+	);
+}
+
+/**
+ * Specialized `alloc` for a Buffer whose element type owns heap data:
+ * per-element destroy of the OLD slab (guarded on the constructed stamp —
+ * grown-but-unwritten and moved-out slots are zeroed), free the slab, then
+ * calloc the exact fresh one. The raw body dropped the old pointer — the
+ * second Buffer hole in FOLLOWUP.md. x19 = self, x1 = size; returns cap.
+ */
+function emit_owning_alloc_T(elem: StructNode, status: BuildStatus) {
+	const T_SIZE = get_struct_size(elem.name, status);
+	const lbl = (s: string) =>
+		`.Lalloc_${s}_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+	const fresh = lbl("fresh");
+	const drop = lbl("drop");
+	const loop = lbl("loop");
+	const skip = lbl("skip");
+	const done = lbl("done");
+	emit_asm(status, `stp x20, x21, [sp, #-16]!\n`);
+	emit_asm(status, `str x22, [sp, #-16]!\n`);
+	emit_asm(status, `mov x22, x1\n`); // size (survives the destroy calls)
+	emit_asm(status, `ldr x20, [x19, #8]\n`); // old data base
+	emit_asm(status, `cbz x20, ${fresh}\n`);
+	emit_asm(status, `ldr x21, [x19, #16]\n`); // old cap
+	emit_asm(status, `cbz x21, ${drop}\n`);
+	// Destroy each constructed element in place, counting down (the stamp
+	// guard skips grown-but-unwritten and moved-out slots).
+	emit_asm(status, `${loop}:\n`);
+	emit_asm(status, `mov x9, #${T_SIZE}\n`);
+	emit_asm(status, `madd x10, x21, x9, x20\n`); // data + i * T_SIZE
+	emit_asm(status, `sub x10, x10, x9\n`); // &slot[i - 1]
+	emit_asm(status, `ldr x9, [x10]\n`); // constructed stamp
+	emit_asm(status, `cbz x9, ${skip}\n`);
+	emit_asm(status, `mov x0, x10\n`);
+	emit_asm(status, `bl ${elem.name}_destroy\n`);
+	emit_asm(status, `${skip}:\n`);
+	emit_asm(status, `sub x21, x21, #1\n`);
+	emit_asm(status, `cbnz x21, ${loop}\n`);
+	emit_asm(status, `${drop}:\n`);
+	emit_asm(status, `mov x0, x20\n`);
+	emit_free(status);
+	emit_asm(status, `${fresh}:\n`);
+	emit_asm(status, `mov x0, x22\n`); // size
+	emit_asm(status, `mov x1, #${T_SIZE}\n`);
+	emit_asm(status, status.audit ? `bl _nomen_calloc_wrap\n` : `bl _calloc\n`);
+	emit_asm(status, `str x0, [x19, #8]\n`); // data = fresh slab
+	emit_asm(status, `str x22, [x19, #16]\n`); // cap = size
+	emit_asm(status, `ldr x0, [x19, #16]\n`); // return cap
+	emit_asm(status, `${done}:\n`);
+	emit_asm(status, `ldr x22, [sp], #16\n`);
+	emit_asm(status, `ldp x20, x21, [sp], #16\n`);
 }
 
 /**

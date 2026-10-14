@@ -220,6 +220,14 @@ pub struct Buffer<T> {
 	// reaching here is always a value type (primitive or struct).
 
 	func alloc = (ref self, int size, out int: out >= size) {
+		// Reclaim the old slab before the fresh calloc (the raw body runs
+		// for scalar / trivially-destructible elements — plain bytes, so a
+		// straight free is sound; mv element types take the specialized
+		// body, which per-element destroys first). The exact-cap contract
+		// is preserved: the fresh slab is calloc'd at exactly `size`.
+		if self.data != 0 {
+			free(self.data)
+		}
 		self.cap = size
 		self.data = calloc(size, T_SIZE)
 		return self.cap

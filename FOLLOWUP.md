@@ -133,24 +133,42 @@ invalidates `items`-rooted element borrows but not sibling-field borrows;
 transitive effects (a `ref self` method calling another); opaque-body
 fallback; all existing invalidation tests unchanged.
 
-## Residual Buffer holes
+## Residual Buffer holes (closed 2026-10-15)
 
-The raw slot primitives are now `internal` (library-internal visibility
-landed), so these are only reachable from System containers — which use
-`store_T` on fresh slots and `replace_T` to overwrite and are balanced:
+Both holes are fixed; the raw slot primitives remain `internal`
+(library-internal visibility), so only System containers reach them —
+and those were already balanced (`store_T` on fresh slots, `replace_T`
+to overwrite):
 
-1. **`store`'s fresh-slot contract is load-bearing.** Removing `store` and
-   routing every caller to `replace` broke the load→modify→store
-   round-trip uses (`JsonTree.set_kind`/`set_child`/…): `load` returns a
-   shallow (aliasing) copy for mv structs, and `replace` frees the
-   displaced value _before_ copying, so the aliased copy dangles. Closing
-   the remaining leak (a `store` on an occupied, non-aliasing slot) needs
-   per-element reclaim in the mv specializations while preserving that
-   guard.
-2. **`alloc` discarding:** `alloc(n)` sets cap exactly `n`; `grow(n)` rounds
-   up. Callers rely on the exact cap. Reclaiming the old slab inside
-   `alloc` while keeping the exact cap needs per-element destroy (mv
-   `T`).
+1. **`store`'s fresh-slot contract** was load-bearing for the
+   load→modify→store round-trip (`JsonTree.set_kind`/`set_child`/…):
+   `replace` frees the displaced value before copying, so an aliased
+   copy dangles. The mv `store_T` specializations now reclaim the
+   displaced slot's owned POINTER state (containers, `Box`, class
+   fields, closure descriptors, enum payloads) in place BEFORE the
+   overwrite, guarded per leaf on pointer identity against the incoming
+   value — the aliased round-trip keeps the slot's own state, a
+   non-aliasing store reclaims the previous occupant. Plain string
+   fields keep the B1 displaced-old free. The SAME guarded pass now
+   runs in `modify_T` (slot state vs the fn's returned value), which
+   previously leaked the displaced containers entirely.
+2. **`alloc` discarding**: the specialized `alloc` bodies now
+   per-element destroy the old slab (constructed-stamp guarded —
+   grown-but-unwritten and moved-out slots are zeroed) and free it
+   before the exact-cap calloc, on both backends and all three element
+   flavors (mv struct / `string` / enum-with-data); the raw
+   (scalar/trivial) body frees the old slab directly. Exact-cap
+   semantics preserved.
+
+Residual corners in the same family, deliberately left: a
+partially-aliased displaced leaf (one slab pointer shared, another not)
+skips the reclaim conservatively (bounded leak — the guard needs ALL
+identities to differ); `modify_T`'s in-place-mutation contract for
+container fields stays as documented ("returned mv fields must be
+fresh, null, or identical to the corresponding input fields") — a fn
+that mutates its input copy's container in place AND returns a fresh
+value strands the mutated copy's slab (the copy has no teardown).
+Tests: `test/buffer_holes.test.ts`.
 
 ## Trait-declared field ownership corners
 

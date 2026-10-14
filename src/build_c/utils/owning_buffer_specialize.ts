@@ -90,6 +90,7 @@ export const OWNING_BUFFER_METHODS = new Set([
 	"shift",
 	"destroy",
 	"#destroy",
+	"alloc",
 ]);
 
 /**
@@ -352,6 +353,22 @@ export function emit_owning_buffer_enum_body(
 		return true;
 	}
 
+	if (func_name === "alloc") {
+		// alloc_T(self, size): free each old slot's payloads (the payload
+		// helper is zero-safe), then the slab, then calloc the exact fresh
+		// slab (the raw body dropped the old pointer — the second Buffer
+		// hole in FOLLOWUP.md).
+		status.code += `if (self->data) {\n`;
+		status.code += `${E}* _old_slots = ${slots};\n`;
+		status.code += `for (int _i = 0; _i < self->cap; _i++) { ${E}_free_payloads(&_old_slots[_i]); }\n`;
+		status.code += `free(_old_slots);\n`;
+		status.code += `}\n`;
+		status.code += `self->cap = size;\n`;
+		status.code += `self->data = (unsigned long long)calloc(size, sizeof(${E}));\n`;
+		status.code += `return self->cap;\n`;
+		return true;
+	}
+
 	if (func_name === "destroy") {
 		status.code += `if (self->data) {\n`;
 		status.code += `${E}* _slots = ${slots};\n`;
@@ -425,6 +442,22 @@ export function emit_owning_buffer_string_body(func_name: string, status: BuildS
 		return true;
 	}
 
+	if (func_name === "alloc") {
+		// alloc_T(self, size): free each old slot's heap buffer (zeroed
+		// slots free NULL — a no-op), then the slab, then calloc the exact
+		// fresh slab (the raw body dropped the old pointer — the second
+		// Buffer hole in FOLLOWUP.md).
+		status.code += `if (self->data) {\n`;
+		status.code += `nomen_string* _old_slots = (nomen_string*)self->data;\n`;
+		status.code += `for (int _i = 0; _i < self->cap; _i++) { free(_old_slots[_i].ptr); }\n`;
+		status.code += `free(_old_slots);\n`;
+		status.code += `}\n`;
+		status.code += `self->cap = size;\n`;
+		status.code += `self->data = (unsigned long long)calloc(size, sizeof(nomen_string));\n`;
+		status.code += `return self->cap;\n`;
+		return true;
+	}
+
 	if (func_name === "destroy") {
 		// #destroy(self): free each slot's heap buffer, then free the slab.
 		// Unused/moved slots are zeroed (calloc'd or cleared by move_T), and
@@ -476,6 +509,13 @@ export function emit_owning_buffer_body(
 		// arg: spliced from teardown, or a temp that never had one).
 		status.code += `${Tptr}_slots = ${Tcast}(unsigned long long)self->data;\n`;
 		status.code += `struct ${elem.name} _old = _slots[i];\n`;
+		// Residual Buffer hole (FOLLOWUP.md): reclaim the displaced slot
+		// value's owned POINTER state (containers, boxes, classes, closures,
+		// enum payloads) before the overwrite — guarded per leaf on pointer
+		// identity against the incoming value, so the aliased round-trip
+		// keeps the slot's own state. The plain string fields are handled by
+		// emit_deep_copy_fields' displaced-old free below.
+		emit_reclaim_displaced_owned(elem, "_slots[i]", "val", status);
 		status.code += `_slots[i] = (*val);\n`;
 		emit_deep_copy_fields(elem, "_slots[i]", "val", status, "_old");
 		emit_transfer_owning_fields(elem, "val", status);
@@ -497,6 +537,24 @@ export function emit_owning_buffer_body(
 		return true;
 	}
 
+	if (func_name === "alloc") {
+		// alloc_T(self, size): reclaim the OLD slab first — per-element
+		// destroy (guarded on the constructed stamp: grown-but-unwritten and
+		// moved-out slots are zeroed) then the slab itself. The raw body
+		// dropped the old pointer, leaking every live element's owned state
+		// plus the slab (the second Buffer hole in FOLLOWUP.md). Exact-cap
+		// semantics preserved: the fresh slab is calloc'd at exactly `size`.
+		status.code += `if (self->data) {\n`;
+		status.code += `${Tptr}_old_slots = ${Tcast}(unsigned long long)self->data;\n`;
+		status.code += `for (int _i = 0; _i < self->cap; _i++) { if (_old_slots[_i]._vt) { ${elem.name}_destroy(&_old_slots[_i]); } }\n`;
+		status.code += `free(_old_slots);\n`;
+		status.code += `}\n`;
+		status.code += `self->cap = size;\n`;
+		status.code += `self->data = (unsigned long long)calloc(size, sizeof(struct ${elem.name}));\n`;
+		status.code += `return self->cap;\n`;
+		return true;
+	}
+
 	if (func_name === "modify") {
 		// modify_T(self, i, f): apply the function to the slot in place.
 		// Per mv field, free the slot's displaced copy and take over the
@@ -509,6 +567,11 @@ export function emit_owning_buffer_body(
 		status.code += `${Tptr}_slots = ${Tcast}(unsigned long long)self->data;\n`;
 		status.code += `struct ${elem.name} _old = _slots[i];\n`;
 		status.code += `struct ${elem.name} _new = ((struct ${elem.name} (*)(void *, struct ${elem.name} *))f->code)(f->env, &_old);\n`;
+		// Residual Buffer hole (FOLLOWUP.md): reclaim the displaced slot
+		// state's owned POINTER leaves when the fn's returned value does not
+		// alias them — the same guarded pass store_T uses. The plain string
+		// fields are handled by emit_take_over_fields' identity frees.
+		emit_reclaim_displaced_owned(elem, "_slots[i]", "_new", status);
 		emit_take_over_fields(elem, "_slots[i]", "_new", "_old", status);
 		return true;
 	}
@@ -564,6 +627,162 @@ export function emit_owning_buffer_body(
 	}
 
 	return false;
+}
+
+/**
+ * The container monos whose `<T>_destroy` reclaims the whole container
+ * (slab + per-element owned state): the core value-slot containers. A user
+ * mv struct must NOT take this path (its destroy would free its string
+ * fields too — the string machinery owns those) — such fields recurse.
+ */
+const CONTAINER_MONO_PREFIXES = ["Buffer_", "List_", "Map_", "Set_", "Array_"];
+
+let c_disp_closure_counter = 0;
+
+function is_container_mono_name(name: string): boolean {
+	return CONTAINER_MONO_PREFIXES.some((p) => name.startsWith(p));
+}
+
+/**
+ * Member paths (relative to the container struct start) of every owned slab
+ * pointer inside a container mono: the `data` words of the Buffer-shaped
+ * structs reachable through nested struct fields (`Buffer` → `.data`,
+ * `List` → `.items.data`, `Map` → `.keys.data` / `.values.data` / …). The
+ * store_T displaced-reclaim guard compares ALL of them: the incoming value
+ * aliases the displaced container only when every slab pointer is shared
+ * (a byte-copy round-trip); any differing pointer means the displaced
+ * container's slabs are exclusively owned and can be reclaimed.
+ */
+function container_data_paths(struct: StructNode, status: BuildStatus, prefix = ""): string[] {
+	const paths: string[] = [];
+	for (const field of struct.fields) {
+		if (field.type.is_ref || field.type.is_view || field.type.is_array) continue;
+		if (field.type.name === "string" && !field.type.is_array) continue;
+		if (field.name === "data") {
+			paths.push(`${prefix}.${field.name}`);
+			continue;
+		}
+		const fs = resolve_struct_type(field.type, status);
+		if (fs && !fs.is_class && is_container_mono_name(fs.name)) {
+			paths.push(...container_data_paths(fs, status, `${prefix}.${field.name}`));
+		}
+	}
+	return paths;
+}
+
+/**
+ * Reclaim the DISPLACED slot value's owned pointer state on a store onto an
+ * occupied slot — the residual Buffer hole (FOLLOWUP.md): store_T's
+ * fresh-slot contract leaked every owned field of the previous occupant
+ * except the plain string fields the B1 displaced-old reclaim already
+ * handles. Runs BEFORE the slot overwrite (the guard reads both the slot's
+ * and the incoming value's identity pointers live), per owned leaf:
+ *
+ *  - container fields: `<T>_destroy` in place when NO slab pointer aliases
+ *    the incoming value's (a byte-copy round-trip keeps the slot's own);
+ *  - Box / class fields: destroy + free the displaced wrapper when the
+ *    incoming pointer differs;
+ *  - func fields: the free-if-owned arm when the descriptor differs;
+ *  - enum-with-data fields: `<E>_free_payloads` when the tag differs, or
+ *    the same case's payload pointers all differ;
+ *  - nested mv struct fields: recurse (their strings stay out — the string
+ *    machinery owns them).
+ */
+function emit_reclaim_displaced_owned(
+	elem: StructNode,
+	slot_path: string,
+	val_path: string,
+	status: BuildStatus,
+): void {
+	for (const field of elem.fields) {
+		if (field.type.is_ref || field.type.is_view || field.type.is_array) continue;
+		if (field.type.name === "string" && !field.type.is_array) continue;
+		const slot_f = `${slot_path}.${field.name}`;
+		// `val` is a pointer at the top level (`val->field`); nested hops are
+		// values (`.`) — the same convention emit_transfer_owning_fields uses.
+		const val_f = `${val_path}${arrow(val_path)}${field.name}`;
+		const box_mono = box_field_mono(field.type, status);
+		if (box_mono) {
+			status.code += `if (${slot_f} && ${slot_f} != ${val_f}) { ${box_mono.name}_destroy(${slot_f}); free(${slot_f}); }\n`;
+			continue;
+		}
+		const fs = resolve_struct_type(field.type, status);
+		if (fs?.is_class) {
+			status.code += `if (${slot_f} && ${slot_f} != ${val_f}) { ${fs.name}_destroy(${slot_f}); free(${slot_f}); }\n`;
+			continue;
+		}
+		if (field.type.name === "func") {
+			const c = `_disp_closure_${c_disp_closure_counter++}`;
+			status.code += `if (${slot_f} && ${slot_f} != ${val_f}) {\n`;
+			status.code += `struct nomen_closure *${c} = (struct nomen_closure *)${slot_f};\n`;
+			status.code += `if (${c}->owned) { if (${c}->destroy_env) ${c}->destroy_env(${c}->env); free(${c}->env); free(${c}); }\n`;
+			status.code += `}\n`;
+			continue;
+		}
+		const field_enum = status.enums.find(
+			(e) => e.name === field.type.name && e.has_associated_data,
+		);
+		if (field_enum) {
+			emit_displaced_enum_reclaim(field_enum, slot_f, val_f, status);
+			continue;
+		}
+		if (fs && !fs.is_class) {
+			if (is_container_mono_name(fs.name)) {
+				const data_paths = container_data_paths(fs, status);
+				if (!data_paths.length) continue;
+				// A fresh (zeroed) slot owns nothing — the first slab pointer
+				// doubles as the emptiness check, sparing the destroy call on
+				// the fresh-store hot path.
+				const guard = [
+					`${slot_f}${data_paths[0]}`,
+					...data_paths.map((p) => `${slot_f}${p} != ${val_f}${p}`),
+				].join(" && ");
+				status.code += `if (${guard}) { ${fs.name}_destroy(&${slot_f}); }\n`;
+			} else if (struct_needs_destroy(fs, status) || has_string_fields(fs, status)) {
+				emit_reclaim_displaced_owned(fs, slot_f, val_f, status);
+			}
+		}
+	}
+}
+
+/**
+ * The enum-with-data arm of the displaced reclaim: the payload compare must
+ * be tag-scoped (payloads of different cases never alias — distinct
+ * allocations), so per owning case: a differing tag reclaims outright; the
+ * same tag reclaims only when every payload pointer differs (the round-trip
+ * identity keeps the slot's payloads).
+ */
+function emit_displaced_enum_reclaim(
+	elem: EnumNode,
+	slot_f: string,
+	val_f: string,
+	status: BuildStatus,
+): void {
+	const owning_cases = elem.cases.filter((c) =>
+		c.params.some((p) => p.type.name === "string" || payload_is_reference(p.type, status)),
+	);
+	if (!owning_cases.length) return;
+	const reclaim = `${elem.name}_free_payloads(&${slot_f});`;
+	const guards = owning_cases.map((c) => {
+		const compares = c.params
+			.filter((p) => p.type.name === "string" || payload_is_reference(p.type, status))
+			.map((p) => {
+				const slot_p = `${slot_f}._data._${c.name}.${p.name}`;
+				const val_p = `${val_f}._data._${c.name}.${p.name}`;
+				return p.type.name === "string" ? `${slot_p}.ptr != ${val_p}.ptr` : `${slot_p} != ${val_p}`;
+			});
+		return `else if (${slot_f}.tag == ${elem.name}_${c.name}) { if (${compares.join(" && ")}) { ${reclaim} } }`;
+	});
+	status.code += `if (${slot_f}.tag != ${val_f}.tag) { ${reclaim} }\n`;
+	status.code += `${guards.join(" ")}\n`;
+}
+
+/** The C-side payload reference check (mirrors the enum reclaim's shape). */
+function payload_is_reference(type: { name: string }, status: BuildStatus): boolean {
+	return (
+		status.structs.some((s) => s.name === type.name && s.is_class) ||
+		status.traits.some((t) => t.name === type.name)
+	);
 }
 
 /**
