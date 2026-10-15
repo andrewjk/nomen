@@ -1,0 +1,307 @@
+/**
+ * A picked color's 0-255 components (`ColorPicker.rgb`'s return value)
+ **/
+pub struct Rgb {
+	pub var red = 0
+	pub var green = 0
+	pub var blue = 0
+}
+
+/**
+ * A system color well (click to open the platform color panel)
+ *
+ * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
+ * single field is a platform handle, so the value is movable and its
+ * `#destroy` releases what the handle names. The constructor's `self` is
+ * the inline instance (the `.` accessor); methods keep the pointer form.
+ *
+ * Components travel as 0-255 ints; the platform stores 0-1 doubles, so the
+ * round trip is exact to ±1 (the getters round).
+ **/
+pub mv struct ColorPicker : Control {
+	var uint64 handle = 0
+
+	pub func #init = (self, Window window) {
+		```
+		#arch: c
+		#platform: macos
+		id well = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSColorWell"), sel_registerName("alloc")),
+			sel_registerName("initWithFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 44, 24));
+		id contentView = ((id(*)(id, SEL))objc_msgSend)(
+			(id)window->handle, sel_registerName("contentView"));
+		((void(*)(id, SEL, id))objc_msgSend)(
+			contentView, sel_registerName("addSubview:"), well);
+		self.handle = (uint64_t)well;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		id well = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSColorWell"), sel_registerName("alloc")),
+			sel_registerName("initWithFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 44, 24));
+		id contentView = ((id(*)(id, SEL))objc_msgSend)(
+			(id)window->handle, sel_registerName("contentView"));
+		((void(*)(id, SEL, id))objc_msgSend)(
+			contentView, sel_registerName("addSubview:"), well);
+		self->handle = (uint64_t)well;
+		```
+		```
+		#arch: c
+		#platform: ios
+		id well = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("UIColorWell"), sel_registerName("alloc")),
+			sel_registerName("initWithFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 44, 44));
+		id parentView = ((id(*)(id, SEL))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)(
+				(id)window->handle, sel_registerName("rootViewController")),
+			sel_registerName("view"));
+		((void(*)(id, SEL, id))objc_msgSend)(
+			parentView, sel_registerName("addSubview:"), well);
+		self.handle = (uint64_t)well;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		id well = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("UIColorWell"), sel_registerName("alloc")),
+			sel_registerName("initWithFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 44, 44));
+		id parentView = ((id(*)(id, SEL))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)(
+				(id)window->handle, sel_registerName("rootViewController")),
+			sel_registerName("view"));
+		((void(*)(id, SEL, id))objc_msgSend)(
+			parentView, sel_registerName("addSubview:"), well);
+		self->handle = (uint64_t)well;
+		```
+	}
+
+	pub func set_frame = (ref self, int x, int y, int width, int height) {
+		```
+		#arch: c
+		#platform: macos
+		((void(*)(id, SEL, CGRect))objc_msgSend)(
+			(id)self->handle, sel_registerName("setFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, CGRect))objc_msgSend)(
+			(id)self->handle, sel_registerName("setFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+		```
+		```
+		#arch: c
+		#platform: ios
+		((void(*)(id, SEL, CGRect))objc_msgSend)(
+			(id)self->handle, sel_registerName("setFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		((void(*)(id, SEL, CGRect))objc_msgSend)(
+			(id)self->handle, sel_registerName("setFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+		```
+	}
+
+	// Set the well's color from 0-255 components.
+	pub func set_rgb = (self, int red, int green, int blue) {
+		```
+		#arch: c
+		#platform: macos
+		id color = ((id(*)(id, SEL, double, double, double, double))objc_msgSend)(
+			(id)objc_getClass("NSColor"), sel_registerName("colorWithCalibratedRed:green:blue:alpha:"),
+			(double)red / 255.0, (double)green / 255.0, (double)blue / 255.0, 1.0);
+		((void(*)(id, SEL, id))objc_msgSend)(
+			(id)self->handle, sel_registerName("setColor:"), color);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		id color = ((id(*)(id, SEL, double, double, double, double))objc_msgSend)(
+			(id)objc_getClass("NSColor"), sel_registerName("colorWithCalibratedRed:green:blue:alpha:"),
+			(double)red / 255.0, (double)green / 255.0, (double)blue / 255.0, 1.0);
+		((void(*)(id, SEL, id))objc_msgSend)(
+			(id)self->handle, sel_registerName("setColor:"), color);
+		```
+		```
+		#arch: c
+		#platform: ios
+		id color = ((id(*)(id, SEL, double, double, double, double))objc_msgSend)(
+			(id)objc_getClass("UIColor"), sel_registerName("colorWithRed:green:blue:alpha:"),
+			(double)red / 255.0, (double)green / 255.0, (double)blue / 255.0, 1.0);
+		((void(*)(id, SEL, id))objc_msgSend)(
+			(id)self->handle, sel_registerName("setColor:"), color);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		id color = ((id(*)(id, SEL, double, double, double, double))objc_msgSend)(
+			(id)objc_getClass("UIColor"), sel_registerName("colorWithRed:green:blue:alpha:"),
+			(double)red / 255.0, (double)green / 255.0, (double)blue / 255.0, 1.0);
+		((void(*)(id, SEL, id))objc_msgSend)(
+			(id)self->handle, sel_registerName("setColor:"), color);
+		```
+	}
+
+	// The well's current color as 0-255 components ([red, green, blue]).
+	// A color the user picked from the panel can land between two 255ths —
+	// the components round to the nearest.
+	pub func rgb = (self, out Rgb) {
+		```
+		#arch: c
+		#platform: macos
+		id color = ((id(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("color"));
+		double r = 0, g = 0, b = 0, a = 0;
+		((void(*)(id, SEL, double*, double*, double*, double*))objc_msgSend)(
+			color, sel_registerName("getRed:green:blue:alpha:"), &r, &g, &b, &a);
+		struct Rgb result;
+		result.red = (int)(r * 255.0 + 0.5);
+		result.green = (int)(g * 255.0 + 0.5);
+		result.blue = (int)(b * 255.0 + 0.5);
+		return result;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		id color = ((id(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("color"));
+		double r = 0, g = 0, b = 0, a = 0;
+		((void(*)(id, SEL, double*, double*, double*, double*))objc_msgSend)(
+			color, sel_registerName("getRed:green:blue:alpha:"), &r, &g, &b, &a);
+		struct Rgb result;
+		result.red = (int)(r * 255.0 + 0.5);
+		result.green = (int)(g * 255.0 + 0.5);
+		result.blue = (int)(b * 255.0 + 0.5);
+		return result;
+		```
+		```
+		#arch: c
+		#platform: ios
+		id color = ((id(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("color"));
+		double r = 0, g = 0, b = 0, a = 0;
+		((void(*)(id, SEL, double*, double*, double*, double*))objc_msgSend)(
+			color, sel_registerName("getRed:green:blue:alpha:"), &r, &g, &b, &a);
+		struct Rgb result;
+		result.red = (int)(r * 255.0 + 0.5);
+		result.green = (int)(g * 255.0 + 0.5);
+		result.blue = (int)(b * 255.0 + 0.5);
+		return result;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		id color = ((id(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("color"));
+		double r = 0, g = 0, b = 0, a = 0;
+		((void(*)(id, SEL, double*, double*, double*, double*))objc_msgSend)(
+			color, sel_registerName("getRed:green:blue:alpha:"), &r, &g, &b, &a);
+		struct Rgb result;
+		result.red = (int)(r * 255.0 + 0.5);
+		result.green = (int)(g * 255.0 + 0.5);
+		result.blue = (int)(b * 255.0 + 0.5);
+		return result;
+		```
+	}
+
+	pub func set_hidden = (self, bool hidden) {
+		```
+		#arch: c
+		#platform: macos
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+		```
+		```
+		#arch: c
+		#platform: ios
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+		```
+	}
+
+	// ── Control trait conformance ──
+	pub func intrinsic_size = (self, out Size) {
+		var [w, h] = native_intrinsic(self.handle)
+		var s = Size()
+		s.width = w
+		s.height = h
+		return s
+	}
+
+	pub func measure = (self, BoxConstraints constraints, out Size) {
+		var Size s = self.intrinsic_size()
+		if s.width > constraints.max_width {
+			s.width = constraints.max_width
+		}
+		if s.width < constraints.min_width {
+			s.width = constraints.min_width
+		}
+		if s.height > constraints.max_height {
+			s.height = constraints.max_height
+		}
+		if s.height < constraints.min_height {
+			s.height = constraints.min_height
+		}
+		return s
+	}
+
+	func #destroy = () {
+		```
+		#arch: c
+		#platform: macos
+		if (self->handle) {
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		if (self->handle) {
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		```
+		```
+		#arch: c
+		#platform: ios
+		if (self->handle) {
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		if (self->handle) {
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		```
+	}
+}
