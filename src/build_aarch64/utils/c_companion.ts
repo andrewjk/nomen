@@ -18,6 +18,11 @@ export interface CompanionFunction {
 	func: FunctionNode;
 	struct_name?: string;
 	raw_code: string;
+	/** The C body is emitted under a `_c`-suffixed label: the aarch64 side
+	 *  emits a thunk under the bare label that bridges the C ABI to the Nomen
+	 *  call ABI (float params/returns move x bits to/from the d file — see
+	 *  check_c_fallback). */
+	bridge_c_abi?: boolean;
 }
 
 /**
@@ -168,7 +173,13 @@ export function generate_companion(functions: CompanionFunction[], status: Build
 
 	// --- Function definitions ---
 	for (const entry of functions) {
-		out += generate_c_function(entry.func, entry.struct_name, entry.raw_code, status);
+		out += generate_c_function(
+			entry.func,
+			entry.struct_name,
+			entry.raw_code,
+			status,
+			entry.bridge_c_abi,
+		);
 	}
 
 	return out;
@@ -276,6 +287,7 @@ function generate_c_function(
 	struct_name: string | undefined,
 	raw_code: string,
 	status: BuildStatus,
+	bridge_c_abi = false,
 ): string {
 	// --- Determine function label ---
 	let func_label: string;
@@ -324,13 +336,15 @@ function generate_c_function(
 	// Enum-with-data returns share the x8 sret convention on the asm side,
 	// so they need the same bridging when the C ABI would return the value
 	// in registers (≤ 16 bytes; larger C returns already ride the hidden
-	// x8 sret pointer, matching the asm convention naturally).
+	// x8 sret pointer, matching the asm convention naturally). Float
+	// params/returns need the same `_c` relocation for the d-file bridge
+	// (`bridge_c_abi`, computed by check_c_fallback).
 	const return_enum_size = return_struct ? undefined : get_enum_sret_size(return_type, status);
 	const return_struct_size = return_struct ? get_struct_size(return_type, status) : 0;
 	const needs_thunk =
 		(return_struct && return_struct_size <= 16) ||
 		(return_enum_size !== undefined && return_enum_size <= 16);
-	const symbol_label = needs_thunk ? `${func_label}_c` : func_label;
+	const symbol_label = needs_thunk || bridge_c_abi ? `${func_label}_c` : func_label;
 
 	// --- Build parameter list ---
 	const params = func.params;

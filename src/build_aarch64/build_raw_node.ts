@@ -108,39 +108,74 @@ export function check_c_fallback(
 		}
 	}
 
+	// Float params or return? When yes, the C companion's clang-compiled ABI
+	// (floats in the d file) diverges from the Nomen call ABI (floats as raw
+	// bits in x registers) and the bare label must become a bridge thunk.
+	let float_bridge = has_float_abi_divergence(func);
+	if (float_bridge && func.params.some((p) => p.is_variadic)) {
+		if (!status.build_errors) status.build_errors = [];
+		const label = struct_name ? `${struct_name}.${func.name.replace(/#/g, "")}` : func.name;
+		status.build_errors.push({
+			message: `Function ${label} mixes variadic params with floats — no aarch64_use_c ABI thunk for that shape`,
+			start: func.start,
+		});
+		float_bridge = false;
+	}
+
 	if (is_c_fallback) {
 		if (file_scope_code) {
 			if (!status.file_scope_c) status.file_scope_c = "";
 			status.file_scope_c += file_scope_code;
 		}
 		if (!status.c_companion_functions) status.c_companion_functions = [];
-		status.c_companion_functions.push({ func, struct_name, raw_code });
+		status.c_companion_functions.push({
+			func,
+			struct_name,
+			raw_code,
+			bridge_c_abi: float_bridge,
+		});
 
-		// Emit an assembly thunk when the function returns a struct ≤ 16 bytes.
-		// The aarch64 backend uses x8 (caller-allocated buffer) for ALL struct
-		// returns — and, like structs, for all enum-with-data returns — but
-		// the standard ARM64 ABI used by the C companion returns small structs
-		// in registers x0/x1. The thunk bridges the gap. (> 16-byte returns
-		// already ride C's hidden-pointer sret, which matches x8 naturally.)
-		// A `#init` is exempt: class OR struct, the ctor convention is
-		// x0 = &instance + in-place mutation, which the companion satisfies
-		// directly under the bare label (see generate_c_function) — a thunk
-		// here would collide with it and store through the never-staged x8.
+		// Emit an assembly thunk when the companion's C ABI diverges from the
+		// Nomen call ABI:
+		//
+		// 1. Struct returns ≤ 16 bytes. The aarch64 backend uses x8
+		//    (caller-allocated buffer) for ALL struct returns — and, like
+		//    structs, for all enum-with-data returns — but the standard ARM64
+		//    ABI used by the C companion returns small structs in registers
+		//    x0/x1. The thunk bridges the gap. (> 16-byte returns already ride
+		//    C's hidden-pointer sret, which matches x8 naturally.)
+		// 2. Float params/returns. Nomen's call ABI passes every scalar in an
+		//    x register (floats as raw bits), while clang-compiled companion
+		//    code expects floats per AAPCS64 in the d file (and returns them
+		//    in d0).
+		//
+		// A `#init` is exempt from (1): class OR struct, the ctor convention
+		// is x0 = &instance + in-place mutation (see generate_c_function) — a
+		// struct-return thunk here would collide with it and store through
+		// the never-staged x8. A ctor with floats still gets a thunk for (2):
+		// it forwards x0 (the instance) unchanged and only shuffles the
+		// float bits to the d file.
 		const is_ctor = func.name === "#init" && !!struct_name;
 		const return_type = is_ctor ? "" : func.return_type?.name || "";
 		const return_struct = status.structs.find(
 			(s) => s.name === return_type && !s.is_simple_type && !s.is_class,
 		);
 		const enum_sret_size = get_enum_sret_size(return_type, status);
+		let sret_size: number | undefined;
 		if (return_struct) {
 			const struct_size = get_struct_size(return_type, status);
 			if (struct_size <= 16) {
-				emit_struct_return_thunk(func, struct_name, status, struct_size);
+				sret_size = struct_size;
 			}
 		} else if (enum_sret_size !== undefined) {
 			if (enum_sret_size <= 16) {
-				emit_struct_return_thunk(func, struct_name, status, enum_sret_size);
+				sret_size = enum_sret_size;
 			}
+		}
+		if (float_bridge) {
+			emit_c_abi_thunk(func, struct_name, status, is_ctor ? undefined : sret_size);
+		} else if (!is_ctor && sret_size !== undefined) {
+			emit_c_abi_thunk(func, struct_name, status, sret_size);
 		}
 
 		return true;
@@ -149,32 +184,90 @@ export function check_c_fallback(
 	return false;
 }
 
-function emit_struct_return_thunk(
+/**
+ * Does this parameter type ride the C ABI's d-register file? Nomen `float*`
+ * types are 64-bit doubles (`c_type: "double"`).
+ */
+function is_float_type_name(name: string): boolean {
+	return name.startsWith("float") || name.startsWith("ufloat");
+}
+
+/** Any float param, or a float return? (see emit_c_abi_thunk case 2) */
+function has_float_abi_divergence(func: FunctionNode): boolean {
+	if (is_float_type_name(func.return_type?.name || "")) return true;
+	return func.params.some((p) => !p.is_variadic && is_float_type_name(p.type.name));
+}
+
+function emit_c_abi_thunk(
 	func: FunctionNode,
 	struct_name: string | undefined,
 	status: BuildStatus,
-	struct_size: number,
+	struct_size: number | undefined,
 ): void {
 	const func_label = get_func_label(func, struct_name, status);
 	const c_label = `${func_label}_c`;
-	const words = Math.ceil(struct_size / 8);
+	const words = struct_size !== undefined ? Math.ceil(struct_size / 8) : 0;
+	const return_is_float = is_float_type_name(func.return_type?.name || "");
 
 	emit_asm(status, `.p2align 2\n`);
 	emit_asm(status, `${func_label}:\n`);
 	emit_asm(status, `stp x29, x30, [sp, #-16]!\n`);
-	emit_asm(status, `sub sp, sp, #16\n`);
-	emit_asm(status, `str x8, [sp, #0]\n`);
-	emit_asm(status, `bl ${c_label}\n`);
-	emit_asm(status, `ldr x8, [sp, #0]\n`);
-	for (let i = 0; i < words; i++) {
-		const reg = i === 0 ? "x0" : i === 1 ? "x1" : `x${i}`;
-		if (i === 0) {
-			emit_asm(status, `str ${reg}, [x8]\n`);
-		} else {
-			emit_asm(status, `str ${reg}, [x8, #${i * 8}]\n`);
+	emit_asm(status, `mov x29, sp\n`);
+	if (struct_size !== undefined) {
+		emit_asm(status, `sub sp, sp, #16\n`);
+		emit_asm(status, `str x8, [sp, #0]\n`);
+	}
+
+	// Re-assign every parameter to its C-ABI register. Non-float params keep
+	// x registers on both sides — but only their POSITION differs when floats
+	// precede them (a float consumes an incoming x slot, no outgoing x slot),
+	// so integer params may shift down. Floats move x bits to d slots. Move
+	// the floats FIRST (fmov reads x, writes d — it cannot clobber a slot a
+	// later x move needs), then the x moves in REVERSE param order so an
+	// earlier param's shifted destination is never a later param's unread
+	// source (same argument as build_foreign).
+	let in_slot = 0;
+	let out_x = 0;
+	let out_d = 0;
+	const x_moves: { out: number; in: number }[] = [];
+	const d_moves: { out: number; in: number }[] = [];
+	for (const param of func.params) {
+		if (is_float_type_name(param.type.name)) {
+			d_moves.push({ out: out_d++, in: in_slot });
+			in_slot += 1;
+			continue;
+		}
+		// A 16-byte composite (fat string / view) rides a register PAIR on
+		// both sides — same slot count in and out.
+		const wide = param.type.name === "string" || param.type.is_view;
+		const slots = wide ? 2 : 1;
+		x_moves.push({ out: out_x, in: in_slot });
+		out_x += slots;
+		in_slot += slots;
+	}
+	for (const m of d_moves) {
+		emit_asm(status, `fmov d${m.out}, x${m.in}\n`);
+	}
+	for (let i = x_moves.length - 1; i >= 0; i--) {
+		const { out, in: inc } = x_moves[i];
+		if (out !== inc) {
+			emit_asm(status, `mov x${out}, x${inc}\n`);
 		}
 	}
-	emit_asm(status, `add sp, sp, #16\n`);
+
+	emit_asm(status, `bl ${c_label}\n`);
+	if (struct_size !== undefined) {
+		emit_asm(status, `ldr x8, [sp, #0]\n`);
+		for (let i = 0; i < words; i++) {
+			const reg = i === 0 ? "x0" : i === 1 ? "x1" : `x${i}`;
+			emit_asm(status, `str ${reg}, [x8, #${i * 8}]\n`);
+		}
+		emit_asm(status, `add sp, sp, #16\n`);
+	} else if (return_is_float) {
+		// The C body returned the float in d0; the Nomen ABI reads it as bits
+		// in x0.
+		emit_asm(status, `fmov x0, d0\n`);
+	}
 	emit_asm(status, `ldp x29, x30, [sp], #16\n`);
 	emit_asm(status, `ret\n`);
 }

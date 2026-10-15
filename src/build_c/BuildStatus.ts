@@ -136,11 +136,14 @@ export default interface BuildStatus {
 	 * Functions whose bodies are compiled as C (via `aarch64_use_c`).
 	 * Each entry records the function node, mv struct (if any), and the
 	 * concatenated raw C code — used to generate the companion file.
+	 * `bridge_c_abi` relocates the C body under a `_c` label so the aarch64
+	 * side can emit an ABI thunk under the bare name (floats x↔d file).
 	 */
 	c_companion_functions?: {
 		func: FunctionNode;
 		struct_name?: string;
 		raw_code: string;
+		bridge_c_abi?: boolean;
 	}[];
 	/**
 	 * Build errors (e.g. missing arch block for the target architecture).
