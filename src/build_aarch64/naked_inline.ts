@@ -36,6 +36,7 @@
  */
 
 import type BuildStatus from "../build_c/BuildStatus.ts";
+import { get_built_in_type } from "../built_in_types.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import type FunctionNode from "../nodes/FunctionNode.ts";
@@ -44,6 +45,25 @@ import type Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import { pointer_element_size } from "./utils/ptr_access.ts";
 import { get_field_offset } from "./utils/struct_layout.ts";
+
+/**
+ * Storage width of a built-in scalar type name: 1/2/4 for the sub-word ints,
+ * bool, and char; 8 for everything else (words, floats-as-bits, references).
+ * `null` for anything that is not a built-in scalar (structs, enums, strings,
+ * views) — callers keep their existing behavior for those.
+ */
+function scalar_byte_width(type_name: string): number {
+	const info = get_built_in_type(type_name);
+	if (!info || info.bytes === undefined) return 8;
+	if (info.bytes === 1 || info.bytes === 2 || info.bytes === 4) return info.bytes;
+	return 8;
+}
+
+/** The W-register alias of an X register ("x19" → "w19") — sub-word loads
+ *  zero-extend into the full register, so the caller sees a clean scalar. */
+function w_alias(reg: string): string {
+	return reg.startsWith("x") ? `w${reg.slice(1)}` : reg;
+}
 
 const NAKED_MAX_STATEMENTS = 4;
 const NAKED_SCRATCH = ["x9", "x10"];
@@ -209,7 +229,21 @@ function emit_naked_expr(node: BaseNode, dst: string, ctx: NakedCtx): boolean {
 			if (next === null) return false;
 			struct_name = next;
 		}
-		ctx.push(`ldr ${dst}, [x19, #${offset}]`);
+		// Sub-word scalars (bool, char, int8/16/32) must load at their storage
+		// width: a full `ldr` would read the field's tail padding into the
+		// result, and freshly constructed instances never zero that padding —
+		// a `bool` field read as a word is truthy on whatever the stack held.
+		// Floats keep the word load (they ride x registers as raw bits).
+		const width = scalar_byte_width(struct_name);
+		if (width === 1) {
+			ctx.push(`ldrb ${w_alias(dst)}, [x19, #${offset}]`);
+		} else if (width === 2) {
+			ctx.push(`ldrh ${w_alias(dst)}, [x19, #${offset}]`);
+		} else if (width === 4) {
+			ctx.push(`ldr ${w_alias(dst)}, [x19, #${offset}]`);
+		} else {
+			ctx.push(`ldr ${dst}, [x19, #${offset}]`);
+		}
 		return true;
 	}
 	if (nt === "index") {

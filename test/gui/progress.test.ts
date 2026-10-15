@@ -11,11 +11,8 @@ const system = get_library(path.resolve("core"));
 // Tier 1 #3 (GUI_PLAN): Progress — NSProgressIndicator (bar) / UIProgressView.
 // Determinate value 0..1 plus the indeterminate flag, polled per frame.
 describe("Progress control", () => {
-	test(
-		"value round trip + indeterminate flag",
-		{ timeout: 120000 },
-		async () => {
-			const input = `
+	test("value round trip + indeterminate flag", { timeout: 120000 }, async () => {
+		const input = `
 import System
 import System::Controls
 
@@ -34,17 +31,16 @@ pub func main = () {
 	Console.write("\\n")
 }
 `;
-			const parsed = parse(input, system);
-			expect(parsed.errors).toEqual([]);
-			await build_and_check_output(
-				input,
-				"gui_progress",
-				"0.000000 0.250000 bar spin 1.000000",
-				true,
-				{ platform: "macos", audit: false },
-			);
-		},
-	);
+		const parsed = parse(input, system);
+		expect(parsed.errors).toEqual([]);
+		await build_and_check_output(
+			input,
+			"gui_progress",
+			"0.000000 0.250000 bar spin 1.000000",
+			true,
+			{ platform: "macos", audit: false },
+		);
+	});
 
 	test("Progress conforms to the Control trait (measure / intrinsic_size)", () => {
 		const input = `
