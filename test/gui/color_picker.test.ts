@@ -11,11 +11,8 @@ const system = get_library(path.resolve("core"));
 // Tier 1 #15 (GUI_PLAN): ColorPicker — NSColorWell / UIColorWell (iOS 14+).
 // 0-255 component API; the well opens the platform color panel on click.
 describe("ColorPicker control", () => {
-	test(
-		"set_rgb / rgb round trip",
-		{ timeout: 120000 },
-		async () => {
-			const input = `
+	test("set_rgb / rgb round trip", { timeout: 120000 }, async () => {
+		const input = `
 import System
 import System::Controls
 
@@ -31,14 +28,13 @@ pub func main = () {
 	Console.write("\\n")
 }
 `;
-			const parsed = parse(input, system);
-			expect(parsed.errors).toEqual([]);
-			await build_and_check_output(input, "gui_color_picker", "255,0,128 16,64,255", true, {
-				platform: "macos",
-				audit: false,
-			});
-		},
-	);
+		const parsed = parse(input, system);
+		expect(parsed.errors).toEqual([]);
+		await build_and_check_output(input, "gui_color_picker", "255,0,128 16,64,255", true, {
+			platform: "macos",
+			audit: false,
+		});
+	});
 
 	test("ColorPicker conforms to the Control trait (measure / intrinsic_size)", () => {
 		const input = `

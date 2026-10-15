@@ -11,11 +11,8 @@ const system = get_library(path.resolve("core"));
 // Tier 1 #14 (GUI_PLAN): DatePicker — NSDatePicker (clock+calendar style) /
 // UIDatePicker. Values travel as epoch seconds; the round trip is exact.
 describe("DatePicker control", () => {
-	test(
-		"epoch-seconds set / get round trip",
-		{ timeout: 120000 },
-		async () => {
-			const input = `
+	test("epoch-seconds set / get round trip", { timeout: 120000 }, async () => {
+		const input = `
 import System
 import System::Controls
 
@@ -29,14 +26,13 @@ pub func main = () {
 	Console.write("\\n")
 }
 `;
-			const parsed = parse(input, system);
-			expect(parsed.errors).toEqual([]);
-			await build_and_check_output(input, "gui_date_picker", "1000000000 1234567890", true, {
-				platform: "macos",
-				audit: false,
-			});
-		},
-	);
+		const parsed = parse(input, system);
+		expect(parsed.errors).toEqual([]);
+		await build_and_check_output(input, "gui_date_picker", "1000000000 1234567890", true, {
+			platform: "macos",
+			audit: false,
+		});
+	});
 
 	test("DatePicker conforms to the Control trait (measure / intrinsic_size)", () => {
 		const input = `

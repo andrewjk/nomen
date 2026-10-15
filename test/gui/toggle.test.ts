@@ -11,11 +11,8 @@ const system = get_library(path.resolve("core"));
 // Tier 1 #6 (GUI_PLAN): Toggle — NSButton push-on/push-off / UIButton
 // selected. A Button variant that stays depressed until clicked again.
 describe("Toggle control", () => {
-	test(
-		"set_checked / is_checked round trip",
-		{ timeout: 120000 },
-		async () => {
-			const input = `
+	test("set_checked / is_checked round trip", { timeout: 120000 }, async () => {
+		const input = `
 import System
 import System::Controls
 
@@ -32,14 +29,13 @@ pub func main = () {
 	Console.write("\\n")
 }
 `;
-			const parsed = parse(input, system);
-			expect(parsed.errors).toEqual([]);
-			await build_and_check_output(input, "gui_toggle", "off on off", true, {
-				platform: "macos",
-				audit: false,
-			});
-		},
-	);
+		const parsed = parse(input, system);
+		expect(parsed.errors).toEqual([]);
+		await build_and_check_output(input, "gui_toggle", "off on off", true, {
+			platform: "macos",
+			audit: false,
+		});
+	});
 
 	test("Toggle conforms to the Control trait (measure / intrinsic_size)", () => {
 		const input = `

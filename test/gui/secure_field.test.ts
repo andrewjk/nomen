@@ -13,11 +13,8 @@ const system = get_library(path.resolve("core"));
 // distinct control. The runtime test proves the VALUE is readable back even
 // though the platform masks the display.
 describe("SecureField control", () => {
-	test(
-		"set_text / get_text round trip on the masked value",
-		{ timeout: 120000 },
-		async () => {
-			const input = `
+	test("set_text / get_text round trip on the masked value", { timeout: 120000 }, async () => {
+		const input = `
 import System
 import System::Controls
 
@@ -32,14 +29,13 @@ pub func main = () {
 	Console.write("\\n")
 }
 `;
-			const parsed = parse(input, system);
-			expect(parsed.errors).toEqual([]);
-			await build_and_check_output(input, "gui_secure_field", " hunter2 ", true, {
-				platform: "macos",
-				audit: false,
-			});
-		},
-	);
+		const parsed = parse(input, system);
+		expect(parsed.errors).toEqual([]);
+		await build_and_check_output(input, "gui_secure_field", " hunter2 ", true, {
+			platform: "macos",
+			audit: false,
+		});
+	});
 
 	test("SecureField conforms to the Control trait (measure / intrinsic_size)", () => {
 		const input = `

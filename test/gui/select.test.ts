@@ -11,11 +11,8 @@ const system = get_library(path.resolve("core"));
 // Tier 1 #9 (GUI_PLAN): Select — NSPopUpButton (macOS-first; iOS defers to a
 // picker/action sheet). add/remove items, poll selected_index.
 describe("Select control", () => {
-	test(
-		"items, selection, and clear round trip",
-		{ timeout: 120000 },
-		async () => {
-			const input = `
+	test("items, selection, and clear round trip", { timeout: 120000 }, async () => {
+		const input = `
 import System
 import System::Controls
 
@@ -33,14 +30,13 @@ pub func main = () {
 	Console.write("\\n")
 }
 `;
-			const parsed = parse(input, system);
-			expect(parsed.errors).toEqual([]);
-			await build_and_check_output(input, "gui_select", "3 0 2 0 -1", true, {
-				platform: "macos",
-				audit: false,
-			});
-		},
-	);
+		const parsed = parse(input, system);
+		expect(parsed.errors).toEqual([]);
+		await build_and_check_output(input, "gui_select", "3 0 2 0 -1", true, {
+			platform: "macos",
+			audit: false,
+		});
+	});
 
 	test("Select conforms to the Control trait (measure / intrinsic_size)", () => {
 		const input = `

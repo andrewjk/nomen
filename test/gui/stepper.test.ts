@@ -11,11 +11,8 @@ const system = get_library(path.resolve("core"));
 // Tier 1 #11 (GUI_PLAN): Stepper — NSStepper / UIStepper. min/max/increment
 // + a polled value; pairs with a TextBox for "number input".
 describe("Stepper control", () => {
-	test(
-		"min/max/increment/value round trip",
-		{ timeout: 120000 },
-		async () => {
-			const input = `
+	test("min/max/increment/value round trip", { timeout: 120000 }, async () => {
+		const input = `
 import System
 import System::Controls
 
@@ -32,14 +29,13 @@ pub func main = () {
 	Console.write("\\n")
 }
 `;
-			const parsed = parse(input, system);
-			expect(parsed.errors).toEqual([]);
-			await build_and_check_output(input, "gui_stepper", "4.000000 10.000000", true, {
-				platform: "macos",
-				audit: false,
-			});
-		},
-	);
+		const parsed = parse(input, system);
+		expect(parsed.errors).toEqual([]);
+		await build_and_check_output(input, "gui_stepper", "4.000000 10.000000", true, {
+			platform: "macos",
+			audit: false,
+		});
+	});
 
 	test("Stepper conforms to the Control trait (measure / intrinsic_size)", () => {
 		const input = `

@@ -11,11 +11,8 @@ const system = get_library(path.resolve("core"));
 // Tier 1 #13 (GUI_PLAN): ImageView — NSImageView / UIImageView. File path or
 // named system symbol first; a failed load leaves the view empty.
 describe("ImageView control", () => {
-	test(
-		"set_symbol loads, a bad path clears, has_image reports",
-		{ timeout: 120000 },
-		async () => {
-			const input = `
+	test("set_symbol loads, a bad path clears, has_image reports", { timeout: 120000 }, async () => {
+		const input = `
 import System
 import System::Controls
 
@@ -30,14 +27,13 @@ pub func main = () {
 	Console.write("\\n")
 }
 `;
-			const parsed = parse(input, system);
-			expect(parsed.errors).toEqual([]);
-			await build_and_check_output(input, "gui_image_view", "010", true, {
-				platform: "macos",
-				audit: false,
-			});
-		},
-	);
+		const parsed = parse(input, system);
+		expect(parsed.errors).toEqual([]);
+		await build_and_check_output(input, "gui_image_view", "010", true, {
+			platform: "macos",
+			audit: false,
+		});
+	});
 
 	test("ImageView conforms to the Control trait (measure / intrinsic_size)", () => {
 		const input = `

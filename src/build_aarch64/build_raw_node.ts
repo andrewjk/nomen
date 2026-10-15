@@ -3,6 +3,7 @@ import { is_overloaded, mangled_label } from "../check/utils/function_overload.t
 import FunctionNode from "../nodes/FunctionNode.ts";
 import RawNode from "../nodes/RawNode.ts";
 import { check_raw_arch_coverage, parse_raw_directives } from "../raw_directives.ts";
+import { sanitize_companion_label } from "./utils/c_companion.ts";
 import { asm_code_len, emit_asm } from "./utils/code_buffer.ts";
 import { raw_reload_lines_for } from "./utils/raw_reload.ts";
 import { get_enum_sret_size, get_struct_size } from "./utils/struct_layout.ts";
@@ -205,7 +206,7 @@ function emit_c_abi_thunk(
 	struct_size: number | undefined,
 ): void {
 	const func_label = get_func_label(func, struct_name, status);
-	const c_label = `${func_label}_c`;
+	const c_label = sanitize_companion_label(`${func_label}_c`);
 	const words = struct_size !== undefined ? Math.ceil(struct_size / 8) : 0;
 	const return_is_float = is_float_type_name(func.return_type?.name || "");
 

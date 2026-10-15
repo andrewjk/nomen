@@ -12,11 +12,8 @@ const system = get_library(path.resolve("core"));
 // is Nomen-level ("first selected wins" = uncheck the rest), so the runtime
 // test drives exactly that pattern over two buttons.
 describe("Radio control", () => {
-	test(
-		"Nomen-level group: selecting one unchecks the other",
-		{ timeout: 120000 },
-		async () => {
-			const input = `
+	test("Nomen-level group: selecting one unchecks the other", { timeout: 120000 }, async () => {
+		const input = `
 import System
 import System::Controls
 
@@ -37,14 +34,13 @@ pub func main = () {
 	Console.write("\\n")
 }
 `;
-			const parsed = parse(input, system);
-			expect(parsed.errors).toEqual([]);
-			await build_and_check_output(input, "gui_radio", "10 01", true, {
-				platform: "macos",
-				audit: false,
-			});
-		},
-	);
+		const parsed = parse(input, system);
+		expect(parsed.errors).toEqual([]);
+		await build_and_check_output(input, "gui_radio", "10 01", true, {
+			platform: "macos",
+			audit: false,
+		});
+	});
 
 	test("Radio conforms to the Control trait (measure / intrinsic_size)", () => {
 		const input = `

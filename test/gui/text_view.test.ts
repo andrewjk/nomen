@@ -12,11 +12,8 @@ const system = get_library(path.resolve("core"));
 // editing; sized explicitly by the container, value get/set round-trips
 // through the native text storage.
 describe("TextView control", () => {
-	test(
-		"multiline set_text / get_text round trip",
-		{ timeout: 120000 },
-		async () => {
-			const input = `
+	test("multiline set_text / get_text round trip", { timeout: 120000 }, async () => {
+		const input = `
 import System
 import System::Controls
 
@@ -31,17 +28,13 @@ pub func main = () {
 	Console.write("\\n")
 }
 `;
-			const parsed = parse(input, system);
-			expect(parsed.errors).toEqual([]);
-			await build_and_check_output(
-				input,
-				"gui_text_view",
-				"line one\nline two reset",
-				true,
-				{ platform: "macos", audit: false },
-			);
-		},
-	);
+		const parsed = parse(input, system);
+		expect(parsed.errors).toEqual([]);
+		await build_and_check_output(input, "gui_text_view", "line one\nline two reset", true, {
+			platform: "macos",
+			audit: false,
+		});
+	});
 
 	test("TextView conforms to the Control trait (measure / intrinsic_size)", () => {
 		const input = `

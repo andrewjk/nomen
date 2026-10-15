@@ -11,11 +11,8 @@ const system = get_library(path.resolve("core"));
 // Tier 1 #8 (GUI_PLAN): SearchField — NSSearchField / UISearchTextField.
 // Cancel button + placeholder come free with the native class.
 describe("SearchField control", () => {
-	test(
-		"set_text / get_text round trip",
-		{ timeout: 120000 },
-		async () => {
-			const input = `
+	test("set_text / get_text round trip", { timeout: 120000 }, async () => {
+		const input = `
 import System
 import System::Controls
 
@@ -28,14 +25,13 @@ pub func main = () {
 	Console.write("\\n")
 }
 `;
-			const parsed = parse(input, system);
-			expect(parsed.errors).toEqual([]);
-			await build_and_check_output(input, "gui_search_field", " nomen", true, {
-				platform: "macos",
-				audit: false,
-			});
-		},
-	);
+		const parsed = parse(input, system);
+		expect(parsed.errors).toEqual([]);
+		await build_and_check_output(input, "gui_search_field", " nomen", true, {
+			platform: "macos",
+			audit: false,
+		});
+	});
 
 	test("SearchField conforms to the Control trait (measure / intrinsic_size)", () => {
 		const input = `

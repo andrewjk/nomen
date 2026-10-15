@@ -33,7 +33,7 @@ import { reset_label_counter as reset_while_label_counter } from "./build_aarch6
 import { lift_functions, stack_balance_errors_from_lift } from "./build_aarch64/lift_asm.ts";
 import { reset_neon_counter } from "./build_aarch64/neon_emit.ts";
 import { emit_malloc } from "./build_aarch64/utils/audit.ts";
-import { generate_companion } from "./build_aarch64/utils/c_companion.ts";
+import { companion_function_label, generate_companion } from "./build_aarch64/utils/c_companion.ts";
 import { install_asm_code_buffer } from "./build_aarch64/utils/code_buffer.ts";
 import { scan_heap_returning_functions } from "./build_aarch64/utils/scan_heap_returns.ts";
 import { scan_inline_candidates } from "./build_aarch64/utils/scan_inline_candidates.ts";
@@ -575,6 +575,23 @@ export default function build(
 		status.file_scope_c
 	) {
 		companion = generate_companion(status.c_companion_functions ?? [], status);
+	}
+	// Mach-O reserves leading-`L` symbols for assembler-local labels, so an
+	// L-prefixed companion function (any method of an `LevelIndicator`-shaped
+	// struct) can't be referenced across objects: the asm's `bl L…` is
+	// rejected and clang drops the L-prefixed `__asm__` binding from the
+	// object symbol table. generate_companion already binds those symbols
+	// under a `_`-prefixed alias (sanitize_companion_label); rewrite the asm
+	// text's references — call sites, thunk branches, data refs — to match.
+	// A bare `\b${label}` (no trailing boundary) covers both the plain label
+	// and its `_c`-suffixed body in one pass.
+	if (options.arch === "aarch64" && companion && status.c_companion_functions) {
+		for (const entry of status.c_companion_functions) {
+			const label = companion_function_label(entry.func, entry.struct_name, status);
+			if (label.startsWith("L")) {
+				status.code = status.code.replace(new RegExp(`\\b${label}`, "g"), `_${label}`);
+			}
+		}
 	}
 	// The companion C file contains the pool infrastructure (file_scope_c)
 	// which uses raw malloc/free. Wrap them for audit so the counter stays

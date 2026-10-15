@@ -26,6 +26,38 @@ export interface CompanionFunction {
 }
 
 /**
+ * The label a `aarch64_use_c` function's C body is emitted under — the same
+ * shape the aarch64 side derives for thunks and call sites.
+ */
+export function companion_function_label(
+	func: FunctionNode,
+	struct_name: string | undefined,
+	status: BuildStatus,
+): string {
+	if (struct_name) {
+		const struct = status.structs.find((s) => s.name === struct_name);
+		if (struct && is_overloaded(struct, func.name)) {
+			return mangled_label(func, struct_name);
+		}
+		return `${struct_name}_${func.name.replace(/#/g, "")}`;
+	}
+	return func.name === "main" ? "_nomen_main" : func.name;
+}
+
+/**
+ * Mach-O reserves leading-`L` symbols for assembler-local labels: clang's
+ * assembler refuses `bl L…` to an undefined symbol (local labels can't be
+ * external), and clang's compiler drops L-prefixed `__asm__` bindings from
+ * the object symbol table entirely. A struct named `LevelIndicator` (or any
+ * L-leading function) with `aarch64_use_c` methods therefore binds its
+ * companion symbols under a `_`-prefixed alias — and build.ts rewrites the
+ * asm-side references to match.
+ */
+export function sanitize_companion_label(label: string): string {
+	return label.startsWith("L") ? `_${label}` : label;
+}
+
+/**
  * Generate the complete C companion file: includes, struct typedefs, and
  * function definitions for every collected `aarch64_use_c` function.
  */
@@ -290,17 +322,7 @@ function generate_c_function(
 	bridge_c_abi = false,
 ): string {
 	// --- Determine function label ---
-	let func_label: string;
-	if (struct_name) {
-		const struct = status.structs.find((s) => s.name === struct_name);
-		if (struct && is_overloaded(struct, func.name)) {
-			func_label = mangled_label(func, struct_name);
-		} else {
-			func_label = `${struct_name}_${func.name.replace(/#/g, "")}`;
-		}
-	} else {
-		func_label = func.name === "main" ? "_nomen_main" : func.name;
-	}
+	const func_label = companion_function_label(func, struct_name, status);
 
 	// A `#init` follows the aarch64 constructor convention — class OR struct
 	// (STRUCT_PLAN_3 R tranche 4): the caller provides the instance address in
@@ -344,7 +366,9 @@ function generate_c_function(
 	const needs_thunk =
 		(return_struct && return_struct_size <= 16) ||
 		(return_enum_size !== undefined && return_enum_size <= 16);
-	const symbol_label = needs_thunk || bridge_c_abi ? `${func_label}_c` : func_label;
+	const symbol_label = sanitize_companion_label(
+		needs_thunk || bridge_c_abi ? `${func_label}_c` : func_label,
+	);
 
 	// --- Build parameter list ---
 	const params = func.params;
