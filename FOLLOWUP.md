@@ -26,3 +26,12 @@ Proper fix options: emit the Nomen statements into the companion as
 generated C (hard — needs a full Nomen→C body compiler for the aarch64
 path), or reject mixed bodies at parse/check time with a clear error so the
 gap is never silent.
+
+## TextBox iOS `get_text` selector typo
+
+`core/System/Controls/TextBox.nm`, the `get_text` `#arch: aarch64_use_c` /
+`#platform: ios` block sends `sel_registerName("text.ptr")` — a typo'd
+selector (should be `"text"`, as the sibling `#arch: c` iOS block does).
+Untested on this machine (iOS blocks never compile on a macOS host); noticed
+while writing SecureField's parallel blocks. One-character fix whenever iOS
+builds get exercised.
