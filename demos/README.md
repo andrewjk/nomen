@@ -31,4 +31,7 @@ line that only rewrites when the string changes. The modals are created up
 front and driven from the manual event loop: Alert (blocks in NSAlert's own
 modal loop and reports the button pressed), Sheet (its content window is
 its own layout root, hit-tested in sheet coordinates while presented), and
-Popover (toggled from an anchor button).
+Popover (toggled from an anchor button). A Scrolling section hosts a tall
+label stack on a Scrollable's document view — measured unbounded, sized via
+`set_content_size`, laid out into that height, with the scroll offset
+polled into the status line.

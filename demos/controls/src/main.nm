@@ -96,6 +96,36 @@ pub func main = () {
 	const rule = Separator(win)
 	const form = GroupBox(win, "Group box")
 
+	var scroll_title = Text(win)
+	scroll_title.set_text("Scrolling")
+	scroll_title.set_bold(true)
+	var scroll = Scrollable(win)
+	// The scroll view's children live on its document view: build them
+	// against `content_window()` and lay them out into the content size
+	// (measure unbounded → set_content_size → layout) — see the Scrollable
+	// design note in GUI.md.
+	const scroll_content = scroll.content_window()
+	var scroll_grid = Grid(1, 6)
+	scroll_grid.padding = 8
+	var row_1 = Text(scroll_content)
+	row_1.set_text("Row 1 — scroll me")
+	var row_2 = Text(scroll_content)
+	row_2.set_text("Row 2")
+	var row_3 = Text(scroll_content)
+	row_3.set_text("Row 3")
+	var row_4 = Text(scroll_content)
+	row_4.set_text("Row 4")
+	var row_5 = Text(scroll_content)
+	row_5.set_text("Row 5")
+	var row_6 = Text(scroll_content)
+	row_6.set_text("Row 6 — the end")
+	scroll_grid.add(row_1.handle, 0, 24, 1)
+	scroll_grid.add(row_2.handle, 0, 24, 1)
+	scroll_grid.add(row_3.handle, 0, 24, 1)
+	scroll_grid.add(row_4.handle, 0, 24, 1)
+	scroll_grid.add(row_5.handle, 0, 24, 1)
+	scroll_grid.add(row_6.handle, 0, 24, 1)
+
 	var status = Text(win)
 	status.set_text("")
 
@@ -177,17 +207,26 @@ pub func main = () {
 	grid.add(group_title.handle, 0, 22, 2)
 	grid.add(rule.handle, 0, 4, 2)
 	grid.add(form.handle, 0, 72, 2)
+	grid.add(scroll_title.handle, 0, 22, 2)
+	grid.add(scroll.handle, 0, 120, 2)
 	grid.add(status.handle, 0, 40, 2)
 
 	grid.layout(win)
 	grid.set_resize_callback(win)
 	win.show()
 
+	// Size + lay out the scroll content once its frame is known (see the
+	// Scrollable design note in GUI.md). The document view starts showing
+	// its bottom-left corner (it is unflipped, so the engine's flip math
+	// owns the coordinates), hence the initial scroll_to_top.
+	layout_scroll_content(ref scroll, ref scroll_grid, scroll_content, win.content_width() - 32)
+	scroll.scroll_to_top()
+
 	// The polled status line — rewritten only when the string actually
 	// changes ("" forces the next poll to refresh after a transient
 	// message like the alert result).
 	var prev_status = ""
-	const string status_text = poll_status(ref slide, ref step, ref color, ref when)
+	const string status_text = poll_status(ref slide, ref step, ref color, ref when, ref scroll)
 	status.set_text(status_text)
 	prev_status = mv status_text
 
@@ -206,12 +245,13 @@ pub func main = () {
 			prev_w = cur_w
 			prev_h = cur_h
 			grid.layout(win)
+			layout_scroll_content(ref scroll, ref scroll_grid, scroll_content, cur_w - 32)
 		}
 
 		// Progress mirrors the slider; the status line reports the polled
-		// values (slider / stepper / color / date).
+		// values (slider / stepper / color / date / scroll offset).
 		bar.set_value(slide.value() / 100.0)
-		const string polled = poll_status(ref slide, ref step, ref color, ref when)
+		const string polled = poll_status(ref slide, ref step, ref color, ref when, ref scroll)
 		if polled != prev_status {
 			status.set_text(polled)
 			prev_status = mv polled
@@ -259,17 +299,38 @@ pub func main = () {
 
 // The polled status line: the continuous controls' current values, as one
 // string. Continuous controls are read every frame (no change callbacks in
-// the manual loop — see GUI_PLAN, cross-cutting follow-ups).
+// the manual loop — see GUI_PLAN, cross-cutting follow-ups). The scroll
+// offset is polled the same way so scrolling shows up in the status line.
 func poll_status = (
 	ref Slider slide,
 	ref Stepper step,
 	ref ColorPicker color,
 	ref DatePicker when,
+	ref Scrollable scroll,
 	out string
 ) {
 	const int sv = slide.value() as int
 	const int nv = step.value() as int
 	const Rgb c = color.rgb()
 	const int64 secs = when.time()
-	return "slider \{sv}  stepper \{nv}  rgb \{c.red},\{c.green},\{c.blue}  date \{secs}"
+	const int so = scroll.scroll_offset_y()
+	return "slider \{sv}  stepper \{nv}  rgb \{c.red},\{c.green},\{c.blue}  date \{secs}  scroll y=\{so}"
+}
+
+// Measure the scroll content with unbounded height, size the document view
+// to it, then lay the content out into that height (the flip needs the
+// document height to equal the content height before frames apply — see the
+// Scrollable design note in GUI.md). `content_w` is the scroll view's laid-
+// out width (window content minus the grid's padding).
+func layout_scroll_content = (
+	ref Scrollable scroll,
+	ref Container grid,
+	Window content,
+	int content_w
+) {
+	var bc = BoxConstraints()
+	bc.max_width = content_w
+	const Size cs = grid.measure(bc)
+	scroll.set_content_size(cs.width, cs.height)
+	grid.layout(content)
 }

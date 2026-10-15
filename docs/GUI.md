@@ -443,6 +443,43 @@ Fixed column count `cols`.
 - **Arrange**: child `i` → row `i / cols`, col `i % cols`. Position at
   `(x + col × col_width, y + cumulative_row_height)`.
 
+### Scrollable
+
+`Scrollable` wraps NSScrollView (macOS; UIScrollView is deferred with the other
+iOS stubs). It is a normal framed control — it sits in a Grid cell via
+`set_frame` — but its children live on a **document view**, which changes three
+things about the coordinate story:
+
+1. **Document view vs content view.** Children are added to the scroll view's
+   `documentView`, not the window's contentView. The control constructors all
+   take a `Window` and `addSubview:` onto its `contentView`, so `Scrollable`
+   generalizes the `Sheet.content_window()` trick: the document view is an
+   NSView subclass (`NomenDocumentView`) that answers `-contentView` by
+   returning *itself*, and `content_window()` hands back a `Window`-shaped
+   value naming it. Constructors and `Container.layout` then work unchanged.
+
+2. **y-flip.** `Container.layout` flips y against the parent height it reads
+   from `content_height()` — which, on the `content_window()` value, is the
+   *document* frame height. The document view stays **unflipped** (AppKit
+   bottom-left origin), so the existing flip math is exactly right and the
+   engine needs no new coordinate mode. One consequence: NSScrollView initially
+   shows the bottom-left corner of an unflipped document, so `scroll_to_top()`
+   exists and demos call it once after the first layout.
+
+3. **Content size reporting.** The flip needs the document height to equal the
+   laid-out content height *before* frames are applied. The flow per relayout
+   pass is therefore: measure the content grid with unbounded height
+   (`content_grid.measure(BoxConstraints)`), `scroll.set_content_size(w, h)`,
+   then `content_grid.layout(content)`. This keeps `Container` untouched; a
+   future trait-based layout would fold the sizing into measure.
+
+**Hit testing.** Click coordinates arrive in window space; laid-out child
+rectangles live in document space. The two differ by the scroll offset (and the
+scroll view's own origin), so interactive content needs
+`click_y - scroll_origin_y + scroll_offset_y()` before `grid.contains`. The
+gallery demo only polls the offset into its status line; the todo demo is the
+first app that will need the full translation.
+
 ## Invalidation & incremental relayout
 
 Each control has a `dirty` flag and a reference to its parent (via `parent_of`

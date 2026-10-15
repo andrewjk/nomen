@@ -1,0 +1,389 @@
+/**
+ * A scrolling viewport hosting arbitrary controls on a document view
+ *
+ * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
+ * fields are platform handles, so the value is movable and its `#destroy`
+ * releases what they name. The constructor's `self` is the inline instance
+ * (the `.` accessor); methods keep the pointer form.
+ *
+ * The scroll view is framed like any control (it sits in a Grid cell), but
+ * its children live on a DOCUMENT VIEW: `content_window` hands back a
+ * Window-shaped value whose `contentView` is the document view itself (the
+ * NomenDocumentView NSView subclass answers `-contentView` with `self`), so
+ * control constructors and `Container.layout` work unchanged. The document
+ * view stays unflipped, so the engine's y-flip against `content_height()`
+ * (the document height) is the existing math — see the Scrollable design
+ * note in GUI.md. Per relayout pass: measure the content grid unbounded,
+ * `set_content_size`, then `content_grid.layout(content)`. iOS defers to
+ * UIScrollView (TODO stubs; see GUI_PLAN Tier 2).
+ **/
+pub mv struct Scrollable: Control {
+	var uint64 handle = 0
+	var uint64 doc = 0
+
+	// File-scope helper: the document view class. It answers `-contentView`
+	// with `self` so Window-expecting constructors add their controls to the
+	// document view (registered once, like NomenResizeDelegate).
+	pub func #init = (self, Window window) {
+		```
+		#arch: c
+		#platform: macos
+		#scope: file
+		static id nomen_doc_content_view(id self, SEL cmd) {
+			(void)cmd;
+			return self;
+		}
+		static id nomen_document_view_class(void) {
+			Class Dv = objc_getClass("NomenDocumentView");
+			if (!Dv) {
+				Dv = objc_allocateClassPair(objc_getClass("NSView"), "NomenDocumentView", 0);
+				if (Dv) {
+					class_addMethod(Dv, sel_registerName("contentView"), (IMP)nomen_doc_content_view, "@@:");
+					objc_registerClassPair(Dv);
+				}
+			}
+			return Dv;
+		}
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		#scope: file
+		static id nomen_doc_content_view(id self, SEL cmd) {
+			(void)cmd;
+			return self;
+		}
+		static id nomen_document_view_class(void) {
+			Class Dv = objc_getClass("NomenDocumentView");
+			if (!Dv) {
+				Dv = objc_allocateClassPair(objc_getClass("NSView"), "NomenDocumentView", 0);
+				if (Dv) {
+					class_addMethod(Dv, sel_registerName("contentView"), (IMP)nomen_doc_content_view, "@@:");
+					objc_registerClassPair(Dv);
+				}
+			}
+			return Dv;
+		}
+		```
+		```
+		#arch: c
+		#platform: macos
+		id sv = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSScrollView"), sel_registerName("alloc")),
+			sel_registerName("initWithFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 240, 160));
+		((void(*)(id, SEL, BOOL))objc_msgSend)(sv, sel_registerName("setHasVerticalScroller:"), 1);
+		((void(*)(id, SEL, BOOL))objc_msgSend)(sv, sel_registerName("setDrawsBackground:"), 0);
+		id doc = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)(nomen_document_view_class(), sel_registerName("alloc")),
+			sel_registerName("initWithFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 0, 0));
+		((void(*)(id, SEL, id))objc_msgSend)(sv, sel_registerName("setDocumentView:"), doc);
+		((void(*)(id, SEL))objc_msgSend)(doc, sel_registerName("release"));
+		id contentView = ((id(*)(id, SEL))objc_msgSend)(
+			(id)window->handle, sel_registerName("contentView"));
+		((void(*)(id, SEL, id))objc_msgSend)(
+			contentView, sel_registerName("addSubview:"), sv);
+		self.handle = (uint64_t)sv;
+		self.doc = (uint64_t)((id(*)(id, SEL))objc_msgSend)(sv, sel_registerName("documentView"));
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		id sv = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSScrollView"), sel_registerName("alloc")),
+			sel_registerName("initWithFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 240, 160));
+		((void(*)(id, SEL, BOOL))objc_msgSend)(sv, sel_registerName("setHasVerticalScroller:"), 1);
+		((void(*)(id, SEL, BOOL))objc_msgSend)(sv, sel_registerName("setDrawsBackground:"), 0);
+		id doc = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)(nomen_document_view_class(), sel_registerName("alloc")),
+			sel_registerName("initWithFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 0, 0));
+		((void(*)(id, SEL, id))objc_msgSend)(sv, sel_registerName("setDocumentView:"), doc);
+		((void(*)(id, SEL))objc_msgSend)(doc, sel_registerName("release"));
+		id contentView = ((id(*)(id, SEL))objc_msgSend)(
+			(id)window->handle, sel_registerName("contentView"));
+		((void(*)(id, SEL, id))objc_msgSend)(
+			contentView, sel_registerName("addSubview:"), sv);
+		self->handle = (uint64_t)sv;
+		self->doc = (uint64_t)((id(*)(id, SEL))objc_msgSend)(sv, sel_registerName("documentView"));
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS — UIScrollView + a UIView document view; the constructors'
+		 * rootViewController.view path expects a UIWindow, so content_window
+		 * needs the same `-contentView` trick on a UIView subclass (see
+		 * GUI_PLAN Tier 2; defer with the other iOS stubs). */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+	}
+
+	// A Window-shaped handle to the document view: pass it to control
+	// constructors and `Container.layout` to host controls in the scroll
+	// view. The value retains the document view (+1), so its scope-exit
+	// `#destroy` releases its OWN reference and the Scrollable's stays
+	// balanced — keep the Scrollable alive at least as long as the returned
+	// value.
+	pub func content_window = (self, out Window) {
+		```
+		#arch: c
+		#platform: macos
+		extern void *_Window_traits[];
+		struct Window w;
+		w._vt = (void *)&_Window_traits;
+		w.handle = self->doc;
+		((id(*)(id, SEL))objc_msgSend)((id)self->doc, sel_registerName("retain"));
+		return w;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		extern void *Window_traits;
+		struct Window w;
+		w._vt = (void *)&Window_traits;
+		w.handle = self->doc;
+		((id(*)(id, SEL))objc_msgSend)((id)self->doc, sel_registerName("retain"));
+		return w;
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		{
+			extern void *_Window_traits[];
+			struct Window w;
+			w._vt = (void *)&_Window_traits;
+			w.handle = 0;
+			return w;
+		}
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		{
+			extern void *Window_traits;
+			struct Window w;
+			w._vt = (void *)&Window_traits;
+			w.handle = 0;
+			return w;
+		}
+		```
+	}
+
+	// Size the document view to the laid-out content. Call between the
+	// content grid's unbounded `measure` and its `layout(content)` — the
+	// flip needs the document height to equal the content height before
+	// frames are applied (see the Scrollable design note in GUI.md).
+	pub func set_content_size = (self, int width, int height) {
+		```
+		#arch: c
+		#platform: macos
+		((void(*)(id, SEL, CGSize))objc_msgSend)(
+			(id)self->doc, sel_registerName("setFrameSize:"),
+			((CGSize(*)(double, double))CGSizeMake)((double)width, (double)height));
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, CGSize))objc_msgSend)(
+			(id)self->doc, sel_registerName("setFrameSize:"),
+			((CGSize(*)(double, double))CGSizeMake)((double)width, (double)height));
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+	}
+
+	// Scroll so the top of the document is visible. The document view is
+	// unflipped (the engine's flip math owns the coordinates), and NSScrollView
+	// initially shows an unflipped document's bottom-left corner — call once
+	// after the first layout.
+	pub func scroll_to_top = (self) {
+		```
+		#arch: c
+		#platform: macos
+		id clip = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("contentView"));
+		id doc = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("documentView"));
+		CGRect doc_frame = ((CGRect(*)(id, SEL))objc_msgSend)(doc, sel_registerName("frame"));
+		CGRect clip_bounds = ((CGRect(*)(id, SEL))objc_msgSend)(clip, sel_registerName("bounds"));
+		((void(*)(id, SEL, CGPoint))objc_msgSend)(
+			clip, sel_registerName("scrollPoint:"),
+			((CGPoint(*)(double, double))CGPointMake)(0, doc_frame.size.height - clip_bounds.size.height));
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		id clip = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("contentView"));
+		id doc = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("documentView"));
+		CGRect doc_frame = ((CGRect(*)(id, SEL))objc_msgSend)(doc, sel_registerName("frame"));
+		CGRect clip_bounds = ((CGRect(*)(id, SEL))objc_msgSend)(clip, sel_registerName("bounds"));
+		((void(*)(id, SEL, CGPoint))objc_msgSend)(
+			clip, sel_registerName("scrollPoint:"),
+			((CGPoint(*)(double, double))CGPointMake)(0, doc_frame.size.height - clip_bounds.size.height));
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+	}
+
+	// How far the document is scrolled from its top, in document pixels
+	// (0 = top). Add this to a window-space click y (minus the scroll view's
+	// own origin) before hit-testing content children — see the Scrollable
+	// design note in GUI.md.
+	pub func scroll_offset_y = (self, out int) {
+		```
+		#arch: c
+		#platform: macos
+		id clip = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("contentView"));
+		id doc = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("documentView"));
+		CGRect doc_frame = ((CGRect(*)(id, SEL))objc_msgSend)(doc, sel_registerName("frame"));
+		CGRect clip_bounds = ((CGRect(*)(id, SEL))objc_msgSend)(clip, sel_registerName("bounds"));
+		int offset = (int)(doc_frame.size.height - clip_bounds.size.height - clip_bounds.origin.y);
+		return offset < 0 ? 0 : offset; // content shorter than the viewport can't scroll
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		id clip = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("contentView"));
+		id doc = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("documentView"));
+		CGRect doc_frame = ((CGRect(*)(id, SEL))objc_msgSend)(doc, sel_registerName("frame"));
+		CGRect clip_bounds = ((CGRect(*)(id, SEL))objc_msgSend)(clip, sel_registerName("bounds"));
+		int offset = (int)(doc_frame.size.height - clip_bounds.size.height - clip_bounds.origin.y);
+		return offset < 0 ? 0 : offset; // content shorter than the viewport can't scroll
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return 0;
+		```
+	}
+
+	pub func set_hidden = (self, bool hidden) {
+		```
+		#arch: c
+		#platform: macos
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+		```
+	}
+
+	// ── Control trait conformance ──
+	pub func set_frame = (ref self, int x, int y, int width, int height) {
+		```
+		#arch: c
+		#platform: macos
+		((void(*)(id, SEL, CGRect))objc_msgSend)(
+			(id)self->handle, sel_registerName("setFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, CGRect))objc_msgSend)(
+			(id)self->handle, sel_registerName("setFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+	}
+
+	pub func intrinsic_size = (self, out Size) {
+		var [w, h] = native_intrinsic(self.handle)
+		var s = Size()
+		s.width = w
+		s.height = h
+		return s
+	}
+
+	pub func measure = (self, BoxConstraints constraints, out Size) {
+		var Size s = self.intrinsic_size()
+		if s.width > constraints.max_width {
+			s.width = constraints.max_width
+		}
+		if s.width < constraints.min_width {
+			s.width = constraints.min_width
+		}
+		if s.height > constraints.max_height {
+			s.height = constraints.max_height
+		}
+		if s.height < constraints.min_height {
+			s.height = constraints.min_height
+		}
+		return s
+	}
+
+	func #destroy = () {
+		```
+		#arch: c
+		#platform: macos
+		if (self->handle) {
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		self->doc = 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		if (self->handle) {
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		self->doc = 0;
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+	}
+}
