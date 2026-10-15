@@ -11,11 +11,8 @@ const system = get_library(path.resolve("core"));
 // Tier 1 #17 (GUI_PLAN): Separator + GroupBox — two trivial NSBox-backed
 // files (separator style / primary style with a title), macOS-first.
 describe("Separator + GroupBox controls", () => {
-	test(
-		"Separator: box type is the native separator style",
-		{ timeout: 120000 },
-		async () => {
-			const input = `
+	test("Separator: box type is the native separator style", { timeout: 120000 }, async () => {
+		const input = `
 import System
 import System::Controls
 
@@ -27,20 +24,16 @@ pub func main = () {
 	Console.write(" ok\\n")
 }
 `;
-			const parsed = parse(input, system);
-			expect(parsed.errors).toEqual([]);
-			await build_and_check_output(input, "gui_separator", "2 ok", true, {
-				platform: "macos",
-				audit: false,
-			});
-		},
-	);
+		const parsed = parse(input, system);
+		expect(parsed.errors).toEqual([]);
+		await build_and_check_output(input, "gui_separator", "2 ok", true, {
+			platform: "macos",
+			audit: false,
+		});
+	});
 
-	test(
-		"GroupBox: title round trip + boxed style",
-		{ timeout: 120000 },
-		async () => {
-			const input = `
+	test("GroupBox: title round trip + boxed style", { timeout: 120000 }, async () => {
+		const input = `
 import System
 import System::Controls
 
@@ -53,14 +46,13 @@ pub func main = () {
 	Console.write("\\n")
 }
 `;
-			const parsed = parse(input, system);
-			expect(parsed.errors).toEqual([]);
-			await build_and_check_output(input, "gui_group_box", "0 Account Network", true, {
-				platform: "macos",
-				audit: false,
-			});
-		},
-	);
+		const parsed = parse(input, system);
+		expect(parsed.errors).toEqual([]);
+		await build_and_check_output(input, "gui_group_box", "0 Account Network", true, {
+			platform: "macos",
+			audit: false,
+		});
+	});
 
 	test("Separator/GroupBox conform to the Control trait", () => {
 		const input = `

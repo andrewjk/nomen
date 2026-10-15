@@ -14,11 +14,8 @@ const system = get_library(path.resolve("core"));
 // present/dismiss exist but are not exercised (they animate against a
 // real, visible host window).
 describe("Sheet control", () => {
-	test(
-		"title round trip, content window, presentation state",
-		{ timeout: 120000 },
-		async () => {
-			const input = `
+	test("title round trip, content window, presentation state", { timeout: 120000 }, async () => {
+		const input = `
 import System
 import System::Controls
 
@@ -33,14 +30,13 @@ pub func main = () {
 	Console.write("\\n")
 }
 `;
-			const parsed = parse(input, system);
-			expect(parsed.errors).toEqual([]);
-			await build_and_check_output(input, "gui_sheet", "'Settings' false hosted", true, {
-				platform: "macos",
-				audit: false,
-			});
-		},
-	);
+		const parsed = parse(input, system);
+		expect(parsed.errors).toEqual([]);
+		await build_and_check_output(input, "gui_sheet", "'Settings' false hosted", true, {
+			platform: "macos",
+			audit: false,
+		});
+	});
 
 	test("Sheet conforms to the Control trait (through a Control receiver)", () => {
 		const input = `

@@ -12,11 +12,8 @@ const system = get_library(path.resolve("core"));
 // handle. show/dismiss are not exercised (they animate against a live
 // anchor view); sizing and shown-state are.
 describe("Popover control", () => {
-	test(
-		"content size round trip + shown state",
-		{ timeout: 120000 },
-		async () => {
-			const input = `
+	test("content size round trip + shown state", { timeout: 120000 }, async () => {
+		const input = `
 import System
 import System::Controls
 
@@ -32,14 +29,13 @@ pub func main = () {
 	Console.write("\\n")
 }
 `;
-			const parsed = parse(input, system);
-			expect(parsed.errors).toEqual([]);
-			await build_and_check_output(input, "gui_popover", "200x120 false 240x180", true, {
-				platform: "macos",
-				audit: false,
-			});
-		},
-	);
+		const parsed = parse(input, system);
+		expect(parsed.errors).toEqual([]);
+		await build_and_check_output(input, "gui_popover", "200x120 false 240x180", true, {
+			platform: "macos",
+			audit: false,
+		});
+	});
 
 	test("Popover conforms to the Control trait (through a Control receiver)", () => {
 		const input = `

@@ -13,11 +13,8 @@ const system = get_library(path.resolve("core"));
 // runtime test exercises construction, text, and buttons; `run` itself is
 // deliberately NOT called (it would block the test on dismissal).
 describe("Alert control", () => {
-	test(
-		"title/message round trip + buttons",
-		{ timeout: 120000 },
-		async () => {
-			const input = `
+	test("title/message round trip + buttons", { timeout: 120000 }, async () => {
+		const input = `
 import System
 import System::Controls
 
@@ -32,17 +29,16 @@ pub func main = () {
 	Console.write("\\n")
 }
 `;
-			const parsed = parse(input, system);
-			expect(parsed.errors).toEqual([]);
-			await build_and_check_output(
-				input,
-				"gui_alert",
-				"'' 1 'Delete todo?' 'This cannot be undone.' 2",
-				true,
-				{ platform: "macos", audit: false },
-			);
-		},
-	);
+		const parsed = parse(input, system);
+		expect(parsed.errors).toEqual([]);
+		await build_and_check_output(
+			input,
+			"gui_alert",
+			"'' 1 'Delete todo?' 'This cannot be undone.' 2",
+			true,
+			{ platform: "macos", audit: false },
+		);
+	});
 
 	test("Alert conforms to the Control trait (through a Control receiver)", () => {
 		const input = `
