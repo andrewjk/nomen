@@ -1,0 +1,296 @@
+/**
+ * An anchored transient popup (NSPopover)
+ *
+ * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
+ * single field is a platform handle, so the value is movable and its
+ * `#destroy` releases what the handle names. The constructor's `self` is
+ * the inline instance (the `.` accessor); methods keep the pointer form.
+ *
+ * `show(handle)` anchors the popover to ANY control by its native handle
+ * (the popover appears above it and the user dismisses it by clicking
+ * elsewhere — NSPopover's transient behavior). Sizing drives the content
+ * view's frame; hosting arbitrary controls inside the popover needs the
+ * same layout-root shim as Sheet and lands with that design work. iOS
+ * defers to UIPopoverPresentationController (TODO stubs; see GUI_PLAN
+ * Tier 1 #21).
+ **/
+/**
+ * The popover content area's size (`Popover.content_size`'s return value)
+ **/
+pub struct PopSize {
+	pub var width = 0
+	pub var height = 0
+}
+
+pub mv struct Popover : Control {
+	var uint64 handle = 0
+
+	pub func #init = (self, Window window) {
+		```
+		#arch: c
+		#platform: macos
+		id pop = ((id(*)(id, SEL))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSPopover"), sel_registerName("alloc")),
+			sel_registerName("init"));
+		id vc = ((id(*)(id, SEL))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSViewController"), sel_registerName("alloc")),
+			sel_registerName("init"));
+		id content = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSView"), sel_registerName("alloc")),
+			sel_registerName("initWithFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 200, 120));
+		((void(*)(id, SEL, id))objc_msgSend)(vc, sel_registerName("setView:"), content);
+		((void(*)(id, SEL, id))objc_msgSend)(pop, sel_registerName("setContentViewController:"), vc);
+		((void(*)(id, SEL, double, double))objc_msgSend)(
+			pop, sel_registerName("setContentSize:"), 200.0, 120.0);
+		// The window argument satisfies the Control-constructor shape; the
+		// popover presents relative to an anchor view, not into the window.
+		(void)window->handle;
+		self.handle = (uint64_t)pop;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		id pop = ((id(*)(id, SEL))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSPopover"), sel_registerName("alloc")),
+			sel_registerName("init"));
+		id vc = ((id(*)(id, SEL))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSViewController"), sel_registerName("alloc")),
+			sel_registerName("init"));
+		id content = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSView"), sel_registerName("alloc")),
+			sel_registerName("initWithFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 200, 120));
+		((void(*)(id, SEL, id))objc_msgSend)(vc, sel_registerName("setView:"), content);
+		((void(*)(id, SEL, id))objc_msgSend)(pop, sel_registerName("setContentViewController:"), vc);
+		((void(*)(id, SEL, double, double))objc_msgSend)(
+			pop, sel_registerName("setContentSize:"), 200.0, 120.0);
+		// The window argument satisfies the Control-constructor shape; the
+		// popover presents relative to an anchor view, not into the window.
+		(void)window->handle;
+		self->handle = (uint64_t)pop;
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS — UIPopoverPresentationController needs a source view +
+		 * presenting controller (see GUI_PLAN Tier 1 #21; defer). */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS — UIPopoverPresentationController needs a source view +
+		 * presenting controller (see GUI_PLAN Tier 1 #21; defer). */
+		```
+	}
+
+	// Resize the popover's content area.
+	pub func set_content_size = (self, int width, int height) {
+		```
+		#arch: c
+		#platform: macos
+		((void(*)(id, SEL, double, double))objc_msgSend)(
+			(id)self->handle, sel_registerName("setContentSize:"),
+			(double)width, (double)height);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, double, double))objc_msgSend)(
+			(id)self->handle, sel_registerName("setContentSize:"),
+			(double)width, (double)height);
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+	}
+
+	// The content area's current size.
+	pub func content_size = (self, out PopSize) {
+		```
+		#arch: c
+		#platform: macos
+		CGSize sz = ((CGSize(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("contentSize"));
+		struct PopSize r;
+		r.width = (int)sz.width;
+		r.height = (int)sz.height;
+		return r;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		CGSize sz = ((CGSize(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("contentSize"));
+		struct PopSize r;
+		r.width = (int)sz.width;
+		r.height = (int)sz.height;
+		return r;
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		{
+			struct PopSize r;
+			r.width = 0;
+			r.height = 0;
+			return r;
+		}
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		{
+			struct PopSize r;
+			r.width = 0;
+			r.height = 0;
+			return r;
+		}
+		```
+	}
+
+	// Present the popover anchored above the view `handle` names (any
+	// control's handle). Non-blocking; the user dismisses it by clicking
+	// elsewhere (transient behavior).
+	pub func show = (self, uint64 anchor) {
+		```
+		#arch: c
+		#platform: macos
+		id view = (id)anchor;
+		CGRect bounds = ((CGRect(*)(id, SEL))objc_msgSend)(view, sel_registerName("bounds"));
+		((void(*)(id, SEL, CGRect, id, long))objc_msgSend)(
+			(id)self->handle, sel_registerName("showRelativeToRect:ofView:preferredEdge:"),
+			bounds, view, 3); // NSRectEdgeMaxY = 3 (anchor above)
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		id view = (id)anchor;
+		CGRect bounds = ((CGRect(*)(id, SEL))objc_msgSend)(view, sel_registerName("bounds"));
+		((void(*)(id, SEL, CGRect, id, long))objc_msgSend)(
+			(id)self->handle, sel_registerName("showRelativeToRect:ofView:preferredEdge:"),
+			bounds, view, 3); // NSRectEdgeMaxY = 3 (anchor above)
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+	}
+
+	pub func dismiss = (self) {
+		```
+		#arch: c
+		#platform: macos
+		((void(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("close"));
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("close"));
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+	}
+
+	// True while the popover is on screen.
+	pub func is_shown = (self, out bool) {
+		```
+		#arch: c
+		#platform: macos
+		BOOL shown = ((BOOL(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("isShown"));
+		return shown ? 1 : 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		BOOL shown = ((BOOL(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("isShown"));
+		return shown ? 1 : 0;
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return 0;
+		```
+	}
+
+	// ── Control trait conformance ──
+	// A popover is window-coordinated: the layout engine never frames it.
+	pub func set_frame = (ref self, int x, int y, int width, int height) {
+		// No-op: the popover positions itself relative to its anchor.
+	}
+
+	pub func intrinsic_size = (self, out Size) {
+		var s = Size()
+		return s
+	}
+
+	pub func measure = (self, BoxConstraints constraints, out Size) {
+		var s = Size()
+		return s
+	}
+
+	func #destroy = () {
+		```
+		#arch: c
+		#platform: macos
+		if (self->handle) {
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("close"));
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		if (self->handle) {
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("close"));
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+	}
+}

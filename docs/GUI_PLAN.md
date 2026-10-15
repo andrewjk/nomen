@@ -72,7 +72,7 @@ above; most are a `#init`, a couple of value setters/getters, and `#destroy`.
 | 18  | `Tooltip` ✅             | `view.toolTip` / —                                       | tooltip                 | Not a control — one method on the base pattern (or a helper taking a handle + text).                                                  |
 | 19  | `Alert` ✅               | NSAlert / UIAlertController                              | alert-dialog, dialog    | Window-coordinated (runModal / present). Blocks; fine with the manual loop since NSAlert runs its own modal loop.                     |
 | 20  | `Sheet` ✅               | `beginSheet:` / UISheetPresentationController            | sheet                   | Hosts arbitrary controls in a sheet's content view — the contentView is just another layout root.                                     |
-| 21  | `Popover`                | NSPopover / UIPopoverPresentationController              | popover                 | Same "another layout root" trick, anchored to a handle.                                                                               |
+| 21  | `Popover` ✅             | NSPopover / UIPopoverPresentationController              | popover                 | Same "another layout root" trick, anchored to a handle.                                                                               |
 
 Radio/Toggle/SecureField/SearchField are gpui-kit "input variants" rather
 than standalone components — in Nomen they land as separate controls because
