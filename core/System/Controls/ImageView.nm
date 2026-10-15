@@ -1,0 +1,311 @@
+/**
+ * A static image (file path or named system symbol)
+ *
+ * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
+ * single field is a platform handle, so the value is movable and its
+ * `#destroy` releases what the handle names. The constructor's `self` is
+ * the inline instance (the `.` accessor); methods keep the pointer form.
+ *
+ * `set_path` loads from the filesystem; `set_symbol` uses the system
+ * symbol/SF Symbol set. A failed load leaves the view empty (`has_image`
+ * reads false) — there is no error channel for images.
+ **/
+pub mv struct ImageView : Control {
+	var uint64 handle = 0
+
+	pub func #init = (self, Window window) {
+		```
+		#arch: c
+		#platform: macos
+		id iv = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSImageView"), sel_registerName("alloc")),
+			sel_registerName("initWithFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 64, 64));
+		id contentView = ((id(*)(id, SEL))objc_msgSend)(
+			(id)window->handle, sel_registerName("contentView"));
+		((void(*)(id, SEL, id))objc_msgSend)(
+			contentView, sel_registerName("addSubview:"), iv);
+		self.handle = (uint64_t)iv;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		id iv = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSImageView"), sel_registerName("alloc")),
+			sel_registerName("initWithFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 64, 64));
+		id contentView = ((id(*)(id, SEL))objc_msgSend)(
+			(id)window->handle, sel_registerName("contentView"));
+		((void(*)(id, SEL, id))objc_msgSend)(
+			contentView, sel_registerName("addSubview:"), iv);
+		self->handle = (uint64_t)iv;
+		```
+		```
+		#arch: c
+		#platform: ios
+		id iv = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("UIImageView"), sel_registerName("alloc")),
+			sel_registerName("initWithFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 64, 64));
+		id parentView = ((id(*)(id, SEL))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)(
+				(id)window->handle, sel_registerName("rootViewController")),
+			sel_registerName("view"));
+		((void(*)(id, SEL, id))objc_msgSend)(
+			parentView, sel_registerName("addSubview:"), iv);
+		self.handle = (uint64_t)iv;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		id iv = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("UIImageView"), sel_registerName("alloc")),
+			sel_registerName("initWithFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 64, 64));
+		id parentView = ((id(*)(id, SEL))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)(
+				(id)window->handle, sel_registerName("rootViewController")),
+			sel_registerName("view"));
+		((void(*)(id, SEL, id))objc_msgSend)(
+			parentView, sel_registerName("addSubview:"), iv);
+		self->handle = (uint64_t)iv;
+		```
+	}
+
+	pub func set_frame = (ref self, int x, int y, int width, int height) {
+		```
+		#arch: c
+		#platform: macos
+		((void(*)(id, SEL, CGRect))objc_msgSend)(
+			(id)self->handle, sel_registerName("setFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, CGRect))objc_msgSend)(
+			(id)self->handle, sel_registerName("setFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+		```
+		```
+		#arch: c
+		#platform: ios
+		((void(*)(id, SEL, CGRect))objc_msgSend)(
+			(id)self->handle, sel_registerName("setFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		((void(*)(id, SEL, CGRect))objc_msgSend)(
+			(id)self->handle, sel_registerName("setFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+		```
+	}
+
+	// Load the image at `path`. A missing/undecodable file clears the view.
+	pub func set_path = (self, string path) {
+		```
+		#arch: c
+		#platform: macos
+		id path_str = ((id(*)(id, SEL, const char*))objc_msgSend)(
+			(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), path.ptr);
+		id img = ((id(*)(id, SEL, id))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSImage"), sel_registerName("alloc")),
+			sel_registerName("initWithContentsOfFile:"), path_str);
+		((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("setImage:"), img);
+		if (img) ((void(*)(id, SEL))objc_msgSend)(img, sel_registerName("release"));
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		id path_str = ((id(*)(id, SEL, const char*))objc_msgSend)(
+			(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), path.ptr);
+		id img = ((id(*)(id, SEL, id))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSImage"), sel_registerName("alloc")),
+			sel_registerName("initWithContentsOfFile:"), path_str);
+		((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("setImage:"), img);
+		if (img) ((void(*)(id, SEL))objc_msgSend)(img, sel_registerName("release"));
+		```
+		```
+		#arch: c
+		#platform: ios
+		id img = ((id(*)(id, SEL, id))objc_msgSend)(
+			(id)objc_getClass("UIImage"), sel_registerName("imageWithContentsOfFile:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), path.ptr));
+		((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("setImage:"), img);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		id img = ((id(*)(id, SEL, id))objc_msgSend)(
+			(id)objc_getClass("UIImage"), sel_registerName("imageWithContentsOfFile:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), path.ptr));
+		((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("setImage:"), img);
+		```
+	}
+
+	// Load a named system symbol (SF Symbols). An unknown name clears the view.
+	pub func set_symbol = (self, string name) {
+		```
+		#arch: c
+		#platform: macos
+		id img = ((id(*)(id, SEL, id, id))objc_msgSend)(
+			(id)objc_getClass("NSImage"), sel_registerName("imageWithSystemSymbolName:accessibilityDescription:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), name.ptr),
+			(id)0);
+		((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("setImage:"), img);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		id img = ((id(*)(id, SEL, id, id))objc_msgSend)(
+			(id)objc_getClass("NSImage"), sel_registerName("imageWithSystemSymbolName:accessibilityDescription:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), name.ptr),
+			(id)0);
+		((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("setImage:"), img);
+		```
+		```
+		#arch: c
+		#platform: ios
+		id img = ((id(*)(id, SEL, id))objc_msgSend)(
+			(id)objc_getClass("UIImage"), sel_registerName("systemImageNamed:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), name.ptr));
+		((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("setImage:"), img);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		id img = ((id(*)(id, SEL, id))objc_msgSend)(
+			(id)objc_getClass("UIImage"), sel_registerName("systemImageNamed:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), name.ptr));
+		((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("setImage:"), img);
+		```
+	}
+
+	// True when the view currently holds an image.
+	pub func has_image = (self, out bool) {
+		```
+		#arch: c
+		#platform: macos
+		id img = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("image"));
+		return img != (id)0 ? 1 : 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		id img = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("image"));
+		return img != (id)0 ? 1 : 0;
+		```
+		```
+		#arch: c
+		#platform: ios
+		id img = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("image"));
+		return img != (id)0 ? 1 : 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		id img = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("image"));
+		return img != (id)0 ? 1 : 0;
+		```
+	}
+
+	pub func set_hidden = (self, bool hidden) {
+		```
+		#arch: c
+		#platform: macos
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+		```
+		```
+		#arch: c
+		#platform: ios
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+		```
+	}
+
+	// ── Control trait conformance ──
+	pub func intrinsic_size = (self, out Size) {
+		var [w, h] = native_intrinsic(self.handle)
+		var s = Size()
+		s.width = w
+		s.height = h
+		return s
+	}
+
+	pub func measure = (self, BoxConstraints constraints, out Size) {
+		var Size s = self.intrinsic_size()
+		if s.width > constraints.max_width {
+			s.width = constraints.max_width
+		}
+		if s.width < constraints.min_width {
+			s.width = constraints.min_width
+		}
+		if s.height > constraints.max_height {
+			s.height = constraints.max_height
+		}
+		if s.height < constraints.min_height {
+			s.height = constraints.min_height
+		}
+		return s
+	}
+
+	func #destroy = () {
+		```
+		#arch: c
+		#platform: macos
+		if (self->handle) {
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		if (self->handle) {
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		```
+		```
+		#arch: c
+		#platform: ios
+		if (self->handle) {
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		if (self->handle) {
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		```
+	}
+}
