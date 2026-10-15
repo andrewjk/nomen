@@ -1,0 +1,326 @@
+/**
+ * A modal sheet attached to a window (the macOS "forms slide out of the
+ * title bar" presentation)
+ *
+ * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
+ * fields are platform handles, so the value is movable and its `#destroy`
+ * releases what they name. The constructor's `self` is the inline instance
+ * (the `.` accessor); methods keep the pointer form.
+ *
+ * The sheet is its own NSWindow presented attached to the host — so its
+ * contentView is just another layout root: `content_window` hands back a
+ * Window-shaped value whose contentView is the sheet's, and every control
+ * constructor (and `Container.layout`) accepts it like any window.
+ * `present`/`dismiss` are non-blocking (completion-handler form); iOS
+ * defers to UISheetPresentationController (TODO stubs; see GUI_PLAN
+ * Tier 1 #20).
+ **/
+pub mv struct Sheet : Control {
+	var uint64 handle = 0
+	var uint64 host = 0
+
+	pub func #init = (self, Window window, int width, int height) {
+		```
+		#arch: c
+		#platform: macos
+		unsigned long style = 1 | 2; // NSWindowStyleMaskTitled | Closable
+		id sheet = ((id(*)(id, SEL, double, double, double, double, unsigned long, unsigned long, BOOL))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSWindow"), sel_registerName("alloc")),
+			sel_registerName("initWithContentRect:styleMask:backing:defer:"),
+			0.0, 0.0, (double)width, (double)height,
+			style, 2, 0);
+		((void(*)(id, SEL, BOOL))objc_msgSend)(sheet, sel_registerName("setReleasedWhenClosed:"), 0);
+		id cv = ((id(*)(id, SEL))objc_msgSend)(sheet, sel_registerName("contentView"));
+		((void(*)(id, SEL, unsigned long))objc_msgSend)(cv, sel_registerName("setAutoresizingMask:"), 18UL);
+		((void(*)(id, SEL, BOOL))objc_msgSend)(cv, sel_registerName("setAutoresizesSubviews:"), 1);
+		self.handle = (uint64_t)sheet;
+		self.host = window->handle;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		unsigned long style = 1 | 2; // NSWindowStyleMaskTitled | Closable
+		id sheet = ((id(*)(id, SEL, double, double, double, double, unsigned long, unsigned long, BOOL))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSWindow"), sel_registerName("alloc")),
+			sel_registerName("initWithContentRect:styleMask:backing:defer:"),
+			0.0, 0.0, (double)width, (double)height,
+			style, 2, 0);
+		((void(*)(id, SEL, BOOL))objc_msgSend)(sheet, sel_registerName("setReleasedWhenClosed:"), 0);
+		id cv = ((id(*)(id, SEL))objc_msgSend)(sheet, sel_registerName("contentView"));
+		((void(*)(id, SEL, unsigned long))objc_msgSend)(cv, sel_registerName("setAutoresizingMask:"), 18UL);
+		((void(*)(id, SEL, BOOL))objc_msgSend)(cv, sel_registerName("setAutoresizesSubviews:"), 1);
+		self->handle = (uint64_t)sheet;
+		self->host = window->handle;
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS — UISheetPresentationController (iOS 15+) needs a
+		 * presenting view controller (see GUI_PLAN Tier 1 #20; defer). */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS — UISheetPresentationController (iOS 15+) needs a
+		 * presenting view controller (see GUI_PLAN Tier 1 #20; defer). */
+		```
+	}
+
+	// A Window-shaped handle to the sheet's contentView: pass it to control
+	// constructors and `Container.layout` to host controls in the sheet.
+	// The value borrows the sheet's window (its `#destroy` releases nothing
+	// — it is a plain handle copy, so keep the Sheet alive longer).
+	pub func content_window = (self, out Window) {
+		```
+		#arch: c
+		#platform: macos
+		extern void *_Window_traits[];
+		struct Window w;
+		w._vt = (void *)&_Window_traits;
+		w.handle = self->handle;
+		return w;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		extern void *Window_traits;
+		struct Window w;
+		w._vt = (void *)&Window_traits;
+		w.handle = self->handle;
+		return w;
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		{
+			extern void *_Window_traits[];
+			struct Window w;
+			w._vt = (void *)&_Window_traits;
+			w.handle = 0;
+			return w;
+		}
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		{
+			extern void *Window_traits;
+			struct Window w;
+			w._vt = (void *)&Window_traits;
+			w.handle = 0;
+			return w;
+		}
+		```
+	}
+
+	pub func set_title = (self, string title) {
+		```
+		#arch: c
+		#platform: macos
+		((void(*)(id, SEL, id))objc_msgSend)(
+			(id)self->handle, sel_registerName("setTitle:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, id))objc_msgSend)(
+			(id)self->handle, sel_registerName("setTitle:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+	}
+
+	pub func get_title = (self, out string) {
+		```
+		#arch: c
+		#platform: macos
+		id str = ((id(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("title"));
+		if (!str) return (nomen_string){ strdup(""), 0 };
+		const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(
+			str, sel_registerName("UTF8String"));
+		return (nomen_string){ strdup(cstr), (long)strlen(cstr) };
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		id str = ((id(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("title"));
+		if (!str) return (nomen_string){ strdup(""), 0 };
+		const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(
+			str, sel_registerName("UTF8String"));
+		return (nomen_string){ strdup(cstr), (long)strlen(cstr) };
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return (nomen_string){ strdup(""), 0 };
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return (nomen_string){ strdup(""), 0 };
+		```
+	}
+
+	// Slide the sheet out of the host window's title bar. Non-blocking: the
+	// sheet stays up while the manual loop keeps polling.
+	pub func present = (self) {
+		```
+		#arch: c
+		#platform: macos
+		((void(*)(id, SEL, id, id, id))objc_msgSend)(
+			(id)self->host, sel_registerName("beginSheet:completionHandler:"),
+			(id)self->handle, (id)0, (id)0);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, id, id, id))objc_msgSend)(
+			(id)self->host, sel_registerName("beginSheet:completionHandler:"),
+			(id)self->handle, (id)0, (id)0);
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+	}
+
+	// Close the sheet (the host regains focus).
+	pub func dismiss = (self) {
+		```
+		#arch: c
+		#platform: macos
+		id app = ((id(*)(id, SEL))objc_msgSend)(
+			(id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
+		((void(*)(id, SEL, id))objc_msgSend)(app, sel_registerName("endSheet:"), (id)self->handle);
+		((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("orderOut:"), (id)0);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		id app = ((id(*)(id, SEL))objc_msgSend)(
+			(id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
+		((void(*)(id, SEL, id))objc_msgSend)(app, sel_registerName("endSheet:"), (id)self->handle);
+		((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("orderOut:"), (id)0);
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+	}
+
+	// True while the sheet is attached to its host window.
+	pub func is_presented = (self, out bool) {
+		```
+		#arch: c
+		#platform: macos
+		id attached = ((id(*)(id, SEL))objc_msgSend)(
+			(id)self->host, sel_registerName("attachedSheet"));
+		return attached == (id)self->handle ? 1 : 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		id attached = ((id(*)(id, SEL))objc_msgSend)(
+			(id)self->host, sel_registerName("attachedSheet"));
+		return attached == (id)self->handle ? 1 : 0;
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return 0;
+		```
+	}
+
+	// ── Control trait conformance ──
+	// A sheet is window-coordinated like Alert: the layout engine never
+	// frames it (its own NSWindow carries the geometry).
+	pub func set_frame = (ref self, int x, int y, int width, int height) {
+		// No-op: the sheet's NSWindow carries the geometry.
+	}
+
+	pub func intrinsic_size = (self, out Size) {
+		var s = Size()
+		return s
+	}
+
+	pub func measure = (self, BoxConstraints constraints, out Size) {
+		var s = Size()
+		return s
+	}
+
+	func #destroy = () {
+		```
+		#arch: c
+		#platform: macos
+		if (self->handle) {
+			id app = ((id(*)(id, SEL))objc_msgSend)(
+				(id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
+			((void(*)(id, SEL, id))objc_msgSend)(app, sel_registerName("endSheet:"), (id)self->handle);
+			((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("orderOut:"), (id)0);
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		self->host = 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		if (self->handle) {
+			id app = ((id(*)(id, SEL))objc_msgSend)(
+				(id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
+			((void(*)(id, SEL, id))objc_msgSend)(app, sel_registerName("endSheet:"), (id)self->handle);
+			((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("orderOut:"), (id)0);
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		self->host = 0;
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+	}
+}
