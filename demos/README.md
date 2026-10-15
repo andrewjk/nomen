@@ -35,10 +35,11 @@ Popover (toggled from an anchor button). A Scrolling section hosts a tall
 label stack on a Scrollable's document view — measured unbounded, sized via
 `set_content_size`, laid out into that height, with the scroll offset
 polled into the status line. A Tabs section hosts one label per page via
-`content_window(index)`, with the selected tab polled alongside. A List
+`content_window(index)`, with the selected tab polled alongside. A ListView
 section bridges rows into an NSTableView data source, polling the selected
 row; a ComboBox polls its selection the same way. A Menu attaches to the
 right-click target button — picks surface through the edge-triggered
 `clicked_item` poll and land in the status line, as do the window
 Toolbar's three labeled buttons (created before the first layout, since
-the toolbar shrinks the contentView).
+the toolbar shrinks the contentView). A SplitView section lays a label
+into each of two draggable panes.

@@ -8,12 +8,13 @@ import build_and_check_output from "../build_and_check_output";
 
 const system = get_library(path.resolve("core"));
 
-// GUI_PLAN Tier 2: List / Table — single-column List (NSTableView,
+// GUI_PLAN Tier 2: List / Table — single-column ListView (NSTableView,
 // cell-based) on macOS; iOS (UITableView) deferred with TODO stubs. The
 // data source bridge keeps rows in C globals read by the delegate IMPs —
-// one List per process. A multi-column Table with view-based reusable
-// cells is a later step.
-describe("List control", () => {
+// one ListView per process. A multi-column Table with view-based reusable
+// cells is a later step. Named `ListView` (not `List`) to keep clear of
+// the stdlib `List<T>`.
+describe("ListView control", () => {
 	test("rows round-trip through the data source bridge", { timeout: 120000 }, async () => {
 		const input = `
 import System
@@ -21,7 +22,7 @@ import System::Controls
 
 pub func main = () {
 	var Window win = Window("List", 260, 200)
-	var List list = List(win)
+	var ListView list = ListView(win)
 	list.add_row("alpha")
 	list.add_row("beta")
 	list.add_row("gamma")
@@ -39,7 +40,7 @@ pub func main = () {
 		expect(parsed.errors).toEqual([]);
 		await build_and_check_output(
 			input,
-			"gui_list",
+			"gui_list_view",
 			"count=3 r1=beta up=beta! after=2",
 			true,
 			{ platform: "macos", audit: false },
@@ -53,7 +54,7 @@ import System::Controls
 
 pub func main = () {
 	var Window win = Window("List selection", 260, 200)
-	var List list = List(win)
+	var ListView list = ListView(win)
 	list.add_row("one")
 	list.add_row("two")
 	list.add_row("three")
@@ -67,14 +68,14 @@ pub func main = () {
 		expect(parse(input, system).errors).toEqual([]);
 		await build_and_check_output(
 			input,
-			"gui_list_selection",
+			"gui_list_view_selection",
 			"sel=-1 now=1 empty=0 sel=-1",
 			true,
 			{ platform: "macos", audit: false },
 		);
 	});
 
-	test("List conforms to the Control trait (measure / intrinsic_size)", () => {
+	test("ListView conforms to the Control trait (measure / intrinsic_size)", () => {
 		const input = `
 import System::Controls
 
@@ -88,7 +89,7 @@ func measured = (Control c, out string) {
 
 pub func main = () {
 	var Window win = Window("List trait", 300, 200)
-	var List list = List(win)
+	var ListView list = ListView(win)
 	Console.write(measured(list) + "\\n")
 }
 `;
