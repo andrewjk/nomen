@@ -166,6 +166,14 @@ pub func main = () {
 	combo.add_item("Blue")
 	combo.set_selected(1)
 
+	var menu_btn = Button(win, "Right-click me")
+	var menu = Menu()
+	menu.add_item("Cut")
+	menu.add_item("Copy")
+	menu.add_separator()
+	menu.add_item("Paste")
+	menu.attach(menu_btn.handle)
+
 	var status = Text(win)
 	status.set_text("")
 
@@ -255,6 +263,7 @@ pub func main = () {
 	grid.add(list.handle, 0, 88, 2)
 	grid.add(combo_title.handle, 0, 22, 2)
 	grid.add(combo.handle, 0, 26, 2)
+	grid.add(menu_btn.handle, 0, 32, 2)
 	grid.add(status.handle, 0, 40, 2)
 
 	grid.layout(win)
@@ -302,6 +311,14 @@ pub func main = () {
 		// Progress mirrors the slider; the status line reports the polled
 		// values (slider / stepper / color / date / scroll offset / tab).
 		bar.set_value(slide.value() / 100.0)
+		// A context-menu pick (right-click the menu button, choose an entry)
+		// surfaces here on the next frame — clicked_item is edge-triggered
+		// (a read resets it to -1).
+		const int picked = menu.clicked_item()
+		if picked >= 0 {
+			status.set_text("menu: entry \{picked}")
+			prev_status = ""
+		}
 		const string polled = poll_status(ref slide, ref step, ref color, ref when, ref scroll, ref tabs, ref list, ref combo)
 		if polled != prev_status {
 			status.set_text(polled)

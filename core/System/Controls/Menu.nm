@@ -1,0 +1,331 @@
+/**
+ * A context menu attachable to any control (NSMenu via `view.menu`)
+ *
+ * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
+ * single field is a platform handle, so the value is movable and its
+ * `#destroy` releases what the handle names. The constructor's `self` is
+ * the inline instance (the `.` accessor); methods keep the pointer form.
+ *
+ * Right-clicking an attached control shows the menu natively — AppKit runs
+ * its own modal tracking loop, so the manual event loop is untouched. Each
+ * item carries a tag (its index) and a shared target whose action records
+ * the tag in a C global; `clicked_item` polls it (edge-triggered: the read
+ * resets it to -1, "none"). iOS presentation differs (UIContextMenu-
+ * Interaction needs a scene-attached view — see GUI_PLAN Tier 2; the iOS
+ * blocks are TODO stubs).
+ **/
+pub mv struct Menu : Control {
+	var uint64 handle = 0
+
+	// File-scope helper: the shared item target. The action records the
+	// clicked item's tag (shared — one Menu per process, like List's row
+	// storage).
+	pub func #init = (self) {
+		```
+		#arch: c
+		#platform: macos
+		#scope: file
+		static long g_menu_last_tag = -1;
+		static id g_menu_target = 0;
+
+		static void nomen_menu_item_action(id self, SEL cmd, id sender) {
+			(void)self; (void)cmd;
+			g_menu_last_tag = ((long(*)(id, SEL))objc_msgSend)(sender, sel_registerName("tag"));
+		}
+
+		static id nomen_menu_target(void) {
+			Class Mt = objc_getClass("NomenMenuTarget");
+			if (!Mt) {
+				Mt = objc_allocateClassPair(objc_getClass("NSObject"), "NomenMenuTarget", 0);
+				if (Mt) {
+					class_addMethod(Mt, sel_registerName("nomenMenuItemAction:"),
+						(IMP)nomen_menu_item_action, "v@:@");
+					objc_registerClassPair(Mt);
+				}
+			}
+			if (!g_menu_target) {
+				g_menu_target = ((id(*)(id, SEL))objc_msgSend)(Mt, sel_registerName("new"));
+			}
+			return g_menu_target;
+		}
+
+		// Edge-triggered read: the poll consumes the tag (resets to -1).
+		long nomen_menu_last_tag(void) {
+			long tag = g_menu_last_tag;
+			g_menu_last_tag = -1;
+			return tag;
+		}
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		#scope: file
+		static long g_menu_last_tag = -1;
+		static id g_menu_target = 0;
+
+		static void nomen_menu_item_action(id self, SEL cmd, id sender) {
+			(void)self; (void)cmd;
+			g_menu_last_tag = ((long(*)(id, SEL))objc_msgSend)(sender, sel_registerName("tag"));
+		}
+
+		static id nomen_menu_target(void) {
+			Class Mt = objc_getClass("NomenMenuTarget");
+			if (!Mt) {
+				Mt = objc_allocateClassPair(objc_getClass("NSObject"), "NomenMenuTarget", 0);
+				if (Mt) {
+					class_addMethod(Mt, sel_registerName("nomenMenuItemAction:"),
+						(IMP)nomen_menu_item_action, "v@:@");
+					objc_registerClassPair(Mt);
+				}
+			}
+			if (!g_menu_target) {
+				g_menu_target = ((id(*)(id, SEL))objc_msgSend)(Mt, sel_registerName("new"));
+			}
+			return g_menu_target;
+		}
+
+		// Edge-triggered read: the poll consumes the tag (resets to -1).
+		long nomen_menu_last_tag(void) {
+			long tag = g_menu_last_tag;
+			g_menu_last_tag = -1;
+			return tag;
+		}
+		```
+		```
+		#arch: c
+		#platform: macos
+		id menu = ((id(*)(id, SEL))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSMenu"), sel_registerName("alloc")),
+			sel_registerName("init"));
+		self.handle = (uint64_t)menu;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		id menu = ((id(*)(id, SEL))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSMenu"), sel_registerName("alloc")),
+			sel_registerName("init"));
+		self->handle = (uint64_t)menu;
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS — UIContextMenuInteraction needs a scene-attached view
+		 * (see GUI_PLAN Tier 2; defer). */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+	}
+
+	// Append a clickable item. Its tag (and the `clicked_item` value it
+	// reports) is its ENTRY index in the menu — separators consume an index
+	// too, so `add_item` after `add_separator` reports the entry count.
+	pub func add_item = (self, string title) {
+		```
+		#arch: c
+		#platform: macos
+		id menu = (id)self->handle;
+		long tag = ((long(*)(id, SEL))objc_msgSend)(menu, sel_registerName("numberOfItems"));
+		id item = ((id(*)(id, SEL, id, SEL, id))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSMenuItem"), sel_registerName("alloc")),
+			sel_registerName("initWithTitle:action:keyEquivalent:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr),
+			sel_registerName("nomenMenuItemAction:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), ""));
+		((void(*)(id, SEL, long))objc_msgSend)(item, sel_registerName("setTag:"), tag);
+		((void(*)(id, SEL, id))objc_msgSend)(item, sel_registerName("setTarget:"), nomen_menu_target());
+		((void(*)(id, SEL, id))objc_msgSend)(menu, sel_registerName("addItem:"), item);
+		((void(*)(id, SEL))objc_msgSend)(item, sel_registerName("release"));
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		id menu = (id)self->handle;
+		long tag = ((long(*)(id, SEL))objc_msgSend)(menu, sel_registerName("numberOfItems"));
+		id item = ((id(*)(id, SEL, id, SEL, id))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSMenuItem"), sel_registerName("alloc")),
+			sel_registerName("initWithTitle:action:keyEquivalent:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr),
+			sel_registerName("nomenMenuItemAction:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), ""));
+		((void(*)(id, SEL, long))objc_msgSend)(item, sel_registerName("setTag:"), tag);
+		((void(*)(id, SEL, id))objc_msgSend)(item, sel_registerName("setTarget:"), nomen_menu_target());
+		((void(*)(id, SEL, id))objc_msgSend)(menu, sel_registerName("addItem:"), item);
+		((void(*)(id, SEL))objc_msgSend)(item, sel_registerName("release"));
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+	}
+
+	// Append a separator line.
+	pub func add_separator = (self) {
+		```
+		#arch: c
+		#platform: macos
+		id sep = ((id(*)(id, SEL))objc_msgSend)(
+			(id)objc_getClass("NSMenuItem"), sel_registerName("separatorItem"));
+		((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("addItem:"), sep);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		id sep = ((id(*)(id, SEL))objc_msgSend)(
+			(id)objc_getClass("NSMenuItem"), sel_registerName("separatorItem"));
+		((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("addItem:"), sep);
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+	}
+
+	// Show this menu on right-click of the control with the given handle.
+	pub func attach = (self, uint64 handle) {
+		```
+		#arch: c
+		#platform: macos
+		((void(*)(id, SEL, id))objc_msgSend)((id)handle, sel_registerName("setMenu:"), (id)self->handle);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, id))objc_msgSend)((id)handle, sel_registerName("setMenu:"), (id)self->handle);
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+	}
+
+	// The number of ENTRIES (items + separators).
+	pub func item_count = (self, out int) {
+		```
+		#arch: c
+		#platform: macos
+		return (int)((long(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("numberOfItems"));
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		return (int)((long(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("numberOfItems"));
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return 0;
+		```
+	}
+
+	// The tag of the most recently clicked item since the last read
+	// (edge-triggered; -1 = none). Poll it in the manual loop.
+	pub func clicked_item = (self, out int) {
+		```
+		#arch: c
+		#platform: macos
+		extern long nomen_menu_last_tag(void);
+		long tag = nomen_menu_last_tag();
+		return (int)tag;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		extern long nomen_menu_last_tag(void);
+		long tag = nomen_menu_last_tag();
+		return (int)tag;
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return -1;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return -1;
+		```
+	}
+
+	// ── Control trait conformance ──
+	// A menu is not laid out: it has no frame of its own (it presents at the
+	// cursor under the attached control's right-click).
+	pub func set_frame = (ref self, int x, int y, int width, int height) {
+		// No-op: the menu presents at the cursor.
+	}
+
+	pub func intrinsic_size = (self, out Size) {
+		var s = Size()
+		return s
+	}
+
+	pub func measure = (self, BoxConstraints constraints, out Size) {
+		var s = Size()
+		return s
+	}
+
+	func #destroy = () {
+		```
+		#arch: c
+		#platform: macos
+		if (self->handle) {
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		if (self->handle) {
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+	}
+}
