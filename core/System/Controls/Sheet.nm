@@ -68,8 +68,9 @@ pub mv struct Sheet : Control {
 
 	// A Window-shaped handle to the sheet's contentView: pass it to control
 	// constructors and `Container.layout` to host controls in the sheet.
-	// The value borrows the sheet's window (its `#destroy` releases nothing
-	// — it is a plain handle copy, so keep the Sheet alive longer).
+	// The value retains the sheet's window (+1), so its scope-exit
+	// `#destroy` releases its OWN reference and the Sheet's stays balanced
+	// — keep the Sheet alive at least as long as the returned value.
 	pub func content_window = (self, out Window) {
 		```
 		#arch: c
@@ -78,6 +79,7 @@ pub mv struct Sheet : Control {
 		struct Window w;
 		w._vt = (void *)&_Window_traits;
 		w.handle = self->handle;
+		((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("retain"));
 		return w;
 		```
 		```
@@ -87,6 +89,7 @@ pub mv struct Sheet : Control {
 		struct Window w;
 		w._vt = (void *)&Window_traits;
 		w.handle = self->handle;
+		((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("retain"));
 		return w;
 		```
 		```
