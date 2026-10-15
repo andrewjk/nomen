@@ -1,0 +1,392 @@
+/**
+ * An editable text field with a dropdown of completions (NSComboBox)
+ *
+ * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
+ * single field is a platform handle, so the value is movable and its
+ * `#destroy` releases what the handle names. The constructor's `self` is
+ * the inline instance (the `.` accessor); methods keep the pointer form.
+ *
+ * Items live in the combo box's own internal list (no data source); the
+ * text is polled per frame like every other control (stringValue), and
+ * `selected_index` reports -1 once the user edits the text freely.
+ * macOS-only (NSComboBox has no iOS counterpart — see GUI_PLAN Tier 2; the
+ * iOS blocks are TODO stubs).
+ **/
+pub mv struct ComboBox : Control {
+	var uint64 handle = 0
+
+	pub func #init = (self, Window window) {
+		```
+		#arch: c
+		#platform: macos
+		id cb = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSComboBox"), sel_registerName("alloc")),
+			sel_registerName("initWithFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 200, 26));
+		((void(*)(id, SEL, BOOL))objc_msgSend)(cb, sel_registerName("setCompletes:"), 1);
+		id contentView = ((id(*)(id, SEL))objc_msgSend)(
+			(id)window->handle, sel_registerName("contentView"));
+		((void(*)(id, SEL, id))objc_msgSend)(
+			contentView, sel_registerName("addSubview:"), cb);
+		self.handle = (uint64_t)cb;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		id cb = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSComboBox"), sel_registerName("alloc")),
+			sel_registerName("initWithFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 200, 26));
+		((void(*)(id, SEL, BOOL))objc_msgSend)(cb, sel_registerName("setCompletes:"), 1);
+		id contentView = ((id(*)(id, SEL))objc_msgSend)(
+			(id)window->handle, sel_registerName("contentView"));
+		((void(*)(id, SEL, id))objc_msgSend)(
+			contentView, sel_registerName("addSubview:"), cb);
+		self->handle = (uint64_t)cb;
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS — no NSComboBox counterpart (compose a UITextField +
+		 * picker; see GUI_PLAN Tier 2; defer). */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+	}
+
+	pub func set_frame = (ref self, int x, int y, int width, int height) {
+		```
+		#arch: c
+		#platform: macos
+		((void(*)(id, SEL, CGRect))objc_msgSend)(
+			(id)self->handle, sel_registerName("setFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, CGRect))objc_msgSend)(
+			(id)self->handle, sel_registerName("setFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+	}
+
+	pub func add_item = (self, string title) {
+		```
+		#arch: c
+		#platform: macos
+		((void(*)(id, SEL, id))objc_msgSend)(
+			(id)self->handle, sel_registerName("addItemWithObjectValue:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, id))objc_msgSend)(
+			(id)self->handle, sel_registerName("addItemWithObjectValue:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+	}
+
+	pub func remove_all = (self) {
+		```
+		#arch: c
+		#platform: macos
+		((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeAllItems"));
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeAllItems"));
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+	}
+
+	pub func item_count = (self, out int) {
+		```
+		#arch: c
+		#platform: macos
+		return (int)((long(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("numberOfItems"));
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		return (int)((long(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("numberOfItems"));
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return 0;
+		```
+	}
+
+	// A fresh copy of item `index`'s text (mv — the caller owns it).
+	pub func item = (self, int index, out string) {
+		```
+		#arch: c
+		#platform: macos
+		id value = ((id(*)(id, SEL, long))objc_msgSend)(
+			(id)self->handle, sel_registerName("itemObjectValueAtIndex:"), (long)index);
+		if (!value) return (nomen_string){ strdup(""), 0 };
+		const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(value, sel_registerName("UTF8String"));
+		if (!cstr) return (nomen_string){ strdup(""), 0 };
+		return (nomen_string){ strdup(cstr), (long)strlen(cstr) };
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		id value = ((id(*)(id, SEL, long))objc_msgSend)(
+			(id)self->handle, sel_registerName("itemObjectValueAtIndex:"), (long)index);
+		if (!value) return (nomen_string){ strdup(""), 0 };
+		const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(value, sel_registerName("UTF8String"));
+		if (!cstr) return (nomen_string){ strdup(""), 0 };
+		return (nomen_string){ strdup(cstr), (long)strlen(cstr) };
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return (nomen_string){ strdup(""), 0 };
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return (nomen_string){ strdup(""), 0 };
+		```
+	}
+
+	// The edited/selected text, polled (a fresh copy — the caller owns it).
+	pub func get_text = (self, out string) {
+		```
+		#arch: c
+		#platform: macos
+		id str = ((id(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("stringValue"));
+		if (!str) return (nomen_string){ strdup(""), 0 };
+		const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(str, sel_registerName("UTF8String"));
+		if (!cstr) return (nomen_string){ strdup(""), 0 };
+		return (nomen_string){ strdup(cstr), (long)strlen(cstr) };
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		id str = ((id(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("stringValue"));
+		if (!str) return (nomen_string){ strdup(""), 0 };
+		const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(str, sel_registerName("UTF8String"));
+		if (!cstr) return (nomen_string){ strdup(""), 0 };
+		return (nomen_string){ strdup(cstr), (long)strlen(cstr) };
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return (nomen_string){ strdup(""), 0 };
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return (nomen_string){ strdup(""), 0 };
+		```
+	}
+
+	pub func set_text = (self, string text) {
+		```
+		#arch: c
+		#platform: macos
+		((void(*)(id, SEL, id))objc_msgSend)(
+			(id)self->handle, sel_registerName("setStringValue:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text.ptr));
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, id))objc_msgSend)(
+			(id)self->handle, sel_registerName("setStringValue:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text.ptr));
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+	}
+
+	// The selected item's index, polled; -1 = no selection. (User free-typing
+	// clears it; a programmatic set_text does not.)
+	pub func selected_index = (self, out int) {
+		```
+		#arch: c
+		#platform: macos
+		return (int)((long(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("indexOfSelectedItem"));
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		return (int)((long(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("indexOfSelectedItem"));
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return -1;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return -1;
+		```
+	}
+
+	pub func set_selected = (self, int index) {
+		```
+		#arch: c
+		#platform: macos
+		((void(*)(id, SEL, long))objc_msgSend)(
+			(id)self->handle, sel_registerName("selectItemAtIndex:"), (long)index);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, long))objc_msgSend)(
+			(id)self->handle, sel_registerName("selectItemAtIndex:"), (long)index);
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+	}
+
+	pub func set_hidden = (self, bool hidden) {
+		```
+		#arch: c
+		#platform: macos
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+		```
+	}
+
+	// ── Control trait conformance ──
+	pub func intrinsic_size = (self, out Size) {
+		var [w, h] = native_intrinsic(self.handle)
+		var s = Size()
+		s.width = w
+		s.height = h
+		return s
+	}
+
+	pub func measure = (self, BoxConstraints constraints, out Size) {
+		var Size s = self.intrinsic_size()
+		if s.width > constraints.max_width {
+			s.width = constraints.max_width
+		}
+		if s.width < constraints.min_width {
+			s.width = constraints.min_width
+		}
+		if s.height > constraints.max_height {
+			s.height = constraints.max_height
+		}
+		if s.height < constraints.min_height {
+			s.height = constraints.min_height
+		}
+		return s
+	}
+
+	func #destroy = () {
+		```
+		#arch: c
+		#platform: macos
+		if (self->handle) {
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		if (self->handle) {
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+	}
+}

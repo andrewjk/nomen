@@ -37,4 +37,4 @@ label stack on a Scrollable's document view — measured unbounded, sized via
 polled into the status line. A Tabs section hosts one label per page via
 `content_window(index)`, with the selected tab polled alongside. A List
 section bridges rows into an NSTableView data source, polling the selected
-row.
+row; a ComboBox polls its selection the same way.

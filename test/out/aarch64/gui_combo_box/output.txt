@@ -1,0 +1,1 @@
+count=3 item1=Green sel=2 text=custom sel=2

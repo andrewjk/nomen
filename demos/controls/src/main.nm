@@ -157,6 +157,15 @@ pub func main = () {
 	list.add_row("delta")
 	list.select_row(1)
 
+	var combo_title = Text(win)
+	combo_title.set_text("Combo box")
+	combo_title.set_bold(true)
+	var combo = ComboBox(win)
+	combo.add_item("Red")
+	combo.add_item("Green")
+	combo.add_item("Blue")
+	combo.set_selected(1)
+
 	var status = Text(win)
 	status.set_text("")
 
@@ -244,6 +253,8 @@ pub func main = () {
 	grid.add(tabs.handle, 0, 120, 2)
 	grid.add(list_title.handle, 0, 22, 2)
 	grid.add(list.handle, 0, 88, 2)
+	grid.add(combo_title.handle, 0, 22, 2)
+	grid.add(combo.handle, 0, 26, 2)
 	grid.add(status.handle, 0, 40, 2)
 
 	grid.layout(win)
@@ -265,7 +276,7 @@ pub func main = () {
 	// changes ("" forces the next poll to refresh after a transient
 	// message like the alert result).
 	var prev_status = ""
-	const string status_text = poll_status(ref slide, ref step, ref color, ref when, ref scroll, ref tabs, ref list)
+	const string status_text = poll_status(ref slide, ref step, ref color, ref when, ref scroll, ref tabs, ref list, ref combo)
 	status.set_text(status_text)
 	prev_status = mv status_text
 
@@ -291,7 +302,7 @@ pub func main = () {
 		// Progress mirrors the slider; the status line reports the polled
 		// values (slider / stepper / color / date / scroll offset / tab).
 		bar.set_value(slide.value() / 100.0)
-		const string polled = poll_status(ref slide, ref step, ref color, ref when, ref scroll, ref tabs, ref list)
+		const string polled = poll_status(ref slide, ref step, ref color, ref when, ref scroll, ref tabs, ref list, ref combo)
 		if polled != prev_status {
 			status.set_text(polled)
 			prev_status = mv polled
@@ -340,8 +351,8 @@ pub func main = () {
 // The polled status line: the continuous controls' current values, as one
 // string. Continuous controls are read every frame (no change callbacks in
 // the manual loop — see GUI_PLAN, cross-cutting follow-ups). The scroll
-// offset, selected tab, and selected list row are polled the same way so
-// scrolling, page switches, and selection show up in the status line.
+// offset, selected tab, and selected list/combo rows are polled the same
+// way so scrolling, page switches, and selection show up in the status line.
 func poll_status = (
 	ref Slider slide,
 	ref Stepper step,
@@ -350,6 +361,7 @@ func poll_status = (
 	ref Scrollable scroll,
 	ref Tabs tabs,
 	ref List list,
+	ref ComboBox combo,
 	out string
 ) {
 	const int sv = slide.value() as int
@@ -359,7 +371,8 @@ func poll_status = (
 	const int so = scroll.scroll_offset_y()
 	const int tab = tabs.selected_index()
 	const int sel = list.selected_row()
-	return "slider \{sv}  stepper \{nv}  rgb \{c.red},\{c.green},\{c.blue}  date \{secs}  scroll y=\{so}  tab \{tab}  list \{sel}"
+	const int csel = combo.selected_index()
+	return "slider \{sv}  stepper \{nv}  rgb \{c.red},\{c.green},\{c.blue}  date \{secs}  scroll y=\{so}  tab \{tab}  list \{sel}  combo \{csel}"
 }
 
 // Measure the scroll content with unbounded height, size the document view
