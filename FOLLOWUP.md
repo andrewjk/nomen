@@ -84,3 +84,13 @@ release ships the new rules, `nomen format` cannot be run across the repo
 without a whole-repo style churn commit — pick one: either a dedicated
 "Style: reformat System library" commit or hold the in-source changes until
 release.
+
+## demos/async fails to check: Channel spawn ownership
+
+`demos/async/src/main.nm` line 72 (`fetch = Fiber(run_fetch(done)).start()`)
+fails to check on HEAD: "spawn argument of type Channel owns heap memory —
+spawn it inside an 'async' block as a borrowed read … or mv it in". The
+published 0.7.1 CLI rejects it too, so the rule moved after the demo was
+written (the stashed "enum-in-struct field ownership" WIP is likely
+related). The demo needs `mv done` (or the borrowed-read form) in its
+`Fiber(...)` spawn.
