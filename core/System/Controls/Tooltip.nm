@@ -1,0 +1,76 @@
+/**
+ * Tooltip helpers — attach hover text to any control by its handle
+ *
+ * Not a control: a tooltip is one property of the view the handle names,
+ * so this is a pair of free functions over `view.toolTip` (macOS). The
+ * helper shape means ANY control gains tooltips without per-control API
+ * surface — pass `button.handle`. iOS has no hover concept (TODO stubs;
+ * see GUI_PLAN Tier 1 #18).
+ **/
+
+// Attach (or clear, with "") hover text for the view `handle` names.
+pub func set_tooltip = (uint64 handle, string text) {
+	```
+	#arch: c
+	#platform: macos
+	((void(*)(id, SEL, id))objc_msgSend)(
+		(id)handle, sel_registerName("setToolTip:"),
+		((id(*)(id, SEL, const char*))objc_msgSend)(
+			(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text.ptr));
+	```
+	```
+	#arch: aarch64_use_c
+	#platform: macos
+	((void(*)(id, SEL, id))objc_msgSend)(
+		(id)handle, sel_registerName("setToolTip:"),
+		((id(*)(id, SEL, const char*))objc_msgSend)(
+			(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text.ptr));
+	```
+	```
+	#arch: c
+	#platform: ios
+	/* TODO: iOS — no hover/tooltips (see GUI_PLAN Tier 1 #18). */
+	```
+	```
+	#arch: aarch64_use_c
+	#platform: ios
+	/* TODO: iOS — no hover/tooltips (see GUI_PLAN Tier 1 #18). */
+	```
+}
+
+// The tooltip text currently attached to the view `handle` names ("" when
+// none).
+pub func get_tooltip = (uint64 handle, out string) {
+	```
+	#arch: c
+	#platform: macos
+	id str = ((id(*)(id, SEL))objc_msgSend)(
+		(id)handle, sel_registerName("toolTip"));
+	if (!str) return (nomen_string){ strdup(""), 0 };
+	const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(
+		str, sel_registerName("UTF8String"));
+	return (nomen_string){ strdup(cstr), (long)strlen(cstr) };
+	```
+	```
+	#arch: aarch64_use_c
+	#platform: macos
+	id str = ((id(*)(id, SEL))objc_msgSend)(
+		(id)handle, sel_registerName("toolTip"));
+	if (!str) return (nomen_string){ strdup(""), 0 };
+	const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(
+		str, sel_registerName("UTF8String"));
+	return (nomen_string){ strdup(cstr), (long)strlen(cstr) };
+	```
+	```
+	#arch: c
+	#platform: ios
+	/* TODO: iOS (see set_tooltip) */
+	return (nomen_string){ strdup(""), 0 };
+	```
+	```
+	#arch: aarch64_use_c
+	#platform: ios
+	/* TODO: iOS (see set_tooltip) */
+	return (nomen_string){ strdup(""), 0 };
+	```
+}
