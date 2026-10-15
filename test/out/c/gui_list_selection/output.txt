@@ -1,0 +1,1 @@
+sel=-1 now=1 empty=0 sel=-1

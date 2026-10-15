@@ -35,4 +35,6 @@ Popover (toggled from an anchor button). A Scrolling section hosts a tall
 label stack on a Scrollable's document view — measured unbounded, sized via
 `set_content_size`, laid out into that height, with the scroll offset
 polled into the status line. A Tabs section hosts one label per page via
-`content_window(index)`, with the selected tab polled alongside.
+`content_window(index)`, with the selected tab polled alongside. A List
+section bridges rows into an NSTableView data source, polling the selected
+row.
