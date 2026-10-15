@@ -1,0 +1,321 @@
+/**
+ * A system alert dialog (NSAlert)
+ *
+ * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
+ * single field is a platform handle, so the value is movable and its
+ * `#destroy` releases what the handle names. The constructor's `self` is
+ * the inline instance (the `.` accessor); methods keep the pointer form.
+ *
+ * Window-coordinated: `run` enters NSAlert's own modal loop (it blocks the
+ * caller and pumps its own events, so it works with the manual loop), and
+ * returns the clicked button's index (first button = 0). iOS defers —
+ * UIAlertController needs a presenting view controller (TODO stubs; see
+ * GUI_PLAN Tier 1 #19).
+ **/
+pub mv struct Alert : Control {
+	var uint64 handle = 0
+
+	pub func #init = (self) {
+		```
+		#arch: c
+		#platform: macos
+		id alert = ((id(*)(id, SEL))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSAlert"), sel_registerName("alloc")),
+			sel_registerName("init"));
+		self.handle = (uint64_t)alert;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		id alert = ((id(*)(id, SEL))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSAlert"), sel_registerName("alloc")),
+			sel_registerName("init"));
+		self->handle = (uint64_t)alert;
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS — UIAlertController needs a presenting view controller
+		 * (see GUI_PLAN Tier 1 #19; defer the iOS block). */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS — UIAlertController needs a presenting view controller
+		 * (see GUI_PLAN Tier 1 #19; defer the iOS block). */
+		```
+	}
+
+	// The alert's headline (bold first line).
+	pub func set_title = (self, string title) {
+		```
+		#arch: c
+		#platform: macos
+		((void(*)(id, SEL, id))objc_msgSend)(
+			(id)self->handle, sel_registerName("setMessageText:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, id))objc_msgSend)(
+			(id)self->handle, sel_registerName("setMessageText:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+	}
+
+	pub func title = (self, out string) {
+		```
+		#arch: c
+		#platform: macos
+		id str = ((id(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("messageText"));
+		if (!str) return (nomen_string){ strdup(""), 0 };
+		const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(
+			str, sel_registerName("UTF8String"));
+		return (nomen_string){ strdup(cstr), (long)strlen(cstr) };
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		id str = ((id(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("messageText"));
+		if (!str) return (nomen_string){ strdup(""), 0 };
+		const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(
+			str, sel_registerName("UTF8String"));
+		return (nomen_string){ strdup(cstr), (long)strlen(cstr) };
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return (nomen_string){ strdup(""), 0 };
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return (nomen_string){ strdup(""), 0 };
+		```
+	}
+
+	// The explanatory second line.
+	pub func set_message = (self, string message) {
+		```
+		#arch: c
+		#platform: macos
+		((void(*)(id, SEL, id))objc_msgSend)(
+			(id)self->handle, sel_registerName("setInformativeText:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), message.ptr));
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, id))objc_msgSend)(
+			(id)self->handle, sel_registerName("setInformativeText:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), message.ptr));
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+	}
+
+	pub func message = (self, out string) {
+		```
+		#arch: c
+		#platform: macos
+		id str = ((id(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("informativeText"));
+		if (!str) return (nomen_string){ strdup(""), 0 };
+		const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(
+			str, sel_registerName("UTF8String"));
+		return (nomen_string){ strdup(cstr), (long)strlen(cstr) };
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		id str = ((id(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("informativeText"));
+		if (!str) return (nomen_string){ strdup(""), 0 };
+		const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(
+			str, sel_registerName("UTF8String"));
+		return (nomen_string){ strdup(cstr), (long)strlen(cstr) };
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return (nomen_string){ strdup(""), 0 };
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return (nomen_string){ strdup(""), 0 };
+		```
+	}
+
+	// Append a button (left to right). The FIRST button is the default
+	// (Return); the clicked one's index is what `run` returns. A fresh
+	// NSAlert carries one default button ("OK") — the first
+	// `add_button` REPLACES it, so the count stays what the app adds.
+	pub func add_button = (self, string title) {
+		```
+		#arch: c
+		#platform: macos
+		((void(*)(id, SEL, id))objc_msgSend)(
+			(id)self->handle, sel_registerName("addButtonWithTitle:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, id))objc_msgSend)(
+			(id)self->handle, sel_registerName("addButtonWithTitle:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+	}
+
+	// How many buttons the alert carries.
+	pub func button_count = (self, out int) {
+		```
+		#arch: c
+		#platform: macos
+		id buttons = ((id(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("buttons"));
+		return (int)((long(*)(id, SEL))objc_msgSend)(buttons, sel_registerName("count"));
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		id buttons = ((id(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("buttons"));
+		return (int)((long(*)(id, SEL))objc_msgSend)(buttons, sel_registerName("count"));
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return 0;
+		```
+	}
+
+	// Show the alert modally and return the clicked button's index (0 =
+	// first button). BLOCKS in NSAlert's own modal loop until dismissed —
+	// call it from the event thread when the manual loop can afford to
+	// pause (NSAlert pumps its own events, so the UI stays live).
+	pub func run = (self, out int) {
+		```
+		#arch: c
+		#platform: macos
+		long code = ((long(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("runModal"));
+		return (int)(code - 1000); // NSModalResponseOK = 1000 + button index
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		long code = ((long(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("runModal"));
+		return (int)(code - 1000); // NSModalResponseOK = 1000 + button index
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return 0;
+		```
+	}
+
+	// ── Control trait conformance ──
+	// An alert is a modal, not an in-window view: it measures to nothing and
+	// the layout engine never frames it. The conformance exists so an Alert
+	// can sit in a Control-typed slot without special-casing.
+	pub func set_frame = (ref self, int x, int y, int width, int height) {
+		// No-op: modals are positioned by the window server.
+	}
+
+	pub func intrinsic_size = (self, out Size) {
+		var s = Size()
+		return s
+	}
+
+	pub func measure = (self, BoxConstraints constraints, out Size) {
+		var s = Size()
+		return s
+	}
+
+	func #destroy = () {
+		```
+		#arch: c
+		#platform: macos
+		if (self->handle) {
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		if (self->handle) {
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+	}
+}
