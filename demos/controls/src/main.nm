@@ -126,6 +126,27 @@ pub func main = () {
 	scroll_grid.add(row_5.handle, 0, 24, 1)
 	scroll_grid.add(row_6.handle, 0, 24, 1)
 
+	var tabs_title = Text(win)
+	tabs_title.set_text("Tabs")
+	tabs_title.set_bold(true)
+	var tabs = Tabs(win, 2)
+	tabs.set_label(0, "One")
+	tabs.set_label(1, "Two")
+	// Each page is its own layout root (content_window(index)); the laid-out
+	// frames stay valid when the user switches pages natively.
+	const tabs_page_0 = tabs.content_window(0)
+	const tabs_page_1 = tabs.content_window(1)
+	var tabs_grid_0 = Grid(1, 6)
+	tabs_grid_0.padding = 12
+	var tabs_label_0 = Text(tabs_page_0)
+	tabs_label_0.set_text("Page one content")
+	tabs_grid_0.add(tabs_label_0.handle, 0, 24, 1)
+	var tabs_grid_1 = Grid(1, 6)
+	tabs_grid_1.padding = 12
+	var tabs_label_1 = Text(tabs_page_1)
+	tabs_label_1.set_text("Page two content")
+	tabs_grid_1.add(tabs_label_1.handle, 0, 24, 1)
+
 	var status = Text(win)
 	status.set_text("")
 
@@ -209,6 +230,8 @@ pub func main = () {
 	grid.add(form.handle, 0, 72, 2)
 	grid.add(scroll_title.handle, 0, 22, 2)
 	grid.add(scroll.handle, 0, 120, 2)
+	grid.add(tabs_title.handle, 0, 22, 2)
+	grid.add(tabs.handle, 0, 120, 2)
 	grid.add(status.handle, 0, 40, 2)
 
 	grid.layout(win)
@@ -221,12 +244,16 @@ pub func main = () {
 	// owns the coordinates), hence the initial scroll_to_top.
 	layout_scroll_content(ref scroll, ref scroll_grid, scroll_content, win.content_width() - 32)
 	scroll.scroll_to_top()
+	// Tab pages are their own layout roots: the tab view sizes its page
+	// views to the content area (synchronously on setFrame), so laying out
+	// after the first grid pass sees real page frames.
+	layout_tabs_pages(ref tabs_grid_0, tabs_page_0, ref tabs_grid_1, tabs_page_1)
 
 	// The polled status line — rewritten only when the string actually
 	// changes ("" forces the next poll to refresh after a transient
 	// message like the alert result).
 	var prev_status = ""
-	const string status_text = poll_status(ref slide, ref step, ref color, ref when, ref scroll)
+	const string status_text = poll_status(ref slide, ref step, ref color, ref when, ref scroll, ref tabs)
 	status.set_text(status_text)
 	prev_status = mv status_text
 
@@ -246,12 +273,13 @@ pub func main = () {
 			prev_h = cur_h
 			grid.layout(win)
 			layout_scroll_content(ref scroll, ref scroll_grid, scroll_content, cur_w - 32)
+			layout_tabs_pages(ref tabs_grid_0, tabs_page_0, ref tabs_grid_1, tabs_page_1)
 		}
 
 		// Progress mirrors the slider; the status line reports the polled
-		// values (slider / stepper / color / date / scroll offset).
+		// values (slider / stepper / color / date / scroll offset / tab).
 		bar.set_value(slide.value() / 100.0)
-		const string polled = poll_status(ref slide, ref step, ref color, ref when, ref scroll)
+		const string polled = poll_status(ref slide, ref step, ref color, ref when, ref scroll, ref tabs)
 		if polled != prev_status {
 			status.set_text(polled)
 			prev_status = mv polled
@@ -300,13 +328,15 @@ pub func main = () {
 // The polled status line: the continuous controls' current values, as one
 // string. Continuous controls are read every frame (no change callbacks in
 // the manual loop — see GUI_PLAN, cross-cutting follow-ups). The scroll
-// offset is polled the same way so scrolling shows up in the status line.
+// offset and selected tab are polled the same way so scrolling and page
+// switches show up in the status line.
 func poll_status = (
 	ref Slider slide,
 	ref Stepper step,
 	ref ColorPicker color,
 	ref DatePicker when,
 	ref Scrollable scroll,
+	ref Tabs tabs,
 	out string
 ) {
 	const int sv = slide.value() as int
@@ -314,7 +344,8 @@ func poll_status = (
 	const Rgb c = color.rgb()
 	const int64 secs = when.time()
 	const int so = scroll.scroll_offset_y()
-	return "slider \{sv}  stepper \{nv}  rgb \{c.red},\{c.green},\{c.blue}  date \{secs}  scroll y=\{so}"
+	const int tab = tabs.selected_index()
+	return "slider \{sv}  stepper \{nv}  rgb \{c.red},\{c.green},\{c.blue}  date \{secs}  scroll y=\{so}  tab \{tab}"
 }
 
 // Measure the scroll content with unbounded height, size the document view
@@ -333,4 +364,17 @@ func layout_scroll_content = (
 	const Size cs = grid.measure(bc)
 	scroll.set_content_size(cs.width, cs.height)
 	grid.layout(content)
+}
+
+// Lay both tab pages out into their page views. Safe any time after the tab
+// view has been framed — NSTabView resizes its page views synchronously on
+// setFrame, so the page height the flip runs against is current.
+func layout_tabs_pages = (
+	ref Container grid_0,
+	Window page_0,
+	ref Container grid_1,
+	Window page_1
+) {
+	grid_0.layout(page_0)
+	grid_1.layout(page_1)
 }

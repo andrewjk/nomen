@@ -34,4 +34,5 @@ its own layout root, hit-tested in sheet coordinates while presented), and
 Popover (toggled from an anchor button). A Scrolling section hosts a tall
 label stack on a Scrollable's document view — measured unbounded, sized via
 `set_content_size`, laid out into that height, with the scroll offset
-polled into the status line.
+polled into the status line. A Tabs section hosts one label per page via
+`content_window(index)`, with the selected tab polled alongside.
