@@ -1,0 +1,275 @@
+import System
+import System::Controls
+
+pub func main = () {
+	const win = Window("Nomen Controls", 440, 900)
+
+	// ── Controls ──
+	var header = Text(win)
+	header.set_text("Controls Gallery")
+	header.set_bold(true)
+
+	var title = Text(win)
+	title.set_text("Inputs")
+	title.set_bold(true)
+	const name = TextBox(win)
+	name.set_placeholder("Text box")
+	const secret = SecureField(win)
+	secret.set_placeholder("Password")
+	const search = SearchField(win)
+	search.set_placeholder("Search")
+	const notes = TextView(win)
+	notes.set_placeholder("Multiline notes…")
+
+	var choice_title = Text(win)
+	choice_title.set_text("Choices")
+	choice_title.set_bold(true)
+	const agree = CheckBox(win)
+	agree.set_title("Check me")
+	const radio_a = Radio(win, "One")
+	const radio_b = Radio(win, "Two")
+	radio_a.set_checked(true)
+	const flip = Switch(win)
+	flip.set_checked(true)
+	const stamp = Toggle(win, "Toggle")
+	const views = Segmented(win, 3)
+	views.set_label(0, "Day")
+	views.set_label(1, "Week")
+	views.set_label(2, "Month")
+	views.set_selected(1)
+	const pick = Select(win)
+	pick.add_item("Red")
+	pick.add_item("Green")
+	pick.add_item("Blue")
+	var step = Stepper(win)
+	step.set_min(0.0)
+	step.set_max(10.0)
+	step.set_increment(1.0)
+	step.set_value(3.0)
+	var slide = Slider(win, 0.0, 100.0)
+	slide.set_value(40.0)
+
+	var display_title = Text(win)
+	display_title.set_text("Display")
+	display_title.set_bold(true)
+	const bar = Progress(win)
+	bar.set_value(0.4)
+	var spin = Spinner(win)
+	spin.start()
+	const stars = LevelIndicator(win)
+	stars.set_max(5.0)
+	stars.set_value(3.0)
+	const icon = ImageView(win)
+	icon.set_symbol("gearshape")
+	var when = DatePicker(win)
+	when.set_time(1760000000)
+	var color = ColorPicker(win)
+	color.set_rgb(52, 149, 235)
+	// The display controls show no title of their own, so each row pairs the
+	// control with a caption label (the caption sizes to its text; the
+	// control fills the rest of the row).
+	var prog_caption = Text(win)
+	prog_caption.set_text("Progress")
+	var spin_caption = Text(win)
+	spin_caption.set_text("Spinner")
+	var stars_caption = Text(win)
+	stars_caption.set_text("Level indicator")
+	var icon_caption = Text(win)
+	icon_caption.set_text("Image view")
+	var when_caption = Text(win)
+	when_caption.set_text("Date picker")
+	var color_caption = Text(win)
+	color_caption.set_text("Color picker")
+
+	var action_title = Text(win)
+	action_title.set_text("Actions")
+	action_title.set_bold(true)
+	const hover_btn = Button(win, "Hover me")
+	set_tooltip(hover_btn.handle, "Tooltips attach to any control by handle")
+	const alert_btn = Button(win, "Show alert")
+	const sheet_btn = Button(win, "Show sheet")
+	const pop_btn = Button(win, "Show popover")
+
+	var group_title = Text(win)
+	group_title.set_text("Grouping")
+	group_title.set_bold(true)
+	const rule = Separator(win)
+	const form = GroupBox(win, "Group box")
+
+	var status = Text(win)
+	status.set_text("")
+
+	// ── Modal companions (created up front, driven from the event loop) ──
+	const alert = Alert()
+	alert.set_title("Delete todo?")
+	alert.set_message("This cannot be undone.")
+	alert.add_button("Delete")
+	alert.add_button("Cancel")
+
+	const sheet = Sheet(win, 260, 150)
+	sheet.set_title("Settings")
+	const sheet_content = sheet.content_window()
+	var sheet_grid = Grid(1, 8)
+	sheet_grid.padding = 12
+	var sheet_label = Text(sheet_content)
+	sheet_label.set_text("Sheet content")
+	const sheet_close = Button(sheet_content, "Close")
+	sheet_grid.add(sheet_label.handle, 0, 24, 1)
+	sheet_grid.add(sheet_close.handle, 0, 32, 1)
+	sheet_grid.layout(sheet_content)
+
+	const pop = Popover(win)
+
+	// ── Layout: a 2-column grid; bold section headings span both columns ──
+	var grid = Grid(2, 6)
+	grid.padding = 16
+	grid.add(header.handle, 0, 28, 2)
+
+	grid.add(title.handle, 0, 22, 2)
+	grid.add(name.handle, 0, 24, 1)
+	grid.add(secret.handle, 0, 24, 1)
+	grid.add(search.handle, 0, 24, 1)
+	grid.add(notes.handle, 0, 80, 2)
+
+	grid.add(choice_title.handle, 0, 22, 2)
+	grid.add(agree.handle, 0, 24, 1)
+	// The radios take their intrinsic width: an auto-sized leaf in an
+	// unbounded hstack measures 0 wide, so both radios would draw from the
+	// same spot and the click hit-test (which reads the laid-out frame)
+	// would never match either of them.
+	const int radio_row = grid.add_hstack(grid.root_index(), 12, 1)
+	grid.add_to_kind(radio_row, radio_a.handle, LEN_INTRINSIC, 0, LEN_FIXED, 24, 1)
+	grid.add_to_kind(radio_row, radio_b.handle, LEN_INTRINSIC, 0, LEN_FIXED, 24, 1)
+	grid.add(flip.handle, 0, 24, 1)
+	grid.add(stamp.handle, 0, 32, 1)
+	grid.add(views.handle, 0, 24, 1)
+	grid.add(pick.handle, 0, 26, 1)
+	grid.add(step.handle, 0, 26, 1)
+	grid.add(slide.handle, 0, 24, 1)
+
+	grid.add(display_title.handle, 0, 22, 2)
+	const int prog_row = grid.add_hstack(grid.root_index(), 8, 2)
+	grid.add_to_intrinsic(prog_row, prog_caption.handle, 1)
+	grid.add_to(prog_row, bar.handle, 0, 20, 1, 1)
+	const int spin_row = grid.add_hstack(grid.root_index(), 8, 2)
+	grid.add_to_intrinsic(spin_row, spin_caption.handle, 1)
+	grid.add_to(spin_row, spin.handle, 0, 22, 1, 1)
+	const int stars_row = grid.add_hstack(grid.root_index(), 8, 2)
+	grid.add_to_intrinsic(stars_row, stars_caption.handle, 1)
+	grid.add_to(stars_row, stars.handle, 0, 24, 1, 1)
+	const int icon_row = grid.add_hstack(grid.root_index(), 8, 2)
+	grid.add_to_intrinsic(icon_row, icon_caption.handle, 1)
+	grid.add_to(icon_row, icon.handle, 0, 32, 1, 1)
+	// The date picker has no useful fixed size — it takes its intrinsic one.
+	const int when_row = grid.add_hstack(grid.root_index(), 8, 2)
+	grid.add_to_intrinsic(when_row, when_caption.handle, 1)
+	grid.add_to_intrinsic(when_row, when.handle, 1)
+	const int color_row = grid.add_hstack(grid.root_index(), 8, 2)
+	grid.add_to_intrinsic(color_row, color_caption.handle, 1)
+	grid.add_to(color_row, color.handle, 0, 28, 1, 1)
+
+	grid.add(action_title.handle, 0, 22, 2)
+	grid.add(hover_btn.handle, 0, 32, 1)
+	grid.add(alert_btn.handle, 0, 32, 1)
+	grid.add(sheet_btn.handle, 0, 32, 1)
+	grid.add(pop_btn.handle, 0, 32, 1)
+
+	grid.add(group_title.handle, 0, 22, 2)
+	grid.add(rule.handle, 0, 4, 2)
+	grid.add(form.handle, 0, 72, 2)
+	grid.add(status.handle, 0, 40, 2)
+
+	grid.layout(win)
+	grid.set_resize_callback(win)
+	win.show()
+
+	// The polled status line — rewritten only when the string actually
+	// changes ("" forces the next poll to refresh after a transient
+	// message like the alert result).
+	var prev_status = ""
+	const string status_text = poll_status(ref slide, ref step, ref color, ref when)
+	status.set_text(status_text)
+	prev_status = mv status_text
+
+	// Re-layout live while the window is resized (same as the todo demo:
+	// native controls pin to the bottom-left, so re-running layout re-flips
+	// y against the new height and re-anchors the grid to the top).
+	var int prev_w = win.content_width()
+	var int prev_h = win.content_height()
+
+	while win.is_visible() {
+		const int had_click = Window.process_events()
+
+		const int cur_w = win.content_width()
+		const int cur_h = win.content_height()
+		if cur_w != prev_w || cur_h != prev_h {
+			prev_w = cur_w
+			prev_h = cur_h
+			grid.layout(win)
+		}
+
+		// Progress mirrors the slider; the status line reports the polled
+		// values (slider / stepper / color / date).
+		bar.set_value(slide.value() / 100.0)
+		const string polled = poll_status(ref slide, ref step, ref color, ref when)
+		if polled != prev_status {
+			status.set_text(polled)
+			prev_status = mv polled
+		}
+
+		if had_click == 1 {
+			const int cx = win.click_x()
+			const int cy = win.click_y()
+			if grid.contains(radio_a.handle, cx, cy) {
+				radio_a.set_checked(true)
+				radio_b.set_checked(false)
+			}
+			if grid.contains(radio_b.handle, cx, cy) {
+				radio_b.set_checked(true)
+				radio_a.set_checked(false)
+			}
+			if grid.contains(alert_btn.handle, cx, cy) {
+				// Blocks in NSAlert's own modal loop until dismissed.
+				const int choice = alert.run()
+				status.set_text("alert: button \{choice}")
+				prev_status = ""
+			}
+			if grid.contains(sheet_btn.handle, cx, cy) {
+				sheet.present()
+			}
+			if grid.contains(pop_btn.handle, cx, cy) {
+				if pop.is_shown() {
+					pop.dismiss()
+				} else {
+					pop.show(pop_btn.handle)
+				}
+			}
+			// While the sheet is up, the host window takes no clicks — any
+			// click that arrives is a sheet click, in sheet coordinates.
+			if sheet.is_presented() {
+				if sheet_grid.contains(sheet_close.handle, cx, cy) {
+					sheet.dismiss()
+					status.set_text("sheet: closed")
+					prev_status = ""
+				}
+			}
+		}
+	}
+}
+
+// The polled status line: the continuous controls' current values, as one
+// string. Continuous controls are read every frame (no change callbacks in
+// the manual loop — see GUI_PLAN, cross-cutting follow-ups).
+func poll_status = (
+	ref Slider slide,
+	ref Stepper step,
+	ref ColorPicker color,
+	ref DatePicker when,
+	out string
+) {
+	const int sv = slide.value() as int
+	const int nv = step.value() as int
+	const Rgb c = color.rgb()
+	const int64 secs = when.time()
+	return "slider \{sv}  stepper \{nv}  rgb \{c.red},\{c.green},\{c.blue}  date \{secs}"
+}

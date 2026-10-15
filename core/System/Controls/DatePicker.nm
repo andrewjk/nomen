@@ -1,5 +1,5 @@
 /**
- * A browsable calendar/clock date picker
+ * A browsable date picker (year/month/day)
  *
  * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
  * single field is a platform handle, so the value is movable and its
@@ -7,10 +7,13 @@
  * the inline instance (the `.` accessor); methods keep the pointer form.
  *
  * The value travels as epoch seconds (UTC) — an absolute time, so the
- * platform's display timezone is irrelevant to the round trip. A browsable
- * calendar GRID as a layout widget is Tier 3; this is the native picker.
+ * platform's display timezone is irrelevant to the round trip. The default
+ * macOS style is TextFieldAndStepper (a compact one-line picker): the
+ * ClockAndCalendar style renders as a ~148px-tall inline calendar on modern
+ * macOS, which no row-height layout can host. A browsable calendar GRID as a
+ * layout widget is Tier 3; this is the native picker.
  **/
-pub mv struct DatePicker : Control {
+pub mv struct DatePicker: Control {
 	var uint64 handle = 0
 
 	pub func #init = (self, Window window) {
@@ -22,7 +25,7 @@ pub mv struct DatePicker : Control {
 			sel_registerName("initWithFrame:"),
 			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 140, 32));
 		((void(*)(id, SEL, long))objc_msgSend)(
-			dp, sel_registerName("setDatePickerStyle:"), 1); // NSDatePickerStyleClockAndCalendar = 1
+			dp, sel_registerName("setDatePickerStyle:"), 0); // NSDatePickerStyleTextFieldAndStepper = 0
 		((void(*)(id, SEL, unsigned long))objc_msgSend)(
 			dp, sel_registerName("setDatePickerElements:"), 0x1cUL); // Year|Month|Day
 		id contentView = ((id(*)(id, SEL))objc_msgSend)(
@@ -39,7 +42,7 @@ pub mv struct DatePicker : Control {
 			sel_registerName("initWithFrame:"),
 			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 140, 32));
 		((void(*)(id, SEL, long))objc_msgSend)(
-			dp, sel_registerName("setDatePickerStyle:"), 1); // NSDatePickerStyleClockAndCalendar = 1
+			dp, sel_registerName("setDatePickerStyle:"), 0); // NSDatePickerStyleTextFieldAndStepper = 0
 		((void(*)(id, SEL, unsigned long))objc_msgSend)(
 			dp, sel_registerName("setDatePickerElements:"), 0x1cUL); // Year|Month|Day
 		id contentView = ((id(*)(id, SEL))objc_msgSend)(

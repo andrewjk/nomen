@@ -18,3 +18,17 @@ each sleeps a random 1-10 s (via `Random`), then reports its letter down a
 prints a different order, e.g. `Done! B E D A C`. The label flips to
 "Fetching..." immediately; the event loop stays responsive by polling the
 coordinator's `Task.is_done()` instead of blocking.
+
+## Controls
+
+A gallery of every `System::Controls` control in one window — inputs
+(TextBox, SecureField, SearchField, TextView), choices (CheckBox, Radio,
+Switch, Toggle, Segmented, Select, Stepper, Slider), display (Progress,
+Spinner, LevelIndicator, ImageView, DatePicker, ColorPicker), actions
+(Button + Tooltip), and grouping (Separator, GroupBox) — laid out in a
+2-column grid. Continuous controls are polled every frame into a status
+line that only rewrites when the string changes. The modals are created up
+front and driven from the manual event loop: Alert (blocks in NSAlert's own
+modal loop and reports the button pressed), Sheet (its content window is
+its own layout root, hit-tested in sheet coordinates while presented), and
+Popover (toggled from an anchor button).

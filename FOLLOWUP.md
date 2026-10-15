@@ -27,6 +27,24 @@ generated C (hard — needs a full Nomen→C body compiler for the aarch64
 path), or reject mixed bodies at parse/check time with a clear error so the
 gap is never silent.
 
+## TextView.set_placeholder relies on AppKit's private KVC placeholder
+
+`core/System/Controls/TextView.nm`, `set_placeholder`: AppKit has no public
+NSTextView placeholder API, so the implementation goes through KVC
+(`setValue:forKey:@"placeholderString"`). It draws correctly in a live window
+on this macOS version, but two caveats:
+
+- `cacheDisplayInRect:` (offscreen rendering, e.g. a screenshot-based test)
+  does NOT draw the placeholder — the value round-trips through KVC but stays
+  invisible. So placeholder rendering cannot be verified offscreen; only in a
+  real window.
+- Being private API surface, a future macOS could drop it entirely.
+
+If that happens, the fallback is an NSTextField hint overlaid on the text
+view (subview, pinned to the top edge via autoresizing mask, hidden through a
+runtime-built `textDidChange:` delegate — same pattern as Container's
+NomenResizeDelegate), plus an explicit visibility update in `set_text`.
+
 ## TextBox iOS `get_text` selector typo
 
 `core/System/Controls/TextBox.nm`, the `get_text` `#arch: aarch64_use_c` /

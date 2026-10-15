@@ -6,7 +6,7 @@
  * `#destroy` releases what the handle names. The constructor's `self` is
  * the inline instance (the `.` accessor); methods keep the pointer form.
  **/
-pub mv struct Text : Control {
+pub mv struct Text: Control {
 	var uint64 handle = 0
 	var text = ""
 
@@ -130,6 +130,51 @@ pub mv struct Text : Control {
 			(id)self->handle, sel_registerName("setText:"),
 			((id(*)(id, SEL, const char*))objc_msgSend)(
 				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text.ptr));
+		```
+	}
+
+	// Switch the label between the regular and bold system font. Bold is for
+	// section headings, so they read as headers rather than sibling labels.
+	pub func set_bold = (self, bool bold) {
+		```
+		#arch: c
+		#platform: macos
+		CGFloat size = ((CGFloat(*)(id, SEL))objc_msgSend)(
+			(id)objc_getClass("NSFont"), sel_registerName("systemFontSize"));
+		id font = ((id(*)(id, SEL, CGFloat))objc_msgSend)(
+			(id)objc_getClass("NSFont"),
+			sel_registerName(bold ? "boldSystemFontOfSize:" : "systemFontOfSize:"), size);
+		((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("setFont:"), font);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		CGFloat size = ((CGFloat(*)(id, SEL))objc_msgSend)(
+			(id)objc_getClass("NSFont"), sel_registerName("systemFontSize"));
+		id font = ((id(*)(id, SEL, CGFloat))objc_msgSend)(
+			(id)objc_getClass("NSFont"),
+			sel_registerName(bold ? "boldSystemFontOfSize:" : "systemFontOfSize:"), size);
+		((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("setFont:"), font);
+		```
+		```
+		#arch: c
+		#platform: ios
+		CGFloat size = ((CGFloat(*)(id, SEL))objc_msgSend)(
+			(id)objc_getClass("UIFont"), sel_registerName("labelFontSize"));
+		id font = ((id(*)(id, SEL, CGFloat))objc_msgSend)(
+			(id)objc_getClass("UIFont"),
+			sel_registerName(bold ? "boldSystemFontOfSize:" : "systemFontOfSize:"), size);
+		((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("setFont:"), font);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		CGFloat size = ((CGFloat(*)(id, SEL))objc_msgSend)(
+			(id)objc_getClass("UIFont"), sel_registerName("labelFontSize"));
+		id font = ((id(*)(id, SEL, CGFloat))objc_msgSend)(
+			(id)objc_getClass("UIFont"),
+			sel_registerName(bold ? "boldSystemFontOfSize:" : "systemFontOfSize:"), size);
+		((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("setFont:"), font);
 		```
 	}
 

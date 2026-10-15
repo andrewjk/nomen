@@ -127,10 +127,11 @@ pagination = Button row. Worth doing opportunistically once Tier 1 lands.
    next blocker for real apps is scrolling, not more controls.
 9. Tier 2 remainder in table order.
 
-Along the way, extend `demos/` with a **gallery demo** (one window, a VStack
-of sections, one per control — the todo demo stays the end-to-end app). Every
-new control should land with: the `.nm` file, a gallery section, and a
-demos/README.md blurb line.
+Along the way, extend `demos/` with a **gallery demo** (done —
+`demos/controls/`, one window, a 2-column grid of sections, one per
+control; the todo demo stays the end-to-end app). Every new control should
+land with: the `.nm` file, a gallery section, and a demos/README.md blurb
+line.
 
 ## Cross-cutting follow-ups (tracked as they bite)
 

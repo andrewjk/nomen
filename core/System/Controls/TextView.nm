@@ -11,7 +11,7 @@
  * Control-trait measure reports what the platform offers and clamps to the
  * constraints like every other leaf.
  **/
-pub mv struct TextView : Control {
+pub mv struct TextView: Control {
 	var uint64 handle = 0
 
 	pub func #init = (self, Window window) {
@@ -27,6 +27,14 @@ pub mv struct TextView : Control {
 		((void(*)(id, SEL, BOOL))objc_msgSend)(tv, sel_registerName("setRichText:"), 0);
 		((void(*)(id, SEL, BOOL))objc_msgSend)(
 			tv, sel_registerName("setUsesFindBar:"), 1);
+		// The NSTextView default is the small (12pt) system font; match the
+		// 13pt standard control size every field control uses.
+		((void(*)(id, SEL, id))objc_msgSend)(
+			tv, sel_registerName("setFont:"),
+			((id(*)(id, SEL, CGFloat))objc_msgSend)(
+				(id)objc_getClass("NSFont"), sel_registerName("systemFontOfSize:"),
+				((CGFloat(*)(id, SEL))objc_msgSend)(
+					(id)objc_getClass("NSFont"), sel_registerName("systemFontSize"))));
 		((void(*)(id, SEL, id))objc_msgSend)(
 			tv, sel_registerName("setString:"),
 			((id(*)(id, SEL, const char*))objc_msgSend)(
@@ -49,6 +57,14 @@ pub mv struct TextView : Control {
 		((void(*)(id, SEL, BOOL))objc_msgSend)(tv, sel_registerName("setRichText:"), 0);
 		((void(*)(id, SEL, BOOL))objc_msgSend)(
 			tv, sel_registerName("setUsesFindBar:"), 1);
+		// The NSTextView default is the small (12pt) system font; match the
+		// 13pt standard control size every field control uses.
+		((void(*)(id, SEL, id))objc_msgSend)(
+			tv, sel_registerName("setFont:"),
+			((id(*)(id, SEL, CGFloat))objc_msgSend)(
+				(id)objc_getClass("NSFont"), sel_registerName("systemFontOfSize:"),
+				((CGFloat(*)(id, SEL))objc_msgSend)(
+					(id)objc_getClass("NSFont"), sel_registerName("systemFontSize"))));
 		((void(*)(id, SEL, id))objc_msgSend)(
 			tv, sel_registerName("setString:"),
 			((id(*)(id, SEL, const char*))objc_msgSend)(
@@ -158,6 +174,47 @@ pub mv struct TextView : Control {
 			(id)self->handle, sel_registerName("setText:"),
 			((id(*)(id, SEL, const char*))objc_msgSend)(
 				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text.ptr));
+		```
+	}
+
+	// The placeholder: gray hint text shown while the view is empty. Unlike
+	// set_text, it is not the view's value — get_text still reports "" until
+	// the user types. AppKit has no public NSTextView placeholder API, so this
+	// goes through the key-value-coded "placeholderString" the view supports;
+	// UITextView has none at all (a delegate-drawn overlay would be needed).
+	pub func set_placeholder = (self, string text) {
+		```
+		#arch: c
+		#platform: macos
+		id value = ((id(*)(id, SEL, const char*))objc_msgSend)(
+			(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text.ptr);
+		id key = ((id(*)(id, SEL, const char*))objc_msgSend)(
+			(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"),
+			"placeholderString");
+		((void(*)(id, SEL, id, id))objc_msgSend)(
+			(id)self->handle, sel_registerName("setValue:forKey:"), value, key);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		id value = ((id(*)(id, SEL, const char*))objc_msgSend)(
+			(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text.ptr);
+		id key = ((id(*)(id, SEL, const char*))objc_msgSend)(
+			(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"),
+			"placeholderString");
+		((void(*)(id, SEL, id, id))objc_msgSend)(
+			(id)self->handle, sel_registerName("setValue:forKey:"), value, key);
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS — UITextView has no placeholder; needs a delegate-drawn
+		 * overlay (see GUI_PLAN Tier 3). */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
 		```
 	}
 
