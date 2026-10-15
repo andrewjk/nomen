@@ -42,4 +42,5 @@ right-click target button — picks surface through the edge-triggered
 `clicked_item` poll and land in the status line, as do the window
 Toolbar's three labeled buttons (created before the first layout, since
 the toolbar shrinks the contentView). A SplitView section lays a label
-into each of two draggable panes.
+into each of two draggable panes; an OutlineView bridges a small tree
+(sources/demos), with its selected row polled too.
