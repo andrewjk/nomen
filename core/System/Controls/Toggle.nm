@@ -1,0 +1,322 @@
+/**
+ * A push-on/push-off button (a Button variant that holds its state)
+ *
+ * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
+ * single field is a platform handle, so the value is movable and its
+ * `#destroy` releases what the handle names. The constructor's `self` is
+ * the inline instance (the `.` accessor); methods keep the pointer form.
+ *
+ * macOS: NSButton with button type NSPushOnPushOffButton; iOS: a UIButton's
+ * selected state. Where `Button` is momentary, `Toggle` stays depressed
+ * until clicked again (toolbar-style).
+ **/
+pub mv struct Toggle : Control {
+	var uint64 handle = 0
+
+	pub func #init = (self, Window window, string title) {
+		```
+		#arch: c
+		#platform: macos
+		id btn = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSButton"), sel_registerName("alloc")),
+			sel_registerName("initWithFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 100, 32));
+		((void(*)(id, SEL, unsigned long))objc_msgSend)(
+			btn, sel_registerName("setButtonType:"), 1); // NSPushOnPushOffButton = 1
+		((void(*)(id, SEL, long))objc_msgSend)(
+			btn, sel_registerName("setState:"), 0);      // NSControlStateValueOff = 0
+		((void(*)(id, SEL, id))objc_msgSend)(
+			btn, sel_registerName("setTitle:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
+		id contentView = ((id(*)(id, SEL))objc_msgSend)(
+			(id)window->handle, sel_registerName("contentView"));
+		((void(*)(id, SEL, id))objc_msgSend)(
+			contentView, sel_registerName("addSubview:"), btn);
+		self.handle = (uint64_t)btn;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		id btn = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSButton"), sel_registerName("alloc")),
+			sel_registerName("initWithFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 100, 32));
+		((void(*)(id, SEL, unsigned long))objc_msgSend)(
+			btn, sel_registerName("setButtonType:"), 1); // NSPushOnPushOffButton = 1
+		((void(*)(id, SEL, long))objc_msgSend)(
+			btn, sel_registerName("setState:"), 0);      // NSControlStateValueOff = 0
+		((void(*)(id, SEL, id))objc_msgSend)(
+			btn, sel_registerName("setTitle:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
+		id contentView = ((id(*)(id, SEL))objc_msgSend)(
+			(id)window->handle, sel_registerName("contentView"));
+		((void(*)(id, SEL, id))objc_msgSend)(
+			contentView, sel_registerName("addSubview:"), btn);
+		self->handle = (uint64_t)btn;
+		```
+		```
+		#arch: c
+		#platform: ios
+		id btn = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("UIButton"), sel_registerName("alloc")),
+			sel_registerName("initWithFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 100, 32));
+		((void(*)(id, SEL, unsigned long, id, id))objc_msgSend)(
+			btn, sel_registerName("setTitle:forState:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr),
+			0); // UIControlStateNormal = 0
+		((void(*)(id, SEL, BOOL))objc_msgSend)(btn, sel_registerName("setSelected:"), 0);
+		id parentView = ((id(*)(id, SEL))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)(
+				(id)window->handle, sel_registerName("rootViewController")),
+			sel_registerName("view"));
+		((void(*)(id, SEL, id))objc_msgSend)(
+			parentView, sel_registerName("addSubview:"), btn);
+		self.handle = (uint64_t)btn;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		id btn = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("UIButton"), sel_registerName("alloc")),
+			sel_registerName("initWithFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 100, 32));
+		((void(*)(id, SEL, unsigned long, id, id))objc_msgSend)(
+			btn, sel_registerName("setTitle:forState:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr),
+			0); // UIControlStateNormal = 0
+		((void(*)(id, SEL, BOOL))objc_msgSend)(btn, sel_registerName("setSelected:"), 0);
+		id parentView = ((id(*)(id, SEL))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)(
+				(id)window->handle, sel_registerName("rootViewController")),
+			sel_registerName("view"));
+		((void(*)(id, SEL, id))objc_msgSend)(
+			parentView, sel_registerName("addSubview:"), btn);
+		self->handle = (uint64_t)btn;
+		```
+	}
+
+	pub func set_frame = (ref self, int x, int y, int width, int height) {
+		```
+		#arch: c
+		#platform: macos
+		((void(*)(id, SEL, CGRect))objc_msgSend)(
+			(id)self->handle, sel_registerName("setFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, CGRect))objc_msgSend)(
+			(id)self->handle, sel_registerName("setFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+		```
+		```
+		#arch: c
+		#platform: ios
+		((void(*)(id, SEL, CGRect))objc_msgSend)(
+			(id)self->handle, sel_registerName("setFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		((void(*)(id, SEL, CGRect))objc_msgSend)(
+			(id)self->handle, sel_registerName("setFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+		```
+	}
+
+	pub func set_title = (self, string title) {
+		```
+		#arch: c
+		#platform: macos
+		((void(*)(id, SEL, id))objc_msgSend)(
+			(id)self->handle, sel_registerName("setTitle:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, id))objc_msgSend)(
+			(id)self->handle, sel_registerName("setTitle:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
+		```
+		```
+		#arch: c
+		#platform: ios
+		((void(*)(id, SEL, unsigned long, id, id))objc_msgSend)(
+			(id)self->handle, sel_registerName("setTitle:forState:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr),
+			0); // UIControlStateNormal = 0
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		((void(*)(id, SEL, unsigned long, id, id))objc_msgSend)(
+			(id)self->handle, sel_registerName("setTitle:forState:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr),
+			0); // UIControlStateNormal = 0
+		```
+	}
+
+	pub func set_checked = (self, bool checked) {
+		```
+		#arch: c
+		#platform: macos
+		((void(*)(id, SEL, long))objc_msgSend)(
+			(id)self->handle, sel_registerName("setState:"),
+			checked ? 1 : 0); // NSControlStateValueOn = 1, Off = 0
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, long))objc_msgSend)(
+			(id)self->handle, sel_registerName("setState:"),
+			checked ? 1 : 0); // NSControlStateValueOn = 1, Off = 0
+		```
+		```
+		#arch: c
+		#platform: ios
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			(id)self->handle, sel_registerName("setSelected:"), checked ? 1 : 0);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			(id)self->handle, sel_registerName("setSelected:"), checked ? 1 : 0);
+		```
+	}
+
+	pub func is_checked = (self, out bool) {
+		```
+		#arch: c
+		#platform: macos
+		long state = ((long(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("state"));
+		return state == 1; // NSControlStateValueOn = 1
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		long state = ((long(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("state"));
+		return state == 1; // NSControlStateValueOn = 1
+		```
+		```
+		#arch: c
+		#platform: ios
+		BOOL on = ((BOOL(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("isSelected"));
+		return on ? 1 : 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		BOOL on = ((BOOL(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("isSelected"));
+		return on ? 1 : 0;
+		```
+	}
+
+	pub func set_hidden = (self, bool hidden) {
+		```
+		#arch: c
+		#platform: macos
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+		```
+		```
+		#arch: c
+		#platform: ios
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+		```
+	}
+
+	// ── Control trait conformance ──
+	pub func intrinsic_size = (self, out Size) {
+		var [w, h] = native_intrinsic(self.handle)
+		var s = Size()
+		s.width = w
+		s.height = h
+		return s
+	}
+
+	pub func measure = (self, BoxConstraints constraints, out Size) {
+		var Size s = self.intrinsic_size()
+		if s.width > constraints.max_width {
+			s.width = constraints.max_width
+		}
+		if s.width < constraints.min_width {
+			s.width = constraints.min_width
+		}
+		if s.height > constraints.max_height {
+			s.height = constraints.max_height
+		}
+		if s.height < constraints.min_height {
+			s.height = constraints.min_height
+		}
+		return s
+	}
+
+	func #destroy = () {
+		```
+		#arch: c
+		#platform: macos
+		if (self->handle) {
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		if (self->handle) {
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		```
+		```
+		#arch: c
+		#platform: ios
+		if (self->handle) {
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		if (self->handle) {
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		```
+	}
+}
