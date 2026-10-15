@@ -1,0 +1,349 @@
+/**
+ * A pair of up/down arrows that walk a numeric range
+ *
+ * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
+ * single field is a platform handle, so the value is movable and its
+ * `#destroy` releases what the handle names. The constructor's `self` is
+ * the inline instance (the `.` accessor); methods keep the pointer form.
+ *
+ * Pair with a TextBox for the "number input" composition (gpui-kit's
+ * number-input is exactly that pairing).
+ **/
+pub mv struct Stepper : Control {
+	var uint64 handle = 0
+
+	pub func #init = (self, Window window) {
+		```
+		#arch: c
+		#platform: macos
+		id step = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSStepper"), sel_registerName("alloc")),
+			sel_registerName("initWithFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 20, 24));
+		((void(*)(id, SEL, double))objc_msgSend)(step, sel_registerName("setMinValue:"), 0.0);
+		((void(*)(id, SEL, double))objc_msgSend)(step, sel_registerName("setMaxValue:"), 100.0);
+		((void(*)(id, SEL, double))objc_msgSend)(step, sel_registerName("setIncrement:"), 1.0);
+		((void(*)(id, SEL, double))objc_msgSend)(step, sel_registerName("setDoubleValue:"), 0.0);
+		id contentView = ((id(*)(id, SEL))objc_msgSend)(
+			(id)window->handle, sel_registerName("contentView"));
+		((void(*)(id, SEL, id))objc_msgSend)(
+			contentView, sel_registerName("addSubview:"), step);
+		self.handle = (uint64_t)step;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		id step = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSStepper"), sel_registerName("alloc")),
+			sel_registerName("initWithFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 20, 24));
+		((void(*)(id, SEL, double))objc_msgSend)(step, sel_registerName("setMinValue:"), 0.0);
+		((void(*)(id, SEL, double))objc_msgSend)(step, sel_registerName("setMaxValue:"), 100.0);
+		((void(*)(id, SEL, double))objc_msgSend)(step, sel_registerName("setIncrement:"), 1.0);
+		((void(*)(id, SEL, double))objc_msgSend)(step, sel_registerName("setDoubleValue:"), 0.0);
+		id contentView = ((id(*)(id, SEL))objc_msgSend)(
+			(id)window->handle, sel_registerName("contentView"));
+		((void(*)(id, SEL, id))objc_msgSend)(
+			contentView, sel_registerName("addSubview:"), step);
+		self->handle = (uint64_t)step;
+		```
+		```
+		#arch: c
+		#platform: ios
+		id step = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("UIStepper"), sel_registerName("alloc")),
+			sel_registerName("initWithFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 94, 29));
+		((void(*)(id, SEL, double))objc_msgSend)(step, sel_registerName("setMinimumValue:"), 0.0);
+		((void(*)(id, SEL, double))objc_msgSend)(step, sel_registerName("setMaximumValue:"), 100.0);
+		((void(*)(id, SEL, double))objc_msgSend)(step, sel_registerName("setStepValue:"), 1.0);
+		((void(*)(id, SEL, double))objc_msgSend)(step, sel_registerName("setValue:"), 0.0);
+		id parentView = ((id(*)(id, SEL))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)(
+				(id)window->handle, sel_registerName("rootViewController")),
+			sel_registerName("view"));
+		((void(*)(id, SEL, id))objc_msgSend)(
+			parentView, sel_registerName("addSubview:"), step);
+		self.handle = (uint64_t)step;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		id step = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("UIStepper"), sel_registerName("alloc")),
+			sel_registerName("initWithFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 94, 29));
+		((void(*)(id, SEL, double))objc_msgSend)(step, sel_registerName("setMinimumValue:"), 0.0);
+		((void(*)(id, SEL, double))objc_msgSend)(step, sel_registerName("setMaximumValue:"), 100.0);
+		((void(*)(id, SEL, double))objc_msgSend)(step, sel_registerName("setStepValue:"), 1.0);
+		((void(*)(id, SEL, double))objc_msgSend)(step, sel_registerName("setValue:"), 0.0);
+		id parentView = ((id(*)(id, SEL))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)(
+				(id)window->handle, sel_registerName("rootViewController")),
+			sel_registerName("view"));
+		((void(*)(id, SEL, id))objc_msgSend)(
+			parentView, sel_registerName("addSubview:"), step);
+		self->handle = (uint64_t)step;
+		```
+	}
+
+	pub func set_frame = (ref self, int x, int y, int width, int height) {
+		```
+		#arch: c
+		#platform: macos
+		((void(*)(id, SEL, CGRect))objc_msgSend)(
+			(id)self->handle, sel_registerName("setFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, CGRect))objc_msgSend)(
+			(id)self->handle, sel_registerName("setFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+		```
+		```
+		#arch: c
+		#platform: ios
+		((void(*)(id, SEL, CGRect))objc_msgSend)(
+			(id)self->handle, sel_registerName("setFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		((void(*)(id, SEL, CGRect))objc_msgSend)(
+			(id)self->handle, sel_registerName("setFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+		```
+	}
+
+	pub func set_min = (self, float min) {
+		```
+		#arch: c
+		#platform: macos
+		((void(*)(id, SEL, double))objc_msgSend)(
+			(id)self->handle, sel_registerName("setMinValue:"), min);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, double))objc_msgSend)(
+			(id)self->handle, sel_registerName("setMinValue:"), min);
+		```
+		```
+		#arch: c
+		#platform: ios
+		((void(*)(id, SEL, double))objc_msgSend)(
+			(id)self->handle, sel_registerName("setMinimumValue:"), min);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		((void(*)(id, SEL, double))objc_msgSend)(
+			(id)self->handle, sel_registerName("setMinimumValue:"), min);
+		```
+	}
+
+	pub func set_max = (self, float max) {
+		```
+		#arch: c
+		#platform: macos
+		((void(*)(id, SEL, double))objc_msgSend)(
+			(id)self->handle, sel_registerName("setMaxValue:"), max);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, double))objc_msgSend)(
+			(id)self->handle, sel_registerName("setMaxValue:"), max);
+		```
+		```
+		#arch: c
+		#platform: ios
+		((void(*)(id, SEL, double))objc_msgSend)(
+			(id)self->handle, sel_registerName("setMaximumValue:"), max);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		((void(*)(id, SEL, double))objc_msgSend)(
+			(id)self->handle, sel_registerName("setMaximumValue:"), max);
+		```
+	}
+
+	// The per-click step size.
+	pub func set_increment = (self, float increment) {
+		```
+		#arch: c
+		#platform: macos
+		((void(*)(id, SEL, double))objc_msgSend)(
+			(id)self->handle, sel_registerName("setIncrement:"), increment);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, double))objc_msgSend)(
+			(id)self->handle, sel_registerName("setIncrement:"), increment);
+		```
+		```
+		#arch: c
+		#platform: ios
+		((void(*)(id, SEL, double))objc_msgSend)(
+			(id)self->handle, sel_registerName("setStepValue:"), increment);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		((void(*)(id, SEL, double))objc_msgSend)(
+			(id)self->handle, sel_registerName("setStepValue:"), increment);
+		```
+	}
+
+	pub func set_value = (self, float value) {
+		```
+		#arch: c
+		#platform: macos
+		((void(*)(id, SEL, double))objc_msgSend)(
+			(id)self->handle, sel_registerName("setDoubleValue:"), value);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, double))objc_msgSend)(
+			(id)self->handle, sel_registerName("setDoubleValue:"), value);
+		```
+		```
+		#arch: c
+		#platform: ios
+		((void(*)(id, SEL, double))objc_msgSend)(
+			(id)self->handle, sel_registerName("setValue:"), value);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		((void(*)(id, SEL, double))objc_msgSend)(
+			(id)self->handle, sel_registerName("setValue:"), value);
+		```
+	}
+
+	// The current value — polled per frame (each click lands between frames).
+	pub func value = (self, out float) {
+		```
+		#arch: c
+		#platform: macos
+		return ((double(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("doubleValue"));
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		return ((double(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("doubleValue"));
+		```
+		```
+		#arch: c
+		#platform: ios
+		return ((double(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("value"));
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		return ((double(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("value"));
+		```
+	}
+
+	pub func set_hidden = (self, bool hidden) {
+		```
+		#arch: c
+		#platform: macos
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+		```
+		```
+		#arch: c
+		#platform: ios
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+		```
+	}
+
+	// ── Control trait conformance ──
+	pub func intrinsic_size = (self, out Size) {
+		var [w, h] = native_intrinsic(self.handle)
+		var s = Size()
+		s.width = w
+		s.height = h
+		return s
+	}
+
+	pub func measure = (self, BoxConstraints constraints, out Size) {
+		var Size s = self.intrinsic_size()
+		if s.width > constraints.max_width {
+			s.width = constraints.max_width
+		}
+		if s.width < constraints.min_width {
+			s.width = constraints.min_width
+		}
+		if s.height > constraints.max_height {
+			s.height = constraints.max_height
+		}
+		if s.height < constraints.min_height {
+			s.height = constraints.min_height
+		}
+		return s
+	}
+
+	func #destroy = () {
+		```
+		#arch: c
+		#platform: macos
+		if (self->handle) {
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		if (self->handle) {
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		```
+		```
+		#arch: c
+		#platform: ios
+		if (self->handle) {
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		if (self->handle) {
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		```
+	}
+}
