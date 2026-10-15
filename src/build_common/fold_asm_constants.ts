@@ -103,7 +103,13 @@ export function fold_asm_constants(asm: string): string {
 			continue;
 		}
 
-		const m = /^(\w+)\s*(.*)$/.exec(line);
+		// The mnemonic run may contain dots (`b.eq`, `b.gt`, …). Capturing the
+		// dotted form whole keeps conditional branches (`b.cond`) distinct from
+		// the unconditional `b` below — a `b.cond` writes no registers, so the
+		// tracked constant map must survive it (Buffer.shift's width dispatch
+		// follows an in-body `cmp x5, x6 / b.eq` early-exit and would never
+		// fold if the `b.eq` cleared it).
+		const m = /^([A-Za-z.][\w.]*)\s*(.*)$/.exec(line);
 		if (!m) {
 			clear();
 			out.push(raw_line);

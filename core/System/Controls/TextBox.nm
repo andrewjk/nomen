@@ -166,6 +166,44 @@ pub mv struct TextBox : Control {
 		```
 	}
 
+	// The placeholder: gray hint text shown while the field is empty. Unlike
+	// set_text, it is not the field's value — get_text still reports "" until
+	// the user types.
+	pub func set_placeholder = (self, string text) {
+		```
+		#arch: c
+		#platform: macos
+		((void(*)(id, SEL, id))objc_msgSend)(
+			(id)self->handle, sel_registerName("setPlaceholderString:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text.ptr));
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, id))objc_msgSend)(
+			(id)self->handle, sel_registerName("setPlaceholderString:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text.ptr));
+		```
+		```
+		#arch: c
+		#platform: ios
+		((void(*)(id, SEL, id))objc_msgSend)(
+			(id)self->handle, sel_registerName("setPlaceholder:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text.ptr));
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		((void(*)(id, SEL, id))objc_msgSend)(
+			(id)self->handle, sel_registerName("setPlaceholder:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text.ptr));
+		```
+	}
+
 	pub func get_text = (self, out string) {
 		```
 		#arch: c

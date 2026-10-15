@@ -498,3 +498,68 @@ non-adopted alias (§A3.3 unchanged); a transferred-adopted instance (`mv x =
 mv q` post-adoption) is expressible now that `q` is an ordinary var; the
 regression test landed (class_aliasing-gaps.test.ts, "a transferred
 adopted instance moves with mv", 2026-10-13).
+
+## `List<Own>.at()` materializes an owning copy that is destroyed at scope end
+
+Found 2026-10-15 while making the todo demo delete controls at runtime
+(`demos/todo/src/main.nm`).
+
+`Buffer<T>.load` (behind `List<T>.at`) returns a **bitwise copy** of the
+element. What happens to a local bound from `.at(i)` differs by element
+shape:
+
+- A value struct whose mv-ness comes from **string fields** (e.g. the
+  `Person` in `test/list.test.ts`) is classified as a **borrow**: no
+  scope-exit destroy is emitted (sound — the slot owns the heap bytes).
+- A `mv struct` with a user-defined **`#destroy`** over a non-string field
+  (e.g. a `uint64` AppKit handle — `CheckBox`, `Window`, …) is classified
+  as **owned**: a scope-exit destroy of the local IS emitted. Probed with
+  a `mv struct Res { var uint64 handle }` whose `#destroy` prints: a
+  single `at()` read prints the destroy twice (once for the local at the
+  end of its block, once for the slot at the container's destroy) — the
+  copy and the slot share the resource, so the second destroy runs on an
+  already-released handle (over-release / use-after-free).
+
+The todo demo works around it by never materializing a `CheckBox` out of
+the list: hit-testing goes through an index-aligned `List<uint64>` of
+grid handles, and the checkboxes are only ever moved (`push(mv)`,
+`remove_at_or_panic` into a nested block).
+
+### Fix shapes
+
+**1. Uniform-borrow (recommended).** Classify loads of heap-owning value
+structs as **borrows uniformly**, matching the string-field behavior. A
+bitwise copy of an owning struct _is_ semantically a borrow — you cannot
+clone an NSView by `memcpy` — so "owned copy + scope-exit destroy" is
+never the right lowering for element reads. Consequences:
+
+- The accidental leak-prone version (reading elements via `.at()` in a
+  hit-test loop) **compiles and is sound**: the borrow emits no destroy,
+  so the bug class disappears silently rather than being rejected.
+- Element reads route through the checker's existing aliasing rules —
+  the container is frozen while a borrow lives, a borrow cannot be moved
+  into an `mv` parameter, and the borrow dies with its binding. Those
+  shapes are already policed for other borrows (GROUP_BORROWING /
+  BORROW.md); the fix routes element loads through them.
+- The demo's parallel-handles workaround could be reverted to the
+  natural `.at()`-based hit-test loop.
+
+Residual sharp edge to nail down while implementing: a borrow that
+outlives a mutation of the same list (e.g. holding `todos.at(i)` across
+a `remove_at_or_panic`) must be rejected by the same
+invalidation-on-mutation rule that guards reassignment of borrowed
+owners.
+
+**2. Strict-rejection.** Error on owned reads of move-only elements, the
+way `at_or`'s `fallback` parameter is rejected ("a bare parameter of mv
+struct type 'T' is a borrow; declare it 'mv' … "). The leak-prone
+version becomes a **compile error** — genuinely unwritable — but every
+existing `.at()` read of a `#destroy`-struct element breaks at once, and
+a sanctioned replacement accessor (`at_borrow`, or a field-in-place
+read) is needed before any such code can be rewritten.
+
+What **neither** fix prevents is deliberate misuse — e.g. pushing the
+same handle into two lists by hand — which is indistinguishable from
+intent. Between the two, uniform-borrow is the sound model (the strict
+shape is a subset of it: a load that borrows can never be an owning
+copy), and it turns the demo's hit-test loop back into the natural code.

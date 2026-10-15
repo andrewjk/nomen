@@ -3,7 +3,27 @@ import System::Controls
 
 const WIN_W = 400
 const WIN_H = 500
-const MAX_TODOS = 6
+
+// Creates a checkbox for `text`, lays it out as a full-width row in the todo
+// stack (so it lands ABOVE the input row), and moves the control into
+// `todos` (its grid handle into `handles`). Called for the starter todos at
+// startup and again on every Add — the todo count is unbounded, and each
+// todo owns the control it created (freed on delete, or at exit, by
+// #destroy).
+func add_todo = (
+	ref Container grid,
+	Window win,
+	int todo_list,
+	ref List<CheckBox> todos,
+	ref List<uint64> handles,
+	string text
+) {
+	const cb = CheckBox(win)
+	cb.set_title(text)
+	grid.add_to(todo_list, cb.handle, 0, 24, 1)
+	handles.push(cb.handle)
+	todos.push(mv cb)
+}
 
 pub func main = () {
 	const win = Window("Nomen Todo", WIN_W, WIN_H)
@@ -11,37 +31,30 @@ pub func main = () {
 	var title = Text(win)
 	title.set_text("Todo List")
 
-	const cb0 = CheckBox(win)
-	const cb1 = CheckBox(win)
-	const cb2 = CheckBox(win)
-	const cb3 = CheckBox(win)
-	const cb4 = CheckBox(win)
-	const cb5 = CheckBox(win)
-
-	cb0.set_title("Learn Nomen")
-	cb1.set_title("Build a GUI app")
-	cb2.set_title("Ship it")
-	cb3.set_hidden(true)
-	cb4.set_hidden(true)
-	cb5.set_hidden(true)
-
-	var todo_count = 3
+	var todos = List<CheckBox>()
+	// Grid handles for hit-testing, index-aligned with `todos`. Reading a
+	// CheckBox out of the list would materialize an owning copy whose
+	// scope-exit destroy releases the live view — so hit-tests go through
+	// these plain ints, and the checkboxes themselves are only ever touched
+	// by ownership transfer (push / remove).
+	var handles = List<uint64>()
 
 	const input = TextBox(win)
-	input.set_text("Type a new todo...")
+	input.set_placeholder("Type a new todo...")
 	const add_btn = Button(win, "Add")
 
-	// A two-column grid. The title and each checkbox span both columns (full
-	// width); the input and Add button share the final row.
+	// A two-column grid. The title and the todo stack span both columns (full
+	// width); the input and Add button share the final row. Todos live in an
+	// inner stack so a newly added todo is inserted ABOVE the input row no
+	// matter how many todos exist (grid.add alone would append it below the
+	// button).
 	var Container grid = Grid(2, 8)
 	grid.padding = 16
 	grid.add(title.handle, 0, 30, 2)
-	grid.add(cb0.handle, 0, 24, 2)
-	grid.add(cb1.handle, 0, 24, 2)
-	grid.add(cb2.handle, 0, 24, 2)
-	grid.add(cb3.handle, 0, 24, 2)
-	grid.add(cb4.handle, 0, 24, 2)
-	grid.add(cb5.handle, 0, 24, 2)
+	const int todo_list = grid.add_vstack(grid.root_index(), 8, 2)
+	add_todo(ref grid, win, todo_list, ref todos, ref handles, "Learn Nomen")
+	add_todo(ref grid, win, todo_list, ref todos, ref handles, "Build a GUI app")
+	add_todo(ref grid, win, todo_list, ref todos, ref handles, "Ship it")
 	grid.add(input.handle, 0, 24, 1)
 	grid.add(add_btn.handle, 0, 32, 1)
 	grid.layout(win)
@@ -70,36 +83,51 @@ pub func main = () {
 		}
 
 		if had_click == 1 {
-			// Re-layout on any click (checkbox toggle or otherwise). Hidden
-			// controls are skipped by the grid automatically. The window size
-			// is unchanged, so mark the tree dirty to pick up any content or
-			// visibility change before measuring.
-			grid.mark_dirty(grid.root_index())
-			grid.layout(win)
-
 			// Hit-test the Add button.
 			const int cx = win.click_x()
 			const int cy = win.click_y()
 			if grid.contains(add_btn.handle, cx, cy) {
-				if todo_count < MAX_TODOS {
-					const string new_text = input.get_text()
-					if todo_count == 3 {
-						cb3.set_title(new_text)
-						cb3.set_hidden(false)
-					}
-					if todo_count == 4 {
-						cb4.set_title(new_text)
-						cb4.set_hidden(false)
-					}
-					if todo_count == 5 {
-						cb5.set_title(new_text)
-						cb5.set_hidden(false)
-					}
-					todo_count += 1
+				const string new_text = input.get_text()
+				if new_text != "" {
+					add_todo(ref grid, win, todo_list, ref todos, ref handles, new_text)
 					input.set_text("")
 					grid.mark_dirty(grid.root_index())
 					grid.layout(win)
 				}
+			}
+		}
+
+		// Right-click deletes a todo. The grid node is removed first — a
+		// freed handle left in the tree would still be measured and
+		// re-framed — then the control itself is freed by moving it out of
+		// the list into a nested block: its #destroy runs at the block's
+		// closing brace, removing the view and releasing it.
+		if had_click == 2 {
+			const int cx = win.click_x()
+			const int cy = win.click_y()
+			var int found = -1
+			var uint64 found_handle = 0
+			var i = 0
+			while i < handles.length; i += 1 {
+				const uint64 h = handles.at(i)
+				// ±4px vertical slop: rows are 24px tall with 8px gaps, so a
+				// click landing in a gap still resolves to the nearest row.
+				// The expanded bands tile the stack exactly (row i claims up
+				// to its bottom + 4, the next row claims from its top - 4),
+				// so no point matches two rows.
+				if grid.contains(h, cx, cy) || grid.contains(h, cx, cy - 4) || grid.contains(h, cx, cy + 4) {
+					found = i
+					found_handle = h
+				}
+			}
+			if found != -1 {
+				grid.remove_leaf(found_handle)
+				{
+					var CheckBox _dead = todos.remove_at_or_panic(found)
+				}
+				var uint64 _gone = handles.remove_at_or_panic(found)
+				grid.mark_dirty(grid.root_index())
+				grid.layout(win)
 			}
 		}
 	}

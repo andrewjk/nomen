@@ -160,10 +160,40 @@ pub mv struct Window : Control {
 	}
 
 	// Process pending events without blocking. Returns 1 if a left-mouse-down
-	// was among the events (i.e. a click happened), 0 otherwise. This lets a
-	// manual event loop detect clicks for re-layout without target/action.
-	// Also runs the run loop briefly to process Apple Events (e.g. dock Quit).
+	// was among the events (i.e. a click happened), 2 if a right-mouse-down
+	// was, 0 otherwise. This lets a manual event loop detect clicks (and
+	// right-clicks) for hit-testing without target/action. The click's
+	// coordinates are captured here (see click_x/click_y). Also runs the run
+	// loop briefly to process Apple Events (e.g. dock Quit).
 	pub func process_events = (out int) {
+		```
+		#arch: c
+		#platform: macos
+		#scope: file
+		// The most recent mouse-down (NSLeftMouseDown = 1 or NSRightMouseDown = 3)
+		// among the events the latest process_events call pumped, in the event
+		// window's content coordinates (top-left origin). Written by the pump;
+		// read by click_x/click_y. click_x/click_y deliberately do NOT read the
+		// live currentEvent: any event after the click in the same batch (a
+		// mouse-move, drag, or key) would make the coordinates stale or missing,
+		// so hit-tests would intermittently miss.
+		static int nomen_last_click_x = -1;
+		static int nomen_last_click_y = -1;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		#scope: file
+		// The most recent mouse-down (NSLeftMouseDown = 1 or NSRightMouseDown = 3)
+		// among the events the latest process_events call pumped, in the event
+		// window's content coordinates (top-left origin). Written by the pump;
+		// read by click_x/click_y. click_x/click_y deliberately do NOT read the
+		// live currentEvent: any event after the click in the same batch (a
+		// mouse-move, drag, or key) would make the coordinates stale or missing,
+		// so hit-tests would intermittently miss.
+		static int nomen_last_click_x = -1;
+		static int nomen_last_click_y = -1;
+		```
 		```
 		#arch: c
 		#platform: macos
@@ -182,7 +212,20 @@ pub mv struct Window : Control {
 			if (!event) break;
 			((void(*)(id, SEL, id))objc_msgSend)(app, sel_registerName("sendEvent:"), event);
 			long type = ((long(*)(id, SEL))objc_msgSend)(event, sel_registerName("type"));
+			// A mouse-down: record where it landed. locationInWindow is in the
+			// event's own window's coordinates (bottom-left origin); flip y
+			// against that window's content height to match the layout's
+			// top-left origin.
+			if (type == 1 || type == 3) {
+				id evwin = ((id(*)(id, SEL))objc_msgSend)(event, sel_registerName("window"));
+				id cv = ((id(*)(id, SEL))objc_msgSend)(evwin, sel_registerName("contentView"));
+				CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
+				CGPoint loc = ((CGPoint(*)(id, SEL))objc_msgSend)(event, sel_registerName("locationInWindow"));
+				nomen_last_click_x = (int)loc.x;
+				nomen_last_click_y = (int)(frame.size.height - loc.y);
+			}
 			if (type == 1) had_click = 1; // NSLeftMouseDown = 1
+			if (type == 3) had_click = 2; // NSRightMouseDown = 3 (reported as 2)
 		}
 		// Process run loop sources (Apple Events, timers) so that dock Quit
 		// and other system interactions work without NSApplication.run().
@@ -207,7 +250,20 @@ pub mv struct Window : Control {
 			if (!event) break;
 			((void(*)(id, SEL, id))objc_msgSend)(app, sel_registerName("sendEvent:"), event);
 			long type = ((long(*)(id, SEL))objc_msgSend)(event, sel_registerName("type"));
+			// A mouse-down: record where it landed. locationInWindow is in the
+			// event's own window's coordinates (bottom-left origin); flip y
+			// against that window's content height to match the layout's
+			// top-left origin.
+			if (type == 1 || type == 3) {
+				id evwin = ((id(*)(id, SEL))objc_msgSend)(event, sel_registerName("window"));
+				id cv = ((id(*)(id, SEL))objc_msgSend)(evwin, sel_registerName("contentView"));
+				CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
+				CGPoint loc = ((CGPoint(*)(id, SEL))objc_msgSend)(event, sel_registerName("locationInWindow"));
+				nomen_last_click_x = (int)loc.x;
+				nomen_last_click_y = (int)(frame.size.height - loc.y);
+			}
 			if (type == 1) had_click = 1; // NSLeftMouseDown = 1
+			if (type == 3) had_click = 2; // NSRightMouseDown = 3 (reported as 2)
 		}
 		// Process run loop sources (Apple Events, timers) so that dock Quit
 		// and other system interactions work without NSApplication.run().
@@ -256,31 +312,20 @@ pub mv struct Window : Control {
 	}
 
 	// Returns the x coordinate (in the window's content view) of the most
-	// recent mouse-down. Call after process_events returned 1.
+	// recent mouse-down (left or right). The pump (process_events) captures
+	// the coordinates when the event is handled, so drag/move events that
+	// follow in the same batch cannot make them stale. Call after
+	// process_events returned 1 or 2 (-1 before any click was ever seen).
 	pub func click_x = (self, out int) {
 		```
 		#arch: c
 		#platform: macos
-		id app = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
-		id event = ((id(*)(id, SEL))objc_msgSend)(app, sel_registerName("currentEvent"));
-		if (!event) return -1;
-		long type = ((long(*)(id, SEL))objc_msgSend)(event, sel_registerName("type"));
-		if (type != 1) return -1; // NSLeftMouseDown = 1
-		// locationInWindow is a CGPoint inside the event; read it via struct-return
-		CGPoint loc = ((CGPoint(*)(id, SEL))objc_msgSend)(event, sel_registerName("locationInWindow"));
-		return (int)loc.x;
+		return nomen_last_click_x;
 		```
 		```
 		#arch: aarch64_use_c
 		#platform: macos
-		id app = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
-		id event = ((id(*)(id, SEL))objc_msgSend)(app, sel_registerName("currentEvent"));
-		if (!event) return -1;
-		long type = ((long(*)(id, SEL))objc_msgSend)(event, sel_registerName("type"));
-		if (type != 1) return -1; // NSLeftMouseDown = 1
-		// locationInWindow is a CGPoint inside the event; read it via struct-return
-		CGPoint loc = ((CGPoint(*)(id, SEL))objc_msgSend)(event, sel_registerName("locationInWindow"));
-		return (int)loc.x;
+		return nomen_last_click_x;
 		```
 		```
 		#arch: c
@@ -295,35 +340,18 @@ pub mv struct Window : Control {
 	}
 
 	// Returns the y coordinate (flipped to top-left origin) of the most
-	// recent mouse-down, in the window's content view.
+	// recent mouse-down, in the window's content view. Captured by the pump;
+	// see click_x.
 	pub func click_y = (self, out int) {
 		```
 		#arch: c
 		#platform: macos
-		id app = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
-		id event = ((id(*)(id, SEL))objc_msgSend)(app, sel_registerName("currentEvent"));
-		if (!event) return -1;
-		long type = ((long(*)(id, SEL))objc_msgSend)(event, sel_registerName("type"));
-		if (type != 1) return -1; // NSLeftMouseDown = 1
-		CGPoint loc = ((CGPoint(*)(id, SEL))objc_msgSend)(event, sel_registerName("locationInWindow"));
-		id cv = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("contentView"));
-		CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
-		// NSWindow coords are bottom-left origin; flip to top-left for layout math
-		return (int)(frame.size.height - loc.y);
+		return nomen_last_click_y;
 		```
 		```
 		#arch: aarch64_use_c
 		#platform: macos
-		id app = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
-		id event = ((id(*)(id, SEL))objc_msgSend)(app, sel_registerName("currentEvent"));
-		if (!event) return -1;
-		long type = ((long(*)(id, SEL))objc_msgSend)(event, sel_registerName("type"));
-		if (type != 1) return -1; // NSLeftMouseDown = 1
-		CGPoint loc = ((CGPoint(*)(id, SEL))objc_msgSend)(event, sel_registerName("locationInWindow"));
-		id cv = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("contentView"));
-		CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
-		// NSWindow coords are bottom-left origin; flip to top-left for layout math
-		return (int)(frame.size.height - loc.y);
+		return nomen_last_click_y;
 		```
 		```
 		#arch: c

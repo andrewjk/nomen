@@ -2,7 +2,12 @@
 
 ## Todo
 
-A GUI app with a todo list.
+A GUI app with a todo list. The list is unbounded: each todo creates its
+own checkbox when added (Add button), and right-clicking a todo deletes
+it — the grid node is removed and the control is freed by moving it into
+a nested block, whose closing brace runs the checkbox's `#destroy`. The
+input field's hint text is a real placeholder (`TextBox.set_placeholder`),
+so the field reads empty until the user types.
 
 ## Async
 

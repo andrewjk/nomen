@@ -73,6 +73,27 @@ pub mv struct List<T>: Viewable {
 		panic("index out of range")
 	}
 
+	// Bounds-checked removal that traps when i is outside [0, self.length) —
+	// same contract as at_or_panic/set_or_panic, for indices that can't be
+	// proven at compile time. The element is moved out (later elements
+	// backward-shift into place) and returned: the caller owns it, so its
+	// resources are reclaimed when the binding's scope ends — binding the
+	// result in a nested block is the way to free an owning element at a
+	// chosen point (its #destroy runs at the block's closing brace).
+	pub func remove_at_or_panic = (ref self, int i, mv out T) {
+		if i < 0 || i >= self.length {
+			panic("index out of range")
+		}
+		var T v = self.items.move(i)
+		var int last = self.length - 1
+		var int j = i
+		while j < last; j += 1 {
+			self.items.shift(j, j + 1)
+		}
+		self.length -= 1
+		return v
+	}
+
 	// A deep copy: a fresh List<T> with an independent copy of every element.
 	// For mv element types (strings, mv value structs) each slot in the
 	// copy owns its own heap data (Buffer deep-copies on store), so the source

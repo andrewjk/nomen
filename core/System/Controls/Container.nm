@@ -676,6 +676,82 @@ pub mv struct Container : Control {
 		self.set_leaf_kind(idx, LEN_INTRINSIC, 0, LEN_INTRINSIC, 0)
 	}
 
+	// Remove the leaf whose native handle matches, deleting its node from the
+	// tree: every per-node array is backward-shifted over the slot and parent
+	// indices above it are fixed up, so the node vanishes from measure,
+	// arrange, hit-test, and apply entirely. Call this BEFORE freeing the
+	// control itself (its #destroy, whenever the owner's scope ends) — a
+	// freed handle left in the tree would still be measured, hit-tested, and
+	// re-framed. The whole tree is marked dirty afterwards so the next
+	// layout reflows the rows the removed child leaves behind. Returns true
+	// if a matching leaf was found and removed.
+	pub func remove_leaf = (ref self, uint64 handle, out bool) {
+		var int needle = handle as int
+		var removed = false
+		var int idx = 1
+		while idx < self.count; idx += 1 {
+			if self.kinds.load_int(idx) == KIND_LEAF {
+				if self.handles.load_int(idx) == needle {
+					removed = true
+					break
+				}
+			}
+		}
+		if !removed {
+			return false
+		}
+		// Backward-shift every per-node array over the removed slot. The
+		// cached frames (rx..prh) shift along with their nodes, so the tree
+		// stays internally consistent — only the structure changed. `idx`
+		// holds the removed slot here; remember it for the parent fix-up,
+		// then walk the shift destinations with it.
+		var int hole = idx
+		var int last = self.count - 1
+		while idx < last; idx += 1 {
+			self.kinds.store_int(idx, self.kinds.load_int(idx + 1))
+			self.w_kinds.store_int(idx, self.w_kinds.load_int(idx + 1))
+			self.w_vals.store_int(idx, self.w_vals.load_int(idx + 1))
+			self.h_kinds.store_int(idx, self.h_kinds.load_int(idx + 1))
+			self.h_vals.store_int(idx, self.h_vals.load_int(idx + 1))
+			self.gaps.store_int(idx, self.gaps.load_int(idx + 1))
+			self.pars.store_int(idx, self.pars.load_int(idx + 1))
+			self.spans.store_int(idx, self.spans.load_int(idx + 1))
+			self.cols.store_int(idx, self.cols.load_int(idx + 1))
+			self.handles.store_int(idx, self.handles.load_int(idx + 1))
+			self.pads.store_int(idx, self.pads.load_int(idx + 1))
+			self.grows.store_int(idx, self.grows.load_int(idx + 1))
+			self.shrinks.store_int(idx, self.shrinks.load_int(idx + 1))
+			self.aligns.store_int(idx, self.aligns.load_int(idx + 1))
+			self.dirty.store_int(idx, self.dirty.load_int(idx + 1))
+			self.measured_count.store_int(idx, self.measured_count.load_int(idx + 1))
+			self.rx.store_int(idx, self.rx.load_int(idx + 1))
+			self.ry.store_int(idx, self.ry.load_int(idx + 1))
+			self.rw.store_int(idx, self.rw.load_int(idx + 1))
+			self.rh.store_int(idx, self.rh.load_int(idx + 1))
+			self.prx.store_int(idx, self.prx.load_int(idx + 1))
+			self.pry.store_int(idx, self.pry.load_int(idx + 1))
+			self.prw.store_int(idx, self.prw.load_int(idx + 1))
+			self.prh.store_int(idx, self.prh.load_int(idx + 1))
+		}
+		self.count = last
+		// Fix parent indices that pointed above the removed slot. (A node
+		// parented AT the removed slot is impossible — leaves have no
+		// children.)
+		var k = 1
+		while k < self.count; k += 1 {
+			if self.pars.load_int(k) > hole + 1 {
+				self.pars.store_int(k, self.pars.load_int(k) - 1)
+			}
+		}
+		// The dirty-rect list holds node indices; the next layout's
+		// collect_dirty rebuilds it from scratch, so drop the stale entries.
+		self.dirty_n = 0
+		// The row structure changed: re-measure everything on the next
+		// compute/layout.
+		self.mark_dirty(self.root)
+		return true
+	}
+
 	// Translate the legacy int (w, h) into a (kind, value) pair: 0 → auto
 	// (no intrinsic; fills a bounded axis, stays 0 on an unbounded axis so
 	// `grow` decides), non-zero → fixed.
