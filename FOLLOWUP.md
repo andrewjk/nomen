@@ -71,3 +71,16 @@ the C side computed 100.0). The gui_split_view test works around it with
 the inline form. Proper fix: in the aarch64 codegen, a float value loaded
 from a variable slot must `fmov d0, x0` before any FP use (`as int`, float
 arithmetic, float args).
+
+## Formatter drift: in-source rules vs the published 0.7.1 release
+
+Running the locally-built CLI's `nomen format` over `core/System` rewrites
+~30 files: it wants `struct X: Control` (no space before the trait colon)
+and re-indents comments inside `#init` bodies, while every committed file
+(including the Tier 2 controls added this cycle) follows the 0.7.1
+formatter's `struct X : Control` + comment style. The demo programs' trims
+(`strip_redundant_types` etc.) also differ. Until the next nomen-lang
+release ships the new rules, `nomen format` cannot be run across the repo
+without a whole-repo style churn commit — pick one: either a dedicated
+"Style: reformat System library" commit or hold the in-source changes until
+release.
