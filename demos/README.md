@@ -39,4 +39,6 @@ polled into the status line. A Tabs section hosts one label per page via
 section bridges rows into an NSTableView data source, polling the selected
 row; a ComboBox polls its selection the same way. A Menu attaches to the
 right-click target button — picks surface through the edge-triggered
-`clicked_item` poll and land in the status line.
+`clicked_item` poll and land in the status line, as do the window
+Toolbar's three labeled buttons (created before the first layout, since
+the toolbar shrinks the contentView).

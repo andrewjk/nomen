@@ -177,6 +177,12 @@ pub func main = () {
 	var status = Text(win)
 	status.set_text("")
 
+	// Window chrome: the toolbar shrinks the contentView (AppKit owns the
+	// layout rect), so it must exist BEFORE the first grid layout. Its
+	// three labeled buttons report clicks through the same edge-triggered
+	// poll as the context menu.
+	var toolbar = Toolbar(win, 3)
+
 	// ── Modal companions (created up front, driven from the event loop) ──
 	const alert = Alert()
 	alert.set_title("Delete todo?")
@@ -313,10 +319,15 @@ pub func main = () {
 		bar.set_value(slide.value() / 100.0)
 		// A context-menu pick (right-click the menu button, choose an entry)
 		// surfaces here on the next frame — clicked_item is edge-triggered
-		// (a read resets it to -1).
+		// (a read resets it to -1). The toolbar buttons use the same poll.
 		const int picked = menu.clicked_item()
 		if picked >= 0 {
 			status.set_text("menu: entry \{picked}")
+			prev_status = ""
+		}
+		const int bar_pick = toolbar.clicked_item()
+		if bar_pick >= 0 {
+			status.set_text("toolbar: item \{bar_pick}")
 			prev_status = ""
 		}
 		const string polled = poll_status(ref slide, ref step, ref color, ref when, ref scroll, ref tabs, ref list, ref combo)

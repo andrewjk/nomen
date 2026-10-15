@@ -1,0 +1,328 @@
+/**
+ * A window toolbar with labeled push-button items (NSToolbar)
+ *
+ * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
+ * single field is a platform handle, so the value is movable and its
+ * `#destroy` releases what the handle names. The constructor's `self` is
+ * the inline instance (the `.` accessor); methods keep the pointer form.
+ *
+ * NSToolbar is delegate-driven: the shared delegate answers the identifier
+ * questions from the fixed item count and builds each item as a labeled
+ * push button (NSButton view) targeted at the shared action recorder — so
+ * `clicked_item` polls the last click edge-triggered, like Menu. Attaching
+ * a toolbar shrinks the window's contentView (AppKit owns the layout rect),
+ * so create the Toolbar BEFORE the first grid layout. One Toolbar per
+ * process (the shared delegate + tag storage — the same trade List and Menu
+ * already make). macOS-only (NSToolbar has no iOS counterpart; see GUI_PLAN
+ * Tier 2 — the iOS blocks are TODO stubs).
+ **/
+pub mv struct Toolbar : Control {
+	var uint64 handle = 0
+
+	// File-scope helper: the shared delegate + action recorder (shared — one
+	// Toolbar per process).
+	pub func #init = (self, Window window, int count) {
+		```
+		#arch: c
+		#platform: macos
+		#scope: file
+		static long g_toolbar_last_tag = -1;
+		static long g_toolbar_count = 0;
+		static id g_toolbar_delegate = 0;
+
+		static void nomen_toolbar_action(id self, SEL cmd, id sender) {
+			(void)self; (void)cmd;
+			g_toolbar_last_tag = ((long(*)(id, SEL))objc_msgSend)(sender, sel_registerName("tag"));
+		}
+
+		// The identifier list is "0"…"count-1" — the index doubles as the tag.
+		static id nomen_toolbar_identifiers(void) {
+			id array = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSMutableArray"), sel_registerName("array"));
+			for (long i = 0; i < g_toolbar_count; i++) {
+				char buf[16];
+				snprintf(buf, sizeof(buf), "%ld", i);
+				((void(*)(id, SEL, id))objc_msgSend)(array, sel_registerName("addObject:"),
+					((id(*)(id, SEL, const char*))objc_msgSend)(
+						(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), buf));
+			}
+			return array;
+		}
+
+		static id nomen_toolbar_item(id self, SEL cmd, id tv, id ident, long insert) {
+			(void)self; (void)cmd; (void)tv; (void)insert;
+			long idx = ((long(*)(id, SEL))objc_msgSend)(ident, sel_registerName("intValue"));
+			id item = ((id(*)(id, SEL, id))objc_msgSend)(
+				((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSToolbarItem"), sel_registerName("alloc")),
+				sel_registerName("initWithItemIdentifier:"), ident);
+			char label[32];
+			snprintf(label, sizeof(label), "Item %ld", idx);
+			id title = ((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), label);
+			((void(*)(id, SEL, id))objc_msgSend)(item, sel_registerName("setLabel:"), title);
+			((void(*)(id, SEL, long))objc_msgSend)(item, sel_registerName("setTag:"), idx);
+			id btn = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+				((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSButton"), sel_registerName("alloc")),
+				sel_registerName("initWithFrame:"),
+				((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 64, 28));
+			((void(*)(id, SEL, unsigned long))objc_msgSend)(btn, sel_registerName("setButtonType:"), 1);
+			((void(*)(id, SEL, id))objc_msgSend)(btn, sel_registerName("setTitle:"), title);
+			((void(*)(id, SEL, SEL))objc_msgSend)(
+				btn, sel_registerName("setAction:"), sel_registerName("nomenToolbarAction:"));
+			((void(*)(id, SEL, id))objc_msgSend)(btn, sel_registerName("setTarget:"), g_toolbar_delegate);
+			((void(*)(id, SEL, id))objc_msgSend)(item, sel_registerName("setView:"), btn);
+			((void(*)(id, SEL))objc_msgSend)(btn, sel_registerName("release"));
+			return item;
+		}
+
+		static id nomen_toolbar_delegate_class(void) {
+			Class Td = objc_getClass("NomenToolbarDelegate");
+			if (!Td) {
+				Td = objc_allocateClassPair(objc_getClass("NSObject"), "NomenToolbarDelegate", 0);
+				if (Td) {
+					class_addMethod(Td, sel_registerName("toolbarAllowedItemIdentifiers:"),
+						(IMP)nomen_toolbar_identifiers, "@@:@");
+					class_addMethod(Td, sel_registerName("toolbarDefaultItemIdentifiers:"),
+						(IMP)nomen_toolbar_identifiers, "@@:@");
+					class_addMethod(Td, sel_registerName("toolbar:itemForItemIdentifier:willBeInsertedIntoToolbar:"),
+						(IMP)nomen_toolbar_item, "@@:@@@c");
+					objc_registerClassPair(Td);
+				}
+			}
+			if (!g_toolbar_delegate) {
+				g_toolbar_delegate = ((id(*)(id, SEL))objc_msgSend)(Td, sel_registerName("new"));
+			}
+			return g_toolbar_delegate;
+		}
+
+		// Edge-triggered read: the poll consumes the tag (resets to -1).
+		long nomen_toolbar_last_tag(void) {
+			long tag = g_toolbar_last_tag;
+			g_toolbar_last_tag = -1;
+			return tag;
+		}
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		#scope: file
+		static long g_toolbar_last_tag = -1;
+		static long g_toolbar_count = 0;
+		static id g_toolbar_delegate = 0;
+
+		static void nomen_toolbar_action(id self, SEL cmd, id sender) {
+			(void)self; (void)cmd;
+			g_toolbar_last_tag = ((long(*)(id, SEL))objc_msgSend)(sender, sel_registerName("tag"));
+		}
+
+		// The identifier list is "0"…"count-1" — the index doubles as the tag.
+		static id nomen_toolbar_identifiers(void) {
+			id array = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSMutableArray"), sel_registerName("array"));
+			for (long i = 0; i < g_toolbar_count; i++) {
+				char buf[16];
+				snprintf(buf, sizeof(buf), "%ld", i);
+				((void(*)(id, SEL, id))objc_msgSend)(array, sel_registerName("addObject:"),
+					((id(*)(id, SEL, const char*))objc_msgSend)(
+						(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), buf));
+			}
+			return array;
+		}
+
+		static id nomen_toolbar_item(id self, SEL cmd, id tv, id ident, long insert) {
+			(void)self; (void)cmd; (void)tv; (void)insert;
+			long idx = ((long(*)(id, SEL))objc_msgSend)(ident, sel_registerName("intValue"));
+			id item = ((id(*)(id, SEL, id))objc_msgSend)(
+				((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSToolbarItem"), sel_registerName("alloc")),
+				sel_registerName("initWithItemIdentifier:"), ident);
+			char label[32];
+			snprintf(label, sizeof(label), "Item %ld", idx);
+			id title = ((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), label);
+			((void(*)(id, SEL, id))objc_msgSend)(item, sel_registerName("setLabel:"), title);
+			((void(*)(id, SEL, long))objc_msgSend)(item, sel_registerName("setTag:"), idx);
+			id btn = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+				((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSButton"), sel_registerName("alloc")),
+				sel_registerName("initWithFrame:"),
+				((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 64, 28));
+			((void(*)(id, SEL, unsigned long))objc_msgSend)(btn, sel_registerName("setButtonType:"), 1);
+			((void(*)(id, SEL, id))objc_msgSend)(btn, sel_registerName("setTitle:"), title);
+			((void(*)(id, SEL, SEL))objc_msgSend)(
+				btn, sel_registerName("setAction:"), sel_registerName("nomenToolbarAction:"));
+			((void(*)(id, SEL, id))objc_msgSend)(btn, sel_registerName("setTarget:"), g_toolbar_delegate);
+			((void(*)(id, SEL, id))objc_msgSend)(item, sel_registerName("setView:"), btn);
+			((void(*)(id, SEL))objc_msgSend)(btn, sel_registerName("release"));
+			return item;
+		}
+
+		static id nomen_toolbar_delegate_class(void) {
+			Class Td = objc_getClass("NomenToolbarDelegate");
+			if (!Td) {
+				Td = objc_allocateClassPair(objc_getClass("NSObject"), "NomenToolbarDelegate", 0);
+				if (Td) {
+					class_addMethod(Td, sel_registerName("toolbarAllowedItemIdentifiers:"),
+						(IMP)nomen_toolbar_identifiers, "@@:@");
+					class_addMethod(Td, sel_registerName("toolbarDefaultItemIdentifiers:"),
+						(IMP)nomen_toolbar_identifiers, "@@:@");
+					class_addMethod(Td, sel_registerName("toolbar:itemForItemIdentifier:willBeInsertedIntoToolbar:"),
+						(IMP)nomen_toolbar_item, "@@:@@@c");
+					objc_registerClassPair(Td);
+				}
+			}
+			if (!g_toolbar_delegate) {
+				g_toolbar_delegate = ((id(*)(id, SEL))objc_msgSend)(Td, sel_registerName("new"));
+			}
+			return g_toolbar_delegate;
+		}
+
+		// Edge-triggered read: the poll consumes the tag (resets to -1).
+		long nomen_toolbar_last_tag(void) {
+			long tag = g_toolbar_last_tag;
+			g_toolbar_last_tag = -1;
+			return tag;
+		}
+		```
+		```
+		#arch: c
+		#platform: macos
+		g_toolbar_count = (long)count;
+		id toolbar = ((id(*)(id, SEL, id))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSToolbar"), sel_registerName("alloc")),
+			sel_registerName("initWithIdentifier:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), "main"));
+		((void(*)(id, SEL, id))objc_msgSend)(toolbar, sel_registerName("setDelegate:"), nomen_toolbar_delegate_class());
+		((void(*)(id, SEL, BOOL))objc_msgSend)(toolbar, sel_registerName("setAllowsUserCustomization:"), 0);
+		((void(*)(id, SEL, BOOL))objc_msgSend)(toolbar, sel_registerName("setAutosavesConfiguration:"), 0);
+		((void(*)(id, SEL, id))objc_msgSend)((id)window->handle, sel_registerName("setToolbar:"), toolbar);
+		self.handle = (uint64_t)toolbar;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		g_toolbar_count = (long)count;
+		id toolbar = ((id(*)(id, SEL, id))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSToolbar"), sel_registerName("alloc")),
+			sel_registerName("initWithIdentifier:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), "main"));
+		((void(*)(id, SEL, id))objc_msgSend)(toolbar, sel_registerName("setDelegate:"), nomen_toolbar_delegate_class());
+		((void(*)(id, SEL, BOOL))objc_msgSend)(toolbar, sel_registerName("setAllowsUserCustomization:"), 0);
+		((void(*)(id, SEL, BOOL))objc_msgSend)(toolbar, sel_registerName("setAutosavesConfiguration:"), 0);
+		((void(*)(id, SEL, id))objc_msgSend)((id)window->handle, sel_registerName("setToolbar:"), toolbar);
+		self->handle = (uint64_t)toolbar;
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS — no NSToolbar counterpart for window chrome (see
+		 * GUI_PLAN Tier 2; defer). */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+	}
+
+	// The fixed item count.
+	pub func count = (self, out int) {
+		```
+		#arch: c
+		#platform: macos
+		id items = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("items"));
+		return (int)((long(*)(id, SEL))objc_msgSend)(items, sel_registerName("count"));
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		id items = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("items"));
+		return (int)((long(*)(id, SEL))objc_msgSend)(items, sel_registerName("count"));
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return 0;
+		```
+	}
+
+	// The tag of the most recently clicked item since the last read
+	// (edge-triggered; -1 = none). Poll it in the manual loop.
+	pub func clicked_item = (self, out int) {
+		```
+		#arch: c
+		#platform: macos
+		extern long nomen_toolbar_last_tag(void);
+		return (int)nomen_toolbar_last_tag();
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		extern long nomen_toolbar_last_tag(void);
+		return (int)nomen_toolbar_last_tag();
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return -1;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return -1;
+		```
+	}
+
+	// ── Control trait conformance ──
+	// A toolbar is window chrome: the layout engine never frames it (AppKit
+	// owns the layout rect and shrinks the contentView itself).
+	pub func set_frame = (ref self, int x, int y, int width, int height) {
+		// No-op: the NSWindow carries the toolbar's geometry.
+	}
+
+	pub func intrinsic_size = (self, out Size) {
+		var s = Size()
+		return s
+	}
+
+	pub func measure = (self, BoxConstraints constraints, out Size) {
+		var s = Size()
+		return s
+	}
+
+	func #destroy = () {
+		```
+		#arch: c
+		#platform: macos
+		if (self->handle) {
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		if (self->handle) {
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+	}
+}
