@@ -157,9 +157,11 @@ void **_get_trait_func(void **obj, int trait_index, int func_index)
 	}
 
 	// `_string_interpolate_N` is shared runtime: definitions live in the
-	// system TU (every arity 1..7 so a user TU's interpolation always
-	// resolves), the user TU emits only forward declarations. In "all" mode
-	// (single TU) only the used arities are emitted (unchanged behaviour).
+	// system TU (arities 1..7 — the arities the library itself can use, so a
+	// user TU's <=7-arg interpolation always resolves). The system TU cannot
+	// enumerate every USER arity, so the user TU defines its own arities past
+	// 7 (mirroring the aarch64 helpers). In "all" mode (single TU) only the
+	// used arities are emitted (unchanged behaviour).
 	const interpolate_counts =
 		status.emit_mode === "user" || status.emit_mode === "system"
 			? new Set([...status.interpolate_string_counts, 1, 2, 3, 4, 5, 6, 7])
@@ -173,7 +175,7 @@ void **_get_trait_func(void **obj, int trait_index, int func_index)
 		// result's length is snprintf's own return — no strlen anywhere.
 		let declaration = `nomen_string _string_interpolate_${length}(nomen_string pattern, ${range.map((n) => `nomen_string arg${n + 1}`).join(", ")})`;
 		status.headers += `${declaration};\n`;
-		if (status.emit_mode !== "user") {
+		if (status.emit_mode !== "user" || length > 7) {
 			status.code += `${declaration}
 {
     int length = snprintf(NULL, 0, pattern.ptr, ${range.map((n) => `arg${n + 1}.ptr`).join(", ")});

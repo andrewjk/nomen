@@ -221,19 +221,22 @@ export default function build(
 				status.code += `${label}: .double ${value}\n`;
 			}
 		}
-		// Generate _string_interpolate_N helpers for aarch64. These are shared
-		// runtime: definitions live in the system TU (covering every arity so a
-		// user TU's interpolation always resolves at link), and the user TU
-		// emits none (its `bl _string_interpolate_N` is an foreign reference).
+		// Generate _string_interpolate_N helpers for aarch64. Shared runtime:
+		// the system TU pre-emits arities 1..7 (plus its own), but it cannot
+		// enumerate every USER arity — so the user TU defines its own arities
+		// past 7 (local symbols bind its intra-TU `bl` references; the C
+		// backend makes the same split, see build_c/build_root_node.ts).
 		const emit_mode = status.emit_mode ?? "all";
-		const interpolate_lengths: number[] =
-			emit_mode === "user"
-				? []
-				: emit_mode === "system"
-					? Array.from(new Set([...status.interpolate_string_counts, 1, 2, 3, 4, 5, 6, 7])).sort(
-							(a, b) => a - b,
-						)
-					: Array.from(status.interpolate_string_counts);
+		let interpolate_lengths: number[];
+		if (emit_mode === "user") {
+			interpolate_lengths = Array.from(status.interpolate_string_counts).filter((n) => n > 7);
+		} else if (emit_mode === "system") {
+			interpolate_lengths = Array.from(
+				new Set([...status.interpolate_string_counts, 1, 2, 3, 4, 5, 6, 7]),
+			).sort((a, b) => a - b);
+		} else {
+			interpolate_lengths = Array.from(status.interpolate_string_counts);
+		}
 		for (const length of interpolate_lengths) {
 			status.code += `\n.p2align 2\n`;
 			// In the system TU these are referenced by the user TU, so export
@@ -247,10 +250,24 @@ export default function build(
 			status.code += `mov x29, sp\n`;
 			// Fat-string ABI: pattern = (x0 ptr, x1 len); arg_i = (ptr, len)
 			// register pairs starting at x2. Only the NUL-terminated ptr
-			// halves feed snprintf. Stack layout: unpacked arg ptrs at
-			// #0..#48, length at #56, str at #64, pattern ptr at #72.
-			status.code += `sub sp, sp, #80\n`;
-			status.code += `str x0, [sp, #72]\n`;
+			// halves feed snprintf. Darwin arm64 passes EVERY variadic
+			// argument on the stack (clang's own snprintf calls store all of
+			// them at [sp+0..] and leave x3..x7 unset), so the unpacked arg
+			// area at #0..#(length*8-8) IS snprintf's variadic read area and
+			// must stay intact across BOTH snprintf calls. The temporaries
+			// therefore live ABOVE it: length at #length*8, buffer at
+			// #length*8+8, pattern ptr at #length*8+16. The old fixed 80-byte
+			// frame overlapped arg 8's variadic slot with the length temp —
+			// storing the size there handed the render snprintf a length as a
+			// char* (SIGBUS/garbage) for every arity >= 8; arities <= 7 only
+			// worked because their variadic reads sat below the temp slots.
+			const args_area = length * 8;
+			const len_off = args_area;
+			const buf_off = args_area + 8;
+			const pat_off = args_area + 16;
+			const frame = Math.ceil((args_area + 24) / 16) * 16;
+			status.code += `sub sp, sp, #${frame}\n`;
+			status.code += `str x0, [sp, #${pat_off}]\n`;
 			const pairRegs = [
 				["x2", "x3"],
 				["x4", "x5"],
@@ -267,22 +284,24 @@ export default function build(
 				status.code += `ldr x9, [x29, #${16 + (i - 3) * 16}]\n`;
 				status.code += `str x9, [sp, #${i * 8}]\n`;
 			}
-			// Call snprintf(NULL, 0, pattern, args...)
+			// Call snprintf(NULL, 0, pattern, args...). Args 1..5 also ride
+			// the registers — unused under the Darwin convention, but the
+			// first slots a SysV-style port would read.
 			status.code += `mov x0, xzr\n`;
 			status.code += `mov x1, xzr\n`;
-			status.code += `ldr x2, [sp, #72]\n`;
+			status.code += `ldr x2, [sp, #${pat_off}]\n`;
 			const variadicRegs = ["x3", "x4", "x5", "x6", "x7"];
 			for (let i = 0; i < length && i < variadicRegs.length; i++) {
 				status.code += `ldr ${variadicRegs[i]}, [sp, #${i * 8}]\n`;
 			}
 			status.code += `bl _snprintf\n`;
 			status.code += `add x0, x0, #1\n`;
-			status.code += `str x0, [sp, #56]\n`;
+			status.code += `str x0, [sp, #${len_off}]\n`;
 			emit_malloc(status);
-			status.code += `str x0, [sp, #64]\n`;
-			status.code += `ldr x0, [sp, #64]\n`;
-			status.code += `ldr x1, [sp, #56]\n`;
-			status.code += `ldr x2, [sp, #72]\n`;
+			status.code += `str x0, [sp, #${buf_off}]\n`;
+			status.code += `ldr x0, [sp, #${buf_off}]\n`;
+			status.code += `ldr x1, [sp, #${len_off}]\n`;
+			status.code += `ldr x2, [sp, #${pat_off}]\n`;
 			for (let i = 0; i < length && i < variadicRegs.length; i++) {
 				status.code += `ldr ${variadicRegs[i]}, [sp, #${i * 8}]\n`;
 			}
@@ -290,8 +309,8 @@ export default function build(
 			// Return the fat pair: x1 = the rendered length (snprintf's own
 			// return — no strlen), then x0 = buffer.
 			status.code += `mov x1, x0\n`;
-			status.code += `ldr x0, [sp, #64]\n`;
-			status.code += `add sp, sp, #80\n`;
+			status.code += `ldr x0, [sp, #${buf_off}]\n`;
+			status.code += `add sp, sp, #${frame}\n`;
 			status.code += `ldp x29, x30, [sp], #16\n`;
 			status.code += `ret\n`;
 		}

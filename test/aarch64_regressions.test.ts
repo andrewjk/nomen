@@ -1114,3 +1114,51 @@ pub func main = (Init init) {
 `;
 	await build_and_check_output(input, "float_param_method", "got=1.250000\n", true);
 });
+
+// A string with 8+ `\{expr}` placeholders mis-lowered on aarch64: the
+// helper's fixed 80-byte frame overlapped arg 8's variadic slot with the
+// length temp, so the render snprintf read a length as a char* (SIGBUS /
+// garbage). Arity <= 7 only worked because their variadic reads sat below
+// the temp slots; the frame now grows with the arity and the temporaries
+// live above the variadic area.
+test("eight interpolations in one string", async () => {
+	const input = `
+var string s1 = "one"
+var string s2 = "two"
+var string s3 = "three"
+var string s4 = "four"
+var string s5 = "five"
+var string s6 = "six"
+var string s7 = "seven"
+var string s8 = "eight"
+Console.write_line("\\{s1}\\{s2}\\{s3}\\{s4}\\{s5}\\{s6}\\{s7}")
+Console.write_line("\\{s1}\\{s2}\\{s3}\\{s4}\\{s5}\\{s6}\\{s7}\\{s8}")
+`;
+	await build_and_check_output(
+		input,
+		"interp_eight_args",
+		"onetwothreefourfivesixseven\nonetwothreefourfivesixseveneight\n",
+	);
+});
+
+// Same bug, further along the arity curve: args 9/10 used to collide with
+// the buffer and pattern-ptr temp slots (the render corrupted even before
+// the length store). Pins the grow-with-arity frame at N=12.
+test("twelve interpolations in one string", async () => {
+	const input = `
+var string s1 = "a"
+var string s2 = "b"
+var string s3 = "c"
+var string s4 = "d"
+var string s5 = "e"
+var string s6 = "f"
+var string s7 = "g"
+var string s8 = "h"
+var string s9 = "i"
+var string s10 = "j"
+var string s11 = "k"
+var string s12 = "l"
+Console.write_line("\\{s1} \\{s2} \\{s3} \\{s4} \\{s5} \\{s6} \\{s7} \\{s8} \\{s9} \\{s10} \\{s11} \\{s12}")
+`;
+	await build_and_check_output(input, "interp_twelve_args", "a b c d e f g h i j k l\n");
+});
