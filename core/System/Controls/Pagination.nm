@@ -22,22 +22,13 @@ pub mv struct Pagination {
 	var current = 0
 
 	pub func #init = (self, Window window, int pages: pages > 0 && pages <= 5) {
-		// Construct into locals, then move into the fields (see the
-		// NumberInput note on nested ctor staging).
-		var p = Button(window, "<")
-		self.prev = mv p
-		var n = Button(window, ">")
-		self.next = mv n
-		var q0 = Button(window, "1")
-		self.b0 = mv q0
-		var q1 = Button(window, "2")
-		self.b1 = mv q1
-		var q2 = Button(window, "3")
-		self.b2 = mv q2
-		var q3 = Button(window, "4")
-		self.b3 = mv q3
-		var q4 = Button(window, "5")
-		self.b4 = mv q4
+		self.prev = Button(window, "<")
+		self.next = Button(window, ">")
+		self.b0 = Button(window, "1")
+		self.b1 = Button(window, "2")
+		self.b2 = Button(window, "3")
+		self.b3 = Button(window, "4")
+		self.b4 = Button(window, "5")
 		self.pages = pages
 		// Spare page buttons stay hidden (the layout skips hidden leaves).
 		if pages <= 4 {

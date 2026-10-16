@@ -43,4 +43,34 @@ pub func main = (Init init) {
 			audit: false,
 		});
 	});
+
+	test("a ctor call nested straight in a field assignment stages correctly", { timeout: 120000 }, async () => {
+		const input = `
+import System
+import System::Controls
+
+pub mv struct Direct {
+	var TextBox box
+	pub func #init = (self, Window window) {
+		// The direct form: the ctor call sits in the assignment itself (the
+		// composite controls use this). It used to stage the Window param's
+		// spill-slot address as the struct.
+		self.box = TextBox(window)
+	}
+}
+
+pub func main = (Init init) {
+	var win = Window("Direct", 200, 100)
+	var d = Direct(win)
+	d.box.set_text("nested")
+	Console.write_line(d.box.get_text())
+}
+`;
+		const parsed = parse(input, system);
+		expect(parsed.errors).toEqual([]);
+		await build_and_check_output(input, "composite_nested_ctor_assign", "nested", true, {
+			platform: "macos",
+			audit: false,
+		});
+	});
 });

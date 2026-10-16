@@ -15,18 +15,11 @@ pub mv struct OtpInput {
 	var SecureField f4
 
 	pub func #init = (self, Window window) {
-		// Construct into locals, then move into the fields (see the
-		// NumberInput note on nested ctor staging).
-		var a = SecureField(window)
-		self.f0 = mv a
-		var b = SecureField(window)
-		self.f1 = mv b
-		var c = SecureField(window)
-		self.f2 = mv c
-		var d = SecureField(window)
-		self.f3 = mv d
-		var e = SecureField(window)
-		self.f4 = mv e
+		self.f0 = SecureField(window)
+		self.f1 = SecureField(window)
+		self.f2 = SecureField(window)
+		self.f3 = SecureField(window)
+		self.f4 = SecureField(window)
 	}
 
 	// Wire the five fields into the caller's grid under `parent`: an hstack

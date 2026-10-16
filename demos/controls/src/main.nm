@@ -234,8 +234,8 @@ pub func main = () {
 	// Tier 3 compositions: pure Nomen over the controls above, wired into
 	// this grid as rows (no new natives).
 	var num = NumberInput(win)
-	num.set_range(0, 1000, 50)
-	num.set_value(250)
+	num.set_range(0.0, 10.0, 0.5)
+	num.set_value(2.5)
 	var otp = OtpInput(win)
 	var pag = Pagination(win, 3)
 	var signin = Form(win, "Sign in")
@@ -512,7 +512,7 @@ func poll_status = (
 	const int csel = combo.selected_index()
 	const int osel = outline.selected_row()
 	const int tsel = table.selected_row()
-	const int nv2 = num.value()
+	const int nv2 = num.value() as int
 	const int pg = pag.page()
 	return "slider \{sv}  stepper \{nv}  rgb \{c.red},\{c.green},\{c.blue}  date \{secs}  scroll y=\{so}  tab \{tab}  list \{sel}  combo \{csel}  tree \{osel}  table \{tsel}  num \{nv2}  page \{pg}"
 }

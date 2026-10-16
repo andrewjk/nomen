@@ -22,18 +22,11 @@ pub mv struct Form {
 	var int rows_stack = -1
 
 	pub func #init = (self, Window window, string title) {
-		// Construct into locals, then move into the fields (see the
-		// NumberInput note on nested ctor staging).
-		var b = GroupBox(window, title)
-		self.box = mv b
-		var a = Text(window)
-		self.l0 = mv a
-		var c = Text(window)
-		self.l1 = mv c
-		var d = Text(window)
-		self.l2 = mv d
-		var e = Text(window)
-		self.l3 = mv e
+		self.box = GroupBox(window, title)
+		self.l0 = Text(window)
+		self.l1 = Text(window)
+		self.l2 = Text(window)
+		self.l3 = Text(window)
 	}
 
 	// Wire the assembly into the caller's grid under `parent`: the box

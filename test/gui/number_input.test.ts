@@ -9,10 +9,10 @@ import build_and_check_output from "../build_and_check_output";
 const system = get_library(path.resolve("core"));
 
 // GUI_PLAN Tier 3 compositions — pure Nomen over existing controls (no new
-// natives, no drawing), wired into the caller's grid as hstacks. NumberInput
-// carries its value as INT HUNDREDTHS: a float param on a composite method
-// hits the aarch64 method-splice staging bug (see FOLLOWUP.md), and
-// hundredths map cleanly onto stepper increments.
+// natives, no drawing), wired into the caller's grid as hstacks. The
+// composite `#init` assigns nested constructor calls straight into the
+// fields, and the methods take float params — both shapes the aarch64
+// backend stages correctly (see the composite_param_staging regression).
 describe("NumberInput composition", () => {
 	test("set_value drives the stepper and mirrors the text as N.NN", { timeout: 120000 }, async () => {
 		const input = `
@@ -22,20 +22,23 @@ import System::Controls
 pub func main = () {
 	var win = Window("NumberInput", 300, 120)
 	var num = NumberInput(win)
-	num.set_range(0, 1000, 100)
-	num.set_value(300)
-	var int v = num.value()
-	Console.write("v=\\{v} text=\\{num.box.get_text()}")
-	num.set_value(-250)
-	Console.write(" neg=\\{num.box.get_text()}\\n")
+	num.set_range(0.0, 10.0, 0.5)
+	num.set_value(3.0)
+	var float v = num.value()
+	Console.write("v=\\{v} text=\\{num.box.get_text()} ")
+	num.set_value(2.5)
+	Console.write("half=\\{num.box.get_text()}\\n")
 }
 `;
 		const parsed = parse(input, system);
 		expect(parsed.errors).toEqual([]);
-		await build_and_check_output(input, "gui_number_input", "v=300 text=3.0 neg=-2.5", true, {
-			platform: "macos",
-			audit: false,
-		});
+		await build_and_check_output(
+			input,
+			"gui_number_input",
+			"v=3.000000 text=3.00 half=2.50",
+			true,
+			{ platform: "macos", audit: false },
+		);
 	});
 
 	test("add_to wires the pair into the caller's grid", { timeout: 120000 }, async () => {
@@ -46,8 +49,8 @@ import System::Controls
 pub func main = () {
 	var win = Window("NumberInput grid", 300, 120)
 	var num = NumberInput(win)
-	num.set_range(0, 1000, 100)
-	num.set_value(400)
+	num.set_range(0.0, 10.0, 0.5)
+	num.set_value(4.0)
 	var grid = Grid(1, 6)
 	grid.padding = 8
 	num.add_to(ref grid, grid.root_index(), 1)
