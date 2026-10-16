@@ -31,23 +31,11 @@ pub mv struct NumberInput {
 	}
 
 	// Drive BOTH controls: the stepper holds the value, the text mirrors it
-	// as N.NN — built from int math on the value in ONE expression (a float
-	// copied to a local, or routed through to_string, hits per-backend
-	// staging quirks; see FOLLOWUP.md).
+	// (the float's %f rendering).
 	pub func set_value = (ref self, float v) {
 		self.step.set_value(v)
-		const int hundredths = (v * 100.0 + 0.5) as int
-		const int whole = hundredths / 100
-		const int frac = hundredths - whole * 100
-		var frac_str = "\{frac}"
-		if frac < 10 {
-			frac_str = "0\{frac}"
-		}
-		if v < 0.0 {
-			self.box.set_text("-\{whole}.\{frac_str}")
-		} else {
-			self.box.set_text("\{whole}.\{frac_str}")
-		}
+		var text = v.to_string()
+		self.box.set_text(text)
 	}
 
 	// The current value (the stepper's — typed text is not parsed back in

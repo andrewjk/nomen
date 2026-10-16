@@ -73,4 +73,42 @@ pub func main = (Init init) {
 			audit: false,
 		});
 	});
+
+	test("float.to_string() after a sibling call on a composite", { timeout: 120000 }, async () => {
+		const input = `
+import System
+import System::Controls
+
+pub mv struct Leaker {
+	var TextBox box
+	var Stepper step
+	pub func #init = (self, Window window) {
+		self.box = TextBox(window)
+		self.step = Stepper(window)
+	}
+	pub func show = (ref self, float v) {
+		// A raw-block-backed call first, then the float-to-string: the
+		// per-body NAME-to-Type map used to leak across struct bodies, so the
+		// param inherited a view-string's type and hit the view-only
+		// to_string arm (C emitted a view-copy of a double; aarch64 crashed).
+		self.step.set_value(v)
+		var text = v.to_string()
+		self.box.set_text(text)
+	}
+}
+
+pub func main = (Init init) {
+	var win = Window("Leaker", 200, 120)
+	var l = Leaker(win)
+	l.show(2.5)
+	Console.write_line(l.box.get_text())
+}
+`;
+		const parsed = parse(input, system);
+		expect(parsed.errors).toEqual([]);
+		await build_and_check_output(input, "composite_variable_types_leak", "2.500000", true, {
+			platform: "macos",
+			audit: false,
+		});
+	});
 });

@@ -67,26 +67,3 @@ release ships the new rules, `nomen format` cannot be run across the repo
 without a whole-repo style churn commit — pick one: either a dedicated
 "Style: reformat System library" commit or hold the in-source changes until
 release.
-
-
-## Per-backend quirks: a float in string-formatting positions
-
-`float.to_string()` (and float interpolation) works when the value is a
-PLAIN LOCAL of a top-level function, but mis-lowers when the float is a
-PARAM of a struct method / spliced composite method: the C backend emits a
-view-copy of the raw double (`nomen_view _vts = v` — a compile error), and
-on aarch64 the same shape produced an EMPTY string result. `NumberInput`
-formats through single-expression int math instead (`(v * 100.0 + 0.5) as
-int` → whole + zero-padded hundredths — identical output on both backends).
-Worth a proper fix in both backends' float-to-string argument lowering.
-
-Fixed while here (regressions: `float_field_default`, `composite_param_staging`):
-a float field default emitted `adr x1, 0.0` — nothing lowered `.double`
-defaults — and the auto constructor never set `function_return_label`, so
-pooled literals landed INLINE in the instruction stream. Constructor
-`function_data` now flushes after the ret, and both default chains pool
-float defaults via a `.double` entry. The earlier composite notes (nested
-ctor assignment staging, float params on spliced methods) turned out to be
-stale binaries blocked by the default bug: both shapes now build and run
-correctly on both backends, and the composites use the direct
-`self.field = Ctor(window)` form.

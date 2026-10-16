@@ -14,7 +14,7 @@ const system = get_library(path.resolve("core"));
 // fields, and the methods take float params — both shapes the aarch64
 // backend stages correctly (see the composite_param_staging regression).
 describe("NumberInput composition", () => {
-	test("set_value drives the stepper and mirrors the text as N.NN", { timeout: 120000 }, async () => {
+	test("set_value drives the stepper and mirrors the text", { timeout: 120000 }, async () => {
 		const input = `
 import System
 import System::Controls
@@ -35,7 +35,7 @@ pub func main = () {
 		await build_and_check_output(
 			input,
 			"gui_number_input",
-			"v=3.000000 text=3.00 half=2.50",
+			"v=3.000000 text=3.000000 half=2.500000",
 			true,
 			{ platform: "macos", audit: false },
 		);

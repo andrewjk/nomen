@@ -174,10 +174,13 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 			const old_init_default_reclaimed = status.init_default_reclaimed_fields;
 			status.init_default_reclaimed_fields = new Set();
 			// The init body builds outside build_function_node — isolate its
-			// name-keyed field records the same way (a store to a body local
-			// must not leak into a later function's build).
+			// name-keyed records the same way (a store to a body local, or a
+			// param's type, must not leak into — or inherit from — a later /
+			// earlier function's build).
 			const old_init_heap_string_fields = status.heap_string_fields;
 			status.heap_string_fields = undefined;
+			const old_init_variable_types = status.variable_types;
+			status.variable_types = new Map();
 
 			// Apply default field values BEFORE the custom init body runs, so any
 			// field the init doesn't explicitly assign still gets its default.
@@ -372,6 +375,7 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 			status.init_assigned_fields = old_init_assigned_fields;
 			status.init_default_reclaimed_fields = old_init_default_reclaimed;
 			status.heap_string_fields = old_init_heap_string_fields;
+			status.variable_types = old_init_variable_types;
 			status.function_return_type = old_return_type;
 		}
 
@@ -796,6 +800,14 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		const old_ref_class_params = status.ref_class_params;
 		const old_ref_class_param_types = status.ref_class_param_types;
 		const old_scoped_declarations = status.scoped_declarations;
+		// variable_types is a per-body NAME→Type map (see build_function_node):
+		// it must be FRESH for every body, or a name reused across bodies
+		// inherits the earlier body's type — a float param named `v` picked up
+		// a view-string local `v` from an earlier function build and the
+		// view-only `to_string`/`.length` arms mis-lowered it (the C backend
+		// emitted a view-copy of a double; aarch64 crashed).
+		const old_variable_types = status.variable_types;
+		status.variable_types = new Map();
 		const old_borrow_only = status.c_borrow_only_strings;
 		const old_force_heap = status.force_heap_strings;
 		const old_heap_array_vars = status.heap_array_vars;
@@ -1118,6 +1130,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		status.current_function_name = old_function_name;
 		status.current_function = old_current_function;
 		status.function_view_params = old_view_params;
+		status.variable_types = old_variable_types;
 	}
 	status.current_struct = old_current_struct;
 

@@ -1843,6 +1843,13 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 
 		const old_scoped_declarations = status.scoped_declarations;
 		const old_heap_strings = status.heap_strings;
+		// variable_types is a per-body NAME→Type map (see build_function_node):
+		// it must be FRESH for every body, or a name reused across bodies
+		// inherits the earlier body's type — a float param named `v` picked up
+		// a view-string local `v` from an earlier build and the view-only
+		// `to_string`/`.length` arms mis-lowered it (garbage / crash).
+		const old_variable_types = status.variable_types;
+		status.variable_types = new Map();
 		// trait_class_frames is scope-keyed; reset per body so a trait-typed
 		// local in one monomorphized body cannot leak into later bodies.
 		const old_trait_class_frames = status.trait_class_frames;
@@ -2610,6 +2617,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 
 		status.scoped_declarations = old_scoped_declarations;
 		status.heap_strings = old_heap_strings;
+		status.variable_types = old_variable_types;
 		status.trait_class_frames = old_trait_class_frames;
 		status.moved = old_moved;
 		status.mv_owns_flag = old_mv_owns_flag;
@@ -2676,6 +2684,11 @@ function build_trait_functions(node: StructNode, status: BuildStatus) {
 
 			const old_scoped_declarations = status.scoped_declarations;
 			const old_heap_strings = status.heap_strings;
+			// Per-body NAME→Type isolation (see build_function_node): a trait
+			// accessor body must not inherit a same-named variable's type from
+			// an earlier build.
+			const old_variable_types = status.variable_types;
+			status.variable_types = new Map();
 			const old_heap_string_arrays = status.heap_string_arrays;
 			status.heap_string_arrays = undefined;
 			const old_heap_class_arrays = status.heap_class_arrays;
@@ -2976,6 +2989,7 @@ function build_trait_functions(node: StructNode, status: BuildStatus) {
 
 			status.scoped_declarations = old_scoped_declarations;
 			status.heap_strings = old_heap_strings;
+			status.variable_types = old_variable_types;
 			status.heap_string_arrays = old_heap_string_arrays;
 			status.heap_class_arrays = old_heap_class_arrays;
 			status.heap_array_vars = old_heap_array_vars;
