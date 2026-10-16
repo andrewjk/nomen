@@ -11,10 +11,11 @@ func fetch_one = (Channel done, string letter) {
 }
 
 // The coordinator: spawns the five tasks into a nursery, waits for them to
-// rejoin, then drains the channel. Sends arrive in finish order, so
-// `letters` ends up ordered by completion, e.g. "B E D A C". Runs on a
+// rejoin, then drains the channel. Owns the channel (the caller moves it
+// in — the fiber's frame outlives the tasks). Sends arrive in finish order,
+// so `letters` ends up ordered by completion, e.g. "B E D A C". Runs on a
 // fiber — it parks (and frees its worker) while the nursery joins.
-func run_fetch = (Channel done, out string) {
+func run_fetch = (mv Channel done, out string) {
 	var letters = ""
 	async {
 		Thread(fetch_one(done, "A")).start()
@@ -51,14 +52,16 @@ pub func main = () {
 
 	win.show()
 
-	// The result channel: lives for the whole loop, drained exactly five
-	// times per fetch.
-	const done = Channel()
+	// The result channel: moved into the coordinator fiber per fetch (the
+	// fiber's nursery join bounds the tasks' borrows, and `fetch.is_done()`
+	// guarantees main never races the drain); a fresh channel replaces it
+	// for the next fetch.
+	var done = Channel()
 	var fetching = false
 	// The coordinator's handle. Main never blocks on it: the event loop
 	// polls is_done() each frame, so the window stays responsive while the
 	// five tasks sleep.
-	var Task<string> fetch = Task<string>()
+	var fetch = Task<string>()
 
 	while win.is_visible() {
 		const int had_click = Window.process_events()
@@ -69,7 +72,11 @@ pub func main = () {
 			if grid.contains(fetch_btn.handle, cx, cy) && !fetching {
 				fetching = true
 				status.set_text("Fetching...")
-				fetch = Fiber(run_fetch(done)).start()
+				// The channel moves into the fiber (its frame outlives the
+				// tasks — the nursery joins before the fiber finishes); a
+				// fresh channel is bound for the next fetch.
+				fetch = Fiber(run_fetch(mv done)).start()
+				done = Channel()
 			}
 		}
 
