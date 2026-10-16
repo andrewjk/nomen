@@ -1,0 +1,75 @@
+/**
+ * A number field with stepper nudges — TextBox + Stepper composed
+ *
+ * PURE COMPOSITION (GUI_PLAN Tier 3 "reachable earlier"): no new native
+ * control, no drawing — a TextBox for the text and a Stepper for the
+ * nudges, wired side by side into the caller's grid (the box fills the
+ * row, the stepper takes its intrinsic width).
+ *
+ * The value is an INT in HUNDREDTHS (`set_value(250)` = 2.50): a method
+ * taking a float param on a composite hits the aarch64 method-splice
+ * staging bug (see FOLLOWUP.md), and hundredths map cleanly onto stepper
+ * increments anyway. `set_value` drives both controls (the text shows the
+ * value as N.NN); stepper clicks update the stepper — but free-typed text
+ * is NOT parsed back in v1, so editing the text only changes the display
+ * until the next nudge. Hit-test the box and stepper through their handles
+ * (fields read like every control's `handle`).
+ **/
+pub mv struct NumberInput {
+	var TextBox box
+	var Stepper step
+
+	pub func #init = (self, Window window) {
+		// Construct into locals, then move into the fields: a ctor call
+		// nested directly in an assignment trips the aarch64 nested-ctor
+		// argument staging (see FOLLOWUP.md), while the declaration path is
+		// the proven shape every control uses.
+		var b = TextBox(window)
+		var s = Stepper(window)
+		self.box = mv b
+		self.step = mv s
+	}
+
+	// The stepper's range and nudge size, in hundredths.
+	pub func set_range = (ref self, int min, int max, int increment) {
+		self.step.set_min(min as float / 100.0)
+		self.step.set_max(max as float / 100.0)
+		self.step.set_increment(increment as float / 100.0)
+	}
+
+	// Drive BOTH controls: the stepper holds the value, the text mirrors it
+	// as N.NN — built from int math (sign, whole, hundredths) and int
+	// interpolation, the only formatting every backend lowers identically.
+	pub func set_value = (ref self, int hundredths) {
+		self.step.set_value(hundredths as float / 100.0)
+		var bool neg = hundredths < 0
+		var int a = hundredths
+		if neg {
+			a = -a
+		}
+		var int whole = a / 100
+		var int hundredths_part = a - whole * 100
+		if neg {
+			self.box.set_text("-\{whole}.\{hundredths_part}")
+		} else {
+			self.box.set_text("\{whole}.\{hundredths_part}")
+		}
+	}
+
+	// The current value in hundredths (the stepper's — typed text is not
+	// parsed back in v1; the next nudge overwrites the text).
+	pub func value = (self, out int) {
+		var float v = self.step.value()
+		return (v * 100.0) as int
+	}
+
+	// Wire the pair into the caller's grid under `parent`: an hstack with
+	// the box filling the row and the stepper at its intrinsic width.
+	// Hit-testing works through the usual grid.contains on the fields'
+	// handles.
+	pub func add_to = (ref self, ref Container grid, int parent, int span) {
+		var int hs = grid.add_hstack(parent, 6, span)
+		grid.add_to(hs, self.box.handle, 0, 24, 1, 1)
+		grid.add_to_intrinsic(hs, self.step.handle, 1)
+	}
+}
