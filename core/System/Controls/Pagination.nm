@@ -1,0 +1,110 @@
+/**
+ * A page-picker row — prev/next plus one numbered Button per page composed
+ *
+ * PURE COMPOSITION (GUI_PLAN Tier 3 "reachable earlier"): no new native
+ * control, no drawing — a row of Buttons wired into the caller's grid.
+ * The page count is fixed at construction (1..5; spare buttons are hidden
+ * and skipped by the layout's hidden-leaf pass). The composite tracks the
+ * current page as pure state: the DEMO hit-tests the buttons each frame
+ * (handles via `prev_handle`/`next_handle`/`page_handle`) and calls
+ * `next`/`prev`/`select` — clicks have no callback in the manual loop
+ * (GUI_PLAN cross-cutting follow-ups).
+ **/
+pub mv struct Pagination {
+	var Button prev
+	var Button next
+	var Button b0
+	var Button b1
+	var Button b2
+	var Button b3
+	var Button b4
+	var pages = 1
+	var current = 0
+
+	pub func #init = (self, Window window, int pages: pages > 0 && pages <= 5) {
+		// Construct into locals, then move into the fields (see the
+		// NumberInput note on nested ctor staging).
+		var p = Button(window, "<")
+		self.prev = mv p
+		var n = Button(window, ">")
+		self.next = mv n
+		var q0 = Button(window, "1")
+		self.b0 = mv q0
+		var q1 = Button(window, "2")
+		self.b1 = mv q1
+		var q2 = Button(window, "3")
+		self.b2 = mv q2
+		var q3 = Button(window, "4")
+		self.b3 = mv q3
+		var q4 = Button(window, "5")
+		self.b4 = mv q4
+		self.pages = pages
+		// Spare page buttons stay hidden (the layout skips hidden leaves).
+		if pages <= 4 {
+			self.b4.set_hidden(true)
+		}
+		if pages <= 3 {
+			self.b3.set_hidden(true)
+		}
+		if pages <= 2 {
+			self.b2.set_hidden(true)
+		}
+		if pages <= 1 {
+			self.b1.set_hidden(true)
+		}
+	}
+
+	// Wire the row into the caller's grid under `parent`.
+	pub func add_to = (ref self, ref Container grid, int parent, int span) {
+		var int hs = grid.add_hstack(parent, 6, span)
+		grid.add_to_intrinsic(hs, self.prev.handle, 1)
+		grid.add_to_intrinsic(hs, self.b0.handle, 1)
+		grid.add_to_intrinsic(hs, self.b1.handle, 1)
+		grid.add_to_intrinsic(hs, self.b2.handle, 1)
+		grid.add_to_intrinsic(hs, self.b3.handle, 1)
+		grid.add_to_intrinsic(hs, self.b4.handle, 1)
+		grid.add_to_intrinsic(hs, self.next.handle, 1)
+	}
+
+	// The page buttons' handles, for grid.contains hit-testing.
+	pub func prev_handle = (self, out uint64) {
+		return self.prev.handle
+	}
+
+	pub func next_handle = (self, out uint64) {
+		return self.next.handle
+	}
+
+	pub func page_handle = (self, int index, out uint64) {
+		if index == 0 { return self.b0.handle }
+		if index == 1 { return self.b1.handle }
+		if index == 2 { return self.b2.handle }
+		if index == 3 { return self.b3.handle }
+		if index == 4 { return self.b4.handle }
+		return 0
+	}
+
+	// The current page (0-based), clamped to the page count.
+	pub func page = (self, out int) {
+		return self.current
+	}
+
+	pub func select = (ref self, int index) {
+		var int i = index
+		if i < 0 { i = 0 }
+		if i > self.pages - 1 { i = self.pages - 1 }
+		self.current = i
+	}
+
+	pub func next = (ref self) {
+		if self.current < self.pages - 1 {
+			self.current += 1
+		}
+	}
+
+	pub func prev = (ref self) {
+		if self.current > 0 {
+			self.current -= 1
+		}
+	}
+}

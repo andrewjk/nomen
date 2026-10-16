@@ -6,7 +6,7 @@
  * `#destroy` releases what the handle names. The constructor's `self` is
  * the inline instance (the `.` accessor); methods keep the pointer form.
  **/
-pub mv struct Button : Control {
+pub mv struct Button: Control {
 	var uint64 handle = 0
 
 	pub func #init = (self, Window window, string title) {
@@ -164,6 +164,60 @@ pub mv struct Button : Control {
 	// through the shared `native_intrinsic` FFI (see Container.nm), which works
 	// on both backends — a per-control raw block couldn't return a `Size` from
 	// the aarch64 companion (struct-name mangling) nor mutate a Nomen local.
+
+	pub func set_hidden = (self, bool hidden) {
+		```
+		#arch: c
+		#platform: macos
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+		```
+		```
+		#arch: c
+		#platform: ios
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+		```
+	}
+
+	pub func is_hidden = (self, out bool) {
+		```
+		#arch: c
+		#platform: macos
+		BOOL hidden = ((BOOL(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("isHidden"));
+		return hidden ? 1 : 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		BOOL hidden = ((BOOL(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("isHidden"));
+		return hidden ? 1 : 0;
+		```
+		```
+		#arch: c
+		#platform: ios
+		BOOL hidden = ((BOOL(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("isHidden"));
+		return hidden ? 1 : 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		BOOL hidden = ((BOOL(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("isHidden"));
+		return hidden ? 1 : 0;
+		```
+	}
 
 	pub func intrinsic_size = (self, out Size) {
 		var [w, h] = native_intrinsic(self.handle)
