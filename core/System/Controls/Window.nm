@@ -8,7 +8,7 @@
  * pointer form); the constructor's `self` is the inline instance (the `.`
  * accessor).
  **/
-pub mv struct Window : Control {
+pub mv struct Window: Control {
 	var uint64 handle = 0
 
 	pub func #init = (self, string title, int width, int height) {
@@ -459,16 +459,22 @@ pub mv struct Window : Control {
 		```
 		#arch: c
 		#platform: macos
-		((void(*)(id, SEL, CGRect))objc_msgSend)(
-			(id)self->handle, sel_registerName("setFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+		// NSWindow has no plain `setFrame:` (that is NSView's) — the window
+		// API takes the display flag.
+		((void(*)(id, SEL, CGRect, BOOL))objc_msgSend)(
+			(id)self->handle, sel_registerName("setFrame:display:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height),
+			1);
 		```
 		```
 		#arch: aarch64_use_c
 		#platform: macos
-		((void(*)(id, SEL, CGRect))objc_msgSend)(
-			(id)self->handle, sel_registerName("setFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+		// NSWindow has no plain `setFrame:` (that is NSView's) — the window
+		// API takes the display flag.
+		((void(*)(id, SEL, CGRect, BOOL))objc_msgSend)(
+			(id)self->handle, sel_registerName("setFrame:display:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height),
+			1);
 		```
 		```
 		#arch: c

@@ -470,15 +470,21 @@ things about the coordinate story:
    laid-out content height *before* frames are applied. The flow per relayout
    pass is therefore: measure the content grid with unbounded height
    (`content_grid.measure(BoxConstraints)`), `scroll.set_content_size(w, h)`,
-   then `content_grid.layout(content)`. This keeps `Container` untouched; a
-   future trait-based layout would fold the sizing into measure.
+   then `content_grid.layout(content)`. `set_content_size` clamps the height
+   UP to the viewport: an unflipped document shorter than its clip view sits
+   at the clip's *bottom*, so a short list would render bunched at the bottom
+   of the scroll region — filling the viewport keeps the content top-anchored
+   (and drops the scrollbar). This keeps `Container` untouched; a future
+   trait-based layout would fold the sizing into measure.
 
 **Hit testing.** Click coordinates arrive in window space; laid-out child
-rectangles live in document space. The two differ by the scroll offset (and the
-scroll view's own origin), so interactive content needs
-`click_y - scroll_origin_y + scroll_offset_y()` before `grid.contains`. The
-gallery demo only polls the offset into its status line; the todo demo is the
-first app that will need the full translation.
+rectangles live in document space. The two differ by the scroll offset and the
+clip view's own origin, so a raw click mis-hits as soon as the content
+scrolls. `content_click(scroll, cx, cy)` (a free function beside the struct —
+a raw-block-backed method returning a tuple fails the checker's
+destructuring; `native_intrinsic` set the free-function precedent) does the
+translation, and the todo demo uses it for both checkbox hit-tests and
+right-click deletes. The gallery only polls the offset into its status line.
 
 ## Invalidation & incremental relayout
 

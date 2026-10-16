@@ -182,21 +182,33 @@ pub mv struct Scrollable: Control {
 	// Size the document view to the laid-out content. Call between the
 	// content grid's unbounded `measure` and its `layout(content)` — the
 	// flip needs the document height to equal the content height before
-	// frames are applied (see the Scrollable design note in GUI.md).
+	// frames are applied (see the Scrollable design note in GUI.md). The
+	// height is clamped UP to the viewport: an unflipped document shorter
+	// than its clip view sits at the clip's BOTTOM, so a short list would
+	// render bunched at the bottom of the scroll region — filling the
+	// viewport keeps the content top-anchored (and drops the scrollbar).
 	pub func set_content_size = (self, int width, int height) {
 		```
 		#arch: c
 		#platform: macos
+		id clip = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("contentView"));
+		CGRect clip_bounds = ((CGRect(*)(id, SEL))objc_msgSend)(clip, sel_registerName("bounds"));
+		double frame_h = (double)height;
+		if (frame_h < clip_bounds.size.height) frame_h = clip_bounds.size.height;
 		((void(*)(id, SEL, CGSize))objc_msgSend)(
 			(id)self->doc, sel_registerName("setFrameSize:"),
-			((CGSize(*)(double, double))CGSizeMake)((double)width, (double)height));
+			((CGSize(*)(double, double))CGSizeMake)((double)width, frame_h));
 		```
 		```
 		#arch: aarch64_use_c
 		#platform: macos
+		id clip = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("contentView"));
+		CGRect clip_bounds = ((CGRect(*)(id, SEL))objc_msgSend)(clip, sel_registerName("bounds"));
+		double frame_h = (double)height;
+		if (frame_h < clip_bounds.size.height) frame_h = clip_bounds.size.height;
 		((void(*)(id, SEL, CGSize))objc_msgSend)(
 			(id)self->doc, sel_registerName("setFrameSize:"),
-			((CGSize(*)(double, double))CGSizeMake)((double)width, (double)height));
+			((CGSize(*)(double, double))CGSizeMake)((double)width, frame_h));
 		```
 		```
 		#arch: c
@@ -222,9 +234,14 @@ pub mv struct Scrollable: Control {
 		id doc = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("documentView"));
 		CGRect doc_frame = ((CGRect(*)(id, SEL))objc_msgSend)(doc, sel_registerName("frame"));
 		CGRect clip_bounds = ((CGRect(*)(id, SEL))objc_msgSend)(clip, sel_registerName("bounds"));
-		((void(*)(id, SEL, CGPoint))objc_msgSend)(
-			clip, sel_registerName("scrollPoint:"),
-			((CGPoint(*)(double, double))CGPointMake)(0, doc_frame.size.height - clip_bounds.size.height));
+		// Set the clip's bounds origin directly — the one primitive the live
+		// scroll machinery can't constrain short of the edge. The unflipped
+		// document's top edge is at doc height; the visible origin sits
+		// `doc_h - clip_h` up from the bottom.
+		CGPoint origin = ((CGPoint(*)(double, double))CGPointMake)(
+			0, doc_frame.size.height - clip_bounds.size.height);
+		((void(*)(id, SEL, CGPoint))objc_msgSend)(clip, sel_registerName("setBoundsOrigin:"), origin);
+		((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("reflectScrolledClipView:"), clip);
 		```
 		```
 		#arch: aarch64_use_c
@@ -233,9 +250,14 @@ pub mv struct Scrollable: Control {
 		id doc = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("documentView"));
 		CGRect doc_frame = ((CGRect(*)(id, SEL))objc_msgSend)(doc, sel_registerName("frame"));
 		CGRect clip_bounds = ((CGRect(*)(id, SEL))objc_msgSend)(clip, sel_registerName("bounds"));
-		((void(*)(id, SEL, CGPoint))objc_msgSend)(
-			clip, sel_registerName("scrollPoint:"),
-			((CGPoint(*)(double, double))CGPointMake)(0, doc_frame.size.height - clip_bounds.size.height));
+		// Set the clip's bounds origin directly — the one primitive the live
+		// scroll machinery can't constrain short of the edge. The unflipped
+		// document's top edge is at doc height; the visible origin sits
+		// `doc_h - clip_h` up from the bottom.
+		CGPoint origin = ((CGPoint(*)(double, double))CGPointMake)(
+			0, doc_frame.size.height - clip_bounds.size.height);
+		((void(*)(id, SEL, CGPoint))objc_msgSend)(clip, sel_registerName("setBoundsOrigin:"), origin);
+		((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("reflectScrolledClipView:"), clip);
 		```
 		```
 		#arch: c
@@ -296,17 +318,25 @@ pub mv struct Scrollable: Control {
 		#arch: c
 		#platform: macos
 		id clip = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("contentView"));
+		// Set the clip's bounds origin directly — the one primitive the live
+		// scroll machinery can't constrain short of the edge. (0, 0) is the
+		// unflipped document's bottom-left corner.
 		((void(*)(id, SEL, CGPoint))objc_msgSend)(
-			clip, sel_registerName("scrollPoint:"),
+			clip, sel_registerName("setBoundsOrigin:"),
 			((CGPoint(*)(double, double))CGPointMake)(0, 0));
+		((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("reflectScrolledClipView:"), clip);
 		```
 		```
 		#arch: aarch64_use_c
 		#platform: macos
 		id clip = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("contentView"));
+		// Set the clip's bounds origin directly — the one primitive the live
+		// scroll machinery can't constrain short of the edge. (0, 0) is the
+		// unflipped document's bottom-left corner.
 		((void(*)(id, SEL, CGPoint))objc_msgSend)(
-			clip, sel_registerName("scrollPoint:"),
+			clip, sel_registerName("setBoundsOrigin:"),
 			((CGPoint(*)(double, double))CGPointMake)(0, 0));
+		((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("reflectScrolledClipView:"), clip);
 		```
 		```
 		#arch: c

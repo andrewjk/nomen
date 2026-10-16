@@ -2,12 +2,19 @@
 
 ## Todo
 
-A GUI app with a todo list. The list is unbounded: each todo creates its
-own checkbox when added (Add button), and right-clicking a todo deletes
-it — the grid node is removed and the control is freed by moving it into
-a nested block, whose closing brace runs the checkbox's `#destroy`. The
-input field's hint text is a real placeholder (`TextBox.set_placeholder`),
-so the field reads empty until the user types.
+A GUI app with a todo list. The list is unbounded and SCROLLS: the todos
+live on a `Scrollable`'s document view in a vertical root whose middle row
+grows to fill the leftover height, so however many todos are added the input
+row stays pinned at the bottom. Each relayout measures the todo stack
+unbounded, sizes the document view to it, and lays the stack out into that
+height (the Scrollable design note in GUI.md); adds re-anchor to the bottom
+so the newest todo is visible. Each todo creates its own checkbox when added
+(Add button), and right-clicking a todo deletes it — the click is translated
+into document coordinates with `content_click` first, then the grid node is
+removed and the control is freed by moving it into a nested block, whose
+closing brace runs the checkbox's `#destroy`. The input field's hint text is
+a real placeholder (`TextBox.set_placeholder`), so the field reads empty
+until the user types.
 
 ## Async
 
