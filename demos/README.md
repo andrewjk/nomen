@@ -43,4 +43,6 @@ right-click target button — picks surface through the edge-triggered
 Toolbar's three labeled buttons (created before the first layout, since
 the toolbar shrinks the contentView). A SplitView section lays a label
 into each of two draggable panes; an OutlineView bridges a small tree
-(sources/demos), with its selected row polled too.
+(sources/demos), with its selected row polled too. A Table section fills a
+3-column grid (headers + rows through the view-based reusable cells), with
+the selected row polled alongside.
