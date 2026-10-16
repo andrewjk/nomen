@@ -1,0 +1,57 @@
+/**
+ * A one-time-code field — five SecureFields composed
+ *
+ * PURE COMPOSITION (GUI_PLAN Tier 3 "reachable earlier"): no new native
+ * control, no drawing — five single-character SecureFields wired in a row
+ * into the caller's grid. `code` concatenates whatever the five fields
+ * hold (incomplete codes read as-is — no per-field auto-advance in v1;
+ * fields are hit-tested through their handles like every control's).
+ **/
+pub mv struct OtpInput {
+	var SecureField f0
+	var SecureField f1
+	var SecureField f2
+	var SecureField f3
+	var SecureField f4
+
+	pub func #init = (self, Window window) {
+		// Construct into locals, then move into the fields (see the
+		// NumberInput note on nested ctor staging).
+		var a = SecureField(window)
+		self.f0 = mv a
+		var b = SecureField(window)
+		self.f1 = mv b
+		var c = SecureField(window)
+		self.f2 = mv c
+		var d = SecureField(window)
+		self.f3 = mv d
+		var e = SecureField(window)
+		self.f4 = mv e
+	}
+
+	// Wire the five fields into the caller's grid under `parent`: an hstack
+	// of fixed-width boxes.
+	pub func add_to = (ref self, ref Container grid, int parent, int span) {
+		var int hs = grid.add_hstack(parent, 8, span)
+		grid.add_to(hs, self.f0.handle, 36, 28, 0, 1)
+		grid.add_to(hs, self.f1.handle, 36, 28, 0, 1)
+		grid.add_to(hs, self.f2.handle, 36, 28, 0, 1)
+		grid.add_to(hs, self.f3.handle, 36, 28, 0, 1)
+		grid.add_to(hs, self.f4.handle, 36, 28, 0, 1)
+	}
+
+	// The concatenated contents of the five fields, in order.
+	pub func code = (self, out string) {
+		return self.f0.get_text() + self.f1.get_text() + self.f2.get_text()
+		+self.f3.get_text() + self.f4.get_text()
+	}
+
+	// Empty every field.
+	pub func clear = (ref self) {
+		self.f0.set_text("")
+		self.f1.set_text("")
+		self.f2.set_text("")
+		self.f3.set_text("")
+		self.f4.set_text("")
+	}
+}
