@@ -1062,3 +1062,55 @@ pub func main = (Init init) {
 `;
 	await build_and_check_output(input, "float_stale_d0_cast", "independent\np=100\n", true);
 });
+
+// A float field DEFAULT (`var float v = 0.0`) emitted `adr x1, 0.0` — the
+// default chain had no float branch, so the assembler saw the literal as an
+// operand. Floats ride x registers as BITS on this backend, so the fix pools
+// a `.double` entry (via function_data) and loads the bits. The auto ctor
+// also never set function_return_label, so pooled literals landed INLINE in
+// the instruction stream — ctor function_data now flushes after the ret.
+test("float field default materializes through a .double pool entry", async () => {
+	const input = `
+import System
+
+pub mv struct Hold {
+	var float v = 2.5
+	pub func get = (self, out float) {
+		return self.v
+	}
+}
+
+pub func main = (Init init) {
+	var h = Hold()
+	Console.write_line("v=\\{h.get()}")
+}
+`;
+	await build_and_check_output(input, "float_field_default", "v=2.500000\n", true);
+});
+
+// A float PARAM on an mv-struct method used to look broken — the failures
+// were stale binaries: the float-default bug blocked the rebuild, so an old
+// binary replayed. With the default bug fixed, a composite method takes a
+// float, stores it, and reads it back correctly on both backends.
+test("float param round-trips on an mv-struct method", async () => {
+	const input = `
+import System
+
+pub mv struct Hold {
+	var float v = 0.0
+	pub func set = (ref self, float x) {
+		self.v = x
+	}
+	pub func get = (self, out float) {
+		return self.v
+	}
+}
+
+pub func main = (Init init) {
+	var h = Hold()
+	h.set(1.25)
+	Console.write_line("got=\\{h.get()}")
+}
+`;
+	await build_and_check_output(input, "float_param_method", "got=1.250000\n", true);
+});

@@ -1008,6 +1008,18 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 					emit_asm(status, `mov x1, #0\n`);
 				} else if (/^(\+|-)*\d+$/.test(val)) {
 					emit_asm(status, `ldr x1, =${val}\n`);
+				} else if (/^(\+|-)*\d+\.\d+$/.test(val)) {
+					// A float literal default: a .double pool entry loaded as BITS
+					// (floats ride x registers as bit patterns on this backend).
+					const label = `_fdefault_${func_name}_${field.name}`;
+					const data = `${label}: .double ${val}\n.p2align 3\n`;
+					// Always pool via function_data — the ctor flushes it after its
+					// ret (the auto ctor never sets function_return_label, so an
+					// inline emit would land .double bytes IN the instruction
+					// stream).
+					status.function_data = (status.function_data ?? "") + data;
+					emit_asm(status, `adr x1, ${label}\n`);
+					emit_asm(status, `ldr x1, [x1]\n`);
 				} else if (val.startsWith('"')) {
 					const label = `_str_${func_name}_${field.name}`;
 					status.strings!.set(label, val);
@@ -1196,6 +1208,14 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 	emit_asm(status, `ldr x19, [sp], #16\n`);
 	emit_asm(status, `ldp x29, x30, [sp], #16\n`);
 	emit_asm(status, `ret\n`);
+
+	// Field defaults may have pooled .double literals — flush them into the
+	// dead zone after the ret (build_function_node's own flush never runs
+	// for constructors; these are built outside it).
+	if (status.function_data) {
+		emit_asm(status, status.function_data);
+		status.function_data = undefined;
+	}
 
 	status.stack_size = old_stack_size;
 	status.stack_offsets = old_stack_offsets;
@@ -1535,6 +1555,18 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 					emit_asm(status, `mov x1, #0\n`);
 				} else if (/^(\+|-)*\d+$/.test(val)) {
 					emit_asm(status, `ldr x1, =${val}\n`);
+				} else if (/^(\+|-)*\d+\.\d+$/.test(val)) {
+					// A float literal default: a .double pool entry loaded as BITS
+					// (floats ride x registers as bit patterns on this backend).
+					const label = `_fdefault_${func_name}_${field.name}`;
+					const data = `${label}: .double ${val}\n.p2align 3\n`;
+					// Always pool via function_data — the ctor flushes it after its
+					// ret (the auto ctor never sets function_return_label, so an
+					// inline emit would land .double bytes IN the instruction
+					// stream).
+					status.function_data = (status.function_data ?? "") + data;
+					emit_asm(status, `adr x1, ${label}\n`);
+					emit_asm(status, `ldr x1, [x1]\n`);
 				} else if (val.startsWith('"')) {
 					const label = `_str_${func_name}_${field.name}`;
 					status.strings!.set(label, val);
@@ -1759,6 +1791,14 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 	emit_asm(status, `ldr x19, [sp], #16\n`);
 	emit_asm(status, `ldp x29, x30, [sp], #16\n`);
 	emit_asm(status, `ret\n`);
+
+	// Field defaults may have pooled .double literals — flush them into the
+	// dead zone after the ret (build_function_node's own flush never runs
+	// for constructors; these are built outside it).
+	if (status.function_data) {
+		emit_asm(status, status.function_data);
+		status.function_data = undefined;
+	}
 
 	status.scoped_declarations = old_scoped_declarations;
 	status.heap_strings = old_heap_strings;
