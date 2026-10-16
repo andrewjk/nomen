@@ -67,3 +67,47 @@ release ships the new rules, `nomen format` cannot be run across the repo
 without a whole-repo style churn commit — pick one: either a dedicated
 "Style: reformat System library" commit or hold the in-source changes until
 release.
+
+## aarch64: more than 7 interpolations in one string
+
+A single string with 8+ `\{expr}` placeholders mis-lowers on aarch64: the
+pattern lands in the argument spill block instead of x0/x1, so every
+rendered argument shifts by one and the oversized call corrupts (SIGBUS /
+garbage). Seven is fine, and the C backend renders any arity correctly.
+
+    const s1 = "one"
+    // ... s2..s8
+    Console.write_line("\{s1}\{s2}\{s3}\{s4}\{s5}\{s6}\{s7}")        // ok
+    Console.write_line("\{s1}\{s2}\{s3}\{s4}\{s5}\{s6}\{s7}\{s8}")   // crash
+
+The runtime pre-emits `_string_interpolate_1..7` (see build_root_node's
+split-TU comment), so staying at 7 is also the documented contract; the
+gallery's status line concatenates several <=7 parts. Worth fixing properly:
+the emit path for the pattern argument in a many-argument call.
+
+## aarch64: functions with more than 8 parameters read garbage
+
+The callee mis-reads parameters past the register slots (and, in a
+first-cut repro, even register-resident `ref` params printed their
+ADDRESSES instead of the pointees): a function with 11 `ref int` params
+returns values like `6099774480` for param 1. An 8-or-9-`ref`-param
+variant crashed outright. Calls with <=8 params are fine. This is what
+took the gallery down once its status helper grew past 8 params; the
+helper is back to its 4-param shape. Needs the callee-side spill/read
+audit for both `ref` and fat-string params past slot 8.
+
+## Conditional `mv` assignment suppresses the scope-exit free (leak)
+
+    while true {
+        const string polled = build_status()      // fresh heap string
+        if polled != prev {
+            prev = mv polled                      // mv only on this branch
+        }
+    }
+
+The static moved-set marks `polled` as moved for the WHOLE body, so the
+not-taken branch never frees it: every iteration leaks one string (the
+gallery's status poll leaked ~8 MB/s at loop speed; the same shape without
+the conditional `mv` is flat). Workaround in the gallery: `prev =
+polled.copy()`. The proper fix is the runtime ownership-flag treatment the
+compiler already uses for other conditional moves.

@@ -197,6 +197,14 @@ pub mv struct Window: Control {
 		```
 		#arch: c
 		#platform: macos
+		// A manual event loop has no autorelease pool of its own: AppKit
+		// autoreleases objects on every pump (events, strings, cell caches)
+		// and without a pool they accumulate for the process lifetime — the
+		// loop leaked tens of MB per second and a busy window eventually
+		// died. One pool per pump; the returned had_click is a plain int.
+		id pool = ((id(*)(id, SEL))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSAutoreleasePool"), sel_registerName("alloc")),
+			sel_registerName("init"));
 		id app = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
 		id distant_past = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSDate"), sel_registerName("distantPast"));
 		id default_mode = ((id(*)(id, SEL, const char*))objc_msgSend)(
@@ -230,11 +238,21 @@ pub mv struct Window: Control {
 		// Process run loop sources (Apple Events, timers) so that dock Quit
 		// and other system interactions work without NSApplication.run().
 		CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0, 1);
-		return had_click;
+		int result = had_click;
+		((void(*)(id, SEL))objc_msgSend)(pool, sel_registerName("drain"));
+		return result;
 		```
 		```
 		#arch: aarch64_use_c
 		#platform: macos
+		// A manual event loop has no autorelease pool of its own: AppKit
+		// autoreleases objects on every pump (events, strings, cell caches)
+		// and without a pool they accumulate for the process lifetime — the
+		// loop leaked tens of MB per second and a busy window eventually
+		// died. One pool per pump; the returned had_click is a plain int.
+		id pool = ((id(*)(id, SEL))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSAutoreleasePool"), sel_registerName("alloc")),
+			sel_registerName("init"));
 		id app = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
 		id distant_past = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSDate"), sel_registerName("distantPast"));
 		id default_mode = ((id(*)(id, SEL, const char*))objc_msgSend)(
@@ -268,7 +286,9 @@ pub mv struct Window: Control {
 		// Process run loop sources (Apple Events, timers) so that dock Quit
 		// and other system interactions work without NSApplication.run().
 		CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0, 1);
-		return had_click;
+		int result = had_click;
+		((void(*)(id, SEL))objc_msgSend)(pool, sel_registerName("drain"));
+		return result;
 		```
 		```
 		#arch: c
