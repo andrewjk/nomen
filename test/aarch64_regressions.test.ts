@@ -1039,3 +1039,26 @@ pub func main = (Init init) {
 `;
 	await build_and_check_output(input, "generic_displaced_destroy_nested_scope", "done\n", true);
 });
+
+// A float value rides x0 as BITS (the convention unary minus and int→float
+// materialize with `fmov d0, x0`). The float→int CAST converted the raw d0
+// instead — fine when d0 happened to still hold the double, but any call
+// between the value's production and the cast (here, the interpolated
+// label's own write) left d0 holding something else: a stored 100.0 cast to
+// int printed 0. The cast now materializes the bits first.
+test("stored float converted to int after an intervening call", async () => {
+	const input = `
+import System
+
+func pos = (out float) {
+	return 100.0
+}
+
+pub func main = (Init init) {
+	var float p = pos()
+	Console.write_line("independent")
+	Console.write_line("p=\\{p as int}")
+}
+`;
+	await build_and_check_output(input, "float_stale_d0_cast", "independent\np=100\n", true);
+});

@@ -41,6 +41,12 @@ export default function build_cast_node(node: CastNode, status: BuildStatus) {
 	const is_to_float = is_float_type(to);
 
 	if (is_from_float && !is_to_float) {
+		// The operand rides x0 as BITS (the float value convention — unary
+		// minus and int→float materialize the same way). Convert the BITS,
+		// not the raw d0: any call between the value's production and this
+		// cast leaves d0 holding something else (a stored float's `as int`
+		// printed 0 for 100.0).
+		emit_asm(status, `fmov d0, x0\n`);
 		emit_asm(status, `fcvtzs x0, d0\n`);
 		emit_asm(status, `fmov d0, x0\n`);
 		return;

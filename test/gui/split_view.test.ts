@@ -37,9 +37,8 @@ pub func main = () {
 	grid_0.layout(left)
 	grid_1.layout(right)
 	split.set_position(100.0, 0)
-	// "as int" converts inline (a stored-then-converted float hits an
-	// aarch64 codegen bug — see FOLLOWUP.md, stale d0 on float reload).
-	Console.write("count=\\{split.count()} pos=\\{split.position() as int}\\n")
+	const float pos = split.position()
+	Console.write("count=\\{split.count()} pos=\\{pos as int}\\n")
 }
 `;
 		const parsed = parse(input, system);

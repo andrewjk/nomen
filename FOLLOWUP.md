@@ -54,23 +54,6 @@ Untested on this machine (iOS blocks never compile on a macOS host); noticed
 while writing SecureField's parallel blocks. One-character fix whenever iOS
 builds get exercised.
 
-## aarch64: stale d0 when a stored float is converted later
-
-The aarch64 backend returns `float` values as BITS in an integer register
-(`fmov x0, d0` after the call — see `SplitView_position` in any generated
-`main.s`). When the result is stored to a variable and only later converted
-with `as int`, the use site emits `fcvtzs x0, d0` — reading the *raw double
-register*, which intervening calls have long since clobbered — instead of
-first materializing the stored bits (`fmov d0, x0`). Converting INLINE
-(`\{c.position() as int}` at the call site) works, because d0 still holds
-the return value there.
-
-Surfaced by `core/System/Controls/SplitView.nm` (`position()` — a stored
-`const float pos = split.position()` then `\{pos as int}` printed 0 while
-the C side computed 100.0). The gui_split_view test works around it with
-the inline form. Proper fix: in the aarch64 codegen, a float value loaded
-from a variable slot must `fmov d0, x0` before any FP use (`as int`, float
-arithmetic, float args).
 
 ## Formatter drift: in-source rules vs the published 0.7.1 release
 
