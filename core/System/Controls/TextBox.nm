@@ -236,7 +236,7 @@ pub mv struct TextBox : Control {
 		#arch: aarch64_use_c
 		#platform: ios
 		id str = ((id(*)(id, SEL))objc_msgSend)(
-			(id)self->handle, sel_registerName("text.ptr"));
+			(id)self->handle, sel_registerName("text"));
 		const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(
 			str, sel_registerName("UTF8String"));
 		return (nomen_string){ strdup(cstr), (long)strlen(cstr) };

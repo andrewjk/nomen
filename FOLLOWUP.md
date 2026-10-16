@@ -607,15 +607,6 @@ view (subview, pinned to the top edge via autoresizing mask, hidden through a
 runtime-built `textDidChange:` delegate — same pattern as Container's
 NomenResizeDelegate), plus an explicit visibility update in `set_text`.
 
-## TextBox iOS `get_text` selector typo
-
-`core/System/Controls/TextBox.nm`, the `get_text` `#arch: aarch64_use_c` /
-`#platform: ios` block sends `sel_registerName("text.ptr")` — a typo'd
-selector (should be `"text"`, as the sibling `#arch: c` iOS block does).
-Untested on this machine (iOS blocks never compile on a macOS host); noticed
-while writing SecureField's parallel blocks. One-character fix whenever iOS
-builds get exercised.
-
 ## Formatter drift: in-source rules vs the published 0.7.1 release
 
 Running the locally-built CLI's `nomen format` over `core/System` rewrites
