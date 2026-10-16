@@ -110,7 +110,13 @@ message/questionnaire (chat composition), theme/root (global state).
 Some Tier 3 items become reachable earlier as **pure Nomen composition** over
 Tier 1 controls (no new natives, no drawing): number-input = TextBox + Stepper;
 form = GroupBox + rows of Label+control; otp-input = five SecureFields;
-pagination = Button row. Worth doing opportunistically once Tier 1 lands.
+pagination = Button row. Done — `NumberInput`, `Form`, `OtpInput`, and
+`Pagination` in `core/System/Controls/` (gallery: the Composites section).
+They compose through the caller's grid — each `add_to(ref grid, parent, span)`
+wires an hstack/vstack/zstack subtree, so one `grid.layout(win)` pass lays
+everything out — and their `#init`s construct fields into locals before
+moving them in (see FOLLOWUP.md for the aarch64 staging bugs that pattern
+avoids).
 
 ## Suggested execution order
 

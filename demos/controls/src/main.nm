@@ -228,6 +228,22 @@ pub func main = () {
 	table.set_cell(2, 2, "0.30")
 	table.select_row(1)
 
+	var comp_title = Text(win)
+	comp_title.set_text("Composites")
+	comp_title.set_bold(true)
+	// Tier 3 compositions: pure Nomen over the controls above, wired into
+	// this grid as rows (no new natives).
+	var num = NumberInput(win)
+	num.set_range(0, 1000, 50)
+	num.set_value(250)
+	var otp = OtpInput(win)
+	var pag = Pagination(win, 3)
+	var signin = Form(win, "Sign in")
+	const form_name = TextBox(win)
+	form_name.set_placeholder("user")
+	const form_ok = CheckBox(win)
+	form_ok.set_title("Remember me")
+
 	var status = Text(win)
 	status.set_text("")
 
@@ -330,6 +346,13 @@ pub func main = () {
 	grid.add(outline.handle, 0, 110, 2)
 	grid.add(table_title.handle, 0, 22, 2)
 	grid.add(table.handle, 0, 110, 2)
+	grid.add(comp_title.handle, 0, 22, 2)
+	num.add_to(ref grid, grid.root_index(), 2)
+	otp.add_to(ref grid, grid.root_index(), 2)
+	pag.add_to(ref grid, grid.root_index(), 2)
+	signin.add_to(ref grid, grid.root_index(), 2)
+	signin.add_row(ref grid, "Name", form_name.handle, 24)
+	signin.add_row(ref grid, "Keep me in", form_ok.handle, 24)
 	grid.add(status.handle, 0, 40, 2)
 
 	grid.layout(win)
@@ -357,7 +380,7 @@ pub func main = () {
 	// changes ("" forces the next poll to refresh after a transient
 	// message like the alert result).
 	var prev_status = ""
-	const string status_text = poll_status(ref slide, ref step, ref color, ref when, ref scroll, ref tabs, ref list, ref combo, ref outline, ref table)
+	const string status_text = poll_status(ref slide, ref step, ref color, ref when, ref scroll, ref tabs, ref list, ref combo, ref outline, ref table, ref num, ref pag)
 	status.set_text(status_text)
 	prev_status = mv status_text
 
@@ -398,7 +421,7 @@ pub func main = () {
 			status.set_text("toolbar: item \{bar_pick}")
 			prev_status = ""
 		}
-		const string polled = poll_status(ref slide, ref step, ref color, ref when, ref scroll, ref tabs, ref list, ref combo, ref outline, ref table)
+		const string polled = poll_status(ref slide, ref step, ref color, ref when, ref scroll, ref tabs, ref list, ref combo, ref outline, ref table, ref num, ref pag)
 		if polled != prev_status {
 			status.set_text(polled)
 			prev_status = mv polled
@@ -440,6 +463,18 @@ pub func main = () {
 					prev_status = ""
 				}
 			}
+			// Pagination: hit-test the row's buttons and drive the page state.
+			if grid.contains(pag.prev_handle(), cx, cy) {
+				pag.prev()
+			}
+			if grid.contains(pag.next_handle(), cx, cy) {
+				pag.next()
+			}
+			for i of 0 .. 3 {
+				if grid.contains(pag.page_handle(i), cx, cy) {
+					pag.select(i)
+				}
+			}
 		}
 	}
 }
@@ -450,6 +485,8 @@ pub func main = () {
 // offset and the selected tab/list/combo/tree/table row are polled the
 // same way so scrolling, page switches, and selection show up in the
 // status line.
+// offset and the selected tab/list/combo/tree/table row are polled the
+// same way, alongside the composite states (number value, selected page).
 func poll_status = (
 	ref Slider slide,
 	ref Stepper step,
@@ -461,6 +498,8 @@ func poll_status = (
 	ref ComboBox combo,
 	ref OutlineView outline,
 	ref Table table,
+	ref NumberInput num,
+	ref Pagination pag,
 	out string
 ) {
 	const int sv = slide.value() as int
@@ -473,7 +512,9 @@ func poll_status = (
 	const int csel = combo.selected_index()
 	const int osel = outline.selected_row()
 	const int tsel = table.selected_row()
-	return "slider \{sv}  stepper \{nv}  rgb \{c.red},\{c.green},\{c.blue}  date \{secs}  scroll y=\{so}  tab \{tab}  list \{sel}  combo \{csel}  tree \{osel}  table \{tsel}"
+	const int nv2 = num.value()
+	const int pg = pag.page()
+	return "slider \{sv}  stepper \{nv}  rgb \{c.red},\{c.green},\{c.blue}  date \{secs}  scroll y=\{so}  tab \{tab}  list \{sel}  combo \{csel}  tree \{osel}  table \{tsel}  num \{nv2}  page \{pg}"
 }
 
 // Measure the scroll content with unbounded height, size the document view

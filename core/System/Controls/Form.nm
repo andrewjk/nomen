@@ -1,0 +1,77 @@
+/**
+ * A labeled group of rows — GroupBox + Label rows composed
+ *
+ * PURE COMPOSITION (GUI_PLAN Tier 3 "reachable earlier"): no new native
+ * control, no drawing — a GroupBox draws the framed, titled panel while a
+ * padded vstack of label+control rows lays out ON TOP of it: both live in
+ * a ZStack node of the caller's grid (same rect; the later child paints on
+ * top), so the whole assembly lays out in the caller's single
+ * `grid.layout(win)` pass.
+ *
+ * Rows are added BEFORE the first layout: `add_row` pairs one of four
+ * pre-created labels with a control handle the caller owns (up to 4 rows).
+ * Hit-test the row controls through their own handles, as everywhere else.
+ **/
+pub mv struct Form {
+	var GroupBox box
+	var Text l0
+	var Text l1
+	var Text l2
+	var Text l3
+	var rows = 0
+	var int rows_stack = -1
+
+	pub func #init = (self, Window window, string title) {
+		// Construct into locals, then move into the fields (see the
+		// NumberInput note on nested ctor staging).
+		var b = GroupBox(window, title)
+		self.box = mv b
+		var a = Text(window)
+		self.l0 = mv a
+		var c = Text(window)
+		self.l1 = mv c
+		var d = Text(window)
+		self.l2 = mv d
+		var e = Text(window)
+		self.l3 = mv e
+	}
+
+	// Wire the assembly into the caller's grid under `parent`: the box
+	// fills the rect, the rows sit on top of it inset by the padding (which
+	// also clears the box's built-in title strip).
+	pub func add_to = (ref self, ref Container grid, int parent, int span) {
+		var int zs = grid.add_zstack(parent, span)
+		grid.add_to(zs, self.box.handle, 0, 0, 1, 1)
+		var int blk = grid.add_block_to(zs, 24, 1)
+		self.rows_stack = grid.add_vstack(blk, 8, 1)
+	}
+
+	// Append a row: `label` on the left (intrinsic width), the caller's
+	// control filling the rest at `control_h` tall. Up to 4 rows.
+	pub func add_row = (ref self, ref Container grid, string label, uint64 control, int control_h) {
+		var uint64 label_handle = 0
+		if self.rows == 0 {
+			self.l0.set_text(label)
+			label_handle = self.l0.handle
+		}
+		if self.rows == 1 {
+			self.l1.set_text(label)
+			label_handle = self.l1.handle
+		}
+		if self.rows == 2 {
+			self.l2.set_text(label)
+			label_handle = self.l2.handle
+		}
+		if self.rows == 3 {
+			self.l3.set_text(label)
+			label_handle = self.l3.handle
+		}
+		if self.rows > 3 {
+			return
+		}
+		var int row = grid.add_hstack(self.rows_stack, 8, 1)
+		grid.add_to_intrinsic(row, label_handle, 1)
+		grid.add_to(row, control, 0, control_h, 1, 1)
+		self.rows += 1
+	}
+}
