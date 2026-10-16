@@ -1009,3 +1009,33 @@ pub func main = (Init init) {
 `;
 	await build_and_check_output(input, "heap_string_conditional_reassign", "done\n", true);
 });
+
+// A generic-typed local (`Task<string>`) reassigned inside a NESTED scope
+// (an `if` in `while`) displaced-destroys the old value through
+// emit_destroy_for_decl — but the inner scope's swapped declaration frame
+// hides the declaration, and the fallback dropped the type_args: the call
+// emitted the bare `Task_destroy`, which nothing defines (link failure).
+// The fallback now keeps the full declared Type, so the mangled
+// `Task_string_destroy` is emitted.
+test("generic-typed reassignment in a nested scope mangles the displaced destroy", async () => {
+	const input = `
+import System
+
+func work = (out string) {
+	return "x"
+}
+
+pub func main = (Init init) {
+	var Task<string> t = Task<string>()
+	var bool go = true
+	while go {
+		if go {
+			t = Fiber(work()).start()
+			go = false
+		}
+	}
+	Console.write_line("done")
+}
+`;
+	await build_and_check_output(input, "generic_displaced_destroy_nested_scope", "done\n", true);
+});

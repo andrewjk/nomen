@@ -1493,7 +1493,15 @@ export default function build_assignment_node(
 			// find_var_size) — fall back to the checker's persistent variable
 			// types so the displaced value is still destroyed (otherwise a value
 			// struct with mv fields leaks its buffer on every reassignment).
-			const lhs_type_name = lhs_decl?.type?.name ?? status.variable_types?.get(name)?.name ?? "";
+			// `scoped_declarations` is swapped per scope frame: an assignment
+			// inside a nested scope (`if` in `while`) doesn't see the var's
+			// top-level declaration, so fall back to `variable_types` — which
+			// keeps the FULL Type (type_args included). Without the args the
+			// displaced destroy of a generic-typed var emits the bare
+			// `<Struct>_destroy` (e.g. `Task_destroy`) that nothing defines.
+			const lhs_decl_type =
+				lhs_decl?.type ?? status.variable_types?.get(name);
+			const lhs_type_name = lhs_decl_type?.name ?? "";
 			const needs_pre_destroy =
 				rhs_is_struct &&
 				!rhs_struct &&
@@ -1506,8 +1514,8 @@ export default function build_assignment_node(
 					name,
 					lhs_type_name,
 					undefined,
-					lhs_decl?.type?.type_args,
-					lhs_decl?.type?.is_nullable,
+					lhs_decl_type?.type_args,
+					lhs_decl_type?.is_nullable,
 				);
 			}
 			get_source_address(node.right_value, status, nir_rhs);
