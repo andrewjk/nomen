@@ -68,17 +68,6 @@ without a whole-repo style churn commit — pick one: either a dedicated
 "Style: reformat System library" commit or hold the in-source changes until
 release.
 
-## aarch64: functions with more than 8 parameters read garbage
-
-The callee mis-reads parameters past the register slots (and, in a
-first-cut repro, even register-resident `ref` params printed their
-ADDRESSES instead of the pointees): a function with 11 `ref int` params
-returns values like `6099774480` for param 1. An 8-or-9-`ref`-param
-variant crashed outright. Calls with <=8 params are fine. This is what
-took the gallery down once its status helper grew past 8 params; the
-helper is back to its 4-param shape. Needs the callee-side spill/read
-audit for both `ref` and fat-string params past slot 8.
-
 ## Conditional `mv` assignment suppresses the scope-exit free (leak)
 
     while true {

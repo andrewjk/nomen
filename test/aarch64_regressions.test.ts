@@ -1162,3 +1162,68 @@ Console.write_line("\\{s1} \\{s2} \\{s3} \\{s4} \\{s5} \\{s6} \\{s7} \\{s8} \\{s
 `;
 	await build_and_check_output(input, "interp_twelve_args", "a b c d e f g h i j k l\n");
 });
+
+// A `ref` scalar param used as a METHOD receiver (every `\{refparam}` in an
+// interpolation lowers to `param.to_string()`) handed the method the caller
+// variable's ADDRESS: the receiver prep dereferenced the ref slot once
+// (yielding &caller-storage) and the simple-target value load was gated off
+// for ref receivers — so int_to_string formatted the address and every
+// interpolation of a `ref int` printed a huge garbage number that looked
+// like a callee-side stack-arg mis-read (FOLLOWUP.md "aarch64: functions
+// with more than 8 parameters read garbage"). The value load now applies to
+// non-string ref receivers; struct/trait/class receivers keep passing
+// addresses and `ref self` methods keep receiving &storage.
+test("ref scalar params read as values through method calls", async () => {
+	const input = `
+import System
+
+func describe = (ref int a, ref bool flag, ref float ratio, out string) {
+  return "a=\\{a} flag=\\{flag} ratio=\\{ratio}"
+}
+
+pub func main = () {
+  var a = 41
+  var flag = true
+  var float ratio = 2.5
+  Console.write_line(describe(ref a, ref flag, ref ratio))
+}
+`;
+	await build_and_check_output(
+		input,
+		"ref_scalar_receiver_value",
+		"a=41 flag=true ratio=2.500000\n",
+		true,
+	);
+});
+
+// A `ref` STRUCT param's methods still receive the instance by address (the
+// receiver deref stops at &caller-storage) and mutations through them reach
+// the caller's variable — guarding the fix above against over-dereferencing
+// non-simple receivers.
+test("ref struct param receiver stays by address", async () => {
+	const input = `
+import System
+
+mv struct Acc {
+  var int n = 0
+  pub func bump = (ref self) {
+    self.n = self.n + 1
+  }
+  pub func get = (self, out int) {
+    return self.n
+  }
+}
+
+func describe = (ref Acc a, out string) {
+  a.bump()
+  return "n=\\{a.get()} raw=\\{a.n}"
+}
+
+pub func main = () {
+  var Acc a = Acc()
+  Console.write_line(describe(ref a))
+  Console.write_line("\\{a.n}")
+}
+`;
+	await build_and_check_output(input, "ref_struct_receiver_address", "n=1 raw=1\n1\n", true);
+});

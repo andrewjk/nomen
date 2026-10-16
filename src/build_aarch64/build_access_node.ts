@@ -2926,10 +2926,16 @@ function build_access_method(
 					target_is_simple &&
 					!target_type.is_array &&
 					(target_type.name !== "string" || has_stack_offset) &&
-					!is_local_ref_var(name, status) &&
 					// A `ref self` method receives &slot: keep the address
 					// emit_var_address produced instead of loading the value.
-					!method_self_is_ref
+					!method_self_is_ref &&
+					// A ref-scalar receiver resolved through emit_deref_var_address
+					// above: x0 holds &caller-storage. A method that does not take
+					// `ref self` wants the VALUE — one more dereference. (String
+					// receivers rebuild the fat (ptr, len) pair elsewhere; struct /
+					// trait / class receivers pass addresses and never reach this
+					// simple-type branch.)
+					(!is_local_ref_var(name, status) || target_type.name !== "string")
 				) {
 					const size = aarch64_size(target_type.name);
 					const signed = is_signed_type(target_type.name);

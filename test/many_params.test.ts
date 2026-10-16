@@ -178,4 +178,70 @@ Console.write("\\{v.fixed_total}|\\{v.var_count}|\\{v.var_first}")
 `;
 		await build_and_check_output(input, "many_params_variadic_ctor_overflow", "28|3|100");
 	});
+
+	// The FOLLOWUP.md repro: 11 `ref int` params — 3 overflow slots. The
+	// callee prologue must spill each overflow ref slot (the &caller-storage
+	// pointer) from the caller's outgoing stack area into its local slot, and
+	// reads AND writes through every param must hit the caller's variable —
+	// including when a read feeds a method call (interpolation's to_string),
+	// which used to format the caller variable's ADDRESS instead of its
+	// value.
+	test("11 ref int params: overflow spill plus reads and writes", async () => {
+		const input = `
+import System
+
+func wide = (ref int a, ref int b, ref int c, ref int d, ref int e, ref int f, ref int g, ref int h, ref int i, ref int j, ref int k, out string) {
+  a = a + 1
+  k = k + a
+  return "\\{a} \\{b} \\{c} \\{d} \\{e} \\{f} \\{g} \\{h} \\{i} \\{j} \\{k}"
+}
+
+pub func main = () {
+  var a = 100
+  var b = 100
+  var c = 100
+  var d = 100
+  var e = 100
+  var f = 100
+  var g = 100
+  var h = 100
+  var i = 100
+  var j = 100
+  var k = 100
+  Console.write_line(wide(ref a, ref b, ref c, ref d, ref e, ref f, ref g, ref h, ref i, ref j, ref k))
+}
+`;
+		// a = 101, k = 100 + 101 = 201; the rest stay 100. Both written
+		// params (a: register slot 0, k: overflow slot 10) round-trip.
+		await build_and_check_output(
+			input,
+			"many_params_eleven_refs",
+			"101 100 100 100 100 100 100 100 100 100 201\n",
+			true,
+		);
+	});
+
+	// Fat `string` params consume TWO AAPCS64 slots each (ptr, len pair).
+	// With 4 ints + 5 strings (14 slots), the trailing pairs land past x7 —
+	// the prologue must spill BOTH halves of each overflow pair, including a
+	// pair that straddles the register/overflow boundary.
+	test("fat string pairs past slot 8", async () => {
+		const input = `
+import System
+
+func join5 = (int a, string s1, int b, string s2, int c, string s3, int d, string s4, string s5, out string) {
+  return "\\{a} \\{s1} \\{b} \\{s2} \\{c} \\{s3} \\{d} \\{s4} \\{s5}"
+}
+
+pub func main = () {
+  Console.write_line(join5(1, "aa", 2, "bb", 3, "cc", 4, "dd", "ee"))
+}
+`;
+		await build_and_check_output(
+			input,
+			"many_params_fat_strings_overflow",
+			"1 aa 2 bb 3 cc 4 dd ee\n",
+			true,
+		);
+	});
 });
