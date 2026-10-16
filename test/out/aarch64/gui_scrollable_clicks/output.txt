@@ -1,0 +1,1 @@
+before_x=10 before_moved=true after=10,20

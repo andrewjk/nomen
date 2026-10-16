@@ -14,8 +14,10 @@
  * view stays unflipped, so the engine's y-flip against `content_height()`
  * (the document height) is the existing math — see the Scrollable design
  * note in GUI.md. Per relayout pass: measure the content grid unbounded,
- * `set_content_size`, then `content_grid.layout(content)`. iOS defers to
- * UIScrollView (TODO stubs; see GUI_PLAN Tier 2).
+ * `set_content_size`, then `content_grid.layout(content)`. `content_click`
+ * translates window-space clicks into document coordinates so content
+ * children can be hit-tested while scrolled. iOS defers to UIScrollView
+ * (TODO stubs; see GUI_PLAN Tier 2).
  **/
 pub mv struct Scrollable: Control {
 	var uint64 handle = 0
@@ -286,6 +288,38 @@ pub mv struct Scrollable: Control {
 		```
 	}
 
+	// Scroll so the BOTTOM of the document is visible (the unflipped document
+	// shows its bottom by default, so this restores the initial view after a
+	// `scroll_to_top`).
+	pub func scroll_to_bottom = (self) {
+		```
+		#arch: c
+		#platform: macos
+		id clip = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("contentView"));
+		((void(*)(id, SEL, CGPoint))objc_msgSend)(
+			clip, sel_registerName("scrollPoint:"),
+			((CGPoint(*)(double, double))CGPointMake)(0, 0));
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		id clip = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("contentView"));
+		((void(*)(id, SEL, CGPoint))objc_msgSend)(
+			clip, sel_registerName("scrollPoint:"),
+			((CGPoint(*)(double, double))CGPointMake)(0, 0));
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+	}
+
 	pub func set_hidden = (self, bool hidden) {
 		```
 		#arch: c
@@ -296,6 +330,18 @@ pub mv struct Scrollable: Control {
 		```
 		#arch: aarch64_use_c
 		#platform: macos
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+		```
+		```
+		#arch: c
+		#platform: ios
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
 		((void(*)(id, SEL, BOOL))objc_msgSend)(
 			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
 		```
@@ -386,4 +432,78 @@ pub mv struct Scrollable: Control {
 		/* TODO: iOS (see #init) */
 		```
 	}
+}
+
+// Translate a WINDOW-space click (top-left origin, as click_x/click_y
+// return) into the scroll view's DOCUMENT coordinates, so content children
+// can be hit-tested with the content grid's `contains` while scrolled. The
+// visible top-left of the document moves with the scroll position (and the
+// clip view's own origin), so a raw click is off by both. A free function
+// (not a method): a raw-block-backed method returning a tuple fails the
+// checker's destructuring — native_intrinsic's free-function shape works.
+pub func content_click = (Scrollable scroll, int cx, int cy, out [int, int]) {
+	```
+	#arch: c
+	#platform: macos
+	id clip = ((id(*)(id, SEL))objc_msgSend)((id)scroll->handle, sel_registerName("contentView"));
+	id win = ((id(*)(id, SEL))objc_msgSend)((id)scroll->handle, sel_registerName("window"));
+	id cv = ((id(*)(id, SEL))objc_msgSend)(win, sel_registerName("contentView"));
+	CGRect cv_frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
+	CGRect clip_bounds = ((CGRect(*)(id, SEL))objc_msgSend)(clip, sel_registerName("bounds"));
+	// The visible rect in the window's content view (bottom-left origin).
+	CGRect visible = ((CGRect(*)(id, SEL, CGRect, id))objc_msgSend)(
+		clip, sel_registerName("convertRect:toView:"), clip_bounds, cv);
+	id doc = ((id(*)(id, SEL))objc_msgSend)((id)scroll->handle, sel_registerName("documentView"));
+	CGRect doc_frame = ((CGRect(*)(id, SEL))objc_msgSend)(doc, sel_registerName("frame"));
+	int visible_top = (int)(cv_frame.size.height - (visible.origin.y + visible.size.height));
+	int offset = (int)(doc_frame.size.height - clip_bounds.size.height - clip_bounds.origin.y);
+	if (offset < 0) offset = 0;
+	struct _Tuple_int_int r;
+	r._0 = cx - (int)visible.origin.x + (int)clip_bounds.origin.x;
+	r._1 = cy - visible_top + offset;
+	return r;
+	```
+	```
+	#arch: aarch64_use_c
+	#platform: macos
+	id clip = ((id(*)(id, SEL))objc_msgSend)((id)scroll->handle, sel_registerName("contentView"));
+	id win = ((id(*)(id, SEL))objc_msgSend)((id)scroll->handle, sel_registerName("window"));
+	id cv = ((id(*)(id, SEL))objc_msgSend)(win, sel_registerName("contentView"));
+	CGRect cv_frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
+	CGRect clip_bounds = ((CGRect(*)(id, SEL))objc_msgSend)(clip, sel_registerName("bounds"));
+	// The visible rect in the window's content view (bottom-left origin).
+	CGRect visible = ((CGRect(*)(id, SEL, CGRect, id))objc_msgSend)(
+		clip, sel_registerName("convertRect:toView:"), clip_bounds, cv);
+	id doc = ((id(*)(id, SEL))objc_msgSend)((id)scroll->handle, sel_registerName("documentView"));
+	CGRect doc_frame = ((CGRect(*)(id, SEL))objc_msgSend)(doc, sel_registerName("frame"));
+	int visible_top = (int)(cv_frame.size.height - (visible.origin.y + visible.size.height));
+	int offset = (int)(doc_frame.size.height - clip_bounds.size.height - clip_bounds.origin.y);
+	if (offset < 0) offset = 0;
+	struct _Tuple_int_int r;
+	r._0 = cx - (int)visible.origin.x + (int)clip_bounds.origin.x;
+	r._1 = cy - visible_top + offset;
+	return r;
+	```
+	```
+	#arch: c
+	#platform: ios
+	/* TODO: iOS (see #init) */
+	{
+		struct _Tuple_int_int r;
+		r._0 = 0;
+		r._1 = 0;
+		return r;
+	}
+	```
+	```
+	#arch: aarch64_use_c
+	#platform: ios
+	/* TODO: iOS (see #init) */
+	{
+		struct _Tuple_int_int r;
+		r._0 = 0;
+		r._1 = 0;
+		return r;
+	}
+	```
 }

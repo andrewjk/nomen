@@ -90,4 +90,52 @@ pub func main = () {
 `;
 		expect(parse(input, system).errors).toEqual([]);
 	});
+
+	test("content_click translates window clicks into document coordinates", { timeout: 120000 }, async () => {
+		const input = `
+import System
+import System::Controls
+
+pub func main = () {
+	var win = Window("Scrollable clicks", 300, 200)
+	var scroll = Scrollable(win)
+	// 10 rows of 24 + 6px gaps (294 tall) in a 100-tall viewport, so the
+	// document can scroll; the scroll view sits at the layout origin
+	// (padding 0), so a click at (10, 20) is 20px below the visible top.
+	var content = scroll.content_window()
+	var grid = Grid(1, 6)
+	var int made = 0
+	while made < 10; made += 1 {
+		var row = Text(content)
+		row.set_text("Row")
+		grid.add(row.handle, 0, 24, 1)
+	}
+	var root = Grid(1, 6)
+	root.add(scroll.handle, 0, 100, 1)
+	root.layout(win)
+	var BoxConstraints bc = BoxConstraints()
+	bc.max_width = 300
+	const Size cs = grid.measure(bc)
+	scroll.set_content_size(cs.width, cs.height)
+	grid.layout(content)
+	// Before scroll_to_top the document shows its bottom: the same window
+	// click lands deeper into the content.
+	var [bx, by] = content_click(scroll, 10, 20)
+	const bool moved = by > 20
+	Console.write("before_x=\\{bx} before_moved=\\{moved} ")
+	scroll.scroll_to_top()
+	var [ax, ay] = content_click(scroll, 10, 20)
+	Console.write("after=\\{ax},\\{ay}\\n")
+}
+`;
+		const parsed = parse(input, system);
+		expect(parsed.errors).toEqual([]);
+		await build_and_check_output(
+			input,
+			"gui_scrollable_clicks",
+			"before_x=10 before_moved=true after=10,20",
+			true,
+			{ platform: "macos", audit: false },
+		);
+	});
 });
