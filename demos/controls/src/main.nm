@@ -380,7 +380,7 @@ pub func main = () {
 	// changes ("" forces the next poll to refresh after a transient
 	// message like the alert result).
 	var prev_status = ""
-	const string status_text = poll_status(ref slide, ref step, ref color, ref when, ref scroll, ref tabs, ref list, ref combo, ref outline, ref table, ref num, ref pag)
+	const string status_text = poll_status(ref slide, ref step, ref color, ref when)
 	status.set_text(status_text)
 	prev_status = mv status_text
 
@@ -421,10 +421,13 @@ pub func main = () {
 			status.set_text("toolbar: item \{bar_pick}")
 			prev_status = ""
 		}
-		const string polled = poll_status(ref slide, ref step, ref color, ref when, ref scroll, ref tabs, ref list, ref combo, ref outline, ref table, ref num, ref pag)
+		const string polled = poll_status(ref slide, ref step, ref color, ref when)
 		if polled != prev_status {
 			status.set_text(polled)
-			prev_status = mv polled
+			// A conditional `mv` out of `polled` would statically suppress
+			// its scope-exit free (the not-taken branch then leaks one string
+			// per frame — see FOLLOWUP.md), so copy instead.
+			prev_status = polled.copy()
 		}
 
 		if had_click == 1 {
@@ -492,29 +495,13 @@ func poll_status = (
 	ref Stepper step,
 	ref ColorPicker color,
 	ref DatePicker when,
-	ref Scrollable scroll,
-	ref Tabs tabs,
-	ref ListView list,
-	ref ComboBox combo,
-	ref OutlineView outline,
-	ref Table table,
-	ref NumberInput num,
-	ref Pagination pag,
 	out string
 ) {
 	const int sv = slide.value() as int
 	const int nv = step.value() as int
 	const Rgb c = color.rgb()
 	const int64 secs = when.time()
-	const int so = scroll.scroll_offset_y()
-	const int tab = tabs.selected_index()
-	const int sel = list.selected_row()
-	const int csel = combo.selected_index()
-	const int osel = outline.selected_row()
-	const int tsel = table.selected_row()
-	const int nv2 = num.value() as int
-	const int pg = pag.page()
-	return "slider \{sv}  stepper \{nv}  rgb \{c.red},\{c.green},\{c.blue}  date \{secs}  scroll y=\{so}  tab \{tab}  list \{sel}  combo \{csel}  tree \{osel}  table \{tsel}  num \{nv2}  page \{pg}"
+	return "slider \{sv}  stepper \{nv}  rgb \{c.red},\{c.green},\{c.blue}  date \{secs}"
 }
 
 // Measure the scroll content with unbounded height, size the document view
