@@ -216,19 +216,25 @@ pub func main = () {
 
 	// `s`'s literal initializer is heap-forced (the target of a value assign
 	// owns heap), so its throwaway literal copy is eager-freed at the
-	// reassign and the transferred pair is freed once at exit: two frees,
-	// one alloc-for-nothing saved.
+	// reassign, and the transferred pair is freed once at exit — through s.
+	// t's own free stays in the body but is FLAG-GUARDED
+	// (`if (!_mv_owns_t)`): the transfer set the flag, so the guard skips at
+	// runtime; keeping the free alive preserves the not-taken path's reclaim
+	// when the transfer is conditional (the loop-local leak fix). Three frees.
 	const c = build_main(input, "c");
 	expect(c).toContain("s = t;");
 	expect(c).not.toContain("nomen_str_dup(t)");
-	expect(count(c, "free(")).toBe(2);
+	expect(c).toContain("if (!_mv_owns_t) { free(t.ptr); }");
+	expect(count(c, "free(")).toBe(3);
 
 	const a64 = build_main(input, "aarch64");
 	expect(count(a64, "bl string_to_string")).toBe(1);
-	// The transfer copies the pair with no allocator call; only the moved-in
-	// pair is freed at exit.
-	expect(count(a64, "bl _strdup")).toBe(0);
-	expect(count(a64, "bl _free")).toBe(1);
+	// The transfer copies the pair with no allocator call; s's literal init
+	// copy is strdup'd (the transfer makes s a heap receptacle), and the
+	// frees are the displaced literal at the reassign, t's flag-guarded
+	// donor free (skipped at runtime), and the transferred block at exit.
+	expect(count(a64, "bl _strdup")).toBe(1);
+	expect(count(a64, "bl _free")).toBe(3);
 });
 
 test("read-after demands an explicit copy (both names get a copy)", async () => {
@@ -397,16 +403,22 @@ pub func main = () {
 	const c = build_main(input, "c");
 	expect(c).toContain("s = t;");
 	expect(c).not.toContain("nomen_str_dup(t)");
-	// s's heap-forced literal init copy (eager-freed at the reassign) + the
-	// transferred block at scope exit. t's free was spliced.
-	expect(count(c, "free(")).toBe(2);
+	// s's heap-forced literal init copy (eager-freed at the reassign), t's
+	// FLAG-GUARDED donor free (the transfer set _mv_owns_t, so the guard
+	// skips at runtime — the single owner is s), and the transferred block
+	// at scope exit.
+	expect(c).toContain("if (!_mv_owns_t) { free(t.ptr); }");
+	expect(count(c, "free(")).toBe(3);
 });
 
 /**
  * D3: a mv string initialized from another binding must be spelled —
  * `mv u = t` transfers, then `s = mv u` transfers again. The
- * declaration-keyword mv and the assignment mv both lower to a pair
- * assignment with the donor's free suppressed.
+ * declaration-keyword mv lowers to a pair assignment with the donor's free
+ * statically spliced (`mv u = t` is unconditional); the ASSIGNMENT mv keeps
+ * the donor's free in the body under its runtime owns-flag — the flag is
+ * set on the transfer path, so the guard skips there and the bytes are
+ * freed exactly once, through s.
  */
 
 test("explicit-mv initializer source transfers", () => {
@@ -424,13 +436,12 @@ pub func main = () {
 	const c = build_main(input, "c");
 	expect(c).toContain("s = u;");
 	expect(c).not.toContain("nomen_str_dup(u)");
-	// s's heap-forced literal init copy (eager-freed at the reassign) + the
-	// final copy at scope exit; t and u were both moved (their frees
-	// suppressed — u's decl is spliced by the transfer, so u's bytes are
-	// freed exactly once, through s).
-	expect(count(c, "free(")).toBe(2);
-	expect(c).not.toContain("free(u.ptr)");
+	// s's heap-forced literal init copy (eager-freed at the reassign), u's
+	// flag-guarded donor free (skipped at runtime), and the final copy at
+	// scope exit.
+	expect(count(c, "free(")).toBe(3);
+	expect(c).toContain("if (!_mv_owns_u) { free(u.ptr); }");
 
 	const a64 = build_main(input, "aarch64");
-	expect(count(a64, "bl _strdup")).toBe(1);
+	expect(count(a64, "bl _strdup")).toBe(2);
 });

@@ -53,6 +53,18 @@ function visit(node: BaseNode | undefined, result: Set<string>, structs?: Struct
 					// way. Pre-mark it: the declare site heap-allocates the
 					// literal initializer and registers the scope-exit free.
 					result.add((a.left_value as ValueNode).value);
+				} else if (!a.operator && is_moved_string_var_rhs(a.right_value)) {
+					// `s = mv t` transfer: the target takes the source's pair
+					// and is marked heap-owned at the mv site. Pre-mark it for
+					// the same reason as the value-copy arm — in a loop the
+					// target's heap mark is only established by an EARLIER
+					// iteration's transfer, so the mv statement's static
+					// displaced-free gate (`lhs_is_heap`) missed it and leaked
+					// the displaced value every time the branch ran with the
+					// target already holding an owned pair. With the mark the
+					// declare site heap-allocates the initializer, so the
+					// reassignment's displaced free is valid on every path.
+					result.add((a.left_value as ValueNode).value);
 				}
 			}
 			visit(a.right_value, result, structs);
@@ -155,6 +167,17 @@ function is_fresh_heap_string(node: BaseNode | undefined): boolean {
 		return !(!fn.owned_return && is_call_site_borrow_accessor(fn.name));
 	}
 	return false;
+}
+
+// An explicit `mv` VARIABLE right-hand side (`s = mv t`): the transfer hands
+// the target the source's (ptr, len) pair and marks the target heap-owned at
+// the mv site. Bare identifiers only — the same gate as the value-copy arm.
+function is_moved_string_var_rhs(node: BaseNode | undefined): boolean {
+	if (!node || node.node_type !== "value") return false;
+	const vn = node as ValueNode;
+	if (!vn.is_moved) return false;
+	const type = vn.type;
+	return !!type && type.name === "string" && !type.is_view && !type.is_array;
 }
 
 // A bare owned-string VARIABLE right-hand side (`s = t`, no explicit mv):

@@ -68,18 +68,3 @@ without a whole-repo style churn commit — pick one: either a dedicated
 "Style: reformat System library" commit or hold the in-source changes until
 release.
 
-## Conditional `mv` assignment suppresses the scope-exit free (leak)
-
-    while true {
-        const string polled = build_status()      // fresh heap string
-        if polled != prev {
-            prev = mv polled                      // mv only on this branch
-        }
-    }
-
-The static moved-set marks `polled` as moved for the WHOLE body, so the
-not-taken branch never frees it: every iteration leaks one string (the
-gallery's status poll leaked ~8 MB/s at loop speed; the same shape without
-the conditional `mv` is flat). Workaround in the gallery: `prev =
-polled.copy()`. The proper fix is the runtime ownership-flag treatment the
-compiler already uses for other conditional moves.

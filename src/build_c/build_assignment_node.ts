@@ -1213,7 +1213,23 @@ export default function build_assignment_node(
 					// delete(source)/add(target).
 					const src_name = (rhs as ValueNode).value;
 					if (string_var_owns_heap(status, src_name)) {
-						splice_decl_from_c_scopes(status, src_name);
+						// A source carrying a runtime moved flag (see
+						// c_mv_owns_flags) keeps its declaration in the frame and
+						// sets the flag instead of splicing: a CONDITIONAL
+						// transfer (`if polled != prev { prev = mv polled }`)
+						// leaves the not-taken path owning the bytes, and the
+						// splice dropped its scope-exit free there (one leak per
+						// skipped iteration in a loop). The flag-guarded free
+						// reclaims only when the move did not happen. Mirrors the
+						// value-struct donor arm above and the aarch64
+						// mark_local_moved_flag transfer.
+						const src_flag = status.c_mv_owns_flags?.get(src_name);
+						if (src_flag !== undefined) {
+							if (!status.pending_mv_owns_sets) status.pending_mv_owns_sets = [];
+							status.pending_mv_owns_sets.push(`${src_flag} = 1;`);
+						} else {
+							splice_decl_from_c_scopes(status, src_name);
+						}
 						if (!status.heap_strings) status.heap_strings = new Set();
 						status.heap_strings.add(lhs_name);
 						// Fall through: the plain `lhs = rhs` pair store completes

@@ -68,6 +68,7 @@ import {
 	emit_string_field_strdups_at,
 	find_anchor_slot,
 	mark_anchor_destroy,
+	mark_local_moved_flag,
 	mark_moved_if_struct,
 	record_heap_string_field,
 	resolve_struct_name,
@@ -2188,10 +2189,23 @@ export default function build_assignment_node(
 				status.heap_strings.add(name);
 			} else if (
 				explicit_move_source !== undefined &&
-				status.heap_strings?.delete(explicit_move_source)
+				status.heap_strings?.has(explicit_move_source)
 			) {
-				// The source owned heap (its mark was just removed): the target
-				// owns the transferred bytes now.
+				// The source owned heap: ownership transfers to the target. A
+				// CONDITIONAL move (this assignment sits in a branch some exit
+				// path skips) must keep the not-taken path's free live: KEEP
+				// the source's heap_strings mark, record it in the moved set,
+				// and set its runtime flag (0 = owns, 1 = moved out) — every
+				// cleanup (scope exit, return, break/continue) frees a moved
+				// entry under the flag guard (emit_moved_local_cleanup / the
+				// loop-depth walk) instead of skipping it statically. The
+				// static heap_strings delete leaked one string per skipped
+				// iteration when the branch wasn't taken. Mirrors the C
+				// backend's c_mv_owns_flags transfer.
+				if (!status.moved) status.moved = new Set<string>();
+				status.moved.add(explicit_move_source);
+				mark_local_moved_flag(status, explicit_move_source);
+				// The target owns the transferred bytes now.
 				status.heap_strings.add(name);
 			}
 			// A target that OWNED heap before this assignment must still own
