@@ -68,3 +68,35 @@ without a whole-repo style churn commit — pick one: either a dedicated
 "Style: reformat System library" commit or hold the in-source changes until
 release.
 
+
+## aarch64: composite-pattern codegen gaps (worked around in Controls)
+
+Building the Tier 3 compositions (pure-Nomen structs holding mv control
+fields) surfaced three aarch64 codegen bugs. The compositions dodge all
+three; each is a real user-facing bug worth fixing:
+
+1. **Nested ctor call in an assignment.** `self.box = TextBox(window)` (a
+   constructor call nested in a field assignment inside a user `#init`)
+   stages the by-ref `Window` param's SPILL SLOT (one word) as the struct,
+   and overlaps it with the sret temp — `TextBox_init` reads garbage for
+   `window->handle` and the msgSend crashes. Constructing into a local and
+   moving (`var TextBox b = TextBox(window)` … `self.box = mv b`) takes the
+   proven declaration path. Every Controls composite documents this.
+
+2. **Float param on a spliced method.** `num.set_value(3.0)` on a composite
+   (pure-Nomen methods of mv structs INLINE-SPLICE at the call site) scrambles
+   the (receiver, float) staging — the float arrived as 0. Plain functions are
+   unaffected (`echo(3.0)` round-trips), and raw-block-backed methods (real
+   `bl` calls, like Stepper.set_value) are unaffected. NumberInput therefore
+   carries its value as INT HUNDREDTHS.
+
+3. **Float field default emits `adr x1, 0.0`.** A mv struct with a float
+   field DEFAULT (`var float v = 0.0`) fails asm parsing — the default's
+   materialization emits the literal as an `adr` operand.
+
+FIXED while here: a user `#init` passing its by-ref struct param onward
+(`TextBox(window)` again) staged the param's slot ADDRESS instead of the
+pointer it holds — `build_custom_init_function` now registers by-address
+struct params in `function_struct_param_slots` (mirroring the regular
+prologue), so `emit_var_address` derefs the slot (regression:
+`generic_displaced_destroy`-style gui test, `composite_param_staging`).

@@ -1241,6 +1241,12 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 	status.register_allocations = undefined;
 	status.nir_site_allocs = undefined;
 	status.callee_saved_regs_used = undefined;
+	// The param spill below registers by-address struct params (see the
+	// function_struct_param_slots note in the spill loop) — a fresh set,
+	// restored with the enclosing's, so the body's staged addresses deref
+	// the right slots and the enclosing function's registrations don't leak.
+	const old_struct_param_slots = status.function_struct_param_slots;
+	status.function_struct_param_slots = new Set();
 
 	status.scoped_declarations = [];
 	status.heap_strings = new Set<string>();
@@ -1394,6 +1400,23 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 		const size = aarch64_size(param.type.name);
 		const offset = allocate_stack_space(status, size, size);
 		status.stack_offsets!.set(param.name, offset);
+		// Mirror build_function_node's registration: a spilled struct/trait/
+		// enum-with-data param follows the by-address convention — its slot
+		// holds the POINTER to the caller's struct, so emit_var_address must
+		// load the slot's value (the pointer), not hand out the slot's
+		// address. Without this, a custom `#init` passing its `Window window`
+		// (or any struct param) onward staged the slot's address as the
+		// struct — every consumer read garbage (the composite controls
+		// crashed in their constructors).
+		if (!param.type.is_ref && !param.type.is_array && !param.is_variadic) {
+			const spilled_is_structish =
+				!!status.structs.find((s) => s.name === param.type.name && !s.is_simple_type) ||
+				!!status.traits.find((t) => t.name === param.type.name) ||
+				!!status.enums.find((e) => e.name === param.type.name && e.has_associated_data);
+			if (spilled_is_structish) {
+				status.function_struct_param_slots!.add(param.name);
+			}
+		}
 		// Spill with the param's declared width — a full-width `str` into a
 		// sub-word slot (bool/char/int8/int16/int32) clobbers the adjacent
 		// stack bytes.
@@ -1679,6 +1702,7 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 		status.init_assigned_fields = old_init_assigned_fields;
 		status.init_default_reclaimed_fields = old_init_default_reclaimed;
 		status.heap_string_fields = old_init_heap_string_fields;
+		status.function_struct_param_slots = old_struct_param_slots;
 	}
 
 	// The init body's own loop-promotion claims (the enclosing's set was
