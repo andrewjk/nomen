@@ -259,6 +259,53 @@ pub func native_intrinsic = (uint64 handle, out [int, int]) {
 	```
 }
 
+// The NATIVE frame of a control handle as "x,y,w,h" (AppKit's answer, not the
+// layout engine's intent — compare against `Container.fmt_frame` to verify the
+// two agree). Returns "0,0,0,0" for handle 0.
+pub func native_frame = (uint64 handle, out string) {
+	if handle == 0 { return "0,0,0,0" }
+	```
+	#arch: c
+	#platform: macos
+	CGRect r = ((CGRect(*)(id, SEL))objc_msgSend)((id)handle, sel_registerName("frame"));
+	char buf[96];
+	snprintf(buf, sizeof(buf), "%ld,%ld,%ld,%ld",
+		(long)r.origin.x, (long)r.origin.y, (long)r.size.width, (long)r.size.height);
+	char *dup = strdup(buf);
+	return (nomen_string){ dup, (long)strlen(dup) };
+	```
+	```
+	#arch: aarch64_use_c
+	#platform: macos
+	CGRect r = ((CGRect(*)(id, SEL))objc_msgSend)((id)handle, sel_registerName("frame"));
+	char buf[96];
+	snprintf(buf, sizeof(buf), "%ld,%ld,%ld,%ld",
+		(long)r.origin.x, (long)r.origin.y, (long)r.size.width, (long)r.size.height);
+	char *dup = strdup(buf);
+	return (nomen_string){ dup, (long)strlen(dup) };
+	```
+	```
+	#arch: c
+	#platform: ios
+	CGRect r = ((CGRect(*)(id, SEL))objc_msgSend)((id)handle, sel_registerName("frame"));
+	char buf[96];
+	snprintf(buf, sizeof(buf), "%ld,%ld,%ld,%ld",
+		(long)r.origin.x, (long)r.origin.y, (long)r.size.width, (long)r.size.height);
+	char *dup = strdup(buf);
+	return (nomen_string){ dup, (long)strlen(dup) };
+	```
+	```
+	#arch: aarch64_use_c
+	#platform: ios
+	CGRect r = ((CGRect(*)(id, SEL))objc_msgSend)((id)handle, sel_registerName("frame"));
+	char buf[96];
+	snprintf(buf, sizeof(buf), "%ld,%ld,%ld,%ld",
+		(long)r.origin.x, (long)r.origin.y, (long)r.size.width, (long)r.size.height);
+	char *dup = strdup(buf);
+	return (nomen_string){ dup, (long)strlen(dup) };
+	```
+}
+
 /**
  * A flexbox-style container that measures and arranges its child controls.
  *
@@ -313,6 +360,13 @@ pub mv struct Container: Control {
 	var pry = Buffer<int>()
 	var prw = Buffer<int>()
 	var prh = Buffer<int>()
+	// The constraints each node's cached size was measured under (the
+	// measure_node cache gate). A clean node re-uses its cached size only
+	// when the constraints are unchanged — otherwise a standalone
+	// `measure(bc)` after an external resize answered with the PREVIOUS
+	// constraint's width (the page-scroll shrink-per-resize bug).
+	var mw = Buffer<int>()
+	var mh = Buffer<int>()
 	// Dirty-rect list: the node indices (leaves) whose frame changed in the
 	// most recent `compute`/`layout`, in the order discovered. `dirty_count`
 	// / `dirty_rect` expose it; `apply` repaints only these.
@@ -352,6 +406,8 @@ pub mv struct Container: Control {
 		self.pry.grow_int(cap)
 		self.prw.grow_int(cap)
 		self.prh.grow_int(cap)
+		self.mw.grow_int(cap)
+		self.mh.grow_int(cap)
 		self.dirty_idx.grow_int(cap)
 	}
 
@@ -376,6 +432,8 @@ pub mv struct Container: Control {
 		self.pry.store_int(0, -1)
 		self.prw.store_int(0, -1)
 		self.prh.store_int(0, -1)
+		self.mw.store_int(0, -1)
+		self.mh.store_int(0, -1)
 		self.root = 0
 		self.count = 1
 	}
@@ -453,6 +511,8 @@ pub mv struct Container: Control {
 		self.pry.store_int(idx, -1)
 		self.prw.store_int(idx, -1)
 		self.prh.store_int(idx, -1)
+		self.mw.store_int(idx, -1)
+		self.mh.store_int(idx, -1)
 		self.count = self.count + 1
 		return idx
 	}
@@ -753,6 +813,8 @@ pub mv struct Container: Control {
 			self.pry.store_int(idx, self.pry.load_int(idx + 1))
 			self.prw.store_int(idx, self.prw.load_int(idx + 1))
 			self.prh.store_int(idx, self.prh.load_int(idx + 1))
+			self.mw.store_int(idx, self.mw.load_int(idx + 1))
+			self.mh.store_int(idx, self.mh.load_int(idx + 1))
 		}
 		self.count = last
 		// Fix parent indices that pointed above the removed slot. (A node
@@ -921,7 +983,7 @@ pub mv struct Container: Control {
 		// reuse its cached size instead of re-measuring the subtree. The cached
 		// height is already in rh[idx] from the previous pass, so the caller's
 		// `self.rh.load_int(ci)` picks it up without a re-measure.
-		if self.dirty.load_int(idx) == 0 {
+		if self.dirty.load_int(idx) == 0 && self.mw.load_int(idx) == max_w && self.mh.load_int(idx) == max_h {
 			var int cached = self.rw.load_int(idx)
 			return cached
 		}
@@ -976,6 +1038,8 @@ pub mv struct Container: Control {
 			if h < min_h { h = min_h }
 			self.rw.store_int(idx, w)
 			self.rh.store_int(idx, h)
+			self.mw.store_int(idx, max_w)
+			self.mh.store_int(idx, max_h)
 			self.dirty.store_int(idx, 0)
 			return w
 		}
@@ -1002,6 +1066,8 @@ pub mv struct Container: Control {
 			if max_child_w > max_w { max_child_w = max_w }
 			self.rw.store_int(idx, max_child_w)
 			self.rh.store_int(idx, total_h)
+			self.mw.store_int(idx, max_w)
+			self.mh.store_int(idx, max_h)
 			self.dirty.store_int(idx, 0)
 			return max_child_w
 		}
@@ -1028,6 +1094,8 @@ pub mv struct Container: Control {
 			if max_child_h > max_h { max_child_h = max_h }
 			self.rw.store_int(idx, total_w)
 			self.rh.store_int(idx, max_child_h)
+			self.mw.store_int(idx, max_w)
+			self.mh.store_int(idx, max_h)
 			self.dirty.store_int(idx, 0)
 			return total_w
 		}
@@ -1052,6 +1120,8 @@ pub mv struct Container: Control {
 			if best_h > max_h { best_h = max_h }
 			self.rw.store_int(idx, best_w)
 			self.rh.store_int(idx, best_h)
+			self.mw.store_int(idx, max_w)
+			self.mh.store_int(idx, max_h)
 			self.dirty.store_int(idx, 0)
 			return best_w
 		}
@@ -1085,6 +1155,8 @@ pub mv struct Container: Control {
 			if total_h > max_h { total_h = max_h }
 			self.rw.store_int(idx, total_w)
 			self.rh.store_int(idx, total_h)
+			self.mw.store_int(idx, max_w)
+			self.mh.store_int(idx, max_h)
 			self.dirty.store_int(idx, 0)
 			return total_w
 		}
@@ -1124,6 +1196,8 @@ pub mv struct Container: Control {
 		if total_h > max_h { total_h = max_h }
 		self.rw.store_int(idx, cols * col_w)
 		self.rh.store_int(idx, total_h)
+		self.mw.store_int(idx, max_w)
+		self.mh.store_int(idx, max_h)
 		self.dirty.store_int(idx, 0)
 		return cols * col_w
 	}

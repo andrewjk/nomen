@@ -29,6 +29,9 @@ pub mv struct Toolbar : Control {
 		static long g_toolbar_last_tag = -1;
 		static long g_toolbar_count = 0;
 		static id g_toolbar_delegate = 0;
+		// Per-item custom labels ("": fall back to "Item <index>"). Indexed
+		// by item tag; the delegate's item builder reads it lazily.
+		static char g_toolbar_labels[32][64];
 
 		static void nomen_toolbar_action(id self, SEL cmd, id sender) {
 			(void)self; (void)cmd;
@@ -54,10 +57,12 @@ pub mv struct Toolbar : Control {
 			id item = ((id(*)(id, SEL, id))objc_msgSend)(
 				((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSToolbarItem"), sel_registerName("alloc")),
 				sel_registerName("initWithItemIdentifier:"), ident);
-			char label[32];
-			snprintf(label, sizeof(label), "Item %ld", idx);
+			char fallback[32];
+			snprintf(fallback, sizeof(fallback), "Item %ld", idx);
+			const char *text =
+				(idx >= 0 && idx < 32 && g_toolbar_labels[idx][0]) ? g_toolbar_labels[idx] : fallback;
 			id title = ((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), label);
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text);
 			((void(*)(id, SEL, id))objc_msgSend)(item, sel_registerName("setLabel:"), title);
 			((void(*)(id, SEL, long))objc_msgSend)(item, sel_registerName("setTag:"), idx);
 			id btn = ((id(*)(id, SEL, CGRect))objc_msgSend)(
@@ -72,6 +77,28 @@ pub mv struct Toolbar : Control {
 			((void(*)(id, SEL, id))objc_msgSend)(item, sel_registerName("setView:"), btn);
 			((void(*)(id, SEL))objc_msgSend)(btn, sel_registerName("release"));
 			return item;
+		}
+
+		// Store an item's custom label and apply it to the live item (items
+		// are built lazily by the delegate, so the table the builder reads is
+		// the source of truth).
+		void nomen_toolbar_set_label(id toolbar, int idx, const char *text) {
+			if (idx < 0 || idx >= 32) return;
+			snprintf(g_toolbar_labels[idx], sizeof(g_toolbar_labels[idx]), "%s", text);
+			if (!toolbar) return;
+			id items = ((id(*)(id, SEL))objc_msgSend)(toolbar, sel_registerName("items"));
+			long n = ((long(*)(id, SEL))objc_msgSend)(items, sel_registerName("count"));
+			for (long i = 0; i < n; i++) {
+				id item = ((id(*)(id, SEL, long))objc_msgSend)(items, sel_registerName("objectAtIndex:"), i);
+				if (((long(*)(id, SEL))objc_msgSend)(item, sel_registerName("tag")) != idx) continue;
+				id title = ((id(*)(id, SEL, const char*))objc_msgSend)(
+					(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text);
+				((void(*)(id, SEL, id))objc_msgSend)(item, sel_registerName("setLabel:"), title);
+				id view = ((id(*)(id, SEL))objc_msgSend)(item, sel_registerName("view"));
+				if (view) {
+					((void(*)(id, SEL, id))objc_msgSend)(view, sel_registerName("setTitle:"), title);
+				}
+			}
 		}
 
 		static id nomen_toolbar_delegate_class(void) {
@@ -108,6 +135,9 @@ pub mv struct Toolbar : Control {
 		static long g_toolbar_last_tag = -1;
 		static long g_toolbar_count = 0;
 		static id g_toolbar_delegate = 0;
+		// Per-item custom labels ("": fall back to "Item <index>"). Indexed
+		// by item tag; the delegate's item builder reads it lazily.
+		static char g_toolbar_labels[32][64];
 
 		static void nomen_toolbar_action(id self, SEL cmd, id sender) {
 			(void)self; (void)cmd;
@@ -133,10 +163,12 @@ pub mv struct Toolbar : Control {
 			id item = ((id(*)(id, SEL, id))objc_msgSend)(
 				((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSToolbarItem"), sel_registerName("alloc")),
 				sel_registerName("initWithItemIdentifier:"), ident);
-			char label[32];
-			snprintf(label, sizeof(label), "Item %ld", idx);
+			char fallback[32];
+			snprintf(fallback, sizeof(fallback), "Item %ld", idx);
+			const char *text =
+				(idx >= 0 && idx < 32 && g_toolbar_labels[idx][0]) ? g_toolbar_labels[idx] : fallback;
 			id title = ((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), label);
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text);
 			((void(*)(id, SEL, id))objc_msgSend)(item, sel_registerName("setLabel:"), title);
 			((void(*)(id, SEL, long))objc_msgSend)(item, sel_registerName("setTag:"), idx);
 			id btn = ((id(*)(id, SEL, CGRect))objc_msgSend)(
@@ -151,6 +183,28 @@ pub mv struct Toolbar : Control {
 			((void(*)(id, SEL, id))objc_msgSend)(item, sel_registerName("setView:"), btn);
 			((void(*)(id, SEL))objc_msgSend)(btn, sel_registerName("release"));
 			return item;
+		}
+
+		// Store an item's custom label and apply it to the live item (items
+		// are built lazily by the delegate, so the table the builder reads is
+		// the source of truth).
+		void nomen_toolbar_set_label(id toolbar, int idx, const char *text) {
+			if (idx < 0 || idx >= 32) return;
+			snprintf(g_toolbar_labels[idx], sizeof(g_toolbar_labels[idx]), "%s", text);
+			if (!toolbar) return;
+			id items = ((id(*)(id, SEL))objc_msgSend)(toolbar, sel_registerName("items"));
+			long n = ((long(*)(id, SEL))objc_msgSend)(items, sel_registerName("count"));
+			for (long i = 0; i < n; i++) {
+				id item = ((id(*)(id, SEL, long))objc_msgSend)(items, sel_registerName("objectAtIndex:"), i);
+				if (((long(*)(id, SEL))objc_msgSend)(item, sel_registerName("tag")) != idx) continue;
+				id title = ((id(*)(id, SEL, const char*))objc_msgSend)(
+					(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text);
+				((void(*)(id, SEL, id))objc_msgSend)(item, sel_registerName("setLabel:"), title);
+				id view = ((id(*)(id, SEL))objc_msgSend)(item, sel_registerName("view"));
+				if (view) {
+					((void(*)(id, SEL, id))objc_msgSend)(view, sel_registerName("setTitle:"), title);
+				}
+			}
 		}
 
 		static id nomen_toolbar_delegate_class(void) {
@@ -215,6 +269,34 @@ pub mv struct Toolbar : Control {
 		#platform: ios
 		/* TODO: iOS — no NSToolbar counterpart for window chrome (see
 		 * GUI_PLAN Tier 2; defer). */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+	}
+
+	// Set an item's label (the text under its button). Items are built
+	// lazily by the shared delegate, so the label lands in the table the
+	// builder reads and is applied to the live item immediately.
+	pub func set_label = (self, int index, string label) {
+		```
+		#arch: c
+		#platform: macos
+		extern void nomen_toolbar_set_label(id toolbar, int idx, const char *text);
+		nomen_toolbar_set_label((id)self->handle, index, label.ptr);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		extern void nomen_toolbar_set_label(id toolbar, int idx, const char *text);
+		nomen_toolbar_set_label((id)self->handle, index, label.ptr);
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
 		```
 		```
 		#arch: aarch64_use_c

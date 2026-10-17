@@ -457,6 +457,39 @@ pub mv struct Window: Control {
 		```
 	}
 
+	// Resize the window's content area to width x height (displayed). The
+	// programmatic stand-in for a user drag: it fires the same
+	// windowDidResize: notifications (and the Container resize delegate), so
+	// tests can exercise resize relayout headlessly.
+	pub func set_size = (self, int width, int height) {
+		```
+		#arch: c
+		#platform: macos
+		((void(*)(id, SEL, double, double))objc_msgSend)(
+			(id)self->handle, sel_registerName("setContentSize:"), (double)width, (double)height);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, double, double))objc_msgSend)(
+			(id)self->handle, sel_registerName("setContentSize:"), (double)width, (double)height);
+		```
+		```
+		#arch: c
+		#platform: ios
+		((void(*)(id, SEL, CGRect))objc_msgSend)(
+			(id)self->handle, sel_registerName("setFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, (double)width, (double)height));
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		((void(*)(id, SEL, CGRect))objc_msgSend)(
+			(id)self->handle, sel_registerName("setFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, (double)width, (double)height));
+		```
+	}
+
 	// ── Control trait conformance ──
 	// The window is the layout root: it measures to its content-view size and
 	// applies a frame to the native NSWindow/UIWindow.

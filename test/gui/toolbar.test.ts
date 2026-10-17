@@ -54,4 +54,31 @@ pub func main = () {
 `;
 		expect(parse(input, system).errors).toEqual([]);
 	});
+
+	test("set_label names items (out of range is a no-op)", { timeout: 120000 }, async () => {
+		const input = `
+import System
+import System::Controls
+
+pub func main = () {
+	var Window win = Window("Toolbar labels", 400, 200)
+	var Toolbar bar = Toolbar(win, 3)
+	bar.set_label(0, "One")
+	bar.set_label(1, "Two")
+	bar.set_label(2, "Three")
+	bar.set_label(9, "ignored")
+	Console.write("count=\\{bar.count()} clicked=\\{bar.clicked_item()}\\n")
+}
+`;
+		const parsed = parse(input, system);
+		expect(parsed.errors).toEqual([]);
+		// The labels live in the shared delegate's table (applied when the
+		// delegate builds each item); a live click needs a user, so the
+		// headless check pins the model surface: the calls are accepted and
+		// the item model is unchanged.
+		await build_and_check_output(input, "gui_toolbar_labels", "count=3 clicked=-1", true, {
+			platform: "macos",
+			audit: false,
+		});
+	});
 });

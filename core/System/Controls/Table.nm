@@ -90,15 +90,20 @@ pub mv struct Table : Control {
 		// ListView's cell-based rows didn't have).
 		static id nomen_table_view_for_cell(id self, SEL cmd, id tv, id col, long row) {
 			(void)self; (void)cmd; (void)tv;
+			// The cell identifier is the COLUMN'S IDENTIFIER STRING (AppKit
+			// parses the identifier into an internal UIID — passing the
+			// NSTableColumn object itself traps in _NSInternalUIIDParse the
+			// first time a cell is actually built).
+			id col_id = ((id(*)(id, SEL))objc_msgSend)(col, sel_registerName("identifier"));
 			id cell = ((id(*)(id, SEL, id, id))objc_msgSend)(
-				tv, sel_registerName("makeViewWithIdentifier:owner:"), col, g_table_delegate);
+				tv, sel_registerName("makeViewWithIdentifier:owner:"), col_id, g_table_delegate);
 			if (!cell) {
 				cell = ((id(*)(id, SEL, CGRect))objc_msgSend)(
 					((id(*)(id, SEL))objc_msgSend)(
 						(id)objc_getClass("NSTableCellView"), sel_registerName("alloc")),
 					sel_registerName("initWithFrame:"),
 					((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 100, 22));
-				((void(*)(id, SEL, id))objc_msgSend)(cell, sel_registerName("setIdentifier:"), col);
+				((void(*)(id, SEL, id))objc_msgSend)(cell, sel_registerName("setIdentifier:"), col_id);
 				id tf = ((id(*)(id, SEL, CGRect))objc_msgSend)(
 					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSTextField"), sel_registerName("alloc")),
 					sel_registerName("initWithFrame:"),
@@ -212,15 +217,20 @@ pub mv struct Table : Control {
 		// ListView's cell-based rows didn't have).
 		static id nomen_table_view_for_cell(id self, SEL cmd, id tv, id col, long row) {
 			(void)self; (void)cmd; (void)tv;
+			// The cell identifier is the COLUMN'S IDENTIFIER STRING (AppKit
+			// parses the identifier into an internal UIID — passing the
+			// NSTableColumn object itself traps in _NSInternalUIIDParse the
+			// first time a cell is actually built).
+			id col_id = ((id(*)(id, SEL))objc_msgSend)(col, sel_registerName("identifier"));
 			id cell = ((id(*)(id, SEL, id, id))objc_msgSend)(
-				tv, sel_registerName("makeViewWithIdentifier:owner:"), col, g_table_delegate);
+				tv, sel_registerName("makeViewWithIdentifier:owner:"), col_id, g_table_delegate);
 			if (!cell) {
 				cell = ((id(*)(id, SEL, CGRect))objc_msgSend)(
 					((id(*)(id, SEL))objc_msgSend)(
 						(id)objc_getClass("NSTableCellView"), sel_registerName("alloc")),
 					sel_registerName("initWithFrame:"),
 					((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 100, 22));
-				((void(*)(id, SEL, id))objc_msgSend)(cell, sel_registerName("setIdentifier:"), col);
+				((void(*)(id, SEL, id))objc_msgSend)(cell, sel_registerName("setIdentifier:"), col_id);
 				id tf = ((id(*)(id, SEL, CGRect))objc_msgSend)(
 					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSTextField"), sel_registerName("alloc")),
 					sel_registerName("initWithFrame:"),
