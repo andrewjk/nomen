@@ -636,3 +636,49 @@ release ships the new rules, `nomen format` cannot be run across the repo
 without a whole-repo style churn commit — pick one: either a dedicated
 "Style: reformat System library" commit or hold the in-source changes until
 release.
+
+## aarch64: mono-struct assignment under-copies when the body has a 2-word field
+
+CLOSED as not-reproducing (2026-10-20): every aarch64 copy site is
+word-counted from `get_struct_size` (verified statically — `emit_struct_copy`
+in struct_layout.ts, the auto-`#init` default seeders, the custom-`#init`
+field-assign path, the decl-ctor path, the sret return copies — and
+empirically). The exact storage shape this entry blamed — a mono
+`List<ClickBinding>` over a 2-word `{ uint64 handle, func () action }`
+element: ctor-assign in a custom `#init`, push, indirect dispatch through
+the func field, pop, teardown under the allocation auditor — passes
+byte-correct on both backends
+(`test/struct_copy_snapshot.test.ts`, rewritten to compile: the saved
+`.copy()` repro never did — a flat-scalars struct gets no synthesized
+`copy` method, and its `#init = (self, uint64 seed)` shape fails
+`struct_copy_ctor_args`).
+
+The crash behind this entry was recorded mid-session on 2026-10-19 while
+the prebuilt system object was being rebuilt around the in-flight
+`#handle` library edits — most plausibly a stale-system.o/half-rebuilt
+artifact of that window, not a live codegen bug. The hazard that remains
+worth knowing: the split build (`ensure_system_lib`) pairs a STALE system
+object with a fresh user TU whenever the user TU's own hash alone is warm;
+only a MISSING object falls back to single-TU. If a library-editing
+session sees struct-layout-shaped crashes, force a system-lib rebuild
+before blaming codegen.
+
+## on_click (registered handlers)
+
+`Window.on_click(handle, fn)`: the handler (a closure capturing control
+HANDLES — copyable, non-owning twins from the `#handle` hook) is stored in
+a `List<ClickBinding>` on the Window; `run()` drains the native click
+queue against the bindings before the app frame. The storage shape is
+verified sound (the binding-list test above); the implementation was
+never committed — the session that drafted it was cleared, and no
+`ClickBinding`/`on_click`/`dispatch_clicks`/`nomen_window_clicks_init`
+shapes exist in any commit, stash, or dangling object — so this is a
+fresh implementation against the design below, not a restore.
+
+One known wart to solve alongside: the bindings' closure envs are not
+reclaimed at teardown (value-struct func fields have no destroy arm) — a
+bounded, exit-time leak, one per registration.
+
+Dynamic-removal safety (a removed todo's stale view) wants
+generation-checked views — reuse the `WeakHandle` registry
+(pointer + generation slots, destroy bumps) — recorded as its own slice.
