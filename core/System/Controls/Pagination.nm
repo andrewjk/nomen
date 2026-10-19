@@ -5,10 +5,10 @@
  * control, no drawing — a row of Buttons wired into the caller's grid.
  * The page count is fixed at construction (1..5; spare buttons are hidden
  * and skipped by the layout's hidden-leaf pass). The composite tracks the
- * current page as pure state: the DEMO hit-tests the buttons each frame
- * (handles via `prev_handle`/`next_handle`/`page_handle`) and calls
- * `next`/`prev`/`select` — clicks have no callback in the manual loop
- * (GUI_PLAN cross-cutting follow-ups).
+ * current page as pure state: `prev_was_clicked`/`next_was_clicked`/
+ * `clicked_page` poll the buttons' native click actions and the caller
+ * drives `next`/`prev`/`select` (handles via `prev_handle`/`next_handle`/
+ * `page_handle` remain for coordinate hit-testing).
  **/
 pub mv struct Pagination {
 	var Button prev
@@ -97,5 +97,27 @@ pub mv struct Pagination {
 		if self.current > 0 {
 			self.current -= 1
 		}
+	}
+
+	// Edge-triggered click polls (the page buttons arm their native
+	// actions at construction — see Button.was_clicked). True exactly once
+	// per click; the record is consumed.
+	pub func prev_was_clicked = (self, out bool) {
+		return self.prev.was_clicked()
+	}
+
+	pub func next_was_clicked = (self, out bool) {
+		return self.next.was_clicked()
+	}
+
+	// The clicked page button's index (0-based), or -1 when none was
+	// clicked since the last call. Hidden spare buttons can never report.
+	pub func clicked_page = (self, out int) {
+		if self.b0.was_clicked() { return 0 }
+		if self.b1.was_clicked() { return 1 }
+		if self.b2.was_clicked() { return 2 }
+		if self.b3.was_clicked() { return 3 }
+		if self.b4.was_clicked() { return 4 }
+		return -1
 	}
 }

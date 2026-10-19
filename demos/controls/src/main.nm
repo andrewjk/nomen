@@ -648,60 +648,49 @@ mv struct GalleryApp : App {
 			self.prev_status = polled.copy()
 		}
 
-		if ev.click == 1 {
-			var int cx = ev.click_x
-			var int cy = ev.click_y
-			// The page controls live on the document view: translate the
-			// window click through the page scroll (content_click) before
-			// hit-testing. The sheet keeps raw window coordinates (it is
-			// not part of the page).
-			var [tx, ty] = content_click(self.page, cx, cy)
-			if self.page_grid.contains(self.radio_a.handle, tx, ty) {
-				self.radio_a.set_checked(true)
-				self.radio_b.set_checked(false)
+		// Native click events: the button-family controls arm a shared
+		// target/action at construction — was_clicked drains the edge per
+		// control. No coordinates, no hit-testing, and it works for
+		// controls hosted on the Scrollable's document view.
+		if self.radio_a.was_clicked() {
+			self.radio_a.set_checked(true)
+			self.radio_b.set_checked(false)
+		}
+		if self.radio_b.was_clicked() {
+			self.radio_b.set_checked(true)
+			self.radio_a.set_checked(false)
+		}
+		if self.alert_btn.was_clicked() {
+			// Blocks in NSAlert's own modal loop until dismissed.
+			var int choice = self.alert.run()
+			self.status.set_text("alert: button \{choice}")
+			self.prev_status = ""
+		}
+		if self.sheet_btn.was_clicked() {
+			self.sheet.present()
+		}
+		if self.sheet_close_btn.was_clicked() {
+			self.sheet.dismiss()
+			self.status.set_text("sheet: closed")
+			self.prev_status = ""
+		}
+		if self.pop_btn.was_clicked() {
+			if self.pop.is_shown() {
+				self.pop.dismiss()
+			} else {
+				self.pop.show(self.pop_btn.handle)
 			}
-			if self.page_grid.contains(self.radio_b.handle, tx, ty) {
-				self.radio_b.set_checked(true)
-				self.radio_a.set_checked(false)
-			}
-			if self.page_grid.contains(self.alert_btn.handle, tx, ty) {
-				// Blocks in NSAlert's own modal loop until dismissed.
-				var int choice = self.alert.run()
-				self.status.set_text("alert: button \{choice}")
-				self.prev_status = ""
-			}
-			if self.page_grid.contains(self.sheet_btn.handle, tx, ty) {
-				self.sheet.present()
-			}
-			if self.page_grid.contains(self.pop_btn.handle, tx, ty) {
-				if self.pop.is_shown() {
-					self.pop.dismiss()
-				} else {
-					self.pop.show(self.pop_btn.handle)
-				}
-			}
-			// While the sheet is up, the host window takes no clicks — any
-			// click that arrives is a sheet click, in sheet coordinates.
-			if self.sheet.is_presented() {
-				if self.sheet_grid.contains(self.sheet_close_btn.handle, cx, cy) {
-					self.sheet.dismiss()
-					self.status.set_text("sheet: closed")
-					self.prev_status = ""
-				}
-			}
-			// Pagination: hit-test the row's buttons and drive the page
-			// state.
-			if self.page_grid.contains(self.pag.prev_handle(), tx, ty) {
-				self.pag.prev()
-			}
-			if self.page_grid.contains(self.pag.next_handle(), tx, ty) {
-				self.pag.next()
-			}
-			for i of 0 .. 3 {
-				if self.page_grid.contains(self.pag.page_handle(i), tx, ty) {
-					self.pag.select(i)
-				}
-			}
+		}
+		// Pagination: drive the page state from the clicked buttons.
+		if self.pag.prev_was_clicked() {
+			self.pag.prev()
+		}
+		if self.pag.next_was_clicked() {
+			self.pag.next()
+		}
+		var int page_clicked = self.pag.clicked_page()
+		if page_clicked >= 0 {
+			self.pag.select(page_clicked)
 		}
 	}
 }

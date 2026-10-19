@@ -34,6 +34,8 @@ pub mv struct Toggle : Control {
 		((void(*)(id, SEL, id))objc_msgSend)(
 			contentView, sel_registerName("addSubview:"), btn);
 		self.handle = (uint64_t)btn;
+		extern void nomen_control_arm_clicks(unsigned long long);
+		nomen_control_arm_clicks((unsigned long long)btn);
 		```
 		```
 		#arch: aarch64_use_c
@@ -55,6 +57,8 @@ pub mv struct Toggle : Control {
 		((void(*)(id, SEL, id))objc_msgSend)(
 			contentView, sel_registerName("addSubview:"), btn);
 		self->handle = (uint64_t)btn;
+		extern void nomen_control_arm_clicks(unsigned long long) __asm__("nomen_control_arm_clicks");
+		nomen_control_arm_clicks((unsigned long long)btn);
 		```
 		```
 		#arch: c
@@ -256,6 +260,14 @@ pub mv struct Toggle : Control {
 	}
 
 	// ── Control trait conformance ──
+	// Edge-triggered click poll: true exactly once per click (the record
+	// is consumed). Backed by the native target/action queue —
+	// nomen_control_arm_clicks arms this control in the constructor — so
+	// no coordinates and no hit-testing, and it works inside Scrollables.
+	pub func was_clicked = (self, out bool) {
+		return nomen_control_take_click(self.handle)
+	}
+
 	pub func intrinsic_size = (self, out Size) {
 		var [w, h] = native_intrinsic(self.handle)
 		var s = Size()

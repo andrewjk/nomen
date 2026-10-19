@@ -26,3 +26,163 @@ pub trait Control {
 	// wrapping, scrolling, etc. Default: call measure with infinity.)
 	func intrinsic_size = (self, out Size)
 }
+
+// ── Native click events (target/action) ──
+//
+// NSButton-family controls (Button, CheckBox, Radio, Toggle — and
+// composites over them) arm a shared action target at construction; the
+// action records the sender's view pointer — which IS the Nomen handle —
+// into a ring queue, and `was_clicked` drains it. That is an
+// edge-triggered click poll with no coordinates and no hit-testing, and it
+// works for controls hosted on a Scrollable's document view. Handlers that
+// need shared app state stay in `App.frame` — a capturing `on_click`
+// closure is not expressible soundly (capturing a control MOVES it; see
+// CLOSURE.md), so the poll form is the ownership-clean equivalent.
+
+// Arm a control's native click action. Called by the button-family
+// constructors; safe to call again (re-sets target/action).
+pub func nomen_control_arm_clicks = (uint64 handle) {
+	```
+	#arch: c
+	#platform: macos
+	#scope: file
+	// The shared click target: NSControl.target/action fires clickAction:
+	// on the main thread; the sender's view pointer is the Nomen handle.
+	static void *nomen_click_target = 0;
+	// Ring queue of clicked handles (64 deep; a click that is never
+	// consumed is stale, so dropping the oldest when full is fine).
+	static unsigned long long nomen_click_queue[64];
+	static int nomen_click_count = 0;
+	static void nomen_click_push(unsigned long long h) {
+		if (nomen_click_count >= 64) return;
+		nomen_click_queue[nomen_click_count++] = h;
+	}
+	static long nomen_click_take(unsigned long long h) {
+		for (int i = 0; i < nomen_click_count; i++) {
+			if (nomen_click_queue[i] == h) {
+				for (int j = i; j < nomen_click_count - 1; j++) {
+					nomen_click_queue[j] = nomen_click_queue[j + 1];
+				}
+				nomen_click_count--;
+				return 1;
+			}
+		}
+		return 0;
+	}
+	static void nomen_click_action(id self, SEL cmd, id sender) {
+		(void)self; (void)cmd;
+		nomen_click_push((unsigned long long)(void *)sender);
+	}
+	static void nomen_click_arm(unsigned long long handle) {
+		Class Tc = objc_getClass("NomenClickTarget");
+		if (!Tc) {
+			Tc = objc_allocateClassPair(objc_getClass("NSObject"), "NomenClickTarget", 0);
+			if (Tc) {
+				class_addMethod(Tc, sel_registerName("clickAction:"), (IMP)nomen_click_action, "v@:@");
+				objc_registerClassPair(Tc);
+			}
+		}
+		if (!nomen_click_target && Tc) {
+			nomen_click_target = (void *)((id(*)(id, SEL))objc_msgSend)((id)Tc, sel_registerName("new"));
+		}
+		if (nomen_click_target) {
+			id control = (id)handle;
+			((void(*)(id, SEL, id))objc_msgSend)(control, sel_registerName("setTarget:"), (id)nomen_click_target);
+			((void(*)(id, SEL, SEL))objc_msgSend)(control, sel_registerName("setAction:"), sel_registerName("clickAction:"));
+		}
+	}
+	```
+	```
+	#arch: aarch64_use_c
+	#platform: macos
+	#scope: file
+	static void *nomen_click_target = 0;
+	static unsigned long long nomen_click_queue[64];
+	static int nomen_click_count = 0;
+	static void nomen_click_push(unsigned long long h) {
+		if (nomen_click_count >= 64) return;
+		nomen_click_queue[nomen_click_count++] = h;
+	}
+	static long nomen_click_take(unsigned long long h) {
+		for (int i = 0; i < nomen_click_count; i++) {
+			if (nomen_click_queue[i] == h) {
+				for (int j = i; j < nomen_click_count - 1; j++) {
+					nomen_click_queue[j] = nomen_click_queue[j + 1];
+				}
+				nomen_click_count--;
+				return 1;
+			}
+		}
+		return 0;
+	}
+	static void nomen_click_action(id self, SEL cmd, id sender) {
+		(void)self; (void)cmd;
+		nomen_click_push((unsigned long long)(void *)sender);
+	}
+	static void nomen_click_arm(unsigned long long handle) {
+		Class Tc = objc_getClass("NomenClickTarget");
+		if (!Tc) {
+			Tc = objc_allocateClassPair(objc_getClass("NSObject"), "NomenClickTarget", 0);
+			if (Tc) {
+				class_addMethod(Tc, sel_registerName("clickAction:"), (IMP)nomen_click_action, "v@:@");
+				objc_registerClassPair(Tc);
+			}
+		}
+		if (!nomen_click_target && Tc) {
+			nomen_click_target = (void *)((id(*)(id, SEL))objc_msgSend)((id)Tc, sel_registerName("new"));
+		}
+		if (nomen_click_target) {
+			id control = (id)handle;
+			((void(*)(id, SEL, id))objc_msgSend)(control, sel_registerName("setTarget:"), (id)nomen_click_target);
+			((void(*)(id, SEL, SEL))objc_msgSend)(control, sel_registerName("setAction:"), sel_registerName("clickAction:"));
+		}
+	}
+	```
+	```
+	#arch: c
+	#platform: macos
+	nomen_click_arm(handle);
+	```
+	```
+	#arch: aarch64_use_c
+	#platform: macos
+	nomen_click_arm(handle);
+	```
+	```
+	#arch: c
+	#platform: ios
+	/* TODO: iOS (see #init) */
+	```
+	```
+	#arch: aarch64_use_c
+	#platform: ios
+	/* TODO: iOS (see #init) */
+	```
+}
+
+// Drain a control's click record: true exactly once per click (the record
+// is consumed). Called by the button-family `was_clicked` polls.
+pub func nomen_control_take_click = (uint64 handle, out bool) {
+	```
+	#arch: c
+	#platform: macos
+	extern long nomen_click_take(unsigned long long);
+	return (long)nomen_click_take(handle);
+	```
+	```
+	#arch: aarch64_use_c
+	#platform: macos
+	extern long nomen_click_take(unsigned long long);
+	return (long)nomen_click_take(handle);
+	```
+	```
+	#arch: c
+	#platform: ios
+	return 0;
+	```
+	```
+	#arch: aarch64_use_c
+	#platform: ios
+	return 0;
+	```
+}

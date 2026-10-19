@@ -44,11 +44,12 @@ Event handling: apps conform to the `App` trait and hand themselves to
 `Window.run` — the framework pumps events, detects resizes, re-lays-out the
 registered roots (root container + every Scrollable document), and calls
 `start` once / `frame` per iteration with a `FrameEvents` (click kind +
-coords, resize + size). Clicks are hit-tested with `Container.contains`,
-and control _values_ are polled (`is_checked`, `get_text`, …) — continuous
-controls (slider, progress) read their value each frame. The manual pump
-(`Window.process_events` + a `while` loop) remains for tests and scripts.
-See GUI.md, "The App run loop".
+coords, resize + size). Button-family clicks dispatch through native
+target/action: `was_clicked` drains the edge per control — no coordinates,
+no hit-testing (see GUI.md, "Click events"). Control _values_ are polled
+(`is_checked`, `get_text`, …) — continuous controls (slider, progress) read
+their value each frame. The manual pump (`Window.process_events` + a
+`while` loop) remains for tests and scripts.
 
 ## Tier 1 — now (thin wrappers over system controls)
 
@@ -146,7 +147,9 @@ line.
 
 ## Cross-cutting follow-ups (tracked as they bite)
 
-- **Change notifications.** Polling works for the manual loop, but a
+- **Change notifications.** Clicks are solved (`was_clicked` per
+  button-family control, backed by native target/action). VALUE changes
+  (slider drag, text edit, selection) are still polled per frame; a
   `set_changed_callback` per control (or a single event-channel) will be
   needed the moment a control must react to the user between frames.
 - **Enable/disable + font/appearance** — one-liners per control

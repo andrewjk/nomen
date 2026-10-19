@@ -553,6 +553,35 @@ captures, and capturing a control would MOVE it (CLOSURE.md).
 `Container.set_resize_callback` with them) for tests and scripts that pump
 by hand; the demos are all App-shaped.
 
+### Click events
+
+The button-family controls (`Button`, `CheckBox`, `Radio`, `Toggle`, and
+composites over them) arm a shared native target/action at construction
+(`nomen_control_arm_clicks` — one target object per process; the action
+records the sender's view pointer, which IS the Nomen handle, into a ring
+queue). `was_clicked` drains the edge:
+
+```
+if self.alert_btn.was_clicked() {
+	var int choice = self.alert.run()
+	self.status.set_text("alert: button \{choice}")
+}
+```
+
+No coordinates, no hit-testing — and it works for controls hosted on a
+Scrollable's document view (no `content_click` translation). The record is
+consumed: true exactly once per click. `Pagination` exposes the polls as
+`prev_was_clicked` / `next_was_clicked` / `clicked_page`.
+
+Why a poll and not a capturing `on_click` closure: a handler that touches
+shared controls would have to CAPTURE them, and capturing a control MOVES
+it (CLOSURE.md) — a second handler (or `frame` itself) could no longer
+touch it. Handlers-as-methods on the app (the `ref self` receiver) reach
+all app state without captures, so the poll form is the ownership-clean
+equivalent; `FrameEvents.click`/`click_x`/`click_y` remain for
+right-clicks and coordinate-driven cases (the todo demo's right-click
+delete).
+
 ## Invalidation & incremental relayout
 
 Each control has a `dirty` flag and a reference to its parent (via `parent_of`

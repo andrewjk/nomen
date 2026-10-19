@@ -119,17 +119,16 @@ mv struct TodoApp : App {
 
 	// App.frame — the old event-loop body.
 	pub func frame = (ref self, ref Window win, FrameEvents ev) {
-		if ev.click == 1 {
-			// Hit-test the Add button (outside the scroll view, so its
-			// click coordinates are already the root grid's).
-			if self.grid.contains(self.add_btn.handle, ev.click_x, ev.click_y) {
-				var string new_text = self.input.get_text()
-				if new_text != "" {
-					self.add_item(new_text)
-					self.input.set_text("")
-					self.redance(ref win)
-					self.scroll.scroll_to_bottom()
-				}
+		// Native click event: the Add button arms a shared target/action at
+		// construction — was_clicked drains the edge. No coordinates, no
+		// hit-testing.
+		if self.add_btn.was_clicked() {
+			var string new_text = self.input.get_text()
+			if new_text != "" {
+				self.add_item(new_text)
+				self.input.set_text("")
+				self.redance(ref win)
+				self.scroll.scroll_to_bottom()
 			}
 		}
 
