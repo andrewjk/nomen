@@ -374,6 +374,23 @@ byte-identical; pidigits baseline-relative arc 1.89× → ~1.53× vs C `-O2`):
 - Any emitted assembly that must survive a `bl` may only rely on
   callee-saved registers (x19–x28, sp) or stack slots — x0–x18 are
   caller-saved and clobbered by the callee.
+- An aarch64_use_c FREE function is emitted into the C companion with an
+  `__asm__("name")` label — and clang rejects a label applied after first
+  use, so every `extern` declaration of it (e.g. a walker in another file's
+  `#scope: file` block) must carry the SAME `__asm__` label. Externs must
+  also spell parameters with the companion's `nm_` typedef names
+  (`nm_Container`, `nm__Tuple_int_int`, …) — `struct Container *` is a
+  different (incomplete) type there and conflicts. Pure-Nomen free
+  functions are asm-emitted instead (no companion definition, no label);
+  their externs keep the plain `struct`/`_Tuple` spellings. Live example:
+  `nomen_scroll_thunk`/`set_content_size`'s registry/`nomen_scroll_measure`
+  in core/System/Controls/{Scrollable,Container}.nm. Related
+  hoisting rule: `#scope: file` blocks hoist to the top of the generated
+  TU regardless of where the carrier function sits — and the aarch64
+  backend only hoists them from GENERATED functions (methods, or free
+  functions with bodies); an empty-body free function used purely as a
+  file-scope carrier gets skipped on aarch64 (its content never emits —
+  put such blocks in a real method, e.g. set_content_size).
 
 ## json-serde run-time regression in 0.7.0 (string-ownership copies)
 

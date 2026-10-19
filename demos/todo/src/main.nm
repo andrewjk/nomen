@@ -6,10 +6,9 @@ const WIN_H = 500
 
 // Creates a checkbox for `text`, lays it out as a full-width row in the todo
 // stack (so it lands ABOVE the input row), and moves the control into
-// `todos` (its grid handle into `handles`). Called for the starter todos at
-// startup and again on every Add — the todo count is unbounded, and each
-// todo owns the control it created (freed on delete, or at exit, by
-// #destroy).
+// `todos` (its grid handle into `handles`). Used for the starter todos in
+// the app's #init — where everything is still a local (see GUI.md, "The App
+// run loop": composite `ref` wiring on fields would alias `self`).
 func add_todo = (
 	ref Container todos,
 	Window content,
@@ -27,143 +26,152 @@ func add_todo = (
 	owned.push(mv cb)
 }
 
-// The scrolling list's layout: frame the outer grid (which sizes the scroll
-// viewport), then measure the todo stack unbounded, size the document view
-// to it, and lay the stack out into that height — the pair the Scrollable
-// design note (GUI.md) prescribes. `scroll_to_bottom` keeps the newest todo
-// in view.
-func layout_todos = (
-	ref Container grid,
-	Window win,
-	ref Scrollable scroll,
-	ref Container todos,
-	Window content
-) {
-	grid.layout(win)
-	var BoxConstraints bc = BoxConstraints()
-	bc.max_width = win.content_width() - 32 // the root grid's 16px padding, both sides
-	const Size cs = todos.measure(bc)
-	scroll.set_content_size(cs.width, cs.height)
-	todos.layout(content)
-}
+// A todo app as an App (the Window.run contract): the framework owns the
+// pump, the pool, resize detection, and the relayout of the registered root
+// (the window grid) and document (the todo stack). The app handles clicks
+// and re-dances the stack when a todo is added or removed.
+mv struct TodoApp : App {
+	var Text title
+	var Scrollable scroll
+	var Window doc
+	var Container todos
+	var List<CheckBox> owned
+	var List<uint64> handles
+	var TextBox input
+	var Button add_btn
+	var Container grid
 
-pub func main = () {
-	const win = Window("Nomen Todo", WIN_W, WIN_H)
+	pub func #init = (self, Window window) {
+		var Text title = Text(window)
+		title.set_text("Todo List")
 
-	var title = Text(win)
-	title.set_text("Todo List")
+		// The todo list lives on a Scrollable's document view: however many
+		// todos are added, the input row below stays reachable, and the list
+		// scrolls.
+		var Scrollable scroll = Scrollable(window)
+		var Window content = scroll.content_window()
+		var Container todos = VStack(8)
+		// Owned checkboxes, index-aligned with `handles` (the grid handles
+		// for hit-testing). Reading a CheckBox out of the list would
+		// materialize an owning copy whose scope-exit destroy releases the
+		// live view — so hit-tests go through these plain ints, and the
+		// checkboxes themselves are only ever touched by ownership transfer
+		// (push / remove).
+		var List<CheckBox> owned = List<CheckBox>()
+		var List<uint64> handles = List<uint64>()
 
-	// The todo list lives on a Scrollable's document view: however many todos
-	// are added, the input row below stays reachable, and the list scrolls.
-	var scroll = Scrollable(win)
-	const content = scroll.content_window()
-	var todos = VStack(8)
-	// Owned checkboxes, index-aligned with `handles` (the grid handles for
-	// hit-testing). Reading a CheckBox out of the list would materialize an
-	// owning copy whose scope-exit destroy releases the live view — so
-	// hit-tests go through these plain ints, and the checkboxes themselves
-	// are only ever touched by ownership transfer (push / remove).
-	var owned = List<CheckBox>()
-	var handles = List<uint64>()
+		var TextBox input = TextBox(window)
+		input.set_placeholder("Type a new todo...")
+		var Button add_btn = Button(window, "Add")
 
-	const input = TextBox(win)
-	input.set_placeholder("Type a new todo...")
-	const add_btn = Button(win, "Add")
+		// A vertical root: title, the scrollable list (which GROWS to fill
+		// the leftover height), then the input row pinned at the bottom.
+		var Container grid = VStack(8)
+		grid.padding = 16
+		grid.add(title.handle, 0, 30, 1)
+		grid.add(scroll.handle, 0, 0, 1, 1)
+		var int input_row = grid.add_hstack(grid.root_index(), 8, 1)
+		grid.add_to(input_row, input.handle, 0, 24, 1, 1)
+		grid.add_to_intrinsic(input_row, add_btn.handle, 1)
 
-	// A vertical root: title, the scrollable list (which GROWS to fill the
-	// leftover height), then the input row pinned at the bottom.
-	var Container grid = VStack(8)
-	grid.padding = 16
-	grid.add(title.handle, 0, 30, 1)
-	grid.add(scroll.handle, 0, 0, 1, 1)
-	const int input_row = grid.add_hstack(grid.root_index(), 8, 1)
-	grid.add_to(input_row, input.handle, 0, 24, 1, 1)
-	grid.add_to_intrinsic(input_row, add_btn.handle, 1)
+		add_todo(ref todos, content, ref owned, ref handles, "Learn Nomen")
+		add_todo(ref todos, content, ref owned, ref handles, "Build a GUI app")
+		add_todo(ref todos, content, ref owned, ref handles, "Ship it")
 
-	add_todo(ref todos, content, ref owned, ref handles, "Learn Nomen")
-	add_todo(ref todos, content, ref owned, ref handles, "Build a GUI app")
-	add_todo(ref todos, content, ref owned, ref handles, "Ship it")
-	grid.set_resize_callback(win)
+		// Move everything into the app's fields.
+		self.title = title
+		self.scroll = scroll
+		self.doc = content
+		self.todos = todos
+		self.owned = owned
+		self.handles = handles
+		self.input = input
+		self.add_btn = add_btn
+		self.grid = grid
+	}
 
-	win.show()
-	// Lay out AFTER the window is up: the first layout must see the window's
-	// final content size (a title bar shrinks it), or AppKit's autoresizing
-	// masks shift controls at show time.
-	layout_todos(ref grid, win, ref scroll, ref todos, content)
-	scroll.scroll_to_top()
+	// App.start: register the layout roots. The framework lays the root out
+	// on start/show/resize and re-runs the todo stack's document dance
+	// (measure unbounded → set_content_size → layout), with the one-time
+	// scroll_to_top on the first post-show pass. The registration goes
+	// grid-side with scalar handles — one borrow of self per call (two
+	// `ref` borrows under one owner would trip the aliasing rule).
+	pub func start = (ref self, ref Window win) {
+		win.set_content(ref self.grid)
+		self.todos.set_document(self.scroll.handle, self.scroll.doc_handle())
+	}
 
-	// Re-layout live while the window is resized: native controls keep their
-	// absolute frames (AppKit pins them to the bottom-left origin), so without
-	// this they appear anchored to the bottom as the window grows. Re-running
-	// layout on every content-size change re-flips y against the new height
-	// (anchoring the grid to the top) and updates intermediate sizes during
-	// the drag instead of only when it ends. The todo stack re-flows too — its
-	// width follows the scrollable.
-	var int prev_w = win.content_width()
-	var int prev_h = win.content_height()
+	// Add a todo at runtime (fields — every statement borrows `self` once).
+	func add_item = (ref self, string text) {
+		var CheckBox cb = CheckBox(self.doc)
+		cb.set_title(text)
+		self.todos.add(cb.handle, 0, 24, 1)
+		self.handles.push(cb.handle)
+		self.owned.push(mv cb)
+	}
 
-	while win.is_visible() {
-		const int had_click = Window.process_events()
+	// Re-run the document dance: the framework dances on RESIZE only; an
+	// add or delete changes the stack height right now. One `ref` borrow
+	// (the todos grid) + scalar handles, so no aliasing.
+	func redance = (ref self, ref Window win) {
+		nomen_scroll_thunk(ref self.todos, self.scroll.handle, self.scroll.doc_handle(), ref win, 0)
+	}
 
-		const int cur_w = win.content_width()
-		const int cur_h = win.content_height()
-		if cur_w != prev_w || cur_h != prev_h {
-			prev_w = cur_w
-			prev_h = cur_h
-			layout_todos(ref grid, win, ref scroll, ref todos, content)
-		}
-
-		if had_click == 1 {
-			// Hit-test the Add button (outside the scroll view, so its click
-			// coordinates are already the root grid's).
-			const int cx = win.click_x()
-			const int cy = win.click_y()
-			if grid.contains(add_btn.handle, cx, cy) {
-				const string new_text = input.get_text()
+	// App.frame — the old event-loop body.
+	pub func frame = (ref self, ref Window win, FrameEvents ev) {
+		if ev.click == 1 {
+			// Hit-test the Add button (outside the scroll view, so its
+			// click coordinates are already the root grid's).
+			if self.grid.contains(self.add_btn.handle, ev.click_x, ev.click_y) {
+				var string new_text = self.input.get_text()
 				if new_text != "" {
-					add_todo(ref todos, content, ref owned, ref handles, new_text)
-					input.set_text("")
-					layout_todos(ref grid, win, ref scroll, ref todos, content)
-					scroll.scroll_to_bottom()
+					self.add_item(new_text)
+					self.input.set_text("")
+					self.redance(ref win)
+					self.scroll.scroll_to_bottom()
 				}
 			}
 		}
 
-		// Right-click deletes a todo. The click arrives in WINDOW coordinates
-		// while the todos live in the document view, so translate through the
-		// scrollable first — the visible top of the document moves with the
-		// scroll position. The grid node is removed first — a freed handle
-		// left in the tree would still be measured and re-framed — then the
-		// control itself is freed by moving it out of the list into a nested
-		// block: its #destroy runs at the block's closing brace, removing the
-		// view and releasing it.
-		if had_click == 2 {
-			const int cx = win.click_x()
-			const int cy = win.click_y()
-			const [tx, ty] = content_click(scroll, cx, cy)
+		// Right-click deletes a todo. The click arrives in WINDOW
+		// coordinates while the todos live in the document view, so
+		// translate through the scrollable first — the visible top of the
+		// document moves with the scroll position. The grid node is removed
+		// first — a freed handle left in the tree would still be measured
+		// and re-framed — then the control itself is freed by moving it out
+		// of the list into a nested block: its #destroy runs at the block's
+		// closing brace, removing the view and releasing it.
+		if ev.click == 2 {
+			var [tx, ty] = content_click(self.scroll, ev.click_x, ev.click_y)
 			var int found = -1
 			var uint64 found_handle = 0
 			var i = 0
-			while i < handles.length; i += 1 {
-				const uint64 h = handles.at(i)
+			while i < self.handles.length; i += 1 {
+				const uint64 h = self.handles.at(i)
 				// ±4px vertical slop: rows are 24px tall with 8px gaps, so a
 				// click landing in a gap still resolves to the nearest row.
 				// The expanded bands tile the stack exactly (row i claims up
 				// to its bottom + 4, the next row claims from its top - 4),
 				// so no point matches two rows.
-				if todos.contains(h, tx, ty) || todos.contains(h, tx, ty - 4) || todos.contains(h, tx, ty + 4) {
+				if self.todos.contains(h, tx, ty) || self.todos.contains(h, tx, ty - 4) || self.todos.contains(h, tx, ty + 4) {
 					found = i
 					found_handle = h
 				}
 			}
 			if found != -1 {
-				todos.remove_leaf(found_handle)
+				self.todos.remove_leaf(found_handle)
 				{
-					var CheckBox _dead = owned.remove_at_or_panic(found)
+					var CheckBox _dead = self.owned.remove_at_or_panic(found)
 				}
-				var uint64 _gone = handles.remove_at_or_panic(found)
-				layout_todos(ref grid, win, ref scroll, ref todos, content)
+				var uint64 _gone = self.handles.remove_at_or_panic(found)
+				self.redance(ref win)
 			}
 		}
 	}
+}
+
+pub func main = () {
+	var Window win = Window("Nomen Todo", WIN_W, WIN_H)
+	var TodoApp app = TodoApp(win)
+	win.run(mv app)
 }

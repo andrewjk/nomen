@@ -14,14 +14,14 @@ visual fidelity.
 
 ## Current inventory (`core/System/Controls/`)
 
-| Control     | Backing                           | Notes                                                        |
-| ----------- | --------------------------------- | ------------------------------------------------------------ |
-| `Window`    | NSWindow / UIWindow               | manual event loop (`process_events`), click coords           |
-| `Text`      | NSTextField (label) / UILabel     | static text                                                  |
-| `TextBox`   | NSTextField / UITextField         | single line, placeholder, get/set text                       |
-| `CheckBox`  | NSButton (switch type) / UISwitch | toggle + title                                               |
-| `Button`    | NSButton / UIButton               | momentary push                                               |
-| `Container` | — (pure math)                     | Grid / VStack / HStack / ZStack / Block, dirty-rect relayout |
+| Control     | Backing                           | Notes                                                               |
+| ----------- | --------------------------------- | ------------------------------------------------------------------- |
+| `Window`    | NSWindow / UIWindow               | `Window.run` (the App contract) or the manual `process_events` loop |
+| `Text`      | NSTextField (label) / UILabel     | static text                                                         |
+| `TextBox`   | NSTextField / UITextField         | single line, placeholder, get/set text                              |
+| `CheckBox`  | NSButton (switch type) / UISwitch | toggle + title                                                      |
+| `Button`    | NSButton / UIButton               | momentary push                                                      |
+| `Container` | — (pure math)                     | Grid / VStack / HStack / ZStack / Block, dirty-rect relayout        |
 
 All controls follow one shape (see `CheckBox.nm` for the template):
 
@@ -40,10 +40,15 @@ Each function body carries up to four raw blocks: `#arch: c` and
 `#arch: aarch64_use_c`, each for `#platform: macos` and `#platform: ios`.
 macOS-first is fine; an iOS block can lag (the todo demo is macOS-only today).
 
-Event handling stays with the manual loop for now: clicks arrive via
-`Window.process_events` (1 = left, 2 = right) + `Container.contains`
-hit-testing, and control _values_ are polled (`is_checked`, `get_text`, …).
-Continuous controls (slider, progress) read their value each frame.
+Event handling: apps conform to the `App` trait and hand themselves to
+`Window.run` — the framework pumps events, detects resizes, re-lays-out the
+registered roots (root container + every Scrollable document), and calls
+`start` once / `frame` per iteration with a `FrameEvents` (click kind +
+coords, resize + size). Clicks are hit-tested with `Container.contains`,
+and control _values_ are polled (`is_checked`, `get_text`, …) — continuous
+controls (slider, progress) read their value each frame. The manual pump
+(`Window.process_events` + a `while` loop) remains for tests and scripts.
+See GUI.md, "The App run loop".
 
 ## Tier 1 — now (thin wrappers over system controls)
 
@@ -84,16 +89,16 @@ their native classes are separate (`NSSecureTextField` is not
 Still system-backed; each needs design work beyond the template before
 coding.
 
-| Component        | Backing                             | gpui-kit analog       | Why later                                                                                                                                                                                                                                                                   |
-| ---------------- | ----------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Scrollable` ✅  | NSScrollView / UIScrollView         | scrollable            | **Highest value in this tier** — the todo app already outgrows 500px. A scroll container changes the layout engine's coordinate story (document view vs content view, y-flip, content size reporting from measure). Deserves a short design note in GUI.md before the code. |
-| `Tabs` ✅        | NSTabView / UITabBarController      | tabs                  | Container-of-pages; page switching + the tab bar need to interact with our relayout.                                                                                                                                                                                        |
-| `ListView` ✅ / `Table` ✅ | NSTableView / UITableView    | list, data-table      | Needs a data-source bridge (row count/value callbacks from Nomen) and row reuse. Big but native. ListView bridges a single column via C globals; Table generalizes the bridge to a grid with view-based (reusable) cells.                                                       |
-| `ComboBox` ✅    | NSComboBox / —                      | combobox              | macOS-only; editable + completing.                                                                                                                                                                                                                                          |
-| `Menu (context)` ✅ | NSMenu (`view.menu`) / UIMenu     | menu, dropdown-button | Attach-a-menu is easy on macOS; iOS presentation differs.                                                                                                                                                                                                                   |
-| `Toolbar` ✅     | NSToolbar / —                       | toolbar               | Delegate-driven item model; macOS-only.                                                                                                                                                                                                                                     |
-| `SplitView` ✅   | NSSplitView / UISplitViewController | resizable, sidebar    | Resizable panes — the autoresizing-mask story overlaps ours.                                                                                                                                                                                                                |
-| `OutlineView` ✅ | NSOutlineView / —                   | tree                  | Tree-shaped data source bridge (same work as Table, plus hierarchy).                                                                                                                                                                                                        |
+| Component                  | Backing                             | gpui-kit analog       | Why later                                                                                                                                                                                                                                                                   |
+| -------------------------- | ----------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Scrollable` ✅            | NSScrollView / UIScrollView         | scrollable            | **Highest value in this tier** — the todo app already outgrows 500px. A scroll container changes the layout engine's coordinate story (document view vs content view, y-flip, content size reporting from measure). Deserves a short design note in GUI.md before the code. |
+| `Tabs` ✅                  | NSTabView / UITabBarController      | tabs                  | Container-of-pages; page switching + the tab bar need to interact with our relayout.                                                                                                                                                                                        |
+| `ListView` ✅ / `Table` ✅ | NSTableView / UITableView           | list, data-table      | Needs a data-source bridge (row count/value callbacks from Nomen) and row reuse. Big but native. ListView bridges a single column via C globals; Table generalizes the bridge to a grid with view-based (reusable) cells.                                                   |
+| `ComboBox` ✅              | NSComboBox / —                      | combobox              | macOS-only; editable + completing.                                                                                                                                                                                                                                          |
+| `Menu (context)` ✅        | NSMenu (`view.menu`) / UIMenu       | menu, dropdown-button | Attach-a-menu is easy on macOS; iOS presentation differs.                                                                                                                                                                                                                   |
+| `Toolbar` ✅               | NSToolbar / —                       | toolbar               | Delegate-driven item model; macOS-only.                                                                                                                                                                                                                                     |
+| `SplitView` ✅             | NSSplitView / UISplitViewController | resizable, sidebar    | Resizable panes — the autoresizing-mask story overlaps ours.                                                                                                                                                                                                                |
+| `OutlineView` ✅           | NSOutlineView / —                   | tree                  | Tree-shaped data source bridge (same work as Table, plus hierarchy).                                                                                                                                                                                                        |
 
 ## Tier 3 — deferred (no system component; needs custom drawing)
 

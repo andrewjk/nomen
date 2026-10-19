@@ -490,6 +490,158 @@ pub mv struct Window: Control {
 		```
 	}
 
+	// ── The App run loop (see App.nm) ──
+
+	// Register the layout root for Window.run: the root Container's layout
+	// re-runs on start, on every live-resize delegate tick, and on each
+	// frame where the content rect changed. The grid must outlive the run
+	// (an app field — registration stores its address). Call from
+	// App.start; also arms the resize delegate's target pair.
+	pub func set_content = (ref self, ref Container grid) {
+		```
+		#arch: c
+		#platform: macos
+		#scope: file
+		static void *nomen_run_root_grid = 0;
+		static void *nomen_run_root_win = 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		#scope: file
+		static void *nomen_run_root_grid = 0;
+		static void *nomen_run_root_win = 0;
+		```
+		```
+		#arch: c
+		#platform: macos
+		extern void nomen_set_resize_target(void *, void *);
+		nomen_run_root_grid = (void *)grid;
+		nomen_run_root_win = (void *)self;
+		nomen_set_resize_target((void *)grid, (void *)self);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		extern void nomen_set_resize_target(void *, void *);
+		nomen_run_root_grid = (void *)grid;
+		nomen_run_root_win = (void *)self;
+		nomen_set_resize_target((void *)grid, (void *)self);
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+	}
+
+	// One framework relayout pass: the registered root Container, then every
+	// registered Scrollable's document dance (`first` drives its one-time
+	// scroll_to_top).
+	func relayout = (self, int first) {
+		```
+		#arch: c
+		#platform: macos
+		extern void nomen_layout_thunk(struct Container *, struct Window *);
+		extern void nomen_scroll_relayout_all(void *, long);
+		if (nomen_run_root_grid) {
+			nomen_layout_thunk((struct Container *)nomen_run_root_grid, (struct Window *)self);
+		}
+		nomen_scroll_relayout_all((void *)self, first);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		extern void nomen_layout_thunk(struct Container *, struct Window *);
+		extern void nomen_scroll_relayout_all(void *, long);
+		if (nomen_run_root_grid) {
+			nomen_layout_thunk((struct Container *)nomen_run_root_grid, (struct Window *)self);
+		}
+		nomen_scroll_relayout_all((void *)self, first);
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+	}
+
+	// Close the window (the programmatic stand-in for the red button) — the
+	// run loop exits on the next `is_visible` check.
+	pub func close = (self) {
+		```
+		#arch: c
+		#platform: macos
+		((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("performClose:"), (id)0);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("performClose:"), (id)0);
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+	}
+
+	// Run the app: the framework owns everything from here until the window
+	// closes. Order: `app.start` (the app registers its layout roots while
+	// in final storage), the pre-show layout pass, `show`, the post-show
+	// pass (the toolbar settles the content rect only after show; this pass
+	// also performs the one-time scroll_to_top), then the loop — pump
+	// events, detect resizes (framework relayout already applied), and hand
+	// the app a FrameEvents each frame. The app is consumed: it is destroyed
+	// when the loop exits (controls release, buffers free).
+	pub func run = (ref self, mv App app) {
+		app.start(ref self)
+		Container.arm_resize_delegate(self)
+		self.relayout(0)
+		self.show()
+		self.relayout(1)
+		var int prev_w = self.content_width()
+		var int prev_h = self.content_height()
+		var FrameEvents ev = FrameEvents()
+		while self.is_visible() {
+			ev.click = Window.process_events()
+			ev.click_x = self.click_x()
+			ev.click_y = self.click_y()
+			ev.resized = false
+			var int cur_w = self.content_width()
+			var int cur_h = self.content_height()
+			if cur_w != prev_w {
+				ev.resized = true
+			}
+			if cur_h != prev_h {
+				ev.resized = true
+			}
+			if ev.resized {
+				prev_w = cur_w
+				prev_h = cur_h
+				ev.width = cur_w
+				ev.height = cur_h
+				self.relayout(0)
+			}
+			app.frame(ref self, ev)
+		}
+	}
+
 	// ── Control trait conformance ──
 	// The window is the layout root: it measures to its content-view size and
 	// applies a frame to the native NSWindow/UIWindow.

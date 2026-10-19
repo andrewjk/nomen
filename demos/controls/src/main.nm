@@ -1,577 +1,707 @@
 import System
 import System::Controls
 
+// The controls gallery as an App (the Window.run contract): #init builds
+// every control against the page Scrollable's document view, `start`
+// registers the layout roots, and `frame` is the old event-loop body —
+// polled values, click hit-testing, and the app-owned pane relayouts. The
+// framework (Window.run) owns the pump, the autorelease pool, resize
+// detection, and the root/Scrollable relayouts.
+//
+// #init builds CONTROLS AS LOCALS and moves them into fields at the end:
+// wiring a composite takes `num.add_to(ref grid, …)`, and two `ref` borrows
+// under one owner (self) trip the aliasing rule — locals have disjoint
+// owners, fields don't. (See GUI.md, "The App run loop".)
 pub func main = () {
-	const win = Window("Nomen Controls", 440, 900)
+	var Window win = Window("Nomen Controls", 440, 900)
+	var GalleryApp app = GalleryApp(win)
+	win.run(mv app)
+}
 
-	// The whole gallery scrolls: the page lives on a Scrollable's document
-	// view (the todo demo's pattern). The window is a viewport on a page
-	// much taller than it, so every section — and the status line the
-	// toolbar/menu polls report into — stays reachable by scrolling.
-	var page_scroll = Scrollable(win)
-	const content = page_scroll.content_window()
+mv struct GalleryApp : App {
+	// ── Page scaffold ──
+	var Scrollable page
+	var Container outer
+	var Container page_grid
 
-	// ── Controls (built against the document view) ──
-	var header = Text(content)
-	header.set_text("Controls Gallery")
-	header.set_bold(true)
+	// ── Inputs ──
+	var Text header
+	var Text title
+	var TextBox name
+	var SecureField secret
+	var SearchField search
+	var TextView notes
 
-	var title = Text(content)
-	title.set_text("Inputs")
-	title.set_bold(true)
-	const name = TextBox(content)
-	name.set_placeholder("Text box")
-	const secret = SecureField(content)
-	secret.set_placeholder("Password")
-	const search = SearchField(content)
-	search.set_placeholder("Search")
-	const notes = TextView(content)
-	notes.set_placeholder("Multiline notes…")
+	// ── Choices ──
+	var Text choice_title
+	var CheckBox agree
+	var Radio radio_a
+	var Radio radio_b
+	var Switch flip
+	var Toggle stamp
+	var Segmented views
+	var Select pick
+	var Stepper step
+	var Slider slide
 
-	var choice_title = Text(content)
-	choice_title.set_text("Choices")
-	choice_title.set_bold(true)
-	const agree = CheckBox(content)
-	agree.set_title("Check me")
-	const radio_a = Radio(content, "One")
-	const radio_b = Radio(content, "Two")
-	radio_a.set_checked(true)
-	const flip = Switch(content)
-	flip.set_checked(true)
-	const stamp = Toggle(content, "Toggle")
-	const views = Segmented(content, 3)
-	views.set_label(0, "Day")
-	views.set_label(1, "Week")
-	views.set_label(2, "Month")
-	views.set_selected(1)
-	const pick = Select(content)
-	pick.add_item("Red")
-	pick.add_item("Green")
-	pick.add_item("Blue")
-	var step = Stepper(content)
-	step.set_min(0.0)
-	step.set_max(10.0)
-	step.set_increment(1.0)
-	step.set_value(3.0)
-	var slide = Slider(content, 0.0, 100.0)
-	slide.set_value(40.0)
+	// ── Display (each row pairs the control with a caption label) ──
+	var Text display_title
+	var Progress bar
+	var Spinner spin
+	var LevelIndicator stars
+	var ImageView icon
+	var DatePicker when
+	var ColorPicker color
+	var Text prog_caption
+	var Text spin_caption
+	var Text stars_caption
+	var Text icon_caption
+	var Text when_caption
+	var Text color_caption
 
-	var display_title = Text(content)
-	display_title.set_text("Display")
-	display_title.set_bold(true)
-	const bar = Progress(content)
-	bar.set_value(0.4)
-	var spin = Spinner(content)
-	spin.start()
-	const stars = LevelIndicator(content)
-	stars.set_max(5.0)
-	stars.set_value(3.0)
-	const icon = ImageView(content)
-	icon.set_symbol("gearshape")
-	var when = DatePicker(content)
-	when.set_time(1760000000)
-	var color = ColorPicker(content)
-	color.set_rgb(52, 149, 235)
-	// The display controls show no title of their own, so each row pairs the
-	// control with a caption label (the caption sizes to its text; the
-	// control fills the rest of the row).
-	var prog_caption = Text(content)
-	prog_caption.set_text("Progress")
-	var spin_caption = Text(content)
-	spin_caption.set_text("Spinner")
-	var stars_caption = Text(content)
-	stars_caption.set_text("Level indicator")
-	var icon_caption = Text(content)
-	icon_caption.set_text("Image view")
-	var when_caption = Text(content)
-	when_caption.set_text("Date picker")
-	var color_caption = Text(content)
-	color_caption.set_text("Color picker")
+	// ── Actions ──
+	var Text action_title
+	var Button hover_btn
+	var Button alert_btn
+	var Button sheet_btn
+	var Button pop_btn
 
-	var action_title = Text(content)
-	action_title.set_text("Actions")
-	action_title.set_bold(true)
-	const hover_btn = Button(content, "Hover me")
-	set_tooltip(hover_btn.handle, "Tooltips attach to any control by handle")
-	const alert_btn = Button(content, "Show alert")
-	const sheet_btn = Button(content, "Show sheet")
-	const pop_btn = Button(content, "Show popover")
+	// ── Grouping ──
+	var Text group_title
+	var Separator rule
+	var GroupBox form
 
-	var group_title = Text(content)
-	group_title.set_text("Grouping")
-	group_title.set_bold(true)
-	const rule = Separator(content)
-	const form = GroupBox(content, "Group box")
+	// ── Scrolling (a viewport nested in the page) ──
+	var Text scroll_title
+	var Scrollable scroll
+	var Container scroll_grid
 
-	var scroll_title = Text(content)
-	scroll_title.set_text("Scrolling")
-	scroll_title.set_bold(true)
-	var scroll = Scrollable(content)	// nested: the Scrolling section's viewport
-	// The scroll view's children live on its document view: build them
-	// against `content_window()` and lay them out into the content size
-	// (measure unbounded → set_content_size → layout) — see the Scrollable
-	// design note in GUI.md.
-	const scroll_content = scroll.content_window()
-	var scroll_grid = Grid(1, 6)
-	scroll_grid.padding = 8
-	var row_1 = Text(scroll_content)
-	row_1.set_text("Row 1 — scroll me")
-	var row_2 = Text(scroll_content)
-	row_2.set_text("Row 2")
-	var row_3 = Text(scroll_content)
-	row_3.set_text("Row 3")
-	var row_4 = Text(scroll_content)
-	row_4.set_text("Row 4")
-	var row_5 = Text(scroll_content)
-	row_5.set_text("Row 5")
-	var row_6 = Text(scroll_content)
-	row_6.set_text("Row 6 — the end")
-	scroll_grid.add(row_1.handle, 0, 24, 1)
-	scroll_grid.add(row_2.handle, 0, 24, 1)
-	scroll_grid.add(row_3.handle, 0, 24, 1)
-	scroll_grid.add(row_4.handle, 0, 24, 1)
-	scroll_grid.add(row_5.handle, 0, 24, 1)
-	scroll_grid.add(row_6.handle, 0, 24, 1)
+	// ── Tabs (each page is its own layout root) ──
+	var Text tabs_title
+	var Tabs tabs
+	var Container tabs_grid_0
+	var Container tabs_grid_1
+	var Window tabs_page_0
+	var Window tabs_page_1
 
-	var tabs_title = Text(content)
-	tabs_title.set_text("Tabs")
-	tabs_title.set_bold(true)
-	const tabs = Tabs(content, 2)
-	tabs.set_label(0, "One")
-	tabs.set_label(1, "Two")
-	// Each page is its own layout root (content_window(index)); the laid-out
-	// frames stay valid when the user switches pages natively.
-	const tabs_page_0 = tabs.content_window(0)
-	const tabs_page_1 = tabs.content_window(1)
-	var tabs_grid_0 = Grid(1, 6)
-	tabs_grid_0.padding = 12
-	var tabs_label_0 = Text(tabs_page_0)
-	tabs_label_0.set_text("Page one content")
-	tabs_grid_0.add(tabs_label_0.handle, 0, 24, 1)
-	var tabs_grid_1 = Grid(1, 6)
-	tabs_grid_1.padding = 12
-	var tabs_label_1 = Text(tabs_page_1)
-	tabs_label_1.set_text("Page two content")
-	tabs_grid_1.add(tabs_label_1.handle, 0, 24, 1)
+	// ── List / combo ──
+	var Text list_title
+	var ListView list
+	var Text combo_title
+	var ComboBox combo
 
-	var list_title = Text(content)
-	list_title.set_text("List")
-	list_title.set_bold(true)
-	const list = ListView(content)
-	list.add_row("alpha")
-	list.add_row("beta")
-	list.add_row("gamma")
-	list.add_row("delta")
-	list.select_row(1)
+	// ── Context menu ──
+	var Menu menu
+	var Button menu_btn
 
-	var combo_title = Text(content)
-	combo_title.set_text("Combo box")
-	combo_title.set_bold(true)
-	const combo = ComboBox(content)
-	combo.add_item("Red")
-	combo.add_item("Green")
-	combo.add_item("Blue")
-	combo.set_selected(1)
+	// ── Split view (NSSplitView owns the pane geometry) ──
+	var Text split_title
+	var SplitView split
+	var Container split_grid_0
+	var Container split_grid_1
+	var Window split_left
+	var Window split_right
 
-	const menu_btn = Button(content, "Right-click me")
-	const menu = Menu()
-	menu.add_item("Cut")
-	menu.add_item("Copy")
-	menu.add_separator()
-	menu.add_item("Paste")
-	menu.attach(menu_btn.handle)
+	// ── Outline / table ──
+	var Text outline_title
+	var OutlineView outline
+	var Text table_title
+	var Table table
 
-	var split_title = Text(content)
-	split_title.set_text("Split view")
-	split_title.set_bold(true)
-	var split = SplitView(content, 2, true)
-	// Each pane is its own layout root (content_window(index)); NSSplitView
-	// owns the pane geometry, so the pane layouts re-run after the split is
-	// re-framed (below and on window resize).
-	const split_left = split.content_window(0)
-	const split_right = split.content_window(1)
-	var split_grid_0 = Grid(1, 6)
-	split_grid_0.padding = 8
-	var split_label_0 = Text(split_left)
-	split_label_0.set_text("Left pane")
-	split_grid_0.add(split_label_0.handle, 0, 24, 1)
-	var split_grid_1 = Grid(1, 6)
-	split_grid_1.padding = 8
-	var split_label_1 = Text(split_right)
-	split_label_1.set_text("Right pane")
-	split_grid_1.add(split_label_1.handle, 0, 24, 1)
-	split.set_position(200.0, 0)
+	// ── Composites (pure Nomen over the controls above) ──
+	var Text comp_title
+	var NumberInput num
+	var OtpInput otp
+	var Pagination pag
+	var Form signin
+	var TextBox form_name
+	var CheckBox form_ok
 
-	var outline_title = Text(content)
-	outline_title.set_text("Outline")
-	outline_title.set_bold(true)
-	const outline = OutlineView(content)
-	outline.add_item("Sources", -1)
-	outline.add_item("main.nm", 0)
-	outline.add_item("Window.nm", 0)
-	outline.add_item("Demos", -1)
-	outline.add_item("todo", 3)
-	outline.add_item("controls", 3)
-	outline.set_expanded(0, true)
+	// ── Chrome + modals + state ──
+	var Toolbar toolbar
+	var Alert alert
+	var Sheet sheet
+	var Container sheet_grid
+	var Button sheet_close_btn
+	var Popover pop
+	var Text status
+	var string prev_status = ""
+	// The tab/split panes are laid out by NSTabView/NSSplitView AFTER the
+	// framework's first post-show pass gives them real frames — one app-side
+	// pane pass on the first frame, then on every resize.
+	var bool panes_laid = false
 
-	var table_title = Text(content)
-	table_title.set_text("Table")
-	table_title.set_bold(true)
-	const table = Table(content, 3)
-	table.set_header(0, "Item")
-	table.set_header(1, "Qty")
-	table.set_header(2, "Price")
-	table.add_row()
-	table.add_row()
-	table.add_row()
-	table.set_cell(0, 0, "apples")
-	table.set_cell(0, 1, "12")
-	table.set_cell(0, 2, "0.40")
-	table.set_cell(1, 0, "pears")
-	table.set_cell(1, 1, "7")
-	table.set_cell(1, 2, "0.55")
-	table.set_cell(2, 0, "plums")
-	table.set_cell(2, 1, "20")
-	table.set_cell(2, 2, "0.30")
-	table.select_row(1)
+	pub func #init = (self, Window window) {
+		// The whole gallery scrolls: the page lives on a Scrollable's
+		// document view. The window is a viewport on a page much taller
+		// than it, so every section stays reachable by scrolling.
+		var Scrollable page = Scrollable(window)
+		// The document view hosts every page control. The +1 from
+		// content_window releases when this constructor's local dies — the
+		// Scrollable holds its own reference.
+		var Window content = page.content_window()
 
-	var comp_title = Text(content)
-	comp_title.set_text("Composites")
-	comp_title.set_bold(true)
-	// Tier 3 compositions: pure Nomen over the controls above, wired into
-	// this grid as rows (no new natives).
-	var num = NumberInput(content)
-	num.set_range(0.0, 10.0, 0.5)
-	num.set_value(2.5)
-	var otp = OtpInput(content)
-	var pag = Pagination(content, 3)
-	var signin = Form(content, "Sign in")
-	const form_name = TextBox(content)
-	form_name.set_placeholder("user")
-	const form_ok = CheckBox(content)
-	form_ok.set_title("Remember me")
+		// ── Controls (built against the document view) ──
+		var Text header = Text(content)
+		header.set_text("Controls Gallery")
+		header.set_bold(true)
 
-	var status = Text(content)
-	status.set_text("")
+		var Text title = Text(content)
+		title.set_text("Inputs")
+		title.set_bold(true)
+		var TextBox name = TextBox(content)
+		name.set_placeholder("Text box")
+		var SecureField secret = SecureField(content)
+		secret.set_placeholder("Password")
+		var SearchField search = SearchField(content)
+		search.set_placeholder("Search")
+		var TextView notes = TextView(content)
+		notes.set_placeholder("Multiline notes…")
 
-	// Window chrome: the toolbar shrinks the contentView (AppKit owns the
-	// layout rect), so it must exist BEFORE the first grid layout. Its
-	// three labeled buttons report clicks through the same edge-triggered
-	// poll as the context menu.
-	const toolbar = Toolbar(win, 3)
-	toolbar.set_label(0, "One")
-	toolbar.set_label(1, "Two")
-	toolbar.set_label(2, "Three")
+		var Text choice_title = Text(content)
+		choice_title.set_text("Choices")
+		choice_title.set_bold(true)
+		var CheckBox agree = CheckBox(content)
+		agree.set_title("Check me")
+		var Radio radio_a = Radio(content, "One")
+		var Radio radio_b = Radio(content, "Two")
+		radio_a.set_checked(true)
+		var Switch flip = Switch(content)
+		flip.set_checked(true)
+		var Toggle stamp = Toggle(content, "Toggle")
+		var Segmented views = Segmented(content, 3)
+		views.set_label(0, "Day")
+		views.set_label(1, "Week")
+		views.set_label(2, "Month")
+		views.set_selected(1)
+		var Select pick = Select(content)
+		pick.add_item("Red")
+		pick.add_item("Green")
+		pick.add_item("Blue")
+		var Stepper step = Stepper(content)
+		step.set_min(0.0)
+		step.set_max(10.0)
+		step.set_increment(1.0)
+		step.set_value(3.0)
+		var Slider slide = Slider(content, 0.0, 100.0)
+		slide.set_value(40.0)
 
-	// ── Modal companions (created up front, driven from the event loop) ──
-	const alert = Alert()
-	alert.set_title("Delete todo?")
-	alert.set_message("This cannot be undone.")
-	alert.add_button("Delete")
-	alert.add_button("Cancel")
+		var Text display_title = Text(content)
+		display_title.set_text("Display")
+		display_title.set_bold(true)
+		var Progress bar = Progress(content)
+		bar.set_value(0.4)
+		var Spinner spin = Spinner(content)
+		spin.start()
+		var LevelIndicator stars = LevelIndicator(content)
+		stars.set_max(5.0)
+		stars.set_value(3.0)
+		var ImageView icon = ImageView(content)
+		icon.set_symbol("gearshape")
+		var DatePicker when = DatePicker(content)
+		when.set_time(1760000000)
+		var ColorPicker color = ColorPicker(content)
+		color.set_rgb(52, 149, 235)
+		// The display controls show no title of their own, so each row pairs
+		// the control with a caption label (the caption sizes to its text;
+		// the control fills the rest of the row).
+		var Text prog_caption = Text(content)
+		prog_caption.set_text("Progress")
+		var Text spin_caption = Text(content)
+		spin_caption.set_text("Spinner")
+		var Text stars_caption = Text(content)
+		stars_caption.set_text("Level indicator")
+		var Text icon_caption = Text(content)
+		icon_caption.set_text("Image view")
+		var Text when_caption = Text(content)
+		when_caption.set_text("Date picker")
+		var Text color_caption = Text(content)
+		color_caption.set_text("Color picker")
 
-	const sheet = Sheet(win, 260, 150)
-	sheet.set_title("Settings")
-	const sheet_content = sheet.content_window()
-	var sheet_grid = Grid(1, 8)
-	sheet_grid.padding = 12
-	var sheet_label = Text(sheet_content)
-	sheet_label.set_text("Sheet content")
-	const sheet_close = Button(sheet_content, "Close")
-	sheet_grid.add(sheet_label.handle, 0, 24, 1)
-	sheet_grid.add(sheet_close.handle, 0, 32, 1)
-	sheet_grid.layout(sheet_content)
+		var Text action_title = Text(content)
+		action_title.set_text("Actions")
+		action_title.set_bold(true)
+		var Button hover_btn = Button(content, "Hover me")
+		set_tooltip(hover_btn.handle, "Tooltips attach to any control by handle")
+		var Button alert_btn = Button(content, "Show alert")
+		var Button sheet_btn = Button(content, "Show sheet")
+		var Button pop_btn = Button(content, "Show popover")
 
-	const pop = Popover(win)
+		var Text group_title = Text(content)
+		group_title.set_text("Grouping")
+		group_title.set_bold(true)
+		var Separator rule = Separator(content)
+		var GroupBox form = GroupBox(content, "Group box")
 
-	// ── Layout: the window stacks the page scroll (which fills it); the
-	// page itself is a 2-column grid, bold section headings spanning both
-	// columns ──
-	var outer = VStack(0)
-	outer.add(page_scroll.handle, 0, 0, 1, 1)
-	var grid = Grid(2, 6)
-	grid.padding = 16
-	grid.add(header.handle, 0, 28, 2)
+		var Text scroll_title = Text(content)
+		scroll_title.set_text("Scrolling")
+		scroll_title.set_bold(true)
+		var Scrollable scroll = Scrollable(content)	// nested: the Scrolling section's viewport
+		var Container scroll_grid = Grid(1, 6)
+		scroll_grid.padding = 8
+		var Window scroll_content = scroll.content_window()
+		var Text row_1 = Text(scroll_content)
+		row_1.set_text("Row 1 — scroll me")
+		var Text row_2 = Text(scroll_content)
+		row_2.set_text("Row 2")
+		var Text row_3 = Text(scroll_content)
+		row_3.set_text("Row 3")
+		var Text row_4 = Text(scroll_content)
+		row_4.set_text("Row 4")
+		var Text row_5 = Text(scroll_content)
+		row_5.set_text("Row 5")
+		var Text row_6 = Text(scroll_content)
+		row_6.set_text("Row 6 — the end")
+		scroll_grid.add(row_1.handle, 0, 24, 1)
+		scroll_grid.add(row_2.handle, 0, 24, 1)
+		scroll_grid.add(row_3.handle, 0, 24, 1)
+		scroll_grid.add(row_4.handle, 0, 24, 1)
+		scroll_grid.add(row_5.handle, 0, 24, 1)
+		scroll_grid.add(row_6.handle, 0, 24, 1)
 
-	grid.add(title.handle, 0, 22, 2)
-	grid.add(name.handle, 0, 24, 1)
-	grid.add(secret.handle, 0, 24, 1)
-	grid.add(search.handle, 0, 24, 1)
-	grid.add(notes.handle, 0, 80, 2)
+		var Text tabs_title = Text(content)
+		tabs_title.set_text("Tabs")
+		tabs_title.set_bold(true)
+		var Tabs tabs = Tabs(content, 2)
+		tabs.set_label(0, "One")
+		tabs.set_label(1, "Two")
+		// Each page is its own layout root (content_window(index)); the
+		// laid-out frames stay valid when the user switches pages natively.
+		var Window tabs_page_0 = tabs.content_window(0)
+		var Window tabs_page_1 = tabs.content_window(1)
+		var Container tabs_grid_0 = Grid(1, 6)
+		tabs_grid_0.padding = 12
+		var Text tabs_label_0 = Text(tabs_page_0)
+		tabs_label_0.set_text("Page one content")
+		tabs_grid_0.add(tabs_label_0.handle, 0, 24, 1)
+		var Container tabs_grid_1 = Grid(1, 6)
+		tabs_grid_1.padding = 12
+		var Text tabs_label_1 = Text(tabs_page_1)
+		tabs_label_1.set_text("Page two content")
+		tabs_grid_1.add(tabs_label_1.handle, 0, 24, 1)
 
-	grid.add(choice_title.handle, 0, 22, 2)
-	grid.add(agree.handle, 0, 24, 1)
-	// The radios take their intrinsic width: an auto-sized leaf in an
-	// unbounded hstack measures 0 wide, so both radios would draw from the
-	// same spot and the click hit-test (which reads the laid-out frame)
-	// would never match either of them.
-	const int radio_row = grid.add_hstack(grid.root_index(), 12, 1)
-	grid.add_to_kind(radio_row, radio_a.handle, LEN_INTRINSIC, 0, LEN_FIXED, 24, 1)
-	grid.add_to_kind(radio_row, radio_b.handle, LEN_INTRINSIC, 0, LEN_FIXED, 24, 1)
-	grid.add(flip.handle, 0, 24, 1)
-	grid.add(stamp.handle, 0, 32, 1)
-	grid.add(views.handle, 0, 24, 1)
-	grid.add(pick.handle, 0, 26, 1)
-	grid.add(step.handle, 0, 26, 1)
-	grid.add(slide.handle, 0, 24, 1)
+		var Text list_title = Text(content)
+		list_title.set_text("List")
+		list_title.set_bold(true)
+		var ListView list = ListView(content)
+		list.add_row("alpha")
+		list.add_row("beta")
+		list.add_row("gamma")
+		list.add_row("delta")
+		list.select_row(1)
 
-	grid.add(display_title.handle, 0, 22, 2)
-	const int prog_row = grid.add_hstack(grid.root_index(), 8, 2)
-	grid.add_to_intrinsic(prog_row, prog_caption.handle, 1)
-	grid.add_to(prog_row, bar.handle, 0, 20, 1, 1)
-	const int spin_row = grid.add_hstack(grid.root_index(), 8, 2)
-	grid.add_to_intrinsic(spin_row, spin_caption.handle, 1)
-	grid.add_to(spin_row, spin.handle, 0, 22, 1, 1)
-	const int stars_row = grid.add_hstack(grid.root_index(), 8, 2)
-	grid.add_to_intrinsic(stars_row, stars_caption.handle, 1)
-	grid.add_to(stars_row, stars.handle, 0, 24, 1, 1)
-	const int icon_row = grid.add_hstack(grid.root_index(), 8, 2)
-	grid.add_to_intrinsic(icon_row, icon_caption.handle, 1)
-	grid.add_to(icon_row, icon.handle, 0, 32, 1, 1)
-	// The date picker has no useful fixed size — it takes its intrinsic one.
-	const int when_row = grid.add_hstack(grid.root_index(), 8, 2)
-	grid.add_to_intrinsic(when_row, when_caption.handle, 1)
-	grid.add_to_intrinsic(when_row, when.handle, 1)
-	const int color_row = grid.add_hstack(grid.root_index(), 8, 2)
-	grid.add_to_intrinsic(color_row, color_caption.handle, 1)
-	grid.add_to(color_row, color.handle, 0, 28, 1, 1)
+		var Text combo_title = Text(content)
+		combo_title.set_text("Combo box")
+		combo_title.set_bold(true)
+		var ComboBox combo = ComboBox(content)
+		combo.add_item("Red")
+		combo.add_item("Green")
+		combo.add_item("Blue")
+		combo.set_selected(1)
 
-	grid.add(action_title.handle, 0, 22, 2)
-	grid.add(hover_btn.handle, 0, 32, 1)
-	grid.add(alert_btn.handle, 0, 32, 1)
-	grid.add(sheet_btn.handle, 0, 32, 1)
-	grid.add(pop_btn.handle, 0, 32, 1)
+		var Button menu_btn = Button(content, "Right-click me")
+		var Menu menu = Menu()
+		menu.add_item("Cut")
+		menu.add_item("Copy")
+		menu.add_separator()
+		menu.add_item("Paste")
+		menu.attach(menu_btn.handle)
 
-	grid.add(group_title.handle, 0, 22, 2)
-	grid.add(rule.handle, 0, 4, 2)
-	grid.add(form.handle, 0, 72, 2)
-	grid.add(scroll_title.handle, 0, 22, 2)
-	grid.add(scroll.handle, 0, 120, 2)
-	grid.add(tabs_title.handle, 0, 22, 2)
-	grid.add(tabs.handle, 0, 120, 2)
-	grid.add(list_title.handle, 0, 22, 2)
-	grid.add(list.handle, 0, 88, 2)
-	grid.add(combo_title.handle, 0, 22, 2)
-	grid.add(combo.handle, 0, 26, 2)
-	grid.add(menu_btn.handle, 0, 32, 2)
-	grid.add(split_title.handle, 0, 22, 2)
-	grid.add(split.handle, 0, 100, 2)
-	grid.add(outline_title.handle, 0, 22, 2)
-	grid.add(outline.handle, 0, 110, 2)
-	grid.add(table_title.handle, 0, 22, 2)
-	grid.add(table.handle, 0, 110, 2)
-	grid.add(comp_title.handle, 0, 22, 2)
-	num.add_to(ref grid, grid.root_index(), 2)
-	otp.add_to(ref grid, grid.root_index(), 2)
-	pag.add_to(ref grid, grid.root_index(), 2)
-	signin.add_to(ref grid, grid.root_index(), 2)
-	signin.add_row(ref grid, "Name", form_name.handle, 24)
-	signin.add_row(ref grid, "Keep me in", form_ok.handle, 24)
-	grid.add(status.handle, 0, 40, 2)
+		var Text split_title = Text(content)
+		split_title.set_text("Split view")
+		split_title.set_bold(true)
+		var SplitView split = SplitView(content, 2, true)
+		// Each pane is its own layout root (content_window(index)); the pane
+		// layouts re-run after the split is re-framed (see layout_panes).
+		var Window split_left = split.content_window(0)
+		var Window split_right = split.content_window(1)
+		var Container split_grid_0 = Grid(1, 6)
+		split_grid_0.padding = 8
+		var Text split_label_0 = Text(split_left)
+		split_label_0.set_text("Left pane")
+		split_grid_0.add(split_label_0.handle, 0, 24, 1)
+		var Container split_grid_1 = Grid(1, 6)
+		split_grid_1.padding = 8
+		var Text split_label_1 = Text(split_right)
+		split_label_1.set_text("Right pane")
+		split_grid_1.add(split_label_1.handle, 0, 24, 1)
 
-	outer.layout(win)
-	outer.set_resize_callback(win)
-	win.show()
+		var Text outline_title = Text(content)
+		outline_title.set_text("Outline")
+		outline_title.set_bold(true)
+		var OutlineView outline = OutlineView(content)
+		outline.add_item("Sources", -1)
+		outline.add_item("main.nm", 0)
+		outline.add_item("Window.nm", 0)
+		outline.add_item("Demos", -1)
+		outline.add_item("todo", 3)
+		outline.add_item("controls", 3)
+		outline.set_expanded(0, true)
 
-	// Size + lay the page out once the window's final size is known (the
-	// Scrollable design note in GUI.md: measure unbounded → set_content_size
-	// → layout). The document view starts showing its bottom-left corner (it
-	// is unflipped, so the engine's flip math owns the coordinates), hence
-	// the initial scroll_to_top.
-	layout_page(ref grid, ref page_scroll, content, win.content_width())
-	page_scroll.scroll_to_top()
-	// The Scrolling section's content (a viewport nested in the page).
-	layout_scroll_content(ref scroll, ref scroll_grid, scroll_content, win.content_width() - 32)
-	scroll.scroll_to_top()
-	// Tab pages are their own layout roots: the tab view sizes its page
-	// views to the content area (synchronously on setFrame), so laying out
-	// after the first grid pass sees real page frames.
-	layout_tabs_pages(ref tabs_grid_0, tabs_page_0, ref tabs_grid_1, tabs_page_1)
-	// Split panes: NSSplitView sizes them synchronously when the split is
-	// framed, so lay out after the grid pass (the divider set is also
-	// programmatic here — users can drag it natively afterwards).
-	split.set_position(200.0, 0)
-	split_grid_0.layout(split_left)
-	split_grid_1.layout(split_right)
+		var Text table_title = Text(content)
+		table_title.set_text("Table")
+		table_title.set_bold(true)
+		var Table table = Table(content, 3)
+		table.set_header(0, "Item")
+		table.set_header(1, "Qty")
+		table.set_header(2, "Price")
+		table.add_row()
+		table.add_row()
+		table.add_row()
+		table.set_cell(0, 0, "apples")
+		table.set_cell(0, 1, "12")
+		table.set_cell(0, 2, "0.40")
+		table.set_cell(1, 0, "pears")
+		table.set_cell(1, 1, "7")
+		table.set_cell(1, 2, "0.55")
+		table.set_cell(2, 0, "plums")
+		table.set_cell(2, 1, "20")
+		table.set_cell(2, 2, "0.30")
+		table.select_row(1)
 
-	// The polled status line — rewritten only when the string actually
-	// changes ("" forces the next poll to refresh after a transient
-	// message like the alert result).
-	var prev_status = ""
-	const string status_text = poll_status(ref slide, ref step, ref color, ref when)
-	status.set_text(status_text)
-	prev_status = mv status_text
+		var Text comp_title = Text(content)
+		comp_title.set_text("Composites")
+		comp_title.set_bold(true)
+		var NumberInput num = NumberInput(content)
+		num.set_range(0.0, 10.0, 0.5)
+		num.set_value(2.5)
+		var OtpInput otp = OtpInput(content)
+		var Pagination pag = Pagination(content, 3)
+		var Form signin = Form(content, "Sign in")
+		var TextBox form_name = TextBox(content)
+		form_name.set_placeholder("user")
+		var CheckBox form_ok = CheckBox(content)
+		form_ok.set_title("Remember me")
 
-	// Re-layout live while the window is resized (same as the todo demo:
-	// native controls pin to the bottom-left, so re-running layout re-flips
-	// y against the new height and re-anchors the grid to the top).
-	var int prev_w = win.content_width()
-	var int prev_h = win.content_height()
+		var Text status = Text(content)
+		status.set_text("")
 
-	while win.is_visible() {
-		const int had_click = Window.process_events()
+		// Window chrome: the toolbar shrinks the contentView (AppKit owns
+		// the layout rect), so it must exist BEFORE the first grid layout.
+		// Its three labeled buttons report clicks through the same
+		// edge-triggered poll as the context menu.
+		var Toolbar toolbar = Toolbar(window, 3)
+		toolbar.set_label(0, "One")
+		toolbar.set_label(1, "Two")
+		toolbar.set_label(2, "Three")
 
-		const int cur_w = win.content_width()
-		const int cur_h = win.content_height()
-		if cur_w != prev_w || cur_h != prev_h {
-			prev_w = cur_w
-			prev_h = cur_h
-			outer.layout(win)
-			layout_page(ref grid, ref page_scroll, content, cur_w)
-			layout_scroll_content(ref scroll, ref scroll_grid, scroll_content, cur_w - 32)
-			layout_tabs_pages(ref tabs_grid_0, tabs_page_0, ref tabs_grid_1, tabs_page_1)
-			split_grid_0.layout(split_left)
-			split_grid_1.layout(split_right)
+		// ── Modal companions (driven from frame) ──
+		var Alert alert = Alert()
+		alert.set_title("Delete todo?")
+		alert.set_message("This cannot be undone.")
+		alert.add_button("Delete")
+		alert.add_button("Cancel")
+
+		var Sheet sheet = Sheet(window, 260, 150)
+		sheet.set_title("Settings")
+		var Window sheet_content = sheet.content_window()
+		var Container sheet_grid = Grid(1, 8)
+		sheet_grid.padding = 12
+		var Text sheet_label = Text(sheet_content)
+		sheet_label.set_text("Sheet content")
+		var Button sheet_close_btn = Button(sheet_content, "Close")
+		sheet_grid.add(sheet_label.handle, 0, 24, 1)
+		sheet_grid.add(sheet_close_btn.handle, 0, 32, 1)
+		sheet_grid.layout(sheet_content)
+
+		var Popover pop = Popover(window)
+
+		// ── Layout: the window stacks the page scroll (which fills it); the
+		// page itself is a 2-column grid, bold section headings spanning
+		// both columns ──
+		var Container outer = VStack(0)
+		outer.add(page.handle, 0, 0, 1, 1)
+		var Container page_grid = Grid(2, 6)
+		page_grid.padding = 16
+		page_grid.add(header.handle, 0, 28, 2)
+
+		page_grid.add(title.handle, 0, 22, 2)
+		page_grid.add(name.handle, 0, 24, 1)
+		page_grid.add(secret.handle, 0, 24, 1)
+		page_grid.add(search.handle, 0, 24, 1)
+		page_grid.add(notes.handle, 0, 80, 2)
+
+		page_grid.add(choice_title.handle, 0, 22, 2)
+		page_grid.add(agree.handle, 0, 24, 1)
+		// The radios take their intrinsic width: an auto-sized leaf in an
+		// unbounded hstack measures 0 wide, so both radios would draw from
+		// the same spot and the click hit-test (which reads the laid-out
+		// frame) would never match either of them.
+		var int radio_row = page_grid.add_hstack(page_grid.root_index(), 12, 1)
+		page_grid.add_to_kind(radio_row, radio_a.handle, LEN_INTRINSIC, 0, LEN_FIXED, 24, 1)
+		page_grid.add_to_kind(radio_row, radio_b.handle, LEN_INTRINSIC, 0, LEN_FIXED, 24, 1)
+		page_grid.add(flip.handle, 0, 24, 1)
+		page_grid.add(stamp.handle, 0, 32, 1)
+		page_grid.add(views.handle, 0, 24, 1)
+		page_grid.add(pick.handle, 0, 26, 1)
+		page_grid.add(step.handle, 0, 26, 1)
+		page_grid.add(slide.handle, 0, 24, 1)
+
+		page_grid.add(display_title.handle, 0, 22, 2)
+		var int prog_row = page_grid.add_hstack(page_grid.root_index(), 8, 2)
+		page_grid.add_to_intrinsic(prog_row, prog_caption.handle, 1)
+		page_grid.add_to(prog_row, bar.handle, 0, 20, 1, 1)
+		var int spin_row = page_grid.add_hstack(page_grid.root_index(), 8, 2)
+		page_grid.add_to_intrinsic(spin_row, spin_caption.handle, 1)
+		page_grid.add_to(spin_row, spin.handle, 0, 22, 1, 1)
+		var int stars_row = page_grid.add_hstack(page_grid.root_index(), 8, 2)
+		page_grid.add_to_intrinsic(stars_row, stars_caption.handle, 1)
+		page_grid.add_to(stars_row, stars.handle, 0, 24, 1, 1)
+		var int icon_row = page_grid.add_hstack(page_grid.root_index(), 8, 2)
+		page_grid.add_to_intrinsic(icon_row, icon_caption.handle, 1)
+		page_grid.add_to(icon_row, icon.handle, 0, 32, 1, 1)
+		// The date picker has no useful fixed size — it takes its intrinsic
+		// one.
+		var int when_row = page_grid.add_hstack(page_grid.root_index(), 8, 2)
+		page_grid.add_to_intrinsic(when_row, when_caption.handle, 1)
+		page_grid.add_to_intrinsic(when_row, when.handle, 1)
+		var int color_row = page_grid.add_hstack(page_grid.root_index(), 8, 2)
+		page_grid.add_to_intrinsic(color_row, color_caption.handle, 1)
+		page_grid.add_to(color_row, color.handle, 0, 28, 1, 1)
+
+		page_grid.add(action_title.handle, 0, 22, 2)
+		page_grid.add(hover_btn.handle, 0, 32, 1)
+		page_grid.add(alert_btn.handle, 0, 32, 1)
+		page_grid.add(sheet_btn.handle, 0, 32, 1)
+		page_grid.add(pop_btn.handle, 0, 32, 1)
+
+		page_grid.add(group_title.handle, 0, 22, 2)
+		page_grid.add(rule.handle, 0, 4, 2)
+		page_grid.add(form.handle, 0, 72, 2)
+		page_grid.add(scroll_title.handle, 0, 22, 2)
+		page_grid.add(scroll.handle, 0, 120, 2)
+		page_grid.add(tabs_title.handle, 0, 22, 2)
+		page_grid.add(tabs.handle, 0, 120, 2)
+		page_grid.add(list_title.handle, 0, 22, 2)
+		page_grid.add(list.handle, 0, 88, 2)
+		page_grid.add(combo_title.handle, 0, 22, 2)
+		page_grid.add(combo.handle, 0, 26, 2)
+		page_grid.add(menu_btn.handle, 0, 32, 2)
+		page_grid.add(split_title.handle, 0, 22, 2)
+		page_grid.add(split.handle, 0, 100, 2)
+		page_grid.add(outline_title.handle, 0, 22, 2)
+		page_grid.add(outline.handle, 0, 110, 2)
+		page_grid.add(table_title.handle, 0, 22, 2)
+		page_grid.add(table.handle, 0, 110, 2)
+		page_grid.add(comp_title.handle, 0, 22, 2)
+		num.add_to(ref page_grid, page_grid.root_index(), 2)
+		otp.add_to(ref page_grid, page_grid.root_index(), 2)
+		pag.add_to(ref page_grid, page_grid.root_index(), 2)
+		signin.add_to(ref page_grid, page_grid.root_index(), 2)
+		signin.add_row(ref page_grid, "Name", form_name.handle, 24)
+		signin.add_row(ref page_grid, "Keep me in", form_ok.handle, 24)
+		page_grid.add(status.handle, 0, 40, 2)
+
+		// ── Move everything into the app's fields ──
+		self.page = page
+		self.outer = outer
+		self.page_grid = page_grid
+		self.header = header
+		self.title = title
+		self.name = name
+		self.secret = secret
+		self.search = search
+		self.notes = notes
+		self.choice_title = choice_title
+		self.agree = agree
+		self.radio_a = radio_a
+		self.radio_b = radio_b
+		self.flip = flip
+		self.stamp = stamp
+		self.views = views
+		self.pick = pick
+		self.step = step
+		self.slide = slide
+		self.display_title = display_title
+		self.bar = bar
+		self.spin = spin
+		self.stars = stars
+		self.icon = icon
+		self.when = when
+		self.color = color
+		self.prog_caption = prog_caption
+		self.spin_caption = spin_caption
+		self.stars_caption = stars_caption
+		self.icon_caption = icon_caption
+		self.when_caption = when_caption
+		self.color_caption = color_caption
+		self.action_title = action_title
+		self.hover_btn = hover_btn
+		self.alert_btn = alert_btn
+		self.sheet_btn = sheet_btn
+		self.pop_btn = pop_btn
+		self.group_title = group_title
+		self.rule = rule
+		self.form = form
+		self.scroll_title = scroll_title
+		self.scroll = scroll
+		self.scroll_grid = scroll_grid
+		self.tabs_title = tabs_title
+		self.tabs = tabs
+		self.tabs_grid_0 = tabs_grid_0
+		self.tabs_grid_1 = tabs_grid_1
+		self.tabs_page_0 = tabs_page_0
+		self.tabs_page_1 = tabs_page_1
+		self.list_title = list_title
+		self.list = list
+		self.combo_title = combo_title
+		self.combo = combo
+		self.menu = menu
+		self.menu_btn = menu_btn
+		self.split_title = split_title
+		self.split = split
+		self.split_grid_0 = split_grid_0
+		self.split_grid_1 = split_grid_1
+		self.split_left = split_left
+		self.split_right = split_right
+		self.outline_title = outline_title
+		self.outline = outline
+		self.table_title = table_title
+		self.table = table
+		self.comp_title = comp_title
+		self.num = num
+		self.otp = otp
+		self.pag = pag
+		self.signin = signin
+		self.form_name = form_name
+		self.form_ok = form_ok
+		self.toolbar = toolbar
+		self.alert = alert
+		self.sheet = sheet
+		self.sheet_grid = sheet_grid
+		self.sheet_close_btn = sheet_close_btn
+		self.pop = pop
+		self.status = status
+		// The polled status line — rewritten only when the string actually
+		// changes ("" forces the next poll to refresh after a transient
+		// message like the alert result).
+		self.prev_status = ""
+	}
+
+	// App.start: register the layout roots. The framework lays the ROOT out
+	// on start/show/resize and re-runs each Scrollable's document dance
+	// (measure unbounded → set_content_size → layout, plus the one-time
+	// scroll_to_top on the first post-show pass). The registrations go
+	// grid-side with scalar handles — one borrow of self per call (two
+	// `ref` borrows under one owner would trip the aliasing rule).
+	pub func start = (ref self, ref Window win) {
+		win.set_content(ref self.outer)
+		self.page_grid.set_document(self.page.handle, self.page.doc_handle())
+		self.scroll_grid.set_document(self.scroll.handle, self.scroll.doc_handle())
+	}
+
+	// The app-owned pane roots: NSTabView/NSSplitView size their panes
+	// synchronously when framed, so the pane grids lay out after the pass
+	// that framed them (first frame + every resize).
+	func layout_panes = (ref self) {
+		self.tabs_grid_0.layout(self.tabs_page_0)
+		self.tabs_grid_1.layout(self.tabs_page_1)
+		self.split.set_position(200.0, 0)
+		self.split_grid_0.layout(self.split_left)
+		self.split_grid_1.layout(self.split_right)
+		self.panes_laid = true
+	}
+
+	// The polled status line: the continuous controls' current values, as
+	// one string (read every frame — no change callbacks in v1).
+	func poll_status = (ref self, out string) {
+		var int sv = self.slide.value() as int
+		var int nv = self.step.value() as int
+		var Rgb c = self.color.rgb()
+		var int64 secs = self.when.time()
+		return "slider \{sv}  stepper \{nv}  rgb \{c.red},\{c.green},\{c.blue}  date \{secs}"
+	}
+
+	// App.frame — the old event-loop body.
+	pub func frame = (ref self, ref Window win, FrameEvents ev) {
+		if ev.resized {
+			// The framework already re-laid the root and the Scrollables;
+			// the app-owned panes re-flow here.
+			self.layout_panes()
+		}
+		if self.panes_laid == false {
+			self.layout_panes()
 		}
 
 		// Progress mirrors the slider; the status line reports the polled
 		// values (slider / stepper / color / date / scroll offset / tab).
-		bar.set_value(slide.value() / 100.0)
+		self.bar.set_value(self.slide.value() / 100.0)
 		// A context-menu pick (right-click the menu button, choose an entry)
 		// surfaces here on the next frame — clicked_item is edge-triggered
 		// (a read resets it to -1). The toolbar buttons use the same poll.
-		const int picked = menu.clicked_item()
+		var int picked = self.menu.clicked_item()
 		if picked >= 0 {
-			status.set_text("menu: entry \{picked}")
-			prev_status = ""
+			self.status.set_text("menu: entry \{picked}")
+			self.prev_status = ""
 		}
-		const int bar_pick = toolbar.clicked_item()
+		var int bar_pick = self.toolbar.clicked_item()
 		if bar_pick >= 0 {
-			status.set_text("toolbar: item \{bar_pick}")
-			prev_status = ""
+			self.status.set_text("toolbar: item \{bar_pick}")
+			self.prev_status = ""
 		}
-		const string polled = poll_status(ref slide, ref step, ref color, ref when)
-		if polled != prev_status {
-			status.set_text(polled)
+		var string polled = self.poll_status()
+		if polled != self.prev_status {
+			self.status.set_text(polled)
 			// A conditional `mv` out of `polled` would statically suppress
 			// its scope-exit free (the not-taken branch then leaks one string
 			// per frame — see FOLLOWUP.md), so copy instead.
-			prev_status = polled.copy()
+			self.prev_status = polled.copy()
 		}
 
-		if had_click == 1 {
-			const int cx = win.click_x()
-			const int cy = win.click_y()
+		if ev.click == 1 {
+			var int cx = ev.click_x
+			var int cy = ev.click_y
 			// The page controls live on the document view: translate the
 			// window click through the page scroll (content_click) before
-			// hit-testing. The sheet keeps raw window coordinates (it is not
-			// part of the page).
-			const [tx, ty] = content_click(page_scroll, cx, cy)
-			if grid.contains(radio_a.handle, tx, ty) {
-				radio_a.set_checked(true)
-				radio_b.set_checked(false)
+			// hit-testing. The sheet keeps raw window coordinates (it is
+			// not part of the page).
+			var [tx, ty] = content_click(self.page, cx, cy)
+			if self.page_grid.contains(self.radio_a.handle, tx, ty) {
+				self.radio_a.set_checked(true)
+				self.radio_b.set_checked(false)
 			}
-			if grid.contains(radio_b.handle, cx, cy) {
-				radio_b.set_checked(true)
-				radio_a.set_checked(false)
+			if self.page_grid.contains(self.radio_b.handle, tx, ty) {
+				self.radio_b.set_checked(true)
+				self.radio_a.set_checked(false)
 			}
-			if grid.contains(alert_btn.handle, tx, ty) {
+			if self.page_grid.contains(self.alert_btn.handle, tx, ty) {
 				// Blocks in NSAlert's own modal loop until dismissed.
-				const int choice = alert.run()
-				status.set_text("alert: button \{choice}")
-				prev_status = ""
+				var int choice = self.alert.run()
+				self.status.set_text("alert: button \{choice}")
+				self.prev_status = ""
 			}
-			if grid.contains(sheet_btn.handle, tx, ty) {
-				sheet.present()
+			if self.page_grid.contains(self.sheet_btn.handle, tx, ty) {
+				self.sheet.present()
 			}
-			if grid.contains(pop_btn.handle, tx, ty) {
-				if pop.is_shown() {
-					pop.dismiss()
+			if self.page_grid.contains(self.pop_btn.handle, tx, ty) {
+				if self.pop.is_shown() {
+					self.pop.dismiss()
 				} else {
-					pop.show(pop_btn.handle)
+					self.pop.show(self.pop_btn.handle)
 				}
 			}
 			// While the sheet is up, the host window takes no clicks — any
 			// click that arrives is a sheet click, in sheet coordinates.
-			if sheet.is_presented() {
-				if sheet_grid.contains(sheet_close.handle, cx, cy) {
-					sheet.dismiss()
-					status.set_text("sheet: closed")
-					prev_status = ""
+			if self.sheet.is_presented() {
+				if self.sheet_grid.contains(self.sheet_close_btn.handle, cx, cy) {
+					self.sheet.dismiss()
+					self.status.set_text("sheet: closed")
+					self.prev_status = ""
 				}
 			}
-			// Pagination: hit-test the row's buttons and drive the page state.
-			if grid.contains(pag.prev_handle(), tx, ty) {
-				pag.prev()
+			// Pagination: hit-test the row's buttons and drive the page
+			// state.
+			if self.page_grid.contains(self.pag.prev_handle(), tx, ty) {
+				self.pag.prev()
 			}
-			if grid.contains(pag.next_handle(), tx, ty) {
-				pag.next()
+			if self.page_grid.contains(self.pag.next_handle(), tx, ty) {
+				self.pag.next()
 			}
 			for i of 0 .. 3 {
-				if grid.contains(pag.page_handle(i), tx, ty) {
-					pag.select(i)
+				if self.page_grid.contains(self.pag.page_handle(i), tx, ty) {
+					self.pag.select(i)
 				}
 			}
 		}
 	}
-}
-
-// The polled status line: the continuous controls' current values, as one
-// string. Continuous controls are read every frame (no change callbacks in
-// the manual loop — see GUI_PLAN, cross-cutting follow-ups). The scroll
-// offset and the selected tab/list/combo/tree/table row are polled the
-// same way so scrolling, page switches, and selection show up in the
-// status line.
-// offset and the selected tab/list/combo/tree/table row are polled the
-// same way, alongside the composite states (number value, selected page).
-func poll_status = (
-	ref Slider slide,
-	ref Stepper step,
-	ref ColorPicker color,
-	ref DatePicker when,
-	out string
-) {
-	const int sv = slide.value() as int
-	const int nv = step.value() as int
-	const Rgb c = color.rgb()
-	const int64 secs = when.time()
-	return "slider \{sv}  stepper \{nv}  rgb \{c.red},\{c.green},\{c.blue}  date \{secs}"
-}
-
-// The page-level layout: measure the page unbounded, size the document view
-// to it, then lay the page out into that height — the Scrollable pair
-// (see the Scrollable design note in GUI.md). `page_w` is the document
-// width (window content minus the page grid's padding).
-func layout_page = (
-	ref Container grid,
-	ref Scrollable page_scroll,
-	Window content,
-	int page_w
-) {
-	var bc = BoxConstraints()
-	bc.max_width = page_w
-	const Size cs = grid.measure(bc)
-	page_scroll.set_content_size(cs.width, cs.height)
-	grid.layout(content)
-}
-
-// Measure the scroll content with unbounded height, size the document view
-// to it, then lay the content out into that height (the flip needs the
-// document height to equal the content height before frames apply — see the
-// Scrollable design note in GUI.md). `content_w` is the scroll view's laid-
-// out width (window content minus the grid's padding).
-func layout_scroll_content = (
-	ref Scrollable scroll,
-	ref Container grid,
-	Window content,
-	int content_w
-) {
-	var bc = BoxConstraints()
-	bc.max_width = content_w
-	const Size cs = grid.measure(bc)
-	scroll.set_content_size(cs.width, cs.height)
-	grid.layout(content)
-}
-
-// Lay both tab pages out into their page views. Safe any time after the tab
-// view has been framed — NSTabView resizes its page views synchronously on
-// setFrame, so the page height the flip runs against is current.
-func layout_tabs_pages = (
-	ref Container grid_0,
-	Window page_0,
-	ref Container grid_1,
-	Window page_1
-) {
-	grid_0.layout(page_0)
-	grid_1.layout(page_1)
 }

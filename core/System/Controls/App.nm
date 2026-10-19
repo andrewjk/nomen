@@ -1,0 +1,57 @@
+/**
+ * The App contract: the object Window.run drives
+ *
+ * The WinForms/Swift shape for a manual-loop toolkit: instead of pumping
+ * `Window.process_events` and re-checking sizes in a `while` loop, the app
+ * declares a struct conforming to `App`, moves it into `win.run(mv app)`,
+ * and the WINDOW owns everything else — the event pump, the autorelease
+ * pool, resize detection, and the relayout of the hosted content (the root
+ * `Container` from `win.set_content` plus every `Scrollable.set_content`
+ * document). The app implements two hooks:
+ *
+ * - `start` — called once, after the app has been moved into its final
+ *   storage but before the window is shown. Register the layout roots here
+ *   (`win.set_content(ref grid)`, `scroll.set_content(ref grid)`) and do
+ *   any wiring that needs stable addresses.
+ * - `frame` — called every iteration of the run loop with a `FrameEvents`
+ *   value: click kind/coordinates (0 = no click, 1 = left, 2 = right), and
+ *   `resized` + the new size when the window's content rect changed.
+ *   Per-frame value polling (slider → progress mirrors) and click
+ *   hit-testing (`Container.contains`) live here.
+ *
+ * Handlers are METHODS on the app (the `ref self` receiver), so app state —
+ * every control field — is reachable without lambda captures (capturing a
+ * control MOVES it; a capture-free method reference moves nothing).
+ **/
+pub trait App {
+	// Called once before the window is shown, after the app is in its
+	// final storage. Register layout roots here.
+	func start = (ref self, ref Window win) {
+	}
+
+	// Called every frame until the window closes.
+	func frame = (ref self, ref Window win, FrameEvents ev) {
+	}
+}
+
+/**
+ * One frame's input state, passed to App.frame
+ *
+ * Pure scalars, so the by-value parameter copies safely (no destroy).
+ * Click coordinates are the window's content coordinates, top-left origin
+ * (the same values `Window.click_x`/`click_y` report) — translate through
+ * `content_click` before hit-testing controls hosted on a Scrollable.
+ **/
+pub mv struct FrameEvents {
+	// 0 = no mouse-down this frame, 1 = left, 2 = right (edge-triggered:
+	// only the frame that pumped the event reports it).
+	pub var int click = 0
+	pub var int click_x = -1
+	pub var int click_y = -1
+	// True when the window's content rect changed since the last frame —
+	// the framework has already re-laid-out the registered roots; re-layout
+	// App-owned panes (tab pages, split panes) here.
+	pub var bool resized = false
+	pub var int width = 0
+	pub var int height = 0
+}

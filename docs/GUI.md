@@ -455,24 +455,24 @@ things about the coordinate story:
    take a `Window` and `addSubview:` onto its `contentView`, so `Scrollable`
    generalizes the `Sheet.content_window()` trick: the document view is an
    NSView subclass (`NomenDocumentView`) that answers `-contentView` by
-   returning *itself*, and `content_window()` hands back a `Window`-shaped
+   returning _itself_, and `content_window()` hands back a `Window`-shaped
    value naming it. Constructors and `Container.layout` then work unchanged.
 
 2. **y-flip.** `Container.layout` flips y against the parent height it reads
    from `content_height()` — which, on the `content_window()` value, is the
-   *document* frame height. The document view stays **unflipped** (AppKit
+   _document_ frame height. The document view stays **unflipped** (AppKit
    bottom-left origin), so the existing flip math is exactly right and the
    engine needs no new coordinate mode. One consequence: NSScrollView initially
    shows the bottom-left corner of an unflipped document, so `scroll_to_top()`
    exists and demos call it once after the first layout.
 
 3. **Content size reporting.** The flip needs the document height to equal the
-   laid-out content height *before* frames are applied. The flow per relayout
+   laid-out content height _before_ frames are applied. The flow per relayout
    pass is therefore: measure the content grid with unbounded height
    (`content_grid.measure(BoxConstraints)`), `scroll.set_content_size(w, h)`,
    then `content_grid.layout(content)`. `set_content_size` clamps the height
    UP to the viewport: an unflipped document shorter than its clip view sits
-   at the clip's *bottom*, so a short list would render bunched at the bottom
+   at the clip's _bottom_, so a short list would render bunched at the bottom
    of the scroll region — filling the viewport keeps the content top-anchored
    (and drops the scrollbar). This keeps `Container` untouched; a future
    trait-based layout would fold the sizing into measure.
@@ -485,6 +485,73 @@ a raw-block-backed method returning a tuple fails the checker's
 destructuring; `native_intrinsic` set the free-function precedent) does the
 translation, and the todo demo uses it for both checkbox hit-tests and
 right-click deletes. The gallery only polls the offset into its status line.
+
+## The App run loop
+
+`Window.run` is the framework-owned event loop — the WinForms/Swift shape.
+An app declares a struct conforming to `App` (core/System/Controls/App.nm),
+builds its controls in `#init`, and hands the whole thing to the window:
+
+```
+pub func main = () {
+	var Window win = Window("Todo", 400, 500)
+	var TodoApp app = TodoApp(win)
+	win.run(mv app)
+}
+```
+
+`run` owns everything the manual loops used to carry in `main`: the event
+pump (`process_events` internals + the per-pump autorelease pool), resize
+detection, the relayout of the registered roots, and teardown (the app is
+consumed — controls release, buffers free — when the loop exits). The app
+implements two hooks:
+
+- **`start(ref self, ref Window win)`** — called once, after the app has
+  been moved into its final storage but before the window is shown.
+  Register layout roots here: `win.set_content(ref grid)` for the window's
+  root container, and `todos_grid.set_document(scroll.handle,
+scroll.doc_handle())` to give a Scrollable its document grid. The
+  registration stores ADDRESSES, which is why it happens in `start` and not
+  `#init` — the app is moved once into `run`, and fields borrowed before
+  the move would dangle.
+- **`frame(ref self, ref Window win, FrameEvents ev)`** — every iteration.
+  `ev.click` is 1 (left) / 2 (right) on the frame that pumped a mouse-down
+  with `ev.click_x/y` in window coordinates; `ev.resized` + `ev.width/
+height` report content-rect changes. Value polling (slider → progress
+  mirrors), click hit-testing (`Container.contains`), and app-owned pane
+  relayouts (tab pages, split panes — on the first frame and on
+  `ev.resized`) live here.
+
+On each content-rect change the framework re-runs, in order: the root
+container's `layout`, then every registered Scrollable's document dance
+(measure unbounded → `set_content_size` → `layout`, plus a one-time
+`scroll_to_top` on the first post-show pass — the `layout_page`/
+`layout_scroll_content` helpers the demos used to carry). A dynamic
+content change (a todo added) can re-run the dance directly:
+`nomen_scroll_thunk(ref todos, scroll.handle, scroll.doc_handle(), win, 0)`
+— one `ref` borrow + scalar handles.
+
+### The aliasing rule shapes the App style
+
+A call may not hold two `ref` borrows of the same owner, and every field
+borrow's owner is the app. So `self.page.set_content(ref self.page_grid)`
+is rejected (receiver + argument both borrow `self`) — the registration is
+therefore **grid-side with scalar handles**
+(`page_grid.set_document(scroll.handle, scroll.doc_handle())`), and
+composite wiring (`num.add_to(ref grid, …)`) happens in `#init` while the
+controls are still LOCALS, moved into fields afterwards. Inside `frame`,
+single-borrow statements (`self.bar.set_value(…)`) and scalar arguments
+(`grid.contains(handle, x, y)`) are the norm; when two fields must meet,
+borrow one and pass the other by value or as handles
+(`nomen_scroll_thunk(ref self.todos, self.scroll.handle, …)`).
+
+Handlers-as-methods (the `ref self` receiver) is what makes this livable:
+app state — every control — is reachable from a hook without lambda
+captures, and capturing a control would MOVE it (CLOSURE.md).
+
+`Window.process_events` + the manual `while` loop remain available (and
+`Container.set_resize_callback` with them) for tests and scripts that pump
+by hand; the demos are all App-shaped.
 
 ## Invalidation & incremental relayout
 

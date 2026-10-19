@@ -70,8 +70,12 @@ export function emit_boxed_value_struct_c(
 	// A fresh direct constructor builds straight into the box (`*_box =
 	// T_init(args)`): the call result has no address to take, and the box
 	// would otherwise alias the constructor's temporary.
+	// Plain malloc on BOTH paths: under audit, wrap_c_allocators rewrites
+	// `malloc(` to `nomen_malloc_wrap(` in a post-pass (build.ts) — these
+	// emissions must NOT pre-substitute, or non-audit builds reference a
+	// wrapper that is never declared or linked.
 	if (arg.node_type === "func_call" && (arg as FunctionCallNode).name === box_struct.name) {
-		status.code += `(void *)({ struct ${box_struct.name} *_box = (struct ${box_struct.name} *)nomen_malloc_wrap(sizeof(struct ${box_struct.name})); *_box = `;
+		status.code += `(void *)({ struct ${box_struct.name} *_box = (struct ${box_struct.name} *)malloc(sizeof(struct ${box_struct.name})); *_box = `;
 		build_node(arg, status);
 		status.code += `; `;
 		for (const f of unrecorded) {
@@ -90,7 +94,7 @@ export function emit_boxed_value_struct_c(
 	for (const f of unrecorded) {
 		status.code += `_src->${f.name} = nomen_str_dup(_src->${f.name}); `;
 	}
-	status.code += `struct ${box_struct.name} *_box = (struct ${box_struct.name} *)nomen_malloc_wrap(sizeof(struct ${box_struct.name})); `;
+	status.code += `struct ${box_struct.name} *_box = (struct ${box_struct.name} *)malloc(sizeof(struct ${box_struct.name})); `;
 	status.code += `*_box = *_src; `;
 	status.code += `(void *)_box; })`;
 }

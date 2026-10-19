@@ -2,19 +2,24 @@
 
 ## Todo
 
-A GUI app with a todo list. The list is unbounded and SCROLLS: the todos
+A GUI app with a todo list, built on the **App contract** (`Window.run`):
+the app struct builds its controls in `#init`, registers the layout roots
+in `start` (`win.set_content` + `todos_grid.set_document`), and its `frame`
+hook handles clicks — the framework owns the pump, the pool, resize
+detection, and every relayout. The list is unbounded and SCROLLS: the todos
 live on a `Scrollable`'s document view in a vertical root whose middle row
 grows to fill the leftover height, so however many todos are added the input
-row stays pinned at the bottom. Each relayout measures the todo stack
-unbounded, sizes the document view to it, and lays the stack out into that
-height (the Scrollable design note in GUI.md); adds re-anchor to the bottom
-so the newest todo is visible. Each todo creates its own checkbox when added
-(Add button), and right-clicking a todo deletes it — the click is translated
-into document coordinates with `content_click` first, then the grid node is
-removed and the control is freed by moving it into a nested block, whose
-closing brace runs the checkbox's `#destroy`. The input field's hint text is
-a real placeholder (`TextBox.set_placeholder`), so the field reads empty
-until the user types.
+row stays pinned at the bottom. On each relayout the framework measures the
+todo stack unbounded, sizes the document view to it, and lays the stack out
+into that height (the Scrollable design note in GUI.md); an add or delete
+re-runs that dance immediately (`nomen_scroll_thunk`) and re-anchors to the
+bottom so the newest todo is visible. Each todo creates its own checkbox
+when added (Add button), and right-clicking a todo deletes it — the click is
+translated into document coordinates with `content_click` first, then the
+grid node is removed and the control is freed by moving it into a nested
+block, whose closing brace runs the checkbox's `#destroy`. The input
+field's hint text is a real placeholder (`TextBox.set_placeholder`), so the
+field reads empty until the user types.
 
 ## Async
 
@@ -28,24 +33,29 @@ coordinator's `Task.is_done()` instead of blocking.
 
 ## Controls
 
-A gallery of every `System::Controls` control in one window — inputs
-(TextBox, SecureField, SearchField, TextView), choices (CheckBox, Radio,
-Switch, Toggle, Segmented, Select, Stepper, Slider), display (Progress,
-Spinner, LevelIndicator, ImageView, DatePicker, ColorPicker), actions
-(Button + Tooltip), and grouping (Separator, GroupBox) — laid out in a
+A gallery of every `System::Controls` control in one window, built on the
+**App contract** (`Window.run`): the app struct builds everything in
+`#init`, registers the page root + both Scrollables in `start`, and its
+`frame` hook is the per-frame body — the framework owns the pump, resize
+detection, and the root/document relayouts. Inputs (TextBox, SecureField,
+SearchField, TextView), choices (CheckBox, Radio, Switch, Toggle,
+Segmented, Select, Stepper, Slider), display (Progress, Spinner,
+LevelIndicator, ImageView, DatePicker, ColorPicker), actions (Button +
+Tooltip), and grouping (Separator, GroupBox) — laid out in a
 2-column grid. Continuous controls are polled every frame into a status
 line that only rewrites when the string changes. The modals are created up
-front and driven from the manual event loop: Alert (blocks in NSAlert's own
+front and driven from `frame`: Alert (blocks in NSAlert's own
 modal loop and reports the button pressed), Sheet (its content window is
 its own layout root, hit-tested in sheet coordinates while presented), and
 Popover (toggled from an anchor button). A Scrolling section hosts a tall
-label stack on a Scrollable's document view — measured unbounded, sized via
-`set_content_size`, laid out into that height, with the scroll offset
+label stack on a Scrollable's document view — the framework's document
+dance sizes and lays it out, with the scroll offset
 polled into the status line. A Tabs section hosts one label per page via
-`content_window(index)`, with the selected tab polled alongside. A ListView
-section bridges rows into an NSTableView data source, polling the selected
-row; a ComboBox polls its selection the same way. A Menu attaches to the
-right-click target button — picks surface through the edge-triggered
+`content_window(index)`, with the selected tab polled alongside (the pane
+grids re-flow on the first frame and on resize — the app-owned roots). A
+ListView section bridges rows into an NSTableView data source, polling the
+selected row; a ComboBox polls its selection the same way. A Menu attaches
+to the right-click target button — picks surface through the edge-triggered
 `clicked_item` poll and land in the status line, as do the window
 Toolbar's three labeled buttons (created before the first layout, since
 the toolbar shrinks the contentView). A SplitView section lays a label

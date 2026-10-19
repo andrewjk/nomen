@@ -179,6 +179,14 @@ pub mv struct Scrollable: Control {
 		```
 	}
 
+	// The document view's native handle — pair with `handle` to register
+	// this scroll view's document via `Container.set_document` (the
+	// Window.run relayout registry). Scalars, so the registration call
+	// never holds two borrows of the same owner.
+	pub func doc_handle = (self, out uint64) {
+		return self.doc
+	}
+
 	// Size the document view to the laid-out content. Call between the
 	// content grid's unbounded `measure` and its `layout(content)` — the
 	// flip needs the document height to equal the content height before

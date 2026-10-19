@@ -1734,6 +1734,148 @@ pub mv struct Container: Control {
 		```
 	}
 
+	// Install the windowDidResize: delegate WITHOUT setting the target pair
+	// (nomen_set_resize_target — call that first, e.g. from Window's
+	// set_content). Window.run arms the delegate so the ROOT layout re-runs
+	// live during AppKit's blocking resize drag; set_resize_callback is the
+	// combined form for manual-loop apps.
+	pub func arm_resize_delegate = (Window win) {
+		```
+		#arch: c
+		#platform: macos
+		Class Dc = objc_getClass("NomenResizeDelegate");
+		if (!Dc) {
+			Dc = objc_allocateClassPair(objc_getClass("NSObject"), "NomenResizeDelegate", 0);
+			if (Dc) {
+				class_addMethod(Dc, sel_registerName("windowDidResize:"), (IMP)nomen_window_did_resize, "v@:@");
+				objc_registerClassPair(Dc);
+			}
+		}
+		if (Dc) {
+			id delegate = ((id(*)(id, SEL))objc_msgSend)((id)Dc, sel_registerName("alloc"));
+			delegate = ((id(*)(id, SEL))objc_msgSend)(delegate, sel_registerName("init"));
+			((void(*)(id, SEL, id))objc_msgSend)((id)win->handle, sel_registerName("setDelegate:"), delegate);
+		}
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		Class Dc = objc_getClass("NomenResizeDelegate");
+		if (!Dc) {
+			Dc = objc_allocateClassPair(objc_getClass("NSObject"), "NomenResizeDelegate", 0);
+			if (Dc) {
+				class_addMethod(Dc, sel_registerName("windowDidResize:"), (IMP)nomen_window_did_resize, "v@:@");
+				objc_registerClassPair(Dc);
+			}
+		}
+		if (Dc) {
+			id delegate = ((id(*)(id, SEL))objc_msgSend)((id)Dc, sel_registerName("alloc"));
+			delegate = ((id(*)(id, SEL))objc_msgSend)(delegate, sel_registerName("init"));
+			((void(*)(id, SEL, id))objc_msgSend)((id)win->handle, sel_registerName("setDelegate:"), delegate);
+		}
+		```
+	}
+
+	// Register this grid as the document of a Scrollable, for Window.run's
+	// relayout: on every content-rect change the framework re-runs the
+	// document dance (measure unbounded → set_content_size → layout, plus a
+	// one-time scroll_to_top) for every registered pair. `sv`/`doc` are the
+	// scroll view's `handle`/`doc_handle()` — scalars, because a second
+	// `ref` borrow of the same owner (self.page_grid AND self.page) would
+	// trip the aliasing rule; see GUI.md ("The App run loop"). The grid (and
+	// the Scrollable) must outlive the run — app fields. Call once, from
+	// App.start.
+	// Call once, from App.start. The file-scope registry lives HERE (in the
+	// same file as this method and the thunk below): split builds emit only
+	// referenced structs' methods, and every TU that emits set_document /
+	// Window_relayout must also emit the registry + thunk they call —
+	// putting them in Scrollable.nm broke aarch64 split links (undefined
+	// symbols).
+	pub func set_document = (ref self, uint64 sv, uint64 doc) {
+		```
+		#arch: c
+		#platform: macos
+		#scope: file
+		// The registered (scroll view, document, content grid) triples —
+		// walked by nomen_scroll_relayout_all on every window resize. Raw
+		// addresses: the grid and the scroll live in the app struct, whose
+		// storage is stable for the whole run (the app is moved into
+		// Window.run once).
+		static unsigned long long nomen_scroll_reg_sv[8];
+		static unsigned long long nomen_scroll_reg_doc[8];
+		static void *nomen_scroll_reg_grid[8];
+		static int nomen_scroll_reg_n = 0;
+		void nomen_scroll_register(unsigned long long sv, unsigned long long doc, void *grid) {
+			if (nomen_scroll_reg_n >= 8) return;
+			nomen_scroll_reg_sv[nomen_scroll_reg_n] = sv;
+			nomen_scroll_reg_doc[nomen_scroll_reg_n] = doc;
+			nomen_scroll_reg_grid[nomen_scroll_reg_n] = grid;
+			nomen_scroll_reg_n++;
+		}
+		// The dance trampoline — a free function defined at the bottom of
+		// this file; prototyped so the walker can call it regardless of
+		// emission order (file-scope blocks hoist above function bodies).
+		extern void nomen_scroll_thunk(struct Container *, unsigned long long, unsigned long long, struct Window *, long);
+		void nomen_scroll_relayout_all(void *win, long first) {
+			for (int i = 0; i < nomen_scroll_reg_n; i++) {
+				nomen_scroll_thunk(
+					(struct Container *)nomen_scroll_reg_grid[i],
+					nomen_scroll_reg_sv[i], nomen_scroll_reg_doc[i],
+					(struct Window *)win, first);
+			}
+		}
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		#scope: file
+		static unsigned long long nomen_scroll_reg_sv[8];
+		static unsigned long long nomen_scroll_reg_doc[8];
+		static void *nomen_scroll_reg_grid[8];
+		static int nomen_scroll_reg_n = 0;
+		void nomen_scroll_register(unsigned long long sv, unsigned long long doc, void *grid) {
+			if (nomen_scroll_reg_n >= 8) return;
+			nomen_scroll_reg_sv[nomen_scroll_reg_n] = sv;
+			nomen_scroll_reg_doc[nomen_scroll_reg_n] = doc;
+			nomen_scroll_reg_grid[nomen_scroll_reg_n] = grid;
+			nomen_scroll_reg_n++;
+		}
+		// The companion-emitted thunk (a free function, defined at the
+		// bottom of this file) carries the asm label that maps its symbol
+		// for the asm side; the label goes on this FIRST declaration too —
+		// clang rejects an asm label applied after first use.
+		extern void nomen_scroll_thunk(nm_Container *, unsigned long long, unsigned long long, nm_Window *, long) __asm__("nomen_scroll_thunk");
+		void nomen_scroll_relayout_all(void *win, long first) {
+			for (int i = 0; i < nomen_scroll_reg_n; i++) {
+				nomen_scroll_thunk(
+					(nm_Container *)nomen_scroll_reg_grid[i],
+					nomen_scroll_reg_sv[i], nomen_scroll_reg_doc[i],
+					(nm_Window *)win, first);
+			}
+		}
+		```
+		```
+		#arch: c
+		#platform: macos
+		nomen_scroll_register(sv, doc, (void *)self);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		nomen_scroll_register(sv, doc, (void *)self);
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+	}
+
 	// Hit test: is point (cx, cy) (top-left origin, as returned by click_x/
 	// click_y) inside the leaf with the given handle?
 	pub func contains = (self, uint64 handle, int cx, int cy, out bool) {
@@ -1828,6 +1970,99 @@ pub mv struct Container: Control {
  **/
 pub func nomen_layout_thunk = (ref Container grid, Window win) {
 	grid.layout(win)
+}
+
+// The grid-side measure for the document dance, as a C-linkage free
+// function (pure Nomen — asm-emitted on aarch64) so the thunk's raw bodies
+// can call it: constraints are the window's content width minus the grid's
+// own padding (the `layout_page` formula), height unbounded.
+pub func nomen_scroll_measure = (ref Container grid, int max_w, out [int, int]) {
+	var bc = BoxConstraints()
+	bc.max_width = max_w
+	const Size cs = grid.measure(bc)
+	return [cs.width, cs.height]
+}
+
+// The per-pair document dance, called from nomen_scroll_relayout_all (the
+// registration's C walker — see set_document above): measure the grid
+// unbounded-height at the window's content width, size the document view,
+// lay the grid out into the document, and — once, on the framework's first
+// post-show pass — scroll to the top. Pointer/handle params: free functions
+// are exported for C linkage on both backends, and the walker holds raw
+// addresses + the scroll's handles (scalars). FULLY RAW bodies: an
+// aarch64_use_c function routes to the C companion using only its raw
+// blocks, so any Nomen statement here would be silently dropped
+// (FOLLOWUP.md) — the measure goes through nomen_scroll_measure instead.
+pub func nomen_scroll_thunk = (ref Container grid, uint64 sv, uint64 doc, ref Window win, int first) {
+	```
+	#arch: c
+	#platform: macos
+	extern struct _Tuple_int_int nomen_scroll_measure(struct Container *, long);
+	id ssv = (id)sv;
+	id sdoc = (id)doc;
+	id win_cv = ((id(*)(id, SEL))objc_msgSend)((id)win->handle, sel_registerName("contentView"));
+	CGRect win_frame = ((CGRect(*)(id, SEL))objc_msgSend)(win_cv, sel_registerName("frame"));
+	struct _Tuple_int_int cs = nomen_scroll_measure(grid, (long)win_frame.size.width - grid->padding * 2);
+	id clip = ((id(*)(id, SEL))objc_msgSend)(ssv, sel_registerName("contentView"));
+	CGRect clip_bounds = ((CGRect(*)(id, SEL))objc_msgSend)(clip, sel_registerName("bounds"));
+	double frame_h = (double)cs._1;
+	if (frame_h < clip_bounds.size.height) frame_h = clip_bounds.size.height;
+	((void(*)(id, SEL, CGSize))objc_msgSend)(sdoc, sel_registerName("setFrameSize:"),
+		((CGSize(*)(double, double))CGSizeMake)((double)cs._0, frame_h));
+	if (first == 1) {
+		// The document view is unflipped and starts showing its bottom-left
+		// corner — the one-time scroll_to_top (the clip's bounds origin sits
+		// `doc_h - clip_h` up from the bottom).
+		CGPoint origin = ((CGPoint(*)(double, double))CGPointMake)(0, frame_h - clip_bounds.size.height);
+		((void(*)(id, SEL, CGPoint))objc_msgSend)(clip, sel_registerName("setBoundsOrigin:"), origin);
+		((void(*)(id, SEL, id))objc_msgSend)(ssv, sel_registerName("reflectScrolledClipView:"), clip);
+	}
+	// Lay the grid out into the document view: a stack Window value over the
+	// doc handle (layout only reads it — no retain needed).
+	extern void *_Window_traits[];
+	extern void nomen_layout_thunk(struct Container *, struct Window *);
+	struct Window doc_win;
+	doc_win._vt = (void *)&_Window_traits;
+	doc_win.handle = doc;
+	nomen_layout_thunk((struct Container *)grid, &doc_win);
+	```
+	```
+	#arch: aarch64_use_c
+	#platform: macos
+	extern nm__Tuple_int_int nomen_scroll_measure(struct Container *, long);
+	id ssv = (id)sv;
+	id sdoc = (id)doc;
+	id win_cv = ((id(*)(id, SEL))objc_msgSend)((id)win->handle, sel_registerName("contentView"));
+	CGRect win_frame = ((CGRect(*)(id, SEL))objc_msgSend)(win_cv, sel_registerName("frame"));
+	nm__Tuple_int_int cs = nomen_scroll_measure(grid, (long)win_frame.size.width - grid->padding * 2);
+	id clip = ((id(*)(id, SEL))objc_msgSend)(ssv, sel_registerName("contentView"));
+	CGRect clip_bounds = ((CGRect(*)(id, SEL))objc_msgSend)(clip, sel_registerName("bounds"));
+	double frame_h = (double)cs._1;
+	if (frame_h < clip_bounds.size.height) frame_h = clip_bounds.size.height;
+	((void(*)(id, SEL, CGSize))objc_msgSend)(sdoc, sel_registerName("setFrameSize:"),
+		((CGSize(*)(double, double))CGSizeMake)((double)cs._0, frame_h));
+	if (first == 1) {
+		CGPoint origin = ((CGPoint(*)(double, double))CGPointMake)(0, frame_h - clip_bounds.size.height);
+		((void(*)(id, SEL, CGPoint))objc_msgSend)(clip, sel_registerName("setBoundsOrigin:"), origin);
+		((void(*)(id, SEL, id))objc_msgSend)(ssv, sel_registerName("reflectScrolledClipView:"), clip);
+	}
+	extern void *Window_traits;
+	extern void nomen_layout_thunk(struct Container *, struct Window *);
+	nm_Window doc_win;
+	doc_win._vt = (void *)&Window_traits;
+	doc_win.handle = doc;
+	nomen_layout_thunk((struct Container *)grid, (struct Window *)&doc_win);
+	```
+	```
+	#arch: c
+	#platform: ios
+	/* TODO: iOS (see #init) */
+	```
+	```
+	#arch: aarch64_use_c
+	#platform: ios
+	/* TODO: iOS (see #init) */
+	```
 }
 
 /**
