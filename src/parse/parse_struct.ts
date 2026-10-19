@@ -1,7 +1,13 @@
+import AccessFieldNode from "../nodes/AccessFieldNode.ts";
+import AccessNode from "../nodes/AccessNode.ts";
+import AssignmentNode from "../nodes/AssignmentNode.ts";
+import clone_node from "../nodes/clone_node.ts";
+import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import ParameterNode from "../nodes/ParameterNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import Type from "../nodes/Type.ts";
+import ValueNode from "../nodes/ValueNode.ts";
 import parse_statement from "./parse_statement.ts";
 import parse_type from "./parse_type.ts";
 import type ParseStatus from "./ParseStatus.ts";
@@ -86,6 +92,21 @@ export default function parse_struct(
 		}
 
 		add_to_parent(struct, "Struct", status);
+
+		// A `#handle` construction hook: synthesize the copyable Handle
+		// twin — `<Name>Handle`, a NON-mv struct (assignment, params, and
+		// closure captures all COPY it; copies never destroy — the owning
+		// struct releases the resource exactly once). It mirrors every
+		// public bare-self method (bodies transplant verbatim: the twin
+		// carries the same `handle` field the raw bodies read), plus an
+		// `#init(owner)` minter copying the owner's handle. This is what
+		// lets closures capture controls without the capture-MOVES rule
+		// (CLOSURE.md): the captured value owns nothing.
+		const has_handle_hook = struct.functions.some((f) => f.name === "#handle");
+		if (has_handle_hook) {
+			struct.functions = struct.functions.filter((f) => f.name !== "#handle");
+			add_to_parent(synthesize_handle_struct(struct, start, visibility), "Struct", status);
+		}
 	}
 
 	status.namespace = old_namespace;
@@ -117,4 +138,70 @@ function parse_optional_type_param_bound(status: ParseStatus): string[] {
 		bounds.push(consume(status));
 	}
 	return bounds;
+}
+
+// Synthesize the `<Name>Handle` twin for a struct carrying the `#handle`
+// hook (see the struct-close synthesis in parse_struct): a NON-mv struct —
+// copies are data copies of the native handle, so nothing moves and nothing
+// destroys — with mirrors of every public bare-self method and an
+// `#init(owner)` minter. Raw bodies transplant verbatim because the twin
+// carries the same `handle` field the bodies read; methods taking `ref
+// self`, statics, and `#` lifecycle members are not mirrored (a view never
+// constructs or releases). The synthesized nodes reuse the owner's `start`
+// offset so the library raw-block boundary classification is inherited.
+function synthesize_handle_struct(
+	struct: StructNode,
+	start: number,
+	visibility: "pub" | "private" | "internal",
+): StructNode {
+	if (struct.type_params.length > 0) {
+		throw new Error(`#handle is not supported on generic struct '${struct.name}' yet`);
+	}
+	const handle = new StructNode(start, visibility, `${struct.name}Handle`);
+	handle.is_owning = false;
+	handle.fields.push(new DeclarationNode(start, "internal", "var", "handle", new Type("uint64")));
+
+	// The minter: `TextBoxHandle(owner)` — copies the owner's native handle.
+	// `from` is a bare (borrowed) parameter, so the call site needs no `mv`.
+	const init = new FunctionNode(start, visibility, "#init", new Type(handle.name));
+	const self_param = new ParameterNode(start, "self", new Type(handle.name));
+	self_param.is_self_param = true;
+	self_param.declaration = "var";
+	const from_param = new ParameterNode(start, "from", new Type(struct.name));
+	init.params = [self_param, from_param];
+	init.is_static = false;
+	init.has_body = true;
+	init.statements = [
+		new AssignmentNode(
+			start,
+			new AccessNode(
+				start,
+				new ValueNode(start, "self", new Type(handle.name)),
+				new AccessFieldNode(start, "handle", new Type("uint64")),
+			),
+			new AccessNode(
+				start,
+				new ValueNode(start, "from", new Type(struct.name)),
+				new AccessFieldNode(start, "handle", new Type("uint64")),
+			),
+		),
+	];
+	handle.functions.push(init);
+
+	// Mirror every public bare-self method. Clones are plain data (the AST
+	// is JSON-safe), so a structured clone is a faithful deep copy; only the
+	// receiver's type is rewritten to the Handle.
+	for (const func of struct.functions) {
+		if (func.visibility !== "pub") continue;
+		if (func.name.startsWith("#")) continue;
+		const receiver = func.params[0];
+		if (!receiver || !receiver.is_self_param) continue;
+		if (receiver.is_ref) continue; // ref methods mutate the owner — not mirrored
+		const clone = clone_node(func) as unknown as FunctionNode;
+		clone.start = start;
+		clone.visibility = "pub";
+		clone.params[0].type = new Type(handle.name);
+		handle.functions.push(clone);
+	}
+	return handle;
 }

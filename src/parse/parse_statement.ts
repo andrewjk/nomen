@@ -251,8 +251,22 @@ export default function parse_statement(status: ParseStatus) {
 					consume(status); // consume #
 					consume(status); // consume weak
 					parse_destroy(default_visibility(status), status, "#weak");
+				} else if (next === "handle") {
+					// The Handle construction hook: declares that a copyable
+					// `<Name>Handle` twin is synthesized from this struct —
+					// same public bare-self methods, one `handle` field, no
+					// `#destroy` (copies never release; the owner does).
+					// Like #init/#destroy/#spawn/#weak, a lifecycle marker —
+					// the body is a declaration, not user code.
+					consume(status); // consume #
+					consume(status); // consume handle
+					parse_destroy(default_visibility(status), status, "#handle");
 				} else {
-					add_error(status, `Expected #init, #destroy, #spawn or #weak`, get_index(status));
+					add_error(
+						status,
+						`Expected #init, #destroy, #spawn, #weak or #handle`,
+						get_index(status),
+					);
 					consume(status);
 				}
 				break;

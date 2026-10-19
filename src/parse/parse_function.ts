@@ -48,7 +48,14 @@ export default function parse_function(
 	let name = name_override || consume(status);
 	if (!name_override && name === "#") {
 		const next = consume(status);
-		if (next === "init" || next === "destroy" || next.startsWith("op_")) {
+		if (
+			next === "init" ||
+			next === "destroy" ||
+			next === "spawn" ||
+			next === "weak" ||
+			next === "handle" ||
+			next.startsWith("op_")
+		) {
 			name = `#${next}`;
 		}
 	}
@@ -181,10 +188,16 @@ export default function parse_function(
 					expect("}", status);
 					status.stack.pop();
 
-					// Constructors, destructors and the Spawnable construction
-					// marker return through their own machinery, not a Nomen
-					// `return`.
-					if (name !== "#init" && name !== "#destroy" && name !== "#spawn") {
+					// Constructors, destructors and the construction markers
+					// (Spawnable, WeakHandle, Handle) return through their own
+					// machinery, not a Nomen `return`.
+					if (
+						name !== "#init" &&
+						name !== "#destroy" &&
+						name !== "#spawn" &&
+						name !== "#weak" &&
+						name !== "#handle"
+					) {
 						check_missing_return(func, status);
 					}
 				}

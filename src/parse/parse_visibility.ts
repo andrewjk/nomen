@@ -197,6 +197,11 @@ export default function parse_visibility(
 				consume(status); // consume #
 				consume(status); // consume weak
 				parse_function(visibility, status, "#weak");
+			} else if (next2 === "handle") {
+				consume(status); // consume pub
+				consume(status); // consume #
+				consume(status); // consume handle
+				parse_function(visibility, status, "#handle");
 			} else {
 				add_error(status, `Expected #init, #destroy, #spawn or #weak after pub`, get_index(status));
 				consume(status);
