@@ -126,9 +126,6 @@ mv struct GalleryApp : App {
 	var Popover pop
 	var Text status
 	var string prev_status = ""
-	// The pagination's page last shown in the status line (the composite
-	// self-drives; frame only mirrors the state).
-	var int prev_page = 0
 	// The tab/split panes are laid out by NSTabView/NSSplitView AFTER the
 	// framework's first post-show pass gives them real frames — one app-side
 	// pane pass on the first frame, then on every resize.
@@ -607,6 +604,14 @@ mv struct GalleryApp : App {
 			self.radio_a.set_checked(false)
 		})
 
+		// The pagination's page changes come UP as events (docs/HANDLERS.md
+		// Stage 3): enrolling stores the dispatch id in the composite; each
+		// frame's `tick` forwards the app down and the callback lands here —
+		// one handler, no per-frame polling of the page.
+		self.pag.on_page_change(func () {
+			self.status.set_text("page \{self.pag.page()}")
+		})
+
 		// The dialog/drawer buttons register here too (once — before the run
 		// loop). Each body runs with `ref self`, so app state — the Alert,
 		// the Sheet, the Popover — is direct field access, no captures. The
@@ -693,12 +698,9 @@ mv struct GalleryApp : App {
 			self.prev_status = polled.copy()
 		}
 
-		// The pagination self-drives (its registered arms keep the page —
-		// docs/HANDLERS.md Stage 2); the status line reads the current page.
-		if self.pag.page() != self.prev_page {
-			self.prev_page = self.pag.page()
-			self.status.set_text("page \{self.prev_page}")
-			self.prev_status = ""
-		}
+		// The pagination self-drives and reports up (docs/HANDLERS.md
+		// Stage 3): forwarding the app down once per tick delivers any page
+		// change to the enrolled handler.
+		self.pag.tick(ref self, ref win)
 	}
 }

@@ -555,7 +555,7 @@ function check_access_field_node(
 	return true;
 }
 
-function check_access_function_node(
+export function check_access_function_node(
 	target_type: Type,
 	target: BaseNode,
 	node: AccessFunctionCallNode,

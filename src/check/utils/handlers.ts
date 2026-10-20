@@ -7,10 +7,12 @@ import BranchNode from "../../nodes/BranchNode.ts";
 import FunctionCallNode from "../../nodes/FunctionCallNode.ts";
 import FunctionNode from "../../nodes/FunctionNode.ts";
 import IfElseNode from "../../nodes/IfElseNode.ts";
+import OperationNode from "../../nodes/OperationNode.ts";
 import ParameterNode from "../../nodes/ParameterNode.ts";
 import StructNode from "../../nodes/StructNode.ts";
 import Type from "../../nodes/Type.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
+import { check_access_function_node } from "../check_access_node.ts";
 import check_function_node from "../check_function_node.ts";
 import type CheckStatus from "../CheckStatus.ts";
 import { is_box_type } from "./box.ts";
@@ -54,9 +56,6 @@ import { is_box_type } from "./box.ts";
 /** The reserved member-name family on control receivers (HANDLERS.md). */
 const HANDLER_EVENT = /^on_[a-z][a-z0-9_]*$/;
 
-/** The one event the Stage 1 desugar dispatches. */
-const SUPPORTED_EVENTS = new Set(["on_click"]);
-
 interface HandlerHostState {
 	/** The synthesized trait override, appended to the host's functions. */
 	handle_clicks: FunctionNode;
@@ -82,6 +81,19 @@ const host_states = new WeakMap<StructNode, HandlerHostState>();
  */
 const pending_hosts = new Map<BaseNode, StructNode[]>();
 
+interface RunHandlerState {
+	/** The synthesized trait override, appended to the app's functions. */
+	run_handler: FunctionNode;
+	/** Registration order assigns dispatch ids (HANDLERS.md Stage 3). */
+	next_id: number;
+}
+
+/** Per-app up-call synthesis state (see host_states for why module-level). */
+const run_handler_states = new WeakMap<StructNode, RunHandlerState>();
+
+/** Apps whose synthesized `run_handler` awaits its check (see pending_hosts). */
+const pending_run_handlers = new Map<BaseNode, StructNode[]>();
+
 /**
  * The `.on_<event>(closure)` hook, called from check_access_function_node
  * BEFORE ordinary method resolution. Returns:
@@ -98,22 +110,36 @@ export function try_check_handler_registration(
 	node: AccessFunctionCallNode,
 	status: CheckStatus,
 ): boolean | undefined {
+	// The Stage 3 enrollment rewrite re-enters this hook with the site
+	// already rewritten to `receiver.on_<event>(id)` — resolve ordinarily.
+	if (node.is_handler_enrollment) return undefined;
 	if (!HANDLER_EVENT.test(node.name)) return undefined;
 	// Reserved on CONTROL receivers only: any other type's `on_*` member (or
 	// the "Function not found" for a missing one) resolves ordinarily.
 	const receiver = status.structs.find((s) => s.name === target_type.name);
-	if (!receiver || !receiver.traits.includes("Control")) return undefined;
+	if (!receiver) return undefined;
 
 	const fail = (message: string): false => {
 		add_error(status, message, node.start);
 		return false;
 	};
 
-	if (!SUPPORTED_EVENTS.has(node.name)) {
-		return fail(
-			`.${node.name} is not a supported handler event yet — only on_click is implemented`,
-		);
+	if (node.name !== "on_click") {
+		// Composite event APIs (Stage 3): `self.pager.on_page_change(func () {
+		// ... })` enrolls an up-call handler on a composite host. Controls
+		// keep the click family only.
+		if (receiver.traits.includes("Control")) {
+			return fail(
+				`.${node.name} is not a supported handler event yet — only on_click is implemented`,
+			);
+		}
+		return try_check_composite_event(receiver, target_type, target, node, status, fail);
 	}
+	// Click handlers ride on CONTROL receivers: any other type's `on_click`
+	// member (or the "Function not found" for a missing one) resolves
+	// ordinarily.
+	if (!receiver.traits.includes("Control")) return undefined;
+
 	if (node.params.length !== 1 || node.params[0].node_type !== "func") {
 		return fail(`.${node.name} expects one closure argument — .on_click(func () { ... })`);
 	}
@@ -222,6 +248,164 @@ export function try_check_handler_registration(
 }
 
 /**
+ * Composite event registration (docs/HANDLERS.md Stage 3 — id up-calls).
+ * `self.<field>.on_<event>(closure)` on a composite host — a struct that
+ * DECLARES the event API — enrolls the app handler for the composite's
+ * up-call:
+ *
+ *  - the closure hoists into a hidden method on the app —
+ *    `#on_<event>_N = (ref self, ref Window win) { body }`;
+ *  - the app's synthesized `run_handler` gains the dispatch arm
+ *    `if id == N { self.#on_<event>_N(ref win) }` — the concrete method the
+ *    composite's `owner.run_handler(id, ref win)` callback hops into;
+ *  - the registration site REWRITES to the enrollment call
+ *    `receiver.on_<event>(N)` — the composite's own declared API stores the
+ *    id (the one thing tier 2 stores: an int, never a handler).
+ *
+ * The composite opts in by declaration: the event exists when the receiver
+ * declares `func on_<event> = (ref self, int id)`. Without it the name
+ * resolves ordinarily ("Function not found") — the family is not reserved
+ * on composites, only on controls.
+ *
+ * The closure rules match the click desugar (no parameters, no upvalue
+ * captures, self-rooted field receiver), and the enclosing host must be the
+ * App conformer — the up-call dispatches through the app's `run_handler`.
+ * Returns undefined when this isn't a declared composite event.
+ */
+function try_check_composite_event(
+	receiver: StructNode,
+	target_type: Type,
+	target: BaseNode,
+	node: AccessFunctionCallNode,
+	status: CheckStatus,
+	fail: (message: string) => false,
+): boolean | undefined {
+	// Opt-in by declaration: one `on_<event> = (ref self, int id)` method.
+	const enrollment = receiver.functions.find(
+		(f) =>
+			f.name === node.name &&
+			f.params.length === 2 &&
+			f.params[0].is_self_param &&
+			!f.params[1].is_self_param &&
+			f.params[1].type.name === "int" &&
+			!f.params[1].type.is_ref,
+	);
+	if (!enrollment) return undefined;
+
+	if (node.params.length !== 1 || node.params[0].node_type !== "func") {
+		return fail(`.${node.name} expects one closure argument — .${node.name}(func () { ... })`);
+	}
+	const closure = node.params[0] as FunctionNode;
+	if (closure.params.length > 0) {
+		return fail(
+			"handler closures take no parameters — the body sees `self` and the dispatch `win`",
+		);
+	}
+
+	// The receiver path and host rules match the click desugar (v1: the
+	// up-call dispatches through the app's run_handler, so the handler
+	// hoists onto the App conformer).
+	const fields = self_rooted_field_path(target);
+	if (!fields) {
+		return fail(
+			`.${node.name} needs a self-rooted field receiver — store the composite in a field and register from self.<field>.${node.name}(...)`,
+		);
+	}
+	const enclosing = status.stack.findLast((n) => n.node_type === "func") as
+		| FunctionNode
+		| undefined;
+	const host = enclosing?.scope as StructNode | undefined;
+	if (!host || host.node_type !== "struct") {
+		return fail(
+			`.${node.name} registers a handler on the enclosing struct — it cannot appear outside one`,
+		);
+	}
+	if (!host.traits.includes("App")) {
+		return fail(
+			`up-call handlers dispatch through the app's run_handler — register .${node.name} from the app, not from '${host.name}'`,
+		);
+	}
+	if (host.functions.some((f) => f.name === "run_handler")) {
+		return fail(
+			`'${host.name}' already declares run_handler — the .${node.name} desugar synthesizes it (the name is reserved on the app)`,
+		);
+	}
+
+	// Per-app synthesis state (the run_handler override + the id counter).
+	const root = status.stack[0];
+	let state = run_handler_states.get(host);
+	if (!state) {
+		const run_handler = new FunctionNode(node.start, "pub", "run_handler", new Type(""), [
+			ref_self_param(host),
+			new ParameterNode(node.start, "id", new Type("int")),
+			win_param(),
+		]);
+		host.functions.push(run_handler);
+		state = { run_handler, next_id: 1 };
+		run_handler_states.set(host, state);
+		let apps = pending_run_handlers.get(root);
+		if (!apps) {
+			apps = [];
+			pending_run_handlers.set(root, apps);
+		}
+		apps.push(host);
+	}
+	const id = state.next_id++;
+
+	// ── The hoist ── (identical discipline to the click desugar: checked as
+	// a closure WOULD BE, so upvalue references record as captures — the
+	// v1 error. `self` and `win` resolve to the hoisted method's params.)
+	const hoisted = new FunctionNode(
+		closure.start,
+		"private",
+		`#${node.name}_${id}`,
+		new Type(""),
+		[ref_self_param(host), win_param()],
+		closure.statements,
+	);
+	host.functions.push(hoisted);
+	hoisted.is_closure = true;
+	check_function_node(hoisted, status);
+	const upvalues = hoisted.captures ?? [];
+	hoisted.is_closure = undefined;
+	hoisted.captures = undefined;
+	if (upvalues.length) {
+		return fail(
+			"handler closures see `self` and the dispatch `win` — copy what you need into fields",
+		);
+	}
+
+	// ── The dispatch arm ── (registration order; ids arrive per tick.)
+	state.run_handler.statements.push(up_call_arm(host, node.name, id, node.start));
+
+	// ── The enrollment rewrite ──: the site becomes
+	// `receiver.on_<event>(N)` and resolves as the composite's declared API.
+	node.is_handler_enrollment = true;
+	node.params = [new ValueNode(node.start, String(id), new Type("int"))];
+	return check_access_function_node(target_type, target, node, status);
+}
+
+/**
+ * `if id == N { self.#on_<event>_N(ref win) }` — one arm of the
+ * synthesized `run_handler`.
+ */
+function up_call_arm(host: StructNode, event: string, id: number, start: number): IfElseNode {
+	const condition = new OperationNode(
+		start,
+		"==",
+		new ValueNode(start, "id", new Type("int")),
+		new ValueNode(start, String(id), new Type("int")),
+	);
+	const dispatch = new AccessFunctionCallNode(start, `#${event}_${id}`);
+	// `ref win` — the borrowed argument needs the same explicit `ref` a source
+	// call site writes (ref_param_indices marks the keyword positions).
+	dispatch.ref_param_indices = [0];
+	dispatch.params = [new ValueNode(start, "win")];
+	const call = new AccessNode(start, new ValueNode(start, "self", new Type(host.name)), dispatch);
+	return new IfElseNode(start, condition, new BranchNode(start, [call]));
+}
+
+/**
  * Check every host's synthesized `handle_clicks`, after first synthesizing
  * the FORWARDING wiring (Stage 2, HANDLERS.md "Handler hosts beyond the
  * root"): a struct with registrations is a handler host — not just the App.
@@ -241,12 +425,13 @@ export function try_check_handler_registration(
 export function finalize_handler_hosts(status: CheckStatus): void {
 	const root = status.stack[0];
 	const hosts = pending_hosts.get(root);
-	if (!hosts) return;
+	const up_call_apps = pending_run_handlers.get(root);
+	if (!hosts && !up_call_apps) return;
 	pending_hosts.delete(root);
-	const host_set = new Set<StructNode>(hosts);
+	const host_set = new Set<StructNode>(hosts ?? []);
 
 	const to_check: FunctionNode[] = [];
-	for (const host of hosts) {
+	for (const host of hosts ?? []) {
 		const state = host_states.get(host);
 		if (state) to_check.push(state.handle_clicks);
 	}
@@ -304,6 +489,18 @@ export function finalize_handler_hosts(status: CheckStatus): void {
 
 	for (const hc of to_check) {
 		check_function_node(hc, status);
+	}
+
+	// The up-call protocol (Stage 3): check every synthesized `run_handler`
+	// override the same way — all hoisted `#on_<event>_N` methods exist by
+	// now, and the trait's default is declared on `App`.
+	if (up_call_apps) {
+		pending_run_handlers.delete(root);
+		for (const app of up_call_apps) {
+			const state = run_handler_states.get(app);
+			if (!state) continue;
+			check_function_node(state.run_handler, status);
+		}
 	}
 }
 

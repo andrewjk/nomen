@@ -7,9 +7,13 @@
  * and skipped by the layout's hidden-leaf pass). The composite is its own
  * HANDLER HOST (docs/HANDLERS.md Stage 2): #init registers a handler per
  * button and the arms keep `current` up to date — the run loop forwards
- * into whatever app field hosts the pagination, and the caller just reads
- * `page` (value polling). Handles (`prev_handle`/`next_handle`/
- * `page_handle`) remain for coordinate hit-testing.
+ * into whatever app field hosts the pagination. Changes the app cares
+ * about travel UP via the id up-call (Stage 3): `on_page_change(id)`
+ * enrolls interest, the mutators raise the pending flag, and the app
+ * forwards itself down once per frame — `pag.tick(ref self, ref win)` —
+ * for the callback into its `run_handler`. Value polling (`page`) remains
+ * for apps that don't need the event. Handles (`prev_handle`/
+ * `next_handle`/`page_handle`) remain for coordinate hit-testing.
  **/
 pub mv struct Pagination {
 	var Button prev
@@ -21,6 +25,10 @@ pub mv struct Pagination {
 	var Button b4
 	var pages = 1
 	var current = 0
+	// The up-call plumbing: the dispatch id the app enrolled (—1 = none)
+	// and whether a page change is waiting for the next tick.
+	var int page_change_id = -1
+	var bool page_change_pending = false
 
 	pub func #init = (self, Window window, int pages: pages > 0 && pages <= 5) {
 		self.prev = Button(window, "<")
@@ -97,17 +105,38 @@ pub mv struct Pagination {
 		if i < 0 { i = 0 }
 		if i > self.pages - 1 { i = self.pages - 1 }
 		self.current = i
+		self.page_change_pending = true
 	}
 
 	pub func next = (ref self) {
 		if self.current < self.pages - 1 {
 			self.current += 1
+			self.page_change_pending = true
 		}
 	}
 
 	pub func prev = (ref self) {
 		if self.current > 0 {
 			self.current -= 1
+			self.page_change_pending = true
 		}
+	}
+
+	// The declared event API (docs/HANDLERS.md Stage 3): the desugar's
+	// enrollment rewrite calls this with the app handler's dispatch id.
+	pub func on_page_change = (ref self, int id) {
+		self.page_change_id = id
+	}
+
+	// One tick of the up-call protocol: the app forwards itself down once
+	// per frame — `self.pag.tick(ref self, ref win)` — and a pending page
+	// change calls back into the app's `run_handler` (one vtable hop into
+	// the concrete override). The borrow flows down per call; nothing is
+	// stored and nothing outlives the tick.
+	pub func tick = (ref self, ref App owner, ref Window win) {
+		if self.page_change_pending && self.page_change_id >= 0 {
+			owner.run_handler(self.page_change_id, ref win)
+		}
+		self.page_change_pending = false
 	}
 }

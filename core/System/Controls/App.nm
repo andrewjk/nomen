@@ -7,7 +7,7 @@
  * and the WINDOW owns everything else — the event pump, the autorelease
  * pool, resize detection, and the relayout of the hosted content (the root
  * `Container` from `win.set_content` plus every `Scrollable.set_content`
- * document). The app implements three hooks:
+ * document). The app implements four hooks:
  *
  * - `start` — called once, after the app has been moved into its final
  *   storage but before the window is shown. Register the layout roots here
@@ -24,6 +24,11 @@
  *   `.on_<event>(closure)` desugar (docs/HANDLERS.md) synthesizes the
  *   override on conformers with registrations, so user code only writes
  *   the registration and never sees the machinery.
+ * - `run_handler` — the up-call protocol (Stage 3): a composite with an
+ *   enrolled event calls back `owner.run_handler(id, ref win)` from its
+ *   `tick` (the app forwards itself down once per tick). Default-empty;
+ *   the desugar synthesizes the override dispatching ids to the app's
+ *   `.on_<event>` handlers.
  *
  * Handlers are METHODS on the app (the `ref self` receiver), so app state —
  * every control field — is reachable without lambda captures (capturing a
@@ -51,6 +56,15 @@ pub trait App {
 	// registrations inherit this empty default (trait defaults have
 	// precedent: `Enumerable.length`).
 	func handle_clicks = (ref self, ref Window win) {
+	}
+
+	// The up-call protocol (docs/HANDLERS.md Stage 3): a composite the app
+	// has enrolled events on calls back into this — `owner.run_handler(id,
+	// ref win)` from its `tick` — one vtable hop into the desugar's
+	// synthesized override, whose arms dispatch the id to the app's handler.
+	// The borrow flows down per call; nothing outlives it. Default-empty,
+	// like `handle_clicks`.
+	func run_handler = (ref self, int id, ref Window win) {
 	}
 }
 

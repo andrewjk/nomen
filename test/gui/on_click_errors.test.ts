@@ -218,6 +218,194 @@ pub func main = (Init init) {
 		expect(parse(input, system).errors).toEqual([]);
 	});
 
+	// Stage 3 — id up-calls: a composite declares the event API (a method
+	// taking the dispatch id), and the app-side registration hoists the
+	// handler onto the app, synthesizes `run_handler`, and rewrites the site
+	// to the enrollment call.
+	test("composite event registration enrolls an up-call handler", () => {
+		const input = `
+import System
+import System::Controls
+
+mv struct MyPager {
+	var Button next
+	var int page = 0
+	var int page_change_id = -1
+	var bool page_change_pending = false
+
+	pub func #init = (self, Window window) {
+		self.next = Button(window, ">")
+	}
+
+	pub func on_page_change = (ref self, int id) {
+		self.page_change_id = id
+	}
+
+	pub func tick = (ref self, ref App owner, ref Window win) {
+		if self.page_change_pending && self.page_change_id >= 0 {
+			owner.run_handler(self.page_change_id, ref win)
+		}
+		self.page_change_pending = false
+	}
+}
+
+mv struct PagerApp : App {
+	var MyPager pager
+
+	pub func #init = (self, Window window) {
+		self.pager = MyPager(window)
+	}
+
+	pub func start = (ref self, ref Window win) {
+		self.pager.on_page_change(func () { })
+	}
+
+	pub func frame = (ref self, ref Window win, FrameEvents ev) {
+		self.pager.tick(ref self, ref win)
+	}
+}
+
+pub func main = (Init init) {
+	var Window win = Window("pager", 200, 160)
+	var PagerApp app = PagerApp(win)
+	win.run(mv app)
+}
+`;
+		expect(parse(input, system).errors).toEqual([]);
+	});
+
+	// Without the composite's declared event API, the name resolves
+	// ordinarily — the family is reserved on controls, not on composites.
+	test("composite event without a declared API is a plain missing function", () => {
+		const input = `
+import System
+import System::Controls
+
+mv struct MyBox {
+	var Button btn
+
+	pub func #init = (self, Window window) {
+		self.btn = Button(window, "Go")
+	}
+}
+
+mv struct BoxApp : App {
+	var MyBox box
+
+	pub func #init = (self, Window window) {
+		self.box = MyBox(window)
+	}
+
+	pub func start = (ref self, ref Window win) {
+		self.box.on_frobnicate(func () { })
+	}
+}
+
+pub func main = (Init init) {
+	var Window win = Window("box", 200, 160)
+	var BoxApp app = BoxApp(win)
+	win.run(mv app)
+}
+`;
+		expect(parse(input, system).errors.map((e) => e.message)).toEqual([
+			"Function not found: MyBox.on_frobnicate",
+		]);
+	});
+
+	// The up-call dispatches through the APP's run_handler — a composite
+	// cannot register an event handler on another composite.
+	test("composite events register from the app only", () => {
+		const input = `
+import System
+import System::Controls
+
+mv struct Leaf {
+	var Button btn
+
+	pub func #init = (self, Window window) {
+		self.btn = Button(window, "Go")
+	}
+
+	pub func on_page_change = (ref self, int id) {
+	}
+}
+
+mv struct Wrapper {
+	var Leaf leaf
+	var int seen = 0
+
+	pub func #init = (self, Window window) {
+		self.leaf = Leaf(window)
+	}
+
+	pub func arm = (ref self, ref Window win) {
+		self.leaf.on_page_change(func () { })
+	}
+}
+
+mv struct ChainApp : App {
+	var Wrapper wrapper
+
+	pub func #init = (self, Window window) {
+		self.wrapper = Wrapper(window)
+	}
+}
+
+pub func main = (Init init) {
+	var Window win = Window("chain", 200, 160)
+	var ChainApp app = ChainApp(win)
+	win.run(mv app)
+}
+`;
+		expect(parse(input, system).errors.map((e) => e.message)).toEqual([
+			"up-call handlers dispatch through the app's run_handler — register .on_page_change from the app, not from 'Wrapper'",
+		]);
+	});
+
+	// run_handler is the desugar's synthesized dispatch — a user declaration
+	// collides with it on an enrolling app.
+	test("run_handler is reserved on apps with up-call handlers", () => {
+		const input = `
+import System
+import System::Controls
+
+mv struct MyPager {
+	var Button next
+
+	pub func #init = (self, Window window) {
+		self.next = Button(window, ">")
+	}
+
+	pub func on_page_change = (ref self, int id) {
+	}
+}
+
+mv struct PagerApp : App {
+	var MyPager pager
+
+	pub func #init = (self, Window window) {
+		self.pager = MyPager(window)
+	}
+
+	pub func run_handler = (ref self, int id, ref Window win) {
+	}
+
+	pub func start = (ref self, ref Window win) {
+		self.pager.on_page_change(func () { })
+	}
+}
+
+pub func main = (Init init) {
+	var Window win = Window("pager", 200, 160)
+	var PagerApp app = PagerApp(win)
+	win.run(mv app)
+}
+`;
+		expect(parse(input, system).errors.map((e) => e.message)).toEqual([
+			"'PagerApp' already declares run_handler — the .on_page_change desugar synthesizes it (the name is reserved on the app)",
+		]);
+	});
+
 	test("unsupported events name the one supported form", () => {
 		expect(check_with_registration(`self.btn.on_hover(func () { })`)).toEqual([
 			".on_hover is not a supported handler event yet — only on_click is implemented",

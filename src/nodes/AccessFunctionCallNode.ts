@@ -84,6 +84,15 @@ export default class AccessFunctionCallNode extends BaseNode {
 	 */
 	is_handler_registration?: boolean;
 	/**
+	 * Set during checking when this `.on_<event>(closure)` call was
+	 * checker-interpreted as a COMPOSITE EVENT registration (docs/HANDLERS.md
+	 * Stage 3): the closure was hoisted into a hidden method on the app and
+	 * the params were REWRITTEN to the enrollment call — `receiver.on_<event>(id)`
+	 * — which resolves as the composite's own declared event API. The stamp
+	 * makes the re-entered ordinary resolution skip the desugar hook.
+	 */
+	is_handler_enrollment?: boolean;
+	/**
 	 * RETIRED with the pre-migration launch dispatch: `.start()`/`.detach()`
 	 * are ordinary methods on the library `Thread` class now (docs/ASYNC.md).
 	 * The flags remain only because monomorphized clones can carry them from

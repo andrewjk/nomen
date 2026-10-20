@@ -1523,10 +1523,14 @@ export default function check_function_call(
 		//   - a `mv Trait` param takes ownership of a HEAP box (T2) — the
 		//     hoisted temp keeps the trait type so it lowers as a box, and the
 		//     arg is stamped mv-owned below (the box owns the transferred
-		//     string records).
-		// A `ref Trait` param would let the callee reassign the caller's slot
-		// to a new box — impossible over a value-struct lvalue (T2: borrows
-		// cannot be boxed). Reject with the boxing-owns error.
+		//     string records);
+		//   - a `ref Trait` param (HANDLERS.md Stage 3, the up-call owner) is
+		//     a borrow OF THE CONFORMER INSTANCE: the instance's first word is
+		//     its vtable — exactly the trait handle shape — so the caller
+		//     passes the instance's address and the callee dispatches through
+		//     it. No box, no copy, nothing stored; the borrow's obligations
+		//     are the ordinary `ref` ones (mutable access for the call, no
+		//     escape), enforced by the shared ref-argument checks below.
 		const callee_param_is_trait =
 			!!func_param && !!status.traits.find((t) => t.name === func_param.type.name);
 		if (
@@ -1534,13 +1538,7 @@ export default function check_function_call(
 			!func_param.type.is_array &&
 			is_value_struct_conformer(param_type.name, func_param.type.name!, status)
 		) {
-			if (func_param.type.is_ref) {
-				add_error(
-					status,
-					`a 'ref ${func_param.type.name}' parameter cannot take value struct '${param_type.name}' — boxing owns its instance — mv the value, or copy it ('.copy()')`,
-					param.start,
-				);
-			} else if (func_param.is_moved) {
+			if (func_param.is_moved) {
 				// A `mv Trait` param owns the box: transfer semantics. Stamp
 				// mv-owned so the builds drop the donor's string records
 				// (the box owns them now) and invalidate the donor.

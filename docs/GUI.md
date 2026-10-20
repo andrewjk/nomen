@@ -592,6 +592,51 @@ registered arm never reaches a poll.
 right-clicks and coordinate-driven cases (the todo demo's right-click
 delete; `Container.contains` hit-testing).
 
+### Upward events (composite → app)
+
+A composite can raise its own events. The composite declares the API — an
+enrollment method storing the dispatch id, mutators that raise a pending
+flag, and a `tick` that forwards the app down (Pagination is the shipped
+example, docs/HANDLERS.md Stage 3):
+
+```
+mv struct MyPager {
+	var int page_change_id = -1
+	var bool page_change_pending = false
+
+	pub func on_page_change = (ref self, int id) {
+		self.page_change_id = id
+	}
+
+	pub func tick = (ref self, ref App owner, ref Window win) {
+		if self.page_change_pending && self.page_change_id >= 0 {
+			owner.run_handler(self.page_change_id, ref win)
+		}
+		self.page_change_pending = false
+	}
+}
+```
+
+The app enrolls once in `start` and forwards itself down each frame:
+
+```
+pub func start = (ref self, ref Window win) {
+	self.pager.on_page_change(func () {
+		self.status.set_text("page \{self.pager.page}")
+	})
+}
+
+pub func frame = (ref self, ref Window win, FrameEvents ev) {
+	self.pager.tick(ref self, ref win)
+}
+```
+
+The registration hoists the handler onto the app and synthesizes its
+`run_handler` override; the composite's `owner.run_handler(id, ref win)`
+callback is one vtable hop into it — the borrow flows down per call,
+nothing is stored, nothing outlives the tick. For apps that don't need the
+event, plain value polling (`self.pager.page`) stays the tier-1 form.
+
 ## Invalidation & incremental relayout
 
 Each control has a `dirty` flag and a reference to its parent (via `parent_of`
