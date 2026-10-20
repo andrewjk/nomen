@@ -7,21 +7,30 @@
  * and the WINDOW owns everything else — the event pump, the autorelease
  * pool, resize detection, and the relayout of the hosted content (the root
  * `Container` from `win.set_content` plus every `Scrollable.set_content`
- * document). The app implements two hooks:
+ * document). The app implements three hooks:
  *
  * - `start` — called once, after the app has been moved into its final
  *   storage but before the window is shown. Register the layout roots here
  *   (`win.set_content(ref grid)`, `scroll.set_content(ref grid)`) and do
- *   any wiring that needs stable addresses.
+ *   any wiring that needs stable addresses — including click handlers
+ *   (`self.btn.on_click(func () { ... })`).
  * - `frame` — called every iteration of the run loop with a `FrameEvents`
  *   value: click kind/coordinates (0 = no click, 1 = left, 2 = right), and
  *   `resized` + the new size when the window's content rect changed.
  *   Per-frame value polling (slider → progress mirrors) and click
  *   hit-testing (`Container.contains`) live here.
+ * - `handle_clicks` — called every frame before `frame`; drains registered
+ *   click handlers. Declared here as a default-empty method; the
+ *   `.on_<event>(closure)` desugar (docs/HANDLERS.md) synthesizes the
+ *   override on conformers with registrations, so user code only writes
+ *   the registration and never sees the machinery.
  *
  * Handlers are METHODS on the app (the `ref self` receiver), so app state —
  * every control field — is reachable without lambda captures (capturing a
- * control MOVES it; a capture-free method reference moves nothing).
+ * control MOVES it; a capture-free method reference moves nothing). The
+ * `.on_click` desugar is that shape with registration ergonomics: the
+ * closure you write IS hoisted into a hidden method, and the dispatch
+ * borrow of `self` is taken by the run loop per frame.
  **/
 pub trait App {
 	// Called once before the window is shown, after the app is in its
@@ -31,6 +40,17 @@ pub trait App {
 
 	// Called every frame until the window closes.
 	func frame = (ref self, ref Window win, FrameEvents ev) {
+	}
+
+	// Called every frame before `frame`: drains this app's registered click
+	// handlers. The `.on_<event>(closure)` desugar (docs/HANDLERS.md)
+	// synthesizes this override on any conformer with registrations — hidden
+	// `#on_click_N` methods per closure plus one dispatch arm per registered
+	// control — and `Window.run` calls it at the slot the old
+	// `dispatch_clicks` binding list occupied. Conformers without
+	// registrations inherit this empty default (trait defaults have
+	// precedent: `Enumerable.length`).
+	func handle_clicks = (ref self, ref Window win) {
 	}
 }
 

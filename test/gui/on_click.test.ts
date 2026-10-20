@@ -2,20 +2,23 @@ import { describe, test } from "vite-plus/test";
 
 import build_and_check_output from "../build_and_check_output";
 
-// Registered click handlers: `Window.on_click(handle, fn)` stores a
-// { handle, closure } binding in a list on the window and each frame —
-// before the app frame — `dispatch_clicks` drains the shared native click
-// ring against the bindings. The handler closure captures the label's
-// `#handle` VIEW twin (copyable, non-owning), so the capture does not move
-// the control and the app keeps its own field; the mutation is visible
-// through the OWNER (the twin's handle names the same native view).
+// Registered click handlers — the `.on_click` desugar (docs/HANDLERS.md,
+// Stage 1): `self.btn.on_click(func () { ... })` is checker-interpreted —
+// the closure body is hoisted into a hidden method on the app (`#on_click_1
+// = (ref self, ref Window win)`), the registration site emits no code, and
+// the app's synthesized `handle_clicks` drains the control's native click
+// record each frame (before `frame`) by re-evaluating the remembered field
+// path. The handler captures NOTHING: `self` inside the body is the hidden
+// method's own receiver, borrowed by the run loop at dispatch — so a
+// handler can read and mutate app state (`self.label`) with no twins and no
+// capture-MOVES.
 //
 // The click is synthesized at the AppKit seam — performClick: fires the
 // button's own target/action (armed at construction) exactly as a real
-// click would; the binding drain then consumes the ring record.
-describe("Window.on_click", () => {
+// click would; the next frame's handle_clicks drain consumes the record.
+describe("control on_click handlers", () => {
 	test(
-		"registered handler dispatches and mutates through the twin",
+		"registered handler dispatches with the app as receiver",
 		{
 			timeout: 300000,
 		},
@@ -35,18 +38,16 @@ mv struct ClickApp : App {
 		self.btn = Button(window, "Go")
 	}
 
-	// Wire the registered handler once the app is in final storage: the
-	// handler closure captures a VIEW twin of the label (a copy — the
-	// capture-MOVES rule never fires for a #handle twin), so the frame hook
-	// keeps reading the owner field.
+	// Wire the handler once the app is in final storage: the arm
+	// re-evaluates self.btn's handle at dispatch, so registration needs no
+	// captures and nothing can go stale.
 	pub func start = (ref self, ref Window win) {
-		var TextHandle label_view = TextHandle(self.label)
-		win.on_click(self.btn.handle, func () { label_view.set_text("clicked") })
+		self.btn.on_click(func () { self.label.set_text("clicked") })
 	}
 
 	// Synthesize the click at the AppKit seam: performClick: fires the
 	// button's armed target/action (the ring recorder) synchronously — the
-	// NEXT frame's dispatch_clicks drains the record against the binding.
+	// NEXT frame's handle_clicks drain runs the arm.
 	pub func poke = (ref self, ref Window win) {
 		\`\`\`
 		#arch: c
@@ -78,8 +79,8 @@ mv struct ClickApp : App {
 			self.poke(ref win)
 		}
 		if self.frames == 3 {
-			// dispatch_clicks ran before this frame: the binding's closure
-			// set the text through the twin. Read it through the OWNER.
+			// handle_clicks ran before this frame: the arm's hidden method set
+			// the text through the ref-self receiver. Read it through the owner.
 			Console.write_line(self.label.get_text())
 			win.close()
 		}

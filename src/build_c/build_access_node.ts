@@ -564,6 +564,12 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 		}
 		case "access_func": {
 			const access_func = node.access as AccessFunctionCallNode;
+			// A handler registration (docs/HANDLERS.md): the checker hoisted
+			// the closure into a hidden method and checked the site into a
+			// dispatch arm — the registration itself emits no code.
+			if (access_func.is_handler_registration) {
+				return;
+			}
 			// Thread.start / Thread.detach / Fiber.start are ordinary
 			// methods on the library classes (ASYNC.md);
 			// start_on's checker rewrites it to start after validating the

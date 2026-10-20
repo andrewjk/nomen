@@ -95,10 +95,23 @@ mv struct TodoApp : App {
 	// (measure unbounded → set_content_size → layout), with the one-time
 	// scroll_to_top on the first post-show pass. The registration goes
 	// grid-side with scalar handles — one borrow of self per call (two
-	// `ref` borrows under one owner would trip the aliasing rule).
+	// `ref` borrows under one owner would trip the aliasing rule). The Add
+	// button's click handler registers here too: the closure is hoisted
+	// into a hidden method on TodoApp and dispatched with `ref self` by the
+	// run loop (docs/HANDLERS.md), so it reaches app state — the input, the
+	// list, the scroll — with no captures.
 	pub func start = (ref self, ref Window win) {
 		win.set_content(ref self.grid)
 		self.todos.set_document(self.scroll.handle, self.scroll.doc_handle())
+		self.add_btn.on_click(func () {
+			var string new_text = self.input.get_text()
+			if new_text != "" {
+				self.add_item(new_text)
+				self.input.set_text("")
+				self.redance(ref win)
+				self.scroll.scroll_to_bottom()
+			}
+		})
 	}
 
 	// Add a todo at runtime (fields — every statement borrows `self` once).
@@ -117,21 +130,9 @@ mv struct TodoApp : App {
 		nomen_scroll_thunk(ref self.todos, self.scroll.handle, self.scroll.doc_handle(), ref win, 0)
 	}
 
-	// App.frame — the old event-loop body.
+	// App.frame — the old event-loop body. The Add flow is a registered
+	// on_click handler (see start); left-click polls are gone.
 	pub func frame = (ref self, ref Window win, FrameEvents ev) {
-		// Native click event: the Add button arms a shared target/action at
-		// construction — was_clicked drains the edge. No coordinates, no
-		// hit-testing.
-		if self.add_btn.was_clicked() {
-			var string new_text = self.input.get_text()
-			if new_text != "" {
-				self.add_item(new_text)
-				self.input.set_text("")
-				self.redance(ref win)
-				self.scroll.scroll_to_bottom()
-			}
-		}
-
 		// Right-click deletes a todo. The click arrives in WINDOW
 		// coordinates while the todos live in the document view, so
 		// translate through the scrollable first — the visible top of the

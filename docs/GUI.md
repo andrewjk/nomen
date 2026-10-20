@@ -555,54 +555,42 @@ by hand; the demos are all App-shaped.
 
 ### Click events
 
-The button-family controls (`Button`, `CheckBox`, `Radio`, `Toggle`, and
-composites over them) arm a shared native target/action at construction
-(`nomen_control_arm_clicks` — one target object per process; the action
-records the sender's view pointer, which IS the Nomen handle, into a ring
-queue). `was_clicked` drains the edge:
+`on_click` is the way: register a handler on a control field and the
+framework dispatches it — with the app's own `ref self` — every frame the
+control's native click record surfaces:
 
 ```
-if self.alert_btn.was_clicked() {
-	var int choice = self.alert.run()
-	self.status.set_text("alert: button \{choice}")
+pub func start = (ref self, ref Window win) {
+	self.alert_btn.on_click(func () {
+		var int choice = self.alert.run()
+		self.status.set_text("alert: button \{choice}")
+	})
 }
 ```
 
-No coordinates, no hit-testing — and it works for controls hosted on a
-Scrollable's document view (no `content_click` translation). The record is
-consumed: true exactly once per click. `Pagination` exposes the polls as
-`prev_was_clicked` / `next_was_clicked` / `clicked_page`.
+The closure is checker-interpreted (docs/HANDLERS.md): its body is hoisted
+into a hidden method on the app, the registration site emits no code, and
+the app's synthesized `handle_clicks` drains the registered controls each
+frame before `frame` — the run loop owns the borrow, so the handler reads
+and mutates app state (`self.alert`, `self.status`) with no captures and no
+twins. Handlers must register from a `self`-rooted field (the dispatch arm
+re-evaluates the path), take no parameters, and close over nothing but
+`self` and the dispatch `win` — copy what you need into fields.
 
-Why a poll and not a capturing `on_click` closure: a handler that touches
-shared controls would have to CAPTURE them, and capturing a control MOVES
-it (CLOSURE.md) — a second handler (or `frame` itself) could no longer
-touch it. Handlers-as-methods on the app (the `ref self` receiver) reach
-all app state without captures, so the poll form is the ownership-clean
-equivalent; `FrameEvents.click`/`click_x`/`click_y` remain for
+Underneath, the button-family controls (`Button`, `CheckBox`, `Radio`,
+`Toggle`, and composites over them) arm a shared native target/action at
+construction (`nomen_control_arm_clicks` — one target object per process;
+the action records the sender's view pointer, which IS the Nomen handle,
+into a ring queue). The desugar's drain pops that ring per registered
+handle; non-button controls arm a click gesture recognizer on their first
+dispatch. `was_clicked` remains as the low-level ring primitive
+(edge-triggered per control — true exactly once per click), for manual
+loops and for composite internals not yet migrated; a record consumed by a
+registered arm never reaches a poll.
+
+`FrameEvents.click`/`click_x`/`click_y` are unchanged and remain for
 right-clicks and coordinate-driven cases (the todo demo's right-click
-delete).
-
-The closure-shaped `Window.on_click(handle, fn)` is the registered-handler
-alternative: the binding (a `{ handle, closure }` `ClickBinding`) is stored
-in a list on the window, and every frame — before the app frame —
-`run()` drains the shared click ring against the bindings (`dispatch_clicks`;
-manual-loop users call it after `process_events`). The handler closure
-captures `#handle` VIEW twins (copyable, non-owning), so it touches sibling
-controls without capturing-and-moving them — the capture-MOVES rule never
-fires for a twin. `on_click` also arms click recording on the registered
-view (`nomen_window_clicks_init` — a click gesture recognizer feeding the
-same ring), so non-button controls work too; a record consumed by a
-binding never reaches a `was_clicked` poll (first consumer wins).
-
-```
-var TextHandle view = TextHandle(self.label)
-win.on_click(self.btn.handle, func () { view.set_text("clicked") })
-```
-
-Handlers stay METHODS on the app when they need `ref self` app state; a
-registered closure covers the rest. (The two-form split is a consequence of
-the capture rules, not a goal — the staged design that unifies both into
-owner-dispatched handler closures lives in [HANDLERS.md](HANDLERS.md).)
+delete; `Container.contains` hit-testing).
 
 ## Invalidation & incremental relayout
 

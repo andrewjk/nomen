@@ -1,6 +1,7 @@
 import built_in_types from "./built_in_types.ts";
 import check_node from "./check/check_node.ts";
 import type CheckStatus from "./check/CheckStatus.ts";
+import { finalize_handler_hosts } from "./check/utils/handlers.ts";
 import { stamp_literal_element_moves } from "./check/utils/last_use.ts";
 import emit_warnings from "./check/warnings.ts";
 import BaseNode from "./nodes/BaseNode.ts";
@@ -43,6 +44,11 @@ export default function check(
 	stamp_literal_element_moves(root);
 
 	check_node(root, status);
+
+	// Handler hosts (docs/HANDLERS.md): check every synthesized
+	// `handle_clicks` now that the whole tree — user code and the appended
+	// library (the drain primitive, the Window type) — is checked.
+	finalize_handler_hosts(status);
 
 	// (The hidden string-length companion pass is retired: `.length` is a
 	// field load on the fat string value, so no length threading is needed.)

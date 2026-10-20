@@ -75,6 +75,15 @@ export default class AccessFunctionCallNode extends BaseNode {
 	 */
 	is_nursery_spawn?: boolean;
 	/**
+	 * Set during checking when this `.on_<event>(closure)` call was
+	 * checker-interpreted as a handler registration (docs/HANDLERS.md): the
+	 * closure body was hoisted into a hidden method on the enclosing struct
+	 * and the site checked into a dispatch arm on the host's synthesized
+	 * `handle_clicks`. The registration itself emits NO code — both backends
+	 * return as soon as they see the stamp.
+	 */
+	is_handler_registration?: boolean;
+	/**
 	 * RETIRED with the pre-migration launch dispatch: `.start()`/`.detach()`
 	 * are ordinary methods on the library `Thread` class now (docs/ASYNC.md).
 	 * The flags remain only because monomorphized clones can carry them from

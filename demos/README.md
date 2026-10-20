@@ -18,8 +18,8 @@ when added (Add button), and right-clicking a todo deletes it — the click is
 translated into document coordinates with `content_click` first, then the
 grid node is removed and the control is freed by moving it into a nested
 block, whose closing brace runs the checkbox's `#destroy`. The Add button
-reports through its native click action (`was_clicked` — no hit-testing).
-The input
+is a registered `on_click` handler (dispatched with the app's `ref self`
+— docs/HANDLERS.md). The input
 field's hint text is a real placeholder (`TextBox.set_placeholder`), so the
 field reads empty until the user types.
 
@@ -44,10 +44,11 @@ SearchField, TextView), choices (CheckBox, Radio, Switch, Toggle,
 Segmented, Select, Stepper, Slider), display (Progress, Spinner,
 LevelIndicator, ImageView, DatePicker, ColorPicker), actions (Button +
 Tooltip), and grouping (Separator, GroupBox) — laid out in a
-2-column grid. Clicks dispatch through native target/action —
-`was_clicked` drains the edge per control (no coordinates, no
-hit-testing). Continuous controls are polled every frame into a status
-line that only rewrites when the string changes. The modals are created up
+2-column grid. Clicks are registered `on_click` handlers — the desugar
+dispatches each closure as a hidden method with the app's `ref self`
+(docs/HANDLERS.md); composite internals (`Pagination`) keep their
+edge polls until Stage 2. Continuous controls are polled every frame into
+a status line that only rewrites when the string changes. The modals are created up
 front and driven from `frame`: Alert (blocks in NSAlert's own
 modal loop and reports the button pressed), Sheet (its content window is
 its own layout root, hit-tested in sheet coordinates while presented), and

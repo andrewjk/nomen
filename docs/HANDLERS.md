@@ -9,10 +9,26 @@ ownership rules underneath, see MEMORY.md.
 ## Implementation status
 
 DESIGN — recorded 2026-10-20, out of the `#handle` / `Window.on_click` work
-and a demo experiment that hit the wall this design removes. Nothing here is
-implemented; the shipped forms (control `was_clicked()` polls and
-`Window.on_click(handle, closure)`) remain as documented in GUI.md until the
-staging at the end lands.
+and a demo experiment that hit the wall this design removes.
+
+**Stage 1 is implemented (2026-10-20).** `.on_<event>(closure)` recognition,
+the hoist into hidden `#on_click_N` methods, arm synthesis onto a
+default-empty `App.handle_clicks` (trait default), `Window.run` routing
+through `app.handle_clicks(ref win)`, the no-parameters / no-upvalue /
+receiver-path / host-reachability checker rules, and the retired window
+binding list (`Window.on_click` / `ClickBinding` / `dispatch_clicks` are
+gone; `was_clicked` stays as the low-level ring primitive and for composite
+internals). The runtime test is `test/gui/on_click.test.ts` (the todo Add
+flow — the snippet that motivated this — working); the checker rules are
+pinned by `test/gui/on_click_errors.test.ts`; the demos are migrated (the
+todo Add handler; the gallery's radio pair and dialog buttons —
+`demos_check.test.ts` keeps them green).
+
+Still to land: Stage 2 (host forwarding — the synthesized arms forward to
+host-typed fields child-first, and `Pagination`/`Form` internals migrate
+off polls), Stage 3 (id up-calls), Stage 4 (B5 dynamic trees), and the
+deprecation-cycle doc sweep (the poll examples leave GUI.md's other
+sections; `Pagination`'s composite API re-think).
 
 ## The problem: two click forms, and the wall behind them
 

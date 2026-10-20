@@ -588,6 +588,48 @@ mv struct GalleryApp : App {
 		win.set_content(ref self.outer)
 		self.page_grid.set_document(self.page.handle, self.page.doc_handle())
 		self.scroll_grid.set_document(self.scroll.handle, self.scroll.doc_handle())
+
+		// Registered click handlers for the radio pair: the closures are
+		// hoisted into hidden methods on GalleryApp and dispatched with
+		// `ref self` by the run loop (docs/HANDLERS.md) — no twins, no
+		// captures; the body reads the app's own fields. The native click
+		// checks the clicked button itself; unchecking the rest of the group
+		// is the caller's job (Radio.nm).
+		self.radio_a.on_click(func () {
+			self.radio_a.set_checked(true)
+			self.radio_b.set_checked(false)
+		})
+		self.radio_b.on_click(func () {
+			self.radio_b.set_checked(true)
+			self.radio_a.set_checked(false)
+		})
+
+		// The dialog/drawer buttons register here too (once — before the run
+		// loop). Each body runs with `ref self`, so app state — the Alert,
+		// the Sheet, the Popover — is direct field access, no captures. The
+		// arms drain in registration order; a record consumed by an arm
+		// never reaches a poll.
+		self.alert_btn.on_click(func () {
+			// Blocks in NSAlert's own modal loop until dismissed.
+			var int choice = self.alert.run()
+			self.status.set_text("alert: button \{choice}")
+			self.prev_status = ""
+		})
+		self.sheet_btn.on_click(func () {
+			self.sheet.present()
+		})
+		self.sheet_close_btn.on_click(func () {
+			self.sheet.dismiss()
+			self.status.set_text("sheet: closed")
+			self.prev_status = ""
+		})
+		self.pop_btn.on_click(func () {
+			if self.pop.is_shown() {
+				self.pop.dismiss()
+			} else {
+				self.pop.show(self.pop_btn.handle)
+			}
+		})
 	}
 
 	// The app-owned pane roots: NSTabView/NSSplitView size their panes
@@ -648,40 +690,9 @@ mv struct GalleryApp : App {
 			self.prev_status = polled.copy()
 		}
 
-		// Native click events: the button-family controls arm a shared
-		// target/action at construction — was_clicked drains the edge per
-		// control. No coordinates, no hit-testing, and it works for
-		// controls hosted on the Scrollable's document view.
-		if self.radio_a.was_clicked() {
-			self.radio_a.set_checked(true)
-			self.radio_b.set_checked(false)
-		}
-		if self.radio_b.was_clicked() {
-			self.radio_b.set_checked(true)
-			self.radio_a.set_checked(false)
-		}
-		if self.alert_btn.was_clicked() {
-			// Blocks in NSAlert's own modal loop until dismissed.
-			var int choice = self.alert.run()
-			self.status.set_text("alert: button \{choice}")
-			self.prev_status = ""
-		}
-		if self.sheet_btn.was_clicked() {
-			self.sheet.present()
-		}
-		if self.sheet_close_btn.was_clicked() {
-			self.sheet.dismiss()
-			self.status.set_text("sheet: closed")
-			self.prev_status = ""
-		}
-		if self.pop_btn.was_clicked() {
-			if self.pop.is_shown() {
-				self.pop.dismiss()
-			} else {
-				self.pop.show(self.pop_btn.handle)
-			}
-		}
-		// Pagination: drive the page state from the clicked buttons.
+		// Pagination: composite internals keep their edge polls for now —
+		// migrating a composite's OWN buttons off polls is Stage 2 (host
+		// forwarding; HANDLERS.md "Staging").
 		if self.pag.prev_was_clicked() {
 			self.pag.prev()
 		}

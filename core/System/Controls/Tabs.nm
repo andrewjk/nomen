@@ -154,11 +154,6 @@ pub mv struct Tabs : Control {
 		struct Window w;
 		w._vt = (void *)&_Window_traits;
 		w.handle = (uint64_t)page;
-		w.clicks._vt = (void *)1;
-		w.clicks.length = 0;
-		w.clicks.items._vt = (void *)1;
-		w.clicks.items.data = 0;
-		w.clicks.items.cap = 0;
 		((id(*)(id, SEL))objc_msgSend)(page, sel_registerName("retain"));
 		return w;
 		```
@@ -172,11 +167,6 @@ pub mv struct Tabs : Control {
 		struct Window w;
 		w._vt = (void *)&Window_traits;
 		w.handle = (uint64_t)page;
-		w.clicks._vt = (void *)1;
-		w.clicks.length = 0;
-		w.clicks.items._vt = (void *)1;
-		w.clicks.items.data = 0;
-		w.clicks.items.cap = 0;
 		((id(*)(id, SEL))objc_msgSend)(page, sel_registerName("retain"));
 		return w;
 		```
@@ -189,11 +179,6 @@ pub mv struct Tabs : Control {
 			struct Window w;
 			w._vt = (void *)&_Window_traits;
 			w.handle = 0;
-			w.clicks._vt = (void *)1;
-			w.clicks.length = 0;
-			w.clicks.items._vt = (void *)1;
-			w.clicks.items.data = 0;
-			w.clicks.items.cap = 0;
 			return w;
 		}
 		```
@@ -206,11 +191,6 @@ pub mv struct Tabs : Control {
 			struct Window w;
 			w._vt = (void *)&Window_traits;
 			w.handle = 0;
-			w.clicks._vt = (void *)1;
-			w.clicks.length = 0;
-			w.clicks.items._vt = (void *)1;
-			w.clicks.items.data = 0;
-			w.clicks.items.cap = 0;
 			return w;
 		}
 		```

@@ -33,6 +33,7 @@ import {
 	is_overloaded,
 	mangled_label,
 } from "./utils/function_overload.ts";
+import { try_check_handler_registration } from "./utils/handlers.ts";
 import is_visible from "./utils/is_visible.ts";
 import {
 	is_class_type,
@@ -560,6 +561,18 @@ function check_access_function_node(
 	node: AccessFunctionCallNode,
 	status: CheckStatus,
 ): boolean {
+	// `self.<field>.on_<event>(closure)` — the handler desugar
+	// (docs/HANDLERS.md): checker-interpreted on control receivers (the
+	// name-keyed precedent is Fiber.start_on below). The closure body is
+	// hoisted into a hidden method on the enclosing struct, the site checks
+	// into a dispatch arm on the synthesized `handle_clicks`, and the
+	// registration itself emits no code. `undefined` means "not a handler
+	// registration" — resolve the member ordinarily.
+	const handler = try_check_handler_registration(target_type, target, node, status);
+	if (handler !== undefined) {
+		return handler;
+	}
+
 	// Escape hatch: `name.start(Thread(fn(args)))` spawns the wrapped call
 	// into the nursery referenced by the receiver. The single parameter is
 	// the compiler-special Thread constructor wrapping the call to spawn.
