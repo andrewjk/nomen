@@ -52,9 +52,15 @@ pub func main = () {
 }
 `;
 		expect(parse(input, system).errors).toEqual([]);
-		await build_and_check_output(input, "gui_pagination_handles", "p1=true spare=true hidden=true", true, {
-			platform: "macos",
-			audit: false,
-		});
+		await build_and_check_output(
+			input,
+			"gui_pagination_handles",
+			"p1=true spare=true hidden=true",
+			true,
+			{
+				platform: "macos",
+				audit: false,
+			},
+		);
 	});
 });

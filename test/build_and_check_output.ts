@@ -83,6 +83,11 @@ export default async function build_and_check_output(
 		const result = split
 			? build(parsed.root, { ...options, emit_mode: "user", system_struct_names: system_names })
 			: build(parsed.root, options);
+		// A backend build error must fail the test: a build that "succeeded"
+		// with an unconstructed field once produced garbage storage that
+		// passed every output assertion on the C backend (see the use_c
+		// ctor-default fix and the aarch64_regressions result.errors asserts).
+		expect(result.errors ?? []).toEqual([]);
 		await check_output(name, result, expected, {
 			...options,
 			system_lib: split,

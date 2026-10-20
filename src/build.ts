@@ -460,7 +460,12 @@ export default function build(
 		// The lift runs ONCE: lift_functions performs the full validate_asm
 		// pass internally, and the balance check below consumes the same
 		// structured functions (re-lifting per check doubled the cost).
-		const { result: lifted } = lift_functions(status.code);
+		// Split user TUs branch to system.o symbols (closure thunks tail-call
+		// System functions) — external by linkage, so the definedness check
+		// applies to single-TU builds only.
+		const { result: lifted } = lift_functions(status.code, {
+			allow_external_branch_targets: status.emit_mode === "user",
+		});
 		const lift_errors = lifted.errors;
 		if (lift_errors.length > 0) {
 			if (!status.build_errors) status.build_errors = [];

@@ -14,8 +14,11 @@ const system = get_library(path.resolve("core"));
 // `-contentView`-answers-self trick); divider positions are programmatic
 // (set_position / position).
 describe("SplitView control", () => {
-	test("panes host layouts; divider position sets and reads back", { timeout: 120000 }, async () => {
-		const input = `
+	test(
+		"panes host layouts; divider position sets and reads back",
+		{ timeout: 120000 },
+		async () => {
+			const input = `
 import System
 import System::Controls
 
@@ -41,13 +44,14 @@ pub func main = () {
 	Console.write("count=\\{split.count()} pos=\\{pos as int}\\n")
 }
 `;
-		const parsed = parse(input, system);
-		expect(parsed.errors).toEqual([]);
-		await build_and_check_output(input, "gui_split_view", "count=2 pos=100", true, {
-			platform: "macos",
-			audit: false,
-		});
-	});
+			const parsed = parse(input, system);
+			expect(parsed.errors).toEqual([]);
+			await build_and_check_output(input, "gui_split_view", "count=2 pos=100", true, {
+				platform: "macos",
+				audit: false,
+			});
+		},
+	);
 
 	test("SplitView conforms to the Control trait (measure / intrinsic_size)", () => {
 		const input = `

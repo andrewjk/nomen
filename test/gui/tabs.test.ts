@@ -14,8 +14,11 @@ const system = get_library(path.resolve("core"));
 // back a Window-shaped value naming the page view (the Scrollable
 // `-contentView`-answers-self trick).
 describe("Tabs control", () => {
-	test("labels + selection round-trip through the native item model", { timeout: 120000 }, async () => {
-		const input = `
+	test(
+		"labels + selection round-trip through the native item model",
+		{ timeout: 120000 },
+		async () => {
+			const input = `
 import System
 import System::Controls
 
@@ -29,16 +32,20 @@ pub func main = () {
 	Console.write("now=\\{tabs.selected_index()}\\n")
 }
 `;
-		const parsed = parse(input, system);
-		expect(parsed.errors).toEqual([]);
-		await build_and_check_output(input, "gui_tabs", "count=2 sel=0 now=1", true, {
-			platform: "macos",
-			audit: false,
-		});
-	});
+			const parsed = parse(input, system);
+			expect(parsed.errors).toEqual([]);
+			await build_and_check_output(input, "gui_tabs", "count=2 sel=0 now=1", true, {
+				platform: "macos",
+				audit: false,
+			});
+		},
+	);
 
-	test("pages host controls; laid-out frames survive a page switch", { timeout: 120000 }, async () => {
-		const input = `
+	test(
+		"pages host controls; laid-out frames survive a page switch",
+		{ timeout: 120000 },
+		async () => {
+			const input = `
 import System
 import System::Controls
 
@@ -64,12 +71,13 @@ pub func main = () {
 	Console.write("back on \\{tabs.selected_index()}\\n")
 }
 `;
-		expect(parse(input, system).errors).toEqual([]);
-		await build_and_check_output(input, "gui_tabs_pages", "back on 0", true, {
-			platform: "macos",
-			audit: false,
-		});
-	});
+			expect(parse(input, system).errors).toEqual([]);
+			await build_and_check_output(input, "gui_tabs_pages", "back on 0", true, {
+				platform: "macos",
+				audit: false,
+			});
+		},
+	);
 
 	test("Tabs conforms to the Control trait (measure / intrinsic_size)", () => {
 		const input = `

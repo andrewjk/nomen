@@ -16,8 +16,11 @@ const system = get_library(path.resolve("core"));
 // scroll. Named `Table` with no stdlib collision (the ListView `List<T>`
 // lesson).
 describe("Table control", () => {
-	test("grid round-trips cells; selection is programmatically settable", { timeout: 120000 }, async () => {
-		const input = `
+	test(
+		"grid round-trips cells; selection is programmatically settable",
+		{ timeout: 120000 },
+		async () => {
+			const input = `
 import System
 import System::Controls
 
@@ -41,16 +44,14 @@ pub func main = () {
 	Console.write("oob=\\{oob}\\n")
 }
 `;
-		const parsed = parse(input, system);
-		expect(parsed.errors).toEqual([]);
-		await build_and_check_output(
-			input,
-			"gui_table",
-			"grid=2x3 c10=pears sel=1 oob=",
-			true,
-			{ platform: "macos", audit: false },
-		);
-	});
+			const parsed = parse(input, system);
+			expect(parsed.errors).toEqual([]);
+			await build_and_check_output(input, "gui_table", "grid=2x3 c10=pears sel=1 oob=", true, {
+				platform: "macos",
+				audit: false,
+			});
+		},
+	);
 
 	test("remove_row shifts the tail rows; clear empties the grid", { timeout: 120000 }, async () => {
 		const input = `

@@ -91,8 +91,11 @@ pub func main = () {
 		expect(parse(input, system).errors).toEqual([]);
 	});
 
-	test("content_click translates window clicks into document coordinates", { timeout: 120000 }, async () => {
-		const input = `
+	test(
+		"content_click translates window clicks into document coordinates",
+		{ timeout: 120000 },
+		async () => {
+			const input = `
 import System
 import System::Controls
 
@@ -128,16 +131,17 @@ pub func main = () {
 	Console.write("after=\\{ax},\\{ay}\\n")
 }
 `;
-		const parsed = parse(input, system);
-		expect(parsed.errors).toEqual([]);
-		await build_and_check_output(
-			input,
-			"gui_scrollable_clicks",
-			"before_x=10 before_moved=true after=10,20",
-			true,
-			{ platform: "macos", audit: false },
-		);
-	});
+			const parsed = parse(input, system);
+			expect(parsed.errors).toEqual([]);
+			await build_and_check_output(
+				input,
+				"gui_scrollable_clicks",
+				"before_x=10 before_moved=true after=10,20",
+				true,
+				{ platform: "macos", audit: false },
+			);
+		},
+	);
 
 	test("short content clamps to the viewport (top-anchored)", { timeout: 120000 }, async () => {
 		const input = `

@@ -613,11 +613,27 @@ field member types mono-resolve (`nm_List_ClickBinding clicks`, was
 `void *`) with the dependency walk ordering by-value members
 correctly (class members are pointer edges — no ordering, no cycle).
 Window's `clicks` list field is the live example: its raw `#init` now
-constructs identically on both backends. What remains dropped: general
-Nomen STATEMENTS around raw blocks in a mixed body (the Spinner shape —
-worked around in-source) and non-container constructor-call defaults
-(still a build error — but now the error surfaces if the harness ever
-asserts `BuildResult.errors`; see the on_click entry's harness gap).
+constructs identically on both backends.
+
+CLOSED (2026-10-20): the mixed-STATEMENT half is now a check-time
+rejection — `find_use_c_mixed_body` (src/raw_directives.ts, called from
+check_function_node) errors on any function whose body mixes
+`aarch64_use_c` blocks with Nomen statements or inline-asm raw blocks
+(`test/raw_mixed_body.test.ts`), so the divergence can no longer happen
+silently. Wiring the rejection uncovered three live mixed bodies in
+`core/System/Controls/Container.nm`: `is_visible`/`native_intrinsic`/
+`native_frame` carried Nomen `if handle == 0` guards AROUND their raw
+blocks — silently dropped on aarch64, where the functions only worked via
+ObjC nil-messaging accidents. All three moved the guards into every arch
+block (the Spinner pattern). Non-container constructor-call defaults
+remain a build error, and `build_and_check_output` now asserts
+`BuildResult.errors`, so a backend build error can no longer pass
+silently — the assert immediately surfaced (and fixed) the split-build
+false positive where a closure thunk tail-calls a System function with a
+bare `b`: a legitimate cross-object branch (linking against the
+system.o symbol) that the asm validator now accepts for user-TU builds
+(`allow_external_branch_targets`), keeping the strict check for
+single-TU builds.
 
 ## TextView.set_placeholder relies on AppKit's private KVC placeholder
 
@@ -676,63 +692,10 @@ only a MISSING object falls back to single-TU. If a library-editing
 session sees struct-layout-shaped crashes, force a system-lib rebuild
 before blaming codegen.
 
-## on_click (registered handlers)
+## Generation-checked views for dynamic-removal safety
 
-SHIPPED (2026-10-20): `Window.on_click(handle, fn)` stores a
-`ClickBinding { handle, func () action }` in a `List<ClickBinding>` on the
-window; `run()` drains the shared click ring against the bindings before
-the app frame (`dispatch_clicks`, also public for manual loops);
-`nomen_window_clicks_init` arms a click gesture recognizer per registered
-view so non-button controls record clicks too (buttons keep their
-target/action arming). Handlers capture `#handle` VIEW twins
-(`TextHandle(owner)`) — copies, so the capture-MOVES rule never fires.
-Test: `test/gui/on_click.test.ts` (performClick → binding dispatch →
-twin mutation → visible through the owner, both backends).
-
-Landing it surfaced and fixed three live gaps:
-
-- **use_c constructors silently dropped constructor-call field defaults.**
-  Adding the `clicks` list field to Window made its raw-body `#init` carry
-  a Nomen-level default (`List<ClickBinding>()`). The companion's ctor
-  prologue only seeded literal defaults — the ctor-call default hit the
-  build-error branch, which the output harness never asserts on (the build
-  "succeeded" with the field never constructed → garbage storage →
-  realloc-on-garbage in push). This was the REAL mechanism behind the
-  "mono-struct under-copy" entry above. Fixed: the companion seeds
-  zero-arg container-ctor defaults directly
-  (`emit_zero_ctor_field_default` — a companion→asm ctor call cannot link,
-  method labels being file-local outside system builds), and
-  `generate_struct_definition` now mono-resolves generic field member
-  types (`List<ClickBinding>` → `nm_List_ClickBinding`, was `void *`) with
-  value-member dep edges (class fields are pointers — the tag
-  forward-declares them, and a mono-resolved pointer edge created a
-  Node→Box→Node emission cycle that broke every Box program).
-- **A borrow copy's func-field dispose freed the shared descriptor.**
-  `dispatch_clicks`'s loop local (`var b = clicks.at_or_panic(i)`) is a
-  byte-copy borrow of the stored binding, but the scope-exit func-field
-  free-if-owned arm fired on it (owned = 1) — freeing the descriptor+env
-  the stored original still names; the next frame's dispatch called
-  through freed memory. Fixed: borrow-accessor-initialized value-struct
-  locals are marked (`func_field_borrow_decls`, keyed off the existing
-  `is_container_borrow_accessor_name` predicate at both backends'
-  declaration sites) and the func-field arm skips (and consumes) the
-  mark. Constructor- and `mv out`-initialized locals own their fields and
-  keep the dispose (`closure_func_value_string_return` pins that side).
-- **Raw Window fabricators predate the new field.**
-  `Scrollable`/`Sheet`/`SplitView`/`Tabs` `.content_window` build Windows
-  in raw bodies setting only `_vt` + `handle` — the new field was never
-  seeded and teardown walked garbage. All four now seed the zero list in
-  every arch block.
-
-Still open from this area: the compile-time detection of a mixed `#init`
-(a use_c ctor is now CORRECT for literal + zero-arg-container defaults;
-general Nomen statements around raw blocks are still dropped on aarch64 —
-the entry below), and the harness gap that hid the first bug:
-`build_and_check_output` asserts parse errors but never
-`BuildResult.errors` — a backend build error still passes the suite
-(`test/aarch64_regressions.test.ts`-style `result.errors` asserts are the
-model).
-
-Dynamic-removal safety (a removed todo's stale view) wants
-generation-checked views — reuse the `WeakHandle` registry
-(pointer + generation slots, destroy bumps) — recorded as its own slice.
+Dynamic removal (a removed todo's stale view — `demos/todo` deletes
+controls at runtime) wants generation-checked views: reuse the
+`WeakHandle` registry (pointer + generation slots, destroy bumps) so a
+view whose owner is gone is detected at use instead of pointing at freed
+state. Split out of the on_click work (2026-10-20).

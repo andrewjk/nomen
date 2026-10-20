@@ -157,3 +157,71 @@ export function check_raw_arch_coverage(
 
 	return { has_match, has_other_arch };
 }
+
+/**
+ * A body that MIXES `#arch: aarch64_use_c` raw blocks with code the aarch64
+ * backend would silently drop. The backend routes such a function WHOLE to
+ * the C companion — the concatenation of its use_c blocks (check_c_fallback)
+ * — so Nomen statements around them (and raw blocks that would emit inline
+ * asm on aarch64) compile on the C backend but never run on aarch64: the
+ * same source would mean different things per backend. A raw block targeting
+ * `c` only is the other half of a parallel per-arch implementation and is
+ * fine. Platform tags are ignored (arch-level is the right granularity: a
+ * platform-gated use_c block still dead-ends the statements on its own
+ * platform's aarch64 build).
+ */
+export interface UseCMixedBody {
+	/** What the aarch64 backend would drop: a Nomen statement, or a raw
+	 *  block that would have emitted inline assembly. */
+	dropped: "statement" | "raw asm";
+	/** Position of the first dropped node (the error location). */
+	start: number;
+}
+
+export function find_use_c_mixed_body(func: FunctionNode): UseCMixedBody | null {
+	let has_use_c = false;
+	const drops: UseCMixedBody[] = [];
+	for (const stmt of func.statements) {
+		if (stmt.node_type !== "raw") {
+			drops.push({ dropped: "statement", start: stmt.start });
+			continue;
+		}
+		// Parse the arch tag manually (without consuming the code), mirroring
+		// parse_raw_directives' precedence: an explicit `aarch64` match emits
+		// as asm, `aarch64_use_c` only when `aarch64` is absent.
+		let arches: string[] | null = null;
+		for (const line of (stmt as unknown as { value: string }).value.split("\n")) {
+			const trimmed = line.trim();
+			if (trimmed.startsWith("#arch:")) {
+				arches = trimmed
+					.substring(6)
+					.split(",")
+					.map((a) => a.trim())
+					.filter((a) => a.length > 0);
+			} else if (trimmed.length > 0) {
+				break;
+			}
+		}
+		if (!arches) {
+			// No arch tag: matches every target, emitting inline asm on
+			// aarch64 — dropped when the body goes to the companion.
+			drops.push({ dropped: "raw asm", start: stmt.start });
+			continue;
+		}
+		if (arches.includes("aarch64")) {
+			// Explicit inline asm on aarch64 (parse_raw_directives prefers
+			// this match over `aarch64_use_c`) — also dropped when the body
+			// goes to the companion.
+			drops.push({ dropped: "raw asm", start: stmt.start });
+			continue;
+		}
+		if (arches.includes("aarch64_use_c")) {
+			has_use_c = true;
+			continue;
+		}
+		// c-only: the other half of a parallel per-arch implementation.
+		continue;
+	}
+	if (!has_use_c) return null;
+	return drops[0] ?? null;
+}

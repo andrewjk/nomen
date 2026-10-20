@@ -16,8 +16,11 @@ const system = get_library(path.resolve("core"));
 // emit_var_address derefs the slot (mirroring the regular prologue). This
 // is the composite-control shape (NumberInput et al).
 describe("custom-init struct param staging", () => {
-	test("a by-ref struct param passes through nested ctor staging", { timeout: 120000 }, async () => {
-		const input = `
+	test(
+		"a by-ref struct param passes through nested ctor staging",
+		{ timeout: 120000 },
+		async () => {
+			const input = `
 import System
 import System::Controls
 
@@ -36,16 +39,20 @@ pub func main = (Init init) {
 	Console.write_line(card.title.get_text())
 }
 `;
-		const parsed = parse(input, system);
-		expect(parsed.errors).toEqual([]);
-		await build_and_check_output(input, "composite_param_staging", "card text", true, {
-			platform: "macos",
-			audit: false,
-		});
-	});
+			const parsed = parse(input, system);
+			expect(parsed.errors).toEqual([]);
+			await build_and_check_output(input, "composite_param_staging", "card text", true, {
+				platform: "macos",
+				audit: false,
+			});
+		},
+	);
 
-	test("a ctor call nested straight in a field assignment stages correctly", { timeout: 120000 }, async () => {
-		const input = `
+	test(
+		"a ctor call nested straight in a field assignment stages correctly",
+		{ timeout: 120000 },
+		async () => {
+			const input = `
 import System
 import System::Controls
 
@@ -66,13 +73,14 @@ pub func main = (Init init) {
 	Console.write_line(d.box.get_text())
 }
 `;
-		const parsed = parse(input, system);
-		expect(parsed.errors).toEqual([]);
-		await build_and_check_output(input, "composite_nested_ctor_assign", "nested", true, {
-			platform: "macos",
-			audit: false,
-		});
-	});
+			const parsed = parse(input, system);
+			expect(parsed.errors).toEqual([]);
+			await build_and_check_output(input, "composite_nested_ctor_assign", "nested", true, {
+				platform: "macos",
+				audit: false,
+			});
+		},
+	);
 
 	test("float.to_string() after a sibling call on a composite", { timeout: 120000 }, async () => {
 		const input = `

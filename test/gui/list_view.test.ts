@@ -38,13 +38,10 @@ pub func main = () {
 `;
 		const parsed = parse(input, system);
 		expect(parsed.errors).toEqual([]);
-		await build_and_check_output(
-			input,
-			"gui_list_view",
-			"count=3 r1=beta up=beta! after=2",
-			true,
-			{ platform: "macos", audit: false },
-		);
+		await build_and_check_output(input, "gui_list_view", "count=3 r1=beta up=beta! after=2", true, {
+			platform: "macos",
+			audit: false,
+		});
 	});
 
 	test("selection polls and is programmatically settable", { timeout: 120000 }, async () => {

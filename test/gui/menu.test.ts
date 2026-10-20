@@ -14,8 +14,11 @@ const system = get_library(path.resolve("core"));
 // clicked_item (edge-triggered); the click path itself needs a live
 // right-click, so headless tests cover the model surface.
 describe("Menu control", () => {
-	test("items + separators build; clicked_item polls -1 with no clicks", { timeout: 120000 }, async () => {
-		const input = `
+	test(
+		"items + separators build; clicked_item polls -1 with no clicks",
+		{ timeout: 120000 },
+		async () => {
+			const input = `
 import System
 import System::Controls
 
@@ -33,13 +36,14 @@ pub func main = () {
 	Console.write("still=\\{menu.clicked_item()}\\n")
 }
 `;
-		const parsed = parse(input, system);
-		expect(parsed.errors).toEqual([]);
-		await build_and_check_output(input, "gui_menu", "items=4 clicked=-1 still=-1", true, {
-			platform: "macos",
-			audit: false,
-		});
-	});
+			const parsed = parse(input, system);
+			expect(parsed.errors).toEqual([]);
+			await build_and_check_output(input, "gui_menu", "items=4 clicked=-1 still=-1", true, {
+				platform: "macos",
+				audit: false,
+			});
+		},
+	);
 
 	test("Menu is not a laid-out control (measure reports 0x0)", () => {
 		const input = `

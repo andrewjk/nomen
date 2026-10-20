@@ -336,7 +336,17 @@ function parse_operand(tok: string): Operand | "labelish" | null {
  * Validate emitted assembly. Returns every problem found (empty array when
  * clean). Never throws — malformed input IS the input here.
  */
-export function validate_asm(code: string): LiftError[] {
+export interface ValidateAsmOptions {
+	/** Split-build user TUs reference the precompiled system object: a branch
+	 *  or tail-call to a label undefined in this TU is an external symbol
+	 *  (e.g. a closure thunk's `b Console_write`), not an emission bug — the
+	 *  sp-transparent tail-call form is required there (a frame would shift
+	 *  the callee's incoming stack slots). Single-TU builds keep the strict
+	 *  check. */
+	allow_external_branch_targets?: boolean;
+}
+
+export function validate_asm(code: string, options: ValidateAsmOptions = {}): LiftError[] {
 	const errors: LiftError[] = [];
 	const lines = code.split("\n");
 
@@ -477,7 +487,7 @@ export function validate_asm(code: string): LiftError[] {
 			const defined = num
 				? (numeric_labels.get(num[1]) ?? []).some((line) => (num[2] === "f" ? line > i : line < i))
 				: labels.has(target);
-			if (!defined) {
+			if (!defined && !options.allow_external_branch_targets) {
 				err(`branch to undefined label '${target}'`);
 			}
 		}
@@ -899,8 +909,11 @@ function describe(operands: Operand[]): string {
  * function entry (bl-target / globl / boundary-heuristic labels). Validation
  * errors are returned alongside — callers should check them first.
  */
-export function lift_functions(code: string): { result: LiftResult } {
-	const errors = validate_asm(code);
+export function lift_functions(
+	code: string,
+	options: ValidateAsmOptions = {},
+): { result: LiftResult } {
+	const errors = validate_asm(code, options);
 	const lines: AsmLine[] = [];
 	const functions: LiftedFunction[] = [];
 	const lines_split = code.split("\n");

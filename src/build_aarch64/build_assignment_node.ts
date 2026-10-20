@@ -1500,8 +1500,7 @@ export default function build_assignment_node(
 			// keeps the FULL Type (type_args included). Without the args the
 			// displaced destroy of a generic-typed var emits the bare
 			// `<Struct>_destroy` (e.g. `Task_destroy`) that nothing defines.
-			const lhs_decl_type =
-				lhs_decl?.type ?? status.variable_types?.get(name);
+			const lhs_decl_type = lhs_decl?.type ?? status.variable_types?.get(name);
 			const lhs_type_name = lhs_decl_type?.name ?? "";
 			const needs_pre_destroy =
 				rhs_is_struct &&

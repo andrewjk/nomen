@@ -1,6 +1,7 @@
 import add_error from "../add_error.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import Type from "../nodes/Type.ts";
+import { find_use_c_mixed_body } from "../raw_directives.ts";
 import check_block_node from "./check_block_node.ts";
 import { instantiate_generic_type } from "./check_function_call_node.ts";
 import check_function_parameter_node from "./check_function_parameter_node.ts";
@@ -108,6 +109,23 @@ export default function check_function_node(func: FunctionNode, status: CheckSta
 				func.return_type_start ?? func.start,
 			);
 		}
+	}
+
+	// A body mixing `#arch: aarch64_use_c` blocks with regular statements is
+	// a backend divergence, not a style question: the aarch64 backend routes
+	// the whole function to the C companion (the concatenation of the raw
+	// blocks) and would silently drop the rest, while the C backend compiles
+	// it normally (the Spinner flag bug). Rejected here so the gap is never
+	// silent — before the generic early-return, so clones re-report it too.
+	const mixed_body = find_use_c_mixed_body(func);
+	if (mixed_body) {
+		add_error(
+			status,
+			mixed_body.dropped === "statement"
+				? `Function '${func.name}' mixes '#arch: aarch64_use_c' blocks with Nomen statements — the aarch64 backend replaces the whole body with the raw blocks and would drop the statements`
+				: `Function '${func.name}' mixes '#arch: aarch64_use_c' blocks with inline raw code — the aarch64 backend replaces the whole body with the raw blocks and would drop the assembly`,
+			mixed_body.start,
+		);
 	}
 
 	if (is_generic_func(func)) {

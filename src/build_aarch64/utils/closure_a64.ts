@@ -271,6 +271,12 @@ export function materialize_func_value_a64(func: FunctionNode, status: BuildStat
 		lines.push(`ldp x29, x30, [sp], #16`);
 		lines.push(`ret`);
 	} else {
+		// Deliberately a bare `b` (not `bl`+`ret`): it preserves the incoming
+		// x30 (the target's own epilogue returns straight to the thunk's
+		// caller) and never moves sp — a frame here would shift the stack slots
+		// the shift below just laid out. In split user builds the target may
+		// live in the precompiled system object (an external symbol); the asm
+		// validator accepts undefined branch targets for that emit_mode.
 		lines.push(`b ${target}`);
 	}
 	lines.push(``);
