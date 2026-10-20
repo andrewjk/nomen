@@ -139,6 +139,85 @@ pub func main = (Init init) {
 		]);
 	});
 
+	// Stage 2 (HANDLERS.md "Handler hosts beyond the root"): a composite the
+	// app owns is a handler host in its own right — the dispatch forwards
+	// down the static field path, so the registration is accepted.
+	test("composite host reachable from the app is accepted", () => {
+		const input = `
+import System
+import System::Controls
+
+mv struct MyPager {
+	var Button prev
+	var Button next
+	var int page = 0
+
+	pub func #init = (self, Window window) {
+		self.prev = Button(window, "<")
+		self.next = Button(window, ">")
+		self.prev.on_click(func () { self.page = self.page - 1 })
+		self.next.on_click(func () { self.page = self.page + 1 })
+	}
+}
+
+mv struct PagerApp : App {
+	var MyPager pager
+
+	pub func #init = (self, Window window) {
+		self.pager = MyPager(window)
+	}
+}
+
+pub func main = (Init init) {
+	var Window win = Window("my_pager", 200, 160)
+	var PagerApp app = PagerApp(win)
+	win.run(mv app)
+}
+`;
+		expect(parse(input, system).errors).toEqual([]);
+	});
+
+	// Forwarding is transitive: App -> Middle (no handlers of its own) ->
+	// Leaf (registers). Middle synthesizes a pure-forwarding handle_clicks.
+	test("transitive host chains forward through intermediate structs", () => {
+		const input = `
+import System
+import System::Controls
+
+mv struct Leaf {
+	var Button btn
+
+	pub func #init = (self, Window window) {
+		self.btn = Button(window, "Go")
+		self.btn.on_click(func () { })
+	}
+}
+
+mv struct Middle {
+	var Leaf leaf
+
+	pub func #init = (self, Window window) {
+		self.leaf = Leaf(window)
+	}
+}
+
+mv struct ChainApp : App {
+	var Middle middle
+
+	pub func #init = (self, Window window) {
+		self.middle = Middle(window)
+	}
+}
+
+pub func main = (Init init) {
+	var Window win = Window("chain", 200, 160)
+	var ChainApp app = ChainApp(win)
+	win.run(mv app)
+}
+`;
+		expect(parse(input, system).errors).toEqual([]);
+	});
+
 	test("unsupported events name the one supported form", () => {
 		expect(check_with_registration(`self.btn.on_hover(func () { })`)).toEqual([
 			".on_hover is not a supported handler event yet — only on_click is implemented",

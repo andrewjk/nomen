@@ -4,11 +4,12 @@
  * PURE COMPOSITION (GUI_PLAN Tier 3 "reachable earlier"): no new native
  * control, no drawing — a row of Buttons wired into the caller's grid.
  * The page count is fixed at construction (1..5; spare buttons are hidden
- * and skipped by the layout's hidden-leaf pass). The composite tracks the
- * current page as pure state: `prev_was_clicked`/`next_was_clicked`/
- * `clicked_page` poll the buttons' native click actions and the caller
- * drives `next`/`prev`/`select` (handles via `prev_handle`/`next_handle`/
- * `page_handle` remain for coordinate hit-testing).
+ * and skipped by the layout's hidden-leaf pass). The composite is its own
+ * HANDLER HOST (docs/HANDLERS.md Stage 2): #init registers a handler per
+ * button and the arms keep `current` up to date — the run loop forwards
+ * into whatever app field hosts the pagination, and the caller just reads
+ * `page` (value polling). Handles (`prev_handle`/`next_handle`/
+ * `page_handle`) remain for coordinate hit-testing.
  **/
 pub mv struct Pagination {
 	var Button prev
@@ -43,6 +44,17 @@ pub mv struct Pagination {
 		if pages <= 1 {
 			self.b1.set_hidden(true)
 		}
+		// The row self-drives: one registered handler per button (hidden
+		// spares can never be clicked). The closures hoist to hidden methods
+		// on Pagination and run with `ref self` — the app's dispatch
+		// forwards into the field that hosts the row. No polls to starve.
+		self.prev.on_click(func () { self.prev() })
+		self.next.on_click(func () { self.next() })
+		self.b0.on_click(func () { self.select(0) })
+		self.b1.on_click(func () { self.select(1) })
+		self.b2.on_click(func () { self.select(2) })
+		self.b3.on_click(func () { self.select(3) })
+		self.b4.on_click(func () { self.select(4) })
 	}
 
 	// Wire the row into the caller's grid under `parent`.
@@ -97,27 +109,5 @@ pub mv struct Pagination {
 		if self.current > 0 {
 			self.current -= 1
 		}
-	}
-
-	// Edge-triggered click polls (the page buttons arm their native
-	// actions at construction — see Button.was_clicked). True exactly once
-	// per click; the record is consumed.
-	pub func prev_was_clicked = (self, out bool) {
-		return self.prev.was_clicked()
-	}
-
-	pub func next_was_clicked = (self, out bool) {
-		return self.next.was_clicked()
-	}
-
-	// The clicked page button's index (0-based), or -1 when none was
-	// clicked since the last call. Hidden spare buttons can never report.
-	pub func clicked_page = (self, out int) {
-		if self.b0.was_clicked() { return 0 }
-		if self.b1.was_clicked() { return 1 }
-		if self.b2.was_clicked() { return 2 }
-		if self.b3.was_clicked() { return 3 }
-		if self.b4.was_clicked() { return 4 }
-		return -1
 	}
 }

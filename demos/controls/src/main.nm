@@ -126,6 +126,9 @@ mv struct GalleryApp : App {
 	var Popover pop
 	var Text status
 	var string prev_status = ""
+	// The pagination's page last shown in the status line (the composite
+	// self-drives; frame only mirrors the state).
+	var int prev_page = 0
 	// The tab/split panes are laid out by NSTabView/NSSplitView AFTER the
 	// framework's first post-show pass gives them real frames — one app-side
 	// pane pass on the first frame, then on every resize.
@@ -690,18 +693,12 @@ mv struct GalleryApp : App {
 			self.prev_status = polled.copy()
 		}
 
-		// Pagination: composite internals keep their edge polls for now —
-		// migrating a composite's OWN buttons off polls is Stage 2 (host
-		// forwarding; HANDLERS.md "Staging").
-		if self.pag.prev_was_clicked() {
-			self.pag.prev()
-		}
-		if self.pag.next_was_clicked() {
-			self.pag.next()
-		}
-		var int page_clicked = self.pag.clicked_page()
-		if page_clicked >= 0 {
-			self.pag.select(page_clicked)
+		// The pagination self-drives (its registered arms keep the page —
+		// docs/HANDLERS.md Stage 2); the status line reads the current page.
+		if self.pag.page() != self.prev_page {
+			self.prev_page = self.pag.page()
+			self.status.set_text("page \{self.prev_page}")
+			self.prev_status = ""
 		}
 	}
 }

@@ -585,7 +585,7 @@ into a ring queue). The desugar's drain pops that ring per registered
 handle; non-button controls arm a click gesture recognizer on their first
 dispatch. `was_clicked` remains as the low-level ring primitive
 (edge-triggered per control — true exactly once per click), for manual
-loops and for composite internals not yet migrated; a record consumed by a
+loops and composite-internal edge cases; a record consumed by a
 registered arm never reaches a poll.
 
 `FrameEvents.click`/`click_x`/`click_y` are unchanged and remain for

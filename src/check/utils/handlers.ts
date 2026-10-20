@@ -13,6 +13,7 @@ import Type from "../../nodes/Type.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
 import check_function_node from "../check_function_node.ts";
 import type CheckStatus from "../CheckStatus.ts";
+import { is_box_type } from "./box.ts";
 
 /**
  * Handler registrations: `.on_<event>(closure)` desugars into owner-dispatched
@@ -45,9 +46,9 @@ import type CheckStatus from "../CheckStatus.ts";
  *    it, so a local receiver has nothing to re-evaluate);
  *  - the closure takes no parameters (v1);
  *  - no upvalue captures — the hoisted method has no env;
- *  - host reachability — Stage 1 dispatches from the run root only, so the
- *    enclosing struct must conform to `App` (host forwarding for owned
- *    composites is Stage 2).
+ *  - host reachability — dispatch reaches hosts through static field paths
+ *    from the run root, so the enclosing struct must conform to `App` or be
+ *    a (transitive) field of one (library composites are trusted).
  */
 
 /** The reserved member-name family on control receivers (HANDLERS.md). */
@@ -144,10 +145,13 @@ export function try_check_handler_registration(
 			`.${node.name} registers a handler on the enclosing struct — it cannot appear outside one`,
 		);
 	}
-	// Stage 1 dispatches from the run root only: the run loop holds the App
-	// and calls its synthesized override. A host the root cannot reach has no
-	// dispatcher (Stage 2 adds forwarding down static field paths).
-	if (!host.traits.includes("App")) {
+	// Host reachability (HANDLERS.md "Checker rules"): dispatch reaches hosts
+	// through static field paths from the run root, so the enclosing struct
+	// must conform to `App` or be a (transitive) field of one. Library
+	// composites (Pagination) are trusted machinery — the System library is
+	// exempt, as everywhere the checker trusts library internals; a program
+	// that hosts one gets the forwarding wiring synthesized at finalize.
+	if (!host.traits.includes("App") && !host.is_library && !reachable_from_an_app(host, status)) {
 		return fail(`handlers dispatch from the run root — '${host.name}' is not owned by the app`);
 	}
 	let state = host_states.get(host);
@@ -160,7 +164,7 @@ export function try_check_handler_registration(
 				`'${host.name}' already declares handle_clicks — the .${node.name} desugar synthesizes it (the name is reserved on handler hosts)`,
 			);
 		}
-		const handle_clicks = new FunctionNode(node.start, "private", "handle_clicks", new Type(""), [
+		const handle_clicks = new FunctionNode(node.start, "pub", "handle_clicks", new Type(""), [
 			ref_self_param(host),
 			win_param(),
 		]);
@@ -218,22 +222,153 @@ export function try_check_handler_registration(
 }
 
 /**
- * Check every host's synthesized `handle_clicks`. Called once, after the
- * whole tree has been checked: the arms reference the hidden `#on_click_N`
- * methods (checked at their registration sites), the library drain
- * (`nomen_control_take_click`) and the `Window` type — all resolved by now.
- * Checking the method body also stamps the arm nodes for the build.
+ * Check every host's synthesized `handle_clicks`, after first synthesizing
+ * the FORWARDING wiring (Stage 2, HANDLERS.md "Handler hosts beyond the
+ * root"): a struct with registrations is a handler host — not just the App.
+ * Dispatch reaches non-root hosts down static field paths: every struct on a
+ * path from an App conformer to a host gets a `handle_clicks` (its own arms
+ * if it registers, pure forwarding if it doesn't) that forwards to each
+ * host-reaching field — `self.<field>.handle_clicks(ref win)` — direct
+ * calls, no trait objects. Dispatch order is children-first, then own arms
+ * (most specific first, HANDLERS.md "user-authored composites").
+ *
+ * Runs once, after the whole tree has been checked: the arms reference the
+ * hidden `#on_click_N` methods (checked at their registration sites), the
+ * drain (`nomen_control_take_click`) and the `Window` type are resolved, and
+ * the full field graph (gathered upfront) decides reachability. Checking the
+ * bodies also stamps every node for the build.
  */
 export function finalize_handler_hosts(status: CheckStatus): void {
 	const root = status.stack[0];
 	const hosts = pending_hosts.get(root);
 	if (!hosts) return;
 	pending_hosts.delete(root);
+	const host_set = new Set<StructNode>(hosts);
+
+	const to_check: FunctionNode[] = [];
 	for (const host of hosts) {
 		const state = host_states.get(host);
-		if (!state) continue;
-		check_function_node(state.handle_clicks, status);
+		if (state) to_check.push(state.handle_clicks);
 	}
+
+	// Does `s` (or anything it owns down forwardable fields) carry handlers?
+	const reaches_memo = new Map<StructNode, boolean>();
+	const reaches_host = (s: StructNode, stack: Set<StructNode>): boolean => {
+		if (host_set.has(s)) return true;
+		const memo = reaches_memo.get(s);
+		if (memo !== undefined) return memo;
+		if (stack.has(s)) return false;
+		stack.add(s);
+		let result = false;
+		for (const field of s.fields) {
+			const t = forwardable_field_type(field, status);
+			if (t && reaches_host(t, stack)) {
+				result = true;
+				break;
+			}
+		}
+		stack.delete(s);
+		reaches_memo.set(s, result);
+		return result;
+	};
+
+	for (const s of status.structs) {
+		const forwarding = s.fields.filter((f) => {
+			const t = forwardable_field_type(f, status);
+			return !!t && reaches_host(t, new Set());
+		});
+		if (forwarding.length === 0) continue;
+		// Who gets a dispatch body: App conformers (the run root drains them),
+		// hosts (their arms), and structs an App reaches that lead further
+		// down to a host (pure forwarders). Anything else is a dead chain.
+		const is_app = s.traits.includes("App");
+		const is_host = host_set.has(s);
+		if (!is_app && !is_host && !reachable_from_an_app(s, status)) continue;
+		let state = host_states.get(s);
+		if (!state) {
+			// A pure forwarder (or an App conformer whose only handlers live
+			// in its composites). A user-declared handle_clicks is left alone.
+			if (s.functions.some((f) => f.name === "handle_clicks")) continue;
+			const handle_clicks = new FunctionNode(-1, "pub", "handle_clicks", new Type(""), [
+				ref_self_param(s),
+				win_param(),
+			]);
+			s.functions.push(handle_clicks);
+			state = { handle_clicks, next_index: 0 };
+			host_states.set(s, state);
+			to_check.push(handle_clicks);
+		}
+		// Children-first: forwarding splices ahead of the host's own arms.
+		state.handle_clicks.statements.unshift(...forwarding.map((f) => forward_statement(s, f.name)));
+	}
+
+	for (const hc of to_check) {
+		check_function_node(hc, status);
+	}
+}
+
+/**
+ * The field types dispatch may FORWARD through: direct, owned, concrete
+ * struct fields. Boxes/containers/monos/generics are element-dispatch
+ * territory (B5, Stage 4) and stop the walk; nullable/borrowed/array fields
+ * have no single static target.
+ */
+function forwardable_field_type(
+	field: { type: Type },
+	status: CheckStatus,
+): StructNode | undefined {
+	const type = field.type;
+	if (!type.name || type.is_ref || type.is_view || type.is_array || type.is_nullable) {
+		return undefined;
+	}
+	if (is_box_type(type.name, status.structs)) return undefined;
+	const s = status.structs.find((st) => st.name === type.name);
+	if (!s) return undefined;
+	// A monomorphized instance of a generic (List_Pager, Box_Pager, …) or a
+	// raw generic template: no static single-instance path.
+	if (s.source_type_args?.length || s.type_params.length > 0) return undefined;
+	return s;
+}
+
+/** Whether some App conformer reaches `target` down forwardable field paths. */
+function reachable_from_an_app(target: StructNode, status: CheckStatus): boolean {
+	for (const s of status.structs) {
+		if (!s.traits.includes("App")) continue;
+		if (path_exists(s, target, status, new Set())) return true;
+	}
+	return false;
+}
+
+function path_exists(
+	s: StructNode,
+	target: StructNode,
+	status: CheckStatus,
+	stack: Set<StructNode>,
+): boolean {
+	if (s === target) return true;
+	if (stack.has(s)) return false;
+	stack.add(s);
+	for (const field of s.fields) {
+		const t = forwardable_field_type(field, status);
+		if (t && path_exists(t, target, status, stack)) return true;
+	}
+	stack.delete(s);
+	return false;
+}
+
+/** `self.<field>.handle_clicks(ref win)` — one hop down the ownership path. */
+function forward_statement(host: StructNode, field: string): AccessNode {
+	const receiver = new AccessNode(
+		-1,
+		new ValueNode(-1, "self", new Type(host.name)),
+		new AccessFieldNode(-1, field),
+	);
+	const dispatch = new AccessFunctionCallNode(-1, "handle_clicks");
+	// `ref win` — the borrowed argument needs the same explicit `ref` a source
+	// call site writes (ref_param_indices marks the keyword positions).
+	dispatch.ref_param_indices = [0];
+	dispatch.params = [new ValueNode(-1, "win")];
+	return new AccessNode(-1, receiver, dispatch);
 }
 
 /** `ref self` — the hoisted method's receiver (the host instance). */
