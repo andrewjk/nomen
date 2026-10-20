@@ -644,7 +644,7 @@ mv struct GalleryApp : App {
 			self.status.set_text(polled)
 			// A conditional `mv` out of `polled` would statically suppress
 			// its scope-exit free (the not-taken branch then leaks one string
-			// per frame — see FOLLOWUP.md), so copy instead.
+			// per frame), so copy instead.
 			self.prev_status = polled.copy()
 		}
 

@@ -309,17 +309,6 @@ large-program builds need more headroom, the remaining cost is each
 pass's own per-line analysis — a shared `label/directive/alias/code` memo
 keyed on the trimmed line is the next candidate.
 
-## `last_result_is_heap` is side-channel state (structural rewrite optional)
-
-CLOSED as a bug class (2026-10-03): every consumer now enforces
-reset-first, and build_block_node clears the flag at every statement
-boundary. Remaining (deliberate): the flag itself is still side-channel
-state rather than an ownership value threaded through the RHS emitters
-(`{ heap: boolean }` returns). That rewrite touches every emitter and the
-NIR seam for no correctness gain under the enforced contract — worth it
-only if the flag grows more consumers or the bounded-leak default becomes
-a measured problem.
-
 ## Tranche-3 shelved pieces (measured, not shipped)
 
 ASM_PLAN_5 tranche 3 landed the ext-borrow machinery + hardenings; these
@@ -492,32 +481,6 @@ deprecation cycle for the user-Awaitable `#spawn` spelling. INTERIM
 guardrail until this lands: freeze the `#`-member namespace (the checker
 rejects unknown `#foo` members as reserved) so the family stops growing.
 
-## `ref` re-point semantics — asymmetry resolved as alias adoption (2026-10-13)
-
-Investigating the param/alias asymmetry (a `ref Box` param can be reassigned —
-the callee writes the caller's pointer slot, tested + leak-audited on both
-backends, ref_class_param.test.ts — while a `ref Box` alias rejected `q = …`)
-produced two findings, both now landed:
-
-- The param side's cross-frame reclamation is real and deliberate ("so the
-  callee can reassign it"), NOT an unfinished-accounting hole. An attempt to
-  block heap-owning ref-param reassignment was reverted: 11 runtime tests
-  (ref_class_param, reassignment-loop, string-reassignment) encode it as a
-  feature.
-- The alias side is instance-alias, not variable-alias (owner reassignment
-  already leaves the alias on the old instance — deferred reclamation). So
-  alias re-point needs no cross-frame accounting at all: `q = RHS` now ADOPTS
-  the assignment into the alias's own slot (checker clears the alias link;
-  the slot becomes an owning `var`; ordinary anchoring frees the adopted
-  instance at scope exit; the owner keeps its instance). No build changes
-  were needed — the alias slot is an ordinary stack slot to both backends.
-
-Remaining niceties, not done: `mv` still cannot transfer THROUGH a
-non-adopted alias (§A3.3 unchanged); a transferred-adopted instance (`mv x =
-mv q` post-adoption) is expressible now that `q` is an ordinary var; the
-regression test landed (class_aliasing-gaps.test.ts, "a transferred
-adopted instance moves with mv", 2026-10-13).
-
 ## `List<Own>.at()` materializes an owning copy that is destroyed at scope end
 
 Found 2026-10-15 while making the todo demo delete controls at runtime
@@ -583,58 +546,6 @@ intent. Between the two, uniform-borrow is the sound model (the strict
 shape is a subset of it: a load that borrows can never be an owning
 copy), and it turns the demo's hit-test loop back into the natural code.
 
-## aarch64_use_c bodies silently drop Nomen statements in mixed bodies
-
-When a function's body mixes `#arch: aarch64_use_c` raw blocks with regular
-Nomen statements, the aarch64 backend routes the whole function to the C
-companion using ONLY the concatenation of the raw blocks
-(`check_c_fallback` in `src/build_aarch64/build_raw_node.ts` collects
-`raw_code`; `generate_c_function` in `src/build_aarch64/utils/c_companion.ts`
-emits exactly that). Any Nomen statements around the raw blocks are silently
-dropped — the C backend compiles the full statement list, so the same source
-behaves differently per backend.
-
-Surfaced by `core/System/Controls/Spinner.nm` (`start`/`stop` originally
-ended with a Nomen-level `self.spinning = true/false` after the raw
-startAnimation/stopAnimation blocks): the flag was maintained on the C
-backend but never on aarch64. Worked around in Spinner by moving the flag
-write INTO the raw bodies (`self->spinning = 1;`), which is also the
-established pattern for the other controls.
-
-Proper fix options: emit the Nomen statements into the companion as
-generated C (hard — needs a full Nomen→C body compiler for the aarch64
-path), or reject mixed bodies at parse/check time with a clear error so the
-gap is never silent.
-
-PARTIALLY CLOSED (2026-10-20): the FIELD-DEFAULT half is fixed — a use_c
-ctor's companion prologue now seeds literal defaults AND zero-arg
-container-ctor defaults (`emit_zero_ctor_field_default`), and generic
-field member types mono-resolve (`nm_List_ClickBinding clicks`, was
-`void *`) with the dependency walk ordering by-value members
-correctly (class members are pointer edges — no ordering, no cycle).
-Window's `clicks` list field is the live example: its raw `#init` now
-constructs identically on both backends.
-
-CLOSED (2026-10-20): the mixed-STATEMENT half is now a check-time
-rejection — `find_use_c_mixed_body` (src/raw_directives.ts, called from
-check_function_node) errors on any function whose body mixes
-`aarch64_use_c` blocks with Nomen statements or inline-asm raw blocks
-(`test/raw_mixed_body.test.ts`), so the divergence can no longer happen
-silently. Wiring the rejection uncovered three live mixed bodies in
-`core/System/Controls/Container.nm`: `is_visible`/`native_intrinsic`/
-`native_frame` carried Nomen `if handle == 0` guards AROUND their raw
-blocks — silently dropped on aarch64, where the functions only worked via
-ObjC nil-messaging accidents. All three moved the guards into every arch
-block (the Spinner pattern). Non-container constructor-call defaults
-remain a build error, and `build_and_check_output` now asserts
-`BuildResult.errors`, so a backend build error can no longer pass
-silently — the assert immediately surfaced (and fixed) the split-build
-false positive where a closure thunk tail-calls a System function with a
-bare `b`: a legitimate cross-object branch (linking against the
-system.o symbol) that the asm validator now accepts for user-TU builds
-(`allow_external_branch_targets`), keeping the strict check for
-single-TU builds.
-
 ## TextView.set_placeholder relies on AppKit's private KVC placeholder
 
 `core/System/Controls/TextView.nm`, `set_placeholder`: AppKit has no public
@@ -666,31 +577,16 @@ without a whole-repo style churn commit — pick one: either a dedicated
 "Style: reformat System library" commit or hold the in-source changes until
 release.
 
-## aarch64: mono-struct assignment under-copies when the body has a 2-word field
+## Split-build stale system-object hazard
 
-CLOSED as not-reproducing (2026-10-20): every aarch64 copy site is
-word-counted from `get_struct_size` (verified statically — `emit_struct_copy`
-in struct_layout.ts, the auto-`#init` default seeders, the custom-`#init`
-field-assign path, the decl-ctor path, the sret return copies — and
-empirically). The exact storage shape this entry blamed — a mono
-`List<ClickBinding>` over a 2-word `{ uint64 handle, func () action }`
-element: ctor-assign in a custom `#init`, push, indirect dispatch through
-the func field, pop, teardown under the allocation auditor — passes
-byte-correct on both backends
-(`test/struct_copy_snapshot.test.ts`, rewritten to compile: the saved
-`.copy()` repro never did — a flat-scalars struct gets no synthesized
-`copy` method, and its `#init = (self, uint64 seed)` shape fails
-`struct_copy_ctor_args`).
-
-The crash behind this entry was recorded mid-session on 2026-10-19 while
-the prebuilt system object was being rebuilt around the in-flight
-`#handle` library edits — most plausibly a stale-system.o/half-rebuilt
-artifact of that window, not a live codegen bug. The hazard that remains
-worth knowing: the split build (`ensure_system_lib`) pairs a STALE system
-object with a fresh user TU whenever the user TU's own hash alone is warm;
-only a MISSING object falls back to single-TU. If a library-editing
-session sees struct-layout-shaped crashes, force a system-lib rebuild
-before blaming codegen.
+The split build (`ensure_system_lib`) pairs a STALE system object with a
+fresh user TU whenever the user TU's own hash alone is warm; only a
+MISSING object falls back to single-TU. If a library-editing session sees
+struct-layout-shaped crashes, force a system-lib rebuild before blaming
+codegen (the 2026-10-20 "mono-struct under-copy" scare was one of these —
+closed as not-reproducing; every aarch64 copy site is word-counted from
+`get_struct_size`, pinned by `test/struct_copy_snapshot.test.ts`). A fix
+would fold the system-lib hash into the user TU's warmness check.
 
 ## Generation-checked views for dynamic-removal safety
 
