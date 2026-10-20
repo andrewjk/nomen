@@ -595,3 +595,21 @@ controls at runtime) wants generation-checked views: reuse the
 `WeakHandle` registry (pointer + generation slots, destroy bumps) so a
 view whose owner is gone is detected at use instead of pointing at freed
 state. Split out of the on_click work (2026-10-20).
+
+## Handler desugar: owner-dispatched callbacks (staged, design recorded)
+
+The two click forms (control `was_clicked()` polls + `Window.on_click`
+closures) are scheduled for unification into one: control-carried
+`self.<field>.on_<event>(closure)` — the closure hoists to a hidden method
+on the enclosing struct and the framework dispatches it with a
+dispatch-time `ref self` borrow, so handlers reach app state without
+capturing anything. Full design, checker rules, staging, and the
+alternatives rejected: [`docs/HANDLERS.md`](./docs/HANDLERS.md).
+
+Stage 1 (root desugar + App protocol + `run` routing) is the implementable
+slice — no backend changes, no new borrow machinery. Stage 2 (host
+forwarding) is what makes USER-authored composites get the same one form;
+stage 3 is id up-calls for composite event APIs; stage 4 (dynamic trees of
+self-handling controls, `List<MyRow>` with per-row closures) is the B5
+tranche's motivating GUI case — see also the `List<Own>.at()` entry above
+for the element-dispatch borrow questions B5 must answer.

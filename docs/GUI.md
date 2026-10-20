@@ -600,7 +600,9 @@ win.on_click(self.btn.handle, func () { view.set_text("clicked") })
 ```
 
 Handlers stay METHODS on the app when they need `ref self` app state; a
-registered closure covers the rest.
+registered closure covers the rest. (The two-form split is a consequence of
+the capture rules, not a goal — the staged design that unifies both into
+owner-dispatched handler closures lives in [HANDLERS.md](HANDLERS.md).)
 
 ## Invalidation & incremental relayout
 

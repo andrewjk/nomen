@@ -1,0 +1,331 @@
+# Handlers: owner-dispatched callbacks (design)
+
+Documents the design for unifying event handling — click handlers first, but
+the mechanism is Nomen's general callback story. For what ships today, see
+GUI.md's "Click events"; for the closure machinery this builds on (capture
+kinds, the capture-MOVES rule), see [CLOSURE.md](CLOSURE.md); for the
+ownership rules underneath, see MEMORY.md.
+
+## Implementation status
+
+DESIGN — recorded 2026-10-20, out of the `#handle` / `Window.on_click` work
+and a demo experiment that hit the wall this design removes. Nothing here is
+implemented; the shipped forms (control `was_clicked()` polls and
+`Window.on_click(handle, closure)`) remain as documented in GUI.md until the
+staging at the end lands.
+
+## The problem: two click forms, and the wall behind them
+
+Click handling today has two user-facing forms that live in two places, and
+the user has to know which to reach for:
+
+- **Polls** — `if self.btn.was_clicked() { ... }` inside `App.frame`.
+  Edge-triggered per control; works for any handler because `frame` holds
+  `ref self`.
+- **Registered closures** — `win.on_click(handle, func () { ... })`, wired in
+  `start`; each frame `dispatch_clicks` drains the shared native click ring
+  against the bindings before the app frame.
+
+The closure form exists because `#handle` view twins are copyable
+(CLOSURE.md's capture rules: a twin capture is a plain data copy, so the
+capture-MOVES rule never fires). But that is also its ceiling: the closure can
+touch sibling CONTROLS and nothing else. The moment a handler needs app state
+— read a text field, mutate a list, call a `ref self` method — it cannot be a
+closure, and the author falls back to a poll in a different method. The two
+forms also interact: a record consumed by a binding never reaches a poll
+(first consumer wins), so registering `on_click` on a control silently
+starves its `was_clicked` poll.
+
+The motivating experiment — the natural code a user writes first, from the
+todo demo:
+
+```
+var add_btn = Button(window, "Add")
+add_btn.on_click(func() {
+	var string new_text = self.input.get_text()
+	if new_text != "" {
+		self.add_item(new_text)
+		self.input.set_text("")
+		self.redance(ref win)
+		self.scroll.scroll_to_bottom()
+	}
+})
+```
+
+This fails on three stacked walls:
+
+1. **No route**: there is no `on_click` member on a control. Registration
+   lives on the `Window` (the binding list and the drain live there), and a
+   control has no back-reference to its window — `mv struct Button` carries
+   only `var uint64 handle`.
+2. **Capture-MOVES**: the closure references `self` — an `mv struct` app,
+   which a capture MOVES into the closure env (CLOSURE.md, "Move-only
+   capturing values"). After that, `frame` and every other handler could not
+   touch the app. `win` is a borrow, and borrows are not capturable at all.
+3. **Lifetime**: even if capture were allowed, the app MOVES after `#init`
+   (locals → fields, then `win.run(mv app)`). Anything captured at
+   registration names the old storage.
+
+## The insight: the closure becomes a method; the owner lends the borrow at dispatch
+
+The three walls share one root: the closure tries to _carry_ state it should
+_borrow at dispatch_. The fix is to stop treating the closure as a value and
+treat it as **a method of the enclosing struct that the framework invokes**:
+
+- The closure body is **hoisted** into a hidden method on the enclosing
+  struct — `#on_click_1 = (ref self, ref Window win) { body }`. Hidden
+  methods are ordinary methods: every existing borrow rule already applies to
+  their bodies, and both backends already lower them. No new codegen.
+- The registration site emits **no code at all**. It is checked into a
+  dispatch **arm** — `if handle == self.add_btn.handle { #on_click_1(ref
+self, ref win) }` — whose handle expression re-evaluates at dispatch,
+  against final fields. Staleness (wall 3) dissolves because nothing was
+  captured; only the _path_ is remembered.
+- The borrow of `self` is taken **by the dispatcher, at dispatch time**, by
+  whoever owns the host — for the app, the `run` loop, which holds the app
+  for its whole lifetime. Wall 2 dissolves because the closure captures
+  nothing; `self` inside the body is the hidden method's own receiver
+  parameter.
+
+This is the same shape the language already uses for `App.frame`: the
+framework holds the object and calls trait methods on it per frame. The
+desugar just lets the user _write_ the callback as a closure while _getting_
+a method.
+
+## The mechanism
+
+### Registration
+
+```
+self.add_btn.on_click(func () {
+	var string new_text = self.input.get_text()
+	if new_text != "" {
+		self.add_item(new_text)
+		self.input.set_text("")
+		self.redance(ref win)
+		self.scroll.scroll_to_bottom()
+	}
+})
+```
+
+`.on_<event>(closure)` on a control receiver is checker-interpreted (the
+name-keyed precedent is the `Fiber.start_on` rewrite): no code executes at
+the site. The member name family `on_<event>` becomes reserved on control
+receivers — the extension point for future events (`on_change`, `on_hover`,
+`on_select`), in the same spirit as the marker-trait endgame recorded in
+FOLLOWUP.md: conformance/registration is the opt-in, not new `#`-members.
+
+### Hosts and dispatch
+
+A struct with registrations is a **handler host**. The checker synthesizes on
+it:
+
+```
+func handle_clicks = (ref self, ref Window win) {
+	// first call only: arm registered non-button views
+	//   (nomen_window_clicks_init per arm — buttons already arm
+	//   target/action in their constructors)
+	// drain own arms, in registration order:
+	if nomen_control_take_click(self.add_btn.handle) { #on_click_1(ref self, ref win) }
+	// forward to child hosts, depth-first:
+	self.some_field.handle_clicks(ref win)
+}
+```
+
+`App` grows a default-empty trait method `handle_clicks` (trait defaults have
+precedent: `Enumerable.length`); a conformer with registrations gets the
+synthesized override. `Window.run` calls `app.handle_clicks(ref self)` each
+frame before `frame` — the same slot `dispatch_clicks` occupies today. Trait
+calls through `mv App` parameters are existing machinery (the `Enumerable`
+tier): **zero backend changes**.
+
+`FrameEvents.click` / `click_x` / `click_y` are unchanged — right-clicks and
+coordinate-driven input stay exactly as documented in GUI.md.
+
+### Checker rules
+
+Each is one clear error:
+
+- **Receiver must be a `self`-rooted field path** — `self.add_btn.on_click(...)`:
+  the arm re-evaluates the path at dispatch, so a local receiver
+  (`add_btn.on_click`) has nothing to re-evaluate. Error teaches the field
+  form.
+- **The closure takes no parameters** (v1). The body's context is `self` and
+  the dispatch window `win`.
+- **No upvalue captures (v1)** — the hoisted method has no env. A body
+  referencing an outer local errors with "handler closures see `self` and
+  the dispatch `win` — copy what you need into fields."
+- **Host reachability** — the enclosing struct must conform to `App` or be a
+  (transitive) field of one: dispatch reaches hosts through static field
+  paths from the run root. A host the root cannot reach is rejected ("handlers
+  dispatch from the run root — 'MyPager' is not owned by the app").
+
+### What retires
+
+- `Window.on_click(handle, closure)` and the `ClickBinding` /
+  `clicks` / `dispatch_clicks` machinery — the twin-capture form is
+  subsumed (the radio pair's handler body becomes `self.radio_b.set_checked(false)`
+  — no twins minted for handlers at all).
+- `was_clicked()` as the _documented_ pattern. It stays as the low-level ring
+  primitive (the desugar's drain lowers to it) — during migration the
+  coexistence is safe because arms drain their own registered handles and
+  never drain-any. After migration the first-consumer-wins footgun is gone:
+  every left-click record has exactly one consumer, its arm.
+
+## Handler hosts beyond the root: user-authored composites
+
+Keying on `App` would only cover controls the library ships. The desugar
+keys on **handler-host** instead — any struct with registrations — and the
+app's dispatch forwards to host-typed fields. A user's composite is written
+exactly like a library control:
+
+```
+mv struct MyPager : Control {
+	var Button prev
+	var Button next
+	var int page = 0
+
+	pub func #init = (self, Window window) {
+		self.prev = Button(window, "<")
+		self.next = Button(window, ">")
+		self.prev.on_click(func () { self.page = self.page - 1 })
+		self.next.on_click(func () { self.page = self.page + 1 })
+	}
+}
+```
+
+Internal state transitions run with `ref self` = the composite, borrowed by
+the forwarding chain from the run root. All field paths are static and
+concrete, so forwarding is direct calls — no trait objects, no B5. Forward
+order is children-first, then own arms (most specific first), deterministic.
+
+## Upward notification (composite → app)
+
+A composite whose change interests the app has three tiers:
+
+1. **Value polling (v1)** — the app reads `self.my_pager.page` in `frame`.
+   This is _state_ polling, not click polling; the gallery's status line
+   already works this way for sliders and steppers.
+2. **Id up-calls** — the composite stores an int per event; the app forwards
+   itself down once per tick (`self.my_pager.tick(ref self, ref win)`, a
+   trait-typed owner parameter — the same shape as `run`'s `mv App`), and the
+   composite calls back `owner.run_handler(id, ref win)` — one vtable hop
+   into the concrete app method the desugar synthesized. The borrow always
+   flows _down_ per call; nothing is stored.
+3. **B5 listener objects** — first-class handler values stored in fields
+   (`mv PageChangeDelegate`), for handlers as composable runtime values. See
+   the next section for why this is storage, not the borrow story.
+
+## Soundness: what makes it work, and where it doesn't
+
+The borrow is sound because dispatch happens at **points where the owner's
+borrow is exclusive**: frame boundaries, poll points, loop iterations — under
+Nomen's single-threaded cooperative scheduler. That precondition is also the
+edge:
+
+- **Truly concurrent dispatch is out.** A fiber running beside mid-mutation
+  app state is a data race; spawn's move-semantics captures remain the
+  correct tool there.
+- **Callbacks that outlive the owner are out.** Handlers are methods, not
+  objects: they cannot be sent to another thread, stored past the loop, or
+  invoked after the owner dies. First-class handler _values_ are the B5
+  storage tier — and even then, a stored object still cannot hold a borrow;
+  dispatch-time borrows from the owner remain the only app-state path.
+- **One-shot stateless callbacks don't need it.** Comparators and
+  `map`/`filter` predicates are plain func values today; a stateful
+  comparator would need the id/protocol chain per API and is not worth
+  forcing into the pattern.
+
+### Alternatives rejected
+
+- **Escapable framework-held borrows** (store `{app*, method}` in the
+  binding): needs a borrow that outlives its statement, tied to the window —
+  borrow-checker machinery the hoist makes unnecessary. The registration
+  stores no state, so there is nothing to keep alive.
+- **`Rc`/`Weak` shared-mutable handlers**: against the ownership model; a
+  different language.
+- **Frame-events collapse** (clicks as data in `FrameEvents`, everything in
+  `frame`): one place and zero machinery, but loses registration ergonomics
+  and reintroduces handle-matching boilerplate. `FrameEvents` keeps the
+  coordinate-driven cases it has today.
+- **Polls-only** (arm every control, kill closures): simplest mental model,
+  discards the twin-closure work and register-and-forget ergonomics.
+
+## Beyond UIs
+
+The general test: **a framework owns the loop, the user owns the state — the
+pattern applies.** UI is consumer #1; the same three pieces serve:
+
+- **Timers, animation, resize** — `on_resize` (the gallery's
+  `layout_panes`), `win.every(500, ...)`: the run loop is already the
+  dispatcher.
+- **Event-driven IO** — ASYNC.md's Phase 4 io_uring runtime is
+  completion-based, i.e. callbacks; completions dispatched at frame/poll
+  boundaries are exactly host dispatch. A future Tcp/Http server framework
+  (`server.on_route("GET /users", func () { ... self.db ... })`) is the same
+  shape — the accept loop as dispatcher, the Node-model that cooperative
+  fibers already resemble.
+- **User-authored frameworks** — parsers (SAX-style events), state machines,
+  protocol handlers, command dispatchers: any library needing call-backs into
+  user state gets the ownership-clean form instead of edge-triggered getters.
+
+The meta-payoff: this establishes **"closures with an owner-provided
+receiver"** as Nomen's general callback mechanism, so callback ergonomics
+never require escapable borrows, `Rc`/`Weak`, or runtime-checked shared
+mutability. The ownership model stays pure; the power comes from dispatch
+discipline.
+
+## Relationship to B5 (trait-typed fields)
+
+Two different walls, often conflated:
+
+| Wall                                                                 | What breaks it                                       | Status                                                             |
+| -------------------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------ |
+| **Borrow** (handler can't hold app state)                            | Dispatch-time borrow from the owner — protocol calls | Exists (trait params: `run`'s `mv App`)                            |
+| **Routing** (non-root hosts, composites)                             | Host forwarding down static field paths              | Checker synthesis, no B5                                           |
+| **Storage** (handlers as first-class values; heterogeneous children) | **B5** — `mv ClickHandler` fields, `List<Control>`   | Recorded tranche (FOLLOWUP.md, "Trait-typed FIELDS on mv structs") |
+
+B5 is storage-shaped, not borrow-shaped: a stored handler object still cannot
+hold a borrow of the app. What B5 genuinely adds here is **dynamic trees of
+self-handling controls** — `List<MyRow>` where each row carries its own
+closures — because forwarding is static field-path recursion, and dispatch
+through erased, runtime-sized elements is vtable-per-element. That intersects
+the `List<Own>.at()` element-materialization questions recorded in
+FOLLOWUP.md, and is the motivating GUI case to add to the B5 entry.
+
+## Staging
+
+- **Stage 1 — root desugar.** Checker: `.on_<event>(closure)` recognition,
+  hoist, arms, no-upvalue and receiver-path rules, host reachability. App
+  trait default `handle_clicks`; `Window.run` routing; retire the window
+  binding list; demote `was_clicked` from the documented pattern. Tests: port
+  `test/gui/on_click.test.ts` (the todo Add flow becomes the runtime test —
+  the snippet that failed above, working); error tests for each checker rule.
+- **Stage 2 — host forwarding.** Transitive host detection, forwarding
+  synthesis, child-first ordering; migrate `Pagination`/`Form` internals off
+  polls; a user-composite test (`MyPager`).
+- **Stage 3 — id up-calls.** `App.run_handler` protocol; trait-typed ref
+  params (representable — the vtable receiver is that shape); composite event
+  APIs (`MyPager.on_page_change(...)`).
+- **Stage 4 — B5 dynamic trees.** Pointer to the B5 tranche; `List<MyRow>`
+  self-handling rows.
+
+Deprecation cycle: one release with both forms documented as
+"on_click is the way"; then the poll examples leave GUI.md and the demo(s)
+migrate (the todo Add handler becomes the Stage 1 runtime test; the radio
+pair loses its twins).
+
+## Open questions
+
+- **Arming cost**: lazy first-dispatch arming arms every registered non-button
+  view on the first frame; controls that are never dispatched (no host) never
+  arm. Alternative — arm in control constructors unconditionally — costs a
+  recognizer per view. Decide with a large-UI benchmark.
+- **Payload-carrying events** (menu/toolbar item index, key events): the
+  hoisted signature generalizes to `(ref self, ref Window win, <payload>)` —
+  stage 3+.
+- **Manual loops** (headless tests drive `process_events` directly): expose
+  the host's `handle_clicks` for tests, or keep a thin window-level helper.
+- **Multiple windows**: one run root per window; hosts are per-root. An app
+  hosting two windows forwards from whichever root it registers with —
+  mechanical, but the doc follows GUI.md's single-window model until needed.
