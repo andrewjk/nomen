@@ -1545,10 +1545,16 @@ export function emit_field_destroys(
 		) {
 			// A func-typed CLASS or OWNING-struct field may hold a capturing
 			// closure (heap env + descriptor, `owned = 1`) — reclaim it with
-			// the same free-if-owned arm a func-typed local uses. A non-mv
-			// VALUE-struct func field stays non-mv (copies share the
-			// descriptor), so it is excluded (CLOSURE.md Phase 2c).
+			// the same free-if-owned arm a func-typed local uses. A BORROW
+			// copy (`var b = list.at_or_panic(i)` — the local shares the
+			// container slot's bytes) is excluded: its dispose would free the
+			// descriptor the stored original still names. Constructor- and
+			// mv-out-initialized locals own their fields and keep the
+			// dispose (CLOSURE.md Phase 2c).
 			const actual_offset = base_offset !== undefined ? base_offset + offset : offset;
+			const func_field_borrow = !!decl_name && !!status.func_field_borrow_decls?.has(decl_name);
+			if (func_field_borrow) status.func_field_borrow_decls?.delete(decl_name!);
+			if (func_field_borrow) continue;
 			if (decl_name) {
 				emit_base_ptr(status, decl_name, is_class_parent);
 			}

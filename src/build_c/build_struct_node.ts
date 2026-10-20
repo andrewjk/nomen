@@ -1259,10 +1259,10 @@ function build_auto_destroy(node: StructNode, status: BuildStatus) {
 		}
 		// A func-typed field of a CLASS may hold a capturing closure (a heap
 		// env + descriptor, `owned = 1`) — reclaim it with the same
-		// free-if-owned arm a func-typed local uses. A non-mv VALUE-struct
-		// func field stays non-mv (struct copies share the descriptor; the
-		// existing non-mv copy contract), so class and OWNING structs take
-		// this arm (CLOSURE.md Phase 2c).
+		// free-if-owned arm a func-typed local uses. An OWNING VALUE-struct's
+		// field keeps the arm here: this walk targets an INSTANCE (self —
+		// never a borrow-copy local). The local-cleanup side gates on the
+		// borrow-decl mark instead (build_auto_free).
 		if (field.type.name === "func" && (node.is_class || node.is_owning === true)) {
 			const f = `((struct nomen_closure *)self->${field.name})`;
 			status.code += `if (${f} && ${f}->owned) { if (${f}->destroy_env) ${f}->destroy_env(${f}->env); free(${f}->env); free(${f}); }\n`;

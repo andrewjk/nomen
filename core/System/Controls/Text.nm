@@ -2,13 +2,23 @@
  * A read-only text label control
  *
  * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
- * AppKit handle plus the cached label text mv with the value, and the
- * `#destroy` releases what the handle names. The constructor's `self` is
- * the inline instance (the `.` accessor); methods keep the pointer form.
+ * single field is the AppKit handle, and the `#destroy` releases what it
+ * names. The constructor's `self` is the inline instance (the `.` accessor);
+ * methods keep the pointer form.
+ *
+ * The label carries NO Nomen-side text cache — sizing reads the native
+ * control (`native_intrinsic`), and `set_text` is a bare receiver that only
+ * mutates the native view. That keeps the struct write-once after
+ * construction, which is what lets the `#handle` twin mirror it (see
+ * GUI.md, "Click events" and the `#handle` note).
  **/
 pub mv struct Text: Control {
 	var uint64 handle = 0
-	var text = ""
+
+	// The `#handle` hook synthesizes `NameHandle` — a copyable, non-owning
+	// twin (same public bare-self methods, no destroy) so closures can
+	// capture this control without moving it. See GUI.md, "Handles".
+	#handle = () {}
 
 	pub func #init = (self, Window window) {
 		```
@@ -97,8 +107,7 @@ pub mv struct Text: Control {
 		```
 	}
 
-	pub func set_text = (ref self, string text) {
-		self.text = text.copy()
+	pub func set_text = (self, string text) {
 		```
 		#arch: c
 		#platform: macos
@@ -130,6 +139,47 @@ pub mv struct Text: Control {
 			(id)self->handle, sel_registerName("setText:"),
 			((id(*)(id, SEL, const char*))objc_msgSend)(
 				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text.ptr));
+		```
+	}
+
+	// The label's current text, read from the native control (the label
+	// carries no Nomen-side text cache).
+	pub func get_text = (self, out string) {
+		```
+		#arch: c
+		#platform: macos
+		id str = ((id(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("stringValue"));
+		const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(
+			str, sel_registerName("UTF8String"));
+		return (nomen_string){ strdup(cstr), (long)strlen(cstr) };
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		id str = ((id(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("stringValue"));
+		const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(
+			str, sel_registerName("UTF8String"));
+		return (nomen_string){ strdup(cstr), (long)strlen(cstr) };
+		```
+		```
+		#arch: c
+		#platform: ios
+		id str = ((id(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("text"));
+		const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(
+			str, sel_registerName("UTF8String"));
+		return (nomen_string){ strdup(cstr), (long)strlen(cstr) };
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		id str = ((id(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("text"));
+		const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(
+			str, sel_registerName("UTF8String"));
+		return (nomen_string){ strdup(cstr), (long)strlen(cstr) };
 		```
 	}
 
@@ -184,16 +234,18 @@ pub mv struct Text: Control {
 	// refactor"). The default frame is 0,0,0,0; layout drives the real rectangle.
 
 	pub func measure = (self, BoxConstraints constraints, out Size) {
+		var [w, h] = native_intrinsic(self.handle)
 		var s = Size()
-		s.width = self.text.length * 8
-		s.height = 8
+		s.width = w
+		s.height = h
 		return s
 	}
 
 	pub func intrinsic_size = (self, out Size) {
+		var [w, h] = native_intrinsic(self.handle)
 		var s = Size()
-		s.width = self.text.length * 8
-		s.height = 8
+		s.width = w
+		s.height = h
 		return s
 	}
 

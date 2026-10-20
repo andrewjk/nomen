@@ -582,6 +582,26 @@ equivalent; `FrameEvents.click`/`click_x`/`click_y` remain for
 right-clicks and coordinate-driven cases (the todo demo's right-click
 delete).
 
+The closure-shaped `Window.on_click(handle, fn)` is the registered-handler
+alternative: the binding (a `{ handle, closure }` `ClickBinding`) is stored
+in a list on the window, and every frame — before the app frame —
+`run()` drains the shared click ring against the bindings (`dispatch_clicks`;
+manual-loop users call it after `process_events`). The handler closure
+captures `#handle` VIEW twins (copyable, non-owning), so it touches sibling
+controls without capturing-and-moving them — the capture-MOVES rule never
+fires for a twin. `on_click` also arms click recording on the registered
+view (`nomen_window_clicks_init` — a click gesture recognizer feeding the
+same ring), so non-button controls work too; a record consumed by a
+binding never reaches a `was_clicked` poll (first consumer wins).
+
+```
+var TextHandle view = TextHandle(self.label)
+win.on_click(self.btn.handle, func () { view.set_text("clicked") })
+```
+
+Handlers stay METHODS on the app when they need `ref self` app state; a
+registered closure covers the rest.
+
 ## Invalidation & incremental relayout
 
 Each control has a `dirty` flag and a reference to its parent (via `parent_of`

@@ -1,4 +1,24 @@
 /**
+ * One registered click handler
+ *
+ * The control's native handle (matched against the shared click ring in
+ * Control.nm) plus the closure to run when that handle's record drains. An
+ * OWNING mv struct stored by value in the window's `clicks` list; the
+ * constructor copies the closure descriptor, and the owning window's
+ * `#destroy` reclaims it (the func-field free-if-owned arm) — copies of a
+ * binding share the descriptor and never free (the borrow-copy mark).
+ **/
+pub mv struct ClickBinding {
+	var uint64 handle = 0
+	var func () action
+
+	pub func #init = (self, uint64 handle, func () action) {
+		self.handle = handle
+		self.action = action
+	}
+}
+
+/**
  * A top-level native window that hosts controls and dispatches events
  *
  * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
@@ -10,6 +30,10 @@
  **/
 pub mv struct Window: Control {
 	var uint64 handle = 0
+	// Registered click handlers (see on_click). Seeded by the field default;
+	// the #destroy's trailing field walk frees the list and reclaims each
+	// binding's closure descriptor.
+	var List<ClickBinding> clicks = List<ClickBinding>()
 
 	pub func #init = (self, string title, int width, int height) {
 		```
@@ -601,6 +625,41 @@ pub mv struct Window: Control {
 		```
 	}
 
+	// ── Registered click handlers ──
+	//
+	// `on_click` stores a { handle, closure } binding in a list on the window;
+	// each frame the bindings drain the SHARED click ring (Control.nm) before
+	// the app sees FrameEvents. Handlers capture `#handle` VIEW twins
+	// (copyable, non-owning), so a closure may touch sibling controls without
+	// moving them (CLOSURE.md) — the ownership-clean closure form the
+	// handlers-as-methods poll shape works around.
+
+	// Register a click handler for a control: the closure runs when the
+	// control's handle surfaces in the native click ring. The handler captures
+	// `#handle` view twins (copyable, non-owning), so closures can touch
+	// sibling controls; the binding stores the raw handle for the drain match.
+	pub func on_click = (ref self, uint64 handle, func () action) {
+		nomen_window_clicks_init(handle)
+		var ClickBinding b = ClickBinding(handle, action)
+		self.clicks.push(mv b)
+	}
+
+	// Drain the bindings against the native click ring. run() calls this each
+	// frame BEFORE the app frame; manual-loop users call it after
+	// process_events. A record consumed here never reaches a was_clicked poll
+	// (first consumer wins), and records for unregistered handles are left
+	// for the polls.
+	pub func dispatch_clicks = (ref self) {
+		var int i = 0
+		while i < self.clicks.length {
+			var ClickBinding b = self.clicks.at_or_panic(i)
+			if nomen_control_take_click(b.handle) {
+				b.action()
+			}
+			i += 1
+		}
+	}
+
 	// Run the app: the framework owns everything from here until the window
 	// closes. Order: `app.start` (the app registers its layout roots while
 	// in final storage), the pre-show layout pass, `show`, the post-show
@@ -638,6 +697,10 @@ pub mv struct Window: Control {
 				ev.height = cur_h
 				self.relayout(0)
 			}
+			// Registered handlers drain the click ring before the app frame
+			// (a record consumed by a binding never reaches a was_clicked
+			// poll — first consumer wins).
+			self.dispatch_clicks()
 			app.frame(ref self, ev)
 		}
 	}
@@ -731,4 +794,92 @@ pub mv struct Window: Control {
 		}
 		```
 	}
+}
+
+// Arm click recording on a registered view. NSButton-family controls are
+// armed at construction (nomen_control_arm_clicks) and already push to the
+// ring; this re-arms those harmlessly and covers every OTHER view through
+// an NSClickGestureRecognizer whose handler records the recognized view —
+// the Nomen handle — into the same ring. Idempotent per process (the
+// recognizer target class is built once); a fresh recognizer per call.
+pub func nomen_window_clicks_init = (uint64 handle) {
+	```
+	#arch: c
+	#platform: macos
+	#scope: file
+	// The shared gesture target (one class pair per process; the handler
+	// reads the gesture's view — the Nomen handle — and pushes the same
+	// ring the button family's target/action uses).
+	static void nomen_view_click_gesture(id self, SEL cmd, id gesture) {
+		(void)self; (void)cmd;
+		id view = ((id(*)(id, SEL))objc_msgSend)(gesture, sel_registerName("view"));
+		nomen_click_push((unsigned long long)(void *)view);
+	}
+	static void nomen_window_click_arm(unsigned long long handle) {
+		Class Tc = objc_getClass("NomenViewClickTarget");
+		if (!Tc) {
+			Tc = objc_allocateClassPair(objc_getClass("NSObject"), "NomenViewClickTarget", 0);
+			if (Tc) {
+				class_addMethod(Tc, sel_registerName("viewClickGesture:"), (IMP)nomen_view_click_gesture, "v@:@");
+				objc_registerClassPair(Tc);
+			}
+		}
+		if (!Tc) return;
+		id target = ((id(*)(id, SEL))objc_msgSend)((id)Tc, sel_registerName("new"));
+		id rec = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSClickGestureRecognizer"), sel_registerName("alloc"));
+		rec = ((id(*)(id, SEL, id, SEL))objc_msgSend)(
+			rec, sel_registerName("initWithTarget:action:"), (id)target, sel_registerName("viewClickGesture:"));
+		((void(*)(id, SEL, id))objc_msgSend)((id)handle, sel_registerName("addGestureRecognizer:"), (id)rec);
+	}
+	```
+	```
+	#arch: c
+	#platform: macos
+	nomen_window_click_arm(handle);
+	```
+	```
+	#arch: aarch64_use_c
+	#platform: macos
+	#scope: file
+	// Forward declaration: the ring lives in Control.nm's file-scope
+	// block, whose carrier may hoist AFTER this one (build order, not
+	// source order).
+	static void nomen_click_push(unsigned long long h);
+	static void nomen_view_click_gesture(id self, SEL cmd, id gesture) {
+		(void)self; (void)cmd;
+		id view = ((id(*)(id, SEL))objc_msgSend)(gesture, sel_registerName("view"));
+		nomen_click_push((unsigned long long)(void *)view);
+	}
+	static void nomen_window_click_arm(unsigned long long handle) {
+		Class Tc = objc_getClass("NomenViewClickTarget");
+		if (!Tc) {
+			Tc = objc_allocateClassPair(objc_getClass("NSObject"), "NomenViewClickTarget", 0);
+			if (Tc) {
+				class_addMethod(Tc, sel_registerName("viewClickGesture:"), (IMP)nomen_view_click_gesture, "v@:@");
+				objc_registerClassPair(Tc);
+			}
+		}
+		if (!Tc) return;
+		id target = ((id(*)(id, SEL))objc_msgSend)((id)Tc, sel_registerName("new"));
+		id rec = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSClickGestureRecognizer"), sel_registerName("alloc"));
+		rec = ((id(*)(id, SEL, id, SEL))objc_msgSend)(
+			rec, sel_registerName("initWithTarget:action:"), (id)target, sel_registerName("viewClickGesture:"));
+		((void(*)(id, SEL, id))objc_msgSend)((id)handle, sel_registerName("addGestureRecognizer:"), (id)rec);
+	}
+	```
+	```
+	#arch: aarch64_use_c
+	#platform: macos
+	nomen_window_click_arm(handle);
+	```
+	```
+	#arch: c
+	#platform: ios
+	/* TODO: iOS (UITapGestureRecognizer shape; see nomen_control_arm_clicks) */
+	```
+	```
+	#arch: aarch64_use_c
+	#platform: ios
+	/* TODO: iOS (UITapGestureRecognizer shape; see nomen_control_arm_clicks) */
+	```
 }

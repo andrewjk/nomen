@@ -780,6 +780,18 @@ export default interface BuildStatus {
 	 */
 	c_mv_owns_flags?: Map<string, string>;
 	/**
+	 * Value-struct locals initialized from a BORROW accessor (`var b =
+	 * list.at_or_panic(i)` — an access_func whose result is not `mv out`):
+	 * the struct's bytes are shared with the container slot, so a func-typed
+	 * field's free-if-owned dispose must NOT run at this local's scope exit —
+	 * the descriptor is owned by the stored original, and freeing it here
+	 * leaves the container's binding dangling (the crash behind the on_click
+	 * work). Constructor-initialized and `mv out` locals own their fields and
+	 * keep the dispose. Both backends mark; both backends' func-field arms
+	 * consult (and consume) the mark.
+	 */
+	func_field_borrow_decls?: Set<string>;
+	/**
 	 * C backend: the scoped-declarations FRAME (by reference) in which a
 	 * class alias was declared. A reassignment registers the alias's exit
 	 * destroy in that frame (not the current one), so an alias reassigned

@@ -1516,6 +1516,15 @@ export default function build_declaration_node(
 						status.code += line;
 					}
 				}
+				// A func-typed field of a BORROW-accessor binding shares the
+				// descriptor with the stored original (only the string fields
+				// detach above) — mark the local so its scope-exit func-field
+				// dispose is skipped (the free would dangle the container's
+				// binding; mirrors the aarch64 declaration path).
+				if (binding_struct && is_borrow_accessor_init && !is_borrow_accessor_carrier(node)) {
+					if (!status.func_field_borrow_decls) status.func_field_borrow_decls = new Set();
+					status.func_field_borrow_decls.add(safe_name);
+				}
 			}
 			// An OVERRIDE-CONSTRUCTOR base (`[ .. R(x), f = v ]` — the checker
 			// rewrote the literal onto the ctor call) seeded each overridden

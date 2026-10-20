@@ -1,6 +1,11 @@
 import type BuildStatus from "../../build_c/BuildStatus.ts";
 import { runtime_declarations } from "../../build_c/runtime_split.ts";
 import c_type from "../../build_c/utils/c_type.ts";
+import {
+	is_load_deep_copy_container,
+	mono_struct_name,
+	mono_type_name,
+} from "../../build_common/mono_name.ts";
 import { escape_asciz } from "../../build_common/string_escapes.ts";
 import string_literal_length from "../../build_common/string_literal_length.ts";
 import { is_overloaded, mangled_label } from "../../check/utils/function_overload.ts";
@@ -10,6 +15,7 @@ import FunctionNode from "../../nodes/FunctionNode.ts";
 import ParameterNode from "../../nodes/ParameterNode.ts";
 import StructNode from "../../nodes/StructNode.ts";
 import TraitNode from "../../nodes/TraitNode.ts";
+import Type from "../../nodes/Type.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
 import { FIBER_HEADER_C, POOL_HEADER_C } from "../build_spawn_node.ts";
 import { get_enum_sret_size, get_struct_size } from "./struct_layout.ts";
@@ -170,7 +176,18 @@ export function generate_companion(functions: CompanionFunction[], status: Build
 		const d = new Set<string>();
 		for (const f of st.fields) {
 			if (f.type.is_view) continue;
-			if (node_kind.has(f.type.name) && f.type.name !== st.name) d.add(f.type.name);
+			// A generic field type keys its registered mono (`List<int>` →
+			// `List_int`) — the same name the member type lowers to (the bare
+			// generic is not in struct_nodes, so the dep would be dropped and
+			// the mono typedef never emitted).
+			const field_type = mono_struct_name(f.type, status);
+			// A CLASS-typed field member is a POINTER (`struct X *`) — the tag
+			// forward-declares it, so no ordering edge (mono-resolving the
+			// generic spelling would otherwise create a pointer-edge cycle:
+			// Node → Box<Node> → Node). Only by-VALUE members order.
+			const field_struct = status.structs.find((s) => s.name === field_type && !s.is_simple_type);
+			if (field_struct?.is_class) continue;
+			if (node_kind.has(field_type) && field_type !== st.name) d.add(field_type);
 		}
 		deps.set(st.name, d);
 	}
@@ -298,8 +315,15 @@ function generate_struct_definition(struct: StructNode, status: BuildStatus): st
 	out += `void *_vt;\n`;
 	for (const field of struct.fields) {
 		// A `view T` field is the universal (ptr, len) slice value — every
-		// view lowers to nomen_view regardless of its element type.
-		out += `${field.type.is_view ? "nomen_view" : payload_type(field.type.name, status)} ${field.name};\n`;
+		// view lowers to nomen_view regardless of its element type. A generic
+		// field type with concrete args (`List<ClickBinding> clicks`) keys the
+		// registered mono (`List_ClickBinding`) — the bare generic would
+		// lower to `void *` and every member access in a raw body would
+		// mis-type (mirrors the C backend's mono rewrite).
+		const member_type = field.type.is_view
+			? "nomen_view"
+			: payload_type(mono_struct_name(field.type, status), status);
+		out += `${member_type} ${field.name};\n`;
 	}
 	for (const traitName of struct.traits) {
 		const trait = status.traits.find((t) => t.name === traitName) as TraitNode | undefined;
@@ -307,7 +331,10 @@ function generate_struct_definition(struct: StructNode, status: BuildStatus): st
 		for (const field of trait.fields.filter(
 			(f) => !struct.fields.find((nf) => nf.name === f.name),
 		)) {
-			out += `${field.type.is_view ? "nomen_view" : payload_type(field.type.name, status)} ${field.name};\n`;
+			const member_type = field.type.is_view
+				? "nomen_view"
+				: payload_type(mono_struct_name(field.type, status), status);
+			out += `${member_type} ${field.name};\n`;
 		}
 	}
 	out += `} ${nm(struct.name)};\n`;
@@ -417,7 +444,21 @@ function generate_c_function(
 			}
 			for (const field of ctor_struct.fields) {
 				if (!field.value) continue;
-				const seeded = emit_ctor_field_default(ctor_struct, field);
+				let seeded: string | undefined;
+				if (field.value.node_type === "func_call" && (field.value as any).params?.length === 0) {
+					// A zero-arg constructor-call default on a System container:
+					// seed the constructed zero shape directly (see
+					// emit_zero_ctor_field_default — a companion→asm ctor call
+					// cannot link).
+					seeded = emit_zero_ctor_field_default(
+						field.type.name,
+						field.type.type_args,
+						`self->${field.name}`,
+						status,
+						new Set<string>(),
+					);
+				}
+				if (!seeded) seeded = emit_ctor_field_default(ctor_struct, field);
 				if (!seeded) {
 					if (!status.build_errors) status.build_errors = [];
 					status.build_errors.push({
@@ -484,6 +525,76 @@ function emit_ctor_field_default(
 		return `self->${field.name} = ${value};\n`;
 	}
 	return undefined;
+}
+
+/**
+ * The zero-arg CONSTRUCTOR-call field default (`var List<ClickBinding>
+ * clicks = List<ClickBinding>()`) in a use_c ctor's companion prologue:
+ * the System containers' zero-arg init is exactly stamp/traits + zeroed
+ * fields (every container field default is a literal zero or a nested
+ * container ctor call), so seed that shape DIRECTLY. A companion→asm call
+ * (`List_T_init(&self->f)`) is not available here — method labels are
+ * file-local outside system builds, so the companion object could not link
+ * the reference. Returns undefined for anything unsupported (a custom
+ * zero-arg init could have side effects; the caller's build error names
+ * the field). `seen` guards the container nesting (List → Buffer).
+ */
+function emit_zero_ctor_field_default(
+	type_name: string,
+	type_args: Type[] | undefined,
+	target: string,
+	status: BuildStatus,
+	seen: Set<string>,
+): string | undefined {
+	const resolved =
+		type_args?.length && status.structs.some((s) => s.name === mono_type_name(type_name, type_args))
+			? mono_type_name(type_name, type_args)
+			: type_name;
+	if (!is_load_deep_copy_container(resolved)) return undefined;
+	const struct = status.structs.find((s) => s.name === resolved);
+	if (!struct || struct.is_generic || struct.is_simple_type || struct.is_class) return undefined;
+	// A custom zero-arg init can run arbitrary statements — only the
+	// auto-init (all fields defaulted, no body) is provably the zero shape.
+	if (struct.functions.some((f) => f.name === "#init" && f.has_body)) return undefined;
+	if (seen.has(resolved)) return "";
+	seen.add(resolved);
+	let out = "";
+	if (struct.traits.length > 0) {
+		// The asm symbol is `_<T>_traits` (.globl in vtable_data); the C-side
+		// identifier drops the Mach-O underscore — the same spelling the
+		// ctor's own `_vt` install above uses.
+		out += `extern void *${resolved}_traits;\n`;
+		out += `${target}._vt = (void *)&${resolved}_traits;\n`;
+	} else {
+		out += `${target}._vt = (void *)1;\n`;
+	}
+	for (const f of struct.fields) {
+		if (f.type.is_nullable) return undefined;
+		const fv = f.value?.node_type === "value" ? (f.value as ValueNode).value : undefined;
+		if (f.value?.node_type === "func_call") {
+			const nested = emit_zero_ctor_field_default(
+				f.type.name,
+				f.type.type_args,
+				`${target}.${f.name}`,
+				status,
+				seen,
+			);
+			if (nested === undefined) return undefined;
+			out += nested;
+			continue;
+		}
+		// The zero-arg call type-checks only when every field is defaulted,
+		// so an absent default cannot occur here.
+		if (typeof fv !== "string") return undefined;
+		if (f.type.name === "string" && !f.type.is_view && fv.startsWith('"')) {
+			// A string-typed default that is not the zero pair is NOT the
+			// zero shape — unsupported (no container carries one today).
+			return undefined;
+		}
+		if (fv !== "0") return undefined;
+		out += `${target}.${f.name} = 0;\n`;
+	}
+	return out;
 }
 
 function generate_c_param(param: ParameterNode, status: BuildStatus): string {

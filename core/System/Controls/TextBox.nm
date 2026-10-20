@@ -9,6 +9,11 @@
 pub mv struct TextBox : Control {
 	var uint64 handle = 0
 
+	// The `#handle` hook synthesizes `NameHandle` — a copyable, non-owning
+	// twin (same public bare-self methods, no destroy) so closures can
+	// capture this control without moving it. See GUI.md, "Handles".
+	#handle = () {}
+
 	pub func #init = (self, Window window) {
 		```
 		#arch: c

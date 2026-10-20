@@ -140,6 +140,14 @@ pub mv struct Scrollable: Control {
 		struct Window w;
 		w._vt = (void *)&_Window_traits;
 		w.handle = self->doc;
+		// The registered-handler list (Window.on_click): this fabricated view
+		// window owns no bindings, but every Window field must be seeded —
+		// the destructor walk reads them unconditionally.
+		w.clicks._vt = (void *)1;
+		w.clicks.length = 0;
+		w.clicks.items._vt = (void *)1;
+		w.clicks.items.data = 0;
+		w.clicks.items.cap = 0;
 		((id(*)(id, SEL))objc_msgSend)((id)self->doc, sel_registerName("retain"));
 		return w;
 		```
@@ -150,6 +158,12 @@ pub mv struct Scrollable: Control {
 		struct Window w;
 		w._vt = (void *)&Window_traits;
 		w.handle = self->doc;
+		// The registered-handler list (Window.on_click) — see the c block.
+		w.clicks._vt = (void *)1;
+		w.clicks.length = 0;
+		w.clicks.items._vt = (void *)1;
+		w.clicks.items.data = 0;
+		w.clicks.items.cap = 0;
 		((id(*)(id, SEL))objc_msgSend)((id)self->doc, sel_registerName("retain"));
 		return w;
 		```
@@ -162,6 +176,11 @@ pub mv struct Scrollable: Control {
 			struct Window w;
 			w._vt = (void *)&_Window_traits;
 			w.handle = 0;
+			w.clicks._vt = (void *)1;
+			w.clicks.length = 0;
+			w.clicks.items._vt = (void *)1;
+			w.clicks.items.data = 0;
+			w.clicks.items.cap = 0;
 			return w;
 		}
 		```
@@ -174,6 +193,11 @@ pub mv struct Scrollable: Control {
 			struct Window w;
 			w._vt = (void *)&Window_traits;
 			w.handle = 0;
+			w.clicks._vt = (void *)1;
+			w.clicks.length = 0;
+			w.clicks.items._vt = (void *)1;
+			w.clicks.items.data = 0;
+			w.clicks.items.cap = 0;
 			return w;
 		}
 		```

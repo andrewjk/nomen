@@ -606,6 +606,19 @@ generated C (hard — needs a full Nomen→C body compiler for the aarch64
 path), or reject mixed bodies at parse/check time with a clear error so the
 gap is never silent.
 
+PARTIALLY CLOSED (2026-10-20): the FIELD-DEFAULT half is fixed — a use_c
+ctor's companion prologue now seeds literal defaults AND zero-arg
+container-ctor defaults (`emit_zero_ctor_field_default`), and generic
+field member types mono-resolve (`nm_List_ClickBinding clicks`, was
+`void *`) with the dependency walk ordering by-value members
+correctly (class members are pointer edges — no ordering, no cycle).
+Window's `clicks` list field is the live example: its raw `#init` now
+constructs identically on both backends. What remains dropped: general
+Nomen STATEMENTS around raw blocks in a mixed body (the Spinner shape —
+worked around in-source) and non-container constructor-call defaults
+(still a build error — but now the error surfaces if the harness ever
+asserts `BuildResult.errors`; see the on_click entry's harness gap).
+
 ## TextView.set_placeholder relies on AppKit's private KVC placeholder
 
 `core/System/Controls/TextView.nm`, `set_placeholder`: AppKit has no public
@@ -665,19 +678,60 @@ before blaming codegen.
 
 ## on_click (registered handlers)
 
-`Window.on_click(handle, fn)`: the handler (a closure capturing control
-HANDLES — copyable, non-owning twins from the `#handle` hook) is stored in
-a `List<ClickBinding>` on the Window; `run()` drains the native click
-queue against the bindings before the app frame. The storage shape is
-verified sound (the binding-list test above); the implementation was
-never committed — the session that drafted it was cleared, and no
-`ClickBinding`/`on_click`/`dispatch_clicks`/`nomen_window_clicks_init`
-shapes exist in any commit, stash, or dangling object — so this is a
-fresh implementation against the design below, not a restore.
+SHIPPED (2026-10-20): `Window.on_click(handle, fn)` stores a
+`ClickBinding { handle, func () action }` in a `List<ClickBinding>` on the
+window; `run()` drains the shared click ring against the bindings before
+the app frame (`dispatch_clicks`, also public for manual loops);
+`nomen_window_clicks_init` arms a click gesture recognizer per registered
+view so non-button controls record clicks too (buttons keep their
+target/action arming). Handlers capture `#handle` VIEW twins
+(`TextHandle(owner)`) — copies, so the capture-MOVES rule never fires.
+Test: `test/gui/on_click.test.ts` (performClick → binding dispatch →
+twin mutation → visible through the owner, both backends).
 
-One known wart to solve alongside: the bindings' closure envs are not
-reclaimed at teardown (value-struct func fields have no destroy arm) — a
-bounded, exit-time leak, one per registration.
+Landing it surfaced and fixed three live gaps:
+
+- **use_c constructors silently dropped constructor-call field defaults.**
+  Adding the `clicks` list field to Window made its raw-body `#init` carry
+  a Nomen-level default (`List<ClickBinding>()`). The companion's ctor
+  prologue only seeded literal defaults — the ctor-call default hit the
+  build-error branch, which the output harness never asserts on (the build
+  "succeeded" with the field never constructed → garbage storage →
+  realloc-on-garbage in push). This was the REAL mechanism behind the
+  "mono-struct under-copy" entry above. Fixed: the companion seeds
+  zero-arg container-ctor defaults directly
+  (`emit_zero_ctor_field_default` — a companion→asm ctor call cannot link,
+  method labels being file-local outside system builds), and
+  `generate_struct_definition` now mono-resolves generic field member
+  types (`List<ClickBinding>` → `nm_List_ClickBinding`, was `void *`) with
+  value-member dep edges (class fields are pointers — the tag
+  forward-declares them, and a mono-resolved pointer edge created a
+  Node→Box→Node emission cycle that broke every Box program).
+- **A borrow copy's func-field dispose freed the shared descriptor.**
+  `dispatch_clicks`'s loop local (`var b = clicks.at_or_panic(i)`) is a
+  byte-copy borrow of the stored binding, but the scope-exit func-field
+  free-if-owned arm fired on it (owned = 1) — freeing the descriptor+env
+  the stored original still names; the next frame's dispatch called
+  through freed memory. Fixed: borrow-accessor-initialized value-struct
+  locals are marked (`func_field_borrow_decls`, keyed off the existing
+  `is_container_borrow_accessor_name` predicate at both backends'
+  declaration sites) and the func-field arm skips (and consumes) the
+  mark. Constructor- and `mv out`-initialized locals own their fields and
+  keep the dispose (`closure_func_value_string_return` pins that side).
+- **Raw Window fabricators predate the new field.**
+  `Scrollable`/`Sheet`/`SplitView`/`Tabs` `.content_window` build Windows
+  in raw bodies setting only `_vt` + `handle` — the new field was never
+  seeded and teardown walked garbage. All four now seed the zero list in
+  every arch block.
+
+Still open from this area: the compile-time detection of a mixed `#init`
+(a use_c ctor is now CORRECT for literal + zero-arg-container defaults;
+general Nomen statements around raw blocks are still dropped on aarch64 —
+the entry below), and the harness gap that hid the first bug:
+`build_and_check_output` asserts parse errors but never
+`BuildResult.errors` — a backend build error still passes the suite
+(`test/aarch64_regressions.test.ts`-style `result.errors` asserts are the
+model).
 
 Dynamic-removal safety (a removed todo's stale view) wants
 generation-checked views — reuse the `WeakHandle` registry

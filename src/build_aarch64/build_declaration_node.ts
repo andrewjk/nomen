@@ -2953,6 +2953,15 @@ export default function build_declaration_node(
 							emit_owning_field_strdups_at(status, binding_struct.name, "x2");
 						}
 					}
+					// A func-typed field of a BORROW-accessor binding shares the
+					// descriptor with the stored original (only the string
+					// fields detach above) — mark the local so its scope-exit
+					// func-field dispose is skipped (the free would dangle the
+					// container's binding; see emit_field_destroys' func arm).
+					if (binding_struct && is_borrow_accessor_init && !is_compiler_carrier) {
+						if (!status.func_field_borrow_decls) status.func_field_borrow_decls = new Set();
+						status.func_field_borrow_decls.add(node.name);
+					}
 				}
 				// `var X b = mv a`: the bytes are copied into b, then the source is
 				// marked moved so it is not destroyed at scope exit (b is now the sole
