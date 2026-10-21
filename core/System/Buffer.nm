@@ -558,6 +558,30 @@ pub struct Buffer<T> {
 		self.replace(i, value)
 	}
 
+	// Address of slot `i` (library-only): the ELEMENT BORROW primitive —
+	// `ref T x = list.at(i)` (docs/HANDLERS.md Stage 4, the dynamic-tree
+	// dispatch) lowers to this, binding the alias to the slot itself rather
+	// than to a bitwise copy. The pointer is valid while the buffer is
+	// exclusively borrowed and not resized; a `ref self` call on the buffer
+	// (push/pop/set/…) invalidates the borrow through the ordinary
+	// borrow-invalidation rules. Library-internal: the caller (the `List`
+	// wrapper, or trusted internals) bounds-checks; the body is raw-only so
+	// the missing-return net does not apply to the raw return.
+	pub func slot_ptr = (ref self, int i, out ptr T) {
+		```
+		#arch: c
+		return (T*)(unsigned long long)self->data + i;
+		```
+		```
+		#arch: aarch64
+		// x19 = self, x1 = i — the slot address (the load primitive's
+		// address-of: data + i * T_SIZE), returned in x0.
+		ldr x8, [x19, #8]
+		mov x9, #T_SIZE
+		madd x0, x1, x9, x8
+		```
+	}
+
 	// Move slot src into slot dst: overwrite dst with src's bytes and zero
 	// src, so exactly ONE slot owns the value afterwards. The
 	// ownership-transferring primitive behind backward-shift deletion

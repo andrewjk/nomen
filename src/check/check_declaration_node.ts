@@ -1,4 +1,5 @@
 import add_error from "../add_error.ts";
+import { mono_type_name } from "../build_common/mono_name.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
@@ -508,33 +509,51 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 		//     borrow of a value struct is not in A (use `view` for slices);
 		//   - requires a source (a binding/alias/field/call result), which is what
 		//     makes it an alias and not a fresh owned value.
+		// The ELEMENT BORROW (docs/HANDLERS.md Stage 4, the dynamic-tree
+		// dispatch) is the one sanctioned interior borrow: `ref T x =
+		// container.at(i)` binds the SLOT itself — the site rewrites to the
+		// library's `slot_ptr` primitive and the build emits the returned
+		// pointer directly. The borrow's lifetime is policed by the ordinary
+		// rules: the alias records the container as its borrow owner, so any
+		// `ref self` call rooted at the container (push/pop/set — anything
+		// that may resize or displace the slab) invalidates it, and it dies
+		// with its binding.
 		const ref_src = is_ref_keyword ? ref_alias_source_name(decl.value) : undefined;
 		if (is_ref_keyword) {
-			if (decl.type.name && !is_class_type(decl.type.name, status)) {
-				add_error(
-					status,
-					`'ref' binds an alias to a heap-resident instance (a Box<T>); use 'view' for a slice of '${decl.type.name}'`,
-					decl.start,
-				);
-			}
-			if (decl.value && !ref_src && decl.value.node_type === "value") {
-				add_error(
-					status,
-					`'ref' requires an existing binding to alias, got an owned value`,
-					decl.value.start,
-				);
-			}
-			// A bare-call / constructor initializer produces a FRESH owned value —
-			// there is nothing to alias (§A1: calls trigger only when classified
-			// borrow-returning, which ref_alias_source_name already filters). The
-			// value-node arm above catches bare variables that are not sources;
-			// this arm catches `ref Box q = make()` / `= Box(0)` / `= null`.
-			if (decl.value && !ref_src && decl.value.node_type !== "value") {
-				add_error(
-					status,
-					`'ref' requires an existing binding to alias, got an owned value`,
-					decl.value.start,
-				);
+			const slot_load = element_slot_load(decl.value, status);
+			if (slot_load) {
+				// Rewrite `container.at(i)` → `container.slot_ptr(i)`; the
+				// stamp tells the builds to emit the returned pointer bare.
+				slot_load.name = "slot_ptr";
+				slot_load.params = [slot_load.params[0]];
+				(slot_load as unknown as { is_element_slot_load?: boolean }).is_element_slot_load = true;
+			} else {
+				if (decl.type.name && !is_class_type(decl.type.name, status)) {
+					add_error(
+						status,
+						`'ref' binds an alias to a heap-resident instance (a Box<T>); use 'view' for a slice of '${decl.type.name}'`,
+						decl.start,
+					);
+				}
+				if (decl.value && !ref_src && decl.value.node_type === "value") {
+					add_error(
+						status,
+						`'ref' requires an existing binding to alias, got an owned value`,
+						decl.value.start,
+					);
+				}
+				// A bare-call / constructor initializer produces a FRESH owned value —
+				// there is nothing to alias (§A1: calls trigger only when classified
+				// borrow-returning, which ref_alias_source_name already filters). The
+				// value-node arm above catches bare variables that are not sources;
+				// this arm catches `ref Box q = make()` / `= Box(0)` / `= null`.
+				if (decl.value && !ref_src && decl.value.node_type !== "value") {
+					add_error(
+						status,
+						`'ref' requires an existing binding to alias, got an owned value`,
+						decl.value.start,
+					);
+				}
 			}
 			// `ref q = mv p` is contradictory — an alias never takes ownership
 			// (§A3.3: ref can mutate, never transfer).
@@ -1073,4 +1092,30 @@ function ref_alias_source_name(
 		return value_from_value_node(value) || undefined;
 	}
 	return undefined;
+}
+
+/**
+ * The ELEMENT BORROW shape (docs/HANDLERS.md Stage 4): a ref-binding
+ * initializer that is `container.at(i)` — a container element read whose
+ * container exposes the `slot_ptr` primitive (the `List<T>` mono). Returns
+ * the inner AccessFunctionCallNode to rewrite, or undefined when the
+ * initializer isn't an element load.
+ */
+function element_slot_load(
+	value: import("../nodes/BaseNode.ts").default | undefined,
+	status: CheckStatus,
+): AccessFunctionCallNode | undefined {
+	if (!value || value.node_type !== "access") return undefined;
+	const access = value as AccessNode;
+	if (access.access.node_type !== "access_func") return undefined;
+	const call = access.access as AccessFunctionCallNode;
+	if (call.name !== "at" || call.params.length !== 1) return undefined;
+	// The container must expose the element-borrow primitive (the List mono
+	// does; ad-hoc structs with an `at` method don't opt in).
+	const target_type = type_from_value_node(access.target, status);
+	const container = status.structs.find(
+		(s) => s.name === target_type.name || s.name === mono_type_name(target_type),
+	);
+	if (!container?.functions.some((f) => f.name === "slot_ptr")) return undefined;
+	return call;
 }

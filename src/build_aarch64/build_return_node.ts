@@ -86,11 +86,14 @@ function find_var_size(name: string, status: BuildStatus): number {
  */
 function current_return_is_string(status: BuildStatus): boolean {
 	const rt = status.function_return_type;
-	if (rt) return rt.name === "string" && !rt.is_view;
+	// A `ptr string` return is a bare machine word (the element-borrow
+	// primitive's slot pointer — docs/HANDLERS.md Stage 4), never a fat
+	// string: the strdup/ownership normalization must not fire on it.
+	if (rt) return rt.name === "string" && !rt.is_view && !rt.is_pointer;
 	if (status.current_struct && status.current_function_name) {
 		const fn = status.current_struct.functions.find((f) => f.name === status.current_function_name);
 		const frt = fn?.return_type;
-		return !!frt && frt.name === "string" && !frt.is_view;
+		return !!frt && frt.name === "string" && !frt.is_view && !frt.is_pointer;
 	}
 	return false;
 }

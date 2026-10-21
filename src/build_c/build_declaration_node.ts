@@ -578,14 +578,37 @@ export default function build_declaration_node(
 		// Emit `T *x = &y` and track x in function_ref_params so accesses
 		// use `->` and value-uses dereference. Ref locals don't own data,
 		// so they are NOT added to scoped_declarations.
-		if (node.type.is_ref && !node.type.is_array) {
+		// The VALUE-STRUCT alias (`ref Row row = list.at(i)` — the element
+		// borrow, docs/HANDLERS.md Stage 4) rides `is_ref_binding` (the
+		// checker normalizes the declaration keyword): its initializer is the
+		// stamped `slot_ptr` call, which RETURNS the slot pointer — emit it
+		// bare (no `&`, no struct copy).
+		const value_struct_ref_alias =
+			node.is_ref_binding === true &&
+			!node.type.is_ref &&
+			!!status.structs.find(
+				(s) =>
+					s.name === (mono_name ?? node.type.name) &&
+					!s.is_class &&
+					!s.is_simple_type &&
+					!s.is_generic,
+			);
+		if ((node.type.is_ref || value_struct_ref_alias) && !node.type.is_array) {
 			if (mono_struct) {
 				status.code += `struct ${mono_name} *${safe_name}`;
 			} else {
 				status.code += `${c_type(node.type.name)} *${safe_name}`;
 			}
 			if (node.value) {
-				status.code += ` = &`;
+				const init_is_slot_load =
+					node.value.node_type === "access" &&
+					((node.value as AccessNode).access as AccessFunctionCallNode).is_element_slot_load ===
+						true;
+				if (!init_is_slot_load) {
+					status.code += ` = &`;
+				} else {
+					status.code += ` = `;
+				}
 				build_node(node.value, status);
 			}
 			status.code += `;\n`;

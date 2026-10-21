@@ -11,7 +11,7 @@ ownership rules underneath, see MEMORY.md.
 DESIGN — recorded 2026-10-20, out of the `#handle` / `Window.on_click` work
 and a demo experiment that hit the wall this design removes.
 
-**Stages 1–3 are implemented (2026-10-20/21).** Stage 1 (root desugar):
+**Stages 1–4 are implemented (2026-10-20/21).** Stage 1 (root desugar):
 `.on_<event>(closure)` recognition, the hoist into hidden `#on_click_N`
 methods, arm synthesis onto a default-empty `App.handle_clicks` (trait
 default), `Window.run` routing through `app.handle_clicks(ref win)`, and the
@@ -36,16 +36,27 @@ handler onto the app, synthesizes the `run_handler` override the composite's
 `owner.run_handler(id, ref win)` callback hops into, and rewrites the site
 to the enrollment call `receiver.on_<event>(N)`. `Pagination` grew the
 first event API (`on_page_change` / `tick`) and the gallery consumes it.
+Stage 4 (dynamic trees): a `List<Row>` field on the app is a DISPATCHABLE
+host collection — the synthesized `handle_clicks` gains a dispatch loop
+whose ELEMENT BORROW binds the slot, so each row's own arms run in place
+and their state persists. The enabling language piece: `ref T x =
+container.at(i)` is the sanctioned interior borrow — the site rewrites to
+the library's `slot_ptr` primitive (a `ptr T` return is a bare machine
+word in x0 on both backends) and the alias is policed by the ordinary
+borrow-invalidation rules (any `ref self` call on the container kills it).
 Tests: `test/gui/on_click.test.ts` (the todo Add
 flow), `test/gui/composite_handlers.test.ts` (the MyPager composite — the
 doc's example, working — plus the up-call flow),
+`test/gui/dynamic_rows.test.ts` (`List<MyRow>` self-handling rows),
 `test/gui/on_click_errors.test.ts` (every checker
 rule plus the reachable-composite, transitive-chain, and up-call
 acceptances); the demos are migrated (todo Add; the gallery's radio pair,
 dialog buttons, and pagination — `demos_check.test.ts` keeps them green).
 
-Still to land: Stage 4 (B5 dynamic trees) and the deprecation-cycle doc
-sweep (the poll examples leave GUI.md's other sections).
+Still to land: the deprecation-cycle doc sweep (the poll examples leave
+GUI.md's other sections), and the `List<Own>.at()` uniform-borrow load
+question (below — the element BORROW is landed; the owning-copy `.at()`
+read remains as recorded).
 
 ## The problem: two click forms, and the wall behind them
 

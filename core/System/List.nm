@@ -73,6 +73,19 @@ pub mv struct List<T>: Viewable {
 		panic("index out of range")
 	}
 
+	// Address of element `i` (library-only): the ELEMENT BORROW primitive —
+	// `ref T x = list.at(i)` (docs/HANDLERS.md Stage 4, dynamic-tree
+	// dispatch) lowers to this, binding the alias to the slot itself rather
+	// than to a bitwise copy. The pointer is valid while the list is
+	// exclusively borrowed and not resized; a `ref self` call on the list
+	// invalidates the borrow through the ordinary borrow-invalidation
+	// rules. The length constraint is the caller's proof obligation — the
+	// handler desugar's synthesized loops satisfy it from the loop
+	// condition, exactly like `.at`.
+	pub func slot_ptr = (ref self, int i: i >= 0 && i < self.length, out ptr T) {
+		return self.items.slot_ptr(i)
+	}
+
 	// Bounds-checked removal that traps when i is outside [0, self.length) —
 	// same contract as at_or_panic/set_or_panic, for indices that can't be
 	// proven at compile time. The element is moved out (later elements

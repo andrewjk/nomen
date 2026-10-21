@@ -2744,6 +2744,10 @@ function build_access_method(
 		!access_func.type.is_array &&
 		!resolved_ret_type.is_view &&
 		!resolved_ret_type.is_array &&
+		// A `ptr T` return is a bare machine word in x0 — the element-borrow
+		// primitive's shape (docs/HANDLERS.md Stage 4) — never an sret struct.
+		!resolved_ret_type.is_pointer &&
+		!access_func.type.is_pointer &&
 		(!!status.structs.find((s) => s.name === ret_type_name && !s.is_simple_type && !s.is_class) ||
 			get_enum_sret_size(ret_type_name, status) !== undefined);
 	if (process.env.NOMEN_DBG_SRET)

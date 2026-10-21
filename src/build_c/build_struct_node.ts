@@ -19,6 +19,7 @@ import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_auto_free from "./build_auto_free.ts";
 import build_foreign from "./build_foreign.ts";
+import { pointer_element_c_type } from "./build_index_node.ts";
 import build_node from "./build_node.ts";
 import { is_owned_heap_temp } from "./build_operation_node.ts";
 import build_parameter_node from "./build_parameter_node.ts";
@@ -967,6 +968,14 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 			// Returning array data pointer (e.g. out Array<T> becomes T[] after monomorphization)
 			// The #arch: c block returns void* containing struct header + data
 			status.code += `void* ${emit_label}(`;
+		} else if (func.return_type.is_pointer) {
+			// A `ptr T` return is a bare machine word (`T*`) — the
+			// element-borrow primitive's shape (docs/HANDLERS.md Stage 4).
+			// Traits spell with the struct tag (`struct Speaker*`).
+			const elem_c = status.traits.find((t) => t.name === func.return_type.name)
+				? `struct ${func.return_type.name}`
+				: pointer_element_c_type(func.return_type, status);
+			status.code += `${elem_c}* ${emit_label}(`;
 		} else if (returns_array_data) {
 			// Returning Array<T> data — use T* (e.g. with returns int*)
 			const elem_type = c_type(func.return_type.type_args![0].name);

@@ -1969,9 +1969,12 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		// x0 — never sret, even when the element type is a struct (the
 		// element name would otherwise match below). An enum-with-data return
 		// uses sret like a struct (a plain x0 return would hand the caller a
-		// pointer into this method's dead frame).
+		// pointer into this method's dead frame). A `ptr T` return is a bare
+		// machine word in x0 — the element-borrow primitive's shape
+		// (docs/HANDLERS.md Stage 4) — never sret either.
 		const return_struct =
 			!func.return_type?.is_array &&
+			!func.return_type?.is_pointer &&
 			(!!status.structs.find(
 				(s) => s.name === func.return_type?.name && !s.is_simple_type && !s.is_class,
 			) ||

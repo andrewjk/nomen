@@ -29,6 +29,7 @@ import ReturnNode from "../nodes/ReturnNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_array_values_node from "./build_array_values_node.ts";
 import { emit_nursery_joins_on_return_c } from "./build_async_block_node.ts";
+import { pointer_element_c_type } from "./build_index_node.ts";
 import build_node from "./build_node.ts";
 import { is_owned_heap_temp } from "./build_operation_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
@@ -351,7 +352,11 @@ export default function build_return_node(
 		// Monomorphize generic return types: `List<int>` → `List_int`.
 		const mono_ret_name = mono_type_name(ret_type);
 		const return_struct = status.structs.find((s) => s.name === mono_ret_name && !s.is_simple_type);
-		const is_struct = !!return_struct;
+		// A `ptr T` return is a bare machine word (the pointee's address) —
+		// never a struct value: the element-borrow primitive returns the SLOT
+		// pointer, and a value-copy classification would deref-copy the row
+		// and return a pointer to a dead temp (docs/HANDLERS.md Stage 4).
+		const is_struct = !!return_struct && !ret_type.is_pointer;
 		const return_is_class = !!return_struct?.is_class;
 		const return_trait = status.traits.find((t) => t.name === ret_type.name);
 		// Class returns are pointers; struct returns are by-value. A `view T`
@@ -374,15 +379,21 @@ export default function build_return_node(
 		// generates implicit-conversion warnings.
 		const type_prefix = ret_type.is_array
 			? `struct Array_${ret_type.name}* `
-			: ret_type.is_view
-				? "nomen_view "
-				: is_struct
-					? return_is_class
-						? `struct ${mono_ret_name}* `
-						: `struct ${mono_ret_name} `
-					: return_trait
-						? `struct ${ret_type.name}* `
-						: c_type(ret_type.name || "int");
+			: ret_type.is_pointer
+				? `${
+						status.traits.find((t) => t.name === ret_type.name)
+							? `struct ${ret_type.name}`
+							: pointer_element_c_type(ret_type, status)
+					}* `
+				: ret_type.is_view
+					? "nomen_view "
+					: is_struct
+						? return_is_class
+							? `struct ${mono_ret_name}* `
+							: `struct ${mono_ret_name} `
+						: return_trait
+							? `struct ${ret_type.name}* `
+							: c_type(ret_type.name || "int");
 		// Match/switch/if are statements in C, not expressions — `_return_val
 		// = switch(...)` is invalid. Declare _return_val uninitialised, set
 		// return_assign so each branch's LetNode/ReturnNode assigns to it,
@@ -502,12 +513,16 @@ export default function build_return_node(
 		// result and LEAKS the original. Detect the access kind and skip the
 		// strdup for owned-string-returning method calls.
 		let returns_borrowed_string =
-			ret_type.name === "string" && !ret_type.is_view && node.value.node_type === "access";
+			ret_type.name === "string" &&
+			!ret_type.is_view &&
+			!ret_type.is_pointer &&
+			node.value.node_type === "access";
 		// A bare string literal return (`return "Wizard"`) is not heap-allocated;
 		// the caller's auto_free would crash freeing it. strdup to make it owned.
 		const returns_string_literal =
 			ret_type.name === "string" &&
 			!ret_type.is_view &&
+			!ret_type.is_pointer &&
 			node.value.node_type === "value" &&
 			(node.value as ValueNode).value.length >= 2 &&
 			(node.value as ValueNode).value.startsWith('"') &&
@@ -530,6 +545,7 @@ export default function build_return_node(
 		if (
 			ret_type.name === "string" &&
 			!ret_type.is_view &&
+			!ret_type.is_pointer &&
 			node.value.node_type === "value" &&
 			!returns_string_literal
 		) {

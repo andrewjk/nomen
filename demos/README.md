@@ -48,8 +48,10 @@ Tooltip), and grouping (Separator, GroupBox) — laid out in a
 dispatches each closure as a hidden method with the app's `ref self`
 (docs/HANDLERS.md); composites self-drive and report up — the Pagination
 row enrolls the app via `on_page_change`, and each frame's `tick`
-delivers changes to it. Continuous controls are polled every frame into a
-status line that only rewrites when the string changes. The modals are created up
+delivers changes to it — and rows in lists dispatch the same way through
+element borrows. Continuous
+controls are polled every frame into a status line that only rewrites
+when the string changes. The modals are created up
 front and driven from `frame`: Alert (blocks in NSAlert's own
 modal loop and reports the button pressed), Sheet (its content window is
 its own layout root, hit-tested in sheet coordinates while presented), and

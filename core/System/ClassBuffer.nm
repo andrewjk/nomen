@@ -58,6 +58,30 @@ pub struct ClassBuffer<T> {
 		```
 	}
 
+	// Address of slot `i` (library-only): the ELEMENT BORROW primitive for
+	// trait/class elements — `ref T x = list.at(i)` (docs/HANDLERS.md Stage
+	// 4) reaches here through the List wrapper when the element is a trait
+	// (the items buffer is a ClassBuffer). ClassBuffer slots are 8-byte
+	// handles, so the slot's CONTENT is the instance pointer: return the
+	// stored word, not the slot's address. Library-internal: bounds are the
+	// caller's obligation (the List wrapper constrains them).
+	pub func slot_ptr = (ref self, int i, out ptr T) {
+		```
+		#arch: c
+		// The slot's address: through the alias, reads and writes hit the
+		// stored handle word. void* converts to the caller's `T*` spelling.
+		return (void *)&((unsigned long long *)self->data)[i];
+		```
+		```
+		#arch: aarch64
+		// 8-byte slots: the address of slot i — loading through it yields
+		// the stored handle.
+		ldr x8, [x19, #8]
+		lsl x9, x1, #3
+		add x0, x9, x8
+		```
+	}
+
 	// Generic (T-typed) counterparts of the _int primitives. ClassBuffer only
 	// ever holds 8-byte class pointers (T_SIZE is 8), so these are
 	// behaviorally identical to their _int counterparts — they exist so

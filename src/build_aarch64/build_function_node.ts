@@ -292,9 +292,16 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	// An enum-with-data return also uses sret: a plain x0 return hands the
 	// caller a pointer into THIS function's frame, which dies at `ret` —
 	// any intervening call on the caller's side would clobber the bytes.
+	// An enum-with-data return also uses sret: a plain x0 return hands the
+	// caller a pointer into THIS function's frame, which dies at `ret` —
+	// any intervening call on the caller's side would clobber the bytes.
+	// A `ptr T` return is a bare machine word in x0 — never sret, even when
+	// the pointee T is a struct (the element-borrow primitive,
+	// docs/HANDLERS.md Stage 4, returns exactly this shape).
 	const return_struct =
 		!node.return_type.is_view &&
 		!node.return_type.is_array &&
+		!node.return_type.is_pointer &&
 		(!!status.structs.find(
 			(s) => s.name === node.return_type.name && !s.is_simple_type && !s.is_class,
 		) ||

@@ -1376,6 +1376,45 @@ export default function build_declaration_node(
 		return;
 	}
 
+	// A `ref T` local (a mutable ALIAS): one 8-byte pointer slot holding the
+	// pointee's address — no storage of its own, never auto-freed. The
+	// sanctioned VALUE-STRUCT alias is the ELEMENT BORROW (docs/HANDLERS.md
+	// Stage 4 — `ref T x = list.at(i)`, rewritten to `slot_ptr(i)` by the
+	// checker): the call RETURNS the slot pointer, so it is emitted bare and
+	// stored as the alias value — a struct-typed init would deref-copy *x0,
+	// and the borrow must name the slot, not a snapshot of it. Uses go
+	// through function_ref_params (deref-on-value, bare-on-receiver). The
+	// value-struct alias rides `is_ref_binding` (the checker normalizes the
+	// declaration keyword).
+	const value_struct_ref_alias =
+		node.is_ref_binding === true &&
+		!node.type.is_ref &&
+		!!status.structs.find(
+			(s) => s.name === node.type.name && !s.is_class && !s.is_simple_type && !s.is_generic,
+		);
+	if (node.type.is_ref || value_struct_ref_alias) {
+		const offset = allocate_stack_space(status, 8);
+		status.stack_offsets!.set(node.name, offset);
+		if (node.value) {
+			const init_is_slot_load =
+				node.value.node_type === "access" &&
+				((node.value as AccessNode).access as AccessFunctionCallNode).is_element_slot_load === true;
+			if (node.value.node_type === "value") {
+				emit_var_address(status, "x0", (node.value as ValueNode).value);
+			} else if (init_is_slot_load) {
+				build_node(node.value, status);
+				ensure_newline(status);
+			} else {
+				emit_init_value(node.value, nir_init, status);
+				ensure_newline(status);
+			}
+			emit_var_store(status, "x0", node.name, 8);
+		}
+		if (!status.function_ref_params) status.function_ref_params = new Set();
+		status.function_ref_params.add(node.name);
+		return;
+	}
+
 	if (node.type.is_pointer) {
 		// A `ptr T` local is a single 8-byte word (the address). No auto-free
 		// anchor: unsafe code owns the pointee explicitly.
@@ -2571,9 +2610,21 @@ export default function build_declaration_node(
 				emit_data(status, `${node.name}: .space 8\n`);
 			}
 			if (node.value) {
-				if (node.value.node_type === "value") {
+				// An ELEMENT SLOT LOAD (docs/HANDLERS.md Stage 4 — `ref T x =
+				// list.at(i)`, rewritten to `slot_ptr(i)` by the checker)
+				// RETURNS the slot pointer: it IS the alias value. Emit the
+				// call bare — a struct-typed init would deref-copy *x0, and
+				// the borrow must name the slot, not a snapshot of it.
+				const init_is_slot_load =
+					node.value.node_type === "access" &&
+					((node.value as AccessNode).access as AccessFunctionCallNode).is_element_slot_load ===
+						true;
+				if (node.value.node_type === "value" && !init_is_slot_load) {
 					const src_name = (node.value as ValueNode).value;
 					emit_var_address(status, "x0", src_name);
+				} else if (init_is_slot_load) {
+					build_node(node.value, status);
+					ensure_newline(status);
 				} else {
 					emit_init_value(node.value, nir_init, status);
 					ensure_newline(status);

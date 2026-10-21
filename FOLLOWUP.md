@@ -546,6 +546,15 @@ intent. Between the two, uniform-borrow is the sound model (the strict
 shape is a subset of it: a load that borrows can never be an owning
 copy), and it turns the demo's hit-test loop back into the natural code.
 
+Update 2026-10-21 (HANDLERS.md Stage 4): the ELEMENT BORROW is landed —
+`ref T x = list.at(i)` is the sanctioned interior borrow (rewritten to
+`List.slot_ptr`, policed by the ordinary borrow-invalidation rules), and
+dynamic trees of self-handling rows dispatch through it. What remains
+open here is only the OWNING-COPY read: a plain `var T x = list.at(i)`
+of a `#destroy`-struct element still materializes the scope-exit-destroy
+copy (the double-release above), so shape 1's uniform-borrow
+classification for non-ref loads is still the outstanding fix.
+
 ## TextView.set_placeholder relies on AppKit's private KVC placeholder
 
 `core/System/Controls/TextView.nm`, `set_placeholder`: AppKit has no public
@@ -596,9 +605,9 @@ controls at runtime) wants generation-checked views: reuse the
 view whose owner is gone is detected at use instead of pointing at freed
 state. Split out of the on_click work (2026-10-20).
 
-## Handler desugar: owner-dispatched callbacks (Stages 1–3 landed)
+## Handler desugar: owner-dispatched callbacks (Stages 1–4 landed)
 
-Stages 1–3 are DONE (2026-10-20/21): control-carried
+Stages 1–4 are DONE (2026-10-20/21): control-carried
 `self.<field>.on_<event>(closure)` — the closure hoists to a hidden method
 on the enclosing struct, the site checks into a dispatch arm on a
 synthesized `handle_clicks`, and `Window.run` drains the arms before
@@ -610,13 +619,15 @@ are off polls. Stage 3 adds the upward tier: composite events
 (`on_page_change` + `tick`) call back into the app's synthesized
 `run_handler` through a trait-typed `ref` owner borrow — `ref Trait`
 params now take conformer borrows (the instance's first word is its
-vtable). The window binding list
+vtable). Stage 4 adds dynamic trees: `List<Row>` fields dispatch per
+element through the ELEMENT BORROW (`ref Row row = list.at(i)` — the
+sanctioned interior borrow, lowered to the library's `slot_ptr`; a `ptr T`
+return is a bare word in x0 on both backends). The window binding list
 (`Window.on_click` / `ClickBinding` / `dispatch_clicks`) is retired, and
 `was_clicked` is demoted from the documented pattern (it stays as the
 low-level ring primitive). Full design, checker rules, staging, and the
 alternatives rejected: [`docs/HANDLERS.md`](./docs/HANDLERS.md).
 
-Still open: stage 4 (dynamic
-trees of self-handling controls, `List<MyRow>` with per-row closures) is
-the B5 tranche's motivating GUI case — see also the `List<Own>.at()` entry
-above for the element-dispatch borrow questions B5 must answer.
+Still open: the `List<Own>.at()` uniform-borrow LOAD question (above —
+element BORROWS are landed; the owning-copy `.at()` read remains as
+recorded).

@@ -93,6 +93,13 @@ export default class AccessFunctionCallNode extends BaseNode {
 	 */
 	is_handler_enrollment?: boolean;
 	/**
+	 * Set during checking when a `ref T x = container.at(i)` binding was
+	 * rewritten to the element-borrow primitive (`slot_ptr` — docs/HANDLERS.md
+	 * Stage 4): the call RETURNS the slot pointer, so the ref-binding build
+	 * emits it bare (no `&`).
+	 */
+	is_element_slot_load?: boolean;
+	/**
 	 * RETIRED with the pre-migration launch dispatch: `.start()`/`.detach()`
 	 * are ordinary methods on the library `Thread` class now (docs/ASYNC.md).
 	 * The flags remain only because monomorphized clones can carry them from

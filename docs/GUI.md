@@ -637,6 +637,26 @@ callback is one vtable hop into it — the borrow flows down per call,
 nothing is stored, nothing outlives the tick. For apps that don't need the
 event, plain value polling (`self.pager.page`) stays the tier-1 form.
 
+### Dynamic trees: `List<MyRow>` self-handling rows
+
+Rows in a list dispatch like field-hosted composites. A `List<MyRow>` field
+on the app joins the dispatch: each frame, the app's `handle_clicks` walks
+the list and runs every row's own arms — in place, through the ELEMENT
+BORROW:
+
+```
+ref MyRow row = self.rows.at(i)
+row.handle_clicks(ref win)
+```
+
+The element borrow binds the SLOT (lowered to the list's `slot_ptr`), so a
+row's handler mutations persist across frames, and app code can borrow a
+row directly (`ref MyRow row = self.rows.at(0); row.poke()`). The borrow
+is policed by the ordinary rules: any `ref self` call on the list (push /
+pop / set — anything that may resize or displace the slab) invalidates it,
+and it dies with its binding. A `ptr T` return is a bare machine word on
+both backends, so the lowering is a pointer pass-through.
+
 ## Invalidation & incremental relayout
 
 Each control has a `dirty` flag and a reference to its parent (via `parent_of`

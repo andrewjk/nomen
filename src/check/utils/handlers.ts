@@ -2,8 +2,10 @@ import add_error from "../../add_error.ts";
 import AccessFieldNode from "../../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../../nodes/AccessNode.ts";
+import AssignmentNode from "../../nodes/AssignmentNode.ts";
 import type BaseNode from "../../nodes/BaseNode.ts";
 import BranchNode from "../../nodes/BranchNode.ts";
+import DeclarationNode from "../../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../../nodes/FunctionCallNode.ts";
 import FunctionNode from "../../nodes/FunctionNode.ts";
 import IfElseNode from "../../nodes/IfElseNode.ts";
@@ -12,6 +14,7 @@ import ParameterNode from "../../nodes/ParameterNode.ts";
 import StructNode from "../../nodes/StructNode.ts";
 import Type from "../../nodes/Type.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
+import WhileLoopNode from "../../nodes/WhileLoopNode.ts";
 import { check_access_function_node } from "../check_access_node.ts";
 import check_function_node from "../check_function_node.ts";
 import type CheckStatus from "../CheckStatus.ts";
@@ -446,11 +449,13 @@ export function finalize_handler_hosts(status: CheckStatus): void {
 		stack.add(s);
 		let result = false;
 		for (const field of s.fields) {
-			const t = forwardable_field_type(field, status);
-			if (t && reaches_host(t, stack)) {
-				result = true;
-				break;
+			for (const t of reachable_field_targets(field, status)) {
+				if (reaches_host(t, stack)) {
+					result = true;
+					break;
+				}
 			}
+			if (result) break;
 		}
 		stack.delete(s);
 		reaches_memo.set(s, result);
@@ -458,11 +463,22 @@ export function finalize_handler_hosts(status: CheckStatus): void {
 	};
 
 	for (const s of status.structs) {
-		const forwarding = s.fields.filter((f) => {
+		const forwards: BaseNode[] = [];
+		for (const f of s.fields) {
 			const t = forwardable_field_type(f, status);
-			return !!t && reaches_host(t, new Set());
-		});
-		if (forwarding.length === 0) continue;
+			if (t && reaches_host(t, new Set())) forwards.push(forward_statement(s, f.name));
+		}
+		// Dynamic trees (Stage 4): a host-typed LIST field dispatches per
+		// element — the element borrow (`ref Row row = self.rows.at(i)`)
+		// binds the slot, so the row's own arms run in place and their state
+		// persists. Same children-first position as the static hops.
+		for (const f of s.fields) {
+			const elem = forwardable_list_element(f, status);
+			if (elem && reaches_host(elem, new Set())) {
+				forwards.push(...list_forward_loop(s, f.name, elem, status));
+			}
+		}
+		if (forwards.length === 0) continue;
 		// Who gets a dispatch body: App conformers (the run root drains them),
 		// hosts (their arms), and structs an App reaches that lead further
 		// down to a host (pure forwarders). Anything else is a dead chain.
@@ -484,7 +500,7 @@ export function finalize_handler_hosts(status: CheckStatus): void {
 			to_check.push(handle_clicks);
 		}
 		// Children-first: forwarding splices ahead of the host's own arms.
-		state.handle_clicks.statements.unshift(...forwarding.map((f) => forward_statement(s, f.name)));
+		state.handle_clicks.statements.unshift(...forwards);
 	}
 
 	for (const hc of to_check) {
@@ -527,6 +543,21 @@ function forwardable_field_type(
 	return s;
 }
 
+/**
+ * The struct types a field makes REACHABLE for host-dispatch purposes: the
+ * direct struct field target, plus (Stage 4) the element struct of a
+ * `List<Row>` field — dynamic trees are dispatchable, so a composite type
+ * hosted in a list is owned by the app exactly like a direct field.
+ */
+function reachable_field_targets(field: { type: Type }, status: CheckStatus): StructNode[] {
+	const targets: StructNode[] = [];
+	const direct = forwardable_field_type(field, status);
+	if (direct) targets.push(direct);
+	const elem = forwardable_list_element(field, status);
+	if (elem) targets.push(elem);
+	return targets;
+}
+
 /** Whether some App conformer reaches `target` down forwardable field paths. */
 function reachable_from_an_app(target: StructNode, status: CheckStatus): boolean {
 	for (const s of status.structs) {
@@ -546,8 +577,9 @@ function path_exists(
 	if (stack.has(s)) return false;
 	stack.add(s);
 	for (const field of s.fields) {
-		const t = forwardable_field_type(field, status);
-		if (t && path_exists(t, target, status, stack)) return true;
+		for (const t of reachable_field_targets(field, status)) {
+			if (path_exists(t, target, status, stack)) return true;
+		}
 	}
 	stack.delete(s);
 	return false;
@@ -566,6 +598,116 @@ function forward_statement(host: StructNode, field: string): AccessNode {
 	dispatch.ref_param_indices = [0];
 	dispatch.params = [new ValueNode(-1, "win")];
 	return new AccessNode(-1, receiver, dispatch);
+}
+
+/**
+ * The element struct a `List<Row>` field dispatches to, when the field is a
+ * forwardable dynamic tree (either spelling of the mono). Containers of
+ * trait/erased elements stay B5 territory — concrete rows only.
+ */
+function forwardable_list_element(
+	field: { type: Type },
+	status: CheckStatus,
+): StructNode | undefined {
+	const t = field.type;
+	if (t.is_ref || t.is_view || t.is_array || t.is_nullable) return undefined;
+	let elem_name: string | undefined;
+	if (t.name === "List" && t.type_args?.length === 1) {
+		elem_name = t.type_args[0].name;
+	} else if (t.name.startsWith("List_")) {
+		const mono = status.structs.find((s) => s.name === t.name && s.source_type_args?.length);
+		elem_name = mono?.source_type_args?.[0]?.name;
+	}
+	if (!elem_name) return undefined;
+	// The element must be a concrete registered struct (a row composite —
+	// never a trait handle or a primitive).
+	return status.structs.find((s) => s.name === elem_name && !s.is_generic);
+}
+
+/**
+ * The dynamic-tree dispatch body for one `List<Row>` field (docs/HANDLERS.md
+ * Stage 4):
+ *
+ * ```
+ * var int _rows_i_N = 0
+ * while _rows_i_N < self.rows.length; _rows_i_N += 1 {
+ * 	ref Row _row = self.rows.at(_rows_i_N)
+ * 	_row.handle_clicks(ref win)
+ * }
+ * ```
+ *
+ * The element borrow binds the SLOT (the checker rewrites `.at` to
+ * `slot_ptr`), so each row's own arms run in place — state persists across
+ * frames. The bounded-loop condition discharges `.at`'s bounds for the
+ * borrow, and any list mutation (`ref self` on the list) invalidates the
+ * borrow through the ordinary rules.
+ */
+function list_forward_loop(
+	host: StructNode,
+	field: string,
+	elem: StructNode,
+	status: CheckStatus,
+): BaseNode[] {
+	const start = -1;
+	const index = `_${field}_i_${status.var_name_counter.value++}`;
+	const index_value = (): ValueNode => new ValueNode(start, index, new Type("int"));
+	const list_access = (): AccessNode =>
+		new AccessNode(
+			start,
+			new ValueNode(start, "self", new Type(host.name)),
+			new AccessFieldNode(start, field),
+		);
+
+	const declaration = new DeclarationNode(
+		start,
+		"private",
+		"var",
+		index,
+		new Type("int"),
+		new ValueNode(start, "0", new Type("int")),
+	);
+
+	const element_borrow = new DeclarationNode(
+		start,
+		"private",
+		"ref",
+		`_${field}_row`,
+		new Type(elem.name),
+		new AccessNode(
+			start,
+			list_access(),
+			new AccessFunctionCallNode(start, "at", new Type(""), [index_value()]),
+		),
+	);
+	// Ref-ness rides on `is_ref_binding` (the checker normalizes the
+	// declaration keyword to `var` storage); the builds route the
+	// value-struct alias through the element-borrow lowering on it.
+	element_borrow.is_ref_binding = true;
+
+	const dispatch = new AccessFunctionCallNode(start, "handle_clicks");
+	// `ref win` — the borrowed argument needs the same explicit `ref` a source
+	// call site writes (ref_param_indices marks the keyword positions).
+	dispatch.ref_param_indices = [0];
+	dispatch.params = [new ValueNode(start, "win")];
+	const call = new AccessNode(
+		start,
+		new ValueNode(start, `_${field}_row`, new Type(elem.name)),
+		dispatch,
+	);
+
+	const condition = new OperationNode(
+		start,
+		"<",
+		index_value(),
+		new AccessNode(start, list_access(), new AccessFieldNode(start, "length")),
+	);
+	const update = new AssignmentNode(
+		start,
+		index_value(),
+		new ValueNode(start, "1", new Type("int")),
+		"+=",
+	);
+	return [declaration, new WhileLoopNode(start, condition, [element_borrow, call], update)];
 }
 
 /** `ref self` — the hoisted method's receiver (the host instance). */
