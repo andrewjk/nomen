@@ -570,7 +570,7 @@ pub func start = (ref self, ref Window win) {
 
 The closure is checker-interpreted (docs/HANDLERS.md): its body is hoisted
 into a hidden method on the app, the registration site emits no code, and
-the app's synthesized `handle_clicks` drains the registered controls each
+the app's synthesized `handle_events` drains the registered controls each
 frame before `frame` — the run loop owns the borrow, so the handler reads
 and mutates app state (`self.alert`, `self.status`) with no captures and no
 twins. Handlers must register from a `self`-rooted field (the dispatch arm
@@ -662,13 +662,13 @@ state.
 ### Dynamic trees: `List<MyRow>` self-handling rows
 
 Rows in a list dispatch like field-hosted composites. A `List<MyRow>` field
-on the app joins the dispatch: each frame, the app's `handle_clicks` walks
+on the app joins the dispatch: each frame, the app's `handle_events` walks
 the list and runs every row's own arms — in place, through the ELEMENT
 BORROW:
 
 ```
 ref MyRow row = self.rows.at(i)
-row.handle_clicks(ref win)
+row.handle_events(ref win)
 ```
 
 The element borrow binds the SLOT (lowered to the list's `slot_ptr`), so a

@@ -178,7 +178,7 @@ pub func main = (Init init) {
 	});
 
 	// Forwarding is transitive: App -> Middle (no handlers of its own) ->
-	// Leaf (registers). Middle synthesizes a pure-forwarding handle_clicks.
+	// Leaf (registers). Middle synthesizes a pure-forwarding handle_events.
 	test("transitive host chains forward through intermediate structs", () => {
 		const input = `
 import System
@@ -412,7 +412,7 @@ pub func main = (Init init) {
 		]);
 	});
 
-	test("handle_clicks is reserved on handler hosts", () => {
+	test("handle_events is reserved on handler hosts", () => {
 		const input = `
 import System
 import System::Controls
@@ -424,7 +424,7 @@ mv struct ClickApp : App {
 		self.btn = Button(window, "Go")
 	}
 
-	pub func handle_clicks = (ref self, ref Window win) {
+	pub func handle_events = (ref self, ref Window win) {
 	}
 
 	pub func start = (ref self, ref Window win) {
@@ -439,7 +439,7 @@ pub func main = (Init init) {
 }
 `;
 		expect(parse(input, system).errors.map((e) => e.message)).toEqual([
-			"'ClickApp' already declares handle_clicks — the .on_click desugar synthesizes it (the name is reserved on handler hosts)",
+			"'ClickApp' already declares handle_events — the .on_click desugar synthesizes it (the name is reserved on handler hosts)",
 		]);
 	});
 

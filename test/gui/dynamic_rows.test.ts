@@ -4,7 +4,7 @@ import build_and_check_output from "../build_and_check_output";
 
 // Dynamic trees of self-handling rows (docs/HANDLERS.md Stage 4): a
 // `List<MyRow>` field on the app is a DISPATCHABLE host collection — the
-// synthesized `handle_clicks` gains a dispatch loop whose ELEMENT BORROW
+// synthesized `handle_events` gains a dispatch loop whose ELEMENT BORROW
 // (`ref MyRow row = self.rows.at(i)`, lowered to the list's `slot_ptr`)
 // binds the slot itself, so each row's own arms run IN PLACE and their
 // state persists across frames. No per-row static field paths, no
@@ -114,7 +114,7 @@ mv struct RowsApp : App {
 			self.poke(1)
 		}
 		if self.frames == 4 {
-			// handle_clicks ran before this frame: the dispatch loop drained
+			// handle_events ran before this frame: the dispatch loop drained
 			// each row's arms IN PLACE — both counters read back through the
 			// list storage (the element borrow again for the reads).
 			var string text = ""

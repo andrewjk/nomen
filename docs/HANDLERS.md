@@ -13,14 +13,14 @@ and a demo experiment that hit the wall this design removes.
 
 **Stages 1–4 are implemented, plus the standard control-event family (2026-10-20/22).** Stage 1 (root desugar):
 `.on_<event>(closure)` recognition, the hoist into hidden `#on_click_N`
-methods, arm synthesis onto a default-empty `App.handle_clicks` (trait
-default), `Window.run` routing through `app.handle_clicks(ref win)`, and the
+methods, arm synthesis onto a default-empty `App.handle_events` (trait
+default), `Window.run` routing through `app.handle_events(ref win)`, and the
 no-parameters / no-upvalue / receiver-path checker rules; the window binding
 list (`Window.on_click` / `ClickBinding` / `dispatch_clicks`) is retired,
 and `was_clicked` is demoted from the documented pattern (it stays as the
 low-level ring primitive). Stage 2 (host forwarding): non-root hosts —
 structs with registrations the app owns, transitively — synthesize
-`handle_clicks` too, pure-forwarding intermediates included; dispatch is
+`handle_events` too, pure-forwarding intermediates included; dispatch is
 children-first, then own arms; the reachability rule admits any host on a
 static field path from an App conformer (library composites are trusted and
 exempt). `Pagination` internals are migrated off polls (the row registers
@@ -37,7 +37,7 @@ handler onto the app, synthesizes the `run_handler` override the composite's
 to the enrollment call `receiver.on_<event>(N)`. `Pagination` grew the
 first event API (`on_page_change` / `tick`) and the gallery consumes it.
 Stage 4 (dynamic trees): a `List<Row>` field on the app is a DISPATCHABLE
-host collection — the synthesized `handle_clicks` gains a dispatch loop
+host collection — the synthesized `handle_events` gains a dispatch loop
 whose ELEMENT BORROW binds the slot, so each row's own arms run in place
 and their state persists. The enabling language piece: `ref T x =
 container.at(i)` is the sanctioned interior borrow — the site rewrites to
@@ -55,12 +55,14 @@ dialog buttons, and pagination — `demos_check.test.ts` keeps them green).
 
 The control-event family grew past clicks (2026-10-22): `on_focus` /
 `on_blur` drain a per-window first-responder snapshot (polled once per
-frame by the synthesized `handle_focus`; a handoff fires the old control's
-blur and the new control's focus in the same frame, and the field editor
-maps back to the editing control), and `on_input` fires per text change
-(per-handle last-seen-text compares over the live `stringValue`). Each
-event is one row in the desugar's `CONTROL_EVENTS` table (drain primitive,
-optional arming, dispatcher) plus its library plumbing — the route is
+frame by the app's pump; a handoff fires the old control's blur and the
+new control's focus in the same frame, and the field editor maps back to
+the editing control), and `on_input` fires per text change (per-handle
+last-seen-text compares over the live `stringValue`). All control events
+dispatch through ONE App method (`handle_events`) — new events are new
+table rows in the desugar plus their drain primitive; the App contract is
+fixed. Each event is one row in the desugar's `CONTROL_EVENTS` table (drain
+primitive, optional arming) plus its library plumbing — the route is
 untouched.
 
 Still to land: the deprecation-cycle doc sweep (the poll examples leave
@@ -175,20 +177,20 @@ A struct with registrations is a **handler host**. The checker synthesizes on
 it:
 
 ```
-func handle_clicks = (ref self, ref Window win) {
+func handle_events = (ref self, ref Window win) {
 	// first call only: arm registered non-button views
 	//   (nomen_window_clicks_init per arm — buttons already arm
 	//   target/action in their constructors)
 	// drain own arms, in registration order:
 	if nomen_control_take_click(self.add_btn.handle) { #on_click_1(ref self, ref win) }
 	// forward to child hosts, depth-first:
-	self.some_field.handle_clicks(ref win)
+	self.some_field.handle_events(ref win)
 }
 ```
 
-`App` grows a default-empty trait method `handle_clicks` (trait defaults have
+`App` grows a default-empty trait method `handle_events` (trait defaults have
 precedent: `Enumerable.length`); a conformer with registrations gets the
-synthesized override. `Window.run` calls `app.handle_clicks(ref self)` each
+synthesized override. `Window.run` calls `app.handle_events(ref self)` each
 frame before `frame` — the same slot `dispatch_clicks` occupies today. Trait
 calls through `mv App` parameters are existing machinery (the `Enumerable`
 tier): **zero backend changes**.
@@ -351,7 +353,7 @@ FOLLOWUP.md, and is the motivating GUI case to add to the B5 entry.
 
 - **Stage 1 — root desugar.** Checker: `.on_<event>(closure)` recognition,
   hoist, arms, no-upvalue and receiver-path rules, host reachability. App
-  trait default `handle_clicks`; `Window.run` routing; retire the window
+  trait default `handle_events`; `Window.run` routing; retire the window
   binding list; demote `was_clicked` from the documented pattern. Tests: port
   `test/gui/on_click.test.ts` (the todo Add flow becomes the runtime test —
   the snippet that failed above, working); error tests for each checker rule.
@@ -379,7 +381,7 @@ pair loses its twins).
   hoisted signature generalizes to `(ref self, ref Window win, <payload>)` —
   stage 3+.
 - **Manual loops** (headless tests drive `process_events` directly): expose
-  the host's `handle_clicks` for tests, or keep a thin window-level helper.
+  the host's pump for tests, or keep a thin window-level helper.
 - **Multiple windows**: one run root per window; hosts are per-root. An app
   hosting two windows forwards from whichever root it registers with —
   mechanical, but the doc follows GUI.md's single-window model until needed.

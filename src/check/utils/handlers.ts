@@ -30,17 +30,17 @@ import { is_box_type } from "./box.ts";
  * hidden method on the enclosing struct — `#on_click_N = (ref self, ref
  * Window win) { body }` — an ordinary method both backends already lower, and
  * the registration checks into a dispatch ARM appended to the host's
- * synthesized `handle_clicks` method:
+ * synthesized `handle_events` method:
  *
  * ```
- * func handle_clicks = (ref self, ref Window win) {
+ * func handle_events = (ref self, ref Window win) {
  * 	nomen_window_clicks_init(self.<field>.handle)
  * 	if nomen_control_take_click(self.<field>.handle) { self.#on_click_N(ref win) }
  * }
  * ```
  *
- * `App` declares a default-empty `handle_clicks`; `Window.run` calls
- * `app.handle_clicks(ref win)` before `frame`, so the borrow of `self` is
+ * `App` declares a default-empty `handle_events`; `Window.run` calls
+ * `app.handle_events(ref win)` before `frame`, so the borrow of `self` is
  * taken by the dispatcher at dispatch time — the closure captures nothing
  * (HANDLERS.md, "The insight"). The arm's handle expression re-evaluates the
  * remembered field path against final fields each frame; nothing is captured,
@@ -61,70 +61,48 @@ const HANDLER_EVENT = /^on_[a-z][a-z0-9_]*$/;
 
 /**
  * The control-carried event table: event name → the library drain primitive
- * the synthesized arm polls, the optional per-arm ARMING prologue, and the
- * per-event dispatcher the arm belongs to. Focus and blur share a
- * dispatcher (one first-responder snapshot poll frames both edges —
- * docs/HANDLERS.md, "Registered control events").
+ * the synthesized arm polls and the optional per-arm ARMING prologue. Every
+ * arm dispatches through the host's single `handle_events` pump — new events
+ * are new rows here plus their drain primitive; the App contract and the
+ * route never change.
  */
 interface ControlEventConfig {
 	drain: string;
 	arm?: string;
-	dispatcher: string;
-	/** Once-per-dispatcher prologue: refreshes the event source snapshot. */
-	prologue?: string;
 }
 
 const CONTROL_EVENTS: Record<string, ControlEventConfig> = {
-	on_click: {
-		drain: "nomen_control_take_click",
-		arm: "nomen_window_clicks_init",
-		dispatcher: "handle_clicks",
-	},
-	on_focus: {
-		drain: "nomen_control_take_focus",
-		dispatcher: "handle_focus",
-		prologue: "nomen_window_focus_poll",
-	},
-	on_blur: {
-		drain: "nomen_control_take_blur",
-		dispatcher: "handle_focus",
-		prologue: "nomen_window_focus_poll",
-	},
-	on_input: {
-		drain: "nomen_control_take_input",
-		dispatcher: "handle_input",
-	},
+	on_click: { drain: "nomen_control_take_click", arm: "nomen_window_clicks_init" },
+	on_focus: { drain: "nomen_control_take_focus" },
+	on_blur: { drain: "nomen_control_take_blur" },
+	on_input: { drain: "nomen_control_take_input" },
 };
 
-/** The dispatchers awaiting their final check, per compile root. */
-const pending_dispatchers = new Map<BaseNode, { host: StructNode; dispatcher: string }[]>();
+/** The one pump slot's name on handler hosts. */
+const PUMP_NAME = "handle_events";
 
+/** The pumps awaiting their final check, per compile root. */
 interface DispatcherState {
-	/** The synthesized trait override, appended to the host's functions. */
+	/** The synthesized pump, appended to the host's functions. */
 	func: FunctionNode;
 	/** Per-event hidden-method counters (registration order drives arms). */
 	next_index: Map<string, number>;
+	/** True once a focus/blur arm lands here (the pump needs the snapshot poll). */
+	has_focus_arms?: boolean;
 }
 
 /**
- * Per-check synthesis state, keyed by the host struct and dispatcher name.
+ * Per-check synthesis state, keyed by the host struct (one pump per host).
  * Module-level (not on CheckStatus) because `clone_status` copies a fixed
  * field list — state recorded inside a branch clone (a registration nested
  * in an `if`) must survive the clone's discard. The per-check entry in
- * `pending_hosts` dies with the check that created it: `finalize` deletes by
+ * `pending_pumps` dies with the check that created it: `finalize` deletes by
  * root identity, and an aborted compile (parse errors, no check pass) never
  * creates an entry.
  */
-const dispatcher_states = new WeakMap<StructNode, Map<string, DispatcherState>>();
+const dispatcher_states = new WeakMap<StructNode, DispatcherState>();
 
-const host_states = new WeakMap<StructNode, Map<string, DispatcherState>>();
-
-/**
- * Hosts awaiting their `handle_clicks` check, keyed by the compile's ROOT
- * node — `status.stack[0]` is the same shared object from every status clone
- * (clone_status shares the stack by reference), so a registration found
- * inside a branch clone still registers under the compile it belongs to.
- */
+/** Hosts whose pump awaits its final check, per compile root. */
 const pending_hosts = new Map<BaseNode, StructNode[]>();
 
 interface RunHandlerState {
@@ -269,51 +247,34 @@ function try_check_control_event(
 		return fail(`handlers dispatch from the run root — '${host.name}' is not owned by the app`);
 	}
 
-	// The dispatcher (per host + event family): get or synthesize. A
-	// USER-declared same-named method would collide with the synthesized
-	// override (the name is reserved on hosts with registrations). Past this
-	// point a same-named method is our own synthesis from an earlier
-	// registration.
-	let dispatchers = dispatcher_states.get(host);
-	if (!dispatchers) {
-		dispatchers = new Map();
-		dispatcher_states.set(host, dispatchers);
-	}
-	let state = dispatchers.get(cfg.dispatcher);
+	// The pump (per host): get or synthesize. A USER-declared same-named
+	// method would collide with the synthesized pump (the name is reserved on
+	// hosts with registrations). Past this point a same-named method is our
+	// own synthesis from an earlier registration.
+	let state = dispatcher_states.get(host);
 	if (!state) {
-		if (host.functions.some((f) => f.name === cfg.dispatcher)) {
+		if (host.functions.some((f) => f.name === PUMP_NAME)) {
 			return fail(
-				`'${host.name}' already declares ${cfg.dispatcher} — the .${node.name} desugar synthesizes it (the name is reserved on handler hosts)`,
+				`'${host.name}' already declares ${PUMP_NAME} — the .${node.name} desugar synthesizes it (the name is reserved on handler hosts)`,
 			);
 		}
-		const func = new FunctionNode(node.start, "pub", cfg.dispatcher, new Type(""), [
+		const func = new FunctionNode(node.start, "pub", PUMP_NAME, new Type(""), [
 			ref_self_param(host),
 			win_param(),
 		]);
 		host.functions.push(func);
 		state = { func, next_index: new Map() };
-		dispatchers.set(cfg.dispatcher, state);
+		dispatcher_states.set(host, state);
 		const root = status.stack[0];
-		if (cfg.dispatcher === "handle_clicks") {
-			let hosts = pending_hosts.get(root);
-			if (!hosts) {
-				hosts = [];
-				pending_hosts.set(root, hosts);
-			}
-			hosts.push(host);
-		} else {
-			let entries = pending_dispatchers.get(root);
-			if (!entries) {
-				entries = [];
-				pending_dispatchers.set(root, entries);
-			}
-			entries.push({ host, dispatcher: cfg.dispatcher });
+		let hosts = pending_hosts.get(root);
+		if (!hosts) {
+			hosts = [];
+			pending_hosts.set(root, hosts);
 		}
-		if (cfg.prologue) {
-			// Once-per-frame event-source refresh, emitted ahead of the arms
-			// (the focus snapshot frames every focus/blur edge in the frame).
-			state.func.statements.push(prologue_statement(cfg.prologue, node.start));
-		}
+		hosts.push(host);
+	}
+	if (node.name === "on_focus" || node.name === "on_blur") {
+		state.has_focus_arms = true;
 	}
 	let index_state = state.next_index.get(node.name);
 	if (index_state === undefined) {
@@ -369,8 +330,10 @@ function try_check_control_event(
 }
 
 /**
- * The once-per-dispatcher event-source refresh:
- * `nomen_window_focus_poll(win.handle)` for the focus family.
+ * The once-per-frame event-source refresh:
+ * `nomen_window_focus_poll(win.handle)` — spliced into the run root's pump
+ * when any focus/blur arm exists in its tree (the poll frames every
+ * focus/blur edge; child pumps read the same snapshot).
  */
 function prologue_statement(primitive: string, start: number): FunctionCallNode {
 	const handle = new AccessNode(
@@ -540,13 +503,13 @@ function up_call_arm(host: StructNode, event: string, id: number, start: number)
 }
 
 /**
- * Check every host's synthesized `handle_clicks`, after first synthesizing
+ * Check every host's synthesized `handle_events`, after first synthesizing
  * the FORWARDING wiring (Stage 2, HANDLERS.md "Handler hosts beyond the
  * root"): a struct with registrations is a handler host — not just the App.
  * Dispatch reaches non-root hosts down static field paths: every struct on a
- * path from an App conformer to a host gets a `handle_clicks` (its own arms
+ * path from an App conformer to a host gets a `handle_events` (its own arms
  * if it registers, pure forwarding if it doesn't) that forwards to each
- * host-reaching field — `self.<field>.handle_clicks(ref win)` — direct
+ * host-reaching field — `self.<field>.handle_events(ref win)` — direct
  * calls, no trait objects. Dispatch order is children-first, then own arms
  * (most specific first, HANDLERS.md "user-authored composites").
  *
@@ -560,14 +523,12 @@ export function finalize_handler_hosts(status: CheckStatus): void {
 	const root = status.stack[0];
 	const hosts = pending_hosts.get(root);
 	const up_call_apps = pending_run_handlers.get(root);
-	const event_dispatchers = pending_dispatchers.get(root);
-	if (!hosts && !up_call_apps && !event_dispatchers) return;
+	if (!hosts && !up_call_apps) return;
 	pending_hosts.delete(root);
-	pending_dispatchers.delete(root);
 	const host_set = new Set<StructNode>(hosts ?? []);
 	const to_check: FunctionNode[] = [];
 	for (const host of hosts ?? []) {
-		const state = host_states.get(host)?.get("handle_clicks");
+		const state = dispatcher_states.get(host);
 		if (state) to_check.push(state.func);
 	}
 
@@ -617,21 +578,19 @@ export function finalize_handler_hosts(status: CheckStatus): void {
 		const is_app = s.traits.includes("App");
 		const is_host = host_set.has(s);
 		if (!is_app && !is_host && !reachable_from_an_app(s, status)) continue;
-		let state = host_states.get(s)?.get("handle_clicks");
+		let state = dispatcher_states.get(s);
 		if (!state) {
 			// A pure forwarder (or an App conformer whose only handlers live
-			// in its composites). A user-declared handle_clicks is left alone.
-			if (s.functions.some((f) => f.name === "handle_clicks")) continue;
-			const handle_clicks = new FunctionNode(-1, "pub", "handle_clicks", new Type(""), [
+			// in its composites). A user-declared pump is left alone.
+			if (s.functions.some((f) => f.name === PUMP_NAME)) continue;
+			const pump = new FunctionNode(-1, "pub", PUMP_NAME, new Type(""), [
 				ref_self_param(s),
 				win_param(),
 			]);
-			s.functions.push(handle_clicks);
-			state = { func: handle_clicks, next_index: new Map() };
-			const click_map = host_states.get(s) ?? new Map<string, DispatcherState>();
-			click_map.set("handle_clicks", state);
-			host_states.set(s, click_map);
-			to_check.push(handle_clicks);
+			s.functions.push(pump);
+			state = { func: pump, next_index: new Map() };
+			dispatcher_states.set(s, state);
+			to_check.push(pump);
 		}
 		// Children-first: forwarding splices ahead of the host's own arms.
 		state.func.statements.unshift(...forwards);
@@ -653,15 +612,60 @@ export function finalize_handler_hosts(status: CheckStatus): void {
 		}
 	}
 
-	// The control-event dispatchers (focus/blur/input): check their bodies —
-	// the prologue and arms are fully synthesized, and the App trait declares
-	// the defaults they override.
-	if (event_dispatchers) {
-		pending_dispatchers.delete(root);
-		for (const { host, dispatcher } of event_dispatchers) {
-			const state = dispatcher_states.get(host)?.get(dispatcher);
-			if (!state) continue;
-			check_function_node(state.func, status);
+	// The FOCUS SNAPSHOT poll (docs/HANDLERS.md, "Registered control
+	// events"): when any pump in the tree carries focus/blur arms, the RUN
+	// ROOT's pump refreshes the snapshot once per frame, ahead of the
+	// children-first forwarding — every focus/blur arm (here or in a child)
+	// then compares the same fresh snapshot. Exactly one poll per frame, so
+	// edges are visible exactly once.
+	let focus_arms_root: StructNode | undefined;
+	for (const host of hosts ?? []) {
+		if (dispatcher_states.get(host)?.has_focus_arms) {
+			focus_arms_root = host;
+			break;
+		}
+	}
+	if (focus_arms_root) {
+		// The run root: an App conformer that reaches (or is) the focus-armed
+		// pump. Reachability was checked at registration, so this finds one.
+		let app_root: StructNode | undefined;
+		if (focus_arms_root.traits.includes("App")) {
+			app_root = focus_arms_root;
+		} else {
+			for (const s of status.structs) {
+				if (!s.traits.includes("App")) continue;
+				if (path_exists(s, focus_arms_root, status, new Set())) {
+					app_root = s;
+					break;
+				}
+			}
+		}
+		if (app_root) {
+			let state = dispatcher_states.get(app_root);
+			if (!state) {
+				// The root's own pump: forwarder synthesis above created it
+				// when the root reached the host, but create it defensively —
+				// the poll must live here.
+				if (app_root.functions.some((f) => f.name === PUMP_NAME)) {
+					add_error(
+						status,
+						`'${app_root.name}' already declares ${PUMP_NAME} — the desugar needs it for the focus snapshot poll`,
+						app_root.start,
+					);
+				} else {
+					const pump = new FunctionNode(-1, "pub", PUMP_NAME, new Type(""), [
+						ref_self_param(app_root),
+						win_param(),
+					]);
+					app_root.functions.push(pump);
+					state = { func: pump, next_index: new Map() };
+					dispatcher_states.set(app_root, state);
+					to_check.push(pump);
+				}
+			}
+			if (state) {
+				state.func.statements.unshift(prologue_statement("nomen_window_focus_poll", -1));
+			}
 		}
 	}
 }
@@ -731,14 +735,14 @@ function path_exists(
 	return false;
 }
 
-/** `self.<field>.handle_clicks(ref win)` — one hop down the ownership path. */
+/** `self.<field>.handle_events(ref win)` — one hop down the ownership path. */
 function forward_statement(host: StructNode, field: string): AccessNode {
 	const receiver = new AccessNode(
 		-1,
 		new ValueNode(-1, "self", new Type(host.name)),
 		new AccessFieldNode(-1, field),
 	);
-	const dispatch = new AccessFunctionCallNode(-1, "handle_clicks");
+	const dispatch = new AccessFunctionCallNode(-1, "handle_events");
 	// `ref win` — the borrowed argument needs the same explicit `ref` a source
 	// call site writes (ref_param_indices marks the keyword positions).
 	dispatch.ref_param_indices = [0];
@@ -778,7 +782,7 @@ function forwardable_list_element(
  * var int _rows_i_N = 0
  * while _rows_i_N < self.rows.length; _rows_i_N += 1 {
  * 	ref Row _row = self.rows.at(_rows_i_N)
- * 	_row.handle_clicks(ref win)
+ * 	_row.handle_events(ref win)
  * }
  * ```
  *
@@ -830,7 +834,7 @@ function list_forward_loop(
 	// value-struct alias through the element-borrow lowering on it.
 	element_borrow.is_ref_binding = true;
 
-	const dispatch = new AccessFunctionCallNode(start, "handle_clicks");
+	const dispatch = new AccessFunctionCallNode(start, "handle_events");
 	// `ref win` — the borrowed argument needs the same explicit `ref` a source
 	// call site writes (ref_param_indices marks the keyword positions).
 	dispatch.ref_param_indices = [0];

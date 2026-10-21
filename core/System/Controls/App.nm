@@ -7,7 +7,7 @@
  * and the WINDOW owns everything else — the event pump, the autorelease
  * pool, resize detection, and the relayout of the hosted content (the root
  * `Container` from `win.set_content` plus every `Scrollable.set_content`
- * document). The app implements five hooks:
+ * document). The app implements four hooks:
  *
  * - `start` — called once, after the app has been moved into its final
  *   storage but before the window is shown. Register the layout roots here
@@ -19,19 +19,18 @@
  *   `resized` + the new size when the window's content rect changed.
  *   Per-frame value polling (slider → progress mirrors) and click
  *   hit-testing (`Container.contains`) live here.
- * - `handle_clicks` — called every frame before `frame`; drains registered
- *   click handlers. Declared here as a default-empty method; the
- *   `.on_<event>(closure)` desugar (docs/HANDLERS.md) synthesizes the
- *   override on conformers with registrations, so user code only writes
- *   the registration and never sees the machinery.
+ * - `handle_events` — the per-frame event pump: drains every registered
+ *   control event (clicks, focus/blur, text input). Declared here as a
+ *   default-empty method; the `.on_<event>(closure)` desugars
+ *   (docs/HANDLERS.md) synthesize the override on conformers with
+ *   registrations, so user code only writes the registration and never
+ *   sees the machinery. New control events extend the pump's arms — the
+ *   App contract is fixed.
  * - `run_handler` — the up-call protocol (Stage 3): a composite with an
  *   enrolled event calls back `owner.run_handler(id, ref win)` from its
  *   `tick` (the app forwards itself down once per tick). Default-empty;
  *   the desugar synthesizes the override dispatching ids to the app's
  *   `.on_<event>` handlers.
- * - `handle_focus` / `handle_input` — per-frame focus/blur and text-input
- *   dispatch (the `on_focus` / `on_blur` / `on_input` desugars). Same
- *   default-empty shape as `handle_clicks`.
  *
  * Handlers are METHODS on the app (the `ref self` receiver), so app state —
  * every control field — is reachable without lambda captures (capturing a
@@ -50,15 +49,16 @@ pub trait App {
 	func frame = (ref self, ref Window win, FrameEvents ev) {
 	}
 
-	// Called every frame before `frame`: drains this app's registered click
-	// handlers. The `.on_<event>(closure)` desugar (docs/HANDLERS.md)
-	// synthesizes this override on any conformer with registrations — hidden
-	// `#on_click_N` methods per closure plus one dispatch arm per registered
-	// control — and `Window.run` calls it at the slot the old
-	// `dispatch_clicks` binding list occupied. Conformers without
-	// registrations inherit this empty default (trait defaults have
-	// precedent: `Enumerable.length`).
-	func handle_clicks = (ref self, ref Window win) {
+	// The per-frame event pump: drains every registered control event —
+	// clicks, focus/blur, text input — through arms the `.on_<event>`
+	// desugar (docs/HANDLERS.md) synthesizes on conformers with
+	// registrations: one hidden method per closure, one drain arm per
+	// registered control, one event-source prologue per family.
+	// `Window.run` calls it before `frame`. New control events are new arms
+	// in this one slot — the App contract never grows with the event
+	// catalog. Conformers without registrations inherit this empty default
+	// (trait defaults have precedent: `Enumerable.length`).
+	func handle_events = (ref self, ref Window win) {
 	}
 
 	// The up-call protocol (docs/HANDLERS.md Stage 3): a composite the app
@@ -66,23 +66,8 @@ pub trait App {
 	// ref win)` from its `tick` — one vtable hop into the desugar's
 	// synthesized override, whose arms dispatch the id to the app's handler.
 	// The borrow flows down per call; nothing outlives it. Default-empty,
-	// like `handle_clicks`.
+	// like `handle_events`.
 	func run_handler = (ref self, int id, ref Window win) {
-	}
-
-	// Per-frame focus dispatch: polls the window's first-responder snapshot
-	// once, then drains the `on_focus` / `on_blur` arms (a handoff fires the
-	// old control's blur and the new control's focus in the same frame).
-	// Default-empty; the desugar synthesizes the override on conformers with
-	// focus or blur registrations.
-	func handle_focus = (ref self, ref Window win) {
-	}
-
-	// Per-frame text-input dispatch: drains the `on_input` arms (one edge
-	// per text change — the field editor writes through to the control's
-	// value while typing). Default-empty; the desugar synthesizes the
-	// override on conformers with input registrations.
-	func handle_input = (ref self, ref Window win) {
 	}
 }
 

@@ -608,8 +608,8 @@ pub mv struct Window: Control {
 	// after show; this pass also performs the one-time scroll_to_top), then
 	// the loop — pump events, detect resizes (framework relayout already
 	// applied), drain the app's registered handlers (its synthesized
-	// `handle_focus` / `handle_clicks` / `handle_input` overrides — the
-	// control-event desugars), and hand the app a FrameEvents each frame.
+	// `handle_events` pump — the control-event desugars), and hand the app
+	// a FrameEvents each frame.
 	// The app is consumed: it is destroyed when the loop exits (controls
 	// release, buffers free).
 	pub func run = (ref self, mv App app) {
@@ -642,13 +642,11 @@ pub mv struct Window: Control {
 				self.relayout(0)
 			}
 			// Registered handlers drain before the app frame — the app's
-			// synthesized per-event overrides (the control-event desugars);
+			// synthesized `handle_events` pump (the control-event desugars);
 			// conformers without registrations inherit the trait's empty
-			// defaults. Focus first (its snapshot poll frames the focus/blur
-			// edges), then the click ring, then text-input edges.
-			app.handle_focus(ref self)
-			app.handle_clicks(ref self)
-			app.handle_input(ref self)
+			// default. One poll/frame per event source, one arm per
+			// registered control.
+			app.handle_events(ref self)
 			app.frame(ref self, ev)
 		}
 	}
