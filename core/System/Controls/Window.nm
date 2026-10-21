@@ -601,26 +601,17 @@ pub mv struct Window: Control {
 		```
 	}
 
-	// ── Registered click handlers ──
-	//
-	// Retired with the handler desugar (docs/HANDLERS.md): registrations are
-	// now `self.<field>.on_click(func () { ... })` — the checker hoists the
-	// closure into a hidden method on the app and checks the site into a
-	// dispatch arm on the app's synthesized `handle_clicks`, which the run
-	// loop calls before `frame`. The window keeps only the ARMING primitive
-	// the arms call: arming is idempotent per handle (an armed-set in C), so
-	// an arm's per-frame call is a no-op after the first dispatch.
-
 	// Run the app: the framework owns everything from here until the window
 	// closes. Order: `app.start` (the app registers its layout roots and its
 	// click handlers while in final storage), the pre-show layout pass,
 	// `show`, the post-show pass (the toolbar settles the content rect only
 	// after show; this pass also performs the one-time scroll_to_top), then
 	// the loop — pump events, detect resizes (framework relayout already
-	// applied), drain the app's registered click handlers (its
-	// `handle_clicks` — the on_click desugar's dispatch), and hand the app a
-	// FrameEvents each frame. The app is consumed: it is destroyed when the
-	// loop exits (controls release, buffers free).
+	// applied), drain the app's registered handlers (its synthesized
+	// `handle_focus` / `handle_clicks` / `handle_input` overrides — the
+	// control-event desugars), and hand the app a FrameEvents each frame.
+	// The app is consumed: it is destroyed when the loop exits (controls
+	// release, buffers free).
 	pub func run = (ref self, mv App app) {
 		app.start(ref self)
 		Container.arm_resize_delegate(self)
@@ -650,11 +641,14 @@ pub mv struct Window: Control {
 				ev.height = cur_h
 				self.relayout(0)
 			}
-			// Registered handlers drain the click ring before the app frame —
-			// the app's synthesized `handle_clicks` override (the on_click
-			// desugar); conformers without registrations inherit the trait's
-			// empty default. Each arm drains only its own registered handle.
+			// Registered handlers drain before the app frame — the app's
+			// synthesized per-event overrides (the control-event desugars);
+			// conformers without registrations inherit the trait's empty
+			// defaults. Focus first (its snapshot poll frames the focus/blur
+			// edges), then the click ring, then text-input edges.
+			app.handle_focus(ref self)
 			app.handle_clicks(ref self)
+			app.handle_input(ref self)
 			app.frame(ref self, ev)
 		}
 	}
@@ -758,6 +752,310 @@ pub mv struct Window: Control {
 // set below — a desugar dispatch arm calls this every frame, and a fresh
 // recognizer per call would accumulate); the recognizer target class is
 // still built once per process.
+// ── Registered control events (focus / blur / input) ──
+//
+// The desugar's control-carried events beyond clicks (docs/HANDLERS.md):
+// `self.<field>.on_focus / on_blur / on_input(func () { ... })`. The
+// window is the focus authority, so the snapshot lives here: the
+// synthesized focus dispatcher calls `nomen_window_focus_poll` ONCE per
+// frame (prev/cur first responder — the field editor maps back to the
+// editing control), then each arm is a pure snapshot compare via
+// `nomen_control_take_focus` / `take_blur` — order-independent across
+// arms, and both sides of a handoff (A's blur, B's focus) fire in the
+// same frame. Input edges are per-control text compares
+// (`nomen_control_take_input`): the field editor writes through to the
+// control's stringValue while typing, so each keystroke is one edge.
+
+// Refresh the focus snapshot (prev/cur first responder of `window`).
+// Idempotent per frame; the synthesized focus dispatcher calls it once
+// before the arms.
+pub func nomen_window_focus_poll = (uint64 window) {
+	```
+	#arch: c
+	#platform: macos
+	#scope: file
+	// Shared with the take_focus / take_blur drains (same TU): the snapshot
+	// has external linkage and ONE definition (here); the drains declare it
+	// extern.
+	unsigned long long nomen_focus_prev = 0;
+	unsigned long long nomen_focus_cur = 0;
+	void *nomen_focus_window = 0;
+	static id nomen_focus_responder(void *win) {
+		id fr = ((id(*)(id, SEL))objc_msgSend)((id)win, sel_registerName("firstResponder"));
+		// While a text control is being edited, the first responder is the
+		// window's FIELD EDITOR — map it back to the editing control (the
+		// editor's delegate) so focus edges name the control.
+		if (((BOOL(*)(id, SEL, id))objc_msgSend)(fr, sel_registerName("isKindOfClass:"), (id)objc_getClass("NSTextView"))) {
+			id d = ((id(*)(id, SEL))objc_msgSend)(fr, sel_registerName("delegate"));
+			if (d) fr = d;
+		}
+		return fr;
+	}
+	```
+	```
+	#arch: aarch64_use_c
+	#platform: macos
+	#scope: file
+	unsigned long long nomen_focus_prev = 0;
+	unsigned long long nomen_focus_cur = 0;
+	void *nomen_focus_window = 0;
+	static id nomen_focus_responder(void *win) {
+		id fr = ((id(*)(id, SEL))objc_msgSend)((id)win, sel_registerName("firstResponder"));
+		if (((BOOL(*)(id, SEL, id))objc_msgSend)(fr, sel_registerName("isKindOfClass:"), (id)objc_getClass("NSTextView"))) {
+			id d = ((id(*)(id, SEL))objc_msgSend)(fr, sel_registerName("delegate"));
+			if (d) fr = d;
+		}
+		return fr;
+	}
+	```
+	```
+	#arch: c
+	#platform: macos
+	void *win = (void *)window;
+	id fr = nomen_focus_responder(win);
+	if (nomen_focus_window != win) {
+		// A different window took the snapshot: re-baseline (no edge).
+		nomen_focus_window = win;
+		nomen_focus_cur = (unsigned long long)(void *)fr;
+		nomen_focus_prev = nomen_focus_cur;
+	} else {
+		nomen_focus_prev = nomen_focus_cur;
+		nomen_focus_cur = (unsigned long long)(void *)fr;
+	}
+	```
+	```
+	#arch: aarch64_use_c
+	#platform: macos
+	void *win = (void *)window;
+	id fr = nomen_focus_responder(win);
+	if (nomen_focus_window != win) {
+		nomen_focus_window = win;
+		nomen_focus_cur = (unsigned long long)(void *)fr;
+		nomen_focus_prev = nomen_focus_cur;
+	} else {
+		nomen_focus_prev = nomen_focus_cur;
+		nomen_focus_cur = (unsigned long long)(void *)fr;
+	}
+	```
+	```
+	#arch: c
+	#platform: ios
+	/* TODO: iOS (first responder via UITextField delegates) */
+	```
+	```
+	#arch: aarch64_use_c
+	#platform: ios
+	/* TODO: iOS (see #arch: c) */
+	```
+}
+
+// Focus EDGE drain: true when `handle` GAINED first-responder status this
+// frame. Pure snapshot compare — no state update, so any number of
+// focus/blur arms can poll the same frame in any order.
+pub func nomen_control_take_focus = (uint64 handle, out bool) {
+	```
+	#arch: c
+	#platform: macos
+	#scope: file
+	extern unsigned long long nomen_focus_prev;
+	extern unsigned long long nomen_focus_cur;
+	extern void *nomen_focus_window;
+	static id nomen_focus_responder(void *win);
+	```
+	```
+	#arch: c
+	#platform: macos
+	int known = nomen_focus_window != 0;
+	id fr = known ? nomen_focus_responder(nomen_focus_window) : 0;
+	int gained =
+		known && ((unsigned long long)(void *)fr == handle) && (nomen_focus_prev != handle);
+	return gained;
+	```
+	```
+	#arch: aarch64_use_c
+	#platform: macos
+	#scope: file
+	extern unsigned long long nomen_focus_prev;
+	extern unsigned long long nomen_focus_cur;
+	extern void *nomen_focus_window;
+	static id nomen_focus_responder(void *win);
+	```
+	```
+	#arch: aarch64_use_c
+	#platform: macos
+	int known = nomen_focus_window != 0;
+	id fr = known ? nomen_focus_responder(nomen_focus_window) : 0;
+	int gained =
+		known && ((unsigned long long)(void *)fr == handle) && (nomen_focus_prev != handle);
+	return gained;
+	```
+	```
+	#arch: c
+	#platform: ios
+	return 0;
+	```
+	```
+	#arch: aarch64_use_c
+	#platform: ios
+	return 0;
+	```
+}
+
+// Blur EDGE drain: true when `handle` LOST first-responder status this
+// frame (it was focused on the previous poll and is not now).
+pub func nomen_control_take_blur = (uint64 handle, out bool) {
+	```
+	#arch: c
+	#platform: macos
+	#scope: file
+	extern unsigned long long nomen_focus_prev;
+	extern unsigned long long nomen_focus_cur;
+	extern void *nomen_focus_window;
+	static id nomen_focus_responder(void *win);
+	```
+	```
+	#arch: c
+	#platform: macos
+	int known = nomen_focus_window != 0;
+	id fr = known ? nomen_focus_responder(nomen_focus_window) : 0;
+	int lost =
+		known && (nomen_focus_prev == handle) && ((unsigned long long)(void *)fr != handle);
+	return lost;
+	```
+	```
+	#arch: aarch64_use_c
+	#platform: macos
+	#scope: file
+	extern unsigned long long nomen_focus_prev;
+	extern unsigned long long nomen_focus_cur;
+	extern void *nomen_focus_window;
+	static id nomen_focus_responder(void *win);
+	```
+	```
+	#arch: aarch64_use_c
+	#platform: macos
+	int known = nomen_focus_window != 0;
+	id fr = known ? nomen_focus_responder(nomen_focus_window) : 0;
+	int lost =
+		known && (nomen_focus_prev == handle) && ((unsigned long long)(void *)fr != handle);
+	return lost;
+	```
+	```
+	#arch: c
+	#platform: ios
+	return 0;
+	```
+	```
+	#arch: aarch64_use_c
+	#platform: ios
+	return 0;
+	```
+}
+
+// Text-INPUT edge drain: true when the control's text changed since the
+// last drain for this handle (the field editor writes through to the
+// control's stringValue while typing, so each keystroke is one edge).
+// Last-seen text is tracked per handle.
+pub func nomen_control_take_input = (uint64 handle, out bool) {
+	```
+	#arch: c
+	#platform: macos
+	#scope: file
+	struct nomen_input_seen {
+		void *handle;
+		char *last;
+	};
+	static struct nomen_input_seen nomen_input_seen[32];
+	static int nomen_input_seen_count = 0;
+	```
+	```
+	#arch: c
+	#platform: macos
+	struct nomen_input_seen *e = 0;
+	for (int i = 0; i < nomen_input_seen_count; i++) {
+		if (nomen_input_seen[i].handle == (void *)handle) {
+			e = &nomen_input_seen[i];
+			break;
+		}
+	}
+	if (!e && nomen_input_seen_count < 32) {
+		e = &nomen_input_seen[nomen_input_seen_count++];
+		e->handle = (void *)handle;
+		e->last = 0;
+	}
+	if (!e) return 0;
+	// stringValue returns the live text (the field editor writes through to
+	// it while typing); UTF8String goes through the returned NSString.
+	id s = ((id(*)(id, SEL))objc_msgSend)((id)handle, sel_registerName("stringValue"));
+	const char *cur = ((const char *(*)(id, SEL))objc_msgSend)(s, sel_registerName("UTF8String"));
+	// First sight of a handle: record the baseline silently — no edge.
+	if (!e->last) {
+		e->last = strdup(cur);
+		return 0;
+	}
+	int changed = strcmp(e->last, cur) != 0;
+	if (changed) {
+		free(e->last);
+		e->last = strdup(cur);
+	}
+	return changed;
+	```
+	```
+	#arch: aarch64_use_c
+	#platform: macos
+	#scope: file
+	struct nomen_input_seen {
+		void *handle;
+		char *last;
+	};
+	static struct nomen_input_seen nomen_input_seen[32];
+	static int nomen_input_seen_count = 0;
+	```
+	```
+	#arch: aarch64_use_c
+	#platform: macos
+	struct nomen_input_seen *e = 0;
+	for (int i = 0; i < nomen_input_seen_count; i++) {
+		if (nomen_input_seen[i].handle == (void *)handle) {
+			e = &nomen_input_seen[i];
+			break;
+		}
+	}
+	if (!e && nomen_input_seen_count < 32) {
+		e = &nomen_input_seen[nomen_input_seen_count++];
+		e->handle = (void *)handle;
+		e->last = 0;
+	}
+	if (!e) return 0;
+	// stringValue returns the live text (the field editor writes through to
+	// it while typing); UTF8String goes through the returned NSString.
+	id s = ((id(*)(id, SEL))objc_msgSend)((id)handle, sel_registerName("stringValue"));
+	const char *cur = ((const char *(*)(id, SEL))objc_msgSend)(s, sel_registerName("UTF8String"));
+	// First sight of a handle: record the baseline silently — no edge.
+	if (!e->last) {
+		e->last = strdup(cur);
+		return 0;
+	}
+	int changed = strcmp(e->last, cur) != 0;
+	if (changed) {
+		free(e->last);
+		e->last = strdup(cur);
+	}
+	return changed;
+	```
+	```
+	#arch: c
+	#platform: ios
+	return 0;
+	```
+	```
+	#arch: aarch64_use_c
+	#platform: ios
+	return 0;
+	```
+}
+
+
 pub func nomen_window_clicks_init = (uint64 handle) {
 	```
 	#arch: c

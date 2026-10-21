@@ -59,22 +59,65 @@ import { is_box_type } from "./box.ts";
 /** The reserved member-name family on control receivers (HANDLERS.md). */
 const HANDLER_EVENT = /^on_[a-z][a-z0-9_]*$/;
 
-interface HandlerHostState {
+/**
+ * The control-carried event table: event name → the library drain primitive
+ * the synthesized arm polls, the optional per-arm ARMING prologue, and the
+ * per-event dispatcher the arm belongs to. Focus and blur share a
+ * dispatcher (one first-responder snapshot poll frames both edges —
+ * docs/HANDLERS.md, "Registered control events").
+ */
+interface ControlEventConfig {
+	drain: string;
+	arm?: string;
+	dispatcher: string;
+	/** Once-per-dispatcher prologue: refreshes the event source snapshot. */
+	prologue?: string;
+}
+
+const CONTROL_EVENTS: Record<string, ControlEventConfig> = {
+	on_click: {
+		drain: "nomen_control_take_click",
+		arm: "nomen_window_clicks_init",
+		dispatcher: "handle_clicks",
+	},
+	on_focus: {
+		drain: "nomen_control_take_focus",
+		dispatcher: "handle_focus",
+		prologue: "nomen_window_focus_poll",
+	},
+	on_blur: {
+		drain: "nomen_control_take_blur",
+		dispatcher: "handle_focus",
+		prologue: "nomen_window_focus_poll",
+	},
+	on_input: {
+		drain: "nomen_control_take_input",
+		dispatcher: "handle_input",
+	},
+};
+
+/** The dispatchers awaiting their final check, per compile root. */
+const pending_dispatchers = new Map<BaseNode, { host: StructNode; dispatcher: string }[]>();
+
+interface DispatcherState {
 	/** The synthesized trait override, appended to the host's functions. */
-	handle_clicks: FunctionNode;
-	/** Registration order drives arm order (HANDLERS.md: "in registration order"). */
-	next_index: number;
+	func: FunctionNode;
+	/** Per-event hidden-method counters (registration order drives arms). */
+	next_index: Map<string, number>;
 }
 
 /**
- * Per-check synthesis state, keyed by the host struct. Module-level (not on
- * CheckStatus) because `clone_status` copies a fixed field list — state
- * recorded inside a branch clone (a registration nested in an `if`) must
- * survive the clone's discard. The per-check entry in `pending_hosts` dies
- * with the check that created it: `finalize` deletes by status identity, and
- * an aborted compile (parse errors, no check pass) never creates an entry.
+ * Per-check synthesis state, keyed by the host struct and dispatcher name.
+ * Module-level (not on CheckStatus) because `clone_status` copies a fixed
+ * field list — state recorded inside a branch clone (a registration nested
+ * in an `if`) must survive the clone's discard. The per-check entry in
+ * `pending_hosts` dies with the check that created it: `finalize` deletes by
+ * root identity, and an aborted compile (parse errors, no check pass) never
+ * creates an entry.
  */
-const host_states = new WeakMap<StructNode, HandlerHostState>();
+const dispatcher_states = new WeakMap<StructNode, Map<string, DispatcherState>>();
+
+const host_states = new WeakMap<StructNode, Map<string, DispatcherState>>();
 
 /**
  * Hosts awaiting their `handle_clicks` check, keyed by the compile's ROOT
@@ -127,24 +170,66 @@ export function try_check_handler_registration(
 		return false;
 	};
 
-	if (node.name !== "on_click") {
-		// Composite event APIs (Stage 3): `self.pager.on_page_change(func () {
-		// ... })` enrolls an up-call handler on a composite host. Controls
-		// keep the click family only.
-		if (receiver.traits.includes("Control")) {
-			return fail(
-				`.${node.name} is not a supported handler event yet — only on_click is implemented`,
+	// Click handlers ride on CONTROL receivers (any other type's `on_click`
+	// member — or the "Function not found" for a missing one — resolves
+	// ordinarily).
+	if (node.name === "on_click") {
+		if (!receiver.traits.includes("Control")) return undefined;
+		return try_check_control_event(
+			receiver,
+			target_type,
+			target,
+			node,
+			status,
+			fail,
+			CONTROL_EVENTS[node.name],
+		);
+	}
+	if (receiver.traits.includes("Control")) {
+		// The on_<event> family is reserved on control receivers: a
+		// table-backed event dispatches; anything else is a named error
+		// rather than a confusing "Function not found".
+		const cfg = CONTROL_EVENTS[node.name];
+		if (cfg) {
+			return try_check_control_event(
+				receiver,
+				target_type,
+				target,
+				node,
+				status,
+				fail,
+				CONTROL_EVENTS[node.name],
 			);
 		}
-		return try_check_composite_event(receiver, target_type, target, node, status, fail);
+		return fail(
+			`.${node.name} is not a supported handler event — supported: on_click, on_focus, on_blur, on_input`,
+		);
 	}
-	// Click handlers ride on CONTROL receivers: any other type's `on_click`
-	// member (or the "Function not found" for a missing one) resolves
-	// ordinarily.
-	if (!receiver.traits.includes("Control")) return undefined;
+	// Composite event APIs (Stage 3): `self.pager.on_page_change(func () {
+	// ... })` enrolls an up-call handler on a composite host — the composite
+	// declares the event API, so any on_<event> can be a composite event.
+	return try_check_composite_event(receiver, target_type, target, node, status, fail);
+}
 
+/**
+ * The control-carried event path (docs/HANDLERS.md, "Registered control
+ * events"): the event comes from the CONTROL's own source (the click ring,
+ * the window's first responder, the control's text), the synthesized arm
+ * polls that source's drain primitive, and the hidden method hoists onto
+ * the App conformer the way the click desugar does. Config comes from
+ * CONTROL_EVENTS; everything here is event-agnostic.
+ */
+function try_check_control_event(
+	receiver: StructNode,
+	target_type: Type,
+	target: BaseNode,
+	node: AccessFunctionCallNode,
+	status: CheckStatus,
+	fail: (message: string) => false,
+	cfg: ControlEventConfig,
+): boolean {
 	if (node.params.length !== 1 || node.params[0].node_type !== "func") {
-		return fail(`.${node.name} expects one closure argument — .on_click(func () { ... })`);
+		return fail(`.${node.name} expects one closure argument — .${node.name}(func () { ... })`);
 	}
 	const closure = node.params[0] as FunctionNode;
 	if (closure.params.length > 0) {
@@ -183,32 +268,62 @@ export function try_check_handler_registration(
 	if (!host.traits.includes("App") && !host.is_library && !reachable_from_an_app(host, status)) {
 		return fail(`handlers dispatch from the run root — '${host.name}' is not owned by the app`);
 	}
-	let state = host_states.get(host);
+
+	// The dispatcher (per host + event family): get or synthesize. A
+	// USER-declared same-named method would collide with the synthesized
+	// override (the name is reserved on hosts with registrations). Past this
+	// point a same-named method is our own synthesis from an earlier
+	// registration.
+	let dispatchers = dispatcher_states.get(host);
+	if (!dispatchers) {
+		dispatchers = new Map();
+		dispatcher_states.set(host, dispatchers);
+	}
+	let state = dispatchers.get(cfg.dispatcher);
 	if (!state) {
-		// A USER-declared handle_clicks would collide with the synthesized
-		// override (the name is reserved on handler hosts). Past this point a
-		// same-named method is our own synthesis from an earlier registration.
-		if (host.functions.some((f) => f.name === "handle_clicks")) {
+		if (host.functions.some((f) => f.name === cfg.dispatcher)) {
 			return fail(
-				`'${host.name}' already declares handle_clicks — the .${node.name} desugar synthesizes it (the name is reserved on handler hosts)`,
+				`'${host.name}' already declares ${cfg.dispatcher} — the .${node.name} desugar synthesizes it (the name is reserved on handler hosts)`,
 			);
 		}
-		const handle_clicks = new FunctionNode(node.start, "pub", "handle_clicks", new Type(""), [
+		const func = new FunctionNode(node.start, "pub", cfg.dispatcher, new Type(""), [
 			ref_self_param(host),
 			win_param(),
 		]);
-		host.functions.push(handle_clicks);
-		state = { handle_clicks, next_index: 1 };
-		host_states.set(host, state);
+		host.functions.push(func);
+		state = { func, next_index: new Map() };
+		dispatchers.set(cfg.dispatcher, state);
 		const root = status.stack[0];
-		let hosts = pending_hosts.get(root);
-		if (!hosts) {
-			hosts = [];
-			pending_hosts.set(root, hosts);
+		if (cfg.dispatcher === "handle_clicks") {
+			let hosts = pending_hosts.get(root);
+			if (!hosts) {
+				hosts = [];
+				pending_hosts.set(root, hosts);
+			}
+			hosts.push(host);
+		} else {
+			let entries = pending_dispatchers.get(root);
+			if (!entries) {
+				entries = [];
+				pending_dispatchers.set(root, entries);
+			}
+			entries.push({ host, dispatcher: cfg.dispatcher });
 		}
-		hosts.push(host);
+		if (cfg.prologue) {
+			// Once-per-frame event-source refresh, emitted ahead of the arms
+			// (the focus snapshot frames every focus/blur edge in the frame).
+			state.func.statements.push(prologue_statement(cfg.prologue, node.start));
+		}
 	}
-	const index = state.next_index++;
+	let index_state = state.next_index.get(node.name);
+	if (index_state === undefined) {
+		index_state = 1;
+	} else {
+		index_state += 1;
+	}
+	state.next_index.set(node.name, index_state);
+	const index = index_state;
+	const hidden = `#${node.name}_${index}`;
 
 	// ── The hoist ──
 	// The closure body becomes the hidden method's body, VERBATIM. The method
@@ -220,7 +335,7 @@ export function try_check_handler_registration(
 	const hoisted = new FunctionNode(
 		closure.start,
 		"private",
-		`#on_click_${index}`,
+		`#${node.name}_${index}`,
 		new Type(""),
 		[ref_self_param(host), win_param()],
 		closure.statements,
@@ -237,17 +352,33 @@ export function try_check_handler_registration(
 		);
 	}
 
-	// ── The arm ── (registration order; the drain drains only its own handle,
-	// so arms never starve each other or a was_clicked poll.)
-	state.handle_clicks.statements.push(
-		arm_init_statement(host, fields, node.start),
-		arm_dispatch_statement(host, fields, index, node.start),
-	);
+	// ── The arm ── (registration order; each arm drains only its own
+	// registered handle, so arms never starve each other or a was_clicked
+	// poll.) The click family arms its native source per arm; the passive
+	// events (focus/blur/input) poll and need no arming.
+	const arm_target = arm_receiver(host, fields, node.start);
+	if (cfg.arm) {
+		state.func.statements.push(arm_init_statement(cfg.arm, arm_target, node.start));
+	}
+	state.func.statements.push(arm_dispatch_statement(host, fields, cfg.drain, hidden, node.start));
 
 	// The registration site emits no code at all.
 	node.is_handler_registration = true;
 	node.type = new Type("");
 	return true;
+}
+
+/**
+ * The once-per-dispatcher event-source refresh:
+ * `nomen_window_focus_poll(win.handle)` for the focus family.
+ */
+function prologue_statement(primitive: string, start: number): FunctionCallNode {
+	const handle = new AccessNode(
+		start,
+		new ValueNode(start, "win"),
+		new AccessFieldNode(start, "handle"),
+	);
+	return new FunctionCallNode(start, primitive, new Type(""), [handle]);
 }
 
 /**
@@ -429,14 +560,15 @@ export function finalize_handler_hosts(status: CheckStatus): void {
 	const root = status.stack[0];
 	const hosts = pending_hosts.get(root);
 	const up_call_apps = pending_run_handlers.get(root);
-	if (!hosts && !up_call_apps) return;
+	const event_dispatchers = pending_dispatchers.get(root);
+	if (!hosts && !up_call_apps && !event_dispatchers) return;
 	pending_hosts.delete(root);
+	pending_dispatchers.delete(root);
 	const host_set = new Set<StructNode>(hosts ?? []);
-
 	const to_check: FunctionNode[] = [];
 	for (const host of hosts ?? []) {
-		const state = host_states.get(host);
-		if (state) to_check.push(state.handle_clicks);
+		const state = host_states.get(host)?.get("handle_clicks");
+		if (state) to_check.push(state.func);
 	}
 
 	// Does `s` (or anything it owns down forwardable fields) carry handlers?
@@ -485,7 +617,7 @@ export function finalize_handler_hosts(status: CheckStatus): void {
 		const is_app = s.traits.includes("App");
 		const is_host = host_set.has(s);
 		if (!is_app && !is_host && !reachable_from_an_app(s, status)) continue;
-		let state = host_states.get(s);
+		let state = host_states.get(s)?.get("handle_clicks");
 		if (!state) {
 			// A pure forwarder (or an App conformer whose only handlers live
 			// in its composites). A user-declared handle_clicks is left alone.
@@ -495,12 +627,14 @@ export function finalize_handler_hosts(status: CheckStatus): void {
 				win_param(),
 			]);
 			s.functions.push(handle_clicks);
-			state = { handle_clicks, next_index: 0 };
-			host_states.set(s, state);
+			state = { func: handle_clicks, next_index: new Map() };
+			const click_map = host_states.get(s) ?? new Map<string, DispatcherState>();
+			click_map.set("handle_clicks", state);
+			host_states.set(s, click_map);
 			to_check.push(handle_clicks);
 		}
 		// Children-first: forwarding splices ahead of the host's own arms.
-		state.handle_clicks.statements.unshift(...forwards);
+		state.func.statements.unshift(...forwards);
 	}
 
 	for (const hc of to_check) {
@@ -516,6 +650,18 @@ export function finalize_handler_hosts(status: CheckStatus): void {
 			const state = run_handler_states.get(app);
 			if (!state) continue;
 			check_function_node(state.run_handler, status);
+		}
+	}
+
+	// The control-event dispatchers (focus/blur/input): check their bodies —
+	// the prologue and arms are fully synthesized, and the App trait declares
+	// the defaults they override.
+	if (event_dispatchers) {
+		pending_dispatchers.delete(root);
+		for (const { host, dispatcher } of event_dispatchers) {
+			const state = dispatcher_states.get(host)?.get(dispatcher);
+			if (!state) continue;
+			check_function_node(state.func, status);
 		}
 	}
 }
@@ -757,37 +903,34 @@ function arm_receiver(host: StructNode, fields: string[], start: number): BaseNo
 }
 
 /**
- * First-dispatch arming for the registered view: covers non-button controls
- * (buttons arm target/action at construction). `nomen_window_clicks_init` is
- * idempotent per handle, so the per-frame call is a no-op after the first.
+ * The event-source arming prologue (click family only: the recognizer/
+ * target init — idempotent per handle). Other events poll passively and
+ * have no arming.
  */
-function arm_init_statement(host: StructNode, fields: string[], start: number): FunctionCallNode {
-	const handle = new AccessNode(
-		start,
-		arm_receiver(host, fields, start),
-		new AccessFieldNode(start, "handle"),
-	);
-	return new FunctionCallNode(start, "nomen_window_clicks_init", new Type(""), [handle]);
+function arm_init_statement(
+	drain_arm: string,
+	receiver: BaseNode,
+	start: number,
+): FunctionCallNode {
+	const handle = new AccessNode(start, receiver, new AccessFieldNode(start, "handle"));
+	return new FunctionCallNode(start, drain_arm, new Type(""), [handle]);
 }
 
 /**
- * `if nomen_control_take_click(self.<path>.handle) { self.#on_click_N(ref win) }`
+ * `if <drain>(self.<path>.handle) { self.<hidden>(ref win) }` — one arm of
+ * the synthesized dispatcher.
  */
 function arm_dispatch_statement(
 	host: StructNode,
 	fields: string[],
-	index: number,
+	drain: string,
+	hidden: string,
 	start: number,
 ): IfElseNode {
-	const handle = new AccessNode(
-		start,
-		arm_receiver(host, fields, start),
-		new AccessFieldNode(start, "handle"),
-	);
-	const condition = new FunctionCallNode(start, "nomen_control_take_click", new Type("bool"), [
-		handle,
-	]);
-	const dispatch = new AccessFunctionCallNode(start, `#on_click_${index}`);
+	const receiver = arm_receiver(host, fields, start);
+	const handle = new AccessNode(start, receiver, new AccessFieldNode(start, "handle"));
+	const condition = new FunctionCallNode(start, drain, new Type("bool"), [handle]);
+	const dispatch = new AccessFunctionCallNode(start, hidden);
 	// `ref win` — the borrowed argument needs the same explicit `ref` a source
 	// call site writes (ref_param_indices marks the keyword positions).
 	dispatch.ref_param_indices = [0];

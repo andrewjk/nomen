@@ -637,6 +637,28 @@ callback is one vtable hop into it — the borrow flows down per call,
 nothing is stored, nothing outlives the tick. For apps that don't need the
 event, plain value polling (`self.pager.page`) stays the tier-1 form.
 
+### Focus, blur, and input
+
+Text controls carry three more events (docs/HANDLERS.md, "Registered
+control events"):
+
+```
+pub func start = (ref self, ref Window win) {
+	self.field_a.on_focus(func () { self.status.set_text("editing a") })
+	self.field_a.on_blur(func () { self.status.set_text("left a") })
+	self.field_b.on_input(func () { self.status.set_text(self.field_b.get_text()) })
+}
+```
+
+`on_focus` / `on_blur` are edges of the window's first responder (a
+handoff fires the old control's blur and the new control's focus in the
+same frame; editing a text control maps the field editor back to the
+control). `on_input` fires once per text change — the field editor writes
+through to the control's value while typing, so each keystroke is one
+edge. Pull, don't push: read the new state inside the handler
+(`self.field_b.text()`) — events carry the edge, the control carries the
+state.
+
 ### Dynamic trees: `List<MyRow>` self-handling rows
 
 Rows in a list dispatch like field-hosted composites. A `List<MyRow>` field

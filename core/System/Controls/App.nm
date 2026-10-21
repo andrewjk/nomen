@@ -7,7 +7,7 @@
  * and the WINDOW owns everything else — the event pump, the autorelease
  * pool, resize detection, and the relayout of the hosted content (the root
  * `Container` from `win.set_content` plus every `Scrollable.set_content`
- * document). The app implements four hooks:
+ * document). The app implements five hooks:
  *
  * - `start` — called once, after the app has been moved into its final
  *   storage but before the window is shown. Register the layout roots here
@@ -29,6 +29,9 @@
  *   `tick` (the app forwards itself down once per tick). Default-empty;
  *   the desugar synthesizes the override dispatching ids to the app's
  *   `.on_<event>` handlers.
+ * - `handle_focus` / `handle_input` — per-frame focus/blur and text-input
+ *   dispatch (the `on_focus` / `on_blur` / `on_input` desugars). Same
+ *   default-empty shape as `handle_clicks`.
  *
  * Handlers are METHODS on the app (the `ref self` receiver), so app state —
  * every control field — is reachable without lambda captures (capturing a
@@ -65,6 +68,21 @@ pub trait App {
 	// The borrow flows down per call; nothing outlives it. Default-empty,
 	// like `handle_clicks`.
 	func run_handler = (ref self, int id, ref Window win) {
+	}
+
+	// Per-frame focus dispatch: polls the window's first-responder snapshot
+	// once, then drains the `on_focus` / `on_blur` arms (a handoff fires the
+	// old control's blur and the new control's focus in the same frame).
+	// Default-empty; the desugar synthesizes the override on conformers with
+	// focus or blur registrations.
+	func handle_focus = (ref self, ref Window win) {
+	}
+
+	// Per-frame text-input dispatch: drains the `on_input` arms (one edge
+	// per text change — the field editor writes through to the control's
+	// value while typing). Default-empty; the desugar synthesizes the
+	// override on conformers with input registrations.
+	func handle_input = (ref self, ref Window win) {
 	}
 }
 

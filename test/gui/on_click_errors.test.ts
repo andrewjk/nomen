@@ -408,7 +408,7 @@ pub func main = (Init init) {
 
 	test("unsupported events name the one supported form", () => {
 		expect(check_with_registration(`self.btn.on_hover(func () { })`)).toEqual([
-			".on_hover is not a supported handler event yet — only on_click is implemented",
+			".on_hover is not a supported handler event — supported: on_click, on_focus, on_blur, on_input",
 		]);
 	});
 

@@ -11,7 +11,7 @@ ownership rules underneath, see MEMORY.md.
 DESIGN — recorded 2026-10-20, out of the `#handle` / `Window.on_click` work
 and a demo experiment that hit the wall this design removes.
 
-**Stages 1–4 are implemented (2026-10-20/21).** Stage 1 (root desugar):
+**Stages 1–4 are implemented, plus the standard control-event family (2026-10-20/22).** Stage 1 (root desugar):
 `.on_<event>(closure)` recognition, the hoist into hidden `#on_click_N`
 methods, arm synthesis onto a default-empty `App.handle_clicks` (trait
 default), `Window.run` routing through `app.handle_clicks(ref win)`, and the
@@ -52,6 +52,16 @@ doc's example, working — plus the up-call flow),
 rule plus the reachable-composite, transitive-chain, and up-call
 acceptances); the demos are migrated (todo Add; the gallery's radio pair,
 dialog buttons, and pagination — `demos_check.test.ts` keeps them green).
+
+The control-event family grew past clicks (2026-10-22): `on_focus` /
+`on_blur` drain a per-window first-responder snapshot (polled once per
+frame by the synthesized `handle_focus`; a handoff fires the old control's
+blur and the new control's focus in the same frame, and the field editor
+maps back to the editing control), and `on_input` fires per text change
+(per-handle last-seen-text compares over the live `stringValue`). Each
+event is one row in the desugar's `CONTROL_EVENTS` table (drain primitive,
+optional arming, dispatcher) plus its library plumbing — the route is
+untouched.
 
 Still to land: the deprecation-cycle doc sweep (the poll examples leave
 GUI.md's other sections), and the `List<Own>.at()` uniform-borrow load
