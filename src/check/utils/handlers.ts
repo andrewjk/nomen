@@ -6,7 +6,6 @@ import AssignmentNode from "../../nodes/AssignmentNode.ts";
 import type BaseNode from "../../nodes/BaseNode.ts";
 import BranchNode from "../../nodes/BranchNode.ts";
 import DeclarationNode from "../../nodes/DeclarationNode.ts";
-import FunctionCallNode from "../../nodes/FunctionCallNode.ts";
 import FunctionNode from "../../nodes/FunctionNode.ts";
 import IfElseNode from "../../nodes/IfElseNode.ts";
 import OperationNode from "../../nodes/OperationNode.ts";
@@ -35,7 +34,7 @@ import { is_box_type } from "./box.ts";
  * ```
  * func handle_events = (ref self, ref Window win) {
  * 	nomen_window_clicks_init(self.<field>.handle)
- * 	if nomen_control_take_click(self.<field>.handle) { self.#on_click_N(ref win) }
+ * 	if self.<field>.take_click() { self.#on_click_N(ref win) }
  * }
  * ```
  *
@@ -59,25 +58,6 @@ import { is_box_type } from "./box.ts";
 /** The reserved member-name family on control receivers (HANDLERS.md). */
 const HANDLER_EVENT = /^on_[a-z][a-z0-9_]*$/;
 
-/**
- * The control-carried event table: event name → the library drain primitive
- * the synthesized arm polls and the optional per-arm ARMING prologue. Every
- * arm dispatches through the host's single `handle_events` pump — new events
- * are new rows here plus their drain primitive; the App contract and the
- * route never change.
- */
-interface ControlEventConfig {
-	drain: string;
-	arm?: string;
-}
-
-const CONTROL_EVENTS: Record<string, ControlEventConfig> = {
-	on_click: { drain: "nomen_control_take_click", arm: "nomen_window_clicks_init" },
-	on_focus: { drain: "nomen_control_take_focus" },
-	on_blur: { drain: "nomen_control_take_blur" },
-	on_input: { drain: "nomen_control_take_input" },
-};
-
 /** The one pump slot's name on handler hosts. */
 const PUMP_NAME = "handle_events";
 
@@ -87,8 +67,6 @@ interface DispatcherState {
 	func: FunctionNode;
 	/** Per-event hidden-method counters (registration order drives arms). */
 	next_index: Map<string, number>;
-	/** True once a focus/blur arm lands here (the pump needs the snapshot poll). */
-	has_focus_arms?: boolean;
 }
 
 /**
@@ -157,27 +135,17 @@ export function try_check_handler_registration(
 	//    This is the framework-author extension point — any widget, any
 	//    event name, GUI or not (a voice-only widget's `on_command`), and
 	//    `on_click` itself. A declared API wins over the builtin table.
-	// 2. BUILTIN TABLE (Control receivers only) — events the WINDOW pump
-	//    drains natively (click ring, first responder, text value): zero
-	//    widget plumbing, arms poll the drain in the pump.
-	// 3. RESERVED FAMILY — an untabled `on_<event>` on a Control receiver is
-	//    a named error (the family is reserved for future builtin events),
-	//    not a confusing "Function not found".
-	// 4. Otherwise — ordinary resolution ("Function not found" for a missing
+	// 2. CONTROL DRAIN (naming convention, no table) — `on_<event>` routes
+	//    to the control's own `take_<event>` drain method (Button.take_click,
+	//    TextBox.take_input, …): the control DECLARES which events it emits,
+	//    in the library, next to its native plumbing. No compiler table, no
+	//    privileged events; a new event kind is new library methods.
+	// 3. Otherwise — ordinary resolution ("Function not found" for a missing
 	//    member; a same-named method on a non-control resolves as a call).
 	const composite = try_check_composite_event(receiver, target_type, target, node, status, fail);
 	if (composite !== undefined) return composite;
 
-	if (receiver.traits.includes("Control")) {
-		const cfg = CONTROL_EVENTS[node.name];
-		if (cfg) {
-			return try_check_control_event(receiver, target_type, target, node, status, fail, cfg);
-		}
-		return fail(
-			`.${node.name} is not a supported handler event — supported: on_click, on_focus, on_blur, on_input`,
-		);
-	}
-	return undefined;
+	return try_check_control_drain(receiver, target_type, target, node, status, fail);
 }
 
 /**
@@ -186,17 +154,24 @@ export function try_check_handler_registration(
  * the window's first responder, the control's text), the synthesized arm
  * polls that source's drain primitive, and the hidden method hoists onto
  * the App conformer the way the click desugar does. Config comes from
- * CONTROL_EVENTS; everything here is event-agnostic.
+ * and everything here is event-agnostic.
  */
-function try_check_control_event(
+function try_check_control_drain(
 	receiver: StructNode,
 	target_type: Type,
 	target: BaseNode,
 	node: AccessFunctionCallNode,
 	status: CheckStatus,
 	fail: (message: string) => false,
-	cfg: ControlEventConfig,
 ): boolean {
+	// The drain is the control's own take_<event> method (naming convention,
+	// no compiler table): on_click → take_click, on_input → take_input.
+	const drain = `take_${node.name.slice(3)}`;
+	if (!receiver.functions.some((f) => f.name === drain && f.params.length === 1)) {
+		// The control doesn't emit this event — a named, per-control error
+		// (the event vocabulary is the control's own declared API).
+		return fail(`'${receiver.name}' doesn't emit ${node.name} events (no ${drain} drain)`);
+	}
 	if (node.params.length !== 1 || node.params[0].node_type !== "func") {
 		return fail(`.${node.name} expects one closure argument — .${node.name}(func () { ... })`);
 	}
@@ -264,9 +239,6 @@ function try_check_control_event(
 		}
 		hosts.push(host);
 	}
-	if (node.name === "on_focus" || node.name === "on_blur") {
-		state.has_focus_arms = true;
-	}
 	let index_state = state.next_index.get(node.name);
 	if (index_state === undefined) {
 		index_state = 1;
@@ -306,33 +278,14 @@ function try_check_control_event(
 
 	// ── The arm ── (registration order; each arm drains only its own
 	// registered handle, so arms never starve each other or a was_clicked
-	// poll.) The click family arms its native source per arm; the passive
-	// events (focus/blur/input) poll and need no arming.
-	const arm_target = arm_receiver(host, fields, node.start);
-	if (cfg.arm) {
-		state.func.statements.push(arm_init_statement(cfg.arm, arm_target, node.start));
-	}
-	state.func.statements.push(arm_dispatch_statement(host, fields, cfg.drain, hidden, node.start));
+	// poll.) The drain is the control's own take_<event> method — arming and
+	// native plumbing live inside it, on the control.
+	state.func.statements.push(arm_dispatch_statement(host, fields, drain, hidden, node.start));
 
 	// The registration site emits no code at all.
 	node.is_handler_registration = true;
 	node.type = new Type("");
 	return true;
-}
-
-/**
- * The once-per-frame event-source refresh:
- * `nomen_window_focus_poll(win.handle)` — spliced into the run root's pump
- * when any focus/blur arm exists in its tree (the poll frames every
- * focus/blur edge; child pumps read the same snapshot).
- */
-function prologue_statement(primitive: string, start: number): FunctionCallNode {
-	const handle = new AccessNode(
-		start,
-		new ValueNode(start, "win"),
-		new AccessFieldNode(start, "handle"),
-	);
-	return new FunctionCallNode(start, primitive, new Type(""), [handle]);
 }
 
 /**
@@ -506,7 +459,7 @@ function up_call_arm(host: StructNode, event: string, id: number, start: number)
  *
  * Runs once, after the whole tree has been checked: the arms reference the
  * hidden `#on_click_N` methods (checked at their registration sites), the
- * drain (`nomen_control_take_click`) and the `Window` type are resolved, and
+ * drain methods (`take_click` et al) and the `Window` type are resolved, and
  * the full field graph (gathered upfront) decides reachability. Checking the
  * bodies also stamps every node for the build.
  */
@@ -600,63 +553,6 @@ export function finalize_handler_hosts(status: CheckStatus): void {
 			const state = run_handler_states.get(app);
 			if (!state) continue;
 			check_function_node(state.run_handler, status);
-		}
-	}
-
-	// The FOCUS SNAPSHOT poll (docs/HANDLERS.md, "Registered control
-	// events"): when any pump in the tree carries focus/blur arms, the RUN
-	// ROOT's pump refreshes the snapshot once per frame, ahead of the
-	// children-first forwarding — every focus/blur arm (here or in a child)
-	// then compares the same fresh snapshot. Exactly one poll per frame, so
-	// edges are visible exactly once.
-	let focus_arms_root: StructNode | undefined;
-	for (const host of hosts ?? []) {
-		if (dispatcher_states.get(host)?.has_focus_arms) {
-			focus_arms_root = host;
-			break;
-		}
-	}
-	if (focus_arms_root) {
-		// The run root: an App conformer that reaches (or is) the focus-armed
-		// pump. Reachability was checked at registration, so this finds one.
-		let app_root: StructNode | undefined;
-		if (focus_arms_root.traits.includes("App")) {
-			app_root = focus_arms_root;
-		} else {
-			for (const s of status.structs) {
-				if (!s.traits.includes("App")) continue;
-				if (path_exists(s, focus_arms_root, status, new Set())) {
-					app_root = s;
-					break;
-				}
-			}
-		}
-		if (app_root) {
-			let state = dispatcher_states.get(app_root);
-			if (!state) {
-				// The root's own pump: forwarder synthesis above created it
-				// when the root reached the host, but create it defensively —
-				// the poll must live here.
-				if (app_root.functions.some((f) => f.name === PUMP_NAME)) {
-					add_error(
-						status,
-						`'${app_root.name}' already declares ${PUMP_NAME} — the desugar needs it for the focus snapshot poll`,
-						app_root.start,
-					);
-				} else {
-					const pump = new FunctionNode(-1, "pub", PUMP_NAME, new Type(""), [
-						ref_self_param(app_root),
-						win_param(),
-					]);
-					app_root.functions.push(pump);
-					state = { func: pump, next_index: new Map() };
-					dispatcher_states.set(app_root, state);
-					to_check.push(pump);
-				}
-			}
-			if (state) {
-				state.func.statements.unshift(prologue_statement("nomen_window_focus_poll", -1));
-			}
 		}
 	}
 }
@@ -898,20 +794,6 @@ function arm_receiver(host: StructNode, fields: string[], start: number): BaseNo
 }
 
 /**
- * The event-source arming prologue (click family only: the recognizer/
- * target init — idempotent per handle). Other events poll passively and
- * have no arming.
- */
-function arm_init_statement(
-	drain_arm: string,
-	receiver: BaseNode,
-	start: number,
-): FunctionCallNode {
-	const handle = new AccessNode(start, receiver, new AccessFieldNode(start, "handle"));
-	return new FunctionCallNode(start, drain_arm, new Type(""), [handle]);
-}
-
-/**
  * `if <drain>(self.<path>.handle) { self.<hidden>(ref win) }` — one arm of
  * the synthesized dispatcher.
  */
@@ -922,14 +804,13 @@ function arm_dispatch_statement(
 	hidden: string,
 	start: number,
 ): IfElseNode {
-	const receiver = arm_receiver(host, fields, start);
-	const handle = new AccessNode(start, receiver, new AccessFieldNode(start, "handle"));
-	const condition = new FunctionCallNode(start, drain, new Type("bool"), [handle]);
+	const condition = new AccessFunctionCallNode(start, drain);
+	const condition_call = new AccessNode(start, arm_receiver(host, fields, start), condition);
 	const dispatch = new AccessFunctionCallNode(start, hidden);
 	// `ref win` — the borrowed argument needs the same explicit `ref` a source
 	// call site writes (ref_param_indices marks the keyword positions).
 	dispatch.ref_param_indices = [0];
 	dispatch.params = [new ValueNode(start, "win")];
 	const call = new AccessNode(start, new ValueNode(start, "self", new Type(host.name)), dispatch);
-	return new IfElseNode(start, condition, new BranchNode(start, [call]));
+	return new IfElseNode(start, condition_call, new BranchNode(start, [call]));
 }

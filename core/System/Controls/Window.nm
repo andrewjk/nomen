@@ -641,11 +641,12 @@ pub mv struct Window: Control {
 				ev.height = cur_h
 				self.relayout(0)
 			}
-			// Registered handlers drain before the app frame — the app's
-			// synthesized `handle_events` pump (the control-event desugars);
-			// conformers without registrations inherit the trait's empty
-			// default. One poll/frame per event source, one arm per
-			// registered control.
+			// The window refreshes the per-frame event sources (the
+			// first-responder snapshot feeds the focus/blur drains), then the
+			// app's synthesized `handle_events` pump drains registered
+			// handlers — conformers without registrations inherit the
+			// trait's empty default. One arm per registered control.
+			nomen_window_focus_poll(self.handle)
 			app.handle_events(ref self)
 			app.frame(ref self, ev)
 		}

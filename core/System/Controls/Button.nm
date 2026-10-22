@@ -235,6 +235,13 @@ pub mv struct Button: Control {
 		return nomen_control_take_click(self.handle)
 	}
 
+	// The on_click desugar's drain (docs/HANDLERS.md): the synthesized pump
+	// arm polls this per frame. Same edge as was_clicked — register one way
+	// or the other, never both (first consumer wins).
+	pub func take_click = (self, out bool) {
+		return nomen_control_take_click(self.handle)
+	}
+
 	pub func intrinsic_size = (self, out Size) {
 		var [w, h] = native_intrinsic(self.handle)
 		var s = Size()

@@ -308,7 +308,7 @@ pub func main = (Init init) {
 }
 `;
 		expect(parse(input, system).errors.map((e) => e.message)).toEqual([
-			"Function not found: MyBox.on_frobnicate",
+			"'MyBox' doesn't emit on_frobnicate events (no take_frobnicate drain)",
 		]);
 	});
 
@@ -406,9 +406,9 @@ pub func main = (Init init) {
 		]);
 	});
 
-	test("unsupported events name the one supported form", () => {
+	test("unsupported events name the control's missing drain", () => {
 		expect(check_with_registration(`self.btn.on_hover(func () { })`)).toEqual([
-			".on_hover is not a supported handler event — supported: on_click, on_focus, on_blur, on_input",
+			"'Button' doesn't emit on_hover events (no take_hover drain)",
 		]);
 	});
 
@@ -456,7 +456,7 @@ mv struct Plain {
 }
 `;
 		expect(parse(input, system).errors.map((e) => e.message)).toEqual([
-			"Function not found: int.on_click",
+			"'int' doesn't emit on_click events (no take_click drain)",
 		]);
 	});
 

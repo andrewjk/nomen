@@ -209,6 +209,35 @@ pub mv struct TextBox : Control {
 		```
 	}
 
+	// ── Event drains (docs/HANDLERS.md): the on_click / on_focus / on_blur /
+	// on_input desugars poll these per frame — one method per event, the
+	// naming convention is the contract. Arming and native plumbing live
+	// inside the drains.
+
+	// Click edge (the gesture recognizer arms this view — see
+	// nomen_window_clicks_init; arming is idempotent per handle).
+	pub func take_click = (self, out bool) {
+		nomen_window_clicks_init(self.handle)
+		return nomen_control_take_click(self.handle)
+	}
+
+	// Focus edge: true the frame this control GAINED first-responder status.
+	pub func take_focus = (self, out bool) {
+		return nomen_control_take_focus(self.handle)
+	}
+
+	// Blur edge: true the frame this control LOST first-responder status.
+	pub func take_blur = (self, out bool) {
+		return nomen_control_take_blur(self.handle)
+	}
+
+	// Text-input edge: true when the control's text changed since the last
+	// drain (the field editor writes through to stringValue while typing —
+	// each keystroke is one edge). First drain baselines silently.
+	pub func take_input = (self, out bool) {
+		return nomen_control_take_input(self.handle)
+	}
+
 	pub func get_text = (self, out string) {
 		```
 		#arch: c

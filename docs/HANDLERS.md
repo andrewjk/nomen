@@ -55,15 +55,14 @@ dialog buttons, and pagination — `demos_check.test.ts` keeps them green).
 
 The control-event family grew past clicks (2026-10-22): `on_focus` /
 `on_blur` drain a per-window first-responder snapshot (polled once per
-frame by the app's pump; a handoff fires the old control's blur and the
-new control's focus in the same frame, and the field editor maps back to
-the editing control), and `on_input` fires per text change (per-handle
-last-seen-text compares over the live `stringValue`). All control events
-dispatch through ONE App method (`handle_events`) — new events are new
-table rows in the desugar plus their drain primitive; the App contract is
-fixed. Each event is one row in the desugar's `CONTROL_EVENTS` table (drain
-primitive, optional arming) plus its library plumbing — the route is
-untouched.
+frame by the run loop itself — `nomen_window_focus_poll` in `Window.run`;
+a handoff fires the old control's blur and the new control's focus in the
+same frame, and the field editor maps back to the editing control), and
+`on_input` fires per text change (per-handle last-seen-text compares over
+the live `stringValue`). All control events dispatch through ONE App
+method (`handle_events`) — new events are new library drain methods
+(`take_<event>` per control) plus their native plumbing; the App contract
+and the route are fixed, and there is no compiler event table.
 
 Still to land: the deprecation-cycle doc sweep (the poll examples leave
 GUI.md's other sections), and the `List<Own>.at()` uniform-borrow load
@@ -172,13 +171,15 @@ Routing is by precedence:
    `func on_<event> = (ref self, int id)`: the composite owns the event
    source and drains it; the site rewrites to the enrollment call. This is
    the framework-author extension point — any widget, any event name, GUI
-   or not (`on_command` on a voice-only widget), and it wins over the
-   builtin table even on a Control-conforming composite.
-2. **Builtin table** (`Control` receivers only) — events the window pump
-   drains natively: `on_click`, `on_focus`, `on_blur`, `on_input`. The
-   member family is reserved on control receivers, so an untabled
-   `on_<event>` there is a named error (the extension point for future
-   builtin events), not a confusing "Function not found".
+   or not (`on_command` on a voice-only widget) — and it wins over the
+   builtin drains even on a Control-conforming composite.
+2. **Control drain** (naming convention, no table) — `on_<event>` routes to
+   the control's own `take_<event>` drain method (`Button.take_click`,
+   `TextBox.take_input`, …): the control DECLARES which events it emits, in
+   the library, next to its native plumbing. No compiler table, no
+   privileged events; a new event kind is new library methods, and a
+   control that doesn't emit an event says so at the registration
+   ("'Button' doesn't emit on_hover events").
 3. **Otherwise** — ordinary resolution: a same-named method on a
    non-control resolves as a call; a missing one is "Function not found".
 
