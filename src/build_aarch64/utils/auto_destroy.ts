@@ -4,6 +4,7 @@ import { box_field_mono, enum_copy_is_deep } from "../../build_common/box_clone.
 import {
 	field_load_deep_copy,
 	has_destroy,
+	is_pure_borrow_element_load,
 	struct_needs_auto_destroy,
 	struct_needs_destroy,
 } from "../../build_common/destroy_analysis.ts";
@@ -1883,6 +1884,10 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 			// A shallow field-struct borrow (e.g. the hoisted `_param_N` copy
 			// of `diff.changes`) is not destroyed — the owner frees it.
 			if (is_field_struct_borrow(decl)) continue;
+			// The `List<Own>.at()` pure borrow is not destroyed either — the
+			// load aliased destroy-worthy state the slot owns (see
+			// is_pure_borrow_element_load).
+			if (is_pure_borrow_element_load(decl, status)) continue;
 			if (emit_fixed_array_local_destroys(status, decl)) continue;
 			const resolved_decl = resolve_decl_struct(decl, status);
 			if (!resolved_decl) continue;
@@ -2055,6 +2060,10 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 		// A shallow field-struct borrow is not destroyed — see the
 		// heap_slots branch above.
 		if (is_field_struct_borrow(decl)) continue;
+		// The `List<Own>.at()` pure borrow is not destroyed either — the
+		// load aliased destroy-worthy state the slot owns (see
+		// is_pure_borrow_element_load).
+		if (is_pure_borrow_element_load(decl, status)) continue;
 		if (emit_fixed_array_local_destroys(status, decl)) continue;
 		const resolved_decl = resolve_decl_struct(decl, status);
 		if (!resolved_decl) continue;

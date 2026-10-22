@@ -177,7 +177,14 @@ Two shapes do NOT create invalidatable borrows:
   (below), which revalidates the field.
 - **Container element reads are deep copies** (`List`/`Buffer`'s
   copy-on-store), so the reader owns its value and owner mutation cannot
-  dangle it — re-fetching an element after a push is fine.
+  dangle it — re-fetching an element after a push is fine. The one
+  exception is the element-load pure borrow: a `.at()` read of an element
+  whose destroy-worthy state cannot be privatized (a `#destroy` over a
+  non-string field — an AppKit-style handle — a nested destroy struct
+  without a `copy`, an owned func field). The binding aliases the slot's
+  resource, so it is policed like any borrow: a `ref self` call on the
+  container invalidates it, it cannot move through `mv`, and nothing is
+  destroyed at its scope exit (the slot's destroy stays the only one).
 
 Object-level aliases (`ref Box<Token> q = b`, where both names are the same
 heap instance) are **not** child-group borrows, so mutating one does not
@@ -257,6 +264,10 @@ immutable borrow — assigning to its fields is a compile error ("Cannot mutate
 - Child-group borrow invalidation is enforced statically (check phase), rooted
   at the ultimate owner variable name; branch/loop invalidations merge
   conservatively.
+- Element loads of destroy-aliasing structs (the `List<Own>.at()` shape) are
+  classified as pure borrows at compile time: no scope-exit destroy on the
+  binding, container-mutation invalidation, `mv`-transfer rejection
+  (`element_load_aliases_destroy_state`; `test/list-own-at.test.ts`).
 - View borrows are scope-checked (a borrow may not escape the scope it was
   taken in) and invalidated on source reassignment.
 - `swap` and its `mv` requirement are enforced at compile time.

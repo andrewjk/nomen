@@ -401,6 +401,16 @@ borrows) will be required.**
 
 These were previously open gaps and are now enforced at compile time:
 
+- **Element reads of `#destroy`-struct containers are pure borrows**
+  (the `List<Own>.at()` double-release): a bitwise `.at()` load of an
+  element whose destroy-worthy state the load cannot privatize (a user
+  `#destroy` over a non-string field — an AppKit-style handle — a nested
+  destroy struct without a `copy`, an owned func field, a trait-declared
+  destroy field) no longer destroy-tracks the binding. The slot keeps
+  sole ownership; the binding is borrow-checked against the container
+  (invalidated by mutation, not transferable through `mv`) — see
+  `element_load_aliases_destroy_state` and
+  `test/list-own-at.test.ts`.
 - **Borrowed references outliving their owner** are rejected at compile time
   (scope-depth lifetime check; every nested-structure store is closed by the
   mv-parameter and move-field rules). See "Borrow Lifetimes" above.

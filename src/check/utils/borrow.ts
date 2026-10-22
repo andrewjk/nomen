@@ -1,3 +1,5 @@
+import { element_load_aliases_destroy_state } from "../../build_common/destroy_analysis.ts";
+import { is_container_borrow_accessor_name } from "../../build_common/string_return_analysis.ts";
 import AccessFunctionCallNode from "../../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../../nodes/AccessNode.ts";
 import type BaseNode from "../../nodes/BaseNode.ts";
@@ -41,13 +43,17 @@ export function borrow_depth_of(node: BaseNode, status: CheckStatus): number | u
 			}
 		} else if (access.access.node_type === "access_func") {
 			const t = type_from_value_node(access, status);
-			if (is_borrowed_return(t, status)) {
+			const borrows_from_receiver =
 				// A `mv out T` method transfers ownership — the result is an
 				// owned value, not a borrow.
-				if ((access.access as AccessFunctionCallNode).owned_return) return undefined;
-				// Instance method returning a class/view borrows from its
-				// receiver. Static calls (receiver is a type name, not a
-				// variable in scope) and constructors produce owned values.
+				(is_borrowed_return(t, status) &&
+					!(access.access as AccessFunctionCallNode).owned_return) ||
+				is_element_load_pure_borrow(access, status);
+			if (borrows_from_receiver) {
+				// Instance method returning a class/view (or an element-load
+				// pure borrow) borrows from its receiver. Static calls (receiver
+				// is a type name, not a variable in scope) and constructors
+				// produce owned values.
 				if (access.target.node_type === "value") {
 					const recv = status.values.findLast((v) => v.name === (access.target as ValueNode).value);
 					if (recv) {
@@ -93,10 +99,14 @@ export function borrow_owner_of(node: BaseNode, status: CheckStatus): string | u
 			}
 		} else if (access.access.node_type === "access_func") {
 			const t = type_from_value_node(access, status);
-			if (is_borrowed_return(t, status)) {
+			const borrows_from_receiver =
 				// A `mv out T` method returns an owned value — no owner to root
-				// a borrow at (and it must not be invalidated by receiver mutation).
-				if ((access.access as AccessFunctionCallNode).owned_return) return undefined;
+				// a borrow at (and it must not be invalidated by receiver
+				// mutation). The element-load pure borrow joins the class case.
+				(is_borrowed_return(t, status) &&
+					!(access.access as AccessFunctionCallNode).owned_return) ||
+				is_element_load_pure_borrow(access, status);
+			if (borrows_from_receiver) {
 				if (access.target.node_type === "value") {
 					const recv = status.values.findLast((v) => v.name === (access.target as ValueNode).value);
 					if (recv) {
@@ -131,6 +141,27 @@ function is_borrowed_return(t: Type | undefined, status: CheckStatus): boolean {
 	if (!t) return false;
 	if (t.is_view) return true;
 	return !!t.name && is_owning_ref_type(t.name, status);
+}
+
+/**
+ * The `List<Own>.at()` pure borrow (FOLLOWUP.md): a container borrow accessor
+ * (`list.at(i)` — the accessor family, non-`mv out`) whose value-struct
+ * element aliases destroy-worthy state the load cannot privatize. The result
+ * is a borrow of the slot's resources — rooted at the container exactly like
+ * a class-typed method return, so a `ref self` call on the container
+ * invalidates it, it cannot escape its scope, and it cannot transfer through
+ * `mv`. Deliberately name-scoped to the accessor family: any method may
+ * return a `#destroy`-bearing struct by value as an OWNED transfer.
+ */
+function is_element_load_pure_borrow(access: AccessNode, status: CheckStatus): boolean {
+	const func_access = access.access as AccessFunctionCallNode;
+	if (func_access.owned_return) return false;
+	if (!is_container_borrow_accessor_name(func_access.name ?? "")) return false;
+	const t = type_from_value_node(access, status);
+	if (!t?.name || t.is_view || t.is_array) return false;
+	const elem = status.structs.find((s) => s.name === t.name && !s.is_simple_type && !s.is_generic);
+	if (!elem || elem.is_class) return false;
+	return element_load_aliases_destroy_state(elem, status);
 }
 
 /**

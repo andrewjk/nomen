@@ -1,5 +1,6 @@
 import {
 	has_destroy,
+	is_pure_borrow_element_load,
 	struct_needs_auto_destroy,
 	struct_needs_destroy,
 } from "../build_common/destroy_analysis.ts";
@@ -363,7 +364,13 @@ export function free_scoped_declarations(
 			// a container borrow accessor keeps the slot's alias — no strdup, no
 			// destroy (the aliased strings belong to the slot's owner; a `return
 			// _recv.field` view would point at bytes this cleanup frees).
-			is_borrow_accessor_carrier(dec);
+			is_borrow_accessor_carrier(dec) ||
+			// The `List<Own>.at()` pure borrow (FOLLOWUP.md): a container
+			// borrow-accessor binding whose element aliases destroy-worthy
+			// state — the load cannot privatize it, so the binding owns
+			// nothing and the slot keeps sole ownership (destroying the
+			// borrowed copy double-released the slot's resource).
+			is_pure_borrow_element_load(dec, status);
 		// A string declaration initialized from an array element access
 		// (`args.at(n)`, `list.first()`) is a BORROW into the container's
 		// storage — including the hoisted `_param_N` temp for a call like

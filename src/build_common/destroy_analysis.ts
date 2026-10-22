@@ -1,3 +1,6 @@
+import { is_box_type } from "../check/utils/box.ts";
+import type AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
+import type AccessNode from "../nodes/AccessNode.ts";
 import type StructNode from "../nodes/StructNode.ts";
 import type Type from "../nodes/Type.ts";
 import type { StructTable } from "./mono_name.ts";
@@ -200,6 +203,108 @@ export function field_load_deep_copy(struct: StructNode, table: StructTable): bo
 function struct_has_owned_func_field(struct: StructNode): boolean {
 	if (!(struct.is_class === true || struct.is_owning === true)) return false;
 	return struct.fields.some((f) => !f.type.is_ref && f.type.name === "func" && !f.type.is_array);
+}
+
+/**
+ * Whether a container-element bitwise load (`.at(i)` / `.first()` / `load_T`
+ * — the borrow accessor family) aliases destroy-worthy state that neither
+ * the mv `load_T` deep-copy nor the binding's string strdup repair
+ * privatizes. Such a binding must be classified as a PURE BORROW — no
+ * scope-exit destroy and no strdup repair: the slot keeps sole ownership of
+ * everything the load aliased (the recorded `List<Own>.at()`
+ * double-release: a `#destroy` over a non-string field — an AppKit handle —
+ * ran on the borrowed copy AND on the slot, and a nested `#destroy` struct
+ * without a copy method did the same one level down).
+ *
+ * Privatized by the load + binding repair, and therefore fine to keep
+ * destroy-tracked: direct `string` fields (strdup'd at the binding),
+ * non-nullable `Box<T>` fields (cloned by load_T), nested structs whose
+ * `copy` deep-copies (field_load_deep_copy), and enum fields whose payloads
+ * are all deep-copyable (strdup'd in place). NOT privatizable, and
+ * therefore aliasing: a user `#destroy` body (release semantics — a bitwise
+ * copy cannot clone the resource), a nested destroy-worthy struct without a
+ * copy method, a nullable Box/class field (the load's clone arm skips
+ * nullable fields), an enum field whose payloads reference classes/traits,
+ * an owned func field (the shared closure descriptor), and trait-declared
+ * destroy fields (outside the strdup repair's field walk).
+ *
+ * The accessor-name set is kept in sync with
+ * `is_container_borrow_accessor_name` (string_return_analysis.ts), which
+ * cannot be imported here (it pulls the build_c utils graph into a module
+ * the backends' gather passes import directly).
+ */
+export function element_load_aliases_destroy_state(
+	struct: StructNode,
+	table: StructTable,
+): boolean {
+	if (has_destroy(struct)) return true;
+	if (struct_has_owned_func_field(struct)) return true;
+	if (struct_has_trait_declared_destroy_fields(struct, table as EnumAwareTable)) return true;
+	for (const field of struct.fields) {
+		if (field.type.is_ref || field.type.is_view || field.type.is_array) continue;
+		const field_enum = (table as EnumAwareTable).enums?.find(
+			(e) => e.name === field.type.name && e.has_associated_data,
+		);
+		if (field_enum) {
+			// String payloads are strdup'd in place by the load; class/trait
+			// payloads are shared pointers ownership cannot split.
+			for (const c of field_enum.cases) {
+				for (const p of c.params) {
+					if ((table as EnumAwareTable).traits?.some((t) => t.name === p.type.name)) return true;
+					const ps = table.structs.find((s) => s.name === p.type.name);
+					if (ps?.is_class) return true;
+				}
+			}
+			continue;
+		}
+		const field_struct = resolve_struct_type(field.type, table);
+		if (!field_struct) continue;
+		if (field_struct.is_class) {
+			// A non-nullable Box field is cloned by the load (privatized);
+			// a nullable Box — or any other class-shaped field — is not:
+			// the load's clone arm skips nullable fields.
+			if (is_box_type(field_struct.name, table.structs) && !field.type.is_nullable) continue;
+			return true;
+		}
+		if (struct_needs_destroy(field_struct, table) && !field_load_deep_copy(field_struct, table))
+			return true;
+	}
+	return false;
+}
+
+/**
+ * Whether a DECLARATION is the `List<Own>.at()` pure borrow: bound (non-`mv`,
+ * non-`ref`) to a container borrow accessor call (`at`/`at_or_panic`/`first`/
+ * `slice`/`get_or`/`get_or_panic`/`load`, without `owned_return`) whose
+ * value-struct element aliases destroy-worthy state. Both backends gate the
+ * binding's scope-exit destroy and the string strdup repair on this — see
+ * element_load_aliases_destroy_state.
+ */
+export function is_pure_borrow_element_load(
+	decl: { type?: Type; value?: unknown },
+	table: StructTable,
+): boolean {
+	const value = decl.value as AccessNode | undefined;
+	if (!value || value.node_type !== "access") return false;
+	const access = value.access;
+	if (!access || access.node_type !== "access_func") return false;
+	const func = access as AccessFunctionCallNode;
+	if (func.owned_return) return false;
+	const name = func.name ?? "";
+	const is_borrow_accessor =
+		name === "at" ||
+		name === "at_or_panic" ||
+		name === "first" ||
+		name === "slice" ||
+		name === "get_or" ||
+		name === "get_or_panic" ||
+		name === "load";
+	if (!is_borrow_accessor) return false;
+	const decl_type = decl.type;
+	if (!decl_type) return false;
+	const struct_type = resolve_struct_type(decl_type, table);
+	if (!struct_type || struct_type.is_class || struct_type.is_generic) return false;
+	return element_load_aliases_destroy_state(struct_type, table);
 }
 
 /**

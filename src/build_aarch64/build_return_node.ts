@@ -7,7 +7,10 @@ import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import { is_normalized_struct_call } from "../build_common/call_init_string_fields.ts";
 import { override_return_string_fields } from "../build_common/ctor_return_owned.ts";
 import ctor_return_owned_string_fields from "../build_common/ctor_return_owned.ts";
-import { struct_needs_auto_destroy } from "../build_common/destroy_analysis.ts";
+import {
+	is_pure_borrow_element_load,
+	struct_needs_auto_destroy,
+} from "../build_common/destroy_analysis.ts";
 import { direct_string_fields, owns_strings_uniformly } from "../build_common/has_string_fields.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { is_nullable_struct_type } from "../build_common/nullable_struct.ts";
@@ -216,6 +219,10 @@ export default function build_return_node(
 				continue;
 			}
 			if (is_field_struct_borrow(decl)) continue;
+			// The `List<Own>.at()` pure borrow is not destroyed — the load
+			// aliased destroy-worthy state the slot owns (see
+			// is_pure_borrow_element_load).
+			if (is_pure_borrow_element_load(decl, status)) continue;
 			emit_destroy_for_decl(
 				status,
 				decl.name,
@@ -249,6 +256,9 @@ export default function build_return_node(
 					continue;
 				}
 				if (is_field_struct_borrow(decl)) continue;
+				// The `List<Own>.at()` pure borrow is not destroyed — see
+				// is_pure_borrow_element_load.
+				if (is_pure_borrow_element_load(decl, status)) continue;
 				emit_destroy_for_decl(
 					status,
 					decl.name,
@@ -436,6 +446,9 @@ export default function build_return_node(
 					continue;
 				}
 				if (is_field_struct_borrow(decl)) continue;
+				// The `List<Own>.at()` pure borrow is not destroyed — see
+				// is_pure_borrow_element_load.
+				if (is_pure_borrow_element_load(decl, status)) continue;
 				emit_destroy_for_decl(
 					status,
 					decl.name,

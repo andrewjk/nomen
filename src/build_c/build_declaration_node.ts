@@ -11,6 +11,7 @@ import record_ctor_heap_default_fields from "../build_common/ctor_heap_default_f
 import { override_displaced_string_fields } from "../build_common/ctor_return_owned.ts";
 import {
 	field_load_deep_copy,
+	is_pure_borrow_element_load,
 	struct_needs_auto_destroy,
 } from "../build_common/destroy_analysis.ts";
 import { direct_string_fields, owns_strings_uniformly } from "../build_common/has_string_fields.ts";
@@ -1491,7 +1492,12 @@ export default function build_declaration_node(
 					binding_struct &&
 					owns_strings_uniformly(binding_struct) &&
 					is_borrow_accessor_init &&
-					!is_borrow_accessor_carrier(node)
+					!is_borrow_accessor_carrier(node) &&
+					// The `List<Own>.at()` pure borrow skips the strdup repair:
+					// its scope-exit destroy is suppressed, so privatized string
+					// copies would have nothing to free them (a per-binding
+					// leak) — the fields alias the slot, which owns them.
+					!is_pure_borrow_element_load(node, status)
 				) {
 					// The declaration statement is still open (its terminator
 					// normally rides the override emitters, which cannot fire for

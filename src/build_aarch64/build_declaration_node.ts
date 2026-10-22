@@ -9,6 +9,7 @@ import call_in_set from "../build_common/call_in_set.ts";
 import { record_call_init_string_fields } from "../build_common/call_init_string_fields.ts";
 import record_ctor_heap_default_fields from "../build_common/ctor_heap_default_fields.ts";
 import {
+	is_pure_borrow_element_load,
 	struct_needs_destroy,
 	struct_needs_auto_destroy,
 } from "../build_common/destroy_analysis.ts";
@@ -1895,10 +1896,16 @@ export default function build_declaration_node(
 	// NOT be destroy-tracked — destroying it would free the owner's buffer
 	// (double-free once the owner is destroyed). Mirrors the C backend's
 	// is_destructured_field_access rule in build_auto_free. A `mv` field
-	// access transfers ownership and stays tracked.
+	// access transfers ownership and stays tracked. The same holds for the
+	// `List<Own>.at()` pure borrow (FOLLOWUP.md): a container borrow-accessor
+	// binding whose element aliases destroy-worthy state — the slot keeps
+	// sole ownership, so the binding is destroy-tracked by nothing.
+	const pure_borrow_element_load =
+		!is_borrowed_class_ref && is_pure_borrow_element_load(node, status);
 	if (
 		!is_borrowed_class_ref &&
 		!is_field_struct_borrow(node) &&
+		!pure_borrow_element_load &&
 		struct_type &&
 		struct_needs_destroy(struct_type, status)
 	) {
@@ -2995,7 +3002,18 @@ export default function build_declaration_node(
 					// Stamp the carrier so the destroy walks skip it (see
 					// is_field_struct_borrow).
 					const is_compiler_carrier = is_compiler_temp_name(node.name);
-					if (binding_struct && owns_strings_uniformly(binding_struct) && is_borrow_accessor_init) {
+					// The `List<Own>.at()` pure borrow skips the strdup repair:
+					// its scope-exit destroy is suppressed, so privatized string
+					// copies would have nothing to free them (a per-binding
+					// leak) — the fields alias the slot, which owns them.
+					const pure_borrow_init =
+						is_borrow_accessor_init && is_pure_borrow_element_load(node, status);
+					if (
+						binding_struct &&
+						owns_strings_uniformly(binding_struct) &&
+						is_borrow_accessor_init &&
+						!pure_borrow_init
+					) {
 						if (is_compiler_carrier) {
 							(node as unknown as { borrow_accessor_carrier?: boolean }).borrow_accessor_carrier =
 								true;

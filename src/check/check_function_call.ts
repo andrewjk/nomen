@@ -965,18 +965,23 @@ export default function check_function_call(
 		// (ClassBuffer-backed for class/trait element types) frees the
 		// pointer per-element, but the borrow's source still references the
 		// same instance — a runtime double-free (SIGABRT) when the source
-		// is later destroyed. Reject at check time. The argument must be
-		// an OWNED value: an owned local, a constructor call, or a
-		// `mv out T` accessor result (e.g. `.pop()`, `Buffer.move_T(i)`).
-		// `swap` is exempt — the swap expression replaces the source in
-		// scope, so the mv is sound even when the lvalue reads as a
-		// borrow (e.g. `dst.push(mv src.field swap fresh)`).
-		if (
-			func_param.is_moved &&
-			!node.swap_params?.has(i) &&
-			func_param.type.name &&
-			is_owning_ref_type(func_param.type.name, status)
-		) {
+		// is later destroyed. The same holds for a `mv` VALUE-STRUCT
+		// parameter: the argument's bytes alias resources the source owner
+		// still destroys (the `List<Own>.at()` pure borrow). Reject at check
+		// time — the argument must be an OWNED value: an owned local, a
+		// constructor call, or a `mv out T` accessor result (e.g. `.pop()`,
+		// `Buffer.move_T(i)`). `swap` is exempt — the swap expression
+		// replaces the source in scope, so the mv is sound even when the
+		// lvalue reads as a borrow (e.g. `dst.push(mv src.field swap fresh)`).
+		const param_struct = func_param.type.name
+			? status.structs.find(
+					(s) => s.name === func_param.type.name && !s.is_simple_type && !s.is_generic,
+				)
+			: undefined;
+		const param_takes_ownership =
+			(func_param.type.name && is_owning_ref_type(func_param.type.name, status)) ||
+			(!!param_struct && !param_struct.is_class && param_struct.is_owning === true);
+		if (func_param.is_moved && !node.swap_params?.has(i) && param_takes_ownership) {
 			const arg_borrow_depth = borrow_depth_of(param, status);
 			if (arg_borrow_depth !== undefined) {
 				add_error(
