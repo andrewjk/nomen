@@ -95,7 +95,15 @@ shape doesn't transfer — needs its own design).
 ## Field-scoped borrow invalidation (Valen-style effect precision)
 
 Recorded 2026-10-12, out of the Valen group-borrowing comparison
-([docs/GROUP_BORROWING.md](./docs/GROUP_BORROWING.md)). Today ANY `ref self`
+([docs/GROUP_BORROWING.md](./docs/GROUP_BORROWING.md)). **Superseded design
+(2026-10-23)**: the body-scan mechanism sketched below was rejected
+(reasoning burden, scan/fixpoint cost) in favor of signature-declared effect
+sets — `ref self mutates data, cache` — verified against the body at the
+definition. The plumbing half of the sketch (`borrowed_via`, field-scoped
+`invalidate_borrows_of`) survives unchanged. Full design, syntax decisions,
+staging, and tests: [`docs/FIELD_EFFECTS.md`](./docs/FIELD_EFFECTS.md).
+
+Today ANY `ref self`
 method call invalidates ALL live child-group borrows rooted at the receiver's
 owner — `invalidate_borrows_of(status, owner)` at
 src/check/check_access_node.ts:907, where borrows root only at the ultimate

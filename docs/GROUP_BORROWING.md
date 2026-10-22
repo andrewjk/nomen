@@ -665,6 +665,90 @@ compile-time bounds contracts could extend to index-disjointness proofs
   optimizer noalias hints and any future data-parallel story. The async
   freeze recovers exclusivity, but only inside nurseries.
 
+## Addendum: Ante's places-over-lifetimes (recorded 2026-10-22)
+
+Jake Fecher's [Borrow Checking Zero-Cost Cyclic
+Mutability](https://antelang.org/blog/safe_cyclic_mutability/) (2026-10-19)
+is the shipping version of this lineage — the post says Ante's new rules
+"blended many elements from group borrowing" (the Verdagon post above).
+The philosophy was already on our books when it landed; what is genuinely
+new relative to Valen:
+
+- **Places as first-class, union-able entities.** `'x`, `'(x, y)`,
+  `'z.bar` — the exact set of things a reference may borrow from,
+  generalized past Valen's paths with unions and anonymous places. The
+  checker core becomes "on use, error if any place the value refers to
+  has been moved" — the same shape as Nomen's checker
+  (invalidate-on-mutation, check-on-use) keyed on a much coarser key:
+  the owner root name.
+- **The explicit, nestable stability marker `!`.** Valen's type-stability
+  exception was _planned_; Ante ships it as an inferable marker. A
+  reference into shape-unstable storage (a Vec element, an Rc interior)
+  carries `!`; mutating place `a` invalidates `a!` borrows but not `a`
+  borrows — so `first_mut` and `last_mut` coexist, which Rust rejects.
+- **`Rc 'p t`, the place-parameterized shared pointer.** Valen's "RC
+  blend" was a roadmap item; Ante shows it concretely. Every clone shares
+  one place variable, so mutation through clone 1 invalidates unstable
+  borrows through clone 2 — statically, zero runtime checks — and cyclic
+  mutability falls out for free (the headline).
+
+Honest costs the post glosses: "zero-cost" covers the _checking_, not the
+memory — footnote 7 concedes Rc cycles still leak, so the headline does
+not touch Nomen's determinism story; signatures carry place annotations
+(`mut 'v! t`, `can Mutate 'ctx.events`); and the planned "abstract
+places" fix for abstraction leaks is left "up to the library author to
+keep the translation sound."
+
+Mapped onto the lists above:
+
+- **Shortfall 1 (`step`):** unstable places are the genuine fix, not a
+  mitigation — an element reference typed `mut 'v! t` stays live across
+  sibling-field mutation and only dies when its container actually
+  displaces. The Nomen analog is a place-carrying container (`at_ref`
+  returning a `(p!, container!)` reference), which needs interior
+  references and place-carrying generics vs. Nomen's simple
+  monomorphism — the third design's route to the granularity Valen's
+  planned Mutable-in-Immutable targets. (Shortfall 2, view-field
+  poisoning, falls to the same per-place precision.)
+- **"What is worth stealing" item 1:** the stability framing sharpens
+  the field-scoped sketch's justification — classify mutations by _what
+  the storage shape lets them displace_, not by "is it `ref self`".
+  Same idea, better stated. Concrete process note: key borrows as
+  place-sets (owner root + field path) so the container case above
+  extends the structure instead of reworking it (noted in the FOLLOWUP
+  sketch).
+- **Shortfall 3 (`File` → `FileSystem`):** `Rc 'p t` covers this shape
+  statically. A Nomen analog _without_ refcounting: place-threaded
+  handles into an **owned arena** — every handle into one arena shares
+  a place, the arena owner stays the single destructor (determinism
+  intact, wholesale free per MEMORY.md's arena containers), handles are
+  unstable borrows so mutation through one invalidates borrows through
+  others at compile time. Zero-runtime-cost cyclic _mutability_;
+  collection remains the arena's job. Plausible future design note for
+  `Graph<T>` element references.
+- **Shortfall 5 (exclusivity):** Ante's `Mutate 'p` call-site
+  distinctness is a place-precise refinement of Nomen's
+  two-`ref`-param rejection — the gap over what Nomen has is precision,
+  not a missing guard.
+
+Not worth stealing, same as before plus: `imm`/`uniq` reference kinds
+(exclusivity via `mv` plus the async freeze covers Nomen; the want is
+optimizer noalias), the `get_default`/Polonius contrast (copy semantics
+dissolves that shape differently), Ante's
+FnOnce-when-invalidating-captures closure rule (Nomen's eager captures
+sidestep it entirely), places in user-facing signatures wholesale (the
+abstraction risk this doc already flags — Ante's own abstract-places
+footnote admits it; Nomen's root-name model stays abstraction-proof),
+and Rc-based cycles as-is (Nomen does not want refcounting, and theirs
+leak).
+
+The philosophical line: Ante takes the dangerous shapes and _proves them
+safe_ with `!`; Nomen makes them _unspellable_ (copies, no interior
+refs, no `ref` fields). They get no-write-back ergonomics; Nomen gets no
+annotation surface and no dangle-able borrows. Residue on Nomen's side
+is write-back noise; on Ante's, annotation surface, cycle leaks, and the
+abstraction hole.
+
 ## Pointers
 
 - Checker machinery: `src/check/utils/borrow.ts` (`borrow_depth_of`,
@@ -679,3 +763,6 @@ compile-time bounds contracts could extend to index-disjointness proofs
   between tasks".
 - Follow-up sketch: FOLLOWUP.md, "Field-scoped borrow invalidation
   (Valen-style effect precision)".
+- The Ante follow-up in this lineage (places, `!` stability, `Rc 'p t`):
+  [Borrow Checking Zero-Cost Cyclic Mutability](https://antelang.org/blog/safe_cyclic_mutability/)
+  — see the addendum above.
