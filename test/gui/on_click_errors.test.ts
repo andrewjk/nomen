@@ -459,4 +459,145 @@ mv struct Plain {
 			"Function not found: int.on_click",
 		]);
 	});
+
+	// Event routing precedence (docs/HANDLERS.md): a DECLARED event API wins
+	// over the builtin table — even on a Control-conforming composite, and
+	// even for the name on_click. A voice-only (non-GUI) widget declares its
+	// own events the same way; nothing in the desugar is click-specific.
+	test("Control-conforming composite with a declared API routes composite", () => {
+		const input = `
+import System
+import System::Controls
+
+mv struct MyPager : Control {
+	var Button prev
+	var Button next
+	var int page = 0
+	var int page_change_id = -1
+	var bool page_change_pending = false
+
+	pub func #init = (self, Window window) {
+		self.prev = Button(window, "<")
+		self.next = Button(window, ">")
+	}
+
+	pub func measure = (self, BoxConstraints constraints, out Size) {
+		var s = Size()
+		s.width = 120
+		s.height = 24
+		return s
+	}
+
+	pub func set_frame = (ref self, int x, int y, int width, int height) {
+	}
+
+	pub func intrinsic_size = (self, out Size) {
+		var s = Size()
+		s.width = 120
+		s.height = 24
+		return s
+	}
+
+	pub func on_page_change = (ref self, int id) {
+		self.page_change_id = id
+	}
+
+	pub func tick = (ref self, ref App owner, ref Window win) {
+		if self.page_change_pending && self.page_change_id >= 0 {
+			owner.run_handler(self.page_change_id, ref win)
+		}
+		self.page_change_pending = false
+	}
+}
+
+mv struct PagerApp : App {
+	var MyPager pager
+
+	pub func #init = (self, Window window) {
+		self.pager = MyPager(window)
+	}
+
+	pub func start = (ref self, ref Window win) {
+		self.pager.on_page_change(func () { })
+	}
+}
+
+pub func main = (Init init) {
+	var Window win = Window("pager", 200, 160)
+	var PagerApp app = PagerApp(win)
+	win.run(mv app)
+}
+`;
+		expect(parse(input, system).errors).toEqual([]);
+	});
+
+	// on_click itself is composite-eligible: a widget that declares
+	// `on_click(id)` owns its own click source (e.g. a custom-drawn or
+	// voice-activated control) and the desugar routes through enrollment —
+	// the builtin table is only the Control-receiver default.
+	test("declared on_click API on a custom widget routes composite", () => {
+		const input = `
+import System
+import System::Controls
+
+mv struct VoiceButton {
+	var int press_id = -1
+	var bool press_pending = false
+
+	pub func on_click = (ref self, int id) {
+		self.press_id = id
+	}
+
+	pub func tick = (ref self, ref App owner, ref Window win) {
+		if self.press_pending && self.press_id >= 0 {
+			owner.run_handler(self.press_id, ref win)
+		}
+		self.press_pending = false
+	}
+
+	pub func heard = (ref self) {
+		self.press_pending = true
+	}
+}
+
+mv struct VoiceApp : App {
+	var VoiceButton mic
+	var Text status
+	var Container grid
+	var int heard = 0
+	var int frames = 0
+
+	pub func #init = (self, Window window) {
+		self.mic = VoiceButton()
+		self.status = Text(window)
+		var Container grid = VStack(8)
+		grid.add(self.status.handle, 0, 24, 1)
+		self.grid = grid
+	}
+
+	pub func start = (ref self, ref Window win) {
+		win.set_content(ref self.grid)
+		self.mic.on_click(func () { self.heard = self.heard + 1 })
+	}
+
+	pub func frame = (ref self, ref Window win, FrameEvents ev) {
+		self.frames = self.frames + 1
+		if self.frames == 2 {
+			self.mic.heard()
+		}
+		if self.frames == 3 {
+			Console.write_line(self.heard.to_string())
+			win.close()
+		}
+	}
+}
+
+pub func main = (Init init) {
+	var Window win = Window("voice", 200, 160)
+	var VoiceApp app = VoiceApp(win)
+	win.run(mv app)
+}
+`;
+		expect(parse(input, system).errors).toEqual([]);
+	});
 });

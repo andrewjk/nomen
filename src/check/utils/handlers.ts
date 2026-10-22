@@ -148,45 +148,36 @@ export function try_check_handler_registration(
 		return false;
 	};
 
-	// Click handlers ride on CONTROL receivers (any other type's `on_click`
-	// member — or the "Function not found" for a missing one — resolves
-	// ordinarily).
-	if (node.name === "on_click") {
-		if (!receiver.traits.includes("Control")) return undefined;
-		return try_check_control_event(
-			receiver,
-			target_type,
-			target,
-			node,
-			status,
-			fail,
-			CONTROL_EVENTS[node.name],
-		);
-	}
+	// Event routing, in precedence order:
+	//
+	// 1. DECLARED EVENT API (Stage 3) — the receiver declares
+	//    `func on_<event> = (ref self, int id)`: the widget owns the event
+	//    source and drains it (its tick up-calls `run_handler`), and the
+	//    desugar routes the registration through the enrollment rewrite.
+	//    This is the framework-author extension point — any widget, any
+	//    event name, GUI or not (a voice-only widget's `on_command`), and
+	//    `on_click` itself. A declared API wins over the builtin table.
+	// 2. BUILTIN TABLE (Control receivers only) — events the WINDOW pump
+	//    drains natively (click ring, first responder, text value): zero
+	//    widget plumbing, arms poll the drain in the pump.
+	// 3. RESERVED FAMILY — an untabled `on_<event>` on a Control receiver is
+	//    a named error (the family is reserved for future builtin events),
+	//    not a confusing "Function not found".
+	// 4. Otherwise — ordinary resolution ("Function not found" for a missing
+	//    member; a same-named method on a non-control resolves as a call).
+	const composite = try_check_composite_event(receiver, target_type, target, node, status, fail);
+	if (composite !== undefined) return composite;
+
 	if (receiver.traits.includes("Control")) {
-		// The on_<event> family is reserved on control receivers: a
-		// table-backed event dispatches; anything else is a named error
-		// rather than a confusing "Function not found".
 		const cfg = CONTROL_EVENTS[node.name];
 		if (cfg) {
-			return try_check_control_event(
-				receiver,
-				target_type,
-				target,
-				node,
-				status,
-				fail,
-				CONTROL_EVENTS[node.name],
-			);
+			return try_check_control_event(receiver, target_type, target, node, status, fail, cfg);
 		}
 		return fail(
 			`.${node.name} is not a supported handler event — supported: on_click, on_focus, on_blur, on_input`,
 		);
 	}
-	// Composite event APIs (Stage 3): `self.pager.on_page_change(func () {
-	// ... })` enrolls an up-call handler on a composite host — the composite
-	// declares the event API, so any on_<event> can be a composite event.
-	return try_check_composite_event(receiver, target_type, target, node, status, fail);
+	return undefined;
 }
 
 /**
@@ -455,7 +446,7 @@ function try_check_composite_event(
 	const hoisted = new FunctionNode(
 		closure.start,
 		"private",
-		`#${node.name}_${id}`,
+		`#up_${node.name}_${id}`,
 		new Type(""),
 		[ref_self_param(host), win_param()],
 		closure.statements,
@@ -493,7 +484,7 @@ function up_call_arm(host: StructNode, event: string, id: number, start: number)
 		new ValueNode(start, "id", new Type("int")),
 		new ValueNode(start, String(id), new Type("int")),
 	);
-	const dispatch = new AccessFunctionCallNode(start, `#${event}_${id}`);
+	const dispatch = new AccessFunctionCallNode(start, `#up_${event}_${id}`);
 	// `ref win` — the borrowed argument needs the same explicit `ref` a source
 	// call site writes (ref_param_indices marks the keyword positions).
 	dispatch.ref_param_indices = [0];

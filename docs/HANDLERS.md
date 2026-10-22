@@ -164,12 +164,23 @@ self.add_btn.on_click(func () {
 })
 ```
 
-`.on_<event>(closure)` on a control receiver is checker-interpreted (the
-name-keyed precedent is the `Fiber.start_on` rewrite): no code executes at
-the site. The member name family `on_<event>` becomes reserved on control
-receivers — the extension point for future events (`on_change`, `on_hover`,
-`on_select`), in the same spirit as the marker-trait endgame recorded in
-FOLLOWUP.md: conformance/registration is the opt-in, not new `#`-members.
+`.on_<event>(closure)` is checker-interpreted (the name-keyed precedent is
+the `Fiber.start_on` rewrite): no code executes at a registration site.
+Routing is by precedence:
+
+1. **Declared event API** — the receiver declares
+   `func on_<event> = (ref self, int id)`: the composite owns the event
+   source and drains it; the site rewrites to the enrollment call. This is
+   the framework-author extension point — any widget, any event name, GUI
+   or not (`on_command` on a voice-only widget), and it wins over the
+   builtin table even on a Control-conforming composite.
+2. **Builtin table** (`Control` receivers only) — events the window pump
+   drains natively: `on_click`, `on_focus`, `on_blur`, `on_input`. The
+   member family is reserved on control receivers, so an untabled
+   `on_<event>` there is a named error (the extension point for future
+   builtin events), not a confusing "Function not found".
+3. **Otherwise** — ordinary resolution: a same-named method on a
+   non-control resolves as a call; a missing one is "Function not found".
 
 ### Hosts and dispatch
 
