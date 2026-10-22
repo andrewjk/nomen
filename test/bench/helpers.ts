@@ -7,12 +7,7 @@ import build, { build_needs_objc, default_platform } from "../../src/build";
 import { get_library } from "../../src/lib";
 import parse from "../../src/parse";
 import check_output from "../check_output";
-import {
-	SYSTEM_OBJ,
-	SYSTEM_OBJ_A64,
-	load_system_fn_names,
-	load_system_struct_names,
-} from "../system_lib";
+import { load_system_fn_names, load_system_struct_names, system_lib_fresh } from "../system_lib";
 const lib = get_library(path.resolve(import.meta.dirname, "../../core"));
 
 export function read_bench(name: string): string {
@@ -34,9 +29,10 @@ async function bench_options(
 	arch: "aarch64" | "c",
 ) {
 	const options = { arch, audit: true };
-	const split =
-		!build_needs_objc(parsed.root, default_platform()) &&
-		(arch === "aarch64" ? fs.existsSync(SYSTEM_OBJ_A64) : fs.existsSync(SYSTEM_OBJ));
+	// Not FRESH (stale object from a library edit the prebuild worker never
+	// rebuilt) is treated like MISSING: single TU — pairing a stale system.o
+	// with a fresh user TU is the struct-layout-crash hazard.
+	const split = !build_needs_objc(parsed.root, default_platform()) && system_lib_fresh(arch, true);
 	const result = split
 		? build(parsed.root, {
 				...options,

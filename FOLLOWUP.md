@@ -130,6 +130,16 @@ fields?)`: with a set, poison only borrows whose `borrowed_via` is in the
    invalidation paths need the same field-scoping; view borrows' eager
    invalidation on reassignment stays as-is (the buffer actually frees).
 
+Data-structure note (2026-10-22, from Ante's places-over-lifetimes post —
+see the GROUP_BORROWING.md addendum): key borrows as place-sets — (owner
+root, field path) pairs — rather than bare field-name strings. The match at
+invalidation time should compare paths (Ante's unstable-place checker works
+this way), so a future place-carrying container (`at_ref` returning
+`(p!, container!)` element references — the unstable-place fix for the
+`step` shortfall) extends this structure instead of reworking it.
+`borrowed_via` can stay the serialized string; the path comparison is what
+matters.
+
 Tests: `poke`-writes-`scratch` keeps a `data`-rooted borrow; `push`
 invalidates `items`-rooted element borrows but not sibling-field borrows;
 transitive effects (a `ref self` method calling another); opaque-body
@@ -511,17 +521,6 @@ release ships the new rules, `nomen format` cannot be run across the repo
 without a whole-repo style churn commit — pick one: either a dedicated
 "Style: reformat System library" commit or hold the in-source changes until
 release.
-
-## Split-build stale system-object hazard
-
-The split build (`ensure_system_lib`) pairs a STALE system object with a
-fresh user TU whenever the user TU's own hash alone is warm; only a
-MISSING object falls back to single-TU. If a library-editing session sees
-struct-layout-shaped crashes, force a system-lib rebuild before blaming
-codegen (the 2026-10-20 "mono-struct under-copy" scare was one of these —
-closed as not-reproducing; every aarch64 copy site is word-counted from
-`get_struct_size`, pinned by `test/struct_copy_snapshot.test.ts`). A fix
-would fold the system-lib hash into the user TU's warmness check.
 
 ## Generation-checked views for dynamic-removal safety
 

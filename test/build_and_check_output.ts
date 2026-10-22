@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import path from "node:path";
 
 import { expect } from "vite-plus/test";
@@ -8,7 +7,7 @@ import { get_library } from "../src/lib";
 import BaseNode from "../src/nodes/BaseNode";
 import check_output from "./check_output";
 import parse_with_imports, { parse_raw } from "./parse_with_imports";
-import { load_system_fn_names, load_system_struct_names, system_paths } from "./system_lib";
+import { load_system_fn_names, load_system_struct_names, system_lib_fresh } from "./system_lib";
 
 const system_lib = get_library(path.resolve("core"));
 
@@ -74,12 +73,15 @@ export default async function build_and_check_output(
 		// decides whether the generated code calls the audit runtime's wrappers
 		// or libc directly, and the two halves allocate and free each other's
 		// blocks — mixing them makes the audit counter meaningless (see
-		// system_paths). Missing variant ⇒ single TU (System compiled inline,
-		// so both halves always agree).
+		// system_paths). Not FRESH (stale object from a library edit the
+		// prebuild worker never rebuilt) ⇒ single TU too — pairing a stale
+		// system.o with a fresh user TU is the struct-layout-crash hazard.
+		// Missing variant ⇒ single TU (System compiled inline, so both halves
+		// always agree).
 		const split =
 			!build_needs_objc(parsed.root, default_platform()) &&
 			!shadows_system(parsed.root) &&
-			fs.existsSync(system_paths(arch, options.audit).obj);
+			system_lib_fresh(arch, options.audit);
 		const result = split
 			? build(parsed.root, { ...options, emit_mode: "user", system_struct_names: system_names })
 			: build(parsed.root, options);

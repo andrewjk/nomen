@@ -1,16 +1,9 @@
-import fs from "node:fs";
-
 import { expect, describe, test } from "vite-plus/test";
 
 import build from "../src/build";
 import check_output from "./check_output";
 import { parse_raw } from "./parse_with_imports";
-import {
-	SYSTEM_OBJ,
-	SYSTEM_OBJ_A64,
-	load_system_fn_names,
-	load_system_struct_names,
-} from "./system_lib";
+import { load_system_fn_names, load_system_struct_names, system_lib_fresh } from "./system_lib";
 
 describe("module-level statements", () => {
 	test("module-level var + async compile and run in a split build", async () => {
@@ -42,7 +35,11 @@ pub func main = () {
 		const system_names = load_system_struct_names();
 		const system_fn_names = load_system_fn_names();
 		for (const arch of ["c", "aarch64"] as const) {
-			const split = arch === "aarch64" ? fs.existsSync(SYSTEM_OBJ_A64) : fs.existsSync(SYSTEM_OBJ);
+			// A STALE system object (library edit the prebuild worker never
+			// rebuilt) is treated like a MISSING one: single TU — pairing a
+			// stale system.o with a fresh user TU is the struct-layout-crash
+			// hazard.
+			const split = system_lib_fresh(arch, true);
 			const options = { arch, audit: true };
 			const result = split
 				? build(parsed.root, { ...options, emit_mode: "user", system_struct_names: system_names })

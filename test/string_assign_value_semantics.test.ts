@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import path from "node:path";
 
 import { expect, test } from "vite-plus/test";
@@ -7,12 +6,7 @@ import build, { build_needs_objc, default_platform } from "../src/build";
 import { get_library } from "../src/lib";
 import parse from "../src/parse";
 import check_output from "./check_output";
-import {
-	SYSTEM_OBJ,
-	SYSTEM_OBJ_A64,
-	load_system_fn_names,
-	load_system_struct_names,
-} from "./system_lib";
+import { load_system_fn_names, load_system_struct_names, system_lib_fresh } from "./system_lib";
 
 const system = get_library(path.resolve(import.meta.dirname, "../core"));
 
@@ -55,9 +49,11 @@ function build_main(input: string, arch: "aarch64" | "c"): string {
 async function run_program(input: string, name: string, expected: string) {
 	const parsed = parse(input, system);
 	expect(parsed.errors).toEqual([]);
+	// A STALE system object (library edit the prebuild worker never rebuilt)
+	// is treated like a MISSING one: single TU — pairing a stale system.o
+	// with a fresh user TU is the struct-layout-crash hazard.
 	const split_available = (arch: "aarch64" | "c") =>
-		!build_needs_objc(parsed.root, default_platform()) &&
-		(arch === "aarch64" ? fs.existsSync(SYSTEM_OBJ_A64) : fs.existsSync(SYSTEM_OBJ));
+		!build_needs_objc(parsed.root, default_platform()) && system_lib_fresh(arch, true);
 	for (const arch of ["aarch64", "c"] as const) {
 		const options = { arch, audit: true };
 		const split = split_available(arch);

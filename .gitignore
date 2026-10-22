@@ -4,6 +4,7 @@ dist/
 
 build/
 *.cache
+*.libhash*
 *.out
 *.h
 *.m
