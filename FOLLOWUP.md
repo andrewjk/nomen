@@ -4,28 +4,6 @@ Recorded issues that were deliberately not fixed inline (out of scope for the
 task that surfaced them). Each entry: what was seen, where, and any context
 needed to pick it up later.
 
-## aarch64: receiver-relative field accesses beyond the immediate ranges (controls demo)
-
-Found 2026-10-22: `demos/controls` no longer assembles on aarch64 (C backend
-builds fine). `GalleryApp` holds every control in the gallery, and the struct
-crossed the aarch64 immediate encodings: the generated body addresses fields
-as `stur x0, [x19, #7152]` (stur imm9: ±255) and takes addresses as
-`add x0, x19, #6056` (add imm12: 0..4095). The prologue's `sub sp, sp, #big`
-chain IS split correctly — only the field addressing is out of range.
-
-`asm_large_frame.ts` rewrites out-of-range **frame** accesses (`[x29, #big]`,
-`add xD, x29, #big`) into `mov x17, #big` (+ `add`) shims, but has no
-coverage for **receiver-relative field** accesses (`[xN, #big]` where xN is
-the `self`/struct pointer — x19 in methods). Any app struct past ~4-7 KB of
-fields hits this; the gallery just crossed it.
-
-Fix shape: extend the large-frame rewriting (or the emitters) to
-receiver-relative `ldr/str/stur` and `add xD, xN, #big` forms with the same
-x17-staging trick — the receiver register is not x17 and the shims contain
-no calls, so the same safety argument holds. Workaround today: build with
-`--arch c`.
-
-
 ## Struct-plan residuals
 
 (The plan documents are consolidated in [`docs/STRUCTS.md`](./docs/STRUCTS.md);
