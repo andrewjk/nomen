@@ -1,5 +1,17 @@
 # Nomen Demos
 
+## Button
+
+The smallest App: one "Click me" button in the middle of the window; clicking
+it changes the title to "Thank you". The click is a registered `on_click`
+handler (the closure hoists into a hidden method with the app's `ref self` —
+docs/HANDLERS.md). The centering is the layout's, and both axes come from a
+pair of `add_spacer_to` grow spacers: a VStack hugs its widest child (the
+button), but the auto-width spacers fill the bounded cross axis — so the
+stack stretches to the full window — while their grow splits the leftover
+height evenly around the button; `ALIGN_CENTER` centers the button's
+intrinsic size across the stretched stack.
+
 ## Todo
 
 A GUI app with a todo list, built on the **App contract** (`Window.run`):

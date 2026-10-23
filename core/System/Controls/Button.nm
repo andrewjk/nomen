@@ -167,6 +167,47 @@ pub mv struct Button: Control {
 		```
 	}
 
+	// The button's current title (a fresh own string — the heap copy is the
+	// returned nomen_string).
+	pub func get_title = (self, out string) {
+		```
+		#arch: c
+		#platform: macos
+		id str = ((id(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("title"));
+		const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(
+			str, sel_registerName("UTF8String"));
+		return (nomen_string){ strdup(cstr), (long)strlen(cstr) };
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		id str = ((id(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("title"));
+		const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(
+			str, sel_registerName("UTF8String"));
+		return (nomen_string){ strdup(cstr), (long)strlen(cstr) };
+		```
+		```
+		#arch: c
+		#platform: ios
+		id str = ((id(*)(id, SEL, unsigned long))objc_msgSend)(
+			(id)self->handle, sel_registerName("titleForState:"), 0UL); // UIControlStateNormal = 0
+		const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(
+			str, sel_registerName("UTF8String"));
+		return (nomen_string){ strdup(cstr), (long)strlen(cstr) };
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		id str = ((id(*)(id, SEL, unsigned long))objc_msgSend)(
+			(id)self->handle, sel_registerName("titleForState:"), 0UL); // UIControlStateNormal = 0
+		const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(
+			str, sel_registerName("UTF8String"));
+		return (nomen_string){ strdup(cstr), (long)strlen(cstr) };
+		```
+	}
+
 	// ── Control trait conformance ──
 	// A button sizes to its native intrinsic content size (title + chrome);
 	// `measure` clamps that to the box constraints. The native query goes

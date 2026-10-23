@@ -1,0 +1,47 @@
+import System
+import System::Controls
+
+const WIN_W = 320
+const WIN_H = 200
+
+// A tiny App: one button in the middle of the window.
+pub func main = () {
+	var win = Window("Button", WIN_W, WIN_H)
+	var app = ButtonApp(win)
+	win.run(mv app)
+}
+
+mv struct ButtonApp: App {
+	var Button btn
+	var Container grid
+
+	// Create controls in the constructor
+	pub func #init = (self, Window window) {
+		var btn = Button(window, "Click me")
+		var Container grid = VStack(0)
+		grid.add_spacer_to(grid.root_index(), 1, 1)
+		grid.add_to_kind(
+			grid.root_index(),
+			btn.handle,
+			LEN_INTRINSIC,
+			0,
+			LEN_INTRINSIC,
+			0,
+			1,
+			0,
+			ALIGN_CENTER,
+			0,
+		)
+		grid.add_spacer_to(grid.root_index(), 1, 1)
+		self.btn = btn
+		self.grid = grid
+	}
+
+	// Add control events in `start`
+	pub func start = (ref self, ref Window win) {
+		win.set_content(ref self.grid)
+		self.btn.on_click(func() {
+				self.btn.set_title("Thank you")
+			})
+	}
+}
