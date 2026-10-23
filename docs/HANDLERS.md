@@ -152,6 +152,25 @@ menu/toolbar picks joined the family (2026-10-23):
   `clicked_item` poll remains for manual
   loops (poll and drain share one record — a pick consumed by one never
   reaches the other).
+- **`on_double_click`** (`Container.take_double_click`) — the list-row
+  "open" gesture: the sugar over the mouse-down record (left button,
+  `nomen_last_click_count` == 2). Window-level and broadcast like
+  `on_right_click` — every registered arm sees the edge, `on_mouse_down`
+  still sees the same record with the full payload, and the HANDLER
+  disambiguates through the dispatch window (`win.click_x()`/`click_y()`
+  for hit-testing). A row-targeted refinement can come later through the
+  table family's native `doubleAction`.
+- **`on_submit`** (`take_submit` on TextBox, SecureField, SearchField) —
+  Return-in-a-field: NSTextField sends its target/action exactly on the
+  USER commit, so the constructors arm a shared `NomenSubmitTarget`
+  (the `nomen_control_arm_selects` shape) feeding a per-handle submit
+  ring next to the selection ring. Consume-on-read like `on_item_select`
+  (one commit fires an arm once; programmatic `set_text` stays silent),
+  and the handler body reads the committed text through the control's
+  existing `get_text()` — no new getters. The field editor already maps
+  back to the editing control (the `on_focus` mapping), so one shared
+  target serves every field. TextView stays out: Enter is a newline
+  there.
 - **`on_select`** (`take_select` on Select, Segmented, ComboBox, Tabs,
   ListView, Table, OutlineView) — the selection-bearing controls report
   "my selection changed" as a registered handler. One shared per-handle
@@ -508,30 +527,6 @@ NOT be faked with the per-frame record architecture:
 
 **Tier 2 — sugar over shipped records (cheap, no pump work):**
 
-- **`on_double_click`** (`Container.take_double_click`) — the one gesture
-  with a claim to semantic naming ("open" on list rows everywhere). A
-  ten-line drain filtering the existing mouse-down record (button 1,
-  `nomen_last_click_count` == 2); `on_mouse_down` already covers it, so
-  this is purely an ergonomics call. **Ship condition met (2026-10-23)**:
-  the list-row consumers shipped (Table, ListView, OutlineView, all with
-  `on_select`), and double-click-to-open is the convention on every one
-  of them. Window-level broadcast like `on_right_click`; a later
-  refinement is a row-targeted form on the table family (NSTableView
-  carries a native `doubleAction`).
-- **`on_submit`** (`take_submit` on TextBox, SecureField, SearchField) —
-  Return-in-a-field, the search-box and form commits. No clean expression
-  today: `on_key_down` is a window-level record (mapping the first
-  responder to a field is the app's problem), and `on_input` fires per
-  keystroke. The plumbing is the selection family's, transplanted:
-  NSTextField fires its target/action exactly on the user commit (Enter;
-  Tab moves focus), so arm a shared submit target in the constructors
-  (the `nomen_control_arm_selects` shape), a per-handle record ring next
-  to the selection ring, and a `take_submit` drain per control. The
-  handler body pulls the committed text through the control's existing
-  `get_text()` — no new getters. The field editor already maps back to
-  the editing control (the `on_focus` mapping), so one shared target
-  serves every field. Consumer shape: the Form composite (gallery) and
-  every search field.
 - **`on_hover` / `on_exit`** (per-control mouse enter/exit) — derivable
   today from `on_mouse_move` + `Container.contains` (GUI.md's hover
   example does exactly this), so this is pure sugar — but it needs more
@@ -539,6 +534,8 @@ NOT be faked with the per-frame record architecture:
   last-inside state walked once per frame against the mouse-move record
   (a small bookkeeping table, no new native plumbing). Ship when a
   hover-effect consumer complains about the hit-test boilerplate.
+  (`on_double_click` and `on_submit` were the other two entries here —
+  both shipped 2026-10-23, see the status section above.)
 
 **Tier 2.5 — framework conveniences (not input, run-loop-shaped):**
 

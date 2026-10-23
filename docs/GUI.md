@@ -724,6 +724,23 @@ window opts in (`setAcceptsMouseMovedEvents`): `run` arms it before the
 loop, and manual-loop apps call `win.arm_mouse_moves()` once.
 `FrameEvents.mouse_x`/`mouse_y` carry the same record for `frame`.
 
+### Double-clicks: on_double_click
+
+`on_double_click` is the list-row "open" gesture — the sugar over the
+mouse-down record (left button, click count 2). Window-level and
+broadcast: every registered arm sees the edge, and the handler resolves
+what was opened through the dispatch window (the same hit-test shape as
+the hover example above):
+
+```
+self.rows.on_double_click(func () {
+	// hit-test win.click_x()/click_y() against the row handles
+})
+```
+
+`on_mouse_down` remains the raw tier — it sees the same double-click with
+the full record (button, count, modifiers) and both arms run.
+
 ### Window lifecycle: on_resize and close_requested
 
 `on_resize` fires on the frame whose content rect changed — the framework
@@ -827,6 +844,19 @@ through to the control's value while typing, so each keystroke is one
 edge. Pull, don't push: read the new state inside the handler
 (`self.field_b.text()`) — events carry the edge, the control carries the
 state.
+
+The single-line fields (TextBox, SecureField, SearchField) also emit
+`on_submit` — the user committed the field with Return:
+
+```
+self.search.on_submit(func () {
+	self.status.set_text("search: \{self.search.get_text()}")
+})
+```
+
+User-driven only (programmatic `set_text` stays silent), and the handler
+reads the committed text through the control's `get_text()` — same
+pull-don't-push shape. TextView stays out: Enter is a newline there.
 
 ### Selection: `on_select`
 

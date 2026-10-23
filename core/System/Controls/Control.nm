@@ -314,6 +314,132 @@ pub func nomen_control_arm_selects = (uint64 handle) {
 	```
 }
 
+// Arm a text field's native commit action — the on_submit plumbing for the
+// single-line fields (TextBox, SecureField, SearchField). NSTextField
+// sends its target/action exactly on the USER commit (Return), so one
+// shared target serves every field: the field editor maps back to the
+// editing control (the on_focus mapping), and the action's sender IS the
+// field's handle. The record is the submit ring — the selection ring's
+// shape, one entry per committed field, consumed by the field's
+// take_submit drain. Called by those constructors; safe to call again.
+pub func nomen_control_arm_submits = (uint64 handle) {
+	```
+	#arch: c
+	#platform: macos
+	#scope: file
+	// The shared submit record: the selection ring's shape. The commit is
+	// USER-driven only (the field's action; programmatic set_string_value
+	// stays silent).
+	static unsigned long long nomen_submit_queue[64];
+	static int nomen_submit_count = 0;
+	void nomen_submit_push(unsigned long long h) {
+		if (nomen_submit_count >= 64) return;
+		nomen_submit_queue[nomen_submit_count++] = h;
+	}
+	long nomen_submit_take(unsigned long long h) {
+		for (int i = 0; i < nomen_submit_count; i++) {
+			if (nomen_submit_queue[i] == h) {
+				for (int j = i; j < nomen_submit_count - 1; j++) {
+					nomen_submit_queue[j] = nomen_submit_queue[j + 1];
+				}
+				nomen_submit_count--;
+				return 1;
+			}
+		}
+		return 0;
+	}
+	static void *nomen_submit_target = 0;
+	static void nomen_submit_action(id self, SEL cmd, id sender) {
+		(void)self; (void)cmd;
+		nomen_submit_push((unsigned long long)(void *)sender);
+	}
+	static void nomen_submit_arm(unsigned long long handle) {
+		Class Tc = objc_getClass("NomenSubmitTarget");
+		if (!Tc) {
+			Tc = objc_allocateClassPair(objc_getClass("NSObject"), "NomenSubmitTarget", 0);
+			if (Tc) {
+				class_addMethod(Tc, sel_registerName("submitAction:"), (IMP)nomen_submit_action, "v@:@");
+				objc_registerClassPair(Tc);
+			}
+		}
+		if (!nomen_submit_target && Tc) {
+			nomen_submit_target = (void *)((id(*)(id, SEL))objc_msgSend)((id)Tc, sel_registerName("new"));
+		}
+		if (nomen_submit_target) {
+			id control = (id)handle;
+			((void(*)(id, SEL, id))objc_msgSend)(control, sel_registerName("setTarget:"), (id)nomen_submit_target);
+			((void(*)(id, SEL, SEL))objc_msgSend)(control, sel_registerName("setAction:"), sel_registerName("submitAction:"));
+		}
+	}
+	```
+	```
+	#arch: c
+	#platform: macos
+	nomen_submit_arm(handle);
+	```
+	```
+	#arch: aarch64_use_c
+	#platform: macos
+	#scope: file
+	static unsigned long long nomen_submit_queue[64];
+	static int nomen_submit_count = 0;
+	void nomen_submit_push(unsigned long long h) {
+		if (nomen_submit_count >= 64) return;
+		nomen_submit_queue[nomen_submit_count++] = h;
+	}
+	long nomen_submit_take(unsigned long long h) {
+		for (int i = 0; i < nomen_submit_count; i++) {
+			if (nomen_submit_queue[i] == h) {
+				for (int j = i; j < nomen_submit_count - 1; j++) {
+					nomen_submit_queue[j] = nomen_submit_queue[j + 1];
+				}
+				nomen_submit_count--;
+				return 1;
+			}
+		}
+		return 0;
+	}
+	static void *nomen_submit_target = 0;
+	static void nomen_submit_action(id self, SEL cmd, id sender) {
+		(void)self; (void)cmd;
+		nomen_submit_push((unsigned long long)(void *)sender);
+	}
+	static void nomen_submit_arm(unsigned long long handle) {
+		Class Tc = objc_getClass("NomenSubmitTarget");
+		if (!Tc) {
+			Tc = objc_allocateClassPair(objc_getClass("NSObject"), "NomenSubmitTarget", 0);
+			if (Tc) {
+				class_addMethod(Tc, sel_registerName("submitAction:"), (IMP)nomen_submit_action, "v@:@");
+				objc_registerClassPair(Tc);
+			}
+		}
+		if (!nomen_submit_target && Tc) {
+			nomen_submit_target = (void *)((id(*)(id, SEL))objc_msgSend)((id)Tc, sel_registerName("new"));
+		}
+		if (nomen_submit_target) {
+			id control = (id)handle;
+			((void(*)(id, SEL, id))objc_msgSend)(control, sel_registerName("setTarget:"), (id)nomen_submit_target);
+			((void(*)(id, SEL, SEL))objc_msgSend)(control, sel_registerName("setAction:"), sel_registerName("submitAction:"));
+		}
+	}
+	```
+	```
+	#arch: aarch64_use_c
+	#platform: macos
+	nomen_submit_arm(handle);
+	```
+	```
+	#arch: c
+	#platform: ios
+	/* TODO: iOS (see #init) */
+	```
+	```
+	#arch: aarch64_use_c
+	#platform: ios
+	/* TODO: iOS (see #init) */
+	```
+}
+
 // Drain a control's selection record: true exactly once per selection
 // change (the record is consumed). Called by the selection-family
 // `take_select` drains — the on_select desugar's arm primitive. The

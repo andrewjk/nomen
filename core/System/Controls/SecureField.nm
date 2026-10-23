@@ -34,6 +34,10 @@ pub mv struct SecureField : Control {
 			(id)window->handle, sel_registerName("contentView"));
 		((void(*)(id, SEL, id))objc_msgSend)(
 			contentView, sel_registerName("addSubview:"), field);
+		// NSTextField (the secure subclass) sends its action on the USER
+		// commit (Return) — arm it so on_submit drains fire.
+		extern void nomen_control_arm_submits(unsigned long long);
+		nomen_control_arm_submits((unsigned long long)field);
 		self.handle = (uint64_t)field;
 		```
 		```
@@ -57,6 +61,8 @@ pub mv struct SecureField : Control {
 			(id)window->handle, sel_registerName("contentView"));
 		((void(*)(id, SEL, id))objc_msgSend)(
 			contentView, sel_registerName("addSubview:"), field);
+		extern void nomen_control_arm_submits(unsigned long long) __asm__("nomen_control_arm_submits");
+		nomen_control_arm_submits((unsigned long long)field);
 		self->handle = (uint64_t)field;
 		```
 		```
@@ -236,6 +242,38 @@ pub mv struct SecureField : Control {
 		const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(
 			str, sel_registerName("UTF8String"));
 		return (nomen_string){ strdup(cstr), (long)strlen(cstr) };
+		```
+	}
+
+	// The on_submit desugar's drain (docs/HANDLERS.md tier 2): true when
+	// the user committed this field (Return) since the last drain — the
+	// record is consumed, one commit fires an arm exactly once.
+	// User-driven only. The handler body reads the committed text through
+	// get_text().
+	pub func take_submit = (self, out bool) {
+		```
+		#arch: c
+		#platform: macos
+		extern long nomen_submit_take(unsigned long long);
+		return (long)nomen_submit_take((unsigned long long)self->handle);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		extern long nomen_submit_take(unsigned long long);
+		return (long)nomen_submit_take((unsigned long long)self->handle);
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return false;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return false;
 		```
 	}
 

@@ -2116,6 +2116,41 @@ pub mv struct Container: Control {
 		```
 	}
 
+	// The on_double_click desugar's drain (docs/HANDLERS.md tier 2): the
+	// sugar over the mouse-down record — left button (1) with a click count
+	// of 2, the list-row "open" gesture. Window-level and broadcast, like
+	// the rest of the family: every registered arm sees the edge, and the
+	// HANDLER disambiguates — position via win.click_x()/click_y() for
+	// hit-testing (a row-targeted refinement can come later through the
+	// table family's native doubleAction). `on_mouse_down` remains the raw
+	// tier (it sees the same double-click with the full record).
+	pub func take_double_click = (self, out bool) {
+		```
+		#arch: c
+		#platform: macos
+		extern int nomen_last_click_button;
+		extern int nomen_last_click_count;
+		return nomen_last_click_button == 1 && nomen_last_click_count == 2;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		extern int nomen_last_click_button;
+		extern int nomen_last_click_count;
+		return nomen_last_click_button == 1 && nomen_last_click_count == 2;
+		```
+		```
+		#arch: c
+		#platform: ios
+		return 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		return 0;
+		```
+	}
+
 	// The on_key_down / on_key_up desugars' drains (docs/HANDLERS.md): the
 	// synthesized pump arm polls these per frame. The keyboard record is
 	// window-level and broadcast (like the mouse records): every registered
