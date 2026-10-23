@@ -15,10 +15,15 @@
  *   any wiring that needs stable addresses — including click handlers
  *   (`self.btn.on_click(func () { ... })`).
  * - `frame` — called every iteration of the run loop with a `FrameEvents`
- *   value: click kind/coordinates (0 = no click, 1 = left, 2 = right), and
- *   `resized` + the new size when the window's content rect changed.
- *   Per-frame value polling (slider → progress mirrors) and click
- *   hit-testing (`Container.contains`) live here.
+ *   value: the full mouse record for this frame (click kind/coordinates,
+ *   `mouse_button`/`mouse_click_count`/`mouse_modifiers` — every button,
+ *   and `scroll_dx`/`scroll_dy`), and `resized` + the new size when the
+ *   window's content rect changed. Per-frame value polling (slider →
+ *   progress mirrors), coordinate-driven input that no event names, and
+ *   app-owned pane relayouts live here — registered click, right-click,
+ *   mouse-down, and scroll handlers dispatch earlier, in `handle_events`
+ *   (the `.on_click` / `.on_right_click` / `.on_mouse_down` / `.on_scroll`
+ *   desugars).
  * - `handle_events` — the per-frame event pump: drains every registered
  *   control event (clicks, focus/blur, text input). Declared here as a
  *   default-empty method; the `.on_<event>(closure)` desugars
@@ -85,6 +90,21 @@ pub mv struct FrameEvents {
 	pub var int click = 0
 	pub var int click_x = -1
 	pub var int click_y = -1
+	// The full mouse record for this frame (0 = no mouse-down): the 1-based
+	// button number (1 left, 2 right, 3 middle, 4+ extra buttons), the
+	// AppKit click count (2 = double-click), and the device-independent
+	// modifier flags (Command = 0x100000, Option = 0x80000, Control =
+	// 0x40000, Shift = 0x20000). The same values the `win.mouse_button()` /
+	// `mouse_click_count()` / `mouse_modifiers()` getters report to
+	// `on_mouse_down` handlers. `click` remains the left/right compat view.
+	pub var int mouse_button = 0
+	pub var int mouse_click_count = 0
+	pub var int mouse_modifiers = 0
+	// This frame's accumulated scroll-wheel deltas (dy positive scrolling
+	// up/away, dx positive right; trackpad frames sum every small event).
+	// `Scrollable.on_scroll` is the registered-handler form.
+	pub var int scroll_dx = 0
+	pub var int scroll_dy = 0
 	// True when the window's content rect changed since the last frame —
 	// the framework has already re-laid-out the registered roots; re-layout
 	// App-owned panes (tab pages, split panes) here.

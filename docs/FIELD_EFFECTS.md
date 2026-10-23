@@ -69,14 +69,14 @@ memoized fixpoint. That design was rejected on 2026-10-23 for two reasons:
    into functions."
 2. **A memory/speed trap.** The scan needs a second AST pass, a memoized
    call-graph table, and cycle-safe fixpoint logic, all to derive information
-   that is cheaper to *state*.
+   that is cheaper to _state_.
 
 The declared form inverts the flow: the author states the effect set in the
 signature, and the checker verifies the body against it. The signature
 **cannot lie**, which is what makes it safe to reason from — the same
 prove-it philosophy as Nomen's bounds contracts
 (`entity_id: entity_id >= 0 && entity_id < world.entities.length`):
-declared *and* enforced, never inferred.
+declared _and_ enforced, never inferred.
 
 A side benefit: it encourages the right shape of program. Most functions
 should not mutate anything, and those stay bare-`self` readers with nothing
@@ -215,8 +215,8 @@ definition sites of conformers' callers.
 
 Decisions made 2026-10-23, with the alternatives and why they lost:
 
-- **Direction — capability, not invalidation.** Declare what the method *may
-  mutate* (`mutates data`); derive the invalidation (borrows via `data` die).
+- **Direction — capability, not invalidation.** Declare what the method _may
+  mutate_ (`mutates data`); derive the invalidation (borrows via `data` die).
   The alternative phrasing, `mutate(self) invalidates self.data`, has the
   direction backwards: "invalidates" is a promise about callers' state, which
   is the wrong ownership. Capability declarations compose (rule 3); promises
@@ -224,7 +224,7 @@ Decisions made 2026-10-23, with the alternatives and why they lost:
 - **Placement — receiver-attached, in the param list**
   (`ref self mutates data`), not a trailing clause
   (`func load = (ref self) mutates data { … }`). Reasons:
-  1. The clause is a property of the *borrow*, not the function. Nomen
+  1. The clause is a property of the _borrow_, not the function. Nomen
      already encodes receiver capability through the receiver param (bare
      `self` / `ref self` / `var self`); field-narrowing is a refinement of
      that same axis.
@@ -241,9 +241,9 @@ Decisions made 2026-10-23, with the alternatives and why they lost:
 - **Keyword — `mutates`.** Alternatives considered:
   - `mut` (Valen's word): rejected — differs from `mv` by one letter, and
     `mv` saturates transfer positions in this language. `mv data` / `mut
-    data` in adjacent lines will be misread as typos forever.
+data` in adjacent lines will be misread as typos forever.
   - `in` (echoing Valen's `entity in world.entities[]`): rejected — reads as
-    *placement* ("self lives in data"), and the clause is *capability*.
+    _placement_ ("self lives in data"), and the clause is _capability_.
   - `writes`: viable fallback — accurate (`self.items.push(…)` is a write
     through `items`), no collisions, one letter shorter.
   - The length of `mutates` is a one-time read cost per mutator, on the line
@@ -256,17 +256,17 @@ Decisions made 2026-10-23, with the alternatives and why they lost:
     list brace-free.
   - Braced set (`mutates {data, cache}`): unambiguous, visually grouped, and
     gives the empty case a tidy spelling (`mutates {}` vs `mutates nothing`).
-  The empty case needs a spelling either way (`mutates nothing` / `mutates
-  {}`); `pure` was rejected — bare-`self` already *is* the read-only case,
-  and an empty-mutates `ref self` method is a genuinely different middle
-  ground ("mutates self, but only value-type storage").
+    The empty case needs a spelling either way (`mutates nothing` / `mutates
+{}`); `pure` was rejected — bare-`self` already _is_ the read-only case,
+    and an empty-mutates `ref self` method is a genuinely different middle
+    ground ("mutates self, but only value-type storage").
 
 ## Honest costs (accepted)
 
 - **Abstraction leak, for real.** A field name is now contract surface —
   exactly the constraint GROUP_BORROWING.md flagged as the reason the
   original sketch kept effect sets compiler-internal. Softened by the fact
-  that callers never *write* the field name (they call `h.poke()`; the
+  that callers never _write_ the field name (they call `h.poke()`; the
   difference is behavioral, not textual). Hiding `data` behind an accessor
   later means editing the declaration. If that ever actually hurts, the
   mitigation from GROUP_BORROWING.md is named field groups —

@@ -64,6 +64,49 @@ method (`handle_events`) — new events are new library drain methods
 (`take_<event>` per control) plus their native plumbing; the App contract
 and the route are fixed, and there is no compiler event table.
 
+`on_right_click` joined the family (2026-10-23) as the first WINDOW-level
+event: the record is the pump's click-kind stamp (`Window.nm`'s
+`nomen_last_click_kind`, stamped by every `process_events` call — the same
+edge `FrameEvents.click` reports as 2), and `Container.take_right_click`
+is the drain. One edge per pump — not per control — so every registered
+arm sees it (broadcast, no consumption handshake: a quiet pump stamps 0,
+so the edge expires with the frame), and the HANDLER disambiguates: the
+click comes through the dispatch window (`win.click_x()`/`click_y()`),
+`content_click` translates for scrollable-hosted children, and
+`Container.contains` hit-tests. The todo demo's right-click delete moved
+off `App.frame` onto it (the demo now overrides only `start`;
+`remove_todo_at` carries the hit-test). The v1 closure rules held — no
+checker changes: the drain returns plain bool and the payload rides the
+existing `win` parameter.
+
+The exhaustive input tier landed the same day, on the same pattern —
+no checker changes, new library drains + pump plumbing only:
+
+- **`on_mouse_down`** (`Container.take_mouse_down`) — EVERY mouse-down
+  (left, right, middle, mouse 4+), the AppKit click count, and the
+  device-independent modifier flags. The pump stamps the full record
+  (`nomen_last_click_button/count/modifiers` — other-mouse-downs were
+  previously pumped and DROPPED), and the handlers read it through the
+  dispatch window (`win.mouse_button()` 1-based, `mouse_click_count()`,
+  `mouse_modifiers()`, plus the existing `click_x()`/`click_y()`).
+  `on_right_click` is now honestly framed as this tier sugared for
+  button 2; `FrameEvents` carries the same record
+  (`mouse_button`/`mouse_click_count`/`mouse_modifiers`) for the `frame`
+  form.
+- **`on_scroll`** (`Scrollable.take_scroll`) — scroll-wheel deltas
+  accumulated across each pump's events (trackpad batches, momentum),
+  read via `win.scroll_dx()`/`scroll_dy()`; `FrameEvents.scroll_dx`/
+  `scroll_dy` for the frame form. Continuous input, its own family: the
+  edge means "this frame scrolled", the magnitudes are the payload.
+
+The test seam generalizes: synthetic events posted into NSApp's queue via
+`postEvent:atStart:` deliver deterministically on the next pump. One
+lesson recorded — the classic `NSEvent` mouse factory has NO buttonNumber
+parameter (it reads 0), so non-left/right buttons must be synthesized
+through `CGEventCreateMouseEvent` + `NSEvent.eventWithCGEvent:`
+(test/gui/mouse_input.test.ts covers middle+Command+double-click and a
+5-line scroll).
+
 Still to land: the deprecation-cycle doc sweep (the poll examples leave
 GUI.md's other sections), and the `List<Own>.at()` uniform-borrow load
 question (below — the element BORROW is landed; the owning-copy `.at()`
@@ -207,8 +250,10 @@ frame before `frame` — the same slot `dispatch_clicks` occupies today. Trait
 calls through `mv App` parameters are existing machinery (the `Enumerable`
 tier): **zero backend changes**.
 
-`FrameEvents.click` / `click_x` / `click_y` are unchanged — right-clicks and
-coordinate-driven input stay exactly as documented in GUI.md.
+`FrameEvents.click` / `click_x` / `click_y` are unchanged — right-clicks
+dispatch through `on_right_click` (below), and the frame fields remain for
+coordinate-driven input that no event names (drag positions, hover
+tracking) and manual loops.
 
 ### Checker rules
 

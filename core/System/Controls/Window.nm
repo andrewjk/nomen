@@ -163,7 +163,9 @@ pub mv struct Window: Control {
 	// was among the events (i.e. a click happened), 2 if a right-mouse-down
 	// was, 0 otherwise. This lets a manual event loop detect clicks (and
 	// right-clicks) for hit-testing without target/action. The click's
-	// coordinates are captured here (see click_x/click_y). Also runs the run
+	// coordinates are captured here (see click_x/click_y), and the click's
+	// button kind is stamped for the drains (nomen_last_click_kind —
+	// Container.take_right_click reads it). Also runs the run
 	// loop briefly to process Apple Events (e.g. dock Quit).
 	pub func process_events = (out int) {
 		```
@@ -179,6 +181,28 @@ pub mv struct Window: Control {
 		// so hit-tests would intermittently miss.
 		static int nomen_last_click_x = -1;
 		static int nomen_last_click_y = -1;
+		// The same record's button kind (0 none / 1 left / 2 right), stamped
+		// by every pump — a quiet pump stamps 0, so the edge expires with
+		// the frame. External linkage (NOT static, unlike the coordinates):
+		// Container's take_right_click drain externs it from another TU —
+		// the focus snapshot's sharing pattern (nomen_window_focus_poll).
+		int nomen_last_click_kind = 0;
+		// The full mouse-down record for THIS pump (the exhaustive input
+		// surface — every button, not just left/right): 1-based button
+		// number (0 = no mouse-down this frame), AppKit clickCount, and the
+		// device-independent modifier flags (Command = 0x100000, Option =
+		// 0x80000, Control = 0x40000, Shift = 0x20000). Zeroed by every
+		// pump, so the edge expires with the frame. External linkage:
+		// Container.take_mouse_down externs the button from another TU.
+		int nomen_last_click_button = 0;
+		int nomen_last_click_count = 0;
+		int nomen_last_click_modifiers = 0;
+		// Scroll-wheel deltas accumulated across this pump's events
+		// (trackpads emit many small events per frame; momentum counts).
+		// Zeroed by every pump. External linkage: Scrollable.take_scroll
+		// externs them from another TU.
+		double nomen_scroll_dx_acc = 0.0;
+		double nomen_scroll_dy_acc = 0.0;
 		```
 		```
 		#arch: aarch64_use_c
@@ -193,6 +217,28 @@ pub mv struct Window: Control {
 		// so hit-tests would intermittently miss.
 		static int nomen_last_click_x = -1;
 		static int nomen_last_click_y = -1;
+		// The same record's button kind (0 none / 1 left / 2 right), stamped
+		// by every pump — a quiet pump stamps 0, so the edge expires with
+		// the frame. External linkage (NOT static, unlike the coordinates):
+		// Container's take_right_click drain externs it from another TU —
+		// the focus snapshot's sharing pattern (nomen_window_focus_poll).
+		int nomen_last_click_kind = 0;
+		// The full mouse-down record for THIS pump (the exhaustive input
+		// surface — every button, not just left/right): 1-based button
+		// number (0 = no mouse-down this frame), AppKit clickCount, and the
+		// device-independent modifier flags (Command = 0x100000, Option =
+		// 0x80000, Control = 0x40000, Shift = 0x20000). Zeroed by every
+		// pump, so the edge expires with the frame. External linkage:
+		// Container.take_mouse_down externs the button from another TU.
+		int nomen_last_click_button = 0;
+		int nomen_last_click_count = 0;
+		int nomen_last_click_modifiers = 0;
+		// Scroll-wheel deltas accumulated across this pump's events
+		// (trackpads emit many small events per frame; momentum counts).
+		// Zeroed by every pump. External linkage: Scrollable.take_scroll
+		// externs them from another TU.
+		double nomen_scroll_dx_acc = 0.0;
+		double nomen_scroll_dy_acc = 0.0;
 		```
 		```
 		#arch: c
@@ -210,6 +256,14 @@ pub mv struct Window: Control {
 		id default_mode = ((id(*)(id, SEL, const char*))objc_msgSend)(
 			(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), "kCFRunLoopDefaultMode");
 		int had_click = 0;
+		// This pump's mouse record: zeroed first, so a quiet pump expires
+		// the previous frame's edge — the getters and drains read these,
+		// and 0 means "no mouse-down / no scroll this frame".
+		nomen_last_click_button = 0;
+		nomen_last_click_count = 0;
+		nomen_last_click_modifiers = 0;
+		nomen_scroll_dx_acc = 0.0;
+		nomen_scroll_dy_acc = 0.0;
 		while (1) {
 			id event = ((id(*)(id, SEL, unsigned long long, id, id, BOOL))objc_msgSend)(
 				app, sel_registerName("nextEventMatchingMask:untilDate:inMode:dequeue:"),
@@ -220,17 +274,32 @@ pub mv struct Window: Control {
 			if (!event) break;
 			((void(*)(id, SEL, id))objc_msgSend)(app, sel_registerName("sendEvent:"), event);
 			long type = ((long(*)(id, SEL))objc_msgSend)(event, sel_registerName("type"));
-			// A mouse-down: record where it landed. locationInWindow is in the
-			// event's own window's coordinates (bottom-left origin); flip y
-			// against that window's content height to match the layout's
-			// top-left origin.
-			if (type == 1 || type == 3) {
+			// A mouse-down (left = 1, right = 3, other/middle/extra = 25):
+			// record where it landed and which button. locationInWindow is
+			// in the event's own window's coordinates (bottom-left origin);
+			// flip y against that window's content height to match the
+			// layout's top-left origin. buttonNumber is 0-based (0 left, 1
+			// right, 2 middle, 3+ extras) — stored 1-based to match
+			// FrameEvents.click's 1 = left / 2 = right contract. clickCount
+			// gives double/triple clicks; modifierFlags are masked to the
+			// device-independent bits.
+			if (type == 1 || type == 3 || type == 25) {
 				id evwin = ((id(*)(id, SEL))objc_msgSend)(event, sel_registerName("window"));
 				id cv = ((id(*)(id, SEL))objc_msgSend)(evwin, sel_registerName("contentView"));
 				CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
 				CGPoint loc = ((CGPoint(*)(id, SEL))objc_msgSend)(event, sel_registerName("locationInWindow"));
 				nomen_last_click_x = (int)loc.x;
 				nomen_last_click_y = (int)(frame.size.height - loc.y);
+				nomen_last_click_button = (int)(((long(*)(id, SEL))objc_msgSend)(event, sel_registerName("buttonNumber"))) + 1;
+				nomen_last_click_count = (int)((unsigned long(*)(id, SEL))objc_msgSend)(event, sel_registerName("clickCount"));
+				nomen_last_click_modifiers = (int)(((unsigned long(*)(id, SEL))objc_msgSend)(event, sel_registerName("modifierFlags")) & 0xFFF00000ULL);
+			}
+			// A scroll-wheel event (NSEventTypeScrollWheel = 22): accumulate
+			// the deltas for this frame. AppKit deltaY is positive scrolling
+			// up/away from the user; deltaX is positive scrolling right.
+			if (type == 22) {
+				nomen_scroll_dy_acc += ((double(*)(id, SEL))objc_msgSend)(event, sel_registerName("deltaY"));
+				nomen_scroll_dx_acc += ((double(*)(id, SEL))objc_msgSend)(event, sel_registerName("deltaX"));
 			}
 			if (type == 1) had_click = 1; // NSLeftMouseDown = 1
 			if (type == 3) had_click = 2; // NSRightMouseDown = 3 (reported as 2)
@@ -239,6 +308,9 @@ pub mv struct Window: Control {
 		// and other system interactions work without NSApplication.run().
 		CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0, 1);
 		int result = had_click;
+		// Stamp the kind for the drains (Container.take_right_click reads
+		// it in the handle_events pass that follows this pump).
+		nomen_last_click_kind = had_click;
 		((void(*)(id, SEL))objc_msgSend)(pool, sel_registerName("drain"));
 		return result;
 		```
@@ -258,6 +330,14 @@ pub mv struct Window: Control {
 		id default_mode = ((id(*)(id, SEL, const char*))objc_msgSend)(
 			(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), "kCFRunLoopDefaultMode");
 		int had_click = 0;
+		// This pump's mouse record: zeroed first, so a quiet pump expires
+		// the previous frame's edge — the getters and drains read these,
+		// and 0 means "no mouse-down / no scroll this frame".
+		nomen_last_click_button = 0;
+		nomen_last_click_count = 0;
+		nomen_last_click_modifiers = 0;
+		nomen_scroll_dx_acc = 0.0;
+		nomen_scroll_dy_acc = 0.0;
 		while (1) {
 			id event = ((id(*)(id, SEL, unsigned long long, id, id, BOOL))objc_msgSend)(
 				app, sel_registerName("nextEventMatchingMask:untilDate:inMode:dequeue:"),
@@ -268,17 +348,32 @@ pub mv struct Window: Control {
 			if (!event) break;
 			((void(*)(id, SEL, id))objc_msgSend)(app, sel_registerName("sendEvent:"), event);
 			long type = ((long(*)(id, SEL))objc_msgSend)(event, sel_registerName("type"));
-			// A mouse-down: record where it landed. locationInWindow is in the
-			// event's own window's coordinates (bottom-left origin); flip y
-			// against that window's content height to match the layout's
-			// top-left origin.
-			if (type == 1 || type == 3) {
+			// A mouse-down (left = 1, right = 3, other/middle/extra = 25):
+			// record where it landed and which button. locationInWindow is
+			// in the event's own window's coordinates (bottom-left origin);
+			// flip y against that window's content height to match the
+			// layout's top-left origin. buttonNumber is 0-based (0 left, 1
+			// right, 2 middle, 3+ extras) — stored 1-based to match
+			// FrameEvents.click's 1 = left / 2 = right contract. clickCount
+			// gives double/triple clicks; modifierFlags are masked to the
+			// device-independent bits.
+			if (type == 1 || type == 3 || type == 25) {
 				id evwin = ((id(*)(id, SEL))objc_msgSend)(event, sel_registerName("window"));
 				id cv = ((id(*)(id, SEL))objc_msgSend)(evwin, sel_registerName("contentView"));
 				CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
 				CGPoint loc = ((CGPoint(*)(id, SEL))objc_msgSend)(event, sel_registerName("locationInWindow"));
 				nomen_last_click_x = (int)loc.x;
 				nomen_last_click_y = (int)(frame.size.height - loc.y);
+				nomen_last_click_button = (int)(((long(*)(id, SEL))objc_msgSend)(event, sel_registerName("buttonNumber"))) + 1;
+				nomen_last_click_count = (int)((unsigned long(*)(id, SEL))objc_msgSend)(event, sel_registerName("clickCount"));
+				nomen_last_click_modifiers = (int)(((unsigned long(*)(id, SEL))objc_msgSend)(event, sel_registerName("modifierFlags")) & 0xFFF00000ULL);
+			}
+			// A scroll-wheel event (NSEventTypeScrollWheel = 22): accumulate
+			// the deltas for this frame. AppKit deltaY is positive scrolling
+			// up/away from the user; deltaX is positive scrolling right.
+			if (type == 22) {
+				nomen_scroll_dy_acc += ((double(*)(id, SEL))objc_msgSend)(event, sel_registerName("deltaY"));
+				nomen_scroll_dx_acc += ((double(*)(id, SEL))objc_msgSend)(event, sel_registerName("deltaX"));
 			}
 			if (type == 1) had_click = 1; // NSLeftMouseDown = 1
 			if (type == 3) had_click = 2; // NSRightMouseDown = 3 (reported as 2)
@@ -287,6 +382,9 @@ pub mv struct Window: Control {
 		// and other system interactions work without NSApplication.run().
 		CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0, 1);
 		int result = had_click;
+		// Stamp the kind for the drains (Container.take_right_click reads
+		// it in the handle_events pass that follows this pump).
+		nomen_last_click_kind = had_click;
 		((void(*)(id, SEL))objc_msgSend)(pool, sel_registerName("drain"));
 		return result;
 		```
@@ -382,6 +480,140 @@ pub mv struct Window: Control {
 		#arch: aarch64_use_c
 		#platform: ios
 		return -1;
+		```
+	}
+
+	// ── The full mouse record (this frame's pump) ──
+	// The exhaustive input surface beside click_x/click_y: EVERY button
+	// (middle, mouse 4+), the click count (double/triple), and the modifier
+	// flags. All five are per-frame: stamped by the pump that saw the
+	// events, zeroed by the next — so a handler registered on
+	// `on_mouse_down` (Container.take_mouse_down) or a `frame` reading
+	// FrameEvents sees exactly this frame's record. `mouse_button` is
+	// 1-based (1 left, 2 right, 3 middle, 4+ extra buttons), 0 on a quiet
+	// frame — the same contract as FrameEvents.mouse_button.
+	//
+	// Modifier bits (NSEventModifierFlagDeviceIndependentFlagsMask, already
+	// applied by the pump): Command = 0x100000, Option = 0x80000,
+	// Control = 0x40000, Shift = 0x20000, Function = 0x800000.
+
+	pub func mouse_button = (self, out int) {
+		```
+		#arch: c
+		#platform: macos
+		return nomen_last_click_button;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		return nomen_last_click_button;
+		```
+		```
+		#arch: c
+		#platform: ios
+		return 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		return 0;
+		```
+	}
+
+	pub func mouse_click_count = (self, out int) {
+		```
+		#arch: c
+		#platform: macos
+		return nomen_last_click_count;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		return nomen_last_click_count;
+		```
+		```
+		#arch: c
+		#platform: ios
+		return 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		return 0;
+		```
+	}
+
+	pub func mouse_modifiers = (self, out int) {
+		```
+		#arch: c
+		#platform: macos
+		return nomen_last_click_modifiers;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		return nomen_last_click_modifiers;
+		```
+		```
+		#arch: c
+		#platform: ios
+		return 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		return 0;
+		```
+	}
+
+	// This frame's accumulated scroll deltas (AppKit deltaY/deltaX: dy is
+	// positive scrolling up/away from the user, dx positive scrolling
+	// right), truncated to ints. Scroll events accumulate across the pump's
+	// batch — a trackpad frame sums every small event — and expire with the
+	// frame. `Scrollable.on_scroll` is the registered-handler form.
+	pub func scroll_dx = (self, out int) {
+		```
+		#arch: c
+		#platform: macos
+		return (int)nomen_scroll_dx_acc;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		return (int)nomen_scroll_dx_acc;
+		```
+		```
+		#arch: c
+		#platform: ios
+		return 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		return 0;
+		```
+	}
+
+	pub func scroll_dy = (self, out int) {
+		```
+		#arch: c
+		#platform: macos
+		return (int)nomen_scroll_dy_acc;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		return (int)nomen_scroll_dy_acc;
+		```
+		```
+		#arch: c
+		#platform: ios
+		return 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		return 0;
 		```
 	}
 
@@ -625,6 +857,11 @@ pub mv struct Window: Control {
 			ev.click = Window.process_events()
 			ev.click_x = self.click_x()
 			ev.click_y = self.click_y()
+			ev.mouse_button = self.mouse_button()
+			ev.mouse_click_count = self.mouse_click_count()
+			ev.mouse_modifiers = self.mouse_modifiers()
+			ev.scroll_dx = self.scroll_dx()
+			ev.scroll_dy = self.scroll_dy()
 			ev.resized = false
 			var int cur_w = self.content_width()
 			var int cur_h = self.content_height()
@@ -845,6 +1082,43 @@ pub func nomen_window_focus_poll = (uint64 window) {
 	#arch: aarch64_use_c
 	#platform: ios
 	/* TODO: iOS (see #arch: c) */
+	```
+}
+
+// Whether the most recent pump saw a right-mouse-down (the same record
+// FrameEvents.click reports as 2). Read by Container.take_right_click —
+// the on_right_click drain (docs/HANDLERS.md). The pump stamps the kind
+// on EVERY call — a quiet pump stamps 0 — so the edge expires with the
+// frame: the drains see it exactly in the handle_events pass that follows
+// the pump, and no clearing handshake is needed. The record is
+// window-level (one per process, like click_x/click_y): every registered
+// arm sees the edge (broadcast), and the HANDLER disambiguates — read the
+// click through the dispatch window (win.click_x()/click_y()), translate
+// for scrollables (content_click), hit-test children (contains).
+pub func nomen_window_had_right_click = (out bool) {
+	```
+	#arch: c
+	#platform: macos
+	// One definition lives in process_events' file-scope block (this file);
+	// the extern keeps this function's TU-independent (split builds).
+	extern int nomen_last_click_kind;
+	return nomen_last_click_kind == 2;
+	```
+	```
+	#arch: aarch64_use_c
+	#platform: macos
+	extern int nomen_last_click_kind;
+	return nomen_last_click_kind == 2;
+	```
+	```
+	#arch: c
+	#platform: ios
+	return 0;
+	```
+	```
+	#arch: aarch64_use_c
+	#platform: ios
+	return 0;
 	```
 }
 

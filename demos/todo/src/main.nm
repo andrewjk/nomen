@@ -96,9 +96,10 @@ mv struct TodoApp : App {
 	// scroll_to_top on the first post-show pass. The registration goes
 	// grid-side with scalar handles — one borrow of self per call (two
 	// `ref` borrows under one owner would trip the aliasing rule). The Add
-	// button's click handler registers here too: the closure is hoisted
-	// into a hidden method on TodoApp and dispatched with `ref self` by the
-	// run loop (docs/HANDLERS.md), so it reaches app state — the input, the
+	// button's click handler and the todos stack's right-click handler
+	// register here: the closures are hoisted
+	// into hidden methods on TodoApp and dispatched with `ref self` by the
+	// run loop (docs/HANDLERS.md), so they reach app state — the input, the
 	// list, the scroll — with no captures.
 	pub func start = (ref self, ref Window win) {
 		win.set_content(ref self.grid)
@@ -110,6 +111,19 @@ mv struct TodoApp : App {
 				self.input.set_text("")
 				self.redance(ref win)
 				self.scroll.scroll_to_bottom()
+			}
+		})
+		// Right-click deletes a todo (docs/HANDLERS.md): the todos stack is
+		// the drain receiver, but the record is WINDOW-level — one edge per
+		// frame, seen by every registered arm — so the handler reads the
+		// click through the dispatch window, translates into document
+		// coordinates (the rows live in the scrollable's content view), and
+		// hit-tests. The dispatch-time `ref self` borrow reaches the rows,
+		// the owned list, and `redance` with no captures.
+		self.todos.on_right_click(func () {
+			var [tx, ty] = content_click(self.scroll, win.click_x(), win.click_y())
+			if self.remove_todo_at(tx, ty) {
+				self.redance(ref win)
 			}
 		})
 	}
@@ -130,43 +144,38 @@ mv struct TodoApp : App {
 		nomen_scroll_thunk(ref self.todos, self.scroll.handle, self.scroll.doc_handle(), ref win, 0)
 	}
 
-	// App.frame — the old event-loop body. The Add flow is a registered
-	// on_click handler (see start); left-click polls are gone.
-	pub func frame = (ref self, ref Window win, FrameEvents ev) {
-		// Right-click deletes a todo. The click arrives in WINDOW
-		// coordinates while the todos live in the document view, so
-		// translate through the scrollable first — the visible top of the
-		// document moves with the scroll position. The grid node is removed
-		// first — a freed handle left in the tree would still be measured
-		// and re-framed — then the control itself is freed by moving it out
-		// of the list into a nested block: its #destroy runs at the block's
-		// closing brace, removing the view and releasing it.
-		if ev.click == 2 {
-			var [tx, ty] = content_click(self.scroll, ev.click_x, ev.click_y)
-			var int found = -1
-			var uint64 found_handle = 0
-			var i = 0
-			while i < self.handles.length; i += 1 {
-				const uint64 h = self.handles.at(i)
-				// ±4px vertical slop: rows are 24px tall with 8px gaps, so a
-				// click landing in a gap still resolves to the nearest row.
-				// The expanded bands tile the stack exactly (row i claims up
-				// to its bottom + 4, the next row claims from its top - 4),
-				// so no point matches two rows.
-				if self.todos.contains(h, tx, ty) || self.todos.contains(h, tx, ty - 4) || self.todos.contains(h, tx, ty + 4) {
-					found = i
-					found_handle = h
-				}
-			}
-			if found != -1 {
-				self.todos.remove_leaf(found_handle)
-				{
-					var CheckBox _dead = self.owned.remove_at_or_panic(found)
-				}
-				var uint64 _gone = self.handles.remove_at_or_panic(found)
-				self.redance(ref win)
+	// Hit-test the todo rows against a DOCUMENT-space click and remove the
+	// hit row. Returns whether anything was removed (the caller re-dances
+	// only then). The grid node is removed first — a freed handle left in
+	// the tree would still be measured and re-framed — then the control
+	// itself is freed by moving it out of the list into a nested block: its
+	// #destroy runs at the block's closing brace, removing the view and
+	// releasing it.
+	func remove_todo_at = (ref self, int tx, int ty, out bool) {
+		var int found = -1
+		var uint64 found_handle = 0
+		var i = 0
+		while i < self.handles.length; i += 1 {
+			const uint64 h = self.handles.at(i)
+			// ±4px vertical slop: rows are 24px tall with 8px gaps, so a
+			// click landing in a gap still resolves to the nearest row.
+			// The expanded bands tile the stack exactly (row i claims up
+			// to its bottom + 4, the next row claims from its top - 4),
+			// so no point matches two rows.
+			if self.todos.contains(h, tx, ty) || self.todos.contains(h, tx, ty - 4) || self.todos.contains(h, tx, ty + 4) {
+				found = i
+				found_handle = h
 			}
 		}
+		if found != -1 {
+			self.todos.remove_leaf(found_handle)
+			{
+				var CheckBox _dead = self.owned.remove_at_or_panic(found)
+			}
+			var uint64 _gone = self.handles.remove_at_or_panic(found)
+			return true
+		}
+		return false
 	}
 }
 

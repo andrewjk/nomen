@@ -470,6 +470,43 @@ pub mv struct Scrollable: Control {
 		/* TODO: iOS (see #init) */
 		```
 	}
+
+	// The on_scroll desugar's drain (docs/HANDLERS.md): the synthesized
+	// pump arm polls this per frame. True on any frame whose pump saw
+	// scroll-wheel events; the deltas ride the dispatch window —
+	// `win.scroll_dx()` / `win.scroll_dy()` (dy positive scrolling up/away,
+	// dx positive right; a trackpad frame sums every small event). Scroll
+	// is continuous input, not a click: the edge means "this frame
+	// scrolled", and the magnitudes are the payload. The record is
+	// window-level (broadcast, like the mouse-down record) — handlers that
+	// care about WHICH scrollable route by hit-testing or by reading
+	// `self.scroll_offset_y()` deltas.
+	pub func take_scroll = (self, out bool) {
+		```
+		#arch: c
+		#platform: macos
+		extern double nomen_scroll_dx_acc;
+		extern double nomen_scroll_dy_acc;
+		return (nomen_scroll_dx_acc != 0.0) || (nomen_scroll_dy_acc != 0.0);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		extern double nomen_scroll_dx_acc;
+		extern double nomen_scroll_dy_acc;
+		return (nomen_scroll_dx_acc != 0.0) || (nomen_scroll_dy_acc != 0.0);
+		```
+		```
+		#arch: c
+		#platform: ios
+		return 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		return 0;
+		```
+	}
 }
 
 // Translate a WINDOW-space click (top-left origin, as click_x/click_y

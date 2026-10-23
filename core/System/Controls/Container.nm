@@ -1915,6 +1915,76 @@ pub mv struct Container: Control {
 		```
 	}
 
+	// The on_right_click desugar's drain (docs/HANDLERS.md): the synthesized
+	// pump arm polls this per frame. The record is WINDOW-level — the same
+	// edge FrameEvents.click reports as 2, stamped by every process_events
+	// pump and stale the moment the next pump runs — so registration reads
+	// "tell me when a right-click happens": every registered arm sees the
+	// edge (broadcast — no consumption, so arms never starve each other),
+	// and the HANDLER disambiguates: read the click through the dispatch
+	// window (win.click_x()/click_y()), translate for scrollables
+	// (content_click), hit-test children (contains). `self` is the routing
+	// receiver only — the event is not container-scoped.
+	pub func take_right_click = (self, out bool) {
+		```
+		#arch: c
+		#platform: macos
+		extern unsigned char nomen_window_had_right_click(void);
+		return nomen_window_had_right_click();
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		extern unsigned char nomen_window_had_right_click(void) __asm__("nomen_window_had_right_click");
+		return nomen_window_had_right_click();
+		```
+		```
+		#arch: c
+		#platform: ios
+		return 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		return 0;
+		```
+	}
+
+	// The on_mouse_down desugar's drain (docs/HANDLERS.md): the synthesized
+	// pump arm polls this per frame. The exhaustive window-level edge —
+	// EVERY mouse-down (left, right, middle, mouse 4+), not just the two
+	// named buttons. Like take_right_click, the record is window-level and
+	// broadcast (one edge per pump, every registered arm sees it); the
+	// HANDLER filters and disambiguates: `win.mouse_button()` (1-based —
+	// 1 left, 2 right, 3 middle, 4+ extras), `mouse_click_count()`
+	// (double/triple), `mouse_modifiers()` (cmd/option/ctrl/shift bits),
+	// `click_x()`/`click_y()` for the position. `on_right_click` is the
+	// sugar for button 2.
+	pub func take_mouse_down = (self, out bool) {
+		```
+		#arch: c
+		#platform: macos
+		extern int nomen_last_click_button;
+		return nomen_last_click_button != 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		extern int nomen_last_click_button;
+		return nomen_last_click_button != 0;
+		```
+		```
+		#arch: c
+		#platform: ios
+		return 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		return 0;
+		```
+	}
+
 	// Hit test: is point (cx, cy) (top-left origin, as returned by click_x/
 	// click_y) inside the leaf with the given handle?
 	pub func contains = (self, uint64 handle, int cx, int cy, out bool) {

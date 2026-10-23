@@ -483,8 +483,8 @@ clip view's own origin, so a raw click mis-hits as soon as the content
 scrolls. `content_click(scroll, cx, cy)` (a free function beside the struct —
 a raw-block-backed method returning a tuple fails the checker's
 destructuring; `native_intrinsic` set the free-function precedent) does the
-translation, and the todo demo uses it for both checkbox hit-tests and
-right-click deletes. The gallery only polls the offset into its status line.
+translation, and the todo demo's `on_right_click` handler uses it before its
+checkbox hit-test. The gallery only polls the offset into its status line.
 
 ## The App run loop
 
@@ -589,8 +589,76 @@ loops and composite-internal edge cases; a record consumed by a
 registered arm never reaches a poll.
 
 `FrameEvents.click`/`click_x`/`click_y` are unchanged and remain for
-right-clicks and coordinate-driven cases (the todo demo's right-click
-delete; `Container.contains` hit-testing).
+coordinate-driven and manual-loop cases.
+
+Right-click is the window-level event family: register it on a container
+field and the framework dispatches it on the frame that pumped a
+right-mouse-down — the same edge `FrameEvents.click` reports as 2:
+
+```
+self.todos.on_right_click(func () {
+	var [tx, ty] = content_click(self.scroll, win.click_x(), win.click_y())
+	if self.remove_todo_at(tx, ty) {
+		self.redance(ref win)
+	}
+})
+```
+
+The record carries no hit target (it is one edge per pump, not per
+control), so every registered arm sees it and the HANDLER disambiguates:
+read the click through the dispatch window (`win.click_x()`/`click_y()` —
+the same values `FrameEvents` carries), translate into document space with
+`content_click` for scrollable-hosted children, and hit-test with
+`Container.contains`. The drain is `Container.take_right_click`; a
+right-click that hits nothing simply hit-tests to no row.
+
+### The raw mouse tier: on_mouse_down
+
+`on_mouse_down` is the exhaustive form — EVERY button, the click count,
+and the modifiers, through one registration:
+
+```
+self.rows.on_mouse_down(func () {
+	if win.mouse_button() == 3 {          // 1 left, 2 right, 3 middle, 4+ extras
+		if win.mouse_click_count() == 2 { // double-click
+			if win.mouse_modifiers() == 1048576 { // 0x100000 = Command
+				self.open_in_new_tab(...)
+			}
+		}
+	}
+})
+```
+
+The record rides the dispatch window: `win.mouse_button()` (1-based, 0 on
+a quiet frame), `win.mouse_click_count()` (AppKit click count — 2 is a
+double-click), `win.mouse_modifiers()` (device-independent bits: Command
+= 1048576, Option = 524288, Control = 262144, Shift = 131072), and
+`win.click_x()`/`click_y()` for the position. The drain is
+`Container.take_mouse_down`; the record is window-level and broadcast
+like the right-click record, and the arm filters. `on_right_click` is
+exactly this tier sugared for button 2. `FrameEvents` carries the same
+record for the `frame` form (`mouse_button`/`mouse_click_count`/
+`mouse_modifiers`) — `click` remains the left/right compat view.
+
+### Scroll: on_scroll
+
+Scroll is continuous input, not a click: the edge means "this frame
+scrolled", and the magnitudes are the payload. Register on a Scrollable
+and read the deltas off the dispatch window:
+
+```
+self.scroll.on_scroll(func () {
+	var int dy = win.scroll_dy()   // positive scrolling up/away
+	if dy > 0 {
+		self.zoom = self.zoom + dy
+	}
+})
+```
+
+The deltas accumulate across each frame's pump (a trackpad frame sums
+every small event, momentum included) and expire with the frame — the
+same per-frame record as the mouse family. `FrameEvents.scroll_dx`/
+`scroll_dy` carry the same values for `frame`.
 
 ### Upward events (composite → app)
 
