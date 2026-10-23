@@ -25,10 +25,10 @@ pub mv struct Mutex {
 	pub var uint64 handle = 0
 
 	pub func #init = (self) {
-	// The constructor's `self` is the INLINE instance (a local value in the
-	// C lowering — methods take the pointer form, the ctor does not), so the
-	// C body uses the `.` accessor; the aarch64 body writes through x19 =
-	// &instance as always.
+		// The constructor's `self` is the INLINE instance (a local value in the
+		// C lowering — methods take the pointer form, the ctor does not), so the
+		// C body uses the `.` accessor; the aarch64 body writes through x19 =
+		// &instance as always.
 	```
 	#arch: c
 	self.handle = (unsigned long long)__nomen_mutex_create();

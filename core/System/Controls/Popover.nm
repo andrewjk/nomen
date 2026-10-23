@@ -22,7 +22,7 @@ pub struct PopSize {
 	pub var height = 0
 }
 
-pub mv struct Popover : Control {
+pub mv struct Popover: Control {
 	var uint64 handle = 0
 
 	pub func #init = (self, Window window) {

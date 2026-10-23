@@ -57,8 +57,8 @@ pub struct File {
 				return FileError.already_exists
 			}
 		} else {
-				return FileError.other
-			}
+			return FileError.other
+		}
 	}
 
 	// Open the file at `path` with a C mode string ("r", "w", "a", …).

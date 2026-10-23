@@ -10,7 +10,7 @@
  * For the spinning variant (macOS styles the SAME control differently, iOS
  * uses a distinct class) see `Spinner`.
  **/
-pub mv struct Progress : Control {
+pub mv struct Progress: Control {
 	var uint64 handle = 0
 
 	pub func #init = (self, Window window) {

@@ -18,7 +18,7 @@
  * lesson). macOS-only (no iOS counterpart; see GUI_PLAN Tier 2 — the iOS
  * blocks are TODO stubs).
  **/
-pub mv struct OutlineView : Control {
+pub mv struct OutlineView: Control {
 	var uint64 handle = 0
 	var uint64 tree = 0
 

@@ -102,7 +102,7 @@ pub trait App {
 pub mv struct FrameEvents {
 	// 0 = no mouse-down this frame, 1 = left, 2 = right (edge-triggered:
 	// only the frame that pumped the event reports it).
-	pub var int click = 0
+	pub var click = 0
 	pub var int click_x = -1
 	pub var int click_y = -1
 	// The full mouse record for this frame (0 = no mouse-down): the 1-based
@@ -112,14 +112,14 @@ pub mv struct FrameEvents {
 	// 0x40000, Shift = 0x20000). The same values the `win.mouse_button()` /
 	// `mouse_click_count()` / `mouse_modifiers()` getters report to
 	// `on_mouse_down` handlers. `click` remains the left/right compat view.
-	pub var int mouse_button = 0
-	pub var int mouse_click_count = 0
-	pub var int mouse_modifiers = 0
+	pub var mouse_button = 0
+	pub var mouse_click_count = 0
+	pub var mouse_modifiers = 0
 	// This frame's accumulated scroll-wheel deltas (dy positive scrolling
 	// up/away, dx positive right; trackpad frames sum every small event).
 	// `Scrollable.on_scroll` is the registered-handler form.
-	pub var int scroll_dx = 0
-	pub var int scroll_dy = 0
+	pub var scroll_dx = 0
+	pub var scroll_dy = 0
 	// The keyboard record for this frame (-1 = no key this frame): the
 	// hardware keycode of the last key-down (Space = 49, Return = 36,
 	// arrows = 123–126, letters a…z = 0–25), the modifiers at key-down,
@@ -127,8 +127,8 @@ pub mv struct FrameEvents {
 	// `on_key_down` / `on_key_up` are the registered-handler forms; text
 	// ENTRY flows through `on_input` (the field editor), not here.
 	pub var int key_code = -1
-	pub var int key_modifiers = 0
-	pub var bool key_repeat = false
+	pub var key_modifiers = 0
+	pub var key_repeat = false
 	pub var int key_up_code = -1
 	// The pointer-MOVE record for this frame (-1 = no movement): the
 	// current pointer position. `on_mouse_move` is the registered-handler
@@ -137,11 +137,11 @@ pub mv struct FrameEvents {
 	pub var int mouse_y = -1
 	// Milliseconds since the previous frame (0 on the first) — the
 	// animation clock. `win.dt()` reports the same value.
-	pub var int dt = 0
+	pub var dt = 0
 	// True when the window's content rect changed since the last frame —
 	// the framework has already re-laid-out the registered roots; re-layout
 	// App-owned panes (tab pages, split panes) here.
-	pub var bool resized = false
-	pub var int width = 0
-	pub var int height = 0
+	pub var resized = false
+	pub var width = 0
+	pub var height = 0
 }

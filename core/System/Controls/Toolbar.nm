@@ -17,7 +17,7 @@
  * already make). macOS-only (NSToolbar has no iOS counterpart; see GUI_PLAN
  * Tier 2 — the iOS blocks are TODO stubs).
  **/
-pub mv struct Toolbar : Control {
+pub mv struct Toolbar: Control {
 	var uint64 handle = 0
 
 	// File-scope helper: the shared delegate + action recorder (shared — one

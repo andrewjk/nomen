@@ -142,7 +142,7 @@ pub struct StringBuilder {
 				return false
 			}
 			var int start = self.len - sl
-			var int i = 0
+			var i = 0
 			while i < sl; i += 1 {
 				if (self.data as ptr char)[start + i] != (suffix as ptr char)[i] {
 					return false

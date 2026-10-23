@@ -11,9 +11,9 @@
  * tracked at the Nomen level (NSProgressIndicator has no isSpinning getter),
  * so `is_spinning` reads true exactly between start() and stop().
  **/
-pub mv struct Spinner : Control {
+pub mv struct Spinner: Control {
 	var uint64 handle = 0
-	var bool spinning = false
+	var spinning = false
 
 	pub func #init = (self, Window window) {
 		```

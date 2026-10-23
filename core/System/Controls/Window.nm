@@ -1354,7 +1354,7 @@ pub mv struct Window: Control {
 		self.relayout(1)
 		var int prev_w = self.content_width()
 		var int prev_h = self.content_height()
-		var FrameEvents ev = FrameEvents()
+		var ev = FrameEvents()
 		while self.is_visible() {
 			// Close interception: the delegate refused the native close and
 			// set the pending flag; consult the app. Accept → forced close
@@ -1852,7 +1852,6 @@ pub func nomen_control_take_input = (uint64 handle, out bool) {
 	return 0;
 	```
 }
-
 
 pub func nomen_window_clicks_init = (uint64 handle) {
 	```

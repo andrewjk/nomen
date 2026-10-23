@@ -28,7 +28,7 @@ pub mv struct Pagination {
 	// The up-call plumbing: the dispatch id the app enrolled (—1 = none)
 	// and whether a page change is waiting for the next tick.
 	var int page_change_id = -1
-	var bool page_change_pending = false
+	var page_change_pending = false
 
 	pub func #init = (self, Window window, int pages: pages > 0 && pages <= 5) {
 		self.prev = Button(window, "<")
@@ -56,13 +56,13 @@ pub mv struct Pagination {
 		// spares can never be clicked). The closures hoist to hidden methods
 		// on Pagination and run with `ref self` — the app's dispatch
 		// forwards into the field that hosts the row. No polls to starve.
-		self.prev.on_click(func () { self.prev() })
-		self.next.on_click(func () { self.next() })
-		self.b0.on_click(func () { self.select(0) })
-		self.b1.on_click(func () { self.select(1) })
-		self.b2.on_click(func () { self.select(2) })
-		self.b3.on_click(func () { self.select(3) })
-		self.b4.on_click(func () { self.select(4) })
+		self.prev.on_click(func() { self.prev() })
+		self.next.on_click(func() { self.next() })
+		self.b0.on_click(func() { self.select(0) })
+		self.b1.on_click(func() { self.select(1) })
+		self.b2.on_click(func() { self.select(2) })
+		self.b3.on_click(func() { self.select(3) })
+		self.b4.on_click(func() { self.select(4) })
 	}
 
 	// Wire the row into the caller's grid under `parent`.

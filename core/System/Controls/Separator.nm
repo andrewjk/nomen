@@ -10,7 +10,7 @@
  * the frame's aspect (wide = horizontal, tall = vertical). macOS-only —
  * iOS has no separator view (TODO stubs; see GUI_PLAN Tier 1 #17).
  **/
-pub mv struct Separator : Control {
+pub mv struct Separator: Control {
 	var uint64 handle = 0
 
 	pub func #init = (self, Window window) {

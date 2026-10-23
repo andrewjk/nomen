@@ -10,7 +10,7 @@
  * polled after each event batch. iOS needs a picker or action sheet and
  * defers (TODO stubs below; see GUI_PLAN Tier 1 #9).
  **/
-pub mv struct Select : Control {
+pub mv struct Select: Control {
 	var uint64 handle = 0
 
 	pub func #init = (self, Window window) {

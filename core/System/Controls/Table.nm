@@ -19,7 +19,7 @@
  * `List<T>` lesson). macOS-only (no iOS counterpart for a plain embeddable
  * grid; see GUI_PLAN Tier 2 — the iOS blocks are TODO stubs).
  **/
-pub mv struct Table : Control {
+pub mv struct Table: Control {
 	var uint64 handle = 0
 	var uint64 table = 0
 

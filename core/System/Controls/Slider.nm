@@ -8,7 +8,7 @@
  *
  * Continuous control: read `value` each frame in the manual event loop.
  **/
-pub mv struct Slider : Control {
+pub mv struct Slider: Control {
 	var uint64 handle = 0
 
 	pub func #init = (self, Window window, float min, float max) {

@@ -18,7 +18,7 @@ pub struct Rgb {
  * Components travel as 0-255 ints; the platform stores 0-1 doubles, so the
  * round trip is exact to ±1 (the getters round).
  **/
-pub mv struct ColorPicker : Control {
+pub mv struct ColorPicker: Control {
 	var uint64 handle = 0
 
 	pub func #init = (self, Window window) {

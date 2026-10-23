@@ -12,7 +12,7 @@
  * macOS-only (NSComboBox has no iOS counterpart — see GUI_PLAN Tier 2; the
  * iOS blocks are TODO stubs).
  **/
-pub mv struct ComboBox : Control {
+pub mv struct ComboBox: Control {
 	var uint64 handle = 0
 
 	pub func #init = (self, Window window) {

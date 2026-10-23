@@ -21,7 +21,7 @@
  * UISplitViewController (a view-controller-level type — see GUI_PLAN
  * Tier 2; the iOS blocks are TODO stubs).
  **/
-pub mv struct SplitView : Control {
+pub mv struct SplitView: Control {
 	var uint64 handle = 0
 
 	// File-scope helper: the pane view class (answers `-contentView` with

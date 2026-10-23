@@ -12,13 +12,13 @@
  * UIAlertController needs a presenting view controller (TODO stubs; see
  * GUI_PLAN Tier 1 #19).
  **/
-pub mv struct Alert : Control {
+pub mv struct Alert: Control {
 	var uint64 handle = 0
 
 	// The `#handle` hook synthesizes `NameHandle` — a copyable, non-owning
 	// twin (same public bare-self methods, no destroy) so closures can
 	// capture this control without moving it. See GUI.md, "Handles".
-	#handle = () {}
+	#handle = () { }
 
 	pub func #init = (self) {
 		```

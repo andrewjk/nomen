@@ -9,7 +9,7 @@
  * The segment count is fixed at construction; labels and the selection are
  * set/poll per frame like every other control.
  **/
-pub mv struct Segmented : Control {
+pub mv struct Segmented: Control {
 	var uint64 handle = 0
 
 	pub func #init = (self, Window window, int count) {

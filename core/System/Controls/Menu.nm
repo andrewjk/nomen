@@ -17,7 +17,7 @@
  * Interaction needs a scene-attached view — see GUI_PLAN Tier 2; the iOS
  * blocks are TODO stubs).
  **/
-pub mv struct Menu : Control {
+pub mv struct Menu: Control {
 	var uint64 handle = 0
 
 	// File-scope helper: the shared item target. The action records the

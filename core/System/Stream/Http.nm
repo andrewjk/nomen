@@ -49,8 +49,8 @@ pub struct Http {
 				return HttpError.connect
 			}
 		} else {
-				return HttpError.other
-			}
+			return HttpError.other
+		}
 	}
 
 	// Shared socket round-trip used by get/post. `method` is the request

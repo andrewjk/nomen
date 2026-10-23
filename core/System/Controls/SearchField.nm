@@ -9,7 +9,7 @@
  * NSSearchField gives the magnifier icon, placeholder, and Cancel button for
  * free; UISearchTextField is the iOS 13+ equivalent.
  **/
-pub mv struct SearchField : Control {
+pub mv struct SearchField: Control {
 	var uint64 handle = 0
 
 	pub func #init = (self, Window window) {

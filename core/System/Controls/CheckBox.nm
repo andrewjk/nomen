@@ -6,13 +6,13 @@
  * `#destroy` releases what the handle names. The constructor's `self` is
  * the inline instance (the `.` accessor); methods keep the pointer form.
  **/
-pub mv struct CheckBox : Control {
+pub mv struct CheckBox: Control {
 	var uint64 handle = 0
 
 	// The `#handle` hook synthesizes `NameHandle` — a copyable, non-owning
 	// twin (same public bare-self methods, no destroy) so closures can
 	// capture this control without moving it. See GUI.md, "Handles".
-	#handle = () {}
+	#handle = () { }
 
 	pub func #init = (self, Window window) {
 		```

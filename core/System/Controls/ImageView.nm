@@ -10,7 +10,7 @@
  * symbol/SF Symbol set. A failed load leaves the view empty (`has_image`
  * reads false) — there is no error channel for images.
  **/
-pub mv struct ImageView : Control {
+pub mv struct ImageView: Control {
 	var uint64 handle = 0
 
 	pub func #init = (self, Window window) {

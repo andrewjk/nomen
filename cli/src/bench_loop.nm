@@ -16,19 +16,19 @@
 // emit unchecked strided loads).
 func bench_loop___NAME__ = (ref Tester t) {
 	// Warm up so the first samples don't pay for cold caches / lazy binding.
-	var int __w = 0
+	var __w = 0
 	while __w < 8 {
 		__TARGET__()
 		__w += 1
 	}
 	// Collect __N__ samples, tracking running aggregates for every statistic
 	// except the median (which needs sorted data).
-	var List<int> __samples = List<int>()
-	var int __sum = 0
-	var float __sum_sq = 0.0
-	var int __min = 0
-	var int __max = 0
-	var int __i = 0
+	var __samples = List<int>()
+	var __sum = 0
+	var __sum_sq = 0.0
+	var __min = 0
+	var __max = 0
+	var __i = 0
 	while __i < __N__ {
 		const uint64 __t0 = Time.now_ns()
 		__TARGET__()
@@ -63,12 +63,12 @@ func bench_loop___NAME__ = (ref Tester t) {
 		// Insertion sort the samples so we can pick a median. `length` is
 		// stable throughout (only `set` mutates), so every access is guarded
 		// against `__samples.length` directly.
-		var int __s = 1
+		var __s = 1
 		while __s < __n {
 			if __s >= 0 && __s < __samples.length {
 				const int __v = __samples.at(__s)
 				var int __j = __s
-				var bool __more = true
+				var __more = true
 				while __more {
 					var int __pm1 = __j - 1
 					if __pm1 >= 0 && __pm1 < __samples.length {

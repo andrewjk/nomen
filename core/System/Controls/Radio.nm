@@ -12,13 +12,13 @@
  * the rest. The control itself is a CheckBox sibling (button type 4,
  * NSRadioButton). iOS defers to Segmented or a checkmark list.
  **/
-pub mv struct Radio : Control {
+pub mv struct Radio: Control {
 	var uint64 handle = 0
 
 	// The `#handle` hook synthesizes `NameHandle` — a copyable, non-owning
 	// twin (same public bare-self methods, no destroy) so closures can
 	// capture this control without moving it. See GUI.md, "Handles".
-	#handle = () {}
+	#handle = () { }
 
 	pub func #init = (self, Window window, string title) {
 		```

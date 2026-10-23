@@ -22,7 +22,7 @@
  * any document view. iOS defers to UITableView (TODO stubs; see GUI_PLAN
  * Tier 2).
  **/
-pub mv struct ListView : Control {
+pub mv struct ListView: Control {
 	var uint64 handle = 0
 	var uint64 table = 0
 

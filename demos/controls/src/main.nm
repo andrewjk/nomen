@@ -16,12 +16,12 @@ import System::Controls
 // under one owner (self) trip the aliasing rule — locals have disjoint
 // owners, fields don't. (See GUI.md, "The App run loop".)
 pub func main = () {
-	var Window win = Window("Nomen Controls", 440, 900)
-	var GalleryApp app = GalleryApp(win)
+	var win = Window("Nomen Controls", 440, 900)
+	var app = GalleryApp(win)
 	win.run(mv app)
 }
 
-mv struct GalleryApp : App {
+mv struct GalleryApp: App {
 	// ── Page scaffold ──
 	var Scrollable page
 	var Container outer
@@ -128,128 +128,128 @@ mv struct GalleryApp : App {
 	var Button sheet_close_btn
 	var Popover pop
 	var Text status
-	var string prev_status = ""
+	var prev_status = ""
 
 	pub func #init = (self, Window window) {
 		// The whole gallery scrolls: the page lives on a Scrollable's
 		// document view. The window is a viewport on a page much taller
 		// than it, so every section stays reachable by scrolling.
-		var Scrollable page = Scrollable(window)
+		var page = Scrollable(window)
 		// The document view hosts every page control. The +1 from
 		// content_window releases when this constructor's local dies — the
 		// Scrollable holds its own reference.
 		var Window content = page.content_window()
 
 		// ── Controls (built against the document view) ──
-		var Text header = Text(content)
+		var header = Text(content)
 		header.set_text("Controls Gallery")
 		header.set_bold(true)
 
-		var Text title = Text(content)
+		var title = Text(content)
 		title.set_text("Inputs")
 		title.set_bold(true)
-		var TextBox name = TextBox(content)
+		var name = TextBox(content)
 		name.set_placeholder("Text box")
-		var SecureField secret = SecureField(content)
+		var secret = SecureField(content)
 		secret.set_placeholder("Password")
-		var SearchField search = SearchField(content)
+		var search = SearchField(content)
 		search.set_placeholder("Search")
-		var TextView notes = TextView(content)
+		var notes = TextView(content)
 		notes.set_placeholder("Multiline notes…")
 
-		var Text choice_title = Text(content)
+		var choice_title = Text(content)
 		choice_title.set_text("Choices")
 		choice_title.set_bold(true)
-		var CheckBox agree = CheckBox(content)
+		var agree = CheckBox(content)
 		agree.set_title("Check me")
-		var Radio radio_a = Radio(content, "One")
-		var Radio radio_b = Radio(content, "Two")
+		var radio_a = Radio(content, "One")
+		var radio_b = Radio(content, "Two")
 		radio_a.set_checked(true)
-		var Switch flip = Switch(content)
+		var flip = Switch(content)
 		flip.set_checked(true)
-		var Toggle stamp = Toggle(content, "Toggle")
-		var Segmented views = Segmented(content, 3)
+		var stamp = Toggle(content, "Toggle")
+		var views = Segmented(content, 3)
 		views.set_label(0, "Day")
 		views.set_label(1, "Week")
 		views.set_label(2, "Month")
 		views.set_selected(1)
-		var Select pick = Select(content)
+		var pick = Select(content)
 		pick.add_item("Red")
 		pick.add_item("Green")
 		pick.add_item("Blue")
-		var Stepper step = Stepper(content)
+		var step = Stepper(content)
 		step.set_min(0.0)
 		step.set_max(10.0)
 		step.set_increment(1.0)
 		step.set_value(3.0)
-		var Slider slide = Slider(content, 0.0, 100.0)
+		var slide = Slider(content, 0.0, 100.0)
 		slide.set_value(40.0)
 
-		var Text display_title = Text(content)
+		var display_title = Text(content)
 		display_title.set_text("Display")
 		display_title.set_bold(true)
-		var Progress bar = Progress(content)
+		var bar = Progress(content)
 		bar.set_value(0.4)
-		var Spinner spin = Spinner(content)
+		var spin = Spinner(content)
 		spin.start()
-		var LevelIndicator stars = LevelIndicator(content)
+		var stars = LevelIndicator(content)
 		stars.set_max(5.0)
 		stars.set_value(3.0)
-		var ImageView icon = ImageView(content)
+		var icon = ImageView(content)
 		icon.set_symbol("gearshape")
-		var DatePicker when = DatePicker(content)
+		var when = DatePicker(content)
 		when.set_time(1760000000)
-		var ColorPicker color = ColorPicker(content)
+		var color = ColorPicker(content)
 		color.set_rgb(52, 149, 235)
 		// The display controls show no title of their own, so each row pairs
 		// the control with a caption label (the caption sizes to its text;
 		// the control fills the rest of the row).
-		var Text prog_caption = Text(content)
+		var prog_caption = Text(content)
 		prog_caption.set_text("Progress")
-		var Text spin_caption = Text(content)
+		var spin_caption = Text(content)
 		spin_caption.set_text("Spinner")
-		var Text stars_caption = Text(content)
+		var stars_caption = Text(content)
 		stars_caption.set_text("Level indicator")
-		var Text icon_caption = Text(content)
+		var icon_caption = Text(content)
 		icon_caption.set_text("Image view")
-		var Text when_caption = Text(content)
+		var when_caption = Text(content)
 		when_caption.set_text("Date picker")
-		var Text color_caption = Text(content)
+		var color_caption = Text(content)
 		color_caption.set_text("Color picker")
 
-		var Text action_title = Text(content)
+		var action_title = Text(content)
 		action_title.set_text("Actions")
 		action_title.set_bold(true)
-		var Button hover_btn = Button(content, "Hover me")
+		var hover_btn = Button(content, "Hover me")
 		set_tooltip(hover_btn.handle, "Tooltips attach to any control by handle")
-		var Button alert_btn = Button(content, "Show alert")
-		var Button sheet_btn = Button(content, "Show sheet")
-		var Button pop_btn = Button(content, "Show popover")
+		var alert_btn = Button(content, "Show alert")
+		var sheet_btn = Button(content, "Show sheet")
+		var pop_btn = Button(content, "Show popover")
 
-		var Text group_title = Text(content)
+		var group_title = Text(content)
 		group_title.set_text("Grouping")
 		group_title.set_bold(true)
-		var Separator rule = Separator(content)
-		var GroupBox form = GroupBox(content, "Group box")
+		var rule = Separator(content)
+		var form = GroupBox(content, "Group box")
 
-		var Text scroll_title = Text(content)
+		var scroll_title = Text(content)
 		scroll_title.set_text("Scrolling")
 		scroll_title.set_bold(true)
-		var Scrollable scroll = Scrollable(content)	// nested: the Scrolling section's viewport
+		var scroll = Scrollable(content) // nested: the Scrolling section's viewport
 		var Container scroll_grid = Grid(1, 6)
 		scroll_grid.padding = 8
 		var Window scroll_content = scroll.content_window()
-		var Text row_1 = Text(scroll_content)
+		var row_1 = Text(scroll_content)
 		row_1.set_text("Row 1 — scroll me")
-		var Text row_2 = Text(scroll_content)
+		var row_2 = Text(scroll_content)
 		row_2.set_text("Row 2")
-		var Text row_3 = Text(scroll_content)
+		var row_3 = Text(scroll_content)
 		row_3.set_text("Row 3")
-		var Text row_4 = Text(scroll_content)
+		var row_4 = Text(scroll_content)
 		row_4.set_text("Row 4")
-		var Text row_5 = Text(scroll_content)
+		var row_5 = Text(scroll_content)
 		row_5.set_text("Row 5")
-		var Text row_6 = Text(scroll_content)
+		var row_6 = Text(scroll_content)
 		row_6.set_text("Row 6 — the end")
 		scroll_grid.add(row_1.handle, 0, 24, 1)
 		scroll_grid.add(row_2.handle, 0, 24, 1)
@@ -258,10 +258,10 @@ mv struct GalleryApp : App {
 		scroll_grid.add(row_5.handle, 0, 24, 1)
 		scroll_grid.add(row_6.handle, 0, 24, 1)
 
-		var Text tabs_title = Text(content)
+		var tabs_title = Text(content)
 		tabs_title.set_text("Tabs")
 		tabs_title.set_bold(true)
-		var Tabs tabs = Tabs(content, 2)
+		var tabs = Tabs(content, 2)
 		tabs.set_label(0, "One")
 		tabs.set_label(1, "Two")
 		// Each page is its own layout root (content_window(index)); the
@@ -270,65 +270,65 @@ mv struct GalleryApp : App {
 		var Window tabs_page_1 = tabs.content_window(1)
 		var Container tabs_grid_0 = Grid(1, 6)
 		tabs_grid_0.padding = 12
-		var Text tabs_label_0 = Text(tabs_page_0)
+		var tabs_label_0 = Text(tabs_page_0)
 		tabs_label_0.set_text("Page one content")
 		tabs_grid_0.add(tabs_label_0.handle, 0, 24, 1)
 		var Container tabs_grid_1 = Grid(1, 6)
 		tabs_grid_1.padding = 12
-		var Text tabs_label_1 = Text(tabs_page_1)
+		var tabs_label_1 = Text(tabs_page_1)
 		tabs_label_1.set_text("Page two content")
 		tabs_grid_1.add(tabs_label_1.handle, 0, 24, 1)
 
-		var Text list_title = Text(content)
+		var list_title = Text(content)
 		list_title.set_text("List")
 		list_title.set_bold(true)
-		var ListView list = ListView(content)
+		var list = ListView(content)
 		list.add_row("alpha")
 		list.add_row("beta")
 		list.add_row("gamma")
 		list.add_row("delta")
 		list.select_row(1)
 
-		var Text combo_title = Text(content)
+		var combo_title = Text(content)
 		combo_title.set_text("Combo box")
 		combo_title.set_bold(true)
-		var ComboBox combo = ComboBox(content)
+		var combo = ComboBox(content)
 		combo.add_item("Red")
 		combo.add_item("Green")
 		combo.add_item("Blue")
 		combo.set_selected(1)
 
-		var Button menu_btn = Button(content, "Right-click me")
-		var Menu menu = Menu()
+		var menu_btn = Button(content, "Right-click me")
+		var menu = Menu()
 		menu.add_item("Cut")
 		menu.add_item("Copy")
 		menu.add_separator()
 		menu.add_item("Paste")
 		menu.attach(menu_btn.handle)
 
-		var Text split_title = Text(content)
+		var split_title = Text(content)
 		split_title.set_text("Split view")
 		split_title.set_bold(true)
-		var SplitView split = SplitView(content, 2, true)
+		var split = SplitView(content, 2, true)
 		// Each pane is its own layout root (content_window(index)); the pane
 		// layouts re-run after the split is re-framed (see layout_panes).
 		var Window split_left = split.content_window(0)
 		var Window split_right = split.content_window(1)
 		var Container split_grid_0 = Grid(1, 6)
 		split_grid_0.padding = 8
-		var Text split_label_0 = Text(split_left)
+		var split_label_0 = Text(split_left)
 		split_label_0.set_text("Left pane")
 		split_grid_0.add(split_label_0.handle, 0, 24, 1)
 		var Container split_grid_1 = Grid(1, 6)
 		split_grid_1.padding = 8
-		var Text split_label_1 = Text(split_right)
+		var split_label_1 = Text(split_right)
 		split_label_1.set_text("Right pane")
 		split_grid_1.add(split_label_1.handle, 0, 24, 1)
 
-		var Text outline_title = Text(content)
+		var outline_title = Text(content)
 		outline_title.set_text("Outline")
 		outline_title.set_bold(true)
-		var OutlineView outline = OutlineView(content)
+		var outline = OutlineView(content)
 		outline.add_item("Sources", -1)
 		outline.add_item("main.nm", 0)
 		outline.add_item("Window.nm", 0)
@@ -337,10 +337,10 @@ mv struct GalleryApp : App {
 		outline.add_item("controls", 3)
 		outline.set_expanded(0, true)
 
-		var Text table_title = Text(content)
+		var table_title = Text(content)
 		table_title.set_text("Table")
 		table_title.set_bold(true)
-		var Table table = Table(content, 3)
+		var table = Table(content, 3)
 		table.set_header(0, "Item")
 		table.set_header(1, "Qty")
 		table.set_header(2, "Price")
@@ -358,51 +358,51 @@ mv struct GalleryApp : App {
 		table.set_cell(2, 2, "0.30")
 		table.select_row(1)
 
-		var Text comp_title = Text(content)
+		var comp_title = Text(content)
 		comp_title.set_text("Composites")
 		comp_title.set_bold(true)
-		var NumberInput num = NumberInput(content)
+		var num = NumberInput(content)
 		num.set_range(0.0, 10.0, 0.5)
 		num.set_value(2.5)
-		var OtpInput otp = OtpInput(content)
-		var Pagination pag = Pagination(content, 3)
-		var Form signin = Form(content, "Sign in")
-		var TextBox form_name = TextBox(content)
+		var otp = OtpInput(content)
+		var pag = Pagination(content, 3)
+		var signin = Form(content, "Sign in")
+		var form_name = TextBox(content)
 		form_name.set_placeholder("user")
-		var CheckBox form_ok = CheckBox(content)
+		var form_ok = CheckBox(content)
 		form_ok.set_title("Remember me")
 
-		var Text status = Text(content)
+		var status = Text(content)
 		status.set_text("")
 
 		// Window chrome: the toolbar shrinks the contentView (AppKit owns
 		// the layout rect), so it must exist BEFORE the first grid layout.
 		// Its three labeled buttons report picks as on_item_select events.
-		var Toolbar toolbar = Toolbar(window, 3)
+		var toolbar = Toolbar(window, 3)
 		toolbar.set_label(0, "One")
 		toolbar.set_label(1, "Two")
 		toolbar.set_label(2, "Three")
 
 		// ── Modal companions (driven from frame) ──
-		var Alert alert = Alert()
+		var alert = Alert()
 		alert.set_title("Delete todo?")
 		alert.set_message("This cannot be undone.")
 		alert.add_button("Delete")
 		alert.add_button("Cancel")
 
-		var Sheet sheet = Sheet(window, 260, 150)
+		var sheet = Sheet(window, 260, 150)
 		sheet.set_title("Settings")
 		var Window sheet_content = sheet.content_window()
 		var Container sheet_grid = Grid(1, 8)
 		sheet_grid.padding = 12
-		var Text sheet_label = Text(sheet_content)
+		var sheet_label = Text(sheet_content)
 		sheet_label.set_text("Sheet content")
-		var Button sheet_close_btn = Button(sheet_content, "Close")
+		var sheet_close_btn = Button(sheet_content, "Close")
 		sheet_grid.add(sheet_label.handle, 0, 24, 1)
 		sheet_grid.add(sheet_close_btn.handle, 0, 32, 1)
 		sheet_grid.layout(sheet_content)
 
-		var Popover pop = Popover(window)
+		var pop = Popover(window)
 
 		// ── Layout: the window stacks the page scroll (which fills it); the
 		// page itself is a 2-column grid, bold section headings spanning
@@ -606,62 +606,62 @@ mv struct GalleryApp : App {
 		// captures; the body reads the app's own fields. The native click
 		// checks the clicked button itself; unchecking the rest of the group
 		// is the caller's job (Radio.nm).
-		self.radio_a.on_click(func () {
-			self.radio_a.set_checked(true)
-			self.radio_b.set_checked(false)
-		})
-		self.radio_b.on_click(func () {
-			self.radio_b.set_checked(true)
-			self.radio_a.set_checked(false)
-		})
+		self.radio_a.on_click(func() {
+				self.radio_a.set_checked(true)
+				self.radio_b.set_checked(false)
+			})
+		self.radio_b.on_click(func() {
+				self.radio_b.set_checked(true)
+				self.radio_a.set_checked(false)
+			})
 
 		// The pagination's page changes come UP as events (docs/HANDLERS.md
 		// Stage 3): enrolling stores the dispatch id in the composite; each
 		// frame's `tick` forwards the app down and the callback lands here —
 		// one handler, no per-frame polling of the page.
-		self.pag.on_page_change(func () {
-			self.status.set_text("page \{self.pag.page()}")
-		})
+		self.pag.on_page_change(func() {
+				self.status.set_text("page \{self.pag.page()}")
+			})
 
 		// Menu and toolbar selections are events too (docs/HANDLERS.md): the
 		// drain consumes the selection and the body reads the item through
 		// the control's payload getter (menu.selected_item()) — no per-frame
 		// polls.
-		self.menu.on_item_select(func () {
-			self.status.set_text("menu: entry \{self.menu.selected_item()}")
-			self.prev_status = ""
-		})
-		self.toolbar.on_item_select(func () {
-			self.status.set_text("toolbar: item \{self.toolbar.selected_item()}")
-			self.prev_status = ""
-		})
+		self.menu.on_item_select(func() {
+				self.status.set_text("menu: entry \{self.menu.selected_item()}")
+				self.prev_status = ""
+			})
+		self.toolbar.on_item_select(func() {
+				self.status.set_text("toolbar: item \{self.toolbar.selected_item()}")
+				self.prev_status = ""
+			})
 
 		// The dialog/drawer buttons register here too (once — before the run
 		// loop). Each body runs with `ref self`, so app state — the Alert,
 		// the Sheet, the Popover — is direct field access, no captures. The
 		// arms drain in registration order; a record consumed by an arm
 		// never reaches a poll.
-		self.alert_btn.on_click(func () {
-			// Blocks in NSAlert's own modal loop until dismissed.
-			var int choice = self.alert.run()
-			self.status.set_text("alert: button \{choice}")
-			self.prev_status = ""
-		})
-		self.sheet_btn.on_click(func () {
-			self.sheet.present()
-		})
-		self.sheet_close_btn.on_click(func () {
-			self.sheet.dismiss()
-			self.status.set_text("sheet: closed")
-			self.prev_status = ""
-		})
-		self.pop_btn.on_click(func () {
-			if self.pop.is_shown() {
-				self.pop.dismiss()
-			} else {
-				self.pop.show(self.pop_btn.handle)
-			}
-		})
+		self.alert_btn.on_click(func() {
+				// Blocks in NSAlert's own modal loop until dismissed.
+				var int choice = self.alert.run()
+				self.status.set_text("alert: button \{choice}")
+				self.prev_status = ""
+			})
+		self.sheet_btn.on_click(func() {
+				self.sheet.present()
+			})
+		self.sheet_close_btn.on_click(func() {
+				self.sheet.dismiss()
+				self.status.set_text("sheet: closed")
+				self.prev_status = ""
+			})
+		self.pop_btn.on_click(func() {
+				if self.pop.is_shown() {
+					self.pop.dismiss()
+				} else {
+					self.pop.show(self.pop_btn.handle)
+				}
+			})
 	}
 
 	// The polled status line: the continuous controls' current values, as

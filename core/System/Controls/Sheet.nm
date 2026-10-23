@@ -15,7 +15,7 @@
  * defers to UISheetPresentationController (TODO stubs; see GUI_PLAN
  * Tier 1 #20).
  **/
-pub mv struct Sheet : Control {
+pub mv struct Sheet: Control {
 	var uint64 handle = 0
 	var uint64 host = 0
 

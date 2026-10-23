@@ -41,8 +41,8 @@ pub struct Json {
 					sb.append_string("\x5cr")
 				}
 			} else {
-					sb.append_char(c)
-				}
+				sb.append_char(c)
+			}
 		}
 		sb.append_char('"')
 		return sb.to_string()
@@ -90,8 +90,8 @@ pub struct Json {
 							sb.append_string("\x5c")
 						}
 					} else {
-							sb.append_char(e)
-						}
+						sb.append_char(e)
+					}
 				}
 			} else {
 				sb.append_char(c)
@@ -164,8 +164,8 @@ func json_parse_string = (string s, ref Buffer<int> pos, int len, ref JsonTree t
 						sb.append_string("\x5c")
 					}
 				} else {
-						sb.append_char(e)
-					}
+					sb.append_char(e)
+				}
 			}
 		} else {
 			sb.append_char(c)
@@ -216,9 +216,9 @@ func json_parse_literal = (string s, ref Buffer<int> pos, int len, ref JsonTree 
 			adv = 5
 		}
 	} else {
-			tree.set_kind(n, 0)
-			adv = 4
-		}
+		tree.set_kind(n, 0)
+		adv = 4
+	}
 	pos.store_int(0, i + adv)
 	return n
 }

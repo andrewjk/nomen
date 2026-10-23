@@ -9,7 +9,7 @@
  * Pair with a TextBox for the "number input" composition (gpui-kit's
  * number-input is exactly that pairing).
  **/
-pub mv struct Stepper : Control {
+pub mv struct Stepper: Control {
 	var uint64 handle = 0
 
 	pub func #init = (self, Window window) {

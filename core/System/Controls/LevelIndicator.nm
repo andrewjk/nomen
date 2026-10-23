@@ -10,7 +10,7 @@
  * Tier 1 #16 — the iOS blocks are TODO stubs). Styles: 0 relevancy,
  * 1 discrete capacity, 2 continuous capacity, 3 rating (stars).
  **/
-pub mv struct LevelIndicator : Control {
+pub mv struct LevelIndicator: Control {
 	var uint64 handle = 0
 
 	pub func #init = (self, Window window) {

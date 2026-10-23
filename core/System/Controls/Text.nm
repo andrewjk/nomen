@@ -18,7 +18,7 @@ pub mv struct Text: Control {
 	// The `#handle` hook synthesizes `NameHandle` — a copyable, non-owning
 	// twin (same public bare-self methods, no destroy) so closures can
 	// capture this control without moving it. See GUI.md, "Handles".
-	#handle = () {}
+	#handle = () { }
 
 	pub func #init = (self, Window window) {
 		```

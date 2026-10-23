@@ -517,19 +517,6 @@ view (subview, pinned to the top edge via autoresizing mask, hidden through a
 runtime-built `textDidChange:` delegate — same pattern as Container's
 NomenResizeDelegate), plus an explicit visibility update in `set_text`.
 
-## Formatter drift: in-source rules vs the published 0.7.1 release
-
-Running the locally-built CLI's `nomen format` over `core/System` rewrites
-~30 files: it wants `struct X: Control` (no space before the trait colon)
-and re-indents comments inside `#init` bodies, while every committed file
-(including the Tier 2 controls added this cycle) follows the 0.7.1
-formatter's `struct X : Control` + comment style. The demo programs' trims
-(`strip_redundant_types` etc.) also differ. Until the next nomen-lang
-release ships the new rules, `nomen format` cannot be run across the repo
-without a whole-repo style churn commit — pick one: either a dedicated
-"Style: reformat System library" commit or hold the in-source changes until
-release.
-
 ## Generation-checked views for dynamic-removal safety
 
 Dynamic removal (a removed todo's stale view — `demos/todo` deletes

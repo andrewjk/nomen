@@ -9,7 +9,7 @@
  * A distinct native class on both platforms (NSSecureTextField is NOT
  * NSTextField), so it lands as its own control rather than a TextBox mode.
  **/
-pub mv struct SecureField : Control {
+pub mv struct SecureField: Control {
 	var uint64 handle = 0
 
 	pub func #init = (self, Window window) {

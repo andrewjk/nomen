@@ -8,7 +8,7 @@
  *
  * Pairs with CheckBox: check = task state, switch = preference.
  **/
-pub mv struct Switch : Control {
+pub mv struct Switch: Control {
 	var uint64 handle = 0
 
 	pub func #init = (self, Window window) {

@@ -2394,7 +2394,13 @@ pub func nomen_scroll_measure = (ref Container grid, int max_w, out [int, int]) 
 // aarch64_use_c function routes to the C companion using only its raw
 // blocks, so any Nomen statement here would be silently dropped
 // (FOLLOWUP.md) — the measure goes through nomen_scroll_measure instead.
-pub func nomen_scroll_thunk = (ref Container grid, uint64 sv, uint64 doc, ref Window win, int first) {
+pub func nomen_scroll_thunk = (
+	ref Container grid,
+	uint64 sv,
+	uint64 doc,
+	ref Window win,
+	int first
+) {
 	```
 	#arch: c
 	#platform: macos

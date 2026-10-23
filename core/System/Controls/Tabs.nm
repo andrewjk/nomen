@@ -17,7 +17,7 @@
  * NSTabView counterpart (UITabBarController is app-level chrome — see
  * GUI_PLAN Tier 2; defer with TODO stubs).
  **/
-pub mv struct Tabs : Control {
+pub mv struct Tabs: Control {
 	var uint64 handle = 0
 
 	// File-scope helper: the page view class. It answers `-contentView` with

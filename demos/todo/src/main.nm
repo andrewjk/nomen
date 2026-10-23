@@ -30,7 +30,7 @@ func add_todo = (
 // pump, the pool, resize detection, and the relayout of the registered root
 // (the window grid) and document (the todo stack). The app handles clicks
 // and re-dances the stack when a todo is added or removed.
-mv struct TodoApp : App {
+mv struct TodoApp: App {
 	var Text title
 	var Scrollable scroll
 	var Window doc
@@ -42,13 +42,13 @@ mv struct TodoApp : App {
 	var Container grid
 
 	pub func #init = (self, Window window) {
-		var Text title = Text(window)
+		var title = Text(window)
 		title.set_text("Todo List")
 
 		// The todo list lives on a Scrollable's document view: however many
 		// todos are added, the input row below stays reachable, and the list
 		// scrolls.
-		var Scrollable scroll = Scrollable(window)
+		var scroll = Scrollable(window)
 		var Window content = scroll.content_window()
 		var Container todos = VStack(8)
 		// Owned checkboxes, index-aligned with `handles` (the grid handles
@@ -57,12 +57,12 @@ mv struct TodoApp : App {
 		// live view — so hit-tests go through these plain ints, and the
 		// checkboxes themselves are only ever touched by ownership transfer
 		// (push / remove).
-		var List<CheckBox> owned = List<CheckBox>()
-		var List<uint64> handles = List<uint64>()
+		var owned = List<CheckBox>()
+		var handles = List<uint64>()
 
-		var TextBox input = TextBox(window)
+		var input = TextBox(window)
 		input.set_placeholder("Type a new todo...")
-		var Button add_btn = Button(window, "Add")
+		var add_btn = Button(window, "Add")
 
 		// A vertical root: title, the scrollable list (which GROWS to fill
 		// the leftover height), then the input row pinned at the bottom.
@@ -104,15 +104,15 @@ mv struct TodoApp : App {
 	pub func start = (ref self, ref Window win) {
 		win.set_content(ref self.grid)
 		self.todos.set_document(self.scroll.handle, self.scroll.doc_handle())
-		self.add_btn.on_click(func () {
-			var string new_text = self.input.get_text()
-			if new_text != "" {
-				self.add_item(new_text)
-				self.input.set_text("")
-				self.redance(ref win)
-				self.scroll.scroll_to_bottom()
-			}
-		})
+		self.add_btn.on_click(func() {
+				var string new_text = self.input.get_text()
+				if new_text != "" {
+					self.add_item(new_text)
+					self.input.set_text("")
+					self.redance(ref win)
+					self.scroll.scroll_to_bottom()
+				}
+			})
 		// Right-click deletes a todo (docs/HANDLERS.md): the todos stack is
 		// the drain receiver, but the record is WINDOW-level — one edge per
 		// frame, seen by every registered arm — so the handler reads the
@@ -120,17 +120,17 @@ mv struct TodoApp : App {
 		// coordinates (the rows live in the scrollable's content view), and
 		// hit-tests. The dispatch-time `ref self` borrow reaches the rows,
 		// the owned list, and `redance` with no captures.
-		self.todos.on_right_click(func () {
-			var [tx, ty] = content_click(self.scroll, win.click_x(), win.click_y())
-			if self.remove_todo_at(tx, ty) {
-				self.redance(ref win)
-			}
-		})
+		self.todos.on_right_click(func() {
+				var [tx, ty] = content_click(self.scroll, win.click_x(), win.click_y())
+				if self.remove_todo_at(tx, ty) {
+					self.redance(ref win)
+				}
+			})
 	}
 
 	// Add a todo at runtime (fields — every statement borrows `self` once).
 	func add_item = (ref self, string text) {
-		var CheckBox cb = CheckBox(self.doc)
+		var cb = CheckBox(self.doc)
 		cb.set_title(text)
 		self.todos.add(cb.handle, 0, 24, 1)
 		self.handles.push(cb.handle)
@@ -162,7 +162,11 @@ mv struct TodoApp : App {
 			// The expanded bands tile the stack exactly (row i claims up
 			// to its bottom + 4, the next row claims from its top - 4),
 			// so no point matches two rows.
-			if self.todos.contains(h, tx, ty) || self.todos.contains(h, tx, ty - 4) || self.todos.contains(h, tx, ty + 4) {
+			if self.todos.contains(
+				h,
+				tx,
+				ty,
+			) || self.todos.contains(h, tx, ty - 4) || self.todos.contains(h, tx, ty + 4) {
 				found = i
 				found_handle = h
 			}
@@ -180,7 +184,7 @@ mv struct TodoApp : App {
 }
 
 pub func main = () {
-	var Window win = Window("Nomen Todo", WIN_W, WIN_H)
-	var TodoApp app = TodoApp(win)
+	var win = Window("Nomen Todo", WIN_W, WIN_H)
+	var app = TodoApp(win)
 	win.run(mv app)
 }
