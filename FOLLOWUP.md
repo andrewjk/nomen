@@ -547,3 +547,16 @@ return is a bare word in x0 on both backends). The window binding list
 `was_clicked` is demoted from the documented pattern (it stays as the
 low-level ring primitive). Full design, checker rules, staging, and the
 alternatives rejected: [`docs/HANDLERS.md`](./docs/HANDLERS.md).
+
+## Orphaned `???`/`!!!` tokenizer symbols
+
+The ziglings test corpus (removed 2026-10-24 — early scaffolding: 56 files
+never ran at all, and the 54 that did duplicated coverage the other 500+
+test files provide) was the only producer of the emphasis symbols `???` /
+`!!!` (`src/tokenize.ts`, where the comment already says "mostly for
+ziglings, can be removed if necessary"; also listed in `src/format/join.ts`'s
+`NO_SPACE_AFTER`). Nothing else emits them. Deleting the symbols is a small
+compiler change (the tokenizer compound list plus the formatter set) with no
+functional payoff beyond tidiness, so it was recorded rather than done —
+worth folding into the next tokenizer-touching change. Nothing else in the
+repo uses `???` as a placeholder.

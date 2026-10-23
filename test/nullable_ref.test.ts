@@ -1,7 +1,7 @@
 import { expect, test } from "vite-plus/test";
 
 import build_and_check_output from "./build_and_check_output";
-import parse_with_imports from "./ziglings/parse_with_imports";
+import { parse_program } from "./parse_with_imports";
 
 // Originally used `ref Node?` fields (now disallowed for soundness). Rewritten
 // to use the arena LinkedList: a flat buffer of value+next-index slots with a
@@ -25,7 +25,7 @@ pub func main = () {
     }
 }
 `;
-	const parsed = parse_with_imports(input);
+	const parsed = parse_program(input);
 	expect(parsed.errors).toEqual([]);
 	await build_and_check_output(input, "nullable_ref_basic", "a.value=1 b.value=2\n", true);
 });
@@ -42,7 +42,7 @@ pub func main = () {
     }
 }
 `;
-	const parsed = parse_with_imports(input);
+	const parsed = parse_program(input);
 	expect(parsed.errors).toEqual([]);
 	await build_and_check_output(input, "nullable_ref_null_check", "next is null\n", true);
 });
@@ -65,7 +65,7 @@ pub func main = () {
     printX(ref pt)
 }
 `;
-	const parsed = parse_with_imports(input);
+	const parsed = parse_program(input);
 	expect(parsed.errors).toEqual([]);
 	await build_and_check_output(input, "ref_struct_param", "5", true);
 });
@@ -89,7 +89,7 @@ pub func main = () {
     Console.write("\\{pt.x}")
 }
 `;
-	const parsed = parse_with_imports(input);
+	const parsed = parse_program(input);
 	expect(parsed.errors).toEqual([]);
 	await build_and_check_output(input, "ref_struct_assign", "42", true);
 });
@@ -115,7 +115,7 @@ pub func main = () {
     process(ref x)
 }
 `;
-	const parsed = parse_with_imports(input);
+	const parsed = parse_program(input);
 	expect(parsed.errors).toEqual([]);
 	await build_and_check_output(input, "ref_struct_bool", "7", true);
 });

@@ -1,7 +1,7 @@
 import { expect, test } from "vite-plus/test";
 
 import build_and_check_output from "./build_and_check_output";
-import parse_with_imports from "./ziglings/parse_with_imports";
+import { parse_program } from "./parse_with_imports";
 
 test("bare func ref -- Console.write with explicit type", async () => {
 	const input = `
@@ -12,7 +12,7 @@ pub func main = () {
     print("hello world\\n")
 }
 `;
-	const parsed = parse_with_imports(input);
+	const parsed = parse_program(input);
 	expect(parsed.errors).toEqual([]);
 	await build_and_check_output(input, "ziglings_func_ref1", "hello world\n", true);
 });
@@ -26,7 +26,7 @@ pub func main = () {
     f("inferred!\\n")
 }
 `;
-	const parsed = parse_with_imports(input);
+	const parsed = parse_program(input);
 	expect(parsed.errors).toEqual([]);
 	await build_and_check_output(input, "ziglings_func_ref2", "inferred!\n", true);
 });

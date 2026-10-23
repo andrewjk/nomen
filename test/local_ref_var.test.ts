@@ -1,7 +1,7 @@
 import { expect, test } from "vite-plus/test";
 
 import build_and_check_output from "./build_and_check_output";
-import parse_with_imports from "./ziglings/parse_with_imports";
+import { parse_program } from "./parse_with_imports";
 
 test("local ref var -- field access and assignment", async () => {
 	const input = `
@@ -41,7 +41,7 @@ pub func main = () {
     Console.write("after:\\{glorp.experience}.\\n")
 }
 `;
-	const parsed = parse_with_imports(input);
+	const parsed = parse_program(input);
 	expect(parsed.errors).toEqual([]);
 	await build_and_check_output(
 		input,
@@ -75,7 +75,7 @@ pub func main = () {
     Console.write("A:\\{elephantA.visited} B:\\{elephantB.visited}\\n")
 }
 `;
-	const parsed = parse_with_imports(input);
+	const parsed = parse_program(input);
 	expect(parsed.errors).toEqual([]);
 	await build_and_check_output(input, "local_ref2", "A B A:true B:true\n", true);
 });
@@ -108,7 +108,7 @@ pub func main = () {
     Console.write("b:\\{b.x},\\{b.y}\\n")
 }
 `;
-	const parsed = parse_with_imports(input);
+	const parsed = parse_program(input);
 	expect(parsed.errors).toEqual([]);
 	await build_and_check_output(input, "local_ref3", "a:6,1 b:11,1\n", true);
 });

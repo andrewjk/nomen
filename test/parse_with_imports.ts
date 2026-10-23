@@ -15,6 +15,11 @@ ${source}
 	return parse(source_to_parse, system, undefined, { allow_internal: true, ...options });
 }
 
+/** Parse a complete program (its imports and `pub func main` included) as-is. */
+export function parse_program(source: string) {
+	return parse(source, system, undefined, { allow_internal: true });
+}
+
 export function parse_raw(source: string) {
 	// The raw-splicing machinery tests hand-write user-shaped programs with
 	// `#arch:` blocks; production builds never set allow_user_raw, so real
