@@ -1,0 +1,4 @@
+resized 300x168
+frame 300
+declined
+closed

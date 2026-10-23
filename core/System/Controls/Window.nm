@@ -215,6 +215,26 @@ pub mv struct Window: Control {
 		int nomen_last_key_modifiers = 0;
 		int nomen_last_key_repeat = 0;
 		int nomen_last_key_up_code = -1;
+		// The pointer-MOVE record for THIS pump (NSEventTypeMouseMoved = 5,
+		// plus the dragged variants 6/7/26 while a button is held): the last
+		// seen position, -1 = no move this frame. Zeroed by every pump.
+		// External linkage: Container.take_mouse_move externs it. Requires
+		// setAcceptsMouseMovedEvents (armed by every pump below) — without
+		// it AppKit delivers no move events at all.
+		int nomen_last_mouse_move_x = -1;
+		int nomen_last_mouse_move_y = -1;
+		// Frame time: the pump's wall-clock interval, persisted across
+		// pumps (NOT zeroed — the first frame reports 0). Read by win.dt().
+		double nomen_last_pump_time = 0.0;
+		double nomen_last_dt_ms = 0.0;
+		// The window-resize record for THIS frame, stamped by Window.run's
+		// resize detection (not by the pump). External linkage:
+		// Container.take_resize externs the edge from another TU; the size
+		// getters (resize_width/resize_height) are Window methods reading
+		// these directly.
+		int nomen_last_resized = 0;
+		int nomen_last_resize_w = 0;
+		int nomen_last_resize_h = 0;
 		```
 		```
 		#arch: aarch64_use_c
@@ -263,6 +283,26 @@ pub mv struct Window: Control {
 		int nomen_last_key_modifiers = 0;
 		int nomen_last_key_repeat = 0;
 		int nomen_last_key_up_code = -1;
+		// The pointer-MOVE record for THIS pump (NSEventTypeMouseMoved = 5,
+		// plus the dragged variants 6/7/26 while a button is held): the last
+		// seen position, -1 = no move this frame. Zeroed by every pump.
+		// External linkage: Container.take_mouse_move externs it. Requires
+		// setAcceptsMouseMovedEvents (armed by every pump below) — without
+		// it AppKit delivers no move events at all.
+		int nomen_last_mouse_move_x = -1;
+		int nomen_last_mouse_move_y = -1;
+		// Frame time: the pump's wall-clock interval, persisted across
+		// pumps (NOT zeroed — the first frame reports 0). Read by win.dt().
+		double nomen_last_pump_time = 0.0;
+		double nomen_last_dt_ms = 0.0;
+		// The window-resize record for THIS frame, stamped by Window.run's
+		// resize detection (not by the pump). External linkage:
+		// Container.take_resize externs the edge from another TU; the size
+		// getters (resize_width/resize_height) are Window methods reading
+		// these directly.
+		int nomen_last_resized = 0;
+		int nomen_last_resize_w = 0;
+		int nomen_last_resize_h = 0;
 		```
 		```
 		#arch: c
@@ -292,6 +332,8 @@ pub mv struct Window: Control {
 		nomen_last_key_modifiers = 0;
 		nomen_last_key_repeat = 0;
 		nomen_last_key_up_code = -1;
+		nomen_last_mouse_move_x = -1;
+		nomen_last_mouse_move_y = -1;
 		while (1) {
 			id event = ((id(*)(id, SEL, unsigned long long, id, id, BOOL))objc_msgSend)(
 				app, sel_registerName("nextEventMatchingMask:untilDate:inMode:dequeue:"),
@@ -343,12 +385,28 @@ pub mv struct Window: Control {
 			if (type == 11) {
 				nomen_last_key_up_code = (int)((unsigned long(*)(id, SEL))objc_msgSend)(event, sel_registerName("keyCode"));
 			}
+			// A pointer move (NSMouseMoved = 5; the dragged variants 6/7/26
+			// while a button is held): record where the pointer is now.
+			if (type == 5 || type == 6 || type == 7 || type == 26) {
+				id evwin = ((id(*)(id, SEL))objc_msgSend)(event, sel_registerName("window"));
+				id cv = ((id(*)(id, SEL))objc_msgSend)(evwin, sel_registerName("contentView"));
+				CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
+				CGPoint loc = ((CGPoint(*)(id, SEL))objc_msgSend)(event, sel_registerName("locationInWindow"));
+				nomen_last_mouse_move_x = (int)loc.x;
+				nomen_last_mouse_move_y = (int)(frame.size.height - loc.y);
+			}
 			if (type == 1) had_click = 1; // NSLeftMouseDown = 1
 			if (type == 3) had_click = 2; // NSRightMouseDown = 3 (reported as 2)
 		}
 		// Process run loop sources (Apple Events, timers) so that dock Quit
 		// and other system interactions work without NSApplication.run().
 		CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0, 1);
+		// Frame time: the interval since the previous pump (0 on the first).
+		double now = CFAbsoluteTimeGetCurrent();
+		if (nomen_last_pump_time != 0.0) {
+			nomen_last_dt_ms = (now - nomen_last_pump_time) * 1000.0;
+		}
+		nomen_last_pump_time = now;
 		int result = had_click;
 		// Stamp the kind for the drains (Container.take_right_click reads
 		// it in the handle_events pass that follows this pump).
@@ -384,6 +442,8 @@ pub mv struct Window: Control {
 		nomen_last_key_modifiers = 0;
 		nomen_last_key_repeat = 0;
 		nomen_last_key_up_code = -1;
+		nomen_last_mouse_move_x = -1;
+		nomen_last_mouse_move_y = -1;
 		while (1) {
 			id event = ((id(*)(id, SEL, unsigned long long, id, id, BOOL))objc_msgSend)(
 				app, sel_registerName("nextEventMatchingMask:untilDate:inMode:dequeue:"),
@@ -435,12 +495,28 @@ pub mv struct Window: Control {
 			if (type == 11) {
 				nomen_last_key_up_code = (int)((unsigned long(*)(id, SEL))objc_msgSend)(event, sel_registerName("keyCode"));
 			}
+			// A pointer move (NSMouseMoved = 5; the dragged variants 6/7/26
+			// while a button is held): record where the pointer is now.
+			if (type == 5 || type == 6 || type == 7 || type == 26) {
+				id evwin = ((id(*)(id, SEL))objc_msgSend)(event, sel_registerName("window"));
+				id cv = ((id(*)(id, SEL))objc_msgSend)(evwin, sel_registerName("contentView"));
+				CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
+				CGPoint loc = ((CGPoint(*)(id, SEL))objc_msgSend)(event, sel_registerName("locationInWindow"));
+				nomen_last_mouse_move_x = (int)loc.x;
+				nomen_last_mouse_move_y = (int)(frame.size.height - loc.y);
+			}
 			if (type == 1) had_click = 1; // NSLeftMouseDown = 1
 			if (type == 3) had_click = 2; // NSRightMouseDown = 3 (reported as 2)
 		}
 		// Process run loop sources (Apple Events, timers) so that dock Quit
 		// and other system interactions work without NSApplication.run().
 		CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0, 1);
+		// Frame time: the interval since the previous pump (0 on the first).
+		double now = CFAbsoluteTimeGetCurrent();
+		if (nomen_last_pump_time != 0.0) {
+			nomen_last_dt_ms = (now - nomen_last_pump_time) * 1000.0;
+		}
+		nomen_last_pump_time = now;
 		int result = had_click;
 		// Stamp the kind for the drains (Container.take_right_click reads
 		// it in the handle_events pass that follows this pump).
@@ -777,6 +853,231 @@ pub mv struct Window: Control {
 		```
 	}
 
+	// ── The pointer-move record (this frame's pump) ──
+	// The current pointer position — moves (and drags) stamped by the pump,
+	// -1 on a frame with no movement. `on_mouse_move`
+	// (Container.take_mouse_move) is the registered-handler form; hover,
+	// cursors, and tooltips hit-test this against Container.contains.
+
+	pub func mouse_x = (self, out int) {
+		```
+		#arch: c
+		#platform: macos
+		return nomen_last_mouse_move_x;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		return nomen_last_mouse_move_x;
+		```
+		```
+		#arch: c
+		#platform: ios
+		return -1;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		return -1;
+		```
+	}
+
+	pub func mouse_y = (self, out int) {
+		```
+		#arch: c
+		#platform: macos
+		return nomen_last_mouse_move_y;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		return nomen_last_mouse_move_y;
+		```
+		```
+		#arch: c
+		#platform: ios
+		return -1;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		return -1;
+		```
+	}
+
+	// ── Frame time ──
+	// Milliseconds since the previous pump (0 on the first frame) — the
+	// animation clock. `FrameEvents.dt` carries the same value.
+
+	pub func dt = (self, out int) {
+		```
+		#arch: c
+		#platform: macos
+		return (int)nomen_last_dt_ms;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		return (int)nomen_last_dt_ms;
+		```
+		```
+		#arch: c
+		#platform: ios
+		return 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		return 0;
+		```
+	}
+
+	// ── Window resize ──
+	// `on_resize` (Container.take_resize) fires on the frame whose content
+	// rect changed; the new size rides the dispatch window via these
+	// getters. The framework has ALREADY re-laid-out the registered roots
+	// (the delegate + the relayout pass) — handlers re-layout app-owned
+	// panes (tab pages, split panes). FrameEvents.resized / width / height
+	// carry the same record for `frame`.
+
+	// Stamp the resize record — run's resize detection calls this (the
+	// record lives in C statics shared with Container.take_resize; params
+	// because raw blocks in deep control flow can only address them).
+	func stamp_resize = (self, bool on, int w, int h) {
+		```
+		#arch: c
+		#platform: macos
+		extern int nomen_last_resized;
+		extern int nomen_last_resize_w;
+		extern int nomen_last_resize_h;
+		nomen_last_resized = on ? 1 : 0;
+		if (on) {
+			nomen_last_resize_w = w;
+			nomen_last_resize_h = h;
+		}
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		extern int nomen_last_resized;
+		extern int nomen_last_resize_w;
+		extern int nomen_last_resize_h;
+		nomen_last_resized = on ? 1 : 0;
+		if (on) {
+			nomen_last_resize_w = w;
+			nomen_last_resize_h = h;
+		}
+		```
+		```
+		#arch: c
+		#platform: ios
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		```
+	}
+
+	pub func resize_width = (self, out int) {
+		```
+		#arch: c
+		#platform: macos
+		return nomen_last_resize_w;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		return nomen_last_resize_w;
+		```
+		```
+		#arch: c
+		#platform: ios
+		return 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		return 0;
+		```
+	}
+
+	pub func resize_height = (self, out int) {
+		```
+		#arch: c
+		#platform: macos
+		return nomen_last_resize_h;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		return nomen_last_resize_h;
+		```
+		```
+		#arch: c
+		#platform: ios
+		return 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		return 0;
+		```
+	}
+
+	// ── Close interception ──
+	// The red button routes through the App's `close_requested` (which may
+	// refuse — the unsaved-changes pattern): the delegate refuses the
+	// native close and sets a pending flag, and run consults the app on the
+	// next frame. Programmatic `close()` is forced and bypasses this.
+
+	pub func close_pending = (self, out bool) {
+		```
+		#arch: c
+		#platform: macos
+		extern int nomen_close_pending;
+		return nomen_close_pending != 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		extern int nomen_close_pending;
+		return nomen_close_pending != 0;
+		```
+		```
+		#arch: c
+		#platform: ios
+		return 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		return 0;
+		```
+	}
+
+	pub func clear_close_pending = (self) {
+		```
+		#arch: c
+		#platform: macos
+		extern int nomen_close_pending;
+		nomen_close_pending = 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		extern int nomen_close_pending;
+		nomen_close_pending = 0;
+		```
+		```
+		#arch: c
+		#platform: ios
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		```
+	}
+
 	// Returns the width of the window's content view.
 	pub func content_width = (self, out int) {
 		```
@@ -968,17 +1269,51 @@ pub mv struct Window: Control {
 		```
 	}
 
+	// Arm mouse-MOVED delivery. AppKit sends move events only when the
+	// window opts in — run() arms it before the loop; manual-loop apps
+	// pumping process_events directly call this once after creating the
+	// window. Idempotent.
+	pub func arm_mouse_moves = (self) {
+		```
+		#arch: c
+		#platform: macos
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			(id)self->handle, sel_registerName("setAcceptsMouseMovedEvents:"), 1);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			(id)self->handle, sel_registerName("setAcceptsMouseMovedEvents:"), 1);
+		```
+		```
+		#arch: c
+		#platform: ios
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		```
+	}
+
 	// Close the window (the programmatic stand-in for the red button) — the
-	// run loop exits on the next `is_visible` check.
+	// run loop exits on the next `is_visible` check. Programmatic close is
+	// FORCED: it bypasses the close_requested interception (the delegate's
+	// windowShouldClose: sees nomen_close_forced and allows). Only the red
+	// button routes through `close_requested`.
 	pub func close = (self) {
 		```
 		#arch: c
 		#platform: macos
+		extern int nomen_close_forced;
+		nomen_close_forced = 1;
 		((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("performClose:"), (id)0);
 		```
 		```
 		#arch: aarch64_use_c
 		#platform: macos
+		extern int nomen_close_forced;
+		nomen_close_forced = 1;
 		((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("performClose:"), (id)0);
 		```
 		```
@@ -1007,6 +1342,7 @@ pub mv struct Window: Control {
 	pub func run = (ref self, mv App app) {
 		app.start(ref self)
 		Container.arm_resize_delegate(self)
+		self.arm_mouse_moves()
 		self.relayout(0)
 		self.show()
 		self.relayout(1)
@@ -1014,42 +1350,61 @@ pub mv struct Window: Control {
 		var int prev_h = self.content_height()
 		var FrameEvents ev = FrameEvents()
 		while self.is_visible() {
-			ev.click = Window.process_events()
-			ev.click_x = self.click_x()
-			ev.click_y = self.click_y()
-			ev.mouse_button = self.mouse_button()
-			ev.mouse_click_count = self.mouse_click_count()
-			ev.mouse_modifiers = self.mouse_modifiers()
-			ev.scroll_dx = self.scroll_dx()
-			ev.scroll_dy = self.scroll_dy()
-			ev.key_code = self.key_code()
-			ev.key_modifiers = self.key_modifiers()
-			ev.key_repeat = self.key_repeat()
-			ev.key_up_code = self.key_up_code()
-			ev.resized = false
-			var int cur_w = self.content_width()
-			var int cur_h = self.content_height()
-			if cur_w != prev_w {
-				ev.resized = true
+			// Close interception: the delegate refused the native close and
+			// set the pending flag; consult the app. Accept → forced close
+			// (bypasses the delegate); decline → window stays, flag cleared.
+			if self.close_pending() {
+				if app.close_requested(ref self) {
+					self.close()
+				}
+				self.clear_close_pending()
 			}
-			if cur_h != prev_h {
-				ev.resized = true
+			// An accepted close above releases the native window mid-frame;
+			// skip the rest of this iteration (the while re-checks and
+			// exits).
+			if self.is_visible() {
+				ev.click = Window.process_events()
+				ev.click_x = self.click_x()
+				ev.click_y = self.click_y()
+				ev.mouse_button = self.mouse_button()
+				ev.mouse_click_count = self.mouse_click_count()
+				ev.mouse_modifiers = self.mouse_modifiers()
+				ev.scroll_dx = self.scroll_dx()
+				ev.scroll_dy = self.scroll_dy()
+				ev.key_code = self.key_code()
+				ev.key_modifiers = self.key_modifiers()
+				ev.key_repeat = self.key_repeat()
+				ev.key_up_code = self.key_up_code()
+				ev.mouse_x = self.mouse_x()
+				ev.mouse_y = self.mouse_y()
+				ev.dt = self.dt()
+				ev.resized = false
+				self.stamp_resize(false, 0, 0)
+				var int cur_w = self.content_width()
+				var int cur_h = self.content_height()
+				if cur_w != prev_w {
+					ev.resized = true
+				}
+				if cur_h != prev_h {
+					ev.resized = true
+				}
+				if ev.resized {
+					prev_w = cur_w
+					prev_h = cur_h
+					ev.width = cur_w
+					ev.height = cur_h
+					self.stamp_resize(true, cur_w, cur_h)
+					self.relayout(0)
+				}
+				// The window refreshes the per-frame event sources (the
+				// first-responder snapshot feeds the focus/blur drains), then the
+				// app's synthesized `handle_events` pump drains registered
+				// handlers — conformers without registrations inherit the
+				// trait's empty default. One arm per registered control.
+				nomen_window_focus_poll(self.handle)
+				app.handle_events(ref self)
+				app.frame(ref self, ev)
 			}
-			if ev.resized {
-				prev_w = cur_w
-				prev_h = cur_h
-				ev.width = cur_w
-				ev.height = cur_h
-				self.relayout(0)
-			}
-			// The window refreshes the per-frame event sources (the
-			// first-responder snapshot feeds the focus/blur drains), then the
-			// app's synthesized `handle_events` pump drains registered
-			// handlers — conformers without registrations inherit the
-			// trait's empty default. One arm per registered control.
-			nomen_window_focus_poll(self.handle)
-			app.handle_events(ref self)
-			app.frame(ref self, ev)
 		}
 	}
 

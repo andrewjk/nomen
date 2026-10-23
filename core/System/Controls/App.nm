@@ -15,17 +15,19 @@
  *   any wiring that needs stable addresses — including click handlers
  *   (`self.btn.on_click(func () { ... })`).
  * - `frame` — called every iteration of the run loop with a `FrameEvents`
- *   value: the full mouse record for this frame (click kind/coordinates,
+ *   value: the full input record for this frame (click kind/coordinates,
  *   `mouse_button`/`mouse_click_count`/`mouse_modifiers` — every button,
- *   `scroll_dx`/`scroll_dy`, and the keyboard record
- *   `key_code`/`key_modifiers`/`key_repeat`/`key_up_code`), and `resized`
+ *   `scroll_dx`/`scroll_dy`, the keyboard record
+ *   `key_code`/`key_modifiers`/`key_repeat`/`key_up_code`, the pointer
+ *   position `mouse_x`/`mouse_y`, and frame time `dt`), and `resized`
  *   + the new size when the window's content rect changed. Per-frame value
  *   polling (slider → progress mirrors), coordinate-driven input that no
  *   event names, and app-owned pane relayouts live here — registered
- *   click, right-click, mouse-down, scroll, and key handlers dispatch
- *   earlier, in `handle_events` (the `.on_click` / `.on_right_click` /
- *   `.on_mouse_down` / `.on_scroll` / `.on_key_down` / `.on_key_up`
- *   desugars).
+ *   click, right-click, mouse-down, scroll, key, move, and resize handlers
+ *   dispatch earlier, in `handle_events` (the `.on_click` /
+ *   `.on_right_click` / `.on_mouse_down` / `.on_scroll` / `.on_key_down` /
+ *   `.on_key_up` / `.on_mouse_move` / `.on_resize` desugars), and close
+ *   requests consult `close_requested`.
  * - `handle_events` — the per-frame event pump: drains every registered
  *   control event (clicks, focus/blur, text input). Declared here as a
  *   default-empty method; the `.on_<event>(closure)` desugars
@@ -76,6 +78,17 @@ pub trait App {
 	// like `handle_events`.
 	func run_handler = (ref self, int id, ref Window win) {
 	}
+
+	// Close interception (the unsaved-changes pattern): run consults this
+	// on the frame after the user requests close (the red button — the
+	// delegate refuses the native close and sets a pending flag). Return
+	// false to refuse: the window stays, the flag is cleared, and a later
+	// close request consults again. Programmatic `win.close()` is FORCED
+	// and bypasses this — handlers closing their own window never trip the
+	// interception. Default: allow.
+	func close_requested = (ref self, ref Window win, out bool) {
+		return true
+	}
 }
 
 /**
@@ -117,6 +130,14 @@ pub mv struct FrameEvents {
 	pub var int key_modifiers = 0
 	pub var bool key_repeat = false
 	pub var int key_up_code = -1
+	// The pointer-MOVE record for this frame (-1 = no movement): the
+	// current pointer position. `on_mouse_move` is the registered-handler
+	// form; hover/tooltips hit-test this against Container.contains.
+	pub var int mouse_x = -1
+	pub var int mouse_y = -1
+	// Milliseconds since the previous frame (0 on the first) — the
+	// animation clock. `win.dt()` reports the same value.
+	pub var int dt = 0
 	// True when the window's content rect changed since the last frame —
 	// the framework has already re-laid-out the registered roots; re-layout
 	// App-owned panes (tab pages, split panes) here.

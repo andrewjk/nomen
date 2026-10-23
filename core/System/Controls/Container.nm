@@ -1700,6 +1700,20 @@ pub mv struct Container: Control {
 			g_resize_grid = grid;
 			g_resize_win = win;
 		}
+		// Close interception (Window.run consults the app's
+		// close_requested): the delegate REFUSES the native close and sets
+		// the pending flag; the Nomen loop consumes it next frame — the app
+		// declines (flag cleared, window stays) or accepts (close() forces
+		// past this via nomen_close_forced). External linkage: Window's
+		// close() and close_pending() extern both flags.
+		int nomen_close_pending = 0;
+		int nomen_close_forced = 0;
+		BOOL nomen_window_should_close_imp(id self, SEL cmd, id notification) {
+			(void)self; (void)cmd; (void)notification;
+			if (nomen_close_forced) return YES;
+			nomen_close_pending = 1;
+			return NO;
+		}
 		void nomen_window_did_resize(id self, SEL cmd, id notification) {
 			(void)self; (void)cmd; (void)notification;
 			if (g_resize_grid && g_resize_win) {
@@ -1728,6 +1742,20 @@ pub mv struct Container: Control {
 			g_resize_grid = grid;
 			g_resize_win = win;
 		}
+		// Close interception (Window.run consults the app's
+		// close_requested): the delegate REFUSES the native close and sets
+		// the pending flag; the Nomen loop consumes it next frame — the app
+		// declines (flag cleared, window stays) or accepts (close() forces
+		// past this via nomen_close_forced). External linkage: Window's
+		// close() and close_pending() extern both flags.
+		int nomen_close_pending = 0;
+		int nomen_close_forced = 0;
+		BOOL nomen_window_should_close_imp(id self, SEL cmd, id notification) {
+			(void)self; (void)cmd; (void)notification;
+			if (nomen_close_forced) return YES;
+			nomen_close_pending = 1;
+			return NO;
+		}
 		void nomen_window_did_resize(id self, SEL cmd, id notification) {
 			(void)self; (void)cmd; (void)notification;
 			if (g_resize_grid && g_resize_win) {
@@ -1744,6 +1772,9 @@ pub mv struct Container: Control {
 			Dc = objc_allocateClassPair(objc_getClass("NSObject"), "NomenResizeDelegate", 0);
 			if (Dc) {
 				class_addMethod(Dc, sel_registerName("windowDidResize:"), (IMP)nomen_window_did_resize, "v@:@");
+				// Close interception: refuse the native close, set the
+				// pending flag, let Window.run consult the app.
+				class_addMethod(Dc, sel_registerName("windowShouldClose:"), (IMP)nomen_window_should_close_imp, "c@:@");
 				objc_registerClassPair(Dc);
 			}
 		}
@@ -1762,6 +1793,9 @@ pub mv struct Container: Control {
 			Dc = objc_allocateClassPair(objc_getClass("NSObject"), "NomenResizeDelegate", 0);
 			if (Dc) {
 				class_addMethod(Dc, sel_registerName("windowDidResize:"), (IMP)nomen_window_did_resize, "v@:@");
+				// Close interception: refuse the native close, set the
+				// pending flag, let Window.run consult the app.
+				class_addMethod(Dc, sel_registerName("windowShouldClose:"), (IMP)nomen_window_should_close_imp, "c@:@");
 				objc_registerClassPair(Dc);
 			}
 		}
@@ -1787,6 +1821,9 @@ pub mv struct Container: Control {
 			Dc = objc_allocateClassPair(objc_getClass("NSObject"), "NomenResizeDelegate", 0);
 			if (Dc) {
 				class_addMethod(Dc, sel_registerName("windowDidResize:"), (IMP)nomen_window_did_resize, "v@:@");
+				// Close interception: refuse the native close, set the
+				// pending flag, let Window.run consult the app.
+				class_addMethod(Dc, sel_registerName("windowShouldClose:"), (IMP)nomen_window_should_close_imp, "c@:@");
 				objc_registerClassPair(Dc);
 			}
 		}
@@ -1804,6 +1841,9 @@ pub mv struct Container: Control {
 			Dc = objc_allocateClassPair(objc_getClass("NSObject"), "NomenResizeDelegate", 0);
 			if (Dc) {
 				class_addMethod(Dc, sel_registerName("windowDidResize:"), (IMP)nomen_window_did_resize, "v@:@");
+				// Close interception: refuse the native close, set the
+				// pending flag, let Window.run consult the app.
+				class_addMethod(Dc, sel_registerName("windowShouldClose:"), (IMP)nomen_window_should_close_imp, "c@:@");
 				objc_registerClassPair(Dc);
 			}
 		}
@@ -2033,6 +2073,71 @@ pub mv struct Container: Control {
 		#platform: macos
 		extern int nomen_last_key_up_code;
 		return nomen_last_key_up_code != -1;
+		```
+		```
+		#arch: c
+		#platform: ios
+		return 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		return 0;
+		```
+	}
+
+	// The on_mouse_move desugar's drain (docs/HANDLERS.md): the synthesized
+	// pump arm polls this per frame. True on any frame whose pump saw a
+	// pointer move or drag; the position rides the dispatch window —
+	// `win.mouse_x()` / `win.mouse_y()` (-1 on a frame with no movement).
+	// Window-level and broadcast, like every record in the family. Hover,
+	// cursors, and tooltips hit-test this against contains(); per-control
+	// entered/exited is sugar over the same record.
+	pub func take_mouse_move = (self, out bool) {
+		```
+		#arch: c
+		#platform: macos
+		extern int nomen_last_mouse_move_x;
+		return nomen_last_mouse_move_x != -1;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		extern int nomen_last_mouse_move_x;
+		return nomen_last_mouse_move_x != -1;
+		```
+		```
+		#arch: c
+		#platform: ios
+		return 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		return 0;
+		```
+	}
+
+	// The on_resize desugar's drain (docs/HANDLERS.md): fires on the frame
+	// whose content rect changed. The framework has ALREADY re-laid-out the
+	// registered roots — the handler re-lays-out app-owned panes (tab
+	// pages, split panes). The new size rides the dispatch window via
+	// `win.resize_width()` / `win.resize_height()`; FrameEvents.resized /
+	// width / height carry the same record for `frame`. The record is
+	// stamped by Window.run's resize detection (same edge the frame form
+	// reports) — window-level, broadcast like the rest of the family.
+	pub func take_resize = (self, out bool) {
+		```
+		#arch: c
+		#platform: macos
+		extern int nomen_last_resized;
+		return nomen_last_resized != 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		extern int nomen_last_resized;
+		return nomen_last_resized != 0;
 		```
 		```
 		#arch: c

@@ -692,6 +692,66 @@ the same record for `frame`.
 through `on_input` (the field editor), which is the right event for
 editors. `on_key_down`/`on_key_up` are for shortcuts and raw key handling.
 
+### Pointer moves: on_mouse_move
+
+Hover, cursors, tooltips: `on_mouse_move` fires on any frame whose pump
+saw a pointer move or drag, and the handler reads the position off the
+dispatch window:
+
+```
+self.grid.on_mouse_move(func () {
+	var [mx, my] = [win.mouse_x(), win.mouse_y()]
+	var int hovered = -1
+	var i = 0
+	while i < self.handles.length; i += 1 {
+		if self.todos.contains(self.handles.at(i), mx, my) {
+			hovered = i
+		}
+	}
+	self.status.set_text(hovered == -1 ? "" : "\{hovered}")
+})
+```
+
+The record is per-frame (-1 on a frame with no movement) — the same
+expiring-edge shape as every family. Moves are delivered only because the
+window opts in (`setAcceptsMouseMovedEvents`): `run` arms it before the
+loop, and manual-loop apps call `win.arm_mouse_moves()` once.
+`FrameEvents.mouse_x`/`mouse_y` carry the same record for `frame`.
+
+### Window lifecycle: on_resize and close_requested
+
+`on_resize` fires on the frame whose content rect changed — the framework
+has already re-laid-out the registered roots, so the handler re-lays-out
+app-owned panes (tab pages, split panes) and reads the new size through
+`win.resize_width()`/`resize_height()` (the CONTENT rect — the same
+values `FrameEvents.width`/`height` carry):
+
+```
+self.grid.on_resize(func () {
+	self.panes.relayout(win.resize_width(), win.resize_height())
+})
+```
+
+`close_requested` is the unsaved-changes interception. The red button's
+native close is refused by the framework and routed to the app on the
+next frame; returning false declines (the window stays, and a later
+request consults again), returning true closes:
+
+```
+func close_requested = (ref self, ref Window win, out bool) {
+	if self.unsaved_changes {
+		self.prompt_save()
+		return false
+	}
+	return true
+}
+```
+
+Programmatic `win.close()` is FORCED — it bypasses the interception, so
+handlers closing their own window (and tests) never trip it. Frame time
+rides `FrameEvents.dt` (`win.dt()`): milliseconds since the previous
+frame, 0 on the first — the animation clock.
+
 ### Upward events (composite → app)
 
 A composite can raise its own events. The composite declares the API — an

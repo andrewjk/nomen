@@ -107,6 +107,23 @@ no checker changes, new library drains + pump plumbing only:
   Return = 36, letters a…z = 0–25), `win.key_modifiers()`,
   `win.key_repeat()`, `win.key_up_code()`; `FrameEvents.key_code`/
   `key_modifiers`/`key_repeat`/`key_up_code` for the frame form.
+- **`on_mouse_move`** (`Container.take_mouse_move`, 2026-10-23) — the
+  pointer-move record: last seen position per pump (moves AND drags —
+  types 5/6/7/26), `-1` on a frame with no movement, read via
+  `win.mouse_x()`/`mouse_y()`. The window arms
+  `setAcceptsMouseMovedEvents` in `run` (`win.arm_mouse_moves()` for
+  manual loops) — without it AppKit delivers no moves at all.
+- **`on_resize`** (`Container.take_resize`, 2026-10-23) — the frame whose
+  content rect changed; the framework already re-laid-out the registered
+  roots, the handler re-lays-out app-owned panes. Size via
+  `win.resize_width()`/`resize_height()` (the CONTENT rect — a 200pt
+  window frame is 168 content under the titlebar).
+- **`close_requested`** (App trait method with a default, 2026-10-23) —
+  the unsaved-changes interception: the delegate refuses the native close
+  (sets a pending flag) and run consults the app next frame; false
+  declines, true force-closes. Programmatic `win.close()` sets a forced
+  flag and bypasses the interception (tests and handler-initiated closes
+  never trip it). The frame time rides `FrameEvents.dt`/`win.dt()`.
 
 The test seam generalizes: synthetic events posted into NSApp's queue via
 `postEvent:atStart:` deliver deterministically on the next pump. One
@@ -117,9 +134,10 @@ through `CGEventCreateMouseEvent` + `NSEvent.eventWithCGEvent:`
 5-line scroll).
 
 Still to land: the deprecation-cycle doc sweep (the poll examples leave
-GUI.md's other sections), and the `List<Own>.at()` uniform-borrow load
+GUI.md's other sections), the `List<Own>.at()` uniform-borrow load
 question (below — the element BORROW is landed; the owning-copy `.at()`
-read remains as recorded).
+read remains as recorded), and the input frontier's tier 2/3
+("The input frontier" below).
 
 ## The problem: two click forms, and the wall behind them
 
@@ -436,6 +454,45 @@ Deprecation cycle: one release with both forms documented as
 "on_click is the way"; then the poll examples leave GUI.md and the demo(s)
 migrate (the todo Add handler becomes the Stage 1 runtime test; the radio
 pair loses its twins).
+
+## The input frontier (tiers 2 and 3)
+
+The input surface ships in tiers — names for universal semantics, the raw
+record for everything else, and a short list of real projects that should
+NOT be faked with the per-frame record architecture:
+
+**Tier 2 — sugar over shipped records (cheap, no pump work):**
+
+- **`on_double_click`** (`Container.take_double_click`) — the one gesture
+  with a claim to semantic naming ("open" on list rows everywhere). A
+  ten-line drain filtering the existing mouse-down record (button 1,
+  `nomen_last_click_count` == 2); `on_mouse_down` already covers it, so
+  this is purely an ergonomics call. Ship it when a list-row consumer
+  shape appears.
+
+**Tier 3 — real projects (each has a reason the record architecture
+doesn't fit):**
+
+- **Drag & drop** — file drag-in from Finder and internal drags.
+  NSDraggingDestination is a PROTOCOL with async phases
+  (draggingEntered/Updated/Exited/performDrop) and pasteboard semantics —
+  not a per-frame record, and the payload (files, promises) is its own
+  ownership question. The most likely next request from real users; give
+  it its own plan doc.
+- **Menu bar + key equivalents** — `cmd+S` as a MENU binding (displayed
+  in the UI, routed through the responder chain, working while a text
+  field has focus). Menu.nm exists; this connects it to the window/NSApp
+  menu wiring. Raw shortcuts already work through `on_key_down` (the pump
+  sees every key regardless of first responder) — what menus add is the
+  discoverable, localized command surface.
+- **iOS touch** — multi-point by nature (UIEvent carries touch SETS with
+  phases), a different record shape than the single-pointer model. The
+  ios stubs in every drain are the visible edge. Platform-completeness
+  project, not a new drain.
+- **Pressure, gamepads, IME composition** — niche, or already handled:
+  IME composition is the field editor's job (`on_input` sees the
+  committed result), and Force Touch pressure would ride the existing
+  mouse-down record as one more getter if ever wanted.
 
 ## Open questions
 
