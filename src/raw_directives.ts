@@ -1,3 +1,4 @@
+import type BaseNode from "./nodes/BaseNode.ts";
 import type FunctionNode from "./nodes/FunctionNode.ts";
 
 /**
@@ -171,9 +172,11 @@ export function check_raw_arch_coverage(
  * platform's aarch64 build).
  */
 export interface UseCMixedBody {
-	/** What the aarch64 backend would drop: a Nomen statement, or a raw
-	 *  block that would have emitted inline assembly. */
-	dropped: "statement" | "raw asm";
+	/** What the aarch64 backend would drop: a Nomen statement, a raw
+	 *  block that would have emitted inline assembly, or a use_c block
+	 *  NESTED inside control flow (the body is asm-emitted and block-scope
+	 *  C has no inline splice — the block never reaches the companion). */
+	dropped: "statement" | "raw asm" | "nested block";
 	/** Position of the first dropped node (the error location). */
 	start: number;
 }
@@ -222,6 +225,67 @@ export function find_use_c_mixed_body(func: FunctionNode): UseCMixedBody | null 
 		// c-only: the other half of a parallel per-arch implementation.
 		continue;
 	}
-	if (!has_use_c) return null;
+	if (!has_use_c) {
+		// No whole-body replacement is in play — but a use_c block can
+		// still sit NESTED inside control flow. There the aarch64 backend
+		// emits the body as assembly and block-scope C has no inline
+		// splice: the block never reaches the companion (found the hard
+		// way building Window.run's resize stamping — see the build-side
+		// backstop in build_raw_node).
+		return find_nested_use_c_block(func.statements);
+	}
 	return drops[0] ?? null;
+}
+
+/**
+ * Descend into nested control-flow statements and report the first
+ * block-scope `aarch64_use_c` raw block. Nested functions are boundaries —
+ * their bodies get their own check pass (their own find_use_c_mixed_body
+ * run). `#scope: file` blocks are exempt: file-scope C hoists to the
+ * companion's file scope and emits wherever the carrier function sits (the
+ * blessed pattern for delegate IMPs and registries).
+ */
+function find_nested_use_c_block(statements: BaseNode[]): UseCMixedBody | null {
+	let found: UseCMixedBody | null = null;
+	const visit = (value: unknown): void => {
+		if (found || !value || typeof value !== "object") return;
+		if (Array.isArray(value)) {
+			for (const item of value) visit(item);
+			return;
+		}
+		const n = value as BaseNode;
+		if (typeof n.node_type !== "string") return;
+		// Nested functions are checked on their own pass.
+		if (n.node_type === "func" || n.node_type === "struct" || n.node_type === "trait") return;
+		if (n.node_type === "raw") {
+			const raw = n as unknown as { value: string };
+			let arches: string[] | null = null;
+			let scope_file = false;
+			for (const line of raw.value.split("\n")) {
+				const trimmed = line.trim();
+				if (trimmed.startsWith("#scope:")) {
+					scope_file = trimmed.substring(7).trim() === "file";
+				} else if (trimmed.startsWith("#arch:")) {
+					arches = trimmed
+						.substring(6)
+						.split(",")
+						.map((a) => a.trim())
+						.filter((a) => a.length > 0);
+				} else if (trimmed.length > 0) {
+					break;
+				}
+			}
+			if (arches?.includes("aarch64_use_c") && !scope_file) {
+				found = { dropped: "nested block", start: n.start };
+			}
+			return;
+		}
+		const record = value as Record<string, unknown>;
+		for (const key of Object.keys(record)) {
+			if (key === "parent" || key === "scope" || key === "node_type") continue;
+			visit(record[key]);
+		}
+	};
+	for (const stmt of statements) visit(stmt);
+	return found;
 }

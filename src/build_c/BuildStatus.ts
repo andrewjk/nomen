@@ -64,11 +64,6 @@ export default interface BuildStatus {
 	 */
 	system_struct_names?: Set<string>;
 	/**
-	 * C companion code (functions with `aarch64_use_c` raw blocks).
-	 * Emitted as a separate `.m`/`.c` file and linked with the assembly output.
-	 */
-	c_companion?: string;
-	/**
 	 * File-scope C code emitted to the companion file before function bodies.
 	 * Used for pool infrastructure, type definitions, and `#scope: file` raw
 	 * blocks that need to appear at file scope rather than inline.

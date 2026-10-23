@@ -22,9 +22,20 @@ export default function build_raw_node(node: RawNode, status: BuildStatus) {
 			if (!status.file_scope_c) status.file_scope_c = "";
 			status.file_scope_c += `${code}\n`;
 		} else {
-			// Block-scope C companion code.
-			if (!status.c_companion) status.c_companion = "";
-			status.c_companion += `${code}\n`;
+			// Block-scope C inside a body the aarch64 backend emits as
+			// ASSEMBLY. Whole-body C functions are routed to the companion
+			// by check_c_fallback before asm emission, so reaching here
+			// means the block is nested inside control flow (or mixed with
+			// Nomen statements on an unchecked path). The historic behavior
+			// appended the code to status.c_companion — a field nothing
+			// consumes — silently dropping the block (found building
+			// Window.run's resize stamping). The checker rejects this shape
+			// (find_use_c_mixed_body); this is the ground-truth backstop.
+			if (!status.build_errors) status.build_errors = [];
+			status.build_errors.push({
+				message: `aarch64 cannot splice an inline C raw block into a Nomen body — a C raw block is emitted only as a function's whole body; move this block into its own aarch64_use_c function and pass values as parameters`,
+				start: node.start,
+			});
 		}
 	} else {
 		// A raw asm block reads its parameters from the entry ABI registers

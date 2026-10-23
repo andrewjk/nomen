@@ -123,7 +123,9 @@ export default function check_function_node(func: FunctionNode, status: CheckSta
 			status,
 			mixed_body.dropped === "statement"
 				? `Function '${func.name}' mixes '#arch: aarch64_use_c' blocks with Nomen statements — the aarch64 backend replaces the whole body with the raw blocks and would drop the statements`
-				: `Function '${func.name}' mixes '#arch: aarch64_use_c' blocks with inline raw code — the aarch64 backend replaces the whole body with the raw blocks and would drop the assembly`,
+				: mixed_body.dropped === "raw asm"
+					? `Function '${func.name}' mixes '#arch: aarch64_use_c' blocks with inline raw code — the aarch64 backend replaces the whole body with the raw blocks and would drop the assembly`
+					: `Function '${func.name}' has a '#arch: aarch64_use_c' block nested inside control flow — the aarch64 backend emits the body as assembly and silently drops block-scope C; move the block into its own aarch64_use_c function and pass values as parameters`,
 			mixed_body.start,
 		);
 	}

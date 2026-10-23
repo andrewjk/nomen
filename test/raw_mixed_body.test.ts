@@ -93,4 +93,64 @@ func parallel = (int x, out int) {
 		const parsed = parse_raw(input);
 		expect(parsed.errors).toEqual([]);
 	});
+
+	// A use_c block NESTED inside control flow is a different drop than the
+	// whole-body replacement above: the body is emitted as assembly and
+	// block-scope C has no inline splice, so the block itself never reaches
+	// the companion (found building Window.run's resize stamping — the
+	// stamping silently never ran on aarch64).
+	test("nested use_c block inside an if", () => {
+		const input = `import System
+
+func nested_raw = (bool flag, out int) {
+	var int n = 0
+	if flag {
+		\`\`\`
+		#arch: c
+		n = 1;
+		\`\`\`
+		\`\`\`
+		#arch: aarch64_use_c
+		n = 1;
+		\`\`\`
+	}
+	return n
+}
+`;
+		const parsed = parse_raw(input);
+		const expected = [
+			test_error(
+				input,
+				"Function 'nested_raw' has a '#arch: aarch64_use_c' block nested inside control flow — the aarch64 backend emits the body as assembly and silently drops block-scope C; move the block into its own aarch64_use_c function and pass values as parameters",
+				10,
+				3,
+			),
+		];
+		expect(parsed.errors).toEqual(expected);
+	});
+
+	// File-scope blocks are the blessed nested form: they hoist to the
+	// companion's file scope and emit wherever the carrier function sits
+	// (delegate IMPs, registries).
+	test("nested file-scope block is allowed", () => {
+		const input = `import System
+
+func carrier = (bool flag) {
+	if flag {
+		\`\`\`
+		#arch: c
+		#scope: file
+		static int nomen_counter = 0;
+		\`\`\`
+		\`\`\`
+		#arch: aarch64_use_c
+		#scope: file
+		static int nomen_counter = 0;
+		\`\`\`
+	}
+}
+`;
+		const parsed = parse_raw(input);
+		expect(parsed.errors).toEqual([]);
+	});
 });

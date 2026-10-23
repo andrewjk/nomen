@@ -286,23 +286,6 @@ rewrite, and the last name-keyed launch dispatch is gone. It can stay
 Fiber-specific (embedded/no-heap path); `Spawnable<T>`'s surface remains
 `start`/`detach`.
 
-## aarch64 raw-block silent drop (locals in nested control flow)
-
-Discovered 2026-10-23 building the `on_resize` plumbing (Window.nm
-`stamp_resize`): an inline `#arch: aarch64_use_c` block inside `run`'s
-`if ev.resized { ... }` (a while → if → if nest) referencing plain Nomen
-LOCALS (`cur_w`, `cur_h`) was **silently dropped** from the emitted
-companion — no error, no warning; the program just never stamped its
-record. Blocks at method top level (or referencing params/fields, which
-are addressable) emit fine. The C backend splices the same blocks into
-the C function body and works.
-
-Fix expected: the aarch64 raw-block emitter should reject (compile error)
-blocks whose referenced locals it cannot lower, instead of dropping them.
-The workaround used here is the general one: route values through a
-helper method whose parameters the raw block can address
-(`self.stamp_resize(true, cur_w, cur_h)`).
-
 ## aarch64 code-quality notes
 
 ### `--release` emitter cleanup
