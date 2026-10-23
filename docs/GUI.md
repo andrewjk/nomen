@@ -828,6 +828,27 @@ edge. Pull, don't push: read the new state inside the handler
 (`self.field_b.text()`) — events carry the edge, the control carries the
 state.
 
+### Selection: `on_select`
+
+Every selection-bearing control emits `on_select` — Select, Segmented,
+ComboBox (`selected_index()`), Tabs, ListView, Table, OutlineView
+(`selected_row()`). The handler runs on the frame after the selection
+changed; the body pulls the new position from the control:
+
+```
+self.combo.on_select(func () {
+	self.status.set_text("picked \{self.combo.selected_index()}")
+})
+```
+
+Two feeds share one record. The action family (Select / Segmented /
+ComboBox) fires on USER selection only — programmatic `set_selected`
+stays silent. The delegate family (Tabs / ListView / Table / OutlineView)
+observes programmatic selection too, so a pre-selection in `#init` fires
+on the first frame. Value polling (`selected_index()` in `frame`) keeps
+working beside the handlers — the poll reads state, the handler consumes
+an edge.
+
 ### Dynamic trees: `List<MyRow>` self-handling rows
 
 Rows in a list dispatch like field-hosted composites. A `List<MyRow>` field

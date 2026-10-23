@@ -26,6 +26,10 @@ pub mv struct Select : Control {
 			(id)window->handle, sel_registerName("contentView"));
 		((void(*)(id, SEL, id))objc_msgSend)(
 			contentView, sel_registerName("addSubview:"), pop);
+		// NSPopUpButton sends its action on USER selection only — arm it so
+		// on_select drains fire (programmatic selection stays silent).
+		extern void nomen_control_arm_selects(unsigned long long);
+		nomen_control_arm_selects((unsigned long long)pop);
 		self.handle = (uint64_t)pop;
 		```
 		```
@@ -40,6 +44,8 @@ pub mv struct Select : Control {
 			(id)window->handle, sel_registerName("contentView"));
 		((void(*)(id, SEL, id))objc_msgSend)(
 			contentView, sel_registerName("addSubview:"), pop);
+		extern void nomen_control_arm_selects(unsigned long long) __asm__("nomen_control_arm_selects");
+		nomen_control_arm_selects((unsigned long long)pop);
 		self->handle = (uint64_t)pop;
 		```
 		```
@@ -188,6 +194,38 @@ pub mv struct Select : Control {
 		#platform: ios
 		/* TODO: iOS (see #init) */
 		return -1;
+		```
+	}
+
+	// The on_select desugar's drain (docs/HANDLERS.md): true when the user
+	// selected an item since the last drain (the record is consumed).
+	// User-driven only — AppKit sends the popup's action for user picks,
+	// not for programmatic ones. The handler body reads the item through
+	// selected_index().
+	pub func take_select = (self, out bool) {
+		```
+		#arch: c
+		#platform: macos
+		extern long nomen_select_take(unsigned long long);
+		return (long)nomen_select_take((unsigned long long)self->handle);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		extern long nomen_select_take(unsigned long long);
+		return (long)nomen_select_take((unsigned long long)self->handle);
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return false;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return false;
 		```
 	}
 

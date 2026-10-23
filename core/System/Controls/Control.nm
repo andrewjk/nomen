@@ -186,3 +186,160 @@ pub func nomen_control_take_click = (uint64 handle, out bool) {
 	return 0;
 	```
 }
+
+// Arm a control's native selection action — the on_select plumbing for the
+// ACTION family (Select, Segmented, ComboBox: NSControls whose target/action
+// fires on a user-driven selection change). The DELEGATE family (Tabs,
+// ListView, Table, OutlineView) pushes into the same record from its
+// selection delegate instead. Called by those constructors; safe to call
+// again (re-sets target/action). A control carries ONE target/action, so a
+// control arms clicks OR selects, never both — the families are disjoint.
+pub func nomen_control_arm_selects = (uint64 handle) {
+	```
+	#arch: c
+	#platform: macos
+	#scope: file
+	// The shared selection record: the click ring's shape, fed by both
+	// families — the target's selectAction: (the sender's view pointer is
+	// the Nomen handle) and the delegate family's selection callbacks
+	// (nomen_select_push is EXTERNAL: Tabs/ListView/Table/OutlineView
+	// delegates in other files push into this ring).
+	static unsigned long long nomen_select_queue[64];
+	static int nomen_select_count = 0;
+	void nomen_select_push(unsigned long long h) {
+		if (nomen_select_count >= 64) return;
+		nomen_select_queue[nomen_select_count++] = h;
+	}
+	long nomen_select_take(unsigned long long h) {
+		for (int i = 0; i < nomen_select_count; i++) {
+			if (nomen_select_queue[i] == h) {
+				for (int j = i; j < nomen_select_count - 1; j++) {
+					nomen_select_queue[j] = nomen_select_queue[j + 1];
+				}
+				nomen_select_count--;
+				return 1;
+			}
+		}
+		return 0;
+	}
+	static void *nomen_select_target = 0;
+	static void nomen_select_action(id self, SEL cmd, id sender) {
+		(void)self; (void)cmd;
+		nomen_select_push((unsigned long long)(void *)sender);
+	}
+	static void nomen_select_arm(unsigned long long handle) {
+		Class Tc = objc_getClass("NomenSelectTarget");
+		if (!Tc) {
+			Tc = objc_allocateClassPair(objc_getClass("NSObject"), "NomenSelectTarget", 0);
+			if (Tc) {
+				class_addMethod(Tc, sel_registerName("selectAction:"), (IMP)nomen_select_action, "v@:@");
+				objc_registerClassPair(Tc);
+			}
+		}
+		if (!nomen_select_target && Tc) {
+			nomen_select_target = (void *)((id(*)(id, SEL))objc_msgSend)((id)Tc, sel_registerName("new"));
+		}
+		if (nomen_select_target) {
+			id control = (id)handle;
+			((void(*)(id, SEL, id))objc_msgSend)(control, sel_registerName("setTarget:"), (id)nomen_select_target);
+			((void(*)(id, SEL, SEL))objc_msgSend)(control, sel_registerName("setAction:"), sel_registerName("selectAction:"));
+		}
+	}
+	```
+	```
+	#arch: c
+	#platform: macos
+	nomen_select_arm(handle);
+	```
+	```
+	#arch: aarch64_use_c
+	#platform: macos
+	#scope: file
+	static unsigned long long nomen_select_queue[64];
+	static int nomen_select_count = 0;
+	void nomen_select_push(unsigned long long h) {
+		if (nomen_select_count >= 64) return;
+		nomen_select_queue[nomen_select_count++] = h;
+	}
+	long nomen_select_take(unsigned long long h) {
+		for (int i = 0; i < nomen_select_count; i++) {
+			if (nomen_select_queue[i] == h) {
+				for (int j = i; j < nomen_select_count - 1; j++) {
+					nomen_select_queue[j] = nomen_select_queue[j + 1];
+				}
+				nomen_select_count--;
+				return 1;
+			}
+		}
+		return 0;
+	}
+	static void *nomen_select_target = 0;
+	static void nomen_select_action(id self, SEL cmd, id sender) {
+		(void)self; (void)cmd;
+		nomen_select_push((unsigned long long)(void *)sender);
+	}
+	static void nomen_select_arm(unsigned long long handle) {
+		Class Tc = objc_getClass("NomenSelectTarget");
+		if (!Tc) {
+			Tc = objc_allocateClassPair(objc_getClass("NSObject"), "NomenSelectTarget", 0);
+			if (Tc) {
+				class_addMethod(Tc, sel_registerName("selectAction:"), (IMP)nomen_select_action, "v@:@");
+				objc_registerClassPair(Tc);
+			}
+		}
+		if (!nomen_select_target && Tc) {
+			nomen_select_target = (void *)((id(*)(id, SEL))objc_msgSend)((id)Tc, sel_registerName("new"));
+		}
+		if (nomen_select_target) {
+			id control = (id)handle;
+			((void(*)(id, SEL, id))objc_msgSend)(control, sel_registerName("setTarget:"), (id)nomen_select_target);
+			((void(*)(id, SEL, SEL))objc_msgSend)(control, sel_registerName("setAction:"), sel_registerName("selectAction:"));
+		}
+	}
+	```
+	```
+	#arch: aarch64_use_c
+	#platform: macos
+	nomen_select_arm(handle);
+	```
+	```
+	#arch: c
+	#platform: ios
+	/* TODO: iOS (see #init) */
+	```
+	```
+	#arch: aarch64_use_c
+	#platform: ios
+	/* TODO: iOS (see #init) */
+	```
+}
+
+// Drain a control's selection record: true exactly once per selection
+// change (the record is consumed). Called by the selection-family
+// `take_select` drains — the on_select desugar's arm primitive. The
+// payload is NOT stashed here: the handler body reads it through the
+// control's own selected_index() / selected_row().
+pub func nomen_control_take_select = (uint64 handle, out bool) {
+	```
+	#arch: c
+	#platform: macos
+	extern long nomen_select_take(unsigned long long);
+	return (long)nomen_select_take(handle);
+	```
+	```
+	#arch: aarch64_use_c
+	#platform: macos
+	extern long nomen_select_take(unsigned long long);
+	return (long)nomen_select_take(handle);
+	```
+	```
+	#arch: c
+	#platform: ios
+	return 0;
+	```
+	```
+	#arch: aarch64_use_c
+	#platform: ios
+	return 0;
+	```
+}

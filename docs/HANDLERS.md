@@ -152,6 +152,20 @@ menu/toolbar picks joined the family (2026-10-23):
   `clicked_item` poll remains for manual
   loops (poll and drain share one record — a pick consumed by one never
   reaches the other).
+- **`on_select`** (`take_select` on Select, Segmented, ComboBox, Tabs,
+  ListView, Table, OutlineView) — the selection-bearing controls report
+  "my selection changed" as a registered handler. One shared per-handle
+  record (the selection ring, next to the click ring in `Control.nm`)
+  feeds two families: the ACTION controls (Select/Segmented/ComboBox arm
+  `nomen_control_arm_selects` in their constructors — NSControl
+  target/action, so USER selection only; programmatic selection stays
+  silent) and the DELEGATE controls (Tabs' `didSelectTabViewItem` and the
+  table family's `tableViewSelectionDidChange:` push from the existing
+  bridge delegates — they observe programmatic `select_row`/`set_selected`
+  too, so a pre-selection in `#init` fires on the first frame). The
+  handler body reads the payload through the control's OWN
+  `selected_index()` / `selected_row()` — no new getters, no stash: the
+  control already was the payload's home.
 
 The test seam generalizes: synthetic events posted into NSApp's queue via
 `postEvent:atStart:` deliver deterministically on the next pump. One
@@ -498,8 +512,44 @@ NOT be faked with the per-frame record architecture:
   with a claim to semantic naming ("open" on list rows everywhere). A
   ten-line drain filtering the existing mouse-down record (button 1,
   `nomen_last_click_count` == 2); `on_mouse_down` already covers it, so
-  this is purely an ergonomics call. Ship it when a list-row consumer
-  shape appears.
+  this is purely an ergonomics call. **Ship condition met (2026-10-23)**:
+  the list-row consumers shipped (Table, ListView, OutlineView, all with
+  `on_select`), and double-click-to-open is the convention on every one
+  of them. Window-level broadcast like `on_right_click`; a later
+  refinement is a row-targeted form on the table family (NSTableView
+  carries a native `doubleAction`).
+- **`on_submit`** (`take_submit` on TextBox, SecureField, SearchField) —
+  Return-in-a-field, the search-box and form commits. No clean expression
+  today: `on_key_down` is a window-level record (mapping the first
+  responder to a field is the app's problem), and `on_input` fires per
+  keystroke. The plumbing is the selection family's, transplanted:
+  NSTextField fires its target/action exactly on the user commit (Enter;
+  Tab moves focus), so arm a shared submit target in the constructors
+  (the `nomen_control_arm_selects` shape), a per-handle record ring next
+  to the selection ring, and a `take_submit` drain per control. The
+  handler body pulls the committed text through the control's existing
+  `get_text()` — no new getters. The field editor already maps back to
+  the editing control (the `on_focus` mapping), so one shared target
+  serves every field. Consumer shape: the Form composite (gallery) and
+  every search field.
+- **`on_hover` / `on_exit`** (per-control mouse enter/exit) — derivable
+  today from `on_mouse_move` + `Container.contains` (GUI.md's hover
+  example does exactly this), so this is pure sugar — but it needs more
+  than the other tier-2 names: enter/exit EDGES require per-handle
+  last-inside state walked once per frame against the mouse-move record
+  (a small bookkeeping table, no new native plumbing). Ship when a
+  hover-effect consumer complains about the hit-test boilerplate.
+
+**Tier 2.5 — framework conveniences (not input, run-loop-shaped):**
+
+- **Timers** (`win.every(ms, ...)`) — animation and clocks work today by
+  accumulating `FrameEvents.dt` in `frame`; the named API is register-and-
+  forget sugar over the same dispatch slot the pumps use. The run loop is
+  already the dispatcher ("Beyond UIs" above).
+- **Sheet dismiss callback** (`sheetDidDismiss:`) — apps drive
+  `present`/`dismiss` themselves today, so the app KNOWS when a sheet
+  closes; the callback only earns its place when sheets grow native
+  dismissal affordances (Escape, close box) the app doesn't control.
 
 **Tier 3 — real projects (each has a reason the record architecture
 doesn't fit):**

@@ -136,6 +136,17 @@ pub mv struct Table : Control {
 			return cell;
 		}
 
+		// The delegate's selection hook: every selection change — user click
+		// AND programmatic select_row — pushes the table view's handle into
+		// the shared selection record (the on_select feed; the ring lives
+		// in Control.nm next to the click ring).
+		static void nomen_table_selection_did_change(id self, SEL cmd, id note) {
+			(void)self; (void)cmd;
+			id tv = ((id(*)(id, SEL))objc_msgSend)(note, sel_registerName("object"));
+			extern void nomen_select_push(unsigned long long);
+			nomen_select_push((unsigned long long)(void *)tv);
+		}
+
 		static id nomen_table_delegate_class(void) {
 			Class Td = objc_getClass("NomenTableBridge");
 			if (!Td) {
@@ -145,6 +156,8 @@ pub mv struct Table : Control {
 						(IMP)nomen_table_number_of_rows, "l@:@");
 					class_addMethod(Td, sel_registerName("tableView:viewForTableColumn:row:"),
 						(IMP)nomen_table_view_for_cell, "@@:@@@l");
+					class_addMethod(Td, sel_registerName("tableViewSelectionDidChange:"),
+						(IMP)nomen_table_selection_did_change, "v@:@");
 					objc_registerClassPair(Td);
 				}
 			}
@@ -263,6 +276,17 @@ pub mv struct Table : Control {
 			return cell;
 		}
 
+		// The delegate's selection hook: every selection change — user click
+		// AND programmatic select_row — pushes the table view's handle into
+		// the shared selection record (the on_select feed; the ring lives
+		// in Control.nm next to the click ring).
+		static void nomen_table_selection_did_change(id self, SEL cmd, id note) {
+			(void)self; (void)cmd;
+			id tv = ((id(*)(id, SEL))objc_msgSend)(note, sel_registerName("object"));
+			extern void nomen_select_push(unsigned long long);
+			nomen_select_push((unsigned long long)(void *)tv);
+		}
+
 		static id nomen_table_delegate_class(void) {
 			Class Td = objc_getClass("NomenTableBridge");
 			if (!Td) {
@@ -272,6 +296,8 @@ pub mv struct Table : Control {
 						(IMP)nomen_table_number_of_rows, "l@:@");
 					class_addMethod(Td, sel_registerName("tableView:viewForTableColumn:row:"),
 						(IMP)nomen_table_view_for_cell, "@@:@@@l");
+					class_addMethod(Td, sel_registerName("tableViewSelectionDidChange:"),
+						(IMP)nomen_table_selection_did_change, "v@:@");
 					objc_registerClassPair(Td);
 				}
 			}
@@ -632,6 +658,39 @@ pub mv struct Table : Control {
 		#platform: ios
 		/* TODO: iOS (see #init) */
 		return -1;
+		```
+	}
+
+	// The on_select desugar's drain (docs/HANDLERS.md): true when the
+	// selected row changed since the last drain — user clicks AND
+	// programmatic select_row (the delegate observes both; a pre-selection
+	// in #init therefore fires on the first frame). The handler body reads
+	// the row through selected_row(). The record is keyed on the table
+	// view (what the delegate sees), not the scroll wrapper.
+	pub func take_select = (self, out bool) {
+		```
+		#arch: c
+		#platform: macos
+		extern long nomen_select_take(unsigned long long);
+		return (long)nomen_select_take((unsigned long long)self->table);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		extern long nomen_select_take(unsigned long long);
+		return (long)nomen_select_take((unsigned long long)self->table);
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return false;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return false;
 		```
 	}
 

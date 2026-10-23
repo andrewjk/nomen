@@ -28,6 +28,11 @@ pub mv struct Segmented : Control {
 			(id)window->handle, sel_registerName("contentView"));
 		((void(*)(id, SEL, id))objc_msgSend)(
 			contentView, sel_registerName("addSubview:"), seg);
+		// NSSegmentedControl sends its action on USER segment clicks — arm
+		// it so on_select drains fire (programmatic setSelectedSegment
+		// stays silent).
+		extern void nomen_control_arm_selects(unsigned long long);
+		nomen_control_arm_selects((unsigned long long)seg);
 		self.handle = (uint64_t)seg;
 		```
 		```
@@ -45,6 +50,8 @@ pub mv struct Segmented : Control {
 			(id)window->handle, sel_registerName("contentView"));
 		((void(*)(id, SEL, id))objc_msgSend)(
 			contentView, sel_registerName("addSubview:"), seg);
+		extern void nomen_control_arm_selects(unsigned long long) __asm__("nomen_control_arm_selects");
+		nomen_control_arm_selects((unsigned long long)seg);
 		self->handle = (uint64_t)seg;
 		```
 		```
@@ -219,6 +226,36 @@ pub mv struct Segmented : Control {
 		#platform: ios
 		return (int)((long(*)(id, SEL))objc_msgSend)(
 			(id)self->handle, sel_registerName("selectedSegmentIndex"));
+		```
+	}
+
+	// The on_select desugar's drain (docs/HANDLERS.md): true when the user
+	// clicked a segment since the last drain (the record is consumed).
+	// User-driven only — AppKit sends the control's action for user clicks,
+	// not for programmatic setSelectedSegment. The handler body reads the
+	// segment through selected_index().
+	pub func take_select = (self, out bool) {
+		```
+		#arch: c
+		#platform: macos
+		extern long nomen_select_take(unsigned long long);
+		return (long)nomen_select_take((unsigned long long)self->handle);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		extern long nomen_select_take(unsigned long long);
+		return (long)nomen_select_take((unsigned long long)self->handle);
+		```
+		```
+		#arch: c
+		#platform: ios
+		return 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		return 0;
 		```
 	}
 
