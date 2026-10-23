@@ -447,11 +447,21 @@ export default function build(
 			// read as a phantom over-free. Mirrors wrap_c_allocators on the C
 			// side (nomen_realloc_wrap only counts a null old_ptr, matching
 			// realloc's malloc-equivalence).
-			status.code = status.code.replaceAll("bl _malloc\n", "bl _nomen_malloc_wrap\n");
-			status.code = status.code.replaceAll("bl _calloc\n", "bl _nomen_calloc_wrap\n");
-			status.code = status.code.replaceAll("bl _realloc\n", "bl _nomen_realloc_wrap\n");
-			status.code = status.code.replaceAll("bl _strdup\n", "bl _nomen_strdup_wrap\n");
-			status.code = status.code.replaceAll("bl _free\n", "bl _nomen_free_wrap\n");
+			//
+			// Line-anchored with a word boundary rather than a bare
+			// `bl _malloc\n` substring: a call with a trailing comment (the
+			// Channel's send path carried `bl _strdup  // x0 = owned copy`)
+			// escaped the substring form, so its allocation stayed raw while
+			// the paired receive freed through the wrapper — two stale frees
+			// per message (the node and its payload), the Channel-handoff
+			// audit finding. Wrapped forms (`bl _nomen_malloc_wrap`) never
+			// match: `bl _malloc` requires the exact `bl _` prefix.
+			status.code = status.code
+				.replace(/^(\s*)bl _malloc\b/gm, "$1bl _nomen_malloc_wrap")
+				.replace(/^(\s*)bl _calloc\b/gm, "$1bl _nomen_calloc_wrap")
+				.replace(/^(\s*)bl _realloc\b/gm, "$1bl _nomen_realloc_wrap")
+				.replace(/^(\s*)bl _strdup\b/gm, "$1bl _nomen_strdup_wrap")
+				.replace(/^(\s*)bl _free\b/gm, "$1bl _nomen_free_wrap");
 		}
 		// Validate the final assembly (lift it into structured form and check
 		// mnemonic shapes, branch targets, flag discipline, stack balance).
