@@ -98,6 +98,15 @@ no checker changes, new library drains + pump plumbing only:
   read via `win.scroll_dx()`/`scroll_dy()`; `FrameEvents.scroll_dx`/
   `scroll_dy` for the frame form. Continuous input, its own family: the
   edge means "this frame scrolled", the magnitudes are the payload.
+- **`on_key_down` / `on_key_up`** (`Container.take_key_down` /
+  `take_key_up`, 2026-10-23) — the keyboard tier: the pump stamps the
+  key-down keycode (NSEventTypeKeyDown = 10; text entry does NOT flow
+  here — the field editor feeds `on_input`), its modifiers, and the
+  auto-repeat flag (NSEvent isARepeat), plus the key-up keycode (type
+  11). Handlers read `win.key_code()` (hardware keycode — Space = 49,
+  Return = 36, letters a…z = 0–25), `win.key_modifiers()`,
+  `win.key_repeat()`, `win.key_up_code()`; `FrameEvents.key_code`/
+  `key_modifiers`/`key_repeat`/`key_up_code` for the frame form.
 
 The test seam generalizes: synthetic events posted into NSApp's queue via
 `postEvent:atStart:` deliver deterministically on the next pump. One

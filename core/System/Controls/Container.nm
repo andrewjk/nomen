@@ -1985,6 +1985,67 @@ pub mv struct Container: Control {
 		```
 	}
 
+	// The on_key_down / on_key_up desugars' drains (docs/HANDLERS.md): the
+	// synthesized pump arm polls these per frame. The keyboard record is
+	// window-level and broadcast (like the mouse records): every registered
+	// arm sees every key, and the HANDLER filters — `win.key_code()`
+	// (hardware keycode: Space = 49, Return = 36, arrows = 123–126, letters
+	// a…z = 0–25), `win.key_modifiers()` (Command = 1048576, Option =
+	// 524288, Control = 262144, Shift = 131072), `win.key_repeat()` (a held
+	// key auto-repeating — filter for first-press-only shortcuts),
+	// `win.key_up_code()`. These are SHORTCUT and raw-key events: text
+	// entry does not flow here — a TextBox's typing arrives through
+	// `on_input` (the field editor), which is the right event for editors.
+	pub func take_key_down = (self, out bool) {
+		```
+		#arch: c
+		#platform: macos
+		extern int nomen_last_key_code;
+		return nomen_last_key_code != -1;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		extern int nomen_last_key_code;
+		return nomen_last_key_code != -1;
+		```
+		```
+		#arch: c
+		#platform: ios
+		return 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		return 0;
+		```
+	}
+
+	pub func take_key_up = (self, out bool) {
+		```
+		#arch: c
+		#platform: macos
+		extern int nomen_last_key_up_code;
+		return nomen_last_key_up_code != -1;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		extern int nomen_last_key_up_code;
+		return nomen_last_key_up_code != -1;
+		```
+		```
+		#arch: c
+		#platform: ios
+		return 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		return 0;
+		```
+	}
+
 	// Hit test: is point (cx, cy) (top-left origin, as returned by click_x/
 	// click_y) inside the leaf with the given handle?
 	pub func contains = (self, uint64 handle, int cx, int cy, out bool) {

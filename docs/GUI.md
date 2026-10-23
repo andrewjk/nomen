@@ -660,6 +660,38 @@ every small event, momentum included) and expire with the frame — the
 same per-frame record as the mouse family. `FrameEvents.scroll_dx`/
 `scroll_dy` carry the same values for `frame`.
 
+### Keyboard: on_key_down / on_key_up
+
+Keyboard events are the same window-level pattern — every registered arm
+sees every key, and the handler filters:
+
+```
+self.grid.on_key_down(func () {
+	if win.key_code() == 49 {           // Space
+		if win.key_repeat() == false {  // first press only
+			self.toggle_play()
+		}
+	}
+})
+self.grid.on_key_up(func () {
+	if win.key_up_code() == 36 {        // Return
+		self.commit()
+	}
+})
+```
+
+`win.key_code()` is the hardware keycode (Space = 49, Return = 36,
+Delete = 51, Esc = 53, arrows = 123–126, letters a…z = 0–25),
+`win.key_modifiers()` the same flag bits as the mouse record,
+`win.key_repeat()` true while a held key auto-repeats (filter it for
+first-press-only shortcuts), `win.key_up_code()` the matching up event.
+`FrameEvents.key_code`/`key_modifiers`/`key_repeat`/`key_up_code` carry
+the same record for `frame`.
+
+**Text entry does not flow through these** — a TextBox's typing arrives
+through `on_input` (the field editor), which is the right event for
+editors. `on_key_down`/`on_key_up` are for shortcuts and raw key handling.
+
 ### Upward events (composite → app)
 
 A composite can raise its own events. The composite declares the API — an

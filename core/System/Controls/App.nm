@@ -17,12 +17,14 @@
  * - `frame` — called every iteration of the run loop with a `FrameEvents`
  *   value: the full mouse record for this frame (click kind/coordinates,
  *   `mouse_button`/`mouse_click_count`/`mouse_modifiers` — every button,
- *   and `scroll_dx`/`scroll_dy`), and `resized` + the new size when the
- *   window's content rect changed. Per-frame value polling (slider →
- *   progress mirrors), coordinate-driven input that no event names, and
- *   app-owned pane relayouts live here — registered click, right-click,
- *   mouse-down, and scroll handlers dispatch earlier, in `handle_events`
- *   (the `.on_click` / `.on_right_click` / `.on_mouse_down` / `.on_scroll`
+ *   `scroll_dx`/`scroll_dy`, and the keyboard record
+ *   `key_code`/`key_modifiers`/`key_repeat`/`key_up_code`), and `resized`
+ *   + the new size when the window's content rect changed. Per-frame value
+ *   polling (slider → progress mirrors), coordinate-driven input that no
+ *   event names, and app-owned pane relayouts live here — registered
+ *   click, right-click, mouse-down, scroll, and key handlers dispatch
+ *   earlier, in `handle_events` (the `.on_click` / `.on_right_click` /
+ *   `.on_mouse_down` / `.on_scroll` / `.on_key_down` / `.on_key_up`
  *   desugars).
  * - `handle_events` — the per-frame event pump: drains every registered
  *   control event (clicks, focus/blur, text input). Declared here as a
@@ -105,6 +107,16 @@ pub mv struct FrameEvents {
 	// `Scrollable.on_scroll` is the registered-handler form.
 	pub var int scroll_dx = 0
 	pub var int scroll_dy = 0
+	// The keyboard record for this frame (-1 = no key this frame): the
+	// hardware keycode of the last key-down (Space = 49, Return = 36,
+	// arrows = 123–126, letters a…z = 0–25), the modifiers at key-down,
+	// whether it was an auto-repeat, and the keycode of the last key-up.
+	// `on_key_down` / `on_key_up` are the registered-handler forms; text
+	// ENTRY flows through `on_input` (the field editor), not here.
+	pub var int key_code = -1
+	pub var int key_modifiers = 0
+	pub var bool key_repeat = false
+	pub var int key_up_code = -1
 	// True when the window's content rect changed since the last frame —
 	// the framework has already re-laid-out the registered roots; re-layout
 	// App-owned panes (tab pages, split panes) here.

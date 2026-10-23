@@ -203,6 +203,18 @@ pub mv struct Window: Control {
 		// externs them from another TU.
 		double nomen_scroll_dx_acc = 0.0;
 		double nomen_scroll_dy_acc = 0.0;
+		// The keyboard record for THIS pump: the hardware keycode of the
+		// last key-down (NSEventTypeKeyDown = 10) and key-up (type 11),
+		// -1 = none this frame; the modifiers at key-down; and whether the
+		// key-down was an auto-repeat (a held key). Zeroed by every pump.
+		// External linkage: Container.take_key_down / take_key_up extern
+		// them from another TU. Text entry does NOT flow here (the field
+		// editor feeds TextBox.on_input) — this record is for shortcuts and
+		// raw key handling.
+		int nomen_last_key_code = -1;
+		int nomen_last_key_modifiers = 0;
+		int nomen_last_key_repeat = 0;
+		int nomen_last_key_up_code = -1;
 		```
 		```
 		#arch: aarch64_use_c
@@ -239,6 +251,18 @@ pub mv struct Window: Control {
 		// externs them from another TU.
 		double nomen_scroll_dx_acc = 0.0;
 		double nomen_scroll_dy_acc = 0.0;
+		// The keyboard record for THIS pump: the hardware keycode of the
+		// last key-down (NSEventTypeKeyDown = 10) and key-up (type 11),
+		// -1 = none this frame; the modifiers at key-down; and whether the
+		// key-down was an auto-repeat (a held key). Zeroed by every pump.
+		// External linkage: Container.take_key_down / take_key_up extern
+		// them from another TU. Text entry does NOT flow here (the field
+		// editor feeds TextBox.on_input) — this record is for shortcuts and
+		// raw key handling.
+		int nomen_last_key_code = -1;
+		int nomen_last_key_modifiers = 0;
+		int nomen_last_key_repeat = 0;
+		int nomen_last_key_up_code = -1;
 		```
 		```
 		#arch: c
@@ -264,6 +288,10 @@ pub mv struct Window: Control {
 		nomen_last_click_modifiers = 0;
 		nomen_scroll_dx_acc = 0.0;
 		nomen_scroll_dy_acc = 0.0;
+		nomen_last_key_code = -1;
+		nomen_last_key_modifiers = 0;
+		nomen_last_key_repeat = 0;
+		nomen_last_key_up_code = -1;
 		while (1) {
 			id event = ((id(*)(id, SEL, unsigned long long, id, id, BOOL))objc_msgSend)(
 				app, sel_registerName("nextEventMatchingMask:untilDate:inMode:dequeue:"),
@@ -300,6 +328,20 @@ pub mv struct Window: Control {
 			if (type == 22) {
 				nomen_scroll_dy_acc += ((double(*)(id, SEL))objc_msgSend)(event, sel_registerName("deltaY"));
 				nomen_scroll_dx_acc += ((double(*)(id, SEL))objc_msgSend)(event, sel_registerName("deltaX"));
+			}
+			// A key-down (NSEventTypeKeyDown = 10): record the hardware
+			// keycode (Space = 49, Return = 36, Delete = 51, Esc = 53,
+			// arrows = 123–126, letters a…z = 0–25), the modifiers, and
+			// whether this is an auto-repeat (a held key — filter it for
+			// first-press-only shortcuts).
+			if (type == 10) {
+				nomen_last_key_code = (int)((unsigned long(*)(id, SEL))objc_msgSend)(event, sel_registerName("keyCode"));
+				nomen_last_key_modifiers = (int)(((unsigned long(*)(id, SEL))objc_msgSend)(event, sel_registerName("modifierFlags")) & 0xFFF00000ULL);
+				nomen_last_key_repeat = ((BOOL(*)(id, SEL))objc_msgSend)(event, sel_registerName("isARepeat")) ? 1 : 0;
+			}
+			// A key-up (NSEventTypeKeyUp = 11): press-and-hold handling.
+			if (type == 11) {
+				nomen_last_key_up_code = (int)((unsigned long(*)(id, SEL))objc_msgSend)(event, sel_registerName("keyCode"));
 			}
 			if (type == 1) had_click = 1; // NSLeftMouseDown = 1
 			if (type == 3) had_click = 2; // NSRightMouseDown = 3 (reported as 2)
@@ -338,6 +380,10 @@ pub mv struct Window: Control {
 		nomen_last_click_modifiers = 0;
 		nomen_scroll_dx_acc = 0.0;
 		nomen_scroll_dy_acc = 0.0;
+		nomen_last_key_code = -1;
+		nomen_last_key_modifiers = 0;
+		nomen_last_key_repeat = 0;
+		nomen_last_key_up_code = -1;
 		while (1) {
 			id event = ((id(*)(id, SEL, unsigned long long, id, id, BOOL))objc_msgSend)(
 				app, sel_registerName("nextEventMatchingMask:untilDate:inMode:dequeue:"),
@@ -374,6 +420,20 @@ pub mv struct Window: Control {
 			if (type == 22) {
 				nomen_scroll_dy_acc += ((double(*)(id, SEL))objc_msgSend)(event, sel_registerName("deltaY"));
 				nomen_scroll_dx_acc += ((double(*)(id, SEL))objc_msgSend)(event, sel_registerName("deltaX"));
+			}
+			// A key-down (NSEventTypeKeyDown = 10): record the hardware
+			// keycode (Space = 49, Return = 36, Delete = 51, Esc = 53,
+			// arrows = 123–126, letters a…z = 0–25), the modifiers, and
+			// whether this is an auto-repeat (a held key — filter it for
+			// first-press-only shortcuts).
+			if (type == 10) {
+				nomen_last_key_code = (int)((unsigned long(*)(id, SEL))objc_msgSend)(event, sel_registerName("keyCode"));
+				nomen_last_key_modifiers = (int)(((unsigned long(*)(id, SEL))objc_msgSend)(event, sel_registerName("modifierFlags")) & 0xFFF00000ULL);
+				nomen_last_key_repeat = ((BOOL(*)(id, SEL))objc_msgSend)(event, sel_registerName("isARepeat")) ? 1 : 0;
+			}
+			// A key-up (NSEventTypeKeyUp = 11): press-and-hold handling.
+			if (type == 11) {
+				nomen_last_key_up_code = (int)((unsigned long(*)(id, SEL))objc_msgSend)(event, sel_registerName("keyCode"));
 			}
 			if (type == 1) had_click = 1; // NSLeftMouseDown = 1
 			if (type == 3) had_click = 2; // NSRightMouseDown = 3 (reported as 2)
@@ -614,6 +674,106 @@ pub mv struct Window: Control {
 		#arch: aarch64_use_c
 		#platform: ios
 		return 0;
+		```
+	}
+
+	// ── The keyboard record (this frame's pump) ──
+	// Hardware keycodes (NSEventKeyCode): Space = 49, Return = 36,
+	// Delete = 51, Esc = 53, arrows = 123–126, letters a…z = 0–25.
+	// `on_key_down` / `on_key_up` (Container.take_key_down / take_key_up)
+	// are the registered forms; FrameEvents carries the same record
+	// (key_code / key_modifiers / key_repeat / key_up_code). All per-frame:
+	// -1 = no key-down/key-up this frame.
+
+	pub func key_code = (self, out int) {
+		```
+		#arch: c
+		#platform: macos
+		return nomen_last_key_code;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		return nomen_last_key_code;
+		```
+		```
+		#arch: c
+		#platform: ios
+		return -1;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		return -1;
+		```
+	}
+
+	pub func key_modifiers = (self, out int) {
+		```
+		#arch: c
+		#platform: macos
+		return nomen_last_key_modifiers;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		return nomen_last_key_modifiers;
+		```
+		```
+		#arch: c
+		#platform: ios
+		return 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		return 0;
+		```
+	}
+
+	pub func key_repeat = (self, out bool) {
+		```
+		#arch: c
+		#platform: macos
+		return nomen_last_key_repeat != 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		return nomen_last_key_repeat != 0;
+		```
+		```
+		#arch: c
+		#platform: ios
+		return 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		return 0;
+		```
+	}
+
+	pub func key_up_code = (self, out int) {
+		```
+		#arch: c
+		#platform: macos
+		return nomen_last_key_up_code;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		return nomen_last_key_up_code;
+		```
+		```
+		#arch: c
+		#platform: ios
+		return -1;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		return -1;
 		```
 	}
 
@@ -862,6 +1022,10 @@ pub mv struct Window: Control {
 			ev.mouse_modifiers = self.mouse_modifiers()
 			ev.scroll_dx = self.scroll_dx()
 			ev.scroll_dy = self.scroll_dy()
+			ev.key_code = self.key_code()
+			ev.key_modifiers = self.key_modifiers()
+			ev.key_repeat = self.key_repeat()
+			ev.key_up_code = self.key_up_code()
 			ev.resized = false
 			var int cur_w = self.content_width()
 			var int cur_h = self.content_height()
