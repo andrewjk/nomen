@@ -37,9 +37,10 @@ coordinator's `Task.is_done()` instead of blocking.
 
 A gallery of every `System::Controls` control in one window, built on the
 **App contract** (`Window.run`): the app struct builds everything in
-`#init`, registers the page root + both Scrollables in `start`, and its
-`frame` hook is the per-frame body — the framework owns the pump, resize
-detection, and the root/document relayouts. Inputs (TextBox, SecureField,
+`#init`, registers the page root + both Scrollables + the pane roots in
+`start`, and its `frame` hook carries only the per-frame polls — the
+framework owns the pump, resize detection, the root/document/pane
+relayouts, and the event dispatch. Inputs (TextBox, SecureField,
 SearchField, TextView), choices (CheckBox, Radio, Switch, Toggle,
 Segmented, Select, Stepper, Slider), display (Progress, Spinner,
 LevelIndicator, ImageView, DatePicker, ColorPicker), actions (Button +
@@ -47,9 +48,11 @@ Tooltip), and grouping (Separator, GroupBox) — laid out in a
 2-column grid. Clicks are registered `on_click` handlers — the desugar
 dispatches each closure as a hidden method with the app's `ref self`
 (docs/HANDLERS.md); composites self-drive and report up — the Pagination
-row enrolls the app via `on_page_change`, and each frame's `tick`
-delivers changes to it — and rows in lists dispatch the same way through
-element borrows. Continuous
+row enrolls the app via `on_page_change`, and the desugar delivers each
+change through the synthesized per-frame `tick` forward — and rows in
+lists dispatch the same way through element borrows. Menu picks and
+toolbar button presses are events too (`on_item_select`; the handler body
+reads the item through the control's `selected_item()`). Continuous
 controls are polled every frame into a status line that only rewrites
 when the string changes. The modals are created up
 front and driven from `frame`: Alert (blocks in NSAlert's own
@@ -60,17 +63,20 @@ label stack on a Scrollable's document view — the framework's document
 dance sizes and lays it out, with the scroll offset
 polled into the status line. A Tabs section hosts one label per page via
 `content_window(index)`, with the selected tab polled alongside (the pane
-grids re-flow on the first frame and on resize — the app-owned roots). A
+grids are registered pane roots — `Container.set_pane` — so the run loop
+re-flows them after every pass that frames the tab view). A
 ListView section bridges rows into an NSTableView data source, polling the
 selected row; a ComboBox polls its selection the same way. A Menu attaches
-to the right-click target button — picks surface through the edge-triggered
-`clicked_item` poll and land in the status line, as do the window
+to the right-click target button — picks arrive as registered
+`on_item_select` handlers and land in the status line, as do the window
 Toolbar's three labeled buttons (created before the first layout, since
 the toolbar shrinks the contentView). A SplitView section lays a label
-into each of two draggable panes; an OutlineView bridges a small tree
-(sources/demos), with its selected row polled too. A Table section fills a
-3-column grid (headers + rows through the view-based reusable cells), with
-the selected row polled alongside. A Composites section exercises the Tier 3
+into each of two draggable panes; its divider is pinned once in `start`
+(the split's delegate holds it across re-frames). An OutlineView bridges
+a small tree (sources/demos), with its selected row polled too. A Table
+section fills a 3-column grid (headers + rows through the view-based
+reusable cells), with the selected row polled alongside. A Composites
+section exercises the Tier 3
 pure-Nomen compositions — NumberInput (TextBox + Stepper, hundredths),
 OtpInput (five SecureFields), Pagination (page state driven from
 hit-tests), and Form (a GroupBox with label rows composed on top).

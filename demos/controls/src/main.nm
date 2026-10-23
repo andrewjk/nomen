@@ -3,10 +3,13 @@ import System::Controls
 
 // The controls gallery as an App (the Window.run contract): #init builds
 // every control against the page Scrollable's document view, `start`
-// registers the layout roots, and `frame` is the old event-loop body —
-// polled values, click hit-testing, and the app-owned pane relayouts. The
-// framework (Window.run) owns the pump, the autorelease pool, resize
-// detection, and the root/Scrollable relayouts.
+// registers the layout roots and the event handlers, and `frame` carries
+// only the genuinely per-frame work — the slider mirror and the polled
+// status line. The framework (Window.run) owns the pump, the autorelease
+// pool, resize detection, the root/Scrollable relayouts, the pane
+// relayouts (registered pane roots — Container.set_pane), and the event
+// dispatch (on_click / on_resize-adjacent relayouts / on_item_select /
+// composite up-calls — docs/HANDLERS.md).
 //
 // #init builds CONTROLS AS LOCALS and moves them into fields at the end:
 // wiring a composite takes `num.add_to(ref grid, …)`, and two `ref` borrows
@@ -126,10 +129,6 @@ mv struct GalleryApp : App {
 	var Popover pop
 	var Text status
 	var string prev_status = ""
-	// The tab/split panes are laid out by NSTabView/NSSplitView AFTER the
-	// framework's first post-show pass gives them real frames — one app-side
-	// pane pass on the first frame, then on every resize.
-	var bool panes_laid = false
 
 	pub func #init = (self, Window window) {
 		// The whole gallery scrolls: the page lives on a Scrollable's
@@ -378,8 +377,7 @@ mv struct GalleryApp : App {
 
 		// Window chrome: the toolbar shrinks the contentView (AppKit owns
 		// the layout rect), so it must exist BEFORE the first grid layout.
-		// Its three labeled buttons report clicks through the same
-		// edge-triggered poll as the context menu.
+		// Its three labeled buttons report picks as on_item_select events.
 		var Toolbar toolbar = Toolbar(window, 3)
 		toolbar.set_label(0, "One")
 		toolbar.set_label(1, "Two")
@@ -589,6 +587,19 @@ mv struct GalleryApp : App {
 		self.page_grid.set_document(self.page.handle, self.page.doc_handle())
 		self.scroll_grid.set_document(self.scroll.handle, self.scroll.doc_handle())
 
+		// Pane roots: NSTabView/NSSplitView re-frame their panes on their own
+		// schedule (when the pass that frames the host view lands), so the
+		// pane grids are registered with the run loop — re-laid after every
+		// relayout pass that could have re-framed them (first post-show +
+		// every resize). Scalar handles — one borrow of self per call.
+		self.tabs_grid_0.set_pane(self.tabs_page_0.handle)
+		self.tabs_grid_1.set_pane(self.tabs_page_1.handle)
+		self.split_grid_0.set_pane(self.split_left.handle)
+		self.split_grid_1.set_pane(self.split_right.handle)
+		// The split's delegate holds the divider across re-frames, so this
+		// one pin is the whole position story.
+		self.split.set_position(200.0, 0)
+
 		// Registered click handlers for the radio pair: the closures are
 		// hoisted into hidden methods on GalleryApp and dispatched with
 		// `ref self` by the run loop (docs/HANDLERS.md) — no twins, no
@@ -610,6 +621,19 @@ mv struct GalleryApp : App {
 		// one handler, no per-frame polling of the page.
 		self.pag.on_page_change(func () {
 			self.status.set_text("page \{self.pag.page()}")
+		})
+
+		// Menu and toolbar selections are events too (docs/HANDLERS.md): the
+		// drain consumes the selection and the body reads the item through
+		// the control's payload getter (menu.selected_item()) — no per-frame
+		// polls.
+		self.menu.on_item_select(func () {
+			self.status.set_text("menu: entry \{self.menu.selected_item()}")
+			self.prev_status = ""
+		})
+		self.toolbar.on_item_select(func () {
+			self.status.set_text("toolbar: item \{self.toolbar.selected_item()}")
+			self.prev_status = ""
 		})
 
 		// The dialog/drawer buttons register here too (once — before the run
@@ -640,18 +664,6 @@ mv struct GalleryApp : App {
 		})
 	}
 
-	// The app-owned pane roots: NSTabView/NSSplitView size their panes
-	// synchronously when framed, so the pane grids lay out after the pass
-	// that framed them (first frame + every resize).
-	func layout_panes = (ref self) {
-		self.tabs_grid_0.layout(self.tabs_page_0)
-		self.tabs_grid_1.layout(self.tabs_page_1)
-		self.split.set_position(200.0, 0)
-		self.split_grid_0.layout(self.split_left)
-		self.split_grid_1.layout(self.split_right)
-		self.panes_laid = true
-	}
-
 	// The polled status line: the continuous controls' current values, as
 	// one string (read every frame — no change callbacks in v1).
 	func poll_status = (ref self, out string) {
@@ -662,33 +674,14 @@ mv struct GalleryApp : App {
 		return "slider \{sv}  stepper \{nv}  rgb \{c.red},\{c.green},\{c.blue}  date \{secs}"
 	}
 
-	// App.frame — the old event-loop body.
-	pub func frame = (ref self, ref Window win, FrameEvents ev) {
-		if ev.resized {
-			// The framework already re-laid the root and the Scrollables;
-			// the app-owned panes re-flow here.
-			self.layout_panes()
-		}
-		if self.panes_laid == false {
-			self.layout_panes()
-		}
-
+	// App.frame — the genuinely per-frame work. Everything else moved onto
+	// the framework: the pane grids re-flow with the run loop's relayout
+	// (registered pane roots), and the menu/toolbar picks and the
+	// pagination's page changes arrive as registered handlers.
+	pub func frame = (ref self, ref Window _win, FrameEvents _ev) {
 		// Progress mirrors the slider; the status line reports the polled
-		// values (slider / stepper / color / date / scroll offset / tab).
+		// values (slider / stepper / color / date).
 		self.bar.set_value(self.slide.value() / 100.0)
-		// A context-menu pick (right-click the menu button, choose an entry)
-		// surfaces here on the next frame — clicked_item is edge-triggered
-		// (a read resets it to -1). The toolbar buttons use the same poll.
-		var int picked = self.menu.clicked_item()
-		if picked >= 0 {
-			self.status.set_text("menu: entry \{picked}")
-			self.prev_status = ""
-		}
-		var int bar_pick = self.toolbar.clicked_item()
-		if bar_pick >= 0 {
-			self.status.set_text("toolbar: item \{bar_pick}")
-			self.prev_status = ""
-		}
 		var string polled = self.poll_status()
 		if polled != self.prev_status {
 			self.status.set_text(polled)
@@ -697,10 +690,5 @@ mv struct GalleryApp : App {
 			// per frame), so copy instead.
 			self.prev_status = polled.copy()
 		}
-
-		// The pagination self-drives and reports up (docs/HANDLERS.md
-		// Stage 3): forwarding the app down once per tick delivers any page
-		// change to the enrolled handler.
-		self.pag.tick(ref self, ref win)
 	}
 }

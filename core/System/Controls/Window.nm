@@ -1235,27 +1235,33 @@ pub mv struct Window: Control {
 
 	// One framework relayout pass: the registered root Container, then every
 	// registered Scrollable's document dance (`first` drives its one-time
-	// scroll_to_top).
+	// scroll_to_top), then every registered pane root's layout (tabs pages /
+	// split panes re-frame when THIS pass frames their host view — the app
+	// cannot know the moment, so registration hands the timing here).
 	func relayout = (self, int first) {
 		```
 		#arch: c
 		#platform: macos
 		extern void nomen_layout_thunk(struct Container *, struct Window *);
 		extern void nomen_scroll_relayout_all(void *, long);
+		extern void nomen_pane_relayout_all(void);
 		if (nomen_run_root_grid) {
 			nomen_layout_thunk((struct Container *)nomen_run_root_grid, (struct Window *)self);
 		}
 		nomen_scroll_relayout_all((void *)self, first);
+		nomen_pane_relayout_all();
 		```
 		```
 		#arch: aarch64_use_c
 		#platform: macos
 		extern void nomen_layout_thunk(struct Container *, struct Window *);
 		extern void nomen_scroll_relayout_all(void *, long);
+		extern void nomen_pane_relayout_all(void);
 		if (nomen_run_root_grid) {
 			nomen_layout_thunk((struct Container *)nomen_run_root_grid, (struct Window *)self);
 		}
 		nomen_scroll_relayout_all((void *)self, first);
+		nomen_pane_relayout_all();
 		```
 		```
 		#arch: c

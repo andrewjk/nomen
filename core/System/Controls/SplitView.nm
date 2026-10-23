@@ -13,8 +13,11 @@
  * constructors and `Container.layout` target a pane unchanged. NSSplitView
  * owns the pane geometry: when the split view is framed (or the user drags
  * a divider) AppKit resizes the pane views synchronously, so re-run the
- * pane layouts after re-framing. Divider positions are set programmatically
- * with `set_position` and read with `position`. iOS defers to
+ * pane layouts after re-framing — registrable pane roots
+ * (`Container.set_pane`) put that on the run loop. A shared delegate holds
+ * every divider at its current position across re-frames (the AppKit
+ * default re-divides panes equally), so a programmatic divider position set
+ * with `set_position` (read with `position`) stays put. iOS defers to
  * UISplitViewController (a view-controller-level type — see GUI_PLAN
  * Tier 2; the iOS blocks are TODO stubs).
  **/
@@ -43,6 +46,56 @@ pub mv struct SplitView : Control {
 			}
 			return Pv;
 		}
+
+		// The delegate's resize-subviews hook: keep every divider at its
+		// CURRENT position — panes 0..n-2 keep their sizes, the LAST pane
+		// absorbs the delta. Without it NSSplitView's default adjustSubviews
+		// re-divides the panes equally on every re-frame (window resizes
+		// included), so a programmatic set_position drifts back; with it the
+		// divider is pinned where the app left it. One shared delegate
+		// serves every split view: the hook derives everything from the
+		// passed view.
+		static void nomen_split_resize_panes(id self, SEL cmd, id sv, NSSize oldSize) {
+			(void)self; (void)cmd; (void)oldSize;
+			id subviews = ((id(*)(id, SEL))objc_msgSend)(sv, sel_registerName("subviews"));
+			long n = ((long(*)(id, SEL))objc_msgSend)(subviews, sel_registerName("count"));
+			if (n < 1) return;
+			CGRect bounds = ((CGRect(*)(id, SEL))objc_msgSend)(sv, sel_registerName("bounds"));
+			BOOL vertical = ((BOOL(*)(id, SEL))objc_msgSend)(sv, sel_registerName("isVertical"));
+			double thickness = ((double(*)(id, SEL))objc_msgSend)(sv, sel_registerName("dividerThickness"));
+			double cross = vertical ? bounds.size.width : bounds.size.height;
+			double extent = vertical ? bounds.size.height : bounds.size.width;
+			double cursor = 0;
+			for (long i = 0; i < n; i++) {
+				id pane = ((id(*)(id, SEL, unsigned long))objc_msgSend)(
+					subviews, sel_registerName("objectAtIndex:"), (unsigned long)i);
+				CGRect f = ((CGRect(*)(id, SEL))objc_msgSend)(pane, sel_registerName("frame"));
+				double size = (i < n - 1)
+					? (vertical ? f.size.height : f.size.width)
+					: (extent - cursor);
+				CGRect nf = vertical ? CGRectMake(0, cursor, cross, size)
+					: CGRectMake(cursor, 0, size, cross);
+				((void(*)(id, SEL, CGRect))objc_msgSend)(pane, sel_registerName("setFrame:"), nf);
+				cursor = (vertical ? nf.origin.y + nf.size.height : nf.origin.x + nf.size.width)
+					+ thickness;
+			}
+		}
+		static id g_split_delegate = 0;
+		static id nomen_split_delegate(void) {
+			Class Sd = objc_getClass("NomenSplitDelegate");
+			if (!Sd) {
+				Sd = objc_allocateClassPair(objc_getClass("NSObject"), "NomenSplitDelegate", 0);
+				if (Sd) {
+					class_addMethod(Sd, sel_registerName("splitView:resizeSubviewsWithOldSize:"),
+						(IMP)nomen_split_resize_panes, "v@:@@{NSSize=dd}");
+					objc_registerClassPair(Sd);
+				}
+			}
+			if (!g_split_delegate) {
+				g_split_delegate = ((id(*)(id, SEL))objc_msgSend)(Sd, sel_registerName("new"));
+			}
+			return g_split_delegate;
+		}
 		```
 		```
 		#arch: aarch64_use_c
@@ -62,6 +115,49 @@ pub mv struct SplitView : Control {
 				}
 			}
 			return Pv;
+		}
+
+		// The delegate's resize-subviews hook (see the c twin above).
+		static void nomen_split_resize_panes(id self, SEL cmd, id sv, NSSize oldSize) {
+			(void)self; (void)cmd; (void)oldSize;
+			id subviews = ((id(*)(id, SEL))objc_msgSend)(sv, sel_registerName("subviews"));
+			long n = ((long(*)(id, SEL))objc_msgSend)(subviews, sel_registerName("count"));
+			if (n < 1) return;
+			CGRect bounds = ((CGRect(*)(id, SEL))objc_msgSend)(sv, sel_registerName("bounds"));
+			BOOL vertical = ((BOOL(*)(id, SEL))objc_msgSend)(sv, sel_registerName("isVertical"));
+			double thickness = ((double(*)(id, SEL))objc_msgSend)(sv, sel_registerName("dividerThickness"));
+			double cross = vertical ? bounds.size.width : bounds.size.height;
+			double extent = vertical ? bounds.size.height : bounds.size.width;
+			double cursor = 0;
+			for (long i = 0; i < n; i++) {
+				id pane = ((id(*)(id, SEL, unsigned long))objc_msgSend)(
+					subviews, sel_registerName("objectAtIndex:"), (unsigned long)i);
+				CGRect f = ((CGRect(*)(id, SEL))objc_msgSend)(pane, sel_registerName("frame"));
+				double size = (i < n - 1)
+					? (vertical ? f.size.height : f.size.width)
+					: (extent - cursor);
+				CGRect nf = vertical ? CGRectMake(0, cursor, cross, size)
+					: CGRectMake(cursor, 0, size, cross);
+				((void(*)(id, SEL, CGRect))objc_msgSend)(pane, sel_registerName("setFrame:"), nf);
+				cursor = (vertical ? nf.origin.y + nf.size.height : nf.origin.x + nf.size.width)
+					+ thickness;
+			}
+		}
+		static id g_split_delegate = 0;
+		static id nomen_split_delegate(void) {
+			Class Sd = objc_getClass("NomenSplitDelegate");
+			if (!Sd) {
+				Sd = objc_allocateClassPair(objc_getClass("NSObject"), "NomenSplitDelegate", 0);
+				if (Sd) {
+					class_addMethod(Sd, sel_registerName("splitView:resizeSubviewsWithOldSize:"),
+						(IMP)nomen_split_resize_panes, "v@:@@{NSSize=dd}");
+					objc_registerClassPair(Sd);
+				}
+			}
+			if (!g_split_delegate) {
+				g_split_delegate = ((id(*)(id, SEL))objc_msgSend)(Sd, sel_registerName("new"));
+			}
+			return g_split_delegate;
 		}
 		```
 		```
@@ -83,6 +179,12 @@ pub mv struct SplitView : Control {
 			(id)window->handle, sel_registerName("contentView"));
 		((void(*)(id, SEL, id))objc_msgSend)(
 			contentView, sel_registerName("addSubview:"), sv);
+		// Hold the dividers across re-frames (see the delegate above): the
+		// pane pass (Container.set_pane / Window.relayout) can then rely on
+		// the pane frames AppKit just adjusted, and a set_position pin holds
+		// without the app re-pinning on every resize.
+		((void(*)(id, SEL, id))objc_msgSend)(
+			sv, sel_registerName("setDelegate:"), nomen_split_delegate());
 		self.handle = (uint64_t)sv;
 		```
 		```
@@ -104,6 +206,8 @@ pub mv struct SplitView : Control {
 			(id)window->handle, sel_registerName("contentView"));
 		((void(*)(id, SEL, id))objc_msgSend)(
 			contentView, sel_registerName("addSubview:"), sv);
+		((void(*)(id, SEL, id))objc_msgSend)(
+			sv, sel_registerName("setDelegate:"), nomen_split_delegate());
 		self->handle = (uint64_t)sv;
 		```
 		```

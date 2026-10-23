@@ -260,8 +260,9 @@ mv struct PagerApp : App {
 		self.pager.on_page_change(func () { })
 	}
 
+	// No manual tick: the desugar appends the per-frame owner forward
+	// (\`pager.tick\`) to the app's synthesized dispatch pump at finalize.
 	pub func frame = (ref self, ref Window win, FrameEvents ev) {
-		self.pager.tick(ref self, ref win)
 	}
 }
 

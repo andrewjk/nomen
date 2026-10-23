@@ -509,8 +509,10 @@ implements two hooks:
 - **`start(ref self, ref Window win)`** — called once, after the app has
   been moved into its final storage but before the window is shown.
   Register layout roots here: `win.set_content(ref grid)` for the window's
-  root container, and `todos_grid.set_document(scroll.handle,
-scroll.doc_handle())` to give a Scrollable its document grid. The
+  root container, `todos_grid.set_document(scroll.handle,
+scroll.doc_handle())` to give a Scrollable its document grid, and
+  `pane_grid.set_pane(pane_window.handle)` for a pane root (a grid laid
+  into a Tabs page or SplitView pane). The
   registration stores ADDRESSES, which is why it happens in `start` and not
   `#init` — the app is moved once into `run`, and fields borrowed before
   the move would dangle.
@@ -518,15 +520,19 @@ scroll.doc_handle())` to give a Scrollable its document grid. The
   `ev.click` is 1 (left) / 2 (right) on the frame that pumped a mouse-down
   with `ev.click_x/y` in window coordinates; `ev.resized` + `ev.width/
 height` report content-rect changes. Value polling (slider → progress
-  mirrors), click hit-testing (`Container.contains`), and app-owned pane
-  relayouts (tab pages, split panes — on the first frame and on
-  `ev.resized`) live here.
+  mirrors) and click hit-testing (`Container.contains`) live here —
+  registered handlers (`on_click` and family, docs/HANDLERS.md) dispatch
+  before `frame`, and pane relayouts are framework work (registered pane
+  roots re-lay with each relayout pass).
 
 On each content-rect change the framework re-runs, in order: the root
 container's `layout`, then every registered Scrollable's document dance
 (measure unbounded → `set_content_size` → `layout`, plus a one-time
 `scroll_to_top` on the first post-show pass — the `layout_page`/
-`layout_scroll_content` helpers the demos used to carry). A dynamic
+`layout_scroll_content` helpers the demos used to carry), then every
+registered pane root's layout (tab pages / split panes re-frame when the
+pass frames their host view — the app cannot know the moment, so
+registration hands the timing to the run loop). A dynamic
 content change (a todo added) can re-run the dance directly:
 `nomen_scroll_thunk(ref todos, scroll.handle, scroll.doc_handle(), win, 0)`
 — one `ref` borrow + scalar handles.
@@ -722,7 +728,7 @@ loop, and manual-loop apps call `win.arm_mouse_moves()` once.
 
 `on_resize` fires on the frame whose content rect changed — the framework
 has already re-laid-out the registered roots, so the handler re-lays-out
-app-owned panes (tab pages, split panes) and reads the new size through
+whatever app-owned geometry remains and reads the new size through
 `win.resize_width()`/`resize_height()` (the CONTENT rect — the same
 values `FrameEvents.width`/`height` carry):
 
@@ -731,6 +737,10 @@ self.grid.on_resize(func () {
 	self.panes.relayout(win.resize_width(), win.resize_height())
 })
 ```
+
+Tab pages and split panes don't need this handler at all: register their
+grids as pane roots (`pane_grid.set_pane(pane_window.handle)`) and the
+relayout pass re-lays them — see "The App run loop" above.
 
 `close_requested` is the unsaved-changes interception. The red button's
 native close is refused by the framework and routed to the app on the
@@ -777,7 +787,7 @@ mv struct MyPager {
 }
 ```
 
-The app enrolls once in `start` and forwards itself down each frame:
+The app enrolls once in `start` — the forward is the desugar's job:
 
 ```
 pub func start = (ref self, ref Window win) {
@@ -785,17 +795,16 @@ pub func start = (ref self, ref Window win) {
 		self.status.set_text("page \{self.pager.page}")
 	})
 }
-
-pub func frame = (ref self, ref Window win, FrameEvents ev) {
-	self.pager.tick(ref self, ref win)
-}
 ```
 
-The registration hoists the handler onto the app and synthesizes its
-`run_handler` override; the composite's `owner.run_handler(id, ref win)`
-callback is one vtable hop into it — the borrow flows down per call,
-nothing is stored, nothing outlives the tick. For apps that don't need the
-event, plain value polling (`self.pager.page`) stays the tier-1 form.
+The registration hoists the handler onto the app, synthesizes its
+`run_handler` override, and appends the per-frame owner forward
+(`self.pager.tick(ref self, ref win)`) to the app's synthesized dispatch
+pump — the app never writes the forwarding call. The composite's
+`owner.run_handler(id, ref win)` callback is one vtable hop into the
+handler — the borrow flows down per call, nothing is stored, nothing
+outlives the tick. For apps that don't need the event, plain value polling
+(`self.pager.page`) stays the tier-1 form.
 
 ### Focus, blur, and input
 

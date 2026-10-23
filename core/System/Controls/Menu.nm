@@ -10,7 +10,10 @@
  * its own modal tracking loop, so the manual event loop is untouched. Each
  * item carries a tag (its index) and a shared target whose action records
  * the tag in a C global; `clicked_item` polls it (edge-triggered: the read
- * resets it to -1, "none"). iOS presentation differs (UIContextMenu-
+ * resets it to -1, "none"), and `on_item_select` is the registered form —
+ * the drain consumes the selection, the handler reads it through
+ * `selected_item`.
+ * iOS presentation differs (UIContextMenu-
  * Interaction needs a scene-attached view — see GUI_PLAN Tier 2; the iOS
  * blocks are TODO stubs).
  **/
@@ -55,6 +58,22 @@ pub mv struct Menu : Control {
 			g_menu_last_tag = -1;
 			return tag;
 		}
+
+		// The on_item_select drain's consume-and-stash: the drain consumes
+		// the selected tag exactly like the poll, and STASHES it for the
+		// handler body to read through Menu.selected_item (the drain runs
+		// first in its pump arm, so the stash is fresh when the handler
+		// body runs).
+		long g_menu_selected_tag = -1;
+		unsigned char nomen_menu_take_select(void) {
+			long tag = nomen_menu_last_tag();
+			if (tag < 0) return 0;
+			g_menu_selected_tag = tag;
+			return 1;
+		}
+		long nomen_menu_selected_tag(void) {
+			return g_menu_selected_tag;
+		}
 		```
 		```
 		#arch: aarch64_use_c
@@ -89,6 +108,19 @@ pub mv struct Menu : Control {
 			long tag = g_menu_last_tag;
 			g_menu_last_tag = -1;
 			return tag;
+		}
+
+		// The on_item_select drain's consume-and-stash (see the c twin
+		// above).
+		long g_menu_selected_tag = -1;
+		unsigned char nomen_menu_take_select(void) {
+			long tag = nomen_menu_last_tag();
+			if (tag < 0) return 0;
+			g_menu_selected_tag = tag;
+			return 1;
+		}
+		long nomen_menu_selected_tag(void) {
+			return g_menu_selected_tag;
 		}
 		```
 		```
@@ -268,6 +300,71 @@ pub mv struct Menu : Control {
 		extern long nomen_menu_last_tag(void);
 		long tag = nomen_menu_last_tag();
 		return (int)tag;
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return -1;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return -1;
+		```
+	}
+
+	// The on_item_select desugar's drain (docs/HANDLERS.md): the synthesized
+	// pump arm polls this per frame. The selection is CONSUMED by the drain
+	// — like the poll, one record has one consumer, so a selection fires an
+	// arm exactly once — and the consumed tag is stashed for the handler
+	// body, which reads it through selected_item. The poll and the drain
+	// share one record: a selection consumed by one never reaches the other.
+	pub func take_item_select = (self, out bool) {
+		```
+		#arch: c
+		#platform: macos
+		extern unsigned char nomen_menu_take_select(void);
+		return nomen_menu_take_select();
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		extern unsigned char nomen_menu_take_select(void);
+		return nomen_menu_take_select();
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return false;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return false;
+		```
+	}
+
+	// The tag the last take_item_select consumed (-1 before the first
+	// selection) — the handler body's payload getter. The control-scoped
+	// analog of the dispatch-window getters (win.click_x() et al): the
+	// record is the menu's own, so the payload rides the menu, not the
+	// window.
+	pub func selected_item = (self, out int) {
+		```
+		#arch: c
+		#platform: macos
+		extern long nomen_menu_selected_tag(void);
+		return (int)nomen_menu_selected_tag();
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		extern long nomen_menu_selected_tag(void);
+		return (int)nomen_menu_selected_tag();
 		```
 		```
 		#arch: c

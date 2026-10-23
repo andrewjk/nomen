@@ -9,7 +9,8 @@
  * NSToolbar is delegate-driven: the shared delegate answers the identifier
  * questions from the fixed item count and builds each item as a labeled
  * push button (NSButton view) targeted at the shared action recorder — so
- * `clicked_item` polls the last click edge-triggered, like Menu. Attaching
+ * `clicked_item` polls the last click edge-triggered, like Menu, and
+ * `on_item_select` is the registered form. Attaching
  * a toolbar shrinks the window's contentView (AppKit owns the layout rect),
  * so create the Toolbar BEFORE the first grid layout. One Toolbar per
  * process (the shared delegate + tag storage — the same trade List and Menu
@@ -127,6 +128,20 @@ pub mv struct Toolbar : Control {
 			g_toolbar_last_tag = -1;
 			return tag;
 		}
+
+		// The on_item_select drain's consume-and-stash (see Menu.nm): the
+		// drain consumes the selected tag like the poll and stashes it for
+		// the handler body to read through Toolbar.selected_item.
+		long g_toolbar_selected_tag = -1;
+		unsigned char nomen_toolbar_take_select(void) {
+			long tag = nomen_toolbar_last_tag();
+			if (tag < 0) return 0;
+			g_toolbar_selected_tag = tag;
+			return 1;
+		}
+		long nomen_toolbar_selected_tag(void) {
+			return g_toolbar_selected_tag;
+		}
 		```
 		```
 		#arch: aarch64_use_c
@@ -232,6 +247,19 @@ pub mv struct Toolbar : Control {
 			long tag = g_toolbar_last_tag;
 			g_toolbar_last_tag = -1;
 			return tag;
+		}
+
+		// The on_item_select drain's consume-and-stash (see the c twin
+		// above).
+		long g_toolbar_selected_tag = -1;
+		unsigned char nomen_toolbar_take_select(void) {
+			long tag = nomen_toolbar_last_tag();
+			if (tag < 0) return 0;
+			g_toolbar_selected_tag = tag;
+			return 1;
+		}
+		long nomen_toolbar_selected_tag(void) {
+			return g_toolbar_selected_tag;
 		}
 		```
 		```
@@ -347,6 +375,69 @@ pub mv struct Toolbar : Control {
 		#platform: macos
 		extern long nomen_toolbar_last_tag(void);
 		return (int)nomen_toolbar_last_tag();
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return -1;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return -1;
+		```
+	}
+
+	// The on_item_select desugar's drain (docs/HANDLERS.md): the synthesized
+	// pump arm polls this per frame. The selection is CONSUMED by the drain
+	// — like the poll, one record has one consumer, so a selection fires an
+	// arm exactly once — and the consumed tag is stashed for the handler
+	// body, which reads it through selected_item. The poll and the drain
+	// share one record: a selection consumed by one never reaches the other.
+	pub func take_item_select = (self, out bool) {
+		```
+		#arch: c
+		#platform: macos
+		extern unsigned char nomen_toolbar_take_select(void);
+		return nomen_toolbar_take_select();
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		extern unsigned char nomen_toolbar_take_select(void);
+		return nomen_toolbar_take_select();
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return false;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		return false;
+		```
+	}
+
+	// The tag the last take_item_select consumed (-1 before the first
+	// selection) — the handler body's payload getter, the control-scoped
+	// analog of the dispatch-window getters (win.click_x() et al).
+	pub func selected_item = (self, out int) {
+		```
+		#arch: c
+		#platform: macos
+		extern long nomen_toolbar_selected_tag(void);
+		return (int)nomen_toolbar_selected_tag();
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		extern long nomen_toolbar_selected_tag(void);
+		return (int)nomen_toolbar_selected_tag();
 		```
 		```
 		#arch: c

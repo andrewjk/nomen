@@ -135,8 +135,10 @@ pub func main = (Init init) {
 	// owner, ref win)` forwarding the owner down); the app registers
 	// `.on_page_change(func () { ... })` — the desugar hoists the handler
 	// onto the app, synthesizes the `run_handler` override the composite's
-	// callback hops into, and rewrites the site to the enrollment call with
-	// the dispatch id. One poke → one up-call → one label update.
+	// callback hops into, rewrites the site to the enrollment call with
+	// the dispatch id, AND appends the per-frame owner forward
+	// (`pager.tick`) to the app's dispatch pump — the app never writes it.
+	// One poke → one up-call → one label update.
 	test(
 		"composite events up-call into the app's run_handler",
 		{
@@ -245,12 +247,6 @@ mv struct PagerApp : App {
 		}
 		if self.frames == 3 {
 			self.poke_next()
-		}
-		// The click drained at this frame's handle_clicks (the composite's
-		// own arm raised the pending flag); the tick forwards the owner down
-		// and the up-call runs the app's handler with the composite's state.
-		if self.frames >= 3 {
-			self.pager.tick(ref self, ref win)
 		}
 		if self.frames == 5 {
 			Console.write_line(self.label.get_text())

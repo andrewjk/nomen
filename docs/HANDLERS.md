@@ -125,6 +125,34 @@ no checker changes, new library drains + pump plumbing only:
   flag and bypasses the interception (tests and handler-initiated closes
   never trip it). The frame time rides `FrameEvents.dt`/`win.dt()`.
 
+The composite up-calls lost their last piece of app-side plumbing, and the
+menu/toolbar picks joined the family (2026-10-23):
+
+- **Stage 3's owner forward is synthesized.** An enrollment now ALSO appends
+  the per-frame forward — `self.<field>.tick(ref self, ref win)` — to the
+  app's synthesized dispatch pump at finalize (after the forwards and own
+  arms: the tick delivers the owner down to composites whose arms just ran
+  this frame). One tick per enrolled field path, however many events; a
+  pump is created for the app if it has none (a composite with no internal
+  handlers is not a host, so the forwarding pass would otherwise skip it).
+  The app never writes the forwarding call; the demo's and the tests'
+  manual `tick` calls are gone.
+- **`on_item_select`** (`Menu.take_item_select` /
+  `Toolbar.take_item_select`) — the menu item pick and the toolbar button
+  press as registered handlers. The record is the CONTROL's own (the
+  selected item's tag), consumed by the drain like the click ring — one
+  record, one consumer, so a selection fires an arm exactly once — and
+  the handler body reads the item through the control-scoped payload
+  getter `selected_item()`: the first payload getter
+  that rides the control rather than the dispatch window, because the
+  record is the control's. The name carries the subject (the item) the
+  same way `on_page_change` does — `on_select` stays reserved for the
+  selection-bearing controls (ComboBox, ListView, Table, Segmented,
+  Select), where it will mean their persistent selection changed. The
+  `clicked_item` poll remains for manual
+  loops (poll and drain share one record — a pick consumed by one never
+  reaches the other).
+
 The test seam generalizes: synthetic events posted into NSApp's queue via
 `postEvent:atStart:` deliver deterministically on the next pump. One
 lesson recorded — the classic `NSEvent` mouse factory has NO buttonNumber
@@ -346,9 +374,11 @@ A composite whose change interests the app has three tiers:
 1. **Value polling (v1)** — the app reads `self.my_pager.page` in `frame`.
    This is _state_ polling, not click polling; the gallery's status line
    already works this way for sliders and steppers.
-2. **Id up-calls** — the composite stores an int per event; the app forwards
-   itself down once per tick (`self.my_pager.tick(ref self, ref win)`, a
-   trait-typed owner parameter — the same shape as `run`'s `mv App`), and the
+2. **Id up-calls** — the composite stores an int per event; the desugar
+   forwards the app down once per frame (the synthesized dispatch pump ends
+   in `self.my_pager.tick(ref self, ref win)` — a trait-typed owner
+   parameter, the same shape as `run`'s `mv App` — appended after the
+   forwards and the own arms, so the composite's arms run first), and the
    composite calls back `owner.run_handler(id, ref win)` — one vtable hop
    into the concrete app method the desugar synthesized. The borrow always
    flows _down_ per call; nothing is stored.
@@ -396,9 +426,10 @@ edge:
 The general test: **a framework owns the loop, the user owns the state — the
 pattern applies.** UI is consumer #1; the same three pieces serve:
 
-- **Timers, animation, resize** — `on_resize` (the gallery's
-  `layout_panes`), `win.every(500, ...)`: the run loop is already the
-  dispatcher.
+- **Timers, animation, resize** — `on_resize`, `win.every(500, ...)`: the
+  run loop is already the dispatcher. (The gallery's pane re-flow outgrew
+  the handler: registered pane roots — `Container.set_pane` — re-lay with
+  the run loop's relayout pass, no app code at all.)
 - **Event-driven IO** — ASYNC.md's Phase 4 io_uring runtime is
   completion-based, i.e. callbacks; completions dispatched at frame/poll
   boundaries are exactly host dispatch. A future Tcp/Http server framework
@@ -500,9 +531,12 @@ doesn't fit):**
   view on the first frame; controls that are never dispatched (no host) never
   arm. Alternative — arm in control constructors unconditionally — costs a
   recognizer per view. Decide with a large-UI benchmark.
-- **Payload-carrying events** (menu/toolbar item index, key events): the
-  hoisted signature generalizes to `(ref self, ref Window win, <payload>)` —
-  stage 3+.
+- **Payload-carrying events** — resolved for the menu/toolbar item index
+  and key events WITHOUT generalizing the hoisted signature: the payload
+  rides getters — the dispatch window's for window-level records
+  (`win.key_code()`), the control's own for control-scoped records
+  (`menu.selected_item()`). A closure parameter remains an option if an
+  event ever needs to carry data no getter can expose.
 - **Manual loops** (headless tests drive `process_events` directly): expose
   the host's pump for tests, or keep a thin window-level helper.
 - **Multiple windows**: one run root per window; hosts are per-root. An app

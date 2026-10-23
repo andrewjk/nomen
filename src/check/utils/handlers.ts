@@ -97,6 +97,25 @@ const run_handler_states = new WeakMap<StructNode, RunHandlerState>();
 const pending_run_handlers = new Map<BaseNode, StructNode[]>();
 
 /**
+ * Per-app tick-forward state (Stage 3): one entry per enrolled composite
+ * field path, recorded at the registration site and turned into pump
+ * statements at finalize — `self.<fields>.tick(ref self, ref win)` — so the
+ * app never writes the owner-forwarding call by hand.
+ */
+interface TickState {
+	/** Enrolled field paths, in registration order, deduped per app. */
+	entries: Array<{ fields: string[]; composite: StructNode }>;
+	/** The dedupe keys (one tick per field path, however many events). */
+	seen: Set<string>;
+}
+
+/** Per-app tick-forward state (see host_states for why module-level). */
+const tick_states = new WeakMap<StructNode, TickState>();
+
+/** Apps whose pump awaits its synthesized tick forwards (see pending_hosts). */
+const pending_tick_apps = new Map<BaseNode, StructNode[]>();
+
+/**
  * The `.on_<event>(closure)` hook, called from check_access_function_node
  * BEFORE ordinary method resolution. Returns:
  *  - `undefined` — not a handler registration (name family or receiver does
@@ -301,7 +320,10 @@ function try_check_control_drain(
  *    composite's `owner.run_handler(id, ref win)` callback hops into;
  *  - the registration site REWRITES to the enrollment call
  *    `receiver.on_<event>(N)` — the composite's own declared API stores the
- *    id (the one thing tier 2 stores: an int, never a handler).
+ *    id (the one thing tier 2 stores: an int, never a handler);
+ *  - the app's dispatch pump gains the per-frame owner forward
+ *    `self.<fields>.tick(ref self, ref win)` at finalize — registration is
+ *    register-and-forget, the app never writes the forwarding call.
  *
  * The composite opts in by declaration: the event exists when the receiver
  * declares `func on_<event> = (ref self, int id)`. Without it the name
@@ -419,6 +441,28 @@ function try_check_composite_event(
 	// ── The dispatch arm ── (registration order; ids arrive per tick.)
 	state.run_handler.statements.push(up_call_arm(host, node.name, id, node.start));
 
+	// ── The tick forward ── recorded here, appended to the app's dispatch
+	// pump at finalize (after the forwards and own arms: the tick delivers
+	// the owner down to composites whose arms just ran this frame). One
+	// tick per field path, however many events are enrolled on it.
+	let ticks = tick_states.get(host);
+	if (!ticks) {
+		ticks = { entries: [], seen: new Set() };
+		tick_states.set(host, ticks);
+		const tick_root = status.stack[0];
+		let apps = pending_tick_apps.get(tick_root);
+		if (!apps) {
+			apps = [];
+			pending_tick_apps.set(tick_root, apps);
+		}
+		apps.push(host);
+	}
+	const path_key = fields.join(".");
+	if (!ticks.seen.has(path_key)) {
+		ticks.seen.add(path_key);
+		ticks.entries.push({ fields, composite: receiver });
+	}
+
 	// ── The enrollment rewrite ──: the site becomes
 	// `receiver.on_<event>(N)` and resolves as the composite's declared API.
 	node.is_handler_enrollment = true;
@@ -467,8 +511,10 @@ export function finalize_handler_hosts(status: CheckStatus): void {
 	const root = status.stack[0];
 	const hosts = pending_hosts.get(root);
 	const up_call_apps = pending_run_handlers.get(root);
-	if (!hosts && !up_call_apps) return;
+	const tick_apps = pending_tick_apps.get(root);
+	if (!hosts && !up_call_apps && !tick_apps) return;
 	pending_hosts.delete(root);
+	pending_tick_apps.delete(root);
 	const host_set = new Set<StructNode>(hosts ?? []);
 	const to_check: FunctionNode[] = [];
 	for (const host of hosts ?? []) {
@@ -538,6 +584,48 @@ export function finalize_handler_hosts(status: CheckStatus): void {
 		}
 		// Children-first: forwarding splices ahead of the host's own arms.
 		state.func.statements.unshift(...forwards);
+	}
+
+	// The tick-forward pass (Stage 3): every app with composite enrollments
+	// gets `self.<field>.tick(ref self, ref win)` appended to its pump —
+	// after the forwards (children-first) and the own arms, because the
+	// tick delivers the owner down to composites whose arms just ran this
+	// frame. The pump may not exist yet (a composite with no internal
+	// handlers is not a host, so the forwarding pass skipped the app):
+	// create it the same way. A user-declared pump is left alone (its
+	// author owns the forwarding, as before this synthesis existed).
+	for (const app of tick_apps ?? []) {
+		const ticks = tick_states.get(app);
+		if (!ticks) continue;
+		let state = dispatcher_states.get(app);
+		if (!state) {
+			if (app.functions.some((f) => f.name === PUMP_NAME)) continue;
+			const pump = new FunctionNode(-1, "pub", PUMP_NAME, new Type(""), [
+				ref_self_param(app),
+				win_param(),
+			]);
+			app.functions.push(pump);
+			state = { func: pump, next_index: new Map() };
+			dispatcher_states.set(app, state);
+			to_check.push(pump);
+		}
+		for (const entry of ticks.entries) {
+			// The composite's side of the protocol is a `tick = (ref self,
+			// <owner>, ref Window win)` method; without it there is nothing
+			// to forward (and no up-call could ever fire anyway).
+			const has_tick = entry.composite.functions.some(
+				(f) => f.name === "tick" && f.params.length === 3 && f.params[0].is_self_param,
+			);
+			if (!has_tick) continue;
+			const tick_call = new AccessFunctionCallNode(-1, "tick");
+			// `ref self` (the owner borrow flowing down) and `ref win` —
+			// both need the explicit `ref` a source call site writes.
+			tick_call.ref_param_indices = [0, 1];
+			tick_call.params = [new ValueNode(-1, "self", new Type(app.name)), new ValueNode(-1, "win")];
+			state.func.statements.push(
+				new AccessNode(-1, arm_receiver(app, entry.fields, -1), tick_call),
+			);
+		}
 	}
 
 	for (const hc of to_check) {

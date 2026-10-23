@@ -1955,6 +1955,97 @@ pub mv struct Container: Control {
 		```
 	}
 
+	// Register this grid as a PANE root: after every framework relayout pass
+	// (first post-show + every resize — Window.relayout), the grid is re-laid
+	// into its companion window (`pane_handle`). Pane hosts re-frame on their
+	// own schedule — a Tabs page after the tab view is framed, a SplitView
+	// pane after the split is re-framed — so the app cannot know the right
+	// moment; registration hands the timing to the run loop (the same trade
+	// set_document makes for Scrollable documents). `pane_handle` is the
+	// companion window's `handle` — a scalar, because a second `ref` borrow
+	// of the same owner (self.pane_grid AND self.pane_window) would trip the
+	// aliasing rule (see set_document). The grid (and the pane window) must
+	// outlive the run — app fields. Call once, from App.start. The file-scope
+	// registry lives HERE (same file as the layout thunk the walker calls),
+	// for the same split-link reason set_document records.
+	pub func set_pane = (ref self, uint64 pane_handle) {
+		```
+		#arch: c
+		#platform: macos
+		#scope: file
+		// The registered (pane grid, pane window handle) pairs — walked by
+		// nomen_pane_relayout_all after every relayout pass. Raw grid
+		// addresses: the grid lives in the app struct, whose storage is
+		// stable for the whole run. The window is stored as its handle and
+		// re-wrapped per walk (the same stack Window the scroll thunk builds
+		// over the doc handle) — a by-value Window param would point at
+		// set_pane's own frame once the call returns.
+		static void *nomen_pane_reg_grid[8];
+		static unsigned long long nomen_pane_reg_win[8];
+		static int nomen_pane_reg_n = 0;
+		void nomen_pane_register(void *grid, unsigned long long handle) {
+			if (nomen_pane_reg_n >= 8) return;
+			nomen_pane_reg_grid[nomen_pane_reg_n] = grid;
+			nomen_pane_reg_win[nomen_pane_reg_n] = handle;
+			nomen_pane_reg_n++;
+		}
+		void nomen_pane_relayout_all(void) {
+			for (int i = 0; i < nomen_pane_reg_n; i++) {
+				extern void *_Window_traits[];
+				extern void nomen_layout_thunk(struct Container *, struct Window *);
+				struct Window pane_win;
+				pane_win._vt = (void *)&_Window_traits;
+				pane_win.handle = nomen_pane_reg_win[i];
+				nomen_layout_thunk((struct Container *)nomen_pane_reg_grid[i], &pane_win);
+			}
+		}
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		#scope: file
+		static void *nomen_pane_reg_grid[8];
+		static unsigned long long nomen_pane_reg_win[8];
+		static int nomen_pane_reg_n = 0;
+		void nomen_pane_register(void *grid, unsigned long long handle) {
+			if (nomen_pane_reg_n >= 8) return;
+			nomen_pane_reg_grid[nomen_pane_reg_n] = grid;
+			nomen_pane_reg_win[nomen_pane_reg_n] = handle;
+			nomen_pane_reg_n++;
+		}
+		void nomen_pane_relayout_all(void) {
+			for (int i = 0; i < nomen_pane_reg_n; i++) {
+				extern void *Window_traits;
+				extern void nomen_layout_thunk(struct Container *, struct Window *);
+				nm_Window pane_win;
+				pane_win._vt = (void *)&Window_traits;
+				pane_win.handle = nomen_pane_reg_win[i];
+				nomen_layout_thunk((struct Container *)nomen_pane_reg_grid[i], (struct Window *)&pane_win);
+			}
+		}
+		```
+		```
+		#arch: c
+		#platform: macos
+		nomen_pane_register((void *)self, pane_handle);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		nomen_pane_register((void *)self, pane_handle);
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS (see #init) */
+		```
+	}
+
 	// The on_right_click desugar's drain (docs/HANDLERS.md): the synthesized
 	// pump arm polls this per frame. The record is WINDOW-level — the same
 	// edge FrameEvents.click reports as 2, stamped by every process_events
