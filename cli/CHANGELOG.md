@@ -23,6 +23,139 @@
 
 
 
+
+## 0.8.0
+<sub>2026-10-23</sub>
+
+-  *(minor)*
+  Window.run: the App contract — the framework owns the event loop, resize relayout, and teardown (App trait + FrameEvents); Window.set_content/close; Container.set_document
+-  *(minor)*
+  Native click events: button-family controls arm target/action at construction and was_clicked drains the edge per control — no coordinates, no hit-testing, works inside Scrollables
+-  *(minor)*
+  Window.on_click/dispatch_clicks: registered click handlers over #handle view twins (ClickBinding list, per-frame drain before the app frame, gesture-recognizer arming for non-button views); fix use_c ctor companion dropping container-ctor field defaults and generic field member types (aarch64); fix a borrow copy's func-field dispose freeing a shared closure descriptor (both backends); seed the clicks list in the raw content_window fabricators
+-  *(minor)*
+  Handler desugar Stage 1: control .on_click closures hoist to hidden methods on the app and dispatch through a synthesized handle_clicks before frame — app-state handlers without captures; Window.on_click binding list retired
+-  *(minor)*
+  Handler desugar Stage 2: user composites the app owns are handler hosts — dispatch forwards down static field paths (children-first); Pagination self-drives via its own on_click arms, poll accessors retired
+-  *(minor)*
+  Handler desugar Stage 3: id up-calls — ref Trait params take conformer borrows, App gains the run_handler protocol, composites declare event APIs (on_page_change/tick; Pagination ships the first)
+-  *(minor)*
+  Handler desugar Stage 4: dynamic trees — List<MyRow> fields dispatch per element through the element borrow (ref T x = list.at(i) lowered to slot_ptr); ptr T returns are bare words in x0
+-  *(minor)*
+  Control events beyond clicks: on_focus / on_blur (first-responder snapshot edges) and on_input (per-text-change), each with its own synthesized dispatcher and App trait default
+
+  Also: event-routing precedence — a declared event API (`on_<event>(id)` on the widget) wins over the builtin table on any receiver, so Control-conforming composites and non-GUI (voice-only) widgets define their own events without touching the compiler's event table.
+-  *(minor)*
+  Single event pump: all control events (click/focus/blur/input and future ones) dispatch through one App.handle_events slot — the App contract is fixed as events are added
+-  *(minor)*
+  Events are library-defined: on_<event> routes to the control's own take_<event> drain method (no compiler event table); window refreshes the focus snapshot per frame
+-  *(minor)*
+  on_right_click: window-level right-click handlers (Container.take_right_click drain, pump click-kind stamp); todo demo's right-click delete moves off App.frame
+-  *(minor)*
+  Mouse events: on_mouse_down (every button + click count + modifiers via win.mouse_button/mouse_click_count/mouse_modifiers), on_scroll (accumulated deltas via win.scroll_dx/scroll_dy), FrameEvents full mouse record; pump no longer drops other-mouse-downs
+-  *(minor)*
+  Keyboard events: on_key_down/on_key_up (keycode + modifiers + auto-repeat via win.key_code/key_modifiers/key_repeat/key_up_code), FrameEvents full input record; pump no longer drops other-mouse-downs or key events
+-  *(minor)*
+  Window lifecycle + move events: on_mouse_move (pointer position via win.mouse_x/mouse_y), on_resize (content rect via win.resize_width/resize_height), close_requested interception (win.close() forced bypass), FrameEvents pointer position + dt; run arms setAcceptsMouseMovedEvents
+-  *(minor)*
+  on_select on all seven selection-bearing controls (Select/Segmented/ComboBox/Tabs/ListView/Table/OutlineView — shared selection ring, take_select drains, payload via the existing selected_index/selected_row), and synthesized composite tick forwards (the desugar appends the per-frame owner forward to the app's dispatch pump)
+-  *(minor)*
+  SplitView holds divider positions across re-frames (a shared delegate) — set_position pins once and resizes stop re-dividing the panes
+-  *(minor)*
+  Menu/Toolbar on_item_select handlers — item picks dispatch as registered events (take_item_select drains + selected_item payload getter); clicked_item polls remain for manual loops
+-  *(minor)*
+  Registered pane roots (Container.set_pane + the Window.relayout pane pass) — tab/split pane grids re-lay with the run loop: apps register, the framework lays
+-  *(minor)*
+  on_double_click — the list-row "open" gesture as a registered event (the sugar over the mouse-down record: left button, click count 2; window-level broadcast, position via the dispatch window)
+-  *(minor)*
+  on_submit — Return-in-a-field as a registered event on TextBox/SecureField/SearchField (NSTextField target/action armed per constructor, a per-handle submit ring, committed text via the existing get_text)
+-  *(patch)*
+  Nested mv struct fields of container elements load as independent deep copies (the auto-derive copy gate now accepts Buffer/Map/Set fields)
+-  *(patch)*
+  Map/Set gain .copy(); container-element Map/Set fields load as independent deep copies; fixes the aarch64 deferred zero-arg variadic-init marshalling behind Map.copy
+-  *(patch)* - Make structs with 'view' fields only usable in the current scope
+-  *(patch)* - Always check declaration-level return types
+-  *(patch)*
+  Assigning to a ref alias re-points the alias itself: the assignment is adopted into the alias's own slot (an owning var, freed at scope exit) and the previously-aliased instance stays owned by its owner
+-  *(patch)* - The freeze write-gate names the spawn that lent the donor ("'xs' is borrowed by the 'worker' spawn …")
+-  *(patch)* - aarch64: deep-copy enum-with-data fields of container elements on mv load (stale free)
+-  *(patch)* - Fix the internal 'Unknown value: _recv_N' check error on a chained Box deref through an accessor result
+-  *(patch)* - Enforce the mv spelling on generic struct templates whose instantiation owns heap (was silently derived per-mono)
+-  *(patch)* - Fix destructuring markers dropped by per-mono body clones; variadic params are callee-owned (mutable)
+-  *(patch)* - Map's variadic init uses an explicit mv-destructure transfer chain; retire the temp-rooted mv-arg exemption
+-  *(patch)*
+  Fixed-array struct elements: correct ctor copy stride + uniform-heap detach on both backends, per-element destroy walks (trait-declared owned fields reclaimed), valid C emission for array fields
+-  *(patch)*
+  Buffer primitives: mv store_T reclaims displaced owned state behind per-leaf identity guards; alloc destroys and frees the old slab before the exact-cap calloc (modify_T's container leak re-recorded — a guarded reclaim is unsound there)
+-  *(patch)*
+  Unbounded todo demo controls, TextBox.set_placeholder, right-click events, Container.remove_leaf, List.remove_at_or_panic, constant folding across conditional branches
+-  *(patch)* - Controls: Switch (NSSwitch/UISwitch) — the settings toggle
+-  *(patch)* - aarch64: ABI thunk bridges float params/returns into aarch64_use_c C bodies (x/d register files)
+-  *(patch)* - Controls: Slider (NSSlider/UISlider) — min/max/value for the manual loop
+-  *(patch)* - Controls: Progress (NSProgressIndicator bar/UIProgressView) — value 0..1 + indeterminate flag
+-  *(patch)*
+  Controls: Spinner (NSProgressIndicator spinning/UIActivityIndicatorView); aarch64 naked-inline loads sub-word fields at storage width
+-  *(patch)* - Controls: Radio (NSButton radio type) — group semantics stay Nomen-level; iOS deferred
+-  *(patch)* - Controls: Toggle (NSButton push-on-push-off/UIButton selected)
+-  *(patch)* - Controls: SecureField (NSSecureTextField/UITextField secureTextEntry)
+-  *(patch)* - Controls: SearchField (NSSearchField/UISearchTextField)
+-  *(patch)* - Controls: Select (NSPopUpButton) — items + selected_index; iOS block deferred
+-  *(patch)* - Controls: Segmented (NSSegmentedControl/UISegmentedControl)
+-  *(patch)* - Controls: Stepper (NSStepper/UIStepper) — min/max/increment + polled value
+-  *(patch)* - Controls: TextView (NSTextView/UITextView) — multiline editing
+-  *(patch)* - Controls: ImageView (NSImageView/UIImageView) — file path + SF Symbol, has_image
+-  *(patch)* - Controls: DatePicker (NSDatePicker/UIDatePicker) — epoch-seconds value API
+-  *(patch)* - Controls: ColorPicker (NSColorWell/UIColorWell) — 0-255 rgb component API
+-  *(patch)* - Controls: LevelIndicator (NSLevelIndicator, macOS-only); aarch64: Mach-O-safe companion symbols for L-prefixed labels
+-  *(patch)* - Controls: Separator + GroupBox (NSBox separator/primary styles, macOS-first)
+-  *(patch)* - Controls: Tooltip helpers (view.toolTip by handle) — set/get, macOS-first
+-  *(patch)* - Controls: Alert (NSAlert) — title/message/buttons + blocking run(); iOS deferred
+-  *(patch)* - Controls: Sheet (beginSheet:) — content_window() exposes the sheet as a layout root; iOS deferred
+-  *(patch)* - Controls: Popover (NSPopover) — content sizing + anchor-to-handle show; iOS deferred
+-  *(patch)* - Sheet: content_window retains the sheet window so the Window-shaped copy's destroy is balanced
+-  *(patch)* - Controls: Scrollable (NSScrollView document view) — content_window layout root, offset polling; iOS deferred
+-  *(patch)* - Controls: Tabs (NSTabView) — per-page content_window layout roots; iOS has no counterpart, deferred
+-  *(patch)* - Controls: List (NSTableView, single column) — C-global data-source bridge, polled selection; iOS deferred
+-  *(patch)* - Controls: ComboBox (NSComboBox, editable + completing) — macOS-only; iOS deferred
+-  *(patch)* - Controls: Menu (NSMenu context menu) — attach-to-handle, edge-triggered clicked_item poll; iOS deferred
+-  *(patch)* - Controls: Toolbar (NSToolbar delegate items) — labeled push buttons, edge-triggered click poll; macOS-only
+-  *(patch)* - Controls: SplitView (NSSplitView panes as layout roots) — programmatic divider position; iOS deferred
+-  *(patch)* - Controls: OutlineView (NSOutlineView tree bridge) — C-global node pool, NSNumber items; macOS-only
+-  *(patch)* - Fix: displaced-destroy of a generic-typed var reassigned in a nested scope emitted the bare (unmono) destroy symbol
+-  *(patch)* - Fix: aarch64 float-to-int cast converted stale d0 instead of materializing the bits in x0
+-  *(patch)* - Controls: Table (NSTableView multi-column) — view-based reusable cells, row-major C-global cell grid; macOS-only
+-  *(patch)* - Fix: aarch64 custom #init staged by-address struct params as the struct itself when passing them to nested ctors
+-  *(patch)* - Controls: NumberInput composition (TextBox + Stepper, int hundredths)
+-  *(patch)* - Controls: OtpInput composition (five SecureFields in a row)
+-  *(patch)* - Controls: Pagination composition (prev/next + numbered Button row, clamped page state); Button set_hidden/is_hidden
+-  *(patch)* - Controls: Form composition (GroupBox + label rows over a ZStack); gallery Composites section
+-  *(patch)* - Fix: float field defaults pool a .double entry; ctor function_data flushes after ret (literals landed inline)
+-  *(patch)* - Controls: composites use direct field ctors and NumberInput's float API (int-math text formatting)
+-  *(patch)*
+  Fix: per-body variable_types isolation for struct methods/inits (a float param inherited a view-string's type and mis-lowered to_string on both backends)
+-  *(patch)* - Scrollable: content_click window-to-document translation (free function, tuple destructure) and scroll_to_bottom
+-  *(patch)*
+  Container: a grow leaf carries the matching autoresizing size bit so the flexible region resizes live during a window drag
+-  *(patch)* - Fix: Window.set_frame sent setFrame: (an NSView selector) — NSWindow needs setFrame:display:
+-  *(patch)*
+  Fix: Scrollable scroll_to_top/bottom set the clip origin directly (scrollPoint/scrollRectToVisible get constrained short of the edges live)
+-  *(patch)* - Fix: Scrollable clamps the document height up to the viewport so short content stays top-anchored
+-  *(patch)*
+  Fix: Window.process_events drains an autorelease pool per pump (the manual loop leaked tens of MB/s: unbounded autoreleased AppKit objects)
+-  *(patch)* - aarch64: string interpolation of 8+ arguments (helper frame collision)
+-  *(patch)* - aarch64: ref-scalar receiver passed &caller-storage instead of its value (ref param interpolation read garbage)
+-  *(patch)* - Fix: conditional mv string transfer leaked the not-taken path's heap string
+-  *(patch)* - Fix: TextBox iOS get_text sent a typo'd Objective-C selector
+-  *(patch)* - Controls: page scrolls; Toolbar.set_label; Table cell fix; measure cache (resize shrink)
+-  *(patch)*
+  Fix: C-backend trait-boxing referenced the audit-only malloc wrapper, so trait-typed mv parameters failed to compile in non-audit builds
+-  *(patch)*
+  Reject mixed aarch64_use_c bodies at check time (find_use_c_mixed_body); move Container's handle-0 guards into every arch block; build_and_check_output asserts BuildResult.errors; asm validator accepts external branch targets in split user-TU builds
+-  *(patch)* - Fix: receiver-relative field accesses beyond the aarch64 immediate ranges
+-  *(patch)* - Fix: List<Own>.at() element reads of destroy-aliasing structs are pure borrows (double-release)
+-  *(patch)*
+  aarch64: use_c raw blocks nested in control flow are now a check + build error (were silently dropped from the companion); mixed use_c/Nomen bodies already errored, nested ones escaped the top-level scan
+
 ## 0.7.1
 <sub>2026-10-12</sub>
 
