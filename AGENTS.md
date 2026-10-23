@@ -53,9 +53,19 @@ packages are released: `nomen-lang` (the CLI, published to npm) and `nomen`
 
 - Create a bump file as part of any PR that changes a released package:
   `pnpm exec bumpy add` (non-interactive: `pnpm exec bumpy add --packages "nomen-lang:patch" --message "..."`)
+- **Bump both packages together.** The extension is the companion front-end
+  to the CLI and the System library — its Run/Audit/completions drive the
+  installed `nomen` CLI and resolve `core/` from the workspace — so any
+  change to the compiler or the library should bump `nomen` alongside
+  `nomen-lang`. List both in the same bump file, mirroring the level:
+  `pnpm exec bumpy add --packages "nomen-lang:minor,nomen:minor" --message
+"..."`. This keeps "which extension goes with which compiler/library" a
+  non-question and makes every marketplace release carry the current
+  language surface.
 - Bump levels: `patch` / `minor` / `major`. For changes that touch a released
   package but shouldn't trigger a release (e.g. dev tooling), create an empty
-  bump file: `pnpm exec bumpy add --empty`.
+  bump file: `pnpm exec bumpy add --empty`. Docs-only changes (like edits to
+  this file) need no bump at all.
 - CI posts a release-plan comment on PRs and keeps a "Versioned release" PR up
   to date; merging that PR publishes both packages and creates git tags +
   GitHub releases.
