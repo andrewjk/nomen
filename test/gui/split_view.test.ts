@@ -73,4 +73,35 @@ pub func main = () {
 `;
 		expect(parse(input, system).errors).toEqual([]);
 	});
+
+	// The divider-holding delegate: re-framing the split (set_frame — the
+	// same re-entry a window resize takes) must PRESERVE the divider, not
+	// re-divide the panes equally and not blow the panes through the wrong
+	// axis. The re-frame height is deliberately ≠ the pinned position, so a
+	// wrong-axis implementation (pane width = bounds height) reads back a
+	// different number.
+	test("re-framing preserves the divider position", { timeout: 120000 }, async () => {
+		const input = `
+import System
+import System::Controls
+
+pub func main = () {
+	var Window win = Window("SplitView preserve", 320, 200)
+	var SplitView split = SplitView(win, 2, true)
+	split.set_frame(0, 0, 300, 100)
+	split.set_position(100.0, 0)
+	// Re-frame: the delegate keeps pane 0 at its pinned width (100) and
+	// hands the delta to the last pane.
+	split.set_frame(0, 0, 420, 150)
+	var float kept = split.position()
+	Console.write("kept=\\{kept as int}\\n")
+}
+`;
+		const parsed = parse(input, system);
+		expect(parsed.errors).toEqual([]);
+		await build_and_check_output(input, "gui_split_preserve", "kept=100", true, {
+			platform: "macos",
+			audit: false,
+		});
+	});
 });

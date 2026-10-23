@@ -54,7 +54,12 @@ pub mv struct SplitView : Control {
 		// included), so a programmatic set_position drifts back; with it the
 		// divider is pinned where the app left it. One shared delegate
 		// serves every split view: the hook derives everything from the
-		// passed view.
+		// passed view. AXIS NOTE: isVertical YES means the DIVIDER is
+		// vertical, so the panes sit side by side and advance along X
+		// (left|right); a horizontal split stacks along Y. Kept sizes are
+		// clamped to the room left in the bounds, so the frames always
+		// tile exactly (AppKit validates the tiling and warns when a
+		// delegate leaves the panes out of bounds or overlapping).
 		static void nomen_split_resize_panes(id self, SEL cmd, id sv, NSSize oldSize) {
 			(void)self; (void)cmd; (void)oldSize;
 			id subviews = ((id(*)(id, SEL))objc_msgSend)(sv, sel_registerName("subviews"));
@@ -63,21 +68,30 @@ pub mv struct SplitView : Control {
 			CGRect bounds = ((CGRect(*)(id, SEL))objc_msgSend)(sv, sel_registerName("bounds"));
 			BOOL vertical = ((BOOL(*)(id, SEL))objc_msgSend)(sv, sel_registerName("isVertical"));
 			double thickness = ((double(*)(id, SEL))objc_msgSend)(sv, sel_registerName("dividerThickness"));
-			double cross = vertical ? bounds.size.width : bounds.size.height;
-			double extent = vertical ? bounds.size.height : bounds.size.width;
+			// Panes advance along `extent` and every pane spans `cross`.
+			double extent = vertical ? bounds.size.width : bounds.size.height;
+			double cross = vertical ? bounds.size.height : bounds.size.width;
 			double cursor = 0;
 			for (long i = 0; i < n; i++) {
 				id pane = ((id(*)(id, SEL, unsigned long))objc_msgSend)(
 					subviews, sel_registerName("objectAtIndex:"), (unsigned long)i);
 				CGRect f = ((CGRect(*)(id, SEL))objc_msgSend)(pane, sel_registerName("frame"));
-				double size = (i < n - 1)
-					? (vertical ? f.size.height : f.size.width)
-					: (extent - cursor);
-				CGRect nf = vertical ? CGRectMake(0, cursor, cross, size)
-					: CGRectMake(cursor, 0, size, cross);
+				double size;
+				if (i < n - 1) {
+					size = vertical ? f.size.width : f.size.height;
+					// Clamp: later panes keep at least their dividers' room,
+					// so the kept sizes can never overflow the bounds.
+					double room = extent - cursor - (n - 1 - i) * thickness;
+					if (size > room) size = room;
+				} else {
+					size = extent - cursor;
+				}
+				if (size < 0) size = 0;
+				CGRect nf = vertical
+					? CGRectMake(cursor, 0, size, cross)
+					: CGRectMake(0, cursor, cross, size);
 				((void(*)(id, SEL, CGRect))objc_msgSend)(pane, sel_registerName("setFrame:"), nf);
-				cursor = (vertical ? nf.origin.y + nf.size.height : nf.origin.x + nf.size.width)
-					+ thickness;
+				cursor += size + thickness;
 			}
 		}
 		static id g_split_delegate = 0;
@@ -117,7 +131,8 @@ pub mv struct SplitView : Control {
 			return Pv;
 		}
 
-		// The delegate's resize-subviews hook (see the c twin above).
+		// The delegate's resize-subviews hook (see the c twin above — note
+		// the axis: isVertical YES means panes advance along X).
 		static void nomen_split_resize_panes(id self, SEL cmd, id sv, NSSize oldSize) {
 			(void)self; (void)cmd; (void)oldSize;
 			id subviews = ((id(*)(id, SEL))objc_msgSend)(sv, sel_registerName("subviews"));
@@ -126,21 +141,30 @@ pub mv struct SplitView : Control {
 			CGRect bounds = ((CGRect(*)(id, SEL))objc_msgSend)(sv, sel_registerName("bounds"));
 			BOOL vertical = ((BOOL(*)(id, SEL))objc_msgSend)(sv, sel_registerName("isVertical"));
 			double thickness = ((double(*)(id, SEL))objc_msgSend)(sv, sel_registerName("dividerThickness"));
-			double cross = vertical ? bounds.size.width : bounds.size.height;
-			double extent = vertical ? bounds.size.height : bounds.size.width;
+			// Panes advance along `extent` and every pane spans `cross`.
+			double extent = vertical ? bounds.size.width : bounds.size.height;
+			double cross = vertical ? bounds.size.height : bounds.size.width;
 			double cursor = 0;
 			for (long i = 0; i < n; i++) {
 				id pane = ((id(*)(id, SEL, unsigned long))objc_msgSend)(
 					subviews, sel_registerName("objectAtIndex:"), (unsigned long)i);
 				CGRect f = ((CGRect(*)(id, SEL))objc_msgSend)(pane, sel_registerName("frame"));
-				double size = (i < n - 1)
-					? (vertical ? f.size.height : f.size.width)
-					: (extent - cursor);
-				CGRect nf = vertical ? CGRectMake(0, cursor, cross, size)
-					: CGRectMake(cursor, 0, size, cross);
+				double size;
+				if (i < n - 1) {
+					size = vertical ? f.size.width : f.size.height;
+					// Clamp: later panes keep at least their dividers' room,
+					// so the kept sizes can never overflow the bounds.
+					double room = extent - cursor - (n - 1 - i) * thickness;
+					if (size > room) size = room;
+				} else {
+					size = extent - cursor;
+				}
+				if (size < 0) size = 0;
+				CGRect nf = vertical
+					? CGRectMake(cursor, 0, size, cross)
+					: CGRectMake(0, cursor, cross, size);
 				((void(*)(id, SEL, CGRect))objc_msgSend)(pane, sel_registerName("setFrame:"), nf);
-				cursor = (vertical ? nf.origin.y + nf.size.height : nf.origin.x + nf.size.width)
-					+ thickness;
+				cursor += size + thickness;
 			}
 		}
 		static id g_split_delegate = 0;
