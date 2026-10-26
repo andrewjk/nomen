@@ -25,23 +25,34 @@ function has_trait(type_name: string, trait_name: string, status: CheckStatus): 
 }
 
 /**
- * The element type of a `List<T>` value, from either the generic annotation
- * (`List` + type args) or the monomorphized struct (`List_Diff` via its
- * recorded source args) — mirroring the lookup in check_access_node.
- * Returns undefined when the List struct isn't in scope at all (e.g. bare
- * parse without the System library) or the element can't be recovered, in
- * which case the loop falls through to the array-or-Enumerable error.
+ * The element type of a `List<T>` or `StableList<T>` value, from either the
+ * generic annotation (`List` + type args) or the monomorphized struct
+ * (`List_Diff` via its recorded source args) — mirroring the lookup in
+ * check_access_node. StableList iterates ELEMENTS exactly like List (same
+ * shape: a `length` field plus a bounds-contracted `.at`); its element
+ * borrows survive `push` (docs/GOOSE.md), so a borrow held across the loop
+ * isn't invalidated by pushes in the body.
+ * Returns undefined when the struct isn't in scope at all (e.g. bare parse
+ * without the System library) or the element can't be recovered, in which
+ * case the loop falls through to the array-or-Enumerable error.
  */
 function list_element_type(t: Type, status: CheckStatus): Type | undefined {
-	if (t.name === "List") {
-		const generic = status.structs.find((s) => s.name === "List");
+	if (t.name === "List" || t.name === "StableList") {
+		const generic = status.structs.find((s) => s.name === t.name);
 		if (!generic || !generic.functions.some((f) => f.name === "at")) return undefined;
 		return t.type_args?.[0];
 	}
 	const struct = t.name ? status.structs.find((s) => s.name === t.name) : undefined;
-	if (!struct?.name.startsWith("List_")) return undefined;
+	if (!struct || !(struct.name.startsWith("List_") || struct.name.startsWith("StableList_")))
+		return undefined;
 	if (!struct.functions.some((f) => f.name === "at")) return undefined;
 	return struct.source_type_args?.[0];
+}
+
+// Display name for the `'ref' iteration` diagnostic: spell the container the
+// way the user wrote it, so a StableList loop isn't misreported as List<T>.
+function iterated_container_name(t: Type): string {
+	return t.name === "StableList" || t.name?.startsWith("StableList_") ? "StableList<T>" : "List<T>";
 }
 
 export default function check_for_loop_node(for_loop: ForLoopNode, status: CheckStatus) {
@@ -105,7 +116,7 @@ export default function check_for_loop_node(for_loop: ForLoopNode, status: Check
 			if (for_loop.item_is_ref) {
 				add_error(
 					status,
-					`'ref' iteration is not supported for List<T> — index explicitly (for i of 0..xs.length) and use .set to write back`,
+					`'ref' iteration is not supported for ${iterated_container_name(list_type)} — index explicitly (for i of 0..xs.length) and use .set to write back`,
 					for_loop.item.start,
 				);
 				return;
@@ -141,7 +152,7 @@ export default function check_for_loop_node(for_loop: ForLoopNode, status: Check
 			if (for_loop.item_is_ref) {
 				add_error(
 					for_status,
-					`'ref' iteration is not supported for List<T> — index explicitly (for i of 0..xs.length) and use .set to write back`,
+					`'ref' iteration is not supported for ${iterated_container_name(list_type)} — index explicitly (for i of 0..xs.length) and use .set to write back`,
 					for_loop.item.start,
 				);
 				return;

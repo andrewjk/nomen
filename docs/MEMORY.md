@@ -364,6 +364,17 @@ out of a field, `move_T`/`pop` out of a container, and `field = owned_local`,
 which is a transfer, not an alias (verified: the value survives the donor
 scope with balanced frees).
 
+**`StableList<T>` element borrows survive `push`.** The container is
+append-only — no `pop`/`set`/`remove_at`/`slot_ptr` — so growth reallocs the
+slot array (a memmove) but displaces no element resources: a borrow from
+`.at` holds the slot's bytes (value tier) or an element instance pointer
+(class tier), never a slot address. The checker exempts `StableList.push`
+(only) from borrow invalidation (`push_keeps_element_borrows` in
+src/check/check_access_node.ts); every other `ref self` call invalidates as
+usual. The interior-address form (`ref T x = sl.at(i)`) is a compile error —
+`slot_ptr` is deliberately absent, because slot addresses do not survive
+realloc. See docs/GOOSE.md and test/stable-list.test.ts.
+
 ## Known Soundness Gaps
 
 These are memory-safety holes that are **not** currently caught at compile time.

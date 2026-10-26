@@ -548,6 +548,39 @@ return is a bare word in x0 on both backends). The window binding list
 low-level ring primitive). Full design, checker rules, staging, and the
 alternatives rejected: [`docs/HANDLERS.md`](./docs/HANDLERS.md).
 
+## StableList v2 — inline chunked slab (interior addresses, the JsonTree replacement)
+
+`StableList<T>` shipped (Oct 2026, [docs/GOOSE.md](./docs/GOOSE.md)) with
+List's storage — one `Buffer<T>` slab, doubling `realloc` growth. The
+borrow-survives-`push` rule is sound over that because a borrow from `.at`
+holds the slot's BYTES (value tier) or an element INSTANCE POINTER (class
+tier), and a realloc memmove displaces neither. What it does NOT provide is
+interior-address stability: slot addresses move on every growth, which is
+why `slot_ptr` is deliberately absent and the `ref T x = sl.at(i)` form is
+a compile error, and why a value-tier borrow cannot be written through
+(`r.handle = x` writes the binding's byte copy, not the slot).
+
+The Goose endgame is a **chunked slab**: a directory of fixed-capacity
+chunks, each chunk allocated once and never resized, so slot addresses
+never move and `slot_ptr` can exist safely (push stays exempt). That
+unlocks the marquee use case — replacing `JsonTree`'s `unsafe` slab
+(`idx * 7 + 2` hand-encoded element layout, manual strdup/`free_text`/`reset`
+lifecycle in core/System/Text/JsonTree.nm) with checked in-place slot
+mutation.
+
+Why it wasn't done inline: the directory is the hard part in today's
+machinery. Chunk Buffers stored in a container would be read out as
+Buffer VALUES, and a value copy of a Buffer aliases the slab while
+inheriting its `#destroy` — a double-free footgun (no container-of-containers
+value usage exists anywhere in core/ or test/). The candidate design is
+chunk access entirely inside StableList's raw bodies (same `T_SIZE`/
+`T_FAT`/`T_destroy` substitution Buffer uses), with typed slot store/load
+delegated to a temporarily-repointed Buffer instance at the raw level only
+(no destroy window), on both backends. Needs a careful symbol-naming/
+dispatch review per backend before building. Also worth folding in: a
+packed/variable-size element mode (GOOSE.md item 6), which shares the
+chunk machinery.
+
 ## Orphaned `???`/`!!!` tokenizer symbols
 
 The ziglings test corpus (removed 2026-10-24 — early scaffolding: 56 files

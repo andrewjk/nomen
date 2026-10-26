@@ -1,0 +1,77 @@
+/**
+ * A grow-only, ordered list whose element borrows SURVIVE `push`
+ * (docs/GOOSE.md, "Stable grow-only arrays").
+ *
+ * The contract that makes that sound: the list is APPEND-ONLY — there is
+ * deliberately no `pop`/`set`/`remove_at`/`slot_ptr`. Growth may realloc the
+ * slot array (a memmove), but a borrow taken from `.at` holds either the
+ * slot's BYTES (value-tier elements) or an element INSTANCE POINTER (class/
+ * Box/trait tier) — never a slot ADDRESS — and growth displaces no element
+ * resources, so those borrows stay valid across any number of pushes. The
+ * checker exempts `push` from borrow invalidation for this type and this
+ * type only (see check_access_node.ts); every other `ref self` call still
+ * invalidates. `slot_ptr` is omitted on purpose: an interior slot address
+ * would not survive growth's realloc, so the `ref T x = sl.at(i)` form is a
+ * compile error here rather than a dangling alias. Element resources are
+ * reclaimed exactly once, when the list's scope ends.
+ **/
+pub mv struct StableList<T> {
+	var length = 0
+	var items = Buffer<T>()
+
+	pub func push = (ref self, mv T value) {
+		if self.length >= self.items.cap {
+			var new_cap = 4
+			var int old_cap = self.items.cap
+			if old_cap >= 4 {
+				new_cap = old_cap * 2
+			}
+			self.items.grow(new_cap)
+		}
+		self.items.store(self.length, value)
+		self.length += 1
+	}
+
+	pub inline func at = (self, int i: i >= 0 && i < self.length, out T) {
+		return self.items.load(i)
+	}
+
+	// Bounds-checked access: `fallback` when i is outside [0, self.length) —
+	// for indices that can't be proven at compile time and out-of-range is an
+	// expected case.
+	pub func at_or = (self, int i, T fallback, out T) {
+		if i >= 0 && i < self.length {
+			return self.at(i)
+		}
+		return fallback
+	}
+
+	// Bounds-checked access that traps when i is outside [0, self.length) —
+	// for indices that can't be proven at compile time and out-of-range is a
+	// bug, not a case.
+	pub func at_or_panic = (self, int i, out T) {
+		if i >= 0 && i < self.length {
+			return self.at(i)
+		}
+		panic("index out of range")
+	}
+
+	// A deep copy: a fresh StableList<T> with an independent copy of every
+	// element. For mv element types (strings, mv value structs) each slot in
+	// the copy owns its own heap data (Buffer deep-copies on store), so the
+	// source and the copy share nothing. Not available for class/trait
+	// element types (the copy would share the stored instances — the checker
+	// rejects it). The element is bound to a local before push — the
+	// monomorphized body is never re-checked, so it can't rely on check-time
+	// call-arg hoisting for struct element types.
+	pub func copy = (self, out StableList<T>) {
+		var dst = StableList<T>()
+		var i = 0
+		while i < self.length {
+			var T v = self.at(i)
+			dst.push(v)
+			i += 1
+		}
+		return dst
+	}
+}

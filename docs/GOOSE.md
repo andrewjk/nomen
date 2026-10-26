@@ -85,6 +85,21 @@ node — an arena variant with narrow index links is the Goose-style
 comparison (their suite runs both forms), added as a labeled variant rather
 than replacing the allocator-honest original.
 
+**Shipped (Oct 2026):** `StableList<T>` (core/System/StableList.nm) —
+grow-only, List-shaped storage, with `push` exempted from borrow
+invalidation (`push_keeps_element_borrows` in
+src/check/check_access_node.ts; the only such exemption besides Atomic's
+frozen-root carve-out). A borrow from `.at` holds the slot's bytes (value
+tier) or an element instance pointer (class tier), and growth's realloc
+memmove displaces neither — so borrows survive any number of pushes, and a
+`Box` element can be written through after pushes (the Goose
+`first.weight = 99.5` demo works; test/stable-list.test.ts pins it).
+`for of` iterates elements like List. The interior-address form
+(`ref T x = sl.at(i)`) is deliberately a compile error — `slot_ptr` is
+absent, because slot ADDRESSES do not survive realloc. The chunked inline
+slab (interior addresses, zero-copy value tier, the JsonTree replacement)
+is recorded in FOLLOWUP.md as StableList v2.
+
 ### 3. `return E from f` — statically checked multi-frame error return
 
 ```goose

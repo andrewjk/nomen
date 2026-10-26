@@ -952,7 +952,7 @@ export function check_access_function_node(
 			);
 			return false;
 		}
-		if (owner) {
+		if (owner && !push_keeps_element_borrows(target_type, func)) {
 			invalidate_borrows_of(status, owner);
 		}
 	}
@@ -1054,6 +1054,25 @@ export function check_access_function_node(
 	}
 
 	return result;
+}
+
+/**
+ * StableList.push keeps element borrows alive (docs/GOOSE.md, "Stable
+ * grow-only arrays"): the list is append-only — no `pop`/`set`/`remove_at` —
+ * so growth reallocs the slot array (a memmove) but displaces no element
+ * resources. A borrow taken from `.at` holds the slot's bytes (value tier)
+ * or an element instance pointer (class/Box/trait tier), never a slot
+ * ADDRESS — StableList deliberately has no `slot_ptr`, the one form that
+ * would dangle under growth. Every other `ref self` method on every type
+ * still invalidates as usual. (Name-based like the Atomic frozen-root
+ * exemption above; checker-side only — the builds' pure-borrow destroy
+ * suppression already keys on the `.at` accessor family and needs no
+ * counterpart.)
+ */
+function push_keeps_element_borrows(target_type: Type, func: FunctionNode): boolean {
+	if (func.name !== "push") return false;
+	const name = target_type.name;
+	return name === "StableList" || (!!name && name.startsWith("StableList_"));
 }
 
 // Infer a function's return type by scanning its body for return statements
