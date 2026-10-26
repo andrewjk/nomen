@@ -40,7 +40,14 @@ export function is_container_borrow_accessor_name(name: string): boolean {
 		name === "slice" ||
 		name === "get_or" ||
 		name === "get_or_panic" ||
-		name === "load"
+		name === "load" ||
+		// StableList's directory-chunk load (docs/GOOSE.md): the tail half of
+		// its `at` — a slot borrow exactly like `load`, routed through the
+		// chunk directory. In the family so a two-branch `at` (chunk 0 via
+		// `load`, later chunks via `load_tail`) classifies as a borrow on
+		// BOTH branches — a heap join would make the desugared `for of`
+		// binding free the slot's pointer.
+		name === "load_tail"
 	);
 }
 

@@ -2539,6 +2539,30 @@ function substitute_raw_in_node(
 			// Substitute T_destroy placeholder with the monomorphized element's
 			// destroy symbol (e.g. ClassBuffer<Animal>.#destroy calls Animal_destroy).
 			value = value.replace(new RegExp(`\\b${param}_destroy\\b`, "g"), `${type}_destroy`);
+			// Delegated-callee tokens: raw bodies in chunked containers
+			// (StableList's directory chunks) reach the element buffer's mono'd
+			// methods through a stack view. The glued symbol
+			// (`Buffer_int_load_from`) cannot spell the param word-bounded —
+			// `\bT\b` fails between underscores — so the body writes the token
+			// alone and the substitution supplies the prefix, exactly like
+			// T_destroy above. The prefix follows the same reference-type
+			// routing as the field rewrite: Box/trait elements live in a
+			// ClassBuffer<T>, everything else in a Buffer<T> (identical
+			// {_vt, data, cap} layout, so the stack view works for both).
+			const buffer_prefix = is_reference_type_arg(new Type(type), structs, traits)
+				? "ClassBuffer_"
+				: "Buffer_";
+			value = value.replace(
+				new RegExp(`\\b${param}_load_from\\b`, "g"),
+				`${buffer_prefix}${type}_load_from`,
+			);
+			value = value.replace(
+				new RegExp(`\\b${param}_buffer_destroy\\b`, "g"),
+				`${buffer_prefix}${type}_destroy`,
+			);
+			// The mono buffer's C type name itself, for declaring a stack view
+			// over a foreign slab: `T_buffer _tmp;` → `Buffer_Res _tmp;`.
+			value = value.replace(new RegExp(`\\b${param}_buffer\\b`, "g"), `${buffer_prefix}${type}`);
 			// T_NEEDS_STRDUP: 1 when T is `string` (a `char*` literal pointer that
 			// must be heap-copied per slot when stored into a mv container,
 			// e.g. `Array.with("x", n)` storing the literal in n slots), 0

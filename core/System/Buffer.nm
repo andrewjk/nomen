@@ -127,7 +127,6 @@ pub struct Buffer<T> {
 		self.data = calloc(size, 8)
 		return self.cap
 	}
-
 	internal func grow_int = (ref self, int needed, out int: out >= needed) {
 		if self.cap >= needed {
 			return self.cap
@@ -168,6 +167,67 @@ pub struct Buffer<T> {
 		lsl x3, x1, #3
 		add x0, x0, x3
 		str x2, [x0]
+		```
+	}
+
+	// Labeled delegation point for raw-body callers in other containers
+	// (StableList's chunked storage calls this). Deliberately a RAW bitwise
+	// slot load — NOT a delegation to `load`: the owning-specialized `load`
+	// body materializes an owned copy (strdup) for string elements, while
+	// the accessor-family classification of every name that reaches user
+	// bindings (`at`, `load_tail` → this) promises a BORROW — the slot keeps
+	// sole ownership and the caller's binding is never freed. A strdup here
+	// would pair a counted allocation with a borrow binding that never frees
+	// it (audit LEAK).
+	internal func load_from = (self, int i: i >= 0 && i < self.cap, out T) {
+		```
+		#arch: c
+		return ((T*)(unsigned long long)self->data)[i];
+		```
+		```
+		#arch: aarch64
+		// x19 = self, x1 = i. The return register convention is per type
+		// KIND: `string` returns the fat pair in x0/x1 (T_FAT folds to 1),
+		// composites larger than 8 bytes return through the x8 sret buffer,
+		// scalars are width-matched into x0.
+		mov x14, #T_FAT
+		cmp x14, #1
+		b.eq .Lbuffer_load_from_fat
+		ldr x0, [x19, #8]
+		mov x3, #T_SIZE
+		madd x1, x1, x3, xzr
+		add x0, x0, x1
+		cmp x3, #8
+		b.gt .Lbuffer_load_from_copy
+		cmp x3, #1
+		b.eq .Lbuffer_load_from_1
+		cmp x3, #2
+		b.eq .Lbuffer_load_from_2
+		cmp x3, #4
+		b.eq .Lbuffer_load_from_4
+		ldr x0, [x0]
+		b .Lbuffer_load_from_end
+		.Lbuffer_load_from_1:
+		ldrb w0, [x0]
+		b .Lbuffer_load_from_end
+		.Lbuffer_load_from_2:
+		ldrh w0, [x0]
+		b .Lbuffer_load_from_end
+		.Lbuffer_load_from_4:
+		ldr w0, [x0]
+		b .Lbuffer_load_from_end
+		.Lbuffer_load_from_copy:
+		mov x1, x0
+		mov x0, x8
+		mov x2, x3
+		bl _memcpy
+		b .Lbuffer_load_from_end
+		.Lbuffer_load_from_fat:
+		ldr x0, [x19, #8]
+		lsl x2, x1, #4
+		add x0, x0, x2
+		ldp x0, x1, [x0]
+		.Lbuffer_load_from_end:
 		```
 	}
 

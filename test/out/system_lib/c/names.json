@@ -57,6 +57,7 @@
 	"Map_string_int",
 	"_Tuple_string_string",
 	"Map_string_string",
+	"Buffer_uint64",
 	"Stringable",
 	"Equatable",
 	"Hashable",

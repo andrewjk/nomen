@@ -1,44 +1,159 @@
 /**
- * A grow-only, ordered list whose element borrows SURVIVE `push`
- * (docs/GOOSE.md, "Stable grow-only arrays").
+ * A grow-only, ordered list whose element borrows survive `push` — including
+ * interior slot ADDRESSES (docs/GOOSE.md, "Stable grow-only arrays"; v2).
  *
- * The contract that makes that sound: the list is APPEND-ONLY — there is
- * deliberately no `pop`/`set`/`remove_at`/`slot_ptr`. Growth may realloc the
- * slot array (a memmove), but a borrow taken from `.at` holds either the
- * slot's BYTES (value-tier elements) or an element INSTANCE POINTER (class/
- * Box/trait tier) — never a slot ADDRESS — and growth displaces no element
- * resources, so those borrows stay valid across any number of pushes. The
- * checker exempts `push` from borrow invalidation for this type and this
- * type only (see check_access_node.ts); every other `ref self` call still
- * invalidates. `slot_ptr` is omitted on purpose: an interior slot address
- * would not survive growth's realloc, so the `ref T x = sl.at(i)` form is a
- * compile error here rather than a dangling alias. Element resources are
- * reclaimed exactly once, when the list's scope ends.
+ * Storage is CHUNKED so that no slot address ever moves: chunk 0 is the
+ * `items` Buffer, allocated once at exactly 256 slots and never resized;
+ * chunks 1.. live in the `chunks` directory as raw slab pointers (each
+ * `calloc`'d once at 256 slots). The directory itself may realloc — it holds
+ * slab ADDRESSES, which survive the move. That is what lets `slot_ptr`
+ * exist: `ref T x = sl.at(i)` binds the slot itself, the checker's `push`
+ * exemption keeps the alias alive across pushes, and writes through it land
+ * in the list. The list is still append-only — no `pop`/`set`/`remove_at` —
+ * because displacing an element would invalidate its borrows.
+ *
+ * The tail pieces (store/load/destroy for directory chunks) are raw bodies
+ * and unsafe Nomen delegating to Buffer's mono'd methods through a stack
+ * `Buffer_T` view — `load_from` is a bitwise slot load (the borrow form;
+ * never the strdup-copy the owning-specialized `load` would materialize),
+ * and `#destroy` destroys each directory chunk through a view whose `cap`
+ * is the chunk's FILL count, so no uninitialized slot is ever walked.
+ * Chunk 0 (`items`), `stage`, and the directory's own slab are reclaimed by
+ * the ordinary field destroy: the specialized per-element destroy guards
+ * zeroed slots and frees its slab.
  **/
 pub mv struct StableList<T> {
 	var length = 0
+	// Chunk 0: an exact-cap 256-slot slab, allocated on first push, never
+	// grown — a realloc would move its slots and invalidate `slot_ptr` aliases.
 	var items = Buffer<T>()
+	// Directory of chunk-1.. slab addresses (uint64 words, `calloc`'d slabs of
+	// 256 T_SIZE bytes). The directory's slot array may realloc; the slabs it
+	// points at never move.
+	var chunks = Buffer<uint64>()
+	// One-slot staging buffer for tail pushes: the typed store lands here
+	// (deep-copy semantics via Buffer's specialized `store`), then the raw
+	// relay byte-moves the slot into the chunk and zeroes it — sole ownership
+	// transfers, `Buffer.shift`'s contract. This keeps every T-value crossing
+	// inside Nomen's typed machinery: raw bodies only ever relay addresses.
+	var stage = Buffer<T>()
 
 	pub func push = (ref self, mv T value) {
-		if self.length >= self.items.cap {
-			var new_cap = 4
-			var int old_cap = self.items.cap
-			if old_cap >= 4 {
-				new_cap = old_cap * 2
-			}
-			self.items.grow(new_cap)
+		if self.items.cap == 0 {
+			self.items.alloc(256)
 		}
-		self.items.store(self.length, value)
+		if self.length < self.items.cap {
+			self.items.store(self.length, value)
+		} else {
+			var int dir_index = self.length / 256 - 1
+			if dir_index >= self.chunks.cap {
+				self.chunks.grow(dir_index + 1)
+			}
+			if self.stage.cap == 0 {
+				self.stage.alloc(1)
+			}
+			self.stage.store(0, value)
+			self.push_tail(dir_index, self.length % 256)
+		}
 		self.length += 1
 	}
 
-	pub inline func at = (self, int i: i >= 0 && i < self.length, out T) {
-		return self.items.load(i)
+	// Append the staged value (stage slot 0) into directory chunk `dir_index`
+	// at `slot`: calloc the slab on first touch (zero words mark empty
+	// chunks), then byte-move stage → chunk and zero the stage slot — exactly
+	// one owner afterwards, so mv elements need no strdup on this path.
+	internal func push_tail = (ref self, int dir_index, int slot) {
+		```
+		#arch: c
+		if (((unsigned long long*)self->chunks.data)[dir_index] == 0) {
+			((unsigned long long*)self->chunks.data)[dir_index] =
+				(unsigned long long)calloc(256, T_SIZE);
+		}
+		unsigned long long chunk = ((unsigned long long*)self->chunks.data)[dir_index];
+		memcpy((void*)(chunk + (unsigned long long)slot * T_SIZE),
+			(void*)self->stage.data,
+			T_SIZE);
+		memset((void*)self->stage.data, 0, T_SIZE);
+		```
+		```
+		#arch: aarch64
+		// x19 = self, x1 = dir_index, x2 = slot.
+		stp x20, x21, [sp, #-16]!
+		mov x20, x1
+		mov x21, x2
+		sub sp, sp, #16
+		ldr x9, [x19, #48]
+		ldr x10, [x9, x20, lsl #3]
+		cmp x10, #0
+		b.ne .Lsl_pt_have
+		mov x0, #256
+		mov x1, #T_SIZE
+		bl _nomen_calloc_wrap
+		ldr x9, [x19, #48]
+		str x0, [x9, x20, lsl #3]
+		.Lsl_pt_have:
+		ldr x0, [x9, x20, lsl #3]
+		mov x1, #T_SIZE
+		mul x2, x21, x1
+		add x0, x0, x2
+		ldr x1, [x19, #72]
+		mov x2, #T_SIZE
+		bl _memcpy
+		ldr x0, [x19, #72]
+		mov x1, #0
+		mov x2, #T_SIZE
+		bl _memset
+		add sp, sp, #16
+		ldp x20, x21, [sp], #16
+		```
 	}
 
-	// Bounds-checked access: `fallback` when i is outside [0, self.length) —
-	// for indices that can't be proven at compile time and out-of-range is an
-	// expected case.
+	pub inline func at = (self, int i: i >= 0 && i < self.length, out T) {
+		if i < self.items.cap {
+			return self.items.load(i)
+		}
+		return self.load_tail(i)
+	}
+
+	// The directory-chunk half of `at`: a slot borrow exactly like `load`,
+	// routed through the chunk directory, delegating to the mono'd
+	// `load_from` through a stack view over the foreign slab. Named in the
+	// borrow-accessor family (string_return_analysis.ts) so a two-branch
+	// `at` classifies as a borrow on both branches.
+	internal func load_tail = (self, int i, out T) {
+		```
+		#arch: c
+		long dir_index = i / 256L - 1L;
+		long slot = i % 256L;
+		T_buffer _tmp;
+		_tmp._vt = 0;
+		_tmp.data = ((unsigned long long*)self->chunks.data)[dir_index];
+		_tmp.cap = 256;
+		return T_load_from(&_tmp, slot);
+		```
+		```
+		#arch: aarch64
+		// x19 = self, x1 = i. The result forwards: x0 for T_SIZE <= 16, or
+		// the x8 sret slot — which is this function's OWN sret slot, passed
+		// through untouched, so the callee writes the caller's destination
+		// directly.
+		sub sp, sp, #32
+		mov x9, #256
+		sdiv x10, x1, x9
+		msub x1, x10, x9, x1
+		sub x10, x10, #1
+		ldr x11, [x19, #48]
+		ldr x12, [x11, x10, lsl #3]
+		str xzr, [sp]
+		str x12, [sp, #8]
+		mov x13, #256
+		str x13, [sp, #16]
+		mov x0, sp
+		bl T_load_from
+		add sp, sp, #32
+		```
+	}
+
 	pub func at_or = (self, int i, T fallback, out T) {
 		if i >= 0 && i < self.length {
 			return self.at(i)
@@ -54,6 +169,43 @@ pub mv struct StableList<T> {
 			return self.at(i)
 		}
 		panic("index out of range")
+	}
+
+	// Address of element `i`: the ELEMENT BORROW primitive — `ref T x =
+	// sl.at(i)` lowers to this, binding the alias to the slot itself. The
+	// address is stable across any number of pushes (slabs are allocated
+	// once and never relocate), and the checker exempts `push` from borrow
+	// invalidation for this type, so the alias stays live and writes through
+	// it land in the list. The length constraint is the caller's proof
+	// obligation, exactly like `.at`.
+	pub func slot_ptr = (ref self, int i: i >= 0 && i < self.length, out ptr T) {
+		if i < self.items.cap {
+			return self.items.slot_ptr(i)
+		}
+		return self.slot_ptr_tail(i)
+	}
+
+	// The slot address in a directory chunk (pure address arithmetic — the
+	// slab never moves, so the pointer stays valid for the list's lifetime).
+	internal func slot_ptr_tail = (self, int i, out ptr T) {
+		```
+		#arch: c
+		long dir_index = i / 256L - 1L;
+		long slot = i % 256L;
+		return (T*)(unsigned long long)((unsigned long long*)self->chunks.data)[dir_index] + slot;
+		```
+		```
+		#arch: aarch64
+		// x19 = self, x1 = i — the slot address, returned in x0.
+		mov x9, #256
+		sdiv x10, x1, x9
+		msub x1, x10, x9, x1
+		sub x10, x10, #1
+		ldr x11, [x19, #48]
+		ldr x12, [x11, x10, lsl #3]
+		mov x13, #T_SIZE
+		madd x0, x1, x13, x12
+		```
 	}
 
 	// A deep copy: a fresh StableList<T> with an independent copy of every
@@ -73,5 +225,87 @@ pub mv struct StableList<T> {
 			i += 1
 		}
 		return dst
+	}
+
+	// Chunk 0 first: `move` hands each element out (the binding's scope exit
+	// destroys it — exactly once), then `alloc(0)` retires the empty slab so
+	// the field destroy walks zero slots. Directory chunks: raw loop, each
+	// destroyed through a view whose cap is the chunk's FILL count (never
+	// its 256 capacity — uninitialized slots hold zeroes, and a user
+	// `#destroy` over zeroed elements is garbage). The directory's own slot
+	// array is reclaimed by the ordinary field destroy (plain free — pointer
+	// words own nothing).
+	// Only the directory slabs (chunks 1..) need explicit teardown — they are
+	// raw pointer words the field destroy cannot see — so each is destroyed
+	// through a cap=filled view (per-element destroy + slab free). Chunk 0
+	// (`items`) and `stage` are reclaimed by the ordinary field destroy: the
+	// specialized per-element destroy guards zeroed slots (a calloc'd slot
+	// skips the element destroy instead of firing the user `#destroy` on
+	// unconstructed storage) and frees its own slab; pointer words own
+	// nothing.
+	func #destroy = (ref self) {
+		self.destroy_tails()
+	}
+
+	// Raw: destroy directory chunks 1.. — per chunk, `filled` slots + the
+	// slab, via `T_buffer_destroy` on a cap=filled view.
+	internal func destroy_tails = (ref self) {
+		```
+		#arch: c
+		long n_dir = (self->length - 1L) / 256L;
+		for (long c = 0; c < n_dir; c++) {
+			unsigned long long slab = ((unsigned long long*)self->chunks.data)[c];
+			if (slab == 0) {
+				continue;
+			}
+			long filled = (c == n_dir - 1L) ? (self->length - n_dir * 256L) : 256L;
+			T_buffer _tmp;
+			_tmp._vt = 0;
+			_tmp.data = slab;
+			_tmp.cap = filled;
+			T_buffer_destroy(&_tmp);
+		}
+		```
+		```
+		#arch: aarch64
+		// x19 = self. n_dir = (length - 1) / 256; per chunk, a cap=filled
+		// view on the stack and `bl T_buffer_destroy`.
+		sub sp, sp, #48
+		ldr x20, [x19, #8]
+		sub x20, x20, #1
+		mov x9, #256
+		sdiv x20, x20, x9
+		str xzr, [sp, #24]
+		.Lsl_dt_loop:
+		ldr x21, [sp, #24]
+		cmp x21, x20
+		b.ge .Lsl_dt_end
+		lsl x22, x21, #3
+		ldr x9, [x19, #48]
+		ldr x10, [x9, x22]
+		cmp x10, #0
+		b.eq .Lsl_dt_next
+		mov x11, #256
+		cmp x21, x20
+		b.ne .Lsl_dt_full
+		ldr x11, [x19, #8]
+		msub x11, x20, x9, x11
+		b .Lsl_dt_have
+		.Lsl_dt_full:
+		mov x11, #256
+		.Lsl_dt_have:
+		str xzr, [sp]
+		str x10, [sp, #8]
+		str x11, [sp, #16]
+		mov x0, sp
+		bl T_buffer_destroy
+		.Lsl_dt_next:
+		ldr x21, [sp, #24]
+		add x21, x21, #1
+		str x21, [sp, #24]
+		b .Lsl_dt_loop
+		.Lsl_dt_end:
+		add sp, sp, #48
+		```
 	}
 }

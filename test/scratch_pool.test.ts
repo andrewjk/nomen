@@ -61,6 +61,18 @@ function main_loops(code: string): number[] {
 	}
 	return nums;
 }
+
+// The `.while_N` label counter is global across the whole compilation, so
+// adding a looping library file shifts every number — labels must always be
+// resolved within main's body, never by whole-file indexOf. Returns main's
+// body bounds (after the `_main:` label, before the next function label).
+function main_bounds(code: string): [number, number] {
+	const start = code.indexOf("_main:");
+	const after_start = start + "_main:".length;
+	const next_fn = code.slice(after_start).match(/^[A-Za-z_][A-Za-z0-9_]*:/m);
+	const end = next_fn && next_fn.index !== undefined ? after_start + next_fn.index : code.length;
+	return [after_start, end];
+}
 const EXHAUSTED_SHAPE = `
 import System
 
@@ -103,9 +115,10 @@ pub func main = () {
 
 test("pool-exhausted call-free loop pins its receiver into a scratch register", () => {
 	const code = compile(EXHAUSTED_SHAPE, true);
+	const [m0] = main_bounds(code);
 	const [, w] = main_loops(code);
-	const loop_start = code.indexOf(`.while_${w}:`);
-	const loop = code.slice(loop_start, code.indexOf(`.end_while_${w}:`));
+	const loop_start = code.indexOf(`.while_${w}:`, m0);
+	const loop = code.slice(loop_start, code.indexOf(`.end_while_${w}:`, m0));
 	const pre = code.slice(0, loop_start);
 	// The derivation runs once, BEFORE the header, into x4–x8 (x8 first).
 	expect(pre).toMatch(/add x9, x29, #\d+\nldr x9, \[x9, #8\]\nmov x[4-8], x9\n/);
@@ -115,7 +128,7 @@ test("pool-exhausted call-free loop pins its receiver into a scratch register", 
 	// Nothing to spill, nothing to restore: the bracket neither spills a
 	// displaced occupant nor reloads the scratch register at exit.
 	expect(loop).not.toMatch(/str x[4-8], \[x29, #\d+\]/);
-	const after = code.slice(code.indexOf(`.end_while_${w}:`));
+	const after = code.slice(code.indexOf(`.end_while_${w}:`, m0));
 	expect(after.slice(0, 200)).not.toMatch(/ldr x[4-8], \[x29, #\d+\]\nmov x[4-8],/);
 });
 
@@ -174,8 +187,9 @@ pub func main = () {
 `,
 		true,
 	);
+	const [m0] = main_bounds(code);
 	const [, w] = main_loops(code);
-	const loop = code.slice(code.indexOf(`.while_${w}:`), code.indexOf(`.end_while_${w}:`));
+	const loop = code.slice(code.indexOf(`.while_${w}:`, m0), code.indexOf(`.end_while_${w}:`, m0));
 	expect(loop.length).toBeGreaterThan(0);
 	// The scan refuses (x5 in the raw text): no scratch pin — the
 	// derivation stays inline, re-run per iteration. Soundness first.
@@ -194,8 +208,9 @@ test("kill-switch restores the pre-tranche shape", () => {
 		const off = compile(EXHAUSTED_SHAPE);
 		// With the region gate off, the derivation rides inside the loop
 		// and no scratch register is ever borrowed.
+		const [o0] = main_bounds(off);
 		const [, w] = main_loops(off);
-		const loop = off.slice(off.indexOf(`.while_${w}:`), off.indexOf(`.end_while_${w}:`));
+		const loop = off.slice(off.indexOf(`.while_${w}:`, o0), off.indexOf(`.end_while_${w}:`, o0));
 		expect(loop.length).toBeGreaterThan(0);
 		expect(loop).not.toMatch(/mov x[4-8], x9/);
 		expect(off).not.toEqual(on);
@@ -288,9 +303,10 @@ pub func main = () {
 
 test("base-fold: the pin folds an invariant base and accesses index the bare induction", () => {
 	const code = compile(FOLD_SHAPE, true);
+	const [m0] = main_bounds(code);
 	const [, w] = main_loops(code);
-	const loop_start = code.indexOf(`.while_${w}:`);
-	const loop = code.slice(loop_start, code.indexOf(`.end_while_${w}:`));
+	const loop_start = code.indexOf(`.while_${w}:`, m0);
+	const loop = code.slice(loop_start, code.indexOf(`.end_while_${w}:`, m0));
 	const pre = code.slice(0, loop_start);
 	// The fold register is preloaded once, before the header (base 4 × 8).
 	expect(pre).toMatch(/add x8, x\d+, #32\n/);

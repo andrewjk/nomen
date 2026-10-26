@@ -85,20 +85,22 @@ node — an arena variant with narrow index links is the Goose-style
 comparison (their suite runs both forms), added as a labeled variant rather
 than replacing the allocator-honest original.
 
-**Shipped (Oct 2026):** `StableList<T>` (core/System/StableList.nm) —
-grow-only, List-shaped storage, with `push` exempted from borrow
-invalidation (`push_keeps_element_borrows` in
+**Shipped (Oct 2026, v2 — chunked):** `StableList<T>`
+(core/System/StableList.nm) — chunk-0 `items` allocated once at exactly 256
+slots, chunks 1.. as raw slab pointers in a `chunks` directory; `push`
+exempted from borrow invalidation (`push_keeps_element_borrows` in
 src/check/check_access_node.ts; the only such exemption besides Atomic's
-frozen-root carve-out). A borrow from `.at` holds the slot's bytes (value
-tier) or an element instance pointer (class tier), and growth's realloc
-memmove displaces neither — so borrows survive any number of pushes, and a
-`Box` element can be written through after pushes (the Goose
-`first.weight = 99.5` demo works; test/stable-list.test.ts pins it).
-`for of` iterates elements like List. The interior-address form
-(`ref T x = sl.at(i)`) is deliberately a compile error — `slot_ptr` is
-absent, because slot ADDRESSES do not survive realloc. The chunked inline
-slab (interior addresses, zero-copy value tier, the JsonTree replacement)
-is recorded in FOLLOWUP.md as StableList v2.
+frozen-root carve-out). Because no slab is ever resized, even interior slot
+ADDRESSES are stable: `ref T x = sl.at(i)` lowers to `slot_ptr`, the alias
+survives any number of pushes, and writes through it land in the list (the
+Goose `first.weight = 99.5` demo works; test/stable-list.test.ts pins it).
+`for of` iterates elements like List. The list is append-only (no
+`pop`/`set`/`remove_at`) — displacing an element would invalidate its
+borrows. The directory-tail store/load/destroy are raw bodies and unsafe
+Nomen delegating to Buffer's mono'd methods (`load_from` bitwise-borrow,
+`T_buffer_destroy` on a cap=filled view); the checker-side exemption and
+both backends' pure-borrow destroy suppression carry the semantics. The
+JsonTree replacement (the marquee use) rides on this directly.
 
 ### 3. `return E from f` — statically checked multi-frame error return
 

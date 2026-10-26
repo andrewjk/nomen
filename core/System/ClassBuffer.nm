@@ -118,6 +118,15 @@ pub struct ClassBuffer<T> {
 		```
 	}
 
+	// Labeled delegation point for raw-body callers in other containers
+	// (StableList's chunked storage calls this): `load` is `inline` — spliced
+	// at Nomen call sites, so no label exists for a raw C call or `bl` to
+	// target. Mirror of Buffer.load_from (class slots are pointer words —
+	// the pointer load IS the borrow form).
+	internal func load_from = (self, int i: i >= 0 && i < self.cap, out T) {
+		return self.load(i)
+	}
+
 	// Store the owned class pointer `val` into slot `i`, which MUST be fresh
 	// (calloc'd, or zeroed by mv/move_int). Takes OWNERSHIP of `val`
 	// (`mv`): the slot's #destroy reclaims the instance, so the caller must

@@ -548,38 +548,73 @@ return is a bare word in x0 on both backends). The window binding list
 low-level ring primitive). Full design, checker rules, staging, and the
 alternatives rejected: [`docs/HANDLERS.md`](./docs/HANDLERS.md).
 
-## StableList v2 — inline chunked slab (interior addresses, the JsonTree replacement)
+## StableList v2 — SHIPPED (Oct 2026); remaining: the JsonTree swap
 
-`StableList<T>` shipped (Oct 2026, [docs/GOOSE.md](./docs/GOOSE.md)) with
-List's storage — one `Buffer<T>` slab, doubling `realloc` growth. The
-borrow-survives-`push` rule is sound over that because a borrow from `.at`
-holds the slot's BYTES (value tier) or an element INSTANCE POINTER (class
-tier), and a realloc memmove displaces neither. What it does NOT provide is
-interior-address stability: slot addresses move on every growth, which is
-why `slot_ptr` is deliberately absent and the `ref T x = sl.at(i)` form is
-a compile error, and why a value-tier borrow cannot be written through
-(`r.handle = x` writes the binding's byte copy, not the slot).
+**Shipped** (docs/GOOSE.md item 2): `StableList<T>` is now CHUNKED — chunk 0
+(`items`) allocated once at exactly 256 slots, chunks 1.. as raw slab
+pointers in a `chunks` directory (each `calloc`'d once; the directory itself
+may realloc — it holds slab ADDRESSES). No slab ever moves, so `slot_ptr`
+exists: `ref T x = sl.at(i)` binds the slot itself, the checker's `push`
+exemption keeps the alias alive, and writes through it land in the list.
+The directory-tail pieces are unsafe Nomen + raw bodies delegating to
+Buffer's mono'd methods (`load_slab` bitwise-borrow, `T_buffer_destroy` on
+a cap=filled view); `#destroy` reclaims directory slabs through those views
+(the per-element destroy's zero-slot guard makes even a full-cap walk safe).
+Chunk 0, `stage`, and the directory slab are reclaimed by the ordinary
+field destroy.
 
-The Goose endgame is a **chunked slab**: a directory of fixed-capacity
-chunks, each chunk allocated once and never resized, so slot addresses
-never move and `slot_ptr` can exist safely (push stays exempt). That
-unlocks the marquee use case — replacing `JsonTree`'s `unsafe` slab
-(`idx * 7 + 2` hand-encoded element layout, manual strdup/`free_text`/`reset`
-lifecycle in core/System/Text/JsonTree.nm) with checked in-place slot
-mutation.
+**Remaining (the marquee): swap `JsonTree`'s `unsafe` slab for
+`StableList<JsonNode>`** — deleting the `idx * 7 + 2` hand-encoded element
+layout and the manual strdup/`free_text`/`reset` lifecycle
+(core/System/Text/JsonTree.nm). The one behavioral gap: `JsonTree.set_text`
+writes a strdup'd pointer into a slot in place — the StableList equivalent
+is the checked interior mutation (`ref JsonNode n = tree.nodes.at(i)`,
+then `n.text = ...`), which now exists. Perf note: json-serde resets the
+tree per iteration, so the swap should be perf-neutral; the win is deleting
+the unsafe. A packed/variable-size element mode (GOOSE.md item 6) remains a
+future sibling, sharing the chunk machinery.
 
-Why it wasn't done inline: the directory is the hard part in today's
-machinery. Chunk Buffers stored in a container would be read out as
-Buffer VALUES, and a value copy of a Buffer aliases the slab while
-inheriting its `#destroy` — a double-free footgun (no container-of-containers
-value usage exists anywhere in core/ or test/). The candidate design is
-chunk access entirely inside StableList's raw bodies (same `T_SIZE`/
-`T_FAT`/`T_destroy` substitution Buffer uses), with typed slot store/load
-delegated to a temporarily-repointed Buffer instance at the raw level only
-(no destroy window), on both backends. Needs a careful symbol-naming/
-dispatch review per backend before building. Also worth folding in: a
-packed/variable-size element mode (GOOSE.md item 6), which shares the
-chunk machinery.
+## Compiler gaps surfaced by StableList v2 (all dodged, none fixed)
+
+Three checker/backend gaps were hit while building the chunked StableList
+and worked around in the container's design. Each is a real limitation worth
+fixing at its source when a compiler touch lands nearby:
+
+- **Nested generics in generic struct bodies don't monomorphize.** A field
+  shaped `List<Box<Buffer<T>>>` (any Generic<G<T>> inside a generic struct's
+  own body) clones bodies whose degraded mono names (`Box_Buffer`,
+  `Buffer_Box_Buffer_int`) survive into instantiated code — the checker
+  passes but the link fails (`Buffer_Box_Buffer_int_grow` referenced from
+  `StableList_int_init`, never emitted; the Arena.nm header's
+  "a `List<int>` field would need its own monomorphization from inside a
+  generic struct body" comment warns about exactly this). This is what
+  killed the first chunked design. Workaround: the directory stores raw
+  `uint64` slab words, and typed slot access delegates through Buffer's
+  mono'd `load_from`/`store` bodies. Proper fix: recursive mono
+  materialization for nested args (monomorphize already flattens one level
+  via `flatten_nested_generic_arg`; the gap is args that still reference
+  the outer struct's own type params).
+- **`uint64` params are dropped from raw-method C signatures.** A raw-body
+  method `(self, uint64 slab, int i, out T)` emitted a 2-param C signature
+  (`uint64 slab` silently missing) while call sites passed 3 args — caught
+  as "too many arguments to function call" only when the class-tier mono
+  was linked. Workaround: keep 64-bit values in `self->data`-style fields
+  (the `load_from(self, i)` shape) rather than params. Fix: the C param
+  emitter's type mapping needs a `uint64` → `unsigned long long` arm.
+- **`T_SIZE` is unresolved in unsafe-Nomen foreign-call args (aarch64).**
+  `calloc(256, T_SIZE)` inside `unsafe { }` emitted the literal symbol
+  `T_SIZE` (call-argument positions skip the ValueNode constant
+  substitution), while the same constant in expression positions
+  (`slot * T_SIZE`) folds fine. Workaround: bind it first —
+  `var int element = T_SIZE` — and use the local. Fix: the unsafe-block
+  call-arg lowering must run the same ValueNode substitution the raw blocks
+  get (src/check/check_function_call_node.ts:2491 handles Nomen ValueNodes,
+  but the aarch64 unsafe call-arg emitter bypasses it).
+
+Also fixed in passing: through-box field access on a generic receiver
+(`box.__value`'s declared bare-param type is now substituted with the
+receiver's type argument — check_access_node.ts), which generic containers
+with Box-typed storage need.
 
 ## Orphaned `???`/`!!!` tokenizer symbols
 

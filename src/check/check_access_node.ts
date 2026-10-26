@@ -520,6 +520,19 @@ function check_access_field_node(
 			return false;
 		} else {
 			node.type = field.type;
+			// Materialization can be deferred for a receiver whose type args
+			// are themselves generic (`Box<Buffer<T>>` inside a generic body —
+			// the nested arg defers the mono), leaving `field.type` as the
+			// DECLARED bare param (`Box.__value: T`). Substitute the
+			// receiver's type argument so the through-box access resolves
+			// against the argument's type, exactly as the mono'd struct's
+			// field would have.
+			if (struct?.is_generic && target_type.type_args?.length === struct.type_params.length) {
+				const param_index = struct.type_params.indexOf(node.type.name);
+				if (param_index >= 0) {
+					node.type = target_type.type_args[param_index];
+				}
+			}
 			// Reading through a const-ref base keeps the const: `w.__value`
 			// on a `Box<T>` binding extracted from a const source is itself a
 			// const reference (the box-transparent rewrite routes through
