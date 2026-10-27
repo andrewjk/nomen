@@ -119,10 +119,15 @@ export default function build_declaration_node(
 	if (node.in_place_push_slot && node.value?.node_type === "func_call") {
 		const recv_type = type_from_value_node(node.value);
 		if (recv_type?.name) {
-			const list_mono = `List_${recv_type.name}`;
+			const list_mono = `${node.in_place_push_slot.container}_${recv_type.name}`;
 			const elem_c = recv_type.name === "string" ? "nomen_string" : `struct ${recv_type.name}`;
+			const stable = list_mono.startsWith("StableList");
 			status.code += `${c_function_name(`${list_mono}_reserve`)}(&${node.in_place_push_slot.receiver}, 1L);\n`;
-			status.code += `((${elem_c}*)(unsigned long long)${node.in_place_push_slot.receiver}.items.data)[${node.in_place_push_slot.receiver}.length] = `;
+			if (stable) {
+				status.code += `*( ${elem_c}*)(unsigned long long)${c_function_name(`${list_mono}_append_slot_ptr`)}(&${node.in_place_push_slot.receiver}) = `;
+			} else {
+				status.code += `((${elem_c}*)(unsigned long long)${node.in_place_push_slot.receiver}.items.data)[${node.in_place_push_slot.receiver}.length] = `;
+			}
 			build_node(node.value, status);
 			status.code += ";\n";
 			return;

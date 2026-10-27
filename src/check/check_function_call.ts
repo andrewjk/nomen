@@ -1637,16 +1637,21 @@ export default function check_function_call(
 		// lowers can't drift from this decision. Every clause below closes a
 		// hole documented in in_place_push.ts.
 		const in_place_container =
-			// The container push: `List.push = (ref self, mv T value)`. The
+			// The container push: `push = (ref self, mv T value)`. The
 			// resolved callee is a mono clone whose `scope` back-pointer may be
 			// unset, so the container is identified through the RECEIVER's
-			// type (generic `List` at check time): it must be the System List
-			// and actually carry the `reserve` half the lowering calls.
+			// type (generic `List`/`StableList` at check time): it must be the
+			// System List or StableList and actually carry the `reserve` half
+			// the lowering calls.
 			func.name === "push" &&
 			func.params.length === 2 &&
 			func_param === func.params[1] &&
 			func_param.is_moved &&
-			(target_type?.name === "List" || !!target_type?.name?.startsWith("List_")) &&
+			!!target_type?.name &&
+			(target_type.name === "List" ||
+				target_type.name.startsWith("List_") ||
+				target_type.name === "StableList" ||
+				target_type.name.startsWith("StableList_")) &&
 			!!status.structs
 				.find((s) => s.name === target_type?.name)
 				?.functions.some((f) => f.name === "reserve" && f.has_body) &&
@@ -1725,7 +1730,10 @@ export default function check_function_call(
 				!decl.in_place_push_slot &&
 				value_use_count(decl.name, enclosing_function_node(status)) === 1
 			) {
-				decl.in_place_push_slot = { receiver: self_value! };
+				decl.in_place_push_slot = {
+					receiver: self_value!,
+					container: target_type!.name,
+				};
 				(node as AccessFunctionCallNode).in_place_donor_name = decl.name;
 			}
 		}

@@ -44,10 +44,12 @@ export default class DeclarationNode extends BaseNode {
 	 * the immediately following statement is `items.push(mv <name>)` and
 	 * this binding has no other use — the binding itself never materializes
 	 * (no storage, no scope-exit free; the push is just the length bump).
-	 * Stamped by check_function_call; the push carries the mirror stamp
+	 * `container` is the generic container name (`List`/`StableList`) — the
+	 * mono is `${container}_${elem}` at build time. Stamped by
+	 * check_function_call; the push carries the mirror stamp
 	 * (`AccessFunctionCallNode.in_place_donor_name`).
 	 */
-	in_place_push_slot?: { receiver: string };
+	in_place_push_slot?: { receiver: string; container: string };
 	func_params?: ParameterNode[];
 	func_return_type?: Type;
 	scope?: BaseNode;

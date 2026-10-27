@@ -379,6 +379,98 @@ pub func main = (Init init) {
 	});
 });
 
+describe("in-place push: StableList (chunked storage)", () => {
+	test("string pushes read back across the chunk-0 boundary", async () => {
+		const input = `
+import System
+
+func fake_parse = (string line, out string) {
+	return line.copy()
+}
+
+pub func main = (Init init) {
+	var StableList<string> items = StableList<string>()
+	var int i = 0
+	while i < 300; i += 1 {
+		items.push(fake_parse("\\{i}"))
+	}
+	Console.write("\\{items.at_or_panic(0)}\\{items.at_or_panic(299)}\\{items.length}")
+}
+`;
+		// 300 pushes cross chunk 0 (256 slots) into the directory slabs —
+		// the append_slot_ptr path — and audit mode polices every slot.
+		await build_and_check_output(input, "inplace_slist_growth", "0299300", true);
+	});
+
+	test("first and middle slots survive directory growth", async () => {
+		const input = `
+import System
+
+func fake_parse = (string line, out string) {
+	return line.copy()
+}
+
+pub func main = (Init init) {
+	var StableList<string> items = StableList<string>()
+	items.push(fake_parse("first"))
+	var int i = 1
+	while i < 300; i += 1 {
+		items.push(fake_parse("x"))
+	}
+	Console.write("\\{items.at_or_panic(0)}\\{items.at_or_panic(257)}\\{items.length}")
+}
+`;
+		// Slot 0 was pushed before the directory ever grew; slot 257 lives in
+		// a directory slab — both must read back exactly.
+		await build_and_check_output(input, "inplace_slist_slots", "firstx300", true);
+	});
+
+	test("named donor on a StableList lands in the slot", async () => {
+		const input = `
+import System
+
+func fake_parse = (string line, out string) {
+	return line.copy()
+}
+
+pub func main = (Init init) {
+	var StableList<string> items = StableList<string>()
+	var p = fake_parse("s")
+	items.push(mv p)
+	items.push(fake_parse("t"))
+	Console.write("\\{items.at_or_panic(0)}\\{items.at_or_panic(1)}")
+}
+`;
+		await build_and_check_output(input, "inplace_slist_donor", "st", true);
+	});
+
+	test("struct elements land in chunk slots", async () => {
+		const input = `
+import System
+
+mv struct Vec {
+	var int x
+	var int y
+}
+
+func make_vec = (int x, int y, out Vec) {
+	return Vec(x, y)
+}
+
+pub func main = (Init init) {
+	var StableList<Vec> vs = StableList<Vec>()
+	var int i = 0
+	while i < 260; i += 1 {
+		vs.push(make_vec(i, i + 1))
+	}
+	mv Vec v = vs.at_or_panic(259)
+	Console.write("\\{vs.length}:\\{v.x},\\{v.y}")
+}
+`;
+		await build_and_check_output(input, "inplace_slist_struct", "260:259,260", true);
+	});
+});
+
 describe("in-place push: checker gating", () => {
 	test("a program with no push-of-call sites checks clean", async () => {
 		const parsed = parse_with_imports(`

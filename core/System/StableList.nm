@@ -39,16 +39,11 @@ pub mv struct StableList<T> {
 	var stage = Buffer<T>()
 
 	pub func push = (ref self, mv T value) {
-		if self.items.cap == 0 {
-			self.items.alloc(256)
-		}
+		self.reserve(1)
 		if self.length < self.items.cap {
 			self.items.store(self.length, value)
 		} else {
 			var int dir_index = self.length / 256 - 1
-			if dir_index >= self.chunks.cap {
-				self.chunks.grow(dir_index + 1)
-			}
 			if self.stage.cap == 0 {
 				self.stage.alloc(1)
 			}
@@ -56,6 +51,104 @@ pub mv struct StableList<T> {
 			self.push_tail(dir_index, self.length % 256)
 		}
 		self.length += 1
+	}
+
+	// Capacity for `extra` more appends: allocates chunk 0, grows the
+	// directory, and pre-callocs the target slab (the raw `ensure_chunk`'s
+	// zero-check keeps `push_tail`'s own calloc idempotent). Splitting it
+	// out of `push` is what makes the compiler's in-place push lowering
+	// possible: the destination slot for a `push(parse(x))` argument must
+	// exist before the argument call runs, so the backend reserves first
+	// and constructs the callee's result directly into the append slot
+	// (docs/GOOSE.md #4). Byte-identical policy for extra=1: the same
+	// alloc/dir-grow/first-touch sequence push's inline branches performed.
+	internal func reserve = (ref self, int extra: extra >= 0, out int) {
+		if self.items.cap == 0 {
+			self.items.alloc(256)
+		}
+		if self.length + extra > self.items.cap {
+			var int last = self.length + extra - 1
+			var int dir_index = last / 256 - 1
+			if dir_index >= self.chunks.cap {
+				self.chunks.grow(dir_index + 1)
+			}
+			self.ensure_chunk(dir_index)
+		}
+		return self.items.cap
+	}
+
+	// Calloc the directory chunk's slab on first touch (zero words mark
+	// empty chunks) — push_tail's calloc, hoisted so an in-place append can
+	// construct into the slot before `push_tail` ever runs.
+	internal func ensure_chunk = (ref self, int dir_index) {
+		```
+		#arch: c
+		if (((unsigned long long*)self->chunks.data)[dir_index] == 0) {
+			((unsigned long long*)self->chunks.data)[dir_index] =
+				(unsigned long long)calloc(256, T_SIZE);
+		}
+		```
+		```
+		#arch: aarch64
+		// x0 = self, x1 = dir_index. Stack-less raw functions get no
+		// `mov x19, x0` prologue, so load self explicitly and keep it in
+		// x19 (the prologue saved the caller's) with dir_index in x20
+		// (saved here — x20 is not covered by the prologue) across the
+		// calloc call.
+		stp x19, x20, [sp, #-16]!
+		mov x19, x0
+		mov x20, x1
+		ldr x9, [x19, #48]
+		ldr x10, [x9, x20, lsl #3]
+		cmp x10, #0
+		b.ne .Lsl_ec_have
+		mov x0, #256
+		mov x1, #T_SIZE
+		bl _calloc
+		ldr x9, [x19, #48]
+		str x0, [x9, x20, lsl #3]
+		.Lsl_ec_have:
+		ldp x19, x20, [sp], #16
+		```
+	}
+
+	// Address of the APPEND slot (element `length`) — reserve must have run,
+	// so the slot exists. The in-place push lowering constructs the argument
+	// call's result straight through this address; the stage relay never
+	// engages (sole ownership transfers as surely as push_tail's).
+	internal func append_slot_ptr = (ref self, out ptr T) {
+		```
+		#arch: c
+		unsigned long long idx = (unsigned long long)self->length;
+		if (idx < 256) {
+			return (T*)(unsigned long long)self->items.data + idx;
+		}
+		unsigned long long chunk = ((unsigned long long*)self->chunks.data)[idx / 256 - 1];
+		return (T*)chunk + (idx % 256);
+		```
+		```
+		#arch: aarch64
+		// x0 = self (stack-less raw: x19 is NOT loaded — read the fields
+		// from x0 and return the slot address in x0; the body calls
+		// nothing, so x9-x13 scratch is safe). Field offsets mirror
+		// push_tail's: length @8, items.data @24, chunks.data @48 (the
+		// Buffer mono is {_vt, data, cap} = 24 bytes).
+		ldr x9, [x0, #8]
+		ldr x10, [x0, #24]
+		cmp x9, #256
+		b.lt .Lsl_as_c0
+		and x11, x9, #255
+		lsr x12, x9, #8
+		sub x12, x12, #1
+		ldr x13, [x0, #48]
+		ldr x10, [x13, x12, lsl #3]
+		b .Lsl_as_have
+		.Lsl_as_c0:
+		mov x11, x9
+		.Lsl_as_have:
+		mov x12, #T_SIZE
+		madd x0, x11, x12, x10
+		```
 	}
 
 	// Append the staged value (stage slot 0) into directory chunk `dir_index`

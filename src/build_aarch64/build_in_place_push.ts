@@ -107,33 +107,41 @@ function emit_reserve_and_slot(
 	elem_name: string,
 	elem_is_string: boolean,
 ): number {
-	const elem_size = elem_is_string ? 16 : get_struct_size(elem_name, status);
-	const items_off = get_field_offset(list_mono, "items", status);
-	const length_off = get_field_offset(list_mono, "length", status);
-	const buffer_mono = `Buffer_${elem_name}`;
-	const data_off = items_off + get_field_offset(buffer_mono, "data", status);
-
 	// 1. Reserve capacity for the new element. `extra` is push's own policy
 	// argument; the `out int` result (the new capacity) is discarded.
 	emit_var_address(status, "x0", receiver);
 	emit_asm(status, `mov x1, #1\n`);
 	emit_asm(status, `bl ${list_mono}_reserve\n`);
 
-	// 2. The destination slot's address, spilled to the frame.
-	emit_var_address(status, "x9", receiver);
-	ensure_newline(status);
-	emit_asm(status, `ldr x10, [x9, #${data_off}]\n`);
-	emit_asm(status, `ldr x11, [x9, #${length_off}]\n`);
-	const shift = Math.log2(elem_size);
-	if (Number.isInteger(shift)) {
-		emit_asm(status, `lsl x11, x11, #${shift}\n`);
+	// 2. The destination slot's address. `list` derives it inline (data +
+	// length * elem_size); `stable` calls the container's raw
+	// append_slot_ptr (chunk 0, or the directory chunk's slab). Either way
+	// the address is spilled to the frame.
+	if (list_mono.startsWith("StableList")) {
+		emit_var_address(status, "x0", receiver);
+		emit_asm(status, `bl ${list_mono}_append_slot_ptr\n`);
 	} else {
-		emit_asm(status, `mov x12, #${elem_size}\n`);
-		emit_asm(status, `mul x11, x11, x12\n`);
+		const elem_size = elem_is_string ? 16 : get_struct_size(elem_name, status);
+		const items_off = get_field_offset(list_mono, "items", status);
+		const length_off = get_field_offset(list_mono, "length", status);
+		const buffer_mono = `Buffer_${elem_name}`;
+		const data_off = items_off + get_field_offset(buffer_mono, "data", status);
+		emit_var_address(status, "x9", receiver);
+		ensure_newline(status);
+		emit_asm(status, `ldr x10, [x9, #${data_off}]\n`);
+		emit_asm(status, `ldr x11, [x9, #${length_off}]\n`);
+		const shift = Math.log2(elem_size);
+		if (Number.isInteger(shift)) {
+			emit_asm(status, `lsl x11, x11, #${shift}\n`);
+		} else {
+			emit_asm(status, `mov x12, #${elem_size}\n`);
+			emit_asm(status, `mul x11, x11, x12\n`);
+		}
+		emit_asm(status, `add x11, x10, x11\n`);
+		emit_asm(status, `mov x0, x11\n`);
 	}
-	emit_asm(status, `add x11, x10, x11\n`);
 	const slot = allocate_stack_space(status, 8);
-	emit_asm(status, `str x11, [x29, #${slot}]\n`);
+	emit_asm(status, `str x0, [x29, #${slot}]\n`);
 	return slot;
 }
 
@@ -162,9 +170,10 @@ export function build_in_place_donor_declaration(
 	if (!slot_stamp || !node.value || node.value.node_type !== "func_call") return false;
 	const elem_type = type_from_value_node(node.value);
 	if (!elem_type?.name) return false;
-	// The container mono name derives from the element (`List_string`) — the
-	// same name the checker's receiver resolves to post-monomorphization.
-	const list_mono = `List_${elem_type.name}`;
+	// The container mono name: the checker's generic container name
+	// (`List`/`StableList`) plus the element — the same name the receiver
+	// resolves to post-monomorphization.
+	const list_mono = `${slot_stamp.container}_${elem_type.name}`;
 	const elem_is_string = elem_type.name === "string";
 	const slot = emit_reserve_and_slot(
 		status,

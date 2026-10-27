@@ -176,10 +176,25 @@ bump alone (`AccessFunctionCallNode.in_place_donor_name`). The binding never
 materializes: no storage, no string-field records, no scope-exit free; a
 panic between the construct and the bump leaves the count untouched, so
 teardown frees only the buffer. A second use of the name disqualifies the
-donor and keeps the ordinary (correct) hoisted path. Still open: richer
-argument trees (they need the x8 re-preset threading widened beyond the two
-strdup sites), growable-container returns (the bigger half — the binding's
-home as sret target), and StableList (chunked slot math).
+donor and keeps the ordinary (correct) hoisted path.
+
+**Shipped (Oct 2026, tranche 3 — StableList):** the chunked container joins
+the guarantee. `StableList.reserve` (the alloc/dir-grow/first-touch prefix of
+push's own body) and a raw `append_slot_ptr` (the address of element
+`length` — chunk 0, or the directory chunk's slab, pre-calloc'd by reserve)
+are split out of `push`; the in-place lowering reserves, calls
+`append_slot_ptr`, constructs through the returned address, and bumps the
+length — the stage relay never engages, and the sole-ownership transfer is
+as direct as push_tail's. The raw bodies are stack-less-function-safe (they
+read self from x0 and self-save callee registers — stack-less raw functions
+get no `mov x19, x0` prologue) and hardcode the mono offsets push_tail's
+body already hardcodes. Chunk-boundary crossings (300 pushes), directory
+slabs, and donor forms are pinned in test/list_in_place_push.test.ts with
+audit mode policing every slot.
+
+Still open: richer argument trees (they need the x8 re-preset threading
+widened beyond the two strdup sites) and growable-container returns (the
+binding's home as sret target).
 
 ### 5. Contained task failure: `thread_spawn_contained`
 

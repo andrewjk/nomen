@@ -1399,7 +1399,14 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					if (facts) {
 						const elem_c = facts.elem_is_string ? "nomen_string" : `struct ${facts.elem_name}`;
 						status.code += `${c_function_name(`${facts.list_mono}_reserve`)}(&${facts.receiver}, 1L);\n`;
-						status.code += `((${elem_c}*)(unsigned long long)${facts.receiver}.items.data)[${facts.receiver}.length] = `;
+						if (facts.flavor === "stable") {
+							// Chunked storage: the raw append_slot_ptr returns the
+							// slot address (chunk 0, or the directory chunk's
+							// slab — reserve pre-calloc'd it).
+							status.code += `*( ${elem_c}*)(unsigned long long)${c_function_name(`${facts.list_mono}_append_slot_ptr`)}(&${facts.receiver}) = `;
+						} else {
+							status.code += `((${elem_c}*)(unsigned long long)${facts.receiver}.items.data)[${facts.receiver}.length] = `;
+						}
 						build_node(facts.arg, status);
 						// No trailing terminator: the statement wrapper adds the
 						// final `;\n` after the length bump.
