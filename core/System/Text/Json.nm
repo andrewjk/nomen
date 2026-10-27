@@ -5,7 +5,7 @@
 // Integer (de)serialization is handled by int.to_string() and int.parse()
 // (see int.nm), so this struct only deals with JSON strings.
 //
-// `parse` / `stringify` use a JsonTree pool (flat Buffer-backed slot array)
+// `parse` / `stringify` use a JsonTree pool (a flat StableList of nodes)
 // instead of per-node heap allocation, avoiding O(nodes) malloc/free per
 // parse cycle. The caller creates a JsonTree once and resets it per document.
 

@@ -54,7 +54,6 @@ element storage.
 | `Array.nm` (9)         | #init, at, first, set, at_end, slice, with, add, mul                                                                                                | Elements stored inline after the header (`(T*)((char*)self + sizeof(*self))`); `T_NEEDS_STRDUP` string-slot specialization                                                                        |
 | `BigInt.nm` (7)        | get, set, data_ptr, get_at, set_at, div128, mul_wide_hi                                                                                             | uint64-as-pointer limb access; `div128` needs `unsigned __int128` 128/64 divide (aarch64: `___udivti3`); `mul_wide_hi` needs the high half of a 64×64 product (`umulh`) — no 128-bit ops in Nomen |
 | `StringBuilder.nm` (5) | ensure, append_char, append_string, to_string, #destroy                                                                                             | uint64 byte-buffer handle + realloc/memcpy; `to_string` transfers ownership of the raw buffer                                                                                                     |
-| `JsonTree.nm` (3)      | alloc_node, free_text, set_text                                                                                                                     | strdup directly into the node slab (file header: cannot go through load/store without double-free)                                                                                                |
 | `String.nm` (3)        | at, set, slice                                                                                                                                      | Pointer arithmetic on the fat-string ptr (`self + start`, `(*self)[index]`) — this _is_ the primitive everything else indexes through                                                             |
 
 BigInt is the clearest example of the intended split: every algorithm
@@ -324,7 +323,7 @@ Nomen/C numbers:
 | ------------------------------------------------ | ----------------------------------------------- | -------------------------------------------------- |
 | nsieve                                           | `Buffer.store_or`/`load`                        | A (irreplaceable)                                  |
 | knucleotide                                      | `String.at`, `Buffer.load_int`/`store_int`      | A                                                  |
-| json-serde                                       | `JsonTree` slab, `StringBuilder`                | A                                                  |
+| json-serde                                       | `StableList` tails, `StringBuilder`             | A                                                  |
 | pidigits, edigits                                | `BigInt` limb access, `div128`, `mul_wide_hi`   | A                                                  |
 | binarytrees, merkletrees                         | class allocation only                           | A (alloc path)                                     |
 | lru                                              | `int.hash`, `Buffer`, `LinkedList` (pure Nomen) | A + C.2 (rewritten, measured parity)               |

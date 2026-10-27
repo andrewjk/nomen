@@ -100,7 +100,9 @@ borrows. The directory-tail store/load/destroy are raw bodies and unsafe
 Nomen delegating to Buffer's mono'd methods (`load_from` bitwise-borrow,
 `T_buffer_destroy` on a cap=filled view); the checker-side exemption and
 both backends' pure-borrow destroy suppression carry the semantics. The
-JsonTree replacement (the marquee use) rides on this directly.
+JsonTree replacement (the marquee use) rode on this directly (shipped:
+`JsonTree.nm` is a `StableList<JsonNode>` pool — its raw slab trio and
+manual text lifecycle are gone).
 
 ### 3. `return E from f` — statically checked multi-frame error return
 

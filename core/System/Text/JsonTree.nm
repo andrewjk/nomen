@@ -1,12 +1,16 @@
-// JsonTree: a flat pool of JSON tree nodes backed by a Buffer<JsonNode> slab.
-// Each node is a value struct stored at index N in the buffer; grow_T/store_T/
-// load_T handle the slab arithmetic. The caller creates a JsonTree once and
-// calls reset() per document to reuse the slab without reallocation.
+// JsonTree: a flat pool of JSON tree nodes backed by a StableList<JsonNode>.
+// Each node is a value struct appended to the list; node indices are list
+// indices, and list slots never move. The caller creates a JsonTree once and
+// calls reset() per document. The pool owns its node texts end to end —
+// set_text's interior field write frees the displaced text and the list's own
+// destroy reclaims every node — so there is no manual text lifecycle. (The
+// pre-StableList version kept a raw Buffer slab with a hand-encoded element
+// layout and a strdup/free dance; see docs/GOOSE.md, "Stable grow-only
+// arrays".)
 //
-// set_text is the one exception to the load/store pattern: it calls strdup
-// directly into the slab via raw code, because routing the strdup'd pointer
-// through an Nomen local would subject it to auto-free at scope exit, leaving
-// the slab's text pointer dangling.
+// Accessors read and write through the slot alias (`ref JsonNode n =
+// self.nodes.at(idx)`), the checked interior-mutation form: the alias binds
+// the slot itself, so field writes land in the list and reads copy nothing.
 
 // A node in a parsed JSON tree, stored by value in the pool.
 //   kind: 0=null, 1=true, 2=number, 3=string, 4=array, 5=object, 6=false
@@ -20,137 +24,101 @@ mv struct JsonNode {
 }
 
 /**
- * A flat, buffer-backed pool of JSON tree nodes — the parsed representation `Json.parse` produces
+ * A flat, pool-backed set of JSON tree nodes — the parsed representation `Json.parse` produces
  **/
 pub mv struct JsonTree {
-	var nodes = Buffer<JsonNode>()
-	var count = 0
+	var nodes = StableList<JsonNode>()
 
+	// Append a fresh node and return its index.
 	func alloc_node = (ref self, out int) {
-		var int idx = self.count
-		self.nodes.grow(idx + 1)
-		self.count = idx + 1
-		var default = JsonNode()
-		self.nodes.store(idx, default)
-		// store_T deep-copies the mv `text` field (strdup of the shared
-		// empty-string literal) into the slot. JsonTree manages node texts
-		// manually (set_text strdup's into the slab; free_text/release frees
-		// them; NULL means "no text"), so the slot must start NULL — free the
-		// strdup'd default and NULL it, or reset() would leak it. The slab
-		// slot layout: 56-byte JsonNode elements — 7 words — with the text
-		// pair at words 2 and 3 of each element.
-		unsafe {
-			var ptr uint64 slots = self.nodes.data as ptr uint64
-			var int t = idx * 7 + 2
-			var uint64 old = slots[t]
-			if old != 0 {
-				free(old)
-			}
-			slots[t] = 0
-			slots[t + 1] = 0
-		}
-		return idx
+		self.nodes.push(JsonNode())
+		return self.nodes.length - 1
 	}
 
-	// Free a node's strdup'd text pointer (set_text writes a heap pointer via
-	// raw strdup; this mirrors it). idx is x1, following set_text's layout.
-	func free_text = (ref self, int idx) {
-		unsafe {
-			var ptr uint64 slots = self.nodes.data as ptr uint64
-			var int t = idx * 7 + 2
-			var uint64 p = slots[t]
-			if p != 0 {
-				free(p)
-				slots[t] = 0
-				slots[t + 1] = 0
-			}
-		}
-	}
-
-	// Free every strdup'd text pointer before reusing the slab, otherwise
-	// re-parsing a document leaks the previous document's string/number texts.
+	// Drop the current document: the fresh StableList displaces the old one,
+	// whose destroy frees every node (texts included) and its slabs. The
+	// next parse starts from a clean pool.
 	func reset = (ref self) {
-		var i = 0
-		while i < self.count; i += 1 {
-			self.free_text(i)
-		}
-		self.count = 0
+		self.nodes = StableList<JsonNode>()
 	}
 
-	// Runs when the tree instance is destroyed (before its `nodes` buffer field
-	// is freed): release the current document's strdup'd node texts, which live
-	// raw in the slab and are otherwise invisible to the auto-destroy pass.
-	func #destroy = () {
-		var i = 0
-		while i < self.count; i += 1 {
-			self.free_text(i)
-		}
-		self.count = 0
-	}
-
-	// strdup directly into the slab — see file header for why this can't
-	// go through load_T/store_T. (Under the fat-string ABI the C body is
-	// emitted behind the _raw_ adapter, so `text` arrives as a thin char*;
-	// aarch64 receives the pair x2 = ptr, x3 = len.)
 	func set_text = (ref self, int idx, string text) {
-		unsafe {
-			var int len = text.length
-			var uint64 buf = malloc(len + 1)
-			memcpy(buf, (text as ptr char) as uint64, len)
-			memset(buf + len, 0, 1)
-			var ptr uint64 slots = self.nodes.data as ptr uint64
-			var int t = idx * 7 + 2
-			slots[t] = buf
-			slots[t + 1] = len
+		if idx < 0 || idx >= self.nodes.length {
+			panic("index out of range")
 		}
+		ref JsonNode n = self.nodes.at(idx)
+		n.text = text.copy()
 	}
 
 	func set_kind = (ref self, int idx, int val) {
-		var JsonNode n = self.nodes.load(idx)
+		if idx < 0 || idx >= self.nodes.length {
+			panic("index out of range")
+		}
+		ref JsonNode n = self.nodes.at(idx)
 		n.kind = val
-		self.nodes.store(idx, n)
 	}
 
 	func set_child = (ref self, int idx, int val) {
-		var JsonNode n = self.nodes.load(idx)
+		if idx < 0 || idx >= self.nodes.length {
+			panic("index out of range")
+		}
+		ref JsonNode n = self.nodes.at(idx)
 		n.child = val
-		self.nodes.store(idx, n)
 	}
 
 	func set_next = (ref self, int idx, int val) {
-		var JsonNode n = self.nodes.load(idx)
+		if idx < 0 || idx >= self.nodes.length {
+			panic("index out of range")
+		}
+		ref JsonNode n = self.nodes.at(idx)
 		n.next = val
-		self.nodes.store(idx, n)
 	}
 
 	func set_val = (ref self, int idx, int val) {
-		var JsonNode n = self.nodes.load(idx)
+		if idx < 0 || idx >= self.nodes.length {
+			panic("index out of range")
+		}
+		ref JsonNode n = self.nodes.at(idx)
 		n.val = val
-		self.nodes.store(idx, n)
 	}
 
 	func get_kind = (self, int idx, out int) {
-		var JsonNode n = self.nodes.load(idx)
+		if idx < 0 || idx >= self.nodes.length {
+			panic("index out of range")
+		}
+		ref JsonNode n = self.nodes.at(idx)
 		return n.kind
 	}
 
 	func get_text = (self, int idx, out string) {
-		var JsonNode n = self.nodes.load(idx)
+		if idx < 0 || idx >= self.nodes.length {
+			panic("index out of range")
+		}
+		ref JsonNode n = self.nodes.at(idx)
 		return n.text.copy()
 	}
 
 	func get_child = (self, int idx, out int) {
-		var JsonNode n = self.nodes.load(idx)
+		if idx < 0 || idx >= self.nodes.length {
+			panic("index out of range")
+		}
+		ref JsonNode n = self.nodes.at(idx)
 		return n.child
 	}
 
 	func get_next = (self, int idx, out int) {
-		var JsonNode n = self.nodes.load(idx)
+		if idx < 0 || idx >= self.nodes.length {
+			panic("index out of range")
+		}
+		ref JsonNode n = self.nodes.at(idx)
 		return n.next
 	}
 
 	func get_val = (self, int idx, out int) {
-		var JsonNode n = self.nodes.load(idx)
+		if idx < 0 || idx >= self.nodes.length {
+			panic("index out of range")
+		}
+		ref JsonNode n = self.nodes.at(idx)
 		return n.val
 	}
 }

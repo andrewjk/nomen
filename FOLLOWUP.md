@@ -548,32 +548,6 @@ return is a bare word in x0 on both backends). The window binding list
 low-level ring primitive). Full design, checker rules, staging, and the
 alternatives rejected: [`docs/HANDLERS.md`](./docs/HANDLERS.md).
 
-## StableList v2 — SHIPPED (Oct 2026); remaining: the JsonTree swap
-
-**Shipped** (docs/GOOSE.md item 2): `StableList<T>` is now CHUNKED — chunk 0
-(`items`) allocated once at exactly 256 slots, chunks 1.. as raw slab
-pointers in a `chunks` directory (each `calloc`'d once; the directory itself
-may realloc — it holds slab ADDRESSES). No slab ever moves, so `slot_ptr`
-exists: `ref T x = sl.at(i)` binds the slot itself, the checker's `push`
-exemption keeps the alias alive, and writes through it land in the list.
-The directory-tail pieces are unsafe Nomen + raw bodies delegating to
-Buffer's mono'd methods (`load_slab` bitwise-borrow, `T_buffer_destroy` on
-a cap=filled view); `#destroy` reclaims directory slabs through those views
-(the per-element destroy's zero-slot guard makes even a full-cap walk safe).
-Chunk 0, `stage`, and the directory slab are reclaimed by the ordinary
-field destroy.
-
-**Remaining (the marquee): swap `JsonTree`'s `unsafe` slab for
-`StableList<JsonNode>`** — deleting the `idx * 7 + 2` hand-encoded element
-layout and the manual strdup/`free_text`/`reset` lifecycle
-(core/System/Text/JsonTree.nm). The one behavioral gap: `JsonTree.set_text`
-writes a strdup'd pointer into a slot in place — the StableList equivalent
-is the checked interior mutation (`ref JsonNode n = tree.nodes.at(i)`,
-then `n.text = ...`), which now exists. Perf note: json-serde resets the
-tree per iteration, so the swap should be perf-neutral; the win is deleting
-the unsafe. A packed/variable-size element mode (GOOSE.md item 6) remains a
-future sibling, sharing the chunk machinery.
-
 ## Guarded non-zero index access can't discharge (`xs.at(1)` under `xs.length > 1`)
 
 Recorded 2026-10-27, while auditing the (since-fixed) core-trust naming

@@ -69,10 +69,10 @@ Console.write(v.to_string())
 });
 
 describe("Json parse/stringify", () => {
-	// Text strings stored in the tree pool (from StringBuilder.to_string) are
-	// heap-allocated and not individually freed by the pool's #destroy, so
-	// audit would report a leak. The output is still verified.
-	const opts = { arch: "aarch64", audit: false } as const;
+	// The tree pool owns its node texts end to end (StableList<JsonNode>:
+	// set_text's interior write frees the displaced text, the list's destroy
+	// reclaims every node), so audit mode's leak check passes.
+	const opts = { arch: "aarch64", audit: true } as const;
 
 	test("parse and stringify an array", async () => {
 		const input = `
@@ -111,5 +111,26 @@ Console.write(Json.stringify(ref tree, n))
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64" });
 		await check_output("json_parse_nested", result, '{"name":"a","coords":[[1,2],[3,4]]}', opts);
+	});
+
+	test("re-parsing the same tree with a new document replaces its content", async () => {
+		const input = `
+var string first = "{\\"a\\": 1}"
+var string second = "[9, \\"eight\\"]"
+var JsonTree tree = JsonTree()
+var int r1 = Json.parse(first, ref tree)
+var string s1 = Json.stringify(ref tree, r1)
+var int r2 = Json.parse(second, ref tree)
+var string s2 = Json.stringify(ref tree, r2)
+Console.write("\\{s1}|\\{s2}")
+`;
+		// Json.parse resets the pool per document: the displaced StableList's
+		// destroy frees every node (texts included), and the fresh pool parses
+		// the next document clean. Audit mode verifies nothing leaks across
+		// the reset.
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64" });
+		await check_output("json_tree_reset_reparse", result, '{"a":1}|[9,"eight"]', opts);
 	});
 });

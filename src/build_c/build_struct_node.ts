@@ -312,6 +312,8 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 			const old_variadic_params = status.function_variadic_params;
 			const old_current_function = status.current_function;
 			status.function_ref_params = new Set<string>();
+			const old_ref_locals = status.ref_local_vars;
+			status.ref_local_vars = new Set<string>();
 			// Seed with root-scope trait handles (visible from every body;
 			// class_vars is reset per body — BUGS.md #5).
 			status.class_vars = new Set<string>(status.trait_class_globals?.keys() ?? []);
@@ -367,6 +369,7 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 			status.code += `return self;\n`;
 			status.code += `}\n`;
 			status.function_ref_params = old_ref_params;
+			status.ref_local_vars = old_ref_locals;
 			status.class_vars = old_class_vars;
 			status.function_variadic_params = old_variadic_params;
 			status.self_is_ref = old_self_is_ref;
@@ -796,6 +799,8 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		}
 
 		const old_ref_params = status.function_ref_params;
+		const old_ref_locals = status.ref_local_vars;
+		status.ref_local_vars = new Set<string>();
 		const old_self_is_ref = status.self_is_ref;
 		const old_class_vars = status.class_vars;
 		const old_ref_class_params = status.ref_class_params;
@@ -1139,6 +1144,8 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		status.current_function_name = old_function_name;
 		status.current_function = old_current_function;
 		status.function_view_params = old_view_params;
+		status.function_ref_params = old_ref_params;
+		status.ref_local_vars = old_ref_locals;
 		status.variable_types = old_variable_types;
 	}
 	status.current_struct = old_current_struct;

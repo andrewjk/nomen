@@ -88,7 +88,7 @@ pub mv struct StableList<T> {
 		b.ne .Lsl_pt_have
 		mov x0, #256
 		mov x1, #T_SIZE
-		bl _nomen_calloc_wrap
+		bl _calloc
 		ldr x9, [x19, #48]
 		str x0, [x9, x20, lsl #3]
 		.Lsl_pt_have:
