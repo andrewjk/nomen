@@ -481,7 +481,14 @@ export default function build_return_node(
 			}
 			return;
 		}
-		status.code += `${type_prefix} _return_val = `;
+		// GOOSE.md #4 return-side NRVO: the binding constructed directly in
+		// `_return_val` (DeclarationNode.nrvo_sret) — the return declares
+		// nothing and copies nothing, but the builder's scope-exit cleanup
+		// (the enclosing hoisted temporaries' frees) still runs below.
+		const nrvo_elided = !!(node as ReturnNode).nrvo_elided;
+		if (!nrvo_elided) {
+			status.code += `${type_prefix} _return_val = `;
+		}
 		// `return self` from a value method: build_value_node dereferences
 		// the `self` pointer uniformly (so `var T c = self` and `return self`
 		// both copy the struct), so no special-case `*` is needed here.
@@ -721,7 +728,10 @@ export default function build_return_node(
 			status.code += `(struct ${mono_ret_name}){0}`;
 		} else if (returns_view_value) {
 			c_materialize_view_string(node.value, status);
-		} else {
+		} else if (!nrvo_elided) {
+			// GOOSE.md #4 return-side NRVO: the binding already constructed in
+			// `_return_val` (the NRVO declaration branch) — no value build, no
+			// re-declaration; the scope-exit cleanup below still runs.
 			emit_return_value(node.value, nir_value, status);
 		}
 		if (wrap_view_string_return) {

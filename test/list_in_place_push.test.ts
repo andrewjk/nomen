@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
 
-import build from "../src/build";
+import build, { default_platform } from "../src/build";
 import build_and_check_output from "./build_and_check_output";
 import parse_with_imports, { parse_raw } from "./parse_with_imports";
 
@@ -518,6 +518,92 @@ pub func main = (Init init) {
 }
 `;
 		await build_and_check_output(input, "inplace_slist_struct", "260:259,260", true);
+	});
+});
+
+describe("in-place push: return-side NRVO (GOOSE.md #4, container returns)", () => {
+	test("a returned binding constructs in the caller's variable", async () => {
+		const input = `
+import System
+
+func make_two = (out List<string>) {
+	var items = List<string>()
+	items.push("first")
+	items.push("second")
+	return items
+}
+
+func build = (out List<string>) {
+	var items = make_two()
+	return items
+}
+
+pub func main = (Init init) {
+	var result = build()
+	Console.write("\\{result.at_or_panic(0)}\\{result.at_or_panic(1)}\\{result.length}")
+}
+`;
+		// Every return of `build` is a bare `return items` and items is read
+		// nowhere else — the pure-transfer shape: the binding constructs in
+		// the caller's variable and the returns copy nothing.
+		void default_platform;
+		await build_and_check_output(input, "nrvo_return_list", "firstsecond2", true);
+		// C shape: the binding IS `_return_val` (constructed once, no local
+		// `items`, no copy at the return).
+		const parsed = parse_raw(input);
+		const result = build(parsed.root, { arch: "c" });
+		expect(result.errors ?? []).toEqual([]);
+		const code = result.code ?? "";
+		expect(code).toContain("struct List_string _return_val = make_two();");
+		const fn_start = code.indexOf("struct List_string build()");
+		const fn = code.slice(fn_start, code.indexOf("\n}\n", fn_start));
+		expect(fn).toContain("struct List_string _return_val = make_two();");
+		expect(fn).not.toContain("_return_val = items;");
+		expect(fn).not.toContain("items");
+	});
+
+	test("multiple returns of the same binding stay NRVO'd", async () => {
+		const input = `
+import System
+
+func build = (int n, out List<int>) {
+	var items = List<int>()
+	if n > 0 {
+		items.push(n)
+		return items
+	}
+	items.push(0)
+	return items
+}
+
+pub func main = (Init init) {
+	var a = build(5)
+	var b = build(0)
+	Console.write("\\{a.at_or_panic(0)}\\{b.at_or_panic(0)}")
+}
+`;
+		await build_and_check_output(input, "nrvo_return_multi", "50", true);
+	});
+
+	test("a binding with other reads keeps the ordinary lowering", async () => {
+		const input = `
+import System
+
+func build = (out List<int>) {
+	var items = List<int>()
+	items.push(7)
+	Console.write("\\{items.length}")
+	return items
+}
+
+pub func main = (Init init) {
+	var result = build()
+	Console.write("\\{result.at_or_panic(0)}")
+}
+`;
+		// items is READ inside build (the length print) — the return copies;
+		// both behaviors are identical, so this pins the fallback's runtime.
+		await build_and_check_output(input, "nrvo_return_other_reads", "17", true);
 	});
 });
 

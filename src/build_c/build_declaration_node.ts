@@ -133,6 +133,18 @@ export default function build_declaration_node(
 			return;
 		}
 	}
+	// GOOSE.md #4, return-side NRVO: the checker stamped this binding as the
+	// sole escape of a value-struct-returning function — construct the
+	// initializer directly into the function's `_return_val` slot (the
+	// return emits `return _return_val;` alone) and materialize nothing for
+	// the binding. Falls through when the shape changed under us.
+	if (node.nrvo_sret && node.value) {
+		const recv_type = mono_type_name(node.type);
+		status.code += `struct ${recv_type} _return_val = `;
+		build_node(node.value, status);
+		status.code += ";\n";
+		return;
+	}
 	// Evaluate override values into temporaries before the base lands in the
 	// destination (see hoist_field_overrides).
 	hoist_field_overrides(node.value, build_node, status, ";\n", node.name);

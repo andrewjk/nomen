@@ -649,7 +649,13 @@ export default function build_return_node(
 			// otherwise let a borrow through and the indirect caller would
 			// free it.
 			status.last_result_is_heap = false;
-			emit_return_value(node.value, nir_value, status);
+			// GOOSE.md #4 return-side NRVO: the binding has no storage — it
+			// IS the caller's sret buffer — so the value build (an address
+			// load that would fall back to a global `adr`) is skipped; the
+			// sret block below emits nothing either.
+			if (!(node as ReturnNode).nrvo_elided) {
+				emit_return_value(node.value, nir_value, status);
+			}
 		}
 		if (ret_is_float) {
 			ensure_newline(status);
@@ -974,6 +980,9 @@ export default function build_return_node(
 			? undefined
 			: get_enum_sret_size(status.function_return_type!.name, status);
 		if (ret_struct || ret_enum_size !== undefined) {
+			// GOOSE.md #4 return-side NRVO: the returned binding constructed
+			// directly in the caller's sret buffer (DeclarationNode.nrvo_sret)
+			// — the byte-copy is its own construct, not a copy.
 			if (status.return_buffer_stack_offset !== undefined) {
 				emit_asm(status, `ldr x8, [x29, #${status.return_buffer_stack_offset}]\n`);
 			}
@@ -984,7 +993,11 @@ export default function build_return_node(
 			// enum case shorthand (`.none`, checker-stamped to its mono name),
 			// which is not a declaration: its build already left x0 pointing at
 			// the tag+payload temp, so copy straight from x0.
-			if (node.value.node_type === "value" && !(node.value as ValueNode).is_enum_shorthand) {
+			if ((node as ReturnNode).nrvo_elided) {
+				// The data is already in the caller's buffer; the trailing
+				// nullable-flag / payload work below still applies where the
+				// shapes demand it (the NRVO gate excludes nullable returns).
+			} else if (node.value.node_type === "value" && !(node.value as ValueNode).is_enum_shorthand) {
 				const var_name = (node.value as ValueNode).value;
 				const paramReg = status.function_param_regs?.get(var_name);
 				if (paramReg) {

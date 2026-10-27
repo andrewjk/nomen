@@ -50,6 +50,17 @@ export default class DeclarationNode extends BaseNode {
 	 * (`AccessFunctionCallNode.in_place_donor_name`).
 	 */
 	in_place_push_slot?: { receiver: string; container: string };
+	/**
+	 * GOOSE.md #4, return-side NRVO: this binding is the sole escape of a
+	 * value-struct-returning function (every direct return is bare
+	 * `return <name>`, and the name is read nowhere else), so it constructs
+	 * directly in the caller's sret buffer — aarch64: the incoming x8
+	 * destination; C: the function's `_return_val` slot — and the returns
+	 * copy nothing. The binding never materializes. Stamped by
+	 * check_function_node's post-body pass; the returns carry the mirror
+	 * stamp (`ReturnNode.nrvo_elided`).
+	 */
+	nrvo_sret?: boolean;
 	func_params?: ParameterNode[];
 	func_return_type?: Type;
 	scope?: BaseNode;

@@ -205,6 +205,24 @@ slot; a method receiver could alias the container).
 
 Still open: growable-container returns (the binding's home as sret target).
 
+**Shipped (Oct 2026, tranche 5 — growable-container returns):** the last
+half. When every direct return of a value-struct-returning function is a
+bare `return <name>` and the binding is read nowhere else (the
+pure-transfer shape — receiver borrows, copies, even reassigns inside the
+function see the same storage the copy semantics gave them, but a read
+lowers to a frame-slot address the elided binding doesn't have, so any read
+disqualifies it), the binding constructs directly in the caller's sret
+buffer — aarch64: the incoming x8 spilled to the frame, preset through the
+existing `call_x8_preset` window; C: the function's `_return_val` slot —
+and the returns copy nothing. The binding never materializes; nested
+function captures disqualify (a capture would outlive the frame the buffer
+lives in). This is the classic `var c = make(); return c` transfer —
+`__Tuple_string_string_copy`-shaped System monos included. test/list_in_place_push.test.ts
+pins the runtime, the C elision shape, and the fallback for bindings with
+other reads. No open items remain for #4's store/return halves; the
+re-preset threading now covers strdup sites and per-argument builds, and
+StableList shares the guarantee through `append_slot_ptr`.
+
 ### 5. Contained task failure: `thread_spawn_contained`
 
 A worker whose check failure or `panic` delivers its message _to the waiter as

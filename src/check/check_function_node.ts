@@ -1,6 +1,11 @@
 import add_error from "../add_error.ts";
+import { value_use_count } from "../build_common/in_place_push.ts";
+import type BaseNode from "../nodes/BaseNode.ts";
+import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
+import ReturnNode from "../nodes/ReturnNode.ts";
 import Type from "../nodes/Type.ts";
+import ValueNode from "../nodes/ValueNode.ts";
 import { find_use_c_mixed_body } from "../raw_directives.ts";
 import check_block_node from "./check_block_node.ts";
 import { instantiate_generic_type } from "./check_function_call_node.ts";
@@ -261,6 +266,107 @@ export default function check_function_node(func: FunctionNode, status: CheckSta
 		const t = function_status.types[i];
 		if (!status.types.includes(t)) {
 			status.types.push(t);
+		}
+	}
+
+	// GOOSE.md #4, return-side NRVO: when EVERY direct return of a
+	// value-struct-returning function is a bare `return <name>`, and <name>
+	// is a single local whose only reads are those returns, the binding
+	// constructs directly in the caller's sret buffer (aarch64) / the
+	// function's `_return_val` (C) and the returns copy nothing. The count
+	// discipline is forward.ts's: name-based, shadowing-conservative, over
+	// the whole function including nested bodies.
+	const ret_type = func.return_type;
+	if (
+		!func.is_closure &&
+		ret_type?.name &&
+		!ret_type.is_view &&
+		!ret_type.is_array &&
+		!ret_type.is_ref &&
+		!ret_type.is_nullable
+	) {
+		const ret_struct = function_status.structs.find(
+			(s) => s.name === ret_type.name && !s.is_simple_type && !s.is_class,
+		);
+		if (ret_struct) {
+			const returns: ReturnNode[] = [];
+			const seen_nodes = new Set<BaseNode>();
+			const collect_returns = (n: BaseNode): void => {
+				if (!n || typeof n !== "object" || seen_nodes.has(n)) return;
+				seen_nodes.add(n);
+				if (n !== func && n.node_type === "func") return;
+				if (n.node_type === "return") returns.push(n as ReturnNode);
+				for (const key of Object.keys(n)) {
+					if (key === "parent" || key === "scope") continue;
+					const child = (n as unknown as Record<string, unknown>)[key];
+					const children = Array.isArray(child) ? child : [child];
+					for (const item of children) {
+						if (item && typeof item === "object" && "node_type" in item) {
+							collect_returns(item as BaseNode);
+						}
+					}
+				}
+			};
+			for (const st of func.statements) collect_returns(st);
+
+			if (
+				returns.length > 0 &&
+				returns.every(
+					(r) =>
+						!r.nrvo_elided &&
+						r.value?.node_type === "value" &&
+						typeof (r.value as ValueNode).value === "string",
+				)
+			) {
+				const name = (returns[0].value as ValueNode).value as string;
+				// Exactly one declaration of the name (shadowing would make
+				// the stamp ambiguous), a var/const with a call initializer
+				// of exactly the return type, and no nested-function capture
+				// (a capture outlives the frame whose sret buffer the binding
+				// now IS). Other uses are fine: receiver borrows (`items.push`)
+				// never read the handle, and any read/copy/reassign inside the
+				// function sees the same storage the copy semantics gave it.
+				const decls: DeclarationNode[] = [];
+				const seen_decls = new Set<BaseNode>();
+				const collect_decls = (n: BaseNode): void => {
+					if (!n || typeof n !== "object" || seen_decls.has(n)) return;
+					seen_decls.add(n);
+					if (n !== func && n.node_type === "func") return;
+					if (n.node_type === "declare" && (n as DeclarationNode).name === name) {
+						decls.push(n as DeclarationNode);
+					}
+					for (const key of Object.keys(n)) {
+						if (key === "parent" || key === "scope") continue;
+						const child = (n as unknown as Record<string, unknown>)[key];
+						const children = Array.isArray(child) ? child : [child];
+						for (const item of children) {
+							if (item && typeof item === "object" && "node_type" in item) {
+								collect_decls(item as BaseNode);
+							}
+						}
+					}
+				};
+				for (const st of func.statements) collect_decls(st);
+				const decl = decls.length === 1 ? decls[0] : undefined;
+				// The binding must be read NOWHERE except the returns them-
+				// selves: every read lowers to emit_var_address(name), and the
+				// elided binding has no frame slot (the aarch64 address path
+				// would fall back to a global `adr` of the name). Receiver
+				// borrows count — they address the storage too.
+				const uses = value_use_count(name, func);
+				if (
+					decl &&
+					!decl.nrvo_sret &&
+					!decl.in_place_push_slot &&
+					(decl.declaration === "var" || decl.declaration === "const") &&
+					decl.value?.node_type === "func_call" &&
+					decl.type?.name === ret_type.name &&
+					uses === returns.length
+				) {
+					decl.nrvo_sret = true;
+					for (const r of returns) r.nrvo_elided = true;
+				}
+			}
 		}
 	}
 }

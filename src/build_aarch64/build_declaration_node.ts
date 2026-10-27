@@ -1134,6 +1134,30 @@ export default function build_declaration_node(
 	if (build_in_place_donor_declaration(node, status)) {
 		return;
 	}
+	// GOOSE.md #4, return-side NRVO: the checker stamped this binding as the
+	// sole escape of a value-struct-returning function — construct the
+	// initializer directly in the caller's sret buffer (the incoming x8,
+	// spilled to the frame so the init call's own `bl`s — and the call
+	// emitter's per-argument re-preset, keyed on the same slot — can reload
+	// it) and materialize nothing for the binding. The returns copy nothing.
+	// Falls through when the shape changed under us.
+	if (node.nrvo_sret && node.value) {
+		const rbo = status.return_buffer_stack_offset;
+		if (rbo !== undefined) {
+			emit_asm(status, `ldr x9, [x29, #${rbo}]\n`);
+			const slot = allocate_stack_space(status, 8);
+			emit_asm(status, `str x9, [x29, #${slot}]\n`);
+			emit_asm(status, `ldr x8, [x29, #${slot}]\n`);
+			const old_preset = status.call_x8_preset;
+			const old_slot = status.call_x8_slot_offset;
+			status.call_x8_preset = true;
+			status.call_x8_slot_offset = slot;
+			build_node(node.value, status);
+			status.call_x8_preset = old_preset;
+			status.call_x8_slot_offset = old_slot;
+			return;
+		}
+	}
 	// Record the declared type for the whole-function registry (see
 	// BuildStatus.function_local_types): loop promotion resolves candidates
 	// invisible to the scoped_declarations frames (outer locals under an

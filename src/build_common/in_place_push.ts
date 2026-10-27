@@ -2,6 +2,7 @@ import type BaseNode from "../nodes/BaseNode.ts";
 import type FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import type StructNode from "../nodes/StructNode.ts";
 import type Type from "../nodes/Type.ts";
+import type ValueNode from "../nodes/ValueNode.ts";
 
 /**
  * GOOSE.md #4 — the in-place construction guarantee, tranche 1: container
@@ -115,4 +116,85 @@ export function in_place_push_facts(
 		flavor: receiver_type_name.startsWith("StableList") ? "stable" : "list",
 		arg: arg as FunctionCallNode,
 	};
+}
+
+/**
+ * Whether an argument expression tree is safe to build under the in-place
+ * push's preset sret destination: bare values, cast/grouped wrappers, op
+ * trees, and nested calls whose OWN return is a simple type or string (a
+ * struct-returning nested call would take the suppressed `_call_ret_`
+ * preset as its own destination — the preset window's x8). Lambdas,
+ * accesses (a method call's receiver could alias the container) and arrays
+ * keep the hoisted path. `bl`s anywhere in the tree are fine: the call
+ * emitter re-presets x8 from the spilled slot after each argument build
+ * (build_function_call_node.ts).
+ */
+export function in_place_arg_tree_ok(arg: BaseNode, structs: readonly StructNode[]): boolean {
+	const seen = new Set<BaseNode>();
+	const walk = (n: BaseNode): boolean => {
+		if (!n || typeof n !== "object" || seen.has(n)) return true;
+		seen.add(n);
+		if (n.node_type === "func_call") {
+			const tname = (n as unknown as { type?: { name?: string } }).type?.name;
+			if (
+				tname &&
+				tname !== "string" &&
+				!!structs.find((s) => s.name === tname && !s.is_simple_type && !s.is_class)
+			) {
+				return false;
+			}
+		} else if (
+			n.node_type !== "value" &&
+			n.node_type !== "op" &&
+			n.node_type !== "cast" &&
+			n.node_type !== "grouped"
+		) {
+			return false;
+		}
+		for (const key of Object.keys(n)) {
+			if (key === "parent" || key === "scope") continue;
+			const child = (n as unknown as Record<string, unknown>)[key];
+			const children = Array.isArray(child) ? child : [child];
+			for (const item of children) {
+				if (item && typeof item === "object" && "node_type" in item) {
+					if (!walk(item as BaseNode)) return false;
+				}
+			}
+		}
+		return true;
+	};
+	return walk(arg);
+}
+
+/**
+ * How many times `name` appears as a bare value under `root` — every
+ * expression position, including nested function bodies (a capture is a
+ * use). Name-based and shadowing-conservative: a same-named inner binding
+ * over-counts and disqualifies the candidate, never wrongly qualifies it
+ * (forward.ts's counting discipline).
+ */
+export function value_use_count(name: string, root: BaseNode | undefined): number {
+	if (!root) return 0;
+	let count = 0;
+	const seen = new Set<BaseNode>();
+	const walk = (node: BaseNode): void => {
+		if (!node || typeof node !== "object" || seen.has(node)) return;
+		seen.add(node);
+		if (node.node_type === "value" && (node as ValueNode).value === name) count += 1;
+		for (const key of Object.keys(node)) {
+			if (key === "parent" || key === "scope") continue;
+			const child = (node as unknown as Record<string, unknown>)[key];
+			if (Array.isArray(child)) {
+				for (const item of child) {
+					if (item && typeof item === "object" && "node_type" in item) {
+						walk(item as BaseNode);
+					}
+				}
+			} else if (child && typeof child === "object" && "node_type" in child) {
+				walk(child as BaseNode);
+			}
+		}
+	};
+	walk(root);
+	return count;
 }
