@@ -154,10 +154,9 @@ the `_param_N` temp home, the callee-side slot memcpy, and the temp's
 scope-exit free are all gone (test/list_in_place_push.test.ts pins the
 runtime semantics and the emitted shapes). The gates are deliberately narrow:
 bare local receiver, statement position, argument a direct call of the
-element type (string or value struct) whose own arguments are all bare
-values — so the argument build cannot emit a call into the preset sret
-destination or re-enter the container; everything else keeps the hoisted
-lowering.
+element type (string or value struct) whose own arguments are approved trees
+(bare values, ops, nested simple calls — a struct-returning nested call or a
+container-aliasing access keeps the hoisted lowering).
 
 **Shipped (Oct 2026, tranche 2 — the named donor):** the other spelling of
 the idiom,
@@ -192,9 +191,19 @@ body already hardcodes. Chunk-boundary crossings (300 pushes), directory
 slabs, and donor forms are pinned in test/list_in_place_push.test.ts with
 audit mode policing every slot.
 
-Still open: richer argument trees (they need the x8 re-preset threading
-widened beyond the two strdup sites) and growable-container returns (the
-binding's home as sret target).
+**Shipped (Oct 2026, tranche 4 — argument trees):** the "every argument a
+bare value" gate widened to approved trees — bare values, cast/grouped
+wrappers, op trees (string concat included), and nested calls whose own
+return is a simple type or string. The x8 re-preset threading that made this
+safe lives in the call emitter's argument loop: while the in-place window is
+open, the spilled slot address is re-loaded into x8 after every argument
+build, so an argument's own `bl`s cannot strand a stale destination (the
+declaration-initializer preset path is untouched — it keys on
+`struct_return_buffer_var`). Struct-returning nested calls and method-call
+arguments keep the hoisted path (a suppressed `_call_ret_` would target the
+slot; a method receiver could alias the container).
+
+Still open: growable-container returns (the binding's home as sret target).
 
 ### 5. Contained task failure: `thread_spawn_contained`
 

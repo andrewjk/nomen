@@ -29,11 +29,12 @@ import type Type from "../nodes/Type.ts";
  *   type, with a body (foreign callees keep the hoisted path), no `ref`
  *   arguments, no swap, no field overrides, and a non-view/non-nullable
  *   return;
- * - every argument OF the argument call is a bare value — a name or
- *   literal — so the argument build emits no `bl`: x8 (the preset sret
- *   destination) cannot be clobbered mid-build, and no argument expression
- *   can re-enter the container. Richer argument trees keep the hoisted
- *   lowering;
+ * - every argument OF the argument call is a bare value, an op tree, or a
+ *   nested call whose own return is a simple type or string — the build may
+ *   `bl` (the call emitter re-presets the spilled sret destination after
+ *   each argument), but no argument can be a struct-returning call (its own
+ *   suppressed `_call_ret_` preset would target the slot) or re-enter the
+ *   container;
  * - the statement's value is discarded (the call is the statement) — push
  *   returns void, so this is the only context that exists;
  * - the element is `string` or a value struct — the classes whose call

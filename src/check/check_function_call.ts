@@ -177,6 +177,54 @@ function in_statement_position(node: BaseNode, status: CheckStatus): boolean {
 }
 
 /**
+ * Whether an argument expression tree is safe to build under the in-place
+ * push's preset sret destination: bare values, cast/grouped wrappers, op
+ * trees, and nested calls whose OWN return is a simple type or string (a
+ * struct-returning nested call would take the suppressed `_call_ret_`
+ * preset as its own destination — the preset window's x8). Lambdas,
+ * accesses (a method call's receiver could alias the container) and arrays
+ * keep the hoisted path. `bl`s anywhere in the tree are fine: the call
+ * emitter re-presets x8 from the spilled slot after each argument build
+ * (build_function_call_node.ts).
+ */
+function in_place_arg_tree_ok(arg: BaseNode, status: CheckStatus): boolean {
+	const seen = new Set<BaseNode>();
+	const walk = (n: BaseNode): boolean => {
+		if (!n || typeof n !== "object" || seen.has(n)) return true;
+		seen.add(n);
+		if (n.node_type === "func_call") {
+			const tname = (n as FunctionCallNode).type?.name;
+			if (
+				tname &&
+				tname !== "string" &&
+				!!status.structs.find((s) => s.name === tname && !s.is_simple_type && !s.is_class)
+			) {
+				return false;
+			}
+		} else if (
+			n.node_type !== "value" &&
+			n.node_type !== "op" &&
+			n.node_type !== "cast" &&
+			n.node_type !== "grouped"
+		) {
+			return false;
+		}
+		for (const key of Object.keys(n)) {
+			if (key === "parent" || key === "scope") continue;
+			const child = (n as unknown as Record<string, unknown>)[key];
+			const children = Array.isArray(child) ? child : [child];
+			for (const item of children) {
+				if (item && typeof item === "object" && "node_type" in item) {
+					if (!walk(item as BaseNode)) return false;
+				}
+			}
+		}
+		return true;
+	};
+	return walk(arg);
+}
+
+/**
  * The statement immediately before `node` in the statement list that hosts
  * it (the in-place donor form's adjacency requirement), or undefined.
  */
@@ -1670,10 +1718,11 @@ export default function check_function_call(
 		// The value-producing call quality gate, shared by the direct form's
 		// argument and the donor declaration's initializer: a body (foreign
 		// callees keep the hoisted path), no by-reference plumbing, no
-		// constructor/magic-ctor shape, and every argument a bare value — the
-		// build emits no `bl`, so the preset sret destination (x8) cannot be
-		// clobbered mid-build and no argument can re-enter the container
-		// between the reserve and the store.
+		// constructor/magic-ctor shape, and every argument an approved tree
+		// (in_place_arg_tree_ok — a `bl` inside the tree is fine, the call
+		// emitter re-presets the spilled sret destination per argument; a
+		// struct-returning nested call or a container-aliasing access is
+		// not).
 		const in_place_call_ok = (call: FunctionCallNode | undefined): boolean =>
 			!!call &&
 			!!call.resolved_function?.has_body &&
@@ -1683,7 +1732,7 @@ export default function check_function_call(
 			!call.is_fiber_ctor &&
 			!call.is_awaitable_ctor &&
 			!status.structs.find((s) => s.name === call.name) &&
-			call.params.every((a) => a.node_type === "value") &&
+			call.params.every((a) => in_place_arg_tree_ok(a, status)) &&
 			// String or value-struct elements own heap bytes a temp would have
 			// freed at scope exit — the classes the guarantee is for.
 			(param_type.name === "string" ||

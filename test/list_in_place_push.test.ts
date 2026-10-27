@@ -100,6 +100,56 @@ pub func main = (Init init) {
 		await build_and_check_output(input, "inplace_push_donor_struct", "3,9", true);
 	});
 
+	test("op-tree and nested-call arguments under a struct sret", async () => {
+		const input = `
+import System
+
+func fake_int = (int k, out int) {
+	return k * 2
+}
+
+mv struct Vec {
+	var int x
+	var int y
+}
+
+func make_vec = (int x, int y, out Vec) {
+	return Vec(x, y)
+}
+
+pub func main = (Init init) {
+	var List<Vec> vs = List<Vec>()
+	var int i = 3
+	vs.push(make_vec(fake_int(i), i * 10))
+	mv Vec v = vs.at_or_panic(0)
+	Console.write("\\{v.x},\\{v.y}")
+}
+`;
+		// `fake_int(i)` is a nested call (a `bl` mid-argument-build — the
+		// preset sret destination must be re-established) and `i * 10` an op
+		// tree. The construct lands in the slot: 6, 30.
+		await build_and_check_output(input, "inplace_push_op_args", "6,30", true);
+	});
+
+	test("string concat argument constructs in place", async () => {
+		const input = `
+import System
+
+func fake_parse = (string line, out string) {
+	return line.copy()
+}
+
+pub func main = (Init init) {
+	var List<string> items = List<string>()
+	items.push(fake_parse("ab" + "cd"))
+	Console.write("\\{items.at_or_panic(0)}")
+}
+`;
+		await build_and_check_output(input, "inplace_push_concat_arg", "abcd", true);
+	});
+});
+
+describe("in-place push: checker gating", () => {
 	test("donor with a second use keeps the ordinary lowering", async () => {
 		const input = `
 import System

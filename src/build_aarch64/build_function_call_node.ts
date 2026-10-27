@@ -1329,6 +1329,13 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					continue;
 				} else {
 					build_node(node.params[i], status);
+					// The in-place push window: an argument build may `bl`
+					// (string concat, nested scalar calls) — x8 is caller-saved,
+					// so re-establish the spilled sret destination after each
+					// argument (build_in_place_push.ts).
+					if (status.call_x8_preset && status.call_x8_slot_offset !== undefined) {
+						emit_asm(status, `ldr x8, [x29, #${status.call_x8_slot_offset}]\n`);
+					}
 				}
 				ensure_newline(status);
 				// A capturing lambda arg's descriptor sits in its spill slot
