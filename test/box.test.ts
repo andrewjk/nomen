@@ -7,6 +7,7 @@ import { get_library } from "../src/lib";
 import parse from "../src/parse";
 import check_output from "./check_output";
 import { parse_raw } from "./parse_with_imports";
+import test_error from "./test_error";
 
 const system = get_library(path.resolve("core"));
 
@@ -61,6 +62,27 @@ var Box<Node> h2 = h
 		// A class-stamped Box source is ALIASABLE — the precise spelled-alias
 		// error wins over the generic box-copy message.
 		expect(errors.some((e) => e.message.includes("'h' is aliased"))).toBe(true);
+	});
+
+	test("the box-copy rejection names the actual type", () => {
+		const input = `import System
+
+mv struct Node {
+	var int value
+}
+var Node n = Node(1)
+var Box<Node> h = Box<Node>(mv n)
+var Box<Node> h2 = Box<Node>(mv Node(2))
+h2 = h
+`;
+		const errors = check(input.substring("import System\n".length));
+		// A bare REASSIGNMENT (not a declaration initializer — that path has
+		// its own alias diagnosis) reaches the box-copy rule, whose message
+		// must interpolate the source type's name (it used to emit the raw
+		// template text `${rhs_type.name}` — an escaped `$`).
+		expect(errors).toEqual([
+			test_error(input, "cannot copy 'Box' by value — a Box owns its pointee; use mv", 9, 6),
+		]);
 	});
 
 	test("a bare Box param is an error (mv or ref)", () => {

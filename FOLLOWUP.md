@@ -589,25 +589,6 @@ inclusive `length >= k + 1`) would close it; the constraint evaluation
 lives in `evaluate_const_condition`
 (src/check/utils/evaluate_const_condition.ts).
 
-## Compiler gaps surfaced by StableList v2
-
-One checker/backend gap was hit while building the chunked StableList and
-worked around in the container's design. It is a real limitation worth
-fixing at its source when a compiler touch lands nearby:
-
-- **`uint64` params are dropped from raw-method C signatures.** A raw-body
-  method `(self, uint64 slab, int i, out T)` emitted a 2-param C signature
-  (`uint64 slab` silently missing) while call sites passed 3 args — caught
-  as "too many arguments to function call" only when the class-tier mono
-  was linked. Workaround: keep 64-bit values in `self->data`-style fields
-  (the `load_from(self, i)` shape) rather than params. Fix: the C param
-  emitter's type mapping needs a `uint64` → `unsigned long long` arm.
-
-Also fixed in passing: through-box field access on a generic receiver
-(`box.__value`'s declared bare-param type is now substituted with the
-receiver's type argument — check_access_node.ts), which generic containers
-with Box-typed storage need.
-
 ## Orphaned `???`/`!!!` tokenizer symbols
 
 The ziglings test corpus (removed 2026-10-24 — early scaffolding: 56 files

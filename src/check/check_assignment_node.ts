@@ -848,7 +848,7 @@ export default function check_assignment_node(
 	) {
 		add_error(
 			status,
-			`cannot copy '\${rhs_type.name}' by value — a Box owns its pointee; use mv`,
+			`cannot copy '${rhs_type.name}' by value — a Box owns its pointee; use mv`,
 			assign.right_value.start,
 		);
 		status.is_assignment_target = false;
