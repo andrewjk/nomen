@@ -1,0 +1,41 @@
+// Minimal library fixture for the unsafe-T_SIZE regression tests: `unsafe`
+// bodies and the per-instantiation constants (T_SIZE / T_FAT) are
+// library-only, so the shapes under test must live behind the library
+// boundary. Declares just enough System surface for the test program.
+
+foreign func calloc = (int count, int size, out uint64)
+foreign func memset = (uint64 dst, int value, int bytes, out uint64)
+
+/**
+ * Generic struct whose unsafe bodies pass T_SIZE in foreign-call argument
+ * positions — including inside `if T_FAT` constant-if branches.
+ **/
+pub struct TSizeCallBox<T> {
+	internal var uint64 slab = 0
+
+	// Bare constant in a call-argument position.
+	func alloc_direct = (ref self, int count) {
+		unsafe {
+			self.slab = calloc(count, T_SIZE)
+		}
+	}
+
+	// The same call inside BOTH arms of a constant-if: the monomorphizer
+	// substitutes the condition and folds the dead arm, and the surviving
+	// arm's call argument must carry the substituted literal.
+	func alloc_in_constant_if = (ref self, int count) {
+		unsafe {
+			if T_FAT {
+				self.slab = calloc(count, T_SIZE)
+			} else {
+				self.slab = calloc(count, T_SIZE)
+			}
+		}
+	}
+
+	func wipe = (ref self, int count) {
+		unsafe {
+			memset(self.slab, 0, T_SIZE)
+		}
+	}
+}

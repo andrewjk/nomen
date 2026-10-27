@@ -2901,6 +2901,42 @@ function substitute_raw_in_node(
 	if (any_node.index?.node_type) {
 		substitute_raw_in_node(any_node.index, substitution, structs, deref_params, traits, tables);
 	}
+	// Branch bodies. The walk above covers an if's CONDITION (that is what
+	// fold_substituted_constant_ifs dispatches on) but not its branches — a
+	// per-instantiation constant used INSIDE a branch (`calloc(256, T_SIZE)`
+	// in the surviving arm of `if T_FAT { … } else { … }`) kept the raw
+	// symbol into the emitted code, where the value emitter's unknown-value
+	// fallback spliced it in as a bogus global read (`adr x0, T_SIZE@PAGE`).
+	// Descend like the other mono passes over bodies do
+	// (retype_value_in_node, collect_local_decl_types, …); the substitution
+	// is an exact-match rewrite, so re-visiting already-folded statements is
+	// harmless.
+	if (any_node.if_branch?.node_type) {
+		substitute_raw_in_node(any_node.if_branch, substitution, structs, deref_params, traits, tables);
+	}
+	if (any_node.else_branch?.node_type) {
+		substitute_raw_in_node(
+			any_node.else_branch,
+			substitution,
+			structs,
+			deref_params,
+			traits,
+			tables,
+		);
+	}
+	if (Array.isArray(any_node.cases)) {
+		for (const c of any_node.cases) {
+			if (c?.condition?.node_type) {
+				substitute_raw_in_node(c.condition, substitution, structs, deref_params, traits, tables);
+			}
+			if (c?.match_value?.node_type) {
+				substitute_raw_in_node(c.match_value, substitution, structs, deref_params, traits, tables);
+			}
+			if (c?.branch?.node_type) {
+				substitute_raw_in_node(c.branch, substitution, structs, deref_params, traits, tables);
+			}
+		}
+	}
 }
 
 function specialize_function(

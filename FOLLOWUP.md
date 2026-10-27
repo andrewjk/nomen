@@ -591,8 +591,8 @@ lives in `evaluate_const_condition`
 
 ## Compiler gaps surfaced by StableList v2
 
-Two checker/backend gaps were hit while building the chunked StableList
-and worked around in the container's design. Each is a real limitation worth
+One checker/backend gap was hit while building the chunked StableList and
+worked around in the container's design. It is a real limitation worth
 fixing at its source when a compiler touch lands nearby:
 
 - **`uint64` params are dropped from raw-method C signatures.** A raw-body
@@ -602,15 +602,6 @@ fixing at its source when a compiler touch lands nearby:
   was linked. Workaround: keep 64-bit values in `self->data`-style fields
   (the `load_from(self, i)` shape) rather than params. Fix: the C param
   emitter's type mapping needs a `uint64` → `unsigned long long` arm.
-- **`T_SIZE` is unresolved in unsafe-Nomen foreign-call args (aarch64).**
-  `calloc(256, T_SIZE)` inside `unsafe { }` emitted the literal symbol
-  `T_SIZE` (call-argument positions skip the ValueNode constant
-  substitution), while the same constant in expression positions
-  (`slot * T_SIZE`) folds fine. Workaround: bind it first —
-  `var int element = T_SIZE` — and use the local. Fix: the unsafe-block
-  call-arg lowering must run the same ValueNode substitution the raw blocks
-  get (src/check/check_function_call_node.ts:2491 handles Nomen ValueNodes,
-  but the aarch64 unsafe call-arg emitter bypasses it).
 
 Also fixed in passing: through-box field access on a generic receiver
 (`box.__value`'s declared bare-param type is now substituted with the
