@@ -64,13 +64,26 @@ import value_from_value_node from "./utils/value_from_value_node.ts";
 import { struct_has_view_fields } from "./utils/view_fields.ts";
 
 /**
- * Core data structures whose internals maintain length<=cap invariants or use
- * computed indices that flow analysis can't always prove. When we're checking
- * a call inside one of these structs' methods, unverifiable Buffer constraints
- * are silently allowed (the data structure is trusted to maintain its own
- * invariants).
+ * Whether a call sits inside System-library code. Library internals maintain
+ * length<=cap invariants and use computed indices that flow analysis can't
+ * always prove, so unverifiable Buffer constraints are silently allowed
+ * there (trusted to maintain their own invariants). Monomorphized clones
+ * keep the flag (clone_node copies `is_library`), so core monos
+ * (`Buffer_int`'s methods) are trusted through it too. Deliberately NOT
+ * keyed on the enclosing struct's NAME: a name match (prefix `Buffer_…` /
+ * `BigInt_…`, or an exact shadow) let user structs opt into the trusted
+ * treatment by naming alone, shipping unverified runtime indices as
+ * unchecked loads/stores.
  */
-const CORE_DATA_STRUCTURES = new Set(["Buffer", "BigInt"]);
+function is_inside_core_method(status: CheckStatus): boolean {
+	for (let i = status.stack.length - 1; i >= 0; i--) {
+		const node = status.stack[i];
+		if (node.node_type === "func") {
+			return !!(node as FunctionNode).is_library;
+		}
+	}
+	return false;
+}
 
 /**
  * Whether `type` is a heap `Array<T>`. `Array<T>` is parse-rewritten to
@@ -174,31 +187,6 @@ function shift_offset_expr(expr: string, c: number): string {
  * Walk the checking stack to find the nearest enclosing FunctionNode and check
  * whether its scope is a method of a core data structure.
  */
-function is_inside_core_method(status: CheckStatus): boolean {
-	for (let i = status.stack.length - 1; i >= 0; i--) {
-		const node = status.stack[i];
-		if (node.node_type === "func") {
-			const func = node as FunctionNode;
-			// Trust all code defined in the appended System library source — it
-			// maintains its own bounds invariants (e.g. Json, Regex, ziglings).
-			if (func.is_library) return true;
-			const scope = func.scope as StructNode | undefined;
-			if (scope && scope.node_type === "struct" && CORE_DATA_STRUCTURES.has(scope.name)) {
-				return true;
-			}
-			// Also check the function name prefix for monomorphized structs
-			// (e.g. List_int's methods still belong to a core data structure)
-			if (scope && scope.node_type === "struct") {
-				const base = scope.name.split("_")[0];
-				if (CORE_DATA_STRUCTURES.has(base)) return true;
-			}
-			// Found the nearest function but it's not a core method — stop walking
-			return false;
-		}
-	}
-	return false;
-}
-
 export default function check_function_call(
 	node: FunctionCallNode | AccessFunctionCallNode,
 	status: CheckStatus,
@@ -1483,7 +1471,9 @@ export default function check_function_call(
 				// hoist the guard outside the loop when the bound is loop-invariant.
 				// Other unverifiable constraints (e.g. on a List/LinkedList/Graph `.at`
 				// accessor whose bound references `self.count`) also error unless the
-				// call is inside a trusted core library method.
+				// call is inside a trusted core library method. This includes calls
+				// to `internal` primitives from non-library code — the carve-out is
+				// keyed on the ENCLOSING function's trust only.
 				const inside_core = is_inside_core_method(status);
 				if (!inside_core) {
 					add_error(
@@ -1736,6 +1726,7 @@ export default function check_function_call(
 	// seen on non-generic structs whose Buffer<T> fields are already rewritten.
 	const is_bufferish =
 		target_type?.name === "Buffer" ||
+		target_type?.name === "ClassBuffer" ||
 		!!target_type?.name?.startsWith("Buffer_") ||
 		!!target_type?.name?.startsWith("ClassBuffer_");
 	if (self_path && self_path !== "?" && is_bufferish && func.return_constraint) {

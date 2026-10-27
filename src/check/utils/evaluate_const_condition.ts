@@ -4,6 +4,7 @@ import OperationNode from "../../nodes/OperationNode.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
 import type CheckStatus from "../CheckStatus.ts";
 import { expr_to_string, lookup_buffer_cap, numeric_interval } from "./flow_bounds.ts";
+import { is_class_type } from "./ownership.ts";
 
 /**
  * Parse a bound expression string of the form `name`, `name + c`, or
@@ -406,6 +407,31 @@ function evaluate_operation(
 		const right_var = resolve_var(op.right_value);
 		if (right_var && pinned_by(lookup(right_var), expr_to_string(op.left_value, status))) {
 			return op.op === "==";
+		}
+		// `x != 0` on a NON-NULLABLE reference-typed value (a class instance, a
+		// `Box<T>` wrapper, a trait handle) is true by construction: the type
+		// system guarantees a constructed value — `Box<T>?` / `Class?` is the
+		// nullable spelling, and the zero representation is only reachable
+		// through it. Discharge the constraint from the declared type (e.g.
+		// `ClassBuffer.store`'s `mv T val: val != 0` slot precondition, called
+		// with a non-nullable box donor).
+		if (op.op === "!=") {
+			const nonnull_reference = (var_name: string | undefined): boolean => {
+				if (!var_name) return false;
+				const decl = lookup(var_name);
+				const t = decl?.type;
+				if (!t?.name || t.is_nullable || t.is_ref || t.is_view) return false;
+				if (is_class_type(t.name, status)) return true;
+				return !!status.traits.find((tr) => tr.name === t.name);
+			};
+			const zero_side = (var_name: string | undefined): boolean =>
+				var_name === "0" || var_name === "null";
+			if (
+				(nonnull_reference(left_var) && zero_side(expr_to_string(op.right_value, status))) ||
+				(nonnull_reference(right_var) && zero_side(expr_to_string(op.left_value, status)))
+			) {
+				return true;
+			}
 		}
 	}
 

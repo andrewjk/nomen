@@ -574,66 +574,20 @@ tree per iteration, so the swap should be perf-neutral; the win is deleting
 the unsafe. A packed/variable-size element mode (GOOSE.md item 6) remains a
 future sibling, sharing the chunk machinery.
 
-## Core-trust bounds bypass via user structs named `Buffer_*` / `BigInt_*`
+## Guarded non-zero index access can't discharge (`xs.at(1)` under `xs.length > 1`)
 
-Recorded 2026-10-27, surfaced while assessing the bounds-flow limitation
-below (which is itself only a false positive — see the context note at the
-end).
+Recorded 2026-10-27, while auditing the (since-fixed) core-trust naming
+bypass. Memory-SAFE — the unprovable call is a compile error, so this is a
+usability gap, not a soundness one.
 
-`.at` compiles to UNCHECKED loads (and `.set` to unchecked stores) — the
-safety gate is the compile-time proof of the index constraint
-(`i >= 0 && i < self.length`) at the call site. When the proof can't be
-made, check_function_call rejects the call UNLESS it sits inside a "core"
-method (`is_inside_core_method`, src/check/check_function_call.ts): the
-nearest enclosing function is library source, or its scope struct is named
-`Buffer`/`BigInt`, or — the hole — the struct's name **up to the first
-underscore** is `Buffer`/`BigInt` (a heuristic meant to keep monomorphized
-clones like `Buffer_int` trusted).
-
-Any user struct whose name begins `Buffer_` or `BigInt_` therefore gets the
-trusted treatment, and an unverified runtime index ships as an unchecked
-load/store. Empirically (0 check errors on both):
-
-```
-struct Buffer_Foo {
-	pub func probe = (self, List<int> xs, int i, out int) {
-		return xs.at(i)
-	}
-}
-var Buffer_Foo f = Buffer_Foo()
-var List<int> xs = List<int>()
-xs.push(1)
-Console.write("\{f.probe(xs, 5)}")
-```
-
-— an out-of-bounds read at runtime (index 5 into a 1-element list), from
-plain user code, by naming alone. The same shape with `xs.set(i, v)` is an
-unchecked out-of-bounds WRITE. The `satisfied === false` / `"unsafe"`
-constraint paths are NOT bypassable (they error before the trust check);
-only the unverifiable path is gated.
-
-Fix options, in preference order:
-
-1. Delete the `split("_")[0]` arm and rely on `func.is_library` plus the
-   exact `CORE_DATA_STRUCTURES` name. Mono clones copy `is_library` off the
-   generic's methods (`clone_node`), so real core monos stay trusted via
-   line 184 already — verify by running the full suite with the arm
-   removed (watch the Buffer/BigInt tests specifically).
-2. If some mono flow reaches the check with `is_library` unset, stamp the
-   mono struct explicitly at monomorphize time (e.g. a `core_trusted` flag
-   derived from the GENERIC template's identity) and key the trust on that
-   flag — never on the emitted name.
-
-### Context: the guarded-index false positive (safe, usability only)
-
-The trigger for the above: `xs.at(0)` under `if xs.length > 0` verifies,
-but `xs.at(1)` under `if xs.length > 1` (or `>= 2`) does not — the
-flow-bounds machinery only discharges index 0. That limitation is
-memory-SAFE: the unprovable call is a compile error (the program never
-builds), so the user must restructure (`.pop()`, `.at_or_panic`, or a
-loop). Recording it here since it is the sanctioned-workaround gap users
-will hit first; fixing the discharge (literal index `k` proven by a strict
-`length > k` guard, or inclusive `length >= k + 1`) would close it.
+`xs.at(0)` under `if xs.length > 0` verifies, but `xs.at(1)` under
+`if xs.length > 1` (or `>= 2`) does not — the flow-bounds machinery only
+discharges index 0 against a strict lower-bound guard. The sanctioned
+workarounds: `.pop()`, `.at_or_panic`, a loop, or indexing 0. Fixing the
+discharge (literal index `k` proven by a strict `length > k` guard, or
+inclusive `length >= k + 1`) would close it; the constraint evaluation
+lives in `evaluate_const_condition`
+(src/check/utils/evaluate_const_condition.ts).
 
 ## Compiler gaps surfaced by StableList v2
 
