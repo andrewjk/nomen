@@ -92,16 +92,17 @@ list.push(1)
 });
 
 test("rederive return_bounds from a return-contract call inside mono body", () => {
-	// List<T>.push's body calls self.items.grow(new_cap); Buffer<T>.grow
-	// declares `out int: out >= needed`, so the mono List_int.push body's
-	// grow call must carry the substituted return-contract bounds.
+	// List<T>.reserve's body calls self.items.grow(new_cap); Buffer<T>.grow
+	// declares `out int: out >= needed`, so the mono List_int.reserve body's
+	// grow call must carry the substituted return-contract bounds. (push
+	// delegates its growth to reserve — GOOSE.md #4's reserve/store split.)
 	const parsed = parse_with_system(`
 var List<int> list = List<int>()
 list.push(1)
 `);
 	expect(parsed.errors).toEqual([]);
 
-	const calls = find_mono_method_calls(parsed.root as RootNode, "List_int", "push");
+	const calls = find_mono_method_calls(parsed.root as RootNode, "List_int", "reserve");
 	const grow_call = calls.find((c) => c.name === "grow");
 	expect(grow_call).toBeDefined();
 	expect(grow_call!.return_bounds).toBeDefined();

@@ -38,6 +38,19 @@ export default class AccessFunctionCallNode extends BaseNode {
 	view_param_indices?: number[];
 	swap_params?: Map<number, BaseNode>;
 	variadic_param_name?: string;
+	/**
+	 * GOOSE.md #4, the in-place construction guarantee (tranche 1): the index
+	 * of the single `mv T value` argument that is a direct call of type T —
+	 * the backends reserve the container's new slot (`List_reserve`) and
+	 * construct the argument call's result directly into it, instead of
+	 * materializing a `_param_N` temp and copying it at the store. Set by
+	 * check_function_call only when the whole shape is provably lowerable
+	 * (bare local receiver, side-call-free argument arguments, string or
+	 * value-struct element — see build_common/in_place_push.ts); both
+	 * backends re-derive the mechanical facts through that shared helper, so
+	 * the checker's stamp and the lowers can't drift.
+	 */
+	in_place_push_index?: number;
 	variadic_param_index?: number;
 	mangled_name?: string;
 	/**

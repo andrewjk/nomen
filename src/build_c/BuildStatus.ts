@@ -443,6 +443,14 @@ export default interface BuildStatus {
 	 */
 	call_x8_preset?: boolean;
 	/**
+	 * aarch64 only. Frame offset of a SPILLED sret destination for the
+	 * current `call_x8_preset` window, used when the destination is not a
+	 * nameable local — the in-place push slot (build_in_place_push.ts). The
+	 * call emitter's post-`bl` re-presets reload x8 from here when
+	 * `struct_return_buffer_var` is unset.
+	 */
+	call_x8_slot_offset?: number;
+	/**
 	 * aarch64 only. Struct/trait/enum-with-data params that did NOT get a
 	 * callee-saved register (the x19..x22 pool was exhausted) and were spilled
 	 * to a local slot. Under the by-address struct param convention the slot

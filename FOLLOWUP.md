@@ -563,6 +563,37 @@ inclusive `length >= k + 1`) would close it; the constraint evaluation
 lives in `evaluate_const_condition`
 (src/check/utils/evaluate_const_condition.ts).
 
+## aarch64 audit+split builds: `sp offset -16 at ret` validator error
+
+Recorded 2026-10-27, while landing the in-place push tranche
+(docs/GOOSE.md #4) — reproduced on clean `main` (stashed tree, fresh
+system.o), so it is pre-existing and NOT caused by that work.
+
+A user function with a synthesized early-return path (`.return_0`, the
+panic/null epilogue) emits `bl _nomen_audit_check; mov x0, #0;
+ldp x29, x30, [sp], #16; ret` — restoring x29/x30 but NOT the frame
+(`add sp, sp, #frame` is missing), so the aarch64 stack validator rejects
+the function: "asm: unbalanced stack: sp offset -16 at ret". Seen in
+split+audit builds whose user TU declares `pub func main = (Init init)`
+plus helper functions returning `out T` (repro: `test/list_in_place_push.test.ts`'s
+first programs, e.g. `func fake_int = (int k, out int)`; the normal
+`.return_N` path restores correctly). The lift validator is
+src/build_aarch64/lift_asm.ts (Pass 6). Likely cause: the audit-check
+instrumentation of the synthesized return path running against a frame
+size captured before later allocations (e.g. `allocate_stack_space` from
+call-site staging) — the normal path re-derives but the synthesized one
+was emitted with a stale/absent restore.
+
+## `while cond; { … }` (empty post-statement) fails to parse
+
+Recorded 2026-10-27. `while i < 12; i += 1 { }` (with a post-statement)
+and `while cond { }` (without the semicolon) both parse; the
+semicolon-with-empty-post form `while items.length > 0; { }` errors with
+"Expected {" at the body. The post-statement slot should accept emptiness
+(the loop-building code it forced — a dummy `s = s + items.pop()`
+restructure — is uglier than the form it replaced). Parser lives in
+src/parse (while-loop parsing).
+
 ## Orphaned `???`/`!!!` tokenizer symbols
 
 The ziglings test corpus (removed 2026-10-24 — early scaffolding: 56 files

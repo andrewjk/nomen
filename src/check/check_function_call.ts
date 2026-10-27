@@ -1,6 +1,7 @@
 import add_error from "../add_error.ts";
 import { struct_needs_destroy } from "../build_common/destroy_analysis.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
+import { in_place_element_ok } from "../build_common/in_place_push.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
@@ -153,6 +154,26 @@ function is_heap_array_var_copy(
 	return (
 		name !== "null" && !/^[+-]?\d+$/.test(name) && !name.startsWith('"') && !name.startsWith("'")
 	);
+}
+
+/**
+ * Whether `node` — or the `access` node wrapping it — is one of a statement
+ * list's statements. The checker stack's top at a method call is the
+ * access_func itself; the statement list owning it sits below the
+ * intermediate expression frames. The in-place push emission is a
+ * multi-statement splice — it must only engage for a bare statement-position
+ * call, never for a call nested in a larger expression (`let f()`, a
+ * condition, an argument).
+ */
+function in_statement_position(node: BaseNode, status: CheckStatus): boolean {
+	for (let s = status.stack.length - 1; s >= 0; s--) {
+		const frame = status.stack[s] as { statements?: BaseNode[] };
+		if (!frame || !Array.isArray(frame.statements)) continue;
+		return frame.statements.some(
+			(st) => st === node || (st.node_type === "access" && (st as AccessNode).access === node),
+		);
+	}
+	return false;
 }
 
 /**
@@ -1544,6 +1565,73 @@ export default function check_function_call(
 			}
 		}
 
+		// GOOSE.md #4, the in-place construction guarantee (container-push
+		// tranche): an `items.push(<call>)` argument — a direct call of the
+		// element type — is constructed directly into the container's fresh
+		// slot (`List_reserve`, then the result written at `items.data[
+		// length]`, then `length += 1`), so no `_param_N` temp home, no
+		// callee-side slot copy, and no temp free. Skipped for the hoist like
+		// the box elision below; the stamp carries the index to both backends,
+		// which re-derive the mechanical facts through
+		// build_common/in_place_push.ts so the lowers can't drift from this
+		// decision. The conjunction is deliberately narrow — every clause
+		// closes a hole documented in in_place_push.ts:
+		const in_place_push =
+			// The container push: `List.push = (ref self, mv T value)`. The
+			// resolved callee is a mono clone whose `scope` back-pointer may be
+			// unset, so the container is identified through the RECEIVER's
+			// type (generic `List` at check time): it must be the System List
+			// and actually carry the `reserve` half the lowering calls.
+			func.name === "push" &&
+			func.params.length === 2 &&
+			func_param === func.params[1] &&
+			func_param.is_moved &&
+			(target_type?.name === "List" || !!target_type?.name?.startsWith("List_")) &&
+			!!status.structs
+				.find((s) => s.name === target_type?.name)
+				?.functions.some((f) => f.name === "reserve" && f.has_body) &&
+			// Statement position: push is void, but the emission is a
+			// multi-statement splice — only a bare statement hosts it.
+			in_statement_position(node, status) &&
+			// A bare local receiver: reserve and the slot math address it by
+			// name in both backends (a param's spelling differs, a path can't
+			// be re-derived safely).
+			!!self_value &&
+			self_path === self_value &&
+			(() => {
+				const vi = status.values.findIndex((v) => v.name === self_value && !v.is_param);
+				return vi >= status.function_value_base;
+			})() &&
+			// The argument expression is a direct call (a method call arrives
+			// as an `access` node and keeps the hoisted path — its receiver
+			// could alias the container) of the element type...
+			param.node_type === "func_call" &&
+			in_place_element_ok(param_type, status.structs) &&
+			// ...with a body (foreign callees keep the hoisted path), no
+			// by-reference plumbing, and no constructor/magic-ctor shape.
+			!!(param as FunctionCallNode).resolved_function?.has_body &&
+			!(param as FunctionCallNode).ref_param_indices?.length &&
+			!node.swap_params?.has(i) &&
+			!(param as FunctionCallNode).field_overrides?.length &&
+			!(param as FunctionCallNode).is_thread_ctor &&
+			!(param as FunctionCallNode).is_fiber_ctor &&
+			!(param as FunctionCallNode).is_awaitable_ctor &&
+			!status.structs.find((s) => s.name === (param as FunctionCallNode).name) &&
+			// Every argument OF the argument call is a bare value: the arg
+			// build emits no `bl`, so the preset sret destination (x8) cannot
+			// be clobbered mid-build and no argument can re-enter the
+			// container between the reserve and the store.
+			(param as FunctionCallNode).params.every((a) => a.node_type === "value") &&
+			// String or value-struct elements own heap bytes a temp would have
+			// freed at scope exit — the classes the guarantee is for.
+			(param_type.name === "string" ||
+				!!status.structs.find(
+					(s) => s.name === param_type.name && !s.is_simple_type && !s.is_class,
+				));
+		if (in_place_push) {
+			(node as AccessFunctionCallNode).in_place_push_index = i;
+		}
+
 		// STRUCT_PLAN_3 Box elision: a `Box<T>(T(...))` argument — a direct
 		// constructor of the wrapped type — is built DIRECTLY into the freshly
 		// malloc'd box slot by both backends, so the argument needs no hoisted
@@ -1572,6 +1660,7 @@ export default function check_function_call(
 			!has_ref_keyword &&
 			!node.swap_params?.has(i) &&
 			!box_ctor_in_place_arg &&
+			!in_place_push &&
 			!(i === (node as FunctionCallNode).variadic_param_index && param.node_type === "array")
 		) {
 			const declaration_name = `_param_${status.var_name_counter.value++}`;

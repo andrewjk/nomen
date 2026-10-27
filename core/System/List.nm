@@ -6,16 +6,33 @@ pub mv struct List<T>: Viewable {
 	var items = Buffer<T>()
 
 	pub func push = (ref self, mv T value) {
-		if self.length >= self.items.cap {
-			var new_cap = 4
-			var int old_cap = self.items.cap
-			if old_cap >= 4 {
-				new_cap = old_cap * 2
-			}
-			self.items.grow(new_cap)
-		}
+		self.reserve(1)
 		self.items.store(self.length, value)
 		self.length += 1
+	}
+
+	// Capacity for `extra` more elements without reallocation: the exact
+	// growth policy `push` uses (double from 4, so repeated single pushes
+	// amortize). Returns the resulting capacity. Splitting it out of `push`
+	// is what makes the compiler's in-place push lowering possible: the
+	// destination slot for a `push(parse(line))` argument must exist before
+	// the argument call runs, so the backend reserves first and constructs
+	// the callee's result directly into `items.data[length]` (docs/GOOSE.md
+	// #4). Sound for extra=1 by the same proof as push's old inline growth:
+	// length + 1 > cap grows to exactly the capacity push would have grown
+	// to.
+	internal func reserve = (ref self, int extra: extra >= 0, out int) {
+		if self.length + extra <= self.items.cap {
+			return self.items.cap
+		}
+		var int new_cap = 4
+		var int old_cap = self.items.cap
+		if old_cap >= 4 {
+			new_cap = old_cap * 2
+		}
+		while new_cap < self.length + extra; new_cap *= 2 { }
+		self.items.grow(new_cap)
+		return self.items.cap
 	}
 
 	pub func pop = (ref self, mv out T) {

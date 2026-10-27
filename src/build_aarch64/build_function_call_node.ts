@@ -1250,8 +1250,14 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 								emit_struct_address(node.params[i], status);
 								ensure_newline(status);
 								emit_string_field_strdups_at(status, transfer_struct.name, "x0", 0, recorded);
-								if (status.call_x8_preset && status.struct_return_buffer_var) {
-									emit_var_address(status, "x8", status.struct_return_buffer_var);
+								if (status.call_x8_preset) {
+									if (status.struct_return_buffer_var) {
+										emit_var_address(status, "x8", status.struct_return_buffer_var);
+									} else if (status.call_x8_slot_offset !== undefined) {
+										// The in-place push's spilled slot address (see
+										// build_in_place_push.ts) — not a nameable local.
+										emit_asm(status, `ldr x8, [x29, #${status.call_x8_slot_offset}]\n`);
+									}
 								}
 							}
 						}
@@ -1306,8 +1312,14 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 						// x8 is caller-saved — so re-establish the preset after
 						// them instead of staging x8 through the optimizer.
 						emit_string_field_strdups_at(status, mono_name, "x0");
-						if (status.call_x8_preset && status.struct_return_buffer_var) {
-							emit_var_address(status, "x8", status.struct_return_buffer_var);
+						if (status.call_x8_preset) {
+							if (status.struct_return_buffer_var) {
+								emit_var_address(status, "x8", status.struct_return_buffer_var);
+							} else if (status.call_x8_slot_offset !== undefined) {
+								// The in-place push's spilled slot address (see
+								// build_in_place_push.ts) — not a nameable local.
+								emit_asm(status, `ldr x8, [x29, #${status.call_x8_slot_offset}]\n`);
+							}
 						}
 					} else {
 						emit_struct_address(node.params[i], status);

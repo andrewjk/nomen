@@ -148,17 +148,22 @@ sink += ops.length
 	test("aarch64: push is slab-grow + inline memcpy, no per-element malloc/free", () => {
 		const code = build_aarch64(IDIOM);
 		const push = asm_function_body(code, "List_Op_push:");
-		// The only allocation is amortized slab growth (grow reallocs), and
-		// the element store is the naked-inlined memcpy path. The growth
-		// call itself now SPLICES (call-bearing auto inline — the unlock):
-		// grow's `cap >= needed` fast path inlines into push and only the
-		// cold-path realloc stays a call.
+		// The only allocation is amortized slab growth, and the element store
+		// is the naked-inlined memcpy path. Growth sits behind List.reserve
+		// (GOOSE.md #4's reserve/store split — the compiler's in-place push
+		// reserves before constructing the element): push calls it, and the
+		// doubling fast path plus the cold realloc live in reserve's body.
 		expect(push).not.toContain("bl _malloc");
 		expect(push).not.toContain("bl _calloc");
 		expect(push).not.toContain("bl _free");
 		expect(push).not.toContain("bl Buffer_Op_grow");
-		expect(push).toContain("bl foreign_realloc");
+		expect(push).toContain("bl List_Op_reserve");
 		expect(push).toContain("bl _memcpy");
+		const reserve = asm_function_body(code, "List_Op_reserve:");
+		expect(reserve).not.toContain("bl _malloc");
+		expect(reserve).not.toContain("bl _calloc");
+		expect(reserve).not.toContain("bl _free");
+		expect(reserve).toContain("bl foreign_realloc");
 		// The construct/mutate/push loop in main must not allocate either.
 		const main = asm_function_body(code, "_main:");
 		expect(main).not.toContain("bl _malloc");

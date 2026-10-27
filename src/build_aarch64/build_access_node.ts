@@ -40,6 +40,7 @@ import {
 import { array_licm_enabled } from "./array_licm.ts";
 import build_function_call_node from "./build_function_call_node.ts";
 import { boxable_value_struct_arg, emit_box_value_struct_arg } from "./build_function_call_node.ts";
+import { build_in_place_push } from "./build_in_place_push.ts";
 import build_inline_method, {
 	begin_inline_splice,
 	end_inline_splice,
@@ -763,6 +764,13 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 			// through the stored code pointer (`ldr x8, …; blr x8`).
 			if (access_func.is_func_field_call) {
 				build_func_field_call(node, access_func, status);
+				return;
+			}
+			// GOOSE.md #4 in-place push: construct the argument call's result
+			// directly into the container's fresh slot (see
+			// build_in_place_push.ts). Falls through to the ordinary hoisted
+			// lowering when the stamp is absent or the shape changed under us.
+			if (build_in_place_push(node, access_func, status)) {
 				return;
 			}
 			build_access_method(node, access_func, status);

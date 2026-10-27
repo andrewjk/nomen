@@ -1,3 +1,4 @@
+import { in_place_push_facts } from "../build_common/in_place_push.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { is_nullable_struct_type } from "../build_common/nullable_struct.ts";
@@ -1356,6 +1357,45 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 						status.code += `({ nomen_string ${ncp_tmp} = `;
 						build_node(node.target, status);
 						status.code += `; (${ncp_tmp}.ptr != 0 ? `;
+					}
+				}
+				// GOOSE.md #4 in-place push: reserve the new slot, construct the
+				// argument call's result directly into it, bump the length. The
+				// checker stamps the index only when the whole shape is provably
+				// lowerable (bare local receiver, bl-free argument build,
+				// string/value-struct element — build_common/in_place_push.ts);
+				// any wrapper temp above means a context the splice must not
+				// host, and the fall-through keeps the ordinary hoisted
+				// lowering.
+				if (
+					access_func.in_place_push_index !== undefined &&
+					!ctor_temp_free &&
+					!owned_recv_temp &&
+					!ncp_tmp &&
+					!array_wrap &&
+					lambda_arg_temps.size === 0 &&
+					node.target.node_type === "value"
+				) {
+					const recv_type = type_from_value_node(node.target);
+					const facts = in_place_push_facts(
+						access_func,
+						node.target,
+						// The value-node type can still carry the GENERIC name
+						// (`List`) at build time — the reserve label and the field
+						// offsets are mono-name addressed.
+						recv_type ? mono_type_name(recv_type) : undefined,
+						type_from_value_node(access_func.params[access_func.in_place_push_index]),
+						status.structs,
+					);
+					if (facts) {
+						const elem_c = facts.elem_is_string ? "nomen_string" : `struct ${facts.elem_name}`;
+						status.code += `${c_function_name(`${facts.list_mono}_reserve`)}(&${facts.receiver}, 1L);\n`;
+						status.code += `((${elem_c}*)(unsigned long long)${facts.receiver}.items.data)[${facts.receiver}.length] = `;
+						build_node(facts.arg, status);
+						// No trailing terminator: the statement wrapper adds the
+						// final `;\n` after the length bump.
+						status.code += `;\n${facts.receiver}.length += 1L`;
+						return;
 					}
 				}
 				status.code += `${label}(`;

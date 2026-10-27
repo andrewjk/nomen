@@ -138,6 +138,34 @@ paths. This is codegen-level work in both backends, so it ranks below the
 checker-level items, but the payoff shows up in every benchmark that builds
 large structures.
 
+**Shipped (Oct 2026, tranche 1 — container stores):** `items.push(<call>)`
+constructs the call's result directly into the new slot, in both backends.
+The checker stamps the argument (`in_place_push_index`,
+src/check/check_function_call.ts) when the whole shape is provably lowerable;
+the lowers re-derive the mechanical facts through the shared
+`in_place_push_facts` (src/build_common/in_place_push.ts) so the two backends
+cannot drift. The shape: `bl List_T_reserve(&items, 1)` — `List.reserve` is
+push's own growth policy split out (core/System/List.nm), so the destination
+slot exists before the argument call runs — then the sret destination (x8, or
+the x0/x1 pair store for fat strings) is the fresh slot
+`items.items.data[length]`, spilled to the frame so the argument call cannot
+invalidate it, then `length += 1`. Versus the hoisted lowering this replaces,
+the `_param_N` temp home, the callee-side slot memcpy, and the temp's
+scope-exit free are all gone (test/list_in_place_push.test.ts pins the
+runtime semantics and the emitted shapes). The gates are deliberately narrow:
+bare local receiver, statement position, argument a direct call of the
+element type (string or value struct) whose own arguments are all bare
+values — so the argument build cannot emit a call into the preset sret
+destination or re-enter the container; everything else keeps the hoisted
+lowering. The named-temp form (`const p = parse(line)` then
+`items.push(mv p)`) is the donor path — it still materializes `p` and copies
+at the store; routing single-use adjacent donors through the same slot
+destination is the natural next step and needs no new machinery, just a
+checker-side def/use gate. Still open: that named-temp extension,
+richer argument trees (they need the x8 re-preset threading widened beyond
+the two strdup sites), growable-container returns (the bigger half — the
+binding's home as sret target), and StableList (chunked slot math).
+
 ### 5. Contained task failure: `thread_spawn_contained`
 
 A worker whose check failure or `panic` delivers its message _to the waiter as
