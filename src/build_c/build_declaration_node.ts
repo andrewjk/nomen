@@ -108,6 +108,26 @@ export default function build_declaration_node(
 	nir_init?: NirExpr | null,
 	nir_swap?: NirExpr | null,
 ) {
+	// GOOSE.md #4, donor form: the checker stamped this binding because the
+	// immediately following statement is `items.push(mv <name>)` and the
+	// binding has no other use — construct the initializer's result directly
+	// into the container's fresh slot and materialize nothing for the
+	// binding: no C declaration, no scope-frame registration, no auto-free
+	// record, no binding-site string-field records (the slot owns the
+	// bytes; the push supplies the length bump). Falls through when the
+	// shape changed under us.
+	if (node.in_place_push_slot && node.value?.node_type === "func_call") {
+		const recv_type = type_from_value_node(node.value);
+		if (recv_type?.name) {
+			const list_mono = `List_${recv_type.name}`;
+			const elem_c = recv_type.name === "string" ? "nomen_string" : `struct ${recv_type.name}`;
+			status.code += `${c_function_name(`${list_mono}_reserve`)}(&${node.in_place_push_slot.receiver}, 1L);\n`;
+			status.code += `((${elem_c}*)(unsigned long long)${node.in_place_push_slot.receiver}.items.data)[${node.in_place_push_slot.receiver}.length] = `;
+			build_node(node.value, status);
+			status.code += ";\n";
+			return;
+		}
+	}
 	// Evaluate override values into temporaries before the base lands in the
 	// destination (see hoist_field_overrides).
 	hoist_field_overrides(node.value, build_node, status, ";\n", node.name);

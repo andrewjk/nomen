@@ -1359,6 +1359,15 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 						status.code += `; (${ncp_tmp}.ptr != 0 ? `;
 					}
 				}
+				// GOOSE.md #4 in-place push — donor form: the preceding
+				// declaration constructed the element into the slot, so this
+				// statement is just the length bump. The checker's
+				// statement-position stamp keeps this out of expression
+				// contexts.
+				if (access_func.in_place_donor_name !== undefined && node.target.node_type === "value") {
+					status.code += `${(node.target as ValueNode).value}.length += 1L`;
+					return;
+				}
 				// GOOSE.md #4 in-place push: reserve the new slot, construct the
 				// argument call's result directly into it, bump the length. The
 				// checker stamps the index only when the whole shape is provably

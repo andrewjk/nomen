@@ -2,7 +2,7 @@ import { describe, expect, test } from "vite-plus/test";
 
 import build from "../src/build";
 import build_and_check_output from "./build_and_check_output";
-import parse_with_imports from "./parse_with_imports";
+import parse_with_imports, { parse_raw } from "./parse_with_imports";
 
 // GOOSE.md #4 — the in-place construction guarantee, container-push tranche:
 // `items.push(parse(line))` constructs the parsed record directly into the
@@ -55,7 +55,7 @@ pub func main = (Init init) {
 		await build_and_check_output(input, "inplace_push_growth", "11109876543210", true);
 	});
 
-	test("named donor keeps the hoisted lowering and still works", async () => {
+	test("named donor converges on the in-place lowering", async () => {
 		const input = `
 import System
 
@@ -70,7 +70,57 @@ pub func main = (Init init) {
 	Console.write("\\{items.pop()}")
 }
 `;
+		// The donor form with a single adjacent use gets the SAME in-place
+		// lowering as the direct form: the declaration constructs into the
+		// slot and the push is just the length bump.
 		await build_and_check_output(input, "inplace_push_named_donor", "k", true);
+	});
+
+	test("donor with a struct element lands in the slot", async () => {
+		const input = `
+import System
+
+mv struct Vec {
+	var int x
+	var int y
+}
+
+func make_vec = (int x, int y, out Vec) {
+	return Vec(x, y)
+}
+
+pub func main = (Init init) {
+	var List<Vec> vs = List<Vec>()
+	var v = make_vec(3, 9)
+	vs.push(mv v)
+	mv Vec w = vs.pop()
+	Console.write("\\{w.x},\\{w.y}")
+}
+`;
+		await build_and_check_output(input, "inplace_push_donor_struct", "3,9", true);
+	});
+
+	test("donor with a second use keeps the ordinary lowering", async () => {
+		const input = `
+import System
+
+func fake_parse = (string line, out string) {
+	return line.copy()
+}
+
+pub func main = (Init init) {
+	var List<string> items = List<string>()
+	var List<string> echo = List<string>()
+	var p = fake_parse("k")
+	items.push(mv p)
+	echo.push(mv p)
+	Console.write("\\{items.length}\\{echo.length}")
+}
+`;
+		// A second `mv p` is a use-after-move — the ordinary ownership rules
+		// reject the shape, so this asserts the diagnosis rather than output.
+		const parsed = parse_raw(input);
+		expect(parsed.errors.length).toBeGreaterThan(0);
 	});
 
 	test("method-call argument (pop) keeps the hoisted lowering", async () => {
@@ -172,6 +222,7 @@ pub func main = (Init init) {
 describe("in-place push: lowering shape", () => {
 	test("C backend reserves and constructs into the slot, no temp", async () => {
 		const input = `
+import System
 func fake_parse = (string line, out string) {
 	return line.copy()
 }
@@ -182,8 +233,10 @@ pub func main = (Init init) {
 	Console.write("\\{items.pop()}")
 }
 `;
-		const parsed = parse_with_imports(input, { allow_user_raw: true });
+		const parsed = parse_raw(input);
+		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "c" });
+		expect(result.errors ?? []).toEqual([]);
 		const code = result.code ?? "";
 		const at = code.indexOf("List_string_reserve(&items");
 		expect(at).toBeGreaterThan(0);
@@ -200,8 +253,42 @@ pub func main = (Init init) {
 		expect(seq).not.toContain("List_string_push");
 	});
 
+	test("C backend elides the donor binding entirely", async () => {
+		const input = `
+import System
+
+func fake_parse = (string line, out string) {
+	return line.copy()
+}
+
+pub func main = (Init init) {
+	var List<string> items = List<string>()
+	var p = fake_parse("x")
+	items.push(mv p)
+	Console.write("\\{items.pop()}")
+}
+`;
+		const parsed = parse_raw(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "c" });
+		expect(result.errors ?? []).toEqual([]);
+		const code = result.code ?? "";
+		const at = code.indexOf("List_string_reserve(&items");
+		expect(at).toBeGreaterThan(0);
+		// The declaration constructs into the slot; the binding itself never
+		// materializes (no declaration, no temp, no auto-free), and the push
+		// statement is the length bump alone.
+		expect(code).toMatch(/items\.items\.data\)\[items\.length\] = \w*fake_parse\(/);
+		expect(code).not.toMatch(/nomen_string p =/);
+		expect(code).not.toContain("List_string_push(&items");
+		const seq = code.slice(at, code.indexOf("items.length += 1L", at) + 18);
+		expect(seq).not.toContain("_param_");
+	});
+
 	test("aarch64 backend reserves, spills the slot, stores the pair", async () => {
 		const input = `
+import System
+
 func fake_parse = (string line, out string) {
 	return line.copy()
 }
@@ -212,7 +299,7 @@ pub func main = (Init init) {
 	Console.write("\\{items.pop()}")
 }
 `;
-		const parsed = parse_with_imports(input, { allow_user_raw: true });
+		const parsed = parse_raw(input);
 		const result = build(parsed.root, { arch: "aarch64" });
 		expect(result.errors ?? []).toEqual([]);
 		const code = result.code ?? "";
@@ -239,6 +326,56 @@ pub func main = (Init init) {
 		expect(seq).toContain("str x11, [x29, #");
 		expect(seq).not.toContain("bl List_string_push");
 		expect(seq).not.toContain("_param_");
+	});
+
+	test("aarch64 backend elides the donor binding entirely", async () => {
+		const input = `
+import System
+
+func fake_parse = (string line, out string) {
+	return line.copy()
+}
+
+pub func main = (Init init) {
+	var List<string> items = List<string>()
+	var p = fake_parse("x")
+	items.push(mv p)
+	Console.write("\\{items.pop()}")
+}
+`;
+		const parsed = parse_raw(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(result.errors ?? []).toEqual([]);
+		const code = result.code ?? "";
+		// The donor declaration's construct sequence exists (reserve, spill,
+		// pair store); the mono'd push is never called, and the length bump
+		// re-derives the receiver afterwards. The mono'd push body's own
+		// reserve(1) also appears — the donor site is the occurrence whose
+		// window stores the result pair through the spilled slot address.
+		let at = -1;
+		for (
+			let pos = code.indexOf("bl List_string_reserve");
+			pos >= 0;
+			pos = code.indexOf("bl List_string_reserve", pos + 1)
+		) {
+			const window = code.slice(pos, pos + 400);
+			if (window.includes("str x0, [x10]") && window.includes("str x1, [x10, #8]")) {
+				at = pos;
+				break;
+			}
+		}
+		expect(at).toBeGreaterThan(0);
+		const donor_seq = code.slice(at, at + 400);
+		expect(donor_seq).toContain("str x1, [x10, #8]");
+		const bump = code.indexOf("add x10, x10, #1", at);
+		expect(bump).toBeGreaterThan(at);
+		expect(code.slice(bump, bump + 40)).toContain("str x10, [x9, #");
+		// Scope the negatives to main's own body: the mono'd List_string_copy
+		// body legitimately calls the mono'd push elsewhere in the TU.
+		const main_start = code.indexOf("\n_main:\n");
+		const main_body = code.slice(main_start, code.indexOf(".p2align", main_start));
+		expect(main_body).not.toContain("bl List_string_push");
+		expect(main_body).not.toMatch(/_param_\d+ = main_fake_parse/);
 	});
 });
 

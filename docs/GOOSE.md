@@ -157,14 +157,29 @@ bare local receiver, statement position, argument a direct call of the
 element type (string or value struct) whose own arguments are all bare
 values — so the argument build cannot emit a call into the preset sret
 destination or re-enter the container; everything else keeps the hoisted
-lowering. The named-temp form (`const p = parse(line)` then
-`items.push(mv p)`) is the donor path — it still materializes `p` and copies
-at the store; routing single-use adjacent donors through the same slot
-destination is the natural next step and needs no new machinery, just a
-checker-side def/use gate. Still open: that named-temp extension,
-richer argument trees (they need the x8 re-preset threading widened beyond
-the two strdup sites), growable-container returns (the bigger half — the
-binding's home as sret target), and StableList (chunked slot math).
+lowering.
+
+**Shipped (Oct 2026, tranche 2 — the named donor):** the other spelling of
+the idiom,
+
+    var p = parse(line)
+    items.push(mv p)
+
+now converges on the same lowering: when the push's `mv p` argument is a
+bare value whose declaration is the immediately preceding statement, whose
+initializer passes the same call gates, and whose name occurs exactly once
+in the enclosing function (forward.ts's whole-function counting discipline),
+the declaration is stamped (`DeclarationNode.in_place_push_slot`) to
+construct its initializer directly into the fresh slot — reserve first, then
+the call, evaluation order untouched — and the push lowers to the length
+bump alone (`AccessFunctionCallNode.in_place_donor_name`). The binding never
+materializes: no storage, no string-field records, no scope-exit free; a
+panic between the construct and the bump leaves the count untouched, so
+teardown frees only the buffer. A second use of the name disqualifies the
+donor and keeps the ordinary (correct) hoisted path. Still open: richer
+argument trees (they need the x8 re-preset threading widened beyond the two
+strdup sites), growable-container returns (the bigger half — the binding's
+home as sret target), and StableList (chunked slot math).
 
 ### 5. Contained task failure: `thread_spawn_contained`
 

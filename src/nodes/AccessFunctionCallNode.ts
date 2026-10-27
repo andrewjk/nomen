@@ -51,6 +51,16 @@ export default class AccessFunctionCallNode extends BaseNode {
 	 * the checker's stamp and the lowers can't drift.
 	 */
 	in_place_push_index?: number;
+	/**
+	 * GOOSE.md #4, donor form: the argument is a bare `mv p` whose
+	 * declaration (`var p = <call of T>`) is the IMMEDIATELY preceding
+	 * statement and whose only use in the function is this push — the
+	 * declaration constructs its initializer directly into the fresh slot
+	 * and THIS statement lowers to just the length bump. Stamped by
+	 * check_function_call; the declaration carries the mirror stamp
+	 * (`DeclarationNode.in_place_push_slot`).
+	 */
+	in_place_donor_name?: string;
 	variadic_param_index?: number;
 	mangled_name?: string;
 	/**

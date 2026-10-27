@@ -38,6 +38,16 @@ export default class DeclarationNode extends BaseNode {
 	 * source. Set by mark_library_nodes; used to route root-scope globals
 	 * (e.g. `const MAX_DIM`) to the correct TU in the System-lib split. */
 	is_library?: boolean;
+	/**
+	 * GOOSE.md #4, donor form: this binding's initializer constructs
+	 * directly into the named container's fresh slot (NRVO-to-slot) because
+	 * the immediately following statement is `items.push(mv <name>)` and
+	 * this binding has no other use — the binding itself never materializes
+	 * (no storage, no scope-exit free; the push is just the length bump).
+	 * Stamped by check_function_call; the push carries the mirror stamp
+	 * (`AccessFunctionCallNode.in_place_donor_name`).
+	 */
+	in_place_push_slot?: { receiver: string };
 	func_params?: ParameterNode[];
 	func_return_type?: Type;
 	scope?: BaseNode;

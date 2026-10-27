@@ -50,6 +50,7 @@ import ValueNode from "../nodes/ValueNode.ts";
 import { emit_address_of } from "./build_access_node.ts";
 import build_array_values_node, { resolve_static_value } from "./build_array_values_node.ts";
 import { emit_swap_value, get_source_address } from "./build_assignment_node.ts";
+import { build_in_place_donor_declaration } from "./build_in_place_push.ts";
 import build_node from "./build_node.ts";
 import { load_nullable_has } from "./build_operation_node.ts";
 import {
@@ -1124,6 +1125,15 @@ export default function build_declaration_node(
 	nir_init?: NirExpr | null,
 	nir_swap?: NirExpr | null,
 ) {
+	// GOOSE.md #4, donor form: the checker stamped this binding because the
+	// immediately following statement is `items.push(mv <name>)` and the
+	// binding has no other use — construct the initializer's result directly
+	// into the container's fresh slot and materialize nothing for the
+	// binding (the push supplies the length bump). Falls through when the
+	// shape changed under us.
+	if (build_in_place_donor_declaration(node, status)) {
+		return;
+	}
 	// Record the declared type for the whole-function registry (see
 	// BuildStatus.function_local_types): loop promotion resolves candidates
 	// invisible to the scoped_declarations frames (outer locals under an

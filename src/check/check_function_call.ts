@@ -177,6 +177,63 @@ function in_statement_position(node: BaseNode, status: CheckStatus): boolean {
 }
 
 /**
+ * The statement immediately before `node` in the statement list that hosts
+ * it (the in-place donor form's adjacency requirement), or undefined.
+ */
+function preceding_statement(node: BaseNode, status: CheckStatus): BaseNode | undefined {
+	for (let s = status.stack.length - 1; s >= 0; s--) {
+		const frame = status.stack[s] as { statements?: BaseNode[] };
+		if (!frame || !Array.isArray(frame.statements)) continue;
+		const idx = frame.statements.findIndex(
+			(st) => st === node || (st.node_type === "access" && (st as AccessNode).access === node),
+		);
+		return idx > 0 ? frame.statements[idx - 1] : undefined;
+	}
+	return undefined;
+}
+
+/** The nearest enclosing function node on the checking stack. */
+function enclosing_function_node(status: CheckStatus): BaseNode | undefined {
+	for (let s = status.stack.length - 1; s >= 0; s--) {
+		if (status.stack[s].node_type === "func") return status.stack[s];
+	}
+	return undefined;
+}
+
+/**
+ * How many times `name` appears as a bare value under `root` — every
+ * expression position, including nested function bodies (a capture is a
+ * use). Name-based and shadowing-conservative: a same-named inner binding
+ * over-counts and disqualifies the candidate, never wrongly qualifies it
+ * (forward.ts's counting discipline).
+ */
+function value_use_count(name: string, root: BaseNode | undefined): number {
+	if (!root) return 0;
+	let count = 0;
+	const seen = new Set<BaseNode>();
+	const walk = (node: BaseNode): void => {
+		if (!node || typeof node !== "object" || seen.has(node)) return;
+		seen.add(node);
+		if (node.node_type === "value" && (node as ValueNode).value === name) count += 1;
+		for (const key of Object.keys(node)) {
+			if (key === "parent" || key === "scope") continue;
+			const child = (node as unknown as Record<string, unknown>)[key];
+			if (Array.isArray(child)) {
+				for (const item of child) {
+					if (item && typeof item === "object" && "node_type" in item) {
+						walk(item as BaseNode);
+					}
+				}
+			} else if (child && typeof child === "object" && "node_type" in child) {
+				walk(child as BaseNode);
+			}
+		}
+	};
+	walk(root);
+	return count;
+}
+
+/**
  * Shift a bound expression string (`base`, `base - a`, `base + a`) by a
  * constant `c`, combining offsets numerically: `(base - a) + c` → `base - (a - c)`.
  * This keeps bounds in a canonical `base ± offset` form so symbolic
@@ -1570,13 +1627,16 @@ export default function check_function_call(
 		// element type — is constructed directly into the container's fresh
 		// slot (`List_reserve`, then the result written at `items.data[
 		// length]`, then `length += 1`), so no `_param_N` temp home, no
-		// callee-side slot copy, and no temp free. Skipped for the hoist like
-		// the box elision below; the stamp carries the index to both backends,
-		// which re-derive the mechanical facts through
-		// build_common/in_place_push.ts so the lowers can't drift from this
-		// decision. The conjunction is deliberately narrow — every clause
-		// closes a hole documented in in_place_push.ts:
-		const in_place_push =
+		// callee-side slot copy, and no temp free. The donor form —
+		// `var p = <call of T>` immediately followed by `items.push(mv p)`,
+		// p otherwise unused — constructs the DECLARATION's initializer into
+		// the slot the same way and lowers the push to the length bump
+		// alone: the two spellings of the idiom converge on identical code.
+		// The stamps carry the decision to both backends, which re-derive
+		// the mechanical facts through build_common/in_place_push.ts so the
+		// lowers can't drift from this decision. Every clause below closes a
+		// hole documented in in_place_push.ts.
+		const in_place_container =
 			// The container push: `List.push = (ref self, mv T value)`. The
 			// resolved callee is a mono clone whose `scope` back-pointer may be
 			// unset, so the container is identified through the RECEIVER's
@@ -1601,35 +1661,73 @@ export default function check_function_call(
 			(() => {
 				const vi = status.values.findIndex((v) => v.name === self_value && !v.is_param);
 				return vi >= status.function_value_base;
-			})() &&
-			// The argument expression is a direct call (a method call arrives
-			// as an `access` node and keeps the hoisted path — its receiver
-			// could alias the container) of the element type...
-			param.node_type === "func_call" &&
-			in_place_element_ok(param_type, status.structs) &&
-			// ...with a body (foreign callees keep the hoisted path), no
-			// by-reference plumbing, and no constructor/magic-ctor shape.
-			!!(param as FunctionCallNode).resolved_function?.has_body &&
-			!(param as FunctionCallNode).ref_param_indices?.length &&
-			!node.swap_params?.has(i) &&
-			!(param as FunctionCallNode).field_overrides?.length &&
-			!(param as FunctionCallNode).is_thread_ctor &&
-			!(param as FunctionCallNode).is_fiber_ctor &&
-			!(param as FunctionCallNode).is_awaitable_ctor &&
-			!status.structs.find((s) => s.name === (param as FunctionCallNode).name) &&
-			// Every argument OF the argument call is a bare value: the arg
-			// build emits no `bl`, so the preset sret destination (x8) cannot
-			// be clobbered mid-build and no argument can re-enter the
-			// container between the reserve and the store.
-			(param as FunctionCallNode).params.every((a) => a.node_type === "value") &&
+			})();
+		// The value-producing call quality gate, shared by the direct form's
+		// argument and the donor declaration's initializer: a body (foreign
+		// callees keep the hoisted path), no by-reference plumbing, no
+		// constructor/magic-ctor shape, and every argument a bare value — the
+		// build emits no `bl`, so the preset sret destination (x8) cannot be
+		// clobbered mid-build and no argument can re-enter the container
+		// between the reserve and the store.
+		const in_place_call_ok = (call: FunctionCallNode | undefined): boolean =>
+			!!call &&
+			!!call.resolved_function?.has_body &&
+			!call.ref_param_indices?.length &&
+			!call.field_overrides?.length &&
+			!call.is_thread_ctor &&
+			!call.is_fiber_ctor &&
+			!call.is_awaitable_ctor &&
+			!status.structs.find((s) => s.name === call.name) &&
+			call.params.every((a) => a.node_type === "value") &&
 			// String or value-struct elements own heap bytes a temp would have
 			// freed at scope exit — the classes the guarantee is for.
 			(param_type.name === "string" ||
 				!!status.structs.find(
 					(s) => s.name === param_type.name && !s.is_simple_type && !s.is_class,
 				));
+		const in_place_push =
+			in_place_container &&
+			// The argument expression is a direct call (a method call arrives
+			// as an `access` node and keeps the hoisted path — its receiver
+			// could alias the container) of the element type...
+			param.node_type === "func_call" &&
+			in_place_element_ok(param_type, status.structs) &&
+			in_place_call_ok(param as FunctionCallNode) &&
+			!node.swap_params?.has(i);
 		if (in_place_push) {
 			(node as AccessFunctionCallNode).in_place_push_index = i;
+		}
+		// The donor form: a bare `mv p` whose declaration is the immediately
+		// preceding statement and whose initializer passes the same call
+		// gates. The declaration is stamped to construct into the slot; the
+		// push lowers to the length bump. Single use is counted over the
+		// whole enclosing function (name-based, shadowing-conservative —
+		// forward.ts's counting discipline).
+		const in_place_donor =
+			!in_place_push &&
+			in_place_container &&
+			!node.swap_params?.has(i) &&
+			has_mov_keyword &&
+			param.node_type === "value" &&
+			typeof (param as ValueNode).value === "string" &&
+			in_place_element_ok(param_type, status.structs) &&
+			in_place_call_ok(
+				(preceding_statement(node, status) as DeclarationNode | undefined)?.value as
+					| FunctionCallNode
+					| undefined,
+			);
+		if (in_place_donor) {
+			const decl = preceding_statement(node, status) as DeclarationNode;
+			if (
+				decl.name === (param as ValueNode).value &&
+				(decl.declaration === "var" || decl.declaration === "const") &&
+				decl.value?.node_type === "func_call" &&
+				!decl.in_place_push_slot &&
+				value_use_count(decl.name, enclosing_function_node(status)) === 1
+			) {
+				decl.in_place_push_slot = { receiver: self_value! };
+				(node as AccessFunctionCallNode).in_place_donor_name = decl.name;
+			}
 		}
 
 		// STRUCT_PLAN_3 Box elision: a `Box<T>(T(...))` argument — a direct
