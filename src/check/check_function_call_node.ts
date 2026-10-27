@@ -718,6 +718,17 @@ export function monomorphize(
 		// param, lowering a struct field as a pointer. Mirrors the trait-default
 		// retype at the trait-method clone site.
 		retype_self_references(retype_roots, mono_name);
+		// Re-type `self.`-rooted FIELD-ACCESS chains from the monomorphized
+		// struct's actual field declarations. substitute_node_types renames
+		// type params by name only, so a body access typed `Buffer<T>` becomes
+		// `Buffer<Box_Pt>` — but the mono struct's field was MATERIALIZED to a
+		// different mono at the same substitution (the Buffer→ClassBuffer
+		// rewrite keys on the substituted element's class-ness), leaving the
+		// body's node type naming a struct that is never emitted. The aarch64
+		// method dispatch keys the callee name on this node type (a `bl
+		// Buffer_Box_Pt_grow` — a link error); the C backend re-resolves from
+		// the field declaration at build time and masked the divergence.
+		retype_self_field_chains(retype_roots, mono_struct, status.structs);
 		cloned.return_type = substitute_type(cloned.return_type, substitution);
 		if (cloned.return_type.type_args?.length) {
 			cloned.return_type = materialize_generic_enum_type(cloned.return_type, status);
@@ -910,9 +921,13 @@ export function monomorphize(
 						is_owning_struct_type_requiring_move(field.type, status))
 				) {
 					param.is_moved = true;
-				} else if (field.declaration === "mv") {
-					param.declaration = "var";
 				}
+				// A `mv`-declared field whose substituted type owns nothing (a
+				// scalar, a plain value struct — e.g. `Box<int>`'s `mv T __value`
+				// substituted to `int`) keeps a PLAIN read-only param: the mv is
+				// a no-op there (B1 — field ownership derives from the type, not
+				// the keyword), and a `var` param is rejected outright by the
+				// var-parameter ban when the mono struct's init is checked.
 				init_params.push(param);
 			}
 		}
@@ -1153,6 +1168,151 @@ export function synthesize_generic_trait_defaults(struct: StructNode, status: Ch
  */
 function retype_self_references(nodes: BaseNode[], struct_name: string) {
 	retype_value_nodes(nodes, (name) => (name === "self" ? new Type(struct_name) : undefined));
+}
+
+/**
+ * Re-type `self.`-rooted FIELD-ACCESS chains from the monomorphized struct's
+ * field declarations.
+ *
+ * A monomorphized body is cloned from the unchecked generic body and never
+ * re-checked; substitute_node_types renames type params by NAME only, so an
+ * access node typed `Buffer<T>` in the generic body carries `Buffer<Box_Pt>`
+ * after substitution — while the mono struct's own field was materialized to
+ * a DIFFERENT mono at the same moment (the Buffer→ClassBuffer rewrite keys on
+ * the substituted element's class-ness: `ClassBuffer_Box_Pt`). The body's
+ * stale node type then names a struct that is never emitted: the aarch64
+ * method dispatch derives the callee name from it (`Buffer_Box_Pt_grow` —
+ * undefined at link time), and any build-side consumer reading the node type
+ * (sizes, sret shape) sees the wrong struct. Re-stamping each field segment
+ * from the mono struct's declarations keeps the body's types on the emitted
+ * monos, for both backends. Chains rooted at other values (params, locals)
+ * are left to retype_param_references / retype_local_references; access_func
+ * segments keep their substituted call types.
+ */
+function retype_self_field_chains(
+	nodes: BaseNode[],
+	mono_struct: StructNode,
+	structs: StructNode[],
+) {
+	for (const node of nodes) retype_field_chain_in_node(node, mono_struct, structs, new Set());
+}
+
+function retype_field_chain_in_node(
+	node: BaseNode | undefined | null,
+	mono_struct: StructNode,
+	structs: StructNode[],
+	seen: Set<BaseNode>,
+) {
+	if (!node || seen.has(node)) return;
+	seen.add(node);
+	const any_node = node as any;
+
+	// Re-stamp a field access whose base chain resolves to a concrete struct
+	// (self, or an inner chain already re-typed by this pass).
+	if (node.node_type === "access" && any_node.access?.node_type === "access_field") {
+		const base = chain_base_type(any_node.target, mono_struct, structs);
+		if (base?.name) {
+			const base_struct = structs.find((s) => s.name === base.name && !s.is_generic);
+			const field = base_struct?.fields.find((f) => f.name === any_node.access.name);
+			const current: Type | undefined = any_node.access.type;
+			if (field?.type?.name && (!current?.name || current.name !== field.type.name)) {
+				any_node.access.type = clone_field_type(field.type);
+			}
+		}
+	}
+
+	if (any_node.statements && Array.isArray(any_node.statements)) {
+		for (const child of any_node.statements) {
+			if (child && typeof child === "object" && "node_type" in child) {
+				retype_field_chain_in_node(child, mono_struct, structs, seen);
+			}
+		}
+	}
+	if (any_node.params && Array.isArray(any_node.params)) {
+		for (const child of any_node.params) {
+			if (child && typeof child === "object" && "node_type" in child) {
+				retype_field_chain_in_node(child, mono_struct, structs, seen);
+			}
+		}
+	}
+	if (any_node.value?.node_type) {
+		retype_field_chain_in_node(any_node.value, mono_struct, structs, seen);
+	}
+	if (any_node.left_value?.node_type) {
+		retype_field_chain_in_node(any_node.left_value, mono_struct, structs, seen);
+	}
+	if (any_node.right_value?.node_type) {
+		retype_field_chain_in_node(any_node.right_value, mono_struct, structs, seen);
+	}
+	if (any_node.target?.node_type) {
+		retype_field_chain_in_node(any_node.target, mono_struct, structs, seen);
+	}
+	if (any_node.access?.node_type) {
+		retype_field_chain_in_node(any_node.access, mono_struct, structs, seen);
+	}
+	if (any_node.condition?.node_type) {
+		retype_field_chain_in_node(any_node.condition, mono_struct, structs, seen);
+	}
+	if (any_node.index?.node_type) {
+		retype_field_chain_in_node(any_node.index, mono_struct, structs, seen);
+	}
+	if (any_node.if_branch?.node_type) {
+		retype_field_chain_in_node(any_node.if_branch, mono_struct, structs, seen);
+	}
+	if (any_node.else_branch?.node_type) {
+		retype_field_chain_in_node(any_node.else_branch, mono_struct, structs, seen);
+	}
+	if (any_node.item?.node_type) {
+		retype_field_chain_in_node(any_node.item, mono_struct, structs, seen);
+	}
+	if (any_node.list?.node_type) {
+		retype_field_chain_in_node(any_node.list, mono_struct, structs, seen);
+	}
+}
+
+/**
+ * The type an access chain's BASE names, for the self-chain retype: `self`
+ * resolves to the monomorphized struct, an inner field chain to its
+ * (mono struct's) field type, a method-call segment to its substituted call
+ * type. Anything else (params, locals, bare globals) is not this pass's
+ * domain — undefined.
+ */
+function chain_base_type(
+	node: BaseNode | undefined | null,
+	mono_struct: StructNode,
+	structs: StructNode[],
+): Type | undefined {
+	if (!node) return undefined;
+	const any_node = node as any;
+	if (node.node_type === "value") {
+		if (any_node.value === "self") return new Type(mono_struct.name);
+		return any_node.type?.name ? any_node.type : undefined;
+	}
+	if (node.node_type === "grouped") return chain_base_type(any_node.value, mono_struct, structs);
+	if (node.node_type === "access") {
+		const base = chain_base_type(any_node.target, mono_struct, structs);
+		if (!base?.name) return undefined;
+		if (any_node.access?.node_type === "access_field") {
+			const struct = structs.find((s) => s.name === base.name && !s.is_generic);
+			const field = struct?.fields.find((f) => f.name === any_node.access.name);
+			return field?.type?.name ? field.type : undefined;
+		}
+		if (any_node.access?.type?.name) return any_node.access.type;
+		return undefined;
+	}
+	return undefined;
+}
+
+function clone_field_type(t: Type): Type {
+	const copy = new Type(t.name, t.is_static, t.is_array, t.length);
+	copy.storage_kind = t.storage_kind;
+	copy.is_ref = t.is_ref;
+	copy.is_view = t.is_view;
+	copy.is_const_ref = t.is_const_ref;
+	copy.is_nullable = t.is_nullable;
+	copy.is_pointer = t.is_pointer;
+	if (t.type_args) copy.type_args = t.type_args.map((a) => clone_field_type(a));
+	return copy;
 }
 
 /**

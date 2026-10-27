@@ -574,26 +574,12 @@ tree per iteration, so the swap should be perf-neutral; the win is deleting
 the unsafe. A packed/variable-size element mode (GOOSE.md item 6) remains a
 future sibling, sharing the chunk machinery.
 
-## Compiler gaps surfaced by StableList v2 (all dodged, none fixed)
+## Compiler gaps surfaced by StableList v2
 
-Three checker/backend gaps were hit while building the chunked StableList
+Two checker/backend gaps were hit while building the chunked StableList
 and worked around in the container's design. Each is a real limitation worth
 fixing at its source when a compiler touch lands nearby:
 
-- **Nested generics in generic struct bodies don't monomorphize.** A field
-  shaped `List<Box<Buffer<T>>>` (any Generic<G<T>> inside a generic struct's
-  own body) clones bodies whose degraded mono names (`Box_Buffer`,
-  `Buffer_Box_Buffer_int`) survive into instantiated code — the checker
-  passes but the link fails (`Buffer_Box_Buffer_int_grow` referenced from
-  `StableList_int_init`, never emitted; the Arena.nm header's
-  "a `List<int>` field would need its own monomorphization from inside a
-  generic struct body" comment warns about exactly this). This is what
-  killed the first chunked design. Workaround: the directory stores raw
-  `uint64` slab words, and typed slot access delegates through Buffer's
-  mono'd `load_from`/`store` bodies. Proper fix: recursive mono
-  materialization for nested args (monomorphize already flattens one level
-  via `flatten_nested_generic_arg`; the gap is args that still reference
-  the outer struct's own type params).
 - **`uint64` params are dropped from raw-method C signatures.** A raw-body
   method `(self, uint64 slab, int i, out T)` emitted a 2-param C signature
   (`uint64 slab` silently missing) while call sites passed 3 args — caught
