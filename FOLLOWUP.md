@@ -563,6 +563,50 @@ inclusive `length >= k + 1`) would close it; the constraint evaluation
 lives in `evaluate_const_condition`
 (src/check/utils/evaluate_const_condition.ts).
 
+## aarch64 audit builds: crash building `(Init init)` mains outside the harness pipeline
+
+Recorded 2026-10-28 while landing the in-place push tranches
+(docs/GOOSE.md #4) — reproduced on clean `main`, so pre-existing.
+
+Two build shapes crash in the aarch64 backend when driven directly
+(`parse_raw` + `build(arch: "aarch64")`) instead of through the harness's
+split pipeline — both before user code emits:
+
+1. **Full-TU (single TU) + `pub func main = (Init init)`**: a declaration
+   node with NO name/type/value reaches `build_declaration_node`
+   (src/build_aarch64/build_declaration_node.ts, the `node.type.is_view`
+   read at the view-binding arm) and TypeError-crashes. The node carries a
+   `statements` field — a block/func-shaped node is being routed into the
+   declaration builder (Init-main desugar residue).
+2. **Split (emit_mode "user") + StableList + Init-main**:
+   `emit_cond_branch` (src/build_aarch64/build_operation_node.ts:553) reads
+   `node.node_type` on an undefined condition — an if/else reaches
+   `build_if_else_node` with no condition node.
+
+The harness's own tests never hit these (they either wrap sources via
+`parse_with_imports` or run split-mode builds of shapes that avoid the
+desugar), so the suite stays green — but any direct pipeline use of these
+shapes crashes. Worth one triage pass over the Init-main desugar's NIR
+lowering.
+
+## System.o prebuild races parallel workers after a core edit
+
+Recorded 2026-10-28. The first `vp test` run after editing `core/**`
+rebuilds `test/out/system_lib/**` (globalSetup prebuild) — when that
+rebuild overlaps cold workers, 1–27 tests fail spuriously (mix of link
+errors and audit-run failures); the NEXT full run is green with zero
+changes. Three consecutive post-rebuild runs settled to stable green, so
+the failures are a rebuild/worker race, not codegen. Mitigation for a
+touched-core session: run the suite once to rebuild, then judge on the
+second run — or make the prebuild a hard barrier for worker startup.
+
+## `.bumpy/*.md` bump messages conflict with the formatter
+
+Prettier strips `*` characters from the bump-file message body
+(`Buffer_*/BigInt_*` became `Buffer__/BigInt__`), so every
+`vp check --fix` re-mangles any bump message containing asterisks. Restore
+before release or avoid `*` in bump messages.
+
 ## aarch64 audit+split builds: `sp offset -16 at ret` validator error
 
 Recorded 2026-10-27, while landing the in-place push tranche
