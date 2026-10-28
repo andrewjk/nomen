@@ -6,6 +6,11 @@ pub mv struct List<T>: Viewable {
 	var items = Buffer<T>()
 
 	pub func push = (ref self, mv T value) {
+		if self.length < self.items.cap {
+			self.items.store(self.length, value)
+			self.length += 1
+			return
+		}
 		self.reserve(1)
 		self.items.store(self.length, value)
 		self.length += 1

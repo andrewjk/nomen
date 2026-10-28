@@ -39,11 +39,16 @@ pub mv struct StableList<T> {
 	var stage = Buffer<T>()
 
 	pub func push = (ref self, mv T value) {
-		self.reserve(1)
+		if self.items.cap == 0 {
+			self.items.alloc(256)
+		}
 		if self.length < self.items.cap {
 			self.items.store(self.length, value)
 		} else {
 			var int dir_index = self.length / 256 - 1
+			if dir_index >= self.chunks.cap {
+				self.chunks.grow(dir_index + 1)
+			}
 			if self.stage.cap == 0 {
 				self.stage.alloc(1)
 			}
