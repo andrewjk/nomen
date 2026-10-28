@@ -23,6 +23,21 @@ export default function build_if_else_node(
 	status: BuildStatus,
 	nir?: NirStmt & { kind: "if" },
 ) {
+	// An if with no condition is an internal-invariant violation: the checker
+	// never produces one (every IfElseNode is parsed or desugared with a
+	// condition). The historic Init-main desugar residue routed a malformed
+	// node here and TypeError'd the build driver with no diagnosis. This is
+	// the ground-truth backstop — the build fails with the offending node
+	// instead of crashing.
+	if (!node.condition) {
+		if (!status.build_errors) status.build_errors = [];
+		status.build_errors.push({
+			message: `aarch64 cannot build an if with no condition — an unlowered if node reached the emitter (internal-invariant violation)`,
+			start: node.start,
+		});
+		return;
+	}
+
 	const label = next_if_label();
 	const old_scoped_declarations = enter_scope_frame(status);
 

@@ -563,32 +563,6 @@ inclusive `length >= k + 1`) would close it; the constraint evaluation
 lives in `evaluate_const_condition`
 (src/check/utils/evaluate_const_condition.ts).
 
-## aarch64 audit builds: crash building `(Init init)` mains outside the harness pipeline
-
-Recorded 2026-10-28 while landing the in-place push tranches
-(the in-place push work) — reproduced on clean `main`, so pre-existing.
-
-Two build shapes crash in the aarch64 backend when driven directly
-(`parse_raw` + `build(arch: "aarch64")`) instead of through the harness's
-split pipeline — both before user code emits:
-
-1. **Full-TU (single TU) + `pub func main = (Init init)`**: a declaration
-   node with NO name/type/value reaches `build_declaration_node`
-   (src/build_aarch64/build_declaration_node.ts, the `node.type.is_view`
-   read at the view-binding arm) and TypeError-crashes. The node carries a
-   `statements` field — a block/func-shaped node is being routed into the
-   declaration builder (Init-main desugar residue).
-2. **Split (emit_mode "user") + StableList + Init-main**:
-   `emit_cond_branch` (src/build_aarch64/build_operation_node.ts:553) reads
-   `node.node_type` on an undefined condition — an if/else reaches
-   `build_if_else_node` with no condition node.
-
-The harness's own tests never hit these (they either wrap sources via
-`parse_with_imports` or run split-mode builds of shapes that avoid the
-desugar), so the suite stays green — but any direct pipeline use of these
-shapes crashes. Worth one triage pass over the Init-main desugar's NIR
-lowering.
-
 ## System.o prebuild races parallel workers after a core edit
 
 Recorded 2026-10-28. The first `vp test` run after editing `core/**`
@@ -606,27 +580,6 @@ Prettier strips `*` characters from the bump-file message body
 (`Buffer_*/BigInt_*` became `Buffer__/BigInt__`), so every
 `vp check --fix` re-mangles any bump message containing asterisks. Restore
 before release or avoid `*` in bump messages.
-
-## aarch64 audit+split builds: `sp offset -16 at ret` validator error
-
-Recorded 2026-10-27, while landing the in-place push tranche
-(the in-place push work) — reproduced on clean `main` (stashed tree, fresh
-system.o), so it is pre-existing and NOT caused by that work.
-
-A user function with a synthesized early-return path (`.return_0`, the
-panic/null epilogue) emits `bl _nomen_audit_check; mov x0, #0;
-ldp x29, x30, [sp], #16; ret` — restoring x29/x30 but NOT the frame
-(`add sp, sp, #frame` is missing), so the aarch64 stack validator rejects
-the function: "asm: unbalanced stack: sp offset -16 at ret". Seen in
-split+audit builds whose user TU declares `pub func main = (Init init)`
-plus helper functions returning `out T` (repro: `test/list_in_place_push.test.ts`'s
-first programs, e.g. `func fake_int = (int k, out int)`; the normal
-`.return_N` path restores correctly). The lift validator is
-src/build_aarch64/lift_asm.ts (Pass 6). Likely cause: the audit-check
-instrumentation of the synthesized return path running against a frame
-size captured before later allocations (e.g. `allocate_stack_space` from
-call-site staging) — the normal path re-derives but the synthesized one
-was emitted with a stale/absent restore.
 
 ## `while cond; { … }` (empty post-statement) fails to parse
 

@@ -1125,6 +1125,21 @@ export default function build_declaration_node(
 	nir_init?: NirExpr | null,
 	nir_swap?: NirExpr | null,
 ) {
+	// A declaration with no name, type, or value is an internal-invariant
+	// violation: the checker stamps every declaration it passes through. The
+	// historic Init-main desugar residue routed a block/func-shaped node
+	// (one carrying `statements`) into this builder and TypeError'd the build
+	// driver at the `node.type.is_view` read below with no diagnosis. This is
+	// the ground-truth backstop — the build fails with the offending node
+	// instead of crashing.
+	if (!node.name && !node.type && !node.value) {
+		if (!status.build_errors) status.build_errors = [];
+		status.build_errors.push({
+			message: `aarch64 cannot build a declaration with no name, type, or value — a malformed node reached the emitter (internal-invariant violation)`,
+			start: node.start,
+		});
+		return;
+	}
 	// In-place push, donor form: the checker stamped this binding because the
 	// immediately following statement is `items.push(mv <name>)` and the
 	// binding has no other use — construct the initializer's result directly

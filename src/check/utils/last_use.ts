@@ -571,7 +571,7 @@ function walk_stmt(walk: Walk, node: BaseNode): void {
 				else_branch?: { statements: BaseNode[] };
 			};
 			walk.interval(() => {
-				walk_expr(walk, if_else.condition);
+				if (if_else.condition) walk_expr(walk, if_else.condition);
 				for (const s of if_else.if_branch?.statements ?? []) walk_stmt(walk, s);
 				for (const s of if_else.else_branch?.statements ?? []) walk_stmt(walk, s);
 			});
