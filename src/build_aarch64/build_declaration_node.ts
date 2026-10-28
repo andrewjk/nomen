@@ -1125,7 +1125,7 @@ export default function build_declaration_node(
 	nir_init?: NirExpr | null,
 	nir_swap?: NirExpr | null,
 ) {
-	// GOOSE.md #4, donor form: the checker stamped this binding because the
+	// In-place push, donor form: the checker stamped this binding because the
 	// immediately following statement is `items.push(mv <name>)` and the
 	// binding has no other use — construct the initializer's result directly
 	// into the container's fresh slot and materialize nothing for the
@@ -1134,7 +1134,7 @@ export default function build_declaration_node(
 	if (build_in_place_donor_declaration(node, status)) {
 		return;
 	}
-	// GOOSE.md #4, return-side NRVO: the checker stamped this binding as the
+	// Return-side NRVO: the checker stamped this binding as the
 	// sole escape of a value-struct-returning function — construct the
 	// initializer directly in the caller's sret buffer (the incoming x8,
 	// spilled to the frame so the init call's own `bl`s — and the call

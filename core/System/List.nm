@@ -22,7 +22,7 @@ pub mv struct List<T>: Viewable {
 	// is what makes the compiler's in-place push lowering possible: the
 	// destination slot for a `push(parse(line))` argument must exist before
 	// the argument call runs, so the backend reserves first and constructs
-	// the callee's result directly into `items.data[length]` (docs/GOOSE.md
+	// the callee's result directly into `items.data[length]` (the in-place
 	// #4). Sound for extra=1 by the same proof as push's old inline growth:
 	// length + 1 > cap grows to exactly the capacity push would have grown
 	// to.
@@ -96,7 +96,7 @@ pub mv struct List<T>: Viewable {
 	}
 
 	// Address of the APPEND slot (element `length`) — the in-place push
-	// lowering's destination primitive (docs/GOOSE.md #4). reserve must have
+	// lowering's destination primitive, the in-place push contract). reserve must have
 	// run, so the slot exists. Offsets mirror the mono layout: length @8,
 	// items.data @24 (the Buffer mono is {_vt, data, cap} = 24 bytes).
 	internal func append_slot_ptr = (ref self, out ptr T) {

@@ -7,7 +7,7 @@ export default class ReturnNode extends BaseNode {
 
 	from_inline?: boolean;
 	/**
-	 * GOOSE.md #4, return-side NRVO: this return's value is a binding that
+	 * Return-side NRVO: this return's value is a binding that
 	 * constructs directly in the caller's sret buffer (see
 	 * `DeclarationNode.nrvo_sret`) — the return copies nothing. Stamped by
 	 * check_function_node's post-body pass.

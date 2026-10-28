@@ -39,7 +39,7 @@ export default class AccessFunctionCallNode extends BaseNode {
 	swap_params?: Map<number, BaseNode>;
 	variadic_param_name?: string;
 	/**
-	 * GOOSE.md #4, the in-place construction guarantee (tranche 1): the index
+	 * The in-place construction guarantee (docs: in-place push): the index
 	 * of the single `mv T value` argument that is a direct call of type T —
 	 * the backends reserve the container's new slot (`List_reserve`) and
 	 * construct the argument call's result directly into it, instead of
@@ -52,7 +52,7 @@ export default class AccessFunctionCallNode extends BaseNode {
 	 */
 	in_place_push_index?: number;
 	/**
-	 * GOOSE.md #4, donor form: the argument is a bare `mv p` whose
+	 * In-place push, donor form: the argument is a bare `mv p` whose
 	 * declaration (`var p = <call of T>`) is the IMMEDIATELY preceding
 	 * statement and whose only use in the function is this push — the
 	 * declaration constructs its initializer directly into the fresh slot

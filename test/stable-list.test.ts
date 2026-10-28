@@ -14,7 +14,7 @@ function errors(src: string) {
 
 /**
  * `StableList<T>` — the grow-only list whose element borrows SURVIVE `push`
- * (docs/GOOSE.md, "Stable grow-only arrays"). The list is append-only (no
+ * (the stable-address contract). The list is append-only (no
  * `pop`/`set`/`remove_at`/`slot_ptr`), so growth reallocs the slot array but
  * displaces no element resources: a borrow from `.at` holds the slot's bytes
  * (value tier) or an instance pointer (class tier), and the checker exempts

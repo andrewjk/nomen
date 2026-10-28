@@ -269,7 +269,7 @@ export default function check_function_node(func: FunctionNode, status: CheckSta
 		}
 	}
 
-	// GOOSE.md #4, return-side NRVO: when EVERY direct return of a
+	// Return-side NRVO: when EVERY direct return of a
 	// value-struct-returning function is a bare `return <name>`, and <name>
 	// is a single local whose only reads are those returns, the binding
 	// constructs directly in the caller's sret buffer (aarch64) / the

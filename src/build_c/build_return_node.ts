@@ -481,7 +481,7 @@ export default function build_return_node(
 			}
 			return;
 		}
-		// GOOSE.md #4 return-side NRVO: the binding constructed directly in
+		// Return-side NRVO: the binding constructed directly in
 		// `_return_val` (DeclarationNode.nrvo_sret) — the return declares
 		// nothing and copies nothing, but the builder's scope-exit cleanup
 		// (the enclosing hoisted temporaries' frees) still runs below.
@@ -729,7 +729,7 @@ export default function build_return_node(
 		} else if (returns_view_value) {
 			c_materialize_view_string(node.value, status);
 		} else if (!nrvo_elided) {
-			// GOOSE.md #4 return-side NRVO: the binding already constructed in
+			// Return-side NRVO: the binding already constructed in
 			// `_return_val` (the NRVO declaration branch) — no value build, no
 			// re-declaration; the scope-exit cleanup below still runs.
 			emit_return_value(node.value, nir_value, status);

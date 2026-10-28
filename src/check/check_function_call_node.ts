@@ -2697,8 +2697,7 @@ function substitute_raw_in_node(
 			// would name an undeclared (trait) type, and the slot stride is
 			// the pointer width anyway, so substitute sizeof(void *).
 			const size = raw_type_size(type, structs, tables);
-			const is_handle_element =
-				struct_node?.is_class || traits.some((t) => t.name === type);
+			const is_handle_element = struct_node?.is_class || traits.some((t) => t.name === type);
 			const size_expr = raw_block_is_pure_asm(value)
 				? String(size)
 				: is_handle_element

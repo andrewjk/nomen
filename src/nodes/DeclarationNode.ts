@@ -39,7 +39,7 @@ export default class DeclarationNode extends BaseNode {
 	 * (e.g. `const MAX_DIM`) to the correct TU in the System-lib split. */
 	is_library?: boolean;
 	/**
-	 * GOOSE.md #4, donor form: this binding's initializer constructs
+	 * In-place push, donor form: this binding's initializer constructs
 	 * directly into the named container's fresh slot (NRVO-to-slot) because
 	 * the immediately following statement is `items.push(mv <name>)` and
 	 * this binding has no other use — the binding itself never materializes
@@ -51,7 +51,7 @@ export default class DeclarationNode extends BaseNode {
 	 */
 	in_place_push_slot?: { receiver: string; container: string };
 	/**
-	 * GOOSE.md #4, return-side NRVO: this binding is the sole escape of a
+	 * Return-side NRVO: this binding is the sole escape of a
 	 * value-struct-returning function (every direct return is bare
 	 * `return <name>`, and the name is read nowhere else), so it constructs
 	 * directly in the caller's sret buffer — aarch64: the incoming x8

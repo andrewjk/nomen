@@ -5,7 +5,7 @@ import type Type from "../nodes/Type.ts";
 import type ValueNode from "../nodes/ValueNode.ts";
 
 /**
- * GOOSE.md #4 — the in-place construction guarantee, tranche 1: container
+ * The in-place construction guarantee (container-push tranche):
  * push. Goose compiles `items.push(parse(line))` so the parsed record is
  * written directly into the new slot — the destination is passed down, no
  * temporary, no copy. Nomen's checker hoists every non-trivial call argument

@@ -1070,8 +1070,8 @@ export function check_access_function_node(
 }
 
 /**
- * StableList.push keeps element borrows alive (docs/GOOSE.md, "Stable
- * grow-only arrays"): the list is append-only — no `pop`/`set`/`remove_at` —
+ * StableList.push keeps element borrows alive (the stable-address
+ * grow-only contract): the list is append-only — no `pop`/`set`/`remove_at` —
  * so growth reallocs the slot array (a memmove) but displaces no element
  * resources. A borrow taken from `.at` holds the slot's bytes (value tier)
  * or an element instance pointer (class/Box/trait tier), never a slot

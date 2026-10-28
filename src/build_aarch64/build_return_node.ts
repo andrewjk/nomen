@@ -649,7 +649,7 @@ export default function build_return_node(
 			// otherwise let a borrow through and the indirect caller would
 			// free it.
 			status.last_result_is_heap = false;
-			// GOOSE.md #4 return-side NRVO: the binding has no storage — it
+			// Return-side NRVO: the binding has no storage — it
 			// IS the caller's sret buffer — so the value build (an address
 			// load that would fall back to a global `adr`) is skipped; the
 			// sret block below emits nothing either.
@@ -980,7 +980,7 @@ export default function build_return_node(
 			? undefined
 			: get_enum_sret_size(status.function_return_type!.name, status);
 		if (ret_struct || ret_enum_size !== undefined) {
-			// GOOSE.md #4 return-side NRVO: the returned binding constructed
+			// Return-side NRVO: the returned binding constructed
 			// directly in the caller's sret buffer (DeclarationNode.nrvo_sret)
 			// — the byte-copy is its own construct, not a copy.
 			if (status.return_buffer_stack_offset !== undefined) {

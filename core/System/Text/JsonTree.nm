@@ -5,7 +5,7 @@
 // set_text's interior field write frees the displaced text and the list's own
 // destroy reclaims every node — so there is no manual text lifecycle. (The
 // pre-StableList version kept a raw Buffer slab with a hand-encoded element
-// layout and a strdup/free dance; see docs/GOOSE.md, "Stable grow-only
+// layout and a strdup/free dance; see the stable grow-only
 // arrays".)
 //
 // Accessors read and write through the slot alias (`ref JsonNode n =

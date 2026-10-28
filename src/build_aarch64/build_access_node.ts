@@ -766,7 +766,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				build_func_field_call(node, access_func, status);
 				return;
 			}
-			// GOOSE.md #4 in-place push: construct the argument call's result
+			// In-place push: construct the argument call's result
 			// directly into the container's fresh slot (see
 			// build_in_place_push.ts). The donor form (the declaration before
 			// this statement already constructed into the slot) lowers to the

@@ -14,7 +14,7 @@ import { allocate_stack_space, emit_var_address } from "./utils/stack_var.ts";
 import { get_field_offset } from "./utils/struct_layout.ts";
 
 /**
- * GOOSE.md #4 — the in-place construction guarantee, container-push tranche.
+ * The in-place construction guarantee, container-push tranche.
  *
  * Lowers a checker-stamped `items.push(<call>)` as:
  *

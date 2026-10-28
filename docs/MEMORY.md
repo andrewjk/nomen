@@ -374,8 +374,7 @@ container is append-only — no `pop`/`set`/`remove_at` — because displacing
 an element would invalidate its borrows. The checker exempts
 `StableList.push` (only) from borrow invalidation
 (`push_keeps_element_borrows` in src/check/check_access_node.ts); every
-other `ref self` call invalidates as usual. See docs/GOOSE.md and
-test/stable-list.test.ts.
+other `ref self` call invalidates as usual. See test/stable-list.test.ts.
 
 ## Known Soundness Gaps
 

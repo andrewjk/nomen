@@ -1,6 +1,6 @@
 /**
  * A grow-only, ordered list whose element borrows survive `push` — including
- * interior slot ADDRESSES (docs/GOOSE.md, "Stable grow-only arrays"; v2).
+ * interior slot ADDRESSES (stable grow-only arrays; v2).
  *
  * Storage is CHUNKED so that no slot address ever moves: chunk 0 is the
  * `items` Buffer, allocated once at exactly 256 slots and never resized;
@@ -65,7 +65,7 @@ pub mv struct StableList<T> {
 	// possible: the destination slot for a `push(parse(x))` argument must
 	// exist before the argument call runs, so the backend reserves first
 	// and constructs the callee's result directly into the append slot
-	// (docs/GOOSE.md #4). Byte-identical policy for extra=1: the same
+	// (the in-place push contract). Byte-identical policy for extra=1: the same
 	// alloc/dir-grow/first-touch sequence push's inline branches performed.
 	internal func reserve = (ref self, int extra: extra >= 0, out int) {
 		if self.items.cap == 0 {

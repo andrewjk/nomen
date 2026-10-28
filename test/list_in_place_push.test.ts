@@ -4,7 +4,7 @@ import build, { default_platform } from "../src/build";
 import build_and_check_output from "./build_and_check_output";
 import parse_with_imports, { parse_raw } from "./parse_with_imports";
 
-// GOOSE.md #4 — the in-place construction guarantee, container-push tranche:
+// The in-place construction guarantee, container-push tranche:
 // `items.push(parse(line))` constructs the parsed record directly into the
 // new slot (List.reserve, sret/pair-store into items.data[length], length
 // bump) — no `_param_N` temp home, no callee-side slot copy, no temp free.
@@ -524,7 +524,7 @@ pub func main = (Init init) {
 	});
 });
 
-describe("in-place push: return-side NRVO (GOOSE.md #4, container returns)", () => {
+describe("in-place push: return-side NRVO (container returns)", () => {
 	test("a returned binding constructs in the caller's variable", async () => {
 		const input = `
 import System
@@ -608,7 +608,6 @@ pub func main = (Init init) {
 		// both behaviors are identical, so this pins the fallback's runtime.
 		await build_and_check_output(input, "nrvo_return_other_reads", "17", true);
 	});
-
 });
 
 describe("in-place push: checker gating", () => {

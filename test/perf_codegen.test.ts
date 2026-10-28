@@ -150,7 +150,7 @@ sink += ops.length
 		const push = asm_function_body(code, "List_Op_push:");
 		// The only allocation is amortized slab growth, and the element store
 		// is the naked-inlined memcpy path. Growth sits behind List.reserve
-		// (GOOSE.md #4's reserve/store split — the compiler's in-place push
+		// (the reserve/store split — the compiler's in-place push
 		// reserves before constructing the element): push calls it, and the
 		// doubling fast path plus the cold realloc live in reserve's body.
 		expect(push).not.toContain("bl _malloc");

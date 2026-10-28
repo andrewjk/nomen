@@ -30,7 +30,7 @@ function has_trait(type_name: string, trait_name: string, status: CheckStatus): 
  * (`List_Diff` via its recorded source args) — mirroring the lookup in
  * check_access_node. StableList iterates ELEMENTS exactly like List (same
  * shape: a `length` field plus a bounds-contracted `.at`); its element
- * borrows survive `push` (docs/GOOSE.md), so a borrow held across the loop
+ * borrows survive `push` (the stable-address contract), so a borrow held across the loop
  * isn't invalidated by pushes in the body.
  * Returns undefined when the struct isn't in scope at all (e.g. bare parse
  * without the System library) or the element can't be recovered, in which

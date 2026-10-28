@@ -566,7 +566,7 @@ lives in `evaluate_const_condition`
 ## aarch64 audit builds: crash building `(Init init)` mains outside the harness pipeline
 
 Recorded 2026-10-28 while landing the in-place push tranches
-(docs/GOOSE.md #4) — reproduced on clean `main`, so pre-existing.
+(the in-place push work) — reproduced on clean `main`, so pre-existing.
 
 Two build shapes crash in the aarch64 backend when driven directly
 (`parse_raw` + `build(arch: "aarch64")`) instead of through the harness's
@@ -610,7 +610,7 @@ before release or avoid `*` in bump messages.
 ## aarch64 audit+split builds: `sp offset -16 at ret` validator error
 
 Recorded 2026-10-27, while landing the in-place push tranche
-(docs/GOOSE.md #4) — reproduced on clean `main` (stashed tree, fresh
+(the in-place push work) — reproduced on clean `main` (stashed tree, fresh
 system.o), so it is pre-existing and NOT caused by that work.
 
 A user function with a synthesized early-return path (`.return_0`, the

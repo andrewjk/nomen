@@ -1593,7 +1593,7 @@ export default function check_function_call(
 			}
 		}
 
-		// GOOSE.md #4, the in-place construction guarantee (container-push
+		// The in-place construction guarantee (container-push
 		// tranche): an `items.push(<call>)` argument — a direct call of the
 		// element type — is constructed directly into the container's fresh
 		// slot (`List_reserve`, then the result written at `items.data[
@@ -1616,7 +1616,7 @@ export default function check_function_call(
 			// address) — plus a `length` field for the commit bump. Any
 			// container with that contract qualifies (List, StableList, user
 			// containers); the append-only, fresh-slot semantics are the
-			// contract's documented obligation (docs/GOOSE.md #4).
+			// contract's documented obligation.
 			func.name === "push" &&
 			func.params.length === 2 &&
 			func_param === func.params[1] &&
