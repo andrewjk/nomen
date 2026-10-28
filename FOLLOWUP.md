@@ -4,6 +4,28 @@ Recorded issues that were deliberately not fixed inline (out of scope for the
 task that surfaced them). Each entry: what was seen, where, and any context
 needed to pick it up later.
 
+## Value-struct copy-assignment corners (pre-existing, surfaced by the struct last-use tests)
+
+Recorded 2026-10-29 while landing PERF_PLAN item 3 (move-on-last-use for
+structs, `test/struct_last_use_move.test.ts`). Both reproduce on
+main@66f82e91 unchanged — the new tests deliberately refuse to rewrite these
+shapes, so they pin guards, not the bugs:
+
+- **`p = p.copy()` (self-assignment) is a use-after-free.** The C backend
+  frees the displaced value's fields (`free(p.name.ptr)`) BEFORE the copy
+  call reads them — `Pair_copy(&p)` strdups the just-freed `p.name`. The
+  program prints nothing / crashes (audit mode: stale free). The aarch64
+  backend has the same ordering (displaced free, then the copy reads the
+  source slot). A same-variable RHS needs the `s = s + "x"` treatment:
+  compute the RHS into a temp before the displaced free.
+- **`p2 = p1.copy()` with a displaced old `p2` leaks one allocation** (audit
+  run: `LEAK: 1 allocation(s)`; `var p2 = Pair(); p2 = p1.copy()` with a
+  later read of `p1`). The declared-then-reassigned shape loses the seed's
+  heap string field somewhere in the displaced-value reclaim + fresh-copy
+  store sequence. The declare form (`var p2 = p1.copy()`) is leak-clean, and
+  the move-on-last-use transfer of the same shape is leak-clean too — the
+  loss is specific to the copy-into-displaced-slot path.
+
 ## Struct-plan residuals
 
 (The plan documents are consolidated in [`docs/STRUCTS.md`](./docs/STRUCTS.md);

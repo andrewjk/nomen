@@ -490,7 +490,7 @@ function build_copy(struct: StructNode, status: CheckStatus): FunctionNode {
 		statements.push(new AssignmentNode(-1, field_access("c", field.name), right));
 	}
 	statements.push(new ReturnNode(-1, new ValueNode(-1, "c")));
-	return new FunctionNode(
+	const fn = new FunctionNode(
 		-1,
 		"pub",
 		"copy",
@@ -498,6 +498,11 @@ function build_copy(struct: StructNode, status: CheckStatus): FunctionNode {
 		[self_param(struct)],
 		statements,
 	);
+	// Move-on-last-use for structs: the marker tells the build-time last-use
+	// pass this `copy` is EXACTLY a fresh deep copy, so a call site that is
+	// the receiver's last use may be rewritten to a transfer (`mv`).
+	fn.is_synthesized_copy = true;
+	return fn;
 }
 
 /**

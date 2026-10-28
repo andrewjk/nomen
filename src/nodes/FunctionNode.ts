@@ -90,6 +90,14 @@ export default class FunctionNode extends BaseNode implements BlockNode, Returni
 	 * string-return analysis (build_common/string_return_analysis.ts).
 	 */
 	returns_string_borrow?: boolean;
+	/**
+	 * True for the auto-synthesized deep-copy method (`struct_is_copyable` →
+	 * `build_copy` in check/utils/auto_derive.ts). A user-written `copy`
+	 * method never carries the marker, so build-time passes can tell "a
+	 * `.copy()` whose semantics are exactly a fresh deep copy" from an
+	 * arbitrary method that happens to be named `copy`.
+	 */
+	is_synthesized_copy?: boolean;
 	type_params: string[] = [];
 	scope?: BaseNode;
 	/**

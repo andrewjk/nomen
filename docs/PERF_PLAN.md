@@ -3,15 +3,15 @@
 Research into the next performance opportunities, following the StableList +
 in-place push work. PERF.md is the record of what landed; this is the plan for
 what's next. All findings are ordered most-promising-first. Written Oct 2026;
-originally unmeasured — item 2 has since landed with measurements in place
-(items marked LANDED carry them; the rest carry expected wins and the
+originally unmeasured — items 2 and 3 have since landed with measurements in
+place (items marked LANDED carry them; the rest carry expected wins and the
 receipts they rest on).
 
 | #   | Item                                                                             | Backends       | Effort | Receipt                                               |
 | --- | -------------------------------------------------------------------------------- | -------------- | ------ | ----------------------------------------------------- |
 | 1   | Faster allocator (slab/bump class allocation)                                    | both           | M      | PERF.md "Large"; ASM_TODO "largest unclaimed"         |
 | 2   | ~~In-place push for constructors~~ **LANDED Oct 2026: −55% / −58% on the shape** | both           | S      | shape micro-bench, interleaved medians (below)        |
-| 3   | Move-on-last-use for structs (strings-only today)                                | both           | S–M    | tree-bench regression attributed to struct memcpy     |
+| 3   | ~~Move-on-last-use for structs~~ **LANDED Oct 2026: −20% / −29% on the shape**   | both           | S–M    | shape micro-bench, interleaved medians (below)        |
 | 4   | Borrow-returning reads (Map `get_ptr`, `at_view`)                                | both           | M      | lru hot loop double-probes; per-read container copies |
 | 5   | Json ownership copies                                                            | both           | S      | measured 0.7.0 regression +61% / +103%                |
 | 6   | In-place store (`set`/`insert`/`add`/`alloc`)                                    | both           | M      | slot primitives already exist                         |
@@ -102,14 +102,61 @@ re-derived after the constructing call). Extending the receiver side to
 `self.<field>` paths is the natural sibling item; it needs a field-path
 addressing primitive first.
 
-## 3. Move-on-last-use for structs
+## 3. Move-on-last-use for structs — LANDED (Oct 2026)
 
-`src/check/utils/last_use.ts` is explicitly "mv-on-last-use **string**
-assignment" (both backends gate on `rhs_is_string_var`). But `a = b` where `T`
-is a mv struct with string/container fields deep-copies _every field_; if `b`
-is genuinely dead after the assignment, a pointer steal needs zero copies. The
-whole-function single-use counting machinery exists and works. This is exactly
-the cost FOLLOWUP.md blames for the tree-bench regression.
+**What landed.** The build-time last-use pass
+(`src/check/utils/last_use.ts`) gained a second shape beside the string one:
+`a = b.copy()` / `var a = b.copy()` where the call resolves to the
+SYNTHESIZED deep-copy method (`copy` of a copyable value struct — a
+user-written `copy` never carries the new
+`FunctionNode.is_synthesized_copy` marker, so arbitrary `copy` methods are
+never touched) and `b` is provably dead after the site. The whole-function
+single-use counting machinery (reads, loop back-edges, spawn opacity, raw
+bodies, re-assignment refusal, param/const exclusion) is shared with the
+string pass. On a hit the RHS is REWRITTEN to `mv b` — the exact AST a
+hand-written transfer produces — so both backends' existing, tested
+explicit-mv lowerings do the work with zero backend changes: donor cleanup
+spliced away, displaced-value reclaim kept, moved-flag guards for
+conditional paths. The kill-switch restores the `.copy()` RHS on rebuild,
+and the rewrite is idempotent across repeated builds of a shared AST. The
+guard set turned out to matter: the D3 ownership rules already force every
+cross-variable struct transfer through `mv`/`.copy()`, so the implicit deep
+copy the item imagined doesn't exist — the explicit `.copy()` call IS the
+deep copy being elided. Thirteen tests in
+`test/struct_last_use_move.test.ts` pin the transfer, the guards (later
+read, back-edge re-read, self-assignment, const/param donors, raw bodies)
+and the emitted shape; the full suite (521 files, both backends) passes.
+
+**Measured.** Shape micro-bench — 3×2M iterations of `var dst = src.copy()`
+on a fresh local `Rec` (mv struct: string + int + `List<int>` of 2
+elements), donor dead each iteration, n from argv, Apple Silicon, best-of-5
+plus interleaved medians, audit off, identical outputs:
+
+| Backend | before | after |        Δ |
+| ------- | -----: | ----: | -------: |
+| C       |  0.63s | 0.51s | **−20%** |
+| aarch64 |  0.92s | 0.66s | **−29%** |
+
+Per iteration the elided work is exactly the item's promise: `Rec_copy`
+(a fresh init, a strdup per string field, a fresh `List` malloc + slab copy,
+a temp struct copy) and the donor's scope-exit destroy become one bare
+struct byte copy with the donor's cleanup spliced away — 3 heap allocations
+per iteration become 1 (the seed strdup, which is the store). The standard
+suite is unchanged (json-serde, binarytrees, lru, nsieve: byte-identical
+outputs, flat timings on both backends) — no bench hot loop contains a
+last-use struct `.copy()` yet. In particular the tree benches this item was
+booked against stay flat: their per-child cost is the `Box<T>(mv node)`
+ctor shape (alloc + struct memcpy — items 1/7/14), not a last-use copy.
+
+**Remainder.** Only whole-RHS sites (assignment + declare) rewrite today.
+The same elision applies at the other ownership-transfer positions —
+`return src.copy()`, call arguments, container stores
+(`list.push(src.copy())`), field stores — each needs its site's transfer
+lowering checked against the rewrite (the return/arg paths move the donor
+differently than the local-reassignment paths). Container-typed donors
+(`var dst = list.copy()` where `list` is a `List`/`Map`/`Set` local) are
+the natural sibling: the synthesized/library copy has the same
+fresh-value shape, and the container `mv` transfer exists.
 
 ## 4. Borrow-returning reads
 
