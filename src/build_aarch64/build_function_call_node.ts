@@ -427,6 +427,10 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			emit_asm(status, `mov x0, #${struct_size}\n`);
 			emit_malloc(status);
 			emit_asm(status, `str x0, [sp, #-16]!\n`);
+		} else if (status.call_x8_preset && status.call_x8_slot_offset !== undefined) {
+			// In-place construction window (in-place push / NRVO donor): the
+			// destination is the address spilled to the frame slot — x0 loads
+			// it at the bl below (argument builds clobber x0). No temp home.
 		} else if (status.struct_return_buffer) {
 			// Reload the incoming sret pointer from its frame slot: x8 is
 			// destructible (AAPCS64), so intervening calls in this body may
@@ -1332,7 +1336,12 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					// The in-place push window: an argument build may `bl`
 					// (string concat, nested scalar calls) — x8 is caller-saved,
 					// so re-establish the spilled sret destination after each
-					// argument (build_in_place_push.ts).
+					// argument (build_in_place_push.ts). The newline comes
+					// FIRST: several leaf emitters (immediates, char literals)
+					// leave the buffer unterminated — gluing the re-preset onto
+					// them produces `mov x0, #90ldr x8, …`, which the asm
+					// reader rejects.
+					ensure_newline(status);
 					if (status.call_x8_preset && status.call_x8_slot_offset !== undefined) {
 						emit_asm(status, `ldr x8, [x29, #${status.call_x8_slot_offset}]\n`);
 					}
@@ -1415,6 +1424,11 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		// pointer: the -32-at-ret imbalance on allmark's parse).
 		if (is_struct && is_struct.is_class) {
 			emit_asm(status, `ldr x0, [sp]\n`);
+		} else if (is_struct && status.call_x8_preset && status.call_x8_slot_offset !== undefined) {
+			// In-place construction window: the ctor's destination is the
+			// spilled slot address (the append slot, or the NRVO donor's sret
+			// buffer) — load it into x0, the ctor's hidden destination param.
+			emit_asm(status, `ldr x0, [x29, #${status.call_x8_slot_offset}]\n`);
 		} else if (is_struct && status.struct_return_buffer) {
 			// Reload the incoming sret pointer from its frame slot (see the
 			// matching reload above): x8 may have been clobbered by any call
@@ -1639,46 +1653,53 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			emit_asm(status, `mov x0, ${status.struct_return_buffer}\n`);
 		}
 	} else if (is_struct && !status.struct_return_buffer) {
-		const temp_addr = `_temp_${temp_counter - 1}`;
-		const offset = status.stack_offsets!.get(temp_addr)!;
-		emit_asm(status, `add x0, x29, #${offset}\n`);
-		// `T(...) + [ ... ]` in an expression position (e.g. a call arg or
-		// return value) lands in the temp above; apply the named-field
-		// overrides to that same temp, then restore x0 (building the
-		// override values may have clobbered it).
-		if (node.field_overrides?.length) {
-			// The constructor seeded each overridden field with its DEFAULT;
-			// a non-literal default was evaluated fresh into the temp and is
-			// owned by the temp alone — reclaim it before the override store
-			// (a compiler-temp destination keeps raw stores, so no
-			// heap_string_fields record exists to key the reclaim on).
-			// STRUCT_PLAN_3 B1 cutover: an OWNING struct's seed is ALWAYS
-			// heap (every string seed is strdup'd), so every overridden
-			// field's seed is displaced here — and the override store takes
-			// the TYPED lowering (owning_temp_carrier): it strdup's the
-			// override value (the first-write skips the displaced free the
-			// pre-reclaim just handled), so the bytes that land in the
-			// destination are heap-owned and its destroy never frees a raw
-			// borrow.
-			const ctor_struct = status.structs.find(
-				(s) => s.name === node.name && !s.is_simple_type && !s.is_class,
-			);
-			const owning_carrier = !!ctor_struct && owns_strings_uniformly(ctor_struct);
-			if (ctor_struct) {
-				for (const fname of ctor_heap_displaced_string_fields(
-					ctor_struct,
-					node.field_overrides,
-					(seed) => is_owned_heap_temp(seed, status),
-				)) {
-					const field_off = get_field_offset(ctor_struct.name, fname, status);
-					emit_asm(status, `ldr x0, [x29, #${offset + field_off}]\n`);
-					emit_free(status);
-				}
-			}
-			emit_field_overrides(temp_addr, node, build_node, status, "", "", {
-				owning_temp_carrier: owning_carrier,
-			});
+		if (status.call_x8_preset && status.call_x8_slot_offset !== undefined) {
+			// In-place construction window: the value's home is the spilled
+			// slot, not a `_temp_N` — reload its address for consumers (same
+			// invariant as the temp reload below).
+			emit_asm(status, `ldr x0, [x29, #${status.call_x8_slot_offset}]\n`);
+		} else {
+			const temp_addr = `_temp_${temp_counter - 1}`;
+			const offset = status.stack_offsets!.get(temp_addr)!;
 			emit_asm(status, `add x0, x29, #${offset}\n`);
+			// `T(...) + [ ... ]` in an expression position (e.g. a call arg or
+			// return value) lands in the temp above; apply the named-field
+			// overrides to that same temp, then restore x0 (building the
+			// override values may have clobbered it).
+			if (node.field_overrides?.length) {
+				// The constructor seeded each overridden field with its DEFAULT;
+				// a non-literal default was evaluated fresh into the temp and is
+				// owned by the temp alone — reclaim it before the override store
+				// (a compiler-temp destination keeps raw stores, so no
+				// heap_string_fields record exists to key the reclaim on).
+				// STRUCT_PLAN_3 B1 cutover: an OWNING struct's seed is ALWAYS
+				// heap (every string seed is strdup'd), so every overridden
+				// field's seed is displaced here — and the override store takes
+				// the TYPED lowering (owning_temp_carrier): it strdup's the
+				// override value (the first-write skips the displaced free the
+				// pre-reclaim just handled), so the bytes that land in the
+				// destination are heap-owned and its destroy never frees a raw
+				// borrow.
+				const ctor_struct = status.structs.find(
+					(s) => s.name === node.name && !s.is_simple_type && !s.is_class,
+				);
+				const owning_carrier = !!ctor_struct && owns_strings_uniformly(ctor_struct);
+				if (ctor_struct) {
+					for (const fname of ctor_heap_displaced_string_fields(
+						ctor_struct,
+						node.field_overrides,
+						(seed) => is_owned_heap_temp(seed, status),
+					)) {
+						const field_off = get_field_offset(ctor_struct.name, fname, status);
+						emit_asm(status, `ldr x0, [x29, #${offset + field_off}]\n`);
+						emit_free(status);
+					}
+				}
+				emit_field_overrides(temp_addr, node, build_node, status, "", "", {
+					owning_temp_carrier: owning_carrier,
+				});
+				emit_asm(status, `add x0, x29, #${offset}\n`);
+			}
 		}
 	}
 

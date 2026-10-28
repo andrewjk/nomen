@@ -27,8 +27,11 @@ import type ValueNode from "../nodes/ValueNode.ts";
  *   resolved to a non-param value of the current function — never a
  *   param, whose by-address spelling differs, never a dotted path);
  * - the argument expression is a direct `func_call` of exactly the element
- *   type, with a body (foreign callees keep the hoisted path), no `ref`
- *   arguments, no swap, no field overrides, and a non-view/non-nullable
+ *   type — a function with a body (foreign callees keep the hoisted path) or
+ *   a constructor of the element struct (the callee is the struct's `#init`,
+ *   whose emission is unconditional; the build constructs it into the preset
+ *   destination exactly like `Box<T>(T(...))` into the box slot) — with no
+ *   `ref` arguments, no swap, no field overrides, and a non-view/non-nullable
  *   return;
  * - every argument OF the argument call is a bare value, an op tree, or a
  *   nested call whose own return is a simple type or string — the build may

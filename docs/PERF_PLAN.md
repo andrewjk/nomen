@@ -3,28 +3,29 @@
 Research into the next performance opportunities, following the StableList +
 in-place push work. PERF.md is the record of what landed; this is the plan for
 what's next. All findings are ordered most-promising-first. Written Oct 2026;
-no new measurements yet — each item carries its expected win and the receipts
-it rests on.
+originally unmeasured — item 2 has since landed with measurements in place
+(items marked LANDED carry them; the rest carry expected wins and the
+receipts they rest on).
 
-| #  | Item                                             | Backends      | Effort | Receipt                                        |
-| -- | ------------------------------------------------ | ------------- | ------ | ---------------------------------------------- |
-| 1  | Faster allocator (slab/bump class allocation)     | both          | M      | PERF.md "Large"; ASM_TODO "largest unclaimed"  |
-| 2  | In-place push for constructors                    | both          | S      | sibling tranche measured −61% / −73%           |
-| 3  | Move-on-last-use for structs (strings-only today) | both          | S–M    | tree-bench regression attributed to struct memcpy |
-| 4  | Borrow-returning reads (Map `get_ptr`, `at_view`) | both          | M      | lru hot loop double-probes; per-read container copies |
-| 5  | Json ownership copies                             | both          | S      | measured 0.7.0 regression +61% / +103%         |
-| 6  | In-place store (`set`/`insert`/`add`/`alloc`)     | both          | M      | slot primitives already exist                  |
-| 7  | Enum payload in-place construction                | both          | S–M    | mechanically same as in-place push             |
-| 8  | Regex/String O(n²) accumulators                   | both          | S      | O(n²) per-byte loops in core                   |
-| 9  | Map/Set stored hash (Swiss-table tricks)          | both          | M      | rehash re-hashes every key                     |
-| 10 | StringBuilder numeric appends + 1-pass interp     | both          | S      | two snprintf passes + malloc per append        |
-| 11 | Devirtualization of trait calls                   | both          | M      | unmeasured                                     |
-| 12 | Struct field-order / padding                      | both          | S      | modest; raw-body caveat                        |
-| 13 | Variable-mode enums                               | both          | L      | GOOSE #6, documented, unshipped                |
-| 14 | Buffer word pairs (T_SIZE ≤ 16)                   | mostly aarch64 | S     | IMPROVEMENTS.md "still needed"                 |
-| 15 | aarch64 codegen receipts (splice model, folds…)   | aarch64       | S–M    | measured regressions to reclaim                |
-| 16 | Async paths audit                                 | both          | ?      | unexplored, unmeasured                         |
-| 17 | Minor batch                                       | both          | S      | assorted                                       |
+| #   | Item                                                                             | Backends       | Effort | Receipt                                               |
+| --- | -------------------------------------------------------------------------------- | -------------- | ------ | ----------------------------------------------------- |
+| 1   | Faster allocator (slab/bump class allocation)                                    | both           | M      | PERF.md "Large"; ASM_TODO "largest unclaimed"         |
+| 2   | ~~In-place push for constructors~~ **LANDED Oct 2026: −55% / −58% on the shape** | both           | S      | shape micro-bench, interleaved medians (below)        |
+| 3   | Move-on-last-use for structs (strings-only today)                                | both           | S–M    | tree-bench regression attributed to struct memcpy     |
+| 4   | Borrow-returning reads (Map `get_ptr`, `at_view`)                                | both           | M      | lru hot loop double-probes; per-read container copies |
+| 5   | Json ownership copies                                                            | both           | S      | measured 0.7.0 regression +61% / +103%                |
+| 6   | In-place store (`set`/`insert`/`add`/`alloc`)                                    | both           | M      | slot primitives already exist                         |
+| 7   | Enum payload in-place construction                                               | both           | S–M    | mechanically same as in-place push                    |
+| 8   | Regex/String O(n²) accumulators                                                  | both           | S      | O(n²) per-byte loops in core                          |
+| 9   | Map/Set stored hash (Swiss-table tricks)                                         | both           | M      | rehash re-hashes every key                            |
+| 10  | StringBuilder numeric appends + 1-pass interp                                    | both           | S      | two snprintf passes + malloc per append               |
+| 11  | Devirtualization of trait calls                                                  | both           | M      | unmeasured                                            |
+| 12  | Struct field-order / padding                                                     | both           | S      | modest; raw-body caveat                               |
+| 13  | Variable-mode enums                                                              | both           | L      | GOOSE #6, documented, unshipped                       |
+| 14  | Buffer word pairs (T_SIZE ≤ 16)                                                  | mostly aarch64 | S      | IMPROVEMENTS.md "still needed"                        |
+| 15  | aarch64 codegen receipts (splice model, folds…)                                  | aarch64        | S–M    | measured regressions to reclaim                       |
+| 16  | Async paths audit                                                                | both           | ?      | unexplored, unmeasured                                |
+| 17  | Minor batch                                                                      | both           | S      | assorted                                              |
 
 ## 1. Faster allocator — slab/bump the class-allocation path
 
@@ -37,24 +38,75 @@ per child now", FOLLOWUP.md). Slab/bump the per-instance path. Fairness-honest:
 the excluded dodge is source-level pooling, and the Go/Rust/Zig references all
 have fast allocators.
 
-## 2. In-place push for constructors — the dominant excluded shape
+## 2. In-place push for constructors — LANDED (Oct 2026)
 
-The gate in `in_place_call_ok` (`src/check/check_function_call.ts`) rejects any
-argument call whose name matches a struct ("no constructor/magic-ctor shape").
-Counting push-argument shapes across `test/`, constructors dominate: 12×
-`push(Res(7))`, 8× `push(Person(...))`, 4× `push(TextRule())` — nearly all
-lower today as: ctor srets into a `_param_N` temp → push callee memcpys
-temp→slot → temp teardown. `JsonTree.alloc_node` does
-`self.nodes.push(JsonNode())` — the JSON pool itself misses the guarantee on
-every parsed value. The precedent exists: `Box<T>(T(...))` already constructs
-directly into the box slot (`box_ctor_in_place_arg`). Extending the stamp to
-ctor arguments reuses the tranche-4 x8 re-preset threading as-is.
+**What landed.** The `in_place_call_ok` gate
+(`src/check/check_function_call.ts`) no longer rejects the constructor shape:
+an argument call whose name resolves to a non-simple, non-class, non-generic
+struct is now stamped like any other producer — the callee is the struct's
+`#init` (auto-generated or user-written), whose emission is unconditional, so
+the foreign-callee `has_body` clause doesn't apply to it. Both backends
+construct the result straight into the container's fresh slot, reusing the
+tranche-4 x8 threading as predicted:
+
+- aarch64: `build_function_call_node` gained a preset-window branch for value
+  structs — when `call_x8_preset` + `call_x8_slot_offset` are set (the
+  in-place push and NRVO-donor windows), the ctor's hidden destination (x0)
+  loads the spilled slot address instead of allocating a `_temp_N` home, and
+  the post-call tail reloads the same address. The x8 re-preset-per-argument
+  carried over unchanged.
+- C: no backend change was needed — the in-place lowering already builds the
+  argument as the RHS of the append-slot assignment, which a ctor expression
+  satisfies verbatim.
+- Checker hardening found on the way: the stamp now also requires the
+  CALLEE-side element type (`mv T value`) to be in-place-eligible. A
+  `mv Trait` push param stores boxed handles per slot, so
+  `pets.push(Dog("Rex"))` into `List<Speaker>` — the arg's concrete type is a
+  value struct, but the container stores handles — keeps the hoisted + boxing
+  path. Without this the aarch64 backend built a 16-byte struct into an
+  8-byte handle slot (the trait-collection tests caught it).
+- One latent assembler bug fell out: the in-place window's per-argument x8
+  re-preset could glue onto an unterminated leaf emit (`mov x0,
+#90ldr x8, …`) — several immediate/char-literal emitters leave the buffer
+  unterminated and had only been saved by the _following_ `ensure_newline`.
+  The re-preset now ensures the newline first.
+
+`push(Res(7))`, `push(Person(...))`, `push(TextRule())`, the zero-arg
+`push(JsonNode())` pool shape, custom-`#init` ctors, and the donor spelling
+(`var p = Res(...); push(mv p)`) all lower in place now; nine tests in
+`test/list_in_place_push.test.ts` pin the shapes and the emitted code, and
+the full suite (521 files, both backends) passes.
+
+**Measured.** Shape micro-bench — 3×2M `recs.push(Rec("item", i, i*2, i*3))`
+into a local `List<Rec>` (mv struct: string + 3 ints), n from argv, Apple
+Silicon, best-of-5 plus interleaved medians, audit off:
+
+| Backend | before | after |        Δ |
+| ------- | -----: | ----: | -------: |
+| C       |  0.44s | 0.20s | **−55%** |
+| aarch64 |  0.52s | 0.22s | **−58%** |
+
+Per push the elided work is exactly the tranche's promise: the ctor's seed
+strdup remains (it is the store), but the temp home, the push-callee
+deep-copy (a second strdup + struct memcpy), and the temp teardown disappear
+— 2 mallocs + 1 free per push become 1 malloc. The standard suite is
+unchanged (json-serde 0.05/0.07s, binarytrees 1.40/1.83s, lru, nsieve —
+identical before/after on both backends): none of its hot loops contain the
+bare-local ctor-push shape yet.
+
+**Remainder.** `JsonTree.alloc_node` still misses the guarantee — not because
+of the ctor shape (fixed here) but because its receiver is a field path
+(`self.nodes`), which the tranche's bare-local rule excludes (the aarch64
+`emit_var_address` has no field-path form, and the slot address must be
+re-derived after the constructing call). Extending the receiver side to
+`self.<field>` paths is the natural sibling item; it needs a field-path
+addressing primitive first.
 
 ## 3. Move-on-last-use for structs
 
 `src/check/utils/last_use.ts` is explicitly "mv-on-last-use **string**
 assignment" (both backends gate on `rhs_is_string_var`). But `a = b` where `T`
-is a mv struct with string/container fields deep-copies *every field*; if `b`
+is a mv struct with string/container fields deep-copies _every field_; if `b`
 is genuinely dead after the assignment, a pointer steal needs zero copies. The
 whole-function single-use counting machinery exists and works. This is exactly
 the cost FOLLOWUP.md blames for the tree-bench regression.
@@ -64,7 +116,7 @@ the cost FOLLOWUP.md blames for the tree-bench regression.
 Two halves, one family:
 
 - **Deep-copy-on-read for container-bearing structs.** The owning-specialized
-  `load_T` deep-copies every `List`/`Buffer`/`Map`/`Set` field on *every read*
+  `load_T` deep-copies every `List`/`Buffer`/`Map`/`Set` field on _every read_
   — `.at(i)`, `.get(k)`, and each `for of` element
   (`src/build_c/utils/owning_buffer_specialize.ts`,
   `emit_load_deep_copy_fields`). `for node of outer_list` where `Outer` has a
@@ -114,7 +166,7 @@ constructed.
 ## 8. Regex/String O(n²) accumulators
 
 `Regex.nm` builds matches with `match_result = match_result + "\{input.at(j)}"`
-— per matched byte, one interpolation malloc *plus* one whole-accumulator
+— per matched byte, one interpolation malloc _plus_ one whole-accumulator
 re-copy. O(n²). Same per-byte pattern in `Regex.replace_all` and
 `String.replace_all` — one `append_string_view(input.slice(...))` per run
 replaces the byte loop. Also in the emitted code: the C backend's fixed-array

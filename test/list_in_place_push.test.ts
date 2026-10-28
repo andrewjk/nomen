@@ -432,6 +432,241 @@ pub func main = (Init init) {
 	});
 });
 
+describe("in-place push: constructor arguments (the dominant excluded shape)", () => {
+	test("ctor push with a string field lands in the slot and survives", async () => {
+		const input = `
+import System
+
+mv struct Rec {
+	var string name
+	var int n
+}
+
+pub func main = (Init init) {
+	var List<Rec> recs = List<Rec>()
+	recs.push(Rec("a", 1))
+	recs.push(Rec("b", 2))
+	recs.push(Rec("c", 3))
+	mv Rec r3 = recs.pop()
+	mv Rec r1 = recs.at_or_panic(0)
+	Console.write("\\{r1.name}\\{r1.n}\\{r3.name}\\{r3.n}")
+}
+`;
+		// The constructor writes straight into the container's fresh slot: no
+		// `_param_N` temp, no push-callee copy, no temp teardown. Every slot
+		// owns its own heap string (each ctor strdups its seed).
+		await build_and_check_output(input, "inplace_push_ctor_slot", "a1c3", true);
+	});
+
+	test("zero-arg ctor pushes (the JsonNode pool shape)", async () => {
+		const input = `
+import System
+
+mv struct Node {
+	var kind = 0
+	var text = ""
+	var int child = -1
+}
+
+pub func main = (Init init) {
+	var List<Node> pool = List<Node>()
+	var int i = 0
+	while i < 40; i += 1 {
+		pool.push(Node())
+	}
+	mv Node m = pool.pop()
+	Console.write("\\{pool.length}:\\{m.kind}:\\{m.child}:\\{pool.at_or_panic(0).kind}")
+}
+`;
+		// 40 zero-arg ctor pushes cross the growth boundary; every slot owns
+		// fresh ctor defaults, and the popped node reads them back.
+		await build_and_check_output(input, "inplace_push_ctor_zero_arg", "39:0:-1:0", true);
+	});
+
+	test("computed ctor arguments construct in place", async () => {
+		const input = `
+import System
+
+func fake_int = (int k, out int) {
+	return k * 2
+}
+
+mv struct Vec {
+	var int x
+	var int y
+}
+
+pub func main = (Init init) {
+	var List<Vec> vs = List<Vec>()
+	var int i = 3
+	vs.push(Vec(fake_int(i), i * 10))
+	mv Vec v = vs.at_or_panic(0)
+	Console.write("\\{v.x},\\{v.y}")
+}
+`;
+		// A nested scalar call (`bl` mid-argument-build) and an op tree —
+		// the preset destination must survive both: 6, 30.
+		await build_and_check_output(input, "inplace_push_ctor_computed", "6,30", true);
+	});
+
+	test("plain-field ctor pushes across the growth boundary", async () => {
+		const input = `
+import System
+
+mv struct Vec {
+	var int x
+	var int y
+}
+
+pub func main = (Init init) {
+	var List<Vec> vs = List<Vec>()
+	var int i = 0
+	while i < 9; i += 1 {
+		vs.push(Vec(i, i * i))
+	}
+	mv Vec v = vs.pop()
+	mv Vec w = vs.pop()
+	Console.write("\\{vs.length}:\\{v.x},\\{v.y},\\{w.x}")
+}
+`;
+		await build_and_check_output(input, "inplace_push_ctor_growth", "7:8,64,7", true);
+	});
+
+	test("donor form with a ctor initializer converges on the in-place lowering", async () => {
+		const input = `
+import System
+
+mv struct Rec {
+	var string name
+	var int n
+}
+
+pub func main = (Init init) {
+	var List<Rec> recs = List<Rec>()
+	var p = Rec("k", 5)
+	recs.push(mv p)
+	recs.push(Rec("j", 6))
+	Console.write("\\{recs.at_or_panic(0).name}\\{recs.at_or_panic(0).n}\\{recs.at_or_panic(1).name}")
+}
+`;
+		await build_and_check_output(input, "inplace_push_ctor_donor", "k5j", true);
+	});
+
+	test("a ctor argument that fails the arg-tree gate keeps the hoisted lowering", async () => {
+		const input = `
+import System
+
+mv struct Rec {
+	var string name
+	var int n
+}
+
+pub func main = (Init init) {
+	var List<Rec> recs = List<Rec>()
+	const src = "a"
+	recs.push(Rec(src.copy(), 1))
+	recs.push(Rec("b", 2))
+	mv Rec r1 = recs.pop()
+	mv Rec r0 = recs.pop()
+	Console.write("\\{r0.name}\\{r0.n}\\{r1.name}\\{r1.n}")
+}
+`;
+		// `src.copy()` is an access (a method call) — the argument tree gate
+		// rejects the in-place shape and the ordinary hoisted lowering runs.
+		// Both pushes must still read back exactly.
+		await build_and_check_output(input, "inplace_push_ctor_fallback", "a1b2", true);
+	});
+
+	test("a custom #init constructor constructs in place", async () => {
+		const input = `
+import System
+
+mv struct Tagged {
+	var string label
+	var int n
+
+	func #init = (self, mv string l, int k) {
+		self.label = l
+		self.n = k * 2
+	}
+}
+
+pub func main = (Init init) {
+	var List<Tagged> tags = List<Tagged>()
+	tags.push(Tagged("t", 21))
+	mv Tagged t = tags.pop()
+	Console.write("\\{t.label}:\\{t.n}")
+}
+`;
+		await build_and_check_output(input, "inplace_push_ctor_custom_init", "t:42", true);
+	});
+
+	test("C backend constructs the ctor into the slot, no temp and no push call", async () => {
+		const input = `
+import System
+
+mv struct Rec {
+	var string name
+	var int n
+}
+
+pub func main = (Init init) {
+	var List<Rec> recs = List<Rec>()
+	recs.push(Rec("a", 1))
+	Console.write("\\{recs.pop().name}")
+}
+`;
+		const parsed = parse_raw(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "c" });
+		expect(result.errors ?? []).toEqual([]);
+		const code = result.code ?? "";
+		const at = code.indexOf("List_Rec_reserve(&recs");
+		expect(at).toBeGreaterThan(0);
+		// The push statement is reserve → ctor-into-slot → length bump.
+		expect(code).toMatch(
+			/\*\( struct Rec\*\)\(unsigned long long\)List_Rec_append_slot_ptr\(&recs\) = Rec_init\(/,
+		);
+		expect(code).toContain("recs.length += 1L");
+		// The hoisted lowering is gone: no temp home, no push-callee call.
+		const seq = code.slice(at, code.indexOf("recs.length += 1L", at) + 18);
+		expect(seq).not.toContain("_param_");
+		expect(seq).not.toContain("List_Rec_push");
+	});
+
+	test("aarch64 backend loads the ctor destination from the spilled slot", async () => {
+		const input = `
+import System
+
+mv struct Rec {
+	var string name
+	var int n
+}
+
+pub func main = (Init init) {
+	var List<Rec> recs = List<Rec>()
+	recs.push(Rec("a", 1))
+	Console.write("\\{recs.pop().name}")
+}
+`;
+		const parsed = parse_raw(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(result.errors ?? []).toEqual([]);
+		const code = result.code ?? "";
+		const main_start = code.indexOf("\n_main:\n");
+		const main_body = code.slice(main_start, code.indexOf(".p2align", main_start));
+		// The in-place sequence: reserve, the slot address spilled, the ctor
+		// destination loaded from the spill, the ctor called, the length bump.
+		expect(main_body).toContain("bl List_Rec_reserve");
+		expect(main_body).toContain("bl List_Rec_append_slot_ptr");
+		expect(main_body).toMatch(/str x0, \[x29, #\d+\]\n[\s\S]*?bl Rec_init/);
+		expect(main_body).toContain("add x10, x10, #1");
+		// The hoisted lowering is gone.
+		expect(main_body).not.toContain("bl List_Rec_push");
+		expect(main_body).not.toContain("_param_");
+	});
+});
+
 describe("in-place push: StableList (chunked storage)", () => {
 	test("string pushes read back across the chunk-0 boundary", async () => {
 		const input = `

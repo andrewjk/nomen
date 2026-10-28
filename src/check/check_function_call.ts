@@ -1646,20 +1646,40 @@ export default function check_function_call(
 		// The value-producing call quality gate, shared by the direct form's
 		// argument and the donor declaration's initializer: a body (foreign
 		// callees keep the hoisted path), no by-reference plumbing, no
-		// constructor/magic-ctor shape, and every argument an approved tree
+		// magic-ctor shape (a VALUE-STRUCT constructor is sanctioned — see
+		// ctor_shape_struct), and every argument an approved tree
 		// (in_place_arg_tree_ok — a `bl` inside the tree is fine, the call
 		// emitter re-presets the spilled sret destination per argument; a
 		// struct-returning nested call or a container-aliasing access is
 		// not).
+		// A constructor-shaped call (`Res(7)` — the name resolves to a value
+		// struct) is the DOMINANT push-argument shape: it lowered as ctor
+		// sret into a `_param_N` temp → push-callee memcpy temp→slot → temp
+		// teardown. The callee is the struct's `#init` (auto-generated or
+		// user-written) and always emits, so the foreign-callee has_body gate
+		// doesn't apply; both backends construct the result straight into the
+		// preset destination — the same mechanism `Box<T>(T(...))` already
+		// uses for the box slot (box_ctor_direct_ctor_arg). Generics are
+		// excluded: `in_place_element_ok` never admits a generic element, so
+		// a generic-body ctor has no in-place destination to match.
+		const ctor_shape_struct = (call: FunctionCallNode): StructNode | undefined =>
+			status.structs.find(
+				(s) => s.name === call.name && !s.is_simple_type && !s.is_class && !s.is_generic,
+			);
 		const in_place_call_ok = (call: FunctionCallNode | undefined): boolean =>
 			!!call &&
-			!!call.resolved_function?.has_body &&
+			// A ctor's emission is unconditional; every other callee must have
+			// a body (foreign callees keep the hoisted path).
+			(!!ctor_shape_struct(call) || !!call.resolved_function?.has_body) &&
 			!call.ref_param_indices?.length &&
 			!call.field_overrides?.length &&
 			!call.is_thread_ctor &&
 			!call.is_fiber_ctor &&
 			!call.is_awaitable_ctor &&
-			!status.structs.find((s) => s.name === call.name) &&
+			// Non-ctor callees keep the struct-name exclusion; a ctor of the
+			// element type is the sanctioned shape (its result type IS the
+			// element type — checker-enforced by the param match above).
+			(!status.structs.find((s) => s.name === call.name) || !!ctor_shape_struct(call)) &&
 			call.params.every((a) => in_place_arg_tree_ok(a, status.structs)) &&
 			// String or value-struct elements own heap bytes a temp would have
 			// freed at scope exit — the classes the guarantee is for.
@@ -1669,6 +1689,12 @@ export default function check_function_call(
 				));
 		const in_place_push =
 			in_place_container &&
+			// The callee-side element type gates too: a `mv Trait` push param
+			// stores a boxed handle per slot — an argument whose CONCRETE
+			// type is a value struct (`pets.push(Dog("Rex"))` into
+			// `List<Speaker>`) must keep the hoisted + boxing path, never
+			// construct into the handle slot.
+			in_place_element_ok(func_param.type, status.structs) &&
 			// The argument expression is a direct call (a method call arrives
 			// as an `access` node and keeps the hoisted path — its receiver
 			// could alias the container) of the element type...
@@ -1692,6 +1718,9 @@ export default function check_function_call(
 			has_mov_keyword &&
 			param.node_type === "value" &&
 			typeof (param as ValueNode).value === "string" &&
+			// The same callee-side element gate as the direct form (a
+			// trait-typed push param stores boxed handles, not raw values).
+			in_place_element_ok(func_param.type, status.structs) &&
 			in_place_element_ok(param_type, status.structs) &&
 			in_place_call_ok(
 				(preceding_statement(node, status) as DeclarationNode | undefined)?.value as
