@@ -2692,9 +2692,18 @@ function substitute_raw_in_node(
 			value = value.replace(new RegExp(`\\b${param}\\b`, "g"), c_type_name);
 			// Also substitute T_SIZE placeholder with element byte size.
 			// Numeric only for pure-asm blocks; C blocks get sizeof(T) so
-			// slab sizing agrees with C struct layout (tail padding).
+			// slab sizing agrees with C struct layout (tail padding). A
+			// class/trait element is a heap/vtable handle — `sizeof(T)`
+			// would name an undeclared (trait) type, and the slot stride is
+			// the pointer width anyway, so substitute sizeof(void *).
 			const size = raw_type_size(type, structs, tables);
-			const size_expr = raw_block_is_pure_asm(value) ? String(size) : `sizeof(${c_type_name})`;
+			const is_handle_element =
+				struct_node?.is_class || traits.some((t) => t.name === type);
+			const size_expr = raw_block_is_pure_asm(value)
+				? String(size)
+				: is_handle_element
+					? "sizeof(void *)"
+					: `sizeof(${c_type_name})`;
 			value = value.replace(new RegExp(`\\b${param}_SIZE\\b`, "g"), size_expr);
 			// Substitute T_destroy placeholder with the monomorphized element's
 			// destroy symbol (e.g. ClassBuffer<Animal>.#destroy calls Animal_destroy).

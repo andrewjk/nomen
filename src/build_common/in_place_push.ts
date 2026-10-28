@@ -77,14 +77,8 @@ export interface InPlacePushFacts {
 	elem_name: string;
 	/** True when the element is the fat string (x0/x1 return, 16-byte slot). */
 	elem_is_string: boolean;
-	/** The mono'd container struct name (`List_string`) — reserve label prefix. */
+	/** The mono'd container struct name (`List_string`) — labels prefix. */
 	list_mono: string;
-	/**
-	 * The slot-address flavor: `list` derives the slot inline (data +
-	 * length * elem_size); `stable` calls the container's raw
-	 * `append_slot_ptr` (chunked storage — chunk 0, then directory slabs).
-	 */
-	flavor: "list" | "stable";
 	/** The argument call to construct into the slot. */
 	arg: FunctionCallNode;
 }
@@ -113,7 +107,6 @@ export function in_place_push_facts(
 		elem_name: elem_type.name,
 		elem_is_string: elem_type.name === "string",
 		list_mono: receiver_type_name,
-		flavor: receiver_type_name.startsWith("StableList") ? "stable" : "list",
 		arg: arg as FunctionCallNode,
 	};
 }

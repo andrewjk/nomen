@@ -203,7 +203,40 @@ declaration-initializer preset path is untouched — it keys on
 arguments keep the hoisted path (a suppressed `_call_ret_` would target the
 slot; a method receiver could alias the container).
 
-Still open: growable-container returns (the binding's home as sret target).
+**Shipped (Oct 2026, tranche 6 — the contract, generalised):** the
+List/StableList name-prefix gates and the List inline slot-math special
+case are gone. The checker now admits ANY container whose resolved `push`
+is `(ref self, mv T value)` and whose type declares the three primitives
+the lowering calls — `reserve(extra)`, raw `append_slot_ptr() -> ptr T`
+(the address of element `length`; reserve must have run), and a `length`
+field for the commit bump — and both backends emit one unified sequence:
+`reserve(1)` → `append_slot_ptr` → construct through the returned address →
+`length += 1`. List itself migrated onto `append_slot_ptr` (its inline math
+moved into the primitive), so a new container needs zero compiler work —
+declare the three primitives in its own `.nm` (unsafe context: the
+`ptr`-returning signature is System-reserved, which is the contract's
+security boundary — in-place push means the container author manipulates
+raw slots). A `Pushable` marker trait would be the declarative form of the
+same contract (conformance-checked, per the marker-trait endgame in
+FOLLOWUP.md); vtable-dispatched push was rejected — the guarantee needs the
+static slot address. test/list_in_place_push.test.ts pins the unified
+lowering for List and StableList alike.
+
+Still open: nothing for #4. The marker-trait form of the contract can fold
+into the marker-trait endgame when that lands.
+
+**Measured (Oct 2026, aarch64/C, 2-3M iterations, best-of-5, vs the
+pre-change compiler+core, outputs verified identical):** push-of-call
+shapes — **−61% aarch64 / −73% C** (2M string pushes: 130→50ms, 110→30ms);
+the named-donor spelling identical; struct elements −10% aarch64 at 9M
+pushes (the sret-into-slot saves the copy; the `append_slot_ptr` call gives
+a few ns back); return-side NRVO flat (the 40-byte handle copy is below
+noise, as predicted); plain scalar pushes and StableList pushes **+0%**
+(the reserve/push fast path restored after the A/B caught a +75% scalar
+regression in the first reserve-split shape). The standard bench/ suite is
+flat — its loops don't push call results; the win is per-push (~40ns on
+strings), so it shows in parser-shaped loops, not in the suite's
+compute-bound benchmarks.
 
 **Shipped (Oct 2026, tranche 5 — growable-container returns):** the last
 half. When every direct return of a value-struct-returning function is a

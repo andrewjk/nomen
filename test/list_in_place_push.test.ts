@@ -291,8 +291,10 @@ pub func main = (Init init) {
 		const at = code.indexOf("List_string_reserve(&items");
 		expect(at).toBeGreaterThan(0);
 		// The push statement is reserve → construct-into-slot → length bump.
-		expect(code).toContain("((nomen_string*)(unsigned long long)items.items.data)[items.length]");
-		expect(code).toMatch(/items\.items\.data\)\[items\.length\] = \w*fake_parse\(/);
+		expect(code).toContain(
+			"*( nomen_string*)(unsigned long long)List_string_append_slot_ptr(&items)",
+		);
+		expect(code).toMatch(/append_slot_ptr\(&items\) = \w*fake_parse\(/);
 		expect(code).toContain("items.length += 1L");
 		// No call site takes the hoisted push: the mono'd push body label may
 		// be emitted, but nothing calls it.
@@ -328,7 +330,7 @@ pub func main = (Init init) {
 		// The declaration constructs into the slot; the binding itself never
 		// materializes (no declaration, no temp, no auto-free), and the push
 		// statement is the length bump alone.
-		expect(code).toMatch(/items\.items\.data\)\[items\.length\] = \w*fake_parse\(/);
+		expect(code).toMatch(/append_slot_ptr\(&items\) = \w*fake_parse\(/);
 		expect(code).not.toMatch(/nomen_string p =/);
 		expect(code).not.toContain("List_string_push(&items");
 		const seq = code.slice(at, code.indexOf("items.length += 1L", at) + 18);
@@ -371,9 +373,10 @@ pub func main = (Init init) {
 			}
 		}
 		expect(at).toBeGreaterThan(0);
-		// The in-place sequence: slot address derived and spilled, the result
-		// pair stored through it, the length bumped.
-		expect(seq).toContain("str x11, [x29, #");
+		// The in-place sequence: slot address from the container's
+		// append_slot_ptr, spilled, the result pair stored through it, the
+		// length bumped.
+		expect(seq).toContain("str x0, [x29, #");
 		expect(seq).not.toContain("bl List_string_push");
 		expect(seq).not.toContain("_param_");
 	});
@@ -605,6 +608,7 @@ pub func main = (Init init) {
 		// both behaviors are identical, so this pins the fallback's runtime.
 		await build_and_check_output(input, "nrvo_return_other_reads", "17", true);
 	});
+
 });
 
 describe("in-place push: checker gating", () => {

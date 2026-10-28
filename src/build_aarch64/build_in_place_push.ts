@@ -11,7 +11,7 @@ import type ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
 import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
 import { allocate_stack_space, emit_var_address } from "./utils/stack_var.ts";
-import { get_field_offset, get_struct_size } from "./utils/struct_layout.ts";
+import { get_field_offset } from "./utils/struct_layout.ts";
 
 /**
  * GOOSE.md #4 — the in-place construction guarantee, container-push tranche.
@@ -64,8 +64,8 @@ export function build_in_place_push(
 }
 
 function emit_in_place_push(facts: InPlacePushFacts, status: BuildStatus): void {
-	const { receiver, elem_name, elem_is_string, list_mono, arg } = facts;
-	const slot = emit_reserve_and_slot(status, receiver, list_mono, elem_name, elem_is_string);
+	const { receiver, elem_is_string, list_mono, arg } = facts;
+	const slot = emit_reserve_and_slot(status, receiver, list_mono);
 
 	// 3. Construct the argument call's result directly into the slot.
 	if (elem_is_string) {
@@ -97,49 +97,22 @@ function emit_in_place_push(facts: InPlacePushFacts, status: BuildStatus): void 
 }
 
 /** Steps 1–2, shared by the direct form and the donor declaration: reserve
- *  one element of capacity, then spill the fresh slot's address to a frame
+ *  one element of capacity, then spill the append slot's address to a frame
  *  slot (a `bl` in the constructing call cannot invalidate it). Returns the
- *  frame offset of the spilled address. */
-function emit_reserve_and_slot(
-	status: BuildStatus,
-	receiver: string,
-	list_mono: string,
-	elem_name: string,
-	elem_is_string: boolean,
-): number {
+ *  frame offset of the spilled address. The slot address comes from the
+ *  container's own `append_slot_ptr` primitive (the same contract every
+ *  container declares — List, StableList, user containers). */
+function emit_reserve_and_slot(status: BuildStatus, receiver: string, list_mono: string): number {
 	// 1. Reserve capacity for the new element. `extra` is push's own policy
 	// argument; the `out int` result (the new capacity) is discarded.
 	emit_var_address(status, "x0", receiver);
 	emit_asm(status, `mov x1, #1\n`);
 	emit_asm(status, `bl ${list_mono}_reserve\n`);
 
-	// 2. The destination slot's address. `list` derives it inline (data +
-	// length * elem_size); `stable` calls the container's raw
-	// append_slot_ptr (chunk 0, or the directory chunk's slab). Either way
-	// the address is spilled to the frame.
-	if (list_mono.startsWith("StableList")) {
-		emit_var_address(status, "x0", receiver);
-		emit_asm(status, `bl ${list_mono}_append_slot_ptr\n`);
-	} else {
-		const elem_size = elem_is_string ? 16 : get_struct_size(elem_name, status);
-		const items_off = get_field_offset(list_mono, "items", status);
-		const length_off = get_field_offset(list_mono, "length", status);
-		const buffer_mono = `Buffer_${elem_name}`;
-		const data_off = items_off + get_field_offset(buffer_mono, "data", status);
-		emit_var_address(status, "x9", receiver);
-		ensure_newline(status);
-		emit_asm(status, `ldr x10, [x9, #${data_off}]\n`);
-		emit_asm(status, `ldr x11, [x9, #${length_off}]\n`);
-		const shift = Math.log2(elem_size);
-		if (Number.isInteger(shift)) {
-			emit_asm(status, `lsl x11, x11, #${shift}\n`);
-		} else {
-			emit_asm(status, `mov x12, #${elem_size}\n`);
-			emit_asm(status, `mul x11, x11, x12\n`);
-		}
-		emit_asm(status, `add x11, x10, x11\n`);
-		emit_asm(status, `mov x0, x11\n`);
-	}
+	// 2. The destination slot's address — the container's raw append-slot
+	// primitive — spilled to the frame.
+	emit_var_address(status, "x0", receiver);
+	emit_asm(status, `bl ${list_mono}_append_slot_ptr\n`);
 	const slot = allocate_stack_space(status, 8);
 	emit_asm(status, `str x0, [x29, #${slot}]\n`);
 	return slot;
@@ -175,13 +148,7 @@ export function build_in_place_donor_declaration(
 	// resolves to post-monomorphization.
 	const list_mono = `${slot_stamp.container}_${elem_type.name}`;
 	const elem_is_string = elem_type.name === "string";
-	const slot = emit_reserve_and_slot(
-		status,
-		slot_stamp.receiver,
-		list_mono,
-		elem_type.name,
-		elem_is_string,
-	);
+	const slot = emit_reserve_and_slot(status, slot_stamp.receiver, list_mono);
 	if (elem_is_string) {
 		build_node(node.value, status);
 		ensure_newline(status);

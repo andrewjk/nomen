@@ -121,13 +121,10 @@ export default function build_declaration_node(
 		if (recv_type?.name) {
 			const list_mono = `${node.in_place_push_slot.container}_${recv_type.name}`;
 			const elem_c = recv_type.name === "string" ? "nomen_string" : `struct ${recv_type.name}`;
-			const stable = list_mono.startsWith("StableList");
 			status.code += `${c_function_name(`${list_mono}_reserve`)}(&${node.in_place_push_slot.receiver}, 1L);\n`;
-			if (stable) {
-				status.code += `*( ${elem_c}*)(unsigned long long)${c_function_name(`${list_mono}_append_slot_ptr`)}(&${node.in_place_push_slot.receiver}) = `;
-			} else {
-				status.code += `((${elem_c}*)(unsigned long long)${node.in_place_push_slot.receiver}.items.data)[${node.in_place_push_slot.receiver}.length] = `;
-			}
+			// The container's raw append-slot primitive is the LHS — the same
+			// contract for every container.
+			status.code += `*( ${elem_c}*)(unsigned long long)${c_function_name(`${list_mono}_append_slot_ptr`)}(&${node.in_place_push_slot.receiver}) = `;
 			build_node(node.value, status);
 			status.code += ";\n";
 			return;

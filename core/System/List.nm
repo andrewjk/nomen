@@ -95,6 +95,29 @@ pub mv struct List<T>: Viewable {
 		panic("index out of range")
 	}
 
+	// Address of the APPEND slot (element `length`) — the in-place push
+	// lowering's destination primitive (docs/GOOSE.md #4). reserve must have
+	// run, so the slot exists. Offsets mirror the mono layout: length @8,
+	// items.data @24 (the Buffer mono is {_vt, data, cap} = 24 bytes).
+	internal func append_slot_ptr = (ref self, out ptr T) {
+		```
+		#arch: c
+		// Byte math + void* — the body must compile for EVERY element kind
+		// (values, strings, class/trait handles), so it never names T.
+		// T_SIZE substitutes to the element's real stride.
+		return (void *)((unsigned long long)self->items.data +
+			(unsigned long long)self->length * T_SIZE);
+		```
+		```
+		#arch: aarch64
+		// x0 = self (stack-less raw: read from x0). Returns x0 = slot address.
+		ldr x9, [x0, #8]
+		ldr x10, [x0, #24]
+		mov x11, #T_SIZE
+		madd x0, x9, x11, x10
+		```
+	}
+
 	// Address of element `i` (library-only): the ELEMENT BORROW primitive —
 	// `ref T x = list.at(i)` (docs/HANDLERS.md Stage 4, dynamic-tree
 	// dispatch) lowers to this, binding the alias to the slot itself rather

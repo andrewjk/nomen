@@ -1611,21 +1611,26 @@ export default function check_function_call(
 			// The container push: `push = (ref self, mv T value)`. The
 			// resolved callee is a mono clone whose `scope` back-pointer may be
 			// unset, so the container is identified through the RECEIVER's
-			// type (generic `List`/`StableList` at check time): it must be the
-			// System List or StableList and actually carry the `reserve` half
-			// the lowering calls.
+			// type: it must declare the primitives the lowering calls —
+			// `reserve` (growth) and `append_slot_ptr` (the raw append-slot
+			// address) — plus a `length` field for the commit bump. Any
+			// container with that contract qualifies (List, StableList, user
+			// containers); the append-only, fresh-slot semantics are the
+			// contract's documented obligation (docs/GOOSE.md #4).
 			func.name === "push" &&
 			func.params.length === 2 &&
 			func_param === func.params[1] &&
 			func_param.is_moved &&
 			!!target_type?.name &&
-			(target_type.name === "List" ||
-				target_type.name.startsWith("List_") ||
-				target_type.name === "StableList" ||
-				target_type.name.startsWith("StableList_")) &&
+			!!status.structs.find((s) => s.name === target_type?.name) &&
+			["reserve", "append_slot_ptr"].every((prim) =>
+				status.structs
+					.find((s) => s.name === target_type?.name)
+					?.functions.some((f) => f.name === prim && f.has_body),
+			) &&
 			!!status.structs
 				.find((s) => s.name === target_type?.name)
-				?.functions.some((f) => f.name === "reserve" && f.has_body) &&
+				?.fields.some((f) => f.name === "length") &&
 			// Statement position: push is void, but the emission is a
 			// multi-statement splice — only a bare statement hosts it.
 			in_statement_position(node, status) &&
