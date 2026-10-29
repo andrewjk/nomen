@@ -335,6 +335,11 @@ export default interface BuildStatus {
 	/** Local variables declared as `var ref` (mutable aliases via pointer).
 	 *  Reassigning one repoints the pointer rather than writing through it. */
 	ref_local_vars?: Set<string>;
+	/** `ref` locals initialized from an ELEMENT BORROW (a slot-load call —
+	 *  `slot_ptr`/`get_ptr`): the alias names a container slot, so a scalar
+	 *  assignment writes THROUGH to the slot (repointing to an rvalue would
+	 *  strand the borrow). Struct borrows keep the repoint behavior. */
+	ref_slot_vars?: Set<string>;
 	/**
 	 * When true, the next value-node build of a ref/var param should NOT be
 	 * prefixed with `*` (i.e. the caller needs the pointer itself, e.g. to

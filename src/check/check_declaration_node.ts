@@ -521,10 +521,21 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 		const ref_src = is_ref_keyword ? ref_alias_source_name(decl.value) : undefined;
 		if (is_ref_keyword) {
 			const slot_load = element_slot_load(decl.value, status);
-			if (slot_load) {
-				// Rewrite `container.at(i)` → `container.slot_ptr(i)`; the
-				// stamp tells the builds to emit the returned pointer bare.
-				slot_load.name = "slot_ptr";
+			if (slot_load && decl.type.name === "string") {
+				// A string slot borrow has no safe store convention (writing
+				// through would need the strdup-and-free-old slot discipline,
+				// and repointing would strand the borrow) — the owning `get`
+				// remains the string read.
+				add_error(
+					status,
+					`'ref' element borrows of string values are not supported — bind an owning copy with 'var'`,
+					decl.start,
+				);
+			} else if (slot_load) {
+				// Rewrite the element read to the container's slot-borrow
+				// primitive; the stamp tells the builds to emit the returned
+				// pointer bare.
+				slot_load.name = slot_load_primitive(slot_load);
 				slot_load.params = [slot_load.params[0]];
 				(slot_load as unknown as { is_element_slot_load?: boolean }).is_element_slot_load = true;
 			} else {
@@ -1096,10 +1107,15 @@ function ref_alias_source_name(
 
 /**
  * The ELEMENT BORROW shape (docs/HANDLERS.md Stage 4): a ref-binding
- * initializer that is `container.at(i)` — a container element read whose
- * container exposes the `slot_ptr` primitive (the `List<T>` mono). Returns
- * the inner AccessFunctionCallNode to rewrite, or undefined when the
- * initializer isn't an element load.
+ * initializer that is a container element read whose container exposes the
+ * matching slot-borrow primitive. Two read spellings lower this way:
+ *   - `container.at(i)`  → `slot_ptr(i)`   (the `List<T>` mono)
+ *   - `map.get_or_panic(k)` → `get_ptr(k)` (the `Map<K, V>` mono — the
+ *     trap-on-absent contract carries over verbatim, so the rewrite is
+ *     semantics-preserving; plain `get` does NOT rewrite, because its
+ *     zero-value-on-miss would become a wild pointer read)
+ * Returns the inner AccessFunctionCallNode to rewrite, or undefined when
+ * the initializer isn't an element load.
  */
 function element_slot_load(
 	value: import("../nodes/BaseNode.ts").default | undefined,
@@ -1109,13 +1125,20 @@ function element_slot_load(
 	const access = value as AccessNode;
 	if (access.access.node_type !== "access_func") return undefined;
 	const call = access.access as AccessFunctionCallNode;
-	if (call.name !== "at" || call.params.length !== 1) return undefined;
-	// The container must expose the element-borrow primitive (the List mono
-	// does; ad-hoc structs with an `at` method don't opt in).
+	if (call.params.length !== 1) return undefined;
+	if (call.name !== "at" && call.name !== "get_or_panic") return undefined;
+	// The container must expose the element-borrow primitive (the List/Map
+	// monos do; ad-hoc structs with an `at`/`get_or_panic` method don't opt
+	// in).
 	const target_type = type_from_value_node(access.target, status);
 	const container = status.structs.find(
 		(s) => s.name === target_type.name || s.name === mono_type_name(target_type),
 	);
-	if (!container?.functions.some((f) => f.name === "slot_ptr")) return undefined;
+	if (!container?.functions.some((f) => f.name === slot_load_primitive(call))) return undefined;
 	return call;
+}
+
+/** The slot-borrow primitive a read spelling lowers to. */
+function slot_load_primitive(call: AccessFunctionCallNode): string {
+	return call.name === "at" ? "slot_ptr" : "get_ptr";
 }

@@ -358,6 +358,8 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	// JsonTree receipt: a library `ref JsonNode n` leaked into main's `n`).
 	const old_ref_locals = status.ref_local_vars;
 	status.ref_local_vars = new Set<string>();
+	const old_slot_locals = status.ref_slot_vars;
+	status.ref_slot_vars = new Set<string>();
 	const old_class_vars = status.class_vars;
 	// Seed with root-scope trait handles: they are pointer storage visible
 	// from every function, but class_vars is per-body (BUGS.md #5).
@@ -649,6 +651,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 
 	status.function_ref_params = old_ref_params;
 	status.ref_local_vars = old_ref_locals;
+	status.ref_slot_vars = old_slot_locals;
 	status.class_vars = old_class_vars;
 	status.ref_class_params = old_ref_class_params;
 	status.ref_class_param_types = old_ref_class_param_types;

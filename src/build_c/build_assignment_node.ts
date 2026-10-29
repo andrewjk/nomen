@@ -1557,12 +1557,30 @@ export default function build_assignment_node(
 	// Ref-local reassignment (`current = otherVar`): repoint the pointer
 	// rather than writing through it. A `var ref` local is emitted as a C
 	// pointer, so `current = &otherVar` makes it alias the new variable.
+	// EXCEPTION — an ELEMENT BORROW local (slot-load-initialized, the
+	// `ref_slot_vars` set): the alias names a container SLOT, so a scalar
+	// store must land IN the slot (`*v = 10`) — repointing at an rvalue
+	// would strand the borrow. Struct borrows keep the repoint behavior
+	// (their stores go through the `->`-field paths instead).
 	if (
 		!node.operator &&
 		node.left_value.node_type === "value" &&
 		status.ref_local_vars?.has((node.left_value as ValueNode).value)
 	) {
 		const lhs_name = (node.left_value as ValueNode).value;
+		const lhs_type = status.variable_types?.get(lhs_name);
+		const is_scalar_slot_borrow =
+			status.ref_slot_vars?.has(lhs_name) === true &&
+			!!lhs_type &&
+			!lhs_type.is_array &&
+			lhs_type.name !== "string" &&
+			!status.structs.some((s) => s.name === lhs_type.name && !s.is_simple_type);
+		if (is_scalar_slot_borrow) {
+			status.code += `*${lhs_name} = `;
+			build_node(node.right_value, status);
+			status.code += `;\n`;
+			return;
+		}
 		status.code += `${lhs_name} = &`;
 		build_node(node.right_value, status);
 		status.code += `;\n`;

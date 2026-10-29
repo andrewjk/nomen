@@ -3,29 +3,29 @@
 Research into the next performance opportunities, following the StableList +
 in-place push work. PERF.md is the record of what landed; this is the plan for
 what's next. All findings are ordered most-promising-first. Written Oct 2026;
-originally unmeasured — items 2 and 3 have since landed with measurements in
-place (items marked LANDED carry them; the rest carry expected wins and the
-receipts they rest on).
+originally unmeasured — items 2, 3, and 4 (partially) have since landed with
+measurements in place (items marked LANDED carry them; the rest carry
+expected wins and the receipts they rest on).
 
-| #   | Item                                                                             | Backends       | Effort | Receipt                                               |
-| --- | -------------------------------------------------------------------------------- | -------------- | ------ | ----------------------------------------------------- |
-| 1   | Faster allocator (slab/bump class allocation)                                    | both           | M      | PERF.md "Large"; ASM_TODO "largest unclaimed"         |
-| 2   | ~~In-place push for constructors~~ **LANDED Oct 2026: −55% / −58% on the shape** | both           | S      | shape micro-bench, interleaved medians (below)        |
-| 3   | ~~Move-on-last-use for structs~~ **LANDED Oct 2026: −20% / −29% on the shape**   | both           | S–M    | shape micro-bench, interleaved medians (below)        |
-| 4   | Borrow-returning reads (Map `get_ptr`, `at_view`)                                | both           | M      | lru hot loop double-probes; per-read container copies |
-| 5   | Json ownership copies                                                            | both           | S      | measured 0.7.0 regression +61% / +103%                |
-| 6   | In-place store (`set`/`insert`/`add`/`alloc`)                                    | both           | M      | slot primitives already exist                         |
-| 7   | Enum payload in-place construction                                               | both           | S–M    | mechanically same as in-place push                    |
-| 8   | Regex/String O(n²) accumulators                                                  | both           | S      | O(n²) per-byte loops in core                          |
-| 9   | Map/Set stored hash (Swiss-table tricks)                                         | both           | M      | rehash re-hashes every key                            |
-| 10  | StringBuilder numeric appends + 1-pass interp                                    | both           | S      | two snprintf passes + malloc per append               |
-| 11  | Devirtualization of trait calls                                                  | both           | M      | unmeasured                                            |
-| 12  | Struct field-order / padding                                                     | both           | S      | modest; raw-body caveat                               |
-| 13  | Variable-mode enums                                                              | both           | L      | GOOSE #6, documented, unshipped                       |
-| 14  | Buffer word pairs (T_SIZE ≤ 16)                                                  | mostly aarch64 | S      | IMPROVEMENTS.md "still needed"                        |
-| 15  | aarch64 codegen receipts (splice model, folds…)                                  | aarch64        | S–M    | measured regressions to reclaim                       |
-| 16  | Async paths audit                                                                | both           | ?      | unexplored, unmeasured                                |
-| 17  | Minor batch                                                                      | both           | S      | assorted                                              |
+| #   | Item                                                                                                                                                     | Backends       | Effort | Receipt                                          |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | ------ | ------------------------------------------------ |
+| 1   | Faster allocator (slab/bump class allocation)                                                                                                            | both           | M      | PERF.md "Large"; ASM_TODO "largest unclaimed"    |
+| 2   | ~~In-place push for constructors~~ **LANDED Oct 2026: −55% / −58% on the shape**                                                                         | both           | S      | shape micro-bench, interleaved medians (below)   |
+| 3   | ~~Move-on-last-use for structs~~ **LANDED Oct 2026: −20% / −29% on the shape**                                                                           | both           | S–M    | shape micro-bench, interleaved medians (below)   |
+| 4   | ~~Borrow-returning reads (Map `get_ptr`, `at_view`)~~ **PARTIALLY LANDED Oct 2026: Map slot borrow, −79% / −98% on the borrow shape, −48% probe fusion** | both           | M      | shape micro-benches, interleaved medians (below) |
+| 5   | Json ownership copies                                                                                                                                    | both           | S      | measured 0.7.0 regression +61% / +103%           |
+| 6   | In-place store (`set`/`insert`/`add`/`alloc`)                                                                                                            | both           | M      | slot primitives already exist                    |
+| 7   | Enum payload in-place construction                                                                                                                       | both           | S–M    | mechanically same as in-place push               |
+| 8   | Regex/String O(n²) accumulators                                                                                                                          | both           | S      | O(n²) per-byte loops in core                     |
+| 9   | Map/Set stored hash (Swiss-table tricks)                                                                                                                 | both           | M      | rehash re-hashes every key                       |
+| 10  | StringBuilder numeric appends + 1-pass interp                                                                                                            | both           | S      | two snprintf passes + malloc per append          |
+| 11  | Devirtualization of trait calls                                                                                                                          | both           | M      | unmeasured                                       |
+| 12  | Struct field-order / padding                                                                                                                             | both           | S      | modest; raw-body caveat                          |
+| 13  | Variable-mode enums                                                                                                                                      | both           | L      | GOOSE #6, documented, unshipped                  |
+| 14  | Buffer word pairs (T_SIZE ≤ 16)                                                                                                                          | mostly aarch64 | S      | IMPROVEMENTS.md "still needed"                   |
+| 15  | aarch64 codegen receipts (splice model, folds…)                                                                                                          | aarch64        | S–M    | measured regressions to reclaim                  |
+| 16  | Async paths audit                                                                                                                                        | both           | ?      | unexplored, unmeasured                           |
+| 17  | Minor batch                                                                                                                                              | both           | S      | assorted                                         |
 
 ## 1. Faster allocator — slab/bump the class-allocation path
 
@@ -158,26 +158,112 @@ differently than the local-reassignment paths). Container-typed donors
 the natural sibling: the synthesized/library copy has the same
 fresh-value shape, and the container `mv` transfer exists.
 
-## 4. Borrow-returning reads
+## 4. Borrow-returning reads — PARTIALLY LANDED (Oct 2026)
 
-Two halves, one family:
+**What landed.** The Map value slot borrow. `Map.get_ptr(key) -> ptr TV`
+(`core/System/Map.nm`) is `Buffer.slot_ptr` for Map values: one probe
+(`find_slot` + the `used` check — the `has` + `get` pair collapses into it),
+then the mapped slot's address, so container-bearing values stop paying the
+owning-specialized deep copy on every lookup and the LRU-style hit path
+stops paying a second probe. It traps on an absent key (a missing key is a
+bug at a slot-borrow site; miss-as-case lookups keep `get_or`).
 
-- **Deep-copy-on-read for container-bearing structs.** The owning-specialized
-  `load_T` deep-copies every `List`/`Buffer`/`Map`/`Set` field on _every read_
-  — `.at(i)`, `.get(k)`, and each `for of` element
-  (`src/build_c/utils/owning_buffer_specialize.ts`,
-  `emit_load_deep_copy_fields`). `for node of outer_list` where `Outer` has a
-  `List<string>` field clones the whole container per iteration, on both
-  backends. Plain strings and scalars are already borrows on load — only
-  container-field structs (and string-payload enums) pay.
-- **Map `get_ptr` / has+get fusion.** `Map.has` + `Map.get` each run a full
-  probe — the LRU bench's hottest loop does exactly this pair
-  (`bench/nomen/lru.nm`). A `get_ptr(key) -> ptr TV` slot borrow (like
-  `List.slot_ptr`) fuses probe + read, and is the anchor for in-place
-  `set(key, f(x))` (item 6).
+`ptr` returns are library-only, so user code reaches the primitive through
+the ELEMENT BORROW, extended to a second read spelling: `ref TV v =
+map.get_or_panic(k)` is rewritten in place to `get_ptr(k)` — the same
+lowering `ref T x = list.at(i)` has always gotten from `slot_ptr`
+(`src/check/check_declaration_node.ts`, `element_slot_load`). The rewrite is
+semantics-preserving because the trap-on-absent contract carries over
+verbatim; plain `get` deliberately does NOT rewrite (its zero-value-on-miss
+would become a wild pointer read). Making that usable surfaced three
+pre-existing gaps, fixed here:
 
-A `view`-returning accessor family (`at_view`/`get_view`) kills the copies;
-the `view` machinery and the borrow-accessor classification already exist.
+- **Scalar element borrows never worked.** Both backends' ref-local
+  declaration paths only recognized struct-typed aliases, so a scalar
+  slot-load fell through to the plain declaration path — the C backend
+  emitted `long v = <the pointer>` and clang rejected it outright; the
+  aarch64 backend stored the pointer into a scalar local and read garbage.
+  Both gates now admit slot-load initializers for any element type
+  (`src/build_c/build_declaration_node.ts`,
+  `src/build_aarch64/build_declaration_node.ts`).
+- **Scalar writes through an element borrow re-pointed instead of storing.**
+  The C backend's ref-local reassignment branch unconditionally emitted
+  `v = &rhs`; for a slot borrow that strands the alias (and cannot even
+  compile — `&` of an rvalue). Slot-borrow locals are now tracked
+  (`ref_slot_vars`) and a scalar store lands in the slot (`*v = rhs`); the
+  aarch64 backend already wrote through. String values are rejected at the
+  checker (`ref string` element borrows have no safe store convention —
+  write-through would need the strdup-and-free-old slot discipline).
+- **Element borrows of non-destroy-bearing elements were unpoliced.**
+  `borrow_owner_of` only rooted a borrow at the container when the element
+  was a destroy-bearing struct (`is_element_load_pure_borrow`), so `ref int
+v = map.get_or_panic(k)` recorded no owner and `map.set(...)` after the
+  lookup did not invalidate it. The checker-rewritten slot-load stamp now
+  roots the borrow for every element type
+  (`src/check/utils/borrow.ts`).
+
+Six runtime/emission tests in `test/map_get_ptr.test.ts` (both backends,
+audit on: alias write-through visible via `get`, compound assignment,
+struct-value zero-copy aliasing, trap shape, string rejection, borrow
+invalidation, and the emitted one-probe body); the full suite (522 files,
+both backends) passes with no new failures.
+
+**Measured.** Shape micro-benches, n from argv, Apple Silicon, best-of-5
+plus interleaved rounds, audit off, identical outputs:
+
+- _The borrow shape_ — 20M reads of `Map<int, Rec>` (`Rec`: `List<int>` of
+  3 elements + int), hit path only, owning spelling (`var Rec r = …`) vs
+  element borrow (`ref Rec r = …`):
+
+| Backend | owning read | element borrow |        Δ |
+| ------- | ----------: | -------------: | -------: |
+| C       |       0.51s |          0.01s |    −98%* |
+| aarch64 |       1.05s |          0.22s | **−79%** |
+
+\* The C number is the optimizer collecting on the elision: once the loop
+is copy-free, clang -O2 folds the invariant fields (the whole loop reduces
+to the accumulator). The aarch64 number is the honest per-read cost: the
+owning read pays probe + `load_T` (struct copy + fresh `List` init + slab
+malloc + memcpy + displaced destroy ≈ 2 mallocs + 2 frees per read); the
+element borrow pays the probe.
+
+- _The probe-fusion shape_ — 200M hit-lookups on `Map<int,int>` (1024
+  entries), `has` + `get` vs the fused single probe (`get_or`):
+
+| Backend | has + get | fused |        Δ |
+| ------- | --------: | ----: | -------: |
+| C       |     0.18s | 0.17s |    ~flat |
+| aarch64 |     3.28s | 1.72s | **−48%** |
+
+The C backend is flat because -O2 already fused the pair for free: both
+methods inline into the caller and GVN eliminates the second probe's
+loads. The aarch64 backend issues real calls, so the second probe was real
+work.
+
+- _The standard suite_ — lru (the bench this item was booked against) is
+  **flat on both backends** (C 0.86 → 0.85s, aarch64 1.80 → 1.79s at the
+  measurement size `1000 20000000`; outputs identical). Its `get` is
+  miss-dominated (~10% hit rate at size 1000 over a 10000-key space), so
+  both spellings probe once; the win only exists on hit-heavy put paths,
+  which are a minority of its loop. The bench now uses the fused spelling
+  anyway (`get_or(key, -1)`) — the double probe is gone from the source,
+  and the probe-fusion shape above receipts what that is worth when hits
+  dominate.
+
+**Remainder.** The `at_view`/`get_view` half of this item is NOT landed. A
+`view`-returning accessor that kills the per-read copy for
+container-bearing struct ELEMENTS (`for node of outer_list` where `Outer`
+has a `List<string>` field) needs struct views: a `view Outer` value with
+field access through it (the (ptr, len) view representation covers flat
+data — strings and scalar arrays — but not struct fields, and the borrow
+rules for nested container-field reads through a view are undesigned).
+The `ref` element borrow covers the explicit-binding shape today; the
+remaining victims are the expression-temp and `for of` positions (the
+desugar lowers to `.at`, an owning read). Also recorded in FOLLOWUP.md:
+scalar element borrows via `List.at` are blocked by contract verification
+(the Map reads verify clean because `get_or_panic` carries no parameter
+contract), so scalar borrows are Map-only until the verifier understands
+the rewrite's length facts.
 
 ## 5. Json ownership copies
 

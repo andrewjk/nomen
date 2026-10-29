@@ -616,18 +616,26 @@ export default function build_declaration_node(
 		// The VALUE-STRUCT alias (`ref Row row = list.at(i)` — the element
 		// borrow, docs/HANDLERS.md Stage 4) rides `is_ref_binding` (the
 		// checker normalizes the declaration keyword): its initializer is the
-		// stamped `slot_ptr` call, which RETURNS the slot pointer — emit it
-		// bare (no `&`, no struct copy).
+		// stamped `slot_ptr`/`get_ptr` call, which RETURNS the slot pointer —
+		// emit it bare (no `&`, no struct copy). Scalars take the same path
+		// (`ref int v = map.get_or_panic(k)`): the slot pointer needs a
+		// pointer local, not the bare word a plain scalar declaration makes.
+		const init_is_slot_load =
+			node.is_ref_binding === true &&
+			!!node.value &&
+			node.value.node_type === "access" &&
+			((node.value as AccessNode).access as AccessFunctionCallNode).is_element_slot_load === true;
 		const value_struct_ref_alias =
 			node.is_ref_binding === true &&
 			!node.type.is_ref &&
-			!!status.structs.find(
-				(s) =>
-					s.name === (mono_name ?? node.type.name) &&
-					!s.is_class &&
-					!s.is_simple_type &&
-					!s.is_generic,
-			);
+			(init_is_slot_load ||
+				!!status.structs.find(
+					(s) =>
+						s.name === (mono_name ?? node.type.name) &&
+						!s.is_class &&
+						!s.is_simple_type &&
+						!s.is_generic,
+				));
 		if ((node.type.is_ref || value_struct_ref_alias) && !node.type.is_array) {
 			if (mono_struct) {
 				status.code += `struct ${mono_name} *${safe_name}`;
@@ -635,10 +643,6 @@ export default function build_declaration_node(
 				status.code += `${c_type(node.type.name)} *${safe_name}`;
 			}
 			if (node.value) {
-				const init_is_slot_load =
-					node.value.node_type === "access" &&
-					((node.value as AccessNode).access as AccessFunctionCallNode).is_element_slot_load ===
-						true;
 				if (!init_is_slot_load) {
 					status.code += ` = &`;
 				} else {
@@ -651,6 +655,10 @@ export default function build_declaration_node(
 			status.function_ref_params.add(safe_name);
 			if (!status.ref_local_vars) status.ref_local_vars = new Set();
 			status.ref_local_vars.add(safe_name);
+			if (init_is_slot_load) {
+				if (!status.ref_slot_vars) status.ref_slot_vars = new Set();
+				status.ref_slot_vars.add(safe_name);
+			}
 			if (node.type?.name) {
 				if (!status.variable_types) status.variable_types = new Map();
 				status.variable_types.set(safe_name, node.type);

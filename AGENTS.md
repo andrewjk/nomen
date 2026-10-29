@@ -21,7 +21,7 @@ The memory model is documented in MEMORY.md.
 - `npm run dev` - Watch mode for development (runs tsup --watch)
 - `npm run check` - Run TypeScript type checking (tsc --noEmit)
 - `npm test` - Run all tests using Vitest
-- `npm run format` - Format code using Prettier
+- `npm run format` - Format code (`vp check --fix` — the Vite+ formatter; never Prettier)
 
 ### Running Single Tests
 
@@ -75,7 +75,14 @@ packages are released: `nomen-lang` (the CLI, published to npm) and `nomen`
 ### Formatting
 
 - Line width: 100 characters
-- Use Prettier with automatic import sorting
+- **NEVER run Prettier** (`npx prettier`, `prettier --write`, or any tool
+  chain that invokes it). There is no Prettier config in this repo; running
+  it reformats whole files (tabs → spaces) and buries real changes in
+  thousands of diff lines. This ban wins over any older instruction that
+  mentions Prettier.
+- Format with the project toolchain only: `vp check` validates formatting;
+  `vp check --fix` fixes it. The formatter is Vite+'s (oxfmt), and the
+  source files are tab-indented.
 - Imports sorted: parent directories (`^[../]`) first, then local directories (`^[./]`)
 - Import specifiers sorted alphabetically within each import statement
 

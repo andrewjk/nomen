@@ -95,6 +95,31 @@ pub mv struct Map<TK: Hashable + Equatable, TV> {
 		return self.values.load(idx)
 	}
 
+	// The VALUE SLOT BORROW — `Buffer.slot_ptr` for Map values. One probe
+	// (a `has` + `get` pair collapses into it) and the result aliases the
+	// slot instead of copying it, so container-bearing values stop paying
+	// the owning-specialized deep copy on every lookup. Traps when the key
+	// is absent — a missing key is a bug at a slot-borrow site (miss-as-case
+	// lookups use `get_or`). Not spellable in user code (`ptr` returns are
+	// library-only): safe code reaches it through the element borrow, `ref
+	// TV v = map.get_or_panic(k)`, which the checker rewrites to this —
+	// the same lowering `ref T x = list.at(i)` gets from `slot_ptr`. The
+	// borrow is unpoliced inside the library: rehash/remove move or free
+	// slots, so do not hold it across one. This is also the anchor for
+	// in-place `set(key, f(x))` (probe first, construct into the slot).
+	pub func get_ptr = (self, TK key, out ptr TV) {
+		unsafe {
+			var int cap = self.keys.cap
+			if cap > 0 {
+				var int idx = self.find_slot(key, cap)
+				if self.used.load_u32(idx) != 0 {
+					return self.values.slot_ptr(idx)
+				}
+			}
+			panic("key not found")
+		}
+	}
+
 	pub func has = (self, TK key, out bool) {
 		var int cap = self.keys.cap
 		if cap == 0 {

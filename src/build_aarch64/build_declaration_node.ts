@@ -1435,20 +1435,25 @@ export default function build_declaration_node(
 	// and the borrow must name the slot, not a snapshot of it. Uses go
 	// through function_ref_params (deref-on-value, bare-on-receiver). The
 	// value-struct alias rides `is_ref_binding` (the checker normalizes the
-	// declaration keyword).
+	// declaration keyword). SCALAR element borrows (`ref int v =
+	// map.get_or_panic(k)` — the `get_ptr` rewrite) take the same path: the
+	// pointee is the slot, so the local is the 8-byte pointer, not the
+	// pointer's load.
+	const init_is_slot_load =
+		!!node.value &&
+		node.value.node_type === "access" &&
+		((node.value as AccessNode).access as AccessFunctionCallNode).is_element_slot_load === true;
 	const value_struct_ref_alias =
 		node.is_ref_binding === true &&
 		!node.type.is_ref &&
-		!!status.structs.find(
-			(s) => s.name === node.type.name && !s.is_class && !s.is_simple_type && !s.is_generic,
-		);
+		(init_is_slot_load ||
+			!!status.structs.find(
+				(s) => s.name === node.type.name && !s.is_class && !s.is_simple_type && !s.is_generic,
+			));
 	if (node.type.is_ref || value_struct_ref_alias) {
 		const offset = allocate_stack_space(status, 8);
 		status.stack_offsets!.set(node.name, offset);
 		if (node.value) {
-			const init_is_slot_load =
-				node.value.node_type === "access" &&
-				((node.value as AccessNode).access as AccessFunctionCallNode).is_element_slot_load === true;
 			if (node.value.node_type === "value") {
 				emit_var_address(status, "x0", (node.value as ValueNode).value);
 			} else if (init_is_slot_load) {

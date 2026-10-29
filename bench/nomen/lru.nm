@@ -57,27 +57,30 @@ mv struct LRU {
 	}
 
 	func put = (ref self, int key, int value) {
-		switch {
-			case self.keys.has(key) {
-				const int id = self.keys.get(key)
-				if id >= 0 && id < self.nvals.cap {
-					self.nvals.store_int(id, value)
-				}
-				self.unlink(id)
-				self.link_tail(id)
+		// One probe: `get_or` fuses the `has` + `get` pair the hot loop used
+		// to pay (PERF_PLAN item 4). Node ids are >= 0, so -1 means missing.
+		const int id = self.keys.get_or(key, -1)
+		if id >= 0 {
+			if id < self.nvals.cap {
+				self.nvals.store_int(id, value)
 			}
+			self.unlink(id)
+			self.link_tail(id)
+			return
+		}
+		switch {
 			case self.count >= self.size {
-				const int id = self.head
-				if id >= 0 && id < self.nkeys.cap {
-					const int old_key = self.nkeys.load_int(id)
+				const int head_id = self.head
+				if head_id >= 0 && head_id < self.nkeys.cap {
+					const int old_key = self.nkeys.load_int(head_id)
 					self.keys.remove(old_key)
-					self.unlink(id)
-					if id < self.nvals.cap {
-						self.nkeys.store_int(id, key)
-						self.nvals.store_int(id, value)
+					self.unlink(head_id)
+					if head_id < self.nvals.cap {
+						self.nkeys.store_int(head_id, key)
+						self.nvals.store_int(head_id, value)
 					}
-					self.link_tail(id)
-					self.keys.set(key, id)
+					self.link_tail(head_id)
+					self.keys.set(key, head_id)
 				}
 			}
 		} else {
@@ -93,11 +96,12 @@ mv struct LRU {
 	}
 
 	func get = (ref self, int key, out int) {
-		if self.keys.has(key) {
-			const int id = self.keys.get(key)
+		// One probe (was `has` + `get` — two full probes per lookup).
+		const int id = self.keys.get_or(key, -1)
+		if id >= 0 {
 			self.unlink(id)
 			self.link_tail(id)
-			if id >= 0 && id < self.nvals.cap {
+			if id < self.nvals.cap {
 				return self.nvals.load_int(id)
 			}
 		}

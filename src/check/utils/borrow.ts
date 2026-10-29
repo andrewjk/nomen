@@ -99,13 +99,18 @@ export function borrow_owner_of(node: BaseNode, status: CheckStatus): string | u
 			}
 		} else if (access.access.node_type === "access_func") {
 			const t = type_from_value_node(access, status);
+			const call = access.access as AccessFunctionCallNode;
 			const borrows_from_receiver =
 				// A `mv out T` method returns an owned value — no owner to root
 				// a borrow at (and it must not be invalidated by receiver
 				// mutation). The element-load pure borrow joins the class case.
-				(is_borrowed_return(t, status) &&
-					!(access.access as AccessFunctionCallNode).owned_return) ||
-				is_element_load_pure_borrow(access, status);
+				(is_borrowed_return(t, status) && !call.owned_return) ||
+				is_element_load_pure_borrow(access, status) ||
+				// The checker-rewritten ELEMENT BORROW (`ref x = c.at(i)` /
+				// `ref v = m.get_or_panic(k)` → slot_ptr/get_ptr) names the
+				// container's slot for EVERY element type — scalars included —
+				// so a `ref self` call on the container must invalidate it.
+				call.is_element_slot_load === true;
 			if (borrows_from_receiver) {
 				if (access.target.node_type === "value") {
 					const recv = status.values.findLast((v) => v.name === (access.target as ValueNode).value);

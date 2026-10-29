@@ -642,3 +642,18 @@ any new emit placed after an argument build without its own
 newline-ensure can reintroduce the glue. Root fix: terminate inside the
 leaf emitters (or make emit_asm always terminate) and drop the
 compensating calls.
+
+## Scalar element borrows via `List.at` are blocked by contract verification (pre-existing, surfaced by the Map element borrow)
+
+Recorded 2026-10-29 while landing PERF_PLAN item 4 (borrow-returning reads,
+`test/map_get_ptr.test.ts`). The element-borrow rewrite `ref T x =
+container.<read>(i)` is element-type-agnostic in the checker, but the scalar
+shape only works for containers whose read has NO parameter contract:
+`ref int v = list.at(0)` fails with "Parameter constraint cannot be
+verified: i >= 0 && i < self.length" (the verifier cannot prove `at`'s
+bounds contract at the rewrite site, even right after a `push`), while
+`ref int v = map.get_or_panic(k)` checks clean — `get_or_panic` has no
+parameter contract (it traps internally). Consequence: scalar element
+borrows are Map-only today. Fix shape: teach the bounds verifier to use the
+rewrite's own length facts (`push` → `length`), or give `at` a
+contract-free `at_ptr`-style primitive to rewrite to.
