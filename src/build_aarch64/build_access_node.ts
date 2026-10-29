@@ -3901,22 +3901,29 @@ function build_int_array_to_string(node: AccessNode, target_type: Type, status: 
 		ensure_newline(status);
 	}
 
-	// Save x19, x20
+	// Save x19-x22: x19 = array base, x20 = result buffer, x21 = write
+	// cursor (byte offset), x22 = capacity.
 	emit_asm(status, `str x19, [sp, #-16]!\n`);
 	emit_asm(status, `str x20, [sp, #-16]!\n`);
+	emit_asm(status, `str x21, [sp, #-16]!\n`);
+	emit_asm(status, `str x22, [sp, #-16]!\n`);
 	emit_asm(status, `mov x19, x0\n`);
 
-	// Allocate result buffer - estimate 20 bytes per int element
-	const buf_size = Math.max(length * 20, 32);
+	// Allocate result buffer - estimate 21 bytes per int element (the
+	// geometric grow below covers longer element to_strings)
+	const buf_size = Math.max(length * 21, 32);
 	emit_asm(status, `mov x0, #${buf_size}\n`);
 	emit_malloc(status);
 	emit_asm(status, `mov x20, x0\n`);
-
-	// Zero out the buffer
-	emit_asm(status, `strb wzr, [x20]\n`);
+	emit_asm(status, `mov x21, #0\n`);
+	emit_asm(status, `mov x22, #${buf_size}\n`);
 
 	// Loop through elements
 	for (let i = 0; i < length; i++) {
+		// Labels are per-site unique: this sequence is emitted inline at
+		// every `to_string` call site, so a bare index would collide.
+		const grow = `.Lts_grow_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+		const ok = `.Lts_ok_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
 		// Load element
 		const offset = i * element_size;
 		if (element_size === 1) {
@@ -3926,21 +3933,45 @@ function build_int_array_to_string(node: AccessNode, target_type: Type, status: 
 			emit_asm(status, `ldr x0, [x19, #${offset}]\n`);
 		}
 
-		// Call int_to_string (or appropriate to_string)
+		// Call int_to_string (or appropriate to_string): x0 = ptr, x1 = len
 		const to_string_fn = `${target_type.name}_to_string`;
 		emit_asm(status, `bl ${to_string_fn}\n`);
 
-		// Concatenate: strcat(x20, x0)
-		emit_asm(status, `str x0, [sp, #-16]!\n`);
-		emit_asm(status, `mov x1, x0\n`);
+		// Append at the write cursor (memcpy of the known length). The old
+		// body did strcat(x20, x0) — strcat rescans the whole accumulator,
+		// O(n²) in the element count, and clobbered the length half in x1.
+		emit_asm(status, `stp x0, x1, [sp, #-16]!\n`);
+		// Grow when cursor + len + 1 (room for the terminator) exceeds cap.
+		emit_asm(status, `add x2, x21, x1\n`);
+		emit_asm(status, `add x2, x2, #1\n`);
+		emit_asm(status, `cmp x2, x22\n`);
+		emit_asm(status, `b.lt ${ok}\n`);
+		emit_asm(status, `${grow}:\n`);
+		emit_asm(status, `lsl x22, x22, #1\n`);
+		emit_asm(status, `cmp x22, x2\n`);
+		emit_asm(status, `b.lt ${grow}\n`);
 		emit_asm(status, `mov x0, x20\n`);
-		emit_asm(status, `bl _strcat\n`);
-		emit_asm(status, `ldr x0, [sp], #16\n`);
+		emit_asm(status, `bl _realloc\n`);
+		emit_asm(status, `mov x20, x0\n`);
+		emit_asm(status, `${ok}:\n`);
+		emit_asm(status, `ldp x1, x2, [sp]\n`);
+		emit_asm(status, `mov x0, x20\n`);
+		emit_asm(status, `add x0, x0, x21\n`);
+		emit_asm(status, `add x21, x21, x2\n`);
+		emit_asm(status, `bl _memcpy\n`);
+		emit_asm(status, `ldp x0, x1, [sp], #16\n`);
 		emit_free(status);
 	}
 
-	// Return result in x0
+	// NUL-terminate at the cursor and return the (ptr, len) pair — the
+	// cursor IS the length.
 	emit_asm(status, `mov x0, x20\n`);
+	emit_asm(status, `add x0, x0, x21\n`);
+	emit_asm(status, `strb wzr, [x0]\n`);
+	emit_asm(status, `mov x0, x20\n`);
+	emit_asm(status, `mov x1, x21\n`);
+	emit_asm(status, `ldr x22, [sp], #16\n`);
+	emit_asm(status, `ldr x21, [sp], #16\n`);
 	emit_asm(status, `ldr x20, [sp], #16\n`);
 	emit_asm(status, `ldr x19, [sp], #16\n`);
 }
@@ -3981,6 +4012,10 @@ function build_char_array_to_string(node: AccessNode, length: string, status: Bu
 		emit_asm(status, `strb w1, [x0, #${i}]\n`);
 	}
 	emit_asm(status, `strb wzr, [x0, #${len}]\n`);
+	// The string result is a (ptr, len) pair: set the length half. The old
+	// body left x1 holding the last copied byte, so tracked-length
+	// consumers (`.length`) read garbage.
+	emit_asm(status, `mov x1, #${len}\n`);
 	emit_asm(status, `ldr x19, [sp], #16\n`);
 }
 

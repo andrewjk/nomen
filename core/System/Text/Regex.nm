@@ -33,10 +33,9 @@ pub struct Regex {
 	}
 
 	// Return the first substring of input matching pattern, or "" if none.
-	// `mv out string`: the built match (or the copied empty literal) is
-	// handed to the caller as an owned value.
+	// `mv out string`: the matched span (or the empty literal) is handed to
+	// the caller as an owned value.
 	pub func match = (string pattern, string input, mv out string) {
-		var match_result = ""
 		var int pat_len = pattern.length
 		var int len = input.length
 		var string charset = first_byte_set(pattern, pat_len)
@@ -52,14 +51,14 @@ pub struct Regex {
 			var caps = List<int>()
 			var int end = match_here(pattern, 0, pat_len, input, i, len, ref caps)
 			if end >= 0 {
-				var int j = i
-				while j < end; j += 1 {
-					match_result = match_result + "\{input.at(j)}"
-				}
-				break
+				// One owned substring copy. The old accumulator
+				// (`match_result = match_result + "\{input.at(j)}"` per
+				// matched byte) paid an interpolation malloc PLUS a
+				// whole-accumulator re-copy per byte — O(n²) in the span.
+				return input.substring(i, end)
 			}
 		}
-		return match_result
+		return ""
 	}
 
 	// Try to match pattern anywhere in input. On a match, append the whole
@@ -173,25 +172,27 @@ pub struct Regex {
 	}
 
 	// Replace all non-overlapping occurrences of pattern in input with replacement.
+	// Literal bytes between matches are copied in bulk runs (one
+	// `append_string_view` per run) — the old loop appended per byte.
 	pub func replace_all = (
 		string pattern,
 		string input,
 		string replacement,
 		out string
-	) { var sb = StringBuilder()
+	) {
+		var sb = StringBuilder()
 		var int pat_len = pattern.length
 		var int len = input.length
 		var string charset = first_byte_set(pattern, pat_len)
 		var int clen = charset.length
 		var pos = 0
+		var run_start = 0
 		while pos < len {
 			if clen > 0 {
-				var int next = find_next_byte(input, pos, len, charset)
-				// Copy the bytes we're skipping over.
-				while pos < next {
-					sb.append_char(input.at(pos))
-					pos += 1
-				}
+				// Prefilter: jump to the next candidate byte. The skipped
+				// run stays pending — it is copied in bulk at the next
+				// match, or by the tail copy below.
+				pos = find_next_byte(input, pos, len, charset)
 				if pos >= len {
 					break
 				}
@@ -199,18 +200,22 @@ pub struct Regex {
 			var caps = List<int>()
 			var int end = match_here(pattern, 0, pat_len, input, pos, len, ref caps)
 			if end >= 0 {
+				sb.append_string_view(input.slice(run_start, pos))
 				sb.append_string(replacement)
 				if end == pos {
-					sb.append_char(input.at(pos))
+					// Empty match: the byte at pos is not consumed — it
+					// starts the next literal run.
+					run_start = pos
 					pos += 1
 				} else {
 					pos = end
+					run_start = pos
 				}
 			} else {
-				sb.append_char(input.at(pos))
 				pos += 1
 			}
 		}
+		sb.append_string_view(input.slice(run_start, len))
 		return sb.to_string()
 	}
 

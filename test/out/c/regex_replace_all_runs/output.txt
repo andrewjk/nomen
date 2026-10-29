@@ -1,0 +1,5 @@
+keep|keep|end
+no matches in hereE
+-a-b-c
+seq1seq2|
+bXnXnX

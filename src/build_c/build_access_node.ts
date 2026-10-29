@@ -827,7 +827,10 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 			// is lowered to `long arr[3] = {1, 2, 3}`). The array is NOT an
 			// Array<T> struct, so Array_int_to_string can't be called. Instead,
 			// inline a GCC statement expression that iterates the elements,
-			// calls `<elem>_to_string` on each, and concatenates the results.
+			// calls `<elem>_to_string` on each, and appends the results at a
+			// tracked write cursor (memcpy of the known length). The old body
+			// did realloc + strcat per element — strcat rescans the whole
+			// accumulator, O(n²) in the element count.
 			if (access_func.name === "to_string" && target_type.is_array && target_type.length) {
 				const elem_name = target_type.name;
 				const to_string_fn = `${elem_name}_to_string`;
@@ -837,7 +840,9 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				const target_name =
 					node.target.node_type === "value" ? (node.target as ValueNode).value : "";
 				const is_heap = !!target_name && !!status.heap_array_vars?.has(target_name);
-				status.code += `({ char* _ts_r = (char*)malloc(1); _ts_r[0] = 0; long _ts_n = 0; for (long _i = 0; _i < ${len}; _i++) { nomen_string _s = ${to_string_fn}(`;
+				// Pre-size for the scalar case (an int/bool to_string fits in
+				// 21 bytes); the geometric grow covers longer elements.
+				status.code += `({ long _ts_c = ${len} * 21 + 1; char* _ts_r = (char*)malloc(_ts_c); long _ts_n = 0; for (long _i = 0; _i < ${len}; _i++) { nomen_string _s = ${to_string_fn}(`;
 				if (is_heap) {
 					status.code += `((${c_type(elem_name)}*)((char*)`;
 					build_node(node.target, status);
@@ -846,7 +851,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					build_node(node.target, status);
 					status.code += `[_i]`;
 				}
-				status.code += `); _ts_n += _s.len; _ts_r = (char*)realloc(_ts_r, _ts_n + 1); strcat(_ts_r, _s.ptr); free(_s.ptr); } (nomen_string){ _ts_r, _ts_n }; })`;
+				status.code += `); if (_ts_n + _s.len + 1 > _ts_c) { while (_ts_c < _ts_n + _s.len + 1) _ts_c *= 2; _ts_r = (char*)realloc(_ts_r, _ts_c); } memcpy(_ts_r + _ts_n, _s.ptr, _s.len); _ts_n += _s.len; free(_s.ptr); } _ts_r[_ts_n] = 0; (nomen_string){ _ts_r, _ts_n }; })`;
 				status.last_result_is_heap = true;
 				break;
 			}

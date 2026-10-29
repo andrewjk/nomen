@@ -276,21 +276,26 @@ pub mv struct string: Stringable, Hashable, Equatable {
 	}
 
 	// Replace all non-overlapping occurrences of needle with replacement,
-	// left to right. Same edge behavior as replace_first.
+	// left to right. Same edge behavior as replace_first. Literal bytes
+	// between matches are copied in bulk runs (one `append_string_view` per
+	// run) — the old loop appended per byte.
 	pub func replace_all = (self, view string needle, view string replacement, out string) {
 		var sb = StringBuilder()
 		var i = 0
 		var int n = self.length
 		var int nlen = needle.length
-		while i < n {
-			if nlen > 0 && i + nlen <= n && match_at(self, needle, i) {
+		var run_start = 0
+		while nlen > 0 && i + nlen <= n {
+			if match_at(self, needle, i) {
+				sb.append_string_view(self.slice(run_start, i))
 				sb.append_string_view(replacement)
 				i = i + nlen
+				run_start = i
 			} else {
-				sb.append_char(self.at(i))
-				i = i + 1
+				i += 1
 			}
 		}
+		sb.append_string_view(self.slice(run_start, n))
 		return sb.to_string()
 	}
 

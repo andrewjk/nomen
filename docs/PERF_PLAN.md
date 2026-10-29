@@ -3,29 +3,29 @@
 Research into the next performance opportunities, following the StableList +
 in-place push work. PERF.md is the record of what landed; this is the plan for
 what's next. All findings are ordered most-promising-first. Written Oct 2026;
-originally unmeasured — items 2, 3, 4 (partially), 5, 6, and 7 have since
+originally unmeasured — items 2, 3, 4 (partially), 5, 6, 7, and 8 have since
 landed with measurements in place (items marked LANDED carry them; the rest
 carry expected wins and the receipts they rest on).
 
-| #   | Item                                                                                                                                                     | Backends       | Effort | Receipt                                          |
-| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | ------ | ------------------------------------------------ |
-| 1   | Faster allocator (slab/bump class allocation)                                                                                                            | both           | M      | PERF.md "Large"; ASM_TODO "largest unclaimed"    |
-| 2   | ~~In-place push for constructors~~ **LANDED Oct 2026: −55% / −58% on the shape**                                                                         | both           | S      | shape micro-bench, interleaved medians (below)   |
-| 3   | ~~Move-on-last-use for structs~~ **LANDED Oct 2026: −20% / −29% on the shape**                                                                           | both           | S–M    | shape micro-bench, interleaved medians (below)   |
-| 4   | ~~Borrow-returning reads (Map `get_ptr`, `at_view`)~~ **PARTIALLY LANDED Oct 2026: Map slot borrow, −79% / −98% on the borrow shape, −48% probe fusion** | both           | M      | shape micro-benches, interleaved medians (below) |
-| 5   | ~~Json ownership copies~~ **LANDED Oct 2026: −26% / −13% on the ownership shape, −22% / −12% json-serde**                                                | both           | S      | measured 0.7.0 regression +61% / +103%           |
-| 6   | ~~In-place store (`set`/`insert`/`add`/`alloc`)~~ **LANDED Oct 2026: −50% / −56% on the pure store shape, −64% Map replace**                             | both           | M      | shape micro-benches, interleaved medians (below) |
-| 7   | ~~Enum payload in-place construction~~ **LANDED Oct 2026: −45% / −8% on the payload shapes (aarch64; C take-variant)**                                   | both           | S–M    | shape micro-benches, interleaved medians (below) |
-| 8   | Regex/String O(n²) accumulators                                                                                                                          | both           | S      | O(n²) per-byte loops in core                     |
-| 9   | Map/Set stored hash (Swiss-table tricks)                                                                                                                 | both           | M      | rehash re-hashes every key                       |
-| 10  | StringBuilder numeric appends + 1-pass interp                                                                                                            | both           | S      | two snprintf passes + malloc per append          |
-| 11  | Devirtualization of trait calls                                                                                                                          | both           | M      | unmeasured                                       |
-| 12  | Struct field-order / padding                                                                                                                             | both           | S      | modest; raw-body caveat                          |
-| 13  | Variable-mode enums                                                                                                                                      | both           | L      | GOOSE #6, documented, unshipped                  |
-| 14  | Buffer word pairs (T_SIZE ≤ 16)                                                                                                                          | mostly aarch64 | S      | IMPROVEMENTS.md "still needed"                   |
-| 15  | aarch64 codegen receipts (splice model, folds…)                                                                                                          | aarch64        | S–M    | measured regressions to reclaim                  |
-| 16  | Async paths audit                                                                                                                                        | both           | ?      | unexplored, unmeasured                           |
-| 17  | Minor batch                                                                                                                                              | both           | S      | assorted                                         |
+| #   | Item                                                                                                                                                                                   | Backends       | Effort | Receipt                                          |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | ------ | ------------------------------------------------ |
+| 1   | Faster allocator (slab/bump class allocation)                                                                                                                                          | both           | M      | PERF.md "Large"; ASM_TODO "largest unclaimed"    |
+| 2   | ~~In-place push for constructors~~ **LANDED Oct 2026: −55% / −58% on the shape**                                                                                                       | both           | S      | shape micro-bench, interleaved medians (below)   |
+| 3   | ~~Move-on-last-use for structs~~ **LANDED Oct 2026: −20% / −29% on the shape**                                                                                                         | both           | S–M    | shape micro-bench, interleaved medians (below)   |
+| 4   | ~~Borrow-returning reads (Map `get_ptr`, `at_view`)~~ **PARTIALLY LANDED Oct 2026: Map slot borrow, −79% / −98% on the borrow shape, −48% probe fusion**                               | both           | M      | shape micro-benches, interleaved medians (below) |
+| 5   | ~~Json ownership copies~~ **LANDED Oct 2026: −26% / −13% on the ownership shape, −22% / −12% json-serde**                                                                              | both           | S      | measured 0.7.0 regression +61% / +103%           |
+| 6   | ~~In-place store (`set`/`insert`/`add`/`alloc`)~~ **LANDED Oct 2026: −50% / −56% on the pure store shape, −64% Map replace**                                                           | both           | M      | shape micro-benches, interleaved medians (below) |
+| 7   | ~~Enum payload in-place construction~~ **LANDED Oct 2026: −45% / −8% on the payload shapes (aarch64; C take-variant)**                                                                 | both           | S–M    | shape micro-benches, interleaved medians (below) |
+| 8   | ~~Regex/String O(n²) accumulators~~ **LANDED Oct 2026: −92% / −91% match accumulator, −65% / −58% replace_all skip loop, −33% / −40% String.replace_all, −28% / −14% array to_string** | both           | S      | shape micro-benches, interleaved medians (below) |
+| 9   | Map/Set stored hash (Swiss-table tricks)                                                                                                                                               | both           | M      | rehash re-hashes every key                       |
+| 10  | StringBuilder numeric appends + 1-pass interp                                                                                                                                          | both           | S      | two snprintf passes + malloc per append          |
+| 11  | Devirtualization of trait calls                                                                                                                                                        | both           | M      | unmeasured                                       |
+| 12  | Struct field-order / padding                                                                                                                                                           | both           | S      | modest; raw-body caveat                          |
+| 13  | Variable-mode enums                                                                                                                                                                    | both           | L      | GOOSE #6, documented, unshipped                  |
+| 14  | Buffer word pairs (T_SIZE ≤ 16)                                                                                                                                                        | mostly aarch64 | S      | IMPROVEMENTS.md "still needed"                   |
+| 15  | aarch64 codegen receipts (splice model, folds…)                                                                                                                                        | aarch64        | S–M    | measured regressions to reclaim                  |
+| 16  | Async paths audit                                                                                                                                                                      | both           | ?      | unexplored, unmeasured                           |
+| 17  | Minor batch                                                                                                                                                                            | both           | S      | assorted                                         |
 
 ## 1. Faster allocator — slab/bump the class-allocation path
 
@@ -545,15 +545,118 @@ in-place win there is booked on int-only payloads until that lands. The
 donor spelling (`var p = make(i); var Res r = Res.ok(mv p)`) keeps the
 ordinary mv transfer, as in every prior tranche.
 
-## 8. Regex/String O(n²) accumulators
+## 8. Regex/String O(n²) accumulators — LANDED (Oct 2026)
 
-`Regex.nm` builds matches with `match_result = match_result + "\{input.at(j)}"`
-— per matched byte, one interpolation malloc _plus_ one whole-accumulator
-re-copy. O(n²). Same per-byte pattern in `Regex.replace_all` and
-`String.replace_all` — one `append_string_view(input.slice(...))` per run
-replaces the byte loop. Also in the emitted code: the C backend's fixed-array
-`to_string` does `realloc` + `strcat` per element (strcat rescans the
-accumulator, `src/build_c/build_access_node.ts`).
+**What landed.** All three per-byte accumulator shapes from the item:
+
+- **`Regex.match`** (`core/System/Text/Regex.nm`): the accumulator is gone.
+  The loop always broke after the first match, so `match_result` was
+  definitionally the matched span — the per-byte
+  `match_result = match_result + "\{input.at(j)}"` (one interpolation malloc
+  PLUS one whole-accumulator re-copy per matched byte, O(L²) in the span)
+  is now one `input.substring(i, end)` owned copy, the same shape
+  `captures`/`find` already used. `match_ci` picks the win up through the
+  shared body.
+- **`Regex.replace_all`**: literal bytes between matches are copied in bulk
+  runs — a `run_start` cursor tracks the not-yet-copied span, each match
+  emits one `append_string_view(input.slice(run_start, pos))` +
+  `append_string(replacement)`, and a tail copy drains the last run. The
+  old loop appended per byte both in the prefilter skip (one `append_char`
+  per skipped byte) and on the no-match path (per byte when the prefilter
+  is disabled, e.g. negated-class or wildcard-leading patterns). Empty-match
+  bookkeeping is preserved: a zero-width match keeps its position's byte as
+  the next run's start (the `x*` shape still yields `-a-b-c`).
+- **`String.replace_all`** (`core/System/String.nm`): the same run-cursor
+  restructure — one `append_string_view(self.slice(run_start, i))` +
+  replacement per match, one tail copy, no per-byte `append_char`. The
+  empty-needle guard is kept (an empty needle still never matches, so the
+  result is the whole-string copy).
+- **The emitted fixed-array `to_string`** (both backends' inline statement
+  sequences, `src/build_c/build_access_node.ts`,
+  `src/build_aarch64/build_access_node.ts`): the C body did
+  `realloc` + `strcat` per element — strcat rescans the whole accumulator,
+  O(n²) in the element count — and both bodies returned a broken length
+  half (see the bug fixes below). The rewrite tracks a write cursor and
+  capacity: one malloc sized 21 bytes/element (a scalar `to_string` upper
+  bound), `memcpy` at the cursor, geometric `realloc` only when an element
+  overflows, one NUL at the end, and the returned `(ptr, len)` pair carries
+  the tracked length.
+
+Two aarch64 bugs fell out of the emitted-code half (both pre-existing,
+both pinned by the new tests):
+
+- **`Array(1,2,3).to_string().length` was garbage on aarch64.** The old
+  body returned only x0 — x1 held whatever the last `strcat`/reload left
+  (a fresh x1 from `int_to_string`, so one-shot prints looked right; a
+  `.length` in a loop read ~5e15). The cursor rewrite returns the pair
+  from the tracked length.
+- **char-array `to_string` had the same missing length half** — x1 held
+  the last byte COPIED (`.length` of `Array('a','b','c').to_string()` was
+  99 = 'c'). One `mov x1, #len` before the epilogue.
+
+Four runtime tests in `test/string_accumulators.test.ts` (both backends,
+audit on) pin the match span, the replace_all run shapes (prefilter on,
+off, and the empty-match `x*` case), and the array/char `to_string`
+contents AND tracked lengths; the full suite (524 files, both backends)
+passes.
+
+**Measured.** Shape micro-benches — n from argv, Apple Silicon, best-of-5
+plus interleaved medians, audit off, release builds, identical outputs
+checksums before/after:
+
+- _The accumulator shapes_ — `Regex.match` = 200 matches of a 2000-byte
+  `[a-z]+` span (the old loop re-copied ≈ 2 MB + 2000 mallocs per match);
+  the replace_all skip-loop shape = `Regex.replace_all("zz", …)` over a
+  480 KB doc (zero matches — the prefilter visits candidates only, so the
+  per-byte append loop is the isolated delta); `String.replace_all` = 100
+  passes over the doc with 16000 literal matches; fixed-array `to_string`
+  = 10K calls of a 64-element `Array<int>`:
+
+| Shape                                 | Backend | before |  after |        Δ |
+| ------------------------------------- | ------- | -----: | -----: | -------: |
+| `Regex.match` accumulator             | C       | 0.068s | 0.005s | **−92%** |
+| `Regex.match` accumulator             | aarch64 | 0.101s | 0.009s | **−91%** |
+| replace_all skip loop (zero matches)  | C       | 0.129s | 0.045s | **−65%** |
+| replace_all skip loop (zero matches)  | aarch64 | 0.336s | 0.143s | **−58%** |
+| `String.replace_all` runs             | C       | 0.115s | 0.077s | **−33%** |
+| `String.replace_all` runs             | aarch64 | 0.590s | 0.356s | **−40%** |
+| fixed-array `to_string` (64 elements) | C       | 0.104s | 0.074s | **−28%** |
+| fixed-array `to_string` (64 elements) | aarch64 | 0.087s | 0.075s | **−14%** |
+
+Per unit the elided work is exactly the item's promise: per matched byte,
+an interpolation malloc + an accumulator re-copy (Σ = L²/2 bytes per
+match) become one L-byte substring copy; per literal run, N `append_char`
+calls become one memcpy; per array element, a realloc + a whole-accumulator
+strcat scan become a cursor memcpy.
+
+- _The matcher-bound shapes_ — realistic patterns WITH matches, where the
+  regex engine work (probing, backtracking) is identical before/after and
+  dominates: `<[^>]*>` over the tagged doc (16000 matches, prefilter on)
+  is −5% aarch64 / −3% C; `[^z]x` (zero matches, prefilter OFF —
+  `match_here` attempts at every position) is −2% aarch64 / flat C
+  (clang -O2 already folds the append loop's bounds checks into the
+  memcpy-shaped store chain). Honest reading: when the accumulator is a
+  small fraction of a replace_all's total work, the win is proportional;
+  the accumulator shapes above are where it lives.
+
+- _The standard suite_ — flat on both backends (json-serde 0.070/0.043s,
+  binarytrees 1.80/1.41s, lru 0.018/0.010s, nsieve 0.157/0.128s aarch64/C;
+  outputs byte-identical). regex-redux at the bench size (25000_in) is
+  26.0 → 25.7ms aarch64, 25.8 → 25.7ms C; at a 40× (1 MB) input,
+  0.950 → 0.938s / 0.405 → 0.402s. Its substitution patterns run over
+  cleaned DNA where the prefilter finds no candidates at all — the one
+  run-heavy call (the header/newline strip) is a ~2ms slice of a ~1s run,
+  and the count phase dominates. The bench's hot loops simply don't sit
+  on the accumulator shapes; the wins are booked on the shapes above.
+
+**Remainder.** `String.replace_first` keeps its per-byte appends — it
+copies at most one run before stopping, and StringBuilder append is
+amortized O(1), so there is no quadratic to remove (only the constant per
+call); the same run-cursor restructure would apply verbatim if a workload
+shows it. `json_parse_string`'s per-byte append loop is item 17's
+scan-to-next-escape. The emitted-code rewrite assumes a scalar
+`_to_string` fits 21 bytes for the initial malloc (any longer element
+takes the geometric grow, so it is a size hint, not a bound).
 
 ## 9. Map/Set stored hash
 
