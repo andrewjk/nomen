@@ -870,6 +870,24 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				const func_index = trait.functions.indexOf(trait_func);
 				const has_self = trait_func.params.some((p) => p.is_self_param);
 
+				// Devirtualization (PERF_PLAN item 11): the checker proved this
+				// receiver's binding holds one known conformer that itself
+				// defines the method — call the concrete symbol DIRECTLY (the
+				// same label the vtable slot holds) instead of resolving
+				// through _get_trait_func. Re-derived here so the stamp and
+				// the lowering can't drift; the receiver expression, argument
+				// lowering, and every wrapper below stay the dispatch path's
+				// own.
+				const devirt_struct = status.structs.find(
+					(s) =>
+						s.name === access_func.devirtualized_class &&
+						!s.is_generic &&
+						s.functions.some((f) => f.name === access_func.name),
+				);
+				const devirt_label = devirt_struct
+					? `${devirt_struct.name}_${access_func.name}`
+					: undefined;
+
 				// An INLINE capturing lambda argument to the func-typed
 				// parameter is a one-shot heap descriptor the callee only
 				// borrows (CLOSURE.md) — capture each into a wrapper-declared
@@ -987,13 +1005,17 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					status.code += `${ret_c} ${lambda_ret_tmp} = `;
 				}
 
-				status.code += `(${cast}_get_trait_func(`;
-				if (recv_temp) {
-					status.code += `(void *)${recv_temp}`;
+				if (devirt_label) {
+					status.code += `${devirt_label}(`;
 				} else {
-					build_vtable_target(node.target, status);
+					status.code += `(${cast}_get_trait_func(`;
+					if (recv_temp) {
+						status.code += `(void *)${recv_temp}`;
+					} else {
+						build_vtable_target(node.target, status);
+					}
+					status.code += `, ${trait_index}, ${func_index}))(`;
 				}
-				status.code += `, ${trait_index}, ${func_index}))(`;
 
 				// Receiver pointer is the first call argument only when the
 				// method declares self.

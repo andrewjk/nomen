@@ -173,6 +173,10 @@ export default function clone_node(node: BaseNode): BaseNode {
 				: undefined;
 			c.is_statement = n.is_statement;
 			c.skip_bounds_check = n.skip_bounds_check;
+			// Devirtualization stamp (PERF_PLAN item 11): the proof is
+			// whole-site (the receiver binding's concrete conformer), so a
+			// cloned body keeps the same direct-call lowering.
+			c.devirtualized_class = n.devirtualized_class;
 			set_resolved_function(c, n.resolved_function);
 			c.allocations = n.allocations?.map(clone_node);
 			return c;

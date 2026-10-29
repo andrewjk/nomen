@@ -21,6 +21,7 @@ import type CheckStatus from "./CheckStatus.ts";
 import { invalidate_borrows_of, receiver_owner_of } from "./utils/borrow.ts";
 import { is_box_type } from "./utils/box.ts";
 import check_func_argument_signature from "./utils/check_func_argument_signature.ts";
+import { stamp_devirtualized_trait_call } from "./utils/devirtualize.ts";
 import {
 	enforce_case_payload_ownership,
 	find_mono_enum,
@@ -709,6 +710,13 @@ export function check_access_function_node(
 		const trait = status.traits.find((s) => s.name === target_type.name);
 		if (trait) {
 			func = trait.functions.find((f) => f.name === node.name);
+			// Devirtualization (PERF_PLAN item 11): when the trait-typed
+			// receiver is a bare local whose binding provably holds one known
+			// conformer, stamp the concrete class so both backends lower a
+			// direct `<Class>_<method>` call instead of the vtable dispatch.
+			if (func) {
+				stamp_devirtualized_trait_call(node, target, target_type.name, trait, status);
+			}
 		}
 	}
 

@@ -144,6 +144,19 @@ export default interface CheckStatus {
 	null_paths?: Set<string>;
 
 	/**
+	 * Devirtualization (PERF_PLAN item 11): names this function's body REBINDS
+	 * anywhere — assigned (`s = ...`), swapped (`f(mv a swap b)`), or passed
+	 * as a `ref` argument (the callee can reassign through the alias). Scanned
+	 * once at function entry (check_function_node) because statement-order
+	 * tracking cannot see loop back-edges: a rebinding LATER in a loop body
+	 * retypes EARLIER trait calls on the next iteration. A trait-typed local
+	 * whose name is in this set never carries a known concrete conformer.
+	 * Shared by reference into block clones (the scan is immutable after
+	 * entry); reset per function (a nested lambda gets its own scan).
+	 */
+	devirt_rebound_names?: Set<string>;
+
+	/**
 	 * Errors that have been encountered
 	 */
 	errors: CompileError[];

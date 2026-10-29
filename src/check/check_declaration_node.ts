@@ -19,6 +19,7 @@ import check_func_argument_signature from "./utils/check_func_argument_signature
 import check_merged_missing_return from "./utils/check_merged_missing_return.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import check_type_exists from "./utils/check_type_exists.ts";
+import { trait_decl_concrete_struct } from "./utils/devirtualize.ts";
 import evaluate_const_condition from "./utils/evaluate_const_condition.ts";
 import {
 	apply_bounds,
@@ -920,6 +921,10 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			is_ref_binding: is_ref_keyword || undefined,
 			ref_source: is_ref_keyword ? ref_src : undefined,
 			is_global: !in_function(status),
+			// Devirtualization (PERF_PLAN item 11): a trait-typed local built
+			// from one known conformer — provable only while the whole-function
+			// rebind scan clears the name (see trait_decl_concrete_struct).
+			concrete_struct: trait_decl_concrete_struct(decl, status),
 		});
 		if (decl.value) {
 			invalidate_token_facts(decl.name, status);

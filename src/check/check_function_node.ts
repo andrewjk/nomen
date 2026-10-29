@@ -13,6 +13,7 @@ import check_function_parameter_node from "./check_function_parameter_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import check_type_exists from "./utils/check_type_exists.ts";
 import clone_status from "./utils/clone_status.ts";
+import { collect_rebound_names } from "./utils/devirtualize.ts";
 import { extract_length_equalities_at_registration } from "./utils/flow_bounds.ts";
 import materialize_type from "./utils/materialize_type.ts";
 import { struct_has_view_fields } from "./utils/view_fields.ts";
@@ -228,6 +229,14 @@ export default function check_function_node(func: FunctionNode, status: CheckSta
 	// An foreign has no body to check: the backends synthesize the
 	// marshalling adapter from the signature alone.
 	if (func.is_foreign) return;
+
+	// Devirtualization scan (PERF_PLAN item 11): one pass over the body for
+	// every name this function REBINDS (assignment / swap / `ref` argument —
+	// see collect_rebound_names). A trait-typed local outside this set may
+	// carry a known concrete conformer; statement-order tracking cannot
+	// substitute for it (a rebinding later in a loop body retypes earlier
+	// call sites on the next iteration).
+	function_status.devirt_rebound_names = collect_rebound_names(func.statements);
 
 	check_block_node(func, function_status);
 

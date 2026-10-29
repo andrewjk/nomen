@@ -197,6 +197,21 @@ export default class AccessFunctionCallNode extends BaseNode {
 	 */
 	skip_bounds_check?: boolean;
 	/**
+	 * Devirtualized trait dispatch (PERF_PLAN item 11): the name of the one
+	 * concrete conformer the checker proved this receiver's binding holds —
+	 * a bare-local receiver whose declaration (and every later binding of
+	 * that name in the function) is a direct constructor call of a struct
+	 * that conforms to the trait. The backends lower the call as a DIRECT
+	 * call to `<Class>_<method>` (the same symbol the vtable entry holds),
+	 * skipping the two vtable loads + indirect call — a C inlining
+	 * opportunity and a shorter dependency chain on aarch64. Stamped by
+	 * check_access_node only when the concrete type is provably stable
+	 * (whole-function rebind scan — see check/utils/devirtualize.ts); both
+	 * backends re-derive the mechanical facts at the site, so the stamp and
+	 * the lowering can't drift.
+	 */
+	devirtualized_class?: string;
+	/**
 	 * The concrete FunctionNode the checker resolved this method call to.
 	 * See FunctionCallNode.resolved_function — used by build-time passes for
 	 * callee-signature facts (notably hidden string-length companions).

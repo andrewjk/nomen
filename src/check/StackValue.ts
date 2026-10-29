@@ -193,4 +193,14 @@ export default interface StackValue {
 	 * For function-typed variables: the declared return type.
 	 */
 	func_return_type?: Type;
+	/**
+	 * Devirtualization tracking (PERF_PLAN item 11): for a trait-typed local
+	 * declared with a direct constructor call of one known conforming struct,
+	 * that struct's name. Set only when a whole-function scan proved the name
+	 * is never rebound anywhere in the function (no assignment, swap, or
+	 * `ref`-argument pass — any of those could change the concrete conformer),
+	 * so method resolution may stamp a direct call on this binding. Never set
+	 * for globals (any function may rebind them) or params.
+	 */
+	concrete_struct?: string;
 }

@@ -39,6 +39,11 @@ export default function clone_status(status: CheckStatus): CheckStatus {
 					)
 				: undefined,
 		})),
+		// Devirtualization rebind scan: shared by reference — the scan is
+		// immutable once a function entry computes it, so block clones (if /
+		// while / match bodies) must see the same set. check_function_node
+		// assigns a fresh scan for each nested function.
+		devirt_rebound_names: status.devirt_rebound_names,
 		// Inherited from the current function: block clones (if/else/while)
 		// stay in the same function, so they keep the enclosing base. Only
 		// `check_function_node` resets it for a freshly-entered function.

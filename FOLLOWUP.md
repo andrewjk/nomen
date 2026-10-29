@@ -734,3 +734,44 @@ destroy to run the payload struct's `T_destroy` for owning payload structs
 (guarded on the tag, like the reference-payload arm), both backends, plus
 the same for `Enum_copy`'s deep-copy direction. Touches MEMORY.md's enum
 ownership section when it lands.
+
+## `ref Trait` reassignment across conformers: invalid C, silent no-retype on aarch64 (pre-existing, surfaced by the devirtualization work)
+
+Recorded 2026-10-30 while landing PERF_PLAN item 11 (trait-call
+devirtualization, `test/trait_devirtualization.test.ts`). A callee
+reassigning a `ref Speaker` parameter to a different conformer (`sp =
+Cat()`) does not work end to end on either backend: the C backend emits
+`*sp = Cat_init()` against a `struct Speaker *` slot and clang rejects it
+("assigning to 'struct Speaker' from incompatible type 'struct Cat'"), and
+the aarch64 backend runs but the caller's binding keeps dispatching the OLD
+conformer (the write lands in the callee's view of the slot; the caller's
+re-sync does not retype the dispatch). Reproduced byte-identical on HEAD
+before the item, so it is not a devirtualization regression — the
+conservative devirtualization scan treats every `ref`-argument pass as a
+rebind precisely because this edge is unsound today. Fix shape: make the
+ref-trait slot a boxed-handle slot on C (or reject cross-conformer ref
+reassignment at the checker) and propagate the written handle to the
+caller's anchor/dispatch slot on aarch64, with a runtime test pinning the
+retype on both backends.
+
+## `inline` methods on trait-conforming structs never emit their symbol — the vtable entry dangles (pre-existing, surfaced by the devirtualization work)
+
+Recorded 2026-10-30 while landing PERF_PLAN item 11 (trait-call
+devirtualization). Declaring a trait-conforming method `pub inline func`
+(`mv struct Tile: Shape { pub inline func area = ... }`) fails to LINK on
+aarch64: the trait-conforming struct's vtable is emitted unconditionally
+(`_${Struct}_${Trait}_funcs` holds `.quad Tile_area`,
+build_aarch64/build_struct_node.ts), but inline methods are splice-only and
+never emitted as standalone symbols — `Undefined symbols: "Tile_area",
+referenced from: _Tile_Shape_funcs`. The C backend has the same shape
+(`void *_Tile_Shape_funcs[] = {Tile_area};`). Byte-identical on HEAD before
+the item. Consequence for the item: the aarch64 devirtualized call cannot
+take the concrete method's inline splice (the trait dispatch tail would
+also need the string-return normalization decision the bl path makes), so
+it lowers as a plain `bl` — the C backend collects the inlining win
+instead. Fix shape: emit a standalone alias for inline methods on
+trait-conforming structs (or emit the vtable slot as the splice body's
+outline), then route the devirtualized call through
+`build_inline_method` (the machine state at the dispatch point — x0 =
+instance, args in x1..x7 — is already identical to the concrete-receiver
+splice's contract).

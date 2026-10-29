@@ -3,29 +3,29 @@
 Research into the next performance opportunities, following the StableList +
 in-place push work. PERF.md is the record of what landed; this is the plan for
 what's next. All findings are ordered most-promising-first. Written Oct 2026;
-originally unmeasured — items 2, 3, 4 (partially), 5, 6, 7, 8, and 9 have since
-landed with measurements in place (items marked LANDED carry them; the rest
-carry expected wins and the receipts they rest on).
+originally unmeasured — items 2, 3, 4 (partially), 5, 6, 7, 8, 9, and 11 have
+since landed with measurements in place (items marked LANDED carry them; the
+rest carry expected wins and the receipts they rest on).
 
-| #   | Item                                                                                                                                                                                   | Backends       | Effort | Receipt                                          |
-| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | ------ | ------------------------------------------------ |
-| 1   | Faster allocator (slab/bump class allocation)                                                                                                                                          | both           | M      | PERF.md "Large"; ASM_TODO "largest unclaimed"    |
-| 2   | ~~In-place push for constructors~~ **LANDED Oct 2026: −55% / −58% on the shape**                                                                                                       | both           | S      | shape micro-bench, interleaved medians (below)   |
-| 3   | ~~Move-on-last-use for structs~~ **LANDED Oct 2026: −20% / −29% on the shape**                                                                                                         | both           | S–M    | shape micro-bench, interleaved medians (below)   |
-| 4   | ~~Borrow-returning reads (Map `get_ptr`, `at_view`)~~ **PARTIALLY LANDED Oct 2026: Map slot borrow, −79% / −98% on the borrow shape, −48% probe fusion**                               | both           | M      | shape micro-benches, interleaved medians (below) |
-| 5   | ~~Json ownership copies~~ **LANDED Oct 2026: −26% / −13% on the ownership shape, −22% / −12% json-serde**                                                                              | both           | S      | measured 0.7.0 regression +61% / +103%           |
-| 6   | ~~In-place store (`set`/`insert`/`add`/`alloc`)~~ **LANDED Oct 2026: −50% / −56% on the pure store shape, −64% Map replace**                                                           | both           | M      | shape micro-benches, interleaved medians (below) |
-| 7   | ~~Enum payload in-place construction~~ **LANDED Oct 2026: −45% / −8% on the payload shapes (aarch64; C take-variant)**                                                                 | both           | S–M    | shape micro-benches, interleaved medians (below) |
-| 8   | ~~Regex/String O(n²) accumulators~~ **LANDED Oct 2026: −92% / −91% match accumulator, −65% / −58% replace_all skip loop, −33% / −40% String.replace_all, −28% / −14% array to_string** | both           | S      | shape micro-benches, interleaved medians (below) |
+| #   | Item                                                                                                                                                                                                           | Backends       | Effort | Receipt                                          |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | ------ | ------------------------------------------------ |
+| 1   | Faster allocator (slab/bump class allocation)                                                                                                                                                                  | both           | M      | PERF.md "Large"; ASM_TODO "largest unclaimed"    |
+| 2   | ~~In-place push for constructors~~ **LANDED Oct 2026: −55% / −58% on the shape**                                                                                                                               | both           | S      | shape micro-bench, interleaved medians (below)   |
+| 3   | ~~Move-on-last-use for structs~~ **LANDED Oct 2026: −20% / −29% on the shape**                                                                                                                                 | both           | S–M    | shape micro-bench, interleaved medians (below)   |
+| 4   | ~~Borrow-returning reads (Map `get_ptr`, `at_view`)~~ **PARTIALLY LANDED Oct 2026: Map slot borrow, −79% / −98% on the borrow shape, −48% probe fusion**                                                       | both           | M      | shape micro-benches, interleaved medians (below) |
+| 5   | ~~Json ownership copies~~ **LANDED Oct 2026: −26% / −13% on the ownership shape, −22% / −12% json-serde**                                                                                                      | both           | S      | measured 0.7.0 regression +61% / +103%           |
+| 6   | ~~In-place store (`set`/`insert`/`add`/`alloc`)~~ **LANDED Oct 2026: −50% / −56% on the pure store shape, −64% Map replace**                                                                                   | both           | M      | shape micro-benches, interleaved medians (below) |
+| 7   | ~~Enum payload in-place construction~~ **LANDED Oct 2026: −45% / −8% on the payload shapes (aarch64; C take-variant)**                                                                                         | both           | S–M    | shape micro-benches, interleaved medians (below) |
+| 8   | ~~Regex/String O(n²) accumulators~~ **LANDED Oct 2026: −92% / −91% match accumulator, −65% / −58% replace_all skip loop, −33% / −40% String.replace_all, −28% / −14% array to_string**                         | both           | S      | shape micro-benches, interleaved medians (below) |
 | 9   | ~~Map/Set stored hash (Swiss-table tricks)~~ **LANDED Oct 2026: −35% / −52% probe shape, −21% / −49% string build+remove, −19% / −33% Set build, −22% aarch64 int rehash; int-keyed hit paths +2–10% (below)** | both           | M      | shape micro-benches, interleaved medians (below) |
-| 10  | StringBuilder numeric appends + 1-pass interp                                                                                                                                          | both           | S      | two snprintf passes + malloc per append          |
-| 11  | Devirtualization of trait calls                                                                                                                                                        | both           | M      | unmeasured                                       |
-| 12  | Struct field-order / padding                                                                                                                                                           | both           | S      | modest; raw-body caveat                          |
-| 13  | Variable-mode enums                                                                                                                                                                    | both           | L      | GOOSE #6, documented, unshipped                  |
-| 14  | Buffer word pairs (T_SIZE ≤ 16)                                                                                                                                                        | mostly aarch64 | S      | IMPROVEMENTS.md "still needed"                   |
-| 15  | aarch64 codegen receipts (splice model, folds…)                                                                                                                                        | aarch64        | S–M    | measured regressions to reclaim                  |
-| 16  | Async paths audit                                                                                                                                                                      | both           | ?      | unexplored, unmeasured                           |
-| 17  | Minor batch                                                                                                                                                                            | both           | S      | assorted                                         |
+| 10  | StringBuilder numeric appends + 1-pass interp                                                                                                                                                                  | both           | S      | two snprintf passes + malloc per append          |
+| 11  | ~~Devirtualization of trait calls~~ **LANDED Oct 2026: −12% realistic callee / tiny-callee loop folds outright (C); flat aarch64, inline splice blocked (below)**                                              | both           | M      | shape micro-bench, interleaved medians (below)   |
+| 12  | Struct field-order / padding                                                                                                                                                                                   | both           | S      | modest; raw-body caveat                          |
+| 13  | Variable-mode enums                                                                                                                                                                                            | both           | L      | GOOSE #6, documented, unshipped                  |
+| 14  | Buffer word pairs (T_SIZE ≤ 16)                                                                                                                                                                                | mostly aarch64 | S      | IMPROVEMENTS.md "still needed"                   |
+| 15  | aarch64 codegen receipts (splice model, folds…)                                                                                                                                                                | aarch64        | S–M    | measured regressions to reclaim                  |
+| 16  | Async paths audit                                                                                                                                                                                              | both           | ?      | unexplored, unmeasured                           |
+| 17  | Minor batch                                                                                                                                                                                                    | both           | S      | assorted                                         |
 
 ## 1. Faster allocator — slab/bump the class-allocation path
 
@@ -707,21 +707,21 @@ measured the new library on both sides):
 - _The rehash shape_ — 2M `Map<int, int>` inserts from empty (the growth
   chain re-inserts every entry ~2×):
 
-| Backend | before | after |        Δ |
-| ------- | -----: | ----: | -------: |
-| C       | 0.022s | 0.022s |   ~flat |
+| Backend | before |  after |        Δ |
+| ------- | -----: | -----: | -------: |
+| C       | 0.022s | 0.022s |    ~flat |
 | aarch64 | 0.058s | 0.046s | **−22%** |
 
-  The C backend is flat because -O2 inlines `set` and the loop is already
-  tight (and 22 ms is near the process-noise floor); aarch64 issues the
-  calls and collects the full elision — per moved entry, the `key.hash()`,
-  the `set` call, and the per-probe key compares are gone.
+The C backend is flat because -O2 inlines `set` and the loop is already
+tight (and 22 ms is near the process-noise floor); aarch64 issues the
+calls and collects the full elision — per moved entry, the `key.hash()`,
+the `set` call, and the per-probe key compares are gone.
 
 - _The string build/remove shape_ — 500k `"k{i}"` inserts (rehash-heavy),
   every 4th removed (backward shift), survivors verified via `get_or`:
 
-| Backend | before | after |        Δ |
-| ------- | -----: | ----: | -------: |
+| Backend | before |  after |        Δ |
+| ------- | -----: | -----: | -------: |
 | C       | 0.474s | 0.374s | **−21%** |
 | aarch64 | 0.839s | 0.429s | **−49%** |
 
@@ -732,14 +732,14 @@ measured the new library on both sides):
   length early-out) — exactly the compare the stored word short-circuits on
   a walk whose hashes differ:
 
-| Backend | before | after |        Δ |
-| ------- | -----: | ----: | -------: |
+| Backend | before |  after |        Δ |
+| ------- | -----: | -----: | -------: |
 | C       | 1.283s | 0.834s | **−35%** |
 | aarch64 | 2.255s | 1.088s | **−52%** |
 
-  With length-diverse keys the same shape is ~flat: the `==` length check
-  early-outs and there is little to save. The win lives where the compare is
-  real.
+With length-diverse keys the same shape is ~flat: the `==` length check
+early-outs and there is little to save. The win lives where the compare is
+real.
 
 - _The Set shapes_ — `Set<string>`: 500k adds + a verify sweep (C
   **−19%**, aarch64 **−33%**). `Set<int>`: 2M adds, 12M `has` lookups
@@ -768,7 +768,6 @@ the `used` word itself (Swiss-table control words — one load per probe, and
 the int-keyed hit-path cost shrinks to a shift) is the next squeeze if
 int-keyed hit paths ever matter more than they do today.
 
-
 ## 10. StringBuilder numeric appends + single-pass interpolation
 
 Every `sb.append(x.to_string())` costs two snprintf passes + malloc + free
@@ -778,13 +777,123 @@ against a fixed buffer. Same family: `"\{x} …"` interpolation lowers to one
 a writer form appending into a StringBuilder (or stack chunks, one pass) helps
 I/O-heavy code on both backends.
 
-## 11. Devirtualization of trait calls
+## 11. Devirtualization of trait calls — LANDED (Oct 2026)
 
-Trait dispatch always goes through the conformer's vtable
-(`src/check/utils/trait_slot.ts`). When the concrete type is statically
-visible — a local constructed from a known class, boxed and immediately called
-— a direct call (opening an inline opportunity, where the aarch64 backend
-shines) is possible. Pure checker/codegen change, both backends, unmeasured.
+**What landed.** When the concrete conformer behind a trait-typed position is
+statically visible, the dispatch lowers as a DIRECT call to
+`<Class>_<method>` — the same symbol the vtable slot holds — instead of
+resolving through `_get_trait_func` (two dependent vtable loads + an
+indirect branch on aarch64, an opaque function-pointer cast on C that
+blocks inlining). The proof is checker-side, whole-function:
+
+- **The rebind scan** (`collect_rebound_names`,
+  `src/check/utils/devirtualize.ts`): once per function entry, every name
+  the body REBINDS in a way that could change a binding's conformer —
+  assignment targets, swap operands (both sides, plus the moved-out RHS
+  source of `a = mv b swap c`), and `ref`-argument passes (the callee
+  receives the caller's SLOT and may reassign it). Whole-function, not
+  statement-ordered: a rebinding LATER in a loop body retypes EARLIER call
+  sites on the next iteration, so no amount of in-order clearing can stamp
+  calls inside a loop safely.
+- **The concrete tracking** (`StackValue.concrete_struct`): set at
+  declaration when a trait-typed local's initializer is a direct
+  constructor call of a conforming struct (the checker stamps the call's
+  `.type` with the struct name), or a `mv` from a donor that itself carries
+  a known concrete, or the boxed copy of a bare value-struct donor. Names
+  in the rebind set, globals (any function may rebind them — each function
+  is checked against its own scan), params, and
+  nullable/ref/view/array-typed bindings never carry it.
+- **The stamp** (`AccessFunctionCallNode.devirtualized_class`, set in
+  `check_access_node`'s trait-method resolution): only for a bare-local
+  receiver, a non-generic trait and conformer, and a conformer that itself
+  defines the method — the plain `${Struct}_${method}` label, not an
+  overloaded (mangled) one, and not the trait-default fallback the vtable
+  would otherwise supply. Both backends re-derive the mechanical facts at
+  the site (struct exists, non-generic, defines the method) so stamp and
+  lowering can't drift.
+- **C** (`build_access_node.ts`): the callee expression
+  `(${cast}_get_trait_func(recv, ti, fi))` becomes `Table_mix` — the
+  receiver expression, argument lowering, and every wrapper around it
+  (lambda-arg temps, rvalue-receiver temps, owned-receiver destroy) are the
+  dispatch path's own. With the call direct, clang -O2 can finally see (and
+  inline) the callee.
+- **aarch64** (`build_access_node.ts`): the dispatch core
+  `ldr x10,[x9] / ldr x10,[x10,#(ti+1)*8] / ldr x10,[x10,#fi*8] / blr x10`
+  becomes `bl Table_mix`; the receiver setup (x0 = instance, args in
+  x1..x7) is shared and unchanged.
+
+Fourteen tests in `test/trait_devirtualization.test.ts` pin the lowering on
+both backends (known class conformer, boxed value-struct conformer, `mv`
+propagation — direct; reassignment, loop-body reassignment, branch
+reassignment, `ref`-argument pass, trait-default-only conformer — still
+dispatching), the runtime results on all of those, and the rebind scan's
+collection rules (unit). The full suite (527 files, both backends) passes.
+
+**Measured.** Shape micro-bench — `bench/nomen/trait_dispatch.nm`, four
+dispatch shapes back to back (n from argv, Apple Silicon, 7 interleaved
+rounds, medians, audit off, release builds; outputs identical between the
+before/after binaries of each backend):
+
+- _Shape A — tiny callee_ (`var Shape s = Square(7)` hoisted, loop body is
+  only the dispatch + a multiply):
+
+| Backend | before |  after |          Δ |
+| ------- | -----: | -----: | ---------: |
+| C       | 0.175s | 0.003s | **−98.5%** |
+| aarch64 | 0.239s | 0.239s |      ~flat |
+
+The C number is the optimizer collecting on the elision (the item-4/7
+footnote again): with the call direct, clang inlines `Square_area` and
+folds the whole loop to a closed form — before, the opaque
+`_get_trait_func` indirection blocked inlining entirely and the loop paid
+a predicted indirect call per iteration. The aarch64 number is the honest
+dispatch-only cost: the two vtable loads issue early and hide under
+across-iteration overlap, and a monomorphic indirect branch predicts
+perfectly, so steady-state throughput doesn't move.
+
+- _Shape C — realistic callee_ (a masked 12-op hash chain, `m.mix(i % 1024)`
+  — the dispatch is a small slice of the iteration):
+
+| Backend | before |  after |          Δ |
+| ------- | -----: | -----: | ---------: |
+| C       | 0.304s | 0.266s | **−12.4%** |
+| aarch64 | 0.359s | 0.346s |  **−3.5%** |
+
+- _Shape E — dependency-chained_ (`x = m.mix(x)` — each call's argument is
+  the previous result, so the dispatch sits on the loop-carried chain):
+
+| Backend | before |  after |         Δ |
+| ------- | -----: | -----: | --------: |
+| C       | 1.162s | 1.148s | **−1.2%** |
+| aarch64 | 0.916s | 0.900s | **−1.7%** |
+
+Even on the chain the loads resolve early enough to hide; the win is the
+call plumbing, not latency.
+
+- _Shape B — container dispatch control_ (`shapes.at_or_panic(k).area()` —
+  never devirtualizable): flat on both backends (±0.1%), confirming the
+  stamp reaches exactly the sites it proves and nothing else.
+
+- _The standard suite_ — flat on both backends (json-serde 0.041/0.041s C
+  +0.0%, binarytrees 1.414/1.409s −0.3%, lru 0.851/0.876s +2.9%, nsieve
+  0.127/0.126s −0.2%; aarch64 0.070/0.071s, 1.817/1.827s, 1.765/1.761s,
+  0.156/0.156s; outputs byte-identical): none of the benches declares a
+  trait.
+
+**Remainder.** The aarch64 side's real prize — splicing the concrete
+method body in place of the call, which the concrete-receiver path already
+does for `inline func` methods — is blocked by a pre-existing gap:
+an `inline` method on a trait-CONFORMING struct never emits a standalone
+symbol, so the struct's unconditionally-emitted vtable references a
+never-defined label and the program doesn't link (FOLLOWUP.md, byte-
+identical on HEAD). Until that lands, the aarch64 devirtualized call is a
+plain `bl` and measures flat-to-small; the C backend collects the inlining
+win. Also not stamped yet: field-path receivers (`self.speaker.speak()`),
+container elements proven monomorphic after a check, trait-default-only
+conformers (the slot holds `${Trait}_${method}` — directly callable too),
+and generic traits/structs. The `ref`-trait reassignment edge (FOLLOWUP.md)
+is what forces any `ref`-argument pass to disqualify the name; if that edge
+is ever fixed, the scan can shrink with it.
 
 ## 12. Struct field-order / padding
 

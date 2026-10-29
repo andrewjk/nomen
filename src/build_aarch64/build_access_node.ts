@@ -3540,6 +3540,21 @@ function build_access_method(
 		// through the vtable when the receiver is trait-typed.
 		const trait_index = status.traits.indexOf(trait_target);
 		const func_index = trait_target.functions.indexOf(trait_func);
+		// Devirtualization (PERF_PLAN item 11): the checker proved this
+		// receiver's binding holds one known conformer that itself defines
+		// the method — call the concrete symbol DIRECTLY (the same label the
+		// vtable slot holds) instead of the two dependent vtable loads and
+		// the indirect branch. Re-derived here so the stamp and the lowering
+		// can't drift. The receiver setup above is shared: x0 already holds
+		// the instance for instance methods (args in x1..x7 for static ones),
+		// exactly the state the dispatched body expects.
+		const devirt_struct = status.structs.find(
+			(s) =>
+				s.name === access_func.devirtualized_class &&
+				!s.is_generic &&
+				s.functions.some((f) => f.name === access_func.name),
+		);
+		const devirt_label = devirt_struct ? `${devirt_struct.name}_${access_func.name}` : undefined;
 		if (node.target.node_type === "value") {
 			const name = (node.target as ValueNode).value;
 			const paramReg = get_param_reg(name, status);
@@ -3578,11 +3593,15 @@ function build_access_method(
 			ensure_newline(status);
 			emit_asm(status, `mov x9, x0\n`);
 		}
-		emit_asm(status, `ldr x10, [x9]\n`);
-		// +1 to skip the destroy slot at vtable[0].
-		emit_asm(status, `ldr x10, [x10, #${(trait_index + 1) * 8}]\n`);
-		emit_asm(status, `ldr x10, [x10, #${func_index * 8}]\n`);
-		emit_asm(status, `blr x10\n`);
+		if (devirt_label) {
+			emit_asm(status, `bl ${devirt_label}\n`);
+		} else {
+			emit_asm(status, `ldr x10, [x9]\n`);
+			// +1 to skip the destroy slot at vtable[0].
+			emit_asm(status, `ldr x10, [x10, #${(trait_index + 1) * 8}]\n`);
+			emit_asm(status, `ldr x10, [x10, #${func_index * 8}]\n`);
+			emit_asm(status, `blr x10\n`);
+		}
 		// A float-returning trait method hands its result back in d0 (the d0
 		// return convention) — bit-cast to x0 for the generic consumers.
 		if (is_float_type(access_func.type.name)) {

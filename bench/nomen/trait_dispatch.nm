@@ -1,0 +1,129 @@
+import System
+
+// PERF_PLAN item 11 — devirtualization of trait calls. Three dispatch
+// shapes back to back, each printing a checksum:
+//   A  monomorphic local — `var Shape s = Square(...)` hoisted, never
+//      rebound; the loop body is ONLY the dispatch + the callee's one
+//      multiply, so the vtable walk (handle load, two dependent loads,
+//      indirect call) is a large fraction of each iteration.
+//   B  container dispatch — `shapes.at(i % 2).area()`: the receiver is an
+//      expression, never devirtualizable; the control group (must be flat).
+//   C  monomorphic local with a realistic callee — the dispatch is a small
+//      fraction of the iteration, so the relative win shrinks (the honest
+//      bound of the item).
+
+trait Shape {
+	func area = (self, out int)
+}
+
+mv struct Square: Shape {
+	var int side
+	func area = (self, out int) {
+		return self.side * self.side
+	}
+}
+
+mv struct Rect: Shape {
+	var int w
+	var int h
+	func area = (self, out int) {
+		return self.w * self.h
+	}
+}
+
+// A heavier monomorphic callee: a masked hash chain (~12 dependent int
+// ops), so shape C's dispatch overhead is a small slice of the loop. Every
+// multiply/add is masked back under 2^31 — intermediate values stay in
+// range, so no step overflows and every backend/optimization level
+// computes bit-identical results (an unmasked chain is signed-overflow UB
+// that clang -O2 reassociates once the body inlines, and before/after
+// checksums would diverge).
+trait Mixer {
+	func mix = (self, int x, out int)
+}
+
+mv struct Table: Mixer {
+	var int seed
+	func mix = (self, int x, out int) {
+		var int v = (self.seed ^ x) & 2147483647
+		v = (v * 2654435761 + 1) & 2147483647
+		v = v ^ (v >> 13)
+		v = (v * 1274126177 + 3) & 2147483647
+		v = v ^ (v >> 16)
+		v = (v + self.seed * 3) & 2147483647
+		v = v ^ (v >> 7)
+		v = (v * 31 + 5) & 2147483647
+		v = v ^ (v >> 11)
+		return v
+	}
+}
+
+pub func main = (Init init) {
+	var n = 50000000
+	if init.argc > 1 {
+		n = parse_int(init.args.at(1))
+	}
+	// Optional shape selector (a|b|c) so each shape can be timed in its own
+	// process run; default runs all three.
+	var mode = "all"
+	if init.argc > 2 {
+		mode = init.args.at(2)
+	}
+
+	// A — devirtualizable monomorphic dispatch, tiny callee.
+	if mode == "all" || mode == "a" {
+		var Shape s = Square(7)
+		var total_a = 0
+		var i = 0
+		while i < n {
+			total_a += s.area()
+			i += 1
+		}
+		Console.write("A \{total_a}\n")
+	}
+
+	// B — container dispatch, the control (stays virtual in both worlds).
+	if mode == "all" || mode == "b" {
+		var List<Shape> shapes = List<Shape>()
+		shapes.push(Square(3))
+		shapes.push(Rect(2, 5))
+		var total_b = 0
+		var i = 0
+		while i < n {
+			if i % 2 == 0 {
+				total_b += shapes.at_or_panic(0).area()
+			} else {
+				total_b += shapes.at_or_panic(1).area()
+			}
+			i += 1
+		}
+		Console.write("B \{total_b}\n")
+	}
+
+	// C — devirtualizable monomorphic dispatch, realistic callee.
+	if mode == "all" || mode == "c" {
+		var Mixer m = Table(12345)
+		var total_c = 0
+		var i = 0
+		while i < n {
+			total_c += m.mix(i % 1024)
+			i += 1
+		}
+		Console.write("C \{total_c}\n")
+	}
+
+	// E — the same callee CHAINED through the accumulator (`x = m.mix(x)`):
+	// each call's argument is the previous call's result, so the dispatch
+	// sits on the loop-carried dependency chain instead of hiding under
+	// across-iteration overlap.
+	if mode == "all" || mode == "e" {
+		var Mixer m = Table(12345)
+		var x = 1
+		var i = 0
+		while i < n {
+			x = m.mix(x)
+			i += 1
+		}
+		Console.write("E \{x}\n")
+	}
+}
