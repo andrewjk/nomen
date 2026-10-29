@@ -7,12 +7,21 @@
  * bucket indexing is a mask (`hash & (cap - 1)`) instead of a division — and
  * it is correct for negative hashes too: two's-complement `&` already lands
  * in `[0, cap)`, which is why no negative adjustment is needed.
+ *
+ * Each slot carries its key's hash (truncated to 32 bits) in a parallel
+ * `hashes` buffer. Probes compare the stored hash before the key itself, so
+ * a probed slot whose hash differs skips the key load and `==` entirely (the
+ * Swiss-table short-circuit: the full key compare only runs on a hash match,
+ * and a false match still falls through to `==`, so truncation costs
+ * nothing); rehash re-inserts hash-free, reading the stored word instead of
+ * calling `key.hash()` again.
  **/
 pub mv struct Map<TK: Hashable + Equatable, TV> {
 	var length = 0
 	var keys = Buffer<TK>()
 	var values = Buffer<TV>()
 	var used = Buffer<int>()
+	var hashes = Buffer<int>()
 
 	// Variadic-tuple constructor: Map<string, int>(["a", 1], ["b", 2]) or
 	// Map(["a", 1], ["b", 2]) (type args inferred from the first pair).
@@ -39,16 +48,19 @@ pub mv struct Map<TK: Hashable + Equatable, TV> {
 			cap = self.keys.alloc(8)
 			self.values.alloc(8)
 			self.used.alloc_u32(8)
+			self.hashes.alloc_u32(8)
 		}
 		if self.length * 4 >= cap * 3 {
 			self.rehash(cap * 2)
 			cap = self.keys.cap
 		}
-		var int idx = self.find_slot(key, cap)
+		var uint32 h = key.hash() as uint32
+		var int idx = self.find_slot(key, h, cap)
 		if self.used.load_u32(idx) == 0 {
 			self.used.store_u32(idx, 1)
 			self.keys.store(idx, key)
 			self.values.store(idx, value)
+			self.hashes.store_u32(idx, h)
 			self.length += 1
 		} else {
 			self.values.replace(idx, value)
@@ -77,15 +89,18 @@ pub mv struct Map<TK: Hashable + Equatable, TV> {
 			cap = self.keys.alloc(8)
 			self.values.alloc(8)
 			self.used.alloc_u32(8)
+			self.hashes.alloc_u32(8)
 		}
 		if self.length * 4 >= cap * 3 {
 			self.rehash(cap * 2)
 			cap = self.keys.cap
 		}
-		var int idx = self.find_slot(key, cap)
+		var uint32 h = key.hash() as uint32
+		var int idx = self.find_slot(key, h, cap)
 		if self.used.load_u32(idx) == 0 {
 			self.used.store_u32(idx, 1)
 			self.keys.store(idx, key)
+			self.hashes.store_u32(idx, h)
 			self.length += 1
 		} else {
 			self.values.destroy_at(idx)
@@ -98,7 +113,7 @@ pub mv struct Map<TK: Hashable + Equatable, TV> {
 		if cap == 0 {
 			return 0
 		}
-		var int idx = self.find_slot(key, cap)
+		var int idx = self.find_slot(key, key.hash() as uint32, cap)
 		if self.used.load_u32(idx) == 0 {
 			return 0
 		}
@@ -112,7 +127,7 @@ pub mv struct Map<TK: Hashable + Equatable, TV> {
 		if cap == 0 {
 			return fallback
 		}
-		var int idx = self.find_slot(key, cap)
+		var int idx = self.find_slot(key, key.hash() as uint32, cap)
 		if self.used.load_u32(idx) == 0 {
 			return fallback
 		}
@@ -126,7 +141,7 @@ pub mv struct Map<TK: Hashable + Equatable, TV> {
 		if cap == 0 {
 			panic("key not found")
 		}
-		var int idx = self.find_slot(key, cap)
+		var int idx = self.find_slot(key, key.hash() as uint32, cap)
 		if self.used.load_u32(idx) == 0 {
 			panic("key not found")
 		}
@@ -150,7 +165,7 @@ pub mv struct Map<TK: Hashable + Equatable, TV> {
 		unsafe {
 			var int cap = self.keys.cap
 			if cap > 0 {
-				var int idx = self.find_slot(key, cap)
+				var int idx = self.find_slot(key, key.hash() as uint32, cap)
 				if self.used.load_u32(idx) != 0 {
 					return self.values.slot_ptr(idx)
 				}
@@ -164,7 +179,7 @@ pub mv struct Map<TK: Hashable + Equatable, TV> {
 		if cap == 0 {
 			return false
 		}
-		var int idx = self.find_slot(key, cap)
+		var int idx = self.find_slot(key, key.hash() as uint32, cap)
 		return self.used.load_u32(idx) != 0
 	}
 
@@ -173,7 +188,7 @@ pub mv struct Map<TK: Hashable + Equatable, TV> {
 		if cap == 0 {
 			return
 		}
-		var int idx = self.find_slot(key, cap)
+		var int idx = self.find_slot(key, key.hash() as uint32, cap)
 		if self.used.load_u32(idx) == 0 {
 			return
 		}
@@ -186,7 +201,9 @@ pub mv struct Map<TK: Hashable + Equatable, TV> {
 		// so entries past a non-moveable one are not stranded behind an empty
 		// slot (which would make find_slot miss them). No tombstones, so
 		// find_slot/get/has/set are unchanged, and the cost is the local cluster
-		// length — not a full O(cap) rehash on every delete.
+		// length — not a full O(cap) rehash on every delete. `home` reads the
+		// stored hash word (no re-hash per shifted entry), and the word moves
+		// with the entry — find_slot's hash short-circuit trusts it.
 		var int gap = idx
 		var int k = idx
 		while true {
@@ -197,7 +214,7 @@ pub mv struct Map<TK: Hashable + Equatable, TV> {
 			if self.used.load_u32(k) == 0 {
 				break
 			}
-			var int home = (self.keys.load(k).hash() as int) & (cap - 1)
+			var int home = (self.hashes.load_u32(k) as int) & (cap - 1)
 			var int dgap = gap - home
 			if dgap < 0 {
 				dgap = dgap + cap
@@ -214,6 +231,7 @@ pub mv struct Map<TK: Hashable + Equatable, TV> {
 				// used.store marks it empty (the buffer destroy skips it).
 				self.keys.shift(gap, k)
 				self.values.shift(gap, k)
+				self.hashes.store_u32(gap, self.hashes.load_u32(k))
 				self.used.store_u32(gap, 1)
 				gap = k
 			}
@@ -222,26 +240,39 @@ pub mv struct Map<TK: Hashable + Equatable, TV> {
 		self.length = self.length - 1
 	}
 
-	// An independent copy: a fresh Map whose every member slab is a fresh
-	// `Buffer.copy` (which deep-copies mv key/value elements), with the same
-	// length and entries. Not available for class/trait keys or values (the
+	// An independent copy: a fresh Map whose every member slab is fresh
+	// (keys/values deep-copied per element, `used`/`hashes` copied word by
+	// word), with the same length and entries. The u32-word buffers are
+	// copied through their own primitives — `Buffer.copy` is T_SIZE-aware
+	// (8-byte loads for `int`), which would read past a 4-byte-per-slot
+	// `alloc_u32` slab. Not available for class/trait keys or values (the
 	// member routes to ClassBuffer, which has no copy — the checker rejects
 	// the call; see the copy gate in check_access_node).
 	pub func copy = (self, out Map<TK, TV>) {
 		var dst = Map<TK, TV>()
 		dst.keys = self.keys.copy()
 		dst.values = self.values.copy()
-		dst.used = self.used.copy()
+		dst.used.alloc_u32(self.keys.cap)
+		dst.hashes.alloc_u32(self.keys.cap)
+		var i = 0
+		while i < self.keys.cap; i += 1 {
+			dst.used.store_u32(i, self.used.load_u32(i))
+			dst.hashes.store_u32(i, self.hashes.load_u32(i))
+		}
 		dst.length = self.length
 		return dst
 	}
 
-	func find_slot = (self, TK key, int cap, out int: out >= 0 && out < cap) {
+	func find_slot = (self, TK key, uint32 h, int cap, out int: out >= 0 && out < cap) {
 		// cap is a power of two, so this is `hash mod cap` via a mask —
 		// non-negative for any hash (two's complement), no adjustment.
-		var int idx = (key.hash() as int) & (cap - 1)
+		var int idx = (h as int) & (cap - 1)
 		while self.used.load_u32(idx) != 0 {
-			if self.keys.load(idx) == key {
+			// The stored-hash word short-circuits the key compare: a probed
+			// slot whose hash differs (every step of a collision walk past
+			// the home slot) skips the key load and `==`. A hash match still
+			// falls through to `==`, so the 32-bit truncation costs nothing.
+			if self.hashes.load_u32(idx) == h && self.keys.load(idx) == key {
 				return idx
 			}
 			idx += 1
@@ -252,15 +283,23 @@ pub mv struct Map<TK: Hashable + Equatable, TV> {
 		return idx
 	}
 
+	// Rehash hash-free: the stored per-slot hash words move with the entries,
+	// so no `key.hash()` runs here and the insertion probe needs no key
+	// compares (keys arrive unique — they came from a valid table). This is
+	// the other half of the Swiss-table trick; the old form re-inserted via
+	// `self.set(mv k, mv v)`, re-hashing every key and re-comparing keys on
+	// every probed slot.
 	func rehash = (ref self, int new_cap) {
 		var Buffer<TK> old_keys = mv self.keys swap Buffer<TK>()
 		var Buffer<TV> old_values = mv self.values swap Buffer<TV>()
 		var Buffer<int> old_used = mv self.used swap Buffer<int>()
+		var Buffer<int> old_hashes = mv self.hashes swap Buffer<int>()
 		var int old_cap = old_keys.cap
 
 		self.keys.alloc(new_cap)
 		self.values.alloc(new_cap)
 		self.used.alloc_u32(new_cap)
+		self.hashes.alloc_u32(new_cap)
 		self.length = 0
 
 		var i = 0
@@ -277,7 +316,19 @@ pub mv struct Map<TK: Hashable + Equatable, TV> {
 				// move_T results.
 				var TK k = old_keys.move(i)
 				var TV v = old_values.move(i)
-				self.set(mv k, mv v)
+				var uint32 h = old_hashes.load_u32(i)
+				var int idx = (h as int) & (new_cap - 1)
+				while self.used.load_u32(idx) != 0 {
+					idx += 1
+					if idx >= new_cap {
+						idx = 0
+					}
+				}
+				self.used.store_u32(idx, 1)
+				self.keys.store(idx, k)
+				self.values.store(idx, v)
+				self.hashes.store_u32(idx, h)
+				self.length += 1
 			}
 		}
 	}

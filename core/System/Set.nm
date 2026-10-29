@@ -6,26 +6,37 @@
  * The capacity is always a power of two (initial 8, doubling on rehash), so
  * slot indexing is a mask (`hash & (cap - 1)`) — correct for negative hashes
  * too (two's-complement `&` already lands in `[0, cap)`).
+ *
+ * Each slot carries its value's hash (truncated to 32 bits) in a parallel
+ * `hashes` buffer. Probes compare the stored hash before the value itself
+ * (the Swiss-table short-circuit — the `==` only runs on a hash match, and a
+ * false match still falls through to `==`, so truncation costs nothing);
+ * rehash re-inserts hash-free, reading the stored word instead of calling
+ * `value.hash()` again.
  **/
 pub mv struct Set<T: Hashable + Equatable> {
 	var length = 0
 	var slots = Buffer<T>()
 	var used = Buffer<int>()
+	var hashes = Buffer<int>()
 
 	pub func add = (ref self, mv T value) {
 		var int cap = self.slots.cap
 		if cap == 0 {
 			cap = self.slots.alloc(8)
 			self.used.alloc_u32(8)
+			self.hashes.alloc_u32(8)
 		}
 		if self.length * 4 >= cap * 3 {
 			self.rehash(cap * 2)
 			cap = self.slots.cap
 		}
-		var int idx = self.find_slot(value, cap)
+		var uint32 h = value.hash() as uint32
+		var int idx = self.find_slot(value, h, cap)
 		if self.used.load_u32(idx) == 0 {
 			self.used.store_u32(idx, 1)
 			self.slots.store(idx, value)
+			self.hashes.store_u32(idx, h)
 			self.length += 1
 		}
 	}
@@ -35,7 +46,7 @@ pub mv struct Set<T: Hashable + Equatable> {
 		if cap == 0 {
 			return false
 		}
-		var int idx = self.find_slot(value, cap)
+		var int idx = self.find_slot(value, value.hash() as uint32, cap)
 		return self.used.load_u32(idx) != 0
 	}
 
@@ -44,7 +55,7 @@ pub mv struct Set<T: Hashable + Equatable> {
 		if cap == 0 {
 			return 0
 		}
-		var int idx = self.find_slot(key, cap)
+		var int idx = self.find_slot(key, key.hash() as uint32, cap)
 		if self.used.load_u32(idx) == 0 {
 			return 0
 		}
@@ -58,7 +69,7 @@ pub mv struct Set<T: Hashable + Equatable> {
 		if cap == 0 {
 			return fallback
 		}
-		var int idx = self.find_slot(key, cap)
+		var int idx = self.find_slot(key, key.hash() as uint32, cap)
 		if self.used.load_u32(idx) == 0 {
 			return fallback
 		}
@@ -71,7 +82,7 @@ pub mv struct Set<T: Hashable + Equatable> {
 		if cap == 0 {
 			panic("value not found in set")
 		}
-		var int idx = self.find_slot(key, cap)
+		var int idx = self.find_slot(key, key.hash() as uint32, cap)
 		if self.used.load_u32(idx) == 0 {
 			panic("value not found in set")
 		}
@@ -83,7 +94,7 @@ pub mv struct Set<T: Hashable + Equatable> {
 		if cap == 0 {
 			return
 		}
-		var int idx = self.find_slot(value, cap)
+		var int idx = self.find_slot(value, value.hash() as uint32, cap)
 		if self.used.load_u32(idx) == 0 {
 			return
 		}
@@ -96,7 +107,9 @@ pub mv struct Set<T: Hashable + Equatable> {
 		// so entries past a non-moveable one are not stranded behind an empty
 		// slot (which would make find_slot miss them). No tombstones, so
 		// find_slot/get/has/add are unchanged, and the cost is the local cluster
-		// length — not a full O(cap) rehash on every delete.
+		// length — not a full O(cap) rehash on every delete. `home` reads the
+		// stored hash word (no re-hash per shifted entry), and the word moves
+		// with the entry — find_slot's hash short-circuit trusts it.
 		var int gap = idx
 		var int k = idx
 		while true {
@@ -107,7 +120,7 @@ pub mv struct Set<T: Hashable + Equatable> {
 			if self.used.load_u32(k) == 0 {
 				break
 			}
-			var int home = (self.slots.load(k).hash() as int) & (cap - 1)
+			var int home = (self.hashes.load_u32(k) as int) & (cap - 1)
 			var int dgap = gap - home
 			if dgap < 0 {
 				dgap = dgap + cap
@@ -123,6 +136,7 @@ pub mv struct Set<T: Hashable + Equatable> {
 				// pointer at the vacated slot (leaked once used.store marks it
 				// empty; the buffer destroy skips unused slots).
 				self.slots.shift(gap, k)
+				self.hashes.store_u32(gap, self.hashes.load_u32(k))
 				self.used.store_u32(gap, 1)
 				gap = k
 			}
@@ -131,26 +145,40 @@ pub mv struct Set<T: Hashable + Equatable> {
 		self.length = self.length - 1
 	}
 
-	// An independent copy: a fresh Set whose both member slabs are fresh
-	// `Buffer.copy` calls (which deep-copy mv elements), with the same length
-	// and entries. Not available for class/trait elements (the member routes
-	// to ClassBuffer, which has no copy — the checker rejects the call; the
-	// shape is also unreachable today since `T: Hashable + Equatable` cannot
-	// be a trait without trait-conformance syntax).
+	// An independent copy: a fresh Set whose member slabs are fresh (`slots`
+	// deep-copied per element, `used`/`hashes` copied word by word), with the
+	// same length and entries. The u32-word buffers are copied through their
+	// own primitives — `Buffer.copy` is T_SIZE-aware (8-byte loads for
+	// `int`), which would read past a 4-byte-per-slot `alloc_u32` slab. Not
+	// available for class/trait elements (the member routes to ClassBuffer,
+	// which has no copy — the checker rejects the call; the shape is also
+	// unreachable today since `T: Hashable + Equatable` cannot be a trait
+	// without trait-conformance syntax).
 	pub func copy = (self, out Set<T>) {
 		var dst = Set<T>()
 		dst.slots = self.slots.copy()
-		dst.used = self.used.copy()
+		dst.used.alloc_u32(self.slots.cap)
+		dst.hashes.alloc_u32(self.slots.cap)
+		var i = 0
+		while i < self.slots.cap; i += 1 {
+			dst.used.store_u32(i, self.used.load_u32(i))
+			dst.hashes.store_u32(i, self.hashes.load_u32(i))
+		}
 		dst.length = self.length
 		return dst
 	}
 
-	func find_slot = (self, T value, int cap, out int: out >= 0 && out < cap) {
+	func find_slot = (self, T value, uint32 h, int cap, out int: out >= 0 && out < cap) {
 		// cap is a power of two: `hash mod cap` via a mask, non-negative
 		// for any hash — no adjustment needed.
-		var int idx = (value.hash() as int) & (cap - 1)
+		var int idx = (h as int) & (cap - 1)
 		while self.used.load_u32(idx) != 0 {
-			if self.slots.load(idx) == value {
+			// The stored-hash word short-circuits the value compare: a probed
+			// slot whose hash differs (every step of a collision walk past
+			// the home slot) skips the value load and `==`. A hash match
+			// still falls through to `==`, so the 32-bit truncation costs
+			// nothing.
+			if self.hashes.load_u32(idx) == h && self.slots.load(idx) == value {
 				return idx
 			}
 			idx += 1
@@ -161,13 +189,20 @@ pub mv struct Set<T: Hashable + Equatable> {
 		return idx
 	}
 
+	// Rehash hash-free: the stored per-slot hash words move with the entries,
+	// so no `value.hash()` runs here and the insertion probe needs no value
+	// compares (values arrive unique — they came from a valid set). The old
+	// form re-inserted via `self.add(mv v)`, re-hashing every value and
+	// re-comparing values on every probed slot.
 	func rehash = (ref self, int new_cap) {
 		var Buffer<T> old_slots = mv self.slots swap Buffer<T>()
 		var Buffer<int> old_used = mv self.used swap Buffer<int>()
+		var Buffer<int> old_hashes = mv self.hashes swap Buffer<int>()
 		var int old_cap = old_slots.cap
 
 		self.slots.alloc(new_cap)
 		self.used.alloc_u32(new_cap)
+		self.hashes.alloc_u32(new_cap)
 		self.length = 0
 
 		var i = 0
@@ -182,7 +217,18 @@ pub mv struct Set<T: Hashable + Equatable> {
 				// once the new buffer has made its own copy — passing it inline
 				// would orphan the move_T result.
 				var T v = old_slots.move(i)
-				self.add(mv v)
+				var uint32 h = old_hashes.load_u32(i)
+				var int idx = (h as int) & (new_cap - 1)
+				while self.used.load_u32(idx) != 0 {
+					idx += 1
+					if idx >= new_cap {
+						idx = 0
+					}
+				}
+				self.used.store_u32(idx, 1)
+				self.slots.store(idx, v)
+				self.hashes.store_u32(idx, h)
+				self.length += 1
 			}
 		}
 	}

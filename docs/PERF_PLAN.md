@@ -3,7 +3,7 @@
 Research into the next performance opportunities, following the StableList +
 in-place push work. PERF.md is the record of what landed; this is the plan for
 what's next. All findings are ordered most-promising-first. Written Oct 2026;
-originally unmeasured — items 2, 3, 4 (partially), 5, 6, 7, and 8 have since
+originally unmeasured — items 2, 3, 4 (partially), 5, 6, 7, 8, and 9 have since
 landed with measurements in place (items marked LANDED carry them; the rest
 carry expected wins and the receipts they rest on).
 
@@ -17,7 +17,7 @@ carry expected wins and the receipts they rest on).
 | 6   | ~~In-place store (`set`/`insert`/`add`/`alloc`)~~ **LANDED Oct 2026: −50% / −56% on the pure store shape, −64% Map replace**                                                           | both           | M      | shape micro-benches, interleaved medians (below) |
 | 7   | ~~Enum payload in-place construction~~ **LANDED Oct 2026: −45% / −8% on the payload shapes (aarch64; C take-variant)**                                                                 | both           | S–M    | shape micro-benches, interleaved medians (below) |
 | 8   | ~~Regex/String O(n²) accumulators~~ **LANDED Oct 2026: −92% / −91% match accumulator, −65% / −58% replace_all skip loop, −33% / −40% String.replace_all, −28% / −14% array to_string** | both           | S      | shape micro-benches, interleaved medians (below) |
-| 9   | Map/Set stored hash (Swiss-table tricks)                                                                                                                                               | both           | M      | rehash re-hashes every key                       |
+| 9   | ~~Map/Set stored hash (Swiss-table tricks)~~ **LANDED Oct 2026: −35% / −52% probe shape, −21% / −49% string build+remove, −19% / −33% Set build, −22% aarch64 int rehash; int-keyed hit paths +2–10% (below)** | both           | M      | shape micro-benches, interleaved medians (below) |
 | 10  | StringBuilder numeric appends + 1-pass interp                                                                                                                                          | both           | S      | two snprintf passes + malloc per append          |
 | 11  | Devirtualization of trait calls                                                                                                                                                        | both           | M      | unmeasured                                       |
 | 12  | Struct field-order / padding                                                                                                                                                           | both           | S      | modest; raw-body caveat                          |
@@ -658,13 +658,116 @@ scan-to-next-escape. The emitted-code rewrite assumes a scalar
 `_to_string` fits 21 bytes for the initial malloc (any longer element
 takes the geometric grow, so it is a size hint, not a bound).
 
-## 9. Map/Set stored hash
+## 9. Map/Set stored hash — LANDED (Oct 2026)
 
-`rehash` re-inserts via `self.set(mv k, mv v)` (`Map.nm`) — a full re-hash of
-every key plus re-probe. The Swiss-table trick — store a per-slot hash word
-(a fourth `Buffer<int>`), compare hashes before `memcmp` in probes, rehash
-hash-free — is one buffer away. Composes with item 4 (hash check short-circuits
-before the key compare).
+**What landed.** A fourth `Buffer<int>` per Map (`hashes` — a third per Set),
+driven by the same u32 word family as `used` (`alloc_u32`/`store_u32`/
+`load_u32`, 4 bytes per slot):
+
+- **Insert** (`set`/`set_slot_ptr`/`add`): the key's `hash()` — computed once
+  per call now, where `find_slot` used to hash internally — is truncated to
+  u32 and stored next to the key. The replace path leaves the word alone
+  (same key, same hash).
+- **Probes** (`find_slot`, now taking the precomputed hash): the stored word
+  is compared before the key itself, so a probed slot whose hash differs
+  skips the key load and `==` entirely — on aarch64 that `==` is a
+  `bl string_eq` + `bl _memcmp` when lengths match (the Swiss-table
+  short-circuit; a false hash match still falls through to `==`, so the
+  32-bit truncation costs nothing). On C, clang -O2 inlines the compare, so
+  the win shows only where compares are real (dense tables, equal-length
+  keys).
+- **Rehash is hash-free and compare-free.** Instead of re-inserting via
+  `self.set(mv k, mv v)` — re-hashing every key and key-comparing every
+  probed slot — the loop reads each entry's stored word, derives the new
+  home from it, probes `used` words only (keys arrive unique), and moves the
+  entry with its word. `remove`'s backward shift reads stored words for
+  `home` (no re-hash per shifted entry) and moves the word with the entry —
+  `find_slot`'s short-circuit trusts it, so a stale word would strand the
+  key.
+- **`copy`** copies `used`/`hashes` word by word through their own
+  primitives, which also fixes a pre-existing out-of-bounds read: both used
+  to route through `Buffer.copy`, which is T_SIZE-aware (8-byte loads for
+  `int`) against a 4-byte-per-slot `alloc_u32` slab — every copy of a
+  non-empty Map/Set read past the slab's end (silently: the garbage high
+  halves are never read through `load_u32`, and the over-read rarely
+  faults).
+
+Seven tests in `test/map_set_stored_hash.test.ts` (both backends, audit on)
+pin the rehash growth path, the hash-move-on-shift (a colliding cluster
+whose middle entry is removed), negative-key u32 truncation across rehash,
+the replace path, Set growth/remove, and Map/Set copy independence; the full
+suite (526 files, both backends) passes.
+
+**Measured.** Shape micro-benches — n from argv, Apple Silicon, best-of-9
+interleaved medians, audit off, release builds, identical outputs. The
+"before" binaries were built from the pre-change tree (a HEAD worktree — the
+probe/set shapes were rebuilt there after an initial pass accidentally
+measured the new library on both sides):
+
+- _The rehash shape_ — 2M `Map<int, int>` inserts from empty (the growth
+  chain re-inserts every entry ~2×):
+
+| Backend | before | after |        Δ |
+| ------- | -----: | ----: | -------: |
+| C       | 0.022s | 0.022s |   ~flat |
+| aarch64 | 0.058s | 0.046s | **−22%** |
+
+  The C backend is flat because -O2 inlines `set` and the loop is already
+  tight (and 22 ms is near the process-noise floor); aarch64 issues the
+  calls and collects the full elision — per moved entry, the `key.hash()`,
+  the `set` call, and the per-probe key compares are gone.
+
+- _The string build/remove shape_ — 500k `"k{i}"` inserts (rehash-heavy),
+  every 4th removed (backward shift), survivors verified via `get_or`:
+
+| Backend | before | after |        Δ |
+| ------- | -----: | ----: | -------: |
+| C       | 0.474s | 0.374s | **−21%** |
+| aarch64 | 0.839s | 0.429s | **−49%** |
+
+- _The probe shape_ — 387k fixed-width string keys, so the table sits at its
+  worst-case steady load factor (~0.74, long clusters); probe strings
+  pre-built, then 3.87M `get_or` lookups cycling half hits, half absent
+  keys. Fixed-width keys make every probed slot's `==` a real memcmp (no
+  length early-out) — exactly the compare the stored word short-circuits on
+  a walk whose hashes differ:
+
+| Backend | before | after |        Δ |
+| ------- | -----: | ----: | -------: |
+| C       | 1.283s | 0.834s | **−35%** |
+| aarch64 | 2.255s | 1.088s | **−52%** |
+
+  With length-diverse keys the same shape is ~flat: the `==` length check
+  early-outs and there is little to save. The win lives where the compare is
+  real.
+
+- _The Set shapes_ — `Set<string>`: 500k adds + a verify sweep (C
+  **−19%**, aarch64 **−33%**). `Set<int>`: 2M adds, 12M `has` lookups
+  (5 rounds of [0,n) hits + [n,2n) misses, kept inside one capacity),
+  a contiguous quarter removed (C **+8%**, aarch64 +3.6%).
+
+  The int-keyed regression is the honest cost of the trick on keys whose
+  hash is free: `int.hash()` is the identity, so the stored word is
+  redundant and every probed slot pays one extra 4-byte load + compare on
+  the hit path, while the rehash elision never repays it (the table is built
+  once and never grows again). At the shape's ~27 ms runtime +8% is ~2 ms.
+  The standard suite's int-keyed Map bench (lru) lands at +2.1% / +0.9% —
+  flat within noise. String-keyed containers pay the same extra load but
+  stop paying whole memcmps, which is where the design wins.
+
+- _The standard suite_ — flat on both backends (lru `1000 20000000`
+  0.88 → 0.90s C, 1.79 → 1.81s aarch64; json-serde `sample.json 50000`
+  0.41/0.69s unchanged; binarytrees 18 1.46/1.85s; nsieve 12 0.13/0.16s;
+  outputs byte-identical): no bench hot loop builds or probes a string-keyed
+  table at density, and lru's `get_or` misses (~90% of its loop) short-
+  circuit on the `used` word before any compare in both worlds.
+
+**Remainder.** The stored word is 32 bits and lives in its own buffer, so a
+probe costs two small loads (`used`, then `hashes`). Packing the tag into
+the `used` word itself (Swiss-table control words — one load per probe, and
+the int-keyed hit-path cost shrinks to a shift) is the next squeeze if
+int-keyed hit paths ever matter more than they do today.
+
 
 ## 10. StringBuilder numeric appends + single-pass interpolation
 
