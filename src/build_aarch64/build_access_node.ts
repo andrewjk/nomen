@@ -40,7 +40,11 @@ import {
 import { array_licm_enabled } from "./array_licm.ts";
 import build_function_call_node from "./build_function_call_node.ts";
 import { boxable_value_struct_arg, emit_box_value_struct_arg } from "./build_function_call_node.ts";
-import { build_in_place_donor_bump, build_in_place_push } from "./build_in_place_push.ts";
+import {
+	build_in_place_donor_bump,
+	build_in_place_push,
+	build_in_place_store,
+} from "./build_in_place_push.ts";
 import build_inline_method, {
 	begin_inline_splice,
 	end_inline_splice,
@@ -777,6 +781,8 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				if (build_in_place_donor_bump(node, status)) {
 					return;
 				}
+			} else if (build_in_place_store(node, access_func, status)) {
+				return;
 			} else if (build_in_place_push(node, access_func, status)) {
 				return;
 			}

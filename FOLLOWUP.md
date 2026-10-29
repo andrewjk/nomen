@@ -681,3 +681,36 @@ into the joined source (plus unrelated constraint errors from the inlined
 code). Fix directions: mkdtemp under a nomen-owned root instead of the
 temp root, skip parent gathering for test compiles (they are standalone),
 or treat a harness-bearing test entry as a program for the skip checks.
+
+## Declaring `Map<K, UserStruct>` poisons every `UserStruct(...)` ctor call in the program (pre-existing, surfaced by the in-place store work)
+
+Recorded 2026-10-29 while landing PERF_PLAN item 6 (in-place store,
+`test/in_place_store.test.ts`'s Map tests). Any program that declares a
+`Map` whose value type is a user `mv struct` fails to PARSE with
+`Parameters missing for function: <Struct>` — even when the struct's ctor
+call sits in an uncalled function defined BEFORE the Map declaration. The
+error's location is bogus: line ~3830 / start ~102k for a 16-line program
+(it points into an internal buffer, and the position drifts with library
+content — 3785 at main@b4c25d65 vs 3839 in the working tree). Verified
+identical on HEAD, with and without `join`, and at -O0 and -O2 — it is a
+checker bug, not a backend or release-mode one. Consequences: the Map
+in-place-store receipt (item 6) is measured on string values; struct-valued
+Maps cannot be written in-source at all (the tests use `List<int>` values
+instead). Shape hints: scalar- and container-valued Maps are fine; the
+struct ctor itself is fine in the same program without the Map declaration.
+Suspect: the generic mono's zero-value/`out TV` handling synthesizing a
+`<Struct>()` call (an mv struct has no zero-arg `#init` — "parameters
+missing" is exactly that diagnosis) when the checker instantiates Map's
+methods against the struct.
+
+## `vp check --fix` corrupts `.bumpy/*.md` release messages containing `*/` (tooling footgun)
+
+Recorded 2026-10-29 (observed twice in one day). Running the repo
+formatter (`vp check --fix`) rewrites a bump file's free-text message,
+eating the asterisks around a `*/` sequence: the committed message
+`...close the Buffer_*/BigInt_* core-trust bounds bypass...` came back as
+`...close the Buffer__/BigInt__...` (oxfmt appears to treat `*/` inside
+the markdown as a comment closer). A corrupted message ships a wrong
+release note if not noticed before merge. Workaround until fixed: avoid
+`*/` in bump messages (spell `Buffer_x/BigInt_x`), or restore the file
+after formatting (`git checkout -- .bumpy/`).

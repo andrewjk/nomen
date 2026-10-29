@@ -287,6 +287,40 @@ pub struct ClassBuffer<T> {
 		```
 	}
 
+	// Reclaim slot i's owned class pointer (destroy + free) WITHOUT writing
+	// the slot — the destroy half of replace_int, without the store, zeroing
+	// the handle so a re-destroy is a no-op. The caller (Map.set_slot_ptr's
+	// replace path — the value-side sibling of `values.replace`) overwrites
+	// the slot immediately afterwards. Contract: the slot must be
+	// overwritten before it is read or destroyed again.
+	internal func destroy_at = (ref self, int i: i >= 0 && i < self.cap) {
+		```
+		#arch: c
+		long *slots = (long*)(unsigned long long)self->data;
+		if (slots[i]) {
+			T_destroy((void*)slots[i]);
+			free((void*)slots[i]);
+			slots[i] = 0;
+		}
+		```
+		```
+		#arch: aarch64
+		stp x20, x21, [sp, #-16]!
+		ldr x20, [x19, #8]
+		lsl x3, x1, #3
+		add x20, x20, x3
+		ldr x0, [x20]
+		cbz x0, .Lcb_destroy_at_done
+		mov x21, x0
+		bl T_destroy
+		mov x0, x21
+		bl _free
+		str xzr, [x20]
+		.Lcb_destroy_at_done:
+		ldp x20, x21, [sp], #16
+		```
+	}
+
 	// T-typed alias of replace_int: free the outgoing class pointer (destroy +
 	// free) then store the new one. Used by List.set so the uniform API
 	// preserves ownership for class elements.

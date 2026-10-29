@@ -1,5 +1,7 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
+import { struct_needs_destroy } from "../build_common/destroy_analysis.ts";
+import { has_string_fields } from "../build_common/has_string_fields.ts";
 import { in_place_push_facts, type InPlacePushFacts } from "../build_common/in_place_push.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import type AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
@@ -9,6 +11,7 @@ import type StructNode from "../nodes/StructNode.ts";
 import type Type from "../nodes/Type.ts";
 import type ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
+import { emit_free } from "./utils/audit.ts";
 import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
 import { allocate_stack_space, emit_var_address } from "./utils/stack_var.ts";
 import { get_field_offset } from "./utils/struct_layout.ts";
@@ -43,6 +46,11 @@ export function build_in_place_push(
 	access_func: AccessFunctionCallNode,
 	status: BuildStatus,
 ): boolean {
+	// A `set` stamp re-uses `in_place_push_index` for the value argument —
+	// the store lowering claims it first (build_access_node dispatches the
+	// store before this), so a kind stamp here means dispatch fell through
+	// out of order.
+	if (access_func.in_place_store_kind !== undefined) return false;
 	const idx = access_func.in_place_push_index;
 	if (idx === undefined) return false;
 	const elem_type: Type | undefined = type_from_value_node(access_func.params[idx]);
@@ -68,6 +76,26 @@ function emit_in_place_push(facts: InPlacePushFacts, status: BuildStatus): void 
 	const slot = emit_reserve_and_slot(status, receiver, list_mono);
 
 	// 3. Construct the argument call's result directly into the slot.
+	construct_into_frame_slot(arg, elem_is_string, slot, status);
+
+	// 4. The slot is a real element.
+	bump_length(status, receiver, list_mono);
+}
+
+/**
+ * Step 3, shared by the push and store splices: construct the argument
+ * call's result directly into the frame-spilled slot address — the fat
+ * string pair stores raw (x0/x1), a value struct takes the sret preset
+ * window (x8 = the spilled address; the argument build re-presets it after
+ * every nested `bl`). Clears `last_result_is_heap` for strings: the slot
+ * owns the buffer now, no caller-side reclaim may fire.
+ */
+function construct_into_frame_slot(
+	arg: BaseNode,
+	elem_is_string: boolean,
+	slot: number,
+	status: BuildStatus,
+): void {
 	if (elem_is_string) {
 		// Fat strings return in x0/x1 (no sret): store the pair into the slot.
 		build_node(arg, status);
@@ -91,9 +119,6 @@ function emit_in_place_push(facts: InPlacePushFacts, status: BuildStatus): void 
 		status.struct_return_buffer_var = old_var;
 		status.call_x8_slot_offset = old_slot;
 	}
-
-	// 4. The slot is a real element.
-	bump_length(status, receiver, list_mono);
 }
 
 /** Steps 1–2, shared by the direct form and the donor declaration: reserve
@@ -184,5 +209,146 @@ export function build_in_place_donor_bump(
 	const list_mono = recv_type ? mono_type_name(recv_type) : undefined;
 	if (!list_mono) return false;
 	bump_length(status, (node.target as ValueNode).value as string, list_mono);
+	return true;
+}
+
+/**
+ * The in-place STORE siblings (`lst.set(i, f(x))`, `buf.set(i, f(x))`,
+ * `map.set(k, f(x))`): lower a checker-stamped `set` as
+ *
+ *     slot := <container>.<slot primitive>(<earlier args>)
+ *             — List/Buffer `slot_ptr(i)`; Map `set_slot_ptr(key)` runs the
+ *               whole set preamble + probe + insert bookkeeping (or the
+ *               displaced reclaim via `values.destroy_at`) first
+ *     [slot_ptr kind only: reclaim the displaced value through the slot —
+ *      string free + pair zero / guarded T_destroy + stamp clear]
+ *     <call> constructed into slot        — sret via x8, or x0/x1 pair store
+ *
+ * versus the hoisted lowering this replaces: the value argument into a
+ * `_param_N` stack temp, the `set` callee's `replace` destroy + deep-copy
+ * (a strdup per string field) into the slot, then the temp's scope-exit
+ * free. The temp home, the deep copy, and the free all disappear; the
+ * displaced-value reclaim stays (it is `set`'s documented overwrite
+ * semantic). The earlier arguments (index / key) keep their ordinary
+ * lowering and precede the value in evaluation order, so the probe sees
+ * them: the key precedes the value end to end.
+ *
+ * Register discipline: as push — the slot address lives in a FRAME SLOT
+ * (a `bl` inside the constructing call cannot invalidate it), scratch is
+ * x9-x11, and the sret preset rides `call_x8_preset` /
+ * `call_x8_slot_offset`.
+ */
+export function build_in_place_store(
+	node: { target: BaseNode },
+	access_func: AccessFunctionCallNode,
+	status: BuildStatus,
+): boolean {
+	const idx = access_func.in_place_push_index;
+	const kind = access_func.in_place_store_kind;
+	if (idx === undefined || !kind) return false;
+	const elem_type: Type | undefined = type_from_value_node(access_func.params[idx]);
+	const recv_type = type_from_value_node(node.target);
+	const recv_mono = recv_type ? mono_type_name(recv_type) : undefined;
+	const facts = in_place_push_facts(
+		access_func,
+		node.target,
+		recv_mono,
+		elem_type,
+		status.structs as readonly StructNode[],
+	);
+	if (!facts) return false;
+
+	// 1. The destination slot's address: the container's slot primitive
+	//    with the earlier arguments (index / key). The receiver's address is
+	//    parked in a frame slot while the argument builds run (each build
+	//    clobbers x0); each argument's value parks in its own frame slot so
+	//    the register loads read them back in call order.
+	const recv_slot = allocate_stack_space(status, 8);
+	emit_var_address(status, "x0", facts.receiver);
+	emit_asm(status, `str x0, [x29, #${recv_slot}]\n`);
+	const arg_slots: { slot: number; kind: "scalar" | "string" | "struct" }[] = [];
+	for (const early of access_func.params.slice(0, idx)) {
+		const t = type_from_value_node(early);
+		const kind_of: "scalar" | "string" | "struct" = !t?.name
+			? "scalar"
+			: t.name === "string" && !t.is_array
+				? "string"
+				: status.structs.find((s) => s.name === t.name && !s.is_simple_type && !s.is_generic)
+					? "struct"
+					: "scalar";
+		const arg_slot = allocate_stack_space(status, kind_of === "string" ? 16 : 8);
+		if (kind_of === "struct") {
+			// A struct argument crosses by address; a bare value (the only
+			// shape the checker admits — everything else is hoisted to a
+			// `_param_N`) is a nameable local.
+			emit_var_address(status, "x0", (early as ValueNode).value as string);
+		} else {
+			build_node(early, status);
+			ensure_newline(status);
+		}
+		if (kind_of === "string") {
+			emit_asm(status, `str x0, [x29, #${arg_slot}]\n`);
+			emit_asm(status, `str x1, [x29, #${arg_slot + 8}]\n`);
+		} else {
+			emit_asm(status, `str x0, [x29, #${arg_slot}]\n`);
+		}
+		arg_slots.push({ slot: arg_slot, kind: kind_of });
+	}
+	emit_asm(status, `ldr x0, [x29, #${recv_slot}]\n`);
+	let reg = 1;
+	for (const { slot, kind: arg_kind } of arg_slots) {
+		if (arg_kind === "string") {
+			emit_asm(status, `ldr x${reg}, [x29, #${slot}]\n`);
+			emit_asm(status, `ldr x${reg + 1}, [x29, #${slot + 8}]\n`);
+			reg += 2;
+		} else {
+			emit_asm(status, `ldr x${reg}, [x29, #${slot}]\n`);
+			reg += 1;
+		}
+	}
+	const prim =
+		kind === "set_slot_ptr" ? `${facts.list_mono}_set_slot_ptr` : `${facts.list_mono}_slot_ptr`;
+	emit_asm(status, `bl ${prim}\n`);
+	const slot = allocate_stack_space(status, 8);
+	emit_asm(status, `str x0, [x29, #${slot}]\n`);
+
+	// 2. The displaced-value reclaim (slot_ptr kind only — Map's primitive
+	//    already ran it, one probe earlier, through `values.destroy_at`).
+	//    The destroy half of Buffer.replace's specialized body: a string
+	//    slot's displaced pointer is freed and the pair zeroed; an owning
+	//    value struct's displaced value runs T_destroy, guarded on the `_vt`
+	//    constructed stamp (grown-but-unwritten and moved-out slots are
+	//    zeroed); a trivially-destructible element needs nothing.
+	if (kind === "slot_ptr") {
+		if (facts.elem_is_string) {
+			const skip = `.Lipds_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+			emit_asm(status, `ldr x10, [x29, #${slot}]\n`);
+			emit_asm(status, `ldr x0, [x10]\n`);
+			emit_asm(status, `cbz x0, ${skip}\n`);
+			emit_free(status);
+			emit_asm(status, `ldr x10, [x29, #${slot}]\n`);
+			emit_asm(status, `stp xzr, xzr, [x10]\n`);
+			emit_asm(status, `${skip}:\n`);
+		} else {
+			const elem_struct = status.structs.find((s) => s.name === facts.elem_name);
+			if (
+				elem_struct &&
+				(has_string_fields(elem_struct, status) || struct_needs_destroy(elem_struct, status))
+			) {
+				const skip = `.Lipds_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+				emit_asm(status, `ldr x10, [x29, #${slot}]\n`);
+				emit_asm(status, `ldr x9, [x10]\n`);
+				emit_asm(status, `cbz x9, ${skip}\n`);
+				emit_asm(status, `ldr x0, [x29, #${slot}]\n`);
+				emit_asm(status, `bl ${facts.elem_name}_destroy\n`);
+				emit_asm(status, `ldr x10, [x29, #${slot}]\n`);
+				emit_asm(status, `str xzr, [x10]\n`);
+				emit_asm(status, `${skip}:\n`);
+			}
+		}
+	}
+
+	// 3. Construct the value argument's result directly into the slot.
+	construct_into_frame_slot(facts.arg, facts.elem_is_string, slot, status);
 	return true;
 }

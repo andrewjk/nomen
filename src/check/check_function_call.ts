@@ -1643,6 +1643,54 @@ export default function check_function_call(
 				const vi = status.values.findIndex((v) => v.name === self_value && !v.is_param);
 				return vi >= status.function_value_base;
 			})();
+		// The in-place STORE siblings (`lst.set(i, f(x))`, `buf.set(i, f(x))`,
+		// `map.set(k, f(x))`): the value parameter is the LAST parameter, the
+		// earlier arguments (the index / the key) keep their ordinary lowering
+		// and precede the value in evaluation order, and the receiver's type
+		// declares the slot primitive the splice calls:
+		// - `slot_ptr` — a List/Buffer-shaped container: the splice computes
+		//   element i's address, reclaims the displaced value through it (the
+		//   destroy half of replace), and constructs straight into the slot.
+		// - `set_slot_ptr` — a Map-shaped container: the primitive runs the
+		//   whole set preamble + probe with the KEY, does the insert
+		//   bookkeeping (or reclaims the displaced value via
+		//   `values.destroy_at`), and returns the value slot's address.
+		// The bounds proof the ordinary `set` call carries (List.set's
+		// `i < self.length` constraint) was discharged for THIS call site
+		// earlier in the argument loop, so the raw splice keeps it. The
+		// displaced value is reclaimed before the constructing call runs —
+		// the same accepted window the push splice opened for aliased
+		// re-entry through a bare-value argument.
+		const in_place_store_struct = target_type?.name
+			? status.structs.find((s) => s.name === target_type?.name)
+			: undefined;
+		const in_place_store_declares = (prim: string): boolean =>
+			!!in_place_store_struct?.functions.some((f) => f.name === prim && f.has_body);
+		const in_place_store_receiver_ok =
+			in_statement_position(node, status) &&
+			!!self_value &&
+			self_path === self_value &&
+			(() => {
+				const vi = status.values.findIndex((v) => v.name === self_value && !v.is_param);
+				return vi >= status.function_value_base;
+			})();
+		const in_place_store_kind: "slot_ptr" | "set_slot_ptr" | undefined =
+			func.name === "set" &&
+			func_param === func.params[func.params.length - 1] &&
+			func_param.is_moved &&
+			!func_param.is_variadic &&
+			node.params.length === func.params.length - 1 &&
+			in_place_store_receiver_ok
+				? // Map first: its `set` probes with the key, so the value slot
+					// only exists after `set_slot_ptr` runs. A container declaring
+					// both primitives is not a shape that exists; the Map
+					// primitive is the specific contract.
+					in_place_store_declares("set_slot_ptr")
+					? "set_slot_ptr"
+					: in_place_store_declares("slot_ptr")
+						? "slot_ptr"
+						: undefined
+				: undefined;
 		// The value-producing call quality gate, shared by the direct form's
 		// argument and the donor declaration's initializer: a body (foreign
 		// callees keep the hoisted path), no by-reference plumbing, no
@@ -1704,6 +1752,19 @@ export default function check_function_call(
 			!node.swap_params?.has(i);
 		if (in_place_push) {
 			(node as AccessFunctionCallNode).in_place_push_index = i;
+		}
+		// The store sibling: same value-argument quality gate, stamped with
+		// the slot primitive kind (see the container gate above).
+		const in_place_store =
+			in_place_store_kind !== undefined &&
+			in_place_element_ok(func_param.type, status.structs) &&
+			param.node_type === "func_call" &&
+			in_place_element_ok(param_type, status.structs) &&
+			in_place_call_ok(param as FunctionCallNode) &&
+			!node.swap_params?.has(i);
+		if (in_place_store) {
+			(node as AccessFunctionCallNode).in_place_push_index = i;
+			(node as AccessFunctionCallNode).in_place_store_kind = in_place_store_kind;
 		}
 		// The donor form: a bare `mv p` whose declaration is the immediately
 		// preceding statement and whose initializer passes the same call
@@ -1773,6 +1834,7 @@ export default function check_function_call(
 			!node.swap_params?.has(i) &&
 			!box_ctor_in_place_arg &&
 			!in_place_push &&
+			!in_place_store &&
 			!(i === (node as FunctionCallNode).variadic_param_index && param.node_type === "array")
 		) {
 			const declaration_name = `_param_${status.var_name_counter.value++}`;

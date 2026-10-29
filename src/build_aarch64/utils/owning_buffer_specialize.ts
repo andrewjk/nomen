@@ -525,6 +525,14 @@ export function emit_owning_buffer_standalone_aarch64(
 ): boolean {
 	const elem = owning_buffer_element_aarch64(node, status);
 	if (elem) {
+		if (func_name === "destroy_at") {
+			// The destroy half of replace, without the copy (x19 = self,
+			// x1 = i): guarded T_destroy + stamp clear. The in-place store
+			// lowering and Map.set_slot_ptr's replace path construct the new
+			// value into the slot afterwards.
+			emit_owning_destroy_at(elem, status);
+			return true;
+		}
 		if (
 			func_name !== "store" &&
 			func_name !== "replace" &&
@@ -544,6 +552,10 @@ export function emit_owning_buffer_standalone_aarch64(
 	}
 	const enum_elem = owning_buffer_enum_element_aarch64(node, status);
 	if (enum_elem) {
+		if (func_name === "destroy_at") {
+			emit_enum_destroy_at(enum_elem, status);
+			return true;
+		}
 		if (func_name === "alloc") {
 			emit_enum_alloc_T(enum_elem, status);
 			return true;
@@ -568,6 +580,21 @@ export function emit_owning_buffer_standalone_aarch64(
 		return false;
 	}
 	if (owning_buffer_is_string_elem_aarch64(node)) {
+		if (func_name === "destroy_at") {
+			// Free the displaced heap copy and zero the pair (x19 = self,
+			// x1 = i) — the destroy half of replace without the copy.
+			const skip = `.Lown_sdat_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+			emit_asm(status, `stp x20, x21, [sp, #-16]!\n`);
+			emit_asm(status, `ldr x20, [x19, #8]\n`);
+			emit_asm(status, `add x20, x20, x1, lsl #4\n`);
+			emit_asm(status, `ldr x0, [x20]\n`);
+			emit_asm(status, `cbz x0, ${skip}\n`);
+			emit_free(status);
+			emit_asm(status, `stp xzr, xzr, [x20]\n`);
+			emit_asm(status, `${skip}:\n`);
+			emit_asm(status, `ldp x20, x21, [sp], #16\n`);
+			return true;
+		}
 		if (func_name === "alloc") {
 			emit_string_alloc_T(status);
 			return true;
@@ -1259,6 +1286,51 @@ function emit_guarded_slot_destroy(status: BuildStatus, elem: StructNode, slot_r
 	if (slot_reg !== "x0") emit_asm(status, `mov x0, ${slot_reg}\n`);
 	emit_asm(status, `bl ${elem.name}_destroy\n`);
 	emit_asm(status, `${skip}:\n`);
+}
+
+/**
+ * Standalone `Buffer<T>.destroy_at` for mv value-struct elements: reclaim
+ * slot i's owned state (guarded on the `_vt` constructed stamp —
+ * grown-but-unwritten and moved-out slots are zeroed) and clear the stamp.
+ * x19 = self, x1 = i. The destroy half of replace without the copy: the
+ * in-place store lowering and Map.set_slot_ptr's replace path construct the
+ * new value straight into the slot afterwards.
+ */
+function emit_owning_destroy_at(elem: StructNode, status: BuildStatus): void {
+	const T_SIZE = get_struct_size(elem.name, status);
+	const skip = `.Lown_dat_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+	emit_asm(status, `stp x20, x22, [sp, #-16]!\n`);
+	emit_asm(status, `ldr x20, [x19, #8]\n`);
+	emit_asm(status, `mov x22, #${T_SIZE}\n`);
+	emit_asm(status, `madd x20, x1, x22, x20\n`);
+	emit_asm(status, `ldr x9, [x20]\n`);
+	emit_asm(status, `cbz x9, ${skip}\n`);
+	emit_asm(status, `mov x0, x20\n`);
+	emit_asm(status, `bl ${elem.name}_destroy\n`);
+	emit_asm(status, `str xzr, [x20]\n`);
+	emit_asm(status, `${skip}:\n`);
+	emit_asm(status, `ldp x20, x22, [sp], #16\n`);
+}
+
+/**
+ * Standalone `Buffer<E>.destroy_at` for enum-with-data elements: free the
+ * displaced case's payloads and zero the slot. x19 = self, x1 = i.
+ */
+function emit_enum_destroy_at(enum_node: EnumNode, status: BuildStatus): void {
+	const T_SIZE = get_enum_size(enum_node.name, status);
+	emit_asm(status, `stp x20, x21, [sp, #-16]!\n`);
+	emit_asm(status, `str x22, [sp, #-16]!\n`);
+	emit_asm(status, `ldr x20, [x19, #8]\n`);
+	emit_asm(status, `mov x22, #${T_SIZE}\n`);
+	emit_asm(status, `madd x20, x1, x22, x20\n`);
+	emit_asm(status, `mov x0, x20\n`);
+	emit_enum_payload_frees_at(status, enum_node.name, "x20");
+	emit_asm(status, `mov x0, x20\n`);
+	emit_asm(status, `mov x1, #0\n`);
+	emit_asm(status, `mov x2, x22\n`);
+	emit_asm(status, `bl _memset\n`);
+	emit_asm(status, `ldr x22, [sp], #16\n`);
+	emit_asm(status, `ldp x20, x21, [sp], #16\n`);
 }
 
 /**

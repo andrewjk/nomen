@@ -1,3 +1,5 @@
+import { struct_needs_destroy } from "../build_common/destroy_analysis.ts";
+import { has_string_fields } from "../build_common/has_string_fields.ts";
 import { in_place_push_facts } from "../build_common/in_place_push.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
@@ -1378,6 +1380,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				// lowering.
 				if (
 					access_func.in_place_push_index !== undefined &&
+					access_func.in_place_store_kind === undefined &&
 					!ctor_temp_free &&
 					!owned_recv_temp &&
 					!ncp_tmp &&
@@ -1407,6 +1410,85 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 						// No trailing terminator: the statement wrapper adds the
 						// final `;\n` after the length bump.
 						status.code += `;\n${facts.receiver}.length += 1L`;
+						return;
+					}
+				}
+				// In-place store — the `set` siblings: `lst.set(i, f(x))` /
+				// `map.set(k, f(x))` construct the value argument straight into
+				// the destination slot instead of materializing a `_param_N`
+				// temp, deep-copying it at the store, and freeing it at scope
+				// exit (the checker's gates: build_common/in_place_push.ts, the
+				// store stamp in check_function_call.ts). List/Buffer-shaped
+				// containers: `slot_ptr(i)` addresses element i, the displaced
+				// value is reclaimed through the slot (the destroy half of
+				// replace — string free / guarded T_destroy / nothing for
+				// trivially-destructible elements), then the construct
+				// overwrites the slot. Map: `set_slot_ptr(key)` runs the whole
+				// set preamble + probe with the key, does the insert
+				// bookkeeping or the displaced reclaim, and returns the value
+				// slot — the key precedes the value in evaluation order, so
+				// the probe precedes the construct end to end.
+				if (
+					access_func.in_place_store_kind !== undefined &&
+					access_func.in_place_push_index !== undefined &&
+					!ctor_temp_free &&
+					!owned_recv_temp &&
+					!ncp_tmp &&
+					!array_wrap &&
+					lambda_arg_temps.size === 0 &&
+					node.target.node_type === "value"
+				) {
+					const recv_type = type_from_value_node(node.target);
+					const facts = in_place_push_facts(
+						access_func,
+						node.target,
+						recv_type ? mono_type_name(recv_type) : undefined,
+						type_from_value_node(access_func.params[access_func.in_place_push_index]),
+						status.structs,
+					);
+					if (facts) {
+						const elem_c = facts.elem_is_string ? "nomen_string" : `struct ${facts.elem_name}`;
+						// The earlier arguments (index / key), emitted once into
+						// the slot primitive's call. The checker hoists every
+						// non-bare-value argument, so these are plain loads at
+						// build time — captured anyway rather than assumed.
+						const saved_early = begin_code_scratch(status);
+						for (let a = 0; a < access_func.in_place_push_index; a++) {
+							if (a > 0) status.code += ", ";
+							build_node(access_func.params[a], status);
+						}
+						const early_args = end_code_scratch(status, saved_early);
+						// The displaced-value reclaim — exactly the destroy half
+						// of Buffer.replace's specialized body: a string slot's
+						// displaced pointer is freed; an owning value struct's
+						// displaced value runs T_destroy, guarded on the `_vt`
+						// constructed stamp (grown-but-unwritten and moved-out
+						// slots are zeroed); a trivially-destructible element
+						// needs nothing.
+						let reclaim = "";
+						if (facts.elem_is_string) {
+							reclaim = "free(_nomen_islot->ptr);";
+						} else {
+							const elem_struct = status.structs.find((s) => s.name === facts.elem_name);
+							if (
+								elem_struct &&
+								(has_string_fields(elem_struct, status) ||
+									struct_needs_destroy(elem_struct, status))
+							) {
+								reclaim = `if (_nomen_islot->_vt) { ${facts.elem_name}_destroy(_nomen_islot); }`;
+							}
+						}
+						const prim =
+							access_func.in_place_store_kind === "set_slot_ptr"
+								? `${facts.list_mono}_set_slot_ptr`
+								: `${facts.list_mono}_slot_ptr`;
+						status.code += `{ ${elem_c}* _nomen_islot = (${elem_c}*)(unsigned long long)${c_function_name(prim)}(&${facts.receiver}${early_args ? `, ${early_args}` : ""}); `;
+						if (reclaim) status.code += `${reclaim} `;
+						status.code += `*_nomen_islot = `;
+						build_node(facts.arg, status);
+						// No trailing terminator: the statement wrapper adds the
+						// final `;\n`.
+						status.code += `; }`;
 						return;
 					}
 				}

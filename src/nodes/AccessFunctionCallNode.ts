@@ -52,6 +52,19 @@ export default class AccessFunctionCallNode extends BaseNode {
 	 */
 	in_place_push_index?: number;
 	/**
+	 * The in-place STORE siblings (item: `set`/`insert`/`add`/`alloc`): which
+	 * slot primitive the in-place store lowering calls, when
+	 * `in_place_push_index` stamps a `set` call's value argument.
+	 * `"slot_ptr"` — a `List`/`Buffer`-shaped container whose `slot_ptr(i)`
+	 * addresses element `i`; the splice reclaims the displaced value through
+	 * the slot address itself. `"set_slot_ptr"` — a `Map`-shaped container
+	 * whose `set_slot_ptr(key)` runs the whole set preamble + probe + insert
+	 * bookkeeping (or the displaced reclaim) and returns the value slot.
+	 * Stamped by check_function_call; both backends branch on the kind to
+	 * pick the primitive.
+	 */
+	in_place_store_kind?: "slot_ptr" | "set_slot_ptr";
+	/**
 	 * In-place push, donor form: the argument is a bare `mv p` whose
 	 * declaration (`var p = <call of T>`) is the IMMEDIATELY preceding
 	 * statement and whose only use in the function is this push — the

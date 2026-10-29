@@ -618,6 +618,26 @@ pub struct Buffer<T> {
 		self.replace(i, value)
 	}
 
+	// Reclaim slot i's owned heap state WITHOUT writing the slot (the raw
+	// no-op below is correct for trivially-destructible elements; for
+	// `string` and mv value-struct elements both backends specialize this
+	// body — free the displaced pointer / guarded T_destroy — the same
+	// dispatch replace_T gets). This is the DESTROY half of replace,
+	// separated from the copy so the in-place store lowering can reclaim
+	// the displaced value and then CONSTRUCT the new one straight into the
+	// slot (no donor, no deep copy). Contract: the slot must be
+	// overwritten before it is read or destroyed again — Map.set_slot_ptr
+	// (the probe-then-construct primitive) and the in-place `set` splice
+	// are the callers, and both overwrite immediately.
+	internal func destroy_at = (ref self, int i: i >= 0 && i < self.cap) {
+		```
+		#arch: c
+		```
+		```
+		#arch: aarch64
+		```
+	}
+
 	// Address of slot `i` (library-only): the ELEMENT BORROW primitive —
 	// `ref T x = list.at(i)` (docs/HANDLERS.md Stage 4, the dynamic-tree
 	// dispatch) lowers to this, binding the alias to the slot itself rather

@@ -55,6 +55,44 @@ pub mv struct Map<TK: Hashable + Equatable, TV> {
 		}
 	}
 
+	// The IN-PLACE STORE primitive — the write-side sibling of `get_ptr`.
+	// Runs set's whole preamble (alloc-if-empty, rehash-at-load-factor) and
+	// probe with the KEY (which precedes the value in evaluation order at a
+	// `set(key, f(x))` site), then does everything set does EXCEPT write the
+	// value: the insert path marks the slot used, stores the key, and bumps
+	// length; the replace path reclaims the displaced value through
+	// `values.destroy_at` (the destroy half of replace, no copy). It returns
+	// the VALUE SLOT's address, so the compiler's in-place `set` lowering
+	// constructs `f(x)` straight into it — no `_param_N` temp home, no
+	// callee-side deep copy, no temp free. INTERNAL, like every slot
+	// primitive: the raw pointer must not cross the library boundary, and
+	// the caller must overwrite the slot before it is read or destroyed
+	// again (both paths leave it owning nothing).
+	internal func set_slot_ptr = (ref self, TK key, out ptr TV) {
+		var int cap = self.keys.cap
+		if cap == 0 {
+			// alloc_T: for Buffer<TK> it is T_SIZE-aware (string keys are
+			// 16-byte slots); for ClassBuffer<TV> it delegates to alloc_int
+			// (one pointer per slot). Both have it for generic parity.
+			cap = self.keys.alloc(8)
+			self.values.alloc(8)
+			self.used.alloc_u32(8)
+		}
+		if self.length * 4 >= cap * 3 {
+			self.rehash(cap * 2)
+			cap = self.keys.cap
+		}
+		var int idx = self.find_slot(key, cap)
+		if self.used.load_u32(idx) == 0 {
+			self.used.store_u32(idx, 1)
+			self.keys.store(idx, key)
+			self.length += 1
+		} else {
+			self.values.destroy_at(idx)
+		}
+		return self.values.slot_ptr(idx)
+	}
+
 	pub func get = (self, TK key, out TV) {
 		var int cap = self.keys.cap
 		if cap == 0 {

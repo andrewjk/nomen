@@ -3,8 +3,8 @@
 Research into the next performance opportunities, following the StableList +
 in-place push work. PERF.md is the record of what landed; this is the plan for
 what's next. All findings are ordered most-promising-first. Written Oct 2026;
-originally unmeasured — items 2, 3, 4 (partially), and 5 have since landed with
-measurements in place (items marked LANDED carry them; the rest carry
+originally unmeasured — items 2, 3, 4 (partially), 5, and 6 have since landed
+with measurements in place (items marked LANDED carry them; the rest carry
 expected wins and the receipts they rest on).
 
 | #   | Item                                                                                                                                                     | Backends       | Effort | Receipt                                          |
@@ -14,7 +14,7 @@ expected wins and the receipts they rest on).
 | 3   | ~~Move-on-last-use for structs~~ **LANDED Oct 2026: −20% / −29% on the shape**                                                                           | both           | S–M    | shape micro-bench, interleaved medians (below)   |
 | 4   | ~~Borrow-returning reads (Map `get_ptr`, `at_view`)~~ **PARTIALLY LANDED Oct 2026: Map slot borrow, −79% / −98% on the borrow shape, −48% probe fusion** | both           | M      | shape micro-benches, interleaved medians (below) |
 | 5   | ~~Json ownership copies~~ **LANDED Oct 2026: −26% / −13% on the ownership shape, −22% / −12% json-serde**                                                | both           | S      | measured 0.7.0 regression +61% / +103%           |
-| 6   | In-place store (`set`/`insert`/`add`/`alloc`)                                                                                                            | both           | M      | slot primitives already exist                    |
+| 6   | ~~In-place store (`set`/`insert`/`add`/`alloc`)~~ **LANDED Oct 2026: −50% / −56% on the pure store shape, −64% Map replace**                             | both           | M      | shape micro-benches, interleaved medians (below) |
 | 7   | Enum payload in-place construction                                                                                                                       | both           | S–M    | mechanically same as in-place push               |
 | 8   | Regex/String O(n²) accumulators                                                                                                                          | both           | S      | O(n²) per-byte loops in core                     |
 | 9   | Map/Set stored hash (Swiss-table tricks)                                                                                                                 | both           | M      | rehash re-hashes every key                       |
@@ -341,16 +341,110 @@ scan-to-next-escape). A general `mv string` param that actually transfers
 (eliding `set_text`'s copy for owned strings everywhere) is a convention
 change across every mv-string function and needs its own measured item.
 
-## 6. In-place store: the `set`/`insert`/`add`/`alloc` siblings
+## 6. In-place store: the `set`/`insert`/`add`/`alloc` siblings — LANDED (Oct 2026)
 
-`List.set(i, f(x))`, `Map.set(k, v)`, `Arena.alloc(f(x))`, `Buffer.set` all
-still route through the `_param_N` hoist + deep copy. The slot-address
-primitive (`slot_ptr(i)`) already exists on List/Buffer, and the donor spelling
-(`var p = f(x); lst.set(i, mv p)`) already converges for push. Map needs
-probe-then-construct — the key precedes the value in evaluation order, so
-`set(key, f(x))` can probe first, then construct into `values.slot_ptr(idx)`
-(needs item 4's slot API). Gate on string/value-struct elements as push does;
-scalar elements have nothing to elide.
+**What landed.** The in-place construction guarantee extended from push to
+container STORES: `lst.set(i, f(x))`, `buf.set(i, f(x))`, and
+`map.set(k, f(x))` where the value argument is a direct call of the element
+type now construct straight into the destination slot — no `_param_N` temp
+home, no callee-side deep copy at the store, no temp free at scope exit. The
+checker stamps the call (`in_place_push_index` re-used for the value
+argument, plus a new `in_place_store_kind` naming the slot primitive,
+`src/check/check_function_call.ts`); the value-argument quality gate is the
+push one verbatim (`in_place_call_ok` — body-bearing callee, no by-ref
+plumbing, single use, bare-local receiver; method-call value arguments keep
+the hoisted path because the receiver could alias the container, the same
+rule as push). Scalars keep the hoisted lowering — nothing to elide.
+Evaluation order is preserved end to end: the index/key arguments keep their
+ordinary lowering and precede the value, so Map's probe sees the key before
+the construct begins.
+
+- **Slot primitives.** List/Buffer-shaped containers address the destination
+  with the existing `slot_ptr(i)`; the splice reclaims the DISPLACED value
+  through the slot itself (the destroy half of replace: a string slot's
+  displaced pointer is freed and the pair zeroed; an owning value struct's
+  displaced value runs `T_destroy` guarded on the `_vt` constructed stamp —
+  grown-but-unwritten and moved-out slots are zeroed; trivially-destructible
+  elements need nothing), then constructs into the slot. Map needed a new
+  core primitive: `Map.set_slot_ptr(key) -> ptr TV`
+  (`core/System/Map.nm`) runs set's whole preamble (alloc-if-empty,
+  rehash-at-load-factor) and probe with the KEY, does the insert
+  bookkeeping (mark used, store key, bump length) or the displaced reclaim
+  via a new `Buffer<T>.destroy_at(i)` / `ClassBuffer<T>.destroy_at(i)`
+  (the destroy half of replace, no copy, specialized per element kind by
+  both backends like `replace`), and returns the VALUE slot's address.
+  INTERNAL, like every slot primitive — the raw pointer must not cross the
+  library boundary, and the caller must overwrite the slot before it is
+  read or destroyed again (both paths overwrite immediately).
+- **C backend** (`src/build_c/build_access_node.ts`): the splice emits
+  `{ T* _nomen_islot = <prim>(&recv, <early args>); <reclaim>;
+*_nomen_islot = <constructing call>; }` — the constructing call as the
+  slot assignment's RHS, exactly the lowering the push splice's in-place
+  append-slot assignment already used for ctor arguments.
+- **aarch64 backend** (`src/build_aarch64/build_in_place_push.ts`,
+  `build_in_place_store`): the slot address lives in a FRAME SLOT (a `bl`
+  inside the constructing call cannot invalidate it), the earlier
+  arguments park in their own frame slots while the primitive call runs,
+  and the construct re-uses push's `construct_into_frame_slot` — fat
+  string pairs store raw (x0/x1), value structs take the sret preset
+  window (`call_x8_preset`/`call_x8_slot_offset`, re-preset per argument).
+
+`List.set` with string and value-struct elements (including across growth),
+`Buffer.set`, Map insert + replace paths (including across rehash growth),
+and the not-taken shapes (scalars, method-call value arguments,
+`set_or_panic`, the `mv p` donor form) are pinned by seventeen tests in
+`test/in_place_store.test.ts` (both backends, audit on); the full suite
+(524 files, both backends) passes.
+
+**Measured.** Shape micro-benches — 2048×1024 replace-stores (2M total) into
+a K=1024 container seeded then overwritten in a loop, n from argv, Apple
+Silicon, best-of-5 plus interleaved medians, audit off, release builds,
+identical outputs:
+
+- _The pure store shape_ — constant payload, so the only per-store work is
+  the elidable copy dance (temp home + callee-side deep copy + temp free)
+  versus construct-into-slot:
+
+| Shape                       | Backend | before | after |        Δ |
+| --------------------------- | ------- | -----: | ----: | -------: |
+| `List<Rec>.set` (mv struct) | C       |  0.14s | 0.07s | **−50%** |
+| `List<Rec>.set` (mv struct) | aarch64 |  0.16s | 0.07s | **−56%** |
+| `Map<int, string>` replace  | C       |  0.11s | 0.04s | **−64%** |
+| `Map<int, string>` replace  | aarch64 |  0.14s | 0.05s | **−64%** |
+
+- _With a realistic producing call_ (per-store `f(x)` allocates: a string
+  interpolation + the producer's strdup, which both lowerings pay):
+
+| Shape                       | Backend | before | after |        Δ |
+| --------------------------- | ------- | -----: | ----: | -------: |
+| `List<Rec>.set` (mv struct) | C       |  0.65s | 0.58s | **−11%** |
+| `List<Rec>.set` (mv struct) | aarch64 |  0.68s | 0.59s | **−13%** |
+| `Map<int, string>` replace  | C       |  0.64s | 0.55s | **−14%** |
+| `Map<int, string>` replace  | aarch64 |  0.65s | 0.55s | **−15%** |
+
+Per store the elided work is exactly the item's promise: the `_param_N`
+temp's malloc, the `set` callee's deep copy (a second strdup per string
+field + struct memcpy), and the temp's scope-exit free — 2 mallocs + 1 free
+per store become 1 malloc (the producer's own allocation, which is the
+store). Map additionally stops paying replace's second probe bookkeeping on
+the replace path (the splice's `set_slot_ptr` fuses probe + reclaim).
+
+- _The standard suite_ — flat on both backends (json-serde 0.04/0.07s,
+  binarytrees 1.39/1.81s, nsieve 0.12/0.15s; lru at the measurement size
+  `1000 20000000` 0.85 → 0.85s C, 1.74 → 1.75s aarch64; outputs
+  byte-identical): no bench hot loop stores a direct call result yet. lru's
+  `put` is scalar-valued — nothing to elide by design.
+
+**Not taken.** `insert`/`add`/`alloc` siblings (`Arena.alloc(f(x))`,
+`StableList`'s staged append) keep their lowering this tranche — their slot
+acquisition is not a single addressable primitive yet. `Array<T>.set`
+remains on item 17's list. The `mv p` donor spelling for `set`
+(`var p = f(x); lst.set(i, mv p)`) deliberately keeps the ordinary (sound)
+transfer — it is not part of the guarantee. A user mv struct as a Map VALUE
+type is unreachable in-source today (declaring `Map<K, SomeStruct>` poisons
+every later `SomeStruct(...)` ctor call — pre-existing, FOLLOWUP.md), so
+the Map receipt is taken on string values; struct-valued Maps will pick
+the win up when the poisoning is fixed.
 
 ## 7. Enum payload in-place construction
 

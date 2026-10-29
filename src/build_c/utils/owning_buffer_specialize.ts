@@ -91,6 +91,7 @@ export const OWNING_BUFFER_METHODS = new Set([
 	"destroy",
 	"#destroy",
 	"alloc",
+	"destroy_at",
 ]);
 
 /**
@@ -325,6 +326,17 @@ export function emit_owning_buffer_enum_body(
 		return true;
 	}
 
+	if (func_name === "destroy_at") {
+		// destroy_at(self, i): the destroy half of replace, without the
+		// copy — reclaim the displaced payload and zero the slot (the
+		// in-place store lowering constructs the new value into the slot
+		// afterwards).
+		status.code += `${E}* _slots = ${slots};\n`;
+		status.code += `${E}_free_payloads(&_slots[i]);\n`;
+		status.code += `memset((void*)&_slots[i], 0, sizeof(${E}));\n`;
+		return true;
+	}
+
 	if (func_name === "shift") {
 		status.code += `${E}* _slots = ${slots};\n`;
 		status.code += `if (dst != src) {\n`;
@@ -413,6 +425,18 @@ export function emit_owning_buffer_string_body(func_name: string, status: BuildS
 		status.code += `nomen_string* _slots = (nomen_string*)self->data;\n`;
 		status.code += `nomen_string _old = _slots[i];\n`;
 		status.code += `if (val.ptr != _old.ptr) { free(_old.ptr); _slots[i] = val.ptr ? nomen_str_dup(val) : (nomen_string){0,0}; }\n`;
+		return true;
+	}
+
+	if (func_name === "destroy_at") {
+		// destroy_at(self, i): the destroy half of replace, without the
+		// copy — free the displaced heap buffer and zero the pair (the
+		// in-place store lowering reclaims the displaced value, then
+		// CONSTRUCTS the new one into the slot; Map.set_slot_ptr's replace
+		// path is the same dance one probe earlier).
+		status.code += `nomen_string* _slots = (nomen_string*)self->data;\n`;
+		status.code += `free(_slots[i].ptr);\n`;
+		status.code += `_slots[i] = (nomen_string){0,0};\n`;
 		return true;
 	}
 
@@ -593,6 +617,19 @@ export function emit_owning_buffer_body(
 		emit_deep_copy_fields(elem, "_slots[i]", "val", status);
 		emit_transfer_owning_fields(elem, "val", status);
 		emit_reclaim_donor_strings(elem, "val", status);
+		return true;
+	}
+
+	if (func_name === "destroy_at") {
+		// destroy_at(self, i): the destroy half of replace, without the
+		// copy — reclaim the displaced slot value's owned state (guarded on
+		// the `_vt` constructed stamp: grown-but-unwritten and moved-out
+		// slots are zeroed) and clear the stamp. The in-place store lowering
+		// reclaims the displaced value, then CONSTRUCTS the new one straight
+		// into the slot; Map.set_slot_ptr's replace path is the same dance
+		// one probe earlier.
+		status.code += `${Tptr}_slots = ${Tcast}(unsigned long long)self->data;\n`;
+		status.code += `if (_slots[i]._vt) { ${elem.name}_destroy(&_slots[i]); _slots[i]._vt = 0; }\n`;
 		return true;
 	}
 
