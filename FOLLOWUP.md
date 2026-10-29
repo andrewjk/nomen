@@ -657,3 +657,19 @@ parameter contract (it traps internally). Consequence: scalar element
 borrows are Map-only today. Fix shape: teach the bounds verifier to use the
 rewrite's own length facts (`push` → `length`), or give `at` a
 contract-free `at_ptr`-style primitive to rewrite to.
+
+## `join` inlines stray `.nm` files from the OS temp root during test compiles (robustness trap, no compiler bug)
+
+Recorded 2026-10-29 after a false alarm: six suite failures
+(`leak_hygiene`, `test_harness`, `extension_source_map`) that looked
+pre-existing were caused by scratch `.nm` files left in `$TMPDIR` while
+debugging. `run_test_file` (cli/src/test.ts) mkdtemps under the OS temp
+root, and `join`'s `gather_module_parent` (src/join.ts) scans that parent
+for `.nm` siblings — a `*.test.nm` entry carries no `func main` at join
+time, so `entry_is_program` is false and main-bearing neighbors are NOT
+skipped: every scratch file gets inlined, producing confusing
+"Function already declared: main" errors whose line numbers point deep
+into the joined source (plus unrelated constraint errors from the inlined
+code). Fix directions: mkdtemp under a nomen-owned root instead of the
+temp root, skip parent gathering for test compiles (they are standalone),
+or treat a harness-bearing test entry as a program for the skip checks.
