@@ -958,6 +958,34 @@ export default function build_assignment_node(
 			status.code += `;\n`;
 			return;
 		}
+		// `ref` TRAIT param reassignment (`sp = Cat()` where sp is a
+		// `void **` pointer to the caller's boxed-handle slot): box the new
+		// conformer into a temp, reclaim the displaced handle through the
+		// trait's destroy shim, then swap the handle through the slot. The
+		// caller's binding re-types with it — the write-back IS the
+		// reassignment (mirrors the ref-class double-pointer path above,
+		// which destroys and frees because a class instance is its own
+		// malloc; here the box is the callee's malloc too).
+		if (status.ref_trait_params?.has(lhs_name)) {
+			const param_trait = status.ref_trait_param_types?.get(lhs_name);
+			const rhs_type = type_from_value_node(node.right_value);
+			const rhs_struct = status.structs.find(
+				(s) => s.name === mono_type_name(rhs_type) && !s.is_generic,
+			);
+			if (rhs_struct && param_trait?.name) {
+				const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+				const tmp = `_ref_box_${id}`;
+				const guard_open = param_trait.is_nullable ? `if (*${lhs_name}) { ` : "";
+				const guard_close = param_trait.is_nullable ? ` }` : "";
+				status.code += `{ struct ${rhs_struct.name} ${tmp} = `;
+				build_node(node.right_value, status);
+				status.code += `; `;
+				status.code += `${guard_open}${param_trait.name}_destroy(*${lhs_name}); free(*${lhs_name});${guard_close} `;
+				status.code += `*${lhs_name} = (void *)malloc(sizeof(struct ${rhs_struct.name})); `;
+				status.code += `*(struct ${rhs_struct.name} *)(*${lhs_name}) = ${tmp}; }\n`;
+				return;
+			}
+		}
 		// If the LHS was previously moved out (`take(mv a)`), its old value is
 		// owned by the callee and must NOT be reclaimed here. Just overwrite —
 		// the fall-through path emits `a = <rhs>` — and clear the moved flag so
@@ -1538,6 +1566,7 @@ export default function build_assignment_node(
 		if (
 			status.function_ref_params?.has(lhs_name) &&
 			!status.ref_class_params?.has(lhs_name) &&
+			!status.ref_trait_params?.has(lhs_name) &&
 			!status.heap_array_vars?.has(lhs_name)
 		) {
 			const lhs_type = type_from_value_node(node.left_value);
@@ -1548,7 +1577,10 @@ export default function build_assignment_node(
 					destroy_struct &&
 					(has_destroy(destroy_struct) || struct_needs_auto_destroy(destroy_struct, status))
 				) {
-					status.code += `${mono}_destroy(*${lhs_name});\n`;
+					// The param IS the pointer to the caller's displaced
+					// instance — pass the pointer, not a by-value deref (a
+					// `struct T` does not convert to the destroy's `T *`).
+					status.code += `${mono}_destroy(${lhs_name});\n`;
 				}
 			}
 		}

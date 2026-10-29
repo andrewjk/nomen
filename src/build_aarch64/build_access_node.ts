@@ -3389,7 +3389,19 @@ function build_access_method(
 		if (is_ref_param) {
 			const rp_name = param.node_type === "value" ? (param as ValueNode).value : undefined;
 			const rp_slot = rp_name !== undefined ? status.ref_class_slots?.get(rp_name) : undefined;
-			if (rp_slot !== undefined) {
+			// A trait-typed REF param receives the ADDRESS of the caller's
+			// boxed-handle slot: a trait local IS that slot — pass its address
+			// and re-sync the cleanup anchor after the call (the callee may
+			// have displaced the instance the anchor tracks).
+			const rp_is_trait_arg =
+				rp_name !== undefined &&
+				!!(param as any).type?.name &&
+				!!status.traits.find((t) => t.name === (param as any).type?.name) &&
+				trait_class_for(status, rp_name) !== undefined;
+			if (rp_is_trait_arg && rp_name !== undefined) {
+				emit_var_address(status, "x0", rp_name);
+				ref_class_sync_names.push(rp_name);
+			} else if (rp_slot !== undefined) {
 				// Forwarding a `ref` class PARAM: its callee-saved register
 				// holds the instance, but the callee dereferences its ref-param
 				// argument at entry — pass the caller's slot address stored in

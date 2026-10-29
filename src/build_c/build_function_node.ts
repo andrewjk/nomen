@@ -368,6 +368,10 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.ref_class_params = new Set<string>();
 	const old_ref_class_param_types = status.ref_class_param_types;
 	status.ref_class_param_types = new Map();
+	const old_ref_trait_params = status.ref_trait_params;
+	status.ref_trait_params = new Set<string>();
+	const old_ref_trait_param_types = status.ref_trait_param_types;
+	status.ref_trait_param_types = new Map();
 	const old_variadic_params = status.function_variadic_params;
 	status.function_variadic_params = new Set<string>();
 	const old_view_params = status.function_view_params;
@@ -463,6 +467,22 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 					status.ref_class_param_types!.set(pname, param.type);
 				}
 			} else {
+				// A `ref` trait param is a pointer to the caller's HANDLE slot
+				// (`void **` — a trait local stores a boxed handle): the call
+				// site passes `&slot` and reassignments box a new conformer
+				// and swap the handle through the slot. Still registered in
+				// function_ref_params, whose `*name` value-deref IS the
+				// handle; receiver sites check ref_trait_params to deref to
+				// the instance and the assignment path writes through.
+				if (
+					param_trait &&
+					(param.is_ref || param.type.is_ref) &&
+					!param.is_self_param &&
+					param.type.name
+				) {
+					status.ref_trait_params.add(pname);
+					status.ref_trait_param_types!.set(pname, param.type);
+				}
 				// An `Array<T>` struct param is already registered in
 				// `heap_array_vars` above and lowers to a single
 				// `struct Array_<T>*` (mutation via `.set` is in place, no
@@ -655,6 +675,8 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.class_vars = old_class_vars;
 	status.ref_class_params = old_ref_class_params;
 	status.ref_class_param_types = old_ref_class_param_types;
+	status.ref_trait_params = old_ref_trait_params;
+	status.ref_trait_param_types = old_ref_trait_param_types;
 	status.function_variadic_params = old_variadic_params;
 	status.function_view_params = old_view_params;
 	status.function_return_type = old_return_type;

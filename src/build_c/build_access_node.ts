@@ -188,6 +188,12 @@ export function build_vtable_target(node: BaseNode, status: BuildStatus) {
 			status.code += "self";
 			return;
 		}
+		// A `ref` trait param points at the caller's boxed-handle slot
+		// (`void **`): the receiver is the HANDLE — deref once.
+		if (name !== "self" && status.ref_trait_params?.has(c_function_name(name))) {
+			status.code += `(*${c_function_name(name)})`;
+			return;
+		}
 		// A CAPTURED trait/class receiver lives in the closure env as a
 		// pointer (`_env->name`); emit it directly — taking its address would
 		// pass the env slot, not the instance (CLOSURE.md Phase 2c).

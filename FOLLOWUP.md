@@ -735,25 +735,6 @@ destroy to run the payload struct's `T_destroy` for owning payload structs
 the same for `Enum_copy`'s deep-copy direction. Touches MEMORY.md's enum
 ownership section when it lands.
 
-## `ref Trait` reassignment across conformers: invalid C, silent no-retype on aarch64 (pre-existing, surfaced by the devirtualization work)
-
-Recorded 2026-10-30 while landing PERF_PLAN item 11 (trait-call
-devirtualization, `test/trait_devirtualization.test.ts`). A callee
-reassigning a `ref Speaker` parameter to a different conformer (`sp =
-Cat()`) does not work end to end on either backend: the C backend emits
-`*sp = Cat_init()` against a `struct Speaker *` slot and clang rejects it
-("assigning to 'struct Speaker' from incompatible type 'struct Cat'"), and
-the aarch64 backend runs but the caller's binding keeps dispatching the OLD
-conformer (the write lands in the callee's view of the slot; the caller's
-re-sync does not retype the dispatch). Reproduced byte-identical on HEAD
-before the item, so it is not a devirtualization regression — the
-conservative devirtualization scan treats every `ref`-argument pass as a
-rebind precisely because this edge is unsound today. Fix shape: make the
-ref-trait slot a boxed-handle slot on C (or reject cross-conformer ref
-reassignment at the checker) and propagate the written handle to the
-caller's anchor/dispatch slot on aarch64, with a runtime test pinning the
-retype on both backends.
-
 ## `inline` methods on trait-conforming structs never emit their symbol — the vtable entry dangles (pre-existing, surfaced by the devirtualization work)
 
 Recorded 2026-10-30 while landing PERF_PLAN item 11 (trait-call

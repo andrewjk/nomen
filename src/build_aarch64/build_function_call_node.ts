@@ -36,6 +36,7 @@ import {
 	find_anchor_slot,
 	resolve_struct_name,
 	clear_heap_string_fields,
+	trait_class_for,
 } from "./utils/auto_destroy.ts";
 import { build_swap_params } from "./utils/build_swap.ts";
 import { emit_dispose_lambda_args_a64 } from "./utils/closure_a64.ts";
@@ -1017,21 +1018,30 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					}
 					emit_asm(status, `adr x0, ${label}`);
 				} else if (is_ref_param) {
-					// A trait-typed REF param receives the trait-OBJECT
-					// pointer: for a CLASS-backed conformer the object IS the
-					// instance, so pass the instance VALUE (never the caller
-					// slot's address — the callee would read the local's
-					// storage as a vtable).
+					// A trait-typed REF param receives the ADDRESS of the
+					// caller's boxed-handle slot: the callee boxes a new
+					// conformer, reclaims the displaced handle through the
+					// trait shim, and swaps the handle through the slot
+					// (write-back). A trait local IS that slot — pass its
+					// address and re-sync the cleanup anchor after the call.
+					// (A class-backed conformer local is the same pointer-slot
+					// shape and takes the generic class-local path below.)
 					const callee_params = node.resolved_function?.params?.filter((p) => !p.is_self_param);
 					const callee_param_type = callee_params?.[i]?.type;
 					const callee_param_is_trait =
 						!!callee_param_type && !!status.traits.find((t) => t.name === callee_param_type.name);
-					const arg_trait_type = (param as any).type?.name;
-					const arg_is_class_backed =
-						!!arg_trait_type &&
-						!!status.structs.find((s) => s.name === arg_trait_type && s.is_class);
-					if (callee_param_is_trait && arg_is_class_backed) {
-						build_node(param, status);
+					const ref_arg_name = param.node_type === "value" ? (param as ValueNode).value : undefined;
+					const arg_is_trait_typed =
+						!!(param as any).type?.name &&
+						!!status.traits.find((t) => t.name === (param as any).type?.name);
+					if (
+						callee_param_is_trait &&
+						arg_is_trait_typed &&
+						ref_arg_name !== undefined &&
+						trait_class_for(status, ref_arg_name) !== undefined
+					) {
+						emit_var_address(status, "x0", ref_arg_name);
+						ref_class_sync_names.push(ref_arg_name);
 						ensure_newline(status);
 						emit_asm(status, `str x0, [x29, #${args_base + arg_slot[i] * 8}]\n`);
 						continue;

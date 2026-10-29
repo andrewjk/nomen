@@ -43,6 +43,13 @@ export interface ParamClass {
 	 */
 	is_ref_class: boolean;
 	/**
+	 * A `ref` TRAIT param is a pointer to the caller's boxed-handle slot
+	 * (`void **` on C; a saved &slot on aarch64 — a trait local stores a
+	 * heap handle, so the write-back swaps the handle and reclaims the
+	 * displaced instance through the trait's destroy shim).
+	 */
+	is_ref_trait: boolean;
+	/**
 	 * The value arrives as a pointer: struct/trait reference, `ref` borrow,
 	 * array data pointer, or a by-value `var` of struct type.
 	 */
@@ -96,6 +103,7 @@ export function classify_param(
 		type.is_array ||
 		(!is_simple && !is_value_enum && flags.declaration === "var");
 	const is_ref_class = !!flags.is_ref && is_class && !flags.is_self;
+	const is_ref_trait = !!flags.is_ref && !!trait && !flags.is_self;
 	return {
 		struct,
 		trait,
@@ -103,6 +111,7 @@ export function classify_param(
 		is_simple,
 		is_class,
 		is_ref_class,
+		is_ref_trait,
 		wants_pointer,
 	};
 }

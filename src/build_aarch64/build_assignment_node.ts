@@ -1139,6 +1139,145 @@ export default function build_assignment_node(
 		// lands. (`rhs_is_struct` alone misses a trait-typed RHS — `r = pick()`.)
 		const rhs_trait_rated_early = !!status.traits.find((t) => t.name === rhs_type.name);
 		if ((rhs_is_struct || rhs_trait_rated_early) && !node.operator) {
+			// A `ref` TRAIT param's reassignment writes THROUGH to the caller's
+			// boxed-handle slot (`ref_trait_slots` holds its address): reclaim
+			// the displaced handle via the trait's destroy shim, box the new
+			// conformer (or transfer an incoming handle), swap it through the
+			// slot, and reload the param's callee-saved register so later uses
+			// see the new instance. The instance's ownership stays with the
+			// caller — its cleanup reclaims whatever is current — so this is
+			// the trait-shaped sibling of the class write-back below.
+			const ref_trait_slot = status.ref_trait_slots?.get(name);
+			const ref_trait_name = status.ref_trait_param_traits?.get(name);
+			if (ref_trait_slot !== undefined && ref_trait_name !== undefined) {
+				const rhs_struct = status.structs.find(
+					(s) => s.name === rhs_type.name && !s.is_simple_type && !s.is_generic && !s.is_class,
+				);
+				const label_id = (status.label_counter = (status.label_counter ?? 0) + 1);
+				const no_free_label = `.Ltrait_ref_no_free_${label_id}`;
+				// Displaced reclaim through the caller's slot (guarded: a
+				// nullable handle may hold 0).
+				emit_asm(status, `ldr x9, [x29, #${ref_trait_slot}]\n`);
+				emit_asm(status, `ldr x0, [x9]\n`);
+				emit_asm(status, `cbz x0, ${no_free_label}\n`);
+				emit_asm(status, `bl ${ref_trait_name}_destroy\n`);
+				emit_asm(status, `ldr x9, [x29, #${ref_trait_slot}]\n`);
+				emit_asm(status, `ldr x0, [x9]\n`);
+				emit_free(status);
+				emit_asm(status, `${no_free_label}:\n`);
+				if (rhs_struct) {
+					// BOX the conformer (the trait-local branch's three shapes,
+					// with the caller's slot as the binding storage).
+					const strdup_string_fields =
+						!owns_strings_uniformly(rhs_struct) &&
+						!rhs_struct.functions.some((f) => f.name === "#destroy") &&
+						struct_needs_auto_destroy(rhs_struct, status);
+					const box_size = get_struct_size(rhs_struct.name, status);
+					const direct_ctor =
+						node.right_value.node_type === "func_call" &&
+						(node.right_value as FunctionCallNode).name === rhs_struct.name &&
+						!is_magic_spawn_ctor(node.right_value as FunctionCallNode);
+					const store_handle = () => {
+						emit_asm(status, `ldr x9, [x29, #${ref_trait_slot}]\n`);
+						emit_asm(status, `str x0, [x9]\n`);
+					};
+					const load_handle = (dst: string) => {
+						emit_asm(status, `ldr x9, [x29, #${ref_trait_slot}]\n`);
+						emit_asm(status, `ldr ${dst}, [x9]\n`);
+					};
+					if (direct_ctor) {
+						const func_call = node.right_value as FunctionCallNode;
+						emit_asm(status, `mov x0, #${box_size}\n`);
+						emit_malloc(status);
+						store_handle();
+						const param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
+						const outgoing = build_constructor_params(func_call, param_regs, status);
+						load_handle("x0");
+						emit_asm(status, `bl ${func_call.mangled_name ?? `${func_call.name}_init`}\n`);
+						if (outgoing > 0) emit_asm(status, `add sp, sp, #${outgoing}\n`);
+						if (func_call.move_param_indices?.length) {
+							for (const idx of func_call.move_param_indices) {
+								mark_moved_if_struct(func_call.params[idx], status);
+							}
+						}
+						build_swap_params(func_call, status);
+						load_handle("x0");
+						if (strdup_string_fields) {
+							emit_string_field_strdups_at(status, rhs_struct.name, "x0");
+						}
+					} else if (node.right_value.node_type === "value") {
+						const donor_name = (node.right_value as ValueNode).value;
+						const recorded = new Set<string>();
+						for (const key of status.heap_string_fields ?? []) {
+							if (key.startsWith(`${donor_name}.`)) {
+								recorded.add(key.slice(donor_name.length + 1));
+							}
+						}
+						emit_asm(status, `mov x0, #${box_size}\n`);
+						emit_malloc(status);
+						store_handle();
+						load_handle("x1");
+						get_source_address(node.right_value, status, nir_rhs);
+						ensure_newline(status);
+						emit_asm(status, `mov x2, x0\n`);
+						load_handle("x1");
+						const words = Math.ceil(box_size / 8);
+						for (let w = 0; w < words; w++) {
+							emit_asm(status, `ldr x3, [x2, #${w * 8}]\n`);
+							emit_asm(status, `str x3, [x1, #${w * 8}]\n`);
+						}
+						load_handle("x0");
+						if (strdup_string_fields) {
+							emit_string_field_strdups_at(status, rhs_struct.name, "x0", 0, recorded);
+						}
+						mark_moved_if_struct(node.right_value, status);
+						clear_heap_string_fields(status, donor_name);
+					} else {
+						const scratch = allocate_stack_space(status, box_size, 8);
+						const old_buffer = status.struct_return_buffer;
+						const old_buffer_var = status.struct_return_buffer_var;
+						const old_preset = status.call_x8_preset;
+						emit_asm(status, `add x8, x29, #${scratch}\n`);
+						status.struct_return_buffer_var = name;
+						status.struct_return_buffer = "x8";
+						status.call_x8_preset = true;
+						emit_rhs_value(node.right_value, nir_rhs, status);
+						status.struct_return_buffer = old_buffer;
+						status.struct_return_buffer_var = old_buffer_var;
+						status.call_x8_preset = old_preset;
+						emit_asm(status, `mov x0, #${box_size}\n`);
+						emit_malloc(status);
+						store_handle();
+						load_handle("x1");
+						emit_asm(status, `add x2, x29, #${scratch}\n`);
+						const words = Math.ceil(box_size / 8);
+						for (let w = 0; w < words; w++) {
+							emit_asm(status, `ldr x3, [x2, #${w * 8}]\n`);
+							emit_asm(status, `str x3, [x1, #${w * 8}]\n`);
+						}
+						load_handle("x0");
+						if (strdup_string_fields) {
+							emit_string_field_strdups_at(status, rhs_struct.name, "x0");
+						}
+					}
+				} else {
+					// A trait-typed handle RHS: transfer the handle as-is.
+					mark_moved_if_struct(node.right_value, status);
+					emit_rhs_value(node.right_value, nir_rhs, status);
+					ensure_newline(status);
+					emit_asm(status, `ldr x9, [x29, #${ref_trait_slot}]\n`);
+					emit_asm(status, `str x0, [x9]\n`);
+				}
+				// Reload the param's callee-saved register to the new binding so
+				// later uses (dispatch receivers, field access) see it.
+				const param_reg = status.function_param_regs?.get(name);
+				if (param_reg) {
+					emit_asm(status, `ldr x9, [x29, #${ref_trait_slot}]\n`);
+					emit_asm(status, `ldr ${param_reg}, [x9]\n`);
+				}
+				build_swap(node, status, nir_swap);
+				return;
+			}
 			const struct_size = get_struct_size(rhs_type.name, status);
 			const rhs_struct = status.structs.find((s) => s.name === rhs_type.name && s.is_class);
 			// STRUCT_PLAN_3 B4 — a value-struct conformer RHS boxes into the

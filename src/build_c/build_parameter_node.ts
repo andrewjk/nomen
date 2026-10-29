@@ -82,13 +82,20 @@ export default function build_parameter_node(node: ParameterNode, status: BuildS
 	// name) is never mangled, only the typedef is — and a parameter is a
 	// pointer to the struct, not a typedef value. Emit the tag directly rather
 	// than `c_type`, which would yield the (possibly mangled) typedef.
-	if (cls.is_struct) {
+	if (cls.is_ref_trait) {
+		// A `ref` trait param points at the caller's boxed-handle slot: the
+		// slot stores a `void *` handle, so the param is `void **` — the
+		// write-back swaps the handle (the concrete conformer varies).
+		status.code += `void **`;
+	} else if (cls.is_struct) {
 		status.code += `struct ${type_name}`;
 	} else {
 		status.code += c_type(type_name);
 	}
 	if (cls.is_ref_class) {
 		status.code += ` **`;
+	} else if (cls.is_ref_trait) {
+		// `void **name` — the pointer count is already in the type spelling.
 	} else if (cls.wants_pointer) {
 		status.code += ` *`;
 	} else {

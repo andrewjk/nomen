@@ -346,6 +346,20 @@ export default interface BuildStatus {
 	ref_class_params?: Set<string>;
 	/** Type of each `ref` class param, keyed by C name (see ref_class_params). */
 	ref_class_param_types?: Map<string, import("../nodes/Type.ts").default>;
+	/**
+	 * `ref` trait parameters, emitted as pointers to the caller's HANDLE slot
+	 * (`void **` — a trait local stores a boxed handle). The call site passes
+	 * `&slot` so the callee can reassign the caller's binding: the write-back
+	 * boxes the new conformer and swaps the handle, reclaiming the displaced
+	 * instance through the trait's `<Trait>_destroy` shim. Value uses inside
+	 * the callee deref once (`*name` = the handle, the instance pointer) —
+	 * the same spelling function_ref_params already produces, so only
+	 * receiver sites (build_vtable_target) and the assignment path need this
+	 * set. Mirrors the aarch64 backend's `ref_trait_slots`.
+	 */
+	ref_trait_params?: Set<string>;
+	/** Type (the trait) of each `ref` trait param, keyed by C name (nullability rides on it). */
+	ref_trait_param_types?: Map<string, import("../nodes/Type.ts").default>;
 	/** Local variables declared as `var ref` (mutable aliases via pointer).
 	 *  Reassigning one repoints the pointer rather than writing through it. */
 	ref_local_vars?: Set<string>;
@@ -829,6 +843,18 @@ export default interface BuildStatus {
 	 * back through the slot.
 	 */
 	ref_class_slots?: Map<string, number>;
+	/**
+	 * For a `ref` TRAIT param (aarch64): the call site passes the ADDRESS of
+	 * the caller's boxed-handle slot. The callee stores that &slot address
+	 * here (param name → stack offset), dereferences the incoming register to
+	 * the current handle (so uses work unchanged), and reassignment boxes a
+	 * new conformer, reclaims the displaced handle through the trait's
+	 * destroy shim, and swaps the handle through the caller's slot. Mirrors
+	 * the C backend's `ref_trait_params`.
+	 */
+	ref_trait_slots?: Map<string, number>;
+	/** The trait of each `ref` trait param, keyed by param name (drives the destroy shim). */
+	ref_trait_param_traits?: Map<string, string>;
 	inline_functions?: Map<string, BaseNode>;
 	/**
 	 * Maps variable names to callee-saved registers (x23-x28) for loop register allocation.

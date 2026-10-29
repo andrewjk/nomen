@@ -561,6 +561,37 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			status.suppress_dereference = false;
 			continue;
 		}
+		// A `ref` TRAIT param is a pointer to the caller's boxed-handle slot
+		// (`void **` — a trait local stores a heap handle): pass the address
+		// of the caller's slot so the callee can box a new conformer and swap
+		// the handle. An arg that is itself a ref trait param already IS the
+		// slot pointer — forward as-is.
+		if (is_ref_param && !!status.traits.find((t) => t.name === param_type.name)) {
+			const arg = node.params[i];
+			if (arg.node_type === "value" && status.ref_trait_params?.has((arg as ValueNode).value)) {
+				status.suppress_dereference = true;
+				build_node(arg, status);
+				status.suppress_dereference = false;
+				continue;
+			}
+			status.code += `&`;
+			status.suppress_dereference = true;
+			build_node(arg, status);
+			status.suppress_dereference = false;
+			continue;
+		}
+		// A `ref` trait param's VALUE use is `*name` — the boxed handle, which
+		// is exactly what a bare trait param receives. No prefix, no
+		// suppression: build_node's function_ref_params `*` deref is right.
+		if (
+			!is_ref_param &&
+			!!status.traits.find((t) => t.name === param_type.name) &&
+			node.params[i].node_type === "value" &&
+			status.ref_trait_params?.has((node.params[i] as ValueNode).value)
+		) {
+			build_node(node.params[i], status);
+			continue;
+		}
 		// OWNED value-struct parameter (pass-by-value): materialize a
 		// normalized heap shell at the call boundary — struct-copy the
 		// argument, strdup its string fields — and pass the shell's address.
