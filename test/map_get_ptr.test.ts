@@ -10,7 +10,8 @@ import parse_with_imports, { parse_program } from "./parse_with_imports";
 // probes) and the owning-specialized deep copy on every read of a
 // container-bearing value both collapse into a single aliasing probe.
 //
-// `ptr` returns are library-only, so safe code reaches the primitive
+// `ptr` returns are library-only and every slot-borrow primitive is
+// `internal`, so safe code reaches the primitive
 // through the ELEMENT BORROW rewrite: `ref TV v = map.get_or_panic(k)`
 // lowers to `get_ptr(k)` — the same lowering `ref T x = list.at(i)` gets
 // from `slot_ptr`. The trap-on-absent contract carries over verbatim, so

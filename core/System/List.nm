@@ -118,7 +118,7 @@ pub mv struct List<T>: Viewable {
 		```
 	}
 
-	// Address of element `i` (library-only): the ELEMENT BORROW primitive —
+	// Address of element `i` (INTERNAL — the ELEMENT BORROW primitive):
 	// `ref T x = list.at(i)` (docs/HANDLERS.md Stage 4, dynamic-tree
 	// dispatch) lowers to this, binding the alias to the slot itself rather
 	// than to a bitwise copy. The pointer is valid while the list is
@@ -127,7 +127,7 @@ pub mv struct List<T>: Viewable {
 	// rules. The length constraint is the caller's proof obligation — the
 	// handler desugar's synthesized loops satisfy it from the loop
 	// condition, exactly like `.at`.
-	pub func slot_ptr = (ref self, int i: i >= 0 && i < self.length, out ptr T) {
+	internal func slot_ptr = (ref self, int i: i >= 0 && i < self.length, out ptr T) {
 		return self.items.slot_ptr(i)
 	}
 

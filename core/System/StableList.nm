@@ -269,14 +269,15 @@ pub mv struct StableList<T> {
 		panic("index out of range")
 	}
 
-	// Address of element `i`: the ELEMENT BORROW primitive — `ref T x =
-	// sl.at(i)` lowers to this, binding the alias to the slot itself. The
+	// Address of element `i` (INTERNAL — the ELEMENT BORROW primitive):
+	// `ref T x = sl.at(i)` lowers to this, binding the alias to the slot
+	// itself. The
 	// address is stable across any number of pushes (slabs are allocated
 	// once and never relocate), and the checker exempts `push` from borrow
 	// invalidation for this type, so the alias stays live and writes through
 	// it land in the list. The length constraint is the caller's proof
 	// obligation, exactly like `.at`.
-	pub func slot_ptr = (ref self, int i: i >= 0 && i < self.length, out ptr T) {
+	internal func slot_ptr = (ref self, int i: i >= 0 && i < self.length, out ptr T) {
 		if i < self.items.cap {
 			return self.items.slot_ptr(i)
 		}

@@ -627,7 +627,7 @@ pub struct Buffer<T> {
 	// borrow-invalidation rules. Library-internal: the caller (the `List`
 	// wrapper, or trusted internals) bounds-checks; the body is raw-only so
 	// the missing-return net does not apply to the raw return.
-	pub func slot_ptr = (ref self, int i, out ptr T) {
+	internal func slot_ptr = (ref self, int i, out ptr T) {
 		```
 		#arch: c
 		return (T*)(unsigned long long)self->data + i;

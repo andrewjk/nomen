@@ -65,7 +65,7 @@ pub struct ClassBuffer<T> {
 	// handles, so the slot's CONTENT is the instance pointer: return the
 	// stored word, not the slot's address. Library-internal: bounds are the
 	// caller's obligation (the List wrapper constrains them).
-	pub func slot_ptr = (ref self, int i, out ptr T) {
+	internal func slot_ptr = (ref self, int i, out ptr T) {
 		```
 		#arch: c
 		// The slot's address: through the alias, reads and writes hit the

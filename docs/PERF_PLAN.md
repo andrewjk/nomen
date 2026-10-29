@@ -166,7 +166,13 @@ fresh-value shape, and the container `mv` transfer exists.
 then the mapped slot's address, so container-bearing values stop paying the
 owning-specialized deep copy on every lookup and the LRU-style hit path
 stops paying a second probe. It traps on an absent key (a missing key is a
-bug at a slot-borrow site; miss-as-case lookups keep `get_or`).
+bug at a slot-borrow site; miss-as-case lookups keep `get_or`). INTERNAL,
+like every slot-borrow primitive (`List`/`Buffer`/`StableList`/
+`ClassBuffer.slot_ptr`, `StableList.append_slot_ptr`): the raw pointer must
+not cross the library boundary, so user code reaches the family only
+through the element-borrow rewrite below — and since the checker checks
+visibility on the pre-rewrite spelling, the marker costs the lowering
+nothing.
 
 `ptr` returns are library-only, so user code reaches the primitive through
 the ELEMENT BORROW, extended to a second read spelling: `ref TV v =

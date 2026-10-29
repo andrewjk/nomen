@@ -100,14 +100,15 @@ pub mv struct Map<TK: Hashable + Equatable, TV> {
 	// slot instead of copying it, so container-bearing values stop paying
 	// the owning-specialized deep copy on every lookup. Traps when the key
 	// is absent — a missing key is a bug at a slot-borrow site (miss-as-case
-	// lookups use `get_or`). Not spellable in user code (`ptr` returns are
-	// library-only): safe code reaches it through the element borrow, `ref
-	// TV v = map.get_or_panic(k)`, which the checker rewrites to this —
-	// the same lowering `ref T x = list.at(i)` gets from `slot_ptr`. The
-	// borrow is unpoliced inside the library: rehash/remove move or free
-	// slots, so do not hold it across one. This is also the anchor for
-	// in-place `set(key, f(x))` (probe first, construct into the slot).
-	pub func get_ptr = (self, TK key, out ptr TV) {
+	// lookups use `get_or`). INTERNAL, like every slot-borrow primitive: the
+	// raw pointer must not cross the library boundary, so user code reaches
+	// it only through the element borrow, `ref TV v = map.get_or_panic(k)`,
+	// which the checker rewrites to this — the same lowering `ref T x =
+	// list.at(i)` gets from `slot_ptr`. The borrow is unpoliced inside the
+	// library: rehash/remove move or free slots, so do not hold it across
+	// one. This is also the anchor for in-place `set(key, f(x))` (probe
+	// first, construct into the slot).
+	internal func get_ptr = (self, TK key, out ptr TV) {
 		unsafe {
 			var int cap = self.keys.cap
 			if cap > 0 {
