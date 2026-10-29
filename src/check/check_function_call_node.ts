@@ -29,6 +29,7 @@ import {
 	monomorphize_enum,
 	enforce_case_payload_ownership,
 	hoist_case_string_arg_temp,
+	stamp_in_place_enum_payloads,
 } from "./utils/enum_mono.ts";
 import {
 	collect_return_bounds,
@@ -445,10 +446,21 @@ export default function check_function_call_node(
 			// A CLASS/TRAIT case payload is an OWNING slot — enforce the
 			// ownership contract (see enforce_case_payload_ownership).
 			enforce_case_payload_ownership(case_name, enum_case.params, node.params, node, status);
+			// The in-place construction stamp (enum-payload tranche): direct
+			// call arguments of the payload type construct straight into the
+			// payload slot. Runs BEFORE the string hoist, whose skip list is
+			// this stamp — a stamped string argument's fresh buffer is claimed
+			// by the payload, and hoisting it would double-free.
+			stamp_in_place_enum_payloads(enum_case, node.params, node, status);
 			// A computed string argument (`s.copy()`, a call) needs an owning
 			// temp — the case ctor strdups the payload, so the argument's own
 			// storage must survive to a scope exit (see hoist_case_string_arg_temp).
-			hoist_case_string_arg_temp(enum_case.params, node.params, status);
+			hoist_case_string_arg_temp(
+				enum_case.params,
+				node.params,
+				status,
+				node.in_place_payload_indices,
+			);
 			node.type = new Type(enum_node.name);
 			node.is_static = true;
 			node.name = `${enum_node.name}_${case_name}`;

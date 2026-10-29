@@ -714,3 +714,23 @@ the markdown as a comment closer). A corrupted message ships a wrong
 release note if not noticed before merge. Workaround until fixed: avoid
 `*/` in bump messages (spell `Buffer_x/BigInt_x`), or restore the file
 after formatting (`git checkout -- .bumpy/`).
+
+## Enum teardown never frees struct payloads' heap fields (pre-existing, surfaced by the enum-payload in-place work)
+
+Recorded 2026-10-29 while landing PERF_PLAN item 7 (enum payload in-place
+construction, `test/enum_in_place_payload.test.ts`). An enum local whose
+active case carries a VALUE-STRUCT payload with a string field leaks the
+field's buffer (and the audit runtime reports the matching imbalance): the
+scope-exit destroy for enum-with-data values frees only STRING and
+class/trait-reference payloads (`emit_enum_payload_frees_at` filters
+`p.type.name === "string" || enum_payload_is_reference(p)` on aarch64;
+`Enum_free_payloads` mirrors that in C) — a `Rec` payload's `name` field is
+nobody's to free. Byte-identical on HEAD before the item (the in-place
+lowering changes WHERE the payload is constructed, not who owns it — the
+probe `RecRes.found(Rec("x", 1))` reports the same LEAK before and after),
+so the tranche ships with int-only struct payloads in its runtime tests and
+the string-field shape stays out of them. Fix shape: teach the enum
+destroy to run the payload struct's `T_destroy` for owning payload structs
+(guarded on the tag, like the reference-payload arm), both backends, plus
+the same for `Enum_copy`'s deep-copy direction. Touches MEMORY.md's enum
+ownership section when it lands.

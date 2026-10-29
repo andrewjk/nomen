@@ -19,6 +19,7 @@ import BaseNode from "../nodes/BaseNode.ts";
 import type FunctionNode from "../nodes/FunctionNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
+import { ensure_enum_case_take_c } from "./build_enum_node.ts";
 import { emit_nullable_arg_flag } from "./build_function_call_node.ts";
 import build_node from "./build_node.ts";
 import build_nursery_spawn from "./build_nursery_spawn.ts";
@@ -735,9 +736,26 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 							if (decl_hit) decl_hit.frame.splice(decl_hit.index, 1);
 						}
 					}
+					// The enum-payload in-place tranche (PERF_PLAN item 7): a
+					// stamped construction's string payload arguments are all
+					// direct calls (checker whole-site rule), and every C
+					// string call result is a fresh heap buffer the caller
+					// owns — the take variant claims them as the payloads
+					// instead of strdup'ing. Unstamped sites keep `_init`
+					// (its strdup makes the payload independent of the
+					// argument's storage); the take definition buffers at
+					// file scope (ensure_enum_case_take_c).
+					const take_case =
+						(access_func.in_place_payload_indices?.length ?? 0) > 0 &&
+						enum_case.params.some(
+							(p) => p.type?.name === "string" && !p.type.is_view && !p.type.is_array,
+						);
+					if (take_case) {
+						ensure_enum_case_take_c(enum_node, enum_node.cases.indexOf(enum_case), status);
+					}
 					// A TRAIT-typed case payload rides as an owned heap handle,
 					// so a concrete value-struct conformer argument is boxed.
-					status.code += `${enum_node.name}_${enum_case.name}_init(`;
+					status.code += `${enum_node.name}_${enum_case.name}_init${take_case ? "_take" : ""}(`;
 					for (let i = 0; i < access_func.params.length; i++) {
 						if (i > 0) {
 							status.code += ", ";

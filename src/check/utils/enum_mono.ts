@@ -1,8 +1,10 @@
 import add_error from "../../add_error.ts";
+import { in_place_arg_tree_ok } from "../../build_common/in_place_push.ts";
 import { mono_type_name } from "../../build_common/mono_name.ts";
 import type BaseNode from "../../nodes/BaseNode.ts";
 import DeclarationNode from "../../nodes/DeclarationNode.ts";
 import EnumNode from "../../nodes/EnumNode.ts";
+import type FunctionCallNode from "../../nodes/FunctionCallNode.ts";
 import ParameterNode from "../../nodes/ParameterNode.ts";
 import RootNode from "../../nodes/RootNode.ts";
 import Type from "../../nodes/Type.ts";
@@ -254,7 +256,7 @@ export function enforce_case_payload_ownership(
 }
 
 /**
- * Hoist a COMPUTED string argument (`s.copy()`, a call, a concat) at an enum
+ * Hoist a COMPUTED string argument (`s.copy()`, a concat) at an enum
  * case construction into a scoped `_param_N` temp — the same mechanism
  * `check_function_call` applies to ordinary call arguments.
  *
@@ -265,16 +267,23 @@ export function enforce_case_payload_ownership(
  * expression has no owner — inline it leaks. The hoisted const is freed at
  * scope exit, balancing the ctor's strdup. `mv`-spelled args arrive as value
  * nodes with move records and skip this entirely.
+ *
+ * Indices named by `skip_indices` (the in-place payload stamp — see
+ * stamp_in_place_enum_payloads) are NOT hoisted: the case store claims the
+ * producing call's fresh buffer directly, so a hoisted temp would both
+ * double-free and hide the win.
  */
 export function hoist_case_string_arg_temp(
 	case_params: ParameterNode[],
 	args: BaseNode[],
 	status: CheckStatus,
+	skip_indices?: number[],
 ): void {
 	for (let i = 0; i < args.length; i++) {
 		const case_param = case_params[i];
 		const t = case_param?.type;
 		if (!t || t.name !== "string" || t.is_view || t.is_array) continue;
+		if (skip_indices?.includes(i)) continue;
 		const arg = args[i];
 		if (arg.node_type === "value") continue;
 		const declaration_name = `_param_${status.var_name_counter.value++}`;
@@ -283,4 +292,90 @@ export function hoist_case_string_arg_temp(
 		);
 		args.splice(i, 1, new ValueNode(arg.start, declaration_name, t));
 	}
+}
+
+/**
+ * Stamp the in-place construction guarantee's enum-payload tranche (PERF_PLAN
+ * item 7) on an enum case construction: an argument that is a DIRECT CALL of
+ * the payload type constructs straight into the payload slot instead of
+ * hoisting a `_param_N` temp and strdup/struct-copying it in.
+ *
+ * The payload classes the guarantee is for — the ones today's store pays a
+ * copy for — are the owned `string` (the case ctor strdups the pair) and the
+ * value struct (the case store struct-copies it). A class/trait payload rides
+ * as a bare handle (nothing to elide); a scalar stores its width straight
+ * from the producing call's register (no temp exists).
+ *
+ * Soundness rests on the same facts the in-place push stamps against (see
+ * build_common/in_place_push.ts): the callee must have a body (a value-struct
+ * ctor of the payload type is sanctioned — its emission is unconditional and
+ * both backends construct it into the preset destination), no `ref`
+ * arguments, no field overrides, no spawn/weak construction flavors, and
+ * every argument of the argument call an approved tree (a `bl` inside is
+ * fine; a struct-returning nested call or a lambda is not — its own
+ * suppressed `_call_ret_`/sret preset would collide with the payload
+ * destination window).
+ *
+ * THE STAMP IS WHOLE-SITE for string payloads: a case whose string payloads
+ * are not ALL direct calls is stamped not at all. The C backend lowers a
+ * stamped construction with a `_take` variant of the case ctor, which claims
+ * EVERY string argument's buffer — a hoisted temp or borrowed string at the
+ * same site would be double-owned. Non-string payloads are unconstrained.
+ * Both construction spellings (`.case(args)` access calls and the rewritten
+ * `Enum_case(args)` shorthand) run this right before
+ * `hoist_case_string_arg_temp`, whose skip list is the stamp.
+ */
+export function stamp_in_place_enum_payloads(
+	enum_case: { params: ParameterNode[] },
+	args: BaseNode[],
+	node: { in_place_payload_indices?: number[] },
+	status: CheckStatus,
+): void {
+	const is_string_payload = (t: Type | undefined): boolean =>
+		!!t?.name && t.name === "string" && !t.is_view && !t.is_array;
+	const is_struct_payload = (t: Type | undefined): boolean =>
+		!!t?.name &&
+		t.name !== "string" &&
+		!t.is_view &&
+		!t.is_array &&
+		!t.is_ref &&
+		!t.is_nullable &&
+		!!status.structs.find(
+			(s) => s.name === t.name && !s.is_simple_type && !s.is_class && !s.is_generic,
+		);
+	const in_place_call_ok = (call: FunctionCallNode): boolean => {
+		// The callee's result must BE the payload value: a ctor of a
+		// value-struct payload is the sanctioned shape (its `#init` emits
+		// unconditionally); every other callee must have a body — foreign
+		// callees keep the hoisted path.
+		const payload_ctor = !!status.structs.find(
+			(s) => s.name === call.name && !s.is_simple_type && !s.is_class && !s.is_generic,
+		);
+		if (!payload_ctor && !call.resolved_function?.has_body) return false;
+		if (call.ref_param_indices?.length) return false;
+		if (call.field_overrides?.length) return false;
+		if (call.is_thread_ctor || call.is_fiber_ctor || call.is_awaitable_ctor || call.is_weak_ctor) {
+			return false;
+		}
+		return call.params.every((a) => in_place_arg_tree_ok(a, status.structs));
+	};
+	const indices: number[] = [];
+	for (let i = 0; i < enum_case.params.length; i++) {
+		const payload_type = enum_case.params[i]?.type;
+		if (!is_string_payload(payload_type) && !is_struct_payload(payload_type)) continue;
+		const arg = args[i];
+		if (arg?.node_type !== "func_call") continue;
+		const call = arg as FunctionCallNode;
+		// The argument call's own result type must match the payload type
+		// exactly (a `string` payload takes a string-producing call).
+		if (call.type?.name !== payload_type!.name) continue;
+		if (!in_place_call_ok(call)) continue;
+		indices.push(i);
+	}
+	// Whole-site rule: every string payload's argument must have stamped —
+	// the take-variant claims all of them (see the doc comment).
+	for (let i = 0; i < enum_case.params.length; i++) {
+		if (is_string_payload(enum_case.params[i]?.type) && !indices.includes(i)) return;
+	}
+	if (indices.length) node.in_place_payload_indices = indices;
 }

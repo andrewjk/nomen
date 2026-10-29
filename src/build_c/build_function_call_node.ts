@@ -17,6 +17,7 @@ import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import ParameterNode from "../nodes/ParameterNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
+import { ensure_enum_case_take_c } from "./build_enum_node.ts";
 import build_node from "./build_node.ts";
 import build_parameter_node from "./build_parameter_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
@@ -78,10 +79,30 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		}
 		// A TRAIT-typed case payload rides as an owned heap handle, so a
 		// concrete value-struct conformer argument is boxed at the case ctor.
+		// The enum-payload in-place tranche (PERF_PLAN item 7): a stamped
+		// construction's string payload arguments are all direct calls
+		// (checker whole-site rule), so the take variant claims their fresh
+		// heap buffers as the payloads instead of strdup'ing (see
+		// ensure_enum_case_take_c).
 		const found_case = find_enum_for_case(node.name, status);
-		const case_param_types =
-			found_case?.enum_node.cases.find((c) => c.name === found_case.case_name)?.params ?? [];
-		status.code += `${node.name}_init(`;
+		const found_enum_case = found_case?.enum_node.cases.find(
+			(c) => c.name === found_case.case_name,
+		);
+		const take_case =
+			found_enum_case &&
+			(node.in_place_payload_indices?.length ?? 0) > 0 &&
+			found_enum_case.params.some(
+				(p) => p.type?.name === "string" && !p.type.is_view && !p.type.is_array,
+			);
+		if (take_case && found_case && found_enum_case) {
+			ensure_enum_case_take_c(
+				found_case.enum_node,
+				found_case.enum_node.cases.indexOf(found_enum_case),
+				status,
+			);
+		}
+		const case_param_types = found_enum_case?.params ?? [];
+		status.code += `${node.name}_init${take_case ? "_take" : ""}(`;
 		for (let i = 0; i < node.params.length; i++) {
 			if (i > 0) {
 				status.code += ", ";

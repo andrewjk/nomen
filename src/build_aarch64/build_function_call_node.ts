@@ -350,6 +350,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 						node.params[i],
 						enum_case.params[i].type,
 						temp_offset + payload_offsets[i],
+						node.in_place_payload_indices?.includes(i) ?? false,
 					);
 				}
 				emit_asm(status, `add x0, x29, #${temp_offset}\n`);

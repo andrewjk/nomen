@@ -3,9 +3,9 @@
 Research into the next performance opportunities, following the StableList +
 in-place push work. PERF.md is the record of what landed; this is the plan for
 what's next. All findings are ordered most-promising-first. Written Oct 2026;
-originally unmeasured — items 2, 3, 4 (partially), 5, and 6 have since landed
-with measurements in place (items marked LANDED carry them; the rest carry
-expected wins and the receipts they rest on).
+originally unmeasured — items 2, 3, 4 (partially), 5, 6, and 7 have since
+landed with measurements in place (items marked LANDED carry them; the rest
+carry expected wins and the receipts they rest on).
 
 | #   | Item                                                                                                                                                     | Backends       | Effort | Receipt                                          |
 | --- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | ------ | ------------------------------------------------ |
@@ -15,7 +15,7 @@ expected wins and the receipts they rest on).
 | 4   | ~~Borrow-returning reads (Map `get_ptr`, `at_view`)~~ **PARTIALLY LANDED Oct 2026: Map slot borrow, −79% / −98% on the borrow shape, −48% probe fusion** | both           | M      | shape micro-benches, interleaved medians (below) |
 | 5   | ~~Json ownership copies~~ **LANDED Oct 2026: −26% / −13% on the ownership shape, −22% / −12% json-serde**                                                | both           | S      | measured 0.7.0 regression +61% / +103%           |
 | 6   | ~~In-place store (`set`/`insert`/`add`/`alloc`)~~ **LANDED Oct 2026: −50% / −56% on the pure store shape, −64% Map replace**                             | both           | M      | shape micro-benches, interleaved medians (below) |
-| 7   | Enum payload in-place construction                                                                                                                       | both           | S–M    | mechanically same as in-place push               |
+| 7   | ~~Enum payload in-place construction~~ **LANDED Oct 2026: −45% / −8% on the payload shapes (aarch64; C take-variant)**                                   | both           | S–M    | shape micro-benches, interleaved medians (below) |
 | 8   | Regex/String O(n²) accumulators                                                                                                                          | both           | S      | O(n²) per-byte loops in core                     |
 | 9   | Map/Set stored hash (Swiss-table tricks)                                                                                                                 | both           | M      | rehash re-hashes every key                       |
 | 10  | StringBuilder numeric appends + 1-pass interp                                                                                                            | both           | S      | two snprintf passes + malloc per append          |
@@ -446,15 +446,104 @@ every later `SomeStruct(...)` ctor call — pre-existing, FOLLOWUP.md), so
 the Map receipt is taken on string values; struct-valued Maps will pick
 the win up when the poisoning is fixed.
 
-## 7. Enum payload in-place construction
+## 7. Enum payload in-place construction — LANDED (Oct 2026)
 
-`Result.ok(parse(line))` hoists the payload then strdups/struct-copies it into
-the payload slot (`src/build_aarch64/build_access_node.ts`, hoist in
-`enum_mono.ts`). The payload address is a known frame offset — mechanically
-identical to in-place push's destination (preset x8 to `[x29, #off]` via the
-existing `call_x8_preset` window). The fixed enum layout and its safety
-argument (MEMORY.md) are untouched — this is only about where the payload is
-constructed.
+**What landed.** The in-place construction guarantee extended to enum payload
+arguments: `Result.ok(parse(line))` constructs the producing call straight
+into the payload slot instead of hoisting a `_param_N` temp that the case
+store then strdups/struct-copies in. The checker stamps a case construction
+whose argument is a direct call of the payload type
+(`in_place_payload_indices`, `src/check/utils/enum_mono.ts` — the same
+callee-quality gate the in-place push stamps use: body-bearing callee or a
+payload-struct ctor, no `ref`/override/spawn shapes, argument trees
+admissible for the preset window), and the string hoist
+(`hoist_case_string_arg_temp`) skips stamped indices.
+
+- **aarch64** (`emit_enum_payload_arg_store` gains the `in_place` arm,
+  `src/build_aarch64/build_access_node.ts`): a string payload stores the
+  produced (ptr, len) pair RAW when the call's result is a fresh heap
+  allocation (the `last_result_is_heap` signal — the same discipline the
+  assignment lowering stores under) and falls back to the strdup'd owned
+  copy when it is not (a borrow/rodata pair must not be claimed — the
+  payload free would free foreign storage). A multi-word value-struct
+  payload spills the payload's frame address and presets it as the sret
+  destination via the existing `call_x8_preset`/`call_x8_slot_offset`
+  window (the in-place push protocol verbatim — the argument build
+  re-presets after every nested `bl`), so the callee writes the slot
+  directly; the sret temp home and the struct copy disappear. A ≤8-byte
+  struct payload keeps the width store (no temp exists to elide).
+- **C** (`build_enum_node.ts`, both construction sites): a stamped
+  construction calls an `<Enum>_<case>_init_take` variant of the case ctor
+  that assigns string payloads RAW (the C convention strdups every string
+  return, so any direct call's buffer is a fresh heap allocation the
+  caller owns — the take claims it). The variant is discovered at the
+  construction site and buffered to file scope like `box_clone_definitions`
+  (C may not nest a definition in the body being emitted); unstamped sites
+  keep `_init`, so both variants coexist and nothing is double-owned.
+- **The stamp is whole-site for string payloads**: a case whose string
+  payloads are not ALL direct calls is stamped not at all — the C take
+  variant claims every string argument, so a hoisted temp or a literal at
+  the same site would be double-owned. Method-call arguments
+  (`seed.copy()`) keep the hoisted path, the same exclusion the push
+  stamps carry. Class/trait payloads ride as bare handles and scalars
+  store their width straight from the producing call's register — nothing
+  to elide, no stamp.
+
+Ten tests in `test/enum_in_place_payload.test.ts` (both backends, audit on)
+pin the runtime shapes (both spellings, the borrow fallback, struct
+payloads, mixed lists, the whole-site rule, return/argument positions) and
+the emitted code (the C `_take` body's missing strdup and the aarch64 raw
+pair store / sret preset); the full suite (525 files, both backends) passes.
+
+**Measured.** Shape micro-benches — 3×2M constructions per shape, n from
+argv, Apple Silicon, best-of-5 plus interleaved medians, audit off, release
+builds, identical outputs:
+
+- _The pure shape_ — the payload's producer is the cheapest owned-value
+  producer (a seed string's `.copy()` behind a plain function — one strdup;
+  a constant-payload ctor), so the elidable copy dance dominates the loop.
+  One binary runs both shapes back to back (3×2M string-payload + 3×2M
+  struct-payload constructions). Measured on aarch64: the C backend's -O2
+  folds the whole pure loop (malloc/free pairs elided) before AND after —
+  the optimizer collects the same elision, there is no honest number to
+  take (the item-4 footnote again).
+
+| Shape                                       | Backend | before | after |        Δ |
+| ------------------------------------------- | ------- | -----: | ----: | -------: |
+| `Res.ok(make())` + `RecRes.found(Rec(...))` | aarch64 |  0.51s | 0.28s | **−45%** |
+
+- _With a realistic producing call_ (per-construction
+  `"item\{i}"` interpolation: two snprintf passes + a malloc, which both
+  lowerings pay), 3×2M string-payload + 3×2M struct-payload constructions:
+
+| Backend | before (median) | after (median) |       Δ |
+| ------- | --------------: | -------------: | ------: |
+| aarch64 |           3.30s |          3.08s | **−7%** |
+| C       |           2.96s |          2.93s |   ~flat |
+
+Per construction the elided work is exactly the item's promise: the string
+shape's `_param_N` temp home, the case strdup (a second malloc + memcpy),
+and the temp's scope-exit free — 2 mallocs + 2 frees become 1 + 1 (the
+producer's allocation IS the payload); the struct shape's sret temp home and
+the payload struct copy disappear (the callee writes the slot). The emitted
+code receipts it: the aarch64 ok-loop is `bl make` + two pair stores (no
+`bl _strdup`), and the C construction is
+`Res r = Res_ok_init_take(make(i))` with the take body's bare assignment.
+
+- _The standard suite_ — flat on both backends (json-serde 0.06/0.04s,
+  binarytrees 1.82/1.39s, lru 1.74/0.84s, nsieve 0.04/0.03s at the
+  measurement sizes; outputs byte-identical): no bench hot loop constructs
+  an enum case from a call payload yet.
+
+**Remainder.** Method-call payload arguments (`Res.ok(seed.copy())`) keep
+the hoisted lowering — extending the stamp to `access`-wrapped calls needs
+a per-argument heapness story on C (the take label is per-call, so a mixed
+site would need the classifier, not the checker, to pick it). Struct
+payloads with string fields hit a pre-existing ownership gap — the enum
+teardown never frees a struct payload's heap fields (FOLLOWUP.md) — so the
+in-place win there is booked on int-only payloads until that lands. The
+donor spelling (`var p = make(i); var Res r = Res.ok(mv p)`) keeps the
+ordinary mv transfer, as in every prior tranche.
 
 ## 8. Regex/String O(n²) accumulators
 

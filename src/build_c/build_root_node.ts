@@ -90,6 +90,12 @@ export default function build_root_node(node: RootNode, status: BuildStatus) {
 		status.code += status.box_clone_definitions;
 		status.box_clone_definitions = undefined;
 	}
+	// `<Enum>_<case>_init_take` variants (the enum-payload in-place tranche)
+	// flush at file scope like box clones — headers carry their prototypes.
+	if (status.enum_case_take_definitions) {
+		status.code += status.enum_case_take_definitions;
+		status.enum_case_take_definitions = undefined;
+	}
 
 	// Apple ObjC framework imports (Foundation/Cocoa) pull in MacTypes.h, which
 	// defines `Point`, `Rect`, etc. and would collide with user-defined types

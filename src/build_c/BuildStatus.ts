@@ -91,6 +91,20 @@ export default interface BuildStatus {
 	/** Box monos whose `<Box_T>_box_clone` helper this TU already emitted. */
 	emitted_box_clones?: Set<string>;
 	/**
+	 * `<Enum>_<case>_init_take` definitions (the enum-payload in-place
+	 * tranche, PERF_PLAN item 7): a stamped case construction's producing
+	 * call results ARE the payloads, so the take variant assigns string
+	 * payloads raw instead of strdup'ing them (every other payload copies
+	 * exactly like `_init`). Discovered at construction sites — function
+	 * bodies — so C may not nest the definition there: buffered like
+	 * `box_clone_definitions` and flushed at file scope by build_root_node
+	 * (headers carry the prototypes). Deduped per TU via
+	 * `emitted_enum_case_takes`.
+	 */
+	enum_case_take_definitions?: string;
+	/** `<Enum>_<case>` pairs whose `_init_take` this TU already emitted. */
+	emitted_enum_case_takes?: Set<string>;
+	/**
 	 * Closure support (CLOSURE.md). A func-typed VALUE is a
 	 * `struct nomen_closure *` — { code, env, owned }. These flags/buffers
 	 * back the descriptor ABI: the struct definition is emitted once per TU;

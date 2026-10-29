@@ -74,6 +74,20 @@ export default class AccessFunctionCallNode extends BaseNode {
 	 * (`DeclarationNode.in_place_push_slot`).
 	 */
 	in_place_donor_name?: string;
+	/**
+	 * The in-place construction guarantee, enum-payload tranche (PERF_PLAN
+	 * item 7): indices of this enum case construction's arguments that are
+	 * direct calls of the payload type — the case store builds each stamped
+	 * argument straight into its payload slot (the x0/x1 pair store, or the
+	 * sret preset window against the payload's frame address) instead of
+	 * hoisting a `_param_N` temp and strdup/struct-copying it in. Stamped by
+	 * the checker only when the whole shape is provably lowerable (every
+	 * string payload of the case is such a call — the C take-variant claims
+	 * all of them; see check/utils/enum_mono.ts,
+	 * stamp_in_place_enum_payloads). Both backends re-derive the mechanical
+	 * facts at the site, so the stamp and the lowering can't drift.
+	 */
+	in_place_payload_indices?: number[];
 	variadic_param_index?: number;
 	mangled_name?: string;
 	/**

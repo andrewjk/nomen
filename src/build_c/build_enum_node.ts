@@ -144,3 +144,51 @@ function build_tagged_union_enum(node: EnumNode, status: BuildStatus) {
 		status.code += `}\n`;
 	}
 }
+
+/**
+ * Emit the `<Enum>_<case>_init_take` variant the enum-payload in-place
+ * tranche (PERF_PLAN item 7) calls at a stamped construction site: the
+ * checker proved every string payload's argument is a direct call, and the
+ * C backend's string-return convention hands every call result a fresh heap
+ * buffer the caller owns — so the take variant assigns each string payload
+ * RAW (no strdup; the produced buffer IS the payload, freeing the hoisted
+ * `_param_N` temp and its scope-exit free) while every other payload copies
+ * exactly like `_init`. An unstamped site keeps calling `_init` (its strdup
+ * makes the payload independent of the argument's storage), so both
+ * variants coexist.
+ *
+ * Discovered at construction sites — inside function bodies — so the
+ * definition buffers into `status.enum_case_take_definitions` (flushed at
+ * file scope by build_root_node, mirroring `box_clone_definitions`) with the
+ * prototype in headers. Deduped per TU via `emitted_enum_case_takes`.
+ */
+export function ensure_enum_case_take_c(
+	enum_node: EnumNode,
+	case_index: number,
+	status: BuildStatus,
+): void {
+	const c = enum_node.cases[case_index];
+	if (!c) return;
+	if (!status.emitted_enum_case_takes) status.emitted_enum_case_takes = new Set();
+	const key = `${enum_node.name}_${c.name}`;
+	if (status.emitted_enum_case_takes.has(key)) return;
+	status.emitted_enum_case_takes.add(key);
+	const take = `${key}_init_take`;
+	const ctor_params = c.params.map((p) => payload_c_decl(p.type, p.name, status)).join(", ");
+	status.headers += `${c_typedef_name(enum_node.name)} ${take}(${ctor_params});\n`;
+	const out: string[] = [];
+	out.push(`${c_typedef_name(enum_node.name)} ${take}(${ctor_params})\n{\n`);
+	out.push(`${c_typedef_name(enum_node.name)} r;\n`);
+	out.push(`r.tag = ${enum_node.name}_${c.name};\n`);
+	for (const p of c.params) {
+		// A string payload takes its argument's fresh heap buffer raw (the
+		// whole point of the variant); every other payload — scalar, value
+		// struct, class/trait handle — copies exactly like `_init`
+		// (construction transfers mv pointers — see
+		// enforce_case_payload_ownership).
+		out.push(`r._data._${c.name}.${p.name} = ${p.name};\n`);
+	}
+	out.push(`return r;\n`);
+	out.push(`}\n`);
+	status.enum_case_take_definitions = (status.enum_case_take_definitions ?? "") + out.join("");
+}

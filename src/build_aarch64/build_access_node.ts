@@ -592,20 +592,50 @@ function is_struct_type(type_name: string, status: BuildStatus): boolean {
  *
  * Mirrors the load side (`emit_enum_payload_binding_load`): the enum layout
  * sizes/offsets come from `get_type_size`, so construction and binding agree.
+ *
+ * The in-place construction guarantee's enum-payload tranche (`in_place` —
+ * the checker's `in_place_payload_indices` stamp): the argument is a direct
+ * call of the payload type, so it constructs STRAIGHT INTO the payload slot
+ * instead of materializing a temp that the store then copies —
+ * - `string`: the produced (ptr, len) pair stores raw when the call's result
+ *   is a fresh heap allocation (the payload owns the buffer; the strdup and
+ *   the hoisted temp's scope-exit free disappear), and falls back to the
+ *   strdup'd owned copy when it is not (a borrow/rodata pair must not be
+ *   claimed — the payload free would free foreign storage);
+ * - a multi-word value struct: the sret preset window (`call_x8_preset` +
+ *   a frame-spilled payload address — the same destination protocol the
+ *   in-place push constructs under) makes the callee write the payload slot
+ *   directly; the sret temp home and the struct copy disappear. A ≤8-byte
+ *   struct payload keeps the ordinary width store (no temp exists to elide).
  */
 export function emit_enum_payload_arg_store(
 	status: BuildStatus,
 	arg: BaseNode,
 	type: Type,
 	abs_offset: number,
+	in_place = false,
 ) {
 	const type_name = type.name;
 	if (type_name === "string" && !type.is_view) {
 		// A string payload is an OWNED copy: strdup the (ptr, len) pair the
 		// arg built, then store both halves — the enum value outlives the
 		// producer's local, and the scope-exit payload free needs a heap ptr.
+		const take_direct = in_place && arg.node_type === "func_call";
+		if (take_direct) {
+			// Fresh signal: the arg build decides heapness (the same
+			// discipline the assignment lowering stores under).
+			status.last_result_is_heap = false;
+		}
 		build_node(arg, status);
 		ensure_newline(status);
+		if (take_direct && status.last_result_is_heap) {
+			// The produced pair is a fresh heap allocation — the payload owns
+			// the buffer now; no strdup, no temp, no caller-side reclaim.
+			emit_asm(status, `str x0, [x29, #${abs_offset}]\n`);
+			emit_asm(status, `str x1, [x29, #${abs_offset + 8}]\n`);
+			status.last_result_is_heap = false;
+			return;
+		}
 		emit_strdup_string(status);
 		emit_asm(status, `str x0, [x29, #${abs_offset}]\n`);
 		emit_asm(status, `str x1, [x29, #${abs_offset + 8}]\n`);
@@ -626,6 +656,27 @@ export function emit_enum_payload_arg_store(
 	const is_multiworld_value =
 		!is_class && !is_trait && !type.is_ref && !type.is_view && !type.is_array && size > 8;
 	if (is_multiworld_value) {
+		if (in_place && arg.node_type === "func_call") {
+			// Construct the call's result straight into the payload slot: the
+			// destination address is a known frame offset, spilled to a frame
+			// slot so the sret preset window survives every nested `bl` (the
+			// argument build re-presets x8 after each argument — the same
+			// protocol build_in_place_push.ts constructs under).
+			const slot = allocate_stack_space(status, 8);
+			emit_asm(status, `add x9, x29, #${abs_offset}\n`);
+			emit_asm(status, `str x9, [x29, #${slot}]\n`);
+			emit_asm(status, `ldr x8, [x29, #${slot}]\n`);
+			const old_preset = status.call_x8_preset;
+			const old_var = status.struct_return_buffer_var;
+			const old_slot = status.call_x8_slot_offset;
+			status.call_x8_preset = true;
+			status.call_x8_slot_offset = slot;
+			build_node(arg, status);
+			status.call_x8_preset = old_preset;
+			status.struct_return_buffer_var = old_var;
+			status.call_x8_slot_offset = old_slot;
+			return;
+		}
 		emit_address_of(arg, status);
 		ensure_newline(status);
 		emit_struct_copy("x0", "x29", abs_offset, size, status);
@@ -2069,6 +2120,7 @@ function build_access_method(
 						access_func.params[i],
 						enum_case.params[i].type,
 						temp_offset + payload_offsets[i],
+						access_func.in_place_payload_indices?.includes(i) ?? false,
 					);
 				}
 				emit_asm(status, `add x0, x29, #${temp_offset}\n`);
