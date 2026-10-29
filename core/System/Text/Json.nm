@@ -174,7 +174,7 @@ func json_parse_string = (string s, ref Buffer<int> pos, int len, ref JsonTree t
 	pos.store_int(0, i)
 	var int n = tree.alloc_node()
 	tree.set_kind(n, 3)
-	tree.set_text(n, sb.to_string())
+	tree.take_text(n, ref sb)
 	return n
 }
 
@@ -197,7 +197,7 @@ func json_parse_number = (string s, ref Buffer<int> pos, int len, ref JsonTree t
 	}
 	var int n = tree.alloc_node()
 	tree.set_kind(n, 2)
-	tree.set_text(n, sb.to_string())
+	tree.take_text(n, ref sb)
 	return n
 }
 
@@ -318,7 +318,7 @@ func json_ser_list = (ref JsonTree tree, int first, ref StringBuilder sb) {
 
 func json_ser_pairs = (ref JsonTree tree, int first, ref StringBuilder sb) {
 	sb.append_char('"')
-	sb.append_string(tree.get_text(first))
+	sb.append_string_view(tree.get_text_view(first))
 	sb.append_string("\":")
 	var int v = tree.get_val(first)
 	if v < 0 {
@@ -348,12 +348,12 @@ func json_ser_value = (ref JsonTree tree, int n, ref StringBuilder sb) {
 		return
 	}
 	if k == 2 {
-		sb.append_string(tree.get_text(n))
+		sb.append_string_view(tree.get_text_view(n))
 		return
 	}
 	if k == 3 {
 		sb.append_char('"')
-		sb.append_string(tree.get_text(n))
+		sb.append_string_view(tree.get_text_view(n))
 		sb.append_char('"')
 		return
 	}

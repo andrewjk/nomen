@@ -437,6 +437,14 @@ memcpy per child now), not codegen. Worth a pass over the Json parse path
 to identify which lowered reads can stay borrows (e.g. view-returning
 field reads where the caller immediately re-copies or hashes).
 
+Update Oct 2026: the Json-ownership half of this landed
+(PERF_PLAN item 5) — `JsonTree.take_text`/`get_text_view` removed the
+per-node set_text copy + get_text read copy, taking json-serde to −22% /
+−12% (C / aarch64, `bench/sample.json 50000`, interleaved medians,
+byte-identical outputs). The regression's other cited causes (uniform-heap
+field reads/returns in user shapes, `List`/`Map` as `mv struct`s) are
+untouched by it.
+
 ## Endgame: compiler magic keyed on marker traits (the `#spawn` retirement)
 
 `#spawn` began as a one-time construction hook (Thread/Fiber) and `#weak`

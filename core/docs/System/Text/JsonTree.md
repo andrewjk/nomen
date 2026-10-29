@@ -15,6 +15,8 @@ A flat, pool-backed set of JSON tree nodes — the parsed representation `Json.p
 - `set_val(int idx, int val)`
 - `get_kind(int idx) -> int`
 - `get_text(int idx) -> string`
+- `get_text_view(int idx) -> view string`
+- `take_text(int idx, ref StringBuilder sb)`
 - `get_child(int idx) -> int`
 - `get_next(int idx) -> int`
 - `get_val(int idx) -> int`

@@ -3,7 +3,7 @@
 Research into the next performance opportunities, following the StableList +
 in-place push work. PERF.md is the record of what landed; this is the plan for
 what's next. All findings are ordered most-promising-first. Written Oct 2026;
-originally unmeasured — items 2, 3, and 4 (partially) have since landed with
+originally unmeasured — items 2, 3, 4 (partially), and 5 have since landed with
 measurements in place (items marked LANDED carry them; the rest carry
 expected wins and the receipts they rest on).
 
@@ -13,7 +13,7 @@ expected wins and the receipts they rest on).
 | 2   | ~~In-place push for constructors~~ **LANDED Oct 2026: −55% / −58% on the shape**                                                                         | both           | S      | shape micro-bench, interleaved medians (below)   |
 | 3   | ~~Move-on-last-use for structs~~ **LANDED Oct 2026: −20% / −29% on the shape**                                                                           | both           | S–M    | shape micro-bench, interleaved medians (below)   |
 | 4   | ~~Borrow-returning reads (Map `get_ptr`, `at_view`)~~ **PARTIALLY LANDED Oct 2026: Map slot borrow, −79% / −98% on the borrow shape, −48% probe fusion** | both           | M      | shape micro-benches, interleaved medians (below) |
-| 5   | Json ownership copies                                                                                                                                    | both           | S      | measured 0.7.0 regression +61% / +103%           |
+| 5   | ~~Json ownership copies~~ **LANDED Oct 2026: −26% / −13% on the ownership shape, −22% / −12% json-serde**                                                | both           | S      | measured 0.7.0 regression +61% / +103%           |
 | 6   | In-place store (`set`/`insert`/`add`/`alloc`)                                                                                                            | both           | M      | slot primitives already exist                    |
 | 7   | Enum payload in-place construction                                                                                                                       | both           | S–M    | mechanically same as in-place push               |
 | 8   | Regex/String O(n²) accumulators                                                                                                                          | both           | S      | O(n²) per-byte loops in core                     |
@@ -271,15 +271,75 @@ scalar element borrows via `List.at` are blocked by contract verification
 contract), so scalar borrows are Map-only until the verifier understands
 the rewrite's length facts.
 
-## 5. Json ownership copies
+## 5. Json ownership copies — LANDED (Oct 2026)
 
-`set_text` does `n.text = text.copy()` on a string the caller just built
-(`tree.set_text(n, sb.to_string())` = builder malloc → copy malloc → temp
-free), and `get_text` returns `n.text.copy()` which callers immediately memcpy
-into a StringBuilder and drop (`core/System/Text/JsonTree.nm`, callers in
-`Json.nm`). A `mv` param + a `get_text_view` → zero mallocs. Every parsed
-string/key pays this twice today — and the 0.7.0 json-serde regression
-(FOLLOWUP.md) is attributed to exactly this class of ownership lowering.
+**What landed.** The two zero-copy ownership paths the item asked for, in
+`core/System/Text/JsonTree.nm` (callers in `Json.nm`):
+
+- **`take_text(idx, ref StringBuilder)` — the zero-copy store.** `to_string`
+  is a take (the builder hands its heap buffer over and resets), and a
+  fresh-call RHS stored into an owning struct's string field is the one
+  zero-copy store shape both backends already lower (the C backend's
+  `is_owned_heap_temp` arm emits the call as the field's initializer; the
+  aarch64 backend's `last_result_is_heap` skips the strdup and stores the
+  pair raw). So `n.text = sb.to_string()` inside the method moves the
+  builder's buffer straight into the node: the parse shape's
+  "builder malloc → copy malloc → temp free" becomes "builder malloc".
+- **`get_text_view(idx) -> view string` — the zero-copy read.** A
+  self-rooted (ptr, len) borrow over the node's text (the `slice` re-rooting
+  convention), which the serializer's `sb.append_string(tree.get_text(n))`
+  sites now take as `sb.append_string_view(tree.get_text_view(n))` — the
+  per-read `.copy()` malloc + memcpy + free is gone from
+  `json_ser_pairs`/`json_ser_value`.
+
+`set_text` keeps the plain-string API (one owned copy of the argument). The
+item's `mv`-param spelling was tried first and **does not work**: both
+backends strdup'd anyway, because the D3 string-ownership convention makes
+`mv string` arguments caller-owned borrows (the caller frees its hoisted
+temp after the call — `build_function_call_node.ts`'s string-arg gate — so
+the callee's field store must copy to own anything), and the spelling
+regressed the copy primitive itself (tracked-length `string_copy` became a
+strlen-rescanning `_strdup`). The take-shaped method delivers the same
+elision from inside the convention. Thirteen json tests pass (the parse and
+stringify suites exercise both paths through `Json.parse`/`stringify`,
+audit on, plus two new tests pinning `take_text` and `get_text_view`
+directly); the full suite (522 files, both backends) passes.
+
+**Measured.** `bench/nomen/json-serde.nm` (parse + re-stringify cycles, n
+from argv, Apple Silicon, interleaved rounds, audit off, byte-identical
+outputs on both backends — sample.json, an escapes/unicode edge doc, and a
+string-heavy 8000-key doc):
+
+- _The standard suite_ — `bench/sample.json`:
+
+| Backend | n = 5000 (median) | n = 50000 (median) |        Δ |
+| ------- | ----------------- | ------------------ | -------: |
+| C       | 0.05s → 0.04s     | 0.50s → 0.39s      | **−22%** |
+| aarch64 | 0.08s → 0.07s     | 0.78s → 0.69s      | **−12%** |
+
+- _The ownership shape_ — 8000 string keys/values per document (every node
+  pays a text store + a text read), 5000 parse+serialize passes:
+
+| Backend | before | after  |        Δ |
+| ------- | ------ | ------ | -------: |
+| C       | 9.49s  | 7.04s  | **−26%** |
+| aarch64 | 13.40s | 11.68s | **−13%** |
+
+Per parsed string/key the elided work is exactly the item's promise: the
+copy malloc, the temp free, and (on serialize) the read-copy malloc + free
+are gone — 3 mallocs + 2 frees per node become 2 + 1. The emitted code
+receipts it: `JsonTree_take_text` is `bl StringBuilder_to_string` + raw
+pair store + displaced free (no `_strdup`) on aarch64, and
+`StringBuilder_to_string(sb)` as the field initializer (no
+`nomen_str_dup`) in C; `JsonTree_get_text_view` returns the `nomen_view`
+pair both backends memcpy from directly.
+
+**Remainder.** Per node there is still the `JsonNode()` seed strdup inside
+`alloc_node`'s push — item 2's field-path remainder (`self.nodes`
+receiver) — and `json_parse_string`'s per-byte append loop (item 17's
+scan-to-next-escape). A general `mv string` param that actually transfers
+(eliding `set_text`'s copy for owned strings everywhere) is a convention
+change across every mv-string function and needs its own measured item.
 
 ## 6. In-place store: the `set`/`insert`/`add`/`alloc` siblings
 

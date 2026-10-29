@@ -42,12 +42,33 @@ pub mv struct JsonTree {
 		self.nodes = StableList<JsonNode>()
 	}
 
+	// Install node `idx`'s text. Takes a copy of `text`: the pool owns its
+	// node texts, so the field store must own an independent value (the
+	// interior write frees the displaced text). For strings produced by a
+	// StringBuilder, `take_text` installs the builder's buffer with no
+	// copy at all.
 	func set_text = (ref self, int idx, string text) {
 		if idx < 0 || idx >= self.nodes.length {
 			panic("index out of range")
 		}
 		ref JsonNode n = self.nodes.at(idx)
 		n.text = text.copy()
+	}
+
+	// Install node `idx`'s text by TAKING the builder's buffer — the parse
+	// path's zero-copy store. `to_string` is a take (the builder hands its
+	// heap buffer over and resets), and a fresh-call RHS stores into the
+	// field directly, so per parsed string/key the only allocation left is
+	// the builder's own buffer — no copy malloc, no temp free. (A `mv
+	// string` parameter cannot do this: the string-arg ownership
+	// convention makes mv string arguments caller-owned borrows, forcing
+	// the callee-side copy this method exists to skip.)
+	func take_text = (ref self, int idx, ref StringBuilder sb) {
+		if idx < 0 || idx >= self.nodes.length {
+			panic("index out of range")
+		}
+		ref JsonNode n = self.nodes.at(idx)
+		n.text = sb.to_string()
 	}
 
 	func set_kind = (ref self, int idx, int val) {
@@ -96,6 +117,20 @@ pub mv struct JsonTree {
 		}
 		ref JsonNode n = self.nodes.at(idx)
 		return n.text.copy()
+	}
+
+	// A non-mv (ptr, len) view over node `idx`'s text — the zero-copy read.
+	// The borrow roots at `self` and re-roots at the call-site receiver
+	// (the `slice` convention), so it is invalidated by `reset()`/re-parse
+	// like any pool borrow. Callers that immediately append, hash, or
+	// inspect the text take this instead of paying `get_text`'s per-read
+	// copy allocation.
+	func get_text_view = (self, int idx, out view string) {
+		if idx < 0 || idx >= self.nodes.length {
+			panic("index out of range")
+		}
+		ref JsonNode n = self.nodes.at(idx)
+		return n.text.slice(0, n.text.length)
 	}
 
 	func get_child = (self, int idx, out int) {

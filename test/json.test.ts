@@ -134,3 +134,55 @@ Console.write("\\{s1}|\\{s2}")
 		await check_output("json_tree_reset_reparse", result, '{"a":1}|[9,"eight"]', opts);
 	});
 });
+
+describe("JsonTree ownership paths", () => {
+	// take_text installs the builder's heap buffer (the take-shaped zero-copy
+	// store the parse hot path uses), and get_text_view reads a node's text
+	// as a (ptr, len) borrow — the zero-copy read the serializer's
+	// append_string_view sites use. The pool owns its node texts end to end,
+	// so audit mode verifies both shapes stay inside the pool's ownership
+	// rules (the taken buffer is freed exactly once, by the list's destroy).
+	const opts = { arch: "aarch64", audit: true } as const;
+
+	test("take_text stores the builder's buffer; the builder resets after", async () => {
+		const input = `
+var JsonTree tree = JsonTree()
+var int n = tree.alloc_node()
+tree.set_kind(n, 3)
+var sb = StringBuilder()
+sb.append_string("hello")
+tree.take_text(n, ref sb)
+Console.write(tree.get_text(n))
+Console.write("|")
+sb.append_string("more")
+Console.write(sb.to_string())
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64" });
+		await check_output("json_take_text", result, "hello|more", opts);
+	});
+
+	test("get_text_view reads the node's text without an owning copy", async () => {
+		const input = `
+var JsonTree tree = JsonTree()
+var int n = tree.alloc_node()
+tree.set_kind(n, 3)
+var sb = StringBuilder()
+sb.append_string("payload")
+tree.take_text(n, ref sb)
+view v = tree.get_text_view(n)
+var sb2 = StringBuilder()
+sb2.append_string_view(v)
+Console.write(sb2.to_string())
+Console.write("|")
+Console.write(v.length.to_string())
+Console.write("|")
+Console.write(tree.get_text(n))
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64" });
+		await check_output("json_get_text_view", result, "payload|7|payload", opts);
+	});
+});
