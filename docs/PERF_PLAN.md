@@ -19,7 +19,7 @@ rest carry expected wins and the receipts they rest on).
 | 8   | ~~Regex/String O(n²) accumulators~~ **LANDED Oct 2026: −92% / −91% match accumulator, −65% / −58% replace_all skip loop, −33% / −40% String.replace_all, −28% / −14% array to_string**                         | both           | S      | shape micro-benches, interleaved medians (below) |
 | 9   | ~~Map/Set stored hash (Swiss-table tricks)~~ **LANDED Oct 2026: −35% / −52% probe shape, −21% / −49% string build+remove, −19% / −33% Set build, −22% aarch64 int rehash; int-keyed hit paths +2–10% (below)** | both           | M      | shape micro-benches, interleaved medians (below) |
 | 10  | StringBuilder numeric appends + 1-pass interp                                                                                                                                                                  | both           | S      | two snprintf passes + malloc per append          |
-| 11  | ~~Devirtualization of trait calls~~ **LANDED Oct 2026: −12% realistic callee / tiny-callee loop folds outright (C); flat aarch64, inline splice blocked (below)**                                              | both           | M      | shape micro-bench, interleaved medians (below)   |
+| 11  | ~~Devirtualization of trait calls~~ **LANDED Oct 2026: −12% realistic callee / tiny-callee loop folds outright (C); aarch64 inline splice −19% (below)**                                                       | both           | M      | shape micro-bench, interleaved medians (below)   |
 | 12  | Struct field-order / padding                                                                                                                                                                                   | both           | S      | modest; raw-body caveat                          |
 | 13  | Variable-mode enums                                                                                                                                                                                            | both           | L      | GOOSE #6, documented, unshipped                  |
 | 14  | Buffer word pairs (T_SIZE ≤ 16)                                                                                                                                                                                | mostly aarch64 | S      | IMPROVEMENTS.md "still needed"                   |
@@ -874,26 +874,56 @@ call plumbing, not latency.
   never devirtualizable): flat on both backends (±0.1%), confirming the
   stamp reaches exactly the sites it proves and nothing else.
 
+- _Shape D — the inline splice_ (`bench/nomen/trait_dispatch_inline.nm`,
+  its own binary so the extra loop's register pressure cannot shift the
+  other shapes; the same-shaped non-inline callee is shape A): a
+  devirtualized call whose concrete method is `inline func` splices the
+  body at the call site — no call instruction at all on aarch64, and clang
+  inlines + folds the C loop:
+
+| Backend |      before |  after |                              Δ |
+| ------- | ----------: | -----: | -----------------------------: |
+| C       |      0.004s | 0.003s |                     **−13.4%** |
+| aarch64 | cannot link | 0.197s | **−18.9%** vs the shape A loop |
+
+The aarch64 "before" cell is the bug, not a missing measurement: an
+`inline` method on a trait-CONFORMING struct previously never emitted a
+standalone symbol, so the struct's unconditionally-emitted vtable
+referenced a never-defined label and the program failed to LINK (the
+same program compiles and dispatches after this item's emission fix).
+The −18.9% compares the spliced loop against the same-shaped loop with a
+non-inline callee in the same compiler (`bl <Class>_area`); against the
+vtable loop it is larger still.
+
 - _The standard suite_ — flat on both backends (json-serde 0.041/0.041s C
   +0.0%, binarytrees 1.414/1.409s −0.3%, lru 0.851/0.876s +2.9%, nsieve
   0.127/0.126s −0.2%; aarch64 0.070/0.071s, 1.817/1.827s, 1.765/1.761s,
   0.156/0.156s; outputs byte-identical): none of the benches declares a
   trait.
 
-**Remainder.** The aarch64 side's real prize — splicing the concrete
-method body in place of the call, which the concrete-receiver path already
-does for `inline func` methods — is blocked by a pre-existing gap:
-an `inline` method on a trait-CONFORMING struct never emits a standalone
-symbol, so the struct's unconditionally-emitted vtable references a
-never-defined label and the program doesn't link (FOLLOWUP.md, byte-
-identical on HEAD). Until that lands, the aarch64 devirtualized call is a
-plain `bl` and measures flat-to-small; the C backend collects the inlining
-win. Also not stamped yet: field-path receivers (`self.speaker.speak()`),
-container elements proven monomorphic after a check, trait-default-only
-conformers (the slot holds `${Trait}_${method}` — directly callable too),
-and generic traits/structs. The `ref`-trait reassignment edge (FOLLOWUP.md)
-is what forces any `ref`-argument pass to disqualify the name; if that edge
-is ever fixed, the scan can shrink with it.
+**The inline splice (landed with the item).** A devirtualized call to an
+`inline func` method now takes the same splice the concrete-receiver path
+takes (`build_inline_method`; the machine state at the dispatch point — x0
+= instance, args in x1..x7 — is identical). Making that linkable required
+fixing the pre-existing emission gap: an inline method that a conforming
+trait DECLARES now emits a standalone body, because the struct's
+per-trait vtable entry IS that method label and the table is emitted
+unconditionally (a marker trait like `Viewable` declares no functions, so
+its conformers' inline methods reference nothing and stay splice-only —
+emitting those would grow every container mono for no linkage need).
+Plain-string returns stay on the `bl` (the dispatch tail normalizes them
+against the call ABI, which a spliced body does not take); four tests in
+`test/trait_inline_method.test.ts` pin the link, the vtable dispatch, the
+splice's emitted shape, and the runtime results.
+
+**Remainder.** Not stamped yet: field-path receivers
+(`self.speaker.speak()`), container elements proven monomorphic after a
+check, trait-default-only conformers (the slot holds
+`${Trait}_${method}` — directly callable too), and generic
+traits/structs. The `ref`-trait reassignment edge disqualified every
+`ref`-argument pass from the scan conservatively; that edge is fixed
+(`ref` trait params now write back through the caller's handle slot), but
+the scan stays conservative until it is revisited.
 
 ## 12. Struct field-order / padding
 

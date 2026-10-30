@@ -3566,7 +3566,6 @@ function build_access_method(
 				!s.is_generic &&
 				s.functions.some((f) => f.name === access_func.name),
 		);
-		const devirt_label = devirt_struct ? `${devirt_struct.name}_${access_func.name}` : undefined;
 		if (node.target.node_type === "value") {
 			const name = (node.target as ValueNode).value;
 			const paramReg = get_param_reg(name, status);
@@ -3605,8 +3604,36 @@ function build_access_method(
 			ensure_newline(status);
 			emit_asm(status, `mov x9, x0\n`);
 		}
-		if (devirt_label) {
-			emit_asm(status, `bl ${devirt_label}\n`);
+		if (devirt_struct) {
+			const devirt_label = `${devirt_struct.name}_${access_func.name}`;
+			// A stamped call whose concrete method is an `inline func` takes
+			// the same splice the concrete-receiver path takes — the machine
+			// state at this point (x0 = instance, args in x1..x7) is
+			// identical, only the checker's receiver TYPE differed.
+			// Plain-string returns stay on the bl: the dispatch tail below
+			// normalizes them against the call ABI, which a spliced body
+			// does not take.
+			const devirt_inline_func = devirt_struct.functions.find(
+				(f) =>
+					f.is_inline &&
+					f.name === access_func.name &&
+					(access_func.mangled_name
+						? mangled_label(f, devirt_struct.name) === access_func.mangled_name
+						: true),
+			);
+			if (
+				devirt_inline_func &&
+				overflow_count === 0 &&
+				!(access_func.type.name === "string" && !access_func.type.is_view) &&
+				!inline_splice_active(devirt_struct.name, access_func.name) &&
+				!owns_specialized_primitive(devirt_struct, access_func.name, status)
+			) {
+				begin_inline_splice(devirt_struct.name, access_func.name);
+				build_inline_method(devirt_struct, devirt_inline_func, status);
+				end_inline_splice(devirt_struct.name, access_func.name);
+			} else {
+				emit_asm(status, `bl ${devirt_label}\n`);
+			}
 		} else {
 			emit_asm(status, `ldr x10, [x9]\n`);
 			// +1 to skip the destroy slot at vtable[0].

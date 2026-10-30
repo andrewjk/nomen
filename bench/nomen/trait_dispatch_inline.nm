@@ -1,0 +1,37 @@
+import System
+
+// PERF_PLAN item 11 — the inline-splice receipt, kept in its OWN binary:
+// the devirtualized call to an `inline func` method splices the body at the
+// call site (no call instruction, no vtable walk on aarch64; clang inlines
+// + folds the loop on C). Isolated from trait_dispatch.nm so the extra
+// loop's register-allocation pressure cannot shift the other shapes'
+// measurements. The same-shaped non-inline callee loop lives in
+// trait_dispatch.nm's shape A — the A-vs-D delta on identical sources
+// isolates the splice itself.
+
+trait Shape {
+	func area = (self, out int)
+}
+
+mv struct Tile: Shape {
+	var int side
+	pub inline func area = (self, out int) {
+		return self.side * self.side
+	}
+}
+
+pub func main = (Init init) {
+	var n = 50000000
+	if init.argc > 1 {
+		n = parse_int(init.args.at(1))
+	}
+
+	var Shape t = Tile(7)
+	var total = 0
+	var i = 0
+	while i < n {
+		total += t.area()
+		i += 1
+	}
+	Console.write("D \{total}\n")
+}

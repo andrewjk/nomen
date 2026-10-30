@@ -734,25 +734,3 @@ destroy to run the payload struct's `T_destroy` for owning payload structs
 (guarded on the tag, like the reference-payload arm), both backends, plus
 the same for `Enum_copy`'s deep-copy direction. Touches MEMORY.md's enum
 ownership section when it lands.
-
-## `inline` methods on trait-conforming structs never emit their symbol — the vtable entry dangles (pre-existing, surfaced by the devirtualization work)
-
-Recorded 2026-10-30 while landing PERF_PLAN item 11 (trait-call
-devirtualization). Declaring a trait-conforming method `pub inline func`
-(`mv struct Tile: Shape { pub inline func area = ... }`) fails to LINK on
-aarch64: the trait-conforming struct's vtable is emitted unconditionally
-(`_${Struct}_${Trait}_funcs` holds `.quad Tile_area`,
-build_aarch64/build_struct_node.ts), but inline methods are splice-only and
-never emitted as standalone symbols — `Undefined symbols: "Tile_area",
-referenced from: _Tile_Shape_funcs`. The C backend has the same shape
-(`void *_Tile_Shape_funcs[] = {Tile_area};`). Byte-identical on HEAD before
-the item. Consequence for the item: the aarch64 devirtualized call cannot
-take the concrete method's inline splice (the trait dispatch tail would
-also need the string-return normalization decision the bl path makes), so
-it lowers as a plain `bl` — the C backend collects the inlining win
-instead. Fix shape: emit a standalone alias for inline methods on
-trait-conforming structs (or emit the vtable slot as the splice body's
-outline), then route the devirtualized call through
-`build_inline_method` (the machine state at the dispatch point — x0 =
-instance, args in x1..x7 — is already identical to the concrete-receiver
-splice's contract).

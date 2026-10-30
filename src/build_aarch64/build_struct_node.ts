@@ -1830,11 +1830,30 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		}
 		if (func.name === "#destroy") continue;
 		// User-marked inline methods skip standalone emission — every call
-		// site splices. EXCEPTION (STRUCT_PLAN_3 B1 cutover): an OWNING-
+		// site splices. EXCEPTIONS (STRUCT_PLAN_3 B1 cutover): an OWNING-
 		// element Buffer primitive whose call sites now take the bl (the
 		// splice barrier in build_access_node) needs the specialized
-		// standalone body to exist.
-		if (func.is_inline && !owns_specialized_primitive_for(node, func.name, status)) continue;
+		// standalone body to exist — and so does an inline method that a
+		// conforming trait DECLARES: the struct's vtable entry for that
+		// trait function IS the method label (the per-trait table is emitted
+		// unconditionally), so skipping the body leaves a dangling symbol
+		// and the program fails to link. A MARKER trait declares no
+		// functions (e.g. `Viewable`), so its conformers' inline methods
+		// reference nothing and stay splice-only — emitting them would grow
+		// every container mono for no linkage need.
+		const referenced_by_vtable =
+			func.name !== "#init" &&
+			node.traits.some((trait_name) =>
+				(status.traits.find((t) => t.name === trait_name)?.functions ?? []).some(
+					(f) => f.name === func.name,
+				),
+			);
+		if (
+			func.is_inline &&
+			!referenced_by_vtable &&
+			!owns_specialized_primitive_for(node, func.name, status)
+		)
+			continue;
 		if (check_c_fallback(func, node.name, status)) continue;
 		if (func.is_foreign) {
 			build_foreign(func, status, node);
