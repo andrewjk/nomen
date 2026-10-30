@@ -2521,13 +2521,44 @@ export default function build_declaration_node(
 							element_size,
 						);
 						status.stack_offsets!.set(node.name, offset);
+						const elem_is_string = node.type.name === "string";
 						array_values.values.forEach((value, i) => {
 							const slot_offset = offset + i * element_size;
 							const resolved = resolve_static_value(value, status);
 							if (resolved !== null) {
-								emit_string_array_element(status, resolved, labels, "x29", slot_offset);
+								if (elem_is_string && resolved.startsWith('"')) {
+									// The slot OWNS its row: strdup the rodata
+									// label the way Array.with seeds each slot,
+									// so the inline .set's displaced free (and
+									// the scope-exit walk below) see heap-owned
+									// slots — never the literal's rodata.
+									const label = resolve_array_element(resolved, labels);
+									emit_asm(status, `adr x0, ${label}\n`);
+									emit_strdup(status);
+									emit_asm(status, `mov x1, #${string_literal_length(resolved)}\n`);
+									if (slot_offset < 0 || slot_offset + 8 > 504) {
+										emit_asm(status, `str x0, [x29, #${slot_offset}]\n`);
+										emit_asm(status, `str x1, [x29, #${slot_offset + 8}]\n`);
+									} else {
+										emit_asm(status, `stp x0, x1, [x29, #${slot_offset}]\n`);
+									}
+								} else {
+									emit_string_array_element(status, resolved, labels, "x29", slot_offset);
+								}
 							}
 						});
+						if (elem_is_string) {
+							// The slots are heap-owned (strdup'd above): register
+							// the INLINE-storage shape so the scope-exit walk
+							// frees each slot's ptr half (negative len = inline).
+							if (!status.heap_string_arrays) status.heap_string_arrays = new Map();
+							status.heap_string_arrays.set(node.name, -array_values.values.length);
+							if (status.heap_cleanup_stack?.length) {
+								status.heap_cleanup_stack[status.heap_cleanup_stack.length - 1].heap_strings.add(
+									node.name,
+								);
+							}
+						}
 					}
 				} else {
 					emit_data(status, `${node.name}: ${directive} `);

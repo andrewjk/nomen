@@ -681,6 +681,39 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					break;
 				}
 				if (access_func.name === "set") {
+					// A string element array's slots are heap-OWNED (the literal
+					// initializer strdup's each row; the scope-exit walk frees
+					// them), so the store is the deep-copy form `Array_string.set`'s
+					// raw body runs: reclaim the displaced slot's bytes, then
+					// store a value the slot uniquely owns. A raw pair store would
+					// leak the displaced row and double-free the donor local's
+					// buffer at scope exit. Statement-expression so each operand
+					// evaluates once; the value lands in a temp that owns exactly
+					// one buffer — a fresh-heap producer result transfers as-is,
+					// anything else is strdup'd (the struct-field store's
+					// fresh_heap convention).
+					if (target_type.name === "string") {
+						const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+						const slot = `_iset_${id}`;
+						const val = `_iset_v_${id}`;
+						const fresh_heap = is_owned_heap_temp(access_func.params[1], status);
+						status.code += `({ nomen_string* ${slot} = &`;
+						status.suppress_dereference = true;
+						build_node(node.target, status);
+						status.suppress_dereference = false;
+						status.code += `[`;
+						build_node(access_func.params[0], status);
+						status.code += `]; nomen_string ${val} = `;
+						if (!fresh_heap) {
+							status.code += `nomen_str_dup(`;
+						}
+						build_node(access_func.params[1], status);
+						if (!fresh_heap) {
+							status.code += `)`;
+						}
+						status.code += `; free(${slot}->ptr); *${slot} = ${val}; })`;
+						break;
+					}
 					status.suppress_dereference = true;
 					build_node(node.target, status);
 					status.suppress_dereference = false;

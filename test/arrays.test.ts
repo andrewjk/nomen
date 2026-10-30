@@ -899,4 +899,60 @@ const s = names([Person("Alice", 30)])
 			"Cannot pass an array of mv value struct 'Person' (string fields) to 'Array<Person>' parameter 'xs' — the materialised heap copy would share the element strings. Use 'List<Person>' instead: its Buffer deep-copies mv elements soundly",
 		);
 	});
+
+	// An `Array<string>` (or `string[]`) built from a literal used to hold the
+	// elements' rodata pairs on aarch64 (no strdup), so `.set`'s documented
+	// replace semantics freed static storage (stale free / allocator abort);
+	// the C backend strdup'd the literal rows but its inline `.set` was a raw
+	// pair store — leaking the displaced row and double-freeing the donor
+	// local at scope exit. Both backends now run the `Array.with` ownership
+	// story: the literal initializer strdup's each row (aarch64 registers the
+	// inline slots for the scope-exit walk), and `.set` reclaims the displaced
+	// slot then stores a value the slot uniquely owns (fresh-heap transfers,
+	// borrowed donors strdup). The audit-on run below fails on any LEAK /
+	// stale-free report, so every displaced and produced row is released
+	// exactly once.
+	test("Array<string> from a literal: set replaces owned rows cleanly", async () => {
+		const input = `
+var arr = ["a", "b", "c"]
+var donor = "x"
+arr.set(1, donor)
+arr.set(2, "yy")
+func make = (int i, out string) {
+	return "m\\{i}"
+}
+arr.set(0, make(9))
+Console.write("\\{arr.at(0)}\\{arr.at(1)}\\{arr.at(2)} \\{arr.length}")
+`;
+		await build_and_check_output(input, "array_string_literal_set_owned_rows", "m9xyy 3");
+	});
+
+	// The same ownership story for `for ref x of arr` writebacks: the item is
+	// a borrow of the slot, so the writeback strdups the item's bytes BEFORE
+	// reclaiming the displaced row (the no-reassignment iteration still
+	// aliases it), then stores the owned pair — and the item keeps its
+	// 16-byte pair width for in-body reassignments (a dropped len half left
+	// at() reading stale slot lengths). Audit-on fails on any leak /
+	// stale-free report.
+	test("for ref over a string array writes back owned rows", async () => {
+		const input = `
+var arr = ["a", "b", "c"]
+var n = 0
+for ref x of arr {
+	if n > 0 {
+		x = "cc"
+	}
+	n = n + 1
+}
+Console.write("[")
+Console.write(arr.at(0))
+Console.write("|")
+Console.write(arr.at(1))
+Console.write("|")
+Console.write(arr.at(2))
+Console.write("] ")
+Console.write("\\{arr.at(0).length}\\{arr.at(1).length}\\{arr.at(2).length}")
+`;
+		await build_and_check_output(input, "array_string_for_ref_owned_rows", "[a|cc|cc] 122");
+	});
 });

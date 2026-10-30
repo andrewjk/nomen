@@ -9,7 +9,7 @@ import { build_block_with_cursor } from "./emit_nir.ts";
 import { emit_neon_vector_loop } from "./neon_emit.ts";
 import type { NeonPlan } from "./neon_plan.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
-import { emit_free } from "./utils/audit.ts";
+import { emit_free, emit_strdup } from "./utils/audit.ts";
 import { enter_scope_frame, exit_scope_frame } from "./utils/auto_destroy.ts";
 import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
 import { promote_loop_locals, type PromotedVar } from "./utils/loop_promotion.ts";
@@ -223,6 +223,16 @@ export default function build_for_loop_node(
 			const struct_size = element_size;
 			const item_offset = allocate_stack_space(status, struct_size);
 			status.stack_offsets!.set(item_name, item_offset);
+			if (is_fat_string_elem) {
+				// Register the item's element type so an in-body reassignment
+				// resolves the 16-byte pair width: the item never passes
+				// through a declaration build, so find_var_size can't see it
+				// (scoped_declarations is swapped out inside the body) — a
+				// fat-string `x = …` then stored only the ptr half, dropping
+				// the length half (at() read the stale slot len).
+				if (!status.variable_types) status.variable_types = new Map();
+				status.variable_types.set(item_name, type);
+			}
 		}
 
 		if (status.function_return_label) {
@@ -346,6 +356,7 @@ export default function build_for_loop_node(
 			const wb_list_name = list_name;
 			const wb_list_is_pointer = list_is_pointer;
 			const wb_shift = shift;
+			const wb_fat_string = is_fat_string_elem;
 			status.loop_writebacks![status.loop_writebacks.length - 1] = () => {
 				// Recompute element address into x9.
 				if (wb_list_is_pointer) {
@@ -363,6 +374,32 @@ export default function build_for_loop_node(
 					emit_asm(status, `mov x11, #${wb_element_size}\n`);
 					emit_asm(status, `mul x10, x10, x11\n`);
 					emit_asm(status, `add x9, x9, x10\n`);
+				}
+				if (wb_fat_string) {
+					// A string slot is heap-OWNED (the literal initializer
+					// strdup'd each row; the scope-exit walk frees them), so
+					// the writeback is the deep-copy store: strdup the item's
+					// bytes FIRST (the item is a borrow — this iteration it
+					// may still alias the slot, so the displaced free must
+					// not run before the copy), then reclaim the displaced
+					// row, then store the owned pair. A raw pair store would
+					// leak the displaced row and leave the slot aliasing
+					// bytes the item's own teardown frees. x9 is caller-saved
+					// — park it in x19 across the strdup/free calls.
+					emit_asm(status, `stp x19, x20, [sp, #-16]!\n`);
+					emit_asm(status, `mov x19, x9\n`);
+					emit_var_load(status, "x10", wb_item_name, 16);
+					emit_asm(status, `mov x0, x10\n`);
+					emit_asm(status, `mov x20, x11\n`);
+					emit_strdup(status);
+					emit_asm(status, `stp x0, xzr, [sp, #-16]!\n`);
+					emit_asm(status, `ldr x0, [x19]\n`);
+					emit_free(status);
+					emit_asm(status, `ldp x0, x9, [sp], #16\n`);
+					emit_asm(status, `str x0, [x19]\n`);
+					emit_asm(status, `str x20, [x19, #8]\n`);
+					emit_asm(status, `ldp x19, x20, [sp], #16\n`);
+					return;
 				}
 				if (wb_struct_type) {
 					const item_offset = status.stack_offsets!.get(wb_item_name);
@@ -388,10 +425,30 @@ export default function build_for_loop_node(
 			};
 		}
 
+		// A ref-for item over fat strings must stay SLOT-canonical for the
+		// writeback: a register-hinted reassignment inside the body (`x = "z"`)
+		// writes the promoted pair only, leaving the slot stale — the deep-copy
+		// writeback below would read the pre-assignment pair. Drop the item
+		// from the promotion map for the body build (assignments then land in
+		// the slot via emit_var_store's pair store) and restore it after.
+		const saved_item_alloc =
+			node.item_is_ref && is_fat_string_elem
+				? status.register_allocations?.get(item_name)
+				: undefined;
+		if (saved_item_alloc !== undefined) {
+			status.register_allocations!.delete(item_name);
+		}
+
 		build_block_with_cursor(node, nir?.body, status);
 
 		// Write the (possibly mutated) loop variable back into its array slot.
+		// (Before the item's promotion entry is restored — the writeback must
+		// read the slot the body just kept in sync.)
 		status.loop_writebacks![status.loop_writebacks.length - 1]?.();
+
+		if (saved_item_alloc !== undefined) {
+			status.register_allocations!.set(item_name, saved_item_alloc);
+		}
 
 		if (node.update) {
 			emit_asm(status, `${continue_label}:\n`);

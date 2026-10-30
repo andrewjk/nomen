@@ -182,7 +182,16 @@ export default function build_for_loop_node(
 				} else {
 					wb_target = `${list_name}[${idx_var}]`;
 				}
-				const wb_code = `${wb_target} = ${node.item.value};\n`;
+				// A string slot is heap-OWNED (the literal initializer strdup'd
+				// each row; the scope-exit walk frees them), so the writeback is
+				// the deep-copy store: reclaim the displaced row, strdup the
+				// item (a borrow — a rodata literal or the old slot's bytes).
+				// A raw pair store would leak the displaced row and leave the
+				// slot aliasing bytes the item's own teardown frees.
+				const wb_code =
+					element_type === "string"
+						? `{ nomen_string _wb_t = nomen_str_dup(${node.item.value}); free(${wb_target}.ptr); ${wb_target} = _wb_t; }\n`
+						: `${wb_target} = ${node.item.value};\n`;
 				ref_writeback = () => {
 					status.code += wb_code;
 				};

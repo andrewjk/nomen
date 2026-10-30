@@ -758,6 +758,23 @@ destroy to run the payload struct's `T_destroy` for owning payload structs
 the same for `Enum_copy`'s deep-copy direction. Touches MEMORY.md's enum
 ownership section when it lands.
 
+## `for ref x of strings` reassigning the item to a call result leaks the item's heap value (pre-existing)
+
+Recorded 2026-10-31 while fixing the Array-literal slot ownership (the
+".set frees rodata" item, fixed the same day). The shape:
+`for ref x of string_array { if cond { x = x.replace_first(...) } }` — the
+output is correct on both backends, but the auditor reports LEAK: 2 (one
+per reassigned iteration, byte-identical at main@b6b5e083). The loop item
+is not a scope-tracked local (the for builder addresses its slot directly
+and it never passes through a declaration build), so the fresh heap string
+a call-RHS stores into `x` has no scope-exit free; the writeback deep-copies
+it into the slot and the item's own copy dies with the frame. Literal-RHS
+reassignments don't leak (rodata owns nothing), which is why the
+`array_string_for_ref_owned_rows` test only pins the conditional literal
+shape. Fix shape: give the ref-for item a real scoped declaration (or track
+it like a heap-string local) so an owned RHS is reclaimed after the
+writeback — both backends.
+
 ## Donor-form `set` on a List of sub-8-field mv structs leaks on C (pre-existing; aarch64 side fixed by PERF_PLAN item 12)
 
 Recorded 2026-10-30 while landing PERF_PLAN item 12 (struct field-order
@@ -778,20 +795,3 @@ read/copy paths (clean on both backends) and keeps the donor-set shape out.
 Fix shape: audit the C store_T donor path's string/container reclaim for
 mixed-alignment elements the way the aarch64 walks now are, then pin the
 donor-set shape in `test/struct_field_packing.test.ts`.
-
-## `Array<string>` from an array LITERAL: `.set` frees rodata (pre-existing)
-
-Recorded 2026-10-30 while landing PERF_PLAN item 17c (`Array<T>.set`
-in-place producer store). The shape: `var arr = ["a", "b", "c"]` followed by
-`arr.set(1, s)` (or `arr[1] = s`) crashes on both backends — the array
-literal's `#init` shallow-copies the (ptr, len) pairs, so the slots hold
-pointers to the literal's rodata; `Array<string>.set`'s documented replace
-semantics free the displaced pointer unconditionally, i.e. `free()` on
-static storage (aarch64 aborts; C crashes later in the allocator). The
-in-place producer lowering frees the displaced slot the same way, so it
-inherits the bug rather than causing it. `Array.with(seed, n)` is the
-supported constructor (it strdups the seed per slot; item 17c's tests and
-bench use it). Fix shape: make the literal initializer own its slots
-(strdup per element, the way `Array.with` does) or mark literal-initialized
-slots non-owning and teach `set` to skip the displaced free for them — the
-former matches the `Array.with` ownership story and is the smaller change.
