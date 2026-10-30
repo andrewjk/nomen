@@ -377,6 +377,20 @@ export function anchor_heap_pointer(
 
 export function emit_heap_slots_cleanup_for_return(status: BuildStatus) {
 	const moved = status.moved ?? new Set<string>();
+	// `for ref x of strings` items: a return inside the loop body skips the
+	// writeback, so an owned pair stored mid-iteration (owns-flag set) has no
+	// consumer — free it under the flag. Registrations live exactly while the
+	// item's loop body builds, so returns outside never see the slot.
+	if (status.ref_item_flag_offsets?.size) {
+		for (const [item_name, flag_offset] of status.ref_item_flag_offsets) {
+			const skip = `.Lskip_rfit_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+			emit_asm(status, `ldr x0, [x29, #${flag_offset}]\n`);
+			emit_asm(status, `cbz x0, ${skip}\n`);
+			emit_var_load(status, "x0", item_name, 8);
+			emit_free(status);
+			emit_asm(status, `${skip}:\n`);
+		}
+	}
 	for (const scope of status.heap_cleanup_stack ?? []) {
 		for (const slot of scope.heap_slots) {
 			if (slot.var_name && moved.has(slot.var_name)) continue;

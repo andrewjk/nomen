@@ -27,6 +27,14 @@ export default function build_for_loop_node(
 	push_c_loop_frame(status);
 
 	let ref_writeback: (() => void) | undefined;
+	// The `for ref x of strings` item registered for this loop's body build
+	// (undefined for non-ref / non-string loops), and whether the name was
+	// ALREADY registered by an enclosing loop (a nested same-name loop must
+	// not drop the outer registration at its own exit — the outer body and
+	// writeback continue to use it, and C block scoping resolves the flag
+	// name to whichever loop's declaration is in scope there).
+	let registered_ref_item: string | undefined;
+	let registered_ref_item_nested = false;
 
 	if (node.item && node.list) {
 		if (node.list.node_type == "range") {
@@ -167,6 +175,15 @@ export default function build_for_loop_node(
 				emit_list_ref();
 				status.code += `[${idx_var}];\n`;
 			}
+			// The ref-for string item's runtime owns-flag: 0 = the item aliases
+			// the array row (just copied), 1 = a body assignment stored an
+			// owned value into it. Declared inside the loop braces so it is
+			// re-initialized every iteration (the reassignment may sit in a
+			// branch the iteration skips) and scoped per loop (nested
+			// same-name loops shadow cleanly in C).
+			if (node.item_is_ref && element_type === "string") {
+				status.code += `unsigned char _owned_${node.item.value} = 0;\n`;
+			}
 
 			// For `for ref x of arr`, build the write-back snippet that persists
 			// the (possibly mutated) loop variable back into its array slot.
@@ -188,13 +205,32 @@ export default function build_for_loop_node(
 				// item (a borrow — a rodata literal or the old slot's bytes).
 				// A raw pair store would leak the displaced row and leave the
 				// slot aliasing bytes the item's own teardown frees.
+				// RUNTIME OWNERSHIP: a body reassignment (`x = x.replace_first
+				// (...)`) stores a FRESH heap value into the item — strdup'ing
+				// it into the slot above leaked that value (one allocation per
+				// reassigned iteration). The `_owned_x` flag (declared at the
+				// loop head, reset every iteration, set by the assignment
+				// builder) says whether the item owns its pair: set → transfer
+				// the pair into the slot verbatim (no dup, no leak); clear →
+				// the item still aliases the row → today's strdup copy.
 				const wb_code =
 					element_type === "string"
-						? `{ nomen_string _wb_t = nomen_str_dup(${node.item.value}); free(${wb_target}.ptr); ${wb_target} = _wb_t; }\n`
+						? `{ if (_owned_${node.item.value}) { free(${wb_target}.ptr); ${wb_target} = ${node.item.value}; } else { nomen_string _wb_t = nomen_str_dup(${node.item.value}); free(${wb_target}.ptr); ${wb_target} = _wb_t; } }\n`
 						: `${wb_target} = ${node.item.value};\n`;
 				ref_writeback = () => {
 					status.code += wb_code;
 				};
+				if (element_type === "string") {
+					// Register the item for the body build: the assignment
+					// builder owns-ifies every store into it and maintains the
+					// flag; the return-path reclaim frees an owned pair under
+					// the flag. Restored after the body build (below) so the
+					// registration is live exactly while the item is in scope.
+					registered_ref_item_nested = status.ref_for_string_items?.has(node.item.value) ?? false;
+					if (!status.ref_for_string_items) status.ref_for_string_items = new Set();
+					status.ref_for_string_items.add(node.item.value);
+					registered_ref_item = node.item.value;
+				}
 			}
 		}
 	}
@@ -230,6 +266,12 @@ export default function build_for_loop_node(
 	leave_c_scope(status);
 	status.scoped_declarations = old_scoped_declarations;
 	status.deferred_frees = old_deferred_frees;
+	// The ref-for item's registration dies with its loop body: a return
+	// outside the loop must not free the (out-of-scope) item, and a nested
+	// build never sees a stale entry. An enclosing loop's registration stays.
+	if (registered_ref_item !== undefined && !registered_ref_item_nested) {
+		status.ref_for_string_items?.delete(registered_ref_item);
+	}
 }
 
 function is_enumerable_type(node: any, status: BuildStatus): boolean {

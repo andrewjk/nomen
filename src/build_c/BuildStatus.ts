@@ -655,6 +655,22 @@ export default interface BuildStatus {
 	 */
 	force_heap_strings?: Set<string>;
 	/**
+	 * `for ref x of string_array` items currently in scope (live exactly while
+	 * the loop body builds). The item slot aliases the array row until a body
+	 * assignment stores an owned value into it, so its ownership is RUNTIME
+	 * state: the C backend tracks it in a synthesized `unsigned char
+	 * _owned_<item>` flag declared at the loop head (reset every iteration),
+	 * aarch64 in a frame slot keyed here. The writeback reads the flag —
+	 * set: the item owns a fresh heap value, transfer it into the slot;
+	 * clear: the item still aliases the row, take today's strdup copy.
+	 */
+	ref_for_string_items?: Set<string>;
+	/**
+	 * aarch64 owns-flag frame offsets (from x29) for the live
+	 * `ref_for_string_items` — same contract as the C backend's flag byte.
+	 */
+	ref_item_flag_offsets?: Map<string, number>;
+	/**
 	 * Names reassigned anywhere in the current function body (any scope). A
 	 * variable operand of a string concat must NOT be constant-folded to its
 	 * declaration initializer once it is in this set: the reassigned runtime

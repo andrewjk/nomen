@@ -59,6 +59,13 @@ export default function build_for_loop_node(
 	}
 
 	const promoted: PromotedVar[] = [];
+	// The `for ref x of strings` owns-flag registration made by this loop
+	// (undefined otherwise). Restored after the body so the registration is
+	// live exactly while the item is in scope; a nested same-name loop
+	// restores the enclosing loop's flag offset (`outer_offset`).
+	let registered_ref_item_flag:
+		| { name: string; offset: number; outer_offset: number | undefined }
+		| undefined;
 	const saved_reg_allocs = status.register_allocations
 		? new Map(status.register_allocations)
 		: undefined;
@@ -349,6 +356,33 @@ export default function build_for_loop_node(
 		// element address and stores the (possibly mutated) item back. Called
 		// after the body and before break/continue.
 		if (node.item_is_ref) {
+			// A fat-string ref item gets a runtime owns-flag frame slot: the
+			// item aliases the array row until a body assignment stores an
+			// owned value into it (the reassignment may sit in a branch the
+			// iteration skips, so ownership is RUNTIME state — a static
+			// per-function mark would free the row in iterations whose branch
+			// didn't run). 1 = the item owns its pair: the writeback below
+			// transfers it into the slot (the strdup copy leaked that value —
+			// one allocation per reassigned iteration). The assignment
+			// builder maintains the flag; the return-path cleanup frees an
+			// owned pair under it (a return inside the body skips the
+			// writeback).
+			let item_flag_offset: number | undefined;
+			if (is_fat_string_elem && status.function_return_label) {
+				item_flag_offset = allocate_stack_space(status, 8, 8);
+				if (!status.ref_item_flag_offsets) status.ref_item_flag_offsets = new Map();
+				const outer_offset = status.ref_item_flag_offsets.get(item_name);
+				registered_ref_item_flag = {
+					name: item_name,
+					offset: item_flag_offset,
+					outer_offset,
+				};
+				status.ref_item_flag_offsets.set(item_name, item_flag_offset);
+				// Flag = 0 (the item aliases the row just copied). Emitted at
+				// the loop head — every iteration re-initializes it (the
+				// reassignment may sit in a branch the iteration skips).
+				emit_asm(status, `str xzr, [x29, #${item_flag_offset}]\n`);
+			}
 			const wb_struct_type = struct_type;
 			const wb_element_size = element_size;
 			const wb_item_name = item_name;
@@ -377,17 +411,37 @@ export default function build_for_loop_node(
 				}
 				if (wb_fat_string) {
 					// A string slot is heap-OWNED (the literal initializer
-					// strdup'd each row; the scope-exit walk frees them), so
-					// the writeback is the deep-copy store: strdup the item's
-					// bytes FIRST (the item is a borrow — this iteration it
-					// may still alias the slot, so the displaced free must
-					// not run before the copy), then reclaim the displaced
-					// row, then store the owned pair. A raw pair store would
-					// leak the displaced row and leave the slot aliasing
-					// bytes the item's own teardown frees. x9 is caller-saved
-					// — park it in x19 across the strdup/free calls.
+					// strdup'd each row; the scope-exit walk frees them), so the
+					// writeback must leave the slot owning an independent pair —
+					// a raw pair store would leak the displaced row and leave the
+					// slot aliasing bytes the item's own teardown frees. TWO
+					// cases, selected on the item's runtime owns-flag:
+					// - flag set: the item OWNS a fresh heap pair (a body
+					//   assignment stored a call/op result) — transfer it into
+					//   the slot verbatim: reclaim the displaced row, store the
+					//   pair. No strdup (the copy leaked one allocation per
+					//   reassigned iteration before the flag existed).
+					// - flag clear: the item still aliases the slot row (a borrow
+					//   — a rodata literal or the old slot's bytes) — strdup the
+					//   item's bytes FIRST (the displaced free must not run
+					//   before the copy: this iteration the item aliases the
+					//   row), then reclaim the displaced row, then store the
+					//   owned pair.
+					// x9 is caller-saved — park it in x19 across the strdup/free
+					// calls; x20 parks the flag word / the item's len half.
+					// Labels are fresh per emission: break/continue emit this
+					// callback before their jumps AND the loop bottom emits it —
+					// one copy per site, so a loop-counter label would collide.
+					const transfer_label = `.wb_transfer_${(status.label_counter =
+						(status.label_counter ?? 0) + 1)}`;
+					const done_label = `.wb_done_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
 					emit_asm(status, `stp x19, x20, [sp, #-16]!\n`);
 					emit_asm(status, `mov x19, x9\n`);
+					if (item_flag_offset !== undefined) {
+						emit_asm(status, `ldr x20, [x29, #${item_flag_offset}]\n`);
+						emit_asm(status, `cbnz x20, ${transfer_label}\n`);
+					}
+					// Alias path: deep-copy the item into the slot.
 					emit_var_load(status, "x10", wb_item_name, 16);
 					emit_asm(status, `mov x0, x10\n`);
 					emit_asm(status, `mov x20, x11\n`);
@@ -398,6 +452,19 @@ export default function build_for_loop_node(
 					emit_asm(status, `ldp x0, x9, [sp], #16\n`);
 					emit_asm(status, `str x0, [x19]\n`);
 					emit_asm(status, `str x20, [x19, #8]\n`);
+					if (item_flag_offset !== undefined) {
+						emit_asm(status, `b ${done_label}\n`);
+						// Owned path: transfer the item's pair into the slot.
+						emit_asm(status, `${transfer_label}:\n`);
+						emit_asm(status, `ldr x0, [x19]\n`);
+						emit_free(status);
+						// emit_free's call clobbers every caller-saved register —
+						// load the pair AFTER it (x19 is callee-saved and parked).
+						emit_var_load(status, "x10", wb_item_name, 16);
+						emit_asm(status, `str x10, [x19]\n`);
+						emit_asm(status, `str x11, [x19, #8]\n`);
+						emit_asm(status, `${done_label}:\n`);
+					}
 					emit_asm(status, `ldp x19, x20, [sp], #16\n`);
 					return;
 				}
@@ -491,6 +558,19 @@ export default function build_for_loop_node(
 	status.buffer_data_cache = saved_buffer_cache;
 	status.buffer_fold_cache = saved_fold_cache;
 	status.array_ptr_cache = saved_array_cache;
+	// The ref-for item's flag registration dies with its loop body (a return
+	// outside the loop must not free the out-of-scope item); a nested
+	// same-name loop restores the enclosing loop's flag offset.
+	if (registered_ref_item_flag !== undefined) {
+		if (registered_ref_item_flag.outer_offset !== undefined) {
+			status.ref_item_flag_offsets!.set(
+				registered_ref_item_flag.name,
+				registered_ref_item_flag.outer_offset,
+			);
+		} else {
+			status.ref_item_flag_offsets?.delete(registered_ref_item_flag.name);
+		}
+	}
 	status.loop_labels.pop();
 	status.loop_writebacks?.pop();
 	exit_scope_frame(status, old_scoped_declarations);

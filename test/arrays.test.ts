@@ -955,4 +955,131 @@ Console.write("\\{arr.at(0).length}\\{arr.at(1).length}\\{arr.at(2).length}")
 `;
 		await build_and_check_output(input, "array_string_for_ref_owned_rows", "[a|cc|cc] 122");
 	});
+
+	// The call-RHS companion of the test above: a reassignment whose RHS is a
+	// FRESH heap string (`x = x.replace_first(...)`, a concat) stores an owned
+	// pair into the item slot. The writeback's strdup-copy left that value
+	// with no owner — one leaked allocation per reassigned iteration (LEAK: 2
+	// below, audit-on). The item now carries a runtime owns-flag: set by the
+	// assignment (the value may land in a branch the iteration skips, so
+	// ownership is per-iteration runtime state, not a static mark), and the
+	// writeback transfers the owned pair into the slot instead of copying.
+	// Flag-clear iterations keep the strdup copy (the item still aliases the
+	// row). The displaced-row free in a reassignment is flag-guarded too —
+	// an unconditional one freed the aliased row (a stale free at the
+	// writeback). Audit-on fails on any leak / stale-free report.
+	test("for ref reassigning the item to a call result transfers the owned pair", async () => {
+		const input = `
+var arr = ["a", "b", "c"]
+var n = 0
+for ref x of arr {
+	if n > 0 {
+		x = x.replace_first("\\{x}", "\\{x}!")
+	}
+	n = n + 1
+}
+Console.write("[")
+Console.write(arr.at(0))
+Console.write("|")
+Console.write(arr.at(1))
+Console.write("|")
+Console.write(arr.at(2))
+Console.write("] ")
+Console.write("\\{arr.at(0).length}\\{arr.at(1).length}\\{arr.at(2).length}")
+`;
+		await build_and_check_output(input, "array_string_for_ref_call_rhs_transfer", "[a|b!|c!] 122");
+	});
+
+	// Every RHS class into the item must end up owned (a literal or a deep
+	// copy is strdup'd, a fresh-heap RHS stores directly), and the
+	// displaced-row free stays valid across MIXED bodies: a literal iteration
+	// following a call iteration must not free the row the item aliases. (A
+	// bare `x = donor` is a checker error — value-copying an owned string
+	// through the ref item is rejected, so the donor shape enters as a
+	// `.copy()`.) Audit-on fails on any leak / stale-free report.
+	test("for ref mixed RHS classes keep slot ownership exact", async () => {
+		const input = `
+var arr = ["a", "b", "c"]
+var donor = "dd"
+var n = 0
+for ref x of arr {
+	if n == 0 {
+		x = x + "aa"
+	}
+	if n == 1 {
+		x = donor.copy()
+	}
+	if n == 2 {
+		x = "cc"
+	}
+	n = n + 1
+}
+Console.write("[")
+Console.write(arr.at(0))
+Console.write("|")
+Console.write(arr.at(1))
+Console.write("|")
+Console.write(arr.at(2))
+Console.write("] ")
+Console.write("\\{arr.at(0).length}\\{arr.at(1).length}\\{arr.at(2).length}")
+`;
+		await build_and_check_output(input, "array_string_for_ref_mixed_rhs", "[aaa|dd|cc] 322");
+	});
+
+	// break/continue emit the writeback before jumping: an owned pair stored
+	// before the jump must land in the slot (transfer), and iterations after
+	// a continue must re-alias the next row (the flag resets every iteration
+	// at the loop head).
+	test("for ref owned pair survives break and continue writebacks", async () => {
+		const input = `
+var arr = ["a", "b", "c", "d"]
+var n = 0
+for ref x of arr {
+	n = n + 1
+	if n == 2 {
+		x = x + "b"
+		continue
+	}
+	if n == 4 {
+		x = x + "d"
+		break
+	}
+}
+Console.write("[")
+Console.write(arr.at(0))
+Console.write("|")
+Console.write(arr.at(1))
+Console.write("|")
+Console.write(arr.at(2))
+Console.write("|")
+Console.write(arr.at(3))
+Console.write("]")
+`;
+		await build_and_check_output(input, "array_string_for_ref_break_continue", "[a|bb|c|dd]");
+	});
+
+	// A return inside the body skips the writeback entirely: the item's owned
+	// pair (a call result stored earlier in the iteration) is reclaimed under
+	// the owns-flag on the return path, and the slot keeps what earlier
+	// writebacks transferred.
+	test("for ref return inside the body reclaims an owned pair", async () => {
+		const input = `
+func take = (out string) {
+	var arr = ["a", "b", "c"]
+	var n = 0
+	for ref x of arr {
+		n = n + 1
+		if n == 2 {
+			x = x + "b"
+		}
+		if n == 3 {
+			return arr.at(0) + arr.at(1)
+		}
+	}
+	return arr.at(2)
+}
+Console.write(take())
+`;
+		await build_and_check_output(input, "array_string_for_ref_return_owned", "ab");
+	});
 });

@@ -95,6 +95,16 @@ export function pop_c_loop_frame(status: BuildStatus) {
  * serves the fall-through). Deferred frees are handled like build_auto_free.
  */
 export function reclaim_all_c_scopes(status: BuildStatus) {
+	// `for ref x of strings` items: a return inside the loop body leaves the
+	// item owning a fresh heap value (an owned RHS stored mid-iteration, flag
+	// set) with no writeback to consume it — free it under its owns-flag.
+	// Registrations are live exactly while the item's loop body builds, so a
+	// return outside the loop never sees the (out-of-scope) flag variable.
+	if (status.ref_for_string_items?.size) {
+		for (const item_name of status.ref_for_string_items) {
+			status.code += `if (_owned_${item_name}) { free(${item_name}.ptr); }\n`;
+		}
+	}
 	const stack = status.c_scope_stack;
 	if (!stack?.length) {
 		free_scoped_declarations(status, status.scoped_declarations, true);

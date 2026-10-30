@@ -54,6 +54,7 @@ import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_malloc } from "./utils/audit.ts";
 import { emit_free, emit_strdup } from "./utils/audit.ts";
 import {
+	all_scope_frames,
 	anchor_heap_pointer,
 	clear_heap_string_fields,
 	consume_anchor_slot,
@@ -2060,6 +2061,21 @@ export default function build_assignment_node(
 			}
 		} else {
 			const lhs_is_heap = status.heap_strings?.has(name);
+			// A `for ref x of strings` item (registered while its loop body
+			// builds; a declared local of the same name resolves through its
+			// declaration and never maps to the flag): its displaced-value
+			// free below is guarded on the runtime owns-flag instead of this
+			// static mark. The reassignment may sit in a branch the iteration
+			// skips — a flag-0 item still aliases the array row, and an
+			// unconditional free would reclaim the row under the slot's feet
+			// (the writeback's displaced-row free would then release a stale
+			// pointer).
+			const ref_item_shadowed = all_scope_frames(status).some((frame) =>
+				frame.some((d) => d.name === name),
+			);
+			const ref_item_flag_offset = ref_item_shadowed
+				? undefined
+				: status.ref_item_flag_offsets?.get(name);
 			// Fast path: assignment to a register-allocated float var from a
 			// float expression. The default assignment codegen builds the RHS
 			// into x0 (the float op emitting `fmov x0, d0`) then stores it
@@ -2192,9 +2208,22 @@ export default function build_assignment_node(
 				emit_asm(status, `str x0, [sp, #-16]!\n`);
 			}
 			if (lhs_is_heap) {
-				emit_var_load(status, "x0", name, 8);
-				emit_free(status);
-				status.heap_strings!.delete(name);
+				if (ref_item_flag_offset !== undefined) {
+					// Runtime owns-flag guard: free the displaced pair only
+					// when the item actually owns it this iteration.
+					const skip_disp = `.Lskip_ref_disp_${(status.label_counter =
+						(status.label_counter ?? 0) + 1)}`;
+					emit_asm(status, `ldr x0, [x29, #${ref_item_flag_offset}]\n`);
+					emit_asm(status, `cbz x0, ${skip_disp}\n`);
+					emit_var_load(status, "x0", name, 8);
+					emit_free(status);
+					status.heap_strings!.delete(name);
+					emit_asm(status, `${skip_disp}:\n`);
+				} else {
+					emit_var_load(status, "x0", name, 8);
+					emit_free(status);
+					status.heap_strings!.delete(name);
+				}
 			}
 			if (saves_fat_pair) {
 				emit_asm(status, `ldp x0, x1, [sp], #16\n`);
@@ -2364,6 +2393,25 @@ export default function build_assignment_node(
 			}
 			emit_asm(status, `\n`);
 			emit_var_store(status, "x0", name, size);
+			if (ref_item_flag_offset !== undefined) {
+				// Mirror the ownership this store established into the runtime
+				// owns-flag the writeback reads. After the classification
+				// chain above, `heap_strings.has(name)` is exactly "the item
+				// now owns its pair" — the owned-store arms re-added the mark,
+				// and the "a target that OWNED heap before this assignment
+				// must still own heap after it" catch-all re-established it
+				// for a non-heap store into a may-own target (that catch-all
+				// strdups an owned copy, so the mirror below is true for it
+				// too). A raw non-owned store (a rodata literal into a
+				// never-owned item) clears the flag: the writeback keeps its
+				// strdup copy.
+				if (status.heap_strings?.has(name)) {
+					emit_asm(status, `mov x0, #1\n`);
+				} else {
+					emit_asm(status, `mov x0, xzr\n`);
+				}
+				emit_asm(status, `str x0, [x29, #${ref_item_flag_offset}]\n`);
+			}
 		}
 	} else if (node.left_value.node_type === "access") {
 		const access = node.left_value as AccessNode;

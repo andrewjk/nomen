@@ -19,7 +19,10 @@ import {
 } from "../build_common/mono_name.ts";
 import { call_result_type, is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
-import { is_string_borrow } from "../build_common/string_return_analysis.ts";
+import {
+	is_call_site_borrow_accessor,
+	is_string_borrow,
+} from "../build_common/string_return_analysis.ts";
 import { move_on_last_use_enabled } from "../check/utils/last_use.ts";
 import type { NirExpr } from "../nir/nir.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
@@ -688,6 +691,65 @@ export default function build_assignment_node(
 	function field_access_node_name(node: AssignmentNode): string {
 		const access = (node.left_value as AccessNode).access as AccessFieldNode;
 		return access.name;
+	}
+
+	// `for ref x of string_array` item reassignment: the item is a loop-scoped
+	// slot with a runtime owns-flag (`_owned_x`, declared at the loop head —
+	// see build_for_loop_node). Every stored value must be OWNED: a fresh-heap
+	// RHS (a call/op result) stores directly; anything else (a rodata literal,
+	// another variable's pair, a container borrow view) is strdup'd into an
+	// independent copy. The displaced value is freed only when the flag says
+	// the item owns (an un-reassigned iteration still aliases the array row —
+	// freeing it would reclaim the row under the slot's feet). The flag then
+	// turns 1, and the writeback transfers the owned pair into the slot
+	// instead of strdup'ing it (which leaked one allocation per reassigned
+	// iteration). Registered only while the loop body builds, and a declared
+	// local of the same name (a shadowing `var x` in the body) resolves
+	// through its declaration and never reaches this arm.
+	if (
+		!node.swap &&
+		!node.operator &&
+		node.left_value.node_type === "value" &&
+		!find_decl_in_c_scopes(status, (node.left_value as ValueNode).value) &&
+		status.ref_for_string_items?.has((node.left_value as ValueNode).value)
+	) {
+		const lhs_name = (node.left_value as ValueNode).value;
+		// Fresh-heap classification (shape-based — the access/call node's
+		// cached `.type` is not always stamped here, and a dup wrapper around
+		// an already-owned call result would abandon the call's own return):
+		// a concat/interpolation, a function call, or a non-borrow-accessor
+		// method call yields an owned value the item can store directly;
+		// anything else (a rodata literal, another variable's pair, a
+		// container borrow view) is strdup'd into an independent copy.
+		const rhs_fresh = (() => {
+			const rhs = node.right_value;
+			const type_name = (rhs as unknown as { type?: { name?: string } }).type?.name;
+			if (type_name !== undefined && type_name !== "string") return false;
+			if (rhs.node_type === "op" || rhs.node_type === "func_call") return true;
+			if (rhs.node_type === "access") {
+				const access = (rhs as AccessNode).access;
+				if (access.node_type !== "access_func") return false;
+				const fn = access as AccessFunctionCallNode;
+				return !(!fn.owned_return && is_call_site_borrow_accessor(fn.name));
+			}
+			return false;
+		})();
+		// A `mv` RHS degrades to a value copy here: the item takes an
+		// independent owned duplicate and the donor keeps its own cleanup —
+		// no transfer bookkeeping through a slot that isn't a tracked local.
+		const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+		const temp = `_ref_item_${id}`;
+		status.code += `nomen_string ${temp} = `;
+		if (!rhs_fresh) status.code += `nomen_str_dup(`;
+		emit_rhs_value(node.right_value, nir_rhs, status);
+		if (!rhs_fresh) status.code += `)`;
+		status.code += `;\n`;
+		// Temp-first: the RHS expression may read the item (`x = x + "!"`), so
+		// the displaced free runs only after the copy is materialized.
+		status.code += `if (_owned_${lhs_name}) { free(${lhs_name}.ptr); }\n`;
+		status.code += `${lhs_name} = ${temp};\n`;
+		status.code += `_owned_${lhs_name} = 1;\n`;
+		return;
 	}
 
 	// Borrowed string RHS (e.g. `filename = init.args.at(1)`): the LHS gives up
