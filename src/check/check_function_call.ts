@@ -1664,8 +1664,19 @@ export default function check_function_call(
 		const in_place_store_struct = target_type?.name
 			? status.structs.find((s) => s.name === target_type?.name)
 			: undefined;
+		// An `Array<T>` receiver (`Array.with(...)` results, array literals,
+		// and `T[N]` locals) parses to the ELEMENT type with `is_array` — there
+		// is no `Array` struct instance to look methods up on, so the slot
+		// contract is the builtin element-slot one (the backends compute the
+		// element's address inline; heap and inline array storage both
+		// supported). This is the same in-place store contract as the
+		// List/Buffer families: `set(i, f(x))` constructs the value argument
+		// straight into element i, reclaiming the displaced slot first.
+		const in_place_store_is_array = !!target_type?.is_array;
 		const in_place_store_declares = (prim: string): boolean =>
-			!!in_place_store_struct?.functions.some((f) => f.name === prim && f.has_body);
+			in_place_store_is_array
+				? prim === "slot_ptr"
+				: !!in_place_store_struct?.functions.some((f) => f.name === prim && f.has_body);
 		const in_place_store_receiver_ok =
 			in_statement_position(node, status) &&
 			!!self_value &&
@@ -1677,7 +1688,14 @@ export default function check_function_call(
 		const in_place_store_kind: "slot_ptr" | "set_slot_ptr" | undefined =
 			func.name === "set" &&
 			func_param === func.params[func.params.length - 1] &&
-			func_param.is_moved &&
+			// The mv requirement belongs to the container families whose `set`
+			// takes ownership (List/Buffer/Map store a `mv` value and deep-copy
+			// it). Array.set takes a BORROW and deep-copies into the slot; the
+			// stamped lowering bypasses the callee entirely (the producer's
+			// result IS the slot's new value, the displaced value reclaimed
+			// first), so the parameter's declaration mode is irrelevant there
+			// — the container's slot contract is what the splice relies on.
+			(func_param.is_moved || in_place_store_is_array) &&
 			!func_param.is_variadic &&
 			node.params.length === func.params.length - 1 &&
 			in_place_store_receiver_ok

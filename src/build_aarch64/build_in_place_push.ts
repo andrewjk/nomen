@@ -13,8 +13,35 @@ import type ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
 import { emit_free } from "./utils/audit.ts";
 import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
-import { allocate_stack_space, emit_var_address } from "./utils/stack_var.ts";
-import { get_field_offset } from "./utils/struct_layout.ts";
+import {
+	allocate_stack_space,
+	emit_deref_var_address,
+	emit_var_address,
+	is_local_ref_var,
+} from "./utils/stack_var.ts";
+import { get_field_offset, get_struct_size } from "./utils/struct_layout.ts";
+
+/**
+ * Load a heap `Array<T>` receiver's ELEMENT BASE into x0 — the pointer every
+ * Array method call site passes (`[[local]] + 8`: the block's first word is
+ * the length). Mirrors the inline .at/.set receiver branches in
+ * build_access_node; the in-place store stamps only bare-local receivers, so
+ * the param/field-path branches cannot reach here, but the ref-local and
+ * heap-local shapes still can.
+ */
+function emit_array_element_base(status: BuildStatus, name: string): void {
+	if (is_local_ref_var(name, status)) {
+		emit_deref_var_address(status, "x0", name);
+		return;
+	}
+	if (status.heap_array_vars?.has(name)) {
+		emit_var_address(status, "x0", name);
+		emit_asm(status, `ldr x0, [x0]\n`);
+		emit_asm(status, `add x0, x0, #8\n`);
+		return;
+	}
+	emit_var_address(status, "x0", name);
+}
 
 /**
  * The in-place construction guarantee, container-push tranche.
@@ -255,6 +282,7 @@ export function build_in_place_store(
 		recv_mono,
 		elem_type,
 		status.structs as readonly StructNode[],
+		!!recv_type?.is_array,
 	);
 	if (!facts) return false;
 
@@ -264,7 +292,14 @@ export function build_in_place_store(
 	//    clobbers x0); each argument's value parks in its own frame slot so
 	//    the register loads read them back in call order.
 	const recv_slot = allocate_stack_space(status, 8);
-	emit_var_address(status, "x0", facts.receiver);
+	if (facts.receiver_is_array) {
+		// A heap Array<T> receiver's ELEMENT BASE: the same computation every
+		// Array method call site emits (the local holds the block pointer;
+		// the length word precedes the elements).
+		emit_array_element_base(status, facts.receiver);
+	} else {
+		emit_var_address(status, "x0", facts.receiver);
+	}
 	emit_asm(status, `str x0, [x29, #${recv_slot}]\n`);
 	const arg_slots: { slot: number; kind: "scalar" | "string" | "struct" }[] = [];
 	for (const early of access_func.params.slice(0, idx)) {
@@ -306,10 +341,19 @@ export function build_in_place_store(
 			reg += 1;
 		}
 	}
-	const prim =
-		kind === "set_slot_ptr" ? `${facts.list_mono}_set_slot_ptr` : `${facts.list_mono}_slot_ptr`;
-	emit_asm(status, `bl ${prim}\n`);
 	const slot = allocate_stack_space(status, 8);
+	if (facts.receiver_is_array) {
+		// Array: the element address inline — x0 holds the element base, x1
+		// the index (the only early argument). No core slot method exists for
+		// the builtin array types.
+		const elem_stride = facts.elem_is_string ? 16 : get_struct_size(facts.elem_name, status);
+		emit_asm(status, `mov x3, #${elem_stride}\n`);
+		emit_asm(status, `madd x0, x1, x3, x0\n`);
+	} else {
+		const prim =
+			kind === "set_slot_ptr" ? `${facts.list_mono}_set_slot_ptr` : `${facts.list_mono}_slot_ptr`;
+		emit_asm(status, `bl ${prim}\n`);
+	}
 	emit_asm(status, `str x0, [x29, #${slot}]\n`);
 
 	// 2. The displaced-value reclaim (slot_ptr kind only — Map's primitive

@@ -7,25 +7,25 @@ originally unmeasured — items 2, 3, 4 (partially), 5, 6, 7, 8, 9, 10, 11, 12,
 and 14 have since landed with measurements in place (items marked LANDED carry
 them; the rest carry expected wins and the receipts they rest on).
 
-| #   | Item                                                                                                                                                                                                                                    | Backends       | Effort | Receipt                                          |
-| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | ------ | ------------------------------------------------ |
-| 1   | Faster allocator (slab/bump class allocation)                                                                                                                                                                                           | both           | M      | PERF.md "Large"; ASM_TODO "largest unclaimed"    |
-| 2   | ~~In-place push for constructors~~ **LANDED Oct 2026: −55% / −58% on the shape**                                                                                                                                                        | both           | S      | shape micro-bench, interleaved medians (below)   |
-| 3   | ~~Move-on-last-use for structs~~ **LANDED Oct 2026: −20% / −29% on the shape**                                                                                                                                                          | both           | S–M    | shape micro-bench, interleaved medians (below)   |
-| 4   | ~~Borrow-returning reads (Map `get_ptr`, `at_view`)~~ **PARTIALLY LANDED Oct 2026: Map slot borrow, −79% / −98% on the borrow shape, −48% probe fusion**                                                                                | both           | M      | shape micro-benches, interleaved medians (below) |
-| 5   | ~~Json ownership copies~~ **LANDED Oct 2026: −26% / −13% on the ownership shape, −22% / −12% json-serde**                                                                                                                               | both           | S      | measured 0.7.0 regression +61% / +103%           |
-| 6   | ~~In-place store (`set`/`insert`/`add`/`alloc`)~~ **LANDED Oct 2026: −50% / −56% on the pure store shape, −64% Map replace**                                                                                                            | both           | M      | shape micro-benches, interleaved medians (below) |
-| 7   | ~~Enum payload in-place construction~~ **LANDED Oct 2026: −45% / −8% on the payload shapes (aarch64; C take-variant)**                                                                                                                  | both           | S–M    | shape micro-benches, interleaved medians (below) |
-| 8   | ~~Regex/String O(n²) accumulators~~ **LANDED Oct 2026: −92% / −91% match accumulator, −65% / −58% replace_all skip loop, −33% / −40% String.replace_all, −28% / −14% array to_string**                                                  | both           | S      | shape micro-benches, interleaved medians (below) |
-| 9   | ~~Map/Set stored hash (Swiss-table tricks)~~ **LANDED Oct 2026: −35% / −52% probe shape, −21% / −49% string build+remove, −19% / −33% Set build, −22% aarch64 int rehash; int-keyed hit paths +2–10% (below)**                          | both           | M      | shape micro-benches, interleaved medians (below) |
-| 10  | ~~StringBuilder numeric appends + 1-pass interp~~ **LANDED Oct 2026: −80% / −79% interp, −76% / −75% numeric append, −66% / −70% new-spelling**                                                                                         | both           | S      | shape micro-benches, interleaved medians (below) |
-| 11  | ~~Devirtualization of trait calls~~ **LANDED Oct 2026: −12% realistic callee / −31% trait-default (C), tiny-callee loop folds outright; aarch64 inline splice −19% (below)**                                                            | both           | M      | shape micro-bench, interleaved medians (below)   |
-| 12  | ~~Struct field-order / padding~~ **LANDED Oct 2026: −10% / −12% shape (aarch64 / C), −20% peak RSS on the shape; standard suite flat**                                                                                                  | both           | S      | shape micro-bench, interleaved medians (below)   |
-| 13  | ~~Variable-mode enums~~ **PARTIALLY LANDED Oct 2026: case types (`Enum.case`) — −53% / −31% time, −49% RSS on the shape; variable-stride arrays + generic enums remain**                                                                | both           | L      | shape micro-bench, interleaved medians (below)   |
-| 14  | ~~Buffer word pairs (T_SIZE ≤ 16)~~ **LANDED Oct 2026: −12% / flat shape (aarch64 / C — clang already inlined it); json-serde flat (no 16-byte element exists)**                                                                        | mostly aarch64 | S      | shape micro-bench, interleaved medians (below)   |
-| 15  | aarch64 codegen receipts (splice model, folds…)                                                                                                                                                                                         | aarch64        | S–M    | measured regressions to reclaim                  |
-| 16  | Async paths audit                                                                                                                                                                                                                       | both           | ?      | unexplored, unmeasured                           |
-| 17  | ~~Minor batch~~ **PARTIALLY LANDED Oct 2026: `List.remove_at_or_panic` bulk tail move −91% / −61% (17a); StableList tail push direct view store −14% aarch64 / flat C (17b); `Array.set` in-place and `json_parse_string` scan remain** | both           | S      | assorted                                         |
+| #   | Item                                                                                                                                                                                                                                                                   | Backends       | Effort | Receipt                                          |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | ------ | ------------------------------------------------ |
+| 1   | Faster allocator (slab/bump class allocation)                                                                                                                                                                                                                          | both           | M      | PERF.md "Large"; ASM_TODO "largest unclaimed"    |
+| 2   | ~~In-place push for constructors~~ **LANDED Oct 2026: −55% / −58% on the shape**                                                                                                                                                                                       | both           | S      | shape micro-bench, interleaved medians (below)   |
+| 3   | ~~Move-on-last-use for structs~~ **LANDED Oct 2026: −20% / −29% on the shape**                                                                                                                                                                                         | both           | S–M    | shape micro-bench, interleaved medians (below)   |
+| 4   | ~~Borrow-returning reads (Map `get_ptr`, `at_view`)~~ **PARTIALLY LANDED Oct 2026: Map slot borrow, −79% / −98% on the borrow shape, −48% probe fusion**                                                                                                               | both           | M      | shape micro-benches, interleaved medians (below) |
+| 5   | ~~Json ownership copies~~ **LANDED Oct 2026: −26% / −13% on the ownership shape, −22% / −12% json-serde**                                                                                                                                                              | both           | S      | measured 0.7.0 regression +61% / +103%           |
+| 6   | ~~In-place store (`set`/`insert`/`add`/`alloc`)~~ **LANDED Oct 2026: −50% / −56% on the pure store shape, −64% Map replace**                                                                                                                                           | both           | M      | shape micro-benches, interleaved medians (below) |
+| 7   | ~~Enum payload in-place construction~~ **LANDED Oct 2026: −45% / −8% on the payload shapes (aarch64; C take-variant)**                                                                                                                                                 | both           | S–M    | shape micro-benches, interleaved medians (below) |
+| 8   | ~~Regex/String O(n²) accumulators~~ **LANDED Oct 2026: −92% / −91% match accumulator, −65% / −58% replace_all skip loop, −33% / −40% String.replace_all, −28% / −14% array to_string**                                                                                 | both           | S      | shape micro-benches, interleaved medians (below) |
+| 9   | ~~Map/Set stored hash (Swiss-table tricks)~~ **LANDED Oct 2026: −35% / −52% probe shape, −21% / −49% string build+remove, −19% / −33% Set build, −22% aarch64 int rehash; int-keyed hit paths +2–10% (below)**                                                         | both           | M      | shape micro-benches, interleaved medians (below) |
+| 10  | ~~StringBuilder numeric appends + 1-pass interp~~ **LANDED Oct 2026: −80% / −79% interp, −76% / −75% numeric append, −66% / −70% new-spelling**                                                                                                                        | both           | S      | shape micro-benches, interleaved medians (below) |
+| 11  | ~~Devirtualization of trait calls~~ **LANDED Oct 2026: −12% realistic callee / −31% trait-default (C), tiny-callee loop folds outright; aarch64 inline splice −19% (below)**                                                                                           | both           | M      | shape micro-bench, interleaved medians (below)   |
+| 12  | ~~Struct field-order / padding~~ **LANDED Oct 2026: −10% / −12% shape (aarch64 / C), −20% peak RSS on the shape; standard suite flat**                                                                                                                                 | both           | S      | shape micro-bench, interleaved medians (below)   |
+| 13  | ~~Variable-mode enums~~ **PARTIALLY LANDED Oct 2026: case types (`Enum.case`) — −53% / −31% time, −49% RSS on the shape; variable-stride arrays + generic enums remain**                                                                                               | both           | L      | shape micro-bench, interleaved medians (below)   |
+| 14  | ~~Buffer word pairs (T_SIZE ≤ 16)~~ **LANDED Oct 2026: −12% / flat shape (aarch64 / C — clang already inlined it); json-serde flat (no 16-byte element exists)**                                                                                                       | mostly aarch64 | S      | shape micro-bench, interleaved medians (below)   |
+| 15  | aarch64 codegen receipts (splice model, folds…)                                                                                                                                                                                                                        | aarch64        | S–M    | measured regressions to reclaim                  |
+| 16  | Async paths audit                                                                                                                                                                                                                                                      | both           | ?      | unexplored, unmeasured                           |
+| 17  | ~~Minor batch~~ **PARTIALLY LANDED Oct 2026: `List.remove_at_or_panic` bulk tail move −91% / −61% (17a); StableList tail push direct view store −14% aarch64 / flat C (17b); `Array.set` in-place producer store −51% / −48% (17c); `json_parse_string` scan remains** | both           | S      | assorted                                         |
 
 ## 1. Faster allocator — slab/bump the class-allocation path
 
@@ -1362,6 +1362,7 @@ both-backend territory nobody has measured.
   **LANDED Oct 2026: −14% aarch64 / flat C on the tail-push shape (17b below).**
 - `Array<T>.set` for strings does `free(old); strdup(new)` per store; an
   in-place variant would let a producer write the slot directly.
+  **LANDED Oct 2026: −51% / −48% on the producer-store shape (17c below).**
 - `json_parse_string` appends per byte; a scan-to-next-escape + bulk append
   would help parse-heavy workloads.
 
@@ -1494,6 +1495,75 @@ collects the elision.
 stage and is untouched. `StableList.copy` still pushes element-by-element
 through `at` + `push` (load_T + store per element); a bulk `Buffer` view copy
 would apply but is a different shape.
+
+### 17c. `Array<T>.set` in-place producer store — LANDED (Oct 2026)
+
+**What landed.** The in-place STORE contract (item 6) extended to heap
+`Array<T>` receivers: `arr.set(i, f(x))` where f's result type is the element
+type now constructs f's result straight into element i — no `_param_N` temp
+home, no callee `free(old); strdup(new)`, no temp free at scope exit (2
+mallocs + 1 free per store become 1 malloc, plus the displaced-value free both
+lowerings owe).
+
+- **Checker** (`src/check/check_function_call.ts`): an `Array<T>` receiver
+  parses to the ELEMENT type with `is_array` (there is no container struct
+  instance to look a slot primitive up on), so the store gate gained an array
+  branch: `slot_ptr` is the builtin element-slot contract. Array.set's value
+  parameter is a BORROW (`T value`, not `mv`), and the stamped lowering never
+  runs the callee — the producer's result IS the slot's new value and the
+  displaced value is reclaimed first — so the `mv` requirement is relaxed for
+  array receivers only. The `in_place_store_receiver_ok` rules (bare local,
+  statement position) are unchanged.
+- **aarch64** (`src/build_aarch64/build_in_place_push.ts`): the splice
+  computes the element base with the Array receiver convention
+  (`[[local]] + 8` for a heap array block — the length word precedes the
+  elements; the local's own address for inline storage) and the slot address
+  inline (`madd base, index, stride`), then reclaims and constructs as the
+  List/Buffer splice already did. No core slot primitive is needed.
+- **C** (`src/build_c/build_access_node.ts`): the splice emits the address as
+  an expression — `((T*)((char*)arr + sizeof(struct Array_<T>))) + i` for a
+  heap array local, `((T*)arr) + i` for inline storage — followed by the same
+  displaced reclaim and the producer-call assignment.
+- `in_place_push_facts` carries a `receiver_is_array` fact (and derives the
+  `Array_<elem>` mono name, since the parsed type's name is the element).
+
+Three tests in `test/array_in_place_set.test.ts` (runtime: six producer stores
+into an `Array.with`-built string array, then a borrowed-local control store —
+both backends, audit on; emitted-code pins: the aarch64 inline `madd` slot +
+reclaim + pair store with no `Array_string_slot_ptr`, the C slot expression
+and producer assignment). The full suite (536 files, both backends) passes.
+
+**Measured.** Shape micro-bench — `bench/nomen/array_set.nm`: 100 000-element
+`Array<string>` (built with `Array.with`), `arr.set(i, make(i))` over the whole
+array per round (the producer interpolates `"val\{i}"` — one malloc the store
+cannot elide), then a read sweep; rounds from argv (100 rounds = 10M stores),
+Apple Silicon, release builds, audit off, checksums identical before/after;
+"before" binaries built from a HEAD worktree (the item-2 commit); 5
+interleaved rounds, medians:
+
+| Backend | before (median) | after (median) |        Δ |
+| ------- | --------------: | -------------: | -------: |
+| C       |          0.880s |         0.430s | **−51%** |
+| aarch64 |          0.840s |         0.440s | **−48%** |
+
+Per store the elided work is exactly the item's promise: the hoisted
+`_param_N` temp's slot, the set callee's `strdup` of it, and the temp's
+scope-exit free — one malloc + one free per store, on top of the displaced
+free both sides pay. Both backends collect it (the C backend because the
+stamp removes the temp and the callee copy at the source level, not via the
+optimizer).
+
+- _The standard suite_ — flat with outputs byte-identical: fannkuch-redux
+  (the array-`set`-heavy bench, int elements — never stamped) 0.10 → 0.10s,
+  json-serde flat, binarytrees 1.40 → 1.39s, lru flat, nsieve 0.12 → 0.12s.
+
+**Remainder.** `Array<string>` built from a LITERAL (`var arr = ["a", "b"]`)
+stores rodata pointers in its slots, so any `set` (in-place or not) frees
+static memory — a pre-existing bug, now recorded in FOLLOWUP.md (the
+`Array.with` shape has owned slots and is the supported one). Inline (stack)
+storage arrays take the splice's non-heap address branch, but a string stack
+array without initialisation has uninitialized slots (the reclaim would free
+garbage) — no such shape is constructible through the checked language today.
 
 ## Already rejected — don't re-suggest
 

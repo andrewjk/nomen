@@ -84,6 +84,11 @@ export interface InPlacePushFacts {
 	list_mono: string;
 	/** The argument call to construct into the slot. */
 	arg: FunctionCallNode;
+	/** True when the receiver is a heap `Array<T>` (the type is the ELEMENT
+	 *  type with `is_array`/`is_array_heap` set — there is no container
+	 *  struct): the backends pass the array value itself (C) / the element
+	 *  base (aarch64) as the slot primitive's receiver, never `&receiver`. */
+	receiver_is_array: boolean;
 }
 
 /**
@@ -97,6 +102,7 @@ export function in_place_push_facts(
 	receiver_type_name: string | undefined,
 	elem_type: Type | undefined,
 	structs: readonly StructNode[],
+	receiver_is_array = false,
 ): InPlacePushFacts | undefined {
 	const idx = access.in_place_push_index;
 	if (idx === undefined) return undefined;
@@ -109,8 +115,12 @@ export function in_place_push_facts(
 		receiver,
 		elem_name: elem_type.name,
 		elem_is_string: elem_type.name === "string",
-		list_mono: receiver_type_name,
+		// A heap `Array<T>` parses to the ELEMENT type with the array flags —
+		// the container mono is derived (`Array_<elem>`), never the type's
+		// name (see build_access_node's array dispatch).
+		list_mono: receiver_is_array ? `Array_${elem_type.name}` : receiver_type_name,
 		arg: arg as FunctionCallNode,
+		receiver_is_array,
 	};
 }
 

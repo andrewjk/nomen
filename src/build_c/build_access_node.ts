@@ -1495,6 +1495,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 						recv_type ? mono_type_name(recv_type) : undefined,
 						type_from_value_node(access_func.params[access_func.in_place_push_index]),
 						status.structs,
+						!!recv_type?.is_array,
 					);
 					if (facts) {
 						const elem_c = facts.elem_is_string ? "nomen_string" : `struct ${facts.elem_name}`;
@@ -1532,7 +1533,24 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 							access_func.in_place_store_kind === "set_slot_ptr"
 								? `${facts.list_mono}_set_slot_ptr`
 								: `${facts.list_mono}_slot_ptr`;
-						status.code += `{ ${elem_c}* _nomen_islot = (${elem_c}*)(unsigned long long)${c_function_name(prim)}(&${facts.receiver}${early_args ? `, ${early_args}` : ""}); `;
+						// An Array receiver's element address is computed
+						// inline (no core struct method to look up): a heap
+						// array's local is `struct Array_<T>*` with the elements
+						// after the 16-byte header; an inline (stack) array local
+						// decays to its first element. Every struct container is
+						// addressed through its own slot primitive.
+						if (facts.receiver_is_array) {
+							const elem_size_c = facts.elem_is_string
+								? "nomen_string"
+								: `struct ${facts.elem_name}`;
+							const is_heap = !!status.heap_array_vars?.has(facts.receiver);
+							const base = is_heap
+								? `((${elem_size_c}*)((char*)${facts.receiver} + sizeof(struct ${facts.list_mono})))`
+								: `((${elem_size_c}*)${facts.receiver})`;
+							status.code += `{ ${elem_c}* _nomen_islot = ${base} + (${early_args}); `;
+						} else {
+							status.code += `{ ${elem_c}* _nomen_islot = (${elem_c}*)(unsigned long long)${c_function_name(prim)}(&${facts.receiver}${early_args ? `, ${early_args}` : ""}); `;
+						}
 						if (reclaim) status.code += `${reclaim} `;
 						status.code += `*_nomen_islot = `;
 						build_node(facts.arg, status);

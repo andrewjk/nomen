@@ -1,0 +1,40 @@
+import System
+
+// Array<T>.set producer shape (PERF_PLAN item 17, minor batch) —
+// `arr.set(i, make(i))` on a string array. The old lowering hoisted the
+// producer's result into a `_param_N` temp, then `set` freed the displaced
+// slot and strdup'd the temp, and the temp freed at scope exit (2 mallocs +
+// 1 free per store). The in-place store splices the producer's result
+// straight into the slot (1 malloc, no temp free). The array length is a
+// compile-time constant (the bounds contracts must be provable); rounds come
+// from argv. Checksum printed so before/after binaries are comparable.
+
+const int SIZE = 100000
+
+func make = (int i, out string) {
+	return "val\{i}"
+}
+
+pub func main = (Init init) {
+	var rounds = 1
+	if init.argc > 1 {
+		rounds = parse_int(init.args.at(1))
+	}
+
+	var arr = Array.with("seed", SIZE)
+	var checksum = 0
+	var r = 0
+	while r < rounds; r += 1 {
+		var i = 0
+		while i < arr.length; i += 1 {
+			arr.set(i, make(i))
+		}
+		var j = 0
+		while j < arr.length; j += 1 {
+			checksum += arr.at(j).length
+		}
+	}
+
+	Console.write(checksum.to_string())
+	Console.write("\n")
+}

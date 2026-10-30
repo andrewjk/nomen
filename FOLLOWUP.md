@@ -778,3 +778,20 @@ read/copy paths (clean on both backends) and keeps the donor-set shape out.
 Fix shape: audit the C store_T donor path's string/container reclaim for
 mixed-alignment elements the way the aarch64 walks now are, then pin the
 donor-set shape in `test/struct_field_packing.test.ts`.
+
+## `Array<string>` from an array LITERAL: `.set` frees rodata (pre-existing)
+
+Recorded 2026-10-30 while landing PERF_PLAN item 17c (`Array<T>.set`
+in-place producer store). The shape: `var arr = ["a", "b", "c"]` followed by
+`arr.set(1, s)` (or `arr[1] = s`) crashes on both backends — the array
+literal's `#init` shallow-copies the (ptr, len) pairs, so the slots hold
+pointers to the literal's rodata; `Array<string>.set`'s documented replace
+semantics free the displaced pointer unconditionally, i.e. `free()` on
+static storage (aarch64 aborts; C crashes later in the allocator). The
+in-place producer lowering frees the displaced slot the same way, so it
+inherits the bug rather than causing it. `Array.with(seed, n)` is the
+supported constructor (it strdups the seed per slot; item 17c's tests and
+bench use it). Fix shape: make the literal initializer own its slots
+(strdup per element, the way `Array.with` does) or mark literal-initialized
+slots non-owning and teach `set` to skip the displaced free for them — the
+former matches the `Array.with` ownership story and is the smaller change.
