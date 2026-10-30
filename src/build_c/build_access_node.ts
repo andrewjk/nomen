@@ -877,22 +877,21 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				const has_self = trait_func.params.some((p) => p.is_self_param);
 
 				// Devirtualization (PERF_PLAN item 11): the checker proved this
-				// receiver's binding holds one known conformer that itself
-				// defines the method — call the concrete symbol DIRECTLY (the
-				// same label the vtable slot holds) instead of resolving
-				// through _get_trait_func. Re-derived here so the stamp and
-				// the lowering can't drift; the receiver expression, argument
-				// lowering, and every wrapper below stay the dispatch path's
-				// own.
+				// receiver's binding holds one known conformer. Call the symbol
+				// the vtable slot holds DIRECTLY instead of resolving through
+				// _get_trait_func: the conformer's own method when it defines
+				// one, else the trait's DEFAULT body (`${Trait}_${method}`) it
+				// inherits. Re-derived here so the stamp and the lowering
+				// can't drift; the receiver expression, argument lowering, and
+				// every wrapper below stay the dispatch path's own.
 				const devirt_struct = status.structs.find(
-					(s) =>
-						s.name === access_func.devirtualized_class &&
-						!s.is_generic &&
-						s.functions.some((f) => f.name === access_func.name),
+					(s) => s.name === access_func.devirtualized_class && !s.is_generic,
 				);
-				const devirt_label = devirt_struct
-					? `${devirt_struct.name}_${access_func.name}`
-					: undefined;
+				const devirt_defines = !!devirt_struct?.functions.some((f) => f.name === access_func.name);
+				const devirt_label =
+					devirt_struct && (devirt_defines || trait_func.has_body)
+						? `${devirt_defines ? devirt_struct.name : trait.name}_${access_func.name}`
+						: undefined;
 
 				// An INLINE capturing lambda argument to the func-typed
 				// parameter is a one-shot heap descriptor the callee only

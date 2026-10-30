@@ -3561,11 +3561,9 @@ function build_access_method(
 		// the instance for instance methods (args in x1..x7 for static ones),
 		// exactly the state the dispatched body expects.
 		const devirt_struct = status.structs.find(
-			(s) =>
-				s.name === access_func.devirtualized_class &&
-				!s.is_generic &&
-				s.functions.some((f) => f.name === access_func.name),
+			(s) => s.name === access_func.devirtualized_class && !s.is_generic,
 		);
+		const devirt_defines = !!devirt_struct?.functions.some((f) => f.name === access_func.name);
 		if (node.target.node_type === "value") {
 			const name = (node.target as ValueNode).value;
 			const paramReg = get_param_reg(name, status);
@@ -3604,23 +3602,30 @@ function build_access_method(
 			ensure_newline(status);
 			emit_asm(status, `mov x9, x0\n`);
 		}
-		if (devirt_struct) {
-			const devirt_label = `${devirt_struct.name}_${access_func.name}`;
+		if (devirt_struct && (devirt_defines || trait_func.has_body)) {
+			// The symbol the vtable slot holds: the conformer's own method,
+			// else the trait DEFAULT body it inherits.
+			const devirt_label = `${
+				devirt_defines ? devirt_struct.name : trait_target.name
+			}_${access_func.name}`;
 			// A stamped call whose concrete method is an `inline func` takes
 			// the same splice the concrete-receiver path takes — the machine
 			// state at this point (x0 = instance, args in x1..x7) is
 			// identical, only the checker's receiver TYPE differed.
 			// Plain-string returns stay on the bl: the dispatch tail below
 			// normalizes them against the call ABI, which a spliced body
-			// does not take.
-			const devirt_inline_func = devirt_struct.functions.find(
-				(f) =>
-					f.is_inline &&
-					f.name === access_func.name &&
-					(access_func.mangled_name
-						? mangled_label(f, devirt_struct.name) === access_func.mangled_name
-						: true),
-			);
+			// does not take. (A trait default is never spliced here — the
+			// splicer is keyed on a struct body.)
+			const devirt_inline_func = devirt_defines
+				? devirt_struct.functions.find(
+						(f) =>
+							f.is_inline &&
+							f.name === access_func.name &&
+							(access_func.mangled_name
+								? mangled_label(f, devirt_struct.name) === access_func.mangled_name
+								: true),
+					)
+				: undefined;
 			if (
 				devirt_inline_func &&
 				overflow_count === 0 &&

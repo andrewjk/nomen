@@ -1,0 +1,45 @@
+import System
+
+// PERF_PLAN item 11 — trait-DEFAULT devirtualization (its own binary, so the
+// extra loop's register pressure cannot shift the other shapes' numbers).
+// `Table` inherits `Mixer.mix` (the trait's default body), so the vtable slot
+// holds `Mixer_mix` — the devirtualized call targets that same label
+// directly. The body is shape C's masked hash chain (every multiply/add
+// masked back under 2^31, so no step overflows and every backend/opt level
+// computes bit-identical results); the seed read goes through the trait
+// field accessor in both worlds.
+
+trait Mixer {
+	var int seed
+	func mix = (self, int x, out int) {
+		var int v = (self.seed ^ x) & 2147483647
+		v = (v * 2654435761 + 1) & 2147483647
+		v = v ^ (v >> 13)
+		v = (v * 1274126177 + 3) & 2147483647
+		v = v ^ (v >> 16)
+		v = (v + self.seed * 3) & 2147483647
+		v = v ^ (v >> 7)
+		v = (v * 31 + 5) & 2147483647
+		v = v ^ (v >> 11)
+		return v
+	}
+}
+
+mv struct Table: Mixer {
+	var int seed
+}
+
+pub func main = (Init init) {
+	var n = 50000000
+	if init.argc > 1 {
+		n = parse_int(init.args.at(1))
+	}
+	var Mixer m = Table(12345)
+	var total = 0
+	var i = 0
+	while i < n {
+		total += m.mix(i % 1024)
+		i += 1
+	}
+	Console.write("T \{total}\n")
+}

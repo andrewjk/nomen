@@ -19,7 +19,7 @@ rest carry expected wins and the receipts they rest on).
 | 8   | ~~Regex/String O(n²) accumulators~~ **LANDED Oct 2026: −92% / −91% match accumulator, −65% / −58% replace_all skip loop, −33% / −40% String.replace_all, −28% / −14% array to_string**                         | both           | S      | shape micro-benches, interleaved medians (below) |
 | 9   | ~~Map/Set stored hash (Swiss-table tricks)~~ **LANDED Oct 2026: −35% / −52% probe shape, −21% / −49% string build+remove, −19% / −33% Set build, −22% aarch64 int rehash; int-keyed hit paths +2–10% (below)** | both           | M      | shape micro-benches, interleaved medians (below) |
 | 10  | StringBuilder numeric appends + 1-pass interp                                                                                                                                                                  | both           | S      | two snprintf passes + malloc per append          |
-| 11  | ~~Devirtualization of trait calls~~ **LANDED Oct 2026: −12% realistic callee / tiny-callee loop folds outright (C); aarch64 inline splice −19% (below)**                                                       | both           | M      | shape micro-bench, interleaved medians (below)   |
+| 11  | ~~Devirtualization of trait calls~~ **LANDED Oct 2026: −12% realistic callee / −31% trait-default (C), tiny-callee loop folds outright; aarch64 inline splice −19% (below)**                                   | both           | M      | shape micro-bench, interleaved medians (below)   |
 | 12  | Struct field-order / padding                                                                                                                                                                                   | both           | S      | modest; raw-body caveat                          |
 | 13  | Variable-mode enums                                                                                                                                                                                            | both           | L      | GOOSE #6, documented, unshipped                  |
 | 14  | Buffer word pairs (T_SIZE ≤ 16)                                                                                                                                                                                | mostly aarch64 | S      | IMPROVEMENTS.md "still needed"                   |
@@ -805,12 +805,14 @@ blocks inlining). The proof is checker-side, whole-function:
   nullable/ref/view/array-typed bindings never carry it.
 - **The stamp** (`AccessFunctionCallNode.devirtualized_class`, set in
   `check_access_node`'s trait-method resolution): only for a bare-local
-  receiver, a non-generic trait and conformer, and a conformer that itself
-  defines the method — the plain `${Struct}_${method}` label, not an
-  overloaded (mangled) one, and not the trait-default fallback the vtable
-  would otherwise supply. Both backends re-derive the mechanical facts at
-  the site (struct exists, non-generic, defines the method) so stamp and
-  lowering can't drift.
+  receiver, a non-generic trait and conformer, and — for the method —
+  either the conformer defines it (the plain `${Struct}_${method}` label,
+  not an overloaded/mangled one) or it inherits a trait DEFAULT with a body
+  (`${Trait}_${method}` — the label the vtable slot holds for that
+  conformer too; a bodyless trait signature has no symbol, so it keeps the
+  dispatch). Both backends re-derive the mechanical facts at the site
+  (struct exists, non-generic, defines the method or the default has a
+  body), so stamp and lowering can't drift.
 - **C** (`build_access_node.ts`): the callee expression
   `(${cast}_get_trait_func(recv, ti, fi))` becomes `Table_mix` — the
   receiver expression, argument lowering, and every wrapper around it
@@ -822,12 +824,13 @@ blocks inlining). The proof is checker-side, whole-function:
   becomes `bl Table_mix`; the receiver setup (x0 = instance, args in
   x1..x7) is shared and unchanged.
 
-Fourteen tests in `test/trait_devirtualization.test.ts` pin the lowering on
+Sixteen tests in `test/trait_devirtualization.test.ts` pin the lowering on
 both backends (known class conformer, boxed value-struct conformer, `mv`
-propagation — direct; reassignment, loop-body reassignment, branch
-reassignment, `ref`-argument pass, trait-default-only conformer — still
-dispatching), the runtime results on all of those, and the rebind scan's
-collection rules (unit). The full suite (527 files, both backends) passes.
+propagation, inherited trait default — direct; reassignment, loop-body
+reassignment, branch reassignment, `ref`-argument pass, a bodyless trait
+signature — still dispatching), the runtime results on all of those, and
+the rebind scan's collection rules (unit). The full suite (529 files, both
+backends) passes.
 
 **Measured.** Shape micro-bench — `bench/nomen/trait_dispatch.nm`, four
 dispatch shapes back to back (n from argv, Apple Silicon, 7 interleaved
@@ -895,6 +898,25 @@ The −18.9% compares the spliced loop against the same-shaped loop with a
 non-inline callee in the same compiler (`bl <Class>_area`); against the
 vtable loop it is larger still.
 
+- _Shape T — the trait-default conformer_ (`bench/nomen/trait_dispatch_default.nm`):
+  `Table` inherits `Mixer.mix` (the trait's default body carries shape C's
+  masked hash chain and reads a trait field), so the vtable slot holds
+  `${Trait}_${method}` — the devirtualized call targets that same label:
+
+| Backend | before |  after |          Δ |
+| ------- | -----: | -----: | ---------: |
+| C       | 0.475s | 0.329s | **−30.9%** |
+| aarch64 | 0.479s | 0.470s |  **−2.0%** |
+
+The C win outstrips shape C's because the inherited default's two
+`self.seed` reads are themselves trait-field dispatches
+(`get_${Concrete}_seed` through `_get_trait_func`): once the body inlines
+at the direct call site, the whole site (call + field reads) collapses —
+the emitted code drops from three `_get_trait_func` call sites to two
+(the mix call is direct; the field accessors remain, as they must).
+aarch64 stays near-flat for the same steady-state reason as the other
+monomorphic shapes.
+
 - _The standard suite_ — flat on both backends (json-serde 0.041/0.041s C
   +0.0%, binarytrees 1.414/1.409s −0.3%, lru 0.851/0.876s +2.9%, nsieve
   0.127/0.126s −0.2%; aarch64 0.070/0.071s, 1.817/1.827s, 1.765/1.761s,
@@ -916,14 +938,24 @@ against the call ABI, which a spliced body does not take); four tests in
 `test/trait_inline_method.test.ts` pin the link, the vtable dispatch, the
 splice's emitted shape, and the runtime results.
 
-**Remainder.** Not stamped yet: field-path receivers
-(`self.speaker.speak()`), container elements proven monomorphic after a
-check, trait-default-only conformers (the slot holds
-`${Trait}_${method}` — directly callable too), and generic
-traits/structs. The `ref`-trait reassignment edge disqualified every
-`ref`-argument pass from the scan conservatively; that edge is fixed
-(`ref` trait params now write back through the caller's handle slot), but
-the scan stays conservative until it is revisited.
+**Remainder.** Item 11's planned scope is complete (overrides, boxed
+value-struct conformers, `mv` propagation, inherited trait defaults, the
+inline splice). What stays on the table by design or by other gaps:
+
+- **Field-path receivers** — trait-typed FIELDS are rejected today ("a
+  trait-typed field is not supported yet", check_struct_node), so
+  `self.speaker.speak()` cannot exist as a trait dispatch; a field-path
+  receiver of CONCRETE type already lowers direct. Revisit with trait
+  fields (STRUCT_PLAN_3 B5 remainder).
+- **Container elements** (`pets.at_or_panic(i).speak()`) would need
+  element-level "every store was the same conformer" tracking, a different
+  analysis from the binding-level proof here.
+- **Generic traits/structs** — the direct label would need the
+  monomorphized signature substitution the vtable cast performs; deferred.
+- **The `ref`-argument conservatism stays by design, not because of the
+  (now fixed) ref-trait write-back bug**: a `ref` argument genuinely may
+  rebind the caller's local mid-function, so any ref pass must keep the
+  name out of the known-concrete set.
 
 ## 12. Struct field-order / padding
 

@@ -173,11 +173,13 @@ export function trait_decl_concrete_struct(
  * Stamp `node.devirtualized_class` when a trait-method dispatch on a
  * bare-local receiver can lower as a direct call: the local carries a known
  * concrete conformer, the trait and conformer are non-generic (the direct
- * symbol and its signature are the plain ones), and the conformer itself
- * defines the method — the exact label the vtable builder would put in the
- * slot (`${Struct}_${method}`; a trait-default fallback keeps the vtable
- * path). Overridden method sets (overloads mangle their labels) and no-self
- * (static) calls keep the dispatch.
+ * symbol and its signature are the plain ones), and the call target exists
+ * as a symbol — either the conformer DEFINES the method (`${Struct}_${method}`
+ * — the exact label the vtable builder puts in the slot) or it inherits a
+ * trait DEFAULT with a body (`${Trait}_${method}`, likewise the slot's
+ * label). A bodyless trait function has no symbol to call, so that shape
+ * keeps the vtable path. Overridden method sets (overloads mangle their
+ * labels) and no-self (static) calls also keep the dispatch.
  */
 export function stamp_devirtualized_trait_call(
 	node: AccessFunctionCallNode,
@@ -198,8 +200,13 @@ export function stamp_devirtualized_trait_call(
 		(s) => s.name === sv.concrete_struct && !s.is_generic && !s.is_simple_type,
 	);
 	if (!concrete) return;
-	if (!concrete.functions.some((f) => f.name === node.name)) return;
 	const overrides = concrete.functions.filter((f) => f.name === node.name);
 	if (overrides.length > 1) return; // overloaded: labels mangle per signature
+	if (overrides.length === 0) {
+		// Trait-default-only conformer: the vtable slot holds the trait's
+		// default body. Callable only when that body exists.
+		const trait_func = trait.functions.find((f) => f.name === node.name);
+		if (!trait_func?.has_body) return;
+	}
 	node.devirtualized_class = concrete.name;
 }

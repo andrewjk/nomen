@@ -3,6 +3,7 @@ import path from "node:path";
 import { describe, expect, test } from "vite-plus/test";
 
 import build from "../src/build";
+import check from "../src/check";
 import { collect_rebound_names } from "../src/check/utils/devirtualize";
 import { get_library } from "../src/lib";
 import parse from "../src/parse";
@@ -218,19 +219,81 @@ pub func main = (Init init) {
 		}
 	});
 
-	test("a trait-default-only method keeps the dispatch", () => {
+	test("a trait-default-only conformer calls the inherited default directly", () => {
 		for (const arch of ["c", "aarch64"] as const) {
 			const code = build_code(PRELUDE + cases.trait_default_only, arch);
-			// The concrete struct defines no `greet`, so the direct symbol the
-			// stamp would name does not exist — the stamp must not fire.
+			// The conformer inherits `greet`, so the vtable slot holds the
+			// trait's default body — the devirtualized call targets that same
+			// label (no dispatch, and not a per-conformer stub).
 			if (arch === "c") {
-				expect(code).toContain("_get_trait_func(");
+				expect(code).toContain("Greeter_greet(g)");
+				expect(code.match(/\)_get_trait_func\(/g)?.length ?? 0).toBe(0);
 				expect(code).not.toContain("Shy_greet(");
 			} else {
-				expect(code).toContain("blr x10");
-				expect(code).not.toContain("bl Shy_greet\n");
+				expect(code).toContain("bl Greeter_greet\n");
+				expect(code).not.toContain("blr x10");
 			}
 		}
+	});
+
+	test("a bodiless trait signature keeps the dispatch", () => {
+		const input = `
+trait Named {
+	func name = (self, out string)
+}
+struct Tagged: Named {
+	func name = (self, out string) {
+		return "tag"
+	}
+}
+pub func main = (Init init) {
+	var Named n = Tagged()
+	Console.write(n.name())
+}`;
+		// The conformer defines the method — still devirtualized (control for
+		// the bodyless-trait case below).
+		const direct = build_code(`import System\n${input}`, "c");
+		expect(direct).toContain("Tagged_name(n)");
+		expect(direct.match(/\)_get_trait_func\(/g)?.length ?? 0).toBe(0);
+
+		// A trait function with no body and no conformer override has no
+		// symbol to call — the stamp must not fire (the shape keeps the
+		// vtable dispatch; the missing implementation is a checker error).
+		const bodyless = `
+trait Named {
+	func name = (self, out string)
+}
+struct Tagged: Named {
+}
+func probe = () {
+	var Named n = Tagged()
+	Console.write(n.name())
+}`;
+		const parsed = parse_raw(`import System\n${bodyless}`);
+		check(parsed.root);
+		// Find the trait-method AccessFunctionCallNode and assert no stamp.
+		let stamped: string | undefined;
+		const visit = (node: unknown): void => {
+			if (!node || typeof node !== "object") return;
+			if (Array.isArray(node)) {
+				for (const item of node) visit(item);
+				return;
+			}
+			const n = node as Record<string, unknown> & {
+				node_type?: string;
+				devirtualized_class?: string;
+				name?: string;
+			};
+			if (n.node_type === "access_func" && n.name === "name" && n.devirtualized_class) {
+				stamped = n.devirtualized_class;
+			}
+			for (const [key, value] of Object.entries(n)) {
+				if (key === "scope" || key === "resolved_function") continue;
+				visit(value);
+			}
+		};
+		visit(parsed.root);
+		expect(stamped).toBeUndefined();
 	});
 });
 
@@ -330,6 +393,32 @@ while i < 3 {
 }`,
 			"devirt_loop_rebind_runtime",
 			"woofmeowmeow",
+		);
+	});
+
+	test("devirtualized trait-default call computes the same result", async () => {
+		await build_and_check_output(
+			`
+trait Greeter {
+	func greet = (self, out string) {
+		return "hello"
+	}
+}
+struct Shy: Greeter {
+}
+struct Polite: Greeter {
+	func greet = (self, out string) {
+		return "good day"
+	}
+}
+var Greeter g = Shy()
+Console.write(g.greet())
+var Greeter p = Polite()
+Console.write(p.greet())
+p = Shy()
+Console.write(p.greet())`,
+			"devirt_trait_default_runtime",
+			"hellogood dayhello",
 		);
 	});
 });
