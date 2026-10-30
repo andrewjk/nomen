@@ -239,6 +239,48 @@ pub struct Buffer<T> {
 		```
 	}
 
+	// Initialize this buffer as a VIEW over a foreign slab (INTERNAL — the
+	// chunked-container primitive): `data` becomes `slab` and `cap` becomes
+	// `fill`, and the buffer owns NOTHING — the slab keeps its real owner
+	// (never grown, never freed by the view). The mono'd slot family
+	// (`store`/`load`/`load_from`/`shift`) then runs against the view
+	// unchanged, with its per-element specializations intact. This is how
+	// StableList's directory chunks reach the typed store without a staging
+	// relay — the same stack view the raw bodies build by hand, in typed
+	// Nomen. The holder must clear the view afterwards (see clear_view):
+	// an owning Buffer FIELD is destroyed by its holder's teardown.
+	internal func init_view = (ref self, uint64 slab, int fill: fill >= 0) {
+		self.data = slab
+		self.cap = fill
+	}
+
+	// Clear a view initialized by init_view: `data`/`cap` back to zero, so
+	// the holder's own field destroy reclaims nothing (the slab's real owner
+	// still owns it).
+	internal func clear_view = (ref self) {
+		self.data = 0
+		self.cap = 0
+	}
+
+	// Store `val` into slot `slot` of a foreign slab at `slab` (fill `fill`)
+	// through this buffer as a transient view — INTERNAL (StableList's
+	// directory chunks): init the view, run the mono'd `store` (the per-
+	// element deep-copy specialization), then clear the view so the holder's
+	// teardown reclaims nothing. The holder passes a Buffer FIELD, never a
+	// local — a local owning Buffer would be auto-destroyed at scope exit
+	// and free the slab it only borrows.
+	internal func store_in_slab = (
+		ref self,
+		uint64 slab,
+		int fill: fill >= 0,
+		int slot: slot >= 0,
+		T val
+	) {
+		self.init_view(slab, fill)
+		self.store(slot, val)
+		self.clear_view()
+	}
+
 	// Move a value out of a slot: return it and clear the slot to 0. This is
 	// the ownership-extracting primitive (used by e.g. List.pop) — unlike
 	// load_int (a borrow read), it relinquishes the slot so the buffer no

@@ -150,6 +150,42 @@ pub struct ClassBuffer<T> {
 		```
 	}
 
+	// Initialize this buffer as a VIEW over a foreign slab (INTERNAL — the
+	// chunked-container primitive): `data` becomes `slab` and `cap` becomes
+	// `fill`, and the buffer owns NOTHING — the slab keeps its real owner
+	// (never grown, never freed by the view). Mirror of Buffer.init_view;
+	// class slots are pointer words.
+	internal func init_view = (ref self, uint64 slab, int fill: fill >= 0) {
+		self.data = slab
+		self.cap = fill
+	}
+
+	// Clear a view initialized by init_view (see Buffer.clear_view): the
+	// holder's own field destroy then reclaims nothing.
+	internal func clear_view = (ref self) {
+		self.data = 0
+		self.cap = 0
+	}
+
+	// Store the owned class pointer `val` into slot `slot` of a foreign slab
+	// at `slab` (fill `fill`) through this buffer as a transient view —
+	// INTERNAL (StableList's directory chunks, class elements): init the
+	// view, run the typed `store` (the ownership-transferring slot store),
+	// then clear the view so the holder's teardown reclaims nothing. The
+	// holder passes a ClassBuffer FIELD, never a local (a local owning buffer
+	// is auto-destroyed at scope exit and would free the borrowed slab).
+	internal func store_in_slab = (
+		ref self,
+		uint64 slab,
+		int fill: fill >= 0,
+		int slot: slot >= 0,
+		mv T val
+	) {
+		self.init_view(slab, fill)
+		self.store(slot, val)
+		self.clear_view()
+	}
+
 	// Move a class pointer out of a slot: return it and zero the slot so the
 	// buffer no longer references it. Declared `mv out T` so the borrow
 	// checker treats the result as OWNED — the slot is relinquished, so the

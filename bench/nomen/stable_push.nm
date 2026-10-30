@@ -1,0 +1,39 @@
+import System
+
+// StableList tail-push shape (PERF_PLAN item 17, minor batch) — the
+// non-in-place push into directory chunks (length >= 256). The old lowering
+// relayed through a one-slot `stage` Buffer: typed store into the stage, then
+// a raw push_tail memcpy stage → chunk + memset stage (two `bl`s + the relay
+// call per push). The new lowering stores the value straight into the chunk
+// slot through a transient Buffer view (Buffer.store_in_slab: init_view →
+// the specialized `store` → clear_view) — no stage slot, no byte relay.
+// n from argv, checksum printed so before/after binaries are comparable.
+
+pub func main = (Init init) {
+	var n = 200000
+	if init.argc > 1 {
+		n = parse_int(init.args.at(1))
+	}
+
+	var sl = StableList<string>()
+
+	// Donor-spelled pushes across many directory chunks: every push takes the
+	// tail path (chunk 0 holds the first 256). The seed literal is a static
+	// string; the typed store strdups it per slot (the store, which both
+	// lowerings pay).
+	var i = 0
+	while i < n; i += 1 {
+		var s = "abcdef"
+		sl.push(mv s)
+	}
+
+	// Read sweep: keep the slots observable (and the checksum honest).
+	var checksum = 0
+	var j = 0
+	while j < sl.length; j += 1 {
+		checksum += sl.at_or_panic(j).length
+	}
+
+	Console.write(checksum.to_string())
+	Console.write("\n")
+}

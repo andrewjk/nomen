@@ -12,15 +12,16 @@
  * in the list. The list is still append-only — no `pop`/`set`/`remove_at` —
  * because displacing an element would invalidate its borrows.
  *
- * The tail pieces (store/load/destroy for directory chunks) are raw bodies
- * and unsafe Nomen delegating to Buffer's mono'd methods through a stack
- * `Buffer_T` view — `load_from` is a bitwise slot load (the borrow form;
- * never the strdup-copy the owning-specialized `load` would materialize),
- * and `#destroy` destroys each directory chunk through a view whose `cap`
- * is the chunk's FILL count, so no uninitialized slot is ever walked.
- * Chunk 0 (`items`), `stage`, and the directory's own slab are reclaimed by
- * the ordinary field destroy: the specialized per-element destroy guards
- * zeroed slots and frees its slab.
+ * The tail pieces (store/load/destroy for directory chunks) delegate to
+ * Buffer's mono'd methods through a stack `Buffer_T` view — `load_from` is a
+ * bitwise slot load (the borrow form; never the strdup-copy the
+ * owning-specialized `load` would materialize), the tail store is the typed
+ * `store` against a `Buffer.init_view` view (deep-copy semantics into the
+ * chunk slot, no staging relay), and `#destroy` destroys each directory chunk
+ * through a view whose `cap` is the chunk's FILL count, so no uninitialized
+ * slot is ever walked. Chunk 0 (`items`) and the directory's own slab are
+ * reclaimed by the ordinary field destroy: the specialized per-element
+ * destroy guards zeroed slots and frees its slab.
  **/
 pub mv struct StableList<T> {
 	var length = 0
@@ -31,11 +32,12 @@ pub mv struct StableList<T> {
 	// 256 T_SIZE bytes). The directory's slot array may realloc; the slabs it
 	// points at never move.
 	var chunks = Buffer<uint64>()
-	// One-slot staging buffer for tail pushes: the typed store lands here
-	// (deep-copy semantics via Buffer's specialized `store`), then the raw
-	// relay byte-moves the slot into the chunk and zeroes it — sole ownership
-	// transfers, `Buffer.shift`'s contract. This keeps every T-value crossing
-	// inside Nomen's typed machinery: raw bodies only ever relay addresses.
+	// A transient VIEW carrier for tail pushes: `push` points it at the
+	// target chunk slab, stores the value through it (deep-copy semantics via
+	// Buffer's specialized `store` — no staging relay, no byte copy), then
+	// clears it. A field (not a local) because an owning Buffer local is
+	// auto-destroyed at scope exit and would free the borrowed slab. Its own
+	// slab is always null, so its field destroy reclaims nothing.
 	var stage = Buffer<T>()
 
 	pub func push = (ref self, mv T value) {
@@ -49,18 +51,24 @@ pub mv struct StableList<T> {
 			if dir_index >= self.chunks.cap {
 				self.chunks.grow(dir_index + 1)
 			}
-			if self.stage.cap == 0 {
-				self.stage.alloc(1)
-			}
-			self.stage.store(0, value)
-			self.push_tail(dir_index, self.length % 256)
+			self.ensure_chunk(dir_index)
+			// The typed store lands the value straight into the chunk slot
+			// through the view — deep-copy semantics via Buffer's specialized
+			// `store`, no staging slot, no byte relay. Every T-value crossing
+			// stays inside Nomen's typed machinery.
+			self.stage.store_in_slab(
+				self.chunks.load(dir_index),
+				256,
+				self.length % 256,
+				value
+			)
 		}
 		self.length += 1
 	}
 
 	// Capacity for `extra` more appends: allocates chunk 0, grows the
 	// directory, and pre-callocs the target slab (the raw `ensure_chunk`'s
-	// zero-check keeps `push_tail`'s own calloc idempotent). Splitting it
+	// zero-check keeps push's own calloc idempotent). Splitting it
 	// out of `push` is what makes the compiler's in-place push lowering
 	// possible: the destination slot for a `push(parse(x))` argument must
 	// exist before the argument call runs, so the backend reserves first
@@ -83,8 +91,8 @@ pub mv struct StableList<T> {
 	}
 
 	// Calloc the directory chunk's slab on first touch (zero words mark
-	// empty chunks) — push_tail's calloc, hoisted so an in-place append can
-	// construct into the slot before `push_tail` ever runs.
+	// empty chunks) — push's tail store and the in-place append both rely on
+	// the slab existing before a slot address is taken from it.
 	internal func ensure_chunk = (ref self, int dir_index) {
 		```
 		#arch: c
@@ -119,8 +127,9 @@ pub mv struct StableList<T> {
 
 	// Address of the APPEND slot (element `length`) — reserve must have run,
 	// so the slot exists. The in-place push lowering constructs the argument
-	// call's result straight through this address; the stage relay never
-	// engages (sole ownership transfers as surely as push_tail's).
+	// call's result straight through this address (sole ownership transfers
+	// into the slot — the chunk slab is calloc'd on first touch by
+	// `reserve`'s `ensure_chunk` before the slot address is taken).
 	internal func append_slot_ptr = (ref self, out ptr T) {
 		```
 		#arch: c
@@ -136,7 +145,7 @@ pub mv struct StableList<T> {
 		// x0 = self (stack-less raw: x19 is NOT loaded — read the fields
 		// from x0 and return the slot address in x0; the body calls
 		// nothing, so x9-x13 scratch is safe). Field offsets mirror
-		// push_tail's: length @8, items.data @24, chunks.data @48 (the
+		// push's: length @8, items.data @24, chunks.data @48 (the
 		// Buffer mono is {_vt, data, cap} = 24 bytes).
 		ldr x9, [x0, #8]
 		ldr x10, [x0, #24]
@@ -153,56 +162,6 @@ pub mv struct StableList<T> {
 		.Lsl_as_have:
 		mov x12, #T_SIZE
 		madd x0, x11, x12, x10
-		```
-	}
-
-	// Append the staged value (stage slot 0) into directory chunk `dir_index`
-	// at `slot`: calloc the slab on first touch (zero words mark empty
-	// chunks), then byte-move stage → chunk and zero the stage slot — exactly
-	// one owner afterwards, so mv elements need no strdup on this path.
-	internal func push_tail = (ref self, int dir_index, int slot) {
-		```
-		#arch: c
-		if (((unsigned long long*)self->chunks.data)[dir_index] == 0) {
-			((unsigned long long*)self->chunks.data)[dir_index] =
-				(unsigned long long)calloc(256, T_SIZE);
-		}
-		unsigned long long chunk = ((unsigned long long*)self->chunks.data)[dir_index];
-		memcpy((void*)(chunk + (unsigned long long)slot * T_SIZE),
-			(void*)self->stage.data,
-			T_SIZE);
-		memset((void*)self->stage.data, 0, T_SIZE);
-		```
-		```
-		#arch: aarch64
-		// x19 = self, x1 = dir_index, x2 = slot.
-		stp x20, x21, [sp, #-16]!
-		mov x20, x1
-		mov x21, x2
-		sub sp, sp, #16
-		ldr x9, [x19, #48]
-		ldr x10, [x9, x20, lsl #3]
-		cmp x10, #0
-		b.ne .Lsl_pt_have
-		mov x0, #256
-		mov x1, #T_SIZE
-		bl _calloc
-		ldr x9, [x19, #48]
-		str x0, [x9, x20, lsl #3]
-		.Lsl_pt_have:
-		ldr x0, [x9, x20, lsl #3]
-		mov x1, #T_SIZE
-		mul x2, x21, x1
-		add x0, x0, x2
-		ldr x1, [x19, #72]
-		mov x2, #T_SIZE
-		bl _memcpy
-		ldr x0, [x19, #72]
-		mov x1, #0
-		mov x2, #T_SIZE
-		bl _memset
-		add sp, sp, #16
-		ldp x20, x21, [sp], #16
 		```
 	}
 
@@ -337,11 +296,13 @@ pub mv struct StableList<T> {
 	// Only the directory slabs (chunks 1..) need explicit teardown — they are
 	// raw pointer words the field destroy cannot see — so each is destroyed
 	// through a cap=filled view (per-element destroy + slab free). Chunk 0
-	// (`items`) and `stage` are reclaimed by the ordinary field destroy: the
+	// (`items`) is reclaimed by the ordinary field destroy: the
 	// specialized per-element destroy guards zeroed slots (a calloc'd slot
 	// skips the element destroy instead of firing the user `#destroy` on
 	// unconstructed storage) and frees its own slab; pointer words own
 	// nothing.
+	// (The old `stage` relay field is gone — push's tail path stores into
+	// the chunk through a `Buffer.init_view` view.)
 	func #destroy = (ref self) {
 		self.destroy_tails()
 	}
