@@ -3,8 +3,8 @@
 Research into the next performance opportunities, following the StableList +
 in-place push work. PERF.md is the record of what landed; this is the plan for
 what's next. All findings are ordered most-promising-first. Written Oct 2026;
-originally unmeasured — items 2, 3, 4 (partially), 5, 6, 7, 8, 9, 10, 11, and
-14 have since landed with measurements in place (items marked LANDED carry
+originally unmeasured — items 2, 3, 4 (partially), 5, 6, 7, 8, 9, 10, 11, 12,
+and 14 have since landed with measurements in place (items marked LANDED carry
 them; the rest carry expected wins and the receipts they rest on).
 
 | #   | Item                                                                                                                                                                                                           | Backends       | Effort | Receipt                                          |
@@ -20,7 +20,7 @@ them; the rest carry expected wins and the receipts they rest on).
 | 9   | ~~Map/Set stored hash (Swiss-table tricks)~~ **LANDED Oct 2026: −35% / −52% probe shape, −21% / −49% string build+remove, −19% / −33% Set build, −22% aarch64 int rehash; int-keyed hit paths +2–10% (below)** | both           | M      | shape micro-benches, interleaved medians (below) |
 | 10  | ~~StringBuilder numeric appends + 1-pass interp~~ **LANDED Oct 2026: −80% / −79% interp, −76% / −75% numeric append, −66% / −70% new-spelling**                                                                | both           | S      | shape micro-benches, interleaved medians (below) |
 | 11  | ~~Devirtualization of trait calls~~ **LANDED Oct 2026: −12% realistic callee / −31% trait-default (C), tiny-callee loop folds outright; aarch64 inline splice −19% (below)**                                   | both           | M      | shape micro-bench, interleaved medians (below)   |
-| 12  | Struct field-order / padding                                                                                                                                                                                   | both           | S      | modest; raw-body caveat                          |
+| 12  | ~~Struct field-order / padding~~ **LANDED Oct 2026: −10% / −12% shape (aarch64 / C), −20% peak RSS on the shape; standard suite flat**                                                                        | both           | S      | shape micro-bench, interleaved medians (below)   |
 | 13  | Variable-mode enums                                                                                                                                                                                            | both           | L      | GOOSE #6, documented, unshipped                  |
 | 14  | ~~Buffer word pairs (T_SIZE ≤ 16)~~ **LANDED Oct 2026: −12% / flat shape (aarch64 / C — clang already inlined it); json-serde flat (no 16-byte element exists)**                                               | mostly aarch64 | S      | shape micro-bench, interleaved medians (below)   |
 | 15  | aarch64 codegen receipts (splice model, folds…)                                                                                                                                                                | aarch64        | S–M    | measured regressions to reclaim                  |
@@ -1053,13 +1053,108 @@ inline splice). What stays on the table by design or by other gaps:
   rebind the caller's local mid-function, so any ref pass must keep the
   name out of the known-concrete set.
 
-## 12. Struct field-order / padding
+## 12. Struct field-order / padding — LANDED (Oct 2026)
 
-Layout is declaration order, so hot structs can carry padding (JsonNode-style
-payloads are 48 bytes). Auto-reordering for packing shrinks and speeds both
-backends — with one hard caveat: raw `#arch` bodies hardcode field offsets
-(StableList hardcodes `length @8`, `items.data @24`, …), so it must skip
-raw-body structs or be opt-in.
+**What landed.** The three layout authorities now walk a PACKED order — each
+struct's own fields sorted by alignment descending (stable within equal
+alignment, so all-word structs keep their declaration order byte-for-byte):
+the aarch64 offset/size walk (`layout_fields`,
+`src/build_aarch64/utils/struct_layout.ts`), the C typedef member emission
+(`src/build_c/build_struct_body.ts`, and the `aarch64_use_c` companion's
+struct definitions in `src/build_aarch64/utils/c_companion.ts`), and the
+check-side `raw_type_size` T_SIZE mirror
+(`src/check/check_function_call_node.ts`). One shared module decides the
+order and the exclusions (`src/build_common/struct_packing.ts`, memoized per
+struct — `layout_fields` runs per field access, and the sort must not show up
+in compiler time):
+
+- **`struct.fields` itself is untouched.** The auto-`#init` binds its
+  parameters positionally in field order (`Pt(1, 2)`), so permuting the array
+  would silently flip every positional construction. Packing is a
+  layout-order VIEW; the ctor signature, named field overrides, and
+  destructuring (by name) are unchanged. `#init`'s per-field stores emit in
+  packed order — independent stores, semantics-neutral.
+- **The skip predicate.** Declaration order stays for: structs with ANY raw
+  `#arch` body in ANY of their functions (the raw text hardcodes field
+  offsets — StableList's `length @8` / `items.data @24`, StringBuilder's
+  `data @8 / len @16 / cap @24`, the async family, File, Mutex, Atomic; the
+  same "raw bodies are opaque" treatment scan_inline_candidates uses), tuples
+  (`_Tuple_*` — positional index contract), and structs with fixed-size
+  stack-array fields (the C backend emits `T name[N]` with no length header
+  while the aarch64 layout sizes `8 + elem*len` — that disagreement stays
+  quarantined in declaration order). Monomorphized clones carry their raw
+  statements through substitution, so a generic and its monos always decide
+  the same way. The System library's only sub-8 field outside raw-body
+  structs is `Init.is_tty`, and `Init` has a fixed-array field — so no
+  prebuilt-system.o layout changes.
+- **Why descending alignment is exactly right here:** in this type system
+  every type's size is a multiple of its natural alignment (scalars
+  size == alignment; strings/views/structs are multiples of 8), so the
+  sorted order is GAP-FREE — the aligned layout walk never inserts padding,
+  C's naturally-aligned members of the identically-ordered typedef land on
+  the same offsets, and the RAW unaligned cursor walks in the aarch64
+  owning-buffer/destroy specializations
+  (`owning_buffer_specialize.ts`, `auto_destroy.ts`) stay exact. Those
+  cursor walks (collect_string_fields, collect_transfer_fields,
+  emit_load_deep_copy_fields, container_data_offsets_a64,
+  collect_displaced_leaves_a64, emit_borrow_carrier_owned_free,
+  emit_destroy_for_array_elem) now iterate the packed list, and the four
+  sites that computed offsets over filtered/declaration-order field lists
+  (emit_field_destroys, emit_field_destroys_at, emit_nested_field_destroys,
+  box_clone's clone_fields) compute them against the full packed layout
+  while keeping their visited-set filters.
+- **Nullable `_has` flags follow their field** (offset + size) in both
+  backends, unchanged.
+
+Eleven tests in `test/struct_field_packing.test.ts` (unit: sort order,
+stability, the alignment mirror, the skip predicate; emission: the C typedef
+member order, the aarch64 T_SIZE 32-not-40 stride fold, the ctor `strb`
+offsets; runtime: field round-trips, string/List ownership through packed
+offsets on BOTH backends with the auditor on, and a Map round-trip); the
+full suite (532 files, both backends) passes.
+
+**Measured.** Shape micro-bench — `bench/nomen/struct_packing.nm`: n
+`Rec` pushes (word/bool/word/bool — declaration T_SIZE 40, packed 32) into a
+`List`, then two field-sum read sweeps; checksum identical before/after; n
+from argv, Apple Silicon, 7–9 interleaved rounds, medians, audit off, release
+builds. "Before" binaries built from a HEAD worktree:
+
+| Backend | before |  after |        Δ |
+| ------- | -----: | -----: | -------: |
+| aarch64 | 0.469s | 0.423s | **−10%** |
+| C       | 0.188s | 0.165s | **−12%** |
+
+Peak RSS at n = 20M: **1345 MB → 1078 MB (−20%)** — exactly the T_SIZE cut
+(40 → 32 bytes per element), paid again on every push growth memcpy and read
+sweep. At n = 4M (list hot in cache) both backends are flat — the win is
+memory-traffic, so it lives where the container exceeds the cache.
+
+- _The standard suite_ — flat on both backends (medians, interleaved, outputs
+  byte-identical): json-serde 0.693 → 0.689s aarch64 / 0.401 → 0.397s C,
+  binarytrees 1.836 → 1.831s / 1.409 → 1.424s, lru `1000 20000000` 1.697 →
+  1.699s / 0.887 → 0.892s, nsieve 0.162 → 0.161s / 0.131 → 0.131s — all
+  within ±1.1%. No bench struct has a sub-8-byte field (System structs with
+  sub-8 fields are excluded or fixed-array), so there was nothing to pack.
+
+**A crash fell out of the walks.** A donor-form `l.set(i, mv r)` on a
+`List` of sub-8-field mv structs CRASHED on aarch64 before this change
+(the unaligned cursor walks disagreed with the aligned layout for
+declaration orders whose prefix sums aren't naturally aligned — e.g. a
+`bool` field before a word field). The packed order is always gap-free, so
+the walks are now exact and the program runs; eleven suite tests pin the
+packed-ownership paths. The same shape leaks 4 allocations on the C backend
+— identically before and after (pre-existing, unrelated to layout; recorded
+in FOLLOWUP.md).
+
+**Remainder.** Trait-declared fields pack among themselves but stay AFTER
+the own fields (the own-fields-first contract the per-name offset lookups
+rely on), so a struct whose trait fields are words and whose own fields end
+in sub-8 scalars keeps one boundary gap. Packing is per-struct, opt-out by
+the raw-body/fixed-array/tuple exclusions only — a per-struct `packed`/
+`declared` attribute would let raw-body structs opt in after a hand-audit of
+their raw offsets. `_has` flag bytes still sit between fields (a nullable
+scalar before a sub-8 field wastes bytes); grouping flags at the struct tail
+would shave those, and needs the C emission to move them identically.
 
 ## 13. Variable-mode enums
 

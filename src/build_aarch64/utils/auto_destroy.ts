@@ -14,6 +14,7 @@ import {
 } from "../../build_common/has_string_fields.ts";
 import { mono_type_name, resolve_struct_type } from "../../build_common/mono_name.ts";
 import { has_flag_name, is_nullable_struct_type } from "../../build_common/nullable_struct.ts";
+import { packed_own_fields } from "../../build_common/struct_packing.ts";
 import { superseded_param_temp_names } from "../../build_common/temp_anchor_consolidation.ts";
 import AccessNode from "../../nodes/AccessNode.ts";
 import type BaseNode from "../../nodes/BaseNode.ts";
@@ -89,7 +90,8 @@ export function emit_borrow_carrier_owned_free(
 	decl_name: string,
 ): void {
 	let offset = 8; // VT prefix
-	for (const field of elem.fields) {
+	// Packed layout order (struct_packing.ts) keeps the unaligned cursor exact.
+	for (const field of packed_own_fields(elem)) {
 		const size = get_type_size(field.type, status);
 		if (
 			!field.type.is_ref &&
@@ -570,12 +572,13 @@ function emit_field_destroys_at(
 	// A CLASS's trait-declared fields are owned (the ctor strdup's their string
 	// defaults), so include them in the destroy. Value-struct trait fields stay
 	// out: their defaults are borrowed rodata (mirroring the C backend).
+	// Offsets always come from the full packed LAYOUT (own fields prefix the
+	// trait tail), while the visited set keeps the class/own-only filter.
+	const layout = layout_fields(struct_type, status);
 	const fields =
-		struct_type.is_class || owns_strings_uniformly(struct_type)
-			? layout_fields(struct_type, status)
-			: struct_type.fields;
+		struct_type.is_class || owns_strings_uniformly(struct_type) ? layout : struct_type.fields;
 	for (const field of fields) {
-		const offset = get_field_offset_of_fields(fields, field.name, status);
+		const offset = get_field_offset_of_fields(layout, field.name, status);
 		const field_struct =
 			is_struct_type(resolve_struct_name(field.type.name, field.type.type_args, status), status) ||
 			is_struct_type(field.type.name, status);
@@ -1391,13 +1394,13 @@ export function emit_field_destroys(
 	// A CLASS's — or, B1 cutover, an OWNING struct's — trait-declared fields
 	// are owned (the ctor strdup's their string defaults), so include them.
 	// Non-mv value-struct trait fields stay out: their defaults are
-	// borrowed rodata.
+	// borrowed rodata. Offsets always come from the full packed LAYOUT
+	// (own fields prefix the trait tail); the visited set keeps the filter.
+	const layout = layout_fields(struct_type, status);
 	const destroy_fields =
-		struct_type.is_class || owns_strings_uniformly(struct_type)
-			? layout_fields(struct_type, status)
-			: struct_type.fields;
+		struct_type.is_class || owns_strings_uniformly(struct_type) ? layout : struct_type.fields;
 	for (const field of destroy_fields) {
-		const offset = get_field_offset_of_fields(destroy_fields, field.name, status);
+		const offset = get_field_offset_of_fields(layout, field.name, status);
 		// An enum-with-data field owns its ACTIVE case's payloads (case
 		// construction strdups string args / transfers reference pointers, and
 		// every enum-field store takes mv copies). Free them regardless of
@@ -1604,7 +1607,12 @@ function emit_nested_field_destroys(
 	base_offset: number,
 ) {
 	for (const field of struct_type.fields) {
-		const offset = get_field_offset_of_fields(struct_type.fields, field.name, status);
+		// Packed layout order — declaration-order fields, packed offsets.
+		const offset = get_field_offset_of_fields(
+			layout_fields(struct_type, status),
+			field.name,
+			status,
+		);
 		const field_struct =
 			is_struct_type(resolve_struct_name(field.type.name, field.type.type_args, status), status) ||
 			is_struct_type(field.type.name, status);
@@ -1646,7 +1654,8 @@ function emit_destroy_for_array_elem(
 		if (struct_type.is_class || struct_type.is_owning === true) return;
 	}
 	let offset = 8;
-	for (const field of struct_type.fields) {
+	// Packed layout order (struct_packing.ts) keeps the unaligned cursor exact.
+	for (const field of packed_own_fields(struct_type)) {
 		const field_struct =
 			is_struct_type(resolve_struct_name(field.type.name, field.type.type_args, status), status) ||
 			is_struct_type(field.type.name, status);

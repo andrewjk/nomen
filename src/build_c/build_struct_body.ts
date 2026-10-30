@@ -1,11 +1,11 @@
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
+import { packed_own_fields, packed_trait_extra_fields } from "../build_common/struct_packing.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import type BlockNode from "../nodes/BlockNode.ts";
 import type FunctionNode from "../nodes/FunctionNode.ts";
 import StructNode from "../nodes/StructNode.ts";
-import TraitNode from "../nodes/TraitNode.ts";
 import Type from "../nodes/Type.ts";
 import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
@@ -81,8 +81,14 @@ export default function build_struct_body(node: StructNode, status: BuildStatus)
 	// pulls in MacTypes.h (see set_c_typedef_mangling).
 	status.code += `typedef struct ${node.name}\n{\n`;
 	status.code += `void *_vt;\n`;
-	// Fields from the struct
-	for (let field of node.fields) {
+	// Fields from the struct, in PACKED layout order — the same order the
+	// aarch64 offset walk (`layout_fields`) and the check-side T_SIZE mirror
+	// use, so C's naturally-aligned layout of these members places every
+	// field at the offset the aarch64 backend computes. `struct.fields` keeps
+	// declaration order (the positional #init contract); this is the layout
+	// view only.
+	const packed_fields = packed_own_fields(node);
+	for (let field of packed_fields) {
 		if (field.type.is_array && field.type.length && !field.type.is_array_heap) {
 			// Fixed-size stack array field: e.g. char* items[2]
 			status.code += `${field_c_type(field.type, status)} ${field.name}[`;
@@ -102,14 +108,10 @@ export default function build_struct_body(node: StructNode, status: BuildStatus)
 			}
 		}
 	}
-	// Default fields from traits
-	for (let traitName of node.traits) {
-		const trait = status.traits.find((n) => n.name === traitName) as TraitNode;
-		if (trait) {
-			for (let field of trait.fields.filter((f) => !node.fields.find((nf) => nf.name === f.name))) {
-				status.code += `${field_c_type(field.type, status)} ${field.name};\n`;
-			}
-		}
+	// Default fields from traits (packed among themselves, mirroring the
+	// aarch64 layout_fields trait tail)
+	for (let field of packed_trait_extra_fields(node, status.traits)) {
+		status.code += `${field_c_type(field.type, status)} ${field.name};\n`;
 	}
 	status.code += `} ${c_typedef_name(node.name)};\n`;
 }

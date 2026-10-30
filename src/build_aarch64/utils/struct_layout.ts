@@ -1,8 +1,10 @@
 import type BuildStatus from "../../build_c/BuildStatus.ts";
 import { is_nullable_scalar_type } from "../../build_common/nullable_scalar.ts";
 import { is_nullable_struct_type } from "../../build_common/nullable_struct.ts";
+import { packed_own_fields, packed_trait_extra_fields } from "../../build_common/struct_packing.ts";
 import { get_built_in_type } from "../../built_in_types.ts";
 import DeclarationNode from "../../nodes/DeclarationNode.ts";
+import type FunctionNode from "../../nodes/FunctionNode.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
 import aarch64_size from "./aarch64_size.ts";
 import { emit_asm } from "./code_buffer.ts";
@@ -72,21 +74,26 @@ export function get_struct_size(name: string, status: BuildStatus): number {
  * the struct does not override. The C backend emits trait fields into the
  * typedef (the C compiler lays them out); the aarch64 layout must account for
  * them too, or a trait field's offset lands past the allocated instance.
+ *
+ * Own fields are PACKED (alignment-descending — see
+ * build_common/struct_packing.ts) unless the struct is excluded (raw `#arch`
+ * bodies, tuples, fixed-array fields); trait extras follow, packed among
+ * themselves. Field declaration order is untouched on the node itself — the
+ * positional `#init` contract depends on it.
  */
 export function layout_fields(
-	struct: { fields: DeclarationNode[]; traits?: string[] },
+	struct: {
+		name?: string;
+		fields: DeclarationNode[];
+		traits?: string[];
+		functions?: FunctionNode[];
+	},
 	status: BuildStatus,
 ): DeclarationNode[] {
-	if (!struct.traits?.length) return struct.fields;
-	const extra: DeclarationNode[] = [];
-	for (const trait_name of struct.traits) {
-		const trait = status.traits.find((t) => t.name === trait_name);
-		if (!trait) continue;
-		for (const f of trait.fields) {
-			if (!struct.fields.find((nf) => nf.name === f.name)) extra.push(f);
-		}
-	}
-	return extra.length ? [...struct.fields, ...extra] : struct.fields;
+	const own = packed_own_fields(struct);
+	if (!struct.traits?.length) return own;
+	const extra = packed_trait_extra_fields(struct, status.traits);
+	return extra.length ? [...own, ...extra] : own;
 }
 
 export function get_type_size(

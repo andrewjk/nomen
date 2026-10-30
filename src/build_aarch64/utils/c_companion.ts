@@ -8,13 +8,13 @@ import {
 } from "../../build_common/mono_name.ts";
 import { escape_asciz } from "../../build_common/string_escapes.ts";
 import string_literal_length from "../../build_common/string_literal_length.ts";
+import { packed_own_fields, packed_trait_extra_fields } from "../../build_common/struct_packing.ts";
 import { is_overloaded, mangled_label } from "../../check/utils/function_overload.ts";
 import DeclarationNode from "../../nodes/DeclarationNode.ts";
 import EnumNode from "../../nodes/EnumNode.ts";
 import FunctionNode from "../../nodes/FunctionNode.ts";
 import ParameterNode from "../../nodes/ParameterNode.ts";
 import StructNode from "../../nodes/StructNode.ts";
-import TraitNode from "../../nodes/TraitNode.ts";
 import Type from "../../nodes/Type.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
 import { FIBER_HEADER_C, POOL_HEADER_C } from "../build_spawn_node.ts";
@@ -313,7 +313,10 @@ function generate_enum_definition(node: EnumNode, status: BuildStatus): string {
 function generate_struct_definition(struct: StructNode, status: BuildStatus): string {
 	let out = `typedef struct ${struct.name}\n{\n`;
 	out += `void *_vt;\n`;
-	for (const field of struct.fields) {
+	// Members in PACKED layout order — aarch64_use_c raw bodies read these
+	// fields through C's naturally-aligned layout of THIS typedef, so the
+	// member order must match the aarch64 offset walk (`layout_fields`).
+	for (const field of packed_own_fields(struct)) {
 		// A `view T` field is the universal (ptr, len) slice value — every
 		// view lowers to nomen_view regardless of its element type. A generic
 		// field type with concrete args (`List<ClickBinding> clicks`) keys the
@@ -325,17 +328,11 @@ function generate_struct_definition(struct: StructNode, status: BuildStatus): st
 			: payload_type(mono_struct_name(field.type, status), status);
 		out += `${member_type} ${field.name};\n`;
 	}
-	for (const traitName of struct.traits) {
-		const trait = status.traits.find((t) => t.name === traitName) as TraitNode | undefined;
-		if (!trait) continue;
-		for (const field of trait.fields.filter(
-			(f) => !struct.fields.find((nf) => nf.name === f.name),
-		)) {
-			const member_type = field.type.is_view
-				? "nomen_view"
-				: payload_type(mono_struct_name(field.type, status), status);
-			out += `${member_type} ${field.name};\n`;
-		}
+	for (const field of packed_trait_extra_fields(struct, status.traits)) {
+		const member_type = field.type.is_view
+			? "nomen_view"
+			: payload_type(mono_struct_name(field.type, status), status);
+		out += `${member_type} ${field.name};\n`;
 	}
 	out += `} ${nm(struct.name)};\n`;
 	return out;

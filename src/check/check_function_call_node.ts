@@ -3,6 +3,7 @@ import { fold_asm_constants } from "../build_common/fold_asm_constants.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import type { NullableTypeTables } from "../build_common/nullable_scalar.ts";
+import { packed_own_fields } from "../build_common/struct_packing.ts";
 import { get_built_in_type } from "../built_in_types.ts";
 import type AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
@@ -2568,8 +2569,12 @@ function raw_type_size(name: string, structs: StructNode[], tables: NullableType
 	const struct = structs.find((s) => s.name === name);
 	if (name === "string") return 16;
 	if (!struct || struct.is_simple_type || struct.is_class) return 8;
+	// Walk the PACKED layout order (build_common/struct_packing.ts) — the
+	// same order the aarch64 get_struct_size walk and the C typedef emission
+	// use — so a raw T-generic slab stride stays byte-for-byte in sync with
+	// the real element layout.
 	let size = 8;
-	for (const field of struct.fields) {
+	for (const field of packed_own_fields(struct)) {
 		size = raw_align_to(size, raw_type_alignment(field.type.name));
 		// A `view T` field is the universal 16-byte (ptr, len) pair,
 		// regardless of its element type (matches get_type_size in

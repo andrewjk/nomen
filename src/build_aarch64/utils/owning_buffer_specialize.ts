@@ -7,6 +7,7 @@ import {
 } from "../../build_common/destroy_analysis.ts";
 import { has_string_fields, owns_strings_uniformly } from "../../build_common/has_string_fields.ts";
 import { resolve_struct_type } from "../../build_common/mono_name.ts";
+import { packed_own_fields } from "../../build_common/struct_packing.ts";
 import type EnumNode from "../../nodes/EnumNode.ts";
 import StructNode from "../../nodes/StructNode.ts";
 import aarch64_size from "./aarch64_size.ts";
@@ -228,7 +229,9 @@ function collect_string_fields(
 ): { offset: number }[] {
 	const result: { offset: number }[] = [];
 	let offset = 8; // VT_SIZE prefix
-	for (const field of elem.fields) {
+	// Packed layout order — the cursor below is unaligned and relies on the
+	// packed order being gap-free (struct_packing.ts).
+	for (const field of packed_own_fields(elem)) {
 		if (field.type.is_ref) {
 			offset += get_type_size(field.type, status);
 			continue;
@@ -274,7 +277,8 @@ function collect_transfer_fields(
 ): { offset: number; size: number }[] {
 	const result: { offset: number; size: number }[] = [];
 	let offset = 8; // VT_SIZE prefix
-	for (const field of elem.fields) {
+	// Packed layout order (struct_packing.ts) keeps the unaligned cursor exact.
+	for (const field of packed_own_fields(elem)) {
 		const size = get_type_size(field.type, status);
 		// A `Box<T>` field TRANSFERS (nullable included — the donor's teardown
 		// is null-guarded, so zeroing removes it from that reclaim): the slot
@@ -343,7 +347,8 @@ function emit_load_deep_copy_fields(
 	slot: string,
 ): void {
 	let offset = 8; // VT_SIZE prefix
-	for (const field of elem.fields) {
+	// Packed layout order (struct_packing.ts) keeps the unaligned cursor exact.
+	for (const field of packed_own_fields(elem)) {
 		const size = get_type_size(field.type, status);
 		// Plain string fields stay BORROWED on load: expression-temp consumers
 		// (`a.get(r).label`) never reclaim the loaded temp, so a strdup here
@@ -1395,7 +1400,8 @@ function is_container_mono_name_a64(name: string): boolean {
 function container_data_offsets_a64(fs: StructNode, status: BuildStatus, base = 0): number[] {
 	const out: number[] = [];
 	let offset = 8; // VT/stamp prefix
-	for (const field of fs.fields) {
+	// Packed layout order (struct_packing.ts) keeps the unaligned cursor exact.
+	for (const field of packed_own_fields(fs)) {
 		const size = get_type_size(field.type, status);
 		if (field.name === "data") {
 			out.push(base + offset);
@@ -1445,7 +1451,8 @@ function collect_displaced_leaves_a64(
 ): DisplacedLeafA64[] {
 	const leaves: DisplacedLeafA64[] = [];
 	let offset = 8; // VT/stamp prefix
-	for (const field of elem.fields) {
+	// Packed layout order (struct_packing.ts) keeps the unaligned cursor exact.
+	for (const field of packed_own_fields(elem)) {
 		const size = get_type_size(field.type, status);
 		if (!field.type.is_ref && !field.type.is_view && !field.type.is_array) {
 			if (field.type.name === "string" && !field.type.is_array) {

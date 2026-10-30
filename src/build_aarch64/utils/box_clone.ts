@@ -129,9 +129,11 @@ function emit_pointee_owned_copies_asm(
 	if (visiting.has(pointee.name)) return;
 	visiting.add(pointee.name);
 	const strings_are_heap = box_pointee_strings_are_heap(pointee, scratch);
+	const layout = layout_fields(pointee, scratch);
 	for (const field of clone_fields(pointee, scratch)) {
-		const offset =
-			acc + get_field_offset_of_fields(clone_fields(pointee, scratch), field.name, scratch);
+		// Offsets come from the full packed LAYOUT (own fields prefix the trait
+		// tail); the visited set keeps the clone_fields filter.
+		const offset = acc + get_field_offset_of_fields(layout, field.name, scratch);
 		if (field.type.is_ref || field.type.is_view || field.type.is_array || field.type.is_nullable)
 			continue;
 		const nested_box = box_field_mono(field.type, scratch);
@@ -185,7 +187,8 @@ function emit_pointee_owned_copies_asm(
 /** The fields the pointee's destroy reclaims: an OWNING struct's
  *  trait-declared fields are uniformly heap (the ctor strdup'd their
  *  defaults) and join the walk, mirroring emit_field_destroys'
- *  layout_fields merge. */
+ *  layout_fields merge. (Offsets for both arms are computed against the
+ *  full packed `layout_fields` — see the call site.) */
 function clone_fields(pointee: StructNode, status: BuildStatus): DeclarationNode[] {
 	return pointee.is_class || owns_strings_uniformly(pointee)
 		? layout_fields(pointee, status)

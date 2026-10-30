@@ -1,0 +1,42 @@
+// Struct field-order packing shape (PERF_PLAN item 12).
+//
+// `Rec` declares its fields word, bool, word, bool — the classic
+// declaration-order padding shape. Declaration layout: a@8, f@16, b@24,
+// g@32 → T_SIZE 40 (7 padding bytes per element). Packed layout: a@8, b@16,
+// f@24, g@25 → T_SIZE 32. Every slot write, read sweep, and push below pays
+// the stride; the checksum pins identical semantics across compilers.
+//
+// n from argv. Prints one checksum.
+
+import System
+
+struct Rec {
+	var int a
+	var bool f
+	var int b
+	var bool g
+}
+
+pub func main = (Init init) {
+	var n = 2000000
+	if init.argc > 1 {
+		n = parse_int(init.args.at(1))
+	}
+	var l = List<Rec>()
+	var int i = 0
+	while i < n; i += 1 {
+		l.push(Rec(i, (i % 2) == 0, i * 3, (i % 3) == 0))
+	}
+	var int sum = 0
+	var int pass = 0
+	while pass < 2; pass += 1 {
+		var int j = 0
+		while j < l.length; j += 1 {
+			var Rec r = l.at(j)
+			sum += r.a + r.b
+			if r.f { sum += 1 }
+			if r.g { sum += 2 }
+		}
+	}
+	Console.write(sum.to_string())
+}
