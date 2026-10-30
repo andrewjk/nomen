@@ -5,7 +5,7 @@ import Type from "./Type.ts";
 export default class EnumNode extends BaseNode {
 	visibility: "pub" | "private" | "internal";
 	name: string;
-	cases: { name: string; params: ParameterNode[] }[];
+	cases: { name: string; params: ParameterNode[]; tag_index?: number }[];
 	/** True when this enum is defined in the appended System library source. */
 	is_library?: boolean;
 	/** Declared `mv enum` (STRUCT_PLAN_3 B1a): bindings mv instead of
@@ -33,6 +33,15 @@ export default class EnumNode extends BaseNode {
 	 * for top-level enums, whose source name IS their emission name.
 	 */
 	source_name?: string;
+	/**
+	 * Variable-mode enum (PERF_PLAN item 13): set on a synthesized
+	 * single-case mono (`Res.ok` → enum `Res_ok` whose cases are [ok]).
+	 * `parent_enum` names the base enum; every case carries the ORIGINAL
+	 * declaration index in `tag_index` so tags stay consistent with the
+	 * base (a case-mono value's tag equals the base case's tag).
+	 */
+	is_case_mono?: boolean;
+	parent_enum?: string;
 
 	constructor(
 		start: number,

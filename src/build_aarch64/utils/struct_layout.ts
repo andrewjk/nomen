@@ -256,7 +256,13 @@ export function get_enum_case_index(
 ): number {
 	const enum_node = status.enums.find((e) => e.name === enum_name);
 	if (!enum_node) return 0;
-	return enum_node.cases.findIndex((c) => c.name === case_name);
+	const idx = enum_node.cases.findIndex((c) => c.name === case_name);
+	if (idx < 0) return idx;
+	// A case-mono enum (variable-mode `Res.ok` → `Res_ok`) holds its single
+	// case at position 0, but the tag VALUE is the base case's declaration
+	// index — recorded on the case at check time. Every caller here compares
+	// or stores a tag, never an array position.
+	return enum_node.cases[idx].tag_index ?? idx;
 }
 
 export function emit_struct_copy(

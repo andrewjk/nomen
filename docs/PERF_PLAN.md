@@ -20,8 +20,8 @@ them; the rest carry expected wins and the receipts they rest on).
 | 9   | ~~Map/Set stored hash (Swiss-table tricks)~~ **LANDED Oct 2026: −35% / −52% probe shape, −21% / −49% string build+remove, −19% / −33% Set build, −22% aarch64 int rehash; int-keyed hit paths +2–10% (below)** | both           | M      | shape micro-benches, interleaved medians (below) |
 | 10  | ~~StringBuilder numeric appends + 1-pass interp~~ **LANDED Oct 2026: −80% / −79% interp, −76% / −75% numeric append, −66% / −70% new-spelling**                                                                | both           | S      | shape micro-benches, interleaved medians (below) |
 | 11  | ~~Devirtualization of trait calls~~ **LANDED Oct 2026: −12% realistic callee / −31% trait-default (C), tiny-callee loop folds outright; aarch64 inline splice −19% (below)**                                   | both           | M      | shape micro-bench, interleaved medians (below)   |
-| 12  | ~~Struct field-order / padding~~ **LANDED Oct 2026: −10% / −12% shape (aarch64 / C), −20% peak RSS on the shape; standard suite flat**                                                                        | both           | S      | shape micro-bench, interleaved medians (below)   |
-| 13  | Variable-mode enums                                                                                                                                                                                            | both           | L      | GOOSE #6, documented, unshipped                  |
+| 12  | ~~Struct field-order / padding~~ **LANDED Oct 2026: −10% / −12% shape (aarch64 / C), −20% peak RSS on the shape; standard suite flat**                                                                         | both           | S      | shape micro-bench, interleaved medians (below)   |
+| 13  | ~~Variable-mode enums~~ **PARTIALLY LANDED Oct 2026: case types (`Enum.case`) — −53% / −31% time, −49% RSS on the shape; variable-stride arrays + generic enums remain**                                       | both           | L      | shape micro-bench, interleaved medians (below)   |
 | 14  | ~~Buffer word pairs (T_SIZE ≤ 16)~~ **LANDED Oct 2026: −12% / flat shape (aarch64 / C — clang already inlined it); json-serde flat (no 16-byte element exists)**                                               | mostly aarch64 | S      | shape micro-bench, interleaved medians (below)   |
 | 15  | aarch64 codegen receipts (splice model, folds…)                                                                                                                                                                | aarch64        | S–M    | measured regressions to reclaim                  |
 | 16  | Async paths audit                                                                                                                                                                                              | both           | ?      | unexplored, unmeasured                           |
@@ -1156,14 +1156,103 @@ their raw offsets. `_has` flag bytes still sit between fields (a nullable
 scalar before a sub-8 field wastes bytes); grouping flags at the struct tail
 would shave those, and needs the C emission to move them identically.
 
-## 13. Variable-mode enums
+## 13. Variable-mode enums — PARTIALLY LANDED (Oct 2026)
 
-GOOSE #6 — documented, never shipped. Tag + max-payload-room means every
-`Option`/`Result`/AST node pays the largest variant; variable mode packs each
-value to its variant's size (9/17/1 bytes instead of 17 each). The
-freeze-at-construction constraint is exactly the safety argument MEMORY.md
-already leans on. Token/AST-shaped workloads — the compiler's own — benefit on
-both backends. Big change; long-term.
+GOOSE #6 asked for enums whose values pack to their variant's size instead of
+every value paying tag + the largest payload. This tranche lands the
+statically-known-variant half: **case-qualified types** — `Enum.case` in a
+type position (`Res.ok`) names the variable-mode form of the enum — a value
+that is exactly one case, stored at that case's size (tag word + the case's
+payload, word-rounded) instead of tag + the largest case's payload. The
+freeze-at-construction constraint is enforced by the TYPE SYSTEM rather than
+a runtime check: nothing but an `.ok` construction types as `Res.ok`, so a
+`Res.ok` slot can never change variant — the safety condition MEMORY.md's
+tagged-union note leans on. The spelling flattens to a single-case mono enum
+(`Res.ok` → `Res__ok`; double underscore so the mono's C identifiers never
+collide with the base enum's tag constants `Res_err`/`Res_ok`), materialized
+during check into `status.enums` + `status.types` + `root.statements` — the
+same route generic monos take.
+
+- **Parse** (`src/parse/parse_type.ts`): `Enum.case` after the base type
+  name; the `?`/`[]` suffixes still apply (`Res.ok?`). Case types over a
+  generic instantiation (`Option<int>.some`) are rejected with "not supported
+  yet" (remainder).
+- **Check** (`src/check/utils/case_enum.ts`, hooked from
+  `check_type_exists`): validates the base enum + case, rejects name
+  collisions (`struct Res__ok`), copies `is_owning`/`checked` (a `mv enum`'s
+  monos stay move-only; a `checked` enum's stay checked), and stamps every
+  case's `tag_index` = its ORIGINAL declaration index (`check_enum_node`).
+  Construction coercion: when the expected type is the matching case mono,
+  `check_access_node` stamps the mono type and rewrites the `Res.ok(...)` /
+  `Res.ok` receiver to the mono, so both backends construct the mono value —
+  the existing enum machinery (in-place push/store, match, `==`, sret,
+  container monos, ownership teardown) keys off the type name and just works.
+  Explicit constructor type args (`List<Item.small>()`) materialize the mono
+  in `check_function_call_node`, since that path bypasses annotation
+  validation.
+- **Tags** (`get_enum_case_index` in
+  `src/build_aarch64/utils/struct_layout.ts` plus the seven other
+  tag-emission sites; `src/build_c/build_enum_node.ts`): a tag's VALUE is
+  `case.tag_index ?? position`, so a mono's single case (position 0)
+  stores/compares the base enum's tag — case-mono values are byte-compatible
+  with base values. The C tag typedefs emit explicit values when they differ
+  (`typedef enum { Item__small_small = 1 } Item__small_tag;`).
+- **No conversions this tranche**: a case-mono value cannot flow into a
+  base-typed slot (or the reverse) — declaration/assignment/argument/return
+  positions compare type names, so the mismatch is a clean check error. Case
+  types interoperate with themselves: locals, params, returns, struct fields,
+  `List`/`Map`/`Set`/`Buffer` elements, `match` (exhaustiveness refines to
+  the single case), and `==`.
+- **A pre-existing bug fixed on the way**: C match bindings whose names are
+  ObjC/C-reserved (`id`) were declared unmangled while the body referenced
+  the mangled `_nomen_id`; the declaration now goes through
+  `c_function_name` (`src/build_c/build_match_node.ts`). `match` on a
+  multi-case data enum with a call/`pop()` scrutinee SIGBUSes on aarch64 at
+  HEAD — pre-existing and unrelated (FOLLOWUP.md), so the bench and tests
+  avoid that shape.
+
+Sixteen tests in `test/enum_variable_mode.test.ts` (both backends, audit on)
+pin the runtime shapes (int/string payloads, shorthand, same-case
+reassignment, `List` push/read/`pop`, zero-payload cases, `==`, struct
+fields, params/returns) and the emitted code (`Item__small_small = 1` tag,
+`sizeof(Item__small)` container stride, the aarch64 frame/copy shrink); the
+full suite (533 files, both backends) passes.
+
+**Measured.** Shape micro-bench — `bench/nomen/enum_variable_mode.nm`: n
+pushes + an n-read sweep, `Item { case missing; case small(int id); case big(int id, int a, int b) }`
+— fixed slot 32 bytes (tag + 3 payload words) vs `Item.small` slot 16 (tag +
+1). Same binary, mode from argv, n = 5M, Apple Silicon, 9 interleaved rounds,
+medians, audit off, release builds, identical checksums:
+
+| Backend | fixed (before) | var (after) |        Δ | peak RSS            |
+| ------- | -------------: | ----------: | -------: | ------------------- |
+| C       |        0.0432s |     0.0203s | **−53%** | 260 → 132 MB (−49%) |
+| aarch64 |        0.0902s |     0.0623s | **−31%** | 260 → 132 MB (−49%) |
+
+At n = 2M (more cache-resident): C −32%, aarch64 −26%, RSS −47%. Per element
+the elided work is exactly the item's promise: half the stride — every push
+slot store, growth memcpy, read load, and ownership zero is 16 bytes instead
+of 32 — and the allocation halves; the RSS column is the direct receipt.
+
+- _The before/after control_ — the fixed shape's emitted code is
+  byte-identical between the pre-change compiler and this one (all four
+  standard-suite sources too: json-serde, binarytrees, lru, nsieve —
+  `cmp`-equal `.m`/`.s` on both backends). No existing program's emission
+  changed; the win is exactly the layout the new type asks for, so the
+  standard suite needs no timing table.
+
+**Remainder.** (1) True variable-stride storage — GOOSE's "packed and
+sequential" array where element _i_'s address is not `base + i × stride`
+(needs a packed container family; today a case mono is a fixed-stride
+container of variant-sized elements, which captures the memory win for
+unknown-dimension-free uses). (2) Case types over generic enums
+(`Option<int>.some`, `Result<int,string>.ok`) — rejected at parse until the
+mono-of-a-mono materialization order is settled. (3) Base↔case conversions:
+case → base is always sound (tags are in range) and base → case needs a
+runtime case test; both are assignment-site surface, deferred so this
+tranche stays additive. (4) A whole-enum variable-mode type (`Shape..` in
+GOOSE's spelling) whose size comes from the tag at runtime — the other half
+of #6.
 
 ## 14. Buffer word pairs for T_SIZE ≤ 16 — LANDED (Oct 2026)
 

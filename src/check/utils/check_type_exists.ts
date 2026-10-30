@@ -5,6 +5,7 @@ import {
 } from "../../build_common/nullable_scalar.ts";
 import Type from "../../nodes/Type.ts";
 import type CheckStatus from "../CheckStatus.ts";
+import { resolve_case_enum_type } from "./case_enum.ts";
 import resolve_declared_type from "./resolve_declared_type.ts";
 import type_name from "./type_name.ts";
 
@@ -76,6 +77,13 @@ export default function check_type_exists(type: Type, status: CheckStatus, start
 			}
 		}
 		return ok;
+	}
+	// Variable-mode enum (PERF_PLAN item 13): a case-qualified type
+	// (`Res.ok`) validates its base enum + case and materializes the
+	// single-case mono (`Res_ok`) into the type tables. Afterwards the
+	// mangled name resolves like any declared type below.
+	if (type.case_enum) {
+		resolve_case_enum_type(type, status, start);
 	}
 	// Resolve to the declaration's emission name so a nested type whose source
 	// name was scope-labelled resolves consistently everywhere downstream (the

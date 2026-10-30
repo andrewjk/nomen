@@ -1404,7 +1404,8 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 	if (enum_node) {
 		const enum_case = enum_node.cases.find((c) => c.name === access_field.name);
 		if (enum_case) {
-			const case_index = enum_node.cases.indexOf(enum_case);
+			// Tag VALUE = declaration index (case monos carry the base tag).
+			const case_index = enum_case.tag_index ?? enum_node.cases.indexOf(enum_case);
 			if (enum_node.has_associated_data && enum_case.params.length === 0) {
 				const enum_size = get_enum_size(target_name || target_type?.name || "", status);
 				const temp_name = `_enum_${access_temp_counter++}`;
@@ -2069,7 +2070,8 @@ function build_access_method(
 	if (enum_node) {
 		const enum_case = enum_node.cases.find((c) => c.name === access_func.name);
 		if (enum_case) {
-			const case_index = enum_node.cases.indexOf(enum_case);
+			// Tag VALUE = declaration index (case monos carry the base tag).
+			const case_index = enum_case.tag_index ?? enum_node.cases.indexOf(enum_case);
 			if (enum_node.has_associated_data) {
 				const enum_size = get_enum_size(target_name!, status);
 				const temp_name = `_enum_${access_temp_counter++}`;

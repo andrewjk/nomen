@@ -19,10 +19,17 @@ export default function build_enum_node(node: EnumNode, status: BuildStatus) {
 	status.headers += `// Enum ${node.name}\n`;
 	status.code += `// Enum ${node.name}\n`;
 
+	// A case mono's single case keeps the BASE enum's tag value (tag_index),
+	// so a mono value's tag compares equal to the base case in match/==.
+	const tag_value = (c: { name: string; tag_index?: number }, i: number): string =>
+		c.tag_index !== undefined && c.tag_index !== i
+			? `${node.name}_${c.name} = ${c.tag_index}`
+			: `${node.name}_${c.name}`;
+
 	if (node.has_associated_data) {
-		build_tagged_union_enum(node, status);
+		build_tagged_union_enum(node, status, tag_value);
 	} else {
-		build_simple_enum(node, status);
+		build_simple_enum(node, status, tag_value);
 	}
 
 	status.headers += "\n";
@@ -52,20 +59,31 @@ function payload_c_decl(type: Type, name: string, status: BuildStatus): string {
 	return `${c_type(type.name)} ${name}`;
 }
 
-function build_simple_enum(node: EnumNode, status: BuildStatus) {
+function build_simple_enum(
+	node: EnumNode,
+	status: BuildStatus,
+	tag_value: (c: { name: string; tag_index?: number }, i: number) => string,
+) {
 	// Emit the typedef enum only in the header (which the .m includes), so the
 	// definition isn't duplicated between the two files. The typedef name is
 	// mangled on GUI builds (MacTypes collision); the enum constants
-	// (`Name_case`) are plain symbols, unaffected.
-	status.headers += `typedef enum { ${node.cases.map((c) => `${node.name}_${c.name}`).join(", ")} } ${c_typedef_name(node.name)};\n`;
+	// (`Name_case`) are plain symbols, unaffected. A case's tag VALUE is its
+	// original declaration index (case monos carry a base-enum tag).
+	status.headers += `typedef enum { ${node.cases.map(tag_value).join(", ")} } ${c_typedef_name(node.name)};\n`;
 }
 
-function build_tagged_union_enum(node: EnumNode, status: BuildStatus) {
+function build_tagged_union_enum(
+	node: EnumNode,
+	status: BuildStatus,
+	tag_value: (c: { name: string; tag_index?: number }, i: number) => string,
+) {
 	// Tagged-union enums: emit tag typedef + struct typedef only in the header
 	// (the .m includes it), avoiding duplicate definitions across files. Both
 	// the tag enum and the struct typedef names are mangled on GUI builds; the
-	// struct TAG (`struct Foo`) and the case constants stay plain.
-	status.headers += `typedef enum { ${node.cases.map((c) => `${node.name}_${c.name}`).join(", ")} } ${c_typedef_name(node.name + "_tag")};\n`;
+	// struct TAG (`struct Foo`) and the case constants stay plain. A case's
+	// tag VALUE is its original declaration index (case monos carry a
+	// base-enum tag, so a mono value matches the base case in match/==).
+	status.headers += `typedef enum { ${node.cases.map(tag_value).join(", ")} } ${c_typedef_name(node.name + "_tag")};\n`;
 	status.headers += `struct ${node.name};\n`;
 	status.headers += `typedef struct ${node.name}\n{\n`;
 	status.headers += `${c_typedef_name(node.name + "_tag")} tag;\n`;

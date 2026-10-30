@@ -87,6 +87,16 @@ export default class Type {
 	enum_cases?: { name: string; types: Type[] }[];
 
 	/**
+	 * Variable-mode enum (PERF_PLAN item 13): the BASE enum name of a
+	 * case-qualified type spelling `Enum.case` (e.g. `Res.ok` →
+	 * case_enum "Res", name "Res_ok"). The type is materialized during
+	 * check into a single-case mono enum (see resolve_case_enum_type);
+	 * afterwards only `name` matters — this field survives for rendering
+	 * and re-validation. Undefined on every other type.
+	 */
+	case_enum?: string;
+
+	/**
 	 * True when this type is an array (stack or heap). Reads from
 	 * `storage_kind`. Setting `is_array = true` promotes a plain type to a
 	 * `stack_array` (or leaves a `heap_array` as heap). Setting it to a

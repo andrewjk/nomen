@@ -319,8 +319,8 @@ function get_raw_value(node: ValueNode, status?: BuildStatus): string {
 		if (found) {
 			const enum_node = found.enum_node;
 			const case_name = found.case_name;
-			const case_index = enum_node.cases.findIndex((c) => c.name === case_name);
-			if (case_index >= 0) return String(case_index);
+			const idx = enum_node.cases.findIndex((c) => c.name === case_name);
+			if (idx >= 0) return String(enum_node.cases[idx].tag_index ?? idx);
 		}
 	}
 	if (is_int_literal(val)) return to_decimal_string(val);

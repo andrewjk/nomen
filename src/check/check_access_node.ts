@@ -20,6 +20,7 @@ import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { invalidate_borrows_of, receiver_owner_of } from "./utils/borrow.ts";
 import { is_box_type } from "./utils/box.ts";
+import { case_mono_for_construction } from "./utils/case_enum.ts";
 import check_func_argument_signature from "./utils/check_func_argument_signature.ts";
 import { stamp_devirtualized_trait_call } from "./utils/devirtualize.ts";
 import {
@@ -435,7 +436,26 @@ function check_access_field_node(
 		if (enum_node) {
 			const enum_case = enum_node.cases.find((c) => c.name === node.name);
 			if (enum_case) {
-				node.type = new Type(enum_node.name);
+				// Variable-mode (case) construction: an expected case-mono type
+				// (`var Res.ok r = Res.ok`) stamps the mono and rewrites the
+				// target so both backends construct the variant-sized value.
+				// Only a bare `Res` receiver rewrites (the stamp requires the
+				// target text swap).
+				const mono =
+					target.node_type === "value"
+						? case_mono_for_construction(
+								enum_node,
+								enum_case.name,
+								status.expected_type?.name,
+								status,
+							)
+						: undefined;
+				node.type = new Type(mono ? mono.name : enum_node.name);
+				if (mono) {
+					const tv = target as ValueNode;
+					tv.value = mono.name;
+					tv.type = new Type(mono.name);
+				}
 				return true;
 			} else {
 				if (enum_node.has_associated_data) {
@@ -779,7 +799,27 @@ export function check_access_function_node(
 		if (enum_node) {
 			const enum_case = enum_node.cases.find((c) => c.name === node.name);
 			if (enum_case) {
-				node.type = new Type(enum_node.name);
+				// Variable-mode (case) construction: an expected case-mono type
+				// (`var Res.ok r = Res.ok(5)`) stamps the mono type and rewrites
+				// the target so both backends construct the variant-sized value
+				// (the mono's `_init`/temp, tag from the ORIGINAL case index).
+				// Only a bare `Res` receiver rewrites — the stamp requires the
+				// target text swap, so anything else keeps the base lowering.
+				const mono =
+					target.node_type === "value"
+						? case_mono_for_construction(
+								enum_node,
+								enum_case.name,
+								status.expected_type?.name,
+								status,
+							)
+						: undefined;
+				node.type = new Type(mono ? mono.name : enum_node.name);
+				if (mono) {
+					const tv = target as ValueNode;
+					tv.value = mono.name;
+					tv.type = new Type(mono.name);
+				}
 				node.is_static = true;
 
 				for (let param of node.params) {

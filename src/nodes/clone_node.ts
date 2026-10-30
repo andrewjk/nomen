@@ -64,6 +64,7 @@ export function clone_type(type: Type): Type {
 	}));
 	t.func_params = type.func_params?.map((p) => clone_node(p) as ParameterNode);
 	t.func_return_type = type.func_return_type ? clone_type(type.func_return_type) : undefined;
+	t.case_enum = type.case_enum;
 	return t;
 }
 

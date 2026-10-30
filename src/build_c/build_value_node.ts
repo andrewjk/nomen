@@ -1,3 +1,4 @@
+import { find_enum_for_case } from "../build_common/find_enum.ts";
 import fold_string_const from "../build_common/fold_string_const.ts";
 import reencode_hex_escapes from "../build_common/string_escapes.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
@@ -52,9 +53,13 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 	// `_init()` (matching `Enum.case` access calls); a simple enum emits the
 	// tag constant directly.
 	if (node.is_enum_shorthand) {
-		const enum_node = status.enums.find((e) => value.startsWith(e.name + "_"));
-		if (enum_node) {
-			if (enum_node.has_associated_data) {
+		// find_enum_for_case disambiguates by case existence: a case-mono
+		// value (`Res__ok_ok`) must resolve to the mono (`Res__ok`, simple →
+		// the tag constant), not the base enum (data → an `_init()` call on
+		// a function that was never emitted for the mono).
+		const found = find_enum_for_case(value, status);
+		if (found) {
+			if (found.enum_node.has_associated_data) {
 				status.code += `${value}_init()`;
 			} else {
 				status.code += value;

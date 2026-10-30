@@ -38,6 +38,12 @@ export default function check_enum_node(node: EnumNode, status: CheckStatus) {
 	}
 
 	for (let i = 0; i < node.cases.length; i++) {
+		// The tag VALUE of a case is its declaration index. Recorded on the
+		// case so case-mono enums (variable-mode `Res.ok` → `Res_ok`, whose
+		// single case sits at position 0 of the mono) emit the same tag the
+		// base enum uses — a case-mono value's tag must equal the base
+		// case's tag for match/== to agree.
+		if (node.cases[i].tag_index === undefined) node.cases[i].tag_index = i;
 		for (let j = i + 1; j < node.cases.length; j++) {
 			if (node.cases[i].name === node.cases[j].name) {
 				add_error(

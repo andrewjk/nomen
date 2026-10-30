@@ -106,8 +106,11 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 		if (found) {
 			const enum_node = found.enum_node;
 			const case_name = found.case_name;
-			const case_index = enum_node.cases.findIndex((c) => c.name === case_name);
-			if (case_index >= 0) {
+			const idx = enum_node.cases.findIndex((c) => c.name === case_name);
+			if (idx >= 0) {
+				// The tag VALUE is the case's declaration index (a case mono's
+				// single case sits at position 0 but carries the base tag).
+				const case_index = enum_node.cases[idx].tag_index ?? idx;
 				// For an enum with associated data, even a no-arg case must
 				// produce a multi-word temp (tag at +0, zeroed payload) so the
 				// caller can struct-copy the full value. A simple enum emits

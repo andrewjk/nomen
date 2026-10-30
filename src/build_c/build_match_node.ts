@@ -156,7 +156,10 @@ export default function build_match_node(
 				if (!field) continue;
 				const is_ref = payload_is_reference(field.type, status);
 				const decl = is_ref ? `struct ${field.type.name} *` : `${c_type(field.type.name)} `;
-				status.code += `${decl}${match_case.params[i]} = ${value_expr}._data._${case_tag}.${field.name};\n`;
+				// The binding is keyword-mangled like any C variable (`id` is
+				// reserved in ObjC .m) — the block body references the mangled
+				// form (see c_function_name).
+				status.code += `${decl}${c_function_name(match_case.params[i])} = ${value_expr}._data._${case_tag}.${field.name};\n`;
 				if (is_ref) {
 					// The binding holds the instance POINTER: track it so a
 					// method call on the binding dispatches through the

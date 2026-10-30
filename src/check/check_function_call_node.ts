@@ -25,6 +25,7 @@ import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { synthesize_copy_method } from "./utils/auto_derive.ts";
 import { maybe_record_capture } from "./utils/captures.ts";
+import { resolve_case_enum_type } from "./utils/case_enum.ts";
 import check_init_assigns_all_fields from "./utils/check_init_fields.ts";
 import {
 	monomorphize_enum,
@@ -184,6 +185,14 @@ export default function check_function_call_node(
 		if (struct) {
 			const arg_types = node.params.map((p) => type_from_value_node(p, status));
 			if (struct.type_params.length > 0 && node.type_args?.length) {
+				// Case-typed type args (`List<Item.small>()`) materialize their
+				// single-case mono here — explicit constructor type args bypass
+				// the annotation path's check_type_exists. Only case types are
+				// resolved at this late point (generic-param args stay deferred,
+				// as below).
+				for (const arg of node.type_args) {
+					if (arg.case_enum) resolve_case_enum_type(arg, status, node.start);
+				}
 				const mono = monomorphize(struct, node.type_args, status);
 				if (mono) {
 					func = find_function_by_params(mono.functions, "#init", arg_types);

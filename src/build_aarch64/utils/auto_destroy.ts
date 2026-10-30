@@ -756,7 +756,8 @@ export function emit_enum_payload_frees_at(
 		for (const p of c.params) {
 			const is_ref = enum_payload_is_reference(p, status);
 			if (p.type.name !== "string" && !is_ref) continue;
-			const case_index = enum_node.cases.indexOf(c);
+			// Tag VALUE = declaration index (case monos carry the base tag).
+			const case_index = c.tag_index ?? enum_node.cases.indexOf(c);
 			const payload_off = get_enum_payload_offset(enum_name, c.name, p.name, status);
 			const payload_addr = base_offset
 				? `[${base_reg}, #${base_offset + payload_off}]`
@@ -813,7 +814,8 @@ export function emit_enum_payload_strdups_at(
 	for (const c of enum_node.cases) {
 		for (const p of c.params) {
 			if (p.type.name !== "string" || enum_payload_is_reference(p, status)) continue;
-			const case_index = enum_node.cases.indexOf(c);
+			// Tag VALUE = declaration index (case monos carry the base tag).
+			const case_index = c.tag_index ?? enum_node.cases.indexOf(c);
 			const payload_off = get_enum_payload_offset(enum_name, c.name, p.name, status);
 			const payload_addr = base_offset
 				? `[${base_reg}, #${base_offset + payload_off}]`

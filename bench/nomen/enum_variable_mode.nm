@@ -1,0 +1,72 @@
+import System
+
+// Variable-mode enum shape (PERF_PLAN item 13) — a case-typed container
+// (`List<Item.small>`, stride = tag + int = 16 bytes) against the fixed-mode
+// base enum (`List<Item>`, stride = tag + max payload = 32 bytes: the big
+// case's three int words). Same workload both modes, n from argv, checksum
+// printed so the runs are comparable:
+//
+//   enum_variable_mode <n> <fixed|var>
+//
+//   push — in-place construct per slot (the case ctor writes the slot)
+//   load — per-slot read sweep (at_or_panic → tag compare + payload load)
+//
+// The fixed shape lowers identically under the pre-variable-mode compiler
+// (old-compiler A/B sanity check); the fixed-vs-var delta on the same
+// compiler is the variable-mode win: half the bytes per element — memcpy /
+// memset sizes, container growth traffic, cache footprint.
+//
+// Payloads are int-only and there is no pop+match phase on purpose: a
+// base-enum `match l.pop()` on aarch64 SIGBUSes at HEAD (pre-existing,
+// FOLLOWUP.md) — unrelated to variable mode, and the mono's single-case
+// variant avoids it, so the bench keeps the shapes both modes can run.
+
+mv enum Item {
+	case missing
+	case small(int id)
+	case big(int id, int a, int b)
+}
+
+pub func main = (Init init) {
+	var n = 2000000
+	if init.argc > 1 {
+		n = parse_int(init.args.at(1))
+	}
+	var use_var = false
+	if init.argc > 2 {
+		use_var = init.args.at(2) == "var"
+	}
+
+	var total = 0
+
+	if use_var {
+		var lv = List<Item.small>()
+		var i = 0
+		while i < n; i += 1 {
+			lv.push(Item.small(i))
+		}
+		i = 0
+		while i < n; i += 1 {
+			match lv.at_or_panic(i) {
+				case .small(id) { total = total + id }
+			}
+		}
+	} else {
+		var lf = List<Item>()
+		var i = 0
+		while i < n; i += 1 {
+			lf.push(Item.small(i))
+		}
+		i = 0
+		while i < n; i += 1 {
+			match lf.at_or_panic(i) {
+				case .small(id) { total = total + id }
+			} else {
+				total = total + 0
+			}
+		}
+	}
+
+	Console.write(total.to_string())
+	Console.write("\n")
+}

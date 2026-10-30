@@ -108,8 +108,8 @@ function get_raw_value(node: ValueNode, status?: BuildStatus): string {
 	if (node.is_enum_shorthand && status) {
 		const found = find_enum_for_case(val, status);
 		if (found) {
-			const case_index = found.enum_node.cases.findIndex((c) => c.name === found.case_name);
-			if (case_index >= 0) return String(case_index);
+			const idx = found.enum_node.cases.findIndex((c) => c.name === found.case_name);
+			if (idx >= 0) return String(found.enum_node.cases[idx].tag_index ?? idx);
 		}
 	}
 	if (is_int_literal(val)) return to_decimal_string(val);
@@ -305,7 +305,8 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			const case_name = found.case_name;
 			const enum_case = enum_node.cases.find((c) => c.name === case_name);
 			if (enum_case) {
-				const case_index = enum_node.cases.indexOf(enum_case);
+				// Tag VALUE = declaration index (case monos carry the base tag).
+				const case_index = enum_case.tag_index ?? enum_node.cases.indexOf(enum_case);
 				const enum_size = get_enum_size(enum_node.name, status);
 				const temp_offset = allocate_stack_space(status, enum_size);
 				// An owned class/trait LOCAL passed to a mv case payload

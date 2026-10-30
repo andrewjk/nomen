@@ -797,7 +797,8 @@ function build_enum_tag_operand(
 	const case_name = static_enum_case(operand, enum_node, status);
 	if (case_name) {
 		const idx = enum_node.cases.findIndex((c) => c.name === case_name);
-		emit_asm(status, `mov ${target_reg}, #${idx}\n`);
+		// Tag VALUE = declaration index (case monos carry the base tag).
+		emit_asm(status, `mov ${target_reg}, #${enum_node.cases[idx]?.tag_index ?? idx}\n`);
 		return;
 	}
 	let node = operand;
