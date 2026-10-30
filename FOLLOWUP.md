@@ -627,13 +627,6 @@ the failures are a rebuild/worker race, not codegen. Mitigation for a
 touched-core session: run the suite once to rebuild, then judge on the
 second run — or make the prebuild a hard barrier for worker startup.
 
-## `.bumpy/*.md` bump messages conflict with the formatter
-
-Prettier strips `*` characters from the bump-file message body
-(`Buffer_*/BigInt_*` became `Buffer__/BigInt__`), so every
-`vp check --fix` re-mangles any bump message containing asterisks. Restore
-before release or avoid `*` in bump messages.
-
 ## `while cond; { … }` (empty post-statement) fails to parse
 
 Recorded 2026-10-27. `while i < 12; i += 1 { }` (with a post-statement)
@@ -725,15 +718,3 @@ Suspect: the generic mono's zero-value/`out TV` handling synthesizing a
 `<Struct>()` call (an mv struct has no zero-arg `#init` — "parameters
 missing" is exactly that diagnosis) when the checker instantiates Map's
 methods against the struct.
-
-## `vp check --fix` corrupts `.bumpy/*.md` release messages containing `*/` (tooling footgun)
-
-Recorded 2026-10-29 (observed twice in one day). Running the repo
-formatter (`vp check --fix`) rewrites a bump file's free-text message,
-eating the asterisks around a `*/` sequence: the committed message
-`...close the Buffer_*/BigInt_* core-trust bounds bypass...` came back as
-`...close the Buffer__/BigInt__...` (oxfmt appears to treat `*/` inside
-the markdown as a comment closer). A corrupted message ships a wrong
-release note if not noticed before merge. Workaround until fixed: avoid
-`*/` in bump messages (spell `Buffer_x/BigInt_x`), or restore the file
-after formatting (`git checkout -- .bumpy/`).
