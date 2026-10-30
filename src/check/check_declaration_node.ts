@@ -1,6 +1,7 @@
 import add_error from "../add_error.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
+import { is_scalar_type } from "../built_in_types.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
@@ -740,9 +741,23 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 						// `mv t._0 swap <replacement>` would carry. The build
 						// then runs the proven mv+swap pipeline unchanged.
 						decl.value.is_moved = true;
-						decl.swap = synthesized_swap_value(field_type, decl.value.start);
+						decl.swap = synthesized_swap_value(field_type, decl.value.start, status);
+						const errors_before_swap = status.errors.length;
 						const swap_ok = check_node(decl.swap, status);
-						if (swap_ok) {
+						if (!swap_ok) {
+							// The swap is compiler-synthesized, so whatever the
+							// failed check reported (e.g. "Parameters missing"
+							// for a type whose every constructor needs an
+							// argument no zero literal can fill) is an internal
+							// diagnosis at a cloned-body position — replace it
+							// with one error naming the type and the fix.
+							status.errors.length = errors_before_swap;
+							add_error(
+								status,
+								`no empty value of '${field_type.name}' can be synthesized for the transfer swap — give every field a default value, or make owning fields nullable`,
+								decl.value.start,
+							);
+						} else {
 							check_type_and_value_match(
 								field_type,
 								type_from_value_node(decl.swap, status),
@@ -1054,10 +1069,20 @@ function extract_const_value(
  * its no-argument constructor (type_args carried so `List<string>` swaps in
  * `List<string>()`). The zero/empty replacement makes the source field's own
  * cleanup a no-op instead of a double-free of the transferred buffer.
+ *
+ * A user mv struct whose constructor has REQUIRED parameters (e.g.
+ * `Point(int x, int y)`) has no zero-argument form — a bare `Point()` fails
+ * to check ("Parameters missing"), which (inside a cloned generic `#init`,
+ * e.g. Map's variadic-pairs constructor) poisoned every program that merely
+ * declared `Map<K, Point>`. For those, the zero-value arguments are
+ * synthesized per parameter and the init whose parameter list is cheapest to
+ * fill wins; a type with no synthesizable empty value keeps the bare call
+ * (its own error diagnoses the corner).
  */
 function synthesized_swap_value(
 	field_type: Type,
 	start: number,
+	status: CheckStatus,
 ): import("../nodes/BaseNode.ts").default {
 	if (field_type.name === "string") {
 		return new ValueNode(start, '""', new Type("string"));
@@ -1067,7 +1092,102 @@ function synthesized_swap_value(
 	if (field_type.type_args?.length) {
 		constructor.type_args = field_type.type_args;
 	}
+	const empty_args = struct_empty_ctor_args(field_type, status, start);
+	if (empty_args) {
+		constructor.params = empty_args;
+	}
 	return constructor;
+}
+
+/**
+ * Zero-value constructor arguments for `type` (a concrete struct), or
+ * undefined when the struct has no synthesizable empty construction (a
+ * generic container keeps the bare call — its constructor is already
+ * zero-argument). Cycle-safe on self-referential shapes.
+ */
+function struct_empty_ctor_args(
+	type: Type,
+	status: CheckStatus,
+	start: number,
+	seen?: Set<string>,
+): import("../nodes/BaseNode.ts").default[] | undefined {
+	if (!type.name || type.is_array) return undefined;
+	const struct = status.structs.findLast(
+		(s) => s.name === type.name && !s.is_generic && !s.is_class && !s.is_simple_type,
+	);
+	if (!struct) return undefined;
+	const guard = seen ?? new Set<string>();
+	if (guard.has(type.name)) return undefined;
+	guard.add(type.name);
+	let best: import("../nodes/BaseNode.ts").default[] | undefined;
+	for (const init of struct.functions) {
+		if (init.name !== "#init") continue;
+		const self_offset = init.params[0]?.is_self_param ? 1 : 0;
+		const args: import("../nodes/BaseNode.ts").default[] = [];
+		let fillable = true;
+		for (let i = self_offset; i < init.params.length; i++) {
+			const param = init.params[i];
+			// A variadic tail may be empty (Map's `...[TK, TV] pairs`); a
+			// defaulted param is omitted exactly like a call site would.
+			if (param.is_variadic || param.default_value) continue;
+			const zero = zero_value_for_type(param.type, status, start, guard);
+			if (!zero) {
+				fillable = false;
+				break;
+			}
+			args.push(zero);
+		}
+		if (fillable && (!best || args.length < best.length)) best = args;
+	}
+	guard.delete(type.name);
+	return best;
+}
+
+/**
+ * A compile-time "empty" value for a constructor parameter type: 0 / false /
+ * '\0' / "" / null, a nested struct's empty constructor, or an enum's first
+ * payload-free case. Undefined when no such literal exists (a non-nullable
+ * class, a func- or array-typed parameter — the caller skips that overload).
+ */
+function zero_value_for_type(
+	type: Type,
+	status: CheckStatus,
+	start: number,
+	seen: Set<string>,
+): import("../nodes/BaseNode.ts").default | undefined {
+	if (type.is_nullable) return new ValueNode(start, "null");
+	if (!type.name) return undefined;
+	if (type.name === "string" && !type.is_array) {
+		return new ValueNode(start, '""', new Type("string"));
+	}
+	if (type.name === "bool") return new ValueNode(start, "false", new Type("bool"));
+	if (type.name === "char") return new ValueNode(start, "'\\0'", new Type("char"));
+	if (is_scalar_type(type.name)) return new ValueNode(start, "0", new Type(type.name));
+	// A class slot has no empty instance unless it is nullable (handled
+	// above) — a non-nullable owner cannot be fabricated here.
+	if (is_class_type(type.name, status)) return undefined;
+	const empty_ctor = struct_empty_ctor_args(type, status, start, seen);
+	if (empty_ctor) {
+		const nested = new FunctionCallNode(start, type.name);
+		nested.type = new Type(type.name);
+		if (type.type_args?.length) nested.type_args = type.type_args;
+		nested.params = empty_ctor;
+		return nested;
+	}
+	// An enum's first payload-free case is a valid zero value (the rewritten
+	// shorthand form the checker itself produces for `.Case`).
+	const enum_node = status.enums.find((e) => e.name === type.name);
+	const plain_case = enum_node?.cases.find((c) => c.params.length === 0);
+	if (enum_node && plain_case) {
+		const value = new ValueNode(
+			start,
+			`${enum_node.name}_${plain_case.name}`,
+			new Type(enum_node.name),
+		);
+		value.is_enum_shorthand = true;
+		return value;
+	}
+	return undefined;
 }
 
 /**

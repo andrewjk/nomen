@@ -698,23 +698,25 @@ code). Fix directions: mkdtemp under a nomen-owned root instead of the
 temp root, skip parent gathering for test compiles (they are standalone),
 or treat a harness-bearing test entry as a program for the skip checks.
 
-## Declaring `Map<K, UserStruct>` poisons every `UserStruct(...)` ctor call in the program (pre-existing, surfaced by the in-place store work)
+## `Map<K, T>` pairs-ctor structs with no synthesizable empty value (residual)
 
-Recorded 2026-10-29 while landing PERF_PLAN item 6 (in-place store,
-`test/in_place_store.test.ts`'s Map tests). Any program that declares a
-`Map` whose value type is a user `mv struct` fails to PARSE with
-`Parameters missing for function: <Struct>` — even when the struct's ctor
-call sits in an uncalled function defined BEFORE the Map declaration. The
-error's location is bogus: line ~3830 / start ~102k for a 16-line program
-(it points into an internal buffer, and the position drifts with library
-content — 3785 at main@b4c25d65 vs 3839 in the working tree). Verified
-identical on HEAD, with and without `join`, and at -O0 and -O2 — it is a
-checker bug, not a backend or release-mode one. Consequences: the Map
-in-place-store receipt (item 6) is measured on string values; struct-valued
-Maps cannot be written in-source at all (the tests use `List<int>` values
-instead). Shape hints: scalar- and container-valued Maps are fine; the
-struct ctor itself is fine in the same program without the Map declaration.
-Suspect: the generic mono's zero-value/`out TV` handling synthesizing a
-`<Struct>()` call (an mv struct has no zero-arg `#init` — "parameters
-missing" is exactly that diagnosis) when the checker instantiates Map's
-methods against the struct.
+The poison from PERF_PLAN item 6 (recorded 2026-10-29: declaring
+`Map<K, UserStruct>` failed to check with `Parameters missing for function:
+<UserStruct>` because Map's cloned variadic `#init` mv-destructures each
+pair and the revalidating swap was synthesized as a bare zero-argument
+constructor call) is fixed: the swap now synthesizes the constructor's
+zero-value arguments (0 / false / '\0' / "" / null / a nested empty), so
+`Map<K, Struct>` is inert and struct-valued Maps work in-source on both
+backends (`test/map_struct_values.test.ts`).
+
+What remains: a struct whose constructor has a REQUIRED parameter with no
+zero literal (a non-nullable `Box<T>`/func/array-typed field without a
+default) still cannot be a pairs-ctor TV — no empty instance exists to
+swap into the moved-from pair slot, and the declaration errors with the
+dedicated message "no empty value of 'T' can be synthesized for the
+transfer swap". (Map()+set() avoids the destructure in user code, but the
+cloned #init is checked at declaration, so the error fires anyway.) A full
+fix wants a zeroed-slot swap form that doesn't route through a
+user-constructible value — the `return 0` → `{0}` compound-literal
+treatment the backends already have for struct returns, generalized to a
+checker-side synthesized zero — not a quiet null-for-non-nullable bypass.

@@ -67,6 +67,13 @@ export default function collect_allocations(
 		case "declare": {
 			const decl = node as DeclarationNode;
 			if (decl.value) result.push(...collect_allocations(decl.value, options));
+			// A mv+swap declaration's replacement value (`var X b = mv obj.f
+			// swap <rep>`, including the checker-synthesized swap for a
+			// mv-DESTRUCTURE binding): its hoisted call-argument temps must
+			// surface as leading statements — the backends splice the swap
+			// inline after an `lvalue = ` prefix, and a declaration spliced
+			// there is invalid C. Mirrors the assign swap handling above.
+			if (decl.swap) result.push(...collect_allocations(decl.swap, options));
 			break;
 		}
 		case "let": {
