@@ -406,6 +406,59 @@ pub struct ClassBuffer<T> {
 		```
 	}
 
+	// Bulk transfer for backward-shift deletion — the ClassBuffer
+	// counterpart of Buffer.move_range (same contract: every slot in
+	// [dst, dst + count) must be DEAD — zeroed by a move-out or otherwise
+	// unowned — because the block move overwrites without reclaiming; the
+	// deletion algorithms zero and relocate in lockstep). Slots are 8-byte
+	// instance pointers, so the block is one memmove + one memset of the
+	// source slots the destination never covers — List.remove_at_or_panic's
+	// whole-tail shift instead of per-element `shift` calls.
+	internal inline func move_range = (
+		ref self,
+		int dst: dst >= 0,
+		int src: src >= dst,
+		int count: count >= 0 && src + count <= self.cap
+	) {
+		```
+		#arch: c
+		if (count > 0) {
+			long *slots = (long*)(unsigned long long)self->data;
+			memmove((void*)&slots[dst], (void*)&slots[src],
+				(unsigned long long)count * sizeof(long));
+			memset((void*)&slots[dst + count], 0,
+				(unsigned long long)(src - dst) * sizeof(long));
+		}
+		```
+		```
+		#arch: aarch64
+		// x19 = self, x1 = dst, x2 = src, x3 = count. x0-x18 die across the
+		// bl calls, so the block math parks on the stack around _memmove.
+		cbz x3, .Lcb_move_range_T_end
+		ldr x4, [x19, #8]
+		lsl x5, x1, #3
+		add x6, x4, x5
+		lsl x5, x2, #3
+		add x7, x4, x5
+		lsl x9, x3, #3
+		sub x10, x2, x1
+		lsl x10, x10, #3
+		stp x6, x9, [sp, #-16]!
+		str x10, [sp, #-16]!
+		mov x0, x6
+		mov x1, x7
+		mov x2, x9
+		bl _memmove
+		ldr x10, [sp], #16
+		ldp x6, x9, [sp], #16
+		add x0, x6, x9
+		mov x1, #0
+		mov x2, x10
+		bl _memset
+		.Lcb_move_range_T_end:
+		```
+	}
+
 	// A non-mv (ptr, len) slice [start, end) over this buffer's class
 	// pointers, returned as a `view T` (T is a class, so each element is an
 	// 8-byte pointer). Borrows from self — invalidated on reassignment. Mirrors

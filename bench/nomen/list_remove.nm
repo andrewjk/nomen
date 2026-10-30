@@ -1,0 +1,43 @@
+import System
+
+// List.remove_at_or_panic bulk-tail shape (PERF_PLAN item 17, minor batch) —
+// the backward shift after a removal. The old lowering shifted one element
+// per iteration (Buffer.shift = a memcpy + memset call pair per element, plus
+// the displaced free for owning elements); the new one is one memmove over
+// the whole tail + one memset of the uncovered source slot. Draining a full
+// list front-first is the worst case: removal k shifts (n - k) elements, so a
+// round pays n^2 / 2 element-shifts. n and rounds from argv, checksum printed
+// so before/after binaries are comparable.
+
+pub func main = (Init init) {
+	var n = 8000
+	if init.argc > 1 {
+		n = parse_int(init.args.at(1))
+	}
+	var rounds = 5
+	if init.argc > 2 {
+		rounds = parse_int(init.args.at(2))
+	}
+
+	var lst = List<string>()
+	var checksum = 0
+	var r = 0
+	while r < rounds; r += 1 {
+		// Drain the whole list front-first: every removal shifts the entire
+		// remaining tail down one slot (worst-case shift shape).
+		while lst.length > 0 {
+			var v = lst.remove_at_or_panic(0)
+			checksum += v.length
+		}
+		// Refill from empty: fresh seeded strings, so every slot owns its
+		// bytes again and the next round shifts real owning elements.
+		var i = 0
+		while i < n; i += 1 {
+			lst.push("e\{i}")
+			checksum += 2
+		}
+	}
+
+	Console.write(checksum.to_string())
+	Console.write("\n")
+}

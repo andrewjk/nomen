@@ -144,9 +144,8 @@ pub mv struct List<T>: Viewable {
 		}
 		var T v = self.items.move(i)
 		var int last = self.length - 1
-		var int j = i
-		while j < last; j += 1 {
-			self.items.shift(j, j + 1)
+		if i < last {
+			self.items.move_range(i, i + 1, last - i)
 		}
 		self.length -= 1
 		return v

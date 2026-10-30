@@ -25,7 +25,7 @@ them; the rest carry expected wins and the receipts they rest on).
 | 14  | ~~Buffer word pairs (T_SIZE ≤ 16)~~ **LANDED Oct 2026: −12% / flat shape (aarch64 / C — clang already inlined it); json-serde flat (no 16-byte element exists)**                                               | mostly aarch64 | S      | shape micro-bench, interleaved medians (below)   |
 | 15  | aarch64 codegen receipts (splice model, folds…)                                                                                                                                                                | aarch64        | S–M    | measured regressions to reclaim                  |
 | 16  | Async paths audit                                                                                                                                                                                              | both           | ?      | unexplored, unmeasured                           |
-| 17  | Minor batch                                                                                                                                                                                                    | both           | S      | assorted                                         |
+| 17  | ~~Minor batch~~ **PARTIALLY LANDED Oct 2026: `List.remove_at_or_panic` bulk tail move −91% / −61% on the removal shape (below); StableList tail relay, `Array.set` in-place, `json_parse_string` scan remain** | both           | S      | assorted                                         |
 
 ## 1. Faster allocator — slab/bump the class-allocation path
 
@@ -1353,8 +1353,9 @@ both-backend territory nobody has measured.
 
 ## 17. Minor batch
 
-- `List.remove_at_or_panic` shifts one element per iteration (`Buffer.shift` =
-  memcpy + memset per element); a single tail memmove + one memset would do.
+- ~~`List.remove_at_or_panic` shifts one element per iteration (`Buffer.shift` =
+  memcpy + memset per element); a single tail memmove + one memset would do.~~
+  **LANDED Oct 2026: −91% / −61% on the removal shape (17a below).**
 - StableList's non-in-place tail push relays through the `stage` slot
   (store → memcpy → memset); a bare-value tail push could relay directly
   chunk→slot.
@@ -1362,6 +1363,70 @@ both-backend territory nobody has measured.
   in-place variant would let a producer write the slot directly.
 - `json_parse_string` appends per byte; a scan-to-next-escape + bulk append
   would help parse-heavy workloads.
+
+### 17a. `List.remove_at_or_panic` bulk tail move — LANDED (Oct 2026)
+
+**What landed.** The backward shift after a removal is ONE block transfer
+instead of a per-element `shift` loop. `Buffer` gained an INTERNAL
+`move_range(dst, src, count)` raw primitive (`core/System/Buffer.nm`, the
+ClassBuffer twin for class/trait elements alongside): a single `memmove` over
+the `count`-slot tail — the bytes carry mv elements' heap pointers wholesale,
+exactly the per-element `shift` semantics — plus one `memset` of the source
+slots the destination never covers ([dst + count, src + count), which is ONE
+slot for the contiguous deletion shape src = dst + 1). `List.remove_at_or_panic`
+(`core/System/List.nm`) calls it once after `move(i)` instead of looping
+`shift(j, j + 1)`.
+
+The soundness contract is the caller-side proof obligation (documented on the
+primitive, like `slot_ptr`'s): every slot in [dst, dst + count) must be DEAD —
+zeroed by a move-out or otherwise unowned — because the block move overwrites
+them without reclaiming. In `remove_at_or_panic` the moved-out slot i is zeroed
+by `move`, and the memmove itself relocates every later value to the slot one
+before it (overwritten bytes are still owned, just at the earlier slot), so
+exactly-once ownership holds for every element kind; the uncovered tail slot
+zeroes. A live displaced value belongs in `shift`, which reclaims dst first —
+Map/Set.remove keep it. The raw bodies never name T (byte math), so one body
+serves every element kind; `bl _memmove` resolves at link time like
+`_memcpy`/`_memset`.
+
+Three tests in `test/list_remove_at.test.ts`: the runtime round-trip
+(middle/front/last removals across strings, mv structs with string fields, and
+ints — both backends, audit on, so every removed element must be released
+exactly once), the aarch64 emitted-code pin (the splice's count guard +
+`bl _memmove` + `bl _memset`, no per-element shift loop), and the C pin (the
+bulk `move_range` helper call). The full suite (534 files, both backends)
+passes; the ClassBuffer twin is pinned by the trait-list runtime tests that
+motivated it.
+
+**Measured.** Shape micro-bench — `bench/nomen/list_remove.nm`: a
+`List<string>` drained front-first (the worst shape: removal k shifts n−k
+elements) and refilled from empty, n = 8000 × 5 rounds (each round ≈ 32M
+element-shifts), n/rounds from argv, Apple Silicon, release builds, audit off,
+checksums identical before/after; "before" binaries built from a HEAD worktree;
+7 interleaved rounds, medians:
+
+| Backend | before (median) | after (median) |        Δ |
+| ------- | --------------: | -------------: | -------: |
+| aarch64 |          0.270s |         0.023s | **−91%** |
+| C       |          0.049s |         0.019s | **−61%** |
+
+Per removal the elided work is exactly the item's promise: count memcpy +
+memset call pairs per removal (the string specialization adds a displaced
+free per element) become one `_memmove` + one `_memset` — ~8000 `bl` pairs
+per removal become 2 `bl`s. The C backend collects less because -O2 had
+already inlined the per-element shift into a tight vectorizable loop (the
+item-4/7 footnote again); aarch64 issues the calls and collects the full
+elision.
+
+- _The standard suite_ — flat on C (medians, interleaved, outputs
+  byte-identical): json-serde 0.04 → 0.04s, binarytrees 1.40 → 1.41s, lru
+  `1000 20000000` 0.88 → 0.88s, nsieve 0.13 → 0.13s. No bench hot loop
+  removes from a List; the win lives in the removal shapes above.
+
+**Remainder.** Map/Set.remove's backward shift keeps per-element `shift`
+(their dst slots are also dead-after-move, so the same `move_range` applies —
+but their probe loop interleaves key compares, so the shape is less purely
+block-shaped; left unmeasured).
 
 ## Already rejected — don't re-suggest
 

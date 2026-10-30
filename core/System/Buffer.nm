@@ -790,6 +790,67 @@ pub struct Buffer<T> {
 		```
 	}
 
+	// Bulk transfer for backward-shift deletion: move the `count` slots at
+	// `src` down to `dst` (src >= dst) as ONE block move, then zero the
+	// source slots the destination never covers — for the contiguous
+	// deletion shape (src = dst + 1) that is exactly one tail slot, so a
+	// whole range shift costs one memmove + one memset instead of
+	// count × (memcpy + memset) per-element `shift` calls. PROOF
+	// OBLIGATION on the caller (INTERNAL, byte-level like `shift`): every
+	// slot in [dst, dst + count) must be DEAD — zeroed by a move-out or
+	// otherwise unowned — because the block move overwrites them without
+	// reclaiming (the ownership proof is why the deletion algorithms zero
+	// and relocate in lockstep; a live displaced value belongs in `shift`,
+	// which reclaims dst first). The bytes transfer wholesale, so the move
+	// carries mv elements' heap pointers with them — correct for every
+	// element kind, raw for both backends (never names T).
+	internal inline func move_range = (
+		ref self,
+		int dst: dst >= 0,
+		int src: src >= dst,
+		int count: count >= 0 && src + count <= self.cap
+	) {
+		```
+		#arch: c
+		if (count > 0) {
+			T* _slots = (T*)(unsigned long long)self->data;
+			memmove((void*)&_slots[dst], (void*)&_slots[src],
+				(unsigned long long)count * T_SIZE);
+			// Zero the source slots the destination does not overwrite:
+			// [dst + count, src + count) — one slot for the contiguous
+			// deletion shape, the gap+1 slots for a strided one.
+			memset((void*)&_slots[dst + count], 0,
+				(unsigned long long)(src - dst) * T_SIZE);
+		}
+		```
+		```
+		#arch: aarch64
+		// x19 = self, x1 = dst, x2 = src, x3 = count. x0-x18 die across the
+		// bl calls, so the block math parks on the stack around _memmove.
+		cbz x3, .Lbuffer_move_range_T_end
+		ldr x4, [x19, #8]
+		mov x5, #T_SIZE
+		madd x6, x1, x5, x4
+		madd x7, x2, x5, x4
+		madd x9, x3, x5, xzr
+		sub x10, x2, x1
+		madd x10, x10, x5, xzr
+		stp x6, x9, [sp, #-16]!
+		str x10, [sp, #-16]!
+		mov x0, x6
+		mov x1, x7
+		mov x2, x9
+		bl _memmove
+		ldr x10, [sp], #16
+		ldp x6, x9, [sp], #16
+		add x0, x6, x9
+		mov x1, #0
+		mov x2, x10
+		bl _memset
+		.Lbuffer_move_range_T_end:
+		```
+	}
+
 	// A non-mv (ptr, len) slice [start, end) over this buffer's element
 	// storage, returned as a `view T`. It borrows from self: it may not outlive
 	// self's scope and is invalidated if self is reassigned. This is the single
