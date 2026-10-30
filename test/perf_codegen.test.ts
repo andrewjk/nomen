@@ -89,10 +89,13 @@ m.set(1, 10)
 m.set(2, 20)
 Console.write("\\{m.get(2)}\\n")
 `);
-		// No division anywhere in the program (it contains no `/` operator),
-		// so any sdiv would have to come from find_slot's bucket index.
-		expect(code).not.toContain("sdiv");
-		expect(code).not.toContain("msub");
+		// Scope the check to find_slot itself: the program's interpolation
+		// now routes through the hand-rolled int formatter, whose itoa
+		// legitimately uses udiv/msub — the bucket index must not.
+		const find_slot = asm_function_body(code, "Map_int_int_find_slot:");
+		expect(find_slot).not.toContain("sdiv");
+		expect(find_slot).not.toContain("msub");
+		expect(find_slot).not.toContain("udiv");
 	});
 
 	test("map with string keys also avoids sdiv", () => {

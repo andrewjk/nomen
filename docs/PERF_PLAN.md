@@ -3,9 +3,9 @@
 Research into the next performance opportunities, following the StableList +
 in-place push work. PERF.md is the record of what landed; this is the plan for
 what's next. All findings are ordered most-promising-first. Written Oct 2026;
-originally unmeasured — items 2, 3, 4 (partially), 5, 6, 7, 8, 9, and 11 have
-since landed with measurements in place (items marked LANDED carry them; the
-rest carry expected wins and the receipts they rest on).
+originally unmeasured — items 2, 3, 4 (partially), 5, 6, 7, 8, 9, 10, and 11
+have since landed with measurements in place (items marked LANDED carry them;
+the rest carry expected wins and the receipts they rest on).
 
 | #   | Item                                                                                                                                                                                                           | Backends       | Effort | Receipt                                          |
 | --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | ------ | ------------------------------------------------ |
@@ -18,7 +18,7 @@ rest carry expected wins and the receipts they rest on).
 | 7   | ~~Enum payload in-place construction~~ **LANDED Oct 2026: −45% / −8% on the payload shapes (aarch64; C take-variant)**                                                                                         | both           | S–M    | shape micro-benches, interleaved medians (below) |
 | 8   | ~~Regex/String O(n²) accumulators~~ **LANDED Oct 2026: −92% / −91% match accumulator, −65% / −58% replace_all skip loop, −33% / −40% String.replace_all, −28% / −14% array to_string**                         | both           | S      | shape micro-benches, interleaved medians (below) |
 | 9   | ~~Map/Set stored hash (Swiss-table tricks)~~ **LANDED Oct 2026: −35% / −52% probe shape, −21% / −49% string build+remove, −19% / −33% Set build, −22% aarch64 int rehash; int-keyed hit paths +2–10% (below)** | both           | M      | shape micro-benches, interleaved medians (below) |
-| 10  | StringBuilder numeric appends + 1-pass interp                                                                                                                                                                  | both           | S      | two snprintf passes + malloc per append          |
+| 10  | ~~StringBuilder numeric appends + 1-pass interp~~ **LANDED Oct 2026: −80% / −79% interp, −76% / −75% numeric append, −66% / −70% new-spelling**                                                                | both           | S      | shape micro-benches, interleaved medians (below) |
 | 11  | ~~Devirtualization of trait calls~~ **LANDED Oct 2026: −12% realistic callee / −31% trait-default (C), tiny-callee loop folds outright; aarch64 inline splice −19% (below)**                                   | both           | M      | shape micro-bench, interleaved medians (below)   |
 | 12  | Struct field-order / padding                                                                                                                                                                                   | both           | S      | modest; raw-body caveat                          |
 | 13  | Variable-mode enums                                                                                                                                                                                            | both           | L      | GOOSE #6, documented, unshipped                  |
@@ -768,14 +768,110 @@ the `used` word itself (Swiss-table control words — one load per probe, and
 the int-keyed hit-path cost shrinks to a shift) is the next squeeze if
 int-keyed hit paths ever matter more than they do today.
 
-## 10. StringBuilder numeric appends + single-pass interpolation
+## 10. StringBuilder numeric appends + single-pass interpolation — LANDED (Oct 2026)
 
-Every `sb.append(x.to_string())` costs two snprintf passes + malloc + free
-(`int.nm`). An `append_int`/`append_float` raw primitive is a few instructions
-against a fixed buffer. Same family: `"\{x} …"` interpolation lowers to one
-`_string_interpolate_N` call = two snprintf passes (size, then write) + malloc;
-a writer form appending into a StringBuilder (or stack chunks, one pass) helps
-I/O-heavy code on both backends.
+**What landed.** Two halves, both backends:
+
+- **Numeric appends without an intermediate string.** `StringBuilder` gained
+  `append_int` / `append_float` primitives, and an `append` OVERLOAD set
+  (`append(int)`, `append(float)`, `append(char)`, `append(view string)`) so
+  `sb.append(x)` picks the direct formatter by argument type. `append_int`
+  is a hand-rolled digit loop into the buffer (no malloc, no snprintf);
+  `append_float` formats with ONE snprintf into a stack scratch (360 bytes
+  covers `%f` of the largest double) and bulk-copies. On aarch64 both are
+  `inline` raw bodies spliced at the call site; on C they are ordinary
+  functions clang inlines. `sb.append(i.to_string())` (2 snprintf passes +
+  malloc + free for the int, plus the append call) becomes a few
+  instructions against the buffer.
+- **`int.to_string` is single-pass.** The two snprintf passes (size, then
+  write) became a digit loop into a 24-byte stack scratch plus one
+  malloc+memcpy — no snprintf at all, and INT64_MIN handled by magnitude
+  negate (via the two's-complement wrap). This pays everywhere, including
+  every numeric interpolation argument (the parse lowering wraps each
+  `\{expr}` in `<T>.to_string()`). `float.to_string` likewise dropped its
+  sizing pass: one snprintf into a 360-byte scratch + malloc+memcpy.
+- **Interpolation is single-pass with an exact size.** `_string_interpolate_N`
+  no longer runs snprintf twice over the whole result; every `%s` in the
+  pattern is exactly two pattern bytes and expands to that argument's byte
+  length, so `total = pattern.len - 2*N + Σ arg.len` is known from the fat
+  pairs alone. One malloc, then a copy walk (literal runs verbatim, `%s`
+  replaced by the next argument's bytes). That also fixes a latent
+  printf-interpretation bug: a literal `%` in the source text used to be
+  consumed as a format directive (`"100% of \{x}"` lost the sign); only `%s`
+  is a placeholder now. The aarch64 helper is generated asm implementing the
+  same count-and-copy walk.
+- **Overload labels are unambiguous.** `mangled_label` now separates the
+  method name from its parameter types with a double underscore
+  (`Struct_append__string`): the old single `_` made an overloaded
+  `append(string)` spell exactly like a distinct method named
+  `append_string` — a real collision the overload set hit. Definitions only
+  mangle when a method set is overloaded, and no test or raw library body
+  pins the old spellings.
+
+Nine tests in `test/string_builder_numeric.test.ts` (both backends, audit
+on) pin the overload surface (int including both extremes, negative, char,
+float, string), `append_int`/`append_float` agreeing with `append`,
+mixed-type and high-arity (stack-passed pairs) interpolation, the literal-`%`
+fix, empty arguments, and the emitted shape (no `snprintf` in
+`int.to_string` or the interpolation helper; `append_int` splices). The full
+suite (530 files, both backends) passes. One pre-existing perf pin needed
+scoping: `test/perf_codegen.test.ts` asserted "no `msub` anywhere in the
+program" for Map's mask indexing, which the new itoa legitimately uses — it
+now checks `find_slot`'s own body.
+
+**Measured.** Shape micro-benches (`bench/nomen/string_build.nm` —
+old-spelling shapes that the pre-change compiler builds too;
+`bench/nomen/string_append_new.nm` — both spellings in one binary for the
+API isolation), n from argv, Apple Silicon, 7 interleaved rounds, medians,
+audit off, release builds, outputs identical between before/after:
+
+- _Interpolation shape_ — 1M × `"k=\{i} v=\{i * 2}"` (two int arguments,
+  length accumulated so nothing folds):
+
+| Backend | before |  after |          Δ |
+| ------- | -----: | -----: | ---------: |
+| C       | 0.393s | 0.078s | **−80.1%** |
+| aarch64 | 0.397s | 0.084s | **−78.7%** |
+
+Per iteration the elided work is the item's promise: the two int
+`to_string`s' four snprintf passes become two digit loops, the helper's
+two full-result snprintf passes become one memcpy walk, and the result
+allocation is exact — per iteration 3 malloc/free pairs and 6 snprintf
+calls become 3 mallocs (two argument strings + the result) and zero
+snprintf.
+
+- _Numeric append shape (old spelling)_ — 1M ×
+  `sb.append_string(i.to_string())` (the intermediate string per append):
+
+| Backend | before |  after |          Δ |
+| ------- | -----: | -----: | ---------: |
+| C       | 0.121s | 0.029s | **−76.0%** |
+| aarch64 | 0.124s | 0.031s | **−75.3%** |
+
+- _The overload/primitive receipt_ — the same binary, old spelling vs
+  `sb.append(i)` (post-change compiler only, so the delta is isolated from
+  layout drift):
+
+| Backend | old spelling | new spelling |          Δ |
+| ------- | -----------: | -----------: | ---------: |
+| C       |       0.030s |       0.010s | **−66.0%** |
+| aarch64 |       0.033s |       0.010s | **−69.6%** |
+
+The new spelling drops the intermediate string allocation and the append
+call entirely (the spliced digit loop writes into the builder).
+
+- _The standard suite_ — flat except where string building is hot, with
+  outputs identical: regex-redux C 0.015 → 0.013s (**−8.2%**); knucleotide
+  C 0.008 → 0.007s (**−10.0%**), aarch64 0.009 → 0.008s (**−12.3%**);
+  json-serde, binarytrees, lru, nsieve within ±2% on both backends.
+
+**Remainder.** Floats still need one snprintf (no hand-rolled `%f`); the
+interpolation call site still converts each numeric argument through
+`<T>.to_string()` (one malloc per argument) — a writer-form call-site
+lowering that appends directly into the helper's buffer would remove those,
+but the exact-size helper already removed the double pass over the result.
+`float32`/`ufloat*` keep their own two-pass bodies for now (same shape as
+the old float).
 
 ## 11. Devirtualization of trait calls — LANDED (Oct 2026)
 

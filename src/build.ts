@@ -249,67 +249,105 @@ export default function build(
 			status.code += `stp x29, x30, [sp, #-16]!\n`;
 			status.code += `mov x29, sp\n`;
 			// Fat-string ABI: pattern = (x0 ptr, x1 len); arg_i = (ptr, len)
-			// register pairs starting at x2. Only the NUL-terminated ptr
-			// halves feed snprintf. Darwin arm64 passes EVERY variadic
-			// argument on the stack (clang's own snprintf calls store all of
-			// them at [sp+0..] and leave x3..x7 unset), so the unpacked arg
-			// area at #0..#(length*8-8) IS snprintf's variadic read area and
-			// must stay intact across BOTH snprintf calls. The temporaries
-			// therefore live ABOVE it: length at #length*8, buffer at
-			// #length*8+8, pattern ptr at #length*8+16. The old fixed 80-byte
-			// frame overlapped arg 8's variadic slot with the length temp —
-			// storing the size there handed the render snprintf a length as a
-			// char* (SIGBUS/garbage) for every arity >= 8; arities <= 7 only
-			// worked because their variadic reads sat below the temp slots.
-			const args_area = length * 8;
-			const len_off = args_area;
-			const buf_off = args_area + 8;
-			const pat_off = args_area + 16;
-			const frame = Math.ceil((args_area + 24) / 16) * 16;
+			// register pairs starting at x2. SINGLE PASS, EXACT SIZE — no
+			// snprintf: every `%s` is two pattern bytes expanding to the
+			// argument's byte length, so total = pattern.len - 2*N + Σ
+			// arg.len is known from the fat pairs alone. One malloc, then a
+			// copy walk over the pattern (literal bytes verbatim, `%s`
+			// replaced by the next argument's bytes). Frame: each arg's pair
+			// at [i*8] (ptr) / [(N+i)*8] (len), then total / buf / pat ptr /
+			// pat len.
+			const argp = (i: number) => i * 8;
+			const argl = (i: number) => (length + i) * 8;
+			const total_off = length * 16;
+			const buf_off = total_off + 8;
+			const pat_off = total_off + 16;
+			const patlen_off = total_off + 24;
+			const frame = Math.ceil((length * 16 + 32) / 16) * 16;
 			status.code += `sub sp, sp, #${frame}\n`;
 			status.code += `str x0, [sp, #${pat_off}]\n`;
+			status.code += `str x1, [sp, #${patlen_off}]\n`;
 			const pairRegs = [
 				["x2", "x3"],
 				["x4", "x5"],
 				["x6", "x7"],
 			];
 			for (let i = 0; i < length && i < pairRegs.length; i++) {
-				status.code += `str ${pairRegs[i][0]}, [sp, #${i * 8}]\n`;
+				status.code += `str ${pairRegs[i][0]}, [sp, #${argp(i)}]\n`;
+				status.code += `str ${pairRegs[i][1]}, [sp, #${argl(i)}]\n`;
 			}
 			// Pairs past x7 arrived in the caller's outgoing area: at the bl,
 			// pair k (k >= 3) sits at [caller_sp + (k-3)*16]. Inside the
-			// helper, x29 = entry_sp - 16 (the stp push), so the ptr half is
-			// at [x29, #(16 + (k-3)*16)].
+			// helper, x29 = entry_sp - 16 (the stp push), so the pair is at
+			// [x29, #(16 + (k-3)*16)].
 			for (let i = 3; i < length; i++) {
 				status.code += `ldr x9, [x29, #${16 + (i - 3) * 16}]\n`;
-				status.code += `str x9, [sp, #${i * 8}]\n`;
+				status.code += `str x9, [sp, #${argp(i)}]\n`;
+				status.code += `ldr x9, [x29, #${24 + (i - 3) * 16}]\n`;
+				status.code += `str x9, [sp, #${argl(i)}]\n`;
 			}
-			// Call snprintf(NULL, 0, pattern, args...). Args 1..5 also ride
-			// the registers — unused under the Darwin convention, but the
-			// first slots a SysV-style port would read.
-			status.code += `mov x0, xzr\n`;
-			status.code += `mov x1, xzr\n`;
-			status.code += `ldr x2, [sp, #${pat_off}]\n`;
-			const variadicRegs = ["x3", "x4", "x5", "x6", "x7"];
-			for (let i = 0; i < length && i < variadicRegs.length; i++) {
-				status.code += `ldr ${variadicRegs[i]}, [sp, #${i * 8}]\n`;
+			// total = pattern.len - 2*N + Σ arg.len
+			status.code += `ldr x9, [sp, #${patlen_off}]\n`;
+			status.code += `sub x9, x9, #${2 * length}\n`;
+			for (let i = 0; i < length; i++) {
+				status.code += `ldr x10, [sp, #${argl(i)}]\n`;
+				status.code += `add x9, x9, x10\n`;
 			}
-			status.code += `bl _snprintf\n`;
-			status.code += `add x0, x0, #1\n`;
-			status.code += `str x0, [sp, #${len_off}]\n`;
+			status.code += `str x9, [sp, #${total_off}]\n`;
+			status.code += `add x0, x9, #1\n`;
 			emit_malloc(status);
 			status.code += `str x0, [sp, #${buf_off}]\n`;
+			// Copy walk: src = pattern.ptr .. +pattern.len, dst = buf,
+			// ai = next argument index.
+			status.code += `ldr x9, [sp, #${pat_off}]\n`;
+			status.code += `ldr x10, [sp, #${patlen_off}]\n`;
+			status.code += `add x10, x9, x10\n`;
+			status.code += `ldr x11, [sp, #${buf_off}]\n`;
+			status.code += `mov x12, #0\n`;
+			status.code += `.Lsi_loop_${length}:\n`;
+			status.code += `cmp x9, x10\n`;
+			status.code += `b.ge .Lsi_done_${length}\n`;
+			status.code += `ldrb w13, [x9]\n`;
+			status.code += `mov w14, #37\n`; // '%'
+			status.code += `cmp w13, w14\n`;
+			status.code += `b.ne .Lsi_lit_${length}\n`;
+			status.code += `add x15, x9, #1\n`;
+			status.code += `cmp x15, x10\n`;
+			status.code += `b.ge .Lsi_lit_${length}\n`;
+			status.code += `ldrb w13, [x15]\n`;
+			status.code += `mov w14, #115\n`; // 's'
+			status.code += `cmp w13, w14\n`;
+			status.code += `b.ne .Lsi_lit_${length}\n`;
+			status.code += `cmp x12, #${length}\n`;
+			status.code += `b.ge .Lsi_lit_${length}\n`;
+			status.code += `ldr x13, [sp, x12, lsl #3]\n`; // arg ptr
+			status.code += `add x15, x12, #${length}\n`;
+			status.code += `ldr x14, [sp, x15, lsl #3]\n`; // arg len
+			status.code += `.Lsi_acopy_${length}:\n`;
+			status.code += `cbz x14, .Lsi_adone_${length}\n`;
+			status.code += `ldrb w15, [x13]\n`;
+			status.code += `strb w15, [x11]\n`;
+			status.code += `add x13, x13, #1\n`;
+			status.code += `add x11, x11, #1\n`;
+			status.code += `sub x14, x14, #1\n`;
+			status.code += `b .Lsi_acopy_${length}\n`;
+			status.code += `.Lsi_adone_${length}:\n`;
+			status.code += `add x12, x12, #1\n`;
+			status.code += `add x9, x9, #2\n`;
+			status.code += `b .Lsi_loop_${length}\n`;
+			status.code += `.Lsi_lit_${length}:\n`;
+			// Reload: the placeholder check above may have left the NEXT
+			// byte in w13 (a '%' not followed by 's' is a literal percent).
+			status.code += `ldrb w13, [x9]\n`;
+			status.code += `strb w13, [x11]\n`;
+			status.code += `add x11, x11, #1\n`;
+			status.code += `add x9, x9, #1\n`;
+			status.code += `b .Lsi_loop_${length}\n`;
+			status.code += `.Lsi_done_${length}:\n`;
+			status.code += `strb wzr, [x11]\n`;
+			// Return the fat pair: x0 = buf, x1 = actual rendered length.
 			status.code += `ldr x0, [sp, #${buf_off}]\n`;
-			status.code += `ldr x1, [sp, #${len_off}]\n`;
-			status.code += `ldr x2, [sp, #${pat_off}]\n`;
-			for (let i = 0; i < length && i < variadicRegs.length; i++) {
-				status.code += `ldr ${variadicRegs[i]}, [sp, #${i * 8}]\n`;
-			}
-			status.code += `bl _snprintf\n`;
-			// Return the fat pair: x1 = the rendered length (snprintf's own
-			// return — no strlen), then x0 = buffer.
-			status.code += `mov x1, x0\n`;
-			status.code += `ldr x0, [sp, #${buf_off}]\n`;
+			status.code += `sub x1, x11, x0\n`;
 			status.code += `add sp, sp, #${frame}\n`;
 			status.code += `ldp x29, x30, [sp], #16\n`;
 			status.code += `ret\n`;

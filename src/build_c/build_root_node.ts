@@ -175,19 +175,40 @@ void **_get_trait_func(void **obj, int trait_index, int func_index)
 	for (let length of interpolate_counts) {
 		let range = Array.from({ length }, (_, i) => i);
 		// Fat-string ABI: the pattern and every rendered argument are
-		// nomen_string values (the checker's interpolation rewrite routes
-		// each `\{expr}` through `<T>.to_string`, which now returns a fat
-		// string). snprintf only needs the NUL-terminated .ptr halves; the
-		// result's length is snprintf's own return — no strlen anywhere.
+		// nomen_string values. The result is built in ONE pass with an
+		// EXACT size, not printf: every `%s` in the pattern is exactly two
+		// pattern bytes and expands to that argument's byte length, so the
+		// length is known from the fat pairs alone (pattern.len - 2*N +
+		// Σ arg.len) — no sizing scan and no format interpretation. One
+		// malloc, then literal runs and argument bytes are copied straight
+		// in. (A literal '%' in the source text is copied verbatim; the old
+		// snprintf body consumed it as a format directive.)
 		let declaration = `nomen_string _string_interpolate_${length}(nomen_string pattern, ${range.map((n) => `nomen_string arg${n + 1}`).join(", ")})`;
 		status.headers += `${declaration};\n`;
 		if (status.emit_mode !== "user" || length > 7) {
+			const arg_array = range.map((n) => `arg${n + 1}`).join(", ");
 			status.code += `${declaration}
 {
-    int length = snprintf(NULL, 0, pattern.ptr, ${range.map((n) => `arg${n + 1}.ptr`).join(", ")});
-    char *str = malloc(length + 1);
-    snprintf(str, length + 1, pattern.ptr, ${range.map((n) => `arg${n + 1}.ptr`).join(", ")});
-    return (nomen_string){ str, (long)length };
+    nomen_string args[${length}] = { ${arg_array} };
+    long total = pattern.len - ${2 * length};
+    for (int i = 0; i < ${length}; i++) total += args[i].len;
+    char *str = (char *)malloc((size_t)total + 1);
+    char *dst = str;
+    const char *src = pattern.ptr;
+    const char *end = pattern.ptr + pattern.len;
+    int ai = 0;
+    while (src < end) {
+        if (*src == '%' && src + 1 < end && src[1] == 's' && ai < ${length}) {
+            nomen_string a = args[ai++];
+            memcpy(dst, a.ptr, (size_t)a.len);
+            dst += a.len;
+            src += 2;
+        } else {
+            *dst++ = *src++;
+        }
+    }
+    *dst = 0;
+    return (nomen_string){ str, (long)(dst - str) };
 }
 `;
 		}

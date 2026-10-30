@@ -1,0 +1,40 @@
+import System
+
+// PERF_PLAN item 10 — the overload/primitive receipt, in its own binary (it
+// uses the post-change API, so only the changed compiler builds it). Both
+// spellings run in the SAME binary, so the new-vs-old delta is isolated from
+// layout/allocation drift:
+//   old — `sb.append_string(i.to_string())` (intermediate string per append)
+//   new — `sb.append(i)` (overload → the spliced int formatter)
+// Run with: <binary> <n> <old|new>
+
+pub func main = (Init init) {
+	var n = 1000000
+	if init.argc > 1 {
+		n = parse_int(init.args.at(1))
+	}
+	var mode = "all"
+	if init.argc > 2 {
+		mode = init.args.at(2)
+	}
+
+	if mode == "all" || mode == "old" {
+		var StringBuilder sb = StringBuilder()
+		var i = 0
+		while i < n {
+			sb.append_string(i.to_string())
+			i += 1
+		}
+		Console.write("O \{sb.length()}\n")
+	}
+
+	if mode == "all" || mode == "new" {
+		var StringBuilder sb = StringBuilder()
+		var i = 0
+		while i < n {
+			sb.append(i)
+			i += 1
+		}
+		Console.write("N \{sb.length()}\n")
+	}
+}

@@ -83,7 +83,218 @@ pub struct StringBuilder {
 		```
 	}
 
-	// Append a null-terminated string. `unsafe` Nomen single-sourced for
+	// Append a base-10 integer WITHOUT materializing a string: the digits are
+	// written straight into the buffer (one capacity check, no malloc and no
+	// snprintf). The `sb.append(i.to_string())` shape's two snprintf passes
+	// plus the intermediate string's malloc/free collapse to a few
+	// instructions against the buffer. The raw body is spliced per call site
+	// (labels renamed by the splicer), so the digit loop is truly inline.
+	pub inline func append_int = (ref self, int n) {
+		```
+		#arch: c
+		long v = n;
+		char tmp[24];
+		int pos = 24;
+		// Magnitude via the two's-complement negate (u stays correct for
+		// INT64_MIN, whose positive counterpart is not representable).
+		unsigned long long u = v < 0 ? (unsigned long long)(-(v + 1)) + 1ULL : (unsigned long long)v;
+		do {
+			tmp[--pos] = (char)('0' + (int)(u % 10));
+			u /= 10;
+		} while (u != 0);
+		if (v < 0) tmp[--pos] = '-';
+		long sl = 24 - pos;
+		long idx = self->len;
+		if (idx + sl + 1 > self->cap) {
+			long nc = self->cap;
+			if (nc == 0) nc = 16;
+			while (nc < idx + sl + 1) nc *= 2;
+			self->data = (unsigned long long)realloc((void*)(unsigned long long)self->data, nc);
+			self->cap = nc;
+		}
+		memcpy((void*)((unsigned long long)self->data + (unsigned long long)idx), tmp + pos, (size_t)sl);
+		self->len = idx + sl;
+		```
+		```
+		#arch: aarch64
+		// x19 = self, x1 = n. Format into a 24-byte scratch at [sp+40..64)
+		// (20 chars for INT64_MIN), then copy into the buffer
+		// (capacity-checked inline, like append_char). Saves live below the
+		// scratch: [sp]=pos, [sp+8]=sl, [sp+16]=idx, [sp+24]=new_cap.
+		sub sp, sp, #64
+		mov x9, x1                 // v = n
+		mov x10, x9
+		cmp x9, #0
+		b.ge .Lsb_ai_pos
+		neg x10, x10               // magnitude (wraps correctly for INT64_MIN)
+		.Lsb_ai_pos:
+		add x11, sp, #64           // pos = end of scratch
+		mov x12, x11
+		.Lsb_ai_digit:
+		mov x13, #10
+		udiv x14, x10, x13
+		msub x15, x14, x13, x10    // rem = v - q*10
+		add x15, x15, #48
+		sub x12, x12, #1
+		strb w15, [x12]
+		mov x10, x14
+		cbnz x10, .Lsb_ai_digit
+		cmp x9, #0
+		b.ge .Lsb_ai_store
+		sub x12, x12, #1
+		mov w15, #45               // '-'
+		strb w15, [x12]
+		.Lsb_ai_store:
+		sub x1, x11, x12           // sl = end - pos
+		ldr x2, [x19, #16]         // len
+		add x3, x2, x1
+		add x3, x3, #1             // needed
+		ldr x4, [x19, #24]         // cap
+		cmp x4, x3
+		b.ge .Lsb_ai_copy
+		mov x5, #16
+		cmp x4, #0
+		csel x5, x5, x4, eq
+		.Lsb_ai_grow:
+		cmp x5, x3
+		b.ge .Lsb_ai_realloc
+		lsl x5, x5, #1
+		b .Lsb_ai_grow
+		.Lsb_ai_realloc:
+		str x12, [sp, #0]          // pos
+		str x1, [sp, #8]           // sl
+		str x2, [sp, #16]          // idx
+		str x5, [sp, #24]          // new_cap
+		ldr x0, [x19, #8]
+		mov x1, x5
+		bl _realloc
+		str x0, [x19, #8]
+		ldr x5, [sp, #24]
+		str x5, [x19, #24]
+		ldr x12, [sp, #0]
+		ldr x1, [sp, #8]
+		ldr x2, [sp, #16]
+		.Lsb_ai_copy:
+		ldr x0, [x19, #8]          // data
+		add x0, x0, x2             // dst = data + idx
+		mov x3, x1
+		.Lsb_ai_cl:
+		cbz x3, .Lsb_ai_done
+		ldrb w4, [x12]
+		strb w4, [x0]
+		add x12, x12, #1
+		add x0, x0, #1
+		sub x3, x3, #1
+		b .Lsb_ai_cl
+		.Lsb_ai_done:
+		add x2, x2, x1             // len += sl
+		str x2, [x19, #16]
+		add sp, sp, #64
+		```
+	}
+
+	// Append a float with the SAME text `float.to_string` produces ("%f"):
+	// one snprintf into a stack scratch, then a bulk copy into the buffer —
+	// no sizing pass and no intermediate string allocation.
+	pub inline func append_float = (ref self, float f) {
+		```
+		#arch: c
+		char tmp[360];
+		int sl = snprintf(tmp, sizeof(tmp), "%f", f);
+		long idx = self->len;
+		if (idx + sl + 1 > self->cap) {
+			long nc = self->cap;
+			if (nc == 0) nc = 16;
+			while (nc < idx + sl + 1) nc *= 2;
+			self->data = (unsigned long long)realloc((void*)(unsigned long long)self->data, nc);
+			self->cap = nc;
+		}
+		memcpy((void*)((unsigned long long)self->data + (unsigned long long)idx), tmp, (size_t)sl);
+		self->len = idx + sl;
+		```
+		```
+		#arch: aarch64
+		// x19 = self, x1 = f (raw bits — float params ride integer
+		// registers). Scratch [sp+16..sp+376); [sp+0] is snprintf's
+		// variadic slot, reused after the call for `sl`; [sp+8] = idx across
+		// the grow call; [sp+376] = new_cap.
+		sub sp, sp, #384
+		fmov d0, x1                // f bits (capture before x1 is reused)
+		str d0, [sp, #0]           // variadic double slot
+		add x0, sp, #16
+		mov x1, #360
+		adr x2, .Lsb_af_fmt
+		bl _snprintf
+		str x0, [sp, #0]           // sl
+		ldr x2, [x19, #16]         // idx = len
+		add x3, x2, x0
+		add x3, x3, #1             // needed
+		ldr x4, [x19, #24]         // cap
+		cmp x4, x3
+		b.ge .Lsb_af_copy
+		mov x5, #16
+		cmp x4, #0
+		csel x5, x5, x4, eq
+		.Lsb_af_grow:
+		cmp x5, x3
+		b.ge .Lsb_af_realloc
+		lsl x5, x5, #1
+		b .Lsb_af_grow
+		.Lsb_af_realloc:
+		str x2, [sp, #8]           // idx
+		str x5, [sp, #376]         // new_cap (above the scratch)
+		ldr x0, [x19, #8]
+		mov x1, x5
+		bl _realloc
+		str x0, [x19, #8]
+		ldr x5, [sp, #376]
+		str x5, [x19, #24]
+		ldr x2, [sp, #8]
+		.Lsb_af_copy:
+		ldr x0, [x19, #8]          // data
+		add x0, x0, x2             // dst = data + idx
+		add x4, sp, #16            // src = scratch
+		ldr x1, [sp, #0]           // sl
+		mov x3, x1
+		.Lsb_af_cl:
+		cbz x3, .Lsb_af_done
+		ldrb w5, [x4]
+		strb w5, [x0]
+		add x4, x4, #1
+		add x0, x0, #1
+		sub x3, x3, #1
+		b .Lsb_af_cl
+		.Lsb_af_done:
+		add x2, x2, x1             // len += sl
+		str x2, [x19, #16]
+		add sp, sp, #384
+		b .Lsb_af_after
+		.Lsb_af_fmt: .asciz "%f"
+		.p2align 2
+		.Lsb_af_after:
+		```
+	}
+
+	// Append a borrowed view without materializing it.
+	pub func append = (ref self, view string s) {
+		self.append_string_view(s)
+	}
+
+	// Append an int without materializing a string (see `append_int`).
+	pub func append = (ref self, int n) {
+		self.append_int(n)
+	}
+
+	// Append a float without materializing a string (see `append_float`).
+	pub func append = (ref self, float f) {
+		self.append_float(f)
+	}
+
+	// Append a single byte. (Overload, so `sb.append(c)` works for chars.)
+	pub func append = (ref self, char c) {
+		self.append_char(c)
+	}
+
 	// both backends: the fat pair's pointer half feeds memcpy directly, and
 	// the tracked length replaces the strlen the old C body paid.
 	// `internal`: a library-implementation append — user code appends with

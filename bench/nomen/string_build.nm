@@ -1,0 +1,42 @@
+import System
+
+// PERF_PLAN item 10 — StringBuilder numeric appends + single-pass
+// interpolation. Old-spelling shapes only, so the PRE-change compiler builds
+// the identical source (the before/after receipt). Modes:
+//   interp — a per-iteration interpolation `"k=\{i} v=\{i*2}"` whose length
+//            is accumulated (the optimizer cannot fold it away).
+//   append — the old numeric-append spelling `sb.append_string(i.to_string())`
+//            over n iterations, then the builder is consumed.
+// Run with: <binary> <n> <interp|append>
+
+pub func main = (Init init) {
+	var n = 1000000
+	if init.argc > 1 {
+		n = parse_int(init.args.at(1))
+	}
+	var mode = "all"
+	if init.argc > 2 {
+		mode = init.args.at(2)
+	}
+
+	if mode == "all" || mode == "interp" {
+		var total = 0
+		var i = 0
+		while i < n {
+			var string s = "k=\{i} v=\{i * 2}"
+			total += s.length
+			i += 1
+		}
+		Console.write("I \{total}\n")
+	}
+
+	if mode == "all" || mode == "append" {
+		var StringBuilder sb = StringBuilder()
+		var i = 0
+		while i < n {
+			sb.append_string(i.to_string())
+			i += 1
+		}
+		Console.write("A \{sb.length()}\n")
+	}
+}

@@ -5,37 +5,51 @@ pub struct float: Stringable {
 	pub func to_string = (self, mv out string) {
 		```
 		#arch: c
-		int length = snprintf(NULL, 0, "%f", self);
-		char* str = malloc(length + 1);
-		snprintf(str, length + 1, "%f", self);
-		// Fat-string ABI: snprintf already counted the bytes.
+		// Single snprintf into a stack scratch (360 bytes covers "%f" of the
+		// largest double: 309 integer digits + '.' + 6 decimals + sign), then
+		// one malloc + memcpy — no sizing pass, no second format.
+		char tmp[360];
+		int length = snprintf(tmp, sizeof(tmp), "%f", self);
+		char* str = (char*)malloc((size_t)length + 1);
+		memcpy(str, tmp, (size_t)length);
+		str[length] = 0;
 		return (nomen_string){ str, length };
 		```
 		```
 		#arch: aarch64
-		sub sp, sp, #128
-		str x0, [sp, #0]
-		str x1, [sp, #8]
-		str x2, [sp, #16]
-		str x3, [sp, #24]
-		str d0, [sp, #64]
-		mov x0, xzr
-		mov x1, xzr
+		// x19 = self (the double). Render into a 360-byte scratch at
+		// [sp+16]; [sp+0] is snprintf's variadic stack slot (Darwin passes
+		// variadic args on the stack), reused after the call for the
+		// length; [sp+8] holds buf.
+		sub sp, sp, #400
+		add x0, sp, #16
+		mov x1, #360
 		adr x2, .Lfmt_float_f
 		fmov d0, x19
+		str d0, [sp, #0]           // variadic double slot
 		bl _snprintf
+		str x0, [sp, #0]           // length
 		add x0, x0, #1
-		str x0, [sp, #64]
 		bl _malloc
-		str x0, [sp, #72]
-		ldr x0, [sp, #72]
-		ldr x1, [sp, #64]
-		adr x2, .Lfmt_float_f
-		fmov d0, x19
-		bl _snprintf
-		mov x1, x0
-		ldr x0, [sp, #72]
-		add sp, sp, #128
+		str x0, [sp, #8]           // buf
+		ldr x1, [sp, #0]
+		add x2, sp, #16            // src
+		mov x3, x1
+		.Lft_cl:
+		cbz x3, .Lft_done
+		ldrb w4, [x2]
+		strb w4, [x0]
+		add x2, x2, #1
+		add x0, x0, #1
+		sub x3, x3, #1
+		b .Lft_cl
+		.Lft_done:
+		ldr x0, [sp, #8]
+		add x2, x0, x1
+		strb wzr, [x2]             // buf[length] = 0
+		ldr x0, [sp, #8]
+		ldr x1, [sp, #0]
+		add sp, sp, #400
 		b .Lend_float_to_string
 		.Lfmt_float_f: .asciz "%f"
 		.p2align 2

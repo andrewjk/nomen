@@ -51,5 +51,9 @@ export function mangled_label(func: FunctionNode, struct_name: string): string {
 	const func_name = sanitize_label(func.name);
 	if (non_self.length === 0) return `${struct_name}_${func_name}`;
 	const suffix = non_self.map((p) => p.type.name || "any").join("_");
-	return `${struct_name}_${func_name}_${suffix}`;
+	// A DOUBLE underscore separates the method name from its parameter types:
+	// a single `_` makes an overloaded `append(string)` spell exactly like a
+	// distinct method named `append_string` (`Struct_append_string`), a real
+	// collision (StringBuilder.append vs StringBuilder.append_string).
+	return `${struct_name}_${func_name}__${suffix}`;
 }

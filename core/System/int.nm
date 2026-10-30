@@ -9,39 +9,80 @@ pub struct int: Stringable, Hashable, Equatable {
 	pub func to_string = (self, mv out string) {
 		```
 		#arch: c
-		int length = snprintf(NULL, 0, "%ld", self);
-		char* str = malloc(length + 1);
-		snprintf(str, length + 1, "%ld", self);
-		// Fat-string ABI: snprintf already counted the bytes.
-		return (nomen_string){ str, length };
+		// Single pass: render the digits into a stack scratch (24 bytes
+		// covers INT64_MIN's sign + 19 digits + slack), then one malloc and
+		// one memcpy. The old body paid two snprintf passes over the value.
+		long v = self;
+		char tmp[24];
+		int pos = 24;
+		// Magnitude via the two's-complement negate (correct for INT64_MIN,
+		// whose positive counterpart is not representable).
+		unsigned long long u = v < 0 ? (unsigned long long)(-(v + 1)) + 1ULL : (unsigned long long)v;
+		do {
+			tmp[--pos] = (char)('0' + (int)(u % 10));
+			u /= 10;
+		} while (u != 0);
+		if (v < 0) tmp[--pos] = '-';
+		long len = 24 - pos;
+		char* str = (char*)malloc((size_t)len + 1);
+		memcpy(str, tmp + pos, (size_t)len);
+		str[len] = 0;
+		return (nomen_string){ str, len };
 		```
 		```
 		#arch: aarch64
-		sub sp, sp, #128
-		str x0, [sp, #0]
-		str x1, [sp, #8]
-		str x2, [sp, #16]
-		str x3, [sp, #24]
-		mov x0, xzr
-		mov x1, xzr
-		adr x2, .Lfmt_int_ld
-		mov x3, x19
-		bl _snprintf
-		add x0, x0, #1
-		str x0, [sp, #64]
+		// x19 = self (the value). Render digits into a 24-byte scratch, then
+		// malloc(len + 1) + copy. [sp]=len, [sp+8]=buf, [sp+16]=pos across
+		// the malloc call.
+		sub sp, sp, #48
+		mov x9, x19
+		mov x10, x9
+		cmp x9, #0
+		b.ge .Lit_pos
+		neg x10, x10               // magnitude (wraps correctly for INT64_MIN)
+		.Lit_pos:
+		add x11, sp, #48
+		mov x12, x11
+		.Lit_digit:
+		mov x13, #10
+		udiv x14, x10, x13
+		msub x15, x14, x13, x10
+		add x15, x15, #48
+		sub x12, x12, #1
+		strb w15, [x12]
+		mov x10, x14
+		cbnz x10, .Lit_digit
+		cmp x9, #0
+		b.ge .Lit_store
+		sub x12, x12, #1
+		mov w15, #45               // '-'
+		strb w15, [x12]
+		.Lit_store:
+		sub x1, x11, x12           // len
+		str x12, [sp, #16]         // pos
+		str x1, [sp, #0]           // len
+		add x0, x1, #1
 		bl _malloc
-		str x0, [sp, #72]
-		ldr x0, [sp, #72]
-		ldr x1, [sp, #64]
-		adr x2, .Lfmt_int_ld
-		mov x3, x19
-		bl _snprintf
-		mov x1, x0
-		ldr x0, [sp, #72]
-		add sp, sp, #128
+		str x0, [sp, #8]           // buf
+		ldr x1, [sp, #0]
+		ldr x12, [sp, #16]
+		mov x3, x1
+		.Lit_cl:
+		cbz x3, .Lit_done
+		ldrb w4, [x12]
+		strb w4, [x0]
+		add x12, x12, #1
+		add x0, x0, #1
+		sub x3, x3, #1
+		b .Lit_cl
+		.Lit_done:
+		ldr x0, [sp, #8]
+		add x2, x0, x1
+		strb wzr, [x2]             // buf[len] = 0
+		ldr x0, [sp, #8]
+		ldr x1, [sp, #0]
+		add sp, sp, #48
 		b .Lend_int_to_string
-		.Lfmt_int_ld: .asciz "%ld"
-		.p2align 2
 		.Lend_int_to_string:
 		```
 	}
