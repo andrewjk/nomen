@@ -253,6 +253,28 @@ var Buffer<int> old = mv self.keys swap Buffer<int>()
 
 This is the idiom `Map`/`Set` `rehash` use to retire their old backing buffers.
 
+### Enum Values (with Data Payloads)
+
+A `mv enum` with data payloads owns its ACTIVE case's payload state. Case
+construction takes ownership: a `string` payload is an owned copy (the
+argument's bytes are duplicated), a mv-struct payload transfers its heap
+state (a borrowed argument is rejected at compile time), and a
+`Box`/trait payload transfers the instance pointer. The blob's owner
+reclaims all of it:
+
+- **Scope exit, reassignment, container teardown**: the active case's
+  payloads are destroyed tag-guarded — a string payload's bytes are freed,
+  a struct payload runs its `#destroy` and frees its owned fields, an
+  instance is destroyed + freed.
+- **Every copy** (into a struct field, a container slot, a return
+  boundary): takes an independent copy — string payloads are duplicated and
+  struct payloads are deep-copied through their `copy`. An owning struct
+  payload without a deep-copy story (a `Box` field, a resource-releasing
+  `#destroy`) makes the enum non-copyable: blobs transfer instead of copy.
+
+`match` case bindings are by-value copies of the payload bytes — they own
+nothing and are not reclaimed.
+
 ### Generic Containers
 
 Generic containers (`List<T>`, `Set<T>`, `Map<K,V>`, `LinkedList<T>`, `Tree<T>`, `Graph<T>`) use **type-erased storage**: all values are stored as 8-byte slots via `Buffer.store_int` / `Buffer.load_int`, regardless of `T`. This works because on aarch64, ints, pointers, and instance references are all 8 bytes.

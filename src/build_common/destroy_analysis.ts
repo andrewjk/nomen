@@ -14,7 +14,7 @@ import { resolve_struct_type } from "./mono_name.ts";
 interface EnumFieldView {
 	name: string;
 	has_associated_data?: boolean;
-	cases: { params: { type: { name: string; is_array?: boolean } }[] }[];
+	cases: { params: { type: Type }[] }[];
 }
 
 interface EnumAwareTable extends StructTable {
@@ -42,10 +42,59 @@ function struct_has_owning_enum_field(struct: StructNode, table: EnumAwareTable)
 				if (table.traits?.some((t) => t.name === p.type.name)) return true;
 				const ps = table.structs.find((s) => s.name === p.type.name);
 				if (ps?.is_class) return true;
+				// A mv-STRUCT payload owns its heap state (the checker's case
+				// construction takes ownership — enforce_case_payload_ownership
+				// treats it like a reference payload), and the enum teardown
+				// destroys it. Such a field must be reclaimed when the struct
+				// dies.
+				if (enum_payload_destroy_struct(p, table)) return true;
 			}
 		}
 	}
 	return false;
+}
+
+/**
+ * The payload's OWNING value struct when an enum case payload of this type
+ * carries heap state the enum teardown must destroy: a non-array, non-view,
+ * non-nullable, non-trait VALUE struct declared `mv` whose fields need
+ * destroy (`struct_needs_destroy` — the same predicate that gates a struct
+ * local's scope-exit walk). Case construction transfers ownership of such a
+ * payload (enforce_case_payload_ownership), so the blob is the sole owner and
+ * the destroy is sound. Class/trait payloads are reference payloads (their
+ * own arm); non-mv value structs own nothing (their fields may be rodata
+ * borrows) and stay out.
+ */
+export function enum_payload_destroy_struct(
+	p: { type: Type },
+	table: StructTable & { traits?: { name: string }[] },
+): StructNode | undefined {
+	const type = p.type;
+	if (!type.name || type.is_array || type.is_ref || type.is_view || type.is_nullable) {
+		return undefined;
+	}
+	if (table.traits?.some((t) => t.name === type.name)) return undefined;
+	const struct = resolve_struct_type(type, table);
+	if (!struct || struct.is_class || struct.is_owning !== true) return undefined;
+	return struct_needs_destroy(struct, table) ? struct : undefined;
+}
+
+/**
+ * The payload's struct when an enum case payload can be DEEP-COPIED by the
+ * enum copy helper: the destroy struct (enum_payload_destroy_struct) plus a
+ * `copy` method (the auto-derived deep copy, or a user one). Where this is
+ * undefined but the destroy struct is not, a byte copy of the blob would
+ * share the payload's owned state with both deaths destroying it — such an
+ * enum is NOT deep-copyable (enum_copy_is_deep reports false, the same
+ * posture as reference payloads).
+ */
+export function enum_payload_deep_copy_struct(
+	p: { type: Type },
+	table: StructTable & { traits?: { name: string }[] },
+): StructNode | undefined {
+	const struct = enum_payload_destroy_struct(p, table);
+	if (!struct) return undefined;
+	return struct.functions.some((f) => f.name === "copy") ? struct : undefined;
 }
 
 /**
@@ -247,12 +296,17 @@ export function element_load_aliases_destroy_state(
 		);
 		if (field_enum) {
 			// String payloads are strdup'd in place by the load; class/trait
-			// payloads are shared pointers ownership cannot split.
+			// payloads are shared pointers ownership cannot split; a mv-struct
+			// payload is privatized only when its `copy` deep-copies (the
+			// enum copy arm) — an owning payload WITHOUT a copy story shares
+			// heap state both deaths would destroy.
 			for (const c of field_enum.cases) {
 				for (const p of c.params) {
 					if ((table as EnumAwareTable).traits?.some((t) => t.name === p.type.name)) return true;
 					const ps = table.structs.find((s) => s.name === p.type.name);
 					if (ps?.is_class) return true;
+					if (enum_payload_destroy_struct(p, table) && !enum_payload_deep_copy_struct(p, table))
+						return true;
 				}
 			}
 			continue;

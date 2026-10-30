@@ -2,6 +2,8 @@ import type BuildStatus from "../../build_c/BuildStatus.ts";
 import type_from_value_node from "../../build_c/utils/type_from_value_node.ts";
 import { box_field_mono, enum_copy_is_deep } from "../../build_common/box_clone.ts";
 import {
+	enum_payload_deep_copy_struct,
+	enum_payload_destroy_struct,
 	field_load_deep_copy,
 	has_destroy,
 	is_pure_borrow_element_load,
@@ -733,10 +735,12 @@ export function resolve_struct_name(
  * index, compare against the blob's tag word, and free the payload's ptr
  * half on match. A class/trait payload (an owned instance pointer — case
  * construction transfers ownership) is likewise reclaimed: `<T>_destroy`
- * (the trait shim dispatches polymorphically) then free. Case construction
- * strdups string args (always-heap), so freeing here is safe. Callers must
- * NOT run this for an enum local that was RETURNED — its bytes (and payload
- * ownership) transferred to the caller.
+ * (the trait shim dispatches polymorphically) then free. A mv-STRUCT payload
+ * owns its heap state (case construction transferred it) — `<T>_destroy`
+ * reclaims it (the user destroy's trailing walk or the auto-generated field
+ * walk). Case construction strdups string args (always-heap), so freeing
+ * here is safe. Callers must NOT run this for an enum local that was
+ * RETURNED — its bytes (and payload ownership) transferred to the caller.
  */
 export function emit_enum_payload_frees(status: BuildStatus, enum_name: string, decl_name: string) {
 	const enum_node = status.enums.find((e) => e.name === enum_name);
@@ -758,7 +762,12 @@ export function emit_enum_payload_frees_at(
 	const enum_node = status.enums.find((e) => e.name === enum_name);
 	if (!enum_node?.has_associated_data) return;
 	const owning_cases = enum_node.cases.filter((c) =>
-		c.params.some((p) => p.type.name === "string" || enum_payload_is_reference(p, status)),
+		c.params.some(
+			(p) =>
+				p.type.name === "string" ||
+				enum_payload_is_reference(p, status) ||
+				!!enum_payload_destroy_struct(p, status),
+		),
 	);
 	if (!owning_cases.length) return;
 	// Every call in the body clobbers all caller-saved registers — including
@@ -769,7 +778,8 @@ export function emit_enum_payload_frees_at(
 	for (const c of owning_cases) {
 		for (const p of c.params) {
 			const is_ref = enum_payload_is_reference(p, status);
-			if (p.type.name !== "string" && !is_ref) continue;
+			const p_struct = is_ref ? undefined : enum_payload_destroy_struct(p, status);
+			if (p.type.name !== "string" && !is_ref && !p_struct) continue;
 			// Tag VALUE = declaration index (case monos carry the base tag).
 			const case_index = c.tag_index ?? enum_node.cases.indexOf(c);
 			const payload_off = get_enum_payload_offset(enum_name, c.name, p.name, status);
@@ -783,7 +793,9 @@ export function emit_enum_payload_frees_at(
 			emit_asm(status, `b.ne ${skip}\n`);
 			// x13 parks the payload ptr so `base_reg` stays valid until its
 			// spill (the caller may pass x0 as the base).
-			emit_asm(status, `ldr x13, ${payload_addr}\n`);
+			if (!p_struct) {
+				emit_asm(status, `ldr x13, ${payload_addr}\n`);
+			}
 			emit_asm(status, `str ${base_reg}, [sp, #-16]!\n`);
 			if (is_ref) {
 				// The destroy call clobbers every caller-saved register, x13
@@ -794,6 +806,14 @@ export function emit_enum_payload_frees_at(
 				emit_asm(status, `bl ${p.type.name}_destroy\n`);
 				emit_asm(status, `ldr x0, [sp], #16\n`);
 				emit_free(status);
+			} else if (p_struct) {
+				// A mv-STRUCT payload: x13 must hold the payload's ADDRESS (the
+				// struct lives inline in the blob — `<T>_destroy` walks it in
+				// place; the user destroy's trailing field walk or the
+				// auto-generated walk reclaims every owned field).
+				emit_asm(status, `add x13, ${base_reg}, #${base_offset + payload_off}\n`);
+				emit_asm(status, `mov x0, x13\n`);
+				emit_asm(status, `bl ${p_struct.name}_destroy\n`);
 			} else {
 				emit_asm(status, `mov x0, x13\n`);
 				emit_free(status);
@@ -805,13 +825,17 @@ export function emit_enum_payload_frees_at(
 }
 
 /**
- * Take mv copies of the string payloads of the enum-with-data blob at
+ * Take mv copies of the owned payloads of the enum-with-data blob at
  * `[base_reg + base_offset]` (tag-guarded, in place): each ACTIVE case's
- * string payload ptr half is strdup'd. Used after an enum blob is copied into
- * a struct field — the blob's payload pointers are shared with the source
- * temp, which frees its own copies at scope exit; the field must own
- * independent copies. Reference payloads are NOT duplicated: case
- * construction transfers their ownership to the blob.
+ * string payload ptr half is strdup'd, and each ACTIVE case's mv-struct
+ * payload with a `copy` story is deep-copied in place (`<T>_copy` with
+ * sret == self — the copy reads each field before writing it). Used after an
+ * enum blob is copied into a struct field — the blob's payload pointers/state
+ * are shared with the source temp, which frees its own copies at scope exit;
+ * the field must own independent copies. Reference payloads are NOT
+ * duplicated: case construction transfers their ownership to the blob (and
+ * an owning struct payload WITHOUT a copy story never arrives here — the
+ * enum_copy_is_deep gate keeps such blobs off the copy paths).
  */
 export function emit_enum_payload_strdups_at(
 	status: BuildStatus,
@@ -827,7 +851,9 @@ export function emit_enum_payload_strdups_at(
 	const tag_addr = base_offset ? `[${base_reg}, #${base_offset}]` : `[${base_reg}]`;
 	for (const c of enum_node.cases) {
 		for (const p of c.params) {
-			if (p.type.name !== "string" || enum_payload_is_reference(p, status)) continue;
+			const is_ref = enum_payload_is_reference(p, status);
+			const p_struct = is_ref ? undefined : enum_payload_deep_copy_struct(p, status);
+			if ((p.type.name !== "string" || is_ref) && !p_struct) continue;
 			// Tag VALUE = declaration index (case monos carry the base tag).
 			const case_index = c.tag_index ?? enum_node.cases.indexOf(c);
 			const payload_off = get_enum_payload_offset(enum_name, c.name, p.name, status);
@@ -839,15 +865,28 @@ export function emit_enum_payload_strdups_at(
 			emit_asm(status, `mov x10, #${case_index}\n`);
 			emit_asm(status, `cmp x9, x10\n`);
 			emit_asm(status, `b.ne ${skip}\n`);
-			emit_asm(status, `ldr x13, ${payload_addr}\n`);
 			emit_asm(status, `str ${base_reg}, [sp, #-16]!\n`);
-			emit_asm(status, `mov x0, x13\n`);
-			emit_strdup(status);
-			// Park the strdup'd copy (x0) before reloading the base — the pop
-			// would otherwise clobber the result.
-			emit_asm(status, `mov x13, x0\n`);
+			if (p_struct) {
+				// Deep-copy the payload in place: x13 = the payload's ADDRESS,
+				// sret (x8) = self = x13 — `<T>_copy` reads each field before
+				// its result write, so overlapping is safe.
+				emit_asm(status, `add x13, ${base_reg}, #${base_offset + payload_off}\n`);
+				emit_asm(status, `mov x8, x13\n`);
+				emit_asm(status, `mov x0, x13\n`);
+				emit_asm(status, `bl ${p_struct.name}_copy\n`);
+			} else {
+				emit_asm(status, `ldr x13, ${payload_addr}\n`);
+				emit_asm(status, `mov x0, x13\n`);
+				emit_strdup(status);
+				// Park the strdup'd copy (x0) before reloading the base — the pop
+				// would otherwise clobber the result.
+				emit_asm(status, `mov x13, x0\n`);
+				emit_asm(status, `ldr ${base_reg}, [sp], #16\n`);
+				emit_asm(status, `str x13, ${payload_addr}\n`);
+				emit_asm(status, `${skip}:\n`);
+				continue;
+			}
 			emit_asm(status, `ldr ${base_reg}, [sp], #16\n`);
-			emit_asm(status, `str x13, ${payload_addr}\n`);
 			emit_asm(status, `${skip}:\n`);
 		}
 	}

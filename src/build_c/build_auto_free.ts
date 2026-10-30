@@ -1,4 +1,5 @@
 import {
+	enum_payload_destroy_struct,
 	has_destroy,
 	is_pure_borrow_element_load,
 	struct_needs_auto_destroy,
@@ -39,7 +40,9 @@ function payload_is_reference(type: ParameterNode["type"], status: BuildStatus):
 /**
  * Emit the tag-guarded reclamation for one owned payload of an enum value:
  * a string payload frees its strdup'd ptr; a class/trait payload destroys
- * and frees the instance.
+ * and frees the instance; a mv-struct payload runs the struct's destroy walk
+ * (the user `#destroy`, the uniformly-heap string fields, and the nested
+ * owned fields — case construction transferred their ownership to the blob).
  */
 function emit_enum_payload_reclaim(
 	cname: string,
@@ -53,6 +56,12 @@ function emit_enum_payload_reclaim(
 		status.code += `${guard} { ${p.type.name}_destroy(${cname}._data._${c.name}.${p.name}); free(${cname}._data._${c.name}.${p.name}); }\n`;
 	} else if (p.type.name === "string") {
 		status.code += `${guard} { free(${cname}._data._${c.name}.${p.name}.ptr); }\n`;
+	} else {
+		const p_struct = enum_payload_destroy_struct(p, status);
+		if (!p_struct) return;
+		status.code += `${guard} {\n`;
+		emit_struct_destroys(status, p_struct, `${cname}._data._${c.name}.${p.name}`);
+		status.code += `}\n`;
 	}
 }
 
@@ -495,13 +504,19 @@ export function free_scoped_declarations(
 		}
 		// An enum-with-data local owns its payloads (case construction is an
 		// ownership copy: strings are strdup'd, class/trait instances
-		// transfer their pointer). Reclaim the payload of the case actually
-		// stored, guarded by the tag.
+		// transfer their pointer, and a mv-struct payload's heap state is
+		// transferred). Reclaim the payload of the case actually stored,
+		// guarded by the tag.
 		if (!is_destructured_field_access && !dec.type.is_array) {
 			const enum_node = status.enums.find((e) => e.name === dec.type.name);
 			if (enum_node?.has_associated_data) {
 				const payload_cases = enum_node.cases.filter((c) =>
-					c.params.some((p) => p.type.name === "string" || payload_is_reference(p.type, status)),
+					c.params.some(
+						(p) =>
+							p.type.name === "string" ||
+							payload_is_reference(p.type, status) ||
+							!!enum_payload_destroy_struct(p, status),
+					),
 				);
 				if (payload_cases.length) {
 					if (!commented) {

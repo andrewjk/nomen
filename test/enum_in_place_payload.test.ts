@@ -101,6 +101,7 @@ pub func main = (Init init) {
 import System
 
 mv struct Rec {
+	var string name
 	var int a
 	var int b
 }
@@ -111,27 +112,27 @@ mv enum RecRes {
 }
 
 func make_rec = (int k, out Rec) {
-	return Rec(k, k * 2)
+	return Rec("r", k, k * 2)
 }
 
 pub func main = (Init init) {
-	var RecRes r = RecRes.found(Rec(3, 4))
+	var RecRes r = RecRes.found(Rec("x", 3, 4))
 	match r {
-		case .found(rec) -> Console.write("\\{rec.a}\\{rec.b}")
+		case .found(rec) -> Console.write("\\{rec.name}\\{rec.a}\\{rec.b}")
 		case .miss -> Console.write("miss")
 	}
 	var RecRes r2 = RecRes.found(make_rec(5))
 	match r2 {
-		case .found(rec) -> Console.write("\\{rec.a}\\{rec.b}")
+		case .found(rec) -> Console.write("\\{rec.name}\\{rec.a}\\{rec.b}")
 		case .miss -> Console.write("miss")
 	}
 }
 `;
-		// (A struct payload with a STRING field hits a pre-existing
-		// ownership gap — the enum teardown does not free struct payloads'
-		// fields — recorded in FOLLOWUP.md; this test pins the in-place
-		// construction on the int-only payload.)
-		await build_and_check_output(input, "enum_inplace_struct_payload", "34510", true);
+		// The payload struct carries a string field: the in-place lowering
+		// changes WHERE the payload is constructed, and the enum teardown
+		// destroys the payload's owned fields (test/enum_struct_payload.test.ts
+		// encodes that ownership contract) — the audit stays balanced.
+		await build_and_check_output(input, "enum_inplace_struct_payload", "x34r510", true);
 	});
 
 	test("mixed payload lists: call + scalar, construction in a loop", async () => {

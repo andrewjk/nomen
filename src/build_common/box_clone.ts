@@ -2,7 +2,12 @@ import { is_box_type } from "../check/utils/box.ts";
 import type EnumNode from "../nodes/EnumNode.ts";
 import type StructNode from "../nodes/StructNode.ts";
 import type Type from "../nodes/Type.ts";
-import { has_destroy, struct_needs_auto_destroy } from "./destroy_analysis.ts";
+import {
+	enum_payload_deep_copy_struct,
+	enum_payload_destroy_struct,
+	has_destroy,
+	struct_needs_auto_destroy,
+} from "./destroy_analysis.ts";
 import { owns_strings_uniformly } from "./has_string_fields.ts";
 import { resolve_struct_type, type StructTable } from "./mono_name.ts";
 
@@ -45,7 +50,11 @@ export function box_pointee_type(box_mono: StructNode): Type | undefined {
 
 /** Whether `<E>_copy` yields a fully independent value: no case payload is a
  *  class/trait reference (those are shared pointers the copy cannot
- *  duplicate — a cloned blob sharing one would free it twice at teardown). */
+ *  duplicate — a cloned blob sharing one would free it twice at teardown),
+ *  and no case payload is a mv struct whose owned state lacks a deep-copy
+ *  story (the copy arm deep-copies payloads via their `copy`; an owning
+ *  payload without one would share heap state both deaths destroy — the same
+ *  non-copyable posture as reference payloads). */
 export function enum_copy_is_deep(
 	elem: EnumNode,
 	table: StructTable & { traits?: { name: string }[] },
@@ -54,6 +63,8 @@ export function enum_copy_is_deep(
 		for (const p of c.params) {
 			const ps = table.structs.find((s) => s.name === p.type.name);
 			if (ps?.is_class || table.traits?.some((t) => t.name === p.type.name)) return false;
+			if (enum_payload_destroy_struct(p, table) && !enum_payload_deep_copy_struct(p, table))
+				return false;
 		}
 	}
 	return true;

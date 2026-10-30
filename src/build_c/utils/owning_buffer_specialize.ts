@@ -1,5 +1,10 @@
-import { box_field_mono } from "../../build_common/box_clone.ts";
 import {
+	box_field_mono,
+	enum_copy_is_deep as enum_copy_is_deep_shared,
+} from "../../build_common/box_clone.ts";
+import {
+	enum_payload_deep_copy_struct,
+	enum_payload_destroy_struct,
 	field_load_deep_copy,
 	has_destroy,
 	struct_needs_destroy,
@@ -232,15 +237,12 @@ export function emit_load_owned_copies_destroy(
 
 /** Whether `<E>_copy` yields a fully independent value: no case payload is a
  *  class/trait reference (those are shared pointers the copy cannot
- *  duplicate — mirroring owning_buffer_enum_element's gate). */
+ *  duplicate — mirroring owning_buffer_enum_element's gate), and no case
+ *  payload is a mv struct whose owned state lacks a deep-copy story. The
+ *  shared predicate (build_common/box_clone) is the one definition — the
+ *  enum copy arm and the destroy arms must agree. */
 function enum_copy_is_deep(elem: EnumNode, status: BuildStatus): boolean {
-	for (const c of elem.cases) {
-		for (const p of c.params) {
-			const ps = status.structs.find((s) => s.name === p.type.name);
-			if (ps?.is_class || status.traits.find((t) => t.name === p.type.name)) return false;
-		}
-	}
-	return true;
+	return enum_copy_is_deep_shared(elem, status);
 }
 
 /**
@@ -254,13 +256,14 @@ export function owning_buffer_is_string_elem(node: StructNode): boolean {
 }
 
 /**
- * Detect a `Buffer_<E>` whose element is an enum-with-data carrying string
- * payloads. Such a slot owns heap strings exactly like a `Buffer<string>` /
- * mv value struct: `<E>_copy` deep-copies the active case's string
- * payloads, `<E>_free_payloads` reclaims them. Enums whose mv payloads
- * include a class/trait reference are NOT specialized — `<E>_copy` shares
- * those pointers (case construction transfers ownership), so a container slot
- * cannot take an independent copy; such programs retain the pre-existing
+ * Detect a `Buffer_<E>` whose element is an enum-with-data carrying OWNED
+ * payloads with an independent-copy story (string payloads — always heap —
+ * or mv-struct payloads whose `copy` deep-copies). Such a slot owns heap
+ * state exactly like a `Buffer<string>` / mv value struct: `<E>_copy`
+ * deep-copies the active case's payloads, `<E>_free_payloads` reclaims them.
+ * Enums whose mv payloads include a class/trait reference — or an owning
+ * struct WITHOUT a copy story (the copy would share state both deaths
+ * destroy) — are NOT specialized; such programs retain the pre-existing
  * shallow behaviour.
  */
 export function owning_buffer_enum_element(
@@ -271,18 +274,22 @@ export function owning_buffer_enum_element(
 	const elem_name = node.name.substring("Buffer_".length);
 	const elem = status.enums.find((e) => e.name === elem_name && !e.is_generic);
 	if (!elem?.has_associated_data) return undefined;
-	let has_string = false;
+	let has_owned = false;
 	for (const c of elem.cases) {
 		for (const p of c.params) {
 			if (p.type.name === "string" && !p.type.is_array) {
-				has_string = true;
+				has_owned = true;
 				continue;
 			}
 			const ps = status.structs.find((s) => s.name === p.type.name);
 			if (ps?.is_class || status.traits.find((t) => t.name === p.type.name)) return undefined;
+			if (enum_payload_destroy_struct(p, status)) {
+				if (!enum_payload_deep_copy_struct(p, status)) return undefined;
+				has_owned = true;
+			}
 		}
 	}
-	return has_string ? elem : undefined;
+	return has_owned ? elem : undefined;
 }
 
 /**

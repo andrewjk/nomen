@@ -538,12 +538,12 @@ code receipts it: the aarch64 ok-loop is `bl make` + two pair stores (no
 **Remainder.** Method-call payload arguments (`Res.ok(seed.copy())`) keep
 the hoisted lowering — extending the stamp to `access`-wrapped calls needs
 a per-argument heapness story on C (the take label is per-call, so a mixed
-site would need the classifier, not the checker, to pick it). Struct
-payloads with string fields hit a pre-existing ownership gap — the enum
-teardown never frees a struct payload's heap fields (FOLLOWUP.md) — so the
-in-place win there is booked on int-only payloads until that lands. The
-donor spelling (`var p = make(i); var Res r = Res.ok(mv p)`) keeps the
-ordinary mv transfer, as in every prior tranche.
+site would need the classifier, not the checker, to pick it). (Struct
+payloads with string fields used to hit a pre-existing ownership gap — the
+enum teardown never freed a struct payload's heap fields — but the teardown
+and deep-copy arms landed, 2026-10-31, so those payloads are now balanced
+end to end.) The donor spelling (`var p = make(i); var Res r =
+Res.ok(mv p)`) keeps the ordinary mv transfer, as in every prior tranche.
 
 ## 8. Regex/String O(n²) accumulators — LANDED (Oct 2026)
 

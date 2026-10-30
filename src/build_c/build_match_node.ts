@@ -1,3 +1,4 @@
+import { enum_payload_destroy_struct } from "../build_common/destroy_analysis.ts";
 import type { NirStmt } from "../nir/nir.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
@@ -6,7 +7,7 @@ import type EnumNode from "../nodes/EnumNode.ts";
 import MatchNode from "../nodes/MatchNode.ts";
 import type Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
-import build_auto_free from "./build_auto_free.ts";
+import build_auto_free, { emit_struct_destroys } from "./build_auto_free.ts";
 import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import { build_block_with_cursor } from "./emit_nir.ts";
@@ -29,7 +30,12 @@ function payload_is_reference(type: Type, status: BuildStatus): boolean {
 /** Cases of this enum whose payloads the value OWNS and must reclaim. */
 function owning_payload_cases(enum_node: EnumNode, status: BuildStatus) {
 	return enum_node.cases.filter((c) =>
-		c.params.some((p) => p.type.name === "string" || payload_is_reference(p.type, status)),
+		c.params.some(
+			(p) =>
+				p.type.name === "string" ||
+				payload_is_reference(p.type, status) ||
+				!!enum_payload_destroy_struct(p, status),
+		),
 	);
 }
 
@@ -191,17 +197,23 @@ export default function build_match_node(
 	// The scrutinee temp dies with the match: free its owned payloads
 	// (tag-guarded), mirroring the enum-local auto-free. A string payload is
 	// a strdup'd copy (free the ptr); a class/trait payload is an owned
-	// instance (destroy + free).
+	// instance (destroy + free); a mv-struct payload owns its heap state
+	// (case construction transferred it) — destroy walk.
 	for (const temp of match_scrutinee_temps) {
 		for (const c of enum_node!.cases) {
 			for (const p of c.params) {
 				const is_ref = payload_is_reference(p.type, status);
-				if (p.type.name !== "string" && !is_ref) continue;
 				const guard = `if (${temp}.tag == ${enum_node!.name}_${c.name})`;
 				if (is_ref) {
 					status.code += `${guard} { ${p.type.name}_destroy(${temp}._data._${c.name}.${p.name}); free(${temp}._data._${c.name}.${p.name}); }\n`;
-				} else {
+				} else if (p.type.name === "string") {
 					status.code += `${guard} { free(${temp}._data._${c.name}.${p.name}.ptr); }\n`;
+				} else {
+					const p_struct = enum_payload_destroy_struct(p, status);
+					if (!p_struct) continue;
+					status.code += `${guard} {\n`;
+					emit_struct_destroys(status, p_struct, `${temp}._data._${c.name}.${p.name}`);
+					status.code += `}\n`;
 				}
 			}
 		}

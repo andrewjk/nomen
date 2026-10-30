@@ -6,6 +6,7 @@ import { is_normalized_struct_call } from "../build_common/call_init_string_fiel
 import record_ctor_heap_default_fields from "../build_common/ctor_heap_default_fields.ts";
 import { override_displaced_string_fields } from "../build_common/ctor_return_owned.ts";
 import {
+	enum_payload_destroy_struct,
 	has_destroy,
 	struct_needs_auto_destroy,
 	struct_needs_destroy,
@@ -1681,11 +1682,13 @@ export default function build_assignment_node(
 		return;
 	}
 
-	// Reassignment of an enum-with-data LOCAL with string payloads: the old
-	// value's payload is an owned heap string — free it (tag-guarded) before
-	// the store overwrites it. Scope-exit auto-free only reclaims the FINAL
-	// value, so a displaced payload would otherwise leak. Enum fields inside
-	// containers are not covered (their destroy doesn't walk payloads yet).
+	// Reassignment of an enum-with-data LOCAL with owned payloads: the old
+	// value's payload is owned heap state — a string payload is a strdup'd
+	// copy, a mv-struct payload owns its fields (case construction
+	// transferred them). Free/destroy it (tag-guarded) before the store
+	// overwrites it. Scope-exit auto-free only reclaims the FINAL value, so
+	// a displaced payload would otherwise leak. Enum fields inside containers
+	// are not covered (their destroy doesn't walk payloads yet).
 	if (!node.operator && !node.swap && node.left_value.node_type === "value") {
 		const lhs_name = (node.left_value as ValueNode).value;
 		const rhs_is_same_var =
@@ -1700,7 +1703,14 @@ export default function build_assignment_node(
 			const cname = c_function_name(lhs_name);
 			for (const c of enum_node.cases) {
 				for (const p of c.params) {
-					if (p.type.name !== "string") continue;
+					if (p.type.name !== "string") {
+						const p_struct = enum_payload_destroy_struct(p, status);
+						if (!p_struct) continue;
+						status.code += `if (${cname}.tag == ${enum_node.name}_${c.name}) {\n`;
+						emit_struct_destroys(status, p_struct, `${cname}._data._${c.name}.${p.name}`);
+						status.code += `}\n`;
+						continue;
+					}
 					status.code += `if (${cname}.tag == ${enum_node.name}_${c.name}) { free(${cname}._data._${c.name}.${p.name}.ptr); }\n`;
 				}
 			}

@@ -1,7 +1,13 @@
+import {
+	enum_payload_deep_copy_struct,
+	enum_payload_destroy_struct,
+} from "../build_common/destroy_analysis.ts";
 import EnumNode from "../nodes/EnumNode.ts";
 import type Type from "../nodes/Type.ts";
+import { emit_struct_destroys } from "./build_auto_free.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_type, { c_typedef_name } from "./utils/c_type.ts";
+import { begin_code_scratch, end_code_scratch } from "./utils/code_scratch.ts";
 
 export default function build_enum_node(node: EnumNode, status: BuildStatus) {
 	// Generic enums are templates — only their monomorphized forms (created
@@ -139,6 +145,19 @@ function build_tagged_union_enum(
 				} else if (ref) {
 					stmts.push(`${p.type.name}_destroy(v->_data._${c.name}.${p.name});`);
 					stmts.push(`free(v->_data._${c.name}.${p.name});`);
+				} else {
+					// A mv-STRUCT payload owns its heap state (case construction
+					// transfers it — enforce_case_payload_ownership): reclaim it
+					// through the struct's destroy walk — the user `#destroy`
+					// (side effects), the uniformly-heap string fields, and the
+					// nested owned fields recursively — the same treatment a
+					// struct local gets at scope exit (emit_struct_destroys).
+					const p_struct = enum_payload_destroy_struct(p, status);
+					if (!p_struct) continue;
+					const saved = begin_code_scratch(status);
+					emit_struct_destroys(status, p_struct, `v->_data._${c.name}.${p.name}`);
+					const captured = end_code_scratch(status, saved);
+					if (captured.trim()) stmts.push(captured.trim());
 				}
 			}
 			if (!stmts.length) continue;
@@ -155,6 +174,17 @@ function build_tagged_union_enum(
 				const ref = payload_is_reference(p.type, status);
 				if (p.type.name === "string" && !ref) {
 					status.code += `if (r.tag == ${node.name}_${c.name}) { r._data._${c.name}.${p.name}.ptr = strdup(r._data._${c.name}.${p.name}.ptr); }\n`;
+				} else if (!ref) {
+					// A mv-STRUCT payload: byte-copying the blob would share the
+					// payload's owned heap state with the source — both deaths
+					// destroy it (free_payloads). Deep-copy through the
+					// payload's `copy` when it has one; an owning payload
+					// WITHOUT a copy story keeps the enum non-deep-copyable
+					// (enum_copy_is_deep reports false — the same posture as
+					// reference payloads) and callers transfer instead.
+					const p_struct = enum_payload_deep_copy_struct(p, status);
+					if (!p_struct) continue;
+					status.code += `if (r.tag == ${node.name}_${c.name}) { r._data._${c.name}.${p.name} = ${p_struct.name}_copy(&r._data._${c.name}.${p.name}); }\n`;
 				}
 			}
 		}

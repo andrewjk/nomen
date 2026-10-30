@@ -1,6 +1,8 @@
 import type BuildStatus from "../../build_c/BuildStatus.ts";
 import { box_field_mono, enum_copy_is_deep } from "../../build_common/box_clone.ts";
 import {
+	enum_payload_deep_copy_struct,
+	enum_payload_destroy_struct,
 	field_load_deep_copy,
 	has_destroy,
 	struct_needs_destroy,
@@ -101,8 +103,10 @@ export function owning_buffer_is_string_elem_aarch64(node: StructNode): boolean 
 }
 
 /**
- * Detect a `Buffer_<E>` whose element is an enum-with-data carrying string
- * payloads (string-only; class/trait payloads cannot be independently
+ * Detect a `Buffer_<E>` whose element is an enum-with-data carrying OWNED
+ * payloads with an independent-copy story (string payloads — always heap —
+ * or mv-struct payloads whose `copy` deep-copies; class/trait payloads and
+ * owning struct payloads without a copy story cannot be independently
  * deep-copied — case construction transfers their ownership). Mirrors the C
  * backend's owning_buffer_enum_element.
  */
@@ -114,18 +118,22 @@ export function owning_buffer_enum_element_aarch64(
 	const elem_name = node.name.substring("Buffer_".length);
 	const elem = status.enums.find((e) => e.name === elem_name && !e.is_generic);
 	if (!elem?.has_associated_data) return undefined;
-	let has_string = false;
+	let has_owned = false;
 	for (const c of elem.cases) {
 		for (const p of c.params) {
 			if (p.type.name === "string" && !p.type.is_array) {
-				has_string = true;
+				has_owned = true;
 				continue;
 			}
 			const ps = status.structs.find((s) => s.name === p.type.name);
 			if (ps?.is_class || status.traits.find((t) => t.name === p.type.name)) return undefined;
+			if (enum_payload_destroy_struct(p, status)) {
+				if (!enum_payload_deep_copy_struct(p, status)) return undefined;
+				has_owned = true;
+			}
 		}
 	}
-	return has_string ? elem : undefined;
+	return has_owned ? elem : undefined;
 }
 
 /**

@@ -7,6 +7,7 @@ import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import { is_normalized_struct_call } from "../build_common/call_init_string_fields.ts";
 import record_ctor_heap_default_fields from "../build_common/ctor_heap_default_fields.ts";
 import {
+	enum_payload_destroy_struct,
 	has_destroy,
 	struct_needs_auto_destroy,
 	struct_needs_destroy,
@@ -1825,13 +1826,20 @@ export default function build_assignment_node(
 		// Enum with associated data is multi-word (tag + payload). The RHS
 		// builds to a temp address in x0; copy the full enum bytes into the
 		// variable's stack slot (a plain `str` would only store the address).
-		// Reassignment displaces the old value: free its string payloads
-		// (tag-guarded) BEFORE the copy — scope-exit only reclaims the final
-		// value, so the displaced payload would otherwise leak.
+		// Reassignment displaces the old value: free its owned payloads (a
+		// string payload is a strdup'd copy, a mv-struct payload owns its
+		// fields — tag-guarded) BEFORE the copy — scope-exit only reclaims
+		// the final value, so the displaced payload would otherwise leak.
 		if (rhs_is_enum_with_data && !node.operator) {
 			const enum_size = get_enum_size(rhs_type.name, status);
 			const lhs_enum = status.enums.find((e) => e.name === rhs_type.name);
-			if (lhs_enum?.cases.some((c) => c.params.some((p) => p.type.name === "string"))) {
+			if (
+				lhs_enum?.cases.some((c) =>
+					c.params.some(
+						(p) => p.type.name === "string" || !!enum_payload_destroy_struct(p, status),
+					),
+				)
+			) {
 				emit_enum_payload_frees(status, rhs_type.name, name);
 			}
 			emit_rhs_value(node.right_value, nir_rhs, status);
