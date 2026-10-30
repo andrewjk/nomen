@@ -3,9 +3,9 @@
 Research into the next performance opportunities, following the StableList +
 in-place push work. PERF.md is the record of what landed; this is the plan for
 what's next. All findings are ordered most-promising-first. Written Oct 2026;
-originally unmeasured — items 2, 3, 4 (partially), 5, 6, 7, 8, 9, 10, and 11
-have since landed with measurements in place (items marked LANDED carry them;
-the rest carry expected wins and the receipts they rest on).
+originally unmeasured — items 2, 3, 4 (partially), 5, 6, 7, 8, 9, 10, 11, and
+14 have since landed with measurements in place (items marked LANDED carry
+them; the rest carry expected wins and the receipts they rest on).
 
 | #   | Item                                                                                                                                                                                                           | Backends       | Effort | Receipt                                          |
 | --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | ------ | ------------------------------------------------ |
@@ -22,7 +22,7 @@ the rest carry expected wins and the receipts they rest on).
 | 11  | ~~Devirtualization of trait calls~~ **LANDED Oct 2026: −12% realistic callee / −31% trait-default (C), tiny-callee loop folds outright; aarch64 inline splice −19% (below)**                                   | both           | M      | shape micro-bench, interleaved medians (below)   |
 | 12  | Struct field-order / padding                                                                                                                                                                                   | both           | S      | modest; raw-body caveat                          |
 | 13  | Variable-mode enums                                                                                                                                                                                            | both           | L      | GOOSE #6, documented, unshipped                  |
-| 14  | Buffer word pairs (T_SIZE ≤ 16)                                                                                                                                                                                | mostly aarch64 | S      | IMPROVEMENTS.md "still needed"                   |
+| 14  | ~~Buffer word pairs (T_SIZE ≤ 16)~~ **LANDED Oct 2026: −12% / flat shape (aarch64 / C — clang already inlined it); json-serde flat (no 16-byte element exists)**                                               | mostly aarch64 | S      | shape micro-bench, interleaved medians (below)   |
 | 15  | aarch64 codegen receipts (splice model, folds…)                                                                                                                                                                | aarch64        | S–M    | measured regressions to reclaim                  |
 | 16  | Async paths audit                                                                                                                                                                                              | both           | ?      | unexplored, unmeasured                           |
 | 17  | Minor batch                                                                                                                                                                                                    | both           | S      | assorted                                         |
@@ -1070,12 +1070,80 @@ freeze-at-construction constraint is exactly the safety argument MEMORY.md
 already leans on. Token/AST-shaped workloads — the compiler's own — benefit on
 both backends. Big change; long-term.
 
-## 14. Buffer word pairs for T_SIZE ≤ 16
+## 14. Buffer word pairs for T_SIZE ≤ 16 — LANDED (Oct 2026)
 
-`load_T`/`store_T` for small structs as word-pair moves instead of `memcpy` —
-already on the list (`bench/IMPROVEMENTS.md`, "still needed"), lifts json-serde
-and the per-child memcpy in the tree benches. Mostly an aarch64 win (clang -O2
-already inlines small memcpy on the C side).
+**What landed.** Buffer's T_SIZE-aware slot family — `load`/`store`/`replace`/
+`move`/`shift`/`load_from`, the load_T/store_T pair behind every container
+`.at`/`set`/`pop` — gained a word-pair arm: for `8 < T_SIZE ≤ 16` the slot
+copy is one `ldp`/`stp` pair where the width dispatch used to fall into
+`bl _memcpy` (plus `bl _memset` for move's/shift's slot zero). The dispatch is
+written for the folder (`cmp x3, #16 / b.gt <memcpy>` over the existing ≤ 8
+width match), so after monomorphization each element kind gets straight-line
+code: T_SIZE 16 splices as `lsl` stride + pair move with the dispatch and the
+memcpy tail left unreachable, scalars keep the width-matched loads unchanged,
+and > 16 keeps the calls.
+
+- Since struct sizes round to 8 bytes, the new arm serves exactly the
+  16-byte class (VT word + one field word) and ≤ 16-byte enums-with-data.
+- The mv-owning specializations (`emit_owning_store_T`/`replace_T`/`load_T`/
+  `shift_T`, inline and standalone —
+  `src/build_aarch64/utils/owning_buffer_specialize.ts`) take the same pair
+  through a generation-time gate (`emit_slot_pair_copy`, `T_SIZE <= 16`). The gate is reachable only
+  for the vt + 8-byte-Box shape: the smallest previously-possible owning
+  element (`has_string_fields || struct_needs_destroy`), since a string field
+  already puts an element at 24 bytes. Enum specializations stay memcpy-only
+  (an owning enum always carries a string payload, ≥ 24).
+- `modify`'s staging copies keep memcpy (the staged copy feeds a closure
+  call; the item is the load/store family). StableList's chunk moves
+  (`push_tail`, `load_tail`'s delegation) are unchanged.
+- **C untouched, verified:** the `#arch: c` bodies and the C backend are
+  byte-identical before/after (all four standard-suite C sources `cmp` equal)
+  — clang -O2 already inlines small struct assignments, as the item
+  predicted.
+
+**Measured.** Shape micro-bench — `bench/nomen/buffer_word_pairs.nm`: a
+`List<Pair>` of 16-byte elements (`Pair` = VT + one int), n from argv, Apple
+Silicon, 7–9 interleaved rounds, medians, audit off, release builds,
+identical checksums before/after. Three shapes back to back: a `set_or_panic`
+sweep (replace_T per slot, donor `mv` spelling), an `at_or_panic` read sweep
+(load_T per slot, inline-spliced), and a `pop` sweep (move_T per slot).
+
+| Backend |   n = 2M (median) | n = 5M (median) |        Δ |
+| ------- | ----------------: | --------------: | -------: |
+| aarch64 | 0.0618s → 0.0544s | 0.153s → 0.134s | **−12%** |
+| C       | 0.0094s → 0.0094s | 0.023s → 0.023s |    ~flat |
+
+Per slot the elided work is exactly the item's promise: the `bl _memcpy`
+call and its register parking become one load-pair + store-pair (move/shift
+also drop the `bl _memset`; the pair zero is one `stp xzr, xzr`). The
+emitted splice receipts it: the 16-byte `replace` is
+`lsl x1, x1, #4 / add x0, x0, x1 / ldp x9, x10, [x2] / stp x9, x10, [x0]`.
+
+- _The standard suite_ — flat on both backends (medians, interleaved, outputs
+  byte-identical): json-serde aarch64 0.694 → 0.695s, C 0.397 → 0.397s;
+  binarytrees 1.86 → 1.84s aarch64, 1.43 → 1.43s C; nsieve 0.16/0.13s
+  unchanged; lru aarch64 1.787 → 1.715s (−4% median / −1.6% min against a
+  ±0.7% same-binary race spread — its only textual delta is the added dead
+  pair labels shifting code addresses, so this is layout displacement, the
+  documented aarch64 text-sensitivity, not a causal win), lru C flat. Two
+  tests in `test/buffer_word_pairs.test.ts` pin the runtime round-trip
+  (set/at/pop/copy on both backends, audit on) and the emitted pair splices
+  (pair arms present, no memcpy on the taken replace path); the full suite
+  (531 files, both backends) passes.
+
+- _json-serde stays flat — the booking was wrong about the mechanism._ The
+  plan (and bench/IMPROVEMENTS.md) booked this item against json-serde, but
+  its slot types are `JsonNode` (56 bytes — the owning specialization's
+  memcpy stays, correctly) and `int`/`uint64` scalars (the ≤ 8 width match
+  already covered them). No 16-byte element exists in the program, and the
+  .s diff confirms every hot path is identical. The item's win is real for
+  genuine 16-byte elements (the shape above); it just wasn't json-serde's.
+
+**Remainder.** `StableList.push_tail` still pays memcpy + memset per tail
+push at every T_SIZE — the same pair treatment would apply when a
+chunked-storage shape shows up in a hot loop. Structs of 24/32 bytes could
+take two/three `ldp`/`stp` pairs instead of the memcpy call; left unmeasured
+(the item's contract was ≤ 16).
 
 ## 15. aarch64 codegen receipts (from the project's own docs)
 

@@ -1,0 +1,57 @@
+import System
+
+// Buffer word-pair shape (PERF_PLAN item 14) — Buffer's load_T/store_T family
+// for a T_SIZE == 16 element: a multi-word (VT + one int word) slot copied
+// wholesale per access, the size class the width dispatch falls into memcpy
+// for. Shapes back to back through List<Pair> (the container wrapper), n from
+// argv, checksum printed so before/after binaries are comparable:
+//   store — replace_T per slot (set_or_panic, donor mv spelling)
+//   load  — load_T per slot (at_or_panic → at → load)
+//   move  — move_T per slot (pop)
+
+struct Pair {
+	var int v = 0
+}
+
+pub func main = (Init init) {
+	var n = 2000000
+	if init.argc > 1 {
+		n = parse_int(init.args.at(1))
+	}
+
+	var lst = List<Pair>()
+
+	// Fill once (setup): the in-place push constructs each Pair into its slot.
+	var i = 0
+	while i < n; i += 1 {
+		var p = Pair()
+		p.v = i
+		lst.push(mv p)
+	}
+
+	// Store shape: replace_T per slot (donor mv spelling — the ordinary
+	// transfer, not the in-place construct).
+	i = 0
+	while i < n; i += 1 {
+		var p = Pair()
+		p.v = i * 2
+		lst.set_or_panic(i, mv p)
+	}
+
+	// Load shape: load_T per slot.
+	var total = 0
+	i = 0
+	while i < n; i += 1 {
+		total = total + lst.at_or_panic(i).v
+	}
+
+	// Move shape: move_T per slot (the slot is zeroed — exactly one owner).
+	i = 0
+	while i < n; i += 1 {
+		var p = lst.pop()
+		total = total + p.v
+	}
+
+	Console.write(total.to_string())
+	Console.write("\n")
+}

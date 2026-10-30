@@ -662,10 +662,13 @@ function emit_owning_standalone_struct(elem: StructNode, func_name: string, stat
 		emit_asm(status, `mov x9, #${T_SIZE}\n`);
 		emit_asm(status, `madd x21, x1, x9, x20\n`); // x21 = &slot[i]
 		emit_asm(status, `mov x22, x8\n`); // x22 = sret (x8 is caller-saved)
-		emit_asm(status, `mov x0, x22\n`);
-		emit_asm(status, `mov x1, x21\n`);
-		emit_asm(status, `mov x2, x9\n`);
-		emit_asm(status, `bl _memcpy\n`);
+		// Slot → sret copy: a word pair at T_SIZE <= 16, memcpy otherwise.
+		if (!emit_slot_pair_copy(status, "x22", "x21", T_SIZE)) {
+			emit_asm(status, `mov x0, x22\n`);
+			emit_asm(status, `mov x1, x21\n`);
+			emit_asm(status, `mov x2, x9\n`);
+			emit_asm(status, `bl _memcpy\n`);
+		}
 		// Deep-copy the List fields into the sret buffer (reads the slot).
 		emit_load_deep_copy_fields(elem, status, "x22", "x21");
 		emit_asm(status, `mov x0, x22\n`);
@@ -713,11 +716,14 @@ function emit_owning_standalone_struct(elem: StructNode, func_name: string, stat
 		});
 	}
 
-	// memcpy(slot, val, T_SIZE) — x22 holds T_SIZE (preserved across calls)
-	emit_asm(status, `mov x0, x20\n`);
-	emit_asm(status, `mov x1, x21\n`);
-	emit_asm(status, `mov x2, x22\n`);
-	emit_asm(status, `bl _memcpy\n`);
+	// Slot ← val copy: a word pair at T_SIZE <= 16, memcpy otherwise
+	// (x22 holds T_SIZE, preserved across the call).
+	if (!emit_slot_pair_copy(status, "x20", "x21", T_SIZE)) {
+		emit_asm(status, `mov x0, x20\n`);
+		emit_asm(status, `mov x1, x21\n`);
+		emit_asm(status, `mov x2, x22\n`);
+		emit_asm(status, `bl _memcpy\n`);
+	}
 
 	if (func_name === "store") {
 		// strdup each string field, skipping NULL source fields and
@@ -799,6 +805,29 @@ function emit_owning_standalone_struct(elem: StructNode, func_name: string, stat
 
 	emit_asm(status, `ldr x22, [sp], #16\n`);
 	emit_asm(status, `ldp x20, x21, [sp], #16\n`);
+	return true;
+}
+
+/**
+ * Emit a T_SIZE-sized slot copy as a word pair (PERF_PLAN item 14): for
+ * elements <= 16 bytes the slot copy is one ldp/stp pair — no memcpy call,
+ * no register parking around it. Slots and struct temps are 8-byte
+ * aligned, and the backend already issues 8-aligned pairs for every
+ * 16-byte (string) slot, so the pair form is the established convention.
+ * Owning elements below 16 bytes do not exist (the smallest is the VT
+ * word + one 8-byte Box field), so a taken pair always covers the whole
+ * element. Returns whether the pair was emitted; larger elements keep the
+ * memcpy call.
+ */
+function emit_slot_pair_copy(
+	status: BuildStatus,
+	dst: string,
+	src: string,
+	T_SIZE: number,
+): boolean {
+	if (T_SIZE > 16) return false;
+	emit_asm(status, `ldp x9, x10, [${src}]\n`);
+	emit_asm(status, `stp x9, x10, [${dst}]\n`);
 	return true;
 }
 
@@ -1019,14 +1048,18 @@ function emit_owning_shift_T(elem: StructNode, status: BuildStatus, self_reg: st
 	// Destroy dst's old value (guarded: dst may be an empty slot — see
 	// emit_guarded_slot_destroy)
 	emit_guarded_slot_destroy(status, elem, "x20");
-	emit_asm(status, `mov x0, x20\n`);
-	emit_asm(status, `mov x1, x21\n`);
-	emit_asm(status, `mov x2, x22\n`);
-	emit_asm(status, `bl _memcpy\n`);
-	emit_asm(status, `mov x0, x21\n`);
-	emit_asm(status, `mov x1, #0\n`);
-	emit_asm(status, `mov x2, x22\n`);
-	emit_asm(status, `bl _memset\n`);
+	if (emit_slot_pair_copy(status, "x20", "x21", T_SIZE)) {
+		emit_asm(status, `stp xzr, xzr, [x21]\n`);
+	} else {
+		emit_asm(status, `mov x0, x20\n`);
+		emit_asm(status, `mov x1, x21\n`);
+		emit_asm(status, `mov x2, x22\n`);
+		emit_asm(status, `bl _memcpy\n`);
+		emit_asm(status, `mov x0, x21\n`);
+		emit_asm(status, `mov x1, #0\n`);
+		emit_asm(status, `mov x2, x22\n`);
+		emit_asm(status, `bl _memset\n`);
+	}
 	emit_asm(status, `${done}:\n`);
 	emit_asm(status, `ldr x22, [sp], #16\n`);
 	emit_asm(status, `ldp x20, x21, [sp], #16\n`);
@@ -1048,10 +1081,13 @@ function emit_owning_load_T(elem: StructNode, status: BuildStatus, self_reg: str
 	emit_asm(status, `mov x9, #${T_SIZE}\n`);
 	emit_asm(status, `madd x21, x1, x9, x20\n`); // x21 = &slot[i]
 	emit_asm(status, `mov x22, x8\n`); // x22 = sret (x8 is caller-saved)
-	emit_asm(status, `mov x0, x22\n`);
-	emit_asm(status, `mov x1, x21\n`);
-	emit_asm(status, `mov x2, x9\n`);
-	emit_asm(status, `bl _memcpy\n`);
+	// Slot → sret copy: a word pair at T_SIZE <= 16, memcpy otherwise.
+	if (!emit_slot_pair_copy(status, "x22", "x21", T_SIZE)) {
+		emit_asm(status, `mov x0, x22\n`);
+		emit_asm(status, `mov x1, x21\n`);
+		emit_asm(status, `mov x2, x9\n`);
+		emit_asm(status, `bl _memcpy\n`);
+	}
 	// Deep-copy the List fields into the sret buffer (reads the slot).
 	emit_load_deep_copy_fields(elem, status, "x22", "x21");
 	emit_asm(status, `mov x0, x22\n`);
@@ -1093,11 +1129,13 @@ function emit_owning_store_T(elem: StructNode, status: BuildStatus) {
 			emit_asm(status, `str x9, [sp, #${i * 8}]\n`);
 		});
 	}
-	// memcpy(slot, val, T_SIZE)
-	emit_asm(status, `mov x0, x20\n`); // dest
-	emit_asm(status, `mov x1, x21\n`); // src
-	emit_asm(status, `mov x2, x22\n`); // size
-	emit_asm(status, `bl _memcpy\n`);
+	// Slot ← val copy: a word pair at T_SIZE <= 16, memcpy otherwise.
+	if (!emit_slot_pair_copy(status, "x20", "x21", T_SIZE)) {
+		emit_asm(status, `mov x0, x20\n`); // dest
+		emit_asm(status, `mov x1, x21\n`); // src
+		emit_asm(status, `mov x2, x22\n`); // size
+		emit_asm(status, `bl _memcpy\n`);
+	}
 	// strdup each string field, skipping NULL source fields and round-trips
 	// (source pointer identical to the slot's pre-copy pointer).
 	for (const [i, { offset: foff }] of string_fields.entries()) {
@@ -1164,11 +1202,14 @@ function emit_owning_replace_T(elem: StructNode, status: BuildStatus) {
 	// Destroy old slot value (guarded: the slot may be empty — see
 	// emit_guarded_slot_destroy)
 	emit_guarded_slot_destroy(status, elem, "x20");
-	// memcpy(slot, val, T_SIZE) — x22 preserved across destroy call
-	emit_asm(status, `mov x0, x20\n`);
-	emit_asm(status, `mov x1, x21\n`);
-	emit_asm(status, `mov x2, x22\n`);
-	emit_asm(status, `bl _memcpy\n`);
+	// Slot ← val copy: a word pair at T_SIZE <= 16, memcpy otherwise
+	// (x22 preserved across the destroy call).
+	if (!emit_slot_pair_copy(status, "x20", "x21", T_SIZE)) {
+		emit_asm(status, `mov x0, x20\n`);
+		emit_asm(status, `mov x1, x21\n`);
+		emit_asm(status, `mov x2, x22\n`);
+		emit_asm(status, `bl _memcpy\n`);
+	}
 	// strdup each string field (NULL source fields stay NULL — no strdup)
 	for (const { offset: foff } of string_fields) {
 		emit_strdup_field(

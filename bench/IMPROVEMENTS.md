@@ -762,9 +762,12 @@ references.
   field-by-field into the parent's `left`/`right`. A first-class struct return
   (or direct pointer assignment) removes the per-node copy that the reference
   languages avoid.
-- **[stdlib]** Make `Buffer.load_T`/`store_T` use word-pair loads for
-  `T_SIZE ≤ 16` instead of `memcpy`. N/A for binarytrees now that it uses direct
-  node objects, but still needed for **json-serde**.
+- ✓ **[stdlib] DONE (PERF_PLAN item 14):** `Buffer.load_T`/`store_T` use
+  word-pair loads for `T_SIZE ≤ 16` instead of `memcpy` (aarch64; C's clang
+  already inlined it). Measured −12% on a 16-byte-element shape micro-bench;
+  json-serde is flat — its slot types are `JsonNode` (56 B) and scalars, so
+  no 16-byte element exists there (this bullet's premise was wrong about the
+  mechanism).
 
 ### merkletrees (194 / 907 ms — ~7× off Zig)
 
@@ -889,9 +892,11 @@ prints the length.
 - **[stdlib]** Arena-allocate the `JsonNode` pool: bump-allocate from a
   contiguous slab and reset the bump pointer between parses instead of going
   through the general allocator.
-- **[stdlib]** `Buffer.load_T`/`store_T` for the `JsonNode` struct should use
-  word-pair loads, not `memcpy` (same fix as binarytrees). Each node access is
-  currently a struct memcpy plus string pointer chases.
+- ✓ **[stdlib] DONE (PERF_PLAN item 14):** the word-pair fix landed, but
+  `JsonNode` is 56 bytes (VT + kind + text + 3 ints) — the pair path covers
+  ≤ 16 and `JsonNode` correctly stays on the owning-specialized memcpy. The
+  expected json-serde lift from this item does not exist; json-serde
+  measures flat before/after.
 - **[stdlib]** String handling is a dominant cost: every `+` concatenation and
   tokenize allocates and copies. Go's `encoding/json` is also allocation-heavy
   but Go's allocator and string copy are far faster than Nomen's per-call
@@ -1113,10 +1118,10 @@ the note at the top.)
 
 ### B. Stdlib fixes (one-time work, lifts every user)
 
-1. **`Buffer.load_T`/`store_T` for small structs → word pairs instead of
-   `memcpy`.** Lifts **json-serde** and any future struct-of-array code. Not
-   done. (binarytrees no longer uses a struct buffer — it allocates node objects
-   directly.)
+1. ✓ **DONE (PERF_PLAN item 14):** `Buffer.load_T`/`store_T` for structs
+   ≤ 16 bytes → word pairs instead of `memcpy` (aarch64; −12% shape, both
+   standard-suite backends otherwise flat — json-serde's `JsonNode` is 56 B
+   and stays on the owning memcpy).
 2. ✓ **DONE (items 13–15):** Hoist/`div128`/`get`+`set`/`Buffer<T>`-inline
    fixes for BigInt's limb loops. `div128` → `___udivti3`; `get`/`set` use
    indexed addressing; monomorphized `Buffer_int` load/store now inline. (A

@@ -197,8 +197,10 @@ pub struct Buffer<T> {
 		mov x3, #T_SIZE
 		madd x1, x1, x3, xzr
 		add x0, x0, x1
-		cmp x3, #8
+		cmp x3, #16
 		b.gt .Lbuffer_load_from_copy
+		cmp x3, #8
+		b.gt .Lbuffer_load_from_pair
 		cmp x3, #1
 		b.eq .Lbuffer_load_from_1
 		cmp x3, #2
@@ -215,6 +217,12 @@ pub struct Buffer<T> {
 		b .Lbuffer_load_from_end
 		.Lbuffer_load_from_4:
 		ldr w0, [x0]
+		b .Lbuffer_load_from_end
+		.Lbuffer_load_from_pair:
+		// Word-pair load (T_SIZE <= 16): both words into the sret
+		// buffer, no call.
+		ldp x9, x10, [x0]
+		stp x9, x10, [x8]
 		b .Lbuffer_load_from_end
 		.Lbuffer_load_from_copy:
 		mov x1, x0
@@ -275,8 +283,9 @@ pub struct Buffer<T> {
 	}
 
 	// T_SIZE-aware primitives for value-struct elements. Slab is sized in
-	// multiples of T_SIZE; load/store use memcpy so multi-word structs work
-	// correctly. Classes route to ClassBuffer<T> (per-element destroy), so T
+	// multiples of T_SIZE; multi-word slots copy as one word pair at
+	// T_SIZE <= 16 (ldp/stp — no call) and via memcpy above that, so
+	// structs of any width work correctly. Classes route to ClassBuffer<T> (per-element destroy), so T
 	// reaching here is always a value type (primitive or struct).
 
 	func alloc = (ref self, int size, out int: out >= size) {
@@ -324,8 +333,10 @@ pub struct Buffer<T> {
 		mov x3, #T_SIZE
 		madd x1, x1, x3, xzr
 		add x0, x0, x1
-		cmp x3, #8
+		cmp x3, #16
 		b.gt .Lbuffer_load_T_copy
+		cmp x3, #8
+		b.gt .Lbuffer_load_T_pair
 		// Width-matched load (zero-extends) — an 8-byte ldr on a sub-8
 		// element would read past the slab's end and leave garbage in the
 		// upper bits.
@@ -345,6 +356,12 @@ pub struct Buffer<T> {
 		b .Lbuffer_load_T_end
 		.Lbuffer_load_T_4:
 		ldr w0, [x0]
+		b .Lbuffer_load_T_end
+		.Lbuffer_load_T_pair:
+		// Word-pair load (T_SIZE <= 16): both words into the sret
+		// buffer, no call.
+		ldp x9, x10, [x0]
+		stp x9, x10, [x8]
 		b .Lbuffer_load_T_end
 		.Lbuffer_load_T_copy:
 		mov x1, x0
@@ -375,8 +392,10 @@ pub struct Buffer<T> {
 		mov x3, #T_SIZE
 		madd x1, x1, x3, xzr
 		add x0, x0, x1
-		cmp x3, #8
+		cmp x3, #16
 		b.gt .Lbuffer_store_T_copy
+		cmp x3, #8
+		b.gt .Lbuffer_store_T_pair
 		// Sub-8 element types must use a width-matched store: an 8-byte str
 		// would clobber the following slots (and run past the slab's end).
 		cmp x3, #1
@@ -395,6 +414,12 @@ pub struct Buffer<T> {
 		b .Lbuffer_store_T_end
 		.Lbuffer_store_T_4:
 		str w2, [x0]
+		b .Lbuffer_store_T_end
+		.Lbuffer_store_T_pair:
+		// Word-pair store (T_SIZE <= 16): the value's address (x2)
+		// feeds both words, no call.
+		ldp x9, x10, [x2]
+		stp x9, x10, [x0]
 		b .Lbuffer_store_T_end
 		.Lbuffer_store_T_copy:
 		mov x1, x2
@@ -424,8 +449,10 @@ pub struct Buffer<T> {
 		mov x3, #T_SIZE
 		madd x5, x1, x3, xzr
 		add x5, x4, x5
-		cmp x3, #8
+		cmp x3, #16
 		b.gt .Lbuffer_move_T_copy
+		cmp x3, #8
+		b.gt .Lbuffer_move_T_pair
 		// Width-matched load + zero-clear: an 8-byte access on a sub-8
 		// element would zero the following slots and run past the slab.
 		cmp x3, #1
@@ -448,6 +475,14 @@ pub struct Buffer<T> {
 		.Lbuffer_move_T_4:
 		ldr w0, [x5]
 		str wzr, [x5]
+		b .Lbuffer_move_T_end
+		.Lbuffer_move_T_pair:
+		// Word-pair move (T_SIZE <= 16): the sret pair takes both
+		// words and the slot zeroes, no calls.
+		ldp x9, x10, [x5]
+		stp x9, x10, [x8]
+		stp xzr, xzr, [x5]
+		mov x0, x8
 		b .Lbuffer_move_T_end
 		.Lbuffer_move_T_copy:
 		mov x0, x8
@@ -578,8 +613,10 @@ pub struct Buffer<T> {
 		mov x3, #T_SIZE
 		madd x1, x1, x3, xzr
 		add x0, x0, x1
-		cmp x3, #8
+		cmp x3, #16
 		b.gt .Lbuffer_replace_T_copy
+		cmp x3, #8
+		b.gt .Lbuffer_replace_T_pair
 		// Width-matched store: an 8-byte str on a sub-8 element would
 		// clobber the following slots and run past the slab's end.
 		cmp x3, #1
@@ -598,6 +635,12 @@ pub struct Buffer<T> {
 		b .Lbuffer_replace_T_end
 		.Lbuffer_replace_T_4:
 		str w2, [x0]
+		b .Lbuffer_replace_T_end
+		.Lbuffer_replace_T_pair:
+		// Word-pair store (T_SIZE <= 16): the value's address (x2)
+		// feeds both words, no call.
+		ldp x9, x10, [x2]
+		stp x9, x10, [x0]
 		b .Lbuffer_replace_T_end
 		.Lbuffer_replace_T_copy:
 		mov x1, x2
@@ -694,8 +737,10 @@ pub struct Buffer<T> {
 		madd x6, x2, x3, x4
 		cmp x5, x6
 		b.eq .Lbuffer_shift_T_end
-		cmp x3, #8
+		cmp x3, #16
 		b.gt .Lbuffer_shift_T_copy
+		cmp x3, #8
+		b.gt .Lbuffer_shift_T_pair
 		// Width-matched mv: an 8-byte access on a sub-8 element would
 		// clobber the following slot (and run past the slab's end).
 		cmp x3, #1
@@ -722,6 +767,13 @@ pub struct Buffer<T> {
 		ldr w7, [x6]
 		str w7, [x5]
 		str wzr, [x6]
+		b .Lbuffer_shift_T_end
+		.Lbuffer_shift_T_pair:
+		// Word-pair shift (T_SIZE <= 16): both words move wholesale
+		// and the source pair zeroes, no calls.
+		ldp x7, x9, [x6]
+		stp x7, x9, [x5]
+		stp xzr, xzr, [x6]
 		b .Lbuffer_shift_T_end
 		.Lbuffer_shift_T_copy:
 		mov x0, x5
