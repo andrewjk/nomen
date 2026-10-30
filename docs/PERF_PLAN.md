@@ -7,25 +7,25 @@ originally unmeasured — items 2, 3, 4 (partially), 5, 6, 7, 8, 9, 10, 11, 12,
 and 14 have since landed with measurements in place (items marked LANDED carry
 them; the rest carry expected wins and the receipts they rest on).
 
-| #   | Item                                                                                                                                                                                                                                                                   | Backends       | Effort | Receipt                                          |
-| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | ------ | ------------------------------------------------ |
-| 1   | Faster allocator (slab/bump class allocation)                                                                                                                                                                                                                          | both           | M      | PERF.md "Large"; ASM_TODO "largest unclaimed"    |
-| 2   | ~~In-place push for constructors~~ **LANDED Oct 2026: −55% / −58% on the shape**                                                                                                                                                                                       | both           | S      | shape micro-bench, interleaved medians (below)   |
-| 3   | ~~Move-on-last-use for structs~~ **LANDED Oct 2026: −20% / −29% on the shape**                                                                                                                                                                                         | both           | S–M    | shape micro-bench, interleaved medians (below)   |
-| 4   | ~~Borrow-returning reads (Map `get_ptr`, `at_view`)~~ **PARTIALLY LANDED Oct 2026: Map slot borrow, −79% / −98% on the borrow shape, −48% probe fusion**                                                                                                               | both           | M      | shape micro-benches, interleaved medians (below) |
-| 5   | ~~Json ownership copies~~ **LANDED Oct 2026: −26% / −13% on the ownership shape, −22% / −12% json-serde**                                                                                                                                                              | both           | S      | measured 0.7.0 regression +61% / +103%           |
-| 6   | ~~In-place store (`set`/`insert`/`add`/`alloc`)~~ **LANDED Oct 2026: −50% / −56% on the pure store shape, −64% Map replace**                                                                                                                                           | both           | M      | shape micro-benches, interleaved medians (below) |
-| 7   | ~~Enum payload in-place construction~~ **LANDED Oct 2026: −45% / −8% on the payload shapes (aarch64; C take-variant)**                                                                                                                                                 | both           | S–M    | shape micro-benches, interleaved medians (below) |
-| 8   | ~~Regex/String O(n²) accumulators~~ **LANDED Oct 2026: −92% / −91% match accumulator, −65% / −58% replace_all skip loop, −33% / −40% String.replace_all, −28% / −14% array to_string**                                                                                 | both           | S      | shape micro-benches, interleaved medians (below) |
-| 9   | ~~Map/Set stored hash (Swiss-table tricks)~~ **LANDED Oct 2026: −35% / −52% probe shape, −21% / −49% string build+remove, −19% / −33% Set build, −22% aarch64 int rehash; int-keyed hit paths +2–10% (below)**                                                         | both           | M      | shape micro-benches, interleaved medians (below) |
-| 10  | ~~StringBuilder numeric appends + 1-pass interp~~ **LANDED Oct 2026: −80% / −79% interp, −76% / −75% numeric append, −66% / −70% new-spelling**                                                                                                                        | both           | S      | shape micro-benches, interleaved medians (below) |
-| 11  | ~~Devirtualization of trait calls~~ **LANDED Oct 2026: −12% realistic callee / −31% trait-default (C), tiny-callee loop folds outright; aarch64 inline splice −19% (below)**                                                                                           | both           | M      | shape micro-bench, interleaved medians (below)   |
-| 12  | ~~Struct field-order / padding~~ **LANDED Oct 2026: −10% / −12% shape (aarch64 / C), −20% peak RSS on the shape; standard suite flat**                                                                                                                                 | both           | S      | shape micro-bench, interleaved medians (below)   |
-| 13  | ~~Variable-mode enums~~ **PARTIALLY LANDED Oct 2026: case types (`Enum.case`) — −53% / −31% time, −49% RSS on the shape; variable-stride arrays + generic enums remain**                                                                                               | both           | L      | shape micro-bench, interleaved medians (below)   |
-| 14  | ~~Buffer word pairs (T_SIZE ≤ 16)~~ **LANDED Oct 2026: −12% / flat shape (aarch64 / C — clang already inlined it); json-serde flat (no 16-byte element exists)**                                                                                                       | mostly aarch64 | S      | shape micro-bench, interleaved medians (below)   |
-| 15  | aarch64 codegen receipts (splice model, folds…)                                                                                                                                                                                                                        | aarch64        | S–M    | measured regressions to reclaim                  |
-| 16  | Async paths audit                                                                                                                                                                                                                                                      | both           | ?      | unexplored, unmeasured                           |
-| 17  | ~~Minor batch~~ **PARTIALLY LANDED Oct 2026: `List.remove_at_or_panic` bulk tail move −91% / −61% (17a); StableList tail push direct view store −14% aarch64 / flat C (17b); `Array.set` in-place producer store −51% / −48% (17c); `json_parse_string` scan remains** | both           | S      | assorted                                         |
+| #   | Item                                                                                                                                                                                                                                                                                                                                      | Backends       | Effort | Receipt                                          |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | ------ | ------------------------------------------------ |
+| 1   | Faster allocator (slab/bump class allocation)                                                                                                                                                                                                                                                                                             | both           | M      | PERF.md "Large"; ASM_TODO "largest unclaimed"    |
+| 2   | ~~In-place push for constructors~~ **LANDED Oct 2026: −55% / −58% on the shape**                                                                                                                                                                                                                                                          | both           | S      | shape micro-bench, interleaved medians (below)   |
+| 3   | ~~Move-on-last-use for structs~~ **LANDED Oct 2026: −20% / −29% on the shape**                                                                                                                                                                                                                                                            | both           | S–M    | shape micro-bench, interleaved medians (below)   |
+| 4   | ~~Borrow-returning reads (Map `get_ptr`, `at_view`)~~ **PARTIALLY LANDED Oct 2026: Map slot borrow, −79% / −98% on the borrow shape, −48% probe fusion**                                                                                                                                                                                  | both           | M      | shape micro-benches, interleaved medians (below) |
+| 5   | ~~Json ownership copies~~ **LANDED Oct 2026: −26% / −13% on the ownership shape, −22% / −12% json-serde**                                                                                                                                                                                                                                 | both           | S      | measured 0.7.0 regression +61% / +103%           |
+| 6   | ~~In-place store (`set`/`insert`/`add`/`alloc`)~~ **LANDED Oct 2026: −50% / −56% on the pure store shape, −64% Map replace**                                                                                                                                                                                                              | both           | M      | shape micro-benches, interleaved medians (below) |
+| 7   | ~~Enum payload in-place construction~~ **LANDED Oct 2026: −45% / −8% on the payload shapes (aarch64; C take-variant)**                                                                                                                                                                                                                    | both           | S–M    | shape micro-benches, interleaved medians (below) |
+| 8   | ~~Regex/String O(n²) accumulators~~ **LANDED Oct 2026: −92% / −91% match accumulator, −65% / −58% replace_all skip loop, −33% / −40% String.replace_all, −28% / −14% array to_string**                                                                                                                                                    | both           | S      | shape micro-benches, interleaved medians (below) |
+| 9   | ~~Map/Set stored hash (Swiss-table tricks)~~ **LANDED Oct 2026: −35% / −52% probe shape, −21% / −49% string build+remove, −19% / −33% Set build, −22% aarch64 int rehash; int-keyed hit paths +2–10% (below)**                                                                                                                            | both           | M      | shape micro-benches, interleaved medians (below) |
+| 10  | ~~StringBuilder numeric appends + 1-pass interp~~ **LANDED Oct 2026: −80% / −79% interp, −76% / −75% numeric append, −66% / −70% new-spelling**                                                                                                                                                                                           | both           | S      | shape micro-benches, interleaved medians (below) |
+| 11  | ~~Devirtualization of trait calls~~ **LANDED Oct 2026: −12% realistic callee / −31% trait-default (C), tiny-callee loop folds outright; aarch64 inline splice −19% (below)**                                                                                                                                                              | both           | M      | shape micro-bench, interleaved medians (below)   |
+| 12  | ~~Struct field-order / padding~~ **LANDED Oct 2026: −10% / −12% shape (aarch64 / C), −20% peak RSS on the shape; standard suite flat**                                                                                                                                                                                                    | both           | S      | shape micro-bench, interleaved medians (below)   |
+| 13  | ~~Variable-mode enums~~ **PARTIALLY LANDED Oct 2026: case types (`Enum.case`) — −53% / −31% time, −49% RSS on the shape; variable-stride arrays + generic enums remain**                                                                                                                                                                  | both           | L      | shape micro-bench, interleaved medians (below)   |
+| 14  | ~~Buffer word pairs (T_SIZE ≤ 16)~~ **LANDED Oct 2026: −12% / flat shape (aarch64 / C — clang already inlined it); json-serde flat (no 16-byte element exists)**                                                                                                                                                                          | mostly aarch64 | S      | shape micro-bench, interleaved medians (below)   |
+| 15  | aarch64 codegen receipts (splice model, folds…)                                                                                                                                                                                                                                                                                           | aarch64        | S–M    | measured regressions to reclaim                  |
+| 16  | Async paths audit                                                                                                                                                                                                                                                                                                                         | both           | ?      | unexplored, unmeasured                           |
+| 17  | ~~Minor batch~~ **LANDED Oct 2026: `List.remove_at_or_panic` bulk tail move −91% / −61% (17a); StableList tail push direct view store −14% aarch64 / flat C (17b); `Array.set` in-place producer store −51% / −48% (17c); `json_parse_string`/`number` scan + bulk append −44% / −33% on string-heavy docs, json-serde −12% / −9% (17d)** | both           | S      | assorted                                         |
 
 ## 1. Faster allocator — slab/bump the class-allocation path
 
@@ -1365,6 +1365,8 @@ both-backend territory nobody has measured.
   **LANDED Oct 2026: −51% / −48% on the producer-store shape (17c below).**
 - `json_parse_string` appends per byte; a scan-to-next-escape + bulk append
   would help parse-heavy workloads.
+  **LANDED Oct 2026: −44% / −33% on the long-string doc, −12% / −9% json-serde
+  (17d below).**
 
 ### 17a. `List.remove_at_or_panic` bulk tail move — LANDED (Oct 2026)
 
@@ -1564,6 +1566,60 @@ static memory — a pre-existing bug, now recorded in FOLLOWUP.md (the
 storage arrays take the splice's non-heap address branch, but a string stack
 array without initialisation has uninitialized slots (the reclaim would free
 garbage) — no such shape is constructible through the checked language today.
+
+### 17d. `json_parse_string`/`json_parse_number` scan + bulk append — LANDED (Oct 2026)
+
+**What landed.** The JSON scanners no longer append one byte per iteration
+(each `append_char` pays the builder's capacity check, bounds math, and length
+bump):
+
+- **`json_parse_string`** (`core/System/Text/Json.nm`): the loop scans to the
+  next `"` or `\` and appends the whole plain run as ONE
+  `append_string_view(s.slice(run_start, i))` — a single `memcpy` — then
+  decodes the escape byte (whose single-byte appends remain; they are one
+  byte by definition). Escape semantics are unchanged, including the
+  unknown-escape fallback (`\q` → `q`). One malformed-border case improves:
+  a trailing backslash at end-of-input now leaves the position AT the limit
+  (`len`) instead of one past it — the rewrite's `while i < len` guard, where
+  the old loop's unconditional increment could store `len + 1`.
+- **`json_parse_number`**: the scan already found the number's end; only its
+  copy loop remained — `while j < i { append_char }` became one
+  `append_string_view(s.slice(start, i))`.
+
+Three tests in `test/json_parse_bulk.test.ts` (runtime: a 50-byte plain run,
+every escape case with character-code assertions, and a number run — both
+backends, audit on; emitted-code pins: the C and aarch64 scanner bodies call
+`append_string_view` and hold no per-byte run appends — the escape decode's
+are bounded at 2). The full suite (537 files, both backends) passes.
+
+**Measured.** The standard `bench/nomen/json-serde.nm` (parse + re-stringify
+cycles, `bench/sample.json`, n = 50 000) plus a string-heavy document (2000
+keys × 200-character values, n = 3000 — the shape the per-byte append hurts
+most), Apple Silicon, release builds, audit off, identical outputs
+before/after; "before" binaries built from a HEAD worktree (the item-3
+commit); 5 interleaved rounds, medians:
+
+| Shape                       | Backend | before (median) | after (median) |        Δ |
+| --------------------------- | ------- | --------------: | -------------: | -------: |
+| sample.json, n = 50 000     | C       |          0.400s |         0.350s | **−13%** |
+| sample.json, n = 50 000     | aarch64 |          0.690s |         0.620s |  **−9%** |
+| 2000×200-char doc, n = 3000 | C       |          2.970s |         1.990s | **−33%** |
+| 2000×200-char doc, n = 3000 | aarch64 |          5.570s |         3.130s | **−44%** |
+
+Per string byte the elided work is exactly the item's promise: the
+per-byte builder append (capacity check + store + length bump, plus its
+bounds math) becomes one memcpy per run — the win scales with run length,
+which is why the long-string document collects 3–5× the sample.json delta.
+sample.json's strings are short, so the fixed per-string overhead dominates
+there.
+
+- _The standard suite_ — flat, outputs identical: binarytrees 1.41 → 1.41s,
+  lru flat, nsieve 0.12 → 0.13s, fannkuch-redux 0.10 → 0.10s.
+
+**Remainder.** The serializer's per-string path was already bulk (item 5).
+`json_parse_literal` parses at most 4 bytes (no run to bulk up).
+`String.replace_first` keeps its per-byte appends by design (item 8's
+remainder).
 
 ## Already rejected — don't re-suggest
 

@@ -135,40 +135,55 @@ func json_parse_string = (string s, ref Buffer<int> pos, int len, ref JsonTree t
 	var int i = pos.load_int(0)
 	i += 1
 	var sb = StringBuilder()
-	while i < len; i += 1 {
-		var char c = s.at(i)
-		var int code = c as int
+	while i < len {
+		// Scan-to-next-escape fast path: copy the run of plain bytes in ONE
+		// bulk append instead of a per-byte append_char (each of which pays
+		// the builder's capacity check and length bump).
+		var int run_start = i
+		var int code = 0
+		while i < len {
+			code = s.at(i) as int
+			if code == 34 || code == 92 {
+				break
+			}
+			i += 1
+		}
+		if i > run_start {
+			sb.append_string_view(s.slice(run_start, i))
+		}
+		if i >= len {
+			break
+		}
 		if code == 34 {
 			i += 1
 			break
 		}
-		if code == 92 {
-			i += 1
-			if i < len {
-				var char e = s.at(i)
-				var int ec = e as int
-				switch {
-					case ec == 110 {
-						sb.append_string("\n")
-					}
-					case ec == 116 {
-						sb.append_string("\t")
-					}
-					case ec == 114 {
-						sb.append_string("\r")
-					}
-					case ec == 34 {
-						sb.append_char('"')
-					}
-					case ec == 92 {
-						sb.append_string("\x5c")
-					}
-				} else {
-					sb.append_char(e)
+		// code == 92 — escape sequence: consume the backslash, append the
+		// decoded byte (an unknown escape appends the byte verbatim).
+		i += 1
+		if i < len {
+			var char e = s.at(i)
+			var int ec = e as int
+			switch {
+				case ec == 110 {
+					sb.append_string("\n")
 				}
+				case ec == 116 {
+					sb.append_string("\t")
+				}
+				case ec == 114 {
+					sb.append_string("\r")
+				}
+				case ec == 34 {
+					sb.append_char('"')
+				}
+				case ec == 92 {
+					sb.append_string("\x5c")
+				}
+			} else {
+				sb.append_char(e)
 			}
-		} else {
-			sb.append_char(c)
+			i += 1
 		}
 	}
 	pos.store_int(0, i)
@@ -191,10 +206,9 @@ func json_parse_number = (string s, ref Buffer<int> pos, int len, ref JsonTree t
 	}
 	pos.store_int(0, i)
 	var sb = StringBuilder()
-	var int j = start
-	while j < i; j += 1 {
-		sb.append_char(s.at(j))
-	}
+	// One bulk append for the whole run of number bytes (the scan above
+	// already found its end) — no per-byte append_char.
+	sb.append_string_view(s.slice(start, i))
 	var int n = tree.alloc_node()
 	tree.set_kind(n, 2)
 	tree.take_text(n, ref sb)
