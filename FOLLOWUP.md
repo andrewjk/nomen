@@ -774,24 +774,3 @@ reassignments don't leak (rodata owns nothing), which is why the
 shape. Fix shape: give the ref-for item a real scoped declaration (or track
 it like a heap-string local) so an owned RHS is reclaimed after the
 writeback — both backends.
-
-## Donor-form `set` on a List of sub-8-field mv structs leaks on C (pre-existing; aarch64 side fixed by PERF_PLAN item 12)
-
-Recorded 2026-10-30 while landing PERF_PLAN item 12 (struct field-order
-packing, `test/struct_field_packing.test.ts`). The shape: `mv struct Rec {
-string name; bool hot; List<int> xs; bool tag }` pushed into a `List<Rec>`,
-then `var Rec r = l.at(i)` (owning read) + `r.xs.push(..)` +
-`l.set(i, mv r)` (the donor spelling) in a loop. On the C backend the
-auditor reports LEAK: 4 allocations — byte-identical on HEAD before the
-item (declaration-order layout), so it is a pre-existing gap in the
-donor-form store path for structs whose word fields FOLLOW sub-8 fields,
-not a layout regression. The aarch64 half of the same shape used to CRASH
-before the item (the unaligned cursor walks disagreed with the aligned
-declaration-order layout whenever a prefix sum wasn't naturally aligned —
-a `bool` field before a word field); the packed gap-free order made those
-walks exact and the crash is gone, which is how the C leak surfaced as the
-remaining asymmetry. The suite's ownership test deliberately exercises the
-read/copy paths (clean on both backends) and keeps the donor-set shape out.
-Fix shape: audit the C store_T donor path's string/container reclaim for
-mixed-alignment elements the way the aarch64 walks now are, then pin the
-donor-set shape in `test/struct_field_packing.test.ts`.

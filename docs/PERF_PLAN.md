@@ -1142,9 +1142,11 @@ memory-traffic, so it lives where the container exceeds the cache.
 declaration orders whose prefix sums aren't naturally aligned — e.g. a
 `bool` field before a word field). The packed order is always gap-free, so
 the walks are now exact and the program runs; eleven suite tests pin the
-packed-ownership paths. The same shape leaks 4 allocations on the C backend
-— identically before and after (pre-existing, unrelated to layout; recorded
-in FOLLOWUP.md).
+packed-ownership paths. The same shape was suspected to leak 4 allocations
+on the C backend, but never reproduced — the C specializations address
+fields BY NAME (the typedef order is layout-only), so alignment cannot
+misdirect them; the shape is pinned ownership-clean on both backends by
+`packed_donor_set_ownership` in `test/struct_field_packing.test.ts`.
 
 **Remainder.** Trait-declared fields pack among themselves but stay AFTER
 the own fields (the own-fields-first contract the per-name offset lookups
