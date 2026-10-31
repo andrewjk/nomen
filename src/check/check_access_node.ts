@@ -1071,6 +1071,7 @@ export function check_access_function_node(
 		target_type,
 		value_from_value_node(target),
 		expr_to_string(target, status),
+		target,
 	);
 
 	// Convert Array struct return type back to array type for array method calls.

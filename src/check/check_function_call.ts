@@ -4,6 +4,7 @@ import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import {
 	in_place_arg_tree_ok,
 	in_place_element_ok,
+	in_place_receiver_path,
 	value_use_count,
 } from "../build_common/in_place_push.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
@@ -205,6 +206,55 @@ function enclosing_function_node(status: CheckStatus): BaseNode | undefined {
 }
 
 /**
+ * The in-place lowering's receiver gate. A BARE LOCAL's name, or — the
+ * field-path tranche — a `self.<field>...` chain of plain value-struct
+ * field hops ending at the container. Both spellings re-derive the
+ * receiver's address after any call (a frame slot or register-held receiver
+ * plus static offsets), which is exact because nothing the splice runs can
+ * rebind them: a callee cannot see the method's `self` (functions don't
+ * close over it; lambdas and `ref`-argument callees are rejected by
+ * in_place_arg_tree_ok / in_place_call_ok), so the container can't move
+ * between the slot capture and the length bump.
+ */
+function in_place_receiver_ok(
+	self_value: string | undefined,
+	self_path: string | undefined,
+	self_target: BaseNode | undefined,
+	status: CheckStatus,
+	allow_field_path: boolean,
+): boolean {
+	if (!self_value) return false;
+	if (self_path === self_value) {
+		// A bare local receiver: reserve and the slot math address it by
+		// name in both backends (a param's spelling differs).
+		const vi = status.values.findIndex((v) => v.name === self_value && !v.is_param);
+		return vi >= status.function_value_base;
+	}
+	if (!allow_field_path) return false;
+	// `self.<field>...`: the root is the method receiver; every hop a plain
+	// field of a value struct. Intermediate hops read their stamped access
+	// types — a class/Box hop is a pointer hop and a generic hop an
+	// unmaterialized layout, and the summed-offset addressing (aarch64) and
+	// the `self->f1.f2` spelling (C) are only defined for inline hops. The
+	// final hop's type is the container itself, gated by the container
+	// contract clauses at the call sites.
+	const path = in_place_receiver_path(self_target);
+	if (!path || path.root !== "self" || path.fields.length === 0) return false;
+	for (let i = 0; i < path.nodes.length - 1; i++) {
+		const hop_type = path.nodes[i].access.type;
+		if (
+			!hop_type?.name ||
+			!status.structs.find(
+				(s) => s.name === hop_type.name && !s.is_simple_type && !s.is_class && !s.is_generic,
+			)
+		) {
+			return false;
+		}
+	}
+	return true;
+}
+
+/**
  * Shift a bound expression string (`base`, `base - a`, `base + a`) by a
  * constant `c`, combining offsets numerically: `(base - a) + c` → `base - (a - c)`.
  * This keeps bounds in a canonical `base ± offset` form so symbolic
@@ -243,6 +293,7 @@ export default function check_function_call(
 	target_type?: Type,
 	self_value?: string,
 	self_path?: string,
+	self_target?: BaseNode,
 ): boolean {
 	// Stamp the resolved callee so build-time passes can consult the exact
 	// FunctionNode (overloads, monos) — used for the hidden string-length
@@ -1634,15 +1685,8 @@ export default function check_function_call(
 			// Statement position: push is void, but the emission is a
 			// multi-statement splice — only a bare statement hosts it.
 			in_statement_position(node, status) &&
-			// A bare local receiver: reserve and the slot math address it by
-			// name in both backends (a param's spelling differs, a path can't
-			// be re-derived safely).
-			!!self_value &&
-			self_path === self_value &&
-			(() => {
-				const vi = status.values.findIndex((v) => v.name === self_value && !v.is_param);
-				return vi >= status.function_value_base;
-			})();
+			// Bare-local or `self.<field>` receiver (see in_place_receiver_ok).
+			in_place_receiver_ok(self_value, self_path, self_target, status, true);
 		// The in-place STORE siblings (`lst.set(i, f(x))`, `buf.set(i, f(x))`,
 		// `map.set(k, f(x))`): the value parameter is the LAST parameter, the
 		// earlier arguments (the index / the key) keep their ordinary lowering
@@ -1679,12 +1723,10 @@ export default function check_function_call(
 				: !!in_place_store_struct?.functions.some((f) => f.name === prim && f.has_body);
 		const in_place_store_receiver_ok =
 			in_statement_position(node, status) &&
-			!!self_value &&
-			self_path === self_value &&
-			(() => {
-				const vi = status.values.findIndex((v) => v.name === self_value && !v.is_param);
-				return vi >= status.function_value_base;
-			})();
+			// Array receivers keep the bare-local rule (the element-base math
+			// is name-keyed in both backends); struct containers take the
+			// field-path tranche too.
+			in_place_receiver_ok(self_value, self_path, self_target, status, !in_place_store_is_array);
 		const in_place_store_kind: "slot_ptr" | "set_slot_ptr" | undefined =
 			func.name === "set" &&
 			func_param === func.params[func.params.length - 1] &&
@@ -1793,6 +1835,11 @@ export default function check_function_call(
 		const in_place_donor =
 			!in_place_push &&
 			in_place_container &&
+			// The donor stamps address the receiver by bare name in both
+			// backends (build_in_place_donor_declaration / the bump) — a
+			// field-path receiver keeps the ordinary mv transfer.
+			!!self_value &&
+			self_path === self_value &&
 			!node.swap_params?.has(i) &&
 			has_mov_keyword &&
 			param.node_type === "value" &&

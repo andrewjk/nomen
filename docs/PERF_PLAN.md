@@ -10,7 +10,7 @@ them; the rest carry expected wins and the receipts they rest on).
 | #   | Item                                                                                                                                                                                                                                                                                                                                      | Backends       | Effort | Receipt                                          |
 | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | ------ | ------------------------------------------------ |
 | 1   | Faster allocator (slab/bump class allocation)                                                                                                                                                                                                                                                                                             | both           | M      | PERF.md "Large"; ASM_TODO "largest unclaimed"    |
-| 2   | ~~In-place push for constructors~~ **LANDED Oct 2026: −55% / −58% on the shape**                                                                                                                                                                                                                                                          | both           | S      | shape micro-bench, interleaved medians (below)   |
+| 2   | ~~In-place push for constructors~~ **LANDED Oct 2026: −55% / −58% on the shape; field-path receivers (the `JsonTree.alloc_node` remainder) −24% / −30% sample.json, −25% / −32% string-heavy doc**                                                                                                                                        | both           | S      | shape micro-bench, interleaved medians (below)   |
 | 3   | ~~Move-on-last-use for structs~~ **LANDED Oct 2026: −20% / −29% on the shape**                                                                                                                                                                                                                                                            | both           | S–M    | shape micro-bench, interleaved medians (below)   |
 | 4   | ~~Borrow-returning reads (Map `get_ptr`, `at_view`)~~ **PARTIALLY LANDED Oct 2026: Map slot borrow, −79% / −98% on the borrow shape, −48% probe fusion**                                                                                                                                                                                  | both           | M      | shape micro-benches, interleaved medians (below) |
 | 5   | ~~Json ownership copies~~ **LANDED Oct 2026: −26% / −13% on the ownership shape, −22% / −12% json-serde**                                                                                                                                                                                                                                 | both           | S      | measured 0.7.0 regression +61% / +103%           |
@@ -94,13 +94,75 @@ unchanged (json-serde 0.05/0.07s, binarytrees 1.40/1.83s, lru, nsieve —
 identical before/after on both backends): none of its hot loops contain the
 bare-local ctor-push shape yet.
 
-**Remainder.** `JsonTree.alloc_node` still misses the guarantee — not because
-of the ctor shape (fixed here) but because its receiver is a field path
-(`self.nodes`), which the tranche's bare-local rule excludes (the aarch64
-`emit_var_address` has no field-path form, and the slot address must be
-re-derived after the constructing call). Extending the receiver side to
-`self.<field>` paths is the natural sibling item; it needs a field-path
-addressing primitive first.
+**Field-path receivers (the remainder above, landed Oct 2026).** The
+receiver side of the guarantee now accepts `self.<field>...` chains of
+plain value-struct field hops, so `JsonTree.alloc_node`'s
+`self.nodes.push(JsonNode())` constructs in place:
+
+- **Checker** (`src/check/check_function_call.ts`): the identical
+  bare-local clauses of the push and store gates are one
+  `in_place_receiver_ok` helper, extended with the field-path branch —
+  root `self`, every hop an `access_field` whose owner is a
+  non-generic, non-class, non-simple struct (intermediate hops read
+  their stamped access types). The soundness story is the receiver's
+  stability: nothing the splice runs can rebind a method's `self`
+  (callees cannot see it — functions don't close over it, and lambdas
+  and `ref`-argument callees are rejected by the existing arg gates), so
+  `self + Σ static offsets` cannot move between the slot capture and
+  the length bump. Array receivers keep the bare-local rule (their
+  element-base math is name-keyed), and the DONOR form keeps it too —
+  the donor stamps address the receiver by bare name, so a field-path
+  `var p = X(); self.nodes.push(mv p)` keeps the ordinary (sound) mv
+  transfer.
+- **Shared facts** (`src/build_common/in_place_push.ts`):
+  `in_place_receiver_path` reduces a receiver to (root, field hops) or
+  nothing (an index or call segment anywhere in the chain refuses), and
+  `in_place_field_path_owners` walks the field types against the struct
+  table to the container's mono — the same walk the checker re-derives
+  before stamping, so a stamp always resolves.
+- **aarch64**: the reserve/append-slot/bump addressing gained the
+  field-path form — the receiver base (x19 for the mv-struct method
+  receiver, the spilled struct-param slot for `var self`) plus the
+  summed static offsets (`add x0, x19, #8`), re-derived after each `bl`
+  exactly as the bare-local form re-derives by name.
+- **C**: the splice spells the receiver `self->nodes` (methods take
+  `struct T* self`; a custom `#init`'s by-value self spells dots).
+
+Seven tests in `test/list_in_place_push.test.ts` pin the runtime shapes
+(the `JsonNode()` pool push through `self.nodes` with audit on, a
+producer push across the growth boundary, the donor fallback, the `set`
+sibling through a field path) and the emitted code (the C `&self->nodes`
+spelling, the aarch64 `add x0, x19, #8` receiver math, no `bl ..._push`
+at the sites); the full suite (539 files, both backends) passes.
+
+**Measured.** `bench/nomen/json-serde.nm` — the workload the remainder
+was booked against: every parsed node pays `alloc_node`'s push. n from
+argv, Apple Silicon, 7 interleaved rounds, medians, audit off, release
+builds, identical outputs before/after; "before" binaries built from a
+HEAD worktree. The emitted diff is one semantic hunk on both backends
+(the splice; everything else is label-counter renumbering): the temp
+home, the push-callee struct copy, and the temp teardown disappear —
+2 mallocs + 1 free per node become 1 malloc (the ctor's seed strdup,
+which is the store).
+
+| Document                     | Backend | before (median) | after (median) |        Δ |
+| ---------------------------- | ------- | --------------: | -------------: | -------: |
+| `bench/sample.json`, n=50000 | aarch64 |          0.620s |         0.472s | **−24%** |
+| `bench/sample.json`, n=50000 | C       |          0.354s |         0.246s | **−30%** |
+| 2000×200-char doc, n=3000    | aarch64 |         22.051s |        16.458s | **−25%** |
+| 2000×200-char doc, n=3000    | C       |         12.888s |         8.744s | **−32%** |
+
+The standard suite is flat on aarch64 (binarytrees 18: 1.837 → 1.829s,
+lru `1000 20000000`: 1.712 → 1.711s, nsieve 12: 0.158 → 0.158s; outputs
+byte-identical): no other bench hot loop pushes a ctor through a field
+path.
+
+**Remainder.** Deeper receiver shapes keep the hoisted path: index or
+call segments (`self.rows.at(0).items`), class-typed hops (pointer
+arithmetic the summed-offset addressing doesn't model), generic owners,
+and non-`self` roots (`local.field.push(X())` — sound by the same
+argument, just not gated yet). The donor form through a field path
+keeps the ordinary (sound) transfer.
 
 ## 3. Move-on-last-use for structs — LANDED (Oct 2026)
 
@@ -335,11 +397,13 @@ pair store + displaced free (no `_strdup`) on aarch64, and
 pair both backends memcpy from directly.
 
 **Remainder.** Per node there is still the `JsonNode()` seed strdup inside
-`alloc_node`'s push — item 2's field-path remainder (`self.nodes`
-receiver) — and `json_parse_string`'s per-byte append loop (item 17's
-scan-to-next-escape). A general `mv string` param that actually transfers
-(eliding `set_text`'s copy for owned strings everywhere) is a convention
-change across every mv-string function and needs its own measured item.
+`alloc_node`'s push — the store itself (item 2's field-path receiver has
+since landed: the temp home, the push-callee copy, and the temp teardown it
+also paid are gone) — and `json_parse_string`'s per-byte append loop (item
+17's scan-to-next-escape). A general `mv string` param that actually
+transfers (eliding `set_text`'s copy for owned strings everywhere) is a
+convention change across every mv-string function and needs its own
+measured item.
 
 ## 6. In-place store: the `set`/`insert`/`add`/`alloc` siblings — LANDED (Oct 2026)
 

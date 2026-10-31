@@ -1,8 +1,11 @@
+import type AccessFieldNode from "../nodes/AccessFieldNode.ts";
+import type AccessNode from "../nodes/AccessNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import type FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import type StructNode from "../nodes/StructNode.ts";
 import type Type from "../nodes/Type.ts";
 import type ValueNode from "../nodes/ValueNode.ts";
+import { mono_type_name } from "./mono_name.ts";
 
 /**
  * The in-place construction guarantee (container-push tranche):
@@ -25,7 +28,11 @@ import type ValueNode from "../nodes/ValueNode.ts";
  *
  * - the receiver is a BARE LOCAL's name (`self_value === self_path`,
  *   resolved to a non-param value of the current function — never a
- *   param, whose by-address spelling differs, never a dotted path);
+ *   param, whose by-address spelling differs), or a `self.<field>...`
+ *   chain of plain value-struct field hops (the field-path tranche: the
+ *   address is the receiver base plus summed static offsets, and nothing
+ *   the splice runs can rebind a method's `self` — callees cannot see it,
+ *   and lambdas and `ref`-argument callees are rejected below);
  * - the argument expression is a direct `func_call` of exactly the element
  *   type — a function with a body (foreign callees keep the hoisted path) or
  *   a constructor of the element struct (the callee is the struct's `#init`,
@@ -61,6 +68,75 @@ function value_name(node: BaseNode | undefined): string {
 	return typeof value === "string" ? value : "";
 }
 
+export interface InPlaceReceiverPath {
+	/** The chain's root name (`items`, `self`). */
+	root: string;
+	/** The field hops, first hop from the root first (`["nodes"]`). */
+	fields: string[];
+	/** The chain node whose `access` is `fields[i]` (innermost first). */
+	nodes: AccessNode[];
+}
+
+/**
+ * The receiver as a bare name or a pure field path: `items` →
+ * `{ root: "items", fields: [] }`; `self.nodes` →
+ * `{ root: "self", fields: ["nodes"] }`. An index or call segment (`a[0]`,
+ * `make().f`) anywhere in the chain returns undefined — the in-place
+ * lowering can only address a name or summed static field offsets.
+ */
+export function in_place_receiver_path(
+	target: BaseNode | undefined,
+): InPlaceReceiverPath | undefined {
+	let cursor = target;
+	const nodes: AccessNode[] = [];
+	while (cursor && cursor.node_type === "access") {
+		const access_node = cursor as AccessNode;
+		if (access_node.access?.node_type !== "access_field") return undefined;
+		nodes.unshift(access_node);
+		cursor = access_node.target;
+	}
+	const root = value_name(cursor);
+	if (!root) return undefined;
+	return {
+		root,
+		fields: nodes.map((n) => (n.access as AccessFieldNode).name),
+		nodes,
+	};
+}
+
+export interface InPlaceFieldPathWalk {
+	/** `owners[i]` is the mono'd struct whose layout contains `fields[i]`. */
+	owners: string[];
+	/** The mono'd type of the final hop — the container. */
+	container_mono: string;
+}
+
+/**
+ * Walk a `self.<field>...` path against the struct table: every hop's
+ * OWNER must be a non-generic, non-class, non-simple struct (an inline
+ * value-struct layout — a class hop is a pointer hop and a generic hop an
+ * unmaterialized layout, and both backends' addressing is only defined
+ * for inline hops). The checker re-derives the same walk before
+ * stamping, so a build-time undefined means the stamp is absent too.
+ */
+export function in_place_field_path_owners(
+	root_struct_name: string,
+	fields: readonly string[],
+	structs: readonly StructNode[],
+): InPlaceFieldPathWalk | undefined {
+	let owner = root_struct_name;
+	const owners: string[] = [];
+	for (const field of fields) {
+		const struct = structs.find((s) => s.name === owner);
+		if (!struct || struct.is_class || struct.is_simple_type || struct.is_generic) return undefined;
+		const field_decl = struct.fields.find((f) => f.name === field);
+		if (!field_decl?.type?.name) return undefined;
+		owners.push(owner);
+		owner = mono_type_name(field_decl.type);
+	}
+	return { owners, container_mono: owner };
+}
+
 /** True for the simple categories whose marshalling never emits a call. */
 export function in_place_element_ok(
 	type: Type | undefined,
@@ -74,8 +150,13 @@ export function in_place_element_ok(
 }
 
 export interface InPlacePushFacts {
-	/** The receiver variable's bare name (`items`). */
+	/** The receiver variable's bare name (`items`), or the field path's
+	 *  root (`self`). */
 	receiver: string;
+	/** The field hops when the receiver is `self.<field>...` (`["nodes"]`
+	 *  — the address is the root's base plus the summed static field
+	 *  offsets). Unset for a bare-local receiver. */
+	receiver_field_path?: string[];
 	/** The element type's mono name (`string`, `Point`, ...). */
 	elem_name: string;
 	/** True when the element is the fat string (x0/x1 return, 16-byte slot). */
@@ -94,7 +175,11 @@ export interface InPlacePushFacts {
 /**
  * Re-derive the mechanical facts for a stamped push call. Returns undefined
  * for a node without the stamp (the caller keeps the normal lowering — the
- * checker only skips the hoist when this will resolve).
+ * checker only skips the hoist when this will resolve). `self_struct_name`
+ * is the enclosing struct's name (`status.current_struct?.name`) for the
+ * field-path receiver tranche: `type_from_value_node` cannot see through an
+ * access chain, so the container's mono is derived by walking the stamped
+ * field types against the struct table.
  */
 export function in_place_push_facts(
 	access: { in_place_push_index?: number; params?: BaseNode[] },
@@ -103,22 +188,37 @@ export function in_place_push_facts(
 	elem_type: Type | undefined,
 	structs: readonly StructNode[],
 	receiver_is_array = false,
+	self_struct_name?: string,
 ): InPlacePushFacts | undefined {
 	const idx = access.in_place_push_index;
 	if (idx === undefined) return undefined;
-	const receiver = value_name(target);
-	if (!receiver || !receiver_type_name) return undefined;
+	const path = in_place_receiver_path(target);
+	if (!path) return undefined;
+	let receiver_type = receiver_type_name;
+	let field_path: string[] | undefined;
+	if (path.fields.length) {
+		// A `self.<field>...` receiver. Array receivers keep the bare-local
+		// rule — the element-base math is name-keyed.
+		if (receiver_is_array) return undefined;
+		if (path.root !== "self" || !self_struct_name) return undefined;
+		const walk = in_place_field_path_owners(self_struct_name, path.fields, structs);
+		if (!walk) return undefined;
+		receiver_type = walk.container_mono;
+		field_path = path.fields;
+	}
+	if (!receiver_type) return undefined;
 	const arg = access.params?.[idx];
 	if (!arg || arg.node_type !== "func_call") return undefined;
 	if (!elem_type?.name || !in_place_element_ok(elem_type, structs)) return undefined;
 	return {
-		receiver,
+		receiver: path.root,
+		receiver_field_path: field_path,
 		elem_name: elem_type.name,
 		elem_is_string: elem_type.name === "string",
 		// A heap `Array<T>` parses to the ELEMENT type with the array flags —
 		// the container mono is derived (`Array_<elem>`), never the type's
 		// name (see build_access_node's array dispatch).
-		list_mono: receiver_is_array ? `Array_${elem_type.name}` : receiver_type_name,
+		list_mono: receiver_is_array ? `Array_${elem_type.name}` : receiver_type,
 		arg: arg as FunctionCallNode,
 		receiver_is_array,
 	};

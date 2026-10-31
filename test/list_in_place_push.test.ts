@@ -858,3 +858,270 @@ func main = () {
 		expect(parsed.errors).toEqual([]);
 	});
 });
+
+describe("in-place push: field-path receivers (the JsonTree.alloc_node shape)", () => {
+	test("self-list ctor push lands in the slot and survives", async () => {
+		const input = `
+import System
+
+mv struct Node {
+	var kind = 0
+	var text = ""
+}
+
+mv struct Tree {
+	var nodes = List<Node>()
+
+	func add = (ref self, out int) {
+		self.nodes.push(Node())
+		self.nodes.push(Node())
+		return self.nodes.length - 1
+	}
+}
+
+pub func main = (Init init) {
+	var Tree t = Tree()
+	var int i = t.add()
+	Console.write("\\{i}:\\{t.nodes.at_or_panic(1).kind}:\\{t.nodes.at_or_panic(0).text}")
+}
+`;
+		// The method receiver's field is the container: the ctor constructs
+		// straight into `self.nodes`' fresh slot (the JsonTree.alloc_node
+		// pool shape), audit-clean — every slot owns its ctor seed.
+		await build_and_check_output(input, "inplace_push_field_path_ctor", "1:0:", true);
+	});
+
+	test("field-path string push through a producer reads back across growth", async () => {
+		const input = `
+import System
+
+func dup_str = (string s, out string) {
+	return s.copy()
+}
+
+mv struct Log {
+	var lines = List<string>()
+
+	func record = (ref self, string s) {
+		self.lines.push(dup_str(s))
+	}
+}
+
+pub func main = (Init init) {
+	var Log log = Log()
+	var int i = 0
+	while i < 12; i += 1 {
+		log.record("\\{i}")
+	}
+	var string all = ""
+	while log.lines.length > 0 {
+		all = all + log.lines.pop()
+	}
+	Console.write(all)
+}
+`;
+		// 12 pushes cross List's growth boundary through the field-path
+		// receiver; LIFO pops read every slot's own buffer back.
+		await build_and_check_output(input, "inplace_push_field_path_growth", "11109876543210", true);
+	});
+
+	test("field-path donor form keeps the ordinary mv transfer", async () => {
+		const input = `
+import System
+
+mv struct Node {
+	var kind = 0
+	var text = ""
+}
+
+mv struct Tree {
+	var nodes = List<Node>()
+
+	func add = (ref self, out int) {
+		var Node p = Node()
+		self.nodes.push(mv p)
+		self.nodes.push(Node())
+		return self.nodes.length - 1
+	}
+}
+
+pub func main = (Init init) {
+	var Tree t = Tree()
+	var int i = t.add()
+	Console.write("\\{i}:\\{t.nodes.at_or_panic(0).kind}:\\{t.nodes.at_or_panic(1).text}")
+}
+`;
+		// The donor stamps address the receiver by bare name, so a field-path
+		// receiver keeps the ordinary (sound) mv transfer — the moved donor
+		// is destroyed exactly once and the slots read back.
+		await build_and_check_output(input, "inplace_push_field_path_donor", "1:0:", true);
+	});
+
+	test("field-path store lands in the slot (the set sibling)", async () => {
+		const input = `
+import System
+
+func make = (int k, out string) {
+	return "v\\{k}"
+}
+
+mv struct Store {
+	var slots = List<string>()
+
+	func fill = (ref self) {
+		var int i = 0
+		while i < self.slots.length; i += 1 {
+			self.slots.set(i, make(i))
+		}
+	}
+}
+
+pub func main = (Init init) {
+	var Store s = Store()
+	s.slots.push("a")
+	s.slots.push("b")
+	s.slots.push("c")
+	s.fill()
+	Console.write("\\{s.slots.at_or_panic(0)}\\{s.slots.at_or_panic(2)}\\{s.slots.length}")
+}
+`;
+		// The store tranche shares the receiver gate: `self.slots.set(i,
+		// make(i))` constructs the producer's result straight into the field
+		// container's slot (the displaced seed reclaimed first).
+		await build_and_check_output(input, "inplace_store_field_path", "v0v23", true);
+	});
+
+	test("C backend spells the field-path receiver through self", async () => {
+		const input = `
+import System
+
+mv struct Node {
+	var kind = 0
+	var text = ""
+}
+
+mv struct Tree {
+	var nodes = List<Node>()
+
+	func add = (ref self, out int) {
+		self.nodes.push(Node())
+		return self.nodes.length - 1
+	}
+}
+
+pub func main = (Init init) {
+	var Tree t = Tree()
+	var int i = t.add()
+	Console.write("\\{i}")
+}
+`;
+		const parsed = parse_raw(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "c" });
+		expect(result.errors ?? []).toEqual([]);
+		const code = result.code ?? "";
+		const at = code.indexOf("Tree_add(");
+		expect(at).toBeGreaterThan(0);
+		const end = code.indexOf("\n}\n", at);
+		const seq = code.slice(at, end);
+		// The splice addresses the receiver as `self->nodes` end to end.
+		expect(seq).toContain("List_Node_reserve(&self->nodes, 1L)");
+		expect(seq).toContain(
+			"*( struct Node*)(unsigned long long)List_Node_append_slot_ptr(&self->nodes) = Node_init()",
+		);
+		expect(seq).toContain("self->nodes.length += 1L");
+		// No hoisted push call at the site (the mono'd push body may exist
+		// elsewhere in the TU for List's internals).
+		expect(seq).not.toContain("List_Node_push(&self->nodes");
+		expect(seq).not.toContain("_param_");
+	});
+
+	test("aarch64 backend addresses the receiver as base plus field offset", async () => {
+		const input = `
+import System
+
+mv struct Node {
+	var kind = 0
+	var text = ""
+}
+
+mv struct Tree {
+	var nodes = List<Node>()
+
+	func add = (ref self, out int) {
+		self.nodes.push(Node())
+		return self.nodes.length - 1
+	}
+}
+
+pub func main = (Init init) {
+	var Tree t = Tree()
+	var int i = t.add()
+	Console.write("\\{i}")
+}
+`;
+		const parsed = parse_raw(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(result.errors ?? []).toEqual([]);
+		const code = result.code ?? "";
+		const start = code.indexOf("\nTree_add:\n");
+		const end = code.indexOf(".return_Tree_add:", start);
+		const seq = code.slice(start, end);
+		// `nodes` sits at offset 8 (the VT word precedes it): the receiver
+		// address is x19 (the method receiver) plus the static offset, both
+		// for the reserve/append calls and for the re-derived length bump.
+		expect(seq).toContain("add x0, x19, #8\nmov x1, #1\nbl List_Node_reserve");
+		expect(seq).toContain("add x0, x19, #8\nbl List_Node_append_slot_ptr");
+		expect(seq).toContain("str x0, [x29, #");
+		expect(seq).toContain("add x9, x19, #8");
+		expect(seq).toContain("str x10, [x9, #8]");
+		expect(seq).toContain("bl Node_init");
+		expect(seq).not.toContain("bl List_Node_push");
+		expect(seq).not.toContain("_param_");
+	});
+
+	test("C backend stores through the field-path receiver", async () => {
+		const input = `
+import System
+
+func make = (int k, out string) {
+	return "v\\{k}"
+}
+
+mv struct Store {
+	var slots = List<string>()
+
+	func fill = (ref self) {
+		var int i = 0
+		while i < self.slots.length; i += 1 {
+			self.slots.set(i, make(i))
+		}
+	}
+}
+
+pub func main = (Init init) {
+	var Store s = Store()
+	s.slots.push("a")
+	s.slots.push("b")
+	s.slots.push("c")
+	s.fill()
+	Console.write("\\{s.slots.at_or_panic(2)}")
+}
+`;
+		const parsed = parse_raw(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "c" });
+		expect(result.errors ?? []).toEqual([]);
+		const code = result.code ?? "";
+		const at = code.indexOf("Store_fill(");
+		expect(at).toBeGreaterThan(0);
+		const end = code.indexOf("\n}\n", at);
+		const seq = code.slice(at, end);
+		// The store splice addresses the slot primitive through the field
+		// path and constructs the producer into it.
+		expect(seq).toContain("List_string_slot_ptr(&self->slots");
+		expect(seq).toMatch(/_nomen_islot = \w*make\(/);
+		expect(seq).not.toContain("List_string_set(&self->slots");
+		expect(seq).not.toContain("_param_");
+	});
+});

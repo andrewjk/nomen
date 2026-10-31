@@ -1,6 +1,6 @@
 import { struct_needs_destroy } from "../build_common/destroy_analysis.ts";
 import { has_string_fields } from "../build_common/has_string_fields.ts";
-import { in_place_push_facts } from "../build_common/in_place_push.ts";
+import { in_place_push_facts, type InPlacePushFacts } from "../build_common/in_place_push.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { is_nullable_struct_type } from "../build_common/nullable_struct.ts";
@@ -333,6 +333,20 @@ function array_receiver_wrap(
 			? `; ${copy_back}` + (ret_c !== "void" ? `_arrm_r_${id}; ` : `(void)0; `)
 			: "") + `; })`;
 	return { prefix, self_expr, suffix };
+}
+
+/**
+ * The in-place receiver spelled as a C lvalue: a bare local's name, or —
+ * the field-path tranche — `self->nodes` (methods receive
+ * `struct T* self`; a custom `#init`'s by-value self, which is not a ref
+ * param, spells dots). Every hop after the first is a value-struct field
+ * (checker-gated), so plain `.` chains them.
+ */
+function c_in_place_receiver(facts: InPlacePushFacts, status: BuildStatus): string {
+	const fields = facts.receiver_field_path;
+	if (!fields?.length) return facts.receiver;
+	const sep = status.function_ref_params?.has(facts.receiver) ? "->" : ".";
+	return `${facts.receiver}${sep}${fields.join(".")}`;
 }
 
 export default function build_access_node(node: AccessNode, status: BuildStatus) {
@@ -1468,8 +1482,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					!owned_recv_temp &&
 					!ncp_tmp &&
 					!array_wrap &&
-					lambda_arg_temps.size === 0 &&
-					node.target.node_type === "value"
+					lambda_arg_temps.size === 0
 				) {
 					const recv_type = type_from_value_node(node.target);
 					const facts = in_place_push_facts(
@@ -1477,22 +1490,27 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 						node.target,
 						// The value-node type can still carry the GENERIC name
 						// (`List`) at build time — the reserve label and the field
-						// offsets are mono-name addressed.
+						// offsets are mono-name addressed. A field-path receiver
+						// resolves through the struct-table walk in facts (the
+						// value-node type cannot see through an access chain).
 						recv_type ? mono_type_name(recv_type) : undefined,
 						type_from_value_node(access_func.params[access_func.in_place_push_index]),
 						status.structs,
+						false,
+						status.current_struct?.name,
 					);
 					if (facts) {
 						const elem_c = facts.elem_is_string ? "nomen_string" : `struct ${facts.elem_name}`;
-						status.code += `${c_function_name(`${facts.list_mono}_reserve`)}(&${facts.receiver}, 1L);\n`;
+						const recv_c = c_in_place_receiver(facts, status);
+						status.code += `${c_function_name(`${facts.list_mono}_reserve`)}(&${recv_c}, 1L);\n`;
 						// The container's raw append-slot primitive is the LHS —
 						// the same contract for every container (List's inline
 						// slot math moved into its own append_slot_ptr).
-						status.code += `*( ${elem_c}*)(unsigned long long)${c_function_name(`${facts.list_mono}_append_slot_ptr`)}(&${facts.receiver}) = `;
+						status.code += `*( ${elem_c}*)(unsigned long long)${c_function_name(`${facts.list_mono}_append_slot_ptr`)}(&${recv_c}) = `;
 						build_node(facts.arg, status);
 						// No trailing terminator: the statement wrapper adds the
 						// final `;\n` after the length bump.
-						status.code += `;\n${facts.receiver}.length += 1L`;
+						status.code += `;\n${recv_c}.length += 1L`;
 						return;
 					}
 				}
@@ -1518,8 +1536,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					!owned_recv_temp &&
 					!ncp_tmp &&
 					!array_wrap &&
-					lambda_arg_temps.size === 0 &&
-					node.target.node_type === "value"
+					lambda_arg_temps.size === 0
 				) {
 					const recv_type = type_from_value_node(node.target);
 					const facts = in_place_push_facts(
@@ -1529,6 +1546,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 						type_from_value_node(access_func.params[access_func.in_place_push_index]),
 						status.structs,
 						!!recv_type?.is_array,
+						status.current_struct?.name,
 					);
 					if (facts) {
 						const elem_c = facts.elem_is_string ? "nomen_string" : `struct ${facts.elem_name}`;
@@ -1582,7 +1600,8 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 								: `((${elem_size_c}*)${facts.receiver})`;
 							status.code += `{ ${elem_c}* _nomen_islot = ${base} + (${early_args}); `;
 						} else {
-							status.code += `{ ${elem_c}* _nomen_islot = (${elem_c}*)(unsigned long long)${c_function_name(prim)}(&${facts.receiver}${early_args ? `, ${early_args}` : ""}); `;
+							const recv_c = c_in_place_receiver(facts, status);
+							status.code += `{ ${elem_c}* _nomen_islot = (${elem_c}*)(unsigned long long)${c_function_name(prim)}(&${recv_c}${early_args ? `, ${early_args}` : ""}); `;
 						}
 						if (reclaim) status.code += `${reclaim} `;
 						status.code += `*_nomen_islot = `;

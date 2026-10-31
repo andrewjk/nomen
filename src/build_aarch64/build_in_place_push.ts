@@ -2,7 +2,11 @@ import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import { struct_needs_destroy } from "../build_common/destroy_analysis.ts";
 import { has_string_fields } from "../build_common/has_string_fields.ts";
-import { in_place_push_facts, type InPlacePushFacts } from "../build_common/in_place_push.ts";
+import {
+	in_place_field_path_owners,
+	in_place_push_facts,
+	type InPlacePushFacts,
+} from "../build_common/in_place_push.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import type AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
@@ -92,6 +96,8 @@ export function build_in_place_push(
 		recv_mono,
 		elem_type,
 		status.structs as readonly StructNode[],
+		false,
+		status.current_struct?.name,
 	);
 	if (!facts) return false;
 	emit_in_place_push(facts, status);
@@ -99,14 +105,39 @@ export function build_in_place_push(
 }
 
 function emit_in_place_push(facts: InPlacePushFacts, status: BuildStatus): void {
-	const { receiver, elem_is_string, list_mono, arg } = facts;
-	const slot = emit_reserve_and_slot(status, receiver, list_mono);
+	const { elem_is_string, list_mono, arg } = facts;
+	const emit_addr = (reg: string) => emit_receiver_address(facts, status, reg);
+	const slot = emit_reserve_and_slot(status, emit_addr, list_mono);
 
 	// 3. Construct the argument call's result directly into the slot.
 	construct_into_frame_slot(arg, elem_is_string, slot, status);
 
 	// 4. The slot is a real element.
-	bump_length(status, receiver, list_mono);
+	bump_length(status, emit_addr, list_mono);
+}
+
+/**
+ * The receiver's address into `reg`: a bare local by name, or — the
+ * field-path tranche — the method receiver's base plus the summed static
+ * field offsets. The path is checker-gated to plain value-struct hops, so
+ * no hop dereferences a pointer and re-deriving the sum after any `bl` is
+ * exact (a callee cannot rebind a method's `self`). `self` resolves
+ * through the same base conventions as any read (x19 for the mv-struct
+ * method receiver, the spilled struct-param slot for `var self`).
+ */
+function emit_receiver_address(facts: InPlacePushFacts, status: BuildStatus, reg: string): void {
+	emit_var_address(status, reg, facts.receiver);
+	const fields = facts.receiver_field_path;
+	if (!fields?.length) return;
+	const self_struct = status.current_struct?.name;
+	if (!self_struct) return; // unreachable: the facts walk resolved the same path
+	const walk = in_place_field_path_owners(self_struct, fields, status.structs);
+	if (!walk) return; // unreachable: the facts walk resolved the same path
+	let total = 0;
+	for (let i = 0; i < fields.length; i++) {
+		total += get_field_offset(walk.owners[i], fields[i], status);
+	}
+	if (total > 0) emit_asm(status, `add ${reg}, ${reg}, #${total}\n`);
 }
 
 /**
@@ -153,17 +184,23 @@ function construct_into_frame_slot(
  *  slot (a `bl` in the constructing call cannot invalidate it). Returns the
  *  frame offset of the spilled address. The slot address comes from the
  *  container's own `append_slot_ptr` primitive (the same contract every
- *  container declares — List, StableList, user containers). */
-function emit_reserve_and_slot(status: BuildStatus, receiver: string, list_mono: string): number {
+ *  container declares — List, StableList, user containers). `emit_addr`
+ *  puts the receiver's address into a register (a bare local by name, or
+ *  the field-path tranche's base-plus-offsets). */
+function emit_reserve_and_slot(
+	status: BuildStatus,
+	emit_addr: (reg: string) => void,
+	list_mono: string,
+): number {
 	// 1. Reserve capacity for the new element. `extra` is push's own policy
 	// argument; the `out int` result (the new capacity) is discarded.
-	emit_var_address(status, "x0", receiver);
+	emit_addr("x0");
 	emit_asm(status, `mov x1, #1\n`);
 	emit_asm(status, `bl ${list_mono}_reserve\n`);
 
 	// 2. The destination slot's address — the container's raw append-slot
 	// primitive — spilled to the frame.
-	emit_var_address(status, "x0", receiver);
+	emit_addr("x0");
 	emit_asm(status, `bl ${list_mono}_append_slot_ptr\n`);
 	const slot = allocate_stack_space(status, 8);
 	emit_asm(status, `str x0, [x29, #${slot}]\n`);
@@ -171,9 +208,13 @@ function emit_reserve_and_slot(status: BuildStatus, receiver: string, list_mono:
 }
 
 /** Step 4: the slot is a real element. */
-function bump_length(status: BuildStatus, receiver: string, list_mono: string): void {
+function bump_length(
+	status: BuildStatus,
+	emit_addr: (reg: string) => void,
+	list_mono: string,
+): void {
 	const length_off = get_field_offset(list_mono, "length", status);
-	emit_var_address(status, "x9", receiver);
+	emit_addr("x9");
 	ensure_newline(status);
 	emit_asm(status, `ldr x10, [x9, #${length_off}]\n`);
 	emit_asm(status, `add x10, x10, #1\n`);
@@ -200,7 +241,11 @@ export function build_in_place_donor_declaration(
 	// resolves to post-monomorphization.
 	const list_mono = `${slot_stamp.container}_${elem_type.name}`;
 	const elem_is_string = elem_type.name === "string";
-	const slot = emit_reserve_and_slot(status, slot_stamp.receiver, list_mono);
+	const slot = emit_reserve_and_slot(
+		status,
+		(reg) => emit_var_address(status, reg, slot_stamp.receiver),
+		list_mono,
+	);
 	if (elem_is_string) {
 		build_node(node.value, status);
 		ensure_newline(status);
@@ -235,7 +280,8 @@ export function build_in_place_donor_bump(
 	const recv_type = type_from_value_node(node.target);
 	const list_mono = recv_type ? mono_type_name(recv_type) : undefined;
 	if (!list_mono) return false;
-	bump_length(status, (node.target as ValueNode).value as string, list_mono);
+	const receiver = (node.target as ValueNode).value as string;
+	bump_length(status, (reg) => emit_var_address(status, reg, receiver), list_mono);
 	return true;
 }
 
@@ -283,6 +329,7 @@ export function build_in_place_store(
 		elem_type,
 		status.structs as readonly StructNode[],
 		!!recv_type?.is_array,
+		status.current_struct?.name,
 	);
 	if (!facts) return false;
 
@@ -298,7 +345,7 @@ export function build_in_place_store(
 		// the length word precedes the elements).
 		emit_array_element_base(status, facts.receiver);
 	} else {
-		emit_var_address(status, "x0", facts.receiver);
+		emit_receiver_address(facts, status, "x0");
 	}
 	emit_asm(status, `str x0, [x29, #${recv_slot}]\n`);
 	const arg_slots: { slot: number; kind: "scalar" | "string" | "struct" }[] = [];
