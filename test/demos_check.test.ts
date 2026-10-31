@@ -3,10 +3,7 @@ import path from "node:path";
 
 import { describe, expect, test } from "vite-plus/test";
 
-import { get_library } from "../src/lib.ts";
 import { parse_raw } from "./parse_with_imports";
-
-const system = get_library(path.resolve("core"));
 
 // The demos must parse + check against the local compiler. (They are built
 // by the released CLI in CI; this keeps them green against HEAD.)

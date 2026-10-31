@@ -6,6 +6,8 @@ import {
 	packing_alignment,
 	struct_packs_fields,
 } from "../src/build_common/struct_packing";
+import type DeclarationNode from "../src/nodes/DeclarationNode";
+import type FunctionNode from "../src/nodes/FunctionNode";
 import type Type from "../src/nodes/Type";
 import build_and_check_output from "./build_and_check_output";
 import { parse_program } from "./parse_with_imports";
@@ -28,7 +30,8 @@ import { parse_program } from "./parse_with_imports";
 const t = (name: string, extra: Partial<Type> = {}): Type =>
 	({ name, ...extra }) as unknown as Type;
 
-const f = (name: string, type: Type) => ({ name, type });
+const f = (name: string, type: Type): DeclarationNode =>
+	({ name, type }) as unknown as DeclarationNode;
 
 function build_c(source: string): string {
 	const parsed = parse_program(source);
@@ -119,7 +122,7 @@ describe("packing order (unit)", () => {
 		const with_raw = {
 			name: "Raw",
 			fields,
-			functions: [{ statements: [{ node_type: "raw" }] }],
+			functions: [{ statements: [{ node_type: "raw" }] }] as unknown as FunctionNode[],
 		};
 		expect(struct_packs_fields(with_raw)).toBe(false);
 		expect(packed_own_fields(with_raw)).toBe(fields);

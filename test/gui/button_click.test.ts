@@ -1,5 +1,3 @@
-import path from "node:path";
-
 import { describe, test } from "vite-plus/test";
 
 import build_and_check_output from "../build_and_check_output";

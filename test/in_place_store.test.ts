@@ -2,7 +2,7 @@ import { describe, expect, test } from "vite-plus/test";
 
 import build, { default_platform } from "../src/build";
 import build_and_check_output from "./build_and_check_output";
-import parse_with_imports, { parse_raw } from "./parse_with_imports";
+import { parse_raw } from "./parse_with_imports";
 
 // The in-place construction guarantee, container-store tranche: a
 // `set(i, f(x))` / `map.set(k, f(x))` whose value argument is a direct call

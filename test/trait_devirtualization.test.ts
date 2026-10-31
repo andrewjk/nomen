@@ -6,6 +6,7 @@ import build from "../src/build";
 import check from "../src/check";
 import { collect_rebound_names } from "../src/check/utils/devirtualize";
 import { get_library } from "../src/lib";
+import type FunctionNode from "../src/nodes/FunctionNode";
 import parse from "../src/parse";
 import build_and_check_output from "./build_and_check_output";
 import { parse_raw } from "./parse_with_imports";
@@ -429,7 +430,7 @@ describe("devirtualization: rebind scan", () => {
 		expect(parsed.errors).toEqual([]);
 		for (const stmt of parsed.root.statements) {
 			if (stmt.node_type === "func" && (stmt as { name?: string }).name === "f") {
-				return collect_rebound_names((stmt as { statements: unknown[] }).statements as never);
+				return collect_rebound_names((stmt as FunctionNode).statements);
 			}
 		}
 		return new Set();
