@@ -697,26 +697,3 @@ into the joined source (plus unrelated constraint errors from the inlined
 code). Fix directions: mkdtemp under a nomen-owned root instead of the
 temp root, skip parent gathering for test compiles (they are standalone),
 or treat a harness-bearing test entry as a program for the skip checks.
-
-## `Map<K, T>` pairs-ctor structs with no synthesizable empty value (residual)
-
-The poison from PERF_PLAN item 6 (recorded 2026-10-29: declaring
-`Map<K, UserStruct>` failed to check with `Parameters missing for function:
-<UserStruct>` because Map's cloned variadic `#init` mv-destructures each
-pair and the revalidating swap was synthesized as a bare zero-argument
-constructor call) is fixed: the swap now synthesizes the constructor's
-zero-value arguments (0 / false / '\0' / "" / null / a nested empty), so
-`Map<K, Struct>` is inert and struct-valued Maps work in-source on both
-backends (`test/map_struct_values.test.ts`).
-
-What remains: a struct whose constructor has a REQUIRED parameter with no
-zero literal (a non-nullable `Box<T>`/func/array-typed field without a
-default) still cannot be a pairs-ctor TV — no empty instance exists to
-swap into the moved-from pair slot, and the declaration errors with the
-dedicated message "no empty value of 'T' can be synthesized for the
-transfer swap". (Map()+set() avoids the destructure in user code, but the
-cloned #init is checked at declaration, so the error fires anyway.) A full
-fix wants a zeroed-slot swap form that doesn't route through a
-user-constructible value — the `return 0` → `{0}` compound-literal
-treatment the backends already have for struct returns, generalized to a
-checker-side synthesized zero — not a quiet null-for-non-nullable bypass.

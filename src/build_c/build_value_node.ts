@@ -1,5 +1,6 @@
 import { find_enum_for_case } from "../build_common/find_enum.ts";
 import fold_string_const from "../build_common/fold_string_const.ts";
+import { mono_type_name } from "../build_common/mono_name.ts";
 import reencode_hex_escapes from "../build_common/string_escapes.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
 import { is_int_literal } from "../int_literal.ts";
@@ -19,6 +20,15 @@ const INT_LITERAL_SUFFIX: Record<string, string> = {
 };
 
 export default function build_value_node(node: ValueNode, status: BuildStatus) {
+	// The checker-synthesized zeroed-struct swap value (`is_struct_zero`): a
+	// zero-initialized compound literal — the struct-return `{0}` treatment.
+	// No constructor call: the NULL heap words make the moved-from owner's
+	// destroy a no-op. Must precede every literal rule (the "0" payload is
+	// not an int).
+	if (node.is_struct_zero) {
+		status.code += `(struct ${mono_type_name(node.type)}){0}`;
+		return;
+	}
 	let value = node.value;
 	// A captured outer name inside a capturing lambda reads from its env
 	// (CLOSURE.md Phase 2). The checker records a capture only when

@@ -22,6 +22,15 @@ export default class ValueNode extends BaseNode {
 	 * suppressed) instead of rejecting the aliasing copy.
 	 */
 	literal_last_use_move?: boolean;
+	/**
+	 * Stamped by the checker's synthesized transfer swap (the revalidating
+	 * replacement for a mv-destructured field): this node's `"0"` is a ZEROED
+	 * SLOT of `type`, not an int literal — the swap form that needs no
+	 * user-constructible empty value (the `{0}` compound-literal treatment
+	 * struct returns already have, generalized to the swap). The checker and
+	 * both backends' value paths consult the flag before the literal rules.
+	 */
+	is_struct_zero?: boolean;
 
 	constructor(start: number, value: string, type?: Type) {
 		super("value", start);

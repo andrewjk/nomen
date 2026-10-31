@@ -2,6 +2,7 @@ import type BuildStatus from "../build_c/BuildStatus.ts";
 import decode_char_literal from "../build_common/decode_char_literal.ts";
 import emission_label from "../build_common/emission_label.ts";
 import fold_string_const from "../build_common/fold_string_const.ts";
+import { mono_type_name } from "../build_common/mono_name.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
 import { is_signed_int_type, is_signed_type } from "../built_in_types.ts";
 import { is_int_literal, to_decimal_string } from "../int_literal.ts";
@@ -13,7 +14,7 @@ import { emit_asm } from "./utils/code_buffer.ts";
 import { find_enum_for_case } from "./utils/enum_case.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
 import { emit_string_pair_load } from "./utils/string_pair.ts";
-import { get_enum_size } from "./utils/struct_layout.ts";
+import { get_enum_size, get_struct_size } from "./utils/struct_layout.ts";
 
 let string_counter = 0;
 
@@ -73,6 +74,21 @@ function deref_load_instr(reg: string, type_name: string): string {
 
 export default function build_value_node(node: ValueNode, status: BuildStatus) {
 	const original_value = node.value;
+	// The checker-synthesized zeroed-struct swap value (`is_struct_zero`):
+	// materialize a zeroed stack temp (the enum-with-data shorthand's temp
+	// treatment, minus the tag) and leave its ADDRESS in x0 — the same
+	// sret-shaped result a constructor call leaves, so the swap consumers
+	// struct-copy from it unchanged. Must precede every literal rule (the
+	// "0" payload is not an int).
+	if (node.is_struct_zero) {
+		const struct_size = get_struct_size(mono_type_name(node.type), status);
+		const temp_offset = allocate_stack_space(status, struct_size);
+		for (let off = 0; off < struct_size; off += 8) {
+			emit_asm(status, `str xzr, [x29, #${temp_offset + off}]\n`);
+		}
+		emit_asm(status, `add x0, x29, #${temp_offset}\n`);
+		return;
+	}
 	// The `self` keyword reads the `_self` local — but ONLY the bare keyword:
 	// a substring rewrite corrupts string literals and identifiers that
 	// merely contain "self" (`"myself"`, a variable named `selfish`).

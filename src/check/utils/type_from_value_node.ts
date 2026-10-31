@@ -22,6 +22,11 @@ export default function type_from_value_node(node: BaseNode, status: CheckStatus
 	switch (node.node_type) {
 		case "value": {
 			const vn = node as ValueNode;
+			// The checker-synthesized zeroed-struct swap value carries the
+			// struct type itself — the "0" payload is not an int literal.
+			if (vn.is_struct_zero && vn.type?.name) {
+				return vn.type;
+			}
 			if (vn.value === "null") {
 				const t = new Type("null", true);
 				t.is_nullable = true;

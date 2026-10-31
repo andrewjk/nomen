@@ -1076,8 +1076,10 @@ function extract_const_value(
  * e.g. Map's variadic-pairs constructor) poisoned every program that merely
  * declared `Map<K, Point>`. For those, the zero-value arguments are
  * synthesized per parameter and the init whose parameter list is cheapest to
- * fill wins; a type with no synthesizable empty value keeps the bare call
- * (its own error diagnoses the corner).
+ * fill wins. A concrete struct with NO synthesizable empty value (a required
+ * parameter that no zero literal can fill) swaps in a zeroed slot instead —
+ * an `is_struct_zero` value node both backends materialize without a
+ * constructor call — so the declaration checks instead of erroring.
  */
 function synthesized_swap_value(
 	field_type: Type,
@@ -1095,6 +1097,29 @@ function synthesized_swap_value(
 	const empty_args = struct_empty_ctor_args(field_type, status, start);
 	if (empty_args) {
 		constructor.params = empty_args;
+		return constructor;
+	}
+	// A CONCRETE value struct with no synthesizable constructor call (a
+	// required parameter no zero literal can fill — a non-nullable Box, a
+	// func/array-typed field without a default) swaps in a zeroed slot: the
+	// `{0}` compound-literal treatment struct returns already have,
+	// generalized to the checker-side swap. No user-constructible empty value
+	// is fabricated — the zeroed slot's NULL heap words make the moved-from
+	// owner's destroy a no-op, which is all the revalidation needs. Generic
+	// containers keep the bare call (their own constructors are zero-argument
+	// or variadic).
+	const concrete =
+		field_type.name && !field_type.is_array
+			? status.structs.findLast(
+					(s) => s.name === field_type.name && !s.is_generic && !s.is_class && !s.is_simple_type,
+				)
+			: undefined;
+	if (concrete) {
+		const zero = new ValueNode(start, "0");
+		zero.is_struct_zero = true;
+		zero.type = new Type(field_type.name);
+		if (field_type.type_args?.length) zero.type.type_args = field_type.type_args;
+		return zero;
 	}
 	return constructor;
 }

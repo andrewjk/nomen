@@ -8,6 +8,12 @@ import { find_mono_enum, monomorphize_enum } from "./utils/enum_mono.ts";
 import type_from_value from "./utils/type_from_value.ts";
 
 export default function check_value_node(node: ValueNode, status: CheckStatus): boolean {
+	// The checker-synthesized zeroed-struct swap value: `type` already names
+	// the struct — never re-resolve the "0" payload as an int literal.
+	if (node.is_struct_zero) {
+		return true;
+	}
+
 	if (node.value === "null") {
 		node.type = new Type("null", true);
 		node.type.is_nullable = true;
