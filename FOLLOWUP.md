@@ -650,23 +650,6 @@ functional payoff beyond tidiness, so it was recorded rather than done —
 worth folding into the next tokenizer-touching change. Nothing else in the
 repo uses `???` as a placeholder.
 
-## Unterminated aarch64 leaf emits rely on a later `ensure_newline`
-
-Recorded 2026-10-29. Several operand emitters leave the code buffer
-unterminated and depend on the NEXT emit (or an enclosing
-`ensure_newline`) to terminate the line: `emit_immediate`
-(src/build_aarch64/build_value_node.ts — `mov`/`movn`/`ldr =` arms) and the
-char-literal/int-operand arms in build_operation_node.ts (lines ~906, ~962,
-~968, ~1030). This surfaced when the in-place-push ctor tranche put the
-call emitter's per-argument x8 re-preset directly after an immediate arg —
-`mov x0, #90ldr x8, [x29, #48]`, which the asm reader rejects. The exposed
-call site got an `ensure_newline` before the re-preset
-(build_function_call_node.ts); the emitters themselves are unchanged, so
-any new emit placed after an argument build without its own
-newline-ensure can reintroduce the glue. Root fix: terminate inside the
-leaf emitters (or make emit_asm always terminate) and drop the
-compensating calls.
-
 ## Scalar element borrows via `List.at` are blocked by contract verification (pre-existing, surfaced by the Map element borrow)
 
 Recorded 2026-10-29 while landing PERF_PLAN item 4 (borrow-returning reads,

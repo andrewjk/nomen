@@ -113,9 +113,8 @@ export default function build_for_loop_node(
 		if (range.left_value) {
 			build_node(range.left_value, status);
 		} else {
-			emit_asm(status, `ldr x0, =0`);
+			emit_asm(status, `ldr x0, =0\n`);
 		}
-		emit_asm(status, `\n`);
 		emit_var_store(status, "x0", item_name, 8);
 
 		// NEON vector loop (phase 4, tranche 2): the plan guarantees the
@@ -131,21 +130,21 @@ export default function build_for_loop_node(
 		build_node(node.item, status);
 		const right_is_literal = range.right_value?.node_type === "value";
 		if (right_is_literal) {
-			emit_asm(status, `\nmov x2, x0\n`);
+			emit_asm(status, `mov x2, x0\n`);
 			if (range.right_value) {
 				build_node(range.right_value, status);
 			} else {
-				emit_asm(status, `ldr x0, =0`);
+				emit_asm(status, `ldr x0, =0\n`);
 			}
-			emit_asm(status, `\ncmp x2, x0\n`);
+			emit_asm(status, `cmp x2, x0\n`);
 		} else {
-			emit_asm(status, `\nstr x0, [sp, #-16]!\n`);
+			emit_asm(status, `str x0, [sp, #-16]!\n`);
 			if (range.right_value) {
 				build_node(range.right_value, status);
 			} else {
-				emit_asm(status, `ldr x0, =0`);
+				emit_asm(status, `ldr x0, =0\n`);
 			}
-			emit_asm(status, `\nmov x2, x0\n`);
+			emit_asm(status, `mov x2, x0\n`);
 			emit_asm(status, `ldr x1, [sp], #16\n`);
 			emit_asm(status, `cmp x1, x2\n`);
 		}
@@ -161,7 +160,7 @@ export default function build_for_loop_node(
 
 		emit_asm(status, `${increment_label}:\n`);
 		build_node(node.item, status);
-		emit_asm(status, `\nadd x0, x0, #1\n`);
+		emit_asm(status, `add x0, x0, #1\n`);
 		emit_var_store(status, "x0", item_name, 8);
 
 		emit_asm(status, `b ${start_label}\n`);

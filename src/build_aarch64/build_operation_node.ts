@@ -904,9 +904,9 @@ function emit_immediate(target_reg: string, value: string, status: BuildStatus) 
 	const dec = to_decimal_string(value);
 	const n = parse_int_literal_bigint(value);
 	if (n !== null && n >= 0n && n <= 65535n) {
-		emit_asm(status, `mov ${target_reg}, #${dec}`);
+		emit_asm(status, `mov ${target_reg}, #${dec}\n`);
 	} else {
-		emit_asm(status, `ldr ${target_reg}, =${dec}`);
+		emit_asm(status, `ldr ${target_reg}, =${dec}\n`);
 	}
 }
 
@@ -960,13 +960,13 @@ export function build_operand(node: BaseNode, target_reg: string, status: BuildS
 					(!!param_type_name && !!status.traits.find((t) => t.name === param_type_name));
 				if (is_class) {
 					if (paramReg !== target_reg) {
-						emit_asm(status, `mov ${target_reg}, ${paramReg}`);
+						emit_asm(status, `mov ${target_reg}, ${paramReg}\n`);
 					}
 				} else {
-					emit_asm(status, `ldr ${target_reg}, [${paramReg}]`);
+					emit_asm(status, `ldr ${target_reg}, [${paramReg}]\n`);
 				}
 			} else if (paramReg !== target_reg) {
-				emit_asm(status, `mov ${target_reg}, ${paramReg}`);
+				emit_asm(status, `mov ${target_reg}, ${paramReg}\n`);
 			}
 			return;
 		}
@@ -1028,9 +1028,9 @@ export function build_operand(node: BaseNode, target_reg: string, status: BuildS
 		if (value.startsWith("'") && value.endsWith("'") && value.length === 3) {
 			const char_code = value.charCodeAt(1);
 			if (char_code <= 65535) {
-				emit_asm(status, `mov ${target_reg}, #${char_code}`);
+				emit_asm(status, `mov ${target_reg}, #${char_code}\n`);
 			} else {
-				emit_asm(status, `ldr ${target_reg}, =${char_code}`);
+				emit_asm(status, `ldr ${target_reg}, =${char_code}\n`);
 			}
 			return;
 		}

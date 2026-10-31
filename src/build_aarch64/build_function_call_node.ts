@@ -1017,7 +1017,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 							.join(", ");
 						emit_asm(status, `${label}: .quad ${values}\n.p2align 2\n`);
 					}
-					emit_asm(status, `adr x0, ${label}`);
+					emit_asm(status, `adr x0, ${label}\n`);
 				} else if (is_ref_param) {
 					// A trait-typed REF param receives the ADDRESS of the
 					// caller's boxed-handle slot: the callee boxes a new
@@ -1348,12 +1348,9 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					// The in-place push window: an argument build may `bl`
 					// (string concat, nested scalar calls) — x8 is caller-saved,
 					// so re-establish the spilled sret destination after each
-					// argument (build_in_place_push.ts). The newline comes
-					// FIRST: several leaf emitters (immediates, char literals)
-					// leave the buffer unterminated — gluing the re-preset onto
-					// them produces `mov x0, #90ldr x8, …`, which the asm
-					// reader rejects.
-					ensure_newline(status);
+					// argument (build_in_place_push.ts). The leaf emitters
+					// (immediates, char literals, param/slot loads) terminate
+					// their own lines, so no newline guard is needed here.
 					if (status.call_x8_preset && status.call_x8_slot_offset !== undefined) {
 						emit_asm(status, `ldr x8, [x29, #${status.call_x8_slot_offset}]\n`);
 					}
