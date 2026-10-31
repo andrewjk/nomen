@@ -53,6 +53,191 @@ describe("struct move-on-last-use: readback", () => {
 		await build_and_check_output(LOOP_DONOR, "struct_lu_loop_donor", "150", true);
 	});
 
+	test("return-site donor transfers instead of deep-copying", async () => {
+		// `return src.copy()` at src's last use: the synthesized copy is
+		// elided, the donor's bytes transfer to the caller. Each iteration
+		// reads back through the transferred fields (audit on: exactly-once
+		// release).
+		const input = `
+import System
+
+mv struct Rec {
+	var name = ""
+	var n = 0
+}
+
+func make = (int i, out Rec) {
+	var src = Rec()
+	src.name = "r\\{i}"
+	src.n = i * 2
+	return src.copy()
+}
+
+pub func main = (Init init) {
+	var acc = 0
+	var int i = 0
+	while i < 5 {
+		var r = make(i)
+		acc = acc + r.n + r.name.length
+		i += 1
+	}
+	Console.write("\\{acc}")
+}
+`;
+		// (0+1+...+4)*2 + 5*2 = 20 + 10 = 30
+		await build_and_check_output(input, "struct_lu_return", "30", true);
+		const parsed = parse_program(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "c" });
+		expect(result.errors ?? []).toEqual([]);
+		expect(result.code).not.toMatch(/Rec_copy\(&/);
+	});
+
+	test("container-store donor transfers instead of deep-copying", async () => {
+		// `list.push(src.copy())` at src's last use: the push's `mv T value`
+		// parameter takes the donor's state — the checker-hoisted `_param_N`
+		// copy temp drops out (audit on: every element released exactly once).
+		const input = `
+import System
+
+mv struct Rec {
+	var name = ""
+	var n = 0
+}
+
+pub func main = (Init init) {
+	var list = List<Rec>()
+	var acc = 0
+	var int i = 0
+	while i < 5 {
+		var src = Rec()
+		src.name = "r\\{i}"
+		src.n = i
+		list.push(src.copy())
+		i += 1
+	}
+	while list.length > 0 {
+		var r = list.pop()
+		acc = acc + r.n
+	}
+	Console.write("\\{acc}")
+}
+`;
+		await build_and_check_output(input, "struct_lu_push", "10", true);
+		const parsed = parse_program(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "c" });
+		expect(result.errors ?? []).toEqual([]);
+		expect(result.code).not.toMatch(/Rec_copy\(&/);
+	});
+
+	test("field-store donor transfers instead of deep-copying", async () => {
+		// `holder.r = src.copy()` at src's last use: the field takes the
+		// donor's state (audit on: the displaced field value released, the
+		// donor not double-released).
+		const input = `
+import System
+
+mv struct Rec {
+	var name = ""
+	var n = 0
+}
+
+mv struct Holder {
+	var r = Rec()
+	var tag = 0
+}
+
+pub func main = (Init init) {
+	var h = Holder()
+	h.tag = 9
+	var acc = 0
+	var int i = 0
+	while i < 4 {
+		var src = Rec()
+		src.name = "r\\{i}"
+		src.n = i
+		h.r = src.copy()
+		acc = acc + h.r.n + h.tag
+		i += 1
+	}
+	Console.write("\\{acc}\\{h.r.name}")
+}
+`;
+		// (0+1+2+3) + 4*9 = 6 + 36 = 42, name = r3
+		await build_and_check_output(input, "struct_lu_field", "42r3", true);
+	});
+
+	test("container-typed donor (List) transfers instead of deep-copying", async () => {
+		// `var dst = list.copy()` at list's last use: the container mv
+		// transfer hands the slab over — the library copy malloc drops out.
+		const input = `
+import System
+
+pub func main = (Init init) {
+	var acc = 0
+	var int i = 0
+	while i < 5 {
+		var list = List<int>()
+		list.push(i)
+		list.push(i * 10)
+		var dst = list.copy()
+		acc = acc + dst.pop()
+		i += 1
+	}
+	Console.write("\\{acc}")
+}
+`;
+		// 10+20+30+40+50 = 100
+		await build_and_check_output(input, "struct_lu_list_donor", "100", true);
+		const parsed = parse_program(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "c" });
+		expect(result.errors ?? []).toEqual([]);
+		// The definition is still emitted (unconditional); nothing calls it.
+		expect(result.code).toContain("List_int_copy(struct List_int *self)");
+		expect(result.code).not.toMatch(/List_int_copy\(&/);
+	});
+
+	test("free-call mv-param donor transfers instead of deep-copying", async () => {
+		// `consume(src.copy())` where consume takes `mv Rec`: the rewritten
+		// argument is the explicit `mv src` donor spelling — no `_param_N`
+		// copy temp, no synthesized copy (audit on).
+		const input = `
+import System
+
+mv struct Rec {
+	var name = ""
+	var n = 0
+}
+
+func consume = (mv Rec r, out int) {
+	return r.n
+}
+
+pub func main = (Init init) {
+	var acc = 0
+	var int i = 0
+	while i < 5 {
+		var src = Rec()
+		src.name = "r\\{i}"
+		src.n = i * 3
+		var got = consume(src.copy())
+		acc = acc + got
+		i += 1
+	}
+	Console.write("\\{acc}")
+}
+`;
+		// (0+1+2+3+4)*3 = 30
+		await build_and_check_output(input, "struct_lu_call_arg", "30", true);
+		const parsed = parse_program(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "c" });
+		expect(result.errors ?? []).toEqual([]);
+		expect(result.code).not.toMatch(/Rec_copy\(&/);
+	});
+
 	test("assignment form transfers and reads back", async () => {
 		const input = `
 import System
@@ -214,6 +399,115 @@ pub func main = (Init init) {
 		// probe, where the mv param is a pointer) keeps its copy too.
 		expect(result.code).toMatch(/Rec_copy\(&c\)/);
 		expect(result.code).toMatch(/Rec_copy\(r\)/);
+	});
+
+	test("return-site guard: a later read of the donor keeps the copy", async () => {
+		const input = `
+import System
+
+mv struct Rec {
+	var name = ""
+	var n = 0
+}
+
+func make = (int i, out Rec) {
+	var src = Rec()
+	src.name = "r\\{i}"
+	src.n = i
+	var r = src.copy()
+	Console.write("\\{src.n}")
+	return r
+}
+
+pub func main = (Init init) {
+	Console.write("\\{make(3).n}")
+}
+`;
+		await build_and_check_output(input, "struct_lu_return_guard", "33", true);
+		const parsed = parse_program(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "c" });
+		expect(result.errors ?? []).toEqual([]);
+		expect(result.code).toMatch(/Rec_copy\(&src\)/);
+	});
+
+	test("container-store guard: a later read of the donor keeps the copy", async () => {
+		const input = `
+import System
+
+mv struct Rec {
+	var name = ""
+	var n = 0
+}
+
+pub func main = (Init init) {
+	var list = List<Rec>()
+	var src = Rec()
+	src.n = 4
+	list.push(src.copy())
+	Console.write("\\{src.n}")
+	Console.write("\\{list.pop().n}")
+}
+`;
+		await build_and_check_output(input, "struct_lu_push_guard", "44", true);
+		const parsed = parse_program(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "c" });
+		expect(result.errors ?? []).toEqual([]);
+		expect(result.code).toMatch(/Rec_copy\(&src\)/);
+	});
+
+	test("field-store guard: a later read of the donor keeps the copy", async () => {
+		const input = `
+import System
+
+mv struct Rec {
+	var name = ""
+	var n = 0
+}
+
+mv struct Holder {
+	var r = Rec()
+	var tag = 0
+}
+
+pub func main = (Init init) {
+	var h = Holder()
+	h.tag = 5
+	var src = Rec()
+	src.n = 2
+	h.r = src.copy()
+	Console.write("\\{src.n}\\{h.r.n + h.tag}")
+}
+`;
+		// Emission-level pin only: a plain kept-copy field store into a
+		// struct local leaks its strdup at scope exit (pre-existing, shared
+		// with the explicit-copy spelling — FOLLOWUP.md), so this asserts the
+		// REWRITE decision — the copy must be kept — without the audit pin.
+		const parsed = parse_program(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "c" });
+		expect(result.errors ?? []).toEqual([]);
+		expect(result.code).toMatch(/Rec_copy\(&src\)/);
+	});
+
+	test("container-donor guard: a later read of the list keeps the copy", async () => {
+		const input = `
+import System
+
+pub func main = (Init init) {
+	var list = List<int>()
+	list.push(7)
+	var dst = list.copy()
+	Console.write("\\{dst.pop()}\\{list.pop()}")
+}
+`;
+		await build_and_check_output(input, "struct_lu_list_guard", "77", true);
+		const parsed = parse_program(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "c" });
+		expect(result.errors ?? []).toEqual([]);
+		expect(result.code).toMatch(/List_int_copy\(&list\)/);
 	});
 
 	test("a raw body in the copy's own function refuses every rewrite", async () => {

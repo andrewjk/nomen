@@ -272,15 +272,78 @@ last-use struct `.copy()` yet. In particular the tree benches this item was
 booked against stay flat: their per-child cost is the `Box<T>(mv node)`
 ctor shape (alloc + struct memcpy — items 1/7/14), not a last-use copy.
 
-**Remainder.** Only whole-RHS sites (assignment + declare) rewrite today.
-The same elision applies at the other ownership-transfer positions —
-`return src.copy()`, call arguments, container stores
-(`list.push(src.copy())`), field stores — each needs its site's transfer
-lowering checked against the rewrite (the return/arg paths move the donor
-differently than the local-reassignment paths). Container-typed donors
-(`var dst = list.copy()` where `list` is a `List`/`Map`/`Set` local) are
-the natural sibling: the synthesized/library copy has the same
-fresh-value shape, and the container `mv` transfer exists.
+**The transfer-position tranche (landed Oct 2026).** The rewrite now covers
+the other ownership-transfer positions, not just whole-RHS declare/assign.
+The same donor test (no read of the source may execute after the copy, with
+the whole-program loop/back-edge/spawn/refusals the pass already implements)
+classifies each site, and the rewrite is again the exact AST the explicit
+spelling parses into, so both backends' tested explicit-`mv` lowerings do
+the work with zero backend changes:
+
+- **`return src.copy()`** → `return mv src`. The return builders already
+  treat a bare-local struct value as a transfer (the C backend splices the
+  returned declaration from the scope frames and drops its heap-field
+  records so the return-path reclaim keeps the bytes being handed out), so
+  the rewritten return is the hand-written `return mv src` shape.
+- **Container stores** — `list.push(src.copy())` (any argument position
+  whose callee parameter is `mv`-declared). The checker had hoisted the
+  argument into a `const _param_N = src.copy()` allocation; the rewrite
+  splices that allocation out of the statement, puts the bare `mv src`
+  donor in the parameter slot, and stamps `move_param_indices` — the exact
+  three artifacts the explicit spelling produces — so the donor cleanup
+  (splice or moved-flag, both backends) runs unchanged. The synthesized
+  copy and its temp home drop out; the store itself is the push's own
+  `mv T` slot copy, as in the explicit donor form.
+- **Field stores** — `obj.field = src.copy()` → `obj.field = mv src`, the
+  transfer lowering the assignment builders already implement for explicit
+  mv field stores.
+- **Free-function call arguments** — `consume(src.copy())` where `consume`
+  takes `mv Rec` — the same hoisted-temp splice as the container store.
+  An argument whose callee parameter is NOT `mv`-declared never rewrites:
+  the checker rejects `mv` into a borrow parameter, so that rewrite would
+  build a spelling the language refuses.
+- **Container-typed donors** — `var dst = list.copy()` where `list` is a
+  `List`/`Map`/`Set` `var` local: the library copy is a fresh-value copy of
+  the same shape as the synthesized struct copy, and the container `mv`
+  transfer (slab hand-over, donor spliced from the scopes) exists on both
+  backends. The receiver recognizer admits a copy call whose receiver's
+  stamped type names a container; user `copy` methods are still never
+  touched (only the synthesized-struct marker or a container type name
+  qualify).
+
+Two guard refinements came with the positions. Sites are processed in
+program order and a donor already moved by an earlier site refuses later
+ones — two `x.copy()` sites in a row rewrite only the LAST (the earlier
+copies are real: the program reads `x` between them), which also closes a
+latent double-move on the landed declare shape. And the read test's
+skip-window narrowed for call sites: only the hoisted allocation's own
+interval is exempt, so a SIBLING argument reading the donor
+(`f(src.copy(), g(src))`) refuses the rewrite.
+
+Nine new tests in `test/struct_last_use_move.test.ts` (twenty-two total)
+pin each position's transfer with the auditor on (both backends: return,
+push, field store, List donor, `mv`-param call argument) and each position's
+guard (a later read of the donor keeps the copy; emission-pinned, so the
+assert is the rewrite decision, not the leak state). The full suite (539
+files, both backends) passes. No new shape bench was taken: the elided work
+per site is exactly the item's measured promise (the synthesized copy — a
+fresh init, a strdup per string field, a fresh container per `List` field —
+drops out; what remains is the explicit-mv transfer the sites' lowerings
+already performed), and the standard suite contains no hot-loop
+last-use copy sites beyond the ones the item's table already receipts (the
+LANDED entry's suite timings cover those; the 539-file suite's runtime
+tests — which build and run the bench-adjacent shapes — pass unchanged).
+
+**Remainder.** A call argument nested inside a larger expression
+(`acc = acc + consume(src.copy())`) does not rewrite yet: the checker
+hoists the argument temp somewhere the last-use walk cannot attribute to
+the call (no `allocations` array carries it), so the classify refuses
+(conservatively — the copy stays). Tracing that hoist is the remaining
+piece. Also out of scope by design: `Map.set(k, src.copy())`-style
+two-argument stores (the value argument is index 1; the machinery admits it
+but no test pins it yet), and donors whose type is an enum-with-data (the
+mv convention deep-copies those at the boundary, so a rewrite would be
+sound but not an elision).
 
 ## 4. Borrow-returning reads — PARTIALLY LANDED (Oct 2026)
 
