@@ -1,3 +1,4 @@
+import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
@@ -86,6 +87,18 @@ export function is_normalized_struct_call(
 		if (receiver_type?.name) {
 			const label = `${mono_type_name(receiver_type)}_${name}`;
 			if (status.normalized_struct_returners?.has(label)) return true;
+		}
+		// A NESTED-access receiver (`h.r.copy()`) carries no stamped type on
+		// the access node — resolve it structurally (the checker stamps the
+		// FIELD's type, which the backend resolver descends to) before giving
+		// up. Without this, a kept-copy store into a nested slot missed the
+		// normalized classification and its displaced heap fields leaked.
+		if (target) {
+			const resolved = type_from_value_node(target);
+			if (resolved?.name) {
+				const label = `${mono_type_name(resolved)}_${name}`;
+				if (status.normalized_struct_returners?.has(label)) return true;
+			}
 		}
 		return false;
 	}

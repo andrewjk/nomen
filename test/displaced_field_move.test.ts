@@ -85,3 +85,70 @@ Console.write("still=\\{box2.value}\\n")
 		);
 	});
 });
+
+describe("kept-copy field stores reclaim the displaced value", () => {
+	// `h.r = src.copy()` — a value-struct FIELD store whose RHS is a method
+	// call (a real deep copy, not a transfer) used to fall through to the
+	// plain struct copy: the displaced field value's heap fields leaked at
+	// the store (1 allocation per store, both backends). The fresh-call
+	// classification now covers normalized method calls (the synthesized
+	// copy), and the copy is materialized before the displaced reclaim so a
+	// self-aliasing receiver (`h.r = h.r.copy()`) reads live state.
+	test("a loop of kept-copy stores stays audit clean", async () => {
+		const input = `
+import System
+
+mv struct Rec {
+	var name = ""
+	var n = 0
+}
+
+mv struct Holder {
+	var r = Rec()
+	var tag = 0
+}
+
+pub func main = (Init init) {
+	var h = Holder()
+	var acc = 0
+	var int i = 0
+	while i < 4 {
+		var src = Rec()
+		src.name = "r\\{i}"
+		src.n = i
+		h.r = src.copy()
+		acc = acc + h.r.n + h.r.name.length
+		i += 1
+	}
+	Console.write("\\{acc}\\{h.r.name}")
+}
+`;
+		// (0+1+2+3) + 4*2 = 14, name = r3
+		await build_and_check_output(input, "kept_copy_field_store", "14r3", true);
+	});
+
+	test("a self-aliasing kept-copy store reads the pre-store field", async () => {
+		const input = `
+import System
+
+mv struct Rec {
+	var name = ""
+	var n = 0
+}
+
+mv struct Holder {
+	var r = Rec()
+	var tag = 0
+}
+
+pub func main = (Init init) {
+	var h = Holder()
+	h.r.name = "hello"
+	h.r.n = 3
+	h.r = h.r.copy()
+	Console.write("\\{h.r.name} \\{h.r.n}")
+}
+`;
+		await build_and_check_output(input, "kept_copy_field_store_self", "hello 3", true);
+	});
+});

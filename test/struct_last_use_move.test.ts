@@ -480,10 +480,10 @@ pub func main = (Init init) {
 	Console.write("\\{src.n}\\{h.r.n + h.tag}")
 }
 `;
-		// Emission-level pin only: a plain kept-copy field store into a
-		// struct local leaks its strdup at scope exit (pre-existing, shared
-		// with the explicit-copy spelling — FOLLOWUP.md), so this asserts the
-		// REWRITE decision — the copy must be kept — without the audit pin.
+		// The kept copy is a real deep copy whose displaced seed must be
+		// reclaimed at the store (audit on: the displaced h.r.name free runs
+		// exactly once and the copy's strdup is released at scope exit).
+		await build_and_check_output(input, "struct_lu_field_guard", "27", true);
 		const parsed = parse_program(input);
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "c" });

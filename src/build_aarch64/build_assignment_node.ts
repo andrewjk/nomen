@@ -2786,6 +2786,68 @@ export default function build_assignment_node(
 					const struct_size = get_struct_size(field_type!.name, status);
 					mark_moved_if_struct(node.right_value, status);
 
+					// A normalized METHOD-call RHS (`field = src.copy()`) is a
+					// fresh uniformly-heap value the field takes ownership of —
+					// the same fresh-call shape as the func_call arm below — but
+					// the call may READ the displaced field (the receiver can be
+					// the field itself: `h.r = h.r.copy()`), so the copy is
+					// materialized FIRST and the displaced reclaim runs after it.
+					// Without this arm the store fell to the plain struct copy
+					// and the displaced field value's heap fields leaked at the
+					// store (borrow accessors are excluded by the classifier).
+					const field_rhs_is_method_call =
+						!node.swap &&
+						node.right_value.node_type !== "func_call" &&
+						is_normalized_struct_call(node.right_value, status);
+					if (field_rhs_is_method_call) {
+						const field_resolved = resolve_struct_type(field_type!, status);
+						if (field_resolved && !field_resolved.is_class) {
+							const method_target_var =
+								access.target.node_type === "value" ? (access.target as ValueNode).value : "";
+							const method_first_init = is_first_init_field_write(
+								method_target_var,
+								field_name,
+								status,
+							);
+							mark_init_field_write(method_target_var, field_name, status);
+							// 1. Materialize the copy, then park its address —
+							// the base computation and the destroy call both
+							// clobber x0.
+							get_source_address(node.right_value, status, nir_rhs);
+							ensure_newline(status);
+							emit_asm(status, `str x0, [sp, #-16]!\n`);
+							// 2. Base address of the store target.
+							get_base_address(access, status, "x9");
+							ensure_newline(status);
+							// 3. Reclaim the displaced field value (x9 parked —
+							// the destroy call clobbers every caller-saved
+							// register). A custom `#init`'s FIRST write to a
+							// `self.<field>` overwrites garbage — skip. A
+							// synthesized-copy store displaces a BORROW seed
+							// (`displaced_is_alias`) — drop the alias, reclaim
+							// nothing.
+							if (
+								!method_first_init &&
+								!(node as unknown as { displaced_is_alias?: boolean }).displaced_is_alias &&
+								struct_needs_auto_destroy(field_resolved, status)
+							) {
+								emit_asm(status, `str x9, [sp, #-16]!\n`);
+								if (offset !== 0) {
+									emit_asm(status, `add x0, x9, #${offset}\n`);
+								} else {
+									emit_asm(status, `mov x0, x9\n`);
+								}
+								emit_asm(status, `bl ${field_resolved.name}_destroy\n`);
+								emit_asm(status, `ldr x9, [sp], #16\n`);
+							}
+							// 4. Copy the fresh value into the field.
+							emit_asm(status, `ldr x1, [sp], #16\n`);
+							emit_asm(status, `mov x0, x9\n`);
+							emit_struct_copy("x1", "x0", offset, struct_size, status);
+							return;
+						}
+					}
+
 					const base_reg = deferred_field_base_reg(access, status);
 					if (base_reg === undefined) {
 						get_base_address(access, status, "x0");
@@ -2828,6 +2890,10 @@ export default function build_assignment_node(
 							field_resolved &&
 							!field_resolved.is_class &&
 							!first_init_write &&
+							// A synthesized-copy store displaces a BORROW seed
+							// (`displaced_is_alias`) — drop the alias, reclaim
+							// nothing.
+							!(node as unknown as { displaced_is_alias?: boolean }).displaced_is_alias &&
 							struct_needs_auto_destroy(field_resolved, status)
 						) {
 							// The `<T>_destroy` function exists whenever

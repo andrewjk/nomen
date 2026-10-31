@@ -20,6 +20,17 @@ export default class AssignmentNode extends BaseNode {
 	 */
 	last_use_move?: boolean;
 
+	/**
+	 * Stamped by the synthesized-`copy` builder (auto_derive's build_copy) on
+	 * a `c.<field> = self.<field>.copy()` assignment whose field's CURRENT
+	 * value is a BORROW: the shell constructor byte-copied `self.<field>` in
+	 * (struct/container ctor params alias their argument — only string params
+	 * strdup), so the displaced seed shares another owner's heap state and
+	 * the field-store paths must NOT reclaim it (the store simply drops the
+	 * alias — the fresh copy is the field's first owned value).
+	 */
+	displaced_is_alias?: boolean;
+
 	constructor(start: number, left_value: BaseNode, right_value: BaseNode, operator?: string) {
 		super("assign", start);
 		this.left_value = left_value;

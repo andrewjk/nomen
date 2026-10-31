@@ -665,21 +665,23 @@ borrows are Map-only today. Fix shape: teach the bounds verifier to use the
 rewrite's own length facts (`push` → `length`), or give `at` a
 contract-free `at_ptr`-style primitive to rewrite to.
 
-## A kept-copy field store into a struct local leaks its strdup at scope exit (pre-existing, surfaced by the last-use field-store guard)
+## A ctor call with a borrow argument seeds an ALIASED field (pre-existing, surfaced by the kept-copy field-store fix)
 
-Recorded 2026-10-31 while landing PERF_PLAN item 3's remainder
-(`test/struct_last_use_move.test.ts`, the field-store guard test). The shape
-`h.r = src.copy()` — an owning mv struct FIELD store whose RHS is a real
-deep copy (here the guard refused the rewrite because `src` is read after) —
-leaks the copy's seed strdup: `main` exits without freeing `h.r.name`'s heap
-bytes. The audit reports `LEAK: 1 allocation(s)`; the same program with the
-transfer spelling (`h.r = mv src`, the shape the last-use rewrite produces)
-is audit-clean, so the field-store transfer path's displaced-value handling
-is fine and the gap is specific to keeping the copy — most likely the
-assignment path not registering the fresh heap field for the scope-exit
-destroy when the RHS is a call result (the C `Rec_copy(&src)` result is
-assigned but its name buffer never joins the destroy set). The guard test
-pins only the rewrite decision (the copy must be kept) without the audit
-pin, mirroring the self-assignment guard's posture. Fix shape: teach the
-field-store assignment path to record call-result RHS heap fields the way
-the declaration path does for `var r = f()` locals.
+Recorded 2026-10-31 while fixing the kept-copy field-store leak (the
+synthesized-copy breakage it caused is what surfaced the general shape; the
+user-code form reproduces on main unchanged). `var m = Mid(o.mid.inner)` —
+a mv-struct constructor taking a STRUCT/CONTAINER argument — byte-copies
+the argument into the field (`Mid_init`: `_self.inner = *inner`), so the
+fresh local's field ALIASES the donor's heap state while `Mid` is an owning
+struct whose destroy frees that state. The program
+(`var o = Outer(); o.mid.inner.text = "abc"; var m = Mid(o.mid.inner);
+probe(mv o)`) dies with `AUDIT-STALE-FREE: 1 pointer(s)` on aarch64: `m`'s
+teardown frees the buffer `o.mid.inner` still owns. String ctor params are
+safe (`Inner_init` strdups — `text.ptr ? nomen_str_dup(text) : text`), so
+the gap is specific to struct/container-typed ctor params. The synthesized
+`copy` bodies dodge it only via the `displaced_is_alias` stamp (their
+`c.<field> = self.<field>.copy()` stores drop the alias without reclaim);
+user code has no such marking. Fix shape: make struct/container ctor
+params establish ownership (deep-copy at the init store, with the caller
+temp's buffers released), or have the checker reject an aliased donor
+argument the way it rejects sharing closures in value-struct func fields.

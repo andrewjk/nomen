@@ -487,7 +487,17 @@ function build_copy(struct: StructNode, status: CheckStatus): FunctionNode {
 		const right = field_copy_call(field.type, status)
 			? method_call(field_access("self", field.name), "copy")
 			: field_access("self", field.name);
-		statements.push(new AssignmentNode(-1, field_access("c", field.name), right));
+		const assign = new AssignmentNode(-1, field_access("c", field.name), right);
+		if (field_copy_call(field.type, status)) {
+			// The shell constructor took this field as a byte-copied borrow
+			// (`Mid(self.inner)` — struct/container ctor params alias their
+			// argument), so the displaced seed shares `self.<field>`'s heap
+			// state: the field-store paths must drop the alias, not reclaim
+			// it (only string ctor params strdup — their displaced free is
+			// valid and stays unstamped).
+			assign.displaced_is_alias = true;
+		}
+		statements.push(assign);
 	}
 	statements.push(new ReturnNode(-1, new ValueNode(-1, "c")));
 	const fn = new FunctionNode(

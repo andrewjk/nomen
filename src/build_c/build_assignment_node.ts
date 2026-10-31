@@ -409,9 +409,17 @@ export default function build_assignment_node(
 	// moves) gets the same displaced reclaim: the store overwrites the field's
 	// bytes, so the displaced value's owned resources must be destroyed first
 	// (there is no source splice — nothing is transferred out of a variable).
+	// A normalized METHOD-call RHS (`field = src.copy()` — the synthesized
+	// copy's bare-local return normalizes the result to uniformly heap-owned;
+	// borrow accessors are excluded by the classifier) is the same fresh-value
+	// shape: without it the store fell through to the generic path and the
+	// displaced field value's heap fields leaked at the store.
 	const assign_rhs_is_moved_value =
 		node.right_value.node_type === "value" && (node.right_value as ValueNode).is_moved;
-	const assign_rhs_is_fresh_call = !node.swap && node.right_value.node_type === "func_call";
+	const assign_rhs_is_fresh_call =
+		!node.swap &&
+		(node.right_value.node_type === "func_call" ||
+			is_normalized_struct_call(node.right_value, status));
 	if (
 		!node.operator &&
 		node.left_value.node_type === "access" &&
@@ -457,12 +465,39 @@ export default function build_assignment_node(
 				if (!status.init_assigned_fields) status.init_assigned_fields = new Set();
 				status.init_assigned_fields.add(field_key);
 			}
-			if (!first_init_write && struct_needs_destroy_by_name(field_struct.name, status)) {
-				emit_struct_destroys(status, field_struct, field_access);
+			const needs_displaced_reclaim =
+				!first_init_write &&
+				// A synthesized-copy field store (`c.inner = self.inner.copy()`)
+				// displaces a BORROW seed (the shell constructor byte-copied
+				// `self.inner` in) — dropping the alias is the whole store;
+				// reclaiming it would free another owner's heap state.
+				!(node as unknown as { displaced_is_alias?: boolean }).displaced_is_alias &&
+				struct_needs_destroy_by_name(field_struct.name, status);
+			// A METHOD-call RHS may READ the displaced field — the receiver can
+			// be the field itself (`h.r = h.r.copy()`) — so the copy is
+			// materialized into a temp BEFORE the displaced reclaim (the same
+			// temp-first posture the string field store uses). A plain function
+			// call cannot name the field through a receiver, so it keeps the
+			// destroy-then-store order.
+			if (assign_rhs_is_moved_value || node.right_value.node_type === "func_call") {
+				if (needs_displaced_reclaim) {
+					emit_struct_destroys(status, field_struct, field_access);
+				}
+				status.code += `${field_access} = `;
+				emit_rhs_value(node.right_value, nir_rhs, status);
+				status.code += `;\n`;
+				return;
 			}
-			status.code += `${field_access} = `;
+			const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+			const temp = `_tfc_${id}`;
+			status.code += `{ struct ${field_struct.name} ${temp} = `;
 			emit_rhs_value(node.right_value, nir_rhs, status);
 			status.code += `;\n`;
+			if (needs_displaced_reclaim) {
+				emit_struct_destroys(status, field_struct, field_access);
+			}
+			status.code += `${field_access} = ${temp};\n}\n`;
+			if (!status.c_field_override_depth) status.c_stmt_ends_block = true;
 			return;
 		}
 	}
