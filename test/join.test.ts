@@ -150,6 +150,53 @@ test("join for a regular program does not strip main", () => {
 	}
 });
 
+test("join for a test file ignores stray .nm files in the parent dir", () => {
+	// Test compiles frequently run from scratch dirs under the OS temp root;
+	// stray `.nm` files left in that parent must not join the compile (the
+	// entry declares no `func main`, so the program-skip can't filter them).
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), "nomen-join-parent-"));
+	try {
+		fs.writeFileSync(
+			path.join(root, "scratch.nm"),
+			'pub func main = (Init init) {\n\tConsole.write_line("stray")\n}\n',
+		);
+		fs.writeFileSync(path.join(root, "helper.nm"), "pub func stray_helper = () {}\n");
+		fs.mkdirSync(path.join(root, "run"));
+		fs.writeFileSync(
+			path.join(root, "run", "app.test.nm"),
+			'import System\nimport System::Test\npub func test_noop = (ref Tester t) {\n\tt.expect(true, "ok")\n}\n',
+		);
+
+		const input = join(path.join(root, "run", "app.test.nm"), undefined, { for_test: true });
+		expect(input).not.toContain("stray_helper");
+		expect(input).not.toContain("scratch.nm");
+	} finally {
+		fs.rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("join for a program skips main-bearing parent files but keeps the rest", () => {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), "nomen-join-parprog-"));
+	try {
+		fs.writeFileSync(
+			path.join(root, "other.nm"),
+			'pub func main = (Init init) {\n\tConsole.write_line("other")\n}\n',
+		);
+		fs.writeFileSync(path.join(root, "util.nm"), "pub func parent_util = () {}\n");
+		fs.mkdirSync(path.join(root, "src"));
+		fs.writeFileSync(
+			path.join(root, "src", "main.nm"),
+			'import System\npub func main = (Init init) {\n\tConsole.write_line("hi")\n}\n',
+		);
+
+		const input = join(path.join(root, "src", "main.nm"), undefined);
+		expect(input).toContain("pub func parent_util");
+		expect(input.split("pub func main").length - 1).toBe(1);
+	} finally {
+		fs.rmSync(root, { recursive: true, force: true });
+	}
+});
+
 // ---------------------------------------------------------------------------
 // join: namespace (directory) imports + spaced `::` segments
 // ---------------------------------------------------------------------------

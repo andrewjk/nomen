@@ -74,7 +74,15 @@ export default function join(
 		// Declarations one directory up are visible too — a file in `src/utils/`
 		// sees the `.nm` files directly in `src/`. Mirrors the editor extension,
 		// which does the same so diagnostics match what the compiler accepts.
-		gather_module_parent(folder_path, file_path, inputs, resolved_lib_path, visited);
+		// A test compile skips this like sibling gathering: test files are
+		// STANDALONE, and their parent dir is often a shared scratch root (the
+		// OS temp dir) where stray `.nm` files must not join the compile. The
+		// entry declares no `func main` (the harness supplies it), so the
+		// main-bearing-neighbor skip inside gather_module_parent would never
+		// fire — every stray would be inlined.
+		if (!for_test) {
+			gather_module_parent(folder_path, file_path, inputs, resolved_lib_path, visited);
+		}
 		// A `*.test.nm` file can use the program's `pub` declarations: pull in
 		// the `src/` module (with `main` stripped) so tests call the real code.
 		if (test_src_dir) gather_src_module(test_src_dir, inputs, resolved_lib_path, visited);
