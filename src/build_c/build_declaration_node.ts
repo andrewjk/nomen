@@ -15,6 +15,11 @@ import {
 	struct_needs_auto_destroy,
 } from "../build_common/destroy_analysis.ts";
 import { direct_string_fields, owns_strings_uniformly } from "../build_common/has_string_fields.ts";
+import {
+	c_field_path_spelling,
+	in_place_field_path_owners,
+	in_place_field_path_root_struct_name,
+} from "../build_common/in_place_push.ts";
 import { mono_type_name, resolve_struct_type } from "../build_common/mono_name.ts";
 import { call_result_type, is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
@@ -118,13 +123,34 @@ export default function build_declaration_node(
 	// shape changed under us.
 	if (node.in_place_push_slot && node.value?.node_type === "func_call") {
 		const recv_type = type_from_value_node(node.value);
-		if (recv_type?.name) {
-			const list_mono = `${node.in_place_push_slot.container}_${recv_type.name}`;
+		const stamp = node.in_place_push_slot;
+		// A field-path receiver spells through the stamp's root plus hops —
+		// the same resolution the push-side bump performs, so an
+		// unresolvable path falls back to the ordinary declaration (and the
+		// ordinary push) on both sides together.
+		let recv_c: string | undefined = stamp.receiver;
+		if (stamp.receiver_field_path?.length) {
+			recv_c = undefined;
+			const root_struct = in_place_field_path_root_struct_name(status, stamp.receiver);
+			const walk = root_struct
+				? in_place_field_path_owners(root_struct, stamp.receiver_field_path, status.structs)
+				: undefined;
+			if (walk) {
+				recv_c = c_field_path_spelling(
+					stamp.receiver,
+					stamp.receiver_field_path,
+					walk.class_hops,
+					status.function_ref_params?.has(stamp.receiver) ?? false,
+				);
+			}
+		}
+		if (recv_type?.name && recv_c) {
+			const list_mono = `${stamp.container}_${recv_type.name}`;
 			const elem_c = recv_type.name === "string" ? "nomen_string" : `struct ${recv_type.name}`;
-			status.code += `${c_function_name(`${list_mono}_reserve`)}(&${node.in_place_push_slot.receiver}, 1L);\n`;
+			status.code += `${c_function_name(`${list_mono}_reserve`)}(&${recv_c}, 1L);\n`;
 			// The container's raw append-slot primitive is the LHS — the same
 			// contract for every container.
-			status.code += `*( ${elem_c}*)(unsigned long long)${c_function_name(`${list_mono}_append_slot_ptr`)}(&${node.in_place_push_slot.receiver}) = `;
+			status.code += `*( ${elem_c}*)(unsigned long long)${c_function_name(`${list_mono}_append_slot_ptr`)}(&${recv_c}) = `;
 			build_node(node.value, status);
 			status.code += ";\n";
 			return;

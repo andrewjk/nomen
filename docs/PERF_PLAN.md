@@ -10,7 +10,7 @@ them; the rest carry expected wins and the receipts they rest on).
 | #   | Item                                                                                                                                                                                                                                                                                                                                      | Backends       | Effort | Receipt                                          |
 | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | ------ | ------------------------------------------------ |
 | 1   | Faster allocator (slab/bump class allocation)                                                                                                                                                                                                                                                                                             | both           | M      | PERF.md "Large"; ASM_TODO "largest unclaimed"    |
-| 2   | ~~In-place push for constructors~~ **LANDED Oct 2026: −55% / −58% on the shape; field-path receivers (the `JsonTree.alloc_node` remainder) −24% / −30% sample.json, −25% / −32% string-heavy doc**                                                                                                                                        | both           | S      | shape micro-bench, interleaved medians (below)   |
+| 2   | ~~In-place push for constructors~~ **LANDED Oct 2026: −55% / −58% on the shape; field-path receivers −24% / −30% sample.json, −25% / −32% string-heavy doc; tranche completed (local roots, Box/generic hops, donor) −51% / −52% on the field-path shape bench**                                                                          | both           | S      | shape micro-bench, interleaved medians (below)   |
 | 3   | ~~Move-on-last-use for structs~~ **LANDED Oct 2026: −20% / −29% on the shape**                                                                                                                                                                                                                                                            | both           | S–M    | shape micro-bench, interleaved medians (below)   |
 | 4   | ~~Borrow-returning reads (Map `get_ptr`, `at_view`)~~ **PARTIALLY LANDED Oct 2026: Map slot borrow, −79% / −98% on the borrow shape, −48% probe fusion**                                                                                                                                                                                  | both           | M      | shape micro-benches, interleaved medians (below) |
 | 5   | ~~Json ownership copies~~ **LANDED Oct 2026: −26% / −13% on the ownership shape, −22% / −12% json-serde**                                                                                                                                                                                                                                 | both           | S      | measured 0.7.0 regression +61% / +103%           |
@@ -157,12 +157,74 @@ lru `1000 20000000`: 1.712 → 1.711s, nsieve 12: 0.158 → 0.158s; outputs
 byte-identical): no other bench hot loop pushes a ctor through a field
 path.
 
-**Remainder.** Deeper receiver shapes keep the hoisted path: index or
-call segments (`self.rows.at(0).items`), class-typed hops (pointer
-arithmetic the summed-offset addressing doesn't model), generic owners,
-and non-`self` roots (`local.field.push(X())` — sound by the same
-argument, just not gated yet). The donor form through a field path
-keeps the ordinary (sound) transfer.
+**The rest of the field-path tranche (landed Oct 2026).** The gate's
+remaining shapes — all sound by the same argument (nothing the splice
+runs can rebind the root), now stamped:
+
+- **Roots beyond `self`**: a non-param LOCAL (`t.nodes.push(Rec(...))` in
+  `main`). Globals stay excluded (they sit below
+  `function_value_base` — a callee could reassign a global's field,
+  stranding the captured slot); `ref` bindings stay excluded (their slot
+  holds a pointer, so the root's base address is not the slot's
+  address); params keep the bare-local rule's exclusion (their
+  by-address spelling differs).
+- **Class-typed hops**: a hop whose field type is a class instance LOADS
+  the instance pointer the field slot holds (aarch64 `ldr`, C `->`)
+  instead of adding into inline storage — and since `class` retired in
+  favor of `Box<T>` sharing, the shape arrives post-rewrite: the
+  transparent Box rewrite spells the chain `engine.__value.events`, the
+  wrapper mono is a class (pointer hop), and `__value` itself is inline
+  in the pointee (add hop), so `self.engine.events.push(Rec(...))`
+  constructs into the shared list's slot via
+  `&self->engine->__value.events`. Generic owners resolve through their
+  materialized monos (`self.hold.items` where `hold: Holder<string>`
+  walks `Holder_string`'s layout). Refused: nullable non-class hops (no
+  pointer slot to load), view/ref/array-typed hops, generic templates,
+  and trait-typed hops (a trait field's boxed-handle slot is not the
+  walk's shape); class/Box ROOTS stay excluded (the root's slot holds a
+  pointer the addressing would have to deref).
+- **The donor form through a field path**: `var p = Rec(...);
+self.nodes.push(mv p)` now converges on the in-place lowering — the
+  stamp carries the path (`DeclarationNode.in_place_push_slot.
+receiver_field_path`), and both backends' declaration and length bump
+  re-derive the same walk, falling back TOGETHER to the ordinary
+  declaration + ordinary push when it fails (a mismatched fallback would
+  double-push).
+- **Index/call segments stay excluded** (`self.rows.at(0).items`): the
+  splice re-derives the receiver address after every `bl`, and a call
+  segment's re-derivation would re-run the call — soundness would need a
+  can't-mutate proof about arbitrary callees, a different analysis.
+
+Six new tests in `test/list_in_place_push.test.ts` (thirteen in the
+field-path block) pin the runtime shapes — local root, Box hop,
+generic owner, donor convergence (audit on, so every slot and the shared
+engine's slots are freed exactly once) — and the emitted code (the C
+`&self->engine->__value.events` spelling, the aarch64
+`ldr x0, [x0, #8]` wrapper load with the summed inline offsets, the
+donor binding's non-materialization); the full suite (539 files, both
+backends) passes.
+
+**Measured.** Shape micro-bench — `bench/nomen/field_path_push.nm`: three
+shapes back to back, n pushes each (local root, Box hop, donor through a
+path) of a computed-payload ctor, then pop-and-accumulate sweeps (one
+checksum over all three; identical before/after). n = 2M, Apple Silicon,
+7 interleaved rounds, medians, audit off, release builds; "before"
+binaries built from a HEAD worktree. The elided work is the ctor shape's
+promise — temp home, push-callee struct copy, temp teardown (2 mallocs +
+1 free per push become 1 malloc) — with the receiver addressing (a
+pointer load or an extra add, amortized over the push) as the only new
+cost. The C diff receipts it: `List_Rec_push(&t.nodes, &<temp>)` becomes
+reserve + construct + length bump through `&t.nodes`, `&b.recs->__value`,
+and `&d.nodes`.
+
+| Backend | before (median) | after (median) |        Δ |
+| ------- | --------------: | -------------: | -------: |
+| aarch64 |          0.569s |         0.279s | **−51%** |
+| C       |          0.442s |         0.210s | **−52%** |
+
+**Remainder.** Index/call-segment receivers only (the different-analysis
+case above); everything else the tranche enumerated is landed or
+explicitly refused by the gate.
 
 ## 3. Move-on-last-use for structs — LANDED (Oct 2026)
 

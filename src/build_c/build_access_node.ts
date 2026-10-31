@@ -1,6 +1,13 @@
 import { struct_needs_destroy } from "../build_common/destroy_analysis.ts";
 import { has_string_fields } from "../build_common/has_string_fields.ts";
-import { in_place_push_facts, type InPlacePushFacts } from "../build_common/in_place_push.ts";
+import {
+	c_field_path_spelling,
+	in_place_field_path_owners,
+	in_place_field_path_root_struct_name,
+	in_place_push_facts,
+	in_place_receiver_path,
+	type InPlacePushFacts,
+} from "../build_common/in_place_push.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { is_nullable_struct_type } from "../build_common/nullable_struct.ts";
@@ -337,16 +344,30 @@ function array_receiver_wrap(
 
 /**
  * The in-place receiver spelled as a C lvalue: a bare local's name, or —
- * the field-path tranche — `self->nodes` (methods receive
- * `struct T* self`; a custom `#init`'s by-value self, which is not a ref
- * param, spells dots). Every hop after the first is a value-struct field
- * (checker-gated), so plain `.` chains them.
+ * the field-path tranche — the root plus one separator per hop. The root
+ * is a pointer when it is a `ref` param (methods receive
+ * `struct T* self`; a custom `#init`'s by-value self is not a ref param
+ * and spells dots); a hop is `->` when its field type is a class instance
+ * (the field slot holds the instance pointer), `.` for inline value-struct
+ * storage.
  */
 function c_in_place_receiver(facts: InPlacePushFacts, status: BuildStatus): string {
 	const fields = facts.receiver_field_path;
 	if (!fields?.length) return facts.receiver;
-	const sep = status.function_ref_params?.has(facts.receiver) ? "->" : ".";
-	return `${facts.receiver}${sep}${fields.join(".")}`;
+	return c_field_path_spelling(
+		facts.receiver,
+		fields,
+		facts.receiver_class_hops ?? [],
+		status.function_ref_params?.has(facts.receiver) ?? false,
+	);
+}
+
+/** The root hop's owner for a field-path receiver (undefined for a bare
+ *  value target — the bare-local path uses the value type instead). */
+function field_path_root_struct(status: BuildStatus, target: BaseNode): string | undefined {
+	const path = in_place_receiver_path(target);
+	if (!path?.fields.length) return undefined;
+	return in_place_field_path_root_struct_name(status, path.root);
 }
 
 export default function build_access_node(node: AccessNode, status: BuildStatus) {
@@ -1463,9 +1484,31 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				// statement is just the length bump. The checker's
 				// statement-position stamp keeps this out of expression
 				// contexts.
-				if (access_func.in_place_donor_name !== undefined && node.target.node_type === "value") {
-					status.code += `${(node.target as ValueNode).value}.length += 1L`;
-					return;
+				if (access_func.in_place_donor_name !== undefined) {
+					const path = in_place_receiver_path(node.target);
+					if (path && !path.fields.length) {
+						status.code += `${path.root}.length += 1L`;
+						return;
+					}
+					// Field-path donor: the spelling must resolve exactly as
+					// the stamped declaration resolved it (the same walk) —
+					// otherwise both fall back to the ordinary lowering.
+					if (path) {
+						const root_struct = field_path_root_struct(status, node.target);
+						const walk = root_struct
+							? in_place_field_path_owners(root_struct, path.fields, status.structs)
+							: undefined;
+						if (walk) {
+							const expr = c_field_path_spelling(
+								path.root,
+								path.fields,
+								walk.class_hops,
+								status.function_ref_params?.has(path.root) ?? false,
+							);
+							status.code += `${expr}.length += 1L`;
+							return;
+						}
+					}
 				}
 				// In-place push: reserve the new slot, construct the
 				// argument call's result directly into it, bump the length. The
@@ -1497,7 +1540,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 						type_from_value_node(access_func.params[access_func.in_place_push_index]),
 						status.structs,
 						false,
-						status.current_struct?.name,
+						field_path_root_struct(status, node.target),
 					);
 					if (facts) {
 						const elem_c = facts.elem_is_string ? "nomen_string" : `struct ${facts.elem_name}`;
@@ -1546,7 +1589,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 						type_from_value_node(access_func.params[access_func.in_place_push_index]),
 						status.structs,
 						!!recv_type?.is_array,
-						status.current_struct?.name,
+						field_path_root_struct(status, node.target),
 					);
 					if (facts) {
 						const elem_c = facts.elem_is_string ? "nomen_string" : `struct ${facts.elem_name}`;

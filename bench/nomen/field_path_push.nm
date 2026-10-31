@@ -1,0 +1,69 @@
+import System
+
+// field_path_push — the in-place push field-path tranche's shape bench:
+// ctor pushes through receiver FIELD PATHS, the shapes that kept the
+// hoisted lowering (temp home + push-callee struct copy + temp teardown)
+// before the tranche — a local root, a Box field hop (the transparent
+// rewrite spells `recs.__value`), and the donor spelling through a path.
+// The elided work per push is the first field-path tranche's promise (the
+// receiver addressing is a couple of extra instructions, amortized); the
+// payload is computed so neither backend can fold the loop. n from argv;
+// prints one checksum over all three shapes.
+
+mv struct Rec {
+	var string name
+	var int a
+	var int b
+}
+
+mv struct Tree {
+	var nodes = List<Rec>()
+}
+
+mv struct Boxed {
+	var recs = Box<List<Rec>>(List<Rec>())
+}
+
+pub func main = (Init init) {
+	var n = 1000000
+	if init.argc > 1 {
+		n = parse_int(init.args.at(1))
+	}
+
+	// Shape A: local-root field path — `t.nodes.push(Rec(...))`.
+	var Tree t = Tree()
+	var total = 0
+	var i = 0
+	while i < n; i += 1 {
+		t.nodes.push(Rec("item", i, i * 2))
+	}
+	while t.nodes.length > 0 {
+		mv Rec r = t.nodes.pop()
+		total = total + r.a + r.b
+	}
+
+	// Shape B: Box field hop — `b.recs.push(Rec(...))`.
+	var Boxed b = Boxed()
+	var i2 = 0
+	while i2 < n; i2 += 1 {
+		b.recs.push(Rec("item", i2, i2 * 3))
+	}
+	while b.recs.length > 0 {
+		mv Rec r2 = b.recs.pop()
+		total = total + r2.a + r2.b
+	}
+
+	// Shape C: the donor spelling through a field path.
+	var Tree d = Tree()
+	var i3 = 0
+	while i3 < n; i3 += 1 {
+		var p = Rec("item", i3, i3 * 5)
+		d.nodes.push(mv p)
+	}
+	while d.nodes.length > 0 {
+		mv Rec r3 = d.nodes.pop()
+		total = total + r3.a + r3.b
+	}
+
+	Console.write(total.to_string())
+}

@@ -925,7 +925,7 @@ pub func main = (Init init) {
 		await build_and_check_output(input, "inplace_push_field_path_growth", "11109876543210", true);
 	});
 
-	test("field-path donor form keeps the ordinary mv transfer", async () => {
+	test("field-path donor form converges on the in-place lowering", async () => {
 		const input = `
 import System
 
@@ -951,10 +951,238 @@ pub func main = (Init init) {
 	Console.write("\\{i}:\\{t.nodes.at_or_panic(0).kind}:\\{t.nodes.at_or_panic(1).text}")
 }
 `;
-		// The donor stamps address the receiver by bare name, so a field-path
-		// receiver keeps the ordinary (sound) mv transfer — the moved donor
-		// is destroyed exactly once and the slots read back.
+		// The donor stamps carry the field path: the declaration constructs
+		// into the field container's slot and the push is the length bump —
+		// the same convergence the bare-local donor form got. The moved
+		// donor is destroyed exactly once and the slots read back.
 		await build_and_check_output(input, "inplace_push_field_path_donor", "1:0:", true);
+	});
+
+	test("a local field path pushes in place", async () => {
+		const input = `
+import System
+
+mv struct Node {
+	var kind = 0
+	var text = ""
+}
+
+mv struct Tree {
+	var nodes = List<Node>()
+}
+
+pub func main = (Init init) {
+	var Tree t = Tree()
+	t.nodes.push(Node())
+	t.nodes.push(Node())
+	Console.write("\\{t.nodes.length}:\\{t.nodes.at_or_panic(1).kind}:\\{t.nodes.at_or_panic(0).text}")
+}
+`;
+		// The root need not be `self`: a local value-struct holder's field
+		// is the container, and nothing the splice runs can rebind it.
+		await build_and_check_output(input, "inplace_push_field_path_local", "2:0:", true);
+	});
+
+	test("a Box field hop pushes in place (the shared-container shape)", async () => {
+		const input = `
+import System
+
+func dup_str = (string s, out string) {
+	return s.copy()
+}
+
+mv struct Engine {
+	var events = List<string>()
+}
+
+mv struct App {
+	var engine = Box<Engine>(Engine())
+
+	func run = (ref self) {
+		self.engine.events.push(dup_str("e1"))
+		self.engine.events.push(dup_str("e2"))
+	}
+}
+
+pub func main = (Init init) {
+	var App a = App()
+	a.run()
+	Console.write("\\{a.engine.events.at_or_panic(0)}\\{a.engine.events.at_or_panic(1)}\\{a.engine.events.length}")
+}
+`;
+		// The transparent Box rewrite spells the chain `engine.__value.events`:
+		// the wrapper pointer loads (class hop), `__value` is inline in the
+		// pointee (add hop), and the ctor constructs into the shared list's
+		// fresh slot. Audit on: the shared engine's slots are freed once.
+		await build_and_check_output(input, "inplace_push_field_path_box", "e1e22", true);
+	});
+
+	test("a generic-owner field hop pushes in place", async () => {
+		const input = `
+import System
+
+func dup_str = (string s, out string) {
+	return s.copy()
+}
+
+mv struct Holder<T> {
+	var items = List<T>()
+}
+
+mv struct Bag {
+	var hold = Holder<string>()
+
+	func add = (ref self, string s) {
+		self.hold.items.push(dup_str(s))
+	}
+}
+
+pub func main = (Init init) {
+	var Bag b = Bag()
+	b.add("a")
+	b.add("b")
+	Console.write("\\{b.hold.items.at_or_panic(0)}\\{b.hold.items.at_or_panic(1)}")
+}
+`;
+		// The intermediate hop is a MATERIALIZED generic instance
+		// (`Holder_string`): the walk resolves the mono's layout, so the
+		// ctor-pushed string lands in the inner list's slot directly.
+		await build_and_check_output(input, "inplace_push_field_path_generic", "ab", true);
+	});
+
+	test("C backend constructs the field-path donor into the slot", async () => {
+		const input = `
+import System
+
+mv struct Node {
+	var kind = 0
+	var text = ""
+}
+
+mv struct Tree {
+	var nodes = List<Node>()
+
+	func add = (ref self, out int) {
+		var Node p = Node()
+		self.nodes.push(mv p)
+		return self.nodes.length - 1
+	}
+}
+
+pub func main = (Init init) {
+	var Tree t = Tree()
+	var int i = t.add()
+	Console.write("\\{i}")
+}
+`;
+		const parsed = parse_raw(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "c" });
+		expect(result.errors ?? []).toEqual([]);
+		const code = result.code ?? "";
+		const at = code.indexOf("Tree_add(");
+		expect(at).toBeGreaterThan(0);
+		const end = code.indexOf("\n}\n", at);
+		const seq = code.slice(at, end);
+		// The declaration constructs into the field container's slot; the
+		// binding never materializes and the push is the length bump alone.
+		expect(seq).toContain("List_Node_reserve(&self->nodes, 1L)");
+		expect(seq).toContain(
+			"*( struct Node*)(unsigned long long)List_Node_append_slot_ptr(&self->nodes) = Node_init()",
+		);
+		expect(seq).toContain("self->nodes.length += 1L");
+		expect(seq).not.toMatch(/struct Node p =/);
+		expect(seq).not.toContain("List_Node_push(&self->nodes");
+	});
+
+	test("C backend spells the Box hop receiver", async () => {
+		const input = `
+import System
+
+func dup_str = (string s, out string) {
+	return s.copy()
+}
+
+mv struct Engine {
+	var events = List<string>()
+}
+
+mv struct App {
+	var engine = Box<Engine>(Engine())
+
+	func run = (ref self) {
+		self.engine.events.push(dup_str("e1"))
+	}
+}
+
+pub func main = (Init init) {
+	var App a = App()
+	a.run()
+	Console.write("\\{a.engine.events.at_or_panic(0)}")
+}
+`;
+		const parsed = parse_raw(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "c" });
+		expect(result.errors ?? []).toEqual([]);
+		const code = result.code ?? "";
+		const at = code.indexOf("App_run(");
+		expect(at).toBeGreaterThan(0);
+		const end = code.indexOf("\n}\n", at);
+		const seq = code.slice(at, end);
+		// Wrapper pointer (`->`) then inline pointee storage (`.`).
+		expect(seq).toContain("List_string_reserve(&self->engine->__value.events, 1L)");
+		expect(seq).toContain("List_string_append_slot_ptr(&self->engine->__value.events) = ");
+		expect(seq).toContain("self->engine->__value.events.length += 1L");
+		expect(seq).not.toContain("List_string_push(&self->engine");
+		expect(seq).not.toContain("_param_");
+	});
+
+	test("aarch64 backend loads the Box hop's wrapper pointer", async () => {
+		const input = `
+import System
+
+func dup_str = (string s, out string) {
+	return s.copy()
+}
+
+mv struct Engine {
+	var events = List<string>()
+}
+
+mv struct App {
+	var engine = Box<Engine>(Engine())
+
+	func run = (ref self) {
+		self.engine.events.push(dup_str("e1"))
+	}
+}
+
+pub func main = (Init init) {
+	var App a = App()
+	a.run()
+	Console.write("\\{a.engine.events.at_or_panic(0)}")
+}
+`;
+		const parsed = parse_raw(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(result.errors ?? []).toEqual([]);
+		const code = result.code ?? "";
+		const start = code.indexOf("\nApp_run:\n");
+		const end = code.indexOf(".return_App_run:", start);
+		const seq = code.slice(start, end);
+		// The class hop LOADS the wrapper pointer the engine field holds
+		// (offset 8); the inline hops sum (`__value` at 8 + `events` at 8).
+		expect(seq).toContain(
+			"mov x0, x19\nldr x0, [x0, #8]\nadd x0, x0, #16\nmov x1, #1\nbl List_string_reserve",
+		);
+		expect(seq).toContain(
+			"mov x0, x19\nldr x0, [x0, #8]\nadd x0, x0, #16\nbl List_string_append_slot_ptr",
+		);
+		expect(seq).toContain("mov x9, x19\nldr x9, [x9, #8]\nadd x9, x9, #16");
+		expect(seq).toContain("str x10, [x9, #8]");
+		expect(seq).not.toContain("bl List_string_push");
+		expect(seq).not.toContain("_param_");
 	});
 
 	test("field-path store lands in the slot (the set sibling)", async () => {

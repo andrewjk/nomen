@@ -45,11 +45,17 @@ export default class DeclarationNode extends BaseNode {
 	 * this binding has no other use — the binding itself never materializes
 	 * (no storage, no scope-exit free; the push is just the length bump).
 	 * `container` is the generic container name (`List`/`StableList`) — the
-	 * mono is `${container}_${elem}` at build time. Stamped by
-	 * check_function_call; the push carries the mirror stamp
-	 * (`AccessFunctionCallNode.in_place_donor_name`).
+	 * mono is `${container}_${elem}` at build time. `receiver_field_path`
+	 * carries the field-path tranche (`self.<field>...` / local roots): the
+	 * backends re-derive the receiver's address from the root name plus the
+	 * hops. Stamped by check_function_call; the push carries the mirror
+	 * stamp (`AccessFunctionCallNode.in_place_donor_name`).
 	 */
-	in_place_push_slot?: { receiver: string; container: string };
+	in_place_push_slot?: {
+		receiver: string;
+		container: string;
+		receiver_field_path?: string[];
+	};
 	/**
 	 * Return-side NRVO: this binding is the sole escape of a
 	 * value-struct-returning function (every direct return is bare

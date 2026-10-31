@@ -7,6 +7,7 @@ import {
 	in_place_receiver_path,
 	value_use_count,
 } from "../build_common/in_place_push.ts";
+import { mono_type_name } from "../build_common/mono_name.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
@@ -207,14 +208,18 @@ function enclosing_function_node(status: CheckStatus): BaseNode | undefined {
 
 /**
  * The in-place lowering's receiver gate. A BARE LOCAL's name, or — the
- * field-path tranche — a `self.<field>...` chain of plain value-struct
- * field hops ending at the container. Both spellings re-derive the
- * receiver's address after any call (a frame slot or register-held receiver
- * plus static offsets), which is exact because nothing the splice runs can
- * rebind them: a callee cannot see the method's `self` (functions don't
- * close over it; lambdas and `ref`-argument callees are rejected by
- * in_place_arg_tree_ok / in_place_call_ok), so the container can't move
- * between the slot capture and the length bump.
+ * field-path tranche — a `root.<field>...` chain of field hops ending at
+ * the container, where the root is the method receiver (`self`) or a
+ * non-param local, and every hop's field type is a materialized struct
+ * the addressing can spell (an inline value struct, or a class instance —
+ * including a `Box<T>` field post-rewrite). Both spellings re-derive the
+ * receiver's address after any call (a frame slot or register-held
+ * receiver plus per-hop addressing), which is exact because nothing the
+ * splice runs can rebind the root: a callee cannot see a method's `self`
+ * or a caller's local (functions don't close over them; lambdas and
+ * `ref`-argument callees are rejected by in_place_arg_tree_ok /
+ * in_place_call_ok), so the container can't move between the slot capture
+ * and the length bump.
  */
 function in_place_receiver_ok(
 	self_value: string | undefined,
@@ -231,25 +236,36 @@ function in_place_receiver_ok(
 		return vi >= status.function_value_base;
 	}
 	if (!allow_field_path) return false;
-	// `self.<field>...`: the root is the method receiver; every hop a plain
-	// field of a value struct. Intermediate hops read their stamped access
-	// types — a class/Box hop is a pointer hop and a generic hop an
-	// unmaterialized layout, and the summed-offset addressing (aarch64) and
-	// the `self->f1.f2` spelling (C) are only defined for inline hops. The
-	// final hop's type is the container itself, gated by the container
-	// contract clauses at the call sites.
+	// `root.<field>...`: the root is the method receiver or a non-param
+	// local (globals sit below `function_value_base` — a callee could
+	// reassign a global's field, stranding the captured slot). Every
+	// intermediate hop reads its stamped access type, monomorphized: a
+	// generic template hop is an unmaterialized layout, and a nullable
+	// non-class hop has no pointer slot to load — the addressing is only
+	// defined for the rest. A `Box<T>` field hop arrives post-rewrite
+	// (the checker's transparent access spells `__value`): the wrapper
+	// mono is a class (pointer hop), `__value` itself is inline in the
+	// pointee. The final hop's type is the container itself, gated by the
+	// container contract clauses at the call sites.
 	const path = in_place_receiver_path(self_target);
-	if (!path || path.root !== "self" || path.fields.length === 0) return false;
+	if (!path || path.fields.length === 0) return false;
+	if (path.root !== "self") {
+		const vi = status.values.findIndex((v) => v.name === path.root && !v.is_param);
+		if (!(vi >= status.function_value_base)) return false;
+		// A `ref` binding's slot holds a POINTER (the backends deref it on
+		// every use) — the root's base address is not the slot's address.
+		const root_value = status.values.findLast((v) => v.name === path.root);
+		if (root_value?.type?.is_ref) return false;
+	}
 	for (let i = 0; i < path.nodes.length - 1; i++) {
 		const hop_type = path.nodes[i].access.type;
-		if (
-			!hop_type?.name ||
-			!status.structs.find(
-				(s) => s.name === hop_type.name && !s.is_simple_type && !s.is_class && !s.is_generic,
-			)
-		) {
+		if (!hop_type?.name || hop_type.is_view || hop_type.is_ref || hop_type.is_array) {
 			return false;
 		}
+		const hop_mono = mono_type_name(hop_type);
+		const hop_struct = status.structs.find((s) => s.name === hop_mono);
+		if (!hop_struct || hop_struct.is_simple_type || hop_struct.is_generic) return false;
+		if (hop_type.is_nullable && !hop_struct.is_class) return false;
 	}
 	return true;
 }
@@ -1835,11 +1851,11 @@ export default function check_function_call(
 		const in_place_donor =
 			!in_place_push &&
 			in_place_container &&
-			// The donor stamps address the receiver by bare name in both
-			// backends (build_in_place_donor_declaration / the bump) — a
-			// field-path receiver keeps the ordinary mv transfer.
-			!!self_value &&
-			self_path === self_value &&
+			// The donor stamps carry the same receivers the direct form takes
+			// (bare local, or a field path the backends re-derive from the
+			// stamp) — the declaration constructs into the slot; the push is
+			// the length bump.
+			in_place_receiver_ok(self_value, self_path, self_target, status, true) &&
 			!node.swap_params?.has(i) &&
 			has_mov_keyword &&
 			param.node_type === "value" &&
@@ -1862,9 +1878,11 @@ export default function check_function_call(
 				!decl.in_place_push_slot &&
 				value_use_count(decl.name, enclosing_function_node(status)) === 1
 			) {
+				const donor_path = in_place_receiver_path(self_target);
 				decl.in_place_push_slot = {
 					receiver: self_value!,
 					container: target_type!.name,
+					receiver_field_path: donor_path?.fields.length ? donor_path.fields : undefined,
 				};
 				(node as AccessFunctionCallNode).in_place_donor_name = decl.name;
 			}

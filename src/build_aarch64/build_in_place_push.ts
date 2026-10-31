@@ -4,7 +4,9 @@ import { struct_needs_destroy } from "../build_common/destroy_analysis.ts";
 import { has_string_fields } from "../build_common/has_string_fields.ts";
 import {
 	in_place_field_path_owners,
+	in_place_field_path_root_struct_name,
 	in_place_push_facts,
+	in_place_receiver_path,
 	type InPlacePushFacts,
 } from "../build_common/in_place_push.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
@@ -45,6 +47,17 @@ function emit_array_element_base(status: BuildStatus, name: string): void {
 		return;
 	}
 	emit_var_address(status, "x0", name);
+}
+
+/**
+ * The root hop's owner for a field-path receiver (`self` → the method
+ * receiver's struct, a local → its declared type); undefined for a bare
+ * value target, whose type rides `type_from_value_node` instead.
+ */
+function field_path_root_struct(status: BuildStatus, target: BaseNode): string | undefined {
+	const path = in_place_receiver_path(target);
+	if (!path?.fields.length) return undefined;
+	return in_place_field_path_root_struct_name(status, path.root);
 }
 
 /**
@@ -97,7 +110,7 @@ export function build_in_place_push(
 		elem_type,
 		status.structs as readonly StructNode[],
 		false,
-		status.current_struct?.name,
+		field_path_root_struct(status, node.target),
 	);
 	if (!facts) return false;
 	emit_in_place_push(facts, status);
@@ -117,27 +130,56 @@ function emit_in_place_push(facts: InPlacePushFacts, status: BuildStatus): void 
 }
 
 /**
- * The receiver's address into `reg`: a bare local by name, or — the
- * field-path tranche — the method receiver's base plus the summed static
- * field offsets. The path is checker-gated to plain value-struct hops, so
- * no hop dereferences a pointer and re-deriving the sum after any `bl` is
- * exact (a callee cannot rebind a method's `self`). `self` resolves
- * through the same base conventions as any read (x19 for the mv-struct
- * method receiver, the spilled struct-param slot for `var self`).
+ * The receiver's address into `reg` for a `root.<field>...` path: the
+ * root's base plus per-hop addressing. An inline value-struct hop adds its
+ * static offset; a class-typed hop LOADS the instance pointer the field
+ * slot holds (`ldr` — the summed-offset arithmetic would read the pointer
+ * as storage). The path is checker-gated, so re-deriving the hops after
+ * any `bl` is exact (a callee cannot rebind a method's `self` or a
+ * caller's local). The root resolves through the same base conventions as
+ * any read (x19 for the mv-struct method receiver, the spilled struct-param
+ * slot for `var self`, the frame slot for a local).
  */
-function emit_receiver_address(facts: InPlacePushFacts, status: BuildStatus, reg: string): void {
-	emit_var_address(status, reg, facts.receiver);
-	const fields = facts.receiver_field_path;
-	if (!fields?.length) return;
-	const self_struct = status.current_struct?.name;
-	if (!self_struct) return; // unreachable: the facts walk resolved the same path
-	const walk = in_place_field_path_owners(self_struct, fields, status.structs);
-	if (!walk) return; // unreachable: the facts walk resolved the same path
+function emit_field_path_address(
+	status: BuildStatus,
+	root: string,
+	fields: readonly string[],
+	reg: string,
+): boolean {
+	emit_var_address(status, reg, root);
+	const root_struct = in_place_field_path_root_struct_name(status, root);
+	if (!root_struct) return false;
+	const walk = in_place_field_path_owners(root_struct, fields, status.structs);
+	if (!walk) return false;
 	let total = 0;
 	for (let i = 0; i < fields.length; i++) {
-		total += get_field_offset(walk.owners[i], fields[i], status);
+		const off = get_field_offset(walk.owners[i], fields[i], status);
+		if (walk.class_hops[i]) {
+			if (total > 0) {
+				emit_asm(status, `add ${reg}, ${reg}, #${total}\n`);
+				total = 0;
+			}
+			emit_asm(status, `ldr ${reg}, [${reg}, #${off}]\n`);
+		} else {
+			total += off;
+		}
 	}
 	if (total > 0) emit_asm(status, `add ${reg}, ${reg}, #${total}\n`);
+	return true;
+}
+
+/**
+ * The receiver's address into `reg`: a bare local by name, or the
+ * field-path tranche's base-plus-hops. Returns false when a field path
+ * cannot be resolved (the caller keeps the ordinary lowering).
+ */
+function emit_receiver_address(facts: InPlacePushFacts, status: BuildStatus, reg: string): boolean {
+	const fields = facts.receiver_field_path;
+	if (!fields?.length) {
+		emit_var_address(status, reg, facts.receiver);
+		return true;
+	}
+	return emit_field_path_address(status, facts.receiver, fields, reg);
 }
 
 /**
@@ -223,10 +265,14 @@ function bump_length(
 
 /**
  * The donor form's DECLARATION (`var p = <call of T>` stamped by the
- * checker because the next statement is `items.push(mv p)`): reserve the
- * slot, construct the initializer's result into it, and materialize
- * NOTHING for the binding — no frame home, no anchors, no string-field
- * records, no scope-exit free. The push statement supplies the bump.
+ * checker because the next statement is `items.push(mv p)` — or
+ * `self.nodes.push(mv p)` / `t.nodes.push(mv p)`, the field-path
+ * tranche): reserve the slot, construct the initializer's result into it,
+ * and materialize NOTHING for the binding — no frame home, no anchors, no
+ * string-field records, no scope-exit free. The push statement supplies
+ * the bump. Returns false when a stamped field path cannot be resolved —
+ * the ordinary declaration (and the ordinary push) must run consistently,
+ * so the bump performs the same resolution.
  */
 export function build_in_place_donor_declaration(
 	node: DeclarationNode,
@@ -241,11 +287,18 @@ export function build_in_place_donor_declaration(
 	// resolves to post-monomorphization.
 	const list_mono = `${slot_stamp.container}_${elem_type.name}`;
 	const elem_is_string = elem_type.name === "string";
-	const slot = emit_reserve_and_slot(
-		status,
-		(reg) => emit_var_address(status, reg, slot_stamp.receiver),
-		list_mono,
-	);
+	const fields = slot_stamp.receiver_field_path;
+	let emit_addr: (reg: string) => void;
+	if (fields?.length) {
+		const root_struct = in_place_field_path_root_struct_name(status, slot_stamp.receiver);
+		if (!root_struct) return false;
+		const walk = in_place_field_path_owners(root_struct, fields, status.structs);
+		if (!walk) return false;
+		emit_addr = (reg) => emit_field_path_address(status, slot_stamp.receiver, fields, reg);
+	} else {
+		emit_addr = (reg) => emit_var_address(status, reg, slot_stamp.receiver);
+	}
+	const slot = emit_reserve_and_slot(status, emit_addr, list_mono);
 	if (elem_is_string) {
 		build_node(node.value, status);
 		ensure_newline(status);
@@ -270,18 +323,33 @@ export function build_in_place_donor_declaration(
 
 /**
  * The donor form's PUSH: the declaration already constructed the element,
- * so this statement is just the length bump.
+ * so this statement is just the length bump. Returns false for a field
+ * path that cannot be resolved — the same resolution the declaration
+ * performed, so both fall back together (the ordinary declaration +
+ * ordinary push).
  */
 export function build_in_place_donor_bump(
 	node: { target: BaseNode },
 	status: BuildStatus,
 ): boolean {
-	if (node.target.node_type !== "value") return false;
-	const recv_type = type_from_value_node(node.target);
-	const list_mono = recv_type ? mono_type_name(recv_type) : undefined;
-	if (!list_mono) return false;
-	const receiver = (node.target as ValueNode).value as string;
-	bump_length(status, (reg) => emit_var_address(status, reg, receiver), list_mono);
+	const path = in_place_receiver_path(node.target);
+	if (!path) return false;
+	if (!path.fields.length) {
+		const recv_type = type_from_value_node(node.target);
+		const list_mono = recv_type ? mono_type_name(recv_type) : undefined;
+		if (!list_mono) return false;
+		bump_length(status, (reg) => emit_var_address(status, reg, path.root), list_mono);
+		return true;
+	}
+	const root_struct = in_place_field_path_root_struct_name(status, path.root);
+	if (!root_struct) return false;
+	const walk = in_place_field_path_owners(root_struct, path.fields, status.structs);
+	if (!walk) return false;
+	bump_length(
+		status,
+		(reg) => emit_field_path_address(status, path.root, path.fields, reg),
+		walk.container_mono,
+	);
 	return true;
 }
 
@@ -329,7 +397,7 @@ export function build_in_place_store(
 		elem_type,
 		status.structs as readonly StructNode[],
 		!!recv_type?.is_array,
-		status.current_struct?.name,
+		field_path_root_struct(status, node.target),
 	);
 	if (!facts) return false;
 
