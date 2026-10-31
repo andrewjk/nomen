@@ -43,6 +43,13 @@ import ValueNode from "../../nodes/ValueNode.ts";
  *        is the explicit donor spelling; the checker-hoisted `_param_N`
  *        temp and its copy drop out of the statement's allocations)
  *      - field stores                 → `obj.field = mv src`
+ *      - call arguments nested in larger expressions (`acc = acc +
+ *        consume(src.copy())`): a nested call's hoisted temp lands on the
+ *        CALL node itself (promote_allocations attaches to the first node
+ *        whose stack parent is a block — op/assign never push), so the
+ *        walk frames the call's own allocations and the classify splices
+ *        from there. Method calls take the same path with the temp on the
+ *        whole ACCESS node.
  *    Plus the container-typed donor sibling: `var dst = list.copy()` where
  *    `list` is a `List`/`Map`/`Set` `var` local — the library copy has the
  *    same fresh-value shape and the container `mv` transfer exists. A
@@ -997,8 +1004,10 @@ function classify_call(
 		if (!param || param.node_type !== "value") continue;
 		const temp_name = (param as ValueNode).value;
 		if (typeof temp_name !== "string" || !temp_name.startsWith("_param_")) continue;
-		// The hoisted allocation: search the enclosing statements' allocation
-		// frames (nearest first) for the declare this param names.
+		// The hoisted allocation: search the call's own frame (a nested
+		// call carries its temps on itself) then the enclosing statements'
+		// allocation frames (nearest first) for the declare this param
+		// names.
 		let alloc: DeclareRecord | undefined;
 		let alloc_node: DeclarationNode | undefined;
 		let allocs: BaseNode[] | undefined;
@@ -1329,6 +1338,25 @@ function walk_stmt_inner(walk: Walk, node: BaseNode): void {
 	}
 }
 
+/** A call nested inside a larger expression (`acc = acc + f(x.copy())`)
+ *  carries its hoisted `_param_N` argument temps on ITSELF:
+ *  promote_allocations attaches the pending allocations to the first checked
+ *  node whose stack parent is a block — for a nested call that is the call
+ *  node (op/assign never push the checker stack), not the enclosing
+ *  statement. Walk them at the call's position — the declare record and its
+ *  body's reads must exist for the classify's skip window and donor test —
+ *  and return the LIVE arrays as the nearest alloc frames (the rewrite
+ *  splices the temp out of one of them). Returns [] when the frame is
+ *  already live (a statement-level access walked by walk_stmt) or absent. */
+function walk_call_allocations(walk: Walk, node: BaseNode): BaseNode[][] {
+	const allocs = node.allocations;
+	if (!allocs?.length || walk.alloc_frames.includes(allocs)) return [];
+	walk.alloc_frames.push(allocs);
+	for (const alloc of allocs) walk_stmt(walk, alloc);
+	walk.alloc_frames.pop();
+	return [allocs];
+}
+
 function walk_lhs(walk: Walk, node: BaseNode, compound: boolean): void {
 	if (node.node_type === "value") {
 		const name = (node as ValueNode).value;
@@ -1362,6 +1390,10 @@ function walk_expr(walk: Walk, node: BaseNode): void {
 			walk_expr(walk, access.target);
 			if (access.access.node_type === "access_func") {
 				const af = access.access as AccessFunctionCallNode;
+				// A nested method call (`acc = acc + u.eat(src.copy())`) hoists
+				// its argument temps onto the whole ACCESS node; walk them (for
+				// the declare records and reads) and frame them for the rewrite.
+				const own_frames = walk_call_allocations(walk, access);
 				if (af.params.length > 0) {
 					// A method call with arguments: a candidate for rewriting a
 					// hoisted `_param_N` copy argument into the bare `mv` donor
@@ -1377,7 +1409,7 @@ function walk_expr(walk: Walk, node: BaseNode): void {
 						enter,
 						exit,
 						loop_ranges,
-						alloc_frames: [...walk.alloc_frames],
+						alloc_frames: [...own_frames, ...walk.alloc_frames],
 					});
 				}
 			}
@@ -1395,6 +1427,10 @@ function walk_expr(walk: Walk, node: BaseNode): void {
 		}
 		case "func_call": {
 			const fc = node as FunctionCallNode;
+			// A nested free call (`acc = acc + consume(src.copy())`) hoists
+			// its argument temps onto ITSELF (see walk_call_allocations);
+			// frame them so the classify can find and splice the copy.
+			const own_frames = walk_call_allocations(walk, fc);
 			if (fc.params.length === 0) return;
 			const loop_ranges = [...walk.loop_stack];
 			const enter = ++walk.stamp;
@@ -1406,7 +1442,7 @@ function walk_expr(walk: Walk, node: BaseNode): void {
 				enter,
 				exit,
 				loop_ranges,
-				alloc_frames: [...walk.alloc_frames],
+				alloc_frames: [...own_frames, ...walk.alloc_frames],
 			});
 			return;
 		}

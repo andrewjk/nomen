@@ -334,16 +334,67 @@ last-use copy sites beyond the ones the item's table already receipts (the
 LANDED entry's suite timings cover those; the 539-file suite's runtime
 tests — which build and run the bench-adjacent shapes — pass unchanged).
 
-**Remainder.** A call argument nested inside a larger expression
-(`acc = acc + consume(src.copy())`) does not rewrite yet: the checker
-hoists the argument temp somewhere the last-use walk cannot attribute to
-the call (no `allocations` array carries it), so the classify refuses
-(conservatively — the copy stays). Tracing that hoist is the remaining
-piece. Also out of scope by design: `Map.set(k, src.copy())`-style
-two-argument stores (the value argument is index 1; the machinery admits it
-but no test pins it yet), and donors whose type is an enum-with-data (the
-mv convention deep-copies those at the boundary, so a rewrite would be
-sound but not an elision).
+**The nested-expression tranche (landed Nov 2026).** The call-argument
+rewrite now covers arguments nested inside a larger expression
+(`acc = acc + consume(src.copy())`), and the `Map.set(k, src.copy())`
+two-argument store is pinned. The blocker was attribution, not analysis:
+`promote_allocations` attaches the pending hoisted temps to the first
+checked node whose stack parent is a block, and for a call nested in an
+expression that node is the CALL itself (op/assign never push the checker
+stack) — so the temp hung off the call node (for a method call, the whole
+ACCESS node), where the walk's statement-level `alloc_frames` never
+looked. The walk now frames a call's own `allocations` at the call's
+position (`walk_call_allocations`): the temp's declare interval exists for
+the classify's skip window, its body's reads are recorded (a sibling
+hoisted temp reading the donor after the call now counts as the real read
+it is), and the live array rides the record as the nearest frame, so the
+splice lands on the AST wherever the checker parked the temp. The
+classify is unchanged (temp-name matched, so a shared chain frame cannot
+misattribute), and the kill-switch restore already reached the nested
+nodes via `child_nodes`.
+
+Five new tests in `test/struct_last_use_move.test.ts` (twenty-seven total)
+pin the free-call and method-call nested shapes and the `Map.set`
+two-argument store with the auditor on (both backends), the nested-site
+guard (a read of the donor after the call, inside the same statement,
+keeps the copy), and the kill-switch restore of a nested site's spliced
+temp. The full suite passes. Two pre-existing lowerings surfaced on the
+way — an owning read of a user-struct-valued Map byte-loads the slot
+(stale frees), and the aarch64 callee skips the mv-param teardown for
+METHODS (the free-function path is fine); both reproduce with the
+explicit spellings alone, are recorded in FOLLOWUP.md, and the new tests
+route around them (element-borrow read-back; the method hands the param
+onward to a consuming free function).
+
+**Measured.** Shape micro-bench — `bench/nomen/last_use_nested_call.nm`:
+two shapes back to back, n sites each (free-call and method-call, both in
+`acc = acc + f(src.copy())` position) of a computed-payload `Rec`
+(mv struct: string + int + `List<int>` of 2 elements), donor dead each
+iteration, n from argv, Apple Silicon, 7 interleaved rounds, medians,
+audit off, release builds, identical outputs; "before" binaries built
+from a HEAD-worktree compiler. The emitted diff is the two sites'
+`_param_N = Rec_copy(&src)` hoist + temp teardown becoming the bare `mv`
+donor pass (no `bl Rec_copy` / `Rec_copy(&src)` at the sites); everything
+else is label renumbering.
+
+| Backend | before (median) | after (median) |        Δ |
+| ------- | --------------: | -------------: | -------: |
+| C       |           0.42s |          0.17s | **−60%** |
+| aarch64 |           0.97s |          0.49s | **−49%** |
+
+Per site the elided work is the item's promise: the synthesized copy (a
+fresh init, a strdup per string field, a fresh `List` malloc + slab copy
+per container field, the temp struct copy) and the donor's scope-exit
+destroy — 2 mallocs + 2 frees per iteration become 1 + 1 (the seed
+strdup, which is the store; the callee's mv teardown frees the
+transferred state). The standard suite is untouched: json-serde's
+generated C is byte-identical before/after (a 0-line diff — the tranche
+changes no emission the suite reaches) and flat at the measurement size
+(`bench/sample.json 50000`: 0.23–0.25s both, identical outputs).
+
+**Remainder.** Donors whose type is an enum-with-data stay out of scope
+by design (the mv convention deep-copies those at the boundary, so a
+rewrite would be sound but not an elision).
 
 ## 4. Borrow-returning reads — PARTIALLY LANDED (Oct 2026)
 

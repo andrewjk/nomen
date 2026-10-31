@@ -1,0 +1,69 @@
+import System
+
+// last_use_nested_call — the move-on-last-use nested-expression tranche's
+// shape bench: synthesized struct copies as call arguments nested inside a
+// larger expression, the shapes that kept the checker-hoisted `_param_N`
+// copy temp before the tranche — a free-function `mv Rec` call and a
+// method `mv Rec` call, both in `acc = acc + f(src.copy())` position. The
+// elided work per site is the item's measured promise (the fresh init, the
+// strdup per string field, the fresh List per container field, the temp
+// teardown; what remains is the explicit-mv transfer the argument
+// position's lowering already performed). The payload is computed so
+// neither backend can fold the loop. n from argv; prints one checksum over
+// both shapes.
+
+mv struct Rec {
+	var name = ""
+	var n = 0
+	var tags = List<int>()
+}
+
+func consume = (mv Rec r, out int) {
+	return r.n + r.name.length + r.tags.pop()
+}
+
+mv struct Util {
+	var tag = 0
+	func eat = (ref self, mv Rec r, out int) {
+		// The param hands onward to the consuming free function — the
+		// callee teardown both backends implement, so the method shape
+		// stays audit-honest end to end.
+		return consume(mv r) + self.tag
+	}
+}
+
+pub func main = (Init init) {
+	var n = 2000000
+	if init.argc > 1 {
+		n = parse_int(init.args.at(1))
+	}
+	var u = Util()
+	u.tag = 1
+
+	// Shape A: free call nested in an assignment expression.
+	var acc = 0
+	var int i = 0
+	while i < n; i += 1 {
+		var src = Rec()
+		src.name = "item\{i}"
+		src.n = i * 3
+		src.tags.push(i)
+		src.tags.push(i * 2)
+		acc = acc + consume(src.copy())
+	}
+
+	// Shape B: method call nested in an assignment expression. (A distinct
+	// donor name: the pass's single-write gate is name-based per function,
+	// so two same-name loop locals would conservatively keep both copies.)
+	var j = 0
+	while j < n; j += 1 {
+		var src_b = Rec()
+		src_b.name = "item\{j}"
+		src_b.n = j * 5
+		src_b.tags.push(j)
+		src_b.tags.push(j * 4)
+		acc = acc + u.eat(src_b.copy())
+	}
+
+	Console.write("\{acc}")
+}

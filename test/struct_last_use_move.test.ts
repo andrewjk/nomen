@@ -287,6 +287,218 @@ pub func main = (Init init) {
 	});
 });
 
+describe("struct move-on-last-use: nested-expression arguments", () => {
+	test("free-call argument nested in an expression transfers instead of deep-copying", async () => {
+		// `acc = acc + consume(src.copy())`: the hoisted `_param_N` temp rides
+		// on the CALL node itself (a nested call's promote_allocations lands
+		// there, not on the statement), so the walk must frame it from the
+		// call — the rewrite splices it and stamps the bare `mv src` donor.
+		const input = `
+import System
+
+mv struct Rec {
+	var name = ""
+	var n = 0
+}
+
+func consume = (mv Rec r, out int) {
+	return r.n
+}
+
+pub func main = (Init init) {
+	var acc = 0
+	var int i = 0
+	while i < 5 {
+		var src = Rec()
+		src.name = "r\\{i}"
+		src.n = i * 3
+		acc = acc + consume(src.copy())
+		i += 1
+	}
+	Console.write("\\{acc}")
+}
+`;
+		// (0+1+2+3+4)*3 = 30
+		await build_and_check_output(input, "struct_lu_nested_call_arg", "30", true);
+		const parsed = parse_program(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "c" });
+		expect(result.errors ?? []).toEqual([]);
+		expect(result.code).not.toMatch(/Rec_copy\(&/);
+	});
+
+	test("method-call argument nested in an expression transfers instead of deep-copying", async () => {
+		// Same shape through the ACCESS path: the hoisted temp lands on the
+		// whole `u.eat(src.copy())` access node, and the rewrite moves the
+		// access_func's parameter. The method hands the param onward to a
+		// consuming free function (the callee teardown both backends
+		// implement for the free-call shape).
+		const input = `
+import System
+
+mv struct Rec {
+	var name = ""
+	var n = 0
+}
+
+func consume = (mv Rec r, out int) {
+	return r.n
+}
+
+mv struct Util {
+	var tag = 0
+	func eat = (ref self, mv Rec r, out int) {
+		return consume(mv r) + self.tag
+	}
+}
+
+pub func main = (Init init) {
+	var u = Util()
+	u.tag = 100
+	var acc = 0
+	var int i = 0
+	while i < 4 {
+		var src = Rec()
+		src.name = "r\\{i}"
+		src.n = i
+		acc = acc + u.eat(src.copy())
+		i += 1
+	}
+	Console.write("\\{acc}")
+}
+`;
+		// (0+100)+(1+100)+(2+100)+(3+100) = 406
+		await build_and_check_output(input, "struct_lu_nested_method_arg", "406", true);
+		const parsed = parse_program(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "c" });
+		expect(result.errors ?? []).toEqual([]);
+		expect(result.code).not.toMatch(/Rec_copy\(&src\)/);
+	});
+
+	test("Map.set two-argument store transfers instead of deep-copying", async () => {
+		// The value argument is index 1 (past the key): the same hoisted-temp
+		// splice applies, with Map.set's `mv TV value` as the taker. The
+		// read-back goes through the element borrow (`ref Rec r =
+		// map.get_or_panic(i)`) — an owning read of a user-struct-valued Map
+		// still byte-loads the slot (FOLLOWUP.md), which would stale-free.
+		const input = `
+import System
+
+mv struct Rec {
+	var name = ""
+	var n = 0
+}
+
+pub func main = (Init init) {
+	var map = Map<int, Rec>()
+	var acc = 0
+	var int i = 0
+	while i < 4 {
+		var src = Rec()
+		src.name = "r\\{i}"
+		src.n = i * 7
+		map.set(i, src.copy())
+		i += 1
+	}
+	while i > 0 {
+		i -= 1
+		ref Rec r = map.get_or_panic(i)
+		acc = acc + r.n
+	}
+	Console.write("\\{acc}")
+}
+`;
+		// (0+7+14+21) = 42
+		await build_and_check_output(input, "struct_lu_map_set", "42", true);
+		const parsed = parse_program(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "c" });
+		expect(result.errors ?? []).toEqual([]);
+		// (The Map<int, Rec> monos still call Rec_copy inside the library
+		// copies — the pin is the donor site, not the definitions.)
+		expect(result.code).not.toMatch(/Rec_copy\(&src\)/);
+	});
+
+	test("nested-expression guard: a sibling/later read of the donor keeps the copy", async () => {
+		// The read of src.n sits after the call inside the same statement's
+		// wider expression — beyond the call's boundary, so the classify
+		// refuses and the copy stays.
+		const input = `
+import System
+
+mv struct Rec {
+	var name = ""
+	var n = 0
+}
+
+func consume = (mv Rec r, out int) {
+	return r.n
+}
+
+pub func main = (Init init) {
+	var src = Rec()
+	src.name = "r"
+	src.n = 6
+	var acc = consume(src.copy()) + src.n
+	Console.write("\\{acc}")
+}
+`;
+		// Emission-level pin only: the keep means the program then reads a
+		// still-owned src — 6 + 6 = 12. build_and_check_output asserts the
+		// readback; here we assert the rewrite decision.
+		await build_and_check_output(input, "struct_lu_nested_guard", "12", true);
+		const parsed = parse_program(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "c" });
+		expect(result.errors ?? []).toEqual([]);
+		expect(result.code).toMatch(/Rec_copy\(&src\)/);
+	});
+
+	test("the kill-switch restores a nested site's hoisted temp on rebuild", () => {
+		const input = `
+import System
+
+mv struct Rec {
+	var name = ""
+	var n = 0
+}
+
+func consume = (mv Rec r, out int) {
+	return r.n
+}
+
+pub func main = (Init init) {
+	var src = Rec()
+	src.n = 4
+	var acc = 1 + consume(src.copy())
+	Console.write("\\{acc}")
+}
+`;
+		const parsed = parse_program(input);
+		expect(parsed.errors).toEqual([]);
+
+		const moved = build(parsed.root, { arch: "c" });
+		expect(moved.errors ?? []).toEqual([]);
+		expect(moved.code).not.toMatch(/Rec_copy\(&/);
+
+		set_move_on_last_use_enabled(false);
+		try {
+			const copied = build(parsed.root, { arch: "c" });
+			expect(copied.errors ?? []).toEqual([]);
+			expect(copied.code).toMatch(/Rec_copy\(&src\)/);
+		} finally {
+			set_move_on_last_use_enabled(true);
+		}
+
+		// Switching back on re-fires the rewrite (the spliced temp is
+		// re-inserted into the call node's own allocations array).
+		const again = build(parsed.root, { arch: "c" });
+		expect(again.errors ?? []).toEqual([]);
+		expect(again.code).not.toMatch(/Rec_copy\(&/);
+	});
+});
+
 describe("struct move-on-last-use: guards keep the deep copy", () => {
 	test("a later read of the donor keeps the copy", async () => {
 		const input = `
