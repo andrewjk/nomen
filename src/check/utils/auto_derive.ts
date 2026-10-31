@@ -1,5 +1,5 @@
 import { direct_string_fields } from "../../build_common/has_string_fields.ts";
-import { is_load_deep_copy_container } from "../../build_common/mono_name.ts";
+import { is_load_deep_copy_container, mono_struct_name } from "../../build_common/mono_name.ts";
 import { is_hashable_scalar } from "../../built_in_types.ts";
 import AccessFieldNode from "../../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../../nodes/AccessFunctionCallNode.ts";
@@ -463,27 +463,63 @@ function field_copy_call(type: Type, status: CheckStatus): boolean {
 	);
 }
 
+/** Whether a REQUIRED field's shell-ctor argument must be an OWNED deep
+ *  copy (`self.<field>.copy()` — the sanctioned spelling the "cannot copy
+ *  field ... by value" diagnostics prescribe) instead of the raw
+ *  `self.<field>` borrow: a nested copyable STRUCT. The ctor seed
+ *  byte-copies the argument's bytes (the documented mv-transfer convention
+ *  — the fresh temp's own cleanup is suppressed), so `c.<field>` ends up
+ *  owning fresh independent state and never aliases `self.<field>`; the
+ *  per-field rewrite below is then unnecessary for these fields.
+ *  Containers are excluded: their `.copy()` is legal only as a
+ *  container-store RHS (the mv store contract), never in argument
+ *  position — they keep the field-store route with the displaced-alias
+ *  stamp. Tuples/anon monos are excluded too (their generated shape has no
+ *  user-spellable copy story); Box fields are class-shaped and never
+ *  copyable. */
+function ctor_arg_deep_copy(type: Type, status: CheckStatus): boolean {
+	if (!type.name || type.is_array || type.is_ref || type.is_view || type.is_nullable) return false;
+	if (type.name === "string") return false;
+	if (is_box_type(type.name, status.structs)) return false;
+	const mono_name = mono_struct_name(type, status);
+	if (is_load_deep_copy_container(mono_name)) return false;
+	const nested = status.structs.find(
+		(s) => s.name === mono_name && !s.is_simple_type && !s.is_class && !s.is_generic,
+	);
+	if (!nested) return false;
+	if (nested.name.startsWith("_Tuple_") || nested.name.startsWith("_Anon_")) return false;
+	return struct_has_function(nested, "copy") || struct_is_copyable(nested, status);
+}
+
 /**
  * Synthesize `pub func copy(self) -> Struct` for mv value structs: a
  * fresh `Struct()` whose every field is rewritten from `self` — string
  * field writes strdup the source (the backends' field-write path), nested
  * copyable structs recurse through their own `copy`, everything else byte
- * copies. `return c` hits the return-boundary normalization (all fields
- * recorded → transfer raw), so the caller receives a uniformly heap-owned
- * value with no extra copies.
+ * copies. A required nested-copyable-struct field passes an OWNED
+ * `.copy()` temp as the shell-ctor argument instead of the borrow (see
+ * ctor_arg_deep_copy), so its seed owns independent state and the store
+ * below is skipped. `return c` hits the return-boundary normalization (all
+ * fields recorded → transfer raw), so the caller receives a uniformly
+ * heap-owned value with no extra copies.
  */
 function build_copy(struct: StructNode, status: CheckStatus): FunctionNode {
 	const ctor_args = struct_copy_ctor_args(struct) ?? [];
-	const ctor = new FunctionCallNode(
-		-1,
-		struct.name,
-		new Type(struct.name),
-		ctor_args.map((name) => field_access("self", name)),
-	);
+	const arg_copy_fields = new Set<string>();
+	const call_args = ctor_args.map((name) => {
+		const field = struct.fields.find((f) => f.name === name);
+		if (field && !field.value && ctor_arg_deep_copy(field.type, status)) {
+			arg_copy_fields.add(name);
+			return method_call(field_access("self", name), "copy");
+		}
+		return field_access("self", name);
+	});
+	const ctor = new FunctionCallNode(-1, struct.name, new Type(struct.name), call_args);
 	const statements: BaseNode[] = [
 		new DeclarationNode(-1, "private", "var", "c", new Type(struct.name), ctor),
 	];
 	for (const field of struct.fields) {
+		if (arg_copy_fields.has(field.name)) continue;
 		const right = field_copy_call(field.type, status)
 			? method_call(field_access("self", field.name), "copy")
 			: field_access("self", field.name);
@@ -494,7 +530,10 @@ function build_copy(struct: StructNode, status: CheckStatus): FunctionNode {
 			// argument), so the displaced seed shares `self.<field>`'s heap
 			// state: the field-store paths must drop the alias, not reclaim
 			// it (only string ctor params strdup — their displaced free is
-			// valid and stays unstamped).
+			// valid and stays unstamped). Required nested-copyable-struct
+			// fields no longer ride this path — their shell-ctor argument is
+			// an owned `.copy()` temp (ctor_arg_deep_copy) — but container
+			// and tuple/anon fields still do.
 			assign.displaced_is_alias = true;
 		}
 		statements.push(assign);
