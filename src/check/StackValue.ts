@@ -138,6 +138,16 @@ export default interface StackValue {
 	 */
 	borrow_invalidated?: boolean;
 	/**
+	 * True for an ELEMENT BORROW (`ref T x = container.at(i)` → the slot
+	 * pointer, the for-of desugar's loop binding, or a pure element-borrow
+	 * accessor read — see `is_element_borrow_value`): the value is a pointer
+	 * INTO the container's slab, not a separately-lived class instance. The
+	 * owner's REASSIGNMENT destroys the displaced container eagerly (the old
+	 * slab is freed), so these are poisoned by the reassignment path — unlike
+	 * class child-group borrows, which deferred reclamation keeps valid.
+	 */
+	is_element_borrow?: boolean;
+	/**
 	 * True when this struct value's `view T` fields hold borrows taken from
 	 * other variables (see `view_field_owners`). Drives escape checking:
 	 * the instance may not be returned (unless every borrow roots at `self`)

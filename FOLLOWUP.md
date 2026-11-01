@@ -4,29 +4,6 @@ Recorded issues that were deliberately not fixed inline (out of scope for the
 task that surfaced them). Each entry: what was seen, where, and any context
 needed to pick it up later.
 
-## Element borrows miss ref-argument and reassignment invalidation (pre-existing)
-
-Recorded 2026-11-01 while landing PERF_PLAN item 4's element-borrow read
-positions (`test/element_borrow_reads.test.ts`). Both reproduce on
-main@0bdc2c38 unchanged, and both expose the explicit `ref` binding today —
-the new loop-binding/temp-borrow positions inherit the same exposure, they do
-not widen it:
-
-- **A `ref`-argument call between alias creation and read does not
-  invalidate.** `ref Rec r = xs.at(0); consume(ref xs); r.id` — where
-  `consume = (ref List<Rec> xs) { xs.pop() }` — checks clean. The
-  `ref self` invalidation in check_access_node fires for RECEIVER
-  mutations only; a call that passes the container as a `ref` ARGUMENT
-  (the sanctioned callee-mutates shape) never reaches
-  `invalidate_borrows_of`. After `pop`'s backward shift the alias reads
-  the wrong slot; after a `push` (realloc) it can dangle. Fix shape: the
-  ref-argument site resolves each ref argument's ultimate owner and
-  invalidates borrows rooted there, exactly like the receiver path.
-- **A container REASSIGNMENT does not invalidate element borrows.**
-  `ref Rec r = xs.at(0); xs = other_list; r.id` — `invalidate_view_borrows_of`
-  (check_assignment_node) covers `view T` borrows only; an element borrow
-  (a `ptr` into the old slab) survives the reassignment that frees it.
-
 ## Value-struct copy-assignment corners (pre-existing, surfaced by the struct last-use tests)
 
 Recorded 2026-10-29 while landing PERF_PLAN item 3 (move-on-last-use for

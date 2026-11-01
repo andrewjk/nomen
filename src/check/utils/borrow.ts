@@ -209,6 +209,45 @@ export function receiver_owner_of(target: BaseNode, status: CheckStatus): string
 }
 
 /**
+ * Whether a declaration/assignment initializer is an ELEMENT BORROW shape: a
+ * value that aliases the CONTAINER's storage rather than a deferred-reclaimed
+ * class instance. Two spellings:
+ *  - the checker-rewritten slot load (`ref x = c.at(i)` → `slot_ptr` /
+ *    `ref v = m.get_or_panic(k)` → `get_ptr`), stamped `is_element_slot_load`;
+ *  - a pure element-borrow accessor read (`is_element_load_pure_borrow` —
+ *    the `List<Own>.at()` family whose load cannot privatize the element's
+ *    destroy-worthy state).
+ * Stamped as StackValue.is_element_borrow so the owner's REASSIGNMENT — which
+ * frees the old slab eagerly (the displaced destroy) — can poison exactly
+ * these, while class child-group borrows stay valid under deferred
+ * reclamation.
+ */
+export function is_element_borrow_value(value: BaseNode | undefined, status: CheckStatus): boolean {
+	if (!value || value.node_type !== "access") return false;
+	const access = value as AccessNode;
+	if (access.access.node_type !== "access_func") return false;
+	if ((access.access as AccessFunctionCallNode).is_element_slot_load === true) return true;
+	return is_element_load_pure_borrow(access, status);
+}
+
+/**
+ * Mark every live ELEMENT borrow rooted at `owner` as invalidated. An element
+ * borrow points INTO the owner's slab; unlike a class child-group borrow —
+ * which owner reassignment keeps valid through deferred reclamation
+ * (`has_live_borrow`) — the displaced mv container is destroyed eagerly at the
+ * reassignment, so the borrow's storage is gone immediately. The narrower
+ * companion of `invalidate_borrows_of` for the reassignment path (the `ref
+ * self` receiver path keeps poisoning everything).
+ */
+export function invalidate_element_borrows_of(status: CheckStatus, owner: string) {
+	for (const v of status.values) {
+		if (v.borrowed_from === owner && v.is_element_borrow) {
+			v.borrow_invalidated = true;
+		}
+	}
+}
+
+/**
  * Mark every live VIEW borrow rooted at `owner` as invalidated. Used when a
  * bare variable is reassigned: a `view string`/`view T[]` slice points into
  * the old buffer, which is freed at the reassignment, so the view dangles.

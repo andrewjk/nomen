@@ -12,7 +12,14 @@ import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
-import { borrow_depth_of, borrow_owner_of, invalidate_view_borrows_of } from "./utils/borrow.ts";
+import {
+	borrow_depth_of,
+	borrow_owner_of,
+	invalidate_element_borrows_of,
+	invalidate_view_borrows_of,
+	is_element_borrow_value,
+	revert_hoisted_element_borrows,
+} from "./utils/borrow.ts";
 import { is_box_type } from "./utils/box.ts";
 import { value_owns_closure } from "./utils/captures.ts";
 import check_func_argument_signature from "./utils/check_func_argument_signature.ts";
@@ -409,6 +416,16 @@ export default function check_assignment_node(
 		// (class_alias_of) are likewise unaffected.
 		if (assign.left_value.node_type === "value") {
 			invalidate_view_borrows_of(status, left_value.name);
+			// An ELEMENT borrow (`ref r = xs.at(0)` — the slot pointer, or a
+			// pure element-borrow read) points INTO the displaced value's
+			// storage: the displaced mv container is destroyed EAGERLY at the
+			// reassignment (the old slab is freed), so the borrow dangles
+			// immediately. Unlike class child-group borrows — which deferred
+			// reclamation (`has_live_borrow`) keeps valid until scope exit —
+			// element borrows are poisoned here. Hoisted alias temps revert
+			// to their owning copy (the elision must stay invisible).
+			revert_hoisted_element_borrows(status, left_value.name);
+			invalidate_element_borrows_of(status, left_value.name);
 		}
 		// Re-track bounds if the RHS establishes new ones (e.g. cap = buf.get_cap()).
 		// Skip for compound assignments (+=, -=, etc.) since the RHS is a delta,
@@ -920,6 +937,8 @@ export default function check_assignment_node(
 			} else {
 				left_value.borrow_depth = rhs_borrow_depth;
 				left_value.borrowed_from = borrow_owner_of(assign.right_value, status);
+				left_value.is_element_borrow =
+					is_element_borrow_value(assign.right_value, status) || undefined;
 				// Re-assigning a (possibly invalidated) borrow refreshes it: the
 				// new value is a fresh borrow rooted at its own owner.
 				left_value.borrow_invalidated = false;
@@ -963,6 +982,7 @@ export default function check_assignment_node(
 		} else {
 			left_value.borrow_depth = undefined;
 			left_value.borrowed_from = undefined;
+			left_value.is_element_borrow = undefined;
 			left_value.borrow_invalidated = false;
 		}
 	}

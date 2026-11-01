@@ -29,7 +29,12 @@ import { substitute_type } from "./check_function_call_node.ts";
 import { instantiate_generic_type } from "./check_function_call_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
-import { borrow_depth_of } from "./utils/borrow.ts";
+import {
+	borrow_depth_of,
+	invalidate_borrows_of,
+	receiver_owner_of,
+	revert_hoisted_element_borrows,
+} from "./utils/borrow.ts";
 import { is_box_type } from "./utils/box.ts";
 import { value_owns_closure } from "./utils/captures.ts";
 import check_func_argument_signature from "./utils/check_func_argument_signature.ts";
@@ -689,6 +694,28 @@ export default function check_function_call(
 		// reference — sweep it conservatively.
 		if (has_ref_keyword && param.node_type === "value") {
 			invalidate_token_facts((param as ValueNode).value, status);
+		}
+		// A `ref` argument is the sanctioned callee-mutates shape: the callee
+		// may pop/push/set (or rebind) the argument through the alias, so any
+		// live ELEMENT borrow rooted at it (`ref r = xs.at(0)` before
+		// `consume(ref xs)`) is stale afterwards — a pop's backward shift
+		// reads the wrong slot, a growth realloc frees the slab. Mirror the
+		// `ref self` receiver path (check_access_node): hoisted alias temps
+		// revert to their owning copy, borrows rooted at the ultimate owner
+		// (field-path arguments root at the base variable) are poisoned.
+		// StableList.push's keep-alive exemption does not apply here — the
+		// callee's body is opaque at the call site, so the pass must assume
+		// the full mutator family.
+		if (has_ref_keyword) {
+			const ref_owner = receiver_owner_of(param, status);
+			if (status.hoisted_element_borrows?.has(param_value)) {
+				revert_hoisted_element_borrows(status, "", param_value);
+			} else if (ref_owner) {
+				revert_hoisted_element_borrows(status, ref_owner);
+			}
+			if (ref_owner) {
+				invalidate_borrows_of(status, ref_owner);
+			}
 		}
 		// OWNED value-struct parameter: the callee fully owns a normalized
 		// copy of the argument (pass-by-value — see the build-side
