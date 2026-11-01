@@ -330,9 +330,8 @@ pub func main = (Init init) {
 	test("method-call argument nested in an expression transfers instead of deep-copying", async () => {
 		// Same shape through the ACCESS path: the hoisted temp lands on the
 		// whole `u.eat(src.copy())` access node, and the rewrite moves the
-		// access_func's parameter. The method hands the param onward to a
-		// consuming free function (the callee teardown both backends
-		// implement for the free-call shape).
+		// access_func's parameter. The callee consumes the mv param (the
+		// method teardown both backends implement).
 		const input = `
 import System
 
@@ -341,14 +340,10 @@ mv struct Rec {
 	var n = 0
 }
 
-func consume = (mv Rec r, out int) {
-	return r.n
-}
-
 mv struct Util {
 	var tag = 0
 	func eat = (ref self, mv Rec r, out int) {
-		return consume(mv r) + self.tag
+		return r.n + self.tag
 	}
 }
 
@@ -379,9 +374,9 @@ pub func main = (Init init) {
 	test("Map.set two-argument store transfers instead of deep-copying", async () => {
 		// The value argument is index 1 (past the key): the same hoisted-temp
 		// splice applies, with Map.set's `mv TV value` as the taker. The
-		// read-back goes through the element borrow (`ref Rec r =
-		// map.get_or_panic(i)`) — an owning read of a user-struct-valued Map
-		// still byte-loads the slot (FOLLOWUP.md), which would stale-free.
+		// read-back is the plain owning read — an owning read of a
+		// user-struct-valued Map returns an independent copy (the load
+		// specialization owns its string fields).
 		const input = `
 import System
 
@@ -403,14 +398,13 @@ pub func main = (Init init) {
 	}
 	while i > 0 {
 		i -= 1
-		ref Rec r = map.get_or_panic(i)
-		acc = acc + r.n
+		acc = acc + map.get(i).n + map.get(i).name.length
 	}
 	Console.write("\\{acc}")
 }
 `;
-		// (0+7+14+21) = 42
-		await build_and_check_output(input, "struct_lu_map_set", "42", true);
+		// (0+7+14+21) + 4*2 = 42 + 8 = 50
+		await build_and_check_output(input, "struct_lu_map_set", "50", true);
 		const parsed = parse_program(input);
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "c" });

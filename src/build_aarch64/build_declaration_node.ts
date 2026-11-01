@@ -25,6 +25,7 @@ import string_literal_length from "../build_common/string_literal_length.ts";
 import {
 	collect_expression_branch_values,
 	is_container_borrow_accessor_name,
+	is_library_container_get,
 	is_owned_string_branch_value,
 	is_string_borrow,
 } from "../build_common/string_return_analysis.ts";
@@ -3077,7 +3078,11 @@ export default function build_declaration_node(
 							: undefined;
 					const is_borrow_accessor_init =
 						init_access?.node_type === "access_func" &&
-						is_container_borrow_accessor_name(init_access.name ?? "");
+						(is_container_borrow_accessor_name(init_access.name ?? "") ||
+							// Plain `get` on a library container: the same slot
+							// byte-load its get_or sibling is (admitted by receiver
+							// type — see is_library_container_get).
+							is_library_container_get(node.value));
 					// A compiler-hoisted `_recv_N` carrier (the checker's
 					// receiver hoist for `xs.at(i).text`) is an EXPRESSION-TEMP
 					// consumer, not a binding: it keeps the alias and reclaims

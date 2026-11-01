@@ -160,8 +160,9 @@ function emit_load_deep_copy_fields(elem: StructNode, dst: string, status: Build
 		// Plain string fields stay BORROWED on load: expression-temp consumers
 		// (`a.get(r).label`) never reclaim the loaded temp, so a strdup here
 		// would leak per expression use (the pre-B1 convention, still sound —
-		// the slot keeps ownership; a BINDING of a borrow-accessor result is
-		// the residual hazard recorded in FOLLOWUP.md).
+		// the slot keeps ownership; a BINDING of a load result is given its
+		// own strdup at the binding (the B1 repair arm) and frees that at
+		// scope exit).
 		if (field.type.name === "string") continue;
 		// A `Box<T>` field: clone the wrapper (fresh malloc + fresh copies of
 		// the pointee's owned fields) so the loaded copy's scope-exit destroy

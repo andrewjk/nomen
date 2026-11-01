@@ -234,4 +234,43 @@ pub func main = (Init init) {
 `;
 		await build_and_check_output(input, "map_struct_values_nested_required_box", "4,1,t", true);
 	});
+
+	test("plain get owning reads are sound: carrier and binding (both backends)", async () => {
+		// `get` sat outside the borrow-accessor family, so a `map.get(k)`
+		// receiver carrier took the generic owning-struct teardown and freed
+		// the slot's aliased string fields (stale frees at the map's
+		// teardown), and a `var v = m.get(k)` binding missed the B1 strdup
+		// repair its get_or sibling got. Audit on: every load's deep-copied
+		// container and strdup'd binding string released exactly once.
+		const input = `
+import System
+
+mv struct Rec {
+	var name = ""
+	var n = 0
+	var tags = List<int>()
+}
+
+pub func main = (Init init) {
+	var m = Map<int, Rec>()
+	var int i = 0
+	while i < 3 {
+		var src = Rec()
+		src.name = "r\\{i}"
+		src.n = i * 7
+		src.tags.push(i)
+		src.tags.push(i * 10)
+		m.set(i, src.copy())
+		i += 1
+	}
+	var acc = m.get(0).n + m.get(1).name.length
+	var Rec r = m.get(2)
+	acc = acc + r.n + r.tags.pop()
+	Console.write("\\{acc},\\{r.name},\\{m.get(0).tags.pop()}")
+}
+`;
+		// 0 + 2 + 14 + 20 = 36 (pop is LIFO); r.name = r2; the SLOT's tags
+		// still own [0, 0] (the carrier's pop hit its own deep copy) → 0.
+		await build_and_check_output(input, "map_struct_values_plain_get", "36,r2,0", true);
+	});
 });

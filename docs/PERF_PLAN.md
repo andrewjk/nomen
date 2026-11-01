@@ -359,12 +359,16 @@ two-argument store with the auditor on (both backends), the nested-site
 guard (a read of the donor after the call, inside the same statement,
 keeps the copy), and the kill-switch restore of a nested site's spliced
 temp. The full suite passes. Two pre-existing lowerings surfaced on the
-way — an owning read of a user-struct-valued Map byte-loads the slot
-(stale frees), and the aarch64 callee skips the mv-param teardown for
-METHODS (the free-function path is fine); both reproduce with the
-explicit spellings alone, are recorded in FOLLOWUP.md, and the new tests
-route around them (element-borrow read-back; the method hands the param
-onward to a consuming free function).
+way — an owning read of a user-struct-valued Map freed the slot's aliased
+string fields (plain `get` sat outside the borrow-accessor family, so its
+receiver carriers and bindings missed both the carrier stamp and the B1
+strdup repair), and the aarch64 callee skipped the mv-param teardown for
+METHODS (the free-function path seeded the param's string records; the
+method path never did). Both reproduce with the explicit spellings alone;
+both have since landed (2026-11-01 — the declaration-side gates admit the
+library containers' plain `get` by receiver type, and the method path
+mirrors the free path's registration) and the tests no longer route
+around them.
 
 **Measured.** Shape micro-bench — `bench/nomen/last_use_nested_call.nm`:
 two shapes back to back, n sites each (free-call and method-call, both in

@@ -30,7 +30,9 @@ const EMPTY_SET: Set<string> = new Set();
  * return `self.values.load(idx)` — or the caller's own fallback temp), and
  * the backing Buffer slot-load primitive `load_T`. A `mv out T` accessor
  * (`owned_return`, e.g. `pop` / `move_T`) relinquishes the slot and is NOT
- * in this family.
+ * in this family — and neither is plain `.get(...)`: user code defines
+ * owning `get` methods, so the declaration-side gates admit the library
+ * containers' `get` by receiver type (is_library_container_get).
  */
 export function is_container_borrow_accessor_name(name: string): boolean {
 	return (
@@ -48,6 +50,39 @@ export function is_container_borrow_accessor_name(name: string): boolean {
 		// BOTH branches — a heap join would make the desugared `for of`
 		// binding free the slot's pointer.
 		name === "load_tail"
+	);
+}
+
+/**
+ * Whether `node` (an access expression) is a plain `.get(k)` on a LIBRARY
+ * container value — the same slot byte-load its `get_or`/`get_or_panic`
+ * siblings are (zero-value on miss, a slot borrow otherwise). Plain `get`
+ * cannot join the NAME-based borrow accessor family: user code freely
+ * defines owning `get` methods (a generic trait's `func get = (self,
+ * out T)` notably), and the family also gates string-return heapness at
+ * aarch64 trait-dispatch sites. The declaration-side gates (the B1 strdup
+ * repair and the receiver-carrier stamp) admit it by RECEIVER TYPE instead.
+ */
+export function is_library_container_get(node: unknown): boolean {
+	const access = node as
+		| {
+				node_type?: string;
+				access?: { node_type?: string; name?: string };
+				target?: { type?: { name?: string; is_view?: boolean; is_array?: boolean } };
+		  }
+		| undefined;
+	if (!access || access.node_type !== "access") return false;
+	const inner = access.access;
+	if (!inner || inner.node_type !== "access_func" || inner.name !== "get") return false;
+	const recv = access.target?.type;
+	if (!recv?.name || recv.is_view || recv.is_array) return false;
+	return (
+		recv.name === "Map" ||
+		recv.name === "List" ||
+		recv.name === "Buffer" ||
+		recv.name === "StableList" ||
+		recv.name === "ClassBuffer" ||
+		/^(Map|List|Buffer|StableList|ClassBuffer)_/.test(recv.name)
 	);
 }
 
@@ -87,11 +122,14 @@ export function is_borrow_accessor_carrier(decl: { name?: string; value?: unknow
 	const value = decl.value as
 		| { node_type?: string; access?: { node_type?: string; name?: string; owned_return?: boolean } }
 		| undefined;
+	if (value?.node_type !== "access" || value.access?.node_type !== "access_func") return false;
+	if (value.access.owned_return) return false;
+	// Plain `.get(k)` on a library container is the same slot borrow (see
+	// is_library_container_get for why it cannot join the name family) — its
+	// carriers were stranded outside this check and took the generic
+	// owning-struct teardown, freeing the slot's aliased string fields.
 	return (
-		value?.node_type === "access" &&
-		value.access?.node_type === "access_func" &&
-		!value.access.owned_return &&
-		is_container_borrow_accessor_name(value.access.name ?? "")
+		is_container_borrow_accessor_name(value.access.name ?? "") || is_library_container_get(value)
 	);
 }
 

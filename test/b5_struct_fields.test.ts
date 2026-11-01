@@ -221,6 +221,46 @@ Console.write_line("done")
 `;
 		await build_and_check_output(input, "b5_class_field_move_param", "Rex\nmoved\ndone\n");
 	});
+
+	test("a METHOD taking a mv struct param reclaims it (runtime, both backends)", async () => {
+		// The method path registered the mv param's save slot but never
+		// seeded its heap-string records (and missed the string-only owning
+		// gate), so the free-function shape reclaimed the param's fields
+		// while the method shape leaked them on aarch64. Audit on: the
+		// callee's teardown releases the param's string exactly once on both
+		// backends.
+		const input = `
+import System
+
+mv struct Rec {
+	var name = ""
+	var n = 0
+}
+
+mv struct Util {
+	var tag = 0
+	func eat = (ref self, mv Rec r, out int) {
+		return r.n + self.tag
+	}
+}
+
+pub func main = (Init init) {
+	var u = Util()
+	u.tag = 100
+	var acc = 0
+	var int i = 0
+	while i < 4 {
+		var src = Rec()
+		src.name = "r\\{i}"
+		src.n = i
+		acc = acc + u.eat(mv src)
+		i += 1
+	}
+	Console.write("\\{acc}")
+}
+`;
+		await build_and_check_output(input, "b5_method_move_param", "406", true);
+	});
 });
 
 describe("B5: verifier errors", () => {

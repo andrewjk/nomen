@@ -4,41 +4,6 @@ Recorded issues that were deliberately not fixed inline (out of scope for the
 task that surfaced them). Each entry: what was seen, where, and any context
 needed to pick it up later.
 
-## User-struct-valued Map reads and method mv-struct params (pre-existing, surfaced by the nested last-use tests)
-
-Recorded 2026-11-01 while landing PERF_PLAN item 3's remainder (nested-
-expression call arguments, `test/struct_last_use_move.test.ts`). Both
-reproduce with the EXPLICIT spellings alone (no rewrite involved) — the new
-tests route around them, and the rewritten sites are byte-identical to the
-explicit ones:
-
-- **`Map<K, UserStruct>` owning reads byte-load the slot (stale frees).**
-  `map.get(i)`/`get_or*` on a user mv-struct value type returns
-  `Buffer<T>.load` — a plain byte copy of the slot — so the loaded value
-  aliases the slot's heap fields, and the caller's scope-exit auto-free
-  frees them out from under the Map (audit: `AUDIT-STALE-FREE`, then the
-  Map teardown frees them again). Only `string` elements get the
-  deep-copying owning-specialized load; user structs (and container-typed
-  elements) do not. The `ref` element borrow (`ref Rec r =
-map.get_or_panic(i)`) is the clean read path today. Related: PERF_PLAN
-  item 6 recorded user-struct-valued Maps as "unreachable in-source" via
-  the ctor-poisoning bug — the declaration parses now, which makes this
-  read path reachable. Fix shape: extend the owning-specialize pass
-  (`src/build_c/utils/owning_buffer_specialize.ts` + the aarch64 twin) to
-  destroy-bearing struct elements for `load`, the way `store`/`replace`
-  already are.
-- **A method taking a `mv` user-struct param never frees it on aarch64
-  (leak).** `acc + u.eat(mv src)` where `func eat = (ref self, mv Rec r,
-out int) { return r.n + self.tag }`: the C callee emits the mv-param
-  teardown (`free((*r).name.ptr)` at scope exit), the aarch64 callee emits
-  none — `Util_eat` returns without any free/destroy of `r` — so the
-  param's heap fields leak (audit: `LEAK: 4 allocation(s)` at 4
-  iterations). Free functions with the same body are fine on both backends
-  (`struct_lu_call_arg` passes), so the gap is specific to the method-body
-  path (struct-scoped function build / `moved_param_is_consumed` gating) on
-  aarch64. Handing the param onward (`consume(mv r)` inside the method) is
-  the workaround the new test uses.
-
 ## Enum match on a call scrutinee SIGBUSes on aarch64 (pre-existing, surfaced by the variable-mode bench)
 
 Recorded 2026-10-30 while landing PERF_PLAN item 13 (variable-mode enums,

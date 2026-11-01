@@ -361,8 +361,9 @@ function emit_load_deep_copy_fields(
 		// Plain string fields stay BORROWED on load: expression-temp consumers
 		// (`a.get(r).label`) never reclaim the loaded temp, so a strdup here
 		// would leak per expression use (the pre-B1 convention, still sound —
-		// the slot keeps ownership; a BINDING of a borrow-accessor result is
-		// the residual hazard recorded in FOLLOWUP.md).
+		// the slot keeps ownership; a BINDING of a load result is given its
+		// own strdup at the binding (the B1 repair arm) and frees that at
+		// scope exit).
 		if (!field.type.is_ref && !field.type.is_view && field.type.name === "string") {
 			offset += size;
 			continue;

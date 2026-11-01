@@ -26,6 +26,7 @@ import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable
 import {
 	is_borrow_accessor_carrier,
 	is_container_borrow_accessor_name,
+	is_library_container_get,
 	is_string_borrow,
 } from "../build_common/string_return_analysis.ts";
 import {
@@ -1555,7 +1556,11 @@ export default function build_declaration_node(
 						: undefined;
 				const is_borrow_accessor_init =
 					init_access?.node_type === "access_func" &&
-					is_container_borrow_accessor_name(init_access.name ?? "");
+					(is_container_borrow_accessor_name(init_access.name ?? "") ||
+						// Plain `get` on a library container: the same slot byte-load
+						// its get_or sibling is (admitted by receiver type — see
+						// is_library_container_get).
+						is_library_container_get(node.value));
 				if (
 					binding_struct &&
 					owns_strings_uniformly(binding_struct) &&

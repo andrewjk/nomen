@@ -5,7 +5,7 @@ import {
 	struct_needs_destroy,
 } from "../build_common/destroy_analysis.ts";
 import emission_label from "../build_common/emission_label.ts";
-import { owns_strings_uniformly } from "../build_common/has_string_fields.ts";
+import { direct_string_fields, owns_strings_uniformly } from "../build_common/has_string_fields.ts";
 import { resolve_struct_type } from "../build_common/mono_name.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
@@ -1880,6 +1880,13 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		// method then has its return-path free / destroy suppressed (leak).
 		const old_moved = status.moved;
 		(status.moved as Set<string> | undefined) = undefined;
+		// heap_string_fields ("var.field" records) is name-keyed like `moved`:
+		// reset per body so one method's seeded param records (or a leftover
+		// record from an earlier body / the enclosing build) cannot suppress or
+		// double-free another body's field releases. Mirrors
+		// build_function_node's save/reset/restore.
+		const old_heap_string_fields = status.heap_string_fields;
+		status.heap_string_fields = undefined;
 		const old_mv_owns_flag = status.mv_owns_flag;
 		status.mv_owns_flag = undefined;
 		const old_heap_string_arrays = status.heap_string_arrays;
@@ -2416,7 +2423,15 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 				!!vstruct &&
 				!vstruct.is_class &&
 				!param.type.is_nullable &&
-				struct_needs_destroy(vstruct, status);
+				(struct_needs_destroy(vstruct, status) ||
+					// B1 full cutover (mirrors build_function_node's gate): a
+					// string-only DECLARED-mv struct has no
+					// `struct_needs_destroy` footprint (that gate excludes
+					// strings) — but the transfer row makes the callee the
+					// field owner, so the teardown fires for it too (the seeded
+					// records release the string fields through the saved
+					// address at exit).
+					(vstruct.is_owning && direct_string_fields(vstruct).length > 0));
 			if (!is_class && !is_owning_value_struct) continue;
 			const reg = status.function_param_regs.get(param.name);
 			if (reg) {
@@ -2439,6 +2454,23 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 						is_nullable: param.type.is_nullable,
 						value_struct_destroy_name: is_owning_value_struct ? vstruct!.name : undefined,
 					});
+				}
+			}
+			// Seed the transferred string fields' records so the return
+			// label's release_heap_string_fields sees them. THE MISSING HALF
+			// of the method-side registration: the free-function path seeds
+			// these, the method path never did, so an owning struct param's
+			// string fields were reclaimed by nothing — every `u.eat(mv src)`
+			// leaked the param's heap strings on this backend. Safe even when
+			// the destroy walk fires: emit_field_destroys SKIPS string fields
+			// (they may be rodata literals), so the records are the only
+			// reclaimer — a user `#destroy` owns the whole sequence and
+			// records stay unseeded there. Mirrors build_function_node's
+			// seeding.
+			if (vstruct && !has_destroy(vstruct)) {
+				if (!status.heap_string_fields) status.heap_string_fields = new Set();
+				for (const field of direct_string_fields(vstruct)) {
+					status.heap_string_fields.add(`${param.name}.${field.name}`);
 				}
 			}
 		}
@@ -2639,6 +2671,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 
 		status.scoped_declarations = old_scoped_declarations;
 		status.heap_strings = old_heap_strings;
+		status.heap_string_fields = old_heap_string_fields;
 		status.variable_types = old_variable_types;
 		status.trait_class_frames = old_trait_class_frames;
 		status.moved = old_moved;
