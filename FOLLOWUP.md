@@ -563,16 +563,6 @@ the failures are a rebuild/worker race, not codegen. Mitigation for a
 touched-core session: run the suite once to rebuild, then judge on the
 second run — or make the prebuild a hard barrier for worker startup.
 
-## `while cond; { … }` (empty post-statement) fails to parse
-
-Recorded 2026-10-27. `while i < 12; i += 1 { }` (with a post-statement)
-and `while cond { }` (without the semicolon) both parse; the
-semicolon-with-empty-post form `while items.length > 0; { }` errors with
-"Expected {" at the body. The post-statement slot should accept emptiness
-(the loop-building code it forced — a dummy `s = s + items.pop()`
-restructure — is uglier than the form it replaced). Parser lives in
-src/parse (while-loop parsing).
-
 ## Orphaned `???`/`!!!` tokenizer symbols
 
 The ziglings test corpus (removed 2026-10-24 — early scaffolding: 56 files

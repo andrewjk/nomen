@@ -197,6 +197,23 @@ while {
 		expect(parsed.errors).toEqual(expected);
 	});
 
+	test("empty update clause (bare ';' before the body)", () => {
+		// The ';' introduces the update clause — it is not a terminator, and
+		// the no-update form has its own spelling (`while cond { }`), so a
+		// dangling ';' is malformed. The diagnostic names the update clause
+		// (it used to fall through to a misleading "Expected {" against the
+		// body brace).
+		const input = `
+var x = 5
+while x > 0; {
+  x = x - 1
+}
+`;
+		const expected = [test_error(input, "Expected update clause after ';'", 3, 14)];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
+	});
+
 	test("update with undefined variable", () => {
 		const input = `
 var x = 0
