@@ -2841,9 +2841,18 @@ function build_access_method(
 	let temp_offset = 0;
 	if (return_struct || nullable_scalar_ret) {
 		temp_addr = `_access_temp_${access_temp_counter++}`;
+		// The temp must hold the FULL result blob: an enum-with-data return
+		// is not a struct, so get_struct_size answers the 8-byte default for
+		// an enum name — the callee's sret copy (tag + payload) then runs
+		// past the slot into the frame's saved-register area (List<mv-enum>
+		// .pop's inline move memcpy'd 32 bytes into an 8-byte slot, clobbering
+		// x19/x29 on return → SIGSEGV in the caller). get_enum_sret_size
+		// answers the real tag+payload size.
 		temp_offset = allocate_stack_space(
 			status,
-			nullable_scalar_ret ? 16 : get_struct_size(ret_type_name, status),
+			nullable_scalar_ret
+				? 16
+				: (get_enum_sret_size(ret_type_name, status) ?? get_struct_size(ret_type_name, status)),
 		);
 		status.stack_offsets!.set(temp_addr, temp_offset);
 		if (nullable_scalar_ret) {

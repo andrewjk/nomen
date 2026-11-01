@@ -4,28 +4,27 @@ Recorded issues that were deliberately not fixed inline (out of scope for the
 task that surfaced them). Each entry: what was seen, where, and any context
 needed to pick it up later.
 
-## Enum match on a call scrutinee SIGBUSes on aarch64 (pre-existing, surfaced by the variable-mode bench)
+## `List<mv-enum>.at(i)` fails contract verification even with a literal index
 
 Recorded 2026-10-30 while landing PERF_PLAN item 13 (variable-mode enums,
-`bench/nomen/enum_variable_mode.nm`). Reproduced at main@7ecb5593 with the
-pre-change compiler — the bench deliberately avoids the shapes:
+`bench/nomen/enum_variable_mode.nm`). The section's other half — `match
+l.pop()` on a multi-case data enum SIGBUSing on aarch64 — is FIXED
+(2026-11: the call site's sret temp was sized with `get_struct_size`,
+which answers the 8-byte default for an enum name, so `List<Item>.pop`'s
+inline move memcpy'd 32 bytes over its saved registers; see
+test/aarch64_regressions.test.ts "enum-with-data method return sret temp
+holds the blob").
 
-- **`match <call>() { … }` / `match l.pop() { … }` on a multi-case data enum
-  SIGBUSes on aarch64.** `while l.length > 0 { match l.pop() { case .small(v)
-{ … } } else { … } }` over `List<Item>` (`Item { case missing; case small(int
-id); case big(int id, int a, int b) }`) dies at n = 1 (exit 138). A plain
-  variable scrutinee (`var it = l.pop(); match it`) and an all-cases arm list
-  crash the same way; the same program on the C backend runs. `at_or_panic`
-  as the scrutinee is fine at n = 1000 on aarch64, so the trigger is the
-  pop/owning-temp path specifically — the match hoists the call result into a
-  temp blob (`scrutinee_is_temp`), and the pop result's slot handling
-  disagrees with the hoist. A single-case case-mono (`List<Item.small>`)
-  works, which is how the variable-mode bench and tests cover the same
-  shapes.
+What remains, reproduced unchanged:
+
 - **`List<mv-enum>.at(i)` fails contract verification even with a literal
   index** ("Parameter constraint cannot be verified: i >= 0 && i <
   self.length") — `at_or_panic` verifies fine and is the workaround the
-  tests use. Reproduced unchanged at HEAD.
+  tests use. NOT mv-enum-specific: `List<int>.at(0)` with no guard fails
+  identically (verified 2026-11-01), so this is the general unguarded-`at`
+  case — the verifier has no length fact to discharge `i < self.length`
+  against (see also the guarded-index discharge gap further below). A
+  plain `var it = l.pop()` plus `match it` works for the same shapes.
 
 ## Value-struct copy-assignment corners (pre-existing, surfaced by the struct last-use tests)
 

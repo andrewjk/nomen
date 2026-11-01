@@ -16,10 +16,12 @@ import System
 // compiler is the variable-mode win: half the bytes per element — memcpy /
 // memset sizes, container growth traffic, cache footprint.
 //
-// Payloads are int-only and there is no pop+match phase on purpose: a
-// base-enum `match l.pop()` on aarch64 SIGBUSes at HEAD (pre-existing,
-// FOLLOWUP.md) — unrelated to variable mode, and the mono's single-case
-// variant avoids it, so the bench keeps the shapes both modes can run.
+// Payloads are int-only, and the phases stay push/load (no pop+match): the
+// bench pins load/push strides, and adding a phase would change what the
+// historical numbers measure. (A base-enum `match l.pop()` used to SIGBUS
+// on aarch64 — the call site's sret temp undersized the enum blob, fixed
+// 2026-11, see test/aarch64_regressions.test.ts "enum-with-data method
+// return sret temp holds the blob" — so that shape is now usable.)
 
 mv enum Item {
 	case missing

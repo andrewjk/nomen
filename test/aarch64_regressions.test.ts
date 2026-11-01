@@ -1227,3 +1227,104 @@ pub func main = () {
 `;
 	await build_and_check_output(input, "ref_struct_receiver_address", "n=1 raw=1\n1\n", true);
 });
+
+// A method call returning an ENUM WITH DATA rides sret like a struct, but the
+// call site's sret temp was sized with get_struct_size — which answers the
+// 8-byte default for an enum name (enums live in status.enums, not structs).
+// The callee's tag+payload blob copy then ran past the slot into the frame's
+// saved-register area: List<Item>.pop's inline `move` memcpy'd 32 bytes into
+// an 8-byte slot, clobbering the saved x19/x29, and the caller crashed on its
+// first x29-relative access (SIGSEGV, exit 139) right after the pop returned.
+// Any `List<mv-enum>` element pop/shape crashed — `match l.pop() { … }` was
+// just the shape that surfaced it (the C backend ran the same program fine).
+test("enum-with-data method return sret temp holds the blob", async () => {
+	const input = `
+import System
+
+mv enum Item {
+  case missing
+  case small(int id)
+  case big(int id, int a, int b)
+}
+
+pub func main = (Init init) {
+  var List<Item> l = List<Item>()
+  l.push(Item.small(1))
+  l.push(Item.big(2, 3, 4))
+  var int total = 0
+  while l.length > 0 {
+    match l.pop() {
+      case .missing { total += 0 }
+      case .small(v) { total += v }
+      case .big(id, a, b) { total += id + a + b }
+    }
+  }
+  Console.write("\\{total} \\{l.length}")
+}
+`;
+	await build_and_check_output(input, "enum_sret_call_temp", "10 0", true);
+});
+
+// The plain-variable form exercises the same path INSIDE the callee (pop's
+// own `return self.items.move(idx)` is a method call returning the enum) —
+// the standalone pop corrupted its own frame even when the caller never
+// matched on the result.
+test("enum-with-data pop into a variable", async () => {
+	const input = `
+import System
+
+mv enum Item {
+  case missing
+  case small(int id)
+}
+
+pub func main = (Init init) {
+  var List<Item> l = List<Item>()
+  l.push(Item.small(7))
+  while l.length > 0 {
+    var it = l.pop()
+    match it {
+      case .missing { Console.write("missing\\n") }
+      case .small(v) { Console.write("\\{v}\\n") }
+    }
+  }
+  Console.write("\\{l.length}")
+}
+`;
+	await build_and_check_output(input, "enum_pop_var", "7\n0", true);
+});
+
+// A `+` chain inside a match ARM (`total += a + b`) inside a loop is
+// loop-invariant ONLY in its arm-scoped payload terms. The VN hoist never
+// saw the bindings (they're scoped by the match build, never written by a
+// statement), so it lifted the chain into the loop preheader — where the
+// arm's names are out of scope and build_value_node's fallback emitted bare
+// global symbols (`adrp x0, a@PAGE`) that failed to link. The hoist now
+// treats arm payload bindings as loop-internal names and refuses those
+// chains.
+test("match arm payload chain not hoisted out of scope", async () => {
+	const input = `
+import System
+
+mv enum Pair {
+  case none
+  case two(int a, int b)
+}
+
+pub func main = (Init init) {
+  var List<Pair> l = List<Pair>()
+  l.push(Pair.two(3, 4))
+  l.push(Pair.two(5, 6))
+  var int total = 0
+  var int i = 0
+  while i < l.length; i += 1 {
+    match l.at_or_panic(i) {
+      case .none { total += 0 }
+      case .two(a, b) { total += a + b }
+    }
+  }
+  Console.write("\\{total}")
+}
+`;
+	await build_and_check_output(input, "match_arm_chain_scope", "18", true);
+});

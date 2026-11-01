@@ -540,6 +540,18 @@ function collect_loop_writes(list: readonly NirStmt[], into: Set<string>): void 
 					break;
 				case "switch_match":
 					if (s.scrutinee) expr_writes(s.scrutinee);
+					{
+						// An arm's payload bindings (`case .small(v) { … }`) are
+						// scoped to the arm but never written by a statement, so
+						// without this they looked hoistable: a `+` chain reading
+						// one was lifted into the loop preheader, where the name
+						// is out of scope (build_value_node's fallback emitted a
+						// bare global symbol — undefined at link time).
+						const match_node = s.node as { cases?: { params?: string[] }[] };
+						for (const match_case of match_node.cases ?? []) {
+							for (const binding of match_case.params ?? []) into.add(binding);
+						}
+					}
 					for (const arm of s.arms) {
 						if (arm.condition) expr_writes(arm.condition);
 						walk(arm.branch);

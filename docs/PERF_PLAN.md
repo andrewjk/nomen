@@ -1455,7 +1455,10 @@ same route generic monos take.
   `c_function_name` (`src/build_c/build_match_node.ts`). `match` on a
   multi-case data enum with a call/`pop()` scrutinee SIGBUSes on aarch64 at
   HEAD — pre-existing and unrelated (FOLLOWUP.md), so the bench and tests
-  avoid that shape.
+  avoid that shape. (Fixed 2026-11: the call site's sret temp was sized with
+  `get_struct_size`, which answers 8 for an enum name — see
+  test/aarch64_regressions.test.ts "enum-with-data method return sret temp
+  holds the blob".)
 
 Sixteen tests in `test/enum_variable_mode.test.ts` (both backends, audit on)
 pin the runtime shapes (int/string payloads, shorthand, same-case
