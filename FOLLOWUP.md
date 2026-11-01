@@ -31,12 +31,6 @@ shapes, so they pin guards, not the bugs:
 (The plan documents are consolidated in [`docs/STRUCTS.md`](./docs/STRUCTS.md);
 the "STRUCT_PLAN_3" labels below are its section names.)
 
-The class retirement (Phase R) and the struct/move refactor (Phases B/D)
-have landed: `class` is retired with a dedicated parse error, the Copyable
-verifier runs over declared ownership, `string` is a declared mv type,
-and the mv-struct string-field lowerings are uniform-heap on both
-backends. What remains:
-
 ### Test-corpus skips that name live gaps
 
 Each skip masks a real post-R/B1/D3 gap (verified still failing
@@ -71,10 +65,7 @@ this may stay rejected permanently if R doesn't need it.
 
 ## `Shared<T>` + the `with(m)` critical-section form + typed `Mutex<T>` (N4 remainder)
 
-STRUCT_PLAN_3 Phase N's N4 is otherwise complete (`Atomic<T>`, the
-protected-slot freeze derivation, ref-arg spawn borrows); this is the
-deliberately deferred remainder, recorded 2026-10-05 in
-`PROGRESS_PHASE_N.md`:
+STRUCT_PLAN_3 Phase N's deferred remainder:
 
 - **`Shared<T>`** — the lock-guarded slot type, reachable only through the
   mv lock's critical-section form.
@@ -214,11 +205,9 @@ deliberately left:
 
 Nursery cancel/timeout wakes a parked fiber and the fiber exits
 cooperatively by polling `Task.current_cancelled()` at its checkpoints —
-or by `Channel.receive` returning the zero value once cancelled. The
-bounded-slice wait and the unconditional join-before-exit landed (see
-`test/kill_kick.test.ts`).
+or by `Channel.receive` returning the zero value once cancelled.
 
-What remains: a task that NEVER observes cancellation (one long
+A task that NEVER observes cancellation (one long
 unobservable raw sleep, a tight CAS loop, a raw blocking FFI call) now
 hangs its nursery's join instead of corrupting memory — the
 join-before-exit contract holds, liveness doesn't. The full fix is the
@@ -421,29 +410,15 @@ byte-identical; pidigits baseline-relative arc 1.89× → ~1.53× vs C `-O2`):
   file-scope carrier gets skipped on aarch64 (its content never emits —
   put such blocks in a real method, e.g. set_content_size).
 
-## json-serde run-time regression in 0.7.0 (string-ownership copies)
+## json-serde: remaining uniform-heap copy costs
 
-Head-to-head against `nomen-lang@0.6.13` (2026-10-10, identical
-`bench/nomen/json-serde.nm`, byte-for-byte outputs match): best-of-3 run
-time went 59→95ms on aarch64 (+61%) and 30→61ms on the C backend (+103%).
-The generated C is call-count identical for malloc/memcpy/realloc but adds
-~12 `nomen_str_dup(` call sites, 2 `string_copy(`, and 4 extra
-`JsonNode_destroy(` calls — the D3 string-ownership lowerings (field reads
-and returns now `.copy()`, uniform-heap normalization) landing in the Json
-parser's hot paths, with `List`/`Map` now `mv struct`s on top. Everything
-else in the bench suite is flat (±5%); binarytrees/merkletrees +19–36% is
-the class→`mv struct`+`Box` tree idiom (one alloc before, alloc + struct
-memcpy per child now), not codegen. Worth a pass over the Json parse path
-to identify which lowered reads can stay borrows (e.g. view-returning
-field reads where the caller immediately re-copies or hashes).
-
-Update Oct 2026: the Json-ownership half of this landed
-(PERF_PLAN item 5) — `JsonTree.take_text`/`get_text_view` removed the
-per-node set_text copy + get_text read copy, taking json-serde to −22% /
-−12% (C / aarch64, `bench/sample.json 50000`, interleaved medians,
-byte-identical outputs). The regression's other cited causes (uniform-heap
-field reads/returns in user shapes, `List`/`Map` as `mv struct`s) are
-untouched by it.
+The Json-ownership half of the 0.7.0 run-time regression landed
+(PERF_PLAN item 5 — `JsonTree.take_text`/`get_text_view`, json-serde to
+−22% / −12% vs the 0.7.0 baseline). The regression's other cited causes
+are untouched: uniform-heap field reads/returns in user shapes and
+`List`/`Map` as `mv struct`s. Worth a pass over the Json parse path to
+identify which lowered reads can stay borrows (e.g. view-returning field
+reads where the caller immediately re-copies or hashes).
 
 ## Endgame: compiler magic keyed on marker traits (the `#spawn` retirement)
 
@@ -555,77 +530,27 @@ controls at runtime) wants generation-checked views: reuse the
 view whose owner is gone is detected at use instead of pointing at freed
 state. Split out of the on_click work (2026-10-20).
 
-## Handler desugar: owner-dispatched callbacks (Stages 1–4 landed)
-
-Stages 1–4 are DONE (2026-10-20/21): control-carried
-`self.<field>.on_<event>(closure)` — the closure hoists to a hidden method
-on the enclosing struct, the site checks into a dispatch arm on a
-synthesized `handle_clicks`, and `Window.run` drains the arms before
-`frame` with a dispatch-time `ref self` borrow — so handlers reach app
-state without capturing anything. Stage 2 opens it to user composites: any
-struct the app owns (transitively, down static field paths) is a handler
-host, forwarding is synthesized child-first, and `Pagination`'s internals
-are off polls. Stage 3 adds the upward tier: composite events
-(`on_page_change` + `tick`) call back into the app's synthesized
-`run_handler` through a trait-typed `ref` owner borrow — `ref Trait`
-params now take conformer borrows (the instance's first word is its
-vtable). Stage 4 adds dynamic trees: `List<Row>` fields dispatch per
-element through the ELEMENT BORROW (`ref Row row = list.at(i)` — the
-sanctioned interior borrow, lowered to the library's `slot_ptr`; a `ptr T`
-return is a bare word in x0 on both backends). The window binding list
-(`Window.on_click` / `ClickBinding` / `dispatch_clicks`) is retired, and
-`was_clicked` is demoted from the documented pattern (it stays as the
-low-level ring primitive). Full design, checker rules, staging, and the
-alternatives rejected: [`docs/HANDLERS.md`](./docs/HANDLERS.md).
-
-## Guard/index contract discharge: modeled, and what still needs a guard
-
-Recorded 2026-10-27 while auditing the (since-fixed) core-trust naming
-bypass; extended and largely FIXED 2026-11-01. Memory-SAFE throughout — an
-unprovable call is a compile error, so everything below is a usability
-question, not a soundness one.
+## Guard/index contract discharge residuals
 
 `List.at`'s parameter contract (`i >= 0 && i < self.length`) is verified at
-every call site. What discharges it now:
-
-- **Exact List lengths** (`known_length`, locals only): `var List<int> x =
-List<int>()` seeds 0; `push` +1; `pop` / `remove_at_or_panic` −1 (floor
-  0); `set` / `set_or_panic` / `reserve` neutral; any other `ref self`
-  mutator or an opaque callee holding the list (argument pass, field
-  escape) kills the fact. Unguarded `x.push(2); x.at(0)` and the
-  push-push-pop sequence verify. Pop/remove_at also NARROW derived facts
-  (literal lower bounds decrement, symbolic ones drop) — the old behavior
-  let `if x.length > 1 { x.pop(); x.at(1) }` verify against a stale fact
-  and read OOB at runtime (a real soundness hole, now closed).
-- Strict guard + literal index (`if xs.length > k { xs.at(k) }` — worked
-  for k = 0/1 before; the general-literal form now too).
-- INCLUSIVE lower bound one step up (`if xs.length >= 2 { xs.at(1) }` —
-  new).
-- Singleton-range variables count as constants (`var int idx = 1` — new).
-- Negated guards (`if !(x.length <= 0)` — new).
-- Length-snapshot aliases (`var n = x.length; if n > 0 { xs.at(0) }` —
-  new; the alias's guard consults for the path).
-
-Still needs a guard (the residual, deliberately conservative):
+every call site; exact List lengths (`known_length`), guards, inclusive
+bounds, singleton-range indices, negated guards, and length-snapshot
+aliases discharge it. The machinery is `evaluate_const_condition`
+(src/check/utils/evaluate_const_condition.ts) and
+`apply_list_length_effect` (src/check/utils/flow_bounds.ts). What still
+needs a guard:
 
 - **Unknown provenance**: a list from a function return or a parameter has
   no length facts — guard, `at_or_panic`, or `pop`.
 - **Globals**: exact tracking is locals-only — a global's length can
-  change behind the caller's back through any opaque callee, so its facts
-  stay guard-derived (the same staleness the OLD guard-fact behavior had
-  for every shape — see next bullet).
-- **Pre-existing staleness on guard facts**: guard-derived bounds on a
-  receiver still survive UNMODELED mutators (only the exact fact dies),
-  and for non-List containers there is no effect model at all. Closing
-  that fully means a mutation-precision pass (refine-vs-invalidate per
+  change behind the caller's back through any opaque callee.
+- **Guard-fact staleness on unmodeled mutators**: guard-derived bounds on
+  a receiver survive `ref self` calls the model doesn't know (only the
+  exact fact dies), and non-List containers have no effect model at all.
+  Closing that means a mutation-precision pass (refine-vs-invalidate per
   callee effect) — worth doing only with concrete blocked shapes.
 - **Field-path receivers** (`h.items.at(0)`): guards only, no exact
   tracking on field paths.
-
-The constraint evaluation lives in `evaluate_const_condition`
-(src/check/utils/evaluate_const_condition.ts); the effect model in
-`apply_list_length_effect` / `record_fresh_list_length`
-(src/check/utils/flow_bounds.ts); tests in `test/length_facts.test.ts`.
 
 ## System.o prebuild races parallel workers after a core edit
 
@@ -661,30 +586,18 @@ functional payoff beyond tidiness, so it was recorded rather than done —
 worth folding into the next tokenizer-touching change. Nothing else in the
 repo uses `???` as a placeholder.
 
-## Scalar element borrows via `List.at` (fixed for bare local receivers; provenance rules remain)
+## Scalar element borrows via `List.at` (provenance residuals)
 
-Recorded 2026-10-29 while landing PERF_PLAN item 4 (borrow-returning reads,
-`test/map_get_ptr.test.ts`). The element-borrow rewrite `ref T x =
-container.<read>(i)` verifies `at`'s bounds contract at the rewrite site
-like any call, and it used to fail everywhere ("Parameter constraint cannot
-be verified: i >= 0 && i < self.length") while `ref int v =
-map.get_or_panic(k)` checked clean (no parameter contract).
-
-FIXED 2026-11-01 for bare local receivers, two independent ways: the
-List length-effect model (`known_length` — see the guarded-index section
-below) discharges the unguarded `ref int v = list.at(0)` right after a
-`push`, and a plain guard (`if list.length > 0`) verifies the rewrite as
-any call (that half worked before). `test/length_facts.test.ts` pins both
-plus the runtime read.
-
-What remains:
+The element-borrow rewrite `ref T x = container.<read>(i)` verifies `at`'s
+bounds contract at the rewrite site like any call. It discharges for bare
+local receivers (length facts or a guard); `ref int v =
+map.get_or_panic(k)` needs nothing (no parameter contract). What remains:
 
 - **Unknown-provenance lists still need a guard at the rewrite** (a list
   from a function return or a parameter has no length facts). The
-  sanctioned spellings stay: a guard, or Map's contract-free
-  `get_or_panic`.
+  sanctioned spellings: a guard, or Map's contract-free `get_or_panic`.
 - **Field-path receivers** (`ref int v = h.items.at(0)`) rely on guards —
-  no exact-length tracking on field paths (same scope as the guarded-index
-  section).
+  no exact-length tracking on field paths (same scope as the
+  guarded-index section).
 - **Containers other than List/Map** (`LinkedList`, `Tree`) have no
   contract-free read and no effect model — guards only.
